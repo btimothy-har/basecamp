@@ -1,0 +1,8 @@
+{
+    "name": "ws-eng",
+    "description": "Engineering resources for Claude Code: agents and skills.",
+    "version": "1.6.1",
+    "author": {
+        "name": "Brian Har"
+    }
+}

@@ -1,0 +1,8 @@
+{
+    "name": "ws-private",
+    "description": "Private tools, not git committed.",
+    "version": "1.0.1",
+    "author": {
+        "name": "Brian Har"
+    }
+}

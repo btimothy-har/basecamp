@@ -1,0 +1,33 @@
+{
+  "hooks": {
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "echo 'Check: are there relevant skills for this? If so, invoke before proceeding.'"
+          },
+          {
+            "type": "command",
+            "command": "echo 'Check: is there a specialized agent for this? If so, task the agent.'"
+          },
+          {
+            "type": "command",
+            "command": "echo 'Check: can work be parallelized? If so, task multiple agents simultaneously.'"
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/scripts/skill-reminder.sh"
+          }
+        ]
+      }
+    ]
+  }
+}

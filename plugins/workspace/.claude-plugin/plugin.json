@@ -1,0 +1,8 @@
+{
+    "name": "ws-workspace",
+    "description": "Project context injection at session start.",
+    "version": "1.5.0",
+    "author": {
+        "name": "Brian Har"
+    }
+}
