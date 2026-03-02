@@ -7,18 +7,21 @@ transcript line.
 
 from dataclasses import dataclass
 from datetime import datetime
+from typing import Literal
 
 from pydantic import BaseModel
-
-from observer.data.enums import ArtifactType
 
 
 class SummaryResult(BaseModel):
     summary: str
 
 
+# ACTION is excluded — it's created deterministically during refinement, not by LLM extraction.
+ExtractableType = Literal["knowledge", "decision", "constraint"]
+
+
 class ExtractedArtifact(BaseModel):
-    artifact_type: ArtifactType
+    artifact_type: ExtractableType
     text: str
     source: str
 

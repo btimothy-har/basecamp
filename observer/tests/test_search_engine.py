@@ -75,20 +75,18 @@ def _seed_data(db, *, artifact_type=ArtifactType.KNOWLEDGE, session_id="sess-1")
         session.add(artifact)
         session.flush()
 
-        # Only index non-PROMPT artifacts (mirrors SearchIndexer behavior)
-        if artifact_type != ArtifactType.PROMPT:
-            index_entry = SearchIndexSchema(
-                source_type=SearchSourceType.ARTIFACT.value,
-                source_id=artifact.id,
-                project_id=project.id,
-                transcript_id=transcript.id,
-                text=text,
-                content_hash=_content_hash(text),
-                embedding=_random_embedding(),
-                created_at=datetime.now(UTC),
-            )
-            session.add(index_entry)
-            session.flush()
+        index_entry = SearchIndexSchema(
+            source_type=SearchSourceType.ARTIFACT.value,
+            source_id=artifact.id,
+            project_id=project.id,
+            transcript_id=transcript.id,
+            text=text,
+            content_hash=_content_hash(text),
+            embedding=_random_embedding(),
+            created_at=datetime.now(UTC),
+        )
+        session.add(index_entry)
+        session.flush()
 
         return artifact.id
 
@@ -142,17 +140,7 @@ class TestSearchArtifacts:
         assert "score" in result
         assert "transcript_id" in result
         assert "type" in result
-        assert "prompt_event_id" in result
         assert "session_context" in result
-
-    def test_excludes_prompts(self, db):  # noqa: ARG002
-        _seed_data(db, artifact_type=ArtifactType.PROMPT, session_id="sess-prompt")
-
-        with patch.object(engine, "_get_model", return_value=_mock_model()):
-            results = engine.search_artifacts("test query", "test-project")
-
-        prompt_results = [r for r in results if r.get("type") == ArtifactType.PROMPT.value]
-        assert len(prompt_results) == 0
 
     def test_excludes_transcript_summaries(self, db):  # noqa: ARG002
         _seed_transcript_summary(db, session_id="sess-excluded")
@@ -346,15 +334,7 @@ class TestGetArtifact:
         assert result["id"] == artifact_id
         assert "type" in result
         assert "text" in result
-        assert "prompt_event_id" in result
-
-    def test_includes_prompts(self, db):  # noqa: ARG002
-        artifact_id = _seed_data(db, artifact_type=ArtifactType.PROMPT, session_id="sess-get-prompt")
-
-        result = engine.get_artifact(artifact_id)
-
-        assert result is not None
-        assert result["type"] == ArtifactType.PROMPT.value
+        assert "prompted_by" in result
 
     def test_returns_none_for_missing(self, db):  # noqa: ARG002
         result = engine.get_artifact(99999)

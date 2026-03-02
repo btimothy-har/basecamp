@@ -8,13 +8,11 @@ Extract artifacts from New Activity only:
 - knowledge: Technical facts discovered through investigation — how something works, why something behaves a certain way, root causes found. Must be generalisable: useful outside this specific conversation without additional context. Not session-specific commentary or restatements of what the user asked.
 - decision: An explicit choice between alternatives — "we chose X over Y because Z". Must involve rejected alternatives. Statements like "I'll do X" without considering options are NOT decisions.
 - constraint: Hard limitations or requirements that restrict future work — API limits, compatibility requirements, invariants that must hold. Not preferences or soft guidelines.
-- backlog: Explicitly deferred work — "we'll handle X later", "TODO: Y", "out of scope for now". Must be a conscious deferral, not just unfinished work.
-
 Prefer fewer, higher-quality artifacts over many low-quality ones.
 When in doubt, do NOT extract — return an empty list.
 
 For each artifact provide:
-- artifact_type: One of the types above (NOT "prompt", "action", "plan", or "scratch")
+- artifact_type: One of the types above
 - text: A clear summary capturing the essential information
 - source: The relevant text from New Activity that supports this artifact
 

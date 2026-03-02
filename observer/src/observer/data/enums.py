@@ -18,14 +18,10 @@ class WorkItemStage(IntEnum):
 
 
 class ArtifactType(StrEnum):
-    PROMPT = "prompt"
     KNOWLEDGE = "knowledge"
     DECISION = "decision"
     ACTION = "action"
     CONSTRAINT = "constraint"
-    BACKLOG = "backlog"
-    PLAN = "plan"
-    SCRATCH = "scratch"
 
 
 class ArtifactSource(StrEnum):

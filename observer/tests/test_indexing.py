@@ -158,16 +158,6 @@ class TestIndexBatch:
             assert entry.embedding is not None
             assert len(entry.embedding) == EMBEDDING_DIMENSIONS
 
-    def test_excludes_prompt_artifacts(self, db):
-        _, transcript_id = _seed_project_and_transcript(db)
-        _create_artifact(db, transcript_id, artifact_type=ArtifactType.PROMPT)
-
-        with patch.object(indexing, "_get_model") as mock_st_cls:
-            count = SearchIndexer.index_batch(db)
-
-        assert count == 0
-        mock_st_cls.assert_not_called()
-
     def test_returns_zero_when_nothing_pending(self, db):  # noqa: ARG002
         with patch.object(indexing, "_get_model") as mock_st_cls:
             count = SearchIndexer.index_batch(db)

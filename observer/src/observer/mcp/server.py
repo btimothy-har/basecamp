@@ -12,13 +12,13 @@ import sys
 
 from fastmcp import FastMCP
 
-from observer.constants import MCP_SERVER_NAME
+from observer.constants import MCP_SERVER_INSTRUCTIONS, MCP_SERVER_NAME
 from observer.mcp import engine
 
 logging.basicConfig(stream=sys.stderr, level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-mcp = FastMCP(MCP_SERVER_NAME)
+mcp = FastMCP(MCP_SERVER_NAME, instructions=MCP_SERVER_INSTRUCTIONS)
 
 
 def _project_and_session() -> tuple[str | None, str | None]:
@@ -92,7 +92,7 @@ def search_artifacts(
     threshold: float = 0.3,
     worktree: str | None = None,
 ) -> dict:
-    """Search for specific extracted knowledge, decisions, actions, and constraints.
+    """Search for extracted knowledge, decisions, actions, and constraints.
 
     Precision retrieval over artifact entries with session context expansion.
     Each result includes sibling artifacts from the same transcript. Use
@@ -106,9 +106,10 @@ def search_artifacts(
 
     Returns:
         Dict with 'results' list and 'count'. Each result contains source_id,
-        type, text, score, created_at, transcript_id, prompt_event_id, and
-        session_context (list of {id, type} sibling artifacts from the same
-        transcript).
+        type, text, score, created_at, transcript_id, and session_context
+        (list of {id, type} sibling artifacts from the same transcript).
+        Use get_artifact to retrieve full details including the prompt that
+        triggered extraction.
     """
     return _search_artifacts(query, top_k=top_k, threshold=threshold, worktree=worktree)
 
@@ -143,14 +144,15 @@ def search_transcripts(
 def get_artifact(artifact_id: int) -> dict:
     """Retrieve a single artifact by ID with full details.
 
-    Returns any artifact type including prompts, with prompt_event_id
-    linking to the prompt that triggered this artifact.
+    Returns artifact details including the prompt text that triggered
+    extraction (prompted_by field).
 
     Args:
         artifact_id: The artifact's database ID.
 
     Returns:
-        Dict with artifact details, or error if not found.
+        Dict with artifact details including prompted_by, or error if
+        not found.
     """
     return _get_artifact(artifact_id)
 

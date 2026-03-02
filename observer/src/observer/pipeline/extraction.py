@@ -12,7 +12,7 @@ import logging
 from datetime import UTC, datetime
 
 from observer.constants import EXTRACTION_BATCH_LIMIT
-from observer.data.enums import ArtifactSource, ArtifactType, WorkItemStage, WorkItemType
+from observer.data.enums import ArtifactSource, WorkItemStage, WorkItemType
 from observer.data.schemas import ArtifactSchema, TranscriptEventSchema, TranscriptSchema
 from observer.data.transcript_event import TranscriptEvent
 from observer.data.work_item import WorkItem
@@ -172,10 +172,8 @@ def _extract_batch(
     now = datetime.now(UTC)
     with db.session() as session:
         for extracted in result.artifacts:
-            if extracted.artifact_type == ArtifactType.PROMPT:
-                continue
             artifact = ArtifactSchema(
-                artifact_type=extracted.artifact_type.value,
+                artifact_type=extracted.artifact_type,
                 origin=ArtifactSource.EXTRACTED.value,
                 text=extracted.text,
                 transcript_id=transcript_id,
