@@ -12,13 +12,13 @@ import sys
 
 from fastmcp import FastMCP
 
-from observer.constants import MCP_SERVER_NAME
+from observer.constants import MCP_SERVER_INSTRUCTIONS, MCP_SERVER_NAME
 from observer.mcp import engine
 
 logging.basicConfig(stream=sys.stderr, level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-mcp = FastMCP(MCP_SERVER_NAME)
+mcp = FastMCP(MCP_SERVER_NAME, instructions=MCP_SERVER_INSTRUCTIONS)
 
 
 def _project_and_session() -> tuple[str | None, str | None]:

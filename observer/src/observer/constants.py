@@ -55,6 +55,25 @@ SEARCH_SIBLING_THRESHOLD = 0.5  # min similarity to result artifact for session 
 
 # MCP server
 MCP_SERVER_NAME = "observer"
+MCP_SERVER_INSTRUCTIONS = """\
+Semantic memory over past Claude Code sessions.
+
+Results are scoped to the current project and exclude the active session.
+
+Two retrieval pathways:
+
+1. search_artifacts — find specific facts, decisions, and constraints.
+   Results include session_context (sibling artifacts from the same
+   session). Drill down with get_artifact for full details including
+   the original prompt (prompted_by) that triggered the work.
+
+2. search_transcripts — find relevant past sessions by summary.
+   Drill down with get_transcript_summary for the full structured
+   summary.
+
+Start with search_artifacts for specific questions. Use
+search_transcripts when you need broader context about what was
+done in past sessions."""
 
 # Container (local dev database)
 DB_CONTAINER_NAME = "observer-pg"
