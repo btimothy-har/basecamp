@@ -92,7 +92,7 @@ def search_artifacts(
     threshold: float = 0.3,
     worktree: str | None = None,
 ) -> dict:
-    """Search for specific extracted knowledge, decisions, actions, and constraints.
+    """Search for extracted knowledge, decisions, actions, and constraints.
 
     Precision retrieval over artifact entries with session context expansion.
     Each result includes sibling artifacts from the same transcript. Use

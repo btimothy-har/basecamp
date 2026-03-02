@@ -8,7 +8,7 @@ and summarization, then marks items as TERMINAL.
 from datetime import UTC, datetime
 from unittest.mock import patch
 
-from observer.data.enums import ArtifactType, WorkItemStage, WorkItemType
+from observer.data.enums import WorkItemStage, WorkItemType
 from observer.data.project import Project
 from observer.data.schemas import (
     ArtifactSchema,
@@ -104,7 +104,7 @@ class TestExtraction:
         mock_extract.return_value = ExtractionResult(
             artifacts=[
                 ExtractedArtifact(
-                    artifact_type=ArtifactType.KNOWLEDGE,
+                    artifact_type="knowledge",
                     text="JWT uses RS256",
                     source="RS256 algorithm",
                 )
@@ -121,7 +121,7 @@ class TestExtraction:
         assert total == 1
 
         with db.session() as session:
-            knowledge = session.query(ArtifactSchema).filter_by(artifact_type=ArtifactType.KNOWLEDGE.value).all()
+            knowledge = session.query(ArtifactSchema).filter_by(artifact_type="knowledge").all()
             assert len(knowledge) == 1
             assert knowledge[0].text == "JWT uses RS256"
             assert knowledge[0].transcript_event_id is not None
@@ -234,7 +234,7 @@ class TestSummarization:
         mock_extract.return_value = ExtractionResult(
             artifacts=[
                 ExtractedArtifact(
-                    artifact_type=ArtifactType.KNOWLEDGE,
+                    artifact_type="knowledge",
                     text="important fact",
                     source="source",
                 )
@@ -251,7 +251,7 @@ class TestSummarization:
 
         # Artifacts were created (extraction succeeded)
         with db.session() as session:
-            artifacts = session.query(ArtifactSchema).filter_by(artifact_type=ArtifactType.KNOWLEDGE.value).all()
+            artifacts = session.query(ArtifactSchema).filter_by(artifact_type="knowledge").all()
             assert len(artifacts) == 1
 
         # Summary not updated (summarization failed)
@@ -283,7 +283,7 @@ class TestTerminalMarking:
         mock_extract.return_value = ExtractionResult(
             artifacts=[
                 ExtractedArtifact(
-                    artifact_type=ArtifactType.KNOWLEDGE,
+                    artifact_type="knowledge",
                     text="Auth uses JWT",
                     source="found JWT",
                 )
@@ -306,7 +306,7 @@ class TestTerminalMarking:
                 .first()
             )
             knowledge_artifact = (
-                session.query(ArtifactSchema).filter_by(artifact_type=ArtifactType.KNOWLEDGE.value).first()
+                session.query(ArtifactSchema).filter_by(artifact_type="knowledge").first()
             )
 
             assert prompt_te is not None

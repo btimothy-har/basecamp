@@ -1,7 +1,7 @@
 """Search engine — two retrieval pathways over the search index.
 
 - ``search_artifacts``: KNN over artifact entries → score → dedup → session
-  context expansion. Returns specific facts, decisions, and actions.
+  context expansion. Returns specific facts, decisions, actions, and constraints.
 - ``search_transcripts``: KNN over transcript summary entries → score → dedup.
   Returns session-level matches for orientation.
 """
@@ -65,8 +65,8 @@ def search_artifacts(
 ) -> list[dict[str, Any]]:
     """Semantic search over artifact index entries with session context expansion.
 
-    Finds specific extracted facts, decisions, actions, constraints, and backlog
-    items. Each result includes sibling artifacts from the same transcript for
+    Finds specific extracted facts, decisions, actions, and constraints.
+    Each result includes sibling artifacts from the same transcript for
     additional context.
     """
     model = _get_model()

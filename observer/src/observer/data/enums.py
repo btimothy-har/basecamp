@@ -22,9 +22,6 @@ class ArtifactType(StrEnum):
     DECISION = "decision"
     ACTION = "action"
     CONSTRAINT = "constraint"
-    BACKLOG = "backlog"
-    PLAN = "plan"
-    SCRATCH = "scratch"
 
 
 class ArtifactSource(StrEnum):

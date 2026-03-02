@@ -8,17 +8,20 @@ transcript line.
 from dataclasses import dataclass
 from datetime import datetime
 
-from pydantic import BaseModel
+from typing import Literal
 
-from observer.data.enums import ArtifactType
+from pydantic import BaseModel
 
 
 class SummaryResult(BaseModel):
     summary: str
 
 
+ExtractableType = Literal["knowledge", "decision", "constraint"]
+
+
 class ExtractedArtifact(BaseModel):
-    artifact_type: ArtifactType
+    artifact_type: ExtractableType
     text: str
     source: str
 

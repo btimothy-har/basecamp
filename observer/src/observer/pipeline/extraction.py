@@ -173,7 +173,7 @@ def _extract_batch(
     with db.session() as session:
         for extracted in result.artifacts:
             artifact = ArtifactSchema(
-                artifact_type=extracted.artifact_type.value,
+                artifact_type=extracted.artifact_type,
                 origin=ArtifactSource.EXTRACTED.value,
                 text=extracted.text,
                 transcript_id=transcript_id,
