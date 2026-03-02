@@ -6,7 +6,7 @@ Claude Code multi-project workspace launcher with custom prompts and isolated wo
 git clone https://github.com/btimothy-har/basecamp.git
 cd basecamp && uv run install.py
 basecamp setup
-basecamp start workspace
+basecamp start basecamp
 ```
 
 ## Why basecamp?
@@ -46,7 +46,7 @@ Layer prompts for different contexts:
 
 | Layer | Purpose |
 |-------|---------|
-| **Environment** | CLI context, Python/uv usage, workspace paths |
+| **Environment** | CLI context, Python/uv usage, project paths |
 | **Core** | Working principles, task management, tool usage |
 | **Working Style** | Role definition, communication style, code quality practices |
 | **Project Context** | Domain knowledge, project-specific patterns |
@@ -74,7 +74,7 @@ uv run install.py -e        # editable (recommended for development)
 uv run install.py --no-editable
 ```
 
-This installs two tools (`basecamp` and `observer`) and saves the workspace directory to `~/.basecamp/config.json`.
+This installs two tools (`basecamp` and `observer`) and saves the install directory to `~/.basecamp/config.json`.
 
 Then initialize the environment:
 
@@ -211,10 +211,10 @@ basecamp includes optional plugins for extended functionality. These are complem
 
 | Plugin | Description |
 |--------|-------------|
-| `ws-collab` | Collaborative discovery and planning for ideation and requirements |
-| `ws-eng` | Code review, PR workflows, testing patterns, Python/SQL development |
-| `ws-cursor` | Discovers `.cursor/*.mdc` context files |
-| `ws-gpg-check` | Verifies GPG card before git commit/tag |
+| `bc-collab` | Collaborative discovery and planning for ideation and requirements |
+| `bc-eng` | Code review, PR workflows, testing patterns, Python/SQL development |
+| `bc-cursor` | Discovers `.cursor/*.mdc` context files |
+| `bc-gpg-check` | Verifies GPG card before git commit/tag |
 
 ### Installing Plugins
 
@@ -222,10 +222,10 @@ From within a Claude Code session started via basecamp:
 
 ```
 /plugin marketplace add /path/to/basecamp
-/plugin install ws-eng@workspace
+/plugin install bc-eng@basecamp
 ```
 
-The first command registers basecamp as a marketplace (it discovers `.claude-plugin/marketplace.json`). The second installs a plugin from it. Available plugins: `ws-collab`, `ws-cursor`, `ws-eng`, `ws-gpg-check`.
+The first command registers basecamp as a marketplace (it discovers `.claude-plugin/marketplace.json`). The second installs a plugin from it. Available plugins: `bc-collab`, `bc-cursor`, `bc-eng`, `bc-gpg-check`.
 
 Create custom plugins in `plugins/` following [Claude Code plugin docs](https://docs.anthropic.com/en/docs/claude-code/plugins). Plugins in `plugins/private/` are gitignored.
 

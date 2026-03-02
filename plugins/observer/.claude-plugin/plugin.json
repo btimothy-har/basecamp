@@ -1,5 +1,5 @@
 {
-    "name": "ws-observer",
+    "name": "bc-observer",
     "description": "Session registration and semantic search for the observer daemon.",
     "version": "1.1.0",
     "author": {

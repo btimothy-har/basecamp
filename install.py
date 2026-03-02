@@ -30,14 +30,14 @@ MODULES: Final[list[tuple[str, Path, str]]] = [
 ]
 
 
-def save_workspace_dir(repo_dir: Path) -> None:
+def save_install_dir(repo_dir: Path) -> None:
     config_file = Path.home() / ".basecamp" / "config.json"
     try:
         existing = json.loads(config_file.read_text()) if config_file.exists() else {}
         existing = existing if isinstance(existing, dict) else {}
     except (json.JSONDecodeError, OSError):
         existing = {}
-    existing["workspace_dir"] = str(repo_dir)
+    existing["install_dir"] = str(repo_dir)
     config_file.parent.mkdir(parents=True, mode=0o700, exist_ok=True)
     content = (json.dumps(existing, indent=2) + os.linesep).encode()
     fd, tmp_name = tempfile.mkstemp(dir=config_file.parent, suffix=".tmp")
@@ -98,7 +98,7 @@ def main() -> None:
     for name, path, cli in MODULES:
         install_module(name, path, cli, editable=editable)
 
-    save_workspace_dir(REPO_DIR)
+    save_install_dir(REPO_DIR)
 
     console.print()
     console.print("[green]✓[/green] Done.")

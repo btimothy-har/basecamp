@@ -1,36 +1,36 @@
 {
-  "name": "workspace-bgmem",
+  "name": "basecamp",
   "owner": {
     "name": "Brian Har"
   },
   "plugins": [
     {
-      "name": "ws-collab",
+      "name": "bc-collab",
       "source": "./plugins/collaboration",
       "description": "Collaborative discovery and planning skills for ideation, requirements gathering, and scope negotiation."
     },
     {
-      "name": "ws-cursor",
+      "name": "bc-cursor",
       "source": "./plugins/cursor",
       "description": "Hook to discover .cursor/*.mdc context files when reading files."
     },
     {
-      "name": "ws-eng",
+      "name": "bc-eng",
       "source": "./plugins/engineering",
       "description": "Engineering resources for Claude Code: agents, commands, and skills."
     },
     {
-      "name": "ws-git-protect",
+      "name": "bc-git-protect",
       "source": "./plugins/git_protect",
       "description": "Guards against destructive git and gh operations."
     },
     {
-      "name": "ws-gpg-check",
+      "name": "bc-gpg-check",
       "source": "./plugins/gpg_check",
       "description": "Pre-tool hook to verify GPG card is unlocked before git operations."
     },
     {
-      "name": "ws-private",
+      "name": "bc-private",
       "source": "./plugins/private",
       "description": "Private tools, not git committed."
     }

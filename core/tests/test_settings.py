@@ -32,19 +32,19 @@ class TestReadWrite:
         assert cfg._read() == {}
 
     def test_write_then_read(self, cfg: Settings) -> None:
-        cfg._write({"workspace_dir": "/tmp/test"})
-        assert cfg._read() == {"workspace_dir": "/tmp/test"}
+        cfg._write({"install_dir": "/tmp/test"})
+        assert cfg._read() == {"install_dir": "/tmp/test"}
 
 
 class TestProperties:
-    """Public property API: workspace_dir, projects."""
+    """Public property API: install_dir, projects."""
 
-    def test_workspace_dir_empty(self, cfg: Settings) -> None:
-        assert cfg.workspace_dir is None
+    def test_install_dir_empty(self, cfg: Settings) -> None:
+        assert cfg.install_dir is None
 
-    def test_workspace_dir_set_and_get(self, cfg: Settings) -> None:
-        cfg.workspace_dir = "/tmp/ws"
-        assert cfg.workspace_dir == "/tmp/ws"
+    def test_install_dir_set_and_get(self, cfg: Settings) -> None:
+        cfg.install_dir = "/tmp/ws"
+        assert cfg.install_dir == "/tmp/ws"
 
     def test_projects_empty(self, cfg: Settings) -> None:
         assert cfg.projects == {}
@@ -54,21 +54,21 @@ class TestProperties:
         cfg.projects = projects
         assert cfg.projects == projects
 
-    def test_workspace_dir_preserves_projects(self, cfg: Settings) -> None:
+    def test_install_dir_preserves_projects(self, cfg: Settings) -> None:
         projects = {"myproj": {"dirs": ["~/myproj"]}}
         cfg.projects = projects
-        cfg.workspace_dir = "/tmp/ws"
+        cfg.install_dir = "/tmp/ws"
 
         data = json.loads(cfg.path.read_text())
-        assert data["workspace_dir"] == "/tmp/ws"
+        assert data["install_dir"] == "/tmp/ws"
         assert data["projects"] == projects
 
-    def test_projects_preserves_workspace_dir(self, cfg: Settings) -> None:
-        cfg.workspace_dir = "/tmp/ws"
+    def test_projects_preserves_install_dir(self, cfg: Settings) -> None:
+        cfg.install_dir = "/tmp/ws"
         cfg.projects = {"myproj": {"dirs": ["~/myproj"]}}
 
         data = json.loads(cfg.path.read_text())
-        assert data["workspace_dir"] == "/tmp/ws"
+        assert data["install_dir"] == "/tmp/ws"
         assert data["projects"]["myproj"] == {"dirs": ["~/myproj"]}
 
 
@@ -76,15 +76,15 @@ class TestLocking:
     """Verify _locked_update creates the lock file and serialises access."""
 
     def test_lock_file_created(self, cfg: Settings) -> None:
-        cfg.workspace_dir = "/tmp/test"
+        cfg.install_dir = "/tmp/test"
         assert cfg.path.with_suffix(".lock").exists()
 
     def test_sequential_updates_preserved(self, cfg: Settings) -> None:
-        cfg.workspace_dir = "/tmp/ws"
+        cfg.install_dir = "/tmp/ws"
         cfg.projects = {"proj": {"dirs": ["~/proj"]}}
 
         data = json.loads(cfg.path.read_text())
-        assert data["workspace_dir"] == "/tmp/ws"
+        assert data["install_dir"] == "/tmp/ws"
         assert data["projects"] == {"proj": {"dirs": ["~/proj"]}}
 
     def test_path_returns_configured_path(self, cfg: Settings) -> None:

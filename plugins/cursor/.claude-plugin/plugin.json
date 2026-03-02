@@ -1,5 +1,5 @@
 {
-    "name": "ws-cursor",
+    "name": "bc-cursor",
     "description": "Hook to discover .cursor/*.mdc context files when reading files.",
     "version": "1.1.0",
     "author": {

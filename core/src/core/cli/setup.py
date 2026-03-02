@@ -39,13 +39,13 @@ def _scaffold_dirs() -> None:
 
 
 def _create_default_config() -> None:
-    """Create config.json with the workspace project as a starting point."""
+    """Create config.json with the basecamp project as a starting point."""
     relative_path = to_home_relative(SCRIPT_DIR)
     config = Config(
         projects={
-            "workspace": ProjectConfig(
+            "basecamp": ProjectConfig(
                 dirs=[relative_path],
-                description="Workspace Source Code",
+                description="Basecamp Source Code",
                 working_style="engineering",
             )
         }
@@ -89,7 +89,7 @@ def execute_setup() -> None:
         console.print(f"  [green]✓[/green] {config_path} [dim]({count} project{'s' if count != 1 else ''})[/dim]")
     else:
         _create_default_config()
-        console.print(f"  [green]✓[/green] Created {config_path} [dim](workspace project)[/dim]")
+        console.print(f"  [green]✓[/green] Created {config_path} [dim](basecamp project)[/dim]")
     console.print()
 
     # Optional modules
@@ -101,6 +101,6 @@ def execute_setup() -> None:
         console.print("    [dim]Install:[/dim] uv tool install -e ./observer && observer setup")
     console.print()
 
-    console.print("[green]✓[/green] Done. Try editing the workspace source: [bold]basecamp start workspace[/bold]")
+    console.print("[green]✓[/green] Done. Try editing the basecamp source: [bold]basecamp start basecamp[/bold]")
     console.print("[dim]  Add your own projects with:[/dim] [bold]basecamp project -h[/bold]")
     console.print()

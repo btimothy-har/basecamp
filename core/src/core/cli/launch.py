@@ -11,7 +11,6 @@ from core.constants import (
     SCRATCH_BASE,
     SCRIPT_DIR,
     USER_CONTEXT_DIR,
-    WORKSPACE_PLUGIN_DIR,
 )
 from core.exceptions import NoDirectoriesConfiguredError, NotAGitRepoError
 from core.git import (
@@ -93,9 +92,10 @@ def execute_launch(
     if resume:
         cmd.append("--resume")
 
-    # Load bundled workspace plugin (always)
-    if (WORKSPACE_PLUGIN_DIR / ".claude-plugin" / "plugin.json").exists():
-        cmd.extend(["--plugin-dir", str(WORKSPACE_PLUGIN_DIR)])
+    # Load bundled companion plugin (always)
+    companion_plugin_dir = SCRIPT_DIR / "plugins" / "companion"
+    if (companion_plugin_dir / ".claude-plugin" / "plugin.json").exists():
+        cmd.extend(["--plugin-dir", str(companion_plugin_dir)])
 
     # Load observer plugin when configured
     observer_plugin_dir = SCRIPT_DIR / "plugins" / "observer"
