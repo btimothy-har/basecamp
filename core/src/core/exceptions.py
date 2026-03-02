@@ -36,6 +36,13 @@ class NoDirectoriesConfiguredError(LauncherError):
         super().__init__(f"Project '{project_name}' has no directories configured")
 
 
+class PathLaunchLabelError(LauncherError):
+    """Raised when worktree labels are used with path-based launch."""
+
+    def __init__(self) -> None:
+        super().__init__("Worktree labels (-l) are not supported with path-based launch")
+
+
 class WorktreeError(LauncherError):
     """Base exception for worktree-related errors."""
 

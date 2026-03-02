@@ -12,6 +12,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 basecamp setup                           # Initialize environment (prerequisites, dirs, config)
 
 basecamp start <project>                # Start Claude in project directory
+basecamp start .                        # Start Claude in current directory
+basecamp start ~/path/to/dir            # Start Claude in any directory path
 basecamp start -r <project>             # Resume a previous conversation
 basecamp start -l auth <project>        # Work in worktree "auth" (creates if new, re-enters if exists)
 
@@ -192,6 +194,5 @@ The `basecamp` project is hardcoded to start with basecamp itself as the working
 
 ## Environment Variables
 
-- `BASECAMP_PROJECT`: Set during start to the project name being started
 - `BASECAMP_REPO`: Set during start to the git repo directory name (falls back to primary dir name for non-git projects)
 - `BASECAMP_CONTEXT_FILE`: Set during start to the resolved context file path (if `context` field is configured and file exists)
