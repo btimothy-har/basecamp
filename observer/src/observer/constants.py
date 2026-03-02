@@ -62,7 +62,7 @@ Results are scoped to the current project and exclude the active session.
 
 Two retrieval pathways:
 
-1. search_artifacts — find specific facts, decisions, and constraints.
+1. search_artifacts — find specific facts, decisions, actions, and constraints.
    Results include session_context (sibling artifacts from the same
    session). Drill down with get_artifact for full details including
    the original prompt (prompted_by) that triggered the work.

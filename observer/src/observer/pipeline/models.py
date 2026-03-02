@@ -7,7 +7,6 @@ transcript line.
 
 from dataclasses import dataclass
 from datetime import datetime
-
 from typing import Literal
 
 from pydantic import BaseModel
@@ -17,6 +16,7 @@ class SummaryResult(BaseModel):
     summary: str
 
 
+# ACTION is excluded — it's created deterministically during refinement, not by LLM extraction.
 ExtractableType = Literal["knowledge", "decision", "constraint"]
 
 

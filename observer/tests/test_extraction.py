@@ -300,14 +300,8 @@ class TestTerminalMarking:
 
         with db.session() as session:
             # The prompt's TranscriptEvent provides the prompt_event_id linkage
-            prompt_te = (
-                session.query(TranscriptEventSchema)
-                .filter_by(event_type=WorkItemType.PROMPT.value)
-                .first()
-            )
-            knowledge_artifact = (
-                session.query(ArtifactSchema).filter_by(artifact_type="knowledge").first()
-            )
+            prompt_te = session.query(TranscriptEventSchema).filter_by(event_type=WorkItemType.PROMPT.value).first()
+            knowledge_artifact = session.query(ArtifactSchema).filter_by(artifact_type="knowledge").first()
 
             assert prompt_te is not None
             assert knowledge_artifact.prompt_event_id == prompt_te.id

@@ -140,7 +140,6 @@ class TestSearchArtifacts:
         assert "score" in result
         assert "transcript_id" in result
         assert "type" in result
-        assert "prompt_event_id" in result
         assert "session_context" in result
 
     def test_excludes_transcript_summaries(self, db):  # noqa: ARG002
@@ -335,7 +334,7 @@ class TestGetArtifact:
         assert result["id"] == artifact_id
         assert "type" in result
         assert "text" in result
-        assert "prompt_event_id" in result
+        assert "prompted_by" in result
 
     def test_returns_none_for_missing(self, db):  # noqa: ARG002
         result = engine.get_artifact(99999)
