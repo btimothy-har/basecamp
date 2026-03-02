@@ -20,7 +20,7 @@ from observer.constants import (
     EMBEDDING_MODEL_NAME,
     MODEL_CACHE_DIR,
 )
-from observer.data.enums import ArtifactType, SearchSourceType
+from observer.data.enums import SearchSourceType
 from observer.data.schemas import ArtifactSchema, SearchIndexSchema, TranscriptSchema
 from observer.exceptions import EmbeddingShapeError
 from observer.services.db import Database
@@ -63,7 +63,6 @@ class SearchIndexer:
                 )
                 .filter(
                     SearchIndexSchema.id.is_(None),
-                    ArtifactSchema.artifact_type != ArtifactType.PROMPT.value,
                     ArtifactSchema.transcript_id.isnot(None),
                 )
                 .limit(1)
@@ -133,7 +132,6 @@ class SearchIndexer:
                 )
                 .filter(
                     SearchIndexSchema.id.is_(None),
-                    ArtifactSchema.artifact_type != ArtifactType.PROMPT.value,
                     ArtifactSchema.transcript_id.isnot(None),
                 )
                 .limit(batch_limit)

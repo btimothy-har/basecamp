@@ -14,7 +14,7 @@ Prefer fewer, higher-quality artifacts over many low-quality ones.
 When in doubt, do NOT extract — return an empty list.
 
 For each artifact provide:
-- artifact_type: One of the types above (NOT "prompt", "action", "plan", or "scratch")
+- artifact_type: One of the types above (NOT "action", "plan", or "scratch")
 - text: A clear summary capturing the essential information
 - source: The relevant text from New Activity that supports this artifact
 

@@ -143,8 +143,8 @@ def search_transcripts(
 def get_artifact(artifact_id: int) -> dict:
     """Retrieve a single artifact by ID with full details.
 
-    Returns any artifact type including prompts, with prompt_event_id
-    linking to the prompt that triggered this artifact.
+    Returns artifact details with prompt_event_id linking to the
+    transcript event for the prompt that triggered this artifact.
 
     Args:
         artifact_id: The artifact's database ID.

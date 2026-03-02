@@ -85,22 +85,7 @@ class _Setup:
         return wi
 
     def add_prompt(self, text: str = "help me implement JWT authentication for the entire API system") -> WorkItem:
-        wi = self._add_refined_item(WorkItemType.PROMPT, text)
-        # Prompts also produce a PROMPT artifact during refine
-        with self.db.session() as session:
-            prompt_te = session.query(TranscriptEventSchema).filter(TranscriptEventSchema.work_item_id == wi.id).first()
-            artifact = ArtifactSchema(
-                artifact_type=ArtifactType.PROMPT.value,
-                origin="extracted",
-                text=text,
-                transcript_id=self.transcript_id,
-                transcript_event_id=prompt_te.id,
-                prompt_event_id=prompt_te.id,
-                source=text,
-                created_at=_ts(self._minute),
-            )
-            session.add(artifact)
-        return wi
+        return self._add_refined_item(WorkItemType.PROMPT, text)
 
     def add_thinking(self, text: str = "Thinking: JWT vs sessions → JWT chosen") -> WorkItem:
         return self._add_refined_item(WorkItemType.THINKING, text)
@@ -141,31 +126,6 @@ class TestExtraction:
             assert knowledge[0].text == "JWT uses RS256"
             assert knowledge[0].transcript_event_id is not None
             assert knowledge[0].prompt_event_id is not None
-
-    @patch("observer.pipeline.extraction.summarize_transcript")
-    @patch("observer.pipeline.extraction.extract_artifacts")
-    def test_skips_prompt_type_from_llm(self, mock_extract, mock_summarize, db):
-        mock_extract.return_value = ExtractionResult(
-            artifacts=[
-                ExtractedArtifact(
-                    artifact_type=ArtifactType.PROMPT,
-                    text="should be skipped",
-                    source="x",
-                )
-            ]
-        )
-        mock_summarize.return_value = "summary"
-
-        s = _Setup(db)
-        s.create_transcript()
-        s.add_prompt()
-        s.add_response("I will help you with the entire authentication system now")
-
-        WorkItemExtractor.extract_batch(db)
-
-        with db.session() as session:
-            prompts = session.query(ArtifactSchema).filter_by(artifact_type=ArtifactType.PROMPT.value).all()
-            assert len(prompts) == 1  # only the refine-created prompt, not the LLM-returned one
 
     @patch("observer.pipeline.extraction.summarize_transcript")
     def test_prompt_only_skips_extraction(self, mock_summarize, db):
@@ -339,13 +299,18 @@ class TestTerminalMarking:
         WorkItemExtractor.extract_batch(db)
 
         with db.session() as session:
-            prompt_artifact = session.query(ArtifactSchema).filter_by(artifact_type=ArtifactType.PROMPT.value).first()
+            # The prompt's TranscriptEvent provides the prompt_event_id linkage
+            prompt_te = (
+                session.query(TranscriptEventSchema)
+                .filter_by(event_type=WorkItemType.PROMPT.value)
+                .first()
+            )
             knowledge_artifact = (
                 session.query(ArtifactSchema).filter_by(artifact_type=ArtifactType.KNOWLEDGE.value).first()
             )
 
-            assert prompt_artifact.prompt_event_id is not None
-            assert knowledge_artifact.prompt_event_id == prompt_artifact.prompt_event_id
+            assert prompt_te is not None
+            assert knowledge_artifact.prompt_event_id == prompt_te.id
 
 
 class TestMultipleTranscripts:

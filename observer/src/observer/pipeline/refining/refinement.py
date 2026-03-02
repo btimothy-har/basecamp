@@ -68,14 +68,6 @@ class WorkItemRefiner:
 
         te = self._save_transcript_event(work_item, user_text)
         self._prompt_event_id = te.id
-
-        self._save_artifact(
-            ArtifactType.PROMPT,
-            user_text,
-            transcript_event_id=te.id,
-            prompt_event_id=te.id,
-            source=user_text,
-        )
         self._mark_work_item(work_item, WorkItemStage.REFINED)
 
     def _handle_thinking(self, work_item: WorkItem) -> None:

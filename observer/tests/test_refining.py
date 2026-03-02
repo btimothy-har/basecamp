@@ -323,7 +323,7 @@ def _setup_transcript(db, tmp_path) -> int:
 
 class TestRefineBatch:
     def test_classifies_and_refines_prompt(self, db, tmp_path):
-        """Prompt event gets classified into WorkItem, then refined into TranscriptEvent + artifact."""
+        """Prompt event gets classified into WorkItem, then refined into TranscriptEvent."""
         transcript_id = _setup_transcript(db, tmp_path)
         text = "help me implement JWT authentication for the entire API system"
         content = json.dumps({"type": "user", "message": {"role": "user", "content": text}})
@@ -342,10 +342,10 @@ class TestRefineBatch:
             assert len(tes) == 1
             assert text in tes[0].text
 
-        # PROMPT artifact created
+        # No artifact created (prompts are not artifacts)
         with db.session() as session:
-            artifacts = session.query(ArtifactSchema).filter_by(artifact_type=ArtifactType.PROMPT.value).all()
-            assert len(artifacts) == 1
+            artifacts = session.query(ArtifactSchema).filter_by(transcript_id=transcript_id).all()
+            assert len(artifacts) == 0
 
     def test_classifies_tool_pair(self, db, tmp_path):
         """Tool use + result get classified into a TOOL_PAIR WorkItem."""
