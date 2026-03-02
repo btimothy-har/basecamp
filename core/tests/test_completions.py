@@ -37,30 +37,22 @@ def sample_config() -> Config:
 
 
 class TestCompleteProjectName:
-    def test_returns_all_on_empty_prefix(
-        self, mock_ctx: Context, mock_param: Parameter, sample_config: Config
-    ) -> None:
+    def test_returns_all_on_empty_prefix(self, mock_ctx: Context, mock_param: Parameter, sample_config: Config) -> None:
         with patch("core.cli.completions.load_config", return_value=sample_config):
             items = complete_project_name(mock_ctx, mock_param, "")
         assert [i.value for i in items] == ["alpha", "beta", "gamma"]
 
-    def test_filters_by_prefix(
-        self, mock_ctx: Context, mock_param: Parameter, sample_config: Config
-    ) -> None:
+    def test_filters_by_prefix(self, mock_ctx: Context, mock_param: Parameter, sample_config: Config) -> None:
         with patch("core.cli.completions.load_config", return_value=sample_config):
             items = complete_project_name(mock_ctx, mock_param, "al")
         assert [i.value for i in items] == ["alpha"]
 
-    def test_no_match_returns_empty(
-        self, mock_ctx: Context, mock_param: Parameter, sample_config: Config
-    ) -> None:
+    def test_no_match_returns_empty(self, mock_ctx: Context, mock_param: Parameter, sample_config: Config) -> None:
         with patch("core.cli.completions.load_config", return_value=sample_config):
             items = complete_project_name(mock_ctx, mock_param, "zzz")
         assert items == []
 
-    def test_config_error_returns_empty(
-        self, mock_ctx: Context, mock_param: Parameter
-    ) -> None:
+    def test_config_error_returns_empty(self, mock_ctx: Context, mock_param: Parameter) -> None:
         with patch("core.cli.completions.load_config", side_effect=RuntimeError("bad")):
             items = complete_project_name(mock_ctx, mock_param, "")
         assert items == []
@@ -77,9 +69,7 @@ class TestCompleteProjectOrPath:
         assert len(project_items) == 3
         assert len(dir_items) == 1
 
-    def test_dir_item_present_even_with_no_projects(
-        self, mock_ctx: Context, mock_param: Parameter
-    ) -> None:
+    def test_dir_item_present_even_with_no_projects(self, mock_ctx: Context, mock_param: Parameter) -> None:
         empty_config = Config(projects={})
         with patch("core.cli.completions.load_config", return_value=empty_config):
             items = complete_project_or_path(mock_ctx, mock_param, "./")
@@ -87,26 +77,30 @@ class TestCompleteProjectOrPath:
 
 
 class TestCompleteWorktreeName:
-    def test_no_project_param_returns_empty(
-        self, mock_ctx: Context, mock_param: Parameter
-    ) -> None:
+    def test_no_project_param_returns_empty(self, mock_ctx: Context, mock_param: Parameter) -> None:
         mock_ctx.params = {}
         items = complete_worktree_name(mock_ctx, mock_param, "")
         assert items == []
 
-    def test_returns_worktree_names(
-        self, mock_ctx: Context, mock_param: Parameter, sample_config: Config
-    ) -> None:
+    def test_returns_worktree_names(self, mock_ctx: Context, mock_param: Parameter, sample_config: Config) -> None:
         now = datetime.now(tz=timezone.utc)
         mock_ctx.params = {"project": "alpha"}
         worktrees = [
             WorktreeInfo(
-                name="auth", path=Path("/fake/auth"), branch="wt/auth",
-                created_at=now, project="alpha", repo_name="alpha",
+                name="auth",
+                path=Path("/fake/auth"),
+                branch="wt/auth",
+                created_at=now,
+                project="alpha",
+                repo_name="alpha",
             ),
             WorktreeInfo(
-                name="api", path=Path("/fake/api"), branch="wt/api",
-                created_at=now, project="alpha", repo_name="alpha",
+                name="api",
+                path=Path("/fake/api"),
+                branch="wt/api",
+                created_at=now,
+                project="alpha",
+                repo_name="alpha",
             ),
         ]
         with (
@@ -119,9 +113,7 @@ class TestCompleteWorktreeName:
             items = complete_worktree_name(mock_ctx, mock_param, "a")
         assert [i.value for i in items] == ["auth", "api"]
 
-    def test_error_returns_empty(
-        self, mock_ctx: Context, mock_param: Parameter
-    ) -> None:
+    def test_error_returns_empty(self, mock_ctx: Context, mock_param: Parameter) -> None:
         mock_ctx.params = {"project": "nonexistent"}
         with patch("core.cli.completions.load_config", side_effect=RuntimeError("bad")):
             items = complete_worktree_name(mock_ctx, mock_param, "")

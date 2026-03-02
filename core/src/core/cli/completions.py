@@ -10,23 +10,19 @@ from core.git import list_worktrees, resolve_repo_name
 
 
 def complete_project_name(
-    ctx: Context, param: Parameter, incomplete: str  # noqa: ARG001
+    ctx: Context,
+    param: Parameter,
+    incomplete: str,  # noqa: ARG001
 ) -> list[CompletionItem]:
     """Complete project names from config."""
     try:
         config = load_config()
-        return [
-            CompletionItem(name)
-            for name in sorted(config.projects.keys())
-            if name.startswith(incomplete)
-        ]
+        return [CompletionItem(name) for name in sorted(config.projects.keys()) if name.startswith(incomplete)]
     except Exception:  # noqa: BLE001
         return []
 
 
-def complete_project_or_path(
-    ctx: Context, param: Parameter, incomplete: str
-) -> list[CompletionItem]:
+def complete_project_or_path(ctx: Context, param: Parameter, incomplete: str) -> list[CompletionItem]:
     """Complete project names and filesystem paths for the start command."""
     items = complete_project_name(ctx, param, incomplete)
     # type="dir" tells the shell to also offer directory completion
@@ -35,7 +31,9 @@ def complete_project_or_path(
 
 
 def complete_worktree_name(
-    ctx: Context, param: Parameter, incomplete: str  # noqa: ARG001
+    ctx: Context,
+    param: Parameter,
+    incomplete: str,  # noqa: ARG001
 ) -> list[CompletionItem]:
     """Complete worktree names for a given project."""
     project_name = ctx.params.get("project")
@@ -51,10 +49,6 @@ def complete_worktree_name(
         repo_name = resolve_repo_name(resolved)
         if not repo_name:
             return []
-        return [
-            CompletionItem(wt.name)
-            for wt in list_worktrees(repo_name)
-            if wt.name.startswith(incomplete)
-        ]
+        return [CompletionItem(wt.name) for wt in list_worktrees(repo_name) if wt.name.startswith(incomplete)]
     except Exception:  # noqa: BLE001
         return []
