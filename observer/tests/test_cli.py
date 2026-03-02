@@ -9,7 +9,7 @@ import questionary
 from click.testing import CliRunner
 from observer.cli import main
 from observer.daemon import Daemon
-from observer.services.container import ContainerRuntimeNotFoundError
+from observer.services.container import ContainerRuntimeNotFoundError, ContainerStatus
 
 
 @pytest.fixture()
@@ -27,9 +27,27 @@ def obs_dir(tmp_path, monkeypatch):
     return obs
 
 
+_CLI_PREFIX = "observer.cli"
+
+
+def _mock_status(*, running: bool = False, status_text: str = "running") -> ContainerStatus:
+    return ContainerStatus(
+        running=running,
+        runtime="docker",
+        container_name="observer-pg",
+        port=15432,
+        volume="observer_data",
+        status_text=status_text,
+    )
+
+
 class TestStart:
     def test_foreground(self, runner, obs_dir):  # noqa: ARG002
-        with patch.object(Daemon, "check_running", return_value=None), patch.object(Daemon, "run") as mock_run:
+        with (
+            patch(f"{_CLI_PREFIX}._ensure_db"),
+            patch.object(Daemon, "check_running", return_value=None),
+            patch.object(Daemon, "run") as mock_run,
+        ):
             result = runner.invoke(main, ["start", "--foreground"])
 
         assert result.exit_code == 0
@@ -43,11 +61,49 @@ class TestStart:
         assert "already running" in result.output
 
     def test_background(self, runner, obs_dir):  # noqa: ARG002
-        with patch.object(Daemon, "check_running", return_value=None), patch.object(Daemon, "run") as mock_run:
+        with (
+            patch(f"{_CLI_PREFIX}._ensure_db"),
+            patch.object(Daemon, "check_running", return_value=None),
+            patch.object(Daemon, "run") as mock_run,
+        ):
             result = runner.invoke(main, ["start"])
 
         assert result.exit_code == 0
         mock_run.assert_called_once_with(foreground=False)
+
+    def test_ensures_db_container(self, runner, obs_dir):  # noqa: ARG002
+        with (
+            patch(f"{_CLI_PREFIX}.get_db_source", return_value="container"),
+            patch(f"{_CLI_PREFIX}.detect_runtime", return_value="docker"),
+            patch(f"{_CLI_PREFIX}.inspect_container", return_value=None),
+            patch(f"{_CLI_PREFIX}.ensure_running", return_value=True) as mock_ensure,
+            patch(f"{_CLI_PREFIX}.container_logs", return_value=""),
+            patch.object(Daemon, "check_running", return_value=None),
+            patch.object(Daemon, "run"),
+        ):
+            result = runner.invoke(main, ["start", "--foreground"])
+
+        assert result.exit_code == 0
+        mock_ensure.assert_called_once_with("docker")
+
+    def test_skips_ensure_for_user_db(self, runner, obs_dir):  # noqa: ARG002
+        with (
+            patch(f"{_CLI_PREFIX}.get_db_source", return_value="user"),
+            patch(f"{_CLI_PREFIX}.ensure_running") as mock_ensure,
+            patch.object(Daemon, "check_running", return_value=None),
+            patch.object(Daemon, "run"),
+        ):
+            result = runner.invoke(main, ["start", "--foreground"])
+
+        assert result.exit_code == 0
+        mock_ensure.assert_not_called()
+
+    def test_exits_if_db_not_configured(self, runner, obs_dir):  # noqa: ARG002
+        with patch(f"{_CLI_PREFIX}.get_db_source", return_value=None):
+            result = runner.invoke(main, ["start"])
+
+        assert result.exit_code != 0
+        assert "observer setup" in result.output.lower()
 
 
 class TestStop:
@@ -240,8 +296,7 @@ class TestSetup:
             patch("observer.cli.questionary") as mock_q,
             patch("observer.cli.detect_runtime", return_value="docker"),
             patch("observer.cli.inspect_container", return_value=None),
-            patch("observer.cli.start_container"),
-            patch("observer.cli.wait_for_ready", return_value=True),
+            patch("observer.cli.ensure_running", return_value=True),
             patch("observer.cli.create_engine", return_value=self._mock_engine()),
             patch("observer.cli.set_pg_url") as mock_set_url,
             patch("observer.cli.set_db_source") as mock_set_source,
