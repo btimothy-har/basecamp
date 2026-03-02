@@ -24,6 +24,7 @@ from observer.data.schemas import (
     ArtifactSchema,
     ProjectSchema,
     SearchIndexSchema,
+    TranscriptEventSchema,
     TranscriptSchema,
     WorktreeSchema,
 )
@@ -80,7 +81,6 @@ def search_artifacts(
             session.query(
                 SearchIndexSchema,
                 ArtifactSchema.artifact_type,
-                ArtifactSchema.prompt_event_id,
                 distance_expr.label("distance"),
             )
             .outerjoin(ArtifactSchema, SearchIndexSchema.source_id == ArtifactSchema.id)
@@ -113,7 +113,7 @@ def search_artifacts(
             return []
 
         scored: list[dict[str, Any]] = []
-        for index_entry, artifact_type, prompt_event_id, distance in rows:
+        for index_entry, artifact_type, distance in rows:
             score = compute_score(distance, index_entry.created_at)
             if score < threshold:
                 continue
@@ -129,7 +129,6 @@ def search_artifacts(
 
             if artifact_type is not None:
                 result["type"] = artifact_type
-                result["prompt_event_id"] = prompt_event_id
 
             scored.append(result)
 
@@ -266,12 +265,18 @@ def search_transcripts(
 
 
 def get_artifact(artifact_id: int) -> dict[str, Any] | None:
-    """Retrieve any artifact by ID, including PROMPTs."""
+    """Retrieve a single artifact by ID with full details."""
     db = Database()
     with db.session() as session:
         row = session.get(ArtifactSchema, artifact_id)
         if row is None:
             return None
+
+        prompted_by = None
+        if row.prompt_event_id is not None:
+            prompt_event = session.get(TranscriptEventSchema, row.prompt_event_id)
+            if prompt_event is not None:
+                prompted_by = prompt_event.text
 
         return {
             "id": row.id,
@@ -280,7 +285,7 @@ def get_artifact(artifact_id: int) -> dict[str, Any] | None:
             "origin": row.origin,
             "source": row.source,
             "transcript_id": row.transcript_id,
-            "prompt_event_id": row.prompt_event_id,
+            "prompted_by": prompted_by,
             "created_at": row.created_at.isoformat() if row.created_at else None,
         }
 
