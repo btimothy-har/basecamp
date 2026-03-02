@@ -236,7 +236,7 @@ def _prompt_edit_fields(existing: ProjectConfig) -> ProjectConfig | None:
     )
 
 
-_PROTECTED_PROJECT = "workspace"
+_PROTECTED_PROJECT = "basecamp"
 
 
 def execute_project_edit(name: str) -> None:

@@ -1,5 +1,5 @@
 {
-    "name": "ws-gpg-check",
+    "name": "bc-gpg-check",
     "description": "Pre-tool hook to verify GPG card is unlocked before git operations.",
     "version": "1.1.0",
     "author": {

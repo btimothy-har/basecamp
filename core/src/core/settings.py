@@ -65,14 +65,14 @@ class Settings:
             os.close(lock_fd)
 
     @property
-    def workspace_dir(self) -> str | None:
-        val = self._read().get("workspace_dir")
+    def install_dir(self) -> str | None:
+        val = self._read().get("install_dir")
         return val if isinstance(val, str) and val.strip() else None
 
-    @workspace_dir.setter
-    def workspace_dir(self, value: str) -> None:
+    @install_dir.setter
+    def install_dir(self, value: str) -> None:
         with self._locked_update() as data:
-            data["workspace_dir"] = value
+            data["install_dir"] = value
 
     @property
     def projects(self) -> dict[str, Any]:

@@ -58,7 +58,7 @@ config.json → ProjectConfig validation → Prompt assembly → Claude CLI exec
 
 | Path | Purpose |
 |------|---------|
-| `~/.basecamp/config.json` | Workspace settings and project definitions |
+| `~/.basecamp/config.json` | Project definitions and settings |
 | `~/.basecamp/prompts/system.md` | User system prompt override |
 | `~/.basecamp/prompts/working_styles/` | User working style overrides or custom styles |
 | `~/.basecamp/prompts/context/` | Per-project context files (injected at session start) |
@@ -94,18 +94,18 @@ basecamp includes a bundled core plugin and a marketplace with optional plugins.
 
 | Plugin | Directory | Contents |
 |--------|-----------|----------|
-| `ws-workspace` | `plugins/workspace/` | Project context injection at session start |
+| `bc-companion` | `plugins/companion/` | Project context injection at session start |
 
 **Marketplace Plugins** (optional, installed via `.claude-plugin/marketplace.json`):
 
 | Plugin | Directory | Contents |
 |--------|-----------|----------|
-| `ws-collab` | `plugins/collaboration/` | Collaborative discovery and planning skills |
-| `ws-cursor` | `plugins/cursor/` | Hooks for .cursor context file discovery |
-| `ws-eng` | `plugins/engineering/` | Agents, commands, skills, hooks for engineering workflows |
-| `ws-gpg-check` | `plugins/gpg_check/` | Pre-tool hook for GPG card verification |
+| `bc-collab` | `plugins/collaboration/` | Collaborative discovery and planning skills |
+| `bc-cursor` | `plugins/cursor/` | Hooks for .cursor context file discovery |
+| `bc-eng` | `plugins/engineering/` | Agents, commands, skills, hooks for engineering workflows |
+| `bc-gpg-check` | `plugins/gpg_check/` | Pre-tool hook for GPG card verification |
 
-#### ws-collab Plugin Structure
+#### bc-collab Plugin Structure
 
 ```
 plugins/collaboration/
@@ -113,7 +113,7 @@ plugins/collaboration/
 └── skills/           # discovery (requirements gathering and interviewing)
 ```
 
-#### ws-eng Plugin Structure
+#### bc-eng Plugin Structure
 
 ```
 plugins/engineering/
@@ -125,10 +125,10 @@ plugins/engineering/
 └── skills/           # python-development, sql, pull-request, pr-review, etc.
 ```
 
-#### ws-workspace Plugin Structure (Bundled)
+#### bc-companion Plugin Structure (Bundled)
 
 ```
-plugins/workspace/
+plugins/companion/
 ├── .claude-plugin/plugin.json
 ├── hooks/            # SessionStart hook
 └── scripts/          # project-context.sh
@@ -188,7 +188,7 @@ Override or add custom styles by placing files in `~/.basecamp/prompts/working_s
 
 ### Built-in Project
 
-The `workspace` project is hardcoded to start with basecamp itself as the working directory.
+The `basecamp` project is hardcoded to start with basecamp itself as the working directory.
 
 ## Environment Variables
 
