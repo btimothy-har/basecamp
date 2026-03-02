@@ -7,24 +7,30 @@
 CMD=$(cat | jq -r '.tool_input.command // empty')
 [[ -z "$CMD" ]] && exit 0
 
-# Only act on simple mkdir commands (no chaining)
+# Only act on simple mkdir commands (no chaining or substitution)
 [[ "$CMD" =~ ^mkdir[[:space:]] ]] || exit 0
-[[ "$CMD" == *";"* || "$CMD" == *"|"* || "$CMD" == *"&&"* ]] && exit 0
+[[ "$CMD" == *";"* || "$CMD" == *"|"* || "$CMD" == *"&&"* || "$CMD" == *"||"* ]] && exit 0
+[[ "$CMD" == *'$('* || "$CMD" == *'`'* || "$CMD" == *"<"* || "$CMD" == *">"* ]] && exit 0
 
-# Extract paths (skip flags)
+# Split into words (safe, no eval)
+read -r -a args <<< "$CMD"
+
+# Extract paths (skip "mkdir" and flags)
 paths=()
-eval set -- $CMD 2>/dev/null || exit 0
-shift  # drop "mkdir"
-for arg in "$@"; do
+for arg in "${args[@]:1}"; do
   [[ "$arg" =~ ^- ]] && continue
   paths+=("$arg")
 done
 
 [[ ${#paths[@]} -eq 0 ]] && exit 0
 
-# All paths must already exist
+# All paths must already exist (expand ~ without eval)
 for p in "${paths[@]}"; do
-  expanded=$(eval echo "$p" 2>/dev/null) || exit 0
+  case "$p" in
+    "~/"*) expanded="${HOME}/${p#"~/"}" ;;
+    "~")   expanded="$HOME" ;;
+    *)     expanded="$p" ;;
+  esac
   [[ -d "$expanded" ]] || exit 0
 done
 
