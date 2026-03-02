@@ -132,6 +132,37 @@ def wait_for_ready(runtime: str, *, timeout: int = 30, poll_interval: float = 1.
     return False
 
 
+def ensure_running(runtime: str) -> bool:
+    """Ensure the observer-pg container is running and PostgreSQL accepts connections.
+
+    Returns True if PostgreSQL is ready, False if it timed out waiting.
+    Raises RuntimeError if container creation/restart fails.
+    """
+    status = inspect_container(runtime)
+
+    if status and not status.running:
+        restart_container(runtime)
+    elif not status:
+        start_container(runtime)
+
+    return wait_for_ready(runtime)
+
+
+def volume_exists(runtime: str) -> bool:
+    """Check whether the observer_data named volume exists."""
+    result = _run([runtime, "volume", "inspect", DB_VOLUME_NAME], check=False)
+    return result.returncode == 0
+
+
+def remove_volume(runtime: str) -> None:
+    """Remove the observer_data volume. Container must already be removed."""
+    try:
+        _run([runtime, "volume", "rm", DB_VOLUME_NAME])
+    except subprocess.CalledProcessError as exc:
+        msg = f"Failed to remove volume '{DB_VOLUME_NAME}': {exc.stderr.strip() or exc}"
+        raise RuntimeError(msg) from exc
+
+
 def container_logs(runtime: str, *, lines: int = 20) -> str:
     """Return recent container logs for diagnostics."""
     result = _run([runtime, "logs", "--tail", str(lines), DB_CONTAINER_NAME], check=False)

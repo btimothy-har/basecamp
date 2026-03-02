@@ -32,12 +32,12 @@ from observer.services.container import (
     ContainerRuntimeNotFoundError,
     container_logs,
     detect_runtime,
+    ensure_running,
     inspect_container,
     remove_container,
-    restart_container,
-    start_container,
+    remove_volume,
     stop_container,
-    wait_for_ready,
+    volume_exists,
 )
 
 
@@ -65,29 +65,7 @@ def up() -> None:
     except ContainerRuntimeNotFoundError:
         sys.exit("Neither 'docker' nor 'podman' found on PATH.")
 
-    status = inspect_container(runtime)
-
-    if status and status.running:
-        click.echo(f"Container '{constants.DB_CONTAINER_NAME}' is already running.")
-        return
-
-    try:
-        if status:
-            click.echo(f"Restarting stopped container '{constants.DB_CONTAINER_NAME}'...")
-            restart_container(runtime)
-        else:
-            click.echo(f"Creating container '{constants.DB_CONTAINER_NAME}'...")
-            start_container(runtime)
-    except RuntimeError as exc:
-        sys.exit(str(exc))
-
-    click.echo("Waiting for PostgreSQL to accept connections...", nl=False)
-    if wait_for_ready(runtime):
-        click.echo(" ready.")
-    else:
-        click.echo(" timed out.")
-        click.echo(container_logs(runtime, lines=10))
-        sys.exit(1)
+    _ensure_container_ready(runtime)
 
 
 @db.command()
@@ -120,6 +98,44 @@ def down() -> None:
     except RuntimeError as exc:
         sys.exit(str(exc))
     click.echo(f"Removed. Volume '{constants.DB_VOLUME_NAME}' preserved.")
+
+
+@db.command()
+@click.option("--yes", "-y", is_flag=True, help="Skip confirmation.")
+def reset(yes: bool) -> None:  # noqa: FBT001
+    """Destroy and recreate the local PostgreSQL container and volume."""
+    source = get_db_source()
+    if source is None:
+        sys.exit("Database not configured. Run 'observer setup' first.")
+    if source == "user":
+        sys.exit("Database is externally managed. Use your own tools to reset it.")
+
+    if not yes and not click.confirm("This will destroy ALL observer data. Continue?"):
+        click.echo("Aborted.")
+        return
+
+    try:
+        runtime = detect_runtime()
+    except ContainerRuntimeNotFoundError:
+        sys.exit("Neither 'docker' nor 'podman' found on PATH.")
+
+    try:
+        status = inspect_container(runtime)
+        if status:
+            if status.running:
+                click.echo(f"Stopping '{constants.DB_CONTAINER_NAME}'...")
+                stop_container(runtime)
+            click.echo(f"Removing '{constants.DB_CONTAINER_NAME}'...")
+            remove_container(runtime)
+
+        if volume_exists(runtime):
+            click.echo(f"Removing volume '{constants.DB_VOLUME_NAME}'...")
+            remove_volume(runtime)
+
+    except RuntimeError as exc:
+        sys.exit(str(exc))
+
+    _ensure_container_ready(runtime, message="PostgreSQL is ready. Database has been reset.")
 
 
 @db.command("status")
@@ -167,6 +183,8 @@ def start(foreground: bool, no_viz: bool) -> None:  # noqa: FBT001
 
     if daemon.check_running():
         sys.exit("Observer is already running.")
+
+    _ensure_db()
 
     constants.OBSERVER_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -360,6 +378,48 @@ def setup() -> None:
                 click.echo("Daemon may still be starting — check: observer status")
 
 
+def _ensure_container_ready(runtime: str, *, message: str = "PostgreSQL is ready.") -> None:
+    """Ensure the container is running and PostgreSQL accepts connections, or exit."""
+    status = inspect_container(runtime)
+    if status and status.running:
+        label = "Checking"
+    elif status:
+        label = "Restarting"
+    else:
+        label = "Creating"
+
+    click.echo(f"{label} container '{constants.DB_CONTAINER_NAME}'...", nl=False)
+
+    try:
+        ready = ensure_running(runtime)
+    except RuntimeError as exc:
+        click.echo(f" failed.\n  {exc}")
+        sys.exit(1)
+
+    if ready:
+        click.echo(f" {message}")
+    else:
+        click.echo(" timed out.")
+        click.echo(container_logs(runtime, lines=10))
+        sys.exit(1)
+
+
+def _ensure_db() -> None:
+    """Ensure the database is available before starting the daemon."""
+    source = get_db_source()
+    if source is None:
+        sys.exit("Database not configured. Run 'observer setup' first.")
+    if source != "container":
+        return
+
+    try:
+        runtime = detect_runtime()
+    except ContainerRuntimeNotFoundError:
+        sys.exit("Neither 'docker' nor 'podman' found on PATH.")
+
+    _ensure_container_ready(runtime)
+
+
 def _setup_container() -> str:
     """Provision a local PostgreSQL container, return the connection URL."""
     try:
@@ -367,30 +427,7 @@ def _setup_container() -> str:
     except ContainerRuntimeNotFoundError:
         sys.exit("Neither 'docker' nor 'podman' found on PATH.")
 
-    status = inspect_container(runtime)
-
-    if status and status.running:
-        click.echo(f"Container '{constants.DB_CONTAINER_NAME}' is already running.")
-        return constants.DB_PG_URL
-
-    try:
-        if status:
-            click.echo(f"Restarting stopped container '{constants.DB_CONTAINER_NAME}'...")
-            restart_container(runtime)
-        else:
-            click.echo(f"Creating container '{constants.DB_CONTAINER_NAME}'...")
-            start_container(runtime)
-    except RuntimeError as exc:
-        sys.exit(str(exc))
-
-    click.echo("Waiting for PostgreSQL to accept connections...", nl=False)
-    if wait_for_ready(runtime):
-        click.echo(" ready.")
-    else:
-        click.echo(" timed out.")
-        click.echo(container_logs(runtime, lines=10))
-        sys.exit(1)
-
+    _ensure_container_ready(runtime)
     return constants.DB_PG_URL
 
 
