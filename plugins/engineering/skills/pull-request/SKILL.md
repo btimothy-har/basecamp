@@ -77,7 +77,7 @@ If no upstream is set, ask the user to push the branch before continuing.
 Then create an empty PR:
 
 ```bash
-gh pr create --title "WIP" --body ""
+gh pr create --draft --title "WIP" --body ""
 ```
 
 Capture the PR number from the output.
