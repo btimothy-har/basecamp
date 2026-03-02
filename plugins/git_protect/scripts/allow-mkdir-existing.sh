@@ -9,6 +9,7 @@ CMD=$(cat | jq -r '.tool_input.command // empty')
 
 # Only act on simple mkdir commands (no chaining or substitution)
 [[ "$CMD" =~ ^mkdir[[:space:]] ]] || exit 0
+[[ "$CMD" == *$'\n'* || "$CMD" == *$'\r'* ]] && exit 0
 [[ "$CMD" == *";"* || "$CMD" == *"|"* || "$CMD" == *"&&"* || "$CMD" == *"||"* ]] && exit 0
 [[ "$CMD" == *'$('* || "$CMD" == *'`'* || "$CMD" == *"<"* || "$CMD" == *">"* ]] && exit 0
 
