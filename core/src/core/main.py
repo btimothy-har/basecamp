@@ -4,7 +4,8 @@ import sys
 
 import rich_click as click
 
-from core.cli.launch import execute_launch
+from core.cli.completions import complete_project_name, complete_project_or_path, complete_worktree_name
+from core.cli.launch import execute_launch, is_path_argument, resolve_path_argument
 from core.cli.open import execute_open
 from core.cli.project import (
     execute_project_add,
@@ -18,8 +19,8 @@ from core.cli.worktree import (
     list_all_project_worktrees,
     list_project_worktrees,
 )
-from core.config import load_config
-from core.exceptions import LauncherError
+from core.config import Config, load_config
+from core.exceptions import LauncherError, PathLaunchLabelError
 from core.ui import err_console
 
 # Configure rich-click
@@ -51,25 +52,30 @@ def setup() -> None:
 
 
 @basecamp.command()
-@click.argument("project")
+@click.argument("project", shell_complete=complete_project_or_path)
 @click.option("--resume", "-r", "resume_session", is_flag=True, help="Resume a previous conversation")
 @click.option("--label", "-l", help="Work in a labeled worktree (creates if new, re-enters if exists)")
 def start(project: str, resume_session: bool, label: str | None) -> None:  # noqa: FBT001
-    """Start Claude Code with pre-configured project directories.
+    """Start Claude Code with a project name or directory path.
 
-    By default, works in the original project directory. Use -l/--label to work
-    in an isolated git worktree. If the label exists, re-enters that worktree;
-    if not, creates a new one.
+    PROJECT can be a configured project name or a filesystem path (., ./, ~/, /).
+    Use -l/--label to work in an isolated git worktree (project names only).
     """
     try:
-        config = load_config()
-        execute_launch(project, config, resume=resume_session, label=label)
+        if is_path_argument(project):
+            if label:
+                raise PathLaunchLabelError
+            resolved = resolve_path_argument(project)
+            execute_launch(resolved.name, Config(projects={}), resume=resume_session, resolved_path=resolved)
+        else:
+            config = load_config()
+            execute_launch(project, config, resume=resume_session, label=label)
     except LauncherError as e:
         _handle_error(e)
 
 
 @basecamp.command("open")
-@click.argument("project")
+@click.argument("project", shell_complete=complete_project_name)
 @click.option("--new", "-n", "new_window", is_flag=True, help="Open in a new window")
 @click.option("--label", "-l", help="Open an existing worktree by label")
 def open_cmd(project: str, new_window: bool, label: str | None) -> None:  # noqa: FBT001
@@ -108,7 +114,7 @@ def project_add() -> None:
 
 
 @project.command("edit")
-@click.argument("name")
+@click.argument("name", shell_complete=complete_project_name)
 def project_edit(name: str) -> None:
     """Interactively edit an existing project."""
     try:
@@ -118,7 +124,7 @@ def project_edit(name: str) -> None:
 
 
 @project.command("remove")
-@click.argument("name")
+@click.argument("name", shell_complete=complete_project_name)
 def project_remove(name: str) -> None:
     """Remove a project."""
     try:
@@ -133,7 +139,7 @@ def worktree() -> None:
 
 
 @worktree.command("list")
-@click.argument("project", required=False)
+@click.argument("project", required=False, shell_complete=complete_project_name)
 @click.option("--all", "-a", "list_all", is_flag=True, help="List all worktrees across all repositories")
 def worktree_list(project: str | None, list_all: bool) -> None:  # noqa: FBT001
     """List worktrees for a project, or all worktrees with --all."""
@@ -156,8 +162,8 @@ def worktree_list(project: str | None, list_all: bool) -> None:  # noqa: FBT001
 
 
 @worktree.command("clean")
-@click.argument("project")
-@click.argument("name", required=False)
+@click.argument("project", shell_complete=complete_project_name)
+@click.argument("name", required=False, shell_complete=complete_worktree_name)
 @click.option("--all", "remove_all", is_flag=True, help="Remove all worktrees for the project")
 @click.option("--force", "-f", is_flag=True, help="Force removal even with uncommitted changes")
 def worktree_clean(project: str, name: str | None, remove_all: bool, force: bool) -> None:  # noqa: FBT001

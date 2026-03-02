@@ -139,7 +139,7 @@ EOF
 
 Append to `docs/observations/{project}.md` in the basecamp repository.
 
-Use the BASECAMP_PROJECT environment variable if available, otherwise use the current directory name.
+Use the current directory name for the project identifier.
 
 Create the file if it doesn't exist:
 ```markdown

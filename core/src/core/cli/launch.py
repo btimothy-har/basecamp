@@ -1,10 +1,11 @@
 """Launch implementation for basecamp CLI."""
 
 import os
+from pathlib import Path
 
 from dotenv import load_dotenv
 
-from core.config import Config, resolve_project, validate_dirs
+from core.config import Config, ProjectConfig, resolve_project, validate_dirs
 from core.constants import (
     CLAUDE_COMMAND,
     OBSERVER_CONFIG,
@@ -12,7 +13,7 @@ from core.constants import (
     SCRIPT_DIR,
     USER_CONTEXT_DIR,
 )
-from core.exceptions import NoDirectoriesConfiguredError, NotAGitRepoError
+from core.exceptions import DirectoryNotFoundError, NoDirectoriesConfiguredError, NotAGitRepoError
 from core.git import (
     WorktreeInfo,
     get_or_create_worktree,
@@ -23,10 +24,31 @@ from core.prompts import system as prompts
 from core.ui import console
 from core.utils import is_observer_configured
 
+DEFAULT_PATH_WORKING_STYLE = "engineering"
+
 
 def _ensure_scratch_dir(project_name: str) -> None:
     """Create the per-project scratch directory if it doesn't exist."""
     (SCRATCH_BASE / project_name).mkdir(parents=True, exist_ok=True)
+
+
+def is_path_argument(value: str) -> bool:
+    """Detect if a CLI argument looks like a filesystem path rather than a project name."""
+    return value.startswith((".", "/", "~")) or "/" in value
+
+
+def resolve_path_argument(value: str) -> Path:
+    """Resolve a path argument to an absolute directory.
+
+    Raises:
+        DirectoryNotFoundError: If the path doesn't exist or isn't a directory.
+    """
+    path = Path(value).expanduser().resolve()
+    if not path.exists():
+        raise DirectoryNotFoundError([f"{value} ({path})"])
+    if not path.is_dir():
+        raise DirectoryNotFoundError([f"{value} ({path}) [not a directory]"])
+    return path
 
 
 def execute_launch(
@@ -35,14 +57,16 @@ def execute_launch(
     *,
     resume: bool = False,
     label: str | None = None,
+    resolved_path: Path | None = None,
 ) -> None:
     """Launch Claude Code with the specified project configuration.
 
     Args:
-        project_name: The project to launch.
+        project_name: The project to launch (display name).
         config: The loaded configuration.
         resume: Whether to resume a previous conversation.
         label: If provided, work in a labeled worktree (create or re-enter).
+        resolved_path: Pre-resolved directory for path-based launch (bypasses config lookup).
 
     Raises:
         ProjectNotFoundError: If the project is not in the config.
@@ -52,14 +76,17 @@ def execute_launch(
         NotAGitRepoError: If label provided but directory is not a git repo.
         WorktreeCommandError: If worktree creation fails.
     """
-    project = resolve_project(project_name, config)
-
-    if not project.dirs:
-        raise NoDirectoriesConfiguredError(project_name)
-
-    # Validate and resolve directories
-    resolved_dirs = validate_dirs(project.dirs)
-    original_primary = resolved_dirs[0]
+    if resolved_path is not None:
+        project = ProjectConfig(dirs=[], working_style=DEFAULT_PATH_WORKING_STYLE)
+        original_primary = resolved_path
+        secondary_dirs: list[Path] = []
+    else:
+        project = resolve_project(project_name, config)
+        if not project.dirs:
+            raise NoDirectoriesConfiguredError(project_name)
+        resolved_dirs = validate_dirs(project.dirs)
+        original_primary = resolved_dirs[0]
+        secondary_dirs = resolved_dirs[1:]
 
     # Handle worktree if label provided
     worktree_info: WorktreeInfo | None = None
@@ -73,8 +100,6 @@ def execute_launch(
         primary_dir = worktree_info.path
     else:
         primary_dir = original_primary
-
-    secondary_dirs = resolved_dirs[1:]
 
     # Ensure scratch directory exists — keyed by repo name (or dir name for non-git)
     scratch_name = repo_name or original_primary.name
@@ -134,7 +159,6 @@ def execute_launch(
     os.chdir(primary_dir)
 
     # Set environment variables for hooks/prompts/MCP servers
-    os.environ["BASECAMP_PROJECT"] = project_name
     os.environ["BASECAMP_REPO"] = repo_name or primary_dir.name
 
     if project.context:
