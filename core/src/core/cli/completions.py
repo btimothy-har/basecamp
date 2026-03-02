@@ -10,9 +10,9 @@ from core.git import list_worktrees, resolve_repo_name
 
 
 def complete_project_name(
-    ctx: Context,
-    param: Parameter,
-    incomplete: str,  # noqa: ARG001
+    ctx: Context,  # noqa: ARG001
+    param: Parameter,  # noqa: ARG001
+    incomplete: str,
 ) -> list[CompletionItem]:
     """Complete project names from config."""
     try:
@@ -32,8 +32,8 @@ def complete_project_or_path(ctx: Context, param: Parameter, incomplete: str) ->
 
 def complete_worktree_name(
     ctx: Context,
-    param: Parameter,
-    incomplete: str,  # noqa: ARG001
+    param: Parameter,  # noqa: ARG001
+    incomplete: str,
 ) -> list[CompletionItem]:
     """Complete worktree names for a given project."""
     project_name = ctx.params.get("project")
