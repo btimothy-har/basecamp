@@ -23,6 +23,14 @@ WORKTREES_DIR = Path.home() / ".worktrees"
 WORKTREE_META_DIR = ".meta"
 
 
+def _parse_datetime(value: str) -> datetime:
+    """Parse an ISO datetime string, ensuring it's timezone-aware (UTC)."""
+    dt = datetime.fromisoformat(value)
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=UTC)
+    return dt
+
+
 @dataclass
 class WorktreeInfo:
     """Information about a git worktree."""
@@ -54,7 +62,7 @@ class WorktreeInfo:
             name=data["name"],
             path=Path(data["path"]),
             branch=data["branch"],
-            created_at=datetime.fromisoformat(data["created_at"]),
+            created_at=_parse_datetime(data["created_at"]),
             project=data["project"],
             repo_name=data.get("repo_name", ""),
             source_dir=Path(data.get("source_dir", "")),
