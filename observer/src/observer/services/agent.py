@@ -78,11 +78,10 @@ class Agent:
         if json_schema is not None:
             cmd.extend(["--json-schema", json.dumps(json_schema)])
 
-        cmd.append(prompt)
-
         try:
             proc = subprocess.run(
                 cmd,
+                input=prompt,
                 check=False,
                 capture_output=True,
                 text=True,
@@ -93,6 +92,7 @@ class Agent:
             try:
                 proc = subprocess.run(
                     cmd,
+                    input=prompt,
                     check=False,
                     capture_output=True,
                     text=True,
