@@ -55,7 +55,8 @@ class TestAgentRun:
             assert cmd[cmd.index("--setting-sources") + 1] == ""
             assert "--strict-mcp-config" in cmd
             assert "--disable-slash-commands" in cmd
-            assert cmd[-1] == "hello"
+            assert "hello" not in cmd
+            assert args[1]["input"] == "hello"
 
     def test_includes_json_schema_when_provided(self):
         agent = Agent(system_prompt="sys")
