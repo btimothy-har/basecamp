@@ -7,8 +7,8 @@ set -euo pipefail
 
 CMD=$(cat | jq -r '.tool_input.command // empty')
 
-if [[ "$CMD" =~ ^gh[[:space:]]+pr[[:space:]]+(comment|review) ]] || \
-   [[ "$CMD" =~ ^gh[[:space:]]+api[[:space:]]+repos/.+/pulls/.+/(comments|reviews) ]]; then
+if [[ "$CMD" =~ ^gh[[:space:]]+pr[[:space:]]+(comment|review)([[:space:]]|$) ]] || \
+   [[ "$CMD" =~ ^gh[[:space:]]+api[[:space:]]+repos/.+/pulls/.+/(comments|reviews)([[:space:]]|$) ]]; then
   jq -n '{
     hookSpecificOutput: {
       hookEventName: "PreToolUse",

@@ -1,18 +1,18 @@
 #!/bin/bash
-# Skill-scoped PreToolUse hook: allow gh pr create/edit
-# Active only when the pull-request skill is loaded.
+# Agent-scoped PreToolUse hook: allow gh issue create/edit/close
+# Active only when the issue-worker agent is running.
 # Returns permissionDecision: "allow" to bypass permission deny rules.
 
 set -euo pipefail
 
 CMD=$(cat | jq -r '.tool_input.command // empty')
 
-if [[ "$CMD" =~ ^gh[[:space:]]+pr[[:space:]]+(create|edit)([[:space:]]|$) ]]; then
+if [[ "$CMD" =~ ^gh[[:space:]]+issue[[:space:]]+(create|edit|close)([[:space:]]|$) ]]; then
   jq -n '{
     hookSpecificOutput: {
       hookEventName: "PreToolUse",
       permissionDecision: "allow",
-      permissionDecisionReason: "Allowed by pull-request skill"
+      permissionDecisionReason: "Allowed by issue-worker agent"
     }
   }'
 fi
