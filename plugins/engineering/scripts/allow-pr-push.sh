@@ -7,7 +7,7 @@ set -euo pipefail
 
 CMD=$(cat | jq -r '.tool_input.command // empty')
 
-if [[ "$CMD" =~ ^gh[[:space:]]+pr[[:space:]]+(create|edit) ]]; then
+if [[ "$CMD" =~ ^gh[[:space:]]+pr[[:space:]]+(create|edit)([[:space:]]|$) ]]; then
   jq -n '{
     hookSpecificOutput: {
       hookEventName: "PreToolUse",
