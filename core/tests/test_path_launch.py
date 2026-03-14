@@ -154,5 +154,11 @@ class TestExecuteLaunchPathMode:
                 resume=True,
                 resolved_path=non_git_dir,
             )
-            cmd = mock_execvp.call_args[0][1]
-            assert "--resume" in cmd
+            # --resume appears either as a direct arg (in-tmux) or inside the
+            # bash -c shell command string (tmux-wrapped)
+            args = mock_execvp.call_args[0][1]
+            if args[0] == "tmux":
+                shell_cmd = args[-1]  # bash -c "<shell_cmd>"
+                assert "--resume" in shell_cmd
+            else:
+                assert "--resume" in args

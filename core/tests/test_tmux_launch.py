@@ -22,6 +22,14 @@ class TestTmuxWrapping:
             }
         )
 
+    @staticmethod
+    def _get_shell_cmd(mock_execvp) -> str:  # type: ignore[no-untyped-def]
+        """Extract the shell command string from the bash -c arg."""
+        args = mock_execvp.call_args[0][1]
+        # ["tmux", "new-session", "-s", "bc-...", "bash", "-c", "<shell_cmd>"]
+        assert args[-2] == "-c"
+        return args[-1]
+
     def test_wraps_in_tmux_when_not_in_tmux(self, non_git_dir: Path) -> None:
         """When TMUX is unset and tmux is available, should exec into tmux."""
         config = self._make_config(non_git_dir)
@@ -34,7 +42,6 @@ class TestTmuxWrapping:
             patch("os.environ.get", side_effect=lambda k, *a: None if k == "TMUX" else (a[0] if a else None)),
             patch("shutil.which", return_value="/usr/bin/tmux"),
         ):
-            # Remove TMUX if present
             import os
 
             os.environ.pop("TMUX", None)
@@ -44,11 +51,51 @@ class TestTmuxWrapping:
             mock_execvp.assert_called_once()
             assert mock_execvp.call_args[0][0] == "tmux"
             args = mock_execvp.call_args[0][1]
-            assert args[0] == "tmux"
-            assert args[1] == "new-session"
-            assert "-s" in args
+            assert args[:2] == ["tmux", "new-session"]
             assert "bc-testproject" in args
-            assert "claude" in args
+            shell_cmd = self._get_shell_cmd(mock_execvp)
+            assert "claude" in shell_cmd
+
+    def test_tmux_forwards_basecamp_env_vars(self, non_git_dir: Path) -> None:
+        """Tmux wrapping should pass BASECAMP_* env vars via -e flags."""
+        config = self._make_config(non_git_dir)
+
+        with (
+            patch("core.cli.launch.load_dotenv"),
+            patch("os.chdir"),
+            patch("os.execvp") as mock_execvp,
+            patch("shutil.which", return_value="/usr/bin/tmux"),
+            patch.dict("os.environ", {"BASECAMP_REPO": "test-repo"}, clear=False),
+        ):
+            import os
+
+            os.environ.pop("TMUX", None)
+
+            execute_launch("testproject", config)
+
+            args = mock_execvp.call_args[0][1]
+            assert "-e" in args
+            e_idx = args.index("-e")
+            assert args[e_idx + 1] == f"BASECAMP_REPO={non_git_dir.name}"
+
+    def test_tmux_sets_gpg_tty(self, non_git_dir: Path) -> None:
+        """Tmux wrapping should set GPG_TTY for correct gpg-agent behavior."""
+        config = self._make_config(non_git_dir)
+
+        with (
+            patch("core.cli.launch.load_dotenv"),
+            patch("os.chdir"),
+            patch("os.execvp") as mock_execvp,
+            patch("shutil.which", return_value="/usr/bin/tmux"),
+        ):
+            import os
+
+            os.environ.pop("TMUX", None)
+
+            execute_launch("testproject", config)
+
+            shell_cmd = self._get_shell_cmd(mock_execvp)
+            assert "export GPG_TTY=$(tty)" in shell_cmd
 
     def test_skips_tmux_when_already_in_tmux(self, non_git_dir: Path) -> None:
         """When TMUX is set, should exec claude directly."""
@@ -105,7 +152,7 @@ class TestTmuxWrapping:
             assert args[session_idx + 1] == "bc-testproject"
 
     def test_tmux_wrapping_preserves_claude_args(self, non_git_dir: Path) -> None:
-        """Claude args (--resume, --plugin-dir, etc.) should pass through to tmux."""
+        """Claude args (--resume, --plugin-dir, etc.) should pass through in shell command."""
         config = self._make_config(non_git_dir)
 
         with (
@@ -120,5 +167,5 @@ class TestTmuxWrapping:
 
             execute_launch("testproject", config, resume=True)
 
-            args = mock_execvp.call_args[0][1]
-            assert "--resume" in args
+            shell_cmd = self._get_shell_cmd(mock_execvp)
+            assert "--resume" in shell_cmd

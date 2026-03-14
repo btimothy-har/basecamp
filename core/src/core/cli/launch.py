@@ -1,6 +1,7 @@
 """Launch implementation for basecamp CLI."""
 
 import os
+import shlex
 import shutil
 from pathlib import Path
 
@@ -169,8 +170,23 @@ def execute_launch(
 
     # Wrap in tmux if not already inside a session — enables `basecamp dispatch`
     # to create worker panes without requiring manual tmux setup.
+    # Env vars must be passed via -e because tmux new-session connects to an
+    # existing server whose processes inherit the server's env, not the client's.
     if not os.environ.get("TMUX") and shutil.which("tmux"):
         session_name = f"bc-{project_name}"
-        os.execvp("tmux", ["tmux", "new-session", "-s", session_name, *cmd])
+        claude_cmd = shlex.join(cmd)
+        shell_cmd = (
+            "tmux set -g mouse on && "
+            "tmux set -g history-limit 50000 && "
+            f"export GPG_TTY=$(tty) && exec {claude_cmd}"
+        )
+        tmux_cmd = ["tmux", "new-session", "-s", session_name]
+        # Forward basecamp env vars into the tmux session
+        for var in ("BASECAMP_REPO", "BASECAMP_CONTEXT_FILE"):
+            value = os.environ.get(var)
+            if value:
+                tmux_cmd.extend(["-e", f"{var}={value}"])
+        tmux_cmd.extend(["bash", "-c", shell_cmd])
+        os.execvp("tmux", tmux_cmd)
     else:
         os.execvp(CLAUDE_COMMAND, cmd)
