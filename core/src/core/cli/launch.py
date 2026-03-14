@@ -1,6 +1,7 @@
 """Launch implementation for basecamp CLI."""
 
 import os
+import shutil
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -166,4 +167,10 @@ def execute_launch(
         if context_path.exists():
             os.environ["BASECAMP_CONTEXT_FILE"] = str(context_path)
 
-    os.execvp(CLAUDE_COMMAND, cmd)
+    # Wrap in tmux if not already inside a session — enables `basecamp dispatch`
+    # to create worker panes without requiring manual tmux setup.
+    if not os.environ.get("TMUX") and shutil.which("tmux"):
+        session_name = f"bc-{project_name}"
+        os.execvp("tmux", ["tmux", "new-session", "-s", session_name, *cmd])
+    else:
+        os.execvp(CLAUDE_COMMAND, cmd)
