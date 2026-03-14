@@ -178,6 +178,8 @@ def execute_launch(
         shell_cmd = (
             "tmux set -g mouse on && "
             "tmux set -g history-limit 50000 && "
+            "tmux set -s extended-keys always && "
+            "tmux set -as terminal-features 'xterm*:extkeys' && "
             f"export GPG_TTY=$(tty) && exec {claude_cmd}"
         )
         tmux_cmd = ["tmux", "new-session", "-s", session_name]
