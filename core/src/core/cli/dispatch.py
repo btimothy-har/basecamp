@@ -65,7 +65,7 @@ def execute_dispatch(
     # Build Claude command — interactive mode with initial prompt read from file
     claude_parts: list[str] = [
         CLAUDE_COMMAND,
-        f"$(cat {shlex.quote(str(prompt_file))})",
+        f'"$(cat {shlex.quote(str(prompt_file))})"',
     ]
 
     # Load plugins (same logic as launch.py)
