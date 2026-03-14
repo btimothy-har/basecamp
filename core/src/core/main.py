@@ -5,6 +5,7 @@ import sys
 import rich_click as click
 
 from core.cli.completions import complete_project_name, complete_project_or_path, complete_worktree_name
+from core.cli.dispatch import execute_dispatch
 from core.cli.launch import execute_launch, is_path_argument, resolve_path_argument
 from core.cli.open import execute_open
 from core.cli.project import (
@@ -70,6 +71,22 @@ def start(project: str, resume_session: bool, label: str | None) -> None:  # noq
         else:
             config = load_config()
             execute_launch(project, config, resume=resume_session, label=label)
+    except LauncherError as e:
+        _handle_error(e)
+
+
+@basecamp.command()
+@click.argument("project", shell_complete=complete_project_name)
+@click.option("--name", "-n", required=True, help="Task name (directory name and tmux pane title)")
+def dispatch(project: str, name: str) -> None:
+    """Dispatch a task to a parallel Claude worker in a new tmux pane.
+
+    Reads prompt.md from the task directory and launches Claude in interactive mode.
+    Must be run from within a tmux session with CLAUDE_SESSION_ID set.
+    """
+    try:
+        config = load_config()
+        execute_dispatch(project, config, name=name)
     except LauncherError as e:
         _handle_error(e)
 

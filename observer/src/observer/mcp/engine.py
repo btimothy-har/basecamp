@@ -306,3 +306,45 @@ def get_transcript_summary(transcript_id: int) -> dict[str, Any] | None:
             "started_at": row.started_at.isoformat(),
             "ended_at": row.ended_at.isoformat() if row.ended_at else None,
         }
+
+
+def get_session(session_id: str) -> dict[str, Any] | None:
+    """Retrieve a session's transcript and recent artifacts by Claude session ID.
+
+    Direct lookup — no embeddings or search involved. Used by the main agent
+    to check on dispatched worker sessions.
+    """
+    db = Database()
+    with db.session() as session:
+        row = (
+            session.query(TranscriptSchema)
+            .filter(TranscriptSchema.session_id == session_id)
+            .first()
+        )
+        if row is None:
+            return None
+
+        recent_artifacts = (
+            session.query(ArtifactSchema)
+            .filter(ArtifactSchema.transcript_id == row.id)
+            .order_by(ArtifactSchema.created_at.desc())
+            .limit(5)
+            .all()
+        )
+
+        return {
+            "session_id": row.session_id,
+            "title": row.title,
+            "summary": row.summary,
+            "started_at": row.started_at.isoformat(),
+            "ended_at": row.ended_at.isoformat() if row.ended_at else None,
+            "recent_artifacts": [
+                {
+                    "id": a.id,
+                    "type": a.artifact_type,
+                    "text": a.text,
+                    "created_at": a.created_at.isoformat() if a.created_at else None,
+                }
+                for a in recent_artifacts
+            ],
+        }

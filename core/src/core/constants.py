@@ -25,6 +25,7 @@ USER_PROMPTS_DIR = USER_DIR / "prompts"
 USER_WORKING_STYLES_DIR = USER_PROMPTS_DIR / "working_styles"
 USER_CONTEXT_DIR = USER_PROMPTS_DIR / "context"
 SCRATCH_BASE = Path("/tmp/claude-workspace")
+TASKS_DIR = SCRATCH_BASE / "tasks"
 OBSERVER_CONFIG = USER_DIR / "observer" / "config.json"
 
 # String constants

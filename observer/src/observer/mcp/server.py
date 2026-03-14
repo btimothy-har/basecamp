@@ -174,6 +174,32 @@ def get_transcript_summary(transcript_id: int) -> dict:
     return _get_transcript_summary(transcript_id)
 
 
+def _get_session(session_id: str) -> dict:
+    """Core get_session logic, called by the MCP tool wrapper."""
+    result = engine.get_session(session_id)
+    if result is None:
+        return {"error": f"Session {session_id} not found"}
+    return result
+
+
+@mcp.tool
+def get_session(session_id: str) -> dict:
+    """Retrieve a session's transcript and recent artifacts by session ID.
+
+    Look up a worker session by its Claude session ID to check its current
+    state, see what it has accomplished (title, summary), and review its
+    most recent extracted artifacts.
+
+    Args:
+        session_id: The Claude session ID (from CLAUDE_SESSION_ID).
+
+    Returns:
+        Dict with session_id, title, summary, started_at, ended_at,
+        and recent_artifacts (up to 5 most recent), or error if not found.
+    """
+    return _get_session(session_id)
+
+
 def main() -> None:
     """Entry point for the observer-search MCP server."""
     mcp.run()
