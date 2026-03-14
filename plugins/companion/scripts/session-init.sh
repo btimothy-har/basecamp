@@ -19,6 +19,13 @@ if [ -n "$CLAUDE_ENV_FILE" ]; then
   echo "export CLAUDE_SESSION_ID=$SESSION_ID" >> "$CLAUDE_ENV_FILE"
 fi
 
+# Create and export task dispatch directory for this session
+TASKS_DIR="/tmp/claude-workspace/tasks/$SESSION_ID"
+mkdir -p "$TASKS_DIR"
+if [ -n "$CLAUDE_ENV_FILE" ]; then
+  echo "export BASECAMP_TASKS_DIR=$TASKS_DIR" >> "$CLAUDE_ENV_FILE"
+fi
+
 # Write to task dir if this is a dispatched worker
 if [ -n "$BASECAMP_TASK_DIR" ]; then
   echo "$SESSION_ID" > "$BASECAMP_TASK_DIR/session_id"

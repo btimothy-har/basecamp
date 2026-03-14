@@ -1,7 +1,6 @@
 """Launch implementation for basecamp CLI."""
 
 import os
-import shlex
 import shutil
 from pathlib import Path
 
@@ -174,21 +173,12 @@ def execute_launch(
     # existing server whose processes inherit the server's env, not the client's.
     if not os.environ.get("TMUX") and shutil.which("tmux"):
         session_name = f"bc-{project_name}"
-        claude_cmd = shlex.join(cmd)
-        shell_cmd = (
-            "tmux set -g mouse on && "
-            "tmux set -g history-limit 50000 && "
-            "tmux set -s extended-keys always && "
-            "tmux set -as terminal-features 'xterm*:extkeys' && "
-            f"export GPG_TTY=$(tty) && exec {claude_cmd}"
-        )
         tmux_cmd = ["tmux", "new-session", "-s", session_name]
-        # Forward basecamp env vars into the tmux session
         for var in ("BASECAMP_REPO", "BASECAMP_CONTEXT_FILE"):
             value = os.environ.get(var)
             if value:
                 tmux_cmd.extend(["-e", f"{var}={value}"])
-        tmux_cmd.extend(["bash", "-c", shell_cmd])
+        tmux_cmd.extend(cmd)
         os.execvp("tmux", tmux_cmd)
     else:
         os.execvp(CLAUDE_COMMAND, cmd)

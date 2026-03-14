@@ -1,0 +1,59 @@
+---
+name: dispatch
+description: "Dispatch parallel Claude workers via tmux panes. Invoke when work can be parallelized into independent tasks, or when the user calls /dispatch with a task description."
+argument-hint: "<task description>"
+---
+
+# Dispatch
+
+Launch a parallel Claude worker session in a tmux pane.
+
+## Input
+
+$ARGUMENTS
+
+## Process
+
+### 1. Build the prompt
+
+Task: $ARGUMENTS
+
+Write a **self-contained brief** for the worker using the task above and relevant context from the current conversation. The worker has no conversation history — the prompt must carry everything:
+
+- Clear, specific objective
+- Relevant file paths, modules, or context already discovered
+- Constraints or decisions already made
+- What "done" looks like
+
+### 2. Derive a task name
+
+Short, kebab-case identifier from the task description. Used as the directory name and tmux pane title.
+
+Examples: `fix-auth-bug`, `add-unit-tests`, `update-docs`
+
+### 3. Write and dispatch
+
+```bash
+mkdir -p "$BASECAMP_TASKS_DIR/<task-name>"
+cat > "$BASECAMP_TASKS_DIR/<task-name>/prompt.md" <<'PROMPT'
+<prompt content>
+PROMPT
+basecamp dispatch $BASECAMP_REPO --name <task-name>
+```
+
+### 4. Monitor (optional)
+
+The worker's session ID is written to `$BASECAMP_TASKS_DIR/<task-name>/session_id` after startup.
+
+Use the observer MCP tool to check progress:
+```
+get_session(session_id=<worker_session_id>)
+```
+
+## Constraints
+
+- **tmux required** — `basecamp start` wraps in tmux automatically
+- **Workers are interactive** — the user can see and intervene in any pane
+- **Pull-based coordination** — poll the observer; workers cannot push results back
+- **No shared state** — each worker operates independently; coordinate via filesystem if needed
+- **Project scope** — workers run in the same project directory as the main session
