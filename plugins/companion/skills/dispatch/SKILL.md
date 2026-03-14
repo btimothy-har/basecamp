@@ -38,7 +38,8 @@ mkdir -p "$BASECAMP_TASKS_DIR/<task-name>"
 cat > "$BASECAMP_TASKS_DIR/<task-name>/prompt.md" <<'PROMPT'
 <prompt content>
 PROMPT
-basecamp dispatch $BASECAMP_REPO --name <task-name>
+basecamp dispatch $BASECAMP_REPO --name <task-name>  # uses sonnet by default
+# or: basecamp dispatch $BASECAMP_REPO --name <task-name> --model opus
 ```
 
 ### 4. Monitor (optional)
@@ -48,6 +49,15 @@ The dispatch command waits for and returns the worker's session ID. Use it with 
 ```
 get_session(session_id=<session_id from dispatch output>)
 ```
+
+## Model selection
+
+Workers default to **sonnet** — sufficient for most tasks.
+
+Use `--model opus` when the task requires deep reasoning:
+- Complex architectural decisions or multi-file refactors with tricky dependencies
+- Debugging subtle issues across a large codebase
+- Tasks where getting it wrong means expensive rework
 
 ## Constraints
 

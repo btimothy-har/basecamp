@@ -23,6 +23,7 @@ def execute_dispatch(
     config: Config,
     *,
     name: str,
+    model: str = "sonnet",
 ) -> None:
     """Dispatch a task to a parallel Claude worker in a new tmux pane.
 
@@ -66,6 +67,7 @@ def execute_dispatch(
     # Build Claude command — interactive mode with initial prompt read from file
     claude_parts: list[str] = [
         CLAUDE_COMMAND,
+        "--model", model,
         f'"$(cat {shlex.quote(str(prompt_file))})"',
     ]
 

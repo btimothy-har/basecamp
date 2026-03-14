@@ -102,6 +102,55 @@ class TestExecuteDispatchSuccess:
             c_idx = cmd.index("-c")
             assert cmd[c_idx + 1] == str(temp_git_repo)
 
+    def test_dispatch_uses_default_model(
+        self, temp_git_repo: Path, mock_config: Config, task_dir: Path
+    ) -> None:
+        env = {
+            "TMUX": "/tmp/tmux-1000/default,12345,0",
+            "CLAUDE_SESSION_ID": "test-session-123",
+        }
+        with (
+            patch.dict("os.environ", env, clear=True),
+            patch("core.cli.dispatch.TASKS_DIR", task_dir),
+            patch("core.cli.dispatch.validate_dirs") as mock_validate,
+            patch("core.cli.dispatch.is_git_repo", return_value=True),
+            patch("core.cli.dispatch.get_repo_name", return_value="test_repo"),
+            patch("core.cli.dispatch.subprocess.run") as mock_run,
+            patch("core.cli.dispatch.time.sleep"),
+        ):
+            mock_validate.return_value = [temp_git_repo]
+
+            execute_dispatch("testproject", mock_config, name="test-task")
+
+            # Claude command in tmux should include --model sonnet
+            split_call = mock_run.call_args_list[0]
+            shell_cmd = split_call[0][0][-1]  # Last element is the shell command string
+            assert "--model sonnet" in shell_cmd
+
+    def test_dispatch_uses_custom_model(
+        self, temp_git_repo: Path, mock_config: Config, task_dir: Path
+    ) -> None:
+        env = {
+            "TMUX": "/tmp/tmux-1000/default,12345,0",
+            "CLAUDE_SESSION_ID": "test-session-123",
+        }
+        with (
+            patch.dict("os.environ", env, clear=True),
+            patch("core.cli.dispatch.TASKS_DIR", task_dir),
+            patch("core.cli.dispatch.validate_dirs") as mock_validate,
+            patch("core.cli.dispatch.is_git_repo", return_value=True),
+            patch("core.cli.dispatch.get_repo_name", return_value="test_repo"),
+            patch("core.cli.dispatch.subprocess.run") as mock_run,
+            patch("core.cli.dispatch.time.sleep"),
+        ):
+            mock_validate.return_value = [temp_git_repo]
+
+            execute_dispatch("testproject", mock_config, name="test-task", model="opus")
+
+            split_call = mock_run.call_args_list[0]
+            shell_cmd = split_call[0][0][-1]
+            assert "--model opus" in shell_cmd
+
     def test_dispatch_sets_pane_title(
         self, temp_git_repo: Path, mock_config: Config, task_dir: Path
     ) -> None:
