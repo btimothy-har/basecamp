@@ -3,6 +3,7 @@
 import os
 import shlex
 import subprocess
+import time
 
 from core.config import Config, resolve_project, validate_dirs
 from core.constants import (
@@ -106,7 +107,19 @@ def execute_dispatch(
     except subprocess.CalledProcessError:
         pass  # Non-critical — pane still works without a title
 
+    # Wait for worker to write its session_id (written by SessionStart hook)
+    session_id_file = task_dir / "session_id"
+    worker_session_id = None
+    for _ in range(30):  # up to 15s
+        if session_id_file.exists():
+            worker_session_id = session_id_file.read_text().strip()
+            if worker_session_id:
+                break
+        time.sleep(0.5)
+
     console.print(f"[bold green]Dispatched[/bold green] task [cyan]{name}[/cyan]")
     console.print(f"  [dim]Task dir:[/dim] {task_dir}")
-    console.print(f"  [dim]Project:[/dim] {project_name}")
-    console.print(f"  [dim]CWD:[/dim] {primary_dir}")
+    if worker_session_id:
+        console.print(f"  [dim]Session:[/dim] {worker_session_id}")
+    else:
+        console.print(f"  [dim]Session:[/dim] (pending — check {session_id_file})")

@@ -43,11 +43,10 @@ basecamp dispatch $BASECAMP_REPO --name <task-name>
 
 ### 4. Monitor (optional)
 
-The worker's session ID is written to `$BASECAMP_TASKS_DIR/<task-name>/session_id` after startup.
+The dispatch command waits for and returns the worker's session ID. Use it with the observer MCP tool to check progress:
 
-Use the observer MCP tool to check progress:
 ```
-get_session(session_id=<worker_session_id>)
+get_session(session_id=<session_id from dispatch output>)
 ```
 
 ## Constraints
