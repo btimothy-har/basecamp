@@ -78,6 +78,7 @@ class TestExecuteDispatchSuccess:
             patch("core.cli.dispatch.validate_dirs") as mock_validate,
             patch("core.cli.dispatch.is_git_repo", return_value=True),
             patch("core.cli.dispatch.get_repo_name", return_value="test_repo"),
+            patch("core.cli.dispatch.prompts.assemble", return_value=("system prompt", ["src"])),
             patch("core.cli.dispatch.subprocess.run") as mock_run,
             patch("core.cli.dispatch.time.sleep"),
         ):
@@ -115,6 +116,7 @@ class TestExecuteDispatchSuccess:
             patch("core.cli.dispatch.validate_dirs") as mock_validate,
             patch("core.cli.dispatch.is_git_repo", return_value=True),
             patch("core.cli.dispatch.get_repo_name", return_value="test_repo"),
+            patch("core.cli.dispatch.prompts.assemble", return_value=("system prompt", ["src"])),
             patch("core.cli.dispatch.subprocess.run") as mock_run,
             patch("core.cli.dispatch.time.sleep"),
         ):
@@ -140,6 +142,7 @@ class TestExecuteDispatchSuccess:
             patch("core.cli.dispatch.validate_dirs") as mock_validate,
             patch("core.cli.dispatch.is_git_repo", return_value=True),
             patch("core.cli.dispatch.get_repo_name", return_value="test_repo"),
+            patch("core.cli.dispatch.prompts.assemble", return_value=("system prompt", ["src"])),
             patch("core.cli.dispatch.subprocess.run") as mock_run,
             patch("core.cli.dispatch.time.sleep"),
         ):
@@ -164,6 +167,7 @@ class TestExecuteDispatchSuccess:
             patch("core.cli.dispatch.validate_dirs") as mock_validate,
             patch("core.cli.dispatch.is_git_repo", return_value=True),
             patch("core.cli.dispatch.get_repo_name", return_value="test_repo"),
+            patch("core.cli.dispatch.prompts.assemble", return_value=("system prompt", ["src"])),
             patch("core.cli.dispatch.subprocess.run") as mock_run,
             patch("core.cli.dispatch.time.sleep"),
         ):
@@ -193,6 +197,7 @@ class TestExecuteDispatchSuccess:
             patch("core.cli.dispatch.validate_dirs") as mock_validate,
             patch("core.cli.dispatch.is_git_repo", return_value=True),
             patch("core.cli.dispatch.get_repo_name", return_value="test_repo"),
+            patch("core.cli.dispatch.prompts.assemble", return_value=("system prompt", ["src"])),
             patch("core.cli.dispatch.subprocess.run") as mock_run,
         ):
             mock_validate.return_value = [temp_git_repo]

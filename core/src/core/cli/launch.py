@@ -173,7 +173,7 @@ def execute_launch(
     # existing server whose processes inherit the server's env, not the client's.
     if not os.environ.get("TMUX") and shutil.which("tmux"):
         session_name = f"bc-{project_name}"
-        tmux_cmd = ["tmux", "new-session", "-s", session_name]
+        tmux_cmd = ["tmux", "new-session", "-A", "-s", session_name]
         for var in ("BASECAMP_REPO", "BASECAMP_CONTEXT_FILE"):
             value = os.environ.get(var)
             if value:

@@ -14,6 +14,7 @@ from core.constants import (
 )
 from core.exceptions import DispatchError, NotInTmuxError, TaskPromptNotFoundError
 from core.git import get_repo_name, is_git_repo
+from core.prompts import system as prompts
 from core.ui import console
 from core.utils import is_observer_configured
 
@@ -62,16 +63,35 @@ def execute_dispatch(
     primary_dir = resolved_dirs[0]
 
     # Resolve repo name for BASECAMP_REPO env var
-    repo_name = get_repo_name(primary_dir) if is_git_repo(primary_dir) else primary_dir.name
+    is_repo = is_git_repo(primary_dir)
+    repo_name = get_repo_name(primary_dir) if is_repo else primary_dir.name
 
-    # Build Claude command — interactive mode with initial prompt read from file
+    # Assemble the same system prompt as launch.py so workers share behavior
+    scratch_name = repo_name or primary_dir.name
+    prompt_content, _ = prompts.assemble(
+        project, primary_dir, [], is_repo=is_repo, scratch_name=scratch_name
+    )
+
+    # Write system prompt to task dir for shell-safe passing via tmux
+    if prompt_content:
+        system_prompt_file = task_dir / "system_prompt.md"
+        system_prompt_file.write_text(prompt_content)
+
+    # Build Claude command — the "$(cat ...)" token is pre-quoted for shell eval:
+    # outer double quotes preserve whitespace/newlines in the expanded content,
+    # and $() opens a new quoting context so shlex.quote's single quotes work inside it.
     claude_parts: list[str] = [
         CLAUDE_COMMAND,
         "--model", model,
-        f'"$(cat {shlex.quote(str(prompt_file))})"',
     ]
+    if prompt_content:
+        claude_parts.extend([
+            "--system-prompt", f'"$(cat {shlex.quote(str(system_prompt_file))})"',
+        ])
+    claude_parts.append(f'"$(cat {shlex.quote(str(prompt_file))})"')
 
-    # Load plugins (same logic as launch.py)
+    # Workers load only companion + observer plugins (not marketplace) to stay
+    # lightweight and task-focused.
     companion_plugin_dir = SCRIPT_DIR / "plugins" / "companion"
     if (companion_plugin_dir / ".claude-plugin" / "plugin.json").exists():
         claude_parts.extend(["--plugin-dir", str(companion_plugin_dir)])
@@ -80,8 +100,7 @@ def execute_dispatch(
     if is_observer_configured(OBSERVER_CONFIG) and (observer_plugin_dir / ".claude-plugin" / "plugin.json").exists():
         claude_parts.extend(["--plugin-dir", str(observer_plugin_dir)])
 
-    # Build shell command string — use shlex.join for everything except the
-    # $(cat ...) expansion which must remain unquoted for shell evaluation
+    # Join with spaces (not shlex.join) so $(cat ...) is evaluated by the shell
     shell_cmd = " ".join(claude_parts)
 
     # Launch in a new tmux pane
@@ -124,4 +143,4 @@ def execute_dispatch(
     if worker_session_id:
         console.print(f"  [dim]Session:[/dim] {worker_session_id}")
     else:
-        console.print(f"  [dim]Session:[/dim] (pending — check {session_id_file})")
+        console.print(f"  [dim]Session:[/dim] (timed out — check {session_id_file})")
