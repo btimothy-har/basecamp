@@ -66,9 +66,7 @@ class TestExecuteDispatchValidation:
 class TestExecuteDispatchSuccess:
     """Tests for successful dispatch execution."""
 
-    def test_dispatch_launches_tmux_pane(
-        self, temp_git_repo: Path, mock_config: Config, task_dir: Path
-    ) -> None:
+    def test_dispatch_launches_tmux_pane(self, temp_git_repo: Path, mock_config: Config, task_dir: Path) -> None:
         env = {
             "TMUX": "/tmp/tmux-1000/default,12345,0",
             "CLAUDE_SESSION_ID": "test-session-123",
@@ -104,9 +102,7 @@ class TestExecuteDispatchSuccess:
             c_idx = cmd.index("-c")
             assert cmd[c_idx + 1] == str(temp_git_repo)
 
-    def test_dispatch_uses_default_model(
-        self, temp_git_repo: Path, mock_config: Config, task_dir: Path
-    ) -> None:
+    def test_dispatch_uses_default_model(self, temp_git_repo: Path, mock_config: Config, task_dir: Path) -> None:
         env = {
             "TMUX": "/tmp/tmux-1000/default,12345,0",
             "CLAUDE_SESSION_ID": "test-session-123",
@@ -130,9 +126,7 @@ class TestExecuteDispatchSuccess:
             shell_cmd = split_call[0][0][-1]  # Last element is the shell command string
             assert "--model sonnet" in shell_cmd
 
-    def test_dispatch_uses_custom_model(
-        self, temp_git_repo: Path, mock_config: Config, task_dir: Path
-    ) -> None:
+    def test_dispatch_uses_custom_model(self, temp_git_repo: Path, mock_config: Config, task_dir: Path) -> None:
         env = {
             "TMUX": "/tmp/tmux-1000/default,12345,0",
             "CLAUDE_SESSION_ID": "test-session-123",
@@ -155,9 +149,7 @@ class TestExecuteDispatchSuccess:
             shell_cmd = split_call[0][0][-1]
             assert "--model opus" in shell_cmd
 
-    def test_dispatch_sets_pane_title(
-        self, temp_git_repo: Path, mock_config: Config, task_dir: Path
-    ) -> None:
+    def test_dispatch_sets_pane_title(self, temp_git_repo: Path, mock_config: Config, task_dir: Path) -> None:
         env = {
             "TMUX": "/tmp/tmux-1000/default,12345,0",
             "CLAUDE_SESSION_ID": "test-session-123",
@@ -183,9 +175,7 @@ class TestExecuteDispatchSuccess:
             assert "select-pane" in cmd
             assert "test-task" in cmd
 
-    def test_dispatch_tmux_failure(
-        self, temp_git_repo: Path, mock_config: Config, task_dir: Path
-    ) -> None:
+    def test_dispatch_tmux_failure(self, temp_git_repo: Path, mock_config: Config, task_dir: Path) -> None:
         env = {
             "TMUX": "/tmp/tmux-1000/default,12345,0",
             "CLAUDE_SESSION_ID": "test-session-123",

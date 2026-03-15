@@ -316,11 +316,7 @@ def get_session(session_id: str) -> dict[str, Any] | None:
     """
     db = Database()
     with db.session() as session:
-        row = (
-            session.query(TranscriptSchema)
-            .filter(TranscriptSchema.session_id == session_id)
-            .first()
-        )
+        row = session.query(TranscriptSchema).filter(TranscriptSchema.session_id == session_id).first()
         if row is None:
             return None
 

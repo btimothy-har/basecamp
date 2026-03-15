@@ -73,9 +73,7 @@ def execute_dispatch(
 
     # Assemble the same system prompt as launch.py so workers share behavior
     scratch_name = repo_name or primary_dir.name
-    prompt_content, _ = prompts.assemble(
-        project, primary_dir, [], is_repo=is_repo, scratch_name=scratch_name
-    )
+    prompt_content, _ = prompts.assemble(project, primary_dir, [], is_repo=is_repo, scratch_name=scratch_name)
 
     # Write system prompt to task dir for shell-safe passing via tmux
     if prompt_content:
@@ -87,12 +85,16 @@ def execute_dispatch(
     # and $() opens a new quoting context so shlex.quote's single quotes work inside it.
     claude_parts: list[str] = [
         CLAUDE_COMMAND,
-        "--model", model,
+        "--model",
+        model,
     ]
     if prompt_content:
-        claude_parts.extend([
-            "--system-prompt", f'"$(cat {shlex.quote(str(system_prompt_file))})"',
-        ])
+        claude_parts.extend(
+            [
+                "--system-prompt",
+                f'"$(cat {shlex.quote(str(system_prompt_file))})"',
+            ]
+        )
     claude_parts.append(f'"$(cat {shlex.quote(str(prompt_file))})"')
 
     # Workers load only companion + observer plugins (not marketplace) to stay
@@ -110,10 +112,15 @@ def execute_dispatch(
 
     # Launch in a new tmux pane
     tmux_cmd = [
-        "tmux", "split-window", "-v",
-        "-e", f"BASECAMP_TASK_DIR={task_dir}",
-        "-e", f"BASECAMP_REPO={repo_name}",
-        "-c", str(primary_dir),
+        "tmux",
+        "split-window",
+        "-v",
+        "-e",
+        f"BASECAMP_TASK_DIR={task_dir}",
+        "-e",
+        f"BASECAMP_REPO={repo_name}",
+        "-c",
+        str(primary_dir),
         shell_cmd,
     ]
 
