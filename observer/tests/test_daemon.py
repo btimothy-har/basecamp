@@ -463,7 +463,7 @@ class TestScheduler:
                 return True
             return False
 
-        clock = iter(float(i) for i in range(3))
+        clock = iter([0.0, 0.5, 1.0])
 
         with (
             patch.object(daemon._shutdown_event, "wait", side_effect=fake_wait),
@@ -475,7 +475,7 @@ class TestScheduler:
             mock_proc_cls.return_value = mock_proc
             daemon.run(foreground=True)
 
-        # t=0..2: all below refine interval (4s), so all go to ingest
+        # t=0..1: all below REFINE_INTERVAL (2s), so all go to ingest
         assert mock_poll.call_count == 3
         assert mock_proc_cls.call_count == 0
 
