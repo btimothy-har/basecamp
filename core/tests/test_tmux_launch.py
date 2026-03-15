@@ -31,12 +31,9 @@ class TestTmuxWrapping:
             patch("core.cli.launch.load_dotenv"),
             patch("os.chdir"),
             patch("os.execvp") as mock_execvp,
-            patch.dict("os.environ", {}, clear=False),
-            patch("os.environ.get", side_effect=lambda k, *a: None if k == "TMUX" else (a[0] if a else None)),
+            patch.dict("os.environ", {"BASECAMP_REPO": "test"}, clear=True),
             patch("shutil.which", return_value="/usr/bin/tmux"),
         ):
-            os.environ.pop("TMUX", None)
-
             execute_launch("testproject", config)
 
             mock_execvp.assert_called_once()

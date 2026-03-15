@@ -14,16 +14,21 @@ if [ -z "$SESSION_ID" ]; then
   exit 0
 fi
 
+# Reject session IDs with unsafe characters — only allow alphanumerics, hyphens, underscores
+if ! echo "$SESSION_ID" | grep -qE '^[a-zA-Z0-9_-]+$'; then
+  exit 1
+fi
+
 # Persist for Bash tool access
 if [ -n "$CLAUDE_ENV_FILE" ]; then
-  echo "export CLAUDE_SESSION_ID='$SESSION_ID'" >> "$CLAUDE_ENV_FILE"
+  printf 'export CLAUDE_SESSION_ID=%s\n' "'$SESSION_ID'" >> "$CLAUDE_ENV_FILE"
 fi
 
 # Create and export task dispatch directory for this session
 TASKS_DIR="/tmp/claude-workspace/tasks/$SESSION_ID"
 mkdir -p "$TASKS_DIR"
 if [ -n "$CLAUDE_ENV_FILE" ]; then
-  echo "export BASECAMP_TASKS_DIR='$TASKS_DIR'" >> "$CLAUDE_ENV_FILE"
+  printf 'export BASECAMP_TASKS_DIR=%s\n' "'$TASKS_DIR'" >> "$CLAUDE_ENV_FILE"
 fi
 
 # Write to task dir if this is a dispatched worker

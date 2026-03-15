@@ -2,6 +2,7 @@
 
 import os
 import shlex
+import stat
 import subprocess
 import time
 
@@ -22,6 +23,32 @@ from core.git import get_repo_name, is_git_repo
 from core.prompts import system as prompts
 from core.ui import console
 from core.utils import is_observer_configured
+
+
+def _build_launcher_script(
+    *,
+    model: str,
+    system_prompt_file: str | None,
+    prompt_file: str,
+    plugin_dirs: list[str],
+) -> str:
+    """Build a bash launcher script that reads prompt files and execs claude.
+
+    Using a script avoids shell quoting issues when passing commands through tmux.
+    Files are read via $(cat ...) within the script's own shell context.
+    """
+    parts = [CLAUDE_COMMAND, "--model", shlex.quote(model)]
+
+    if system_prompt_file:
+        parts.extend(["--system-prompt", f'"$(cat {shlex.quote(system_prompt_file)})"'])
+
+    for plugin_dir in plugin_dirs:
+        parts.extend(["--plugin-dir", shlex.quote(plugin_dir)])
+
+    # Task prompt is the positional argument (must be last)
+    parts.append(f'"$(cat {shlex.quote(prompt_file)})"')
+
+    return "#!/bin/bash\nexec " + " ".join(parts) + "\n"
 
 
 def execute_dispatch(
@@ -73,72 +100,73 @@ def execute_dispatch(
 
     # Assemble the same system prompt as launch.py so workers share behavior
     scratch_name = repo_name or primary_dir.name
-    prompt_content, _ = prompts.assemble(project, primary_dir, [], is_repo=is_repo, scratch_name=scratch_name)
+    additional_dirs = resolved_dirs[1:]
+    prompt_content, _ = prompts.assemble(
+        project, primary_dir, additional_dirs, is_repo=is_repo, scratch_name=scratch_name
+    )
 
-    # Write system prompt to task dir for shell-safe passing via tmux
+    # Write system prompt to task dir
+    system_prompt_file = None
     if prompt_content:
         system_prompt_file = task_dir / "system_prompt.md"
         system_prompt_file.write_text(prompt_content)
 
-    # Build Claude command — the "$(cat ...)" token is pre-quoted for shell eval:
-    # outer double quotes preserve whitespace/newlines in the expanded content,
-    # and $() opens a new quoting context so shlex.quote's single quotes work inside it.
-    claude_parts: list[str] = [
-        CLAUDE_COMMAND,
-        "--model",
-        model,
-    ]
-    if prompt_content:
-        claude_parts.extend(
-            [
-                "--system-prompt",
-                f'"$(cat {shlex.quote(str(system_prompt_file))})"',
-            ]
-        )
-    claude_parts.append(f'"$(cat {shlex.quote(str(prompt_file))})"')
-
-    # Workers load only companion + observer plugins (not marketplace) to stay
-    # lightweight and task-focused.
+    # Collect plugin directories — workers load companion + observer only
+    plugin_dirs: list[str] = []
     companion_plugin_dir = SCRIPT_DIR / "plugins" / "companion"
     if (companion_plugin_dir / ".claude-plugin" / "plugin.json").exists():
-        claude_parts.extend(["--plugin-dir", str(companion_plugin_dir)])
+        plugin_dirs.append(str(companion_plugin_dir))
 
     observer_plugin_dir = SCRIPT_DIR / "plugins" / "observer"
     if is_observer_configured(OBSERVER_CONFIG) and (observer_plugin_dir / ".claude-plugin" / "plugin.json").exists():
-        claude_parts.extend(["--plugin-dir", str(observer_plugin_dir)])
+        plugin_dirs.append(str(observer_plugin_dir))
 
-    # Join with spaces (not shlex.join) so $(cat ...) is evaluated by the shell
-    shell_cmd = " ".join(claude_parts)
+    # Write launcher script — avoids complex shell quoting in the tmux command
+    launcher = task_dir / "launch.sh"
+    launcher.write_text(
+        _build_launcher_script(
+            model=model,
+            system_prompt_file=str(system_prompt_file) if system_prompt_file else None,
+            prompt_file=str(prompt_file),
+            plugin_dirs=plugin_dirs,
+        )
+    )
+    launcher.chmod(launcher.stat().st_mode | stat.S_IEXEC)
 
-    # Launch in a new tmux pane
+    # Launch in a new tmux pane — use -P -F to capture the new pane ID
     tmux_cmd = [
         "tmux",
         "split-window",
         "-v",
+        "-P",
+        "-F",
+        "#{pane_id}",
         "-e",
         f"BASECAMP_TASK_DIR={task_dir}",
         "-e",
         f"BASECAMP_REPO={repo_name}",
         "-c",
         str(primary_dir),
-        shell_cmd,
+        str(launcher),
     ]
 
     try:
-        subprocess.run(tmux_cmd, check=True, capture_output=True, text=True)
+        result = subprocess.run(tmux_cmd, check=True, capture_output=True, text=True)
     except subprocess.CalledProcessError as e:
         raise TmuxLaunchError(e.stderr) from e
 
-    # Set pane title for identification
-    try:
-        subprocess.run(
-            ["tmux", "select-pane", "-t", "{last}", "-T", name],
-            check=True,
-            capture_output=True,
-            text=True,
-        )
-    except subprocess.CalledProcessError:
-        pass  # Non-critical — pane still works without a title
+    # Set pane title using the captured pane ID
+    pane_id = result.stdout.strip()
+    if pane_id:
+        try:
+            subprocess.run(
+                ["tmux", "select-pane", "-t", pane_id, "-T", name],
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+        except subprocess.CalledProcessError:
+            pass  # Non-critical — pane still works without a title
 
     # Wait for worker to write its session_id (written by SessionStart hook)
     session_id_file = task_dir / "session_id"
