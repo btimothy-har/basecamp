@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 from unittest.mock import patch
 
@@ -34,8 +35,6 @@ class TestTmuxWrapping:
             patch("os.environ.get", side_effect=lambda k, *a: None if k == "TMUX" else (a[0] if a else None)),
             patch("shutil.which", return_value="/usr/bin/tmux"),
         ):
-            import os
-
             os.environ.pop("TMUX", None)
 
             execute_launch("testproject", config)
@@ -58,8 +57,6 @@ class TestTmuxWrapping:
             patch("shutil.which", return_value="/usr/bin/tmux"),
             patch.dict("os.environ", {"BASECAMP_REPO": "test-repo"}, clear=False),
         ):
-            import os
-
             os.environ.pop("TMUX", None)
 
             execute_launch("testproject", config)
@@ -94,8 +91,6 @@ class TestTmuxWrapping:
             patch("os.execvp") as mock_execvp,
             patch("shutil.which", return_value=None),
         ):
-            import os
-
             os.environ.pop("TMUX", None)
 
             execute_launch("testproject", config)
@@ -113,8 +108,6 @@ class TestTmuxWrapping:
             patch("os.execvp") as mock_execvp,
             patch("shutil.which", return_value="/usr/bin/tmux"),
         ):
-            import os
-
             os.environ.pop("TMUX", None)
 
             execute_launch("testproject", config)
@@ -133,8 +126,6 @@ class TestTmuxWrapping:
             patch("os.execvp") as mock_execvp,
             patch("shutil.which", return_value="/usr/bin/tmux"),
         ):
-            import os
-
             os.environ.pop("TMUX", None)
 
             execute_launch("testproject", config, resume=True)

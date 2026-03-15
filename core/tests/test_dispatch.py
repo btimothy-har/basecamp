@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import subprocess as sp
 from pathlib import Path
 from unittest.mock import patch
 
@@ -185,8 +186,6 @@ class TestExecuteDispatchSuccess:
     def test_dispatch_tmux_failure(
         self, temp_git_repo: Path, mock_config: Config, task_dir: Path
     ) -> None:
-        import subprocess as sp
-
         env = {
             "TMUX": "/tmp/tmux-1000/default,12345,0",
             "CLAUDE_SESSION_ID": "test-session-123",

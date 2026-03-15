@@ -12,7 +12,12 @@ from core.constants import (
     SCRIPT_DIR,
     TASKS_DIR,
 )
-from core.exceptions import DispatchError, NotInTmuxError, TaskPromptNotFoundError
+from core.exceptions import (
+    NotInTmuxError,
+    SessionIdNotSetError,
+    TaskPromptNotFoundError,
+    TmuxLaunchError,
+)
 from core.git import get_repo_name, is_git_repo
 from core.prompts import system as prompts
 from core.ui import console
@@ -48,7 +53,7 @@ def execute_dispatch(
 
     session_id = os.environ.get("CLAUDE_SESSION_ID")
     if not session_id:
-        raise DispatchError("CLAUDE_SESSION_ID is not set — dispatch must be run from within a Claude session")
+        raise SessionIdNotSetError
 
     # Construct and validate task directory
     task_dir = TASKS_DIR / session_id / name
@@ -115,7 +120,7 @@ def execute_dispatch(
     try:
         subprocess.run(tmux_cmd, check=True, capture_output=True, text=True)
     except subprocess.CalledProcessError as e:
-        raise DispatchError(f"tmux split-window failed: {e.stderr}") from e
+        raise TmuxLaunchError(e.stderr) from e
 
     # Set pane title for identification
     try:
