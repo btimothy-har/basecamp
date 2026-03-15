@@ -83,3 +83,38 @@ class WorktreeRemoveFailedError(WorktreeCommandError):
 
     def __init__(self, stderr: str | None = None) -> None:
         super().__init__("Failed to remove worktree", stderr)
+
+
+class DispatchError(LauncherError):
+    """Base exception for dispatch-related errors."""
+
+
+class NotInTmuxError(DispatchError):
+    """Raised when dispatch is called outside a tmux session."""
+
+    def __init__(self) -> None:
+        super().__init__("dispatch requires an active tmux session ($TMUX not set)")
+
+
+class SessionIdNotSetError(DispatchError):
+    """Raised when CLAUDE_SESSION_ID is not set in the environment."""
+
+    def __init__(self) -> None:
+        super().__init__("CLAUDE_SESSION_ID is not set — dispatch must be run from within a Claude session")
+
+
+class TmuxLaunchError(DispatchError):
+    """Raised when the tmux split-window command fails."""
+
+    def __init__(self, stderr: str | None = None) -> None:
+        msg = "tmux split-window failed"
+        if stderr:
+            msg = f"{msg}: {stderr}"
+        super().__init__(msg)
+
+
+class TaskPromptNotFoundError(DispatchError):
+    """Raised when the task prompt.md file does not exist."""
+
+    def __init__(self, task_dir: Path) -> None:
+        super().__init__(f"prompt.md not found in task directory: {task_dir}")
