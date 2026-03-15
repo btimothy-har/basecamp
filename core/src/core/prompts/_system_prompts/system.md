@@ -20,6 +20,13 @@ With validated requirements, execute the work:
 - Report progress at meaningful checkpoints
 - Surface blockers or scope changes as they emerge
 
+#### Parallel Work
+
+When work can be broken into independent tasks, choose the right parallelization tool:
+
+- **Agent (background)** — Read-only work: exploration, research, code search, file reads. Background agents run in a sandbox without edit/write permissions.
+- **Dispatch** — Mutative work: code changes, file edits, running commands with side effects. Dispatch workers are full Claude sessions in tmux panes with full tool access and user interception.
+
 ### Adapt
 
 During execution, gaps or decision points may emerge.

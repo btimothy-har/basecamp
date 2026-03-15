@@ -20,10 +20,6 @@
           {
             "type": "command",
             "command": "echo 'Check: is there a specialized agent for this? If so, task the agent.'"
-          },
-          {
-            "type": "command",
-            "command": "echo 'Check: can work be parallelized? If so, task multiple agents simultaneously.'"
           }
         ]
       }
