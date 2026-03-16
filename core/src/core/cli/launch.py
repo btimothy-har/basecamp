@@ -34,6 +34,7 @@ def _build_startup_text(
     project_name: str,
     primary_dir: Path,
     worktree_info: WorktreeInfo | None,
+    *,
     worktree_created: bool,
     secondary_dirs: list[Path],
     working_style: str | None,
@@ -185,8 +186,12 @@ def execute_launch(
             os.environ["BASECAMP_CONTEXT_FILE"] = str(context_path)
 
     startup_text = _build_startup_text(
-        project_name, primary_dir, worktree_info, worktree_created,
-        secondary_dirs, project.working_style,
+        project_name,
+        primary_dir,
+        worktree_info,
+        worktree_created=worktree_created,
+        secondary_dirs=secondary_dirs,
+        working_style=project.working_style,
     )
 
     # Wrap in tmux if not already inside a session — enables `basecamp dispatch`
