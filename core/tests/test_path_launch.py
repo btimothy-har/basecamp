@@ -147,6 +147,7 @@ class TestExecuteLaunchPathMode:
             patch("core.cli.launch.load_dotenv"),
             patch("os.chdir"),
             patch("os.execvp") as mock_execvp,
+            patch.dict("os.environ", {"TMUX": "/tmp/tmux-501/default,1,0"}),
         ):
             execute_launch(
                 non_git_dir.name,
