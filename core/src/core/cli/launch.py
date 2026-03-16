@@ -172,7 +172,7 @@ def execute_launch(
     # Env vars must be passed via -e because tmux new-session connects to an
     # existing server whose processes inherit the server's env, not the client's.
     if not os.environ.get("TMUX") and shutil.which("tmux"):
-        session_name = f"bc-{project_name}"
+        session_name = f"bc-{project_name}-{label}" if label else f"bc-{project_name}"
         tmux_cmd = ["tmux", "new-session", "-A", "-s", session_name]
         for var in ("BASECAMP_REPO", "BASECAMP_CONTEXT_FILE"):
             value = os.environ.get(var)
