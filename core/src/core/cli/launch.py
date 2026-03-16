@@ -1,10 +1,13 @@
 """Launch implementation for basecamp CLI."""
 
 import os
+import shlex
 import shutil
+from io import StringIO
 from pathlib import Path
 
 from dotenv import load_dotenv
+from rich.console import Console
 
 from core.config import Config, ProjectConfig, resolve_project, validate_dirs
 from core.constants import (
@@ -22,10 +25,41 @@ from core.git import (
     is_git_repo,
 )
 from core.prompts import system as prompts
-from core.ui import console
 from core.utils import is_observer_configured
 
 DEFAULT_PATH_WORKING_STYLE = "engineering"
+
+
+def _build_startup_text(
+    project_name: str,
+    primary_dir: Path,
+    worktree_info: WorktreeInfo | None,
+    worktree_created: bool,
+    secondary_dirs: list[Path],
+    working_style: str | None,
+) -> str:
+    """Render the startup banner to an ANSI-colored string.
+
+    Uses a Rich Console writing to a buffer so the output can be displayed
+    inside a tmux session (where the original stdout is replaced).
+    """
+    buf = StringIO()
+    c = Console(file=buf, force_terminal=True)
+
+    c.print(f"\n[bold green]Starting Claude[/bold green] with project [cyan]{project_name}[/cyan]")
+    c.print(f"  [dim]Primary:[/dim] {primary_dir}")
+    if worktree_info:
+        status = "new" if worktree_created else "existing"
+        c.print(f"  [dim]Worktree:[/dim] {worktree_info.name} ({status})")
+        c.print(f"  [dim]Branch:[/dim] {worktree_info.branch}")
+    if secondary_dirs:
+        c.print("  [dim]Added dirs:[/dim]")
+        for directory in secondary_dirs:
+            c.print(f"    • {directory}")
+    if working_style:
+        c.print(f"  [dim]Working style:[/dim] {working_style}")
+    c.print()
+    return buf.getvalue()
 
 
 def _ensure_scratch_dir(project_name: str) -> None:
@@ -135,23 +169,6 @@ def execute_launch(
     if prompt_content:
         cmd.extend(["--system-prompt", prompt_content])
 
-    # Display start info
-    console.print(f"\n[bold green]Starting Claude[/bold green] with project [cyan]{project_name}[/cyan]")
-    console.print(f"  [dim]Primary:[/dim] {primary_dir}")
-    if worktree_info:
-        status = "new" if worktree_created else "existing"
-        console.print(f"  [dim]Worktree:[/dim] {worktree_info.name} ({status})")
-        console.print(f"  [dim]Branch:[/dim] {worktree_info.branch}")
-
-    if secondary_dirs:
-        console.print("  [dim]Added dirs:[/dim]")
-        for directory in secondary_dirs:
-            console.print(f"    • {directory}")
-
-    if project.working_style:
-        console.print(f"  [dim]Working style:[/dim] {project.working_style}")
-    console.print()
-
     # Load .env from the original project directory — worktrees won't have one
     dotenv_path = original_primary / ".env"
     load_dotenv(dotenv_path)
@@ -167,6 +184,11 @@ def execute_launch(
         if context_path.exists():
             os.environ["BASECAMP_CONTEXT_FILE"] = str(context_path)
 
+    startup_text = _build_startup_text(
+        project_name, primary_dir, worktree_info, worktree_created,
+        secondary_dirs, project.working_style,
+    )
+
     # Wrap in tmux if not already inside a session — enables `basecamp dispatch`
     # to create worker panes without requiring manual tmux setup.
     # Env vars must be passed via -e because tmux new-session connects to an
@@ -178,7 +200,11 @@ def execute_launch(
             value = os.environ.get(var)
             if value:
                 tmux_cmd.extend(["-e", f"{var}={value}"])
-        tmux_cmd.extend(cmd)
+        # Print startup context inside the tmux session (not the outer terminal
+        # where it would be hidden once tmux takes over the display).
+        inner = f"printf %s {shlex.quote(startup_text)} && exec {shlex.join(cmd)}"
+        tmux_cmd.extend(["sh", "-c", inner])
         os.execvp("tmux", tmux_cmd)
     else:
+        print(startup_text, end="")
         os.execvp(CLAUDE_COMMAND, cmd)

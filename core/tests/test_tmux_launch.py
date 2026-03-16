@@ -41,7 +41,10 @@ class TestTmuxWrapping:
             args = mock_execvp.call_args[0][1]
             assert args[:2] == ["tmux", "new-session"]
             assert "bc-testproject" in args
-            assert "claude" in args
+            # Claude command is inside the sh -c shell wrapper
+            assert args[-3:][0] == "sh"
+            assert args[-3:][1] == "-c"
+            assert "claude" in args[-1]
 
     def test_tmux_forwards_basecamp_env_vars(self, non_git_dir: Path) -> None:
         """Tmux wrapping should pass BASECAMP_* env vars via -e flags."""
@@ -114,7 +117,7 @@ class TestTmuxWrapping:
             assert args[session_idx + 1] == "bc-testproject"
 
     def test_tmux_wrapping_preserves_claude_args(self, non_git_dir: Path) -> None:
-        """Claude args (--resume, --plugin-dir, etc.) should pass through to tmux."""
+        """Claude args (--resume, --plugin-dir, etc.) should pass through in the shell wrapper."""
         config = self._make_config(non_git_dir)
 
         with (
@@ -128,4 +131,5 @@ class TestTmuxWrapping:
             execute_launch("testproject", config, resume=True)
 
             args = mock_execvp.call_args[0][1]
-            assert "--resume" in args
+            shell_inner = args[-1]
+            assert "--resume" in shell_inner
