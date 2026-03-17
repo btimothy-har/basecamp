@@ -97,15 +97,14 @@ class TestExecuteDispatchLauncher:
 
     def test_launcher_with_system_prompt(self, tmp_path: Path) -> None:
         # Create an assembled system prompt
-        assembled_dir = tmp_path / "assembled"
-        assembled_dir.mkdir()
-        (assembled_dir / "myproject.md").write_text("You are a helpful assistant")
+        prompt_file = tmp_path / "assembled" / "myproject.md"
+        prompt_file.parent.mkdir()
+        prompt_file.write_text("You are a helpful assistant")
 
         mock_run = _mock_tmux_run()
-        env = {**_base_env(tmp_path), "BASECAMP_PROJECT": "myproject"}
+        env = {**_base_env(tmp_path), "BASECAMP_SYSTEM_PROMPT": str(prompt_file)}
         with (
             patch.dict("os.environ", env, clear=True),
-            patch("core.cli.dispatch.USER_ASSEMBLED_PROMPTS_DIR", assembled_dir),
             patch("core.cli.dispatch.subprocess.run", mock_run),
             patch("core.cli.dispatch.time.sleep"),
         ):

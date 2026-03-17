@@ -13,7 +13,6 @@ from core.constants import (
     CLAUDE_COMMAND,
     OBSERVER_CONFIG,
     SCRIPT_DIR,
-    USER_ASSEMBLED_PROMPTS_DIR,
 )
 from core.exceptions import (
     InvalidTaskNameError,
@@ -98,11 +97,11 @@ def execute_dispatch(
     prompt_file = task_dir / "prompt.md"
     has_prompt = prompt_file.exists()
 
-    # Read persisted system prompt from ~/.basecamp/prompts/assembled/{project}.md
-    project_name = os.environ.get("BASECAMP_PROJECT")
+    # Read persisted system prompt written by execute_launch()
     system_prompt_file: Path | None = None
-    if project_name:
-        candidate = USER_ASSEMBLED_PROMPTS_DIR / f"{project_name}.md"
+    system_prompt_env = os.environ.get("BASECAMP_SYSTEM_PROMPT")
+    if system_prompt_env:
+        candidate = Path(system_prompt_env)
         if candidate.exists():
             system_prompt_file = candidate
 

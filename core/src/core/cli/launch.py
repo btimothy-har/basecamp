@@ -171,9 +171,12 @@ def execute_launch(
     if prompt_content:
         cmd.extend(["--system-prompt", prompt_content])
 
-        # Persist assembled prompt so dispatch workers can reuse it
+        # Persist assembled prompt so dispatch workers can reuse it.
+        # Scope by label to avoid collisions between concurrent worktree sessions.
+        prompt_key = f"{project_name}-{label}" if label else project_name
+        prompt_path = USER_ASSEMBLED_PROMPTS_DIR / f"{prompt_key}.md"
         USER_ASSEMBLED_PROMPTS_DIR.mkdir(parents=True, exist_ok=True)
-        (USER_ASSEMBLED_PROMPTS_DIR / f"{project_name}.md").write_text(prompt_content)
+        prompt_path.write_text(prompt_content)
 
     # Load .env from the original project directory — worktrees won't have one
     dotenv_path = original_primary / ".env"
@@ -185,6 +188,8 @@ def execute_launch(
     # Set environment variables for hooks/prompts/MCP servers
     os.environ["BASECAMP_PROJECT"] = project_name
     os.environ["BASECAMP_REPO"] = repo_name or primary_dir.name
+    if prompt_content:
+        os.environ["BASECAMP_SYSTEM_PROMPT"] = str(prompt_path)
 
     if project.context:
         context_path = USER_CONTEXT_DIR / f"{project.context}.md"
@@ -207,7 +212,7 @@ def execute_launch(
     if not os.environ.get("TMUX") and shutil.which("tmux"):
         session_name = f"bc-{project_name}-{label}" if label else f"bc-{project_name}"
         tmux_cmd = ["tmux", "new-session", "-A", "-s", session_name]
-        for var in ("BASECAMP_PROJECT", "BASECAMP_REPO", "BASECAMP_CONTEXT_FILE"):
+        for var in ("BASECAMP_PROJECT", "BASECAMP_REPO", "BASECAMP_CONTEXT_FILE", "BASECAMP_SYSTEM_PROMPT"):
             value = os.environ.get(var)
             if value:
                 tmux_cmd.extend(["-e", f"{var}={value}"])
