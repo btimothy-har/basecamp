@@ -108,6 +108,7 @@ def _setup_logseq() -> None:
         except (KeyError, zoneinfo.ZoneInfoNotFoundError):
             console.print(f"  [red]✗[/red] Unknown timezone: {tz_name} [dim](using system local)[/dim]")
     else:
+        settings.timezone = None
         console.print("  [dim]  timezone: system local[/dim]")
 
 

@@ -100,9 +100,12 @@ class Settings:
         return val if isinstance(val, str) and val.strip() else None
 
     @timezone.setter
-    def timezone(self, value: str) -> None:
+    def timezone(self, value: str | None) -> None:
         with self._locked_update() as data:
-            data["timezone"] = value
+            if value is None:
+                data.pop("timezone", None)
+            else:
+                data["timezone"] = value
 
 
 settings = Settings()
