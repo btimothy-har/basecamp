@@ -64,15 +64,17 @@ def _setup_logseq() -> None:
     if existing_graph:
         tz_display = settings.timezone or "system local"
         console.print(f"  [green]✓[/green] logseq [dim](~/{existing_graph}, tz: {tz_display})[/dim]")
-        return
-
-    setup = questionary.confirm(
-        "Set up Logseq integration? (enables basecamp log, reflect, and plan)",
-        default=False,
-    ).ask()
-    if not setup:
-        console.print("  [yellow]![/yellow] logseq [dim](skipped)[/dim]")
-        return
+        reconfigure = questionary.confirm("  Reconfigure Logseq integration?", default=False).ask()
+        if not reconfigure:
+            return
+    else:
+        setup = questionary.confirm(
+            "Set up Logseq integration? (enables basecamp log, reflect, and plan)",
+            default=False,
+        ).ask()
+        if not setup:
+            console.print("  [yellow]![/yellow] logseq [dim](skipped)[/dim]")
+            return
 
     graph_path = questionary.path("Path to your Logseq graph:", only_directories=True).ask()
     if not graph_path:
@@ -106,6 +108,7 @@ def _setup_logseq() -> None:
         except (KeyError, zoneinfo.ZoneInfoNotFoundError):
             console.print(f"  [red]✗[/red] Unknown timezone: {tz_name} [dim](using system local)[/dim]")
     else:
+        settings.timezone = None
         console.print("  [dim]  timezone: system local[/dim]")
 
 
