@@ -7,8 +7,25 @@ from pathlib import Path
 from unittest.mock import patch
 
 import pytest
-from core.cli.reflect import execute_reflect
+from core.cli.reflect import _load_reflect_prompt, execute_reflect
 from core.exceptions import LogseqNotConfiguredError
+
+
+class TestLoadReflectPrompt:
+    """Tests for reflect prompt loading with user override support."""
+
+    def test_loads_package_default(self) -> None:
+        with patch("core.cli.reflect.USER_PROMPTS_DIR", Path("/nonexistent")):
+            content = _load_reflect_prompt()
+        assert "Role" in content
+        assert "Knowledge Graph" in content
+
+    def test_user_override_takes_precedence(self, tmp_path: Path) -> None:
+        user_prompt = tmp_path / "reflect.md"
+        user_prompt.write_text("Custom reflect prompt")
+        with patch("core.cli.reflect.USER_PROMPTS_DIR", tmp_path):
+            content = _load_reflect_prompt()
+        assert content == "Custom reflect prompt"
 
 
 class TestReflectLaunch:
@@ -32,6 +49,14 @@ class TestReflectLaunch:
             assert mock_execvp.call_args[0][0] == "tmux"
             args = mock_execvp.call_args[0][1]
             assert args[:2] == ["tmux", "new-session"]
+            # Inner sh -c command should invoke claude
+            sh_idx = args.index("sh")
+            inner_cmd = args[sh_idx + 2]
+            assert "claude" in inner_cmd
+            # BASECAMP_REFLECT should be passed via tmux -e
+            assert "-e" in args
+            e_idx = args.index("-e")
+            assert args[e_idx + 1] == "BASECAMP_REFLECT=1"
 
     def test_tmux_session_name_is_bc_reflect(self, tmp_path: Path) -> None:
         graph = tmp_path / "brain"
@@ -96,6 +121,11 @@ class TestReflectLaunch:
 
             args = mock_execvp.call_args[0][1]
             assert "--system-prompt" in args
+            prompt_idx = args.index("--system-prompt")
+            system_prompt = args[prompt_idx + 1]
+            assert len(system_prompt) > 0
+            # Should contain reflect.md content
+            assert "Knowledge Graph" in system_prompt
 
     def test_loads_observer_plugin(self, tmp_path: Path) -> None:
         graph = tmp_path / "brain"
@@ -119,7 +149,9 @@ class TestReflectLaunch:
             args = mock_execvp.call_args[0][1]
             assert "--plugin-dir" in args
             plugin_idx = args.index("--plugin-dir")
-            assert "observer" in args[plugin_idx + 1]
+            plugin_path = Path(args[plugin_idx + 1])
+            assert plugin_path.name == "observer"
+            assert plugin_path.parent.name == "plugins"
 
     def test_does_not_load_companion(self, tmp_path: Path) -> None:
         graph = tmp_path / "brain"

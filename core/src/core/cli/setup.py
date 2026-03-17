@@ -56,6 +56,40 @@ def _create_default_config() -> None:
     save_config(config)
 
 
+def _setup_logseq() -> None:
+    """Interactively configure Logseq graph integration."""
+    existing_graph = settings.logseq_graph
+    if existing_graph:
+        console.print(f"  [green]✓[/green] logseq [dim](~/{existing_graph})[/dim]")
+        return
+
+    setup = questionary.confirm(
+        "Set up Logseq integration? (enables basecamp log and basecamp reflect)",
+        default=False,
+    ).ask()
+    if not setup:
+        console.print("  [yellow]![/yellow] logseq [dim](skipped)[/dim]")
+        return
+
+    graph_path = questionary.path("Path to your Logseq graph:", only_directories=True).ask()
+    if not graph_path:
+        console.print("  [yellow]![/yellow] logseq [dim](skipped)[/dim]")
+        return
+
+    resolved = Path(graph_path).expanduser().resolve()
+    if not resolved.is_dir():
+        console.print(f"  [red]✗[/red] Directory not found: {resolved}")
+        return
+
+    try:
+        settings.logseq_graph = to_home_relative(resolved)
+    except Exception:
+        console.print(f"  [red]✗[/red] Path must be under $HOME: {resolved}")
+        return
+
+    console.print(f"  [green]✓[/green] logseq [dim](~/{settings.logseq_graph})[/dim]")
+
+
 def execute_setup() -> None:
     """Run the setup sequence: preflight, scaffold, default config."""
     console.print()
@@ -106,34 +140,7 @@ def execute_setup() -> None:
 
     # Logseq integration (optional)
     console.print("[bold]Logseq integration...[/bold]")
-    existing_graph = settings.logseq_graph
-    if existing_graph:
-        console.print(f"  [green]✓[/green] logseq [dim](~/{existing_graph})[/dim]")
-    else:
-        setup_logseq = questionary.confirm(
-            "Set up Logseq integration? (enables basecamp log and basecamp reflect)",
-            default=False,
-        ).ask()
-        if setup_logseq:
-            graph_path = questionary.path(
-                "Path to your Logseq graph:",
-                only_directories=True,
-            ).ask()
-            if graph_path:
-                resolved = Path(graph_path).expanduser().resolve()
-                if not resolved.is_dir():
-                    console.print(f"  [red]✗[/red] Directory not found: {resolved}")
-                else:
-                    try:
-                        settings.logseq_graph = to_home_relative(resolved)
-                    except Exception:
-                        console.print(f"  [red]✗[/red] Path must be under $HOME: {resolved}")
-                    else:
-                        console.print(f"  [green]✓[/green] logseq [dim](~/{settings.logseq_graph})[/dim]")
-            else:
-                console.print("  [yellow]![/yellow] logseq [dim](skipped)[/dim]")
-        else:
-            console.print("  [yellow]![/yellow] logseq [dim](skipped)[/dim]")
+    _setup_logseq()
     console.print()
 
     console.print("[green]✓[/green] Done. Try editing the basecamp source: [bold]basecamp start basecamp[/bold]")

@@ -10,17 +10,20 @@ from core.settings import settings
 
 
 def resolve_graph_path() -> Path:
-    """Read the logseq_graph setting and resolve to an absolute path.
+    """Resolve the logseq_graph setting to an absolute path.
+
+    The setting is expected to be a home-relative path (as stored by
+    ``basecamp setup``). It is joined with ``Path.home()``.
 
     Raises:
         LogseqNotConfiguredError: If the setting is not set.
         LogseqGraphNotFoundError: If the directory does not exist.
     """
-    relative = settings.logseq_graph
-    if not relative:
+    graph_setting = settings.logseq_graph
+    if not graph_setting:
         raise LogseqNotConfiguredError
 
-    graph_path = Path.home() / relative
+    graph_path = Path.home() / graph_setting
     if not graph_path.is_dir():
         raise LogseqGraphNotFoundError(graph_path)
 
@@ -42,14 +45,16 @@ def ensure_journal_file(journal_path: Path) -> None:
 
 
 def append_block(journal_path: Path, text: str) -> None:
-    """Append a Logseq block to the journal file."""
+    """Append a Logseq block to the journal file.
+
+    Reads and writes in a single open to avoid a race between checking
+    the trailing newline and appending the block.
+    """
     block = f"- {text}\n"
-
-    existing = journal_path.read_text()
-    if existing and not existing.endswith("\n"):
-        block = "\n" + block
-
-    with journal_path.open("a") as f:
+    with journal_path.open("r+") as f:
+        existing = f.read()
+        if existing and not existing.endswith("\n"):
+            f.write("\n")
         f.write(block)
 
 

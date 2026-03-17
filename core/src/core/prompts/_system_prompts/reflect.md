@@ -12,6 +12,8 @@ Inspect the tools available to you. Use them to discover what the user worked on
 - `search_transcripts` — find sessions (search by date, topic)
 - `get_transcript_summary` — drill into specific sessions
 - `search_artifacts` — find decisions, constraints, knowledge, actions
+- `get_artifact` — retrieve full artifact details (including the prompt that triggered extraction)
+- `get_session` — look up a session by its Claude session ID
 
 **GitHub CLI** (`gh`) — pull requests, issues, reviews, and activity across repositories.
 
@@ -59,7 +61,7 @@ The knowledge graph is selective. Only things worth remembering across weeks and
 
 The current working directory is the Logseq graph root. Review existing graph conventions and follow them. Key Logseq mechanics:
 
-- Blocks start with `- ` (dash space), nest with 2-space indent
+- Blocks start with `- ` (dash space), nested blocks are indented (match existing graph convention)
 - Page references: `[[Page Name]]`
 - Tags: `#tag`
 - Properties: `key:: value`
