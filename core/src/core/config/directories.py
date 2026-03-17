@@ -1,5 +1,6 @@
 """Directory resolution and validation for basecamp."""
 
+import os
 from pathlib import Path
 
 from core.exceptions import DirectoryNotFoundError, LauncherError
@@ -8,23 +9,27 @@ from core.exceptions import DirectoryNotFoundError, LauncherError
 def resolve_dir(dir_path: str) -> Path:
     """Resolve a home-relative directory path to an absolute path.
 
-    Rejects absolute paths and traversals that escape $HOME.
+    Collapses ``..`` components to prevent path traversal, but does not
+    follow symlinks.  This means a symlinked subdirectory of $HOME that
+    points outside the home tree (e.g. ~/Documents -> /mnt/data/Documents)
+    is accepted as long as the *logical* path stays under $HOME.
 
     Raises:
-        LauncherError: If the path is absolute or resolves outside $HOME.
+        LauncherError: If the path is absolute or escapes $HOME after
+            normalisation.
     """
     if Path(dir_path).is_absolute():
         msg = f"Path must be relative to $HOME: {dir_path}"
         raise LauncherError(msg)
 
-    home = Path.home().resolve()
-    resolved = (home / dir_path).resolve()
+    home = Path.home()
+    normalized = Path(os.path.normpath(home / dir_path))
 
-    if not resolved.is_relative_to(home):
+    if not normalized.is_relative_to(home):
         msg = f"Path escapes $HOME: {dir_path}"
         raise LauncherError(msg)
 
-    return resolved
+    return normalized
 
 
 def to_home_relative(path: Path) -> str:
