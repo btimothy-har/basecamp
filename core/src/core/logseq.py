@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import datetime
+import zoneinfo
 from pathlib import Path
 
 from core.config.directories import resolve_dir
@@ -41,9 +42,25 @@ def resolve_graph_path() -> Path:
     return graph_path
 
 
+def today() -> datetime.date:
+    """Return today's date in the user's configured timezone.
+
+    Falls back to the system's local timezone if no timezone is configured
+    or the configured value is invalid.
+    """
+    tz_name = settings.timezone
+    if tz_name:
+        try:
+            tz = zoneinfo.ZoneInfo(tz_name)
+            return datetime.datetime.now(tz=tz).date()
+        except (KeyError, zoneinfo.ZoneInfoNotFoundError):
+            pass
+    return datetime.datetime.now().astimezone().date()
+
+
 def resolve_journal_path(graph_path: Path, date: datetime.date | None = None) -> Path:
     """Return the journal file path for the given date (defaults to today)."""
-    target = date or datetime.datetime.now().astimezone().date()
+    target = date or today()
     filename = target.strftime("%Y_%m_%d") + ".md"
     return graph_path / "journals" / filename
 

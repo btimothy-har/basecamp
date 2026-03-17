@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import datetime
 import os
 from pathlib import Path
 from unittest.mock import patch
@@ -10,6 +11,8 @@ import pytest
 from core.cli.reflect import execute_reflect
 from core.exceptions import LogseqNotConfiguredError
 from core.prompts.logseq_prompts import load_system_prompt, load_user_prompt
+
+_TEST_DATE = datetime.date(2026, 3, 17)
 
 
 class TestLogseqPromptLoading:
@@ -30,7 +33,7 @@ class TestLogseqPromptLoading:
 
     def test_user_prompt_loads_package_default(self) -> None:
         with patch("core.prompts.logseq_prompts.USER_PROMPTS_DIR", Path("/nonexistent")):
-            content = load_user_prompt("reflect")
+            content = load_user_prompt("reflect", date=_TEST_DATE)
         assert "Discovery" in content
         assert "Proposals" in content
 
@@ -38,7 +41,7 @@ class TestLogseqPromptLoading:
         user_prompt = tmp_path / "reflect.md"
         user_prompt.write_text("Custom reflect prompt")
         with patch("core.prompts.logseq_prompts.USER_PROMPTS_DIR", tmp_path):
-            content = load_user_prompt("reflect")
+            content = load_user_prompt("reflect", date=_TEST_DATE)
         assert content == "Custom reflect prompt"
 
 

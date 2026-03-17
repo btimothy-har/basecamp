@@ -1,3 +1,5 @@
+Today's date: {date}
+
 Help me plan my day. Use available tools to gather context and surface what needs attention.
 
 ## Review

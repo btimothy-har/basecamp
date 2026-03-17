@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import datetime
 import os
 from pathlib import Path
 from unittest.mock import patch
@@ -11,13 +12,15 @@ from core.cli.plan import execute_plan
 from core.exceptions import LogseqNotConfiguredError
 from core.prompts.logseq_prompts import load_user_prompt
 
+_TEST_DATE = datetime.date(2026, 3, 17)
+
 
 class TestPlanUserPrompt:
     """Tests for the plan user prompt loading."""
 
     def test_loads_package_default(self) -> None:
         with patch("core.prompts.logseq_prompts.USER_PROMPTS_DIR", Path("/nonexistent")):
-            content = load_user_prompt("plan")
+            content = load_user_prompt("plan", date=_TEST_DATE)
         assert "Review" in content
         assert "Priorities" in content
 
@@ -25,7 +28,7 @@ class TestPlanUserPrompt:
         user_prompt = tmp_path / "plan.md"
         user_prompt.write_text("Custom plan prompt")
         with patch("core.prompts.logseq_prompts.USER_PROMPTS_DIR", tmp_path):
-            content = load_user_prompt("plan")
+            content = load_user_prompt("plan", date=_TEST_DATE)
         assert content == "Custom plan prompt"
 
 

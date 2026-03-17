@@ -88,6 +88,23 @@ class TestProperties:
         assert data["projects"] == {"proj": {"dirs": ["~/proj"]}}
         assert data["logseq_graph"] == "Documents/brain"
 
+    def test_timezone_empty(self, cfg: Settings) -> None:
+        assert cfg.timezone is None
+
+    def test_timezone_set_and_get(self, cfg: Settings) -> None:
+        cfg.timezone = "America/Toronto"
+        assert cfg.timezone == "America/Toronto"
+
+    def test_timezone_preserves_other_settings(self, cfg: Settings) -> None:
+        cfg.install_dir = "/tmp/ws"
+        cfg.logseq_graph = "Documents/brain"
+        cfg.timezone = "America/Toronto"
+
+        data = json.loads(cfg.path.read_text())
+        assert data["install_dir"] == "/tmp/ws"
+        assert data["logseq_graph"] == "Documents/brain"
+        assert data["timezone"] == "America/Toronto"
+
 
 class TestLocking:
     """Verify _locked_update creates the lock file and serialises access."""

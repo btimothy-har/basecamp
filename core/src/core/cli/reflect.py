@@ -1,6 +1,5 @@
 """Reflect command — launch a Claude session for reflective journaling."""
 
-import datetime
 import os
 import shlex
 import shutil
@@ -11,7 +10,7 @@ from rich.console import Console
 
 from core.constants import CLAUDE_COMMAND, OBSERVER_CONFIG, SCRATCH_BASE, SCRIPT_DIR
 from core.git import is_git_repo
-from core.logseq import resolve_graph_path
+from core.logseq import resolve_graph_path, today
 from core.prompts.logseq_prompts import load_system_prompt, load_user_prompt
 from core.prompts.system import build_runtime_preamble
 from core.utils import is_observer_configured
@@ -50,8 +49,9 @@ def execute_reflect() -> None:
     # Ensure scratch directory exists
     (SCRATCH_BASE / REFLECT_SCRATCH_NAME).mkdir(parents=True, exist_ok=True)
 
+    target_date = today()
     system_prompt = _assemble_system_prompt(graph_path)
-    user_prompt = load_user_prompt("reflect")
+    user_prompt = load_user_prompt("reflect", date=target_date)
 
     # Build claude command: system prompt + initial user prompt.
     # The -- separator ensures the prompt isn't misinterpreted as a flag.
@@ -70,8 +70,7 @@ def execute_reflect() -> None:
     # shell inherits it even though tmux starts a fresh environment.
     os.environ["BASECAMP_REFLECT"] = "1"
 
-    today = datetime.datetime.now().astimezone().date().isoformat()
-    startup_text = _build_startup_text(str(graph_path), today)
+    startup_text = _build_startup_text(str(graph_path), target_date.isoformat())
 
     # Wrap in tmux if not already inside a session.
     # Pass BASECAMP_REFLECT via -e so the observer plugin inherits it.

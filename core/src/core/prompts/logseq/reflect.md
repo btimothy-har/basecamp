@@ -1,3 +1,5 @@
+Today's date: {date}
+
 Review my work from today. Use available tools to discover what I worked on across all projects.
 
 ## Discovery

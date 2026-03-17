@@ -1,6 +1,7 @@
 """Setup command for basecamp — one-time environment bootstrap."""
 
 import shutil
+import zoneinfo
 from pathlib import Path
 
 import questionary
@@ -61,11 +62,12 @@ def _setup_logseq() -> None:
     """Interactively configure Logseq graph integration."""
     existing_graph = settings.logseq_graph
     if existing_graph:
-        console.print(f"  [green]✓[/green] logseq [dim](~/{existing_graph})[/dim]")
+        tz_display = settings.timezone or "system local"
+        console.print(f"  [green]✓[/green] logseq [dim](~/{existing_graph}, tz: {tz_display})[/dim]")
         return
 
     setup = questionary.confirm(
-        "Set up Logseq integration? (enables basecamp log and basecamp reflect)",
+        "Set up Logseq integration? (enables basecamp log, reflect, and plan)",
         default=False,
     ).ask()
     if not setup:
@@ -89,6 +91,22 @@ def _setup_logseq() -> None:
         return
 
     console.print(f"  [green]✓[/green] logseq [dim](~/{settings.logseq_graph})[/dim]")
+
+    # Timezone for journal date boundaries
+    tz_input = questionary.text(
+        "Timezone for journal dates (IANA, e.g. America/Toronto):",
+        default="",
+    ).ask()
+    if tz_input and tz_input.strip():
+        tz_name = tz_input.strip()
+        try:
+            zoneinfo.ZoneInfo(tz_name)
+            settings.timezone = tz_name
+            console.print(f"  [green]✓[/green] timezone [dim]({tz_name})[/dim]")
+        except (KeyError, zoneinfo.ZoneInfoNotFoundError):
+            console.print(f"  [red]✗[/red] Unknown timezone: {tz_name} [dim](using system local)[/dim]")
+    else:
+        console.print("  [dim]  timezone: system local[/dim]")
 
 
 def execute_setup() -> None:
