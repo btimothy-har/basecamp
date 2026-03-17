@@ -85,8 +85,9 @@ def execute_reflect() -> None:
 
     system_prompt = _assemble_system_prompt(graph_path)
 
-    # Build claude command: system prompt + initial user prompt
-    cmd: list[str] = [CLAUDE_COMMAND, "--system-prompt", system_prompt, USER_PROMPT]
+    # Build claude command: system prompt + initial user prompt.
+    # The -- separator ensures the prompt isn't misinterpreted as a flag.
+    cmd: list[str] = [CLAUDE_COMMAND, "--system-prompt", system_prompt, "--", USER_PROMPT]
 
     # Load observer plugin for MCP access (cross-project session search)
     observer_plugin_dir = SCRIPT_DIR / "plugins" / "observer"
