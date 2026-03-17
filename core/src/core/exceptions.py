@@ -118,3 +118,10 @@ class TasksDirNotSetError(DispatchError):
 
     def __init__(self) -> None:
         super().__init__("BASECAMP_TASKS_DIR is not set — dispatch must be run from within a Claude session")
+
+
+class InvalidTaskNameError(DispatchError):
+    """Raised when a task name contains unsafe characters."""
+
+    def __init__(self, name: str) -> None:
+        super().__init__(f"Invalid task name {name!r} — must contain only alphanumerics, hyphens, underscores, or dots")

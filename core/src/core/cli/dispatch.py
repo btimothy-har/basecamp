@@ -1,6 +1,7 @@
 """Dispatch implementation for basecamp CLI — launches parallel Claude workers in tmux panes."""
 
 import os
+import re
 import shlex
 import stat
 import subprocess
@@ -15,6 +16,7 @@ from core.constants import (
     USER_ASSEMBLED_PROMPTS_DIR,
 )
 from core.exceptions import (
+    InvalidTaskNameError,
     NotInTmuxError,
     SessionIdNotSetError,
     TasksDirNotSetError,
@@ -22,6 +24,8 @@ from core.exceptions import (
 )
 from core.ui import console
 from core.utils import is_observer_configured
+
+_SAFE_NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
 
 
 def _build_launcher_script(
@@ -82,6 +86,9 @@ def execute_dispatch(
     # Auto-generate name if not provided
     if not name:
         name = f"worker-{uuid.uuid4().hex[:8]}"
+
+    if not _SAFE_NAME_RE.match(name):
+        raise InvalidTaskNameError(name)
 
     # Construct task directory
     task_dir = Path(tasks_dir) / name

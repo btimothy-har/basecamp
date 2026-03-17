@@ -8,7 +8,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 from core.cli.dispatch import execute_dispatch
-from core.exceptions import DispatchError, NotInTmuxError, TasksDirNotSetError
+from core.exceptions import DispatchError, InvalidTaskNameError, NotInTmuxError, TasksDirNotSetError
 
 
 def _base_env(tasks_dir: Path) -> dict[str, str]:
@@ -48,6 +48,16 @@ class TestExecuteDispatchValidation:
         with patch.dict("os.environ", env, clear=True):
             with pytest.raises(TasksDirNotSetError):
                 execute_dispatch(name="test-task")
+
+    @pytest.mark.parametrize(
+        "bad_name",
+        ["../escape", "/absolute/path", "has/slash", ".dotstart", "has spaces", "semi;colon"],
+    )
+    def test_raises_invalid_task_name(self, bad_name: str, tmp_path: Path) -> None:
+        env = _base_env(tmp_path)
+        with patch.dict("os.environ", env, clear=True):
+            with pytest.raises(InvalidTaskNameError):
+                execute_dispatch(name=bad_name)
 
 
 class TestExecuteDispatchLauncher:
