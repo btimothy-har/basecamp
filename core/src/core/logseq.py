@@ -5,7 +5,12 @@ from __future__ import annotations
 import datetime
 from pathlib import Path
 
-from core.exceptions import LogseqGraphNotFoundError, LogseqNotConfiguredError
+from core.config.directories import resolve_dir
+from core.exceptions import (
+    LauncherError,
+    LogseqGraphNotFoundError,
+    LogseqNotConfiguredError,
+)
 from core.settings import settings
 
 
@@ -13,17 +18,23 @@ def resolve_graph_path() -> Path:
     """Resolve the logseq_graph setting to an absolute path.
 
     The setting is expected to be a home-relative path (as stored by
-    ``basecamp setup``). It is joined with ``Path.home()``.
+    ``basecamp setup``). It is resolved via ``resolve_dir`` which
+    validates containment within ``$HOME``.
 
     Raises:
         LogseqNotConfiguredError: If the setting is not set.
-        LogseqGraphNotFoundError: If the directory does not exist.
+        LogseqGraphNotFoundError: If the directory does not exist or
+            the path escapes ``$HOME``.
     """
     graph_setting = settings.logseq_graph
     if not graph_setting:
         raise LogseqNotConfiguredError
 
-    graph_path = Path.home() / graph_setting
+    try:
+        graph_path = resolve_dir(graph_setting)
+    except LauncherError:
+        raise LogseqGraphNotFoundError(Path(graph_setting)) from None
+
     if not graph_path.is_dir():
         raise LogseqGraphNotFoundError(graph_path)
 

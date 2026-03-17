@@ -29,6 +29,7 @@ class TestTmuxWrapping:
 
         with (
             patch("core.cli.launch.load_dotenv"),
+            patch("core.cli.launch.validate_dirs", return_value=[non_git_dir]),
             patch("os.chdir"),
             patch("os.execvp") as mock_execvp,
             patch.dict("os.environ", {"BASECAMP_REPO": "test"}, clear=True),
@@ -52,6 +53,7 @@ class TestTmuxWrapping:
 
         with (
             patch("core.cli.launch.load_dotenv"),
+            patch("core.cli.launch.validate_dirs", return_value=[non_git_dir]),
             patch("os.chdir"),
             patch("os.execvp") as mock_execvp,
             patch("shutil.which", return_value="/usr/bin/tmux"),
@@ -74,6 +76,7 @@ class TestTmuxWrapping:
 
         with (
             patch("core.cli.launch.load_dotenv"),
+            patch("core.cli.launch.validate_dirs", return_value=[non_git_dir]),
             patch("os.chdir"),
             patch("os.execvp") as mock_execvp,
             patch.dict("os.environ", {"TMUX": "/tmp/tmux-501/default,12345,0"}),
@@ -89,6 +92,7 @@ class TestTmuxWrapping:
 
         with (
             patch("core.cli.launch.load_dotenv"),
+            patch("core.cli.launch.validate_dirs", return_value=[non_git_dir]),
             patch("os.chdir"),
             patch("os.execvp") as mock_execvp,
             patch("shutil.which", return_value=None),
@@ -106,6 +110,7 @@ class TestTmuxWrapping:
 
         with (
             patch("core.cli.launch.load_dotenv"),
+            patch("core.cli.launch.validate_dirs", return_value=[non_git_dir]),
             patch("os.chdir"),
             patch("os.execvp") as mock_execvp,
             patch("shutil.which", return_value="/usr/bin/tmux"),
@@ -124,6 +129,7 @@ class TestTmuxWrapping:
 
         with (
             patch("core.cli.launch.load_dotenv"),
+            patch("core.cli.launch.validate_dirs", return_value=[non_git_dir]),
             patch("os.chdir"),
             patch("os.execvp") as mock_execvp,
             patch("shutil.which", return_value="/usr/bin/tmux"),

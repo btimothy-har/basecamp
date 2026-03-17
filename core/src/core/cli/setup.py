@@ -15,6 +15,7 @@ from core.constants import (
     USER_PROMPTS_DIR,
     USER_WORKING_STYLES_DIR,
 )
+from core.exceptions import LauncherError
 from core.settings import settings
 from core.ui import console
 from core.utils import is_observer_configured
@@ -83,7 +84,7 @@ def _setup_logseq() -> None:
 
     try:
         settings.logseq_graph = to_home_relative(resolved)
-    except Exception:
+    except LauncherError:
         console.print(f"  [red]✗[/red] Path must be under $HOME: {resolved}")
         return
 

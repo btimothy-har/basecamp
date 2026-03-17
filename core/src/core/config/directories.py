@@ -6,8 +6,25 @@ from core.exceptions import DirectoryNotFoundError, LauncherError
 
 
 def resolve_dir(dir_path: str) -> Path:
-    """Resolve a directory path relative to home directory."""
-    return Path.home() / dir_path
+    """Resolve a home-relative directory path to an absolute path.
+
+    Rejects absolute paths and traversals that escape $HOME.
+
+    Raises:
+        LauncherError: If the path is absolute or resolves outside $HOME.
+    """
+    if Path(dir_path).is_absolute():
+        msg = f"Path must be relative to $HOME: {dir_path}"
+        raise LauncherError(msg)
+
+    home = Path.home().resolve()
+    resolved = (home / dir_path).resolve()
+
+    if not resolved.is_relative_to(home):
+        msg = f"Path escapes $HOME: {dir_path}"
+        raise LauncherError(msg)
+
+    return resolved
 
 
 def to_home_relative(path: Path) -> str:

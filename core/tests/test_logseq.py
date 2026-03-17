@@ -7,7 +7,7 @@ from pathlib import Path
 from unittest.mock import MagicMock, PropertyMock, patch
 
 import pytest
-from core.exceptions import LogseqGraphNotFoundError, LogseqNotConfiguredError
+from core.exceptions import LauncherError, LogseqGraphNotFoundError, LogseqNotConfiguredError
 from core.logseq import (
     append_block,
     ensure_journal_file,
@@ -27,12 +27,12 @@ class TestResolveGraphPath:
                 resolve_graph_path()
 
     def test_directory_missing(self, tmp_path: Path) -> None:
+        nonexistent = tmp_path / "nonexistent"
         with (
             patch("core.logseq.settings") as mock_settings,
-            patch("core.logseq.Path") as mock_path,
+            patch("core.logseq.resolve_dir", return_value=nonexistent),
         ):
             type(mock_settings).logseq_graph = PropertyMock(return_value="nonexistent")
-            mock_path.home.return_value = tmp_path
             with pytest.raises(LogseqGraphNotFoundError):
                 resolve_graph_path()
 
@@ -41,12 +41,20 @@ class TestResolveGraphPath:
         graph_dir.mkdir()
         with (
             patch("core.logseq.settings") as mock_settings,
-            patch("core.logseq.Path") as mock_path,
+            patch("core.logseq.resolve_dir", return_value=graph_dir),
         ):
             type(mock_settings).logseq_graph = PropertyMock(return_value="brain")
-            mock_path.home.return_value = tmp_path
             result = resolve_graph_path()
         assert result == graph_dir
+
+    def test_rejects_invalid_path(self) -> None:
+        with (
+            patch("core.logseq.settings") as mock_settings,
+            patch("core.logseq.resolve_dir", side_effect=LauncherError("bad")),
+        ):
+            type(mock_settings).logseq_graph = PropertyMock(return_value="/etc/passwd")
+            with pytest.raises(LogseqGraphNotFoundError):
+                resolve_graph_path()
 
 
 class TestResolveJournalPath:
