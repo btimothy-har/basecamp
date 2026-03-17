@@ -93,6 +93,10 @@ def execute_dispatch(
     task_dir = Path(tasks_dir) / name
     task_dir.mkdir(parents=True, exist_ok=True)
 
+    # Remove stale session_id from a previous dispatch with the same name
+    stale_session_id = task_dir / "session_id"
+    stale_session_id.unlink(missing_ok=True)
+
     # Prompt is optional — bare worker if absent
     prompt_file = task_dir / "prompt.md"
     has_prompt = prompt_file.exists()

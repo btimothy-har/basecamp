@@ -192,6 +192,24 @@ class TestExecuteDispatchTmux:
             c_idx = cmd.index("-c")
             assert cmd[c_idx + 1] == str(Path.cwd())
 
+    def test_stale_session_id_removed(self, tmp_path: Path) -> None:
+        # Pre-create a task dir with a stale session_id from a previous dispatch
+        task = tmp_path / "reused-task"
+        task.mkdir()
+        (task / "session_id").write_text("old-session-abc")
+
+        mock_run = _mock_tmux_run()
+        env = _base_env(tmp_path)
+        with (
+            patch.dict("os.environ", env, clear=True),
+            patch("core.cli.dispatch.subprocess.run", mock_run),
+            patch("core.cli.dispatch.time.sleep"),
+        ):
+            execute_dispatch(name="reused-task")
+
+            # Stale file should have been removed before polling
+            assert not (task / "session_id").exists()
+
     def test_tmux_failure_raises(self, tmp_path: Path) -> None:
         env = _base_env(tmp_path)
         with (
