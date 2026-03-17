@@ -11,9 +11,9 @@ from pathlib import Path
 from rich.console import Console
 
 from core.constants import CLAUDE_COMMAND, OBSERVER_CONFIG, SCRATCH_BASE, SCRIPT_DIR, USER_PROMPTS_DIR
-from core.git import generate_git_status, get_remote_url, is_git_repo
+from core.git import is_git_repo
 from core.logseq import resolve_graph_path
-from core.prompts.system import _load_environment_prompt, generate_env_block
+from core.prompts.system import build_runtime_preamble
 from core.utils import is_observer_configured
 
 REFLECT_SCRATCH_NAME = "reflect"
@@ -42,22 +42,11 @@ def _load_reflect_prompt() -> str:
 
 
 def _assemble_system_prompt(graph_path: Path) -> str:
-    """Assemble the reflect system prompt: env block + environment.md + reflect.md."""
-    primary = graph_path
-    repo = is_git_repo(primary)
-    remote_url = get_remote_url(primary) if repo else None
-
-    env_block = generate_env_block(primary, [], is_repo=repo, remote_url=remote_url, scratch_name=REFLECT_SCRATCH_NAME)
-    environment_content, _ = _load_environment_prompt()
-    git_status = generate_git_status(primary) if repo else None
-
-    runtime_parts = [env_block, environment_content.strip()]
-    if git_status:
-        runtime_parts.append(git_status)
-
+    """Assemble the reflect system prompt: runtime preamble + reflect.md."""
+    repo = is_git_repo(graph_path)
+    preamble, _ = build_runtime_preamble(graph_path, [], is_repo=repo, scratch_name=REFLECT_SCRATCH_NAME)
     reflect_content = _load_reflect_prompt()
-
-    return "\n\n".join(["\n\n".join(runtime_parts), reflect_content.strip()])
+    return "\n\n".join([preamble, reflect_content.strip()])
 
 
 def _build_startup_text(graph_path: str, today: str) -> str:

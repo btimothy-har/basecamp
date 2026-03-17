@@ -44,15 +44,15 @@ def _content_hash(text: str) -> str:
     return hashlib.sha256(text.encode()).hexdigest()
 
 
-def _seed_data(db, *, artifact_type=ArtifactType.KNOWLEDGE, session_id="sess-1"):
+def _seed_data(db, *, artifact_type=ArtifactType.KNOWLEDGE, session_id="sess-1", project_name="test-project"):
     """Create a project, transcript, artifact, and search_index entry. Returns artifact ID.
 
-    Reuses an existing project if one with name 'test-project' already exists.
+    Reuses an existing project if one with the given name already exists.
     """
     with db.session() as session:
-        project = session.query(ProjectSchema).filter(ProjectSchema.name == "test-project").first()
+        project = session.query(ProjectSchema).filter(ProjectSchema.name == project_name).first()
         if project is None:
-            project = ProjectSchema(name="test-project", repo_path="/tmp/test")
+            project = ProjectSchema(name=project_name, repo_path=f"/tmp/{project_name}")
             session.add(project)
             session.flush()
 
@@ -91,12 +91,14 @@ def _seed_data(db, *, artifact_type=ArtifactType.KNOWLEDGE, session_id="sess-1")
         return artifact.id
 
 
-def _seed_transcript_summary(db, *, session_id="sess-summary", summary="Test transcript summary"):
+def _seed_transcript_summary(
+    db, *, session_id="sess-summary", summary="Test transcript summary", project_name="test-project"
+):
     """Create a project, transcript with summary, and search_index entry. Returns transcript ID."""
     with db.session() as session:
-        project = session.query(ProjectSchema).filter(ProjectSchema.name == "test-project").first()
+        project = session.query(ProjectSchema).filter(ProjectSchema.name == project_name).first()
         if project is None:
-            project = ProjectSchema(name="test-project", repo_path="/tmp/test")
+            project = ProjectSchema(name=project_name, repo_path=f"/tmp/{project_name}")
             session.add(project)
             session.flush()
 
@@ -248,6 +250,17 @@ class TestSearchArtifacts:
         for s in siblings:
             assert "type" in s
 
+    def test_none_project_returns_all_projects(self, db):  # noqa: ARG002
+        """project_name=None skips the project filter (reflect mode cross-project search)."""
+        _seed_data(db, session_id="sess-proj-a", project_name="project-a")
+        _seed_data(db, session_id="sess-proj-b", project_name="project-b")
+
+        with patch.object(engine, "_get_model", return_value=_mock_model()):
+            results = engine.search_artifacts("test query", None, top_k=50, threshold=0.0)
+
+        # Should find artifacts from both projects
+        assert len(results) >= 2
+
     def test_empty_db_returns_empty(self, db):  # noqa: ARG002
         with patch.object(engine, "_get_model", return_value=_mock_model()):
             results = engine.search_artifacts("test query", "test-project")
@@ -316,6 +329,16 @@ class TestSearchTranscripts:
             results = engine.search_transcripts("test query", "test-project", top_k=2)
 
         assert len(results) <= 2
+
+    def test_none_project_returns_all_projects(self, db):  # noqa: ARG002
+        """project_name=None skips the project filter (reflect mode cross-project search)."""
+        _seed_transcript_summary(db, session_id="sess-ts-a", summary="Summary A", project_name="project-a")
+        _seed_transcript_summary(db, session_id="sess-ts-b", summary="Summary B", project_name="project-b")
+
+        with patch.object(engine, "_get_model", return_value=_mock_model()):
+            results = engine.search_transcripts("test query", None, top_k=50, threshold=0.0)
+
+        assert len(results) >= 2
 
     def test_empty_db_returns_empty(self, db):  # noqa: ARG002
         with patch.object(engine, "_get_model", return_value=_mock_model()):
