@@ -76,18 +76,17 @@ def start(project: str, resume_session: bool, label: str | None) -> None:  # noq
 
 
 @basecamp.command()
-@click.argument("project", shell_complete=complete_project_name)
-@click.option("--name", "-n", required=True, help="Task name (directory name and tmux pane title)")
+@click.option("--name", "-n", default=None, help="Task name (auto-generated if omitted)")
 @click.option("--model", "-m", default="sonnet", help="Model for the worker session (default: sonnet)")
-def dispatch(project: str, name: str, model: str) -> None:
-    """Dispatch a task to a parallel Claude worker in a new tmux pane.
+def dispatch(name: str | None, model: str) -> None:
+    """Dispatch a worker session in a new tmux pane.
 
-    Reads prompt.md from the task directory and launches Claude in interactive mode.
-    Must be run from within a tmux session with CLAUDE_SESSION_ID set.
+    Must be run from within a Claude session (tmux + CLAUDE_SESSION_ID).
+    If --name is provided and a prompt.md exists in the task directory,
+    the worker receives it as the initial message. Otherwise starts bare.
     """
     try:
-        config = load_config()
-        execute_dispatch(project, config, name=name, model=model)
+        execute_dispatch(name=name, model=model)
     except LauncherError as e:
         _handle_error(e)
 

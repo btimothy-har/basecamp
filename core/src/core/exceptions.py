@@ -113,8 +113,15 @@ class TmuxLaunchError(DispatchError):
         super().__init__(msg)
 
 
-class TaskPromptNotFoundError(DispatchError):
-    """Raised when the task prompt.md file does not exist."""
+class TasksDirNotSetError(DispatchError):
+    """Raised when BASECAMP_TASKS_DIR is not set in the environment."""
 
-    def __init__(self, task_dir: Path) -> None:
-        super().__init__(f"prompt.md not found in task directory: {task_dir}")
+    def __init__(self) -> None:
+        super().__init__("BASECAMP_TASKS_DIR is not set — dispatch must be run from within a Claude session")
+
+
+class InvalidTaskNameError(DispatchError):
+    """Raised when a task name contains unsafe characters."""
+
+    def __init__(self, name: str) -> None:
+        super().__init__(f"Invalid task name {name!r} — must contain only alphanumerics, hyphens, underscores, or dots")

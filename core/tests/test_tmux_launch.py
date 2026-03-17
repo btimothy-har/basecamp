@@ -62,9 +62,11 @@ class TestTmuxWrapping:
             execute_launch("testproject", config)
 
             args = mock_execvp.call_args[0][1]
-            assert "-e" in args
-            e_idx = args.index("-e")
-            assert args[e_idx + 1] == f"BASECAMP_REPO={non_git_dir.name}"
+            # Collect all -e values
+            e_values = [args[i + 1] for i, a in enumerate(args) if a == "-e"]
+            assert "BASECAMP_PROJECT=testproject" in e_values
+            assert f"BASECAMP_REPO={non_git_dir.name}" in e_values
+            assert any(v.startswith("BASECAMP_SYSTEM_PROMPT=") for v in e_values)
 
     def test_skips_tmux_when_already_in_tmux(self, non_git_dir: Path) -> None:
         """When TMUX is set, should exec claude directly."""
