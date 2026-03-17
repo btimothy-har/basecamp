@@ -177,6 +177,7 @@ def execute_launch(
         prompt_path = USER_ASSEMBLED_PROMPTS_DIR / f"{prompt_key}.md"
         USER_ASSEMBLED_PROMPTS_DIR.mkdir(parents=True, exist_ok=True)
         prompt_path.write_text(prompt_content)
+        os.environ["BASECAMP_SYSTEM_PROMPT"] = str(prompt_path)
 
     # Load .env from the original project directory — worktrees won't have one
     dotenv_path = original_primary / ".env"
@@ -188,8 +189,6 @@ def execute_launch(
     # Set environment variables for hooks/prompts/MCP servers
     os.environ["BASECAMP_PROJECT"] = project_name
     os.environ["BASECAMP_REPO"] = repo_name or primary_dir.name
-    if prompt_content:
-        os.environ["BASECAMP_SYSTEM_PROMPT"] = str(prompt_path)
 
     if project.context:
         context_path = USER_CONTEXT_DIR / f"{project.context}.md"
