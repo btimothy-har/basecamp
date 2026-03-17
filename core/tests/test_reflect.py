@@ -100,10 +100,16 @@ class TestReflectLaunch:
     def test_loads_observer_plugin(self, tmp_path: Path) -> None:
         graph = tmp_path / "brain"
         graph.mkdir()
+        # Create fake observer plugin structure so the .exists() check passes
+        fake_script_dir = tmp_path / "install"
+        plugin_json = fake_script_dir / "plugins" / "observer" / ".claude-plugin" / "plugin.json"
+        plugin_json.parent.mkdir(parents=True)
+        plugin_json.write_text("{}")
 
         with (
             patch("core.cli.reflect.resolve_graph_path", return_value=graph),
             patch("core.cli.reflect.is_observer_configured", return_value=True),
+            patch("core.cli.reflect.SCRIPT_DIR", fake_script_dir),
             patch("os.chdir"),
             patch("os.execvp") as mock_execvp,
             patch.dict("os.environ", {"TMUX": "1"}),
@@ -118,10 +124,16 @@ class TestReflectLaunch:
     def test_does_not_load_companion(self, tmp_path: Path) -> None:
         graph = tmp_path / "brain"
         graph.mkdir()
+        # Create fake observer plugin so --plugin-dir appears in args
+        fake_script_dir = tmp_path / "install"
+        plugin_json = fake_script_dir / "plugins" / "observer" / ".claude-plugin" / "plugin.json"
+        plugin_json.parent.mkdir(parents=True)
+        plugin_json.write_text("{}")
 
         with (
             patch("core.cli.reflect.resolve_graph_path", return_value=graph),
             patch("core.cli.reflect.is_observer_configured", return_value=True),
+            patch("core.cli.reflect.SCRIPT_DIR", fake_script_dir),
             patch("os.chdir"),
             patch("os.execvp") as mock_execvp,
             patch.dict("os.environ", {"TMUX": "1"}),
@@ -129,9 +141,8 @@ class TestReflectLaunch:
             execute_reflect()
 
             args = mock_execvp.call_args[0][1]
-            for i, arg in enumerate(args):
-                if arg == "--plugin-dir":
-                    assert "companion" not in args[i + 1]
+            plugin_dirs = [args[i + 1] for i, arg in enumerate(args) if arg == "--plugin-dir"]
+            assert all(Path(d).name != "companion" for d in plugin_dirs)
 
     def test_not_configured_raises(self) -> None:
         with patch("core.cli.reflect.resolve_graph_path", side_effect=LogseqNotConfiguredError):
