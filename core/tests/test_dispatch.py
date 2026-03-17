@@ -135,10 +135,11 @@ class TestExecuteDispatchSuccess:
 
             execute_dispatch("testproject", mock_config, name="test-task")
 
-            # Launcher script should contain --model sonnet
+            # Launcher script should contain --model sonnet and -- separator before prompt
             launcher = task_dir / "test-session-123" / "test-task" / "launch.sh"
             script_content = launcher.read_text()
             assert "--model sonnet" in script_content
+            assert "-- \"$(cat" in script_content
 
     def test_dispatch_uses_custom_model(self, temp_git_repo: Path, mock_config: Config, task_dir: Path) -> None:
         env = {

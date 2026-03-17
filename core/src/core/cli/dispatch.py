@@ -45,7 +45,8 @@ def _build_launcher_script(
     for plugin_dir in plugin_dirs:
         parts.extend(["--plugin-dir", shlex.quote(plugin_dir)])
 
-    # Task prompt is the positional argument (must be last)
+    # End-of-options separator ensures the prompt isn't misinterpreted as a flag
+    parts.append("--")
     parts.append(f'"$(cat {shlex.quote(prompt_file)})"')
 
     return "#!/bin/bash\nexec " + " ".join(parts) + "\n"
