@@ -7,6 +7,7 @@ import rich_click as click
 from core.cli.completions import complete_project_name, complete_project_or_path, complete_worktree_name
 from core.cli.dispatch import execute_dispatch
 from core.cli.launch import execute_launch, is_path_argument, resolve_path_argument
+from core.cli.log import execute_log
 from core.cli.open import execute_open
 from core.cli.project import (
     execute_project_add,
@@ -14,6 +15,7 @@ from core.cli.project import (
     execute_project_list,
     execute_project_remove,
 )
+from core.cli.reflect import execute_reflect
 from core.cli.setup import execute_setup
 from core.cli.worktree import (
     clean_project_worktrees,
@@ -103,6 +105,26 @@ def open_cmd(project: str, new_window: bool, label: str | None) -> None:  # noqa
     try:
         config = load_config()
         execute_open(project, config, new_window=new_window, label=label)
+    except LauncherError as e:
+        _handle_error(e)
+
+
+@basecamp.command()
+@click.argument("message")
+@click.option("--project", "-p", help="Add a [[Project]] page reference to the entry")
+def log(message: str, project: str | None) -> None:
+    """Append a block to today's Logseq daily journal."""
+    try:
+        execute_log(message, project=project)
+    except LauncherError as e:
+        _handle_error(e)
+
+
+@basecamp.command()
+def reflect() -> None:
+    """Launch a reflective journaling session with Claude."""
+    try:
+        execute_reflect()
     except LauncherError as e:
         _handle_error(e)
 

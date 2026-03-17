@@ -72,6 +72,24 @@ class TestProperties:
         assert data["projects"]["myproj"] == {"dirs": ["~/myproj"]}
 
 
+    def test_logseq_graph_empty(self, cfg: Settings) -> None:
+        assert cfg.logseq_graph is None
+
+    def test_logseq_graph_set_and_get(self, cfg: Settings) -> None:
+        cfg.logseq_graph = "Documents/brain"
+        assert cfg.logseq_graph == "Documents/brain"
+
+    def test_logseq_graph_preserves_other_settings(self, cfg: Settings) -> None:
+        cfg.install_dir = "/tmp/ws"
+        cfg.projects = {"proj": {"dirs": ["~/proj"]}}
+        cfg.logseq_graph = "Documents/brain"
+
+        data = json.loads(cfg.path.read_text())
+        assert data["install_dir"] == "/tmp/ws"
+        assert data["projects"] == {"proj": {"dirs": ["~/proj"]}}
+        assert data["logseq_graph"] == "Documents/brain"
+
+
 class TestLocking:
     """Verify _locked_update creates the lock file and serialises access."""
 

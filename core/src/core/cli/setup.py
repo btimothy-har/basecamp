@@ -1,6 +1,9 @@
 """Setup command for basecamp — one-time environment bootstrap."""
 
 import shutil
+from pathlib import Path
+
+import questionary
 
 from core.config import Config, ProjectConfig, save_config
 from core.config.directories import to_home_relative
@@ -99,6 +102,34 @@ def execute_setup() -> None:
     else:
         console.print("  [yellow]![/yellow] observer [dim](not configured)[/dim]")
         console.print("    [dim]Install:[/dim] uv tool install -e ./observer && observer setup")
+    console.print()
+
+    # Logseq integration (optional)
+    console.print("[bold]Logseq integration...[/bold]")
+    existing_graph = settings.logseq_graph
+    if existing_graph:
+        console.print(f"  [green]✓[/green] logseq [dim](~/{existing_graph})[/dim]")
+    else:
+        setup_logseq = questionary.confirm(
+            "Set up Logseq integration? (enables basecamp log and basecamp reflect)",
+            default=False,
+        ).ask()
+        if setup_logseq:
+            graph_path = questionary.path(
+                "Path to your Logseq graph:",
+                only_directories=True,
+            ).ask()
+            if graph_path:
+                resolved = Path(graph_path).expanduser().resolve()
+                if resolved.is_dir():
+                    settings.logseq_graph = to_home_relative(resolved)
+                    console.print(f"  [green]✓[/green] logseq [dim](~/{settings.logseq_graph})[/dim]")
+                else:
+                    console.print(f"  [red]✗[/red] Directory not found: {resolved}")
+            else:
+                console.print("  [yellow]![/yellow] logseq [dim](skipped)[/dim]")
+        else:
+            console.print("  [yellow]![/yellow] logseq [dim](skipped)[/dim]")
     console.print()
 
     console.print("[green]✓[/green] Done. Try editing the basecamp source: [bold]basecamp start basecamp[/bold]")
