@@ -68,7 +68,7 @@ class TestExecuteDispatchLauncher:
             execute_dispatch(name="test-task")
 
             script = (task / "launch.sh").read_text()
-            assert "-- \"$(cat" in script
+            assert '-- "$(cat' in script
             assert "prompt.md" in script
 
     def test_launcher_bare_worker(self, tmp_path: Path) -> None:
@@ -82,7 +82,7 @@ class TestExecuteDispatchLauncher:
             execute_dispatch(name="bare-task")
 
             script = (tmp_path / "bare-task" / "launch.sh").read_text()
-            assert "-- \"$(cat" not in script
+            assert '-- "$(cat' not in script
             assert "prompt.md" not in script
 
     def test_launcher_with_system_prompt(self, tmp_path: Path) -> None:

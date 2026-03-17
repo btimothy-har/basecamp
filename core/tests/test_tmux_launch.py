@@ -64,7 +64,7 @@ class TestTmuxWrapping:
             args = mock_execvp.call_args[0][1]
             # Collect all -e values
             e_values = [args[i + 1] for i, a in enumerate(args) if a == "-e"]
-            assert f"BASECAMP_PROJECT=testproject" in e_values
+            assert "BASECAMP_PROJECT=testproject" in e_values
             assert f"BASECAMP_REPO={non_git_dir.name}" in e_values
 
     def test_skips_tmux_when_already_in_tmux(self, non_git_dir: Path) -> None:
