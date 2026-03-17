@@ -75,6 +75,35 @@ def generate_env_block(
     return "\n".join(lines)
 
 
+def build_runtime_preamble(
+    primary_dir: Path,
+    additional_dirs: list[Path],
+    *,
+    is_repo: bool,
+    scratch_name: str,
+) -> tuple[str, str]:
+    """Build the runtime preamble: env block + environment.md + git status.
+
+    This is the common first layer shared by all prompt assembly paths
+    (project launch, reflect, etc.).
+
+    Returns:
+        Tuple of (preamble_content, environment_source).
+    """
+    remote_url = get_remote_url(primary_dir) if is_repo else None
+    env_block = generate_env_block(
+        primary_dir, additional_dirs, is_repo=is_repo, remote_url=remote_url, scratch_name=scratch_name
+    )
+    git_status = generate_git_status(primary_dir) if is_repo else None
+
+    environment_content, environment_source = _load_environment_prompt()
+    parts = [env_block, environment_content.strip()]
+    if git_status:
+        parts.append(git_status)
+
+    return "\n\n".join(parts), environment_source
+
+
 def assemble(
     project: ProjectConfig,
     primary_dir: Path,
@@ -98,21 +127,14 @@ def assemble(
     Raises:
         PromptNotFoundError: If a specified working style doesn't exist anywhere.
     """
-    remote_url = get_remote_url(primary_dir) if is_repo else None
-    env_block = generate_env_block(
-        primary_dir, additional_dirs, is_repo=is_repo, remote_url=remote_url, scratch_name=scratch_name
-    )
-    git_status = generate_git_status(primary_dir) if is_repo else None
-
     prompt_parts: list[str] = []
     prompt_sources: list[str] = []
 
     # 1. Runtime context first (paths, platform), then environment guidelines
-    environment_content, environment_source = _load_environment_prompt()
-    runtime_parts = [env_block, environment_content.strip()]
-    if git_status:
-        runtime_parts.append(git_status)
-    prompt_parts.append("\n\n".join(runtime_parts))
+    preamble, environment_source = build_runtime_preamble(
+        primary_dir, additional_dirs, is_repo=is_repo, scratch_name=scratch_name
+    )
+    prompt_parts.append(preamble)
     prompt_sources.append(environment_source)
 
     # 2. Include working style if specified (user dir takes precedence over package)

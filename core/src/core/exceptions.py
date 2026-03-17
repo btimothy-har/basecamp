@@ -85,6 +85,20 @@ class WorktreeRemoveFailedError(WorktreeCommandError):
         super().__init__("Failed to remove worktree", stderr)
 
 
+class LogseqNotConfiguredError(LauncherError):
+    """Raised when logseq_graph is not set in settings."""
+
+    def __init__(self) -> None:
+        super().__init__("Logseq graph not configured. Run: basecamp setup")
+
+
+class LogseqGraphNotFoundError(LauncherError):
+    """Raised when the configured Logseq graph directory does not exist."""
+
+    def __init__(self, path: Path) -> None:
+        super().__init__(f"Logseq graph directory not found: {path}")
+
+
 class DispatchError(LauncherError):
     """Base exception for dispatch-related errors."""
 

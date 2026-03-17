@@ -56,7 +56,7 @@ def _get_model() -> Any:
 
 def search_artifacts(
     query: str,
-    project_name: str,
+    project_name: str | None,
     *,
     session_id: str | None = None,
     top_k: int = SEARCH_DEFAULT_TOP_K,
@@ -84,13 +84,16 @@ def search_artifacts(
                 distance_expr.label("distance"),
             )
             .outerjoin(ArtifactSchema, SearchIndexSchema.source_id == ArtifactSchema.id)
-            .join(ProjectSchema, SearchIndexSchema.project_id == ProjectSchema.id)
             .filter(
                 SearchIndexSchema.embedding.isnot(None),
                 SearchIndexSchema.source_type == SearchSourceType.ARTIFACT.value,
-                ProjectSchema.name == project_name,
             )
         )
+
+        if project_name is not None:
+            q = q.join(ProjectSchema, SearchIndexSchema.project_id == ProjectSchema.id).filter(
+                ProjectSchema.name == project_name,
+            )
 
         if worktree is not None:
             q = (
@@ -185,7 +188,7 @@ def search_artifacts(
 
 def search_transcripts(
     query: str,
-    project_name: str,
+    project_name: str | None,
     *,
     session_id: str | None = None,
     top_k: int = SEARCH_DEFAULT_TOP_K,
@@ -213,13 +216,16 @@ def search_transcripts(
                 distance_expr.label("distance"),
             )
             .outerjoin(TranscriptSchema, SearchIndexSchema.source_id == TranscriptSchema.id)
-            .join(ProjectSchema, SearchIndexSchema.project_id == ProjectSchema.id)
             .filter(
                 SearchIndexSchema.embedding.isnot(None),
                 SearchIndexSchema.source_type == SearchSourceType.TRANSCRIPT_SUMMARY.value,
-                ProjectSchema.name == project_name,
             )
         )
+
+        if project_name is not None:
+            q = q.join(ProjectSchema, SearchIndexSchema.project_id == ProjectSchema.id).filter(
+                ProjectSchema.name == project_name,
+            )
 
         if worktree is not None:
             q = q.join(WorktreeSchema, TranscriptSchema.worktree_id == WorktreeSchema.id).filter(

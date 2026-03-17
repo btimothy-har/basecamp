@@ -84,5 +84,25 @@ class Settings:
         with self._locked_update() as data:
             data["projects"] = value
 
+    @property
+    def logseq_graph(self) -> str | None:
+        val = self._read().get("logseq_graph")
+        return val if isinstance(val, str) and val.strip() else None
+
+    @logseq_graph.setter
+    def logseq_graph(self, value: str) -> None:
+        with self._locked_update() as data:
+            data["logseq_graph"] = value
+
+    @property
+    def timezone(self) -> str | None:
+        val = self._read().get("timezone")
+        return val if isinstance(val, str) and val.strip() else None
+
+    @timezone.setter
+    def timezone(self, value: str) -> None:
+        with self._locked_update() as data:
+            data["timezone"] = value
+
 
 settings = Settings()

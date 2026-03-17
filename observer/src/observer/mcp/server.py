@@ -21,8 +21,23 @@ logger = logging.getLogger(__name__)
 mcp = FastMCP(MCP_SERVER_NAME, instructions=MCP_SERVER_INSTRUCTIONS)
 
 
-def _project_and_session() -> tuple[str | None, str | None]:
-    return os.environ.get("BASECAMP_REPO"), os.environ.get("CLAUDE_SESSION_ID")
+def _is_reflect_mode() -> bool:
+    return os.environ.get("BASECAMP_REFLECT") == "1"
+
+
+def _resolve_search_context() -> tuple[str | None, str | None] | dict:
+    """Resolve project and session for search, respecting reflect mode.
+
+    Returns (project_name, session_id) on success, or an error dict.
+    Reflect mode sets project_name to None for cross-project search.
+    """
+    project_name = os.environ.get("BASECAMP_REPO")
+    session_id = os.environ.get("CLAUDE_SESSION_ID")
+    if _is_reflect_mode():
+        return None, session_id
+    if not project_name:
+        return {"error": "BASECAMP_REPO is not set"}
+    return project_name, session_id
 
 
 def _search_artifacts(
@@ -32,9 +47,10 @@ def _search_artifacts(
     worktree: str | None = None,
 ) -> dict:
     """Core search_artifacts logic, called by the MCP tool wrapper."""
-    project_name, session_id = _project_and_session()
-    if not project_name:
-        return {"error": "BASECAMP_REPO is not set"}
+    context = _resolve_search_context()
+    if isinstance(context, dict):
+        return context
+    project_name, session_id = context
 
     results = engine.search_artifacts(
         query,
@@ -54,9 +70,10 @@ def _search_transcripts(
     worktree: str | None = None,
 ) -> dict:
     """Core search_transcripts logic, called by the MCP tool wrapper."""
-    project_name, session_id = _project_and_session()
-    if not project_name:
-        return {"error": "BASECAMP_REPO is not set"}
+    context = _resolve_search_context()
+    if isinstance(context, dict):
+        return context
+    project_name, session_id = context
 
     results = engine.search_transcripts(
         query,

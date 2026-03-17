@@ -1,6 +1,10 @@
 """Setup command for basecamp — one-time environment bootstrap."""
 
 import shutil
+import zoneinfo
+from pathlib import Path
+
+import questionary
 
 from core.config import Config, ProjectConfig, save_config
 from core.config.directories import to_home_relative
@@ -12,6 +16,7 @@ from core.constants import (
     USER_PROMPTS_DIR,
     USER_WORKING_STYLES_DIR,
 )
+from core.exceptions import LauncherError
 from core.settings import settings
 from core.ui import console
 from core.utils import is_observer_configured
@@ -51,6 +56,57 @@ def _create_default_config() -> None:
         }
     )
     save_config(config)
+
+
+def _setup_logseq() -> None:
+    """Interactively configure Logseq graph integration."""
+    existing_graph = settings.logseq_graph
+    if existing_graph:
+        tz_display = settings.timezone or "system local"
+        console.print(f"  [green]✓[/green] logseq [dim](~/{existing_graph}, tz: {tz_display})[/dim]")
+        return
+
+    setup = questionary.confirm(
+        "Set up Logseq integration? (enables basecamp log, reflect, and plan)",
+        default=False,
+    ).ask()
+    if not setup:
+        console.print("  [yellow]![/yellow] logseq [dim](skipped)[/dim]")
+        return
+
+    graph_path = questionary.path("Path to your Logseq graph:", only_directories=True).ask()
+    if not graph_path:
+        console.print("  [yellow]![/yellow] logseq [dim](skipped)[/dim]")
+        return
+
+    resolved = Path(graph_path).expanduser().resolve()
+    if not resolved.is_dir():
+        console.print(f"  [red]✗[/red] Directory not found: {resolved}")
+        return
+
+    try:
+        settings.logseq_graph = to_home_relative(resolved)
+    except LauncherError:
+        console.print(f"  [red]✗[/red] Path must be under $HOME: {resolved}")
+        return
+
+    console.print(f"  [green]✓[/green] logseq [dim](~/{settings.logseq_graph})[/dim]")
+
+    # Timezone for journal date boundaries
+    tz_input = questionary.text(
+        "Timezone for journal dates (IANA, e.g. America/Toronto):",
+        default="",
+    ).ask()
+    if tz_input and tz_input.strip():
+        tz_name = tz_input.strip()
+        try:
+            zoneinfo.ZoneInfo(tz_name)
+            settings.timezone = tz_name
+            console.print(f"  [green]✓[/green] timezone [dim]({tz_name})[/dim]")
+        except (KeyError, zoneinfo.ZoneInfoNotFoundError):
+            console.print(f"  [red]✗[/red] Unknown timezone: {tz_name} [dim](using system local)[/dim]")
+    else:
+        console.print("  [dim]  timezone: system local[/dim]")
 
 
 def execute_setup() -> None:
@@ -99,6 +155,11 @@ def execute_setup() -> None:
     else:
         console.print("  [yellow]![/yellow] observer [dim](not configured)[/dim]")
         console.print("    [dim]Install:[/dim] uv tool install -e ./observer && observer setup")
+    console.print()
+
+    # Logseq integration (optional)
+    console.print("[bold]Logseq integration...[/bold]")
+    _setup_logseq()
     console.print()
 
     console.print("[green]✓[/green] Done. Try editing the basecamp source: [bold]basecamp start basecamp[/bold]")
