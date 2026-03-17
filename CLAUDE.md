@@ -26,6 +26,11 @@ basecamp project add                    # Interactively add a new project
 basecamp project edit <name>            # Interactively edit a project
 basecamp project remove <name>          # Remove a project
 
+basecamp log "message"                  # Append a block to today's Logseq journal
+basecamp log "message" -p ProjectName   # Append with [[ProjectName]] page reference
+basecamp reflect                        # Launch a reflective journaling session (end of day)
+basecamp plan                           # Launch a planning session (start of day)
+
 basecamp worktree list <project>        # List worktrees for a project
 basecamp worktree list --all            # List all worktrees across all repos
 basecamp worktree clean <project>       # Interactive worktree cleanup

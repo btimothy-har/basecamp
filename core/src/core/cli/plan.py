@@ -1,4 +1,4 @@
-"""Reflect command — launch a Claude session for reflective journaling."""
+"""Plan command — launch a Claude session for daily planning."""
 
 import datetime
 import os
@@ -16,30 +16,30 @@ from core.prompts.logseq_prompts import load_system_prompt, load_user_prompt
 from core.prompts.system import build_runtime_preamble
 from core.utils import is_observer_configured
 
-REFLECT_SCRATCH_NAME = "reflect"
+PLAN_SCRATCH_NAME = "plan"
 
 
 def _assemble_system_prompt(graph_path: Path) -> str:
-    """Assemble the reflect system prompt: runtime preamble + logseq system prompt."""
+    """Assemble the plan system prompt: runtime preamble + logseq system prompt."""
     repo = is_git_repo(graph_path)
-    preamble, _ = build_runtime_preamble(graph_path, [], is_repo=repo, scratch_name=REFLECT_SCRATCH_NAME)
+    preamble, _ = build_runtime_preamble(graph_path, [], is_repo=repo, scratch_name=PLAN_SCRATCH_NAME)
     logseq_content = load_system_prompt()
     return "\n\n".join([preamble, logseq_content.strip()])
 
 
 def _build_startup_text(graph_path: str, today: str) -> str:
-    """Render the reflect startup banner."""
+    """Render the plan startup banner."""
     buf = StringIO()
     c = Console(file=buf, force_terminal=True)
-    c.print("\n[bold green]Starting Claude[/bold green] in [cyan]reflect[/cyan] mode")
+    c.print("\n[bold green]Starting Claude[/bold green] in [cyan]plan[/cyan] mode")
     c.print(f"  [dim]Graph:[/dim] {graph_path}")
     c.print(f"  [dim]Date:[/dim] {today}")
     c.print()
     return buf.getvalue()
 
 
-def execute_reflect() -> None:
-    """Launch a Claude session for reflective journaling against the Logseq graph.
+def execute_plan() -> None:
+    """Launch a Claude session for daily planning against the Logseq graph.
 
     Raises:
         LogseqNotConfiguredError: If logseq_graph is not set.
@@ -48,10 +48,10 @@ def execute_reflect() -> None:
     graph_path = resolve_graph_path()
 
     # Ensure scratch directory exists
-    (SCRATCH_BASE / REFLECT_SCRATCH_NAME).mkdir(parents=True, exist_ok=True)
+    (SCRATCH_BASE / PLAN_SCRATCH_NAME).mkdir(parents=True, exist_ok=True)
 
     system_prompt = _assemble_system_prompt(graph_path)
-    user_prompt = load_user_prompt("reflect")
+    user_prompt = load_user_prompt("plan")
 
     # Build claude command: system prompt + initial user prompt.
     # The -- separator ensures the prompt isn't misinterpreted as a flag.
@@ -64,7 +64,7 @@ def execute_reflect() -> None:
 
     os.chdir(graph_path)
 
-    # Reflect mode: cross-project search, skip session ingestion.
+    # Logseq journal session: skip observer ingestion.
     # Set in os.environ so the non-tmux execvp path inherits it.
     # The tmux path also passes it explicitly via -e so the inner
     # shell inherits it even though tmux starts a fresh environment.
@@ -76,7 +76,7 @@ def execute_reflect() -> None:
     # Wrap in tmux if not already inside a session.
     # Pass BASECAMP_REFLECT via -e so the observer plugin inherits it.
     if not os.environ.get("TMUX") and shutil.which("tmux"):
-        tmux_cmd = ["tmux", "new-session", "-A", "-s", "bc-reflect", "-e", "BASECAMP_REFLECT=1"]
+        tmux_cmd = ["tmux", "new-session", "-A", "-s", "bc-plan", "-e", "BASECAMP_REFLECT=1"]
         inner = f"printf %s {shlex.quote(startup_text)} && exec {shlex.join(cmd)}"
         tmux_cmd.extend(["sh", "-c", inner])
         os.execvp("tmux", tmux_cmd)

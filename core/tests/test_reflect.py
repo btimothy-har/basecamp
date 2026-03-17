@@ -7,24 +7,38 @@ from pathlib import Path
 from unittest.mock import patch
 
 import pytest
-from core.cli.reflect import _load_reflect_prompt, execute_reflect
+from core.cli.reflect import execute_reflect
 from core.exceptions import LogseqNotConfiguredError
+from core.prompts.logseq_prompts import load_system_prompt, load_user_prompt
 
 
-class TestLoadReflectPrompt:
-    """Tests for reflect prompt loading with user override support."""
+class TestLogseqPromptLoading:
+    """Tests for Logseq prompt loading with user override support."""
 
-    def test_loads_package_default(self) -> None:
-        with patch("core.cli.reflect.USER_PROMPTS_DIR", Path("/nonexistent")):
-            content = _load_reflect_prompt()
-        assert "Role" in content
-        assert "Knowledge Graph" in content
+    def test_system_prompt_loads_package_default(self) -> None:
+        with patch("core.prompts.logseq_prompts.USER_PROMPTS_DIR", Path("/nonexistent")):
+            content = load_system_prompt()
+        assert "Logseq Conventions" in content
+        assert "Constraints" in content
 
-    def test_user_override_takes_precedence(self, tmp_path: Path) -> None:
+    def test_system_prompt_user_override(self, tmp_path: Path) -> None:
+        user_prompt = tmp_path / "logseq.md"
+        user_prompt.write_text("Custom logseq system prompt")
+        with patch("core.prompts.logseq_prompts.USER_PROMPTS_DIR", tmp_path):
+            content = load_system_prompt()
+        assert content == "Custom logseq system prompt"
+
+    def test_user_prompt_loads_package_default(self) -> None:
+        with patch("core.prompts.logseq_prompts.USER_PROMPTS_DIR", Path("/nonexistent")):
+            content = load_user_prompt("reflect")
+        assert "Discovery" in content
+        assert "Proposals" in content
+
+    def test_user_prompt_user_override(self, tmp_path: Path) -> None:
         user_prompt = tmp_path / "reflect.md"
         user_prompt.write_text("Custom reflect prompt")
-        with patch("core.cli.reflect.USER_PROMPTS_DIR", tmp_path):
-            content = _load_reflect_prompt()
+        with patch("core.prompts.logseq_prompts.USER_PROMPTS_DIR", tmp_path):
+            content = load_user_prompt("reflect")
         assert content == "Custom reflect prompt"
 
 
@@ -139,8 +153,27 @@ class TestReflectLaunch:
             prompt_idx = args.index("--system-prompt")
             system_prompt = args[prompt_idx + 1]
             assert len(system_prompt) > 0
-            # Should contain reflect.md content
-            assert "Knowledge Graph" in system_prompt
+            # Should contain logseq system.md content
+            assert "Logseq Conventions" in system_prompt
+
+    def test_includes_user_prompt(self, tmp_path: Path) -> None:
+        graph = tmp_path / "brain"
+        graph.mkdir()
+
+        with (
+            patch("core.cli.reflect.resolve_graph_path", return_value=graph),
+            patch("core.cli.reflect.is_observer_configured", return_value=True),
+            patch("os.chdir"),
+            patch("os.execvp") as mock_execvp,
+            patch.dict("os.environ", {"TMUX": "1"}),
+        ):
+            execute_reflect()
+
+            args = mock_execvp.call_args[0][1]
+            # User prompt is the last arg after --
+            separator_idx = args.index("--")
+            user_prompt = args[separator_idx + 1]
+            assert "Discovery" in user_prompt
 
     def test_loads_observer_plugin(self, tmp_path: Path) -> None:
         graph = tmp_path / "brain"

@@ -15,6 +15,7 @@ from core.cli.project import (
     execute_project_list,
     execute_project_remove,
 )
+from core.cli.plan import execute_plan
 from core.cli.reflect import execute_reflect
 from core.cli.setup import execute_setup
 from core.cli.worktree import (
@@ -125,6 +126,15 @@ def reflect() -> None:
     """Launch a reflective journaling session with Claude."""
     try:
         execute_reflect()
+    except LauncherError as e:
+        _handle_error(e)
+
+
+@basecamp.command()
+def plan() -> None:
+    """Launch a planning session with Claude for today's priorities."""
+    try:
+        execute_plan()
     except LauncherError as e:
         _handle_error(e)
 
