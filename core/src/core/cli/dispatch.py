@@ -5,22 +5,21 @@ import shlex
 import stat
 import subprocess
 import time
+import uuid
+from pathlib import Path
 
-from core.config import Config, resolve_project, validate_dirs
 from core.constants import (
     CLAUDE_COMMAND,
     OBSERVER_CONFIG,
     SCRIPT_DIR,
-    TASKS_DIR,
+    USER_ASSEMBLED_PROMPTS_DIR,
 )
 from core.exceptions import (
     NotInTmuxError,
     SessionIdNotSetError,
-    TaskPromptNotFoundError,
+    TasksDirNotSetError,
     TmuxLaunchError,
 )
-from core.git import get_repo_name, is_git_repo
-from core.prompts import system as prompts
 from core.ui import console
 from core.utils import is_observer_configured
 
@@ -29,7 +28,7 @@ def _build_launcher_script(
     *,
     model: str,
     system_prompt_file: str | None,
-    prompt_file: str,
+    prompt_file: str | None,
     plugin_dirs: list[str],
 ) -> str:
     """Build a bash launcher script that reads prompt files and execs claude.
@@ -45,72 +44,60 @@ def _build_launcher_script(
     for plugin_dir in plugin_dirs:
         parts.extend(["--plugin-dir", shlex.quote(plugin_dir)])
 
-    # End-of-options separator ensures the prompt isn't misinterpreted as a flag
-    parts.append("--")
-    parts.append(f'"$(cat {shlex.quote(prompt_file)})"')
+    if prompt_file:
+        # End-of-options separator ensures the prompt isn't misinterpreted as a flag
+        parts.append("--")
+        parts.append(f'"$(cat {shlex.quote(prompt_file)})"')
 
     return "#!/bin/bash\nexec " + " ".join(parts) + "\n"
 
 
 def execute_dispatch(
-    project_name: str,
-    config: Config,
     *,
-    name: str,
+    name: str | None = None,
     model: str = "sonnet",
 ) -> None:
     """Dispatch a task to a parallel Claude worker in a new tmux pane.
 
-    The caller (main Claude session) is expected to have already created the task
-    directory and written prompt.md before calling this function.
-
-    Args:
-        project_name: The project to dispatch against (for directory/plugin resolution).
-        config: The loaded configuration.
-        name: Task name — used as directory name and tmux pane title.
+    Must be run from within a Claude session (tmux + CLAUDE_SESSION_ID).
+    If a task name is provided and prompt.md exists in the task directory,
+    the worker receives it as the initial message. Otherwise starts a bare session.
 
     Raises:
         NotInTmuxError: If not running inside a tmux session.
-        DispatchError: If CLAUDE_SESSION_ID is not set or tmux command fails.
-        TaskPromptNotFoundError: If prompt.md does not exist in the task directory.
-        ProjectNotFoundError: If the project is not in the config.
-        DirectoryNotFoundError: If project directories don't exist.
+        SessionIdNotSetError: If CLAUDE_SESSION_ID is not set.
+        TasksDirNotSetError: If BASECAMP_TASKS_DIR is not set.
+        TmuxLaunchError: If the tmux split-window command fails.
     """
     if not os.environ.get("TMUX"):
         raise NotInTmuxError
 
-    session_id = os.environ.get("CLAUDE_SESSION_ID")
-    if not session_id:
+    if not os.environ.get("CLAUDE_SESSION_ID"):
         raise SessionIdNotSetError
 
-    # Construct and validate task directory
-    task_dir = TASKS_DIR / session_id / name
+    tasks_dir = os.environ.get("BASECAMP_TASKS_DIR")
+    if not tasks_dir:
+        raise TasksDirNotSetError
+
+    # Auto-generate name if not provided
+    if not name:
+        name = f"worker-{uuid.uuid4().hex[:8]}"
+
+    # Construct task directory
+    task_dir = Path(tasks_dir) / name
+    task_dir.mkdir(parents=True, exist_ok=True)
+
+    # Prompt is optional — bare worker if absent
     prompt_file = task_dir / "prompt.md"
+    has_prompt = prompt_file.exists()
 
-    if not prompt_file.exists():
-        raise TaskPromptNotFoundError(task_dir)
-
-    # Resolve project directory
-    project = resolve_project(project_name, config)
-    resolved_dirs = validate_dirs(project.dirs)
-    primary_dir = resolved_dirs[0]
-
-    # Resolve repo name for BASECAMP_REPO env var
-    is_repo = is_git_repo(primary_dir)
-    repo_name = get_repo_name(primary_dir) if is_repo else primary_dir.name
-
-    # Assemble the same system prompt as launch.py so workers share behavior
-    scratch_name = repo_name or primary_dir.name
-    additional_dirs = resolved_dirs[1:]
-    prompt_content, _ = prompts.assemble(
-        project, primary_dir, additional_dirs, is_repo=is_repo, scratch_name=scratch_name
-    )
-
-    # Write system prompt to task dir
-    system_prompt_file = None
-    if prompt_content:
-        system_prompt_file = task_dir / "system_prompt.md"
-        system_prompt_file.write_text(prompt_content)
+    # Read persisted system prompt from ~/.basecamp/prompts/assembled/{project}.md
+    project_name = os.environ.get("BASECAMP_PROJECT")
+    system_prompt_file: Path | None = None
+    if project_name:
+        candidate = USER_ASSEMBLED_PROMPTS_DIR / f"{project_name}.md"
+        if candidate.exists():
+            system_prompt_file = candidate
 
     # Collect plugin directories — workers load companion + observer only
     plugin_dirs: list[str] = []
@@ -128,11 +115,14 @@ def execute_dispatch(
         _build_launcher_script(
             model=model,
             system_prompt_file=str(system_prompt_file) if system_prompt_file else None,
-            prompt_file=str(prompt_file),
+            prompt_file=str(prompt_file) if has_prompt else None,
             plugin_dirs=plugin_dirs,
         )
     )
     launcher.chmod(launcher.stat().st_mode | stat.S_IEXEC)
+
+    # Read env vars to forward to worker pane
+    repo_name = os.environ.get("BASECAMP_REPO", "")
 
     # Launch in a new tmux pane — use -P -F to capture the new pane ID
     tmux_cmd = [
@@ -147,7 +137,7 @@ def execute_dispatch(
         "-e",
         f"BASECAMP_REPO={repo_name}",
         "-c",
-        str(primary_dir),
+        str(Path.cwd()),
         str(launcher),
     ]
 

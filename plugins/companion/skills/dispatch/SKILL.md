@@ -38,8 +38,8 @@ mkdir -p "$BASECAMP_TASKS_DIR/<task-name>"
 cat > "$BASECAMP_TASKS_DIR/<task-name>/prompt.md" <<'PROMPT'
 <prompt content>
 PROMPT
-basecamp dispatch $BASECAMP_REPO --name <task-name>  # uses sonnet by default
-# or: basecamp dispatch $BASECAMP_REPO --name <task-name> --model opus
+basecamp dispatch --name <task-name>  # uses sonnet by default
+# or: basecamp dispatch --name <task-name> --model opus
 ```
 
 ### 4. Monitor (optional)
