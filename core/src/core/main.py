@@ -9,13 +9,13 @@ from core.cli.dispatch import execute_dispatch
 from core.cli.launch import execute_launch, is_path_argument, resolve_path_argument
 from core.cli.log import execute_log
 from core.cli.open import execute_open
+from core.cli.plan import execute_plan
 from core.cli.project import (
     execute_project_add,
     execute_project_edit,
     execute_project_list,
     execute_project_remove,
 )
-from core.cli.plan import execute_plan
 from core.cli.reflect import execute_reflect
 from core.cli.setup import execute_setup
 from core.cli.worktree import (
