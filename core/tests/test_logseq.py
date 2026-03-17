@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import datetime
 from pathlib import Path
-from unittest.mock import PropertyMock, patch
+from unittest.mock import MagicMock, PropertyMock, patch
 
 import pytest
 from core.exceptions import LogseqGraphNotFoundError, LogseqNotConfiguredError
@@ -53,9 +53,11 @@ class TestResolveJournalPath:
     """Journal file path generation."""
 
     def test_default_today(self, tmp_path: Path) -> None:
+        fake_date = datetime.date(2026, 3, 17)
+        fake_now = MagicMock()
+        fake_now.astimezone.return_value.date.return_value = fake_date
         with patch("core.logseq.datetime") as mock_dt:
-            mock_dt.UTC = datetime.UTC
-            mock_dt.datetime.now.return_value = datetime.datetime(2026, 3, 17, tzinfo=datetime.UTC)
+            mock_dt.datetime.now.return_value = fake_now
             result = resolve_journal_path(tmp_path)
         assert result == tmp_path / "journals" / "2026_03_17.md"
 

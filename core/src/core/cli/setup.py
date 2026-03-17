@@ -121,11 +121,15 @@ def execute_setup() -> None:
             ).ask()
             if graph_path:
                 resolved = Path(graph_path).expanduser().resolve()
-                if resolved.is_dir():
-                    settings.logseq_graph = to_home_relative(resolved)
-                    console.print(f"  [green]✓[/green] logseq [dim](~/{settings.logseq_graph})[/dim]")
-                else:
+                if not resolved.is_dir():
                     console.print(f"  [red]✗[/red] Directory not found: {resolved}")
+                else:
+                    try:
+                        settings.logseq_graph = to_home_relative(resolved)
+                    except Exception:
+                        console.print(f"  [red]✗[/red] Path must be under $HOME: {resolved}")
+                    else:
+                        console.print(f"  [green]✓[/green] logseq [dim](~/{settings.logseq_graph})[/dim]")
             else:
                 console.print("  [yellow]![/yellow] logseq [dim](skipped)[/dim]")
         else:

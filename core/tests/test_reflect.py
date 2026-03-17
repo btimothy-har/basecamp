@@ -153,14 +153,17 @@ class TestReflectLaunch:
         graph = tmp_path / "brain"
         graph.mkdir()
 
+        env = os.environ.copy()
+        env.pop("TMUX", None)
+
         with (
             patch("core.cli.reflect.resolve_graph_path", return_value=graph),
             patch("core.cli.reflect.is_observer_configured", return_value=True),
             patch("os.chdir"),
             patch("os.execvp") as mock_execvp,
             patch("shutil.which", return_value=None),
+            patch.dict("os.environ", env, clear=True),
         ):
-            os.environ.pop("TMUX", None)
             execute_reflect()
 
             mock_execvp.assert_called_once()

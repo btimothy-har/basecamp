@@ -99,7 +99,7 @@ def execute_reflect() -> None:
     # Reflect mode: cross-project search, skip session ingestion
     os.environ["BASECAMP_REFLECT"] = "1"
 
-    today = datetime.datetime.now(tz=datetime.UTC).date().isoformat()
+    today = datetime.datetime.now().astimezone().date().isoformat()
     startup_text = _build_startup_text(str(graph_path), today)
 
     # Wrap in tmux if not already inside a session.

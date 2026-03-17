@@ -29,7 +29,7 @@ def resolve_graph_path() -> Path:
 
 def resolve_journal_path(graph_path: Path, date: datetime.date | None = None) -> Path:
     """Return the journal file path for the given date (defaults to today)."""
-    target = date or datetime.datetime.now(tz=datetime.UTC).date()
+    target = date or datetime.datetime.now().astimezone().date()
     filename = target.strftime("%Y_%m_%d") + ".md"
     return graph_path / "journals" / filename
 
