@@ -58,11 +58,14 @@ def ensure_journal_file(journal_path: Path) -> None:
 def append_block(journal_path: Path, text: str) -> None:
     """Append a Logseq block to the journal file.
 
+    Uses ``a+`` so the call succeeds even if the file doesn't exist yet
+    (though callers normally ensure it via ``ensure_journal_file``).
     Reads and writes in a single open to avoid a race between checking
     the trailing newline and appending the block.
     """
     block = f"- {text}\n"
-    with journal_path.open("r+") as f:
+    with journal_path.open("a+") as f:
+        f.seek(0)
         existing = f.read()
         if existing and not existing.endswith("\n"):
             f.write("\n")

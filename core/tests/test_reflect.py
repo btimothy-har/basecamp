@@ -92,6 +92,21 @@ class TestReflectLaunch:
             mock_execvp.assert_called_once()
             assert mock_execvp.call_args[0][0] == "claude"
 
+    def test_sets_reflect_env_var(self, tmp_path: Path) -> None:
+        graph = tmp_path / "brain"
+        graph.mkdir()
+
+        env: dict[str, str] = {"TMUX": "1"}
+        with (
+            patch("core.cli.reflect.resolve_graph_path", return_value=graph),
+            patch("core.cli.reflect.is_observer_configured", return_value=True),
+            patch("os.chdir"),
+            patch("os.execvp"),
+            patch.dict("os.environ", env),
+        ):
+            execute_reflect()
+            assert os.environ["BASECAMP_REFLECT"] == "1"
+
     def test_chdirs_to_graph(self, tmp_path: Path) -> None:
         graph = tmp_path / "brain"
         graph.mkdir()

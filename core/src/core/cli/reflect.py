@@ -85,7 +85,10 @@ def execute_reflect() -> None:
 
     os.chdir(graph_path)
 
-    # Reflect mode: cross-project search, skip session ingestion
+    # Reflect mode: cross-project search, skip session ingestion.
+    # Set in os.environ so the non-tmux execvp path inherits it.
+    # The tmux path also passes it explicitly via -e so the inner
+    # shell inherits it even though tmux starts a fresh environment.
     os.environ["BASECAMP_REFLECT"] = "1"
 
     today = datetime.datetime.now().astimezone().date().isoformat()
