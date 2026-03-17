@@ -71,7 +71,6 @@ class TestProperties:
         assert data["install_dir"] == "/tmp/ws"
         assert data["projects"]["myproj"] == {"dirs": ["~/myproj"]}
 
-
     def test_logseq_graph_empty(self, cfg: Settings) -> None:
         assert cfg.logseq_graph is None
 
