@@ -95,12 +95,16 @@ def execute_reflect() -> None:
 
     os.chdir(graph_path)
 
+    # Reflect mode: cross-project search, skip session ingestion
+    os.environ["BASECAMP_REFLECT"] = "1"
+
     today = datetime.datetime.now(tz=datetime.UTC).date().isoformat()
     startup_text = _build_startup_text(str(graph_path), today)
 
-    # Wrap in tmux if not already inside a session
+    # Wrap in tmux if not already inside a session.
+    # Pass BASECAMP_REFLECT via -e so the observer plugin inherits it.
     if not os.environ.get("TMUX") and shutil.which("tmux"):
-        tmux_cmd = ["tmux", "new-session", "-A", "-s", "bc-reflect"]
+        tmux_cmd = ["tmux", "new-session", "-A", "-s", "bc-reflect", "-e", "BASECAMP_REFLECT=1"]
         inner = f"printf %s {shlex.quote(startup_text)} && exec {shlex.join(cmd)}"
         tmux_cmd.extend(["sh", "-c", inner])
         os.execvp("tmux", tmux_cmd)

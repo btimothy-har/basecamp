@@ -21,6 +21,10 @@ logger = logging.getLogger(__name__)
 mcp = FastMCP(MCP_SERVER_NAME, instructions=MCP_SERVER_INSTRUCTIONS)
 
 
+def _is_reflect_mode() -> bool:
+    return os.environ.get("BASECAMP_REFLECT") == "1"
+
+
 def _project_and_session() -> tuple[str | None, str | None]:
     return os.environ.get("BASECAMP_REPO"), os.environ.get("CLAUDE_SESSION_ID")
 
@@ -33,7 +37,9 @@ def _search_artifacts(
 ) -> dict:
     """Core search_artifacts logic, called by the MCP tool wrapper."""
     project_name, session_id = _project_and_session()
-    if not project_name:
+    if _is_reflect_mode():
+        project_name = None
+    elif not project_name:
         return {"error": "BASECAMP_REPO is not set"}
 
     results = engine.search_artifacts(
@@ -55,7 +61,9 @@ def _search_transcripts(
 ) -> dict:
     """Core search_transcripts logic, called by the MCP tool wrapper."""
     project_name, session_id = _project_and_session()
-    if not project_name:
+    if _is_reflect_mode():
+        project_name = None
+    elif not project_name:
         return {"error": "BASECAMP_REPO is not set"}
 
     results = engine.search_transcripts(
