@@ -138,9 +138,7 @@ class TestTmuxBackend:
             mock_run.side_effect = sp.CalledProcessError(1, "tmux", stderr="session not found")
 
             with pytest.raises(PaneLaunchError, match="tmux pane launch failed"):
-                TmuxBackend().spawn_pane(
-                    Path("/tmp/launch.sh"), env={}, cwd=Path("/tmp"), title="t"
-                )
+                TmuxBackend().spawn_pane(Path("/tmp/launch.sh"), env={}, cwd=Path("/tmp"), title="t")
 
 
 class TestKittyBackend:
@@ -175,9 +173,7 @@ class TestKittyBackend:
             patch("core.terminal.subprocess.run", mock_run),
             patch.dict("os.environ", {"KITTY_LISTEN_ON": "unix:/tmp/kitty-123"}),
         ):
-            KittyBackend().spawn_pane(
-                Path("/tmp/launch.sh"), env={}, cwd=Path("/tmp"), title="t"
-            )
+            KittyBackend().spawn_pane(Path("/tmp/launch.sh"), env={}, cwd=Path("/tmp"), title="t")
 
         cmd = mock_run.call_args[0][0]
         assert "--keep-focus" in cmd
@@ -210,9 +206,7 @@ class TestKittyBackend:
             patch("core.terminal.subprocess.run", mock_run),
             patch.dict("os.environ", {"KITTY_LISTEN_ON": "unix:/tmp/kitty-123"}),
         ):
-            KittyBackend().spawn_pane(
-                Path("/tmp/launch.sh"), env={}, cwd=Path("/my/project"), title="t"
-            )
+            KittyBackend().spawn_pane(Path("/tmp/launch.sh"), env={}, cwd=Path("/my/project"), title="t")
 
         cmd = mock_run.call_args[0][0]
         cwd_idx = cmd.index("--cwd")
@@ -226,9 +220,7 @@ class TestKittyBackend:
             patch("core.terminal.subprocess.run", mock_run),
             patch.dict("os.environ", {"KITTY_LISTEN_ON": "unix:/tmp/kitty-123"}),
         ):
-            KittyBackend().spawn_pane(
-                Path("/tmp/launch.sh"), env={}, cwd=Path("/tmp"), title="my-task"
-            )
+            KittyBackend().spawn_pane(Path("/tmp/launch.sh"), env={}, cwd=Path("/tmp"), title="my-task")
 
         cmd = mock_run.call_args[0][0]
         title_idx = cmd.index("--title")
@@ -242,9 +234,7 @@ class TestKittyBackend:
             patch("core.terminal.subprocess.run", mock_run),
             patch.dict("os.environ", {"KITTY_LISTEN_ON": "unix:/tmp/kitty-123"}),
         ):
-            KittyBackend().spawn_pane(
-                Path("/tmp/launch.sh"), env={}, cwd=Path("/tmp"), title="t"
-            )
+            KittyBackend().spawn_pane(Path("/tmp/launch.sh"), env={}, cwd=Path("/tmp"), title="t")
 
         cmd = mock_run.call_args[0][0]
         assert cmd[-1] == "/tmp/launch.sh"
@@ -257,6 +247,4 @@ class TestKittyBackend:
             mock_run.side_effect = sp.CalledProcessError(1, "kitty", stderr="remote control disabled")
 
             with pytest.raises(PaneLaunchError, match="kitty pane launch failed"):
-                KittyBackend().spawn_pane(
-                    Path("/tmp/launch.sh"), env={}, cwd=Path("/tmp"), title="t"
-                )
+                KittyBackend().spawn_pane(Path("/tmp/launch.sh"), env={}, cwd=Path("/tmp"), title="t")
