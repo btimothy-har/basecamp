@@ -14,9 +14,9 @@ PID_FILE = OBSERVER_DIR / "observer.pid"
 LOG_FILE = OBSERVER_DIR / "observer.log"
 
 TICK_INTERVAL = 1  # seconds between scheduler ticks
-PROCESS_INTERVAL = 10  # seconds between processing spawns
+PROCESS_INTERVAL = 30  # seconds between processing spawns
 SUMMARY_INTERVAL = 60  # seconds between summary regeneration spawns
-INDEX_INTERVAL = 30  # seconds between indexing spawns
+INDEX_INTERVAL = 120  # seconds between indexing spawns
 MAX_INGEST_WORKERS = 8  # max ingest processes spawned per poll cycle
 DEFAULT_STALE_THRESHOLD = 300
 
