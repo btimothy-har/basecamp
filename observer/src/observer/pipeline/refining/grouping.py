@@ -116,15 +116,12 @@ class EventGrouper:
             # unmatched tool_uses). Only mark them SKIPPED once they're older
             # than the stale threshold — recent ones may still get a matching
             # tool_result in the next batch.
-            classified_event_ids = {
-                e.id for item in classified for e in item.events
-            }
+            classified_event_ids = {e.id for item in classified for e in item.events}
             stale_cutoff = now.replace(tzinfo=None) - timedelta(seconds=DEFAULT_STALE_THRESHOLD)
             orphaned = [
                 e
                 for e in transcript_events
-                if e.id not in classified_event_ids
-                and e.timestamp.replace(tzinfo=None) < stale_cutoff
+                if e.id not in classified_event_ids and e.timestamp.replace(tzinfo=None) < stale_cutoff
             ]
 
             with db.session() as session:

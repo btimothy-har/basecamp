@@ -138,9 +138,7 @@ class WorkItemRefiner:
         if thinking_text:
             try:
                 embedded_thinking = summarize_thinking(thinking_text)
-                self._save_transcript_event(
-                    work_item, embedded_thinking, event_type=WorkItemType.THINKING
-                )
+                self._save_transcript_event(work_item, embedded_thinking, event_type=WorkItemType.THINKING)
             except ExtractionError:
                 logger.exception("Thinking summarization failed in response handler")
 
