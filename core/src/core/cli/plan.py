@@ -10,10 +10,10 @@ from rich.console import Console
 
 from core.constants import CLAUDE_COMMAND, OBSERVER_CONFIG, SCRATCH_BASE, SCRIPT_DIR
 from core.git import is_git_repo
-from core.terminal import in_multiplexer
 from core.logseq import resolve_graph_path, today
 from core.prompts.logseq_prompts import load_system_prompt, load_user_prompt
 from core.prompts.system import build_runtime_preamble
+from core.terminal import in_multiplexer
 from core.utils import is_observer_configured
 
 PLAN_SCRATCH_NAME = "plan"
