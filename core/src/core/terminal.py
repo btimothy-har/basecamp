@@ -93,6 +93,7 @@ class KittyBackend:
             "launch",
             "--type=window",
             "--keep-focus",
+            "--copy-env",
             "--cwd",
             str(cwd),
             "--title",
