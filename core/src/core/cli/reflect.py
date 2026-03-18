@@ -53,14 +53,16 @@ def execute_reflect() -> None:
     system_prompt = _assemble_system_prompt(graph_path)
     user_prompt = load_user_prompt("reflect", date=target_date)
 
-    # Build claude command: system prompt + initial user prompt.
-    # The -- separator ensures the prompt isn't misinterpreted as a flag.
-    cmd: list[str] = [CLAUDE_COMMAND, "--system-prompt", system_prompt, "--", user_prompt]
+    # Build claude command — flags first, then -- separator + user prompt last
+    # so the end-of-options marker doesn't swallow subsequent flags.
+    cmd: list[str] = [CLAUDE_COMMAND, "--system-prompt", system_prompt]
 
     # Load observer plugin for MCP access (cross-project session search)
     observer_plugin_dir = SCRIPT_DIR / "plugins" / "observer"
     if is_observer_configured(OBSERVER_CONFIG) and (observer_plugin_dir / ".claude-plugin" / "plugin.json").exists():
         cmd.extend(["--plugin-dir", str(observer_plugin_dir)])
+
+    cmd.extend(["--", user_prompt])
 
     os.chdir(graph_path)
 
