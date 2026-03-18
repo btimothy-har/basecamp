@@ -82,9 +82,9 @@ def start(project: str, resume_session: bool, label: str | None) -> None:  # noq
 @click.option("--name", "-n", default=None, help="Task name (auto-generated if omitted)")
 @click.option("--model", "-m", default="sonnet", help="Model for the worker session (default: sonnet)")
 def dispatch(name: str | None, model: str) -> None:
-    """Dispatch a worker session in a new tmux pane.
+    """Dispatch a worker session in a new terminal pane (Kitty or tmux).
 
-    Must be run from within a Claude session (tmux + CLAUDE_SESSION_ID).
+    Must be run from within a Claude session inside a terminal multiplexer.
     If --name is provided and a prompt.md exists in the task directory,
     the worker receives it as the initial message. Otherwise starts bare.
     """

@@ -25,7 +25,7 @@ With validated requirements, execute the work:
 When work can be broken into independent tasks, choose the right parallelization tool:
 
 - **Agent (background)** — Read-only work: exploration, research, code search, file reads. Background agents run in a sandbox without edit/write permissions.
-- **Dispatch** — Mutative work: code changes, file edits, running commands with side effects. Dispatch workers are full Claude sessions in tmux panes with full tool access and user interception.
+- **Dispatch** — Mutative work: code changes, file edits, running commands with side effects. Dispatch workers are full Claude sessions in terminal panes (Kitty or tmux) with full tool access and user interception.
 
 ### Adapt
 

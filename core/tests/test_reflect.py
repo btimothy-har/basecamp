@@ -251,3 +251,20 @@ class TestReflectLaunch:
 
             mock_execvp.assert_called_once()
             assert mock_execvp.call_args[0][0] == "claude"
+
+    def test_skips_tmux_when_in_kitty(self, tmp_path: Path) -> None:
+        graph = tmp_path / "brain"
+        graph.mkdir()
+
+        with (
+            patch("core.cli.reflect.resolve_graph_path", return_value=graph),
+            patch("core.cli.reflect.is_observer_configured", return_value=True),
+            patch("os.chdir"),
+            patch("os.execvp") as mock_execvp,
+            patch.dict("os.environ", {"KITTY_LISTEN_ON": "unix:/tmp/kitty-123"}, clear=True),
+            patch("shutil.which", return_value="/usr/bin/tmux"),
+        ):
+            execute_reflect()
+
+            mock_execvp.assert_called_once()
+            assert mock_execvp.call_args[0][0] == "claude"

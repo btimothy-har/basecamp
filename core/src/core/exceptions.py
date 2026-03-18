@@ -103,11 +103,11 @@ class DispatchError(LauncherError):
     """Base exception for dispatch-related errors."""
 
 
-class NotInTmuxError(DispatchError):
-    """Raised when dispatch is called outside a tmux session."""
+class NoMultiplexerError(DispatchError):
+    """Raised when dispatch is called outside any terminal multiplexer."""
 
     def __init__(self) -> None:
-        super().__init__("dispatch requires an active tmux session ($TMUX not set)")
+        super().__init__("dispatch requires a terminal multiplexer ($KITTY_LISTEN_ON or $TMUX not set)")
 
 
 class SessionIdNotSetError(DispatchError):
@@ -117,11 +117,11 @@ class SessionIdNotSetError(DispatchError):
         super().__init__("CLAUDE_SESSION_ID is not set — dispatch must be run from within a Claude session")
 
 
-class TmuxLaunchError(DispatchError):
-    """Raised when the tmux split-window command fails."""
+class PaneLaunchError(DispatchError):
+    """Raised when spawning a new terminal pane fails."""
 
-    def __init__(self, stderr: str | None = None) -> None:
-        msg = "tmux split-window failed"
+    def __init__(self, backend: str, stderr: str | None = None) -> None:
+        msg = f"{backend} pane launch failed"
         if stderr:
             msg = f"{msg}: {stderr}"
         super().__init__(msg)

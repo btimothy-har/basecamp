@@ -1,4 +1,4 @@
-"""Tests for tmux wrapping in launch."""
+"""Tests for terminal multiplexer wrapping in launch."""
 
 from __future__ import annotations
 
@@ -10,8 +10,8 @@ from core.cli.launch import execute_launch
 from core.config import Config, ProjectConfig
 
 
-class TestTmuxWrapping:
-    """Tests for automatic tmux session wrapping."""
+class TestTerminalWrapping:
+    """Tests for automatic terminal multiplexer session wrapping."""
 
     def _make_config(self, dir_path: Path) -> Config:
         return Config(
@@ -141,3 +141,24 @@ class TestTmuxWrapping:
             args = mock_execvp.call_args[0][1]
             shell_inner = args[-1]
             assert "--resume" in shell_inner
+
+    def test_skips_tmux_when_in_kitty(self, non_git_dir: Path) -> None:
+        """When KITTY_LISTEN_ON is set, should exec claude directly (no tmux wrapping)."""
+        config = self._make_config(non_git_dir)
+
+        with (
+            patch("core.cli.launch.load_dotenv"),
+            patch("core.cli.launch.validate_dirs", return_value=[non_git_dir]),
+            patch("os.chdir"),
+            patch("os.execvp") as mock_execvp,
+            patch.dict(
+                "os.environ",
+                {"KITTY_LISTEN_ON": "unix:/tmp/kitty-123", "BASECAMP_REPO": "test"},
+                clear=True,
+            ),
+            patch("shutil.which", return_value="/usr/bin/tmux"),
+        ):
+            execute_launch("testproject", config)
+
+            mock_execvp.assert_called_once()
+            assert mock_execvp.call_args[0][0] == "claude"

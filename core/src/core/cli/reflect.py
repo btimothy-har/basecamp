@@ -13,6 +13,7 @@ from core.git import is_git_repo
 from core.logseq import resolve_graph_path, today
 from core.prompts.logseq_prompts import load_system_prompt, load_user_prompt
 from core.prompts.system import build_runtime_preamble
+from core.terminal import in_multiplexer
 from core.utils import is_observer_configured
 
 REFLECT_SCRATCH_NAME = "reflect"
@@ -74,9 +75,10 @@ def execute_reflect() -> None:
 
     startup_text = _build_startup_text(str(graph_path), target_date.isoformat())
 
-    # Wrap in tmux if not already inside a session.
-    # Pass BASECAMP_REFLECT via -e so the observer plugin inherits it.
-    if not os.environ.get("TMUX") and shutil.which("tmux"):
+    if in_multiplexer():
+        print(startup_text, end="")
+        os.execvp(CLAUDE_COMMAND, cmd)
+    elif shutil.which("tmux"):
         tmux_cmd = ["tmux", "new-session", "-A", "-s", "bc-reflect", "-e", "BASECAMP_REFLECT=1"]
         inner = f"printf %s {shlex.quote(startup_text)} && exec {shlex.join(cmd)}"
         tmux_cmd.extend(["sh", "-c", inner])
