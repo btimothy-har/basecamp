@@ -1,10 +1,9 @@
-"""Dispatch implementation for basecamp CLI — launches parallel Claude workers in tmux panes."""
+"""Dispatch implementation for basecamp CLI — launches parallel Claude workers in terminal panes."""
 
 import os
 import re
 import shlex
 import stat
-import subprocess
 import time
 import uuid
 from pathlib import Path
@@ -16,11 +15,11 @@ from core.constants import (
 )
 from core.exceptions import (
     InvalidTaskNameError,
-    NotInTmuxError,
+    NoMultiplexerError,
     SessionIdNotSetError,
     TasksDirNotSetError,
-    TmuxLaunchError,
 )
+from core.terminal import detect_backend
 from core.ui import console
 from core.utils import is_observer_configured
 
@@ -36,8 +35,9 @@ def _build_launcher_script(
 ) -> str:
     """Build a bash launcher script that reads prompt files and execs claude.
 
-    Using a script avoids shell quoting issues when passing commands through tmux.
-    Files are read via $(cat ...) within the script's own shell context.
+    Using a script avoids shell quoting issues when passing commands through
+    terminal multiplexers. Files are read via $(cat ...) within the script's
+    own shell context.
     """
     parts = [CLAUDE_COMMAND, "--model", shlex.quote(model)]
 
@@ -60,20 +60,20 @@ def execute_dispatch(
     name: str | None = None,
     model: str = "sonnet",
 ) -> None:
-    """Dispatch a task to a parallel Claude worker in a new tmux pane.
+    """Dispatch a task to a parallel Claude worker in a new terminal pane.
 
-    Must be run from within a Claude session (tmux + CLAUDE_SESSION_ID).
-    If a task name is provided and prompt.md exists in the task directory,
-    the worker receives it as the initial message. Otherwise starts a bare session.
+    Must be run from within a Claude session inside a terminal multiplexer
+    (Kitty with remote control, or tmux).
 
     Raises:
-        NotInTmuxError: If not running inside a tmux session.
+        NoMultiplexerError: If not running inside a terminal multiplexer.
         SessionIdNotSetError: If CLAUDE_SESSION_ID is not set.
         TasksDirNotSetError: If BASECAMP_TASKS_DIR is not set.
-        TmuxLaunchError: If the tmux split-window command fails.
+        PaneLaunchError: If spawning the terminal pane fails.
     """
-    if not os.environ.get("TMUX"):
-        raise NotInTmuxError
+    backend = detect_backend()
+    if backend is None:
+        raise NoMultiplexerError
 
     if not os.environ.get("CLAUDE_SESSION_ID"):
         raise SessionIdNotSetError
@@ -119,7 +119,7 @@ def execute_dispatch(
     if is_observer_configured(OBSERVER_CONFIG) and (observer_plugin_dir / ".claude-plugin" / "plugin.json").exists():
         plugin_dirs.append(str(observer_plugin_dir))
 
-    # Write launcher script — avoids complex shell quoting in the tmux command
+    # Write launcher script — avoids complex shell quoting in terminal commands
     launcher = task_dir / "launch.sh"
     launcher.write_text(
         _build_launcher_script(
@@ -131,43 +131,17 @@ def execute_dispatch(
     )
     launcher.chmod(launcher.stat().st_mode | stat.S_IEXEC)
 
-    # Read env vars to forward to worker pane
+    # Launch worker in a new terminal pane
     repo_name = os.environ.get("BASECAMP_REPO", "")
-
-    # Launch in a new tmux pane — use -P -F to capture the new pane ID
-    tmux_cmd = [
-        "tmux",
-        "split-window",
-        "-v",
-        "-P",
-        "-F",
-        "#{pane_id}",
-        "-e",
-        f"BASECAMP_TASK_DIR={task_dir}",
-        "-e",
-        f"BASECAMP_REPO={repo_name}",
-        "-c",
-        str(Path.cwd()),
-        str(launcher),
-    ]
-
-    try:
-        result = subprocess.run(tmux_cmd, check=True, capture_output=True, text=True)
-    except subprocess.CalledProcessError as e:
-        raise TmuxLaunchError(e.stderr) from e
-
-    # Set pane title using the captured pane ID
-    pane_id = result.stdout.strip()
-    if pane_id:
-        try:
-            subprocess.run(
-                ["tmux", "select-pane", "-t", pane_id, "-T", name],
-                check=True,
-                capture_output=True,
-                text=True,
-            )
-        except subprocess.CalledProcessError:
-            pass  # Non-critical — pane still works without a title
+    backend.spawn_pane(
+        launcher,
+        env={
+            "BASECAMP_TASK_DIR": str(task_dir),
+            "BASECAMP_REPO": repo_name,
+        },
+        cwd=Path.cwd(),
+        title=name,
+    )
 
     # Wait for worker to write its session_id (written by SessionStart hook)
     session_id_file = task_dir / "session_id"

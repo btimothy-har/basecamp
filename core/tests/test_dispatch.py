@@ -8,11 +8,11 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 from core.cli.dispatch import execute_dispatch
-from core.exceptions import DispatchError, InvalidTaskNameError, NotInTmuxError, TasksDirNotSetError
+from core.exceptions import DispatchError, InvalidTaskNameError, NoMultiplexerError, TasksDirNotSetError
 
 
-def _base_env(tasks_dir: Path) -> dict[str, str]:
-    """Minimal env vars for a valid dispatch call."""
+def _tmux_env(tasks_dir: Path) -> dict[str, str]:
+    """Minimal env vars for a valid dispatch call via tmux."""
     return {
         "TMUX": "/tmp/tmux-1000/default,12345,0",
         "CLAUDE_SESSION_ID": "test-session-123",
@@ -21,8 +21,18 @@ def _base_env(tasks_dir: Path) -> dict[str, str]:
     }
 
 
-def _mock_tmux_run() -> MagicMock:
-    """Create a subprocess.run mock that returns a pane ID for split-window."""
+def _kitty_env(tasks_dir: Path) -> dict[str, str]:
+    """Minimal env vars for a valid dispatch call via Kitty."""
+    return {
+        "KITTY_LISTEN_ON": "unix:/tmp/kitty-123",
+        "CLAUDE_SESSION_ID": "test-session-123",
+        "BASECAMP_TASKS_DIR": str(tasks_dir),
+        "BASECAMP_REPO": "test-repo",
+    }
+
+
+def _mock_subprocess_run() -> MagicMock:
+    """Create a subprocess.run mock that succeeds (tmux returns pane ID)."""
     mock = MagicMock()
     mock.return_value = sp.CompletedProcess(args=[], returncode=0, stdout="%42\n", stderr="")
     return mock
@@ -31,10 +41,10 @@ def _mock_tmux_run() -> MagicMock:
 class TestExecuteDispatchValidation:
     """Tests for dispatch validation logic."""
 
-    def test_raises_not_in_tmux(self, tmp_path: Path) -> None:
+    def test_raises_no_multiplexer(self, tmp_path: Path) -> None:
         env = {"CLAUDE_SESSION_ID": "test-session-123", "BASECAMP_TASKS_DIR": str(tmp_path)}
         with patch.dict("os.environ", env, clear=True):
-            with pytest.raises(NotInTmuxError):
+            with pytest.raises(NoMultiplexerError):
                 execute_dispatch(name="test-task")
 
     def test_raises_no_session_id(self, tmp_path: Path) -> None:
@@ -54,7 +64,7 @@ class TestExecuteDispatchValidation:
         ["../escape", "/absolute/path", "has/slash", ".dotstart", "has spaces", "semi;colon"],
     )
     def test_raises_invalid_task_name(self, bad_name: str, tmp_path: Path) -> None:
-        env = _base_env(tmp_path)
+        env = _tmux_env(tmp_path)
         with patch.dict("os.environ", env, clear=True):
             with pytest.raises(InvalidTaskNameError):
                 execute_dispatch(name=bad_name)
@@ -68,11 +78,11 @@ class TestExecuteDispatchLauncher:
         task.mkdir()
         (task / "prompt.md").write_text("Do the thing")
 
-        mock_run = _mock_tmux_run()
-        env = _base_env(tmp_path)
+        mock_run = _mock_subprocess_run()
+        env = _tmux_env(tmp_path)
         with (
             patch.dict("os.environ", env, clear=True),
-            patch("core.cli.dispatch.subprocess.run", mock_run),
+            patch("core.terminal.subprocess.run", mock_run),
             patch("core.cli.dispatch.time.sleep"),
         ):
             execute_dispatch(name="test-task")
@@ -82,11 +92,11 @@ class TestExecuteDispatchLauncher:
             assert "prompt.md" in script
 
     def test_launcher_bare_worker(self, tmp_path: Path) -> None:
-        mock_run = _mock_tmux_run()
-        env = _base_env(tmp_path)
+        mock_run = _mock_subprocess_run()
+        env = _tmux_env(tmp_path)
         with (
             patch.dict("os.environ", env, clear=True),
-            patch("core.cli.dispatch.subprocess.run", mock_run),
+            patch("core.terminal.subprocess.run", mock_run),
             patch("core.cli.dispatch.time.sleep"),
         ):
             execute_dispatch(name="bare-task")
@@ -96,16 +106,15 @@ class TestExecuteDispatchLauncher:
             assert "prompt.md" not in script
 
     def test_launcher_with_system_prompt(self, tmp_path: Path) -> None:
-        # Create an assembled system prompt
         prompt_file = tmp_path / "assembled" / "myproject.md"
         prompt_file.parent.mkdir()
         prompt_file.write_text("You are a helpful assistant")
 
-        mock_run = _mock_tmux_run()
-        env = {**_base_env(tmp_path), "BASECAMP_SYSTEM_PROMPT": str(prompt_file)}
+        mock_run = _mock_subprocess_run()
+        env = {**_tmux_env(tmp_path), "BASECAMP_SYSTEM_PROMPT": str(prompt_file)}
         with (
             patch.dict("os.environ", env, clear=True),
-            patch("core.cli.dispatch.subprocess.run", mock_run),
+            patch("core.terminal.subprocess.run", mock_run),
             patch("core.cli.dispatch.time.sleep"),
         ):
             execute_dispatch(name="test-task")
@@ -115,11 +124,11 @@ class TestExecuteDispatchLauncher:
             assert "myproject.md" in script
 
     def test_launcher_default_model(self, tmp_path: Path) -> None:
-        mock_run = _mock_tmux_run()
-        env = _base_env(tmp_path)
+        mock_run = _mock_subprocess_run()
+        env = _tmux_env(tmp_path)
         with (
             patch.dict("os.environ", env, clear=True),
-            patch("core.cli.dispatch.subprocess.run", mock_run),
+            patch("core.terminal.subprocess.run", mock_run),
             patch("core.cli.dispatch.time.sleep"),
         ):
             execute_dispatch(name="test-task")
@@ -128,11 +137,11 @@ class TestExecuteDispatchLauncher:
             assert "--model sonnet" in script
 
     def test_launcher_custom_model(self, tmp_path: Path) -> None:
-        mock_run = _mock_tmux_run()
-        env = _base_env(tmp_path)
+        mock_run = _mock_subprocess_run()
+        env = _tmux_env(tmp_path)
         with (
             patch.dict("os.environ", env, clear=True),
-            patch("core.cli.dispatch.subprocess.run", mock_run),
+            patch("core.terminal.subprocess.run", mock_run),
             patch("core.cli.dispatch.time.sleep"),
         ):
             execute_dispatch(name="test-task", model="opus")
@@ -145,11 +154,11 @@ class TestExecuteDispatchTmux:
     """Tests for tmux pane management."""
 
     def test_tmux_env_vars_passed(self, tmp_path: Path) -> None:
-        mock_run = _mock_tmux_run()
-        env = _base_env(tmp_path)
+        mock_run = _mock_subprocess_run()
+        env = _tmux_env(tmp_path)
         with (
             patch.dict("os.environ", env, clear=True),
-            patch("core.cli.dispatch.subprocess.run", mock_run),
+            patch("core.terminal.subprocess.run", mock_run),
             patch("core.cli.dispatch.time.sleep"),
         ):
             execute_dispatch(name="test-task")
@@ -161,11 +170,11 @@ class TestExecuteDispatchTmux:
             assert "BASECAMP_REPO=test-repo" in cmd_str
 
     def test_tmux_sets_pane_title(self, tmp_path: Path) -> None:
-        mock_run = _mock_tmux_run()
-        env = _base_env(tmp_path)
+        mock_run = _mock_subprocess_run()
+        env = _tmux_env(tmp_path)
         with (
             patch.dict("os.environ", env, clear=True),
-            patch("core.cli.dispatch.subprocess.run", mock_run),
+            patch("core.terminal.subprocess.run", mock_run),
             patch("core.cli.dispatch.time.sleep"),
         ):
             execute_dispatch(name="test-task")
@@ -178,11 +187,11 @@ class TestExecuteDispatchTmux:
             assert "test-task" in cmd
 
     def test_tmux_cwd_is_current_dir(self, tmp_path: Path) -> None:
-        mock_run = _mock_tmux_run()
-        env = _base_env(tmp_path)
+        mock_run = _mock_subprocess_run()
+        env = _tmux_env(tmp_path)
         with (
             patch.dict("os.environ", env, clear=True),
-            patch("core.cli.dispatch.subprocess.run", mock_run),
+            patch("core.terminal.subprocess.run", mock_run),
             patch("core.cli.dispatch.time.sleep"),
         ):
             execute_dispatch(name="test-task")
@@ -193,32 +202,87 @@ class TestExecuteDispatchTmux:
             assert cmd[c_idx + 1] == str(Path.cwd())
 
     def test_stale_session_id_removed(self, tmp_path: Path) -> None:
-        # Pre-create a task dir with a stale session_id from a previous dispatch
         task = tmp_path / "reused-task"
         task.mkdir()
         (task / "session_id").write_text("old-session-abc")
 
-        mock_run = _mock_tmux_run()
-        env = _base_env(tmp_path)
+        mock_run = _mock_subprocess_run()
+        env = _tmux_env(tmp_path)
         with (
             patch.dict("os.environ", env, clear=True),
-            patch("core.cli.dispatch.subprocess.run", mock_run),
+            patch("core.terminal.subprocess.run", mock_run),
             patch("core.cli.dispatch.time.sleep"),
         ):
             execute_dispatch(name="reused-task")
 
-            # Stale file should have been removed before polling
             assert not (task / "session_id").exists()
 
     def test_tmux_failure_raises(self, tmp_path: Path) -> None:
-        env = _base_env(tmp_path)
+        env = _tmux_env(tmp_path)
         with (
             patch.dict("os.environ", env, clear=True),
-            patch("core.cli.dispatch.subprocess.run") as mock_run,
+            patch("core.terminal.subprocess.run") as mock_run,
         ):
             mock_run.side_effect = sp.CalledProcessError(1, "tmux", stderr="session not found")
 
-            with pytest.raises(DispatchError, match="tmux split-window failed"):
+            with pytest.raises(DispatchError, match="tmux pane launch failed"):
+                execute_dispatch(name="test-task")
+
+
+class TestExecuteDispatchKitty:
+    """Tests for Kitty pane management."""
+
+    def test_kitty_env_vars_passed(self, tmp_path: Path) -> None:
+        mock_run = _mock_subprocess_run()
+        env = _kitty_env(tmp_path)
+        with (
+            patch.dict("os.environ", env, clear=True),
+            patch("core.terminal.subprocess.run", mock_run),
+            patch("core.cli.dispatch.time.sleep"),
+        ):
+            execute_dispatch(name="test-task")
+
+            cmd = mock_run.call_args[0][0]
+            cmd_str = " ".join(str(c) for c in cmd)
+            assert "--env BASECAMP_TASK_DIR=" in cmd_str
+            assert "--env BASECAMP_REPO=test-repo" in cmd_str
+
+    def test_kitty_uses_socket(self, tmp_path: Path) -> None:
+        mock_run = _mock_subprocess_run()
+        env = _kitty_env(tmp_path)
+        with (
+            patch.dict("os.environ", env, clear=True),
+            patch("core.terminal.subprocess.run", mock_run),
+            patch("core.cli.dispatch.time.sleep"),
+        ):
+            execute_dispatch(name="test-task")
+
+            cmd = mock_run.call_args[0][0]
+            assert cmd[:3] == ["kitty", "@", "--to"]
+            assert cmd[3] == "unix:/tmp/kitty-123"
+
+    def test_kitty_preferred_over_tmux(self, tmp_path: Path) -> None:
+        mock_run = _mock_subprocess_run()
+        env = {**_kitty_env(tmp_path), "TMUX": "/tmp/tmux-501/default,12345,0"}
+        with (
+            patch.dict("os.environ", env, clear=True),
+            patch("core.terminal.subprocess.run", mock_run),
+            patch("core.cli.dispatch.time.sleep"),
+        ):
+            execute_dispatch(name="test-task")
+
+            cmd = mock_run.call_args[0][0]
+            assert cmd[0] == "kitty"
+
+    def test_kitty_failure_raises(self, tmp_path: Path) -> None:
+        env = _kitty_env(tmp_path)
+        with (
+            patch.dict("os.environ", env, clear=True),
+            patch("core.terminal.subprocess.run") as mock_run,
+        ):
+            mock_run.side_effect = sp.CalledProcessError(1, "kitty", stderr="remote control disabled")
+
+            with pytest.raises(DispatchError, match="kitty pane launch failed"):
                 execute_dispatch(name="test-task")
 
 
@@ -226,16 +290,15 @@ class TestExecuteDispatchNameGeneration:
     """Tests for auto-generated task names."""
 
     def test_auto_generates_name(self, tmp_path: Path) -> None:
-        mock_run = _mock_tmux_run()
-        env = _base_env(tmp_path)
+        mock_run = _mock_subprocess_run()
+        env = _tmux_env(tmp_path)
         with (
             patch.dict("os.environ", env, clear=True),
-            patch("core.cli.dispatch.subprocess.run", mock_run),
+            patch("core.terminal.subprocess.run", mock_run),
             patch("core.cli.dispatch.time.sleep"),
         ):
             execute_dispatch()
 
-            # Should have created a worker-XXXXXXXX directory
             dirs = list(tmp_path.iterdir())
             assert len(dirs) == 1
             assert dirs[0].name.startswith("worker-")

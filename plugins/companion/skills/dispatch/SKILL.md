@@ -1,12 +1,12 @@
 ---
 name: dispatch
-description: "Dispatch parallel Claude workers via tmux panes. Invoke when work can be parallelized into independent tasks, or when the user calls /dispatch with a task description."
+description: "Dispatch parallel Claude workers via terminal panes (Kitty or tmux). Invoke when work can be parallelized into independent tasks, or when the user calls /dispatch with a task description."
 argument-hint: "<task description>"
 ---
 
 # Dispatch
 
-Launch a parallel Claude worker session in a tmux pane.
+Launch a parallel Claude worker session in a new terminal pane.
 
 ## Input
 
@@ -27,7 +27,7 @@ Write a **self-contained brief** for the worker using the task above and relevan
 
 ### 2. Derive a task name
 
-Short, kebab-case identifier from the task description. Used as the directory name and tmux pane title.
+Short, kebab-case identifier from the task description. Used as the directory name and pane title.
 
 Examples: `fix-auth-bug`, `add-unit-tests`, `update-docs`
 
@@ -61,7 +61,7 @@ Use `--model opus` when the task requires deep reasoning:
 
 ## Constraints
 
-- **tmux required** — `basecamp start` wraps in tmux automatically
+- **Terminal multiplexer required** — Kitty (with remote control) or tmux. `basecamp start` wraps in tmux automatically when neither is detected
 - **Workers are interactive** — the user can see and intervene in any pane
 - **Pull-based coordination** — poll the observer; workers cannot push results back
 - **No shared state** — each worker operates independently; coordinate via filesystem if needed

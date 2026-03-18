@@ -26,6 +26,7 @@ from core.git import (
     is_git_repo,
 )
 from core.prompts import system as prompts
+from core.terminal import in_multiplexer
 from core.utils import is_observer_configured
 
 DEFAULT_PATH_WORKING_STYLE = "engineering"
@@ -204,13 +205,17 @@ def execute_launch(
         working_style=project.working_style,
     )
 
-    # Wrap in tmux if not already inside a session — enables `basecamp dispatch`
-    # to create worker panes without requiring manual tmux setup.
-    # Env vars must be passed via -e because tmux new-session connects to an
-    # existing server whose processes inherit the server's env, not the client's.
-    if not os.environ.get("TMUX") and shutil.which("tmux"):
+    # If already inside a terminal multiplexer (Kitty or tmux), run directly —
+    # dispatch will use the active backend to create worker panes.
+    # Otherwise, wrap in tmux so dispatch has a multiplexer to work with.
+    if in_multiplexer():
+        print(startup_text, end="")
+        os.execvp(CLAUDE_COMMAND, cmd)
+    elif shutil.which("tmux"):
         session_name = f"bc-{project_name}-{label}" if label else f"bc-{project_name}"
         tmux_cmd = ["tmux", "new-session", "-A", "-s", session_name]
+        # Env vars must be passed via -e because tmux new-session connects to an
+        # existing server whose processes inherit the server's env, not the client's.
         for var in ("BASECAMP_PROJECT", "BASECAMP_REPO", "BASECAMP_CONTEXT_FILE", "BASECAMP_SYSTEM_PROMPT"):
             value = os.environ.get(var)
             if value:
