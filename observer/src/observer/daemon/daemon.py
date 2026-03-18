@@ -204,9 +204,9 @@ class Daemon:
         """Run the priority-based tick scheduler until shutdown.
 
         Each tick runs exactly one stage, selected by priority:
-            1. Indexing    — if INDEX_INTERVAL (15s) elapsed
-            2. Processing  — if PROCESS_INTERVAL (6s) elapsed
-            3. Refining    — if REFINE_INTERVAL (4s) elapsed
+            1. Indexing    — if INDEX_INTERVAL (30s) elapsed
+            2. Processing  — if PROCESS_INTERVAL (10s) elapsed
+            3. Refining    — if REFINE_INTERVAL (5s) elapsed
             4. Ingest      — fills remaining ticks
 
         This guarantees sequential stage execution: each stage only

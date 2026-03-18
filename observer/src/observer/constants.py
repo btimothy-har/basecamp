@@ -14,8 +14,9 @@ PID_FILE = OBSERVER_DIR / "observer.pid"
 LOG_FILE = OBSERVER_DIR / "observer.log"
 
 TICK_INTERVAL = 1  # seconds between scheduler ticks
-PROCESS_INTERVAL = 3  # seconds between processing spawns
-INDEX_INTERVAL = 15  # seconds between indexing spawns
+PROCESS_INTERVAL = 10  # seconds between processing spawns
+SUMMARY_INTERVAL = 60  # seconds between summary regeneration spawns
+INDEX_INTERVAL = 30  # seconds between indexing spawns
 MAX_INGEST_WORKERS = 8  # max ingest processes spawned per poll cycle
 DEFAULT_STALE_THRESHOLD = 300
 
@@ -30,7 +31,7 @@ TRANSCRIPT_EXTENSION = ".jsonl"
 
 # Extraction settings
 REFINING_BATCH_LIMIT = 200
-REFINE_INTERVAL = 2  # seconds between refining spawns
+REFINE_INTERVAL = 5  # seconds between refining spawns
 EXTRACTION_BATCH_LIMIT = 200
 EXTRACTION_TIMEOUT = 120
 DEFAULT_EXTRACTION_MODEL = "sonnet"

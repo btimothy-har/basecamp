@@ -3,15 +3,16 @@
 Operates on refined WorkItems (REFINED stage) that already have TranscriptEvents.
 
 Phase 1 (Extract): Batch call extracts artifacts from transcript event texts.
-Phase 2 (Summarize): Regenerates full summary from ALL transcript events.
+Phase 2 (Summarize): Regenerates summary if SUMMARY_INTERVAL has elapsed since last update.
 
-Extraction is skipped when the only new events are prompts (no tool/thinking/response activity).
+Thinking events are excluded from both extraction and summary inputs.
+Extraction is skipped when the only new events are prompts (no tool/response activity).
 """
 
 import logging
 from datetime import UTC, datetime
 
-from observer.constants import EXTRACTION_BATCH_LIMIT
+from observer.constants import EXTRACTION_BATCH_LIMIT, SUMMARY_INTERVAL
 from observer.data.enums import ArtifactSource, WorkItemStage, WorkItemType
 from observer.data.schemas import ArtifactSchema, TranscriptEventSchema, TranscriptSchema
 from observer.data.transcript_event import TranscriptEvent
@@ -42,11 +43,11 @@ def _extract_title(summary: str) -> str | None:
 
 
 # WorkItem types that represent real activity (non-prompt work)
-_ACTIVITY_TYPES = frozenset({WorkItemType.THINKING, WorkItemType.TOOL_PAIR, WorkItemType.RESPONSE})
+_ACTIVITY_TYPES = frozenset({WorkItemType.TOOL_PAIR, WorkItemType.RESPONSE})
 
 
 class WorkItemExtractor:
-    """Extracts artifacts and generates summaries from refined WorkItems."""
+    """Extracts artifacts from refined WorkItems."""
 
     @classmethod
     def extract_batch(cls, db: Database, *, batch_limit: int = EXTRACTION_BATCH_LIMIT) -> int:
@@ -84,7 +85,7 @@ def _process_transcript(
     items: list[WorkItem],
     initial_summary: str,
 ) -> int:
-    """Extract artifacts and update summary for a set of refined WorkItems."""
+    """Extract artifacts from a set of refined WorkItems. Thinking events are excluded."""
     # Derive state from DB — TranscriptEvents already created by Refine stage
     item_ids = [item.id for item in items]
     with db.session() as session:
@@ -94,10 +95,12 @@ def _process_transcript(
             .order_by(TranscriptEventSchema.created_at)
             .all()
         )
-        new_event_texts = [row.text for row in te_rows]
+        new_event_texts = [
+            row.text for row in te_rows if row.event_type != WorkItemType.THINKING
+        ]
         last_event_id = te_rows[-1].id if te_rows else None
 
-    if not new_event_texts:
+    if not te_rows:
         logger.warning(
             "Refined items for transcript %d have no TranscriptEvents; marking ERROR",
             transcript_id,
@@ -105,6 +108,14 @@ def _process_transcript(
         with db.session() as session:
             for item in items:
                 item.processed = WorkItemStage.ERROR
+                item.save(session)
+        return 0
+
+    if not new_event_texts:
+        # All events were thinking-only — nothing to extract, mark terminal
+        with db.session() as session:
+            for item in items:
+                item.processed = WorkItemStage.TERMINAL
                 item.save(session)
         return 0
 
@@ -143,9 +154,8 @@ def _process_transcript(
                     item.save(session)
             return 0
 
-    # Phase 2: Regenerate summary from all transcript events
-    if new_event_texts:
-        _update_summary(db, transcript_id)
+    # Phase 2: Regenerate summary if cooldown has elapsed
+    _update_summary(db, transcript_id)
 
     # Mark all items as terminal
     with db.session() as session:
@@ -190,10 +200,23 @@ def _extract_batch(
 
 
 def _update_summary(db: Database, transcript_id: int) -> None:
-    """Regenerate transcript summary from ALL transcript events."""
+    """Regenerate transcript summary if SUMMARY_INTERVAL has elapsed since last update."""
+    now = datetime.now(UTC)
+
+    with db.session() as session:
+        transcript_row = session.get(TranscriptSchema, transcript_id)
+        if transcript_row is None:
+            return
+        if transcript_row.last_summary_at is not None:
+            elapsed = (now - transcript_row.last_summary_at.replace(tzinfo=UTC)).total_seconds()
+            if elapsed < SUMMARY_INTERVAL:
+                return
+
     try:
         all_events = TranscriptEvent.get_for_transcript(transcript_id)
-        all_texts = [te.text for te in all_events]
+        all_texts = [
+            te.text for te in all_events if te.event_type != WorkItemType.THINKING
+        ]
 
         if not all_texts:
             return
@@ -206,5 +229,6 @@ def _update_summary(db: Database, transcript_id: int) -> None:
             if transcript_row is not None:
                 transcript_row.summary = new_summary
                 transcript_row.title = title
+                transcript_row.last_summary_at = now
     except ExtractionError:
         logger.exception("Summary generation failed for transcript %d", transcript_id)

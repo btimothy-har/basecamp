@@ -412,7 +412,7 @@ class TestScheduler:
     """Tests for the 4-tier priority scheduler in _poll_loop.
 
     The scheduler picks one stage per tick based on priority:
-        indexing (15s) > processing (6s) > refining (4s) > ingest (fills remaining)
+        indexing (30s) > processing (10s) > refining (5s) > ingest (fills remaining)
 
     Time is simulated by patching time.monotonic to return incrementing
     values (0.0, 1.0, 2.0, ...). _poll_once is mocked since ingest
@@ -420,18 +420,18 @@ class TestScheduler:
     """
 
     def test_refine_fires_after_interval(self, db, daemon):  # noqa: ARG002
-        """Refining spawns once REFINE_INTERVAL (4s) has elapsed."""
+        """Refining spawns once REFINE_INTERVAL (5s) has elapsed."""
         tick = 0
 
         def fake_wait(**_):
             nonlocal tick
             tick += 1
-            if tick >= 5:
+            if tick >= 6:
                 daemon._shutdown_event.set()
                 return True
             return False
 
-        clock = iter(float(i) for i in range(5))
+        clock = iter(float(i) for i in range(6))
 
         with (
             patch.object(daemon._shutdown_event, "wait", side_effect=fake_wait),
@@ -447,7 +447,7 @@ class TestScheduler:
             mock_proc_cls.return_value = mock_proc
             daemon.run(foreground=True)
 
-        # t=4: refine interval elapsed (4-0 >= 4)
+        # t=5: refine interval elapsed (5-0 >= 5)
         all_targets = [c.kwargs.get("target") for c in mock_proc_cls.call_args_list]
         assert refine_worker in all_targets
 
@@ -475,23 +475,23 @@ class TestScheduler:
             mock_proc_cls.return_value = mock_proc
             daemon.run(foreground=True)
 
-        # t=0..1: all below REFINE_INTERVAL (2s), so all go to ingest
+        # t=0..1: all below REFINE_INTERVAL (5s), so all go to ingest
         assert mock_poll.call_count == 3
         assert mock_proc_cls.call_count == 0
 
     def test_processing_fires_after_interval(self, db, daemon):  # noqa: ARG002
-        """Processing spawns once PROCESS_INTERVAL (6s) has elapsed."""
+        """Processing spawns once PROCESS_INTERVAL (10s) has elapsed."""
         tick = 0
 
         def fake_wait(**_):
             nonlocal tick
             tick += 1
-            if tick >= 7:
+            if tick >= 11:
                 daemon._shutdown_event.set()
                 return True
             return False
 
-        clock = iter(float(i) for i in range(7))
+        clock = iter(float(i) for i in range(11))
 
         with (
             patch.object(daemon._shutdown_event, "wait", side_effect=fake_wait),
@@ -507,23 +507,23 @@ class TestScheduler:
             mock_proc_cls.return_value = mock_proc
             daemon.run(foreground=True)
 
-        # t=6: process interval elapsed (6-0 >= 6)
+        # t=10: process interval elapsed (10-0 >= 10)
         all_targets = [c.kwargs.get("target") for c in mock_proc_cls.call_args_list]
         assert process_worker in all_targets
 
     def test_indexing_fires_after_interval(self, db, daemon):  # noqa: ARG002
-        """Indexing spawns once INDEX_INTERVAL (15s) has elapsed."""
+        """Indexing spawns once INDEX_INTERVAL (30s) has elapsed."""
         tick = 0
 
         def fake_wait(**_):
             nonlocal tick
             tick += 1
-            if tick >= 16:
+            if tick >= 31:
                 daemon._shutdown_event.set()
                 return True
             return False
 
-        clock = iter(float(i) for i in range(16))
+        clock = iter(float(i) for i in range(31))
 
         with (
             patch.object(daemon._shutdown_event, "wait", side_effect=fake_wait),
@@ -539,7 +539,7 @@ class TestScheduler:
             mock_proc_cls.return_value = mock_proc
             daemon.run(foreground=True)
 
-        # t=15: index interval elapsed (15-0 >= 15)
+        # t=30: index interval elapsed (30-0 >= 30)
         all_targets = [c.kwargs.get("target") for c in mock_proc_cls.call_args_list]
         assert index_worker in all_targets
 
@@ -550,12 +550,12 @@ class TestScheduler:
         def fake_wait(**_):
             nonlocal tick
             tick += 1
-            if tick >= 16:
+            if tick >= 31:
                 daemon._shutdown_event.set()
                 return True
             return False
 
-        clock = iter(float(i) for i in range(16))
+        clock = iter(float(i) for i in range(31))
 
         with (
             patch.object(daemon._shutdown_event, "wait", side_effect=fake_wait),
@@ -581,10 +581,10 @@ class TestScheduler:
             daemon._shutdown_event.set()
             return True
 
-        # At t=20, all intervals are exceeded
+        # At t=60, all intervals are exceeded
         with (
             patch.object(daemon._shutdown_event, "wait", side_effect=fake_wait),
-            patch("observer.daemon.daemon.time.monotonic", return_value=20.0),
+            patch("observer.daemon.daemon.time.monotonic", return_value=60.0),
             patch("observer.daemon.daemon.SearchIndexer.has_pending", return_value=True),
             patch("observer.daemon.daemon.WorkItem.has_by_processed", return_value=True),
             patch("observer.daemon.daemon.multiprocessing.Process") as mock_proc_cls,

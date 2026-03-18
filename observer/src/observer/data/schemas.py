@@ -71,6 +71,7 @@ class TranscriptSchema(Base):
     last_mtime: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     title: Mapped[str | None] = mapped_column(String, nullable=True)
     summary: Mapped[str | None] = mapped_column(Text, nullable=True)
+    last_summary_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
     project: Mapped["ProjectSchema"] = relationship(back_populates="transcripts")
     worktree: Mapped["WorktreeSchema | None"] = relationship(back_populates="transcripts")
