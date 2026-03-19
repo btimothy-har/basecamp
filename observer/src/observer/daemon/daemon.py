@@ -31,7 +31,7 @@ from observer.pipeline.indexing import SearchIndexer
 from observer.pipeline.refining.grouping import EventGrouper
 from observer.pipeline.refining.refinement import WorkItemRefiner
 from observer.pipeline.summarization import has_pending as summary_has_pending
-from observer.services.config import get_extraction_enabled
+from observer.services.config import get_mode
 from observer.services.db import Database
 from observer.services.logger import configure_logging_daemon
 from observer.services.notebook import NotebookService
@@ -56,7 +56,7 @@ class Daemon:
     ):
         self._pid_file = pid_file
         self._enable_viz = enable_viz
-        self._extraction_enabled = get_extraction_enabled()
+        self._mode = get_mode()
         self._shutdown_event = threading.Event()
         self._workers: list[multiprocessing.Process] = []
         self._log_queue: multiprocessing.Queue | None = None
@@ -194,8 +194,7 @@ class Daemon:
         for marker in lock_dir.glob("notfound_*"):
             marker.unlink(missing_ok=True)
 
-        mode = "full" if self._extraction_enabled else "lite"
-        logger.info("Observer daemon started (pid=%d, mode=%s)", os.getpid(), mode)
+        logger.info("Observer daemon started (pid=%d, mode=%s)", os.getpid(), self._mode)
 
         try:
             if notebook:
@@ -214,24 +213,29 @@ class Daemon:
     def _poll_loop(self, lock_dir: Path, notebook: NotebookService | None) -> None:
         """Run the priority-based tick scheduler until shutdown.
 
-        Full mode (extraction enabled):
+        Full mode:
             1. Indexing    — if INDEX_INTERVAL (120s) elapsed
             2. Processing  — if PROCESS_INTERVAL (30s) elapsed
             3. Refining    — if REFINE_INTERVAL (5s) elapsed
             4. Ingest      — fills remaining ticks
 
-        Lite mode (extraction disabled):
+        Lite mode:
             1. Indexing    — summaries only, if INDEX_INTERVAL elapsed
             2. Summarize   — if SUMMARY_INTERVAL elapsed
             3. Ingest      — fills remaining ticks
 
+        Off mode:
+            1. Ingest      — only ingests raw events, no processing
+
         This guarantees sequential stage execution: each stage only
         consumes data committed by a previous tick.
         """
-        if self._extraction_enabled:
+        if self._mode == "full":
             self._poll_loop_full(lock_dir, notebook)
-        else:
+        elif self._mode == "lite":
             self._poll_loop_lite(lock_dir, notebook)
+        else:
+            self._poll_loop_off(lock_dir, notebook)
 
     def _poll_loop_full(self, lock_dir: Path, notebook: NotebookService | None) -> None:
         """Full pipeline: ingest → refine → process → index."""
@@ -267,6 +271,17 @@ class Daemon:
                 self._try_spawn_summary(lock_dir, now)
             else:
                 self._tick_ingest(lock_dir)
+
+            if notebook:
+                notebook.check()
+
+            self._shutdown_event.wait(timeout=constants.TICK_INTERVAL)
+
+    def _poll_loop_off(self, lock_dir: Path, notebook: NotebookService | None) -> None:
+        """Off pipeline: ingest only, no LLM calls."""
+        while not self._shutdown_event.is_set():
+            self._reap_workers()
+            self._tick_ingest(lock_dir)
 
             if notebook:
                 notebook.check()

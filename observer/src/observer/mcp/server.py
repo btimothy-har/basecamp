@@ -14,12 +14,12 @@ from fastmcp import FastMCP
 
 from observer.constants import MCP_SERVER_INSTRUCTIONS, MCP_SERVER_INSTRUCTIONS_LITE, MCP_SERVER_NAME
 from observer.mcp import engine
-from observer.services.config import get_extraction_enabled
+from observer.services.config import get_mode
 
 logging.basicConfig(stream=sys.stderr, level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-_instructions = MCP_SERVER_INSTRUCTIONS if get_extraction_enabled() else MCP_SERVER_INSTRUCTIONS_LITE
+_instructions = MCP_SERVER_INSTRUCTIONS if get_mode() == "full" else MCP_SERVER_INSTRUCTIONS_LITE
 mcp = FastMCP(MCP_SERVER_NAME, instructions=_instructions)
 
 
@@ -42,7 +42,7 @@ def _resolve_search_context() -> tuple[str | None, str | None] | dict:
     return project_name, session_id
 
 
-_EXTRACTION_DISABLED_MSG = "Extraction is disabled (lite mode). Only transcript search is available."
+_EXTRACTION_DISABLED_MSG = "Artifact extraction is not enabled. Only transcript search is available."
 
 
 def _search_artifacts(
@@ -52,7 +52,7 @@ def _search_artifacts(
     worktree: str | None = None,
 ) -> dict:
     """Core search_artifacts logic, called by the MCP tool wrapper."""
-    if not get_extraction_enabled():
+    if get_mode() != "full":
         return {"error": _EXTRACTION_DISABLED_MSG}
 
     context = _resolve_search_context()
@@ -96,7 +96,7 @@ def _search_transcripts(
 
 def _get_artifact(artifact_id: int) -> dict:
     """Core get_artifact logic, called by the MCP tool wrapper."""
-    if not get_extraction_enabled():
+    if get_mode() != "full":
         return {"error": _EXTRACTION_DISABLED_MSG}
 
     result = engine.get_artifact(artifact_id)
