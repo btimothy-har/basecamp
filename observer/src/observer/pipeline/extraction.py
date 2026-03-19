@@ -26,7 +26,7 @@ logger = logging.getLogger(__name__)
 _TITLE_MAX_LEN = 50
 
 
-def _extract_title(summary: str) -> str | None:
+def extract_title(summary: str) -> str | None:
     """Extract the first content line after '## Title' from a structured summary."""
     in_title = False
     for line in summary.splitlines():
@@ -219,7 +219,7 @@ def _update_summary(db: Database, transcript_id: int) -> None:
 
         new_summary = summarize_transcript(all_texts)
 
-        title = _extract_title(new_summary)
+        title = extract_title(new_summary)
         with db.session() as session:
             transcript_row = session.get(TranscriptSchema, transcript_id)
             if transcript_row is not None:

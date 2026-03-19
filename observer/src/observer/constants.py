@@ -76,6 +76,19 @@ Start with search_artifacts for specific questions. Use
 search_transcripts when you need broader context about what was
 done in past sessions."""
 
+MCP_SERVER_INSTRUCTIONS_LITE = """\
+Semantic memory over past Claude Code sessions (lite mode — transcripts only).
+
+Results are scoped to the current project and exclude the active session.
+
+Retrieval pathway:
+
+search_transcripts — find relevant past sessions by summary.
+Drill down with get_transcript_summary for the full structured
+summary.
+
+Artifact search is not available in lite mode."""
+
 # Container (local dev database)
 DB_CONTAINER_NAME = "observer-pg"
 DB_IMAGE = "docker.io/pgvector/pgvector:pg17"

@@ -301,7 +301,7 @@ class TestSetup:
             patch("observer.cli.set_pg_url") as mock_set_url,
             patch("observer.cli.set_db_source") as mock_set_source,
         ):
-            mock_q.select.return_value.ask.side_effect = ["container", "haiku", "haiku"]
+            mock_q.select.return_value.ask.side_effect = ["container", "haiku", "haiku", "full"]
             mock_q.Choice = questionary.Choice
 
             result = runner.invoke(main, ["setup"], input="n\n")

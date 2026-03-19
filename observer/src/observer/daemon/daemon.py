@@ -17,13 +17,21 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from observer import constants
-from observer.daemon.workers import index_worker, ingest_worker, process_worker, refine_worker
+from observer.daemon.workers import (
+    index_worker,
+    ingest_worker,
+    process_worker,
+    refine_worker,
+    summary_worker,
+)
 from observer.data.enums import WorkItemStage
 from observer.data.transcript import Transcript
 from observer.data.work_item import WorkItem
 from observer.pipeline.indexing import SearchIndexer
 from observer.pipeline.refining.grouping import EventGrouper
 from observer.pipeline.refining.refinement import WorkItemRefiner
+from observer.pipeline.summarization import has_pending as summary_has_pending
+from observer.services.config import get_extraction_enabled
 from observer.services.db import Database
 from observer.services.logger import configure_logging_daemon
 from observer.services.notebook import NotebookService
@@ -48,6 +56,7 @@ class Daemon:
     ):
         self._pid_file = pid_file
         self._enable_viz = enable_viz
+        self._extraction_enabled = get_extraction_enabled()
         self._shutdown_event = threading.Event()
         self._workers: list[multiprocessing.Process] = []
         self._log_queue: multiprocessing.Queue | None = None
@@ -57,6 +66,7 @@ class Daemon:
         self._last_process_at: float = 0.0
         self._last_index_at: float = 0.0
         self._last_refine_at: float = 0.0
+        self._last_summary_at: float = 0.0
 
     @staticmethod
     def is_process_running(pid: int) -> bool:
@@ -184,7 +194,8 @@ class Daemon:
         for marker in lock_dir.glob("notfound_*"):
             marker.unlink(missing_ok=True)
 
-        logger.info("Observer daemon started (pid=%d)", os.getpid())
+        mode = "full" if self._extraction_enabled else "lite"
+        logger.info("Observer daemon started (pid=%d, mode=%s)", os.getpid(), mode)
 
         try:
             if notebook:
@@ -203,15 +214,27 @@ class Daemon:
     def _poll_loop(self, lock_dir: Path, notebook: NotebookService | None) -> None:
         """Run the priority-based tick scheduler until shutdown.
 
-        Each tick runs exactly one stage, selected by priority:
+        Full mode (extraction enabled):
             1. Indexing    — if INDEX_INTERVAL (120s) elapsed
             2. Processing  — if PROCESS_INTERVAL (30s) elapsed
             3. Refining    — if REFINE_INTERVAL (5s) elapsed
             4. Ingest      — fills remaining ticks
 
+        Lite mode (extraction disabled):
+            1. Indexing    — summaries only, if INDEX_INTERVAL elapsed
+            2. Summarize   — if SUMMARY_INTERVAL elapsed
+            3. Ingest      — fills remaining ticks
+
         This guarantees sequential stage execution: each stage only
         consumes data committed by a previous tick.
         """
+        if self._extraction_enabled:
+            self._poll_loop_full(lock_dir, notebook)
+        else:
+            self._poll_loop_lite(lock_dir, notebook)
+
+    def _poll_loop_full(self, lock_dir: Path, notebook: NotebookService | None) -> None:
+        """Full pipeline: ingest → refine → process → index."""
         while not self._shutdown_event.is_set():
             self._reap_workers()
 
@@ -223,6 +246,25 @@ class Daemon:
                 self._try_spawn_process(lock_dir, now)
             elif now - self._last_refine_at >= constants.REFINE_INTERVAL:
                 self._try_spawn_refine(lock_dir, now)
+            else:
+                self._tick_ingest(lock_dir)
+
+            if notebook:
+                notebook.check()
+
+            self._shutdown_event.wait(timeout=constants.TICK_INTERVAL)
+
+    def _poll_loop_lite(self, lock_dir: Path, notebook: NotebookService | None) -> None:
+        """Lite pipeline: ingest → summarize → index (summaries only)."""
+        while not self._shutdown_event.is_set():
+            self._reap_workers()
+
+            now = time.monotonic()
+
+            if now - self._last_index_at >= constants.INDEX_INTERVAL:
+                self._try_spawn_index_lite(lock_dir, now)
+            elif now - self._last_summary_at >= constants.SUMMARY_INTERVAL:
+                self._try_spawn_summary(lock_dir, now)
             else:
                 self._tick_ingest(lock_dir)
 
@@ -291,6 +333,38 @@ class Daemon:
                 logger.info("Spawned refining worker (pid=%d)", proc.pid)
         except Exception:
             logger.exception("Refining cycle failed")
+
+    def _try_spawn_index_lite(self, lock_dir: Path, now: float) -> None:
+        """Spawn indexing worker for summaries only (lite mode)."""
+        self._last_index_at = now
+        try:
+            if SearchIndexer.has_pending(skip_artifacts=True):
+                proc = multiprocessing.Process(
+                    target=index_worker,
+                    args=(lock_dir,),
+                    kwargs={"skip_artifacts": True, "log_queue": self._log_queue},
+                )
+                proc.start()
+                self._workers.append(proc)
+                logger.info("Spawned indexing worker [lite] (pid=%d)", proc.pid)
+        except Exception:
+            logger.exception("Indexing cycle failed (lite)")
+
+    def _try_spawn_summary(self, lock_dir: Path, now: float) -> None:
+        """Spawn summarization worker if any active transcripts need a refresh."""
+        self._last_summary_at = now
+        try:
+            if summary_has_pending():
+                proc = multiprocessing.Process(
+                    target=summary_worker,
+                    args=(lock_dir,),
+                    kwargs={"log_queue": self._log_queue},
+                )
+                proc.start()
+                self._workers.append(proc)
+                logger.info("Spawned summary worker (pid=%d)", proc.pid)
+        except Exception:
+            logger.exception("Summary cycle failed")
 
     def _tick_ingest(self, lock_dir: Path) -> None:
         """Run one ingest poll."""

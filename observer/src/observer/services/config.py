@@ -87,3 +87,18 @@ def set_summary_model(model: str) -> None:
     data = _read()
     data["summary_model"] = model
     _write(data)
+
+
+def get_extraction_enabled() -> bool:
+    """Return whether full extraction is enabled. Default True (full mode)."""
+    value = _read().get("extraction_enabled")
+    if value is None:
+        return True
+    return bool(value)
+
+
+def set_extraction_enabled(enabled: bool) -> None:
+    """Persist the extraction enabled flag to the config file."""
+    data = _read()
+    data["extraction_enabled"] = enabled
+    _write(data)
