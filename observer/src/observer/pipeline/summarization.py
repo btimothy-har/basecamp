@@ -9,7 +9,6 @@ import logging
 from datetime import UTC, datetime
 
 from observer.constants import SUMMARY_INTERVAL
-from observer.data.enums import RawEventStatus
 from observer.data.raw_event import RawEvent
 from observer.data.schemas import RawEventSchema, TranscriptSchema
 from observer.pipeline.extraction import extract_title
@@ -27,18 +26,11 @@ def has_pending() -> bool:
     """
     now = datetime.now(UTC)
     with Database().session() as session:
-        transcripts = (
-            session.query(TranscriptSchema)
-            .filter(TranscriptSchema.ended_at.is_(None))
-            .all()
-        )
+        transcripts = session.query(TranscriptSchema).filter(TranscriptSchema.ended_at.is_(None)).all()
         for t in transcripts:
             # Must have ingested events
             has_events = (
-                session.query(RawEventSchema.id)
-                .filter(RawEventSchema.transcript_id == t.id)
-                .limit(1)
-                .first()
+                session.query(RawEventSchema.id).filter(RawEventSchema.transcript_id == t.id).limit(1).first()
             ) is not None
             if not has_events:
                 continue
@@ -59,11 +51,7 @@ def summarize_active_transcripts(db: Database) -> int:
     updated = 0
 
     with db.session() as session:
-        transcripts = (
-            session.query(TranscriptSchema)
-            .filter(TranscriptSchema.ended_at.is_(None))
-            .all()
-        )
+        transcripts = session.query(TranscriptSchema).filter(TranscriptSchema.ended_at.is_(None)).all()
         # Detach before closing session — we only need id + last_summary_at
         pending = []
         for t in transcripts:
