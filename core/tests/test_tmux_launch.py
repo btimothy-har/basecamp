@@ -60,6 +60,7 @@ class TestTerminalWrapping:
             patch.dict("os.environ", {"BASECAMP_REPO": "test-repo"}, clear=False),
         ):
             os.environ.pop("TMUX", None)
+            os.environ.pop("KITTY_LISTEN_ON", None)
 
             execute_launch("testproject", config)
 
@@ -116,6 +117,7 @@ class TestTerminalWrapping:
             patch("shutil.which", return_value="/usr/bin/tmux"),
         ):
             os.environ.pop("TMUX", None)
+            os.environ.pop("KITTY_LISTEN_ON", None)
 
             execute_launch("testproject", config)
 
@@ -135,6 +137,7 @@ class TestTerminalWrapping:
             patch("shutil.which", return_value="/usr/bin/tmux"),
         ):
             os.environ.pop("TMUX", None)
+            os.environ.pop("KITTY_LISTEN_ON", None)
 
             execute_launch("testproject", config, resume=True)
 
