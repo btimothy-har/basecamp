@@ -94,10 +94,13 @@ class Artifact(BaseModel):
         )
 
     @classmethod
-    def get_pending_index(cls) -> list[Self]:
+    def get_pending_index(cls, *, transcript_id: int | None = None) -> list[Self]:
         """Return artifacts that need (re-)indexing."""
         with Database().session() as session:
-            rows = session.query(ArtifactSchema).filter(cls._pending_condition()).all()
+            q = session.query(ArtifactSchema).filter(cls._pending_condition())
+            if transcript_id is not None:
+                q = q.filter(ArtifactSchema.transcript_id == transcript_id)
+            rows = q.all()
             return [cls.model_validate(row) for row in rows]
 
     @classmethod

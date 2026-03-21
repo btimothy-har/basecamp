@@ -95,9 +95,9 @@ class EventGrouper:
         return RawEvent.has_unprocessed()
 
     @staticmethod
-    def group_batch(db: Database, *, batch_limit: int) -> int:
+    def group_batch(db: Database, *, transcript_id: int | None = None, batch_limit: int) -> int:
         """Classify ungrouped RawEvents into WorkItems. Returns count created."""
-        events = RawEvent.get_unprocessed(limit=batch_limit)
+        events = RawEvent.get_unprocessed(transcript_id=transcript_id, limit=batch_limit)
         if not events:
             return 0
 

@@ -49,10 +49,11 @@ class SearchIndexer:
     def index_batch(
         db: Database,
         *,
+        transcript_id: int | None = None,
         batch_limit: int = EMBEDDING_BATCH_LIMIT,
     ) -> int:
         """Embed a batch of pending artifacts. Returns count of rows updated."""
-        to_index = Artifact.get_pending_index()[:batch_limit]
+        to_index = Artifact.get_pending_index(transcript_id=transcript_id)[:batch_limit]
 
         if not to_index:
             return 0

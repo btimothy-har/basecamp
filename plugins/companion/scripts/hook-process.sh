@@ -15,10 +15,16 @@ fi
 
 # Read hook input and extract session_id
 INPUT=$(cat)
-SESSION_ID=$(echo "$INPUT" | python3 -c "import sys,json; print(json.load(sys.stdin)['session_id'])")
+SESSION_ID=$(echo "$INPUT" | python3 -c "import sys,json; print(json.load(sys.stdin)['session_id'])" 2>/dev/null)
+
+if [ -z "$SESSION_ID" ]; then
+    exit 0
+fi
 
 # Synchronous: ingest new events
-echo "$INPUT" | observer ingest 2>/dev/null || true
+if ! echo "$INPUT" | observer ingest 2>/dev/null; then
+    exit 0
+fi
 
 # Background: refine + extract + embed (detached, non-blocking)
 nohup observer process "$SESSION_ID" >/dev/null 2>&1 &
