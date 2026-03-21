@@ -10,8 +10,8 @@ import numpy as np
 from observer.constants import EMBEDDING_DIMENSIONS
 from observer.data.enums import SectionType
 from observer.data.schemas import (
-    ProjectSchema,
     ArtifactSchema,
+    ProjectSchema,
     TranscriptSchema,
 )
 from observer.mcp import engine
@@ -31,7 +31,7 @@ def _mock_model():
     return model
 
 
-def _seed_extraction(
+def _seed_artifact(
     db,
     *,
     section_type=SectionType.KNOWLEDGE,
@@ -108,14 +108,14 @@ def _seed_summary(
 
 class TestSearchArtifacts:
     def test_returns_extraction_results(self, db):  # noqa: ARG002
-        _seed_extraction(db)
+        _seed_artifact(db)
 
         with patch.object(engine, "_get_model", return_value=_mock_model()):
             results = engine.search_artifacts("test query", "test-project")
 
         assert len(results) >= 1
         result = results[0]
-        assert "source_id" in result
+        assert "artifact_id" in result
         assert "text" in result
         assert "score" in result
         assert "transcript_id" in result
@@ -131,7 +131,7 @@ class TestSearchArtifacts:
             assert r.get("type") != SectionType.SUMMARY
 
     def test_scopes_to_project(self, db):  # noqa: ARG002
-        _seed_extraction(db, session_id="sess-scoped")
+        _seed_artifact(db, session_id="sess-scoped")
 
         with patch.object(engine, "_get_model", return_value=_mock_model()):
             results = engine.search_artifacts("test query", "nonexistent-project")
@@ -139,7 +139,7 @@ class TestSearchArtifacts:
         assert len(results) == 0
 
     def test_excludes_current_session(self, db):  # noqa: ARG002
-        _seed_extraction(db, session_id="current-session")
+        _seed_artifact(db, session_id="current-session")
 
         with patch.object(engine, "_get_model", return_value=_mock_model()):
             results = engine.search_artifacts("test query", "test-project", session_id="current-session")
@@ -148,7 +148,7 @@ class TestSearchArtifacts:
 
     def test_respects_top_k(self, db):  # noqa: ARG002
         for i in range(5):
-            _seed_extraction(db, session_id=f"sess-topk-{i}")
+            _seed_artifact(db, session_id=f"sess-topk-{i}")
 
         with patch.object(engine, "_get_model", return_value=_mock_model()):
             results = engine.search_artifacts("test query", "test-project", top_k=2)
@@ -156,7 +156,7 @@ class TestSearchArtifacts:
         assert len(results) <= 2
 
     def test_threshold_filters_low_scores(self, db):  # noqa: ARG002
-        _seed_extraction(db, session_id="sess-thresh")
+        _seed_artifact(db, session_id="sess-thresh")
 
         with patch.object(engine, "_get_model", return_value=_mock_model()):
             results = engine.search_artifacts("test query", "test-project", threshold=0.99)
@@ -165,8 +165,8 @@ class TestSearchArtifacts:
             assert r["score"] >= 0.99
 
     def test_none_project_returns_all_projects(self, db):  # noqa: ARG002
-        _seed_extraction(db, session_id="sess-proj-a", project_name="project-a")
-        _seed_extraction(db, session_id="sess-proj-b", project_name="project-b")
+        _seed_artifact(db, session_id="sess-proj-a", project_name="project-a")
+        _seed_artifact(db, session_id="sess-proj-b", project_name="project-b")
 
         with patch.object(engine, "_get_model", return_value=_mock_model()):
             results = engine.search_artifacts("test query", None, top_k=50, threshold=0.0)
@@ -217,14 +217,14 @@ class TestSearchTranscripts:
 
         assert len(results) >= 1
         result = results[0]
-        assert "source_id" in result
+        assert "artifact_id" in result
         assert "text" in result
         assert "score" in result
         assert "title" in result
         assert "transcript_id" in result
 
     def test_excludes_non_summary_sections(self, db):  # noqa: ARG002
-        _seed_extraction(db, session_id="sess-excluded")
+        _seed_artifact(db, session_id="sess-excluded")
 
         with patch.object(engine, "_get_model", return_value=_mock_model()):
             results = engine.search_transcripts("test query", "test-project")
@@ -274,11 +274,11 @@ class TestSearchTranscripts:
         assert results == []
 
 
-class TestGetExtraction:
+class TestGetArtifact:
     def test_returns_extraction(self, db):  # noqa: ARG002
-        ext_id = _seed_extraction(db, session_id="sess-get")
+        ext_id = _seed_artifact(db, session_id="sess-get")
 
-        result = engine.get_extraction(ext_id)
+        result = engine.get_artifact(ext_id)
 
         assert result is not None
         assert result["id"] == ext_id
@@ -286,15 +286,15 @@ class TestGetExtraction:
         assert "text" in result
 
     def test_returns_none_for_missing(self, db):  # noqa: ARG002
-        result = engine.get_extraction(99999)
+        result = engine.get_artifact(99999)
         assert result is None
 
 
-class TestGetTranscriptSummary:
+class TestGetTranscriptDetail:
     def test_returns_summary(self, db):  # noqa: ARG002
         transcript_id = _seed_summary(db, session_id="sess-get-summary")
 
-        result = engine.get_transcript_summary(transcript_id)
+        result = engine.get_transcript_detail(transcript_id)
 
         assert result is not None
         assert result["id"] == transcript_id
@@ -304,7 +304,7 @@ class TestGetTranscriptSummary:
         assert "sections" in result
 
     def test_returns_none_for_missing(self, db):  # noqa: ARG002
-        result = engine.get_transcript_summary(99999)
+        result = engine.get_transcript_detail(99999)
         assert result is None
 
 

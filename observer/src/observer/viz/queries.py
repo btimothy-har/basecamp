@@ -8,12 +8,12 @@ from __future__ import annotations
 
 from sqlalchemy import func
 
-from observer.data.enums import RawEventStatus, SectionType
 from observer.data.artifact import Artifact
+from observer.data.enums import RawEventStatus, SectionType
 from observer.data.schemas import (
+    ArtifactSchema,
     ProjectSchema,
     RawEventSchema,
-    ArtifactSchema,
     TranscriptSchema,
 )
 from observer.services.db import Database
@@ -68,7 +68,7 @@ def get_pipeline_stats(
             "skipped": skipped,
             "errors": errors,
             "pending": pending,
-            "total_extractions": extractions_q.count(),
+            "total_artifacts": extractions_q.count(),
         }
 
 
@@ -166,7 +166,7 @@ def get_transcripts(
             event_count = (
                 session.query(func.count(RawEventSchema.id)).filter(RawEventSchema.transcript_id == r.id).scalar()
             )
-            extraction_count = (
+            artifact_count = (
                 session.query(func.count(ArtifactSchema.id))
                 .filter(ArtifactSchema.transcript_id == r.id)
                 .scalar()
@@ -179,19 +179,19 @@ def get_transcripts(
                     "title": title,
                     "started_at": r.started_at.isoformat() if r.started_at else None,
                     "event_count": event_count,
-                    "extraction_count": extraction_count,
+                    "artifact_count": artifact_count,
                 }
             )
         return results
 
 
-def get_extractions(
+def get_artifacts(
     transcript_id: int | None = None,
     section_type: str | None = None,
     project_id: int | None = None,
     worktree_id: int | None | str = None,
 ) -> list[dict]:
-    """Extraction sections with text preview."""
+    """Artifact sections with text preview."""
     with Database().session() as session:
         q = session.query(ArtifactSchema)
         if transcript_id is not None:
@@ -218,10 +218,10 @@ def get_extractions(
         ]
 
 
-def get_extraction_detail(extraction_id: int) -> dict | None:
-    """Single extraction section with full text."""
+def get_artifact_detail(artifact_id: int) -> dict | None:
+    """Single artifact section with full text."""
     with Database().session() as session:
-        row = session.get(ArtifactSchema, extraction_id)
+        row = session.get(ArtifactSchema, artifact_id)
         if row is None:
             return None
 

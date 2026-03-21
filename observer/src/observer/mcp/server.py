@@ -93,20 +93,20 @@ def _search_transcripts(
     return {"results": results, "count": len(results)}
 
 
-def _get_extraction(extraction_id: int) -> dict:
-    """Core get_extraction logic, called by the MCP tool wrapper."""
+def _get_artifact(artifact_id: int) -> dict:
+    """Core get_artifact logic, called by the MCP tool wrapper."""
     if get_mode() == "off":
         return {"error": _MODE_DISABLED_MSG}
 
-    result = engine.get_extraction(extraction_id)
+    result = engine.get_artifact(artifact_id)
     if result is None:
-        return {"error": f"Extraction {extraction_id} not found"}
+        return {"error": f"Artifact {artifact_id} not found"}
     return result
 
 
-def _get_transcript_summary(transcript_id: int) -> dict:
-    """Core get_transcript_summary logic, called by the MCP tool wrapper."""
-    result = engine.get_transcript_summary(transcript_id)
+def _get_transcript_detail(transcript_id: int) -> dict:
+    """Core get_transcript_detail logic, called by the MCP tool wrapper."""
+    result = engine.get_transcript_detail(transcript_id)
     if result is None:
         return {"error": f"Transcript {transcript_id} not found"}
     return result
@@ -121,9 +121,9 @@ def search_artifacts(
 ) -> dict:
     """Search for extracted knowledge, decisions, actions, and constraints.
 
-    Precision retrieval over transcript extraction sections. Each result
-    is a specific extraction (knowledge, decision, constraint, or action)
-    from a past session. Use get_extraction to retrieve full details.
+    Precision retrieval over transcript artifact sections. Each result
+    is a specific artifact (knowledge, decision, constraint, or action)
+    from a past session. Use get_artifact to retrieve full details.
 
     Args:
         query: Natural language search query.
@@ -132,9 +132,9 @@ def search_artifacts(
         worktree: Optional worktree label to filter by.
 
     Returns:
-        Dict with 'results' list and 'count'. Each result contains source_id,
+        Dict with 'results' list and 'count'. Each result contains artifact_id,
         type (section_type), text, score, created_at, and transcript_id.
-        Use get_extraction to retrieve full details for any result.
+        Use get_artifact to retrieve full details for any result.
     """
     return _search_artifacts(query, top_k=top_k, threshold=threshold, worktree=worktree)
 
@@ -149,7 +149,7 @@ def search_transcripts(
     """Search for relevant past sessions by their summaries.
 
     Orientation retrieval — finds sessions whose work is semantically related
-    to the query. Use get_transcript_summary to drill down into the full
+    to the query. Use get_transcript_detail to drill down into the full
     structured sections (summary, knowledge, decisions, constraints, actions).
 
     Args:
@@ -159,33 +159,33 @@ def search_transcripts(
         worktree: Optional worktree label to filter by.
 
     Returns:
-        Dict with 'results' list and 'count'. Each result contains source_id,
+        Dict with 'results' list and 'count'. Each result contains artifact_id,
         title, text, score, created_at, and transcript_id.
     """
     return _search_transcripts(query, top_k=top_k, threshold=threshold, worktree=worktree)
 
 
 @mcp.tool
-def get_extraction(extraction_id: int) -> dict:
-    """Retrieve a single transcript extraction section by ID.
+def get_artifact(artifact_id: int) -> dict:
+    """Retrieve a single artifact by ID.
 
-    Returns the extraction's section type, full text, transcript ID,
+    Returns the artifact's section type, full text, transcript ID,
     and creation timestamp.
 
     Args:
-        extraction_id: The extraction's database ID.
+        artifact_id: The artifact's database ID.
 
     Returns:
-        Dict with extraction details, or error if not found.
+        Dict with artifact details, or error if not found.
     """
-    return _get_extraction(extraction_id)
+    return _get_artifact(artifact_id)
 
 
 @mcp.tool
-def get_transcript_summary(transcript_id: int) -> dict:
-    """Retrieve a transcript's extraction sections and metadata.
+def get_transcript_detail(transcript_id: int) -> dict:
+    """Retrieve a transcript's artifact sections and metadata.
 
-    Returns all extraction sections (summary, knowledge, decisions,
+    Returns all artifact sections (summary, knowledge, decisions,
     constraints, actions) for a transcript, plus session timing info.
     Use this to drill down on transcript hits from search results.
 
@@ -195,7 +195,7 @@ def get_transcript_summary(transcript_id: int) -> dict:
     Returns:
         Dict with transcript details and sections dict, or error if not found.
     """
-    return _get_transcript_summary(transcript_id)
+    return _get_transcript_detail(transcript_id)
 
 
 def _get_session(session_id: str) -> dict:

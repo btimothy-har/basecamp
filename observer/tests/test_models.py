@@ -5,12 +5,10 @@ from datetime import UTC, datetime
 import pytest
 from observer.data.enums import SectionType
 from observer.data.schemas import (
+    ArtifactSchema,
     ProjectSchema,
     RawEventSchema,
-    TranscriptEventSchema,
-    ArtifactSchema,
     TranscriptSchema,
-    WorkItemSchema,
     WorktreeSchema,
 )
 from sqlalchemy import inspect
@@ -185,10 +183,10 @@ class TestIngestionModels:
                 s.flush()
 
 
-class TestExtractionModels:
+class TestArtifactModels:
     """Tests for ArtifactSchema."""
 
-    def test_create_extraction(self, db):
+    def test_create_artifact(self, db):
         with db.session() as s:
             p = _make_project(s)
             t = _make_transcript(s, p)

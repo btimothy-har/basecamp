@@ -146,9 +146,9 @@ class TestDeduplicate:
         """Two near-identical transcript summaries (no type field) get deduped."""
         emb = _make_embedding(0)
         results = [
-            {"source_id": 1, "score": 0.9, "_embedding": emb},
-            {"source_id": 2, "score": 0.8, "_embedding": emb},
+            {"artifact_id": 1, "score": 0.9, "_embedding": emb},
+            {"artifact_id": 2, "score": 0.8, "_embedding": emb},
         ]
         kept = deduplicate(results)
         assert len(kept) == 1
-        assert kept[0]["source_id"] == 1
+        assert kept[0]["artifact_id"] == 1

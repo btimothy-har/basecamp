@@ -8,8 +8,8 @@ import logging
 
 from observer import prompts
 from observer.pipeline.models import (
-    SummaryResult,
     ExtractionResult,
+    SummaryResult,
 )
 from observer.services.agent import Agent
 from observer.services.config import get_extraction_model

@@ -18,15 +18,15 @@ from observer.constants import (
     SEARCH_DEFAULT_TOP_K,
     SEARCH_OVERFETCH_FACTOR,
 )
+from observer.data.artifact import Artifact
 from observer.data.enums import SectionType
 from observer.data.schemas import (
-    ProjectSchema,
     ArtifactSchema,
+    ProjectSchema,
     TranscriptSchema,
     WorktreeSchema,
 )
 from observer.data.transcript import Transcript
-from observer.data.artifact import Artifact
 from observer.mcp.scoring import compute_score, deduplicate
 from observer.services.db import Database
 
@@ -115,19 +115,19 @@ def search_artifacts(
             return []
 
         scored: list[dict[str, Any]] = []
-        for extraction, distance in rows:
-            score = compute_score(distance, extraction.created_at)
+        for artifact, distance in rows:
+            score = compute_score(distance, artifact.created_at)
             if score < threshold:
                 continue
 
             scored.append({
-                "source_id": extraction.id,
-                "text": extraction.text,
-                "type": extraction.section_type,
+                "artifact_id": artifact.id,
+                "text": artifact.text,
+                "type": artifact.section_type,
                 "score": round(score, 4),
-                "created_at": extraction.created_at.isoformat() if extraction.created_at else None,
-                "transcript_id": extraction.transcript_id,
-                "_embedding": extraction.embedding,
+                "created_at": artifact.created_at.isoformat() if artifact.created_at else None,
+                "transcript_id": artifact.transcript_id,
+                "_embedding": artifact.embedding,
             })
 
         scored.sort(key=lambda r: r["score"], reverse=True)
@@ -152,8 +152,8 @@ def search_transcripts(
     """Semantic search over summary extraction sections.
 
     Finds sessions whose summaries are semantically relevant to the query.
-    Returns session-level matches for orientation — use get_transcript_summary
-    to drill down into the full structured summary.
+    Returns session-level matches for orientation — use get_transcript_detail
+    to drill down into the full structured sections.
     """
     model = _get_model()
     query_vector = model.encode([query], show_progress_bar=False)[0].tolist()
@@ -178,20 +178,20 @@ def search_transcripts(
             return []
 
         scored: list[dict[str, Any]] = []
-        for extraction, distance in rows:
-            score = compute_score(distance, extraction.created_at)
+        for artifact, distance in rows:
+            score = compute_score(distance, artifact.created_at)
             if score < threshold:
                 continue
 
-            title = Artifact.parse_title(extraction.text)
+            title = Artifact.parse_title(artifact.text)
 
             result: dict[str, Any] = {
-                "source_id": extraction.id,
-                "text": extraction.text,
+                "artifact_id": artifact.id,
+                "text": artifact.text,
                 "score": round(score, 4),
-                "created_at": extraction.created_at.isoformat() if extraction.created_at else None,
-                "transcript_id": extraction.transcript_id,
-                "_embedding": extraction.embedding,
+                "created_at": artifact.created_at.isoformat() if artifact.created_at else None,
+                "transcript_id": artifact.transcript_id,
+                "_embedding": artifact.embedding,
             }
 
             if title is not None:
@@ -209,34 +209,34 @@ def search_transcripts(
     return results
 
 
-def _extraction_sections_dict(transcript_id: int) -> dict[str, str]:
-    """Get extraction sections for a transcript as {section_type: text}."""
-    extractions = Artifact.get_for_transcript(transcript_id)
-    return {e.section_type: e.text for e in extractions}
+def _sections_dict(transcript_id: int) -> dict[str, str]:
+    """Get artifact sections for a transcript as {section_type: text}."""
+    artifacts = Artifact.get_for_transcript(transcript_id)
+    return {a.section_type: a.text for a in artifacts}
 
 
-def get_extraction(extraction_id: int) -> dict[str, Any] | None:
-    """Retrieve a single transcript extraction section by ID."""
-    extraction = Artifact.get(extraction_id)
-    if extraction is None:
+def get_artifact(artifact_id: int) -> dict[str, Any] | None:
+    """Retrieve a single artifact by ID."""
+    artifact = Artifact.get(artifact_id)
+    if artifact is None:
         return None
 
     return {
-        "id": extraction.id,
-        "section_type": extraction.section_type,
-        "text": extraction.text,
-        "transcript_id": extraction.transcript_id,
-        "created_at": extraction.created_at.isoformat() if extraction.created_at else None,
+        "id": artifact.id,
+        "section_type": artifact.section_type,
+        "text": artifact.text,
+        "transcript_id": artifact.transcript_id,
+        "created_at": artifact.created_at.isoformat() if artifact.created_at else None,
     }
 
 
-def get_transcript_summary(transcript_id: int) -> dict[str, Any] | None:
-    """Retrieve a transcript's extraction sections and metadata for drill-down."""
+def get_transcript_detail(transcript_id: int) -> dict[str, Any] | None:
+    """Retrieve a transcript's artifact sections and metadata for drill-down."""
     transcript = Transcript.get(transcript_id)
     if transcript is None:
         return None
 
-    sections = _extraction_sections_dict(transcript_id)
+    sections = _sections_dict(transcript_id)
 
     title = Artifact.parse_title(sections.get(SectionType.SUMMARY))
 
@@ -260,7 +260,7 @@ def get_session(session_id: str) -> dict[str, Any] | None:
     if transcript is None:
         return None
 
-    sections = _extraction_sections_dict(transcript.id)
+    sections = _sections_dict(transcript.id)
 
     return {
         "session_id": transcript.session_id,

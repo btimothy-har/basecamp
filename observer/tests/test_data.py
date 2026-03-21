@@ -8,17 +8,16 @@ from observer.data import (
     Transcript,
     Worktree,
 )
+from observer.data.artifact import Artifact
 from observer.data.enums import SectionType
 from observer.data.schemas import (
+    ArtifactSchema,
     ProjectSchema,
     RawEventSchema,
-    TranscriptEventSchema,
-    ArtifactSchema,
     TranscriptSchema,
-    WorkItemSchema,
     WorktreeSchema,
 )
-from observer.data.artifact import Artifact
+
 NOW = datetime.now(UTC)
 
 

@@ -1,6 +1,5 @@
 """Tests for observer.pipeline.indexing module."""
 
-import hashlib
 from datetime import UTC, datetime, timedelta
 from unittest.mock import MagicMock, patch
 
@@ -8,8 +7,8 @@ import numpy as np
 from observer.constants import EMBEDDING_DIMENSIONS
 from observer.data.enums import SectionType
 from observer.data.schemas import (
-    ProjectSchema,
     ArtifactSchema,
+    ProjectSchema,
     TranscriptSchema,
 )
 from observer.pipeline import indexing
@@ -49,14 +48,14 @@ def _seed_project_and_transcript(db, *, session_id="sess-1"):
         return project.id, transcript.id
 
 
-def _create_extraction(
+def _create_artifact(
     db,
     transcript_id,
     *,
     text="some knowledge",
     section_type=SectionType.KNOWLEDGE,
 ):
-    """Create a transcript extraction. Returns extraction ID."""
+    """Create an artifact. Returns artifact ID."""
     with db.session() as session:
         extraction = ArtifactSchema(
             transcript_id=transcript_id,
@@ -84,36 +83,36 @@ class TestHasPending:
 
     def test_true_when_unindexed_extraction(self, db):
         _, transcript_id = _seed_project_and_transcript(db)
-        _create_extraction(db, transcript_id)
+        _create_artifact(db, transcript_id)
         assert SearchIndexer.has_pending() is True
 
     def test_false_when_all_indexed(self, db):
         _, transcript_id = _seed_project_and_transcript(db)
-        ext_id = _create_extraction(db, transcript_id)
+        ext_id = _create_artifact(db, transcript_id)
         _mark_indexed(db, ext_id)
         assert SearchIndexer.has_pending() is False
 
     def test_true_when_summary_unindexed(self, db):
         _, transcript_id = _seed_project_and_transcript(db)
-        _create_extraction(db, transcript_id, text="A summary.", section_type=SectionType.SUMMARY)
+        _create_artifact(db, transcript_id, text="A summary.", section_type=SectionType.SUMMARY)
         assert SearchIndexer.has_pending() is True
 
     def test_true_when_content_changed(self, db):
         _, transcript_id = _seed_project_and_transcript(db)
-        ext_id = _create_extraction(db, transcript_id, text="Updated text.")
+        ext_id = _create_artifact(db, transcript_id, text="Updated text.")
         _mark_indexed(db, ext_id, stale_hash=True)
         assert SearchIndexer.has_pending() is True
 
     def test_false_when_content_current(self, db):
         text = "Current text."
         _, transcript_id = _seed_project_and_transcript(db)
-        ext_id = _create_extraction(db, transcript_id, text=text)
+        ext_id = _create_artifact(db, transcript_id, text=text)
         _mark_indexed(db, ext_id, text=text)
         assert SearchIndexer.has_pending() is False
 
     def test_true_when_updated_after_indexed(self, db):
         _, transcript_id = _seed_project_and_transcript(db)
-        ext_id = _create_extraction(db, transcript_id)
+        ext_id = _create_artifact(db, transcript_id)
         _mark_indexed(db, ext_id)
 
         # Simulate text update after indexing
@@ -127,7 +126,7 @@ class TestHasPending:
 class TestIndexBatch:
     def test_indexes_extraction(self, db):
         _, transcript_id = _seed_project_and_transcript(db)
-        ext_id = _create_extraction(db, transcript_id, text="extraction text")
+        ext_id = _create_artifact(db, transcript_id, text="extraction text")
 
         with patch.object(indexing, "_get_model", return_value=_mock_model(1)):
             count = SearchIndexer.index_batch(db)
@@ -151,7 +150,7 @@ class TestIndexBatch:
     def test_respects_batch_limit(self, db):
         _, transcript_id = _seed_project_and_transcript(db)
         for i in range(5):
-            _create_extraction(db, transcript_id, text=f"extraction {i}", section_type=list(SectionType)[i])
+            _create_artifact(db, transcript_id, text=f"extraction {i}", section_type=list(SectionType)[i])
 
         with patch.object(indexing, "_get_model", return_value=_mock_model(2)):
             count = SearchIndexer.index_batch(db, batch_limit=2)
@@ -168,7 +167,7 @@ class TestIndexBatch:
 
     def test_indexes_summary_section(self, db):
         _, transcript_id = _seed_project_and_transcript(db)
-        ext_id = _create_extraction(
+        ext_id = _create_artifact(
             db, transcript_id, text="Session summary text.", section_type=SectionType.SUMMARY
         )
 
@@ -184,7 +183,7 @@ class TestIndexBatch:
 
     def test_updates_changed_content(self, db):
         _, transcript_id = _seed_project_and_transcript(db)
-        ext_id = _create_extraction(db, transcript_id, text="New text.")
+        ext_id = _create_artifact(db, transcript_id, text="New text.")
         _mark_indexed(db, ext_id, stale_hash=True)
 
         with patch.object(indexing, "_get_model", return_value=_mock_model(1)):
@@ -199,7 +198,7 @@ class TestIndexBatch:
     def test_skips_unchanged_content(self, db):
         text = "Unchanged text."
         _, transcript_id = _seed_project_and_transcript(db)
-        ext_id = _create_extraction(db, transcript_id, text=text)
+        ext_id = _create_artifact(db, transcript_id, text=text)
         _mark_indexed(db, ext_id, text=text)
 
         with patch.object(indexing, "_get_model") as mock_st_cls:
@@ -210,8 +209,8 @@ class TestIndexBatch:
 
     def test_indexes_multiple_sections_in_one_batch(self, db):
         _, transcript_id = _seed_project_and_transcript(db)
-        _create_extraction(db, transcript_id, text="A summary.", section_type=SectionType.SUMMARY)
-        _create_extraction(db, transcript_id, text="A decision.", section_type=SectionType.DECISIONS)
+        _create_artifact(db, transcript_id, text="A summary.", section_type=SectionType.SUMMARY)
+        _create_artifact(db, transcript_id, text="A decision.", section_type=SectionType.DECISIONS)
 
         with patch.object(indexing, "_get_model", return_value=_mock_model()):
             count = SearchIndexer.index_batch(db)

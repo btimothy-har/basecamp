@@ -63,8 +63,8 @@ search_artifacts — find specific knowledge, decisions, actions,
 and constraints extracted from past sessions.
 
 search_transcripts — find relevant past sessions by summary.
-Drill down with get_transcript_summary for the full structured
-summary."""
+Drill down with get_transcript_detail for the full structured
+sections."""
 
 # Container (local dev database)
 DB_CONTAINER_NAME = "observer-pg"

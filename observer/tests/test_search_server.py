@@ -5,9 +5,9 @@ from __future__ import annotations
 from unittest.mock import patch
 
 from observer.mcp.server import (
-    _get_extraction,
+    _get_artifact,
     _get_session,
-    _get_transcript_summary,
+    _get_transcript_detail,
     _resolve_search_context,
     _search_artifacts,
     _search_transcripts,
@@ -54,7 +54,7 @@ class TestSearchArtifactsTool:
         monkeypatch.setenv("BASECAMP_REPO", "test-project")
         monkeypatch.delenv("CLAUDE_SESSION_ID", raising=False)
 
-        mock_results = [{"source_id": 1, "type": "knowledge", "text": "found", "score": 0.9}]
+        mock_results = [{"artifact_id": 1, "type": "knowledge", "text": "found", "score": 0.9}]
 
         with patch("observer.mcp.engine.search_artifacts", return_value=mock_results) as mock:
             result = _search_artifacts("test query", top_k=5, threshold=0.5)
@@ -110,7 +110,7 @@ class TestSearchTranscriptsTool:
         monkeypatch.setenv("BASECAMP_REPO", "test-project")
         monkeypatch.delenv("CLAUDE_SESSION_ID", raising=False)
 
-        mock_results = [{"source_id": 1, "title": "Auth session", "text": "summary", "score": 0.8}]
+        mock_results = [{"artifact_id": 1, "title": "Auth session", "text": "summary", "score": 0.8}]
 
         with patch("observer.mcp.engine.search_transcripts", return_value=mock_results) as mock:
             result = _search_transcripts("test query", top_k=5, threshold=0.5)
@@ -155,35 +155,35 @@ class TestSearchTranscriptsTool:
         assert "error" not in result
 
 
-class TestGetExtractionTool:
+class TestGetArtifactTool:
     def test_found(self):
-        mock_result = {"id": 1, "type": "knowledge", "text": "extraction text"}
+        mock_result = {"id": 1, "type": "knowledge", "text": "artifact text"}
 
-        with patch("observer.mcp.engine.get_extraction", return_value=mock_result):
-            result = _get_extraction(1)
+        with patch("observer.mcp.engine.get_artifact", return_value=mock_result):
+            result = _get_artifact(1)
 
         assert result["id"] == 1
 
     def test_not_found(self):
-        with patch("observer.mcp.engine.get_extraction", return_value=None):
-            result = _get_extraction(99999)
+        with patch("observer.mcp.engine.get_artifact", return_value=None):
+            result = _get_artifact(99999)
 
         assert "error" in result
 
 
-class TestGetTranscriptSummaryTool:
+class TestGetTranscriptDetailTool:
     def test_found(self):
         mock_result = {"id": 1, "title": "Session title", "summary": "Summary text"}
 
-        with patch("observer.mcp.engine.get_transcript_summary", return_value=mock_result):
-            result = _get_transcript_summary(1)
+        with patch("observer.mcp.engine.get_transcript_detail", return_value=mock_result):
+            result = _get_transcript_detail(1)
 
         assert result["id"] == 1
         assert result["title"] == "Session title"
 
     def test_not_found(self):
-        with patch("observer.mcp.engine.get_transcript_summary", return_value=None):
-            result = _get_transcript_summary(99999)
+        with patch("observer.mcp.engine.get_transcript_detail", return_value=None):
+            result = _get_transcript_detail(99999)
 
         assert "error" in result
 

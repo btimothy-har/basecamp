@@ -7,9 +7,9 @@ Single LLM call per transcript produces all section types at once.
 import logging
 from datetime import UTC, datetime
 
+from observer.data.artifact import Artifact
 from observer.data.enums import SectionType, WorkItemType
 from observer.data.transcript_event import TranscriptEvent
-from observer.data.artifact import Artifact
 from observer.exceptions import ExtractionError
 from observer.pipeline.llm import extract_sections
 from observer.services.db import Database
