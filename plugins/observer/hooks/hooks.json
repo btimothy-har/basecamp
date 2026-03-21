@@ -1,11 +1,21 @@
 {
   "hooks": {
-    "SessionStart": [
+    "PreCompact": [
       {
         "hooks": [
           {
             "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/scripts/session-register.sh"
+            "command": "${CLAUDE_PLUGIN_ROOT}/scripts/hook-process.sh"
+          }
+        ]
+      }
+    ],
+    "SessionEnd": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/scripts/hook-process.sh"
           }
         ]
       }
