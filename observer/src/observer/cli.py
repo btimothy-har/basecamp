@@ -612,3 +612,99 @@ def register() -> None:
     pid = ensure_daemon_running()
     if pid:
         click.echo(f"Daemon running (pid={pid})")
+
+
+@main.command()
+def ingest() -> None:
+    """Ingest transcript events from a hook. Reads JSON from stdin.
+
+    Synchronous entry point for PreCompact/SessionEnd hooks.
+    Registers the session (if needed), parses new JSONL events,
+    and groups them into work items.
+    """
+    from observer.pipeline.parser import TranscriptParser  # noqa: PLC0415
+    from observer.pipeline.refining.grouping import EventGrouper  # noqa: PLC0415
+    from observer.services.db import Database  # noqa: PLC0415
+    from observer.services.registration import (  # noqa: PLC0415
+        HookInput,
+        register_session,
+    )
+
+    raw = sys.stdin.read()
+    if not raw.strip():
+        sys.exit("No input received on stdin.")
+
+    try:
+        data = json.loads(raw)
+    except json.JSONDecodeError as e:
+        sys.exit(f"Invalid JSON on stdin: {e}")
+
+    if not isinstance(data, dict):
+        sys.exit("stdin JSON must be an object/dict")
+
+    required = {"session_id", "transcript_path", "cwd"}
+    missing = required - data.keys()
+    if missing:
+        sys.exit(f"Missing required fields in stdin JSON: {', '.join(sorted(missing))}")
+
+    hook_input = HookInput(
+        session_id=data["session_id"],
+        transcript_path=data["transcript_path"],
+        cwd=data["cwd"],
+    )
+
+    try:
+        result = register_session(hook_input)
+    except (RegistrationError, ValueError) as e:
+        sys.exit(str(e))
+
+    transcript = result.transcript
+
+    # Parse new JSONL events from cursor_offset
+    ingested = TranscriptParser().ingest(transcript)
+
+    # Group raw events into work items (pure logic, no LLM)
+    db = Database()
+    grouped = EventGrouper.group_batch(db, batch_limit=500)
+
+    click.echo(f"session={transcript.session_id} ingested={ingested} grouped={grouped}")
+
+
+@main.command()
+@click.argument("session_id")
+def process(session_id: str) -> None:
+    """Run background processing for a session. Refine, extract, embed.
+
+    Called as a detached background process by the hook script.
+    Runs the full LLM pipeline: refine work_items into transcript_events,
+    extract structured artifacts, and embed for semantic search.
+    """
+    from observer.data.transcript import Transcript  # noqa: PLC0415
+    from observer.pipeline.extraction import TranscriptExtractor  # noqa: PLC0415
+    from observer.pipeline.indexing import SearchIndexer  # noqa: PLC0415
+    from observer.pipeline.refining import EventRefiner  # noqa: PLC0415
+    from observer.services.config import get_mode  # noqa: PLC0415
+    from observer.services.db import Database  # noqa: PLC0415
+    from observer.services.logger import configure_logging  # noqa: PLC0415
+
+    configure_logging()
+
+    transcript = Transcript.get_by_session_id(session_id)
+    if transcript is None:
+        sys.exit(f"No transcript found for session {session_id}")
+
+    if get_mode() == "off":
+        return
+
+    db = Database()
+    try:
+        # Phase 1: Refine work_items → transcript_events (LLM calls)
+        EventRefiner.refine_batch(db)
+
+        # Phase 2: Extract transcript_events → artifacts (single LLM call)
+        TranscriptExtractor.extract_transcript(db, transcript.id)
+
+        # Phase 3: Embed artifacts → pgvector
+        SearchIndexer.index_batch(db)
+    finally:
+        db.close()
