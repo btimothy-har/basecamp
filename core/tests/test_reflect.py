@@ -54,7 +54,6 @@ class TestReflectLaunch:
 
         with (
             patch("core.cli.reflect.resolve_graph_path", return_value=graph),
-            patch("core.cli.reflect.is_observer_configured", return_value=True),
             patch("os.chdir"),
             patch("os.execvp") as mock_execvp,
             patch.dict("os.environ", {}, clear=True),
@@ -81,7 +80,6 @@ class TestReflectLaunch:
 
         with (
             patch("core.cli.reflect.resolve_graph_path", return_value=graph),
-            patch("core.cli.reflect.is_observer_configured", return_value=True),
             patch("os.chdir"),
             patch("os.execvp") as mock_execvp,
             patch.dict("os.environ", {}, clear=True),
@@ -99,7 +97,6 @@ class TestReflectLaunch:
 
         with (
             patch("core.cli.reflect.resolve_graph_path", return_value=graph),
-            patch("core.cli.reflect.is_observer_configured", return_value=True),
             patch("os.chdir"),
             patch("os.execvp") as mock_execvp,
             patch.dict("os.environ", {"TMUX": "/tmp/tmux-501/default,12345,0"}),
@@ -116,7 +113,6 @@ class TestReflectLaunch:
         env: dict[str, str] = {"TMUX": "1"}
         with (
             patch("core.cli.reflect.resolve_graph_path", return_value=graph),
-            patch("core.cli.reflect.is_observer_configured", return_value=True),
             patch("os.chdir"),
             patch("os.execvp"),
             patch.dict("os.environ", env),
@@ -130,7 +126,6 @@ class TestReflectLaunch:
 
         with (
             patch("core.cli.reflect.resolve_graph_path", return_value=graph),
-            patch("core.cli.reflect.is_observer_configured", return_value=True),
             patch("os.chdir") as mock_chdir,
             patch("os.execvp"),
             patch.dict("os.environ", {"TMUX": "1"}),
@@ -144,7 +139,6 @@ class TestReflectLaunch:
 
         with (
             patch("core.cli.reflect.resolve_graph_path", return_value=graph),
-            patch("core.cli.reflect.is_observer_configured", return_value=True),
             patch("os.chdir"),
             patch("os.execvp") as mock_execvp,
             patch.dict("os.environ", {"TMUX": "1"}),
@@ -165,7 +159,6 @@ class TestReflectLaunch:
 
         with (
             patch("core.cli.reflect.resolve_graph_path", return_value=graph),
-            patch("core.cli.reflect.is_observer_configured", return_value=True),
             patch("os.chdir"),
             patch("os.execvp") as mock_execvp,
             patch.dict("os.environ", {"TMUX": "1"}),
@@ -178,18 +171,16 @@ class TestReflectLaunch:
             user_prompt = args[separator_idx + 1]
             assert "Discovery" in user_prompt
 
-    def test_loads_observer_plugin(self, tmp_path: Path) -> None:
+    def test_loads_companion_plugin(self, tmp_path: Path) -> None:
         graph = tmp_path / "brain"
         graph.mkdir()
-        # Create fake observer plugin structure so the .exists() check passes
         fake_script_dir = tmp_path / "install"
-        plugin_json = fake_script_dir / "plugins" / "observer" / ".claude-plugin" / "plugin.json"
+        plugin_json = fake_script_dir / "plugins" / "companion" / ".claude-plugin" / "plugin.json"
         plugin_json.parent.mkdir(parents=True)
         plugin_json.write_text("{}")
 
         with (
             patch("core.cli.reflect.resolve_graph_path", return_value=graph),
-            patch("core.cli.reflect.is_observer_configured", return_value=True),
             patch("core.cli.reflect.SCRIPT_DIR", fake_script_dir),
             patch("os.chdir"),
             patch("os.execvp") as mock_execvp,
@@ -201,31 +192,8 @@ class TestReflectLaunch:
             assert "--plugin-dir" in args
             plugin_idx = args.index("--plugin-dir")
             plugin_path = Path(args[plugin_idx + 1])
-            assert plugin_path.name == "observer"
+            assert plugin_path.name == "companion"
             assert plugin_path.parent.name == "plugins"
-
-    def test_does_not_load_companion(self, tmp_path: Path) -> None:
-        graph = tmp_path / "brain"
-        graph.mkdir()
-        # Create fake observer plugin so --plugin-dir appears in args
-        fake_script_dir = tmp_path / "install"
-        plugin_json = fake_script_dir / "plugins" / "observer" / ".claude-plugin" / "plugin.json"
-        plugin_json.parent.mkdir(parents=True)
-        plugin_json.write_text("{}")
-
-        with (
-            patch("core.cli.reflect.resolve_graph_path", return_value=graph),
-            patch("core.cli.reflect.is_observer_configured", return_value=True),
-            patch("core.cli.reflect.SCRIPT_DIR", fake_script_dir),
-            patch("os.chdir"),
-            patch("os.execvp") as mock_execvp,
-            patch.dict("os.environ", {"TMUX": "1"}),
-        ):
-            execute_reflect()
-
-            args = mock_execvp.call_args[0][1]
-            plugin_dirs = [args[i + 1] for i, arg in enumerate(args) if arg == "--plugin-dir"]
-            assert all(Path(d).name != "companion" for d in plugin_dirs)
 
     def test_not_configured_raises(self) -> None:
         with patch("core.cli.reflect.resolve_graph_path", side_effect=LogseqNotConfiguredError):
@@ -241,7 +209,6 @@ class TestReflectLaunch:
 
         with (
             patch("core.cli.reflect.resolve_graph_path", return_value=graph),
-            patch("core.cli.reflect.is_observer_configured", return_value=True),
             patch("os.chdir"),
             patch("os.execvp") as mock_execvp,
             patch("shutil.which", return_value=None),
@@ -258,7 +225,6 @@ class TestReflectLaunch:
 
         with (
             patch("core.cli.reflect.resolve_graph_path", return_value=graph),
-            patch("core.cli.reflect.is_observer_configured", return_value=True),
             patch("os.chdir"),
             patch("os.execvp") as mock_execvp,
             patch.dict("os.environ", {"KITTY_LISTEN_ON": "unix:/tmp/kitty-123"}, clear=True),

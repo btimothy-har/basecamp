@@ -41,7 +41,6 @@ class TestPlanLaunch:
 
         with (
             patch("core.cli.plan.resolve_graph_path", return_value=graph),
-            patch("core.cli.plan.is_observer_configured", return_value=True),
             patch("os.chdir"),
             patch("os.execvp") as mock_execvp,
             patch.dict("os.environ", {}, clear=True),
@@ -66,7 +65,6 @@ class TestPlanLaunch:
 
         with (
             patch("core.cli.plan.resolve_graph_path", return_value=graph),
-            patch("core.cli.plan.is_observer_configured", return_value=True),
             patch("os.chdir"),
             patch("os.execvp") as mock_execvp,
             patch.dict("os.environ", {}, clear=True),
@@ -84,7 +82,6 @@ class TestPlanLaunch:
 
         with (
             patch("core.cli.plan.resolve_graph_path", return_value=graph),
-            patch("core.cli.plan.is_observer_configured", return_value=True),
             patch("os.chdir"),
             patch("os.execvp") as mock_execvp,
             patch.dict("os.environ", {"TMUX": "/tmp/tmux-501/default,12345,0"}),
@@ -101,7 +98,6 @@ class TestPlanLaunch:
         env: dict[str, str] = {"TMUX": "1"}
         with (
             patch("core.cli.plan.resolve_graph_path", return_value=graph),
-            patch("core.cli.plan.is_observer_configured", return_value=True),
             patch("os.chdir"),
             patch("os.execvp"),
             patch.dict("os.environ", env),
@@ -115,7 +111,6 @@ class TestPlanLaunch:
 
         with (
             patch("core.cli.plan.resolve_graph_path", return_value=graph),
-            patch("core.cli.plan.is_observer_configured", return_value=True),
             patch("os.chdir") as mock_chdir,
             patch("os.execvp"),
             patch.dict("os.environ", {"TMUX": "1"}),
@@ -129,7 +124,6 @@ class TestPlanLaunch:
 
         with (
             patch("core.cli.plan.resolve_graph_path", return_value=graph),
-            patch("core.cli.plan.is_observer_configured", return_value=True),
             patch("os.chdir"),
             patch("os.execvp") as mock_execvp,
             patch.dict("os.environ", {"TMUX": "1"}),
@@ -148,7 +142,6 @@ class TestPlanLaunch:
 
         with (
             patch("core.cli.plan.resolve_graph_path", return_value=graph),
-            patch("core.cli.plan.is_observer_configured", return_value=True),
             patch("os.chdir"),
             patch("os.execvp") as mock_execvp,
             patch.dict("os.environ", {"TMUX": "1"}),
@@ -174,7 +167,6 @@ class TestPlanLaunch:
 
         with (
             patch("core.cli.plan.resolve_graph_path", return_value=graph),
-            patch("core.cli.plan.is_observer_configured", return_value=True),
             patch("os.chdir"),
             patch("os.execvp") as mock_execvp,
             patch("shutil.which", return_value=None),
@@ -191,7 +183,6 @@ class TestPlanLaunch:
 
         with (
             patch("core.cli.plan.resolve_graph_path", return_value=graph),
-            patch("core.cli.plan.is_observer_configured", return_value=True),
             patch("os.chdir"),
             patch("os.execvp") as mock_execvp,
             patch.dict("os.environ", {"KITTY_LISTEN_ON": "unix:/tmp/kitty-123"}, clear=True),

@@ -27,6 +27,8 @@ from core.prompts import system as prompts
 from core.terminal import resolve_launch_backend
 from core.utils import is_observer_configured
 
+OBSERVER_ENV_VAR = "BASECAMP_OBSERVER_ENABLED"
+
 DEFAULT_PATH_WORKING_STYLE = "engineering"
 
 
@@ -155,10 +157,9 @@ def execute_launch(
     if (companion_plugin_dir / ".claude-plugin" / "plugin.json").exists():
         cmd.extend(["--plugin-dir", str(companion_plugin_dir)])
 
-    # Load observer plugin when configured
-    observer_plugin_dir = SCRIPT_DIR / "plugins" / "observer"
-    if is_observer_configured(OBSERVER_CONFIG) and (observer_plugin_dir / ".claude-plugin" / "plugin.json").exists():
-        cmd.extend(["--plugin-dir", str(observer_plugin_dir)])
+    # Enable observer hooks/ingestion when configured
+    if is_observer_configured(OBSERVER_CONFIG):
+        os.environ[OBSERVER_ENV_VAR] = "1"
 
     # Add any additional project directories
     for directory in secondary_dirs:
@@ -207,7 +208,14 @@ def execute_launch(
     # Collect env vars that need forwarding (tmux wrapping requires explicit
     # passing because tmux new-session inherits the server's env, not the client's).
     env_vars: dict[str, str] = {k: v for k, v in dotenv_values(dotenv_path).items() if v is not None}
-    for var in ("BASECAMP_PROJECT", "BASECAMP_REPO", "BASECAMP_CONTEXT_FILE", "BASECAMP_SYSTEM_PROMPT"):
+    forward_vars = (
+        "BASECAMP_PROJECT",
+        "BASECAMP_REPO",
+        "BASECAMP_CONTEXT_FILE",
+        "BASECAMP_SYSTEM_PROMPT",
+        OBSERVER_ENV_VAR,
+    )
+    for var in forward_vars:
         value = os.environ.get(var)
         if value:
             env_vars[var] = value

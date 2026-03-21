@@ -3,6 +3,11 @@
 # Synchronous: ingest (parse + group)
 # Async: fire background process (refine + extract + embed)
 
+# Skip when observer is not configured
+if [ "${BASECAMP_OBSERVER_ENABLED}" != "1" ]; then
+    exit 0
+fi
+
 # Skip in reflect mode
 if [ "${BASECAMP_REFLECT}" = "1" ]; then
     exit 0
