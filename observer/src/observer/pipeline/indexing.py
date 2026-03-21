@@ -44,7 +44,7 @@ class SearchIndexer:
     @staticmethod
     def has_pending() -> bool:
         """Check if any extraction sections need embedding."""
-        return len(TranscriptExtraction.get_pending_index()) > 0
+        return TranscriptExtraction.has_pending_index()
 
     @staticmethod
     def index_batch(

@@ -1,6 +1,6 @@
 """Tests for observer Pydantic domain models."""
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 from observer.data import (
     Project,
@@ -8,14 +8,17 @@ from observer.data import (
     Transcript,
     Worktree,
 )
+from observer.data.enums import SectionType
 from observer.data.schemas import (
     ProjectSchema,
     RawEventSchema,
     TranscriptEventSchema,
+    TranscriptExtractionSchema,
     TranscriptSchema,
     WorkItemSchema,
     WorktreeSchema,
 )
+from observer.data.transcript_extraction import TranscriptExtraction
 NOW = datetime.now(UTC)
 
 
@@ -177,3 +180,129 @@ class TestLookupMethods:
 
     def test_transcript_get_by_session_id_not_found(self, db):  # noqa: ARG002
         assert Transcript.get_by_session_id("nonexistent") is None
+
+
+class TestTranscriptExtractionSave:
+    """Tests for TranscriptExtraction.save() upsert behavior."""
+
+    def _seed_transcript(self, db) -> int:
+        """Create a project + transcript, return transcript_id."""
+        with db.session() as session:
+            project = ProjectSchema(name="test-proj", repo_path="/tmp/test")
+            session.add(project)
+            session.flush()
+            transcript = TranscriptSchema(
+                project_id=project.id,
+                session_id="sess-upsert",
+                path="/tmp/transcript.jsonl",
+            )
+            session.add(transcript)
+            session.flush()
+            return transcript.id
+
+    def test_insert_creates_new_row(self, db):
+        tid = self._seed_transcript(db)
+        now = datetime.now(UTC)
+        extraction = TranscriptExtraction(
+            transcript_id=tid,
+            section_type=SectionType.KNOWLEDGE,
+            text="some knowledge",
+            created_at=now,
+            updated_at=now,
+        )
+        with db.session() as session:
+            saved = extraction.save(session)
+
+        assert saved.id is not None
+        assert saved.text == "some knowledge"
+        assert saved.section_type == SectionType.KNOWLEDGE
+
+    def test_update_overwrites_text(self, db):
+        tid = self._seed_transcript(db)
+        now = datetime.now(UTC)
+        later = now + timedelta(seconds=10)
+
+        with db.session() as session:
+            TranscriptExtraction(
+                transcript_id=tid,
+                section_type=SectionType.KNOWLEDGE,
+                text="v1",
+                created_at=now,
+                updated_at=now,
+            ).save(session)
+
+        with db.session() as session:
+            updated = TranscriptExtraction(
+                transcript_id=tid,
+                section_type=SectionType.KNOWLEDGE,
+                text="v2",
+                created_at=now,
+                updated_at=later,
+            ).save(session)
+
+        assert updated.text == "v2"
+
+        with db.session() as session:
+            count = (
+                session.query(TranscriptExtractionSchema)
+                .filter(
+                    TranscriptExtractionSchema.transcript_id == tid,
+                    TranscriptExtractionSchema.section_type == SectionType.KNOWLEDGE,
+                )
+                .count()
+            )
+        assert count == 1
+
+    def test_different_section_types_coexist(self, db):
+        tid = self._seed_transcript(db)
+        now = datetime.now(UTC)
+
+        with db.session() as session:
+            TranscriptExtraction(
+                transcript_id=tid,
+                section_type=SectionType.KNOWLEDGE,
+                text="knowledge",
+                created_at=now,
+                updated_at=now,
+            ).save(session)
+            TranscriptExtraction(
+                transcript_id=tid,
+                section_type=SectionType.DECISIONS,
+                text="decisions",
+                created_at=now,
+                updated_at=now,
+            ).save(session)
+
+        with db.session() as session:
+            count = (
+                session.query(TranscriptExtractionSchema)
+                .filter(TranscriptExtractionSchema.transcript_id == tid)
+                .count()
+            )
+        assert count == 2
+
+    def test_idempotent_save(self, db):
+        """Saving the same data twice doesn't create duplicates."""
+        tid = self._seed_transcript(db)
+        now = datetime.now(UTC)
+
+        for _ in range(2):
+            with db.session() as session:
+                TranscriptExtraction(
+                    transcript_id=tid,
+                    section_type=SectionType.SUMMARY,
+                    text="same text",
+                    created_at=now,
+                    updated_at=now,
+                ).save(session)
+
+        with db.session() as session:
+            count = (
+                session.query(TranscriptExtractionSchema)
+                .filter(
+                    TranscriptExtractionSchema.transcript_id == tid,
+                    TranscriptExtractionSchema.section_type == SectionType.SUMMARY,
+                )
+                .count()
+            )
+        assert count == 1

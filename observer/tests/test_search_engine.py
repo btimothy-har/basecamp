@@ -306,3 +306,32 @@ class TestGetTranscriptSummary:
     def test_returns_none_for_missing(self, db):  # noqa: ARG002
         result = engine.get_transcript_summary(99999)
         assert result is None
+
+
+class TestGetSession:
+    def test_returns_session_with_sections(self, db):
+        """Found session returns session_id, timestamps, and all extraction sections."""
+        transcript_id = _seed_summary(db, session_id="sess-get-session")
+
+        # Add a second section type to the same transcript
+        with db.session() as session:
+            extraction = TranscriptExtractionSchema(
+                transcript_id=transcript_id,
+                section_type=SectionType.KNOWLEDGE,
+                text="some knowledge",
+            )
+            session.add(extraction)
+
+        result = engine.get_session("sess-get-session")
+
+        assert result is not None
+        assert result["session_id"] == "sess-get-session"
+        assert "started_at" in result
+        assert "ended_at" in result
+        assert "sections" in result
+        assert SectionType.SUMMARY in result["sections"]
+        assert SectionType.KNOWLEDGE in result["sections"]
+
+    def test_returns_none_for_missing(self, db):  # noqa: ARG002
+        result = engine.get_session("nonexistent-session")
+        assert result is None

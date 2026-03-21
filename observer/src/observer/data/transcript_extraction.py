@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
-import hashlib
 from datetime import datetime
 from typing import Self
 
 from pydantic import BaseModel, ConfigDict
+from sqlalchemy import cast, exists, func, or_
 from sqlalchemy.orm import Session
+from sqlalchemy.types import LargeBinary
 
 from observer.data.enums import SectionType
 from observer.data.schemas import TranscriptExtractionSchema
@@ -73,22 +74,41 @@ class TranscriptExtraction(BaseModel):
             return cls.model_validate(row) if row else None
 
     @classmethod
-    def get_pending_index(cls) -> list[Self]:
-        """Return extractions that need (re-)indexing.
+    def _pending_condition(cls):
+        """SQLAlchemy filter expression for extractions that need (re-)indexing.
 
-        Pending when: never indexed, updated since last index, or content hash mismatch.
+        Pending when: never indexed, updated since last index, or embedding is stale
+        (content hash doesn't match current text). content_hash is only written by
+        update_embedding(), so mismatch means the embedding hasn't caught up yet.
         """
+        current_hash = func.encode(
+            func.sha256(cast(TranscriptExtractionSchema.text, LargeBinary)),
+            "hex",
+        )
+        return or_(
+            TranscriptExtractionSchema.indexed_at.is_(None),
+            TranscriptExtractionSchema.updated_at > TranscriptExtractionSchema.indexed_at,
+            current_hash != TranscriptExtractionSchema.content_hash,
+        )
+
+    @classmethod
+    def get_pending_index(cls) -> list[Self]:
+        """Return extractions that need (re-)indexing."""
         with Database().session() as session:
-            rows = session.query(TranscriptExtractionSchema).all()
-            pending = []
-            for row in rows:
-                if row.indexed_at is None:
-                    pending.append(cls.model_validate(row))
-                elif row.updated_at > row.indexed_at:
-                    pending.append(cls.model_validate(row))
-                elif row.content_hash != hashlib.sha256(row.text.encode()).hexdigest():
-                    pending.append(cls.model_validate(row))
-            return pending
+            rows = (
+                session.query(TranscriptExtractionSchema)
+                .filter(cls._pending_condition())
+                .all()
+            )
+            return [cls.model_validate(row) for row in rows]
+
+    @classmethod
+    def has_pending_index(cls) -> bool:
+        """Check if any extractions need (re-)indexing without loading rows."""
+        with Database().session() as session:
+            return session.query(
+                exists().where(cls._pending_condition())
+            ).scalar()
 
     @staticmethod
     def parse_title(summary_text: str | None) -> str | None:

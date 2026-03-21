@@ -15,10 +15,6 @@ class SummaryResult(BaseModel):
     summary: str
 
 
-class ToolSummaryResult(BaseModel):
-    summary: str
-
-
 class TranscriptExtractionResult(BaseModel):
     """Structured extraction result with one field per section type."""
 

@@ -9,7 +9,6 @@ import logging
 from observer import prompts
 from observer.pipeline.models import (
     SummaryResult,
-    ToolSummaryResult,
     TranscriptExtractionResult,
 )
 from observer.services.agent import Agent
@@ -22,18 +21,18 @@ def summarize_tool_pair(
     tool_name: str,
     tool_input: str,
     result_content: str,
-) -> ToolSummaryResult:
+) -> SummaryResult:
     """Summarize one tool_use + tool_result pair."""
     prompt = f"## Tool Invocation\nTool: {tool_name}\nInput: {tool_input}\n\n## Result\n{result_content}"
 
     agent = Agent(system_prompt=prompts.tool_summarize)
-    response = agent.run(prompt, json_schema=ToolSummaryResult.model_json_schema())
+    response = agent.run(prompt, json_schema=SummaryResult.model_json_schema())
 
     try:
-        return ToolSummaryResult.model_validate_json(response.result)
+        return SummaryResult.model_validate_json(response.result)
     except Exception:
         logger.warning("Tool summary parse failed for %s, using fallback", tool_name, exc_info=True)
-        return ToolSummaryResult(summary=f"{tool_name}: {str(tool_input)}")
+        return SummaryResult(summary=f"{tool_name}: {str(tool_input)}")
 
 
 def summarize_thinking(thinking_text: str) -> str:

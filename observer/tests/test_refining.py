@@ -9,7 +9,7 @@ from observer.data.raw_event import RawEvent
 from observer.data.schemas import ProjectSchema, RawEventSchema, TranscriptEventSchema, TranscriptSchema
 from observer.data.work_item import WorkItem
 from observer.exceptions import ExtractionError
-from observer.pipeline.models import ToolSummaryResult
+from observer.pipeline.models import SummaryResult
 from observer.pipeline.refining import EventRefiner
 from observer.pipeline.refining.grouping import EventGrouper, classify_events
 from observer.pipeline.refining.refinement import WorkItemRefiner
@@ -373,7 +373,7 @@ class TestRefineBatch:
         )
 
         with patch("observer.pipeline.refining.refinement.summarize_tool_pair") as mock_tool:
-            mock_tool.return_value = ToolSummaryResult(summary="Read: auth.py → found JWT")
+            mock_tool.return_value = SummaryResult(summary="Read: auth.py → found JWT")
             count = EventRefiner.refine_batch(db)
 
         assert count == 1
@@ -456,7 +456,7 @@ class TestRefineBatch:
     def test_full_sequence_classifies_and_refines(self, mock_thinking, mock_tool, db, tmp_path):
         """prompt → thinking → tool_pair → thinking → response = 5 refined WorkItems."""
         mock_thinking.return_value = "Thinking: analysis summary"
-        mock_tool.return_value = ToolSummaryResult(summary="Read: auth.py → found JWT")
+        mock_tool.return_value = SummaryResult(summary="Read: auth.py → found JWT")
 
         transcript_id = _setup_transcript(db, tmp_path)
 

@@ -6,6 +6,7 @@ from unittest.mock import patch
 
 from observer.mcp.server import (
     _get_extraction,
+    _get_session,
     _get_transcript_summary,
     _resolve_search_context,
     _search_artifacts,
@@ -183,5 +184,27 @@ class TestGetTranscriptSummaryTool:
     def test_not_found(self):
         with patch("observer.mcp.engine.get_transcript_summary", return_value=None):
             result = _get_transcript_summary(99999)
+
+        assert "error" in result
+
+
+class TestGetSessionTool:
+    def test_found(self):
+        mock_result = {
+            "session_id": "sess-123",
+            "started_at": "2025-01-15T10:00:00",
+            "ended_at": None,
+            "sections": {"summary": "test summary"},
+        }
+
+        with patch("observer.mcp.engine.get_session", return_value=mock_result):
+            result = _get_session("sess-123")
+
+        assert result["session_id"] == "sess-123"
+        assert "sections" in result
+
+    def test_not_found(self):
+        with patch("observer.mcp.engine.get_session", return_value=None):
+            result = _get_session("nonexistent")
 
         assert "error" in result
