@@ -1,27 +1,22 @@
 """Tests for observer Pydantic domain models."""
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
-import pytest
 from observer.data import (
-    Artifact,
-    ArtifactSource,
-    ArtifactType,
     Project,
     RawEvent,
     Transcript,
     Worktree,
 )
+from observer.data.artifact import Artifact
+from observer.data.enums import SectionType
 from observer.data.schemas import (
     ArtifactSchema,
     ProjectSchema,
     RawEventSchema,
-    TranscriptEventSchema,
     TranscriptSchema,
-    WorkItemSchema,
     WorktreeSchema,
 )
-from pydantic import ValidationError
 
 NOW = datetime.now(UTC)
 
@@ -107,25 +102,6 @@ class TestTranscriptModel:
             assert t.id == row.id
             assert t.started_at is not None
 
-    def test_summary_nullable(self):
-        t = Transcript(project_id=1, session_id="s1", path="/t", started_at=NOW)
-        assert t.summary is None
-
-    def test_summary_round_trip(self, db):  # noqa: ARG002
-        with db.session() as s:
-            proj = ProjectSchema(name="proj", repo_path="/repo")
-            s.add(proj)
-            s.flush()
-            row = TranscriptSchema(project_id=proj.id, session_id="s1", path="/t")
-            s.add(row)
-            s.flush()
-            row.summary = "User working on JWT auth"
-            row_id = row.id
-
-        with db.session() as s:
-            reloaded = s.get(TranscriptSchema, row_id)
-            assert reloaded.summary == "User working on JWT auth"
-
 
 class TestRawEventModel:
     def test_construction(self):
@@ -158,77 +134,6 @@ class TestRawEventModel:
             e = RawEvent.model_validate(row)
             assert e.id == row.id
             assert e.event_type == "msg"
-
-
-class TestArtifactModel:
-    def test_construction(self):
-        a = Artifact(
-            artifact_type=ArtifactType.KNOWLEDGE,
-            origin=ArtifactSource.EXTRACTED,
-            text="test",
-            created_at=NOW,
-        )
-        assert a.id is None
-        assert a.transcript_id is None
-        assert a.prompt_event_id is None
-        assert a.source is None
-
-    def test_enum_validation(self):
-        a = Artifact(
-            artifact_type="decision",
-            origin="manual",
-            text="test",
-            created_at=NOW,
-        )
-        assert a.artifact_type == ArtifactType.DECISION
-        assert a.origin == ArtifactSource.MANUAL
-
-    def test_invalid_enum_rejected(self):
-        with pytest.raises(ValidationError):
-            Artifact(
-                artifact_type="invalid",
-                origin=ArtifactSource.EXTRACTED,
-                text="test",
-                created_at=NOW,
-            )
-
-    def test_from_attributes(self, db):  # noqa: ARG002
-        with db.session() as s:
-            row = ArtifactSchema(
-                artifact_type=ArtifactType.KNOWLEDGE,
-                origin=ArtifactSource.EXTRACTED,
-                text="test",
-            )
-            s.add(row)
-            s.flush()
-            a = Artifact.model_validate(row)
-            assert a.id == row.id
-            assert a.artifact_type == ArtifactType.KNOWLEDGE
-
-    def test_from_attributes_with_prompt_event_id(self, db):  # noqa: ARG002
-        with db.session() as s:
-            proj = ProjectSchema(name="proj-prompt", repo_path="/repo-prompt")
-            s.add(proj)
-            s.flush()
-            tr = TranscriptSchema(project_id=proj.id, session_id="s-prompt", path="/t-prompt")
-            s.add(tr)
-            s.flush()
-            wi = WorkItemSchema(transcript_id=tr.id, item_type="prompt", event_ids=[])
-            s.add(wi)
-            s.flush()
-            te = TranscriptEventSchema(transcript_id=tr.id, work_item_id=wi.id, event_type="prompt", text="user prompt")
-            s.add(te)
-            s.flush()
-            child = ArtifactSchema(
-                artifact_type=ArtifactType.KNOWLEDGE,
-                origin=ArtifactSource.EXTRACTED,
-                text="knowledge",
-                prompt_event_id=te.id,
-            )
-            s.add(child)
-            s.flush()
-            a = Artifact.model_validate(child)
-            assert a.prompt_event_id == te.id
 
 
 class TestLookupMethods:
@@ -274,3 +179,125 @@ class TestLookupMethods:
 
     def test_transcript_get_by_session_id_not_found(self, db):  # noqa: ARG002
         assert Transcript.get_by_session_id("nonexistent") is None
+
+
+class TestArtifactSave:
+    """Tests for Artifact.save() upsert behavior."""
+
+    def _seed_transcript(self, db) -> int:
+        """Create a project + transcript, return transcript_id."""
+        with db.session() as session:
+            project = ProjectSchema(name="test-proj", repo_path="/tmp/test")
+            session.add(project)
+            session.flush()
+            transcript = TranscriptSchema(
+                project_id=project.id,
+                session_id="sess-upsert",
+                path="/tmp/transcript.jsonl",
+            )
+            session.add(transcript)
+            session.flush()
+            return transcript.id
+
+    def test_insert_creates_new_row(self, db):
+        tid = self._seed_transcript(db)
+        now = datetime.now(UTC)
+        extraction = Artifact(
+            transcript_id=tid,
+            section_type=SectionType.KNOWLEDGE,
+            text="some knowledge",
+            created_at=now,
+            updated_at=now,
+        )
+        with db.session() as session:
+            saved = extraction.save(session)
+
+        assert saved.id is not None
+        assert saved.text == "some knowledge"
+        assert saved.section_type == SectionType.KNOWLEDGE
+
+    def test_update_overwrites_text(self, db):
+        tid = self._seed_transcript(db)
+        now = datetime.now(UTC)
+        later = now + timedelta(seconds=10)
+
+        with db.session() as session:
+            Artifact(
+                transcript_id=tid,
+                section_type=SectionType.KNOWLEDGE,
+                text="v1",
+                created_at=now,
+                updated_at=now,
+            ).save(session)
+
+        with db.session() as session:
+            updated = Artifact(
+                transcript_id=tid,
+                section_type=SectionType.KNOWLEDGE,
+                text="v2",
+                created_at=now,
+                updated_at=later,
+            ).save(session)
+
+        assert updated.text == "v2"
+
+        with db.session() as session:
+            count = (
+                session.query(ArtifactSchema)
+                .filter(
+                    ArtifactSchema.transcript_id == tid,
+                    ArtifactSchema.section_type == SectionType.KNOWLEDGE,
+                )
+                .count()
+            )
+        assert count == 1
+
+    def test_different_section_types_coexist(self, db):
+        tid = self._seed_transcript(db)
+        now = datetime.now(UTC)
+
+        with db.session() as session:
+            Artifact(
+                transcript_id=tid,
+                section_type=SectionType.KNOWLEDGE,
+                text="knowledge",
+                created_at=now,
+                updated_at=now,
+            ).save(session)
+            Artifact(
+                transcript_id=tid,
+                section_type=SectionType.DECISIONS,
+                text="decisions",
+                created_at=now,
+                updated_at=now,
+            ).save(session)
+
+        with db.session() as session:
+            count = session.query(ArtifactSchema).filter(ArtifactSchema.transcript_id == tid).count()
+        assert count == 2
+
+    def test_idempotent_save(self, db):
+        """Saving the same data twice doesn't create duplicates."""
+        tid = self._seed_transcript(db)
+        now = datetime.now(UTC)
+
+        for _ in range(2):
+            with db.session() as session:
+                Artifact(
+                    transcript_id=tid,
+                    section_type=SectionType.SUMMARY,
+                    text="same text",
+                    created_at=now,
+                    updated_at=now,
+                ).save(session)
+
+        with db.session() as session:
+            count = (
+                session.query(ArtifactSchema)
+                .filter(
+                    ArtifactSchema.transcript_id == tid,
+                    ArtifactSchema.section_type == SectionType.SUMMARY,
+                )
+                .count()
+            )
+        assert count == 1

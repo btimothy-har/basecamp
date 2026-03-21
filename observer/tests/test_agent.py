@@ -27,7 +27,7 @@ def _make_envelope(
 
 class TestAgentRun:
     def test_builds_command_correctly(self):
-        agent = Agent(system_prompt="sys prompt")
+        agent = Agent(system_prompt="sys prompt", model="sonnet")
 
         with patch("observer.services.agent.subprocess.run") as mock_run:
             mock_run.return_value = subprocess.CompletedProcess(
@@ -45,7 +45,7 @@ class TestAgentRun:
             assert "--output-format" in cmd
             assert cmd[cmd.index("--output-format") + 1] == "json"
             assert "--model" in cmd
-            assert cmd[cmd.index("--model") + 1] == "haiku"
+            assert cmd[cmd.index("--model") + 1] == "sonnet"
             assert "--no-session-persistence" in cmd
             assert "--tools" in cmd
             assert cmd[cmd.index("--tools") + 1] == ""
@@ -59,7 +59,7 @@ class TestAgentRun:
             assert args[1]["input"] == "hello"
 
     def test_includes_json_schema_when_provided(self):
-        agent = Agent(system_prompt="sys")
+        agent = Agent(system_prompt="sys", model="sonnet")
         schema = {"type": "object", "properties": {"x": {"type": "string"}}}
 
         with patch("observer.services.agent.subprocess.run") as mock_run:
@@ -77,7 +77,7 @@ class TestAgentRun:
             assert json.loads(schema_str) == schema
 
     def test_omits_json_schema_when_none(self):
-        agent = Agent(system_prompt="sys")
+        agent = Agent(system_prompt="sys", model="sonnet")
 
         with patch("observer.services.agent.subprocess.run") as mock_run:
             mock_run.return_value = subprocess.CompletedProcess(
@@ -92,7 +92,7 @@ class TestAgentRun:
             assert "--json-schema" not in cmd
 
     def test_parses_successful_response(self):
-        agent = Agent(system_prompt="sys")
+        agent = Agent(system_prompt="sys", model="sonnet")
 
         with patch("observer.services.agent.subprocess.run") as mock_run:
             mock_run.return_value = subprocess.CompletedProcess(
@@ -132,7 +132,7 @@ class TestAgentRun:
 
 class TestAgentRunErrors:
     def test_raises_on_timeout(self):
-        agent = Agent(system_prompt="sys")
+        agent = Agent(system_prompt="sys", model="sonnet")
 
         with patch("observer.services.agent.subprocess.run") as mock_run:
             mock_run.side_effect = subprocess.TimeoutExpired(cmd="claude", timeout=120)
@@ -141,7 +141,7 @@ class TestAgentRunErrors:
                 agent.run("hello")
 
     def test_raises_on_nonzero_exit(self):
-        agent = Agent(system_prompt="sys")
+        agent = Agent(system_prompt="sys", model="sonnet")
 
         with patch("observer.services.agent.subprocess.run") as mock_run:
             mock_run.return_value = subprocess.CompletedProcess(
@@ -155,7 +155,7 @@ class TestAgentRunErrors:
                 agent.run("hello")
 
     def test_raises_on_invalid_json(self):
-        agent = Agent(system_prompt="sys")
+        agent = Agent(system_prompt="sys", model="sonnet")
 
         with patch("observer.services.agent.subprocess.run") as mock_run:
             mock_run.return_value = subprocess.CompletedProcess(
@@ -169,7 +169,7 @@ class TestAgentRunErrors:
                 agent.run("hello")
 
     def test_raises_on_missing_result_key(self):
-        agent = Agent(system_prompt="sys")
+        agent = Agent(system_prompt="sys", model="sonnet")
 
         with patch("observer.services.agent.subprocess.run") as mock_run:
             mock_run.return_value = subprocess.CompletedProcess(
@@ -184,7 +184,7 @@ class TestAgentRunErrors:
 
     def test_defaults_optional_fields(self):
         """Response with only 'result' still parses with defaults."""
-        agent = Agent(system_prompt="sys")
+        agent = Agent(system_prompt="sys", model="sonnet")
 
         with patch("observer.services.agent.subprocess.run") as mock_run:
             mock_run.return_value = subprocess.CompletedProcess(
@@ -202,7 +202,7 @@ class TestAgentRunErrors:
 
     def test_prefers_structured_output_over_result(self):
         """When structured_output is present, result should contain its JSON."""
-        agent = Agent(system_prompt="sys")
+        agent = Agent(system_prompt="sys", model="sonnet")
         envelope = {
             "result": "some plain text the model also returned",
             "structured_output": {"summary": "the structured value"},
@@ -223,7 +223,7 @@ class TestAgentRunErrors:
         assert json.loads(resp.result) == {"summary": "the structured value"}
 
     def test_passes_timeout_to_subprocess(self):
-        agent = Agent(system_prompt="sys", timeout=30)
+        agent = Agent(system_prompt="sys", model="sonnet", timeout=30)
 
         with patch("observer.services.agent.subprocess.run") as mock_run:
             mock_run.return_value = subprocess.CompletedProcess(

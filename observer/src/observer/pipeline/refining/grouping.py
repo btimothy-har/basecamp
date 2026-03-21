@@ -17,7 +17,7 @@ from observer.services.db import Database
 
 logger = logging.getLogger(__name__)
 
-# Tool names that produce no meaningful artifacts (task management noise)
+# Tool names that produce no meaningful transcript events (task management noise)
 SKIP_TOOLS = frozenset({"TaskCreate", "TaskUpdate", "TaskList", "TaskGet"})
 
 

@@ -14,8 +14,7 @@ PID_FILE = OBSERVER_DIR / "observer.pid"
 LOG_FILE = OBSERVER_DIR / "observer.log"
 
 TICK_INTERVAL = 1  # seconds between scheduler ticks
-PROCESS_INTERVAL = 30  # seconds between processing spawns
-SUMMARY_INTERVAL = 60  # seconds between summary regeneration spawns
+INACTIVITY_TIMEOUT = 120  # seconds of no file changes before extraction fires
 INDEX_INTERVAL = 120  # seconds between indexing spawns
 MAX_INGEST_WORKERS = 8  # max ingest processes spawned per poll cycle
 DEFAULT_STALE_THRESHOLD = 300
@@ -32,10 +31,8 @@ TRANSCRIPT_EXTENSION = ".jsonl"
 # Extraction settings
 REFINING_BATCH_LIMIT = 200
 REFINE_INTERVAL = 5  # seconds between refining spawns
-EXTRACTION_BATCH_LIMIT = 200
 EXTRACTION_TIMEOUT = 120
-DEFAULT_EXTRACTION_MODEL = "sonnet"
-DEFAULT_SUMMARY_MODEL = "haiku"
+DEFAULT_OBSERVER_MODEL = "sonnet"
 
 EXTRACTABLE_EVENT_TYPES = frozenset({"user", "assistant"})
 
@@ -52,7 +49,6 @@ SEARCH_TIME_DECAY_SCALE_DAYS = 30.0  # age at which recency bonus = 0.5
 SEARCH_TIME_DECAY_POWER = 0.5  # power-law exponent; lower = slower decay
 SEARCH_DEDUP_SIMILARITY = 0.9
 SEARCH_OVERFETCH_FACTOR = 5
-SEARCH_SIBLING_THRESHOLD = 0.5  # min similarity to result artifact for session context
 
 # MCP server
 MCP_SERVER_NAME = "observer"
@@ -61,33 +57,14 @@ Semantic memory over past Claude Code sessions.
 
 Results are scoped to the current project and exclude the active session.
 
-Two retrieval pathways:
+Retrieval pathways:
 
-1. search_artifacts — find specific facts, decisions, actions, and constraints.
-   Results include session_context (sibling artifacts from the same
-   session). Drill down with get_artifact for full details including
-   the original prompt (prompted_by) that triggered the work.
-
-2. search_transcripts — find relevant past sessions by summary.
-   Drill down with get_transcript_summary for the full structured
-   summary.
-
-Start with search_artifacts for specific questions. Use
-search_transcripts when you need broader context about what was
-done in past sessions."""
-
-MCP_SERVER_INSTRUCTIONS_LITE = """\
-Semantic memory over past Claude Code sessions (lite mode — transcripts only).
-
-Results are scoped to the current project and exclude the active session.
-
-Retrieval pathway:
+search_artifacts — find specific knowledge, decisions, actions,
+and constraints extracted from past sessions.
 
 search_transcripts — find relevant past sessions by summary.
-Drill down with get_transcript_summary for the full structured
-summary.
-
-Artifact search is not available in lite mode."""
+Drill down with get_transcript_detail for the full structured
+sections."""
 
 # Container (local dev database)
 DB_CONTAINER_NAME = "observer-pg"

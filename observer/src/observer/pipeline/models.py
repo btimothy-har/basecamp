@@ -7,7 +7,6 @@ transcript line.
 
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Literal
 
 from pydantic import BaseModel
 
@@ -16,22 +15,15 @@ class SummaryResult(BaseModel):
     summary: str
 
 
-# ACTION is excluded — it's created deterministically during refinement, not by LLM extraction.
-ExtractableType = Literal["knowledge", "decision", "constraint"]
-
-
-class ExtractedArtifact(BaseModel):
-    artifact_type: ExtractableType
-    text: str
-    source: str
-
-
 class ExtractionResult(BaseModel):
-    artifacts: list[ExtractedArtifact] = []
+    """Structured extraction result with one field per section type."""
 
-
-class ToolSummaryResult(BaseModel):
+    title: str
     summary: str
+    knowledge: str
+    decisions: str
+    constraints: str
+    actions: str
 
 
 @dataclass(frozen=True, slots=True)

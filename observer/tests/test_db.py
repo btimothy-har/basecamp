@@ -1,14 +1,10 @@
 """Tests for observer.db module."""
 
-from datetime import UTC, datetime
-
 import pytest
-from observer.data.enums import SearchSourceType
-from observer.data.schemas import ProjectSchema, SearchIndexSchema
+from observer.data.schemas import ProjectSchema
 from observer.exceptions import DatabaseNotConfiguredError
 from observer.services.db import Base, Database
 from sqlalchemy import text
-from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 
@@ -77,56 +73,19 @@ class TestDatabaseMissingUrl:
             Database()
 
 
-class TestSearchIndex:
-    """Tests for search_index table schema."""
-
-    def test_table_created(self, db):
-        with db.session() as session:
-            result = session.execute(
-                text("SELECT table_name FROM information_schema.tables WHERE table_name = 'search_index'")
-            ).scalar()
-            assert result == "search_index"
-
-    def test_unique_constraint(self, db):
-        with db.session() as session:
-            project = ProjectSchema(name="si-proj", repo_path="/tmp/si")
-            session.add(project)
-            session.flush()
-            project_id = project.id
-
-            entry = SearchIndexSchema(
-                source_type=SearchSourceType.ARTIFACT.value,
-                source_id=1,
-                project_id=project_id,
-                text="first entry",
-                content_hash="abc123",
-                created_at=datetime.now(UTC),
-            )
-            session.add(entry)
-            session.flush()
-
-        with pytest.raises(IntegrityError):
-            with db.session() as session:
-                duplicate = SearchIndexSchema(
-                    source_type=SearchSourceType.ARTIFACT.value,
-                    source_id=1,
-                    project_id=project_id,
-                    text="duplicate entry",
-                    content_hash="def456",
-                    created_at=datetime.now(UTC),
-                )
-                session.add(duplicate)
+class TestExtractionEmbedding:
+    """Tests for embedding support on artifacts table."""
 
     def test_hnsw_index_exists(self, db):
         with db.session() as session:
             result = session.execute(
                 text(
                     "SELECT indexname FROM pg_indexes "
-                    "WHERE tablename = 'search_index' "
-                    "AND indexname = 'ix_search_index_embedding_hnsw'"
+                    "WHERE tablename = 'artifacts' "
+                    "AND indexname = 'ix_artifacts_embedding_hnsw'"
                 )
             ).scalar()
-            assert result == "ix_search_index_embedding_hnsw"
+            assert result == "ix_artifacts_embedding_hnsw"
 
     def test_embedding_column_dimensions(self, db):
         with db.session() as session:
@@ -134,7 +93,7 @@ class TestSearchIndex:
                 text(
                     "SELECT atttypmod FROM pg_attribute "
                     "JOIN pg_class ON pg_attribute.attrelid = pg_class.oid "
-                    "WHERE pg_class.relname = 'search_index' "
+                    "WHERE pg_class.relname = 'artifacts' "
                     "AND pg_attribute.attname = 'embedding'"
                 )
             ).scalar()

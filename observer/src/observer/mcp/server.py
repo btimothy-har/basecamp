@@ -12,16 +12,14 @@ import sys
 
 from fastmcp import FastMCP
 
-from observer.constants import MCP_SERVER_INSTRUCTIONS, MCP_SERVER_INSTRUCTIONS_LITE, MCP_SERVER_NAME
+from observer.constants import MCP_SERVER_INSTRUCTIONS, MCP_SERVER_NAME
 from observer.mcp import engine
 from observer.services.config import get_mode
 
 logging.basicConfig(stream=sys.stderr, level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Evaluated at process start — mode changes require restarting the MCP server.
-_instructions = MCP_SERVER_INSTRUCTIONS if get_mode() == "full" else MCP_SERVER_INSTRUCTIONS_LITE
-mcp = FastMCP(MCP_SERVER_NAME, instructions=_instructions)
+mcp = FastMCP(MCP_SERVER_NAME, instructions=MCP_SERVER_INSTRUCTIONS)
 
 
 def _is_reflect_mode() -> bool:
@@ -43,7 +41,7 @@ def _resolve_search_context() -> tuple[str | None, str | None] | dict:
     return project_name, session_id
 
 
-_EXTRACTION_DISABLED_MSG = "Artifact extraction is not enabled. Only transcript search is available."
+_MODE_DISABLED_MSG = "Observer is off. No extraction data is available."
 
 
 def _search_artifacts(
@@ -53,8 +51,8 @@ def _search_artifacts(
     worktree: str | None = None,
 ) -> dict:
     """Core search_artifacts logic, called by the MCP tool wrapper."""
-    if get_mode() != "full":
-        return {"error": _EXTRACTION_DISABLED_MSG}
+    if get_mode() == "off":
+        return {"error": _MODE_DISABLED_MSG}
 
     context = _resolve_search_context()
     if isinstance(context, dict):
@@ -97,8 +95,8 @@ def _search_transcripts(
 
 def _get_artifact(artifact_id: int) -> dict:
     """Core get_artifact logic, called by the MCP tool wrapper."""
-    if get_mode() != "full":
-        return {"error": _EXTRACTION_DISABLED_MSG}
+    if get_mode() == "off":
+        return {"error": _MODE_DISABLED_MSG}
 
     result = engine.get_artifact(artifact_id)
     if result is None:
@@ -106,9 +104,9 @@ def _get_artifact(artifact_id: int) -> dict:
     return result
 
 
-def _get_transcript_summary(transcript_id: int) -> dict:
-    """Core get_transcript_summary logic, called by the MCP tool wrapper."""
-    result = engine.get_transcript_summary(transcript_id)
+def _get_transcript_detail(transcript_id: int) -> dict:
+    """Core get_transcript_detail logic, called by the MCP tool wrapper."""
+    result = engine.get_transcript_detail(transcript_id)
     if result is None:
         return {"error": f"Transcript {transcript_id} not found"}
     return result
@@ -123,9 +121,9 @@ def search_artifacts(
 ) -> dict:
     """Search for extracted knowledge, decisions, actions, and constraints.
 
-    Precision retrieval over artifact entries with session context expansion.
-    Each result includes sibling artifacts from the same transcript. Use
-    get_artifact to retrieve full details for any result or sibling.
+    Precision retrieval over transcript artifact sections. Each result
+    is a specific artifact (knowledge, decision, constraint, or action)
+    from a past session. Use get_artifact to retrieve full details.
 
     Args:
         query: Natural language search query.
@@ -134,11 +132,9 @@ def search_artifacts(
         worktree: Optional worktree label to filter by.
 
     Returns:
-        Dict with 'results' list and 'count'. Each result contains source_id,
-        type, text, score, created_at, transcript_id, and session_context
-        (list of {id, type} sibling artifacts from the same transcript).
-        Use get_artifact to retrieve full details including the prompt that
-        triggered extraction.
+        Dict with 'results' list and 'count'. Each result contains artifact_id,
+        type (section_type), text, score, created_at, and transcript_id.
+        Use get_artifact to retrieve full details for any result.
     """
     return _search_artifacts(query, top_k=top_k, threshold=threshold, worktree=worktree)
 
@@ -153,8 +149,8 @@ def search_transcripts(
     """Search for relevant past sessions by their summaries.
 
     Orientation retrieval — finds sessions whose work is semantically related
-    to the query. Use get_transcript_summary to drill down into the full
-    structured summary (goal, active context, key decisions, constraints).
+    to the query. Use get_transcript_detail to drill down into the full
+    structured sections (summary, knowledge, decisions, constraints, actions).
 
     Args:
         query: Natural language search query.
@@ -163,7 +159,7 @@ def search_transcripts(
         worktree: Optional worktree label to filter by.
 
     Returns:
-        Dict with 'results' list and 'count'. Each result contains source_id,
+        Dict with 'results' list and 'count'. Each result contains artifact_id,
         title, text, score, created_at, and transcript_id.
     """
     return _search_transcripts(query, top_k=top_k, threshold=threshold, worktree=worktree)
@@ -171,36 +167,35 @@ def search_transcripts(
 
 @mcp.tool
 def get_artifact(artifact_id: int) -> dict:
-    """Retrieve a single artifact by ID with full details.
+    """Retrieve a single artifact by ID.
 
-    Returns artifact details including the prompt text that triggered
-    extraction (prompted_by field).
+    Returns the artifact's section type, full text, transcript ID,
+    and creation timestamp.
 
     Args:
         artifact_id: The artifact's database ID.
 
     Returns:
-        Dict with artifact details including prompted_by, or error if
-        not found.
+        Dict with artifact details, or error if not found.
     """
     return _get_artifact(artifact_id)
 
 
 @mcp.tool
-def get_transcript_summary(transcript_id: int) -> dict:
-    """Retrieve a transcript's summary and metadata.
+def get_transcript_detail(transcript_id: int) -> dict:
+    """Retrieve a transcript's artifact sections and metadata.
 
-    Returns the full summary, title, session timing, and session ID
-    for a transcript. Use this to drill down on transcript summary
-    hits from search results.
+    Returns all artifact sections (summary, knowledge, decisions,
+    constraints, actions) for a transcript, plus session timing info.
+    Use this to drill down on transcript hits from search results.
 
     Args:
         transcript_id: The transcript's database ID.
 
     Returns:
-        Dict with transcript details, or error if not found.
+        Dict with transcript details and sections dict, or error if not found.
     """
-    return _get_transcript_summary(transcript_id)
+    return _get_transcript_detail(transcript_id)
 
 
 def _get_session(session_id: str) -> dict:
@@ -213,18 +208,18 @@ def _get_session(session_id: str) -> dict:
 
 @mcp.tool
 def get_session(session_id: str) -> dict:
-    """Retrieve a session's transcript and recent artifacts by session ID.
+    """Retrieve a session's transcript and extraction sections by session ID.
 
     Look up a worker session by its Claude session ID to check its current
-    state, see what it has accomplished (title, summary), and review its
-    most recent extracted artifacts.
+    state and review its extracted sections (summary, knowledge, decisions,
+    constraints, actions).
 
     Args:
         session_id: The Claude session ID (from CLAUDE_SESSION_ID).
 
     Returns:
-        Dict with session_id, title, summary, started_at, ended_at,
-        and recent_artifacts (up to 5 most recent), or error if not found.
+        Dict with session_id, started_at, ended_at, and sections dict,
+        or error if not found.
     """
     return _get_session(session_id)
 

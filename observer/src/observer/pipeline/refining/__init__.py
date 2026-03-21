@@ -2,7 +2,7 @@
 
 Two-phase stage:
   1. Group: RawEvent(PENDING) → WorkItem(UNREFINED)
-  2. Refine: WorkItem(UNREFINED) → TranscriptEvent + mark REFINED/TERMINAL/ERROR
+  2. Refine: WorkItem(UNREFINED) → TranscriptEvent, mark REFINED/TERMINAL/ERROR
 
 Grouping is pure logic (tool_use/tool_result pairing, type mapping).
 Refinement involves LLM calls for thinking/tool_pair summarization.
@@ -24,7 +24,7 @@ class EventRefiner:
 
     Thin orchestrator that runs both phases in sequence:
       1. EventGrouper: ungrouped RawEvents → WorkItems
-      2. WorkItemRefiner: WorkItems → TranscriptEvents + artifacts
+      2. WorkItemRefiner: WorkItems → TranscriptEvents
     """
 
     @staticmethod

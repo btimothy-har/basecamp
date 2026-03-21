@@ -176,6 +176,51 @@ def db_status() -> None:
     click.echo(f"  Volume:  {status.volume}")
 
 
+@db.command()
+def migrate() -> None:
+    """Run pending database schema migrations."""
+    from observer.services.migrations import (  # noqa: PLC0415
+        get_current_version,
+        get_pending,
+        run_pending,
+    )
+
+    pg_url = get_pg_url()
+    if not pg_url:
+        sys.exit("Database not configured. Run 'observer setup' first.")
+
+    engine = create_engine(pg_url)
+    try:
+        with engine.connect() as conn:
+            conn.execute(text("SELECT 1"))
+    except Exception as e:
+        sys.exit(f"Cannot connect to database: {e}")
+
+    current = get_current_version(engine)
+    pending = get_pending(engine)
+
+    if not pending:
+        click.echo(f"Schema is up to date (version {current}).")
+        engine.dispose()
+        return
+
+    click.echo(f"Current schema version: {current}")
+    click.echo(f"Pending migrations: {len(pending)}")
+    for m in pending:
+        click.echo(f"  {m.version:03d}: {m.description}")
+
+    click.echo()
+    applied = run_pending(engine)
+
+    # After migrations, run create_all to pick up new tables/columns
+    from observer.services.db import Base  # noqa: PLC0415
+
+    Base.metadata.create_all(engine)
+
+    click.echo(f"\nApplied {len(applied)} migration(s). Schema is now at version {applied[-1].version}.")
+    engine.dispose()
+
+
 @main.command()
 @click.option("--foreground", "-f", is_flag=True, help="Run in the foreground.")
 @click.option("--no-viz", is_flag=True, help="Don't start the visualization dashboard.")
@@ -312,25 +357,23 @@ def viz(port: int, host: str, headless: bool) -> None:  # noqa: FBT001
 
 @main.command()
 def mcp() -> None:
-    """Start the MCP server for semantic search over observer artifacts."""
+    """Start the MCP server for semantic search over observer memory."""
     from observer.mcp.server import main as mcp_main  # noqa: PLC0415
 
     mcp_main()
 
 
 @main.command()
-@click.argument("target", required=False, type=click.Choice(["full", "lite", "off"]))
+@click.argument("target", required=False, type=click.Choice(["on", "off"]))
 def mode(target: str | None) -> None:
     """Show or set the observer processing mode.
 
     \b
-    full  — full extraction pipeline (artifacts, summaries, indexing)
-    lite  — ingestion + summaries only (no artifact extraction)
-    off   — ingestion only (no LLM calls)
+    on   — full pipeline (extraction, embedding, indexing)
+    off  — ingestion only (no LLM calls)
     """
     _mode_descriptions = {
-        "full": "Full extraction pipeline (artifacts, summaries, indexing)",
-        "lite": "Ingestion + summaries only (no artifact extraction)",
+        "on": "Full pipeline (extraction, embedding, indexing)",
         "off": "Ingestion only (no LLM calls)",
     }
     current = get_mode()
@@ -375,7 +418,7 @@ def setup() -> None:
 
     _model_choices = ["haiku", "sonnet", "opus"]
     extraction_model = questionary.select(
-        "Extraction model (artifact extraction):",
+        "Extraction model:",
         choices=_model_choices,
         default=get_extraction_model(),
     ).ask()
@@ -383,7 +426,7 @@ def setup() -> None:
         sys.exit(1)
 
     summary_model = questionary.select(
-        "Summary model (tool/thinking summarization):",
+        "Summary model:",
         choices=_model_choices,
         default=get_summary_model(),
     ).ask()
@@ -393,8 +436,7 @@ def setup() -> None:
     mode_choice = questionary.select(
         "Processing mode:",
         choices=[
-            questionary.Choice("Full (artifacts, summaries, indexing)", value="full"),
-            questionary.Choice("Lite (ingestion + summaries only)", value="lite"),
+            questionary.Choice("On (extraction, embedding, indexing)", value="on"),
             questionary.Choice("Off (ingestion only, no LLM calls)", value="off"),
         ],
         default=get_mode(),

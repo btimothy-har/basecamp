@@ -6,6 +6,6 @@ ingest, update state, unlock, exit.
 """
 
 from observer.daemon.daemon import Daemon
-from observer.daemon.workers import index_worker, ingest_worker, process_worker, refine_worker
+from observer.daemon.workers import extraction_worker, index_worker, ingest_worker, refine_worker
 
-__all__ = ["Daemon", "index_worker", "ingest_worker", "process_worker", "refine_worker"]
+__all__ = ["Daemon", "extraction_worker", "index_worker", "ingest_worker", "refine_worker"]

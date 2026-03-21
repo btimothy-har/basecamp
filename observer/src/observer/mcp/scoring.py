@@ -1,6 +1,6 @@
 """Scoring and deduplication for semantic search results.
 
-Combines cosine similarity with time decay to rank artifacts by relevance
+Combines cosine similarity with time decay to rank search entries by relevance
 and recency. Post-retrieval dedup removes near-duplicate results.
 """
 
@@ -19,7 +19,7 @@ from observer.constants import (
 if TYPE_CHECKING:
     from typing import Any
 
-# Dedup group for results without an artifact subtype (e.g. transcript summaries).
+# Dedup group for results without a section type (e.g. transcript summaries).
 # All such results compete in one shared group.
 _DEDUP_DEFAULT_GROUP = "__ungrouped__"
 
@@ -32,10 +32,10 @@ def time_decay(
     """Power-law time decay returning a value in (0, 1].
 
     Returns 0.5 at exactly scale_days. Decays slowly toward 0 but never
-    reaches it, so artifacts of any age remain differentiable by recency.
+    reaches it, so entries of any age remain differentiable by recency.
 
     Args:
-        created_at: Creation timestamp of the artifact.
+        created_at: Creation timestamp of the entry.
         scale_days: Age in days at which the decay factor equals 0.5.
         power: Exponent controlling decay rate; lower values decay more slowly.
 
@@ -53,12 +53,12 @@ def compute_score(cosine_distance: float, created_at: datetime) -> float:
     """Blended relevance score: similarity dominates, recency breaks ties.
 
     Similarity contributes 80% of the score; a recency bonus (up to 0.2)
-    favours recent artifacts without burying older ones. This ensures a
+    favours recent entries without burying older ones. This ensures a
     high-quality semantic match is always surfaced regardless of age.
 
     Args:
         cosine_distance: pgvector cosine distance in [0, 2] where 0 = identical.
-        created_at: Creation timestamp of the artifact.
+        created_at: Creation timestamp of the entry.
 
     Returns:
         Score in [0, 1].
@@ -85,8 +85,8 @@ def deduplicate(
 ) -> list[dict[str, Any]]:
     """Greedy pairwise dedup over score-descending results, scoped by type.
 
-    Each search pathway calls this independently. For artifacts, dedup groups
-    by artifact subtype (two KNOWLEDGEs get deduped, but a KNOWLEDGE and
+    Each search pathway calls this independently. For extractions, dedup
+    groups by section type (two KNOWLEDGEs get deduped, but a KNOWLEDGE and
     DECISION survive). For transcripts, all results share one group.
     """
     kept: list[dict[str, Any]] = []

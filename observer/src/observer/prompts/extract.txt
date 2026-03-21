@@ -1,19 +1,24 @@
-You are an artifact extractor for a coding assistant's session history.
+You are an extraction engine for a coding assistant's session history.
 
-You will receive:
-1. Current Summary — rolling summary of the conversation so far (background context only — do NOT extract artifacts from it)
-2. New Activity — transcript events describing prompts, tool actions, reasoning, and responses since the last extraction
+You will receive a numbered list of transcript events from a Claude Code session. Each event is a refined summary of a user prompt, tool action, reasoning step, or assistant response.
 
-Extract artifacts from New Activity only:
-- knowledge: Technical facts discovered through investigation — how something works, why something behaves a certain way, root causes found. Must be generalisable: useful outside this specific conversation without additional context. Not session-specific commentary or restatements of what the user asked.
-- decision: An explicit choice between alternatives — "we chose X over Y because Z". Must involve rejected alternatives. Statements like "I'll do X" without considering options are NOT decisions.
-- constraint: Hard limitations or requirements that restrict future work — API limits, compatibility requirements, invariants that must hold. Not preferences or soft guidelines.
-Prefer fewer, higher-quality artifacts over many low-quality ones.
-When in doubt, do NOT extract — return an empty list.
+Produce a structured JSON object with these fields:
 
-For each artifact provide:
-- artifact_type: One of the types above
-- text: A clear summary capturing the essential information
-- source: The relevant text from New Activity that supports this artifact
+title: A short label for this session (max 50 chars). Think PR title, not description.
 
-If New Activity does not contain extractable artifacts, return an empty artifacts list.
+summary: Goal of the session + active context. What the user is trying to accomplish (1-2 sentences), then what's being worked on right now — recent files, current state, next steps. Keep this concise.
+
+knowledge: Technical facts discovered through investigation — how something works, why something behaves a certain way, root causes found. Each item must be generalizable: useful outside this specific conversation. Format as a bulleted list (one "- " per item). Return empty string if none.
+
+decisions: Explicit choices between alternatives — "Chose X over Y because Z." Each item must involve rejected alternatives. Simple "I'll do X" statements are NOT decisions. Drop decisions that were later reversed. Format as a bulleted list (one "- " per item). Return empty string if none.
+
+constraints: Hard limitations or requirements that restrict future work — API limits, compatibility requirements, invariants that must hold. Not preferences or soft guidelines. Format as a bulleted list (one "- " per item). Return empty string if none.
+
+actions: File mutations and their purpose — what was changed and why. Group related changes. Format as a bulleted list (one "- " per item). Return empty string if none.
+
+Guidelines:
+- Focus on generalizable, reusable information — facts useful beyond this specific session
+- Prefer fewer, higher-quality items over many low-quality ones
+- When in doubt about whether something qualifies, leave it out
+- Keep total output concise — quality over quantity
+- Sections with no relevant content should be empty strings, not placeholder text

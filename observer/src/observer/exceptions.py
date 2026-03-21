@@ -40,7 +40,7 @@ class TranscriptError(ObserverError):
 
 
 class ExtractionError(ObserverError):
-    """Raised when artifact extraction fails."""
+    """Raised when LLM extraction fails."""
 
 
 class DatabaseNotConfiguredError(ObserverError):

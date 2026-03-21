@@ -1,15 +1,15 @@
 """Read-only query layer for the visualization dashboard.
 
-Builds on existing domain models (Artifact, RawEvent, Transcript, Project)
-and the Database singleton. Never mutates data — safe for concurrent access with
-the daemon via WAL mode.
+Builds on existing domain models and the Database singleton. Never mutates
+data — safe for concurrent access with the daemon via WAL mode.
 """
 
 from __future__ import annotations
 
 from sqlalchemy import func
 
-from observer.data.enums import RawEventStatus
+from observer.data.artifact import Artifact
+from observer.data.enums import RawEventStatus, SectionType
 from observer.data.schemas import (
     ArtifactSchema,
     ProjectSchema,
@@ -46,15 +46,15 @@ def get_pipeline_stats(
     """Top-level counts for the pipeline overview."""
     with Database().session() as session:
         events_q = session.query(RawEventSchema)
-        artifacts_q = session.query(ArtifactSchema)
+        extractions_q = session.query(ArtifactSchema)
 
         if transcript_id is not None:
             events_q = events_q.filter(RawEventSchema.transcript_id == transcript_id)
-            artifacts_q = artifacts_q.filter(ArtifactSchema.transcript_id == transcript_id)
+            extractions_q = extractions_q.filter(ArtifactSchema.transcript_id == transcript_id)
         elif project_id is not None:
             tid_sq = _scoped_transcript_ids(session, project_id, worktree_id)
             events_q = events_q.filter(RawEventSchema.transcript_id.in_(tid_sq))
-            artifacts_q = artifacts_q.filter(ArtifactSchema.transcript_id.in_(tid_sq))
+            extractions_q = extractions_q.filter(ArtifactSchema.transcript_id.in_(tid_sq))
 
         total_events = events_q.count()
         processed = events_q.filter(RawEventSchema.processed == RawEventStatus.PROCESSED).count()
@@ -68,7 +68,7 @@ def get_pipeline_stats(
             "skipped": skipped,
             "errors": errors,
             "pending": pending,
-            "total_artifacts": artifacts_q.count(),
+            "total_artifacts": extractions_q.count(),
         }
 
 
@@ -90,15 +90,15 @@ def get_processing_status_counts(
         return [{"status": labels.get(status, str(status)), "count": count} for status, count in q.all()]
 
 
-def get_artifact_type_counts(
+def get_section_type_counts(
     transcript_id: int | None = None,
     project_id: int | None = None,
     worktree_id: int | None | str = None,
 ) -> list[dict]:
-    """Artifact counts grouped by type."""
+    """Extraction counts grouped by section type."""
     with Database().session() as session:
-        q = session.query(ArtifactSchema.artifact_type, func.count(ArtifactSchema.id)).group_by(
-            ArtifactSchema.artifact_type
+        q = session.query(ArtifactSchema.section_type, func.count(ArtifactSchema.id)).group_by(
+            ArtifactSchema.section_type
         )
 
         if transcript_id is not None:
@@ -106,7 +106,7 @@ def get_artifact_type_counts(
         elif project_id is not None:
             q = q.filter(ArtifactSchema.transcript_id.in_(_scoped_transcript_ids(session, project_id, worktree_id)))
 
-        return [{"type": artifact_type, "count": count} for artifact_type, count in q.all()]
+        return [{"type": section_type, "count": count} for section_type, count in q.all()]
 
 
 # -- Lists --
@@ -126,11 +126,24 @@ def get_project_scopes() -> list[dict]:
         ]
 
 
+def _extract_title(session, transcript_id: int) -> str | None:
+    """Extract title from the SUMMARY extraction section."""
+    summary = (
+        session.query(ArtifactSchema.text)
+        .filter(
+            ArtifactSchema.transcript_id == transcript_id,
+            ArtifactSchema.section_type == SectionType.SUMMARY,
+        )
+        .first()
+    )
+    return Artifact.parse_title(summary.text if summary else None)
+
+
 def get_transcripts(
     project_id: int | None = None,
     worktree_id: int | None | str = None,
 ) -> list[dict]:
-    """Transcripts with event and artifact counts.
+    """Transcripts with event and extraction counts.
 
     worktree_id: None = all, "main" = main repo only, int = specific worktree.
     """
@@ -152,13 +165,13 @@ def get_transcripts(
             artifact_count = (
                 session.query(func.count(ArtifactSchema.id)).filter(ArtifactSchema.transcript_id == r.id).scalar()
             )
+            title = _extract_title(session, r.id)
             results.append(
                 {
                     "id": r.id,
                     "session_id": r.session_id,
-                    "title": r.title,
+                    "title": title,
                     "started_at": r.started_at.isoformat() if r.started_at else None,
-                    "summary": r.summary,
                     "event_count": event_count,
                     "artifact_count": artifact_count,
                 }
@@ -168,31 +181,27 @@ def get_transcripts(
 
 def get_artifacts(
     transcript_id: int | None = None,
-    artifact_type: str | None = None,
+    section_type: str | None = None,
     project_id: int | None = None,
     worktree_id: int | None | str = None,
 ) -> list[dict]:
-    """Artifacts with text preview."""
+    """Artifact sections with text preview."""
     with Database().session() as session:
         q = session.query(ArtifactSchema)
         if transcript_id is not None:
             q = q.filter(ArtifactSchema.transcript_id == transcript_id)
         elif project_id is not None:
             q = q.filter(ArtifactSchema.transcript_id.in_(_scoped_transcript_ids(session, project_id, worktree_id)))
-        if artifact_type is not None:
-            q = q.filter(ArtifactSchema.artifact_type == artifact_type)
+        if section_type is not None:
+            q = q.filter(ArtifactSchema.section_type == section_type)
 
         rows = q.order_by(ArtifactSchema.created_at.desc()).all()
         return [
             {
                 "id": r.id,
-                "type": r.artifact_type,
+                "type": r.section_type,
                 "text": r.text,
-                "source_preview": (r.source[:200] + "...") if r.source and len(r.source) > 200 else r.source,
-                "source": r.source,
-                "origin": r.origin,
                 "transcript_id": r.transcript_id,
-                "prompt_event_id": r.prompt_event_id,
                 "created_at": r.created_at.isoformat() if r.created_at else None,
             }
             for r in rows
@@ -200,7 +209,7 @@ def get_artifacts(
 
 
 def get_artifact_detail(artifact_id: int) -> dict | None:
-    """Single artifact with full source."""
+    """Single artifact section with full text."""
     with Database().session() as session:
         row = session.get(ArtifactSchema, artifact_id)
         if row is None:
@@ -208,12 +217,9 @@ def get_artifact_detail(artifact_id: int) -> dict | None:
 
         return {
             "id": row.id,
-            "type": row.artifact_type,
+            "type": row.section_type,
             "text": row.text,
-            "source": row.source,
-            "origin": row.origin,
             "transcript_id": row.transcript_id,
-            "prompt_event_id": row.prompt_event_id,
             "created_at": row.created_at.isoformat() if row.created_at else None,
         }
 
@@ -222,7 +228,7 @@ def get_artifact_detail(artifact_id: int) -> dict | None:
 
 
 def get_timeline_events(transcript_id: int) -> list[dict]:
-    """Chronological interleaving of raw events and artifacts for a transcript."""
+    """Chronological interleaving of raw events and extraction sections for a transcript."""
     with Database().session() as session:
         events = (
             session.query(RawEventSchema)
@@ -230,34 +236,33 @@ def get_timeline_events(transcript_id: int) -> list[dict]:
             .order_by(RawEventSchema.timestamp)
             .all()
         )
-        artifacts = (
+        extractions = (
             session.query(ArtifactSchema)
             .filter(ArtifactSchema.transcript_id == transcript_id)
             .order_by(ArtifactSchema.created_at)
             .all()
         )
 
-        timeline: list[dict] = []
-        for e in events:
-            status_labels = {s: s.name.lower() for s in RawEventStatus}
-            timeline.append(
-                {
-                    "kind": "event",
-                    "timestamp": e.timestamp.isoformat(),
-                    "event_type": e.event_type,
-                    "status": status_labels.get(e.processed, str(e.processed)),
-                    "id": e.id,
-                }
-            )
+        status_labels = {s: s.name.lower() for s in RawEventStatus}
+        timeline: list[dict] = [
+            {
+                "kind": "event",
+                "timestamp": e.timestamp.isoformat(),
+                "event_type": e.event_type,
+                "status": status_labels.get(e.processed, str(e.processed)),
+                "id": e.id,
+            }
+            for e in events
+        ]
         timeline.extend(
             {
-                "kind": "artifact",
-                "timestamp": a.created_at.isoformat() if a.created_at else "",
-                "artifact_type": a.artifact_type,
-                "text": a.text,
-                "id": a.id,
+                "kind": "extraction",
+                "timestamp": x.created_at.isoformat() if x.created_at else "",
+                "section_type": x.section_type,
+                "text": x.text,
+                "id": x.id,
             }
-            for a in artifacts
+            for x in extractions
         )
 
         timeline.sort(key=lambda x: x["timestamp"])

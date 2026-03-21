@@ -1,17 +1,15 @@
 """Work item refinement — turns classified WorkItems into TranscriptEvents.
 
 LLM-driven stage that summarizes thinking blocks and tool pairs, creates
-TranscriptEvents, and produces inline artifacts (PROMPT, ACTION).
-Items are marked REFINED, TERMINAL, or ERROR.
+TranscriptEvents. Items are marked REFINED, TERMINAL, or ERROR.
 """
 
 import json
 import logging
 from datetime import UTC, datetime
 
-from observer.data.enums import ArtifactSource, ArtifactType, WorkItemStage, WorkItemType
+from observer.data.enums import WorkItemStage, WorkItemType
 from observer.data.raw_event import RawEvent
-from observer.data.schemas import ArtifactSchema
 from observer.data.transcript_event import TranscriptEvent
 from observer.data.work_item import WorkItem
 from observer.exceptions import ExtractionError
@@ -19,9 +17,6 @@ from observer.pipeline.llm import summarize_thinking, summarize_tool_pair
 from observer.services.db import Database
 
 logger = logging.getLogger(__name__)
-
-# Tools that mutate files — produce ACTION artifacts
-MUTATION_TOOLS = frozenset({"Edit", "Write", "NotebookEdit"})
 
 
 class WorkItemRefiner:
@@ -35,7 +30,6 @@ class WorkItemRefiner:
     def __init__(self, db: Database, transcript_id: int):
         self._db = db
         self._transcript_id = transcript_id
-        self._prompt_event_id: int | None = None
 
     def refine(self, items: list[WorkItem]) -> int:
         refined = 0
@@ -66,8 +60,7 @@ class WorkItemRefiner:
             self._mark_work_item(work_item, WorkItemStage.TERMINAL)
             return
 
-        te = self._save_transcript_event(work_item, user_text)
-        self._prompt_event_id = te.id
+        self._save_transcript_event(work_item, user_text)
         self._mark_work_item(work_item, WorkItemStage.REFINED)
 
     def _handle_thinking(self, work_item: WorkItem) -> None:
@@ -110,17 +103,7 @@ class WorkItemRefiner:
             self._mark_work_item(work_item, WorkItemStage.ERROR)
             return
 
-        te = self._save_transcript_event(work_item, result.summary)
-
-        if tool_name in MUTATION_TOOLS:
-            self._save_artifact(
-                ArtifactType.ACTION,
-                result.summary,
-                transcript_event_id=te.id,
-                prompt_event_id=self._prompt_event_id,
-                source=result.summary,
-            )
-
+        self._save_transcript_event(work_item, result.summary)
         self._mark_work_item(work_item, WorkItemStage.REFINED)
 
     def _handle_response(self, work_item: WorkItem) -> None:
@@ -165,30 +148,6 @@ class WorkItemRefiner:
         with self._db.session() as session:
             te = te.save(session)
         return te
-
-    def _save_artifact(
-        self,
-        artifact_type: ArtifactType,
-        text: str,
-        *,
-        transcript_event_id: int | None = None,
-        prompt_event_id: int | None = None,
-        source: str | None = None,
-    ) -> int:
-        with self._db.session() as session:
-            artifact = ArtifactSchema(
-                artifact_type=artifact_type.value,
-                origin=ArtifactSource.EXTRACTED.value,
-                text=text,
-                transcript_id=self._transcript_id,
-                transcript_event_id=transcript_event_id,
-                prompt_event_id=prompt_event_id,
-                source=source,
-                created_at=datetime.now(UTC),
-            )
-            session.add(artifact)
-            session.flush()
-            return artifact.id
 
     def _mark_work_item(self, work_item: WorkItem, stage: WorkItemStage) -> None:
         work_item.processed = stage

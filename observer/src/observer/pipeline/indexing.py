@@ -1,18 +1,13 @@
-"""Search index pipeline — syncs the search_index table from source tables.
+"""Search indexing pipeline — embeds artifact sections.
 
-Runs as a batch processor on the daemon's polling cadence. Reads from artifacts
-and transcript summaries, encodes with sentence-transformers, and writes entries
-to the ``search_index`` table.
-
-Artifacts are insert-once (immutable text). Transcript summaries are
-upsert-on-change (mutable text, detected via content hash).
+Runs as a batch processor on the daemon's polling cadence. Reads artifacts
+that need embedding, encodes with sentence-transformers, and updates
+the artifact rows with embedding vectors.
 """
 
 import hashlib
 import logging
 from datetime import UTC, datetime
-
-from sqlalchemy import and_
 
 from observer.constants import (
     EMBEDDING_BATCH_LIMIT,
@@ -20,8 +15,7 @@ from observer.constants import (
     EMBEDDING_MODEL_NAME,
     MODEL_CACHE_DIR,
 )
-from observer.data.enums import SearchSourceType
-from observer.data.schemas import ArtifactSchema, SearchIndexSchema, TranscriptSchema
+from observer.data.artifact import Artifact
 from observer.exceptions import EmbeddingShapeError
 from observer.services.db import Database
 
@@ -45,203 +39,40 @@ def _content_hash(text: str) -> str:
 
 
 class SearchIndexer:
-    """Syncs the search_index table from source tables."""
+    """Embeds artifacts for semantic search."""
 
     @staticmethod
-    def has_pending(*, skip_artifacts: bool = False) -> bool:
-        """Check if any sources need indexing."""
-        with Database().session() as session:
-            if not skip_artifacts:
-                # Check 1: unindexed artifacts
-                unindexed_artifact = (
-                    session.query(ArtifactSchema.id)
-                    .outerjoin(
-                        SearchIndexSchema,
-                        and_(
-                            SearchIndexSchema.source_type == SearchSourceType.ARTIFACT.value,
-                            SearchIndexSchema.source_id == ArtifactSchema.id,
-                        ),
-                    )
-                    .filter(
-                        SearchIndexSchema.id.is_(None),
-                        ArtifactSchema.transcript_id.isnot(None),
-                    )
-                    .limit(1)
-                    .first()
-                )
-                if unindexed_artifact is not None:
-                    return True
-
-            # Check 2: transcript summaries needing indexing (new or changed)
-            unindexed_summary = (
-                session.query(TranscriptSchema.id)
-                .outerjoin(
-                    SearchIndexSchema,
-                    and_(
-                        SearchIndexSchema.source_type == SearchSourceType.TRANSCRIPT_SUMMARY.value,
-                        SearchIndexSchema.source_id == TranscriptSchema.id,
-                    ),
-                )
-                .filter(
-                    TranscriptSchema.summary.isnot(None),
-                    SearchIndexSchema.id.is_(None),
-                )
-                .limit(1)
-                .first()
-            )
-            if unindexed_summary is not None:
-                return True
-
-            # Check 3: transcript summaries with stale hash — compare in Python
-            # Volume is small (one entry per transcript), so fetch all and compare.
-            indexed_summaries = (
-                session.query(TranscriptSchema.id, TranscriptSchema.summary, SearchIndexSchema.content_hash)
-                .join(
-                    SearchIndexSchema,
-                    and_(
-                        SearchIndexSchema.source_type == SearchSourceType.TRANSCRIPT_SUMMARY.value,
-                        SearchIndexSchema.source_id == TranscriptSchema.id,
-                    ),
-                )
-                .filter(TranscriptSchema.summary.isnot(None))
-                .all()
-            )
-            return any(_content_hash(summary) != stored_hash for _, summary, stored_hash in indexed_summaries)
+    def has_pending() -> bool:
+        """Check if any artifacts need embedding."""
+        return Artifact.has_pending_index()
 
     @staticmethod
     def index_batch(
         db: Database,
         *,
         batch_limit: int = EMBEDDING_BATCH_LIMIT,
-        skip_artifacts: bool = False,
     ) -> int:
-        """Index a batch of pending sources. Returns count of entries written."""
-        total = 0
+        """Embed a batch of pending artifacts. Returns count of rows updated."""
+        to_index = Artifact.get_pending_index()[:batch_limit]
 
-        # Phase 1: Index new artifacts (skipped in lite mode)
-        if not skip_artifacts:
-            with db.session() as session:
-                rows = (
-                    session.query(
-                        ArtifactSchema.id,
-                        ArtifactSchema.text,
-                        ArtifactSchema.transcript_id,
-                        ArtifactSchema.created_at,
-                        TranscriptSchema.project_id,
-                    )
-                    .join(TranscriptSchema, ArtifactSchema.transcript_id == TranscriptSchema.id)
-                    .outerjoin(
-                        SearchIndexSchema,
-                        and_(
-                            SearchIndexSchema.source_type == SearchSourceType.ARTIFACT.value,
-                            SearchIndexSchema.source_id == ArtifactSchema.id,
-                        ),
-                    )
-                    .filter(
-                        SearchIndexSchema.id.is_(None),
-                        ArtifactSchema.transcript_id.isnot(None),
-                    )
-                    .limit(batch_limit)
-                    .all()
-                )
+        if not to_index:
+            return 0
 
-            if rows:
-                texts = [r.text for r in rows]
-                embeddings = _encode(texts)
+        texts = [a.text for a in to_index]
+        embeddings = _encode(texts)
 
-                with db.session() as session:
-                    for row, embedding in zip(rows, embeddings, strict=True):
-                        session.add(
-                            SearchIndexSchema(
-                                source_type=SearchSourceType.ARTIFACT.value,
-                                source_id=row.id,
-                                project_id=row.project_id,
-                                transcript_id=row.transcript_id,
-                                text=row.text,
-                                content_hash=_content_hash(row.text),
-                                created_at=row.created_at,
-                                embedding=embedding.tolist(),
-                            )
-                        )
-
-                total += len(rows)
-                logger.info("Indexed %d artifacts", len(rows))
-
-        # Phase 2: Index new/changed transcript summaries
-        remaining = batch_limit - total
-        if remaining <= 0:
-            return total
-
+        now = datetime.now(UTC)
         with db.session() as session:
-            # Get all transcripts with summaries + their existing index entries (if any)
-            summary_rows = (
-                session.query(
-                    TranscriptSchema.id,
-                    TranscriptSchema.summary,
-                    TranscriptSchema.project_id,
-                    TranscriptSchema.started_at,
-                    SearchIndexSchema.id.label("index_id"),
-                    SearchIndexSchema.content_hash,
+            for artifact, embedding in zip(to_index, embeddings, strict=True):
+                artifact.update_embedding(
+                    session,
+                    embedding=embedding.tolist(),
+                    content_hash=_content_hash(artifact.text),
+                    indexed_at=now,
                 )
-                .outerjoin(
-                    SearchIndexSchema,
-                    and_(
-                        SearchIndexSchema.source_type == SearchSourceType.TRANSCRIPT_SUMMARY.value,
-                        SearchIndexSchema.source_id == TranscriptSchema.id,
-                    ),
-                )
-                .filter(TranscriptSchema.summary.isnot(None))
-                .all()
-            )
 
-        # Filter in Python: new (no index entry) or changed (hash mismatch)
-        to_index: list[tuple] = []
-        for row in summary_rows:
-            current_hash = _content_hash(row.summary)
-            if row.index_id is None or row.content_hash != current_hash:
-                to_index.append(row)
-
-        to_index = to_index[:remaining]
-
-        if to_index:
-            texts = [r.summary for r in to_index]
-            embeddings = _encode(texts)
-
-            with db.session() as session:
-                written = 0
-                for row, embedding in zip(to_index, embeddings, strict=True):
-                    current_hash = _content_hash(row.summary)
-
-                    if row.index_id is None:
-                        # New entry
-                        session.add(
-                            SearchIndexSchema(
-                                source_type=SearchSourceType.TRANSCRIPT_SUMMARY.value,
-                                source_id=row.id,
-                                project_id=row.project_id,
-                                transcript_id=row.id,
-                                text=row.summary,
-                                content_hash=current_hash,
-                                created_at=row.started_at,
-                                embedding=embedding.tolist(),
-                            )
-                        )
-                        written += 1
-                    else:
-                        # Update existing entry
-                        entry = session.get(SearchIndexSchema, row.index_id)
-                        if entry is None:
-                            continue
-                        entry.text = row.summary
-                        entry.content_hash = current_hash
-                        entry.embedding = embedding.tolist()
-                        entry.indexed_at = datetime.now(UTC)
-                        written += 1
-
-            total += written
-            logger.info("Indexed %d transcript summaries", written)
-
-        return total
+        logger.info("Indexed %d artifacts", len(to_index))
+        return len(to_index)
 
 
 def _encode(texts: list[str]) -> list:

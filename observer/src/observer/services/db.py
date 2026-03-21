@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import os
 from collections.abc import Generator
 from contextlib import contextmanager
@@ -12,6 +13,8 @@ from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
 
 from observer.exceptions import DatabaseClosedError, DatabaseNotConfiguredError
 from observer.services.config import get_pg_url
+
+logger = logging.getLogger(__name__)
 
 
 class Base(DeclarativeBase):
@@ -77,7 +80,38 @@ class Database:
 
         import observer.data.schemas  # noqa: F401, PLC0415 -- register schemas with Base
 
+        self._init_schema()
+
+    def _init_schema(self) -> None:
+        """Create tables and check migration state.
+
+        New installs: ``create_all()`` builds the latest schema and stamps
+        the version so no migrations are pending.
+
+        Existing installs: ``create_all()`` handles additive changes. If
+        destructive migrations are pending, log a warning — the user must
+        run ``observer db migrate`` explicitly.
+        """
+        from observer.services.migrations import (  # noqa: PLC0415
+            needs_migration,
+            stamp,
+        )
+
+        is_new = not self._has_tables()
         Base.metadata.create_all(self._engine)
+
+        if is_new:
+            stamp(self._engine)
+        elif needs_migration(self._engine):
+            logger.warning("Database schema is outdated. Run 'observer db migrate' to update.")
+
+    def _has_tables(self) -> bool:
+        """Check if core tables exist (i.e. not a fresh database)."""
+        with self._engine.connect() as conn:
+            row = conn.execute(
+                text("SELECT 1 FROM information_schema.tables WHERE table_name = 'transcripts'")
+            ).fetchone()
+            return row is not None
 
     @contextmanager
     def session(self) -> Generator[Session]:

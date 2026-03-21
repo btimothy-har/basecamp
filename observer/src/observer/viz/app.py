@@ -91,7 +91,7 @@ def _(mo, queries, scope_dropdown, transcript_dropdown):
         project_id=_pid,
         worktree_id=_wid,
     )
-    artifact_counts = queries.get_artifact_type_counts(
+    section_counts = queries.get_section_type_counts(
         transcript_id=_tid,
         project_id=_pid,
         worktree_id=_wid,
@@ -113,7 +113,7 @@ def _(mo, queries, scope_dropdown, transcript_dropdown):
         [
             mo.md("## Pipeline Overview"),
             _make_bar(status_counts, "status", "Processing Status"),
-            _make_bar(artifact_counts, "type", "Artifact Types"),
+            _make_bar(section_counts, "type", "Section Types"),
         ]
     )
 
@@ -132,13 +132,12 @@ def _(mo, queries, scope_dropdown, transcript_dropdown):
 
     _table_data = [
         {
-            "id": a["id"],
-            "type": str(a["type"]),
-            "text": a["text"][:120] + ("..." if len(a["text"]) > 120 else ""),
-            "origin": str(a["origin"]),
-            "created": a["created_at"],
+            "id": e["id"],
+            "type": str(e["type"]),
+            "text": e["text"][:120] + ("..." if len(e["text"]) > 120 else ""),
+            "created": e["created_at"],
         }
-        for a in _artifacts
+        for e in _artifacts
     ]
 
     artifact_table = (
@@ -163,30 +162,11 @@ def _(artifact_table, mo, queries):
         _selected = artifact_table.value[0]
         _info = queries.get_artifact_detail(_selected["id"])
         if _info:
-            _prompt_line = ""
-            if _info["prompt_event_id"]:
-                _prompt_line = f"\n\n**Prompt event**: #{_info['prompt_event_id']}"
-
             _detail = mo.vstack(
                 [
-                    mo.md(f"### {str(_info['type']).upper()} (id={_info['id']}){_prompt_line}"),
-                    mo.hstack(
-                        [
-                            mo.vstack(
-                                [
-                                    mo.md("**Extracted Text**"),
-                                    mo.md(f"```\n{_info['text']}\n```"),
-                                ]
-                            ),
-                            mo.vstack(
-                                [
-                                    mo.md("**Source Text**"),
-                                    mo.md(f"```\n{_info['source'][:2000] if _info['source'] else '(no source)'}\n```"),
-                                ]
-                            ),
-                        ],
-                        widths=[1, 2],
-                    ),
+                    mo.md(f"### {str(_info['type']).upper()} (id={_info['id']})"),
+                    mo.md("**Artifact Text**"),
+                    mo.md(f"```\n{_info['text']}\n```"),
                 ]
             )
 
@@ -213,7 +193,7 @@ def _(mo, queries, transcript_dropdown):
             {
                 "time": item["timestamp"],
                 "kind": item["kind"],
-                "type": item.get("event_type", "") or str(item.get("artifact_type", "")),
+                "type": item.get("event_type", "") or str(item.get("section_type", "")),
                 "status": _status.get(item.get("status", ""), item.get("status", "")),
                 "detail": item.get("text", "")[:120] if item.get("text") else "",
             }
