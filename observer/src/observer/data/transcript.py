@@ -39,12 +39,6 @@ class Transcript(BaseModel):
             return cls.model_validate(row) if row else None
 
     @classmethod
-    def get_active(cls) -> list[Self]:
-        with Database().session() as session:
-            rows = session.query(TranscriptSchema).filter(TranscriptSchema.ended_at.is_(None)).all()
-            return [cls.model_validate(row) for row in rows]
-
-    @classmethod
     def get_by_session_id(cls, session_id: str) -> Self | None:
         with Database().session() as session:
             row = session.query(TranscriptSchema).filter(TranscriptSchema.session_id == session_id).first()

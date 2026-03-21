@@ -126,7 +126,7 @@ class TestRegisterSession:
         r1 = register_session(hook)
         assert r1.created is True
 
-        # Simulate daemon marking it ended
+        # Simulate transcript being marked ended
         with Database().session() as session:
             t = Transcript.get_by_session_id("sess-ended")
             t.ended_at = datetime.now(UTC)

@@ -451,48 +451,6 @@ def _verify_connection(url: str) -> None:
 
 
 @main.command()
-def register() -> None:
-    """Register a Claude Code session (called by SessionStart hook)."""
-    from observer.services.registration import (  # noqa: PLC0415
-        HookInput,
-        register_session,
-    )
-
-    raw = sys.stdin.read()
-    if not raw.strip():
-        sys.exit("No input received on stdin.")
-
-    try:
-        data = json.loads(raw)
-    except json.JSONDecodeError as e:
-        sys.exit(f"Invalid JSON on stdin: {e}")
-
-    if not isinstance(data, dict):
-        sys.exit("stdin JSON must be an object/dict")
-
-    required = {"session_id", "transcript_path", "cwd"}
-    missing = required - data.keys()
-    if missing:
-        sys.exit(f"Missing required fields in stdin JSON: {', '.join(sorted(missing))}")
-
-    hook_input = HookInput(
-        session_id=data["session_id"],
-        transcript_path=data["transcript_path"],
-        cwd=data["cwd"],
-    )
-
-    try:
-        result = register_session(hook_input)
-    except (RegistrationError, ValueError) as e:
-        sys.exit(str(e))
-
-    if result.created:
-        click.echo(f"Registered transcript {result.transcript.session_id}")
-    else:
-        click.echo(f"Session {result.transcript.session_id} already registered")
-
-
-@main.command()
 def ingest() -> None:
     """Ingest transcript events from a hook. Reads JSON from stdin.
 
@@ -546,6 +504,90 @@ def ingest() -> None:
     grouped = EventGrouper.group_batch(db, batch_limit=500)
 
     click.echo(f"session={transcript.session_id} ingested={ingested} grouped={grouped}")
+
+
+@main.command()
+@click.option("--yes", "-y", is_flag=True, help="Skip confirmation.")
+def reprocess(yes: bool) -> None:  # noqa: FBT001
+    """Clear derived data and re-run the full pipeline for all transcripts.
+
+    Keeps raw_events and transcripts intact. Clears work_items,
+    transcript_events, and artifacts, resets raw_event status to PENDING,
+    then runs group → refine → extract → embed for each transcript.
+    """
+    from observer.data.enums import RawEventStatus  # noqa: PLC0415
+    from observer.data.schemas import (  # noqa: PLC0415
+        ArtifactSchema,
+        RawEventSchema,
+        TranscriptEventSchema,
+        TranscriptSchema,
+        WorkItemSchema,
+    )
+    from observer.pipeline.extraction import TranscriptExtractor  # noqa: PLC0415
+    from observer.pipeline.indexing import SearchIndexer  # noqa: PLC0415
+    from observer.pipeline.refining import EventRefiner  # noqa: PLC0415
+    from observer.services.db import Database  # noqa: PLC0415
+    from observer.services.logger import configure_logging  # noqa: PLC0415
+
+    configure_logging(foreground=True)
+
+    db = Database()
+
+    # Count what we're about to reprocess
+    with db.session() as session:
+        transcript_count = session.query(TranscriptSchema).count()
+        raw_event_count = session.query(RawEventSchema).count()
+
+    if transcript_count == 0:
+        click.echo("No transcripts found. Nothing to reprocess.")
+        return
+
+    click.echo(f"Transcripts: {transcript_count}")
+    click.echo(f"Raw events:  {raw_event_count}")
+    click.echo("\nThis will clear all work_items, transcript_events, and artifacts,")
+    click.echo("then re-run the full pipeline (group → refine → extract → embed).")
+
+    if not yes and not click.confirm("\nProceed?"):
+        click.echo("Aborted.")
+        return
+
+    # Phase 0: Clear derived tables and reset raw_event status
+    click.echo("\nClearing derived data...")
+    with db.session() as session:
+        session.query(ArtifactSchema).delete()
+        session.query(TranscriptEventSchema).delete()
+        session.query(WorkItemSchema).delete()
+        session.execute(
+            RawEventSchema.__table__.update().values(processed=RawEventStatus.PENDING)
+        )
+    click.echo("  Cleared work_items, transcript_events, artifacts")
+    click.echo("  Reset raw_events to PENDING")
+
+    # Phase 1: Group all raw events into work items
+    click.echo("\nGrouping raw events...")
+    grouped = EventRefiner.refine_batch(db, batch_limit=raw_event_count)
+    click.echo(f"  Refined {grouped} work items")
+
+    # Phase 2: Extract per transcript
+    click.echo("\nExtracting artifacts...")
+    with db.session() as session:
+        transcript_ids = [
+            row[0] for row in session.query(TranscriptSchema.id).all()
+        ]
+
+    extracted = 0
+    for tid in transcript_ids:
+        count = TranscriptExtractor.extract_transcript(db, tid)
+        extracted += count
+
+    click.echo(f"  Extracted {extracted} artifact sections across {len(transcript_ids)} transcripts")
+
+    # Phase 3: Embed all artifacts
+    click.echo("\nEmbedding artifacts...")
+    SearchIndexer.index_batch(db)
+    click.echo("  Embedding complete")
+
+    click.echo("\nReprocessing complete.")
 
 
 @main.command()

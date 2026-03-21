@@ -1,6 +1,5 @@
 """Tests for the observer CLI."""
 
-import json
 from unittest.mock import MagicMock, patch
 
 import observer.constants as c
@@ -68,71 +67,6 @@ class TestLogs:
 
         args = mock_exec.call_args[0]
         assert "-f" in args[1]
-
-
-class TestRegister:
-    def test_success(self, runner, obs_dir):  # noqa: ARG002
-        stdin_json = json.dumps(
-            {
-                "session_id": "s1",
-                "transcript_path": "/t.jsonl",
-                "cwd": "/some/repo",
-            }
-        )
-        mock_result = MagicMock(
-            created=True,
-            transcript=MagicMock(session_id="s1"),
-        )
-        with patch("observer.services.registration.register_session", return_value=mock_result):
-            result = runner.invoke(main, ["register"], input=stdin_json)
-
-        assert result.exit_code == 0
-        assert "Registered" in result.output
-
-    def test_already_registered(self, runner, obs_dir):  # noqa: ARG002
-        stdin_json = json.dumps(
-            {
-                "session_id": "s1",
-                "transcript_path": "/t.jsonl",
-                "cwd": "/some/repo",
-            }
-        )
-        mock_result = MagicMock(
-            created=False,
-            transcript=MagicMock(session_id="s1"),
-        )
-        with patch("observer.services.registration.register_session", return_value=mock_result):
-            result = runner.invoke(main, ["register"], input=stdin_json)
-
-        assert result.exit_code == 0
-        assert "already registered" in result.output
-
-    def test_empty_stdin(self, runner, obs_dir):  # noqa: ARG002
-        result = runner.invoke(main, ["register"], input="")
-        assert result.exit_code != 0
-        assert "No input" in result.output
-
-    def test_invalid_json(self, runner, obs_dir):  # noqa: ARG002
-        result = runner.invoke(main, ["register"], input="not json")
-        assert result.exit_code != 0
-        assert "Invalid JSON" in result.output
-
-    def test_not_a_repo(self, runner, obs_dir):  # noqa: ARG002
-        stdin_json = json.dumps(
-            {
-                "session_id": "s1",
-                "transcript_path": "/t.jsonl",
-                "cwd": "/nonexistent",
-            }
-        )
-        with patch(
-            "observer.services.registration.register_session",
-            side_effect=ValueError("Not a git repository: /nonexistent"),
-        ):
-            result = runner.invoke(main, ["register"], input=stdin_json)
-
-        assert result.exit_code != 0
-        assert "Not a git repository" in result.output
 
 
 class TestSetup:

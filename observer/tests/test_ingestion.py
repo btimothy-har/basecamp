@@ -119,22 +119,6 @@ class TestTranscriptSaveGet:
     def test_get_missing(self, db):  # noqa: ARG002
         assert Transcript.get(999) is None
 
-    def test_get_active(self, db):  # noqa: ARG002
-        with db.session() as s:
-            p = Project(name="proj", repo_path="/repo").save(s)
-            Transcript(project_id=p.id, session_id="active", path="/a", started_at=NOW).save(s)
-            Transcript(
-                project_id=p.id,
-                session_id="ended",
-                path="/b",
-                started_at=NOW,
-                ended_at=NOW,
-            ).save(s)
-
-        active = Transcript.get_active()
-        assert len(active) == 1
-        assert active[0].session_id == "active"
-
 
 # -- RawEvent save/get --------------------------------------------------------
 
