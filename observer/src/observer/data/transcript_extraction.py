@@ -21,12 +21,29 @@ class TranscriptExtraction(BaseModel):
     section_type: SectionType
     text: str
     created_at: datetime
+    updated_at: datetime
 
     def save(self, session: Session) -> Self:
-        data = self.model_dump()
-        merged = session.merge(TranscriptExtractionSchema(**data))
+        """Upsert by (transcript_id, section_type). Updates text + updated_at if exists."""
+        existing = (
+            session.query(TranscriptExtractionSchema)
+            .filter(
+                TranscriptExtractionSchema.transcript_id == self.transcript_id,
+                TranscriptExtractionSchema.section_type == self.section_type,
+            )
+            .first()
+        )
+
+        if existing is not None:
+            existing.text = self.text
+            existing.updated_at = self.updated_at
+            session.flush()
+            return type(self).model_validate(existing)
+
+        row = TranscriptExtractionSchema(**self.model_dump())
+        session.add(row)
         session.flush()
-        return type(self).model_validate(merged)
+        return type(self).model_validate(row)
 
     @classmethod
     def get(cls, extraction_id: int) -> Self | None:
@@ -44,10 +61,3 @@ class TranscriptExtraction(BaseModel):
             )
             return [cls.model_validate(row) for row in rows]
 
-    @classmethod
-    def delete_for_transcript(cls, transcript_id: int) -> None:
-        """Delete all extractions for a transcript before re-extraction."""
-        with Database().session() as session:
-            session.query(TranscriptExtractionSchema).filter(
-                TranscriptExtractionSchema.transcript_id == transcript_id
-            ).delete()

@@ -51,6 +51,3 @@ _SKIP_TYPES = frozenset(
 )
 
 
-class SearchSourceType(StrEnum):
-    TRANSCRIPT_EXTRACTION = "transcript_extraction"
-    TRANSCRIPT_SUMMARY = "transcript_summary"

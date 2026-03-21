@@ -18,7 +18,7 @@ from observer.constants import (
     SEARCH_DEFAULT_TOP_K,
     SEARCH_OVERFETCH_FACTOR,
 )
-from observer.data.enums import SearchSourceType, SectionType
+from observer.data.enums import SectionType
 from observer.data.schemas import (
     ProjectSchema,
     SearchIndexSchema,
@@ -103,16 +103,11 @@ def search_artifacts(
         q = (
             session.query(
                 SearchIndexSchema,
-                TranscriptExtractionSchema.section_type,
                 distance_expr.label("distance"),
-            )
-            .outerjoin(
-                TranscriptExtractionSchema,
-                SearchIndexSchema.source_id == TranscriptExtractionSchema.id,
             )
             .filter(
                 SearchIndexSchema.embedding.isnot(None),
-                SearchIndexSchema.source_type == SearchSourceType.TRANSCRIPT_EXTRACTION.value,
+                SearchIndexSchema.section_type != SectionType.SUMMARY,
             )
         )
 
@@ -123,24 +118,20 @@ def search_artifacts(
             return []
 
         scored: list[dict[str, Any]] = []
-        for index_entry, section_type, distance in rows:
+        for index_entry, distance in rows:
             score = compute_score(distance, index_entry.created_at)
             if score < threshold:
                 continue
 
-            result: dict[str, Any] = {
+            scored.append({
                 "source_id": index_entry.source_id,
                 "text": index_entry.text,
+                "type": index_entry.section_type,
                 "score": round(score, 4),
                 "created_at": index_entry.created_at.isoformat() if index_entry.created_at else None,
                 "transcript_id": index_entry.transcript_id,
                 "_embedding": index_entry.embedding,
-            }
-
-            if section_type is not None:
-                result["type"] = section_type
-
-            scored.append(result)
+            })
 
         scored.sort(key=lambda r: r["score"], reverse=True)
         results = deduplicate(scored)
@@ -180,7 +171,7 @@ def search_transcripts(
             distance_expr.label("distance"),
         ).filter(
             SearchIndexSchema.embedding.isnot(None),
-            SearchIndexSchema.source_type == SearchSourceType.TRANSCRIPT_SUMMARY.value,
+            SearchIndexSchema.section_type == SectionType.SUMMARY,
         )
 
         q = _apply_scope_filters(q, project_name=project_name, worktree=worktree, session_id=session_id)

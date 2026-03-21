@@ -8,11 +8,11 @@ from unittest.mock import MagicMock, patch
 
 import numpy as np
 from observer.constants import EMBEDDING_DIMENSIONS
-from observer.data.enums import ArtifactSource, ArtifactType, SearchSourceType
+from observer.data.enums import SectionType
 from observer.data.schemas import (
-    ArtifactSchema,
     ProjectSchema,
     SearchIndexSchema,
+    TranscriptExtractionSchema,
     TranscriptSchema,
 )
 from observer.mcp import engine
@@ -44,11 +44,14 @@ def _content_hash(text: str) -> str:
     return hashlib.sha256(text.encode()).hexdigest()
 
 
-def _seed_data(db, *, artifact_type=ArtifactType.KNOWLEDGE, session_id="sess-1", project_name="test-project"):
-    """Create a project, transcript, artifact, and search_index entry. Returns artifact ID.
-
-    Reuses an existing project if one with the given name already exists.
-    """
+def _seed_extraction(
+    db,
+    *,
+    section_type=SectionType.KNOWLEDGE,
+    session_id="sess-1",
+    project_name="test-project",
+):
+    """Create a project, transcript, extraction, and search_index entry. Returns extraction ID."""
     with db.session() as session:
         project = session.query(ProjectSchema).filter(ProjectSchema.name == project_name).first()
         if project is None:
@@ -64,20 +67,18 @@ def _seed_data(db, *, artifact_type=ArtifactType.KNOWLEDGE, session_id="sess-1",
         session.add(transcript)
         session.flush()
 
-        text = f"test artifact of type {artifact_type.value}"
-        artifact = ArtifactSchema(
-            artifact_type=artifact_type.value,
-            origin=ArtifactSource.EXTRACTED.value,
-            text=text,
+        text = f"test extraction of type {section_type.value}"
+        extraction = TranscriptExtractionSchema(
             transcript_id=transcript.id,
-            created_at=datetime.now(UTC),
+            section_type=section_type,
+            text=text,
         )
-        session.add(artifact)
+        session.add(extraction)
         session.flush()
 
         index_entry = SearchIndexSchema(
-            source_type=SearchSourceType.ARTIFACT.value,
-            source_id=artifact.id,
+            section_type=section_type,
+            source_id=extraction.id,
             project_id=project.id,
             transcript_id=transcript.id,
             text=text,
@@ -88,13 +89,17 @@ def _seed_data(db, *, artifact_type=ArtifactType.KNOWLEDGE, session_id="sess-1",
         session.add(index_entry)
         session.flush()
 
-        return artifact.id
+        return extraction.id
 
 
-def _seed_transcript_summary(
-    db, *, session_id="sess-summary", summary="Test transcript summary", project_name="test-project"
+def _seed_summary(
+    db,
+    *,
+    session_id="sess-summary",
+    summary_text="## Test Title\nTest transcript summary",
+    project_name="test-project",
 ):
-    """Create a project, transcript with summary, and search_index entry. Returns transcript ID."""
+    """Create a project, transcript, summary extraction, and search_index entry. Returns transcript ID."""
     with db.session() as session:
         project = session.query(ProjectSchema).filter(ProjectSchema.name == project_name).first()
         if project is None:
@@ -106,19 +111,25 @@ def _seed_transcript_summary(
             project_id=project.id,
             session_id=session_id,
             path=f"/tmp/transcript-{session_id}.jsonl",
-            title=f"Title for {session_id}",
-            summary=summary,
         )
         session.add(transcript)
         session.flush()
 
+        extraction = TranscriptExtractionSchema(
+            transcript_id=transcript.id,
+            section_type=SectionType.SUMMARY,
+            text=summary_text,
+        )
+        session.add(extraction)
+        session.flush()
+
         index_entry = SearchIndexSchema(
-            source_type=SearchSourceType.TRANSCRIPT_SUMMARY.value,
-            source_id=transcript.id,
+            section_type=SectionType.SUMMARY,
+            source_id=extraction.id,
             project_id=project.id,
             transcript_id=transcript.id,
-            text=summary,
-            content_hash=_content_hash(summary),
+            text=summary_text,
+            content_hash=_content_hash(summary_text),
             embedding=_random_embedding(),
             created_at=datetime.now(UTC),
         )
@@ -129,8 +140,8 @@ def _seed_transcript_summary(
 
 
 class TestSearchArtifacts:
-    def test_returns_artifact_results(self, db):  # noqa: ARG002
-        _seed_data(db)
+    def test_returns_extraction_results(self, db):  # noqa: ARG002
+        _seed_extraction(db)
 
         with patch.object(engine, "_get_model", return_value=_mock_model()):
             results = engine.search_artifacts("test query", "test-project")
@@ -142,20 +153,19 @@ class TestSearchArtifacts:
         assert "score" in result
         assert "transcript_id" in result
         assert "type" in result
-        assert "session_context" in result
 
-    def test_excludes_transcript_summaries(self, db):  # noqa: ARG002
-        _seed_transcript_summary(db, session_id="sess-excluded")
+    def test_excludes_summaries(self, db):  # noqa: ARG002
+        _seed_summary(db, session_id="sess-excluded")
 
         with patch.object(engine, "_get_model", return_value=_mock_model()):
             results = engine.search_artifacts("test query", "test-project")
 
-        # No transcript summary results should appear in artifact search
+        # Summary sections should not appear in artifact search
         for r in results:
-            assert "title" not in r
+            assert r.get("type") != SectionType.SUMMARY
 
     def test_scopes_to_project(self, db):  # noqa: ARG002
-        _seed_data(db, session_id="sess-scoped")
+        _seed_extraction(db, session_id="sess-scoped")
 
         with patch.object(engine, "_get_model", return_value=_mock_model()):
             results = engine.search_artifacts("test query", "nonexistent-project")
@@ -163,7 +173,7 @@ class TestSearchArtifacts:
         assert len(results) == 0
 
     def test_excludes_current_session(self, db):  # noqa: ARG002
-        _seed_data(db, session_id="current-session")
+        _seed_extraction(db, session_id="current-session")
 
         with patch.object(engine, "_get_model", return_value=_mock_model()):
             results = engine.search_artifacts("test query", "test-project", session_id="current-session")
@@ -172,7 +182,7 @@ class TestSearchArtifacts:
 
     def test_respects_top_k(self, db):  # noqa: ARG002
         for i in range(5):
-            _seed_data(db, session_id=f"sess-topk-{i}")
+            _seed_extraction(db, session_id=f"sess-topk-{i}")
 
         with patch.object(engine, "_get_model", return_value=_mock_model()):
             results = engine.search_artifacts("test query", "test-project", top_k=2)
@@ -180,85 +190,21 @@ class TestSearchArtifacts:
         assert len(results) <= 2
 
     def test_threshold_filters_low_scores(self, db):  # noqa: ARG002
-        _seed_data(db, session_id="sess-thresh")
+        _seed_extraction(db, session_id="sess-thresh")
 
         with patch.object(engine, "_get_model", return_value=_mock_model()):
             results = engine.search_artifacts("test query", "test-project", threshold=0.99)
 
-        # With random embeddings, scores should be low — most filtered out
         for r in results:
             assert r["score"] >= 0.99
 
-    def test_session_context_includes_siblings(self, db):
-        """Results include sibling artifact entries from the same transcript."""
-        with db.session() as session:
-            project = session.query(ProjectSchema).filter(ProjectSchema.name == "test-project").first()
-            if project is None:
-                project = ProjectSchema(name="test-project", repo_path="/tmp/test")
-                session.add(project)
-                session.flush()
-
-            transcript = TranscriptSchema(
-                project_id=project.id,
-                session_id="sess-siblings",
-                path="/tmp/transcript-sess-siblings.jsonl",
-            )
-            session.add(transcript)
-            session.flush()
-
-            primary = ArtifactSchema(
-                artifact_type=ArtifactType.KNOWLEDGE.value,
-                origin=ArtifactSource.EXTRACTED.value,
-                text="primary artifact with embedding",
-                transcript_id=transcript.id,
-                created_at=datetime.now(UTC),
-            )
-            sibling = ArtifactSchema(
-                artifact_type=ArtifactType.DECISION.value,
-                origin=ArtifactSource.EXTRACTED.value,
-                text="sibling decision in same session",
-                transcript_id=transcript.id,
-                created_at=datetime.now(UTC),
-            )
-            session.add_all([primary, sibling])
-            session.flush()
-            both_ids = {primary.id, sibling.id}
-
-            for artifact, emb_offset in [(primary, 0), (sibling, 1)]:
-                session.add(
-                    SearchIndexSchema(
-                        source_type=SearchSourceType.ARTIFACT.value,
-                        source_id=artifact.id,
-                        project_id=project.id,
-                        transcript_id=transcript.id,
-                        text=artifact.text,
-                        content_hash=_content_hash(artifact.text),
-                        embedding=_fixed_embedding(base=1.0, offset=emb_offset),
-                        created_at=datetime.now(UTC),
-                    )
-                )
-            session.flush()
-
-        with patch.object(engine, "_get_model", return_value=_mock_model()):
-            results = engine.search_artifacts("test query", "test-project", top_k=1)
-
-        assert len(results) == 1
-        result_id = results[0]["source_id"]
-        siblings = results[0]["session_context"]
-        context_ids = {s["id"] for s in siblings}
-        assert context_ids == both_ids - {result_id}
-        for s in siblings:
-            assert "type" in s
-
     def test_none_project_returns_all_projects(self, db):  # noqa: ARG002
-        """project_name=None skips the project filter (reflect mode cross-project search)."""
-        _seed_data(db, session_id="sess-proj-a", project_name="project-a")
-        _seed_data(db, session_id="sess-proj-b", project_name="project-b")
+        _seed_extraction(db, session_id="sess-proj-a", project_name="project-a")
+        _seed_extraction(db, session_id="sess-proj-b", project_name="project-b")
 
         with patch.object(engine, "_get_model", return_value=_mock_model()):
             results = engine.search_artifacts("test query", None, top_k=50, threshold=0.0)
 
-        # Should find artifacts from both projects
         assert len(results) >= 2
 
     def test_empty_db_returns_empty(self, db):  # noqa: ARG002
@@ -270,7 +216,7 @@ class TestSearchArtifacts:
 
 class TestSearchTranscripts:
     def test_returns_transcript_results(self, db):  # noqa: ARG002
-        _seed_transcript_summary(db)
+        _seed_summary(db)
 
         with patch.object(engine, "_get_model", return_value=_mock_model()):
             results = engine.search_transcripts("test query", "test-project")
@@ -283,30 +229,18 @@ class TestSearchTranscripts:
         assert "title" in result
         assert "transcript_id" in result
 
-    def test_no_session_context(self, db):  # noqa: ARG002
-        """Transcript search results should not include session_context."""
-        _seed_transcript_summary(db)
+    def test_excludes_non_summary_sections(self, db):  # noqa: ARG002
+        _seed_extraction(db, session_id="sess-excluded")
 
         with patch.object(engine, "_get_model", return_value=_mock_model()):
             results = engine.search_transcripts("test query", "test-project")
 
-        assert len(results) >= 1
-        for r in results:
-            assert "session_context" not in r
-
-    def test_excludes_artifacts(self, db):  # noqa: ARG002
-        _seed_data(db, session_id="sess-excluded")
-
-        with patch.object(engine, "_get_model", return_value=_mock_model()):
-            results = engine.search_transcripts("test query", "test-project")
-
-        # No artifact results should appear in transcript search
+        # Non-summary extraction results should not appear in transcript search
         for r in results:
             assert "type" not in r
-            assert "prompt_event_id" not in r
 
     def test_scopes_to_project(self, db):  # noqa: ARG002
-        _seed_transcript_summary(db, session_id="sess-scoped-ts")
+        _seed_summary(db, session_id="sess-scoped-ts")
 
         with patch.object(engine, "_get_model", return_value=_mock_model()):
             results = engine.search_transcripts("test query", "nonexistent-project")
@@ -314,7 +248,7 @@ class TestSearchTranscripts:
         assert len(results) == 0
 
     def test_excludes_current_session(self, db):  # noqa: ARG002
-        _seed_transcript_summary(db, session_id="current-session-ts")
+        _seed_summary(db, session_id="current-session-ts")
 
         with patch.object(engine, "_get_model", return_value=_mock_model()):
             results = engine.search_transcripts("test query", "test-project", session_id="current-session-ts")
@@ -323,7 +257,7 @@ class TestSearchTranscripts:
 
     def test_respects_top_k(self, db):  # noqa: ARG002
         for i in range(5):
-            _seed_transcript_summary(db, session_id=f"sess-topk-ts-{i}", summary=f"Summary {i}")
+            _seed_summary(db, session_id=f"sess-topk-ts-{i}", summary_text=f"## Title {i}\nSummary {i}")
 
         with patch.object(engine, "_get_model", return_value=_mock_model()):
             results = engine.search_transcripts("test query", "test-project", top_k=2)
@@ -331,9 +265,8 @@ class TestSearchTranscripts:
         assert len(results) <= 2
 
     def test_none_project_returns_all_projects(self, db):  # noqa: ARG002
-        """project_name=None skips the project filter (reflect mode cross-project search)."""
-        _seed_transcript_summary(db, session_id="sess-ts-a", summary="Summary A", project_name="project-a")
-        _seed_transcript_summary(db, session_id="sess-ts-b", summary="Summary B", project_name="project-b")
+        _seed_summary(db, session_id="sess-ts-a", summary_text="## A\nSummary A", project_name="project-a")
+        _seed_summary(db, session_id="sess-ts-b", summary_text="## B\nSummary B", project_name="project-b")
 
         with patch.object(engine, "_get_model", return_value=_mock_model()):
             results = engine.search_transcripts("test query", None, top_k=50, threshold=0.0)
@@ -347,35 +280,34 @@ class TestSearchTranscripts:
         assert results == []
 
 
-class TestGetArtifact:
-    def test_returns_artifact(self, db):  # noqa: ARG002
-        artifact_id = _seed_data(db, session_id="sess-get")
+class TestGetExtraction:
+    def test_returns_extraction(self, db):  # noqa: ARG002
+        ext_id = _seed_extraction(db, session_id="sess-get")
 
-        result = engine.get_artifact(artifact_id)
+        result = engine.get_extraction(ext_id)
 
         assert result is not None
-        assert result["id"] == artifact_id
-        assert "type" in result
+        assert result["id"] == ext_id
+        assert result["section_type"] == SectionType.KNOWLEDGE
         assert "text" in result
-        assert "prompted_by" in result
 
     def test_returns_none_for_missing(self, db):  # noqa: ARG002
-        result = engine.get_artifact(99999)
+        result = engine.get_extraction(99999)
         assert result is None
 
 
 class TestGetTranscriptSummary:
     def test_returns_summary(self, db):  # noqa: ARG002
-        transcript_id = _seed_transcript_summary(db, session_id="sess-get-summary")
+        transcript_id = _seed_summary(db, session_id="sess-get-summary")
 
         result = engine.get_transcript_summary(transcript_id)
 
         assert result is not None
         assert result["id"] == transcript_id
-        assert result["title"] is not None
-        assert result["summary"] is not None
+        assert result["title"] == "Test Title"
         assert result["session_id"] == "sess-get-summary"
         assert "started_at" in result
+        assert "sections" in result
 
     def test_returns_none_for_missing(self, db):  # noqa: ARG002
         result = engine.get_transcript_summary(99999)

@@ -3,7 +3,7 @@
 from datetime import UTC, datetime
 
 import pytest
-from observer.data.enums import SearchSourceType
+from observer.data.enums import SectionType
 from observer.data.schemas import ProjectSchema, SearchIndexSchema
 from observer.exceptions import DatabaseNotConfiguredError
 from observer.services.db import Base, Database
@@ -95,7 +95,7 @@ class TestSearchIndex:
             project_id = project.id
 
             entry = SearchIndexSchema(
-                source_type=SearchSourceType.ARTIFACT.value,
+                section_type=SectionType.KNOWLEDGE,
                 source_id=1,
                 project_id=project_id,
                 text="first entry",
@@ -108,7 +108,7 @@ class TestSearchIndex:
         with pytest.raises(IntegrityError):
             with db.session() as session:
                 duplicate = SearchIndexSchema(
-                    source_type=SearchSourceType.ARTIFACT.value,
+                    section_type=SectionType.KNOWLEDGE,
                     source_id=1,
                     project_id=project_id,
                     text="duplicate entry",

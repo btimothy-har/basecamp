@@ -4,16 +4,13 @@ Runs as a batch processor on the daemon's polling cadence. Reads from
 transcript extraction sections, encodes with sentence-transformers, and writes
 entries to the ``search_index`` table.
 
-SUMMARY sections are indexed as TRANSCRIPT_SUMMARY; all other section types
-(KNOWLEDGE, DECISIONS, CONSTRAINTS, ACTIONS) are indexed as TRANSCRIPT_EXTRACTION.
-Both use upsert-on-change (mutable text, detected via content hash).
+Change detection uses two signals: ``updated_at > indexed_at`` as a fast path,
+and ``content_hash`` mismatch as a safety net.
 """
 
 import hashlib
 import logging
 from datetime import UTC, datetime
-
-from sqlalchemy import and_
 
 from observer.constants import (
     EMBEDDING_BATCH_LIMIT,
@@ -21,7 +18,6 @@ from observer.constants import (
     EMBEDDING_MODEL_NAME,
     MODEL_CACHE_DIR,
 )
-from observer.data.enums import SearchSourceType, SectionType
 from observer.data.schemas import SearchIndexSchema, TranscriptExtractionSchema, TranscriptSchema
 from observer.exceptions import EmbeddingShapeError
 from observer.services.db import Database
@@ -45,42 +41,38 @@ def _content_hash(text: str) -> str:
     return hashlib.sha256(text.encode()).hexdigest()
 
 
-def _source_type_for(section_type: str) -> str:
-    """Map a SectionType to its SearchSourceType value."""
-    if section_type == SectionType.SUMMARY:
-        return SearchSourceType.TRANSCRIPT_SUMMARY.value
-    return SearchSourceType.TRANSCRIPT_EXTRACTION.value
-
-
 class SearchIndexer:
     """Syncs the search_index table from transcript extraction sections."""
 
     @staticmethod
     def has_pending() -> bool:
-        """Check if any extraction sections need indexing."""
+        """Check if any extraction sections need indexing.
+
+        Fast path: new extractions (no index entry) or updated_at > indexed_at.
+        Safety net: content_hash mismatch catches any missed updates.
+        """
         with Database().session() as session:
-            extractions = (
+            rows = (
                 session.query(
                     TranscriptExtractionSchema.id,
-                    TranscriptExtractionSchema.section_type,
                     TranscriptExtractionSchema.text,
+                    TranscriptExtractionSchema.updated_at,
+                    SearchIndexSchema.indexed_at,
+                    SearchIndexSchema.content_hash,
+                )
+                .outerjoin(
+                    SearchIndexSchema,
+                    SearchIndexSchema.source_id == TranscriptExtractionSchema.id,
                 )
                 .all()
             )
 
-            for ext_id, section_type, text in extractions:
-                source_type = _source_type_for(section_type)
-                existing = (
-                    session.query(SearchIndexSchema.content_hash)
-                    .filter(
-                        SearchIndexSchema.source_type == source_type,
-                        SearchIndexSchema.source_id == ext_id,
-                    )
-                    .first()
-                )
-                if existing is None:
+            for _, text, updated_at, indexed_at, existing_hash in rows:
+                if indexed_at is None:
                     return True
-                if existing.content_hash != _content_hash(text):
+                if updated_at > indexed_at:
+                    return True
+                if existing_hash != _content_hash(text):
                     return True
 
             return False
@@ -100,8 +92,10 @@ class SearchIndexer:
                     TranscriptExtractionSchema.section_type,
                     TranscriptExtractionSchema.text,
                     TranscriptExtractionSchema.created_at,
+                    TranscriptExtractionSchema.updated_at,
                     TranscriptSchema.project_id,
                     SearchIndexSchema.id.label("index_id"),
+                    SearchIndexSchema.indexed_at,
                     SearchIndexSchema.content_hash,
                 )
                 .join(
@@ -110,22 +104,19 @@ class SearchIndexer:
                 )
                 .outerjoin(
                     SearchIndexSchema,
-                    and_(
-                        SearchIndexSchema.source_id == TranscriptExtractionSchema.id,
-                        SearchIndexSchema.source_type.in_([
-                            SearchSourceType.TRANSCRIPT_SUMMARY.value,
-                            SearchSourceType.TRANSCRIPT_EXTRACTION.value,
-                        ]),
-                    ),
+                    SearchIndexSchema.source_id == TranscriptExtractionSchema.id,
                 )
                 .all()
             )
 
-        # Filter in Python: new (no index entry) or changed (hash mismatch)
+        # Filter: new (no index entry), timestamp stale, or hash mismatch
         to_index: list[tuple] = []
         for row in extraction_rows:
-            current_hash = _content_hash(row.text)
-            if row.index_id is None or row.content_hash != current_hash:
+            if row.index_id is None:
+                to_index.append(row)
+            elif row.updated_at > row.indexed_at:
+                to_index.append(row)
+            elif row.content_hash != _content_hash(row.text):
                 to_index.append(row)
 
         to_index = to_index[:batch_limit]
@@ -140,12 +131,11 @@ class SearchIndexer:
             written = 0
             for row, embedding in zip(to_index, embeddings, strict=True):
                 current_hash = _content_hash(row.text)
-                source_type = _source_type_for(row.section_type)
 
                 if row.index_id is None:
                     session.add(
                         SearchIndexSchema(
-                            source_type=source_type,
+                            section_type=row.section_type,
                             source_id=row.id,
                             project_id=row.project_id,
                             transcript_id=row.transcript_id,

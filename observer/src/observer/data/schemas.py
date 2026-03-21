@@ -24,7 +24,7 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from observer.data.enums import SearchSourceType, SectionType, WorkItemType
+from observer.data.enums import SectionType, WorkItemType
 from observer.services.db import Base
 
 
@@ -146,15 +146,16 @@ class TranscriptExtractionSchema(Base):
     )
     text: Mapped[str] = mapped_column(Text, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow, nullable=False)
 
 
 class SearchIndexSchema(Base):
     __tablename__ = "search_index"
     __table_args__ = (
-        UniqueConstraint("source_type", "source_id"),
+        UniqueConstraint("source_id"),
         Index("ix_search_index_project_id", "project_id"),
         Index("ix_search_index_transcript_id", "transcript_id"),
-        Index("ix_search_index_source_type", "source_type"),
+        Index("ix_search_index_section_type", "section_type"),
         Index(
             "ix_search_index_embedding_hnsw",
             "embedding",
@@ -165,8 +166,8 @@ class SearchIndexSchema(Base):
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    source_type: Mapped[str] = mapped_column(
-        Enum(SearchSourceType, native_enum=False, create_constraint=False), nullable=False
+    section_type: Mapped[str] = mapped_column(
+        Enum(SectionType, native_enum=False, create_constraint=False), nullable=False
     )
     source_id: Mapped[int] = mapped_column(Integer, nullable=False)
     project_id: Mapped[int] = mapped_column(ForeignKey("projects.id"), nullable=False)

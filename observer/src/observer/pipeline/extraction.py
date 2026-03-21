@@ -8,7 +8,6 @@ import logging
 from datetime import UTC, datetime
 
 from observer.data.enums import SectionType, WorkItemType
-from observer.data.schemas import TranscriptExtractionSchema
 from observer.data.transcript_event import TranscriptEvent
 from observer.data.transcript_extraction import TranscriptExtraction
 from observer.exceptions import ExtractionError
@@ -49,9 +48,6 @@ class TranscriptExtractor:
             logger.exception("Extraction failed for transcript %d", transcript_id)
             return 0
 
-        # Replace existing extractions
-        TranscriptExtraction.delete_for_transcript(transcript_id)
-
         now = datetime.now(UTC)
         count = 0
         with db.session() as session:
@@ -60,7 +56,6 @@ class TranscriptExtractor:
                 if not text:
                     continue
 
-                # Prepend the title to the summary section
                 if section_type == SectionType.SUMMARY:
                     text = f"## {result.title}\n{text}"
 
@@ -69,6 +64,7 @@ class TranscriptExtractor:
                     section_type=section_type,
                     text=text,
                     created_at=now,
+                    updated_at=now,
                 )
                 extraction.save(session)
                 count += 1
