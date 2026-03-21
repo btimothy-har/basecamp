@@ -4,7 +4,7 @@ import os
 from io import StringIO
 from pathlib import Path
 
-from dotenv import load_dotenv
+from dotenv import dotenv_values, load_dotenv
 from rich.console import Console
 
 from core.config import Config, ProjectConfig, resolve_project, validate_dirs
@@ -205,7 +205,7 @@ def execute_launch(
 
     # Collect env vars that need forwarding (tmux wrapping requires explicit
     # passing because tmux new-session inherits the server's env, not the client's).
-    env_vars: dict[str, str] = {}
+    env_vars: dict[str, str] = {k: v for k, v in dotenv_values(dotenv_path).items() if v is not None}
     for var in ("BASECAMP_PROJECT", "BASECAMP_REPO", "BASECAMP_CONTEXT_FILE", "BASECAMP_SYSTEM_PROMPT"):
         value = os.environ.get(var)
         if value:
