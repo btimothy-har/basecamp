@@ -1,4 +1,4 @@
-"""Multiprocessing worker targets for ingestion, refining, processing, indexing, and summarization.
+"""Multiprocessing worker targets for ingestion, refining, extraction, and indexing.
 
 These are top-level functions (not methods) because ``multiprocessing.Process``
 needs picklable targets. Each worker acquires an advisory file lock, does its
@@ -14,11 +14,10 @@ from pathlib import Path
 from typing import Any
 
 from observer.data.transcript import Transcript
-from observer.pipeline.extraction import WorkItemExtractor
+from observer.pipeline.extraction import TranscriptExtractor
 from observer.pipeline.indexing import SearchIndexer
 from observer.pipeline.parser import TranscriptParser
 from observer.pipeline.refining import EventRefiner
-from observer.pipeline.summarization import summarize_active_transcripts
 from observer.services.db import Database
 from observer.services.logger import configure_logging_worker
 
@@ -104,28 +103,33 @@ def refine_worker(lock_dir: Path) -> None:
 
 
 @worker_process
-def process_worker(lock_dir: Path) -> None:
-    """Worker process target for work item processing. Acquires advisory lock, runs batch."""
-    lock_path = lock_dir / "processing.lock"
+def extraction_worker(transcript_id: int, lock_dir: Path) -> None:
+    """Worker process target for transcript-level extraction.
+
+    Fires when a transcript has been inactive (no new file writes) for
+    INACTIVITY_TIMEOUT seconds. Uses a per-transcript lock so multiple
+    transcripts can be extracted concurrently.
+    """
+    lock_path = lock_dir / f"extraction_{transcript_id}.lock"
     fd = os.open(str(lock_path), os.O_CREAT | os.O_WRONLY)
     try:
         fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
     except OSError:
         os.close(fd)
-        logger.info("Processing lock held, skipping")
+        logger.info("Extraction lock held for transcript %d, skipping", transcript_id)
         return
 
     try:
-        WorkItemExtractor.extract_batch(Database())
+        TranscriptExtractor.extract_transcript(Database(), transcript_id)
     except Exception:
-        logger.exception("Processing worker failed")
+        logger.exception("Extraction worker failed for transcript %d", transcript_id)
     finally:
         fcntl.flock(fd, fcntl.LOCK_UN)
         os.close(fd)
 
 
 @worker_process
-def index_worker(lock_dir: Path, *, skip_artifacts: bool = False) -> None:
+def index_worker(lock_dir: Path) -> None:
     """Worker process target for search indexing. Acquires advisory lock, runs batch."""
     lock_path = lock_dir / "indexing.lock"
     fd = os.open(str(lock_path), os.O_CREAT | os.O_WRONLY)
@@ -137,34 +141,9 @@ def index_worker(lock_dir: Path, *, skip_artifacts: bool = False) -> None:
         return
 
     try:
-        SearchIndexer.index_batch(Database(), skip_artifacts=skip_artifacts)
+        SearchIndexer.index_batch(Database())
     except Exception:
         logger.exception("Indexing worker failed")
-    finally:
-        fcntl.flock(fd, fcntl.LOCK_UN)
-        os.close(fd)
-
-
-@worker_process
-def summary_worker(lock_dir: Path) -> None:
-    """Worker process target for lightweight transcript summarization (lite mode).
-
-    Generates summaries directly from raw events, bypassing the full
-    Group → Refine → Extract pipeline.
-    """
-    lock_path = lock_dir / "summarization.lock"
-    fd = os.open(str(lock_path), os.O_CREAT | os.O_WRONLY)
-    try:
-        fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
-    except OSError:
-        os.close(fd)
-        logger.info("Summarization lock held, skipping")
-        return
-
-    try:
-        summarize_active_transcripts(Database())
-    except Exception:
-        logger.exception("Summarization worker failed")
     finally:
         fcntl.flock(fd, fcntl.LOCK_UN)
         os.close(fd)

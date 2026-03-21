@@ -14,6 +14,7 @@ PID_FILE = OBSERVER_DIR / "observer.pid"
 LOG_FILE = OBSERVER_DIR / "observer.log"
 
 TICK_INTERVAL = 1  # seconds between scheduler ticks
+INACTIVITY_TIMEOUT = 120  # seconds of no file changes before extraction fires
 INDEX_INTERVAL = 120  # seconds between indexing spawns
 MAX_INGEST_WORKERS = 8  # max ingest processes spawned per poll cycle
 DEFAULT_STALE_THRESHOLD = 300

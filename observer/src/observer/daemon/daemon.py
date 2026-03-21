@@ -3,6 +3,10 @@
 The daemon is a read-only detector: queries active transcripts, stats files,
 and spawns isolated worker processes to ingest. Workers are ephemeral — lock,
 ingest, update state, unlock, exit.
+
+Extraction is inactivity-driven: when a transcript's file hasn't changed for
+INACTIVITY_TIMEOUT seconds, an extraction worker fires to produce structured
+sections from the refined events.
 """
 
 import logging
@@ -18,19 +22,15 @@ from pathlib import Path
 
 from observer import constants
 from observer.daemon.workers import (
+    extraction_worker,
     index_worker,
     ingest_worker,
-    process_worker,
     refine_worker,
-    summary_worker,
 )
-from observer.data.enums import WorkItemStage
 from observer.data.transcript import Transcript
-from observer.data.work_item import WorkItem
 from observer.pipeline.indexing import SearchIndexer
 from observer.pipeline.refining.grouping import EventGrouper
 from observer.pipeline.refining.refinement import WorkItemRefiner
-from observer.pipeline.summarization import has_pending as summary_has_pending
 from observer.services.config import get_mode
 from observer.services.db import Database
 from observer.services.logger import configure_logging_daemon
@@ -62,11 +62,13 @@ class Daemon:
         self._log_queue: multiprocessing.Queue | None = None
         self._log_listener: logging.handlers.QueueListener | None = None
 
-        # Scheduler state — tracks when each stage was last spawned
-        self._last_process_at: float = 0.0
+        # Scheduler state — interval-based stages
         self._last_index_at: float = 0.0
         self._last_refine_at: float = 0.0
-        self._last_summary_at: float = 0.0
+
+        # Inactivity tracking — keyed by transcript_id
+        self._last_ingest_at: dict[int, float] = {}
+        self._last_extracted_at: dict[int, float] = {}
 
     @staticmethod
     def is_process_running(pid: int) -> bool:
@@ -211,66 +213,31 @@ class Daemon:
             self._pid_file.unlink(missing_ok=True)
 
     def _poll_loop(self, lock_dir: Path, notebook: NotebookService | None) -> None:
-        """Run the priority-based tick scheduler until shutdown.
-
-        Full mode:
-            1. Indexing    — if INDEX_INTERVAL (120s) elapsed
-            2. Processing  — if PROCESS_INTERVAL (30s) elapsed
-            3. Refining    — if REFINE_INTERVAL (5s) elapsed
-            4. Ingest      — fills remaining ticks
-
-        Lite mode:
-            1. Indexing    — summaries only, if INDEX_INTERVAL elapsed
-            2. Summarize   — if SUMMARY_INTERVAL elapsed
-            3. Ingest      — fills remaining ticks
-
-        Off mode:
-            1. Ingest      — only ingests raw events, no processing
-
-        This guarantees sequential stage execution: each stage only
-        consumes data committed by a previous tick.
-        """
-        if self._mode == "full":
-            self._poll_loop_full(lock_dir, notebook)
-        elif self._mode == "lite":
-            self._poll_loop_lite(lock_dir, notebook)
-        else:
+        """Dispatch to the appropriate poll loop based on mode."""
+        if self._mode == "off":
             self._poll_loop_off(lock_dir, notebook)
+        else:
+            self._poll_loop_on(lock_dir, notebook)
 
-    def _poll_loop_full(self, lock_dir: Path, notebook: NotebookService | None) -> None:
-        """Full pipeline: ingest → refine → process → index."""
+    def _poll_loop_on(self, lock_dir: Path, notebook: NotebookService | None) -> None:
+        """On pipeline: ingest → refine → extract (on inactivity) → index.
+
+        Interval-based stages (refine, index) run on their configured cadence.
+        Extraction is inactivity-driven — fires when a transcript's file hasn't
+        changed for INACTIVITY_TIMEOUT seconds.
+        """
         while not self._shutdown_event.is_set():
             self._reap_workers()
-
             now = time.monotonic()
 
             if now - self._last_index_at >= constants.INDEX_INTERVAL:
                 self._try_spawn_index(lock_dir, now)
-            elif now - self._last_process_at >= constants.PROCESS_INTERVAL:
-                self._try_spawn_process(lock_dir, now)
             elif now - self._last_refine_at >= constants.REFINE_INTERVAL:
                 self._try_spawn_refine(lock_dir, now)
             else:
                 self._tick_ingest(lock_dir)
 
-            if notebook:
-                notebook.check()
-
-            self._shutdown_event.wait(timeout=constants.TICK_INTERVAL)
-
-    def _poll_loop_lite(self, lock_dir: Path, notebook: NotebookService | None) -> None:
-        """Lite pipeline: ingest → summarize → index (summaries only)."""
-        while not self._shutdown_event.is_set():
-            self._reap_workers()
-
-            now = time.monotonic()
-
-            if now - self._last_summary_at >= constants.SUMMARY_INTERVAL:
-                self._try_spawn_summary(lock_dir, now)
-            elif now - self._last_index_at >= constants.INDEX_INTERVAL:
-                self._try_spawn_index_lite(lock_dir, now)
-            else:
-                self._tick_ingest(lock_dir)
+            self._try_spawn_extractions(lock_dir, now)
 
             if notebook:
                 notebook.check()
@@ -317,22 +284,6 @@ class Daemon:
         except Exception:
             logger.exception("Indexing cycle failed")
 
-    def _try_spawn_process(self, lock_dir: Path, now: float) -> None:
-        """Spawn processing worker if there are refined work items (processed=1)."""
-        self._last_process_at = now
-        try:
-            if WorkItem.has_by_processed(WorkItemStage.REFINED):
-                proc = multiprocessing.Process(
-                    target=process_worker,
-                    args=(lock_dir,),
-                    kwargs={"log_queue": self._log_queue},
-                )
-                proc.start()
-                self._workers.append(proc)
-                logger.info("Spawned processing worker (pid=%d)", proc.pid)
-        except Exception:
-            logger.exception("Processing cycle failed")
-
     def _try_spawn_refine(self, lock_dir: Path, now: float) -> None:
         """Spawn refining worker if there are ungrouped events or unrefined work items."""
         self._last_refine_at = now
@@ -349,37 +300,32 @@ class Daemon:
         except Exception:
             logger.exception("Refining cycle failed")
 
-    def _try_spawn_index_lite(self, lock_dir: Path, now: float) -> None:
-        """Spawn indexing worker for summaries only (lite mode)."""
-        self._last_index_at = now
-        try:
-            if SearchIndexer.has_pending(skip_artifacts=True):
-                proc = multiprocessing.Process(
-                    target=index_worker,
-                    args=(lock_dir,),
-                    kwargs={"skip_artifacts": True, "log_queue": self._log_queue},
-                )
-                proc.start()
-                self._workers.append(proc)
-                logger.info("Spawned indexing worker [lite] (pid=%d)", proc.pid)
-        except Exception:
-            logger.exception("Indexing cycle failed (lite)")
+    def _try_spawn_extractions(self, lock_dir: Path, now: float) -> None:
+        """Spawn extraction workers for transcripts that have been inactive long enough."""
+        for transcript_id, last_ingest in self._last_ingest_at.items():
+            idle_time = now - last_ingest
+            if idle_time < constants.INACTIVITY_TIMEOUT:
+                continue
 
-    def _try_spawn_summary(self, lock_dir: Path, now: float) -> None:
-        """Spawn summarization worker if any active transcripts need a refresh."""
-        self._last_summary_at = now
-        try:
-            if summary_has_pending():
-                proc = multiprocessing.Process(
-                    target=summary_worker,
-                    args=(lock_dir,),
-                    kwargs={"log_queue": self._log_queue},
-                )
-                proc.start()
-                self._workers.append(proc)
-                logger.info("Spawned summary worker (pid=%d)", proc.pid)
-        except Exception:
-            logger.exception("Summary cycle failed")
+            # Don't re-extract if we already extracted after the last ingest
+            last_extracted = self._last_extracted_at.get(transcript_id, 0.0)
+            if last_extracted > last_ingest:
+                continue
+
+            self._last_extracted_at[transcript_id] = now
+
+            proc = multiprocessing.Process(
+                target=extraction_worker,
+                args=(transcript_id, lock_dir),
+                kwargs={"log_queue": self._log_queue},
+            )
+            proc.start()
+            self._workers.append(proc)
+            logger.info(
+                "Spawned extraction worker for transcript %d (idle %.0fs)",
+                transcript_id,
+                idle_time,
+            )
 
     def _tick_ingest(self, lock_dir: Path) -> None:
         """Run one ingest poll."""
@@ -392,6 +338,7 @@ class Daemon:
 
     def _poll_once(self, lock_dir: Path) -> int:
         """One tick: detect file changes, mark deletions, spawn ingest workers."""
+        now = time.monotonic()
         to_ingest: list[tuple[int, int]] = []
 
         for transcript in Transcript.get_active():
@@ -402,9 +349,9 @@ class Daemon:
             if not path.exists():
                 # Grace period: file may not exist yet if just registered
                 if transcript.last_mtime is None:
-                    now = datetime.now(UTC)
+                    wall_now = datetime.now(UTC)
                     started = transcript.started_at.replace(tzinfo=UTC)
-                    age = (now - started).total_seconds()
+                    age = (wall_now - started).total_seconds()
                     if age < constants.DEFAULT_STALE_THRESHOLD:
                         continue
 
@@ -445,6 +392,8 @@ class Daemon:
             to_ingest = to_ingest[: constants.MAX_INGEST_WORKERS]
 
         for transcript_id, file_mtime in to_ingest:
+            self._last_ingest_at[transcript_id] = now
+
             proc = multiprocessing.Process(
                 target=ingest_worker,
                 args=(transcript_id, file_mtime, lock_dir),

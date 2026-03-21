@@ -8,7 +8,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 from observer.daemon import Daemon
-from observer.daemon.workers import index_worker, ingest_worker, process_worker, refine_worker
+from observer.daemon.workers import extraction_worker, index_worker, ingest_worker, refine_worker
 from observer.data.project import Project
 from observer.data.transcript import Transcript
 
@@ -54,7 +54,6 @@ def _run_one_poll(daemon: Daemon) -> None:
     # Force the scheduler into the ingest branch for this single tick
     fixed_time = 100.0
     daemon._last_index_at = fixed_time
-    daemon._last_process_at = fixed_time
     daemon._last_refine_at = fixed_time
 
     with (
@@ -362,27 +361,30 @@ class TestRefineWorker:
             refine_worker(lock_dir)
 
 
-class TestProcessWorker:
-    def test_calls_process_batch(self, db, tmp_path, lock_dir):  # noqa: ARG002
-        with patch("observer.daemon.workers.WorkItemExtractor.extract_batch") as mock_batch:
-            process_worker(lock_dir)
-            mock_batch.assert_called_once()
+class TestExtractionWorker:
+    def test_calls_extract_transcript(self, db, tmp_path, lock_dir):  # noqa: ARG002
+        with patch("observer.daemon.workers.TranscriptExtractor.extract_transcript") as mock_extract:
+            extraction_worker(42, lock_dir)
+            mock_extract.assert_called_once()
 
     def test_bails_when_lock_held(self, db, tmp_path, lock_dir):  # noqa: ARG002
-        lock_path = lock_dir / "processing.lock"
+        lock_path = lock_dir / "extraction_42.lock"
         fd = os.open(str(lock_path), os.O_CREAT | os.O_WRONLY)
         fcntl.flock(fd, fcntl.LOCK_EX)
         try:
-            with patch("observer.daemon.workers.WorkItemExtractor.extract_batch") as mock_batch:
-                process_worker(lock_dir)
-                mock_batch.assert_not_called()
+            with patch("observer.daemon.workers.TranscriptExtractor.extract_transcript") as mock_extract:
+                extraction_worker(42, lock_dir)
+                mock_extract.assert_not_called()
         finally:
             fcntl.flock(fd, fcntl.LOCK_UN)
             os.close(fd)
 
-    def test_handles_processing_error(self, db, tmp_path, lock_dir):  # noqa: ARG002
-        with patch("observer.daemon.workers.WorkItemExtractor.extract_batch", side_effect=RuntimeError("boom")):
-            process_worker(lock_dir)
+    def test_handles_extraction_error(self, db, tmp_path, lock_dir):  # noqa: ARG002
+        with patch(
+            "observer.daemon.workers.TranscriptExtractor.extract_transcript",
+            side_effect=RuntimeError("boom"),
+        ):
+            extraction_worker(42, lock_dir)
 
 
 class TestIndexWorker:
@@ -409,10 +411,12 @@ class TestIndexWorker:
 
 
 class TestScheduler:
-    """Tests for the 4-tier priority scheduler in _poll_loop.
+    """Tests for the priority scheduler in _poll_loop_on.
 
     The scheduler picks one stage per tick based on priority:
-        indexing (120s) > processing (30s) > refining (5s) > ingest (fills remaining)
+        indexing (120s) > refining (5s) > ingest (fills remaining)
+
+    Extraction is inactivity-driven (not interval-based) and checked every tick.
 
     Time is simulated by patching time.monotonic to return incrementing
     values (0.0, 1.0, 2.0, ...). _poll_once is mocked since ingest
@@ -438,7 +442,6 @@ class TestScheduler:
             patch("observer.daemon.daemon.time.monotonic", side_effect=lambda: next(clock)),
             patch("observer.daemon.daemon.EventGrouper.has_pending", return_value=True),
             patch("observer.daemon.daemon.WorkItemRefiner.has_pending", return_value=False),
-            patch("observer.daemon.daemon.WorkItem.has_by_processed", return_value=False),
             patch("observer.daemon.daemon.SearchIndexer.has_pending", return_value=False),
             patch("observer.daemon.daemon.multiprocessing.Process") as mock_proc_cls,
             patch.object(daemon, "_poll_once", return_value=0),
@@ -479,38 +482,6 @@ class TestScheduler:
         assert mock_poll.call_count == 3
         assert mock_proc_cls.call_count == 0
 
-    def test_processing_fires_after_interval(self, db, daemon):  # noqa: ARG002
-        """Processing spawns once PROCESS_INTERVAL (30s) has elapsed."""
-        tick = 0
-
-        def fake_wait(**_):
-            nonlocal tick
-            tick += 1
-            if tick >= 31:
-                daemon._shutdown_event.set()
-                return True
-            return False
-
-        clock = iter(float(i) for i in range(31))
-
-        with (
-            patch.object(daemon._shutdown_event, "wait", side_effect=fake_wait),
-            patch("observer.daemon.daemon.time.monotonic", side_effect=lambda: next(clock)),
-            patch("observer.daemon.daemon.EventGrouper.has_pending", return_value=True),
-            patch("observer.daemon.daemon.WorkItemRefiner.has_pending", return_value=False),
-            patch("observer.daemon.daemon.WorkItem.has_by_processed", return_value=True),
-            patch("observer.daemon.daemon.SearchIndexer.has_pending", return_value=False),
-            patch("observer.daemon.daemon.multiprocessing.Process") as mock_proc_cls,
-            patch.object(daemon, "_poll_once", return_value=0),
-        ):
-            mock_proc = MagicMock()
-            mock_proc_cls.return_value = mock_proc
-            daemon.run(foreground=True)
-
-        # t=30: process interval elapsed (30-0 >= 30)
-        all_targets = [c.kwargs.get("target") for c in mock_proc_cls.call_args_list]
-        assert process_worker in all_targets
-
     def test_indexing_fires_after_interval(self, db, daemon):  # noqa: ARG002
         """Indexing spawns once INDEX_INTERVAL (120s) has elapsed."""
         tick = 0
@@ -530,7 +501,6 @@ class TestScheduler:
             patch("observer.daemon.daemon.time.monotonic", side_effect=lambda: next(clock)),
             patch("observer.daemon.daemon.EventGrouper.has_pending", return_value=True),
             patch("observer.daemon.daemon.WorkItemRefiner.has_pending", return_value=False),
-            patch("observer.daemon.daemon.WorkItem.has_by_processed", return_value=True),
             patch("observer.daemon.daemon.SearchIndexer.has_pending", return_value=True),
             patch("observer.daemon.daemon.multiprocessing.Process") as mock_proc_cls,
             patch.object(daemon, "_poll_once", return_value=0),
@@ -562,7 +532,6 @@ class TestScheduler:
             patch("observer.daemon.daemon.time.monotonic", side_effect=lambda: next(clock)),
             patch("observer.daemon.daemon.EventGrouper.has_pending", return_value=False),
             patch("observer.daemon.daemon.WorkItemRefiner.has_pending", return_value=False),
-            patch("observer.daemon.daemon.WorkItem.has_by_processed", return_value=False),
             patch("observer.daemon.daemon.SearchIndexer.has_pending", return_value=False),
             patch("observer.daemon.daemon.multiprocessing.Process") as mock_proc_cls,
             patch.object(daemon, "_poll_once", return_value=0),
@@ -574,19 +543,20 @@ class TestScheduler:
         all_targets = [c.kwargs.get("target") for c in mock_proc_cls.call_args_list]
         assert index_worker not in all_targets
 
-    def test_indexing_has_priority_over_processing(self, db, daemon):  # noqa: ARG002
+    def test_indexing_has_priority_over_refining(self, db, daemon):  # noqa: ARG002
         """When both intervals are due on the same tick, indexing wins."""
 
         def fake_wait(**_):
             daemon._shutdown_event.set()
             return True
 
-        # At t=120, all intervals are exceeded
+        # At t=120, both index and refine intervals are exceeded
         with (
             patch.object(daemon._shutdown_event, "wait", side_effect=fake_wait),
             patch("observer.daemon.daemon.time.monotonic", return_value=120.0),
             patch("observer.daemon.daemon.SearchIndexer.has_pending", return_value=True),
-            patch("observer.daemon.daemon.WorkItem.has_by_processed", return_value=True),
+            patch("observer.daemon.daemon.EventGrouper.has_pending", return_value=True),
+            patch("observer.daemon.daemon.WorkItemRefiner.has_pending", return_value=False),
             patch("observer.daemon.daemon.multiprocessing.Process") as mock_proc_cls,
         ):
             mock_proc = MagicMock()
@@ -595,4 +565,74 @@ class TestScheduler:
 
         all_targets = [c.kwargs.get("target") for c in mock_proc_cls.call_args_list]
         assert index_worker in all_targets
-        assert process_worker not in all_targets
+        assert refine_worker not in all_targets
+
+    def test_extraction_fires_on_inactivity(self, db, daemon):  # noqa: ARG002
+        """Extraction spawns when a transcript has been idle for INACTIVITY_TIMEOUT."""
+        # Simulate a transcript that was ingested at t=0
+        daemon._last_ingest_at[1] = 0.0
+
+        def fake_wait(**_):
+            daemon._shutdown_event.set()
+            return True
+
+        # At t=121, transcript 1 has been idle for 121s (> 120s timeout)
+        with (
+            patch.object(daemon._shutdown_event, "wait", side_effect=fake_wait),
+            patch("observer.daemon.daemon.time.monotonic", return_value=121.0),
+            patch("observer.daemon.daemon.SearchIndexer.has_pending", return_value=False),
+            patch("observer.daemon.daemon.multiprocessing.Process") as mock_proc_cls,
+            patch.object(daemon, "_poll_once", return_value=0),
+        ):
+            mock_proc = MagicMock()
+            mock_proc_cls.return_value = mock_proc
+            daemon.run(foreground=True)
+
+        all_targets = [c.kwargs.get("target") for c in mock_proc_cls.call_args_list]
+        assert extraction_worker in all_targets
+
+    def test_extraction_skipped_when_already_extracted(self, db, daemon):  # noqa: ARG002
+        """Extraction does not re-fire if already extracted after last ingest."""
+        daemon._last_ingest_at[1] = 0.0
+        daemon._last_extracted_at[1] = 1.0  # extracted after last ingest
+
+        def fake_wait(**_):
+            daemon._shutdown_event.set()
+            return True
+
+        with (
+            patch.object(daemon._shutdown_event, "wait", side_effect=fake_wait),
+            patch("observer.daemon.daemon.time.monotonic", return_value=121.0),
+            patch("observer.daemon.daemon.SearchIndexer.has_pending", return_value=False),
+            patch("observer.daemon.daemon.multiprocessing.Process") as mock_proc_cls,
+            patch.object(daemon, "_poll_once", return_value=0),
+        ):
+            mock_proc = MagicMock()
+            mock_proc_cls.return_value = mock_proc
+            daemon.run(foreground=True)
+
+        all_targets = [c.kwargs.get("target") for c in mock_proc_cls.call_args_list]
+        assert extraction_worker not in all_targets
+
+    def test_extraction_skipped_when_still_active(self, db, daemon):  # noqa: ARG002
+        """Extraction does not fire if transcript was ingested recently."""
+        daemon._last_ingest_at[1] = 100.0  # ingested at t=100
+
+        def fake_wait(**_):
+            daemon._shutdown_event.set()
+            return True
+
+        # At t=110, only 10s idle (< 120s timeout)
+        with (
+            patch.object(daemon._shutdown_event, "wait", side_effect=fake_wait),
+            patch("observer.daemon.daemon.time.monotonic", return_value=110.0),
+            patch("observer.daemon.daemon.SearchIndexer.has_pending", return_value=False),
+            patch("observer.daemon.daemon.multiprocessing.Process") as mock_proc_cls,
+            patch.object(daemon, "_poll_once", return_value=0),
+        ):
+            mock_proc = MagicMock()
+            mock_proc_cls.return_value = mock_proc
+            daemon.run(foreground=True)
+
+        all_targets = [c.kwargs.get("target") for c in mock_proc_cls.call_args_list]
+        assert extraction_worker not in all_targets
