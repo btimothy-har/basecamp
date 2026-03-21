@@ -6,7 +6,7 @@ Claude Code multi-project workspace launcher with custom prompts and isolated wo
 git clone https://github.com/btimothy-har/basecamp.git
 cd basecamp && uv run install.py
 basecamp setup
-basecamp start basecamp
+basecamp claude basecamp
 ```
 
 ## Why basecamp?
@@ -28,7 +28,7 @@ basecamp solves this with a single command that:
 
 ### Multi-Project Management
 
-Define projects in `~/.basecamp/projects.json` with their directories, descriptions, and working styles. Launch any project with `basecamp start <project>`.
+Define projects in `~/.basecamp/projects.json` with their directories, descriptions, and working styles. Launch any project with `basecamp claude <project>`.
 
 ```json
 {
@@ -56,8 +56,8 @@ Layer prompts for different contexts:
 Use `-l <label>` to work in an isolated worktree:
 
 ```bash
-basecamp start myproject -l auth      # Create or re-enter "auth" worktree
-basecamp start myproject -l bugfix    # Create or re-enter "bugfix" worktree
+basecamp claude myproject -l auth      # Create or re-enter "auth" worktree
+basecamp claude myproject -l bugfix    # Create or re-enter "bugfix" worktree
 ```
 
 Worktrees live in `~/.worktrees/<repo>/<label>/` with branches named `wt/<label>`.
@@ -105,9 +105,9 @@ uv tool uninstall basecamp-core && uv tool uninstall basecamp-observer
 ### Launching Projects
 
 ```bash
-basecamp start <project>                # Start in project directory
-basecamp start <project> --resume       # Resume previous conversation (-r)
-basecamp start <project> -l <label>     # Work in labeled worktree (creates if new)
+basecamp claude <project>               # Launch Claude in project directory
+basecamp claude <project> --resume      # Resume previous conversation (-r)
+basecamp claude <project> -l <label>    # Work in labeled worktree (creates if new)
 ```
 
 ### Opening in VS Code

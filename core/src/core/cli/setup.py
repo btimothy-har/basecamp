@@ -165,6 +165,6 @@ def execute_setup() -> None:
     _setup_logseq()
     console.print()
 
-    console.print("[green]✓[/green] Done. Try editing the basecamp source: [bold]basecamp start basecamp[/bold]")
+    console.print("[green]✓[/green] Done. Try editing the basecamp source: [bold]basecamp claude basecamp[/bold]")
     console.print("[dim]  Add your own projects with:[/dim] [bold]basecamp project -h[/bold]")
     console.print()

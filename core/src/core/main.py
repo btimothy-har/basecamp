@@ -59,8 +59,8 @@ def setup() -> None:
 @click.argument("project", shell_complete=complete_project_or_path)
 @click.option("--resume", "-r", "resume_session", is_flag=True, help="Resume a previous conversation")
 @click.option("--label", "-l", help="Work in a labeled worktree (creates if new, re-enters if exists)")
-def start(project: str, resume_session: bool, label: str | None) -> None:  # noqa: FBT001
-    """Start Claude Code with a project name or directory path.
+def claude(project: str, resume_session: bool, label: str | None) -> None:  # noqa: FBT001
+    """Launch Claude Code with a project name or directory path.
 
     PROJECT can be a configured project name or a filesystem path (., ./, ~/, /).
     Use -l/--label to work in an isolated git worktree (project names only).

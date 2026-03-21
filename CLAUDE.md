@@ -11,11 +11,11 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ```bash
 basecamp setup                           # Initialize environment (prerequisites, dirs, config)
 
-basecamp start <project>                # Start Claude in project directory
-basecamp start .                        # Start Claude in current directory
-basecamp start ~/path/to/dir            # Start Claude in any directory path
-basecamp start -r <project>             # Resume a previous conversation
-basecamp start -l auth <project>        # Work in worktree "auth" (creates if new, re-enters if exists)
+basecamp claude <project>               # Launch Claude in project directory
+basecamp claude .                       # Launch Claude in current directory
+basecamp claude ~/path/to/dir           # Launch Claude in any directory path
+basecamp claude -r <project>            # Resume a previous conversation
+basecamp claude -l auth <project>       # Work in worktree "auth" (creates if new, re-enters if exists)
 
 basecamp open <project>                 # Open VS Code with basecamp + project directories
 basecamp open -n <project>              # Open in a new VS Code window
@@ -89,7 +89,7 @@ Use `-l <label>` to work in an isolated git worktree:
 Key behaviors:
 - Worktrees are opt-in via `-l <label>` flag
 - Label is both the directory name and worktree identifier
-- `basecamp start -l auth` creates or re-enters worktree "auth" with branch `wt/auth`
+- `basecamp claude -l auth` creates or re-enters worktree "auth" with branch `wt/auth`
 - `basecamp open -l auth` opens existing worktree (errors if not found)
 - Secondary dirs (`--add-dir`) stay on main branch
 
