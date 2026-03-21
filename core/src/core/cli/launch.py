@@ -1,12 +1,10 @@
 """Launch implementation for basecamp CLI."""
 
 import os
-import shlex
-import shutil
 from io import StringIO
 from pathlib import Path
 
-from dotenv import load_dotenv
+from dotenv import dotenv_values, load_dotenv
 from rich.console import Console
 
 from core.config import Config, ProjectConfig, resolve_project, validate_dirs
@@ -26,7 +24,7 @@ from core.git import (
     is_git_repo,
 )
 from core.prompts import system as prompts
-from core.terminal import in_multiplexer
+from core.terminal import resolve_launch_backend
 from core.utils import is_observer_configured
 
 DEFAULT_PATH_WORKING_STYLE = "engineering"
@@ -205,26 +203,15 @@ def execute_launch(
         working_style=project.working_style,
     )
 
-    # If already inside a terminal multiplexer (Kitty or tmux), run directly —
-    # dispatch will use the active backend to create worker panes.
-    # Otherwise, wrap in tmux so dispatch has a multiplexer to work with.
-    if in_multiplexer():
-        print(startup_text, end="")
-        os.execvp(CLAUDE_COMMAND, cmd)
-    elif shutil.which("tmux"):
-        session_name = f"bc-{project_name}-{label}" if label else f"bc-{project_name}"
-        tmux_cmd = ["tmux", "new-session", "-A", "-s", session_name]
-        # Env vars must be passed via -e because tmux new-session connects to an
-        # existing server whose processes inherit the server's env, not the client's.
-        for var in ("BASECAMP_PROJECT", "BASECAMP_REPO", "BASECAMP_CONTEXT_FILE", "BASECAMP_SYSTEM_PROMPT"):
-            value = os.environ.get(var)
-            if value:
-                tmux_cmd.extend(["-e", f"{var}={value}"])
-        # Print startup context inside the tmux session (not the outer terminal
-        # where it would be hidden once tmux takes over the display).
-        inner = f"printf %s {shlex.quote(startup_text)} && exec {shlex.join(cmd)}"
-        tmux_cmd.extend(["sh", "-c", inner])
-        os.execvp("tmux", tmux_cmd)
-    else:
-        print(startup_text, end="")
-        os.execvp(CLAUDE_COMMAND, cmd)
+    # Collect env vars that need forwarding (tmux wrapping requires explicit
+    # passing because tmux new-session inherits the server's env, not the client's).
+    env_vars: dict[str, str] = {k: v for k, v in dotenv_values(dotenv_path).items() if v is not None}
+    for var in ("BASECAMP_PROJECT", "BASECAMP_REPO", "BASECAMP_CONTEXT_FILE", "BASECAMP_SYSTEM_PROMPT"):
+        value = os.environ.get(var)
+        if value:
+            env_vars[var] = value
+
+    session_name = f"bc-{project_name}-{label}" if label else f"bc-{project_name}"
+
+    backend = resolve_launch_backend()
+    backend.exec_session(cmd, startup_text=startup_text, env_vars=env_vars, session_name=session_name)

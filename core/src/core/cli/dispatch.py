@@ -19,7 +19,7 @@ from core.exceptions import (
     SessionIdNotSetError,
     TasksDirNotSetError,
 )
-from core.terminal import detect_backend
+from core.terminal import resolve_dispatch_backend
 from core.ui import console
 from core.utils import is_observer_configured
 
@@ -71,7 +71,7 @@ def execute_dispatch(
         TasksDirNotSetError: If BASECAMP_TASKS_DIR is not set.
         PaneLaunchError: If spawning the terminal pane fails.
     """
-    backend = detect_backend()
+    backend = resolve_dispatch_backend()
     if backend is None:
         raise NoMultiplexerError
 

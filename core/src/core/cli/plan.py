@@ -1,8 +1,6 @@
 """Plan command — launch a Claude session for daily planning."""
 
 import os
-import shlex
-import shutil
 from io import StringIO
 from pathlib import Path
 
@@ -13,7 +11,7 @@ from core.git import is_git_repo
 from core.logseq import resolve_graph_path, today
 from core.prompts.logseq_prompts import load_system_prompt, load_user_prompt
 from core.prompts.system import build_runtime_preamble
-from core.terminal import in_multiplexer
+from core.terminal import resolve_launch_backend
 from core.utils import is_observer_configured
 
 PLAN_SCRATCH_NAME = "plan"
@@ -68,21 +66,14 @@ def execute_plan() -> None:
     os.chdir(graph_path)
 
     # Logseq journal session: skip observer ingestion.
-    # Set in os.environ so the non-tmux execvp path inherits it.
-    # The tmux path also passes it explicitly via -e so the inner
-    # shell inherits it even though tmux starts a fresh environment.
     os.environ["BASECAMP_REFLECT"] = "1"
 
     startup_text = _build_startup_text(str(graph_path), target_date.isoformat())
 
-    if in_multiplexer():
-        print(startup_text, end="")
-        os.execvp(CLAUDE_COMMAND, cmd)
-    elif shutil.which("tmux"):
-        tmux_cmd = ["tmux", "new-session", "-A", "-s", "bc-plan", "-e", "BASECAMP_REFLECT=1"]
-        inner = f"printf %s {shlex.quote(startup_text)} && exec {shlex.join(cmd)}"
-        tmux_cmd.extend(["sh", "-c", inner])
-        os.execvp("tmux", tmux_cmd)
-    else:
-        print(startup_text, end="")
-        os.execvp(CLAUDE_COMMAND, cmd)
+    backend = resolve_launch_backend()
+    backend.exec_session(
+        cmd,
+        startup_text=startup_text,
+        env_vars={"BASECAMP_REFLECT": "1"},
+        session_name="bc-plan",
+    )
