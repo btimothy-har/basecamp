@@ -73,7 +73,7 @@ def _(mo, queries, scope_dropdown, transcript_dropdown):
                 f"- {stats['skipped']} skipped\n"
                 f"- {stats['errors']} errors\n"
                 f"- {stats['pending']} pending\n\n"
-                f"**Artifacts**: {stats['total_artifacts']}"
+                f"**Extractions**: {stats['total_extractions']}"
             ),
         ]
     )
@@ -91,7 +91,7 @@ def _(mo, queries, scope_dropdown, transcript_dropdown):
         project_id=_pid,
         worktree_id=_wid,
     )
-    artifact_counts = queries.get_artifact_type_counts(
+    section_counts = queries.get_section_type_counts(
         transcript_id=_tid,
         project_id=_pid,
         worktree_id=_wid,
@@ -113,7 +113,7 @@ def _(mo, queries, scope_dropdown, transcript_dropdown):
         [
             mo.md("## Pipeline Overview"),
             _make_bar(status_counts, "status", "Processing Status"),
-            _make_bar(artifact_counts, "type", "Artifact Types"),
+            _make_bar(section_counts, "type", "Section Types"),
         ]
     )
 
@@ -124,7 +124,7 @@ def _(mo, queries, scope_dropdown, transcript_dropdown):
 def _(mo, queries, scope_dropdown, transcript_dropdown):
     _tid = transcript_dropdown.value
     _pid, _wid = scope_dropdown.value or (None, None)
-    _artifacts = queries.get_artifacts(
+    _extractions = queries.get_extractions(
         transcript_id=_tid,
         project_id=_pid,
         worktree_id=_wid,
@@ -132,74 +132,54 @@ def _(mo, queries, scope_dropdown, transcript_dropdown):
 
     _table_data = [
         {
-            "id": a["id"],
-            "type": str(a["type"]),
-            "text": a["text"][:120] + ("..." if len(a["text"]) > 120 else ""),
-            "origin": str(a["origin"]),
-            "created": a["created_at"],
+            "id": e["id"],
+            "type": str(e["type"]),
+            "text": e["text"][:120] + ("..." if len(e["text"]) > 120 else ""),
+            "created": e["created_at"],
         }
-        for a in _artifacts
+        for e in _extractions
     ]
 
-    artifact_table = (
+    extraction_table = (
         mo.ui.table(
             data=_table_data,
             selection="single",
             page_size=20,
-            label="Artifacts",
+            label="Extractions",
         )
         if _table_data
         else None
     )
 
-    return (artifact_table,)
+    return (extraction_table,)
 
 
 @app.cell
-def _(artifact_table, mo, queries):
-    _detail = mo.md("*Select an artifact from the table to see details.*")
+def _(extraction_table, mo, queries):
+    _detail = mo.md("*Select an extraction from the table to see details.*")
 
-    if artifact_table is not None and artifact_table.value:
-        _selected = artifact_table.value[0]
-        _info = queries.get_artifact_detail(_selected["id"])
+    if extraction_table is not None and extraction_table.value:
+        _selected = extraction_table.value[0]
+        _info = queries.get_extraction_detail(_selected["id"])
         if _info:
-            _prompt_line = ""
-            if _info["prompt_event_id"]:
-                _prompt_line = f"\n\n**Prompt event**: #{_info['prompt_event_id']}"
-
             _detail = mo.vstack(
                 [
-                    mo.md(f"### {str(_info['type']).upper()} (id={_info['id']}){_prompt_line}"),
-                    mo.hstack(
-                        [
-                            mo.vstack(
-                                [
-                                    mo.md("**Extracted Text**"),
-                                    mo.md(f"```\n{_info['text']}\n```"),
-                                ]
-                            ),
-                            mo.vstack(
-                                [
-                                    mo.md("**Source Text**"),
-                                    mo.md(f"```\n{_info['source'][:2000] if _info['source'] else '(no source)'}\n```"),
-                                ]
-                            ),
-                        ],
-                        widths=[1, 2],
-                    ),
+                    mo.md(f"### {str(_info['type']).upper()} (id={_info['id']})"),
+                    mo.md("**Extracted Text**"),
+                    mo.md(f"```\n{_info['text']}\n```"),
                 ]
             )
 
-    artifact_browser_tab = mo.vstack(
+    extraction_browser_tab = mo.vstack(
         [
-            mo.md("## Artifact Browser"),
-            artifact_table if artifact_table is not None else mo.md("*No artifacts found.*"),
+            mo.md("## Extraction Browser"),
+            extraction_table if extraction_table is not None else mo.md("*No extractions found.*"),
             mo.md("---"),
             _detail,
         ]
     )
 
-    return (artifact_browser_tab,)
+    return (extraction_browser_tab,)
 
 
 @app.cell
@@ -213,7 +193,7 @@ def _(mo, queries, transcript_dropdown):
             {
                 "time": item["timestamp"],
                 "kind": item["kind"],
-                "type": item.get("event_type", "") or str(item.get("artifact_type", "")),
+                "type": item.get("event_type", "") or str(item.get("section_type", "")),
                 "status": _status.get(item.get("status", ""), item.get("status", "")),
                 "detail": item.get("text", "")[:120] if item.get("text") else "",
             }
@@ -230,7 +210,7 @@ def _(mo, queries, transcript_dropdown):
 
 @app.cell
 def _(
-    artifact_browser_tab,
+    extraction_browser_tab,
     mo,
     pipeline_tab,
     scope_dropdown,
@@ -244,7 +224,7 @@ def _(
             mo.ui.tabs(
                 {
                     "Pipeline": pipeline_tab,
-                    "Artifacts": artifact_browser_tab,
+                    "Extractions": extraction_browser_tab,
                     "Timeline": timeline_tab,
                 }
             ),

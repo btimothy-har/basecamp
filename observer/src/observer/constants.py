@@ -31,10 +31,8 @@ TRANSCRIPT_EXTENSION = ".jsonl"
 # Extraction settings
 REFINING_BATCH_LIMIT = 200
 REFINE_INTERVAL = 5  # seconds between refining spawns
-EXTRACTION_BATCH_LIMIT = 200
 EXTRACTION_TIMEOUT = 120
 DEFAULT_EXTRACTION_MODEL = "sonnet"
-DEFAULT_SUMMARY_MODEL = "haiku"
 
 EXTRACTABLE_EVENT_TYPES = frozenset({"user", "assistant"})
 
@@ -51,7 +49,6 @@ SEARCH_TIME_DECAY_SCALE_DAYS = 30.0  # age at which recency bonus = 0.5
 SEARCH_TIME_DECAY_POWER = 0.5  # power-law exponent; lower = slower decay
 SEARCH_DEDUP_SIMILARITY = 0.9
 SEARCH_OVERFETCH_FACTOR = 5
-SEARCH_SIBLING_THRESHOLD = 0.5  # min similarity to result artifact for session context
 
 # MCP server
 MCP_SERVER_NAME = "observer"

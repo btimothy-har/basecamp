@@ -13,7 +13,6 @@ import os
 
 from observer.constants import (
     DEFAULT_EXTRACTION_MODEL,
-    DEFAULT_SUMMARY_MODEL,
     OBSERVER_DIR,
 )
 
@@ -79,7 +78,7 @@ def set_extraction_model(model: str) -> None:
 
 def get_summary_model() -> str:
     """Return the configured summary model, falling back to the default."""
-    return _read().get("summary_model") or DEFAULT_SUMMARY_MODEL
+    return _read().get("summary_model") or DEFAULT_EXTRACTION_MODEL
 
 
 def set_summary_model(model: str) -> None:

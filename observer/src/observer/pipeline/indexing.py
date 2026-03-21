@@ -1,11 +1,12 @@
-"""Search index pipeline — syncs the search_index table from source tables.
+"""Search index pipeline — syncs the search_index table from extraction sections.
 
 Runs as a batch processor on the daemon's polling cadence. Reads from
-transcript summaries, encodes with sentence-transformers, and writes entries
-to the ``search_index`` table.
+transcript extraction sections, encodes with sentence-transformers, and writes
+entries to the ``search_index`` table.
 
-Transcript summaries are upsert-on-change (mutable text, detected via
-content hash).
+SUMMARY sections are indexed as TRANSCRIPT_SUMMARY; all other section types
+(KNOWLEDGE, DECISIONS, CONSTRAINTS, ACTIONS) are indexed as TRANSCRIPT_EXTRACTION.
+Both use upsert-on-change (mutable text, detected via content hash).
 """
 
 import hashlib
@@ -20,8 +21,8 @@ from observer.constants import (
     EMBEDDING_MODEL_NAME,
     MODEL_CACHE_DIR,
 )
-from observer.data.enums import SearchSourceType
-from observer.data.schemas import SearchIndexSchema, TranscriptSchema
+from observer.data.enums import SearchSourceType, SectionType
+from observer.data.schemas import SearchIndexSchema, TranscriptExtractionSchema, TranscriptSchema
 from observer.exceptions import EmbeddingShapeError
 from observer.services.db import Database
 
@@ -44,48 +45,45 @@ def _content_hash(text: str) -> str:
     return hashlib.sha256(text.encode()).hexdigest()
 
 
+def _source_type_for(section_type: str) -> str:
+    """Map a SectionType to its SearchSourceType value."""
+    if section_type == SectionType.SUMMARY:
+        return SearchSourceType.TRANSCRIPT_SUMMARY.value
+    return SearchSourceType.TRANSCRIPT_EXTRACTION.value
+
+
 class SearchIndexer:
-    """Syncs the search_index table from source tables."""
+    """Syncs the search_index table from transcript extraction sections."""
 
     @staticmethod
     def has_pending() -> bool:
-        """Check if any transcript summaries need indexing."""
+        """Check if any extraction sections need indexing."""
         with Database().session() as session:
-            # Check 1: transcript summaries needing indexing (new)
-            unindexed_summary = (
-                session.query(TranscriptSchema.id)
-                .outerjoin(
-                    SearchIndexSchema,
-                    and_(
-                        SearchIndexSchema.source_type == SearchSourceType.TRANSCRIPT_SUMMARY.value,
-                        SearchIndexSchema.source_id == TranscriptSchema.id,
-                    ),
+            extractions = (
+                session.query(
+                    TranscriptExtractionSchema.id,
+                    TranscriptExtractionSchema.section_type,
+                    TranscriptExtractionSchema.text,
                 )
-                .filter(
-                    TranscriptSchema.summary.isnot(None),
-                    SearchIndexSchema.id.is_(None),
-                )
-                .limit(1)
-                .first()
-            )
-            if unindexed_summary is not None:
-                return True
-
-            # Check 2: transcript summaries with stale hash — compare in Python
-            # Volume is small (one entry per transcript), so fetch all and compare.
-            indexed_summaries = (
-                session.query(TranscriptSchema.id, TranscriptSchema.summary, SearchIndexSchema.content_hash)
-                .join(
-                    SearchIndexSchema,
-                    and_(
-                        SearchIndexSchema.source_type == SearchSourceType.TRANSCRIPT_SUMMARY.value,
-                        SearchIndexSchema.source_id == TranscriptSchema.id,
-                    ),
-                )
-                .filter(TranscriptSchema.summary.isnot(None))
                 .all()
             )
-            return any(_content_hash(summary) != stored_hash for _, summary, stored_hash in indexed_summaries)
+
+            for ext_id, section_type, text in extractions:
+                source_type = _source_type_for(section_type)
+                existing = (
+                    session.query(SearchIndexSchema.content_hash)
+                    .filter(
+                        SearchIndexSchema.source_type == source_type,
+                        SearchIndexSchema.source_id == ext_id,
+                    )
+                    .first()
+                )
+                if existing is None:
+                    return True
+                if existing.content_hash != _content_hash(text):
+                    return True
+
+            return False
 
     @staticmethod
     def index_batch(
@@ -93,79 +91,83 @@ class SearchIndexer:
         *,
         batch_limit: int = EMBEDDING_BATCH_LIMIT,
     ) -> int:
-        """Index a batch of pending sources. Returns count of entries written."""
-        total = 0
-
+        """Index a batch of pending extraction sections. Returns count of entries written."""
         with db.session() as session:
-            # Get all transcripts with summaries + their existing index entries (if any)
-            summary_rows = (
+            extraction_rows = (
                 session.query(
-                    TranscriptSchema.id,
-                    TranscriptSchema.summary,
+                    TranscriptExtractionSchema.id,
+                    TranscriptExtractionSchema.transcript_id,
+                    TranscriptExtractionSchema.section_type,
+                    TranscriptExtractionSchema.text,
+                    TranscriptExtractionSchema.created_at,
                     TranscriptSchema.project_id,
-                    TranscriptSchema.started_at,
                     SearchIndexSchema.id.label("index_id"),
                     SearchIndexSchema.content_hash,
+                )
+                .join(
+                    TranscriptSchema,
+                    TranscriptExtractionSchema.transcript_id == TranscriptSchema.id,
                 )
                 .outerjoin(
                     SearchIndexSchema,
                     and_(
-                        SearchIndexSchema.source_type == SearchSourceType.TRANSCRIPT_SUMMARY.value,
-                        SearchIndexSchema.source_id == TranscriptSchema.id,
+                        SearchIndexSchema.source_id == TranscriptExtractionSchema.id,
+                        SearchIndexSchema.source_type.in_([
+                            SearchSourceType.TRANSCRIPT_SUMMARY.value,
+                            SearchSourceType.TRANSCRIPT_EXTRACTION.value,
+                        ]),
                     ),
                 )
-                .filter(TranscriptSchema.summary.isnot(None))
                 .all()
             )
 
         # Filter in Python: new (no index entry) or changed (hash mismatch)
         to_index: list[tuple] = []
-        for row in summary_rows:
-            current_hash = _content_hash(row.summary)
+        for row in extraction_rows:
+            current_hash = _content_hash(row.text)
             if row.index_id is None or row.content_hash != current_hash:
                 to_index.append(row)
 
         to_index = to_index[:batch_limit]
 
-        if to_index:
-            texts = [r.summary for r in to_index]
-            embeddings = _encode(texts)
+        if not to_index:
+            return 0
 
-            with db.session() as session:
-                written = 0
-                for row, embedding in zip(to_index, embeddings, strict=True):
-                    current_hash = _content_hash(row.summary)
+        texts = [r.text for r in to_index]
+        embeddings = _encode(texts)
 
-                    if row.index_id is None:
-                        # New entry
-                        session.add(
-                            SearchIndexSchema(
-                                source_type=SearchSourceType.TRANSCRIPT_SUMMARY.value,
-                                source_id=row.id,
-                                project_id=row.project_id,
-                                transcript_id=row.id,
-                                text=row.summary,
-                                content_hash=current_hash,
-                                created_at=row.started_at,
-                                embedding=embedding.tolist(),
-                            )
+        with db.session() as session:
+            written = 0
+            for row, embedding in zip(to_index, embeddings, strict=True):
+                current_hash = _content_hash(row.text)
+                source_type = _source_type_for(row.section_type)
+
+                if row.index_id is None:
+                    session.add(
+                        SearchIndexSchema(
+                            source_type=source_type,
+                            source_id=row.id,
+                            project_id=row.project_id,
+                            transcript_id=row.transcript_id,
+                            text=row.text,
+                            content_hash=current_hash,
+                            created_at=row.created_at,
+                            embedding=embedding.tolist(),
                         )
-                        written += 1
-                    else:
-                        # Update existing entry
-                        entry = session.get(SearchIndexSchema, row.index_id)
-                        if entry is None:
-                            continue
-                        entry.text = row.summary
-                        entry.content_hash = current_hash
-                        entry.embedding = embedding.tolist()
-                        entry.indexed_at = datetime.now(UTC)
-                        written += 1
+                    )
+                    written += 1
+                else:
+                    entry = session.get(SearchIndexSchema, row.index_id)
+                    if entry is None:
+                        continue
+                    entry.text = row.text
+                    entry.content_hash = current_hash
+                    entry.embedding = embedding.tolist()
+                    entry.indexed_at = datetime.now(UTC)
+                    written += 1
 
-            total += written
-            logger.info("Indexed %d transcript summaries", written)
-
-        return total
+        logger.info("Indexed %d extraction sections", written)
+        return written
 
 
 def _encode(texts: list[str]) -> list:

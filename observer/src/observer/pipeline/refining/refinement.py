@@ -30,7 +30,6 @@ class WorkItemRefiner:
     def __init__(self, db: Database, transcript_id: int):
         self._db = db
         self._transcript_id = transcript_id
-        self._prompt_event_id: int | None = None
 
     def refine(self, items: list[WorkItem]) -> int:
         refined = 0
@@ -61,8 +60,7 @@ class WorkItemRefiner:
             self._mark_work_item(work_item, WorkItemStage.TERMINAL)
             return
 
-        te = self._save_transcript_event(work_item, user_text)
-        self._prompt_event_id = te.id
+        self._save_transcript_event(work_item, user_text)
         self._mark_work_item(work_item, WorkItemStage.REFINED)
 
     def _handle_thinking(self, work_item: WorkItem) -> None:
