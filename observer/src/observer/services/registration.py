@@ -4,13 +4,10 @@ from __future__ import annotations
 
 import logging
 import subprocess
-import time
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 
-from observer import constants
-from observer.daemon import Daemon
 from observer.data.project import Project
 from observer.data.transcript import Transcript
 from observer.data.worktree import Worktree
@@ -169,29 +166,3 @@ def register_session(hook_input: HookInput) -> RegistrationResult:
         transcript=transcript,
         created=True,
     )
-
-
-def ensure_daemon_running() -> int | None:
-    """Check if the daemon is running; start it if not. Returns PID or None."""
-    daemon = Daemon(pid_file=constants.PID_FILE)
-    pid = daemon.check_running()
-    if pid is not None:
-        return pid
-
-    constants.OBSERVER_DIR.mkdir(parents=True, exist_ok=True)
-    try:
-        subprocess.Popen(
-            ["observer", "start"],
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-        )
-    except FileNotFoundError:
-        logger.warning("Could not start observer daemon — 'observer' not on PATH")
-        return None
-
-    for _ in range(5):
-        time.sleep(0.1)
-        pid = daemon.check_running()
-        if pid is not None:
-            return pid
-    return None

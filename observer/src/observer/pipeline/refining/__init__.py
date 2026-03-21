@@ -28,29 +28,28 @@ class EventRefiner:
     """
 
     @staticmethod
-    def refine_batch(db: Database, *, batch_limit: int = REFINING_BATCH_LIMIT) -> int:
+    def refine_batch(
+        db: Database,
+        *,
+        transcript_id: int | None = None,
+        batch_limit: int = REFINING_BATCH_LIMIT,
+    ) -> int:
         """Group ungrouped RawEvents, then refine unprocessed WorkItems.
 
         Returns the number of WorkItems refined.
         """
         # Phase 1: Group ungrouped raw events into work items
-        EventGrouper.group_batch(db, batch_limit=batch_limit)
+        EventGrouper.group_batch(db, transcript_id=transcript_id, batch_limit=batch_limit)
 
-        # Phase 2: Refine unprocessed work items
-        items = WorkItem.get_unprocessed(limit=batch_limit)
+        # Phase 2: Atomically claim unprocessed work items, then refine
+        items = WorkItem.claim_unprocessed(transcript_id=transcript_id, limit=batch_limit)
         if not items:
             return 0
 
         logger.info("Refining %d unprocessed work items", len(items))
 
-        groups: dict[int, list[WorkItem]] = {}
-        for item in items:
-            groups.setdefault(item.transcript_id, []).append(item)
-
-        total = 0
-        for transcript_id, transcript_items in groups.items():
-            refiner = WorkItemRefiner(db, transcript_id)
-            total += refiner.refine(transcript_items)
+        refiner = WorkItemRefiner(db)
+        total = refiner.refine(items)
 
         logger.info("Refining batch complete: %d work items refined", total)
         return total

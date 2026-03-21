@@ -35,7 +35,7 @@ class TranscriptEvent(BaseModel):
             rows = (
                 session.query(TranscriptEventSchema)
                 .filter(TranscriptEventSchema.transcript_id == transcript_id)
-                .order_by(TranscriptEventSchema.created_at)
+                .order_by(TranscriptEventSchema.work_item_id, TranscriptEventSchema.id)
                 .all()
             )
             return [cls.model_validate(r) for r in rows]

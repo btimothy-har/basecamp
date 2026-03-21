@@ -11,7 +11,6 @@ from datetime import UTC, datetime
 from pgvector.sqlalchemy import Vector
 from sqlalchemy import (
     ARRAY,
-    BigInteger,
     DateTime,
     Enum,
     ForeignKey,
@@ -67,7 +66,6 @@ class TranscriptSchema(Base):
     cursor_offset: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     started_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow, nullable=False)
     ended_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
-    last_mtime: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
 
     project: Mapped["ProjectSchema"] = relationship(back_populates="transcripts")
     worktree: Mapped["WorktreeSchema | None"] = relationship(back_populates="transcripts")

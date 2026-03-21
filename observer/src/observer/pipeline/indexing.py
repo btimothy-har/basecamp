@@ -1,8 +1,7 @@
 """Search indexing pipeline — embeds artifact sections.
 
-Runs as a batch processor on the daemon's polling cadence. Reads artifacts
-that need embedding, encodes with sentence-transformers, and updates
-the artifact rows with embedding vectors.
+Reads artifacts that need embedding, encodes with sentence-transformers,
+and updates the artifact rows with embedding vectors.
 """
 
 import hashlib
@@ -10,7 +9,6 @@ import logging
 from datetime import UTC, datetime
 
 from observer.constants import (
-    EMBEDDING_BATCH_LIMIT,
     EMBEDDING_DIMENSIONS,
     EMBEDDING_MODEL_NAME,
     MODEL_CACHE_DIR,
@@ -47,13 +45,13 @@ class SearchIndexer:
         return Artifact.has_pending_index()
 
     @staticmethod
-    def index_batch(
+    def index_pending(
         db: Database,
         *,
-        batch_limit: int = EMBEDDING_BATCH_LIMIT,
+        transcript_id: int | None = None,
     ) -> int:
-        """Embed a batch of pending artifacts. Returns count of rows updated."""
-        to_index = Artifact.get_pending_index()[:batch_limit]
+        """Embed pending artifacts. Returns count of rows indexed."""
+        to_index = Artifact.get_pending_index(transcript_id=transcript_id)
 
         if not to_index:
             return 0

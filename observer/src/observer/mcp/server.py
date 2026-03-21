@@ -1,6 +1,6 @@
 """FastMCP server exposing semantic search over observer memory.
 
-Standalone stdio server — read-only DB consumer, independent of the daemon.
+Standalone stdio server — read-only DB consumer.
 Logging goes to stderr to keep stdout clean for MCP protocol.
 """
 

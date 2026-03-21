@@ -10,7 +10,6 @@ from pathlib import Path
 
 from core.constants import (
     CLAUDE_COMMAND,
-    OBSERVER_CONFIG,
     SCRIPT_DIR,
 )
 from core.exceptions import (
@@ -21,7 +20,6 @@ from core.exceptions import (
 )
 from core.terminal import resolve_dispatch_backend
 from core.ui import console
-from core.utils import is_observer_configured
 
 _SAFE_NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
 
@@ -109,15 +107,11 @@ def execute_dispatch(
         if candidate.exists():
             system_prompt_file = candidate
 
-    # Collect plugin directories — workers load companion + observer only
+    # Collect plugin directories — workers load companion only
     plugin_dirs: list[str] = []
     companion_plugin_dir = SCRIPT_DIR / "plugins" / "companion"
     if (companion_plugin_dir / ".claude-plugin" / "plugin.json").exists():
         plugin_dirs.append(str(companion_plugin_dir))
-
-    observer_plugin_dir = SCRIPT_DIR / "plugins" / "observer"
-    if is_observer_configured(OBSERVER_CONFIG) and (observer_plugin_dir / ".claude-plugin" / "plugin.json").exists():
-        plugin_dirs.append(str(observer_plugin_dir))
 
     # Write launcher script — avoids complex shell quoting in terminal commands
     launcher = task_dir / "launch.sh"
@@ -132,13 +126,14 @@ def execute_dispatch(
     launcher.chmod(launcher.stat().st_mode | stat.S_IEXEC)
 
     # Launch worker in a new terminal pane
-    repo_name = os.environ.get("BASECAMP_REPO", "")
+    # Forward all BASECAMP_* env vars from the parent process, then layer on
+    # dispatch-specific overrides. This keeps dispatch in sync as new env vars
+    # are added to launch.py without cherry-picking each one.
+    pane_env = {k: v for k, v in os.environ.items() if k.startswith("BASECAMP_")}
+    pane_env["BASECAMP_TASK_DIR"] = str(task_dir)
     backend.spawn_pane(
         launcher,
-        env={
-            "BASECAMP_TASK_DIR": str(task_dir),
-            "BASECAMP_REPO": repo_name,
-        },
+        env=pane_env,
         cwd=Path.cwd(),
         title=name,
     )

@@ -542,14 +542,16 @@ class TestRefineBatch:
         refined = WorkItem.get_by_processed(WorkItemStage.REFINED, limit=100)
         assert len(refined) == 5
 
-        types = [wi.item_type for wi in refined]
-        assert types == [
-            WorkItemType.PROMPT,
-            WorkItemType.THINKING,
-            WorkItemType.TOOL_PAIR,
-            WorkItemType.THINKING,
-            WorkItemType.RESPONSE,
-        ]
+        types = sorted(wi.item_type.value for wi in refined)
+        assert types == sorted(
+            [
+                WorkItemType.PROMPT.value,
+                WorkItemType.THINKING.value,
+                WorkItemType.TOOL_PAIR.value,
+                WorkItemType.THINKING.value,
+                WorkItemType.RESPONSE.value,
+            ]
+        )
 
         # TranscriptEvents created for each refined item
         with db.session() as session:

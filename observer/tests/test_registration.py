@@ -4,7 +4,6 @@ import subprocess
 from datetime import UTC, datetime
 from unittest.mock import patch
 
-import observer.constants as c
 import observer.services.registration as reg
 import pytest
 from observer.data.transcript import Transcript
@@ -13,7 +12,6 @@ from observer.services.db import Database
 from observer.services.registration import (
     HookInput,
     detect_worktree,
-    ensure_daemon_running,
     register_session,
     resolve_repo_root,
 )
@@ -128,7 +126,7 @@ class TestRegisterSession:
         r1 = register_session(hook)
         assert r1.created is True
 
-        # Simulate daemon marking it ended
+        # Simulate transcript being marked ended
         with Database().session() as session:
             t = Transcript.get_by_session_id("sess-ended")
             t.ended_at = datetime.now(UTC)
@@ -182,46 +180,3 @@ class TestRegisterSession:
 
         assert r1.project.id == r2.project.id
         assert r1.transcript.id != r2.transcript.id
-
-
-class TestEnsureDaemonRunning:
-    def test_already_running(self, tmp_path, monkeypatch):  # noqa: ARG002
-        monkeypatch.setattr(c, "PID_FILE", tmp_path / "observer.pid")
-
-        with patch("observer.services.registration.Daemon") as mock_daemon_cls:
-            mock_daemon_cls.return_value.check_running.return_value = 1234
-            pid = ensure_daemon_running()
-
-        assert pid == 1234
-
-    def test_starts_daemon(self, tmp_path, monkeypatch):  # noqa: ARG002
-        obs_dir = tmp_path / "observer"
-        obs_dir.mkdir(exist_ok=True)
-        monkeypatch.setattr(c, "OBSERVER_DIR", obs_dir)
-        monkeypatch.setattr(c, "PID_FILE", obs_dir / "observer.pid")
-
-        with (
-            patch("observer.services.registration.Daemon") as mock_daemon_cls,
-            patch("observer.services.registration.subprocess.Popen") as mock_popen,
-            patch("observer.services.registration.time.sleep"),
-        ):
-            mock_daemon_cls.return_value.check_running.side_effect = [None, 5678]
-            pid = ensure_daemon_running()
-
-        assert pid == 5678
-        mock_popen.assert_called_once()
-
-    def test_daemon_start_fails(self, tmp_path, monkeypatch):  # noqa: ARG002
-        obs_dir = tmp_path / "observer"
-        obs_dir.mkdir(exist_ok=True)
-        monkeypatch.setattr(c, "OBSERVER_DIR", obs_dir)
-        monkeypatch.setattr(c, "PID_FILE", obs_dir / "observer.pid")
-
-        with (
-            patch("observer.services.registration.Daemon") as mock_daemon_cls,
-            patch("observer.services.registration.subprocess.Popen", side_effect=FileNotFoundError),
-        ):
-            mock_daemon_cls.return_value.check_running.return_value = None
-            pid = ensure_daemon_running()
-
-        assert pid is None

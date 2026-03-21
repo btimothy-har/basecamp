@@ -1,4 +1,4 @@
-"""Observer daemon constants."""
+"""Observer constants."""
 
 import os
 from pathlib import Path
@@ -10,13 +10,8 @@ PROJECTS_DIR = CLAUDE_DIR / "projects"
 # State paths — where observer stores its own data
 BASECAMP_DIR = Path.home() / ".basecamp"
 OBSERVER_DIR = BASECAMP_DIR / "observer"
-PID_FILE = OBSERVER_DIR / "observer.pid"
 LOG_FILE = OBSERVER_DIR / "observer.log"
 
-TICK_INTERVAL = 1  # seconds between scheduler ticks
-INACTIVITY_TIMEOUT = 120  # seconds of no file changes before extraction fires
-INDEX_INTERVAL = 120  # seconds between indexing spawns
-MAX_INGEST_WORKERS = 8  # max ingest processes spawned per poll cycle
 DEFAULT_STALE_THRESHOLD = 300
 
 # Notebook (viz) settings
@@ -30,14 +25,13 @@ TRANSCRIPT_EXTENSION = ".jsonl"
 
 # Extraction settings
 REFINING_BATCH_LIMIT = 200
-REFINE_INTERVAL = 5  # seconds between refining spawns
+REFINING_MAX_WORKERS = 15
 EXTRACTION_TIMEOUT = 120
 DEFAULT_OBSERVER_MODEL = "sonnet"
 
 EXTRACTABLE_EVENT_TYPES = frozenset({"user", "assistant"})
 
 # Embedding settings
-EMBEDDING_BATCH_LIMIT = 500
 EMBEDDING_MODEL_NAME = "all-MiniLM-L6-v2"
 EMBEDDING_DIMENSIONS = 384
 MODEL_CACHE_DIR = OBSERVER_DIR / "models"

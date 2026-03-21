@@ -1,7 +1,7 @@
 """Read-only query layer for the visualization dashboard.
 
 Builds on existing domain models and the Database singleton. Never mutates
-data — safe for concurrent access with the daemon via WAL mode.
+data — safe for concurrent access with the pipeline via WAL mode.
 """
 
 from __future__ import annotations

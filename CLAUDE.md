@@ -101,7 +101,7 @@ basecamp includes a bundled core plugin and a marketplace with optional plugins.
 
 | Plugin | Directory | Contents |
 |--------|-----------|----------|
-| `bc-companion` | `plugins/companion/` | Project context injection at session start |
+| `bc-companion` | `plugins/companion/` | Session management, context injection, observer integration |
 
 **Marketplace Plugins** (optional, installed via `.claude-plugin/marketplace.json`):
 
@@ -136,9 +136,9 @@ plugins/engineering/
 
 ```
 plugins/companion/
-├── .claude-plugin/plugin.json
-├── hooks/            # SessionStart hook
-└── scripts/          # project-context.sh
+├── .claude-plugin/plugin.json    # Includes observer MCP server
+├── hooks/            # SessionStart, PreCompact, SessionEnd hooks
+└── scripts/          # session-init.sh, project-context.sh, hook-process.sh
 ```
 
 ### Agent Definition Format
@@ -201,3 +201,4 @@ The `basecamp` project is hardcoded to start with basecamp itself as the working
 
 - `BASECAMP_REPO`: Set during start to the git repo directory name (falls back to primary dir name for non-git projects)
 - `BASECAMP_CONTEXT_FILE`: Set during start to the resolved context file path (if `context` field is configured and file exists)
+- `BASECAMP_OBSERVER_ENABLED`: Set to `1` when observer is configured (has `pg_url`). Controls whether companion runs observer hooks.

@@ -2,7 +2,7 @@
 
 Stores user-configured settings in a JSON file at
 ~/.basecamp/observer/config.json so they are available across all invocation
-paths — daemon, MCP server, session-register hook — without relying on shell
+paths — CLI commands, MCP server, hooks — without relying on shell
 environment variables, which subprocess spawning may not propagate.
 """
 

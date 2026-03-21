@@ -123,13 +123,13 @@ class TestHasPending:
         assert SearchIndexer.has_pending() is True
 
 
-class TestIndexBatch:
+class TestIndexPending:
     def test_indexes_extraction(self, db):
         _, transcript_id = _seed_project_and_transcript(db)
         ext_id = _create_artifact(db, transcript_id, text="extraction text")
 
         with patch.object(indexing, "_get_model", return_value=_mock_model(1)):
-            count = SearchIndexer.index_batch(db)
+            count = SearchIndexer.index_pending(db)
 
         assert count == 1
 
@@ -142,31 +142,17 @@ class TestIndexBatch:
 
     def test_returns_zero_when_nothing_pending(self, db):  # noqa: ARG002
         with patch.object(indexing, "_get_model") as mock_st_cls:
-            count = SearchIndexer.index_batch(db)
+            count = SearchIndexer.index_pending(db)
 
         assert count == 0
         mock_st_cls.assert_not_called()
-
-    def test_respects_batch_limit(self, db):
-        _, transcript_id = _seed_project_and_transcript(db)
-        for i in range(5):
-            _create_artifact(db, transcript_id, text=f"extraction {i}", section_type=list(SectionType)[i])
-
-        with patch.object(indexing, "_get_model", return_value=_mock_model(2)):
-            count = SearchIndexer.index_batch(db, batch_limit=2)
-
-        assert count == 2
-
-        with db.session() as session:
-            indexed = session.query(ArtifactSchema).filter(ArtifactSchema.embedding.isnot(None)).count()
-            assert indexed == 2
 
     def test_indexes_summary_section(self, db):
         _, transcript_id = _seed_project_and_transcript(db)
         ext_id = _create_artifact(db, transcript_id, text="Session summary text.", section_type=SectionType.SUMMARY)
 
         with patch.object(indexing, "_get_model", return_value=_mock_model(1)):
-            count = SearchIndexer.index_batch(db)
+            count = SearchIndexer.index_pending(db)
 
         assert count == 1
 
@@ -181,7 +167,7 @@ class TestIndexBatch:
         _mark_indexed(db, ext_id, stale_hash=True)
 
         with patch.object(indexing, "_get_model", return_value=_mock_model(1)):
-            count = SearchIndexer.index_batch(db)
+            count = SearchIndexer.index_pending(db)
 
         assert count == 1
 
@@ -196,7 +182,7 @@ class TestIndexBatch:
         _mark_indexed(db, ext_id, text=text)
 
         with patch.object(indexing, "_get_model") as mock_st_cls:
-            count = SearchIndexer.index_batch(db)
+            count = SearchIndexer.index_pending(db)
 
         assert count == 0
         mock_st_cls.assert_not_called()
@@ -207,7 +193,7 @@ class TestIndexBatch:
         _create_artifact(db, transcript_id, text="A decision.", section_type=SectionType.DECISIONS)
 
         with patch.object(indexing, "_get_model", return_value=_mock_model()):
-            count = SearchIndexer.index_batch(db)
+            count = SearchIndexer.index_pending(db)
 
         assert count == 2
 

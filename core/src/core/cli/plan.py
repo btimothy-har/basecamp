@@ -6,13 +6,12 @@ from pathlib import Path
 
 from rich.console import Console
 
-from core.constants import CLAUDE_COMMAND, OBSERVER_CONFIG, SCRATCH_BASE, SCRIPT_DIR
+from core.constants import CLAUDE_COMMAND, SCRATCH_BASE, SCRIPT_DIR
 from core.git import is_git_repo
 from core.logseq import resolve_graph_path, today
 from core.prompts.logseq_prompts import load_system_prompt, load_user_prompt
 from core.prompts.system import build_runtime_preamble
 from core.terminal import resolve_launch_backend
-from core.utils import is_observer_configured
 
 PLAN_SCRATCH_NAME = "plan"
 
@@ -56,10 +55,10 @@ def execute_plan() -> None:
     # so the end-of-options marker doesn't swallow subsequent flags.
     cmd: list[str] = [CLAUDE_COMMAND, "--system-prompt", system_prompt]
 
-    # Load observer plugin for MCP access (cross-project session search)
-    observer_plugin_dir = SCRIPT_DIR / "plugins" / "observer"
-    if is_observer_configured(OBSERVER_CONFIG) and (observer_plugin_dir / ".claude-plugin" / "plugin.json").exists():
-        cmd.extend(["--plugin-dir", str(observer_plugin_dir)])
+    # Load companion plugin for MCP access (cross-project session search)
+    companion_plugin_dir = SCRIPT_DIR / "plugins" / "companion"
+    if (companion_plugin_dir / ".claude-plugin" / "plugin.json").exists():
+        cmd.extend(["--plugin-dir", str(companion_plugin_dir)])
 
     cmd.extend(["--", user_prompt])
 

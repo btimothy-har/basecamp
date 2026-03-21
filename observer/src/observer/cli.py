@@ -1,12 +1,8 @@
-"""CLI entry point for the observer daemon."""
+"""CLI entry point for the observer."""
 
 import json
 import os
-import signal
-import socket
-import subprocess
 import sys
-import time
 from importlib.resources import files
 from urllib.parse import urlparse, urlunparse
 
@@ -15,7 +11,6 @@ import questionary
 from sqlalchemy import create_engine, text
 
 from observer import constants
-from observer.daemon import Daemon
 from observer.exceptions import RegistrationError
 from observer.services.config import (
     CONFIG_FILE,
@@ -45,7 +40,7 @@ from observer.services.container import (
 
 @click.group()
 def main() -> None:
-    """Observer daemon — monitors Claude Code transcripts."""
+    """Observer — monitors Claude Code transcripts."""
 
 
 @main.group()
@@ -221,54 +216,6 @@ def migrate() -> None:
     engine.dispose()
 
 
-@main.command()
-@click.option("--foreground", "-f", is_flag=True, help="Run in the foreground.")
-@click.option("--no-viz", is_flag=True, help="Don't start the visualization dashboard.")
-def start(foreground: bool, no_viz: bool) -> None:  # noqa: FBT001
-    """Start the observer daemon."""
-    daemon = Daemon(pid_file=constants.PID_FILE, enable_viz=not no_viz)
-
-    if daemon.check_running():
-        sys.exit("Observer is already running.")
-
-    _ensure_db()
-
-    constants.OBSERVER_DIR.mkdir(parents=True, exist_ok=True)
-
-    if foreground:
-        click.echo("Observer running in foreground.")
-    else:
-        click.echo("Observer started.")
-
-    if not no_viz:
-        click.echo(f"  Dashboard: http://{constants.VIZ_HOST}:{constants.VIZ_PORT}")
-
-    daemon.run(foreground=foreground)
-
-
-@main.command()
-@click.option("--timeout", "-t", default=10, show_default=True, help="Seconds to wait.")
-def stop(timeout: int) -> None:
-    """Stop the observer daemon."""
-    daemon = Daemon(pid_file=constants.PID_FILE)
-    pid = daemon.check_running()
-
-    if pid is None:
-        sys.exit("Observer is not running.")
-
-    os.kill(pid, signal.SIGTERM)
-
-    deadline = time.monotonic() + timeout
-    while time.monotonic() < deadline:
-        if not Daemon.is_process_running(pid):
-            daemon._pid_file.unlink(missing_ok=True)
-            click.echo("Observer stopped.")
-            return
-        time.sleep(0.1)
-
-    sys.exit(f"Observer (pid={pid}) did not stop within {timeout}s.")
-
-
 def _mask_pg_url(url: str) -> str:
     """Return the URL with the password replaced by *** for safe display."""
     parsed = urlparse(url)
@@ -282,35 +229,10 @@ def _mask_pg_url(url: str) -> str:
 
 
 @main.command()
-def status() -> None:
-    """Show observer daemon status."""
-    daemon = Daemon(pid_file=constants.PID_FILE)
-    pid = daemon.check_running()
-
-    if pid is None:
-        click.echo("Observer is not running.")
-        sys.exit(3)
-
-    click.echo(f"Observer is running (pid={pid}).")
-    click.echo(f"  Configured Mode: {get_mode()}")
-    pg_url = os.environ.get("OBSERVER_PG_URL") or get_pg_url() or "(not set)"
-    click.echo(f"  PG:   {_mask_pg_url(pg_url)}")
-    click.echo(f"  Log:  {constants.LOG_FILE}")
-
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-        s.settimeout(1)
-        notebook_up = s.connect_ex((constants.VIZ_HOST, constants.VIZ_PORT)) == 0
-    if notebook_up:
-        click.echo(f"  Notebook: http://{constants.VIZ_HOST}:{constants.VIZ_PORT}")
-    else:
-        click.echo("  Notebook: not running")
-
-
-@main.command()
 @click.option("-n", "lines", default=20, show_default=True, help="Number of lines.")
 @click.option("--follow", "-f", is_flag=True, help="Follow log output.")
 def logs(lines: int, follow: bool) -> None:  # noqa: FBT001
-    """Show observer daemon logs."""
+    """Show observer logs."""
     log_file = constants.LOG_FILE
 
     if not log_file.exists():
@@ -390,11 +312,6 @@ def mode(target: str | None) -> None:
     set_mode(target)
     click.echo(f"Switched to {target} mode.")
 
-    daemon = Daemon(pid_file=constants.PID_FILE)
-    if daemon.check_running():
-        click.echo("Restart the daemon for changes to take effect:")
-        click.echo("  observer stop && observer start")
-
 
 @main.command()
 def setup() -> None:
@@ -451,25 +368,6 @@ def setup() -> None:
     set_mode(mode_choice)
     click.echo(f"\nConfiguration saved → {CONFIG_FILE}")
 
-    daemon = Daemon(pid_file=constants.PID_FILE)
-    if click.confirm("\nStart observer daemon?", default=True):
-        if daemon.check_running():
-            click.echo("Daemon is already running.")
-        else:
-            constants.OBSERVER_DIR.mkdir(parents=True, exist_ok=True)
-            subprocess.Popen(
-                ["observer", "start"],
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-            )
-            for _ in range(10):
-                time.sleep(0.2)
-                if daemon.check_running():
-                    click.echo("Daemon started.")
-                    break
-            else:
-                click.echo("Daemon may still be starting — check: observer status")
-
 
 def _ensure_container_ready(runtime: str, *, message: str = "PostgreSQL is ready.") -> None:
     """Ensure the container is running and PostgreSQL accepts connections, or exit."""
@@ -495,22 +393,6 @@ def _ensure_container_ready(runtime: str, *, message: str = "PostgreSQL is ready
         click.echo(" timed out.")
         click.echo(container_logs(runtime, lines=10))
         sys.exit(1)
-
-
-def _ensure_db() -> None:
-    """Ensure the database is available before starting the daemon."""
-    source = get_db_source()
-    if source is None:
-        sys.exit("Database not configured. Run 'observer setup' first.")
-    if source != "container":
-        return
-
-    try:
-        runtime = detect_runtime()
-    except ContainerRuntimeNotFoundError:
-        sys.exit("Neither 'docker' nor 'podman' found on PATH.")
-
-    _ensure_container_ready(runtime)
 
 
 def _setup_container() -> str:
@@ -568,11 +450,18 @@ def _verify_connection(url: str) -> None:
 
 
 @main.command()
-def register() -> None:
-    """Register a Claude Code session (called by SessionStart hook)."""
+def ingest() -> None:
+    """Ingest transcript events from a hook. Reads JSON from stdin.
+
+    Synchronous entry point for PreCompact/SessionEnd hooks.
+    Registers the session (if needed), parses new JSONL events,
+    and groups them into work items.
+    """
+    from observer.pipeline.parser import TranscriptParser  # noqa: PLC0415
+    from observer.pipeline.refining.grouping import EventGrouper  # noqa: PLC0415
+    from observer.services.db import Database  # noqa: PLC0415
     from observer.services.registration import (  # noqa: PLC0415
         HookInput,
-        ensure_daemon_running,
         register_session,
     )
 
@@ -604,11 +493,139 @@ def register() -> None:
     except (RegistrationError, ValueError) as e:
         sys.exit(str(e))
 
-    if result.created:
-        click.echo(f"Registered transcript {result.transcript.session_id}")
-    else:
-        click.echo(f"Session {result.transcript.session_id} already registered")
+    transcript = result.transcript
 
-    pid = ensure_daemon_running()
-    if pid:
-        click.echo(f"Daemon running (pid={pid})")
+    # Parse new JSONL events from cursor_offset
+    ingested = TranscriptParser().ingest(transcript)
+
+    # Group raw events into work items (pure logic, no LLM)
+    # Loop until fully drained — a single batch may not cover all pending events
+    db = Database()
+    grouped = 0
+    while True:
+        n = EventGrouper.group_batch(db, batch_limit=500)
+        if n == 0:
+            break
+        grouped += n
+
+    click.echo(f"session={transcript.session_id} ingested={ingested} grouped={grouped}")
+
+
+@main.command()
+@click.option("--yes", "-y", is_flag=True, help="Skip confirmation.")
+def reprocess(yes: bool) -> None:  # noqa: FBT001
+    """Clear derived data and re-run the full pipeline for all transcripts.
+
+    Keeps raw_events and transcripts intact. Clears work_items,
+    transcript_events, and artifacts, resets raw_event status to PENDING,
+    then runs group → refine → extract → embed for each transcript.
+    """
+    from observer.data.enums import RawEventStatus  # noqa: PLC0415
+    from observer.data.schemas import (  # noqa: PLC0415
+        ArtifactSchema,
+        RawEventSchema,
+        TranscriptEventSchema,
+        TranscriptSchema,
+        WorkItemSchema,
+    )
+    from observer.pipeline.extraction import TranscriptExtractor  # noqa: PLC0415
+    from observer.pipeline.indexing import SearchIndexer  # noqa: PLC0415
+    from observer.pipeline.refining import EventRefiner  # noqa: PLC0415
+    from observer.services.db import Database  # noqa: PLC0415
+    from observer.services.logger import configure_logging  # noqa: PLC0415
+
+    configure_logging(foreground=True)
+
+    db = Database()
+
+    # Count what we're about to reprocess
+    with db.session() as session:
+        transcript_count = session.query(TranscriptSchema).count()
+        raw_event_count = session.query(RawEventSchema).count()
+
+    if transcript_count == 0:
+        click.echo("No transcripts found. Nothing to reprocess.")
+        return
+
+    click.echo(f"Transcripts: {transcript_count}")
+    click.echo(f"Raw events:  {raw_event_count}")
+    click.echo("\nThis will clear all work_items, transcript_events, and artifacts,")
+    click.echo("then re-run the full pipeline (group → refine → extract → embed).")
+
+    if not yes and not click.confirm("\nProceed?"):
+        click.echo("Aborted.")
+        return
+
+    # Phase 0: Clear derived tables and reset raw_event status
+    click.echo("\nClearing derived data...")
+    with db.session() as session:
+        session.query(ArtifactSchema).delete()
+        session.query(TranscriptEventSchema).delete()
+        session.query(WorkItemSchema).delete()
+        session.execute(RawEventSchema.__table__.update().values(processed=RawEventStatus.PENDING))
+    click.echo("  Cleared work_items, transcript_events, artifacts")
+    click.echo("  Reset raw_events to PENDING")
+
+    # Phase 1: Group raw events into work items, then refine into transcript events
+    click.echo("\nGrouping and refining...")
+    refined = EventRefiner.refine_batch(db, batch_limit=raw_event_count)
+    click.echo(f"  Refined {refined} work items")
+
+    # Phase 2: Extract per transcript
+    click.echo("\nExtracting artifacts...")
+    with db.session() as session:
+        transcript_ids = [row[0] for row in session.query(TranscriptSchema.id).all()]
+
+    extracted = 0
+    for tid in transcript_ids:
+        count = TranscriptExtractor.extract_transcript(db, tid)
+        extracted += count
+
+    click.echo(f"  Extracted {extracted} artifact sections across {len(transcript_ids)} transcripts")
+
+    # Phase 3: Embed all artifacts
+    click.echo("\nEmbedding artifacts...")
+    SearchIndexer.index_pending(db)
+    click.echo("  Embedding complete")
+
+    click.echo("\nReprocessing complete.")
+
+
+@main.command()
+@click.argument("session_id")
+def process(session_id: str) -> None:
+    """Run background processing for a session. Refine, extract, embed.
+
+    Called as a detached background process by the hook script.
+    Runs the full LLM pipeline: refine work_items into transcript_events,
+    extract structured artifacts, and embed for semantic search.
+    """
+    from observer.data.transcript import Transcript  # noqa: PLC0415
+    from observer.pipeline.extraction import TranscriptExtractor  # noqa: PLC0415
+    from observer.pipeline.indexing import SearchIndexer  # noqa: PLC0415
+    from observer.pipeline.refining import EventRefiner  # noqa: PLC0415
+    from observer.services.config import get_mode  # noqa: PLC0415
+    from observer.services.db import Database  # noqa: PLC0415
+    from observer.services.logger import configure_logging  # noqa: PLC0415
+
+    configure_logging()
+
+    transcript = Transcript.get_by_session_id(session_id)
+    if transcript is None:
+        sys.exit(f"No transcript found for session {session_id}")
+
+    if get_mode() == "off":
+        return
+
+    db = Database()
+    try:
+        # Phase 1: Refine work_items → transcript_events (LLM calls)
+        EventRefiner.refine_batch(db, transcript_id=transcript.id)
+
+        # Phase 2: Extract transcript_events → artifacts (single LLM call)
+        TranscriptExtractor.extract_transcript(db, transcript.id)
+
+        # Phase 3: Embed artifacts → pgvector
+        SearchIndexer.index_pending(db, transcript_id=transcript.id)
+    finally:
+        db.close()

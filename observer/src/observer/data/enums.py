@@ -15,6 +15,7 @@ class WorkItemStage(IntEnum):
     REFINED = 1
     TERMINAL = 2
     ERROR = 3
+    REFINING = 4
 
 
 class SectionType(StrEnum):

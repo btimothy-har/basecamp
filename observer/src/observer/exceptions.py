@@ -1,4 +1,4 @@
-"""Exception classes for the observer daemon."""
+"""Exception classes for the observer."""
 
 from pathlib import Path
 
@@ -12,24 +12,6 @@ class DatabaseError(ObserverError):
 
     def __init__(self, operation: str, detail: str) -> None:
         super().__init__(f"Database error during {operation}: {detail}")
-
-
-class DaemonError(ObserverError):
-    """Base exception for daemon-related errors."""
-
-
-class DaemonAlreadyRunningError(DaemonError):
-    """Raised when attempting to start a daemon that is already running."""
-
-    def __init__(self, pid: int) -> None:
-        super().__init__(f"Observer daemon already running (pid={pid})")
-
-
-class DaemonNotRunningError(DaemonError):
-    """Raised when attempting to stop a daemon that is not running."""
-
-    def __init__(self) -> None:
-        super().__init__("Observer daemon is not running")
 
 
 class TranscriptError(ObserverError):
