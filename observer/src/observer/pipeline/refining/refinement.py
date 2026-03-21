@@ -2,12 +2,18 @@
 
 LLM-driven stage that summarizes thinking blocks and tool pairs, creates
 TranscriptEvents. Items are marked REFINED, TERMINAL, or ERROR.
+
+All items are dispatched to a ThreadPoolExecutor for concurrent processing.
+LLM-requiring items (THINKING, TOOL_PAIR, RESPONSE with embedded thinking)
+benefit most; non-LLM items complete instantly as workers.
 """
 
 import json
 import logging
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import UTC, datetime
 
+from observer.constants import REFINING_MAX_WORKERS
 from observer.data.enums import WorkItemStage, WorkItemType
 from observer.data.raw_event import RawEvent
 from observer.data.transcript_event import TranscriptEvent
@@ -20,34 +26,48 @@ logger = logging.getLogger(__name__)
 
 
 class WorkItemRefiner:
-    """Refines a batch of WorkItems for a single transcript."""
+    """Refines a batch of WorkItems into TranscriptEvents."""
 
     @staticmethod
     def has_pending() -> bool:
         """Check if any WorkItems need refining (processed=0)."""
         return WorkItem.has_unprocessed()
 
-    def __init__(self, db: Database, transcript_id: int):
+    def __init__(self, db: Database):
         self._db = db
-        self._transcript_id = transcript_id
 
     def refine(self, items: list[WorkItem]) -> int:
-        refined = 0
-        for item in items:
-            match item.item_type:
-                case WorkItemType.PROMPT:
-                    self._handle_prompt(item)
-                case WorkItemType.THINKING:
-                    self._handle_thinking(item)
-                case WorkItemType.TOOL_PAIR:
-                    self._handle_tool_pair(item)
-                case WorkItemType.RESPONSE:
-                    self._handle_response(item)
-                case t if t.is_skipped:
-                    self._handle_skipped(item)
-            if item.processed == WorkItemStage.REFINED:
-                refined += 1
-        return refined
+        """Refine work items concurrently via thread pool."""
+        total = len(items)
+        done = 0
+        with ThreadPoolExecutor(max_workers=REFINING_MAX_WORKERS) as pool:
+            futures = {pool.submit(self._handle_item, item): item for item in items}
+            for future in as_completed(futures):
+                item = futures[future]
+                try:
+                    future.result()
+                except Exception:
+                    logger.exception("Unexpected error refining work item %d", item.id)
+                    self._mark_work_item(item, WorkItemStage.ERROR)
+                done += 1
+                if done % 10 == 0 or done == total:
+                    logger.info("Refined %d/%d work items", done, total)
+
+        return sum(1 for i in items if i.processed == WorkItemStage.REFINED)
+
+    def _handle_item(self, item: WorkItem) -> None:
+        """Dispatch a work item to the appropriate handler."""
+        match item.item_type:
+            case WorkItemType.PROMPT:
+                self._handle_prompt(item)
+            case WorkItemType.THINKING:
+                self._handle_thinking(item)
+            case WorkItemType.TOOL_PAIR:
+                self._handle_tool_pair(item)
+            case WorkItemType.RESPONSE:
+                self._handle_response(item)
+            case t if t.is_skipped:
+                self._handle_skipped(item)
 
     def _handle_prompt(self, work_item: WorkItem) -> None:
         raw = RawEvent.get(work_item.event_ids[0])
@@ -139,7 +159,7 @@ class WorkItemRefiner:
         event_type: WorkItemType | None = None,
     ) -> TranscriptEvent:
         te = TranscriptEvent(
-            transcript_id=self._transcript_id,
+            transcript_id=work_item.transcript_id,
             work_item_id=work_item.id,
             event_type=event_type or work_item.item_type,
             text=text,

@@ -36,21 +36,15 @@ class EventRefiner:
         # Phase 1: Group ungrouped raw events into work items
         EventGrouper.group_batch(db, batch_limit=batch_limit)
 
-        # Phase 2: Refine unprocessed work items
+        # Phase 2: Refine unprocessed work items (concurrent via thread pool)
         items = WorkItem.get_unprocessed(limit=batch_limit)
         if not items:
             return 0
 
         logger.info("Refining %d unprocessed work items", len(items))
 
-        groups: dict[int, list[WorkItem]] = {}
-        for item in items:
-            groups.setdefault(item.transcript_id, []).append(item)
-
-        total = 0
-        for transcript_id, transcript_items in groups.items():
-            refiner = WorkItemRefiner(db, transcript_id)
-            total += refiner.refine(transcript_items)
+        refiner = WorkItemRefiner(db)
+        total = refiner.refine(items)
 
         logger.info("Refining batch complete: %d work items refined", total)
         return total
