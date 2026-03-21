@@ -69,10 +69,7 @@ class RawEvent(BaseModel):
     @classmethod
     def get_unprocessed(cls, *, transcript_id: int | None = None, limit: int) -> list[Self]:
         with Database().session() as session:
-            q = (
-                session.query(RawEventSchema)
-                .filter(RawEventSchema.processed == RawEventStatus.PENDING)
-            )
+            q = session.query(RawEventSchema).filter(RawEventSchema.processed == RawEventStatus.PENDING)
             if transcript_id is not None:
                 q = q.filter(RawEventSchema.transcript_id == transcript_id)
             rows = q.order_by(RawEventSchema.timestamp).limit(limit).all()
