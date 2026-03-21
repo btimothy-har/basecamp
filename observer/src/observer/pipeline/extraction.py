@@ -95,7 +95,9 @@ def _process_transcript(
             .order_by(TranscriptEventSchema.created_at)
             .all()
         )
-        new_event_texts = [row.text for row in te_rows if row.event_type != WorkItemType.THINKING]
+        new_event_texts = [
+            row.text for row in te_rows if row.event_type != WorkItemType.THINKING and not row.event_type.is_skipped
+        ]
         last_event_id = te_rows[-1].id if te_rows else None
 
     if not te_rows:
@@ -216,7 +218,9 @@ def _update_summary(db: Database, transcript_id: int) -> bool:
 
     try:
         all_events = TranscriptEvent.get_for_transcript(transcript_id)
-        all_texts = [te.text for te in all_events if te.event_type != WorkItemType.THINKING]
+        all_texts = [
+            te.text for te in all_events if te.event_type != WorkItemType.THINKING and not te.event_type.is_skipped
+        ]
 
         if not all_texts:
             return False
