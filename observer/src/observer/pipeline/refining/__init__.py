@@ -41,8 +41,8 @@ class EventRefiner:
         # Phase 1: Group ungrouped raw events into work items
         EventGrouper.group_batch(db, transcript_id=transcript_id, batch_limit=batch_limit)
 
-        # Phase 2: Refine unprocessed work items (concurrent via thread pool)
-        items = WorkItem.get_unprocessed(transcript_id=transcript_id, limit=batch_limit)
+        # Phase 2: Atomically claim unprocessed work items, then refine
+        items = WorkItem.claim_unprocessed(transcript_id=transcript_id, limit=batch_limit)
         if not items:
             return 0
 
