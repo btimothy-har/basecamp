@@ -24,7 +24,6 @@ class Transcript(BaseModel):
     cursor_offset: int = 0
     started_at: datetime
     ended_at: datetime | None = None
-    last_mtime: int | None = None
     raw_events: list[RawEvent] = Field(default_factory=list)
 
     def save(self, session: Session) -> Self:
