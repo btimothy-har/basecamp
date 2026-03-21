@@ -1,8 +1,7 @@
 """Search indexing pipeline — embeds artifact sections.
 
-Runs as a batch processor on the daemon's polling cadence. Reads artifacts
-that need embedding, encodes with sentence-transformers, and updates
-the artifact rows with embedding vectors.
+Reads artifacts that need embedding, encodes with sentence-transformers,
+and updates the artifact rows with embedding vectors.
 """
 
 import hashlib

@@ -232,7 +232,7 @@ def _mask_pg_url(url: str) -> str:
 @click.option("-n", "lines", default=20, show_default=True, help="Number of lines.")
 @click.option("--follow", "-f", is_flag=True, help="Follow log output.")
 def logs(lines: int, follow: bool) -> None:  # noqa: FBT001
-    """Show observer daemon logs."""
+    """Show observer logs."""
     log_file = constants.LOG_FILE
 
     if not log_file.exists():
