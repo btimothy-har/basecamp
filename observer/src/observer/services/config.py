@@ -100,7 +100,7 @@ def get_mode() -> str:
         return mode
     # Backward compat: old configs used extraction_enabled boolean
     if "extraction_enabled" in data:
-        return "full" if data["extraction_enabled"] else "lite"
+        return "full" if data["extraction_enabled"] else "off"
     return "full"
 
 

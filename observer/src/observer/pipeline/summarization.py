@@ -18,14 +18,14 @@ from observer.services.db import Database
 logger = logging.getLogger(__name__)
 
 
-def has_pending() -> bool:
+def has_pending(db: Database | None = None) -> bool:
     """Check if any active transcripts need a summary refresh.
 
     A transcript needs refresh when it has ingested raw events and either
     has never been summarized or the cooldown has elapsed.
     """
     now = datetime.now(UTC)
-    with Database().session() as session:
+    with (db or Database()).session() as session:
         transcripts = session.query(TranscriptSchema).filter(TranscriptSchema.ended_at.is_(None)).all()
         for t in transcripts:
             # Must have ingested events
@@ -51,8 +51,15 @@ def summarize_active_transcripts(db: Database) -> int:
     updated = 0
 
     with db.session() as session:
-        transcripts = session.query(TranscriptSchema).filter(TranscriptSchema.ended_at.is_(None)).all()
-        # Detach before closing session — we only need id + last_summary_at
+        transcripts = (
+            session.query(TranscriptSchema)
+            .filter(
+                TranscriptSchema.ended_at.is_(None),
+                session.query(RawEventSchema.id).filter(RawEventSchema.transcript_id == TranscriptSchema.id).exists(),
+            )
+            .all()
+        )
+        # Collect IDs before closing session — we only need id + last_summary_at
         pending = []
         for t in transcripts:
             if t.last_summary_at is not None:
@@ -80,8 +87,6 @@ def _summarize_transcript(db: Database, transcript_id: int) -> bool:
         return False
 
     texts = [e.format() for e in raw_events]
-    if not texts:
-        return False
 
     try:
         summary = summarize_transcript(texts)
@@ -93,9 +98,10 @@ def _summarize_transcript(db: Database, transcript_id: int) -> bool:
 
     with db.session() as session:
         row = session.get(TranscriptSchema, transcript_id)
-        if row is not None:
-            row.summary = summary
-            row.title = title
-            row.last_summary_at = now
+        if row is None:
+            return False
+        row.summary = summary
+        row.title = title
+        row.last_summary_at = now
 
     return True

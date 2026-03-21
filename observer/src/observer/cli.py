@@ -247,7 +247,7 @@ def status() -> None:
         sys.exit(3)
 
     click.echo(f"Observer is running (pid={pid}).")
-    click.echo(f"  Mode: {get_mode()}")
+    click.echo(f"  Configured Mode: {get_mode()}")
     pg_url = os.environ.get("OBSERVER_PG_URL") or get_pg_url() or "(not set)"
     click.echo(f"  PG:   {_mask_pg_url(pg_url)}")
     click.echo(f"  Log:  {constants.LOG_FILE}")

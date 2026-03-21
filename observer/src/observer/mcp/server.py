@@ -19,6 +19,7 @@ from observer.services.config import get_mode
 logging.basicConfig(stream=sys.stderr, level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+# Evaluated at process start — mode changes require restarting the MCP server.
 _instructions = MCP_SERVER_INSTRUCTIONS if get_mode() == "full" else MCP_SERVER_INSTRUCTIONS_LITE
 mcp = FastMCP(MCP_SERVER_NAME, instructions=_instructions)
 

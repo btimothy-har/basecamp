@@ -197,25 +197,29 @@ def _extract_batch(
     return count
 
 
-def _update_summary(db: Database, transcript_id: int) -> None:
-    """Regenerate transcript summary if SUMMARY_INTERVAL has elapsed since last update."""
+def _update_summary(db: Database, transcript_id: int) -> bool:
+    """Regenerate transcript summary if SUMMARY_INTERVAL has elapsed since last update.
+
+    Returns True if the summary was actually refreshed, False if skipped (cooldown,
+    no events, or error).
+    """
     now = datetime.now(UTC)
 
     with db.session() as session:
         transcript_row = session.get(TranscriptSchema, transcript_id)
         if transcript_row is None:
-            return
+            return False
         if transcript_row.last_summary_at is not None:
             elapsed = (now - transcript_row.last_summary_at.replace(tzinfo=UTC)).total_seconds()
             if elapsed < SUMMARY_INTERVAL:
-                return
+                return False
 
     try:
         all_events = TranscriptEvent.get_for_transcript(transcript_id)
         all_texts = [te.text for te in all_events if te.event_type != WorkItemType.THINKING]
 
         if not all_texts:
-            return
+            return False
 
         new_summary = summarize_transcript(all_texts)
 
@@ -228,3 +232,6 @@ def _update_summary(db: Database, transcript_id: int) -> None:
                 transcript_row.last_summary_at = now
     except ExtractionError:
         logger.exception("Summary generation failed for transcript %d", transcript_id)
+        return False
+    else:
+        return True

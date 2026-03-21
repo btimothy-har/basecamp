@@ -265,10 +265,10 @@ class Daemon:
 
             now = time.monotonic()
 
-            if now - self._last_index_at >= constants.INDEX_INTERVAL:
-                self._try_spawn_index_lite(lock_dir, now)
-            elif now - self._last_summary_at >= constants.SUMMARY_INTERVAL:
+            if now - self._last_summary_at >= constants.SUMMARY_INTERVAL:
                 self._try_spawn_summary(lock_dir, now)
+            elif now - self._last_index_at >= constants.INDEX_INTERVAL:
+                self._try_spawn_index_lite(lock_dir, now)
             else:
                 self._tick_ingest(lock_dir)
 
