@@ -14,7 +14,6 @@ class DatabaseError(ObserverError):
         super().__init__(f"Database error during {operation}: {detail}")
 
 
-
 class TranscriptError(ObserverError):
     """Raised when a transcript file cannot be processed."""
 

@@ -166,5 +166,3 @@ def register_session(hook_input: HookInput) -> RegistrationResult:
         transcript=transcript,
         created=True,
     )
-
-

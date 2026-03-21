@@ -395,7 +395,6 @@ def _ensure_container_ready(runtime: str, *, message: str = "PostgreSQL is ready
         sys.exit(1)
 
 
-
 def _setup_container() -> str:
     """Provision a local PostgreSQL container, return the connection URL."""
     try:
@@ -557,9 +556,7 @@ def reprocess(yes: bool) -> None:  # noqa: FBT001
         session.query(ArtifactSchema).delete()
         session.query(TranscriptEventSchema).delete()
         session.query(WorkItemSchema).delete()
-        session.execute(
-            RawEventSchema.__table__.update().values(processed=RawEventStatus.PENDING)
-        )
+        session.execute(RawEventSchema.__table__.update().values(processed=RawEventStatus.PENDING))
     click.echo("  Cleared work_items, transcript_events, artifacts")
     click.echo("  Reset raw_events to PENDING")
 
@@ -571,9 +568,7 @@ def reprocess(yes: bool) -> None:  # noqa: FBT001
     # Phase 2: Extract per transcript
     click.echo("\nExtracting artifacts...")
     with db.session() as session:
-        transcript_ids = [
-            row[0] for row in session.query(TranscriptSchema.id).all()
-        ]
+        transcript_ids = [row[0] for row in session.query(TranscriptSchema.id).all()]
 
     extracted = 0
     for tid in transcript_ids:

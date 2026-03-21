@@ -180,5 +180,3 @@ class TestRegisterSession:
 
         assert r1.project.id == r2.project.id
         assert r1.transcript.id != r2.transcript.id
-
-
