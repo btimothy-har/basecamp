@@ -91,18 +91,18 @@ def execute_launch(
     project_name: str,
     config: Config,
     *,
-    resume: bool = False,
     label: str | None = None,
     resolved_path: Path | None = None,
+    extra_args: list[str] | None = None,
 ) -> None:
     """Launch Claude Code with the specified project configuration.
 
     Args:
         project_name: The project to launch (display name).
         config: The loaded configuration.
-        resume: Whether to resume a previous conversation.
         label: If provided, work in a labeled worktree (create or re-enter).
         resolved_path: Pre-resolved directory for path-based launch (bypasses config lookup).
+        extra_args: Additional CLI args to pass through to the Claude CLI.
 
     Raises:
         ProjectNotFoundError: If the project is not in the config.
@@ -150,9 +150,6 @@ def execute_launch(
     # Build claude command
     cmd: list[str] = [CLAUDE_COMMAND]
 
-    if resume:
-        cmd.append("--resume")
-
     # Load bundled companion plugin (always)
     companion_plugin_dir = SCRIPT_DIR / "plugins" / "companion"
     if (companion_plugin_dir / ".claude-plugin" / "plugin.json").exists():
@@ -193,6 +190,10 @@ def execute_launch(
         context_path = USER_CONTEXT_DIR / f"{project.context}.md"
         if context_path.exists():
             os.environ["BASECAMP_CONTEXT_FILE"] = str(context_path)
+
+    # Append passthrough args for the Claude CLI
+    if extra_args:
+        cmd.extend(extra_args)
 
     startup_text = _build_startup_text(
         project_name,

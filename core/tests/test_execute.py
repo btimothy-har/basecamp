@@ -43,7 +43,7 @@ class TestExecuteLaunchWorktreeIntegration:
         ):
             mock_validate.return_value = [temp_git_repo]
 
-            execute_launch("testproject", mock_config, resume=True)
+            execute_launch("testproject", mock_config, extra_args=["--resume"])
 
             # Verify chdir was called with original directory (no worktree created)
             chdir_path = mock_chdir.call_args[0][0]
@@ -65,7 +65,7 @@ class TestExecuteLaunchWorktreeIntegration:
         ):
             mock_validate.return_value = [temp_git_repo]
 
-            execute_launch("testproject", mock_config, resume=True, label="auth")
+            execute_launch("testproject", mock_config, extra_args=["--resume"], label="auth")
 
             # Verify the worktree path is used (label is the directory name)
             chdir_path = str(mock_chdir.call_args[0][0])
@@ -93,7 +93,7 @@ class TestExecuteLaunchWorktreeIntegration:
             mock_validate.return_value = [temp_git_repo]
 
             # Use same label - should re-enter existing worktree
-            execute_launch("testproject", mock_config, resume=True, label="existing")
+            execute_launch("testproject", mock_config, extra_args=["--resume"], label="existing")
 
             # Verify chdir was called with the existing worktree path
             chdir_path = mock_chdir.call_args[0][0]
@@ -165,7 +165,7 @@ class TestExecuteLaunchWorktreeIntegration:
             mock_validate.return_value = [non_git_dir]
 
             with pytest.raises(NotAGitRepoError):
-                execute_launch("testproject", mock_config, resume=True, label="auth")
+                execute_launch("testproject", mock_config, extra_args=["--resume"], label="auth")
 
     def test_launch_non_git_without_label_succeeds(
         self, non_git_dir: Path, mock_config: Config, tmp_path: Path
@@ -182,7 +182,7 @@ class TestExecuteLaunchWorktreeIntegration:
         ):
             mock_validate.return_value = [non_git_dir]
 
-            execute_launch("testproject", mock_config, resume=True)
+            execute_launch("testproject", mock_config, extra_args=["--resume"])
 
             # Verify chdir was called with original directory
             chdir_path = mock_chdir.call_args[0][0]

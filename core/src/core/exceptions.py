@@ -43,6 +43,13 @@ class PathLaunchLabelError(LauncherError):
         super().__init__("Worktree labels (-l) are not supported with path-based launch")
 
 
+class BlockedArgError(LauncherError):
+    """Raised when a user passes a Claude CLI arg that basecamp controls."""
+
+    def __init__(self, arg: str) -> None:
+        super().__init__(f"{arg} is managed by basecamp and cannot be passed through")
+
+
 class WorktreeError(LauncherError):
     """Base exception for worktree-related errors."""
 
