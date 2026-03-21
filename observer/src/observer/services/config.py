@@ -76,17 +76,6 @@ def set_extraction_model(model: str) -> None:
     _write(data)
 
 
-def get_summary_model() -> str:
-    """Return the configured summary model, falling back to the default."""
-    return _read().get("summary_model") or DEFAULT_EXTRACTION_MODEL
-
-
-def set_summary_model(model: str) -> None:
-    """Persist the summary model to the config file."""
-    data = _read()
-    data["summary_model"] = model
-    _write(data)
-
 
 def get_mode() -> str:
     """Return the observer processing mode: 'on' or 'off'.

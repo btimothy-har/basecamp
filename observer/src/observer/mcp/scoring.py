@@ -32,7 +32,7 @@ def time_decay(
     """Power-law time decay returning a value in (0, 1].
 
     Returns 0.5 at exactly scale_days. Decays slowly toward 0 but never
-    reaches it, so artifacts of any age remain differentiable by recency.
+    reaches it, so entries of any age remain differentiable by recency.
 
     Args:
         created_at: Creation timestamp of the entry.

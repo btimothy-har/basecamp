@@ -26,7 +26,7 @@ class TestTimeDecay:
         result = time_decay(old, scale_days=30.0)
         assert result < 0.5
 
-    def test_ancient_artifact_still_positive(self):
+    def test_ancient_entry_still_positive(self):
         # Power-law decay never reaches zero — old artifacts remain differentiable.
         now = datetime.now(UTC)
         ancient = now - timedelta(days=730)

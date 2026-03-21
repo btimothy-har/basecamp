@@ -9,6 +9,7 @@ from __future__ import annotations
 from sqlalchemy import func
 
 from observer.data.enums import RawEventStatus, SectionType
+from observer.data.transcript_extraction import TranscriptExtraction
 from observer.data.schemas import (
     ProjectSchema,
     RawEventSchema,
@@ -130,7 +131,7 @@ def get_project_scopes() -> list[dict]:
 
 
 def _extract_title(session, transcript_id: int) -> str | None:
-    """Extract title from the SUMMARY extraction section (first line: '## {title}')."""
+    """Extract title from the SUMMARY extraction section."""
     summary = (
         session.query(TranscriptExtractionSchema.text)
         .filter(
@@ -139,9 +140,7 @@ def _extract_title(session, transcript_id: int) -> str | None:
         )
         .first()
     )
-    if summary and summary.text and summary.text.startswith("## "):
-        return summary.text.split("\n", 1)[0].removeprefix("## ")
-    return None
+    return TranscriptExtraction.parse_title(summary.text if summary else None)
 
 
 def get_transcripts(

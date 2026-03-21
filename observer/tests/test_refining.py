@@ -4,9 +4,9 @@ import json
 from datetime import UTC, datetime, timedelta
 from unittest.mock import patch
 
-from observer.data.enums import ArtifactType, RawEventStatus, WorkItemStage, WorkItemType
+from observer.data.enums import RawEventStatus, WorkItemStage, WorkItemType
 from observer.data.raw_event import RawEvent
-from observer.data.schemas import ArtifactSchema, ProjectSchema, RawEventSchema, TranscriptEventSchema, TranscriptSchema
+from observer.data.schemas import ProjectSchema, RawEventSchema, TranscriptEventSchema, TranscriptSchema
 from observer.data.work_item import WorkItem
 from observer.exceptions import ExtractionError
 from observer.pipeline.models import ToolSummaryResult
@@ -342,11 +342,6 @@ class TestRefineBatch:
             assert len(tes) == 1
             assert text in tes[0].text
 
-        # No artifact created (prompts are not artifacts)
-        with db.session() as session:
-            artifacts = session.query(ArtifactSchema).filter_by(transcript_id=transcript_id).all()
-            assert len(artifacts) == 0
-
     def test_classifies_tool_pair(self, db, tmp_path):
         """Tool use + result get classified into a TOOL_PAIR WorkItem."""
         transcript_id = _setup_transcript(db, tmp_path)
@@ -596,47 +591,3 @@ class TestRefineBatch:
         errors = WorkItem.get_by_processed(WorkItemStage.ERROR, limit=100)
         assert len(errors) == 1
 
-    @patch("observer.pipeline.refining.refinement.summarize_tool_pair")
-    def test_mutation_tool_creates_action_artifact(self, mock_tool, db, tmp_path):
-        """Edit tool pair produces an ACTION artifact."""
-        mock_tool.return_value = ToolSummaryResult(summary="Edit: auth.py → added redirect")
-
-        transcript_id = _setup_transcript(db, tmp_path)
-
-        # Add a prompt first (for prompt_event_id tracking)
-        prompt_text = "implement auth redirect for the backend system now please"
-        prompt_content = json.dumps({"type": "user", "message": {"role": "user", "content": prompt_text}})
-        tu_content = json.dumps(
-            {
-                "type": "assistant",
-                "message": {
-                    "role": "assistant",
-                    "content": [{"type": "tool_use", "id": "tu-1", "name": "Edit", "input": {}}],
-                },
-            }
-        )
-        tr_content = json.dumps(
-            {
-                "type": "user",
-                "message": {
-                    "role": "user",
-                    "content": [{"type": "tool_result", "tool_use_id": "tu-1", "content": "ok"}],
-                },
-            }
-        )
-        _insert_raw_events(
-            db,
-            transcript_id,
-            [
-                {"event_type": "user", "content": prompt_content, "timestamp": _ts(0)},
-                {"event_type": "assistant", "content": tu_content, "timestamp": _ts(1)},
-                {"event_type": "user", "content": tr_content, "timestamp": _ts(2)},
-            ],
-        )
-
-        EventRefiner.refine_batch(db)
-
-        with db.session() as session:
-            actions = session.query(ArtifactSchema).filter_by(artifact_type=ArtifactType.ACTION.value).all()
-            assert len(actions) == 1
-            assert actions[0].prompt_event_id is not None

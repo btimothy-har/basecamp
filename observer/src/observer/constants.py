@@ -57,7 +57,10 @@ Semantic memory over past Claude Code sessions.
 
 Results are scoped to the current project and exclude the active session.
 
-Retrieval pathway:
+Retrieval pathways:
+
+search_artifacts — find specific knowledge, decisions, actions,
+and constraints extracted from past sessions.
 
 search_transcripts — find relevant past sessions by summary.
 Drill down with get_transcript_summary for the full structured

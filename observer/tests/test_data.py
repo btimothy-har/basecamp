@@ -2,18 +2,13 @@
 
 from datetime import UTC, datetime
 
-import pytest
 from observer.data import (
-    Artifact,
-    ArtifactSource,
-    ArtifactType,
     Project,
     RawEvent,
     Transcript,
     Worktree,
 )
 from observer.data.schemas import (
-    ArtifactSchema,
     ProjectSchema,
     RawEventSchema,
     TranscriptEventSchema,
@@ -21,8 +16,6 @@ from observer.data.schemas import (
     WorkItemSchema,
     WorktreeSchema,
 )
-from pydantic import ValidationError
-
 NOW = datetime.now(UTC)
 
 
@@ -107,25 +100,6 @@ class TestTranscriptModel:
             assert t.id == row.id
             assert t.started_at is not None
 
-    def test_summary_nullable(self):
-        t = Transcript(project_id=1, session_id="s1", path="/t", started_at=NOW)
-        assert t.summary is None
-
-    def test_summary_round_trip(self, db):  # noqa: ARG002
-        with db.session() as s:
-            proj = ProjectSchema(name="proj", repo_path="/repo")
-            s.add(proj)
-            s.flush()
-            row = TranscriptSchema(project_id=proj.id, session_id="s1", path="/t")
-            s.add(row)
-            s.flush()
-            row.summary = "User working on JWT auth"
-            row_id = row.id
-
-        with db.session() as s:
-            reloaded = s.get(TranscriptSchema, row_id)
-            assert reloaded.summary == "User working on JWT auth"
-
 
 class TestRawEventModel:
     def test_construction(self):
@@ -158,77 +132,6 @@ class TestRawEventModel:
             e = RawEvent.model_validate(row)
             assert e.id == row.id
             assert e.event_type == "msg"
-
-
-class TestArtifactModel:
-    def test_construction(self):
-        a = Artifact(
-            artifact_type=ArtifactType.KNOWLEDGE,
-            origin=ArtifactSource.EXTRACTED,
-            text="test",
-            created_at=NOW,
-        )
-        assert a.id is None
-        assert a.transcript_id is None
-        assert a.prompt_event_id is None
-        assert a.source is None
-
-    def test_enum_validation(self):
-        a = Artifact(
-            artifact_type="decision",
-            origin="manual",
-            text="test",
-            created_at=NOW,
-        )
-        assert a.artifact_type == ArtifactType.DECISION
-        assert a.origin == ArtifactSource.MANUAL
-
-    def test_invalid_enum_rejected(self):
-        with pytest.raises(ValidationError):
-            Artifact(
-                artifact_type="invalid",
-                origin=ArtifactSource.EXTRACTED,
-                text="test",
-                created_at=NOW,
-            )
-
-    def test_from_attributes(self, db):  # noqa: ARG002
-        with db.session() as s:
-            row = ArtifactSchema(
-                artifact_type=ArtifactType.KNOWLEDGE,
-                origin=ArtifactSource.EXTRACTED,
-                text="test",
-            )
-            s.add(row)
-            s.flush()
-            a = Artifact.model_validate(row)
-            assert a.id == row.id
-            assert a.artifact_type == ArtifactType.KNOWLEDGE
-
-    def test_from_attributes_with_prompt_event_id(self, db):  # noqa: ARG002
-        with db.session() as s:
-            proj = ProjectSchema(name="proj-prompt", repo_path="/repo-prompt")
-            s.add(proj)
-            s.flush()
-            tr = TranscriptSchema(project_id=proj.id, session_id="s-prompt", path="/t-prompt")
-            s.add(tr)
-            s.flush()
-            wi = WorkItemSchema(transcript_id=tr.id, item_type="prompt", event_ids=[])
-            s.add(wi)
-            s.flush()
-            te = TranscriptEventSchema(transcript_id=tr.id, work_item_id=wi.id, event_type="prompt", text="user prompt")
-            s.add(te)
-            s.flush()
-            child = ArtifactSchema(
-                artifact_type=ArtifactType.KNOWLEDGE,
-                origin=ArtifactSource.EXTRACTED,
-                text="knowledge",
-                prompt_event_id=te.id,
-            )
-            s.add(child)
-            s.flush()
-            a = Artifact.model_validate(child)
-            assert a.prompt_event_id == te.id
 
 
 class TestLookupMethods:

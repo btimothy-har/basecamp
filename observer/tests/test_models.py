@@ -3,17 +3,17 @@
 from datetime import UTC, datetime
 
 import pytest
-from observer.data.enums import ArtifactSource, ArtifactType
+from observer.data.enums import SectionType
 from observer.data.schemas import (
-    ArtifactSchema,
     ProjectSchema,
     RawEventSchema,
     TranscriptEventSchema,
+    TranscriptExtractionSchema,
     TranscriptSchema,
     WorkItemSchema,
     WorktreeSchema,
 )
-from sqlalchemy import inspect, text
+from sqlalchemy import inspect
 from sqlalchemy.exc import IntegrityError
 
 
@@ -53,19 +53,6 @@ def _make_raw_event(session, transcript, *, event_type="msg", content="hello") -
     session.add(e)
     session.flush()
     return e
-
-
-def _make_artifact(
-    session,
-    *,
-    artifact_type=ArtifactType.KNOWLEDGE,
-    origin=ArtifactSource.EXTRACTED,
-    text="test",
-) -> ArtifactSchema:
-    a = ArtifactSchema(artifact_type=artifact_type, origin=origin, text=text)
-    session.add(a)
-    session.flush()
-    return a
 
 
 class TestIngestionModels:
@@ -198,84 +185,41 @@ class TestIngestionModels:
                 s.flush()
 
 
-class TestMemoryModels:
-    """Tests for Artifact."""
+class TestExtractionModels:
+    """Tests for TranscriptExtractionSchema."""
 
-    def test_create_artifact(self, db):
-        with db.session() as s:
-            a = _make_artifact(s)
-            assert a.id is not None
-            assert a.artifact_type == ArtifactType.KNOWLEDGE
-            assert a.origin == ArtifactSource.EXTRACTED
-            assert a.created_at is not None
-            assert a.source is None
-
-    def test_artifact_with_description(self, db):
-        with db.session() as s:
-            a = _make_artifact(s)
-            a.source = "detailed info"
-            s.flush()
-            assert a.source == "detailed info"
-
-    def test_artifact_type_values(self, db):
-        with db.session() as s:
-            for at in ArtifactType:
-                a = ArtifactSchema(
-                    artifact_type=at,
-                    origin=ArtifactSource.MANUAL,
-                    text=f"test-{at}",
-                )
-                s.add(a)
-            s.flush()
-            count = s.execute(text("SELECT COUNT(*) FROM artifacts")).scalar()
-            assert count == len(ArtifactType)
-
-    def test_artifact_with_transcript_and_snippet(self, db):
+    def test_create_extraction(self, db):
         with db.session() as s:
             p = _make_project(s)
             t = _make_transcript(s, p)
-            a = ArtifactSchema(
-                artifact_type=ArtifactType.KNOWLEDGE,
-                origin=ArtifactSource.EXTRACTED,
-                text="test",
+            row = TranscriptExtractionSchema(
                 transcript_id=t.id,
-                source="relevant excerpt",
+                section_type=SectionType.SUMMARY,
+                text="## JWT Auth\nImplemented JWT authentication",
             )
-            s.add(a)
+            s.add(row)
             s.flush()
-            assert a.transcript_id == t.id
-            assert a.source == "relevant excerpt"
+            assert row.id is not None
+            assert row.section_type == SectionType.SUMMARY
+            assert row.created_at is not None
+            assert row.indexed_at is None
 
-    def test_artifact_nullable_transcript_and_snippet(self, db):
+    def test_unique_constraint_transcript_section(self, db):
+        """Only one row per (transcript_id, section_type)."""
         with db.session() as s:
-            a = _make_artifact(s)
-            assert a.transcript_id is None
-            assert a.source is None
-
-    def test_artifact_prompt_event_id(self, db):
-        with db.session() as s:
-            p = _make_project(s, name="proj-prompt", repo_path="/repo-prompt")
-            t = _make_transcript(s, p, session_id="s-prompt", path="/t-prompt")
-            wi = WorkItemSchema(transcript_id=t.id, item_type="prompt", event_ids=[])
-            s.add(wi)
+            p = _make_project(s)
+            t = _make_transcript(s, p)
+            s.add(TranscriptExtractionSchema(
+                transcript_id=t.id, section_type=SectionType.KNOWLEDGE, text="first",
+            ))
             s.flush()
-            te = TranscriptEventSchema(transcript_id=t.id, work_item_id=wi.id, event_type="prompt", text="user prompt")
-            s.add(te)
-            s.flush()
-            child = ArtifactSchema(
-                artifact_type=ArtifactType.KNOWLEDGE,
-                origin=ArtifactSource.EXTRACTED,
-                text="knowledge",
-                prompt_event_id=te.id,
-            )
-            s.add(child)
-            s.flush()
-            assert child.prompt_event_id == te.id
-
-    def test_artifact_prompt_event_id_nullable(self, db):
-        with db.session() as s:
-            a = _make_artifact(s)
-            assert a.prompt_event_id is None
+        with pytest.raises(Exception):
+            with db.session() as s:
+                t_row = s.get(TranscriptSchema, 1)
+                s.add(TranscriptExtractionSchema(
+                    transcript_id=t_row.id, section_type=SectionType.KNOWLEDGE, text="duplicate",
+                ))
+                s.flush()
 
 
 class TestSchemaIntegrity:
@@ -286,7 +230,7 @@ class TestSchemaIntegrity:
         "worktrees",
         "transcripts",
         "raw_events",
-        "artifacts",
+        "transcript_extractions",
     }
 
     def test_all_tables_created(self, db):
@@ -303,10 +247,9 @@ class TestSchemaIntegrity:
             assert "ix_raw_events_processed" in indexes
             assert "ix_raw_events_event_type" in indexes
 
-    def test_artifacts_indexes(self, db):
+    def test_transcript_extractions_indexes(self, db):
         with db.session() as s:
             inspector = inspect(s.bind)
-            indexes = {idx["name"] for idx in inspector.get_indexes("artifacts")}
-            assert "ix_artifacts_artifact_type" in indexes
-            assert "ix_artifacts_origin" in indexes
-            assert "ix_artifacts_prompt_event_id" in indexes
+            indexes = {idx["name"] for idx in inspector.get_indexes("transcript_extractions")}
+            assert "ix_transcript_extractions_transcript_id" in indexes
+            assert "ix_transcript_extractions_section_type" in indexes

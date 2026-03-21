@@ -16,7 +16,7 @@ from observer.exceptions import (
     ExtractionSubprocessError,
     ExtractionTimeoutError,
 )
-from observer.services.config import get_summary_model
+from observer.services.config import get_extraction_model
 
 logger = logging.getLogger(__name__)
 
@@ -42,7 +42,7 @@ class Agent:
         timeout: int = EXTRACTION_TIMEOUT,
     ) -> None:
         self.system_prompt = system_prompt
-        self.model = model or get_summary_model()
+        self.model = model or get_extraction_model()
         self.timeout = timeout
 
     def run(

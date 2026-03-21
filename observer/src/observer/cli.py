@@ -23,12 +23,10 @@ from observer.services.config import (
     get_extraction_model,
     get_mode,
     get_pg_url,
-    get_summary_model,
     set_db_source,
     set_extraction_model,
     set_mode,
     set_pg_url,
-    set_summary_model,
 )
 from observer.services.container import (
     ContainerRuntimeNotFoundError,
@@ -312,25 +310,23 @@ def viz(port: int, host: str, headless: bool) -> None:  # noqa: FBT001
 
 @main.command()
 def mcp() -> None:
-    """Start the MCP server for semantic search over observer artifacts."""
+    """Start the MCP server for semantic search over observer memory."""
     from observer.mcp.server import main as mcp_main  # noqa: PLC0415
 
     mcp_main()
 
 
 @main.command()
-@click.argument("target", required=False, type=click.Choice(["full", "lite", "off"]))
+@click.argument("target", required=False, type=click.Choice(["on", "off"]))
 def mode(target: str | None) -> None:
     """Show or set the observer processing mode.
 
     \b
-    full  — full extraction pipeline (artifacts, summaries, indexing)
-    lite  — ingestion + summaries only (no artifact extraction)
-    off   — ingestion only (no LLM calls)
+    on   — full pipeline (extraction, embedding, indexing)
+    off  — ingestion only (no LLM calls)
     """
     _mode_descriptions = {
-        "full": "Full extraction pipeline (artifacts, summaries, indexing)",
-        "lite": "Ingestion + summaries only (no artifact extraction)",
+        "on": "Full pipeline (extraction, embedding, indexing)",
         "off": "Ingestion only (no LLM calls)",
     }
     current = get_mode()
@@ -375,26 +371,17 @@ def setup() -> None:
 
     _model_choices = ["haiku", "sonnet", "opus"]
     extraction_model = questionary.select(
-        "Extraction model (artifact extraction):",
+        "Extraction model:",
         choices=_model_choices,
         default=get_extraction_model(),
     ).ask()
     if extraction_model is None:
         sys.exit(1)
 
-    summary_model = questionary.select(
-        "Summary model (tool/thinking summarization):",
-        choices=_model_choices,
-        default=get_summary_model(),
-    ).ask()
-    if summary_model is None:
-        sys.exit(1)
-
     mode_choice = questionary.select(
         "Processing mode:",
         choices=[
-            questionary.Choice("Full (artifacts, summaries, indexing)", value="full"),
-            questionary.Choice("Lite (ingestion + summaries only)", value="lite"),
+            questionary.Choice("On (extraction, embedding, indexing)", value="on"),
             questionary.Choice("Off (ingestion only, no LLM calls)", value="off"),
         ],
         default=get_mode(),
@@ -405,7 +392,6 @@ def setup() -> None:
     set_pg_url(url)
     set_db_source(db_choice)
     set_extraction_model(extraction_model)
-    set_summary_model(summary_model)
     set_mode(mode_choice)
     click.echo(f"\nConfiguration saved → {CONFIG_FILE}")
 

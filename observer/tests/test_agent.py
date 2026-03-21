@@ -45,7 +45,7 @@ class TestAgentRun:
             assert "--output-format" in cmd
             assert cmd[cmd.index("--output-format") + 1] == "json"
             assert "--model" in cmd
-            assert cmd[cmd.index("--model") + 1] == "haiku"
+            assert cmd[cmd.index("--model") + 1] == "sonnet"
             assert "--no-session-persistence" in cmd
             assert "--tools" in cmd
             assert cmd[cmd.index("--tools") + 1] == ""

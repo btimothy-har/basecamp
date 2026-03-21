@@ -5,7 +5,7 @@ from __future__ import annotations
 from unittest.mock import patch
 
 from observer.mcp.server import (
-    _get_artifact,
+    _get_extraction,
     _get_transcript_summary,
     _resolve_search_context,
     _search_artifacts,
@@ -154,18 +154,18 @@ class TestSearchTranscriptsTool:
         assert "error" not in result
 
 
-class TestGetArtifactTool:
+class TestGetExtractionTool:
     def test_found(self):
-        mock_result = {"id": 1, "type": "knowledge", "text": "artifact text"}
+        mock_result = {"id": 1, "type": "knowledge", "text": "extraction text"}
 
-        with patch("observer.mcp.engine.get_artifact", return_value=mock_result):
-            result = _get_artifact(1)
+        with patch("observer.mcp.engine.get_extraction", return_value=mock_result):
+            result = _get_extraction(1)
 
         assert result["id"] == 1
 
     def test_not_found(self):
-        with patch("observer.mcp.engine.get_artifact", return_value=None):
-            result = _get_artifact(99999)
+        with patch("observer.mcp.engine.get_extraction", return_value=None):
+            result = _get_extraction(99999)
 
         assert "error" in result
 

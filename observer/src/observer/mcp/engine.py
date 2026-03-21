@@ -183,10 +183,7 @@ def search_transcripts(
             if score < threshold:
                 continue
 
-            # Title is embedded as the first line of the SUMMARY section: "## {title}"
-            title = None
-            if extraction.text and extraction.text.startswith("## "):
-                title = extraction.text.split("\n", 1)[0].removeprefix("## ")
+            title = TranscriptExtraction.parse_title(extraction.text)
 
             result: dict[str, Any] = {
                 "source_id": extraction.id,
@@ -241,11 +238,7 @@ def get_transcript_summary(transcript_id: int) -> dict[str, Any] | None:
 
     sections = _extraction_sections_dict(transcript_id)
 
-    # Extract title from the SUMMARY section (first line: "## {title}")
-    title = None
-    summary_text = sections.get(SectionType.SUMMARY)
-    if summary_text and summary_text.startswith("## "):
-        title = summary_text.split("\n", 1)[0].removeprefix("## ")
+    title = TranscriptExtraction.parse_title(sections.get(SectionType.SUMMARY))
 
     return {
         "id": transcript.id,

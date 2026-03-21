@@ -90,6 +90,13 @@ class TranscriptExtraction(BaseModel):
                     pending.append(cls.model_validate(row))
             return pending
 
+    @staticmethod
+    def parse_title(summary_text: str | None) -> str | None:
+        """Extract title from summary text (first line: '## {title}')."""
+        if summary_text and summary_text.startswith("## "):
+            return summary_text.split("\n", 1)[0].removeprefix("## ")
+        return None
+
     @classmethod
     def get_for_transcript(cls, transcript_id: int) -> list[Self]:
         with Database().session() as session:
