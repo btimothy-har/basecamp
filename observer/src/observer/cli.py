@@ -585,7 +585,7 @@ def reprocess(yes: bool) -> None:  # noqa: FBT001
 
     # Phase 3: Embed all artifacts
     click.echo("\nEmbedding artifacts...")
-    SearchIndexer.index_batch(db)
+    SearchIndexer.index_pending(db)
     click.echo("  Embedding complete")
 
     click.echo("\nReprocessing complete.")
@@ -626,6 +626,6 @@ def process(session_id: str) -> None:
         TranscriptExtractor.extract_transcript(db, transcript.id)
 
         # Phase 3: Embed artifacts → pgvector
-        SearchIndexer.index_batch(db, transcript_id=transcript.id)
+        SearchIndexer.index_pending(db, transcript_id=transcript.id)
     finally:
         db.close()

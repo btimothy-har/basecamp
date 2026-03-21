@@ -9,7 +9,6 @@ import logging
 from datetime import UTC, datetime
 
 from observer.constants import (
-    EMBEDDING_BATCH_LIMIT,
     EMBEDDING_DIMENSIONS,
     EMBEDDING_MODEL_NAME,
     MODEL_CACHE_DIR,
@@ -46,14 +45,13 @@ class SearchIndexer:
         return Artifact.has_pending_index()
 
     @staticmethod
-    def index_batch(
+    def index_pending(
         db: Database,
         *,
         transcript_id: int | None = None,
-        batch_limit: int = EMBEDDING_BATCH_LIMIT,
     ) -> int:
-        """Embed a batch of pending artifacts. Returns count of rows updated."""
-        to_index = Artifact.get_pending_index(transcript_id=transcript_id)[:batch_limit]
+        """Embed pending artifacts. Returns count of rows indexed."""
+        to_index = Artifact.get_pending_index(transcript_id=transcript_id)
 
         if not to_index:
             return 0
