@@ -3,7 +3,7 @@
 Three layers:
 - Ingestion: ProjectSchema, WorktreeSchema, TranscriptSchema, RawEventSchema
 - Pipeline: WorkItemSchema, TranscriptEventSchema
-- Memory: TranscriptExtractionSchema (includes embedding + search index)
+- Memory: ArtifactSchema (includes embedding + search index)
 """
 
 from datetime import UTC, datetime
@@ -130,14 +130,14 @@ class TranscriptEventSchema(Base):
     work_item: Mapped["WorkItemSchema"] = relationship(back_populates="transcript_events")
 
 
-class TranscriptExtractionSchema(Base):
-    __tablename__ = "transcript_extractions"
+class ArtifactSchema(Base):
+    __tablename__ = "artifacts"
     __table_args__ = (
         UniqueConstraint("transcript_id", "section_type"),
-        Index("ix_transcript_extractions_transcript_id", "transcript_id"),
-        Index("ix_transcript_extractions_section_type", "section_type"),
+        Index("ix_artifacts_transcript_id", "transcript_id"),
+        Index("ix_artifacts_section_type", "section_type"),
         Index(
-            "ix_transcript_extractions_embedding_hnsw",
+            "ix_artifacts_embedding_hnsw",
             "embedding",
             postgresql_using="hnsw",
             postgresql_with={"m": 16, "ef_construction": 64},

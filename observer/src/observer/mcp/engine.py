@@ -1,8 +1,8 @@
-"""Search engine — two retrieval pathways over transcript extractions.
+"""Search engine — two retrieval pathways over artifacts.
 
-- ``search_artifacts``: KNN over non-summary extraction sections → score → dedup.
+- ``search_artifacts``: KNN over non-summary artifacts → score → dedup.
   Returns specific facts, decisions, actions, and constraints.
-- ``search_transcripts``: KNN over summary extraction sections → score → dedup.
+- ``search_transcripts``: KNN over summary artifacts → score → dedup.
   Returns session-level matches for orientation.
 """
 
@@ -21,12 +21,12 @@ from observer.constants import (
 from observer.data.enums import SectionType
 from observer.data.schemas import (
     ProjectSchema,
-    TranscriptExtractionSchema,
+    ArtifactSchema,
     TranscriptSchema,
     WorktreeSchema,
 )
 from observer.data.transcript import Transcript
-from observer.data.transcript_extraction import TranscriptExtraction
+from observer.data.artifact import Artifact
 from observer.mcp.scoring import compute_score, deduplicate
 from observer.services.db import Database
 
@@ -52,12 +52,12 @@ def _get_model() -> Any:
 def _apply_scope_filters(q, *, project_name, worktree, session_id):
     """Apply project, worktree, and session exclusion filters to a query.
 
-    The query must already have TranscriptExtractionSchema in the FROM clause.
+    The query must already have ArtifactSchema in the FROM clause.
     Joins TranscriptSchema when needed (project, worktree, or session exclusion).
     """
     needs_transcript_join = project_name is not None or worktree is not None or session_id is not None
     if needs_transcript_join:
-        q = q.join(TranscriptSchema, TranscriptExtractionSchema.transcript_id == TranscriptSchema.id)
+        q = q.join(TranscriptSchema, ArtifactSchema.transcript_id == TranscriptSchema.id)
 
     if project_name is not None:
         q = q.join(ProjectSchema, TranscriptSchema.project_id == ProjectSchema.id).filter(
@@ -96,15 +96,15 @@ def search_artifacts(
     db = Database()
 
     with db.session() as session:
-        distance_expr = TranscriptExtractionSchema.embedding.cosine_distance(query_vector)
+        distance_expr = ArtifactSchema.embedding.cosine_distance(query_vector)
         q = (
             session.query(
-                TranscriptExtractionSchema,
+                ArtifactSchema,
                 distance_expr.label("distance"),
             )
             .filter(
-                TranscriptExtractionSchema.embedding.isnot(None),
-                TranscriptExtractionSchema.section_type != SectionType.SUMMARY,
+                ArtifactSchema.embedding.isnot(None),
+                ArtifactSchema.section_type != SectionType.SUMMARY,
             )
         )
 
@@ -162,13 +162,13 @@ def search_transcripts(
     db = Database()
 
     with db.session() as session:
-        distance_expr = TranscriptExtractionSchema.embedding.cosine_distance(query_vector)
+        distance_expr = ArtifactSchema.embedding.cosine_distance(query_vector)
         q = session.query(
-            TranscriptExtractionSchema,
+            ArtifactSchema,
             distance_expr.label("distance"),
         ).filter(
-            TranscriptExtractionSchema.embedding.isnot(None),
-            TranscriptExtractionSchema.section_type == SectionType.SUMMARY,
+            ArtifactSchema.embedding.isnot(None),
+            ArtifactSchema.section_type == SectionType.SUMMARY,
         )
 
         q = _apply_scope_filters(q, project_name=project_name, worktree=worktree, session_id=session_id)
@@ -183,7 +183,7 @@ def search_transcripts(
             if score < threshold:
                 continue
 
-            title = TranscriptExtraction.parse_title(extraction.text)
+            title = Artifact.parse_title(extraction.text)
 
             result: dict[str, Any] = {
                 "source_id": extraction.id,
@@ -211,13 +211,13 @@ def search_transcripts(
 
 def _extraction_sections_dict(transcript_id: int) -> dict[str, str]:
     """Get extraction sections for a transcript as {section_type: text}."""
-    extractions = TranscriptExtraction.get_for_transcript(transcript_id)
+    extractions = Artifact.get_for_transcript(transcript_id)
     return {e.section_type: e.text for e in extractions}
 
 
 def get_extraction(extraction_id: int) -> dict[str, Any] | None:
     """Retrieve a single transcript extraction section by ID."""
-    extraction = TranscriptExtraction.get(extraction_id)
+    extraction = Artifact.get(extraction_id)
     if extraction is None:
         return None
 
@@ -238,7 +238,7 @@ def get_transcript_summary(transcript_id: int) -> dict[str, Any] | None:
 
     sections = _extraction_sections_dict(transcript_id)
 
-    title = TranscriptExtraction.parse_title(sections.get(SectionType.SUMMARY))
+    title = Artifact.parse_title(sections.get(SectionType.SUMMARY))
 
     return {
         "id": transcript.id,

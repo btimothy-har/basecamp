@@ -9,11 +9,11 @@ from __future__ import annotations
 from sqlalchemy import func
 
 from observer.data.enums import RawEventStatus, SectionType
-from observer.data.transcript_extraction import TranscriptExtraction
+from observer.data.artifact import Artifact
 from observer.data.schemas import (
     ProjectSchema,
     RawEventSchema,
-    TranscriptExtractionSchema,
+    ArtifactSchema,
     TranscriptSchema,
 )
 from observer.services.db import Database
@@ -46,15 +46,15 @@ def get_pipeline_stats(
     """Top-level counts for the pipeline overview."""
     with Database().session() as session:
         events_q = session.query(RawEventSchema)
-        extractions_q = session.query(TranscriptExtractionSchema)
+        extractions_q = session.query(ArtifactSchema)
 
         if transcript_id is not None:
             events_q = events_q.filter(RawEventSchema.transcript_id == transcript_id)
-            extractions_q = extractions_q.filter(TranscriptExtractionSchema.transcript_id == transcript_id)
+            extractions_q = extractions_q.filter(ArtifactSchema.transcript_id == transcript_id)
         elif project_id is not None:
             tid_sq = _scoped_transcript_ids(session, project_id, worktree_id)
             events_q = events_q.filter(RawEventSchema.transcript_id.in_(tid_sq))
-            extractions_q = extractions_q.filter(TranscriptExtractionSchema.transcript_id.in_(tid_sq))
+            extractions_q = extractions_q.filter(ArtifactSchema.transcript_id.in_(tid_sq))
 
         total_events = events_q.count()
         processed = events_q.filter(RawEventSchema.processed == RawEventStatus.PROCESSED).count()
@@ -98,14 +98,14 @@ def get_section_type_counts(
     """Extraction counts grouped by section type."""
     with Database().session() as session:
         q = session.query(
-            TranscriptExtractionSchema.section_type, func.count(TranscriptExtractionSchema.id)
-        ).group_by(TranscriptExtractionSchema.section_type)
+            ArtifactSchema.section_type, func.count(ArtifactSchema.id)
+        ).group_by(ArtifactSchema.section_type)
 
         if transcript_id is not None:
-            q = q.filter(TranscriptExtractionSchema.transcript_id == transcript_id)
+            q = q.filter(ArtifactSchema.transcript_id == transcript_id)
         elif project_id is not None:
             q = q.filter(
-                TranscriptExtractionSchema.transcript_id.in_(
+                ArtifactSchema.transcript_id.in_(
                     _scoped_transcript_ids(session, project_id, worktree_id)
                 )
             )
@@ -133,14 +133,14 @@ def get_project_scopes() -> list[dict]:
 def _extract_title(session, transcript_id: int) -> str | None:
     """Extract title from the SUMMARY extraction section."""
     summary = (
-        session.query(TranscriptExtractionSchema.text)
+        session.query(ArtifactSchema.text)
         .filter(
-            TranscriptExtractionSchema.transcript_id == transcript_id,
-            TranscriptExtractionSchema.section_type == SectionType.SUMMARY,
+            ArtifactSchema.transcript_id == transcript_id,
+            ArtifactSchema.section_type == SectionType.SUMMARY,
         )
         .first()
     )
-    return TranscriptExtraction.parse_title(summary.text if summary else None)
+    return Artifact.parse_title(summary.text if summary else None)
 
 
 def get_transcripts(
@@ -167,8 +167,8 @@ def get_transcripts(
                 session.query(func.count(RawEventSchema.id)).filter(RawEventSchema.transcript_id == r.id).scalar()
             )
             extraction_count = (
-                session.query(func.count(TranscriptExtractionSchema.id))
-                .filter(TranscriptExtractionSchema.transcript_id == r.id)
+                session.query(func.count(ArtifactSchema.id))
+                .filter(ArtifactSchema.transcript_id == r.id)
                 .scalar()
             )
             title = _extract_title(session, r.id)
@@ -193,19 +193,19 @@ def get_extractions(
 ) -> list[dict]:
     """Extraction sections with text preview."""
     with Database().session() as session:
-        q = session.query(TranscriptExtractionSchema)
+        q = session.query(ArtifactSchema)
         if transcript_id is not None:
-            q = q.filter(TranscriptExtractionSchema.transcript_id == transcript_id)
+            q = q.filter(ArtifactSchema.transcript_id == transcript_id)
         elif project_id is not None:
             q = q.filter(
-                TranscriptExtractionSchema.transcript_id.in_(
+                ArtifactSchema.transcript_id.in_(
                     _scoped_transcript_ids(session, project_id, worktree_id)
                 )
             )
         if section_type is not None:
-            q = q.filter(TranscriptExtractionSchema.section_type == section_type)
+            q = q.filter(ArtifactSchema.section_type == section_type)
 
-        rows = q.order_by(TranscriptExtractionSchema.created_at.desc()).all()
+        rows = q.order_by(ArtifactSchema.created_at.desc()).all()
         return [
             {
                 "id": r.id,
@@ -221,7 +221,7 @@ def get_extractions(
 def get_extraction_detail(extraction_id: int) -> dict | None:
     """Single extraction section with full text."""
     with Database().session() as session:
-        row = session.get(TranscriptExtractionSchema, extraction_id)
+        row = session.get(ArtifactSchema, extraction_id)
         if row is None:
             return None
 
@@ -247,9 +247,9 @@ def get_timeline_events(transcript_id: int) -> list[dict]:
             .all()
         )
         extractions = (
-            session.query(TranscriptExtractionSchema)
-            .filter(TranscriptExtractionSchema.transcript_id == transcript_id)
-            .order_by(TranscriptExtractionSchema.created_at)
+            session.query(ArtifactSchema)
+            .filter(ArtifactSchema.transcript_id == transcript_id)
+            .order_by(ArtifactSchema.created_at)
             .all()
         )
 

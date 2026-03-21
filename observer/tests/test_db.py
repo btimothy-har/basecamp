@@ -74,18 +74,18 @@ class TestDatabaseMissingUrl:
 
 
 class TestExtractionEmbedding:
-    """Tests for embedding support on transcript_extractions table."""
+    """Tests for embedding support on artifacts table."""
 
     def test_hnsw_index_exists(self, db):
         with db.session() as session:
             result = session.execute(
                 text(
                     "SELECT indexname FROM pg_indexes "
-                    "WHERE tablename = 'transcript_extractions' "
-                    "AND indexname = 'ix_transcript_extractions_embedding_hnsw'"
+                    "WHERE tablename = 'artifacts' "
+                    "AND indexname = 'ix_artifacts_embedding_hnsw'"
                 )
             ).scalar()
-            assert result == "ix_transcript_extractions_embedding_hnsw"
+            assert result == "ix_artifacts_embedding_hnsw"
 
     def test_embedding_column_dimensions(self, db):
         with db.session() as session:
@@ -93,7 +93,7 @@ class TestExtractionEmbedding:
                 text(
                     "SELECT atttypmod FROM pg_attribute "
                     "JOIN pg_class ON pg_attribute.attrelid = pg_class.oid "
-                    "WHERE pg_class.relname = 'transcript_extractions' "
+                    "WHERE pg_class.relname = 'artifacts' "
                     "AND pg_attribute.attname = 'embedding'"
                 )
             ).scalar()

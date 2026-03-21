@@ -9,7 +9,7 @@ from datetime import UTC, datetime
 
 from observer.data.enums import SectionType, WorkItemType
 from observer.data.transcript_event import TranscriptEvent
-from observer.data.transcript_extraction import TranscriptExtraction
+from observer.data.artifact import Artifact
 from observer.exceptions import ExtractionError
 from observer.pipeline.llm import extract_sections
 from observer.services.db import Database
@@ -59,14 +59,14 @@ class TranscriptExtractor:
                 if section_type == SectionType.SUMMARY:
                     text = f"## {result.title}\n{text}"
 
-                extraction = TranscriptExtraction(
+                artifact = Artifact(
                     transcript_id=transcript_id,
                     section_type=section_type,
                     text=text,
                     created_at=now,
                     updated_at=now,
                 )
-                extraction.save(session)
+                artifact.save(session)
                 count += 1
 
         logger.info(

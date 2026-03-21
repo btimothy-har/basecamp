@@ -15,7 +15,7 @@ class SummaryResult(BaseModel):
     summary: str
 
 
-class TranscriptExtractionResult(BaseModel):
+class ExtractionResult(BaseModel):
     """Structured extraction result with one field per section type."""
 
     title: str

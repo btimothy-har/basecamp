@@ -11,7 +11,7 @@ from observer.constants import EMBEDDING_DIMENSIONS
 from observer.data.enums import SectionType
 from observer.data.schemas import (
     ProjectSchema,
-    TranscriptExtractionSchema,
+    ArtifactSchema,
     TranscriptSchema,
 )
 from observer.mcp import engine
@@ -55,7 +55,7 @@ def _seed_extraction(
         session.flush()
 
         text = f"test extraction of type {section_type.value}"
-        extraction = TranscriptExtractionSchema(
+        extraction = ArtifactSchema(
             transcript_id=transcript.id,
             section_type=section_type,
             text=text,
@@ -92,7 +92,7 @@ def _seed_summary(
         session.add(transcript)
         session.flush()
 
-        extraction = TranscriptExtractionSchema(
+        extraction = ArtifactSchema(
             transcript_id=transcript.id,
             section_type=SectionType.SUMMARY,
             text=summary_text,
@@ -195,7 +195,7 @@ class TestSearchArtifacts:
             session.flush()
 
             # Extraction without embedding (not yet indexed)
-            extraction = TranscriptExtractionSchema(
+            extraction = ArtifactSchema(
                 transcript_id=transcript.id,
                 section_type=SectionType.KNOWLEDGE,
                 text="unindexed knowledge",
@@ -315,7 +315,7 @@ class TestGetSession:
 
         # Add a second section type to the same transcript
         with db.session() as session:
-            extraction = TranscriptExtractionSchema(
+            extraction = ArtifactSchema(
                 transcript_id=transcript_id,
                 section_type=SectionType.KNOWLEDGE,
                 text="some knowledge",

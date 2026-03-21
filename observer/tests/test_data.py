@@ -13,12 +13,12 @@ from observer.data.schemas import (
     ProjectSchema,
     RawEventSchema,
     TranscriptEventSchema,
-    TranscriptExtractionSchema,
+    ArtifactSchema,
     TranscriptSchema,
     WorkItemSchema,
     WorktreeSchema,
 )
-from observer.data.transcript_extraction import TranscriptExtraction
+from observer.data.artifact import Artifact
 NOW = datetime.now(UTC)
 
 
@@ -182,8 +182,8 @@ class TestLookupMethods:
         assert Transcript.get_by_session_id("nonexistent") is None
 
 
-class TestTranscriptExtractionSave:
-    """Tests for TranscriptExtraction.save() upsert behavior."""
+class TestArtifactSave:
+    """Tests for Artifact.save() upsert behavior."""
 
     def _seed_transcript(self, db) -> int:
         """Create a project + transcript, return transcript_id."""
@@ -203,7 +203,7 @@ class TestTranscriptExtractionSave:
     def test_insert_creates_new_row(self, db):
         tid = self._seed_transcript(db)
         now = datetime.now(UTC)
-        extraction = TranscriptExtraction(
+        extraction = Artifact(
             transcript_id=tid,
             section_type=SectionType.KNOWLEDGE,
             text="some knowledge",
@@ -223,7 +223,7 @@ class TestTranscriptExtractionSave:
         later = now + timedelta(seconds=10)
 
         with db.session() as session:
-            TranscriptExtraction(
+            Artifact(
                 transcript_id=tid,
                 section_type=SectionType.KNOWLEDGE,
                 text="v1",
@@ -232,7 +232,7 @@ class TestTranscriptExtractionSave:
             ).save(session)
 
         with db.session() as session:
-            updated = TranscriptExtraction(
+            updated = Artifact(
                 transcript_id=tid,
                 section_type=SectionType.KNOWLEDGE,
                 text="v2",
@@ -244,10 +244,10 @@ class TestTranscriptExtractionSave:
 
         with db.session() as session:
             count = (
-                session.query(TranscriptExtractionSchema)
+                session.query(ArtifactSchema)
                 .filter(
-                    TranscriptExtractionSchema.transcript_id == tid,
-                    TranscriptExtractionSchema.section_type == SectionType.KNOWLEDGE,
+                    ArtifactSchema.transcript_id == tid,
+                    ArtifactSchema.section_type == SectionType.KNOWLEDGE,
                 )
                 .count()
             )
@@ -258,14 +258,14 @@ class TestTranscriptExtractionSave:
         now = datetime.now(UTC)
 
         with db.session() as session:
-            TranscriptExtraction(
+            Artifact(
                 transcript_id=tid,
                 section_type=SectionType.KNOWLEDGE,
                 text="knowledge",
                 created_at=now,
                 updated_at=now,
             ).save(session)
-            TranscriptExtraction(
+            Artifact(
                 transcript_id=tid,
                 section_type=SectionType.DECISIONS,
                 text="decisions",
@@ -275,8 +275,8 @@ class TestTranscriptExtractionSave:
 
         with db.session() as session:
             count = (
-                session.query(TranscriptExtractionSchema)
-                .filter(TranscriptExtractionSchema.transcript_id == tid)
+                session.query(ArtifactSchema)
+                .filter(ArtifactSchema.transcript_id == tid)
                 .count()
             )
         assert count == 2
@@ -288,7 +288,7 @@ class TestTranscriptExtractionSave:
 
         for _ in range(2):
             with db.session() as session:
-                TranscriptExtraction(
+                Artifact(
                     transcript_id=tid,
                     section_type=SectionType.SUMMARY,
                     text="same text",
@@ -298,10 +298,10 @@ class TestTranscriptExtractionSave:
 
         with db.session() as session:
             count = (
-                session.query(TranscriptExtractionSchema)
+                session.query(ArtifactSchema)
                 .filter(
-                    TranscriptExtractionSchema.transcript_id == tid,
-                    TranscriptExtractionSchema.section_type == SectionType.SUMMARY,
+                    ArtifactSchema.transcript_id == tid,
+                    ArtifactSchema.section_type == SectionType.SUMMARY,
                 )
                 .count()
             )

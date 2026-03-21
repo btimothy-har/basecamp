@@ -1,8 +1,8 @@
-"""Search indexing pipeline — embeds transcript extraction sections.
+"""Search indexing pipeline — embeds artifact sections.
 
-Runs as a batch processor on the daemon's polling cadence. Reads extraction
-sections that need embedding, encodes with sentence-transformers, and updates
-the extraction rows with embedding vectors.
+Runs as a batch processor on the daemon's polling cadence. Reads artifacts
+that need embedding, encodes with sentence-transformers, and updates
+the artifact rows with embedding vectors.
 """
 
 import hashlib
@@ -15,7 +15,7 @@ from observer.constants import (
     EMBEDDING_MODEL_NAME,
     MODEL_CACHE_DIR,
 )
-from observer.data.transcript_extraction import TranscriptExtraction
+from observer.data.artifact import Artifact
 from observer.exceptions import EmbeddingShapeError
 from observer.services.db import Database
 
@@ -39,12 +39,12 @@ def _content_hash(text: str) -> str:
 
 
 class SearchIndexer:
-    """Embeds transcript extraction sections for semantic search."""
+    """Embeds artifacts for semantic search."""
 
     @staticmethod
     def has_pending() -> bool:
-        """Check if any extraction sections need embedding."""
-        return TranscriptExtraction.has_pending_index()
+        """Check if any artifacts need embedding."""
+        return Artifact.has_pending_index()
 
     @staticmethod
     def index_batch(
@@ -52,26 +52,26 @@ class SearchIndexer:
         *,
         batch_limit: int = EMBEDDING_BATCH_LIMIT,
     ) -> int:
-        """Embed a batch of pending extraction sections. Returns count of rows updated."""
-        to_index = TranscriptExtraction.get_pending_index()[:batch_limit]
+        """Embed a batch of pending artifacts. Returns count of rows updated."""
+        to_index = Artifact.get_pending_index()[:batch_limit]
 
         if not to_index:
             return 0
 
-        texts = [e.text for e in to_index]
+        texts = [a.text for a in to_index]
         embeddings = _encode(texts)
 
         now = datetime.now(UTC)
         with db.session() as session:
-            for extraction, embedding in zip(to_index, embeddings, strict=True):
-                extraction.update_embedding(
+            for artifact, embedding in zip(to_index, embeddings, strict=True):
+                artifact.update_embedding(
                     session,
                     embedding=embedding.tolist(),
-                    content_hash=_content_hash(extraction.text),
+                    content_hash=_content_hash(artifact.text),
                     indexed_at=now,
                 )
 
-        logger.info("Indexed %d extraction sections", len(to_index))
+        logger.info("Indexed %d artifacts", len(to_index))
         return len(to_index)
 
 

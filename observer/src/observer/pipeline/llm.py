@@ -9,7 +9,7 @@ import logging
 from observer import prompts
 from observer.pipeline.models import (
     SummaryResult,
-    TranscriptExtractionResult,
+    ExtractionResult,
 )
 from observer.services.agent import Agent
 from observer.services.config import get_extraction_model
@@ -49,19 +49,19 @@ def summarize_thinking(thinking_text: str) -> str:
         return result.summary
 
 
-def extract_sections(events: list[str]) -> TranscriptExtractionResult:
+def extract_sections(events: list[str]) -> ExtractionResult:
     """Extract structured sections from all transcript events."""
     event_list = "\n".join(f"{i + 1}. {e}" for i, e in enumerate(events))
     prompt = f"## Transcript Events\n{event_list}"
 
     agent = Agent(system_prompt=prompts.extract, model=get_extraction_model())
-    response = agent.run(prompt, json_schema=TranscriptExtractionResult.model_json_schema())
+    response = agent.run(prompt, json_schema=ExtractionResult.model_json_schema())
 
     try:
-        return TranscriptExtractionResult.model_validate_json(response.result)
+        return ExtractionResult.model_validate_json(response.result)
     except Exception:
         logger.warning("Failed to parse extraction result, returning fallback", exc_info=True)
-        return TranscriptExtractionResult(
+        return ExtractionResult(
             title="Untitled session",
             summary="",
             knowledge="",

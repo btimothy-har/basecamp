@@ -1,4 +1,4 @@
-"""TranscriptExtraction domain model."""
+"""Artifact domain model."""
 
 from __future__ import annotations
 
@@ -11,11 +11,11 @@ from sqlalchemy.orm import Session
 from sqlalchemy.types import LargeBinary
 
 from observer.data.enums import SectionType
-from observer.data.schemas import TranscriptExtractionSchema
+from observer.data.schemas import ArtifactSchema
 from observer.services.db import Database
 
 
-class TranscriptExtraction(BaseModel):
+class Artifact(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: int | None = None
@@ -31,10 +31,10 @@ class TranscriptExtraction(BaseModel):
     def save(self, session: Session) -> Self:
         """Upsert by (transcript_id, section_type). Updates text + updated_at if exists."""
         existing = (
-            session.query(TranscriptExtractionSchema)
+            session.query(ArtifactSchema)
             .filter(
-                TranscriptExtractionSchema.transcript_id == self.transcript_id,
-                TranscriptExtractionSchema.section_type == self.section_type,
+                ArtifactSchema.transcript_id == self.transcript_id,
+                ArtifactSchema.section_type == self.section_type,
             )
             .first()
         )
@@ -45,7 +45,7 @@ class TranscriptExtraction(BaseModel):
             session.flush()
             return type(self).model_validate(existing)
 
-        row = TranscriptExtractionSchema(**self.model_dump())
+        row = ArtifactSchema(**self.model_dump())
         session.add(row)
         session.flush()
         return type(self).model_validate(row)
@@ -58,9 +58,9 @@ class TranscriptExtraction(BaseModel):
         content_hash: str,
         indexed_at: datetime,
     ) -> None:
-        """Update embedding fields on this extraction row."""
-        session.query(TranscriptExtractionSchema).filter(
-            TranscriptExtractionSchema.id == self.id,
+        """Update embedding fields on this artifact row."""
+        session.query(ArtifactSchema).filter(
+            ArtifactSchema.id == self.id,
         ).update({
             "embedding": embedding,
             "content_hash": content_hash,
@@ -68,35 +68,35 @@ class TranscriptExtraction(BaseModel):
         })
 
     @classmethod
-    def get(cls, extraction_id: int) -> Self | None:
+    def get(cls, artifact_id: int) -> Self | None:
         with Database().session() as session:
-            row = session.get(TranscriptExtractionSchema, extraction_id)
+            row = session.get(ArtifactSchema, artifact_id)
             return cls.model_validate(row) if row else None
 
     @classmethod
     def _pending_condition(cls):
-        """SQLAlchemy filter expression for extractions that need (re-)indexing.
+        """SQLAlchemy filter expression for artifacts that need (re-)indexing.
 
         Pending when: never indexed, updated since last index, or embedding is stale
         (content hash doesn't match current text). content_hash is only written by
         update_embedding(), so mismatch means the embedding hasn't caught up yet.
         """
         current_hash = func.encode(
-            func.sha256(cast(TranscriptExtractionSchema.text, LargeBinary)),
+            func.sha256(cast(ArtifactSchema.text, LargeBinary)),
             "hex",
         )
         return or_(
-            TranscriptExtractionSchema.indexed_at.is_(None),
-            TranscriptExtractionSchema.updated_at > TranscriptExtractionSchema.indexed_at,
-            current_hash != TranscriptExtractionSchema.content_hash,
+            ArtifactSchema.indexed_at.is_(None),
+            ArtifactSchema.updated_at > ArtifactSchema.indexed_at,
+            current_hash != ArtifactSchema.content_hash,
         )
 
     @classmethod
     def get_pending_index(cls) -> list[Self]:
-        """Return extractions that need (re-)indexing."""
+        """Return artifacts that need (re-)indexing."""
         with Database().session() as session:
             rows = (
-                session.query(TranscriptExtractionSchema)
+                session.query(ArtifactSchema)
                 .filter(cls._pending_condition())
                 .all()
             )
@@ -104,7 +104,7 @@ class TranscriptExtraction(BaseModel):
 
     @classmethod
     def has_pending_index(cls) -> bool:
-        """Check if any extractions need (re-)indexing without loading rows."""
+        """Check if any artifacts need (re-)indexing without loading rows."""
         with Database().session() as session:
             return session.query(
                 exists().where(cls._pending_condition())
@@ -121,9 +121,8 @@ class TranscriptExtraction(BaseModel):
     def get_for_transcript(cls, transcript_id: int) -> list[Self]:
         with Database().session() as session:
             rows = (
-                session.query(TranscriptExtractionSchema)
-                .filter(TranscriptExtractionSchema.transcript_id == transcript_id)
+                session.query(ArtifactSchema)
+                .filter(ArtifactSchema.transcript_id == transcript_id)
                 .all()
             )
             return [cls.model_validate(row) for row in rows]
-

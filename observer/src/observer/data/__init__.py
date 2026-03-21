@@ -8,7 +8,7 @@ from observer.data.project import Project
 from observer.data.raw_event import RawEvent
 from observer.data.transcript import Transcript
 from observer.data.transcript_event import TranscriptEvent
-from observer.data.transcript_extraction import TranscriptExtraction
+from observer.data.artifact import Artifact
 from observer.data.work_item import WorkItem
 from observer.data.worktree import Worktree
 
@@ -18,7 +18,7 @@ __all__ = [
     "SectionType",
     "Transcript",
     "TranscriptEvent",
-    "TranscriptExtraction",
+    "Artifact",
     "WorkItem",
     "WorkItemType",
     "Worktree",

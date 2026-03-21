@@ -9,7 +9,7 @@ from observer.constants import EMBEDDING_DIMENSIONS
 from observer.data.enums import SectionType
 from observer.data.schemas import (
     ProjectSchema,
-    TranscriptExtractionSchema,
+    ArtifactSchema,
     TranscriptSchema,
 )
 from observer.pipeline import indexing
@@ -58,7 +58,7 @@ def _create_extraction(
 ):
     """Create a transcript extraction. Returns extraction ID."""
     with db.session() as session:
-        extraction = TranscriptExtractionSchema(
+        extraction = ArtifactSchema(
             transcript_id=transcript_id,
             section_type=section_type,
             text=text,
@@ -72,7 +72,7 @@ def _mark_indexed(db, ext_id, *, text=None, stale_hash=False):
     """Mark an extraction as already indexed with embedding and hash."""
     embedding = np.random.rand(EMBEDDING_DIMENSIONS).astype(np.float32).tolist()
     with db.session() as session:
-        extraction = session.get(TranscriptExtractionSchema, ext_id)
+        extraction = session.get(ArtifactSchema, ext_id)
         extraction.embedding = embedding
         extraction.content_hash = _content_hash("wrong" if stale_hash else (text or extraction.text))
         extraction.indexed_at = datetime.now(UTC)
@@ -118,7 +118,7 @@ class TestHasPending:
 
         # Simulate text update after indexing
         with db.session() as session:
-            extraction = session.get(TranscriptExtractionSchema, ext_id)
+            extraction = session.get(ArtifactSchema, ext_id)
             extraction.updated_at = datetime.now(UTC) + timedelta(seconds=1)
 
         assert SearchIndexer.has_pending() is True
@@ -135,7 +135,7 @@ class TestIndexBatch:
         assert count == 1
 
         with db.session() as session:
-            extraction = session.get(TranscriptExtractionSchema, ext_id)
+            extraction = session.get(ArtifactSchema, ext_id)
             assert extraction.embedding is not None
             assert len(extraction.embedding) == EMBEDDING_DIMENSIONS
             assert extraction.content_hash == _content_hash("extraction text")
@@ -160,8 +160,8 @@ class TestIndexBatch:
 
         with db.session() as session:
             indexed = (
-                session.query(TranscriptExtractionSchema)
-                .filter(TranscriptExtractionSchema.embedding.isnot(None))
+                session.query(ArtifactSchema)
+                .filter(ArtifactSchema.embedding.isnot(None))
                 .count()
             )
             assert indexed == 2
@@ -178,7 +178,7 @@ class TestIndexBatch:
         assert count == 1
 
         with db.session() as session:
-            extraction = session.get(TranscriptExtractionSchema, ext_id)
+            extraction = session.get(ArtifactSchema, ext_id)
             assert extraction.embedding is not None
             assert extraction.content_hash == _content_hash("Session summary text.")
 
@@ -193,7 +193,7 @@ class TestIndexBatch:
         assert count == 1
 
         with db.session() as session:
-            extraction = session.get(TranscriptExtractionSchema, ext_id)
+            extraction = session.get(ArtifactSchema, ext_id)
             assert extraction.content_hash == _content_hash("New text.")
 
     def test_skips_unchanged_content(self, db):
@@ -220,8 +220,8 @@ class TestIndexBatch:
 
         with db.session() as session:
             indexed = (
-                session.query(TranscriptExtractionSchema)
-                .filter(TranscriptExtractionSchema.embedding.isnot(None))
+                session.query(ArtifactSchema)
+                .filter(ArtifactSchema.embedding.isnot(None))
                 .count()
             )
             assert indexed == 2

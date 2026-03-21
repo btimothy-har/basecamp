@@ -8,7 +8,7 @@ from observer.data.schemas import (
     ProjectSchema,
     RawEventSchema,
     TranscriptEventSchema,
-    TranscriptExtractionSchema,
+    ArtifactSchema,
     TranscriptSchema,
     WorkItemSchema,
     WorktreeSchema,
@@ -186,13 +186,13 @@ class TestIngestionModels:
 
 
 class TestExtractionModels:
-    """Tests for TranscriptExtractionSchema."""
+    """Tests for ArtifactSchema."""
 
     def test_create_extraction(self, db):
         with db.session() as s:
             p = _make_project(s)
             t = _make_transcript(s, p)
-            row = TranscriptExtractionSchema(
+            row = ArtifactSchema(
                 transcript_id=t.id,
                 section_type=SectionType.SUMMARY,
                 text="## JWT Auth\nImplemented JWT authentication",
@@ -209,14 +209,14 @@ class TestExtractionModels:
         with db.session() as s:
             p = _make_project(s)
             t = _make_transcript(s, p)
-            s.add(TranscriptExtractionSchema(
+            s.add(ArtifactSchema(
                 transcript_id=t.id, section_type=SectionType.KNOWLEDGE, text="first",
             ))
             s.flush()
         with pytest.raises(Exception):
             with db.session() as s:
                 t_row = s.get(TranscriptSchema, 1)
-                s.add(TranscriptExtractionSchema(
+                s.add(ArtifactSchema(
                     transcript_id=t_row.id, section_type=SectionType.KNOWLEDGE, text="duplicate",
                 ))
                 s.flush()
@@ -230,7 +230,7 @@ class TestSchemaIntegrity:
         "worktrees",
         "transcripts",
         "raw_events",
-        "transcript_extractions",
+        "artifacts",
     }
 
     def test_all_tables_created(self, db):
@@ -247,9 +247,9 @@ class TestSchemaIntegrity:
             assert "ix_raw_events_processed" in indexes
             assert "ix_raw_events_event_type" in indexes
 
-    def test_transcript_extractions_indexes(self, db):
+    def test_artifacts_indexes(self, db):
         with db.session() as s:
             inspector = inspect(s.bind)
-            indexes = {idx["name"] for idx in inspector.get_indexes("transcript_extractions")}
-            assert "ix_transcript_extractions_transcript_id" in indexes
-            assert "ix_transcript_extractions_section_type" in indexes
+            indexes = {idx["name"] for idx in inspector.get_indexes("artifacts")}
+            assert "ix_artifacts_transcript_id" in indexes
+            assert "ix_artifacts_section_type" in indexes
