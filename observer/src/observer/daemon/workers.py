@@ -1,4 +1,4 @@
-"""Multiprocessing worker targets for ingestion, refining, processing, and indexing.
+"""Multiprocessing worker targets for ingestion, refining, processing, indexing, and summarization.
 
 These are top-level functions (not methods) because ``multiprocessing.Process``
 needs picklable targets. Each worker acquires an advisory file lock, does its
@@ -18,6 +18,7 @@ from observer.pipeline.extraction import WorkItemExtractor
 from observer.pipeline.indexing import SearchIndexer
 from observer.pipeline.parser import TranscriptParser
 from observer.pipeline.refining import EventRefiner
+from observer.pipeline.summarization import summarize_active_transcripts
 from observer.services.db import Database
 from observer.services.logger import configure_logging_worker
 
@@ -124,7 +125,7 @@ def process_worker(lock_dir: Path) -> None:
 
 
 @worker_process
-def index_worker(lock_dir: Path) -> None:
+def index_worker(lock_dir: Path, *, skip_artifacts: bool = False) -> None:
     """Worker process target for search indexing. Acquires advisory lock, runs batch."""
     lock_path = lock_dir / "indexing.lock"
     fd = os.open(str(lock_path), os.O_CREAT | os.O_WRONLY)
@@ -136,9 +137,34 @@ def index_worker(lock_dir: Path) -> None:
         return
 
     try:
-        SearchIndexer.index_batch(Database())
+        SearchIndexer.index_batch(Database(), skip_artifacts=skip_artifacts)
     except Exception:
         logger.exception("Indexing worker failed")
+    finally:
+        fcntl.flock(fd, fcntl.LOCK_UN)
+        os.close(fd)
+
+
+@worker_process
+def summary_worker(lock_dir: Path) -> None:
+    """Worker process target for lightweight transcript summarization (lite mode).
+
+    Generates summaries directly from raw events, bypassing the full
+    Group → Refine → Extract pipeline.
+    """
+    lock_path = lock_dir / "summarization.lock"
+    fd = os.open(str(lock_path), os.O_CREAT | os.O_WRONLY)
+    try:
+        fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except OSError:
+        os.close(fd)
+        logger.info("Summarization lock held, skipping")
+        return
+
+    try:
+        summarize_active_transcripts(Database())
+    except Exception:
+        logger.exception("Summarization worker failed")
     finally:
         fcntl.flock(fd, fcntl.LOCK_UN)
         os.close(fd)

@@ -21,10 +21,12 @@ from observer.services.config import (
     CONFIG_FILE,
     get_db_source,
     get_extraction_model,
+    get_mode,
     get_pg_url,
     get_summary_model,
     set_db_source,
     set_extraction_model,
+    set_mode,
     set_pg_url,
     set_summary_model,
 )
@@ -245,9 +247,10 @@ def status() -> None:
         sys.exit(3)
 
     click.echo(f"Observer is running (pid={pid}).")
+    click.echo(f"  Configured Mode: {get_mode()}")
     pg_url = os.environ.get("OBSERVER_PG_URL") or get_pg_url() or "(not set)"
-    click.echo(f"  PG:  {_mask_pg_url(pg_url)}")
-    click.echo(f"  Log: {constants.LOG_FILE}")
+    click.echo(f"  PG:   {_mask_pg_url(pg_url)}")
+    click.echo(f"  Log:  {constants.LOG_FILE}")
 
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
         s.settimeout(1)
@@ -316,6 +319,41 @@ def mcp() -> None:
 
 
 @main.command()
+@click.argument("target", required=False, type=click.Choice(["full", "lite", "off"]))
+def mode(target: str | None) -> None:
+    """Show or set the observer processing mode.
+
+    \b
+    full  — full extraction pipeline (artifacts, summaries, indexing)
+    lite  — ingestion + summaries only (no artifact extraction)
+    off   — ingestion only (no LLM calls)
+    """
+    _mode_descriptions = {
+        "full": "Full extraction pipeline (artifacts, summaries, indexing)",
+        "lite": "Ingestion + summaries only (no artifact extraction)",
+        "off": "Ingestion only (no LLM calls)",
+    }
+    current = get_mode()
+
+    if target is None:
+        click.echo(f"Current mode: {current}")
+        click.echo(f"  {_mode_descriptions[current]}")
+        return
+
+    if target == current:
+        click.echo(f"Already in {current} mode.")
+        return
+
+    set_mode(target)
+    click.echo(f"Switched to {target} mode.")
+
+    daemon = Daemon(pid_file=constants.PID_FILE)
+    if daemon.check_running():
+        click.echo("Restart the daemon for changes to take effect:")
+        click.echo("  observer stop && observer start")
+
+
+@main.command()
 def setup() -> None:
     """Configure observer: set PostgreSQL URL and verify the connection."""
     db_choice = questionary.select(
@@ -352,10 +390,23 @@ def setup() -> None:
     if summary_model is None:
         sys.exit(1)
 
+    mode_choice = questionary.select(
+        "Processing mode:",
+        choices=[
+            questionary.Choice("Full (artifacts, summaries, indexing)", value="full"),
+            questionary.Choice("Lite (ingestion + summaries only)", value="lite"),
+            questionary.Choice("Off (ingestion only, no LLM calls)", value="off"),
+        ],
+        default=get_mode(),
+    ).ask()
+    if mode_choice is None:
+        sys.exit(1)
+
     set_pg_url(url)
     set_db_source(db_choice)
     set_extraction_model(extraction_model)
     set_summary_model(summary_model)
+    set_mode(mode_choice)
     click.echo(f"\nConfiguration saved → {CONFIG_FILE}")
 
     daemon = Daemon(pid_file=constants.PID_FILE)

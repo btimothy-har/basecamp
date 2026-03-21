@@ -51,6 +51,22 @@ class RawEvent(BaseModel):
             return row is not None
 
     @classmethod
+    def get_for_transcript_summarizable(cls, transcript_id: int) -> list[Self]:
+        """Return extractable raw events for a transcript, ordered by timestamp."""
+        with Database().session() as session:
+            rows = (
+                session.query(RawEventSchema)
+                .filter(
+                    RawEventSchema.transcript_id == transcript_id,
+                    RawEventSchema.event_type.in_(EXTRACTABLE_EVENT_TYPES),
+                )
+                .order_by(RawEventSchema.timestamp)
+                .all()
+            )
+            events = [cls.model_validate(r) for r in rows]
+            return [e for e in events if e.is_extractable()]
+
+    @classmethod
     def get_unprocessed(cls, *, limit: int) -> list[Self]:
         with Database().session() as session:
             rows = (

@@ -1,7 +1,7 @@
 """Tests for the event refining pipeline stage (classify + refine)."""
 
 import json
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from unittest.mock import patch
 
 from observer.data.enums import ArtifactType, RawEventStatus, WorkItemStage, WorkItemType
@@ -387,7 +387,8 @@ class TestRefineBatch:
         assert items[0].item_type == WorkItemType.TOOL_PAIR
         assert items[0].event_ids == event_ids
 
-    def test_trailing_tool_use_stays_unprocessed(self, db, tmp_path):
+    def test_trailing_tool_use_stays_pending_when_fresh(self, db, tmp_path):
+        """Recent trailing tool_use stays PENDING — result may still arrive."""
         transcript_id = _setup_transcript(db, tmp_path)
         tu_content = json.dumps(
             {
@@ -398,10 +399,49 @@ class TestRefineBatch:
                 },
             }
         )
-        _insert_raw_events(db, transcript_id, [{"event_type": "assistant", "content": tu_content}])
+        fresh_ts = datetime.now(UTC)
+        event_ids = _insert_raw_events(
+            db,
+            transcript_id,
+            [{"event_type": "assistant", "content": tu_content, "timestamp": fresh_ts}],
+        )
 
         count = EventRefiner.refine_batch(db)
         assert count == 0
+
+        with db.session() as session:
+            row = session.query(RawEventSchema).filter_by(id=event_ids[0]).one()
+            assert row.processed == RawEventStatus.PENDING
+
+    def test_trailing_tool_use_skipped_when_stale(self, db, tmp_path):
+        """Trailing tool_use older than stale threshold gets marked SKIPPED."""
+        transcript_id = _setup_transcript(db, tmp_path)
+        tu_content = json.dumps(
+            {
+                "type": "assistant",
+                "message": {
+                    "role": "assistant",
+                    "content": [{"type": "tool_use", "id": "tu-1", "name": "Read", "input": {}}],
+                },
+            }
+        )
+        stale_ts = datetime.now(UTC) - timedelta(seconds=600)
+        event_ids = _insert_raw_events(
+            db,
+            transcript_id,
+            [{"event_type": "assistant", "content": tu_content, "timestamp": stale_ts}],
+        )
+
+        count = EventRefiner.refine_batch(db)
+        assert count == 0
+
+        # Event should be SKIPPED, not stuck as PENDING
+        with db.session() as session:
+            row = session.query(RawEventSchema).filter_by(id=event_ids[0]).one()
+            assert row.processed == RawEventStatus.SKIPPED
+
+        # Should no longer show as pending
+        assert not EventGrouper.has_pending()
 
     def test_has_pending(self, db, tmp_path):
         transcript_id = _setup_transcript(db, tmp_path)

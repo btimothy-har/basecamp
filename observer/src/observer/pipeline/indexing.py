@@ -48,28 +48,29 @@ class SearchIndexer:
     """Syncs the search_index table from source tables."""
 
     @staticmethod
-    def has_pending() -> bool:
+    def has_pending(*, skip_artifacts: bool = False) -> bool:
         """Check if any sources need indexing."""
         with Database().session() as session:
-            # Check 1: unindexed artifacts
-            unindexed_artifact = (
-                session.query(ArtifactSchema.id)
-                .outerjoin(
-                    SearchIndexSchema,
-                    and_(
-                        SearchIndexSchema.source_type == SearchSourceType.ARTIFACT.value,
-                        SearchIndexSchema.source_id == ArtifactSchema.id,
-                    ),
+            if not skip_artifacts:
+                # Check 1: unindexed artifacts
+                unindexed_artifact = (
+                    session.query(ArtifactSchema.id)
+                    .outerjoin(
+                        SearchIndexSchema,
+                        and_(
+                            SearchIndexSchema.source_type == SearchSourceType.ARTIFACT.value,
+                            SearchIndexSchema.source_id == ArtifactSchema.id,
+                        ),
+                    )
+                    .filter(
+                        SearchIndexSchema.id.is_(None),
+                        ArtifactSchema.transcript_id.isnot(None),
+                    )
+                    .limit(1)
+                    .first()
                 )
-                .filter(
-                    SearchIndexSchema.id.is_(None),
-                    ArtifactSchema.transcript_id.isnot(None),
-                )
-                .limit(1)
-                .first()
-            )
-            if unindexed_artifact is not None:
-                return True
+                if unindexed_artifact is not None:
+                    return True
 
             # Check 2: transcript summaries needing indexing (new or changed)
             unindexed_summary = (
@@ -108,57 +109,63 @@ class SearchIndexer:
             return any(_content_hash(summary) != stored_hash for _, summary, stored_hash in indexed_summaries)
 
     @staticmethod
-    def index_batch(db: Database, *, batch_limit: int = EMBEDDING_BATCH_LIMIT) -> int:
+    def index_batch(
+        db: Database,
+        *,
+        batch_limit: int = EMBEDDING_BATCH_LIMIT,
+        skip_artifacts: bool = False,
+    ) -> int:
         """Index a batch of pending sources. Returns count of entries written."""
         total = 0
 
-        # Phase 1: Index new artifacts
-        with db.session() as session:
-            rows = (
-                session.query(
-                    ArtifactSchema.id,
-                    ArtifactSchema.text,
-                    ArtifactSchema.transcript_id,
-                    ArtifactSchema.created_at,
-                    TranscriptSchema.project_id,
-                )
-                .join(TranscriptSchema, ArtifactSchema.transcript_id == TranscriptSchema.id)
-                .outerjoin(
-                    SearchIndexSchema,
-                    and_(
-                        SearchIndexSchema.source_type == SearchSourceType.ARTIFACT.value,
-                        SearchIndexSchema.source_id == ArtifactSchema.id,
-                    ),
-                )
-                .filter(
-                    SearchIndexSchema.id.is_(None),
-                    ArtifactSchema.transcript_id.isnot(None),
-                )
-                .limit(batch_limit)
-                .all()
-            )
-
-        if rows:
-            texts = [r.text for r in rows]
-            embeddings = _encode(texts)
-
+        # Phase 1: Index new artifacts (skipped in lite mode)
+        if not skip_artifacts:
             with db.session() as session:
-                for row, embedding in zip(rows, embeddings, strict=True):
-                    session.add(
-                        SearchIndexSchema(
-                            source_type=SearchSourceType.ARTIFACT.value,
-                            source_id=row.id,
-                            project_id=row.project_id,
-                            transcript_id=row.transcript_id,
-                            text=row.text,
-                            content_hash=_content_hash(row.text),
-                            created_at=row.created_at,
-                            embedding=embedding.tolist(),
-                        )
+                rows = (
+                    session.query(
+                        ArtifactSchema.id,
+                        ArtifactSchema.text,
+                        ArtifactSchema.transcript_id,
+                        ArtifactSchema.created_at,
+                        TranscriptSchema.project_id,
                     )
+                    .join(TranscriptSchema, ArtifactSchema.transcript_id == TranscriptSchema.id)
+                    .outerjoin(
+                        SearchIndexSchema,
+                        and_(
+                            SearchIndexSchema.source_type == SearchSourceType.ARTIFACT.value,
+                            SearchIndexSchema.source_id == ArtifactSchema.id,
+                        ),
+                    )
+                    .filter(
+                        SearchIndexSchema.id.is_(None),
+                        ArtifactSchema.transcript_id.isnot(None),
+                    )
+                    .limit(batch_limit)
+                    .all()
+                )
 
-            total += len(rows)
-            logger.info("Indexed %d artifacts", len(rows))
+            if rows:
+                texts = [r.text for r in rows]
+                embeddings = _encode(texts)
+
+                with db.session() as session:
+                    for row, embedding in zip(rows, embeddings, strict=True):
+                        session.add(
+                            SearchIndexSchema(
+                                source_type=SearchSourceType.ARTIFACT.value,
+                                source_id=row.id,
+                                project_id=row.project_id,
+                                transcript_id=row.transcript_id,
+                                text=row.text,
+                                content_hash=_content_hash(row.text),
+                                created_at=row.created_at,
+                                embedding=embedding.tolist(),
+                            )
+                        )
+
+                total += len(rows)
+                logger.info("Indexed %d artifacts", len(rows))
 
         # Phase 2: Index new/changed transcript summaries
         remaining = batch_limit - total

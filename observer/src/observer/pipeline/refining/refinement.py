@@ -138,7 +138,7 @@ class WorkItemRefiner:
         if thinking_text:
             try:
                 embedded_thinking = summarize_thinking(thinking_text)
-                self._save_transcript_event(work_item, embedded_thinking)
+                self._save_transcript_event(work_item, embedded_thinking, event_type=WorkItemType.THINKING)
             except ExtractionError:
                 logger.exception("Thinking summarization failed in response handler")
 
@@ -148,11 +148,17 @@ class WorkItemRefiner:
     def _handle_skipped(self, work_item: WorkItem) -> None:
         self._mark_work_item(work_item, WorkItemStage.TERMINAL)
 
-    def _save_transcript_event(self, work_item: WorkItem, text: str) -> TranscriptEvent:
+    def _save_transcript_event(
+        self,
+        work_item: WorkItem,
+        text: str,
+        *,
+        event_type: WorkItemType | None = None,
+    ) -> TranscriptEvent:
         te = TranscriptEvent(
             transcript_id=self._transcript_id,
             work_item_id=work_item.id,
-            event_type=work_item.item_type,
+            event_type=event_type or work_item.item_type,
             text=text,
             created_at=datetime.now(UTC),
         )

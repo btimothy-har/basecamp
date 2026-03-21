@@ -27,6 +27,7 @@ class Transcript(BaseModel):
     last_mtime: int | None = None
     title: str | None = None
     summary: str | None = None
+    last_summary_at: datetime | None = None
     raw_events: list[RawEvent] = Field(default_factory=list)
 
     def save(self, session: Session) -> Self:

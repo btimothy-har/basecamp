@@ -60,6 +60,7 @@ class TestTerminalWrapping:
             patch.dict("os.environ", {"BASECAMP_REPO": "test-repo"}, clear=False),
         ):
             os.environ.pop("TMUX", None)
+            os.environ.pop("KITTY_LISTEN_ON", None)
 
             execute_launch("testproject", config)
 
@@ -90,15 +91,15 @@ class TestTerminalWrapping:
         """When tmux is not installed, should exec claude directly."""
         config = self._make_config(non_git_dir)
 
+        env_no_tmux = {k: v for k, v in os.environ.items() if k != "TMUX"}
         with (
             patch("core.cli.launch.load_dotenv"),
             patch("core.cli.launch.validate_dirs", return_value=[non_git_dir]),
             patch("os.chdir"),
             patch("os.execvp") as mock_execvp,
             patch("shutil.which", return_value=None),
+            patch.dict("os.environ", env_no_tmux, clear=True),
         ):
-            os.environ.pop("TMUX", None)
-
             execute_launch("testproject", config)
 
             mock_execvp.assert_called_once()
@@ -108,15 +109,15 @@ class TestTerminalWrapping:
         """Tmux session name should be bc-{project_name}."""
         config = self._make_config(non_git_dir)
 
+        env_clean = {k: v for k, v in os.environ.items() if k not in ("TMUX", "KITTY_LISTEN_ON")}
         with (
             patch("core.cli.launch.load_dotenv"),
             patch("core.cli.launch.validate_dirs", return_value=[non_git_dir]),
             patch("os.chdir"),
             patch("os.execvp") as mock_execvp,
             patch("shutil.which", return_value="/usr/bin/tmux"),
+            patch.dict("os.environ", env_clean, clear=True),
         ):
-            os.environ.pop("TMUX", None)
-
             execute_launch("testproject", config)
 
             args = mock_execvp.call_args[0][1]
@@ -127,15 +128,15 @@ class TestTerminalWrapping:
         """Claude args (--resume, --plugin-dir, etc.) should pass through in the shell wrapper."""
         config = self._make_config(non_git_dir)
 
+        env_clean = {k: v for k, v in os.environ.items() if k not in ("TMUX", "KITTY_LISTEN_ON")}
         with (
             patch("core.cli.launch.load_dotenv"),
             patch("core.cli.launch.validate_dirs", return_value=[non_git_dir]),
             patch("os.chdir"),
             patch("os.execvp") as mock_execvp,
             patch("shutil.which", return_value="/usr/bin/tmux"),
+            patch.dict("os.environ", env_clean, clear=True),
         ):
-            os.environ.pop("TMUX", None)
-
             execute_launch("testproject", config, resume=True)
 
             args = mock_execvp.call_args[0][1]

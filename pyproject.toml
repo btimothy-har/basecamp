@@ -7,7 +7,6 @@ pythonpath = ["core/src"]
 env = ["TESTING=1"]
 
 [tool.ruff]
-required-version = "~=0.13.1"
 line-length = 120
 fix = true
 

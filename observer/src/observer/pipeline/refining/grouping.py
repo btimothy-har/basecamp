@@ -7,8 +7,9 @@ marks RawEvents as processed.
 
 import logging
 from dataclasses import dataclass, field
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
+from observer.constants import DEFAULT_STALE_THRESHOLD
 from observer.data.enums import RawEventStatus, WorkItemType
 from observer.data.raw_event import RawEvent
 from observer.data.work_item import WorkItem
@@ -111,6 +112,18 @@ class EventGrouper:
             classified = classify_events(transcript_events)
             now = datetime.now(UTC)
 
+            # Find events not included in any classified item (e.g. trailing
+            # unmatched tool_uses). Only mark them SKIPPED once they're older
+            # than the stale threshold — recent ones may still get a matching
+            # tool_result in the next batch.
+            classified_event_ids = {e.id for item in classified for e in item.events}
+            stale_cutoff = now.replace(tzinfo=None) - timedelta(seconds=DEFAULT_STALE_THRESHOLD)
+            orphaned = [
+                e
+                for e in transcript_events
+                if e.id not in classified_event_ids and e.timestamp.replace(tzinfo=None) < stale_cutoff
+            ]
+
             with db.session() as session:
                 for item in classified:
                     work_item = WorkItem(
@@ -124,6 +137,10 @@ class EventGrouper:
                     for event in item.events:
                         event.processed = RawEventStatus.PROCESSED
                         event.save(session)
+
+                for event in orphaned:
+                    event.processed = RawEventStatus.SKIPPED
+                    event.save(session)
 
             total += len(classified)
 
