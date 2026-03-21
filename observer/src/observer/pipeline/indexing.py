@@ -1,11 +1,8 @@
-"""Search index pipeline — syncs the search_index table from extraction sections.
+"""Search indexing pipeline — embeds transcript extraction sections.
 
-Runs as a batch processor on the daemon's polling cadence. Reads from
-transcript extraction sections, encodes with sentence-transformers, and writes
-entries to the ``search_index`` table.
-
-Change detection uses two signals: ``updated_at > indexed_at`` as a fast path,
-and ``content_hash`` mismatch as a safety net.
+Runs as a batch processor on the daemon's polling cadence. Reads extraction
+sections that need embedding, encodes with sentence-transformers, and updates
+the extraction rows with embedding vectors.
 """
 
 import hashlib
@@ -18,7 +15,7 @@ from observer.constants import (
     EMBEDDING_MODEL_NAME,
     MODEL_CACHE_DIR,
 )
-from observer.data.schemas import SearchIndexSchema, TranscriptExtractionSchema, TranscriptSchema
+from observer.data.transcript_extraction import TranscriptExtraction
 from observer.exceptions import EmbeddingShapeError
 from observer.services.db import Database
 
@@ -42,40 +39,12 @@ def _content_hash(text: str) -> str:
 
 
 class SearchIndexer:
-    """Syncs the search_index table from transcript extraction sections."""
+    """Embeds transcript extraction sections for semantic search."""
 
     @staticmethod
     def has_pending() -> bool:
-        """Check if any extraction sections need indexing.
-
-        Fast path: new extractions (no index entry) or updated_at > indexed_at.
-        Safety net: content_hash mismatch catches any missed updates.
-        """
-        with Database().session() as session:
-            rows = (
-                session.query(
-                    TranscriptExtractionSchema.id,
-                    TranscriptExtractionSchema.text,
-                    TranscriptExtractionSchema.updated_at,
-                    SearchIndexSchema.indexed_at,
-                    SearchIndexSchema.content_hash,
-                )
-                .outerjoin(
-                    SearchIndexSchema,
-                    SearchIndexSchema.source_id == TranscriptExtractionSchema.id,
-                )
-                .all()
-            )
-
-            for _, text, updated_at, indexed_at, existing_hash in rows:
-                if indexed_at is None:
-                    return True
-                if updated_at > indexed_at:
-                    return True
-                if existing_hash != _content_hash(text):
-                    return True
-
-            return False
+        """Check if any extraction sections need embedding."""
+        return len(TranscriptExtraction.get_pending_index()) > 0
 
     @staticmethod
     def index_batch(
@@ -83,81 +52,27 @@ class SearchIndexer:
         *,
         batch_limit: int = EMBEDDING_BATCH_LIMIT,
     ) -> int:
-        """Index a batch of pending extraction sections. Returns count of entries written."""
-        with db.session() as session:
-            extraction_rows = (
-                session.query(
-                    TranscriptExtractionSchema.id,
-                    TranscriptExtractionSchema.transcript_id,
-                    TranscriptExtractionSchema.section_type,
-                    TranscriptExtractionSchema.text,
-                    TranscriptExtractionSchema.created_at,
-                    TranscriptExtractionSchema.updated_at,
-                    TranscriptSchema.project_id,
-                    SearchIndexSchema.id.label("index_id"),
-                    SearchIndexSchema.indexed_at,
-                    SearchIndexSchema.content_hash,
-                )
-                .join(
-                    TranscriptSchema,
-                    TranscriptExtractionSchema.transcript_id == TranscriptSchema.id,
-                )
-                .outerjoin(
-                    SearchIndexSchema,
-                    SearchIndexSchema.source_id == TranscriptExtractionSchema.id,
-                )
-                .all()
-            )
-
-        # Filter: new (no index entry), timestamp stale, or hash mismatch
-        to_index: list[tuple] = []
-        for row in extraction_rows:
-            if row.index_id is None:
-                to_index.append(row)
-            elif row.updated_at > row.indexed_at:
-                to_index.append(row)
-            elif row.content_hash != _content_hash(row.text):
-                to_index.append(row)
-
-        to_index = to_index[:batch_limit]
+        """Embed a batch of pending extraction sections. Returns count of rows updated."""
+        to_index = TranscriptExtraction.get_pending_index()[:batch_limit]
 
         if not to_index:
             return 0
 
-        texts = [r.text for r in to_index]
+        texts = [e.text for e in to_index]
         embeddings = _encode(texts)
 
+        now = datetime.now(UTC)
         with db.session() as session:
-            written = 0
-            for row, embedding in zip(to_index, embeddings, strict=True):
-                current_hash = _content_hash(row.text)
+            for extraction, embedding in zip(to_index, embeddings, strict=True):
+                extraction.update_embedding(
+                    session,
+                    embedding=embedding.tolist(),
+                    content_hash=_content_hash(extraction.text),
+                    indexed_at=now,
+                )
 
-                if row.index_id is None:
-                    session.add(
-                        SearchIndexSchema(
-                            section_type=row.section_type,
-                            source_id=row.id,
-                            project_id=row.project_id,
-                            transcript_id=row.transcript_id,
-                            text=row.text,
-                            content_hash=current_hash,
-                            created_at=row.created_at,
-                            embedding=embedding.tolist(),
-                        )
-                    )
-                    written += 1
-                else:
-                    entry = session.get(SearchIndexSchema, row.index_id)
-                    if entry is None:
-                        continue
-                    entry.text = row.text
-                    entry.content_hash = current_hash
-                    entry.embedding = embedding.tolist()
-                    entry.indexed_at = datetime.now(UTC)
-                    written += 1
-
-        logger.info("Indexed %d extraction sections", written)
-        return written
+        logger.info("Indexed %d extraction sections", len(to_index))
+        return len(to_index)
 
 
 def _encode(texts: list[str]) -> list:

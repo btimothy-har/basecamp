@@ -1,6 +1,7 @@
 """Tests for observer.pipeline.indexing module."""
 
-from datetime import UTC, datetime
+import hashlib
+from datetime import UTC, datetime, timedelta
 from unittest.mock import MagicMock, patch
 
 import numpy as np
@@ -8,7 +9,6 @@ from observer.constants import EMBEDDING_DIMENSIONS
 from observer.data.enums import SectionType
 from observer.data.schemas import (
     ProjectSchema,
-    SearchIndexSchema,
     TranscriptExtractionSchema,
     TranscriptSchema,
 )
@@ -68,6 +68,16 @@ def _create_extraction(
         return extraction.id
 
 
+def _mark_indexed(db, ext_id, *, text=None, stale_hash=False):
+    """Mark an extraction as already indexed with embedding and hash."""
+    embedding = np.random.rand(EMBEDDING_DIMENSIONS).astype(np.float32).tolist()
+    with db.session() as session:
+        extraction = session.get(TranscriptExtractionSchema, ext_id)
+        extraction.embedding = embedding
+        extraction.content_hash = _content_hash("wrong" if stale_hash else (text or extraction.text))
+        extraction.indexed_at = datetime.now(UTC)
+
+
 class TestHasPending:
     def test_false_when_empty(self, db):  # noqa: ARG002
         assert SearchIndexer.has_pending() is False
@@ -78,22 +88,9 @@ class TestHasPending:
         assert SearchIndexer.has_pending() is True
 
     def test_false_when_all_indexed(self, db):
-        project_id, transcript_id = _seed_project_and_transcript(db)
+        _, transcript_id = _seed_project_and_transcript(db)
         ext_id = _create_extraction(db, transcript_id)
-
-        with db.session() as session:
-            session.add(
-                SearchIndexSchema(
-                    section_type=SectionType.KNOWLEDGE,
-                    source_id=ext_id,
-                    project_id=project_id,
-                    transcript_id=transcript_id,
-                    text="some knowledge",
-                    content_hash=_content_hash("some knowledge"),
-                    created_at=datetime.now(UTC),
-                )
-            )
-
+        _mark_indexed(db, ext_id)
         assert SearchIndexer.has_pending() is False
 
     def test_true_when_summary_unindexed(self, db):
@@ -102,48 +99,34 @@ class TestHasPending:
         assert SearchIndexer.has_pending() is True
 
     def test_true_when_content_changed(self, db):
-        project_id, transcript_id = _seed_project_and_transcript(db)
+        _, transcript_id = _seed_project_and_transcript(db)
         ext_id = _create_extraction(db, transcript_id, text="Updated text.")
-
-        with db.session() as session:
-            session.add(
-                SearchIndexSchema(
-                    section_type=SectionType.KNOWLEDGE,
-                    source_id=ext_id,
-                    project_id=project_id,
-                    transcript_id=transcript_id,
-                    text="Old text.",
-                    content_hash=_content_hash("Old text."),
-                    created_at=datetime.now(UTC),
-                )
-            )
-
+        _mark_indexed(db, ext_id, stale_hash=True)
         assert SearchIndexer.has_pending() is True
 
     def test_false_when_content_current(self, db):
         text = "Current text."
-        project_id, transcript_id = _seed_project_and_transcript(db)
+        _, transcript_id = _seed_project_and_transcript(db)
         ext_id = _create_extraction(db, transcript_id, text=text)
-
-        with db.session() as session:
-            session.add(
-                SearchIndexSchema(
-                    section_type=SectionType.KNOWLEDGE,
-                    source_id=ext_id,
-                    project_id=project_id,
-                    transcript_id=transcript_id,
-                    text=text,
-                    content_hash=_content_hash(text),
-                    created_at=datetime.now(UTC),
-                )
-            )
-
+        _mark_indexed(db, ext_id, text=text)
         assert SearchIndexer.has_pending() is False
+
+    def test_true_when_updated_after_indexed(self, db):
+        _, transcript_id = _seed_project_and_transcript(db)
+        ext_id = _create_extraction(db, transcript_id)
+        _mark_indexed(db, ext_id)
+
+        # Simulate text update after indexing
+        with db.session() as session:
+            extraction = session.get(TranscriptExtractionSchema, ext_id)
+            extraction.updated_at = datetime.now(UTC) + timedelta(seconds=1)
+
+        assert SearchIndexer.has_pending() is True
 
 
 class TestIndexBatch:
     def test_indexes_extraction(self, db):
-        project_id, transcript_id = _seed_project_and_transcript(db)
+        _, transcript_id = _seed_project_and_transcript(db)
         ext_id = _create_extraction(db, transcript_id, text="extraction text")
 
         with patch.object(indexing, "_get_model", return_value=_mock_model(1)):
@@ -152,18 +135,11 @@ class TestIndexBatch:
         assert count == 1
 
         with db.session() as session:
-            entry = (
-                session.query(SearchIndexSchema)
-                .filter(SearchIndexSchema.source_id == ext_id)
-                .one()
-            )
-            assert entry.section_type == SectionType.KNOWLEDGE
-            assert entry.project_id == project_id
-            assert entry.transcript_id == transcript_id
-            assert entry.text == "extraction text"
-            assert entry.content_hash == _content_hash("extraction text")
-            assert entry.embedding is not None
-            assert len(entry.embedding) == EMBEDDING_DIMENSIONS
+            extraction = session.get(TranscriptExtractionSchema, ext_id)
+            assert extraction.embedding is not None
+            assert len(extraction.embedding) == EMBEDDING_DIMENSIONS
+            assert extraction.content_hash == _content_hash("extraction text")
+            assert extraction.indexed_at is not None
 
     def test_returns_zero_when_nothing_pending(self, db):  # noqa: ARG002
         with patch.object(indexing, "_get_model") as mock_st_cls:
@@ -183,11 +159,15 @@ class TestIndexBatch:
         assert count == 2
 
         with db.session() as session:
-            indexed = session.query(SearchIndexSchema).count()
+            indexed = (
+                session.query(TranscriptExtractionSchema)
+                .filter(TranscriptExtractionSchema.embedding.isnot(None))
+                .count()
+            )
             assert indexed == 2
 
     def test_indexes_summary_section(self, db):
-        project_id, transcript_id = _seed_project_and_transcript(db)
+        _, transcript_id = _seed_project_and_transcript(db)
         ext_id = _create_extraction(
             db, transcript_id, text="Session summary text.", section_type=SectionType.SUMMARY
         )
@@ -198,33 +178,14 @@ class TestIndexBatch:
         assert count == 1
 
         with db.session() as session:
-            entry = (
-                session.query(SearchIndexSchema)
-                .filter(SearchIndexSchema.source_id == ext_id)
-                .one()
-            )
-            assert entry.section_type == SectionType.SUMMARY
-            assert entry.project_id == project_id
-            assert entry.text == "Session summary text."
-            assert entry.content_hash == _content_hash("Session summary text.")
-            assert entry.embedding is not None
+            extraction = session.get(TranscriptExtractionSchema, ext_id)
+            assert extraction.embedding is not None
+            assert extraction.content_hash == _content_hash("Session summary text.")
 
     def test_updates_changed_content(self, db):
-        project_id, transcript_id = _seed_project_and_transcript(db)
+        _, transcript_id = _seed_project_and_transcript(db)
         ext_id = _create_extraction(db, transcript_id, text="New text.")
-
-        with db.session() as session:
-            session.add(
-                SearchIndexSchema(
-                    section_type=SectionType.KNOWLEDGE,
-                    source_id=ext_id,
-                    project_id=project_id,
-                    transcript_id=transcript_id,
-                    text="Old text.",
-                    content_hash=_content_hash("Old text."),
-                    created_at=datetime.now(UTC),
-                )
-            )
+        _mark_indexed(db, ext_id, stale_hash=True)
 
         with patch.object(indexing, "_get_model", return_value=_mock_model(1)):
             count = SearchIndexer.index_batch(db)
@@ -232,31 +193,14 @@ class TestIndexBatch:
         assert count == 1
 
         with db.session() as session:
-            entry = (
-                session.query(SearchIndexSchema)
-                .filter(SearchIndexSchema.source_id == ext_id)
-                .one()
-            )
-            assert entry.text == "New text."
-            assert entry.content_hash == _content_hash("New text.")
+            extraction = session.get(TranscriptExtractionSchema, ext_id)
+            assert extraction.content_hash == _content_hash("New text.")
 
     def test_skips_unchanged_content(self, db):
         text = "Unchanged text."
-        project_id, transcript_id = _seed_project_and_transcript(db)
+        _, transcript_id = _seed_project_and_transcript(db)
         ext_id = _create_extraction(db, transcript_id, text=text)
-
-        with db.session() as session:
-            session.add(
-                SearchIndexSchema(
-                    section_type=SectionType.KNOWLEDGE,
-                    source_id=ext_id,
-                    project_id=project_id,
-                    transcript_id=transcript_id,
-                    text=text,
-                    content_hash=_content_hash(text),
-                    created_at=datetime.now(UTC),
-                )
-            )
+        _mark_indexed(db, ext_id, text=text)
 
         with patch.object(indexing, "_get_model") as mock_st_cls:
             count = SearchIndexer.index_batch(db)
@@ -275,5 +219,9 @@ class TestIndexBatch:
         assert count == 2
 
         with db.session() as session:
-            total = session.query(SearchIndexSchema).count()
-            assert total == 2
+            indexed = (
+                session.query(TranscriptExtractionSchema)
+                .filter(TranscriptExtractionSchema.embedding.isnot(None))
+                .count()
+            )
+            assert indexed == 2

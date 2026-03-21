@@ -11,7 +11,6 @@ from observer.constants import EMBEDDING_DIMENSIONS
 from observer.data.enums import SectionType
 from observer.data.schemas import (
     ProjectSchema,
-    SearchIndexSchema,
     TranscriptExtractionSchema,
     TranscriptSchema,
 )
@@ -22,26 +21,14 @@ def _random_embedding() -> list[float]:
     return np.random.rand(EMBEDDING_DIMENSIONS).astype(np.float32).tolist()
 
 
-def _fixed_embedding(base: float = 1.0, offset: int = 0) -> list[float]:
-    """Deterministic embedding with energy at a specific offset.
-
-    Embeddings with the same offset have cosine similarity 1.0; different
-    offsets are orthogonal. Adding a small base keeps vectors non-sparse
-    so they have high mutual similarity when offsets are close.
-    """
-    values = [0.1] * EMBEDDING_DIMENSIONS
-    values[offset % EMBEDDING_DIMENSIONS] = base
-    return values
+def _content_hash(text: str) -> str:
+    return hashlib.sha256(text.encode()).hexdigest()
 
 
 def _mock_model():
     model = MagicMock()
     model.encode.return_value = np.random.rand(1, EMBEDDING_DIMENSIONS).astype(np.float32)
     return model
-
-
-def _content_hash(text: str) -> str:
-    return hashlib.sha256(text.encode()).hexdigest()
 
 
 def _seed_extraction(
@@ -51,7 +38,7 @@ def _seed_extraction(
     session_id="sess-1",
     project_name="test-project",
 ):
-    """Create a project, transcript, extraction, and search_index entry. Returns extraction ID."""
+    """Create a project, transcript, and indexed extraction. Returns extraction ID."""
     with db.session() as session:
         project = session.query(ProjectSchema).filter(ProjectSchema.name == project_name).first()
         if project is None:
@@ -72,21 +59,11 @@ def _seed_extraction(
             transcript_id=transcript.id,
             section_type=section_type,
             text=text,
+            embedding=_random_embedding(),
+            content_hash=_content_hash(text),
+            indexed_at=datetime.now(UTC),
         )
         session.add(extraction)
-        session.flush()
-
-        index_entry = SearchIndexSchema(
-            section_type=section_type,
-            source_id=extraction.id,
-            project_id=project.id,
-            transcript_id=transcript.id,
-            text=text,
-            content_hash=_content_hash(text),
-            embedding=_random_embedding(),
-            created_at=datetime.now(UTC),
-        )
-        session.add(index_entry)
         session.flush()
 
         return extraction.id
@@ -99,7 +76,7 @@ def _seed_summary(
     summary_text="## Test Title\nTest transcript summary",
     project_name="test-project",
 ):
-    """Create a project, transcript, summary extraction, and search_index entry. Returns transcript ID."""
+    """Create a project, transcript, and indexed summary extraction. Returns transcript ID."""
     with db.session() as session:
         project = session.query(ProjectSchema).filter(ProjectSchema.name == project_name).first()
         if project is None:
@@ -119,21 +96,11 @@ def _seed_summary(
             transcript_id=transcript.id,
             section_type=SectionType.SUMMARY,
             text=summary_text,
+            embedding=_random_embedding(),
+            content_hash=_content_hash(summary_text),
+            indexed_at=datetime.now(UTC),
         )
         session.add(extraction)
-        session.flush()
-
-        index_entry = SearchIndexSchema(
-            section_type=SectionType.SUMMARY,
-            source_id=extraction.id,
-            project_id=project.id,
-            transcript_id=transcript.id,
-            text=summary_text,
-            content_hash=_content_hash(summary_text),
-            embedding=_random_embedding(),
-            created_at=datetime.now(UTC),
-        )
-        session.add(index_entry)
         session.flush()
 
         return transcript.id
@@ -160,7 +127,6 @@ class TestSearchArtifacts:
         with patch.object(engine, "_get_model", return_value=_mock_model()):
             results = engine.search_artifacts("test query", "test-project")
 
-        # Summary sections should not appear in artifact search
         for r in results:
             assert r.get("type") != SectionType.SUMMARY
 
@@ -208,6 +174,34 @@ class TestSearchArtifacts:
         assert len(results) >= 2
 
     def test_empty_db_returns_empty(self, db):  # noqa: ARG002
+        with patch.object(engine, "_get_model", return_value=_mock_model()):
+            results = engine.search_artifacts("test query", "test-project")
+
+        assert results == []
+
+    def test_excludes_unindexed_extractions(self, db):  # noqa: ARG002
+        """Extractions without embeddings should not appear in search results."""
+        with db.session() as session:
+            project = ProjectSchema(name="test-project", repo_path="/tmp/test-project")
+            session.add(project)
+            session.flush()
+
+            transcript = TranscriptSchema(
+                project_id=project.id,
+                session_id="sess-unindexed",
+                path="/tmp/transcript-unindexed.jsonl",
+            )
+            session.add(transcript)
+            session.flush()
+
+            # Extraction without embedding (not yet indexed)
+            extraction = TranscriptExtractionSchema(
+                transcript_id=transcript.id,
+                section_type=SectionType.KNOWLEDGE,
+                text="unindexed knowledge",
+            )
+            session.add(extraction)
+
         with patch.object(engine, "_get_model", return_value=_mock_model()):
             results = engine.search_artifacts("test query", "test-project")
 

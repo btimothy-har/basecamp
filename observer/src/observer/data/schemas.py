@@ -1,10 +1,9 @@
 """SQLAlchemy ORM schemas for observer.
 
-Four layers:
+Three layers:
 - Ingestion: ProjectSchema, WorktreeSchema, TranscriptSchema, RawEventSchema
 - Pipeline: WorkItemSchema, TranscriptEventSchema
-- Memory: TranscriptExtractionSchema
-- Search: SearchIndexSchema
+- Memory: TranscriptExtractionSchema (includes embedding + search index)
 """
 
 from datetime import UTC, datetime
@@ -137,27 +136,8 @@ class TranscriptExtractionSchema(Base):
         UniqueConstraint("transcript_id", "section_type"),
         Index("ix_transcript_extractions_transcript_id", "transcript_id"),
         Index("ix_transcript_extractions_section_type", "section_type"),
-    )
-
-    id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    transcript_id: Mapped[int] = mapped_column(ForeignKey("transcripts.id"), nullable=False)
-    section_type: Mapped[str] = mapped_column(
-        Enum(SectionType, native_enum=False, create_constraint=False), nullable=False
-    )
-    text: Mapped[str] = mapped_column(Text, nullable=False)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow, nullable=False)
-    updated_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow, nullable=False)
-
-
-class SearchIndexSchema(Base):
-    __tablename__ = "search_index"
-    __table_args__ = (
-        UniqueConstraint("source_id"),
-        Index("ix_search_index_project_id", "project_id"),
-        Index("ix_search_index_transcript_id", "transcript_id"),
-        Index("ix_search_index_section_type", "section_type"),
         Index(
-            "ix_search_index_embedding_hnsw",
+            "ix_transcript_extractions_embedding_hnsw",
             "embedding",
             postgresql_using="hnsw",
             postgresql_with={"m": 16, "ef_construction": 64},
@@ -166,14 +146,15 @@ class SearchIndexSchema(Base):
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    transcript_id: Mapped[int] = mapped_column(ForeignKey("transcripts.id"), nullable=False)
     section_type: Mapped[str] = mapped_column(
         Enum(SectionType, native_enum=False, create_constraint=False), nullable=False
     )
-    source_id: Mapped[int] = mapped_column(Integer, nullable=False)
-    project_id: Mapped[int] = mapped_column(ForeignKey("projects.id"), nullable=False)
-    transcript_id: Mapped[int | None] = mapped_column(ForeignKey("transcripts.id"), nullable=True)
-    text: Mapped[str] = mapped_column(String, nullable=False)
+    text: Mapped[str] = mapped_column(Text, nullable=False)
     embedding: Mapped[list[float] | None] = mapped_column(Vector(384), nullable=True)
-    content_hash: Mapped[str] = mapped_column(String, nullable=False)
-    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
-    indexed_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow, nullable=False)
+    content_hash: Mapped[str | None] = mapped_column(String, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow, nullable=False)
+    indexed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+    transcript: Mapped["TranscriptSchema"] = relationship()

@@ -1,8 +1,8 @@
-"""Search engine — two retrieval pathways over the search index.
+"""Search engine — two retrieval pathways over transcript extractions.
 
-- ``search_artifacts``: KNN over transcript extraction entries → score → dedup.
+- ``search_artifacts``: KNN over non-summary extraction sections → score → dedup.
   Returns specific facts, decisions, actions, and constraints.
-- ``search_transcripts``: KNN over transcript summary entries → score → dedup.
+- ``search_transcripts``: KNN over summary extraction sections → score → dedup.
   Returns session-level matches for orientation.
 """
 
@@ -21,20 +21,17 @@ from observer.constants import (
 from observer.data.enums import SectionType
 from observer.data.schemas import (
     ProjectSchema,
-    SearchIndexSchema,
     TranscriptExtractionSchema,
     TranscriptSchema,
     WorktreeSchema,
 )
+from observer.data.transcript import Transcript
+from observer.data.transcript_extraction import TranscriptExtraction
 from observer.mcp.scoring import compute_score, deduplicate
 from observer.services.db import Database
 
 logger = logging.getLogger(__name__)
 
-# Single-element cache — mutates the list rather than rebinding a name, so no
-# `global` statement is needed. Thread safety is not a concern: this module is
-# only used by the observer-search MCP server, which is a single-process stdio
-# server with no concurrent callers.
 _model_cache: list[Any] = []
 
 
@@ -55,17 +52,17 @@ def _get_model() -> Any:
 def _apply_scope_filters(q, *, project_name, worktree, session_id):
     """Apply project, worktree, and session exclusion filters to a query.
 
-    The query must already have SearchIndexSchema in the FROM clause.
-    TranscriptSchema is joined only when needed (worktree or session exclusion).
+    The query must already have TranscriptExtractionSchema in the FROM clause.
+    Joins TranscriptSchema when needed (project, worktree, or session exclusion).
     """
+    needs_transcript_join = project_name is not None or worktree is not None or session_id is not None
+    if needs_transcript_join:
+        q = q.join(TranscriptSchema, TranscriptExtractionSchema.transcript_id == TranscriptSchema.id)
+
     if project_name is not None:
-        q = q.join(ProjectSchema, SearchIndexSchema.project_id == ProjectSchema.id).filter(
+        q = q.join(ProjectSchema, TranscriptSchema.project_id == ProjectSchema.id).filter(
             ProjectSchema.name == project_name,
         )
-
-    needs_transcript_join = worktree is not None or session_id is not None
-    if needs_transcript_join:
-        q = q.join(TranscriptSchema, SearchIndexSchema.transcript_id == TranscriptSchema.id)
 
     if worktree is not None:
         q = q.join(WorktreeSchema, TranscriptSchema.worktree_id == WorktreeSchema.id).filter(
@@ -87,7 +84,7 @@ def search_artifacts(
     threshold: float = SEARCH_DEFAULT_THRESHOLD,
     worktree: str | None = None,
 ) -> list[dict[str, Any]]:
-    """Semantic search over transcript extraction index entries.
+    """Semantic search over non-summary extraction sections.
 
     Finds specific extracted knowledge, decisions, actions, and constraints
     from past sessions.
@@ -99,15 +96,15 @@ def search_artifacts(
     db = Database()
 
     with db.session() as session:
-        distance_expr = SearchIndexSchema.embedding.cosine_distance(query_vector)
+        distance_expr = TranscriptExtractionSchema.embedding.cosine_distance(query_vector)
         q = (
             session.query(
-                SearchIndexSchema,
+                TranscriptExtractionSchema,
                 distance_expr.label("distance"),
             )
             .filter(
-                SearchIndexSchema.embedding.isnot(None),
-                SearchIndexSchema.section_type != SectionType.SUMMARY,
+                TranscriptExtractionSchema.embedding.isnot(None),
+                TranscriptExtractionSchema.section_type != SectionType.SUMMARY,
             )
         )
 
@@ -118,19 +115,19 @@ def search_artifacts(
             return []
 
         scored: list[dict[str, Any]] = []
-        for index_entry, distance in rows:
-            score = compute_score(distance, index_entry.created_at)
+        for extraction, distance in rows:
+            score = compute_score(distance, extraction.created_at)
             if score < threshold:
                 continue
 
             scored.append({
-                "source_id": index_entry.source_id,
-                "text": index_entry.text,
-                "type": index_entry.section_type,
+                "source_id": extraction.id,
+                "text": extraction.text,
+                "type": extraction.section_type,
                 "score": round(score, 4),
-                "created_at": index_entry.created_at.isoformat() if index_entry.created_at else None,
-                "transcript_id": index_entry.transcript_id,
-                "_embedding": index_entry.embedding,
+                "created_at": extraction.created_at.isoformat() if extraction.created_at else None,
+                "transcript_id": extraction.transcript_id,
+                "_embedding": extraction.embedding,
             })
 
         scored.sort(key=lambda r: r["score"], reverse=True)
@@ -152,7 +149,7 @@ def search_transcripts(
     threshold: float = SEARCH_DEFAULT_THRESHOLD,
     worktree: str | None = None,
 ) -> list[dict[str, Any]]:
-    """Semantic search over transcript summary index entries.
+    """Semantic search over summary extraction sections.
 
     Finds sessions whose summaries are semantically relevant to the query.
     Returns session-level matches for orientation — use get_transcript_summary
@@ -165,13 +162,13 @@ def search_transcripts(
     db = Database()
 
     with db.session() as session:
-        distance_expr = SearchIndexSchema.embedding.cosine_distance(query_vector)
+        distance_expr = TranscriptExtractionSchema.embedding.cosine_distance(query_vector)
         q = session.query(
-            SearchIndexSchema,
+            TranscriptExtractionSchema,
             distance_expr.label("distance"),
         ).filter(
-            SearchIndexSchema.embedding.isnot(None),
-            SearchIndexSchema.section_type == SectionType.SUMMARY,
+            TranscriptExtractionSchema.embedding.isnot(None),
+            TranscriptExtractionSchema.section_type == SectionType.SUMMARY,
         )
 
         q = _apply_scope_filters(q, project_name=project_name, worktree=worktree, session_id=session_id)
@@ -181,23 +178,23 @@ def search_transcripts(
             return []
 
         scored: list[dict[str, Any]] = []
-        for index_entry, distance in rows:
-            score = compute_score(distance, index_entry.created_at)
+        for extraction, distance in rows:
+            score = compute_score(distance, extraction.created_at)
             if score < threshold:
                 continue
 
             # Title is embedded as the first line of the SUMMARY section: "## {title}"
             title = None
-            if index_entry.text and index_entry.text.startswith("## "):
-                title = index_entry.text.split("\n", 1)[0].removeprefix("## ")
+            if extraction.text and extraction.text.startswith("## "):
+                title = extraction.text.split("\n", 1)[0].removeprefix("## ")
 
             result: dict[str, Any] = {
-                "source_id": index_entry.source_id,
-                "text": index_entry.text,
+                "source_id": extraction.id,
+                "text": extraction.text,
                 "score": round(score, 4),
-                "created_at": index_entry.created_at.isoformat() if index_entry.created_at else None,
-                "transcript_id": index_entry.transcript_id,
-                "_embedding": index_entry.embedding,
+                "created_at": extraction.created_at.isoformat() if extraction.created_at else None,
+                "transcript_id": extraction.transcript_id,
+                "_embedding": extraction.embedding,
             }
 
             if title is not None:
@@ -215,57 +212,49 @@ def search_transcripts(
     return results
 
 
-def _extraction_sections_dict(session, transcript_id: int) -> dict[str, str]:
-    """Query extraction sections for a transcript, returned as {section_type: text}."""
-    rows = (
-        session.query(TranscriptExtractionSchema)
-        .filter(TranscriptExtractionSchema.transcript_id == transcript_id)
-        .all()
-    )
-    return {row.section_type: row.text for row in rows}
+def _extraction_sections_dict(transcript_id: int) -> dict[str, str]:
+    """Get extraction sections for a transcript as {section_type: text}."""
+    extractions = TranscriptExtraction.get_for_transcript(transcript_id)
+    return {e.section_type: e.text for e in extractions}
 
 
 def get_extraction(extraction_id: int) -> dict[str, Any] | None:
     """Retrieve a single transcript extraction section by ID."""
-    db = Database()
-    with db.session() as session:
-        row = session.get(TranscriptExtractionSchema, extraction_id)
-        if row is None:
-            return None
+    extraction = TranscriptExtraction.get(extraction_id)
+    if extraction is None:
+        return None
 
-        return {
-            "id": row.id,
-            "section_type": row.section_type,
-            "text": row.text,
-            "transcript_id": row.transcript_id,
-            "created_at": row.created_at.isoformat() if row.created_at else None,
-        }
+    return {
+        "id": extraction.id,
+        "section_type": extraction.section_type,
+        "text": extraction.text,
+        "transcript_id": extraction.transcript_id,
+        "created_at": extraction.created_at.isoformat() if extraction.created_at else None,
+    }
 
 
 def get_transcript_summary(transcript_id: int) -> dict[str, Any] | None:
     """Retrieve a transcript's extraction sections and metadata for drill-down."""
-    db = Database()
-    with db.session() as session:
-        row = session.get(TranscriptSchema, transcript_id)
-        if row is None:
-            return None
+    transcript = Transcript.get(transcript_id)
+    if transcript is None:
+        return None
 
-        sections = _extraction_sections_dict(session, transcript_id)
+    sections = _extraction_sections_dict(transcript_id)
 
-        # Extract title from the SUMMARY section (first line: "## {title}")
-        title = None
-        summary_text = sections.get(SectionType.SUMMARY)
-        if summary_text and summary_text.startswith("## "):
-            title = summary_text.split("\n", 1)[0].removeprefix("## ")
+    # Extract title from the SUMMARY section (first line: "## {title}")
+    title = None
+    summary_text = sections.get(SectionType.SUMMARY)
+    if summary_text and summary_text.startswith("## "):
+        title = summary_text.split("\n", 1)[0].removeprefix("## ")
 
-        return {
-            "id": row.id,
-            "title": title,
-            "session_id": row.session_id,
-            "started_at": row.started_at.isoformat(),
-            "ended_at": row.ended_at.isoformat() if row.ended_at else None,
-            "sections": sections,
-        }
+    return {
+        "id": transcript.id,
+        "title": title,
+        "session_id": transcript.session_id,
+        "started_at": transcript.started_at.isoformat(),
+        "ended_at": transcript.ended_at.isoformat() if transcript.ended_at else None,
+        "sections": sections,
+    }
 
 
 def get_session(session_id: str) -> dict[str, Any] | None:
@@ -274,17 +263,15 @@ def get_session(session_id: str) -> dict[str, Any] | None:
     Direct lookup — no embeddings or search involved. Used by the main agent
     to check on dispatched worker sessions.
     """
-    db = Database()
-    with db.session() as session:
-        row = session.query(TranscriptSchema).filter(TranscriptSchema.session_id == session_id).first()
-        if row is None:
-            return None
+    transcript = Transcript.get_by_session_id(session_id)
+    if transcript is None:
+        return None
 
-        sections = _extraction_sections_dict(session, row.id)
+    sections = _extraction_sections_dict(transcript.id)
 
-        return {
-            "session_id": row.session_id,
-            "started_at": row.started_at.isoformat(),
-            "ended_at": row.ended_at.isoformat() if row.ended_at else None,
-            "sections": sections,
-        }
+    return {
+        "session_id": transcript.session_id,
+        "started_at": transcript.started_at.isoformat(),
+        "ended_at": transcript.ended_at.isoformat() if transcript.ended_at else None,
+        "sections": sections,
+    }
