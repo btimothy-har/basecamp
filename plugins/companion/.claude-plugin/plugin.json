@@ -1,7 +1,7 @@
 {
     "name": "bc-companion",
-    "description": "Basecamp session management — context injection, session tracking, and worker dispatch.",
-    "version": "1.6.0",
+    "description": "Basecamp session management — context injection and session tracking.",
+    "version": "1.7.0",
     "author": {
         "name": "Brian Har"
     }
