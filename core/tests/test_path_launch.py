@@ -141,7 +141,7 @@ class TestExecuteLaunchPathMode:
             assert project_arg.working_style == DEFAULT_PATH_WORKING_STYLE
 
     def test_path_mode_with_resume(self, non_git_dir: Path, tmp_path: Path) -> None:
-        """Path mode should pass --resume to claude when resume=True."""
+        """Path mode should pass --resume to claude when extra_args=["--resume"]."""
         with (
             patch("core.git.worktrees.WORKTREES_DIR", tmp_path / "worktrees"),
             patch("core.cli.launch.load_dotenv"),
@@ -152,7 +152,7 @@ class TestExecuteLaunchPathMode:
             execute_launch(
                 non_git_dir.name,
                 Config(projects={}),
-                resume=True,
+                extra_args=["--resume"],
                 resolved_path=non_git_dir,
             )
             cmd = mock_execvp.call_args[0][1]

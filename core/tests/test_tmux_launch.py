@@ -158,7 +158,7 @@ class TestTerminalWrapping:
             patch("shutil.which", return_value="/usr/bin/tmux"),
             patch.dict("os.environ", env_clean, clear=True),
         ):
-            execute_launch("testproject", config, resume=True)
+            execute_launch("testproject", config, extra_args=["--resume"])
 
             args = mock_execvp.call_args[0][1]
             shell_inner = args[-1]

@@ -61,7 +61,7 @@ Use `--model opus` when the task requires deep reasoning:
 
 ## Constraints
 
-- **Terminal multiplexer required** — Kitty (with remote control) or tmux. `basecamp start` wraps in tmux automatically when neither is detected
+- **Terminal multiplexer required** — Kitty (with remote control) or tmux. `basecamp claude` wraps in tmux automatically when neither is detected
 - **Workers are interactive** — the user can see and intervene in any pane
 - **Pull-based coordination** — poll the observer; workers cannot push results back
 - **No shared state** — each worker operates independently; coordinate via filesystem if needed
