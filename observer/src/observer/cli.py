@@ -176,6 +176,51 @@ def db_status() -> None:
     click.echo(f"  Volume:  {status.volume}")
 
 
+@db.command()
+def migrate() -> None:
+    """Run pending database schema migrations."""
+    from observer.services.migrations import (  # noqa: PLC0415
+        get_current_version,
+        get_pending,
+        run_pending,
+    )
+
+    pg_url = get_pg_url()
+    if not pg_url:
+        sys.exit("Database not configured. Run 'observer setup' first.")
+
+    engine = create_engine(pg_url)
+    try:
+        with engine.connect() as conn:
+            conn.execute(text("SELECT 1"))
+    except Exception as e:
+        sys.exit(f"Cannot connect to database: {e}")
+
+    current = get_current_version(engine)
+    pending = get_pending(engine)
+
+    if not pending:
+        click.echo(f"Schema is up to date (version {current}).")
+        engine.dispose()
+        return
+
+    click.echo(f"Current schema version: {current}")
+    click.echo(f"Pending migrations: {len(pending)}")
+    for m in pending:
+        click.echo(f"  {m.version:03d}: {m.description}")
+
+    click.echo()
+    applied = run_pending(engine)
+
+    # After migrations, run create_all to pick up new tables/columns
+    from observer.services.db import Base  # noqa: PLC0415
+
+    Base.metadata.create_all(engine)
+
+    click.echo(f"\nApplied {len(applied)} migration(s). Schema is now at version {applied[-1].version}.")
+    engine.dispose()
+
+
 @main.command()
 @click.option("--foreground", "-f", is_flag=True, help="Run in the foreground.")
 @click.option("--no-viz", is_flag=True, help="Don't start the visualization dashboard.")
