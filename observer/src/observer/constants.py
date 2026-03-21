@@ -14,8 +14,6 @@ PID_FILE = OBSERVER_DIR / "observer.pid"
 LOG_FILE = OBSERVER_DIR / "observer.log"
 
 TICK_INTERVAL = 1  # seconds between scheduler ticks
-PROCESS_INTERVAL = 30  # seconds between processing spawns
-SUMMARY_INTERVAL = 60  # seconds between summary regeneration spawns
 INDEX_INTERVAL = 120  # seconds between indexing spawns
 MAX_INGEST_WORKERS = 8  # max ingest processes spawned per poll cycle
 DEFAULT_STALE_THRESHOLD = 300
@@ -61,33 +59,11 @@ Semantic memory over past Claude Code sessions.
 
 Results are scoped to the current project and exclude the active session.
 
-Two retrieval pathways:
-
-1. search_artifacts — find specific facts, decisions, actions, and constraints.
-   Results include session_context (sibling artifacts from the same
-   session). Drill down with get_artifact for full details including
-   the original prompt (prompted_by) that triggered the work.
-
-2. search_transcripts — find relevant past sessions by summary.
-   Drill down with get_transcript_summary for the full structured
-   summary.
-
-Start with search_artifacts for specific questions. Use
-search_transcripts when you need broader context about what was
-done in past sessions."""
-
-MCP_SERVER_INSTRUCTIONS_LITE = """\
-Semantic memory over past Claude Code sessions (lite mode — transcripts only).
-
-Results are scoped to the current project and exclude the active session.
-
 Retrieval pathway:
 
 search_transcripts — find relevant past sessions by summary.
 Drill down with get_transcript_summary for the full structured
-summary.
-
-Artifact search is not available in lite mode."""
+summary."""
 
 # Container (local dev database)
 DB_CONTAINER_NAME = "observer-pg"

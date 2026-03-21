@@ -90,24 +90,26 @@ def set_summary_model(model: str) -> None:
 
 
 def get_mode() -> str:
-    """Return the observer processing mode: 'full', 'lite', or 'off'.
+    """Return the observer processing mode: 'on' or 'off'.
 
-    Handles backward compat with the old extraction_enabled boolean.
+    Handles backward compat with old 'full'/'lite' mode values.
     """
     data = _read()
     mode = data.get("mode")
-    if mode in ("full", "lite", "off"):
-        return mode
+    if mode == "off":
+        return "off"
+    if mode in ("on", "full", "lite"):
+        return "on"
     # Backward compat: old configs used extraction_enabled boolean
     if "extraction_enabled" in data:
-        return "full" if data["extraction_enabled"] else "off"
-    return "full"
+        return "on" if data["extraction_enabled"] else "off"
+    return "on"
 
 
 def set_mode(mode: str) -> None:
     """Persist the processing mode to the config file."""
-    if mode not in ("full", "lite", "off"):
-        msg = f"Invalid mode: {mode!r}. Must be 'full', 'lite', or 'off'."
+    if mode not in ("on", "off"):
+        msg = f"Invalid mode: {mode!r}. Must be 'on' or 'off'."
         raise ValueError(msg)
     data = _read()
     data["mode"] = mode

@@ -17,16 +17,12 @@ class WorkItemStage(IntEnum):
     ERROR = 3
 
 
-class ArtifactType(StrEnum):
+class SectionType(StrEnum):
+    SUMMARY = "summary"
     KNOWLEDGE = "knowledge"
-    DECISION = "decision"
-    ACTION = "action"
-    CONSTRAINT = "constraint"
-
-
-class ArtifactSource(StrEnum):
-    EXTRACTED = "extracted"
-    MANUAL = "manual"
+    DECISIONS = "decisions"
+    CONSTRAINTS = "constraints"
+    ACTIONS = "actions"
 
 
 class WorkItemType(StrEnum):
@@ -56,5 +52,5 @@ _SKIP_TYPES = frozenset(
 
 
 class SearchSourceType(StrEnum):
-    ARTIFACT = "artifact"
+    TRANSCRIPT_EXTRACTION = "transcript_extraction"
     TRANSCRIPT_SUMMARY = "transcript_summary"
