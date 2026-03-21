@@ -9,6 +9,7 @@ from datetime import UTC, datetime
 
 from observer.data.artifact import Artifact
 from observer.data.enums import SectionType, WorkItemType
+from observer.data.schemas import ArtifactSchema
 from observer.data.transcript_event import TranscriptEvent
 from observer.exceptions import ExtractionError
 from observer.pipeline.llm import extract_sections
@@ -46,10 +47,11 @@ class TranscriptExtractor:
 
         now = datetime.now(UTC)
         count = 0
+        emitted: set[SectionType] = set()
         with db.session() as session:
             for field_name, section_type in _SECTION_FIELDS:
                 text = getattr(result, field_name)
-                if not text:
+                if not text or not text.strip():
                     continue
 
                 if section_type == SectionType.SUMMARY:
@@ -63,7 +65,18 @@ class TranscriptExtractor:
                     updated_at=now,
                 )
                 artifact.save(session)
+                emitted.add(section_type)
                 count += 1
+
+            # Remove stale sections from prior extractions
+            if emitted:
+                all_types = {st for _, st in _SECTION_FIELDS}
+                stale_types = all_types - emitted
+                if stale_types:
+                    session.query(ArtifactSchema).filter(
+                        ArtifactSchema.transcript_id == transcript_id,
+                        ArtifactSchema.section_type.in_(stale_types),
+                    ).delete(synchronize_session="fetch")
 
         logger.info(
             "Extracted %d sections for transcript %d",

@@ -113,7 +113,7 @@ def search_artifacts(
 
         scored: list[dict[str, Any]] = []
         for artifact, distance in rows:
-            score = compute_score(distance, artifact.created_at)
+            score = compute_score(distance, artifact.updated_at)
             if score < threshold:
                 continue
 
@@ -178,7 +178,7 @@ def search_transcripts(
 
         scored: list[dict[str, Any]] = []
         for artifact, distance in rows:
-            score = compute_score(distance, artifact.created_at)
+            score = compute_score(distance, artifact.updated_at)
             if score < threshold:
                 continue
 
