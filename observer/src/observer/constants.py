@@ -32,7 +32,7 @@ TRANSCRIPT_EXTENSION = ".jsonl"
 REFINING_BATCH_LIMIT = 200
 REFINE_INTERVAL = 5  # seconds between refining spawns
 EXTRACTION_TIMEOUT = 120
-DEFAULT_EXTRACTION_MODEL = "sonnet"
+DEFAULT_OBSERVER_MODEL = "sonnet"
 
 EXTRACTABLE_EVENT_TYPES = frozenset({"user", "assistant"})
 

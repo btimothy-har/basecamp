@@ -12,7 +12,7 @@ from observer.pipeline.models import (
     SummaryResult,
 )
 from observer.services.agent import Agent
-from observer.services.config import get_extraction_model
+from observer.services.config import get_extraction_model, get_summary_model
 
 logger = logging.getLogger(__name__)
 
@@ -25,7 +25,7 @@ def summarize_tool_pair(
     """Summarize one tool_use + tool_result pair."""
     prompt = f"## Tool Invocation\nTool: {tool_name}\nInput: {tool_input}\n\n## Result\n{result_content}"
 
-    agent = Agent(system_prompt=prompts.tool_summarize)
+    agent = Agent(system_prompt=prompts.tool_summarize, model=get_summary_model())
     response = agent.run(prompt, json_schema=SummaryResult.model_json_schema())
 
     try:
@@ -37,7 +37,7 @@ def summarize_tool_pair(
 
 def summarize_thinking(thinking_text: str) -> str:
     """Summarize a thinking block for the context buffer."""
-    agent = Agent(system_prompt=prompts.thinking_summarize)
+    agent = Agent(system_prompt=prompts.thinking_summarize, model=get_summary_model())
     response = agent.run(thinking_text, json_schema=SummaryResult.model_json_schema())
 
     try:

@@ -23,10 +23,12 @@ from observer.services.config import (
     get_extraction_model,
     get_mode,
     get_pg_url,
+    get_summary_model,
     set_db_source,
     set_extraction_model,
     set_mode,
     set_pg_url,
+    set_summary_model,
 )
 from observer.services.container import (
     ContainerRuntimeNotFoundError,
@@ -378,6 +380,14 @@ def setup() -> None:
     if extraction_model is None:
         sys.exit(1)
 
+    summary_model = questionary.select(
+        "Summary model:",
+        choices=_model_choices,
+        default=get_summary_model(),
+    ).ask()
+    if summary_model is None:
+        sys.exit(1)
+
     mode_choice = questionary.select(
         "Processing mode:",
         choices=[
@@ -392,6 +402,7 @@ def setup() -> None:
     set_pg_url(url)
     set_db_source(db_choice)
     set_extraction_model(extraction_model)
+    set_summary_model(summary_model)
     set_mode(mode_choice)
     click.echo(f"\nConfiguration saved → {CONFIG_FILE}")
 

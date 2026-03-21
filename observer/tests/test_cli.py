@@ -282,7 +282,7 @@ class TestSetup:
             patch("observer.cli.get_pg_url", return_value=self.PG_URL_WITH_CREDS),
             patch("observer.cli.create_engine", return_value=self._mock_engine()),
         ):
-            mock_q.select.return_value.ask.side_effect = ["user", "sonnet", "on"]
+            mock_q.select.return_value.ask.side_effect = ["user", "sonnet", "haiku", "on"]
             mock_q.Choice = questionary.Choice
 
             result = runner.invoke(main, ["setup"], input=f"{self.PG_URL_WITH_CREDS}\nn\n")
@@ -301,7 +301,7 @@ class TestSetup:
             patch("observer.cli.set_pg_url") as mock_set_url,
             patch("observer.cli.set_db_source") as mock_set_source,
         ):
-            mock_q.select.return_value.ask.side_effect = ["container", "sonnet", "on"]
+            mock_q.select.return_value.ask.side_effect = ["container", "sonnet", "haiku", "on"]
             mock_q.Choice = questionary.Choice
 
             result = runner.invoke(main, ["setup"], input="n\n")

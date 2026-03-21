@@ -12,7 +12,7 @@ import json
 import os
 
 from observer.constants import (
-    DEFAULT_EXTRACTION_MODEL,
+    DEFAULT_OBSERVER_MODEL,
     OBSERVER_DIR,
 )
 
@@ -66,13 +66,25 @@ def set_db_source(source: str) -> None:
 
 def get_extraction_model() -> str:
     """Return the configured extraction model, falling back to the default."""
-    return _read().get("extraction_model") or DEFAULT_EXTRACTION_MODEL
+    return _read().get("extraction_model") or DEFAULT_OBSERVER_MODEL
 
 
 def set_extraction_model(model: str) -> None:
     """Persist the extraction model to the config file."""
     data = _read()
     data["extraction_model"] = model
+    _write(data)
+
+
+def get_summary_model() -> str:
+    """Return the configured summary model, falling back to the default."""
+    return _read().get("summary_model") or DEFAULT_OBSERVER_MODEL
+
+
+def set_summary_model(model: str) -> None:
+    """Persist the summary model to the config file."""
+    data = _read()
+    data["summary_model"] = model
     _write(data)
 
 
