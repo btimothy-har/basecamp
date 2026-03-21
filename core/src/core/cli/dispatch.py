@@ -126,15 +126,14 @@ def execute_dispatch(
     launcher.chmod(launcher.stat().st_mode | stat.S_IEXEC)
 
     # Launch worker in a new terminal pane
-    repo_name = os.environ.get("BASECAMP_REPO", "")
-    observer_enabled = os.environ.get("BASECAMP_OBSERVER_ENABLED", "")
+    # Forward all BASECAMP_* env vars from the parent process, then layer on
+    # dispatch-specific overrides. This keeps dispatch in sync as new env vars
+    # are added to launch.py without cherry-picking each one.
+    pane_env = {k: v for k, v in os.environ.items() if k.startswith("BASECAMP_")}
+    pane_env["BASECAMP_TASK_DIR"] = str(task_dir)
     backend.spawn_pane(
         launcher,
-        env={
-            "BASECAMP_TASK_DIR": str(task_dir),
-            "BASECAMP_REPO": repo_name,
-            "BASECAMP_OBSERVER_ENABLED": observer_enabled,
-        },
+        env=pane_env,
         cwd=Path.cwd(),
         title=name,
     )
