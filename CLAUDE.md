@@ -89,8 +89,8 @@ Use `-l <label>` to work in an isolated git worktree:
 Key behaviors:
 - Worktrees are opt-in via `-l <label>` flag
 - Label is both the directory name and worktree identifier
-- `basecamp claude -l auth` creates or re-enters worktree "auth" with branch `wt/auth`
-- `basecamp open -l auth` opens existing worktree (errors if not found)
+- `basecamp claude <project> -l auth` creates or re-enters worktree "auth" with branch `wt/auth`
+- `basecamp open <project> -l auth` opens existing worktree (errors if not found)
 - Secondary dirs (`--add-dir`) stay on main branch
 
 ### Plugin Modules

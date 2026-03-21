@@ -28,7 +28,7 @@ basecamp solves this with a single command that:
 
 ### Multi-Project Management
 
-Define projects in `~/.basecamp/projects.json` with their directories, descriptions, and working styles. Launch any project with `basecamp claude <project>`.
+Define projects in `~/.basecamp/config.json` with their directories, descriptions, and working styles. Launch any project with `basecamp claude <project>`.
 
 ```json
 {

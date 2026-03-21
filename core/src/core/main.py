@@ -72,8 +72,9 @@ def claude(ctx: click.Context, project: str, label: str | None) -> None:
     """
     try:
         for arg in ctx.args:
-            if arg in _BLOCKED_ARGS:
-                raise BlockedArgError(arg)
+            for blocked in _BLOCKED_ARGS:
+                if arg == blocked or arg.startswith(blocked + "="):
+                    raise BlockedArgError(blocked)
 
         if is_path_argument(project):
             if label:
