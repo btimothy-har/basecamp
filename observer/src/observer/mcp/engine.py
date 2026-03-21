@@ -97,15 +97,12 @@ def search_artifacts(
 
     with db.session() as session:
         distance_expr = ArtifactSchema.embedding.cosine_distance(query_vector)
-        q = (
-            session.query(
-                ArtifactSchema,
-                distance_expr.label("distance"),
-            )
-            .filter(
-                ArtifactSchema.embedding.isnot(None),
-                ArtifactSchema.section_type != SectionType.SUMMARY,
-            )
+        q = session.query(
+            ArtifactSchema,
+            distance_expr.label("distance"),
+        ).filter(
+            ArtifactSchema.embedding.isnot(None),
+            ArtifactSchema.section_type != SectionType.SUMMARY,
         )
 
         q = _apply_scope_filters(q, project_name=project_name, worktree=worktree, session_id=session_id)
@@ -120,15 +117,17 @@ def search_artifacts(
             if score < threshold:
                 continue
 
-            scored.append({
-                "artifact_id": artifact.id,
-                "text": artifact.text,
-                "type": artifact.section_type,
-                "score": round(score, 4),
-                "created_at": artifact.created_at.isoformat() if artifact.created_at else None,
-                "transcript_id": artifact.transcript_id,
-                "_embedding": artifact.embedding,
-            })
+            scored.append(
+                {
+                    "artifact_id": artifact.id,
+                    "text": artifact.text,
+                    "type": artifact.section_type,
+                    "score": round(score, 4),
+                    "created_at": artifact.created_at.isoformat() if artifact.created_at else None,
+                    "transcript_id": artifact.transcript_id,
+                    "_embedding": artifact.embedding,
+                }
+            )
 
         scored.sort(key=lambda r: r["score"], reverse=True)
         results = deduplicate(scored)

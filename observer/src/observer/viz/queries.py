@@ -97,18 +97,14 @@ def get_section_type_counts(
 ) -> list[dict]:
     """Extraction counts grouped by section type."""
     with Database().session() as session:
-        q = session.query(
-            ArtifactSchema.section_type, func.count(ArtifactSchema.id)
-        ).group_by(ArtifactSchema.section_type)
+        q = session.query(ArtifactSchema.section_type, func.count(ArtifactSchema.id)).group_by(
+            ArtifactSchema.section_type
+        )
 
         if transcript_id is not None:
             q = q.filter(ArtifactSchema.transcript_id == transcript_id)
         elif project_id is not None:
-            q = q.filter(
-                ArtifactSchema.transcript_id.in_(
-                    _scoped_transcript_ids(session, project_id, worktree_id)
-                )
-            )
+            q = q.filter(ArtifactSchema.transcript_id.in_(_scoped_transcript_ids(session, project_id, worktree_id)))
 
         return [{"type": section_type, "count": count} for section_type, count in q.all()]
 
@@ -167,9 +163,7 @@ def get_transcripts(
                 session.query(func.count(RawEventSchema.id)).filter(RawEventSchema.transcript_id == r.id).scalar()
             )
             artifact_count = (
-                session.query(func.count(ArtifactSchema.id))
-                .filter(ArtifactSchema.transcript_id == r.id)
-                .scalar()
+                session.query(func.count(ArtifactSchema.id)).filter(ArtifactSchema.transcript_id == r.id).scalar()
             )
             title = _extract_title(session, r.id)
             results.append(
@@ -197,11 +191,7 @@ def get_artifacts(
         if transcript_id is not None:
             q = q.filter(ArtifactSchema.transcript_id == transcript_id)
         elif project_id is not None:
-            q = q.filter(
-                ArtifactSchema.transcript_id.in_(
-                    _scoped_transcript_ids(session, project_id, worktree_id)
-                )
-            )
+            q = q.filter(ArtifactSchema.transcript_id.in_(_scoped_transcript_ids(session, project_id, worktree_id)))
         if section_type is not None:
             q = q.filter(ArtifactSchema.section_type == section_type)
 
@@ -253,18 +243,17 @@ def get_timeline_events(transcript_id: int) -> list[dict]:
             .all()
         )
 
-        timeline: list[dict] = []
         status_labels = {s: s.name.lower() for s in RawEventStatus}
-        for e in events:
-            timeline.append(
-                {
-                    "kind": "event",
-                    "timestamp": e.timestamp.isoformat(),
-                    "event_type": e.event_type,
-                    "status": status_labels.get(e.processed, str(e.processed)),
-                    "id": e.id,
-                }
-            )
+        timeline: list[dict] = [
+            {
+                "kind": "event",
+                "timestamp": e.timestamp.isoformat(),
+                "event_type": e.event_type,
+                "status": status_labels.get(e.processed, str(e.processed)),
+                "id": e.id,
+            }
+            for e in events
+        ]
         timeline.extend(
             {
                 "kind": "extraction",

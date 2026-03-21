@@ -158,18 +158,12 @@ class TestIndexBatch:
         assert count == 2
 
         with db.session() as session:
-            indexed = (
-                session.query(ArtifactSchema)
-                .filter(ArtifactSchema.embedding.isnot(None))
-                .count()
-            )
+            indexed = session.query(ArtifactSchema).filter(ArtifactSchema.embedding.isnot(None)).count()
             assert indexed == 2
 
     def test_indexes_summary_section(self, db):
         _, transcript_id = _seed_project_and_transcript(db)
-        ext_id = _create_artifact(
-            db, transcript_id, text="Session summary text.", section_type=SectionType.SUMMARY
-        )
+        ext_id = _create_artifact(db, transcript_id, text="Session summary text.", section_type=SectionType.SUMMARY)
 
         with patch.object(indexing, "_get_model", return_value=_mock_model(1)):
             count = SearchIndexer.index_batch(db)
@@ -218,9 +212,5 @@ class TestIndexBatch:
         assert count == 2
 
         with db.session() as session:
-            indexed = (
-                session.query(ArtifactSchema)
-                .filter(ArtifactSchema.embedding.isnot(None))
-                .count()
-            )
+            indexed = session.query(ArtifactSchema).filter(ArtifactSchema.embedding.isnot(None)).count()
             assert indexed == 2

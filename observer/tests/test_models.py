@@ -207,16 +207,24 @@ class TestArtifactModels:
         with db.session() as s:
             p = _make_project(s)
             t = _make_transcript(s, p)
-            s.add(ArtifactSchema(
-                transcript_id=t.id, section_type=SectionType.KNOWLEDGE, text="first",
-            ))
+            s.add(
+                ArtifactSchema(
+                    transcript_id=t.id,
+                    section_type=SectionType.KNOWLEDGE,
+                    text="first",
+                )
+            )
             s.flush()
-        with pytest.raises(Exception):
+        with pytest.raises(IntegrityError):
             with db.session() as s:
                 t_row = s.get(TranscriptSchema, 1)
-                s.add(ArtifactSchema(
-                    transcript_id=t_row.id, section_type=SectionType.KNOWLEDGE, text="duplicate",
-                ))
+                s.add(
+                    ArtifactSchema(
+                        transcript_id=t_row.id,
+                        section_type=SectionType.KNOWLEDGE,
+                        text="duplicate",
+                    )
+                )
                 s.flush()
 
 

@@ -33,11 +33,7 @@ class TranscriptExtractor:
     def extract_transcript(db: Database, transcript_id: int) -> int:
         """Extract sections for a transcript. Returns count of sections created."""
         events = TranscriptEvent.get_for_transcript(transcript_id)
-        event_texts = [
-            e.text
-            for e in events
-            if e.event_type != WorkItemType.THINKING and not e.event_type.is_skipped
-        ]
+        event_texts = [e.text for e in events if e.event_type != WorkItemType.THINKING and not e.event_type.is_skipped]
 
         if not event_texts:
             return 0

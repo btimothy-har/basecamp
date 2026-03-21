@@ -273,11 +273,7 @@ class TestArtifactSave:
             ).save(session)
 
         with db.session() as session:
-            count = (
-                session.query(ArtifactSchema)
-                .filter(ArtifactSchema.transcript_id == tid)
-                .count()
-            )
+            count = session.query(ArtifactSchema).filter(ArtifactSchema.transcript_id == tid).count()
         assert count == 2
 
     def test_idempotent_save(self, db):

@@ -76,7 +76,6 @@ def set_extraction_model(model: str) -> None:
     _write(data)
 
 
-
 def get_mode() -> str:
     """Return the observer processing mode: 'on' or 'off'.
 

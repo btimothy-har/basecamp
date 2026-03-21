@@ -61,11 +61,13 @@ class Artifact(BaseModel):
         """Update embedding fields on this artifact row."""
         session.query(ArtifactSchema).filter(
             ArtifactSchema.id == self.id,
-        ).update({
-            "embedding": embedding,
-            "content_hash": content_hash,
-            "indexed_at": indexed_at,
-        })
+        ).update(
+            {
+                "embedding": embedding,
+                "content_hash": content_hash,
+                "indexed_at": indexed_at,
+            }
+        )
 
     @classmethod
     def get(cls, artifact_id: int) -> Self | None:
@@ -95,20 +97,14 @@ class Artifact(BaseModel):
     def get_pending_index(cls) -> list[Self]:
         """Return artifacts that need (re-)indexing."""
         with Database().session() as session:
-            rows = (
-                session.query(ArtifactSchema)
-                .filter(cls._pending_condition())
-                .all()
-            )
+            rows = session.query(ArtifactSchema).filter(cls._pending_condition()).all()
             return [cls.model_validate(row) for row in rows]
 
     @classmethod
     def has_pending_index(cls) -> bool:
         """Check if any artifacts need (re-)indexing without loading rows."""
         with Database().session() as session:
-            return session.query(
-                exists().where(cls._pending_condition())
-            ).scalar()
+            return session.query(exists().where(cls._pending_condition())).scalar()
 
     @staticmethod
     def parse_title(summary_text: str | None) -> str | None:
@@ -120,9 +116,5 @@ class Artifact(BaseModel):
     @classmethod
     def get_for_transcript(cls, transcript_id: int) -> list[Self]:
         with Database().session() as session:
-            rows = (
-                session.query(ArtifactSchema)
-                .filter(ArtifactSchema.transcript_id == transcript_id)
-                .all()
-            )
+            rows = session.query(ArtifactSchema).filter(ArtifactSchema.transcript_id == transcript_id).all()
             return [cls.model_validate(row) for row in rows]

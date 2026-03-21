@@ -590,4 +590,3 @@ class TestRefineBatch:
 
         errors = WorkItem.get_by_processed(WorkItemStage.ERROR, limit=100)
         assert len(errors) == 1
-

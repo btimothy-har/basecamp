@@ -49,5 +49,3 @@ _SKIP_TYPES = frozenset(
         WorkItemType.UNRECOGNIZED,
     }
 )
-
-

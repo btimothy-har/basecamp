@@ -35,7 +35,7 @@ class TestTranscriptExtractor:
     @patch("observer.pipeline.extraction.Artifact")
     @patch("observer.pipeline.extraction.extract_sections")
     @patch("observer.pipeline.extraction.TranscriptEvent.get_for_transcript")
-    def test_happy_path_returns_five_sections(self, mock_get, mock_extract, MockExtraction):
+    def test_happy_path_returns_five_sections(self, mock_get, mock_extract, mock_extraction):
         """All 5 sections populated → returns 5, each section saved."""
         mock_get.return_value = [
             _make_event("help me implement JWT auth", WorkItemType.PROMPT),
@@ -46,7 +46,7 @@ class TestTranscriptExtractor:
         count = TranscriptExtractor.extract_transcript(_make_db(), transcript_id=1)
 
         assert count == 5
-        assert MockExtraction.call_count == 5
+        assert mock_extraction.call_count == 5
 
     @patch("observer.pipeline.extraction.extract_sections")
     @patch("observer.pipeline.extraction.TranscriptEvent.get_for_transcript")
@@ -62,7 +62,7 @@ class TestTranscriptExtractor:
     @patch("observer.pipeline.extraction.Artifact")
     @patch("observer.pipeline.extraction.extract_sections")
     @patch("observer.pipeline.extraction.TranscriptEvent.get_for_transcript")
-    def test_thinking_events_filtered_out(self, mock_get, mock_extract, _MockExtraction):
+    def test_thinking_events_filtered_out(self, mock_get, mock_extract, _mock_extraction):
         """THINKING events are excluded from text passed to extract_sections."""
         mock_get.return_value = [
             _make_event("thinking about JWT vs sessions", WorkItemType.THINKING),
@@ -79,7 +79,7 @@ class TestTranscriptExtractor:
     @patch("observer.pipeline.extraction.Artifact")
     @patch("observer.pipeline.extraction.extract_sections")
     @patch("observer.pipeline.extraction.TranscriptEvent.get_for_transcript")
-    def test_skipped_event_types_filtered(self, mock_get, mock_extract, _MockExtraction):
+    def test_skipped_event_types_filtered(self, mock_get, mock_extract, _mock_extraction):
         """TASK_MANAGEMENT (is_skipped=True) events are excluded."""
         mock_get.return_value = [
             _make_event("TaskCreate called", WorkItemType.TASK_MANAGEMENT),
@@ -109,7 +109,7 @@ class TestTranscriptExtractor:
     @patch("observer.pipeline.extraction.Artifact")
     @patch("observer.pipeline.extraction.extract_sections")
     @patch("observer.pipeline.extraction.TranscriptEvent.get_for_transcript")
-    def test_summary_title_prepended(self, mock_get, mock_extract, MockExtraction):
+    def test_summary_title_prepended(self, mock_get, mock_extract, mock_extraction):
         """Summary section text is prefixed with '## {title}'."""
         mock_get.return_value = [
             _make_event("help with auth", WorkItemType.PROMPT),
@@ -119,8 +119,7 @@ class TestTranscriptExtractor:
         TranscriptExtractor.extract_transcript(_make_db(), transcript_id=1)
 
         summary_call = next(
-            c for c in MockExtraction.call_args_list
-            if c.kwargs.get("section_type") == SectionType.SUMMARY
+            c for c in mock_extraction.call_args_list if c.kwargs.get("section_type") == SectionType.SUMMARY
         )
         expected_text = f"## {_FULL_RESULT.title}\n{_FULL_RESULT.summary}"
         assert summary_call.kwargs["text"] == expected_text
@@ -128,7 +127,7 @@ class TestTranscriptExtractor:
     @patch("observer.pipeline.extraction.Artifact")
     @patch("observer.pipeline.extraction.extract_sections")
     @patch("observer.pipeline.extraction.TranscriptEvent.get_for_transcript")
-    def test_empty_section_fields_skipped(self, mock_get, mock_extract, MockExtraction):
+    def test_empty_section_fields_skipped(self, mock_get, mock_extract, mock_extraction):
         """Sections with empty text are not saved → count = 3."""
         mock_get.return_value = [
             _make_event("help with auth", WorkItemType.PROMPT),
@@ -145,7 +144,7 @@ class TestTranscriptExtractor:
         count = TranscriptExtractor.extract_transcript(_make_db(), transcript_id=1)
 
         assert count == 3
-        assert MockExtraction.call_count == 3
+        assert mock_extraction.call_count == 3
 
     @patch("observer.pipeline.extraction.extract_sections")
     @patch("observer.pipeline.extraction.TranscriptEvent.get_for_transcript")
