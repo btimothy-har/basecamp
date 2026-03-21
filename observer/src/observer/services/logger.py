@@ -1,14 +1,8 @@
-"""Logging configuration for daemon and worker processes.
-
-The daemon uses QueueHandler/QueueListener so that a single thread
-writes to the RotatingFileHandler. Workers push LogRecords onto the
-shared multiprocessing.Queue via the @worker_process decorator.
-"""
+"""Logging configuration for observer."""
 
 import logging
 import sys
-from logging.handlers import QueueHandler, QueueListener, RotatingFileHandler
-from multiprocessing import Queue
+from logging.handlers import RotatingFileHandler
 
 from observer import constants
 
@@ -27,9 +21,9 @@ def _suppress_noisy_loggers() -> None:
 
 
 def configure_logging(*, foreground: bool = False) -> None:
-    """Set up root logger with a direct handler (no queue).
+    """Set up root logger with a direct handler.
 
-    Used by non-daemon callers or as a fallback.
+    Used by the process CLI command for background LLM work.
     """
     root = logging.getLogger()
     root.setLevel(logging.INFO)
@@ -44,47 +38,4 @@ def configure_logging(*, foreground: bool = False) -> None:
 
     handler.setFormatter(_make_formatter())
     root.addHandler(handler)
-    _suppress_noisy_loggers()
-
-
-def configure_logging_daemon(*, foreground: bool = False) -> tuple[Queue, QueueListener]:
-    """Set up queue-based logging for the daemon process.
-
-    Creates a multiprocessing.Queue, starts a QueueListener that drains
-    into either a RotatingFileHandler (background) or StreamHandler
-    (foreground), and attaches a QueueHandler to the root logger.
-
-    Returns (queue, listener) — caller owns the listener lifecycle.
-    """
-    if foreground:
-        handler: logging.Handler = logging.StreamHandler(sys.stderr)
-    else:
-        log_file = constants.LOG_FILE
-        log_file.parent.mkdir(parents=True, exist_ok=True)
-        handler = RotatingFileHandler(log_file, maxBytes=_MAX_BYTES, backupCount=_BACKUP_COUNT)
-
-    handler.setFormatter(_make_formatter())
-
-    log_queue: Queue = Queue()
-    listener = QueueListener(log_queue, handler, respect_handler_level=True)
-    listener.start()
-
-    root = logging.getLogger()
-    root.setLevel(logging.INFO)
-    root.handlers.clear()
-    root.addHandler(QueueHandler(log_queue))
-    _suppress_noisy_loggers()
-
-    return log_queue, listener
-
-
-def configure_logging_worker(log_queue: Queue) -> None:
-    """Set up queue-based logging for a spawned worker process.
-
-    Called by the @worker_process decorator, not by workers directly.
-    """
-    root = logging.getLogger()
-    root.setLevel(logging.INFO)
-    root.handlers.clear()
-    root.addHandler(QueueHandler(log_queue))
     _suppress_noisy_loggers()

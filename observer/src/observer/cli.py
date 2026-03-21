@@ -1,12 +1,8 @@
-"""CLI entry point for the observer daemon."""
+"""CLI entry point for the observer."""
 
 import json
 import os
-import signal
-import socket
-import subprocess
 import sys
-import time
 from importlib.resources import files
 from urllib.parse import urlparse, urlunparse
 
@@ -15,7 +11,6 @@ import questionary
 from sqlalchemy import create_engine, text
 
 from observer import constants
-from observer.daemon import Daemon
 from observer.exceptions import RegistrationError
 from observer.services.config import (
     CONFIG_FILE,
@@ -45,7 +40,7 @@ from observer.services.container import (
 
 @click.group()
 def main() -> None:
-    """Observer daemon — monitors Claude Code transcripts."""
+    """Observer — monitors Claude Code transcripts."""
 
 
 @main.group()
@@ -221,54 +216,6 @@ def migrate() -> None:
     engine.dispose()
 
 
-@main.command()
-@click.option("--foreground", "-f", is_flag=True, help="Run in the foreground.")
-@click.option("--no-viz", is_flag=True, help="Don't start the visualization dashboard.")
-def start(foreground: bool, no_viz: bool) -> None:  # noqa: FBT001
-    """Start the observer daemon."""
-    daemon = Daemon(pid_file=constants.PID_FILE, enable_viz=not no_viz)
-
-    if daemon.check_running():
-        sys.exit("Observer is already running.")
-
-    _ensure_db()
-
-    constants.OBSERVER_DIR.mkdir(parents=True, exist_ok=True)
-
-    if foreground:
-        click.echo("Observer running in foreground.")
-    else:
-        click.echo("Observer started.")
-
-    if not no_viz:
-        click.echo(f"  Dashboard: http://{constants.VIZ_HOST}:{constants.VIZ_PORT}")
-
-    daemon.run(foreground=foreground)
-
-
-@main.command()
-@click.option("--timeout", "-t", default=10, show_default=True, help="Seconds to wait.")
-def stop(timeout: int) -> None:
-    """Stop the observer daemon."""
-    daemon = Daemon(pid_file=constants.PID_FILE)
-    pid = daemon.check_running()
-
-    if pid is None:
-        sys.exit("Observer is not running.")
-
-    os.kill(pid, signal.SIGTERM)
-
-    deadline = time.monotonic() + timeout
-    while time.monotonic() < deadline:
-        if not Daemon.is_process_running(pid):
-            daemon._pid_file.unlink(missing_ok=True)
-            click.echo("Observer stopped.")
-            return
-        time.sleep(0.1)
-
-    sys.exit(f"Observer (pid={pid}) did not stop within {timeout}s.")
-
-
 def _mask_pg_url(url: str) -> str:
     """Return the URL with the password replaced by *** for safe display."""
     parsed = urlparse(url)
@@ -279,31 +226,6 @@ def _mask_pg_url(url: str) -> str:
         host += f":{parsed.port}"
     netloc = f"{parsed.username}:***@{host}" if parsed.username else f"***@{host}"
     return urlunparse(parsed._replace(netloc=netloc))
-
-
-@main.command()
-def status() -> None:
-    """Show observer daemon status."""
-    daemon = Daemon(pid_file=constants.PID_FILE)
-    pid = daemon.check_running()
-
-    if pid is None:
-        click.echo("Observer is not running.")
-        sys.exit(3)
-
-    click.echo(f"Observer is running (pid={pid}).")
-    click.echo(f"  Configured Mode: {get_mode()}")
-    pg_url = os.environ.get("OBSERVER_PG_URL") or get_pg_url() or "(not set)"
-    click.echo(f"  PG:   {_mask_pg_url(pg_url)}")
-    click.echo(f"  Log:  {constants.LOG_FILE}")
-
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-        s.settimeout(1)
-        notebook_up = s.connect_ex((constants.VIZ_HOST, constants.VIZ_PORT)) == 0
-    if notebook_up:
-        click.echo(f"  Notebook: http://{constants.VIZ_HOST}:{constants.VIZ_PORT}")
-    else:
-        click.echo("  Notebook: not running")
 
 
 @main.command()
@@ -390,11 +312,6 @@ def mode(target: str | None) -> None:
     set_mode(target)
     click.echo(f"Switched to {target} mode.")
 
-    daemon = Daemon(pid_file=constants.PID_FILE)
-    if daemon.check_running():
-        click.echo("Restart the daemon for changes to take effect:")
-        click.echo("  observer stop && observer start")
-
 
 @main.command()
 def setup() -> None:
@@ -451,25 +368,6 @@ def setup() -> None:
     set_mode(mode_choice)
     click.echo(f"\nConfiguration saved → {CONFIG_FILE}")
 
-    daemon = Daemon(pid_file=constants.PID_FILE)
-    if click.confirm("\nStart observer daemon?", default=True):
-        if daemon.check_running():
-            click.echo("Daemon is already running.")
-        else:
-            constants.OBSERVER_DIR.mkdir(parents=True, exist_ok=True)
-            subprocess.Popen(
-                ["observer", "start"],
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-            )
-            for _ in range(10):
-                time.sleep(0.2)
-                if daemon.check_running():
-                    click.echo("Daemon started.")
-                    break
-            else:
-                click.echo("Daemon may still be starting — check: observer status")
-
 
 def _ensure_container_ready(runtime: str, *, message: str = "PostgreSQL is ready.") -> None:
     """Ensure the container is running and PostgreSQL accepts connections, or exit."""
@@ -496,21 +394,6 @@ def _ensure_container_ready(runtime: str, *, message: str = "PostgreSQL is ready
         click.echo(container_logs(runtime, lines=10))
         sys.exit(1)
 
-
-def _ensure_db() -> None:
-    """Ensure the database is available before starting the daemon."""
-    source = get_db_source()
-    if source is None:
-        sys.exit("Database not configured. Run 'observer setup' first.")
-    if source != "container":
-        return
-
-    try:
-        runtime = detect_runtime()
-    except ContainerRuntimeNotFoundError:
-        sys.exit("Neither 'docker' nor 'podman' found on PATH.")
-
-    _ensure_container_ready(runtime)
 
 
 def _setup_container() -> str:
@@ -572,7 +455,6 @@ def register() -> None:
     """Register a Claude Code session (called by SessionStart hook)."""
     from observer.services.registration import (  # noqa: PLC0415
         HookInput,
-        ensure_daemon_running,
         register_session,
     )
 
@@ -608,10 +490,6 @@ def register() -> None:
         click.echo(f"Registered transcript {result.transcript.session_id}")
     else:
         click.echo(f"Session {result.transcript.session_id} already registered")
-
-    pid = ensure_daemon_running()
-    if pid:
-        click.echo(f"Daemon running (pid={pid})")
 
 
 @main.command()
