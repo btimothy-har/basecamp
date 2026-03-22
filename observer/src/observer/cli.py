@@ -279,14 +279,6 @@ def viz(port: int, host: str, headless: bool) -> None:  # noqa: FBT001
 
 
 @main.command()
-def mcp() -> None:
-    """Start the MCP server for semantic search over observer memory."""
-    from observer.mcp.server import main as mcp_main
-
-    mcp_main()
-
-
-@main.command()
 @click.argument("target", required=False, type=click.Choice(["on", "off"]))
 def mode(target: str | None) -> None:
     """Show or set the observer processing mode.

@@ -43,22 +43,6 @@ SEARCH_TIME_DECAY_POWER = 0.5  # power-law exponent; lower = slower decay
 SEARCH_DEDUP_SIMILARITY = 0.9
 SEARCH_OVERFETCH_FACTOR = 5
 
-# MCP server
-MCP_SERVER_NAME = "observer"
-MCP_SERVER_INSTRUCTIONS = """\
-Semantic memory over past Claude Code sessions.
-
-Results are scoped to the current project.
-
-Retrieval pathways:
-
-search_artifacts — find specific knowledge, decisions, actions,
-and constraints extracted from past sessions.
-
-search_transcripts — find relevant past sessions by summary.
-Drill down with get_transcript_detail for the full structured
-sections."""
-
 # Container (local dev database)
 DB_CONTAINER_NAME = "observer-pg"
 DB_IMAGE = "docker.io/pgvector/pgvector:pg17"

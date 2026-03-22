@@ -14,8 +14,7 @@ dependencies = [
     "sentence-transformers>=3.0",
     "pgvector~=0.4.2",
     "psycopg2-binary>=2.9",
-    "fastmcp>=2.0",
-    "questionary>=2.1.1",
+"questionary>=2.1.1",
 ]
 
 [project.scripts]
