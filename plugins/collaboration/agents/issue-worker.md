@@ -14,9 +14,7 @@ hooks:
 
 You are a GitHub issue worker. You receive a self-contained prompt describing an issue to create or edit. Execute it and return the result.
 
-Issues dir: !`echo $BASECAMP_SCRATCH_DIR/issues`
-
-Issues are drafted locally before submitting to GitHub.
+Issues are drafted locally at `/tmp/claude-workspace/$BASECAMP_REPO/issues/` before submitting to GitHub.
 
 **Do not create, apply, or modify labels.** Labels are managed by the user.
 
@@ -28,7 +26,7 @@ If the prompt references specific code, do a quick search (Grep/Glob) to find fi
 
 ### 2. Draft Locally
 
-Write the issue to `<issues-dir>/draft.md`:
+Write the issue to `/tmp/claude-workspace/$BASECAMP_REPO/issues/draft.md`:
 
 ```markdown
 {title}
@@ -48,15 +46,24 @@ If a similar open issue exists, do not create a duplicate. Return the existing i
 
 ### 4. Submit
 
-Read `<issues-dir>/draft.md`. Line 1 is the title, remainder is the body. Create with `gh issue create`.
+```bash
+TITLE=$(head -1 /tmp/claude-workspace/$BASECAMP_REPO/issues/draft.md)
+BODY=$(tail -n +2 /tmp/claude-workspace/$BASECAMP_REPO/issues/draft.md)
+gh issue create --title "$TITLE" --body "$BODY"
+```
 
-Rename the draft to `<issues-dir>/{number}.md` after creation.
+Rename the draft to `/tmp/claude-workspace/$BASECAMP_REPO/issues/{number}.md` after creation.
 
 Return the issue number and URL.
 
 ## Edit
 
-1. Fetch current state with `gh issue view {number}` and write to `<issues-dir>/{number}.md`.
+1. Fetch current state and write to `/tmp/claude-workspace/$BASECAMP_REPO/issues/{number}.md`:
+
+```bash
+gh issue view {number} --json title,body,labels,state
+```
+
 2. Apply the requested changes via `gh issue edit` or `gh issue close`.
 3. Update the local file to reflect changes.
 4. Return what was updated.

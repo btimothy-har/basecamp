@@ -18,13 +18,7 @@ hooks:
 
 Synthesize review findings from the conversation, draft them into a comment file, and post to the PR after user review.
 
-## Context
-
-- Comments dir: !`echo $BASECAMP_SCRATCH_DIR/pr-comments`
-- Current branch: !`git branch --show-current`
-- Current PR: !`gh pr list --head "$(git branch --show-current)" --json number,title,url --limit 1 2>/dev/null`
-
-Comments persist across sessions.
+Comments are stored at `/tmp/claude-workspace/{repo}/pr-comments/{number}.md` and persist across sessions.
 
 ## Prerequisite
 
@@ -42,7 +36,7 @@ For each finding, identify: file path, line number (if applicable), severity, an
 
 ## Step 2: Compile Draft
 
-Write findings to `<comments-dir>/{number}.md`:
+Write findings to `/tmp/claude-workspace/{repo}/pr-comments/{number}.md`:
 
 ```markdown
 # PR Comments — #123
@@ -189,5 +183,5 @@ If a line comment fails, fall back to a file-level comment and include the inten
 ### Clean Up
 
 After all comments are posted:
-1. Delete `<comments-dir>/{number}.md`
+1. Delete `/tmp/claude-workspace/{repo}/pr-comments/{number}.md`
 2. Report summary: total posted, any failures, any fallbacks

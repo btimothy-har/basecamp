@@ -1,7 +1,6 @@
 ---
 name: code-review
 description: Multi-dimensional code review of a pull request
-argument-hint: "[PR number or branch]"
 allowed-tools: Bash(git:*), Bash(gh:*)
 ---
 
@@ -13,21 +12,15 @@ Structured evaluation methodology for code review. Assess changes across multipl
 
 Transform ad-hoc code review into systematic evaluation. Ensure consistent coverage of quality dimensions while calibrating depth to change size.
 
-## Context
-
-- Target: $ARGUMENTS
-- Current branch: !`git branch --show-current`
-- Current PR: !`gh pr list --head "$(git branch --show-current)" --json number,title,url,baseRefName --limit 1 2>/dev/null`
-
 ## Review Flow
 
 ### Step 1: Checkout the Branch
 
-Use the target from Context if provided. Otherwise, use the detected current PR. If no PR exists, review the current branch against `main`.
-
 ```bash
-gh pr checkout <number>
+gh pr checkout <PR_NUMBER>
 ```
+
+If no PR number provided, review the current branch's changes compared to the base branch.
 
 ### Step 2: Gather Context
 
