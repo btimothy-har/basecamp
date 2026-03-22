@@ -50,7 +50,10 @@ class TestSearch:
         ]
 
         with patch(f"{_ENGINE}.search_artifacts", return_value=mock_results) as mock_fn:
-            output, code = _invoke(["search", "test query", "--type", "knowledge"])
+            output, code = _invoke(
+                ["search", "test query", "--type", "knowledge"],
+                env={"BASECAMP_REPO": "my-project"},
+            )
 
         assert code == 0
         assert output["count"] == 1
@@ -65,14 +68,20 @@ class TestSearch:
         ]
 
         with patch(f"{_ENGINE}.search_artifacts", return_value=mock_results) as mock_fn:
-            output, code = _invoke(["search", "test query", "--type", "knowledge,constraints"])
+            output, code = _invoke(
+                ["search", "test query", "--type", "knowledge,constraints"],
+                env={"BASECAMP_REPO": "my-project"},
+            )
 
         assert code == 0
         assert output["count"] == 2
         assert mock_fn.call_args[1]["section_types"] == ["knowledge", "constraints"]
 
     def test_invalid_type_returns_error(self):
-        output, code = _invoke(["search", "test query", "--type", "bogus"])
+        output, code = _invoke(
+            ["search", "test query", "--type", "bogus"],
+            env={"BASECAMP_REPO": "my-project"},
+        )
 
         assert code == 1
         assert "error" in output
@@ -87,37 +96,46 @@ class TestSearch:
 
         assert mock_fn.call_args[0][1] is None
 
-    def test_no_basecamp_repo_passes_none(self):
-        with patch(f"{_ENGINE}.search_transcripts", return_value=[]) as mock_fn:
-            _invoke(["search", "test query"])
+    def test_no_basecamp_repo_errors_when_not_cross_project(self):
+        output, code = _invoke(["search", "test query"])
 
-        assert mock_fn.call_args[0][1] is None
+        assert code == 1
+        assert "BASECAMP_REPO" in output["error"]
 
     def test_session_id_forwarded_from_env(self):
         with patch(f"{_ENGINE}.search_transcripts", return_value=[]) as mock_fn:
             _invoke(
                 ["search", "test query"],
-                env={"CLAUDE_SESSION_ID": "sess-abc"},
+                env={"BASECAMP_REPO": "my-project", "CLAUDE_SESSION_ID": "sess-abc"},
             )
 
         assert mock_fn.call_args[1]["session_id"] == "sess-abc"
 
     def test_no_session_id_passes_none(self):
         with patch(f"{_ENGINE}.search_transcripts", return_value=[]) as mock_fn:
-            _invoke(["search", "test query"])
+            _invoke(
+                ["search", "test query"],
+                env={"BASECAMP_REPO": "my-project"},
+            )
 
         assert mock_fn.call_args[1]["session_id"] is None
 
     def test_custom_top_k_and_threshold(self):
         with patch(f"{_ENGINE}.search_transcripts", return_value=[]) as mock_fn:
-            _invoke(["search", "test query", "--top-k", "5", "--threshold", "0.7"])
+            _invoke(
+                ["search", "test query", "--top-k", "5", "--threshold", "0.7"],
+                env={"BASECAMP_REPO": "my-project"},
+            )
 
         assert mock_fn.call_args[1]["top_k"] == 5
         assert mock_fn.call_args[1]["threshold"] == 0.7
 
     def test_engine_exception_returns_json_error(self):
         with patch(f"{_ENGINE}.search_transcripts", side_effect=RuntimeError("db down")):
-            output, code = _invoke(["search", "test query"])
+            output, code = _invoke(
+                ["search", "test query"],
+                env={"BASECAMP_REPO": "my-project"},
+            )
 
         assert code == 1
         assert "Search failed" in output["error"]

@@ -47,7 +47,16 @@ def _run_search(
     """Execute search and emit JSON results."""
     from observer.mcp import engine
 
-    project_name = None if cross_project else os.environ.get("BASECAMP_REPO")
+    if cross_project:
+        project_name = None
+    else:
+        project_name = os.environ.get("BASECAMP_REPO")
+        if not project_name:
+            _error(
+                "BASECAMP_REPO is not set — cannot scope search to current project."
+                " Use --cross-project to search all projects."
+            )
+
     session_id = os.environ.get("CLAUDE_SESSION_ID")
 
     parsed_types: list[str] | None = None
