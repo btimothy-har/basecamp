@@ -1,3 +1,4 @@
+# ruff: noqa: PLC0415
 """Semantic memory retrieval CLI for Claude Code sessions.
 
 Thin wrapper over the observer search engine. Reads BASECAMP_REPO and
@@ -36,9 +37,7 @@ def _run_search(
     threshold: float,
 ) -> None:
     """Execute search and emit JSON results."""
-    from observer.exceptions import ObserverError
-    from observer.mcp import engine
-
+    from observer.exceptions import ObserverError    from observer.mcp import engine
     project_name = None if cross_project else os.environ.get("BASECAMP_REPO")
     session_id = os.environ.get("CLAUDE_SESSION_ID")
 
@@ -118,9 +117,7 @@ def main(
 @click.argument("session_id")
 def session(session_id: str) -> None:
     """Retrieve full session detail by session ID."""
-    from observer.exceptions import ObserverError
-    from observer.mcp import engine
-
+    from observer.exceptions import ObserverError    from observer.mcp import engine
     try:
         result = engine.get_session(session_id)
     except ObserverError as e:
