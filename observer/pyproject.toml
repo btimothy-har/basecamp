@@ -1,7 +1,7 @@
 [project]
 name = "basecamp-observer"
 version = "0.1.0"
-description = "Background observer daemon for Claude Code session monitoring"
+description = "Semantic memory for Claude Code sessions — ingestion, extraction, and recall"
 requires-python = ">=3.12"
 dependencies = [
     "click~=8.1",
@@ -14,12 +14,12 @@ dependencies = [
     "sentence-transformers>=3.0",
     "pgvector~=0.4.2",
     "psycopg2-binary>=2.9",
-    "fastmcp>=2.0",
     "questionary>=2.1.1",
 ]
 
 [project.scripts]
-observer = "observer.cli:main"
+observer = "observer.cli.observer:main"
+recall = "observer.cli.recall:main"
 
 [dependency-groups]
 dev = ["pytest~=8.0", "pytest-env>=1.0", "testcontainers[postgres]>=4.8"]

@@ -7,7 +7,7 @@ from unittest.mock import patch
 
 import pytest
 from click.testing import CliRunner
-from observer.cli import main
+from observer.cli.observer import main
 from observer.services.container import (
     ContainerRuntimeNotFoundError,
     ContainerStatus,
@@ -66,7 +66,7 @@ class TestInspectContainer:
         assert status is None
 
 
-_CLI_PREFIX = "observer.cli"
+_CLI_PREFIX = "observer.cli.observer"
 
 
 def _mock_status(*, running: bool = False, status_text: str = "running") -> ContainerStatus:

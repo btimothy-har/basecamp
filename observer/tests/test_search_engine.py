@@ -37,6 +37,7 @@ def _seed_artifact(
     section_type=SectionType.KNOWLEDGE,
     session_id="sess-1",
     project_name="test-project",
+    embedding=None,
 ):
     """Create a project, transcript, and indexed extraction. Returns extraction ID."""
     with db.session() as session:
@@ -59,7 +60,7 @@ def _seed_artifact(
             transcript_id=transcript.id,
             section_type=section_type,
             text=text,
-            embedding=_random_embedding(),
+            embedding=embedding if embedding is not None else _random_embedding(),
             content_hash=_content_hash(text),
             indexed_at=datetime.now(UTC),
         )
@@ -115,10 +116,9 @@ class TestSearchArtifacts:
 
         assert len(results) >= 1
         result = results[0]
-        assert "artifact_id" in result
+        assert "session_id" in result
         assert "text" in result
         assert "score" in result
-        assert "transcript_id" in result
         assert "type" in result
 
     def test_excludes_summaries(self, db):  # noqa: ARG002
@@ -171,6 +171,60 @@ class TestSearchArtifacts:
 
         assert results == []
 
+    def test_excludes_current_session(self, db):  # noqa: ARG002
+        _seed_artifact(db, session_id="current-session")
+        _seed_artifact(db, session_id="other-session")
+
+        with patch.object(engine, "_get_model", return_value=_mock_model()):
+            results = engine.search_artifacts("test query", "test-project", threshold=0.0, session_id="current-session")
+
+        for r in results:
+            assert r["session_id"] != "current-session"
+
+    def test_section_types_filters_at_query_level(self, db):  # noqa: ARG002
+        """section_types restricts results before LIMIT, not after.
+
+        Without pre-query filtering the DECISIONS row would rank first
+        (its embedding is identical to the query vector) and claim the
+        single top_k=1 slot, leaving zero KNOWLEDGE results after a
+        hypothetical post-trim filter.  The assertion that we get
+        exactly one KNOWLEDGE result proves the filter runs in SQL.
+        """
+        # Unit vector along dim 0 — used as both query and DECISIONS embedding.
+        close_vec = np.zeros(EMBEDDING_DIMENSIONS, dtype=np.float32)
+        close_vec[0] = 1.0
+        # Orthogonal vector — KNOWLEDGE embedding, high cosine distance.
+        far_vec = np.zeros(EMBEDDING_DIMENSIONS, dtype=np.float32)
+        far_vec[1] = 1.0
+
+        _seed_artifact(
+            db,
+            section_type=SectionType.DECISIONS,
+            session_id="sess-type-d",
+            embedding=close_vec.tolist(),
+        )
+        _seed_artifact(
+            db,
+            section_type=SectionType.KNOWLEDGE,
+            session_id="sess-type-k",
+            embedding=far_vec.tolist(),
+        )
+
+        model = MagicMock()
+        model.encode.return_value = close_vec.reshape(1, -1)
+
+        with patch.object(engine, "_get_model", return_value=model):
+            results = engine.search_artifacts(
+                "test query",
+                "test-project",
+                top_k=1,
+                threshold=0.0,
+                section_types=["knowledge"],
+            )
+
+        assert len(results) == 1
+        assert results[0]["type"] == SectionType.KNOWLEDGE
+
     def test_excludes_unindexed_extractions(self, db):  # noqa: ARG002
         """Extractions without embeddings should not appear in search results."""
         with db.session() as session:
@@ -209,11 +263,10 @@ class TestSearchTranscripts:
 
         assert len(results) >= 1
         result = results[0]
-        assert "artifact_id" in result
+        assert "session_id" in result
         assert "text" in result
         assert "score" in result
         assert "title" in result
-        assert "transcript_id" in result
 
     def test_excludes_non_summary_sections(self, db):  # noqa: ARG002
         _seed_artifact(db, session_id="sess-excluded")
@@ -251,45 +304,23 @@ class TestSearchTranscripts:
 
         assert len(results) >= 2
 
+    def test_excludes_current_session(self, db):  # noqa: ARG002
+        _seed_summary(db, session_id="current-session-ts", summary_text="## Current\nCurrent summary")
+        _seed_summary(db, session_id="other-session-ts", summary_text="## Other\nOther summary")
+
+        with patch.object(engine, "_get_model", return_value=_mock_model()):
+            results = engine.search_transcripts(
+                "test query", "test-project", threshold=0.0, session_id="current-session-ts"
+            )
+
+        for r in results:
+            assert r["session_id"] != "current-session-ts"
+
     def test_empty_db_returns_empty(self, db):  # noqa: ARG002
         with patch.object(engine, "_get_model", return_value=_mock_model()):
             results = engine.search_transcripts("test query", "test-project")
 
         assert results == []
-
-
-class TestGetArtifact:
-    def test_returns_extraction(self, db):  # noqa: ARG002
-        ext_id = _seed_artifact(db, session_id="sess-get")
-
-        result = engine.get_artifact(ext_id)
-
-        assert result is not None
-        assert result["id"] == ext_id
-        assert result["section_type"] == SectionType.KNOWLEDGE
-        assert "text" in result
-
-    def test_returns_none_for_missing(self, db):  # noqa: ARG002
-        result = engine.get_artifact(99999)
-        assert result is None
-
-
-class TestGetTranscriptDetail:
-    def test_returns_summary(self, db):  # noqa: ARG002
-        transcript_id = _seed_summary(db, session_id="sess-get-summary")
-
-        result = engine.get_transcript_detail(transcript_id)
-
-        assert result is not None
-        assert result["id"] == transcript_id
-        assert result["title"] == "Test Title"
-        assert result["session_id"] == "sess-get-summary"
-        assert "started_at" in result
-        assert "sections" in result
-
-    def test_returns_none_for_missing(self, db):  # noqa: ARG002
-        result = engine.get_transcript_detail(99999)
-        assert result is None
 
 
 class TestGetSession:

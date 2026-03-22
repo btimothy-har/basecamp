@@ -9,7 +9,7 @@ Two packages, one plugin collection:
 | Package | Directory | Purpose |
 |---------|-----------|---------|
 | `basecamp-core` | `core/` | CLI tool — project config, prompt assembly, session launch |
-| `basecamp-observer` | `observer/` | Semantic memory — session ingestion, LLM extraction, vector search |
+| `basecamp-observer` | `observer/` | Semantic memory — session ingestion, LLM extraction, vector search, `recall` CLI |
 
 See `core/CLAUDE.md` and `observer/CLAUDE.md` for package-specific architecture and decisions.
 
@@ -35,7 +35,9 @@ core/src/core/
 └── exceptions.py               # Exception hierarchy
 
 observer/src/observer/
-├── cli.py                      # Click entry point (db, setup, ingest, process, mcp, viz)
+├── cli/
+│   ├── observer.py             # Click entry point (db, setup, ingest, process, viz)
+│   └── recall.py               # Click entry point — recall CLI for semantic search
 ├── data/                       # SQLAlchemy schemas + Pydantic domain models
 ├── pipeline/
 │   ├── parser.py               # JSONL transcript parsing
@@ -43,7 +45,6 @@ observer/src/observer/
 │   ├── extraction.py           # Transcript-level section extraction
 │   └── indexing.py             # Sentence-transformer embedding
 ├── mcp/
-│   ├── server.py               # FastMCP stdio server (5 tools)
 │   ├── engine.py               # KNN search with scoring
 │   └── scoring.py              # Time decay + dedup
 ├── services/                   # DB, config, container, migrations, agent (LLM)
@@ -51,7 +52,7 @@ observer/src/observer/
 └── viz/                        # Marimo dashboard
 
 plugins/
-├── companion/                  # bc-companion (bundled) — session hooks, dispatch skill, observer MCP
+├── companion/                  # bc-companion (bundled) — session hooks, dispatch skill, recall integration
 ├── collaboration/              # bc-collab — discovery skill, gh-issue skill, issue-worker agent
 ├── engineering/                # bc-eng — 8 agents, 9 skills, commands, hooks
 ├── cursor/                     # bc-cursor — .cursor context file discovery hooks

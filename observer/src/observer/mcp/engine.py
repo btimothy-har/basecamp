@@ -39,7 +39,7 @@ def _get_model() -> Any:
     """Return the embedding model, loading it on first call.
 
     sentence_transformers is imported lazily so that importing this module does
-    not trigger PyTorch initialization — keeping MCP server boot fast.
+    not trigger PyTorch initialization at import time.
     """
     if not _model_cache:
         from sentence_transformers import SentenceTransformer  # noqa: PLC0415
@@ -49,15 +49,14 @@ def _get_model() -> Any:
     return _model_cache[0]
 
 
-def _apply_scope_filters(q, *, project_name, worktree):
-    """Apply project and worktree filters to a query.
+def _apply_scope_filters(q, *, project_name, worktree, session_id: str | None = None):
+    """Apply project, worktree, and session exclusion filters to a query.
 
-    The query must already have ArtifactSchema in the FROM clause.
-    Joins TranscriptSchema when needed (project or worktree filtering).
+    TranscriptSchema must already be joined by the caller.
+    Joins ProjectSchema/WorktreeSchema as needed.
     """
-    needs_transcript_join = project_name is not None or worktree is not None
-    if needs_transcript_join:
-        q = q.join(TranscriptSchema, ArtifactSchema.transcript_id == TranscriptSchema.id)
+    if session_id is not None:
+        q = q.filter(TranscriptSchema.session_id != session_id)
 
     if project_name is not None:
         q = q.join(ProjectSchema, TranscriptSchema.project_id == ProjectSchema.id).filter(
@@ -79,11 +78,17 @@ def search_artifacts(
     top_k: int = SEARCH_DEFAULT_TOP_K,
     threshold: float = SEARCH_DEFAULT_THRESHOLD,
     worktree: str | None = None,
+    session_id: str | None = None,
+    section_types: list[str] | None = None,
 ) -> list[dict[str, Any]]:
     """Semantic search over non-summary extraction sections.
 
     Finds specific extracted knowledge, decisions, actions, and constraints
     from past sessions.
+
+    ``section_types`` narrows results to the given type values (e.g.
+    ``["knowledge", "decisions"]``). When omitted, all non-summary types are
+    searched.
     """
     model = _get_model()
     query_vector = model.encode([query], show_progress_bar=False)[0].tolist()
@@ -93,34 +98,44 @@ def search_artifacts(
 
     with db.session() as session:
         distance_expr = ArtifactSchema.embedding.cosine_distance(query_vector)
-        q = session.query(
-            ArtifactSchema,
-            distance_expr.label("distance"),
-        ).filter(
-            ArtifactSchema.embedding.isnot(None),
-            ArtifactSchema.section_type != SectionType.SUMMARY,
+
+        if section_types is not None:
+            type_filter = ArtifactSchema.section_type.in_(section_types)
+        else:
+            type_filter = ArtifactSchema.section_type != SectionType.SUMMARY
+
+        q = (
+            session.query(
+                ArtifactSchema,
+                TranscriptSchema.session_id,
+                distance_expr.label("distance"),
+            )
+            .join(TranscriptSchema, ArtifactSchema.transcript_id == TranscriptSchema.id)
+            .filter(
+                ArtifactSchema.embedding.isnot(None),
+                type_filter,
+            )
         )
 
-        q = _apply_scope_filters(q, project_name=project_name, worktree=worktree)
+        q = _apply_scope_filters(q, project_name=project_name, worktree=worktree, session_id=session_id)
         rows = q.order_by(distance_expr).limit(overfetch).all()
 
         if not rows:
             return []
 
         scored: list[dict[str, Any]] = []
-        for artifact, distance in rows:
+        for artifact, sess_id, distance in rows:
             score = compute_score(distance, artifact.updated_at)
             if score < threshold:
                 continue
 
             scored.append(
                 {
-                    "artifact_id": artifact.id,
+                    "session_id": sess_id,
                     "text": artifact.text,
                     "type": artifact.section_type,
                     "score": round(score, 4),
                     "created_at": artifact.created_at.isoformat() if artifact.created_at else None,
-                    "transcript_id": artifact.transcript_id,
                     "_embedding": artifact.embedding,
                 }
             )
@@ -142,11 +157,12 @@ def search_transcripts(
     top_k: int = SEARCH_DEFAULT_TOP_K,
     threshold: float = SEARCH_DEFAULT_THRESHOLD,
     worktree: str | None = None,
+    session_id: str | None = None,
 ) -> list[dict[str, Any]]:
     """Semantic search over summary extraction sections.
 
     Finds sessions whose summaries are semantically relevant to the query.
-    Returns session-level matches for orientation — use get_transcript_detail
+    Returns session-level matches for orientation — use get_session
     to drill down into the full structured sections.
     """
     model = _get_model()
@@ -157,22 +173,27 @@ def search_transcripts(
 
     with db.session() as session:
         distance_expr = ArtifactSchema.embedding.cosine_distance(query_vector)
-        q = session.query(
-            ArtifactSchema,
-            distance_expr.label("distance"),
-        ).filter(
-            ArtifactSchema.embedding.isnot(None),
-            ArtifactSchema.section_type == SectionType.SUMMARY,
+        q = (
+            session.query(
+                ArtifactSchema,
+                TranscriptSchema.session_id,
+                distance_expr.label("distance"),
+            )
+            .join(TranscriptSchema, ArtifactSchema.transcript_id == TranscriptSchema.id)
+            .filter(
+                ArtifactSchema.embedding.isnot(None),
+                ArtifactSchema.section_type == SectionType.SUMMARY,
+            )
         )
 
-        q = _apply_scope_filters(q, project_name=project_name, worktree=worktree)
+        q = _apply_scope_filters(q, project_name=project_name, worktree=worktree, session_id=session_id)
         rows = q.order_by(distance_expr).limit(overfetch).all()
 
         if not rows:
             return []
 
         scored: list[dict[str, Any]] = []
-        for artifact, distance in rows:
+        for artifact, sess_id, distance in rows:
             score = compute_score(distance, artifact.updated_at)
             if score < threshold:
                 continue
@@ -180,11 +201,10 @@ def search_transcripts(
             title = Artifact.parse_title(artifact.text)
 
             result: dict[str, Any] = {
-                "artifact_id": artifact.id,
+                "session_id": sess_id,
                 "text": artifact.text,
                 "score": round(score, 4),
                 "created_at": artifact.created_at.isoformat() if artifact.created_at else None,
-                "transcript_id": artifact.transcript_id,
                 "_embedding": artifact.embedding,
             }
 
@@ -203,47 +223,6 @@ def search_transcripts(
     return results
 
 
-def _sections_dict(transcript_id: int) -> dict[str, str]:
-    """Get artifact sections for a transcript as {section_type: text}."""
-    artifacts = Artifact.get_for_transcript(transcript_id)
-    return {a.section_type: a.text for a in artifacts}
-
-
-def get_artifact(artifact_id: int) -> dict[str, Any] | None:
-    """Retrieve a single artifact by ID."""
-    artifact = Artifact.get(artifact_id)
-    if artifact is None:
-        return None
-
-    return {
-        "id": artifact.id,
-        "section_type": artifact.section_type,
-        "text": artifact.text,
-        "transcript_id": artifact.transcript_id,
-        "created_at": artifact.created_at.isoformat() if artifact.created_at else None,
-    }
-
-
-def get_transcript_detail(transcript_id: int) -> dict[str, Any] | None:
-    """Retrieve a transcript's artifact sections and metadata for drill-down."""
-    transcript = Transcript.get(transcript_id)
-    if transcript is None:
-        return None
-
-    sections = _sections_dict(transcript_id)
-
-    title = Artifact.parse_title(sections.get(SectionType.SUMMARY))
-
-    return {
-        "id": transcript.id,
-        "title": title,
-        "session_id": transcript.session_id,
-        "started_at": transcript.started_at.isoformat(),
-        "ended_at": transcript.ended_at.isoformat() if transcript.ended_at else None,
-        "sections": sections,
-    }
-
-
 def get_session(session_id: str) -> dict[str, Any] | None:
     """Retrieve a session's transcript and extraction sections by Claude session ID.
 
@@ -254,7 +233,8 @@ def get_session(session_id: str) -> dict[str, Any] | None:
     if transcript is None:
         return None
 
-    sections = _sections_dict(transcript.id)
+    artifacts = Artifact.get_for_transcript(transcript.id)
+    sections = {a.section_type: a.text for a in artifacts}
 
     return {
         "session_id": transcript.session_id,

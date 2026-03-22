@@ -2,7 +2,7 @@
 
 ## What is basecamp-observer
 
-Semantic memory for Claude Code sessions. Ingests session transcripts, extracts structured knowledge via LLM, embeds it into pgvector, and exposes search through an MCP server. The goal: Claude can recall decisions, patterns, and context from past sessions.
+Semantic memory for Claude Code sessions. Ingests session transcripts, extracts structured knowledge via LLM, embeds it into pgvector, and exposes search via the `recall` CLI. The goal: Claude can recall decisions, patterns, and context from past sessions.
 
 ## Data Pipeline
 
@@ -37,15 +37,14 @@ Companion hooks call `observer ingest` on SessionEnd and PreCompact:
 
 3. **Index** — `SearchIndexer.index_pending()` embeds artifacts with sentence-transformers (`all-MiniLM-L6-v2`, 384 dimensions), updates content_hash for change detection.
 
-### Search (MCP server)
+### Search (recall CLI)
 
-Five tools via FastMCP stdio server:
-- `search_artifacts` — KNN over non-summary sections, cosine distance + time decay + dedup
+Search is exposed via the `recall` CLI (second entry point in `basecamp-observer`), which wraps the engine directly:
 - `search_transcripts` — KNN over summaries only (orientation retrieval)
-- `get_artifact` / `get_transcript_detail` — drill-down by ID
+- `search_artifacts` — KNN over non-summary sections, cosine distance + time decay + dedup
 - `get_session` — direct lookup by session_id (used by dispatch)
 
-Search is scoped to current project via `BASECAMP_REPO`. Setting `BASECAMP_REFLECT=1` disables project scoping for cross-project search.
+Search is scoped to current project via `BASECAMP_REPO`. Pass `--cross-project` to search across all projects. The current session is auto-excluded via `CLAUDE_SESSION_ID`.
 
 ### Configuration
 

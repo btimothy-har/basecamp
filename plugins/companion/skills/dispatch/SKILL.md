@@ -42,14 +42,6 @@ basecamp dispatch --name <task-name>  # uses sonnet by default
 # or: basecamp dispatch --name <task-name> --model opus
 ```
 
-### 4. Monitor (optional)
-
-The dispatch command waits for and returns the worker's session ID. Use it with the observer MCP tool to check progress:
-
-```
-get_session(session_id=<session_id from dispatch output>)
-```
-
 ## Model selection
 
 Workers default to **sonnet** — sufficient for most tasks.
@@ -63,6 +55,5 @@ Use `--model opus` when the task requires deep reasoning:
 
 - **Terminal multiplexer required** — Kitty (with remote control) or tmux. `basecamp claude` wraps in tmux automatically when neither is detected
 - **Workers are interactive** — the user can see and intervene in any pane
-- **Pull-based coordination** — poll the observer; workers cannot push results back
 - **No shared state** — each worker operates independently; coordinate via filesystem if needed
 - **Project scope** — workers run in the same project directory as the main session

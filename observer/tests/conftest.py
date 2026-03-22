@@ -22,6 +22,10 @@ def _isolate_config(tmp_path, monkeypatch):
     monkeypatch.setattr(config, "OBSERVER_DIR", obs)
     monkeypatch.setattr(config, "CONFIG_FILE", obs / "config.json")
 
+    # Clear session env vars so tests don't inherit the host session's state.
+    monkeypatch.delenv("BASECAMP_REPO", raising=False)
+    monkeypatch.delenv("CLAUDE_SESSION_ID", raising=False)
+
 
 @pytest.fixture(scope="session")
 def pg_url():
