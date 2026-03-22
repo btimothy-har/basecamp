@@ -22,8 +22,8 @@ if [ -z "$SESSION_ID" ]; then
 fi
 
 # Synchronous: ingest new events
-if ! echo "$INPUT" | observer ingest 2>/dev/null; then
-    exit 0
+if ! echo "$INPUT" | observer ingest; then
+    exit 1
 fi
 
 # Background: refine + extract + embed (detached, non-blocking)

@@ -2,6 +2,7 @@
 # ruff: noqa: PLC0415
 
 import json
+import logging
 import os
 import sys
 from importlib.resources import files
@@ -12,7 +13,7 @@ import questionary
 from sqlalchemy import create_engine, text
 
 from observer import constants
-from observer.exceptions import RegistrationError
+from observer.exceptions import ObserverError, RegistrationError
 from observer.services.config import (
     CONFIG_FILE,
     get_db_source,
@@ -491,15 +492,26 @@ def ingest() -> None:
 
     try:
         result = register_session(hook_input)
+
+        transcript = result.transcript
+
+        # Parse new JSONL events from cursor_offset
+        ingested = TranscriptParser().ingest(transcript)
+
+        transcript = result.transcript
+
+        # Parse new JSONL events, then group into work items
+        db = Database()
+        ingested = TranscriptParser().ingest(transcript)
+        grouped = EventGrouper.group_pending(db, transcript.id)
     except (RegistrationError, ValueError) as e:
         sys.exit(str(e))
-
-    transcript = result.transcript
-
-    # Parse new JSONL events, then group into work items
-    db = Database()
-    ingested = TranscriptParser().ingest(transcript)
-    grouped = EventGrouper.group_pending(db, transcript.id)
+    except ObserverError as e:
+        click.echo(f"observer: {e}", err=True)
+        raise SystemExit(1) from None
+    except Exception as e:
+        click.echo(f"observer: ingestion failed — {e}", err=True)
+        raise SystemExit(1) from None
 
     click.echo(f"session={transcript.session_id} ingested={ingested} grouped={grouped}")
 
@@ -610,23 +622,31 @@ def process(session_id: str) -> None:
     from observer.services.logger import configure_logging
 
     configure_logging()
+    logger = logging.getLogger(__name__)
 
-    transcript = Transcript.get_by_session_id(session_id)
-    if transcript is None:
-        sys.exit(f"No transcript found for session {session_id}")
-
-    if get_mode() == "off":
-        return
-
-    db = Database()
     try:
-        # Phase 1: Refine work_items → transcript_events (LLM calls)
-        EventRefiner.refine_pending(db, transcript_id=transcript.id)
+        transcript = Transcript.get_by_session_id(session_id)
+        if transcript is None:
+            logger.error("No transcript found for session %s", session_id)
+            sys.exit(1)
 
-        # Phase 2: Extract transcript_events → artifacts (single LLM call)
-        TranscriptExtractor.extract_transcript(db, transcript.id)
+        if get_mode() == "off":
+            return
 
-        # Phase 3: Embed artifacts → pgvector
-        SearchIndexer.index_pending(db, transcript_id=transcript.id)
-    finally:
-        db.close()
+        db = Database()
+        try:
+            # Phase 1: Refine work_items → transcript_events (LLM calls)
+            EventRefiner.refine_pending(db, transcript_id=transcript.id)
+
+            # Phase 2: Extract transcript_events → artifacts (single LLM call)
+            TranscriptExtractor.extract_transcript(db, transcript.id)
+
+            # Phase 3: Embed artifacts → pgvector
+            SearchIndexer.index_pending(db, transcript_id=transcript.id)
+        finally:
+            db.close()
+    except SystemExit:
+        raise
+    except Exception:
+        logger.exception("Processing failed for session %s", session_id)
+        sys.exit(1)
