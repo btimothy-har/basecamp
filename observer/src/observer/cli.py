@@ -210,6 +210,7 @@ def migrate() -> None:
 
     # After migrations, run create_all to pick up new tables/columns
     from observer.services.db import Base
+
     Base.metadata.create_all(engine)
 
     click.echo(f"\nApplied {len(applied)} migration(s). Schema is now at version {applied[-1].version}.")
@@ -281,6 +282,7 @@ def viz(port: int, host: str, headless: bool) -> None:  # noqa: FBT001
 def mcp() -> None:
     """Start the MCP server for semantic search over observer memory."""
     from observer.mcp.server import main as mcp_main
+
     mcp_main()
 
 

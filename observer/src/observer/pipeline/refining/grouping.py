@@ -111,9 +111,7 @@ class EventGrouper:
         classified_event_ids = {e.id for item in classified for e in item.events}
         stale_cutoff = now.replace(tzinfo=None) - timedelta(seconds=DEFAULT_STALE_THRESHOLD)
         orphaned = [
-            e
-            for e in events
-            if e.id not in classified_event_ids and e.timestamp.replace(tzinfo=None) < stale_cutoff
+            e for e in events if e.id not in classified_event_ids and e.timestamp.replace(tzinfo=None) < stale_cutoff
         ]
 
         with db.session() as session:
