@@ -1,6 +1,7 @@
 ---
 name: pr-walkthrough
 description: Interactive step-by-step walkthrough of a pull request
+argument-hint: "[PR number or branch]"
 allowed-tools: Bash(git:*), Bash(gh:*)
 ---
 
@@ -12,15 +13,21 @@ Interactive, step-by-step teaching of pull request changes. Transform code revie
 
 Guide reviewers through PR changes progressively, ensuring comprehension at each step before moving forward. Focus on the "why" behind changes while grounding explanations in specific code locations.
 
+## Context
+
+- Target: $ARGUMENTS
+- Current branch: !`git branch --show-current`
+- Current PR: !`gh pr list --head "$(git branch --show-current)" --json number,title,url,baseRefName --limit 1 2>/dev/null`
+
 ## Walkthrough Flow
 
 ### Step 1: Checkout the Branch
 
-```bash
-gh pr checkout <PR_NUMBER>
-```
+Use the target from Context if provided. Otherwise, use the detected current PR. If no PR exists, work with the current branch's changes against `main`.
 
-If no PR number provided, work with the current branch's changes compared to the base branch.
+```bash
+gh pr checkout <number>
+```
 
 ### Step 2: Gather Context
 

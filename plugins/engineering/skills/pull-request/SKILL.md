@@ -21,7 +21,13 @@ Review branch changes, draft a description, and publish.
 
 Use ${ARGUMENTS} as the base branch. Default to `main` if no argument provided.
 
-PR descriptions are stored at `$SCRATCH/pull_requests/$NUMBER.md` and persist across sessions.
+## Context
+
+- PR dir: !`echo $BASECAMP_SCRATCH_DIR/pull_requests`
+- Current branch: !`git branch --show-current`
+- Remote tracking: !`git rev-parse --abbrev-ref @{upstream} 2>/dev/null || echo "none"`
+- Repo URL: !`gh repo view --json url -q '.url' 2>/dev/null`
+- Existing PR: !`gh pr list --head "$(git branch --show-current)" --json number,title,url,baseRefName --limit 1 2>/dev/null`
 
 ## Step 1: Review Changes
 
@@ -50,29 +56,11 @@ uv run ruff format --check .              # Format clean
 
 Fix failures before proceeding.
 
-## Step 3: Create PR
+## Step 3: Create or Locate PR
 
-Check for an existing PR on this branch:
+If an existing PR was found in Context, use its number and `baseRefName` as the base branch. Fetch the current description from GitHub and write it to `<pr-dir>/$NUMBER.md`. Edit from this file, then skip to Step 5.
 
-```bash
-gh pr list --head $(git branch --show-current) --json number,title,url
-```
-
-If a PR exists, use its number. Fetch the current description from GitHub and write it to `$SCRATCH/pull_requests/$NUMBER.md`:
-
-```bash
-gh pr view $NUMBER --json title,body -q '.title + "\n\n" + .body' > $SCRATCH/pull_requests/$NUMBER.md
-```
-
-Edit from this file, then skip to Step 5.
-
-Otherwise, verify the branch is pushed to origin:
-
-```bash
-git rev-parse --abbrev-ref --symbolic-full-name @{u} 2>/dev/null
-```
-
-If no upstream is set, ask the user to push the branch before continuing.
+Otherwise, check the remote tracking info from Context. If no upstream is set, push the branch to origin before continuing.
 
 Then create an empty PR:
 
@@ -113,22 +101,20 @@ Closes #N
 - [ ] Manual verification: ...
 ```
 
-Write to `$SCRATCH/pull_requests/$NUMBER.md`. Line 1 is the title; remainder is the body.
+Write to `<pr-dir>/$NUMBER.md`. Line 1 is the title; remainder is the body.
 
 Title format: `[Scope] Short summary` — scope = module/component/area, imperative mood, <70 chars.
 
-Generate GitHub permalinks using the remote branch — `` [`path#L10`](url) ``.
+Generate GitHub permalinks using the repo URL from Context and the remote branch — `` [`path#L10`](url) ``.
 
 ## Step 5: Publish
 
 Present the description to the user. Wait for approval — the user may edit the file before confirming.
 
-After approval, update the PR:
+After approval, read `<pr-dir>/$NUMBER.md`. Line 1 is the title, remainder is the body. Update the PR:
 
 ```bash
-TITLE=$(head -1 $SCRATCH/pull_requests/$NUMBER.md)
-tail -n +2 $SCRATCH/pull_requests/$NUMBER.md > $SCRATCH/pull_requests/$NUMBER-body.md
-gh pr edit $NUMBER --title "$TITLE" --body-file $SCRATCH/pull_requests/$NUMBER-body.md
+gh pr edit $NUMBER --title "$TITLE" --body-file <pr-dir>/$NUMBER-body.md
 ```
 
 Report the PR URL.
@@ -137,4 +123,4 @@ Report the PR URL.
 
 For subsequent changes to the same PR, ask the user to push the latest commits.
 
-If the description needs updating, edit `$SCRATCH/pull_requests/$NUMBER.md` and re-run Step 5.
+If the description needs updating, edit `<pr-dir>/$NUMBER.md` and re-run Step 5.

@@ -19,7 +19,8 @@ if [ -n "${CLAUDE_ENV_FILE:-}" ]; then
   printf 'export GIT_REPO=%s\n' "'$GIT_REPO'" >> "$CLAUDE_ENV_FILE"
 fi
 
-# Create PR workflow directories
-SCRATCH="/tmp/claude-workspace/$GIT_REPO"
+# Create PR workflow directories under the scratch dir set by basecamp,
+# falling back to the legacy path for non-basecamp sessions.
+SCRATCH="${BASECAMP_SCRATCH_DIR:-/tmp/claude-workspace/$GIT_REPO}"
 mkdir -p "$SCRATCH/pull_requests"
 mkdir -p "$SCRATCH/pr-comments"
