@@ -329,6 +329,7 @@ class TestRefineBatch:
         content = json.dumps({"type": "user", "message": {"role": "user", "content": text}})
         _insert_raw_events(db, transcript_id, [{"event_type": "user", "content": content}])
 
+        EventGrouper.group_pending(db, transcript_id)
         count = EventRefiner.refine_pending(db)
         assert count == 1
 
@@ -372,6 +373,7 @@ class TestRefineBatch:
             ],
         )
 
+        EventGrouper.group_pending(db, transcript_id)
         with patch("observer.pipeline.refining.refinement.summarize_tool_pair") as mock_tool:
             mock_tool.return_value = SummaryResult(summary="Read: auth.py → found JWT")
             count = EventRefiner.refine_pending(db)
@@ -427,6 +429,7 @@ class TestRefineBatch:
             [{"event_type": "assistant", "content": tu_content, "timestamp": stale_ts}],
         )
 
+        EventGrouper.group_pending(db, transcript_id)
         count = EventRefiner.refine_pending(db)
         assert count == 0
 
@@ -536,6 +539,7 @@ class TestRefineBatch:
         ]
         _insert_raw_events(db, transcript_id, events_data)
 
+        EventGrouper.group_pending(db, transcript_id)
         count = EventRefiner.refine_pending(db)
         assert count == 5
 
@@ -565,6 +569,7 @@ class TestRefineBatch:
         content = json.dumps({"type": "progress", "message": {"content": "hook running"}})
         _insert_raw_events(db, transcript_id, [{"event_type": "progress", "content": content}])
 
+        EventGrouper.group_pending(db, transcript_id)
         EventRefiner.refine_pending(db)
 
         skipped = WorkItem.get_by_processed(WorkItemStage.TERMINAL)
@@ -588,6 +593,7 @@ class TestRefineBatch:
         )
         _insert_raw_events(db, transcript_id, [{"event_type": "assistant", "content": content}])
 
+        EventGrouper.group_pending(db, transcript_id)
         EventRefiner.refine_pending(db)
 
         errors = WorkItem.get_by_processed(WorkItemStage.ERROR)
