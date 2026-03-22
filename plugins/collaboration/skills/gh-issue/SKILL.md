@@ -1,37 +1,33 @@
 ---
 name: gh-issue
-description: Create or edit a GitHub issue.
-argument-hint: "[#number] <description>"
+description: Capture context as a GitHub issue.
+argument-hint: "<what to capture>"
 disable-model-invocation: true
 ---
 
-# GitHub Issue
+# Capture as GitHub Issue
 
-Create a new issue or edit an existing one.
+Turn a discovery, decision, or observation into a trackable GitHub issue.
 
 ## Input
 
 $ARGUMENTS
 
-## Detect Intent
-
-- Starts with `#N` or a number → **edit** that issue
-- Otherwise → **create** a new issue
-
 ## Process
 
-### 1. Summarize Context
+### 1. Build Prompt
 
-From the current conversation and `$ARGUMENTS`, build a self-contained prompt. The issue-worker agent has no conversation history — the prompt must carry everything.
+The issue-worker agent has no conversation history — the prompt must be self-contained.
 
-Include:
-- What was observed or requested
-- Relevant file paths, modules, or areas already discussed
+From the input above and any relevant conversation context, build a prompt that includes:
+- What was observed, discovered, or decided
+- Relevant file paths, modules, or areas
 - Why it matters or needs follow-up
-- For edits: the issue number and what should change
+
+Keep it focused — extract only what's relevant to the issue, not the full conversation.
 
 ### 2. Dispatch
 
-Launch the **issue-worker** agent in the background with the summarized prompt.
+Launch the **issue-worker** agent in the background with the prompt.
 
-Do not wait for it to complete. Report that the issue is being created in the background.
+Do not wait for it to complete. Report that the issue is being captured in the background.
