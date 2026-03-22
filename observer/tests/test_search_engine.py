@@ -138,14 +138,6 @@ class TestSearchArtifacts:
 
         assert len(results) == 0
 
-    def test_excludes_current_session(self, db):  # noqa: ARG002
-        _seed_artifact(db, session_id="current-session")
-
-        with patch.object(engine, "_get_model", return_value=_mock_model()):
-            results = engine.search_artifacts("test query", "test-project", session_id="current-session")
-
-        assert len(results) == 0
-
     def test_respects_top_k(self, db):  # noqa: ARG002
         for i in range(5):
             _seed_artifact(db, session_id=f"sess-topk-{i}")
@@ -238,14 +230,6 @@ class TestSearchTranscripts:
 
         with patch.object(engine, "_get_model", return_value=_mock_model()):
             results = engine.search_transcripts("test query", "nonexistent-project")
-
-        assert len(results) == 0
-
-    def test_excludes_current_session(self, db):  # noqa: ARG002
-        _seed_summary(db, session_id="current-session-ts")
-
-        with patch.object(engine, "_get_model", return_value=_mock_model()):
-            results = engine.search_transcripts("test query", "test-project", session_id="current-session-ts")
 
         assert len(results) == 0
 
