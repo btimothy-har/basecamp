@@ -42,14 +42,6 @@ basecamp dispatch --name <task-name>  # uses sonnet by default
 # or: basecamp dispatch --name <task-name> --model opus
 ```
 
-### 4. Monitor (optional)
-
-The dispatch command waits for and returns the worker's session ID. Use it with the observer MCP tool to check progress:
-
-```
-get_session(session_id=<session_id from dispatch output>)
-```
-
 ## Model selection
 
 Workers default to **sonnet** — sufficient for most tasks.
