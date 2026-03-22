@@ -9,8 +9,7 @@ Two packages, one plugin collection:
 | Package | Directory | Purpose |
 |---------|-----------|---------|
 | `basecamp-core` | `core/` | CLI tool — project config, prompt assembly, session launch |
-| `basecamp-observer` | `observer/` | Semantic memory — session ingestion, LLM extraction, vector search |
-| `basecamp-recall` | `recall/` | Semantic memory retrieval CLI |
+| `basecamp-observer` | `observer/` | Semantic memory — session ingestion, LLM extraction, vector search, `recall` CLI |
 
 See `core/CLAUDE.md` and `observer/CLAUDE.md` for package-specific architecture and decisions.
 
@@ -36,7 +35,9 @@ core/src/core/
 └── exceptions.py               # Exception hierarchy
 
 observer/src/observer/
-├── cli.py                      # Click entry point (db, setup, ingest, process, viz)
+├── cli/
+│   ├── observer.py             # Click entry point (db, setup, ingest, process, viz)
+│   └── recall.py               # Click entry point — recall CLI for semantic search
 ├── data/                       # SQLAlchemy schemas + Pydantic domain models
 ├── pipeline/
 │   ├── parser.py               # JSONL transcript parsing
@@ -49,9 +50,6 @@ observer/src/observer/
 ├── services/                   # DB, config, container, migrations, agent (LLM)
 ├── prompts/                    # LLM prompt templates (.txt, PEP 562 lazy load)
 └── viz/                        # Marimo dashboard
-
-recall/src/recall/
-└── cli.py                      # Click entry point — recall CLI for semantic search
 
 plugins/
 ├── companion/                  # bc-companion (bundled) — session hooks, dispatch skill, recall integration

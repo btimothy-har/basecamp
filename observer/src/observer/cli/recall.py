@@ -37,7 +37,6 @@ def _run_search(
     threshold: float,
 ) -> None:
     """Execute search and emit JSON results."""
-    from observer.exceptions import ObserverError
     from observer.mcp import engine
 
     project_name = None if cross_project else os.environ.get("BASECAMP_REPO")
@@ -72,8 +71,6 @@ def _run_search(
             )
             requested = set(parsed_types)
             results = [r for r in raw if r.get("type") in requested]
-    except ObserverError as e:
-        _error(str(e))
     except Exception as e:
         _error(f"Search failed: {e}")
 
@@ -82,8 +79,8 @@ def _run_search(
 
 @click.group(invoke_without_command=True)
 @click.argument("query", required=False)
-@click.option("--type", "-t", "types", default=None, help="Comma-separated artifact types to search: knowledge, decisions, constraints, actions")
-@click.option("--cross-project", "-x", is_flag=True, help="Search across all projects (default: scoped to BASECAMP_REPO)")
+@click.option("--type", "-t", "types", default=None, help="Artifact types: knowledge, decisions, constraints, actions")
+@click.option("--cross-project", "-x", is_flag=True, help="Search across all projects")
 @click.option("--top-k", "-k", default=10, show_default=True, help="Max results to return")
 @click.option("--threshold", default=0.3, show_default=True, help="Minimum relevance score")
 @click.pass_context
@@ -91,7 +88,7 @@ def main(
     ctx: click.Context,
     query: str | None,
     types: str | None,
-    cross_project: bool,
+    cross_project: bool,  # noqa: FBT001
     top_k: int,
     threshold: float,
 ) -> None:
@@ -119,13 +116,10 @@ def main(
 @click.argument("session_id")
 def session(session_id: str) -> None:
     """Retrieve full session detail by session ID."""
-    from observer.exceptions import ObserverError
     from observer.mcp import engine
 
     try:
         result = engine.get_session(session_id)
-    except ObserverError as e:
-        _error(str(e))
     except Exception as e:
         _error(f"Session lookup failed: {e}")
 

@@ -39,7 +39,7 @@ def _get_model() -> Any:
     """Return the embedding model, loading it on first call.
 
     sentence_transformers is imported lazily so that importing this module does
-    not trigger PyTorch initialization — keeping MCP server boot fast.
+    not trigger PyTorch initialization at import time.
     """
     if not _model_cache:
         from sentence_transformers import SentenceTransformer  # noqa: PLC0415
@@ -217,40 +217,6 @@ def _sections_dict(transcript_id: int) -> dict[str, str]:
     artifacts = Artifact.get_for_transcript(transcript_id)
     return {a.section_type: a.text for a in artifacts}
 
-
-def get_artifact(artifact_id: int) -> dict[str, Any] | None:
-    """Retrieve a single artifact by ID."""
-    artifact = Artifact.get(artifact_id)
-    if artifact is None:
-        return None
-
-    return {
-        "id": artifact.id,
-        "section_type": artifact.section_type,
-        "text": artifact.text,
-        "transcript_id": artifact.transcript_id,
-        "created_at": artifact.created_at.isoformat() if artifact.created_at else None,
-    }
-
-
-def get_transcript_detail(transcript_id: int) -> dict[str, Any] | None:
-    """Retrieve a transcript's artifact sections and metadata for drill-down."""
-    transcript = Transcript.get(transcript_id)
-    if transcript is None:
-        return None
-
-    sections = _sections_dict(transcript_id)
-
-    title = Artifact.parse_title(sections.get(SectionType.SUMMARY))
-
-    return {
-        "id": transcript.id,
-        "title": title,
-        "session_id": transcript.session_id,
-        "started_at": transcript.started_at.isoformat(),
-        "ended_at": transcript.ended_at.isoformat() if transcript.ended_at else None,
-        "sections": sections,
-    }
 
 
 def get_session(session_id: str) -> dict[str, Any] | None:

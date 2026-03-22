@@ -14,11 +14,12 @@ dependencies = [
     "sentence-transformers>=3.0",
     "pgvector~=0.4.2",
     "psycopg2-binary>=2.9",
-"questionary>=2.1.1",
+    "questionary>=2.1.1",
 ]
 
 [project.scripts]
-observer = "observer.cli:main"
+observer = "observer.cli.observer:main"
+recall = "observer.cli.recall:main"
 
 [dependency-groups]
 dev = ["pytest~=8.0", "pytest-env>=1.0", "testcontainers[postgres]>=4.8"]

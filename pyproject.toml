@@ -1,5 +1,5 @@
 [tool.uv.workspace]
-members = ["core", "observer", "recall"]
+members = ["core", "observer"]
 
 [tool.pytest.ini_options]
 testpaths = ["core/tests"]

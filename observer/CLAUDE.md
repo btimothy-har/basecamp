@@ -39,13 +39,12 @@ Companion hooks call `observer ingest` on SessionEnd and PreCompact:
 
 ### Search (recall CLI)
 
-Search is exposed via the `recall` CLI (`basecamp-recall` package), which wraps the engine directly:
-- `search_artifacts` — KNN over non-summary sections, cosine distance + time decay + dedup
+Search is exposed via the `recall` CLI (second entry point in `basecamp-observer`), which wraps the engine directly:
 - `search_transcripts` — KNN over summaries only (orientation retrieval)
-- `get_artifact` / `get_transcript_detail` — drill-down by ID
+- `search_artifacts` — KNN over non-summary sections, cosine distance + time decay + dedup
 - `get_session` — direct lookup by session_id (used by dispatch)
 
-Search is scoped to current project via `BASECAMP_REPO`. Setting `BASECAMP_REFLECT=1` disables project scoping for cross-project search.
+Search is scoped to current project via `BASECAMP_REPO`. Pass `--cross-project` to search across all projects. The current session is auto-excluded via `CLAUDE_SESSION_ID`.
 
 ### Configuration
 

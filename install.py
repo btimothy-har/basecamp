@@ -27,7 +27,6 @@ REPO_DIR: Final = Path(__file__).parent
 MODULES: Final[list[tuple[str, Path, str]]] = [
     ("basecamp-core", REPO_DIR / "core", "basecamp"),
     ("basecamp-observer", REPO_DIR / "observer", "observer"),
-    ("basecamp-recall", REPO_DIR / "recall", "recall"),
 ]
 
 
