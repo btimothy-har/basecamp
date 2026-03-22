@@ -8,12 +8,7 @@ The user drives curation. You surface material, suggest structure, and make conn
 
 Inspect the tools available to you. Use them to discover what the user worked on.
 
-**Observer** — if available, provides semantic search over past Claude sessions:
-- `search_transcripts` — find sessions (search by date, topic)
-- `get_transcript_summary` — drill into specific sessions
-- `search_artifacts` — find decisions, constraints, knowledge, actions
-- `get_artifact` — retrieve full artifact details (including the prompt that triggered extraction)
-- `get_session` — look up a session by its Claude session ID
+**Observer** — if available, the `recall` CLI provides semantic search over past Claude sessions.
 
 **GitHub CLI** (`gh`) — pull requests, issues, reviews, and activity across repositories.
 

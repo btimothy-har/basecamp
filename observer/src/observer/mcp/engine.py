@@ -1,9 +1,15 @@
-"""Search engine — two retrieval pathways over artifacts.
+"""Search engine — hybrid retrieval over artifacts.
 
-- ``search_artifacts``: KNN over non-summary artifacts → score → dedup.
-  Returns specific facts, decisions, actions, and constraints.
-- ``search_transcripts``: KNN over summary artifacts → score → dedup.
-  Returns session-level matches for orientation.
+Each search pathway runs two retrievers in the same DB session:
+
+- **KNN**: cosine distance over pgvector embeddings (semantic similarity)
+- **FTS**: PostgreSQL full-text search with ts_rank (keyword relevance)
+
+Results are merged by artifact ID, scored with a weighted blend of both
+signals plus time decay, then truncated to top-k.
+
+- ``search_artifacts``: hybrid search over non-summary artifacts.
+- ``search_transcripts``: hybrid search over summary artifacts.
 """
 
 from __future__ import annotations
@@ -11,11 +17,15 @@ from __future__ import annotations
 import logging
 from typing import Any
 
+from sqlalchemy import func
+from sqlalchemy.orm import Session as SASession
+
 from observer.constants import (
     EMBEDDING_MODEL_NAME,
     MODEL_CACHE_DIR,
     SEARCH_DEFAULT_THRESHOLD,
     SEARCH_DEFAULT_TOP_K,
+    SEARCH_FTS_CONFIG,
     SEARCH_OVERFETCH_FACTOR,
 )
 from observer.data.artifact import Artifact
@@ -27,7 +37,7 @@ from observer.data.schemas import (
     WorktreeSchema,
 )
 from observer.data.transcript import Transcript
-from observer.mcp.scoring import compute_score, deduplicate
+from observer.mcp.scoring import compute_score
 from observer.services.db import Database
 
 logger = logging.getLogger(__name__)
@@ -65,10 +75,98 @@ def _apply_scope_filters(q, *, project_name, worktree, session_id: str | None = 
 
     if worktree is not None:
         q = q.join(WorktreeSchema, TranscriptSchema.worktree_id == WorktreeSchema.id).filter(
-            WorktreeSchema.label == worktree
+            WorktreeSchema.label == worktree,
         )
 
     return q
+
+
+def _hybrid_retrieve(
+    db_session: SASession,
+    query: str,
+    query_vector: list[float],
+    type_filter,
+    *,
+    project_name: str | None,
+    worktree: str | None,
+    session_id: str | None,
+    overfetch: int,
+    threshold: float,
+) -> dict[int, dict[str, Any]]:
+    """Run KNN and FTS retrieval, merge results by artifact ID.
+
+    Returns a dict keyed by artifact ID containing the artifact, its session
+    ID, and both relevance signals (0.0 when a retriever didn't find it).
+    FTS ranks are normalized within the batch so the max rank maps to 1.0.
+
+    Each retriever's signal is individually gated by *threshold* before
+    entering the merge — weak hits from one retriever cannot piggyback on
+    the other signal to inflate the final score.
+    """
+    scope_kw = {"project_name": project_name, "worktree": worktree, "session_id": session_id}
+    merged: dict[int, dict[str, Any]] = {}
+
+    # --- KNN retrieval (semantic) ---
+    distance_expr = ArtifactSchema.embedding.cosine_distance(query_vector)
+    knn_q = (
+        db_session.query(
+            ArtifactSchema,
+            TranscriptSchema.session_id,
+            distance_expr.label("distance"),
+        )
+        .join(TranscriptSchema, ArtifactSchema.transcript_id == TranscriptSchema.id)
+        .filter(ArtifactSchema.embedding.isnot(None), type_filter)
+    )
+    knn_q = _apply_scope_filters(knn_q, **scope_kw)
+
+    for artifact, sess_id, distance in knn_q.order_by(distance_expr).limit(overfetch).all():
+        similarity = max(0.0, 1.0 - distance)  # Clamp: cosine distance can exceed 1.0 for anti-correlated vectors
+        if similarity < threshold:
+            continue
+        merged[artifact.id] = {
+            "artifact": artifact,
+            "session_id": sess_id,
+            "semantic": similarity,
+            "keyword": 0.0,
+        }
+
+    # --- FTS retrieval (keyword) ---
+    tsquery = func.plainto_tsquery(SEARCH_FTS_CONFIG, query)
+    rank_expr = func.ts_rank(ArtifactSchema.search_vector, tsquery)
+
+    fts_q = (
+        db_session.query(
+            ArtifactSchema,
+            TranscriptSchema.session_id,
+            rank_expr.label("rank"),
+        )
+        .join(TranscriptSchema, ArtifactSchema.transcript_id == TranscriptSchema.id)
+        .filter(
+            ArtifactSchema.search_vector.isnot(None),
+            ArtifactSchema.search_vector.op("@@")(tsquery),
+            type_filter,
+        )
+    )
+    fts_q = _apply_scope_filters(fts_q, **scope_kw)
+    fts_rows = fts_q.order_by(rank_expr.desc()).limit(overfetch).all()
+
+    if fts_rows:
+        max_rank = max(rank for _, _, rank in fts_rows)
+        for artifact, sess_id, rank in fts_rows:
+            normalized = rank / max_rank if max_rank > 0 else 0.0
+            if normalized < threshold:
+                continue
+            if artifact.id in merged:
+                merged[artifact.id]["keyword"] = normalized
+            else:
+                merged[artifact.id] = {
+                    "artifact": artifact,
+                    "session_id": sess_id,
+                    "semantic": 0.0,
+                    "keyword": normalized,
+                }
+
+    return merged
 
 
 def search_artifacts(
@@ -81,10 +179,10 @@ def search_artifacts(
     session_id: str | None = None,
     section_types: list[str] | None = None,
 ) -> list[dict[str, Any]]:
-    """Semantic search over non-summary extraction sections.
+    """Hybrid search over non-summary extraction sections.
 
     Finds specific extracted knowledge, decisions, actions, and constraints
-    from past sessions.
+    from past sessions using both semantic similarity and keyword matching.
 
     ``section_types`` narrows results to the given type values (e.g.
     ``["knowledge", "decisions"]``). When omitted, all non-summary types are
@@ -94,60 +192,49 @@ def search_artifacts(
     query_vector = model.encode([query], show_progress_bar=False)[0].tolist()
     overfetch = max(top_k * SEARCH_OVERFETCH_FACTOR, 50)
 
+    if section_types is not None:
+        type_filter = ArtifactSchema.section_type.in_(section_types)
+    else:
+        type_filter = ArtifactSchema.section_type != SectionType.SUMMARY
+
     db = Database()
 
     with db.session() as session:
-        distance_expr = ArtifactSchema.embedding.cosine_distance(query_vector)
-
-        if section_types is not None:
-            type_filter = ArtifactSchema.section_type.in_(section_types)
-        else:
-            type_filter = ArtifactSchema.section_type != SectionType.SUMMARY
-
-        q = (
-            session.query(
-                ArtifactSchema,
-                TranscriptSchema.session_id,
-                distance_expr.label("distance"),
-            )
-            .join(TranscriptSchema, ArtifactSchema.transcript_id == TranscriptSchema.id)
-            .filter(
-                ArtifactSchema.embedding.isnot(None),
-                type_filter,
-            )
+        merged = _hybrid_retrieve(
+            session,
+            query,
+            query_vector,
+            type_filter,
+            project_name=project_name,
+            worktree=worktree,
+            session_id=session_id,
+            overfetch=overfetch,
+            threshold=threshold,
         )
 
-        q = _apply_scope_filters(q, project_name=project_name, worktree=worktree, session_id=session_id)
-        rows = q.order_by(distance_expr).limit(overfetch).all()
-
-        if not rows:
+        if not merged:
             return []
 
         scored: list[dict[str, Any]] = []
-        for artifact, sess_id, distance in rows:
-            score = compute_score(distance, artifact.updated_at)
+        for hit in merged.values():
+            artifact = hit["artifact"]
+            score = compute_score(artifact.updated_at, semantic=hit["semantic"], keyword=hit["keyword"])
             if score < threshold:
                 continue
 
             scored.append(
                 {
-                    "session_id": sess_id,
+                    "session_id": hit["session_id"],
                     "text": artifact.text,
                     "type": artifact.section_type,
                     "score": round(score, 4),
                     "created_at": artifact.created_at.isoformat() if artifact.created_at else None,
-                    "_embedding": artifact.embedding,
                 }
             )
 
         scored.sort(key=lambda r: r["score"], reverse=True)
-        results = deduplicate(scored)
-        results = results[:top_k]
 
-        for r in results:
-            r.pop("_embedding", None)
-
-    return results
+    return scored[:top_k]
 
 
 def search_transcripts(
@@ -159,11 +246,11 @@ def search_transcripts(
     worktree: str | None = None,
     session_id: str | None = None,
 ) -> list[dict[str, Any]]:
-    """Semantic search over summary extraction sections.
+    """Hybrid search over summary extraction sections.
 
-    Finds sessions whose summaries are semantically relevant to the query.
-    Returns session-level matches for orientation — use get_session
-    to drill down into the full structured sections.
+    Finds sessions whose summaries are relevant to the query using both
+    semantic similarity and keyword matching. Returns session-level matches
+    for orientation — use get_session to drill down into full sections.
     """
     model = _get_model()
     query_vector = model.encode([query], show_progress_bar=False)[0].tolist()
@@ -172,40 +259,35 @@ def search_transcripts(
     db = Database()
 
     with db.session() as session:
-        distance_expr = ArtifactSchema.embedding.cosine_distance(query_vector)
-        q = (
-            session.query(
-                ArtifactSchema,
-                TranscriptSchema.session_id,
-                distance_expr.label("distance"),
-            )
-            .join(TranscriptSchema, ArtifactSchema.transcript_id == TranscriptSchema.id)
-            .filter(
-                ArtifactSchema.embedding.isnot(None),
-                ArtifactSchema.section_type == SectionType.SUMMARY,
-            )
+        merged = _hybrid_retrieve(
+            session,
+            query,
+            query_vector,
+            ArtifactSchema.section_type == SectionType.SUMMARY,
+            project_name=project_name,
+            worktree=worktree,
+            session_id=session_id,
+            overfetch=overfetch,
+            threshold=threshold,
         )
 
-        q = _apply_scope_filters(q, project_name=project_name, worktree=worktree, session_id=session_id)
-        rows = q.order_by(distance_expr).limit(overfetch).all()
-
-        if not rows:
+        if not merged:
             return []
 
         scored: list[dict[str, Any]] = []
-        for artifact, sess_id, distance in rows:
-            score = compute_score(distance, artifact.updated_at)
+        for hit in merged.values():
+            artifact = hit["artifact"]
+            score = compute_score(artifact.updated_at, semantic=hit["semantic"], keyword=hit["keyword"])
             if score < threshold:
                 continue
 
             title = Artifact.parse_title(artifact.text)
 
             result: dict[str, Any] = {
-                "session_id": sess_id,
+                "session_id": hit["session_id"],
                 "text": artifact.text,
                 "score": round(score, 4),
                 "created_at": artifact.created_at.isoformat() if artifact.created_at else None,
-                "_embedding": artifact.embedding,
             }
 
             if title is not None:
@@ -214,13 +296,8 @@ def search_transcripts(
             scored.append(result)
 
         scored.sort(key=lambda r: r["score"], reverse=True)
-        results = deduplicate(scored)
-        results = results[:top_k]
 
-        for r in results:
-            r.pop("_embedding", None)
-
-    return results
+    return scored[:top_k]
 
 
 def get_session(session_id: str) -> dict[str, Any] | None:

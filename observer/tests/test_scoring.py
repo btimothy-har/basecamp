@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
 
-from observer.constants import EMBEDDING_DIMENSIONS, SEARCH_DEFAULT_THRESHOLD
-from observer.mcp.scoring import compute_score, deduplicate, time_decay
+from observer.constants import SEARCH_DEFAULT_THRESHOLD
+from observer.mcp.scoring import compute_score, time_decay
 
 
 class TestTimeDecay:
@@ -49,106 +49,66 @@ class TestTimeDecay:
 
 
 class TestComputeScore:
-    def test_perfect_match_recent(self):
+    """Tests for hybrid scoring: relevance = semantic*0.6 + keyword*0.4, score = relevance*0.8 + decay*0.2."""
+
+    def test_perfect_dual_match_recent(self):
+        # Both signals at 1.0 → relevance=1.0, score ≈ 1.0
         now = datetime.now(UTC)
-        score = compute_score(0.0, now)
+        score = compute_score(now, semantic=1.0, keyword=1.0)
         assert score > 0.99
 
-    def test_distant_match_scores_low(self):
+    def test_perfect_semantic_only_recent(self):
+        # semantic=1.0, keyword=0 → relevance=0.6, score ≈ 0.68
         now = datetime.now(UTC)
-        score = compute_score(1.5, now)
-        assert score < 0.5
+        score = compute_score(now, semantic=1.0)
+        assert 0.6 < score < 0.75
 
-    def test_zero_similarity_scores_below_threshold(self):
-        # Orthogonal vectors (cosine_distance=1.0) get only the recency bonus (≤0.2),
-        # which is always below the search threshold of 0.3.
+    def test_perfect_keyword_only_recent(self):
+        # semantic=0, keyword=1.0 → relevance=0.4, score ≈ 0.52
         now = datetime.now(UTC)
-        score = compute_score(1.0, now)
+        score = compute_score(now, keyword=1.0)
+        assert 0.4 < score < 0.6
+
+    def test_no_signals_scores_below_threshold(self):
+        # Both signals at 0 → only recency bonus (≤0.2), below threshold.
+        now = datetime.now(UTC)
+        score = compute_score(now, semantic=0.0, keyword=0.0)
         assert score < SEARCH_DEFAULT_THRESHOLD
 
-    def test_negative_similarity_treated_as_zero(self):
-        # Anti-correlated vectors (cosine_distance=2.0) clamp to similarity=0.
+    def test_dual_match_beats_single(self):
+        # An artifact matching on both signals should outscore one matching on just one.
         now = datetime.now(UTC)
-        score = compute_score(2.0, now)
-        assert score < SEARCH_DEFAULT_THRESHOLD
+        dual = compute_score(now, semantic=0.8, keyword=0.8)
+        semantic_only = compute_score(now, semantic=0.8, keyword=0.0)
+        keyword_only = compute_score(now, keyword=0.8, semantic=0.0)
+        assert dual > semantic_only
+        assert dual > keyword_only
 
-    def test_high_similarity_old_artifact_above_threshold_30d(self):
-        # Acceptance criterion: cd=0.1 at 30 days must exceed the search threshold.
+    def test_semantic_weighted_higher_than_keyword(self):
+        # At equal signal strength, semantic contributes more.
         now = datetime.now(UTC)
-        score = compute_score(0.1, now - timedelta(days=30))
+        semantic_only = compute_score(now, semantic=0.8, keyword=0.0)
+        keyword_only = compute_score(now, semantic=0.0, keyword=0.8)
+        assert semantic_only > keyword_only
+
+    def test_high_similarity_old_artifact_above_threshold(self):
+        now = datetime.now(UTC)
+        score = compute_score(now - timedelta(days=30), semantic=0.9)
         assert score > SEARCH_DEFAULT_THRESHOLD
 
-    def test_high_similarity_old_artifact_above_threshold_180d(self):
-        # Acceptance criterion: cd=0.1 at 180 days must still exceed 0.7.
+    def test_older_artifact_ranks_below_recent_at_same_signals(self):
         now = datetime.now(UTC)
-        score = compute_score(0.1, now - timedelta(days=180))
-        assert score > 0.7
-
-    def test_older_artifact_ranks_below_recent_at_same_similarity(self):
-        # Recency bonus should meaningfully differentiate same-quality artifacts.
-        now = datetime.now(UTC)
-        score_recent = compute_score(0.1, now - timedelta(days=1))
-        score_old = compute_score(0.1, now - timedelta(days=180))
+        score_recent = compute_score(now - timedelta(days=1), semantic=0.8, keyword=0.5)
+        score_old = compute_score(now - timedelta(days=180), semantic=0.8, keyword=0.5)
         assert score_recent > score_old
 
+    def test_keyword_only_hit_above_threshold_when_strong(self):
+        # A strong keyword match should surface even without semantic signal.
+        now = datetime.now(UTC)
+        score = compute_score(now, keyword=0.9)
+        assert score > SEARCH_DEFAULT_THRESHOLD
 
-def _make_embedding(index: int) -> list[float]:
-    """Create an embedding with energy concentrated at a specific dimension.
-
-    Different indices produce near-orthogonal vectors (low cosine similarity).
-    """
-    values = [0.0] * EMBEDDING_DIMENSIONS
-    values[index % EMBEDDING_DIMENSIONS] = 1.0
-    return values
-
-
-class TestDeduplicate:
-    def test_empty_input(self):
-        assert deduplicate([]) == []
-
-    def test_distinct_results_kept(self):
-        results = [
-            {"id": 1, "type": "KNOWLEDGE", "score": 0.9, "_embedding": _make_embedding(0)},
-            {"id": 2, "type": "KNOWLEDGE", "score": 0.8, "_embedding": _make_embedding(1)},
-        ]
-        kept = deduplicate(results)
-        assert len(kept) == 2
-
-    def test_identical_embeddings_deduped_within_same_type(self):
-        emb = _make_embedding(0)
-        results = [
-            {"id": 1, "type": "KNOWLEDGE", "score": 0.9, "_embedding": emb},
-            {"id": 2, "type": "KNOWLEDGE", "score": 0.8, "_embedding": emb},
-        ]
-        kept = deduplicate(results)
-        assert len(kept) == 1
-        assert kept[0]["id"] == 1
-
-    def test_similar_embeddings_kept_across_types(self):
-        """A CONSTRAINT and DECISION with identical embeddings both survive."""
-        emb = _make_embedding(0)
-        results = [
-            {"id": 1, "type": "DECISION", "score": 0.9, "_embedding": emb},
-            {"id": 2, "type": "CONSTRAINT", "score": 0.8, "_embedding": emb},
-        ]
-        kept = deduplicate(results)
-        assert len(kept) == 2
-
-    def test_results_without_embedding_always_kept(self):
-        results = [
-            {"id": 1, "score": 0.9},
-            {"id": 2, "score": 0.8},
-        ]
-        kept = deduplicate(results)
-        assert len(kept) == 2
-
-    def test_identical_summaries_deduped(self):
-        """Two near-identical transcript summaries (no type field) get deduped."""
-        emb = _make_embedding(0)
-        results = [
-            {"artifact_id": 1, "score": 0.9, "_embedding": emb},
-            {"artifact_id": 2, "score": 0.8, "_embedding": emb},
-        ]
-        kept = deduplicate(results)
-        assert len(kept) == 1
-        assert kept[0]["artifact_id"] == 1
+    def test_score_capped_at_one(self):
+        now = datetime.now(UTC)
+        score = compute_score(now, semantic=1.0, keyword=1.0)
+        assert score <= 1.0
