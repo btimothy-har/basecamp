@@ -49,15 +49,14 @@ def _get_model() -> Any:
     return _model_cache[0]
 
 
-def _apply_scope_filters(q, *, project_name, worktree):
-    """Apply project and worktree filters to a query.
+def _apply_scope_filters(q, *, project_name, worktree, session_id: str | None = None):
+    """Apply project, worktree, and session exclusion filters to a query.
 
-    The query must already have ArtifactSchema in the FROM clause.
-    Joins TranscriptSchema when needed (project or worktree filtering).
+    TranscriptSchema must already be joined by the caller.
+    Joins ProjectSchema/WorktreeSchema as needed.
     """
-    needs_transcript_join = project_name is not None or worktree is not None
-    if needs_transcript_join:
-        q = q.join(TranscriptSchema, ArtifactSchema.transcript_id == TranscriptSchema.id)
+    if session_id is not None:
+        q = q.filter(TranscriptSchema.session_id != session_id)
 
     if project_name is not None:
         q = q.join(ProjectSchema, TranscriptSchema.project_id == ProjectSchema.id).filter(
@@ -79,6 +78,7 @@ def search_artifacts(
     top_k: int = SEARCH_DEFAULT_TOP_K,
     threshold: float = SEARCH_DEFAULT_THRESHOLD,
     worktree: str | None = None,
+    session_id: str | None = None,
 ) -> list[dict[str, Any]]:
     """Semantic search over non-summary extraction sections.
 
@@ -93,34 +93,38 @@ def search_artifacts(
 
     with db.session() as session:
         distance_expr = ArtifactSchema.embedding.cosine_distance(query_vector)
-        q = session.query(
-            ArtifactSchema,
-            distance_expr.label("distance"),
-        ).filter(
-            ArtifactSchema.embedding.isnot(None),
-            ArtifactSchema.section_type != SectionType.SUMMARY,
+        q = (
+            session.query(
+                ArtifactSchema,
+                TranscriptSchema.session_id,
+                distance_expr.label("distance"),
+            )
+            .join(TranscriptSchema, ArtifactSchema.transcript_id == TranscriptSchema.id)
+            .filter(
+                ArtifactSchema.embedding.isnot(None),
+                ArtifactSchema.section_type != SectionType.SUMMARY,
+            )
         )
 
-        q = _apply_scope_filters(q, project_name=project_name, worktree=worktree)
+        q = _apply_scope_filters(q, project_name=project_name, worktree=worktree, session_id=session_id)
         rows = q.order_by(distance_expr).limit(overfetch).all()
 
         if not rows:
             return []
 
         scored: list[dict[str, Any]] = []
-        for artifact, distance in rows:
+        for artifact, sess_id, distance in rows:
             score = compute_score(distance, artifact.updated_at)
             if score < threshold:
                 continue
 
             scored.append(
                 {
-                    "artifact_id": artifact.id,
+                    "session_id": sess_id,
                     "text": artifact.text,
                     "type": artifact.section_type,
                     "score": round(score, 4),
                     "created_at": artifact.created_at.isoformat() if artifact.created_at else None,
-                    "transcript_id": artifact.transcript_id,
                     "_embedding": artifact.embedding,
                 }
             )
@@ -142,6 +146,7 @@ def search_transcripts(
     top_k: int = SEARCH_DEFAULT_TOP_K,
     threshold: float = SEARCH_DEFAULT_THRESHOLD,
     worktree: str | None = None,
+    session_id: str | None = None,
 ) -> list[dict[str, Any]]:
     """Semantic search over summary extraction sections.
 
@@ -157,22 +162,27 @@ def search_transcripts(
 
     with db.session() as session:
         distance_expr = ArtifactSchema.embedding.cosine_distance(query_vector)
-        q = session.query(
-            ArtifactSchema,
-            distance_expr.label("distance"),
-        ).filter(
-            ArtifactSchema.embedding.isnot(None),
-            ArtifactSchema.section_type == SectionType.SUMMARY,
+        q = (
+            session.query(
+                ArtifactSchema,
+                TranscriptSchema.session_id,
+                distance_expr.label("distance"),
+            )
+            .join(TranscriptSchema, ArtifactSchema.transcript_id == TranscriptSchema.id)
+            .filter(
+                ArtifactSchema.embedding.isnot(None),
+                ArtifactSchema.section_type == SectionType.SUMMARY,
+            )
         )
 
-        q = _apply_scope_filters(q, project_name=project_name, worktree=worktree)
+        q = _apply_scope_filters(q, project_name=project_name, worktree=worktree, session_id=session_id)
         rows = q.order_by(distance_expr).limit(overfetch).all()
 
         if not rows:
             return []
 
         scored: list[dict[str, Any]] = []
-        for artifact, distance in rows:
+        for artifact, sess_id, distance in rows:
             score = compute_score(distance, artifact.updated_at)
             if score < threshold:
                 continue
@@ -180,11 +190,10 @@ def search_transcripts(
             title = Artifact.parse_title(artifact.text)
 
             result: dict[str, Any] = {
-                "artifact_id": artifact.id,
+                "session_id": sess_id,
                 "text": artifact.text,
                 "score": round(score, 4),
                 "created_at": artifact.created_at.isoformat() if artifact.created_at else None,
-                "transcript_id": artifact.transcript_id,
                 "_embedding": artifact.embedding,
             }
 

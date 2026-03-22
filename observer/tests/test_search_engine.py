@@ -115,10 +115,9 @@ class TestSearchArtifacts:
 
         assert len(results) >= 1
         result = results[0]
-        assert "artifact_id" in result
+        assert "session_id" in result
         assert "text" in result
         assert "score" in result
-        assert "transcript_id" in result
         assert "type" in result
 
     def test_excludes_summaries(self, db):  # noqa: ARG002
@@ -171,6 +170,18 @@ class TestSearchArtifacts:
 
         assert results == []
 
+    def test_excludes_current_session(self, db):  # noqa: ARG002
+        _seed_artifact(db, session_id="current-session")
+        _seed_artifact(db, session_id="other-session")
+
+        with patch.object(engine, "_get_model", return_value=_mock_model()):
+            results = engine.search_artifacts(
+                "test query", "test-project", threshold=0.0, session_id="current-session"
+            )
+
+        for r in results:
+            assert r["session_id"] != "current-session"
+
     def test_excludes_unindexed_extractions(self, db):  # noqa: ARG002
         """Extractions without embeddings should not appear in search results."""
         with db.session() as session:
@@ -209,11 +220,10 @@ class TestSearchTranscripts:
 
         assert len(results) >= 1
         result = results[0]
-        assert "artifact_id" in result
+        assert "session_id" in result
         assert "text" in result
         assert "score" in result
         assert "title" in result
-        assert "transcript_id" in result
 
     def test_excludes_non_summary_sections(self, db):  # noqa: ARG002
         _seed_artifact(db, session_id="sess-excluded")
@@ -250,6 +260,18 @@ class TestSearchTranscripts:
             results = engine.search_transcripts("test query", None, top_k=50, threshold=0.0)
 
         assert len(results) >= 2
+
+    def test_excludes_current_session(self, db):  # noqa: ARG002
+        _seed_summary(db, session_id="current-session-ts", summary_text="## Current\nCurrent summary")
+        _seed_summary(db, session_id="other-session-ts", summary_text="## Other\nOther summary")
+
+        with patch.object(engine, "_get_model", return_value=_mock_model()):
+            results = engine.search_transcripts(
+                "test query", "test-project", threshold=0.0, session_id="current-session-ts"
+            )
+
+        for r in results:
+            assert r["session_id"] != "current-session-ts"
 
     def test_empty_db_returns_empty(self, db):  # noqa: ARG002
         with patch.object(engine, "_get_model", return_value=_mock_model()):

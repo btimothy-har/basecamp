@@ -126,9 +126,8 @@ def search_artifacts(
         worktree: Optional worktree label to filter by.
 
     Returns:
-        Dict with 'results' list and 'count'. Each result contains artifact_id,
-        type (section_type), text, score, created_at, and transcript_id.
-        Use get_artifact to retrieve full details for any result.
+        Dict with 'results' list and 'count'. Each result contains session_id,
+        type (section_type), text, score, and created_at.
     """
     return _search_artifacts(query, top_k=top_k, threshold=threshold, worktree=worktree)
 
@@ -153,8 +152,8 @@ def search_transcripts(
         worktree: Optional worktree label to filter by.
 
     Returns:
-        Dict with 'results' list and 'count'. Each result contains artifact_id,
-        title, text, score, created_at, and transcript_id.
+        Dict with 'results' list and 'count'. Each result contains session_id,
+        title, text, score, and created_at.
     """
     return _search_transcripts(query, top_k=top_k, threshold=threshold, worktree=worktree)
 
