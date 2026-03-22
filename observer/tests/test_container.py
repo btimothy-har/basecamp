@@ -7,7 +7,7 @@ from unittest.mock import patch
 
 import pytest
 from click.testing import CliRunner
-from observer.cli import main
+from observer.cli.observer import main
 from observer.services.container import (
     ContainerRuntimeNotFoundError,
     ContainerStatus,

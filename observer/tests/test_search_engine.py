@@ -280,40 +280,6 @@ class TestSearchTranscripts:
         assert results == []
 
 
-class TestGetArtifact:
-    def test_returns_extraction(self, db):  # noqa: ARG002
-        ext_id = _seed_artifact(db, session_id="sess-get")
-
-        result = engine.get_artifact(ext_id)
-
-        assert result is not None
-        assert result["id"] == ext_id
-        assert result["section_type"] == SectionType.KNOWLEDGE
-        assert "text" in result
-
-    def test_returns_none_for_missing(self, db):  # noqa: ARG002
-        result = engine.get_artifact(99999)
-        assert result is None
-
-
-class TestGetTranscriptDetail:
-    def test_returns_summary(self, db):  # noqa: ARG002
-        transcript_id = _seed_summary(db, session_id="sess-get-summary")
-
-        result = engine.get_transcript_detail(transcript_id)
-
-        assert result is not None
-        assert result["id"] == transcript_id
-        assert result["title"] == "Test Title"
-        assert result["session_id"] == "sess-get-summary"
-        assert "started_at" in result
-        assert "sections" in result
-
-    def test_returns_none_for_missing(self, db):  # noqa: ARG002
-        result = engine.get_transcript_detail(99999)
-        assert result is None
-
-
 class TestGetSession:
     def test_returns_session_with_sections(self, db):
         """Found session returns session_id, timestamps, and all extraction sections."""

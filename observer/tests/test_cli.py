@@ -6,7 +6,7 @@ import observer.constants as c
 import pytest
 import questionary
 from click.testing import CliRunner
-from observer.cli import main
+from observer.cli.observer import main
 from observer.services.container import ContainerRuntimeNotFoundError, ContainerStatus
 
 
@@ -22,9 +22,6 @@ def obs_dir(tmp_path, monkeypatch):
     monkeypatch.setattr(c, "LOG_FILE", obs / "observer.log")
     monkeypatch.setenv("OBSERVER_PG_URL", "postgresql://localhost/observer_test")
     return obs
-
-
-_CLI_PREFIX = "observer.cli"
 
 
 def _mock_status(*, running: bool = False, status_text: str = "running") -> ContainerStatus:
@@ -49,7 +46,7 @@ class TestLogs:
         log_file = obs_dir / "observer.log"
         log_file.write_text("test log line\n")
 
-        with patch("observer.cli.os.execvp") as mock_exec:
+        with patch("observer.cli.observer.os.execvp") as mock_exec:
             runner.invoke(main, ["logs", "-n", "50"])
 
         mock_exec.assert_called_once()
@@ -62,7 +59,7 @@ class TestLogs:
         log_file = obs_dir / "observer.log"
         log_file.write_text("test log line\n")
 
-        with patch("observer.cli.os.execvp") as mock_exec:
+        with patch("observer.cli.observer.os.execvp") as mock_exec:
             runner.invoke(main, ["logs", "--follow"])
 
         args = mock_exec.call_args[0]
@@ -84,10 +81,10 @@ class TestSetup:
 
     def test_existing_url_masks_password(self, runner, obs_dir):  # noqa: ARG002
         with (
-            patch("observer.cli.questionary") as mock_q,
-            patch("observer.cli.get_db_source", return_value="user"),
-            patch("observer.cli.get_pg_url", return_value=self.PG_URL_WITH_CREDS),
-            patch("observer.cli.create_engine", return_value=self._mock_engine()),
+            patch("observer.cli.observer.questionary") as mock_q,
+            patch("observer.cli.observer.get_db_source", return_value="user"),
+            patch("observer.cli.observer.get_pg_url", return_value=self.PG_URL_WITH_CREDS),
+            patch("observer.cli.observer.create_engine", return_value=self._mock_engine()),
         ):
             mock_q.select.return_value.ask.side_effect = ["user", "sonnet", "haiku", "on"]
             mock_q.Choice = questionary.Choice
@@ -100,13 +97,13 @@ class TestSetup:
 
     def test_container_source_creates_and_saves(self, runner, obs_dir):  # noqa: ARG002
         with (
-            patch("observer.cli.questionary") as mock_q,
-            patch("observer.cli.detect_runtime", return_value="docker"),
-            patch("observer.cli.inspect_container", return_value=None),
-            patch("observer.cli.ensure_running", return_value=True),
-            patch("observer.cli.create_engine", return_value=self._mock_engine()),
-            patch("observer.cli.set_pg_url") as mock_set_url,
-            patch("observer.cli.set_db_source") as mock_set_source,
+            patch("observer.cli.observer.questionary") as mock_q,
+            patch("observer.cli.observer.detect_runtime", return_value="docker"),
+            patch("observer.cli.observer.inspect_container", return_value=None),
+            patch("observer.cli.observer.ensure_running", return_value=True),
+            patch("observer.cli.observer.create_engine", return_value=self._mock_engine()),
+            patch("observer.cli.observer.set_pg_url") as mock_set_url,
+            patch("observer.cli.observer.set_db_source") as mock_set_source,
         ):
             mock_q.select.return_value.ask.side_effect = ["container", "sonnet", "haiku", "on"]
             mock_q.Choice = questionary.Choice
@@ -119,8 +116,8 @@ class TestSetup:
 
     def test_no_runtime_exits(self, runner, obs_dir):  # noqa: ARG002
         with (
-            patch("observer.cli.questionary") as mock_q,
-            patch("observer.cli.detect_runtime", side_effect=ContainerRuntimeNotFoundError),
+            patch("observer.cli.observer.questionary") as mock_q,
+            patch("observer.cli.observer.detect_runtime", side_effect=ContainerRuntimeNotFoundError),
         ):
             mock_q.select.return_value.ask.return_value = "container"
             mock_q.Choice = questionary.Choice

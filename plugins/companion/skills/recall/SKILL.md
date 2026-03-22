@@ -17,14 +17,14 @@ Semantic search over extracted knowledge from past Claude Code sessions.
 
 ```bash
 # Find relevant sessions by topic
-recall "<query>"
+recall search "<query>"
 
 # Drill into a session's full structured detail
 recall session <session_id>
 
 # Search for specific artifact types directly
-recall "<query>" --type decisions
-recall "<query>" --type knowledge,decisions
+recall search "<query>" --type decisions
+recall search "<query>" --type knowledge,decisions
 ```
 
 ## Flags
@@ -40,18 +40,18 @@ recall "<query>" --type knowledge,decisions
 
 | Goal | Command |
 |------|---------|
-| "What sessions dealt with X?" | `recall "X"` |
-| "What did we decide about X?" | `recall "X" --type decisions` |
-| "What do we know about X?" | `recall "X" --type knowledge` |
-| "What did we do about X?" | `recall "X" --type actions` |
-| "What limitations exist for X?" | `recall "X" --type constraints` |
+| "What sessions dealt with X?" | `recall search "X"` |
+| "What did we decide about X?" | `recall search "X" --type decisions` |
+| "What do we know about X?" | `recall search "X" --type knowledge` |
+| "What did we do about X?" | `recall search "X" --type actions` |
+| "What limitations exist for X?" | `recall search "X" --type constraints` |
 | Context might exist in other projects | add `--cross-project` |
 
 ## Two-Step Pattern
 
 When you need full context, not just snippets:
 
-1. `recall "<query>"` → find relevant session IDs from summaries
+1. `recall search "<query>"` → find relevant session IDs from summaries
 2. `recall session <session_id>` → get the full structured session (summary, knowledge, decisions, constraints, actions)
 
 ## Output Format

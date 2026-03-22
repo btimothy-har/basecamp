@@ -77,32 +77,25 @@ def _run_search(
     _emit({"results": results, "count": len(results)})
 
 
-@click.group(invoke_without_command=True)
-@click.argument("query", required=False)
+@click.group()
+def main() -> None:
+    """Semantic memory retrieval for Claude Code sessions."""
+
+
+@main.command()
+@click.argument("query")
 @click.option("--type", "-t", "types", default=None, help="Artifact types: knowledge, decisions, constraints, actions")
 @click.option("--cross-project", "-x", is_flag=True, help="Search across all projects")
 @click.option("--top-k", "-k", default=10, show_default=True, help="Max results to return")
 @click.option("--threshold", default=0.3, show_default=True, help="Minimum relevance score")
-@click.pass_context
-def main(
-    ctx: click.Context,
-    query: str | None,
+def search(
+    query: str,
     types: str | None,
     cross_project: bool,  # noqa: FBT001
     top_k: int,
     threshold: float,
 ) -> None:
-    """Semantic memory retrieval for Claude Code sessions.
-
-    Search past sessions by topic (default), or drill into specific artifact
-    types with --type. Use `recall session <id>` to fetch full session detail.
-    """
-    if ctx.invoked_subcommand is not None:
-        return
-
-    if not query:
-        _error("Query required")
-
+    """Search past sessions by topic or artifact type."""
     _run_search(
         query,
         types=types,
