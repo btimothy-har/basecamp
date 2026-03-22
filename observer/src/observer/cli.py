@@ -608,5 +608,3 @@ def reprocess(yes: bool) -> None:  # noqa: FBT001
     click.echo("  Embedding complete")
 
     click.echo("\nReprocessing complete.")
-
-
