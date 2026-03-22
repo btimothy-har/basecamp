@@ -8,13 +8,18 @@ CLAUDE_SESSION_ID from the environment to scope searches automatically.
 from __future__ import annotations
 
 import json
+import logging
 import os
 import sys
-from typing import Any
+from typing import Any, NoReturn
 
 import click
 
-VALID_ARTIFACT_TYPES = frozenset({"knowledge", "decisions", "constraints", "actions"})
+from observer.data.enums import SectionType
+
+VALID_ARTIFACT_TYPES = frozenset(s.value for s in SectionType if s != SectionType.SUMMARY)
+
+logger = logging.getLogger(__name__)
 
 
 def _emit(data: dict[str, Any]) -> None:
@@ -22,8 +27,11 @@ def _emit(data: dict[str, Any]) -> None:
     click.echo(json.dumps(data))
 
 
-def _error(message: str) -> None:
-    """Write a JSON error to stdout and exit with code 1."""
+def _error(message: str) -> NoReturn:
+    """Write a JSON error to stdout and exit with code 1.
+
+    Errors go to stdout (not stderr) so Claude can parse them as JSON.
+    """
     _emit({"error": message})
     sys.exit(1)
 
@@ -71,8 +79,9 @@ def _run_search(
             )
             requested = set(parsed_types)
             results = [r for r in raw if r.get("type") in requested]
-    except Exception as e:
-        _error(f"Search failed: {e}")
+    except Exception:
+        logger.exception("Search failed")
+        _error("Search failed — check observer logs for details")
 
     _emit({"results": results, "count": len(results)})
 
@@ -113,8 +122,9 @@ def session(session_id: str) -> None:
 
     try:
         result = engine.get_session(session_id)
-    except Exception as e:
-        _error(f"Session lookup failed: {e}")
+    except Exception:
+        logger.exception("Session lookup failed")
+        _error("Session lookup failed — check observer logs for details")
 
     if result is None:
         _error(f"Session not found: {session_id}")

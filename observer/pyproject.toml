@@ -1,7 +1,7 @@
 [project]
 name = "basecamp-observer"
 version = "0.1.0"
-description = "Background observer daemon for Claude Code session monitoring"
+description = "Semantic memory for Claude Code sessions — ingestion, extraction, and recall"
 requires-python = ">=3.12"
 dependencies = [
     "click~=8.1",

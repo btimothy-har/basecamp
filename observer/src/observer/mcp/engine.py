@@ -151,7 +151,7 @@ def search_transcripts(
     """Semantic search over summary extraction sections.
 
     Finds sessions whose summaries are semantically relevant to the query.
-    Returns session-level matches for orientation — use get_transcript_detail
+    Returns session-level matches for orientation — use get_session
     to drill down into the full structured sections.
     """
     model = _get_model()
@@ -212,13 +212,6 @@ def search_transcripts(
     return results
 
 
-def _sections_dict(transcript_id: int) -> dict[str, str]:
-    """Get artifact sections for a transcript as {section_type: text}."""
-    artifacts = Artifact.get_for_transcript(transcript_id)
-    return {a.section_type: a.text for a in artifacts}
-
-
-
 def get_session(session_id: str) -> dict[str, Any] | None:
     """Retrieve a session's transcript and extraction sections by Claude session ID.
 
@@ -229,7 +222,8 @@ def get_session(session_id: str) -> dict[str, Any] | None:
     if transcript is None:
         return None
 
-    sections = _sections_dict(transcript.id)
+    artifacts = Artifact.get_for_transcript(transcript.id)
+    sections = {a.section_type: a.text for a in artifacts}
 
     return {
         "session_id": transcript.session_id,

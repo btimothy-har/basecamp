@@ -65,6 +65,7 @@ All output is JSON.
     {
       "session_id": "abc123",
       "text": "...",
+      "title": "Short descriptive title",
       "type": "summary" | "decisions" | "knowledge" | "actions" | "constraints",
       "score": 0.82,
       "created_at": "2026-01-15T10:30:00"
