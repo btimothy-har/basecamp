@@ -22,8 +22,10 @@ if [ -z "$SESSION_ID" ]; then
 fi
 
 # Synchronous: ingest new events
+# Exit 2 signals Claude Code to display stderr as an error message.
+# Exit 1 would only show in verbose mode.
 if ! echo "$INPUT" | observer ingest; then
-    exit 1
+    exit 2
 fi
 
 # Background: refine + extract + embed (detached, non-blocking)
