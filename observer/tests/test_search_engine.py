@@ -37,6 +37,7 @@ def _seed_artifact(
     section_type=SectionType.KNOWLEDGE,
     session_id="sess-1",
     project_name="test-project",
+    embedding=None,
 ):
     """Create a project, transcript, and indexed extraction. Returns extraction ID."""
     with db.session() as session:
@@ -59,7 +60,7 @@ def _seed_artifact(
             transcript_id=transcript.id,
             section_type=section_type,
             text=text,
-            embedding=_random_embedding(),
+            embedding=embedding if embedding is not None else _random_embedding(),
             content_hash=_content_hash(text),
             indexed_at=datetime.now(UTC),
         )
@@ -181,22 +182,48 @@ class TestSearchArtifacts:
             assert r["session_id"] != "current-session"
 
     def test_section_types_filters_at_query_level(self, db):  # noqa: ARG002
-        """section_types restricts results before LIMIT, not after."""
-        _seed_artifact(db, section_type=SectionType.KNOWLEDGE, session_id="sess-type-k")
-        _seed_artifact(db, section_type=SectionType.DECISIONS, session_id="sess-type-d")
+        """section_types restricts results before LIMIT, not after.
 
-        with patch.object(engine, "_get_model", return_value=_mock_model()):
+        Without pre-query filtering the DECISIONS row would rank first
+        (its embedding is identical to the query vector) and claim the
+        single top_k=1 slot, leaving zero KNOWLEDGE results after a
+        hypothetical post-trim filter.  The assertion that we get
+        exactly one KNOWLEDGE result proves the filter runs in SQL.
+        """
+        # Unit vector along dim 0 — used as both query and DECISIONS embedding.
+        close_vec = np.zeros(EMBEDDING_DIMENSIONS, dtype=np.float32)
+        close_vec[0] = 1.0
+        # Orthogonal vector — KNOWLEDGE embedding, high cosine distance.
+        far_vec = np.zeros(EMBEDDING_DIMENSIONS, dtype=np.float32)
+        far_vec[1] = 1.0
+
+        _seed_artifact(
+            db,
+            section_type=SectionType.DECISIONS,
+            session_id="sess-type-d",
+            embedding=close_vec.tolist(),
+        )
+        _seed_artifact(
+            db,
+            section_type=SectionType.KNOWLEDGE,
+            session_id="sess-type-k",
+            embedding=far_vec.tolist(),
+        )
+
+        model = MagicMock()
+        model.encode.return_value = close_vec.reshape(1, -1)
+
+        with patch.object(engine, "_get_model", return_value=model):
             results = engine.search_artifacts(
                 "test query",
                 "test-project",
-                top_k=10,
+                top_k=1,
                 threshold=0.0,
                 section_types=["knowledge"],
             )
 
-        assert len(results) >= 1
-        for r in results:
-            assert r["type"] == SectionType.KNOWLEDGE
+        assert len(results) == 1
+        assert results[0]["type"] == SectionType.KNOWLEDGE
 
     def test_excludes_unindexed_extractions(self, db):  # noqa: ARG002
         """Extractions without embeddings should not appear in search results."""
