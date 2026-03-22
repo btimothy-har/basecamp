@@ -27,6 +27,7 @@ REPO_DIR: Final = Path(__file__).parent
 MODULES: Final[list[tuple[str, Path, str]]] = [
     ("basecamp-core", REPO_DIR / "core", "basecamp"),
     ("basecamp-observer", REPO_DIR / "observer", "observer"),
+    ("basecamp-recall", REPO_DIR / "recall", "recall"),
 ]
 
 
@@ -103,7 +104,7 @@ def main() -> None:
     console.print()
     console.print("[green]✓[/green] Done.")
     console.print()
-    console.print("If [bold]basecamp[/bold] or [bold]observer[/bold] aren't found, add uv's tool bin to your PATH:")
+    console.print("If [bold]basecamp[/bold], [bold]observer[/bold], or [bold]recall[/bold] aren't found, add uv's tool bin to your PATH:")
     console.print('  [dim]export PATH="$HOME/.local/bin:$PATH"[/dim]')
 
 
