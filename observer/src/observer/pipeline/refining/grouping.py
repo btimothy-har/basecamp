@@ -37,7 +37,7 @@ def classify_events(events: list[RawEvent]) -> list[ClassifiedItem]:
     precede their corresponding tool_results.
 
     Trailing unmatched tool_uses are excluded (left unprocessed) so the
-    next batch can pair them with their tool_results.
+    next ingestion can pair them with their tool_results.
     """
     items: list[ClassifiedItem] = []
     # tool_use ID → RawEvent, supports parallel tool calls
@@ -95,54 +95,42 @@ class EventGrouper:
         return RawEvent.has_unprocessed()
 
     @staticmethod
-    def group_batch(db: Database, *, transcript_id: int | None = None, batch_limit: int) -> int:
-        """Classify ungrouped RawEvents into WorkItems. Returns count created."""
-        events = RawEvent.get_unprocessed(transcript_id=transcript_id, limit=batch_limit)
+    def group_pending(db: Database, transcript_id: int) -> int:
+        """Classify ungrouped RawEvents for a transcript into WorkItems."""
+        events = RawEvent.get_unprocessed(transcript_id=transcript_id)
         if not events:
             return 0
 
-        logger.info("Classifying %d ungrouped events", len(events))
+        classified = classify_events(events)
+        now = datetime.now(UTC)
 
-        groups: dict[int, list[RawEvent]] = {}
-        for event in events:
-            groups.setdefault(event.transcript_id, []).append(event)
+        # Find events not included in any classified item (e.g. trailing
+        # unmatched tool_uses). Only mark them SKIPPED once they're older
+        # than the stale threshold — recent ones may still get a matching
+        # tool_result in the next ingestion.
+        classified_event_ids = {e.id for item in classified for e in item.events}
+        stale_cutoff = now.replace(tzinfo=None) - timedelta(seconds=DEFAULT_STALE_THRESHOLD)
+        orphaned = [
+            e for e in events if e.id not in classified_event_ids and e.timestamp.replace(tzinfo=None) < stale_cutoff
+        ]
 
-        total = 0
-        for transcript_id, transcript_events in groups.items():
-            classified = classify_events(transcript_events)
-            now = datetime.now(UTC)
+        with db.session() as session:
+            for item in classified:
+                work_item = WorkItem(
+                    transcript_id=transcript_id,
+                    item_type=item.item_type,
+                    event_ids=[e.id for e in item.events],
+                    created_at=now,
+                )
+                work_item.save(session)
 
-            # Find events not included in any classified item (e.g. trailing
-            # unmatched tool_uses). Only mark them SKIPPED once they're older
-            # than the stale threshold — recent ones may still get a matching
-            # tool_result in the next batch.
-            classified_event_ids = {e.id for item in classified for e in item.events}
-            stale_cutoff = now.replace(tzinfo=None) - timedelta(seconds=DEFAULT_STALE_THRESHOLD)
-            orphaned = [
-                e
-                for e in transcript_events
-                if e.id not in classified_event_ids and e.timestamp.replace(tzinfo=None) < stale_cutoff
-            ]
-
-            with db.session() as session:
-                for item in classified:
-                    work_item = WorkItem(
-                        transcript_id=transcript_id,
-                        item_type=item.item_type,
-                        event_ids=[e.id for e in item.events],
-                        created_at=now,
-                    )
-                    work_item.save(session)
-
-                    for event in item.events:
-                        event.processed = RawEventStatus.PROCESSED
-                        event.save(session)
-
-                for event in orphaned:
-                    event.processed = RawEventStatus.SKIPPED
+                for event in item.events:
+                    event.processed = RawEventStatus.PROCESSED
                     event.save(session)
 
-            total += len(classified)
+            for event in orphaned:
+                event.processed = RawEventStatus.SKIPPED
+                event.save(session)
 
-        logger.info("Classification complete: %d work items created", total)
-        return total
+        logger.info("Grouped %d work items for transcript %d", len(classified), transcript_id)
+        return len(classified)

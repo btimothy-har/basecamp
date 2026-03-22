@@ -1,4 +1,5 @@
 """CLI entry point for the observer."""
+# ruff: noqa: PLC0415
 
 import json
 import os
@@ -174,7 +175,7 @@ def db_status() -> None:
 @db.command()
 def migrate() -> None:
     """Run pending database schema migrations."""
-    from observer.services.migrations import (  # noqa: PLC0415
+    from observer.services.migrations import (
         get_current_version,
         get_pending,
         run_pending,
@@ -208,7 +209,7 @@ def migrate() -> None:
     applied = run_pending(engine)
 
     # After migrations, run create_all to pick up new tables/columns
-    from observer.services.db import Base  # noqa: PLC0415
+    from observer.services.db import Base
 
     Base.metadata.create_all(engine)
 
@@ -280,7 +281,7 @@ def viz(port: int, host: str, headless: bool) -> None:  # noqa: FBT001
 @main.command()
 def mcp() -> None:
     """Start the MCP server for semantic search over observer memory."""
-    from observer.mcp.server import main as mcp_main  # noqa: PLC0415
+    from observer.mcp.server import main as mcp_main
 
     mcp_main()
 
@@ -457,10 +458,10 @@ def ingest() -> None:
     Registers the session (if needed), parses new JSONL events,
     and groups them into work items.
     """
-    from observer.pipeline.parser import TranscriptParser  # noqa: PLC0415
-    from observer.pipeline.refining.grouping import EventGrouper  # noqa: PLC0415
-    from observer.services.db import Database  # noqa: PLC0415
-    from observer.services.registration import (  # noqa: PLC0415
+    from observer.pipeline.parser import TranscriptParser
+    from observer.pipeline.refining.grouping import EventGrouper
+    from observer.services.db import Database
+    from observer.services.registration import (
         HookInput,
         register_session,
     )
@@ -495,18 +496,10 @@ def ingest() -> None:
 
     transcript = result.transcript
 
-    # Parse new JSONL events from cursor_offset
-    ingested = TranscriptParser().ingest(transcript)
-
-    # Group raw events into work items (pure logic, no LLM)
-    # Loop until fully drained — a single batch may not cover all pending events
+    # Parse new JSONL events, then group into work items
     db = Database()
-    grouped = 0
-    while True:
-        n = EventGrouper.group_batch(db, batch_limit=500)
-        if n == 0:
-            break
-        grouped += n
+    ingested = TranscriptParser().ingest(transcript)
+    grouped = EventGrouper.group_pending(db, transcript.id)
 
     click.echo(f"session={transcript.session_id} ingested={ingested} grouped={grouped}")
 
@@ -520,19 +513,20 @@ def reprocess(yes: bool) -> None:  # noqa: FBT001
     transcript_events, and artifacts, resets raw_event status to PENDING,
     then runs group → refine → extract → embed for each transcript.
     """
-    from observer.data.enums import RawEventStatus  # noqa: PLC0415
-    from observer.data.schemas import (  # noqa: PLC0415
+    from observer.data.enums import RawEventStatus
+    from observer.data.schemas import (
         ArtifactSchema,
         RawEventSchema,
         TranscriptEventSchema,
         TranscriptSchema,
         WorkItemSchema,
     )
-    from observer.pipeline.extraction import TranscriptExtractor  # noqa: PLC0415
-    from observer.pipeline.indexing import SearchIndexer  # noqa: PLC0415
-    from observer.pipeline.refining import EventRefiner  # noqa: PLC0415
-    from observer.services.db import Database  # noqa: PLC0415
-    from observer.services.logger import configure_logging  # noqa: PLC0415
+    from observer.pipeline.extraction import TranscriptExtractor
+    from observer.pipeline.indexing import SearchIndexer
+    from observer.pipeline.refining import EventRefiner
+    from observer.pipeline.refining.grouping import EventGrouper
+    from observer.services.db import Database
+    from observer.services.logger import configure_logging
 
     configure_logging(foreground=True)
 
@@ -566,15 +560,23 @@ def reprocess(yes: bool) -> None:  # noqa: FBT001
     click.echo("  Cleared work_items, transcript_events, artifacts")
     click.echo("  Reset raw_events to PENDING")
 
-    # Phase 1: Group raw events into work items, then refine into transcript events
-    click.echo("\nGrouping and refining...")
-    refined = EventRefiner.refine_batch(db, batch_limit=raw_event_count)
-    click.echo(f"  Refined {refined} work items")
-
-    # Phase 2: Extract per transcript
-    click.echo("\nExtracting artifacts...")
     with db.session() as session:
         transcript_ids = [row[0] for row in session.query(TranscriptSchema.id).all()]
+
+    # Phase 1: Group raw events into work items per transcript
+    click.echo("\nGrouping...")
+    grouped = 0
+    for tid in transcript_ids:
+        grouped += EventGrouper.group_pending(db, tid)
+    click.echo(f"  Grouped {grouped} work items")
+
+    # Phase 2: Refine work items into transcript events
+    click.echo("\nRefining...")
+    refined = EventRefiner.refine_pending(db)
+    click.echo(f"  Refined {refined} work items")
+
+    # Phase 3: Extract per transcript
+    click.echo("\nExtracting artifacts...")
 
     extracted = 0
     for tid in transcript_ids:
@@ -583,7 +585,7 @@ def reprocess(yes: bool) -> None:  # noqa: FBT001
 
     click.echo(f"  Extracted {extracted} artifact sections across {len(transcript_ids)} transcripts")
 
-    # Phase 3: Embed all artifacts
+    # Phase 4: Embed all artifacts
     click.echo("\nEmbedding artifacts...")
     SearchIndexer.index_pending(db)
     click.echo("  Embedding complete")
@@ -594,19 +596,18 @@ def reprocess(yes: bool) -> None:  # noqa: FBT001
 @main.command()
 @click.argument("session_id")
 def process(session_id: str) -> None:
-    """Run background processing for a session. Refine, extract, embed.
+    """Run LLM pipeline for a session: refine, extract, embed.
 
     Called as a detached background process by the hook script.
-    Runs the full LLM pipeline: refine work_items into transcript_events,
-    extract structured artifacts, and embed for semantic search.
+    Assumes ingestion and grouping have already been done.
     """
-    from observer.data.transcript import Transcript  # noqa: PLC0415
-    from observer.pipeline.extraction import TranscriptExtractor  # noqa: PLC0415
-    from observer.pipeline.indexing import SearchIndexer  # noqa: PLC0415
-    from observer.pipeline.refining import EventRefiner  # noqa: PLC0415
-    from observer.services.config import get_mode  # noqa: PLC0415
-    from observer.services.db import Database  # noqa: PLC0415
-    from observer.services.logger import configure_logging  # noqa: PLC0415
+    from observer.data.transcript import Transcript
+    from observer.pipeline.extraction import TranscriptExtractor
+    from observer.pipeline.indexing import SearchIndexer
+    from observer.pipeline.refining import EventRefiner
+    from observer.services.config import get_mode
+    from observer.services.db import Database
+    from observer.services.logger import configure_logging
 
     configure_logging()
 
@@ -620,7 +621,7 @@ def process(session_id: str) -> None:
     db = Database()
     try:
         # Phase 1: Refine work_items → transcript_events (LLM calls)
-        EventRefiner.refine_batch(db, transcript_id=transcript.id)
+        EventRefiner.refine_pending(db, transcript_id=transcript.id)
 
         # Phase 2: Extract transcript_events → artifacts (single LLM call)
         TranscriptExtractor.extract_transcript(db, transcript.id)

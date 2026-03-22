@@ -287,7 +287,7 @@ class TestClassifyEvents:
 
 
 # ---------------------------------------------------------------------------
-# Integration tests — refine_batch with real DB
+# Integration tests — refine_pending with real DB
 # ---------------------------------------------------------------------------
 
 
@@ -329,10 +329,11 @@ class TestRefineBatch:
         content = json.dumps({"type": "user", "message": {"role": "user", "content": text}})
         _insert_raw_events(db, transcript_id, [{"event_type": "user", "content": content}])
 
-        count = EventRefiner.refine_batch(db)
+        EventGrouper.group_pending(db, transcript_id)
+        count = EventRefiner.refine_pending(db)
         assert count == 1
 
-        items = WorkItem.get_by_processed(WorkItemStage.REFINED, limit=100)
+        items = WorkItem.get_by_processed(WorkItemStage.REFINED)
         assert len(items) == 1
         assert items[0].item_type == WorkItemType.PROMPT
 
@@ -372,12 +373,13 @@ class TestRefineBatch:
             ],
         )
 
+        EventGrouper.group_pending(db, transcript_id)
         with patch("observer.pipeline.refining.refinement.summarize_tool_pair") as mock_tool:
             mock_tool.return_value = SummaryResult(summary="Read: auth.py → found JWT")
-            count = EventRefiner.refine_batch(db)
+            count = EventRefiner.refine_pending(db)
 
         assert count == 1
-        items = WorkItem.get_by_processed(WorkItemStage.REFINED, limit=100)
+        items = WorkItem.get_by_processed(WorkItemStage.REFINED)
         assert len(items) == 1
         assert items[0].item_type == WorkItemType.TOOL_PAIR
         assert items[0].event_ids == event_ids
@@ -401,7 +403,7 @@ class TestRefineBatch:
             [{"event_type": "assistant", "content": tu_content, "timestamp": fresh_ts}],
         )
 
-        count = EventRefiner.refine_batch(db)
+        count = EventRefiner.refine_pending(db)
         assert count == 0
 
         with db.session() as session:
@@ -427,7 +429,8 @@ class TestRefineBatch:
             [{"event_type": "assistant", "content": tu_content, "timestamp": stale_ts}],
         )
 
-        count = EventRefiner.refine_batch(db)
+        EventGrouper.group_pending(db, transcript_id)
+        count = EventRefiner.refine_pending(db)
         assert count == 0
 
         # Event should be SKIPPED, not stuck as PENDING
@@ -449,7 +452,7 @@ class TestRefineBatch:
 
     def test_empty_batch_returns_zero(self, db, tmp_path):
         _setup_transcript(db, tmp_path)
-        assert EventRefiner.refine_batch(db) == 0
+        assert EventRefiner.refine_pending(db) == 0
 
     @patch("observer.pipeline.refining.refinement.summarize_tool_pair")
     @patch("observer.pipeline.refining.refinement.summarize_thinking")
@@ -536,10 +539,11 @@ class TestRefineBatch:
         ]
         _insert_raw_events(db, transcript_id, events_data)
 
-        count = EventRefiner.refine_batch(db)
+        EventGrouper.group_pending(db, transcript_id)
+        count = EventRefiner.refine_pending(db)
         assert count == 5
 
-        refined = WorkItem.get_by_processed(WorkItemStage.REFINED, limit=100)
+        refined = WorkItem.get_by_processed(WorkItemStage.REFINED)
         assert len(refined) == 5
 
         types = sorted(wi.item_type.value for wi in refined)
@@ -565,9 +569,10 @@ class TestRefineBatch:
         content = json.dumps({"type": "progress", "message": {"content": "hook running"}})
         _insert_raw_events(db, transcript_id, [{"event_type": "progress", "content": content}])
 
-        EventRefiner.refine_batch(db)
+        EventGrouper.group_pending(db, transcript_id)
+        EventRefiner.refine_pending(db)
 
-        skipped = WorkItem.get_by_processed(WorkItemStage.TERMINAL, limit=100)
+        skipped = WorkItem.get_by_processed(WorkItemStage.TERMINAL)
         assert len(skipped) == 1
         assert skipped[0].item_type == WorkItemType.UNRECOGNIZED
 
@@ -588,7 +593,8 @@ class TestRefineBatch:
         )
         _insert_raw_events(db, transcript_id, [{"event_type": "assistant", "content": content}])
 
-        EventRefiner.refine_batch(db)
+        EventGrouper.group_pending(db, transcript_id)
+        EventRefiner.refine_pending(db)
 
-        errors = WorkItem.get_by_processed(WorkItemStage.ERROR, limit=100)
+        errors = WorkItem.get_by_processed(WorkItemStage.ERROR)
         assert len(errors) == 1

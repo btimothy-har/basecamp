@@ -67,12 +67,12 @@ class RawEvent(BaseModel):
             return [e for e in events if e.is_extractable()]
 
     @classmethod
-    def get_unprocessed(cls, *, transcript_id: int | None = None, limit: int) -> list[Self]:
+    def get_unprocessed(cls, *, transcript_id: int | None = None) -> list[Self]:
         with Database().session() as session:
             q = session.query(RawEventSchema).filter(RawEventSchema.processed == RawEventStatus.PENDING)
             if transcript_id is not None:
                 q = q.filter(RawEventSchema.transcript_id == transcript_id)
-            rows = q.order_by(RawEventSchema.timestamp).limit(limit).all()
+            rows = q.order_by(RawEventSchema.timestamp).all()
             return [cls.model_validate(r) for r in rows]
 
     @cached_property

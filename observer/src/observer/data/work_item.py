@@ -41,13 +41,12 @@ class WorkItem(BaseModel):
         processed: WorkItemStage,
         *,
         transcript_id: int | None = None,
-        limit: int,
     ) -> list[Self]:
         with Database().session() as session:
             q = session.query(WorkItemSchema).filter(WorkItemSchema.processed == processed)
             if transcript_id is not None:
                 q = q.filter(WorkItemSchema.transcript_id == transcript_id)
-            rows = q.order_by(WorkItemSchema.created_at).limit(limit).all()
+            rows = q.order_by(WorkItemSchema.created_at).all()
             return [cls.model_validate(r) for r in rows]
 
     @classmethod
@@ -57,11 +56,11 @@ class WorkItem(BaseModel):
             return row is not None
 
     @classmethod
-    def get_unprocessed(cls, *, transcript_id: int | None = None, limit: int) -> list[Self]:
-        return cls.get_by_processed(WorkItemStage.UNREFINED, transcript_id=transcript_id, limit=limit)
+    def get_unprocessed(cls, *, transcript_id: int | None = None) -> list[Self]:
+        return cls.get_by_processed(WorkItemStage.UNREFINED, transcript_id=transcript_id)
 
     @classmethod
-    def claim_unprocessed(cls, *, transcript_id: int | None = None, limit: int) -> list[Self]:
+    def claim_unprocessed(cls, *, transcript_id: int | None = None) -> list[Self]:
         """Atomically claim UNREFINED rows by moving them to REFINING.
 
         Uses SELECT FOR UPDATE SKIP LOCKED so concurrent runners
@@ -71,7 +70,7 @@ class WorkItem(BaseModel):
             q = session.query(WorkItemSchema).filter(WorkItemSchema.processed == WorkItemStage.UNREFINED)
             if transcript_id is not None:
                 q = q.filter(WorkItemSchema.transcript_id == transcript_id)
-            rows = q.order_by(WorkItemSchema.created_at).limit(limit).with_for_update(skip_locked=True).all()
+            rows = q.order_by(WorkItemSchema.created_at).with_for_update(skip_locked=True).all()
             if not rows:
                 return []
             for row in rows:
