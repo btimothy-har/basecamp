@@ -49,13 +49,13 @@ def _get_model() -> Any:
     return _model_cache[0]
 
 
-def _apply_scope_filters(q, *, project_name, worktree, session_id):
-    """Apply project, worktree, and session exclusion filters to a query.
+def _apply_scope_filters(q, *, project_name, worktree):
+    """Apply project and worktree filters to a query.
 
     The query must already have ArtifactSchema in the FROM clause.
-    Joins TranscriptSchema when needed (project, worktree, or session exclusion).
+    Joins TranscriptSchema when needed (project or worktree filtering).
     """
-    needs_transcript_join = project_name is not None or worktree is not None or session_id is not None
+    needs_transcript_join = project_name is not None or worktree is not None
     if needs_transcript_join:
         q = q.join(TranscriptSchema, ArtifactSchema.transcript_id == TranscriptSchema.id)
 
@@ -69,9 +69,6 @@ def _apply_scope_filters(q, *, project_name, worktree, session_id):
             WorktreeSchema.label == worktree
         )
 
-    if session_id is not None:
-        q = q.filter(TranscriptSchema.session_id != session_id)
-
     return q
 
 
@@ -79,7 +76,6 @@ def search_artifacts(
     query: str,
     project_name: str | None,
     *,
-    session_id: str | None = None,
     top_k: int = SEARCH_DEFAULT_TOP_K,
     threshold: float = SEARCH_DEFAULT_THRESHOLD,
     worktree: str | None = None,
@@ -105,7 +101,7 @@ def search_artifacts(
             ArtifactSchema.section_type != SectionType.SUMMARY,
         )
 
-        q = _apply_scope_filters(q, project_name=project_name, worktree=worktree, session_id=session_id)
+        q = _apply_scope_filters(q, project_name=project_name, worktree=worktree)
         rows = q.order_by(distance_expr).limit(overfetch).all()
 
         if not rows:
@@ -143,7 +139,6 @@ def search_transcripts(
     query: str,
     project_name: str | None,
     *,
-    session_id: str | None = None,
     top_k: int = SEARCH_DEFAULT_TOP_K,
     threshold: float = SEARCH_DEFAULT_THRESHOLD,
     worktree: str | None = None,
@@ -170,7 +165,7 @@ def search_transcripts(
             ArtifactSchema.section_type == SectionType.SUMMARY,
         )
 
-        q = _apply_scope_filters(q, project_name=project_name, worktree=worktree, session_id=session_id)
+        q = _apply_scope_filters(q, project_name=project_name, worktree=worktree)
         rows = q.order_by(distance_expr).limit(overfetch).all()
 
         if not rows:
