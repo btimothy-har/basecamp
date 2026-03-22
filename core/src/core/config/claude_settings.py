@@ -27,9 +27,10 @@ _TASKS_DIR = SCRATCH_BASE / "tasks"
 
 
 def _load_user_settings() -> dict[str, Any]:
-    """Read ~/.claude/settings.json, returning empty dict if absent."""
+    """Read ~/.claude/settings.json, returning empty dict if absent or non-dict."""
     try:
-        return json.loads(CLAUDE_USER_SETTINGS.read_text())
+        parsed = json.loads(CLAUDE_USER_SETTINGS.read_text())
+        return parsed if isinstance(parsed, dict) else {}
     except (FileNotFoundError, json.JSONDecodeError):
         return {}
 
@@ -54,10 +55,10 @@ def build_session_settings(
     for key in _STRIPPED_KEYS:
         settings.pop(key, None)
 
-    # Merge .env vars into settings.env (user settings env takes lower priority)
+    # Merge .env vars into settings.env (.env takes priority over user settings)
     dotenv_vars = {k: v for k, v in dotenv_values(dotenv_path).items() if v is not None}
-    env_block: dict[str, str] = dotenv_vars
-    env_block.update(settings.get("env", {}))
+    env_block: dict[str, str] = dict(settings.get("env", {}))
+    env_block.update(dotenv_vars)
     settings["env"] = env_block
 
     # Pre-authorize scratch and tasks directories

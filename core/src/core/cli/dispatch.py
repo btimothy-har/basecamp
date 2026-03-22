@@ -109,7 +109,8 @@ def execute_dispatch(
     if system_prompt_env and Path(system_prompt_env).exists():
         system_prompt_file = system_prompt_env
 
-    settings_file: str | None = os.environ.get("BASECAMP_SETTINGS_FILE")
+    settings_env = os.environ.get("BASECAMP_SETTINGS_FILE")
+    settings_file = settings_env if settings_env and Path(settings_env).exists() else None
 
     # Collect plugin directories — workers load companion only
     plugin_dirs: list[str] = []

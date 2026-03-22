@@ -149,6 +149,37 @@ class TestExecuteDispatchLauncher:
             script = (tmp_path / "test-task" / "launch.sh").read_text()
             assert "--model opus" in script
 
+    def test_launcher_with_settings_file(self, tmp_path: Path) -> None:
+        settings_file = tmp_path / "settings.json"
+        settings_file.write_text('{"env": {}}')
+
+        mock_run = _mock_subprocess_run()
+        env = {**_tmux_env(tmp_path), "BASECAMP_SETTINGS_FILE": str(settings_file)}
+        with (
+            patch.dict("os.environ", env, clear=True),
+            patch("core.terminal.subprocess.run", mock_run),
+            patch("core.cli.dispatch.time.sleep"),
+        ):
+            execute_dispatch(name="test-task")
+
+            script = (tmp_path / "test-task" / "launch.sh").read_text()
+            assert "--settings" in script
+            assert "--setting-sources" in script
+            assert "settings.json" in script
+
+    def test_launcher_skips_missing_settings_file(self, tmp_path: Path) -> None:
+        mock_run = _mock_subprocess_run()
+        env = {**_tmux_env(tmp_path), "BASECAMP_SETTINGS_FILE": str(tmp_path / "nonexistent.json")}
+        with (
+            patch.dict("os.environ", env, clear=True),
+            patch("core.terminal.subprocess.run", mock_run),
+            patch("core.cli.dispatch.time.sleep"),
+        ):
+            execute_dispatch(name="test-task")
+
+            script = (tmp_path / "test-task" / "launch.sh").read_text()
+            assert "--settings" not in script
+
 
 class TestExecuteDispatchTmux:
     """Tests for tmux pane management."""

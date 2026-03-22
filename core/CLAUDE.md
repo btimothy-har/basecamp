@@ -11,11 +11,10 @@ The CLI tool. Manages project configuration, assembles system prompts, and launc
 `cli/launch.py` → `execute_launch()`:
 1. Resolve project config → expand `dirs` to absolute paths
 2. Handle worktree if `-l <label>` provided (`get_or_create_worktree`)
-3. Load `.env` from primary directory
-4. Assemble system prompt (runtime preamble + working style + system.md)
-5. Persist assembled prompt to `~/.basecamp/prompts/assembled/{key}.md`
-6. Set `BASECAMP_*` environment variables, forward through terminal multiplexer
-7. `os.execvp("claude", ...)` — basecamp process is replaced by Claude
+3. Assemble system prompt (runtime preamble + working style + system.md)
+4. Persist assembled prompt to `~/.basecamp/.cached/{project}/prompt.md`
+5. Build session settings via `build_session_settings()` — loads `.env`, injects `BASECAMP_*` vars, persists to `~/.basecamp/.cached/{project}/settings.json`
+6. `exec_session(claude, --settings <settings_file>)` — settings file carries all env vars; no multiplexer forwarding needed
 
 ### Prompt Assembly
 
@@ -30,8 +29,8 @@ Project context (`~/.basecamp/prompts/context/{name}.md`) is NOT assembled into 
 
 `cli/dispatch.py` — runs from within a Claude session:
 1. Validate multiplexer available + `CLAUDE_SESSION_ID` + `BASECAMP_TASKS_DIR` set
-2. Create `$BASECAMP_TASKS_DIR/{name}/` with `launch.sh`
-3. Forward all `BASECAMP_*` env vars to new pane
+2. Create `$BASECAMP_TASKS_DIR/{name}/` with `launch.sh` (embeds `--settings` from `BASECAMP_SETTINGS_FILE`)
+3. Forward only `BASECAMP_TASK_DIR` via multiplexer — everything else is in the cached settings file
 4. Wait up to 15s for worker to write `session_id` file (set by companion hook)
 
 ### Worktree Lifecycle

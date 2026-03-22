@@ -16,7 +16,7 @@ fi
 
 # Export for subsequent Bash tool calls
 if [ -n "${CLAUDE_ENV_FILE:-}" ]; then
-  printf 'export GIT_REPO=%s\n' "'$GIT_REPO'" >> "$CLAUDE_ENV_FILE"
+  printf 'export GIT_REPO=%q\n' "$GIT_REPO" >> "$CLAUDE_ENV_FILE"
 fi
 
 # Create PR workflow directories under the scratch dir set by basecamp,
