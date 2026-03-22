@@ -21,7 +21,7 @@ Review branch changes, draft a description, and publish.
 
 Use ${ARGUMENTS} as the base branch. Default to `main` if no argument provided.
 
-PR descriptions are stored at `/tmp/claude-workspace/$GIT_REPO/pull_requests/$NUMBER.md` and persist across sessions.
+PR descriptions are stored at `$SCRATCH/pull_requests/$NUMBER.md` and persist across sessions.
 
 ## Step 1: Review Changes
 
@@ -58,10 +58,10 @@ Check for an existing PR on this branch:
 gh pr list --head $(git branch --show-current) --json number,title,url
 ```
 
-If a PR exists, use its number. Fetch the current description from GitHub and write it to `/tmp/claude-workspace/$GIT_REPO/pull_requests/$NUMBER.md`:
+If a PR exists, use its number. Fetch the current description from GitHub and write it to `$SCRATCH/pull_requests/$NUMBER.md`:
 
 ```bash
-gh pr view $NUMBER --json title,body -q '.title + "\n\n" + .body' > /tmp/claude-workspace/$GIT_REPO/pull_requests/$NUMBER.md
+gh pr view $NUMBER --json title,body -q '.title + "\n\n" + .body' > $SCRATCH/pull_requests/$NUMBER.md
 ```
 
 Edit from this file, then skip to Step 5.
@@ -113,7 +113,7 @@ Closes #N
 - [ ] Manual verification: ...
 ```
 
-Write to `/tmp/claude-workspace/$GIT_REPO/pull_requests/$NUMBER.md`. Line 1 is the title; remainder is the body.
+Write to `$SCRATCH/pull_requests/$NUMBER.md`. Line 1 is the title; remainder is the body.
 
 Title format: `[Scope] Short summary` — scope = module/component/area, imperative mood, <70 chars.
 
@@ -126,9 +126,9 @@ Present the description to the user. Wait for approval — the user may edit the
 After approval, update the PR:
 
 ```bash
-TITLE=$(head -1 /tmp/claude-workspace/$GIT_REPO/pull_requests/$NUMBER.md)
-tail -n +2 /tmp/claude-workspace/$GIT_REPO/pull_requests/$NUMBER.md > /tmp/claude-workspace/$GIT_REPO/pull_requests/$NUMBER-body.md
-gh pr edit $NUMBER --title "$TITLE" --body-file /tmp/claude-workspace/$GIT_REPO/pull_requests/$NUMBER-body.md
+TITLE=$(head -1 $SCRATCH/pull_requests/$NUMBER.md)
+tail -n +2 $SCRATCH/pull_requests/$NUMBER.md > $SCRATCH/pull_requests/$NUMBER-body.md
+gh pr edit $NUMBER --title "$TITLE" --body-file $SCRATCH/pull_requests/$NUMBER-body.md
 ```
 
 Report the PR URL.
@@ -137,4 +137,4 @@ Report the PR URL.
 
 For subsequent changes to the same PR, ask the user to push the latest commits.
 
-If the description needs updating, edit `/tmp/claude-workspace/$GIT_REPO/pull_requests/$NUMBER.md` and re-run Step 5.
+If the description needs updating, edit `$SCRATCH/pull_requests/$NUMBER.md` and re-run Step 5.

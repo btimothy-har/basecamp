@@ -166,8 +166,10 @@ class TestExecuteDispatchTmux:
             split_call = mock_run.call_args_list[0]
             cmd = split_call[0][0]
             cmd_str = " ".join(str(c) for c in cmd)
+            # Only BASECAMP_TASK_DIR is forwarded via multiplexer env —
+            # everything else is in the cached settings file.
             assert "BASECAMP_TASK_DIR=" in cmd_str
-            assert "BASECAMP_REPO=test-repo" in cmd_str
+            assert "BASECAMP_REPO=" not in cmd_str
 
     def test_tmux_sets_pane_title(self, tmp_path: Path) -> None:
         mock_run = _mock_subprocess_run()
@@ -244,8 +246,10 @@ class TestExecuteDispatchKitty:
 
             cmd = mock_run.call_args[0][0]
             cmd_str = " ".join(str(c) for c in cmd)
+            # Only BASECAMP_TASK_DIR is forwarded via multiplexer env —
+            # everything else is in the cached settings file.
             assert "--env BASECAMP_TASK_DIR=" in cmd_str
-            assert "--env BASECAMP_REPO=test-repo" in cmd_str
+            assert "--env BASECAMP_REPO=" not in cmd_str
 
     def test_kitty_uses_socket(self, tmp_path: Path) -> None:
         mock_run = _mock_subprocess_run()

@@ -4,16 +4,16 @@ import os
 from io import StringIO
 from pathlib import Path
 
-from dotenv import dotenv_values, load_dotenv
 from rich.console import Console
 
 from core.config import Config, ProjectConfig, resolve_project, validate_dirs
+from core.config.claude_settings import build_session_settings
 from core.constants import (
+    CACHE_DIR,
     CLAUDE_COMMAND,
     OBSERVER_CONFIG,
     SCRATCH_BASE,
     SCRIPT_DIR,
-    USER_ASSEMBLED_PROMPTS_DIR,
     USER_CONTEXT_DIR,
 )
 from core.exceptions import DirectoryNotFoundError, NoDirectoriesConfiguredError, NotAGitRepoError
@@ -26,8 +26,6 @@ from core.git import (
 from core.prompts import system as prompts
 from core.terminal import resolve_launch_backend
 from core.utils import is_observer_configured
-
-OBSERVER_ENV_VAR = "BASECAMP_OBSERVER_ENABLED"
 
 DEFAULT_PATH_WORKING_STYLE = "engineering"
 
@@ -157,44 +155,51 @@ def execute_launch(
     if (companion_plugin_dir / ".claude-plugin" / "plugin.json").exists():
         cmd.extend(["--plugin-dir", str(companion_plugin_dir)])
 
-    # Enable observer hooks/ingestion when configured
-    if is_observer_configured(OBSERVER_CONFIG):
-        os.environ[OBSERVER_ENV_VAR] = "1"
+    observer_enabled = is_observer_configured(OBSERVER_CONFIG)
 
     # Add any additional project directories
     for directory in secondary_dirs:
         cmd.extend(["--add-dir", str(directory)])
 
+    # Persist assembled prompt so dispatch workers can reuse it
+    system_prompt_path: str | None = None
     if prompt_content:
         cmd.extend(["--system-prompt", prompt_content])
 
-        # Persist assembled prompt so dispatch workers can reuse it.
-        # Scope by label to avoid collisions between concurrent worktree sessions.
-        prompt_key = f"{project_name}-{label}" if label else project_name
-        prompt_path = USER_ASSEMBLED_PROMPTS_DIR / f"{prompt_key}.md"
-        USER_ASSEMBLED_PROMPTS_DIR.mkdir(parents=True, exist_ok=True)
+        cache_dir = CACHE_DIR / project_name / label if label else CACHE_DIR / project_name
+        prompt_path = cache_dir / "prompt.md"
+        cache_dir.mkdir(parents=True, exist_ok=True)
         prompt_path.write_text(prompt_content)
-        os.environ["BASECAMP_SYSTEM_PROMPT"] = str(prompt_path)
+        system_prompt_path = str(prompt_path)
 
-    # Load .env from the original project directory — worktrees won't have one
-    dotenv_path = original_primary / ".env"
-    load_dotenv(dotenv_path)
-
-    # Change to primary project directory and execute claude
-    os.chdir(primary_dir)
-
-    # Set environment variables for hooks/prompts/MCP servers
-    os.environ["BASECAMP_PROJECT"] = project_name
-    os.environ["BASECAMP_REPO"] = repo_name or primary_dir.name
-
+    # Resolve context file path (if configured)
+    context_file_path: str | None = None
     if project.context:
         context_path = USER_CONTEXT_DIR / f"{project.context}.md"
         if context_path.exists():
-            os.environ["BASECAMP_CONTEXT_FILE"] = str(context_path)
+            context_file_path = str(context_path)
+
+    # Build mutated settings file — carries user settings, .env vars,
+    # and BASECAMP_* env vars. Claude injects settings.env into the
+    # process environment, so hooks and tools see everything.
+    dotenv_path = original_primary / ".env"
+    settings_path = build_session_settings(
+        project_name=project_name,
+        repo_name=repo_name or primary_dir.name,
+        scratch_name=scratch_name,
+        dotenv_path=dotenv_path,
+        system_prompt_path=system_prompt_path,
+        context_file_path=context_file_path,
+        observer_enabled=observer_enabled,
+        label=label,
+    )
+    cmd.extend(["--setting-sources", "project,local", "--settings", str(settings_path)])
 
     # Append passthrough args for the Claude CLI
     if extra_args:
         cmd.extend(extra_args)
+
+    os.chdir(primary_dir)
 
     startup_text = _build_startup_text(
         project_name,
@@ -205,22 +210,7 @@ def execute_launch(
         working_style=project.working_style,
     )
 
-    # Collect env vars that need forwarding (tmux wrapping requires explicit
-    # passing because tmux new-session inherits the server's env, not the client's).
-    env_vars: dict[str, str] = {k: v for k, v in dotenv_values(dotenv_path).items() if v is not None}
-    forward_vars = (
-        "BASECAMP_PROJECT",
-        "BASECAMP_REPO",
-        "BASECAMP_CONTEXT_FILE",
-        "BASECAMP_SYSTEM_PROMPT",
-        OBSERVER_ENV_VAR,
-    )
-    for var in forward_vars:
-        value = os.environ.get(var)
-        if value:
-            env_vars[var] = value
-
     session_name = f"bc-{project_name}-{label}" if label else f"bc-{project_name}"
 
     backend = resolve_launch_backend()
-    backend.exec_session(cmd, startup_text=startup_text, env_vars=env_vars, session_name=session_name)
+    backend.exec_session(cmd, startup_text=startup_text, env_vars={}, session_name=session_name)

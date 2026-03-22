@@ -24,9 +24,10 @@ USER_DIR = Path.home() / ".basecamp"
 USER_PROMPTS_DIR = USER_DIR / "prompts"
 USER_WORKING_STYLES_DIR = USER_PROMPTS_DIR / "working_styles"
 USER_CONTEXT_DIR = USER_PROMPTS_DIR / "context"
-USER_ASSEMBLED_PROMPTS_DIR = USER_PROMPTS_DIR / "assembled"
+CACHE_DIR = USER_DIR / ".cached"
 SCRATCH_BASE = Path("/tmp/claude-workspace")
 OBSERVER_CONFIG = USER_DIR / "observer" / "config.json"
 
-# String constants
+# Claude CLI paths
 CLAUDE_COMMAND = "claude"
+CLAUDE_USER_SETTINGS = Path.home() / ".claude" / "settings.json"

@@ -28,6 +28,7 @@ def _build_launcher_script(
     *,
     model: str,
     system_prompt_file: str | None,
+    settings_file: str | None,
     prompt_file: str | None,
     plugin_dirs: list[str],
 ) -> str:
@@ -41,6 +42,9 @@ def _build_launcher_script(
 
     if system_prompt_file:
         parts.extend(["--system-prompt", f'"$(cat {shlex.quote(system_prompt_file)})"'])
+
+    if settings_file:
+        parts.extend(["--setting-sources", "project,local", "--settings", shlex.quote(settings_file)])
 
     for plugin_dir in plugin_dirs:
         parts.extend(["--plugin-dir", shlex.quote(plugin_dir)])
@@ -99,13 +103,13 @@ def execute_dispatch(
     prompt_file = task_dir / "prompt.md"
     has_prompt = prompt_file.exists()
 
-    # Read persisted system prompt written by execute_launch()
-    system_prompt_file: Path | None = None
+    # Read persisted paths written by execute_launch() (injected via settings.env)
+    system_prompt_file: str | None = None
     system_prompt_env = os.environ.get("BASECAMP_SYSTEM_PROMPT")
-    if system_prompt_env:
-        candidate = Path(system_prompt_env)
-        if candidate.exists():
-            system_prompt_file = candidate
+    if system_prompt_env and Path(system_prompt_env).exists():
+        system_prompt_file = system_prompt_env
+
+    settings_file: str | None = os.environ.get("BASECAMP_SETTINGS_FILE")
 
     # Collect plugin directories — workers load companion only
     plugin_dirs: list[str] = []
@@ -118,19 +122,17 @@ def execute_dispatch(
     launcher.write_text(
         _build_launcher_script(
             model=model,
-            system_prompt_file=str(system_prompt_file) if system_prompt_file else None,
+            system_prompt_file=system_prompt_file,
+            settings_file=settings_file,
             prompt_file=str(prompt_file) if has_prompt else None,
             plugin_dirs=plugin_dirs,
         )
     )
     launcher.chmod(launcher.stat().st_mode | stat.S_IEXEC)
 
-    # Launch worker in a new terminal pane
-    # Forward all BASECAMP_* env vars from the parent process, then layer on
-    # dispatch-specific overrides. This keeps dispatch in sync as new env vars
-    # are added to launch.py without cherry-picking each one.
-    pane_env = {k: v for k, v in os.environ.items() if k.startswith("BASECAMP_")}
-    pane_env["BASECAMP_TASK_DIR"] = str(task_dir)
+    # Only BASECAMP_TASK_DIR needs multiplexer forwarding — everything else
+    # is in the cached settings file which the worker loads via --settings.
+    pane_env = {"BASECAMP_TASK_DIR": str(task_dir)}
     backend.spawn_pane(
         launcher,
         env=pane_env,

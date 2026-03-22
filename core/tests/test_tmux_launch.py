@@ -28,7 +28,7 @@ class TestTerminalWrapping:
         config = self._make_config(non_git_dir)
 
         with (
-            patch("core.cli.launch.load_dotenv"),
+            patch("core.cli.launch.build_session_settings", return_value=Path("/tmp/fake-settings.json")),
             patch("core.cli.launch.validate_dirs", return_value=[non_git_dir]),
             patch("os.chdir"),
             patch("os.execvp") as mock_execvp,
@@ -47,38 +47,13 @@ class TestTerminalWrapping:
             assert args[-3:][1] == "-c"
             assert "claude" in args[-1]
 
-    def test_tmux_forwards_basecamp_env_vars(self, non_git_dir: Path) -> None:
-        """Tmux wrapping should pass BASECAMP_* env vars via -e flags."""
+    def test_tmux_no_env_forwarding(self, non_git_dir: Path) -> None:
+        """Tmux wrapping should not forward env vars — they're in the settings file."""
         config = self._make_config(non_git_dir)
-
-        with (
-            patch("core.cli.launch.load_dotenv"),
-            patch("core.cli.launch.validate_dirs", return_value=[non_git_dir]),
-            patch("os.chdir"),
-            patch("os.execvp") as mock_execvp,
-            patch("shutil.which", return_value="/usr/bin/tmux"),
-            patch.dict("os.environ", {"BASECAMP_REPO": "test-repo"}, clear=False),
-        ):
-            os.environ.pop("TMUX", None)
-            os.environ.pop("KITTY_LISTEN_ON", None)
-
-            execute_launch("testproject", config)
-
-            args = mock_execvp.call_args[0][1]
-            # Collect all -e values
-            e_values = [args[i + 1] for i, a in enumerate(args) if a == "-e"]
-            assert "BASECAMP_PROJECT=testproject" in e_values
-            assert f"BASECAMP_REPO={non_git_dir.name}" in e_values
-            assert any(v.startswith("BASECAMP_SYSTEM_PROMPT=") for v in e_values)
-
-    def test_tmux_forwards_dotenv_vars(self, non_git_dir: Path) -> None:
-        """Tmux wrapping should forward vars loaded from .env via -e flags."""
-        config = self._make_config(non_git_dir)
-        dotenv_file = non_git_dir / ".env"
-        dotenv_file.write_text("SECRET_KEY=hunter2\nAPI_URL=https://api.example.com\n")
 
         env_clean = {k: v for k, v in os.environ.items() if k not in ("TMUX", "KITTY_LISTEN_ON")}
         with (
+            patch("core.cli.launch.build_session_settings", return_value=Path("/tmp/fake-settings.json")),
             patch("core.cli.launch.validate_dirs", return_value=[non_git_dir]),
             patch("os.chdir"),
             patch("os.execvp") as mock_execvp,
@@ -88,16 +63,14 @@ class TestTerminalWrapping:
             execute_launch("testproject", config)
 
             args = mock_execvp.call_args[0][1]
-            e_values = [args[i + 1] for i, a in enumerate(args) if a == "-e"]
-            assert "SECRET_KEY=hunter2" in e_values
-            assert "API_URL=https://api.example.com" in e_values
+            assert "-e" not in args
 
     def test_skips_tmux_when_already_in_tmux(self, non_git_dir: Path) -> None:
         """When TMUX is set, should exec claude directly."""
         config = self._make_config(non_git_dir)
 
         with (
-            patch("core.cli.launch.load_dotenv"),
+            patch("core.cli.launch.build_session_settings", return_value=Path("/tmp/fake-settings.json")),
             patch("core.cli.launch.validate_dirs", return_value=[non_git_dir]),
             patch("os.chdir"),
             patch("os.execvp") as mock_execvp,
@@ -114,7 +87,7 @@ class TestTerminalWrapping:
 
         env_no_tmux = {k: v for k, v in os.environ.items() if k != "TMUX"}
         with (
-            patch("core.cli.launch.load_dotenv"),
+            patch("core.cli.launch.build_session_settings", return_value=Path("/tmp/fake-settings.json")),
             patch("core.cli.launch.validate_dirs", return_value=[non_git_dir]),
             patch("os.chdir"),
             patch("os.execvp") as mock_execvp,
@@ -132,7 +105,7 @@ class TestTerminalWrapping:
 
         env_clean = {k: v for k, v in os.environ.items() if k not in ("TMUX", "KITTY_LISTEN_ON")}
         with (
-            patch("core.cli.launch.load_dotenv"),
+            patch("core.cli.launch.build_session_settings", return_value=Path("/tmp/fake-settings.json")),
             patch("core.cli.launch.validate_dirs", return_value=[non_git_dir]),
             patch("os.chdir"),
             patch("os.execvp") as mock_execvp,
@@ -151,7 +124,7 @@ class TestTerminalWrapping:
 
         env_clean = {k: v for k, v in os.environ.items() if k not in ("TMUX", "KITTY_LISTEN_ON")}
         with (
-            patch("core.cli.launch.load_dotenv"),
+            patch("core.cli.launch.build_session_settings", return_value=Path("/tmp/fake-settings.json")),
             patch("core.cli.launch.validate_dirs", return_value=[non_git_dir]),
             patch("os.chdir"),
             patch("os.execvp") as mock_execvp,
@@ -169,7 +142,7 @@ class TestTerminalWrapping:
         config = self._make_config(non_git_dir)
 
         with (
-            patch("core.cli.launch.load_dotenv"),
+            patch("core.cli.launch.build_session_settings", return_value=Path("/tmp/fake-settings.json")),
             patch("core.cli.launch.validate_dirs", return_value=[non_git_dir]),
             patch("os.chdir"),
             patch("os.execvp") as mock_execvp,

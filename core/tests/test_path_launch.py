@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import os
 from pathlib import Path
 from unittest.mock import patch
 
@@ -81,7 +80,7 @@ class TestExecuteLaunchPathMode:
         """Path mode should chdir to the resolved directory."""
         with (
             patch("core.git.worktrees.WORKTREES_DIR", tmp_path / "worktrees"),
-            patch("core.cli.launch.load_dotenv"),
+            patch("core.cli.launch.build_session_settings", return_value=Path("/tmp/fake-settings.json")),
             patch("os.chdir") as mock_chdir,
             patch("os.execvp"),
         ):
@@ -96,7 +95,10 @@ class TestExecuteLaunchPathMode:
         """Path mode should set BASECAMP_REPO to directory name for non-git dirs."""
         with (
             patch("core.git.worktrees.WORKTREES_DIR", tmp_path / "worktrees"),
-            patch("core.cli.launch.load_dotenv"),
+            patch(
+                "core.cli.launch.build_session_settings",
+                return_value=Path("/tmp/fake-settings.json"),
+            ) as mock_settings,
             patch("os.chdir"),
             patch("os.execvp"),
         ):
@@ -105,13 +107,16 @@ class TestExecuteLaunchPathMode:
                 Config(projects={}),
                 resolved_path=non_git_dir,
             )
-        assert os.environ["BASECAMP_REPO"] == non_git_dir.name
+        assert mock_settings.call_args.kwargs["repo_name"] == non_git_dir.name
 
     def test_path_mode_uses_repo_name_for_git(self, temp_git_repo: Path, tmp_path: Path) -> None:
         """Path mode should use git repo name for BASECAMP_REPO when in a git repo."""
         with (
             patch("core.git.worktrees.WORKTREES_DIR", tmp_path / "worktrees"),
-            patch("core.cli.launch.load_dotenv"),
+            patch(
+                "core.cli.launch.build_session_settings",
+                return_value=Path("/tmp/fake-settings.json"),
+            ) as mock_settings,
             patch("os.chdir"),
             patch("os.execvp"),
         ):
@@ -120,13 +125,13 @@ class TestExecuteLaunchPathMode:
                 Config(projects={}),
                 resolved_path=temp_git_repo,
             )
-        assert os.environ["BASECAMP_REPO"] == "test_repo"
+        assert mock_settings.call_args.kwargs["repo_name"] == "test_repo"
 
     def test_path_mode_uses_engineering_working_style(self, non_git_dir: Path, tmp_path: Path) -> None:
         """Path mode should create a ProjectConfig with the default working style."""
         with (
             patch("core.git.worktrees.WORKTREES_DIR", tmp_path / "worktrees"),
-            patch("core.cli.launch.load_dotenv"),
+            patch("core.cli.launch.build_session_settings", return_value=Path("/tmp/fake-settings.json")),
             patch("os.chdir"),
             patch("os.execvp"),
             patch("core.cli.launch.prompts") as mock_prompts,
@@ -144,7 +149,7 @@ class TestExecuteLaunchPathMode:
         """Path mode should pass --resume to claude when extra_args=["--resume"]."""
         with (
             patch("core.git.worktrees.WORKTREES_DIR", tmp_path / "worktrees"),
-            patch("core.cli.launch.load_dotenv"),
+            patch("core.cli.launch.build_session_settings", return_value=Path("/tmp/fake-settings.json")),
             patch("os.chdir"),
             patch("os.execvp") as mock_execvp,
             patch.dict("os.environ", {"TMUX": "/tmp/tmux-501/default,1,0"}),
