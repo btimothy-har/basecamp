@@ -33,11 +33,11 @@ Examples: `fix-auth-bug`, `add-unit-tests`, `update-docs`
 
 ### 3. Write and dispatch
 
-Tasks dir: !`echo $BASECAMP_TASKS_DIR`
-
-Write the prompt file to `<tasks-dir>/<task-name>/prompt.md`, then dispatch:
-
 ```bash
+mkdir -p "$BASECAMP_TASKS_DIR/<task-name>"
+cat > "$BASECAMP_TASKS_DIR/<task-name>/prompt.md" <<'PROMPT'
+<prompt content>
+PROMPT
 basecamp dispatch --name <task-name>  # uses sonnet by default
 # or: basecamp dispatch --name <task-name> --model opus
 ```
