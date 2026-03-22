@@ -79,11 +79,16 @@ def search_artifacts(
     threshold: float = SEARCH_DEFAULT_THRESHOLD,
     worktree: str | None = None,
     session_id: str | None = None,
+    section_types: list[str] | None = None,
 ) -> list[dict[str, Any]]:
     """Semantic search over non-summary extraction sections.
 
     Finds specific extracted knowledge, decisions, actions, and constraints
     from past sessions.
+
+    ``section_types`` narrows results to the given type values (e.g.
+    ``["knowledge", "decisions"]``). When omitted, all non-summary types are
+    searched.
     """
     model = _get_model()
     query_vector = model.encode([query], show_progress_bar=False)[0].tolist()
@@ -93,6 +98,12 @@ def search_artifacts(
 
     with db.session() as session:
         distance_expr = ArtifactSchema.embedding.cosine_distance(query_vector)
+
+        if section_types is not None:
+            type_filter = ArtifactSchema.section_type.in_(section_types)
+        else:
+            type_filter = ArtifactSchema.section_type != SectionType.SUMMARY
+
         q = (
             session.query(
                 ArtifactSchema,
@@ -102,7 +113,7 @@ def search_artifacts(
             .join(TranscriptSchema, ArtifactSchema.transcript_id == TranscriptSchema.id)
             .filter(
                 ArtifactSchema.embedding.isnot(None),
-                ArtifactSchema.section_type != SectionType.SUMMARY,
+                type_filter,
             )
         )
 

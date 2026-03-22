@@ -47,30 +47,29 @@ class TestSearch:
     def test_artifact_search_calls_search_artifacts(self):
         mock_results = [
             {"session_id": "s1", "text": "fact", "score": 0.9, "type": SectionType.KNOWLEDGE.value},
-            {"session_id": "s2", "text": "choice", "score": 0.7, "type": SectionType.DECISIONS.value},
         ]
 
-        with patch(f"{_ENGINE}.search_artifacts", return_value=mock_results):
+        with patch(f"{_ENGINE}.search_artifacts", return_value=mock_results) as mock_fn:
             output, code = _invoke(["search", "test query", "--type", "knowledge"])
 
         assert code == 0
         assert output["count"] == 1
         assert output["results"][0]["type"] == SectionType.KNOWLEDGE.value
+        assert mock_fn.call_args[1]["section_types"] == ["knowledge"]
 
-    def test_artifact_search_filters_to_requested_types(self):
+    def test_artifact_search_passes_section_types_to_engine(self):
+        # Engine is responsible for type filtering; CLI passes section_types kwarg.
         mock_results = [
             {"session_id": "s1", "text": "fact", "score": 0.9, "type": "knowledge"},
-            {"session_id": "s2", "text": "choice", "score": 0.7, "type": "decisions"},
             {"session_id": "s3", "text": "rule", "score": 0.6, "type": "constraints"},
         ]
 
-        with patch(f"{_ENGINE}.search_artifacts", return_value=mock_results):
+        with patch(f"{_ENGINE}.search_artifacts", return_value=mock_results) as mock_fn:
             output, code = _invoke(["search", "test query", "--type", "knowledge,constraints"])
 
         assert code == 0
         assert output["count"] == 2
-        types = {r["type"] for r in output["results"]}
-        assert types == {"knowledge", "constraints"}
+        assert mock_fn.call_args[1]["section_types"] == ["knowledge", "constraints"]
 
     def test_invalid_type_returns_error(self):
         output, code = _invoke(["search", "test query", "--type", "bogus"])

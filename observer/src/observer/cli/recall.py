@@ -69,16 +69,15 @@ def _run_search(
             )
             results = [{**r, "type": "summary"} for r in raw]
         else:
-            # Artifact search — post-filter to requested types
-            raw = engine.search_artifacts(
+            # Artifact search — type filter pushed into the engine query
+            results = engine.search_artifacts(
                 query,
                 project_name,
                 top_k=top_k,
                 threshold=threshold,
                 session_id=session_id,
+                section_types=parsed_types,
             )
-            requested = set(parsed_types)
-            results = [r for r in raw if r.get("type") in requested]
     except Exception:
         logger.exception("Search failed")
         _error("Search failed — check observer logs for details")

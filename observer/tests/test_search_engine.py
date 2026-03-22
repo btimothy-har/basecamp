@@ -175,12 +175,28 @@ class TestSearchArtifacts:
         _seed_artifact(db, session_id="other-session")
 
         with patch.object(engine, "_get_model", return_value=_mock_model()):
-            results = engine.search_artifacts(
-                "test query", "test-project", threshold=0.0, session_id="current-session"
-            )
+            results = engine.search_artifacts("test query", "test-project", threshold=0.0, session_id="current-session")
 
         for r in results:
             assert r["session_id"] != "current-session"
+
+    def test_section_types_filters_at_query_level(self, db):  # noqa: ARG002
+        """section_types restricts results before LIMIT, not after."""
+        _seed_artifact(db, section_type=SectionType.KNOWLEDGE, session_id="sess-type-k")
+        _seed_artifact(db, section_type=SectionType.DECISIONS, session_id="sess-type-d")
+
+        with patch.object(engine, "_get_model", return_value=_mock_model()):
+            results = engine.search_artifacts(
+                "test query",
+                "test-project",
+                top_k=10,
+                threshold=0.0,
+                section_types=["knowledge"],
+            )
+
+        assert len(results) >= 1
+        for r in results:
+            assert r["type"] == SectionType.KNOWLEDGE
 
     def test_excludes_unindexed_extractions(self, db):  # noqa: ARG002
         """Extractions without embeddings should not appear in search results."""

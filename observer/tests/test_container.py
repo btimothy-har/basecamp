@@ -66,7 +66,7 @@ class TestInspectContainer:
         assert status is None
 
 
-_CLI_PREFIX = "observer.cli"
+_CLI_PREFIX = "observer.cli.observer"
 
 
 def _mock_status(*, running: bool = False, status_text: str = "running") -> ContainerStatus:
