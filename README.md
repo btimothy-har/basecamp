@@ -24,44 +24,6 @@ basecamp solves this with a single command that:
 3. **Supports isolated worktrees** — Use `-l <label>` to work in a labeled worktree for parallel conversations
 4. **Manages multi-repo projects** — Groups related repositories under one project definition
 
-## Features
-
-### Multi-Project Management
-
-Define projects in `~/.basecamp/config.json` with their directories, descriptions, and working styles. Launch any project with `basecamp claude <project>`.
-
-```json
-{
-  "my-project": {
-    "dirs": ["GitHub/my-project", "GitHub/my-project-docs"],
-    "description": "My awesome project",
-    "working_style": "engineering"
-  }
-}
-```
-
-### Custom Prompts
-
-Layer prompts for different contexts:
-
-| Layer | Purpose |
-|-------|---------|
-| **Environment** | CLI context, Python/uv usage, project paths |
-| **Core** | Working principles, task management, tool usage |
-| **Working Style** | Role definition, communication style, code quality practices |
-| **Project Context** | Domain knowledge, project-specific patterns |
-
-### Git Worktree Isolation
-
-Use `-l <label>` to work in an isolated worktree:
-
-```bash
-basecamp claude myproject -l auth      # Create or re-enter "auth" worktree
-basecamp claude myproject -l bugfix    # Create or re-enter "bugfix" worktree
-```
-
-Worktrees live in `~/.worktrees/<repo>/<label>/` with branches named `wt/<label>`.
-
 ## Installation
 
 Requires [uv](https://docs.astral.sh/uv/) and [Claude Code](https://docs.anthropic.com/en/docs/claude-code).
@@ -106,6 +68,8 @@ uv tool uninstall basecamp-core && uv tool uninstall basecamp-observer
 
 ```bash
 basecamp claude <project>               # Launch Claude in project directory
+basecamp claude .                       # Launch Claude in current directory
+basecamp claude ~/path/to/dir           # Launch Claude in any directory path
 basecamp claude <project> --resume      # Resume previous conversation (-r)
 basecamp claude <project> -l <label>    # Work in labeled worktree (creates if new)
 ```
@@ -116,6 +80,15 @@ basecamp claude <project> -l <label>    # Work in labeled worktree (creates if n
 basecamp open <project>                  # Open basecamp + project directories
 basecamp open <project> -n               # Open in new window
 basecamp open <project> -l <label>       # Open in existing worktree
+```
+
+### Managing Projects
+
+```bash
+basecamp project list                    # List available projects
+basecamp project add                     # Interactively add a new project
+basecamp project edit <name>             # Interactively edit a project
+basecamp project remove <name>           # Remove a project
 ```
 
 ### Managing Worktrees
@@ -129,15 +102,30 @@ basecamp worktree clean <project> --all  # Remove all worktrees
 basecamp worktree clean <project> -f     # Force removal (--force)
 ```
 
-### Listing Projects
+### Dispatching Workers
+
+Dispatch parallel Claude sessions from within a running session (requires Kitty or tmux):
 
 ```bash
-basecamp projects                        # Show available projects
+basecamp dispatch                        # Dispatch worker with auto-generated name
+basecamp dispatch --name <task>          # Dispatch with specific task name
+basecamp dispatch --model opus           # Dispatch with specific model
 ```
+
+### Logseq Integration
+
+```bash
+basecamp log "message"                   # Append block to today's journal
+basecamp log "message" -p ProjectName    # Append with [[ProjectName]] page reference
+basecamp reflect                         # Launch reflective journaling session (end of day)
+basecamp plan                            # Launch daily planning session (start of day)
+```
+
+Requires Logseq graph path configured via `basecamp setup`.
 
 ## Configuration
 
-Projects are defined in `~/.basecamp/projects.json`:
+Projects are defined in `~/.basecamp/config.json`:
 
 ```json
 {
@@ -158,8 +146,8 @@ Projects are defined in `~/.basecamp/projects.json`:
 | Field | Required | Description |
 |-------|----------|-------------|
 | `dirs` | Yes | Paths relative to `$HOME`. First is primary (cwd), rest are `--add-dir` |
-| `description` | No | Shown in `basecamp projects` list |
-| `working_style` | No | Loads `~/.basecamp/prompts/working_styles/{name}.md` (user override) or package default |
+| `description` | No | Shown in `basecamp project list` |
+| `working_style` | No | Loads matching working style prompt (see below) |
 | `context` | No | Loads `~/.basecamp/prompts/context/{name}.md` for project context |
 
 ## Prompt System
@@ -205,16 +193,43 @@ For multi-repo projects, add cross-repo context in `~/.basecamp/prompts/context/
 
 Single-repo projects typically use `CLAUDE.md` in the repo itself.
 
+## Git Worktrees
+
+Use `-l <label>` to work in an isolated git worktree for parallel conversations:
+
+```bash
+basecamp claude myproject -l auth      # Create or re-enter "auth" worktree
+basecamp claude myproject -l bugfix    # Create or re-enter "bugfix" worktree
+```
+
+Worktrees live in `~/.worktrees/<repo>/<label>/` with branches named `wt/<label>`.
+
+- Worktrees are opt-in via `-l <label>` flag
+- Label is both the directory name and worktree identifier
+- `basecamp open <project> -l <label>` opens an existing worktree in VS Code (errors if not found)
+- Secondary directories (`--add-dir`) stay on the main branch
+- Only works with git repositories
+
 ## Plugins
 
-basecamp includes optional plugins for extended functionality. These are complementary, not required.
+basecamp includes a bundled plugin and an optional marketplace with additional plugins.
+
+### Bundled Plugin
 
 | Plugin | Description |
 |--------|-------------|
-| `bc-collab` | Collaborative discovery and planning for ideation and requirements |
-| `bc-eng` | Code review, PR workflows, testing patterns, Python/SQL development |
+| `bc-companion` | Session management, context injection, worker dispatch, observer integration |
+
+### Marketplace Plugins
+
+| Plugin | Description |
+|--------|-------------|
+| `bc-collab` | Collaborative discovery, requirements gathering, GitHub issue workflows |
+| `bc-eng` | Code review, PR workflows, testing patterns, Python/SQL/dbt development |
 | `bc-cursor` | Discovers `.cursor/*.mdc` context files |
+| `bc-git-protect` | Guards against destructive git and gh operations |
 | `bc-gpg-check` | Verifies GPG card before git commit/tag |
+| `bc-private` | Private tools, not git committed |
 
 ### Installing Plugins
 
@@ -225,7 +240,7 @@ From within a Claude Code session started via basecamp:
 /plugin install bc-eng@basecamp
 ```
 
-The first command registers basecamp as a marketplace (it discovers `.claude-plugin/marketplace.json`). The second installs a plugin from it. Available plugins: `bc-collab`, `bc-cursor`, `bc-eng`, `bc-gpg-check`.
+The first command registers basecamp as a marketplace (it discovers `.claude-plugin/marketplace.json`). The second installs a plugin from it.
 
 Create custom plugins in `plugins/` following [Claude Code plugin docs](https://docs.anthropic.com/en/docs/claude-code/plugins). Plugins in `plugins/private/` are gitignored.
 
