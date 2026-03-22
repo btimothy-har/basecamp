@@ -13,7 +13,6 @@ import questionary
 from sqlalchemy import create_engine, text
 
 from observer import constants
-from observer.exceptions import ObserverError, RegistrationError
 from observer.services.config import (
     CONFIG_FILE,
     get_db_source,
@@ -452,20 +451,26 @@ def _verify_connection(url: str) -> None:
 
 
 @main.command()
-def ingest() -> None:
+@click.option("--process", "run_process", is_flag=True, help="Also run the LLM pipeline (refine, extract, embed).")
+def ingest(run_process: bool) -> None:  # noqa: FBT001
     """Ingest transcript events from a hook. Reads JSON from stdin.
 
-    Synchronous entry point for PreCompact/SessionEnd hooks.
     Registers the session (if needed), parses new JSONL events,
-    and groups them into work items.
+    and groups them into work items. With --process, also runs the
+    LLM pipeline (refine → extract → embed) after ingestion.
     """
     from observer.pipeline.parser import TranscriptParser
     from observer.pipeline.refining.grouping import EventGrouper
     from observer.services.db import Database
+    from observer.services.logger import configure_logging
     from observer.services.registration import (
         HookInput,
         register_session,
     )
+
+    configure_logging()
+    logger = logging.getLogger(__name__)
+    logger.info("ingest called%s", " --process" if run_process else "")
 
     raw = sys.stdin.read()
     if not raw.strip():
@@ -492,28 +497,28 @@ def ingest() -> None:
 
     try:
         result = register_session(hook_input)
-
         transcript = result.transcript
 
-        # Parse new JSONL events from cursor_offset
-        ingested = TranscriptParser().ingest(transcript)
-
-        transcript = result.transcript
-
-        # Parse new JSONL events, then group into work items
         db = Database()
         ingested = TranscriptParser().ingest(transcript)
         grouped = EventGrouper.group_pending(db, transcript.id)
-    except (RegistrationError, ValueError) as e:
-        sys.exit(str(e))
-    except ObserverError as e:
-        click.echo(f"observer: {e}", err=True)
-        raise SystemExit(1) from None
-    except Exception as e:
-        click.echo(f"observer: ingestion failed — {e}", err=True)
-        raise SystemExit(1) from None
+        logger.info("session=%s ingested=%d grouped=%d", transcript.session_id, ingested, grouped)
 
-    click.echo(f"session={transcript.session_id} ingested={ingested} grouped={grouped}")
+        if run_process:
+            from observer.pipeline.extraction import TranscriptExtractor
+            from observer.pipeline.indexing import SearchIndexer
+            from observer.pipeline.refining import EventRefiner
+            from observer.services.config import get_mode
+
+            if get_mode() != "off":
+                EventRefiner.refine_pending(db, transcript_id=transcript.id)
+                TranscriptExtractor.extract_transcript(db, transcript.id)
+                SearchIndexer.index_pending(db, transcript_id=transcript.id)
+    except SystemExit:
+        raise
+    except Exception:
+        logger.exception("Ingestion failed for session %s", hook_input.session_id)
+        sys.exit(1)
 
 
 @main.command()
@@ -605,48 +610,3 @@ def reprocess(yes: bool) -> None:  # noqa: FBT001
     click.echo("\nReprocessing complete.")
 
 
-@main.command()
-@click.argument("session_id")
-def process(session_id: str) -> None:
-    """Run LLM pipeline for a session: refine, extract, embed.
-
-    Called as a detached background process by the hook script.
-    Assumes ingestion and grouping have already been done.
-    """
-    from observer.data.transcript import Transcript
-    from observer.pipeline.extraction import TranscriptExtractor
-    from observer.pipeline.indexing import SearchIndexer
-    from observer.pipeline.refining import EventRefiner
-    from observer.services.config import get_mode
-    from observer.services.db import Database
-    from observer.services.logger import configure_logging
-
-    configure_logging()
-    logger = logging.getLogger(__name__)
-
-    try:
-        transcript = Transcript.get_by_session_id(session_id)
-        if transcript is None:
-            logger.error("No transcript found for session %s", session_id)
-            sys.exit(1)
-
-        if get_mode() == "off":
-            return
-
-        db = Database()
-        try:
-            # Phase 1: Refine work_items → transcript_events (LLM calls)
-            EventRefiner.refine_pending(db, transcript_id=transcript.id)
-
-            # Phase 2: Extract transcript_events → artifacts (single LLM call)
-            TranscriptExtractor.extract_transcript(db, transcript.id)
-
-            # Phase 3: Embed artifacts → pgvector
-            SearchIndexer.index_pending(db, transcript_id=transcript.id)
-        finally:
-            db.close()
-    except SystemExit:
-        raise
-    except Exception:
-        logger.exception("Processing failed for session %s", session_id)
-        sys.exit(1)
