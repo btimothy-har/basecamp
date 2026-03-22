@@ -40,8 +40,8 @@ Companion hooks call `observer ingest` on SessionEnd and PreCompact:
 ### Search (recall CLI)
 
 Search is exposed via the `recall` CLI (second entry point in `basecamp-observer`), which wraps the engine directly:
-- `search_transcripts` — KNN over summaries only (orientation retrieval)
-- `search_artifacts` — KNN over non-summary sections, cosine distance + time decay + dedup
+- `search_transcripts` — hybrid search over summaries (KNN + FTS) for orientation retrieval
+- `search_artifacts` — hybrid search over non-summary sections (KNN + FTS), scored with time decay
 - `get_session` — direct lookup by session_id (used by dispatch)
 
 Search is scoped to current project via `BASECAMP_REPO`. Pass `--cross-project` to search across all projects. The current session is auto-excluded via `CLAUDE_SESSION_ID`.
@@ -80,7 +80,7 @@ PostgreSQL with pgvector keeps everything in one database. HNSW index (m=16, ef_
 
 ### Search scoring uses time decay
 
-Results combine cosine similarity (80%) with a recency bonus (up to 20%). Time decay follows a power law — 50% recency at 30 days, never reaching zero. Dedup uses greedy pairwise similarity (threshold 0.9) scoped by section type.
+Results blend semantic similarity (60%) and keyword relevance (40%) into a relevance signal, then combine that (80%) with a recency bonus (up to 20%). Time decay follows a power law — 50% recency at 30 days, never reaching zero.
 
 ### Container management is optional
 

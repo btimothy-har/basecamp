@@ -45,8 +45,8 @@ observer/src/observer/
 │   ├── extraction.py           # Transcript-level section extraction
 │   └── indexing.py             # Sentence-transformer embedding
 ├── mcp/
-│   ├── engine.py               # KNN search with scoring
-│   └── scoring.py              # Time decay + dedup
+│   ├── engine.py               # Hybrid search (KNN + FTS) with scoring
+│   └── scoring.py              # Time decay + hybrid scoring
 ├── services/                   # DB, config, container, migrations, agent (LLM)
 ├── prompts/                    # LLM prompt templates (.txt, PEP 562 lazy load)
 └── viz/                        # Marimo dashboard

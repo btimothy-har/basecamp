@@ -40,8 +40,10 @@ SEARCH_DEFAULT_TOP_K = 10
 SEARCH_DEFAULT_THRESHOLD = 0.3
 SEARCH_TIME_DECAY_SCALE_DAYS = 30.0  # age at which recency bonus = 0.5
 SEARCH_TIME_DECAY_POWER = 0.5  # power-law exponent; lower = slower decay
-SEARCH_DEDUP_SIMILARITY = 0.9
 SEARCH_OVERFETCH_FACTOR = 5
+SEARCH_SEMANTIC_WEIGHT = 0.6  # blend weight for semantic similarity
+SEARCH_KEYWORD_WEIGHT = 0.4  # blend weight for FTS keyword relevance
+SEARCH_FTS_CONFIG = "english"  # PostgreSQL text search configuration
 
 # Container (local dev database)
 DB_CONTAINER_NAME = "observer-pg"

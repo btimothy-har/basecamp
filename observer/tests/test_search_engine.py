@@ -225,8 +225,12 @@ class TestSearchArtifacts:
         assert len(results) == 1
         assert results[0]["type"] == SectionType.KNOWLEDGE
 
-    def test_excludes_unindexed_extractions(self, db):  # noqa: ARG002
-        """Extractions without embeddings should not appear in search results."""
+    def test_unembedded_artifact_without_keyword_match_excluded(self, db):  # noqa: ARG002
+        """An artifact with no embedding and no keyword match is excluded from results.
+
+        FTS could surface it if the query terms matched the artifact text, but
+        KNN filtering requires an embedding — so only FTS acts as the safety net here.
+        """
         with db.session() as session:
             project = ProjectSchema(name="test-project", repo_path="/tmp/test-project")
             session.add(project)
@@ -252,6 +256,182 @@ class TestSearchArtifacts:
             results = engine.search_artifacts("test query", "test-project")
 
         assert results == []
+
+
+class TestHybridRetrieval:
+    """Tests for the FTS pathway and merge behavior in hybrid search."""
+
+    def test_keyword_match_surfaces_result(self, db):  # noqa: ARG002
+        """An artifact containing query terms is found even with orthogonal embedding."""
+        # Orthogonal embedding — KNN won't rank this well
+        far_vec = np.zeros(EMBEDDING_DIMENSIONS, dtype=np.float32)
+        far_vec[0] = 1.0
+
+        _seed_artifact(db, session_id="sess-kw")
+
+        # Seed an artifact whose text contains the query keywords
+        with db.session() as session:
+            project = session.query(ProjectSchema).filter(ProjectSchema.name == "test-project").first()
+            transcript = TranscriptSchema(
+                project_id=project.id,
+                session_id="sess-kw-match",
+                path="/tmp/transcript-sess-kw-match.jsonl",
+            )
+            session.add(transcript)
+            session.flush()
+
+            artifact = ArtifactSchema(
+                transcript_id=transcript.id,
+                section_type=SectionType.KNOWLEDGE,
+                text="worktree isolation design prevents polluting project directories",
+                embedding=far_vec.tolist(),
+                content_hash=_content_hash("worktree isolation design prevents polluting project directories"),
+                indexed_at=datetime.now(UTC),
+            )
+            session.add(artifact)
+
+        # Query uses a term that appears in the artifact text
+        model = MagicMock()
+        # Query vector orthogonal to far_vec — low semantic similarity
+        query_vec = np.zeros(EMBEDDING_DIMENSIONS, dtype=np.float32)
+        query_vec[1] = 1.0
+        model.encode.return_value = query_vec.reshape(1, -1)
+
+        with patch.object(engine, "_get_model", return_value=model):
+            results = engine.search_artifacts("worktree isolation", "test-project", threshold=0.0)
+
+        # The keyword-matching artifact should appear in results
+        session_ids = [r["session_id"] for r in results]
+        assert "sess-kw-match" in session_ids
+
+    def test_fts_finds_unembedded_artifact(self, db):  # noqa: ARG002
+        """FTS can surface artifacts that haven't been embedded yet."""
+        with db.session() as session:
+            project = ProjectSchema(name="test-project", repo_path="/tmp/test-project")
+            session.add(project)
+            session.flush()
+
+            transcript = TranscriptSchema(
+                project_id=project.id,
+                session_id="sess-no-emb",
+                path="/tmp/transcript-sess-no-emb.jsonl",
+            )
+            session.add(transcript)
+            session.flush()
+
+            # No embedding set — KNN can't find this
+            artifact = ArtifactSchema(
+                transcript_id=transcript.id,
+                section_type=SectionType.KNOWLEDGE,
+                text="migration schema version tracking applied automatically",
+            )
+            session.add(artifact)
+
+        model = MagicMock()
+        model.encode.return_value = np.random.rand(1, EMBEDDING_DIMENSIONS).astype(np.float32)
+
+        with patch.object(engine, "_get_model", return_value=model):
+            results = engine.search_artifacts("migration schema version", "test-project", threshold=0.0)
+
+        session_ids = [r["session_id"] for r in results]
+        assert "sess-no-emb" in session_ids
+
+    def test_dual_match_scores_higher_than_single(self, db):  # noqa: ARG002
+        """An artifact matching both KNN and FTS should score higher than one matching only KNN."""
+        # Unit vector — will be used as both query and "close" embedding
+        close_vec = np.zeros(EMBEDDING_DIMENSIONS, dtype=np.float32)
+        close_vec[0] = 1.0
+
+        with db.session() as session:
+            project = ProjectSchema(name="test-project", repo_path="/tmp/test-project")
+            session.add(project)
+            session.flush()
+
+            # Artifact 1: matches KNN (close embedding) AND FTS (contains query terms)
+            t1 = TranscriptSchema(project_id=project.id, session_id="sess-dual", path="/tmp/t-dual.jsonl")
+            session.add(t1)
+            session.flush()
+            a1 = ArtifactSchema(
+                transcript_id=t1.id,
+                section_type=SectionType.KNOWLEDGE,
+                text="database migration handling automatic schema upgrades",
+                embedding=close_vec.tolist(),
+                content_hash=_content_hash("database migration handling automatic schema upgrades"),
+                indexed_at=datetime.now(UTC),
+            )
+            session.add(a1)
+
+            # Artifact 2: matches KNN (close embedding) but NOT FTS (different terms)
+            t2 = TranscriptSchema(project_id=project.id, session_id="sess-knn-only", path="/tmp/t-knn.jsonl")
+            session.add(t2)
+            session.flush()
+            a2 = ArtifactSchema(
+                transcript_id=t2.id,
+                section_type=SectionType.KNOWLEDGE,
+                text="vector embedding cosine similarity search implementation",
+                embedding=close_vec.tolist(),
+                content_hash=_content_hash("vector embedding cosine similarity search implementation"),
+                indexed_at=datetime.now(UTC),
+            )
+            session.add(a2)
+
+        model = MagicMock()
+        model.encode.return_value = close_vec.reshape(1, -1)
+
+        with patch.object(engine, "_get_model", return_value=model):
+            results = engine.search_artifacts("database migration schema", "test-project", threshold=0.0)
+
+        # Both should appear, but the dual-match should score higher
+        scores = {r["session_id"]: r["score"] for r in results}
+        assert "sess-dual" in scores
+        assert "sess-knn-only" in scores
+        assert scores["sess-dual"] > scores["sess-knn-only"]
+
+    def test_fts_respects_scope_filters(self, db):  # noqa: ARG002
+        """FTS results are scoped to the same project/session filters as KNN."""
+        with db.session() as session:
+            # Project A
+            proj_a = ProjectSchema(name="project-a", repo_path="/tmp/project-a")
+            session.add(proj_a)
+            session.flush()
+            t_a = TranscriptSchema(project_id=proj_a.id, session_id="sess-fts-a", path="/tmp/t-fts-a.jsonl")
+            session.add(t_a)
+            session.flush()
+            session.add(
+                ArtifactSchema(
+                    transcript_id=t_a.id,
+                    section_type=SectionType.KNOWLEDGE,
+                    text="worktree isolation design pattern implementation",
+                    embedding=_random_embedding(),
+                    content_hash=_content_hash("worktree isolation design pattern implementation"),
+                    indexed_at=datetime.now(UTC),
+                )
+            )
+
+            # Project B — same text, different project
+            proj_b = ProjectSchema(name="project-b", repo_path="/tmp/project-b")
+            session.add(proj_b)
+            session.flush()
+            t_b = TranscriptSchema(project_id=proj_b.id, session_id="sess-fts-b", path="/tmp/t-fts-b.jsonl")
+            session.add(t_b)
+            session.flush()
+            session.add(
+                ArtifactSchema(
+                    transcript_id=t_b.id,
+                    section_type=SectionType.KNOWLEDGE,
+                    text="worktree isolation design pattern implementation",
+                    embedding=_random_embedding(),
+                    content_hash=_content_hash("worktree isolation design pattern implementation"),
+                    indexed_at=datetime.now(UTC),
+                )
+            )
+
+        with patch.object(engine, "_get_model", return_value=_mock_model()):
+            results = engine.search_artifacts("worktree isolation", "project-a", threshold=0.0)
+
+        session_ids = [r["session_id"] for r in results]
+        assert "sess-fts-a" in session_ids
+        assert "sess-fts-b" not in session_ids
 
 
 class TestSearchTranscripts:
