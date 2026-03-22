@@ -26,19 +26,17 @@ def _is_reflect_mode() -> bool:
     return os.environ.get("BASECAMP_REFLECT") == "1"
 
 
-def _resolve_search_context() -> tuple[str | None, str | None] | dict:
-    """Resolve project and session for search, respecting reflect mode.
+def _resolve_project() -> str | None | dict:
+    """Resolve project name for search, respecting reflect mode.
 
-    Returns (project_name, session_id) on success, or an error dict.
-    Reflect mode sets project_name to None for cross-project search.
+    Returns project_name on success (None in reflect mode), or an error dict.
     """
-    project_name = os.environ.get("BASECAMP_REPO")
-    session_id = os.environ.get("CLAUDE_SESSION_ID")
     if _is_reflect_mode():
-        return None, session_id
+        return None
+    project_name = os.environ.get("BASECAMP_REPO")
     if not project_name:
         return {"error": "BASECAMP_REPO is not set"}
-    return project_name, session_id
+    return project_name
 
 
 _MODE_DISABLED_MSG = "Observer is off. No extraction data is available."
@@ -54,15 +52,13 @@ def _search_artifacts(
     if get_mode() == "off":
         return {"error": _MODE_DISABLED_MSG}
 
-    context = _resolve_search_context()
-    if isinstance(context, dict):
-        return context
-    project_name, session_id = context
+    project = _resolve_project()
+    if isinstance(project, dict):
+        return project
 
     results = engine.search_artifacts(
         query,
-        project_name,
-        session_id=session_id,
+        project,
         top_k=top_k,
         threshold=threshold,
         worktree=worktree,
@@ -77,15 +73,13 @@ def _search_transcripts(
     worktree: str | None = None,
 ) -> dict:
     """Core search_transcripts logic, called by the MCP tool wrapper."""
-    context = _resolve_search_context()
-    if isinstance(context, dict):
-        return context
-    project_name, session_id = context
+    project = _resolve_project()
+    if isinstance(project, dict):
+        return project
 
     results = engine.search_transcripts(
         query,
-        project_name,
-        session_id=session_id,
+        project,
         top_k=top_k,
         threshold=threshold,
         worktree=worktree,

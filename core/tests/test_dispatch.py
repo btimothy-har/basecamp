@@ -149,6 +149,37 @@ class TestExecuteDispatchLauncher:
             script = (tmp_path / "test-task" / "launch.sh").read_text()
             assert "--model opus" in script
 
+    def test_launcher_with_settings_file(self, tmp_path: Path) -> None:
+        settings_file = tmp_path / "settings.json"
+        settings_file.write_text('{"env": {}}')
+
+        mock_run = _mock_subprocess_run()
+        env = {**_tmux_env(tmp_path), "BASECAMP_SETTINGS_FILE": str(settings_file)}
+        with (
+            patch.dict("os.environ", env, clear=True),
+            patch("core.terminal.subprocess.run", mock_run),
+            patch("core.cli.dispatch.time.sleep"),
+        ):
+            execute_dispatch(name="test-task")
+
+            script = (tmp_path / "test-task" / "launch.sh").read_text()
+            assert "--settings" in script
+            assert "--setting-sources" in script
+            assert "settings.json" in script
+
+    def test_launcher_skips_missing_settings_file(self, tmp_path: Path) -> None:
+        mock_run = _mock_subprocess_run()
+        env = {**_tmux_env(tmp_path), "BASECAMP_SETTINGS_FILE": str(tmp_path / "nonexistent.json")}
+        with (
+            patch.dict("os.environ", env, clear=True),
+            patch("core.terminal.subprocess.run", mock_run),
+            patch("core.cli.dispatch.time.sleep"),
+        ):
+            execute_dispatch(name="test-task")
+
+            script = (tmp_path / "test-task" / "launch.sh").read_text()
+            assert "--settings" not in script
+
 
 class TestExecuteDispatchTmux:
     """Tests for tmux pane management."""
@@ -166,8 +197,10 @@ class TestExecuteDispatchTmux:
             split_call = mock_run.call_args_list[0]
             cmd = split_call[0][0]
             cmd_str = " ".join(str(c) for c in cmd)
+            # Only BASECAMP_TASK_DIR is forwarded via multiplexer env —
+            # everything else is in the cached settings file.
             assert "BASECAMP_TASK_DIR=" in cmd_str
-            assert "BASECAMP_REPO=test-repo" in cmd_str
+            assert "BASECAMP_REPO=" not in cmd_str
 
     def test_tmux_sets_pane_title(self, tmp_path: Path) -> None:
         mock_run = _mock_subprocess_run()
@@ -244,8 +277,10 @@ class TestExecuteDispatchKitty:
 
             cmd = mock_run.call_args[0][0]
             cmd_str = " ".join(str(c) for c in cmd)
+            # Only BASECAMP_TASK_DIR is forwarded via multiplexer env —
+            # everything else is in the cached settings file.
             assert "--env BASECAMP_TASK_DIR=" in cmd_str
-            assert "--env BASECAMP_REPO=test-repo" in cmd_str
+            assert "--env BASECAMP_REPO=" not in cmd_str
 
     def test_kitty_uses_socket(self, tmp_path: Path) -> None:
         mock_run = _mock_subprocess_run()

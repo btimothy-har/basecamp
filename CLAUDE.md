@@ -70,7 +70,7 @@ The system prompt is fully replaced, not appended. This gives complete control o
 
 Prompts are layered (environment → working style → system → project context) so that each concern is independently overridable. Project context is injected via a SessionStart hook rather than included in the system prompt — this places it alongside CLAUDE.md in the conversation, not buried in the system prompt.
 
-Assembled prompts are persisted to `~/.basecamp/prompts/assembled/` so dispatch workers can inherit the parent session's prompt without re-assembling.
+Assembled prompts are persisted to `~/.basecamp/.cached/{project}/prompt.md` so dispatch workers can inherit the parent session's prompt without re-assembling.
 
 ### Plugin System
 

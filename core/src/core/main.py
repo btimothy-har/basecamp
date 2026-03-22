@@ -56,7 +56,7 @@ def setup() -> None:
 
 
 # Args that basecamp controls — block these from passthrough to Claude CLI.
-_BLOCKED_ARGS = {"--system-prompt", "--append-system-prompt"}
+_BLOCKED_ARGS = {"--system-prompt", "--append-system-prompt", "--settings", "--setting-sources"}
 
 
 @basecamp.command(context_settings={"ignore_unknown_options": True, "allow_extra_args": True})

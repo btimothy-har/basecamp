@@ -45,7 +45,7 @@ Five tools via FastMCP stdio server:
 - `get_artifact` / `get_transcript_detail` — drill-down by ID
 - `get_session` — direct lookup by session_id (used by dispatch)
 
-Search is scoped to current project via `BASECAMP_REPO` and excludes the active session via `CLAUDE_SESSION_ID`. Setting `BASECAMP_REFLECT=1` disables project scoping for cross-project search.
+Search is scoped to current project via `BASECAMP_REPO`. Setting `BASECAMP_REFLECT=1` disables project scoping for cross-project search.
 
 ### Configuration
 

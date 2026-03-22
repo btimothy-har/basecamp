@@ -8,39 +8,35 @@ from observer.mcp.server import (
     _get_artifact,
     _get_session,
     _get_transcript_detail,
-    _resolve_search_context,
+    _resolve_project,
     _search_artifacts,
     _search_transcripts,
 )
 
 
-class TestResolveSearchContext:
+class TestResolveProject:
     def test_normal_mode(self, monkeypatch):
         monkeypatch.setenv("BASECAMP_REPO", "my-project")
-        monkeypatch.setenv("CLAUDE_SESSION_ID", "sess-1")
         monkeypatch.delenv("BASECAMP_REFLECT", raising=False)
-        assert _resolve_search_context() == ("my-project", "sess-1")
+        assert _resolve_project() == "my-project"
 
     def test_missing_project_returns_error(self, monkeypatch):
         monkeypatch.delenv("BASECAMP_REPO", raising=False)
         monkeypatch.delenv("BASECAMP_REFLECT", raising=False)
-        result = _resolve_search_context()
+        result = _resolve_project()
         assert isinstance(result, dict)
         assert "error" in result
 
-    def test_reflect_mode_returns_none_project(self, monkeypatch):
+    def test_reflect_mode_returns_none(self, monkeypatch):
         monkeypatch.setenv("BASECAMP_REFLECT", "1")
         monkeypatch.delenv("BASECAMP_REPO", raising=False)
-        monkeypatch.setenv("CLAUDE_SESSION_ID", "sess-1")
-        assert _resolve_search_context() == (None, "sess-1")
+        assert _resolve_project() is None
 
     def test_reflect_mode_overrides_project(self, monkeypatch):
         """Even when BASECAMP_REPO is set, reflect mode uses None for cross-project search."""
         monkeypatch.setenv("BASECAMP_REFLECT", "1")
         monkeypatch.setenv("BASECAMP_REPO", "my-project")
-        monkeypatch.setenv("CLAUDE_SESSION_ID", "sess-1")
-        project_name, _ = _resolve_search_context()
-        assert project_name is None
+        assert _resolve_project() is None
 
 
 class TestSearchArtifactsTool:
@@ -52,7 +48,6 @@ class TestSearchArtifactsTool:
 
     def test_calls_engine(self, monkeypatch):
         monkeypatch.setenv("BASECAMP_REPO", "test-project")
-        monkeypatch.delenv("CLAUDE_SESSION_ID", raising=False)
 
         mock_results = [{"artifact_id": 1, "type": "knowledge", "text": "found", "score": 0.9}]
 
@@ -62,22 +57,12 @@ class TestSearchArtifactsTool:
         mock.assert_called_once_with(
             "test query",
             "test-project",
-            session_id=None,
             top_k=5,
             threshold=0.5,
             worktree=None,
         )
         assert result["count"] == 1
         assert result["results"] == mock_results
-
-    def test_passes_session_id(self, monkeypatch):
-        monkeypatch.setenv("BASECAMP_REPO", "test-project")
-        monkeypatch.setenv("CLAUDE_SESSION_ID", "abc-123")
-
-        with patch("observer.mcp.engine.search_artifacts", return_value=[]) as mock:
-            _search_artifacts("test query")
-
-        assert mock.call_args.kwargs["session_id"] == "abc-123"
 
     def test_passes_worktree(self, monkeypatch):
         monkeypatch.setenv("BASECAMP_REPO", "test-project")
@@ -108,7 +93,6 @@ class TestSearchTranscriptsTool:
 
     def test_calls_engine(self, monkeypatch):
         monkeypatch.setenv("BASECAMP_REPO", "test-project")
-        monkeypatch.delenv("CLAUDE_SESSION_ID", raising=False)
 
         mock_results = [{"artifact_id": 1, "title": "Auth session", "text": "summary", "score": 0.8}]
 
@@ -118,22 +102,12 @@ class TestSearchTranscriptsTool:
         mock.assert_called_once_with(
             "test query",
             "test-project",
-            session_id=None,
             top_k=5,
             threshold=0.5,
             worktree=None,
         )
         assert result["count"] == 1
         assert result["results"] == mock_results
-
-    def test_passes_session_id(self, monkeypatch):
-        monkeypatch.setenv("BASECAMP_REPO", "test-project")
-        monkeypatch.setenv("CLAUDE_SESSION_ID", "abc-123")
-
-        with patch("observer.mcp.engine.search_transcripts", return_value=[]) as mock:
-            _search_transcripts("test query")
-
-        assert mock.call_args.kwargs["session_id"] == "abc-123"
 
     def test_passes_worktree(self, monkeypatch):
         monkeypatch.setenv("BASECAMP_REPO", "test-project")

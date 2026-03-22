@@ -48,7 +48,7 @@ MCP_SERVER_NAME = "observer"
 MCP_SERVER_INSTRUCTIONS = """\
 Semantic memory over past Claude Code sessions.
 
-Results are scoped to the current project and exclude the active session.
+Results are scoped to the current project.
 
 Retrieval pathways:
 
