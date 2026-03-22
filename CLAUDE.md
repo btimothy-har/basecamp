@@ -1,204 +1,102 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+## What is basecamp
 
-## Project Overview
+A Claude Code multi-project workspace launcher. It replaces Claude's default system prompt, configures project directories, and manages isolated git worktrees — all from a single `basecamp claude <project>` command.
 
-**basecamp** is a Claude Code multi-project workspace launcher. It launches Claude with pre-configured directories, custom prompts, and specialized agents based on project definitions in `~/.basecamp/config.json`.
+Two packages, one plugin collection:
 
-## Commands
+| Package | Directory | Purpose |
+|---------|-----------|---------|
+| `basecamp-core` | `core/` | CLI tool — project config, prompt assembly, session launch |
+| `basecamp-observer` | `observer/` | Semantic memory — session ingestion, LLM extraction, vector search |
 
-```bash
-basecamp setup                           # Initialize environment (prerequisites, dirs, config)
+See `core/CLAUDE.md` and `observer/CLAUDE.md` for package-specific architecture and decisions.
 
-basecamp claude <project>               # Launch Claude in project directory
-basecamp claude .                       # Launch Claude in current directory
-basecamp claude ~/path/to/dir           # Launch Claude in any directory path
-basecamp claude -r <project>            # Resume a previous conversation
-basecamp claude -l auth <project>       # Work in worktree "auth" (creates if new, re-enters if exists)
-
-basecamp open <project>                 # Open VS Code with basecamp + project directories
-basecamp open -n <project>              # Open in a new VS Code window
-basecamp open -l auth <project>         # Open VS Code in existing worktree "auth"
-
-basecamp project list                   # List available projects
-basecamp project add                    # Interactively add a new project
-basecamp project edit <name>            # Interactively edit a project
-basecamp project remove <name>          # Remove a project
-
-basecamp log "message"                  # Append a block to today's Logseq journal
-basecamp log "message" -p ProjectName   # Append with [[ProjectName]] page reference
-basecamp reflect                        # Launch a reflective journaling session (end of day)
-basecamp plan                           # Launch a planning session (start of day)
-
-basecamp worktree list <project>        # List worktrees for a project
-basecamp worktree list --all            # List all worktrees across all repos
-basecamp worktree clean <project>       # Interactive worktree cleanup
-basecamp worktree clean <project> --all # Remove all worktrees for project
-```
-
-> **Note**: Requires installation via `uv tool install -e ./core`. See [README.md](README.md) for details.
-
-## Architecture
-
-### Configuration Flow
+## Repo Map
 
 ```
-config.json → ProjectConfig validation → Prompt assembly → Claude CLI execution
+core/src/core/
+├── main.py                     # Click entry point
+├── cli/                        # One module per command (launch, open, dispatch, etc.)
+├── config/project.py           # ProjectConfig Pydantic model
+├── git/
+│   ├── repo.py                 # Git utilities (is_git_repo, get_repo_name, etc.)
+│   └── worktrees.py            # Worktree CRUD (create, list, remove, get_or_create)
+├── prompts/
+│   ├── system.py               # Prompt assembly pipeline
+│   ├── working_styles.py       # Style discovery and loading
+│   ├── project_context.py      # Context file resolution
+│   ├── _system_prompts/        # Package defaults (environment.md, system.md)
+│   ├── _working_styles/        # Package defaults (engineering.md, advisor.md)
+│   └── logseq/                 # Logseq session prompts (reflect, plan)
+├── settings.py                 # File-backed config with locking
+├── constants.py                # Path constants
+└── exceptions.py               # Exception hierarchy
+
+observer/src/observer/
+├── cli.py                      # Click entry point (db, setup, ingest, process, mcp, viz)
+├── data/                       # SQLAlchemy schemas + Pydantic domain models
+├── pipeline/
+│   ├── parser.py               # JSONL transcript parsing
+│   ├── refining/               # Event grouping + LLM summarization
+│   ├── extraction.py           # Transcript-level section extraction
+│   └── indexing.py             # Sentence-transformer embedding
+├── mcp/
+│   ├── server.py               # FastMCP stdio server (5 tools)
+│   ├── engine.py               # KNN search with scoring
+│   └── scoring.py              # Time decay + dedup
+├── services/                   # DB, config, container, migrations, agent (LLM)
+├── prompts/                    # LLM prompt templates (.txt, PEP 562 lazy load)
+└── viz/                        # Marimo dashboard
+
+plugins/
+├── companion/                  # bc-companion (bundled) — session hooks, dispatch skill, observer MCP
+├── collaboration/              # bc-collab — discovery skill, gh-issue skill, issue-worker agent
+├── engineering/                # bc-eng — 8 agents, 9 skills, commands, hooks
+├── cursor/                     # bc-cursor — .cursor context file discovery hooks
+├── git_protect/                # bc-git-protect — destructive git/gh operation guards
+├── gpg_check/                  # bc-gpg-check — GPG card verification hook
+└── private/                    # bc-private — gitignored personal tools
+
+core/tests/                     # pytest suite for basecamp-core
 ```
 
-1. **Project Configuration** (`config.json`): Defines projects with directories and working style
-2. **System Prompt Assembly**: Merges environment.md (+ runtime info) → working style → system.md
-3. **Plugin Loading**: Discovers agents, skills, commands, hooks from plugin modules
-4. **Launch**: Changes to primary directory and `execvp` to claude CLI
+## Architecture Decisions
 
-### Key Directories
+### Prompt System
 
-| Directory | Purpose |
-|-----------|---------|
-| `core/src/core/prompts/` | Package prompts — environment.md, system.md, working_styles/ (shipped defaults) |
-| `.claude-plugin/` | Plugin marketplace configuration |
-| `~/.worktrees/` | Git worktrees organized by repo name (hidden in home directory) |
-| `core/tests/` | pytest test suite for basecamp-core |
+The system prompt is fully replaced, not appended. This gives complete control over Claude's behavior but means basecamp must provide everything Claude Code's default prompt would (environment context, tool guidance, etc.). Claude Code still appends its own tool definitions section — that's the one thing we can't control.
 
-**User directory** (`~/.basecamp/`):
+Prompts are layered (environment → working style → system → project context) so that each concern is independently overridable. Project context is injected via a SessionStart hook rather than included in the system prompt — this places it alongside CLAUDE.md in the conversation, not buried in the system prompt.
 
-| Path | Purpose |
-|------|---------|
-| `~/.basecamp/config.json` | Project definitions and settings |
-| `~/.basecamp/prompts/system.md` | User system prompt override |
-| `~/.basecamp/prompts/working_styles/` | User working style overrides or custom styles |
-| `~/.basecamp/prompts/context/` | Per-project context files (injected at session start) |
+Assembled prompts are persisted to `~/.basecamp/prompts/assembled/` so dispatch workers can inherit the parent session's prompt without re-assembling.
 
-### Git Worktree Integration
+### Plugin System
 
-Use `-l <label>` to work in an isolated git worktree:
+Plugins use Claude Code's native plugin format (`.claude-plugin/plugin.json`). The marketplace config at `.claude-plugin/marketplace.json` lets users install optional plugins from within a Claude session.
 
-```
-~/.worktrees/<repo-name>/<label>/
-├── .meta/<label>.json     # Metadata (name, branch, created_at, project, repo_name)
-└── <repo contents>        # Working copy on wt/<label> branch
-```
+`bc-companion` is the only bundled plugin (always loaded). Everything else is opt-in via marketplace install. This keeps the base experience minimal.
 
-| Module | Purpose |
-|--------|---------|
-| `worktrees.py` | Core worktree operations (create, list, remove, get_or_create) |
-| `exceptions.py` | `WorktreeError`, `NotAGitRepoError`, `WorktreeNotFoundError`, `WorktreeCommandError` |
-| `constants.py` | `WORKTREES_DIR` path constant |
+### Environment Variable Chain
 
-Key behaviors:
-- Worktrees are opt-in via `-l <label>` flag
-- Label is both the directory name and worktree identifier
-- `basecamp claude <project> -l auth` creates or re-enters worktree "auth" with branch `wt/auth`
-- `basecamp open <project> -l auth` opens existing worktree (errors if not found)
-- Secondary dirs (`--add-dir`) stay on main branch
+Session launch sets `BASECAMP_*` env vars, then forwards them through the terminal multiplexer (tmux/Kitty) so they survive the pane boundary. Dispatch workers bulk-forward all `BASECAMP_*` vars from the parent process — this means new vars added to launch automatically propagate without cherry-picking.
 
-### Plugin Modules
+`BASECAMP_REPO` is always the git repo name, never a worktree label or directory name. This ensures observer can scope searches consistently regardless of whether the session is in a worktree.
 
-basecamp includes a bundled core plugin and a marketplace with optional plugins. Each plugin has its own `.claude-plugin/plugin.json`.
+### Worktree Design
 
-**Bundled Plugin** (always loaded):
+Worktrees live in `~/.worktrees/<repo>/<label>/` rather than inside the repo to avoid polluting project directories. Metadata is stored separately in `.meta/` JSON files for the same reason. The `-l` flag is intentionally opt-in — most sessions don't need worktree isolation.
 
-| Plugin | Directory | Contents |
-|--------|-----------|----------|
-| `bc-companion` | `plugins/companion/` | Session management, context injection, observer integration |
+## Development
 
-**Marketplace Plugins** (optional, installed via `.claude-plugin/marketplace.json`):
+- **Python**: 3.12+, managed with `uv`
+- **Install (dev)**: `uv run install.py -e` (editable mode for both packages)
+- **Lint**: `uv run ruff check` / `uv run ruff format`
 
-| Plugin | Directory | Contents |
-|--------|-----------|----------|
-| `bc-collab` | `plugins/collaboration/` | Collaborative discovery and planning skills |
-| `bc-cursor` | `plugins/cursor/` | Hooks for .cursor context file discovery |
-| `bc-eng` | `plugins/engineering/` | Agents, commands, skills, hooks for engineering workflows |
-| `bc-gpg-check` | `plugins/gpg_check/` | Pre-tool hook for GPG card verification |
+### Testing
 
-#### bc-collab Plugin Structure
-
-```
-plugins/collaboration/
-├── .claude-plugin/plugin.json
-└── skills/           # discovery (requirements gathering and interviewing)
-```
-
-#### bc-eng Plugin Structure
-
-```
-plugins/engineering/
-├── .claude-plugin/plugin.json
-├── agents/           # code-reviewer, code-simplifier, comment-analyzer, etc.
-├── commands/         # commit, pullrequest
-├── hooks/            # UserPromptSubmit reminders, Write|Edit skill reminder
-├── scripts/          # skill-scoped allow hooks for PR workflows
-└── skills/           # python-development, sql, pull-request, pr-review, etc.
-```
-
-#### bc-companion Plugin Structure (Bundled)
-
-```
-plugins/companion/
-├── .claude-plugin/plugin.json    # Includes observer MCP server
-├── hooks/            # SessionStart, PreCompact, SessionEnd hooks
-└── scripts/          # session-init.sh, project-context.sh, hook-process.sh
-```
-
-### Agent Definition Format
-
-```markdown
----
-description: When to use this agent
-model: opus  # optional
-tools: [Read, Grep, Glob]  # optional
----
-
-Agent prompt content here...
-```
-
-### Project Configuration Options
-
-```json
-{
-  "project-name": {
-    "dirs": ["path/relative/to/home"],  // First is primary (cwd), rest are --add-dir
-    "description": "Project description",
-    "working_style": "engineering",  // optional, see working styles below
-    "context": "project"  // optional, loads ~/.basecamp/prompts/context/{name}.md
-  }
-}
-```
-
-### Prompt Assembly Order
-
-1. Runtime `<env>` block + `core.prompts/environment.md` + git status (always)
-2. Working style prompt (if `working_style` specified) — user override → package default
-3. System prompt — user override (`~/.basecamp/prompts/system.md`) → package default
-4. Context file (if `context` specified and `~/.basecamp/prompts/context/{name}.md` exists, injected via SessionStart hook)
-
-### Prompt Layer Architecture
-
-| Layer | Location | Purpose |
-|-------|----------|---------|
-| Environment | `core/src/core/prompts/environment.md` | CLI context, Python/uv, scratch workspace, git status (always loaded) |
-| Working Style | `~/.basecamp/prompts/working_styles/` → `core/src/core/prompts/working_styles/` | Project-specific behaviors: work structure, communication, code quality (mutually exclusive) |
-| System | `~/.basecamp/prompts/system.md` → `core/src/core/prompts/system.md` | Working principles, task management, skills, tool usage |
-| Project Context | `~/.basecamp/prompts/context/` | Per-project context injected at session start (optional) |
-
-### Available Working Styles
-
-Package defaults (in `core/src/core/prompts/working_styles/`):
-
-| File | Purpose |
-|------|---------|
-| `engineering.md` | Partner role, quest-based work structure, code quality practices, frequent check-ins |
-| `advisor.md` | Advisor role, efficient discovery, direct communication, decision support |
-
-Override or add custom styles by placing files in `~/.basecamp/prompts/working_styles/`.
-
-### Built-in Project
-
-The `basecamp` project is hardcoded to start with basecamp itself as the working directory.
-
-## Environment Variables
-
-- `BASECAMP_REPO`: Set during start to the git repo directory name (falls back to primary dir name for non-git projects)
-- `BASECAMP_CONTEXT_FILE`: Set during start to the resolved context file path (if `context` field is configured and file exists)
-- `BASECAMP_OBSERVER_ENABLED`: Set to `1` when observer is configured (has `pg_url`). Controls whether companion runs observer hooks.
+- **Run**: `uv run pytest` from repo root
+- **Config**: root `pyproject.toml` — `testpaths = ["core/tests"]`, `pythonpath = ["core/src"]`
+- **Core tests** use temporary git repos (`temp_git_repo` fixture) and mock terminal backends. Observer is not required — `TESTING=1` is set by pytest config.
+- **Observer tests** are in `observer/tests/` (not currently run from root pytest config). Core tests don't depend on observer.
