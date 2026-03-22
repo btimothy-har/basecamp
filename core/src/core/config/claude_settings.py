@@ -67,7 +67,7 @@ def build_session_settings(
     allow: list[str] = list(permissions.get("allow", []))
     for directory in (scratch_dir, _TASKS_DIR):
         allow.extend(f"{tool}({directory}/**)" for tool in ("Read", "Write", "Edit"))
-    permissions["allow"] = allow
+    permissions["allow"] = list(dict.fromkeys(allow))
 
     # Inject BASECAMP_* env vars
     cache_dir = CACHE_DIR / project_name / label if label else CACHE_DIR / project_name
