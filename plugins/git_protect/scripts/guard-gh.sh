@@ -34,8 +34,13 @@ deny() {
   exit 0
 }
 
+# ALLOW: all gh issue operations
+if [[ "$CMD" =~ ^gh[[:space:]]+issue([[:space:]]|$) ]]; then
+  allow
+fi
+
 # ALLOW: read-only operations
-if [[ "$CMD" =~ ^gh[[:space:]]+(pr|issue|run)[[:space:]]+(view|list|diff|checks|status)([[:space:]]|$) ]] || \
+if [[ "$CMD" =~ ^gh[[:space:]]+(pr|run)[[:space:]]+(view|list|diff|checks|status)([[:space:]]|$) ]] || \
    [[ "$CMD" =~ ^gh[[:space:]]+repo[[:space:]]+(view|list|clone|set-default)([[:space:]]|$) ]] || \
    [[ "$CMD" =~ ^gh[[:space:]]+run[[:space:]]+watch([[:space:]]|$) ]] || \
    [[ "$CMD" =~ ^gh[[:space:]]+search[[:space:]] ]] || \
