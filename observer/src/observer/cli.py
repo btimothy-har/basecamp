@@ -499,14 +499,8 @@ def ingest() -> None:
     ingested = TranscriptParser().ingest(transcript)
 
     # Group raw events into work items (pure logic, no LLM)
-    # Loop until fully drained — a single batch may not cover all pending events
     db = Database()
-    grouped = 0
-    while True:
-        n = EventGrouper.group_batch(db, batch_limit=500)
-        if n == 0:
-            break
-        grouped += n
+    grouped = EventGrouper.group_pending(db)
 
     click.echo(f"session={transcript.session_id} ingested={ingested} grouped={grouped}")
 
@@ -568,7 +562,7 @@ def reprocess(yes: bool) -> None:  # noqa: FBT001
 
     # Phase 1: Group raw events into work items, then refine into transcript events
     click.echo("\nGrouping and refining...")
-    refined = EventRefiner.refine_batch(db, batch_limit=raw_event_count)
+    refined = EventRefiner.refine_pending(db)
     click.echo(f"  Refined {refined} work items")
 
     # Phase 2: Extract per transcript
@@ -620,7 +614,7 @@ def process(session_id: str) -> None:
     db = Database()
     try:
         # Phase 1: Refine work_items → transcript_events (LLM calls)
-        EventRefiner.refine_batch(db, transcript_id=transcript.id)
+        EventRefiner.refine_pending(db, transcript_id=transcript.id)
 
         # Phase 2: Extract transcript_events → artifacts (single LLM call)
         TranscriptExtractor.extract_transcript(db, transcript.id)

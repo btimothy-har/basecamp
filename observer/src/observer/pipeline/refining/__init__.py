@@ -10,7 +10,6 @@ Refinement involves LLM calls for thinking/tool_pair summarization.
 
 import logging
 
-from observer.constants import REFINING_BATCH_LIMIT
 from observer.data.work_item import WorkItem
 from observer.pipeline.refining.grouping import EventGrouper
 from observer.pipeline.refining.refinement import WorkItemRefiner
@@ -28,21 +27,16 @@ class EventRefiner:
     """
 
     @staticmethod
-    def refine_batch(
-        db: Database,
-        *,
-        transcript_id: int | None = None,
-        batch_limit: int = REFINING_BATCH_LIMIT,
-    ) -> int:
+    def refine_pending(db: Database, *, transcript_id: int | None = None) -> int:
         """Group ungrouped RawEvents, then refine unprocessed WorkItems.
 
         Returns the number of WorkItems refined.
         """
         # Phase 1: Group ungrouped raw events into work items
-        EventGrouper.group_batch(db, transcript_id=transcript_id, batch_limit=batch_limit)
+        EventGrouper.group_pending(db, transcript_id=transcript_id)
 
         # Phase 2: Atomically claim unprocessed work items, then refine
-        items = WorkItem.claim_unprocessed(transcript_id=transcript_id, limit=batch_limit)
+        items = WorkItem.claim_unprocessed(transcript_id=transcript_id)
         if not items:
             return 0
 
@@ -51,5 +45,5 @@ class EventRefiner:
         refiner = WorkItemRefiner(db)
         total = refiner.refine(items)
 
-        logger.info("Refining batch complete: %d work items refined", total)
+        logger.info("Refining complete: %d work items refined", total)
         return total

@@ -37,7 +37,7 @@ def classify_events(events: list[RawEvent]) -> list[ClassifiedItem]:
     precede their corresponding tool_results.
 
     Trailing unmatched tool_uses are excluded (left unprocessed) so the
-    next batch can pair them with their tool_results.
+    next ingestion can pair them with their tool_results.
     """
     items: list[ClassifiedItem] = []
     # tool_use ID → RawEvent, supports parallel tool calls
@@ -95,9 +95,9 @@ class EventGrouper:
         return RawEvent.has_unprocessed()
 
     @staticmethod
-    def group_batch(db: Database, *, transcript_id: int | None = None, batch_limit: int) -> int:
+    def group_pending(db: Database, *, transcript_id: int | None = None) -> int:
         """Classify ungrouped RawEvents into WorkItems. Returns count created."""
-        events = RawEvent.get_unprocessed(transcript_id=transcript_id, limit=batch_limit)
+        events = RawEvent.get_unprocessed(transcript_id=transcript_id)
         if not events:
             return 0
 
@@ -115,7 +115,7 @@ class EventGrouper:
             # Find events not included in any classified item (e.g. trailing
             # unmatched tool_uses). Only mark them SKIPPED once they're older
             # than the stale threshold — recent ones may still get a matching
-            # tool_result in the next batch.
+            # tool_result in the next ingestion.
             classified_event_ids = {e.id for item in classified for e in item.events}
             stale_cutoff = now.replace(tzinfo=None) - timedelta(seconds=DEFAULT_STALE_THRESHOLD)
             orphaned = [
