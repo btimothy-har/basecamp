@@ -184,6 +184,13 @@ class TestTaskIndex:
         assert index.get("g") is not None
         assert index.get("missing") is None
 
+    def test_corrupt_index_raises(self, index: TaskIndex) -> None:
+        index._path.parent.mkdir(parents=True, exist_ok=True)
+        index._path.write_text("NOT VALID JSON{{{")
+
+        with pytest.raises(ValueError):
+            index.read()
+
 
 # -- Operations tests --------------------------------------------------------
 
@@ -473,7 +480,9 @@ class TestDispatchPaneManagement:
         cmd = split_call[0][0]
         cmd_str = " ".join(str(c) for c in cmd)
         assert "BASECAMP_TASK_DIR=" in cmd_str
-        assert "BASECAMP_REPO=" not in cmd_str
+        assert "BASECAMP_TASK_NAME=" in cmd_str
+        assert "BASECAMP_PROJECT=test-project" in cmd_str
+        assert "BASECAMP_REPO=test-repo" in cmd_str
 
     def test_tmux_sets_pane_title(self, task_env: dict, tmp_path: Path) -> None:
         tasks_base = tmp_path / "tasks"
@@ -679,6 +688,16 @@ class TestRegisterTask:
         with patch.dict("os.environ", env, clear=True):
             with pytest.raises(ProjectNotSetError):
                 register_task(session_id="worker-sess-1")
+
+    def test_nonexistent_task_is_noop(self, task_env: dict, tmp_path: Path) -> None:
+        index_dir = tmp_path / "index"
+        env = {**task_env, "BASECAMP_TASK_NAME": "nonexistent-task"}
+
+        with (
+            patch.dict("os.environ", env, clear=True),
+            patch("core.task.index.TASKS_INDEX_DIR", index_dir),
+        ):
+            register_task(session_id="worker-sess-1")  # should not raise
 
 
 # -- CLI tests ---------------------------------------------------------------

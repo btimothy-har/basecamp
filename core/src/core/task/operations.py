@@ -237,7 +237,9 @@ def _spawn_task(entry: TaskEntry, index: TaskIndex) -> bool:
             )
         )
         launcher.chmod(stat.S_IRWXU)
-    pane_env = {"BASECAMP_TASK_DIR": str(task_dir), "BASECAMP_TASK_NAME": entry.name}
+    pane_env = {k: v for k, v in os.environ.items() if k.startswith("BASECAMP_")}
+    pane_env["BASECAMP_TASK_DIR"] = str(task_dir)
+    pane_env["BASECAMP_TASK_NAME"] = entry.name
     backend.spawn_pane(
         launcher,
         env=pane_env,

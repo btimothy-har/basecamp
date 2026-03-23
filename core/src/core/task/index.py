@@ -31,14 +31,15 @@ class TaskIndex:
         self._lock_path = self._path.with_suffix(".lock")
 
     def _read_raw(self) -> list[TaskEntry]:
-        """Read index from disk without pruning."""
+        """Read index from disk without pruning.
+
+        Raises on corrupt files (bad JSON, invalid schema) so callers fail
+        loudly rather than silently overwriting lost data.
+        """
         if not self._path.exists():
             return []
-        try:
-            raw = self._path.read_text()
-            return _TASK_LIST_ADAPTER.validate_json(raw)
-        except (ValueError, OSError):
-            return []
+        raw = self._path.read_text()
+        return _TASK_LIST_ADAPTER.validate_json(raw)
 
     def _prune(self, entries: list[TaskEntry]) -> list[TaskEntry]:
         """Drop entries whose task_dir no longer exists."""
