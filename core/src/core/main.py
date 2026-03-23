@@ -5,7 +5,6 @@ import sys
 import rich_click as click
 
 from core.cli.completions import complete_project_name, complete_project_or_path, complete_worktree_name
-from core.cli.dispatch import execute_dispatch
 from core.cli.launch import execute_launch, is_path_argument, resolve_path_argument
 from core.cli.log import execute_log
 from core.cli.open import execute_open
@@ -18,6 +17,7 @@ from core.cli.project import (
 )
 from core.cli.reflect import execute_reflect
 from core.cli.setup import execute_setup
+from core.cli.task import task
 from core.cli.worktree import (
     clean_project_worktrees,
     list_all_project_worktrees,
@@ -88,20 +88,7 @@ def claude(ctx: click.Context, project: str, label: str | None) -> None:
         _handle_error(e)
 
 
-@basecamp.command()
-@click.option("--name", "-n", default=None, help="Task name (auto-generated if omitted)")
-@click.option("--model", "-m", default="sonnet", help="Model for the worker session (default: sonnet)")
-def dispatch(name: str | None, model: str) -> None:
-    """Dispatch a worker session in a new terminal pane (Kitty or tmux).
-
-    Must be run from within a Claude session inside a terminal multiplexer.
-    If --name is provided and a prompt.md exists in the task directory,
-    the worker receives it as the initial message. Otherwise starts bare.
-    """
-    try:
-        execute_dispatch(name=name, model=model)
-    except LauncherError as e:
-        _handle_error(e)
+basecamp.add_command(task)
 
 
 @basecamp.command("open")
