@@ -106,25 +106,18 @@ class LogseqGraphNotFoundError(LauncherError):
         super().__init__(f"Logseq graph directory not found: {path}")
 
 
-class DispatchError(LauncherError):
-    """Base exception for dispatch-related errors."""
+class TaskError(LauncherError):
+    """Base exception for task-related errors."""
 
 
-class NoMultiplexerError(DispatchError):
-    """Raised when dispatch is called outside any terminal multiplexer."""
-
-    def __init__(self) -> None:
-        super().__init__("dispatch requires a terminal multiplexer ($KITTY_LISTEN_ON or $TMUX not set)")
-
-
-class SessionIdNotSetError(DispatchError):
-    """Raised when CLAUDE_SESSION_ID is not set in the environment."""
+class NoMultiplexerError(TaskError):
+    """Raised when a task dispatch is attempted outside any terminal multiplexer."""
 
     def __init__(self) -> None:
-        super().__init__("CLAUDE_SESSION_ID is not set — dispatch must be run from within a Claude session")
+        super().__init__("task dispatch requires a terminal multiplexer ($KITTY_LISTEN_ON or $TMUX not set)")
 
 
-class PaneLaunchError(DispatchError):
+class PaneLaunchError(TaskError):
     """Raised when spawning a new terminal pane fails."""
 
     def __init__(self, backend: str, stderr: str | None = None) -> None:
@@ -134,15 +127,32 @@ class PaneLaunchError(DispatchError):
         super().__init__(msg)
 
 
-class TasksDirNotSetError(DispatchError):
-    """Raised when BASECAMP_TASKS_DIR is not set in the environment."""
+class TaskNotFoundError(TaskError):
+    """Raised when a task does not exist in the index."""
 
-    def __init__(self) -> None:
-        super().__init__("BASECAMP_TASKS_DIR is not set — dispatch must be run from within a Claude session")
+    def __init__(self, name: str, project: str) -> None:
+        super().__init__(f"Task {name!r} not found for project {project!r}")
 
 
-class InvalidTaskNameError(DispatchError):
+class InvalidTaskNameError(TaskError):
     """Raised when a task name contains unsafe characters."""
 
     def __init__(self, name: str) -> None:
-        super().__init__(f"Invalid task name {name!r} — must contain only alphanumerics, hyphens, underscores, or dots")
+        super().__init__(
+            f"Invalid task name {name!r}"
+            " — must start with an alphanumeric and contain only alphanumerics, hyphens, underscores, or dots"
+        )
+
+
+class SessionIdNotSetError(TaskError):
+    """Raised when CLAUDE_SESSION_ID is not set in the environment."""
+
+    def __init__(self) -> None:
+        super().__init__("CLAUDE_SESSION_ID is not set — task commands must be run from within a Claude session")
+
+
+class ProjectNotSetError(TaskError):
+    """Raised when BASECAMP_PROJECT is not set in the environment."""
+
+    def __init__(self) -> None:
+        super().__init__("BASECAMP_PROJECT is not set — task commands must be run from within a Claude session")
