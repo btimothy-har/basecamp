@@ -25,13 +25,16 @@ The CLI tool. Manages project configuration, assembles system prompts, and launc
 
 Project context (`~/.basecamp/prompts/context/{name}.md`) is NOT assembled into the system prompt. It's injected by the companion SessionStart hook using the `BASECAMP_CONTEXT_FILE` env var.
 
-### Dispatch
+### Task Dispatch
 
-`cli/dispatch.py` — runs from within a Claude session:
-1. Validate multiplexer available + `CLAUDE_SESSION_ID` + `BASECAMP_TASKS_DIR` set
-2. Create `$BASECAMP_TASKS_DIR/{name}/` with `launch.sh` (embeds `--settings` from `BASECAMP_SETTINGS_FILE`)
-3. Forward only `BASECAMP_TASK_DIR` via multiplexer — everything else is in the cached settings file
-4. Wait up to 15s for worker to write `session_id` file (set by companion hook)
+`cli/task.py` + `task/` module — runs from within a Claude session:
+1. `basecamp task create --name X [--model MODEL] [--dispatch]` — reads prompt from stdin (default: sonnet)
+2. Creates task dir in `/tmp/claude-workspace/tasks/{project}/{name}/` with `prompt.md` + `launch.sh`
+3. Writes entry to persistent index at `~/.basecamp/tasks/{project}.json` (file-locked, self-pruning)
+4. If `--dispatch`, spawns terminal pane via tmux/Kitty, forwards `BASECAMP_TASK_DIR` + `BASECAMP_TASK_NAME`
+5. Waits up to 15s for worker to register `session_id` in the task index (via `basecamp task register`)
+6. `basecamp task dispatch --name X` — dispatches a previously staged task
+7. `basecamp task list [--all]` — lists tasks, filtered by current session by default
 
 ### Worktree Lifecycle
 
@@ -52,9 +55,17 @@ The basecamp process is replaced by Claude, not a parent of it. No process to ma
 
 `Settings` wraps `~/.basecamp/config.json` with `fcntl.flock` to prevent corruption from concurrent sessions. Multiple `basecamp claude` invocations and dispatch workers can run simultaneously. The lock is held only during read/write, not for the session lifetime.
 
-### Dispatch generates launcher scripts
+### Task dispatch generates launcher scripts
 
-Dispatch writes a `launch.sh` script rather than passing arguments directly to the multiplexer. This avoids shell quoting issues when forwarding prompts and paths through tmux/Kitty command injection. The script reads prompt files from disk rather than embedding them inline.
+Task creation writes a `launch.sh` script rather than passing arguments directly to the multiplexer. This avoids shell quoting issues when forwarding prompts and paths through tmux/Kitty command injection. The script reads prompt files from disk rather than embedding them inline.
+
+### Task storage is hybrid: persistent index + ephemeral files
+
+Task metadata (including worker session_id) lives in a persistent per-project JSON index (`~/.basecamp/tasks/{project}.json`) — the single source of truth for task state. Runtime files (prompt, launcher script) live in `/tmp/claude-workspace/tasks/` so they auto-clean on reboot. The index self-prunes stale entries (whose task_dir no longer exists) on every read. Workers register their session_id via `basecamp task register` (called by the companion SessionStart hook).
+
+### Task names always include a UUID prefix
+
+Task names follow the format `worker-{6-char-hex}[-custom-name]`. The hex prefix guarantees uniqueness; the optional suffix provides human-readable intent. This eliminates duplicate name conflicts without requiring existence checks.
 
 ### Worktree metadata lives outside git
 
