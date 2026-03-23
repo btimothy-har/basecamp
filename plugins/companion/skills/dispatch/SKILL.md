@@ -27,19 +27,31 @@ Write a **self-contained brief** for the worker using the task above and relevan
 
 ### 2. Derive a task name
 
-Short, kebab-case identifier from the task description. Used as the directory name and pane title.
+Short, kebab-case identifier from the task description. Appended to an auto-generated UUID prefix (e.g., `worker-a3f21b-fix-auth-bug`) which becomes the directory name and pane title.
 
 Examples: `fix-auth-bug`, `add-unit-tests`, `update-docs`
 
-### 3. Write and dispatch
+### 3. Create and dispatch
 
 ```bash
-mkdir -p "$BASECAMP_TASKS_DIR/<task-name>"
-cat > "$BASECAMP_TASKS_DIR/<task-name>/prompt.md" <<'PROMPT'
+basecamp task create --name <task-name> --dispatch <<'PROMPT'
 <prompt content>
 PROMPT
-basecamp dispatch --name <task-name>  # uses sonnet by default
-# or: basecamp dispatch --name <task-name> --model opus
+# or with opus: basecamp task create --name <task-name> --dispatch --model opus <<'PROMPT'
+```
+
+To stage a task without dispatching immediately (dispatch later with `basecamp task dispatch --name <task-name>`):
+
+```bash
+basecamp task create --name <task-name> <<'PROMPT'
+<prompt content>
+PROMPT
+```
+
+### 4. Verify
+
+```bash
+basecamp task list
 ```
 
 ## Model selection

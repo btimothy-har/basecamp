@@ -26,6 +26,8 @@ USER_WORKING_STYLES_DIR = USER_PROMPTS_DIR / "working_styles"
 USER_CONTEXT_DIR = USER_PROMPTS_DIR / "context"
 CACHE_DIR = USER_DIR / ".cached"
 SCRATCH_BASE = Path("/tmp/claude-workspace")
+TASKS_BASE = SCRATCH_BASE / "tasks"
+TASKS_INDEX_DIR = USER_DIR / "tasks"
 OBSERVER_CONFIG = USER_DIR / "observer" / "config.json"
 
 # Claude CLI paths
