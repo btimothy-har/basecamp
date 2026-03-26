@@ -15,6 +15,7 @@ signals plus time decay, then truncated to top-k.
 from __future__ import annotations
 
 import logging
+from datetime import datetime
 from typing import Any
 
 from sqlalchemy import func
@@ -59,11 +60,22 @@ def _get_model() -> Any:
     return _model_cache[0]
 
 
-def _apply_scope_filters(q, *, project_name, worktree, session_id: str | None = None):
-    """Apply project, worktree, and session exclusion filters to a query.
+def _apply_scope_filters(
+    q,
+    *,
+    project_name: str | None,
+    worktree: str | None,
+    session_id: str | None = None,
+    after: datetime | None = None,
+    before: datetime | None = None,
+):
+    """Apply project, worktree, session exclusion, and date range filters.
 
     TranscriptSchema must already be joined by the caller.
     Joins ProjectSchema/WorktreeSchema as needed.
+
+    Date filters use a half-open interval on TranscriptSchema.started_at:
+    ``>= after`` (inclusive) and ``< before`` (exclusive).
     """
     if session_id is not None:
         q = q.filter(TranscriptSchema.session_id != session_id)
@@ -77,6 +89,12 @@ def _apply_scope_filters(q, *, project_name, worktree, session_id: str | None = 
         q = q.join(WorktreeSchema, TranscriptSchema.worktree_id == WorktreeSchema.id).filter(
             WorktreeSchema.label == worktree,
         )
+
+    if after is not None:
+        q = q.filter(TranscriptSchema.started_at >= after)
+
+    if before is not None:
+        q = q.filter(TranscriptSchema.started_at < before)
 
     return q
 
@@ -92,6 +110,8 @@ def _hybrid_retrieve(
     session_id: str | None,
     overfetch: int,
     threshold: float,
+    after: datetime | None = None,
+    before: datetime | None = None,
 ) -> dict[int, dict[str, Any]]:
     """Run KNN and FTS retrieval, merge results by artifact ID.
 
@@ -103,7 +123,13 @@ def _hybrid_retrieve(
     entering the merge — weak hits from one retriever cannot piggyback on
     the other signal to inflate the final score.
     """
-    scope_kw = {"project_name": project_name, "worktree": worktree, "session_id": session_id}
+    scope_kw = {
+        "project_name": project_name,
+        "worktree": worktree,
+        "session_id": session_id,
+        "after": after,
+        "before": before,
+    }
     merged: dict[int, dict[str, Any]] = {}
 
     # --- KNN retrieval (semantic) ---
@@ -178,6 +204,8 @@ def search_artifacts(
     worktree: str | None = None,
     session_id: str | None = None,
     section_types: list[str] | None = None,
+    after: datetime | None = None,
+    before: datetime | None = None,
 ) -> list[dict[str, Any]]:
     """Hybrid search over non-summary extraction sections.
 
@@ -210,6 +238,8 @@ def search_artifacts(
             session_id=session_id,
             overfetch=overfetch,
             threshold=threshold,
+            after=after,
+            before=before,
         )
 
         if not merged:
@@ -245,6 +275,8 @@ def search_transcripts(
     threshold: float = SEARCH_DEFAULT_THRESHOLD,
     worktree: str | None = None,
     session_id: str | None = None,
+    after: datetime | None = None,
+    before: datetime | None = None,
 ) -> list[dict[str, Any]]:
     """Hybrid search over summary extraction sections.
 
@@ -269,6 +301,8 @@ def search_transcripts(
             session_id=session_id,
             overfetch=overfetch,
             threshold=threshold,
+            after=after,
+            before=before,
         )
 
         if not merged:
@@ -319,3 +353,119 @@ def get_session(session_id: str) -> dict[str, Any] | None:
         "ended_at": transcript.ended_at.isoformat() if transcript.ended_at else None,
         "sections": sections,
     }
+
+
+def list_transcripts(
+    project_name: str | None,
+    *,
+    after: datetime | None = None,
+    before: datetime | None = None,
+    top_k: int = SEARCH_DEFAULT_TOP_K,
+) -> list[dict[str, Any]]:
+    """List sessions by date range — no semantic search involved.
+
+    Returns summaries ordered by session start time (newest first).
+    Date filters use a half-open interval on TranscriptSchema.started_at.
+    """
+    db = Database()
+
+    with db.session() as session:
+        q = (
+            session.query(
+                ArtifactSchema,
+                TranscriptSchema.session_id,
+                TranscriptSchema.started_at,
+                TranscriptSchema.ended_at,
+            )
+            .join(TranscriptSchema, ArtifactSchema.transcript_id == TranscriptSchema.id)
+            .filter(ArtifactSchema.section_type == SectionType.SUMMARY)
+        )
+
+        if project_name is not None:
+            q = q.join(ProjectSchema, TranscriptSchema.project_id == ProjectSchema.id).filter(
+                ProjectSchema.name == project_name,
+            )
+
+        if after is not None:
+            q = q.filter(TranscriptSchema.started_at >= after)
+
+        if before is not None:
+            q = q.filter(TranscriptSchema.started_at < before)
+
+        rows = q.order_by(TranscriptSchema.started_at.desc()).limit(top_k).all()
+
+        results: list[dict[str, Any]] = []
+        for artifact, sess_id, started_at, ended_at in rows:
+            title = Artifact.parse_title(artifact.text)
+            result: dict[str, Any] = {
+                "session_id": sess_id,
+                "text": artifact.text,
+                "started_at": started_at.isoformat(),
+                "ended_at": ended_at.isoformat() if ended_at else None,
+            }
+            if title is not None:
+                result["title"] = title
+            results.append(result)
+
+    return results
+
+
+def list_artifacts(
+    project_name: str | None,
+    *,
+    after: datetime | None = None,
+    before: datetime | None = None,
+    session_id: str | None = None,
+    section_types: list[str] | None = None,
+    top_k: int = SEARCH_DEFAULT_TOP_K,
+) -> list[dict[str, Any]]:
+    """List artifacts by date range, session, or type — no semantic search involved.
+
+    Returns artifacts ordered by creation time (newest first).
+    Date filters use a half-open interval on ArtifactSchema.created_at.
+    When *session_id* is provided, results are scoped to that session (inclusion).
+    """
+    db = Database()
+
+    with db.session() as session:
+        q = session.query(
+            ArtifactSchema,
+            TranscriptSchema.session_id,
+            TranscriptSchema.started_at,
+            TranscriptSchema.ended_at,
+        ).join(TranscriptSchema, ArtifactSchema.transcript_id == TranscriptSchema.id)
+
+        if section_types is not None:
+            q = q.filter(ArtifactSchema.section_type.in_(section_types))
+        else:
+            q = q.filter(ArtifactSchema.section_type != SectionType.SUMMARY)
+
+        if project_name is not None:
+            q = q.join(ProjectSchema, TranscriptSchema.project_id == ProjectSchema.id).filter(
+                ProjectSchema.name == project_name,
+            )
+
+        if session_id is not None:
+            q = q.filter(TranscriptSchema.session_id == session_id)
+
+        if after is not None:
+            q = q.filter(ArtifactSchema.created_at >= after)
+
+        if before is not None:
+            q = q.filter(ArtifactSchema.created_at < before)
+
+        rows = q.order_by(ArtifactSchema.created_at.desc()).limit(top_k).all()
+
+        results = [
+            {
+                "session_id": sess_id,
+                "text": artifact.text,
+                "type": artifact.section_type,
+                "created_at": artifact.created_at.isoformat() if artifact.created_at else None,
+                "started_at": started_at.isoformat(),
+                "ended_at": ended_at.isoformat() if ended_at else None,
+            }
+            for artifact, sess_id, started_at, ended_at in rows
+        ]
+
+    return results

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from datetime import UTC, datetime
 from unittest.mock import patch
 
 from click.testing import CliRunner
@@ -42,6 +43,8 @@ class TestSearch:
             top_k=10,
             threshold=0.3,
             session_id="current",
+            after=None,
+            before=None,
         )
 
     def test_artifact_search_calls_search_artifacts(self):
@@ -188,3 +191,163 @@ class TestCLIRouting:
         runner = CliRunner()
         result = runner.invoke(main, ["search"])
         assert result.exit_code != 0
+
+    def test_list_appears_in_help(self):
+        runner = CliRunner()
+        result = runner.invoke(main, [])
+        assert "list" in result.output
+
+
+class TestSearchDateFilters:
+    """Tests for --after/--before on `recall search`."""
+
+    def test_after_forwarded_to_search_transcripts(self):
+        with patch(f"{_ENGINE}.search_transcripts", return_value=[]) as mock_fn:
+            _invoke(
+                ["search", "test query", "--after", "2026-03-01"],
+                env={"BASECAMP_REPO": "my-project"},
+            )
+
+        assert mock_fn.call_args[1]["after"] == datetime(2026, 3, 1, tzinfo=UTC)
+
+    def test_before_forwarded_to_search_transcripts(self):
+        with patch(f"{_ENGINE}.search_transcripts", return_value=[]) as mock_fn:
+            _invoke(
+                ["search", "test query", "--before", "2026-03-15"],
+                env={"BASECAMP_REPO": "my-project"},
+            )
+
+        assert mock_fn.call_args[1]["before"] == datetime(2026, 3, 15, tzinfo=UTC)
+
+    def test_date_range_forwarded_to_search_artifacts(self):
+        with patch(f"{_ENGINE}.search_artifacts", return_value=[]) as mock_fn:
+            _invoke(
+                ["search", "test query", "--type", "knowledge", "--after", "2026-01-01", "--before", "2026-02-01"],
+                env={"BASECAMP_REPO": "my-project"},
+            )
+
+        assert mock_fn.call_args[1]["after"] == datetime(2026, 1, 1, tzinfo=UTC)
+        assert mock_fn.call_args[1]["before"] == datetime(2026, 2, 1, tzinfo=UTC)
+
+    def test_iso_datetime_parsed(self):
+        with patch(f"{_ENGINE}.search_transcripts", return_value=[]) as mock_fn:
+            _invoke(
+                ["search", "test query", "--after", "2026-03-01T14:30:00"],
+                env={"BASECAMP_REPO": "my-project"},
+            )
+
+        assert mock_fn.call_args[1]["after"] == datetime(2026, 3, 1, 14, 30, tzinfo=UTC)
+
+    def test_invalid_date_returns_error(self):
+        runner = CliRunner(env={"BASECAMP_REPO": "my-project"})
+        result = runner.invoke(main, ["search", "test query", "--after", "not-a-date"])
+
+        assert result.exit_code != 0
+        assert "Invalid date" in result.output
+
+    def test_no_dates_passes_none(self):
+        with patch(f"{_ENGINE}.search_transcripts", return_value=[]) as mock_fn:
+            _invoke(
+                ["search", "test query"],
+                env={"BASECAMP_REPO": "my-project"},
+            )
+
+        assert mock_fn.call_args[1]["after"] is None
+        assert mock_fn.call_args[1]["before"] is None
+
+
+class TestList:
+    """Tests for `recall list`."""
+
+    def test_no_type_calls_list_transcripts(self):
+        mock_results = [{"session_id": "s1", "text": "summary", "started_at": "2026-03-01T00:00:00"}]
+
+        with patch(f"{_ENGINE}.list_transcripts", return_value=mock_results) as mock_fn:
+            output, code = _invoke(
+                ["list"],
+                env={"BASECAMP_REPO": "my-project"},
+            )
+
+        assert code == 0
+        assert output["count"] == 1
+        mock_fn.assert_called_once_with(
+            "my-project",
+            after=None,
+            before=None,
+            top_k=10,
+        )
+
+    def test_type_calls_list_artifacts(self):
+        mock_results = [{"session_id": "s1", "text": "fact", "type": "knowledge"}]
+
+        with patch(f"{_ENGINE}.list_artifacts", return_value=mock_results) as mock_fn:
+            output, code = _invoke(
+                ["list", "--type", "knowledge"],
+                env={"BASECAMP_REPO": "my-project"},
+            )
+
+        assert code == 0
+        assert output["count"] == 1
+        assert mock_fn.call_args[1]["section_types"] == ["knowledge"]
+
+    def test_session_calls_list_artifacts(self):
+        with patch(f"{_ENGINE}.list_artifacts", return_value=[]) as mock_fn:
+            _invoke(
+                ["list", "--session", "sess-123"],
+                env={"BASECAMP_REPO": "my-project"},
+            )
+
+        assert mock_fn.call_args[1]["session_id"] == "sess-123"
+
+    def test_after_and_before_forwarded(self):
+        with patch(f"{_ENGINE}.list_transcripts", return_value=[]) as mock_fn:
+            _invoke(
+                ["list", "--after", "2026-03-01", "--before", "2026-03-15"],
+                env={"BASECAMP_REPO": "my-project"},
+            )
+
+        assert mock_fn.call_args[1]["after"] == datetime(2026, 3, 1, tzinfo=UTC)
+        assert mock_fn.call_args[1]["before"] == datetime(2026, 3, 15, tzinfo=UTC)
+
+    def test_cross_project_passes_none(self):
+        with patch(f"{_ENGINE}.list_transcripts", return_value=[]) as mock_fn:
+            _invoke(
+                ["list", "--cross-project"],
+                env={"BASECAMP_REPO": "my-project"},
+            )
+
+        assert mock_fn.call_args[0][0] is None
+
+    def test_no_basecamp_repo_errors(self):
+        output, code = _invoke(["list"])
+
+        assert code == 1
+        assert "BASECAMP_REPO" in output["error"]
+
+    def test_invalid_type_returns_error(self):
+        output, code = _invoke(
+            ["list", "--type", "bogus"],
+            env={"BASECAMP_REPO": "my-project"},
+        )
+
+        assert code == 1
+        assert "bogus" in output["error"]
+
+    def test_custom_top_k(self):
+        with patch(f"{_ENGINE}.list_transcripts", return_value=[]) as mock_fn:
+            _invoke(
+                ["list", "--top-k", "5"],
+                env={"BASECAMP_REPO": "my-project"},
+            )
+
+        assert mock_fn.call_args[1]["top_k"] == 5
+
+    def test_engine_exception_returns_json_error(self):
+        with patch(f"{_ENGINE}.list_transcripts", side_effect=RuntimeError("db down")):
+            output, code = _invoke(
+                ["list"],
+                env={"BASECAMP_REPO": "my-project"},
+            )
+
+        assert code == 1
+        assert "List failed" in output["error"]
