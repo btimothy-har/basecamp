@@ -12,11 +12,18 @@ import json
 import os
 
 from observer.constants import (
+    BASECAMP_DIR,
     DEFAULT_OBSERVER_MODEL,
     OBSERVER_DIR,
 )
 
 CONFIG_FILE = OBSERVER_DIR / "config.json"
+_CORE_CONFIG = BASECAMP_DIR / "config.json"
+
+_EXTENDED_CONTEXT_MODELS: dict[str, str] = {
+    "sonnet": "sonnet[1m]",
+    "opus": "opus[1m]",
+}
 
 
 def _read() -> dict[str, str]:
@@ -64,9 +71,26 @@ def set_db_source(source: str) -> None:
     _write(data)
 
 
+def _use_extended_context() -> bool:
+    """Check if extended context is enabled in core config."""
+    try:
+        data = json.loads(_CORE_CONFIG.read_text())
+        return bool(data.get("use_extended_context"))
+    except (json.JSONDecodeError, OSError):
+        return False
+
+
+def resolve_model(model: str) -> str:
+    """Apply extended context suffix when enabled in core settings."""
+    if _use_extended_context():
+        return _EXTENDED_CONTEXT_MODELS.get(model, model)
+    return model
+
+
 def get_extraction_model() -> str:
     """Return the configured extraction model, falling back to the default."""
-    return _read().get("extraction_model") or DEFAULT_OBSERVER_MODEL
+    model = _read().get("extraction_model") or DEFAULT_OBSERVER_MODEL
+    return resolve_model(model)
 
 
 def set_extraction_model(model: str) -> None:
@@ -78,7 +102,8 @@ def set_extraction_model(model: str) -> None:
 
 def get_summary_model() -> str:
     """Return the configured summary model, falling back to the default."""
-    return _read().get("summary_model") or DEFAULT_OBSERVER_MODEL
+    model = _read().get("summary_model") or DEFAULT_OBSERVER_MODEL
+    return resolve_model(model)
 
 
 def set_summary_model(model: str) -> None:

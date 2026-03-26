@@ -20,6 +20,7 @@ from core.exceptions import (
     TaskError,
     TaskNotFoundError,
 )
+from core.settings import resolve_model
 from core.task.index import TaskIndex
 from core.task.models import TaskEntry
 from core.terminal import resolve_dispatch_backend
@@ -163,11 +164,13 @@ def create_task(
         prompt_file.write_text(prompt)
         prompt_file.chmod(0o600)
 
+    resolved = resolve_model(model)
+
     config = _resolve_launch_config()
     launcher = task_dir / "launch.sh"
     launcher.write_text(
         _build_launcher_script(
-            model=model,
+            model=resolved,
             system_prompt_file=config.system_prompt_file,
             settings_file=config.settings_file,
             prompt_file=str(prompt_file) if prompt else None,
@@ -181,7 +184,7 @@ def create_task(
         project=project,
         task_dir=str(task_dir),
         parent_session_id=session_id,
-        model=model,
+        model=resolved,
     )
     index.add(entry)
 

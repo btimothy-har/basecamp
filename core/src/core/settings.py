@@ -18,6 +18,11 @@ from core.utils import atomic_write_json
 
 _DEFAULT_PATH = Path.home() / ".basecamp" / "config.json"
 
+_EXTENDED_CONTEXT_MODELS: dict[str, str] = {
+    "sonnet": "sonnet[1m]",
+    "opus": "opus[1m]",
+}
+
 
 class Settings:
     """File-backed configuration with locked read-modify-write operations.
@@ -95,6 +100,15 @@ class Settings:
             data["logseq_graph"] = value
 
     @property
+    def use_extended_context(self) -> bool:
+        return bool(self._read().get("use_extended_context"))
+
+    @use_extended_context.setter
+    def use_extended_context(self, value: bool) -> None:
+        with self._locked_update() as data:
+            data["use_extended_context"] = value
+
+    @property
     def timezone(self) -> str | None:
         val = self._read().get("timezone")
         return val if isinstance(val, str) and val.strip() else None
@@ -109,3 +123,14 @@ class Settings:
 
 
 settings = Settings()
+
+
+def resolve_model(model: str) -> str:
+    """Apply extended context suffix when enabled in settings.
+
+    Maps base model names to their extended context variants:
+    sonnet → sonnet[1m], opus → opus[1m].
+    """
+    if settings.use_extended_context:
+        return _EXTENDED_CONTEXT_MODELS.get(model, model)
+    return model

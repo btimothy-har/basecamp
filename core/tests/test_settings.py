@@ -4,9 +4,10 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from unittest.mock import patch
 
 import pytest
-from core.settings import Settings
+from core.settings import Settings, resolve_model
 
 
 @pytest.fixture
@@ -104,6 +105,30 @@ class TestProperties:
         assert data["install_dir"] == "/tmp/ws"
         assert data["logseq_graph"] == "Documents/brain"
         assert data["timezone"] == "America/Toronto"
+
+
+class TestExtendedContext:
+    """use_extended_context property and resolve_model."""
+
+    def test_default_is_false(self, cfg: Settings) -> None:
+        assert cfg.use_extended_context is False
+
+    def test_set_and_get(self, cfg: Settings) -> None:
+        cfg.use_extended_context = True
+        assert cfg.use_extended_context is True
+
+    def test_resolve_model_when_disabled(self, cfg: Settings) -> None:
+        with patch("core.settings.settings", cfg):
+            assert resolve_model("sonnet") == "sonnet"
+            assert resolve_model("opus") == "opus"
+            assert resolve_model("haiku") == "haiku"
+
+    def test_resolve_model_when_enabled(self, cfg: Settings) -> None:
+        cfg.use_extended_context = True
+        with patch("core.settings.settings", cfg):
+            assert resolve_model("sonnet") == "sonnet[1m]"
+            assert resolve_model("opus") == "opus[1m]"
+            assert resolve_model("haiku") == "haiku"
 
 
 class TestLocking:
