@@ -101,7 +101,8 @@ class Settings:
 
     @property
     def use_extended_context(self) -> bool:
-        return bool(self._read().get("use_extended_context"))
+        val = self._read().get("use_extended_context")
+        return val if isinstance(val, bool) else False
 
     @use_extended_context.setter
     def use_extended_context(self, value: bool) -> None:
