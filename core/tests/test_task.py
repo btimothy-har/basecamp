@@ -225,11 +225,28 @@ class TestCreateTask:
             patch.dict("os.environ", task_env, clear=True),
             patch("core.task.operations.TASKS_BASE", tasks_base),
             patch("core.task.index.TASKS_INDEX_DIR", index_dir),
+            patch("core.task.operations.resolve_model", side_effect=lambda m: m),
         ):
             entry = create_task(name="t", model="opus")
 
         script = (Path(entry.task_dir) / "launch.sh").read_text()
         assert "--model opus" in script
+
+    def test_launcher_resolves_extended_context(self, task_env: dict, tmp_path: Path) -> None:
+        tasks_base = tmp_path / "tasks"
+        index_dir = tmp_path / "index"
+
+        with (
+            patch.dict("os.environ", task_env, clear=True),
+            patch("core.task.operations.TASKS_BASE", tasks_base),
+            patch("core.task.index.TASKS_INDEX_DIR", index_dir),
+            patch("core.task.operations.resolve_model", return_value="opus[1m]"),
+        ):
+            entry = create_task(name="ext", model="opus")
+
+        script = (Path(entry.task_dir) / "launch.sh").read_text()
+        assert "--model 'opus[1m]'" in script
+        assert entry.model == "opus[1m]"
 
     def test_launcher_with_system_prompt(self, task_env: dict, tmp_path: Path) -> None:
         tasks_base = tmp_path / "tasks"
