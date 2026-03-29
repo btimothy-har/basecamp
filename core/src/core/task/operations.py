@@ -11,7 +11,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import NamedTuple
 
-from core.constants import CLAUDE_COMMAND, SCRIPT_DIR, TASKS_BASE
+from core.constants import CLAUDE_COMMAND, INBOX_BASE, SCRIPT_DIR, TASKS_BASE
 from core.exceptions import (
     InvalidTaskNameError,
     NoMultiplexerError,
@@ -247,6 +247,7 @@ def _spawn_task(entry: TaskEntry, index: TaskIndex) -> bool:
     pane_env = {k: v for k, v in os.environ.items() if k.startswith("BASECAMP_")}
     pane_env["BASECAMP_TASK_DIR"] = str(task_dir)
     pane_env["BASECAMP_TASK_NAME"] = entry.name
+    pane_env["BASECAMP_INBOX_DIR"] = str(INBOX_BASE / entry.session_id)
     backend.spawn_pane(
         launcher,
         env=pane_env,
@@ -256,6 +257,7 @@ def _spawn_task(entry: TaskEntry, index: TaskIndex) -> bool:
 
     if not resumed:
         index.update(entry.name, status=TaskStatus.DISPATCHED)
+        entry.status = TaskStatus.DISPATCHED  # sync in-memory state
 
     return resumed
 

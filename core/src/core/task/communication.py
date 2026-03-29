@@ -1,11 +1,13 @@
-"""Inter-agent communication via Claude CLI session management."""
+"""Inter-agent communication: ask (fork) and send (inbox)."""
 
 from __future__ import annotations
 
 import os
 import subprocess
+import time
+from pathlib import Path
 
-from core.constants import CLAUDE_COMMAND
+from core.constants import CLAUDE_COMMAND, INBOX_BASE
 from core.exceptions import NotAWorkerError, ProjectNotSetError, TaskCommunicationError, TaskNotFoundError
 from core.task.index import TaskIndex
 
@@ -39,28 +41,26 @@ def _resolve_target_session(name: str) -> str:
     return entry.session_id
 
 
-def send_message(*, name: str, message: str, direct: bool = False) -> str:
-    """Send a message to a target session and return the response.
+def ask_task(*, name: str, message: str) -> str:
+    """Fork a target session's context and return a response.
+
+    Non-disruptive — the target session is unmodified. Uses claude CLI
+    with --fork-session --no-session-persistence.
 
     Args:
         name: Target task name or "parent" keyword.
-        message: The message/question to send.
-        direct: If True, inject into target's thread (resume mode).
-                If False (default), fork target's context (non-disruptive).
+        message: The question to ask.
 
     Returns:
-        The text response from the target session.
+        The text response grounded in the target's conversation context.
     """
     session_id = _resolve_target_session(name)
-
-    if direct:
-        cmd = [CLAUDE_COMMAND, "-p", "--resume", session_id, message]
-    else:
-        cmd = [CLAUDE_COMMAND, "-p", "-r", session_id, "--fork-session", "--no-session-persistence", message]
+    cmd = [CLAUDE_COMMAND, "-p", "-r", session_id, "--fork-session", "--no-session-persistence", message]
 
     result = subprocess.run(
         cmd,
-        check=False, capture_output=True,
+        check=False,
+        capture_output=True,
         text=True,
         timeout=120,
     )
@@ -69,3 +69,33 @@ def send_message(*, name: str, message: str, direct: bool = False) -> str:
         raise TaskCommunicationError(result.returncode, result.stderr.strip())
 
     return result.stdout.strip()
+
+
+def send_to_task(*, name: str, message: str, immediate: bool = False) -> Path:
+    """Deliver a message to a target session's inbox.
+
+    Fire-and-forget — writes a file to the target's inbox directory.
+    Delivery happens via hook on the target session:
+    - Normal (.msg): delivered at next Stop event (turn boundary)
+    - Immediate (.immediate): delivered at next PostToolUse event
+
+    Args:
+        name: Target task name or "parent" keyword.
+        message: The message to deliver.
+        immediate: If True, use .immediate extension for urgent delivery.
+
+    Returns:
+        Path to the written message file.
+    """
+    session_id = _resolve_target_session(name)
+    inbox_dir = INBOX_BASE / session_id
+    inbox_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
+
+    ext = "immediate" if immediate else "msg"
+    filename = f"{time.time_ns()}.{ext}"
+    msg_path = inbox_dir / filename
+
+    msg_path.write_text(message)
+    msg_path.chmod(0o600)
+
+    return msg_path

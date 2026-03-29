@@ -19,7 +19,7 @@ from core.exceptions import (
     TaskError,
     TaskNotFoundError,
 )
-from core.task.communication import send_message
+from core.task.communication import ask_task, send_to_task
 from core.task.index import TaskIndex
 from core.task.models import TaskEntry, TaskStatus
 from core.task.operations import close_task, create_task, dispatch_task, list_tasks
@@ -373,6 +373,22 @@ class TestCreateTask:
             create_task(name="dispatched", prompt="Go", dispatch=True)
 
         mock_run.assert_called()
+
+    def test_dispatch_flag_sets_status(self, task_env: dict, tmp_path: Path) -> None:
+        """create_task with dispatch=True returns entry with DISPATCHED status."""
+        tasks_base = tmp_path / "tasks"
+        index_dir = tmp_path / "index"
+        mock_run = _mock_subprocess_run()
+
+        with (
+            patch.dict("os.environ", task_env, clear=True),
+            patch("core.task.operations.TASKS_BASE", tasks_base),
+            patch("core.task.index.TASKS_INDEX_DIR", index_dir),
+            patch("core.terminal.subprocess.run", mock_run),
+        ):
+            entry = create_task(name="dispatched", prompt="Go", dispatch=True)
+
+        assert entry.status == TaskStatus.DISPATCHED
 
 
 class TestCreateTaskValidation:
@@ -789,7 +805,7 @@ class TestTaskCLI:
 
         assert result.exit_code == 1
 
-    def test_send_cli(self, task_env: dict, tmp_path: Path) -> None:
+    def test_ask_cli(self, task_env: dict, tmp_path: Path) -> None:
         tasks_base = tmp_path / "tasks"
         index_dir = tmp_path / "index"
 
@@ -803,10 +819,56 @@ class TestTaskCLI:
             mock_run = MagicMock()
             mock_run.return_value = sp.CompletedProcess(args=[], returncode=0, stdout="response text", stderr="")
             with patch("core.task.communication.subprocess.run", mock_run):
-                result = CliRunner().invoke(task_group, ["send", "-n", entry.name, "what's up?"])
+                result = CliRunner().invoke(task_group, ["ask", "-n", entry.name, "what's up?"])
 
         assert result.exit_code == 0
         assert "response text" in result.output
+
+    def test_ask_error_exits_nonzero(self, task_env: dict, tmp_path: Path) -> None:
+        index_dir = tmp_path / "index"
+
+        with (
+            patch.dict("os.environ", task_env, clear=True),
+            patch("core.task.index.TASKS_INDEX_DIR", index_dir),
+        ):
+            result = CliRunner().invoke(task_group, ["ask", "-n", "nonexistent", "hello"])
+
+        assert result.exit_code == 1
+
+    def test_send_cli(self, task_env: dict, tmp_path: Path) -> None:
+        tasks_base = tmp_path / "tasks"
+        index_dir = tmp_path / "index"
+        inbox_base = tmp_path / "inbox"
+
+        with (
+            patch.dict("os.environ", task_env, clear=True),
+            patch("core.task.operations.TASKS_BASE", tasks_base),
+            patch("core.task.index.TASKS_INDEX_DIR", index_dir),
+            patch("core.task.communication.INBOX_BASE", inbox_base),
+        ):
+            entry = create_task(name="cli-target", prompt="Work")
+            result = CliRunner().invoke(task_group, ["send", "-n", entry.name, "heads up"])
+
+        assert result.exit_code == 0
+        assert "Sent" in result.output
+        assert "normal" in result.output
+
+    def test_send_immediate_cli(self, task_env: dict, tmp_path: Path) -> None:
+        tasks_base = tmp_path / "tasks"
+        index_dir = tmp_path / "index"
+        inbox_base = tmp_path / "inbox"
+
+        with (
+            patch.dict("os.environ", task_env, clear=True),
+            patch("core.task.operations.TASKS_BASE", tasks_base),
+            patch("core.task.index.TASKS_INDEX_DIR", index_dir),
+            patch("core.task.communication.INBOX_BASE", inbox_base),
+        ):
+            entry = create_task(name="cli-target", prompt="Work")
+            result = CliRunner().invoke(task_group, ["send", "-n", entry.name, "--immediate", "urgent"])
+
+        assert result.exit_code == 0
+        assert "immediate" in result.output
 
     def test_send_error_exits_nonzero(self, task_env: dict, tmp_path: Path) -> None:
         index_dir = tmp_path / "index"
@@ -820,14 +882,13 @@ class TestTaskCLI:
         assert result.exit_code == 1
 
 
-# -- Send message tests ------------------------------------------------------
+# -- Ask task tests ----------------------------------------------------------
 
 
-class TestSendMessage:
-    """Tests for inter-agent communication."""
+class TestAskTask:
+    """Tests for ask_task (fork-based synchronous query)."""
 
-    def test_send_fork_mode(self, task_env: dict, tmp_path: Path) -> None:
-        """Default mode uses --fork-session."""
+    def test_ask_uses_fork_session(self, task_env: dict, tmp_path: Path) -> None:
         tasks_base = tmp_path / "tasks"
         index_dir = tmp_path / "index"
 
@@ -841,7 +902,7 @@ class TestSendMessage:
             mock_run = MagicMock()
             mock_run.return_value = sp.CompletedProcess(args=[], returncode=0, stdout="I'm 50% done", stderr="")
             with patch("core.task.communication.subprocess.run", mock_run):
-                result = send_message(name=entry.name, message="what's your status?")
+                result = ask_task(name=entry.name, message="what's your status?")
 
         assert result == "I'm 50% done"
         cmd = mock_run.call_args[0][0]
@@ -849,30 +910,7 @@ class TestSendMessage:
         assert "--no-session-persistence" in cmd
         assert entry.session_id in cmd
 
-    def test_send_direct_mode(self, task_env: dict, tmp_path: Path) -> None:
-        """--direct uses --resume."""
-        tasks_base = tmp_path / "tasks"
-        index_dir = tmp_path / "index"
-
-        with (
-            patch.dict("os.environ", task_env, clear=True),
-            patch("core.task.operations.TASKS_BASE", tasks_base),
-            patch("core.task.index.TASKS_INDEX_DIR", index_dir),
-        ):
-            entry = create_task(name="target", prompt="Do work")
-
-            mock_run = MagicMock()
-            mock_run.return_value = sp.CompletedProcess(args=[], returncode=0, stdout="OK, pivoting", stderr="")
-            with patch("core.task.communication.subprocess.run", mock_run):
-                result = send_message(name=entry.name, message="pivot to X", direct=True)
-
-        assert result == "OK, pivoting"
-        cmd = mock_run.call_args[0][0]
-        assert "--resume" in cmd
-        assert "--fork-session" not in cmd
-
-    def test_send_to_parent(self, task_env: dict, tmp_path: Path) -> None:
-        """--name parent resolves parent_session_id."""
+    def test_ask_parent(self, task_env: dict, tmp_path: Path) -> None:
         tasks_base = tmp_path / "tasks"
         index_dir = tmp_path / "index"
 
@@ -890,15 +928,13 @@ class TestSendMessage:
                 patch.dict("os.environ", worker_env, clear=True),
                 patch("core.task.communication.subprocess.run", mock_run),
             ):
-                result = send_message(name="parent", message="which approach?")
+                result = ask_task(name="parent", message="which approach?")
 
         assert result == "Use approach B"
         cmd = mock_run.call_args[0][0]
-        # Should target the parent session ID, not the worker's
         assert task_env["CLAUDE_SESSION_ID"] in cmd
 
-    def test_send_parent_requires_task_name(self, task_env: dict, tmp_path: Path) -> None:
-        """--name parent fails outside worker sessions."""
+    def test_ask_parent_requires_task_name(self, task_env: dict, tmp_path: Path) -> None:
         index_dir = tmp_path / "index"
         env = {k: v for k, v in task_env.items() if k != "BASECAMP_TASK_NAME"}
 
@@ -907,10 +943,9 @@ class TestSendMessage:
             patch("core.task.index.TASKS_INDEX_DIR", index_dir),
         ):
             with pytest.raises(NotAWorkerError):
-                send_message(name="parent", message="hello")
+                ask_task(name="parent", message="hello")
 
-    def test_send_nonexistent_task_raises(self, task_env: dict, tmp_path: Path) -> None:
-        """Unknown task name raises TaskNotFoundError."""
+    def test_ask_nonexistent_task_raises(self, task_env: dict, tmp_path: Path) -> None:
         index_dir = tmp_path / "index"
 
         with (
@@ -918,10 +953,9 @@ class TestSendMessage:
             patch("core.task.index.TASKS_INDEX_DIR", index_dir),
         ):
             with pytest.raises(TaskNotFoundError):
-                send_message(name="nonexistent-task", message="hello")
+                ask_task(name="nonexistent-task", message="hello")
 
-    def test_send_subprocess_failure_raises(self, task_env: dict, tmp_path: Path) -> None:
-        """Claude CLI failure raises TaskCommunicationError."""
+    def test_ask_subprocess_failure_raises(self, task_env: dict, tmp_path: Path) -> None:
         tasks_base = tmp_path / "tasks"
         index_dir = tmp_path / "index"
 
@@ -936,4 +970,89 @@ class TestSendMessage:
             mock_run.return_value = sp.CompletedProcess(args=[], returncode=1, stdout="", stderr="session not found")
             with patch("core.task.communication.subprocess.run", mock_run):
                 with pytest.raises(TaskCommunicationError, match="Communication failed"):
-                    send_message(name=entry.name, message="hello")
+                    ask_task(name=entry.name, message="hello")
+
+
+# -- Send to task tests ------------------------------------------------------
+
+
+class TestSendToTask:
+    """Tests for send_to_task (inbox file delivery)."""
+
+    def test_send_writes_msg_file(self, task_env: dict, tmp_path: Path) -> None:
+        tasks_base = tmp_path / "tasks"
+        index_dir = tmp_path / "index"
+        inbox_base = tmp_path / "inbox"
+
+        with (
+            patch.dict("os.environ", task_env, clear=True),
+            patch("core.task.operations.TASKS_BASE", tasks_base),
+            patch("core.task.index.TASKS_INDEX_DIR", index_dir),
+            patch("core.task.communication.INBOX_BASE", inbox_base),
+        ):
+            entry = create_task(name="target", prompt="Do work")
+            msg_path = send_to_task(name=entry.name, message="status update")
+
+        assert msg_path.exists()
+        assert msg_path.suffix == ".msg"
+        assert msg_path.read_text() == "status update"
+        assert msg_path.parent == inbox_base / entry.session_id
+
+    def test_send_immediate_writes_immediate_file(self, task_env: dict, tmp_path: Path) -> None:
+        tasks_base = tmp_path / "tasks"
+        index_dir = tmp_path / "index"
+        inbox_base = tmp_path / "inbox"
+
+        with (
+            patch.dict("os.environ", task_env, clear=True),
+            patch("core.task.operations.TASKS_BASE", tasks_base),
+            patch("core.task.index.TASKS_INDEX_DIR", index_dir),
+            patch("core.task.communication.INBOX_BASE", inbox_base),
+        ):
+            entry = create_task(name="target", prompt="Do work")
+            msg_path = send_to_task(name=entry.name, message="urgent!", immediate=True)
+
+        assert msg_path.exists()
+        assert msg_path.suffix == ".immediate"
+        assert msg_path.read_text() == "urgent!"
+
+    def test_send_to_parent(self, task_env: dict, tmp_path: Path) -> None:
+        tasks_base = tmp_path / "tasks"
+        index_dir = tmp_path / "index"
+        inbox_base = tmp_path / "inbox"
+
+        with (
+            patch.dict("os.environ", task_env, clear=True),
+            patch("core.task.operations.TASKS_BASE", tasks_base),
+            patch("core.task.index.TASKS_INDEX_DIR", index_dir),
+            patch("core.task.communication.INBOX_BASE", inbox_base),
+        ):
+            entry = create_task(name="worker", prompt="Do work")
+
+            worker_env = {**task_env, "BASECAMP_TASK_NAME": entry.name}
+            with patch.dict("os.environ", worker_env, clear=True):
+                msg_path = send_to_task(name="parent", message="done!")
+
+        assert msg_path.exists()
+        assert msg_path.parent == inbox_base / task_env["CLAUDE_SESSION_ID"]
+
+    def test_send_parent_requires_task_name(self, task_env: dict, tmp_path: Path) -> None:
+        index_dir = tmp_path / "index"
+        env = {k: v for k, v in task_env.items() if k != "BASECAMP_TASK_NAME"}
+
+        with (
+            patch.dict("os.environ", env, clear=True),
+            patch("core.task.index.TASKS_INDEX_DIR", index_dir),
+        ):
+            with pytest.raises(NotAWorkerError):
+                send_to_task(name="parent", message="hello")
+
+    def test_send_nonexistent_task_raises(self, task_env: dict, tmp_path: Path) -> None:
+        index_dir = tmp_path / "index"
+
+        with (
+            patch.dict("os.environ", task_env, clear=True),
+            patch("core.task.index.TASKS_INDEX_DIR", index_dir),
+        ):
+            with pytest.raises(TaskNotFoundError):
+                send_to_task(name="nonexistent-task", message="hello")

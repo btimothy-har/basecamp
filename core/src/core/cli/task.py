@@ -5,7 +5,7 @@ import sys
 import rich_click as click
 
 from core.exceptions import LauncherError
-from core.task.communication import send_message
+from core.task.communication import ask_task, send_to_task
 from core.task.operations import close_task, create_task, dispatch_task, list_tasks
 from core.ui import console, err_console
 
@@ -98,20 +98,40 @@ def list_cmd(show_all: bool) -> None:  # noqa: FBT001
         _handle_error(e)
 
 
+@task.command("ask")
+@click.option("--name", "-n", required=True, help="Target task name or 'parent'")
+@click.argument("message")
+def ask_cmd(name: str, message: str) -> None:
+    """Ask a question using a target session's context.
+
+    Forks the target's conversation history and returns a response.
+    The target session is not modified.
+
+    Use --name parent from a worker to query the orchestrator.
+    """
+    try:
+        response = ask_task(name=name, message=message)
+        console.print(response)
+    except LauncherError as e:
+        _handle_error(e)
+
+
 @task.command("send")
 @click.option("--name", "-n", required=True, help="Target task name or 'parent'")
-@click.option("--direct", is_flag=True, help="Inject message into target's thread (disruptive)")
+@click.option("--immediate", is_flag=True, help="Deliver at next tool call instead of next turn boundary")
 @click.argument("message")
-def send_cmd(name: str, direct: bool, message: str) -> None:  # noqa: FBT001
-    """Send a message to a task session.
+def send_cmd(name: str, immediate: bool, message: str) -> None:  # noqa: FBT001
+    """Send a message to a task session's inbox.
 
-    By default, reads the target's context without modifying their session
-    (fork mode). Use --direct to inject the message into their thread.
+    Message is delivered by a hook on the target session. By default,
+    delivered at the next turn boundary (Stop event). Use --immediate
+    for delivery at the next tool call.
 
     Use --name parent from a worker to message the orchestrator.
     """
     try:
-        response = send_message(name=name, message=message, direct=direct)
-        console.print(response)
+        send_to_task(name=name, message=message, immediate=immediate)
+        priority = "immediate" if immediate else "normal"
+        console.print(f"[bold green]Sent[/bold green] ({priority}) → [cyan]{name}[/cyan]")
     except LauncherError as e:
         _handle_error(e)

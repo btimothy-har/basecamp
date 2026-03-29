@@ -19,4 +19,5 @@ fi
 # Persist for Bash tool access
 if [ -n "$CLAUDE_ENV_FILE" ]; then
   printf 'export CLAUDE_SESSION_ID=%s\n' "'$SESSION_ID'" >> "$CLAUDE_ENV_FILE"
+  printf 'export BASECAMP_INBOX_DIR=/tmp/claude-workspace/inbox/%s\n' "$SESSION_ID" >> "$CLAUDE_ENV_FILE"
 fi
