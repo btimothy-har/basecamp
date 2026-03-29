@@ -20,6 +20,11 @@ def task() -> None:
     """Manage dispatch tasks."""
 
 
+def main() -> None:
+    """Standalone entry point for the task CLI."""
+    task()
+
+
 @task.command()
 @click.option("--name", "-n", default=None, help="Task name suffix (auto-generated if omitted)")
 @click.option("--model", "-m", default="sonnet", help="Model for the worker session (default: sonnet)")
@@ -40,9 +45,7 @@ def create(name: str | None, model: str, do_dispatch: bool) -> None:  # noqa: FB
 
         entry = create_task(name=name, prompt=prompt, model=model, dispatch=do_dispatch)
 
-        console.print(
-            f"[bold green]Created[/bold green] task [cyan]{entry.name}[/cyan] ({entry.status.value})"
-        )
+        console.print(f"[bold green]Created[/bold green] task [cyan]{entry.name}[/cyan] ({entry.status.value})")
         console.print(f"  [dim]Task dir:[/dim] {entry.task_dir}")
         console.print(f"  [dim]Session:[/dim] {entry.session_id}")
     except LauncherError as e:
