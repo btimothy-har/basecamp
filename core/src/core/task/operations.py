@@ -1,4 +1,4 @@
-"""Task lifecycle operations: create, dispatch, register, list."""
+"""Task lifecycle operations: create, dispatch, close, list."""
 
 from __future__ import annotations
 
@@ -6,8 +6,8 @@ import os
 import re
 import shlex
 import stat
-import time
 import uuid
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import NamedTuple
 
@@ -22,7 +22,7 @@ from core.exceptions import (
 )
 from core.settings import resolve_model
 from core.task.index import TaskIndex
-from core.task.models import TaskEntry
+from core.task.models import TaskEntry, TaskStatus
 from core.terminal import resolve_dispatch_backend
 
 _SAFE_NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
@@ -79,6 +79,7 @@ def _build_resume_script(
 def _build_launcher_script(
     *,
     model: str,
+    session_id: str,
     system_prompt_file: str | None,
     settings_file: str | None,
     prompt_file: str | None,
@@ -90,7 +91,7 @@ def _build_launcher_script(
     terminal multiplexers. Files are read via $(cat ...) within the script's
     own shell context.
     """
-    parts = [CLAUDE_COMMAND, "--model", shlex.quote(model)]
+    parts = [CLAUDE_COMMAND, "--model", shlex.quote(model), "--session-id", shlex.quote(session_id)]
 
     if system_prompt_file:
         parts.extend(["--system-prompt", f'"$(cat {shlex.quote(system_prompt_file)})"'])
@@ -165,12 +166,14 @@ def create_task(
         prompt_file.chmod(0o600)
 
     resolved = resolve_model(model)
+    worker_session_id = str(uuid.uuid4())
 
     config = _resolve_launch_config()
     launcher = task_dir / "launch.sh"
     launcher.write_text(
         _build_launcher_script(
             model=resolved,
+            session_id=worker_session_id,
             system_prompt_file=config.system_prompt_file,
             settings_file=config.settings_file,
             prompt_file=str(prompt_file) if prompt else None,
@@ -183,6 +186,7 @@ def create_task(
         name=name,
         project=project,
         task_dir=str(task_dir),
+        session_id=worker_session_id,
         parent_session_id=session_id,
         model=resolved,
     )
@@ -215,8 +219,8 @@ def dispatch_task(*, name: str) -> tuple[TaskEntry, bool]:
 def _spawn_task(entry: TaskEntry, index: TaskIndex) -> bool:
     """Spawn a terminal pane for a task and update its status.
 
-    If the task already has a worker_session_id, the existing session is
-    resumed via ``claude --resume`` instead of starting a fresh one.
+    If the task is already dispatched, the existing session is resumed via
+    ``claude --resume`` instead of starting a fresh one.
 
     Returns:
         True if an existing session was resumed, False if a new session was spawned.
@@ -227,19 +231,19 @@ def _spawn_task(entry: TaskEntry, index: TaskIndex) -> bool:
 
     task_dir = Path(entry.task_dir)
     launcher = task_dir / "launch.sh"
-    resumed = entry.worker_session_id is not None
+    resumed = entry.status == TaskStatus.DISPATCHED
 
     if resumed:
-        # Rewrite launcher to resume the existing session
         config = _resolve_launch_config()
         launcher.write_text(
             _build_resume_script(
-                session_id=entry.worker_session_id,  # type: ignore[arg-type]
+                session_id=entry.session_id,
                 settings_file=config.settings_file,
                 plugin_dirs=config.plugin_dirs,
             )
         )
         launcher.chmod(stat.S_IRWXU)
+
     pane_env = {k: v for k, v in os.environ.items() if k.startswith("BASECAMP_")}
     pane_env["BASECAMP_TASK_DIR"] = str(task_dir)
     pane_env["BASECAMP_TASK_NAME"] = entry.name
@@ -251,31 +255,25 @@ def _spawn_task(entry: TaskEntry, index: TaskIndex) -> bool:
     )
 
     if not resumed:
-        # Poll until the worker registers its session_id (set by SessionStart hook).
-        # Read-only — the worker owns writing its own session_id via register_task().
-        for _ in range(30):  # up to 15s
-            updated = index.get(entry.name)
-            if updated and updated.worker_session_id:
-                entry.worker_session_id = updated.worker_session_id
-                break
-            time.sleep(0.5)
+        index.update(entry.name, status=TaskStatus.DISPATCHED)
 
     return resumed
 
 
-def register_task(*, session_id: str) -> None:
-    """Register a worker's session_id in the task index.
+def close_task() -> None:
+    """Mark a worker task as closed.
 
-    Called by the SessionStart hook inside a dispatched worker.
+    Called by the SessionEnd hook inside a dispatched worker.
     Reads BASECAMP_PROJECT and BASECAMP_TASK_NAME from environment.
+    No-op if BASECAMP_TASK_NAME is not set (main session, not a worker).
     """
-    project = _require_project()
     name = os.environ.get("BASECAMP_TASK_NAME")
     if not name:
         return
 
+    project = _require_project()
     index = TaskIndex(project)
-    index.update(name, worker_session_id=session_id)
+    index.update(name, status=TaskStatus.CLOSED, closed_at=datetime.now(timezone.utc))
 
 
 def list_tasks(*, show_all: bool = False) -> list[TaskEntry]:
