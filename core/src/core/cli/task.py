@@ -5,7 +5,7 @@ import sys
 import rich_click as click
 
 from core.exceptions import LauncherError
-from core.task.communication import ask_task, send_to_task
+from core.task.communication import ask_task, check_inbox, send_to_task
 from core.task.operations import close_task, create_task, dispatch_task, list_tasks
 from core.ui import console, err_console
 
@@ -114,6 +114,25 @@ def ask_cmd(name: str, message: str) -> None:
         console.print(response)
     except LauncherError as e:
         _handle_error(e)
+
+
+@task.command("inbox")
+@click.option("--peek", is_flag=True, help="Show message count without consuming")
+def inbox_cmd(peek: bool) -> None:  # noqa: FBT001
+    """Check the current session's inbox for messages.
+
+    By default, reads and consumes all pending messages.
+    Use --peek to show the count without consuming.
+    """
+    result = check_inbox(peek=peek)
+    if peek:
+        console.print(f"{result}")
+    elif result:
+        for msg in result:
+            console.print(msg)
+            console.print("[dim]---[/dim]")
+    else:
+        console.print("[dim]No messages.[/dim]")
 
 
 @task.command("send")

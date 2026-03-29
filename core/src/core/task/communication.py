@@ -99,3 +99,34 @@ def send_to_task(*, name: str, message: str, immediate: bool = False) -> Path:
     msg_path.chmod(0o600)
 
     return msg_path
+
+
+def check_inbox(*, peek: bool = False) -> list[str] | int:
+    """Read messages from the current session's inbox.
+
+    Args:
+        peek: If True, return message count without consuming.
+
+    Returns:
+        List of message strings (oldest first) when consuming,
+        or int count when peeking.
+    """
+    inbox_dir = os.environ.get("BASECAMP_INBOX_DIR")
+    if not inbox_dir:
+        return 0 if peek else []
+
+    inbox_path = Path(inbox_dir)
+    if not inbox_path.is_dir():
+        return 0 if peek else []
+
+    files = sorted(inbox_path.glob("*.msg")) + sorted(inbox_path.glob("*.immediate"))
+
+    if peek:
+        return len(files)
+
+    messages = []
+    for f in files:
+        messages.append(f.read_text())
+        f.unlink()
+
+    return messages
