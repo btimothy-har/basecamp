@@ -5,6 +5,7 @@ import sys
 import rich_click as click
 
 from core.exceptions import LauncherError
+from core.task.communication import send_message
 from core.task.operations import close_task, create_task, dispatch_task, list_tasks
 from core.ui import console, err_console
 
@@ -93,5 +94,24 @@ def list_cmd(show_all: bool) -> None:  # noqa: FBT001
                 f"[dim]model:[/dim] {entry.model}  "
                 f"[dim]session:[/dim] {entry.session_id}"
             )
+    except LauncherError as e:
+        _handle_error(e)
+
+
+@task.command("send")
+@click.option("--name", "-n", required=True, help="Target task name or 'parent'")
+@click.option("--direct", is_flag=True, help="Inject message into target's thread (disruptive)")
+@click.argument("message")
+def send_cmd(name: str, direct: bool, message: str) -> None:  # noqa: FBT001
+    """Send a message to a task session.
+
+    By default, reads the target's context without modifying their session
+    (fork mode). Use --direct to inject the message into their thread.
+
+    Use --name parent from a worker to message the orchestrator.
+    """
+    try:
+        response = send_message(name=name, message=message, direct=direct)
+        console.print(response)
     except LauncherError as e:
         _handle_error(e)

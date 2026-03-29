@@ -151,6 +151,23 @@ class SessionIdNotSetError(TaskError):
         super().__init__("CLAUDE_SESSION_ID is not set — task commands must be run from within a Claude session")
 
 
+class NotAWorkerError(TaskError):
+    """Raised when a worker-only operation is attempted from a non-worker session."""
+
+    def __init__(self) -> None:
+        super().__init__("--name parent is only available in worker sessions (BASECAMP_TASK_NAME not set)")
+
+
+class TaskCommunicationError(TaskError):
+    """Raised when the Claude CLI subprocess fails during inter-agent communication."""
+
+    def __init__(self, returncode: int, stderr: str | None = None) -> None:
+        msg = f"Communication failed (exit {returncode})"
+        if stderr:
+            msg = f"{msg}: {stderr}"
+        super().__init__(msg)
+
+
 class ProjectNotSetError(TaskError):
     """Raised when BASECAMP_PROJECT is not set in the environment."""
 
