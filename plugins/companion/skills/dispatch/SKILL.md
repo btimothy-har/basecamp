@@ -34,16 +34,22 @@ Examples: `fix-auth-bug`, `add-unit-tests`, `update-docs`
 ### 3. Create and dispatch
 
 ```bash
-basecamp task create --name <task-name> --dispatch <<'PROMPT'
+task create --name <task-name> --dispatch <<'PROMPT'
 <prompt content>
 PROMPT
-# or with opus: basecamp task create --name <task-name> --dispatch --model opus <<'PROMPT'
 ```
 
-To stage a task without dispatching immediately (dispatch later with `basecamp task dispatch --name <task-name>`):
+With opus for complex work:
+```bash
+task create --name <task-name> --model opus --dispatch <<'PROMPT'
+<prompt content>
+PROMPT
+```
+
+To stage without dispatching (dispatch later with `task dispatch --name <task-name>`):
 
 ```bash
-basecamp task create --name <task-name> <<'PROMPT'
+task create --name <task-name> <<'PROMPT'
 <prompt content>
 PROMPT
 ```
@@ -51,7 +57,7 @@ PROMPT
 ### 4. Verify
 
 ```bash
-basecamp task list
+task list
 ```
 
 ## Model selection
@@ -65,7 +71,10 @@ Use `--model opus` when the task requires deep reasoning:
 
 ## Constraints
 
-- **Terminal multiplexer required** — Kitty (with remote control) or tmux. `basecamp claude` wraps in tmux automatically when neither is detected
+- **Terminal multiplexer required** — Kitty (with remote control) or tmux
 - **Workers are interactive** — the user can see and intervene in any pane
-- **No shared state** — each worker operates independently; coordinate via filesystem if needed
 - **Project scope** — workers run in the same project directory as the main session
+
+## After dispatch
+
+Use the **workers** skill to manage dispatched workers: check status, send instructions, ask questions, and read inbox messages.

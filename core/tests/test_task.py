@@ -12,14 +12,17 @@ from core.cli.task import task as task_group
 from core.exceptions import (
     InvalidTaskNameError,
     NoMultiplexerError,
+    NotAWorkerError,
     ProjectNotSetError,
     SessionIdNotSetError,
+    TaskCommunicationError,
     TaskError,
     TaskNotFoundError,
 )
+from core.task.communication import ask_task, send_to_task
 from core.task.index import TaskIndex
-from core.task.models import TaskEntry
-from core.task.operations import create_task, dispatch_task, list_tasks, register_task
+from core.task.models import TaskEntry, TaskStatus
+from core.task.operations import close_task, create_task, dispatch_task, list_tasks
 
 # -- Fixtures ----------------------------------------------------------------
 
@@ -69,23 +72,28 @@ class TestTaskEntry:
             name="fix-bug",
             project="myproject",
             task_dir="/tmp/tasks/myproject/fix-bug",
+            session_id="sess-123",
             parent_session_id="session-abc",
             model="sonnet",
         )
         data = entry.model_dump(mode="json")
         restored = TaskEntry.model_validate(data)
         assert restored.name == "fix-bug"
-        assert restored.worker_session_id is None
+        assert restored.session_id == "sess-123"
+        assert restored.status == TaskStatus.STAGED
+        assert restored.closed_at is None
 
     def test_defaults(self) -> None:
         entry = TaskEntry(
             name="test",
             project="p",
             task_dir="/tmp/t",
+            session_id="s-1",
             parent_session_id="s",
         )
-        assert entry.worker_session_id is None
+        assert entry.status == TaskStatus.STAGED
         assert entry.model == "sonnet"
+        assert entry.closed_at is None
 
 
 # -- Index tests -------------------------------------------------------------
@@ -102,6 +110,7 @@ class TestTaskIndex:
             name="fix-bug",
             project="test-project",
             task_dir=str(task_dir),
+            session_id="s-1",
             parent_session_id="session-1",
         )
         index.add(entry)
@@ -117,12 +126,14 @@ class TestTaskIndex:
             name="alive",
             project="test-project",
             task_dir=str(alive_dir),
+            session_id="s-1",
             parent_session_id="s",
         )
         dead = TaskEntry(
             name="dead",
             project="test-project",
             task_dir="/tmp/nonexistent-task-dir-xyz",
+            session_id="s-2",
             parent_session_id="s",
         )
         index.add(alive)
@@ -139,21 +150,22 @@ class TestTaskIndex:
             name="t",
             project="test-project",
             task_dir=str(task_dir),
+            session_id="s-1",
             parent_session_id="s",
         )
         index.add(entry)
 
-        updated = index.update("t", worker_session_id="w-123")
+        updated = index.update("t", status=TaskStatus.DISPATCHED)
         assert updated is not None
-        assert updated.worker_session_id == "w-123"
+        assert updated.status == TaskStatus.DISPATCHED
 
         # Verify persisted
         reread = index.get("t")
         assert reread is not None
-        assert reread.worker_session_id == "w-123"
+        assert reread.status == TaskStatus.DISPATCHED
 
     def test_update_nonexistent_returns_none(self, index: TaskIndex) -> None:
-        assert index.update("nope", worker_session_id="w-1") is None
+        assert index.update("nope", status=TaskStatus.DISPATCHED) is None
 
     def test_remove_entry(self, index: TaskIndex, tmp_path: Path) -> None:
         task_dir = tmp_path / "tasks" / "r"
@@ -162,6 +174,7 @@ class TestTaskIndex:
             name="r",
             project="test-project",
             task_dir=str(task_dir),
+            session_id="s-1",
             parent_session_id="s",
         )
         index.add(entry)
@@ -178,6 +191,7 @@ class TestTaskIndex:
             name="g",
             project="test-project",
             task_dir=str(task_dir),
+            session_id="s-1",
             parent_session_id="s",
         )
         index.add(entry)
@@ -211,11 +225,28 @@ class TestCreateTask:
 
         assert entry.name.endswith("-fix-bug")
         assert entry.name.startswith("worker-")
+        assert entry.session_id  # pre-assigned UUID
+        assert entry.status == TaskStatus.STAGED
 
         task_dir = Path(entry.task_dir)
         assert task_dir.is_dir()
         assert (task_dir / "prompt.md").read_text() == "Fix the bug"
         assert (task_dir / "launch.sh").exists()
+
+    def test_launcher_includes_session_id(self, task_env: dict, tmp_path: Path) -> None:
+        tasks_base = tmp_path / "tasks"
+        index_dir = tmp_path / "index"
+
+        with (
+            patch.dict("os.environ", task_env, clear=True),
+            patch("core.task.operations.TASKS_BASE", tasks_base),
+            patch("core.task.index.TASKS_INDEX_DIR", index_dir),
+        ):
+            entry = create_task(name="t", prompt="X")
+
+        script = (Path(entry.task_dir) / "launch.sh").read_text()
+        assert "--session-id" in script
+        assert entry.session_id in script
 
     def test_launcher_includes_model(self, task_env: dict, tmp_path: Path) -> None:
         tasks_base = tmp_path / "tasks"
@@ -338,11 +369,26 @@ class TestCreateTask:
             patch("core.task.operations.TASKS_BASE", tasks_base),
             patch("core.task.index.TASKS_INDEX_DIR", index_dir),
             patch("core.terminal.subprocess.run", mock_run),
-            patch("core.task.operations.time.sleep"),
         ):
             create_task(name="dispatched", prompt="Go", dispatch=True)
 
         mock_run.assert_called()
+
+    def test_dispatch_flag_sets_status(self, task_env: dict, tmp_path: Path) -> None:
+        """create_task with dispatch=True returns entry with DISPATCHED status."""
+        tasks_base = tmp_path / "tasks"
+        index_dir = tmp_path / "index"
+        mock_run = _mock_subprocess_run()
+
+        with (
+            patch.dict("os.environ", task_env, clear=True),
+            patch("core.task.operations.TASKS_BASE", tasks_base),
+            patch("core.task.index.TASKS_INDEX_DIR", index_dir),
+            patch("core.terminal.subprocess.run", mock_run),
+        ):
+            entry = create_task(name="dispatched", prompt="Go", dispatch=True)
+
+        assert entry.status == TaskStatus.DISPATCHED
 
 
 class TestCreateTaskValidation:
@@ -389,7 +435,6 @@ class TestDispatchTask:
             patch("core.task.operations.TASKS_BASE", tasks_base),
             patch("core.task.index.TASKS_INDEX_DIR", index_dir),
             patch("core.terminal.subprocess.run", mock_run),
-            patch("core.task.operations.time.sleep"),
         ):
             staged = create_task(name="staged", prompt="Do work")
             entry, resumed = dispatch_task(name=staged.name)
@@ -407,24 +452,23 @@ class TestDispatchTask:
             patch("core.task.operations.TASKS_BASE", tasks_base),
             patch("core.task.index.TASKS_INDEX_DIR", index_dir),
             patch("core.terminal.subprocess.run", mock_run),
-            patch("core.task.operations.time.sleep"),
         ):
             staged = create_task(name="resumable", prompt="Do work")
 
-            # Simulate first dispatch — register a worker session_id
+            # Mark as dispatched (simulates a previous dispatch)
             index = TaskIndex(task_env["BASECAMP_PROJECT"])
-            index.update(staged.name, worker_session_id="worker-sess-1")
+            index.update(staged.name, status=TaskStatus.DISPATCHED)
 
             # Second dispatch should resume
             entry, resumed = dispatch_task(name=staged.name)
 
         assert resumed is True
-        assert entry.worker_session_id == "worker-sess-1"
+        assert entry.session_id == staged.session_id
 
         # Launcher should contain --resume
         script = (Path(entry.task_dir) / "launch.sh").read_text()
         assert "--resume" in script
-        assert "worker-sess-1" in script
+        assert staged.session_id in script
 
     def test_resume_launcher_omits_system_prompt_and_task_prompt(self, task_env: dict, tmp_path: Path) -> None:
         tasks_base = tmp_path / "tasks"
@@ -439,12 +483,11 @@ class TestDispatchTask:
             patch("core.task.operations.TASKS_BASE", tasks_base),
             patch("core.task.index.TASKS_INDEX_DIR", index_dir),
             patch("core.terminal.subprocess.run", mock_run),
-            patch("core.task.operations.time.sleep"),
         ):
             staged = create_task(name="resume-clean", prompt="Original task")
 
             index = TaskIndex(task_env["BASECAMP_PROJECT"])
-            index.update(staged.name, worker_session_id="sess-abc")
+            index.update(staged.name, status=TaskStatus.DISPATCHED)
 
             dispatch_task(name=staged.name)
 
@@ -489,7 +532,6 @@ class TestDispatchPaneManagement:
             patch("core.task.operations.TASKS_BASE", tasks_base),
             patch("core.task.index.TASKS_INDEX_DIR", index_dir),
             patch("core.terminal.subprocess.run", mock_run),
-            patch("core.task.operations.time.sleep"),
         ):
             create_task(name="t", prompt="Go", dispatch=True)
 
@@ -511,7 +553,6 @@ class TestDispatchPaneManagement:
             patch("core.task.operations.TASKS_BASE", tasks_base),
             patch("core.task.index.TASKS_INDEX_DIR", index_dir),
             patch("core.terminal.subprocess.run", mock_run),
-            patch("core.task.operations.time.sleep"),
         ):
             entry = create_task(name="titled", prompt="Go", dispatch=True)
 
@@ -530,7 +571,6 @@ class TestDispatchPaneManagement:
             patch("core.task.operations.TASKS_BASE", tasks_base),
             patch("core.task.index.TASKS_INDEX_DIR", index_dir),
             patch("core.terminal.subprocess.run", mock_run),
-            patch("core.task.operations.time.sleep"),
         ):
             create_task(name="k", prompt="Go", dispatch=True)
 
@@ -549,7 +589,6 @@ class TestDispatchPaneManagement:
             patch("core.task.operations.TASKS_BASE", tasks_base),
             patch("core.task.index.TASKS_INDEX_DIR", index_dir),
             patch("core.terminal.subprocess.run", mock_run),
-            patch("core.task.operations.time.sleep"),
         ):
             create_task(name="k", prompt="Go", dispatch=True)
 
@@ -634,7 +673,9 @@ class TestListTasks:
 
         assert len(entries) == 2
 
-    def test_enriches_worker_session_id(self, task_env: dict, tmp_path: Path) -> None:
+
+class TestCloseTask:
+    def test_closes_dispatched_task(self, task_env: dict, tmp_path: Path) -> None:
         tasks_base = tmp_path / "tasks"
         index_dir = tmp_path / "index"
 
@@ -643,52 +684,18 @@ class TestListTasks:
             patch("core.task.operations.TASKS_BASE", tasks_base),
             patch("core.task.index.TASKS_INDEX_DIR", index_dir),
         ):
-            entry = create_task(name="enriched", prompt="X")
-
-            # Simulate worker registering session_id via the index
-            index = TaskIndex(task_env["BASECAMP_PROJECT"])
-            index.update(entry.name, worker_session_id="worker-abc-123")
-
-            entries = list_tasks()
-
-        assert entries[0].worker_session_id == "worker-abc-123"
-
-    def test_unregistered_worker_has_no_session_id(self, task_env: dict, tmp_path: Path) -> None:
-        tasks_base = tmp_path / "tasks"
-        index_dir = tmp_path / "index"
-
-        with (
-            patch.dict("os.environ", task_env, clear=True),
-            patch("core.task.operations.TASKS_BASE", tasks_base),
-            patch("core.task.index.TASKS_INDEX_DIR", index_dir),
-        ):
-            create_task(name="stale", prompt="X")
-            entries = list_tasks()
-
-        assert entries[0].worker_session_id is None
-
-
-class TestRegisterTask:
-    def test_registers_session_id(self, task_env: dict, tmp_path: Path) -> None:
-        tasks_base = tmp_path / "tasks"
-        index_dir = tmp_path / "index"
-
-        with (
-            patch.dict("os.environ", task_env, clear=True),
-            patch("core.task.operations.TASKS_BASE", tasks_base),
-            patch("core.task.index.TASKS_INDEX_DIR", index_dir),
-        ):
-            entry = create_task(name="reg", prompt="X")
+            entry = create_task(name="closeable", prompt="X")
 
             env = {**task_env, "BASECAMP_TASK_NAME": entry.name}
             with patch.dict("os.environ", env, clear=True):
-                register_task(session_id="worker-sess-42")
+                close_task()
 
             index = TaskIndex(task_env["BASECAMP_PROJECT"])
             updated = index.get(entry.name)
 
         assert updated is not None
-        assert updated.worker_session_id == "worker-sess-42"
+        assert updated.status == TaskStatus.CLOSED
+        assert updated.closed_at is not None
 
     def test_missing_task_name_is_noop(self, task_env: dict, tmp_path: Path) -> None:
         index_dir = tmp_path / "index"
@@ -698,13 +705,13 @@ class TestRegisterTask:
             patch.dict("os.environ", env, clear=True),
             patch("core.task.index.TASKS_INDEX_DIR", index_dir),
         ):
-            register_task(session_id="worker-sess-1")
+            close_task()  # should not raise
 
     def test_missing_project_raises(self) -> None:
         env = {"CLAUDE_SESSION_ID": "s", "BASECAMP_TASK_NAME": "t"}
         with patch.dict("os.environ", env, clear=True):
             with pytest.raises(ProjectNotSetError):
-                register_task(session_id="worker-sess-1")
+                close_task()
 
     def test_nonexistent_task_is_noop(self, task_env: dict, tmp_path: Path) -> None:
         index_dir = tmp_path / "index"
@@ -714,7 +721,7 @@ class TestRegisterTask:
             patch.dict("os.environ", env, clear=True),
             patch("core.task.index.TASKS_INDEX_DIR", index_dir),
         ):
-            register_task(session_id="worker-sess-1")  # should not raise
+            close_task()  # should not raise
 
 
 # -- CLI tests ---------------------------------------------------------------
@@ -747,7 +754,7 @@ class TestTaskCLI:
 
         assert result.exit_code == 1
 
-    def test_register_passes_session_id(self, task_env: dict, tmp_path: Path) -> None:
+    def test_close_marks_task_closed(self, task_env: dict, tmp_path: Path) -> None:
         tasks_base = tmp_path / "tasks"
         index_dir = tmp_path / "index"
 
@@ -756,18 +763,18 @@ class TestTaskCLI:
             patch("core.task.operations.TASKS_BASE", tasks_base),
             patch("core.task.index.TASKS_INDEX_DIR", index_dir),
         ):
-            entry = create_task(name="reg-cli", prompt="X")
+            entry = create_task(name="close-cli", prompt="X")
 
             env = {**task_env, "BASECAMP_TASK_NAME": entry.name}
             with patch.dict("os.environ", env, clear=True):
-                result = CliRunner().invoke(task_group, ["register", "worker-sess-99"])
+                result = CliRunner().invoke(task_group, ["close"])
 
             index = TaskIndex(task_env["BASECAMP_PROJECT"])
             updated = index.get(entry.name)
 
         assert result.exit_code == 0
         assert updated is not None
-        assert updated.worker_session_id == "worker-sess-99"
+        assert updated.status == TaskStatus.CLOSED
 
     def test_list_empty(self, task_env: dict, tmp_path: Path) -> None:
         index_dir = tmp_path / "index"
@@ -797,3 +804,255 @@ class TestTaskCLI:
             result = CliRunner().invoke(task_group, ["dispatch", "-n", "nonexistent"])
 
         assert result.exit_code == 1
+
+    def test_ask_cli(self, task_env: dict, tmp_path: Path) -> None:
+        tasks_base = tmp_path / "tasks"
+        index_dir = tmp_path / "index"
+
+        with (
+            patch.dict("os.environ", task_env, clear=True),
+            patch("core.task.operations.TASKS_BASE", tasks_base),
+            patch("core.task.index.TASKS_INDEX_DIR", index_dir),
+        ):
+            entry = create_task(name="cli-target", prompt="Work")
+
+            mock_run = MagicMock()
+            mock_run.return_value = sp.CompletedProcess(args=[], returncode=0, stdout="response text", stderr="")
+            with patch("core.task.communication.subprocess.run", mock_run):
+                result = CliRunner().invoke(task_group, ["ask", "-n", entry.name, "what's up?"])
+
+        assert result.exit_code == 0
+        assert "response text" in result.output
+
+    def test_ask_error_exits_nonzero(self, task_env: dict, tmp_path: Path) -> None:
+        index_dir = tmp_path / "index"
+
+        with (
+            patch.dict("os.environ", task_env, clear=True),
+            patch("core.task.index.TASKS_INDEX_DIR", index_dir),
+        ):
+            result = CliRunner().invoke(task_group, ["ask", "-n", "nonexistent", "hello"])
+
+        assert result.exit_code == 1
+
+    def test_send_cli(self, task_env: dict, tmp_path: Path) -> None:
+        tasks_base = tmp_path / "tasks"
+        index_dir = tmp_path / "index"
+        inbox_base = tmp_path / "inbox"
+
+        with (
+            patch.dict("os.environ", task_env, clear=True),
+            patch("core.task.operations.TASKS_BASE", tasks_base),
+            patch("core.task.index.TASKS_INDEX_DIR", index_dir),
+            patch("core.task.communication.INBOX_BASE", inbox_base),
+        ):
+            entry = create_task(name="cli-target", prompt="Work")
+            result = CliRunner().invoke(task_group, ["send", "-n", entry.name, "heads up"])
+
+        assert result.exit_code == 0
+        assert "Sent" in result.output
+        assert "normal" in result.output
+
+    def test_send_immediate_cli(self, task_env: dict, tmp_path: Path) -> None:
+        tasks_base = tmp_path / "tasks"
+        index_dir = tmp_path / "index"
+        inbox_base = tmp_path / "inbox"
+
+        with (
+            patch.dict("os.environ", task_env, clear=True),
+            patch("core.task.operations.TASKS_BASE", tasks_base),
+            patch("core.task.index.TASKS_INDEX_DIR", index_dir),
+            patch("core.task.communication.INBOX_BASE", inbox_base),
+        ):
+            entry = create_task(name="cli-target", prompt="Work")
+            result = CliRunner().invoke(task_group, ["send", "-n", entry.name, "--immediate", "urgent"])
+
+        assert result.exit_code == 0
+        assert "immediate" in result.output
+
+    def test_send_error_exits_nonzero(self, task_env: dict, tmp_path: Path) -> None:
+        index_dir = tmp_path / "index"
+
+        with (
+            patch.dict("os.environ", task_env, clear=True),
+            patch("core.task.index.TASKS_INDEX_DIR", index_dir),
+        ):
+            result = CliRunner().invoke(task_group, ["send", "-n", "nonexistent", "hello"])
+
+        assert result.exit_code == 1
+
+
+# -- Ask task tests ----------------------------------------------------------
+
+
+class TestAskTask:
+    """Tests for ask_task (fork-based synchronous query)."""
+
+    def test_ask_uses_fork_session(self, task_env: dict, tmp_path: Path) -> None:
+        tasks_base = tmp_path / "tasks"
+        index_dir = tmp_path / "index"
+
+        with (
+            patch.dict("os.environ", task_env, clear=True),
+            patch("core.task.operations.TASKS_BASE", tasks_base),
+            patch("core.task.index.TASKS_INDEX_DIR", index_dir),
+        ):
+            entry = create_task(name="target", prompt="Do work")
+
+            mock_run = MagicMock()
+            mock_run.return_value = sp.CompletedProcess(args=[], returncode=0, stdout="I'm 50% done", stderr="")
+            with patch("core.task.communication.subprocess.run", mock_run):
+                result = ask_task(name=entry.name, message="what's your status?")
+
+        assert result == "I'm 50% done"
+        cmd = mock_run.call_args[0][0]
+        assert "--fork-session" in cmd
+        assert "--no-session-persistence" in cmd
+        assert entry.session_id in cmd
+
+    def test_ask_parent(self, task_env: dict, tmp_path: Path) -> None:
+        tasks_base = tmp_path / "tasks"
+        index_dir = tmp_path / "index"
+
+        with (
+            patch.dict("os.environ", task_env, clear=True),
+            patch("core.task.operations.TASKS_BASE", tasks_base),
+            patch("core.task.index.TASKS_INDEX_DIR", index_dir),
+        ):
+            entry = create_task(name="worker", prompt="Do work")
+
+            worker_env = {**task_env, "BASECAMP_TASK_NAME": entry.name}
+            mock_run = MagicMock()
+            mock_run.return_value = sp.CompletedProcess(args=[], returncode=0, stdout="Use approach B", stderr="")
+            with (
+                patch.dict("os.environ", worker_env, clear=True),
+                patch("core.task.communication.subprocess.run", mock_run),
+            ):
+                result = ask_task(name="parent", message="which approach?")
+
+        assert result == "Use approach B"
+        cmd = mock_run.call_args[0][0]
+        assert task_env["CLAUDE_SESSION_ID"] in cmd
+
+    def test_ask_parent_requires_task_name(self, task_env: dict, tmp_path: Path) -> None:
+        index_dir = tmp_path / "index"
+        env = {k: v for k, v in task_env.items() if k != "BASECAMP_TASK_NAME"}
+
+        with (
+            patch.dict("os.environ", env, clear=True),
+            patch("core.task.index.TASKS_INDEX_DIR", index_dir),
+        ):
+            with pytest.raises(NotAWorkerError):
+                ask_task(name="parent", message="hello")
+
+    def test_ask_nonexistent_task_raises(self, task_env: dict, tmp_path: Path) -> None:
+        index_dir = tmp_path / "index"
+
+        with (
+            patch.dict("os.environ", task_env, clear=True),
+            patch("core.task.index.TASKS_INDEX_DIR", index_dir),
+        ):
+            with pytest.raises(TaskNotFoundError):
+                ask_task(name="nonexistent-task", message="hello")
+
+    def test_ask_subprocess_failure_raises(self, task_env: dict, tmp_path: Path) -> None:
+        tasks_base = tmp_path / "tasks"
+        index_dir = tmp_path / "index"
+
+        with (
+            patch.dict("os.environ", task_env, clear=True),
+            patch("core.task.operations.TASKS_BASE", tasks_base),
+            patch("core.task.index.TASKS_INDEX_DIR", index_dir),
+        ):
+            entry = create_task(name="target", prompt="Do work")
+
+            mock_run = MagicMock()
+            mock_run.return_value = sp.CompletedProcess(args=[], returncode=1, stdout="", stderr="session not found")
+            with patch("core.task.communication.subprocess.run", mock_run):
+                with pytest.raises(TaskCommunicationError, match="Communication failed"):
+                    ask_task(name=entry.name, message="hello")
+
+
+# -- Send to task tests ------------------------------------------------------
+
+
+class TestSendToTask:
+    """Tests for send_to_task (inbox file delivery)."""
+
+    def test_send_writes_msg_file(self, task_env: dict, tmp_path: Path) -> None:
+        tasks_base = tmp_path / "tasks"
+        index_dir = tmp_path / "index"
+        inbox_base = tmp_path / "inbox"
+
+        with (
+            patch.dict("os.environ", task_env, clear=True),
+            patch("core.task.operations.TASKS_BASE", tasks_base),
+            patch("core.task.index.TASKS_INDEX_DIR", index_dir),
+            patch("core.task.communication.INBOX_BASE", inbox_base),
+        ):
+            entry = create_task(name="target", prompt="Do work")
+            msg_path = send_to_task(name=entry.name, message="status update")
+
+        assert msg_path.exists()
+        assert msg_path.suffix == ".msg"
+        assert msg_path.read_text() == "status update"
+        assert msg_path.parent == inbox_base / entry.session_id
+
+    def test_send_immediate_writes_immediate_file(self, task_env: dict, tmp_path: Path) -> None:
+        tasks_base = tmp_path / "tasks"
+        index_dir = tmp_path / "index"
+        inbox_base = tmp_path / "inbox"
+
+        with (
+            patch.dict("os.environ", task_env, clear=True),
+            patch("core.task.operations.TASKS_BASE", tasks_base),
+            patch("core.task.index.TASKS_INDEX_DIR", index_dir),
+            patch("core.task.communication.INBOX_BASE", inbox_base),
+        ):
+            entry = create_task(name="target", prompt="Do work")
+            msg_path = send_to_task(name=entry.name, message="urgent!", immediate=True)
+
+        assert msg_path.exists()
+        assert msg_path.suffix == ".immediate"
+        assert msg_path.read_text() == "urgent!"
+
+    def test_send_to_parent(self, task_env: dict, tmp_path: Path) -> None:
+        tasks_base = tmp_path / "tasks"
+        index_dir = tmp_path / "index"
+        inbox_base = tmp_path / "inbox"
+
+        with (
+            patch.dict("os.environ", task_env, clear=True),
+            patch("core.task.operations.TASKS_BASE", tasks_base),
+            patch("core.task.index.TASKS_INDEX_DIR", index_dir),
+            patch("core.task.communication.INBOX_BASE", inbox_base),
+        ):
+            entry = create_task(name="worker", prompt="Do work")
+
+            worker_env = {**task_env, "BASECAMP_TASK_NAME": entry.name}
+            with patch.dict("os.environ", worker_env, clear=True):
+                msg_path = send_to_task(name="parent", message="done!")
+
+        assert msg_path.exists()
+        assert msg_path.parent == inbox_base / task_env["CLAUDE_SESSION_ID"]
+
+    def test_send_parent_requires_task_name(self, task_env: dict, tmp_path: Path) -> None:
+        index_dir = tmp_path / "index"
+        env = {k: v for k, v in task_env.items() if k != "BASECAMP_TASK_NAME"}
+
+        with (
+            patch.dict("os.environ", env, clear=True),
+            patch("core.task.index.TASKS_INDEX_DIR", index_dir),
+        ):
+            with pytest.raises(NotAWorkerError):
+                send_to_task(name="parent", message="hello")
+
+    def test_send_nonexistent_task_raises(self, task_env: dict, tmp_path: Path) -> None:
+        index_dir = tmp_path / "index"
+
+        with (
+            patch.dict("os.environ", task_env, clear=True),
+            patch("core.task.index.TASKS_INDEX_DIR", index_dir),
+        ):
+            with pytest.raises(TaskNotFoundError):
+                send_to_task(name="nonexistent-task", message="hello")

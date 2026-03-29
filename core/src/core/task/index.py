@@ -77,7 +77,7 @@ class TaskIndex:
             entries.append(entry)
             self._write(entries)
 
-    _UPDATABLE_FIELDS = frozenset({"worker_session_id"})
+    _UPDATABLE_FIELDS = frozenset({"status", "closed_at"})
 
     def update(self, name: str, **fields: object) -> TaskEntry | None:
         """Update fields on an existing entry by name. Returns updated entry or None."""

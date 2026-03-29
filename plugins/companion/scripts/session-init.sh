@@ -1,12 +1,9 @@
 #!/bin/bash
-# Exposes CLAUDE_SESSION_ID to the Bash tool environment and registers
-# dispatched workers in the task index.
+# Exposes CLAUDE_SESSION_ID to the Bash tool environment.
 #
 # Claude Code provides session_id in the SessionStart hook's stdin JSON but does
-# not export it as an environment variable. This script bridges the gap by:
-#   1. Writing it to $CLAUDE_ENV_FILE so subsequent Bash tool calls can read it
-#   2. Calling `basecamp task register` so the orchestrator can discover the
-#      worker's session_id via the task index
+# not export it as an environment variable. This script bridges the gap by
+# writing it to $CLAUDE_ENV_FILE so subsequent Bash tool calls can read it.
 
 SESSION_ID=$(jq -r '.session_id // empty')
 
@@ -22,9 +19,5 @@ fi
 # Persist for Bash tool access
 if [ -n "$CLAUDE_ENV_FILE" ]; then
   printf 'export CLAUDE_SESSION_ID=%s\n' "'$SESSION_ID'" >> "$CLAUDE_ENV_FILE"
-fi
-
-# Register worker session_id in the task index
-if [ -n "$BASECAMP_TASK_NAME" ]; then
-  basecamp task register "$SESSION_ID" 2>/dev/null || true
+  printf 'export BASECAMP_INBOX_DIR=/tmp/claude-workspace/inbox/%s\n' "$SESSION_ID" >> "$CLAUDE_ENV_FILE"
 fi

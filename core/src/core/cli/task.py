@@ -5,7 +5,8 @@ import sys
 import rich_click as click
 
 from core.exceptions import LauncherError
-from core.task.operations import create_task, dispatch_task, list_tasks, register_task
+from core.task.communication import ask_task, check_inbox, send_to_task
+from core.task.operations import close_task, create_task, dispatch_task, list_tasks
 from core.ui import console, err_console
 
 
@@ -17,6 +18,11 @@ def _handle_error(e: LauncherError) -> None:
 @click.group()
 def task() -> None:
     """Manage dispatch tasks."""
+
+
+def main() -> None:
+    """Standalone entry point for the task CLI."""
+    task()
 
 
 @task.command()
@@ -39,13 +45,9 @@ def create(name: str | None, model: str, do_dispatch: bool) -> None:  # noqa: FB
 
         entry = create_task(name=name, prompt=prompt, model=model, dispatch=do_dispatch)
 
-        status = "dispatched" if do_dispatch else "staged"
-        console.print(f"[bold green]Created[/bold green] task [cyan]{entry.name}[/cyan] ({status})")
+        console.print(f"[bold green]Created[/bold green] task [cyan]{entry.name}[/cyan] ({entry.status.value})")
         console.print(f"  [dim]Task dir:[/dim] {entry.task_dir}")
-        if entry.worker_session_id:
-            console.print(f"  [dim]Session:[/dim] {entry.worker_session_id}")
-        elif do_dispatch:
-            console.print("  [dim]Session:[/dim] (timed out)")
+        console.print(f"  [dim]Session:[/dim] {entry.session_id}")
     except LauncherError as e:
         _handle_error(e)
 
@@ -62,20 +64,16 @@ def dispatch_cmd(name: str) -> None:
         else:
             console.print(f"[bold green]Dispatched[/bold green] task [cyan]{entry.name}[/cyan]")
         console.print(f"  [dim]Task dir:[/dim] {entry.task_dir}")
-        if entry.worker_session_id:
-            console.print(f"  [dim]Session:[/dim] {entry.worker_session_id}")
-        elif not resumed:
-            console.print("  [dim]Session:[/dim] (timed out)")
+        console.print(f"  [dim]Session:[/dim] {entry.session_id}")
     except LauncherError as e:
         _handle_error(e)
 
 
-@task.command("register", hidden=True)
-@click.argument("session_id")
-def register_cmd(session_id: str) -> None:
-    """Register a worker's session ID (called by SessionStart hook)."""
+@task.command("close", hidden=True)
+def close_cmd() -> None:
+    """Mark a worker task as closed (called by SessionEnd hook)."""
     try:
-        register_task(session_id=session_id)
+        close_task()
     except LauncherError as e:
         _handle_error(e)
 
@@ -92,15 +90,70 @@ def list_cmd(show_all: bool) -> None:  # noqa: FBT001
             return
 
         for entry in entries:
-            dispatched = entry.worker_session_id is not None
-            status_color = "green" if dispatched else "yellow"
-            status_label = "dispatched" if dispatched else "staged"
-            worker = entry.worker_session_id or "[dim]—[/dim]"
+            status_color = {"staged": "yellow", "dispatched": "green", "closed": "dim"}[entry.status.value]
             console.print(
                 f"  [cyan]{entry.name}[/cyan]  "
-                f"[{status_color}]{status_label}[/{status_color}]  "
+                f"[{status_color}]{entry.status.value}[/{status_color}]  "
                 f"[dim]model:[/dim] {entry.model}  "
-                f"[dim]worker:[/dim] {worker}"
+                f"[dim]session:[/dim] {entry.session_id}"
             )
+    except LauncherError as e:
+        _handle_error(e)
+
+
+@task.command("ask")
+@click.option("--name", "-n", required=True, help="Target task name or 'parent'")
+@click.argument("message")
+def ask_cmd(name: str, message: str) -> None:
+    """Ask a question using a target session's context.
+
+    Forks the target's conversation history and returns a response.
+    The target session is not modified.
+
+    Use --name parent from a worker to query the orchestrator.
+    """
+    try:
+        response = ask_task(name=name, message=message)
+        console.print(response)
+    except LauncherError as e:
+        _handle_error(e)
+
+
+@task.command("inbox")
+@click.option("--peek", is_flag=True, help="Show message count without consuming")
+def inbox_cmd(peek: bool) -> None:  # noqa: FBT001
+    """Check the current session's inbox for messages.
+
+    By default, reads and consumes all pending messages.
+    Use --peek to show the count without consuming.
+    """
+    result = check_inbox(peek=peek)
+    if peek:
+        console.print(f"{result}")
+    elif result:
+        for msg in result:
+            console.print(msg)
+            console.print("[dim]---[/dim]")
+    else:
+        console.print("[dim]No messages.[/dim]")
+
+
+@task.command("send")
+@click.option("--name", "-n", required=True, help="Target task name or 'parent'")
+@click.option("--immediate", is_flag=True, help="Deliver at next tool call instead of next turn boundary")
+@click.argument("message")
+def send_cmd(name: str, immediate: bool, message: str) -> None:  # noqa: FBT001
+    """Send a message to a task session's inbox.
+
+    Message is delivered by a hook on the target session. By default,
+    delivered at the next turn boundary (Stop event). Use --immediate
+    for delivery at the next tool call.
+
+    Use --name parent from a worker to message the orchestrator.
+    """
+    try:
+        send_to_task(name=name, message=message, immediate=immediate)
+        priority = "immediate" if immediate else "normal"
+        console.print(f"[bold green]Sent[/bold green] ({priority}) → [cyan]{name}[/cyan]")
     except LauncherError as e:
         _handle_error(e)
