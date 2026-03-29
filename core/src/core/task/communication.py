@@ -55,7 +55,7 @@ def ask_task(*, name: str, message: str) -> str:
         The text response grounded in the target's conversation context.
     """
     session_id = _resolve_target_session(name)
-    cmd = [CLAUDE_COMMAND, "-p", "-r", session_id, "--fork-session", "--no-session-persistence", message]
+    cmd = [CLAUDE_COMMAND, "-p", "-r", session_id, "--fork-session", "--no-session-persistence", "--", message]
 
     result = subprocess.run(
         cmd,
@@ -126,7 +126,18 @@ def check_inbox(*, peek: bool = False) -> list[str] | int:
 
     messages = []
     for f in files:
-        messages.append(f.read_text())
-        f.unlink()
+        content = _consume_file(f)
+        if content is not None:
+            messages.append(content)
 
     return messages
+
+
+def _consume_file(path: Path) -> str | None:
+    """Read and delete a message file, returning None if already consumed."""
+    try:
+        content = path.read_text()
+        path.unlink()
+    except FileNotFoundError:
+        return None
+    return content

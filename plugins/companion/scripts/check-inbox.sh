@@ -10,10 +10,8 @@ INBOX="$BASECAMP_INBOX_DIR"
 MODE="${1:-all}"
 
 if [ "$MODE" = "immediate" ]; then
-  HOOK_EVENT="PostToolUse"
   FILES=$(find "$INBOX" -maxdepth 1 -name '*.immediate' -type f 2>/dev/null | sort)
 else
-  HOOK_EVENT="Stop"
   FILES=$(find "$INBOX" -maxdepth 1 \( -name '*.msg' -o -name '*.immediate' \) -type f 2>/dev/null | sort)
 fi
 
@@ -21,7 +19,8 @@ fi
 
 # Collect all messages
 MESSAGES=""
-for f in $FILES; do
+while IFS= read -r f; do
+  [ -f "$f" ] || continue
   CONTENT=$(cat "$f")
   rm -f "$f"
   if [ -n "$MESSAGES" ]; then
@@ -31,7 +30,7 @@ ${CONTENT}"
   else
     MESSAGES="$CONTENT"
   fi
-done
+done <<< "$FILES"
 
 # Build hook output
 if [ "$MODE" = "all" ]; then

@@ -275,6 +275,11 @@ def close_task() -> None:
 
     project = _require_project()
     index = TaskIndex(project)
+
+    entry = index.get(name)
+    if entry is None or entry.status == TaskStatus.CLOSED:
+        return
+
     index.update(name, status=TaskStatus.CLOSED, closed_at=datetime.now(timezone.utc))
 
 
