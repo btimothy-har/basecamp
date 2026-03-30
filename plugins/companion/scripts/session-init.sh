@@ -5,7 +5,11 @@
 # not export it as an environment variable. This script bridges the gap by
 # writing it to $CLAUDE_ENV_FILE so subsequent Bash tool calls can read it.
 
-SESSION_ID=$(jq -r '.session_id // empty')
+INPUT=$(cat)
+
+SESSION_ID=$(echo "$INPUT" | jq -r '.session_id // empty')
+TRANSCRIPT_PATH=$(echo "$INPUT" | jq -r '.transcript_path // empty')
+CWD=$(echo "$INPUT" | jq -r '.cwd // empty')
 
 if [ -z "$SESSION_ID" ]; then
   exit 0
@@ -20,4 +24,11 @@ fi
 if [ -n "$CLAUDE_ENV_FILE" ]; then
   printf 'export CLAUDE_SESSION_ID=%s\n' "'$SESSION_ID'" >> "$CLAUDE_ENV_FILE"
   printf 'export BASECAMP_INBOX_DIR=/tmp/claude-workspace/inbox/%s\n' "$SESSION_ID" >> "$CLAUDE_ENV_FILE"
+
+  if [ -n "$TRANSCRIPT_PATH" ]; then
+    printf 'export BASECAMP_TRANSCRIPT_PATH=%s\n' "'$TRANSCRIPT_PATH'" >> "$CLAUDE_ENV_FILE"
+  fi
+  if [ -n "$CWD" ]; then
+    printf 'export BASECAMP_SESSION_CWD=%s\n' "'$CWD'" >> "$CLAUDE_ENV_FILE"
+  fi
 fi
