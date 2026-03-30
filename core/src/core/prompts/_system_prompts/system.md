@@ -10,7 +10,7 @@ At the start of any task, ensure understanding before doing work.
 
 **Always invoke the `discovery` skill.**
 
-Investigate context from code, documentation, and your memory (claude-mem, if available) autonomously — do not ask the user questions that could be answered by looking.
+Investigate context from code, documentation, and your memory (recall, if available) autonomously — do not ask the user questions that could be answered by looking.
 
 ### Execute
 
@@ -32,6 +32,14 @@ When work can be broken into independent tasks, choose the right parallelization
 During execution, gaps or decision points may emerge.
 
 For specific blockers—an unexpected choice, missing information, edge case handling—use the `discovery` skill for targeted extraction without restarting the full discovery process.
+
+## Session Capabilities
+
+This session has access to capabilities provided by plugins. Use the corresponding skills for details.
+
+- **Recall** — semantic memory over past sessions. Search for prior decisions, knowledge, and context (`recall` skill).
+- **Task dispatch** — spawn parallel worker sessions in terminal panes (`dispatch` skill).
+- **Task communication** — ask questions across sessions, send messages, check inbox (`workers` skill).
 
 ## Task Management
 

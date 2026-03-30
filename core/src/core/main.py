@@ -5,6 +5,7 @@ import sys
 import rich_click as click
 
 from core.cli.completions import complete_project_name, complete_project_or_path, complete_worktree_name
+from core.cli.handoff import handoff
 from core.cli.launch import execute_launch, is_path_argument, resolve_path_argument
 from core.cli.log import execute_log
 from core.cli.open import execute_open
@@ -88,6 +89,7 @@ def claude(ctx: click.Context, project: str, label: str | None) -> None:
         _handle_error(e)
 
 
+basecamp.add_command(handoff)
 basecamp.add_command(task)
 
 
