@@ -5,6 +5,7 @@ import sys
 import rich_click as click
 
 from core.cli.completions import complete_project_name, complete_project_or_path, complete_worktree_name
+from core.cli.handoff import handoff
 from core.cli.launch import execute_launch, is_path_argument, resolve_path_argument
 from core.cli.log import execute_log
 from core.cli.open import execute_open
@@ -17,7 +18,6 @@ from core.cli.project import (
 )
 from core.cli.reflect import execute_reflect
 from core.cli.setup import execute_setup
-from core.cli.handoff import handoff
 from core.cli.task import task
 from core.cli.worktree import (
     clean_project_worktrees,

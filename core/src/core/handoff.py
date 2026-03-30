@@ -20,7 +20,6 @@ from core.exceptions import (
 from core.settings import resolve_model
 from core.terminal import resolve_dispatch_backend
 
-
 HANDOFF_PROMPT = (files("core.prompts._system_prompts") / "handoff.md").read_text()
 
 
@@ -54,7 +53,8 @@ def _summarize_session(session_id: str) -> str:
     cmd = [
         CLAUDE_COMMAND,
         "-p",
-        "-r", session_id,
+        "-r",
+        session_id,
         "--fork-session",
         "--no-session-persistence",
         "--",
