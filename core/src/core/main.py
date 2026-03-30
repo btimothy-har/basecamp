@@ -17,6 +17,7 @@ from core.cli.project import (
 )
 from core.cli.reflect import execute_reflect
 from core.cli.setup import execute_setup
+from core.cli.handoff import handoff
 from core.cli.task import task
 from core.cli.worktree import (
     clean_project_worktrees,
@@ -88,6 +89,7 @@ def claude(ctx: click.Context, project: str, label: str | None) -> None:
         _handle_error(e)
 
 
+basecamp.add_command(handoff)
 basecamp.add_command(task)
 
 

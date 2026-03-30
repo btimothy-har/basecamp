@@ -13,6 +13,7 @@ dependencies = [
 [project.scripts]
 basecamp = "core.main:basecamp"
 task = "core.cli.task:main"
+handoff = "core.cli.handoff:main"
 
 [dependency-groups]
 dev = [
