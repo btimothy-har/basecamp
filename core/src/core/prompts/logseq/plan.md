@@ -7,13 +7,15 @@ Help me plan my day. Use available tools to gather context and surface what need
 1. Read yesterday's journal and recent entries for open threads, pending items, and unresolved questions
 2. Search for recent sessions to understand where work left off
 3. Check GitHub for PRs needing review, open issues assigned to me, and pending discussions
-4. Check any other available tools (Slack, calendar, etc.) for relevant context
+4. Check calendar for today's meetings, deadlines, and time commitments
+5. Check any other available tools (Slack, etc.) for relevant context
 
 ## Surface
 
 Present a situational briefing:
 - **Carry-over** — unfinished work, open threads from yesterday
 - **Incoming** — PRs to review, issues needing attention, pending discussions
+- **Calendar** — meetings, deadlines, and time blocks that shape the day
 - **Blockers** — anything that might impede today's work
 - **Opportunities** — things that could be progressed today
 
