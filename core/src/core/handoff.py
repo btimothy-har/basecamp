@@ -61,13 +61,16 @@ def _summarize_session(session_id: str) -> str:
         HANDOFF_PROMPT,
     ]
 
-    result = subprocess.run(
-        cmd,
-        check=False,
-        capture_output=True,
-        text=True,
-        timeout=180,
-    )
+    try:
+        result = subprocess.run(
+            cmd,
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=180,
+        )
+    except subprocess.TimeoutExpired as e:
+        raise TaskCommunicationError(1, f"Summarization timed out after {e.timeout}s") from e
 
     if result.returncode != 0:
         raise TaskCommunicationError(result.returncode, result.stderr.strip())
@@ -120,6 +123,8 @@ def execute_handoff(*, model: str = "sonnet") -> str:
     if backend is None:
         raise NoMultiplexerError
 
+    resolved_model = resolve_model(model)
+
     # Summarize current session via fork
     summary = _summarize_session(session_id)
 
@@ -144,7 +149,6 @@ def execute_handoff(*, model: str = "sonnet") -> str:
     prompt_file.chmod(0o600)
 
     # Build launcher
-    resolved_model = resolve_model(model)
     new_session_id = str(uuid.uuid4())
     system_prompt_file, settings_file, plugin_dirs = _resolve_launch_config()
 

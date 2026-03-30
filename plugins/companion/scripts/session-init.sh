@@ -22,13 +22,13 @@ fi
 
 # Persist for Bash tool access
 if [ -n "$CLAUDE_ENV_FILE" ]; then
-  printf 'export CLAUDE_SESSION_ID=%s\n' "'$SESSION_ID'" >> "$CLAUDE_ENV_FILE"
-  printf 'export BASECAMP_INBOX_DIR=/tmp/claude-workspace/inbox/%s\n' "$SESSION_ID" >> "$CLAUDE_ENV_FILE"
+  printf 'export CLAUDE_SESSION_ID=%q\n' "$SESSION_ID" >> "$CLAUDE_ENV_FILE"
+  printf 'export BASECAMP_INBOX_DIR=/tmp/claude-workspace/inbox/%q\n' "$SESSION_ID" >> "$CLAUDE_ENV_FILE"
 
   if [ -n "$TRANSCRIPT_PATH" ]; then
-    printf 'export BASECAMP_TRANSCRIPT_PATH=%s\n' "'$TRANSCRIPT_PATH'" >> "$CLAUDE_ENV_FILE"
+    printf 'export BASECAMP_TRANSCRIPT_PATH=%q\n' "$TRANSCRIPT_PATH" >> "$CLAUDE_ENV_FILE"
   fi
   if [ -n "$CWD" ]; then
-    printf 'export BASECAMP_SESSION_CWD=%s\n' "'$CWD'" >> "$CLAUDE_ENV_FILE"
+    printf 'export BASECAMP_SESSION_CWD=%q\n' "$CWD" >> "$CLAUDE_ENV_FILE"
   fi
 fi
