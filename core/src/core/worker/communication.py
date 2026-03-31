@@ -8,47 +8,47 @@ import time
 from pathlib import Path
 
 from core.constants import CLAUDE_COMMAND, INBOX_BASE
-from core.exceptions import NotAWorkerError, ProjectNotSetError, TaskCommunicationError, TaskNotFoundError
-from core.task.index import TaskIndex
+from core.exceptions import NotAWorkerError, ProjectNotSetError, WorkerCommunicationError, WorkerNotFoundError
+from core.worker.index import WorkerIndex
 
 
 def _resolve_target_session(name: str) -> str:
     """Resolve a target name to a session ID.
 
     If name is "parent", resolves to the parent_session_id of the current
-    worker's task entry (requires BASECAMP_TASK_NAME).
+    worker's entry (requires BASECAMP_WORKER_NAME).
 
-    Otherwise, looks up the task by name in the index and returns its session_id.
+    Otherwise, looks up the worker by name in the index and returns its session_id.
     """
     project = os.environ.get("BASECAMP_PROJECT")
     if not project:
         raise ProjectNotSetError
 
-    index = TaskIndex(project)
+    index = WorkerIndex(project)
 
     if name == "parent":
-        task_name = os.environ.get("BASECAMP_TASK_NAME")
-        if not task_name:
+        worker_name = os.environ.get("BASECAMP_WORKER_NAME")
+        if not worker_name:
             raise NotAWorkerError
-        entry = index.get(task_name)
+        entry = index.get(worker_name)
         if entry is None:
-            raise TaskNotFoundError(task_name, project)
+            raise WorkerNotFoundError(worker_name, project)
         return entry.parent_session_id
 
     entry = index.get(name)
     if entry is None:
-        raise TaskNotFoundError(name, project)
+        raise WorkerNotFoundError(name, project)
     return entry.session_id
 
 
-def ask_task(*, name: str, message: str) -> str:
+def ask_worker(*, name: str, message: str) -> str:
     """Fork a target session's context and return a response.
 
     Non-disruptive — the target session is unmodified. Uses claude CLI
     with --fork-session --no-session-persistence.
 
     Args:
-        name: Target task name or "parent" keyword.
+        name: Target worker name or "parent" keyword.
         message: The question to ask.
 
     Returns:
@@ -66,12 +66,12 @@ def ask_task(*, name: str, message: str) -> str:
     )
 
     if result.returncode != 0:
-        raise TaskCommunicationError(result.returncode, result.stderr.strip())
+        raise WorkerCommunicationError(result.returncode, result.stderr.strip())
 
     return result.stdout.strip()
 
 
-def send_to_task(*, name: str, message: str, immediate: bool = False) -> Path:
+def send_to_worker(*, name: str, message: str, immediate: bool = False) -> Path:
     """Deliver a message to a target session's inbox.
 
     Fire-and-forget — writes a file to the target's inbox directory.
@@ -80,7 +80,7 @@ def send_to_task(*, name: str, message: str, immediate: bool = False) -> Path:
     - Immediate (.immediate): delivered at next PostToolUse event
 
     Args:
-        name: Target task name or "parent" keyword.
+        name: Target worker name or "parent" keyword.
         message: The message to deliver.
         immediate: If True, use .immediate extension for urgent delivery.
 

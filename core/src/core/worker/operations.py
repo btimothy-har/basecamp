@@ -1,4 +1,4 @@
-"""Task lifecycle operations: create, dispatch, close, list."""
+"""Worker lifecycle operations: create, dispatch, close, list."""
 
 from __future__ import annotations
 
@@ -11,19 +11,19 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import NamedTuple
 
-from core.constants import CLAUDE_COMMAND, INBOX_BASE, SCRIPT_DIR, TASKS_BASE
+from core.constants import CLAUDE_COMMAND, INBOX_BASE, SCRIPT_DIR, WORKERS_BASE
 from core.exceptions import (
-    InvalidTaskNameError,
+    InvalidWorkerNameError,
     NoMultiplexerError,
     ProjectNotSetError,
     SessionIdNotSetError,
-    TaskError,
-    TaskNotFoundError,
+    WorkerError,
+    WorkerNotFoundError,
 )
 from core.settings import resolve_model
-from core.task.index import TaskIndex
-from core.task.models import TaskEntry, TaskStatus
 from core.terminal import resolve_dispatch_backend
+from core.worker.index import WorkerIndex
+from core.worker.models import WorkerEntry, WorkerStatus
 
 _SAFE_NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
 
@@ -41,7 +41,7 @@ def _require_project() -> str:
         raise ProjectNotSetError
     if not _SAFE_NAME_RE.match(project):
         msg = f"BASECAMP_PROJECT contains unsafe characters: {project!r}"
-        raise TaskError(msg)
+        raise WorkerError(msg)
     return project
 
 
@@ -55,7 +55,7 @@ def _require_session_id() -> str:
 
 def _validate_name(name: str) -> None:
     if not _SAFE_NAME_RE.match(name):
-        raise InvalidTaskNameError(name)
+        raise InvalidWorkerNameError(name)
 
 
 def _build_resume_script(
@@ -127,23 +127,23 @@ def _resolve_launch_config() -> LaunchConfig:
     return LaunchConfig(system_prompt_file, settings_file, plugin_dirs)
 
 
-def create_task(
+def create_worker(
     *,
     name: str | None = None,
     prompt: str | None = None,
     model: str = "sonnet",
     dispatch: bool = False,
-) -> TaskEntry:
-    """Create a task with its directory, prompt, and launcher script.
+) -> WorkerEntry:
+    """Create a worker with its directory, prompt, and launcher script.
 
     Args:
-        name: Task name (auto-generated if omitted).
-        prompt: Task prompt content (written to prompt.md).
+        name: Worker name (auto-generated if omitted).
+        prompt: Worker prompt content (written to prompt.md).
         model: Model for the worker session.
         dispatch: If True, also spawn a terminal pane immediately.
 
     Returns:
-        The created TaskEntry.
+        The created WorkerEntry.
     """
     project = _require_project()
     session_id = _require_session_id()
@@ -155,12 +155,12 @@ def create_task(
     else:
         name = prefix
 
-    index = TaskIndex(project)
+    index = WorkerIndex(project)
 
-    task_dir = TASKS_BASE / project / name
-    task_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
+    worker_dir = WORKERS_BASE / project / name
+    worker_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
 
-    prompt_file = task_dir / "prompt.md"
+    prompt_file = worker_dir / "prompt.md"
     if prompt:
         prompt_file.write_text(prompt)
         prompt_file.chmod(0o600)
@@ -169,7 +169,7 @@ def create_task(
     worker_session_id = str(uuid.uuid4())
 
     config = _resolve_launch_config()
-    launcher = task_dir / "launch.sh"
+    launcher = worker_dir / "launch.sh"
     launcher.write_text(
         _build_launcher_script(
             model=resolved,
@@ -182,10 +182,10 @@ def create_task(
     )
     launcher.chmod(stat.S_IRWXU)
 
-    entry = TaskEntry(
+    entry = WorkerEntry(
         name=name,
         project=project,
-        task_dir=str(task_dir),
+        worker_dir=str(worker_dir),
         session_id=worker_session_id,
         parent_session_id=session_id,
         model=resolved,
@@ -193,33 +193,33 @@ def create_task(
     index.add(entry)
 
     if dispatch:
-        _spawn_task(entry, index)
+        _spawn_worker(entry, index)
 
     return entry
 
 
-def dispatch_task(*, name: str) -> tuple[TaskEntry, bool]:
-    """Dispatch a task by spawning a terminal pane, or resume if already dispatched.
+def dispatch_worker(*, name: str) -> tuple[WorkerEntry, bool]:
+    """Dispatch a worker by spawning a terminal pane, or resume if already dispatched.
 
     Returns:
-        Tuple of (TaskEntry, resumed) where resumed is True if an existing
+        Tuple of (WorkerEntry, resumed) where resumed is True if an existing
         session was resumed rather than a new one spawned.
     """
     project = _require_project()
-    index = TaskIndex(project)
+    index = WorkerIndex(project)
 
     entry = index.get(name)
     if entry is None:
-        raise TaskNotFoundError(name, project)
+        raise WorkerNotFoundError(name, project)
 
-    resumed = _spawn_task(entry, index)
+    resumed = _spawn_worker(entry, index)
     return entry, resumed
 
 
-def _spawn_task(entry: TaskEntry, index: TaskIndex) -> bool:
-    """Spawn a terminal pane for a task and update its status.
+def _spawn_worker(entry: WorkerEntry, index: WorkerIndex) -> bool:
+    """Spawn a terminal pane for a worker and update its status.
 
-    If the task is already dispatched, the existing session is resumed via
+    If the worker is already dispatched, the existing session is resumed via
     ``claude --resume`` instead of starting a fresh one.
 
     Returns:
@@ -229,9 +229,9 @@ def _spawn_task(entry: TaskEntry, index: TaskIndex) -> bool:
     if backend is None:
         raise NoMultiplexerError
 
-    task_dir = Path(entry.task_dir)
-    launcher = task_dir / "launch.sh"
-    resumed = entry.status == TaskStatus.DISPATCHED
+    worker_dir = Path(entry.worker_dir)
+    launcher = worker_dir / "launch.sh"
+    resumed = entry.status == WorkerStatus.DISPATCHED
 
     if resumed:
         config = _resolve_launch_config()
@@ -245,8 +245,8 @@ def _spawn_task(entry: TaskEntry, index: TaskIndex) -> bool:
         launcher.chmod(stat.S_IRWXU)
 
     pane_env = {k: v for k, v in os.environ.items() if k.startswith("BASECAMP_")}
-    pane_env["BASECAMP_TASK_DIR"] = str(task_dir)
-    pane_env["BASECAMP_TASK_NAME"] = entry.name
+    pane_env["BASECAMP_WORKER_DIR"] = str(worker_dir)
+    pane_env["BASECAMP_WORKER_NAME"] = entry.name
     pane_env["BASECAMP_INBOX_DIR"] = str(INBOX_BASE / entry.session_id)
     backend.spawn_pane(
         launcher,
@@ -256,41 +256,41 @@ def _spawn_task(entry: TaskEntry, index: TaskIndex) -> bool:
     )
 
     if not resumed:
-        index.update(entry.name, status=TaskStatus.DISPATCHED)
-        entry.status = TaskStatus.DISPATCHED  # sync in-memory state
+        index.update(entry.name, status=WorkerStatus.DISPATCHED)
+        entry.status = WorkerStatus.DISPATCHED  # sync in-memory state
 
     return resumed
 
 
-def close_task() -> None:
-    """Mark a worker task as closed.
+def close_worker() -> None:
+    """Mark a worker as closed.
 
     Called by the SessionEnd hook inside a dispatched worker.
-    Reads BASECAMP_PROJECT and BASECAMP_TASK_NAME from environment.
-    No-op if BASECAMP_TASK_NAME is not set (main session, not a worker).
+    Reads BASECAMP_PROJECT and BASECAMP_WORKER_NAME from environment.
+    No-op if BASECAMP_WORKER_NAME is not set (main session, not a worker).
     """
-    name = os.environ.get("BASECAMP_TASK_NAME")
+    name = os.environ.get("BASECAMP_WORKER_NAME")
     if not name:
         return
 
     project = _require_project()
-    index = TaskIndex(project)
+    index = WorkerIndex(project)
 
     entry = index.get(name)
-    if entry is None or entry.status == TaskStatus.CLOSED:
+    if entry is None or entry.status == WorkerStatus.CLOSED:
         return
 
-    index.update(name, status=TaskStatus.CLOSED, closed_at=datetime.now(timezone.utc))
+    index.update(name, status=WorkerStatus.CLOSED, closed_at=datetime.now(timezone.utc))
 
 
-def list_tasks(*, show_all: bool = False) -> list[TaskEntry]:
-    """List tasks for the current project.
+def list_workers(*, show_all: bool = False) -> list[WorkerEntry]:
+    """List workers for the current project.
 
-    By default, filters to tasks created by the current session.
-    Use show_all=True to see all tasks for the project.
+    By default, filters to workers created by the current session.
+    Use show_all=True to see all workers for the project.
     """
     project = _require_project()
-    index = TaskIndex(project)
+    index = WorkerIndex(project)
     entries = index.read()
 
     if not show_all:

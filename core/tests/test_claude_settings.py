@@ -23,7 +23,7 @@ def paths(tmp_path: Path) -> dict[str, Path]:
     with (
         patch("core.config.claude_settings.CACHE_DIR", cache),
         patch("core.config.claude_settings.SCRATCH_BASE", scratch),
-        patch("core.config.claude_settings._TASKS_DIR", tasks),
+        patch("core.config.claude_settings._WORKERS_DIR", tasks),
         patch("core.config.claude_settings.CLAUDE_USER_SETTINGS", user_settings),
     ):
         yield {

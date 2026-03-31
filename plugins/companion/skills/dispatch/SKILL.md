@@ -25,7 +25,7 @@ Write a **self-contained brief** for the worker using the task above and relevan
 - Constraints or decisions already made
 - What "done" looks like
 
-### 2. Derive a task name
+### 2. Derive a worker name
 
 Short, kebab-case identifier from the task description. Appended to an auto-generated UUID prefix (e.g., `worker-a3f21b-fix-auth-bug`) which becomes the directory name and pane title.
 
@@ -34,22 +34,22 @@ Examples: `fix-auth-bug`, `add-unit-tests`, `update-docs`
 ### 3. Create and dispatch
 
 ```bash
-task create --name <task-name> --dispatch <<'PROMPT'
+worker create --name <worker-name> --dispatch <<'PROMPT'
 <prompt content>
 PROMPT
 ```
 
 With opus for complex work:
 ```bash
-task create --name <task-name> --model opus --dispatch <<'PROMPT'
+worker create --name <worker-name> --model opus --dispatch <<'PROMPT'
 <prompt content>
 PROMPT
 ```
 
-To stage without dispatching (dispatch later with `task dispatch --name <task-name>`):
+To stage without dispatching (dispatch later with `worker dispatch --name <worker-name>`):
 
 ```bash
-task create --name <task-name> <<'PROMPT'
+worker create --name <worker-name> <<'PROMPT'
 <prompt content>
 PROMPT
 ```
@@ -57,7 +57,7 @@ PROMPT
 ### 4. Verify
 
 ```bash
-task list
+worker list
 ```
 
 ## Model selection

@@ -1,13 +1,13 @@
-"""CLI commands for task management."""
+"""CLI commands for worker management."""
 
 import sys
 
 import rich_click as click
 
 from core.exceptions import LauncherError
-from core.task.communication import ask_task, check_inbox, send_to_task
-from core.task.operations import close_task, create_task, dispatch_task, list_tasks
 from core.ui import console, err_console
+from core.worker.communication import ask_worker, check_inbox, send_to_worker
+from core.worker.operations import close_worker, create_worker, dispatch_worker, list_workers
 
 
 def _handle_error(e: LauncherError) -> None:
@@ -16,25 +16,25 @@ def _handle_error(e: LauncherError) -> None:
 
 
 @click.group()
-def task() -> None:
-    """Manage dispatch tasks."""
+def worker() -> None:
+    """Manage dispatch workers."""
 
 
 def main() -> None:
-    """Standalone entry point for the task CLI."""
-    task()
+    """Standalone entry point for the worker CLI."""
+    worker()
 
 
-@task.command()
-@click.option("--name", "-n", default=None, help="Task name suffix (auto-generated if omitted)")
+@worker.command()
+@click.option("--name", "-n", default=None, help="Worker name suffix (auto-generated if omitted)")
 @click.option("--model", "-m", default="sonnet", help="Model for the worker session (default: sonnet)")
 @click.option("--dispatch", "do_dispatch", is_flag=True, help="Spawn terminal pane immediately after creation")
 def create(name: str | None, model: str, do_dispatch: bool) -> None:  # noqa: FBT001
-    """Create a dispatch task. Reads prompt from stdin.
+    """Create a dispatch worker. Reads prompt from stdin.
 
     \b
     Example:
-        basecamp task create --name fix-auth-bug --dispatch <<'PROMPT'
+        basecamp worker create --name fix-auth-bug --dispatch <<'PROMPT'
         Fix the authentication bug in the login flow.
         PROMPT
     """
@@ -43,50 +43,50 @@ def create(name: str | None, model: str, do_dispatch: bool) -> None:  # noqa: FB
         if not sys.stdin.isatty():
             prompt = sys.stdin.read().strip() or None
 
-        entry = create_task(name=name, prompt=prompt, model=model, dispatch=do_dispatch)
+        entry = create_worker(name=name, prompt=prompt, model=model, dispatch=do_dispatch)
 
-        console.print(f"[bold green]Created[/bold green] task [cyan]{entry.name}[/cyan] ({entry.status.value})")
-        console.print(f"  [dim]Task dir:[/dim] {entry.task_dir}")
+        console.print(f"[bold green]Created[/bold green] worker [cyan]{entry.name}[/cyan] ({entry.status.value})")
+        console.print(f"  [dim]Worker dir:[/dim] {entry.worker_dir}")
         console.print(f"  [dim]Session:[/dim] {entry.session_id}")
     except LauncherError as e:
         _handle_error(e)
 
 
-@task.command("dispatch")
-@click.option("--name", "-n", required=True, help="Name of the staged task to dispatch")
+@worker.command("dispatch")
+@click.option("--name", "-n", required=True, help="Name of the staged worker to dispatch")
 def dispatch_cmd(name: str) -> None:
-    """Dispatch a previously staged task, or resume if already dispatched."""
+    """Dispatch a previously staged worker, or resume if already dispatched."""
     try:
-        entry, resumed = dispatch_task(name=name)
+        entry, resumed = dispatch_worker(name=name)
 
         if resumed:
-            console.print(f"[bold blue]Resumed[/bold blue] task [cyan]{entry.name}[/cyan]")
+            console.print(f"[bold blue]Resumed[/bold blue] worker [cyan]{entry.name}[/cyan]")
         else:
-            console.print(f"[bold green]Dispatched[/bold green] task [cyan]{entry.name}[/cyan]")
-        console.print(f"  [dim]Task dir:[/dim] {entry.task_dir}")
+            console.print(f"[bold green]Dispatched[/bold green] worker [cyan]{entry.name}[/cyan]")
+        console.print(f"  [dim]Worker dir:[/dim] {entry.worker_dir}")
         console.print(f"  [dim]Session:[/dim] {entry.session_id}")
     except LauncherError as e:
         _handle_error(e)
 
 
-@task.command("close", hidden=True)
+@worker.command("close", hidden=True)
 def close_cmd() -> None:
-    """Mark a worker task as closed (called by SessionEnd hook)."""
+    """Mark a worker as closed (called by SessionEnd hook)."""
     try:
-        close_task()
+        close_worker()
     except LauncherError as e:
         _handle_error(e)
 
 
-@task.command("list")
-@click.option("--all", "-a", "show_all", is_flag=True, help="Show tasks from all sessions, not just current")
+@worker.command("list")
+@click.option("--all", "-a", "show_all", is_flag=True, help="Show workers from all sessions, not just current")
 def list_cmd(show_all: bool) -> None:  # noqa: FBT001
-    """List tasks for the current project."""
+    """List workers for the current project."""
     try:
-        entries = list_tasks(show_all=show_all)
+        entries = list_workers(show_all=show_all)
 
         if not entries:
-            console.print("[dim]No tasks found.[/dim]")
+            console.print("[dim]No workers found.[/dim]")
             return
 
         for entry in entries:
@@ -101,8 +101,8 @@ def list_cmd(show_all: bool) -> None:  # noqa: FBT001
         _handle_error(e)
 
 
-@task.command("ask")
-@click.option("--name", "-n", required=True, help="Target task name or 'parent'")
+@worker.command("ask")
+@click.option("--name", "-n", required=True, help="Target worker name or 'parent'")
 @click.argument("message")
 def ask_cmd(name: str, message: str) -> None:
     """Ask a question using a target session's context.
@@ -113,13 +113,13 @@ def ask_cmd(name: str, message: str) -> None:
     Use --name parent from a worker to query the orchestrator.
     """
     try:
-        response = ask_task(name=name, message=message)
+        response = ask_worker(name=name, message=message)
         console.print(response)
     except LauncherError as e:
         _handle_error(e)
 
 
-@task.command("inbox")
+@worker.command("inbox")
 @click.option("--peek", is_flag=True, help="Show message count without consuming")
 def inbox_cmd(peek: bool) -> None:  # noqa: FBT001
     """Check the current session's inbox for messages.
@@ -138,12 +138,12 @@ def inbox_cmd(peek: bool) -> None:  # noqa: FBT001
         console.print("[dim]No messages.[/dim]")
 
 
-@task.command("send")
-@click.option("--name", "-n", required=True, help="Target task name or 'parent'")
+@worker.command("send")
+@click.option("--name", "-n", required=True, help="Target worker name or 'parent'")
 @click.option("--immediate", is_flag=True, help="Deliver at next tool call instead of next turn boundary")
 @click.argument("message")
 def send_cmd(name: str, immediate: bool, message: str) -> None:  # noqa: FBT001
-    """Send a message to a task session's inbox.
+    """Send a message to a worker session's inbox.
 
     Message is delivered by a hook on the target session. By default,
     delivered at the next turn boundary (Stop event). Use --immediate
@@ -152,7 +152,7 @@ def send_cmd(name: str, immediate: bool, message: str) -> None:  # noqa: FBT001
     Use --name parent from a worker to message the orchestrator.
     """
     try:
-        send_to_task(name=name, message=message, immediate=immediate)
+        send_to_worker(name=name, message=message, immediate=immediate)
         priority = "immediate" if immediate else "normal"
         console.print(f"[bold green]Sent[/bold green] ({priority}) → [cyan]{name}[/cyan]")
     except LauncherError as e:

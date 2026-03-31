@@ -21,9 +21,9 @@ from core.utils import atomic_write_json
 # ANTHROPIC_API_KEY from .env rather than key helpers.
 _STRIPPED_KEYS = {"apiKeyHelper"}
 
-# Tasks dir is under SCRATCH_BASE — session_id isn't known at launch
+# Workers dir is under SCRATCH_BASE — session_id isn't known at launch
 # so we pre-authorize the whole tree.
-_TASKS_DIR = SCRATCH_BASE / "tasks"
+_WORKERS_DIR = SCRATCH_BASE / "workers"
 
 
 def _load_user_settings() -> dict[str, Any]:
@@ -65,7 +65,7 @@ def build_session_settings(
     scratch_dir = SCRATCH_BASE / scratch_name
     permissions = settings.setdefault("permissions", {})
     allow: list[str] = list(permissions.get("allow", []))
-    for directory in (scratch_dir, _TASKS_DIR):
+    for directory in (scratch_dir, _WORKERS_DIR):
         allow.extend(f"{tool}({directory}/**)" for tool in ("Read", "Write", "Edit"))
     permissions["allow"] = list(dict.fromkeys(allow))
 

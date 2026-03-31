@@ -106,18 +106,18 @@ class LogseqGraphNotFoundError(LauncherError):
         super().__init__(f"Logseq graph directory not found: {path}")
 
 
-class TaskError(LauncherError):
-    """Base exception for task-related errors."""
+class WorkerError(LauncherError):
+    """Base exception for worker-related errors."""
 
 
-class NoMultiplexerError(TaskError):
-    """Raised when a task dispatch is attempted outside any terminal multiplexer."""
+class NoMultiplexerError(WorkerError):
+    """Raised when a worker dispatch is attempted outside any terminal multiplexer."""
 
     def __init__(self) -> None:
-        super().__init__("task dispatch requires a terminal multiplexer ($KITTY_LISTEN_ON or $TMUX not set)")
+        super().__init__("worker dispatch requires a terminal multiplexer ($KITTY_LISTEN_ON or $TMUX not set)")
 
 
-class PaneLaunchError(TaskError):
+class PaneLaunchError(WorkerError):
     """Raised when spawning a new terminal pane fails."""
 
     def __init__(self, backend: str, stderr: str | None = None) -> None:
@@ -127,38 +127,38 @@ class PaneLaunchError(TaskError):
         super().__init__(msg)
 
 
-class TaskNotFoundError(TaskError):
-    """Raised when a task does not exist in the index."""
+class WorkerNotFoundError(WorkerError):
+    """Raised when a worker does not exist in the index."""
 
     def __init__(self, name: str, project: str) -> None:
-        super().__init__(f"Task {name!r} not found for project {project!r}")
+        super().__init__(f"Worker {name!r} not found for project {project!r}")
 
 
-class InvalidTaskNameError(TaskError):
-    """Raised when a task name contains unsafe characters."""
+class InvalidWorkerNameError(WorkerError):
+    """Raised when a worker name contains unsafe characters."""
 
     def __init__(self, name: str) -> None:
         super().__init__(
-            f"Invalid task name {name!r}"
+            f"Invalid worker name {name!r}"
             " — must start with an alphanumeric and contain only alphanumerics, hyphens, underscores, or dots"
         )
 
 
-class SessionIdNotSetError(TaskError):
+class SessionIdNotSetError(WorkerError):
     """Raised when CLAUDE_SESSION_ID is not set in the environment."""
 
     def __init__(self) -> None:
-        super().__init__("CLAUDE_SESSION_ID is not set — task commands must be run from within a Claude session")
+        super().__init__("CLAUDE_SESSION_ID is not set — worker commands must be run from within a Claude session")
 
 
-class NotAWorkerError(TaskError):
+class NotAWorkerError(WorkerError):
     """Raised when a worker-only operation is attempted from a non-worker session."""
 
     def __init__(self) -> None:
-        super().__init__("--name parent is only available in worker sessions (BASECAMP_TASK_NAME not set)")
+        super().__init__("--name parent is only available in worker sessions (BASECAMP_WORKER_NAME not set)")
 
 
-class TaskCommunicationError(TaskError):
+class WorkerCommunicationError(WorkerError):
     """Raised when the Claude CLI subprocess fails during inter-agent communication."""
 
     def __init__(self, returncode: int, stderr: str | None = None) -> None:
@@ -168,8 +168,8 @@ class TaskCommunicationError(TaskError):
         super().__init__(msg)
 
 
-class ProjectNotSetError(TaskError):
+class ProjectNotSetError(WorkerError):
     """Raised when BASECAMP_PROJECT is not set in the environment."""
 
     def __init__(self) -> None:
-        super().__init__("BASECAMP_PROJECT is not set — task commands must be run from within a Claude session")
+        super().__init__("BASECAMP_PROJECT is not set — worker commands must be run from within a Claude session")

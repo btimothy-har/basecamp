@@ -18,7 +18,7 @@ See `core/CLAUDE.md` and `observer/CLAUDE.md` for package-specific architecture 
 ```
 core/src/core/
 ├── main.py                     # Click entry point
-├── cli/                        # One module per command (launch, open, task, etc.)
+├── cli/                        # One module per command (launch, open, worker, etc.)
 ├── config/project.py           # ProjectConfig Pydantic model
 ├── git/
 │   ├── repo.py                 # Git utilities (is_git_repo, get_repo_name, etc.)
@@ -30,10 +30,10 @@ core/src/core/
 │   ├── _system_prompts/        # Package defaults (environment.md, system.md)
 │   ├── _working_styles/        # Package defaults (engineering.md, advisor.md)
 │   └── logseq/                 # Logseq session prompts (reflect, plan)
-├── task/
-│   ├── models.py               # TaskEntry Pydantic model, TaskStatus enum
-│   ├── index.py                # File-backed per-project task index with locking
-│   └── operations.py           # Task lifecycle: create, dispatch, register, list
+├── worker/
+│   ├── models.py               # WorkerEntry Pydantic model, WorkerStatus enum
+│   ├── index.py                # File-backed per-project worker index with locking
+│   └── operations.py           # Worker lifecycle: create, dispatch, close, list
 ├── settings.py                 # File-backed config with locking
 ├── constants.py                # Path constants
 └── exceptions.py               # Exception hierarchy
