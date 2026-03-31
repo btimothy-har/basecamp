@@ -15,7 +15,7 @@ from core.exceptions import (
     NoMultiplexerError,
     ProjectNotSetError,
     SessionIdNotSetError,
-    TaskCommunicationError,
+    WorkerCommunicationError,
 )
 from core.settings import resolve_model
 from core.terminal import resolve_dispatch_backend
@@ -70,15 +70,15 @@ def _summarize_session(session_id: str) -> str:
             timeout=180,
         )
     except subprocess.TimeoutExpired as e:
-        raise TaskCommunicationError(1, f"Summarization timed out after {e.timeout}s") from e
+        raise WorkerCommunicationError(1, f"Summarization timed out after {e.timeout}s") from e
 
     if result.returncode != 0:
-        raise TaskCommunicationError(result.returncode, result.stderr.strip())
+        raise WorkerCommunicationError(result.returncode, result.stderr.strip())
 
     summary = result.stdout.strip()
     if not summary:
         msg = "Summarization returned empty output"
-        raise TaskCommunicationError(1, msg)
+        raise WorkerCommunicationError(1, msg)
 
     return summary
 
