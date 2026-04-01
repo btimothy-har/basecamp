@@ -10,6 +10,8 @@ benefit most; non-LLM items complete instantly as workers.
 
 import json
 import logging
+import signal
+import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import UTC, datetime
 
@@ -23,6 +25,13 @@ from observer.pipeline.llm import summarize_thinking, summarize_tool_pair
 from observer.services.db import Database
 
 logger = logging.getLogger(__name__)
+
+_shutdown = threading.Event()
+
+
+def _signal_handler(signum: int, _frame: object) -> None:
+    logger.info("Received %s, initiating graceful shutdown", signal.Signals(signum).name)
+    _shutdown.set()
 
 
 class WorkItemRefiner:
@@ -52,6 +61,11 @@ class WorkItemRefiner:
                 done += 1
                 if done % 10 == 0 or done == total:
                     logger.info("Refined %d/%d work items", done, total)
+                if _shutdown.is_set():
+                    logger.info("Shutdown requested, cancelling remaining work items")
+                    for f in futures:
+                        f.cancel()
+                    break
 
         return sum(1 for i in items if i.processed == WorkItemStage.REFINED)
 
