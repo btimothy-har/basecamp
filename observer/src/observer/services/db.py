@@ -67,7 +67,7 @@ class Database:
             raise DatabaseNotConfiguredError()
 
         # Ensure the parent directory exists for the SQLite file.
-        BASECAMP_DIR.mkdir(parents=True, exist_ok=True)
+        BASECAMP_DIR.mkdir(parents=True, mode=0o700, exist_ok=True)
 
         self._engine: Engine = create_engine(url, connect_args={"timeout": 30})
         event.listen(self._engine, "connect", _on_connect)
@@ -113,23 +113,23 @@ class Database:
             )
             conn.execute(
                 text(
-                    "CREATE TRIGGER IF NOT EXISTS artifacts_ai AFTER INSERT ON artifacts BEGIN"
-                    "  INSERT INTO artifacts_fts(rowid, text) VALUES (new.id, new.text);"
+                    "CREATE TRIGGER IF NOT EXISTS artifacts_ai AFTER INSERT ON artifacts BEGIN\n"
+                    "  INSERT INTO artifacts_fts(rowid, text) VALUES (new.id, new.text);\n"
                     "END"
                 )
             )
             conn.execute(
                 text(
-                    "CREATE TRIGGER IF NOT EXISTS artifacts_au AFTER UPDATE ON artifacts BEGIN"
-                    "  INSERT INTO artifacts_fts(artifacts_fts, rowid, text) VALUES('delete', old.id, old.text);"
-                    "  INSERT INTO artifacts_fts(rowid, text) VALUES (new.id, new.text);"
+                    "CREATE TRIGGER IF NOT EXISTS artifacts_au AFTER UPDATE ON artifacts BEGIN\n"
+                    "  INSERT INTO artifacts_fts(artifacts_fts, rowid, text) VALUES('delete', old.id, old.text);\n"
+                    "  INSERT INTO artifacts_fts(rowid, text) VALUES (new.id, new.text);\n"
                     "END"
                 )
             )
             conn.execute(
                 text(
-                    "CREATE TRIGGER IF NOT EXISTS artifacts_ad AFTER DELETE ON artifacts BEGIN"
-                    "  INSERT INTO artifacts_fts(artifacts_fts, rowid, text) VALUES('delete', old.id, old.text);"
+                    "CREATE TRIGGER IF NOT EXISTS artifacts_ad AFTER DELETE ON artifacts BEGIN\n"
+                    "  INSERT INTO artifacts_fts(artifacts_fts, rowid, text) VALUES('delete', old.id, old.text);\n"
                     "END"
                 )
             )

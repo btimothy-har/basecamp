@@ -362,7 +362,7 @@ def reprocess(yes: bool) -> None:  # noqa: FBT001
     from observer.pipeline.indexing import SearchIndexer
     from observer.pipeline.refining import EventRefiner
     from observer.pipeline.refining.grouping import EventGrouper
-    from observer.services.chroma import get_collection
+    from observer.services.chroma import COLLECTION_NAME, get_client
     from observer.services.db import Database
     from observer.services.logger import configure_logging
 
@@ -400,10 +400,9 @@ def reprocess(yes: bool) -> None:  # noqa: FBT001
 
     # Clear ChromaDB collection
     try:
-        collection = get_collection()
-        collection.delete(where={})
+        get_client().delete_collection(COLLECTION_NAME)
     except Exception:
-        pass  # Collection may be empty
+        pass  # Collection may not exist yet
     click.echo("  Cleared ChromaDB embeddings")
 
     with db_inst.session() as session:

@@ -40,8 +40,8 @@ def migrate_from_pg(pg_url: str | None, yes: bool, skip_reprocess: bool) -> None
     try:
         with pg_engine.connect() as conn:
             conn.execute(text("SELECT 1"))
-    except Exception as e:
-        sys.exit(f"Cannot connect to PostgreSQL: {e}")
+    except Exception:
+        sys.exit("Cannot connect to PostgreSQL. Verify --pg-url or config.json.")
     click.echo("  Connected.")
 
     # Count source data
@@ -221,7 +221,6 @@ def _copy_raw_events(pg_engine, db) -> int:
 
             with db.session() as session:
                 # Check which IDs already exist
-                existing_ids = set()
                 row_ids = [r[0] for r in rows]
                 existing_rows = session.query(RawEventSchema.id).filter(RawEventSchema.id.in_(row_ids)).all()
                 existing_ids = {r[0] for r in existing_rows}

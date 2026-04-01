@@ -74,24 +74,27 @@ class WorkItem(BaseModel):
     def claim_unprocessed(cls, *, transcript_id: int | None = None) -> list[Self]:
         """Atomically claim UNREFINED rows by moving them to REFINING.
 
-        Uses an atomic UPDATE to claim rows. SQLite's file-level write lock
-        ensures only one writer at a time, preventing double-processing.
+        Uses UPDATE...RETURNING to get the exact IDs transitioned, avoiding
+        stale REFINING rows left by a previous crashed run. SQLite's
+        file-level write lock ensures only one writer at a time.
         """
         with Database().session() as session:
             stmt = update(WorkItemSchema).where(WorkItemSchema.processed == WorkItemStage.UNREFINED)
             if transcript_id is not None:
                 stmt = stmt.where(WorkItemSchema.transcript_id == transcript_id)
-            stmt = stmt.values(processed=WorkItemStage.REFINING)
-            session.execute(stmt)
+            stmt = stmt.values(processed=WorkItemStage.REFINING).returning(WorkItemSchema.id)
+            claimed_ids = [row[0] for row in session.execute(stmt)]
             session.flush()
 
-            # Fetch the rows we just claimed
-            q = session.query(WorkItemSchema).filter(WorkItemSchema.processed == WorkItemStage.REFINING)
-            if transcript_id is not None:
-                q = q.filter(WorkItemSchema.transcript_id == transcript_id)
-            rows = q.order_by(WorkItemSchema.created_at).all()
-            if not rows:
+            if not claimed_ids:
                 return []
+
+            rows = (
+                session.query(WorkItemSchema)
+                .filter(WorkItemSchema.id.in_(claimed_ids))
+                .order_by(WorkItemSchema.created_at)
+                .all()
+            )
             return [cls.model_validate(r) for r in rows]
 
     @classmethod

@@ -37,4 +37,4 @@ packages = ["src/observer"]
 testpaths = ["tests"]
 pythonpath = ["src"]
 log_level = "CRITICAL"
-env = ["TESTCONTAINERS_RYUK_DISABLED=true"]
+env = []

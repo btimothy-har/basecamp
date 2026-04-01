@@ -8,30 +8,15 @@ import hashlib
 import logging
 from datetime import UTC, datetime
 
-from observer.constants import (
-    EMBEDDING_DIMENSIONS,
-    EMBEDDING_MODEL_NAME,
-    MODEL_CACHE_DIR,
-)
+from observer.constants import EMBEDDING_DIMENSIONS
 from observer.data.artifact import Artifact
 from observer.data.schemas import ArtifactSchema, ProjectSchema, TranscriptSchema, WorktreeSchema
 from observer.exceptions import EmbeddingShapeError
 from observer.services.chroma import get_collection
 from observer.services.db import Database
+from observer.services.embedding import get_model
 
 logger = logging.getLogger(__name__)
-
-_model_cache: list = []
-
-
-def _get_model():
-    """Return cached embedding model, loading once on first use."""
-    if not _model_cache:
-        from sentence_transformers import SentenceTransformer  # noqa: PLC0415
-
-        MODEL_CACHE_DIR.mkdir(parents=True, exist_ok=True)
-        _model_cache.append(SentenceTransformer(EMBEDDING_MODEL_NAME, cache_folder=str(MODEL_CACHE_DIR)))
-    return _model_cache[0]
 
 
 def _content_hash(text: str) -> str:
@@ -134,7 +119,7 @@ class SearchIndexer:
 
 def _encode(texts: list[str]) -> list:
     """Encode texts into embedding vectors. Lazy-loads model."""
-    model = _get_model()
+    model = get_model()
     embeddings = model.encode(texts, show_progress_bar=False)
 
     expected = (len(texts), EMBEDDING_DIMENSIONS)

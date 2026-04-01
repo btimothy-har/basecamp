@@ -136,7 +136,7 @@ class TestSearchArtifacts:
         )
 
         with (
-            patch.object(engine, "_get_model", return_value=_mock_model()),
+            patch.object(engine, "get_model", return_value=_mock_model()),
             patch("observer.mcp.engine.get_collection", return_value=mock_coll),
         ):
             results = engine.search_artifacts("test query", "test-project")
@@ -152,7 +152,7 @@ class TestSearchArtifacts:
         _seed_artifact(db, session_id="sess-scoped")
 
         with (
-            patch.object(engine, "_get_model", return_value=_mock_model()),
+            patch.object(engine, "get_model", return_value=_mock_model()),
             patch("observer.mcp.engine.get_collection", return_value=_mock_collection_with_results([])),
         ):
             results = engine.search_artifacts("test query", "nonexistent-project")
@@ -163,7 +163,7 @@ class TestSearchArtifacts:
         aid, _ = _seed_artifact(db, session_id="sess-thresh")
 
         with (
-            patch.object(engine, "_get_model", return_value=_mock_model()),
+            patch.object(engine, "get_model", return_value=_mock_model()),
             patch(
                 "observer.mcp.engine.get_collection",
                 return_value=_mock_collection_with_results(
@@ -178,7 +178,7 @@ class TestSearchArtifacts:
 
     def test_empty_db_returns_empty(self, db):  # noqa: ARG002
         with (
-            patch.object(engine, "_get_model", return_value=_mock_model()),
+            patch.object(engine, "get_model", return_value=_mock_model()),
             patch("observer.mcp.engine.get_collection", return_value=_mock_collection_with_results([])),
         ):
             results = engine.search_artifacts("test query", "test-project")
@@ -198,7 +198,7 @@ class TestHybridRetrieval:
         )
 
         with (
-            patch.object(engine, "_get_model", return_value=_mock_model()),
+            patch.object(engine, "get_model", return_value=_mock_model()),
             patch("observer.mcp.engine.get_collection", return_value=_mock_collection_with_results([])),
         ):
             results = engine.search_artifacts("worktree isolation", "test-project", threshold=0.0)
@@ -230,7 +230,7 @@ class TestHybridRetrieval:
             session.add(artifact)
 
         with (
-            patch.object(engine, "_get_model", return_value=_mock_model()),
+            patch.object(engine, "get_model", return_value=_mock_model()),
             patch("observer.mcp.engine.get_collection", return_value=_mock_collection_with_results([])),
         ):
             results = engine.search_artifacts("migration schema version", "test-project", threshold=0.0)
@@ -276,7 +276,7 @@ class TestHybridRetrieval:
             )
 
         with (
-            patch.object(engine, "_get_model", return_value=_mock_model()),
+            patch.object(engine, "get_model", return_value=_mock_model()),
             patch("observer.mcp.engine.get_collection", return_value=_mock_collection_with_results([])),
         ):
             results = engine.search_artifacts("worktree isolation", "project-a", threshold=0.0)
@@ -299,7 +299,7 @@ class TestSearchTranscripts:
         )
 
         with (
-            patch.object(engine, "_get_model", return_value=_mock_model()),
+            patch.object(engine, "get_model", return_value=_mock_model()),
             patch("observer.mcp.engine.get_collection", return_value=mock_coll),
         ):
             results = engine.search_transcripts("test query", "test-project")
@@ -315,7 +315,7 @@ class TestSearchTranscripts:
         _seed_summary(db, session_id="sess-scoped-ts")
 
         with (
-            patch.object(engine, "_get_model", return_value=_mock_model()),
+            patch.object(engine, "get_model", return_value=_mock_model()),
             patch("observer.mcp.engine.get_collection", return_value=_mock_collection_with_results([])),
         ):
             results = engine.search_transcripts("test query", "nonexistent-project")
@@ -324,7 +324,7 @@ class TestSearchTranscripts:
 
     def test_empty_db_returns_empty(self, db):  # noqa: ARG002
         with (
-            patch.object(engine, "_get_model", return_value=_mock_model()),
+            patch.object(engine, "get_model", return_value=_mock_model()),
             patch("observer.mcp.engine.get_collection", return_value=_mock_collection_with_results([])),
         ):
             results = engine.search_transcripts("test query", "test-project")

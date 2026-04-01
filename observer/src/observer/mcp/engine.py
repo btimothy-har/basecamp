@@ -22,8 +22,6 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session as SASession
 
 from observer.constants import (
-    EMBEDDING_MODEL_NAME,
-    MODEL_CACHE_DIR,
     SEARCH_DEFAULT_THRESHOLD,
     SEARCH_DEFAULT_TOP_K,
     SEARCH_OVERFETCH_FACTOR,
@@ -40,20 +38,9 @@ from observer.data.transcript import Transcript
 from observer.mcp.scoring import compute_score
 from observer.services.chroma import get_collection
 from observer.services.db import Database
+from observer.services.embedding import get_model
 
 logger = logging.getLogger(__name__)
-
-_model_cache: list[Any] = []
-
-
-def _get_model() -> Any:
-    """Return the embedding model, loading it on first call."""
-    if not _model_cache:
-        from sentence_transformers import SentenceTransformer  # noqa: PLC0415
-
-        MODEL_CACHE_DIR.mkdir(parents=True, exist_ok=True)
-        _model_cache.append(SentenceTransformer(EMBEDDING_MODEL_NAME, cache_folder=str(MODEL_CACHE_DIR)))
-    return _model_cache[0]
 
 
 def _apply_scope_filters(
@@ -205,6 +192,19 @@ def _knn_retrieve(
     return merged
 
 
+def _sanitize_fts5_query(query: str) -> str:
+    """Escape user input for safe use in FTS5 MATCH expressions.
+
+    Wraps each whitespace-delimited token in double quotes so FTS5
+    treats them as literal strings, not operators. This mirrors
+    PostgreSQL's plainto_tsquery behavior.
+    """
+    tokens = query.split()
+    if not tokens:
+        return '""'
+    return " ".join('"' + t.replace('"', '""') + '"' for t in tokens)
+
+
 def _fts_retrieve(
     db_session: SASession,
     query: str,
@@ -224,10 +224,16 @@ def _fts_retrieve(
     then ORM query for full artifact data with scope filters.
     """
     # Step 1: Get matching rowids and bm25 scores from FTS5
+    safe_query = _sanitize_fts5_query(query)
     fts_sql = text(
         "SELECT rowid, bm25(artifacts_fts) AS rank FROM artifacts_fts WHERE artifacts_fts MATCH :query LIMIT :limit"
-    ).bindparams(query=query, limit=overfetch * 2)
-    fts_matches = db_session.execute(fts_sql).fetchall()
+    ).bindparams(query=safe_query, limit=overfetch * 2)
+
+    try:
+        fts_matches = db_session.execute(fts_sql).fetchall()
+    except Exception:
+        logger.warning("FTS5 query failed for %r, falling back to KNN only", query)
+        return {}
 
     if not fts_matches:
         return {}
@@ -338,6 +344,34 @@ def _load_artifacts(db_session: SASession, artifact_ids: set[int]) -> dict[int, 
     return {row.id: row for row in rows}
 
 
+def _score_and_rank(
+    merged: dict[int, dict[str, Any]],
+    session: SASession,
+    *,
+    threshold: float,
+    top_k: int,
+) -> list[tuple[ArtifactSchema, str, float]]:
+    """Load, score, filter, and rank merged retrieval results.
+
+    Returns (artifact, session_id, score) tuples sorted by score descending,
+    truncated to top_k.
+    """
+    artifacts_by_id = _load_artifacts(session, set(merged.keys()))
+
+    scored: list[tuple[ArtifactSchema, str, float]] = []
+    for hit in merged.values():
+        artifact = artifacts_by_id.get(hit["artifact_id"])
+        if artifact is None:
+            continue
+        score = compute_score(artifact.updated_at, semantic=hit["semantic"], keyword=hit["keyword"])
+        if score < threshold:
+            continue
+        scored.append((artifact, hit["session_id"], score))
+
+    scored.sort(key=lambda t: t[2], reverse=True)
+    return scored[:top_k]
+
+
 def search_artifacts(
     query: str,
     project_name: str | None,
@@ -351,7 +385,7 @@ def search_artifacts(
     before: datetime | None = None,
 ) -> list[dict[str, Any]]:
     """Hybrid search over non-summary extraction sections."""
-    model = _get_model()
+    model = get_model()
     query_vector = model.encode([query], show_progress_bar=False)[0].tolist()
     overfetch = max(top_k * SEARCH_OVERFETCH_FACTOR, 50)
 
@@ -389,31 +423,16 @@ def search_artifacts(
         if not merged:
             return []
 
-        # Load full artifact rows for scoring
-        artifacts_by_id = _load_artifacts(session, set(merged.keys()))
-
-        scored: list[dict[str, Any]] = []
-        for hit in merged.values():
-            artifact = artifacts_by_id.get(hit["artifact_id"])
-            if artifact is None:
-                continue
-            score = compute_score(artifact.updated_at, semantic=hit["semantic"], keyword=hit["keyword"])
-            if score < threshold:
-                continue
-
-            scored.append(
-                {
-                    "session_id": hit["session_id"],
-                    "text": artifact.text,
-                    "type": artifact.section_type,
-                    "score": round(score, 4),
-                    "created_at": artifact.created_at.isoformat() if artifact.created_at else None,
-                }
-            )
-
-        scored.sort(key=lambda r: r["score"], reverse=True)
-
-    return scored[:top_k]
+        return [
+            {
+                "session_id": sess_id,
+                "text": artifact.text,
+                "type": artifact.section_type,
+                "score": round(score, 4),
+                "created_at": artifact.created_at.isoformat() if artifact.created_at else None,
+            }
+            for artifact, sess_id, score in _score_and_rank(merged, session, threshold=threshold, top_k=top_k)
+        ]
 
 
 def search_transcripts(
@@ -428,7 +447,7 @@ def search_transcripts(
     before: datetime | None = None,
 ) -> list[dict[str, Any]]:
     """Hybrid search over summary extraction sections."""
-    model = _get_model()
+    model = get_model()
     query_vector = model.encode([query], show_progress_bar=False)[0].tolist()
     overfetch = max(top_k * SEARCH_OVERFETCH_FACTOR, 50)
 
@@ -453,34 +472,20 @@ def search_transcripts(
         if not merged:
             return []
 
-        artifacts_by_id = _load_artifacts(session, set(merged.keys()))
-
-        scored: list[dict[str, Any]] = []
-        for hit in merged.values():
-            artifact = artifacts_by_id.get(hit["artifact_id"])
-            if artifact is None:
-                continue
-            score = compute_score(artifact.updated_at, semantic=hit["semantic"], keyword=hit["keyword"])
-            if score < threshold:
-                continue
-
+        results: list[dict[str, Any]] = []
+        for artifact, sess_id, score in _score_and_rank(merged, session, threshold=threshold, top_k=top_k):
             title = Artifact.parse_title(artifact.text)
-
             result: dict[str, Any] = {
-                "session_id": hit["session_id"],
+                "session_id": sess_id,
                 "text": artifact.text,
                 "score": round(score, 4),
                 "created_at": artifact.created_at.isoformat() if artifact.created_at else None,
             }
-
             if title is not None:
                 result["title"] = title
+            results.append(result)
 
-            scored.append(result)
-
-        scored.sort(key=lambda r: r["score"], reverse=True)
-
-    return scored[:top_k]
+        return results
 
 
 def get_session(session_id: str) -> dict[str, Any] | None:

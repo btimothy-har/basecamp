@@ -121,7 +121,7 @@ class TestIndexPending:
         ext_id = _create_artifact(db, transcript_id, text="extraction text")
 
         with (
-            patch.object(indexing, "_get_model", return_value=_mock_model(1)),
+            patch.object(indexing, "get_model", return_value=_mock_model(1)),
             patch("observer.pipeline.indexing.get_collection", return_value=_mock_collection()),
         ):
             count = SearchIndexer.index_pending(db)
@@ -134,7 +134,7 @@ class TestIndexPending:
             assert extraction.indexed_at is not None
 
     def test_returns_zero_when_nothing_pending(self, db):  # noqa: ARG002
-        with patch.object(indexing, "_get_model") as mock_st_cls:
+        with patch.object(indexing, "get_model") as mock_st_cls:
             count = SearchIndexer.index_pending(db)
 
         assert count == 0
@@ -145,7 +145,7 @@ class TestIndexPending:
         ext_id = _create_artifact(db, transcript_id, text="Session summary text.", section_type=SectionType.SUMMARY)
 
         with (
-            patch.object(indexing, "_get_model", return_value=_mock_model(1)),
+            patch.object(indexing, "get_model", return_value=_mock_model(1)),
             patch("observer.pipeline.indexing.get_collection", return_value=_mock_collection()),
         ):
             count = SearchIndexer.index_pending(db)
@@ -167,7 +167,7 @@ class TestIndexPending:
             extraction.updated_at = datetime.now(UTC) + timedelta(seconds=1)
 
         with (
-            patch.object(indexing, "_get_model", return_value=_mock_model(1)),
+            patch.object(indexing, "get_model", return_value=_mock_model(1)),
             patch("observer.pipeline.indexing.get_collection", return_value=_mock_collection()),
         ):
             count = SearchIndexer.index_pending(db)
@@ -184,7 +184,7 @@ class TestIndexPending:
         ext_id = _create_artifact(db, transcript_id, text=text)
         _mark_indexed(db, ext_id, text=text)
 
-        with patch.object(indexing, "_get_model") as mock_st_cls:
+        with patch.object(indexing, "get_model") as mock_st_cls:
             count = SearchIndexer.index_pending(db)
 
         assert count == 0
@@ -196,7 +196,7 @@ class TestIndexPending:
         _create_artifact(db, transcript_id, text="A decision.", section_type=SectionType.DECISIONS)
 
         with (
-            patch.object(indexing, "_get_model", return_value=_mock_model()),
+            patch.object(indexing, "get_model", return_value=_mock_model()),
             patch("observer.pipeline.indexing.get_collection", return_value=_mock_collection()),
         ):
             count = SearchIndexer.index_pending(db)

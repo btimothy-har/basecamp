@@ -19,7 +19,7 @@ def get_client() -> chromadb.ClientAPI:
     """Return the ChromaDB persistent client, creating it on first call."""
     global _client  # noqa: PLW0603
     if _client is None:
-        BASECAMP_DIR.mkdir(parents=True, exist_ok=True)
+        BASECAMP_DIR.mkdir(parents=True, mode=0o700, exist_ok=True)
         _client = chromadb.PersistentClient(path=str(CHROMA_DIR))
     return _client
 
