@@ -64,9 +64,11 @@ class TestSetup:
         # Patch the module-level bindings that db.py and chroma.py
         # captured at import time via `from observer.constants import ...`.
         monkeypatch.setattr("observer.services.db.BASECAMP_DIR", tmp_path)
-        monkeypatch.setattr("observer.services.chroma.BASECAMP_DIR", tmp_path)
         monkeypatch.setattr("observer.services.chroma.CHROMA_DIR", tmp_path / "chroma")
-        monkeypatch.setattr("observer.services.chroma._client", None)
+
+        from observer.services import chroma  # noqa: PLC0415
+
+        chroma._state.clear()
 
         from observer.services.db import Database  # noqa: PLC0415
 
