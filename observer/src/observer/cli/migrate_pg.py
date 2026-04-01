@@ -100,6 +100,9 @@ def migrate_from_pg(pg_url: str | None, yes: bool, skip_reprocess: bool) -> None
     from observer.pipeline.indexing import SearchIndexer  # noqa: PLC0415
     from observer.pipeline.refining import EventRefiner  # noqa: PLC0415
     from observer.pipeline.refining.grouping import EventGrouper  # noqa: PLC0415
+    from observer.services.logger import configure_logging  # noqa: PLC0415
+
+    configure_logging(foreground=True)
 
     with db.session() as session:
         transcript_ids = [row[0] for row in session.query(TranscriptSchema.id).all()]
@@ -199,7 +202,7 @@ def _copy_raw_events(pg_engine, db) -> int:
     """Copy raw events from PG to SQLite in batches. Returns count copied."""
     from observer.data.schemas import RawEventSchema  # noqa: PLC0415
 
-    batch_size = 1000
+    batch_size = 500
     copied = 0
 
     with pg_engine.connect() as pg_conn:

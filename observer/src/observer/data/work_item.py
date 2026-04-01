@@ -3,16 +3,20 @@
 from __future__ import annotations
 
 import json
-from datetime import datetime
+import logging
+from datetime import UTC, datetime, timedelta
 from typing import Self
 
 from pydantic import BaseModel, ConfigDict, field_validator
-from sqlalchemy import update
+from sqlalchemy import or_, update
 from sqlalchemy.orm import Session
 
+from observer.constants import REFINING_STALE_THRESHOLD
 from observer.data.enums import WorkItemStage, WorkItemType
 from observer.data.schemas import WorkItemSchema
 from observer.services.db import Database
+
+logger = logging.getLogger(__name__)
 
 
 class WorkItem(BaseModel):
@@ -24,6 +28,7 @@ class WorkItem(BaseModel):
     event_ids: list[int]
     processed: WorkItemStage = WorkItemStage.UNREFINED
     created_at: datetime
+    claimed_at: datetime | None = None
 
     @field_validator("event_ids", mode="before")
     @classmethod
@@ -82,21 +87,51 @@ class WorkItem(BaseModel):
             stmt = update(WorkItemSchema).where(WorkItemSchema.processed == WorkItemStage.UNREFINED)
             if transcript_id is not None:
                 stmt = stmt.where(WorkItemSchema.transcript_id == transcript_id)
-            stmt = stmt.values(processed=WorkItemStage.REFINING).returning(WorkItemSchema.id)
-            claimed_ids = [row[0] for row in session.execute(stmt)]
+            stmt = stmt.values(
+                processed=WorkItemStage.REFINING,
+                claimed_at=datetime.now(UTC),
+            ).returning(WorkItemSchema.id)
+            claimed_ids = {row[0] for row in session.execute(stmt)}
             session.flush()
 
             if not claimed_ids:
                 return []
 
-            rows = (
-                session.query(WorkItemSchema)
-                .filter(WorkItemSchema.id.in_(claimed_ids))
-                .order_by(WorkItemSchema.created_at)
-                .all()
-            )
-            return [cls.model_validate(r) for r in rows]
+            # Query by stage instead of IN(...) to avoid SQLite's 999 variable limit.
+            # This is safe because SQLite's file-level write lock means we're the only
+            # writer, so all REFINING rows in scope are ones we just claimed.
+            q = session.query(WorkItemSchema).filter(WorkItemSchema.processed == WorkItemStage.REFINING)
+            if transcript_id is not None:
+                q = q.filter(WorkItemSchema.transcript_id == transcript_id)
+            rows = q.order_by(WorkItemSchema.created_at).all()
+            return [cls.model_validate(r) for r in rows if r.id in claimed_ids]
 
     @classmethod
     def has_unprocessed(cls) -> bool:
         return cls.has_by_processed(WorkItemStage.UNREFINED)
+
+    @classmethod
+    def recover_stale(cls, stale_threshold: int = REFINING_STALE_THRESHOLD) -> int:
+        """Reset REFINING items older than the threshold back to UNREFINED.
+
+        Handles both post-migration rows (stale claimed_at) and pre-migration
+        rows (NULL claimed_at). Returns the number of items recovered.
+        """
+        cutoff = datetime.now(UTC) - timedelta(seconds=stale_threshold)
+        with Database().session() as session:
+            stmt = (
+                update(WorkItemSchema)
+                .where(WorkItemSchema.processed == WorkItemStage.REFINING)
+                .where(
+                    or_(
+                        WorkItemSchema.claimed_at < cutoff,
+                        WorkItemSchema.claimed_at.is_(None),
+                    )
+                )
+                .values(processed=WorkItemStage.UNREFINED, claimed_at=None)
+            )
+            result = session.execute(stmt)
+            count = result.rowcount
+            if count:
+                logger.warning("Recovered %d stale REFINING work items", count)
+            return count

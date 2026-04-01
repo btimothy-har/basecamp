@@ -101,6 +101,7 @@ class WorkItemSchema(Base):
     event_ids: Mapped[str] = mapped_column(Text, nullable=False)  # JSON-serialized list[int]
     processed: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow, nullable=False)
+    claimed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
     transcript: Mapped["TranscriptSchema"] = relationship()
     transcript_events: Mapped[list["TranscriptEventSchema"]] = relationship(back_populates="work_item")

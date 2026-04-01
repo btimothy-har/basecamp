@@ -24,6 +24,7 @@ TRANSCRIPT_EXTENSION = ".jsonl"
 
 # Extraction settings
 REFINING_MAX_WORKERS = 15
+REFINING_STALE_THRESHOLD = 600  # 10 minutes — reset REFINING items older than this
 EXTRACTION_TIMEOUT = 120
 DEFAULT_OBSERVER_MODEL = "sonnet"
 
