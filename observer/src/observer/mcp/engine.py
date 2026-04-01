@@ -225,9 +225,7 @@ def _fts_retrieve(
     """
     # Step 1: Get matching rowids and bm25 scores from FTS5
     fts_sql = text(
-        "SELECT rowid, bm25(artifacts_fts) AS rank "
-        "FROM artifacts_fts WHERE artifacts_fts MATCH :query "
-        "LIMIT :limit"
+        "SELECT rowid, bm25(artifacts_fts) AS rank FROM artifacts_fts WHERE artifacts_fts MATCH :query LIMIT :limit"
     ).bindparams(query=query, limit=overfetch * 2)
     fts_matches = db_session.execute(fts_sql).fetchall()
 
