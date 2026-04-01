@@ -3,15 +3,12 @@
 Three layers:
 - Ingestion: ProjectSchema, WorktreeSchema, TranscriptSchema, RawEventSchema
 - Pipeline: WorkItemSchema, TranscriptEventSchema
-- Memory: ArtifactSchema (includes embedding + search index)
+- Memory: ArtifactSchema (embeddings stored in ChromaDB, FTS via SQLite FTS5)
 """
 
 from datetime import UTC, datetime
 
-from pgvector.sqlalchemy import Vector
 from sqlalchemy import (
-    ARRAY,
-    Computed,
     DateTime,
     Enum,
     ForeignKey,
@@ -22,19 +19,9 @@ from sqlalchemy import (
     UniqueConstraint,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
-from sqlalchemy.types import UserDefinedType
 
 from observer.data.enums import SectionType, WorkItemType
 from observer.services.db import Base
-
-
-class TSVector(UserDefinedType):
-    """SQLAlchemy type for PostgreSQL tsvector columns."""
-
-    cache_ok = True
-
-    def get_col_spec(self) -> str:
-        return "tsvector"
 
 
 def _utcnow() -> datetime:
@@ -111,7 +98,7 @@ class WorkItemSchema(Base):
     item_type: Mapped[str] = mapped_column(
         Enum(WorkItemType, native_enum=False, create_constraint=False), nullable=False
     )
-    event_ids: Mapped[list[int]] = mapped_column(ARRAY(Integer), nullable=False)
+    event_ids: Mapped[str] = mapped_column(Text, nullable=False)  # JSON-serialized list[int]
     processed: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow, nullable=False)
 
@@ -145,18 +132,6 @@ class ArtifactSchema(Base):
         UniqueConstraint("transcript_id", "section_type"),
         Index("ix_artifacts_transcript_id", "transcript_id"),
         Index("ix_artifacts_section_type", "section_type"),
-        Index(
-            "ix_artifacts_embedding_hnsw",
-            "embedding",
-            postgresql_using="hnsw",
-            postgresql_with={"m": 16, "ef_construction": 64},
-            postgresql_ops={"embedding": "vector_cosine_ops"},
-        ),
-        Index(
-            "ix_artifacts_search_vector",
-            "search_vector",
-            postgresql_using="gin",
-        ),
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
@@ -165,15 +140,9 @@ class ArtifactSchema(Base):
         Enum(SectionType, native_enum=False, create_constraint=False), nullable=False
     )
     text: Mapped[str] = mapped_column(Text, nullable=False)
-    embedding: Mapped[list[float] | None] = mapped_column(Vector(384), nullable=True)
     content_hash: Mapped[str | None] = mapped_column(String, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow, nullable=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow, nullable=False)
     indexed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
-    search_vector = mapped_column(
-        TSVector(),
-        Computed("to_tsvector('english', text)", persisted=True),  # Must match SEARCH_FTS_CONFIG in constants.py
-        nullable=True,
-    )
 
     transcript: Mapped["TranscriptSchema"] = relationship()

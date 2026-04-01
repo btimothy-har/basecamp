@@ -6,9 +6,8 @@ from datetime import datetime
 from typing import Self
 
 from pydantic import BaseModel, ConfigDict
-from sqlalchemy import cast, exists, func, or_
+from sqlalchemy import or_
 from sqlalchemy.orm import Session
-from sqlalchemy.types import LargeBinary
 
 from observer.data.enums import SectionType
 from observer.data.schemas import ArtifactSchema
@@ -22,7 +21,6 @@ class Artifact(BaseModel):
     transcript_id: int
     section_type: SectionType
     text: str
-    embedding: list[float] | None = None
     content_hash: str | None = None
     created_at: datetime
     updated_at: datetime
@@ -50,20 +48,18 @@ class Artifact(BaseModel):
         session.flush()
         return type(self).model_validate(row)
 
-    def update_embedding(
+    def update_index_metadata(
         self,
         session: Session,
         *,
-        embedding: list[float],
         content_hash: str,
         indexed_at: datetime,
     ) -> None:
-        """Update embedding fields on this artifact row."""
+        """Update content_hash and indexed_at after ChromaDB indexing."""
         session.query(ArtifactSchema).filter(
             ArtifactSchema.id == self.id,
         ).update(
             {
-                "embedding": embedding,
                 "content_hash": content_hash,
                 "indexed_at": indexed_at,
             }
@@ -79,18 +75,12 @@ class Artifact(BaseModel):
     def _pending_condition(cls):
         """SQLAlchemy filter expression for artifacts that need (re-)indexing.
 
-        Pending when: never indexed, updated since last index, or embedding is stale
-        (content hash doesn't match current text). content_hash is only written by
-        update_embedding(), so mismatch means the embedding hasn't caught up yet.
+        Pending when: never indexed, or updated since last index.
+        Content hash comparison is done in Python after fetching.
         """
-        current_hash = func.encode(
-            func.sha256(cast(ArtifactSchema.text, LargeBinary)),
-            "hex",
-        )
         return or_(
             ArtifactSchema.indexed_at.is_(None),
             ArtifactSchema.updated_at > ArtifactSchema.indexed_at,
-            current_hash != ArtifactSchema.content_hash,
         )
 
     @classmethod
@@ -106,6 +96,8 @@ class Artifact(BaseModel):
     @classmethod
     def has_pending_index(cls) -> bool:
         """Check if any artifacts need (re-)indexing without loading rows."""
+        from sqlalchemy import exists  # noqa: PLC0415
+
         with Database().session() as session:
             return session.query(exists().where(cls._pending_condition())).scalar()
 

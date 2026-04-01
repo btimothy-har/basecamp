@@ -26,12 +26,10 @@ class ExtractionError(ObserverError):
 
 
 class DatabaseNotConfiguredError(ObserverError):
-    """Raised when OBSERVER_PG_URL is not configured."""
+    """Raised when the database URL is not configured."""
 
     def __init__(self) -> None:
-        super().__init__(
-            "OBSERVER_PG_URL is not configured. Run `observer setup` to configure the PostgreSQL connection."
-        )
+        super().__init__("Database is not configured. Run `observer setup` to initialize.")
 
 
 class DatabaseClosedError(ObserverError):

@@ -1,6 +1,5 @@
 """Observer constants."""
 
-import os
 from pathlib import Path
 
 # Read paths — where Claude stores transcripts
@@ -43,14 +42,7 @@ SEARCH_TIME_DECAY_POWER = 0.5  # power-law exponent; lower = slower decay
 SEARCH_OVERFETCH_FACTOR = 5
 SEARCH_SEMANTIC_WEIGHT = 0.6  # blend weight for semantic similarity
 SEARCH_KEYWORD_WEIGHT = 0.4  # blend weight for FTS keyword relevance
-SEARCH_FTS_CONFIG = "english"  # PostgreSQL text search configuration
-
-# Container (local dev database)
-DB_CONTAINER_NAME = "observer-pg"
-DB_IMAGE = "docker.io/pgvector/pgvector:pg17"
-DB_VOLUME_NAME = "observer_data"
-DB_PORT = 15432
-DB_USER = os.environ.get("OBSERVER_DB_USER", "observer")
-DB_PASSWORD = os.environ.get("OBSERVER_DB_PASSWORD", "observer")
-DB_NAME = os.environ.get("OBSERVER_DB_NAME", "observer")
-DB_PG_URL = f"postgresql://{DB_USER}:{DB_PASSWORD}@localhost:{DB_PORT}/{DB_NAME}"
+# Database paths (SQLite + ChromaDB)
+DB_PATH = BASECAMP_DIR / "observer.db"
+DB_URL = f"sqlite:///{DB_PATH}"
+CHROMA_DIR = BASECAMP_DIR / "chroma"

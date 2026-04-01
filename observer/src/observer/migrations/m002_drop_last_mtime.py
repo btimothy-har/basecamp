@@ -1,15 +1,14 @@
 """Migration 002: Drop last_mtime from transcripts.
 
-The last_mtime column was used by the polling daemon to detect file changes.
-With the move to hook-based ingestion, file mtime tracking is no longer needed.
+Originally dropped the polling-era last_mtime column. Now a no-op —
+fresh SQLite installs never had this column.
 """
 
-from sqlalchemy import Engine, text
+from sqlalchemy import Engine
 
 from observer.services.migrations import migration
 
 
 @migration(version=2, description="Drop last_mtime column from transcripts")
 def run(engine: Engine) -> None:
-    with engine.begin() as conn:
-        conn.execute(text("ALTER TABLE transcripts DROP COLUMN IF EXISTS last_mtime"))
+    pass  # No-op: SQLite installs start with the latest schema.

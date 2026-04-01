@@ -7,12 +7,11 @@ import os
 from collections.abc import Generator
 from contextlib import contextmanager
 
-from pgvector.psycopg2 import register_vector
 from sqlalchemy import Engine, create_engine, event, text
 from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
 
+from observer.constants import BASECAMP_DIR, DB_URL
 from observer.exceptions import DatabaseClosedError, DatabaseNotConfiguredError
-from observer.services.config import get_pg_url
 
 logger = logging.getLogger(__name__)
 
@@ -21,9 +20,12 @@ class Base(DeclarativeBase):
     """SQLAlchemy declarative base for all observer tables."""
 
 
-def _on_connect(dbapi_conn: object, _connection_record: object) -> None:
-    """Register the pgvector type adapter on every new connection."""
-    register_vector(dbapi_conn)  # type: ignore[arg-type]
+def _on_connect(dbapi_conn, _connection_record):
+    """Enable WAL mode and foreign keys on every new SQLite connection."""
+    cursor = dbapi_conn.cursor()
+    cursor.execute("PRAGMA journal_mode=WAL")
+    cursor.execute("PRAGMA foreign_keys=ON")
+    cursor.close()
 
 
 class Database:
@@ -32,7 +34,7 @@ class Database:
     Call :meth:`configure` once before first use to set the connection URL.
     ``Database()`` always returns the singleton instance, creating it on
     first access using the configured URL. Resolution order: :meth:`configure`
-    → ``OBSERVER_PG_URL`` env var → config file (``~/.basecamp/observer/config.json``).
+    → ``OBSERVER_DB_URL`` env var → default ``~/.basecamp/observer.db``.
     """
 
     _instance: Database | None = None
@@ -60,21 +62,14 @@ class Database:
         if hasattr(self, "_engine"):
             return
 
-        url = type(self)._url or os.environ.get("OBSERVER_PG_URL") or get_pg_url()
+        url = type(self)._url or os.environ.get("OBSERVER_DB_URL") or DB_URL
         if not url:
             raise DatabaseNotConfiguredError()
 
-        # Create the extension before registering the pgvector adapter.
-        # register_vector() probes for the vector OID, so it fails if the
-        # extension doesn't exist yet. Use a bare engine for the DDL, then
-        # rebuild with the adapter attached.
-        bootstrap = create_engine(url)
-        with bootstrap.connect() as conn:
-            conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
-            conn.commit()
-        bootstrap.dispose()
+        # Ensure the parent directory exists for the SQLite file.
+        BASECAMP_DIR.mkdir(parents=True, exist_ok=True)
 
-        self._engine: Engine = create_engine(url)
+        self._engine: Engine = create_engine(url, connect_args={"timeout": 30})
         event.listen(self._engine, "connect", _on_connect)
         self._session_factory: sessionmaker[Session] = sessionmaker(bind=self._engine)
 
@@ -99,18 +94,50 @@ class Database:
 
         is_new = not self._has_tables()
         Base.metadata.create_all(self._engine)
+        self._init_fts()
 
         if is_new:
             stamp(self._engine)
         elif needs_migration(self._engine):
             logger.warning("Database schema is outdated. Run 'observer db migrate' to update.")
 
+    def _init_fts(self) -> None:
+        """Create FTS5 virtual table and sync triggers if they don't exist."""
+        with self._engine.begin() as conn:
+            conn.execute(
+                text(
+                    "CREATE VIRTUAL TABLE IF NOT EXISTS artifacts_fts USING fts5("
+                    "  text, content='artifacts', content_rowid='id', tokenize='porter'"
+                    ")"
+                )
+            )
+            conn.execute(
+                text(
+                    "CREATE TRIGGER IF NOT EXISTS artifacts_ai AFTER INSERT ON artifacts BEGIN"
+                    "  INSERT INTO artifacts_fts(rowid, text) VALUES (new.id, new.text);"
+                    "END"
+                )
+            )
+            conn.execute(
+                text(
+                    "CREATE TRIGGER IF NOT EXISTS artifacts_au AFTER UPDATE ON artifacts BEGIN"
+                    "  INSERT INTO artifacts_fts(artifacts_fts, rowid, text) VALUES('delete', old.id, old.text);"
+                    "  INSERT INTO artifacts_fts(rowid, text) VALUES (new.id, new.text);"
+                    "END"
+                )
+            )
+            conn.execute(
+                text(
+                    "CREATE TRIGGER IF NOT EXISTS artifacts_ad AFTER DELETE ON artifacts BEGIN"
+                    "  INSERT INTO artifacts_fts(artifacts_fts, rowid, text) VALUES('delete', old.id, old.text);"
+                    "END"
+                )
+            )
+
     def _has_tables(self) -> bool:
         """Check if core tables exist (i.e. not a fresh database)."""
         with self._engine.connect() as conn:
-            row = conn.execute(
-                text("SELECT 1 FROM information_schema.tables WHERE table_name = 'transcripts'")
-            ).fetchone()
+            row = conn.execute(text("SELECT 1 FROM sqlite_master WHERE type='table' AND name='transcripts'")).fetchone()
             return row is not None
 
     @contextmanager
