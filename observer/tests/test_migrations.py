@@ -1,9 +1,7 @@
-"""Tests for the migration runner and migration 001."""
+"""Tests for the migration runner."""
 
-from observer.services.db import Base
 from observer.services.migrations import (
     _registry,
-    _set_version,
     get_current_version,
     get_latest_version,
     get_pending,
@@ -43,8 +41,6 @@ class TestPendingDetection:
         assert get_pending(db._engine) == []
 
     def test_unstamped_db_has_pending(self, db):
-        # The db fixture calls Database() which stamps new installs,
-        # so we need to clear the version table to simulate an upgrade.
         with db._engine.begin() as conn:
             conn.execute(text("DELETE FROM schema_version"))
 
@@ -68,122 +64,12 @@ class TestRunPending:
         assert applied == []
 
     def test_run_pending_applies_and_updates_version(self, db):
-        # Reset to version 0 to simulate an upgrade
         with db._engine.begin() as conn:
             conn.execute(text("UPDATE schema_version SET version = 0"))
 
         applied = run_pending(db._engine)
         assert len(applied) >= 1
         assert get_current_version(db._engine) == get_latest_version()
-
-
-class TestMigration001:
-    """Tests for migration 001: simplify artifacts."""
-
-    def test_migration_registered(self):
-        assert 1 in _registry
-        m = _registry[1]
-        assert m.version == 1
-        assert "simplify" in m.description.lower() or "artifact" in m.description.lower()
-
-    def test_drops_search_index(self, db):
-        # Create the old search_index table, run migration, verify it's gone
-        with db._engine.begin() as conn:
-            conn.execute(text("CREATE TABLE IF NOT EXISTS search_index (id serial PRIMARY KEY)"))
-
-        # Reset version so migration will run
-        _set_version(db._engine, 0)
-
-        # Drop the new artifacts table so migration can recreate via create_all
-        with db._engine.begin() as conn:
-            conn.execute(text("DROP TABLE IF EXISTS artifacts CASCADE"))
-
-        run_pending(db._engine)
-        Base.metadata.create_all(db._engine)
-
-        with db._engine.connect() as conn:
-            row = conn.execute(
-                text("SELECT 1 FROM information_schema.tables WHERE table_name = 'search_index'")
-            ).fetchone()
-            assert row is None
-
-    def test_drops_old_artifacts_and_creates_new(self, db):
-        # Reset version, drop new artifacts, create old-style artifacts
-        _set_version(db._engine, 0)
-        with db._engine.begin() as conn:
-            conn.execute(text("DROP TABLE IF EXISTS artifacts CASCADE"))
-            conn.execute(
-                text(
-                    "CREATE TABLE artifacts ("
-                    "  id serial PRIMARY KEY,"
-                    "  artifact_type varchar NOT NULL,"
-                    "  origin varchar NOT NULL,"
-                    "  text varchar NOT NULL"
-                    ")"
-                )
-            )
-
-        run_pending(db._engine)
-        Base.metadata.create_all(db._engine)
-
-        # New artifacts table should have section_type, not artifact_type
-        with db._engine.connect() as conn:
-            has_section_type = conn.execute(
-                text(
-                    "SELECT 1 FROM information_schema.columns "
-                    "WHERE table_name = 'artifacts' AND column_name = 'section_type'"
-                )
-            ).fetchone()
-            has_artifact_type = conn.execute(
-                text(
-                    "SELECT 1 FROM information_schema.columns "
-                    "WHERE table_name = 'artifacts' AND column_name = 'artifact_type'"
-                )
-            ).fetchone()
-            assert has_section_type is not None
-            assert has_artifact_type is None
-
-    def test_drops_transcript_summary_columns(self, db):
-        # Add old columns back, then run migration
-        with db._engine.begin() as conn:
-            for col in ("title varchar", "summary text", "last_summary_at timestamp"):
-                name = col.split()[0]
-                exists = conn.execute(
-                    text(
-                        "SELECT 1 FROM information_schema.columns "
-                        "WHERE table_name = 'transcripts' AND column_name = :col"
-                    ),
-                    {"col": name},
-                ).fetchone()
-                if not exists:
-                    conn.execute(text(f"ALTER TABLE transcripts ADD COLUMN {col}"))
-
-        _set_version(db._engine, 0)
-        run_pending(db._engine)
-
-        with db._engine.connect() as conn:
-            for col_name in ("title", "summary", "last_summary_at"):
-                row = conn.execute(
-                    text(
-                        "SELECT 1 FROM information_schema.columns "
-                        "WHERE table_name = 'transcripts' AND column_name = :col"
-                    ),
-                    {"col": col_name},
-                ).fetchone()
-                assert row is None, f"Column {col_name} should have been dropped"
-
-    def test_migration_idempotent(self, db):
-        """Running migration 001 twice should not error."""
-        _set_version(db._engine, 0)
-        with db._engine.begin() as conn:
-            conn.execute(text("DROP TABLE IF EXISTS artifacts CASCADE"))
-
-        run_pending(db._engine)
-        Base.metadata.create_all(db._engine)
-
-        # Run again — should be a no-op since version is already set
-        applied = run_pending(db._engine)
-        assert applied == []
 
 
 class TestDatabaseInitStamping:

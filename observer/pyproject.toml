@@ -12,17 +12,19 @@ dependencies = [
     "plotly>=5.0",
     "networkx>=3.0",
     "sentence-transformers>=3.0",
-    "pgvector~=0.4.2",
-    "psycopg2-binary>=2.9",
+    "chromadb>=0.5",
     "questionary>=2.1.1",
 ]
+
+[project.optional-dependencies]
+pg-migrate = ["psycopg2-binary>=2.9"]
 
 [project.scripts]
 observer = "observer.cli.observer:main"
 recall = "observer.cli.recall:main"
 
 [dependency-groups]
-dev = ["pytest~=8.0", "pytest-env>=1.0", "testcontainers[postgres]>=4.8"]
+dev = ["pytest~=8.0", "pytest-env>=1.0"]
 
 [build-system]
 requires = ["hatchling"]
@@ -35,4 +37,4 @@ packages = ["src/observer"]
 testpaths = ["tests"]
 pythonpath = ["src"]
 log_level = "CRITICAL"
-env = ["TESTCONTAINERS_RYUK_DISABLED=true"]
+env = []

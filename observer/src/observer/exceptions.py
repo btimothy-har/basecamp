@@ -26,12 +26,10 @@ class ExtractionError(ObserverError):
 
 
 class DatabaseNotConfiguredError(ObserverError):
-    """Raised when OBSERVER_PG_URL is not configured."""
+    """Raised when the database URL is not configured."""
 
     def __init__(self) -> None:
-        super().__init__(
-            "OBSERVER_PG_URL is not configured. Run `observer setup` to configure the PostgreSQL connection."
-        )
+        super().__init__("Database is not configured. Run `observer setup` to initialize.")
 
 
 class DatabaseClosedError(ObserverError):
@@ -39,6 +37,17 @@ class DatabaseClosedError(ObserverError):
 
     def __init__(self) -> None:
         super().__init__("Database has been closed")
+
+
+class UnsupportedDialectError(ObserverError):
+    """Raised when a non-SQLite database URL is provided."""
+
+    def __init__(self, dialect: str) -> None:
+        super().__init__(
+            f"Unsupported database dialect {dialect!r}. "
+            "Observer requires SQLite (the default). "
+            "Check OBSERVER_DB_URL if you overrode the connection URL."
+        )
 
 
 class EmbeddingShapeError(ObserverError):

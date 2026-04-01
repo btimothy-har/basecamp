@@ -30,6 +30,13 @@ def _mock_model(n: int | None = None):
     return model
 
 
+def _mock_collection():
+    """Return a mock ChromaDB collection."""
+    collection = MagicMock()
+    collection.upsert = MagicMock()
+    return collection
+
+
 def _seed_project_and_transcript(db, *, session_id="sess-1"):
     """Create a project and transcript. Returns (project_id, transcript_id)."""
     with db.session() as session:
@@ -67,13 +74,11 @@ def _create_artifact(
         return extraction.id
 
 
-def _mark_indexed(db, ext_id, *, text=None, stale_hash=False):
-    """Mark an extraction as already indexed with embedding and hash."""
-    embedding = np.random.rand(EMBEDDING_DIMENSIONS).astype(np.float32).tolist()
+def _mark_indexed(db, ext_id, *, text=None):
+    """Mark an artifact as already indexed with hash and timestamp."""
     with db.session() as session:
         extraction = session.get(ArtifactSchema, ext_id)
-        extraction.embedding = embedding
-        extraction.content_hash = _content_hash("wrong" if stale_hash else (text or extraction.text))
+        extraction.content_hash = _content_hash(text or extraction.text)
         extraction.indexed_at = datetime.now(UTC)
 
 
@@ -97,19 +102,6 @@ class TestHasPending:
         _create_artifact(db, transcript_id, text="A summary.", section_type=SectionType.SUMMARY)
         assert SearchIndexer.has_pending() is True
 
-    def test_true_when_content_changed(self, db):
-        _, transcript_id = _seed_project_and_transcript(db)
-        ext_id = _create_artifact(db, transcript_id, text="Updated text.")
-        _mark_indexed(db, ext_id, stale_hash=True)
-        assert SearchIndexer.has_pending() is True
-
-    def test_false_when_content_current(self, db):
-        text = "Current text."
-        _, transcript_id = _seed_project_and_transcript(db)
-        ext_id = _create_artifact(db, transcript_id, text=text)
-        _mark_indexed(db, ext_id, text=text)
-        assert SearchIndexer.has_pending() is False
-
     def test_true_when_updated_after_indexed(self, db):
         _, transcript_id = _seed_project_and_transcript(db)
         ext_id = _create_artifact(db, transcript_id)
@@ -128,20 +120,21 @@ class TestIndexPending:
         _, transcript_id = _seed_project_and_transcript(db)
         ext_id = _create_artifact(db, transcript_id, text="extraction text")
 
-        with patch.object(indexing, "_get_model", return_value=_mock_model(1)):
+        with (
+            patch.object(indexing, "get_model", return_value=_mock_model(1)),
+            patch("observer.pipeline.indexing.get_collection", return_value=_mock_collection()),
+        ):
             count = SearchIndexer.index_pending(db)
 
         assert count == 1
 
         with db.session() as session:
             extraction = session.get(ArtifactSchema, ext_id)
-            assert extraction.embedding is not None
-            assert len(extraction.embedding) == EMBEDDING_DIMENSIONS
             assert extraction.content_hash == _content_hash("extraction text")
             assert extraction.indexed_at is not None
 
     def test_returns_zero_when_nothing_pending(self, db):  # noqa: ARG002
-        with patch.object(indexing, "_get_model") as mock_st_cls:
+        with patch.object(indexing, "get_model") as mock_st_cls:
             count = SearchIndexer.index_pending(db)
 
         assert count == 0
@@ -151,22 +144,32 @@ class TestIndexPending:
         _, transcript_id = _seed_project_and_transcript(db)
         ext_id = _create_artifact(db, transcript_id, text="Session summary text.", section_type=SectionType.SUMMARY)
 
-        with patch.object(indexing, "_get_model", return_value=_mock_model(1)):
+        with (
+            patch.object(indexing, "get_model", return_value=_mock_model(1)),
+            patch("observer.pipeline.indexing.get_collection", return_value=_mock_collection()),
+        ):
             count = SearchIndexer.index_pending(db)
 
         assert count == 1
 
         with db.session() as session:
             extraction = session.get(ArtifactSchema, ext_id)
-            assert extraction.embedding is not None
             assert extraction.content_hash == _content_hash("Session summary text.")
 
-    def test_updates_changed_content(self, db):
+    def test_reindexes_when_updated_after_indexed(self, db):
         _, transcript_id = _seed_project_and_transcript(db)
         ext_id = _create_artifact(db, transcript_id, text="New text.")
-        _mark_indexed(db, ext_id, stale_hash=True)
+        _mark_indexed(db, ext_id)
 
-        with patch.object(indexing, "_get_model", return_value=_mock_model(1)):
+        # Simulate text update after indexing
+        with db.session() as session:
+            extraction = session.get(ArtifactSchema, ext_id)
+            extraction.updated_at = datetime.now(UTC) + timedelta(seconds=1)
+
+        with (
+            patch.object(indexing, "get_model", return_value=_mock_model(1)),
+            patch("observer.pipeline.indexing.get_collection", return_value=_mock_collection()),
+        ):
             count = SearchIndexer.index_pending(db)
 
         assert count == 1
@@ -181,7 +184,7 @@ class TestIndexPending:
         ext_id = _create_artifact(db, transcript_id, text=text)
         _mark_indexed(db, ext_id, text=text)
 
-        with patch.object(indexing, "_get_model") as mock_st_cls:
+        with patch.object(indexing, "get_model") as mock_st_cls:
             count = SearchIndexer.index_pending(db)
 
         assert count == 0
@@ -192,11 +195,14 @@ class TestIndexPending:
         _create_artifact(db, transcript_id, text="A summary.", section_type=SectionType.SUMMARY)
         _create_artifact(db, transcript_id, text="A decision.", section_type=SectionType.DECISIONS)
 
-        with patch.object(indexing, "_get_model", return_value=_mock_model()):
+        with (
+            patch.object(indexing, "get_model", return_value=_mock_model()),
+            patch("observer.pipeline.indexing.get_collection", return_value=_mock_collection()),
+        ):
             count = SearchIndexer.index_pending(db)
 
         assert count == 2
 
         with db.session() as session:
-            indexed = session.query(ArtifactSchema).filter(ArtifactSchema.embedding.isnot(None)).count()
+            indexed = session.query(ArtifactSchema).filter(ArtifactSchema.indexed_at.isnot(None)).count()
             assert indexed == 2

@@ -48,27 +48,12 @@ def _write(data: dict[str, str]) -> None:
 
 
 def get_pg_url() -> str | None:
-    """Return the stored PostgreSQL URL, or None if not configured."""
+    """Return the stored PostgreSQL URL, or None if not configured.
+
+    Kept for the pg-migrate command — reads the old pg_url from config
+    so users don't have to re-enter it.
+    """
     return _read().get("pg_url") or None
-
-
-def set_pg_url(url: str) -> None:
-    """Persist the PostgreSQL URL to the config file."""
-    data = _read()
-    data["pg_url"] = url
-    _write(data)
-
-
-def get_db_source() -> str | None:
-    """Return the stored database source ("container" or "user"), or None."""
-    return _read().get("db_source") or None
-
-
-def set_db_source(source: str) -> None:
-    """Persist the database source to the config file."""
-    data = _read()
-    data["db_source"] = source
-    _write(data)
 
 
 def _use_extended_context() -> bool:

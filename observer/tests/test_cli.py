@@ -1,13 +1,11 @@
 """Tests for the observer CLI."""
 
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import observer.constants as c
 import pytest
-import questionary
 from click.testing import CliRunner
 from observer.cli.observer import main
-from observer.services.container import ContainerRuntimeNotFoundError, ContainerStatus
 
 
 @pytest.fixture()
@@ -17,22 +15,10 @@ def runner():
 
 @pytest.fixture()
 def obs_dir(tmp_path, monkeypatch):
-    """Redirect LOG constant and set env var for CLI tests."""
+    """Redirect LOG constant for CLI tests."""
     obs = tmp_path / "observer"
     monkeypatch.setattr(c, "LOG_FILE", obs / "observer.log")
-    monkeypatch.setenv("OBSERVER_PG_URL", "postgresql://localhost/observer_test")
     return obs
-
-
-def _mock_status(*, running: bool = False, status_text: str = "running") -> ContainerStatus:
-    return ContainerStatus(
-        running=running,
-        runtime="docker",
-        container_name="observer-pg",
-        port=15432,
-        volume="observer_data",
-        status_text=status_text,
-    )
 
 
 class TestLogs:
@@ -67,62 +53,37 @@ class TestLogs:
 
 
 class TestSetup:
-    PG_URL_WITH_CREDS = "postgresql://user:secret@host/db"
+    def test_setup_initializes_db(self, runner, tmp_path, monkeypatch):
+        db_url = f"sqlite:///{tmp_path / 'observer.db'}"
 
-    def _mock_engine(self):
-        """Return a mock engine whose connect() works as a context manager."""
-        engine = MagicMock()
-        conn = MagicMock()
-        conn.__enter__ = MagicMock(return_value=conn)
-        conn.__exit__ = MagicMock(return_value=False)
-        conn.execute.return_value.fetchone.return_value = (1,)
-        engine.connect.return_value = conn
-        return engine
+        monkeypatch.setattr(c, "BASECAMP_DIR", tmp_path)
+        monkeypatch.setattr(c, "DB_PATH", tmp_path / "observer.db")
+        monkeypatch.setattr(c, "DB_URL", db_url)
+        monkeypatch.setattr(c, "CHROMA_DIR", tmp_path / "chroma")
 
-    def test_existing_url_masks_password(self, runner, obs_dir):  # noqa: ARG002
-        with (
-            patch("observer.cli.observer.questionary") as mock_q,
-            patch("observer.cli.observer.get_db_source", return_value="user"),
-            patch("observer.cli.observer.get_pg_url", return_value=self.PG_URL_WITH_CREDS),
-            patch("observer.cli.observer.create_engine", return_value=self._mock_engine()),
-        ):
-            mock_q.select.return_value.ask.side_effect = ["user", "sonnet", "haiku", "on"]
-            mock_q.Choice = questionary.Choice
+        # Patch the module-level bindings that db.py and chroma.py
+        # captured at import time via `from observer.constants import ...`.
+        monkeypatch.setattr("observer.services.db.BASECAMP_DIR", tmp_path)
+        monkeypatch.setattr("observer.services.chroma.CHROMA_DIR", tmp_path / "chroma")
 
-            result = runner.invoke(main, ["setup"], input=f"{self.PG_URL_WITH_CREDS}\nn\n")
+        from observer.services import chroma  # noqa: PLC0415
 
-        current_url_line = next(line for line in result.output.splitlines() if line.startswith("Current URL:"))
-        assert "***" in current_url_line
-        assert "secret" not in current_url_line
+        chroma._state.clear()
 
-    def test_container_source_creates_and_saves(self, runner, obs_dir):  # noqa: ARG002
-        with (
-            patch("observer.cli.observer.questionary") as mock_q,
-            patch("observer.cli.observer.detect_runtime", return_value="docker"),
-            patch("observer.cli.observer.inspect_container", return_value=None),
-            patch("observer.cli.observer.ensure_running", return_value=True),
-            patch("observer.cli.observer.create_engine", return_value=self._mock_engine()),
-            patch("observer.cli.observer.set_pg_url") as mock_set_url,
-            patch("observer.cli.observer.set_db_source") as mock_set_source,
-        ):
-            mock_q.select.return_value.ask.side_effect = ["container", "sonnet", "haiku", "on"]
-            mock_q.Choice = questionary.Choice
+        from observer.services.db import Database  # noqa: PLC0415
 
-            result = runner.invoke(main, ["setup"], input="n\n")
+        monkeypatch.setattr(Database, "_instance", None)
+        monkeypatch.setattr(Database, "_url", None)
+        Database.configure(db_url)
 
-        assert result.exit_code == 0
-        mock_set_source.assert_called_once_with("container")
-        mock_set_url.assert_called_once()
+        with patch("observer.cli.observer.questionary") as mock_q:
+            import questionary  # noqa: PLC0415
 
-    def test_no_runtime_exits(self, runner, obs_dir):  # noqa: ARG002
-        with (
-            patch("observer.cli.observer.questionary") as mock_q,
-            patch("observer.cli.observer.detect_runtime", side_effect=ContainerRuntimeNotFoundError),
-        ):
-            mock_q.select.return_value.ask.return_value = "container"
+            mock_q.select.return_value.ask.side_effect = ["sonnet", "haiku", "on"]
             mock_q.Choice = questionary.Choice
 
             result = runner.invoke(main, ["setup"])
 
-        assert result.exit_code != 0
-        assert "docker" in result.output.lower() or "podman" in result.output.lower()
+        assert result.exit_code == 0
+        assert "configuration saved" in result.output.lower()
+        Database.close_if_open()

@@ -3,18 +3,30 @@
 import pytest
 from observer.data.schemas import ProjectSchema
 from observer.exceptions import DatabaseNotConfiguredError
-from observer.services.db import Base, Database
+from observer.services.db import Database
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 
-class TestPgvector:
-    """Tests for pgvector extension and schema setup."""
+class TestSQLiteSetup:
+    """Tests for SQLite database setup."""
 
-    def test_vector_extension_installed(self, db):
+    def test_wal_mode_enabled(self, db):
         with db.session() as session:
-            result = session.execute(text("SELECT extname FROM pg_extension WHERE extname = 'vector'")).scalar()
-            assert result == "vector"
+            result = session.execute(text("PRAGMA journal_mode")).scalar()
+            assert result == "wal"
+
+    def test_foreign_keys_enabled(self, db):
+        with db.session() as session:
+            result = session.execute(text("PRAGMA foreign_keys")).scalar()
+            assert result == 1
+
+    def test_fts5_table_exists(self, db):
+        with db.session() as session:
+            result = session.execute(
+                text("SELECT 1 FROM sqlite_master WHERE type='table' AND name='artifacts_fts'")
+            ).fetchone()
+            assert result is not None
 
 
 class TestDatabaseSession:
@@ -46,55 +58,26 @@ class TestDatabaseSession:
 class TestDatabaseClose:
     """Tests for Database.close()."""
 
-    def test_can_create_new_instance_after_close(self, pg_url):
-        Database.configure(pg_url)
-        db1 = Database()
-        db1.close()
+    def test_can_create_new_instance_after_close(self, db, tmp_path, monkeypatch):  # noqa: ARG002
+        db_url = f"sqlite:///{tmp_path / 'test2.db'}"
+        db.close()
 
-        Database.configure(pg_url)
+        Database.configure(db_url)
         db2 = Database()
         with db2.session() as session:
             assert isinstance(session, Session)
 
-        Base.metadata.drop_all(db2._engine)
         db2.close()
 
 
 class TestDatabaseMissingUrl:
-    """Tests for missing OBSERVER_PG_URL."""
+    """Tests for missing OBSERVER_DB_URL."""
 
     def test_raises_if_url_missing(self, monkeypatch):
         monkeypatch.setattr(Database, "_instance", None)
         monkeypatch.setattr(Database, "_url", None)
-        monkeypatch.delenv("OBSERVER_PG_URL", raising=False)
-        monkeypatch.setattr("observer.services.db.get_pg_url", lambda: None)
+        monkeypatch.delenv("OBSERVER_DB_URL", raising=False)
+        monkeypatch.setattr("observer.services.db.DB_URL", "")
 
-        with pytest.raises(DatabaseNotConfiguredError, match="OBSERVER_PG_URL is not configured"):
+        with pytest.raises(DatabaseNotConfiguredError):
             Database()
-
-
-class TestExtractionEmbedding:
-    """Tests for embedding support on artifacts table."""
-
-    def test_hnsw_index_exists(self, db):
-        with db.session() as session:
-            result = session.execute(
-                text(
-                    "SELECT indexname FROM pg_indexes "
-                    "WHERE tablename = 'artifacts' "
-                    "AND indexname = 'ix_artifacts_embedding_hnsw'"
-                )
-            ).scalar()
-            assert result == "ix_artifacts_embedding_hnsw"
-
-    def test_embedding_column_dimensions(self, db):
-        with db.session() as session:
-            result = session.execute(
-                text(
-                    "SELECT atttypmod FROM pg_attribute "
-                    "JOIN pg_class ON pg_attribute.attrelid = pg_class.oid "
-                    "WHERE pg_class.relname = 'artifacts' "
-                    "AND pg_attribute.attname = 'embedding'"
-                )
-            ).scalar()
-            assert result == 384

@@ -6,36 +6,19 @@ import logging
 import os
 import sys
 from importlib.resources import files
-from urllib.parse import urlparse, urlunparse
 
 import click
 import questionary
-from sqlalchemy import create_engine, text
 
 from observer import constants
 from observer.services.config import (
     CONFIG_FILE,
-    get_db_source,
     get_extraction_model,
     get_mode,
-    get_pg_url,
     get_summary_model,
-    set_db_source,
     set_extraction_model,
     set_mode,
-    set_pg_url,
     set_summary_model,
-)
-from observer.services.container import (
-    ContainerRuntimeNotFoundError,
-    container_logs,
-    detect_runtime,
-    ensure_running,
-    inspect_container,
-    remove_container,
-    remove_volume,
-    stop_container,
-    volume_exists,
 )
 
 
@@ -46,158 +29,53 @@ def main() -> None:
 
 @main.group()
 def db() -> None:
-    """Manage the local PostgreSQL container."""
+    """Database management commands."""
 
 
 @db.command()
-def up() -> None:
-    """Start the local PostgreSQL container (must be configured via setup first)."""
-    source = get_db_source()
-    if source is None:
-        sys.exit("Database not configured. Run 'observer setup' first.")
-    if source == "user":
-        sys.exit("Database is externally managed. Use your own tools to start it.")
+def status() -> None:
+    """Show database status."""
+    from observer.constants import CHROMA_DIR, DB_PATH
 
-    try:
-        runtime = detect_runtime()
-    except ContainerRuntimeNotFoundError:
-        sys.exit("Neither 'docker' nor 'podman' found on PATH.")
+    click.echo(f"SQLite:   {DB_PATH}")
+    click.echo(f"  Exists: {DB_PATH.exists()}")
+    click.echo(f"ChromaDB: {CHROMA_DIR}")
+    click.echo(f"  Exists: {CHROMA_DIR.exists()}")
 
-    _ensure_container_ready(runtime)
+    if DB_PATH.exists():
+        from observer.services.db import Database
 
+        try:
+            db_inst = Database()
+            with db_inst.session() as session:
+                from observer.data.schemas import ArtifactSchema, TranscriptSchema
 
-@db.command()
-def down() -> None:
-    """Stop and remove the local PostgreSQL container (data volume preserved)."""
-    source = get_db_source()
-    if source is None:
-        sys.exit("Database not configured. Run 'observer setup' first.")
-    if source == "user":
-        sys.exit("Database is externally managed. Use your own tools to stop it.")
-
-    try:
-        runtime = detect_runtime()
-    except ContainerRuntimeNotFoundError:
-        sys.exit("Neither 'docker' nor 'podman' found on PATH.")
-
-    status = inspect_container(runtime)
-
-    if status is None:
-        click.echo(f"Container '{constants.DB_CONTAINER_NAME}' not found.")
-        return
-
-    try:
-        if status.running:
-            click.echo(f"Stopping container '{constants.DB_CONTAINER_NAME}'...")
-            stop_container(runtime)
-
-        click.echo(f"Removing container '{constants.DB_CONTAINER_NAME}'...")
-        remove_container(runtime)
-    except RuntimeError as exc:
-        sys.exit(str(exc))
-    click.echo(f"Removed. Volume '{constants.DB_VOLUME_NAME}' preserved.")
-
-
-@db.command()
-@click.option("--yes", "-y", is_flag=True, help="Skip confirmation.")
-def reset(yes: bool) -> None:  # noqa: FBT001
-    """Destroy and recreate the local PostgreSQL container and volume."""
-    source = get_db_source()
-    if source is None:
-        sys.exit("Database not configured. Run 'observer setup' first.")
-    if source == "user":
-        sys.exit("Database is externally managed. Use your own tools to reset it.")
-
-    if not yes and not click.confirm("This will destroy ALL observer data. Continue?"):
-        click.echo("Aborted.")
-        return
-
-    try:
-        runtime = detect_runtime()
-    except ContainerRuntimeNotFoundError:
-        sys.exit("Neither 'docker' nor 'podman' found on PATH.")
-
-    try:
-        status = inspect_container(runtime)
-        if status:
-            if status.running:
-                click.echo(f"Stopping '{constants.DB_CONTAINER_NAME}'...")
-                stop_container(runtime)
-            click.echo(f"Removing '{constants.DB_CONTAINER_NAME}'...")
-            remove_container(runtime)
-
-        if volume_exists(runtime):
-            click.echo(f"Removing volume '{constants.DB_VOLUME_NAME}'...")
-            remove_volume(runtime)
-
-    except RuntimeError as exc:
-        sys.exit(str(exc))
-
-    _ensure_container_ready(runtime, message="PostgreSQL is ready. Database has been reset.")
-
-
-@db.command("status")
-def db_status() -> None:
-    """Show database configuration and status."""
-    source = get_db_source()
-    if source is None:
-        click.echo("Database not configured.")
-        click.echo("Run 'observer setup' to configure.")
-        return
-
-    pg_url = get_pg_url()
-    click.echo(f"Source: {source}")
-    click.echo(f"URL:    {_mask_pg_url(pg_url) if pg_url else '(not set)'}")
-
-    if source == "user":
-        return
-
-    try:
-        runtime = detect_runtime()
-    except ContainerRuntimeNotFoundError:
-        click.echo("Container runtime: not found (docker/podman)")
-        return
-
-    status = inspect_container(runtime)
-
-    if status is None:
-        click.echo(f"Container '{constants.DB_CONTAINER_NAME}' not found.")
-        click.echo("Run 'observer db up' to create it.")
-        return
-
-    state = "running" if status.running else status.status_text
-    click.echo(f"Container: {status.container_name}  ({state})")
-    click.echo(f"  Runtime: {status.runtime}")
-    click.echo(f"  Port:    {status.port}")
-    click.echo(f"  Volume:  {status.volume}")
+                transcripts = session.query(TranscriptSchema).count()
+                artifacts = session.query(ArtifactSchema).count()
+            click.echo(f"  Transcripts: {transcripts}")
+            click.echo(f"  Artifacts:   {artifacts}")
+        except Exception as e:
+            click.echo(f"  Error: {e}")
 
 
 @db.command()
 def migrate() -> None:
     """Run pending database schema migrations."""
+    from observer.services.db import Database
     from observer.services.migrations import (
         get_current_version,
         get_pending,
         run_pending,
     )
 
-    pg_url = get_pg_url()
-    if not pg_url:
-        sys.exit("Database not configured. Run 'observer setup' first.")
-
-    engine = create_engine(pg_url)
-    try:
-        with engine.connect() as conn:
-            conn.execute(text("SELECT 1"))
-    except Exception as e:
-        sys.exit(f"Cannot connect to database: {e}")
+    db_inst = Database()
+    engine = db_inst._engine
 
     current = get_current_version(engine)
     pending = get_pending(engine)
 
     if not pending:
         click.echo(f"Schema is up to date (version {current}).")
-        engine.dispose()
         return
 
     click.echo(f"Current schema version: {current}")
@@ -208,25 +86,54 @@ def migrate() -> None:
     click.echo()
     applied = run_pending(engine)
 
-    # After migrations, run create_all to pick up new tables/columns
     from observer.services.db import Base
 
     Base.metadata.create_all(engine)
 
     click.echo(f"\nApplied {len(applied)} migration(s). Schema is now at version {applied[-1].version}.")
-    engine.dispose()
 
 
-def _mask_pg_url(url: str) -> str:
-    """Return the URL with the password replaced by *** for safe display."""
-    parsed = urlparse(url)
-    if not parsed.password:
-        return url
-    host = parsed.hostname or ""
-    if parsed.port:
-        host += f":{parsed.port}"
-    netloc = f"{parsed.username}:***@{host}" if parsed.username else f"***@{host}"
-    return urlunparse(parsed._replace(netloc=netloc))
+@db.command("reset")
+@click.option("--yes", "-y", is_flag=True, help="Skip confirmation.")
+def db_reset(yes: bool) -> None:  # noqa: FBT001
+    """Destroy and recreate the local database."""
+    from observer.constants import CHROMA_DIR, DB_PATH
+
+    if not yes and not click.confirm("This will destroy ALL observer data. Continue?"):
+        click.echo("Aborted.")
+        return
+
+    if DB_PATH.exists():
+        DB_PATH.unlink()
+        click.echo(f"Removed {DB_PATH}")
+
+    # Remove WAL/SHM files if present
+    for suffix in ("-wal", "-shm"):
+        wal = DB_PATH.parent / (DB_PATH.name + suffix)
+        if wal.exists():
+            wal.unlink()
+
+    if CHROMA_DIR.exists():
+        import shutil
+
+        shutil.rmtree(CHROMA_DIR)
+        click.echo(f"Removed {CHROMA_DIR}")
+
+    # Reinitialize
+    from observer.services.db import Database
+
+    Database.close_if_open()
+    Database()
+    click.echo("Database reset complete.")
+
+
+@db.command("migrate-from-pg")
+@click.pass_context
+def migrate_from_pg_cmd(ctx: click.Context) -> None:
+    """Migrate data from PostgreSQL to SQLite + ChromaDB."""
+    from observer.cli.migrate_pg import migrate_from_pg
+
+    ctx.invoke(migrate_from_pg)
 
 
 @main.command()
@@ -308,23 +215,26 @@ def mode(target: str | None) -> None:
 
 @main.command()
 def setup() -> None:
-    """Configure observer: set PostgreSQL URL and verify the connection."""
-    db_choice = questionary.select(
-        "Database source:",
-        choices=[
-            questionary.Choice("Local container (Docker/Podman)", value="container"),
-            questionary.Choice("External PostgreSQL URL", value="user"),
-        ],
-    ).ask()
-    if db_choice is None:
-        sys.exit(1)
+    """Configure observer: initialize database and set model preferences."""
+    from observer.constants import CHROMA_DIR, DB_PATH
 
-    if db_choice == "container":
-        url = _setup_container()
-    else:
-        url = _setup_external_url()
+    click.echo("Initializing observer database...")
 
-    _verify_connection(url)
+    # Ensure directories exist
+    constants.BASECAMP_DIR.mkdir(parents=True, exist_ok=True)
+    constants.OBSERVER_DIR.mkdir(parents=True, exist_ok=True)
+
+    # Initialize SQLite + ChromaDB
+    from observer.services.db import Database
+
+    Database.close_if_open()
+    Database()
+    click.echo(f"  SQLite:   {DB_PATH}")
+
+    from observer.services.chroma import get_collection
+
+    get_collection()
+    click.echo(f"  ChromaDB: {CHROMA_DIR}")
 
     _model_choices = ["haiku", "sonnet", "opus"]
     extraction_model = questionary.select(
@@ -354,92 +264,10 @@ def setup() -> None:
     if mode_choice is None:
         sys.exit(1)
 
-    set_pg_url(url)
-    set_db_source(db_choice)
     set_extraction_model(extraction_model)
     set_summary_model(summary_model)
     set_mode(mode_choice)
     click.echo(f"\nConfiguration saved → {CONFIG_FILE}")
-
-
-def _ensure_container_ready(runtime: str, *, message: str = "PostgreSQL is ready.") -> None:
-    """Ensure the container is running and PostgreSQL accepts connections, or exit."""
-    status = inspect_container(runtime)
-    if status and status.running:
-        label = "Checking"
-    elif status:
-        label = "Restarting"
-    else:
-        label = "Creating"
-
-    click.echo(f"{label} container '{constants.DB_CONTAINER_NAME}'...", nl=False)
-
-    try:
-        ready = ensure_running(runtime)
-    except RuntimeError as exc:
-        click.echo(f" failed.\n  {exc}")
-        sys.exit(1)
-
-    if ready:
-        click.echo(f" {message}")
-    else:
-        click.echo(" timed out.")
-        click.echo(container_logs(runtime, lines=10))
-        sys.exit(1)
-
-
-def _setup_container() -> str:
-    """Provision a local PostgreSQL container, return the connection URL."""
-    try:
-        runtime = detect_runtime()
-    except ContainerRuntimeNotFoundError:
-        sys.exit("Neither 'docker' nor 'podman' found on PATH.")
-
-    _ensure_container_ready(runtime)
-    return constants.DB_PG_URL
-
-
-def _setup_external_url() -> str:
-    """Prompt for an external PostgreSQL URL, return it."""
-    existing = None
-    if get_db_source() == "user":
-        existing = get_pg_url()
-
-    if existing:
-        click.echo(f"Current URL: {_mask_pg_url(existing)}")
-
-    default_url = existing or "postgresql://localhost/observer"
-    url: str = click.prompt("PostgreSQL URL", default=default_url)
-    return url
-
-
-def _verify_connection(url: str) -> None:
-    """Test PostgreSQL connectivity and ensure pgvector is available."""
-    engine = create_engine(url)
-    try:
-        click.echo("  Connecting...", nl=False)
-        with engine.connect() as conn:
-            conn.execute(text("SELECT 1"))
-        click.echo(" OK")
-
-        click.echo("  Checking pgvector...", nl=False)
-        with engine.connect() as conn:
-            row = conn.execute(text("SELECT 1 FROM pg_available_extensions WHERE name = 'vector'")).fetchone()
-            if row is None:
-                click.echo(" NOT FOUND")
-                click.echo(
-                    "  pgvector is not installed on this PostgreSQL server.\n"
-                    "  Install it first: https://github.com/pgvector/pgvector#installation"
-                )
-                sys.exit(1)
-            conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
-            conn.commit()
-        click.echo(" OK")
-    except Exception as e:
-        click.echo(f" FAILED\n  {e}")
-        sys.exit(1)
-    finally:
-        engine.dispose()
 
 
 @main.command()
@@ -491,9 +319,9 @@ def ingest(run_process: bool) -> None:  # noqa: FBT001
         result = register_session(hook_input)
         transcript = result.transcript
 
-        db = Database()
+        db_inst = Database()
         ingested = TranscriptParser().ingest(transcript)
-        grouped = EventGrouper.group_pending(db, transcript.id)
+        grouped = EventGrouper.group_pending(db_inst, transcript.id)
         logger.info("session=%s ingested=%d grouped=%d", transcript.session_id, ingested, grouped)
 
         if run_process:
@@ -503,9 +331,9 @@ def ingest(run_process: bool) -> None:  # noqa: FBT001
             from observer.services.config import get_mode
 
             if get_mode() != "off":
-                EventRefiner.refine_pending(db, transcript_id=transcript.id)
-                TranscriptExtractor.extract_transcript(db, transcript.id)
-                SearchIndexer.index_pending(db, transcript_id=transcript.id)
+                EventRefiner.refine_pending(db_inst, transcript_id=transcript.id)
+                TranscriptExtractor.extract_transcript(db_inst, transcript.id)
+                SearchIndexer.index_pending(db_inst, transcript_id=transcript.id)
     except SystemExit:
         raise
     except Exception:
@@ -534,15 +362,16 @@ def reprocess(yes: bool) -> None:  # noqa: FBT001
     from observer.pipeline.indexing import SearchIndexer
     from observer.pipeline.refining import EventRefiner
     from observer.pipeline.refining.grouping import EventGrouper
+    from observer.services.chroma import COLLECTION_NAME, get_client
     from observer.services.db import Database
     from observer.services.logger import configure_logging
 
     configure_logging(foreground=True)
 
-    db = Database()
+    db_inst = Database()
 
     # Count what we're about to reprocess
-    with db.session() as session:
+    with db_inst.session() as session:
         transcript_count = session.query(TranscriptSchema).count()
         raw_event_count = session.query(RawEventSchema).count()
 
@@ -559,9 +388,9 @@ def reprocess(yes: bool) -> None:  # noqa: FBT001
         click.echo("Aborted.")
         return
 
-    # Phase 0: Clear derived tables and reset raw_event status
+    # Phase 0: Clear derived tables, reset raw_event status, clear ChromaDB
     click.echo("\nClearing derived data...")
-    with db.session() as session:
+    with db_inst.session() as session:
         session.query(ArtifactSchema).delete()
         session.query(TranscriptEventSchema).delete()
         session.query(WorkItemSchema).delete()
@@ -569,19 +398,26 @@ def reprocess(yes: bool) -> None:  # noqa: FBT001
     click.echo("  Cleared work_items, transcript_events, artifacts")
     click.echo("  Reset raw_events to PENDING")
 
-    with db.session() as session:
+    # Clear ChromaDB collection
+    try:
+        get_client().delete_collection(COLLECTION_NAME)
+    except Exception:
+        pass  # Collection may not exist yet
+    click.echo("  Cleared ChromaDB embeddings")
+
+    with db_inst.session() as session:
         transcript_ids = [row[0] for row in session.query(TranscriptSchema.id).all()]
 
     # Phase 1: Group raw events into work items per transcript
     click.echo("\nGrouping...")
     grouped = 0
     for tid in transcript_ids:
-        grouped += EventGrouper.group_pending(db, tid)
+        grouped += EventGrouper.group_pending(db_inst, tid)
     click.echo(f"  Grouped {grouped} work items")
 
     # Phase 2: Refine work items into transcript events
     click.echo("\nRefining...")
-    refined = EventRefiner.refine_pending(db)
+    refined = EventRefiner.refine_pending(db_inst)
     click.echo(f"  Refined {refined} work items")
 
     # Phase 3: Extract per transcript
@@ -589,14 +425,14 @@ def reprocess(yes: bool) -> None:  # noqa: FBT001
 
     extracted = 0
     for tid in transcript_ids:
-        count = TranscriptExtractor.extract_transcript(db, tid)
+        count = TranscriptExtractor.extract_transcript(db_inst, tid)
         extracted += count
 
     click.echo(f"  Extracted {extracted} artifact sections across {len(transcript_ids)} transcripts")
 
     # Phase 4: Embed all artifacts
     click.echo("\nEmbedding artifacts...")
-    SearchIndexer.index_pending(db)
+    SearchIndexer.index_pending(db_inst)
     click.echo("  Embedding complete")
 
     click.echo("\nReprocessing complete.")

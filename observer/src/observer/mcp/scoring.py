@@ -58,8 +58,8 @@ def compute_score(
 
     Args:
         timestamp: Timestamp used for recency calculation (typically the artifact's last update time).
-        semantic: Cosine similarity in [0, 1] where 1 = identical. Pass
-            ``1 - cosine_distance`` from pgvector.
+        semantic: Cosine similarity in [0, 1] where 1 = identical
+            (``1 - cosine_distance`` from ChromaDB).
         keyword: Normalized FTS rank in [0, 1] where 1 = strongest match
             in the batch.
 

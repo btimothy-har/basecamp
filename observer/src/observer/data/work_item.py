@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import json
 from datetime import datetime
 from typing import Self
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, field_validator
+from sqlalchemy import update
 from sqlalchemy.orm import Session
 
 from observer.data.enums import WorkItemStage, WorkItemType
@@ -23,8 +25,17 @@ class WorkItem(BaseModel):
     processed: WorkItemStage = WorkItemStage.UNREFINED
     created_at: datetime
 
+    @field_validator("event_ids", mode="before")
+    @classmethod
+    def _deserialize_event_ids(cls, v: str | list[int]) -> list[int]:
+        """Deserialize JSON string from SQLite back to list[int]."""
+        if isinstance(v, str):
+            return json.loads(v)
+        return v
+
     def save(self, session: Session) -> Self:
         data = self.model_dump()
+        data["event_ids"] = json.dumps(data["event_ids"])
         merged = session.merge(WorkItemSchema(**data))
         session.flush()
         return type(self).model_validate(merged)
@@ -63,19 +74,27 @@ class WorkItem(BaseModel):
     def claim_unprocessed(cls, *, transcript_id: int | None = None) -> list[Self]:
         """Atomically claim UNREFINED rows by moving them to REFINING.
 
-        Uses SELECT FOR UPDATE SKIP LOCKED so concurrent runners
-        never claim the same rows.
+        Uses UPDATE...RETURNING to get the exact IDs transitioned, avoiding
+        stale REFINING rows left by a previous crashed run. SQLite's
+        file-level write lock ensures only one writer at a time.
         """
         with Database().session() as session:
-            q = session.query(WorkItemSchema).filter(WorkItemSchema.processed == WorkItemStage.UNREFINED)
+            stmt = update(WorkItemSchema).where(WorkItemSchema.processed == WorkItemStage.UNREFINED)
             if transcript_id is not None:
-                q = q.filter(WorkItemSchema.transcript_id == transcript_id)
-            rows = q.order_by(WorkItemSchema.created_at).with_for_update(skip_locked=True).all()
-            if not rows:
-                return []
-            for row in rows:
-                row.processed = WorkItemStage.REFINING
+                stmt = stmt.where(WorkItemSchema.transcript_id == transcript_id)
+            stmt = stmt.values(processed=WorkItemStage.REFINING).returning(WorkItemSchema.id)
+            claimed_ids = [row[0] for row in session.execute(stmt)]
             session.flush()
+
+            if not claimed_ids:
+                return []
+
+            rows = (
+                session.query(WorkItemSchema)
+                .filter(WorkItemSchema.id.in_(claimed_ids))
+                .order_by(WorkItemSchema.created_at)
+                .all()
+            )
             return [cls.model_validate(r) for r in rows]
 
     @classmethod

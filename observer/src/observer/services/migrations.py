@@ -53,7 +53,7 @@ def get_current_version(engine: Engine) -> int:
     """Return the current schema version, or 0 if untracked."""
     with engine.connect() as conn:
         has_table = conn.execute(
-            text("SELECT 1 FROM information_schema.tables WHERE table_name = 'schema_version'")
+            text("SELECT 1 FROM sqlite_master WHERE type='table' AND name='schema_version'")
         ).fetchone()
         if not has_table:
             return 0
@@ -82,7 +82,7 @@ def _ensure_version_table(engine: Engine) -> None:
             text(
                 "CREATE TABLE IF NOT EXISTS schema_version ("
                 "  version INTEGER NOT NULL,"
-                "  applied_at TIMESTAMP NOT NULL DEFAULT now()"
+                "  applied_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP"
                 ")"
             )
         )
@@ -93,7 +93,10 @@ def _set_version(engine: Engine, version: int) -> None:
     with engine.begin() as conn:
         existing = conn.execute(text("SELECT 1 FROM schema_version")).fetchone()
         if existing:
-            conn.execute(text("UPDATE schema_version SET version = :v, applied_at = now()"), {"v": version})
+            conn.execute(
+                text("UPDATE schema_version SET version = :v, applied_at = CURRENT_TIMESTAMP"),
+                {"v": version},
+            )
         else:
             conn.execute(text("INSERT INTO schema_version (version) VALUES (:v)"), {"v": version})
 
