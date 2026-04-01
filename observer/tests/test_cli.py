@@ -54,15 +54,25 @@ class TestLogs:
 
 class TestSetup:
     def test_setup_initializes_db(self, runner, tmp_path, monkeypatch):
+        db_url = f"sqlite:///{tmp_path / 'observer.db'}"
+
         monkeypatch.setattr(c, "BASECAMP_DIR", tmp_path)
         monkeypatch.setattr(c, "DB_PATH", tmp_path / "observer.db")
-        monkeypatch.setattr(c, "DB_URL", f"sqlite:///{tmp_path / 'observer.db'}")
+        monkeypatch.setattr(c, "DB_URL", db_url)
         monkeypatch.setattr(c, "CHROMA_DIR", tmp_path / "chroma")
+
+        # Patch the module-level bindings that db.py and chroma.py
+        # captured at import time via `from observer.constants import ...`.
+        monkeypatch.setattr("observer.services.db.BASECAMP_DIR", tmp_path)
+        monkeypatch.setattr("observer.services.chroma.BASECAMP_DIR", tmp_path)
+        monkeypatch.setattr("observer.services.chroma.CHROMA_DIR", tmp_path / "chroma")
+        monkeypatch.setattr("observer.services.chroma._client", None)
 
         from observer.services.db import Database  # noqa: PLC0415
 
         monkeypatch.setattr(Database, "_instance", None)
         monkeypatch.setattr(Database, "_url", None)
+        Database.configure(db_url)
 
         with patch("observer.cli.observer.questionary") as mock_q:
             import questionary  # noqa: PLC0415

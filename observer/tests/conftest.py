@@ -34,6 +34,7 @@ def db(tmp_path, monkeypatch) -> Database:
     db_url = f"sqlite:///{db_path}"
 
     monkeypatch.setattr(c, "BASECAMP_DIR", tmp_path)
+    monkeypatch.setattr("observer.services.db.BASECAMP_DIR", tmp_path)
     monkeypatch.setattr(c, "DB_PATH", db_path)
     monkeypatch.setattr(c, "DB_URL", db_url)
 
