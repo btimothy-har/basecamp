@@ -8,10 +8,11 @@ from collections.abc import Generator
 from contextlib import contextmanager
 
 from sqlalchemy import Engine, create_engine, event, text
+from sqlalchemy.engine.url import make_url
 from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
 
 from observer.constants import BASECAMP_DIR, DB_URL
-from observer.exceptions import DatabaseClosedError, DatabaseNotConfiguredError
+from observer.exceptions import DatabaseClosedError, DatabaseNotConfiguredError, UnsupportedDialectError
 
 logger = logging.getLogger(__name__)
 
@@ -65,6 +66,10 @@ class Database:
         url = type(self)._url or os.environ.get("OBSERVER_DB_URL") or DB_URL
         if not url:
             raise DatabaseNotConfiguredError()
+
+        parsed_url = make_url(url)
+        if parsed_url.get_backend_name() != "sqlite":
+            raise UnsupportedDialectError(parsed_url.get_backend_name())
 
         # Ensure the parent directory exists for the SQLite file.
         BASECAMP_DIR.mkdir(parents=True, mode=0o700, exist_ok=True)

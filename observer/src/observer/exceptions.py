@@ -39,6 +39,17 @@ class DatabaseClosedError(ObserverError):
         super().__init__("Database has been closed")
 
 
+class UnsupportedDialectError(ObserverError):
+    """Raised when a non-SQLite database URL is provided."""
+
+    def __init__(self, dialect: str) -> None:
+        super().__init__(
+            f"Unsupported database dialect {dialect!r}. "
+            "Observer requires SQLite (the default). "
+            "Check OBSERVER_DB_URL if you overrode the connection URL."
+        )
+
+
 class EmbeddingShapeError(ObserverError):
     """Raised when the embedding model produces an unexpected output shape."""
 
