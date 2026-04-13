@@ -1,0 +1,15 @@
+{
+  "name": "basecamp-extension",
+  "version": "1.0.0",
+  "description": "Basecamp extension for pi — session lifecycle, git protection, observer integration, engineering skills.",
+  "keywords": ["pi-package"],
+  "pi": {
+    "extensions": ["./src"],
+    "skills": ["./skills"],
+    "prompts": ["./prompts"]
+  },
+  "peerDependencies": {
+    "@mariozechner/pi-coding-agent": "*",
+    "@sinclair/typebox": "*"
+  }
+}
