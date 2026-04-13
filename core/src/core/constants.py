@@ -35,6 +35,6 @@ OBSERVER_CONFIG = USER_DIR / "observer" / "config.json"
 PI_COMMAND = "pi"
 EXTENSION_DIR = SCRIPT_DIR / "extension"
 
-# Claude CLI paths (still used by worker ops and handoff — remove when migrated)
+# Claude CLI paths (still used by worker ops — remove when migrated)
 CLAUDE_COMMAND = "claude"
 CLAUDE_USER_SETTINGS = Path.home() / ".claude" / "settings.json"

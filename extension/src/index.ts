@@ -6,6 +6,7 @@ import { registerObserver } from "./observer";
 import { registerMessaging } from "./messaging";
 import { registerWorkers } from "./workers";
 import { registerNudges } from "./nudges";
+import { registerHandoff } from "./handoff";
 
 export default function (pi: ExtensionAPI) {
   registerLifecycle(pi);    // session init, env setup, project context injection
@@ -14,4 +15,5 @@ export default function (pi: ExtensionAPI) {
   registerMessaging(pi);    // inter-agent inbox consumption
   registerWorkers(pi);      // worker close-on-exit
   registerNudges(pi);       // skill suggestions on file edits
+  registerHandoff(pi);      // /handoff command — compact + new session
 }
