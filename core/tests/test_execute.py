@@ -36,7 +36,6 @@ class TestExecuteLaunchWorktreeIntegration:
         with (
             patch("core.git.worktrees.WORKTREES_DIR", tmp_path / "worktrees"),
             patch("core.cli.launch.validate_dirs") as mock_validate,
-            patch("core.cli.launch.build_session_settings", return_value=Path("/tmp/fake-settings.json")),
             patch("os.chdir") as mock_chdir,
             patch("os.execvp") as mock_execvp,
         ):
@@ -58,7 +57,6 @@ class TestExecuteLaunchWorktreeIntegration:
         with (
             patch("core.git.worktrees.WORKTREES_DIR", tmp_path / "worktrees"),
             patch("core.cli.launch.validate_dirs") as mock_validate,
-            patch("core.cli.launch.build_session_settings", return_value=Path("/tmp/fake-settings.json")),
             patch("os.chdir") as mock_chdir,
             patch("os.execvp"),
         ):
@@ -85,7 +83,6 @@ class TestExecuteLaunchWorktreeIntegration:
         with (
             patch("core.git.worktrees.WORKTREES_DIR", tmp_path / "worktrees"),
             patch("core.cli.launch.validate_dirs") as mock_validate,
-            patch("core.cli.launch.build_session_settings", return_value=Path("/tmp/fake-settings.json")),
             patch("os.chdir") as mock_chdir,
             patch("os.execvp"),
         ):
@@ -104,20 +101,23 @@ class TestExecuteLaunchWorktreeIntegration:
         """Test that BASECAMP_REPO is set to repo name, not dir name, for git repos."""
         mock_config.projects["testproject"].dirs = [str(temp_git_repo)]
 
+        captured_env_vars: dict[str, str] = {}
+
+        def fake_exec_session(cmd, *, startup_text, env_vars, session_name):
+            captured_env_vars.update(env_vars)
+
         with (
             patch("core.git.worktrees.WORKTREES_DIR", tmp_path / "worktrees"),
             patch("core.cli.launch.validate_dirs") as mock_validate,
-            patch(
-                "core.cli.launch.build_session_settings",
-                return_value=Path("/tmp/fake-settings.json"),
-            ) as mock_settings,
+            patch("core.cli.launch.resolve_launch_backend") as mock_backend,
             patch("os.chdir"),
-            patch("os.execvp"),
         ):
             mock_validate.return_value = [temp_git_repo]
+            mock_backend.return_value.exec_session = fake_exec_session
+
             execute_launch("testproject", mock_config)
 
-        assert mock_settings.call_args.kwargs["repo_name"] == "test_repo"
+        assert captured_env_vars["BASECAMP_REPO"] == "test_repo"
 
     def test_basecamp_repo_uses_repo_name_with_label(
         self, temp_git_repo: Path, mock_config: Config, tmp_path: Path
@@ -125,21 +125,24 @@ class TestExecuteLaunchWorktreeIntegration:
         """Test that BASECAMP_REPO uses repo name (not worktree label) when label is set."""
         mock_config.projects["testproject"].dirs = [str(temp_git_repo)]
 
+        captured_env_vars: dict[str, str] = {}
+
+        def fake_exec_session(cmd, *, startup_text, env_vars, session_name):
+            captured_env_vars.update(env_vars)
+
         with (
             patch("core.git.worktrees.WORKTREES_DIR", tmp_path / "worktrees"),
             patch("core.cli.launch.validate_dirs") as mock_validate,
-            patch(
-                "core.cli.launch.build_session_settings",
-                return_value=Path("/tmp/fake-settings.json"),
-            ) as mock_settings,
+            patch("core.cli.launch.resolve_launch_backend") as mock_backend,
             patch("os.chdir"),
-            patch("os.execvp"),
         ):
             mock_validate.return_value = [temp_git_repo]
+            mock_backend.return_value.exec_session = fake_exec_session
+
             execute_launch("testproject", mock_config, label="auth")
 
         # Must be repo name, not the worktree label
-        assert mock_settings.call_args.kwargs["repo_name"] == "test_repo"
+        assert captured_env_vars["BASECAMP_REPO"] == "test_repo"
 
     def test_basecamp_repo_falls_back_to_dir_name_for_non_git(
         self, non_git_dir: Path, mock_config: Config, tmp_path: Path
@@ -147,20 +150,23 @@ class TestExecuteLaunchWorktreeIntegration:
         """Test that BASECAMP_REPO falls back to directory name for non-git repos."""
         mock_config.projects["testproject"].dirs = [str(non_git_dir)]
 
+        captured_env_vars: dict[str, str] = {}
+
+        def fake_exec_session(cmd, *, startup_text, env_vars, session_name):
+            captured_env_vars.update(env_vars)
+
         with (
             patch("core.git.worktrees.WORKTREES_DIR", tmp_path / "worktrees"),
             patch("core.cli.launch.validate_dirs") as mock_validate,
-            patch(
-                "core.cli.launch.build_session_settings",
-                return_value=Path("/tmp/fake-settings.json"),
-            ) as mock_settings,
+            patch("core.cli.launch.resolve_launch_backend") as mock_backend,
             patch("os.chdir"),
-            patch("os.execvp"),
         ):
             mock_validate.return_value = [non_git_dir]
+            mock_backend.return_value.exec_session = fake_exec_session
+
             execute_launch("testproject", mock_config)
 
-        assert mock_settings.call_args.kwargs["repo_name"] == "not_a_repo"
+        assert captured_env_vars["BASECAMP_REPO"] == "not_a_repo"
 
     def test_launch_with_label_on_non_git_raises(self, non_git_dir: Path, mock_config: Config, tmp_path: Path) -> None:
         """Test that using label on non-git directory raises error."""
@@ -184,7 +190,6 @@ class TestExecuteLaunchWorktreeIntegration:
         with (
             patch("core.git.worktrees.WORKTREES_DIR", tmp_path / "worktrees"),
             patch("core.cli.launch.validate_dirs") as mock_validate,
-            patch("core.cli.launch.build_session_settings", return_value=Path("/tmp/fake-settings.json")),
             patch("os.chdir") as mock_chdir,
             patch("os.execvp"),
         ):

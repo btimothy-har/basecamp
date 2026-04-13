@@ -28,7 +28,6 @@ class TestTerminalWrapping:
         config = self._make_config(non_git_dir)
 
         with (
-            patch("core.cli.launch.build_session_settings", return_value=Path("/tmp/fake-settings.json")),
             patch("core.cli.launch.validate_dirs", return_value=[non_git_dir]),
             patch("os.chdir"),
             patch("os.execvp") as mock_execvp,
@@ -42,18 +41,17 @@ class TestTerminalWrapping:
             args = mock_execvp.call_args[0][1]
             assert args[:2] == ["tmux", "new-session"]
             assert "bc-testproject" in args
-            # Claude command is inside the sh -c shell wrapper
+            # Pi command is inside the sh -c shell wrapper
             assert args[-3:][0] == "sh"
             assert args[-3:][1] == "-c"
-            assert "claude" in args[-1]
+            assert "pi" in args[-1]
 
-    def test_tmux_no_env_forwarding(self, non_git_dir: Path) -> None:
-        """Tmux wrapping should not forward env vars — they're in the settings file."""
+    def test_tmux_forwards_env_vars(self, non_git_dir: Path) -> None:
+        """Tmux wrapping should forward BASECAMP_* env vars via -e flags."""
         config = self._make_config(non_git_dir)
 
         env_clean = {k: v for k, v in os.environ.items() if k not in ("TMUX", "KITTY_LISTEN_ON")}
         with (
-            patch("core.cli.launch.build_session_settings", return_value=Path("/tmp/fake-settings.json")),
             patch("core.cli.launch.validate_dirs", return_value=[non_git_dir]),
             patch("os.chdir"),
             patch("os.execvp") as mock_execvp,
@@ -63,14 +61,18 @@ class TestTerminalWrapping:
             execute_launch("testproject", config)
 
             args = mock_execvp.call_args[0][1]
-            assert "-e" not in args
+            # Env vars are forwarded via tmux -e flags
+            e_indices = [i for i, a in enumerate(args) if a == "-e"]
+            env_pairs = [args[i + 1] for i in e_indices]
+            env_keys = [p.split("=", 1)[0] for p in env_pairs]
+            assert "BASECAMP_PROJECT" in env_keys
+            assert "BASECAMP_REPO" in env_keys
 
     def test_skips_tmux_when_already_in_tmux(self, non_git_dir: Path) -> None:
-        """When TMUX is set, should exec claude directly."""
+        """When TMUX is set, should exec pi directly."""
         config = self._make_config(non_git_dir)
 
         with (
-            patch("core.cli.launch.build_session_settings", return_value=Path("/tmp/fake-settings.json")),
             patch("core.cli.launch.validate_dirs", return_value=[non_git_dir]),
             patch("os.chdir"),
             patch("os.execvp") as mock_execvp,
@@ -79,15 +81,14 @@ class TestTerminalWrapping:
             execute_launch("testproject", config)
 
             mock_execvp.assert_called_once()
-            assert mock_execvp.call_args[0][0] == "claude"
+            assert mock_execvp.call_args[0][0] == "pi"
 
     def test_skips_tmux_when_tmux_not_installed(self, non_git_dir: Path) -> None:
-        """When tmux is not installed, should exec claude directly."""
+        """When tmux is not installed, should exec pi directly."""
         config = self._make_config(non_git_dir)
 
         env_no_tmux = {k: v for k, v in os.environ.items() if k != "TMUX"}
         with (
-            patch("core.cli.launch.build_session_settings", return_value=Path("/tmp/fake-settings.json")),
             patch("core.cli.launch.validate_dirs", return_value=[non_git_dir]),
             patch("os.chdir"),
             patch("os.execvp") as mock_execvp,
@@ -97,7 +98,7 @@ class TestTerminalWrapping:
             execute_launch("testproject", config)
 
             mock_execvp.assert_called_once()
-            assert mock_execvp.call_args[0][0] == "claude"
+            assert mock_execvp.call_args[0][0] == "pi"
 
     def test_tmux_session_name_uses_project_name(self, non_git_dir: Path) -> None:
         """Tmux session name should be bc-{project_name}."""
@@ -105,7 +106,6 @@ class TestTerminalWrapping:
 
         env_clean = {k: v for k, v in os.environ.items() if k not in ("TMUX", "KITTY_LISTEN_ON")}
         with (
-            patch("core.cli.launch.build_session_settings", return_value=Path("/tmp/fake-settings.json")),
             patch("core.cli.launch.validate_dirs", return_value=[non_git_dir]),
             patch("os.chdir"),
             patch("os.execvp") as mock_execvp,
@@ -118,13 +118,12 @@ class TestTerminalWrapping:
             session_idx = args.index("-s")
             assert args[session_idx + 1] == "bc-testproject"
 
-    def test_tmux_wrapping_preserves_claude_args(self, non_git_dir: Path) -> None:
-        """Claude args (--resume, --plugin-dir, etc.) should pass through in the shell wrapper."""
+    def test_tmux_wrapping_preserves_pi_args(self, non_git_dir: Path) -> None:
+        """Pi args (--resume, etc.) should pass through in the shell wrapper."""
         config = self._make_config(non_git_dir)
 
         env_clean = {k: v for k, v in os.environ.items() if k not in ("TMUX", "KITTY_LISTEN_ON")}
         with (
-            patch("core.cli.launch.build_session_settings", return_value=Path("/tmp/fake-settings.json")),
             patch("core.cli.launch.validate_dirs", return_value=[non_git_dir]),
             patch("os.chdir"),
             patch("os.execvp") as mock_execvp,
@@ -138,11 +137,10 @@ class TestTerminalWrapping:
             assert "--resume" in shell_inner
 
     def test_skips_tmux_when_in_kitty(self, non_git_dir: Path) -> None:
-        """When KITTY_LISTEN_ON is set, should exec claude directly (no tmux wrapping)."""
+        """When KITTY_LISTEN_ON is set, should exec pi directly (no tmux wrapping)."""
         config = self._make_config(non_git_dir)
 
         with (
-            patch("core.cli.launch.build_session_settings", return_value=Path("/tmp/fake-settings.json")),
             patch("core.cli.launch.validate_dirs", return_value=[non_git_dir]),
             patch("os.chdir"),
             patch("os.execvp") as mock_execvp,
@@ -156,4 +154,4 @@ class TestTerminalWrapping:
             execute_launch("testproject", config)
 
             mock_execvp.assert_called_once()
-            assert mock_execvp.call_args[0][0] == "claude"
+            assert mock_execvp.call_args[0][0] == "pi"

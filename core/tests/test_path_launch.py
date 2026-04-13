@@ -80,7 +80,6 @@ class TestExecuteLaunchPathMode:
         """Path mode should chdir to the resolved directory."""
         with (
             patch("core.git.worktrees.WORKTREES_DIR", tmp_path / "worktrees"),
-            patch("core.cli.launch.build_session_settings", return_value=Path("/tmp/fake-settings.json")),
             patch("os.chdir") as mock_chdir,
             patch("os.execvp"),
         ):
@@ -93,45 +92,50 @@ class TestExecuteLaunchPathMode:
 
     def test_path_mode_sets_basecamp_repo(self, non_git_dir: Path, tmp_path: Path) -> None:
         """Path mode should set BASECAMP_REPO to directory name for non-git dirs."""
+        captured_env_vars: dict[str, str] = {}
+
+        def fake_exec_session(cmd, *, startup_text, env_vars, session_name):
+            captured_env_vars.update(env_vars)
+
         with (
             patch("core.git.worktrees.WORKTREES_DIR", tmp_path / "worktrees"),
-            patch(
-                "core.cli.launch.build_session_settings",
-                return_value=Path("/tmp/fake-settings.json"),
-            ) as mock_settings,
+            patch("core.cli.launch.resolve_launch_backend") as mock_backend,
             patch("os.chdir"),
-            patch("os.execvp"),
         ):
+            mock_backend.return_value.exec_session = fake_exec_session
+
             execute_launch(
                 non_git_dir.name,
                 Config(projects={}),
                 resolved_path=non_git_dir,
             )
-        assert mock_settings.call_args.kwargs["repo_name"] == non_git_dir.name
+        assert captured_env_vars["BASECAMP_REPO"] == non_git_dir.name
 
     def test_path_mode_uses_repo_name_for_git(self, temp_git_repo: Path, tmp_path: Path) -> None:
         """Path mode should use git repo name for BASECAMP_REPO when in a git repo."""
+        captured_env_vars: dict[str, str] = {}
+
+        def fake_exec_session(cmd, *, startup_text, env_vars, session_name):
+            captured_env_vars.update(env_vars)
+
         with (
             patch("core.git.worktrees.WORKTREES_DIR", tmp_path / "worktrees"),
-            patch(
-                "core.cli.launch.build_session_settings",
-                return_value=Path("/tmp/fake-settings.json"),
-            ) as mock_settings,
+            patch("core.cli.launch.resolve_launch_backend") as mock_backend,
             patch("os.chdir"),
-            patch("os.execvp"),
         ):
+            mock_backend.return_value.exec_session = fake_exec_session
+
             execute_launch(
                 temp_git_repo.name,
                 Config(projects={}),
                 resolved_path=temp_git_repo,
             )
-        assert mock_settings.call_args.kwargs["repo_name"] == "test_repo"
+        assert captured_env_vars["BASECAMP_REPO"] == "test_repo"
 
     def test_path_mode_uses_engineering_working_style(self, non_git_dir: Path, tmp_path: Path) -> None:
         """Path mode should create a ProjectConfig with the default working style."""
         with (
             patch("core.git.worktrees.WORKTREES_DIR", tmp_path / "worktrees"),
-            patch("core.cli.launch.build_session_settings", return_value=Path("/tmp/fake-settings.json")),
             patch("os.chdir"),
             patch("os.execvp"),
             patch("core.cli.launch.prompts") as mock_prompts,
@@ -146,10 +150,9 @@ class TestExecuteLaunchPathMode:
             assert project_arg.working_style == DEFAULT_PATH_WORKING_STYLE
 
     def test_path_mode_with_resume(self, non_git_dir: Path, tmp_path: Path) -> None:
-        """Path mode should pass --resume to claude when extra_args=["--resume"]."""
+        """Path mode should pass --resume to pi when extra_args=["--resume"]."""
         with (
             patch("core.git.worktrees.WORKTREES_DIR", tmp_path / "worktrees"),
-            patch("core.cli.launch.build_session_settings", return_value=Path("/tmp/fake-settings.json")),
             patch("os.chdir"),
             patch("os.execvp") as mock_execvp,
             patch.dict("os.environ", {"TMUX": "/tmp/tmux-501/default,1,0"}),

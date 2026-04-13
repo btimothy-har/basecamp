@@ -4,16 +4,16 @@ import os
 from io import StringIO
 from pathlib import Path
 
+from dotenv import dotenv_values
 from rich.console import Console
 
 from core.config import Config, ProjectConfig, resolve_project, validate_dirs
-from core.config.claude_settings import build_session_settings
 from core.constants import (
     CACHE_DIR,
-    CLAUDE_COMMAND,
+    EXTENSION_DIR,
     OBSERVER_CONFIG,
+    PI_COMMAND,
     SCRATCH_BASE,
-    SCRIPT_DIR,
     USER_CONTEXT_DIR,
 )
 from core.exceptions import DirectoryNotFoundError, NoDirectoriesConfiguredError, NotAGitRepoError
@@ -47,7 +47,7 @@ def _build_startup_text(
     buf = StringIO()
     c = Console(file=buf, force_terminal=True)
 
-    c.print(f"\n[bold green]Starting Claude[/bold green] with project [cyan]{project_name}[/cyan]")
+    c.print(f"\n[bold green]Starting pi[/bold green] with project [cyan]{project_name}[/cyan]")
     c.print(f"  [dim]Primary:[/dim] {primary_dir}")
     if worktree_info:
         status = "new" if worktree_created else "existing"
@@ -95,14 +95,14 @@ def execute_launch(
     resolved_path: Path | None = None,
     extra_args: list[str] | None = None,
 ) -> None:
-    """Launch Claude Code with the specified project configuration.
+    """Launch a pi session with the specified project configuration.
 
     Args:
         project_name: The project to launch (display name).
         config: The loaded configuration.
         label: If provided, work in a labeled worktree (create or re-enter).
         resolved_path: Pre-resolved directory for path-based launch (bypasses config lookup).
-        extra_args: Additional CLI args to pass through to the Claude CLI.
+        extra_args: Additional CLI args to pass through to the pi CLI.
 
     Raises:
         ProjectNotFoundError: If the project is not in the config.
@@ -147,19 +147,12 @@ def execute_launch(
         project, primary_dir, secondary_dirs, is_repo=is_repo, scratch_name=scratch_name
     )
 
-    # Build claude command
-    cmd: list[str] = [CLAUDE_COMMAND]
+    # Build pi command
+    cmd: list[str] = [PI_COMMAND]
 
-    # Load bundled companion plugin (always)
-    companion_plugin_dir = SCRIPT_DIR / "plugins" / "companion"
-    if (companion_plugin_dir / ".claude-plugin" / "plugin.json").exists():
-        cmd.extend(["--plugin-dir", str(companion_plugin_dir)])
-
-    observer_enabled = is_observer_configured(OBSERVER_CONFIG)
-
-    # Add any additional project directories
-    for directory in secondary_dirs:
-        cmd.extend(["--add-dir", str(directory)])
+    # Load basecamp extension
+    if (EXTENSION_DIR / "package.json").exists():
+        cmd.extend(["-e", str(EXTENSION_DIR)])
 
     # Persist assembled prompt so dispatch workers can reuse it
     system_prompt_path: str | None = None
@@ -172,6 +165,10 @@ def execute_launch(
         prompt_path.write_text(prompt_content)
         system_prompt_path = str(prompt_path)
 
+    # Append passthrough args for the pi CLI
+    if extra_args:
+        cmd.extend(extra_args)
+
     # Resolve context file path (if configured)
     context_file_path: str | None = None
     if project.context:
@@ -179,25 +176,24 @@ def execute_launch(
         if context_path.exists():
             context_file_path = str(context_path)
 
-    # Build mutated settings file — carries user settings, .env vars,
-    # and BASECAMP_* env vars. Claude injects settings.env into the
-    # process environment, so hooks and tools see everything.
+    # Build env vars — passed to terminal backend directly, no settings file needed.
+    # The extension reads these from process.env at session_start.
     dotenv_path = original_primary / ".env"
-    settings_path = build_session_settings(
-        project_name=project_name,
-        repo_name=repo_name or primary_dir.name,
-        scratch_name=scratch_name,
-        dotenv_path=dotenv_path,
-        system_prompt_path=system_prompt_path,
-        context_file_path=context_file_path,
-        observer_enabled=observer_enabled,
-        label=label,
-    )
-    cmd.extend(["--setting-sources", "project,local", "--settings", str(settings_path)])
+    dotenv_vars = {k: v for k, v in dotenv_values(dotenv_path).items() if v is not None}
 
-    # Append passthrough args for the Claude CLI
-    if extra_args:
-        cmd.extend(extra_args)
+    scratch_dir = str(SCRATCH_BASE / scratch_name)
+    env_vars: dict[str, str] = {
+        **dotenv_vars,
+        "BASECAMP_PROJECT": project_name,
+        "BASECAMP_REPO": repo_name or primary_dir.name,
+        "BASECAMP_SCRATCH_DIR": scratch_dir,
+    }
+    if system_prompt_path:
+        env_vars["BASECAMP_SYSTEM_PROMPT"] = system_prompt_path
+    if context_file_path:
+        env_vars["BASECAMP_CONTEXT_FILE"] = context_file_path
+    if is_observer_configured(OBSERVER_CONFIG):
+        env_vars["BASECAMP_OBSERVER_ENABLED"] = "1"
 
     os.chdir(primary_dir)
 
@@ -213,4 +209,4 @@ def execute_launch(
     session_name = f"bc-{project_name}-{label}" if label else f"bc-{project_name}"
 
     backend = resolve_launch_backend()
-    backend.exec_session(cmd, startup_text=startup_text, env_vars={}, session_name=session_name)
+    backend.exec_session(cmd, startup_text=startup_text, env_vars=env_vars, session_name=session_name)

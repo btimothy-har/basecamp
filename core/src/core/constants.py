@@ -31,6 +31,10 @@ INBOX_BASE = SCRATCH_BASE / "inbox"
 WORKERS_INDEX_DIR = USER_DIR / "workers"
 OBSERVER_CONFIG = USER_DIR / "observer" / "config.json"
 
-# Claude CLI paths
+# CLI paths
+PI_COMMAND = "pi"
+EXTENSION_DIR = SCRIPT_DIR / "extension"
+
+# Claude CLI paths (still used by worker ops and handoff — remove when migrated)
 CLAUDE_COMMAND = "claude"
 CLAUDE_USER_SETTINGS = Path.home() / ".claude" / "settings.json"
