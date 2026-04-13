@@ -9,8 +9,8 @@ from unittest.mock import MagicMock, patch
 import pytest
 from core.exceptions import PaneLaunchError
 from core.terminal import (
-    DirectBackend,
     KittyBackend,
+    TerminalBackend,
     TmuxBackend,
     resolve_dispatch_backend,
     resolve_launch_backend,
@@ -56,7 +56,6 @@ class TestResolveLaunchBackend:
         with patch.dict("os.environ", {"TMUX": "/tmp/tmux-501/default,12345,0"}, clear=True):
             backend = resolve_launch_backend()
             assert isinstance(backend, TmuxBackend)
-            assert not backend._wrap
 
     def test_kitty_takes_priority_over_tmux(self) -> None:
         env = {"KITTY_LISTEN_ON": "unix:/tmp/kitty-123", "TMUX": "1"}
@@ -64,132 +63,69 @@ class TestResolveLaunchBackend:
             backend = resolve_launch_backend()
             assert isinstance(backend, KittyBackend)
 
-    def test_returns_tmux_wrap_when_tmux_available(self) -> None:
-        with (
-            patch.dict("os.environ", {}, clear=True),
-            patch("core.terminal.shutil.which", return_value="/usr/bin/tmux"),
-        ):
+    def test_returns_base_when_nothing_available(self) -> None:
+        with patch.dict("os.environ", {}, clear=True):
             backend = resolve_launch_backend()
-            assert isinstance(backend, TmuxBackend)
-            assert backend._wrap
-
-    def test_returns_direct_when_nothing_available(self) -> None:
-        with (
-            patch.dict("os.environ", {}, clear=True),
-            patch("core.terminal.shutil.which", return_value=None),
-        ):
-            backend = resolve_launch_backend()
-            assert isinstance(backend, DirectBackend)
+            assert type(backend) is TerminalBackend
 
 
-class TestTmuxExecSession:
-    """Tests for TmuxBackend.exec_session()."""
+class TestExecSession:
+    """Tests for TerminalBackend.exec_session()."""
 
-    def test_direct_mode_prints_and_execs(self) -> None:
-        backend = TmuxBackend(wrap=False)
+    def test_exports_env_vars_and_execs(self) -> None:
+        backend = TerminalBackend()
         with (
             patch("builtins.print") as mock_print,
             patch("os.execvp") as mock_execvp,
+            patch.dict("os.environ", {}, clear=True),
         ):
             backend.exec_session(
-                ["claude", "--resume"],
-                startup_text="header\n",
-                env_vars={"FOO": "bar"},
-                session_name="bc-test",
-            )
-
-            mock_print.assert_called_once_with("header\n", end="")
-            mock_execvp.assert_called_once_with("claude", ["claude", "--resume"])
-
-    def test_wrap_mode_creates_tmux_session(self) -> None:
-        backend = TmuxBackend(wrap=True)
-        with patch("os.execvp") as mock_execvp:
-            backend.exec_session(
-                ["claude"],
+                ["pi", "--resume"],
                 startup_text="header\n",
                 env_vars={"BASECAMP_REPO": "myrepo"},
                 session_name="bc-test",
             )
 
-            mock_execvp.assert_called_once()
-            assert mock_execvp.call_args[0][0] == "tmux"
-            args = mock_execvp.call_args[0][1]
-            assert args[:2] == ["tmux", "new-session"]
-            assert "-s" in args
-            assert "bc-test" in args
+            import os
 
-    def test_wrap_mode_forwards_env_vars(self) -> None:
-        backend = TmuxBackend(wrap=True)
-        with patch("os.execvp") as mock_execvp:
-            backend.exec_session(
-                ["claude"],
-                startup_text="header\n",
-                env_vars={"BASECAMP_REPO": "myrepo", "BASECAMP_PROJECT": "proj"},
-                session_name="bc-test",
-            )
+            assert os.environ["BASECAMP_REPO"] == "myrepo"
+            mock_print.assert_called_once_with("header\n", end="")
+            mock_execvp.assert_called_once_with("pi", ["pi", "--resume"])
 
-            args = mock_execvp.call_args[0][1]
-            e_values = [args[i + 1] for i, a in enumerate(args) if a == "-e"]
-            assert "BASECAMP_REPO=myrepo" in e_values
-            assert "BASECAMP_PROJECT=proj" in e_values
-
-    def test_wrap_mode_embeds_header_in_shell(self) -> None:
-        backend = TmuxBackend(wrap=True)
-        with patch("os.execvp") as mock_execvp:
-            backend.exec_session(
-                ["claude", "--resume"],
-                startup_text="header text",
-                env_vars={},
-                session_name="bc-test",
-            )
-
-            args = mock_execvp.call_args[0][1]
-            assert args[-3] == "sh"
-            assert args[-2] == "-c"
-            shell_inner = args[-1]
-            assert "printf %s" in shell_inner
-            assert "claude" in shell_inner
-            assert "--resume" in shell_inner
-
-
-class TestKittyExecSession:
-    """Tests for KittyBackend.exec_session()."""
-
-    def test_prints_and_execs(self) -> None:
-        backend = KittyBackend()
+    def test_tmux_backend_inherits_exec_session(self) -> None:
+        """TmuxBackend uses the same exec_session as base (no wrapping)."""
+        backend = TmuxBackend()
         with (
             patch("builtins.print") as mock_print,
             patch("os.execvp") as mock_execvp,
+            patch.dict("os.environ", {}, clear=True),
         ):
             backend.exec_session(
-                ["claude", "--resume"],
+                ["pi"],
                 startup_text="header\n",
                 env_vars={"FOO": "bar"},
                 session_name="bc-test",
             )
 
             mock_print.assert_called_once_with("header\n", end="")
-            mock_execvp.assert_called_once_with("claude", ["claude", "--resume"])
+            mock_execvp.assert_called_once_with("pi", ["pi"])
 
-
-class TestDirectExecSession:
-    """Tests for DirectBackend.exec_session()."""
-
-    def test_prints_and_execs(self) -> None:
-        backend = DirectBackend()
+    def test_kitty_backend_inherits_exec_session(self) -> None:
+        backend = KittyBackend()
         with (
             patch("builtins.print") as mock_print,
             patch("os.execvp") as mock_execvp,
+            patch.dict("os.environ", {}, clear=True),
         ):
             backend.exec_session(
-                ["claude"],
+                ["pi"],
                 startup_text="header\n",
                 env_vars={},
                 session_name="bc-test",
             )
 
             mock_print.assert_called_once_with("header\n", end="")
-            mock_execvp.assert_called_once_with("claude", ["claude"])
+            mock_execvp.assert_called_once_with("pi", ["pi"])
 
 
 class TestTmuxBackend:

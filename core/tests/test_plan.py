@@ -33,9 +33,9 @@ class TestPlanUserPrompt:
 
 
 class TestPlanLaunch:
-    """Tests for the plan command's Claude session launch."""
+    """Tests for the plan command's session launch."""
 
-    def test_wraps_in_tmux_when_not_in_tmux(self, tmp_path: Path) -> None:
+    def test_execs_pi_directly(self, tmp_path: Path) -> None:
         graph = tmp_path / "brain"
         graph.mkdir()
 
@@ -44,63 +44,21 @@ class TestPlanLaunch:
             patch("os.chdir"),
             patch("os.execvp") as mock_execvp,
             patch.dict("os.environ", {}, clear=True),
-            patch("shutil.which", return_value="/usr/bin/tmux"),
         ):
             execute_plan()
 
             mock_execvp.assert_called_once()
-            assert mock_execvp.call_args[0][0] == "tmux"
-            args = mock_execvp.call_args[0][1]
-            assert args[:2] == ["tmux", "new-session"]
-            sh_idx = args.index("sh")
-            inner_cmd = args[sh_idx + 2]
-            assert "claude" in inner_cmd
-            assert "-e" in args
-            e_idx = args.index("-e")
-            assert args[e_idx + 1] == "BASECAMP_REFLECT=1"
-
-    def test_tmux_session_name_is_bc_plan(self, tmp_path: Path) -> None:
-        graph = tmp_path / "brain"
-        graph.mkdir()
-
-        with (
-            patch("core.cli.plan.resolve_graph_path", return_value=graph),
-            patch("os.chdir"),
-            patch("os.execvp") as mock_execvp,
-            patch.dict("os.environ", {}, clear=True),
-            patch("shutil.which", return_value="/usr/bin/tmux"),
-        ):
-            execute_plan()
-
-            args = mock_execvp.call_args[0][1]
-            session_idx = args.index("-s")
-            assert args[session_idx + 1] == "bc-plan"
-
-    def test_skips_tmux_when_already_in_tmux(self, tmp_path: Path) -> None:
-        graph = tmp_path / "brain"
-        graph.mkdir()
-
-        with (
-            patch("core.cli.plan.resolve_graph_path", return_value=graph),
-            patch("os.chdir"),
-            patch("os.execvp") as mock_execvp,
-            patch.dict("os.environ", {"TMUX": "/tmp/tmux-501/default,12345,0"}),
-        ):
-            execute_plan()
-
-            mock_execvp.assert_called_once()
-            assert mock_execvp.call_args[0][0] == "claude"
+            assert mock_execvp.call_args[0][0] == "pi"
 
     def test_sets_reflect_env_var(self, tmp_path: Path) -> None:
         graph = tmp_path / "brain"
         graph.mkdir()
 
-        env: dict[str, str] = {"TMUX": "1"}
         with (
             patch("core.cli.plan.resolve_graph_path", return_value=graph),
             patch("os.chdir"),
             patch("os.execvp"),
-            patch.dict("os.environ", env),
+            patch.dict("os.environ", {}, clear=True),
         ):
             execute_plan()
             assert os.environ["BASECAMP_REFLECT"] == "1"
@@ -113,7 +71,7 @@ class TestPlanLaunch:
             patch("core.cli.plan.resolve_graph_path", return_value=graph),
             patch("os.chdir") as mock_chdir,
             patch("os.execvp"),
-            patch.dict("os.environ", {"TMUX": "1"}),
+            patch.dict("os.environ", {}, clear=True),
         ):
             execute_plan()
             mock_chdir.assert_called_once_with(graph)
@@ -126,7 +84,7 @@ class TestPlanLaunch:
             patch("core.cli.plan.resolve_graph_path", return_value=graph),
             patch("os.chdir"),
             patch("os.execvp") as mock_execvp,
-            patch.dict("os.environ", {"TMUX": "1"}),
+            patch.dict("os.environ", {}, clear=True),
         ):
             execute_plan()
 
@@ -144,7 +102,7 @@ class TestPlanLaunch:
             patch("core.cli.plan.resolve_graph_path", return_value=graph),
             patch("os.chdir"),
             patch("os.execvp") as mock_execvp,
-            patch.dict("os.environ", {"TMUX": "1"}),
+            patch.dict("os.environ", {}, clear=True),
         ):
             execute_plan()
 
@@ -157,38 +115,3 @@ class TestPlanLaunch:
         with patch("core.cli.plan.resolve_graph_path", side_effect=LogseqNotConfiguredError):
             with pytest.raises(LogseqNotConfiguredError):
                 execute_plan()
-
-    def test_skips_tmux_when_tmux_not_installed(self, tmp_path: Path) -> None:
-        graph = tmp_path / "brain"
-        graph.mkdir()
-
-        env = os.environ.copy()
-        env.pop("TMUX", None)
-
-        with (
-            patch("core.cli.plan.resolve_graph_path", return_value=graph),
-            patch("os.chdir"),
-            patch("os.execvp") as mock_execvp,
-            patch("shutil.which", return_value=None),
-            patch.dict("os.environ", env, clear=True),
-        ):
-            execute_plan()
-
-            mock_execvp.assert_called_once()
-            assert mock_execvp.call_args[0][0] == "claude"
-
-    def test_skips_tmux_when_in_kitty(self, tmp_path: Path) -> None:
-        graph = tmp_path / "brain"
-        graph.mkdir()
-
-        with (
-            patch("core.cli.plan.resolve_graph_path", return_value=graph),
-            patch("os.chdir"),
-            patch("os.execvp") as mock_execvp,
-            patch.dict("os.environ", {"KITTY_LISTEN_ON": "unix:/tmp/kitty-123"}, clear=True),
-            patch("shutil.which", return_value="/usr/bin/tmux"),
-        ):
-            execute_plan()
-
-            mock_execvp.assert_called_once()
-            assert mock_execvp.call_args[0][0] == "claude"

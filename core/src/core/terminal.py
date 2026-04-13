@@ -1,8 +1,8 @@
 """Terminal backends for session execution and worker pane spawning.
 
 Each backend handles two concerns:
-- exec_session: Replace the current process with a Claude session, displaying the
-  startup banner and forwarding environment variables appropriately.
+- exec_session: Replace the current process with a session, displaying the
+  startup banner and forwarding environment variables.
 - spawn_pane: Create a new terminal pane for a dispatch worker.
 
 Detection is automatic based on environment variables: $KITTY_LISTEN_ON for Kitty,
@@ -12,8 +12,6 @@ $TMUX for tmux. Kitty takes priority when both are available.
 from __future__ import annotations
 
 import os
-import shlex
-import shutil
 import subprocess
 from pathlib import Path
 
@@ -24,8 +22,7 @@ class TerminalBackend:
     """Base class for terminal backends.
 
     Provides the default exec_session implementation (print header + execvp).
-    Subclasses override exec_session for backend-specific behavior (e.g. tmux wrapping)
-    and add spawn_pane for multiplexer-based pane creation.
+    Subclasses add spawn_pane for multiplexer-based pane creation.
     """
 
     name: str = "base"
@@ -35,14 +32,16 @@ class TerminalBackend:
         cmd: list[str],
         *,
         startup_text: str,
-        env_vars: dict[str, str],  # noqa: ARG002
+        env_vars: dict[str, str],
         session_name: str,  # noqa: ARG002
     ) -> None:
-        """Replace the current process with a Claude session.
+        """Replace the current process with a session.
 
-        Default: print startup banner to stdout, then execvp into claude.
-        Subclasses may use env_vars and session_name for backend-specific behavior.
+        Exports env_vars into the current process, prints the startup banner,
+        then execvp into the command.
         """
+        for key, value in env_vars.items():
+            os.environ[key] = value
         print(startup_text, end="")
         os.execvp(cmd[0], cmd)
 
@@ -50,43 +49,15 @@ class TerminalBackend:
 class TmuxBackend(TerminalBackend):
     """Terminal backend for tmux sessions.
 
-    Operates in two modes:
-    - Active (wrap=False): Already inside tmux. Uses the default exec_session
-      (print header + execvp). Spawns panes via split-window.
-    - Wrapping (wrap=True): Not inside any multiplexer. Creates a new tmux
-      session with the header and claude command inside a shell wrapper, so
-      the header appears within the tmux session rather than the outer terminal.
+    Uses the default exec_session (print + execvp) when already inside tmux.
+    Provides spawn_pane via tmux split-window for dispatch workers.
     """
 
     name = "tmux"
 
-    def __init__(self, *, wrap: bool = False) -> None:
-        self._wrap = wrap
-
     @staticmethod
     def is_active() -> bool:
         return bool(os.environ.get("TMUX"))
-
-    def exec_session(
-        self,
-        cmd: list[str],
-        *,
-        startup_text: str,
-        env_vars: dict[str, str],
-        session_name: str,
-    ) -> None:
-        if not self._wrap:
-            super().exec_session(cmd, startup_text=startup_text, env_vars=env_vars, session_name=session_name)
-            return
-
-        tmux_cmd = ["tmux", "new-session", "-A", "-s", session_name]
-        for key, value in env_vars.items():
-            tmux_cmd.extend(["-e", f"{key}={value}"])
-        # Print startup text inside the tmux session (not the outer terminal
-        # where it would be hidden once tmux takes over the display).
-        inner = f"printf %s {shlex.quote(startup_text)} && exec {shlex.join(cmd)}"
-        tmux_cmd.extend(["sh", "-c", inner])
-        os.execvp("tmux", tmux_cmd)
 
     def spawn_pane(
         self,
@@ -177,27 +148,17 @@ class KittyBackend(TerminalBackend):
             raise PaneLaunchError(self.name, e.stderr) from e
 
 
-class DirectBackend(TerminalBackend):
-    """Fallback backend when no terminal multiplexer is available.
-
-    Uses the default exec_session (print + execvp). Cannot spawn panes.
-    """
-
-    name = "direct"
-
-
 def resolve_launch_backend() -> TerminalBackend:
-    """Resolve the backend for launching a Claude session.
+    """Resolve the backend for launching a session.
 
-    Priority: Kitty > active tmux > tmux wrapping > direct fallback.
+    All backends use the same exec_session (export env vars + print + execvp).
+    The distinction only matters for knowing which multiplexer is active.
     """
     if KittyBackend.is_active():
         return KittyBackend()
     if TmuxBackend.is_active():
         return TmuxBackend()
-    if shutil.which("tmux"):
-        return TmuxBackend(wrap=True)
-    return DirectBackend()
+    return TerminalBackend()
 
 
 def resolve_dispatch_backend() -> TmuxBackend | KittyBackend | None:

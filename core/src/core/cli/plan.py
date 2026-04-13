@@ -6,7 +6,7 @@ from pathlib import Path
 
 from rich.console import Console
 
-from core.constants import CLAUDE_COMMAND, SCRATCH_BASE, SCRIPT_DIR
+from core.constants import EXTENSION_DIR, PI_COMMAND, SCRATCH_BASE
 from core.git import is_git_repo
 from core.logseq import resolve_graph_path, today
 from core.prompts.logseq_prompts import load_system_prompt, load_user_prompt
@@ -51,14 +51,13 @@ def execute_plan() -> None:
     system_prompt = _assemble_system_prompt(graph_path)
     user_prompt = load_user_prompt("plan", date=target_date)
 
-    # Build claude command — flags first, then -- separator + user prompt last
+    # Build pi command — flags first, then -- separator + user prompt last
     # so the end-of-options marker doesn't swallow subsequent flags.
-    cmd: list[str] = [CLAUDE_COMMAND, "--system-prompt", system_prompt]
+    cmd: list[str] = [PI_COMMAND, "--system-prompt", system_prompt]
 
-    # Load companion plugin for MCP access (cross-project session search)
-    companion_plugin_dir = SCRIPT_DIR / "plugins" / "companion"
-    if (companion_plugin_dir / ".claude-plugin" / "plugin.json").exists():
-        cmd.extend(["--plugin-dir", str(companion_plugin_dir)])
+    # Load basecamp extension
+    if (EXTENSION_DIR / "package.json").exists():
+        cmd.extend(["-e", str(EXTENSION_DIR)])
 
     cmd.extend(["--", user_prompt])
 
