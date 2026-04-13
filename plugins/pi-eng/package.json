@@ -1,0 +1,10 @@
+{
+  "name": "pi-eng",
+  "version": "1.0.0",
+  "description": "Engineering resources for pi: extension and skills for code review, Python development, SQL, PRs, and more.",
+  "keywords": ["pi-package"],
+  "pi": {
+    "extensions": ["./extension"],
+    "skills": ["./skills"]
+  }
+}
