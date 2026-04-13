@@ -61,7 +61,6 @@ plugins/
 ├── engineering/                # bc-eng — 8 agents, 9 skills, commands, hooks
 ├── cursor/                     # bc-cursor — .cursor context file discovery hooks
 ├── git_protect/                # bc-git-protect — destructive git/gh operation guards
-├── gpg_check/                  # bc-gpg-check — GPG card verification hook
 └── private/                    # bc-private — gitignored personal tools
 
 core/tests/                     # pytest suite for basecamp-core

@@ -25,11 +25,6 @@
       "description": "Guards against destructive git and gh operations."
     },
     {
-      "name": "bc-gpg-check",
-      "source": "./plugins/gpg_check",
-      "description": "Pre-tool hook to verify GPG card is unlocked before git operations."
-    },
-    {
       "name": "bc-private",
       "source": "./plugins/private",
       "description": "Private tools, not git committed."

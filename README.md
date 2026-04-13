@@ -228,7 +228,6 @@ basecamp includes a bundled plugin and an optional marketplace with additional p
 | `bc-eng` | Code review, PR workflows, testing patterns, Python/SQL/dbt development |
 | `bc-cursor` | Discovers `.cursor/*.mdc` context files |
 | `bc-git-protect` | Guards against destructive git and gh operations |
-| `bc-gpg-check` | Verifies GPG card before git commit/tag |
 | `bc-private` | Private tools, not git committed |
 
 ### Installing Plugins
