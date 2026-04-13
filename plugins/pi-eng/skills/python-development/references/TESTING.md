@@ -1,24 +1,14 @@
----
-name: python-testing
-description: Write, design, or troubleshoot Python tests with pytest. Provides expert guidance on test architecture, fixtures, mocking, parametrization, time freezing, and async testing. Invoke when creating test files, designing fixtures, mocking external dependencies, debugging test failures, or architecting a test suite.
----
+# Python Testing
 
-You are an expert Python testing specialist with deep expertise in pytest, test architecture, and quality assurance. You write tests that are isolated, deterministic, and maintainable.
+Pytest patterns for test design, fixtures, mocking, parametrization, time control, and async testing. All test code follows the foundational `python-development` principles.
 
-**Foundation**: You build upon the `python-development` skill. All test code you write adheres to those foundational principles for typing, naming, error handling, and code structure.
+## Test Design and Structure
 
-## Core Responsibilities
-
-### 1. Test Design and Structure
-
-You will:
 - Write isolated tests that never depend on other tests' state or execution order
 - Verify one specific behavior per test function
 - Use descriptive test names that document the expected behavior
 - Group related tests in classes to share context and class-scoped fixtures
 - Mirror the source structure in the test directory layout
-
-**Test Structure Pattern:**
 
 ```python
 # tests/test_users.py
@@ -38,12 +28,11 @@ class TestCreateUser:
 ```
 
 **Test Naming Convention:**
-- `test_<action>_<expected_outcome>` - e.g., `test_create_user_raises_on_duplicate_email`
+- `test_<action>_<expected_outcome>` — e.g., `test_create_user_raises_on_duplicate_email`
 - Never `test_create_user_2` or `test_edge_case`
 
-### 2. Fixture Design
+## Fixture Design
 
-You will:
 - Design fixtures for reuse across tests
 - Place shared fixtures in `conftest.py`, test-specific fixtures inline
 - Choose appropriate scopes: `session` for expensive setup, `function` for isolation
@@ -114,10 +103,9 @@ def make_user(db_session):
     db_session.commit()
 ```
 
-### 3. Mocking External Dependencies
+## Mocking External Dependencies
 
-You will:
-- Mock all external dependencies—never make real network calls, production database connections, or uncontrolled filesystem writes
+- Mock all external dependencies — never make real network calls, production database connections, or uncontrolled filesystem writes
 - Patch at the point of use, not at the point of definition
 - Verify mock interactions when the call itself is the behavior being tested
 - Use `side_effect` for sequences of return values or exceptions
@@ -175,15 +163,12 @@ def test_fetches_external_data(mocker):
     assert result == {"data": "value"}
 ```
 
-### 4. Time Control with Freezegun
+## Time Control with Freezegun
 
-You will:
 - Use freezegun for any datetime-dependent logic
 - Create deterministic tests that don't depend on current time
 - Use `freeze_time` decorator or context manager as appropriate
 - Use `frozen.tick()` to advance time within tests
-
-**Freezegun Patterns:**
 
 ```python
 from freezegun import freeze_time
@@ -209,15 +194,12 @@ class TestSubscription:
             assert trial.days_remaining == 7
 ```
 
-### 5. Parametrized Tests
+## Parametrized Tests
 
-You will:
 - Use `@pytest.mark.parametrize` instead of duplicating test logic
 - Create readable parameter sets with clear expected outcomes
 - Combine parametrize decorators for cartesian products when needed
 - Use `pytest.param(..., id="descriptive_name")` for complex cases
-
-**Parametrization Patterns:**
 
 ```python
 @pytest.mark.parametrize("email,valid", [
@@ -232,16 +214,6 @@ def test_email_validation(email, valid):
     assert is_valid_email(email) == valid
 
 
-@pytest.mark.parametrize("a,b,expected", [
-    (1, 2, 3),
-    (0, 0, 0),
-    (-1, 1, 0),
-    (100, 200, 300),
-])
-def test_addition(a, b, expected):
-    assert add(a, b) == expected
-
-
 # With descriptive IDs for complex cases
 @pytest.mark.parametrize("input_data,expected", [
     pytest.param({"status": "active"}, True, id="active_user"),
@@ -252,15 +224,11 @@ def test_user_access(input_data, expected):
     assert can_access(input_data) == expected
 ```
 
-### 6. Async Testing
+## Async Testing
 
-You will:
 - Use `pytest-asyncio` for async test support
 - Mark async tests with `@pytest.mark.asyncio` or module-level `pytestmark`
 - Create async fixtures when needed
-- Test concurrent operations with `asyncio.gather`
-
-**Async Test Patterns:**
 
 ```python
 import pytest
@@ -284,15 +252,12 @@ class TestAsyncOperations:
         assert len(results) == 2
 ```
 
-### 7. FastAPI Testing
+## FastAPI Testing
 
-You will:
 - Use `httpx.AsyncClient` with `ASGITransport` for async FastAPI testing
 - Create client fixtures that properly manage the async context
 - Test endpoints with realistic request payloads
 - Verify both success and error responses
-
-**FastAPI Test Pattern:**
 
 ```python
 import pytest
@@ -321,9 +286,7 @@ async def test_get_user_not_found(client):
     assert response.status_code == 404
 ```
 
-## Operational Guidelines
-
-### Test Isolation Checklist
+## Test Isolation Checklist
 
 Before each test runs:
 - [ ] No shared mutable state from previous tests
@@ -332,7 +295,7 @@ Before each test runs:
 - [ ] Time is frozen if datetime-dependent
 - [ ] Filesystem operations use `tmp_path`
 
-### Debugging Test Failures
+## Debugging Test Failures
 
 1. **Run in isolation**: `pytest tests/test_file.py::TestClass::test_name -v`
 2. **Add verbosity**: `--tb=long` for full tracebacks
@@ -340,7 +303,7 @@ Before each test runs:
 4. **Verify mocks**: Check mock calls with `mock.call_args_list`
 5. **Print intermediate state**: Use `capsys` or `caplog` to inspect output
 
-### Running Tests
+## Running Tests
 
 ```bash
 uv run pytest                          # Run all tests
@@ -376,5 +339,3 @@ tests/
     ├── conftest.py      # Integration-specific fixtures
     └── test_workflows.py
 ```
-
-You write tests that serve as living documentation of system behavior. Every test is isolated, deterministic, and fast. Mock boundaries are clear, fixtures are reusable, and test names tell the story of what the code should do.

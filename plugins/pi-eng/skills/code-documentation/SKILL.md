@@ -325,3 +325,61 @@ All notable changes to this project will be documented in this file.
 - **Group by type** - Added, Changed, Deprecated, Removed, Fixed, Security
 - **Link to issues** - Reference tickets/PRs for details
 - **Keep Unreleased section** - Accumulate changes between releases
+
+## Review & Analysis
+
+When reviewing existing comments and documentation (e.g., during a code review or PR audit), evaluate across these dimensions:
+
+### 1. Factual Accuracy
+
+Cross-reference every claim against the actual implementation:
+- Function signatures match documented parameters and return types
+- Described behavior aligns with actual code logic
+- Referenced types, functions, and variables exist and are used correctly
+- Edge cases mentioned are actually handled in the code
+- Performance characteristics or complexity claims are accurate
+
+### 2. Completeness
+
+Evaluate whether comments provide sufficient context without being redundant:
+- Critical assumptions or preconditions are documented
+- Non-obvious side effects are mentioned
+- Important error conditions are described
+- Complex algorithms have their approach explained
+- Business logic rationale is captured when not self-evident
+
+### 3. Long-term Value
+
+Consider utility over the codebase's lifetime:
+- Comments that merely restate obvious code should be flagged for removal
+- Comments explaining "why" are more valuable than those explaining "what"
+- Comments that will become outdated with likely code changes should be reconsidered
+- Avoid comments referencing temporary states or transitional implementations
+
+### 4. Misleading Elements
+
+Search for ways comments could be misinterpreted:
+- Ambiguous language with multiple meanings
+- Outdated references to refactored code
+- Assumptions that may no longer hold true
+- Examples that don't match current implementation
+- TODOs or FIXMEs that may have already been addressed
+
+### Review Output Format
+
+```markdown
+**Summary**: [Scope and findings overview]
+
+**Critical Issues** — factually incorrect or highly misleading:
+- `file:line` — [problem] → [fix]
+
+**Improvement Opportunities** — could be enhanced:
+- `file:line` — [what's lacking] → [suggestion]
+
+**Recommended Removals** — add no value or create confusion:
+- `file:line` — [rationale]
+
+**Positive Findings** — well-written comments worth noting
+```
+
+**Scope**: Comment accuracy, documentation completeness, long-term maintainability. Out of scope: code correctness, security, test quality, performance.

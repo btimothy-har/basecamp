@@ -1,6 +1,7 @@
 ---
 name: pr-walkthrough
 description: Interactive step-by-step walkthrough of a pull request
+disable-model-invocation: true
 ---
 
 # PR Walkthrough
@@ -23,7 +24,7 @@ If no PR number provided, work with the current branch's changes compared to the
 
 ### Step 2: Gather Context
 
-Use the **context-gatherer** agent to collect PR metadata, linked issues, and author intent. Present a brief summary before beginning the walkthrough.
+Load `/skill:context-gatherer` to collect PR metadata, linked issues, and author intent. Present a brief summary before beginning the walkthrough.
 
 ### Step 3: Set the Stage
 

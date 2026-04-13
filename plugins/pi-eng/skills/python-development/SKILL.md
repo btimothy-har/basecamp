@@ -242,3 +242,15 @@ except json.JSONDecodeError as e:
 uv run --verbose script.py              # Detailed output
 uv run python -c "import package"       # Test imports
 ```
+
+---
+
+## Backend — read [BACKEND.md](references/BACKEND.md)
+
+FastAPI, async SQLAlchemy, PostgreSQL, and Alembic patterns. Covers API design, database operations, N+1 prevention, model design, Pydantic schemas, migrations, pagination, and security.
+
+---
+
+## Testing — read [TESTING.md](references/TESTING.md)
+
+Pytest patterns for test design, fixtures, mocking, parametrization, time control with freezegun, async testing, and FastAPI test clients.

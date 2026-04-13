@@ -15,12 +15,12 @@ Comments are stored at `/tmp/claude-workspace/{repo}/pr-comments/{number}.md` an
 
 ## Prerequisite
 
-Before proceeding, verify that the conversation contains review findings — output from review agents, walkthrough observations, manual analysis, or user-provided feedback. If no findings exist, stop and ask the user what they'd like to review or comment on.
+Before proceeding, verify that the conversation contains review findings — output from review skills, walkthrough observations, manual analysis, or user-provided feedback. If no findings exist, stop and ask the user what they'd like to review or comment on.
 
 ## Step 1: Synthesize Findings
 
 Read back through the conversation and extract all actionable findings from:
-- Review agent output (code-reviewer, security-reviewer, test-reviewer, etc.)
+- Review skill output (security-review, test-review, code-documentation, etc.)
 - Walkthrough observations and discussion points
 - Manual analysis or user-provided feedback
 - Code issues surfaced during the conversation

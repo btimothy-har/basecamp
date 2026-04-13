@@ -23,18 +23,19 @@ If no PR number provided, review the current branch's changes compared to the ba
 
 ### Step 2: Gather Context
 
-Use the **context-gatherer** agent to collect PR metadata, linked issues, and author intent. Present a brief summary before beginning review.
+Load `/skill:context-gatherer` to collect PR metadata, linked issues, and author intent. Present a brief summary before beginning review.
 
 ### Step 3: Review
 
-Run review agents in parallel:
-- **code-reviewer** — correctness, design, readability, performance
-- **security-reviewer** — vulnerabilities, auth, data exposure
-- **test-reviewer** — coverage, test quality
-- **comment-analyzer** — comment accuracy, documentation quality
-- **code-simplifier** — simplification opportunities
+Review the changes across all dimensions defined in `references/DIMENSIONS.md`. Apply the confidence scoring from `references/SCORING.md` to filter findings.
 
-Collect findings from all agents, grouped by severity.
+For specialized analysis, load these skills as needed:
+- `/skill:security-review` — vulnerabilities, auth, data exposure
+- `/skill:test-review` — coverage, test quality
+- `/skill:code-documentation` — comment accuracy, documentation quality (see its Review & Analysis section)
+- `/skill:code-simplification` — simplification opportunities
+
+Collect all findings, grouped by severity.
 
 ### Step 4: Verdict
 
