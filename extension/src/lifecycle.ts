@@ -4,15 +4,9 @@
  * session_start:
  *   - Determines git repo name (GIT_REPO env var)
  *   - Creates scratch directories for PR workflows
- *   - Sets up inbox directory keyed by session ID
  *
  * before_agent_start:
  *   - Appends project context from BASECAMP_CONTEXT_FILE to system prompt
- *
- * Ported from:
- *   - plugins/pi-eng/extension/index.ts (session_start handler)
- *   - plugins/companion/scripts/session-init.sh (session ID / inbox)
- *   - plugins/companion/scripts/project-context.sh (context injection)
  */
 
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
@@ -40,16 +34,7 @@ export function registerLifecycle(pi: ExtensionAPI): void {
 		await fs.mkdir(path.join(scratch, "pull_requests"), { recursive: true });
 		await fs.mkdir(path.join(scratch, "pr-comments"), { recursive: true });
 
-		// 3. Set up inbox directory keyed by session
-		const sessionFile = ctx.sessionManager.getSessionFile();
-		if (sessionFile) {
-			const sessionId = path.basename(sessionFile, path.extname(sessionFile));
-			const inboxDir = `/tmp/claude-workspace/inbox/${sessionId}`;
-			await fs.mkdir(inboxDir, { recursive: true });
-			process.env.BASECAMP_INBOX_DIR = inboxDir;
-		}
-
-		// 4. Cache context file content
+		// 3. Cache context file content
 		const contextFile = process.env.BASECAMP_CONTEXT_FILE;
 		if (contextFile) {
 			try {

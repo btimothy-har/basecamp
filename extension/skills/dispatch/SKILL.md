@@ -1,12 +1,12 @@
 ---
 name: dispatch
-description: "Dispatch parallel Claude workers via terminal panes (Kitty or tmux). Invoke when work can be parallelized into independent tasks, or when the user calls /dispatch with a task description."
+description: "Dispatch worker agents via the worker tool. Invoke when work can be parallelized into independent tasks, or when the user asks to delegate work."
 argument-hint: "<task description>"
 ---
 
 # Dispatch
 
-Launch a parallel Claude worker session in a new terminal pane.
+Delegate a task to a worker agent using the `worker` tool.
 
 ## Input
 
@@ -14,67 +14,67 @@ $ARGUMENTS
 
 ## Process
 
-### 1. Build the prompt
+### 1. Choose an agent (or go ad-hoc)
 
-Task: $ARGUMENTS
+Review available agents with `worker({ action: "list" })` or `/agents`.
 
-Write a **self-contained brief** for the worker using the task above and relevant context from the current conversation. The worker has no conversation history — the prompt must carry everything:
+| Agent | Best for |
+|-------|----------|
+| **scout** | Fast codebase investigation, context gathering |
+| **planner** | Breaking down requirements into implementation steps |
+| **worker** | Hands-on code changes, refactors, feature implementation |
+| **reviewer** | Reviewing diffs, checking code quality |
+| *(ad-hoc)* | One-off tasks that don't fit a predefined agent |
+
+### 2. Build the task
+
+Write a **self-contained brief**. The worker has no conversation history — the task must carry everything:
 
 - Clear, specific objective
 - Relevant file paths, modules, or context already discovered
 - Constraints or decisions already made
 - What "done" looks like
 
-### 2. Derive a worker name
+### 3. Dispatch
 
-Short, kebab-case identifier from the task description. Appended to an auto-generated UUID prefix (e.g., `worker-a3f21b-fix-auth-bug`) which becomes the directory name and pane title.
+Using the `worker` tool:
 
-Examples: `fix-auth-bug`, `add-unit-tests`, `update-docs`
-
-### 3. Create and dispatch
-
-```bash
-worker create --name <worker-name> --dispatch <<'PROMPT'
-<prompt content>
-PROMPT
+```
+worker({ agent: "scout", task: "Investigate the auth module — find token refresh flow, session management, and middleware chain. Key entry: src/auth/index.ts" })
 ```
 
-With opus for complex work:
-```bash
-worker create --name <worker-name> --model opus --dispatch <<'PROMPT'
-<prompt content>
-PROMPT
+For complex hands-on work (visible Kitty pane, user can observe):
+```
+worker({ agent: "worker", task: "...", mode: "pane" })
 ```
 
-To stage without dispatching (dispatch later with `worker dispatch --name <worker-name>`):
+For background investigation or review:
+```
+worker({ agent: "scout", task: "...", mode: "background" })
+```
 
-```bash
-worker create --name <worker-name> <<'PROMPT'
-<prompt content>
-PROMPT
+Ad-hoc (no agent definition):
+```
+worker({ task: "Fix the null check in auth.ts:142", name: "fix-null" })
 ```
 
 ### 4. Verify
 
-```bash
-worker list
 ```
+worker({ action: "list" })
+```
+
+## Mode selection
+
+- **pane** (default for `worker` agent) — visible Kitty window. User can observe, intervene. Best for implementation tasks.
+- **background** (default for `scout`, `planner`, `reviewer`) — headless. Best for investigation, analysis, review tasks that don't need user interaction.
 
 ## Model selection
 
-Workers default to **sonnet** — sufficient for most tasks.
+Workers inherit the agent's default model. Override when needed:
 
-Use `--model opus` when the task requires deep reasoning:
-- Complex architectural decisions or multi-file refactors with tricky dependencies
-- Debugging subtle issues across a large codebase
-- Tasks where getting it wrong means expensive rework
+```
+worker({ agent: "worker", task: "...", model: "anthropic/claude-opus-4-20250514" })
+```
 
-## Constraints
-
-- **Terminal multiplexer required** — Kitty (with remote control) or tmux
-- **Workers are interactive** — the user can see and intervene in any pane
-- **Project scope** — workers run in the same project directory as the main session
-
-## After dispatch
-
-Use the **workers** skill to manage dispatched workers: check status, send instructions, ask questions, and read inbox messages.
+Use stronger models for complex architectural work. Use faster models for simple investigation.

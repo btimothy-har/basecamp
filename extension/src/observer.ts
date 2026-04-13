@@ -6,15 +6,11 @@
  *
  * Hooks:
  *   session_before_compact / session_shutdown → full pipeline (ingest --process)
- *   tool_call (bash, worker create --dispatch) → ingest only (no --process)
- *
- * Ported from:
- *   - plugins/companion/scripts/hook-process.sh (PreCompact / SessionEnd)
- *   - plugins/companion/scripts/pretool-ingest.sh (PreToolUse dispatch detection)
+ *   tool_call (worker tool dispatch) → ingest only (no --process)
  */
 
 import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-agent";
-import { isToolCallEventType } from "@mariozechner/pi-coding-agent";
+
 
 function isObserverEnabled(): boolean {
 	return (
@@ -82,10 +78,10 @@ export function registerObserver(pi: ExtensionAPI): void {
 	// Pre-ingest before dispatch so workers have recall access
 	pi.on("tool_call", async (event, ctx) => {
 		if (!isObserverEnabled()) return;
-		if (!isToolCallEventType("bash", event)) return;
+		if (event.toolName !== "worker") return;
 
-		const cmd = event.input.command || "";
-		if (/worker\s+create\s+.*--dispatch/.test(cmd)) {
+		const input = event.input as { action?: string; task?: string };
+		if (input.task && !input.action) {
 			triggerIngest(pi, ctx, false);
 		}
 	});
