@@ -79,22 +79,22 @@ Ask the user to rank competing concerns when trade-offs are unavoidable.
 - "For this endpoint: response speed vs. data freshness—which matters more?"
 - "This refactor can prioritize: backward compatibility, code clarity, or performance. Top priority?"
 
-### Using AskUserQuestion Tool
+### Presenting Options
 
-**Always use AskUserQuestion** when applying interview techniques. The tool provides structured options that are faster for users to answer than open-ended questions, and ensures you capture decisions clearly.
+When applying interview techniques, present structured options whenever possible. Options are faster for users to answer than open-ended questions, and ensure decisions are captured clearly.
 
-| Technique | Tool Pattern |
-|-----------|--------------|
-| Clarifying questions | 2-3 options, single select, brief descriptions |
-| Scenario probing | 2-3 options for handling approaches |
+| Technique | Pattern |
+|-----------|---------|
+| Clarifying questions | 2-3 labeled options with brief descriptions |
+| Scenario probing | 2-3 handling approaches to choose from |
 | Preference comparison | 2-3 options with trade-off descriptions |
-| Priority ranking | multiSelect: true, ask to select in priority order |
+| Priority ranking | List items, ask to rank in priority order |
 
-**When to use the tool**:
-- Choosing between approaches → use it
-- Confirming a decision → use it
-- Gathering preferences → use it
-- Any question with identifiable options → use it
+**When to present options**:
+- Choosing between approaches
+- Confirming a decision
+- Gathering preferences
+- Any question with identifiable alternatives
 
 **When plain text is fine**:
 - Truly open-ended questions with no reasonable options to offer
@@ -103,7 +103,7 @@ Ask the user to rank competing concerns when trade-offs are unavoidable.
 **Best practices**:
 - Keep option labels to 1-5 words
 - Use descriptions to explain trade-offs
-- Limit to 2-4 options (users always have "Other")
+- Limit to 2-4 options
 - Provide context in the question itself, not just in options
 
 ---
