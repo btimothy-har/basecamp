@@ -1,5 +1,5 @@
 /**
- * Session Lifecycle — project resolution, prompt assembly, scratch dirs.
+ * Session — state management and session bootstrap.
  *
  * session_start:
  *   - Reads --project / --label / --style flags
@@ -8,20 +8,17 @@
  *   - Changes cwd to the effective working directory
  *   - Loads .env from the project directory
  *   - Caches session state (dirs, working style, context, worktree info)
+ *   - Collects git status snapshot
  *   - Creates scratch directories
  *   - Sets BASECAMP_* env vars
- *
- * before_agent_start (every turn):
- *   - Assembles basecamp prompt (env block + style + system.md + context)
- *   - Prepends before pi's default system prompt
  */
 
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import * as fsSync from "node:fs";
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
-import { type SessionState, resolveSessionState } from "./config";
-import { assemblePrompt, type GitStatusResult } from "./prompt";
+import { type SessionState, resolveSessionState } from "../config";
+import type { GitStatusResult } from "./prompt";
 import { getOrCreateWorktree, registerWorktreeGuards } from "./worktree";
 
 // ---------------------------------------------------------------------------
@@ -30,6 +27,10 @@ import { getOrCreateWorktree, registerWorktreeGuards } from "./worktree";
 
 let state: SessionState | null = null;
 let gitStatus: GitStatusResult | null = null;
+
+export function getGitStatus(): GitStatusResult | null {
+	return gitStatus;
+}
 
 export function getState(): SessionState {
 	return state ?? {
@@ -127,7 +128,7 @@ async function collectGitStatus(
 // Registration
 // ---------------------------------------------------------------------------
 
-export function registerLifecycle(pi: ExtensionAPI): void {
+export function registerSession(pi: ExtensionAPI): void {
 	// Register CLI flags
 	pi.registerFlag("project", {
 		description: "Basecamp project name (from ~/.basecamp/config.json)",
@@ -238,15 +239,5 @@ export function registerLifecycle(pi: ExtensionAPI): void {
 		if (state.projectName) parts.push(`project=${state.projectName}`);
 		if (state.worktreeLabel) parts.push(`worktree=${state.worktreeLabel}`);
 		ctx.ui.notify(`basecamp: ${parts.join(", ")}`, "info");
-	});
-
-	// --- Before agent start: assemble and prepend prompt ---
-	pi.on("before_agent_start", async (event, _ctx) => {
-		const s = getState();
-		const basecampPrompt = assemblePrompt({ state: s, gitStatus });
-
-		return {
-			systemPrompt: basecampPrompt + "\n\n" + event.systemPrompt,
-		};
 	});
 }

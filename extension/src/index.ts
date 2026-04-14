@@ -14,7 +14,8 @@
 
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 
-import { registerLifecycle, getState } from "./core/lifecycle";
+import { registerSession, getState } from "./core/session";
+import { registerPrompt } from "./core/prompt";
 import { registerGitProtect } from "./git-protect";
 import { registerNudges } from "./core/nudges";
 import { registerHandoff } from "./core/handoff";
@@ -30,7 +31,8 @@ export default function (pi: ExtensionAPI) {
 	let sessionName = "";
 
 	// --- Core modules ---
-	registerLifecycle(pi);
+	registerSession(pi);
+	registerPrompt(pi);
 	registerGitProtect(pi);
 	registerNudges(pi);
 	registerHandoff(pi);

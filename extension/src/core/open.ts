@@ -9,7 +9,7 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
-import { type SessionState, readConfig } from "./config";
+import { type SessionState, readConfig } from "../config";
 
 const WORKSPACES_DIR = path.join(os.homedir(), ".workspaces");
 

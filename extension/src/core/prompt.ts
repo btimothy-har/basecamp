@@ -1,16 +1,21 @@
 /**
  * Prompt Assembly — builds the basecamp system prompt layers.
  *
+ * Registers before_agent_start hook to prepend basecamp's prompt
+ * before pi's default system prompt each turn.
+ *
  * Reads bundled prompt files (environment.md, system.md, working styles)
  * and assembles them with runtime context (env block, git status).
  *
  * User overrides in ~/.basecamp/prompts/ take precedence over bundled defaults.
  */
 
+import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import { type SessionState, getTimezone, getLogseqGraph } from "./config";
+import { type SessionState, getTimezone, getLogseqGraph } from "../config";
+import { getState, getGitStatus } from "./session";
 
 // ---------------------------------------------------------------------------
 // Paths
@@ -204,4 +209,21 @@ export function assemblePrompt(opts: AssembleOptions): string {
 	}
 
 	return parts.join("\n\n");
+}
+
+// ---------------------------------------------------------------------------
+// Hook registration
+// ---------------------------------------------------------------------------
+
+export function registerPrompt(pi: ExtensionAPI): void {
+	pi.on("before_agent_start", async (event, _ctx) => {
+		const basecampPrompt = assemblePrompt({
+			state: getState(),
+			gitStatus: getGitStatus(),
+		});
+
+		return {
+			systemPrompt: basecampPrompt + "\n\n" + event.systemPrompt,
+		};
+	});
 }
