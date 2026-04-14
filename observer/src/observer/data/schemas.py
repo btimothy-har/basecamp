@@ -85,6 +85,7 @@ class RawEventSchema(Base):
     content: Mapped[str] = mapped_column(Text, nullable=False)
     message_uuid: Mapped[str | None] = mapped_column(String, nullable=True)
     processed: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    source: Mapped[str] = mapped_column(String, nullable=False, default="pi")
 
     transcript: Mapped["TranscriptSchema"] = relationship(back_populates="raw_events")
 

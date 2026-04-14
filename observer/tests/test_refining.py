@@ -26,7 +26,7 @@ def _make_raw_event(
     content: dict | None = None,
     **kwargs,
 ) -> RawEvent:
-    """Build a RawEvent with JSON content."""
+    """Build a RawEvent with JSON content (Claude format)."""
     if content is None:
         content = {
             "type": event_type,
@@ -39,6 +39,7 @@ def _make_raw_event(
         timestamp=kwargs.get("timestamp", NOW),
         content=json.dumps(content),
         processed=RawEventStatus.PENDING,
+        source="claude",
     )
 
 
@@ -302,6 +303,7 @@ def _insert_raw_events(db, transcript_id: int, events: list[dict]) -> list[int]:
                 timestamp=evt.get("timestamp", NOW),
                 content=evt["content"],
                 processed=RawEventStatus.PENDING,
+                source=evt.get("source", "claude"),
             )
             session.add(row)
             session.flush()
@@ -598,3 +600,175 @@ class TestRefineBatch:
 
         errors = WorkItem.get_by_processed(WorkItemStage.ERROR)
         assert len(errors) == 1
+
+
+# ---------------------------------------------------------------------------
+# Pi-format classification tests
+# ---------------------------------------------------------------------------
+
+
+def _pi_make_raw_event(
+    event_type: str = "user",
+    content: dict | None = None,
+    **kwargs,
+) -> RawEvent:
+    """Build a RawEvent with pi-format JSON content."""
+    if content is None:
+        content = {
+            "type": "message",
+            "message": {"role": event_type, "content": [{"type": "text", "text": "x" * 60}]},
+        }
+    return RawEvent(
+        id=kwargs.get("id", 1),
+        transcript_id=kwargs.get("transcript_id", 1),
+        event_type=event_type,
+        timestamp=kwargs.get("timestamp", NOW),
+        content=json.dumps(content),
+        processed=RawEventStatus.PENDING,
+        source="pi",
+    )
+
+
+def _pi_user_text_event(text: str = "x" * 60, **kwargs) -> RawEvent:
+    return _pi_make_raw_event(
+        "user",
+        {"type": "message", "message": {"role": "user", "content": [{"type": "text", "text": text}]}},
+        **kwargs,
+    )
+
+
+def _pi_assistant_event(text: str = "x" * 60, **kwargs) -> RawEvent:
+    return _pi_make_raw_event(
+        "assistant",
+        {"type": "message", "message": {"role": "assistant", "content": [{"type": "text", "text": text}]}},
+        **kwargs,
+    )
+
+
+def _pi_tool_use_event(
+    name: str = "read",
+    tool_id: str = "tc-1",
+    arguments: dict | None = None,
+    **kwargs,
+) -> RawEvent:
+    return _pi_make_raw_event(
+        "assistant",
+        {
+            "type": "message",
+            "message": {
+                "role": "assistant",
+                "content": [
+                    {
+                        "type": "toolCall",
+                        "id": tool_id,
+                        "name": name,
+                        "arguments": arguments or {"path": "/src/auth.py"},
+                    }
+                ],
+            },
+        },
+        **kwargs,
+    )
+
+
+def _pi_tool_result_event(
+    tool_call_id: str = "tc-1", tool_name: str = "read", content: str = "ok", **kwargs
+) -> RawEvent:
+    return _pi_make_raw_event(
+        "toolResult",
+        {
+            "type": "message",
+            "message": {
+                "role": "toolResult",
+                "toolCallId": tool_call_id,
+                "toolName": tool_name,
+                "content": [{"type": "text", "text": content}],
+            },
+        },
+        **kwargs,
+    )
+
+
+def _pi_thinking_event(text: str = "x" * 60, **kwargs) -> RawEvent:
+    return _pi_make_raw_event(
+        "assistant",
+        {
+            "type": "message",
+            "message": {
+                "role": "assistant",
+                "content": [{"type": "thinking", "thinking": text}],
+            },
+        },
+        **kwargs,
+    )
+
+
+class TestClassifyEventsPi:
+    """Classification tests using pi-format events."""
+
+    def test_user_prompt(self):
+        event = _pi_user_text_event("help me implement JWT authentication for the entire API system")
+        items = classify_events([event])
+        assert len(items) == 1
+        assert items[0].item_type == WorkItemType.PROMPT
+
+    def test_tool_pair(self):
+        tu = _pi_tool_use_event("read", "tc-1")
+        tr = _pi_tool_result_event("tc-1", "read", "file contents")
+        items = classify_events([tu, tr])
+        assert len(items) == 1
+        assert items[0].item_type == WorkItemType.TOOL_PAIR
+        assert items[0].events == [tu, tr]
+
+    def test_agent_text(self):
+        event = _pi_assistant_event("I found the authentication module and here's what I see")
+        items = classify_events([event])
+        assert len(items) == 1
+        assert items[0].item_type == WorkItemType.RESPONSE
+
+    def test_thinking(self):
+        event = _pi_thinking_event("considering architecture options")
+        items = classify_events([event])
+        assert len(items) == 1
+        assert items[0].item_type == WorkItemType.THINKING
+
+    def test_parallel_tool_uses_paired(self):
+        tu1 = _pi_tool_use_event("read", "tc-1")
+        tu2 = _pi_tool_use_event("bash", "tc-2")
+        tr1 = _pi_tool_result_event("tc-1", "read", "file content")
+        tr2 = _pi_tool_result_event("tc-2", "bash", "output")
+        items = classify_events([tu1, tu2, tr1, tr2])
+        assert len(items) == 2
+        assert items[0].item_type == WorkItemType.TOOL_PAIR
+        assert items[0].events == [tu1, tr1]
+        assert items[1].item_type == WorkItemType.TOOL_PAIR
+        assert items[1].events == [tu2, tr2]
+
+    def test_orphaned_tool_result(self):
+        tr = _pi_tool_result_event("tc-999", "read", "no match")
+        items = classify_events([tr])
+        assert len(items) == 1
+        assert items[0].item_type == WorkItemType.ORPHANED_RESULT
+
+    def test_trailing_tool_use_excluded(self):
+        tu = _pi_tool_use_event("read", "tc-1")
+        items = classify_events([tu])
+        assert len(items) == 0
+
+    def test_full_sequence(self):
+        """prompt → thinking → tool_pair → thinking → response = 5 items."""
+        events = [
+            _pi_user_text_event("help me implement JWT authentication for the entire API system"),
+            _pi_thinking_event("weighing JWT vs session tokens for this use case and beyond"),
+            _pi_tool_use_event("read", "tc-1"),
+            _pi_tool_result_event("tc-1", "read", "content"),
+            _pi_thinking_event("the auth module looks good and I will extend it for the task"),
+            _pi_assistant_event("I found the auth module and here is what I see in the codebase"),
+        ]
+        items = classify_events(events)
+        assert len(items) == 5
+        assert items[0].item_type == WorkItemType.PROMPT
+        assert items[1].item_type == WorkItemType.THINKING
+        assert items[2].item_type == WorkItemType.TOOL_PAIR
+        assert items[3].item_type == WorkItemType.THINKING
+        assert items[4].item_type == WorkItemType.RESPONSE

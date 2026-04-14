@@ -26,6 +26,7 @@ class RawEvent(BaseModel):
     content: str
     message_uuid: str | None = None
     processed: RawEventStatus = RawEventStatus.PENDING
+    source: str = "pi"
 
     def save(self, session: Session) -> Self:
         data = self.model_dump()
@@ -75,6 +76,10 @@ class RawEvent(BaseModel):
             rows = q.order_by(RawEventSchema.timestamp).all()
             return [cls.model_validate(r) for r in rows]
 
+    @property
+    def _is_pi(self) -> bool:
+        return self.source == "pi"
+
     @cached_property
     def _parsed(self) -> tuple[dict, str | list, dict]:
         """Parse JSON content once. Returns (message, content, raw_data)."""
@@ -91,6 +96,9 @@ class RawEvent(BaseModel):
         if not message and not content:
             return f"[{self.event_type}] {self.content[:500]}"
 
+        tool_call_type = "toolCall" if self._is_pi else "tool_use"
+        tool_result_type = "toolResult" if self._is_pi else "tool_result"
+
         if isinstance(content, str):
             text = content
         elif isinstance(content, list):
@@ -99,15 +107,21 @@ class RawEvent(BaseModel):
                 if isinstance(block, dict):
                     if block.get("type") == "text":
                         parts.append(block.get("text", ""))
-                    elif block.get("type") == "tool_use":
+                    elif block.get("type") == tool_call_type:
                         parts.append(f"[Tool: {block.get('name', 'unknown')}]")
-                    elif block.get("type") == "tool_result":
-                        parts.append(f"[Tool Result: {block.get('tool_use_id', '')}]")
+                    elif block.get("type") == tool_result_type:
+                        result_id = block.get("tool_use_id", "") if not self._is_pi else block.get("toolCallId", "")
+                        parts.append(f"[Tool Result: {result_id}]")
                 elif isinstance(block, str):
                     parts.append(block)
             text = "\n".join(parts)
         else:
             text = str(content)
+
+        # Pi toolResult messages: show tool name in header
+        if self._is_pi and self.event_type == "toolResult":
+            tool_name = message.get("toolName", "unknown")
+            return f"[toolResult: {tool_name}]\n{text}"
 
         role = message.get("role", self.event_type)
         return f"[{role}]\n{text}"
@@ -118,11 +132,16 @@ class RawEvent(BaseModel):
         if not message and not content:
             return f"[{self.event_type}]"
 
+        # Pi toolResult: one message per result
+        if self._is_pi and self.event_type == "toolResult":
+            tool_name = message.get("toolName", "unknown")
+            return f"[toolResult: {tool_name}]"
+
         if isinstance(content, list):
             types = []
             for block in content:
                 if isinstance(block, dict):
-                    if block.get("type") == "tool_result":
+                    if not self._is_pi and block.get("type") == "tool_result":
                         tool_id = block.get("tool_use_id", "")
                         types.append(f"Tool Result: {tool_id}")
                     else:
@@ -136,7 +155,8 @@ class RawEvent(BaseModel):
 
         User events are only extractable if they contain text content (not tool results).
         Assistant events are extractable if they meet the minimum length.
-        System-injected content (starting with '<' or isMeta) is filtered out.
+        toolResult events (pi only) are always extractable.
+        System-injected content (isMeta / isCompactSummary) is filtered out (Claude only).
         """
         if self.event_type not in EXTRACTABLE_EVENT_TYPES:
             return False
@@ -146,11 +166,16 @@ class RawEvent(BaseModel):
         if not message and not content:
             return False
 
-        if data.get("isMeta", False):
-            return False
+        # Claude-specific filters (pi skips these at parse time)
+        if not self._is_pi:
+            if data.get("isMeta", False):
+                return False
+            if data.get("isCompactSummary", False):
+                return False
 
-        if data.get("isCompactSummary", False):
-            return False
+        # Pi toolResult messages are always extractable
+        if self.event_type == "toolResult":
+            return True
 
         if self.event_type == "user":
             if isinstance(content, str):
@@ -167,10 +192,11 @@ class RawEvent(BaseModel):
             return False
 
         if self.event_type == "assistant":
+            tool_type = "toolCall" if self._is_pi else "tool_use"
             if isinstance(content, str):
                 return True
             if isinstance(content, list):
-                return any(isinstance(b, dict) and b.get("type") in ("text", "tool_use") for b in content)
+                return any(isinstance(b, dict) and b.get("type") in ("text", tool_type) for b in content)
             return False
 
         return False
@@ -191,6 +217,9 @@ class RawEvent(BaseModel):
                     parts.append(block)
                 elif isinstance(block, dict) and block.get("type") == "text":
                     parts.append(block.get("text", ""))
+                # Claude: skip tool_result blocks in user messages
+                elif not self._is_pi and isinstance(block, dict) and block.get("type") == "tool_result":
+                    continue
             return "\n".join(parts) if parts else None
         return None
 
@@ -199,16 +228,19 @@ class RawEvent(BaseModel):
         return self.event_type == "user" and self.is_extractable()
 
     def is_tool_use(self) -> bool:
-        """Assistant event with tool_use blocks."""
+        """Assistant event with tool_use/toolCall blocks."""
         if self.event_type != "assistant":
             return False
         _, content, _ = self._parsed
+        block_type = "toolCall" if self._is_pi else "tool_use"
         if isinstance(content, list):
-            return any(isinstance(b, dict) and b.get("type") == "tool_use" for b in content)
+            return any(isinstance(b, dict) and b.get("type") == block_type for b in content)
         return False
 
     def is_tool_result(self) -> bool:
-        """User event with tool_result blocks."""
+        """Tool result event. Pi: separate toolResult message. Claude: tool_result blocks in user message."""
+        if self._is_pi:
+            return self.event_type == "toolResult"
         if self.event_type != "user":
             return False
         _, content, _ = self._parsed
@@ -217,13 +249,14 @@ class RawEvent(BaseModel):
         return False
 
     def is_thinking(self) -> bool:
-        """Assistant event with thinking blocks only (no tool_use or visible text)."""
+        """Assistant event with thinking blocks only (no tool_use/toolCall or visible text)."""
         if self.event_type != "assistant":
             return False
         _, content, _ = self._parsed
+        block_type = "toolCall" if self._is_pi else "tool_use"
         if isinstance(content, list):
             has_thinking = any(isinstance(b, dict) and b.get("type") == "thinking" for b in content)
-            has_tool_use = any(isinstance(b, dict) and b.get("type") == "tool_use" for b in content)
+            has_tool_use = any(isinstance(b, dict) and b.get("type") == block_type for b in content)
             has_text = any(isinstance(b, dict) and b.get("type") == "text" for b in content)
             return has_thinking and not has_tool_use and not has_text
         return False
@@ -240,39 +273,47 @@ class RawEvent(BaseModel):
         return None
 
     def is_agent_text(self) -> bool:
-        """Assistant text-only event (no tool_use)."""
+        """Assistant text-only event (no tool_use/toolCall)."""
         if self.event_type != "assistant":
             return False
         _, content, _ = self._parsed
+        block_type = "toolCall" if self._is_pi else "tool_use"
         if isinstance(content, str):
             return True
         if isinstance(content, list):
-            has_tool_use = any(isinstance(b, dict) and b.get("type") == "tool_use" for b in content)
+            has_tool_use = any(isinstance(b, dict) and b.get("type") == block_type for b in content)
             if has_tool_use:
                 return False
             return any(isinstance(b, dict) and b.get("type") == "text" for b in content)
         return False
 
     def get_tool_use_id(self) -> str | None:
-        """Extract id from the first tool_use block."""
+        """Extract id from the first tool_use/toolCall block."""
         _, content, _ = self._parsed
+        block_type = "toolCall" if self._is_pi else "tool_use"
         if isinstance(content, list):
             for b in content:
-                if isinstance(b, dict) and b.get("type") == "tool_use":
+                if isinstance(b, dict) and b.get("type") == block_type:
                     return b.get("id")
         return None
 
     def get_tool_use_ids(self) -> frozenset[str]:
-        """Extract ids from all tool_use blocks."""
+        """Extract ids from all tool_use/toolCall blocks."""
         _, content, _ = self._parsed
+        block_type = "toolCall" if self._is_pi else "tool_use"
         if isinstance(content, list):
             return frozenset(
-                b["id"] for b in content if isinstance(b, dict) and b.get("type") == "tool_use" and "id" in b
+                b["id"] for b in content if isinstance(b, dict) and b.get("type") == block_type and "id" in b
             )
         return frozenset()
 
     def get_tool_result_id(self) -> str | None:
-        """Extract tool_use_id from the first tool_result block."""
+        """Extract tool result ID from the first tool_result block or toolResult message."""
+        if self._is_pi:
+            if self.event_type != "toolResult":
+                return None
+            message, _, _ = self._parsed
+            return message.get("toolCallId")
         _, content, _ = self._parsed
         if isinstance(content, list):
             for b in content:
@@ -281,7 +322,14 @@ class RawEvent(BaseModel):
         return None
 
     def get_tool_result_ids(self) -> frozenset[str]:
-        """Extract tool_use_ids from all tool_result blocks."""
+        """Extract tool result IDs."""
+        if self._is_pi:
+            if self.event_type != "toolResult":
+                return frozenset()
+            message, _, _ = self._parsed
+            tool_call_id = message.get("toolCallId")
+            return frozenset({tool_call_id}) if tool_call_id else frozenset()
+        # Claude: scan content blocks for tool_use_id
         _, content, _ = self._parsed
         if isinstance(content, list):
             return frozenset(
@@ -292,25 +340,45 @@ class RawEvent(BaseModel):
         return frozenset()
 
     def get_tool_name(self) -> str | None:
-        """Tool name from the first tool_use block."""
-        _, content, _ = self._parsed
+        """Tool name from the first tool_use/toolCall block or toolResult message."""
+        message, content, _ = self._parsed
+        if self._is_pi and self.event_type == "toolResult":
+            return message.get("toolName")
+        block_type = "toolCall" if self._is_pi else "tool_use"
         if isinstance(content, list):
             for b in content:
-                if isinstance(b, dict) and b.get("type") == "tool_use":
+                if isinstance(b, dict) and b.get("type") == block_type:
                     return b.get("name")
         return None
 
     def get_tool_input(self) -> dict | None:
-        """Input dict from the first tool_use block."""
+        """Input dict from the first tool_use/toolCall block."""
         _, content, _ = self._parsed
+        block_type = "toolCall" if self._is_pi else "tool_use"
+        input_field = "arguments" if self._is_pi else "input"
         if isinstance(content, list):
             for b in content:
-                if isinstance(b, dict) and b.get("type") == "tool_use":
-                    return b.get("input")
+                if isinstance(b, dict) and b.get("type") == block_type:
+                    return b.get(input_field)
         return None
 
     def get_tool_result_content(self) -> str | None:
-        """Text content from the first tool_result block."""
+        """Text content from tool result."""
+        if self._is_pi:
+            if self.event_type != "toolResult":
+                return None
+            _, content, _ = self._parsed
+            # Pi: content is message-level array of text blocks
+            if isinstance(content, list):
+                parts = []
+                for block in content:
+                    if isinstance(block, dict) and block.get("type") == "text":
+                        parts.append(block.get("text", ""))
+                    elif isinstance(block, str):
+                        parts.append(block)
+                return "\n".join(parts) if parts else None
+            return None
+        # Claude: find first tool_result block in content
         _, content, _ = self._parsed
         if isinstance(content, list):
             for b in content:
@@ -333,10 +401,11 @@ class RawEvent(BaseModel):
         if self.event_type != "assistant":
             return None
         _, content, _ = self._parsed
+        block_type = "toolCall" if self._is_pi else "tool_use"
         if isinstance(content, str):
             return content or None
         if isinstance(content, list):
-            has_tool_use = any(isinstance(b, dict) and b.get("type") == "tool_use" for b in content)
+            has_tool_use = any(isinstance(b, dict) and b.get("type") == block_type for b in content)
             if has_tool_use:
                 return None
             parts = [b.get("text", "") for b in content if isinstance(b, dict) and b.get("type") == "text"]

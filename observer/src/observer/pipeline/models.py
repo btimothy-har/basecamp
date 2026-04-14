@@ -34,3 +34,4 @@ class ParsedEvent:
     timestamp: datetime
     content: str
     message_uuid: str | None
+    source: str = "pi"

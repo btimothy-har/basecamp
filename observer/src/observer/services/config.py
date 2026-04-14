@@ -8,9 +8,6 @@ Model identifiers use pydantic-ai's ``provider:model`` format, e.g.:
 - ``anthropic:claude-3-5-haiku-latest``
 - ``openai:gpt-4o-mini``
 - ``anthropic:claude-sonnet-4-20250514``
-
-Legacy short names (``haiku``, ``sonnet``, ``opus``) are migrated
-automatically on read.
 """
 
 from __future__ import annotations
