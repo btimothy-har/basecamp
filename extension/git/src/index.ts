@@ -1,14 +1,15 @@
 /**
- * Git — guards against destructive operations + PR workflow.
+ * Git — guards against destructive operations + PR workflows.
  *
  * Guards:
  *   Block rules gate destructive git commands (force push, ref deletion, clean).
  *   gh commands are blocked by default with an allow-list of safe operations.
- *   gh pr edit is unlocked during an active PR workflow.
+ *   Workflow commands unlock specific operations for their duration.
  *
- * PR workflow:
- *   /pull-request [base] — create or find a draft PR, then hand off to the
- *   agent with a structured prompt for review, description, and publish.
+ * Commands:
+ *   /pull-request [base]   — create/find draft PR, review, describe, publish
+ *   /pr-comments <number>  — synthesize review findings, post as PR comments
+ *   /pr-walkthrough <number> [base] — interactive step-by-step walkthrough
  */
 
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
@@ -29,6 +30,7 @@ const BLOCK_RULES: { gate: RegExp; test: RegExp; reason: string }[] = [
 const GH_ALLOW: RegExp[] = [
 	/^gh\s+issue(\s|$)/,
 	/^gh\s+(pr|run)\s+(view|list|diff|checks|status)(\s|$)/,
+	/^gh\s+pr\s+checkout(\s|$)/,
 	/^gh\s+repo\s+(view|list|clone|set-default)(\s|$)/,
 	/^gh\s+run\s+watch(\s|$)/,
 	/^gh\s+search\s/,
@@ -36,21 +38,75 @@ const GH_ALLOW: RegExp[] = [
 ];
 
 // ---------------------------------------------------------------------------
-// PR workflow state
+// Workflow unlock state
 // ---------------------------------------------------------------------------
 
-let prUnlocked = false;
+const unlocked = {
+	prEdit: false,      // gh pr edit — /pull-request
+	prComment: false,   // gh pr comment, gh api .../pulls — /pr-comments
+};
 
-const PR_EDIT_PATTERN = /^gh\s+pr\s+edit(\s|$)/;
+function lockAll(): void {
+	unlocked.prEdit = false;
+	unlocked.prComment = false;
+}
 
-const PROMPT_PATH = path.resolve(__dirname, "..", "resources", "pull-request.md");
+const PR_EDIT_RE = /^gh\s+pr\s+edit(\s|$)/;
+const PR_COMMENT_RE = /^gh\s+pr\s+comment(\s|$)/;
+const GH_API_PR_RE = /^gh\s+api\s+repos\/[^/]+\/[^/]+\/pulls\//;
 
-function loadPrompt(prNumber: string, base: string, workDir: string): string {
-	const template = fs.readFileSync(PROMPT_PATH, "utf8");
-	return template
-		.replaceAll("{{PR_NUMBER}}", prNumber)
-		.replaceAll("{{BASE}}", base)
-		.replaceAll("{{WORK_DIR}}", workDir);
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+const RESOURCES = path.resolve(__dirname, "..", "resources");
+
+function loadTemplate(name: string, vars: Record<string, string>): string {
+	let template = fs.readFileSync(path.join(RESOURCES, `${name}.md`), "utf8");
+	for (const [key, value] of Object.entries(vars)) {
+		template = template.replaceAll(`{{${key}}}`, value);
+	}
+	return template;
+}
+
+function getWorkDir(cwd: string): string {
+	return process.env.BASECAMP_WORK_DIR || `/tmp/pi/${path.basename(cwd)}`;
+}
+
+async function resolvePrNumber(pi: ExtensionAPI, prArg: string | undefined, ctx: any): Promise<{ number: string; branch: string } | null> {
+	if (prArg) {
+		// Explicit PR number — fetch the branch name
+		const result = await pi.exec("gh", [
+			"pr", "view", prArg,
+			"--json", "headRefName",
+			"-q", ".headRefName",
+		]);
+		if (result.code !== 0) {
+			ctx.ui.notify(`PR #${prArg} not found`, "error");
+			return null;
+		}
+		return { number: prArg, branch: result.stdout.trim() };
+	}
+
+	// No arg — find PR for current branch
+	const branch = await pi.exec("git", ["branch", "--show-current"]);
+	const branchName = branch.stdout.trim();
+	if (!branchName) {
+		ctx.ui.notify("Not on a branch", "error");
+		return null;
+	}
+
+	const existing = await pi.exec("gh", [
+		"pr", "list",
+		"--head", branchName,
+		"--json", "number",
+		"-q", ".[0].number",
+	]);
+	if (!existing.stdout.trim()) {
+		ctx.ui.notify(`No PR found for branch ${branchName}`, "error");
+		return null;
+	}
+	return { number: existing.stdout.trim(), branch: branchName };
 }
 
 // ---------------------------------------------------------------------------
@@ -65,8 +121,9 @@ export default function (pi: ExtensionAPI) {
 		const cmd = event.input.command;
 		if (!cmd) return;
 
-		// PR workflow override — allow gh pr edit when unlocked
-		if (prUnlocked && PR_EDIT_PATTERN.test(cmd)) return;
+		// Workflow overrides
+		if (unlocked.prEdit && PR_EDIT_RE.test(cmd)) return;
+		if (unlocked.prComment && (PR_COMMENT_RE.test(cmd) || GH_API_PR_RE.test(cmd))) return;
 
 		// Check block rules
 		for (const rule of BLOCK_RULES) {
@@ -81,17 +138,16 @@ export default function (pi: ExtensionAPI) {
 		}
 	});
 
-	// --- PR workflow re-lock ---
-	pi.on("session_shutdown", async () => { prUnlocked = false; });
-	pi.on("session_before_compact", async () => { prUnlocked = false; });
+	// --- Re-lock on session boundaries ---
+	pi.on("session_shutdown", async () => lockAll());
+	pi.on("session_before_compact", async () => lockAll());
 
-	// --- /pull-request command ---
+	// --- /pull-request [base] ---
 	pi.registerCommand("pull-request", {
 		description: "Review and publish a pull request",
 		handler: async (args, ctx) => {
 			const base = args?.trim() || "main";
 
-			// Check for existing PR on current branch
 			const branch = await pi.exec("git", ["branch", "--show-current"]);
 			const branchName = branch.stdout.trim();
 			if (!branchName) {
@@ -113,7 +169,6 @@ export default function (pi: ExtensionAPI) {
 				prNumber = String(pr.number);
 				ctx.ui.notify(`Found existing PR #${prNumber}`, "info");
 			} else {
-				// Ensure branch is pushed
 				const upstream = await pi.exec("git", [
 					"rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}",
 				]);
@@ -135,7 +190,6 @@ export default function (pi: ExtensionAPI) {
 					return;
 				}
 
-				// Parse PR URL from output, extract number
 				const urlMatch = create.stdout.match(/\/pull\/(\d+)/);
 				if (!urlMatch) {
 					ctx.ui.notify("Created PR but couldn't parse number from output", "error");
@@ -145,12 +199,46 @@ export default function (pi: ExtensionAPI) {
 				ctx.ui.notify(`Created draft PR #${prNumber}`, "info");
 			}
 
-			// Unlock gh pr edit and hand off to agent
-			prUnlocked = true;
+			unlocked.prEdit = true;
+			const workDir = getWorkDir(ctx.cwd);
+			pi.sendUserMessage(loadTemplate("pull-request", { PR_NUMBER: prNumber, BASE: base, WORK_DIR: workDir }));
+		},
+	});
 
-			const workDir = process.env.BASECAMP_WORK_DIR || `/tmp/pi/${path.basename(ctx.cwd)}`;
-			const prompt = loadPrompt(prNumber, base, workDir);
-			pi.sendUserMessage(prompt);
+	// --- /pr-comments <number> ---
+	pi.registerCommand("pr-comments", {
+		description: "Synthesize review findings and post as PR comments",
+		handler: async (args, ctx) => {
+			const pr = await resolvePrNumber(pi, args?.trim(), ctx);
+			if (!pr) return;
+
+			unlocked.prComment = true;
+			const workDir = getWorkDir(ctx.cwd);
+			ctx.ui.notify(`PR comments workflow for #${pr.number}`, "info");
+			pi.sendUserMessage(loadTemplate("pr-comments", { PR_NUMBER: pr.number, WORK_DIR: workDir }));
+		},
+	});
+
+	// --- /pr-walkthrough <number> [base] ---
+	pi.registerCommand("pr-walkthrough", {
+		description: "Interactive step-by-step PR walkthrough",
+		handler: async (args, ctx) => {
+			const parts = args?.trim().split(/\s+/) || [];
+			const prArg = parts[0];
+			const base = parts[1] || "main";
+
+			const pr = await resolvePrNumber(pi, prArg, ctx);
+			if (!pr) return;
+
+			// Checkout the PR branch
+			ctx.ui.notify(`Checking out PR #${pr.number} (${pr.branch})...`, "info");
+			const checkout = await pi.exec("gh", ["pr", "checkout", pr.number]);
+			if (checkout.code !== 0) {
+				ctx.ui.notify(`Failed to checkout PR: ${checkout.stderr}`, "error");
+				return;
+			}
+
+			pi.sendUserMessage(loadTemplate("pr-walkthrough", { PR_NUMBER: pr.number, BRANCH: pr.branch, BASE: base }));
 		},
 	});
 }

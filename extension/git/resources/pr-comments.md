@@ -1,21 +1,6 @@
----
-name: pr-comments
-description: |
-  Synthesize review findings and post as GitHub PR comments. This skill
-  should be used when the user asks to "post comments", "publish review",
-  "comment on the PR", or when review findings need posting to GitHub.
-disable-model-invocation: true
----
+# PR Comments — PR #{{PR_NUMBER}}
 
-# PR Comments
-
-Synthesize review findings from the conversation, draft them into a comment file, and post to the PR after user review.
-
-Comments are stored at `${BASECAMP_WORK_DIR}/pr-comments/{number}.md` and persist across sessions.
-
-## Prerequisite
-
-Before proceeding, verify that the conversation contains review findings — output from review skills, walkthrough observations, manual analysis, or user-provided feedback. If no findings exist, stop and ask the user what they'd like to review or comment on.
+Synthesize review findings from the conversation and post to PR #{{PR_NUMBER}}.
 
 ## Step 1: Synthesize Findings
 
@@ -25,14 +10,16 @@ Read back through the conversation and extract all actionable findings from:
 - Manual analysis or user-provided feedback
 - Code issues surfaced during the conversation
 
+If no findings exist, stop and ask the user what they'd like to review or comment on.
+
 For each finding, identify: file path, line number (if applicable), severity, and description.
 
 ## Step 2: Compile Draft
 
-Write findings to `${BASECAMP_WORK_DIR}/pr-comments/{number}.md`:
+Write findings to `{{WORK_DIR}}/pull-requests/{{PR_NUMBER}}-comments.md`:
 
 ```markdown
-# PR Comments — #123
+# PR Comments — #{{PR_NUMBER}}
 
 ## Summary
 Overall assessment of the PR. Key themes, patterns observed,
@@ -51,13 +38,6 @@ Exception handler swallows original traceback.
 
 **Suggestion**: Chain the exception with `raise NewError(...) from e`.
 
-## src/utils/cache.py
-
-### Line 15 — 🟠 Unbounded cache growth
-No eviction policy on in-memory cache. Will grow indefinitely under load.
-
-**Suggestion**: Add `maxsize` parameter or TTL-based eviction.
-
 ## General
 - Consider adding integration tests for the auth flow.
 - Nice separation of concerns in the new middleware layer.
@@ -72,16 +52,11 @@ No eviction policy on in-memory cache. Will grow indefinitely under load.
 - `## General` — observations not tied to specific lines (appended to summary when posting)
 - Severity indicators: 🔴 blocker, 🟠 major, 🟡 minor, 🟢 nitpick
 
-## Step 3: Human Review
+## Step 3: Review
 
-Present the draft to the user. The user may edit the file to:
-- Remove comments they don't want to post
-- Modify comment text or severity
-- Remove entire file sections
-- Add additional comments
+Present the draft to the user. The user may edit the file before confirming.
 
-Ask the user to confirm they are ready and choose a publish mode:
-
+Ask the user to choose a publish mode:
 - **As review** — all comments bundled into a single GitHub review with a verdict (APPROVE / REQUEST_CHANGES / COMMENT)
 - **As comments** — comments posted individually, no formal review verdict
 
@@ -90,7 +65,7 @@ Ask the user to confirm they are ready and choose a publish mode:
 ### Setup
 
 ```bash
-COMMIT_SHA=$(gh pr view {number} --json headRefOid -q '.headRefOid')
+COMMIT_SHA=$(gh pr view {{PR_NUMBER}} --json headRefOid -q '.headRefOid')
 REPO=$(gh repo view --json nameWithOwner -q '.nameWithOwner')
 OWNER=$(echo "$REPO" | cut -d/ -f1)
 REPO_NAME=$(echo "$REPO" | cut -d/ -f2)
@@ -98,11 +73,11 @@ REPO_NAME=$(echo "$REPO" | cut -d/ -f2)
 
 ### As Review (bundled)
 
-Submit all comments as a single review. Build a JSON payload with the summary as review body, inline comments as the comments array, and the user's chosen verdict as the event.
+Build a JSON payload with the summary as review body, inline comments as the comments array, and the user's chosen verdict as the event.
 
 ```bash
-gh api repos/$OWNER/$REPO_NAME/pulls/{number}/reviews \
-  --input payload.json
+gh api repos/$OWNER/$REPO_NAME/pulls/{{PR_NUMBER}}/reviews \
+  --input /tmp/pr-review-payload.json
 ```
 
 Payload structure:
@@ -115,7 +90,7 @@ Payload structure:
       "path": "src/api/auth.py",
       "line": 42,
       "side": "RIGHT",
-      "body": "🔴 **SQL injection via unsanitized input**\n\nUser-provided `username` passed directly..."
+      "body": "🔴 **SQL injection via unsanitized input**\n\n..."
     }
   ]
 }
@@ -129,7 +104,7 @@ Post `## General` items by appending them to the review body.
 
 **Line-level comment:**
 ```bash
-gh api repos/$OWNER/$REPO_NAME/pulls/{number}/comments \
+gh api repos/$OWNER/$REPO_NAME/pulls/{{PR_NUMBER}}/comments \
   -f body="Comment text" \
   -f path="src/api/auth.py" \
   -f commit_id="$COMMIT_SHA" \
@@ -139,7 +114,7 @@ gh api repos/$OWNER/$REPO_NAME/pulls/{number}/comments \
 
 **Multi-line range comment:**
 ```bash
-gh api repos/$OWNER/$REPO_NAME/pulls/{number}/comments \
+gh api repos/$OWNER/$REPO_NAME/pulls/{{PR_NUMBER}}/comments \
   -f body="Comment text" \
   -f path="src/api/auth.py" \
   -f commit_id="$COMMIT_SHA" \
@@ -149,18 +124,9 @@ gh api repos/$OWNER/$REPO_NAME/pulls/{number}/comments \
   -f side="RIGHT"
 ```
 
-**File-level comment** (no specific line):
-```bash
-gh api repos/$OWNER/$REPO_NAME/pulls/{number}/comments \
-  -f body="Comment text" \
-  -f path="src/api/auth.py" \
-  -f commit_id="$COMMIT_SHA" \
-  -f subject_type="file"
-```
-
 **Summary and general comments:**
 ```bash
-gh pr comment {number} --body "Summary and general observations"
+gh pr comment {{PR_NUMBER}} --body "Summary and general observations"
 ```
 
 ### Error Handling
@@ -169,12 +135,11 @@ gh pr comment {number} --body "Summary and general observations"
 |-------|-------|------------|
 | 404 on line comment | Line not in diff | Fall back to file-level comment with line reference in body |
 | 422 unprocessable | Invalid line number | Verify line exists in the diff with `gh pr diff` |
-| 401 unauthorized | Auth issue | Check `gh auth status` |
 
 If a line comment fails, fall back to a file-level comment and include the intended line number in the body text.
 
 ### Clean Up
 
 After all comments are posted:
-1. Delete `${BASECAMP_WORK_DIR}/pr-comments/{number}.md`
+1. Delete `{{WORK_DIR}}/pull-requests/{{PR_NUMBER}}-comments.md`
 2. Report summary: total posted, any failures, any fallbacks
