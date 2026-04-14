@@ -212,15 +212,9 @@ Worktrees live in `~/.worktrees/<repo>/<label>/` with branches named `wt/<label>
 
 ## Plugins
 
-basecamp includes a bundled plugin and an optional marketplace with additional plugins.
+basecamp includes an optional marketplace with plugins.
 
-### Bundled Plugin
-
-| Plugin | Description |
-|--------|-------------|
-| `bc-companion` | Session management, context injection, worker dispatch, observer integration |
-
-### Marketplace Plugins
+### Plugins
 
 | Plugin | Description |
 |--------|-------------|

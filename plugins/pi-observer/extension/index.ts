@@ -4,7 +4,7 @@ import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
  * Observer extension for pi.
  *
  * Hooks into session lifecycle events to trigger observer ingestion and
- * processing. Replaces the companion plugin's shell-script hooks.
+ * processing.
  */
 export default function (pi: ExtensionAPI) {
   // Helper: build hook input JSON and run observer ingest (detached).

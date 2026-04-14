@@ -23,7 +23,7 @@ The CLI tool. Manages project configuration, assembles system prompts, and launc
 2. `working_styles.load(name)` — user override dir checked first, then package `_working_styles/`
 3. `_load_system_prompt()` — user override checked first, then package `_system_prompts/system.md`
 
-Project context (`~/.basecamp/prompts/context/{name}.md`) is NOT assembled into the system prompt. It's injected by the companion SessionStart hook using the `BASECAMP_CONTEXT_FILE` env var.
+Project context (`~/.basecamp/prompts/context/{name}.md`) is NOT assembled into the system prompt. It's injected via the `BASECAMP_CONTEXT_FILE` env var.
 
 ### Worker Dispatch
 
@@ -48,7 +48,7 @@ Project context (`~/.basecamp/prompts/context/{name}.md`) is NOT assembled into 
 
 ### `execvp` replaces the process
 
-The basecamp process is replaced by Claude, not a parent of it. No process to manage, no signal forwarding, Claude inherits the exact environment. The trade-off: nothing runs after launch — post-session work happens via companion hooks.
+The basecamp process is replaced by Claude, not a parent of it. No process to manage, no signal forwarding, Claude inherits the exact environment. The trade-off: nothing runs after launch — post-session work happens via plugin hooks.
 
 ### Settings use file-level locking
 

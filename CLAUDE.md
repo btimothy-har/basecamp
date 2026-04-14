@@ -56,7 +56,6 @@ observer/src/observer/
 └── viz/                        # Marimo dashboard
 
 plugins/
-├── companion/                  # bc-companion (bundled) — session hooks, dispatch skill, recall integration
 ├── collaboration/              # bc-collab — discovery skill, gh-issue skill, issue-worker agent
 ├── engineering/                # bc-eng — 8 agents, 9 skills, commands, hooks
 ├── cursor/                     # bc-cursor — .cursor context file discovery hooks
@@ -80,7 +79,7 @@ Assembled prompts are persisted to `~/.basecamp/.cached/{project}/prompt.md` so 
 
 Plugins use Claude Code's native plugin format (`.claude-plugin/plugin.json`). The marketplace config at `.claude-plugin/marketplace.json` lets users install optional plugins from within a Claude session.
 
-`bc-companion` is the only bundled plugin (always loaded). Everything else is opt-in via marketplace install. This keeps the base experience minimal.
+All plugins are opt-in via marketplace install.
 
 ### Environment Variable Chain
 
