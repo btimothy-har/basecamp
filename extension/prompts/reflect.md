@@ -1,5 +1,6 @@
-Today's date: {date}
-
+---
+description: Reflective journaling — review today's work and capture to Logseq
+---
 Review my work from today. Use available tools to discover what I worked on across all projects.
 
 ## Discovery

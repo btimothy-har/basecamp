@@ -1,5 +1,6 @@
-Today's date: {date}
-
+---
+description: Daily planning — gather context and set priorities in Logseq
+---
 Help me plan my day. Use available tools to gather context and surface what needs attention.
 
 ## Review

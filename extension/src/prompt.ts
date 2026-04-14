@@ -10,7 +10,7 @@
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import type { SessionState } from "./config";
+import { type SessionState, getTimezone } from "./config";
 
 // ---------------------------------------------------------------------------
 // Paths
@@ -97,6 +97,16 @@ function buildEnvBlock(state: SessionState): string {
 	}
 
 	lines.push(`Platform: ${process.platform}`);
+
+	const tz = getTimezone();
+	const today = new Intl.DateTimeFormat("en-CA", {
+		timeZone: tz ?? undefined,
+		year: "numeric",
+		month: "2-digit",
+		day: "2-digit",
+	}).format(new Date());
+	lines.push(`Today's date: ${today}`);
+
 	lines.push(`Scratch: ${state.scratchDir}`);
 
 	return lines.join("\n");

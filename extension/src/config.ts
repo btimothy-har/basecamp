@@ -22,6 +22,7 @@ export interface ProjectConfig {
 
 interface BasecampConfig {
 	projects?: Record<string, ProjectConfig>;
+	timezone?: string;
 }
 
 export interface SessionState {
@@ -60,6 +61,13 @@ export interface SessionState {
 const CONFIG_PATH = path.join(os.homedir(), ".basecamp", "config.json");
 const CONTEXT_DIR = path.join(os.homedir(), ".basecamp", "prompts", "context");
 const SCRATCH_BASE = "/tmp/claude-workspace";
+
+export function getTimezone(): string | null {
+	const config = readConfig();
+	return typeof config.timezone === "string" && config.timezone.trim()
+		? config.timezone.trim()
+		: null;
+}
 
 export function readConfig(): BasecampConfig {
 	try {
