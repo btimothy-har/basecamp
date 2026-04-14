@@ -5,7 +5,12 @@
   "keywords": ["pi-package"],
   "pi": {
     "extensions": ["./src"],
-    "skills": ["./skills"],
+    "skills": [
+      "./core/skills",
+      "./engineering/skills",
+      "./collaboration/skills",
+      "./data/skills"
+    ],
     "prompts": ["./prompts"]
   },
   "peerDependencies": {

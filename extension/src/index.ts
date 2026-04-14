@@ -14,11 +14,11 @@
 
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 
-import { registerLifecycle, getState } from "./lifecycle";
+import { registerLifecycle, getState } from "./core/lifecycle";
 import { registerGitProtect } from "./git-protect";
-import { registerNudges } from "./nudges";
-import { registerHandoff } from "./handoff";
-import { registerOpenCommand } from "./open";
+import { registerNudges } from "./core/nudges";
+import { registerHandoff } from "./core/handoff";
+import { registerOpenCommand } from "./core/open";
 import { discoverAgents } from "./agents/discovery";
 import { registerWorkerTool } from "./agents/tool";
 import { registerAgentCommands } from "./agents/commands";
