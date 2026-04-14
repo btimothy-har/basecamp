@@ -49,32 +49,75 @@ Migrate the observer pipeline from Claude Code's transcript format to pi's sessi
    - Use entry-level `id` for `message_uuid` (not `uuid`)
    - Use entry-level `timestamp` (unchanged)
 
+**Detection:** The parser should auto-detect the source format from entry structure. Pi entries have `type: "message"` with a nested `message.role`. Claude entries have the role as the top-level `type` (`"user"`, `"assistant"`). The detection happens per-line in `_parse_line()`.
+
 **Updated `_parse_line` logic:**
 ```python
+# Pi-specific non-message entry types to skip
+_PI_SKIP_TYPES = frozenset({
+    "session", "model_change", "thinking_level_change",
+    "session_info", "label", "custom", "custom_message",
+    "compaction", "branch_summary",
+})
+
+# Claude-specific entry types to skip
+_CLAUDE_SKIP_TYPES = frozenset({"file-history-snapshot"})
+
 def _parse_line(self, line: bytes) -> ParsedEvent | None:
     data = json.loads(line)
     entry_type = data.get("type")
-    
-    if not entry_type or entry_type in _SKIP_TYPES:
+    if not entry_type:
         return None
-    
-    if entry_type != "message":
-        return None  # unknown entry type, skip
-    
-    message = data.get("message", {})
-    role = message.get("role")
-    if not role:
+
+    # Pi format: type is "message", role is nested
+    if entry_type == "message":
+        message = data.get("message", {})
+        role = message.get("role")
+        if not role:
+            return None
+        ts_raw = data.get("timestamp")
+        if not ts_raw:
+            return None
+        timestamp = datetime.fromisoformat(ts_raw)
+        return ParsedEvent(
+            event_type=role,
+            timestamp=timestamp,
+            content=line.decode("utf-8", errors="replace"),
+            message_uuid=data.get("id"),
+            source="pi",
+        )
+
+    # Pi non-message entries: skip
+    if entry_type in _PI_SKIP_TYPES:
         return None
-    
-    ts_raw = data.get("timestamp")  # entry-level, ISO string
+
+    # Claude format: type IS the role
+    if entry_type in _CLAUDE_SKIP_TYPES:
+        return None
+    ts_raw = data.get("timestamp")
+    if not ts_raw:
+        return None
     timestamp = datetime.fromisoformat(ts_raw)
-    
     return ParsedEvent(
-        event_type=role,  # "user", "assistant", "toolResult"
+        event_type=entry_type,
         timestamp=timestamp,
         content=line.decode("utf-8", errors="replace"),
-        message_uuid=data.get("id"),  # 8-char hex entry ID
+        message_uuid=data.get("uuid"),
+        source="claude",
     )
+```
+
+### File: `observer/src/observer/pipeline/models.py`
+
+Add `source` field to `ParsedEvent`:
+```python
+@dataclass(frozen=True, slots=True)
+class ParsedEvent:
+    event_type: str
+    timestamp: datetime
+    content: str
+    message_uuid: str | None
+    source: str = "pi"  # "pi" or "claude"
 ```
 
 ### File: `observer/src/observer/pipeline/models.py`
@@ -90,109 +133,158 @@ EXTRACTABLE_EVENT_TYPES = frozenset({"user", "assistant", "toolResult"})
 
 ---
 
-## Part 2: RawEvent adaptation
+## Part 2: RawEvent adaptation (dual-source)
 
 ### File: `observer/src/observer/data/raw_event.py`
 
-The `_parsed` property and all content-parsing methods need updating for pi's field names and structure.
+All content-parsing methods must handle both Claude Code and pi formats, dispatching on `self.source`. The existing Claude Code logic is preserved for historical data reprocessing.
 
-**Structural difference — tool results:**
-- Claude Code: tool results are content blocks (`type: "tool_result"`) inside user messages
-- Pi: tool results are separate messages with `role: "toolResult"`, with `toolCallId` and `toolName` at the message level, and `content` as a top-level array of text blocks
+**Design pattern:** Each method that touches format-specific fields uses `self.source` to branch. Private helpers `_is_claude` / `_is_pi` make intent clear.
 
-**Structural difference — tool calls:**
-- Claude Code: `type: "tool_use"`, `id`, `name`, `input`
-- Pi: `type: "toolCall"`, `id`, `name`, `arguments`
+```python
+@property
+def _is_pi(self) -> bool:
+    return self.source == "pi"
+```
+
+### Structural differences by source
+
+| Concern | Claude Code (`source="claude"`) | pi (`source="pi"`) |
+|---------|-------------------------------|--------------------|
+| Tool call block type | `"tool_use"` | `"toolCall"` |
+| Tool call input field | `input` | `arguments` |
+| Tool result location | content block in user msg | separate `toolResult` message |
+| Tool result ID field | `tool_use_id` (in content block) | `toolCallId` (message-level) |
+| Tool result name | not available at message level | `toolName` (message-level) |
+| Meta/compact flags | `isMeta`, `isCompactSummary` | not present (filtered at parse time) |
 
 ### `_parsed` property
 
-Current: `data.get("message", {})` then `message.get("content", "")`
-
-For pi, the JSON structure is:
-```json
-{
-  "type": "message",
-  "id": "abc123",
-  "parentId": "def456",
-  "timestamp": "2026-...",
-  "message": {
-    "role": "user|assistant|toolResult",
-    "content": [...],
-    // assistant-only: "api", "provider", "model", "usage", "stopReason"
-    // toolResult-only: "toolCallId", "toolName", "isError"
-  }
-}
-```
-
-The `_parsed` property should return `(message_dict, content, raw_data)` — same shape, just the nesting is compatible. **No change needed** to `_parsed` itself.
+No change — both formats use `data.message.content` nesting.
 
 ### Method-by-method changes
 
-**`is_user_prompt()`** — No change (checks `event_type == "user"` + `is_extractable()`)
+Each method below shows the dual-source pattern. Where the logic is identical across sources, no branching is needed.
 
-**`is_extractable()`** — Add `"toolResult"` handling:
+**`is_extractable()`**
 ```python
-if self.event_type == "toolResult":
-    return True  # always extractable (content is tool output)
-```
-Remove `isMeta` and `isCompactSummary` checks (don't exist in pi).
+def is_extractable(self) -> bool:
+    if self.event_type not in EXTRACTABLE_EVENT_TYPES:
+        return False
+    message, content, data = self._parsed
+    if not message and not content:
+        return False
 
-**`is_tool_use()`** — Change content block type check:
+    # Claude-specific filters (pi skips these at parse time)
+    if self.source == "claude":
+        if data.get("isMeta", False) or data.get("isCompactSummary", False):
+            return False
+
+    if self.event_type == "toolResult":
+        return True  # pi only — always extractable
+
+    # ... rest of user/assistant logic unchanged
+```
+
+**`is_tool_use()`**
 ```python
-# Old: block.get("type") == "tool_use"
-# New: block.get("type") == "toolCall"
+def is_tool_use(self) -> bool:
+    if self.event_type != "assistant":
+        return False
+    _, content, _ = self._parsed
+    block_type = "toolCall" if self._is_pi else "tool_use"
+    if isinstance(content, list):
+        return any(isinstance(b, dict) and b.get("type") == block_type for b in content)
+    return False
 ```
 
-**`is_tool_result()`** — Complete rewrite. No longer checks content blocks:
+**`is_tool_result()`**
 ```python
 def is_tool_result(self) -> bool:
-    return self.event_type == "toolResult"
+    if self._is_pi:
+        return self.event_type == "toolResult"
+    # Claude: tool_result blocks inside user messages
+    if self.event_type != "user":
+        return False
+    _, content, _ = self._parsed
+    if isinstance(content, list):
+        return any(isinstance(b, dict) and b.get("type") == "tool_result" for b in content)
+    return False
 ```
 
-**`get_tool_use_id()` / `get_tool_use_ids()`** — Change block type filter:
+**`get_tool_use_ids()`**
 ```python
-# Old: block.get("type") == "tool_use"
-# New: block.get("type") == "toolCall"
+def get_tool_use_ids(self) -> frozenset[str]:
+    _, content, _ = self._parsed
+    block_type = "toolCall" if self._is_pi else "tool_use"
+    if isinstance(content, list):
+        return frozenset(
+            b["id"] for b in content
+            if isinstance(b, dict) and b.get("type") == block_type and "id" in b
+        )
+    return frozenset()
 ```
-The `id` field name is the same in both formats.
 
-**`get_tool_result_id()` / `get_tool_result_ids()`** — Read from message level, not content blocks:
+**`get_tool_result_ids()`**
 ```python
 def get_tool_result_ids(self) -> frozenset[str]:
-    if self.event_type != "toolResult":
-        return frozenset()
-    message, _, _ = self._parsed
-    tool_call_id = message.get("toolCallId")
-    return frozenset({tool_call_id}) if tool_call_id else frozenset()
+    if self._is_pi:
+        if self.event_type != "toolResult":
+            return frozenset()
+        message, _, _ = self._parsed
+        tool_call_id = message.get("toolCallId")
+        return frozenset({tool_call_id}) if tool_call_id else frozenset()
+    # Claude: scan content blocks for tool_use_id
+    _, content, _ = self._parsed
+    if isinstance(content, list):
+        return frozenset(
+            b["tool_use_id"] for b in content
+            if isinstance(b, dict) and b.get("type") == "tool_result" and "tool_use_id" in b
+        )
+    return frozenset()
 ```
 
-**`get_tool_name()`** — Two paths:
+**`get_tool_name()`**
 ```python
 def get_tool_name(self) -> str | None:
     message, content, _ = self._parsed
-    # toolResult messages: name at message level
-    if self.event_type == "toolResult":
+    if self._is_pi and self.event_type == "toolResult":
         return message.get("toolName")
-    # assistant messages: name in toolCall blocks
+    block_type = "toolCall" if self._is_pi else "tool_use"
     if isinstance(content, list):
         for b in content:
-            if isinstance(b, dict) and b.get("type") == "toolCall":
+            if isinstance(b, dict) and b.get("type") == block_type:
                 return b.get("name")
     return None
 ```
 
-**`get_tool_input()`** — Change field name:
+**`get_tool_input()`**
 ```python
-# Old: block.get("input")
-# New: block.get("arguments")
+def get_tool_input(self) -> dict | None:
+    _, content, _ = self._parsed
+    block_type = "toolCall" if self._is_pi else "tool_use"
+    input_field = "arguments" if self._is_pi else "input"
+    if isinstance(content, list):
+        for b in content:
+            if isinstance(b, dict) and b.get("type") == block_type:
+                return b.get(input_field)
+    return None
 ```
 
-**`get_tool_result_content()`** — Read from message-level content array:
+**`get_tool_result_content()`**
 ```python
 def get_tool_result_content(self) -> str | None:
-    if self.event_type != "toolResult":
-        return None
-    _, content, _ = self._parsed
+    if self._is_pi:
+        if self.event_type != "toolResult":
+            return None
+        _, content, _ = self._parsed
+    else:
+        # Claude: find first tool_result block in content
+        _, content, _ = self._parsed
+        # ... existing Claude block-scanning logic ...
+        return existing_result
+
+    # pi: content is message-level array of text blocks
     if isinstance(content, list):
         parts = []
         for block in content:
@@ -204,30 +296,17 @@ def get_tool_result_content(self) -> str | None:
     return None
 ```
 
-**`extract_user_text()`** — No change (already handles string and list content)
-
-**`extract_agent_text()`** — Change `"tool_use"` to `"toolCall"`:
+**`is_thinking()`, `is_agent_text()`, `extract_agent_text()`** — dispatch on block type:
 ```python
-# Old: block.get("type") == "tool_use"
-# New: block.get("type") == "toolCall"
+block_type = "toolCall" if self._is_pi else "tool_use"
+has_tool_use = any(isinstance(b, dict) and b.get("type") == block_type for b in content)
 ```
 
-**`extract_thinking_text()`** — No change (pi uses same `type: "thinking"` and `thinking` field)
+**`extract_thinking_text()`** — No change (both formats use `type: "thinking"`, field `thinking`).
 
-**`is_thinking()`** — Change `"tool_use"` to `"toolCall"`:
-```python
-has_tool_use = any(isinstance(b, dict) and b.get("type") == "toolCall" for b in content)
-```
+**`extract_user_text()`** — Claude path checks for `tool_result` blocks to skip; pi path doesn't need this since tool results are separate messages. Branch on source.
 
-**`is_agent_text()`** — Change `"tool_use"` to `"toolCall"`:
-```python
-has_tool_use = any(isinstance(b, dict) and b.get("type") == "toolCall" for b in content)
-```
-
-**`format()` and `brief_description()`** — Update content block type references from `"tool_use"` → `"toolCall"` and `"tool_result"` → `"toolResult"` (or remove tool_result handling since those are now separate messages).
-
-**Methods to remove or simplify:**
-- The `is_tool_result` content-block scanning path inside user messages is dead — tool results are never inside user messages in pi. Remove the `"tool_result"` content block handling from `is_extractable()`, `extract_user_text()`, and `brief_description()`.
+**`format()` and `brief_description()`** — Use source-aware block type names.
 
 ---
 
@@ -454,25 +533,32 @@ Add to `~/.pi/agent/extensions/` or project `.pi/extensions/` as appropriate. Or
 
 ### Tests that need updating for pi format
 
-**`test_parser.py`** — Rewrite test JSONL fixtures to use pi's format:
+**`test_parser.py`** — Add pi-format test fixtures alongside existing Claude fixtures. Existing Claude format tests should continue passing (source auto-detection). New tests verify pi format parsing and that `source` field is set correctly.
+
+New pi-format fixtures:
 ```json
 {"type": "session", "version": 3, "id": "test-uuid", "timestamp": "2026-01-01T00:00:00Z", "cwd": "/tmp"}
 {"type": "message", "id": "a1b2c3d4", "parentId": null, "timestamp": "2026-01-01T00:00:01Z", "message": {"role": "user", "content": [{"type": "text", "text": "hello"}], "timestamp": 1234567890}}
 {"type": "message", "id": "b2c3d4e5", "parentId": "a1b2c3d4", "timestamp": "2026-01-01T00:00:02Z", "message": {"role": "assistant", "content": [{"type": "text", "text": "hi"}], "api": "anthropic-messages", "provider": "anthropic", "model": "claude-sonnet-4-5", "usage": {"input": 10, "output": 5, "cacheRead": 0, "cacheWrite": 0, "totalTokens": 15, "cost": {"input": 0, "output": 0, "cacheRead": 0, "cacheWrite": 0, "total": 0}}, "stopReason": "stop", "timestamp": 1234567891}}
 ```
 
-Update test assertions:
-- `event_type` is now the role (`"user"`, `"assistant"`, `"toolResult"`) not the entry type
+New test assertions for pi format:
+- `event_type` is the role (`"user"`, `"assistant"`, `"toolResult"`)
 - `message_uuid` is the entry `id` (8-char hex)
+- `source` is `"pi"`
 - Non-message entries should be skipped (verify session header, model_change etc are filtered)
 
-**`test_data.py`** — Update RawEvent content fixtures to pi's JSON structure. All content-parsing method tests need pi-format JSON.
+Existing Claude format test assertions should be preserved and updated:
+- `source` is `"claude"`
+- All existing behavior unchanged
 
-**`test_ingestion.py`** — Update JSONL fixtures used in integration tests.
+**`test_data.py`** — Add pi-format RawEvent content fixtures. Keep existing Claude fixtures. All content-parsing method tests should run for both sources to verify dual-source dispatch.
 
-**`test_refining.py`** — Update mock RawEvent content to use `toolCall`/`toolResult` format. Tool pairing tests should use separate `toolResult` messages.
+**`test_ingestion.py`** — Add pi-format JSONL integration tests alongside existing Claude ones.
 
-**`test_models.py`** — May need updates if it tests content parsing.
+**`test_refining.py`** — Add pi-format mock RawEvent content (with `toolCall`/`toolResult`). Verify tool pairing works for both source formats.
+
+**`test_models.py`** — May need updates if it tests content parsing. Add `source` field to test models.
 
 **`test_extraction.py`** — Likely no changes (operates on TranscriptEvent text, not raw content).
 
@@ -486,7 +572,7 @@ Update test assertions:
 
 ### Test fixture helper
 
-Create a test utility for building pi-format JSONL entries:
+Create a test utility for building pi-format JSONL entries. Keep existing Claude fixture helpers if any.
 
 ```python
 # observer/tests/conftest.py or observer/tests/fixtures.py
@@ -574,23 +660,78 @@ In `observer/src/observer/constants.py`:
 - Remove `CLAUDE_DIR` and `PROJECTS_DIR` (Claude Code paths, no longer used)
 - Keep `BASECAMP_DIR`, `OBSERVER_DIR`, `DB_PATH`, etc.
 
-### No schema migration needed
+### Schema migration: add `source` column to `raw_events`
 
-The RawEvent table schema doesn't change — `event_type`, `timestamp`, `content`, `message_uuid` all remain. Only the values stored in these fields change (e.g. `event_type` now stores `"toolResult"` instead of never storing it). Existing data from Claude Code sessions will have the old format but won't be re-ingested.
+Historical data from Claude Code sessions exists and should remain reprocessable. Add a `source` column to distinguish the two formats.
 
-If a clean break is desired, run `observer db reset` to start fresh.
+#### Migration: `observer/src/observer/migrations/m004_add_source_column.py`
+
+```python
+"""Migration 004: Add source column to raw_events.
+
+Distinguishes between Claude Code and pi transcript formats so
+content-parsing methods can dispatch to the correct field names.
+Existing rows default to 'claude'.
+"""
+
+from sqlalchemy import Engine, text
+from observer.services.migrations import migration
+
+
+@migration(version=4, description="Add source column to raw_events")
+def run(engine: Engine) -> None:
+    with engine.begin() as conn:
+        conn.execute(
+            text("ALTER TABLE raw_events ADD COLUMN source TEXT NOT NULL DEFAULT 'claude'")
+        )
+```
+
+#### Register in `observer/src/observer/migrations/__init__.py`
+
+Add:
+```python
+from observer.migrations import m004_add_source_column as m004_add_source_column
+```
+
+#### Schema: `observer/src/observer/data/schemas.py`
+
+Add to `RawEventSchema`:
+```python
+source: Mapped[str] = mapped_column(String, nullable=False, default="pi")
+```
+
+Note: the schema default is `"pi"` (new rows), while the migration default is `"claude"` (existing rows).
+
+#### Domain model: `observer/src/observer/data/raw_event.py`
+
+Add to `RawEvent` Pydantic model:
+```python
+source: str = "pi"
+```
+
+#### Enum: `observer/src/observer/data/enums.py`
+
+Add:
+```python
+class TranscriptSource(StrEnum):
+    CLAUDE = "claude"
+    PI = "pi"
+```
 
 ---
 
 ## Execution order
 
-1. **Parser + constants** — Update `_SKIP_TYPES`, `EXTRACTABLE_EVENT_TYPES`, and `_parse_line()` for pi format
-2. **RawEvent** — Adapt all content-parsing methods for pi's field names
-3. **Grouper** — Verify/adapt tool pairing logic (should be minimal)
-4. **Test fixtures** — Create pi-format fixture helpers, update all test files
-5. **Run tests** — `uv run pytest observer/tests/ -x` until green
-6. **Pi extension** — Create `plugins/observer/` with hooks and commands
-7. **Registration** — Verify works with pi session paths (likely no code changes)
-8. **Companion cleanup** — Remove migrated shell scripts and hook entries
-9. **Constants cleanup** — Remove Claude Code path constants
-10. **Lint + format** — `uv run ruff check observer/ && uv run ruff format observer/`
+1. **Migration** — Create `m004_add_source_column.py`, register in `__init__.py`, add `source` field to schema and domain model
+2. **Enums** — Add `TranscriptSource` enum
+3. **ParsedEvent** — Add `source` field
+4. **Parser + constants** — Add pi skip types, update `_parse_line()` with auto-detection, update `EXTRACTABLE_EVENT_TYPES`, pass `source` through to RawEvent in `ingest()`
+5. **RawEvent** — Add `_is_pi` property, adapt all content-parsing methods with dual-source dispatch (preserve all existing Claude logic)
+6. **Grouper** — Verify tool pairing works for both sources (should need no changes if RawEvent methods dispatch correctly)
+7. **Test fixtures** — Create pi-format fixture helpers, add pi-format tests alongside existing Claude tests
+8. **Run tests** — `uv run pytest observer/tests/ -x` — all existing Claude tests must still pass, new pi tests must pass
+9. **Pi extension** — Create `plugins/observer/` with hooks and commands
+10. **Registration** — Verify works with pi session paths (likely no code changes)
+11. **Companion cleanup** — Remove migrated shell scripts and hook entries
+12. **Constants cleanup** — Remove Claude Code path constants
+13. **Lint + format** — `uv run ruff check observer/ && uv run ruff format observer/`
