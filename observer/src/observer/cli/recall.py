@@ -88,7 +88,7 @@ def _run_search(
     before: datetime | None = None,
 ) -> None:
     """Execute search and emit JSON results."""
-    from observer.mcp import engine
+    from observer.search import engine
 
     project_name = _resolve_project(cross_project)
     session_id = os.environ.get("CLAUDE_SESSION_ID")
@@ -134,7 +134,7 @@ def _run_list(
     filter_session_id: str | None = None,
 ) -> None:
     """Execute parametric list and emit JSON results."""
-    from observer.mcp import engine
+    from observer.search import engine
 
     project_name = _resolve_project(cross_project)
     parsed_types = _parse_types(types)
@@ -227,7 +227,7 @@ def list_cmd(
 @click.argument("session_id")
 def session(session_id: str) -> None:
     """Retrieve full session detail by session ID."""
-    from observer.mcp import engine
+    from observer.search import engine
 
     try:
         result = engine.get_session(session_id)

@@ -1,11 +1,11 @@
-"""Tests for observer.mcp.scoring module."""
+"""Tests for observer.search.scoring module."""
 
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
 
 from observer.constants import SEARCH_DEFAULT_THRESHOLD
-from observer.mcp.scoring import compute_score, time_decay
+from observer.search.scoring import compute_score, time_decay
 
 
 class TestTimeDecay:

@@ -35,7 +35,7 @@ from observer.data.schemas import (
     WorktreeSchema,
 )
 from observer.data.transcript import Transcript
-from observer.mcp.scoring import compute_score
+from observer.search.scoring import compute_score
 from observer.services.chroma import get_collection
 from observer.services.db import Database
 from observer.services.embedding import get_model
