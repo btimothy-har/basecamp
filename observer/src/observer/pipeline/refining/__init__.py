@@ -7,11 +7,10 @@ Grouping (RawEvent → WorkItem) is handled by ingest, not here.
 """
 
 import logging
-import signal
 
 from observer.data.enums import WorkItemStage
 from observer.data.work_item import WorkItem
-from observer.pipeline.refining.refinement import WorkItemRefiner, _shutdown, _signal_handler
+from observer.pipeline.refining.refinement import WorkItemRefiner
 from observer.services.db import Database
 
 logger = logging.getLogger(__name__)
@@ -38,8 +37,7 @@ class EventRefiner:
         """Refine unprocessed WorkItems into TranscriptEvents.
 
         Recovers stale REFINING items from crashed runs, then claims and
-        refines pending work items. Signal handlers ensure graceful cleanup
-        on SIGTERM/SIGINT.
+        refines pending work items.
         """
         WorkItem.recover_stale()
 
@@ -49,16 +47,9 @@ class EventRefiner:
 
         logger.info("Refining %d unprocessed work items", len(items))
 
-        _shutdown.clear()
-        old_sigterm = signal.signal(signal.SIGTERM, _signal_handler)
-        old_sigint = signal.signal(signal.SIGINT, _signal_handler)
-        try:
-            refiner = WorkItemRefiner(db)
-            total = refiner.refine(items)
-        finally:
-            signal.signal(signal.SIGTERM, old_sigterm)
-            signal.signal(signal.SIGINT, old_sigint)
-            _reset_incomplete(db, items)
+        refiner = WorkItemRefiner(db)
+        total = refiner.refine(items)
+        _reset_incomplete(db, items)
 
         logger.info("Refining complete: %d work items refined", total)
         return total

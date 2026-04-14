@@ -26,7 +26,7 @@ TRANSCRIPT_EXTENSION = ".jsonl"
 REFINING_MAX_WORKERS = 15
 REFINING_STALE_THRESHOLD = 600  # 10 minutes — reset REFINING items older than this
 EXTRACTION_TIMEOUT = 120
-DEFAULT_OBSERVER_MODEL = "sonnet"
+# Default models moved to services/config.py (pydantic-ai provider:model format)
 
 EXTRACTABLE_EVENT_TYPES = frozenset({"user", "assistant"})
 

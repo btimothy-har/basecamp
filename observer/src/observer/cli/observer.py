@@ -8,7 +8,6 @@ import sys
 from importlib.resources import files
 
 import click
-import questionary
 
 from observer import constants
 from observer.services.config import (
@@ -214,11 +213,32 @@ def mode(target: str | None) -> None:
 
 
 @main.command()
-def setup() -> None:
-    """Configure observer: initialize database and set model preferences."""
-    from observer.constants import CHROMA_DIR, DB_PATH
+@click.option(
+    "--extraction-model",
+    "-e",
+    default=None,
+    help="Model for extraction (e.g. anthropic:claude-sonnet-4-20250514)",
+)
+@click.option(
+    "--summary-model",
+    "-s",
+    default=None,
+    help="Model for summaries (e.g. anthropic:claude-3-5-haiku-latest)",
+)
+@click.option("--mode", "-m", "target_mode", type=click.Choice(["on", "off"]), default=None, help="Processing mode")
+def setup(extraction_model: str | None, summary_model: str | None, target_mode: str | None) -> None:
+    """Configure observer: initialize database and set model preferences.
 
-    click.echo("Initializing observer database...")
+    \b
+    Models use pydantic-ai's provider:model format:
+      anthropic:claude-3-5-haiku-latest
+      anthropic:claude-sonnet-4-20250514
+      openai:gpt-4o-mini
+      openai:gpt-4o
+
+    With no flags, shows current config and initializes the database.
+    """
+    from observer.constants import CHROMA_DIR, DB_PATH
 
     # Ensure directories exist
     constants.BASECAMP_DIR.mkdir(parents=True, exist_ok=True)
@@ -229,45 +249,33 @@ def setup() -> None:
 
     Database.close_if_open()
     Database()
-    click.echo(f"  SQLite:   {DB_PATH}")
 
     from observer.services.chroma import get_collection
 
     get_collection()
-    click.echo(f"  ChromaDB: {CHROMA_DIR}")
 
-    _model_choices = ["haiku", "sonnet", "opus"]
-    extraction_model = questionary.select(
-        "Extraction model:",
-        choices=_model_choices,
-        default=get_extraction_model(),
-    ).ask()
-    if extraction_model is None:
-        sys.exit(1)
+    # Apply any provided settings
+    changed = False
+    if extraction_model is not None:
+        set_extraction_model(extraction_model)
+        changed = True
+    if summary_model is not None:
+        set_summary_model(summary_model)
+        changed = True
+    if target_mode is not None:
+        set_mode(target_mode)
+        changed = True
 
-    summary_model = questionary.select(
-        "Summary model:",
-        choices=_model_choices,
-        default=get_summary_model(),
-    ).ask()
-    if summary_model is None:
-        sys.exit(1)
+    # Show current config
+    click.echo(f"Database:         {DB_PATH}")
+    click.echo(f"ChromaDB:         {CHROMA_DIR}")
+    click.echo(f"Extraction model: {get_extraction_model()}")
+    click.echo(f"Summary model:    {get_summary_model()}")
+    click.echo(f"Mode:             {get_mode()}")
+    click.echo(f"Config:           {CONFIG_FILE}")
 
-    mode_choice = questionary.select(
-        "Processing mode:",
-        choices=[
-            questionary.Choice("On (extraction, embedding, indexing)", value="on"),
-            questionary.Choice("Off (ingestion only, no LLM calls)", value="off"),
-        ],
-        default=get_mode(),
-    ).ask()
-    if mode_choice is None:
-        sys.exit(1)
-
-    set_extraction_model(extraction_model)
-    set_summary_model(summary_model)
-    set_mode(mode_choice)
-    click.echo(f"\nConfiguration saved → {CONFIG_FILE}")
+    if changed:
+        click.echo("\nConfiguration updated.")
 
 
 @main.command()

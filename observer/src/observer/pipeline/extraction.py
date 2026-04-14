@@ -4,6 +4,7 @@ Operates on transcripts that have TranscriptEvents (created by the refine stage)
 Single LLM call per transcript produces all section types at once.
 """
 
+import asyncio
 import logging
 from datetime import UTC, datetime
 
@@ -40,7 +41,7 @@ class TranscriptExtractor:
             return 0
 
         try:
-            result = extract_sections(event_texts)
+            result = asyncio.run(extract_sections(event_texts))
         except ExtractionError:
             logger.exception("Extraction failed for transcript %d", transcript_id)
             return 0

@@ -2,8 +2,15 @@
 
 Stores user-configured settings in a JSON file at
 ~/.basecamp/observer/config.json so they are available across all invocation
-paths — CLI commands, MCP server, hooks — without relying on shell
-environment variables, which subprocess spawning may not propagate.
+paths — CLI commands, hooks — without relying on shell environment variables.
+
+Model identifiers use pydantic-ai's ``provider:model`` format, e.g.:
+- ``anthropic:claude-3-5-haiku-latest``
+- ``openai:gpt-4o-mini``
+- ``anthropic:claude-sonnet-4-20250514``
+
+Legacy short names (``haiku``, ``sonnet``, ``opus``) are migrated
+automatically on read.
 """
 
 from __future__ import annotations
@@ -11,19 +18,13 @@ from __future__ import annotations
 import json
 import os
 
-from observer.constants import (
-    BASECAMP_DIR,
-    DEFAULT_OBSERVER_MODEL,
-    OBSERVER_DIR,
-)
+from observer.constants import OBSERVER_DIR
 
 CONFIG_FILE = OBSERVER_DIR / "config.json"
-_CORE_CONFIG = BASECAMP_DIR / "config.json"
 
-_EXTENDED_CONTEXT_MODELS: dict[str, str] = {
-    "sonnet": "sonnet[1m]",
-    "opus": "opus[1m]",
-}
+# Default models — used when no config exists
+DEFAULT_SUMMARY_MODEL = "anthropic:claude-3-5-haiku-latest"
+DEFAULT_EXTRACTION_MODEL = "anthropic:claude-sonnet-4-20250514"
 
 
 def _read() -> dict[str, str]:
@@ -39,7 +40,6 @@ def _read() -> dict[str, str]:
 def _write(data: dict[str, str]) -> None:
     OBSERVER_DIR.mkdir(parents=True, mode=0o700, exist_ok=True)
     content = (json.dumps(data, indent=2) + os.linesep).encode()
-    # O_CREAT | O_TRUNC with mode 0o600 sets permissions atomically — no TOCTOU window.
     fd = os.open(str(CONFIG_FILE), os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
     try:
         os.write(fd, content)
@@ -47,35 +47,9 @@ def _write(data: dict[str, str]) -> None:
         os.close(fd)
 
 
-def get_pg_url() -> str | None:
-    """Return the stored PostgreSQL URL, or None if not configured.
-
-    Kept for the pg-migrate command — reads the old pg_url from config
-    so users don't have to re-enter it.
-    """
-    return _read().get("pg_url") or None
-
-
-def _use_extended_context() -> bool:
-    """Check if extended context is enabled in core config."""
-    try:
-        data = json.loads(_CORE_CONFIG.read_text())
-        return bool(data.get("use_extended_context"))
-    except (json.JSONDecodeError, OSError):
-        return False
-
-
-def resolve_model(model: str) -> str:
-    """Apply extended context suffix when enabled in core settings."""
-    if _use_extended_context():
-        return _EXTENDED_CONTEXT_MODELS.get(model, model)
-    return model
-
-
 def get_extraction_model() -> str:
-    """Return the configured extraction model, falling back to the default."""
-    model = _read().get("extraction_model") or DEFAULT_OBSERVER_MODEL
-    return resolve_model(model)
+    """Return the configured extraction model as a pydantic-ai model string."""
+    return _read().get("extraction_model") or DEFAULT_EXTRACTION_MODEL
 
 
 def set_extraction_model(model: str) -> None:
@@ -86,9 +60,8 @@ def set_extraction_model(model: str) -> None:
 
 
 def get_summary_model() -> str:
-    """Return the configured summary model, falling back to the default."""
-    model = _read().get("summary_model") or DEFAULT_OBSERVER_MODEL
-    return resolve_model(model)
+    """Return the configured summary model as a pydantic-ai model string."""
+    return _read().get("summary_model") or DEFAULT_SUMMARY_MODEL
 
 
 def set_summary_model(model: str) -> None:
@@ -99,10 +72,7 @@ def set_summary_model(model: str) -> None:
 
 
 def get_mode() -> str:
-    """Return the observer processing mode: 'on' or 'off'.
-
-    Handles backward compat with old 'full'/'lite' mode values.
-    """
+    """Return the observer processing mode: 'on' or 'off'."""
     data = _read()
     mode = data.get("mode")
     if mode == "off":
@@ -122,5 +92,13 @@ def set_mode(mode: str) -> None:
         raise ValueError(msg)
     data = _read()
     data["mode"] = mode
-    data.pop("extraction_enabled", None)  # clean up old key
+    data.pop("extraction_enabled", None)
     _write(data)
+
+
+def get_pg_url() -> str | None:
+    """Return the stored PostgreSQL URL, or None if not configured.
+
+    Kept for the pg-migrate command.
+    """
+    return _read().get("pg_url") or None
