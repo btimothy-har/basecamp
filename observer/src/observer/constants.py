@@ -9,15 +9,6 @@ LOG_FILE = OBSERVER_DIR / "observer.log"
 
 DEFAULT_STALE_THRESHOLD = 300
 
-# Notebook (viz) settings
-NOTEBOOK_LOG_FILE = OBSERVER_DIR / "notebook.log"
-VIZ_PORT = 15028
-VIZ_HOST = "localhost"
-VIZ_MAX_FAILURES = 3
-VIZ_FAILURE_WINDOW = 60  # seconds
-
-TRANSCRIPT_EXTENSION = ".jsonl"
-
 # Extraction settings
 REFINING_MAX_WORKERS = 15
 REFINING_STALE_THRESHOLD = 600  # 10 minutes — reset REFINING items older than this

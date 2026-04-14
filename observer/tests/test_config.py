@@ -35,17 +35,6 @@ class TestWrite:
         assert mode == 0o600, f"Expected 0o600, got 0o{mode:03o}"
 
 
-class TestGetSetPgUrl:
-    """Legacy pg_url for migration support."""
-
-    def test_returns_none_when_not_set(self):
-        assert config.get_pg_url() is None
-
-    def test_returns_stored_value(self):
-        config._write({"pg_url": "postgresql://localhost/obs"})
-        assert config.get_pg_url() == "postgresql://localhost/obs"
-
-
 class TestGetSetMode:
     def test_default_returns_on(self):
         """No config file → default is 'on'."""

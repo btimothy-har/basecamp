@@ -5,7 +5,6 @@ import json
 import logging
 import os
 import sys
-from importlib.resources import files
 
 import click
 
@@ -126,15 +125,6 @@ def db_reset(yes: bool) -> None:  # noqa: FBT001
     click.echo("Database reset complete.")
 
 
-@db.command("migrate-from-pg")
-@click.pass_context
-def migrate_from_pg_cmd(ctx: click.Context) -> None:
-    """Migrate data from PostgreSQL to SQLite + ChromaDB."""
-    from observer.cli.migrate_pg import migrate_from_pg
-
-    ctx.invoke(migrate_from_pg)
-
-
 @main.command()
 @click.option("-n", "lines", default=20, show_default=True, help="Number of lines.")
 @click.option("--follow", "-f", is_flag=True, help="Follow log output.")
@@ -151,37 +141,6 @@ def logs(lines: int, follow: bool) -> None:  # noqa: FBT001
     args.append(str(log_file))
 
     os.execvp("tail", args)
-
-
-@main.command()
-@click.option("--port", "-p", default=constants.VIZ_PORT, show_default=True, help="Port to serve on.")
-@click.option("--host", default=constants.VIZ_HOST, show_default=True, help="Host to bind to.")
-@click.option("--headless", is_flag=True, help="Don't open browser automatically.")
-def viz(port: int, host: str, headless: bool) -> None:  # noqa: FBT001
-    """Launch the observer visualization dashboard (standalone)."""
-    try:
-        import marimo  # noqa: F401, PLC0415
-    except ImportError:
-        sys.exit("marimo is not installed. Reinstall observer with:\n  uv tool install -e ./observer --force")
-
-    app_path = files("observer.viz").joinpath("app.py")
-
-    args = [
-        sys.executable,
-        "-m",
-        "marimo",
-        "run",
-        str(app_path),
-        "--host",
-        host,
-        "--port",
-        str(port),
-    ]
-    if headless:
-        args.append("--headless")
-
-    click.echo(f"Observer dashboard: http://{host}:{port}")
-    os.execvp(args[0], args)
 
 
 @main.command()

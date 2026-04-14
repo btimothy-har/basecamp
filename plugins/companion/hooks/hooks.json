@@ -1,19 +1,5 @@
 {
   "hooks": {
-    "SessionStart": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/scripts/session-init.sh"
-          },
-          {
-            "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/scripts/project-context.sh"
-          }
-        ]
-      }
-    ],
     "Stop": [
       {
         "hooks": [
@@ -34,33 +20,9 @@
         ]
       }
     ],
-    "PreToolUse": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/scripts/pretool-ingest.sh"
-          }
-        ]
-      }
-    ],
-    "PreCompact": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/scripts/hook-process.sh"
-          }
-        ]
-      }
-    ],
     "SessionEnd": [
       {
         "hooks": [
-          {
-            "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/scripts/hook-process.sh"
-          },
           {
             "type": "command",
             "command": "${CLAUDE_PLUGIN_ROOT}/scripts/session-close.sh"

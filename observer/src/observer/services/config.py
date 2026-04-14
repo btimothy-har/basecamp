@@ -91,11 +91,3 @@ def set_mode(mode: str) -> None:
     data["mode"] = mode
     data.pop("extraction_enabled", None)
     _write(data)
-
-
-def get_pg_url() -> str | None:
-    """Return the stored PostgreSQL URL, or None if not configured.
-
-    Kept for the pg-migrate command.
-    """
-    return _read().get("pg_url") or None
