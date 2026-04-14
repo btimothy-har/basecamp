@@ -61,7 +61,6 @@ export interface SessionState {
 
 const CONFIG_PATH = path.join(os.homedir(), ".basecamp", "config.json");
 const CONTEXT_DIR = path.join(os.homedir(), ".basecamp", "prompts", "context");
-const SCRATCH_BASE = "/tmp/basecamp";
 
 export function getTimezone(): string | null {
 	const config = readConfig();
@@ -172,8 +171,7 @@ export function resolveSessionState(opts: ResolveOptions): SessionState {
 		workingStyle = styleOverride;
 	}
 
-	const scratchName = repoName || path.basename(primaryDir);
-	const scratchDir = path.join(SCRATCH_BASE, scratchName);
+	const scratchDir = path.join("/tmp/basecamp", repoName || path.basename(primaryDir));
 
 	return {
 		projectName,
