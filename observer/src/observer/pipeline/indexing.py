@@ -12,9 +12,8 @@ from observer.constants import EMBEDDING_DIMENSIONS
 from observer.data.artifact import Artifact
 from observer.data.schemas import ArtifactSchema, ProjectSchema, TranscriptSchema, WorktreeSchema
 from observer.exceptions import EmbeddingShapeError
-from observer.services.chroma import get_collection
+from observer.services import chroma
 from observer.services.db import Database
-from observer.services.embedding import get_model
 
 logger = logging.getLogger(__name__)
 
@@ -90,9 +89,9 @@ class SearchIndexer:
         metadata_map = _resolve_metadata(db, artifact_ids)
 
         # Upsert into ChromaDB
-        collection = get_collection()
+        collection = chroma.get_collection()
         chroma_ids = [str(a.id) for a in to_index]
-        chroma_embeddings = [e.tolist() for e in embeddings]
+        chroma_embeddings = embeddings
         chroma_metadatas = [metadata_map.get(a.id, {}) for a in to_index]
         chroma_documents = texts
 
@@ -117,13 +116,14 @@ class SearchIndexer:
         return len(to_index)
 
 
-def _encode(texts: list[str]) -> list:
-    """Encode texts into embedding vectors. Lazy-loads model."""
-    model = get_model()
-    embeddings = model.encode(texts, show_progress_bar=False)
+def _encode(texts: list[str]) -> list[list[float]]:
+    """Encode texts into embedding vectors."""
+    embeddings = chroma.encode(texts)
 
-    expected = (len(texts), EMBEDDING_DIMENSIONS)
-    if embeddings.shape != expected:
-        raise EmbeddingShapeError(expected, embeddings.shape)
+    if len(embeddings) != len(texts) or (embeddings and len(embeddings[0]) != EMBEDDING_DIMENSIONS):
+        raise EmbeddingShapeError(
+            (len(texts), EMBEDDING_DIMENSIONS),
+            (len(embeddings), len(embeddings[0]) if embeddings else 0),
+        )
 
     return embeddings

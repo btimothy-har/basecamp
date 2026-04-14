@@ -1,8 +1,9 @@
-"""Tests for observer.search.engine module."""
+"""Tests for observer.search module."""
 
 from __future__ import annotations
 
 import hashlib
+from contextlib import contextmanager
 from datetime import UTC, datetime
 from unittest.mock import MagicMock, patch
 
@@ -26,10 +27,16 @@ def _content_hash(text: str) -> str:
     return hashlib.sha256(text.encode()).hexdigest()
 
 
-def _mock_model():
-    model = MagicMock()
-    model.encode.return_value = np.random.rand(1, EMBEDDING_DIMENSIONS).astype(np.float32)
-    return model
+@contextmanager
+def _patch_chroma(collection=None):
+    """Patch chroma on the search module with mock encode + collection."""
+    if collection is None:
+        collection = _mock_collection_with_results([])
+    mock = MagicMock()
+    mock.encode = lambda texts: np.random.rand(len(texts), EMBEDDING_DIMENSIONS).astype(np.float32).tolist()
+    mock.get_collection.return_value = collection
+    with patch.object(search, "chroma", mock):
+        yield mock
 
 
 def _mock_collection_with_results(
@@ -136,10 +143,7 @@ class TestSearchArtifacts:
             [aid], distances=[0.1], metadatas=[{"session_id": "sess-1", "section_type": "knowledge"}]
         )
 
-        with (
-            patch.object(search, "get_model", return_value=_mock_model()),
-            patch("observer.search.get_collection", return_value=mock_coll),
-        ):
+        with _patch_chroma(mock_coll):
             results = search.search_artifacts("test query", "test-project")
 
         assert len(results) >= 1
@@ -152,10 +156,7 @@ class TestSearchArtifacts:
     def test_scopes_to_project(self, db):  # noqa: ARG002
         _seed_artifact(db, session_id="sess-scoped")
 
-        with (
-            patch.object(search, "get_model", return_value=_mock_model()),
-            patch("observer.search.get_collection", return_value=_mock_collection_with_results([])),
-        ):
+        with _patch_chroma():
             results = search.search_artifacts("test query", "nonexistent-project")
 
         assert len(results) == 0
@@ -163,25 +164,15 @@ class TestSearchArtifacts:
     def test_threshold_filters_low_scores(self, db):  # noqa: ARG002
         aid, _ = _seed_artifact(db, session_id="sess-thresh")
 
-        with (
-            patch.object(search, "get_model", return_value=_mock_model()),
-            patch(
-                "observer.search.get_collection",
-                return_value=_mock_collection_with_results(
-                    [aid], distances=[0.5], metadatas=[{"session_id": "sess-thresh"}]
-                ),
-            ),
-        ):
+        coll = _mock_collection_with_results([aid], distances=[0.5], metadatas=[{"session_id": "sess-thresh"}])
+        with _patch_chroma(coll):
             results = search.search_artifacts("test query", "test-project", threshold=0.99)
 
         for r in results:
             assert r["score"] >= 0.99
 
     def test_empty_db_returns_empty(self, db):  # noqa: ARG002
-        with (
-            patch.object(search, "get_model", return_value=_mock_model()),
-            patch("observer.search.get_collection", return_value=_mock_collection_with_results([])),
-        ):
+        with _patch_chroma():
             results = search.search_artifacts("test query", "test-project")
 
         assert results == []
@@ -198,10 +189,7 @@ class TestHybridRetrieval:
             text="worktree isolation design prevents polluting project directories",
         )
 
-        with (
-            patch.object(search, "get_model", return_value=_mock_model()),
-            patch("observer.search.get_collection", return_value=_mock_collection_with_results([])),
-        ):
+        with _patch_chroma():
             results = search.search_artifacts("worktree isolation", "test-project", threshold=0.0)
 
         session_ids = [r["session_id"] for r in results]
@@ -230,10 +218,7 @@ class TestHybridRetrieval:
             )
             session.add(artifact)
 
-        with (
-            patch.object(search, "get_model", return_value=_mock_model()),
-            patch("observer.search.get_collection", return_value=_mock_collection_with_results([])),
-        ):
+        with _patch_chroma():
             results = search.search_artifacts("migration schema version", "test-project", threshold=0.0)
 
         session_ids = [r["session_id"] for r in results]
@@ -276,10 +261,7 @@ class TestHybridRetrieval:
                 )
             )
 
-        with (
-            patch.object(search, "get_model", return_value=_mock_model()),
-            patch("observer.search.get_collection", return_value=_mock_collection_with_results([])),
-        ):
+        with _patch_chroma():
             results = search.search_artifacts("worktree isolation", "project-a", threshold=0.0)
 
         session_ids = [r["session_id"] for r in results]
@@ -299,10 +281,7 @@ class TestSearchTranscripts:
             [aid], distances=[0.1], metadatas=[{"session_id": "sess-summary", "section_type": "summary"}]
         )
 
-        with (
-            patch.object(search, "get_model", return_value=_mock_model()),
-            patch("observer.search.get_collection", return_value=mock_coll),
-        ):
+        with _patch_chroma(mock_coll):
             results = search.search_transcripts("test query", "test-project")
 
         assert len(results) >= 1
@@ -315,19 +294,13 @@ class TestSearchTranscripts:
     def test_scopes_to_project(self, db):  # noqa: ARG002
         _seed_summary(db, session_id="sess-scoped-ts")
 
-        with (
-            patch.object(search, "get_model", return_value=_mock_model()),
-            patch("observer.search.get_collection", return_value=_mock_collection_with_results([])),
-        ):
+        with _patch_chroma():
             results = search.search_transcripts("test query", "nonexistent-project")
 
         assert len(results) == 0
 
     def test_empty_db_returns_empty(self, db):  # noqa: ARG002
-        with (
-            patch.object(search, "get_model", return_value=_mock_model()),
-            patch("observer.search.get_collection", return_value=_mock_collection_with_results([])),
-        ):
+        with _patch_chroma():
             results = search.search_transcripts("test query", "test-project")
 
         assert results == []

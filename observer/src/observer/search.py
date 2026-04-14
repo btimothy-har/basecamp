@@ -39,9 +39,8 @@ from observer.data.schemas import (
     WorktreeSchema,
 )
 from observer.data.transcript import Transcript
-from observer.services.chroma import get_collection
+from observer.services import chroma
 from observer.services.db import Database
-from observer.services.embedding import get_model
 
 logger = logging.getLogger(__name__)
 
@@ -187,7 +186,7 @@ def _knn_retrieve(
     section_type_ne: str | None = None,
 ) -> dict[int, dict[str, Any]]:
     """Run KNN retrieval via ChromaDB, return results keyed by artifact ID."""
-    collection = get_collection()
+    collection = chroma.get_collection()
 
     where = _build_chroma_where(
         project_name=project_name,
@@ -432,8 +431,7 @@ def search_artifacts(
     before: datetime | None = None,
 ) -> list[dict[str, Any]]:
     """Hybrid search over non-summary extraction sections."""
-    model = get_model()
-    query_vector = model.encode([query], show_progress_bar=False)[0].tolist()
+    query_vector = chroma.encode([query])[0]
     overfetch = max(top_k * SEARCH_OVERFETCH_FACTOR, 50)
 
     if section_types is not None:
@@ -494,8 +492,7 @@ def search_transcripts(
     before: datetime | None = None,
 ) -> list[dict[str, Any]]:
     """Hybrid search over summary extraction sections."""
-    model = get_model()
-    query_vector = model.encode([query], show_progress_bar=False)[0].tolist()
+    query_vector = chroma.encode([query])[0]
     overfetch = max(top_k * SEARCH_OVERFETCH_FACTOR, 50)
 
     db = Database()
