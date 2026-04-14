@@ -1,59 +1,226 @@
 /**
- * Session Lifecycle & Project Context
+ * Session Lifecycle — project resolution, prompt assembly, scratch dirs.
  *
  * session_start:
- *   - Determines git repo name (GIT_REPO env var)
- *   - Creates scratch directories for PR workflows
+ *   - Reads --project / --label / --style flags
+ *   - Resolves project config from ~/.basecamp/config.json
+ *   - Creates/enters worktree if --label provided
+ *   - Caches session state (dirs, working style, context, worktree info)
+ *   - Creates scratch directories
+ *   - Sets BASECAMP_* env vars
  *
- * before_agent_start:
- *   - Appends project context from BASECAMP_CONTEXT_FILE to system prompt
+ * before_agent_start (every turn):
+ *   - Assembles basecamp prompt (env block + style + system.md + context)
+ *   - Prepends before pi's default system prompt
  */
 
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
+import { type SessionState, resolveSessionState } from "./config";
+import { assemblePrompt, type GitStatusResult } from "./prompt";
+import { getOrCreateWorktree, registerWorktreeGuards } from "./worktree";
+
+// ---------------------------------------------------------------------------
+// Module state
+// ---------------------------------------------------------------------------
+
+let state: SessionState | null = null;
+let gitStatus: GitStatusResult | null = null;
+
+export function getState(): SessionState {
+	return state ?? {
+		projectName: null,
+		project: null,
+		primaryDir: process.cwd(),
+		secondaryDirs: [],
+		repoName: path.basename(process.cwd()),
+		isRepo: false,
+		remoteUrl: null,
+		scratchDir: `/tmp/claude-workspace/${path.basename(process.cwd())}`,
+		workingStyle: "engineering",
+		worktreeDir: null,
+		worktreeLabel: null,
+		worktreeBranch: null,
+		contextContent: null,
+	};
+}
+
+// ---------------------------------------------------------------------------
+// Git helpers
+// ---------------------------------------------------------------------------
+
+async function resolveGitInfo(
+	pi: ExtensionAPI,
+	dir: string,
+): Promise<{ repoName: string; isRepo: boolean; remoteUrl: string | null }> {
+	try {
+		const result = await pi.exec("git", ["rev-parse", "--show-toplevel"], {
+			cwd: dir,
+			timeout: 10_000,
+		});
+		const toplevel = result.stdout.trim();
+		const repoName = path.basename(toplevel);
+
+		let remoteUrl: string | null = null;
+		try {
+			const remote = await pi.exec("git", ["-C", toplevel, "remote", "get-url", "origin"], {
+				timeout: 10_000,
+			});
+			if (remote.code === 0) remoteUrl = remote.stdout.trim();
+		} catch { /* no remote */ }
+
+		return { repoName, isRepo: true, remoteUrl };
+	} catch {
+		return { repoName: path.basename(dir), isRepo: false, remoteUrl: null };
+	}
+}
+
+async function collectGitStatus(
+	pi: ExtensionAPI,
+	dir: string,
+): Promise<GitStatusResult | null> {
+	try {
+		const branchResult = await pi.exec("git", ["branch", "--show-current"], {
+			cwd: dir,
+			timeout: 10_000,
+		});
+		const branch = branchResult.code === 0 ? branchResult.stdout.trim() : null;
+		if (branch === null) return null;
+
+		// Detect main branch
+		let mainBranch = "main";
+		const checkMain = await pi.exec("git", ["rev-parse", "--verify", "main"], {
+			cwd: dir,
+			timeout: 10_000,
+		});
+		if (checkMain.code !== 0) {
+			const checkMaster = await pi.exec("git", ["rev-parse", "--verify", "master"], {
+				cwd: dir,
+				timeout: 10_000,
+			});
+			if (checkMaster.code === 0) mainBranch = "master";
+		}
+
+		const statusResult = await pi.exec("git", ["status", "--short"], {
+			cwd: dir,
+			timeout: 10_000,
+		});
+		const status = statusResult.code === 0 ? statusResult.stdout.trim() : "";
+
+		const logResult = await pi.exec("git", ["log", "--oneline", "-5"], {
+			cwd: dir,
+			timeout: 10_000,
+		});
+		const recentCommits = logResult.code === 0 ? logResult.stdout.trim() : "";
+
+		return { branch, mainBranch, status, recentCommits };
+	} catch {
+		return null;
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Registration
+// ---------------------------------------------------------------------------
 
 export function registerLifecycle(pi: ExtensionAPI): void {
-	// Context file content cached at session_start, appended to system prompt
-	// each turn via before_agent_start (same pattern as pi's AGENTS.md handling).
-	let contextContent: string | undefined;
-
-	pi.on("session_start", async (_event, ctx) => {
-		// 1. Determine git repo name
-		let gitRepo: string;
-		try {
-			const result = await pi.exec("git", ["rev-parse", "--show-toplevel"], { cwd: ctx.cwd });
-			gitRepo = path.basename(result.stdout.trim());
-		} catch {
-			gitRepo = path.basename(ctx.cwd);
-		}
-		process.env.GIT_REPO = gitRepo;
-
-		// 2. Create scratch directories
-		const scratch = process.env.BASECAMP_SCRATCH_DIR || `/tmp/claude-workspace/${gitRepo}`;
-		await fs.mkdir(path.join(scratch, "pull_requests"), { recursive: true });
-		await fs.mkdir(path.join(scratch, "pr-comments"), { recursive: true });
-
-		// 3. Cache context file content
-		const contextFile = process.env.BASECAMP_CONTEXT_FILE;
-		if (contextFile) {
-			try {
-				contextContent = await fs.readFile(contextFile, "utf8");
-			} catch {
-				contextContent = undefined;
-			}
-		} else {
-			contextContent = undefined;
-		}
-
-		ctx.ui.notify(`basecamp: repo=${gitRepo}`, "info");
+	// Register CLI flags
+	pi.registerFlag("project", {
+		description: "Basecamp project name (from ~/.basecamp/config.json)",
+		type: "string",
+	});
+	pi.registerFlag("label", {
+		description: "Work in a labeled git worktree (creates if new)",
+		type: "string",
+	});
+	pi.registerFlag("style", {
+		description: "Override working style (e.g. engineering, advisor)",
+		type: "string",
 	});
 
+	// Register worktree tool guards (reads state lazily)
+	registerWorktreeGuards(pi, getState);
+
+	// --- Session start: resolve everything ---
+	pi.on("session_start", async (_event, ctx) => {
+		const projectName = (pi.getFlag("project") as string | undefined) ?? null;
+		const label = (pi.getFlag("label") as string | undefined) ?? null;
+		const styleOverride = (pi.getFlag("style") as string | undefined) ?? undefined;
+
+		// Resolve git info from ctx.cwd (the directory pi was started in)
+		const gitInfo = await resolveGitInfo(pi, ctx.cwd);
+
+		// Build session state
+		state = resolveSessionState({
+			projectName,
+			cwd: ctx.cwd,
+			repoName: gitInfo.repoName,
+			isRepo: gitInfo.isRepo,
+			remoteUrl: gitInfo.remoteUrl,
+			styleOverride,
+		});
+
+		// Handle worktree if --label provided
+		if (label) {
+			if (!projectName) {
+				ctx.ui.notify("basecamp: --label requires --project", "error");
+			} else if (!state.isRepo) {
+				ctx.ui.notify("basecamp: --label requires a git repository", "error");
+			} else {
+				try {
+					const wt = await getOrCreateWorktree(
+						pi,
+						state.primaryDir,
+						state.repoName,
+						label,
+						projectName,
+					);
+					state.worktreeDir = wt.worktreeDir;
+					state.worktreeLabel = label;
+					state.worktreeBranch = wt.branch;
+					ctx.ui.notify(
+						`basecamp: worktree ${wt.created ? "created" : "attached"} → ${label}`,
+						"info",
+					);
+				} catch (err) {
+					const msg = err instanceof Error ? err.message : String(err);
+					ctx.ui.notify(`basecamp: worktree failed — ${msg}`, "error");
+				}
+			}
+		}
+
+		// Collect git status from the effective working dir
+		const gitDir = state.worktreeDir ?? state.primaryDir;
+		if (state.isRepo) {
+			gitStatus = await collectGitStatus(pi, gitDir);
+		} else {
+			gitStatus = null;
+		}
+
+		// Create scratch directories
+		await fs.mkdir(path.join(state.scratchDir, "pull_requests"), { recursive: true });
+		await fs.mkdir(path.join(state.scratchDir, "pr-comments"), { recursive: true });
+
+		// Set env vars for downstream tools (observer, workers, etc.)
+		process.env.BASECAMP_PROJECT = state.projectName ?? "";
+		process.env.BASECAMP_REPO = state.repoName;
+		process.env.BASECAMP_SCRATCH_DIR = state.scratchDir;
+
+		// Notify
+		const parts = [`repo=${state.repoName}`];
+		if (state.projectName) parts.push(`project=${state.projectName}`);
+		if (state.worktreeLabel) parts.push(`worktree=${state.worktreeLabel}`);
+		ctx.ui.notify(`basecamp: ${parts.join(", ")}`, "info");
+	});
+
+	// --- Before agent start: assemble and prepend prompt ---
 	pi.on("before_agent_start", async (event, _ctx) => {
-		if (!contextContent) return;
+		const s = getState();
+		const basecampPrompt = assemblePrompt({ state: s, gitStatus });
 
 		return {
-			systemPrompt: event.systemPrompt + `\n\n# Basecamp Project Context\n\n${contextContent}`,
+			systemPrompt: basecampPrompt + "\n\n" + event.systemPrompt,
 		};
 	});
 }
