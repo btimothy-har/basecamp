@@ -210,31 +210,9 @@ Worktrees live in `~/.worktrees/<repo>/<label>/` with branches named `wt/<label>
 - Secondary directories (`--add-dir`) stay on the main branch
 - Only works with git repositories
 
-## Plugins
+## Extension
 
-basecamp includes an optional marketplace with plugins.
-
-### Plugins
-
-| Plugin | Description |
-|--------|-------------|
-| `bc-collab` | Collaborative discovery, requirements gathering, GitHub issue workflows |
-| `bc-eng` | Code review, PR workflows, testing patterns, Python/SQL/dbt development |
-| `bc-git-protect` | Guards against destructive git and gh operations |
-| `bc-private` | Private tools, not git committed |
-
-### Installing Plugins
-
-From within a Claude Code session started via basecamp:
-
-```
-/plugin marketplace add /path/to/basecamp
-/plugin install bc-eng@basecamp
-```
-
-The first command registers basecamp as a marketplace (it discovers `.claude-plugin/marketplace.json`). The second installs a plugin from it.
-
-Create custom plugins in `plugins/` following [Claude Code plugin docs](https://docs.anthropic.com/en/docs/claude-code/plugins). Plugins in `plugins/private/` are gitignored.
+All skills, agents, hooks, and system prompts are bundled in a single pi extension at `extension/`.
 
 ## License
 

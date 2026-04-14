@@ -2,9 +2,9 @@
 
 ## What is basecamp
 
-A Claude Code multi-project workspace launcher. It replaces Claude's default system prompt, configures project directories, and manages isolated git worktrees — all from a single `basecamp claude <project>` command.
+A multi-project workspace launcher for AI coding agents. Configures project directories, manages isolated git worktrees, and provides semantic memory over past sessions.
 
-Two packages, one plugin collection:
+Two packages, one pi extension:
 
 | Package | Directory | Purpose |
 |---------|-----------|---------|
@@ -40,26 +40,23 @@ core/src/core/
 
 observer/src/observer/
 ├── cli/
-│   ├── observer.py             # Click entry point (db, setup, ingest, process, viz)
+│   ├── observer.py             # Click entry point (db, setup, ingest, reprocess)
 │   └── recall.py               # Click entry point — recall CLI for semantic search
 ├── data/                       # SQLAlchemy schemas + Pydantic domain models
+├── llm/
+│   ├── agents.py               # 3 lazy pydantic-ai agents + output schemas
+│   └── prompts/                # .txt prompt templates (PEP 562 lazy load)
 ├── pipeline/
-│   ├── parser.py               # JSONL transcript parsing
-│   ├── refining/               # Event grouping + LLM summarization
+│   ├── parser.py               # JSONL transcript parsing + ParsedEvent
+│   ├── grouping.py             # RawEvent → WorkItem classification
+│   ├── refinement.py           # WorkItemRefiner + EventRefiner
 │   ├── extraction.py           # Transcript-level section extraction
-│   └── indexing.py             # Sentence-transformer embedding
-├── mcp/
-│   ├── engine.py               # Hybrid search (KNN + FTS) with scoring
-│   └── scoring.py              # Time decay + hybrid scoring
-├── services/                   # DB, config, container, migrations, agent (LLM)
-├── prompts/                    # LLM prompt templates (.txt, PEP 562 lazy load)
-└── viz/                        # Marimo dashboard
+│   └── indexing.py             # ChromaDB embedding
+├── search.py                   # Hybrid KNN+FTS retrieval + scoring
+├── services/                   # DB, config, chroma, migrations, registration
+└── migrations/                 # Schema migrations
 
-plugins/
-├── collaboration/              # bc-collab — discovery skill, gh-issue skill, issue-worker agent
-├── engineering/                # bc-eng — 8 agents, 9 skills, commands, hooks
-├── git_protect/                # bc-git-protect — destructive git/gh operation guards
-└── private/                    # bc-private — gitignored personal tools
+extension/                      # Pi extension — system prompts, skills, agents, hooks
 
 core/tests/                     # pytest suite for basecamp-core
 ```
@@ -74,11 +71,9 @@ Prompts are layered (environment → working style → system → project contex
 
 Assembled prompts are persisted to `~/.basecamp/.cached/{project}/prompt.md` so dispatch workers can inherit the parent session's prompt without re-assembling.
 
-### Plugin System
+### Extension
 
-Plugins use Claude Code's native plugin format (`.claude-plugin/plugin.json`). The marketplace config at `.claude-plugin/marketplace.json` lets users install optional plugins from within a Claude session.
-
-All plugins are opt-in via marketplace install.
+All skills, agents, hooks, and system prompts are bundled in a single pi extension (`extension/`). This replaces the previous Claude Code plugin system.
 
 ### Environment Variable Chain
 
