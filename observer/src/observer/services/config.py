@@ -14,80 +14,107 @@ from __future__ import annotations
 
 import json
 import os
+from functools import cached_property
+from pathlib import Path
 
 from observer.constants import OBSERVER_DIR
-
-CONFIG_FILE = OBSERVER_DIR / "config.json"
 
 # Default models — used when no config exists
 DEFAULT_SUMMARY_MODEL = "anthropic:claude-3-5-haiku-latest"
 DEFAULT_EXTRACTION_MODEL = "anthropic:claude-sonnet-4-20250514"
 
 
-def _read() -> dict[str, str]:
-    if not CONFIG_FILE.exists():
-        return {}
-    try:
-        parsed = json.loads(CONFIG_FILE.read_text())
-        return parsed if isinstance(parsed, dict) else {}
-    except (json.JSONDecodeError, OSError):
-        return {}
+class Config:
+    """File-backed observer configuration with cached reads.
 
+    Reads are cached via ``cached_property`` so repeated access within
+    a process doesn't hit disk. Writes invalidate the cache.
 
-def _write(data: dict[str, str]) -> None:
-    OBSERVER_DIR.mkdir(parents=True, mode=0o700, exist_ok=True)
-    content = (json.dumps(data, indent=2) + os.linesep).encode()
-    fd = os.open(str(CONFIG_FILE), os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
-    try:
-        os.write(fd, content)
-    finally:
-        os.close(fd)
+    Usage::
 
+        cfg = Config.get()
+        cfg.extraction_model          # cached read
+        cfg.extraction_model = "..."  # write + invalidate
+    """
 
-def get_extraction_model() -> str:
-    """Return the configured extraction model as a pydantic-ai model string."""
-    return _read().get("extraction_model") or DEFAULT_EXTRACTION_MODEL
+    _path: Path = OBSERVER_DIR / "config.json"
 
+    def __init__(self) -> None:
+        pass
 
-def set_extraction_model(model: str) -> None:
-    """Persist the extraction model to the config file."""
-    data = _read()
-    data["extraction_model"] = model
-    _write(data)
+    @classmethod
+    def get(cls) -> Config:
+        """Return a Config instance."""
+        return cls()
 
+    # -- raw I/O --
 
-def get_summary_model() -> str:
-    """Return the configured summary model as a pydantic-ai model string."""
-    return _read().get("summary_model") or DEFAULT_SUMMARY_MODEL
+    @cached_property
+    def _data(self) -> dict[str, str]:
+        if not self._path.exists():
+            return {}
+        try:
+            parsed = json.loads(self._path.read_text())
+            return parsed if isinstance(parsed, dict) else {}
+        except (json.JSONDecodeError, OSError):
+            return {}
 
+    def _write(self, data: dict[str, str]) -> None:
+        self._path.parent.mkdir(parents=True, mode=0o700, exist_ok=True)
+        content = (json.dumps(data, indent=2) + os.linesep).encode()
+        fd = os.open(str(self._path), os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        try:
+            os.write(fd, content)
+        finally:
+            os.close(fd)
+        self._invalidate()
 
-def set_summary_model(model: str) -> None:
-    """Persist the summary model to the config file."""
-    data = _read()
-    data["summary_model"] = model
-    _write(data)
+    def _invalidate(self) -> None:
+        self.__dict__.pop("_data", None)
 
+    # -- properties --
 
-def get_mode() -> str:
-    """Return the observer processing mode: 'on' or 'off'."""
-    data = _read()
-    mode = data.get("mode")
-    if mode == "off":
-        return "off"
-    if mode in ("on", "full", "lite"):
+    @property
+    def extraction_model(self) -> str:
+        """Configured extraction model (pydantic-ai format)."""
+        return self._data.get("extraction_model") or DEFAULT_EXTRACTION_MODEL
+
+    @extraction_model.setter
+    def extraction_model(self, value: str) -> None:
+        data = dict(self._data)
+        data["extraction_model"] = value
+        self._write(data)
+
+    @property
+    def summary_model(self) -> str:
+        """Configured summary model (pydantic-ai format)."""
+        return self._data.get("summary_model") or DEFAULT_SUMMARY_MODEL
+
+    @summary_model.setter
+    def summary_model(self, value: str) -> None:
+        data = dict(self._data)
+        data["summary_model"] = value
+        self._write(data)
+
+    @property
+    def mode(self) -> str:
+        """Processing mode: ``'on'`` or ``'off'``."""
+        m = self._data.get("mode")
+        if m == "off":
+            return "off"
+        if m in ("on", "full", "lite"):
+            return "on"
+        # Backward compat: old configs used extraction_enabled boolean
+        if "extraction_enabled" in self._data:
+            return "on" if self._data["extraction_enabled"] else "off"
         return "on"
-    # Backward compat: old configs used extraction_enabled boolean
-    if "extraction_enabled" in data:
-        return "on" if data["extraction_enabled"] else "off"
-    return "on"
 
-
-def set_mode(mode: str) -> None:
-    """Persist the processing mode to the config file."""
-    if mode not in ("on", "off"):
-        msg = f"Invalid mode: {mode!r}. Must be 'on' or 'off'."
-        raise ValueError(msg)
-    data = _read()
-    data["mode"] = mode
-    data.pop("extraction_enabled", None)
-    _write(data)
+    @mode.setter
+    def mode(self, value: str) -> None:
+        if value not in ("on", "off"):
+            msg = f"Invalid mode: {value!r}. Must be 'on' or 'off'."
+            raise ValueError(msg)
+        data = dict(self._data)
+        data["mode"] = value
+        data.pop("extraction_enabled", None)
+        self._write(data)

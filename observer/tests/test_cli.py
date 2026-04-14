@@ -66,8 +66,9 @@ class TestSetup:
         # captured at import time via `from observer.constants import ...`.
         monkeypatch.setattr("observer.services.db.BASECAMP_DIR", tmp_path)
         monkeypatch.setattr("observer.services.chroma.CHROMA_DIR", tmp_path / "chroma")
-        monkeypatch.setattr("observer.services.config.OBSERVER_DIR", tmp_path / "observer")
-        monkeypatch.setattr("observer.services.config.CONFIG_FILE", tmp_path / "observer" / "config.json")
+        from observer.services.config import Config  # noqa: PLC0415
+
+        monkeypatch.setattr(Config, "_path", tmp_path / "observer" / "config.json")
 
         from observer.services import chroma  # noqa: PLC0415
 

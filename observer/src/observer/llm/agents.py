@@ -23,7 +23,7 @@ from pydantic import BaseModel
 from pydantic_ai import Agent
 
 from observer.llm import prompts
-from observer.services.config import get_extraction_model, get_summary_model
+from observer.services.config import Config
 
 
 class SummaryResult(BaseModel):
@@ -45,17 +45,17 @@ _cache: dict[str, Any] = {}
 
 _AGENTS = {
     "tool_summarizer": lambda: Agent(
-        get_summary_model(),
+        Config.get().summary_model,
         system_prompt=prompts.tool_summarize,
         output_type=SummaryResult,
     ),
     "thinking_summarizer": lambda: Agent(
-        get_summary_model(),
+        Config.get().summary_model,
         system_prompt=prompts.thinking_summarize,
         output_type=SummaryResult,
     ),
     "section_extractor": lambda: Agent(
-        get_extraction_model(),
+        Config.get().extraction_model,
         system_prompt=prompts.extract,
         output_type=ExtractionResult,
     ),

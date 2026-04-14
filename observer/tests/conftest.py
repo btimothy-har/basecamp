@@ -2,7 +2,7 @@
 
 import observer.constants as c
 import pytest
-from observer.services import config
+from observer.services.config import Config
 from observer.services.db import Database
 
 
@@ -16,8 +16,7 @@ def _isolate_config(tmp_path, monkeypatch):
     obs = tmp_path / "observer"
     obs.mkdir()
     monkeypatch.setattr(c, "OBSERVER_DIR", obs)
-    monkeypatch.setattr(config, "OBSERVER_DIR", obs)
-    monkeypatch.setattr(config, "CONFIG_FILE", obs / "config.json")
+    monkeypatch.setattr(Config, "_path", obs / "config.json")
 
     # Clear session env vars so tests don't inherit the host session's state.
     monkeypatch.delenv("BASECAMP_REPO", raising=False)

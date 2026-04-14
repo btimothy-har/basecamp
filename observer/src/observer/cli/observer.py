@@ -9,15 +9,7 @@ import sys
 import click
 
 from observer import constants
-from observer.services.config import (
-    CONFIG_FILE,
-    get_extraction_model,
-    get_mode,
-    get_summary_model,
-    set_extraction_model,
-    set_mode,
-    set_summary_model,
-)
+from observer.services.config import Config
 
 
 @click.group()
@@ -156,7 +148,8 @@ def mode(target: str | None) -> None:
         "on": "Full pipeline (extraction, embedding, indexing)",
         "off": "Ingestion only (no LLM calls)",
     }
-    current = get_mode()
+    cfg = Config.get()
+    current = cfg.mode
 
     if target is None:
         click.echo(f"Current mode: {current}")
@@ -167,7 +160,7 @@ def mode(target: str | None) -> None:
         click.echo(f"Already in {current} mode.")
         return
 
-    set_mode(target)
+    cfg.mode = target
     click.echo(f"Switched to {target} mode.")
 
 
@@ -214,24 +207,25 @@ def setup(extraction_model: str | None, summary_model: str | None, target_mode: 
     get_collection()
 
     # Apply any provided settings
+    cfg = Config.get()
     changed = False
     if extraction_model is not None:
-        set_extraction_model(extraction_model)
+        cfg.extraction_model = extraction_model
         changed = True
     if summary_model is not None:
-        set_summary_model(summary_model)
+        cfg.summary_model = summary_model
         changed = True
     if target_mode is not None:
-        set_mode(target_mode)
+        cfg.mode = target_mode
         changed = True
 
     # Show current config
     click.echo(f"Database:         {DB_PATH}")
     click.echo(f"ChromaDB:         {CHROMA_DIR}")
-    click.echo(f"Extraction model: {get_extraction_model()}")
-    click.echo(f"Summary model:    {get_summary_model()}")
-    click.echo(f"Mode:             {get_mode()}")
-    click.echo(f"Config:           {CONFIG_FILE}")
+    click.echo(f"Extraction model: {cfg.extraction_model}")
+    click.echo(f"Summary model:    {cfg.summary_model}")
+    click.echo(f"Mode:             {cfg.mode}")
+    click.echo(f"Config:           {cfg._path}")
 
     if changed:
         click.echo("\nConfiguration updated.")
@@ -295,9 +289,8 @@ def ingest(run_process: bool) -> None:  # noqa: FBT001
             from observer.pipeline.extraction import TranscriptExtractor
             from observer.pipeline.indexing import SearchIndexer
             from observer.pipeline.refinement import EventRefiner
-            from observer.services.config import get_mode
 
-            if get_mode() != "off":
+            if Config.get().mode != "off":
                 EventRefiner.refine_pending(db_inst, transcript_id=transcript.id)
                 TranscriptExtractor.extract_transcript(db_inst, transcript.id)
                 SearchIndexer.index_pending(db_inst, transcript_id=transcript.id)
