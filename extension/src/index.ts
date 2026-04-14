@@ -18,6 +18,7 @@ import { registerLifecycle, getState } from "./lifecycle";
 import { registerGitProtect } from "./git-protect";
 import { registerNudges } from "./nudges";
 import { registerHandoff } from "./handoff";
+import { registerOpenCommand } from "./open";
 import { discoverAgents } from "./agents/discovery";
 import { registerWorkerTool } from "./agents/tool";
 import { registerAgentCommands } from "./agents/commands";
@@ -33,6 +34,7 @@ export default function (pi: ExtensionAPI) {
 	registerGitProtect(pi);
 	registerNudges(pi);
 	registerHandoff(pi);
+	registerOpenCommand(pi, getState);
 
 	// --- Agent discovery and session naming ---
 	pi.on("session_start", async (_event, ctx) => {
