@@ -22,7 +22,7 @@ import { getState, getGitStatus } from "./session";
 // ---------------------------------------------------------------------------
 
 /** Bundled prompt files shipped with the extension package. */
-const PACKAGE_DIR = path.resolve(__dirname, "..", "..", "system-prompts");
+const PACKAGE_DIR = path.resolve(__dirname, "system-prompts");
 
 /** User overrides — checked first before falling back to package defaults. */
 const USER_PROMPTS_DIR = path.join(os.homedir(), ".basecamp", "prompts");
