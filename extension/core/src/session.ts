@@ -9,7 +9,7 @@
  *   - Loads .env from the project directory
  *   - Caches session state (dirs, working style, context, worktree info)
  *   - Collects git status snapshot
- *   - Creates scratch directories
+ *   - Creates work directories
  *   - Sets BASECAMP_* env vars
  */
 
@@ -41,7 +41,7 @@ export function getState(): SessionState {
 		repoName: path.basename(process.cwd()),
 		isRepo: false,
 		remoteUrl: null,
-		scratchDir: `/tmp/basecamp/${path.basename(process.cwd())}`,
+		workDir: `/tmp/pi/${path.basename(process.cwd())}`,
 		workingStyle: "engineering",
 		worktreeDir: null,
 		worktreeLabel: null,
@@ -225,14 +225,13 @@ export function registerSession(pi: ExtensionAPI): void {
 			gitStatus = null;
 		}
 
-		// Create scratch directories
-		await fs.mkdir(path.join(state.scratchDir, "pull_requests"), { recursive: true });
-		await fs.mkdir(path.join(state.scratchDir, "pr-comments"), { recursive: true });
+		// Create work directories
+		await fs.mkdir(path.join(state.workDir, "pull-requests"), { recursive: true });
 
 		// Set env vars for downstream tools (observer, workers, etc.)
 		process.env.BASECAMP_PROJECT = state.projectName ?? "";
 		process.env.BASECAMP_REPO = state.repoName;
-		process.env.BASECAMP_SCRATCH_DIR = state.scratchDir;
+		process.env.BASECAMP_WORK_DIR = state.workDir;
 
 		// Notify
 		const parts = [`repo=${state.repoName}`];

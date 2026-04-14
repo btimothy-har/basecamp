@@ -42,4 +42,4 @@ Always invoke any relevant python skills that you have access to.
 
 ## Scratch Workspace
 
-You have access to a scratch workspace at the path shown above. Use it for ephemeral artifacts — scripts, query results, temporary files, and intermediate outputs. The scratch workspace is not checked into git.
+You have access to a work directory at the path shown above. Use it for ephemeral artifacts — scripts, query results, temporary files, and intermediate outputs. The work directory is not checked into git.
