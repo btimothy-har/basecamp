@@ -43,7 +43,7 @@ let prUnlocked = false;
 
 const PR_EDIT_PATTERN = /^gh\s+pr\s+edit(\s|$)/;
 
-const PROMPT_PATH = path.resolve(__dirname, "..", "prompts", "pull-request.md");
+const PROMPT_PATH = path.resolve(__dirname, "..", "resources", "pull-request.md");
 
 function loadPrompt(prNumber: string, base: string): string {
 	const template = fs.readFileSync(PROMPT_PATH, "utf8");
