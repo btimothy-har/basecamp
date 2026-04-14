@@ -4,7 +4,7 @@ from datetime import UTC, datetime
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from observer.data.enums import SectionType, WorkItemType
-from observer.llm.models import ExtractionResult
+from observer.llm.agents import ExtractionResult
 from observer.pipeline.extraction import TranscriptExtractor
 
 NOW = datetime(2025, 1, 15, 10, 0, 0, tzinfo=UTC)

@@ -8,7 +8,7 @@ from observer.data.enums import RawEventStatus, WorkItemStage, WorkItemType
 from observer.data.raw_event import RawEvent
 from observer.data.schemas import ProjectSchema, RawEventSchema, TranscriptEventSchema, TranscriptSchema
 from observer.data.work_item import WorkItem
-from observer.llm.models import SummaryResult
+from observer.llm.agents import SummaryResult
 from observer.pipeline.grouping import EventGrouper, classify_events
 from observer.pipeline.refinement import EventRefiner, WorkItemRefiner
 

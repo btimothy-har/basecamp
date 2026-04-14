@@ -19,11 +19,27 @@ from __future__ import annotations
 
 from typing import Any
 
+from pydantic import BaseModel
 from pydantic_ai import Agent
 
 from observer.llm import prompts
-from observer.llm.models import ExtractionResult, SummaryResult
 from observer.services.config import get_extraction_model, get_summary_model
+
+
+class SummaryResult(BaseModel):
+    summary: str
+
+
+class ExtractionResult(BaseModel):
+    """Structured extraction result with one field per section type."""
+
+    title: str
+    summary: str
+    knowledge: str
+    decisions: str
+    constraints: str
+    actions: str
+
 
 _cache: dict[str, Any] = {}
 
