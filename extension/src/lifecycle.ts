@@ -5,6 +5,8 @@
  *   - Reads --project / --label / --style flags
  *   - Resolves project config from ~/.basecamp/config.json
  *   - Creates/enters worktree if --label provided
+ *   - Changes cwd to the effective working directory
+ *   - Loads .env from the project directory
  *   - Caches session state (dirs, working style, context, worktree info)
  *   - Creates scratch directories
  *   - Sets BASECAMP_* env vars
@@ -15,6 +17,7 @@
  */
 
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
+import * as fsSync from "node:fs";
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
 import { type SessionState, resolveSessionState } from "./config";
@@ -190,10 +193,33 @@ export function registerLifecycle(pi: ExtensionAPI): void {
 			}
 		}
 
+		// Change to the effective working directory
+		const effectiveDir = state.worktreeDir ?? state.primaryDir;
+		try {
+			process.chdir(effectiveDir);
+		} catch (err) {
+			const msg = err instanceof Error ? err.message : String(err);
+			ctx.ui.notify(`basecamp: chdir failed — ${msg}`, "error");
+		}
+
+		// Load .env from the project's primary directory
+		const dotenvPath = path.join(state.primaryDir, ".env");
+		try {
+			const content = fsSync.readFileSync(dotenvPath, "utf8");
+			for (const line of content.split("\n")) {
+				if (line.startsWith("#") || !line.includes("=")) continue;
+				const eq = line.indexOf("=");
+				const key = line.slice(0, eq).trim();
+				const value = line.slice(eq + 1).trim().replace(/^["']|["']$/g, "");
+				if (key && /^[A-Za-z_]\w*$/.test(key)) {
+					process.env[key] = value;
+				}
+			}
+		} catch { /* no .env file is fine */ }
+
 		// Collect git status from the effective working dir
-		const gitDir = state.worktreeDir ?? state.primaryDir;
 		if (state.isRepo) {
-			gitStatus = await collectGitStatus(pi, gitDir);
+			gitStatus = await collectGitStatus(pi, effectiveDir);
 		} else {
 			gitStatus = null;
 		}

@@ -22,32 +22,11 @@ class DirectoryNotFoundError(LauncherError):
         super().__init__(f"The following directories do not exist:\n{lines}")
 
 
-class PromptNotFoundError(LauncherError):
-    """Raised when a required prompt file is not found."""
-
-    def __init__(self, path: Path) -> None:
-        super().__init__(f"Prompt file not found: {path}")
-
-
 class NoDirectoriesConfiguredError(LauncherError):
     """Raised when a project has no directories configured."""
 
     def __init__(self, project_name: str) -> None:
         super().__init__(f"Project '{project_name}' has no directories configured")
-
-
-class PathLaunchLabelError(LauncherError):
-    """Raised when worktree labels are used with path-based launch."""
-
-    def __init__(self) -> None:
-        super().__init__("Worktree labels (-l) are not supported with path-based launch")
-
-
-class BlockedArgError(LauncherError):
-    """Raised when a user passes a Claude CLI arg that basecamp controls."""
-
-    def __init__(self, arg: str) -> None:
-        super().__init__(f"{arg} is managed by basecamp and cannot be passed through")
 
 
 class WorktreeError(LauncherError):

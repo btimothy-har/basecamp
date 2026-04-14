@@ -8,7 +8,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 from click import Context, Parameter
-from core.cli.completions import complete_project_name, complete_project_or_path, complete_worktree_name
+from core.cli.completions import complete_project_name, complete_worktree_name
 from core.config import Config, ProjectConfig
 from core.git import WorktreeInfo
 
@@ -56,24 +56,6 @@ class TestCompleteProjectName:
         with patch("core.cli.completions.load_config", side_effect=RuntimeError("bad")):
             items = complete_project_name(mock_ctx, mock_param, "")
         assert items == []
-
-
-class TestCompleteProjectOrPath:
-    def test_includes_project_names_and_dir_item(
-        self, mock_ctx: Context, mock_param: Parameter, sample_config: Config
-    ) -> None:
-        with patch("core.cli.completions.load_config", return_value=sample_config):
-            items = complete_project_or_path(mock_ctx, mock_param, "")
-        project_items = [i for i in items if i.type == "plain"]
-        dir_items = [i for i in items if i.type == "dir"]
-        assert len(project_items) == 3
-        assert len(dir_items) == 1
-
-    def test_dir_item_present_even_with_no_projects(self, mock_ctx: Context, mock_param: Parameter) -> None:
-        empty_config = Config(projects={})
-        with patch("core.cli.completions.load_config", return_value=empty_config):
-            items = complete_project_or_path(mock_ctx, mock_param, "./")
-        assert any(i.type == "dir" for i in items)
 
 
 class TestCompleteWorktreeName:

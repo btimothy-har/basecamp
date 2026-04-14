@@ -10,13 +10,20 @@
  */
 
 import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-agent";
+import * as fs from "node:fs";
+import * as os from "node:os";
+import * as path from "node:path";
 
+const OBSERVER_CONFIG = path.join(os.homedir(), ".basecamp", "observer", "config.json");
 
 function isObserverEnabled(): boolean {
-	return (
-		process.env.BASECAMP_OBSERVER_ENABLED === "1" &&
-		process.env.BASECAMP_REFLECT !== "1"
-	);
+	if (process.env.BASECAMP_REFLECT === "1") return false;
+	try {
+		const config = JSON.parse(fs.readFileSync(OBSERVER_CONFIG, "utf8"));
+		return !!config.pg_url;
+	} catch {
+		return false;
+	}
 }
 
 /**

@@ -22,14 +22,6 @@ def complete_project_name(
         return []
 
 
-def complete_project_or_path(ctx: Context, param: Parameter, incomplete: str) -> list[CompletionItem]:
-    """Complete project names and filesystem paths for the start command."""
-    items = complete_project_name(ctx, param, incomplete)
-    # type="dir" tells the shell to also offer directory completion
-    items.append(CompletionItem(incomplete, type="dir"))
-    return items
-
-
 def complete_worktree_name(
     ctx: Context,
     param: Parameter,  # noqa: ARG001

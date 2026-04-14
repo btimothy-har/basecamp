@@ -4,8 +4,7 @@ import sys
 
 import rich_click as click
 
-from core.cli.completions import complete_project_name, complete_project_or_path, complete_worktree_name
-from core.cli.launch import execute_launch, is_path_argument, resolve_path_argument
+from core.cli.completions import complete_project_name, complete_worktree_name
 from core.cli.open import execute_open
 from core.cli.project import (
     execute_project_add,
@@ -19,8 +18,8 @@ from core.cli.worktree import (
     list_all_project_worktrees,
     list_project_worktrees,
 )
-from core.config import Config, load_config
-from core.exceptions import BlockedArgError, LauncherError, PathLaunchLabelError
+from core.config import load_config
+from core.exceptions import LauncherError
 from core.ui import err_console
 
 # Configure rich-click
@@ -39,7 +38,7 @@ def _handle_error(e: LauncherError) -> None:
 
 @click.group(context_settings=CONTEXT_SETTINGS)
 def basecamp() -> None:
-    """basecamp - Claude Code multi-project workspace launcher."""
+    """basecamp - project configuration and workspace management."""
 
 
 @basecamp.command()
@@ -47,39 +46,6 @@ def setup() -> None:
     """Set up basecamp environment (prerequisites, directories, config)."""
     try:
         execute_setup()
-    except LauncherError as e:
-        _handle_error(e)
-
-
-# Args that basecamp controls — block these from passthrough to Claude CLI.
-_BLOCKED_ARGS = {"--system-prompt", "--append-system-prompt", "--settings", "--setting-sources"}
-
-
-@basecamp.command(context_settings={"ignore_unknown_options": True, "allow_extra_args": True})
-@click.argument("project", shell_complete=complete_project_or_path)
-@click.option("--label", "-l", help="Work in a labeled worktree (creates if new, re-enters if exists)")
-@click.pass_context
-def claude(ctx: click.Context, project: str, label: str | None) -> None:
-    """Launch Claude Code with a project name or directory path.
-
-    PROJECT can be a configured project name or a filesystem path (., ./, ~/, /).
-    Use -l/--label to work in an isolated git worktree (project names only).
-    Additional args are passed through to the Claude CLI (e.g. --resume, --model).
-    """
-    try:
-        for arg in ctx.args:
-            for blocked in _BLOCKED_ARGS:
-                if arg == blocked or arg.startswith(blocked + "="):
-                    raise BlockedArgError(blocked)
-
-        if is_path_argument(project):
-            if label:
-                raise PathLaunchLabelError
-            resolved = resolve_path_argument(project)
-            execute_launch(resolved.name, Config(projects={}), resolved_path=resolved, extra_args=ctx.args)
-        else:
-            config = load_config()
-            execute_launch(project, config, label=label, extra_args=ctx.args)
     except LauncherError as e:
         _handle_error(e)
 

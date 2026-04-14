@@ -2,7 +2,6 @@
 
 This package consolidates all git-related functionality:
 - repo: Low-level git operations (is_git_repo, get_repo_name, etc.)
-- status: Git status generation for prompts
 - worktrees: Worktree management
 """
 
@@ -15,7 +14,6 @@ from core.git.repo import (
     is_git_repo,
     resolve_repo_name,
 )
-from core.git.status import generate_git_status
 from core.git.worktrees import (
     WorktreeInfo,
     attach_worktree,
@@ -37,8 +35,6 @@ __all__ = [
     "get_repo_name",
     "is_git_repo",
     "resolve_repo_name",
-    # status
-    "generate_git_status",
     # worktrees
     "WorktreeInfo",
     "attach_worktree",
