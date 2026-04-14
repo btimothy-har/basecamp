@@ -35,7 +35,7 @@ def _mock_extractor(return_value=_FULL_RESULT):
     mock_result = AsyncMock()
     mock_result.output = return_value
     return patch(
-        "observer.services.agents.section_extractor",
+        "observer.llm.agents.section_extractor",
         **{"run": AsyncMock(return_value=mock_result)},
     )
 
@@ -78,7 +78,7 @@ class TestTranscriptExtractor:
         mock_result.output = _FULL_RESULT
         mock_run = AsyncMock(return_value=mock_result)
 
-        with patch("observer.services.agents.section_extractor") as mock_agent:
+        with patch("observer.llm.agents.section_extractor") as mock_agent:
             mock_agent.run = mock_run
             TranscriptExtractor.extract_transcript(_make_db(), transcript_id=1)
 
@@ -99,7 +99,7 @@ class TestTranscriptExtractor:
         mock_result.output = _FULL_RESULT
         mock_run = AsyncMock(return_value=mock_result)
 
-        with patch("observer.services.agents.section_extractor") as mock_agent:
+        with patch("observer.llm.agents.section_extractor") as mock_agent:
             mock_agent.run = mock_run
             TranscriptExtractor.extract_transcript(_make_db(), transcript_id=1)
 
@@ -114,7 +114,7 @@ class TestTranscriptExtractor:
             _make_event("help with auth", WorkItemType.PROMPT),
         ]
 
-        with patch("observer.services.agents.section_extractor") as mock_agent:
+        with patch("observer.llm.agents.section_extractor") as mock_agent:
             mock_agent.run = AsyncMock(side_effect=RuntimeError("LLM failed"))
             count = TranscriptExtractor.extract_transcript(_make_db(), transcript_id=1)
 

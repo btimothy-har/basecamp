@@ -19,7 +19,7 @@ def _mock_tool_summarizer(summary_text="Read: auth.py → found JWT"):
     mock_result.output = SummaryResult(summary=summary_text)
     mock_agent = MagicMock()
     mock_agent.run = AsyncMock(return_value=mock_result)
-    return patch("observer.services.agents.tool_summarizer", mock_agent)
+    return patch("observer.llm.agents.tool_summarizer", mock_agent)
 
 
 def _mock_thinking_summarizer(summary_text="Thinking: analysis summary"):
@@ -28,7 +28,7 @@ def _mock_thinking_summarizer(summary_text="Thinking: analysis summary"):
     mock_result.output = SummaryResult(summary=summary_text)
     mock_agent = MagicMock()
     mock_agent.run = AsyncMock(return_value=mock_result)
-    return patch("observer.services.agents.thinking_summarizer", mock_agent)
+    return patch("observer.llm.agents.thinking_summarizer", mock_agent)
 
 
 NOW = datetime(2025, 1, 15, 10, 0, 0, tzinfo=UTC)
@@ -611,7 +611,7 @@ class TestRefineBatch:
         mock_agent.run = AsyncMock(side_effect=RuntimeError("LLM failed"))
 
         EventGrouper.group_pending(db, transcript_id)
-        with patch("observer.services.agents.thinking_summarizer", mock_agent):
+        with patch("observer.llm.agents.thinking_summarizer", mock_agent):
             EventRefiner.refine_pending(db)
 
         # Graceful degradation: item is REFINED with fallback text

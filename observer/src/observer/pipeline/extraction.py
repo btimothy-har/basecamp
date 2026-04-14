@@ -12,8 +12,8 @@ from observer.data.artifact import Artifact
 from observer.data.enums import SectionType, WorkItemType
 from observer.data.schemas import ArtifactSchema
 from observer.data.transcript_event import TranscriptEvent
+from observer.llm import agents
 from observer.pipeline.models import ExtractionResult
-from observer.services import agents
 from observer.services.db import Database
 
 logger = logging.getLogger(__name__)

@@ -19,7 +19,7 @@ from observer.data.enums import WorkItemStage, WorkItemType
 from observer.data.raw_event import RawEvent
 from observer.data.transcript_event import TranscriptEvent
 from observer.data.work_item import WorkItem
-from observer.services import agents
+from observer.llm import agents
 from observer.services.db import Database
 
 logger = logging.getLogger(__name__)

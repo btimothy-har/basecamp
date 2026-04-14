@@ -3,12 +3,9 @@
 Prompts are stored as .txt files and pre-loaded into a cache at import time.
 Usage::
 
-    from observer import prompts
+    from observer.llm import prompts
     prompts.extract            # → contents of extract.txt
     prompts.tool_summarize     # → contents of tool_summarize.txt
-
-Eager loading avoids a race condition: importlib.resources is not thread-safe,
-and the refinement pipeline reads prompts from a ThreadPoolExecutor.
 """
 
 from importlib import resources

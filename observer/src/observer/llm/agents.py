@@ -7,7 +7,7 @@ in tests or before config is set up.
 
 Usage::
 
-    from observer.services import agents
+    from observer.llm import agents
 
     result = await agents.tool_summarizer.run("prompt")
 
@@ -21,7 +21,7 @@ from typing import Any
 
 from pydantic_ai import Agent
 
-from observer import prompts
+from observer.llm import prompts
 from observer.pipeline.models import ExtractionResult, SummaryResult
 from observer.services.config import get_extraction_model, get_summary_model
 
