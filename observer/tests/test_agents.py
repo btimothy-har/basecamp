@@ -3,7 +3,7 @@
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-from observer.pipeline.models import ExtractionResult, SummaryResult
+from observer.llm.models import ExtractionResult, SummaryResult
 
 
 class TestToolSummarizer:

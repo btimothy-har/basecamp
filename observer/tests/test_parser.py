@@ -3,8 +3,7 @@
 import json
 from datetime import UTC, datetime
 
-from observer.pipeline.models import ParsedEvent
-from observer.pipeline.parser import TranscriptParser
+from observer.pipeline.parser import ParsedEvent, TranscriptParser
 
 from tests.pi_fixtures import (
     make_assistant_message,

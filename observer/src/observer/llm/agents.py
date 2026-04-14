@@ -22,7 +22,7 @@ from typing import Any
 from pydantic_ai import Agent
 
 from observer.llm import prompts
-from observer.pipeline.models import ExtractionResult, SummaryResult
+from observer.llm.models import ExtractionResult, SummaryResult
 from observer.services.config import get_extraction_model, get_summary_model
 
 _cache: dict[str, Any] = {}

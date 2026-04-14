@@ -7,13 +7,25 @@ formats per-line.
 
 import json
 import logging
+from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 
 from observer.data.raw_event import RawEvent
 from observer.exceptions import TranscriptFileNotFoundError, TranscriptNotSavedError
-from observer.pipeline.models import ParsedEvent
 from observer.services.db import Database
+
+
+@dataclass(frozen=True, slots=True)
+class ParsedEvent:
+    """A single parsed transcript event, ready to become a RawEvent."""
+
+    event_type: str
+    timestamp: datetime
+    content: str
+    message_uuid: str | None
+    source: str = "pi"
+
 
 logger = logging.getLogger(__name__)
 
