@@ -39,7 +39,7 @@ export function registerGitProtect(pi: ExtensionAPI): void {
 
 		// gh: block by default, allow-list overrides
 		if (/^gh\s+/.test(cmd) && !GH_ALLOW.some((r) => r.test(cmd))) {
-			return { block: true, reason: "This gh command is blocked — only read-only gh operations are allowed. Ask the user to run this command themselves if needed." };
+			return { block: true, reason: "This gh command is blocked. Allowed: gh issue (all), gh pr/run/repo (read-only), gh search, gh browse. Ask the user to run this command themselves if needed." };
 		}
 	});
 }
