@@ -14,7 +14,8 @@ from observer.data.schemas import (
     ProjectSchema,
     TranscriptSchema,
 )
-from observer.search import engine
+
+from observer import search
 
 
 def _random_embedding() -> list[float]:
@@ -136,10 +137,10 @@ class TestSearchArtifacts:
         )
 
         with (
-            patch.object(engine, "get_model", return_value=_mock_model()),
-            patch("observer.search.engine.get_collection", return_value=mock_coll),
+            patch.object(search, "get_model", return_value=_mock_model()),
+            patch("observer.search.get_collection", return_value=mock_coll),
         ):
-            results = engine.search_artifacts("test query", "test-project")
+            results = search.search_artifacts("test query", "test-project")
 
         assert len(results) >= 1
         result = results[0]
@@ -152,10 +153,10 @@ class TestSearchArtifacts:
         _seed_artifact(db, session_id="sess-scoped")
 
         with (
-            patch.object(engine, "get_model", return_value=_mock_model()),
-            patch("observer.search.engine.get_collection", return_value=_mock_collection_with_results([])),
+            patch.object(search, "get_model", return_value=_mock_model()),
+            patch("observer.search.get_collection", return_value=_mock_collection_with_results([])),
         ):
-            results = engine.search_artifacts("test query", "nonexistent-project")
+            results = search.search_artifacts("test query", "nonexistent-project")
 
         assert len(results) == 0
 
@@ -163,25 +164,25 @@ class TestSearchArtifacts:
         aid, _ = _seed_artifact(db, session_id="sess-thresh")
 
         with (
-            patch.object(engine, "get_model", return_value=_mock_model()),
+            patch.object(search, "get_model", return_value=_mock_model()),
             patch(
-                "observer.search.engine.get_collection",
+                "observer.search.get_collection",
                 return_value=_mock_collection_with_results(
                     [aid], distances=[0.5], metadatas=[{"session_id": "sess-thresh"}]
                 ),
             ),
         ):
-            results = engine.search_artifacts("test query", "test-project", threshold=0.99)
+            results = search.search_artifacts("test query", "test-project", threshold=0.99)
 
         for r in results:
             assert r["score"] >= 0.99
 
     def test_empty_db_returns_empty(self, db):  # noqa: ARG002
         with (
-            patch.object(engine, "get_model", return_value=_mock_model()),
-            patch("observer.search.engine.get_collection", return_value=_mock_collection_with_results([])),
+            patch.object(search, "get_model", return_value=_mock_model()),
+            patch("observer.search.get_collection", return_value=_mock_collection_with_results([])),
         ):
-            results = engine.search_artifacts("test query", "test-project")
+            results = search.search_artifacts("test query", "test-project")
 
         assert results == []
 
@@ -198,10 +199,10 @@ class TestHybridRetrieval:
         )
 
         with (
-            patch.object(engine, "get_model", return_value=_mock_model()),
-            patch("observer.search.engine.get_collection", return_value=_mock_collection_with_results([])),
+            patch.object(search, "get_model", return_value=_mock_model()),
+            patch("observer.search.get_collection", return_value=_mock_collection_with_results([])),
         ):
-            results = engine.search_artifacts("worktree isolation", "test-project", threshold=0.0)
+            results = search.search_artifacts("worktree isolation", "test-project", threshold=0.0)
 
         session_ids = [r["session_id"] for r in results]
         assert "sess-kw-match" in session_ids
@@ -230,10 +231,10 @@ class TestHybridRetrieval:
             session.add(artifact)
 
         with (
-            patch.object(engine, "get_model", return_value=_mock_model()),
-            patch("observer.search.engine.get_collection", return_value=_mock_collection_with_results([])),
+            patch.object(search, "get_model", return_value=_mock_model()),
+            patch("observer.search.get_collection", return_value=_mock_collection_with_results([])),
         ):
-            results = engine.search_artifacts("migration schema version", "test-project", threshold=0.0)
+            results = search.search_artifacts("migration schema version", "test-project", threshold=0.0)
 
         session_ids = [r["session_id"] for r in results]
         assert "sess-no-emb" in session_ids
@@ -276,10 +277,10 @@ class TestHybridRetrieval:
             )
 
         with (
-            patch.object(engine, "get_model", return_value=_mock_model()),
-            patch("observer.search.engine.get_collection", return_value=_mock_collection_with_results([])),
+            patch.object(search, "get_model", return_value=_mock_model()),
+            patch("observer.search.get_collection", return_value=_mock_collection_with_results([])),
         ):
-            results = engine.search_artifacts("worktree isolation", "project-a", threshold=0.0)
+            results = search.search_artifacts("worktree isolation", "project-a", threshold=0.0)
 
         session_ids = [r["session_id"] for r in results]
         assert "sess-fts-a" in session_ids
@@ -299,10 +300,10 @@ class TestSearchTranscripts:
         )
 
         with (
-            patch.object(engine, "get_model", return_value=_mock_model()),
-            patch("observer.search.engine.get_collection", return_value=mock_coll),
+            patch.object(search, "get_model", return_value=_mock_model()),
+            patch("observer.search.get_collection", return_value=mock_coll),
         ):
-            results = engine.search_transcripts("test query", "test-project")
+            results = search.search_transcripts("test query", "test-project")
 
         assert len(results) >= 1
         result = results[0]
@@ -315,19 +316,19 @@ class TestSearchTranscripts:
         _seed_summary(db, session_id="sess-scoped-ts")
 
         with (
-            patch.object(engine, "get_model", return_value=_mock_model()),
-            patch("observer.search.engine.get_collection", return_value=_mock_collection_with_results([])),
+            patch.object(search, "get_model", return_value=_mock_model()),
+            patch("observer.search.get_collection", return_value=_mock_collection_with_results([])),
         ):
-            results = engine.search_transcripts("test query", "nonexistent-project")
+            results = search.search_transcripts("test query", "nonexistent-project")
 
         assert len(results) == 0
 
     def test_empty_db_returns_empty(self, db):  # noqa: ARG002
         with (
-            patch.object(engine, "get_model", return_value=_mock_model()),
-            patch("observer.search.engine.get_collection", return_value=_mock_collection_with_results([])),
+            patch.object(search, "get_model", return_value=_mock_model()),
+            patch("observer.search.get_collection", return_value=_mock_collection_with_results([])),
         ):
-            results = engine.search_transcripts("test query", "test-project")
+            results = search.search_transcripts("test query", "test-project")
 
         assert results == []
 
@@ -346,7 +347,7 @@ class TestGetSession:
             )
             session.add(extraction)
 
-        result = engine.get_session("sess-get-session")
+        result = search.get_session("sess-get-session")
 
         assert result is not None
         assert result["session_id"] == "sess-get-session"
@@ -357,7 +358,7 @@ class TestGetSession:
         assert SectionType.KNOWLEDGE in result["sections"]
 
     def test_returns_none_for_missing(self, db):  # noqa: ARG002
-        result = engine.get_session("nonexistent-session")
+        result = search.get_session("nonexistent-session")
         assert result is None
 
 
@@ -403,7 +404,7 @@ class TestListTranscripts:
         _seed_with_dates(db, session_id="old", started_at=datetime(2026, 1, 1, tzinfo=UTC))
         _seed_with_dates(db, session_id="new", started_at=datetime(2026, 3, 1, tzinfo=UTC))
 
-        results = engine.list_transcripts("test-project")
+        results = search.list_transcripts("test-project")
 
         assert len(results) == 2
         assert results[0]["session_id"] == "new"
@@ -413,7 +414,7 @@ class TestListTranscripts:
         _seed_with_dates(db, session_id="jan", started_at=datetime(2026, 1, 15, tzinfo=UTC))
         _seed_with_dates(db, session_id="mar", started_at=datetime(2026, 3, 15, tzinfo=UTC))
 
-        results = engine.list_transcripts("test-project", after=datetime(2026, 2, 1, tzinfo=UTC))
+        results = search.list_transcripts("test-project", after=datetime(2026, 2, 1, tzinfo=UTC))
 
         assert len(results) == 1
         assert results[0]["session_id"] == "mar"
@@ -422,7 +423,7 @@ class TestListTranscripts:
         _seed_with_dates(db, session_id="jan", started_at=datetime(2026, 1, 15, tzinfo=UTC))
         _seed_with_dates(db, session_id="mar", started_at=datetime(2026, 3, 15, tzinfo=UTC))
 
-        results = engine.list_transcripts("test-project", before=datetime(2026, 2, 1, tzinfo=UTC))
+        results = search.list_transcripts("test-project", before=datetime(2026, 2, 1, tzinfo=UTC))
 
         assert len(results) == 1
         assert results[0]["session_id"] == "jan"
@@ -432,7 +433,7 @@ class TestListTranscripts:
         _seed_with_dates(db, session_id="feb", started_at=datetime(2026, 2, 15, tzinfo=UTC))
         _seed_with_dates(db, session_id="mar", started_at=datetime(2026, 3, 15, tzinfo=UTC))
 
-        results = engine.list_transcripts(
+        results = search.list_transcripts(
             "test-project",
             after=datetime(2026, 2, 1, tzinfo=UTC),
             before=datetime(2026, 3, 1, tzinfo=UTC),
@@ -445,7 +446,7 @@ class TestListTranscripts:
         _seed_with_dates(db, session_id="s1", started_at=datetime(2026, 1, 1, tzinfo=UTC), project_name="proj-a")
         _seed_with_dates(db, session_id="s2", started_at=datetime(2026, 1, 1, tzinfo=UTC), project_name="proj-b")
 
-        results = engine.list_transcripts("proj-a")
+        results = search.list_transcripts("proj-a")
 
         assert len(results) == 1
         assert results[0]["session_id"] == "s1"
@@ -454,7 +455,7 @@ class TestListTranscripts:
         _seed_with_dates(db, session_id="a1", started_at=datetime(2026, 1, 1, tzinfo=UTC), project_name="proj-a")
         _seed_with_dates(db, session_id="b1", started_at=datetime(2026, 1, 1, tzinfo=UTC), project_name="proj-b")
 
-        results = engine.list_transcripts(None)
+        results = search.list_transcripts(None)
 
         assert len(results) >= 2
 
@@ -462,7 +463,7 @@ class TestListTranscripts:
         for i in range(5):
             _seed_with_dates(db, session_id=f"s-{i}", started_at=datetime(2026, 1, i + 1, tzinfo=UTC))
 
-        results = engine.list_transcripts("test-project", top_k=2)
+        results = search.list_transcripts("test-project", top_k=2)
 
         assert len(results) == 2
 
@@ -471,14 +472,14 @@ class TestListTranscripts:
             db, session_id="titled", started_at=datetime(2026, 1, 1, tzinfo=UTC), text="## My Title\nSome content"
         )
 
-        results = engine.list_transcripts("test-project")
+        results = search.list_transcripts("test-project")
 
         assert results[0]["title"] == "My Title"
 
     def test_result_has_expected_fields(self, db):  # noqa: ARG002
         _seed_with_dates(db, session_id="fields", started_at=datetime(2026, 1, 1, tzinfo=UTC))
 
-        results = engine.list_transcripts("test-project")
+        results = search.list_transcripts("test-project")
 
         result = results[0]
         assert "session_id" in result
@@ -488,7 +489,7 @@ class TestListTranscripts:
         assert "score" not in result
 
     def test_empty_db_returns_empty(self, db):  # noqa: ARG002
-        results = engine.list_transcripts("test-project")
+        results = search.list_transcripts("test-project")
         assert results == []
 
 
@@ -509,7 +510,7 @@ class TestListArtifacts:
             text="new knowledge",
         )
 
-        results = engine.list_artifacts("test-project")
+        results = search.list_artifacts("test-project")
 
         assert len(results) == 2
         assert results[0]["session_id"] == "new"
@@ -530,7 +531,7 @@ class TestListArtifacts:
             text="mar decision",
         )
 
-        results = engine.list_artifacts("test-project", after=datetime(2026, 2, 1, tzinfo=UTC))
+        results = search.list_artifacts("test-project", after=datetime(2026, 2, 1, tzinfo=UTC))
 
         assert len(results) == 1
         assert results[0]["session_id"] == "mar"
@@ -551,7 +552,7 @@ class TestListArtifacts:
             text="mar knowledge",
         )
 
-        results = engine.list_artifacts("test-project", before=datetime(2026, 2, 1, tzinfo=UTC))
+        results = search.list_artifacts("test-project", before=datetime(2026, 2, 1, tzinfo=UTC))
 
         assert len(results) == 1
         assert results[0]["session_id"] == "jan"
@@ -572,7 +573,7 @@ class TestListArtifacts:
             text="some decision",
         )
 
-        results = engine.list_artifacts("test-project", section_types=["decisions"])
+        results = search.list_artifacts("test-project", section_types=["decisions"])
 
         assert len(results) == 1
         assert results[0]["type"] == SectionType.DECISIONS
@@ -593,7 +594,7 @@ class TestListArtifacts:
             text="other knowledge",
         )
 
-        results = engine.list_artifacts("test-project", session_id="target")
+        results = search.list_artifacts("test-project", session_id="target")
 
         assert len(results) == 1
         assert results[0]["session_id"] == "target"
@@ -601,7 +602,7 @@ class TestListArtifacts:
     def test_excludes_summaries_by_default(self, db):  # noqa: ARG002
         _seed_with_dates(db, session_id="sum", started_at=datetime(2026, 1, 1, tzinfo=UTC))
 
-        results = engine.list_artifacts("test-project")
+        results = search.list_artifacts("test-project")
 
         for r in results:
             assert r["type"] != SectionType.SUMMARY
@@ -624,7 +625,7 @@ class TestListArtifacts:
             text="b knowledge",
         )
 
-        results = engine.list_artifacts("proj-a")
+        results = search.list_artifacts("proj-a")
 
         assert all(r["session_id"] == "a" for r in results)
 
@@ -637,7 +638,7 @@ class TestListArtifacts:
             text="knowledge",
         )
 
-        results = engine.list_artifacts("test-project")
+        results = search.list_artifacts("test-project")
 
         result = results[0]
         assert "session_id" in result
@@ -649,5 +650,5 @@ class TestListArtifacts:
         assert "score" not in result
 
     def test_empty_db_returns_empty(self, db):  # noqa: ARG002
-        results = engine.list_artifacts("test-project")
+        results = search.list_artifacts("test-project")
         assert results == []

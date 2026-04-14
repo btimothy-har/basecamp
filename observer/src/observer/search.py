@@ -15,7 +15,7 @@ signals plus time decay, then truncated to top-k.
 from __future__ import annotations
 
 import logging
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any
 
 from sqlalchemy import text
@@ -24,7 +24,11 @@ from sqlalchemy.orm import Session as SASession
 from observer.constants import (
     SEARCH_DEFAULT_THRESHOLD,
     SEARCH_DEFAULT_TOP_K,
+    SEARCH_KEYWORD_WEIGHT,
     SEARCH_OVERFETCH_FACTOR,
+    SEARCH_SEMANTIC_WEIGHT,
+    SEARCH_TIME_DECAY_POWER,
+    SEARCH_TIME_DECAY_SCALE_DAYS,
 )
 from observer.data.artifact import Artifact
 from observer.data.enums import SectionType
@@ -35,12 +39,55 @@ from observer.data.schemas import (
     WorktreeSchema,
 )
 from observer.data.transcript import Transcript
-from observer.search.scoring import compute_score
 from observer.services.chroma import get_collection
 from observer.services.db import Database
 from observer.services.embedding import get_model
 
 logger = logging.getLogger(__name__)
+
+
+# ---------------------------------------------------------------------------
+# Scoring
+# ---------------------------------------------------------------------------
+
+
+def time_decay(
+    timestamp: datetime,
+    scale_days: float = SEARCH_TIME_DECAY_SCALE_DAYS,
+    power: float = SEARCH_TIME_DECAY_POWER,
+) -> float:
+    """Power-law time decay returning a value in (0, 1].
+
+    Returns 0.5 at exactly scale_days. Decays slowly toward 0 but never
+    reaches it, so entries of any age remain differentiable by recency.
+    """
+    now = datetime.now(UTC)
+    if timestamp.tzinfo is None:
+        timestamp = timestamp.replace(tzinfo=UTC)
+    age_days = max(0.0, (now - timestamp).total_seconds() / 86400)
+    return 1.0 / (1.0 + (age_days / scale_days) ** power)
+
+
+def compute_score(
+    timestamp: datetime,
+    *,
+    semantic: float = 0.0,
+    keyword: float = 0.0,
+) -> float:
+    """Hybrid relevance score blending semantic similarity, keyword match, and recency.
+
+    Relevance is a weighted average of the two retrieval signals. A recency
+    bonus (up to 20% of the final score) breaks ties in favour of recent
+    entries without burying older ones.
+    """
+    relevance = semantic * SEARCH_SEMANTIC_WEIGHT + keyword * SEARCH_KEYWORD_WEIGHT
+    recency_bonus = time_decay(timestamp) * 0.2
+    return min(1.0, relevance * 0.8 + recency_bonus)
+
+
+# ---------------------------------------------------------------------------
+# Retrieval
+# ---------------------------------------------------------------------------
 
 
 def _apply_scope_filters(
