@@ -2,17 +2,34 @@
 
 import json
 from datetime import UTC, datetime, timedelta
-from unittest.mock import patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 from observer.data.enums import RawEventStatus, WorkItemStage, WorkItemType
 from observer.data.raw_event import RawEvent
 from observer.data.schemas import ProjectSchema, RawEventSchema, TranscriptEventSchema, TranscriptSchema
 from observer.data.work_item import WorkItem
-from observer.exceptions import ExtractionError
+from observer.pipeline.grouping import EventGrouper, classify_events
 from observer.pipeline.models import SummaryResult
-from observer.pipeline.refining import EventRefiner
-from observer.pipeline.refining.grouping import EventGrouper, classify_events
-from observer.pipeline.refining.refinement import WorkItemRefiner
+from observer.pipeline.refinement import EventRefiner, WorkItemRefiner
+
+
+def _mock_tool_summarizer(summary_text="Read: auth.py → found JWT"):
+    """Patch tool_summarizer.run to return a SummaryResult."""
+    mock_result = MagicMock()
+    mock_result.output = SummaryResult(summary=summary_text)
+    mock_agent = MagicMock()
+    mock_agent.run = AsyncMock(return_value=mock_result)
+    return patch("observer.services.agents.tool_summarizer", mock_agent)
+
+
+def _mock_thinking_summarizer(summary_text="Thinking: analysis summary"):
+    """Patch thinking_summarizer.run to return a SummaryResult."""
+    mock_result = MagicMock()
+    mock_result.output = SummaryResult(summary=summary_text)
+    mock_agent = MagicMock()
+    mock_agent.run = AsyncMock(return_value=mock_result)
+    return patch("observer.services.agents.thinking_summarizer", mock_agent)
+
 
 NOW = datetime(2025, 1, 15, 10, 0, 0, tzinfo=UTC)
 
@@ -376,8 +393,7 @@ class TestRefineBatch:
         )
 
         EventGrouper.group_pending(db, transcript_id)
-        with patch("observer.pipeline.refining.refinement.summarize_tool_pair") as mock_tool:
-            mock_tool.return_value = SummaryResult(summary="Read: auth.py → found JWT")
+        with _mock_tool_summarizer():
             count = EventRefiner.refine_pending(db)
 
         assert count == 1
@@ -456,12 +472,8 @@ class TestRefineBatch:
         _setup_transcript(db, tmp_path)
         assert EventRefiner.refine_pending(db) == 0
 
-    @patch("observer.pipeline.refining.refinement.summarize_tool_pair")
-    @patch("observer.pipeline.refining.refinement.summarize_thinking")
-    def test_full_sequence_classifies_and_refines(self, mock_thinking, mock_tool, db, tmp_path):
+    def test_full_sequence_classifies_and_refines(self, db, tmp_path):
         """prompt → thinking → tool_pair → thinking → response = 5 refined WorkItems."""
-        mock_thinking.return_value = "Thinking: analysis summary"
-        mock_tool.return_value = SummaryResult(summary="Read: auth.py → found JWT")
 
         transcript_id = _setup_transcript(db, tmp_path)
 
@@ -542,7 +554,8 @@ class TestRefineBatch:
         _insert_raw_events(db, transcript_id, events_data)
 
         EventGrouper.group_pending(db, transcript_id)
-        count = EventRefiner.refine_pending(db)
+        with _mock_tool_summarizer(), _mock_thinking_summarizer():
+            count = EventRefiner.refine_pending(db)
         assert count == 5
 
         refined = WorkItem.get_by_processed(WorkItemStage.REFINED)
@@ -578,28 +591,37 @@ class TestRefineBatch:
         assert len(skipped) == 1
         assert skipped[0].item_type == WorkItemType.UNRECOGNIZED
 
-    @patch("observer.pipeline.refining.refinement.summarize_thinking")
-    def test_thinking_llm_failure_marks_error(self, mock_thinking, db, tmp_path):
-        """LLM failure during thinking refinement marks ERROR."""
-        mock_thinking.side_effect = ExtractionError("LLM failed")
+    def test_thinking_llm_failure_uses_fallback(self, db, tmp_path):
+        """LLM failure during thinking refinement falls back to raw text."""
 
         transcript_id = _setup_transcript(db, tmp_path)
+        thinking_text = "deep analysis of the system"
         content = json.dumps(
             {
                 "type": "assistant",
                 "message": {
                     "role": "assistant",
-                    "content": [{"type": "thinking", "thinking": "deep analysis of the system", "signature": "s"}],
+                    "content": [{"type": "thinking", "thinking": thinking_text, "signature": "s"}],
                 },
             }
         )
         _insert_raw_events(db, transcript_id, [{"event_type": "assistant", "content": content}])
 
-        EventGrouper.group_pending(db, transcript_id)
-        EventRefiner.refine_pending(db)
+        mock_agent = MagicMock()
+        mock_agent.run = AsyncMock(side_effect=RuntimeError("LLM failed"))
 
-        errors = WorkItem.get_by_processed(WorkItemStage.ERROR)
-        assert len(errors) == 1
+        EventGrouper.group_pending(db, transcript_id)
+        with patch("observer.services.agents.thinking_summarizer", mock_agent):
+            EventRefiner.refine_pending(db)
+
+        # Graceful degradation: item is REFINED with fallback text
+        refined = WorkItem.get_by_processed(WorkItemStage.REFINED)
+        assert len(refined) == 1
+
+        with db.session() as session:
+            tes = session.query(TranscriptEventSchema).filter_by(transcript_id=transcript_id).all()
+            assert len(tes) == 1
+            assert tes[0].text == f"Thinking: {thinking_text}"
 
 
 # ---------------------------------------------------------------------------

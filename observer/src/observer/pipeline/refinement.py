@@ -1,11 +1,12 @@
 """Work item refinement — turns classified WorkItems into TranscriptEvents.
 
-LLM-driven stage that summarizes thinking blocks and tool pairs, creates
-TranscriptEvents. Items are marked REFINED, TERMINAL, or ERROR.
+EventRefiner is the public entry point: claims pending work items,
+recovers stale runs, and delegates to WorkItemRefiner for the actual
+LLM-driven refinement.
 
-Uses asyncio with a semaphore for concurrency control. LLM-requiring
-items (THINKING, TOOL_PAIR, RESPONSE with embedded thinking) run
-concurrently up to REFINING_MAX_WORKERS; non-LLM items complete instantly.
+WorkItemRefiner summarizes thinking blocks and tool pairs, creates
+TranscriptEvents, and marks items REFINED, TERMINAL, or ERROR.
+Uses asyncio with a semaphore for concurrency control.
 """
 
 import asyncio
@@ -18,8 +19,7 @@ from observer.data.enums import WorkItemStage, WorkItemType
 from observer.data.raw_event import RawEvent
 from observer.data.transcript_event import TranscriptEvent
 from observer.data.work_item import WorkItem
-from observer.exceptions import ExtractionError
-from observer.pipeline.llm import summarize_thinking, summarize_tool_pair
+from observer.services import agents
 from observer.services.db import Database
 
 logger = logging.getLogger(__name__)
@@ -101,8 +101,8 @@ class WorkItemRefiner:
             return
 
         try:
-            summary = await summarize_thinking(thinking_text)
-        except ExtractionError:
+            summary = await self._summarize_thinking(thinking_text)
+        except Exception:
             logger.exception("Thinking summarization failed")
             self._mark_work_item(work_item, WorkItemStage.ERROR)
             return
@@ -122,14 +122,17 @@ class WorkItemRefiner:
         result_content = tool_result_raw.get_tool_result_content() or ""
         input_str = json.dumps(tool_input, indent=None, default=str)
 
+        prompt = f"## Tool Invocation\nTool: {tool_name}\nInput: {input_str}\n\n## Result\n{result_content}"
+
         try:
-            result = await summarize_tool_pair(tool_name, input_str, result_content)
-        except ExtractionError:
-            logger.exception("Tool summarization failed")
-            self._mark_work_item(work_item, WorkItemStage.ERROR)
+            result = await agents.tool_summarizer.run(prompt)
+        except Exception:
+            logger.warning("Tool summary failed for %s, using fallback", tool_name, exc_info=True)
+            self._save_transcript_event(work_item, f"{tool_name}: {input_str}")
+            self._mark_work_item(work_item, WorkItemStage.REFINED)
             return
 
-        self._save_transcript_event(work_item, result.summary)
+        self._save_transcript_event(work_item, result.output.summary)
         self._mark_work_item(work_item, WorkItemStage.REFINED)
 
     async def _handle_response(self, work_item: WorkItem) -> None:
@@ -146,9 +149,9 @@ class WorkItemRefiner:
         thinking_text = raw.extract_thinking_text()
         if thinking_text:
             try:
-                embedded_thinking = await summarize_thinking(thinking_text)
+                embedded_thinking = await self._summarize_thinking(thinking_text)
                 self._save_transcript_event(work_item, embedded_thinking, event_type=WorkItemType.THINKING)
-            except ExtractionError:
+            except Exception:
                 logger.exception("Thinking summarization failed in response handler")
 
         self._save_transcript_event(work_item, agent_text)
@@ -175,7 +178,56 @@ class WorkItemRefiner:
             te = te.save(session)
         return te
 
+    @staticmethod
+    async def _summarize_thinking(thinking_text: str) -> str:
+        """Summarize a thinking block via LLM, returning the summary text."""
+        try:
+            result = await agents.thinking_summarizer.run(thinking_text)
+        except Exception:
+            logger.warning("Thinking summary failed, using fallback", exc_info=True)
+            return f"Thinking: {thinking_text}"
+        return result.output.summary
+
     def _mark_work_item(self, work_item: WorkItem, stage: WorkItemStage) -> None:
         work_item.processed = stage
         with self._db.session() as session:
             work_item.save(session)
+
+
+def _reset_incomplete(db: Database, items: list[WorkItem]) -> None:
+    """Reset any items still in REFINING state back to UNREFINED."""
+    incomplete = [i for i in items if i.processed == WorkItemStage.REFINING]
+    if not incomplete:
+        return
+    logger.info("Resetting %d incomplete REFINING items to UNREFINED", len(incomplete))
+    with db.session() as session:
+        for item in incomplete:
+            item.processed = WorkItemStage.UNREFINED
+            item.claimed_at = None
+            item.save(session)
+
+
+class EventRefiner:
+    """Refines classified WorkItems into TranscriptEvents."""
+
+    @staticmethod
+    def refine_pending(db: Database, *, transcript_id: int | None = None) -> int:
+        """Refine unprocessed WorkItems into TranscriptEvents.
+
+        Recovers stale REFINING items from crashed runs, then claims and
+        refines pending work items.
+        """
+        WorkItem.recover_stale()
+
+        items = WorkItem.claim_unprocessed(transcript_id=transcript_id)
+        if not items:
+            return 0
+
+        logger.info("Refining %d unprocessed work items", len(items))
+
+        refiner = WorkItemRefiner(db)
+        total = refiner.refine(items)
+        _reset_incomplete(db, items)
+
+        logger.info("Refining complete: %d work items refined", total)
+        return total

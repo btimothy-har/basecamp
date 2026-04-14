@@ -246,8 +246,8 @@ def ingest(run_process: bool) -> None:  # noqa: FBT001
     and groups them into work items. With --process, also runs the
     LLM pipeline (refine → extract → embed) after ingestion.
     """
+    from observer.pipeline.grouping import EventGrouper
     from observer.pipeline.parser import TranscriptParser
-    from observer.pipeline.refining.grouping import EventGrouper
     from observer.services.db import Database
     from observer.services.logger import configure_logging
     from observer.services.registration import (
@@ -294,7 +294,7 @@ def ingest(run_process: bool) -> None:  # noqa: FBT001
         if run_process:
             from observer.pipeline.extraction import TranscriptExtractor
             from observer.pipeline.indexing import SearchIndexer
-            from observer.pipeline.refining import EventRefiner
+            from observer.pipeline.refinement import EventRefiner
             from observer.services.config import get_mode
 
             if get_mode() != "off":
@@ -326,9 +326,9 @@ def reprocess(yes: bool) -> None:  # noqa: FBT001
         WorkItemSchema,
     )
     from observer.pipeline.extraction import TranscriptExtractor
+    from observer.pipeline.grouping import EventGrouper
     from observer.pipeline.indexing import SearchIndexer
-    from observer.pipeline.refining import EventRefiner
-    from observer.pipeline.refining.grouping import EventGrouper
+    from observer.pipeline.refinement import EventRefiner
     from observer.services.chroma import COLLECTION_NAME, get_client
     from observer.services.db import Database
     from observer.services.logger import configure_logging
