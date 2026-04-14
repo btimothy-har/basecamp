@@ -12,8 +12,6 @@ dependencies = [
 
 [project.scripts]
 basecamp = "core.main:basecamp"
-worker = "core.cli.worker:main"
-handoff = "core.cli.handoff:main"
 
 [dependency-groups]
 dev = [

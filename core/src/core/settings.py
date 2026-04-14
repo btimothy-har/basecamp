@@ -18,12 +18,6 @@ from core.utils import atomic_write_json
 
 _DEFAULT_PATH = Path.home() / ".basecamp" / "config.json"
 
-_EXTENDED_CONTEXT_MODELS: dict[str, str] = {
-    "sonnet": "sonnet[1m]",
-    "opus": "opus[1m]",
-}
-
-
 class Settings:
     """File-backed configuration with locked read-modify-write operations.
 
@@ -124,14 +118,3 @@ class Settings:
 
 
 settings = Settings()
-
-
-def resolve_model(model: str) -> str:
-    """Apply extended context suffix when enabled in settings.
-
-    Maps base model names to their extended context variants:
-    sonnet → sonnet[1m], opus → opus[1m].
-    """
-    if settings.use_extended_context:
-        return _EXTENDED_CONTEXT_MODELS.get(model, model)
-    return model

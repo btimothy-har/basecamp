@@ -26,15 +26,10 @@ USER_WORKING_STYLES_DIR = USER_PROMPTS_DIR / "working_styles"
 USER_CONTEXT_DIR = USER_PROMPTS_DIR / "context"
 CACHE_DIR = USER_DIR / ".cached"
 SCRATCH_BASE = Path("/tmp/claude-workspace")
-WORKERS_BASE = SCRATCH_BASE / "workers"
-INBOX_BASE = SCRATCH_BASE / "inbox"
-WORKERS_INDEX_DIR = USER_DIR / "workers"
 OBSERVER_CONFIG = USER_DIR / "observer" / "config.json"
 
 # CLI paths
 PI_COMMAND = "pi"
 EXTENSION_DIR = SCRIPT_DIR / "extension"
 
-# Claude CLI paths (still used by worker ops — remove when migrated)
-CLAUDE_COMMAND = "claude"
-CLAUDE_USER_SETTINGS = Path.home() / ".claude" / "settings.json"
+

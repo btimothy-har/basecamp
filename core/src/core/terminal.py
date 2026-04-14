@@ -12,10 +12,6 @@ $TMUX for tmux. Kitty takes priority when both are available.
 from __future__ import annotations
 
 import os
-import subprocess
-from pathlib import Path
-
-from core.exceptions import PaneLaunchError
 
 
 class TerminalBackend:
@@ -59,44 +55,6 @@ class TmuxBackend(TerminalBackend):
     def is_active() -> bool:
         return bool(os.environ.get("TMUX"))
 
-    def spawn_pane(
-        self,
-        script: str | Path,
-        *,
-        env: dict[str, str],
-        cwd: Path,
-        title: str,
-    ) -> None:
-        cmd = [
-            "tmux",
-            "split-window",
-            "-v",
-            "-P",
-            "-F",
-            "#{pane_id}",
-        ]
-        for key, value in env.items():
-            cmd.extend(["-e", f"{key}={value}"])
-        cmd.extend(["-c", str(cwd), str(script)])
-
-        try:
-            result = subprocess.run(cmd, check=True, capture_output=True, text=True)
-        except subprocess.CalledProcessError as e:
-            raise PaneLaunchError(self.name, e.stderr) from e
-
-        # Set pane title (non-critical)
-        pane_id = result.stdout.strip()
-        if pane_id:
-            try:
-                subprocess.run(
-                    ["tmux", "select-pane", "-t", pane_id, "-T", title],
-                    check=True,
-                    capture_output=True,
-                    text=True,
-                )
-            except subprocess.CalledProcessError:
-                pass
-
 
 class KittyBackend(TerminalBackend):
     """Terminal backend for Kitty.
@@ -115,39 +73,6 @@ class KittyBackend(TerminalBackend):
     def is_active() -> bool:
         return bool(os.environ.get("KITTY_LISTEN_ON"))
 
-    def spawn_pane(
-        self,
-        script: str | Path,
-        *,
-        env: dict[str, str],
-        cwd: Path,
-        title: str,
-    ) -> None:
-        socket = os.environ["KITTY_LISTEN_ON"]
-        cmd = [
-            "kitty",
-            "@",
-            "--to",
-            socket,
-            "launch",
-            "--type=window",
-            "--keep-focus",
-            "--copy-env",
-            "--cwd",
-            str(cwd),
-            "--title",
-            title,
-        ]
-        for key, value in env.items():
-            cmd.extend(["--env", f"{key}={value}"])
-        cmd.append(str(script))
-
-        try:
-            subprocess.run(cmd, check=True, capture_output=True, text=True)
-        except subprocess.CalledProcessError as e:
-            raise PaneLaunchError(self.name, e.stderr) from e
-
-
 def resolve_launch_backend() -> TerminalBackend:
     """Resolve the backend for launching a session.
 
@@ -161,15 +86,3 @@ def resolve_launch_backend() -> TerminalBackend:
     return TerminalBackend()
 
 
-def resolve_dispatch_backend() -> TmuxBackend | KittyBackend | None:
-    """Resolve the backend for spawning dispatch worker panes.
-
-    Requires an active multiplexer session. Returns None if unavailable.
-    Kitty takes priority when both are available because it provides
-    native window splitting without needing a tmux wrapper session.
-    """
-    if KittyBackend.is_active():
-        return KittyBackend()
-    if TmuxBackend.is_active():
-        return TmuxBackend()
-    return None
