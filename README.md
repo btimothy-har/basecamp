@@ -220,7 +220,6 @@ basecamp includes an optional marketplace with plugins.
 |--------|-------------|
 | `bc-collab` | Collaborative discovery, requirements gathering, GitHub issue workflows |
 | `bc-eng` | Code review, PR workflows, testing patterns, Python/SQL/dbt development |
-| `bc-cursor` | Discovers `.cursor/*.mdc` context files |
 | `bc-git-protect` | Guards against destructive git and gh operations |
 | `bc-private` | Private tools, not git committed |
 

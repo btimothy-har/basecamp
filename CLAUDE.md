@@ -58,7 +58,6 @@ observer/src/observer/
 plugins/
 ├── collaboration/              # bc-collab — discovery skill, gh-issue skill, issue-worker agent
 ├── engineering/                # bc-eng — 8 agents, 9 skills, commands, hooks
-├── cursor/                     # bc-cursor — .cursor context file discovery hooks
 ├── git_protect/                # bc-git-protect — destructive git/gh operation guards
 └── private/                    # bc-private — gitignored personal tools
 

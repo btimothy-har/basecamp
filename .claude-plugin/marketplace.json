@@ -10,11 +10,6 @@
       "description": "Collaborative discovery and planning skills for ideation, requirements gathering, and scope negotiation."
     },
     {
-      "name": "bc-cursor",
-      "source": "./plugins/cursor",
-      "description": "Hook to discover .cursor/*.mdc context files when reading files."
-    },
-    {
       "name": "bc-eng",
       "source": "./plugins/engineering",
       "description": "Engineering resources for Claude Code: agents, commands, and skills."
