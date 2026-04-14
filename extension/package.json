@@ -4,14 +4,9 @@
   "description": "Basecamp extension for pi — session lifecycle, git protection, observer integration, engineering skills.",
   "keywords": ["pi-package"],
   "pi": {
-    "extensions": ["./src"],
-    "skills": [
-      "./core/skills",
-      "./engineering/skills",
-      "./collaboration/skills",
-      "./data/skills"
-    ],
-    "prompts": ["./prompts"]
+    "extensions": ["./**/src"],
+    "skills": ["./**/skills"],
+    "prompts": ["./core/prompts"]
   },
   "peerDependencies": {
     "@mariozechner/pi-coding-agent": "*",
