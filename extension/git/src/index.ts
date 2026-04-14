@@ -45,11 +45,12 @@ const PR_EDIT_PATTERN = /^gh\s+pr\s+edit(\s|$)/;
 
 const PROMPT_PATH = path.resolve(__dirname, "..", "resources", "pull-request.md");
 
-function loadPrompt(prNumber: string, base: string): string {
+function loadPrompt(prNumber: string, base: string, scratchDir: string): string {
 	const template = fs.readFileSync(PROMPT_PATH, "utf8");
 	return template
 		.replaceAll("{{PR_NUMBER}}", prNumber)
-		.replaceAll("{{BASE}}", base);
+		.replaceAll("{{BASE}}", base)
+		.replaceAll("{{SCRATCH_DIR}}", scratchDir);
 }
 
 // ---------------------------------------------------------------------------
@@ -147,7 +148,8 @@ export default function (pi: ExtensionAPI) {
 			// Unlock gh pr edit and hand off to agent
 			prUnlocked = true;
 
-			const prompt = loadPrompt(prNumber, base);
+			const scratchDir = process.env.BASECAMP_SCRATCH_DIR || `/tmp/basecamp/${path.basename(ctx.cwd)}`;
+			const prompt = loadPrompt(prNumber, base, scratchDir);
 			pi.sendUserMessage(prompt);
 		},
 	});

@@ -41,7 +41,7 @@ export function getState(): SessionState {
 		repoName: path.basename(process.cwd()),
 		isRepo: false,
 		remoteUrl: null,
-		scratchDir: `/tmp/claude-workspace/${path.basename(process.cwd())}`,
+		scratchDir: `/tmp/basecamp/${path.basename(process.cwd())}`,
 		workingStyle: "engineering",
 		worktreeDir: null,
 		worktreeLabel: null,
