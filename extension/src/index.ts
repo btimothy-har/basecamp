@@ -8,7 +8,6 @@
  *   - Git protection (force push, remote ref deletion, destructive gh commands)
  *   - Observer integration (transcript ingestion for semantic recall)
  *   - Session handoff (/handoff command)
- *   - Skill nudges (contextual skill suggestions)
  *   - Agent system (worker tool, discovery, pane/background spawning)
  */
 
@@ -17,6 +16,7 @@ import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { registerSession, getState } from "./core/session";
 import { registerPrompt } from "./core/prompt";
 import { registerGitProtect } from "./git-protect";
+import { registerObserver } from "./observer";
 import { registerHandoff } from "./core/handoff";
 import { registerOpenCommand } from "./core/open";
 import { discoverAgents } from "./agents/discovery";
@@ -33,6 +33,7 @@ export default function (pi: ExtensionAPI) {
 	registerSession(pi);
 	registerPrompt(pi);
 	registerGitProtect(pi);
+	registerObserver(pi);
 	registerHandoff(pi);
 	registerOpenCommand(pi, getState);
 
