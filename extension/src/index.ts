@@ -17,7 +17,6 @@ import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { registerSession, getState } from "./core/session";
 import { registerPrompt } from "./core/prompt";
 import { registerGitProtect } from "./git-protect";
-import { registerNudges } from "./core/nudges";
 import { registerHandoff } from "./core/handoff";
 import { registerOpenCommand } from "./core/open";
 import { discoverAgents } from "./agents/discovery";
@@ -34,7 +33,6 @@ export default function (pi: ExtensionAPI) {
 	registerSession(pi);
 	registerPrompt(pi);
 	registerGitProtect(pi);
-	registerNudges(pi);
 	registerHandoff(pi);
 	registerOpenCommand(pi, getState);
 
