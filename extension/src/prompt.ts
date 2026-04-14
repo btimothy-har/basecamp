@@ -10,7 +10,7 @@
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import { type SessionState, getTimezone } from "./config";
+import { type SessionState, getTimezone, getLogseqGraph } from "./config";
 
 // ---------------------------------------------------------------------------
 // Paths
@@ -108,6 +108,13 @@ function buildEnvBlock(state: SessionState): string {
 	lines.push(`Today's date: ${today}`);
 
 	lines.push(`Scratch: ${state.scratchDir}`);
+
+	if (state.workingStyle !== "logseq") {
+		const logseqGraph = getLogseqGraph();
+		if (logseqGraph) {
+			lines.push(`Logseq graph: ${logseqGraph}`);
+		}
+	}
 
 	return lines.join("\n");
 }

@@ -23,6 +23,7 @@ export interface ProjectConfig {
 interface BasecampConfig {
 	projects?: Record<string, ProjectConfig>;
 	timezone?: string;
+	logseq_graph?: string;
 }
 
 export interface SessionState {
@@ -67,6 +68,16 @@ export function getTimezone(): string | null {
 	return typeof config.timezone === "string" && config.timezone.trim()
 		? config.timezone.trim()
 		: null;
+}
+
+export function getLogseqGraph(): string | null {
+	const config = readConfig();
+	if (typeof config.logseq_graph !== "string" || !config.logseq_graph.trim()) return null;
+	const abs = path.join(os.homedir(), config.logseq_graph.trim());
+	try {
+		if (fs.statSync(abs).isDirectory()) return abs;
+	} catch {}
+	return null;
 }
 
 export function readConfig(): BasecampConfig {
