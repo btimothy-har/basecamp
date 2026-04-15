@@ -16,6 +16,7 @@
  */
 
 import { randomUUID } from "node:crypto";
+import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-agent";
@@ -313,12 +314,35 @@ Available agents are discovered from project (.basecamp/agents/), user (~/.basec
       setStatusRunning(ctx, agentLabel);
 
       try {
-        const result = await spawnWorker(
+        let result = await spawnWorker(
           agentConfig,
           params.task,
           { name, model, cwd: ctx.cwd, env, sessionDir },
           signal,
         );
+
+        // Retry with default model if the requested model wasn't found
+        if (
+          result.exitCode === 1 &&
+          model &&
+          result.error?.includes("not found") &&
+          result.usage.turns === 0
+        ) {
+          if (ctx.hasUI) {
+            ctx.ui.notify(
+              `Model "${model}" not found — retrying with default model`,
+              "warning",
+            );
+          }
+          const retrySessionDir = sessionDir + "-retry";
+          fs.mkdirSync(retrySessionDir, { recursive: true });
+          result = await spawnWorker(
+            agentConfig,
+            params.task,
+            { name, model: undefined, cwd: ctx.cwd, env, sessionDir: retrySessionDir },
+            signal,
+          );
+        }
 
         // Mark worker complete
         const ok = result.exitCode === 0;
