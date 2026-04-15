@@ -18,6 +18,7 @@ from core.utils import atomic_write_json
 
 _DEFAULT_PATH = Path.home() / ".basecamp" / "config.json"
 
+
 class Settings:
     """File-backed configuration with locked read-modify-write operations.
 
