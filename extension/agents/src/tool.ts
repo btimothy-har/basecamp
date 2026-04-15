@@ -174,12 +174,6 @@ function formatUsageLine(
 const STATUS_KEY = "basecamp-agent";
 const COLLAPSED_TOOL_COUNT = 10;
 
-function setStatusIdle(ctx: ExtensionContext, agentCount: number): void {
-	if (!ctx.hasUI) return;
-	const t = ctx.ui.theme;
-	ctx.ui.setStatus(STATUS_KEY, t.fg("dim", `🤖 ${agentCount} agents`));
-}
-
 function setStatusRunning(ctx: ExtensionContext, agentName: string): void {
 	if (!ctx.hasUI) return;
 	const t = ctx.ui.theme;
@@ -438,6 +432,3 @@ Available agents are discovered from project (.basecamp/agents/), user (~/.basec
 		},
 	});
 }
-
-// Re-export status helpers for use in index.ts
-export { setStatusIdle };

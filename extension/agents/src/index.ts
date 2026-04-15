@@ -7,7 +7,7 @@ import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { getState } from "../../core/src/session";
 import { registerAgentCommands } from "./commands";
 import { discoverAgents } from "./discovery";
-import { registerAgentTool, setStatusIdle } from "./tool";
+import { registerAgentTool } from "./tool";
 import type { AgentConfig } from "./types";
 
 export default function (pi: ExtensionAPI) {
@@ -27,9 +27,6 @@ export default function (pi: ExtensionAPI) {
 			pi.setSessionName(sessionName);
 		}
 		process.env.BASECAMP_SESSION_NAME = sessionName;
-
-		// Status line: idle with agent count
-		setStatusIdle(ctx, agents.length);
 
 		if (agents.length > 0) {
 			ctx.ui.notify(`basecamp: ${agents.length} agent(s) discovered`, "info");
