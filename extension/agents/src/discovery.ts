@@ -85,9 +85,9 @@ function loadAgentsFromDir(
     const { frontmatter: fm, body } = parseFrontmatter(content);
     if (!fm.name || !fm.description) continue;
 
-    // Model is required: "inherit", "default", or an explicit model string
-    if (!fm.model) continue;
-    const model: ModelStrategy = fm.model as ModelStrategy;
+    // Model strategy: "inherit", "default", or an explicit model string.
+    // Missing model defaults to "default" (pi's default model).
+    const model: ModelStrategy = (fm.model as ModelStrategy) || "default";
 
     // Extensions field: absent = all, empty value = none, csv = allowlist
     let extensions: string[] | undefined;
