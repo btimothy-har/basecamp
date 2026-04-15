@@ -18,7 +18,7 @@ import * as fsSync from "node:fs";
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
 import { type SessionState, resolveSessionState } from "../../config";
-import type { GitStatusResult } from "./prompt";
+import type { GitStatus } from "../../context";
 import { getOrCreateWorktree, registerWorktreeGuards } from "./worktree";
 
 // ---------------------------------------------------------------------------
@@ -26,9 +26,9 @@ import { getOrCreateWorktree, registerWorktreeGuards } from "./worktree";
 // ---------------------------------------------------------------------------
 
 let state: SessionState | null = null;
-let gitStatus: GitStatusResult | null = null;
+let gitStatus: GitStatus | null = null;
 
-export function getGitStatus(): GitStatusResult | null {
+export function getGitStatus(): GitStatus | null {
 	return gitStatus;
 }
 
@@ -83,7 +83,7 @@ async function resolveGitInfo(
 async function collectGitStatus(
 	pi: ExtensionAPI,
 	dir: string,
-): Promise<GitStatusResult | null> {
+): Promise<GitStatus | null> {
 	try {
 		const branchResult = await pi.exec("git", ["branch", "--show-current"], {
 			cwd: dir,
@@ -140,6 +140,10 @@ export function registerSession(pi: ExtensionAPI): void {
 	});
 	pi.registerFlag("style", {
 		description: "Override working style (e.g. engineering, advisor)",
+		type: "string",
+	});
+	pi.registerFlag("agent-prompt", {
+		description: "Agent prompt file — replaces working style + system.md (used by worker spawner)",
 		type: "string",
 	});
 

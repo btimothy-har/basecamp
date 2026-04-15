@@ -6,7 +6,7 @@ import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 
 import { getState } from "../../core/src/session";
 import { discoverAgents } from "./discovery";
-import { registerWorkerTool } from "./tool";
+import { registerWorkerTool, setStatusIdle } from "./tool";
 import { registerAgentCommands } from "./commands";
 import { closeWorker } from "./worker-index";
 import type { AgentConfig } from "./types";
@@ -15,7 +15,7 @@ export default function (pi: ExtensionAPI) {
 	let agents: AgentConfig[] = [];
 	let sessionName = "";
 
-	// --- Agent discovery and session naming ---
+	// --- Agent discovery, session naming, status line ---
 	pi.on("session_start", async (_event, ctx) => {
 		agents = discoverAgents(ctx.cwd);
 
@@ -28,6 +28,9 @@ export default function (pi: ExtensionAPI) {
 			pi.setSessionName(sessionName);
 		}
 		process.env.BASECAMP_SESSION_NAME = sessionName;
+
+		// Status line: idle with agent count
+		setStatusIdle(ctx, agents.length);
 
 		if (agents.length > 0) {
 			ctx.ui.notify(

@@ -1,8 +1,9 @@
 /**
- * Prompt Assembly — builds the basecamp system prompt layers.
+ * Prompt Assembly — builds the complete basecamp system prompt.
  *
- * Registers before_agent_start hook to prepend basecamp's prompt
- * before pi's default system prompt each turn.
+ * Fully replaces pi's default system prompt via the before_agent_start
+ * hook. Tools and skills are sourced dynamically from pi's APIs
+ * (getAllTools, getCommands) so we don't lose those sections.
  *
  * Reads bundled prompt files (environment.md, system.md, working styles)
  * and assembles them with runtime context (env block, git status).
@@ -15,6 +16,18 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { type SessionState, getTimezone, getLogseqGraph } from "../../config";
+import {
+	type GitStatus,
+	type ToolInfo,
+	type SkillInfo,
+	type ContextFile,
+	buildWorktreeWarning,
+	buildProjectContext,
+	buildGitContext,
+	buildToolsContext,
+	buildSkillsContext,
+	discoverContextFiles,
+} from "../../context";
 import { getState, getGitStatus } from "./session";
 
 // ---------------------------------------------------------------------------
@@ -32,7 +45,7 @@ const USER_STYLES_DIR = path.join(USER_PROMPTS_DIR, "working_styles");
 // File loading (user override → package default)
 // ---------------------------------------------------------------------------
 
-function loadPromptFile(filename: string): string {
+export function loadPromptFile(filename: string): string {
 	// Check user override
 	const userPath = path.join(USER_PROMPTS_DIR, filename);
 	try {
@@ -77,18 +90,9 @@ function buildEnvBlock(state: SessionState): string {
 		`Working directory: ${state.primaryDir}`,
 	];
 
-	if (state.worktreeDir) {
-		lines.push(`Worktree directory: ${state.worktreeDir}`);
-		if (state.worktreeBranch) {
-			lines.push(`Worktree branch: ${state.worktreeBranch}`);
-		}
-		lines.push("");
-		lines.push(
-			"⚠ WORKTREE ACTIVE: All file operations (read, edit, write, bash) MUST target the " +
-			"worktree directory using absolute paths. The working directory contains the main " +
-			"branch checkout and must not be modified. Bash commands execute in the worktree " +
-			"directory automatically.",
-		);
+	const worktreeWarning = buildWorktreeWarning(state);
+	if (worktreeWarning) {
+		lines.push(worktreeWarning);
 	}
 
 	if (state.secondaryDirs.length > 0) {
@@ -125,55 +129,36 @@ function buildEnvBlock(state: SessionState): string {
 }
 
 // ---------------------------------------------------------------------------
-// Git status snapshot
-// ---------------------------------------------------------------------------
-
-export interface GitStatusResult {
-	branch: string | null;
-	mainBranch: string;
-	status: string;
-	recentCommits: string;
-}
-
-function formatGitStatus(git: GitStatusResult): string {
-	const lines = [
-		"gitStatus: This is the git status at the start of the conversation. " +
-		"Note that this status is a snapshot in time, and will not update during the conversation.",
-		`Current branch: ${git.branch ?? "unknown"}`,
-		"",
-		`Main branch (you will usually use this for PRs): ${git.mainBranch}`,
-		"",
-		"Status:",
-		git.status || "(clean)",
-		"",
-		"Recent commits:",
-		git.recentCommits,
-	];
-	return lines.join("\n");
-}
-
-// ---------------------------------------------------------------------------
 // Full assembly
 // ---------------------------------------------------------------------------
 
 export interface AssembleOptions {
 	state: SessionState;
-	gitStatus: GitStatusResult | null;
+	gitStatus: GitStatus | null;
+	tools: ToolInfo[];
+	skills: SkillInfo[];
+	contextFiles: ContextFile[];
+	/** Agent prompt — when set, replaces working style + system.md (worker mode) */
+	agentPrompt?: string;
 }
 
 /**
- * Assemble the basecamp prompt content to prepend before pi's default system prompt.
+ * Assemble the complete basecamp system prompt.
+ *
+ * This fully replaces pi's default system prompt. Tools, skills,
+ * and context files are sourced dynamically so we control placement.
  *
  * Layer order:
  *   1. Env block (runtime context)
  *   2. environment.md (tool/environment guidelines)
- *   3. Git status snapshot
- *   4. Working style (engineering/advisor)
- *   5. system.md (working principles, task management)
- *   6. Project context (if configured)
+ *   3. Working style + system.md — OR agent prompt (workers)
+ *      (agent prompt replaces both when --agent-prompt is passed)
+ *   5. Available tools + skills
+ *   6. Project context (basecamp context + CLAUDE.md/AGENTS.md)
+ *   7. Git status snapshot
  */
 export function assemblePrompt(opts: AssembleOptions): string {
-	const { state, gitStatus } = opts;
+	const { state, gitStatus, tools, skills, contextFiles } = opts;
 
 	const parts: string[] = [];
 
@@ -186,26 +171,41 @@ export function assemblePrompt(opts: AssembleOptions): string {
 		parts.push(environment);
 	}
 
-	// 3. Git status
+	// 3. Working style + system.md — OR agent prompt (workers)
+	if (opts.agentPrompt) {
+		// Agent prompt replaces both working style and system.md
+		parts.push(opts.agentPrompt);
+	} else {
+		const style = loadWorkingStyle(state.workingStyle).trim();
+		if (style) {
+			parts.push(style);
+		}
+
+		const system = loadPromptFile("system.md").trim();
+		if (system) {
+			parts.push(system);
+		}
+	}
+
+	// 5. Available tools + skills
+	const toolsBlock = buildToolsContext(tools);
+	if (toolsBlock) {
+		parts.push(toolsBlock);
+	}
+	const skillsBlock = buildSkillsContext(skills);
+	if (skillsBlock) {
+		parts.push(skillsBlock);
+	}
+
+	// 6. Project context (basecamp context + CLAUDE.md/AGENTS.md)
+	const projectContext = buildProjectContext(state, contextFiles);
+	if (projectContext) {
+		parts.push(projectContext);
+	}
+
+	// 7. Git status
 	if (gitStatus) {
-		parts.push(formatGitStatus(gitStatus));
-	}
-
-	// 4. Working style
-	const style = loadWorkingStyle(state.workingStyle).trim();
-	if (style) {
-		parts.push(style);
-	}
-
-	// 5. System prompt
-	const system = loadPromptFile("system.md").trim();
-	if (system) {
-		parts.push(system);
-	}
-
-	// 6. Project context
-	if (state.contextContent) {
-		parts.push(`# Project Context\n\n${state.contextContent}`);
+		parts.push(buildGitContext(gitStatus));
 	}
 
 	return parts.join("\n\n");
@@ -216,14 +216,48 @@ export function assemblePrompt(opts: AssembleOptions): string {
 // ---------------------------------------------------------------------------
 
 export function registerPrompt(pi: ExtensionAPI): void {
-	pi.on("before_agent_start", async (event, _ctx) => {
-		const basecampPrompt = assemblePrompt({
-			state: getState(),
+	pi.on("before_agent_start", async (_event, ctx) => {
+		const state = getState();
+
+		// Collect active tools from pi
+		const activeNames = new Set(pi.getActiveTools());
+		const tools = pi.getAllTools()
+			.filter((t) => activeNames.has(t.name))
+			.map((t) => ({ name: t.name, description: t.description }));
+
+		// Collect skills from pi
+		const skills = pi.getCommands()
+			.filter((c) => c.source === "skill")
+			.map((c) => ({
+				name: c.name,
+				description: c.description,
+				sourceInfo: c.sourceInfo,
+			}));
+
+		// Discover CLAUDE.md / AGENTS.md from cwd
+		const contextFiles = discoverContextFiles(ctx.cwd);
+
+		// Agent prompt: replaces working style + system.md for workers
+		const agentPromptFile = pi.getFlag("agent-prompt") as string | undefined;
+		let agentPrompt: string | undefined;
+		if (agentPromptFile) {
+			try {
+				agentPrompt = fs.readFileSync(agentPromptFile, "utf-8").trim();
+			} catch {
+				// File not found or unreadable — fall through to normal prompt
+			}
+		}
+
+		const prompt = assemblePrompt({
+			state,
 			gitStatus: getGitStatus(),
+			tools,
+			skills,
+			contextFiles,
+			agentPrompt,
 		});
 
-		return {
-			systemPrompt: basecampPrompt + "\n\n" + event.systemPrompt,
-		};
+		// Fully replace pi's default system prompt
+		return { systemPrompt: prompt };
 	});
 }
