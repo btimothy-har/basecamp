@@ -1,6 +1,6 @@
 ---
 name: data-warehousing
-description: This skill should be used when designing, building, or reviewing data warehouse models with dbt. Keywords: dbt, fact table, dimension, data warehouse, mart, schema.
+description: "This skill should be used when designing, building, or reviewing data warehouse models with dbt. Keywords: dbt, fact table, dimension, data warehouse, mart, schema."
 ---
 
 # Data Warehousing

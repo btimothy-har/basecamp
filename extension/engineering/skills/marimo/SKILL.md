@@ -1,6 +1,6 @@
 ---
 name: marimo
-description: This skill should be used when creating or editing marimo reactive notebooks. Keywords: marimo, reactive notebook, data app, mo.ui.
+description: "This skill should be used when creating or editing marimo reactive notebooks. Keywords: marimo, reactive notebook, data app, mo.ui."
 ---
 
 # Marimo Reactive Notebooks

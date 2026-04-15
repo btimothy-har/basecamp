@@ -1,6 +1,6 @@
 ---
 name: python-development
-description: This skill should be used when writing or modifying .py files, or managing Python dependencies with uv. Keywords: Python script, type hints, uv, pydantic, best practices.
+description: "This skill should be used when writing or modifying .py files, or managing Python dependencies with uv. Keywords: Python script, type hints, uv, pydantic, best practices."
 ---
 
 # Python Development

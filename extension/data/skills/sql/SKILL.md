@@ -1,6 +1,6 @@
 ---
 name: sql
-description: This skill should be used when writing or modifying .sql files, designing database schemas, or optimizing queries. Keywords: SQL query, CTE, BigQuery, PostgreSQL, schema, table.
+description: "This skill should be used when writing or modifying .sql files, designing database schemas, or optimizing queries. Keywords: SQL query, CTE, BigQuery, PostgreSQL, schema, table."
 ---
 
 # SQL Development
