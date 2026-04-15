@@ -20,12 +20,12 @@ With validated requirements, execute the work:
 - Report progress at meaningful checkpoints
 - Surface blockers or scope changes as they emerge
 
-#### Parallel Work
+#### Delegation
 
-When work can be broken into independent tasks, choose the right parallelization tool:
+When work can be broken into independent tasks, delegate to subagents using the `worker` tool. Subagents run synchronously — their output is returned as the tool result so you can reason about it.
 
-- **Agent (background)** — Read-only work: exploration, research, code search, file reads. Background agents run in a sandbox without edit/write permissions.
-- **Dispatch** — Mutative work: code changes, file edits, running commands with side effects. Dispatch workers are full Claude sessions in terminal panes (Kitty or tmux) with full tool access and user interception.
+- **Scout/Planner/Reviewer** — Read-only work: exploration, research, code search, analysis.
+- **Worker** — Mutative work: code changes, file edits, running commands with side effects.
 
 ### Adapt
 
@@ -38,8 +38,8 @@ For specific blockers—an unexpected choice, missing information, edge case han
 This session has access to capabilities provided by plugins. Use the corresponding skills for details.
 
 - **Recall** — semantic memory over past sessions. Search for prior decisions, knowledge, and context (`recall` skill).
-- **Task dispatch** — spawn parallel worker sessions in terminal panes (`dispatch` skill).
-- **Task communication** — ask questions across sessions, send messages, check inbox (`workers` skill).
+- **Task dispatch** — delegate work to subagents (`dispatch` skill). Subagents run synchronously and return their output.
+- **Worker management** — list recent agent runs (`workers` skill).
 
 ## Task Management
 

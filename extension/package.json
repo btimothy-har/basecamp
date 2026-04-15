@@ -4,8 +4,8 @@
   "description": "Basecamp extension for pi — session lifecycle, git protection, observer integration, engineering skills.",
   "keywords": ["pi-package"],
   "pi": {
-    "extensions": ["./**/src"],
-    "skills": ["./**/skills"],
+    "extensions": ["./core/src", "./observer/src", "./agents/src", "./git/src"],
+    "skills": ["./core/skills", "./observer/skills", "./data/skills", "./engineering/skills"],
     "prompts": ["./core/prompts"]
   },
   "peerDependencies": {

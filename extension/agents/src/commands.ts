@@ -16,10 +16,9 @@ function formatAgentDetail(agent: AgentConfig): string {
     agent.description,
     "",
     `**Source:** ${agent.source} — \`${agent.filePath}\``,
-    `**Default mode:** ${agent.mode}`,
   ];
 
-  if (agent.model) lines.push(`**Model:** ${agent.model}`);
+  lines.push(`**Model:** ${agent.model}`);
   if (agent.thinking) lines.push(`**Thinking:** ${agent.thinking}`);
   if (agent.tools) lines.push(`**Tools:** ${agent.tools.join(", ")}`);
   if (agent.skills) lines.push(`**Skills:** ${agent.skills.join(", ")}`);
@@ -67,8 +66,7 @@ export function registerAgentCommands(
 
       const labels = agents.map((a) => {
         const badge = badges[a.source] ?? a.source;
-        const mode = a.mode === "background" ? " ⚙" : "";
-        return `${a.name} [${badge}]${mode} — ${a.description}`;
+        return `${a.name} [${badge}] — ${a.description}`;
       });
 
       const choice = await ctx.ui.select("Agents", labels);
@@ -94,13 +92,12 @@ export function registerAgentCommands(
 
       const lines = workers.map((w) => {
         const agentLabel = w.agent ? `(${w.agent})` : "(ad-hoc)";
-        const icon = w.mode === "pane" ? "🖥" : "⚙";
-        const statusColor =
-          w.status === "running" ? w.status : `~~${w.status}~~`;
+        const statusIcon = w.status === "running" ? "⏳" : w.status === "completed" ? "✅" : "❌";
+        const modelLabel = w.model ?? "default";
         const elapsed = Math.round((Date.now() - w.createdAt) / 1000);
         const age =
           elapsed < 60 ? `${elapsed}s` : `${Math.round(elapsed / 60)}m`;
-        return `${icon} **${w.name}** ${agentLabel} [${statusColor}] ${w.model} — ${age} ago`;
+        return `${statusIcon} **${w.name}** ${agentLabel} [${w.status}] ${modelLabel} — ${age} ago`;
       });
 
       ctx.ui.notify(lines.join("\n"), "info");

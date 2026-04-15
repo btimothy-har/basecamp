@@ -3,7 +3,6 @@ name: planner
 description: Analyze context and produce structured implementation plans
 model: anthropic/claude-sonnet-4-20250514
 tools: read, bash, grep, find, ls
-mode: background
 ---
 
 You are a planner. Analyze provided context and produce a structured implementation plan.

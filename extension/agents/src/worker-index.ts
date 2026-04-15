@@ -2,7 +2,7 @@
  * File-backed worker index with atomic writes and auto-pruning.
  *
  * Stores worker metadata in ~/.basecamp/workers.json.
- * Pruning removes closed entries older than 24 hours on every read.
+ * Pruning removes completed/failed entries older than 24 hours on every read.
  */
 
 import * as fs from "node:fs";
@@ -42,14 +42,24 @@ export function addWorker(entry: WorkerEntry): void {
   writeIndex(entries);
 }
 
-export function closeWorker(name: string): void {
+export function completeWorker(
+  name: string,
+  status: "completed" | "failed",
+  exitCode?: number,
+): void {
   const entries = readIndex();
   const entry = entries.find((e) => e.name === name);
-  if (entry && entry.status !== "closed") {
-    entry.status = "closed";
+  if (entry && entry.status === "running") {
+    entry.status = status;
     entry.closedAt = Date.now();
+    entry.exitCode = exitCode;
     writeIndex(entries);
   }
+}
+
+/** @deprecated Use completeWorker instead. Kept for session_shutdown cleanup. */
+export function closeWorker(name: string): void {
+  completeWorker(name, "completed");
 }
 
 export function listWorkers(filter?: {

@@ -6,7 +6,7 @@ argument-hint: "<task description>"
 
 # Dispatch
 
-Delegate a task to a worker agent using the `worker` tool.
+Delegate a task to a subagent using the `worker` tool. The subagent runs synchronously — its output is returned as the tool result.
 
 ## Input
 
@@ -16,7 +16,7 @@ $ARGUMENTS
 
 ### 1. Choose an agent (or go ad-hoc)
 
-Review available agents with `worker({ action: "list" })` or `/agents`.
+Review available agents with `/agents`.
 
 | Agent | Best for |
 |-------|----------|
@@ -28,7 +28,7 @@ Review available agents with `worker({ action: "list" })` or `/agents`.
 
 ### 2. Build the task
 
-Write a **self-contained brief**. The worker has no conversation history — the task must carry everything:
+Write a **self-contained brief**. The subagent has no conversation history — the task must carry everything:
 
 - Clear, specific objective
 - Relevant file paths, modules, or context already discovered
@@ -43,35 +43,28 @@ Using the `worker` tool:
 worker({ agent: "scout", task: "Investigate the auth module — find token refresh flow, session management, and middleware chain. Key entry: src/auth/index.ts" })
 ```
 
-For complex hands-on work (visible Kitty pane, user can observe):
-```
-worker({ agent: "worker", task: "...", mode: "pane" })
-```
-
-For background investigation or review:
-```
-worker({ agent: "scout", task: "...", mode: "background" })
-```
-
 Ad-hoc (no agent definition):
 ```
 worker({ task: "Fix the null check in auth.ts:142", name: "fix-null" })
 ```
 
-### 4. Verify
+The tool blocks until the subagent completes and returns its output.
 
-```
-worker({ action: "list" })
-```
+### 4. Use the result
 
-## Mode selection
-
-- **pane** (default for `worker` agent) — visible Kitty window. User can observe, intervene. Best for implementation tasks.
-- **background** (default for `scout`, `planner`, `reviewer`) — headless. Best for investigation, analysis, review tasks that don't need user interaction.
+The subagent's full output is returned as the tool result. Reason about the findings, incorporate them into your response, or use them to plan next steps.
 
 ## Model selection
 
-Workers inherit the agent's default model. Override when needed:
+Each agent declares a model strategy in its frontmatter:
+
+| Strategy | Meaning |
+|----------|----------|
+| **inherit** | Uses the parent session's current model. Can be overridden via `model` param. |
+| **default** | Uses pi's default model. Cannot be overridden. |
+| *explicit* (e.g. `anthropic/claude-haiku-4-5`) | Always uses that model. Cannot be overridden. |
+
+Override only works with `inherit` agents:
 
 ```
 worker({ agent: "worker", task: "...", model: "anthropic/claude-opus-4-20250514" })

@@ -45,6 +45,10 @@ function triggerIngest(
 	});
 }
 
+export default function (pi: ExtensionAPI): void {
+	registerObserver(pi);
+}
+
 export function registerObserver(pi: ExtensionAPI): void {
 	pi.on("session_before_compact", async (_event, ctx) => {
 		triggerIngest(pi, ctx, true);

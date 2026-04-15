@@ -11,7 +11,7 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { fileURLToPath } from "node:url";
-import type { AgentConfig } from "./types.ts";
+import type { AgentConfig, ModelStrategy } from "./types.ts";
 
 const USER_AGENTS_DIR = path.join(os.homedir(), ".basecamp", "agents");
 const BUILTIN_AGENTS_DIR = path.join(
@@ -85,6 +85,10 @@ function loadAgentsFromDir(
     const { frontmatter: fm, body } = parseFrontmatter(content);
     if (!fm.name || !fm.description) continue;
 
+    // Model is required: "inherit", "default", or an explicit model string
+    if (!fm.model) continue;
+    const model: ModelStrategy = fm.model as ModelStrategy;
+
     // Extensions field: absent = all, empty value = none, csv = allowlist
     let extensions: string[] | undefined;
     if (fm.extensions !== undefined) {
@@ -94,12 +98,11 @@ function loadAgentsFromDir(
     agents.push({
       name: fm.name,
       description: fm.description,
-      model: fm.model || undefined,
+      model,
       thinking: fm.thinking || undefined,
       tools: parseCsv(fm.tools),
       extensions,
       skills: parseCsv(fm.skills),
-      mode: fm.mode === "background" ? "background" : "pane",
       systemPrompt: body,
       source,
       filePath,

@@ -3,7 +3,6 @@ name: scout
 description: Fast codebase reconnaissance — returns structured findings for handoff
 model: anthropic/claude-haiku-4-5
 tools: read, bash, grep, find, ls
-mode: background
 ---
 
 You are a scout. Quickly investigate a codebase and return structured findings.

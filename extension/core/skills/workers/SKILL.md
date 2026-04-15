@@ -1,6 +1,6 @@
 ---
 name: workers
-description: "Monitor and manage dispatched worker agents. Invoke when checking on workers, listing active sessions, or coordinating dispatched tasks."
+description: "Monitor and manage dispatched worker agents. Invoke when checking on workers or reviewing recent agent runs."
 ---
 
 # Worker Management
@@ -23,19 +23,12 @@ Browse available agent definitions: `/agents`
 ## Worker Lifecycle
 
 ```
-running → closed
+running → completed
+running → failed
 ```
 
-- **running** — worker is active (Kitty pane or background process)
-- **closed** — worker session ended (marked automatically on shutdown)
+- **running** — subagent process is active
+- **completed** — subagent finished successfully (exit code 0)
+- **failed** — subagent exited with an error
 
-## Pane Workers
-
-Pane workers run in visible Kitty windows. The user can:
-- See the worker's output in real time
-- Type into the worker's session to redirect or clarify
-- Close the pane to terminate the worker
-
-## Background Workers
-
-Background workers run as headless `pi -p` processes. Check their output logs in the worker's temp directory (shown when dispatched).
+Workers run synchronously — the `worker` tool blocks until the subagent completes and returns its output as the tool result.
