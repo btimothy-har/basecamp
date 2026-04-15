@@ -8,7 +8,7 @@ Two packages, one pi extension:
 
 | Package | Directory | Purpose |
 |---------|-----------|---------|
-| `basecamp-core` | `core/` | CLI tool — project config, prompt assembly, session launch |
+| `basecamp-core` | `core/` | CLI tool — project config and setup |
 | `basecamp-observer` | `observer/` | Semantic memory — session ingestion, LLM extraction, vector search, `recall` CLI |
 
 See `core/CLAUDE.md` and `observer/CLAUDE.md` for package-specific architecture and decisions.
@@ -17,22 +17,18 @@ See `core/CLAUDE.md` and `observer/CLAUDE.md` for package-specific architecture 
 
 ```
 core/src/core/
-├── main.py                     # Click entry point
-├── cli/                        # One module per command (launch, open, worker, etc.)
-├── config/project.py           # ProjectConfig Pydantic model
-├── git/
-│   ├── repo.py                 # Git utilities (is_git_repo, get_repo_name, etc.)
-│   └── worktrees.py            # Worktree CRUD (create, list, remove, get_or_create)
-├── prompts/
-│   ├── system.py               # Prompt assembly pipeline
-│   ├── working_styles.py       # Style discovery and loading
-│   ├── project_context.py      # Context file resolution
-│   ├── _system_prompts/        # Package defaults (environment.md, system.md)
-│   ├── _working_styles/        # Package defaults (engineering.md, advisor.md)
-│   └── logseq/                 # Logseq session prompts (reflect, plan)
+├── main.py                     # Click entry point (setup, project commands)
+├── cli/
+│   ├── project.py              # Interactive project CRUD
+│   └── setup.py                # Environment setup (prerequisites, scaffolding)
+├── config/
+│   ├── project.py              # ProjectConfig Pydantic model, load/save
+│   └── directories.py          # Directory resolution and validation
 ├── settings.py                 # File-backed config with locking
 ├── constants.py                # Path constants
-└── exceptions.py               # Exception hierarchy
+├── exceptions.py               # Exception hierarchy
+├── ui.py                       # Console output helpers
+└── utils.py                    # Shared utilities
 
 observer/src/observer/
 ├── cli/
@@ -52,7 +48,35 @@ observer/src/observer/
 ├── services/                   # DB, config, chroma, migrations, registration
 └── migrations/                 # Schema migrations
 
-extension/                      # Pi extension — system prompts, skills, agents, hooks
+extension/                      # Pi extension
+├── package.json                # Extension manifest (extensions, skills, prompts)
+├── config.ts                   # Config reader (~/.basecamp/config.json)
+├── context.ts                  # Context assembly (git, tools, skills, projects)
+├── core/
+│   ├── src/
+│   │   ├── session.ts          # Session bootstrap (flags, env, worktree, cwd)
+│   │   ├── prompt.ts           # System prompt assembly pipeline
+│   │   ├── worktree.ts         # Worktree CRUD + bash/tool guards
+│   │   ├── handoff.ts          # /handoff slash command
+│   │   ├── open.ts             # /open slash command
+│   │   └── system-prompts/     # Bundled prompts (environment, system, styles)
+│   ├── skills/                 # discovery skill
+│   └── prompts/                # Logseq session prompts (reflect, plan)
+├── agents/
+│   ├── src/
+│   │   ├── tool.ts             # Agent dispatch tool registration
+│   │   ├── executor.ts         # Subagent process management
+│   │   ├── discovery.ts        # Agent definition discovery (project, user, builtin)
+│   │   ├── commands.ts         # /agents slash command
+│   │   ├── skills.ts           # Skill discovery for subagents
+│   │   └── types.ts            # Agent/skill type definitions
+│   └── builtin/                # Built-in agent definitions (scout, worker, etc.)
+├── git/
+│   └── src/                    # Git guards, PR workflow commands
+├── observer/
+│   └── src/                    # Observer integration (session ingest trigger)
+├── engineering/skills/         # Code review, context gathering, python dev
+└── data/skills/                # SQL, data warehousing
 
 core/tests/                     # pytest suite for basecamp-core
 ```
@@ -61,11 +85,9 @@ core/tests/                     # pytest suite for basecamp-core
 
 ### Prompt System
 
-The system prompt is fully replaced, not appended. This gives complete control over Claude's behavior but means basecamp must provide everything Claude Code's default prompt would (environment context, tool guidance, etc.). Claude Code still appends its own tool definitions section — that's the one thing we can't control.
+The system prompt is fully replaced, not appended. This gives complete control over the agent's behavior but means basecamp must provide everything pi's default prompt would (environment context, tool guidance, etc.). Pi's tool definitions and skill listings are sourced dynamically via `getAllTools()`/`getCommands()` and included in the assembled prompt.
 
-Prompts are layered (environment → working style → system → project context) so that each concern is independently overridable. Project context is injected via a SessionStart hook rather than included in the system prompt — this places it alongside CLAUDE.md in the conversation, not buried in the system prompt.
-
-Assembled prompts are persisted to `~/.basecamp/.cached/{project}/prompt.md` so dispatch workers can inherit the parent session's prompt without re-assembling.
+Prompts are layered (environment → working style → system → project context → tools/skills) so that each concern is independently overridable. Project context is assembled directly into the system prompt alongside all other layers.
 
 ### Extension
 
@@ -73,7 +95,7 @@ All skills, agents, hooks, and system prompts are bundled in a single pi extensi
 
 ### Environment Variable Chain
 
-Session launch sets `BASECAMP_*` env vars, then forwards them through the terminal multiplexer (tmux/Kitty) so they survive the pane boundary. Dispatch workers bulk-forward all `BASECAMP_*` vars from the parent process — this means new vars added to launch automatically propagate without cherry-picking.
+Session launch sets `BASECAMP_*` env vars on `process.env`. Subagents spawned via the `agent` tool inherit these automatically as child processes.
 
 `BASECAMP_REPO` is always the git repo name, never a worktree label or directory name. This ensures observer can scope searches consistently regardless of whether the session is in a worktree.
 
@@ -91,5 +113,5 @@ Worktrees live in `~/.worktrees/<repo>/<label>/` rather than inside the repo to 
 
 - **Run**: `uv run pytest` from repo root
 - **Config**: root `pyproject.toml` — `testpaths = ["core/tests"]`, `pythonpath = ["core/src"]`
-- **Core tests** use temporary git repos (`temp_git_repo` fixture) and mock terminal backends. Observer is not required — `TESTING=1` is set by pytest config.
+- **Core tests** cover settings and config. `TESTING=1` is set by pytest config.
 - **Observer tests** are in `observer/tests/` (not currently run from root pytest config). Core tests don't depend on observer.
