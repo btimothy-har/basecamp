@@ -30,10 +30,6 @@ core/src/core/
 │   ├── _system_prompts/        # Package defaults (environment.md, system.md)
 │   ├── _working_styles/        # Package defaults (engineering.md, advisor.md)
 │   └── logseq/                 # Logseq session prompts (reflect, plan)
-├── worker/
-│   ├── models.py               # WorkerEntry Pydantic model, WorkerStatus enum
-│   ├── index.py                # File-backed per-project worker index with locking
-│   └── operations.py           # Worker lifecycle: create, dispatch, close, list
 ├── settings.py                 # File-backed config with locking
 ├── constants.py                # Path constants
 └── exceptions.py               # Exception hierarchy

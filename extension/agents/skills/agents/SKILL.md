@@ -1,12 +1,12 @@
 ---
-name: dispatch
-description: "Dispatch worker agents via the worker tool. Invoke when work can be parallelized into independent tasks, or when the user asks to delegate work."
+name: agents
+description: "Dispatch subagents via the agent tool. Invoke when work can be parallelized into independent tasks, or when the user asks to delegate work."
 argument-hint: "<task description>"
 ---
 
-# Dispatch
+# Agents
 
-Delegate a task to a subagent using the `worker` tool. The subagent runs synchronously — its output is returned as the tool result.
+Delegate tasks to subagents using the `agent` tool. Subagents run synchronously — output is returned as the tool result.
 
 ## Input
 
@@ -14,9 +14,9 @@ $ARGUMENTS
 
 ## Process
 
-### 1. Choose an agent (or go ad-hoc)
+### 1. Choose an agent
 
-Review available agents with `/agents`.
+Browse available agents with `/agents`.
 
 | Agent | Best for |
 |-------|----------|
@@ -24,7 +24,13 @@ Review available agents with `/agents`.
 | **planner** | Breaking down requirements into implementation steps |
 | **worker** | Hands-on code changes, refactors, feature implementation |
 | **reviewer** | Reviewing diffs, checking code quality |
+| **docs-reviewer** | Documentation accuracy and completeness |
+| **security-reviewer** | Injection, auth, secrets, input validation |
+| **test-reviewer** | Test coverage gaps, edge cases, assertion design |
+| **simplification-reviewer** | Complexity reduction, redundancy, clarity |
 | *(ad-hoc)* | One-off tasks that don't fit a predefined agent |
+
+Agents are discovered from three sources: project (`.basecamp/agents/`), user (`~/.basecamp/agents/`), and builtin definitions.
 
 ### 2. Build the task
 
@@ -37,15 +43,15 @@ Write a **self-contained brief**. The subagent has no conversation history — t
 
 ### 3. Dispatch
 
-Using the `worker` tool:
+Using the `agent` tool:
 
 ```
-worker({ agent: "scout", task: "Investigate the auth module — find token refresh flow, session management, and middleware chain. Key entry: src/auth/index.ts" })
+agent({ agent: "scout", task: "Investigate the auth module — find token refresh flow, session management, and middleware chain. Key entry: src/auth/index.ts" })
 ```
 
 Ad-hoc (no agent definition):
 ```
-worker({ task: "Fix the null check in auth.ts:142", name: "fix-null" })
+agent({ task: "Fix the null check in auth.ts:142", name: "fix-null" })
 ```
 
 The tool blocks until the subagent completes and returns its output.
@@ -59,15 +65,15 @@ The subagent's full output is returned as the tool result. Reason about the find
 Each agent declares a model strategy in its frontmatter:
 
 | Strategy | Meaning |
-|----------|----------|
+|----------|---------|
 | **inherit** | Uses the parent session's current model. Can be overridden via `model` param. |
 | **default** | Uses pi's default model. Cannot be overridden. |
-| *explicit* (e.g. `anthropic/claude-haiku-4-5`) | Always uses that model. Cannot be overridden. |
+| *explicit* (e.g. `claude-sonnet-4-20250514`) | Always uses that model. Cannot be overridden. |
 
 Override only works with `inherit` agents:
 
 ```
-worker({ agent: "worker", task: "...", model: "anthropic/claude-opus-4-20250514" })
+agent({ agent: "worker", task: "...", model: "anthropic/claude-opus-4-20250514" })
 ```
 
 Use stronger models for complex architectural work. Use faster models for simple investigation.

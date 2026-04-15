@@ -6,7 +6,7 @@
  *
  * Hooks:
  *   session_before_compact / session_shutdown → full pipeline (ingest --process)
- *   tool_call (worker tool dispatch) → ingest only (no --process)
+ *   tool_call (agent tool dispatch) → ingest only (no --process)
  */
 
 import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-agent";
@@ -59,7 +59,7 @@ export function registerObserver(pi: ExtensionAPI): void {
 	});
 
 	pi.on("tool_call", async (event, ctx) => {
-		if (event.toolName !== "worker") return;
+		if (event.toolName !== "agent") return;
 		const input = event.input as { action?: string; task?: string };
 		if (input.task && !input.action) {
 			triggerIngest(pi, ctx, false);
