@@ -1,11 +1,11 @@
 /**
- * Skill resolution for worker agents.
+ * Skill resolution for agents.
  *
  * Resolves skill names declared in agent frontmatter to file paths
  * using pi's loadSkills() API, reads their content, and injects
  * them into the agent's system prompt as XML blocks.
  *
- * Workers pass --no-skills to suppress pi's own skill discovery
+ * Subagents pass --no-skills to suppress pi's own skill discovery
  * since skills are already baked into the prompt.
  */
 

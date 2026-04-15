@@ -1,9 +1,8 @@
 /**
- * Worker tool — registered as a pi tool the LLM calls to dispatch subagents.
+ * Agent tool — registered as a pi tool the LLM calls to dispatch subagents.
  *
- * All workers run synchronously as background processes. The subagent's
- * output is returned as the tool result so the parent LLM can reason
- * about it.
+ * Subagents run synchronously as child processes. The subagent's output
+ * is returned as the tool result so the parent LLM can reason about it.
  *
  * Includes:
  *   - Status line updates (option A)
@@ -11,8 +10,7 @@
  *
  * Usage:
  *   { agent: "scout", task: "..." }              → run named agent
- *   { task: "Fix the bug" }                      → ad-hoc (no agent)
- *   { action: "list" }                           → list recent workers
+ *   { task: "Fix the bug" }                      → ad-hoc (no agent definition)
  */
 
 import { randomUUID } from "node:crypto";
@@ -22,10 +20,9 @@ import * as path from "node:path";
 import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-agent";
 import { getMarkdownTheme } from "@mariozechner/pi-coding-agent";
 import { Container, Markdown, Spacer, Text } from "@mariozechner/pi-tui";
-import type { AgentConfig, ModelStrategy, WorkerDetails, ToolCallRecord } from "./types.ts";
-import { WorkerToolParams, DEFAULT_WORKER_MAX_DEPTH } from "./types.ts";
-import { spawnWorker } from "./executor.ts";
-import { addWorker, completeWorker, listWorkers } from "./worker-index.ts";
+import type { AgentConfig, ModelStrategy, AgentDetails, ToolCallRecord } from "./types.ts";
+import { AgentToolParams, DEFAULT_AGENT_MAX_DEPTH } from "./types.ts";
+import { spawnAgent } from "./executor.ts";
 
 // ============================================================================
 // Model Resolution
@@ -51,28 +48,28 @@ function resolveModel(
 // ============================================================================
 
 function checkDepth(): void {
-  const depth = Number(process.env.BASECAMP_WORKER_DEPTH ?? "0");
+  const depth = Number(process.env.BASECAMP_AGENT_DEPTH ?? "0");
   const max = Number(
-    process.env.BASECAMP_WORKER_MAX_DEPTH ?? DEFAULT_WORKER_MAX_DEPTH,
+    process.env.BASECAMP_AGENT_MAX_DEPTH ?? DEFAULT_AGENT_MAX_DEPTH,
   );
   if (depth >= max) {
     throw new Error(
-      `Worker nesting blocked (depth=${depth}, max=${max}). ` +
-        "Complete your task directly without spawning further workers.",
+      `Agent nesting blocked (depth=${depth}, max=${max}). ` +
+        "Complete your task directly without spawning further agents.",
     );
   }
 }
 
 // ============================================================================
-// Worker Environment
+// Agent Environment
 // ============================================================================
 
-function buildWorkerEnv(opts: {
+function buildAgentEnv(opts: {
   name: string;
   parentSession: string;
   project: string;
 }): Record<string, string> {
-  const depth = Number(process.env.BASECAMP_WORKER_DEPTH ?? "0");
+  const depth = Number(process.env.BASECAMP_AGENT_DEPTH ?? "0");
   const env: Record<string, string> = {};
   for (const [k, v] of Object.entries(process.env)) {
     if (k.startsWith("BASECAMP_") && v !== undefined) {
@@ -80,11 +77,10 @@ function buildWorkerEnv(opts: {
     }
   }
   env.BASECAMP_PROJECT = opts.project;
-  env.BASECAMP_WORKER_NAME = opts.name;
   env.BASECAMP_PARENT_SESSION = opts.parentSession;
-  env.BASECAMP_WORKER_DEPTH = String(depth + 1);
-  env.BASECAMP_WORKER_MAX_DEPTH =
-    process.env.BASECAMP_WORKER_MAX_DEPTH ?? String(DEFAULT_WORKER_MAX_DEPTH);
+  env.BASECAMP_AGENT_DEPTH = String(depth + 1);
+  env.BASECAMP_AGENT_MAX_DEPTH =
+    process.env.BASECAMP_AGENT_MAX_DEPTH ?? String(DEFAULT_AGENT_MAX_DEPTH);
   return env;
 }
 
@@ -183,7 +179,7 @@ function formatUsageLine(
 // Status Line
 // ============================================================================
 
-const STATUS_KEY = "basecamp-worker";
+const STATUS_KEY = "basecamp-agent";
 const COLLAPSED_TOOL_COUNT = 10;
 
 function setStatusIdle(ctx: ExtensionContext, agentCount: number): void {
@@ -213,57 +209,31 @@ function setStatusDone(ctx: ExtensionContext, agentName: string, durationMs: num
 // Tool Registration
 // ============================================================================
 
-export function registerWorkerTool(
+export function registerAgentTool(
   pi: ExtensionAPI,
   getAgents: () => AgentConfig[],
   getSessionName: () => string,
 ): void {
   pi.registerTool({
-    name: "worker",
-    label: "Worker",
-    description: `Dispatch a subagent to perform a task synchronously. The subagent runs as a background process and its output is returned as the tool result.
+    name: "agent",
+    label: "Agent",
+    description: `Dispatch a subagent to perform a task synchronously. The subagent runs as a child process and its output is returned as the tool result.
 
 DISPATCH: { agent: "scout", task: "Investigate the auth module" }
 AD-HOC: { task: "Fix the login bug" }
-LIST: { action: "list" }
 
 Available agents are discovered from project (.basecamp/agents/), user (~/.basecamp/agents/), and builtin definitions.`,
 
     promptSnippet:
-      "Dispatch a subagent (runs synchronously, returns output) or list recent workers",
+      "Dispatch a subagent (runs synchronously, returns output)",
 
-    parameters: WorkerToolParams,
+    parameters: AgentToolParams,
 
     // ------------------------------------------------------------------
     // Execute
     // ------------------------------------------------------------------
 
     async execute(_id, params, signal, _onUpdate, ctx) {
-      // --- List action ---
-      if (params.action === "list") {
-        const workers = listWorkers();
-        if (workers.length === 0) {
-          return { content: [{ type: "text", text: "No workers." }] };
-        }
-        const lines = workers.map((w) => {
-          const agentLabel = w.agent ?? "ad-hoc";
-          const statusIcon = w.status === "running" ? "⏳" : w.status === "completed" ? "✅" : "❌";
-          const elapsed = Math.round((Date.now() - w.createdAt) / 1000);
-          const age = elapsed < 60 ? `${elapsed}s` : `${Math.round(elapsed / 60)}m`;
-          const modelLabel = w.model ?? "default";
-          return `${statusIcon} ${w.name} [${w.status}] ${agentLabel} (${modelLabel}) ${age} ago`;
-        });
-        return { content: [{ type: "text", text: lines.join("\n") }] };
-      }
-
-      // --- Dispatch ---
-      if (!params.task) {
-        return {
-          content: [{ type: "text", text: "task is required for dispatching a worker" }],
-          isError: true,
-        };
-      }
-
       try {
         checkDepth();
       } catch (error) {
@@ -291,30 +261,19 @@ Available agents are discovered from project (.basecamp/agents/), user (~/.basec
         params.model,
         ctx.model?.id,
       );
-      const prefix = `worker-${randomUUID().slice(0, 6)}`;
+      const prefix = `agent-${randomUUID().slice(0, 6)}`;
       const name = params.name ? `${prefix}-${params.name}` : prefix;
       const project = process.env.BASECAMP_PROJECT ?? "default";
-      const sessionDir = path.join(os.tmpdir(), "basecamp-workers", name, "session");
+      const sessionDir = path.join(os.tmpdir(), "basecamp-agents", name, "session");
       const parentSession = getSessionName();
-      const env = buildWorkerEnv({ name, parentSession, project });
+      const env = buildAgentEnv({ name, parentSession, project });
       const agentLabel = params.agent ?? "ad-hoc";
-
-      // Track the worker as running
-      addWorker({
-        name,
-        agent: params.agent ?? null,
-        status: "running",
-        sessionDir,
-        model,
-        task: params.task,
-        createdAt: Date.now(),
-      });
 
       // Status line: running
       setStatusRunning(ctx, agentLabel);
 
       try {
-        let result = await spawnWorker(
+        let result = await spawnAgent(
           agentConfig,
           params.task,
           { name, model, cwd: ctx.cwd, env, sessionDir },
@@ -336,7 +295,7 @@ Available agents are discovered from project (.basecamp/agents/), user (~/.basec
           }
           const retrySessionDir = sessionDir + "-retry";
           fs.mkdirSync(retrySessionDir, { recursive: true });
-          result = await spawnWorker(
+          result = await spawnAgent(
             agentConfig,
             params.task,
             { name, model: undefined, cwd: ctx.cwd, env, sessionDir: retrySessionDir },
@@ -344,16 +303,13 @@ Available agents are discovered from project (.basecamp/agents/), user (~/.basec
           );
         }
 
-        // Mark worker complete
         const ok = result.exitCode === 0;
-        const status = ok ? "completed" : "failed";
-        completeWorker(name, status as "completed" | "failed", result.exitCode);
 
         // Status line: done
         setStatusDone(ctx, agentLabel, result.durationMs, ok);
 
         // Build structured details for renderResult
-        const details: WorkerDetails = {
+        const details: AgentDetails = {
           agent: agentLabel,
           agentSource: agentConfig?.source ?? "ad-hoc",
           task: params.task,
@@ -371,7 +327,7 @@ Available agents are discovered from project (.basecamp/agents/), user (~/.basec
         const header = `**${agentLabel}** (${modelLabel}) — ${formatDuration(result.durationMs)}, ${result.usage.turns} turn(s)`;
 
         if (!ok) {
-          const errorDetail = result.error ?? "Worker failed with no output";
+          const errorDetail = result.error ?? "Agent failed with no output";
           const textContent = result.output
             ? `${header}\n\n${result.output}\n\n**Error:** ${errorDetail}`
             : `${header}\n\n**Error:** ${errorDetail}`;
@@ -391,7 +347,6 @@ Available agents are discovered from project (.basecamp/agents/), user (~/.basec
           details,
         };
       } catch (error) {
-        completeWorker(name, "failed");
         setStatusDone(ctx, agentLabel, 0, false);
         const msg = error instanceof Error ? error.message : String(error);
         return { content: [{ type: "text", text: msg }], isError: true };
@@ -403,18 +358,11 @@ Available agents are discovered from project (.basecamp/agents/), user (~/.basec
     // ------------------------------------------------------------------
 
     renderCall(args, theme, _context) {
-      if (args.action === "list") {
-        return new Text(
-          theme.fg("toolTitle", theme.bold("worker ")) + theme.fg("muted", "list"),
-          0, 0,
-        );
-      }
-
       const agentName = args.agent || "ad-hoc";
       const task = args.task || "...";
       const preview = task.length > 70 ? `${task.slice(0, 70)}...` : task;
 
-      let text = theme.fg("toolTitle", theme.bold("worker ")) + theme.fg("accent", agentName);
+      let text = theme.fg("toolTitle", theme.bold("agent ")) + theme.fg("accent", agentName);
       if (args.model) text += theme.fg("dim", ` (${args.model})`);
       text += `\n  ${theme.fg("dim", preview)}`;
       return new Text(text, 0, 0);
@@ -425,9 +373,8 @@ Available agents are discovered from project (.basecamp/agents/), user (~/.basec
     // ------------------------------------------------------------------
 
     renderResult(result, { expanded }, theme, _context) {
-      const details = result.details as WorkerDetails | undefined;
+      const details = result.details as AgentDetails | undefined;
 
-      // No structured details (list action, errors without details)
       if (!details) {
         const text = result.content[0];
         return new Text(text?.type === "text" ? text.text : "(no output)", 0, 0);

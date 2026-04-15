@@ -1,14 +1,13 @@
 /**
- * Agents extension — worker tool, agent discovery, slash commands.
+ * Agents extension — agent tool, agent discovery, slash commands.
  */
 
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 
 import { getState } from "../../core/src/session";
 import { discoverAgents } from "./discovery";
-import { registerWorkerTool, setStatusIdle } from "./tool";
+import { registerAgentTool, setStatusIdle } from "./tool";
 import { registerAgentCommands } from "./commands";
-import { closeWorker } from "./worker-index";
 import type { AgentConfig } from "./types";
 
 export default function (pi: ExtensionAPI) {
@@ -40,17 +39,12 @@ export default function (pi: ExtensionAPI) {
 		}
 	});
 
-	// --- Register worker tool and slash commands ---
-	registerWorkerTool(
+	// --- Register agent tool and slash commands ---
+	registerAgentTool(
 		pi,
 		() => agents,
 		() => sessionName,
 	);
 	registerAgentCommands(pi, () => agents);
 
-	// --- Worker cleanup on session shutdown ---
-	pi.on("session_shutdown", async () => {
-		const workerName = process.env.BASECAMP_WORKER_NAME;
-		if (workerName) closeWorker(workerName);
-	});
 }

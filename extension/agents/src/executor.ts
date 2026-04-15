@@ -1,11 +1,11 @@
 /**
- * Worker spawning — synchronous subagent execution.
+ * Subagent execution — synchronous child process spawning.
  *
  * Spawns `pi --mode json -p` as a child process, pipes stdout,
  * parses JSON events, and returns the subagent's final output
  * plus structured metadata (tool calls, usage) for rich rendering.
  *
- * Extensions load normally in workers. The basecamp prompt hook
+ * Extensions load normally in subagents. The basecamp prompt hook
  * sees --agent-prompt and slots the agent persona in place of
  * working style + system.md. Everything else (env block,
  * environment.md, tools, project context, git status) is
@@ -19,14 +19,14 @@ import * as path from "node:path";
 import type { AgentConfig, ToolCallRecord, UsageStats } from "./types.ts";
 import { resolveSkills, buildSkillInjection } from "./skills.ts";
 
-const WORKER_BASE = path.join(os.tmpdir(), "basecamp-workers");
+const AGENT_BASE = path.join(os.tmpdir(), "basecamp-agents");
 const TASK_ARG_LIMIT = 8000;
 
 // ============================================================================
 // Result Types
 // ============================================================================
 
-export interface WorkerResult {
+export interface SpawnResult {
   exitCode: number;
   output: string;
   error?: string;
@@ -48,8 +48,8 @@ interface PiArgsOpts {
   env: Record<string, string>;
 }
 
-function ensureWorkerDir(name: string): string {
-  const dir = path.join(WORKER_BASE, name);
+function ensureAgentDir(name: string): string {
+  const dir = path.join(AGENT_BASE, name);
   fs.mkdirSync(dir, { recursive: true });
   return dir;
 }
@@ -58,24 +58,24 @@ function buildPiArgs(
   agent: AgentConfig | null,
   task: string,
   opts: PiArgsOpts,
-): { args: string[]; workerDir: string } {
-  const workerDir = ensureWorkerDir(opts.name);
+): { args: string[]; agentDir: string } {
+  const agentDir = ensureAgentDir(opts.name);
   const args = ["pi", "--mode", "json", "-p"];
 
   if (opts.model) args.push("--model", opts.model);
 
-  // Session directory for the worker's own session
+  // Session directory for the subagent's own session
   fs.mkdirSync(opts.sessionDir, { recursive: true });
   args.push("--session-dir", opts.sessionDir);
 
-  // Suppress prompt templates — workers get focused instructions
+  // Suppress prompt templates — subagents get focused instructions
   // from the agent persona, not ambient discovery
   args.push("--no-prompt-templates");
 
   // Skills: if the agent declares specific skills, resolve them by name
   // via pi's loadSkills() API, inject their content into the system prompt,
   // and pass --no-skills to suppress pi's own discovery (avoiding doubles).
-  // If no skills declared, workers discover skills normally like the parent.
+  // If no skills declared, subagents discover skills normally like the parent.
   let skillInjection = "";
   if (agent?.skills?.length) {
     const { resolved, missing } = resolveSkills(agent.skills, opts.cwd);
@@ -97,7 +97,7 @@ function buildPiArgs(
     : skillInjection || null;
 
   if (effectivePrompt) {
-    const promptFile = path.join(workerDir, "prompt.md");
+    const promptFile = path.join(agentDir, "prompt.md");
     fs.writeFileSync(promptFile, effectivePrompt, { mode: 0o600 });
     args.push("--agent-prompt", promptFile);
   }
@@ -110,14 +110,14 @@ function buildPiArgs(
   // Task — use a file for large tasks to avoid arg length limits
   const taskText = `Task: ${task}`;
   if (taskText.length > TASK_ARG_LIMIT) {
-    const taskFile = path.join(workerDir, "task.md");
+    const taskFile = path.join(agentDir, "task.md");
     fs.writeFileSync(taskFile, taskText, { mode: 0o600 });
     args.push(`@${taskFile}`);
   } else {
     args.push(taskText);
   }
 
-  return { args, workerDir };
+  return { args, agentDir };
 }
 
 // ============================================================================
@@ -218,10 +218,10 @@ function parseJsonEvents(lines: string[]): ParsedEvents {
 // ============================================================================
 
 /**
- * Spawn a worker agent synchronously. Blocks until the subagent
- * completes and returns its output for the parent LLM to consume.
+ * Spawn a subagent synchronously. Blocks until it completes and
+ * returns its output for the parent LLM to consume.
  */
-export function spawnWorker(
+export function spawnAgent(
   agent: AgentConfig | null,
   task: string,
   opts: {
@@ -232,11 +232,11 @@ export function spawnWorker(
     sessionDir: string;
   },
   signal?: AbortSignal,
-): Promise<WorkerResult> {
+): Promise<SpawnResult> {
   const { args } = buildPiArgs(agent, task, opts);
   const startTime = Date.now();
 
-  return new Promise<WorkerResult>((resolve) => {
+  return new Promise<SpawnResult>((resolve) => {
     const proc = spawn(args[0], args.slice(1), {
       cwd: opts.cwd,
       env: { ...process.env, ...opts.env },

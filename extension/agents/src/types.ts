@@ -1,5 +1,5 @@
 /**
- * Type definitions for the agent/worker system.
+ * Type definitions for the agent system.
  */
 
 import { Type, type Static } from "@sinclair/typebox";
@@ -9,7 +9,7 @@ import { Type, type Static } from "@sinclair/typebox";
 // ============================================================================
 
 /**
- * Model resolution strategy for a worker agent.
+ * Model resolution strategy for an agent.
  *
  * - "inherit"  — use the spawning parent's current model
  * - "default"  — use pi's default model (no --model flag)
@@ -30,23 +30,6 @@ export interface AgentConfig {
 }
 
 // ============================================================================
-// Worker Tracking
-// ============================================================================
-
-export interface WorkerEntry {
-  name: string;
-  agent: string | null;
-  status: "running" | "completed" | "failed";
-  pid?: number;
-  sessionDir?: string;
-  model: string | undefined;
-  task: string;
-  createdAt: number;
-  closedAt?: number;
-  exitCode?: number;
-}
-
-// ============================================================================
 // Tool Result Details (for renderResult)
 // ============================================================================
 
@@ -64,7 +47,7 @@ export interface UsageStats {
   turns: number;
 }
 
-export interface WorkerDetails {
+export interface AgentDetails {
   agent: string;
   agentSource: "builtin" | "user" | "project" | "ad-hoc";
   task: string;
@@ -81,18 +64,17 @@ export interface WorkerDetails {
 // Tool Schema
 // ============================================================================
 
-export const WorkerToolParams = Type.Object({
+export const AgentToolParams = Type.Object({
   agent: Type.Optional(Type.String({ description: "Agent definition name" })),
-  task: Type.Optional(Type.String({ description: "Task description" })),
+  task: Type.String({ description: "Task description" }),
   model: Type.Optional(Type.String({ description: "Override model (only honoured for agents with model: inherit)" })),
-  name: Type.Optional(Type.String({ description: "Worker name suffix (auto-generated prefix)" })),
-  action: Type.Optional(Type.String({ description: "'list' — list active workers" })),
+  name: Type.Optional(Type.String({ description: "Name suffix (auto-generated prefix)" })),
 });
 
-export type WorkerToolInput = Static<typeof WorkerToolParams>;
+export type AgentToolInput = Static<typeof AgentToolParams>;
 
 // ============================================================================
 // Constants
 // ============================================================================
 
-export const DEFAULT_WORKER_MAX_DEPTH = 2;
+export const DEFAULT_AGENT_MAX_DEPTH = 2;

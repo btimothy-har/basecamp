@@ -1,13 +1,11 @@
 /**
- * Slash commands for agent/worker browsing within pi.
+ * Slash commands for agent browsing within pi.
  *
  * /agents  — interactive agent browser (select → detail view)
- * /workers — list active and recent workers
  */
 
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import type { AgentConfig } from "./types.ts";
-import { listWorkers } from "./worker-index.ts";
 
 function formatAgentDetail(agent: AgentConfig): string {
   const lines: string[] = [
@@ -72,27 +70,4 @@ export function registerAgentCommands(
     },
   });
 
-  // /workers — list active and recent workers
-  pi.registerCommand("workers", {
-    description: "List active and recent workers",
-    handler: async (_args, ctx) => {
-      const workers = listWorkers();
-      if (workers.length === 0) {
-        ctx.ui.notify("No workers.", "info");
-        return;
-      }
-
-      const lines = workers.map((w) => {
-        const agentLabel = w.agent ? `(${w.agent})` : "(ad-hoc)";
-        const statusIcon = w.status === "running" ? "⏳" : w.status === "completed" ? "✅" : "❌";
-        const modelLabel = w.model ?? "default";
-        const elapsed = Math.round((Date.now() - w.createdAt) / 1000);
-        const age =
-          elapsed < 60 ? `${elapsed}s` : `${Math.round(elapsed / 60)}m`;
-        return `${statusIcon} **${w.name}** ${agentLabel} [${w.status}] ${modelLabel} — ${age} ago`;
-      });
-
-      ctx.ui.notify(lines.join("\n"), "info");
-    },
-  });
 }
