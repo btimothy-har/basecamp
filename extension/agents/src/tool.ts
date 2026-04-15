@@ -24,7 +24,7 @@ import { getMarkdownTheme } from "@mariozechner/pi-coding-agent";
 import { Container, Markdown, Spacer, Text } from "@mariozechner/pi-tui";
 import type { AgentConfig, ModelStrategy, WorkerDetails, ToolCallRecord } from "./types.ts";
 import { WorkerToolParams, DEFAULT_WORKER_MAX_DEPTH } from "./types.ts";
-import { spawnWorker } from "./spawner.ts";
+import { spawnWorker } from "./executor.ts";
 import { addWorker, completeWorker, listWorkers } from "./worker-index.ts";
 
 // ============================================================================

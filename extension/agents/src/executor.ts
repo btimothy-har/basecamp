@@ -17,6 +17,7 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import type { AgentConfig, ToolCallRecord, UsageStats } from "./types.ts";
+import { resolveSkills, buildSkillInjection } from "./skills.ts";
 
 const WORKER_BASE = path.join(os.tmpdir(), "basecamp-workers");
 const TASK_ARG_LIMIT = 8000;
@@ -42,6 +43,7 @@ export interface WorkerResult {
 interface PiArgsOpts {
   name: string;
   model: string | undefined;
+  cwd: string;
   sessionDir: string;
   env: Record<string, string>;
 }
@@ -66,26 +68,37 @@ function buildPiArgs(
   fs.mkdirSync(opts.sessionDir, { recursive: true });
   args.push("--session-dir", opts.sessionDir);
 
-  // Extension sandboxing: only when agent explicitly declares an allowlist.
-  // By default all extensions load (including basecamp, whose prompt hook
-  // sees --agent-prompt and assembles the worker prompt variant).
-  if (agent?.extensions !== undefined) {
-    args.push("--no-extensions");
-    for (const ext of agent.extensions) {
-      args.push("--extension", ext);
-    }
-  }
-
-  // Suppress skills and prompt templates — workers get focused instructions
+  // Suppress prompt templates — workers get focused instructions
   // from the agent persona, not ambient discovery
-  args.push("--no-skills");
   args.push("--no-prompt-templates");
+
+  // Skills: if the agent declares specific skills, resolve them by name
+  // via pi's loadSkills() API, inject their content into the system prompt,
+  // and pass --no-skills to suppress pi's own discovery (avoiding doubles).
+  // If no skills declared, workers discover skills normally like the parent.
+  let skillInjection = "";
+  if (agent?.skills?.length) {
+    const { resolved, missing } = resolveSkills(agent.skills, opts.cwd);
+    if (resolved.length > 0) {
+      skillInjection = buildSkillInjection(resolved);
+    }
+    // Suppress pi's own discovery — skills are baked into the prompt
+    args.push("--no-skills");
+    // missing skills are silently ignored; the agent runs with what's available
+  }
 
   // Agent prompt: written to a file, passed via --agent-prompt flag.
   // prompt.ts reads this and slots it in place of working style + system.md.
-  if (agent?.systemPrompt) {
+  // If skills were resolved, append them to the agent's system prompt.
+  const effectivePrompt = agent?.systemPrompt
+    ? skillInjection
+      ? `${agent.systemPrompt}\n\n${skillInjection}`
+      : agent.systemPrompt
+    : skillInjection || null;
+
+  if (effectivePrompt) {
     const promptFile = path.join(workerDir, "prompt.md");
-    fs.writeFileSync(promptFile, agent.systemPrompt, { mode: 0o600 });
+    fs.writeFileSync(promptFile, effectivePrompt, { mode: 0o600 });
     args.push("--agent-prompt", promptFile);
   }
 

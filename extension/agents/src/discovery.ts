@@ -90,19 +90,12 @@ function loadAgentsFromDir(
     // Missing model defaults to "default" (pi's default model).
     const model: ModelStrategy = (fm.model as ModelStrategy) || "default";
 
-    // Extensions field: absent = all, empty value = none, csv = allowlist
-    let extensions: string[] | undefined;
-    if (fm.extensions !== undefined) {
-      extensions = parseCsv(fm.extensions) ?? [];
-    }
-
     agents.push({
       name: fm.name,
       description: fm.description,
       model,
       thinking: fm.thinking || undefined,
       tools: parseCsv(fm.tools),
-      extensions,
       skills: parseCsv(fm.skills),
       systemPrompt: body,
       source,

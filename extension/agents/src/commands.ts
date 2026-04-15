@@ -23,14 +23,6 @@ function formatAgentDetail(agent: AgentConfig): string {
   if (agent.tools) lines.push(`**Tools:** ${agent.tools.join(", ")}`);
   if (agent.skills) lines.push(`**Skills:** ${agent.skills.join(", ")}`);
 
-  if (agent.extensions !== undefined) {
-    lines.push(
-      agent.extensions.length > 0
-        ? `**Extensions:** ${agent.extensions.join(", ")}`
-        : "**Extensions:** none (sandboxed)",
-    );
-  }
-
   if (agent.systemPrompt) {
     lines.push("", "## System Prompt", "");
     // Show first ~2000 chars to avoid overwhelming the UI

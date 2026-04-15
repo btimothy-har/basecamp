@@ -23,7 +23,6 @@ export interface AgentConfig {
   model: ModelStrategy;
   thinking?: string;
   tools?: string[];
-  extensions?: string[];
   skills?: string[];
   systemPrompt: string;
   source: "builtin" | "user" | "project";
