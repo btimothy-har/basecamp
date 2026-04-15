@@ -2,8 +2,12 @@
 
 import observer.constants as c
 import pytest
+from observer.llm import agents
+from observer.llm.agents import ExtractionResult, SummaryResult
 from observer.services.config import Config
 from observer.services.db import Database
+from pydantic_ai import Agent
+from pydantic_ai.models.test import TestModel
 
 
 @pytest.fixture(autouse=True)
@@ -21,6 +25,41 @@ def _isolate_config(tmp_path, monkeypatch):
     # Clear session env vars so tests don't inherit the host session's state.
     monkeypatch.delenv("BASECAMP_REPO", raising=False)
     monkeypatch.delenv("CLAUDE_SESSION_ID", raising=False)
+
+
+@pytest.fixture(autouse=True)
+def _mock_agents(monkeypatch):
+    """Replace LLM agents with TestModel-backed agents for all tests.
+
+    This prevents any test from needing real API keys. The TestModel
+    generates structured output that satisfies each agent's output_type.
+    Individual tests can further override via Agent.override() or
+    unittest.mock.patch as needed.
+    """
+    test_agents = {
+        "tool_summarizer": Agent(
+            TestModel(custom_output_args={"summary": "test summary"}),
+            output_type=SummaryResult,
+        ),
+        "thinking_summarizer": Agent(
+            TestModel(custom_output_args={"summary": "test thinking summary"}),
+            output_type=SummaryResult,
+        ),
+        "section_extractor": Agent(
+            TestModel(
+                custom_output_args={
+                    "title": "Test Session",
+                    "summary": "Test summary",
+                    "knowledge": "Test knowledge",
+                    "decisions": "Test decisions",
+                    "constraints": "Test constraints",
+                    "actions": "Test actions",
+                }
+            ),
+            output_type=ExtractionResult,
+        ),
+    }
+    monkeypatch.setattr(agents, "_cache", test_agents)
 
 
 @pytest.fixture

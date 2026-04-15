@@ -1,11 +1,14 @@
 """Tests for the TranscriptExtractor pipeline."""
 
+from contextlib import contextmanager
 from datetime import UTC, datetime
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from observer.data.enums import SectionType, WorkItemType
+from observer.llm import agents
 from observer.llm.agents import ExtractionResult
 from observer.pipeline.extraction import TranscriptExtractor
+from pydantic_ai.models.test import TestModel
 
 NOW = datetime(2025, 1, 15, 10, 0, 0, tzinfo=UTC)
 
@@ -30,14 +33,12 @@ def _make_db() -> MagicMock:
     return MagicMock()
 
 
-def _mock_extractor(return_value=_FULL_RESULT):
-    """Patch section_extractor.run to return a given ExtractionResult."""
-    mock_result = AsyncMock()
-    mock_result.output = return_value
-    return patch(
-        "observer.llm.agents.section_extractor",
-        **{"run": AsyncMock(return_value=mock_result)},
-    )
+@contextmanager
+def _override_extractor(result: ExtractionResult = _FULL_RESULT):
+    """Override section_extractor to return a specific ExtractionResult."""
+    model = TestModel(custom_output_args=result.model_dump())
+    with agents.section_extractor.override(model=model):
+        yield
 
 
 class TestTranscriptExtractor:
@@ -50,7 +51,7 @@ class TestTranscriptExtractor:
             _make_event("I found the auth module", WorkItemType.RESPONSE),
         ]
 
-        with _mock_extractor():
+        with _override_extractor():
             count = TranscriptExtractor.extract_transcript(_make_db(), transcript_id=1)
 
         assert count == 5
@@ -74,17 +75,24 @@ class TestTranscriptExtractor:
             _make_event("user asked for JWT auth", WorkItemType.PROMPT),
         ]
 
-        mock_result = AsyncMock()
-        mock_result.output = _FULL_RESULT
-        mock_run = AsyncMock(return_value=mock_result)
+        # Use a custom TestModel so we can inspect what was passed
+        calls = []
+        original_run = agents.section_extractor.run
 
-        with patch("observer.llm.agents.section_extractor") as mock_agent:
-            mock_agent.run = mock_run
-            TranscriptExtractor.extract_transcript(_make_db(), transcript_id=1)
+        async def capture_run(prompt, *args, **kwargs):
+            calls.append(prompt)
+            return await original_run(prompt, *args, **kwargs)
 
-        prompt = mock_run.call_args[0][0]
-        assert "thinking about JWT vs sessions" not in prompt
-        assert "user asked for JWT auth" in prompt
+        with _override_extractor():
+            agents.section_extractor.run = capture_run
+            try:
+                TranscriptExtractor.extract_transcript(_make_db(), transcript_id=1)
+            finally:
+                agents.section_extractor.run = original_run
+
+        assert len(calls) == 1
+        assert "thinking about JWT vs sessions" not in calls[0]
+        assert "user asked for JWT auth" in calls[0]
 
     @patch("observer.pipeline.extraction.Artifact")
     @patch("observer.pipeline.extraction.TranscriptEvent.get_for_transcript")
@@ -95,17 +103,23 @@ class TestTranscriptExtractor:
             _make_event("I found the auth module", WorkItemType.RESPONSE),
         ]
 
-        mock_result = AsyncMock()
-        mock_result.output = _FULL_RESULT
-        mock_run = AsyncMock(return_value=mock_result)
+        calls = []
+        original_run = agents.section_extractor.run
 
-        with patch("observer.llm.agents.section_extractor") as mock_agent:
-            mock_agent.run = mock_run
-            TranscriptExtractor.extract_transcript(_make_db(), transcript_id=1)
+        async def capture_run(prompt, *args, **kwargs):
+            calls.append(prompt)
+            return await original_run(prompt, *args, **kwargs)
 
-        prompt = mock_run.call_args[0][0]
-        assert "TaskCreate called" not in prompt
-        assert "I found the auth module" in prompt
+        with _override_extractor():
+            agents.section_extractor.run = capture_run
+            try:
+                TranscriptExtractor.extract_transcript(_make_db(), transcript_id=1)
+            finally:
+                agents.section_extractor.run = original_run
+
+        assert len(calls) == 1
+        assert "TaskCreate called" not in calls[0]
+        assert "I found the auth module" in calls[0]
 
     @patch("observer.pipeline.extraction.TranscriptEvent.get_for_transcript")
     def test_extraction_error_returns_zero(self, mock_get):
@@ -114,8 +128,7 @@ class TestTranscriptExtractor:
             _make_event("help with auth", WorkItemType.PROMPT),
         ]
 
-        with patch("observer.llm.agents.section_extractor") as mock_agent:
-            mock_agent.run = AsyncMock(side_effect=RuntimeError("LLM failed"))
+        with patch.object(agents.section_extractor, "run", new=AsyncMock(side_effect=RuntimeError("LLM failed"))):
             count = TranscriptExtractor.extract_transcript(_make_db(), transcript_id=1)
 
         assert count == 0
@@ -128,7 +141,7 @@ class TestTranscriptExtractor:
             _make_event("help with auth", WorkItemType.PROMPT),
         ]
 
-        with _mock_extractor():
+        with _override_extractor():
             TranscriptExtractor.extract_transcript(_make_db(), transcript_id=1)
 
         summary_call = next(
@@ -154,7 +167,7 @@ class TestTranscriptExtractor:
             actions="updated auth.py",
         )
 
-        with _mock_extractor(partial):
+        with _override_extractor(partial):
             count = TranscriptExtractor.extract_transcript(_make_db(), transcript_id=1)
 
         assert count == 3
