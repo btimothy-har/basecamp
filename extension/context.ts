@@ -12,6 +12,7 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import type { SessionState } from "./config";
+import { escapeXml } from "./utils";
 
 // ============================================================================
 // Types
@@ -238,11 +239,4 @@ function firstSentence(text: string): string {
 	return match ? match[0].trim() : text.trim();
 }
 
-function escapeXml(str: string): string {
-	return str
-		.replace(/&/g, "&amp;")
-		.replace(/</g, "&lt;")
-		.replace(/>/g, "&gt;")
-		.replace(/"/g, "&quot;")
-		.replace(/'/g, "&apos;");
-}
+

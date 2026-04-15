@@ -11,6 +11,7 @@
 
 import * as fs from "node:fs";
 import { loadSkills, stripFrontmatter, type Skill } from "@mariozechner/pi-coding-agent";
+import { escapeXml } from "../../utils";
 
 // ============================================================================
 // Types
@@ -91,10 +92,4 @@ export function buildSkillInjection(skills: ResolvedSkill[]): string {
     .join("\n\n");
 }
 
-function escapeXml(str: string): string {
-  return str
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;");
-}
+

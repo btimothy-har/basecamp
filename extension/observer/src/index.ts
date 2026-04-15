@@ -34,8 +34,8 @@ function triggerIngest(
 	});
 
 	const observerCmd = processFlag ? "observer ingest --process" : "observer ingest";
-	const escaped = payload.replace(/'/g, "'\\''");
-	const shellCmd = `echo '${escaped}' | ${observerCmd}`;
+	const b64 = Buffer.from(payload).toString("base64");
+	const shellCmd = `echo ${b64} | base64 -d | ${observerCmd}`;
 
 	pi.exec("bash", ["-c", shellCmd], { timeout: 300_000 }).catch(() => {
 		if (!notifiedFailure) {
