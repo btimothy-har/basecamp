@@ -17,6 +17,7 @@ const USER_AGENTS_DIR = path.join(os.homedir(), ".basecamp", "agents");
 const BUILTIN_AGENTS_DIR = path.join(
   path.dirname(fileURLToPath(import.meta.url)),
   "..",
+  "builtin",
 );
 
 // ============================================================================
