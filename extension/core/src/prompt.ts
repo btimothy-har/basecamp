@@ -11,24 +11,24 @@
  * User overrides in ~/.basecamp/prompts/ take precedence over bundled defaults.
  */
 
-import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import { type SessionState, getTimezone, getLogseqGraph } from "../../config";
+import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
+import { getLogseqGraph, getTimezone, type SessionState } from "../../config";
 import {
-	type GitStatus,
-	type ToolInfo,
-	type SkillInfo,
-	type ContextFile,
-	buildWorktreeWarning,
-	buildProjectContext,
 	buildGitContext,
-	buildToolsContext,
+	buildProjectContext,
 	buildSkillsContext,
+	buildToolsContext,
+	buildWorktreeWarning,
+	type ContextFile,
 	discoverContextFiles,
+	type GitStatus,
+	type SkillInfo,
+	type ToolInfo,
 } from "../../context";
-import { getState, getGitStatus } from "./session";
+import { getGitStatus, getState } from "./session";
 
 // ---------------------------------------------------------------------------
 // Paths
@@ -85,10 +85,7 @@ function loadWorkingStyle(name: string): string {
 
 function buildEnvBlock(state: SessionState): string {
 	const user = process.env.USER || os.userInfo().username || "unknown";
-	const lines: string[] = [
-		`User: ${user}`,
-		`Working directory: ${state.primaryDir}`,
-	];
+	const lines: string[] = [`User: ${user}`, `Working directory: ${state.primaryDir}`];
 
 	const worktreeWarning = buildWorktreeWarning(state);
 	if (worktreeWarning) {
@@ -221,12 +218,14 @@ export function registerPrompt(pi: ExtensionAPI): void {
 
 		// Collect active tools from pi
 		const activeNames = new Set(pi.getActiveTools());
-		const tools = pi.getAllTools()
+		const tools = pi
+			.getAllTools()
 			.filter((t) => activeNames.has(t.name))
 			.map((t) => ({ name: t.name, description: t.description }));
 
 		// Collect skills from pi
-		const skills = pi.getCommands()
+		const skills = pi
+			.getCommands()
 			.filter((c) => c.source === "skill")
 			.map((c) => ({
 				name: c.name,

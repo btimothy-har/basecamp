@@ -64,9 +64,7 @@ const CONTEXT_DIR = path.join(os.homedir(), ".basecamp", "prompts", "context");
 
 export function getTimezone(): string | null {
 	const config = readConfig();
-	return typeof config.timezone === "string" && config.timezone.trim()
-		? config.timezone.trim()
-		: null;
+	return typeof config.timezone === "string" && config.timezone.trim() ? config.timezone.trim() : null;
 }
 
 export function getLogseqGraph(): string | null {
@@ -101,15 +99,13 @@ function resolveDir(dir: string): string {
 
 /** Validate and resolve project dirs. Returns only dirs that exist. */
 function resolveDirs(dirs: string[]): string[] {
-	return dirs
-		.map(resolveDir)
-		.filter((d) => {
-			try {
-				return fs.statSync(d).isDirectory();
-			} catch {
-				return false;
-			}
-		});
+	return dirs.map(resolveDir).filter((d) => {
+		try {
+			return fs.statSync(d).isDirectory();
+		} catch {
+			return false;
+		}
+	});
 }
 
 // ---------------------------------------------------------------------------
@@ -153,7 +149,7 @@ export function resolveSessionState(opts: ResolveOptions): SessionState {
 
 		if (project) {
 			const resolved = resolveDirs(project.dirs);
-			if (resolved.length > 0) {
+			if (resolved.length > 0 && resolved[0]) {
 				primaryDir = resolved[0];
 				secondaryDirs = resolved.slice(1);
 			}

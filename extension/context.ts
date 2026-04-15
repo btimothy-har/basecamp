@@ -48,18 +48,16 @@ export interface SkillInfo {
 export function buildWorktreeWarning(state: SessionState): string | null {
 	if (!state.worktreeDir) return null;
 
-	const lines = [
-		`Worktree directory: ${state.worktreeDir}`,
-	];
+	const lines = [`Worktree directory: ${state.worktreeDir}`];
 	if (state.worktreeBranch) {
 		lines.push(`Worktree branch: ${state.worktreeBranch}`);
 	}
 	lines.push(
 		"",
-		"⚠ WORKTREE ACTIVE: All file operations (read, edit, write, bash) MUST target the "
-		+ "worktree directory using absolute paths. The working directory contains the main "
-		+ "branch checkout and must not be modified. Bash commands execute in the worktree "
-		+ "directory automatically.",
+		"⚠ WORKTREE ACTIVE: All file operations (read, edit, write, bash) MUST target the " +
+			"worktree directory using absolute paths. The working directory contains the main " +
+			"branch checkout and must not be modified. Bash commands execute in the worktree " +
+			"directory automatically.",
 	);
 	return lines.join("\n");
 }
@@ -73,10 +71,7 @@ export function buildWorktreeWarning(state: SessionState): string | null {
  *
  * Returns null if neither source has content.
  */
-export function buildProjectContext(
-	state: SessionState,
-	contextFiles?: ContextFile[],
-): string | null {
+export function buildProjectContext(state: SessionState, contextFiles?: ContextFile[]): string | null {
 	const parts: string[] = [];
 
 	// Basecamp project context
@@ -87,8 +82,8 @@ export function buildProjectContext(
 	// Pi-native context files (CLAUDE.md / AGENTS.md)
 	if (contextFiles && contextFiles.length > 0) {
 		parts.push(
-			"Project-specific instructions and guidelines:\n\n"
-			+ contextFiles.map((f) => `## ${f.path}\n\n${f.content}`).join("\n\n"),
+			"Project-specific instructions and guidelines:\n\n" +
+				contextFiles.map((f) => `## ${f.path}\n\n${f.content}`).join("\n\n"),
 		);
 	}
 
@@ -154,8 +149,8 @@ export function discoverContextFiles(cwd: string): ContextFile[] {
  */
 export function buildGitContext(git: GitStatus): string {
 	const lines = [
-		"gitStatus: This is the git status at the start of the conversation. "
-		+ "Note that this status is a snapshot in time, and will not update during the conversation.",
+		"gitStatus: This is the git status at the start of the conversation. " +
+			"Note that this status is a snapshot in time, and will not update during the conversation.",
 		`Current branch: ${git.branch ?? "unknown"}`,
 		"",
 		`Main branch (you will usually use this for PRs): ${git.mainBranch}`,
@@ -208,8 +203,8 @@ export function buildSkillsContext(skills: SkillInfo[]): string | null {
 	const lines = [
 		"The following skills provide specialized instructions for specific tasks.",
 		"Use the read tool to load a skill's file when the task matches its description.",
-		"When a skill file references a relative path, resolve it against the skill directory "
-		+ "(parent of SKILL.md / dirname of the path) and use that absolute path in tool commands.",
+		"When a skill file references a relative path, resolve it against the skill directory " +
+			"(parent of SKILL.md / dirname of the path) and use that absolute path in tool commands.",
 		"",
 		"<available_skills>",
 	];
@@ -238,5 +233,3 @@ function firstSentence(text: string): string {
 	const match = text.match(/^[^.]*\./);
 	return match ? match[0].trim() : text.trim();
 }
-
-

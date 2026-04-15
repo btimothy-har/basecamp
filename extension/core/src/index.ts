@@ -3,12 +3,10 @@
  */
 
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
-
-import { registerSession } from "./session";
-import { registerPrompt } from "./prompt";
 import { registerHandoff } from "./handoff";
 import { registerOpenCommand } from "./open";
-import { getState } from "./session";
+import { registerPrompt } from "./prompt";
+import { getState, registerSession } from "./session";
 
 export default function (pi: ExtensionAPI) {
 	registerSession(pi);

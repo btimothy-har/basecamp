@@ -14,9 +14,22 @@ import { isToolCallEventType } from "@mariozechner/pi-coding-agent";
 // ---------------------------------------------------------------------------
 
 const BLOCK_RULES: { gate: RegExp; test: RegExp; reason: string }[] = [
-	{ gate: /^git\s+push\b/, test: /\s(--force|--force-with-lease)(\s|$)|\s-[a-zA-Z]*f/, reason: "Force push is blocked. Ask the user to run this command themselves if needed." },
-	{ gate: /^git\s+push\b/, test: /\s--delete(\s|$)|\s:[^\s]/, reason: "Deleting remote refs is blocked. Ask the user to run this command themselves if needed." },
-	{ gate: /^git\s+clean\b/, test: /\s-[a-zA-Z]*f|\s--force/, reason: "git clean -f is blocked — permanently deletes untracked files. Ask the user to run this command themselves if needed." },
+	{
+		gate: /^git\s+push\b/,
+		test: /\s(--force|--force-with-lease)(\s|$)|\s-[a-zA-Z]*f/,
+		reason: "Force push is blocked. Ask the user to run this command themselves if needed.",
+	},
+	{
+		gate: /^git\s+push\b/,
+		test: /\s--delete(\s|$)|\s:[^\s]/,
+		reason: "Deleting remote refs is blocked. Ask the user to run this command themselves if needed.",
+	},
+	{
+		gate: /^git\s+clean\b/,
+		test: /\s-[a-zA-Z]*f|\s--force/,
+		reason:
+			"git clean -f is blocked — permanently deletes untracked files. Ask the user to run this command themselves if needed.",
+	},
 ];
 
 const GH_ALLOW: RegExp[] = [
@@ -71,7 +84,11 @@ export function registerGuards(pi: ExtensionAPI): void {
 
 		// gh: block by default, allow-list overrides
 		if (/^gh\s+/.test(cmd) && !GH_ALLOW.some((r) => r.test(cmd))) {
-			return { block: true, reason: "This gh command is blocked. Allowed: gh issue (all), gh pr/run/repo (read-only), gh search, gh browse. Ask the user to run this command themselves if needed." };
+			return {
+				block: true,
+				reason:
+					"This gh command is blocked. Allowed: gh issue (all), gh pr/run/repo (read-only), gh search, gh browse. Ask the user to run this command themselves if needed.",
+			};
 		}
 	});
 

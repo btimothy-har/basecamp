@@ -5,9 +5,9 @@
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 
 import { getState } from "../../core/src/session";
+import { registerAgentCommands } from "./commands";
 import { discoverAgents } from "./discovery";
 import { registerAgentTool, setStatusIdle } from "./tool";
-import { registerAgentCommands } from "./commands";
 import type { AgentConfig } from "./types";
 
 export default function (pi: ExtensionAPI) {
@@ -32,10 +32,7 @@ export default function (pi: ExtensionAPI) {
 		setStatusIdle(ctx, agents.length);
 
 		if (agents.length > 0) {
-			ctx.ui.notify(
-				`basecamp: ${agents.length} agent(s) discovered`,
-				"info",
-			);
+			ctx.ui.notify(`basecamp: ${agents.length} agent(s) discovered`, "info");
 		}
 	});
 
@@ -46,5 +43,4 @@ export default function (pi: ExtensionAPI) {
 		() => sessionName,
 	);
 	registerAgentCommands(pi, () => agents);
-
 }

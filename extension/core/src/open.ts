@@ -9,7 +9,7 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
-import { type SessionState, readConfig } from "../../config";
+import { readConfig, type SessionState } from "../../config";
 
 const WORKSPACES_DIR = path.join(os.homedir(), ".workspaces");
 
@@ -18,10 +18,7 @@ function resolveDir(dir: string): string {
 	return path.join(os.homedir(), dir);
 }
 
-export function registerOpenCommand(
-	pi: ExtensionAPI,
-	getState: () => SessionState,
-): void {
+export function registerOpenCommand(pi: ExtensionAPI, getState: () => SessionState): void {
 	pi.registerCommand("open", {
 		description: "Open VS Code with project directories",
 		handler: async (args, ctx) => {
@@ -55,7 +52,11 @@ export function registerOpenCommand(
 
 			// Resolve directories
 			const resolved = dirs.map(resolveDir).filter((d) => {
-				try { return fs.statSync(d).isDirectory(); } catch { return false; }
+				try {
+					return fs.statSync(d).isDirectory();
+				} catch {
+					return false;
+				}
 			});
 
 			if (resolved.length === 0) {
@@ -68,17 +69,11 @@ export function registerOpenCommand(
 			const secondary = resolved.slice(1);
 
 			// Build workspace file
-			const folders = [
-				{ path: primary },
-				...secondary.map((d) => ({ path: d })),
-			];
+			const folders = [{ path: primary }, ...secondary.map((d) => ({ path: d }))];
 			const workspace = JSON.stringify({ folders }, null, 2);
 
 			fs.mkdirSync(WORKSPACES_DIR, { recursive: true });
-			const wsFile = path.join(
-				WORKSPACES_DIR,
-				`${projectName}.code-workspace`,
-			);
+			const wsFile = path.join(WORKSPACES_DIR, `${projectName}.code-workspace`);
 			fs.writeFileSync(wsFile, workspace);
 
 			// Open VS Code
@@ -89,10 +84,7 @@ export function registerOpenCommand(
 			if (result.code === 0) {
 				ctx.ui.notify(`Opened VS Code for ${projectName}`, "info");
 			} else {
-				ctx.ui.notify(
-					`VS Code failed: ${result.stderr || "unknown error"}`,
-					"error",
-				);
+				ctx.ui.notify(`VS Code failed: ${result.stderr || "unknown error"}`, "error");
 			}
 		},
 	});

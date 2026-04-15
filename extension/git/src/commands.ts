@@ -24,12 +24,7 @@ export function registerCommands(pi: ExtensionAPI): void {
 				return;
 			}
 
-			const existing = await pi.exec("gh", [
-				"pr", "list",
-				"--head", branchName,
-				"--json", "number,url",
-				"-q", ".[0]",
-			]);
+			const existing = await pi.exec("gh", ["pr", "list", "--head", branchName, "--json", "number,url", "-q", ".[0]"]);
 
 			let prNumber: string;
 
@@ -38,9 +33,7 @@ export function registerCommands(pi: ExtensionAPI): void {
 				prNumber = String(pr.number);
 				ctx.ui.notify(`Found existing PR #${prNumber}`, "info");
 			} else {
-				const upstream = await pi.exec("git", [
-					"rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}",
-				]);
+				const upstream = await pi.exec("git", ["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"]);
 				if (upstream.code !== 0) {
 					ctx.ui.notify("Branch has no upstream — push before creating a PR", "error");
 					return;
@@ -48,10 +41,15 @@ export function registerCommands(pi: ExtensionAPI): void {
 
 				ctx.ui.notify(`Creating draft PR against ${base}...`, "info");
 				const create = await pi.exec("gh", [
-					"pr", "create", "--draft",
-					"--title", `WIP: ${branchName}`,
-					"--body", "",
-					"--base", base,
+					"pr",
+					"create",
+					"--draft",
+					"--title",
+					`WIP: ${branchName}`,
+					"--body",
+					"",
+					"--base",
+					base,
 				]);
 
 				if (create.code !== 0) {
@@ -64,7 +62,7 @@ export function registerCommands(pi: ExtensionAPI): void {
 					ctx.ui.notify("Created PR but couldn't parse number from output", "error");
 					return;
 				}
-				prNumber = urlMatch[1];
+				prNumber = urlMatch[1]!;
 				ctx.ui.notify(`Created draft PR #${prNumber}`, "info");
 			}
 

@@ -13,11 +13,11 @@
  *   - Sets BASECAMP_* env vars
  */
 
-import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import * as fsSync from "node:fs";
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
-import { type SessionState, resolveSessionState } from "../../config";
+import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
+import { resolveSessionState, type SessionState } from "../../config";
 import type { GitStatus } from "../../context";
 import { getOrCreateWorktree, registerWorktreeGuards } from "./worktree";
 
@@ -33,21 +33,23 @@ export function getGitStatus(): GitStatus | null {
 }
 
 export function getState(): SessionState {
-	return state ?? {
-		projectName: null,
-		project: null,
-		primaryDir: process.cwd(),
-		secondaryDirs: [],
-		repoName: path.basename(process.cwd()),
-		isRepo: false,
-		remoteUrl: null,
-		workDir: `/tmp/pi/${path.basename(process.cwd())}`,
-		workingStyle: "engineering",
-		worktreeDir: null,
-		worktreeLabel: null,
-		worktreeBranch: null,
-		contextContent: null,
-	};
+	return (
+		state ?? {
+			projectName: null,
+			project: null,
+			primaryDir: process.cwd(),
+			secondaryDirs: [],
+			repoName: path.basename(process.cwd()),
+			isRepo: false,
+			remoteUrl: null,
+			workDir: `/tmp/pi/${path.basename(process.cwd())}`,
+			workingStyle: "engineering",
+			worktreeDir: null,
+			worktreeLabel: null,
+			worktreeBranch: null,
+			contextContent: null,
+		}
+	);
 }
 
 // ---------------------------------------------------------------------------
@@ -72,7 +74,9 @@ async function resolveGitInfo(
 				timeout: 10_000,
 			});
 			if (remote.code === 0) remoteUrl = remote.stdout.trim();
-		} catch { /* no remote */ }
+		} catch {
+			/* no remote */
+		}
 
 		return { repoName, isRepo: true, remoteUrl };
 	} catch {
@@ -80,10 +84,7 @@ async function resolveGitInfo(
 	}
 }
 
-async function collectGitStatus(
-	pi: ExtensionAPI,
-	dir: string,
-): Promise<GitStatus | null> {
+async function collectGitStatus(pi: ExtensionAPI, dir: string): Promise<GitStatus | null> {
 	try {
 		const branchResult = await pi.exec("git", ["branch", "--show-current"], {
 			cwd: dir,
@@ -177,20 +178,11 @@ export function registerSession(pi: ExtensionAPI): void {
 				ctx.ui.notify("basecamp: --label requires a git repository", "error");
 			} else {
 				try {
-					const wt = await getOrCreateWorktree(
-						pi,
-						state.primaryDir,
-						state.repoName,
-						label,
-						projectName,
-					);
+					const wt = await getOrCreateWorktree(pi, state.primaryDir, state.repoName, label, projectName);
 					state.worktreeDir = wt.worktreeDir;
 					state.worktreeLabel = label;
 					state.worktreeBranch = wt.branch;
-					ctx.ui.notify(
-						`basecamp: worktree ${wt.created ? "created" : "attached"} → ${label}`,
-						"info",
-					);
+					ctx.ui.notify(`basecamp: worktree ${wt.created ? "created" : "attached"} → ${label}`, "info");
 				} catch (err) {
 					const msg = err instanceof Error ? err.message : String(err);
 					ctx.ui.notify(`basecamp: worktree failed — ${msg}`, "error");
@@ -215,12 +207,17 @@ export function registerSession(pi: ExtensionAPI): void {
 				if (line.startsWith("#") || !line.includes("=")) continue;
 				const eq = line.indexOf("=");
 				const key = line.slice(0, eq).trim();
-				const value = line.slice(eq + 1).trim().replace(/^["']|["']$/g, "");
+				const value = line
+					.slice(eq + 1)
+					.trim()
+					.replace(/^["']|["']$/g, "");
 				if (key && /^[A-Za-z_]\w*$/.test(key)) {
 					process.env[key] = value;
 				}
 			}
-		} catch { /* no .env file is fine */ }
+		} catch {
+			/* no .env file is fine */
+		}
 
 		// Collect git status from the effective working dir
 		if (state.isRepo) {

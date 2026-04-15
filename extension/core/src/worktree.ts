@@ -72,11 +72,9 @@ export async function getOrCreateWorktree(
 	fs.mkdirSync(path.dirname(worktreeDir), { recursive: true });
 
 	// Create the worktree
-	const result = await pi.exec(
-		"git",
-		["-C", primaryDir, "worktree", "add", "-b", branch, worktreeDir],
-		{ timeout: 30_000 },
-	);
+	const result = await pi.exec("git", ["-C", primaryDir, "worktree", "add", "-b", branch, worktreeDir], {
+		timeout: 30_000,
+	});
 
 	if (result.code !== 0) {
 		throw new Error(`Failed to create worktree: ${result.stderr}`);
@@ -120,10 +118,7 @@ function shellQuote(s: string): string {
  *
  * Only active when state.worktreeDir is set.
  */
-export function registerWorktreeGuards(
-	pi: ExtensionAPI,
-	getState: () => SessionState,
-): void {
+export function registerWorktreeGuards(pi: ExtensionAPI, getState: () => SessionState): void {
 	pi.on("tool_call", async (event, ctx) => {
 		const state = getState();
 		if (!state.worktreeDir) return;
@@ -148,24 +143,20 @@ export function registerWorktreeGuards(
 		if (!inputPath) return;
 
 		const expanded = expandPath(inputPath);
-		const resolved = path.isAbsolute(expanded)
-			? path.resolve(expanded)
-			: path.resolve(mainRepo, expanded);
+		const resolved = path.isAbsolute(expanded) ? path.resolve(expanded) : path.resolve(mainRepo, expanded);
 
 		// Allow secondary project dirs
-		if (state.secondaryDirs.some((d) =>
-			resolved === d || resolved.startsWith(d + "/"),
-		)) {
+		if (state.secondaryDirs.some((d: string) => resolved === d || resolved.startsWith(`${d}/`))) {
 			return;
 		}
 
 		// Allow anything outside main repo (scratch, /tmp, ~, etc.)
-		if (resolved !== mainRepo && !resolved.startsWith(mainRepo + "/")) {
+		if (resolved !== mainRepo && !resolved.startsWith(`${mainRepo}/`)) {
 			return;
 		}
 
 		// It's under main repo — block unless it's also under worktree
-		if (!resolved.startsWith(worktreeDir + "/") && resolved !== worktreeDir) {
+		if (!resolved.startsWith(`${worktreeDir}/`) && resolved !== worktreeDir) {
 			return {
 				block: true,
 				reason:

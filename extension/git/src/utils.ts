@@ -2,9 +2,9 @@
  * Shared helpers for git commands.
  */
 
-import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import * as fs from "node:fs";
 import * as path from "node:path";
+import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 
 const RESOURCES = path.resolve(__dirname, "..", "resources");
 
@@ -26,11 +26,7 @@ export async function resolvePrNumber(
 	ctx: any,
 ): Promise<{ number: string; branch: string } | null> {
 	if (prArg) {
-		const result = await pi.exec("gh", [
-			"pr", "view", prArg,
-			"--json", "headRefName",
-			"-q", ".headRefName",
-		]);
+		const result = await pi.exec("gh", ["pr", "view", prArg, "--json", "headRefName", "-q", ".headRefName"]);
 		if (result.code !== 0) {
 			ctx.ui.notify(`PR #${prArg} not found`, "error");
 			return null;
@@ -45,12 +41,7 @@ export async function resolvePrNumber(
 		return null;
 	}
 
-	const existing = await pi.exec("gh", [
-		"pr", "list",
-		"--head", branchName,
-		"--json", "number",
-		"-q", ".[0].number",
-	]);
+	const existing = await pi.exec("gh", ["pr", "list", "--head", branchName, "--json", "number", "-q", ".[0].number"]);
 	if (!existing.stdout.trim()) {
 		ctx.ui.notify(`No PR found for branch ${branchName}`, "error");
 		return null;

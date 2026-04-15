@@ -18,11 +18,7 @@ let notifiedFailure = false;
  * Logs to ~/.basecamp/observer/observer.log on the Python side.
  * Extension-side failures (e.g. observer not installed) notify once.
  */
-function triggerIngest(
-	pi: ExtensionAPI,
-	ctx: ExtensionContext,
-	processFlag: boolean,
-): void {
+function triggerIngest(pi: ExtensionAPI, ctx: ExtensionContext, processFlag: boolean): void {
 	const sessionId = ctx.sessionManager.getSessionId();
 	const sessionFile = ctx.sessionManager.getSessionFile();
 	if (!sessionId || !sessionFile) return;
@@ -40,7 +36,7 @@ function triggerIngest(
 	pi.exec("bash", ["-c", shellCmd], { timeout: 300_000 }).catch(() => {
 		if (!notifiedFailure) {
 			notifiedFailure = true;
-			ctx.ui.notify("observer: ingest failed — check ~/.basecamp/observer/observer.log", "warn");
+			ctx.ui.notify("observer: ingest failed — check ~/.basecamp/observer/observer.log", "warning");
 		}
 	});
 }

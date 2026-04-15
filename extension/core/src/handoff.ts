@@ -75,21 +75,16 @@ export function registerHandoff(pi: ExtensionAPI) {
 			}
 
 			const focus = args?.trim();
-			const instructions = focus
-				? `${HANDOFF_INSTRUCTIONS}\n\nFocus the summary on: ${focus}`
-				: HANDOFF_INSTRUCTIONS;
+			const instructions = focus ? `${HANDOFF_INSTRUCTIONS}\n\nFocus the summary on: ${focus}` : HANDOFF_INSTRUCTIONS;
 
 			ctx.ui.notify("Generating handoff summary...", "info");
 
 			// Fork the current session into a separate pi process to
 			// generate the summary. The forked agent sees the full
 			// conversation context but doesn't modify the current session.
-			const result = await pi.exec("pi", [
-				"-p",
-				"--fork", sessionFile,
-				"--no-session",
-				"--", instructions,
-			], { timeout: 180_000 });
+			const result = await pi.exec("pi", ["-p", "--fork", sessionFile, "--no-session", "--", instructions], {
+				timeout: 180_000,
+			});
 
 			if (result.code !== 0) {
 				ctx.ui.notify(`Handoff failed: ${result.stderr || "summarization error"}`, "error");
@@ -109,13 +104,16 @@ export function registerHandoff(pi: ExtensionAPI) {
 				setup: async (sm) => {
 					sm.appendMessage({
 						role: "user",
-						content: [{
-							type: "text",
-							text: "This session is a continuation from a prior session. "
-								+ "Here is a summary of what happened before:\n\n"
-								+ `<handoff-context>\n${summary}\n</handoff-context>\n\n`
-								+ "Wait for my next instruction before proceeding.",
-						}],
+						content: [
+							{
+								type: "text",
+								text:
+									"This session is a continuation from a prior session. " +
+									"Here is a summary of what happened before:\n\n" +
+									`<handoff-context>\n${summary}\n</handoff-context>\n\n` +
+									"Wait for my next instruction before proceeding.",
+							},
+						],
 						timestamp: Date.now(),
 					});
 				},
