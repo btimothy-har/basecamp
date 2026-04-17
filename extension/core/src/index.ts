@@ -4,14 +4,15 @@
 
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { registerContextInjection } from "./context-injection";
+import { registerEscalate } from "./escalate";
 import { registerFooter } from "./footer";
 import { registerHandoff } from "./handoff";
 import { registerHeader } from "./header";
 import { registerOpenCommand } from "./open";
 import { registerPrompt } from "./prompt";
 import { getState, registerSession } from "./session";
+import { registerTasks } from "./tasks";
 import { registerTitle } from "./title";
-import { registerTracker } from "./tracker";
 
 export default function (pi: ExtensionAPI) {
 	registerSession(pi);
@@ -22,5 +23,6 @@ export default function (pi: ExtensionAPI) {
 	registerHandoff(pi);
 	registerOpenCommand(pi, getState);
 	registerTitle(pi);
-	registerTracker(pi);
+	registerTasks(pi);
+	registerEscalate(pi);
 }
