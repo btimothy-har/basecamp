@@ -22,8 +22,8 @@ export default function (pi: ExtensionAPI) {
 		sessionName = pi.getSessionName()?.trim() || "";
 		if (!sessionName) {
 			const project = state.projectName || "session";
-			const id = ctx.sessionManager.getSessionId().slice(0, 8);
-			sessionName = `bc-${project}-${id}`;
+			const id = ctx.sessionManager.getSessionId().replace(/-/g, "").slice(-4);
+			sessionName = `${project}-${id}`;
 			pi.setSessionName(sessionName);
 		}
 		process.env.BASECAMP_SESSION_NAME = sessionName;

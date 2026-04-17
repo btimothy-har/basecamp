@@ -139,9 +139,19 @@ function renderTitleWidget(
 // Registration
 // ============================================================================
 
+/** Last 4 hex chars of UUIDv7 — random portion, safe for disambiguation. */
+function shortSessionId(sessionId: string): string {
+	return sessionId.replace(/-/g, "").slice(-4);
+}
+
+function formatTitle(title: string, tag: string): string {
+	return `${title} [${tag}]`;
+}
+
 export function registerTitle(pi: ExtensionAPI): void {
 	let ctx: ExtensionContext | null = null;
 	let title: string | null = null;
+	let sessionTag: string | null = null;
 	let pendingTitle: AbortController | null = null;
 
 	function updateWidget(): void {
@@ -164,11 +174,18 @@ export function registerTitle(pi: ExtensionAPI): void {
 				render(width: number): string[] {
 					if (cachedLines && cachedWidth === width) return cachedLines;
 					cachedWidth = width;
-					cachedLines = title ? renderTitleWidget(title, fg, bg, bold, width) : [];
+						const display = displayTitle();
+					cachedLines = display ? renderTitleWidget(display, fg, bg, bold, width) : [];
 					return cachedLines;
 				},
 			};
 		}, { placement: "aboveEditor" });
+	}
+
+	/** Display title with session tag suffix. */
+	function displayTitle(): string | null {
+		if (!title) return null;
+		return sessionTag ? formatTitle(title, sessionTag) : title;
 	}
 
 	function persistState(): void {
@@ -191,11 +208,12 @@ export function registerTitle(pi: ExtensionAPI): void {
 			const extracted = await extractTitle(conversation, cmdCtx.cwd, cmdCtx.model?.id, onError);
 			if (extracted) {
 				title = extracted;
-				pi.setSessionName(title);
-				if (ctx?.hasUI) ctx.ui.setTitle(title);
+				const display = displayTitle();
+				pi.setSessionName(display ?? title);
+				if (ctx?.hasUI) ctx.ui.setTitle(display ?? title);
 				updateWidget();
 				persistState();
-				cmdCtx.ui.notify(`Title: ${title}`, "info");
+				cmdCtx.ui.notify(`Title: ${display}`, "info");
 			}
 		},
 	});
@@ -204,6 +222,7 @@ export function registerTitle(pi: ExtensionAPI): void {
 	pi.on("session_start", async (_event, sessionCtx) => {
 		ctx = sessionCtx;
 		title = null;
+		sessionTag = shortSessionId(sessionCtx.sessionManager.getSessionId());
 
 		const entries = sessionCtx.sessionManager.getEntries();
 		const titleEntry = entries
@@ -212,7 +231,8 @@ export function registerTitle(pi: ExtensionAPI): void {
 
 		if (titleEntry?.data?.title) {
 			title = titleEntry.data.title;
-			if (sessionCtx.hasUI) sessionCtx.ui.setTitle(title);
+			const display = displayTitle();
+			if (sessionCtx.hasUI) sessionCtx.ui.setTitle(display ?? title);
 		}
 
 		updateWidget();
@@ -237,8 +257,9 @@ export function registerTitle(pi: ExtensionAPI): void {
 			if (controller.signal.aborted) return;
 			if (extracted) {
 				title = extracted;
-				pi.setSessionName(title);
-				if (ctx?.hasUI) ctx.ui.setTitle(title);
+				const display = displayTitle();
+				pi.setSessionName(display ?? title);
+				if (ctx?.hasUI) ctx.ui.setTitle(display ?? title);
 				updateWidget();
 				persistState();
 			}
