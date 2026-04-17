@@ -185,6 +185,8 @@ function buildLocationSegment(
 
 	if (state.worktreeLabel) {
 		parts.push(fg("warning", `⌥ ${state.worktreeLabel}`));
+	} else {
+		parts.push(fg("dim", "⌥ main"));
 	}
 
 	const branch = footerData.getGitBranch();
