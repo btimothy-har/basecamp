@@ -123,13 +123,16 @@ async function extractTitle(conversation: string, cwd: string, fallbackModel?: s
 function renderTitleWidget(
 	title: string,
 	fg: (color: Parameters<Theme["fg"]>[0], text: string) => string,
+	bg: (color: Parameters<Theme["bg"]>[0], text: string) => string,
 	bold: Theme["bold"],
 	width: number,
 ): string[] {
 	const text = fg("accent", bold(title));
 	const vw = visibleWidth(text);
 	const pad = Math.max(0, width - vw - 1);
-	return [`${" ".repeat(pad)}${text}`];
+	const line = `${" ".repeat(pad)}${text} `;
+	const linePad = Math.max(0, width - visibleWidth(line));
+	return [bg("customMessageBg", line + " ".repeat(linePad))];
 }
 
 // ============================================================================
@@ -151,6 +154,7 @@ export function registerTitle(pi: ExtensionAPI): void {
 
 		ctx.ui.setWidget("basecamp-title", (_tui, theme) => {
 			const fg = theme.fg.bind(theme);
+			const bg = theme.bg.bind(theme);
 			const bold = theme.bold.bind(theme);
 			let cachedLines: string[] | null = null;
 			let cachedWidth = 0;
@@ -160,7 +164,7 @@ export function registerTitle(pi: ExtensionAPI): void {
 				render(width: number): string[] {
 					if (cachedLines && cachedWidth === width) return cachedLines;
 					cachedWidth = width;
-					cachedLines = title ? renderTitleWidget(title, fg, bold, width) : [];
+					cachedLines = title ? renderTitleWidget(title, fg, bg, bold, width) : [];
 					return cachedLines;
 				},
 			};
