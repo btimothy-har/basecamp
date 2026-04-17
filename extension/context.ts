@@ -102,7 +102,7 @@ export interface ContextFile {
 
 const CONTEXT_FILE_NAMES = ["AGENTS.md", "CLAUDE.md"];
 
-function loadContextFileFromDir(dir: string): ContextFile | null {
+export function loadContextFileFromDir(dir: string): ContextFile | null {
 	for (const filename of CONTEXT_FILE_NAMES) {
 		const filePath = path.join(dir, filename);
 		try {
