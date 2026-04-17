@@ -386,37 +386,11 @@ export function registerTracker(pi: ExtensionAPI): void {
 
 	// --- Tool: escalate ---
 
-	/** Build prefilled editor template for multi-question escalate. */
-	function buildEditorTemplate(questions: string[], context?: string[]): string {
-		return questions
-			.map((q, i) => {
-				const hint = context?.[i] ? `  ${context[i]}\n` : "";
-				return `# ${q}\n${hint}> `;
-			})
-			.join("\n\n");
-	}
-
-	/** Parse answers from the submitted editor content. */
-	function parseEditorAnswers(content: string, questionCount: number): (string | null)[] {
-		const sections = content.split(/^#\s/m).filter(Boolean);
-		return Array.from({ length: questionCount }, (_, i) => {
-			const section = sections[i];
-			if (!section) return null;
-			// Extract text after the last "> " marker in the section
-			const lines = section.split("\n");
-			const answerLines: string[] = [];
-			let inAnswer = false;
-			for (const line of lines) {
-				if (line.startsWith("> ") || line === ">") {
-					inAnswer = true;
-					answerLines.push(line.slice(2));
-				} else if (inAnswer && line.trim()) {
-					answerLines.push(line);
-				}
-			}
-			const answer = answerLines.join("\n").trim();
-			return answer || null;
-		});
+	/** Build input title with optional counter and context. */
+	function buildInputTitle(question: string, hint?: string, index?: number, total?: number): string {
+		const counter = total && total > 1 ? `(${(index ?? 0) + 1}/${total}) ` : "";
+		const context = hint ? `\n${hint}` : "";
+		return `${counter}${question}${context}`;
 	}
 
 	pi.registerTool({
@@ -444,38 +418,47 @@ export function registerTracker(pi: ExtensionAPI): void {
 				};
 			}
 
-			// Single question: use select + input
-			if (params.questions.length === 1) {
-				const question = params.questions[0]!;
-				const answer = await execCtx.ui.input(question);
+			const total = params.questions.length;
+			const answers = new Map<number, string>();
+			let index = 0;
+
+			while (index < total) {
+				const question = params.questions[index]!;
+				const hint = params.context?.[index];
+				const title = buildInputTitle(question, hint, index, total);
+				const existing = answers.get(index);
+
+				const answer = await execCtx.ui.input(title, existing);
+
 				if (!answer) {
+					if (index > 0) {
+						index--;
+						continue;
+					}
 					return {
 						content: [{ type: "text", text: "User dismissed without answering." }],
 						details: { questions: params.questions, answers: null },
 					};
 				}
+
+				answers.set(index, answer);
+				index++;
+			}
+
+			// Format results
+			if (total === 1) {
+				const answer = answers.get(0) ?? "";
 				return {
 					content: [{ type: "text", text: answer }],
 					details: { questions: params.questions, answers: [answer] },
 				};
 			}
 
-			// Multi question: use editor
-			const template = buildEditorTemplate(params.questions, params.context);
-			const edited = await execCtx.ui.editor("Answer the questions below", template);
-
-			if (!edited) {
-				return {
-					content: [{ type: "text", text: "User dismissed without answering." }],
-					details: { questions: params.questions, answers: null },
-				};
-			}
-
-			const answers = parseEditorAnswers(edited, params.questions.length);
-			const answerLines = params.questions.map((q, i) => `${q}\n→ ${answers[i] ?? "(no answer)"}`);
+			const answerList = params.questions.map((_, i) => answers.get(i) ?? null);
+			const answerLines = params.questions.map((q, i) => `${q}\n→ ${answerList[i] ?? "(no answer)"}`);
 			return {
 				content: [{ type: "text", text: answerLines.join("\n\n") }],
-				details: { questions: params.questions, answers },
+				details: { questions: params.questions, answers: answerList },
 			};
 		},
 		renderCall(args, theme) {
