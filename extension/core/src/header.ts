@@ -35,6 +35,8 @@ function buildBanner(fg: ThemeFg, width: number): string[] {
 	if (state.worktreeLabel) {
 		const branch = state.worktreeBranch ? fg("dim", ` (${state.worktreeBranch})`) : "";
 		rows.push(["Worktree", `${state.worktreeLabel}${branch}`]);
+	} else {
+		rows.push(["Worktree", "main"]);
 	}
 
 	if (state.secondaryDirs.length > 0) {
