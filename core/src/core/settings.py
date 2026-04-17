@@ -117,5 +117,18 @@ class Settings:
             else:
                 data["timezone"] = value
 
+    @property
+    def models(self) -> dict[str, str]:
+        models = self._read().get("models")
+        return models if isinstance(models, dict) else {}
+
+    @models.setter
+    def models(self, value: dict[str, str]) -> None:
+        with self._locked_update() as data:
+            if value:
+                data["models"] = value
+            else:
+                data.pop("models", None)
+
 
 settings = Settings()

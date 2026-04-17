@@ -5,6 +5,11 @@ import sys
 import rich_click as click
 
 from core.cli.launch import execute_launch
+from core.cli.model import (
+    execute_model_list,
+    execute_model_remove,
+    execute_model_set,
+)
 from core.cli.project import (
     execute_project_add,
     execute_project_edit,
@@ -109,6 +114,41 @@ def project_remove(name: str) -> None:
     """Remove a project."""
     try:
         execute_project_remove(name)
+    except LauncherError as e:
+        _handle_error(e)
+
+
+@basecamp.group()
+def model() -> None:
+    """Manage model aliases."""
+
+
+@model.command("list")
+def model_list() -> None:
+    """List all configured model aliases."""
+    try:
+        execute_model_list()
+    except LauncherError as e:
+        _handle_error(e)
+
+
+@model.command("set")
+@click.argument("alias")
+@click.argument("model_id")
+def model_set(alias: str, model_id: str) -> None:
+    """Set a model alias (e.g. basecamp model set fast claude-haiku-4-5)."""
+    try:
+        execute_model_set(alias, model_id)
+    except LauncherError as e:
+        _handle_error(e)
+
+
+@model.command("remove")
+@click.argument("alias")
+def model_remove(alias: str) -> None:
+    """Remove a model alias."""
+    try:
+        execute_model_remove(alias)
     except LauncherError as e:
         _handle_error(e)
 
