@@ -7,19 +7,8 @@
 
 import { spawn } from "node:child_process";
 import type { AgentMessage } from "@mariozechner/pi-agent-core";
-import type {
-	AssistantMessage,
-	TextContent,
-	ToolCall,
-	ToolResultMessage,
-	UserMessage,
-} from "@mariozechner/pi-ai";
-import type {
-	ExtensionAPI,
-	ExtensionContext,
-	SessionEntry,
-	Theme,
-} from "@mariozechner/pi-coding-agent";
+import type { AssistantMessage, TextContent, ToolCall, ToolResultMessage, UserMessage } from "@mariozechner/pi-ai";
+import type { ExtensionAPI, ExtensionContext, SessionEntry, Theme } from "@mariozechner/pi-coding-agent";
 import { visibleWidth } from "@mariozechner/pi-tui";
 import { resolveModelAlias } from "../../config.ts";
 
@@ -27,7 +16,8 @@ import { resolveModelAlias } from "../../config.ts";
 // Background Title Extraction
 // ============================================================================
 
-const TITLE_SYSTEM_PROMPT = "You are a title generator. Output exactly one short title (4-5 words). No markdown, no quotes, no alternatives, no explanation. Just the title.";
+const TITLE_SYSTEM_PROMPT =
+	"You are a title generator. Output exactly one short title (4-5 words). No markdown, no quotes, no alternatives, no explanation. Just the title.";
 
 const TITLE_PROMPT = `Give a short title (4-5 words) that captures the overall theme of this entire coding session. Consider the full conversation, not just the latest messages. Return ONLY the title, no quotes, no explanation, no punctuation at the end.
 
@@ -44,8 +34,12 @@ function piPrint(model: string, systemPrompt: string, prompt: string, cwd: strin
 
 		let stdout = "";
 		let stderr = "";
-		proc.stdout.on("data", (data: Buffer) => { stdout += data.toString(); });
-		proc.stderr.on("data", (data: Buffer) => { stderr += data.toString(); });
+		proc.stdout.on("data", (data: Buffer) => {
+			stdout += data.toString();
+		});
+		proc.stderr.on("data", (data: Buffer) => {
+			stderr += data.toString();
+		});
 
 		const timer = setTimeout(() => {
 			proc.kill();
@@ -72,15 +66,17 @@ function serializeBranch(entries: SessionEntry[]): string {
 
 		if (msg.role === "user") {
 			const user = msg as UserMessage;
-			const text = typeof user.content === "string"
-				? user.content
-				: user.content.filter((c): c is TextContent => c.type === "text").map((c) => c.text).join("\n");
+			const text =
+				typeof user.content === "string"
+					? user.content
+					: user.content
+							.filter((c): c is TextContent => c.type === "text")
+							.map((c) => c.text)
+							.join("\n");
 			if (text.trim()) lines.push(`[User]\n${text.trim()}`);
 		} else if (msg.role === "assistant") {
 			const assistant = msg as AssistantMessage;
-			const textParts = assistant.content
-				.filter((c): c is TextContent => c.type === "text")
-				.map((c) => c.text);
+			const textParts = assistant.content.filter((c): c is TextContent => c.type === "text").map((c) => c.text);
 			const toolCalls = assistant.content
 				.filter((c): c is ToolCall => c.type === "toolCall")
 				.map((c) => `tool:${c.name}(${JSON.stringify(c.arguments).slice(0, 100)})`);
@@ -100,12 +96,21 @@ function serializeBranch(entries: SessionEntry[]): string {
 	return lines.join("\n\n");
 }
 
-async function extractTitle(conversation: string, cwd: string, fallbackModel?: string, onError?: (msg: string) => void): Promise<string | null> {
+async function extractTitle(
+	conversation: string,
+	cwd: string,
+	fallbackModel?: string,
+	onError?: (msg: string) => void,
+): Promise<string | null> {
 	try {
 		const model = resolveModelAlias("fast", fallbackModel);
 		const stdout = await piPrint(model, TITLE_SYSTEM_PROMPT, TITLE_PROMPT + conversation, cwd, 30_000);
 		const firstLine = stdout.trim().split("\n")[0] ?? "";
-		const cleaned = firstLine.replace(/\*\*/g, "").replace(/^["'`]|["'`]$/g, "").replace(/\.+$/, "").trim();
+		const cleaned = firstLine
+			.replace(/\*\*/g, "")
+			.replace(/^["'`]|["'`]$/g, "")
+			.replace(/\.+$/, "")
+			.trim();
 		const words = cleaned.split(/\s+/);
 		const title = words.length > 5 ? words.slice(0, 5).join(" ") : cleaned;
 		if (!title) onError?.("empty response from pi");
@@ -162,24 +167,30 @@ export function registerTitle(pi: ExtensionAPI): void {
 			return;
 		}
 
-		ctx.ui.setWidget("basecamp-title", (_tui, theme) => {
-			const fg = theme.fg.bind(theme);
-			const bg = theme.bg.bind(theme);
-			const bold = theme.bold.bind(theme);
-			let cachedLines: string[] | null = null;
-			let cachedWidth = 0;
+		ctx.ui.setWidget(
+			"basecamp-title",
+			(_tui, theme) => {
+				const fg = theme.fg.bind(theme);
+				const bg = theme.bg.bind(theme);
+				const bold = theme.bold.bind(theme);
+				let cachedLines: string[] | null = null;
+				let cachedWidth = 0;
 
-			return {
-				invalidate() { cachedLines = null; },
-				render(width: number): string[] {
-					if (cachedLines && cachedWidth === width) return cachedLines;
-					cachedWidth = width;
+				return {
+					invalidate() {
+						cachedLines = null;
+					},
+					render(width: number): string[] {
+						if (cachedLines && cachedWidth === width) return cachedLines;
+						cachedWidth = width;
 						const display = displayTitle();
-					cachedLines = display ? renderTitleWidget(display, fg, bg, bold, width) : [];
-					return cachedLines;
-				},
-			};
-		}, { placement: "aboveEditor" });
+						cachedLines = display ? renderTitleWidget(display, fg, bg, bold, width) : [];
+						return cachedLines;
+					},
+				};
+			},
+			{ placement: "aboveEditor" },
+		);
 	}
 
 	/** Display title with session tag suffix. */
@@ -253,20 +264,22 @@ export function registerTitle(pi: ExtensionAPI): void {
 		}
 		if (!conversation.trim()) return;
 
-		extractTitle(conversation, agentCtx.cwd, agentCtx.model?.id).then((extracted) => {
-			if (controller.signal.aborted) return;
-			if (extracted) {
-				title = extracted;
-				const display = displayTitle();
-				pi.setSessionName(display ?? title);
-				if (ctx?.hasUI) ctx.ui.setTitle(display ?? title);
-				updateWidget();
-				persistState();
-			}
-			pendingTitle = null;
-		}).catch(() => {
-			pendingTitle = null;
-		});
+		extractTitle(conversation, agentCtx.cwd, agentCtx.model?.id)
+			.then((extracted) => {
+				if (controller.signal.aborted) return;
+				if (extracted) {
+					title = extracted;
+					const display = displayTitle();
+					pi.setSessionName(display ?? title);
+					if (ctx?.hasUI) ctx.ui.setTitle(display ?? title);
+					updateWidget();
+					persistState();
+				}
+				pendingTitle = null;
+			})
+			.catch(() => {
+				pendingTitle = null;
+			});
 	});
 
 	// --- Cleanup ---

@@ -20,9 +20,9 @@ import * as path from "node:path";
 import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-agent";
 import { getMarkdownTheme } from "@mariozechner/pi-coding-agent";
 import { type Component, Container, Markdown, Spacer, Text } from "@mariozechner/pi-tui";
+import { resolveModelAlias } from "../../config.ts";
 import type { AgentStreamEvent } from "./executor.ts";
 import { spawnAgent } from "./executor.ts";
-import { resolveModelAlias } from "../../config.ts";
 import type { AgentConfig, AgentDetails, AgentPartialDetails, ModelStrategy, ToolCallRecord } from "./types.ts";
 import { AgentToolParams, DEFAULT_AGENT_MAX_DEPTH } from "./types.ts";
 
@@ -30,10 +30,7 @@ import { AgentToolParams, DEFAULT_AGENT_MAX_DEPTH } from "./types.ts";
 // Model Resolution
 // ============================================================================
 
-function resolveModel(
-	strategy: ModelStrategy,
-	parentModel: string | undefined,
-): string | undefined {
+function resolveModel(strategy: ModelStrategy, parentModel: string | undefined): string | undefined {
 	switch (strategy) {
 		case "default":
 			return undefined;

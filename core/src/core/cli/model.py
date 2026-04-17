@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from rich.table import Table
+
 from core.settings import settings
 from core.ui import console
 
@@ -13,8 +15,6 @@ def execute_model_list() -> None:
         console.print("\n[dim]No model aliases configured.[/dim]")
         console.print("[dim]Use [bold]basecamp model set <alias> <model-id>[/bold] to add one.[/dim]\n")
         return
-
-    from rich.table import Table
 
     table = Table(title="Model Aliases", show_header=True, header_style="bold cyan")
     table.add_column("Alias", style="green")
