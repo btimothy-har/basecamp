@@ -453,29 +453,55 @@ export function registerTracker(pi: ExtensionAPI): void {
 			options: Type.Optional(
 				Type.Array(Type.String(), { description: "Proposed options for the user to choose from" }),
 			),
+			additionalQuestions: Type.Optional(
+				Type.Array(
+					Type.Object({
+						question: Type.String(),
+						options: Type.Optional(Type.Array(Type.String())),
+					}),
+					{ description: "Follow-up questions to ask in sequence (user can navigate back/forward)" },
+				),
+			),
 		}),
 		async execute(_id, params, _signal, _onUpdate, execCtx) {
+			const questions: EscalateQuestion[] = [
+				{ question: params.question, options: params.options },
+				...(params.additionalQuestions ?? []),
+			];
+
 			if (!execCtx.hasUI) {
+				const summary = questions.map((q) => `[escalation] ${q.question}`).join("\n");
 				return {
-					content: [{ type: "text", text: `[escalation] ${params.question}` }],
-					details: { question: params.question, answer: null },
+					content: [{ type: "text", text: summary }],
+					details: { questions: questions.map((q) => q.question), answers: null },
 				};
 			}
 
-			const questions: EscalateQuestion[] = [{ question: params.question, options: params.options }];
 			const result = await runQuestionLoop(execCtx.ui, questions);
 
 			if (result === "dismissed") {
 				return {
 					content: [{ type: "text", text: "User dismissed without answering." }],
-					details: { question: params.question, answer: null },
+					details: { questions: questions.map((q) => q.question), answers: null },
 				};
 			}
 
-			const answer = result.get(0) ?? "";
+			// Format answers: single question returns plain text, multi returns labeled pairs
+			if (questions.length === 1) {
+				const answer = result.get(0) ?? "";
+				return {
+					content: [{ type: "text", text: answer }],
+					details: { questions: [params.question], answers: [answer] },
+				};
+			}
+
+			const answerLines = questions.map((q, i) => `${q.question}\n→ ${result.get(i) ?? "(no answer)"}`);
 			return {
-				content: [{ type: "text", text: answer }],
-				details: { question: params.question, answer },
+				content: [{ type: "text", text: answerLines.join("\n\n") }],
+				details: {
+					questions: questions.map((q) => q.question),
+					answers: questions.map((_, i) => result.get(i) ?? null),
+				},
 			};
 		},
 		renderCall(args, theme) {
@@ -486,12 +512,13 @@ export function registerTracker(pi: ExtensionAPI): void {
 		},
 		renderResult(result, { isPartial }, theme) {
 			if (isPartial) return renderPartial(theme);
-			const answer = (result.details as { answer: string | null })?.answer;
-			if (!answer) {
+			const details = result.details as { answers: (string | null)[] | null };
+			if (!details?.answers) {
 				const { Text } = require("@mariozechner/pi-tui");
 				return new Text(theme.fg("warning", "⚠") + theme.fg("dim", " dismissed"), 0, 0);
 			}
-			return renderSuccess(`answered: ${answer}`, theme);
+			const count = details.answers.filter(Boolean).length;
+			return renderSuccess(`${count} answer${count !== 1 ? "s" : ""} received`, theme);
 		},
 	});
 
