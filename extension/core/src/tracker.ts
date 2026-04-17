@@ -182,7 +182,7 @@ export function registerTracker(pi: ExtensionAPI): void {
 			if (state.assumptions.length > 0) {
 				lines.push(`Assumptions:\n${state.assumptions.map((a) => `• ${a}`).join("\n")}`);
 			}
-			lines.push("", "If the goal or assumptions have changed, call `update_context` to update them.");
+			lines.push("", "You MUST call `update_context` if the goal or any assumption has changed, been invalidated, or been confirmed.");
 			pi.sendMessage(
 				{
 					customType: "tracker-context",
