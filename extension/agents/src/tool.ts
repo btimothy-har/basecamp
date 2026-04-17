@@ -9,7 +9,7 @@
  *   - Custom renderCall/renderResult (option D)
  *
  * Usage:
- *   { agent: "scout", task: "..." }              → run named agent
+ *   { agent: "investigate", task: "..." }              → run named agent
  *   { task: "Fix the bug" }                      → ad-hoc (no agent definition)
  */
 
@@ -298,7 +298,7 @@ export function registerAgentTool(
 		label: "Agent",
 		description: `Dispatch a subagent to perform a task synchronously. The subagent runs as a child process and its output is returned as the tool result.
 
-DISPATCH: { agent: "scout", task: "Investigate the auth module" }
+DISPATCH: { agent: "investigate", task: "Investigate the auth module" }
 AD-HOC: { task: "Fix the login bug" }
 
 Available agents are discovered from project (.basecamp/agents/), user (~/.basecamp/agents/), and builtin definitions.`,

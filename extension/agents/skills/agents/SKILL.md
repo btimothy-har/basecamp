@@ -20,10 +20,9 @@ Browse available agents with `/agents`.
 
 | Agent | Best for |
 |-------|----------|
-| **scout** | Fast codebase investigation, context gathering |
+| **investigate** | Codebase investigation and context gathering |
 | **planner** | Breaking down requirements into implementation steps |
 | **worker** | Hands-on code changes, refactors, feature implementation |
-| **reviewer** | Reviewing diffs, checking code quality |
 | **docs-reviewer** | Documentation accuracy and completeness |
 | **security-reviewer** | Injection, auth, secrets, input validation |
 | **test-reviewer** | Test coverage gaps, edge cases, assertion design |
@@ -46,7 +45,7 @@ Write a **self-contained brief**. The subagent has no conversation history — t
 Using the `agent` tool:
 
 ```
-agent({ agent: "scout", task: "Investigate the auth module — find token refresh flow, session management, and middleware chain. Key entry: src/auth/index.ts" })
+agent({ agent: "investigate", task: "Investigate the auth module — find token refresh flow, session management, and middleware chain. Key entry: src/auth/index.ts" })
 ```
 
 Ad-hoc (no agent definition):
