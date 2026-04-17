@@ -25,3 +25,10 @@ class NoDirectoriesConfiguredError(LauncherError):
 
     def __init__(self, project_name: str) -> None:
         super().__init__(f"Project '{project_name}' has no directories configured")
+
+
+class BlockedArgError(LauncherError):
+    """Raised when a user passes a flag that basecamp manages."""
+
+    def __init__(self, flag: str) -> None:
+        super().__init__(f"Flag '{flag}' is managed by basecamp and cannot be passed through")

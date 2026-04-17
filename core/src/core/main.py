@@ -4,6 +4,7 @@ import sys
 
 import rich_click as click
 
+from core.cli.launch import execute_launch
 from core.cli.project import (
     execute_project_add,
     execute_project_edit,
@@ -11,7 +12,8 @@ from core.cli.project import (
     execute_project_remove,
 )
 from core.cli.setup import execute_setup
-from core.exceptions import LauncherError
+from core.config import load_config
+from core.exceptions import BlockedArgError, LauncherError
 from core.ui import err_console
 
 # Configure rich-click
@@ -31,6 +33,32 @@ def _handle_error(e: LauncherError) -> None:
 @click.group(context_settings=CONTEXT_SETTINGS)
 def basecamp() -> None:
     """basecamp - project configuration and workspace management."""
+
+
+# Args that basecamp controls — block from passthrough to pi.
+_BLOCKED_ARGS = {"--system-prompt", "--append-system-prompt", "--project", "--label", "--style", "--agent-prompt"}
+
+
+@basecamp.command(context_settings={"ignore_unknown_options": True, "allow_extra_args": True})
+@click.argument("project")
+@click.option("--label", "-l", help="Work in a labeled git worktree (creates if new)")
+@click.option("--style", "-s", help="Override working style")
+@click.pass_context
+def pi(ctx: click.Context, project: str, label: str | None, style: str | None) -> None:
+    """Launch pi with a basecamp project.
+
+    Additional args are passed through to the pi CLI (e.g. --model, --resume).
+    """
+    try:
+        for arg in ctx.args:
+            for blocked in _BLOCKED_ARGS:
+                if arg == blocked or arg.startswith(blocked + "="):
+                    raise BlockedArgError(blocked)
+
+        config = load_config()
+        execute_launch(project, config, label=label, style=style, extra_args=ctx.args)
+    except LauncherError as e:
+        _handle_error(e)
 
 
 @basecamp.command()
