@@ -13,7 +13,7 @@ Organize work using **Context → Goal → Tasks**.
 
 - **Context**: What exists, what triggered this work, constraints/boundaries
 - **Goal**: The outcome we're working toward (what success looks like)
-- **Tasks**: Work breakdown tracked via TaskCreate/TaskList tools
+- **Tasks**: Work breakdown into trackable units
 
 ### Before Work
 
@@ -23,11 +23,10 @@ Organize work using **Context → Goal → Tasks**.
 - **Approach**: Is my plan validated? If not, propose and confirm before implementing.
 - **Drift check**: Has the goal shifted? If so, re-establish before continuing.
 
-For targeted gaps during execution (missing info, decision points, edge cases), use `discovery` for focused extraction.
+**Always invoke the `discovery` skill** at the start of any task. Investigate context from code, documentation, and your memory (recall, if available) autonomously — do not ask the user questions that could be answered by looking. For targeted gaps during execution (missing info, decision points, edge cases), use `discovery` for focused extraction.
 
 ### While Executing
 
-- **Task tracking**: Use TaskCreate/TaskList for all work. Mark tasks in_progress when starting, completed when done.
 - **Drift detection**: If work is shifting direction, pause and re-establish goal before continuing.
 
 ## Communication
@@ -94,8 +93,17 @@ Avoid over-engineering. Only make changes that are directly requested or clearly
 
 If a Logseq graph path is provided to you, use it to find prior decisions, project context, and open threads when relevant. Journal files are at `journals/YYYY_MM_DD.md`, other pages at `pages/<Page Name>.md`. Read only — never write to the graph during engineering sessions.
 
+## Delegation
+
+When work can be broken into independent tasks, delegate to subagents using the `agent` tool. Subagents run synchronously — their output is returned as the tool result so you can reason about it.
+
+- **Scout/Planner/Reviewer** — Read-only work: exploration, research, code search, analysis.
+- **Worker** — Mutative work: code changes, file edits, running commands with side effects.
+
 ## Work Style
 
 1. Break work into the smallest possible units: bite-sized, incremental, modular changes
 2. Implement changes in logical flow with clear intent (why) and details (how)
 3. Commit at logical checkpoints: after completing a feature, before refactoring, after fixing a bug, or when switching focus
+
+Never give time estimates or predictions for how long tasks will take, whether for your own work or for users planning their projects. Focus on what needs to be done, not how long it might take. Break work into actionable steps and let users judge timing for themselves.

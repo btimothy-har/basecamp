@@ -5,8 +5,8 @@
  * hook. Tools and skills are sourced dynamically from pi's APIs
  * (getAllTools, getCommands) so we don't lose those sections.
  *
- * Reads bundled prompt files (environment.md, system.md, working styles)
- * and assembles them with runtime context (env block, git status).
+ * Reads bundled prompt files (environment.md, working styles) and assembles
+ * them with runtime context (env block, git status).
  *
  * User overrides in ~/.basecamp/prompts/ take precedence over bundled defaults.
  */
@@ -135,7 +135,7 @@ export interface AssembleOptions {
 	tools: ToolInfo[];
 	skills: SkillInfo[];
 	contextFiles: ContextFile[];
-	/** Agent prompt — when set, replaces working style + system.md (worker mode) */
+	/** Agent prompt — when set, replaces working style (worker mode) */
 	agentPrompt?: string;
 }
 
@@ -148,8 +148,8 @@ export interface AssembleOptions {
  * Layer order:
  *   1. Env block (runtime context)
  *   2. environment.md (tool/environment guidelines)
- *   3. Working style + system.md — OR agent prompt (workers)
- *      (agent prompt replaces both when --agent-prompt is passed)
+ *   3. Working style — OR agent prompt (workers)
+ *      (agent prompt replaces working style when --agent-prompt is passed)
  *   5. Available tools + skills
  *   6. Project context (basecamp context + CLAUDE.md/AGENTS.md)
  *   7. Git status snapshot
@@ -168,19 +168,13 @@ export function assemblePrompt(opts: AssembleOptions): string {
 		parts.push(environment);
 	}
 
-	// 3. Working style + system.md — OR agent prompt (workers)
+	// 3. Working style — OR agent prompt (workers)
 	if (opts.agentPrompt) {
-		// Agent prompt replaces both working style and system.md
 		parts.push(opts.agentPrompt);
 	} else {
 		const style = loadWorkingStyle(state.workingStyle).trim();
 		if (style) {
 			parts.push(style);
-		}
-
-		const system = loadPromptFile("system.md").trim();
-		if (system) {
-			parts.push(system);
 		}
 	}
 
@@ -236,7 +230,7 @@ export function registerPrompt(pi: ExtensionAPI): void {
 		// Discover CLAUDE.md / AGENTS.md from cwd
 		const contextFiles = discoverContextFiles(ctx.cwd);
 
-		// Agent prompt: replaces working style + system.md for workers
+		// Agent prompt: replaces working style for workers
 		const agentPromptFile = pi.getFlag("agent-prompt") as string | undefined;
 		let agentPrompt: string | undefined;
 		if (agentPromptFile) {
