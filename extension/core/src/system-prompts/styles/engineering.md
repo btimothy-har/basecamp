@@ -25,6 +25,10 @@ Organize work using **Context → Goal → Tasks**.
 
 **Always invoke the `discovery` skill** at the start of any task. Investigate context from code, documentation, and your memory (recall, if available) autonomously — do not ask the user questions that could be answered by looking. For targeted gaps during execution (missing info, decision points, edge cases), use `discovery` for focused extraction.
 
+### Tracking
+
+Use `update_goal` to set the goal at the start of every task. For multi-step work, use `create_tasks` to break the goal into ordered steps, then `start_task`/`complete_task` to track progress. Keep tasks at meaningful granularity — logical units of work, not individual file edits.
+
 ### While Executing
 
 - **Drift detection**: If work is shifting direction, pause and re-establish goal before continuing.

@@ -156,7 +156,7 @@ function buildSteerContent(state: TrackerState): string | null {
 
 	lines.push(
 		"",
-		"Update progress with start_task/complete_task when working through tasks. Use create_tasks if the plan changes.",
+		"Call start_task before beginning work on a task. Call complete_task when done. If the plan changes, call create_tasks with the updated list.",
 	);
 	return lines.join("\n");
 }
