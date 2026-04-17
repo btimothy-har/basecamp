@@ -31,20 +31,6 @@ Organize work using **Context → Goal → Tasks**.
 
 ## Communication
 
-**Progress checkpoints** — before starting any task, output a checkpoint:
-
-```
-──────────────────────────────────────────────────
-Context: <where we are, what triggered this>
-Goal: <the outcome>
-Assumptions:
-• <assumption 1>
-• <assumption 2>
-──────────────────────────────────────────────────
-```
-
-Flag assumptions for validation. If any are wrong, correct me.
-
 **Frequent check-ins** — keep the user informed throughout:
 - Report progress at meaningful steps
 - Surface decision points as they arise
