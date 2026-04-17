@@ -386,6 +386,61 @@ export function registerTracker(pi: ExtensionAPI): void {
 
 	// --- Tool: escalate ---
 	const CUSTOM_ANSWER = "Something else...";
+	const GO_BACK = "← Previous question";
+
+	/** Show a single question via select (with options) or input (without). */
+	async function askQuestion(
+		ui: ExtensionContext["ui"],
+		question: string,
+		options: string[] | undefined,
+		showBack: boolean,
+	): Promise<{ answer: string } | "back" | "dismissed"> {
+		if (options?.length) {
+			const choices = [...options, CUSTOM_ANSWER, ...(showBack ? [GO_BACK] : [])];
+			const picked = await ui.select(question, choices);
+			if (!picked) return showBack ? "back" : "dismissed";
+			if (picked === GO_BACK) return "back";
+			if (picked === CUSTOM_ANSWER) {
+				const typed = await ui.input(question);
+				if (!typed) return showBack ? "back" : "dismissed";
+				return { answer: typed };
+			}
+			return { answer: picked };
+		}
+
+		const typed = await ui.input(showBack ? `${question} (Esc to go back)` : question);
+		if (!typed) return showBack ? "back" : "dismissed";
+		return { answer: typed };
+	}
+
+	interface EscalateQuestion {
+		question: string;
+		options?: string[];
+	}
+
+	/** Navigate through questions with back/forward support. */
+	async function runQuestionLoop(
+		ui: ExtensionContext["ui"],
+		questions: EscalateQuestion[],
+	): Promise<Map<number, string> | "dismissed"> {
+		const answers = new Map<number, string>();
+		let index = 0;
+
+		while (index < questions.length) {
+			const q = questions[index]!;
+			const result = await askQuestion(ui, q.question, q.options, index > 0);
+
+			if (result === "dismissed") return "dismissed";
+			if (result === "back") {
+				index--;
+				continue;
+			}
+			answers.set(index, result.answer);
+			index++;
+		}
+
+		return answers;
+	}
 
 	pi.registerTool({
 		name: "escalate",
@@ -407,27 +462,17 @@ export function registerTracker(pi: ExtensionAPI): void {
 				};
 			}
 
-			let answer: string | undefined;
+			const questions: EscalateQuestion[] = [{ question: params.question, options: params.options }];
+			const result = await runQuestionLoop(execCtx.ui, questions);
 
-			if (params.options?.length) {
-				const choices = [...params.options, CUSTOM_ANSWER];
-				const picked = await execCtx.ui.select(params.question, choices);
-				if (picked === CUSTOM_ANSWER) {
-					answer = await execCtx.ui.input(params.question);
-				} else {
-					answer = picked;
-				}
-			} else {
-				answer = await execCtx.ui.input(params.question);
-			}
-
-			if (!answer) {
+			if (result === "dismissed") {
 				return {
 					content: [{ type: "text", text: "User dismissed without answering." }],
 					details: { question: params.question, answer: null },
 				};
 			}
 
+			const answer = result.get(0) ?? "";
 			return {
 				content: [{ type: "text", text: answer }],
 				details: { question: params.question, answer },
