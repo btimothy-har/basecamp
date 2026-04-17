@@ -65,7 +65,7 @@ function renderWidget(
 	if (!hasContent) return [];
 
 	const inner: string[] = [];
-	const boxWidth = Math.min(width, 80);
+	const boxWidth = width;
 
 	if (state.goal) {
 		inner.push(`${fg("dim", "Goal")}  ${state.goal}`);
