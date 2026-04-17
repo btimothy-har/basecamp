@@ -386,11 +386,32 @@ export function registerTracker(pi: ExtensionAPI): void {
 
 	// --- Tool: escalate ---
 
-	/** Build input title with optional counter and context. */
-	function buildInputTitle(question: string, hint?: string, index?: number, total?: number): string {
+	const SOMETHING_ELSE = "Something else...";
+
+	/** Build dialog title with optional counter and context. */
+	function buildTitle(question: string, hint?: string, index?: number, total?: number): string {
 		const counter = total && total > 1 ? `(${(index ?? 0) + 1}/${total}) ` : "";
-		const context = hint ? `\n${hint}` : "";
-		return `${counter}${question}${context}`;
+		const ctx = hint ? `\n${hint}` : "";
+		return `${counter}${question}${ctx}`;
+	}
+
+	/** Show a single question via select (with options) or input (without). */
+	async function askOne(
+		ui: ExtensionContext["ui"],
+		title: string,
+		options: string[] | undefined,
+		prefill?: string,
+	): Promise<string | undefined> {
+		if (options?.length) {
+			const choices = [...options, SOMETHING_ELSE];
+			const picked = await ui.select(title, choices);
+			if (!picked) return undefined;
+			if (picked === SOMETHING_ELSE) {
+				return await ui.input(title, prefill);
+			}
+			return picked;
+		}
+		return await ui.input(title, prefill);
 	}
 
 	pi.registerTool({
@@ -406,6 +427,12 @@ export function registerTracker(pi: ExtensionAPI): void {
 			context: Type.Optional(
 				Type.Array(Type.String(), {
 					description: "Recommendations or context per question (same order as questions)",
+				}),
+			),
+			options: Type.Optional(
+				Type.Array(Type.Array(Type.String()), {
+					description:
+						"Options per question (same order as questions). Use empty array [] for questions without options.",
 				}),
 			),
 		}),
@@ -425,10 +452,11 @@ export function registerTracker(pi: ExtensionAPI): void {
 			while (index < total) {
 				const question = params.questions[index]!;
 				const hint = params.context?.[index];
-				const title = buildInputTitle(question, hint, index, total);
+				const opts = params.options?.[index];
+				const title = buildTitle(question, hint, index, total);
 				const existing = answers.get(index);
 
-				const answer = await execCtx.ui.input(title, existing);
+				const answer = await askOne(execCtx.ui, title, opts?.length ? opts : undefined, existing);
 
 				if (!answer) {
 					if (index > 0) {
