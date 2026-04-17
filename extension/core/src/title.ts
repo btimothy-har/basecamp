@@ -132,7 +132,7 @@ function renderTitleWidget(
 	const pad = Math.max(0, width - vw - 1);
 	const line = `${" ".repeat(pad)}${text} `;
 	const linePad = Math.max(0, width - visibleWidth(line));
-	return [bg("customMessageBg", line + " ".repeat(linePad))];
+	return [bg("selectedBg", line + " ".repeat(linePad))];
 }
 
 // ============================================================================
