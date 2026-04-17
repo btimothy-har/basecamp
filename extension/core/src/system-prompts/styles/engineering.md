@@ -28,6 +28,7 @@ Organize work using **Context → Goal → Tasks**.
 ### While Executing
 
 - **Drift detection**: If work is shifting direction, pause and re-establish goal before continuing.
+- **Context tracking**: Call `update_context` when starting a task, when the goal shifts, or when assumptions change. This updates a persistent tracker visible to the user.
 
 ## Communication
 

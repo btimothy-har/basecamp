@@ -1,16 +1,15 @@
 /**
- * Tracker — persistent context & progress widgets updated by background LLM extraction.
+ * Tracker — persistent context widget above the editor.
  *
- * Two widgets rendered above the editor:
- *   - Context: title, goal, assumptions (replaced on agent_start)
- *   - Progress: cumulative list of work done (appended on agent_end)
+ * Three fields:
+ *   - Title: extracted by background pi -p (plaintext, low stakes)
+ *   - Goal: set by main agent via update_context tool
+ *   - Assumptions: set by main agent via update_context tool
  *
- * Extraction runs async via `pi -p` with a fast model. Never blocks the main agent.
  * State is persisted via appendEntry for session resume.
  */
 
-import { execFile as execFileCb } from "node:child_process";
-import { promisify } from "node:util";
+import { spawn } from "node:child_process";
 import type { AgentMessage } from "@mariozechner/pi-agent-core";
 import type {
 	AssistantMessage,
@@ -19,40 +18,66 @@ import type {
 	ToolResultMessage,
 	UserMessage,
 } from "@mariozechner/pi-ai";
+import { Type } from "@sinclair/typebox";
 import type {
 	ExtensionAPI,
 	ExtensionContext,
 	SessionEntry,
 	Theme,
 } from "@mariozechner/pi-coding-agent";
+import { truncateToWidth, visibleWidth } from "@mariozechner/pi-tui";
 import { resolveModelAlias } from "../../config.ts";
-
-const execFileAsync = promisify(execFileCb);
 
 // ============================================================================
 // Types
 // ============================================================================
 
-interface ContextState {
-	title: string;
-	goal: string;
+interface TrackerState {
+	title: string | null;
+	goal: string | null;
 	assumptions: string[];
 }
 
-interface ProgressState {
-	items: string[];
-}
-
-interface TrackerPersistedState {
-	context: ContextState | null;
-	progress: ProgressState;
-}
-
 // ============================================================================
-// Serialization
+// Background Title Extraction
 // ============================================================================
 
-/** Serialize session branch into a compact text representation for the extraction prompt. */
+/** Run `pi -p` with prompt on stdin, return stdout. */
+function piPrint(model: string, prompt: string, cwd: string, timeout: number): Promise<string> {
+	return new Promise((resolve, reject) => {
+		const proc = spawn("pi", ["-p", "--no-session", "--model", model], {
+			cwd,
+			env: { ...process.env },
+			stdio: ["pipe", "pipe", "pipe"],
+		});
+
+		let stdout = "";
+		let stderr = "";
+		proc.stdout.on("data", (data: Buffer) => { stdout += data.toString(); });
+		proc.stderr.on("data", (data: Buffer) => { stderr += data.toString(); });
+
+		const timer = setTimeout(() => {
+			proc.kill();
+			reject(new Error("timeout"));
+		}, timeout);
+
+		proc.on("close", (code) => {
+			clearTimeout(timer);
+			if (code === 0) resolve(stdout);
+			else reject(new Error(`pi exited ${code}: ${stderr.slice(0, 300)}`));
+		});
+
+		proc.stdin.write(prompt);
+		proc.stdin.end();
+	});
+}
+
+const TITLE_PROMPT = `Give a short title (3-6 words) for the current task in this coding session. Return ONLY the title, no quotes, no explanation, no punctuation at the end.
+
+Conversation:
+`;
+
+/** Serialize session branch into a compact text representation. */
 function serializeBranch(entries: SessionEntry[]): string {
 	const lines: string[] = [];
 
@@ -82,7 +107,6 @@ function serializeBranch(entries: SessionEntry[]): string {
 				.filter((c): c is TextContent => c.type === "text")
 				.map((c) => c.text)
 				.join("\n");
-			// Keep tool results brief — they're context, not the focus
 			const preview = text.length > 200 ? `${text.slice(0, 200)}...` : text;
 			if (preview.trim()) lines.push(`[Tool:${result.toolName}]\n${preview.trim()}`);
 		}
@@ -91,91 +115,12 @@ function serializeBranch(entries: SessionEntry[]): string {
 	return lines.join("\n\n");
 }
 
-// ============================================================================
-// Extraction
-// ============================================================================
-
-const CONTEXT_PROMPT = `You are extracting structured context from a coding session conversation.
-
-Given the conversation below, extract the current working context. Return ONLY valid JSON, no markdown fences, no explanation.
-
-Schema:
-{"title": "short task title (3-6 words)", "goal": "what success looks like (1 sentence)", "assumptions": ["assumption 1", "assumption 2"]}
-
-Rules:
-- Title should describe the current task, not the project
-- Goal should be concrete and verifiable
-- Assumptions are things the agent is taking as given that could be wrong
-- If the conversation is just starting or unclear, use your best judgment
-- 2-4 assumptions max
-
-Conversation:
-`;
-
-const PROGRESS_PROMPT = `You are extracting a progress summary from a coding session conversation.
-
-Given the conversation and existing progress items below, return an UPDATED cumulative list of what has been accomplished. Return ONLY a valid JSON array of strings, no markdown fences, no explanation.
-
-Rules:
-- Each item should be a concise past-tense statement (e.g. "Added JWT validation middleware")
-- Merge/deduplicate with existing items — don't repeat work already listed
-- Keep items specific and actionable, not vague
-- Order chronologically
-- 10 items max — if exceeding, consolidate older items
-
-Existing progress:
-`;
-
-async function extractContext(conversation: string, cwd: string, fallbackModel?: string): Promise<ContextState | null> {
+async function extractTitle(conversation: string, cwd: string, fallbackModel?: string): Promise<string | null> {
 	try {
 		const model = resolveModelAlias("fast", fallbackModel);
-		const prompt = CONTEXT_PROMPT + conversation;
-		const { stdout } = await execFileAsync("pi", [
-			"-p", "--no-session", "--no-extensions", "--no-skills",
-			"--no-prompt-templates", "--no-themes",
-			"--model", model, prompt,
-		], {
-			cwd,
-			timeout: 30_000,
-			env: { ...process.env },
-		});
-
-		const cleaned = stdout.trim().replace(/^```json?\n?|\n?```$/g, "");
-		const parsed = JSON.parse(cleaned);
-		if (parsed.title && parsed.goal && Array.isArray(parsed.assumptions)) {
-			return parsed as ContextState;
-		}
-		return null;
-	} catch {
-		return null;
-	}
-}
-
-async function extractProgress(
-	conversation: string,
-	existing: string[],
-	cwd: string,
-	fallbackModel?: string,
-): Promise<string[] | null> {
-	try {
-		const model = resolveModelAlias("fast", fallbackModel);
-		const prompt = PROGRESS_PROMPT + JSON.stringify(existing) + "\n\nConversation:\n" + conversation;
-		const { stdout } = await execFileAsync("pi", [
-			"-p", "--no-session", "--no-extensions", "--no-skills",
-			"--no-prompt-templates", "--no-themes",
-			"--model", model, prompt,
-		], {
-			cwd,
-			timeout: 30_000,
-			env: { ...process.env },
-		});
-
-		const cleaned = stdout.trim().replace(/^```json?\n?|\n?```$/g, "");
-		const parsed = JSON.parse(cleaned);
-		if (Array.isArray(parsed) && parsed.every((item: unknown) => typeof item === "string")) {
-			return parsed as string[];
-		}
-		return null;
+		const stdout = await piPrint(model, TITLE_PROMPT + conversation, cwd, 30_000);
+		const title = stdout.trim().replace(/^["']|["']$/g, "").replace(/\.+$/, "");
+		return title || null;
 	} catch {
 		return null;
 	}
@@ -186,35 +131,42 @@ async function extractProgress(
 // ============================================================================
 
 function renderWidget(
-	context: ContextState | null,
-	progress: ProgressState,
+	state: TrackerState,
 	fg: (color: Parameters<Theme["fg"]>[0], text: string) => string,
 	bold: Theme["bold"],
 	width: number,
 ): string[] {
-	const lines: string[] = [];
-	const separator = fg("dim", "─".repeat(Math.min(width, 48)));
+	const hasContent = state.title || state.goal || state.assumptions.length > 0;
+	if (!hasContent) return [];
 
-	if (context) {
-		lines.push(fg("accent", bold("Context")));
-		lines.push(`  ${fg("dim", "Title")}  ${context.title}`);
-		lines.push(`  ${fg("dim", "Goal")}   ${context.goal}`);
-		if (context.assumptions.length > 0) {
-			lines.push(`  ${fg("dim", "Assumptions")}`);
-			for (const a of context.assumptions) {
-				lines.push(`  ${fg("muted", "•")} ${a}`);
-			}
+	const inner: string[] = [];
+	const boxWidth = Math.min(width, 52);
+
+	if (state.title) {
+		inner.push(fg("accent", bold(state.title)));
+	}
+	if (state.goal) {
+		inner.push(`  ${fg("dim", "Goal")}  ${state.goal}`);
+	}
+	if (state.assumptions.length > 0) {
+		inner.push(`  ${fg("dim", "Assumptions")}`);
+		for (const a of state.assumptions) {
+			inner.push(`  ${fg("muted", "•")} ${a}`);
 		}
 	}
 
-	if (progress.items.length > 0) {
-		if (context) lines.push(separator);
-		lines.push(fg("accent", bold("Progress")));
-		for (const item of progress.items) {
-			lines.push(`  ${fg("success", "✓")} ${fg("muted", item)}`);
-		}
+	// Box-draw border
+	const contentWidth = boxWidth - 4;
+	const top = fg("dim", `╭${"─".repeat(boxWidth - 2)}╮`);
+	const bottom = fg("dim", `╰${"─".repeat(boxWidth - 2)}╯`);
+	const lines: string[] = [top];
+	for (const line of inner) {
+		const fitted = truncateToWidth(line, contentWidth, fg("dim", "…"));
+		const vw = visibleWidth(fitted);
+		const pad = Math.max(0, contentWidth - vw);
+		lines.push(`${fg("dim", "│")} ${fitted}${" ".repeat(pad)} ${fg("dim", "│")}`);
 	}
-
+	lines.push(bottom);
 	return lines;
 }
 
@@ -224,113 +176,128 @@ function renderWidget(
 
 export function registerTracker(pi: ExtensionAPI): void {
 	let ctx: ExtensionContext | null = null;
-	let contextState: ContextState | null = null;
-	let progressState: ProgressState = { items: [] };
-	let pendingExtraction: AbortController | null = null;
-
-	function cancelPending(): void {
-		if (pendingExtraction) {
-			pendingExtraction.abort();
-			pendingExtraction = null;
-		}
-	}
+	let state: TrackerState = { title: null, goal: null, assumptions: [] };
+	let pendingTitle: AbortController | null = null;
 
 	function updateWidget(): void {
 		if (!ctx?.hasUI) return;
 
 		const lines = renderWidget(
-			contextState,
-			progressState,
+			state,
 			ctx.ui.theme.fg.bind(ctx.ui.theme),
 			ctx.ui.theme.bold.bind(ctx.ui.theme),
 			48,
 		);
 
 		if (lines.length > 0) {
-			ctx.ui.setWidget("basecamp-tracker", lines);
+			ctx.ui.setWidget("basecamp-tracker", lines, { placement: "belowEditor" });
 		} else {
-			ctx.ui.setWidget("basecamp-tracker", undefined);
+			ctx.ui.setWidget("basecamp-tracker", undefined, { placement: "belowEditor" });
 		}
 	}
 
 	function persistState(): void {
-		pi.appendEntry("tracker-state", {
-			context: contextState,
-			progress: progressState,
-		} satisfies TrackerPersistedState);
+		pi.appendEntry("tracker-state", state);
 	}
+
+	// --- Tool: update_context ---
+	pi.registerTool({
+		name: "update_context",
+		label: "Update Context",
+		description: "Update the session context tracker with the current goal and assumptions. Call this when starting a new task, when the goal changes, or when assumptions are established or invalidated.",
+		promptSnippet: "Update context tracker (goal + assumptions)",
+		parameters: Type.Object({
+			goal: Type.String({ description: "What success looks like — concrete and verifiable (1 sentence)" }),
+			assumptions: Type.Array(Type.String(), { description: "Things being taken as given that could be wrong (2-4 items)" }),
+		}),
+		async execute(_id, params, _signal, _onUpdate, _ctx) {
+			state.goal = params.goal;
+			state.assumptions = params.assumptions;
+			updateWidget();
+			persistState();
+			return {
+				content: [{ type: "text", text: "Context updated." }],
+				details: { goal: params.goal, assumptions: params.assumptions },
+			};
+		},
+		renderCall(args, theme) {
+			const { Text } = require("@mariozechner/pi-tui");
+			const goal = (args.goal as string) || "...";
+			const preview = goal.length > 60 ? `${goal.slice(0, 60)}...` : goal;
+			return new Text(
+				theme.fg("toolTitle", theme.bold("update_context ")) + theme.fg("dim", preview),
+				0, 0,
+			);
+		},
+		renderResult(_result, { isPartial }, theme) {
+			const { Text } = require("@mariozechner/pi-tui");
+			if (isPartial) return new Text(theme.fg("dim", "..."), 0, 0);
+			return new Text(theme.fg("success", "✓") + theme.fg("dim", " context updated"), 0, 0);
+		},
+	});
 
 	// --- Restore state on session start ---
 	pi.on("session_start", async (_event, sessionCtx) => {
 		ctx = sessionCtx;
-		contextState = null;
-		progressState = { items: [] };
+		state = { title: null, goal: null, assumptions: [] };
 
 		// Restore from persisted entries
 		const entries = sessionCtx.sessionManager.getEntries();
 		const trackerEntry = entries
 			.filter((e) => e.type === "custom" && (e as { customType?: string }).customType === "tracker-state")
-			.pop() as { data?: TrackerPersistedState } | undefined;
+			.pop() as { data?: TrackerState } | undefined;
 
 		if (trackerEntry?.data) {
-			contextState = trackerEntry.data.context ?? null;
-			progressState = trackerEntry.data.progress ?? { items: [] };
+			state = { ...state, ...trackerEntry.data };
+		}
+
+		// Restore from tool calls in the branch
+		for (const entry of sessionCtx.sessionManager.getBranch()) {
+			if (entry.type === "message" && entry.message.role === "toolResult") {
+				const msg = entry.message as ToolResultMessage;
+				if (msg.toolName === "update_context" && msg.details) {
+					const d = msg.details as { goal?: string; assumptions?: string[] };
+					if (d.goal) state.goal = d.goal;
+					if (d.assumptions) state.assumptions = d.assumptions;
+				}
+			}
 		}
 
 		updateWidget();
 	});
 
-	// --- Extract context on agent_start ---
-	pi.on("agent_start", async (_event, agentCtx) => {
+	// --- Extract title on before_agent_start ---
+	pi.on("before_agent_start", async (event, agentCtx) => {
 		if (!agentCtx.hasUI) return;
 
-		cancelPending();
+		pendingTitle?.abort();
 		const controller = new AbortController();
-		pendingExtraction = controller;
+		pendingTitle = controller;
 
 		const branch = agentCtx.sessionManager.getBranch();
-		const conversation = serializeBranch(branch);
+		let conversation = serializeBranch(branch);
+		if (event.prompt) {
+			conversation += `\n\n[User]\n${event.prompt}`;
+		}
 		if (!conversation.trim()) return;
 
-		// Fire and forget — don't block the agent
-		extractContext(conversation, agentCtx.cwd, agentCtx.model?.id).then((result) => {
+		extractTitle(conversation, agentCtx.cwd, agentCtx.model?.id).then((title) => {
 			if (controller.signal.aborted) return;
-			if (result) {
-				contextState = result;
+			if (title) {
+				state.title = title;
 				updateWidget();
 				persistState();
 			}
-			pendingExtraction = null;
-		});
-	});
-
-	// --- Extract progress on agent_end ---
-	pi.on("agent_end", async (_event, agentCtx) => {
-		if (!agentCtx.hasUI) return;
-
-		cancelPending();
-		const controller = new AbortController();
-		pendingExtraction = controller;
-
-		const branch = agentCtx.sessionManager.getBranch();
-		const conversation = serializeBranch(branch);
-		if (!conversation.trim()) return;
-
-		// Fire and forget
-		extractProgress(conversation, progressState.items, agentCtx.cwd, agentCtx.model?.id).then((result) => {
-			if (controller.signal.aborted) return;
-			if (result) {
-				progressState = { items: result };
-				updateWidget();
-				persistState();
-			}
-			pendingExtraction = null;
+			pendingTitle = null;
+		}).catch(() => {
+			pendingTitle = null;
 		});
 	});
 
 	// --- Cleanup ---
 	pi.on("session_shutdown", async () => {
-		cancelPending();
+		pendingTitle?.abort();
+		pendingTitle = null;
 		ctx = null;
 	});
 }
