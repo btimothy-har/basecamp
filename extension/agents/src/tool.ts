@@ -19,9 +19,10 @@ import * as os from "node:os";
 import * as path from "node:path";
 import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-agent";
 import { getMarkdownTheme } from "@mariozechner/pi-coding-agent";
-import { Container, Markdown, Spacer, Text } from "@mariozechner/pi-tui";
+import { type Component, Container, Markdown, Spacer, Text } from "@mariozechner/pi-tui";
+import type { AgentStreamEvent } from "./executor.ts";
 import { spawnAgent } from "./executor.ts";
-import type { AgentConfig, AgentDetails, ModelStrategy, ToolCallRecord } from "./types.ts";
+import type { AgentConfig, AgentDetails, AgentPartialDetails, ModelStrategy, ToolCallRecord } from "./types.ts";
 import { AgentToolParams, DEFAULT_AGENT_MAX_DEPTH } from "./types.ts";
 
 // ============================================================================
@@ -171,20 +172,115 @@ function formatUsageLine(
 // Status Line
 // ============================================================================
 
-const STATUS_KEY = "basecamp-agent";
-const COLLAPSED_TOOL_COUNT = 10;
+const COLLAPSED_TOOL_COUNT = 3;
+const COLLAPSED_MESSAGE_LINES = 2;
 
-function setStatusRunning(ctx: ExtensionContext, agentName: string): void {
-	if (!ctx.hasUI) return;
-	const t = ctx.ui.theme;
-	ctx.ui.setStatus(STATUS_KEY, t.fg("accent", "⏳") + t.fg("dim", ` ${agentName}...`));
+// Each concurrent agent gets its own status key so they don't clobber each other.
+function statusKey(id: string): string {
+	return `basecamp-agent-${id}`;
 }
 
-function setStatusDone(ctx: ExtensionContext, agentName: string, durationMs: number, ok: boolean): void {
+function setStatusRunning(
+	ctx: ExtensionContext,
+	id: string,
+	agentName: string,
+	toolCount: number,
+	turnCount: number,
+): void {
 	if (!ctx.hasUI) return;
 	const t = ctx.ui.theme;
-	const icon = ok ? t.fg("success", "✅") : t.fg("error", "❌");
-	ctx.ui.setStatus(STATUS_KEY, icon + t.fg("dim", ` ${agentName} ${formatDuration(durationMs)}`));
+	const parts = [t.fg("accent", "⏳"), t.fg("dim", ` ${agentName}`)];
+	if (toolCount > 0) parts.push(t.fg("muted", ` — ${toolCount} tool${toolCount > 1 ? "s" : ""}`));
+	if (turnCount > 0) parts.push(t.fg("muted", `, turn ${turnCount}`));
+	parts.push(t.fg("dim", "..."));
+	ctx.ui.setStatus(statusKey(id), parts.join(""));
+}
+
+function clearStatus(ctx: ExtensionContext, id: string): void {
+	if (!ctx.hasUI) return;
+	ctx.ui.setStatus(statusKey(id), undefined);
+}
+
+// ============================================================================
+// Partial (In-Progress) View
+// ============================================================================
+
+function renderPartialView(
+	partial: AgentPartialDetails,
+	fg: (color: ThemeColor, text: string) => string,
+	theme: import("@mariozechner/pi-coding-agent").Theme,
+): Component {
+	const sourceLabel = partial.agentSource !== "ad-hoc" ? fg("muted", ` (${partial.agentSource})`) : "";
+	const modelLabel = partial.model ? fg("muted", ` (${partial.model})`) : "";
+
+	const statParts: string[] = [];
+	if (partial.toolCalls.length > 0)
+		statParts.push(`${partial.toolCalls.length} tool${partial.toolCalls.length > 1 ? "s" : ""}`);
+	if (partial.turnCount > 0) statParts.push(`turn ${partial.turnCount}`);
+	const stats = statParts.length > 0 ? fg("dim", ` \u2014 ${statParts.join(", ")}`) : "";
+
+	let text = `${fg("accent", "\u23f3")} ${fg("toolTitle", theme.bold(partial.agent))}${sourceLabel}${modelLabel}${stats}`;
+
+	// Last N tool calls (scrolling window)
+	if (partial.toolCalls.length > 0) {
+		const toShow = partial.toolCalls.slice(-COLLAPSED_TOOL_COUNT);
+		const skipped = partial.toolCalls.length - toShow.length;
+		if (skipped > 0) text += `\n${fg("muted", `  ... ${skipped} earlier`)}`;
+		for (const tc of toShow) {
+			text += `\n${fg("muted", "  \u2192 ") + formatToolCallLine(tc, fg)}`;
+		}
+	}
+
+	// Last N lines of the latest assistant message
+	if (partial.latestMessage) {
+		const lines = partial.latestMessage.trim().split("\n").filter(Boolean);
+		const messageLines = lines.slice(-COLLAPSED_MESSAGE_LINES);
+		for (const line of messageLines) {
+			text += `\n${fg("dim", `  ${line}`)}`;
+		}
+	}
+
+	return new Text(text, 0, 0);
+}
+
+// ============================================================================
+// Summary Generation
+// ============================================================================
+
+/**
+ * Generate a concise summary of agent output using a fast model.
+ * Falls back to undefined on any failure — caller uses raw output preview.
+ */
+async function generateSummary(task: string, output: string, cwd: string): Promise<string | undefined> {
+	try {
+		const { execFile } = await import("node:child_process");
+		const { promisify } = await import("node:util");
+		const execFileAsync = promisify(execFile);
+
+		// Truncate output to avoid blowing up the context
+		const maxChars = 4000;
+		const truncated = output.length > maxChars ? `${output.slice(0, maxChars)}\n...` : output;
+
+		const prompt = [
+			"Summarize this agent's output in 2-3 sentences. Be specific about what was found/done. No preamble.",
+			"",
+			`Task: ${task}`,
+			"",
+			"Output:",
+			truncated,
+		].join("\n");
+
+		const { stdout } = await execFileAsync("pi", ["-p", "--model", "claude-haiku-4-5", prompt], {
+			cwd,
+			timeout: 15_000,
+			env: { ...process.env },
+		});
+
+		const summary = stdout.trim();
+		return summary || undefined;
+	} catch {
+		return undefined;
+	}
 }
 
 // ============================================================================
@@ -214,7 +310,7 @@ Available agents are discovered from project (.basecamp/agents/), user (~/.basec
 		// Execute
 		// ------------------------------------------------------------------
 
-		async execute(_id, params, signal, _onUpdate, ctx) {
+		async execute(_id, params, signal, onUpdate, ctx) {
 			try {
 				checkDepth();
 			} catch (error) {
@@ -239,7 +335,8 @@ Available agents are discovered from project (.basecamp/agents/), user (~/.basec
 
 			// Resolve parameters
 			const model = resolveModel(agentConfig?.model ?? "inherit", params.model, ctx.model?.id);
-			const prefix = `agent-${randomUUID().slice(0, 6)}`;
+			const agentId = randomUUID().slice(0, 6);
+			const prefix = `agent-${agentId}`;
 			const name = params.name ? `${prefix}-${params.name}` : prefix;
 			const project = process.env.BASECAMP_PROJECT ?? "default";
 			const sessionDir = path.join(os.tmpdir(), "basecamp-agents", name, "session");
@@ -247,11 +344,49 @@ Available agents are discovered from project (.basecamp/agents/), user (~/.basec
 			const env = buildAgentEnv({ name, parentSession, project });
 			const agentLabel = params.agent ?? "ad-hoc";
 
-			// Status line: running
-			setStatusRunning(ctx, agentLabel);
+			// Progressive rendering state
+			const partial: AgentPartialDetails = {
+				agent: agentLabel,
+				agentSource: agentConfig?.source ?? "ad-hoc",
+				model: model ?? undefined,
+				toolCalls: [],
+				turnCount: 0,
+			};
+
+			const emitUpdate = () => {
+				setStatusRunning(ctx, agentId, agentLabel, partial.toolCalls.length, partial.turnCount);
+				onUpdate?.({
+					content: [{ type: "text", text: "" }],
+					details: { ...partial, toolCalls: [...partial.toolCalls] } as unknown as AgentDetails,
+				});
+			};
+
+			const onEvent = (event: AgentStreamEvent) => {
+				switch (event.kind) {
+					case "tool_start":
+						partial.toolCalls.push(event.toolCall);
+						break;
+					case "message":
+						if (event.text) partial.latestMessage = event.text;
+						if (event.model) partial.model = event.model;
+						break;
+					case "turn_end":
+						partial.turnCount++;
+						break;
+				}
+				emitUpdate();
+			};
+
+			// Initial status
+			setStatusRunning(ctx, agentId, agentLabel, 0, 0);
 
 			try {
-				let result = await spawnAgent(agentConfig, params.task, { name, model, cwd: ctx.cwd, env, sessionDir }, signal);
+				let result = await spawnAgent(
+					agentConfig,
+					params.task,
+					{ name, model, cwd: ctx.cwd, env, sessionDir, onEvent },
+					signal,
+				);
 
 				// Retry with default model if the requested model wasn't found
 				if (result.exitCode === 1 && model && result.error?.includes("not found") && result.usage.turns === 0) {
@@ -260,18 +395,27 @@ Available agents are discovered from project (.basecamp/agents/), user (~/.basec
 					}
 					const retrySessionDir = `${sessionDir}-retry`;
 					fs.mkdirSync(retrySessionDir, { recursive: true });
+					partial.toolCalls = [];
+					partial.turnCount = 0;
+					partial.latestMessage = undefined;
 					result = await spawnAgent(
 						agentConfig,
 						params.task,
-						{ name, model: undefined, cwd: ctx.cwd, env, sessionDir: retrySessionDir },
+						{ name, model: undefined, cwd: ctx.cwd, env, sessionDir: retrySessionDir, onEvent },
 						signal,
 					);
 				}
 
 				const ok = result.exitCode === 0;
 
-				// Status line: done
-				setStatusDone(ctx, agentLabel, result.durationMs, ok);
+				// Clear footer status — result is now in the main panel
+				clearStatus(ctx, agentId);
+
+				// Generate summary for successful completions
+				let summary: string | undefined;
+				if (ok && result.output) {
+					summary = await generateSummary(params.task, result.output, ctx.cwd);
+				}
 
 				// Build structured details for renderResult
 				const details: AgentDetails = {
@@ -285,6 +429,7 @@ Available agents are discovered from project (.basecamp/agents/), user (~/.basec
 					toolCalls: result.toolCalls,
 					usage: result.usage,
 					durationMs: result.durationMs,
+					summary,
 				};
 
 				// Build text content for the LLM (it doesn't see renderResult)
@@ -310,7 +455,7 @@ Available agents are discovered from project (.basecamp/agents/), user (~/.basec
 					details,
 				};
 			} catch (error) {
-				setStatusDone(ctx, agentLabel, 0, false);
+				clearStatus(ctx, agentId);
 				const msg = error instanceof Error ? error.message : String(error);
 				return { content: [{ type: "text", text: msg }], isError: true, details: null as unknown as AgentDetails };
 			}
@@ -335,8 +480,8 @@ Available agents are discovered from project (.basecamp/agents/), user (~/.basec
 		// renderResult — rich display of the subagent's activity and output
 		// ------------------------------------------------------------------
 
-		renderResult(result, { expanded }, theme, _context) {
-			const details = result.details as AgentDetails | undefined;
+		renderResult(result, { expanded, isPartial }, theme, _context) {
+			const details = result.details as (AgentDetails & Partial<AgentPartialDetails>) | undefined;
 
 			if (!details) {
 				const text = result.content[0];
@@ -344,6 +489,12 @@ Available agents are discovered from project (.basecamp/agents/), user (~/.basec
 			}
 
 			const fg = theme.fg.bind(theme);
+
+			// --- In-progress view (streaming) ---
+			if (isPartial) {
+				return renderPartialView(details as AgentPartialDetails, fg, theme);
+			}
+
 			const isError = details.exitCode !== 0;
 			const icon = isError ? fg("error", "✗") : fg("success", "✓");
 			const sourceLabel = details.agentSource !== "ad-hoc" ? fg("muted", ` (${details.agentSource})`) : "";
@@ -396,24 +547,19 @@ Available agents are discovered from project (.basecamp/agents/), user (~/.basec
 				return container;
 			}
 
-			// --- Collapsed view ---
-			let text = `${icon} ${fg("toolTitle", theme.bold(details.agent))}${sourceLabel}`;
+			// --- Collapsed view (completed) ---
+			const modelLabel = details.model ? fg("muted", ` (${details.model})`) : "";
+			const stats = fg("dim", ` — ${details.toolCalls.length} tools, ${formatDuration(details.durationMs)}`);
+			let text = `${icon} ${fg("toolTitle", theme.bold(details.agent))}${modelLabel}${stats}`;
+
 			if (isError && details.error) {
 				text += `\n${fg("error", `Error: ${details.error}`)}`;
 			}
 
-			// Tool calls (collapsed: show last N)
-			if (details.toolCalls.length > 0) {
-				const toShow = details.toolCalls.slice(-COLLAPSED_TOOL_COUNT);
-				const skipped = details.toolCalls.length - toShow.length;
-				if (skipped > 0) text += `\n${fg("muted", `... ${skipped} earlier tools`)}`;
-				for (const tc of toShow) {
-					text += `\n${fg("muted", "→ ") + formatToolCallLine(tc, fg)}`;
-				}
-			}
-
-			// Output preview (first 3 lines)
-			if (details.output) {
+			// Summary or output preview
+			if (details.summary) {
+				text += `\n${fg("toolOutput", details.summary)}`;
+			} else if (details.output) {
 				const preview = details.output.split("\n").slice(0, 3).join("\n");
 				text += `\n${fg("toolOutput", preview)}`;
 				if (details.output.split("\n").length > 3) {
@@ -422,10 +568,6 @@ Available agents are discovered from project (.basecamp/agents/), user (~/.basec
 			} else if (!isError) {
 				text += `\n${fg("muted", "(no output)")}`;
 			}
-
-			// Usage stats
-			const usageLine = formatUsageLine(details.usage, details.model, details.durationMs);
-			if (usageLine) text += `\n${fg("dim", usageLine)}`;
 
 			text += `\n${fg("muted", "(Ctrl+O to expand)")}`;
 			return new Text(text, 0, 0);

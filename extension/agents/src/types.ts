@@ -58,6 +58,19 @@ export interface AgentDetails {
 	toolCalls: ToolCallRecord[];
 	usage: UsageStats;
 	durationMs: number;
+	/** LLM-generated summary of the agent's output (set after completion). */
+	summary?: string;
+}
+
+/** Partial details emitted during agent execution via onUpdate. */
+export interface AgentPartialDetails {
+	agent: string;
+	agentSource: "builtin" | "user" | "project" | "ad-hoc";
+	model?: string;
+	toolCalls: ToolCallRecord[];
+	turnCount: number;
+	/** Latest assistant message text (intermediate, not final). */
+	latestMessage?: string;
 }
 
 // ============================================================================

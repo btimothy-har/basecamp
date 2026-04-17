@@ -19,6 +19,15 @@ import * as path from "node:path";
 import { buildSkillInjection, resolveSkills } from "./skills.ts";
 import type { AgentConfig, ToolCallRecord, UsageStats } from "./types.ts";
 
+// ============================================================================
+// Streaming Event Types
+// ============================================================================
+
+export type AgentStreamEvent =
+	| { kind: "tool_start"; toolCall: ToolCallRecord }
+	| { kind: "message"; text: string; model?: string }
+	| { kind: "turn_end"; usage: Partial<UsageStats> };
+
 const AGENT_BASE = path.join(os.tmpdir(), "basecamp-agents");
 const TASK_ARG_LIMIT = 8000;
 
@@ -144,6 +153,71 @@ interface ParsedEvents {
 }
 
 /**
+ * Parse a single JSON event line and invoke onEvent if relevant.
+ * Returns true if the line was successfully parsed.
+ */
+function processEventLine(
+	line: string,
+	onEvent?: (event: AgentStreamEvent) => void,
+): {
+	toolCall?: ToolCallRecord;
+	messageEnd?: { text: string; model?: string; error?: string; usage: Partial<UsageStats> };
+} | null {
+	if (!line.trim()) return null;
+	try {
+		const evt = JSON.parse(line) as {
+			type?: string;
+			toolName?: string;
+			args?: unknown;
+			message?: {
+				role?: string;
+				model?: string;
+				errorMessage?: string;
+				content?: unknown;
+				usage?: {
+					input?: number;
+					output?: number;
+					cacheRead?: number;
+					cacheWrite?: number;
+					cost?: { total?: number };
+				};
+			};
+		};
+
+		if (evt.type === "tool_execution_start" && evt.toolName) {
+			const toolCall: ToolCallRecord = {
+				name: evt.toolName,
+				args: extractToolCallArgs(evt.args),
+			};
+			onEvent?.({ kind: "tool_start", toolCall });
+			return { toolCall };
+		}
+
+		if (evt.type === "message_end" && evt.message?.role === "assistant") {
+			const text = extractTextFromContent(evt.message.content);
+			const model = evt.message.model;
+			const error = evt.message.errorMessage;
+			const u = evt.message.usage;
+			const usage: Partial<UsageStats> = {
+				input: u?.input ?? 0,
+				output: u?.output ?? 0,
+				cacheRead: u?.cacheRead ?? 0,
+				cacheWrite: u?.cacheWrite ?? 0,
+				cost: u?.cost?.total ?? 0,
+			};
+
+			if (text) onEvent?.({ kind: "message", text, model });
+			onEvent?.({ kind: "turn_end", usage });
+
+			return { messageEnd: { text, model, error, usage } };
+		}
+	} catch {
+		// Non-JSON lines are expected; skip.
+	}
+	return null;
+}
+
+/**
  * Parse accumulated stdout lines (JSON events from `pi --mode json`)
  * and extract output, model, errors, tool calls, and usage stats.
  */
@@ -231,6 +305,7 @@ export function spawnAgent(
 		cwd: string;
 		env: Record<string, string>;
 		sessionDir: string;
+		onEvent?: (event: AgentStreamEvent) => void;
 	},
 	signal?: AbortSignal,
 ): Promise<SpawnResult> {
@@ -280,7 +355,10 @@ export function spawnAgent(
 			stdoutBuf += chunk.toString();
 			const parts = stdoutBuf.split("\n");
 			stdoutBuf = parts.pop() || "";
-			stdoutLines.push(...parts);
+			for (const part of parts) {
+				stdoutLines.push(part);
+				processEventLine(part, opts.onEvent);
+			}
 		});
 
 		proc.stderr.on("data", (chunk: Buffer) => {
