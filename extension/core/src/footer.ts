@@ -129,7 +129,7 @@ export function registerFooter(pi: ExtensionAPI): void {
 					let l2Left = "";
 					if (invokedSkills.length > 0) {
 						const skillList = invokedSkills.map((s) => fg("accent", s)).join(fg("dim", ", "));
-						l2Left = `${fg("dim", "📖 ")}${skillList}`;
+						l2Left = `${fg("muted", "📖 ")}${skillList}`;
 					}
 
 					let l2Right = "";
@@ -187,12 +187,12 @@ function buildLocationSegment(
 	if (state.worktreeLabel) {
 		parts.push(fg("warning", `⌥ ${state.worktreeLabel}`));
 	} else {
-		parts.push(fg("dim", "⌥ main"));
+		parts.push(fg("muted", "⌥ main"));
 	}
 
 	const branch = footerData.getGitBranch();
 	if (branch) {
-		parts.push(fg("muted", `⎇ ${branch}`));
+		parts.push(fg("accent", `⎇ ${branch}`));
 	}
 
 	return parts.join(fg("dim", "  "));
@@ -210,10 +210,10 @@ function buildModelSegment(fg: ThemeFg, ctx: ExtensionContext | null): string {
 			}
 		}
 		if (totalCost > 0) {
-			parts.push(fg("dim", `$${totalCost.toFixed(2)}`));
+			parts.push(fg("muted", `$${totalCost.toFixed(2)}`));
 		}
 	}
 
-	parts.push(fg("dim", ctx?.model?.id ?? "no-model"));
+	parts.push(fg("text", ctx?.model?.id ?? "no-model"));
 	return parts.join(fg("dim", "  "));
 }
