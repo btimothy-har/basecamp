@@ -4,7 +4,6 @@
 
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 
-import { getState } from "../../core/src/session";
 import { registerAgentCommands } from "./commands";
 import { discoverAgents } from "./discovery";
 import { registerAgentTool } from "./tool";
@@ -18,12 +17,9 @@ export default function (pi: ExtensionAPI) {
 	pi.on("session_start", async (_event, ctx) => {
 		agents = discoverAgents(ctx.cwd);
 
-		const state = getState();
 		sessionName = pi.getSessionName()?.trim() || "";
 		if (!sessionName) {
-			const project = state.projectName || "session";
-			const id = ctx.sessionManager.getSessionId().replace(/-/g, "").slice(-4);
-			sessionName = `${project}-${id}`;
+			sessionName = ctx.sessionManager.getSessionId().replace(/-/g, "").slice(-8);
 			pi.setSessionName(sessionName);
 		}
 		process.env.BASECAMP_SESSION_NAME = sessionName;
