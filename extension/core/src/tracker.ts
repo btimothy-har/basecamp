@@ -385,7 +385,7 @@ export function registerTracker(pi: ExtensionAPI): void {
 	});
 
 	// --- Tool: escalate ---
-	const CUSTOM_ANSWER = "✎ Custom answer...";
+	const CUSTOM_ANSWER = "Something else...";
 
 	pi.registerTool({
 		name: "escalate",
