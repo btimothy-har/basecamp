@@ -25,7 +25,7 @@ import type {
 	SessionEntry,
 	Theme,
 } from "@mariozechner/pi-coding-agent";
-import { truncateToWidth, visibleWidth } from "@mariozechner/pi-tui";
+import { visibleWidth, wrapTextWithAnsi } from "@mariozechner/pi-tui";
 import { resolveModelAlias } from "../../config.ts";
 
 // ============================================================================
@@ -42,10 +42,12 @@ interface TrackerState {
 // Background Title Extraction
 // ============================================================================
 
+const TITLE_SYSTEM_PROMPT = "You are a title generator. Output exactly one short title (3-6 words). No markdown, no quotes, no alternatives, no explanation. Just the title.";
+
 /** Run `pi -p` with prompt on stdin, return stdout. */
-function piPrint(model: string, prompt: string, cwd: string, timeout: number): Promise<string> {
+function piPrint(model: string, systemPrompt: string, prompt: string, cwd: string, timeout: number): Promise<string> {
 	return new Promise((resolve, reject) => {
-		const proc = spawn("pi", ["-p", "--no-session", "--model", model], {
+			const proc = spawn("pi", ["-p", "--no-session", "--no-tools", "--model", model, "--system-prompt", systemPrompt], {
 			cwd,
 			env: { ...process.env },
 			stdio: ["pipe", "pipe", "pipe"],
@@ -72,7 +74,7 @@ function piPrint(model: string, prompt: string, cwd: string, timeout: number): P
 	});
 }
 
-const TITLE_PROMPT = `Give a short title (3-6 words) for the current task in this coding session. Return ONLY the title, no quotes, no explanation, no punctuation at the end.
+const TITLE_PROMPT = `Give a short title (3-6 words) that captures the overall theme of this entire coding session. Consider the full conversation, not just the latest messages. Return ONLY the title, no quotes, no explanation, no punctuation at the end.
 
 Conversation:
 `;
@@ -115,13 +117,17 @@ function serializeBranch(entries: SessionEntry[]): string {
 	return lines.join("\n\n");
 }
 
-async function extractTitle(conversation: string, cwd: string, fallbackModel?: string): Promise<string | null> {
+async function extractTitle(conversation: string, cwd: string, fallbackModel?: string, onError?: (msg: string) => void): Promise<string | null> {
 	try {
 		const model = resolveModelAlias("fast", fallbackModel);
-		const stdout = await piPrint(model, TITLE_PROMPT + conversation, cwd, 30_000);
-		const title = stdout.trim().replace(/^["']|["']$/g, "").replace(/\.+$/, "");
+		const stdout = await piPrint(model, TITLE_SYSTEM_PROMPT, TITLE_PROMPT + conversation, cwd, 30_000);
+		// Take only the first line, strip markdown/quotes/punctuation
+		const firstLine = stdout.trim().split("\n")[0] ?? "";
+		const title = firstLine.replace(/\*\*/g, "").replace(/^["'`]|["'`]$/g, "").replace(/\.+$/, "").trim();
+		if (!title) onError?.("empty response from pi");
 		return title || null;
-	} catch {
+	} catch (err) {
+		onError?.(err instanceof Error ? err.message : String(err));
 		return null;
 	}
 }
@@ -140,7 +146,7 @@ function renderWidget(
 	if (!hasContent) return [];
 
 	const inner: string[] = [];
-	const boxWidth = Math.min(width, 52);
+	const boxWidth = Math.min(width, 80);
 
 	if (state.title) {
 		inner.push(fg("accent", bold(state.title)));
@@ -161,10 +167,12 @@ function renderWidget(
 	const bottom = fg("dim", `╰${"─".repeat(boxWidth - 2)}╯`);
 	const lines: string[] = [top];
 	for (const line of inner) {
-		const fitted = truncateToWidth(line, contentWidth, fg("dim", "…"));
-		const vw = visibleWidth(fitted);
-		const pad = Math.max(0, contentWidth - vw);
-		lines.push(`${fg("dim", "│")} ${fitted}${" ".repeat(pad)} ${fg("dim", "│")}`);
+		const wrapped = wrapTextWithAnsi(line, contentWidth);
+		for (const wl of wrapped) {
+			const vw = visibleWidth(wl);
+			const pad = Math.max(0, contentWidth - vw);
+			lines.push(`${fg("dim", "│")} ${wl}${" ".repeat(pad)} ${fg("dim", "│")}`);
+		}
 	}
 	lines.push(bottom);
 	return lines;
@@ -182,18 +190,28 @@ export function registerTracker(pi: ExtensionAPI): void {
 	function updateWidget(): void {
 		if (!ctx?.hasUI) return;
 
-		const lines = renderWidget(
-			state,
-			ctx.ui.theme.fg.bind(ctx.ui.theme),
-			ctx.ui.theme.bold.bind(ctx.ui.theme),
-			48,
-		);
-
-		if (lines.length > 0) {
-			ctx.ui.setWidget("basecamp-tracker", lines, { placement: "belowEditor" });
-		} else {
+		const hasContent = state.title || state.goal || state.assumptions.length > 0;
+		if (!hasContent) {
 			ctx.ui.setWidget("basecamp-tracker", undefined, { placement: "belowEditor" });
+			return;
 		}
+
+		ctx.ui.setWidget("basecamp-tracker", (_tui, theme) => {
+			const fg = theme.fg.bind(theme);
+			const bold = theme.bold.bind(theme);
+			let cachedLines: string[] | null = null;
+			let cachedWidth = 0;
+
+			return {
+				invalidate() { cachedLines = null; },
+				render(width: number): string[] {
+					if (cachedLines && cachedWidth === width) return cachedLines;
+					cachedWidth = width;
+					cachedLines = renderWidget(state, fg, bold, width);
+					return cachedLines;
+				},
+			};
+		}, { placement: "belowEditor" });
 	}
 
 	function persistState(): void {
@@ -233,6 +251,30 @@ export function registerTracker(pi: ExtensionAPI): void {
 			const { Text } = require("@mariozechner/pi-tui");
 			if (isPartial) return new Text(theme.fg("dim", "..."), 0, 0);
 			return new Text(theme.fg("success", "✓") + theme.fg("dim", " context updated"), 0, 0);
+		},
+	});
+
+	// --- Command: /title ---
+	pi.registerCommand("title", {
+		description: "Generate a session title from the conversation",
+		handler: async (_args, cmdCtx) => {
+			const branch = cmdCtx.sessionManager.getBranch();
+			const conversation = serializeBranch(branch);
+			if (!conversation.trim()) {
+				cmdCtx.ui.notify("No conversation to extract title from", "warning");
+				return;
+			}
+
+			cmdCtx.ui.notify("Extracting title...", "info");
+			const onError = (msg: string) => cmdCtx.ui.notify(`Title error: ${msg}`, "error");
+			const title = await extractTitle(conversation, cmdCtx.cwd, cmdCtx.model?.id, onError);
+			if (title) {
+				state.title = title;
+				pi.setSessionName(title);
+				updateWidget();
+				persistState();
+				cmdCtx.ui.notify(`Title: ${title}`, "info");
+			}
 		},
 	});
 
@@ -296,19 +338,20 @@ export function registerTracker(pi: ExtensionAPI): void {
 		}
 
 		// Inject context reminder so the agent sees current state
-		if (state.goal) {
+		if (state.goal && agentCtx.hasUI) {
 			const lines = [`Current context tracker state:`, `Goal: ${state.goal}`];
 			if (state.assumptions.length > 0) {
 				lines.push(`Assumptions:\n${state.assumptions.map((a) => `• ${a}`).join("\n")}`);
 			}
 			lines.push("", "If the goal or assumptions have changed, call `update_context` to update them.");
-			return {
-				message: {
+			pi.sendMessage(
+				{
 					customType: "tracker-context",
 					content: lines.join("\n"),
 					display: false,
 				},
-			};
+				{ deliverAs: "steer" },
+			);
 		}
 	});
 

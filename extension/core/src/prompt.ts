@@ -206,8 +206,16 @@ export function assemblePrompt(opts: AssembleOptions): string {
 // Hook registration
 // ---------------------------------------------------------------------------
 
+/** Pi's default system prompt starts with this prefix. If the prompt doesn't
+ *  match, --system-prompt was explicitly passed and we should respect it. */
+const PI_DEFAULT_PREFIX = "You are an expert coding assistant";
+
 export function registerPrompt(pi: ExtensionAPI): void {
-	pi.on("before_agent_start", async (_event, ctx) => {
+	pi.on("before_agent_start", async (event, ctx) => {
+		if (!event.systemPrompt.startsWith(PI_DEFAULT_PREFIX)) {
+			return;
+		}
+
 		const state = getState();
 
 		// Collect active tools from pi
