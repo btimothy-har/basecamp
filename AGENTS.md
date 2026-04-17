@@ -1,4 +1,4 @@
-# CLAUDE.md
+# AGENTS.md
 
 ## What is basecamp
 
@@ -11,7 +11,7 @@ Two packages, one pi extension:
 | `basecamp-core` | `core/` | CLI tool — project config and setup |
 | `basecamp-observer` | `observer/` | Semantic memory — session ingestion, LLM extraction, vector search, `recall` CLI |
 
-See `core/CLAUDE.md` and `observer/CLAUDE.md` for package-specific architecture and decisions.
+See `core/AGENTS.md` and `observer/AGENTS.md` for package-specific architecture and decisions.
 
 ## Repo Map
 

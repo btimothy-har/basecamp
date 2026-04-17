@@ -1,4 +1,4 @@
-# observer/CLAUDE.md
+# observer/AGENTS.md
 
 ## What is basecamp-observer
 

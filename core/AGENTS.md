@@ -1,4 +1,4 @@
-# core/CLAUDE.md
+# core/AGENTS.md
 
 ## What is basecamp-core
 

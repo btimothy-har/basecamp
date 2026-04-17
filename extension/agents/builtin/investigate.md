@@ -48,7 +48,7 @@ Gather these when relevant. Don't force it when the task is purely codebase expl
 
 #### Patterns & Conventions
 - [Existing patterns to follow]
-- [Conventions from CLAUDE.md]
+- [Conventions from AGENTS.md]
 
 #### Dependencies & Connections
 - [Component A] → [Component B]: [Relationship]

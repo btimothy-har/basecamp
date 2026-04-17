@@ -99,11 +99,11 @@ basecamp project remove <name>           # Remove a project
 Dispatch subagents from within a session using the `agent` tool:
 
 ```
-agent("scout", "Investigate the auth module")
+agent("investigate", "Investigate the auth module")
 agent("worker", "Fix the login bug")
 ```
 
-Built-in agents: `scout`, `planner`, `reviewer`, `worker`, `security-reviewer`, `test-reviewer`, `docs-reviewer`, `simplification-reviewer`.
+Built-in agents: `investigate`, `planner`, `worker`, `security-reviewer`, `test-reviewer`, `docs-reviewer`, `simplification-reviewer`.
 
 Custom agents can be defined as markdown files in `.basecamp/agents/` (project) or `~/.basecamp/agents/` (user).
 
@@ -170,8 +170,9 @@ Override `system.md` by placing a file at `~/.basecamp/prompts/system.md`.
 
 | Style | Description |
 |-------|-------------|
-| `engineering` | Partner role, quest-based work, code quality focus, frequent check-ins |
+| `engineering` | Partner role, collaborative work, code quality focus, frequent check-ins |
 | `advisor` | Advisor role, efficient discovery, direct communication, decision support |
+| `logseq` | Knowledge graph curation, structured entries, user-driven content approval |
 
 Create custom working styles in `~/.basecamp/prompts/working_styles/`.
 
@@ -179,7 +180,7 @@ Create custom working styles in `~/.basecamp/prompts/working_styles/`.
 
 For multi-repo projects, add cross-repo context in `~/.basecamp/prompts/context/`. The `context` field in project config points to this file.
 
-Single-repo projects typically use `CLAUDE.md` in the repo itself.
+Single-repo projects typically use `AGENTS.md` in the repo itself.
 
 ## Git Worktrees
 
@@ -197,6 +198,33 @@ Worktrees live in `~/.worktrees/<repo>/<label>/` with branches named `wt/<label>
 - `/open` in-session opens the worktree directory in VS Code
 - Secondary directories stay on the main branch
 - Only works with git repositories
+
+## Semantic Memory (Observer)
+
+basecamp-observer provides semantic memory across sessions. It ingests session transcripts, extracts structured knowledge via LLM, and makes it searchable.
+
+### How it works
+
+1. **Ingest** — A hook triggers `observer ingest` at session end, parsing new transcript events incrementally
+2. **Process** — A background job refines events into work items, extracts structured artifacts (summary, knowledge, decisions, constraints, actions), and embeds them into ChromaDB
+3. **Search** — The `recall` skill provides hybrid search (semantic + keyword) with time-decay scoring, scoped to the current project
+
+### Observer CLI
+
+```bash
+observer setup                         # Initialize database and config
+observer db status                     # Show database and index status
+observer db migrate                    # Run pending schema migrations
+observer config set mode on            # Enable full pipeline (default: on)
+observer config set mode off           # Ingestion only, no LLM processing
+```
+
+### Storage
+
+All data is local — no servers or external services:
+- `~/.basecamp/observer.db` — SQLite (relational model + FTS5 keyword search)
+- `~/.basecamp/chroma/` — ChromaDB (vector embeddings, HNSW index)
+- `~/.basecamp/observer/config.json` — Observer settings
 
 ## Extension
 
