@@ -80,11 +80,12 @@ export function getLogseqGraph(): string | null {
 
 /**
  * Resolve a model alias to a concrete model ID.
- * Returns the mapped model ID if found, otherwise returns the input unchanged.
+ * Returns the mapped model ID if found, then the fallback if provided,
+ * otherwise returns the alias unchanged.
  */
-export function resolveModelAlias(alias: string): string {
+export function resolveModelAlias(alias: string, fallback?: string): string {
 	const config = readConfig();
-	return config.models?.[alias] ?? alias;
+	return config.models?.[alias] ?? fallback ?? alias;
 }
 
 export function readConfig(): BasecampConfig {

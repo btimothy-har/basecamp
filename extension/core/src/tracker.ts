@@ -126,9 +126,9 @@ Rules:
 Existing progress:
 `;
 
-async function extractContext(conversation: string, cwd: string): Promise<ContextState | null> {
+async function extractContext(conversation: string, cwd: string, fallbackModel?: string): Promise<ContextState | null> {
 	try {
-		const model = resolveModelAlias("fast");
+		const model = resolveModelAlias("fast", fallbackModel);
 		const prompt = CONTEXT_PROMPT + conversation;
 		const { stdout } = await execFileAsync("pi", [
 			"-p", "--no-session", "--no-extensions", "--no-skills",
@@ -155,9 +155,10 @@ async function extractProgress(
 	conversation: string,
 	existing: string[],
 	cwd: string,
+	fallbackModel?: string,
 ): Promise<string[] | null> {
 	try {
-		const model = resolveModelAlias("fast");
+		const model = resolveModelAlias("fast", fallbackModel);
 		const prompt = PROGRESS_PROMPT + JSON.stringify(existing) + "\n\nConversation:\n" + conversation;
 		const { stdout } = await execFileAsync("pi", [
 			"-p", "--no-session", "--no-extensions", "--no-skills",
@@ -292,7 +293,7 @@ export function registerTracker(pi: ExtensionAPI): void {
 		if (!conversation.trim()) return;
 
 		// Fire and forget — don't block the agent
-		extractContext(conversation, agentCtx.cwd).then((result) => {
+		extractContext(conversation, agentCtx.cwd, agentCtx.model?.id).then((result) => {
 			if (controller.signal.aborted) return;
 			if (result) {
 				contextState = result;
@@ -316,7 +317,7 @@ export function registerTracker(pi: ExtensionAPI): void {
 		if (!conversation.trim()) return;
 
 		// Fire and forget
-		extractProgress(conversation, progressState.items, agentCtx.cwd).then((result) => {
+		extractProgress(conversation, progressState.items, agentCtx.cwd, agentCtx.model?.id).then((result) => {
 			if (controller.signal.aborted) return;
 			if (result) {
 				progressState = { items: result };
