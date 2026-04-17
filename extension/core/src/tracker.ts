@@ -266,32 +266,49 @@ export function registerTracker(pi: ExtensionAPI): void {
 		updateWidget();
 	});
 
-	// --- Extract title on before_agent_start ---
+	// --- before_agent_start: extract title + inject context reminder ---
 	pi.on("before_agent_start", async (event, agentCtx) => {
-		if (!agentCtx.hasUI) return;
+		// Extract title in background (only if not yet set)
+		if (!state.title && agentCtx.hasUI) {
+			pendingTitle?.abort();
+			const controller = new AbortController();
+			pendingTitle = controller;
 
-		pendingTitle?.abort();
-		const controller = new AbortController();
-		pendingTitle = controller;
-
-		const branch = agentCtx.sessionManager.getBranch();
-		let conversation = serializeBranch(branch);
-		if (event.prompt) {
-			conversation += `\n\n[User]\n${event.prompt}`;
-		}
-		if (!conversation.trim()) return;
-
-		extractTitle(conversation, agentCtx.cwd, agentCtx.model?.id).then((title) => {
-			if (controller.signal.aborted) return;
-			if (title) {
-				state.title = title;
-				updateWidget();
-				persistState();
+			const branch = agentCtx.sessionManager.getBranch();
+			let conversation = serializeBranch(branch);
+			if (event.prompt) {
+				conversation += `\n\n[User]\n${event.prompt}`;
 			}
-			pendingTitle = null;
-		}).catch(() => {
-			pendingTitle = null;
-		});
+			if (conversation.trim()) {
+				extractTitle(conversation, agentCtx.cwd, agentCtx.model?.id).then((title) => {
+					if (controller.signal.aborted) return;
+					if (title) {
+						state.title = title;
+						updateWidget();
+						persistState();
+					}
+					pendingTitle = null;
+				}).catch(() => {
+					pendingTitle = null;
+				});
+			}
+		}
+
+		// Inject context reminder so the agent sees current state
+		if (state.goal) {
+			const lines = [`Current context tracker state:`, `Goal: ${state.goal}`];
+			if (state.assumptions.length > 0) {
+				lines.push(`Assumptions:\n${state.assumptions.map((a) => `• ${a}`).join("\n")}`);
+			}
+			lines.push("", "If the goal or assumptions have changed, call `update_context` to update them.");
+			return {
+				message: {
+					customType: "tracker-context",
+					content: lines.join("\n"),
+					display: false,
+				},
+			};
+		}
 	});
 
 	// --- Cleanup ---
