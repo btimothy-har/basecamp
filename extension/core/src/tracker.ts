@@ -449,25 +449,12 @@ export function registerTracker(pi: ExtensionAPI): void {
 			"Surface a blocker or decision to the user. Use when you need user input, hit ambiguity, or are stuck. Pauses execution until the user responds.",
 		promptSnippet: "Pause and ask the user for a decision or help with a blocker",
 		parameters: Type.Object({
-			question: Type.String({ description: "The question or blocker to surface" }),
-			options: Type.Optional(
-				Type.Array(Type.String(), { description: "Proposed options for the user to choose from" }),
-			),
-			additionalQuestions: Type.Optional(
-				Type.Array(
-					Type.Object({
-						question: Type.String(),
-						options: Type.Optional(Type.Array(Type.String())),
-					}),
-					{ description: "Follow-up questions to ask in sequence (user can navigate back/forward)" },
-				),
-			),
+			questions: Type.Array(Type.String(), {
+				description: "Questions to ask the user, presented in sequence with back/forward navigation",
+			}),
 		}),
 		async execute(_id, params, _signal, _onUpdate, execCtx) {
-			const questions: EscalateQuestion[] = [
-				{ question: params.question, options: params.options },
-				...(params.additionalQuestions ?? []),
-			];
+			const questions: EscalateQuestion[] = params.questions.map((q) => ({ question: q }));
 
 			if (!execCtx.hasUI) {
 				const summary = questions.map((q) => `[escalation] ${q.question}`).join("\n");
@@ -491,7 +478,7 @@ export function registerTracker(pi: ExtensionAPI): void {
 				const answer = result.get(0) ?? "";
 				return {
 					content: [{ type: "text", text: answer }],
-					details: { questions: [params.question], answers: [answer] },
+					details: { questions: params.questions, answers: [answer] },
 				};
 			}
 
@@ -506,9 +493,11 @@ export function registerTracker(pi: ExtensionAPI): void {
 		},
 		renderCall(args, theme) {
 			const { Text } = require("@mariozechner/pi-tui");
-			const q = (args.question as string) || "...";
-			const preview = q.length > 60 ? `${q.slice(0, 60)}...` : q;
-			return new Text(theme.fg("toolTitle", theme.bold("escalate ")) + theme.fg("dim", preview), 0, 0);
+			const qs = args.questions as string[] | undefined;
+			const preview = qs?.[0] ?? "...";
+			const trimmed = preview.length > 60 ? `${preview.slice(0, 60)}...` : preview;
+			const suffix = qs && qs.length > 1 ? ` (+${qs.length - 1} more)` : "";
+			return new Text(theme.fg("toolTitle", theme.bold("escalate ")) + theme.fg("dim", trimmed + suffix), 0, 0);
 		},
 		renderResult(result, { isPartial }, theme) {
 			if (isPartial) return renderPartial(theme);
