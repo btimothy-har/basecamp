@@ -1,7 +1,7 @@
 ---
 name: planner
 description: Analyze context and produce structured implementation plans
-model: claude-sonnet-4-20250514
+model: balanced
 tools: read, bash, grep, find, ls
 ---
 

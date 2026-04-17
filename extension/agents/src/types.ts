@@ -13,7 +13,8 @@ import { type Static, Type } from "@sinclair/typebox";
  *
  * - "inherit"  — use the spawning parent's current model
  * - "default"  — use pi's default model (no --model flag)
- * - string     — explicit model identifier (e.g. "anthropic/claude-haiku-4-5")
+ * - string     — model alias (e.g. "fast") or explicit model ID; aliases
+ *                are resolved from ~/.basecamp/config.json `models` map
  */
 export type ModelStrategy = "inherit" | "default" | (string & {});
 
@@ -80,7 +81,6 @@ export interface AgentPartialDetails {
 export const AgentToolParams = Type.Object({
 	agent: Type.Optional(Type.String({ description: "Agent definition name" })),
 	task: Type.String({ description: "Task description" }),
-	model: Type.Optional(Type.String({ description: "Override model (only honoured for agents with model: inherit)" })),
 	name: Type.Optional(Type.String({ description: "Name suffix (auto-generated prefix)" })),
 });
 

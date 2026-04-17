@@ -22,6 +22,7 @@ import { getMarkdownTheme } from "@mariozechner/pi-coding-agent";
 import { type Component, Container, Markdown, Spacer, Text } from "@mariozechner/pi-tui";
 import type { AgentStreamEvent } from "./executor.ts";
 import { spawnAgent } from "./executor.ts";
+import { resolveModelAlias } from "../../config.ts";
 import type { AgentConfig, AgentDetails, AgentPartialDetails, ModelStrategy, ToolCallRecord } from "./types.ts";
 import { AgentToolParams, DEFAULT_AGENT_MAX_DEPTH } from "./types.ts";
 
@@ -31,16 +32,15 @@ import { AgentToolParams, DEFAULT_AGENT_MAX_DEPTH } from "./types.ts";
 
 function resolveModel(
 	strategy: ModelStrategy,
-	toolOverride: string | undefined,
 	parentModel: string | undefined,
 ): string | undefined {
 	switch (strategy) {
 		case "default":
 			return undefined;
 		case "inherit":
-			return toolOverride ?? parentModel;
+			return parentModel;
 		default:
-			return strategy;
+			return resolveModelAlias(strategy);
 	}
 }
 
@@ -270,7 +270,8 @@ async function generateSummary(task: string, output: string, cwd: string): Promi
 			truncated,
 		].join("\n");
 
-		const { stdout } = await execFileAsync("pi", ["-p", "--model", "claude-haiku-4-5", prompt], {
+		const summaryModel = resolveModelAlias("fast");
+		const { stdout } = await execFileAsync("pi", ["-p", "--model", summaryModel, prompt], {
 			cwd,
 			timeout: 15_000,
 			env: { ...process.env },
@@ -334,7 +335,7 @@ Available agents are discovered from project (.basecamp/agents/), user (~/.basec
 			}
 
 			// Resolve parameters
-			const model = resolveModel(agentConfig?.model ?? "inherit", params.model, ctx.model?.id);
+			const model = resolveModel(agentConfig?.model ?? "inherit", ctx.model?.id);
 			const agentId = randomUUID().slice(0, 6);
 			const prefix = `agent-${agentId}`;
 			const name = params.name ? `${prefix}-${params.name}` : prefix;
@@ -471,7 +472,6 @@ Available agents are discovered from project (.basecamp/agents/), user (~/.basec
 			const preview = task.length > 70 ? `${task.slice(0, 70)}...` : task;
 
 			let text = theme.fg("toolTitle", theme.bold("agent ")) + theme.fg("accent", agentName);
-			if (args.model) text += theme.fg("dim", ` (${args.model})`);
 			text += `\n  ${theme.fg("dim", preview)}`;
 			return new Text(text, 0, 0);
 		},

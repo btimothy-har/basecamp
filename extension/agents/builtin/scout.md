@@ -1,7 +1,7 @@
 ---
 name: scout
 description: Fast codebase reconnaissance — returns structured findings for handoff
-model: claude-haiku-4-5
+model: fast
 tools: read, bash, grep, find, ls
 ---
 

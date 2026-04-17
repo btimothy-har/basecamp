@@ -24,6 +24,7 @@ interface BasecampConfig {
 	projects?: Record<string, ProjectConfig>;
 	timezone?: string;
 	logseq_graph?: string;
+	models?: Record<string, string>;
 }
 
 export interface SessionState {
@@ -75,6 +76,15 @@ export function getLogseqGraph(): string | null {
 		if (fs.statSync(abs).isDirectory()) return abs;
 	} catch {}
 	return null;
+}
+
+/**
+ * Resolve a model alias to a concrete model ID.
+ * Returns the mapped model ID if found, otherwise returns the input unchanged.
+ */
+export function resolveModelAlias(alias: string): string {
+	const config = readConfig();
+	return config.models?.[alias] ?? alias;
 }
 
 export function readConfig(): BasecampConfig {
