@@ -105,7 +105,7 @@ function renderWidget(
 			if (task.status === "active") {
 				inner.push(`${fg("accent", "→")} ${fg("accent", task.label)}`);
 			} else {
-				inner.push(`${fg("muted", "·")} ${task.label}`);
+				inner.push(`${fg("muted", "☐")} ${task.label}`);
 			}
 		}
 
@@ -149,7 +149,7 @@ function buildSteerContent(state: TrackerState): string | null {
 		for (let i = 0; i < state.tasks.length; i++) {
 			const t = state.tasks[i]!;
 			if (t.status === "completed") continue;
-			const marker = t.status === "active" ? "→" : "·";
+			const marker = t.status === "active" ? "→" : "☐";
 			lines.push(`  [${i}] ${marker} ${t.label}`);
 		}
 	}
