@@ -50,22 +50,24 @@ function shortenPath(p: string): string {
 	return shortened.join("/");
 }
 
-/** Render a visual context bar: [████░░░░░░] 32% */
-function renderContextBar(fg: ThemeFg, percent: number, barWidth: number): string {
-	const filled = Math.round((percent / 100) * barWidth);
-	const empty = barWidth - filled;
-	const bar = "█".repeat(filled) + "░".repeat(empty);
+/** Render context usage: ctx: 45.2k / 200k (23%) */
+function renderContextUsage(fg: ThemeFg, tokens: number | null, window: number, percent: number): string {
+	const tokStr = tokens !== null ? formatTokens(tokens) : "?";
+	const winStr = formatTokens(window);
+	const pctStr = `${percent.toFixed(0)}%`;
 
-	let coloredBar: string;
-	if (percent > 90) {
-		coloredBar = fg("error", bar);
-	} else if (percent > 70) {
-		coloredBar = fg("warning", bar);
-	} else {
-		coloredBar = fg("accent", bar);
-	}
+	let color: Parameters<ThemeFg>[0] = "dim";
+	if (percent > 90) color = "error";
+	else if (percent > 70) color = "warning";
 
-	return `${fg("dim", "ctx: [")}${coloredBar}${fg("dim", "]")} ${fg("dim", `${percent.toFixed(0)}%`)}`;
+	return fg(color, `ctx: ${tokStr} / ${winStr} (${pctStr})`);
+}
+
+function formatTokens(count: number): string {
+	if (count < 1000) return count.toString();
+	if (count < 10_000) return `${(count / 1000).toFixed(1)}k`;
+	if (count < 1_000_000) return `${Math.round(count / 1000)}k`;
+	return `${(count / 1_000_000).toFixed(1)}M`;
 }
 
 /** Join left and right with padding, truncating left if needed. */
@@ -134,8 +136,7 @@ export function registerFooter(pi: ExtensionAPI): void {
 					if (ctx) {
 						const usage = ctx.getContextUsage();
 						if (usage?.percent !== null && usage?.percent !== undefined) {
-							const barWidth = Math.min(20, Math.max(10, Math.floor(width * 0.15)));
-							l2Right = renderContextBar(fg, usage.percent, barWidth);
+							l2Right = renderContextUsage(fg, usage.tokens, usage.contextWindow, usage.percent);
 						}
 					}
 
