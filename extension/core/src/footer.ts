@@ -1,32 +1,29 @@
 /**
- * Custom footer — replaces pi's default footer with a cleaner layout.
+ * Custom footer — replaces pi's default footer.
  *
- * Single-line layout:
- *   Left:  git branch + active skills
- *   Right: context% + model
- *
- * Extension statuses (agent progress, etc.) render as a second line
- * only when present.
+ * Three-line layout:
+ *   Line 1: cwd | worktree | branch (left), model (right)
+ *   Line 2: token stats + cost (left), context bar (right)
+ *   Line 3: skills + agent statuses (only when active)
  *
  * Skills are tracked by intercepting `read` tool calls for SKILL.md
  * files that match known skill locations from pi's skill registry.
  */
 
+import * as os from "node:os";
 import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-agent";
 import { isToolCallEventType } from "@mariozechner/pi-coding-agent";
 import { truncateToWidth, visibleWidth } from "@mariozechner/pi-tui";
+import { getState } from "./session";
+
+type ThemeFg = (color: Parameters<import("@mariozechner/pi-coding-agent").Theme["fg"]>[0], text: string) => string;
 
 // ============================================================================
 // Skill Tracking
 // ============================================================================
 
-/** Set of skill names invoked this session (order-preserving via array). */
 const invokedSkills: string[] = [];
-
-/** Map of SKILL.md path → skill name, built at session start. */
 let skillPathMap = new Map<string, string>();
-
-/** Render callback — set when footer is active, called to trigger re-render. */
 let requestRender: (() => void) | null = null;
 
 function trackSkillRead(filePath: string): void {
@@ -38,7 +35,7 @@ function trackSkillRead(filePath: string): void {
 }
 
 // ============================================================================
-// Token Formatting
+// Formatting Helpers
 // ============================================================================
 
 function formatTokens(count: number): string {
@@ -48,6 +45,58 @@ function formatTokens(count: number): string {
 	return `${(count / 1_000_000).toFixed(1)}M`;
 }
 
+function shortenPath(p: string): string {
+	const home = os.homedir();
+	if (p.startsWith(home)) p = `~${p.slice(home.length)}`;
+
+	const parts = p.split("/");
+	if (parts.length <= 3) return p;
+
+	// Keep first segment (~ or root) and last segment, shorten middle
+	const shortened = parts.slice(0, -1).map((seg, i) => (i === 0 ? seg : seg[0] || seg));
+	shortened.push(parts.at(-1)!);
+	return shortened.join("/");
+}
+
+/** Render a visual context bar: [████░░░░░░] 32% */
+function renderContextBar(fg: ThemeFg, percent: number, barWidth: number): string {
+	const filled = Math.round((percent / 100) * barWidth);
+	const empty = barWidth - filled;
+	const bar = "█".repeat(filled) + "░".repeat(empty);
+
+	let coloredBar: string;
+	if (percent > 90) {
+		coloredBar = fg("error", bar);
+	} else if (percent > 70) {
+		coloredBar = fg("warning", bar);
+	} else {
+		coloredBar = fg("accent", bar);
+	}
+
+	const pctStr = `${percent.toFixed(0)}%`;
+	return `${fg("dim", "ctx: [")}${coloredBar}${fg("dim", "]")} ${fg("dim", pctStr)}`;
+}
+
+/** Join left and right with padding, truncating left if needed. */
+function layoutLine(left: string, right: string, width: number, fg: ThemeFg): string {
+	const lw = visibleWidth(left);
+	const rw = visibleWidth(right);
+	const minGap = 2;
+
+	if (lw + minGap + rw <= width) {
+		return left + " ".repeat(width - lw - rw) + right;
+	}
+
+	const available = width - rw - minGap;
+	if (available > 0) {
+		const truncLeft = truncateToWidth(left, available, fg("dim", "…"));
+		const pad = " ".repeat(Math.max(0, width - visibleWidth(truncLeft) - rw));
+		return truncLeft + pad + right;
+	}
+
+	return truncateToWidth(`${left}  ${right}`, width, fg("dim", "…"));
+}
+
 // ============================================================================
 // Registration
 // ============================================================================
@@ -55,16 +104,14 @@ function formatTokens(count: number): string {
 export function registerFooter(pi: ExtensionAPI): void {
 	let ctx: ExtensionContext | null = null;
 
-	// --- Build skill path map + set footer at session start ---
 	pi.on("session_start", (_event, sessionCtx) => {
 		ctx = sessionCtx;
 
+		// Build skill path map
 		const skills = pi.getCommands().filter((c) => c.source === "skill");
-
 		skillPathMap = new Map();
 		for (const skill of skills) {
-			const name = skill.name.replace(/^skill:/, "");
-			skillPathMap.set(skill.sourceInfo.path, name);
+			skillPathMap.set(skill.sourceInfo.path, skill.name.replace(/^skill:/, ""));
 		}
 
 		// Replace default footer
@@ -78,92 +125,85 @@ export function registerFooter(pi: ExtensionAPI): void {
 				invalidate() {},
 				render(width: number): string[] {
 					const fg = theme.fg.bind(theme);
+					const state = getState();
 
-					// --- Left side: branch + skills ---
-					const parts: string[] = [];
+					// ── Line 1: cwd | worktree | branch ... model ──
+					const l1Parts: string[] = [];
+					l1Parts.push(fg("dim", shortenPath(ctx?.sessionManager.getCwd() ?? state.primaryDir)));
+
+					if (state.worktreeLabel) {
+						l1Parts.push(fg("warning", `⌥ ${state.worktreeLabel}`));
+					}
 
 					const branch = footerData.getGitBranch();
 					if (branch) {
-						parts.push(fg("muted", branch));
+						l1Parts.push(fg("muted", `⎇ ${branch}`));
 					}
 
-					if (invokedSkills.length > 0) {
-						const skillList = invokedSkills.map((s) => fg("accent", s)).join(fg("dim", ", "));
-						parts.push(fg("dim", "skills: ") + skillList);
-					}
+					const l1Left = l1Parts.join(fg("dim", "  "));
+					const l1Right = fg("dim", ctx?.model?.id ?? "no-model");
+					const line1 = layoutLine(l1Left, l1Right, width, fg);
 
-					const left = parts.join(fg("dim", " · "));
-
-					// --- Right side: context% + model ---
-					const rightParts: string[] = [];
+					// ── Line 2: tokens + cost ... context bar ──
+					const l2Parts: string[] = [];
 
 					if (ctx) {
-						const usage = ctx.getContextUsage();
-						if (usage?.percent !== null && usage?.percent !== undefined) {
-							let ctxStr: string;
-							if (usage.percent > 90) {
-								ctxStr = fg("error", `ctx:${usage.percent.toFixed(0)}%`);
-							} else if (usage.percent > 70) {
-								ctxStr = fg("warning", `ctx:${usage.percent.toFixed(0)}%`);
-							} else {
-								ctxStr = fg("dim", `ctx:${usage.percent.toFixed(0)}%`);
-							}
-							rightParts.push(ctxStr);
-						}
-
-						// Token stats
 						let totalInput = 0;
 						let totalOutput = 0;
 						let totalCost = 0;
 						for (const entry of ctx.sessionManager.getEntries()) {
 							if (entry.type === "message" && entry.message.role === "assistant") {
-								const u = (entry.message as { usage: { input: number; output: number; cost: { total: number } } })
-									.usage;
+								const u = (
+									entry.message as {
+										usage: { input: number; output: number; cost: { total: number } };
+									}
+								).usage;
 								totalInput += u.input;
 								totalOutput += u.output;
 								totalCost += u.cost.total;
 							}
 						}
 						if (totalInput > 0) {
-							rightParts.push(fg("dim", `↑${formatTokens(totalInput)} ↓${formatTokens(totalOutput)}`));
+							l2Parts.push(fg("dim", `↑${formatTokens(totalInput)} ↓${formatTokens(totalOutput)}`));
 						}
 						if (totalCost > 0) {
-							rightParts.push(fg("dim", `$${totalCost.toFixed(3)}`));
+							l2Parts.push(fg("dim", `$${totalCost.toFixed(2)}`));
 						}
 					}
 
-					const model = ctx?.model?.id ?? "no-model";
-					rightParts.push(fg("dim", model));
+					const l2Left = l2Parts.join(fg("dim", "  "));
 
-					const right = rightParts.join(fg("dim", " "));
-
-					// --- Layout ---
-					const leftWidth = visibleWidth(left);
-					const rightWidth = visibleWidth(right);
-					const minGap = 2;
-
-					let line: string;
-					if (leftWidth + minGap + rightWidth <= width) {
-						const pad = " ".repeat(width - leftWidth - rightWidth);
-						line = left + pad + right;
-					} else if (leftWidth + minGap + rightWidth > width && rightWidth < width) {
-						const available = width - rightWidth - minGap;
-						const truncLeft = available > 0 ? truncateToWidth(left, available, fg("dim", "…")) : "";
-						const pad = " ".repeat(Math.max(0, width - visibleWidth(truncLeft) - rightWidth));
-						line = truncLeft + pad + right;
-					} else {
-						line = truncateToWidth(`${left}  ${right}`, width, fg("dim", "…"));
+					let l2Right = "";
+					if (ctx) {
+						const usage = ctx.getContextUsage();
+						if (usage?.percent !== null && usage?.percent !== undefined) {
+							const barWidth = Math.min(20, Math.max(10, Math.floor(width * 0.15)));
+							l2Right = renderContextBar(fg, usage.percent, barWidth);
+						}
 					}
 
-					const lines = [line];
+					const line2 = layoutLine(l2Left, l2Right, width, fg);
 
-					// --- Extension statuses (agent progress, etc.) ---
+					const lines = [line1, line2];
+
+					// ── Line 3: skills + agent statuses (conditional) ──
+					const l3Parts: string[] = [];
+
+					if (invokedSkills.length > 0) {
+						const skillList = invokedSkills.map((s) => fg("accent", s)).join(fg("dim", ", "));
+						l3Parts.push(`${fg("dim", "📖 ")}${skillList}`);
+					}
+
 					const statuses = footerData.getExtensionStatuses();
 					if (statuses.size > 0) {
 						const sorted = Array.from(statuses.entries())
 							.sort(([a], [b]) => a.localeCompare(b))
 							.map(([, text]) => text.replace(/[\r\n\t]/g, " ").trim());
-						lines.push(truncateToWidth(sorted.join("  "), width, fg("dim", "…")));
+						l3Parts.push(...sorted);
+					}
+
+					if (l3Parts.length > 0) {
+						lines.push(truncateToWidth(l3Parts.join(fg("dim", "  ")), width, fg("dim", "…")));
 					}
 
 					return lines;
@@ -177,7 +217,7 @@ export function registerFooter(pi: ExtensionAPI): void {
 		});
 	});
 
-	// --- Track skill reads via tool_call events ---
+	// Track skill reads
 	pi.on("tool_call", async (event) => {
 		if (isToolCallEventType("read", event)) {
 			trackSkillRead(event.input.path);
