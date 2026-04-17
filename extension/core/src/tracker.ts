@@ -385,70 +385,38 @@ export function registerTracker(pi: ExtensionAPI): void {
 	});
 
 	// --- Tool: escalate ---
-	const NAV_TYPE_ANSWER = "✎ Type answer...";
-	const NAV_BACK = "← Previous";
-	const NAV_SKIP = "→ Skip";
 
-	interface EscalateQuestion {
-		question: string;
+	/** Build prefilled editor template for multi-question escalate. */
+	function buildEditorTemplate(questions: string[], context?: string[]): string {
+		return questions
+			.map((q, i) => {
+				const hint = context?.[i] ? `  ${context[i]}\n` : "";
+				return `# ${q}\n${hint}> `;
+			})
+			.join("\n\n");
 	}
 
-	/** Build the select choices for a question, including navigation controls. */
-	function buildChoices(hasExistingAnswer: boolean, showBack: boolean, isMulti: boolean): string[] {
-		const choices = [NAV_TYPE_ANSWER];
-		if (isMulti) {
-			if (showBack) choices.push(NAV_BACK);
-			if (hasExistingAnswer) choices.push(NAV_SKIP);
-		}
-		return choices;
-	}
-
-	/** Navigate through questions with select-based controls. */
-	async function runQuestionLoop(
-		ui: ExtensionContext["ui"],
-		questions: EscalateQuestion[],
-	): Promise<Map<number, string> | "dismissed"> {
-		const answers = new Map<number, string>();
-		const isMulti = questions.length > 1;
-		let index = 0;
-
-		while (index < questions.length) {
-			const q = questions[index]!;
-			const existing = answers.get(index);
-			const title = isMulti ? `(${index + 1}/${questions.length}) ${q.question}` : q.question;
-			const choices = buildChoices(existing !== undefined, index > 0, isMulti);
-
-			const picked = await ui.select(title, choices);
-
-			if (!picked) {
-				// Esc: go back if possible, otherwise dismiss
-				if (index > 0) {
-					index--;
-					continue;
-				}
-				return "dismissed";
-			}
-
-			if (picked === NAV_BACK) {
-				index--;
-				continue;
-			}
-
-			if (picked === NAV_SKIP) {
-				index++;
-				continue;
-			}
-
-			if (picked === NAV_TYPE_ANSWER) {
-				const typed = await ui.input(title, existing);
-				if (typed) {
-					answers.set(index, typed);
-					index++;
+	/** Parse answers from the submitted editor content. */
+	function parseEditorAnswers(content: string, questionCount: number): (string | null)[] {
+		const sections = content.split(/^#\s/m).filter(Boolean);
+		return Array.from({ length: questionCount }, (_, i) => {
+			const section = sections[i];
+			if (!section) return null;
+			// Extract text after the last "> " marker in the section
+			const lines = section.split("\n");
+			const answerLines: string[] = [];
+			let inAnswer = false;
+			for (const line of lines) {
+				if (line.startsWith("> ") || line === ">") {
+					inAnswer = true;
+					answerLines.push(line.slice(2));
+				} else if (inAnswer && line.trim()) {
+					answerLines.push(line);
 				}
 			}
-		}
-
-		return answers;
+			const answer = answerLines.join("\n").trim();
+			return answer || null;
+		});
 	}
 
 	pi.registerTool({
@@ -459,45 +427,55 @@ export function registerTracker(pi: ExtensionAPI): void {
 		promptSnippet: "Pause and ask the user for a decision or help with a blocker",
 		parameters: Type.Object({
 			questions: Type.Array(Type.String(), {
-				description: "Questions to ask the user, presented in sequence with back/forward navigation",
+				description: "Questions to ask the user, presented in sequence",
 			}),
+			context: Type.Optional(
+				Type.Array(Type.String(), {
+					description: "Recommendations or context per question (same order as questions)",
+				}),
+			),
 		}),
 		async execute(_id, params, _signal, _onUpdate, execCtx) {
-			const questions: EscalateQuestion[] = params.questions.map((q) => ({ question: q }));
-
 			if (!execCtx.hasUI) {
-				const summary = questions.map((q) => `[escalation] ${q.question}`).join("\n");
+				const summary = params.questions.map((q) => `[escalation] ${q}`).join("\n");
 				return {
 					content: [{ type: "text", text: summary }],
-					details: { questions: questions.map((q) => q.question), answers: null },
+					details: { questions: params.questions, answers: null },
 				};
 			}
 
-			const result = await runQuestionLoop(execCtx.ui, questions);
-
-			if (result === "dismissed") {
-				return {
-					content: [{ type: "text", text: "User dismissed without answering." }],
-					details: { questions: questions.map((q) => q.question), answers: null },
-				};
-			}
-
-			// Format answers: single question returns plain text, multi returns labeled pairs
-			if (questions.length === 1) {
-				const answer = result.get(0) ?? "";
+			// Single question: use select + input
+			if (params.questions.length === 1) {
+				const question = params.questions[0]!;
+				const answer = await execCtx.ui.input(question);
+				if (!answer) {
+					return {
+						content: [{ type: "text", text: "User dismissed without answering." }],
+						details: { questions: params.questions, answers: null },
+					};
+				}
 				return {
 					content: [{ type: "text", text: answer }],
 					details: { questions: params.questions, answers: [answer] },
 				};
 			}
 
-			const answerLines = questions.map((q, i) => `${q.question}\n→ ${result.get(i) ?? "(no answer)"}`);
+			// Multi question: use editor
+			const template = buildEditorTemplate(params.questions, params.context);
+			const edited = await execCtx.ui.editor("Answer the questions below", template);
+
+			if (!edited) {
+				return {
+					content: [{ type: "text", text: "User dismissed without answering." }],
+					details: { questions: params.questions, answers: null },
+				};
+			}
+
+			const answers = parseEditorAnswers(edited, params.questions.length);
+			const answerLines = params.questions.map((q, i) => `${q}\n→ ${answers[i] ?? "(no answer)"}`);
 			return {
 				content: [{ type: "text", text: answerLines.join("\n\n") }],
-				details: {
-					questions: questions.map((q) => q.question),
-					answers: questions.map((_, i) => result.get(i) ?? null),
-				},
+				details: { questions: params.questions, answers },
 			};
 		},
 		renderCall(args, theme) {
