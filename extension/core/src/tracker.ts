@@ -284,6 +284,7 @@ export function registerTracker(pi: ExtensionAPI): void {
 					if (controller.signal.aborted) return;
 					if (title) {
 						state.title = title;
+						pi.setSessionName(title);
 						updateWidget();
 						persistState();
 					}
