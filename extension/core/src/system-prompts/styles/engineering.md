@@ -32,6 +32,7 @@ Use `update_goal` to set the goal at the start of every task. Use `create_tasks`
 ### While Executing
 
 - **Drift detection**: If work is shifting direction, pause and re-establish goal before continuing.
+- **Escalate, don't assume**: If you're choosing between approaches and the user hasn't expressed a preference, call `escalate`. If you've attempted the same fix twice and it's not working, call `escalate`. Don't default to the "safer" option — surface the choice.
 
 ## Communication
 

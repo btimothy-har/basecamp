@@ -384,6 +384,72 @@ export function registerTracker(pi: ExtensionAPI): void {
 		},
 	});
 
+	// --- Tool: escalate ---
+	const CUSTOM_ANSWER = "✎ Custom answer...";
+
+	pi.registerTool({
+		name: "escalate",
+		label: "Escalate",
+		description:
+			"Surface a blocker or decision to the user. Use when you need user input, hit ambiguity, or are stuck. Pauses execution until the user responds.",
+		promptSnippet: "Pause and ask the user for a decision or help with a blocker",
+		parameters: Type.Object({
+			question: Type.String({ description: "The question or blocker to surface" }),
+			options: Type.Optional(
+				Type.Array(Type.String(), { description: "Proposed options for the user to choose from" }),
+			),
+		}),
+		async execute(_id, params, _signal, _onUpdate, execCtx) {
+			if (!execCtx.hasUI) {
+				return {
+					content: [{ type: "text", text: `[escalation] ${params.question}` }],
+					details: { question: params.question, answer: null },
+				};
+			}
+
+			let answer: string | undefined;
+
+			if (params.options?.length) {
+				const choices = [...params.options, CUSTOM_ANSWER];
+				const picked = await execCtx.ui.select(params.question, choices);
+				if (picked === CUSTOM_ANSWER) {
+					answer = await execCtx.ui.input(params.question);
+				} else {
+					answer = picked;
+				}
+			} else {
+				answer = await execCtx.ui.input(params.question);
+			}
+
+			if (!answer) {
+				return {
+					content: [{ type: "text", text: "User dismissed without answering." }],
+					details: { question: params.question, answer: null },
+				};
+			}
+
+			return {
+				content: [{ type: "text", text: answer }],
+				details: { question: params.question, answer },
+			};
+		},
+		renderCall(args, theme) {
+			const { Text } = require("@mariozechner/pi-tui");
+			const q = (args.question as string) || "...";
+			const preview = q.length > 60 ? `${q.slice(0, 60)}...` : q;
+			return new Text(theme.fg("toolTitle", theme.bold("escalate ")) + theme.fg("dim", preview), 0, 0);
+		},
+		renderResult(result, { isPartial }, theme) {
+			if (isPartial) return renderPartial(theme);
+			const answer = (result.details as { answer: string | null })?.answer;
+			if (!answer) {
+				const { Text } = require("@mariozechner/pi-tui");
+				return new Text(theme.fg("warning", "⚠") + theme.fg("dim", " dismissed"), 0, 0);
+			}
+			return renderSuccess(`answered: ${answer}`, theme);
+		},
+	});
+
 	// --- Restore state on session start ---
 	pi.on("session_start", async (_event, sessionCtx) => {
 		ctx = sessionCtx;
