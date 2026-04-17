@@ -385,58 +385,67 @@ export function registerTracker(pi: ExtensionAPI): void {
 	});
 
 	// --- Tool: escalate ---
-	const CUSTOM_ANSWER = "Something else...";
-	const GO_BACK = "← Previous question";
-
-	/** Show a single question via select (with options) or input (without). */
-	async function askQuestion(
-		ui: ExtensionContext["ui"],
-		question: string,
-		options: string[] | undefined,
-		showBack: boolean,
-	): Promise<{ answer: string } | "back" | "dismissed"> {
-		if (options?.length) {
-			const choices = [...options, CUSTOM_ANSWER, ...(showBack ? [GO_BACK] : [])];
-			const picked = await ui.select(question, choices);
-			if (!picked) return showBack ? "back" : "dismissed";
-			if (picked === GO_BACK) return "back";
-			if (picked === CUSTOM_ANSWER) {
-				const typed = await ui.input(question);
-				if (!typed) return showBack ? "back" : "dismissed";
-				return { answer: typed };
-			}
-			return { answer: picked };
-		}
-
-		const typed = await ui.input(showBack ? `${question} (Esc to go back)` : question);
-		if (!typed) return showBack ? "back" : "dismissed";
-		return { answer: typed };
-	}
+	const NAV_TYPE_ANSWER = "✎ Type answer...";
+	const NAV_BACK = "← Previous";
+	const NAV_SKIP = "→ Skip";
 
 	interface EscalateQuestion {
 		question: string;
-		options?: string[];
 	}
 
-	/** Navigate through questions with back/forward support. */
+	/** Build the select choices for a question, including navigation controls. */
+	function buildChoices(hasExistingAnswer: boolean, showBack: boolean, isMulti: boolean): string[] {
+		const choices = [NAV_TYPE_ANSWER];
+		if (isMulti) {
+			if (showBack) choices.push(NAV_BACK);
+			if (hasExistingAnswer) choices.push(NAV_SKIP);
+		}
+		return choices;
+	}
+
+	/** Navigate through questions with select-based controls. */
 	async function runQuestionLoop(
 		ui: ExtensionContext["ui"],
 		questions: EscalateQuestion[],
 	): Promise<Map<number, string> | "dismissed"> {
 		const answers = new Map<number, string>();
+		const isMulti = questions.length > 1;
 		let index = 0;
 
 		while (index < questions.length) {
 			const q = questions[index]!;
-			const result = await askQuestion(ui, q.question, q.options, index > 0);
+			const existing = answers.get(index);
+			const title = isMulti ? `(${index + 1}/${questions.length}) ${q.question}` : q.question;
+			const choices = buildChoices(existing !== undefined, index > 0, isMulti);
 
-			if (result === "dismissed") return "dismissed";
-			if (result === "back") {
+			const picked = await ui.select(title, choices);
+
+			if (!picked) {
+				// Esc: go back if possible, otherwise dismiss
+				if (index > 0) {
+					index--;
+					continue;
+				}
+				return "dismissed";
+			}
+
+			if (picked === NAV_BACK) {
 				index--;
 				continue;
 			}
-			answers.set(index, result.answer);
-			index++;
+
+			if (picked === NAV_SKIP) {
+				index++;
+				continue;
+			}
+
+			if (picked === NAV_TYPE_ANSWER) {
+				const typed = await ui.input(title, existing);
+				if (typed) {
+					answers.set(index, typed);
+					index++;
+				}
+			}
 		}
 
 		return answers;
