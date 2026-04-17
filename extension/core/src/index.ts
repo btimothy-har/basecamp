@@ -10,6 +10,7 @@ import { registerHeader } from "./header";
 import { registerOpenCommand } from "./open";
 import { registerPrompt } from "./prompt";
 import { getState, registerSession } from "./session";
+import { registerTitle } from "./title";
 import { registerTracker } from "./tracker";
 
 export default function (pi: ExtensionAPI) {
@@ -20,5 +21,6 @@ export default function (pi: ExtensionAPI) {
 	registerFooter(pi);
 	registerHandoff(pi);
 	registerOpenCommand(pi, getState);
+	registerTitle(pi);
 	registerTracker(pi);
 }
