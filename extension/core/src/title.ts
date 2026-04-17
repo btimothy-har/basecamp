@@ -127,7 +127,7 @@ function renderTitleWidget(
 	bold: Theme["bold"],
 	width: number,
 ): string[] {
-	const text = fg("accent", bold(title));
+	const text = fg("mdHeading", bold(title));
 	const vw = visibleWidth(text);
 	const pad = Math.max(0, width - vw - 1);
 	const line = `${" ".repeat(pad)}${text} `;
