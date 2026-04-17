@@ -27,7 +27,7 @@ Organize work using **Context → Goal → Tasks**.
 
 ### Tracking
 
-Use `update_goal` to set the goal at the start of every task. For multi-step work, use `create_tasks` to break the goal into ordered steps, then `start_task`/`complete_task` to track progress. Keep tasks at meaningful granularity — logical units of work, not individual file edits.
+Use `update_goal` to set the goal at the start of every task. Use `create_tasks` to break the goal into ordered steps, then `start_task`/`complete_task` to track progress. Always maintain tasks — even simple work gets a task list. Keep tasks at meaningful granularity — logical units of work, not individual file edits.
 
 ### While Executing
 
