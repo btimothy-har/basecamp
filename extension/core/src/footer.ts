@@ -2,9 +2,9 @@
  * Custom footer — replaces pi's default footer.
  *
  * Three-line layout:
- *   Line 1: cwd | worktree | branch (left), model (right)
- *   Line 2: token stats + cost (left), context bar (right)
- *   Line 3: skills + agent statuses (only when active)
+ *   Line 1: cwd | worktree | branch ... cost + model
+ *   Line 2: invoked skills ... context bar
+ *   Line 3: agent statuses (only when active)
  *
  * Skills are tracked by intercepting `read` tool calls for SKILL.md
  * files that match known skill locations from pi's skill registry.
@@ -38,13 +38,6 @@ function trackSkillRead(filePath: string): void {
 // Formatting Helpers
 // ============================================================================
 
-function formatTokens(count: number): string {
-	if (count < 1000) return count.toString();
-	if (count < 10_000) return `${(count / 1000).toFixed(1)}k`;
-	if (count < 1_000_000) return `${Math.round(count / 1000)}k`;
-	return `${(count / 1_000_000).toFixed(1)}M`;
-}
-
 function shortenPath(p: string): string {
 	const home = os.homedir();
 	if (p.startsWith(home)) p = `~${p.slice(home.length)}`;
@@ -52,7 +45,6 @@ function shortenPath(p: string): string {
 	const parts = p.split("/");
 	if (parts.length <= 3) return p;
 
-	// Keep first segment (~ or root) and last segment, shorten middle
 	const shortened = parts.slice(0, -1).map((seg, i) => (i === 0 ? seg : seg[0] || seg));
 	shortened.push(parts.at(-1)!);
 	return shortened.join("/");
@@ -73,8 +65,7 @@ function renderContextBar(fg: ThemeFg, percent: number, barWidth: number): strin
 		coloredBar = fg("accent", bar);
 	}
 
-	const pctStr = `${percent.toFixed(0)}%`;
-	return `${fg("dim", "ctx: [")}${coloredBar}${fg("dim", "]")} ${fg("dim", pctStr)}`;
+	return `${fg("dim", "ctx: [")}${coloredBar}${fg("dim", "]")} ${fg("dim", `${percent.toFixed(0)}%`)}`;
 }
 
 /** Join left and right with padding, truncating left if needed. */
@@ -127,51 +118,17 @@ export function registerFooter(pi: ExtensionAPI): void {
 					const fg = theme.fg.bind(theme);
 					const state = getState();
 
-					// ── Line 1: cwd | worktree | branch ... model ──
-					const l1Parts: string[] = [];
-					l1Parts.push(fg("dim", shortenPath(ctx?.sessionManager.getCwd() ?? state.primaryDir)));
-
-					if (state.worktreeLabel) {
-						l1Parts.push(fg("warning", `⌥ ${state.worktreeLabel}`));
-					}
-
-					const branch = footerData.getGitBranch();
-					if (branch) {
-						l1Parts.push(fg("muted", `⎇ ${branch}`));
-					}
-
-					const l1Left = l1Parts.join(fg("dim", "  "));
-					const l1Right = fg("dim", ctx?.model?.id ?? "no-model");
+					// ── Line 1: cwd | worktree | branch ... cost + model ──
+					const l1Left = buildLocationSegment(fg, state, footerData, ctx);
+					const l1Right = buildModelSegment(fg, ctx);
 					const line1 = layoutLine(l1Left, l1Right, width, fg);
 
-					// ── Line 2: tokens + cost ... context bar ──
-					const l2Parts: string[] = [];
-
-					if (ctx) {
-						let totalInput = 0;
-						let totalOutput = 0;
-						let totalCost = 0;
-						for (const entry of ctx.sessionManager.getEntries()) {
-							if (entry.type === "message" && entry.message.role === "assistant") {
-								const u = (
-									entry.message as {
-										usage: { input: number; output: number; cost: { total: number } };
-									}
-								).usage;
-								totalInput += u.input;
-								totalOutput += u.output;
-								totalCost += u.cost.total;
-							}
-						}
-						if (totalInput > 0) {
-							l2Parts.push(fg("dim", `↑${formatTokens(totalInput)} ↓${formatTokens(totalOutput)}`));
-						}
-						if (totalCost > 0) {
-							l2Parts.push(fg("dim", `$${totalCost.toFixed(2)}`));
-						}
+					// ── Line 2: skills ... context bar ──
+					let l2Left = "";
+					if (invokedSkills.length > 0) {
+						const skillList = invokedSkills.map((s) => fg("accent", s)).join(fg("dim", ", "));
+						l2Left = `${fg("dim", "📖 ")}${skillList}`;
 					}
-
-					const l2Left = l2Parts.join(fg("dim", "  "));
 
 					let l2Right = "";
 					if (ctx) {
@@ -183,27 +140,15 @@ export function registerFooter(pi: ExtensionAPI): void {
 					}
 
 					const line2 = layoutLine(l2Left, l2Right, width, fg);
-
 					const lines = [line1, line2];
 
-					// ── Line 3: skills + agent statuses (conditional) ──
-					const l3Parts: string[] = [];
-
-					if (invokedSkills.length > 0) {
-						const skillList = invokedSkills.map((s) => fg("accent", s)).join(fg("dim", ", "));
-						l3Parts.push(`${fg("dim", "📖 ")}${skillList}`);
-					}
-
+					// ── Line 3: agent statuses (conditional) ──
 					const statuses = footerData.getExtensionStatuses();
 					if (statuses.size > 0) {
 						const sorted = Array.from(statuses.entries())
 							.sort(([a], [b]) => a.localeCompare(b))
 							.map(([, text]) => text.replace(/[\r\n\t]/g, " ").trim());
-						l3Parts.push(...sorted);
-					}
-
-					if (l3Parts.length > 0) {
-						lines.push(truncateToWidth(l3Parts.join(fg("dim", "  ")), width, fg("dim", "…")));
+						lines.push(truncateToWidth(sorted.join(fg("dim", "  ")), width, fg("dim", "…")));
 					}
 
 					return lines;
@@ -223,4 +168,49 @@ export function registerFooter(pi: ExtensionAPI): void {
 			trackSkillRead(event.input.path);
 		}
 	});
+}
+
+// ============================================================================
+// Line Builders
+// ============================================================================
+
+function buildLocationSegment(
+	fg: ThemeFg,
+	state: ReturnType<typeof getState>,
+	footerData: { getGitBranch(): string | null },
+	ctx: ExtensionContext | null,
+): string {
+	const parts: string[] = [];
+	parts.push(fg("dim", shortenPath(ctx?.sessionManager.getCwd() ?? state.primaryDir)));
+
+	if (state.worktreeLabel) {
+		parts.push(fg("warning", `⌥ ${state.worktreeLabel}`));
+	}
+
+	const branch = footerData.getGitBranch();
+	if (branch) {
+		parts.push(fg("muted", `⎇ ${branch}`));
+	}
+
+	return parts.join(fg("dim", "  "));
+}
+
+function buildModelSegment(fg: ThemeFg, ctx: ExtensionContext | null): string {
+	const parts: string[] = [];
+
+	if (ctx) {
+		let totalCost = 0;
+		for (const entry of ctx.sessionManager.getEntries()) {
+			if (entry.type === "message" && entry.message.role === "assistant") {
+				const u = (entry.message as { usage: { cost: { total: number } } }).usage;
+				totalCost += u.cost.total;
+			}
+		}
+		if (totalCost > 0) {
+			parts.push(fg("dim", `$${totalCost.toFixed(2)}`));
+		}
+	}
+
+	parts.push(fg("dim", ctx?.model?.id ?? "no-model"));
+	return parts.join(fg("dim", "  "));
 }
