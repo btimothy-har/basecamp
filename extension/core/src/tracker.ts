@@ -1,34 +1,59 @@
 /**
  * Tracker — persistent context widget below the editor.
  *
- * Two fields:
- *   - Goal: set by main agent via update_context tool
- *   - Assumptions: set by main agent via update_context tool
+ * Tracks a goal and an ordered task list with three states:
+ *   ✓ completed  →  active  ·  pending
+ *
+ * Four tools:
+ *   - update_goal: set or change the session goal
+ *   - create_tasks: set the ordered task list (replaces existing)
+ *   - start_task: mark a task as active
+ *   - complete_task: mark a task as done
+ *
+ * Widget shows a sliding window of 3 open tasks with collapse
+ * counters for completed/remaining items.
  *
  * State is persisted via appendEntry for session resume.
  */
 
 import type { ToolResultMessage } from "@mariozechner/pi-ai";
-import { Type } from "@sinclair/typebox";
-import type {
-	ExtensionAPI,
-	ExtensionContext,
-	Theme,
-} from "@mariozechner/pi-coding-agent";
+import type { ExtensionAPI, ExtensionContext, Theme } from "@mariozechner/pi-coding-agent";
 import { visibleWidth, wrapTextWithAnsi } from "@mariozechner/pi-tui";
+import { Type } from "@sinclair/typebox";
 
 // ============================================================================
 // Types
 // ============================================================================
 
+type TaskStatus = "pending" | "active" | "completed";
+
+interface Task {
+	label: string;
+	status: TaskStatus;
+}
+
 interface TrackerState {
 	goal: string | null;
-	assumptions: string[];
+	tasks: Task[];
+}
+
+// ============================================================================
+// State helpers
+// ============================================================================
+
+function requireTasks(state: TrackerState, index: number): Task {
+	if (state.tasks.length === 0) throw new Error("No tasks exist. Use create_tasks first.");
+	if (!Number.isInteger(index) || index < 0 || index >= state.tasks.length) {
+		throw new Error(`Invalid task index ${index}. Valid range: 0–${state.tasks.length - 1}.`);
+	}
+	return state.tasks[index]!;
 }
 
 // ============================================================================
 // Widget Rendering
 // ============================================================================
+
+const WINDOW_SIZE = 3;
 
 function renderWidget(
 	state: TrackerState,
@@ -36,7 +61,7 @@ function renderWidget(
 	_bold: Theme["bold"],
 	width: number,
 ): string[] {
-	const hasContent = state.goal || state.assumptions.length > 0;
+	const hasContent = state.goal || state.tasks.length > 0;
 	if (!hasContent) return [];
 
 	const inner: string[] = [];
@@ -45,10 +70,47 @@ function renderWidget(
 	if (state.goal) {
 		inner.push(`${fg("dim", "Goal")}  ${state.goal}`);
 	}
-	if (state.assumptions.length > 0) {
-		inner.push(fg("dim", "Assumptions"));
-		for (const a of state.assumptions) {
-			inner.push(`${fg("muted", "•")} ${a}`);
+
+	if (state.tasks.length > 0) {
+		const completedCount = state.tasks.filter((t) => t.status === "completed").length;
+
+		// Find window start: first active task, or first pending if none active
+		const activeIdx = state.tasks.findIndex((t) => t.status === "active");
+		const firstPendingIdx = state.tasks.findIndex((t) => t.status === "pending");
+		const windowStart = activeIdx >= 0 ? activeIdx : firstPendingIdx >= 0 ? firstPendingIdx : state.tasks.length;
+
+		// Window: up to WINDOW_SIZE open tasks from windowStart
+		const windowTasks: Task[] = [];
+		for (let i = windowStart; i < state.tasks.length && windowTasks.length < WINDOW_SIZE; i++) {
+			const task = state.tasks[i];
+			if (task && task.status !== "completed") {
+				windowTasks.push(task);
+			}
+		}
+
+		// Remaining pending tasks after the window
+		const pendingInWindow = windowTasks.filter((t) => t.status === "pending").length;
+		const totalPending = state.tasks.filter((t) => t.status === "pending").length;
+		const remainingCount = totalPending - pendingInWindow;
+
+		if (state.goal) {
+			inner.push("");
+		}
+
+		if (completedCount > 0) {
+			inner.push(fg("muted", `(+${completedCount} completed)`));
+		}
+
+		for (const task of windowTasks) {
+			if (task.status === "active") {
+				inner.push(`${fg("accent", "→")} ${fg("accent", task.label)}`);
+			} else {
+				inner.push(`${fg("muted", "·")} ${task.label}`);
+			}
+		}
+
+		if (remainingCount > 0) {
+			inner.push(fg("muted", `(+${remainingCount} to do)`));
 		}
 	}
 
@@ -70,84 +132,262 @@ function renderWidget(
 }
 
 // ============================================================================
+// Steer message
+// ============================================================================
+
+function buildSteerContent(state: TrackerState): string | null {
+	if (!state.goal) return null;
+
+	const lines = [`Current progress:`, `Goal: ${state.goal}`];
+
+	if (state.tasks.length > 0) {
+		const completedCount = state.tasks.filter((t) => t.status === "completed").length;
+		lines.push(`Completed: ${completedCount}/${state.tasks.length}`);
+		lines.push("");
+
+		// Show only open tasks with indices
+		for (let i = 0; i < state.tasks.length; i++) {
+			const t = state.tasks[i]!;
+			if (t.status === "completed") continue;
+			const marker = t.status === "active" ? "→" : "·";
+			lines.push(`  [${i}] ${marker} ${t.label}`);
+		}
+	}
+
+	lines.push(
+		"",
+		"Update progress with start_task/complete_task when working through tasks. Use create_tasks if the plan changes.",
+	);
+	return lines.join("\n");
+}
+
+// ============================================================================
+// Tool render helpers
+// ============================================================================
+
+function renderSuccess(message: string, theme: Theme) {
+	const { Text } = require("@mariozechner/pi-tui");
+	return new Text(theme.fg("success", "✓") + theme.fg("dim", ` ${message}`), 0, 0);
+}
+
+function renderPartial(theme: Theme) {
+	const { Text } = require("@mariozechner/pi-tui");
+	return new Text(theme.fg("dim", "..."), 0, 0);
+}
+
+// ============================================================================
+// Detail types for tool results (used for persistence/replay)
+// ============================================================================
+
+interface GoalDetails {
+	action: "update_goal";
+	goal: string;
+}
+interface TasksDetails {
+	action: "create_tasks";
+	tasks: string[];
+}
+interface TaskOpDetails {
+	action: "start_task" | "complete_task";
+	task: number;
+	label: string;
+}
+
+// ============================================================================
 // Registration
 // ============================================================================
 
 export function registerTracker(pi: ExtensionAPI): void {
 	let ctx: ExtensionContext | null = null;
-	let state: TrackerState = { goal: null, assumptions: [] };
+	let state: TrackerState = { goal: null, tasks: [] };
 
 	function updateWidget(): void {
 		if (!ctx?.hasUI) return;
 
-		const hasContent = state.goal || state.assumptions.length > 0;
+		const hasContent = state.goal || state.tasks.length > 0;
 		if (!hasContent) {
 			ctx.ui.setWidget("basecamp-tracker", undefined, { placement: "belowEditor" });
 			return;
 		}
 
-		ctx.ui.setWidget("basecamp-tracker", (_tui, theme) => {
-			const fg = theme.fg.bind(theme);
-			const bold = theme.bold.bind(theme);
-			let cachedLines: string[] | null = null;
-			let cachedWidth = 0;
+		ctx.ui.setWidget(
+			"basecamp-tracker",
+			(_tui, theme) => {
+				const fg = theme.fg.bind(theme);
+				const bold = theme.bold.bind(theme);
+				let cachedLines: string[] | null = null;
+				let cachedWidth = 0;
 
-			return {
-				invalidate() { cachedLines = null; },
-				render(width: number): string[] {
-					if (cachedLines && cachedWidth === width) return cachedLines;
-					cachedWidth = width;
-					cachedLines = renderWidget(state, fg, bold, width);
-					return cachedLines;
-				},
-			};
-		}, { placement: "belowEditor" });
+				return {
+					invalidate() {
+						cachedLines = null;
+					},
+					render(width: number): string[] {
+						if (cachedLines && cachedWidth === width) return cachedLines;
+						cachedWidth = width;
+						cachedLines = renderWidget(state, fg, bold, width);
+						return cachedLines;
+					},
+				};
+			},
+			{ placement: "belowEditor" },
+		);
 	}
 
 	function persistState(): void {
 		pi.appendEntry("tracker-state", state);
 	}
 
-	// --- Tool: update_context ---
+	// --- Tool: update_goal ---
 	pi.registerTool({
-		name: "update_context",
-		label: "Update Context",
-		description: "Update the session context tracker with the current goal and assumptions. Call this when starting a new task, when the goal changes, or when assumptions are established or invalidated.",
-		promptSnippet: "Update context tracker (goal + assumptions)",
+		name: "update_goal",
+		label: "Update Goal",
+		description: "Set or change the session goal. Call at the start of any task to establish what success looks like.",
+		promptSnippet: "Set the session goal",
 		parameters: Type.Object({
 			goal: Type.String({ description: "What success looks like — concrete and verifiable (1 sentence)" }),
-			assumptions: Type.Array(Type.String(), { description: "Things being taken as given that could be wrong (2-4 items)" }),
 		}),
-		async execute(_id, params, _signal, _onUpdate, _ctx) {
+		async execute(_id, params) {
 			state.goal = params.goal;
-			state.assumptions = params.assumptions;
 			updateWidget();
 			persistState();
 			return {
-				content: [{ type: "text", text: "Context updated." }],
-				details: { goal: params.goal, assumptions: params.assumptions },
+				content: [{ type: "text", text: "Goal updated." }],
+				details: { action: "update_goal" as const, goal: params.goal },
 			};
 		},
 		renderCall(args, theme) {
 			const { Text } = require("@mariozechner/pi-tui");
 			const goal = (args.goal as string) || "...";
 			const preview = goal.length > 60 ? `${goal.slice(0, 60)}...` : goal;
+			return new Text(theme.fg("toolTitle", theme.bold("update_goal ")) + theme.fg("dim", preview), 0, 0);
+		},
+		renderResult(_result, { isPartial }, theme) {
+			if (isPartial) return renderPartial(theme);
+			return renderSuccess("goal updated", theme);
+		},
+	});
+
+	// --- Tool: create_tasks ---
+	pi.registerTool({
+		name: "create_tasks",
+		label: "Create Tasks",
+		description:
+			"Set the ordered task list for the current goal. Replaces any existing tasks. Requires a goal to be set first.",
+		promptSnippet: "Set the task list for the current goal",
+		parameters: Type.Object({
+			tasks: Type.Array(Type.String(), { description: "Ordered list of task descriptions" }),
+		}),
+		async execute(_id, params) {
+			if (!state.goal) {
+				throw new Error("Cannot create tasks without a goal. Call update_goal first.");
+			}
+			state.tasks = params.tasks.map((label) => ({ label, status: "pending" as TaskStatus }));
+			updateWidget();
+			persistState();
+			return {
+				content: [{ type: "text", text: `Created ${params.tasks.length} tasks.` }],
+				details: { action: "create_tasks" as const, tasks: params.tasks },
+			};
+		},
+		renderCall(args, theme) {
+			const { Text } = require("@mariozechner/pi-tui");
+			const tasks = args.tasks as string[] | undefined;
+			const count = tasks?.length ?? 0;
+			return new Text(theme.fg("toolTitle", theme.bold("create_tasks ")) + theme.fg("dim", `${count} tasks`), 0, 0);
+		},
+		renderResult(_result, { isPartial }, theme) {
+			if (isPartial) return renderPartial(theme);
+			return renderSuccess(`${state.tasks.length} tasks created`, theme);
+		},
+	});
+
+	// --- Tool: start_task ---
+	pi.registerTool({
+		name: "start_task",
+		label: "Start Task",
+		description: "Mark a task as active by index. Only one task can be active at a time.",
+		promptSnippet: "Mark a task as active",
+		parameters: Type.Object({
+			task: Type.Number({ description: "Task index (0-based)" }),
+		}),
+		async execute(_id, params) {
+			const target = requireTasks(state, params.task);
+
+			if (target.status === "completed") {
+				throw new Error(`Task ${params.task} is already completed.`);
+			}
+
+			// Clear any previously active task back to pending
+			for (const t of state.tasks) {
+				if (t.status === "active") t.status = "pending";
+			}
+			target.status = "active";
+			updateWidget();
+			persistState();
+			return {
+				content: [{ type: "text", text: `Started: ${target.label}` }],
+				details: { action: "start_task" as const, task: params.task, label: target.label },
+			};
+		},
+		renderCall(args, theme) {
+			const { Text } = require("@mariozechner/pi-tui");
+			const idx = args.task as number;
+			const label = state.tasks[idx]?.label ?? "...";
+			const preview = label.length > 50 ? `${label.slice(0, 50)}...` : label;
+			return new Text(theme.fg("toolTitle", theme.bold("start_task ")) + theme.fg("dim", `[${idx}] ${preview}`), 0, 0);
+		},
+		renderResult(_result, { isPartial }, theme) {
+			if (isPartial) return renderPartial(theme);
+			return renderSuccess("task started", theme);
+		},
+	});
+
+	// --- Tool: complete_task ---
+	pi.registerTool({
+		name: "complete_task",
+		label: "Complete Task",
+		description: "Mark a task as completed by index.",
+		promptSnippet: "Mark a task as completed",
+		parameters: Type.Object({
+			task: Type.Number({ description: "Task index (0-based)" }),
+		}),
+		async execute(_id, params) {
+			const target = requireTasks(state, params.task);
+
+			if (target.status === "completed") {
+				throw new Error(`Task ${params.task} is already completed.`);
+			}
+
+			target.status = "completed";
+			updateWidget();
+			persistState();
+			return {
+				content: [{ type: "text", text: `Completed: ${target.label}` }],
+				details: { action: "complete_task" as const, task: params.task, label: target.label },
+			};
+		},
+		renderCall(args, theme) {
+			const { Text } = require("@mariozechner/pi-tui");
+			const idx = args.task as number;
+			const label = state.tasks[idx]?.label ?? "...";
+			const preview = label.length > 50 ? `${label.slice(0, 50)}...` : label;
 			return new Text(
-				theme.fg("toolTitle", theme.bold("update_context ")) + theme.fg("dim", preview),
-				0, 0,
+				theme.fg("toolTitle", theme.bold("complete_task ")) + theme.fg("dim", `[${idx}] ${preview}`),
+				0,
+				0,
 			);
 		},
 		renderResult(_result, { isPartial }, theme) {
-			const { Text } = require("@mariozechner/pi-tui");
-			if (isPartial) return new Text(theme.fg("dim", "..."), 0, 0);
-			return new Text(theme.fg("success", "✓") + theme.fg("dim", " context updated"), 0, 0);
+			if (isPartial) return renderPartial(theme);
+			return renderSuccess("task completed", theme);
 		},
 	});
 
 	// --- Restore state on session start ---
 	pi.on("session_start", async (_event, sessionCtx) => {
 		ctx = sessionCtx;
-		state = { goal: null, assumptions: [] };
+		state = { goal: null, tasks: [] };
 
 		// Restore from persisted entries
 		const entries = sessionCtx.sessionManager.getEntries();
@@ -157,36 +397,53 @@ export function registerTracker(pi: ExtensionAPI): void {
 
 		if (trackerEntry?.data) {
 			if (trackerEntry.data.goal) state.goal = trackerEntry.data.goal;
-			if (trackerEntry.data.assumptions) state.assumptions = trackerEntry.data.assumptions;
+			if (trackerEntry.data.tasks) state.tasks = trackerEntry.data.tasks;
 		}
 
-		// Restore from tool calls in the branch
+		// Replay tool calls from the branch to reconstruct current state
 		for (const entry of sessionCtx.sessionManager.getBranch()) {
-			if (entry.type === "message" && entry.message.role === "toolResult") {
-				const msg = entry.message as ToolResultMessage;
-				if (msg.toolName === "update_context" && msg.details) {
-					const d = msg.details as { goal?: string; assumptions?: string[] };
-					if (d.goal) state.goal = d.goal;
-					if (d.assumptions) state.assumptions = d.assumptions;
-				}
+			if (entry.type !== "message" || entry.message.role !== "toolResult") continue;
+			const msg = entry.message as ToolResultMessage;
+			if (!msg.details) continue;
+
+			const d = msg.details as GoalDetails | TasksDetails | TaskOpDetails;
+
+			switch (d.action) {
+				case "update_goal":
+					state.goal = d.goal;
+					break;
+				case "create_tasks":
+					state.tasks = d.tasks.map((label) => ({ label, status: "pending" as TaskStatus }));
+					break;
+				case "start_task":
+					if (state.tasks[d.task]) {
+						for (const t of state.tasks) {
+							if (t.status === "active") t.status = "pending";
+						}
+						state.tasks[d.task]!.status = "active";
+					}
+					break;
+				case "complete_task":
+					if (state.tasks[d.task]) {
+						state.tasks[d.task]!.status = "completed";
+					}
+					break;
 			}
 		}
 
 		updateWidget();
 	});
 
-	// --- before_agent_start: inject context reminder ---
+	// --- before_agent_start: inject progress reminder ---
 	pi.on("before_agent_start", async (_event, agentCtx) => {
-		if (state.goal && agentCtx.hasUI) {
-			const lines = [`Current context tracker state:`, `Goal: ${state.goal}`];
-			if (state.assumptions.length > 0) {
-				lines.push(`Assumptions:\n${state.assumptions.map((a) => `• ${a}`).join("\n")}`);
-			}
-			lines.push("", "You MUST call `update_context` if the goal or any assumption has changed, been invalidated, or been confirmed.");
+		if (!agentCtx.hasUI) return;
+
+		const content = buildSteerContent(state);
+		if (content) {
 			pi.sendMessage(
 				{
 					customType: "tracker-context",
-					content: lines.join("\n"),
+					content,
 					display: false,
 				},
 				{ deliverAs: "steer" },
