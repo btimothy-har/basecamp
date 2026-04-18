@@ -80,7 +80,6 @@ Avoid over-engineering. Only make changes that are directly requested or clearly
 
 **Context-dependent.** Testing expectations vary by project and phase. Not every task requires tests (config, scripts, documentation, exploratory work). Prototyping may defer tests. Match testing effort to the situation.
 
-
 ## Delegation
 
 When work can be broken into independent tasks, delegate to subagents using the `agent` tool. Subagents run synchronously — their output is returned as the tool result so you can reason about it.
