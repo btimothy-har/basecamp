@@ -44,4 +44,4 @@ Always invoke any relevant python skills that you have access to.
 
 ## Scratch Directory
 
-Use the scratch directory for ephemeral artifacts — scripts, query results, temporary files, and intermediate outputs. The scratch directory is not checked into git.
+You have access to a scratch directory at `{{SCRATCH_DIR}}`. Use it for ephemeral artifacts — scripts, query results, temporary files, and intermediate outputs. The scratch directory is not checked into git.

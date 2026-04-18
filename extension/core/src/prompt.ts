@@ -85,25 +85,6 @@ function loadWorkingStyle(name: string): string {
 
 function buildEnvBlock(state: SessionState): string {
 	const user = process.env.USER || os.userInfo().username || "unknown";
-	const lines: string[] = [`User: ${user}`, `Working directory: ${state.primaryDir}`];
-
-	const worktreeWarning = buildWorktreeWarning(state);
-	if (worktreeWarning) {
-		lines.push(worktreeWarning);
-	}
-
-	if (state.secondaryDirs.length > 0) {
-		lines.push(`Additional directories: ${state.secondaryDirs.join(", ")}`);
-	}
-
-	lines.push(`Is directory a git repo: ${state.isRepo ? "Yes" : "No"}`);
-
-	if (state.remoteUrl) {
-		lines.push(`Git remote: ${state.remoteUrl}`);
-	}
-
-	lines.push(`Platform: ${process.platform}`);
-
 	const tz = getTimezone();
 	const today = new Intl.DateTimeFormat("en-CA", {
 		timeZone: tz ?? undefined,
@@ -111,14 +92,30 @@ function buildEnvBlock(state: SessionState): string {
 		month: "2-digit",
 		day: "2-digit",
 	}).format(new Date());
-	lines.push(`Today's date: ${today}`);
 
-	lines.push(`Scratch directory: ${state.scratchDir}`);
+	const lines: string[] = [
+		`User: ${user}`,
+		`Platform: ${process.platform}`,
+		`Today's date: ${today}`,
+		"",
+		`Working directory: ${state.primaryDir}`,
+		`Is directory a git repo: ${state.isRepo ? "Yes" : "No"}`,
+	];
 
-	if (state.workingStyle !== "logseq") {
-		const logseqGraph = getLogseqGraph();
-		if (logseqGraph) {
-			lines.push(`Logseq graph: ${logseqGraph}`);
+	if (state.remoteUrl) {
+		lines.push(`Git remote: ${state.remoteUrl}`);
+	}
+
+	const worktreeWarning = buildWorktreeWarning(state);
+	if (worktreeWarning) {
+		lines.push(worktreeWarning);
+	}
+
+	if (state.secondaryDirs.length > 0) {
+		lines.push("");
+		lines.push("Other directories:");
+		for (const dir of state.secondaryDirs) {
+			lines.push(`- ${dir}`);
 		}
 	}
 
@@ -146,10 +143,10 @@ export interface AssembleOptions {
  * and context files are sourced dynamically so we control placement.
  *
  * Layer order:
- *   1. Env block (runtime context)
- *   2. environment.md (tool/environment guidelines)
+ *   1. Env block (user, platform, directories)
+ *   2. environment.md (tool/environment guidelines, scratch dir)
  *   3. Working style — OR agent prompt (workers)
- *      (agent prompt replaces working style when --agent-prompt is passed)
+ *   4. Logseq graph (conditional — when configured, non-logseq style)
  *   5. Available tools + skills
  *   6. Project context (basecamp context + CLAUDE.md/AGENTS.md)
  *   7. Git status snapshot
@@ -163,8 +160,9 @@ export function assemblePrompt(opts: AssembleOptions): string {
 	parts.push(buildEnvBlock(state));
 
 	// 2. Environment guidelines
-	const environment = loadPromptFile("environment.md").trim();
+	let environment = loadPromptFile("environment.md").trim();
 	if (environment) {
+		environment = environment.replaceAll("{{SCRATCH_DIR}}", state.scratchDir);
 		parts.push(environment);
 	}
 
@@ -175,6 +173,18 @@ export function assemblePrompt(opts: AssembleOptions): string {
 		const style = loadWorkingStyle(state.workingStyle).trim();
 		if (style) {
 			parts.push(style);
+		}
+	}
+
+	// 4. Logseq graph (when configured and not in logseq working style)
+	if (state.workingStyle !== "logseq") {
+		const logseqGraph = getLogseqGraph();
+		if (logseqGraph) {
+			let logseq = loadPromptFile("logseq.md").trim();
+			if (logseq) {
+				logseq = logseq.replaceAll("{{LOGSEQ_GRAPH}}", logseqGraph);
+				parts.push(logseq);
+			}
 		}
 	}
 

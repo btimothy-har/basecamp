@@ -80,9 +80,6 @@ Avoid over-engineering. Only make changes that are directly requested or clearly
 
 **Context-dependent.** Testing expectations vary by project and phase. Not every task requires tests (config, scripts, documentation, exploratory work). Prototyping may defer tests. Match testing effort to the situation.
 
-## Knowledge Graph
-
-If a Logseq graph path is provided to you, use it to find prior decisions, project context, and open threads when relevant. Journal files are at `journals/YYYY_MM_DD.md`, other pages at `pages/<Page Name>.md`. Read only — never write to the graph during engineering sessions.
 
 ## Delegation
 
