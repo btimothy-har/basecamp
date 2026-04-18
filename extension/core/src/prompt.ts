@@ -145,8 +145,8 @@ export interface AssembleOptions {
  * Layer order:
  *   1. Env block (user, platform, directories)
  *   2. environment.md (tool/environment guidelines, scratch dir)
- *   3. Working style — OR agent prompt (workers)
- *   4. Logseq graph (conditional — when configured, non-logseq style)
+ *   3. Logseq graph (conditional — when configured, non-logseq style)
+ *   4. Working style — OR agent prompt (workers)
  *   5. Available tools + skills
  *   6. Project context (basecamp context + CLAUDE.md/AGENTS.md)
  *   7. Git status snapshot
@@ -166,17 +166,7 @@ export function assemblePrompt(opts: AssembleOptions): string {
 		parts.push(environment);
 	}
 
-	// 3. Working style — OR agent prompt (workers)
-	if (opts.agentPrompt) {
-		parts.push(opts.agentPrompt);
-	} else {
-		const style = loadWorkingStyle(state.workingStyle).trim();
-		if (style) {
-			parts.push(style);
-		}
-	}
-
-	// 4. Logseq graph (when configured and not in logseq working style)
+	// 3. Logseq graph (when configured and not in logseq working style)
 	if (state.workingStyle !== "logseq") {
 		const logseqGraph = getLogseqGraph();
 		if (logseqGraph) {
@@ -185,6 +175,16 @@ export function assemblePrompt(opts: AssembleOptions): string {
 				logseq = logseq.replaceAll("{{LOGSEQ_GRAPH}}", logseqGraph);
 				parts.push(logseq);
 			}
+		}
+	}
+
+	// 4. Working style — OR agent prompt (workers)
+	if (opts.agentPrompt) {
+		parts.push(opts.agentPrompt);
+	} else {
+		const style = loadWorkingStyle(state.workingStyle).trim();
+		if (style) {
+			parts.push(style);
 		}
 	}
 
