@@ -43,7 +43,7 @@ export interface SessionState {
 	/** Git remote URL */
 	remoteUrl: string | null;
 	/** Scratch directory path */
-	workDir: string;
+	scratchDir: string;
 	/** Working style name */
 	workingStyle: string;
 	/** Worktree directory (absolute), or null if no worktree */
@@ -178,7 +178,7 @@ export function resolveSessionState(opts: ResolveOptions): SessionState {
 		workingStyle = styleOverride;
 	}
 
-	const workDir = path.join("/tmp/pi", repoName || path.basename(primaryDir));
+	const scratchDir = path.join("/tmp/pi", repoName || path.basename(primaryDir));
 
 	return {
 		projectName,
@@ -188,7 +188,7 @@ export function resolveSessionState(opts: ResolveOptions): SessionState {
 		repoName,
 		isRepo,
 		remoteUrl,
-		workDir,
+		scratchDir,
 		workingStyle,
 		worktreeDir: null,
 		worktreeLabel: null,

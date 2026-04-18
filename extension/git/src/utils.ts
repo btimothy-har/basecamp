@@ -16,8 +16,8 @@ export function loadTemplate(name: string, vars: Record<string, string>): string
 	return template;
 }
 
-export function getWorkDir(cwd: string): string {
-	return process.env.BASECAMP_WORK_DIR || `/tmp/pi/${path.basename(cwd)}`;
+export function getScratchDir(cwd: string): string {
+	return process.env.BASECAMP_SCRATCH_DIR || `/tmp/pi/${path.basename(cwd)}`;
 }
 
 export async function resolvePrNumber(

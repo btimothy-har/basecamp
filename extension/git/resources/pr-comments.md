@@ -16,7 +16,7 @@ For each finding, identify: file path, line number (if applicable), severity, an
 
 ## Step 2: Compile Draft
 
-Write findings to `{{WORK_DIR}}/pull-requests/{{PR_NUMBER}}-comments.md`:
+Write findings to `{{SCRATCH_DIR}}/pull-requests/{{PR_NUMBER}}-comments.md`:
 
 ```markdown
 # PR Comments — #{{PR_NUMBER}}
@@ -141,5 +141,5 @@ If a line comment fails, fall back to a file-level comment and include the inten
 ### Clean Up
 
 After all comments are posted:
-1. Delete `{{WORK_DIR}}/pull-requests/{{PR_NUMBER}}-comments.md`
+1. Delete `{{SCRATCH_DIR}}/pull-requests/{{PR_NUMBER}}-comments.md`
 2. Report summary: total posted, any failures, any fallbacks

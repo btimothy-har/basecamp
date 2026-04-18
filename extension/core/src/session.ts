@@ -42,7 +42,7 @@ export function getState(): SessionState {
 			repoName: path.basename(process.cwd()),
 			isRepo: false,
 			remoteUrl: null,
-			workDir: `/tmp/pi/${path.basename(process.cwd())}`,
+			scratchDir: `/tmp/pi/${path.basename(process.cwd())}`,
 			workingStyle: "engineering",
 			worktreeDir: null,
 			worktreeLabel: null,
@@ -227,12 +227,12 @@ export function registerSession(pi: ExtensionAPI): void {
 		}
 
 		// Create work directories
-		await fs.mkdir(path.join(state.workDir, "pull-requests"), { recursive: true });
+		await fs.mkdir(path.join(state.scratchDir, "pull-requests"), { recursive: true });
 
 		// Set env vars for downstream tools (observer, workers, etc.)
 		process.env.BASECAMP_PROJECT = state.projectName ?? "";
 		process.env.BASECAMP_REPO = state.repoName;
-		process.env.BASECAMP_WORK_DIR = state.workDir;
+		process.env.BASECAMP_SCRATCH_DIR = state.scratchDir;
 
 		// Notify
 		const parts = [`repo=${state.repoName}`];

@@ -8,7 +8,7 @@
 
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { unlocked } from "./guards";
-import { getWorkDir, loadTemplate, resolvePrNumber } from "./utils";
+import { getScratchDir, loadTemplate, resolvePrNumber } from "./utils";
 
 export function registerCommands(pi: ExtensionAPI): void {
 	// --- /pull-request [base] ---
@@ -67,8 +67,8 @@ export function registerCommands(pi: ExtensionAPI): void {
 			}
 
 			unlocked.prEdit = true;
-			const workDir = getWorkDir(ctx.cwd);
-			pi.sendUserMessage(loadTemplate("pull-request", { PR_NUMBER: prNumber, BASE: base, WORK_DIR: workDir }));
+			const scratchDir = getScratchDir(ctx.cwd);
+			pi.sendUserMessage(loadTemplate("pull-request", { PR_NUMBER: prNumber, BASE: base, SCRATCH_DIR: scratchDir }));
 		},
 	});
 
@@ -80,9 +80,9 @@ export function registerCommands(pi: ExtensionAPI): void {
 			if (!pr) return;
 
 			unlocked.prComment = true;
-			const workDir = getWorkDir(ctx.cwd);
+			const scratchDir = getScratchDir(ctx.cwd);
 			ctx.ui.notify(`PR comments workflow for #${pr.number}`, "info");
-			pi.sendUserMessage(loadTemplate("pr-comments", { PR_NUMBER: pr.number, WORK_DIR: workDir }));
+			pi.sendUserMessage(loadTemplate("pr-comments", { PR_NUMBER: pr.number, SCRATCH_DIR: scratchDir }));
 		},
 	});
 

@@ -113,7 +113,7 @@ function buildEnvBlock(state: SessionState): string {
 	}).format(new Date());
 	lines.push(`Today's date: ${today}`);
 
-	lines.push(`Work directory: ${state.workDir}`);
+	lines.push(`Scratch directory: ${state.scratchDir}`);
 
 	if (state.workingStyle !== "logseq") {
 		const logseqGraph = getLogseqGraph();
