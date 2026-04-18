@@ -45,13 +45,14 @@ _BLOCKED_ARGS = {"--system-prompt", "--append-system-prompt", "--project", "--la
 
 
 @basecamp.command(context_settings={"ignore_unknown_options": True, "allow_extra_args": True})
-@click.argument("project")
+@click.argument("project", required=False, default=None)
 @click.option("--label", "-l", help="Work in a labeled git worktree (creates if new)")
 @click.option("--style", "-s", help="Override working style")
 @click.pass_context
-def pi(ctx: click.Context, project: str, label: str | None, style: str | None) -> None:
+def pi(ctx: click.Context, project: str | None, label: str | None, style: str | None) -> None:
     """Launch pi with a basecamp project.
 
+    Run without a project name (or with ".") to launch in the current directory.
     Additional args are passed through to the pi CLI (e.g. --model, --resume).
     """
     try:
@@ -60,8 +61,11 @@ def pi(ctx: click.Context, project: str, label: str | None, style: str | None) -
                 if arg == blocked or arg.startswith(blocked + "="):
                     raise BlockedArgError(blocked)
 
-        config = load_config()
-        execute_launch(project, config, label=label, style=style, extra_args=ctx.args)
+        if project is None or project == ".":
+            execute_launch(None, None, label=label, style=style, extra_args=ctx.args)
+        else:
+            config = load_config()
+            execute_launch(project, config, label=label, style=style, extra_args=ctx.args)
     except LauncherError as e:
         _handle_error(e)
 
