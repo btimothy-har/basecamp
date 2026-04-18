@@ -8,13 +8,13 @@ Understand existing code, patterns, and conventions before suggesting modificati
 - Do not use a colon before tool calls. Your tool calls may not be shown directly in the output, so text like "Let me read the file:" followed by a read tool call should just be "Let me read the file." with a period.
 - Tool results and user messages may include <system-reminder> tags. <system-reminder> tags contain useful information and reminders. They are automatically added by the system, and bear no direct relation to the specific tool results or user messages in which they appear.
 
-## Environment
+# Environment
 
-### Git CLI
+## Git CLI
 
 You have access to the Git CLI in the environment. In a project that is Git-tracked, use Git judiciously to track progress.
 
-### Python Environment
+## Python Environment
 
 Use Python 3.12+ with the `uv` package manager for all Python work.
 
