@@ -4,28 +4,21 @@ import sys
 
 import rich_click as click
 
-from core.cli.completions import complete_project_name, complete_project_or_path, complete_worktree_name
-from core.cli.handoff import handoff
-from core.cli.launch import execute_launch, is_path_argument, resolve_path_argument
-from core.cli.log import execute_log
-from core.cli.open import execute_open
-from core.cli.plan import execute_plan
+from core.cli.launch import execute_launch
+from core.cli.model import (
+    execute_model_list,
+    execute_model_remove,
+    execute_model_set,
+)
 from core.cli.project import (
     execute_project_add,
     execute_project_edit,
     execute_project_list,
     execute_project_remove,
 )
-from core.cli.reflect import execute_reflect
 from core.cli.setup import execute_setup
-from core.cli.worker import worker
-from core.cli.worktree import (
-    clean_project_worktrees,
-    list_all_project_worktrees,
-    list_project_worktrees,
-)
-from core.config import Config, load_config
-from core.exceptions import BlockedArgError, LauncherError, PathLaunchLabelError
+from core.config import load_config
+from core.exceptions import BlockedArgError, LauncherError
 from core.ui import err_console
 
 # Configure rich-click
@@ -44,32 +37,23 @@ def _handle_error(e: LauncherError) -> None:
 
 @click.group(context_settings=CONTEXT_SETTINGS)
 def basecamp() -> None:
-    """basecamp - Claude Code multi-project workspace launcher."""
+    """basecamp - project configuration and workspace management."""
 
 
-@basecamp.command()
-def setup() -> None:
-    """Set up basecamp environment (prerequisites, directories, config)."""
-    try:
-        execute_setup()
-    except LauncherError as e:
-        _handle_error(e)
-
-
-# Args that basecamp controls — block these from passthrough to Claude CLI.
-_BLOCKED_ARGS = {"--system-prompt", "--append-system-prompt", "--settings", "--setting-sources"}
+# Args that basecamp controls — block from passthrough to pi.
+_BLOCKED_ARGS = {"--system-prompt", "--append-system-prompt", "--project", "--label", "--style", "--agent-prompt"}
 
 
 @basecamp.command(context_settings={"ignore_unknown_options": True, "allow_extra_args": True})
-@click.argument("project", shell_complete=complete_project_or_path)
-@click.option("--label", "-l", help="Work in a labeled worktree (creates if new, re-enters if exists)")
+@click.argument("project", required=False, default=None)
+@click.option("--label", "-l", help="Work in a labeled git worktree (creates if new)")
+@click.option("--style", "-s", help="Override working style")
 @click.pass_context
-def claude(ctx: click.Context, project: str, label: str | None) -> None:
-    """Launch Claude Code with a project name or directory path.
+def pi(ctx: click.Context, project: str | None, label: str | None, style: str | None) -> None:
+    """Launch pi with a basecamp project.
 
-    PROJECT can be a configured project name or a filesystem path (., ./, ~/, /).
-    Use -l/--label to work in an isolated git worktree (project names only).
-    Additional args are passed through to the Claude CLI (e.g. --resume, --model).
+    Run without a project name (or with ".") to launch in the current directory.
+    Additional args are passed through to the pi CLI (e.g. --model, --resume).
     """
     try:
         for arg in ctx.args:
@@ -77,63 +61,20 @@ def claude(ctx: click.Context, project: str, label: str | None) -> None:
                 if arg == blocked or arg.startswith(blocked + "="):
                     raise BlockedArgError(blocked)
 
-        if is_path_argument(project):
-            if label:
-                raise PathLaunchLabelError
-            resolved = resolve_path_argument(project)
-            execute_launch(resolved.name, Config(projects={}), resolved_path=resolved, extra_args=ctx.args)
+        if project is None or project == ".":
+            execute_launch(None, None, label=label, style=style, extra_args=ctx.args)
         else:
             config = load_config()
-            execute_launch(project, config, label=label, extra_args=ctx.args)
-    except LauncherError as e:
-        _handle_error(e)
-
-
-basecamp.add_command(handoff)
-basecamp.add_command(worker)
-
-
-@basecamp.command("open")
-@click.argument("project", shell_complete=complete_project_name)
-@click.option("--new", "-n", "new_window", is_flag=True, help="Open in a new window")
-@click.option("--label", "-l", help="Open an existing worktree by label")
-def open_cmd(project: str, new_window: bool, label: str | None) -> None:  # noqa: FBT001
-    """Open VS Code with basecamp and project directories.
-
-    Use -l/--label to open an existing worktree instead of the primary directory.
-    """
-    try:
-        config = load_config()
-        execute_open(project, config, new_window=new_window, label=label)
+            execute_launch(project, config, label=label, style=style, extra_args=ctx.args)
     except LauncherError as e:
         _handle_error(e)
 
 
 @basecamp.command()
-@click.argument("message")
-@click.option("--project", "-p", help="Add a [[Project]] page reference to the entry")
-def log(message: str, project: str | None) -> None:
-    """Append a block to today's Logseq daily journal."""
+def setup() -> None:
+    """Set up basecamp environment (prerequisites, directories, config)."""
     try:
-        execute_log(message, project=project)
-    except LauncherError as e:
-        _handle_error(e)
-
-
-@basecamp.command()
-def reflect() -> None:
-    """Launch a reflective journaling session with Claude."""
-    try:
-        execute_reflect()
-    except LauncherError as e:
-        _handle_error(e)
-
-
-@basecamp.command()
-def plan() -> None:
-    """Launch a planning session with Claude for today's priorities."""
-    try:
-        execute_plan()
+        execute_setup()
     except LauncherError as e:
         _handle_error(e)
 
@@ -162,7 +103,7 @@ def project_add() -> None:
 
 
 @project.command("edit")
-@click.argument("name", shell_complete=complete_project_name)
+@click.argument("name")
 def project_edit(name: str) -> None:
     """Interactively edit an existing project."""
     try:
@@ -172,7 +113,7 @@ def project_edit(name: str) -> None:
 
 
 @project.command("remove")
-@click.argument("name", shell_complete=complete_project_name)
+@click.argument("name")
 def project_remove(name: str) -> None:
     """Remove a project."""
     try:
@@ -182,51 +123,36 @@ def project_remove(name: str) -> None:
 
 
 @basecamp.group()
-def worktree() -> None:
-    """Manage git worktrees for basecamp projects."""
+def model() -> None:
+    """Manage model aliases."""
 
 
-@worktree.command("list")
-@click.argument("project", required=False, shell_complete=complete_project_name)
-@click.option("--all", "-a", "list_all", is_flag=True, help="List all worktrees across all repositories")
-def worktree_list(project: str | None, list_all: bool) -> None:  # noqa: FBT001
-    """List worktrees for a project, or all worktrees with --all."""
-    if list_all and project:
-        err_console.print("[red]Error:[/red] Cannot specify both --all and a project name")
-        sys.exit(1)
-
-    if not list_all and not project:
-        err_console.print("[red]Error:[/red] Please specify a project or use --all to list all worktrees")
-        sys.exit(1)
-
+@model.command("list")
+def model_list() -> None:
+    """List all configured model aliases."""
     try:
-        if list_all:
-            list_all_project_worktrees()
-        else:
-            config = load_config()
-            list_project_worktrees(project, config)  # type: ignore[arg-type]
+        execute_model_list()
     except LauncherError as e:
         _handle_error(e)
 
 
-@worktree.command("clean")
-@click.argument("project", shell_complete=complete_project_name)
-@click.argument("name", required=False, shell_complete=complete_worktree_name)
-@click.option("--all", "remove_all", is_flag=True, help="Remove all worktrees for the project")
-@click.option("--force", "-f", is_flag=True, help="Force removal even with uncommitted changes")
-def worktree_clean(project: str, name: str | None, remove_all: bool, force: bool) -> None:  # noqa: FBT001
-    """Remove worktrees for a project.
-
-    With no arguments, shows interactive selection. Use --all to remove all worktrees,
-    or specify a NAME to remove a specific worktree.
-    """
-    if remove_all and name:
-        err_console.print("[red]Error:[/red] Cannot specify both --all and a worktree name")
-        sys.exit(1)
-
+@model.command("set")
+@click.argument("alias")
+@click.argument("model_id")
+def model_set(alias: str, model_id: str) -> None:
+    """Set a model alias (e.g. basecamp model set fast claude-haiku-4-5)."""
     try:
-        config = load_config()
-        clean_project_worktrees(project, config, name=name, remove_all=remove_all, force=force)
+        execute_model_set(alias, model_id)
+    except LauncherError as e:
+        _handle_error(e)
+
+
+@model.command("remove")
+@click.argument("alias")
+def model_remove(alias: str) -> None:
+    """Remove a model alias."""
+    try:
+        execute_model_remove(alias)
     except LauncherError as e:
         _handle_error(e)
 

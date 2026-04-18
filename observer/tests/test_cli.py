@@ -60,11 +60,15 @@ class TestSetup:
         monkeypatch.setattr(c, "DB_PATH", tmp_path / "observer.db")
         monkeypatch.setattr(c, "DB_URL", db_url)
         monkeypatch.setattr(c, "CHROMA_DIR", tmp_path / "chroma")
+        monkeypatch.setattr(c, "OBSERVER_DIR", tmp_path / "observer")
 
         # Patch the module-level bindings that db.py and chroma.py
         # captured at import time via `from observer.constants import ...`.
         monkeypatch.setattr("observer.services.db.BASECAMP_DIR", tmp_path)
         monkeypatch.setattr("observer.services.chroma.CHROMA_DIR", tmp_path / "chroma")
+        from observer.services.config import Config  # noqa: PLC0415
+
+        monkeypatch.setattr(Config, "_path", tmp_path / "observer" / "config.json")
 
         from observer.services import chroma  # noqa: PLC0415
 
@@ -76,14 +80,21 @@ class TestSetup:
         monkeypatch.setattr(Database, "_url", None)
         Database.configure(db_url)
 
-        with patch("observer.cli.observer.questionary") as mock_q:
-            import questionary  # noqa: PLC0415
-
-            mock_q.select.return_value.ask.side_effect = ["sonnet", "haiku", "on"]
-            mock_q.Choice = questionary.Choice
-
-            result = runner.invoke(main, ["setup"])
+        result = runner.invoke(
+            main,
+            [
+                "setup",
+                "-e",
+                "anthropic:claude-sonnet-4-20250514",
+                "-s",
+                "anthropic:claude-3-5-haiku-latest",
+                "-m",
+                "on",
+            ],
+        )
 
         assert result.exit_code == 0
-        assert "configuration saved" in result.output.lower()
+        assert "configuration updated" in result.output.lower()
+        assert "anthropic:claude-sonnet-4-20250514" in result.output
+        assert "anthropic:claude-3-5-haiku-latest" in result.output
         Database.close_if_open()

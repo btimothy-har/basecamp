@@ -10,6 +10,7 @@
 import argparse
 import json
 import os
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -28,6 +29,8 @@ MODULES: Final[list[tuple[str, Path, str]]] = [
     ("basecamp-core", REPO_DIR / "core", "basecamp"),
     ("basecamp-observer", REPO_DIR / "observer", "observer"),
 ]
+
+EXTENSION_DIR: Final = REPO_DIR / "extension"
 
 
 def save_install_dir(repo_dir: Path) -> None:
@@ -57,6 +60,44 @@ def save_install_dir(repo_dir: Path) -> None:
         os.fsync(dir_fd)
     finally:
         os.close(dir_fd)
+
+
+def install_extension() -> None:
+    """Install the pi extension: npm dependencies + register with pi."""
+    npm = shutil.which("npm")
+    if not npm:
+        console.print("  [yellow]⚠[/yellow] npm not found — skipping extension install")
+        return
+
+    console.print("  Installing [bold]npm dependencies[/bold]...")
+    result = subprocess.run(
+        [npm, "install"],
+        cwd=EXTENSION_DIR,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode != 0:
+        console.print("\n[red]npm install failed:[/red]")
+        console.print(result.stderr.strip())
+        sys.exit(1)
+
+    pi = shutil.which("pi")
+    if not pi:
+        console.print("  [yellow]⚠[/yellow] pi not found — skipping extension registration")
+        return
+
+    console.print("  Registering [bold]extension[/bold] with pi...")
+    result = subprocess.run(
+        [pi, "install", str(EXTENSION_DIR)],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode != 0:
+        console.print("\n[red]pi install failed:[/red]")
+        console.print(result.stderr.strip())
+        sys.exit(1)
 
 
 def install_module(name: str, path: Path, cli: str, *, editable: bool) -> None:
@@ -97,6 +138,11 @@ def main() -> None:
 
     for name, path, cli in MODULES:
         install_module(name, path, cli, editable=editable)
+
+    console.print()
+    console.print("[bold]pi extension[/bold]")
+    console.print()
+    install_extension()
 
     save_install_dir(REPO_DIR)
 

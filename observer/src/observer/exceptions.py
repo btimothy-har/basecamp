@@ -64,34 +64,6 @@ class RegistrationError(ObserverError):
         super().__init__(f"Not a git repository: {cwd}")
 
 
-class ExtractionTimeoutError(ExtractionError):
-    """Raised when the claude -p subprocess times out."""
-
-    def __init__(self, timeout: float) -> None:
-        super().__init__(f"claude -p timed out after {timeout}s (after retry)")
-
-
-class ExtractionSubprocessError(ExtractionError):
-    """Raised when the claude -p subprocess exits with a non-zero code."""
-
-    def __init__(self, code: int, stderr: str) -> None:
-        super().__init__(f"claude -p exited with code {code}: {stderr}")
-
-
-class ExtractionParseError(ExtractionError):
-    """Raised when the claude -p JSON output cannot be parsed."""
-
-    def __init__(self, output: str) -> None:
-        super().__init__(f"Failed to parse claude -p output: {output}")
-
-
-class ExtractionResponseError(ExtractionError):
-    """Raised when the claude -p response is missing the expected result field."""
-
-    def __init__(self, keys: list) -> None:
-        super().__init__(f"Missing 'result' in claude -p response: {keys}")
-
-
 class PromptAttributeError(AttributeError):
     """Raised when a prompt template attribute is not found in the module."""
 

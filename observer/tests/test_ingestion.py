@@ -7,9 +7,17 @@ import pytest
 from observer.data.enums import RawEventStatus
 from observer.data.project import Project
 from observer.data.raw_event import RawEvent
+from observer.data.schemas import RawEventSchema
 from observer.data.transcript import Transcript
 from observer.data.worktree import Worktree
 from observer.pipeline.parser import TranscriptParser
+
+from tests.pi_fixtures import (
+    make_assistant_message,
+    make_session_header,
+    make_tool_result,
+    make_user_message,
+)
 
 NOW = datetime.now(UTC)
 
@@ -251,3 +259,100 @@ class TestIngestTranscript:
 
         with pytest.raises(FileNotFoundError):
             TranscriptParser().ingest(t)
+
+
+# -- Pi-format ingestion -------------------------------------------------------
+
+
+class TestIngestPiTranscript:
+    """Integration tests for pi-format JSONL ingestion."""
+
+    def _setup(self, db, tmp_path):
+        transcript_path = tmp_path / "session.jsonl"
+        transcript_path.write_text("")
+        with db.session() as s:
+            p = Project(name="proj", repo_path="/repo").save(s)
+            t = Transcript(
+                project_id=p.id,
+                session_id="pi-s1",
+                path=str(transcript_path),
+                started_at=NOW,
+            ).save(s)
+        return t, transcript_path
+
+    def _write_lines(self, path, lines: list[str]):
+        with open(path, "w") as f:
+            for line in lines:
+                f.write(line + "\n")
+
+    def test_ingest_pi_session(self, db, tmp_path):
+        t, path = self._setup(db, tmp_path)
+        self._write_lines(
+            path,
+            [
+                make_session_header(session_id="pi-s1"),
+                make_user_message("hello", entry_id="a1"),
+                make_assistant_message(text="hi", entry_id="b1"),
+            ],
+        )
+
+        count = TranscriptParser().ingest(t)
+        assert count == 2  # session header skipped
+
+        loaded = Transcript.get(t.id)
+        assert loaded.cursor_offset > 0
+
+    def test_ingest_pi_source_stored(self, db, tmp_path):
+        """Ingested pi events have source='pi' in the database."""
+        t, path = self._setup(db, tmp_path)
+        self._write_lines(
+            path,
+            [
+                make_user_message("test", entry_id="a1"),
+            ],
+        )
+
+        TranscriptParser().ingest(t)
+
+        with db.session() as s:
+            rows = s.query(RawEventSchema).filter_by(transcript_id=t.id).all()
+            assert len(rows) == 1
+            assert rows[0].source == "pi"
+            assert rows[0].event_type == "user"
+            assert rows[0].message_uuid == "a1"
+
+    def test_ingest_pi_tool_result(self, db, tmp_path):
+        t, path = self._setup(db, tmp_path)
+        self._write_lines(
+            path,
+            [
+                make_assistant_message(
+                    tool_calls=[{"id": "tc-1", "name": "read", "arguments": {"path": "/a.py"}}],
+                    entry_id="b1",
+                ),
+                make_tool_result("tc-1", "read", "file contents", entry_id="c1"),
+            ],
+        )
+
+        count = TranscriptParser().ingest(t)
+        assert count == 2
+
+        with db.session() as s:
+            rows = s.query(RawEventSchema).filter_by(transcript_id=t.id).order_by(RawEventSchema.id).all()
+            assert rows[0].event_type == "assistant"
+            assert rows[1].event_type == "toolResult"
+            assert all(r.source == "pi" for r in rows)
+
+    def test_ingest_pi_incremental(self, db, tmp_path):
+        t, path = self._setup(db, tmp_path)
+        self._write_lines(path, [make_user_message("first", entry_id="a1")])
+
+        count1 = TranscriptParser().ingest(t)
+        t = Transcript.get(t.id)
+
+        with open(path, "a") as f:
+            f.write(make_assistant_message(text="second", entry_id="b1") + "\n")
+
+        count2 = TranscriptParser().ingest(t)
+        assert count1 == 1
+        assert count2 == 1

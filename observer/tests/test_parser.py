@@ -3,8 +3,15 @@
 import json
 from datetime import UTC, datetime
 
-from observer.pipeline.models import ParsedEvent
-from observer.pipeline.parser import TranscriptParser
+from observer.pipeline.parser import ParsedEvent, TranscriptParser
+
+from tests.pi_fixtures import (
+    make_assistant_message,
+    make_model_change,
+    make_session_header,
+    make_tool_result,
+    make_user_message,
+)
 
 
 def _write_jsonl(path, lines: list[dict]) -> None:
@@ -207,3 +214,179 @@ class TestParseTranscript:
         assert events2[0].event_type == "assistant"
         assert offset2 > offset1
         assert offset2 == path.stat().st_size
+
+    def test_claude_source_field(self, tmp_path):
+        """Claude format events have source='claude'."""
+        path = tmp_path / "t.jsonl"
+        _write_jsonl(path, [_make_event("user", uuid="u-1")])
+        events, _ = TranscriptParser().parse(path)
+        assert events[0].source == "claude"
+
+
+class TestPiFormatParsing:
+    """Tests for pi JSONL format auto-detection and parsing."""
+
+    def _write_lines(self, path, lines: list[str]) -> None:
+        with open(path, "w") as f:
+            for line in lines:
+                f.write(line + "\n")
+
+    def test_parse_user_message(self, tmp_path):
+        path = tmp_path / "t.jsonl"
+        self._write_lines(path, [make_user_message("hello", entry_id="a1b2c3d4")])
+        events, _ = TranscriptParser().parse(path)
+        assert len(events) == 1
+        assert events[0].event_type == "user"
+        assert events[0].message_uuid == "a1b2c3d4"
+        assert events[0].source == "pi"
+        assert events[0].timestamp == datetime(2026, 1, 1, 0, 0, 1, tzinfo=UTC)
+
+    def test_parse_assistant_message(self, tmp_path):
+        path = tmp_path / "t.jsonl"
+        self._write_lines(path, [make_assistant_message(text="hi")])
+        events, _ = TranscriptParser().parse(path)
+        assert len(events) == 1
+        assert events[0].event_type == "assistant"
+        assert events[0].source == "pi"
+
+    def test_parse_tool_result_message(self, tmp_path):
+        path = tmp_path / "t.jsonl"
+        self._write_lines(path, [make_tool_result("tc-1", "read", "file contents")])
+        events, _ = TranscriptParser().parse(path)
+        assert len(events) == 1
+        assert events[0].event_type == "toolResult"
+        assert events[0].source == "pi"
+
+    def test_skips_session_header(self, tmp_path):
+        path = tmp_path / "t.jsonl"
+        self._write_lines(
+            path,
+            [
+                make_session_header(),
+                make_user_message("hello"),
+            ],
+        )
+        events, _ = TranscriptParser().parse(path)
+        assert len(events) == 1
+        assert events[0].event_type == "user"
+
+    def test_skips_model_change(self, tmp_path):
+        path = tmp_path / "t.jsonl"
+        self._write_lines(
+            path,
+            [
+                make_model_change(),
+                make_user_message("hello"),
+            ],
+        )
+        events, _ = TranscriptParser().parse(path)
+        assert len(events) == 1
+        assert events[0].event_type == "user"
+
+    def test_skips_all_non_message_types(self, tmp_path):
+        path = tmp_path / "t.jsonl"
+        skip_types = [
+            '{"type": "session", "version": 3, "id": "x", "timestamp": "2026-01-01T00:00:00Z", "cwd": "/tmp"}',
+            '{"type": "model_change", "model": "m", "timestamp": "2026-01-01T00:00:00Z"}',
+            '{"type": "thinking_level_change", "level": "high", "timestamp": "2026-01-01T00:00:00Z"}',
+            '{"type": "session_info", "info": {}, "timestamp": "2026-01-01T00:00:00Z"}',
+            '{"type": "label", "text": "test", "timestamp": "2026-01-01T00:00:00Z"}',
+            '{"type": "custom", "data": {}, "timestamp": "2026-01-01T00:00:00Z"}',
+            '{"type": "custom_message", "data": {}, "timestamp": "2026-01-01T00:00:00Z"}',
+            '{"type": "compaction", "timestamp": "2026-01-01T00:00:00Z"}',
+            '{"type": "branch_summary", "summary": "x", "timestamp": "2026-01-01T00:00:00Z"}',
+        ]
+        lines = skip_types + [make_user_message("hello")]
+        self._write_lines(path, lines)
+        events, _ = TranscriptParser().parse(path)
+        assert len(events) == 1
+        assert events[0].event_type == "user"
+
+    def test_full_pi_session(self, tmp_path):
+        """Parse a complete pi session with mixed entry types."""
+        path = tmp_path / "t.jsonl"
+        self._write_lines(
+            path,
+            [
+                make_session_header(),
+                make_user_message("help me", entry_id="a1", timestamp="2026-01-01T00:00:01Z"),
+                make_assistant_message(
+                    tool_calls=[{"id": "tc-1", "name": "read", "arguments": {"path": "/a.py"}}],
+                    entry_id="b1",
+                    parent_id="a1",
+                    timestamp="2026-01-01T00:00:02Z",
+                ),
+                make_tool_result(
+                    "tc-1",
+                    "read",
+                    "file contents",
+                    entry_id="c1",
+                    parent_id="b1",
+                    timestamp="2026-01-01T00:00:03Z",
+                ),
+                make_assistant_message(
+                    text="Here's what I found",
+                    entry_id="d1",
+                    parent_id="c1",
+                    timestamp="2026-01-01T00:00:04Z",
+                ),
+            ],
+        )
+        events, _ = TranscriptParser().parse(path)
+        assert len(events) == 4
+        assert [e.event_type for e in events] == ["user", "assistant", "toolResult", "assistant"]
+        assert all(e.source == "pi" for e in events)
+
+    def test_mixed_format_file(self, tmp_path):
+        """Auto-detection works per-line even in a mixed file."""
+        path = tmp_path / "t.jsonl"
+        claude_line = json.dumps(_make_event("user", uuid="u-1"))
+        pi_line = make_user_message("hello from pi", entry_id="p1")
+        with open(path, "w") as f:
+            f.write(claude_line + "\n")
+            f.write(pi_line + "\n")
+        events, _ = TranscriptParser().parse(path)
+        assert len(events) == 2
+        assert events[0].source == "claude"
+        assert events[1].source == "pi"
+
+    def test_message_without_role_skipped(self, tmp_path):
+        path = tmp_path / "t.jsonl"
+        bad_line = json.dumps(
+            {
+                "type": "message",
+                "id": "x1",
+                "timestamp": "2026-01-01T00:00:01Z",
+                "message": {"content": [{"type": "text", "text": "no role"}]},
+            }
+        )
+        self._write_lines(path, [bad_line])
+        events, _ = TranscriptParser().parse(path)
+        assert len(events) == 0
+
+    def test_message_without_timestamp_skipped(self, tmp_path):
+        path = tmp_path / "t.jsonl"
+        bad_line = json.dumps(
+            {
+                "type": "message",
+                "id": "x1",
+                "message": {"role": "user", "content": [{"type": "text", "text": "no ts"}]},
+            }
+        )
+        self._write_lines(path, [bad_line])
+        events, _ = TranscriptParser().parse(path)
+        assert len(events) == 0
+
+    def test_incremental_reads_pi(self, tmp_path):
+        path = tmp_path / "t.jsonl"
+        self._write_lines(path, [make_user_message("first", entry_id="a1")])
+        events1, offset1 = TranscriptParser().parse(path)
+        assert len(events1) == 1
+
+        with open(path, "a") as f:
+            f.write(make_assistant_message(text="second", entry_id="b1") + "\n")
+
+        events2, offset2 = TranscriptParser().parse(path, offset1)
+        assert len(events2) == 1
+        assert events2[0].event_type == "assistant"
+        assert offset2 > offset1

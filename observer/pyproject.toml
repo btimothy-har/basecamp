@@ -6,18 +6,12 @@ requires-python = ">=3.12"
 dependencies = [
     "click~=8.1",
     "pydantic~=2.10",
+    "pydantic-ai>=1.0",
     "sqlalchemy~=2.0",
-    "marimo>=0.10",
     "numpy>=1.26",
-    "plotly>=5.0",
-    "networkx>=3.0",
     "sentence-transformers>=3.0",
     "chromadb>=0.5",
-    "questionary>=2.1.1",
 ]
-
-[project.optional-dependencies]
-pg-migrate = ["psycopg2-binary>=2.9"]
 
 [project.scripts]
 observer = "observer.cli.observer:main"

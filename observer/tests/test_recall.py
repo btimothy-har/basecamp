@@ -11,7 +11,7 @@ from observer.cli.recall import main
 from observer.data.enums import SectionType
 
 # Engine is imported lazily inside function bodies, so we patch at the source module.
-_ENGINE = "observer.mcp.engine"
+_ENGINE = "observer.search"
 
 
 def _invoke(args: list[str], *, env: dict[str, str] | None = None):

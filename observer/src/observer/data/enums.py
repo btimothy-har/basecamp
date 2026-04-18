@@ -3,6 +3,11 @@
 from enum import IntEnum, StrEnum
 
 
+class TranscriptSource(StrEnum):
+    CLAUDE = "claude"
+    PI = "pi"
+
+
 class RawEventStatus(IntEnum):
     PENDING = 0
     PROCESSED = 1

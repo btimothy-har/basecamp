@@ -5,15 +5,12 @@ description = "Claude Code multi-project workspace launcher"
 requires-python = ">=3.12"
 dependencies = [
     "pydantic>=2.0",
-    "python-dotenv>=1.0",
     "questionary>=2.1.1",
     "rich-click>=1.8",
 ]
 
 [project.scripts]
 basecamp = "core.main:basecamp"
-worker = "core.cli.worker:main"
-handoff = "core.cli.handoff:main"
 
 [dependency-groups]
 dev = [

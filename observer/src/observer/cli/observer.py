@@ -5,21 +5,11 @@ import json
 import logging
 import os
 import sys
-from importlib.resources import files
 
 import click
-import questionary
 
 from observer import constants
-from observer.services.config import (
-    CONFIG_FILE,
-    get_extraction_model,
-    get_mode,
-    get_summary_model,
-    set_extraction_model,
-    set_mode,
-    set_summary_model,
-)
+from observer.services.config import Config
 
 
 @click.group()
@@ -127,15 +117,6 @@ def db_reset(yes: bool) -> None:  # noqa: FBT001
     click.echo("Database reset complete.")
 
 
-@db.command("migrate-from-pg")
-@click.pass_context
-def migrate_from_pg_cmd(ctx: click.Context) -> None:
-    """Migrate data from PostgreSQL to SQLite + ChromaDB."""
-    from observer.cli.migrate_pg import migrate_from_pg
-
-    ctx.invoke(migrate_from_pg)
-
-
 @main.command()
 @click.option("-n", "lines", default=20, show_default=True, help="Number of lines.")
 @click.option("--follow", "-f", is_flag=True, help="Follow log output.")
@@ -155,37 +136,6 @@ def logs(lines: int, follow: bool) -> None:  # noqa: FBT001
 
 
 @main.command()
-@click.option("--port", "-p", default=constants.VIZ_PORT, show_default=True, help="Port to serve on.")
-@click.option("--host", default=constants.VIZ_HOST, show_default=True, help="Host to bind to.")
-@click.option("--headless", is_flag=True, help="Don't open browser automatically.")
-def viz(port: int, host: str, headless: bool) -> None:  # noqa: FBT001
-    """Launch the observer visualization dashboard (standalone)."""
-    try:
-        import marimo  # noqa: F401, PLC0415
-    except ImportError:
-        sys.exit("marimo is not installed. Reinstall observer with:\n  uv tool install -e ./observer --force")
-
-    app_path = files("observer.viz").joinpath("app.py")
-
-    args = [
-        sys.executable,
-        "-m",
-        "marimo",
-        "run",
-        str(app_path),
-        "--host",
-        host,
-        "--port",
-        str(port),
-    ]
-    if headless:
-        args.append("--headless")
-
-    click.echo(f"Observer dashboard: http://{host}:{port}")
-    os.execvp(args[0], args)
-
-
-@main.command()
 @click.argument("target", required=False, type=click.Choice(["on", "off"]))
 def mode(target: str | None) -> None:
     """Show or set the observer processing mode.
@@ -198,7 +148,8 @@ def mode(target: str | None) -> None:
         "on": "Full pipeline (extraction, embedding, indexing)",
         "off": "Ingestion only (no LLM calls)",
     }
-    current = get_mode()
+    cfg = Config.get()
+    current = cfg.mode
 
     if target is None:
         click.echo(f"Current mode: {current}")
@@ -209,16 +160,37 @@ def mode(target: str | None) -> None:
         click.echo(f"Already in {current} mode.")
         return
 
-    set_mode(target)
+    cfg.mode = target
     click.echo(f"Switched to {target} mode.")
 
 
 @main.command()
-def setup() -> None:
-    """Configure observer: initialize database and set model preferences."""
-    from observer.constants import CHROMA_DIR, DB_PATH
+@click.option(
+    "--extraction-model",
+    "-e",
+    default=None,
+    help="Model for extraction (e.g. anthropic:claude-sonnet-4-20250514)",
+)
+@click.option(
+    "--summary-model",
+    "-s",
+    default=None,
+    help="Model for summaries (e.g. anthropic:claude-3-5-haiku-latest)",
+)
+@click.option("--mode", "-m", "target_mode", type=click.Choice(["on", "off"]), default=None, help="Processing mode")
+def setup(extraction_model: str | None, summary_model: str | None, target_mode: str | None) -> None:
+    """Configure observer: initialize database and set model preferences.
 
-    click.echo("Initializing observer database...")
+    \b
+    Models use pydantic-ai's provider:model format:
+      anthropic:claude-3-5-haiku-latest
+      anthropic:claude-sonnet-4-20250514
+      openai:gpt-4o-mini
+      openai:gpt-4o
+
+    With no flags, shows current config and initializes the database.
+    """
+    from observer.constants import CHROMA_DIR, DB_PATH
 
     # Ensure directories exist
     constants.BASECAMP_DIR.mkdir(parents=True, exist_ok=True)
@@ -229,45 +201,34 @@ def setup() -> None:
 
     Database.close_if_open()
     Database()
-    click.echo(f"  SQLite:   {DB_PATH}")
 
     from observer.services.chroma import get_collection
 
     get_collection()
-    click.echo(f"  ChromaDB: {CHROMA_DIR}")
 
-    _model_choices = ["haiku", "sonnet", "opus"]
-    extraction_model = questionary.select(
-        "Extraction model:",
-        choices=_model_choices,
-        default=get_extraction_model(),
-    ).ask()
-    if extraction_model is None:
-        sys.exit(1)
+    # Apply any provided settings
+    cfg = Config.get()
+    changed = False
+    if extraction_model is not None:
+        cfg.extraction_model = extraction_model
+        changed = True
+    if summary_model is not None:
+        cfg.summary_model = summary_model
+        changed = True
+    if target_mode is not None:
+        cfg.mode = target_mode
+        changed = True
 
-    summary_model = questionary.select(
-        "Summary model:",
-        choices=_model_choices,
-        default=get_summary_model(),
-    ).ask()
-    if summary_model is None:
-        sys.exit(1)
+    # Show current config
+    click.echo(f"Database:         {DB_PATH}")
+    click.echo(f"ChromaDB:         {CHROMA_DIR}")
+    click.echo(f"Extraction model: {cfg.extraction_model}")
+    click.echo(f"Summary model:    {cfg.summary_model}")
+    click.echo(f"Mode:             {cfg.mode}")
+    click.echo(f"Config:           {cfg._path}")
 
-    mode_choice = questionary.select(
-        "Processing mode:",
-        choices=[
-            questionary.Choice("On (extraction, embedding, indexing)", value="on"),
-            questionary.Choice("Off (ingestion only, no LLM calls)", value="off"),
-        ],
-        default=get_mode(),
-    ).ask()
-    if mode_choice is None:
-        sys.exit(1)
-
-    set_extraction_model(extraction_model)
-    set_summary_model(summary_model)
-    set_mode(mode_choice)
-    click.echo(f"\nConfiguration saved → {CONFIG_FILE}")
+    if changed:
+        click.echo("\nConfiguration updated.")
 
 
 @main.command()
@@ -279,8 +240,8 @@ def ingest(run_process: bool) -> None:  # noqa: FBT001
     and groups them into work items. With --process, also runs the
     LLM pipeline (refine → extract → embed) after ingestion.
     """
+    from observer.pipeline.grouping import EventGrouper
     from observer.pipeline.parser import TranscriptParser
-    from observer.pipeline.refining.grouping import EventGrouper
     from observer.services.db import Database
     from observer.services.logger import configure_logging
     from observer.services.registration import (
@@ -327,10 +288,9 @@ def ingest(run_process: bool) -> None:  # noqa: FBT001
         if run_process:
             from observer.pipeline.extraction import TranscriptExtractor
             from observer.pipeline.indexing import SearchIndexer
-            from observer.pipeline.refining import EventRefiner
-            from observer.services.config import get_mode
+            from observer.pipeline.refinement import EventRefiner
 
-            if get_mode() != "off":
+            if Config.get().mode != "off":
                 EventRefiner.refine_pending(db_inst, transcript_id=transcript.id)
                 TranscriptExtractor.extract_transcript(db_inst, transcript.id)
                 SearchIndexer.index_pending(db_inst, transcript_id=transcript.id)
@@ -359,9 +319,9 @@ def reprocess(yes: bool) -> None:  # noqa: FBT001
         WorkItemSchema,
     )
     from observer.pipeline.extraction import TranscriptExtractor
+    from observer.pipeline.grouping import EventGrouper
     from observer.pipeline.indexing import SearchIndexer
-    from observer.pipeline.refining import EventRefiner
-    from observer.pipeline.refining.grouping import EventGrouper
+    from observer.pipeline.refinement import EventRefiner
     from observer.services.chroma import COLLECTION_NAME, get_client
     from observer.services.db import Database
     from observer.services.logger import configure_logging

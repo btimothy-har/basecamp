@@ -1,23 +1,51 @@
 """Transcript JSONL parser.
 
-Reads Claude Code transcript files (JSONL) from a byte offset, produces
-ParsedEvent records, and persists them as RawEvents.
+Reads transcript files (JSONL) from a byte offset, produces ParsedEvent
+records, and persists them as RawEvents. Auto-detects Claude Code vs pi
+formats per-line.
 """
 
 import json
 import logging
+from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 
 from observer.data.raw_event import RawEvent
 from observer.exceptions import TranscriptFileNotFoundError, TranscriptNotSavedError
-from observer.pipeline.models import ParsedEvent
 from observer.services.db import Database
+
+
+@dataclass(frozen=True, slots=True)
+class ParsedEvent:
+    """A single parsed transcript event, ready to become a RawEvent."""
+
+    event_type: str
+    timestamp: datetime
+    content: str
+    message_uuid: str | None
+    source: str = "pi"
+
 
 logger = logging.getLogger(__name__)
 
-# Event types with unreliable structure (no stable uuid/timestamp at top level)
-_SKIP_TYPES = frozenset({"file-history-snapshot"})
+# Pi-specific non-message entry types to skip
+_PI_SKIP_TYPES = frozenset(
+    {
+        "session",
+        "model_change",
+        "thinking_level_change",
+        "session_info",
+        "label",
+        "custom",
+        "custom_message",
+        "compaction",
+        "branch_summary",
+    }
+)
+
+# Claude-specific entry types to skip
+_CLAUDE_SKIP_TYPES = frozenset({"file-history-snapshot"})
 
 
 class TranscriptParser:
@@ -54,6 +82,7 @@ class TranscriptParser:
                 timestamp=parsed.timestamp,
                 content=parsed.content,
                 message_uuid=parsed.message_uuid,
+                source=parsed.source,
             )
             with Database().session() as session:
                 raw_event.save(session)
@@ -108,17 +137,44 @@ class TranscriptParser:
             logger.warning("Skipping malformed JSON line: %s", line[:120])
             return None
 
-        event_type = data.get("type")
-        if not event_type:
+        entry_type = data.get("type")
+        if not entry_type:
             logger.info("Skipping line without type field")
             return None
 
-        if event_type in _SKIP_TYPES:
+        # Pi format: type is "message", role is nested in message.role
+        if entry_type == "message":
+            message = data.get("message", {})
+            role = message.get("role")
+            if not role:
+                return None
+            ts_raw = data.get("timestamp")
+            if not ts_raw:
+                return None
+            try:
+                timestamp = datetime.fromisoformat(ts_raw)
+            except (ValueError, TypeError):
+                logger.warning("Skipping pi message with unparseable timestamp: %s", ts_raw)
+                return None
+            return ParsedEvent(
+                event_type=role,
+                timestamp=timestamp,
+                content=line.decode("utf-8", errors="replace"),
+                message_uuid=data.get("id"),
+                source="pi",
+            )
+
+        # Pi non-message entries: skip
+        if entry_type in _PI_SKIP_TYPES:
+            return None
+
+        # Claude format: type IS the role
+        if entry_type in _CLAUDE_SKIP_TYPES:
             return None
 
         ts_raw = data.get("timestamp")
         if not ts_raw:
-            logger.info("Skipping %s event without timestamp", event_type)
+            logger.info("Skipping %s event without timestamp", entry_type)
             return None
 
         try:
@@ -126,14 +182,15 @@ class TranscriptParser:
         except (ValueError, TypeError):
             logger.warning(
                 "Skipping %s event with unparseable timestamp: %s",
-                event_type,
+                entry_type,
                 ts_raw,
             )
             return None
 
         return ParsedEvent(
-            event_type=event_type,
+            event_type=entry_type,
             timestamp=timestamp,
             content=line.decode("utf-8", errors="replace"),
             message_uuid=data.get("uuid"),
+            source="claude",
         )

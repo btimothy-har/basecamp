@@ -1,20 +1,36 @@
-"""ChromaDB persistent client for observer vector storage."""
+"""ChromaDB persistent client and embedding model for observer vector storage."""
 
 from __future__ import annotations
 
 import logging
 import threading
+from typing import Any
 
 import chromadb
 
-from observer.constants import CHROMA_DIR
+from observer.constants import CHROMA_DIR, EMBEDDING_MODEL_NAME, MODEL_CACHE_DIR
 
 logger = logging.getLogger(__name__)
 
 COLLECTION_NAME = "artifacts"
 
-_state: dict[str, chromadb.ClientAPI] = {}
+_state: dict[str, Any] = {}
 _lock = threading.Lock()
+
+
+def _get_model() -> Any:
+    """Return the sentence-transformer model, loading on first call."""
+    model = _state.get("model")
+    if model is None:
+        with _lock:
+            model = _state.get("model")
+            if model is None:
+                from sentence_transformers import SentenceTransformer  # noqa: PLC0415
+
+                MODEL_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+                model = SentenceTransformer(EMBEDDING_MODEL_NAME, cache_folder=str(MODEL_CACHE_DIR))
+                _state["model"] = model
+    return model
 
 
 def get_client() -> chromadb.ClientAPI:
@@ -38,7 +54,13 @@ def get_collection() -> chromadb.Collection:
     )
 
 
+def encode(texts: list[str]) -> list[list[float]]:
+    """Encode texts into embedding vectors."""
+    model = _get_model()
+    return model.encode(texts, show_progress_bar=False).tolist()
+
+
 def close() -> None:
-    """Reset the client singleton."""
+    """Reset client and model singletons."""
     with _lock:
-        _state.pop("client", None)
+        _state.clear()

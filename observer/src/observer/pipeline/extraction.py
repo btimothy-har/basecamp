@@ -4,6 +4,7 @@ Operates on transcripts that have TranscriptEvents (created by the refine stage)
 Single LLM call per transcript produces all section types at once.
 """
 
+import asyncio
 import logging
 from datetime import UTC, datetime
 
@@ -11,8 +12,8 @@ from observer.data.artifact import Artifact
 from observer.data.enums import SectionType, WorkItemType
 from observer.data.schemas import ArtifactSchema
 from observer.data.transcript_event import TranscriptEvent
-from observer.exceptions import ExtractionError
-from observer.pipeline.llm import extract_sections
+from observer.llm import agents
+from observer.llm.agents import ExtractionResult
 from observer.services.db import Database
 
 logger = logging.getLogger(__name__)
@@ -27,6 +28,26 @@ _SECTION_FIELDS: list[tuple[str, SectionType]] = [
 ]
 
 
+async def _extract_sections(event_texts: list[str]) -> ExtractionResult:
+    """Extract structured sections from transcript event texts."""
+    event_list = "\n".join(f"{i + 1}. {e}" for i, e in enumerate(event_texts))
+    prompt = f"## Transcript Events\n{event_list}"
+
+    try:
+        result = await agents.section_extractor.run(prompt)
+    except Exception:
+        logger.warning("Extraction failed, returning fallback", exc_info=True)
+        return ExtractionResult(
+            title="Untitled session",
+            summary="",
+            knowledge="",
+            decisions="",
+            constraints="",
+            actions="",
+        )
+    return result.output
+
+
 class TranscriptExtractor:
     """Extracts structured sections from a complete transcript."""
 
@@ -39,11 +60,7 @@ class TranscriptExtractor:
         if not event_texts:
             return 0
 
-        try:
-            result = extract_sections(event_texts)
-        except ExtractionError:
-            logger.exception("Extraction failed for transcript %d", transcript_id)
-            return 0
+        result = asyncio.run(_extract_sections(event_texts))
 
         now = datetime.now(UTC)
         count = 0

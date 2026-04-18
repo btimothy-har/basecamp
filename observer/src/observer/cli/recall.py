@@ -1,7 +1,7 @@
 # ruff: noqa: PLC0415
 """Semantic memory retrieval CLI for Claude Code sessions.
 
-Thin wrapper over the observer search engine. Reads BASECAMP_REPO and
+Thin wrapper over the observer search search. Reads BASECAMP_REPO and
 CLAUDE_SESSION_ID from the environment to scope searches automatically.
 """
 
@@ -88,7 +88,7 @@ def _run_search(
     before: datetime | None = None,
 ) -> None:
     """Execute search and emit JSON results."""
-    from observer.mcp import engine
+    from observer import search
 
     project_name = _resolve_project(cross_project)
     session_id = os.environ.get("CLAUDE_SESSION_ID")
@@ -96,7 +96,7 @@ def _run_search(
 
     try:
         if parsed_types is None:
-            raw = engine.search_transcripts(
+            raw = search.search_transcripts(
                 query,
                 project_name,
                 top_k=top_k,
@@ -107,7 +107,7 @@ def _run_search(
             )
             results = [{**r, "type": "summary"} for r in raw]
         else:
-            results = engine.search_artifacts(
+            results = search.search_artifacts(
                 query,
                 project_name,
                 top_k=top_k,
@@ -134,21 +134,21 @@ def _run_list(
     filter_session_id: str | None = None,
 ) -> None:
     """Execute parametric list and emit JSON results."""
-    from observer.mcp import engine
+    from observer import search
 
     project_name = _resolve_project(cross_project)
     parsed_types = _parse_types(types)
 
     try:
         if parsed_types is None and filter_session_id is None:
-            results = engine.list_transcripts(
+            results = search.list_transcripts(
                 project_name,
                 after=after,
                 before=before,
                 top_k=top_k,
             )
         else:
-            results = engine.list_artifacts(
+            results = search.list_artifacts(
                 project_name,
                 after=after,
                 before=before,
@@ -227,10 +227,10 @@ def list_cmd(
 @click.argument("session_id")
 def session(session_id: str) -> None:
     """Retrieve full session detail by session ID."""
-    from observer.mcp import engine
+    from observer import search
 
     try:
-        result = engine.get_session(session_id)
+        result = search.get_session(session_id)
     except Exception:
         logger.exception("Session lookup failed")
         _error("Session lookup failed — check observer logs for details")

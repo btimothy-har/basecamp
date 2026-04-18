@@ -1,8 +1,0 @@
-{
-    "name": "bc-git-protect",
-    "description": "Guards against destructive git and gh operations. Denies force push, remote ref deletion, git clean, and unapproved gh commands.",
-    "version": "1.0.0",
-    "author": {
-        "name": "Brian Har"
-    }
-}

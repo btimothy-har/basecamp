@@ -12,8 +12,7 @@ from core.config import (
     save_config,
 )
 from core.config.directories import to_home_relative
-from core.constants import USER_CONTEXT_DIR
-from core.prompts import project_context, working_styles
+from core.constants import SCRIPT_DIR, USER_CONTEXT_DIR, USER_WORKING_STYLES_DIR
 from core.ui import console, display_projects
 
 
@@ -21,6 +20,24 @@ def _to_relative(path_str: str) -> str:
     """Convert an absolute path to home-relative for storage."""
     expanded = Path(path_str).expanduser().resolve()
     return to_home_relative(expanded)
+
+
+def _available_styles() -> list[str]:
+    """Scan extension + user dirs for available working styles."""
+    styles: set[str] = set()
+    ext_styles = SCRIPT_DIR / "extension" / "system-prompts" / "styles"
+    if ext_styles.exists():
+        styles.update(p.stem for p in ext_styles.glob("*.md"))
+    if USER_WORKING_STYLES_DIR.exists():
+        styles.update(p.stem for p in USER_WORKING_STYLES_DIR.glob("*.md"))
+    return sorted(styles)
+
+
+def _available_contexts() -> list[str]:
+    """Scan user dir for available context files."""
+    if not USER_CONTEXT_DIR.exists():
+        return []
+    return sorted(p.stem for p in USER_CONTEXT_DIR.glob("*.md"))
 
 
 def _prompt_directory(message: str, default: str = "~/") -> str | None:
@@ -79,7 +96,7 @@ def _prompt_project_fields(
         dirs.append(_to_relative(extra))
 
     # Working style
-    style_choices = ["none", *working_styles.available()]
+    style_choices = ["none", *_available_styles()]
     working_style = questionary.select(
         "Working style:",
         choices=style_choices,
@@ -98,7 +115,7 @@ def _prompt_project_fields(
         return None
 
     # Context file (resolves to ~/.basecamp/prompts/context/{name}.md)
-    context_files = project_context.available()
+    context_files = _available_contexts()
     context: str | None = None
     if context_files:
         context_choices = ["none", *context_files]
@@ -190,7 +207,7 @@ def _prompt_edit_fields(existing: ProjectConfig) -> ProjectConfig | None:
         dirs.append(_to_relative(extra))
 
     # Working style
-    style_choices = ["none", *working_styles.available()]
+    style_choices = ["none", *_available_styles()]
     style_default = existing.working_style if existing.working_style else "none"
     working_style = questionary.select(
         "Working style:",
@@ -211,7 +228,7 @@ def _prompt_edit_fields(existing: ProjectConfig) -> ProjectConfig | None:
         return None
 
     # Context file (resolves to ~/.basecamp/prompts/context/{name}.md)
-    context_files = project_context.available()
+    context_files = _available_contexts()
     context: str | None = None
     if context_files:
         context_choices = ["none", *context_files]

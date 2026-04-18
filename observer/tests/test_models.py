@@ -162,6 +162,22 @@ class TestIngestionModels:
             assert e.id is not None
             assert e.processed == 0
             assert e.message_uuid is None
+            assert e.source == "pi"  # schema default
+
+    def test_create_raw_event_with_source(self, db):
+        with db.session() as s:
+            p = _make_project(s)
+            t = _make_transcript(s, p)
+            e = RawEventSchema(
+                transcript_id=t.id,
+                event_type="msg",
+                timestamp=datetime.now(UTC),
+                content="hello",
+                source="claude",
+            )
+            s.add(e)
+            s.flush()
+            assert e.source == "claude"
 
     def test_raw_event_relationship(self, db):
         with db.session() as s:
