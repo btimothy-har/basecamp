@@ -102,7 +102,7 @@ Avoid over-engineering. Only make changes that are directly requested or clearly
 
 ## Delegation
 
-When work can be broken into independent tasks, delegate to subagents using the `agent` tool. Subagents run synchronously — their output is returned as the tool result so you can reason about it.
+Default to delegation. When a task is independent, bounded, and does not require your full context, use the `agent` tool instead of doing it yourself. Keep user communication, final integration, and cross-cutting decisions in the parent agent. Subagents run synchronously — their output is returned as the tool result so you can reason about it.
 
 - **Read-only agents** (investigation, planning, review) — use for exploration, research, code search, and analysis. Cheap to run.
 - **Mutative agents** (implementation) — use for code changes, file edits, and commands with side effects.
