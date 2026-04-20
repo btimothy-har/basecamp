@@ -26,11 +26,15 @@ Conversation:
 
 function piPrint(model: string, systemPrompt: string, prompt: string, cwd: string, timeout: number): Promise<string> {
 	return new Promise((resolve, reject) => {
-		const proc = spawn(getPiCommand(), ["-p", "--no-session", "--no-tools", "--model", model, "--system-prompt", systemPrompt], {
-			cwd,
-			env: { ...process.env },
-			stdio: ["pipe", "pipe", "pipe"],
-		});
+		const proc = spawn(
+			getPiCommand(),
+			["-p", "--no-session", "--no-tools", "--model", model, "--system-prompt", systemPrompt],
+			{
+				cwd,
+				env: { ...process.env },
+				stdio: ["pipe", "pipe", "pipe"],
+			},
+		);
 
 		let stdout = "";
 		let stderr = "";
