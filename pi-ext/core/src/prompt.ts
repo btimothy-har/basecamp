@@ -100,7 +100,7 @@ function loadLanguagePrompt(name: string): string {
 // Env block
 // ---------------------------------------------------------------------------
 
-function buildEnvBlock(state: SessionState): string {
+function buildEnvBlock(state: SessionState, modelId?: string): string {
 	const user = process.env.USER || os.userInfo().username || "unknown";
 	const tz = getTimezone();
 	const today = new Intl.DateTimeFormat("en-CA", {
@@ -110,7 +110,11 @@ function buildEnvBlock(state: SessionState): string {
 		day: "2-digit",
 	}).format(new Date());
 
+	const modelName = modelId ?? "an AI assistant";
+
 	const lines: string[] = [
+		`You are ${modelName}. You are operating inside pi-coding-agent, a terminal based AI harness.`,
+		"",
 		`User: ${user}`,
 		`Platform: ${process.platform}`,
 		`Today's date: ${today}`,
@@ -135,6 +139,9 @@ function buildEnvBlock(state: SessionState): string {
 			lines.push(`- ${dir}`);
 		}
 	}
+
+	lines.push("");
+	lines.push(`Scratch directory: ${state.scratchDir}`);
 
 	return lines.join("\n");
 }
@@ -162,29 +169,47 @@ export interface AssembleOptions {
  * This fully replaces pi's default system prompt. Tools, skills,
  * and context files are sourced dynamically so we control placement.
  *
+ * Layers are ordered static → semi-static → dynamic to maximize
+ * prefix caching. Content that doesn't change between sessions
+ * sits at the front so the LLM provider can cache the prefix.
+ *
  * Layer order:
- *   1. Env block (user, platform, directories)
- *   2. environment.md (tool/environment guidelines, scratch dir)
- *   3. Logseq graph (conditional — when configured, non-logseq style)
- *   4. Working style — OR agent prompt (subagents)
- *   4b. Language (interactive sessions only)
- *   5. Available tools + skills
- *   6. Project context (basecamp context + CLAUDE.md/AGENTS.md)
- *   7. Git status snapshot
+ *   1. Working style — OR agent prompt (static per user/agent)
+ *   1b. Language (static per user, interactive sessions only)
+ *   2. environment.md (static — tool/environment guidelines)
+ *   3. Logseq graph (semi-static — conditional, path rarely changes)
+ *   4. Capabilities index (semi-static — tool/skill/agent names)
+ *   5. Project context (semi-static — changes per project)
+ *   6. Env block (dynamic — identity, user, platform, date, dirs)
+ *   7. Git status snapshot (dynamic)
  */
 export function assemblePrompt(opts: AssembleOptions): string {
 	const { state, gitStatus, toolNames, skillNames, agentNames, contextFiles, modelId } = opts;
 
 	const parts: string[] = [];
 
-	// 1. Env block
-	parts.push(buildEnvBlock(state));
+	// 1. Working style — OR agent prompt (subagents)
+	if (opts.agentPrompt) {
+		parts.push(opts.agentPrompt);
+	} else {
+		const style = loadWorkingStyle(state.workingStyle).trim();
+		if (style) {
+			parts.push(style);
+		}
 
-	// 2. Environment guidelines
-	let environment = loadPromptFile("environment.md").trim();
+		// 1b. Language (interactive sessions only — skipped for agents)
+		const languageName = getLanguage();
+		if (languageName) {
+			const lang = loadLanguagePrompt(languageName).trim();
+			if (lang) {
+				parts.push(lang);
+			}
+		}
+	}
+
+	// 2. Environment guidelines (fully static — no template substitutions)
+	const environment = loadPromptFile("environment.md").trim();
 	if (environment) {
-		environment = environment.replaceAll("{{SCRATCH_DIR}}", state.scratchDir);
-		environment = environment.replaceAll("{{MODEL_NAME}}", modelId ?? "an AI assistant");
 		parts.push(environment);
 	}
 
@@ -200,26 +225,7 @@ export function assemblePrompt(opts: AssembleOptions): string {
 		}
 	}
 
-	// 4. Working style — OR agent prompt (subagents)
-	if (opts.agentPrompt) {
-		parts.push(opts.agentPrompt);
-	} else {
-		const style = loadWorkingStyle(state.workingStyle).trim();
-		if (style) {
-			parts.push(style);
-		}
-
-		// 4b. Language (interactive sessions only — skipped for agents)
-		const languageName = getLanguage();
-		if (languageName) {
-			const lang = loadLanguagePrompt(languageName).trim();
-			if (lang) {
-				parts.push(lang);
-			}
-		}
-	}
-
-	// 5. Capabilities index (names only + discover tool instructions)
+	// 4. Capabilities index (names only + discover tool instructions)
 	parts.push(
 		buildCapabilitiesIndex({
 			toolNames,
@@ -229,11 +235,14 @@ export function assemblePrompt(opts: AssembleOptions): string {
 		}),
 	);
 
-	// 6. Project context (basecamp context + CLAUDE.md/AGENTS.md)
+	// 5. Project context (basecamp context + CLAUDE.md/AGENTS.md)
 	const projectContext = buildProjectContext(state, contextFiles);
 	if (projectContext) {
 		parts.push(projectContext);
 	}
+
+	// 6. Env block (dynamic — identity, user, platform, date, directories, scratch dir)
+	parts.push(buildEnvBlock(state, modelId));
 
 	// 7. Git status
 	if (gitStatus) {
