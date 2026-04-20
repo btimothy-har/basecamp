@@ -66,6 +66,7 @@ export function lockAll(): void {
 	unlocked.prComment = false;
 }
 
+const GH_PR_MUTATE_RE = /^gh\s+pr\s+(create|edit|merge|close|ready|reopen)(\s|$)/;
 const PR_COMMENT_RE = /^gh\s+pr\s+comment(\s|$)/;
 const GH_API_PR_RE = /^gh\s+api\s+repos\/[^/]+\/[^/]+\/pulls\//;
 
@@ -88,6 +89,15 @@ export function registerGuards(pi: ExtensionAPI): void {
 			if (rule.gate.test(cmd) && rule.test.test(cmd)) {
 				return { block: true, reason: rule.reason };
 			}
+		}
+
+		// gh pr mutate: block with workflow-specific message
+		if (GH_PR_MUTATE_RE.test(cmd)) {
+			return {
+				block: true,
+				reason:
+					"PR mutations are blocked. Use /pull-request to start the PR workflow, then pr_publish to update it. Ask the user to invoke /pull-request if needed.",
+			};
 		}
 
 		// gh: block by default, allow-list overrides
