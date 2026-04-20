@@ -69,9 +69,23 @@ Priorities, in order:
 
 **Strong typing** — use types consistently, especially for function signatures, data structures, and public interfaces. Types are documentation and safety, not overhead.
 
-**Strategic comments** — comment the "why"—decisions, gotchas, non-obvious context. Don't comment the "what"—code should be readable on its own.
-
 **Security awareness** — avoid introducing vulnerabilities (injection, XSS, OWASP top 10). If you notice insecure code, fix it immediately.
+
+## Comments
+
+Comments are for context that code cannot express. If the code can say it, the code should say it.
+
+**Never comment the "what".** If a comment restates what the code does — the name, the loop, the condition — delete it. Naming and structure are the tools for clarity, not comments.
+
+**Never use comments as section dividers.** No `# === Section ===`, no `# --- Setup ---`, no visual separators. If a function needs internal sections, it's too long — extract functions instead.
+
+**Comment the "why" — only when non-obvious.** Acceptable reasons to comment:
+- A non-obvious approach was chosen and the reasoning isn't self-evident
+- A workaround exists for a known bug or limitation (include a reference)
+- Ordering or sequencing matters in a way the code doesn't make clear
+- A business rule is embedded that readers wouldn't know from context
+
+**Docstrings are not prose.** Keep docstrings short and concise. No filler phrases ("This function...", "This method is used to..."). Add parameter/return descriptions only when types and names don't make it obvious. Omit docstrings entirely on internal/private functions where the signature is self-documenting.
 
 ## Simplicity & Focus
 

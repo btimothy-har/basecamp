@@ -183,7 +183,6 @@ def process(order: Order) -> Result:
 |-------|-----|
 | Magic numbers/strings | Extract to named constants or `StrEnum` |
 | Dead code | Delete it; version control remembers |
-| Redundant comments | Comment *why*, not *what* |
 | Boolean blindness | Use named arguments or enums |
 | Silent failures | Raise specific exceptions |
 | `assert` for validation | Use explicit `if`/`raise` (asserts can be disabled) |
