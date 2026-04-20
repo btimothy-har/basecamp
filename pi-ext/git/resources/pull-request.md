@@ -26,11 +26,7 @@ git rebase origin/{{BASE}}
 
 Run the project's test and lint commands if they exist. Fix failures before proceeding.
 
-Push the latest state:
-
-```bash
-git push
-```
+If the rebase replayed commits (history rewritten), stop and tell the user to force push manually — do not attempt force push.
 
 ## Step 3: Write and Publish
 
@@ -71,4 +67,4 @@ Draft the title and body, then call `pr_publish` with them. The user will review
 
 ## Updating
 
-For subsequent changes to the same PR, push the latest commits and call `pr_publish` again with the updated description.
+For subsequent changes, invoke `/pull-request` again — it handles pushing and then call `pr_publish` with the updated description.

@@ -10,6 +10,40 @@ import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { setActivePR, unlocked } from "./guards";
 import { getScratchDir, loadTemplate, resolvePrNumber } from "./utils";
 
+type PushResult = "pushed" | "up-to-date" | "cancelled" | "diverged" | "failed";
+
+async function ensurePushed(pi: ExtensionAPI, branchName: string, ctx: any): Promise<PushResult> {
+	const upstream = await pi.exec("git", ["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"]);
+
+	if (upstream.code !== 0) {
+		const confirmed = await ctx.ui.confirm("Push to origin?", `Push ${branchName} and set upstream?`);
+		if (!confirmed) return "cancelled";
+
+		const push = await pi.exec("git", ["push", "-u", "origin", branchName]);
+		return push.code === 0 ? "pushed" : "failed";
+	}
+
+	const counts = await pi.exec("git", ["rev-list", "--left-right", "--count", "@{u}...HEAD"]);
+	if (counts.code !== 0) return "failed";
+
+	const [behind, ahead] = counts.stdout.trim().split(/\s+/).map(Number);
+	if (!ahead || ahead === 0) return "up-to-date";
+
+	if (behind > 0) {
+		ctx.ui.notify(
+			`Branch has diverged from upstream (${ahead} ahead, ${behind} behind). Resolve manually with rebase or force push.`,
+			"error",
+		);
+		return "diverged";
+	}
+
+	const confirmed = await ctx.ui.confirm("Push to origin?", `Push ${ahead} commit${ahead > 1 ? "s" : ""} to origin?`);
+	if (!confirmed) return "cancelled";
+
+	const push = await pi.exec("git", ["push"]);
+	return push.code === 0 ? "pushed" : "failed";
+}
+
 export function registerCommands(pi: ExtensionAPI): void {
 	// --- /pull-request [base] ---
 	pi.registerCommand("pull-request", {
@@ -33,25 +67,19 @@ export function registerCommands(pi: ExtensionAPI): void {
 				prNumber = String(pr.number);
 				ctx.ui.notify(`Found existing PR #${prNumber}`, "info");
 
-				const ahead = await pi.exec("git", ["rev-list", "--count", "@{u}..HEAD"]);
-				if (ahead.code === 0 && parseInt(ahead.stdout.trim(), 10) > 0) {
-					ctx.ui.notify("Pushing local commits...", "info");
-					const push = await pi.exec("git", ["push"]);
-					if (push.code !== 0) {
-						ctx.ui.notify(`Failed to push: ${push.stderr}`, "error");
-						return;
-					}
-				}
+				const pushResult = await ensurePushed(pi, branchName, ctx);
+				if (pushResult === "cancelled" || pushResult === "diverged" || pushResult === "failed") return;
 			} else {
-				const upstream = await pi.exec("git", ["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"]);
-				if (upstream.code !== 0) {
-					ctx.ui.notify(`Pushing ${branchName} to origin...`, "info");
-					const push = await pi.exec("git", ["push", "-u", "origin", branchName]);
-					if (push.code !== 0) {
-						ctx.ui.notify(`Failed to push: ${push.stderr}`, "error");
-						return;
-					}
+				const pushResult = await ensurePushed(pi, branchName, ctx);
+				if (pushResult === "failed") {
+					ctx.ui.notify("Failed to push — cannot create PR", "error");
+					return;
 				}
+				if (pushResult === "cancelled") {
+					ctx.ui.notify("Push cancelled — cannot create PR without upstream", "error");
+					return;
+				}
+				if (pushResult === "diverged") return;
 
 				ctx.ui.notify(`Creating draft PR against ${base}...`, "info");
 				const create = await pi.exec("gh", [
