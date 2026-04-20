@@ -55,6 +55,10 @@ export async function showPrReview(
 		// Read-only body viewer
 		const viewer = new Editor(tui, editorTheme, { paddingX: 0 });
 		viewer.setText(body);
+		// setText() places cursor at end → viewer scrolls to bottom. Reset to top.
+		(viewer as any).state.cursorLine = 0;
+		(viewer as any).state.cursorCol = 0;
+		(viewer as any).scrollOffset = 0;
 		viewer.focused = true;
 		viewer.disableSubmit = true;
 

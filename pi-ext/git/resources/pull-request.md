@@ -63,7 +63,11 @@ Closes #N
 
 Generate GitHub permalinks using the remote branch — `` [`path#L10`](url) ``.
 
-Draft the title and body, then call `pr_publish` with them. The user will review and edit in an inline editor before it publishes.
+Draft the title and body, then call `pr_publish` with them. The user reviews in a read-only overlay and can:
+
+- **Publish** (Enter) — publishes directly
+- **Feedback** (Tab → type → Enter) — returns feedback for you to revise and call `pr_publish` again
+- **Cancel** (Esc) — ask the user what they want to change
 
 ## Updating
 
