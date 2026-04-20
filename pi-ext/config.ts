@@ -26,6 +26,7 @@ interface BasecampConfig {
 	logseq_graph?: string;
 	language?: string;
 	models?: Record<string, string>;
+	pi_command?: string;
 }
 
 export interface SessionState {
@@ -72,6 +73,17 @@ export function getTimezone(): string | null {
 export function getLanguage(): string | null {
 	const config = readConfig();
 	return typeof config.language === "string" && config.language.trim() ? config.language.trim() : null;
+}
+
+/**
+ * Returns [binary, ...prefixArgs] so multi-word commands like "devx pi" work
+ * with spawn()/execFile() which require the binary as a separate first arg.
+ */
+export function getPiCommand(): [string, ...string[]] {
+	const config = readConfig();
+	const raw = typeof config.pi_command === "string" && config.pi_command.trim() ? config.pi_command.trim() : "pi";
+	const parts = raw.split(/\s+/);
+	return parts as [string, ...string[]];
 }
 
 export function getLogseqGraph(): string | null {

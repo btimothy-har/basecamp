@@ -20,7 +20,7 @@ import * as path from "node:path";
 import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-agent";
 import { getMarkdownTheme } from "@mariozechner/pi-coding-agent";
 import { type Component, Container, Markdown, Spacer, Text } from "@mariozechner/pi-tui";
-import { resolveModelAlias } from "../../config.ts";
+import { getPiCommand, resolveModelAlias } from "../../config.ts";
 import type { AgentStreamEvent } from "./executor.ts";
 import { spawnAgent } from "./executor.ts";
 import type { AgentConfig, AgentDetails, AgentPartialDetails, ModelStrategy, ToolCallRecord } from "./types.ts";
@@ -268,7 +268,8 @@ async function generateSummary(task: string, output: string, cwd: string): Promi
 		].join("\n");
 
 		const summaryModel = resolveModelAlias("fast");
-		const { stdout } = await execFileAsync("pi", ["-p", "--model", summaryModel, prompt], {
+		const [piCmd, ...piPrefix] = getPiCommand();
+		const { stdout } = await execFileAsync(piCmd, [...piPrefix, "-p", "--model", summaryModel, prompt], {
 			cwd,
 			timeout: 15_000,
 			env: { ...process.env },
