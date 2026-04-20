@@ -32,7 +32,6 @@ def run_config_menu() -> None:
                 "Projects",
                 "Models",
                 "Language",
-                "Pi Command",
                 "Observer",
                 questionary.Separator(),
                 "Done",
@@ -48,8 +47,6 @@ def run_config_menu() -> None:
             _model_menu()
         elif section == "Language":
             _language_menu()
-        elif section == "Pi Command":
-            _pi_command_menu()
         elif section == "Observer":
             _observer_menu()
 
@@ -169,41 +166,6 @@ def _language_menu() -> None:
             execute_language_set(lang.strip())
         elif action == "Clear":
             execute_language_clear()
-
-
-def _pi_command_menu() -> None:
-    """Pi command configuration sub-menu."""
-    while True:
-        current = settings.pi_command
-        if current:
-            console.print(f"\nPi command: [bold green]{current}[/bold green]")
-        else:
-            console.print("\n[dim]No custom pi command (using default 'pi').[/dim]")
-
-        action = questionary.select(
-            "Pi Command:",
-            choices=[
-                "Set",
-                "Clear",
-                questionary.Separator(),
-                "← Back",
-            ],
-        ).ask()
-
-        if action is None or action == "← Back":
-            return
-
-        if action == "Set":
-            value = questionary.text(
-                "Pi command (path or name):",
-                default=current or "pi",
-            ).ask()
-            if value and value.strip():
-                settings.pi_command = value.strip()
-                console.print(f"[green]✓[/green] Pi command → [bold]{value.strip()}[/bold]")
-        elif action == "Clear":
-            settings.pi_command = None
-            console.print("[green]✓[/green] Pi command cleared (using default 'pi')")
 
 
 def _observer_menu() -> None:
