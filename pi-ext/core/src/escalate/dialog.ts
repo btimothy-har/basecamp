@@ -267,9 +267,13 @@ export class EscalateDialog implements Component, Focusable {
 						this.state.selectedOptions.add(option);
 					}
 				} else {
-					// Single select — replace
-					this.state.selectedOptions.clear();
-					this.state.selectedOptions.add(option);
+					// Single select — toggle current, or switch to new
+					if (this.state.selectedOptions.has(option)) {
+						this.state.selectedOptions.delete(option);
+					} else {
+						this.state.selectedOptions.clear();
+						this.state.selectedOptions.add(option);
+					}
 				}
 				this.state.error = undefined;
 				this.invalidate();
