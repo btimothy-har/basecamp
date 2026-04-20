@@ -15,6 +15,7 @@
  */
 
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
+import { getPiCommand } from "../../config.ts";
 
 const HANDOFF_INSTRUCTIONS = `\
 Summarize this conversation for handoff to a new session. The new session \
@@ -82,9 +83,14 @@ export function registerHandoff(pi: ExtensionAPI) {
 			// Fork the current session into a separate pi process to
 			// generate the summary. The forked agent sees the full
 			// conversation context but doesn't modify the current session.
-			const result = await pi.exec("pi", ["-p", "--fork", sessionFile, "--no-session", "--", instructions], {
-				timeout: 180_000,
-			});
+			const [piCmd, ...piPrefix] = getPiCommand();
+			const result = await pi.exec(
+				piCmd,
+				[...piPrefix, "-p", "--fork", sessionFile, "--no-session", "--", instructions],
+				{
+					timeout: 180_000,
+				},
+			);
 
 			if (result.code !== 0) {
 				ctx.ui.notify(`Handoff failed: ${result.stderr || "summarization error"}`, "error");
