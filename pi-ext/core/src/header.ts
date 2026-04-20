@@ -7,6 +7,7 @@
 
 import * as os from "node:os";
 import type { ExtensionAPI, Theme } from "@mariozechner/pi-coding-agent";
+import { truncateToWidth } from "@mariozechner/pi-tui";
 import { getState } from "./session";
 
 type ThemeFg = (color: Parameters<Theme["fg"]>[0], text: string) => string;
@@ -25,7 +26,7 @@ function buildBanner(fg: ThemeFg, width: number): string[] {
 	const title = state.projectName
 		? `${fg("accent", "basecamp")} ${fg("dim", "·")} ${fg("text", state.projectName)}`
 		: fg("accent", "basecamp");
-	lines.push(title);
+	lines.push(truncateToWidth(title, width, fg("dim", "…")));
 
 	// Info rows
 	const rows: [string, string][] = [];
@@ -45,11 +46,12 @@ function buildBanner(fg: ThemeFg, width: number): string[] {
 
 	rows.push(["Style", state.workingStyle]);
 
-	// Render rows with aligned labels
+	// Render rows with aligned labels, truncated to terminal width
 	const labelWidth = Math.max(...rows.map(([label]) => label.length));
 	for (const [label, value] of rows) {
 		const padded = label.padEnd(labelWidth);
-		lines.push(`  ${fg("dim", padded)}  ${value}`);
+		const line = `  ${fg("dim", padded)}  ${value}`;
+		lines.push(truncateToWidth(line, width, fg("dim", "…")));
 	}
 
 	// Separator

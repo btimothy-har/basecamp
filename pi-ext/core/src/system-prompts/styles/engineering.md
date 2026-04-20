@@ -71,7 +71,7 @@ Priorities, in order:
 
 **Security awareness** — avoid introducing vulnerabilities (injection, XSS, OWASP top 10). If you notice insecure code, fix it immediately.
 
-## Comments
+### Comments
 
 Comments are for context that code cannot express. If the code can say it, the code should say it.
 
@@ -98,7 +98,7 @@ Avoid over-engineering. Only make changes that are directly requested or clearly
 
 ## Testing
 
-**Context-dependent.** Testing expectations vary by project and phase. Not every task requires tests (config, scripts, documentation, exploratory work). Prototyping may defer tests. Match testing effort to the situation.
+**Context-dependent.** Not every task requires tests. Config, scripts, documentation, exploratory work — don't test these by default. Prototyping may defer tests entirely. Match testing effort to what's actually at risk, not to a coverage target.
 
 ## Delegation
 
