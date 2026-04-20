@@ -121,6 +121,19 @@ class Settings:
                 data["language"] = value
 
     @property
+    def pi_command(self) -> str | None:
+        val = self._read().get("pi_command")
+        return val if isinstance(val, str) and val.strip() else None
+
+    @pi_command.setter
+    def pi_command(self, value: str | None) -> None:
+        with self._locked_update() as data:
+            if value is None:
+                data.pop("pi_command", None)
+            else:
+                data["pi_command"] = value
+
+    @property
     def models(self) -> dict[str, str]:
         models = self._read().get("models")
         return models if isinstance(models, dict) else {}
