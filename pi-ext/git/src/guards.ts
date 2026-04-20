@@ -66,8 +66,18 @@ export function lockAll(): void {
 	unlocked.prComment = false;
 }
 
+const GH_PR_MUTATE_RE = /^gh\s+pr\s+(create|edit|merge|close|ready|reopen)(\s|$)/;
 const PR_COMMENT_RE = /^gh\s+pr\s+comment(\s|$)/;
 const GH_API_PR_RE = /^gh\s+api\s+repos\/[^/]+\/[^/]+\/pulls\//;
+const GH_RE = /^gh\s+/;
+
+/** Split a command on shell separators so each segment is checked independently. */
+function splitSegments(cmd: string): string[] {
+	return cmd
+		.split(/\s*(?:&&|\|\||[;|])\s*/)
+		.map((s) => s.trim())
+		.filter(Boolean);
+}
 
 // ---------------------------------------------------------------------------
 // Register
@@ -80,23 +90,35 @@ export function registerGuards(pi: ExtensionAPI): void {
 		const cmd = event.input.command;
 		if (!cmd) return;
 
-		// Workflow overrides
-		if (unlocked.prComment && (PR_COMMENT_RE.test(cmd) || GH_API_PR_RE.test(cmd))) return;
-
-		// Check block rules
-		for (const rule of BLOCK_RULES) {
-			if (rule.gate.test(cmd) && rule.test.test(cmd)) {
-				return { block: true, reason: rule.reason };
+		for (const segment of splitSegments(cmd)) {
+			// Workflow overrides apply per-segment
+			if (unlocked.prComment && (PR_COMMENT_RE.test(segment) || GH_API_PR_RE.test(segment))) {
+				continue;
 			}
-		}
 
-		// gh: block by default, allow-list overrides
-		if (/^gh\s+/.test(cmd) && !GH_ALLOW.some((r) => r.test(cmd))) {
-			return {
-				block: true,
-				reason:
-					"This gh command is blocked. Allowed: gh issue (all), gh pr/run/repo (read-only), gh search, gh browse. Ask the user to run this command themselves if needed.",
-			};
+			// Check block rules
+			for (const rule of BLOCK_RULES) {
+				if (rule.gate.test(segment) && rule.test.test(segment)) {
+					return { block: true, reason: rule.reason };
+				}
+			}
+
+			// gh pr mutate: block with workflow-specific message
+			if (GH_PR_MUTATE_RE.test(segment)) {
+				return {
+					block: true,
+					reason: "PR mutations are blocked. The user needs to invoke /pull-request to start the PR workflow.",
+				};
+			}
+
+			// gh: block by default, allow-list overrides
+			if (GH_RE.test(segment) && !GH_ALLOW.some((r) => r.test(segment))) {
+				return {
+					block: true,
+					reason:
+						"This gh command is blocked. Allowed: gh issue (all), gh pr/run/repo (read-only), gh search, gh browse. Ask the user to run this command themselves if needed.",
+				};
+			}
 		}
 	});
 
