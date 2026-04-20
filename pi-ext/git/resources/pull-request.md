@@ -26,7 +26,7 @@ git rebase origin/{{BASE}}
 
 Run the project's test and lint commands if they exist. Fix failures before proceeding.
 
-## Step 3: Write Description
+## Step 3: Write and Publish
 
 Check the repo for a PR template:
 
@@ -57,28 +57,12 @@ Closes #N
 - [ ] Manual verification: ...
 ```
 
-Write to `{{SCRATCH_DIR}}/pull-requests/{{PR_NUMBER}}.md`. Line 1 is the title; remainder is the body.
-
-Title format: `[Scope] Short summary` — scope = module/component/area, imperative mood, <70 chars.
+**Title format**: `[Scope] Short summary` — scope = module/component/area, imperative mood, <70 chars.
 
 Generate GitHub permalinks using the remote branch — `` [`path#L10`](url) ``.
 
-## Step 4: Publish
+Draft the title and body, then call `pr_publish` with them. The user will review and edit in an inline editor before it publishes.
 
-Present the description to the user. Wait for approval — the user may edit the file before confirming.
+## Updating
 
-After approval, update the PR:
-
-```bash
-TITLE=$(head -1 {{SCRATCH_DIR}}/pull-requests/{{PR_NUMBER}}.md)
-tail -n +2 {{SCRATCH_DIR}}/pull-requests/{{PR_NUMBER}}.md > {{SCRATCH_DIR}}/pull-requests/{{PR_NUMBER}}-body.md
-gh pr edit {{PR_NUMBER}} --title "$TITLE" --body-file {{SCRATCH_DIR}}/pull-requests/{{PR_NUMBER}}-body.md
-```
-
-Report the PR URL.
-
-## Step 5: Update
-
-For subsequent changes to the same PR, ask the user to push the latest commits.
-
-If the description needs updating, edit `{{SCRATCH_DIR}}/pull-requests/{{PR_NUMBER}}.md` and re-run Step 4.
+For subsequent changes to the same PR, ask the user to push the latest commits. Call `pr_publish` again with the updated description.

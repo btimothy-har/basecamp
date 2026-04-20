@@ -7,7 +7,7 @@
  */
 
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
-import { unlocked } from "./guards";
+import { setActivePR, unlocked } from "./guards";
 import { getScratchDir, loadTemplate, resolvePrNumber } from "./utils";
 
 export function registerCommands(pi: ExtensionAPI): void {
@@ -66,9 +66,8 @@ export function registerCommands(pi: ExtensionAPI): void {
 				ctx.ui.notify(`Created draft PR #${prNumber}`, "info");
 			}
 
-			unlocked.prEdit = true;
-			const scratchDir = getScratchDir(ctx.cwd);
-			pi.sendUserMessage(loadTemplate("pull-request", { PR_NUMBER: prNumber, BASE: base, SCRATCH_DIR: scratchDir }));
+			setActivePR({ number: prNumber, base });
+			pi.sendUserMessage(loadTemplate("pull-request", { PR_NUMBER: prNumber, BASE: base }));
 		},
 	});
 

@@ -43,20 +43,29 @@ const GH_ALLOW: RegExp[] = [
 ];
 
 // ---------------------------------------------------------------------------
-// Workflow unlock state
+// Workflow state
 // ---------------------------------------------------------------------------
 
+/** Active PR workflow — set by /pull-request, read by pr_publish tool. */
+export let activePR: { number: string; base: string } | null = null;
+
+export function setActivePR(pr: { number: string; base: string }): void {
+	activePR = pr;
+}
+
+export function clearActivePR(): void {
+	activePR = null;
+}
+
 export const unlocked = {
-	prEdit: false,
 	prComment: false,
 };
 
 export function lockAll(): void {
-	unlocked.prEdit = false;
+	activePR = null;
 	unlocked.prComment = false;
 }
 
-const PR_EDIT_RE = /^gh\s+pr\s+edit(\s|$)/;
 const PR_COMMENT_RE = /^gh\s+pr\s+comment(\s|$)/;
 const GH_API_PR_RE = /^gh\s+api\s+repos\/[^/]+\/[^/]+\/pulls\//;
 
@@ -72,7 +81,6 @@ export function registerGuards(pi: ExtensionAPI): void {
 		if (!cmd) return;
 
 		// Workflow overrides
-		if (unlocked.prEdit && PR_EDIT_RE.test(cmd)) return;
 		if (unlocked.prComment && (PR_COMMENT_RE.test(cmd) || GH_API_PR_RE.test(cmd))) return;
 
 		// Check block rules
