@@ -26,6 +26,7 @@ interface BasecampConfig {
 	logseq_graph?: string;
 	language?: string;
 	models?: Record<string, string>;
+	pi_command?: string;
 }
 
 export interface SessionState {
@@ -72,6 +73,11 @@ export function getTimezone(): string | null {
 export function getLanguage(): string | null {
 	const config = readConfig();
 	return typeof config.language === "string" && config.language.trim() ? config.language.trim() : null;
+}
+
+export function getPiCommand(): string {
+	const config = readConfig();
+	return typeof config.pi_command === "string" && config.pi_command.trim() ? config.pi_command.trim() : "pi";
 }
 
 export function getLogseqGraph(): string | null {

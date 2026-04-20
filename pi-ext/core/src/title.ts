@@ -10,7 +10,7 @@ import type { AgentMessage } from "@mariozechner/pi-agent-core";
 import type { AssistantMessage, TextContent, ToolCall, ToolResultMessage, UserMessage } from "@mariozechner/pi-ai";
 import type { ExtensionAPI, ExtensionContext, SessionEntry, Theme } from "@mariozechner/pi-coding-agent";
 import { visibleWidth } from "@mariozechner/pi-tui";
-import { resolveModelAlias } from "../../config.ts";
+import { getPiCommand, resolveModelAlias } from "../../config.ts";
 
 // ============================================================================
 // Background Title Extraction
@@ -26,11 +26,15 @@ Conversation:
 
 function piPrint(model: string, systemPrompt: string, prompt: string, cwd: string, timeout: number): Promise<string> {
 	return new Promise((resolve, reject) => {
-		const proc = spawn("pi", ["-p", "--no-session", "--no-tools", "--model", model, "--system-prompt", systemPrompt], {
-			cwd,
-			env: { ...process.env },
-			stdio: ["pipe", "pipe", "pipe"],
-		});
+		const proc = spawn(
+			getPiCommand(),
+			["-p", "--no-session", "--no-tools", "--model", model, "--system-prompt", systemPrompt],
+			{
+				cwd,
+				env: { ...process.env },
+				stdio: ["pipe", "pipe", "pipe"],
+			},
+		);
 
 		let stdout = "";
 		let stderr = "";
