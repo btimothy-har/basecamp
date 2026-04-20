@@ -23,7 +23,24 @@ jobs:
     - name: Run Formatter
       run: |
         uv run ruff format --check .
-    
+
+    - name: Setup Node
+      uses: actions/setup-node@v4
+      with:
+        node-version: 22
+
+    - name: Install Extension Dependencies
+      working-directory: pi-ext
+      run: npm ci
+
+    - name: Typecheck (Extension)
+      working-directory: pi-ext
+      run: npx tsc
+
+    - name: Lint (Extension)
+      working-directory: pi-ext
+      run: npx biome check .
+
     - name: Run Tests (Core)
       run: |
         uv run --project core pytest

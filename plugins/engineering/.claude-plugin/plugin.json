@@ -1,8 +1,0 @@
-{
-    "name": "bc-eng",
-    "description": "Engineering resources for Claude Code: agents and skills.",
-    "version": "1.7.0",
-    "author": {
-        "name": "Brian Har"
-    }
-}

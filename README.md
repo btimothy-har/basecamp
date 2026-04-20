@@ -1,32 +1,32 @@
 # basecamp
 
-Claude Code multi-project workspace launcher with custom prompts and isolated worktrees.
+Multi-project workspace launcher for AI coding agents. Configures project directories, manages isolated git worktrees, and provides semantic memory over past sessions.
 
 ```bash
 git clone https://github.com/btimothy-har/basecamp.git
 cd basecamp && uv run install.py
 basecamp setup
-basecamp claude basecamp
+pi --project basecamp
 ```
 
 ## Why basecamp?
 
-When working with Claude Code across multiple projects, you face friction:
+When working with AI coding agents across multiple projects, you face friction:
 
 - **Scattered context** — Each project needs different prompts, working styles, and domain knowledge
 - **Branch conflicts** — Parallel conversations on the same repo compete for the working directory
 - **Repetitive setup** — Re-configuring directories and prompts for each session
 
-basecamp solves this with a single command that:
+basecamp solves this with a pi extension that:
 
-1. **Replaces Claude's default system prompt** — Full control over behavior, consistency across sessions, tailored to your workflow (Claude Code still appends its tool definitions)
+1. **Replaces the default system prompt** — Full control over behavior, consistency across sessions, tailored to your workflow
 2. **Configures project context** — Loads project-specific prompts and working styles automatically
-3. **Supports isolated worktrees** — Use `-l <label>` to work in a labeled worktree for parallel conversations
+3. **Supports isolated worktrees** — Use `--label <label>` to work in a labeled worktree for parallel conversations
 4. **Manages multi-repo projects** — Groups related repositories under one project definition
 
 ## Installation
 
-Requires [uv](https://docs.astral.sh/uv/) and [Claude Code](https://docs.anthropic.com/en/docs/claude-code).
+Requires [uv](https://docs.astral.sh/uv/) and [pi](https://github.com/mariozechner/pi-coding-agent).
 
 ```bash
 git clone https://github.com/btimothy-har/basecamp.git
@@ -36,7 +36,7 @@ uv run install.py -e        # editable (recommended for development)
 uv run install.py --no-editable
 ```
 
-This installs two tools (`basecamp` and `observer`) and saves the install directory to `~/.basecamp/config.json`.
+This installs two tools (`basecamp` and `observer`) and saves the install directory to `~/.pi/basecamp/config.json`.
 
 Then initialize the environment:
 
@@ -64,22 +64,14 @@ uv tool uninstall basecamp-core && uv tool uninstall basecamp-observer
 
 ## Usage
 
-### Launching Projects
+### Launching Sessions
+
+Sessions are launched via `pi` with basecamp flags:
 
 ```bash
-basecamp claude <project>               # Launch Claude in project directory
-basecamp claude .                       # Launch Claude in current directory
-basecamp claude ~/path/to/dir           # Launch Claude in any directory path
-basecamp claude <project> --resume      # Resume previous conversation (-r)
-basecamp claude <project> -l <label>    # Work in labeled worktree (creates if new)
-```
-
-### Opening in VS Code
-
-```bash
-basecamp open <project>                  # Open basecamp + project directories
-basecamp open <project> -n               # Open in new window
-basecamp open <project> -l <label>       # Open in existing worktree
+pi --project <project>               # Launch in project's primary directory
+pi --project <project> --label <l>   # Work in labeled worktree (creates if new)
+pi --project <project> --style eng   # Override working style
 ```
 
 ### Managing Projects
@@ -91,74 +83,68 @@ basecamp project edit <name>             # Interactively edit a project
 basecamp project remove <name>           # Remove a project
 ```
 
-### Managing Worktrees
+### Slash Commands (in-session)
 
-```bash
-basecamp worktree list <project>         # List worktrees for project
-basecamp worktree list --all             # List all worktrees (-a)
-basecamp worktree clean <project>        # Interactive cleanup
-basecamp worktree clean <project> <name> # Remove specific worktree
-basecamp worktree clean <project> --all  # Remove all worktrees
-basecamp worktree clean <project> -f     # Force removal (--force)
+| Command | Description |
+|---------|-------------|
+| `/open` | Open project directories in VS Code |
+| `/handoff` | Generate session handoff for continuing work |
+| `/agents` | Browse available agent definitions |
+| `/pull-request` | Create or update a pull request |
+| `/pr-comments` | Address PR review comments |
+| `/pr-walkthrough` | Generate PR walkthrough |
+
+### Subagents
+
+Dispatch subagents from within a session using the `agent` tool:
+
+```
+agent("investigate", "Investigate the auth module")
+agent("worker", "Fix the login bug")
 ```
 
-### Dispatching Workers
+Built-in agents: `investigate`, `planner`, `worker`, `security-reviewer`, `test-reviewer`, `docs-reviewer`, `simplification-reviewer`.
 
-Dispatch parallel Claude sessions from within a running session (requires Kitty or tmux):
-
-```bash
-basecamp dispatch                        # Dispatch worker with auto-generated name
-basecamp dispatch --name <task>          # Dispatch with specific task name
-basecamp dispatch --model opus           # Dispatch with specific model
-```
-
-### Logseq Integration
-
-```bash
-basecamp log "message"                   # Append block to today's journal
-basecamp log "message" -p ProjectName    # Append with [[ProjectName]] page reference
-basecamp reflect                         # Launch reflective journaling session (end of day)
-basecamp plan                            # Launch daily planning session (start of day)
-```
-
-Requires Logseq graph path configured via `basecamp setup`.
+Custom agents can be defined as markdown files in `~/.pi/agents/` (user-level).
 
 ## Configuration
 
-Projects are defined in `~/.basecamp/config.json`:
+Projects are defined in `~/.pi/basecamp/config.json`:
 
 ```json
 {
-  "web-app": {
-    "dirs": ["GitHub/web-app"],
-    "description": "Main web application",
-    "working_style": "engineering"
-  },
-  "data-pipeline": {
-    "dirs": ["GitHub/pipeline", "GitHub/pipeline-config"],
-    "description": "ETL pipeline and configuration",
-    "working_style": "engineering",
-    "context": "pipeline"
+  "projects": {
+    "web-app": {
+      "dirs": ["GitHub/web-app"],
+      "description": "Main web application",
+      "working_style": "engineering"
+    },
+    "data-pipeline": {
+      "dirs": ["GitHub/pipeline", "GitHub/pipeline-config"],
+      "description": "ETL pipeline and configuration",
+      "working_style": "engineering",
+      "context": "pipeline"
+    }
   }
 }
 ```
 
 | Field | Required | Description |
 |-------|----------|-------------|
-| `dirs` | Yes | Paths relative to `$HOME`. First is primary (cwd), rest are `--add-dir` |
+| `dirs` | Yes | Paths relative to `$HOME`. First is primary (cwd), rest are additional context |
 | `description` | No | Shown in `basecamp project list` |
 | `working_style` | No | Loads matching working style prompt (see below) |
-| `context` | No | Loads `~/.basecamp/prompts/context/{name}.md` for project context |
+| `context` | No | Loads `~/.pi/context/{name}.md` for project context |
 
 ## Prompt System
 
-basecamp replaces Claude Code's default system prompt via the `--system-prompt` flag. This gives you:
+basecamp replaces the default system prompt via a `before_agent_start` hook. This gives you:
 
-- **Full control** — Define how Claude approaches work, not Anthropic's defaults
+- **Full control** — Define how the agent approaches work, not defaults
 - **Consistency** — Same behavior across sessions; immune to upstream prompt changes
 - **Customization** — Prompts designed for your specific workflow
 
-Claude Code still appends its own tool definitions section (tool schemas, permissions, MCP servers) which cannot be modified. basecamp controls everything else.
+Pi's tool definitions and skill listings are sourced dynamically and included in the assembled prompt.
 
 ### Prompt Assembly
 
@@ -172,77 +158,77 @@ environment.md (CLI usage, Python/uv)
 working_styles/{name}.md (if configured)
          ↓
 system.md (working principles, tools, agents)
+         ↓
+project context (if configured)
+         ↓
+tools + skills (dynamically sourced from pi)
 ```
 
-Override `system.md` by placing a file at `~/.basecamp/prompts/system.md`.
-
-Project context is injected separately via a SessionStart hook, not included in the system prompt. This places the project context alongside any `CLAUDE.md` file in the primary repository.
+Override `system.md` by placing a file at `~/.pi/prompts/system.md`.
 
 ### Working Styles
 
 | Style | Description |
 |-------|-------------|
-| `engineering` | Partner role, quest-based work, code quality focus, frequent check-ins |
+| `engineering` | Partner role, collaborative work, code quality focus, frequent check-ins |
 | `advisor` | Advisor role, efficient discovery, direct communication, decision support |
+| `logseq` | Knowledge graph curation, structured entries, user-driven content approval |
 
-Create custom working styles in `~/.basecamp/prompts/working_styles/`.
+Create custom working styles in `~/.pi/styles/`.
 
 ### Project Context
 
-For multi-repo projects, add cross-repo context in `~/.basecamp/prompts/context/`. The `context` field in project config points to this file.
+For multi-repo projects, add cross-repo context in `~/.pi/context/`. The `context` field in project config points to this file.
 
-Single-repo projects typically use `CLAUDE.md` in the repo itself.
+Single-repo projects typically use `AGENTS.md` in the repo itself.
 
 ## Git Worktrees
 
-Use `-l <label>` to work in an isolated git worktree for parallel conversations:
+Use `--label <label>` to work in an isolated git worktree for parallel conversations:
 
 ```bash
-basecamp claude myproject -l auth      # Create or re-enter "auth" worktree
-basecamp claude myproject -l bugfix    # Create or re-enter "bugfix" worktree
+pi --project myproject --label auth      # Create or re-enter "auth" worktree
+pi --project myproject --label bugfix    # Create or re-enter "bugfix" worktree
 ```
 
 Worktrees live in `~/.worktrees/<repo>/<label>/` with branches named `wt/<label>`.
 
-- Worktrees are opt-in via `-l <label>` flag
+- Worktrees are opt-in via `--label <label>` flag
 - Label is both the directory name and worktree identifier
-- `basecamp open <project> -l <label>` opens an existing worktree in VS Code (errors if not found)
-- Secondary directories (`--add-dir`) stay on the main branch
+- `/open` in-session opens the worktree directory in VS Code
+- Secondary directories stay on the main branch
 - Only works with git repositories
 
-## Plugins
+## Semantic Memory (Observer)
 
-basecamp includes a bundled plugin and an optional marketplace with additional plugins.
+basecamp-observer provides semantic memory across sessions. It ingests session transcripts, extracts structured knowledge via LLM, and makes it searchable.
 
-### Bundled Plugin
+### How it works
 
-| Plugin | Description |
-|--------|-------------|
-| `bc-companion` | Session management, context injection, worker dispatch, observer integration |
+1. **Ingest** — A hook triggers `observer ingest` at session end, parsing new transcript events incrementally
+2. **Process** — A background job refines events into work items, extracts structured artifacts (summary, knowledge, decisions, constraints, actions), and embeds them into ChromaDB
+3. **Search** — The `recall` skill provides hybrid search (semantic + keyword) with time-decay scoring, scoped to the current project
 
-### Marketplace Plugins
+### Observer CLI
 
-| Plugin | Description |
-|--------|-------------|
-| `bc-collab` | Collaborative discovery, requirements gathering, GitHub issue workflows |
-| `bc-eng` | Code review, PR workflows, testing patterns, Python/SQL/dbt development |
-| `bc-cursor` | Discovers `.cursor/*.mdc` context files |
-| `bc-git-protect` | Guards against destructive git and gh operations |
-| `bc-gpg-check` | Verifies GPG card before git commit/tag |
-| `bc-private` | Private tools, not git committed |
-
-### Installing Plugins
-
-From within a Claude Code session started via basecamp:
-
-```
-/plugin marketplace add /path/to/basecamp
-/plugin install bc-eng@basecamp
+```bash
+observer setup                         # Initialize database and config
+observer db status                     # Show database and index status
+observer db migrate                    # Run pending schema migrations
+observer config set mode on            # Enable full pipeline (default: on)
+observer config set mode off           # Ingestion only, no LLM processing
 ```
 
-The first command registers basecamp as a marketplace (it discovers `.claude-plugin/marketplace.json`). The second installs a plugin from it.
+### Storage
 
-Create custom plugins in `plugins/` following [Claude Code plugin docs](https://docs.anthropic.com/en/docs/claude-code/plugins). Plugins in `plugins/private/` are gitignored.
+All data is local — no servers or external services:
+- `~/.pi/observer/observer.db` — SQLite (relational model + FTS5 keyword search)
+- `~/.pi/observer/chroma/` — ChromaDB (vector embeddings, HNSW index)
+- `~/.pi/observer/config.json` — Observer settings
+
+## Extension
+
+All skills, agents, hooks, and system prompts are bundled in a single pi extension at `pi-ext/`.
 
 ## License
 
