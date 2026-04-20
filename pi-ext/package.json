@@ -1,0 +1,47 @@
+{
+	"name": "basecamp-pi-ext",
+	"type": "module",
+	"version": "1.0.0",
+	"description": "Basecamp extension for pi — session lifecycle, git protection, observer integration, engineering skills.",
+	"keywords": [
+		"pi-package"
+	],
+	"pi": {
+		"extensions": [
+			"./core/src",
+			"./tasks/src",
+			"./observer/src",
+			"./agents/src",
+			"./git/src"
+		],
+		"skills": [
+			"./core/skills",
+			"./observer/skills",
+			"./data/skills",
+			"./engineering/skills",
+			"./tasks/skills"
+		],
+		"prompts": [
+			"./core/prompts"
+		]
+	},
+	"scripts": {
+		"check": "tsc && biome check .",
+		"typecheck": "tsc",
+		"lint": "biome check .",
+		"lint:fix": "biome check --fix .",
+		"format": "biome format --fix ."
+	},
+	"peerDependencies": {
+		"@mariozechner/pi-coding-agent": "*",
+		"@sinclair/typebox": "*"
+	},
+	"devDependencies": {
+		"@biomejs/biome": "^2.0.0",
+		"@mariozechner/pi-coding-agent": "^0.67.1",
+		"@mariozechner/pi-tui": "^0.67.1",
+		"@sinclair/typebox": "^0.34.0",
+		"@types/node": "^22.0.0",
+		"typescript": "^5.8.0"
+	}
+}

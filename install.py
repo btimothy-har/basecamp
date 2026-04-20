@@ -10,6 +10,7 @@
 import argparse
 import json
 import os
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -24,14 +25,12 @@ console = Console()
 
 REPO_DIR: Final = Path(__file__).parent
 
-MODULES: Final[list[tuple[str, Path, str]]] = [
-    ("basecamp-core", REPO_DIR / "core", "basecamp"),
-    ("basecamp-observer", REPO_DIR / "observer", "observer"),
-]
+CLI_DIR: Final = REPO_DIR / "cli"
+EXTENSION_DIR: Final = REPO_DIR / "pi-ext"
 
 
 def save_install_dir(repo_dir: Path) -> None:
-    config_file = Path.home() / ".basecamp" / "config.json"
+    config_file = Path.home() / ".pi" / "basecamp" / "config.json"
     try:
         existing = json.loads(config_file.read_text()) if config_file.exists() else {}
         existing = existing if isinstance(existing, dict) else {}
@@ -59,16 +58,54 @@ def save_install_dir(repo_dir: Path) -> None:
         os.close(dir_fd)
 
 
-def install_module(name: str, path: Path, cli: str, *, editable: bool) -> None:
-    args = ["uv", "tool", "install", "--reinstall"]
+def install_extension() -> None:
+    """Install the pi extension: npm dependencies + register with pi."""
+    npm = shutil.which("npm")
+    if not npm:
+        console.print("  [yellow]⚠[/yellow] npm not found — skipping extension install")
+        return
+
+    console.print("  Installing [bold]npm dependencies[/bold]...")
+    result = subprocess.run(
+        [npm, "install"],
+        cwd=EXTENSION_DIR,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode != 0:
+        console.print("\n[red]npm install failed:[/red]")
+        console.print(result.stderr.strip())
+        sys.exit(1)
+
+    pi = shutil.which("pi")
+    if not pi:
+        console.print("  [yellow]⚠[/yellow] pi not found — skipping extension registration")
+        return
+
+    console.print("  Registering [bold]extension[/bold] with pi...")
+    result = subprocess.run(
+        [pi, "install", str(EXTENSION_DIR)],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode != 0:
+        console.print("\n[red]pi install failed:[/red]")
+        console.print(result.stderr.strip())
+        sys.exit(1)
+
+
+def install_cli(*, editable: bool) -> None:
+    args = ["uv", "tool", "install", "--force", "--reinstall"]
     if editable:
         args.append("-e")
-    args.append(str(path))
+    args.append(str(CLI_DIR))
 
-    console.print(f"  Installing [bold]{cli}[/bold] ({name})...")
+    console.print("  Installing [bold]basecamp[/bold] CLI (bpi, observer, recall)...")
     result = subprocess.run(args, check=False, capture_output=True, text=True)
     if result.returncode != 0:
-        console.print(f"\n[red]Failed to install {name}:[/red]")
+        console.print("\n[red]Failed to install basecamp:[/red]")
         console.print(result.stderr.strip())
         sys.exit(1)
 
@@ -95,8 +132,12 @@ def main() -> None:
     console.print(Panel.fit("basecamp setup", style="bold blue"))
     console.print()
 
-    for name, path, cli in MODULES:
-        install_module(name, path, cli, editable=editable)
+    install_cli(editable=editable)
+
+    console.print()
+    console.print("[bold]pi extension[/bold]")
+    console.print()
+    install_extension()
 
     save_install_dir(REPO_DIR)
 
@@ -104,7 +145,7 @@ def main() -> None:
     console.print("[green]✓[/green] Done.")
     console.print()
     console.print(
-        "If [bold]basecamp[/bold], [bold]observer[/bold], or [bold]recall[/bold]"
+        "If [bold]bpi[/bold], [bold]basecamp[/bold], [bold]observer[/bold], or [bold]recall[/bold]"
         " aren't found, add uv's tool bin to your PATH:",
     )
     console.print('  [dim]export PATH="$HOME/.local/bin:$PATH"[/dim]')

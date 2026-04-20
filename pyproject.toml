@@ -1,9 +1,9 @@
 [tool.uv.workspace]
-members = ["core", "observer"]
+members = ["cli"]
 
 [tool.pytest.ini_options]
-testpaths = ["core/tests"]
-pythonpath = ["core/src"]
+testpaths = ["cli/tests"]
+pythonpath = ["cli/src"]
 env = ["TESTING=1"]
 
 [tool.ruff]

@@ -1,0 +1,39 @@
+[project]
+name = "basecamp"
+version = "0.8.0"
+description = "Multi-project workspace launcher and semantic memory for AI coding agents"
+requires-python = ">=3.12"
+dependencies = [
+    "pydantic>=2.0",
+    "pydantic-ai>=1.0",
+    "questionary>=2.1.1",
+    "rich-click>=1.8",
+    "sqlalchemy~=2.0",
+    "numpy>=1.26",
+    "sentence-transformers>=3.0",
+    "chromadb>=0.5",
+]
+
+[project.scripts]
+basecamp = "basecamp.main:basecamp"
+bpi = "basecamp.main:bpi"
+observer = "basecamp.cli.observer:main"
+recall = "basecamp.cli.recall:main"
+
+[dependency-groups]
+dev = [
+    "ruff~=0.13.1",
+    "pytest>=8.0.0",
+    "pytest-asyncio>=0.23.0",
+    "pytest-mock>=3.14.0",
+    "pytest-env>=1.2.0",
+    "factory-boy>=3.3.0",
+    "freezegun>=1.5.2",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/basecamp", "src/observer"]
