@@ -1,12 +1,12 @@
 ---
 name: agents
-description: "Dispatch subagents via the agent tool. Invoke when work can be parallelized into independent tasks, or when the user asks to delegate work."
+description: "Dispatch subagents via the agent tool. Default to this for independent, bounded tasks that do not need full parent context, or when the user asks to delegate work."
 argument-hint: "<task description>"
 ---
 
 # Agents
 
-Delegate tasks to subagents using the `agent` tool. Subagents run synchronously — output is returned as the tool result.
+Default to delegating independent, bounded tasks to subagents using the `agent` tool when they do not need your full context. Keep user communication, final integration, and cross-cutting decisions in the parent agent. Subagents run synchronously — output is returned as the tool result.
 
 ## Input
 
