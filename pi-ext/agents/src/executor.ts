@@ -16,7 +16,6 @@ import { spawn } from "node:child_process";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import { getPiCommand } from "../../config.ts";
 import { buildSkillInjection, resolveSkills } from "./skills.ts";
 import type { AgentConfig, ToolCallRecord, UsageStats } from "./types.ts";
 
@@ -66,7 +65,7 @@ function ensureAgentDir(name: string): string {
 
 function buildPiArgs(agent: AgentConfig | null, task: string, opts: PiArgsOpts): { args: string[]; agentDir: string } {
 	const agentDir = ensureAgentDir(opts.name);
-	const args = [getPiCommand(), "--mode", "json", "-p"];
+	const args = ["pi", "--mode", "json", "-p"];
 
 	if (opts.model) args.push("--model", opts.model);
 
