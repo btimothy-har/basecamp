@@ -32,11 +32,25 @@ export function registerCommands(pi: ExtensionAPI): void {
 				const pr = JSON.parse(existing.stdout.trim());
 				prNumber = String(pr.number);
 				ctx.ui.notify(`Found existing PR #${prNumber}`, "info");
+
+				const ahead = await pi.exec("git", ["rev-list", "--count", "@{u}..HEAD"]);
+				if (ahead.code === 0 && parseInt(ahead.stdout.trim(), 10) > 0) {
+					ctx.ui.notify("Pushing local commits...", "info");
+					const push = await pi.exec("git", ["push"]);
+					if (push.code !== 0) {
+						ctx.ui.notify(`Failed to push: ${push.stderr}`, "error");
+						return;
+					}
+				}
 			} else {
 				const upstream = await pi.exec("git", ["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"]);
 				if (upstream.code !== 0) {
-					ctx.ui.notify("Branch has no upstream — push before creating a PR", "error");
-					return;
+					ctx.ui.notify(`Pushing ${branchName} to origin...`, "info");
+					const push = await pi.exec("git", ["push", "-u", "origin", branchName]);
+					if (push.code !== 0) {
+						ctx.ui.notify(`Failed to push: ${push.stderr}`, "error");
+						return;
+					}
 				}
 
 				ctx.ui.notify(`Creating draft PR against ${base}...`, "info");

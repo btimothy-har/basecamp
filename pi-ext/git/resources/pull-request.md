@@ -26,6 +26,12 @@ git rebase origin/{{BASE}}
 
 Run the project's test and lint commands if they exist. Fix failures before proceeding.
 
+Push the latest state:
+
+```bash
+git push
+```
+
 ## Step 3: Write and Publish
 
 Check the repo for a PR template:
@@ -65,4 +71,4 @@ Draft the title and body, then call `pr_publish` with them. The user will review
 
 ## Updating
 
-For subsequent changes to the same PR, ask the user to push the latest commits. Call `pr_publish` again with the updated description.
+For subsequent changes to the same PR, push the latest commits and call `pr_publish` again with the updated description.
