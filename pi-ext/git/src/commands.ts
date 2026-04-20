@@ -26,8 +26,10 @@ async function ensurePushed(pi: ExtensionAPI, branchName: string, ctx: any): Pro
 	const counts = await pi.exec("git", ["rev-list", "--left-right", "--count", "@{u}...HEAD"]);
 	if (counts.code !== 0) return "failed";
 
-	const [behind, ahead] = counts.stdout.trim().split(/\s+/).map(Number);
-	if (!ahead || ahead === 0) return "up-to-date";
+	const parts = counts.stdout.trim().split(/\s+/).map(Number);
+	const behind = parts[0] ?? 0;
+	const ahead = parts[1] ?? 0;
+	if (ahead === 0) return "up-to-date";
 
 	if (behind > 0) {
 		ctx.ui.notify(
