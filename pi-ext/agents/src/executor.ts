@@ -109,10 +109,11 @@ function buildPiArgs(agent: AgentConfig | null, task: string, opts: PiArgsOpts):
 		args.push("--agent-prompt", promptFile);
 	}
 
-	// Tool allowlist — always include discover so subagents can look up capabilities
+	// Tool allowlist — restrict built-in tools available to the subagent.
+	// Extension-registered tools (discover, plan, etc.) are always active
+	// via pi's includeAllExtensionTools behavior and can't be controlled here.
 	if (agent?.tools?.length) {
-		const tools = agent.tools.includes("discover") ? agent.tools : [...agent.tools, "discover"];
-		args.push("--tools", tools.join(","));
+		args.push("--tools", agent.tools.join(","));
 	}
 
 	// Task — use a file for large tasks to avoid arg length limits
