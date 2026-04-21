@@ -56,9 +56,9 @@ def _prompt_worktree(repo_name: str) -> str | None:
             branch = wt.get("branch", "")
             _console.print(f"  [cyan]{i}[/cyan]  {wt['name']:<24} [dim]{branch}[/dim]  [dim]{age}[/dim]")
         _console.print()
-        prompt = f"[1-{len(worktrees)} to resume, name to create, Enter to skip]: "
+        prompt = f"[1-{len(worktrees)} to resume, name to create, Enter to cancel]: "
     else:
-        prompt = "Worktree name (Enter to skip): "
+        prompt = "Worktree name (Enter to cancel): "
 
     try:
         raw = input(prompt).strip()
@@ -105,6 +105,9 @@ def execute_launch(
         if label is None:
             repo_name = Path(primary_dir).name
             label = _prompt_worktree(repo_name)
+            if label is None:
+                _console.print("[dim]No worktree selected — session cancelled.[/dim]")
+                return
 
     if label:
         cmd.extend(["--label", label])
