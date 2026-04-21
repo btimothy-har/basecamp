@@ -201,9 +201,8 @@ export function registerSession(pi: ExtensionAPI): void {
 		}
 
 		// Change to the effective working directory
-		const effectiveDir = state.worktreeDir ?? state.primaryDir;
 		try {
-			process.chdir(effectiveDir);
+			process.chdir(getEffectiveCwd());
 		} catch (err) {
 			const msg = err instanceof Error ? err.message : String(err);
 			ctx.ui.notify(`basecamp: chdir failed — ${msg}`, "error");
@@ -231,7 +230,7 @@ export function registerSession(pi: ExtensionAPI): void {
 
 		// Collect git status from the effective working dir
 		if (state.isRepo) {
-			gitStatus = await collectGitStatus(pi, effectiveDir);
+			gitStatus = await collectGitStatus(pi, getEffectiveCwd());
 		} else {
 			gitStatus = null;
 		}

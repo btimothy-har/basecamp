@@ -14,7 +14,7 @@ import * as os from "node:os";
 import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-agent";
 import { isToolCallEventType } from "@mariozechner/pi-coding-agent";
 import { truncateToWidth, visibleWidth } from "@mariozechner/pi-tui";
-import { getState } from "./session";
+import { getEffectiveCwd, getState } from "./session";
 
 type ThemeFg = (color: Parameters<import("@mariozechner/pi-coding-agent").Theme["fg"]>[0], text: string) => string;
 
@@ -183,8 +183,7 @@ function buildLocationSegment(
 	ctx: ExtensionContext | null,
 ): string {
 	const parts: string[] = [];
-	const displayDir = state.worktreeDir ?? ctx?.sessionManager.getCwd() ?? state.primaryDir;
-	parts.push(fg("dim", shortenPath(displayDir)));
+	parts.push(fg("dim", shortenPath(getEffectiveCwd())));
 
 	if (state.worktreeLabel) {
 		parts.push(fg("warning", `⌥ ${state.worktreeLabel}`));

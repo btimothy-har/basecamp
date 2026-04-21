@@ -27,7 +27,7 @@ import {
 	type GitStatus,
 } from "../../context";
 import { discoverAgents } from "../../discovery";
-import { getGitStatus, getState } from "./session";
+import { getEffectiveCwd, getGitStatus, getState } from "./session";
 
 // ---------------------------------------------------------------------------
 // Paths
@@ -119,7 +119,7 @@ function buildEnvBlock(state: SessionState, modelId?: string): string {
 		`Platform: ${process.platform}`,
 		`Today's date: ${today}`,
 		"",
-		`Working directory: ${state.worktreeDir ?? state.primaryDir}`,
+		`Working directory: ${getEffectiveCwd()}`,
 		`Is directory a git repo: ${state.isRepo ? "Yes" : "No"}`,
 	];
 
