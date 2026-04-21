@@ -26,6 +26,8 @@ git rebase origin/{{BASE}}
 
 Run the project's test and lint commands if they exist. Fix failures before proceeding.
 
+If the rebase has conflicts, file paths shown by git are relative to the current working directory. Use `pwd` to get the absolute path and construct full paths when reading or editing conflicted files.
+
 If the rebase replayed commits (history rewritten), stop and tell the user to force push manually — do not attempt force push.
 
 ## Step 3: Write and Publish
@@ -33,10 +35,10 @@ If the rebase replayed commits (history rewritten), stop and tell the user to fo
 Check the repo for a PR template:
 
 ```bash
-find . -maxdepth 2 -iname "pull_request_template*" -not -path "./.git/*" 2>/dev/null
+find "$(pwd)" -maxdepth 2 -iname "pull_request_template*" -not -path "*/.git/*" 2>/dev/null
 ```
 
-If a template exists, use it as the base structure. Otherwise, use this default:
+If a template exists, read it using the absolute path returned by `find` (via `cat <path>` or the read tool). Otherwise, use this default:
 
 ```markdown
 [Scope] Short summary

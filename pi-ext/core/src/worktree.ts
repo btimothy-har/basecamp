@@ -129,8 +129,10 @@ export function registerWorktreeGuards(pi: ExtensionAPI, getState: () => Session
 		// --- Bash: rewrite cwd ---
 		if (isToolCallEventType("bash", event)) {
 			const cmd = event.input.command;
-			if (cmd && !cmd.startsWith(`cd ${worktreeDir}`)) {
-				event.input.command = `cd ${shellQuote(worktreeDir)} && ${cmd}`;
+			const quoted = shellQuote(worktreeDir);
+			const alreadyCd = cmd?.startsWith(`cd ${worktreeDir}`) || cmd?.startsWith(`cd ${quoted}`);
+			if (cmd && !alreadyCd) {
+				event.input.command = `cd ${quoted} && ${cmd}`;
 			}
 			return;
 		}
