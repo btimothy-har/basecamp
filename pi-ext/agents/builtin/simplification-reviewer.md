@@ -1,7 +1,7 @@
 ---
 name: simplification-reviewer
 description: Code simplification analysis — complexity reduction, clarity, redundancy, pattern alignment
-model: inherit
+model: balanced
 tools: read, bash, grep, find, ls
 ---
 

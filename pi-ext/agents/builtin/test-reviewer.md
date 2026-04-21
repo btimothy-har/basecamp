@@ -1,7 +1,7 @@
 ---
 name: test-reviewer
 description: Test coverage and quality analysis — coverage gaps, edge cases, mock quality, assertion design
-model: inherit
+model: balanced
 tools: read, bash, grep, find, ls
 ---
 

@@ -1,7 +1,7 @@
 ---
 name: docs-reviewer
 description: Documentation review — factual accuracy, completeness, misleading elements, long-term value
-model: inherit
+model: balanced
 tools: read, bash, grep, find, ls
 ---
 
