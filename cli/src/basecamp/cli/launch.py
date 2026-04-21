@@ -29,7 +29,7 @@ def _list_worktrees(repo_name: str) -> list[dict]:
         return []
 
     worktrees = []
-    for meta_file in sorted(meta_dir.glob("*.json")):
+    for meta_file in meta_dir.glob("*.json"):
         with meta_file.open() as f:
             try:
                 data = json.load(f)
@@ -37,7 +37,7 @@ def _list_worktrees(repo_name: str) -> list[dict]:
                 continue
         if "path" in data and Path(data["path"]).is_dir():
             worktrees.append(data)
-    return worktrees
+    return sorted(worktrees, key=lambda w: w.get("created_at", ""), reverse=True)
 
 
 def _format_age(created_at: str) -> str:
