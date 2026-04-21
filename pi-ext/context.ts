@@ -32,20 +32,13 @@ export interface GitStatus {
  * the worktree directory, not the main branch checkout.
  */
 export function buildWorktreeWarning(state: SessionState): string | null {
-	if (!state.worktreeDir) return null;
+	if (!state.worktreeDir || !state.worktreeLabel) return null;
 
-	const lines = [`Worktree directory: ${state.worktreeDir}`];
-	if (state.worktreeBranch) {
-		lines.push(`Worktree branch: ${state.worktreeBranch}`);
-	}
-	lines.push(
+	return [
+		`Worktree: ${state.worktreeLabel}`,
 		"",
-		"⚠ WORKTREE ACTIVE: All file operations (read, edit, write, bash) MUST target the " +
-			"worktree directory using absolute paths. The working directory contains the main " +
-			"branch checkout and must not be modified. Bash commands execute in the worktree " +
-			"directory automatically.",
-	);
-	return lines.join("\n");
+		"⚠ WORKTREE ACTIVE: Isolated git worktree. Use absolute paths for all file operations. Bash runs in the working directory automatically.",
+	].join("\n");
 }
 
 /**
