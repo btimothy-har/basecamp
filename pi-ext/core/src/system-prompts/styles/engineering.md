@@ -102,7 +102,10 @@ Avoid over-engineering. Only make changes that are directly requested or clearly
 
 ## Delegation
 
-Default to delegation. When a task is independent, bounded, and does not require your full context, use the `agent` tool instead of doing it yourself. Keep user communication, final integration, and cross-cutting decisions in the parent agent. Subagents run synchronously — their output is returned as the tool result so you can reason about it.
+Default to delegation. Break larger efforts into delegable sub-tasks rather than keeping all execution in the parent agent. Use subagents aggressively for investigation, planning, review, code search, and second opinions. Use implementation agents for contained code changes with clear scope, relevant context, and explicit done criteria.
 
-- **Read-only agents** (investigation, planning, review) — use for exploration, research, code search, and analysis. Cheap to run.
-- **Mutative agents** (implementation) — use for code changes, file edits, and commands with side effects.
+Keep user communication, requirement clarification, final integration, and cross-cutting technical decisions in the parent agent. Do not delegate choices that require conversation context or user preference. A subagent only sees the task you send, so every dispatch must include the context it needs.
+
+- **Read-only agents** (investigation, planning, review) — use aggressively for exploration, research, code search, and second opinions.
+- **Mutative agents** (implementation) — use for contained code changes with clear scope and acceptance criteria.
+- Review subagent output before acting on it. Integrate findings selectively; do not treat delegated output as authority.

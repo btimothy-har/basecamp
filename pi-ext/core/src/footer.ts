@@ -123,7 +123,7 @@ export function registerFooter(pi: ExtensionAPI): void {
 
 					// ── Line 1: cwd | worktree | branch ... cost + model ──
 					const l1Left = buildLocationSegment(fg, state, footerData, ctx);
-					const l1Right = buildModelSegment(fg, ctx);
+					const l1Right = buildModelSegment(fg, ctx, pi);
 					const line1 = layoutLine(l1Left, l1Right, width, fg);
 
 					// ── Line 2: skills ... context bar ──
@@ -199,22 +199,29 @@ function buildLocationSegment(
 	return parts.join(fg("dim", "  "));
 }
 
-function buildModelSegment(fg: ThemeFg, ctx: ExtensionContext | null): string {
+function buildModelSegment(fg: ThemeFg, ctx: ExtensionContext | null, pi: ExtensionAPI): string {
 	const parts: string[] = [];
+	let totalCost = 0;
 
 	if (ctx) {
-		let totalCost = 0;
 		for (const entry of ctx.sessionManager.getEntries()) {
 			if (entry.type === "message" && entry.message.role === "assistant") {
 				const u = (entry.message as { usage: { cost: { total: number } } }).usage;
 				totalCost += u.cost.total;
 			}
 		}
-		if (totalCost > 0) {
-			parts.push(fg("muted", `$${totalCost.toFixed(2)}`));
-		}
 	}
 
-	parts.push(fg("text", ctx?.model?.id ?? "no-model"));
+	const modelId = ctx?.model?.id ?? "no-model";
+	if (totalCost > 0) {
+		parts.push([fg("muted", `$${totalCost.toFixed(2)}`), fg("dim", "·"), fg("text", modelId)].join(" "));
+	} else {
+		parts.push(fg("text", modelId));
+	}
+
+	if (ctx?.model?.reasoning) {
+		parts.push(fg("muted", pi.getThinkingLevel()));
+	}
+
 	return parts.join(fg("dim", "  "));
 }
