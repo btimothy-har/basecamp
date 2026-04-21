@@ -9,6 +9,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { Type } from "@sinclair/typebox";
+import { exec } from "../../core/src/session";
 import { activePR } from "./guards";
 import { showPrReview } from "./review";
 import { getScratchDir } from "./utils";
@@ -63,13 +64,13 @@ export function registerTool(pi: ExtensionAPI): void {
 			const filePath = path.join(prDir, `${prNumber}.md`);
 			fs.writeFileSync(filePath, `${title}\n\n${body}\n`, "utf-8");
 
-			const ghResult = await pi.exec("gh", ["pr", "edit", prNumber, "--title", title, "--body", body]);
+			const ghResult = await exec(pi, "gh", ["pr", "edit", prNumber, "--title", title, "--body", body]);
 
 			if (ghResult.code !== 0) {
 				throw new Error(`Failed to update PR #${prNumber}: ${ghResult.stderr}\nDescription saved to ${filePath}`);
 			}
 
-			const urlResult = await pi.exec("gh", ["pr", "view", prNumber, "--json", "url", "-q", ".url"]);
+			const urlResult = await exec(pi, "gh", ["pr", "view", prNumber, "--json", "url", "-q", ".url"]);
 			const url = urlResult.stdout.trim();
 
 			return {

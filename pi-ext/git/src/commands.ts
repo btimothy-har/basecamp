@@ -7,7 +7,7 @@
  */
 
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
-import { getEffectiveCwd } from "../../core/src/session";
+import { exec } from "../../core/src/session";
 import { setActivePR, unlocked } from "./guards";
 import { getScratchDir, gitExec, loadTemplate, resolvePrNumber } from "./utils";
 
@@ -61,7 +61,7 @@ export function registerCommands(pi: ExtensionAPI): void {
 				return;
 			}
 
-			const existing = await pi.exec("gh", ["pr", "list", "--head", branchName, "--json", "number,url", "-q", ".[0]"], { cwd: getEffectiveCwd() });
+			const existing = await exec(pi, "gh", ["pr", "list", "--head", branchName, "--json", "number,url", "-q", ".[0]"]);
 
 			let prNumber: string;
 
@@ -85,7 +85,7 @@ export function registerCommands(pi: ExtensionAPI): void {
 				if (pushResult === "diverged") return;
 
 				ctx.ui.notify(`Creating draft PR against ${base}...`, "info");
-				const create = await pi.exec("gh", [
+				const create = await exec(pi, "gh", [
 					"pr",
 					"create",
 					"--draft",
@@ -142,7 +142,7 @@ export function registerCommands(pi: ExtensionAPI): void {
 			if (!pr) return;
 
 			ctx.ui.notify(`Checking out PR #${pr.number} (${pr.branch})...`, "info");
-			const checkout = await pi.exec("gh", ["pr", "checkout", pr.number]);
+			const checkout = await exec(pi, "gh", ["pr", "checkout", pr.number]);
 			if (checkout.code !== 0) {
 				ctx.ui.notify(`Failed to checkout PR: ${checkout.stderr}`, "error");
 				return;
