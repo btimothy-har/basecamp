@@ -14,7 +14,7 @@ import * as os from "node:os";
 import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-agent";
 import { isToolCallEventType } from "@mariozechner/pi-coding-agent";
 import { truncateToWidth, visibleWidth } from "@mariozechner/pi-tui";
-import { getState } from "./session";
+import { getEffectiveCwd, getState } from "./session";
 
 type ThemeFg = (color: Parameters<import("@mariozechner/pi-coding-agent").Theme["fg"]>[0], text: string) => string;
 
@@ -122,7 +122,7 @@ export function registerFooter(pi: ExtensionAPI): void {
 					const state = getState();
 
 					// ── Line 1: cwd | worktree | branch ... cost + model ──
-					const l1Left = buildLocationSegment(fg, state, footerData, ctx);
+					const l1Left = buildLocationSegment(fg, state, footerData);
 					const l1Right = buildModelSegment(fg, ctx, pi);
 					const line1 = layoutLine(l1Left, l1Right, width, fg);
 
@@ -180,10 +180,9 @@ function buildLocationSegment(
 	fg: ThemeFg,
 	state: ReturnType<typeof getState>,
 	footerData: { getGitBranch(): string | null },
-	ctx: ExtensionContext | null,
 ): string {
 	const parts: string[] = [];
-	parts.push(fg("dim", shortenPath(ctx?.sessionManager.getCwd() ?? state.primaryDir)));
+	parts.push(fg("dim", shortenPath(getEffectiveCwd())));
 
 	if (state.worktreeLabel) {
 		parts.push(fg("warning", `⌥ ${state.worktreeLabel}`));
@@ -191,7 +190,7 @@ function buildLocationSegment(
 		parts.push(fg("muted", "⌥ main"));
 	}
 
-	const branch = footerData.getGitBranch();
+	const branch = state.worktreeBranch ?? footerData.getGitBranch();
 	if (branch) {
 		parts.push(fg("accent", `⎇ ${branch}`));
 	}

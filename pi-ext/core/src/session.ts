@@ -32,6 +32,21 @@ export function getGitStatus(): GitStatus | null {
 	return gitStatus;
 }
 
+export function getEffectiveCwd(): string {
+	const s = getState();
+	return s.worktreeDir ?? s.primaryDir;
+}
+
+/** Exec a command in the effective working directory (worktree if active). */
+export function exec(
+	pi: ExtensionAPI,
+	command: string,
+	args: string[],
+	options?: Parameters<ExtensionAPI["exec"]>[2],
+): ReturnType<ExtensionAPI["exec"]> {
+	return pi.exec(command, args, { ...options, cwd: options?.cwd ?? getEffectiveCwd() });
+}
+
 export function getState(): SessionState {
 	return (
 		state ?? {
@@ -191,9 +206,8 @@ export function registerSession(pi: ExtensionAPI): void {
 		}
 
 		// Change to the effective working directory
-		const effectiveDir = state.worktreeDir ?? state.primaryDir;
 		try {
-			process.chdir(effectiveDir);
+			process.chdir(getEffectiveCwd());
 		} catch (err) {
 			const msg = err instanceof Error ? err.message : String(err);
 			ctx.ui.notify(`basecamp: chdir failed — ${msg}`, "error");
@@ -221,7 +235,7 @@ export function registerSession(pi: ExtensionAPI): void {
 
 		// Collect git status from the effective working dir
 		if (state.isRepo) {
-			gitStatus = await collectGitStatus(pi, effectiveDir);
+			gitStatus = await collectGitStatus(pi, getEffectiveCwd());
 		} else {
 			gitStatus = null;
 		}
