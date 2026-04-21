@@ -59,33 +59,34 @@ def _format_age(created_at: str) -> str:
 def _prompt_worktree(repo_name: str) -> str | None:
     """Prompt the user to select or create a worktree, or skip.
 
-    Returns a label string to use, or None to skip (launch on main).
+    Two-step: pick from existing list, then enter a name for a new one.
+    Returns a label string, or None to skip (launch on main).
     """
     worktrees = _list_worktrees(repo_name)
 
-    if worktrees:
-        _console.print()
-        _console.print(f"[dim]Worktrees for[/dim] [bold]{repo_name}[/bold][dim]:[/dim]")
-        for i, wt in enumerate(worktrees, 1):
-            age = _format_age(wt.get("created_at", ""))
-            _console.print(f"  [cyan]{i}[/cyan]  {wt['name']:<24} [dim]{wt.get('branch', '')}[/dim]  [dim]{age}[/dim]")
-        _console.print()
-
     try:
-        raw = input("Label [number/name/Enter to skip]: ").strip()
+        if worktrees:
+            _console.print()
+            _console.print(f"[dim]Worktrees for[/dim] [bold]{repo_name}[/bold][dim]:[/dim]")
+            for i, wt in enumerate(worktrees, 1):
+                age = _format_age(wt.get("created_at", ""))
+                branch = wt.get("branch", "")
+                _console.print(f"  [cyan]{i}[/cyan]  {wt['name']:<24} [dim]{branch}[/dim]  [dim]{age}[/dim]")
+            _console.print()
+
+            raw = input(f"Select [1-{len(worktrees)}, Enter to create new]: ").strip()
+            if raw.isdigit():
+                idx = int(raw) - 1
+                if 0 <= idx < len(worktrees):
+                    return worktrees[idx]["name"]
+
+        name = input("New worktree name (Enter to skip): ").strip()
+
     except (EOFError, KeyboardInterrupt):
         return None
-
-    if not raw:
-        return None
-
-    if raw.isdigit():
-        idx = int(raw) - 1
-        if 0 <= idx < len(worktrees):
-            return worktrees[idx]["name"]
-        _console.print(f"[yellow]No worktree #{raw} — using as label name.[/yellow]")
-
-    return raw
+    else:
+        return name or None
+    return None
 
 
 def execute_launch(
