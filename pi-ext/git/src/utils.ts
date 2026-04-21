@@ -3,13 +3,18 @@
  */
 
 import * as path from "node:path";
-import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
+import type { ExecOptions, ExecResult, ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { loadTemplate as _loadTemplate } from "../../templates";
 
 const RESOURCES = path.resolve(__dirname, "..", "resources");
 
 export function loadTemplate(name: string, vars: Record<string, string>): string {
 	return _loadTemplate(RESOURCES, name, vars);
+}
+
+/** Run a git command in the current working directory. */
+export function gitExec(pi: ExtensionAPI, args: string[], options?: ExecOptions): Promise<ExecResult> {
+	return pi.exec("git", args, { cwd: process.cwd(), ...options });
 }
 
 export function getScratchDir(cwd: string): string {
@@ -30,15 +35,14 @@ export async function resolvePrNumber(
 		return { number: prArg, branch: result.stdout.trim() };
 	}
 
-	const cwd = process.cwd();
-	const branch = await pi.exec("git", ["branch", "--show-current"], { cwd });
+	const branch = await gitExec(pi, ["branch", "--show-current"]);
 	const branchName = branch.stdout.trim();
 	if (!branchName) {
 		ctx.ui.notify("Not on a branch", "error");
 		return null;
 	}
 
-	const existing = await pi.exec("gh", ["pr", "list", "--head", branchName, "--json", "number", "-q", ".[0].number"], { cwd });
+	const existing = await pi.exec("gh", ["pr", "list", "--head", branchName, "--json", "number", "-q", ".[0].number"], { cwd: process.cwd() });
 	if (!existing.stdout.trim()) {
 		ctx.ui.notify(`No PR found for branch ${branchName}`, "error");
 		return null;
