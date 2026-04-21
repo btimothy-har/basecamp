@@ -28,6 +28,9 @@ USER_LANGUAGES_DIR = PI_DIR / "languages"
 USER_CONTEXT_DIR = PI_DIR / "context"
 USER_AGENTS_DIR = PI_DIR / "agents"
 
+# Worktree paths
+WORKTREES_DIR = Path.home() / ".worktrees"
+
 # Observer state paths
 OBSERVER_DIR = PI_DIR / "observer"
 OBSERVER_LOG_FILE = OBSERVER_DIR / "observer.log"

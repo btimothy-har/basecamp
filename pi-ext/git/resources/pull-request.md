@@ -50,7 +50,7 @@ Closes #N
 ## What approach did you use?
 
 ### [Area]
-- Change summary ([`path/file.py#L10-L25`](permalink))
+- Change summary ([`path/file.py#L10-L25`](https://github.com/org/repo/blob/{hash}/path/file.py#L10-L25))
 
 ## How did you validate the changes?
 
@@ -61,7 +61,14 @@ Closes #N
 
 **Title format**: `[Scope] Short summary` — scope = module/component/area, imperative mood, <70 chars.
 
-Generate GitHub permalinks using the remote branch — `` [`path#L10`](url) ``.
+Generate GitHub permalinks using the commit hash (true permalinks, stable across future pushes):
+
+```bash
+git rev-parse HEAD          # commit hash
+gh repo view --json url -q .url  # repo base URL
+```
+
+URL form: `{url}/blob/{hash}/{path}#L10-L25` — e.g. `` [`path/file.py#L10-L25`](https://github.com/org/repo/blob/abc1234/path/file.py#L10-L25) ``.
 
 Draft the title and body, then call `pr_publish` with them. The user reviews in a read-only overlay and can:
 

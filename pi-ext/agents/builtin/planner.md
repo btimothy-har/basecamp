@@ -1,7 +1,7 @@
 ---
 name: planner
 description: Analyze context and produce structured implementation plans
-model: balanced
+model: complex
 tools: read, bash, grep, find, ls
 ---
 
