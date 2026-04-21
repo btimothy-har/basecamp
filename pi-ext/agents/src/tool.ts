@@ -30,12 +30,19 @@ import { AgentToolParams, DEFAULT_AGENT_MAX_DEPTH } from "./types.ts";
 // Model Resolution
 // ============================================================================
 
-function resolveModel(strategy: ModelStrategy, parentModel: string | undefined): string | undefined {
+interface ParentModel {
+	id: string;
+	provider: string;
+}
+
+function resolveModel(strategy: ModelStrategy, parentModel: ParentModel | undefined): string | undefined {
 	switch (strategy) {
 		case "default":
 			return undefined;
 		case "inherit":
-			return parentModel;
+			if (!parentModel) return undefined;
+			// Provider-qualify to avoid ambiguous resolution across providers
+			return `${parentModel.provider}/${parentModel.id}`;
 		default:
 			return resolveModelAlias(strategy);
 	}
@@ -333,7 +340,7 @@ Available agents are discovered from user (~/.pi/agents/) and builtin definition
 			}
 
 			// Resolve parameters
-			const model = resolveModel(agentConfig?.model ?? "inherit", ctx.model?.id);
+			const model = resolveModel(agentConfig?.model ?? "inherit", ctx.model);
 			const agentId = randomUUID().slice(0, 6);
 			const prefix = `agent-${agentId}`;
 			const name = params.name ? `${prefix}-${params.name}` : prefix;
