@@ -201,26 +201,27 @@ function buildLocationSegment(
 
 function buildModelSegment(fg: ThemeFg, ctx: ExtensionContext | null, pi: ExtensionAPI): string {
 	const parts: string[] = [];
+	let totalCost = 0;
 
 	if (ctx) {
-		let totalCost = 0;
 		for (const entry of ctx.sessionManager.getEntries()) {
 			if (entry.type === "message" && entry.message.role === "assistant") {
 				const u = (entry.message as { usage: { cost: { total: number } } }).usage;
 				totalCost += u.cost.total;
 			}
 		}
-		if (totalCost > 0) {
-			parts.push(fg("muted", `$${totalCost.toFixed(2)}`));
-		}
 	}
 
 	const modelId = ctx?.model?.id ?? "no-model";
-	if (ctx?.model?.reasoning) {
-		const thinkingLevel = pi.getThinkingLevel();
-		parts.push([fg("text", modelId), fg("dim", "."), fg("muted", thinkingLevel)].join(" "));
+	if (totalCost > 0) {
+		parts.push([fg("muted", `$${totalCost.toFixed(2)}`), fg("dim", "·"), fg("text", modelId)].join(" "));
 	} else {
 		parts.push(fg("text", modelId));
 	}
+
+	if (ctx?.model?.reasoning) {
+		parts.push(fg("muted", pi.getThinkingLevel()));
+	}
+
 	return parts.join(fg("dim", "  "));
 }
