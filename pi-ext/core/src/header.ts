@@ -41,7 +41,10 @@ function buildBanner(fg: ThemeFg, width: number): string[] {
 	}
 
 	if (state.secondaryDirs.length > 0) {
-		rows.push(["Added dirs", state.secondaryDirs.map(shortenPath).join(", ")]);
+		for (let i = 0; i < state.secondaryDirs.length; i++) {
+			const label = i === 0 ? "Added dirs" : "";
+			rows.push([label, shortenPath(state.secondaryDirs[i]!)]);
+		}
 	}
 
 	rows.push(["Style", state.workingStyle]);

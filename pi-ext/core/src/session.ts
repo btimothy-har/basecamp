@@ -74,7 +74,7 @@ export function getState(): SessionState {
 async function resolveGitInfo(
 	pi: ExtensionAPI,
 	dir: string,
-): Promise<{ repoName: string; isRepo: boolean; remoteUrl: string | null }> {
+): Promise<{ repoName: string; isRepo: boolean; remoteUrl: string | null; toplevel: string | null }> {
 	try {
 		const result = await pi.exec("git", ["rev-parse", "--show-toplevel"], {
 			cwd: dir,
@@ -93,9 +93,9 @@ async function resolveGitInfo(
 			/* no remote */
 		}
 
-		return { repoName, isRepo: true, remoteUrl };
+		return { repoName, isRepo: true, remoteUrl, toplevel };
 	} catch {
-		return { repoName: path.basename(dir), isRepo: false, remoteUrl: null };
+		return { repoName: path.basename(dir), isRepo: false, remoteUrl: null, toplevel: null };
 	}
 }
 
@@ -178,7 +178,7 @@ export function registerSession(pi: ExtensionAPI): void {
 		// Build session state
 		state = resolveSessionState({
 			projectName,
-			cwd: ctx.cwd,
+			cwd: gitInfo.toplevel ?? ctx.cwd,
 			repoName: gitInfo.repoName,
 			isRepo: gitInfo.isRepo,
 			remoteUrl: gitInfo.remoteUrl,
