@@ -123,7 +123,7 @@ export function registerFooter(pi: ExtensionAPI): void {
 
 					// ── Line 1: cwd | worktree | branch ... cost + model ──
 					const l1Left = buildLocationSegment(fg, state, footerData, ctx);
-					const l1Right = buildModelSegment(fg, ctx);
+					const l1Right = buildModelSegment(fg, ctx, pi);
 					const line1 = layoutLine(l1Left, l1Right, width, fg);
 
 					// ── Line 2: skills ... context bar ──
@@ -199,7 +199,7 @@ function buildLocationSegment(
 	return parts.join(fg("dim", "  "));
 }
 
-function buildModelSegment(fg: ThemeFg, ctx: ExtensionContext | null): string {
+function buildModelSegment(fg: ThemeFg, ctx: ExtensionContext | null, pi: ExtensionAPI): string {
 	const parts: string[] = [];
 
 	if (ctx) {
@@ -215,6 +215,12 @@ function buildModelSegment(fg: ThemeFg, ctx: ExtensionContext | null): string {
 		}
 	}
 
-	parts.push(fg("text", ctx?.model?.id ?? "no-model"));
+	const modelId = ctx?.model?.id ?? "no-model";
+	if (ctx?.model?.reasoning) {
+		const thinkingLevel = pi.getThinkingLevel();
+		parts.push([fg("text", modelId), fg("dim", "."), fg("muted", thinkingLevel)].join(" "));
+	} else {
+		parts.push(fg("text", modelId));
+	}
 	return parts.join(fg("dim", "  "));
 }
