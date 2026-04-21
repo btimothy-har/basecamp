@@ -183,7 +183,8 @@ function buildLocationSegment(
 	ctx: ExtensionContext | null,
 ): string {
 	const parts: string[] = [];
-	parts.push(fg("dim", shortenPath(ctx?.sessionManager.getCwd() ?? state.primaryDir)));
+	const displayDir = state.worktreeDir ?? ctx?.sessionManager.getCwd() ?? state.primaryDir;
+	parts.push(fg("dim", shortenPath(displayDir)));
 
 	if (state.worktreeLabel) {
 		parts.push(fg("warning", `⌥ ${state.worktreeLabel}`));
@@ -191,7 +192,7 @@ function buildLocationSegment(
 		parts.push(fg("muted", "⌥ main"));
 	}
 
-	const branch = footerData.getGitBranch();
+	const branch = state.worktreeBranch ?? footerData.getGitBranch();
 	if (branch) {
 		parts.push(fg("accent", `⎇ ${branch}`));
 	}

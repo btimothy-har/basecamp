@@ -119,7 +119,7 @@ function buildEnvBlock(state: SessionState, modelId?: string): string {
 		`Platform: ${process.platform}`,
 		`Today's date: ${today}`,
 		"",
-		`Working directory: ${state.primaryDir}`,
+		`Working directory: ${state.worktreeDir ?? state.primaryDir}`,
 		`Is directory a git repo: ${state.isRepo ? "Yes" : "No"}`,
 	];
 
