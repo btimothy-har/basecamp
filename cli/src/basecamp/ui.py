@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from datetime import datetime, timezone
+
 from rich.console import Console
 from rich.table import Table
 
@@ -10,6 +12,22 @@ from basecamp.config.project import ProjectConfig
 # Console instances for output
 console = Console()
 err_console = Console(stderr=True)
+
+
+def format_age(created_at: str) -> str:
+    """Human-readable age from an ISO timestamp: 'today', 'yesterday', 'Nd ago'."""
+    try:
+        created = datetime.fromisoformat(created_at)
+    except ValueError:
+        return ""
+    if created.tzinfo is None:
+        created = created.replace(tzinfo=timezone.utc)
+    days = (datetime.now(tz=timezone.utc) - created).days
+    if days == 0:
+        return "today"
+    if days == 1:
+        return "yesterday"
+    return f"{days}d ago"
 
 
 def display_projects(projects: dict[str, ProjectConfig]) -> None:

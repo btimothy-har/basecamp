@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import json
 import os
-from datetime import datetime, timezone
 from pathlib import Path
 
 from rich.console import Console
@@ -17,6 +16,7 @@ from rich.console import Console
 from basecamp.config import ProjectConfig, resolve_project, validate_dirs
 from basecamp.constants import WORKTREES_DIR
 from basecamp.exceptions import NoDirectoriesConfiguredError
+from basecamp.ui import format_age
 
 PI_COMMAND = "pi"
 _console = Console()
@@ -40,22 +40,6 @@ def _list_worktrees(repo_name: str) -> list[dict]:
     return sorted(worktrees, key=lambda w: w.get("created_at", ""), reverse=True)
 
 
-def _format_age(created_at: str) -> str:
-    """Return a human-readable age string from an ISO timestamp."""
-    try:
-        created = datetime.fromisoformat(created_at)
-    except ValueError:
-        return ""
-    if created.tzinfo is None:
-        created = created.replace(tzinfo=timezone.utc)
-    days = (datetime.now(tz=timezone.utc) - created).days
-    if days == 0:
-        return "today"
-    if days == 1:
-        return "yesterday"
-    return f"{days}d ago"
-
-
 def _prompt_worktree(repo_name: str) -> str | None:
     """Prompt the user to select or create a worktree, or skip.
 
@@ -68,7 +52,7 @@ def _prompt_worktree(repo_name: str) -> str | None:
     if worktrees:
         _console.print(f"[dim]Worktrees for[/dim] [bold]{repo_name}[/bold][dim]:[/dim]")
         for i, wt in enumerate(worktrees, 1):
-            age = _format_age(wt.get("created_at", ""))
+            age = format_age(wt.get("created_at", ""))
             branch = wt.get("branch", "")
             _console.print(f"  [cyan]{i}[/cyan]  {wt['name']:<24} [dim]{branch}[/dim]  [dim]{age}[/dim]")
         _console.print()
