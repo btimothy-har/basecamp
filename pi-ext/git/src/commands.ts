@@ -7,6 +7,7 @@
  */
 
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
+import { getEffectiveCwd } from "../../core/src/session";
 import { setActivePR, unlocked } from "./guards";
 import { getScratchDir, gitExec, loadTemplate, resolvePrNumber } from "./utils";
 
@@ -60,7 +61,7 @@ export function registerCommands(pi: ExtensionAPI): void {
 				return;
 			}
 
-			const existing = await pi.exec("gh", ["pr", "list", "--head", branchName, "--json", "number,url", "-q", ".[0]"], { cwd: process.cwd() });
+			const existing = await pi.exec("gh", ["pr", "list", "--head", branchName, "--json", "number,url", "-q", ".[0]"], { cwd: getEffectiveCwd() });
 
 			let prNumber: string;
 

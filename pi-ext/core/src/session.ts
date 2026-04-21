@@ -32,6 +32,11 @@ export function getGitStatus(): GitStatus | null {
 	return gitStatus;
 }
 
+export function getEffectiveCwd(): string {
+	const s = getState();
+	return s.worktreeDir ?? s.primaryDir;
+}
+
 export function getState(): SessionState {
 	return (
 		state ?? {

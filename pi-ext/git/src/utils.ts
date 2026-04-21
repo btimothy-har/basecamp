@@ -4,6 +4,7 @@
 
 import * as path from "node:path";
 import type { ExecOptions, ExecResult, ExtensionAPI } from "@mariozechner/pi-coding-agent";
+import { getEffectiveCwd } from "../../core/src/session";
 import { loadTemplate as _loadTemplate } from "../../templates";
 
 const RESOURCES = path.resolve(__dirname, "..", "resources");
@@ -12,9 +13,9 @@ export function loadTemplate(name: string, vars: Record<string, string>): string
 	return _loadTemplate(RESOURCES, name, vars);
 }
 
-/** Run a git command in the current working directory. */
+/** Run a git command in the effective working directory (worktree if active). */
 export function gitExec(pi: ExtensionAPI, args: string[], options?: ExecOptions): Promise<ExecResult> {
-	return pi.exec("git", args, { cwd: process.cwd(), ...options });
+	return pi.exec("git", args, { cwd: getEffectiveCwd(), ...options });
 }
 
 export function getScratchDir(cwd: string): string {
@@ -42,7 +43,7 @@ export async function resolvePrNumber(
 		return null;
 	}
 
-	const existing = await pi.exec("gh", ["pr", "list", "--head", branchName, "--json", "number", "-q", ".[0].number"], { cwd: process.cwd() });
+	const existing = await pi.exec("gh", ["pr", "list", "--head", branchName, "--json", "number", "-q", ".[0].number"], { cwd: getEffectiveCwd() });
 	if (!existing.stdout.trim()) {
 		ctx.ui.notify(`No PR found for branch ${branchName}`, "error");
 		return null;
