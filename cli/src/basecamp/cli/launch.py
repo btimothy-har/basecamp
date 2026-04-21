@@ -59,34 +59,35 @@ def _format_age(created_at: str) -> str:
 def _prompt_worktree(repo_name: str) -> str | None:
     """Prompt the user to select or create a worktree, or skip.
 
-    Two-step: pick from existing list, then enter a name for a new one.
+    Number selects existing, any other text creates new, Enter skips.
     Returns a label string, or None to skip (launch on main).
     """
     worktrees = _list_worktrees(repo_name)
 
+    _console.print()
+    if worktrees:
+        _console.print(f"[dim]Worktrees for[/dim] [bold]{repo_name}[/bold][dim]:[/dim]")
+        for i, wt in enumerate(worktrees, 1):
+            age = _format_age(wt.get("created_at", ""))
+            branch = wt.get("branch", "")
+            _console.print(f"  [cyan]{i}[/cyan]  {wt['name']:<24} [dim]{branch}[/dim]  [dim]{age}[/dim]")
+        _console.print()
+        prompt = f"[1-{len(worktrees)} to resume, name to create, Enter to skip]: "
+    else:
+        prompt = "Worktree name (Enter to skip): "
+
     try:
-        if worktrees:
-            _console.print()
-            _console.print(f"[dim]Worktrees for[/dim] [bold]{repo_name}[/bold][dim]:[/dim]")
-            for i, wt in enumerate(worktrees, 1):
-                age = _format_age(wt.get("created_at", ""))
-                branch = wt.get("branch", "")
-                _console.print(f"  [cyan]{i}[/cyan]  {wt['name']:<24} [dim]{branch}[/dim]  [dim]{age}[/dim]")
-            _console.print()
-
-            raw = input(f"Select [1-{len(worktrees)}, Enter to create new]: ").strip()
-            if raw.isdigit():
-                idx = int(raw) - 1
-                if 0 <= idx < len(worktrees):
-                    return worktrees[idx]["name"]
-
-        name = input("New worktree name (Enter to skip): ").strip()
-
+        raw = input(prompt).strip()
     except (EOFError, KeyboardInterrupt):
         return None
-    else:
-        return name or None
-    return None
+
+    if not raw:
+        return None
+    if raw.isdigit():
+        idx = int(raw) - 1
+        if 0 <= idx < len(worktrees):
+            return worktrees[idx]["name"]
+    return raw
 
 
 def execute_launch(
