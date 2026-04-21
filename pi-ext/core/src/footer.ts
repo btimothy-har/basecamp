@@ -14,7 +14,7 @@ import * as os from "node:os";
 import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-agent";
 import { isToolCallEventType } from "@mariozechner/pi-coding-agent";
 import { truncateToWidth, visibleWidth } from "@mariozechner/pi-tui";
-import { getEffectiveCwd, getState } from "./session";
+import { getState } from "./session";
 
 type ThemeFg = (color: Parameters<import("@mariozechner/pi-coding-agent").Theme["fg"]>[0], text: string) => string;
 
@@ -182,7 +182,7 @@ function buildLocationSegment(
 	footerData: { getGitBranch(): string | null },
 ): string {
 	const parts: string[] = [];
-	parts.push(fg("dim", shortenPath(getEffectiveCwd())));
+	parts.push(fg("dim", shortenPath(state.primaryDir)));
 
 	if (state.worktreeLabel) {
 		parts.push(fg("warning", `⌥ ${state.worktreeLabel}`));
