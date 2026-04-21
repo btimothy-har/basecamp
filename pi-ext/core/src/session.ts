@@ -38,7 +38,12 @@ export function getEffectiveCwd(): string {
 }
 
 /** Exec a command in the effective working directory (worktree if active). */
-export function exec(pi: ExtensionAPI, command: string, args: string[], options?: Parameters<ExtensionAPI["exec"]>[2]): ReturnType<ExtensionAPI["exec"]> {
+export function exec(
+	pi: ExtensionAPI,
+	command: string,
+	args: string[],
+	options?: Parameters<ExtensionAPI["exec"]>[2],
+): ReturnType<ExtensionAPI["exec"]> {
 	return pi.exec(command, args, { ...options, cwd: options?.cwd ?? getEffectiveCwd() });
 }
 

@@ -131,8 +131,7 @@ export function registerWorktreeGuards(pi: ExtensionAPI, getState: () => Session
 		const local = createLocalBashOperations();
 		return {
 			operations: {
-				exec: (command: string, _cwd: string, options) =>
-					local.exec(command, worktreeDir, options),
+				exec: (command: string, _cwd: string, options) => local.exec(command, worktreeDir, options),
 			},
 		};
 	});

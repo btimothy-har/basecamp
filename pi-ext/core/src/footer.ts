@@ -122,7 +122,7 @@ export function registerFooter(pi: ExtensionAPI): void {
 					const state = getState();
 
 					// ── Line 1: cwd | worktree | branch ... cost + model ──
-					const l1Left = buildLocationSegment(fg, state, footerData, ctx);
+					const l1Left = buildLocationSegment(fg, state, footerData);
 					const l1Right = buildModelSegment(fg, ctx, pi);
 					const line1 = layoutLine(l1Left, l1Right, width, fg);
 
@@ -180,7 +180,6 @@ function buildLocationSegment(
 	fg: ThemeFg,
 	state: ReturnType<typeof getState>,
 	footerData: { getGitBranch(): string | null },
-	ctx: ExtensionContext | null,
 ): string {
 	const parts: string[] = [];
 	parts.push(fg("dim", shortenPath(getEffectiveCwd())));
