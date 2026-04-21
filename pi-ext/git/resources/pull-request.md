@@ -26,6 +26,8 @@ git rebase origin/{{BASE}}
 
 Run the project's test and lint commands if they exist. Fix failures before proceeding.
 
+If the rebase replayed commits (history rewritten), stop and tell the user to force push manually — do not attempt force push.
+
 ## Step 3: Write and Publish
 
 Check the repo for a PR template:
@@ -61,8 +63,12 @@ Closes #N
 
 Generate GitHub permalinks using the remote branch — `` [`path#L10`](url) ``.
 
-Draft the title and body, then call `pr_publish` with them. The user will review and edit in an inline editor before it publishes.
+Draft the title and body, then call `pr_publish` with them. The user reviews in a read-only overlay and can:
+
+- **Publish** (Enter) — publishes directly
+- **Feedback** (Tab → type → Enter) — returns feedback for you to revise and call `pr_publish` again
+- **Cancel** (Esc) — ask the user what they want to change
 
 ## Updating
 
-For subsequent changes to the same PR, ask the user to push the latest commits. Call `pr_publish` again with the updated description.
+For subsequent changes, invoke `/pull-request` again — it handles pushing and then call `pr_publish` with the updated description.
