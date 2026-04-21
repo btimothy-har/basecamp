@@ -30,14 +30,15 @@ export async function resolvePrNumber(
 		return { number: prArg, branch: result.stdout.trim() };
 	}
 
-	const branch = await pi.exec("git", ["branch", "--show-current"]);
+	const cwd = process.cwd();
+	const branch = await pi.exec("git", ["branch", "--show-current"], { cwd });
 	const branchName = branch.stdout.trim();
 	if (!branchName) {
 		ctx.ui.notify("Not on a branch", "error");
 		return null;
 	}
 
-	const existing = await pi.exec("gh", ["pr", "list", "--head", branchName, "--json", "number", "-q", ".[0].number"]);
+	const existing = await pi.exec("gh", ["pr", "list", "--head", branchName, "--json", "number", "-q", ".[0].number"], { cwd });
 	if (!existing.stdout.trim()) {
 		ctx.ui.notify(`No PR found for branch ${branchName}`, "error");
 		return null;

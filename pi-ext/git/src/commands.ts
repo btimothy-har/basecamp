@@ -12,18 +12,18 @@ import { getScratchDir, loadTemplate, resolvePrNumber } from "./utils";
 
 type PushResult = "pushed" | "up-to-date" | "cancelled" | "diverged" | "failed";
 
-async function ensurePushed(pi: ExtensionAPI, branchName: string, ctx: any): Promise<PushResult> {
-	const upstream = await pi.exec("git", ["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"]);
+async function ensurePushed(pi: ExtensionAPI, branchName: string, cwd: string, ctx: any): Promise<PushResult> {
+	const upstream = await pi.exec("git", ["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"], { cwd });
 
 	if (upstream.code !== 0) {
 		const confirmed = await ctx.ui.confirm("Push to origin?", `Push ${branchName} and set upstream?`);
 		if (!confirmed) return "cancelled";
 
-		const push = await pi.exec("git", ["push", "-u", "origin", branchName]);
+		const push = await pi.exec("git", ["push", "-u", "origin", branchName], { cwd });
 		return push.code === 0 ? "pushed" : "failed";
 	}
 
-	const counts = await pi.exec("git", ["rev-list", "--left-right", "--count", "@{u}...HEAD"]);
+	const counts = await pi.exec("git", ["rev-list", "--left-right", "--count", "@{u}...HEAD"], { cwd });
 	if (counts.code !== 0) return "failed";
 
 	const parts = counts.stdout.trim().split(/\s+/).map(Number);
@@ -42,7 +42,7 @@ async function ensurePushed(pi: ExtensionAPI, branchName: string, ctx: any): Pro
 	const confirmed = await ctx.ui.confirm("Push to origin?", `Push ${ahead} commit${ahead > 1 ? "s" : ""} to origin?`);
 	if (!confirmed) return "cancelled";
 
-	const push = await pi.exec("git", ["push"]);
+	const push = await pi.exec("git", ["push"], { cwd });
 	return push.code === 0 ? "pushed" : "failed";
 }
 
@@ -51,16 +51,17 @@ export function registerCommands(pi: ExtensionAPI): void {
 	pi.registerCommand("pull-request", {
 		description: "Review and publish a pull request",
 		handler: async (args, ctx) => {
+			const cwd = process.cwd();
 			const base = args?.trim() || "main";
 
-			const branch = await pi.exec("git", ["branch", "--show-current"]);
+			const branch = await pi.exec("git", ["branch", "--show-current"], { cwd });
 			const branchName = branch.stdout.trim();
 			if (!branchName) {
 				ctx.ui.notify("Not on a branch — cannot create PR", "error");
 				return;
 			}
 
-			const existing = await pi.exec("gh", ["pr", "list", "--head", branchName, "--json", "number,url", "-q", ".[0]"]);
+			const existing = await pi.exec("gh", ["pr", "list", "--head", branchName, "--json", "number,url", "-q", ".[0]"], { cwd });
 
 			let prNumber: string;
 
@@ -69,10 +70,10 @@ export function registerCommands(pi: ExtensionAPI): void {
 				prNumber = String(pr.number);
 				ctx.ui.notify(`Found existing PR #${prNumber}`, "info");
 
-				const pushResult = await ensurePushed(pi, branchName, ctx);
+				const pushResult = await ensurePushed(pi, branchName, cwd, ctx);
 				if (pushResult === "cancelled" || pushResult === "diverged" || pushResult === "failed") return;
 			} else {
-				const pushResult = await ensurePushed(pi, branchName, ctx);
+				const pushResult = await ensurePushed(pi, branchName, cwd, ctx);
 				if (pushResult === "failed") {
 					ctx.ui.notify("Failed to push — cannot create PR", "error");
 					return;
