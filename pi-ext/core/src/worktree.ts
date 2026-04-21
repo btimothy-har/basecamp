@@ -5,7 +5,8 @@
  *   1. Prompt: env block tells model to use worktree dir with absolute paths
  *   2. Tool guards:
  *      - read/edit/write/grep/find/ls: block if path resolves under main repo
- *      - bash: prepend cd <worktree> so commands run in the right cwd
+ *      - bash (tool_call): mutate event.input.command to prepend cd <worktree>
+ *      - bash (user_bash / !cmd): return custom operations with worktree as cwd
  *
  * Worktree metadata is stored in ~/.worktrees/<repo>/.meta/<label>.json
  * by the Python git/worktrees.py module. This module reads that metadata
@@ -16,7 +17,7 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
-import { isToolCallEventType } from "@mariozechner/pi-coding-agent";
+import { createLocalBashOperations, isToolCallEventType } from "@mariozechner/pi-coding-agent";
 import type { SessionState } from "../../config";
 
 // ---------------------------------------------------------------------------
@@ -119,6 +120,23 @@ function shellQuote(s: string): string {
  * Only active when state.worktreeDir is set.
  */
 export function registerWorktreeGuards(pi: ExtensionAPI, getState: () => SessionState): void {
+	// user_bash fires when the user types !cmd directly in pi's terminal.
+	// Pi passes sessionManager.getCwd() (source repo) to the subprocess, so we
+	// override operations to substitute the worktree dir as the execution cwd.
+	pi.on("user_bash", async () => {
+		const state = getState();
+		if (!state.worktreeDir) return;
+
+		const worktreeDir = state.worktreeDir;
+		const local = createLocalBashOperations();
+		return {
+			operations: {
+				exec: (command: string, _cwd: string, options) =>
+					local.exec(command, worktreeDir, options),
+			},
+		};
+	});
+
 	pi.on("tool_call", async (event, ctx) => {
 		const state = getState();
 		if (!state.worktreeDir) return;
