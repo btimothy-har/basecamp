@@ -35,7 +35,7 @@ def basecamp() -> None:
 
 @basecamp.command(context_settings={"ignore_unknown_options": True, "allow_extra_args": True})
 @click.argument("project", required=False, default=None)
-@click.option("--label", "-l", help="Work in a labeled git worktree (creates if new)")
+@click.option("--label", "-l", hidden=True, help="Work in a labeled git worktree (creates if new)")
 @click.option("--style", "-s", help="Override working style")
 @click.pass_context
 def pi(ctx: click.Context, project: str | None, label: str | None, style: str | None) -> None:
@@ -85,7 +85,7 @@ _bpi_ctx = {"ignore_unknown_options": True, "allow_extra_args": True, "help_opti
 
 @click.command(context_settings=_bpi_ctx)
 @click.argument("project", required=False, default=None)
-@click.option("--label", "-l", help="Work in a labeled git worktree (creates if new)")
+@click.option("--label", "-l", hidden=True, help="Work in a labeled git worktree (creates if new)")
 @click.option("--style", "-s", help="Override working style")
 @click.pass_context
 def bpi(ctx: click.Context, project: str | None, label: str | None, style: str | None) -> None:
