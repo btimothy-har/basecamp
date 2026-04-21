@@ -9,22 +9,22 @@
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { exec } from "../../core/src/session";
 import { setActivePR, unlocked } from "./guards";
-import { getScratchDir, gitExec, loadTemplate, resolvePrNumber } from "./utils";
+import { getScratchDir, loadTemplate, resolvePrNumber } from "./utils";
 
 type PushResult = "pushed" | "up-to-date" | "cancelled" | "diverged" | "failed";
 
 async function ensurePushed(pi: ExtensionAPI, branchName: string, ctx: any): Promise<PushResult> {
-	const upstream = await gitExec(pi, ["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"]);
+	const upstream = await exec(pi, "git", ["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"]);
 
 	if (upstream.code !== 0) {
 		const confirmed = await ctx.ui.confirm("Push to origin?", `Push ${branchName} and set upstream?`);
 		if (!confirmed) return "cancelled";
 
-		const push = await gitExec(pi, ["push", "-u", "origin", branchName]);
+		const push = await exec(pi, "git", ["push", "-u", "origin", branchName]);
 		return push.code === 0 ? "pushed" : "failed";
 	}
 
-	const counts = await gitExec(pi, ["rev-list", "--left-right", "--count", "@{u}...HEAD"]);
+	const counts = await exec(pi, "git", ["rev-list", "--left-right", "--count", "@{u}...HEAD"]);
 	if (counts.code !== 0) return "failed";
 
 	const parts = counts.stdout.trim().split(/\s+/).map(Number);
@@ -43,7 +43,7 @@ async function ensurePushed(pi: ExtensionAPI, branchName: string, ctx: any): Pro
 	const confirmed = await ctx.ui.confirm("Push to origin?", `Push ${ahead} commit${ahead > 1 ? "s" : ""} to origin?`);
 	if (!confirmed) return "cancelled";
 
-	const push = await gitExec(pi, ["push"]);
+	const push = await exec(pi, "git", ["push"]);
 	return push.code === 0 ? "pushed" : "failed";
 }
 
@@ -54,7 +54,7 @@ export function registerCommands(pi: ExtensionAPI): void {
 		handler: async (args, ctx) => {
 			const base = args?.trim() || "main";
 
-			const branch = await gitExec(pi, ["branch", "--show-current"]);
+			const branch = await exec(pi, "git", ["branch", "--show-current"]);
 			const branchName = branch.stdout.trim();
 			if (!branchName) {
 				ctx.ui.notify("Not on a branch — cannot create PR", "error");

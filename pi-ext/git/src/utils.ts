@@ -3,7 +3,7 @@
  */
 
 import * as path from "node:path";
-import type { ExecOptions, ExecResult, ExtensionAPI } from "@mariozechner/pi-coding-agent";
+import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { exec } from "../../core/src/session";
 import { loadTemplate as _loadTemplate } from "../../templates";
 
@@ -11,11 +11,6 @@ const RESOURCES = path.resolve(__dirname, "..", "resources");
 
 export function loadTemplate(name: string, vars: Record<string, string>): string {
 	return _loadTemplate(RESOURCES, name, vars);
-}
-
-/** Run a git command in the effective working directory (worktree if active). */
-export function gitExec(pi: ExtensionAPI, args: string[], options?: ExecOptions): Promise<ExecResult> {
-	return exec(pi, "git", args, options);
 }
 
 export function getScratchDir(cwd: string): string {
@@ -36,7 +31,7 @@ export async function resolvePrNumber(
 		return { number: prArg, branch: result.stdout.trim() };
 	}
 
-	const branch = await gitExec(pi, ["branch", "--show-current"]);
+	const branch = await exec(pi, "git", ["branch", "--show-current"]);
 	const branchName = branch.stdout.trim();
 	if (!branchName) {
 		ctx.ui.notify("Not on a branch", "error");
