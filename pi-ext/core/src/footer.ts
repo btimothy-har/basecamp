@@ -10,17 +10,15 @@
  * files that match known skill locations from pi's skill registry.
  */
 
+import { existsSync, type FSWatcher, readFileSync, statSync, watch } from "node:fs";
 import * as os from "node:os";
+import { dirname, join, resolve } from "node:path";
 import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-agent";
 import { isToolCallEventType } from "@mariozechner/pi-coding-agent";
 import { truncateToWidth, visibleWidth } from "@mariozechner/pi-tui";
 import { getState } from "./session";
 
 type ThemeFg = (color: Parameters<import("@mariozechner/pi-coding-agent").Theme["fg"]>[0], text: string) => string;
-
-// ============================================================================
-// Skill Tracking
-// ============================================================================
 
 const invokedSkills: string[] = [];
 let skillPathMap = new Map<string, string>();
@@ -34,9 +32,71 @@ function trackSkillRead(filePath: string): void {
 	}
 }
 
-// ============================================================================
-// Formatting Helpers
-// ============================================================================
+/**
+ * Worktree branch watcher — pi's FooterDataProvider watches the main repo's
+ * HEAD, not the worktree's. We run our own watcher on the worktree's HEAD
+ * so the footer shows the actual branch.
+ */
+let worktreeBranchCache: string | null = null;
+let worktreeHeadWatcher: FSWatcher | null = null;
+let worktreeWatcherInitialized = false;
+
+function resolveWorktreeHeadPath(worktreeDir: string): string | null {
+	try {
+		const gitPath = join(worktreeDir, ".git");
+		if (!existsSync(gitPath)) return null;
+		const stat = statSync(gitPath);
+		if (stat.isDirectory()) return join(gitPath, "HEAD");
+		const content = readFileSync(gitPath, "utf8").trim();
+		if (!content.startsWith("gitdir: ")) return null;
+		const gitDir = resolve(worktreeDir, content.slice(8).trim());
+		const headPath = join(gitDir, "HEAD");
+		return existsSync(headPath) ? headPath : null;
+	} catch {
+		return null;
+	}
+}
+
+function readBranchFromHead(headPath: string): string | null {
+	try {
+		const content = readFileSync(headPath, "utf8").trim();
+		if (content.startsWith("ref: refs/heads/")) return content.slice(16);
+		return "detached";
+	} catch {
+		return null;
+	}
+}
+
+function initWorktreeWatcher(worktreeDir: string): void {
+	if (worktreeWatcherInitialized) return;
+	worktreeWatcherInitialized = true;
+
+	const headPath = resolveWorktreeHeadPath(worktreeDir);
+	if (!headPath) return;
+
+	worktreeBranchCache = readBranchFromHead(headPath);
+
+	try {
+		worktreeHeadWatcher = watch(dirname(headPath), (_event, filename) => {
+			if (!filename || filename.toString() === "HEAD") {
+				const next = readBranchFromHead(headPath);
+				if (next !== worktreeBranchCache) {
+					worktreeBranchCache = next;
+					requestRender?.();
+				}
+			}
+		});
+	} catch {
+		// watch failed — fall back to static cache
+	}
+}
+
+function disposeWorktreeWatcher(): void {
+	worktreeHeadWatcher?.close();
+	worktreeHeadWatcher = null;
+	worktreeWatcherInitialized = false;
+	worktreeBranchCache = null;
+}
 
 function shortenPath(p: string): string {
 	const home = os.homedir();
@@ -91,10 +151,6 @@ function layoutLine(left: string, right: string, width: number, fg: ThemeFg): st
 	return truncateToWidth(`${left}  ${right}`, width, fg("dim", "…"));
 }
 
-// ============================================================================
-// Registration
-// ============================================================================
-
 export function registerFooter(pi: ExtensionAPI): void {
 	let ctx: ExtensionContext | null = null;
 
@@ -120,6 +176,8 @@ export function registerFooter(pi: ExtensionAPI): void {
 				render(width: number): string[] {
 					const fg = theme.fg.bind(theme);
 					const state = getState();
+
+					if (state.worktreeDir) initWorktreeWatcher(state.worktreeDir);
 
 					// ── Line 1: cwd | worktree | branch ... cost + model ──
 					const l1Left = buildLocationSegment(fg, state, footerData);
@@ -158,6 +216,7 @@ export function registerFooter(pi: ExtensionAPI): void {
 
 				dispose() {
 					unsub();
+					disposeWorktreeWatcher();
 					requestRender = null;
 				},
 			};
@@ -171,10 +230,6 @@ export function registerFooter(pi: ExtensionAPI): void {
 		}
 	});
 }
-
-// ============================================================================
-// Line Builders
-// ============================================================================
 
 function buildLocationSegment(
 	fg: ThemeFg,
@@ -190,7 +245,7 @@ function buildLocationSegment(
 		parts.push(fg("muted", "⌥ main"));
 	}
 
-	const branch = state.worktreeBranch ?? footerData.getGitBranch();
+	const branch = state.worktreeDir ? worktreeBranchCache : footerData.getGitBranch();
 	if (branch) {
 		parts.push(fg("accent", `⎇ ${branch}`));
 	}
