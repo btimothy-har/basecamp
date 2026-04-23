@@ -223,6 +223,8 @@ function buildSteerContent(state: TasksState, planRef: GoalCycle["planRef"]): st
 	lines.push(
 		"",
 		"Call start_task before beginning work on a task. Call complete_task when done. If the plan changes, call create_tasks with the updated list.",
+		"",
+		"Do not jump straight into execution. First use `discover` to inspect relevant tools, skills, and agents. Load the needed skill with `skill({ name })`. Delegate bounded work with `agent({ task })` before doing it yourself.",
 	);
 	return lines.join("\n");
 }
