@@ -9,10 +9,9 @@
  * Use this tool to actually load the instructions.
  */
 
-import { readFileSync } from "node:fs";
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { Type } from "@sinclair/typebox";
-import { escapeXml } from "../../utils";
+import { loadSkillBlock } from "./skill-content";
 import { hasInvokedSkill, trackSkillInvocation } from "./skill-tracker";
 
 const SkillParams = Type.Object(
@@ -68,14 +67,12 @@ export function registerSkillTool(pi: ExtensionAPI): void {
 			}
 
 			const filePath = command.sourceInfo.path;
-			let content: string;
-			try {
-				content = readFileSync(filePath, "utf8");
-			} catch (err) {
+			const block = loadSkillBlock(name, filePath);
+			if (block === null) {
 				return {
 					details: null,
 					isError: true,
-					content: [{ type: "text", text: `Failed to read skill file at ${filePath}: ${String(err)}` }],
+					content: [{ type: "text", text: `Failed to read skill file at ${filePath}.` }],
 				};
 			}
 
@@ -83,12 +80,7 @@ export function registerSkillTool(pi: ExtensionAPI): void {
 
 			return {
 				details: null,
-				content: [
-					{
-						type: "text",
-						text: `<skill name="${escapeXml(name)}">\n${content}\n</skill>`,
-					},
-				],
+				content: [{ type: "text", text: block }],
 			};
 		},
 	});
