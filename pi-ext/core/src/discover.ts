@@ -1,5 +1,5 @@
 /**
- * Discover tool — on-demand lookup for tools, skills, and agents.
+ * Discover tool — browse, search, and inspect tools, skills, and agents.
  *
  * Replaces the previous pattern of dumping full catalogues into the
  * system prompt. The system prompt now contains only names; this tool
@@ -9,8 +9,9 @@
  *   - List all of a type:    { type: "skills" }
  *   - Keyword search:        { type: "skills", query: "python data" }
  *   - Single item detail:    { name: "python-development" }
+ *
+ * To load full skill instructions, use the `skill` tool instead.
  */
-
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { Type } from "@sinclair/typebox";
 import { DEFAULT_AGENT_MAX_DEPTH } from "../../agents/src/types";
@@ -122,8 +123,8 @@ function formatDetail(item: DiscoverableItem): string {
 		}
 	}
 
-	if (item.kind === "skill" && item.path) {
-		lines.push("", "Read the skill file for full instructions.");
+	if (item.kind === "skill") {
+		lines.push("", `To load instructions, call: skill({ name: "${item.name}" })`);
 	}
 
 	return lines.join("\n");
@@ -164,7 +165,8 @@ export function registerDiscoverTool(pi: ExtensionAPI): void {
 		description:
 			"Look up available tools, skills, and agents. " +
 			'Use { type: "skills" } to list all skills, { type: "skills", query: "python" } to search, ' +
-			'or { name: "python-development" } to get details on a specific item.',
+			'or { name: "python-development" } to get details on a specific item. ' +
+			"To load full skill instructions, use the `skill` tool.",
 
 		parameters: DiscoverParams,
 

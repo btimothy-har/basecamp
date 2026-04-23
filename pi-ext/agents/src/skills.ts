@@ -9,9 +9,8 @@
  * since skills are already baked into the prompt.
  */
 
-import * as fs from "node:fs";
-import { loadSkills, type Skill, stripFrontmatter } from "@mariozechner/pi-coding-agent";
-import { escapeXml } from "../../utils";
+import { loadSkills, type Skill } from "@mariozechner/pi-coding-agent";
+import { buildSkillBlock, readSkillContent } from "../../core/src/skill-content";
 
 // ============================================================================
 // Types
@@ -58,15 +57,10 @@ export function resolveSkills(skillNames: string[], cwd: string): SkillResolutio
 			continue;
 		}
 
-		try {
-			const raw = fs.readFileSync(skill.filePath, "utf-8");
-			const content = stripFrontmatter(raw).trim();
-			if (content) {
-				resolved.push({ name: trimmed, path: skill.filePath, content });
-			} else {
-				missing.push(trimmed);
-			}
-		} catch {
+		const content = readSkillContent(skill.filePath);
+		if (content !== null) {
+			resolved.push({ name: trimmed, path: skill.filePath, content });
+		} else {
 			missing.push(trimmed);
 		}
 	}
@@ -84,5 +78,5 @@ export function resolveSkills(skillNames: string[], cwd: string): SkillResolutio
 export function buildSkillInjection(skills: ResolvedSkill[]): string {
 	if (skills.length === 0) return "";
 
-	return skills.map((s) => `<skill name="${escapeXml(s.name)}">\n${s.content}\n</skill>`).join("\n\n");
+	return skills.map((s) => buildSkillBlock(s.name, s.content)).join("\n\n");
 }

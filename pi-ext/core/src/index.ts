@@ -12,6 +12,7 @@ import { registerHeader } from "./header";
 import { registerOpenCommand } from "./open";
 import { registerPrompt } from "./prompt";
 import { getState, registerSession } from "./session";
+import { registerSkillTool } from "./skill";
 import { registerTitle } from "./title";
 
 export default function (pi: ExtensionAPI) {
@@ -26,6 +27,7 @@ export default function (pi: ExtensionAPI) {
 	registerOpenCommand(pi, getState);
 	registerTitle(pi);
 	registerDiscoverTool(pi);
+	registerSkillTool(pi);
 
 	// Escalate surfaces decisions to the user — subagents should report
 	// back to their parent instead.

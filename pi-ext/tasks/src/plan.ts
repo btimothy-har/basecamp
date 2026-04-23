@@ -139,6 +139,7 @@ function buildApprovedResult(draft: PlanDraft): string {
 
 	const result: Record<string, unknown> = {
 		status: "approved",
+		next_step: "Plan approved. Begin implementing.",
 		goal: draft.goal.content,
 		context: draft.context.content,
 		design: draft.design.content,

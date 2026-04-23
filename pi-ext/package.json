@@ -16,13 +16,15 @@
 		],
 		"skills": [
 			"./core/skills",
+			"./agents/skills",
 			"./observer/skills",
 			"./data/skills",
 			"./engineering/skills",
 			"./tasks/skills"
 		],
 		"prompts": [
-			"./core/prompts"
+			"./core/prompts",
+			"./engineering/prompts"
 		]
 	},
 	"scripts": {
