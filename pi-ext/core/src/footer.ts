@@ -16,7 +16,7 @@ import { dirname, join, resolve } from "node:path";
 import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-agent";
 import { truncateToWidth, visibleWidth } from "@mariozechner/pi-tui";
 import { getState } from "./session";
-import { getInvokedSkills, resetInvokedSkills } from "./skill-tracker.ts";
+import { getInvokedSkills } from "./skill-tracker.ts";
 
 type ThemeFg = (color: Parameters<import("@mariozechner/pi-coding-agent").Theme["fg"]>[0], text: string) => string;
 let requestRender: (() => void) | null = null;
@@ -145,7 +145,6 @@ export function registerFooter(pi: ExtensionAPI): void {
 
 	pi.on("session_start", (_event, sessionCtx) => {
 		ctx = sessionCtx;
-		resetInvokedSkills();
 
 		// Replace default footer
 		if (!sessionCtx.hasUI) return;

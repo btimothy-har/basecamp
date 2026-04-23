@@ -13,12 +13,14 @@ import { registerOpenCommand } from "./open";
 import { registerPrompt } from "./prompt";
 import { getState, registerSession } from "./session";
 import { registerSkillTool } from "./skill";
+import { registerSkillLifecycle } from "./skill-tracker";
 import { registerTitle } from "./title";
 
 export default function (pi: ExtensionAPI) {
 	const isSubagent = Number(process.env.BASECAMP_AGENT_DEPTH ?? "0") > 0;
 
 	registerSession(pi);
+	registerSkillLifecycle(pi);
 	registerPrompt(pi);
 	registerContextInjection(pi);
 	registerHeader(pi);

@@ -6,6 +6,8 @@
  * extension entrypoints still see one shared tracker.
  */
 
+import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
+
 type SkillTrackerState = {
 	invokedSkills: Set<string>;
 };
@@ -45,4 +47,15 @@ export function hasInvokedSkill(name: string): boolean {
 /** Returns invoked skills in invocation order for footer display. */
 export function getInvokedSkills(): readonly string[] {
 	return [...getTrackerState().invokedSkills];
+}
+
+/** Register lifecycle handlers to reset skill state on session events. */
+export function registerSkillLifecycle(pi: ExtensionAPI): void {
+	pi.on("session_start", () => {
+		resetInvokedSkills();
+	});
+
+	pi.on("session_compact", () => {
+		resetInvokedSkills();
+	});
 }
