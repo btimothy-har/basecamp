@@ -9,7 +9,7 @@
  * Use this tool to actually load the instructions.
  */
 
-import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
+import type { ExtensionAPI, Theme } from "@mariozechner/pi-coding-agent";
 import { Type } from "@sinclair/typebox";
 import { loadSkillBlock } from "./skill-content";
 import { hasInvokedSkill, trackSkillInvocation } from "./skill-tracker";
@@ -24,6 +24,46 @@ const SkillParams = Type.Object(
 		description: "Load the instructions for a named skill. Each skill is loaded at most once per session.",
 	},
 );
+
+function renderPartial(theme: Theme) {
+	const { Text } = require("@mariozechner/pi-tui");
+	return new Text(theme.fg("dim", "..."), 0, 0);
+}
+
+function renderCall(args: { name?: string }, theme: Theme) {
+	const { Text } = require("@mariozechner/pi-tui");
+	const name = args.name || "...";
+	const preview = name.length > 50 ? `${name.slice(0, 50)}...` : name;
+	return new Text(theme.fg("toolTitle", theme.bold("skill ")) + theme.fg("dim", preview), 0, 0);
+}
+
+function renderResult(result: { content?: Array<{ type: string; text?: string }> }, meta: { isPartial: boolean }, theme: Theme) {
+	if (meta.isPartial) return renderPartial(theme);
+
+	const { Text } = require("@mariozechner/pi-tui");
+	const text = result.content?.find((item) => item.type === "text")?.text ?? "";
+
+	const loaded = text.match(/^<skill name="([^"]+)">/);
+	if (loaded) {
+		return new Text(theme.fg("success", "✓") + theme.fg("dim", ` ${loaded[1]} loaded`), 0, 0);
+	}
+
+	const alreadyLoaded = text.match(/^Skill "([^"]+)" already loaded this session\.$/);
+	if (alreadyLoaded) {
+		return new Text(theme.fg("dim", `${alreadyLoaded[1]} already loaded`), 0, 0);
+	}
+
+	const notFound = text.match(/^No skill found with name "([^"]+)"\./);
+	if (notFound) {
+		return new Text(theme.fg("error", `${notFound[1]} not found`), 0, 0);
+	}
+
+	if (text.startsWith("Failed to read skill file at ")) {
+		return new Text(theme.fg("error", "skill load failed"), 0, 0);
+	}
+
+	return new Text(theme.fg("dim", "skill processed"), 0, 0);
+}
 
 export function registerSkillTool(pi: ExtensionAPI): void {
 	pi.registerTool({
@@ -83,5 +123,7 @@ export function registerSkillTool(pi: ExtensionAPI): void {
 				content: [{ type: "text", text: block }],
 			};
 		},
+		renderCall,
+		renderResult,
 	});
 }
