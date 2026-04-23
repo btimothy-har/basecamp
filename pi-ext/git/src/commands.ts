@@ -61,6 +61,13 @@ export function registerCommands(pi: ExtensionAPI): void {
 				return;
 			}
 
+			// Collect context upfront before any git operations
+			let context = "";
+			if (await ctx.ui.confirm("Add context?", "Add review context for this PR?")) {
+				const input = await ctx.ui.input("PR context", "");
+				context = input ? `\n**Review context:** ${input}\n` : "";
+			}
+
 			const existing = await exec(pi, "gh", ["pr", "list", "--head", branchName, "--json", "number,url", "-q", ".[0]"]);
 
 			let prNumber: string;
@@ -112,7 +119,7 @@ export function registerCommands(pi: ExtensionAPI): void {
 			}
 
 			setActivePR({ number: prNumber, base });
-			pi.sendUserMessage(loadTemplate("pull-request", { PR_NUMBER: prNumber, BASE: base }));
+			pi.sendUserMessage(loadTemplate("pull-request", { PR_NUMBER: prNumber, BASE: base, CONTEXT: context }));
 		},
 	});
 
