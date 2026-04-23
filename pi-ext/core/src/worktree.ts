@@ -19,6 +19,7 @@ import * as path from "node:path";
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { createLocalBashOperations, isToolCallEventType } from "@mariozechner/pi-coding-agent";
 import type { SessionState } from "../../config";
+import { getWorktreeBranchPrefix } from "../../config";
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -48,9 +49,11 @@ export async function getOrCreateWorktree(
 	repoName: string,
 	label: string,
 	projectName: string,
+	branchPrefix?: string,
 ): Promise<WorktreeResult> {
 	const worktreeDir = path.join(WORKTREES_DIR, repoName, label);
-	const branch = `wt/${label}`;
+	const prefix = branchPrefix ?? getWorktreeBranchPrefix();
+	const branch = `${prefix}${label}`;
 	const metaDir = path.join(WORKTREES_DIR, repoName, ".meta");
 	const metaFile = path.join(metaDir, `${label}.json`);
 
