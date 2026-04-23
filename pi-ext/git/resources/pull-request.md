@@ -1,6 +1,6 @@
 # Pull Request — PR #{{PR_NUMBER}}
 
-Review branch changes and publish PR #{{PR_NUMBER}} against `{{BASE}}`.
+Review branch changes and publish PR #{{PR_NUMBER}} against `{{BASE}}`.{{CONTEXT}}
 
 ## Step 1: Review Changes
 
@@ -32,11 +32,16 @@ If the rebase replayed commits (history rewritten), stop and tell the user to fo
 
 ## Step 3: Write and Publish
 
-Check the repo for a PR template:
+Check the repo for a PR template. GitHub looks for templates in this order:
 
 ```bash
-find "$(pwd)" -maxdepth 2 -iname "pull_request_template*" -not -path "*/.git/*" 2>/dev/null
+REPO_ROOT=$(git rev-parse --show-toplevel)
+find "$REPO_ROOT/.github" -maxdepth 2 -iname "pull_request_template*.md" 2>/dev/null
+find "$REPO_ROOT" -maxdepth 1 -iname "pull_request_template*.md" 2>/dev/null
+find "$REPO_ROOT/docs" -maxdepth 1 -iname "pull_request_template*.md" 2>/dev/null
 ```
+
+If multiple templates exist, prefer `.github/PULL_REQUEST_TEMPLATE.md` over subdirectory variants.
 
 If a template exists, read it using the absolute path returned by `find` (via `cat <path>` or the read tool). Otherwise, use this default:
 

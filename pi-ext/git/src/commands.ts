@@ -111,8 +111,15 @@ export function registerCommands(pi: ExtensionAPI): void {
 				ctx.ui.notify(`Created draft PR #${prNumber}`, "info");
 			}
 
+			// Optional context popup
+			let context = "";
+			if (await ctx.ui.confirm("Add context?", "Add review context for this PR?")) {
+				const input = await ctx.ui.input("PR context", "");
+				context = input ? `\n**Review context:** ${input}\n` : "";
+			}
+
 			setActivePR({ number: prNumber, base });
-			pi.sendUserMessage(loadTemplate("pull-request", { PR_NUMBER: prNumber, BASE: base }));
+			pi.sendUserMessage(loadTemplate("pull-request", { PR_NUMBER: prNumber, BASE: base, CONTEXT: context }));
 		},
 	});
 
