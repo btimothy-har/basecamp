@@ -317,6 +317,7 @@ const TASK_TOOLS = new Set([
 	"escalate",
 	"plan",
 	"discover",
+	"skill",
 	"read",
 ]);
 const GATED_WITHOUT_TASKS = new Set(["edit", "write"]);

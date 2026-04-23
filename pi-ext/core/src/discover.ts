@@ -1,5 +1,5 @@
 /**
- * Discover tool — on-demand lookup for tools, skills, and agents.
+ * Discover tool — browse, search, and inspect tools, skills, and agents.
  *
  * Replaces the previous pattern of dumping full catalogues into the
  * system prompt. The system prompt now contains only names; this tool
@@ -10,16 +10,12 @@
  *   - Keyword search:        { type: "skills", query: "python data" }
  *   - Single item detail:    { name: "python-development" }
  *
- * Skill detail lookups include the full SKILL.md content inline so a
- * separate `read` call is unnecessary.
+ * To load full skill instructions, use the `skill` tool instead.
  */
-
-import { readFileSync } from "node:fs";
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { Type } from "@sinclair/typebox";
 import { DEFAULT_AGENT_MAX_DEPTH } from "../../agents/src/types";
 import { discoverAgents } from "../../discovery";
-import { escapeXml } from "../../utils";
 
 // ============================================================================
 // Types
@@ -115,7 +111,7 @@ function formatList(items: DiscoverableItem[]): string {
 		.join("\n");
 }
 
-function formatDetail(item: DiscoverableItem, fileContent?: string): string {
+function formatDetail(item: DiscoverableItem): string {
 	const lines: string[] = [`**${item.name}** (${item.kind})`];
 
 	if (item.description) lines.push(`Description: ${item.description}`);
@@ -127,8 +123,8 @@ function formatDetail(item: DiscoverableItem, fileContent?: string): string {
 		}
 	}
 
-	if (item.kind === "skill" && fileContent) {
-		lines.push("", `<skill name="${escapeXml(item.name)}">\n${fileContent}\n</skill>`);
+	if (item.kind === "skill") {
+		lines.push("", `To load instructions, call: skill({ name: "${item.name}" })`);
 	}
 
 	return lines.join("\n");
@@ -170,7 +166,7 @@ export function registerDiscoverTool(pi: ExtensionAPI): void {
 			"Look up available tools, skills, and agents. " +
 			'Use { type: "skills" } to list all skills, { type: "skills", query: "python" } to search, ' +
 			'or { name: "python-development" } to get details on a specific item. ' +
-			"Skill detail lookups include the full skill content inline.",
+			'To load full skill instructions, use the `skill` tool.',
 
 		parameters: DiscoverParams,
 
@@ -194,17 +190,7 @@ export function registerDiscoverTool(pi: ExtensionAPI): void {
 					};
 				}
 
-				// For skills, read the file and include full content inline.
-				let fileContent: string | undefined;
-				if (item.kind === "skill" && item.path) {
-					try {
-						fileContent = readFileSync(item.path, "utf8");
-					} catch {
-						// Fall back gracefully — content will be omitted from output.
-					}
-				}
-
-				return { details: null, content: [{ type: "text", text: formatDetail(item, fileContent) }] };
+				return { details: null, content: [{ type: "text", text: formatDetail(item) }] };
 			}
 
 			// Mode 2 & 3: List or search by type

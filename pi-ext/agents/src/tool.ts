@@ -322,7 +322,7 @@ Available agents are discovered from user (~/.pi/agents/) and builtin definition
 				checkDepth();
 				if (!hasInvokedSkill("agents")) {
 					throw new Error(
-						'Load the agents skill first: call discover({ name: "agents" }) before dispatching.',
+						'Load the agents skill first: call skill({ name: "agents" }) before dispatching.',
 					);
 				}
 			} catch (error) {

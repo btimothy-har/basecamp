@@ -1,0 +1,95 @@
+/**
+ * Skill tool — load skill instructions on demand, once per session.
+ *
+ * Reads the named skill file and returns its content wrapped in an XML
+ * block. Subsequent calls for the same skill in the same session return
+ * a short dedup notice rather than re-loading the file.
+ *
+ * Use `discover` to browse or search available skills and get metadata.
+ * Use this tool to actually load the instructions.
+ */
+
+import { readFileSync } from "node:fs";
+import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
+import { Type } from "@sinclair/typebox";
+import { escapeXml } from "../../utils";
+import { hasInvokedSkill, trackSkillInvocation } from "./skill-tracker";
+
+const SkillParams = Type.Object(
+	{
+		name: Type.String({
+			description: "Exact name of the skill to load (e.g. \"python-development\").",
+		}),
+	},
+	{
+		description: "Load the instructions for a named skill. Each skill is loaded at most once per session.",
+	},
+);
+
+export function registerSkillTool(pi: ExtensionAPI): void {
+	pi.registerTool({
+		name: "skill",
+		label: "Skill",
+		description:
+			"Load full instructions for a named skill. " +
+			"Each skill is loaded at most once per session — repeat calls return a short notice. " +
+			'Use discover({ type: "skills" }) to browse available skills.',
+
+		parameters: SkillParams,
+
+		async execute(_id, params, _signal, _onUpdate, _ctx) {
+			const { name } = params;
+
+			// Dedup: already loaded this session.
+			if (hasInvokedSkill(name)) {
+				return {
+					details: null,
+					content: [{ type: "text", text: `Skill "${name}" already loaded this session.` }],
+				};
+			}
+
+			// Resolve skill path from pi commands.
+			const command = pi
+				.getCommands()
+				.filter((c) => c.source === "skill")
+				.find((c) => c.name.replace(/^skill:/, "") === name);
+
+			if (!command) {
+				const available = pi
+					.getCommands()
+					.filter((c) => c.source === "skill")
+					.map((c) => c.name.replace(/^skill:/, ""));
+				const hint = available.length > 0 ? ` Available skills: ${available.join(", ")}.` : "";
+				return {
+					details: null,
+					isError: true,
+					content: [{ type: "text", text: `No skill found with name "${name}".${hint}` }],
+				};
+			}
+
+			const filePath = command.sourceInfo.path;
+			let content: string;
+			try {
+				content = readFileSync(filePath, "utf8");
+			} catch (err) {
+				return {
+					details: null,
+					isError: true,
+					content: [{ type: "text", text: `Failed to read skill file at ${filePath}: ${String(err)}` }],
+				};
+			}
+
+			trackSkillInvocation(name);
+
+			return {
+				details: null,
+				content: [
+					{
+						type: "text",
+						text: `<skill name="${escapeXml(name)}">\n${content}\n</skill>`,
+					},
+				],
+			};
+		},
+	});
+}

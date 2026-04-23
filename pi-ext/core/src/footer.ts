@@ -6,8 +6,8 @@
  *   Line 2: invoked skills ... context bar
  *   Line 3: agent statuses (only when active)
  *
- * Skills are marked as loaded when the agent calls `discover({ name })`
- * for a known skill. Tracked via `discover` tool_call events, not `read`
+ * Skills are marked as loaded when the agent calls `skill({ name })`
+ * for a known skill. Tracked via `skill` tool_call events, not `read`
  * path interception.
  */
 
@@ -150,7 +150,7 @@ export function registerFooter(pi: ExtensionAPI): void {
 		ctx = sessionCtx;
 		resetInvokedSkills();
 
-		// Build skill name set for discover-based tracking
+		// Build skill name set for skill-based tracking
 		skillNameSet = new Set(
 			pi
 				.getCommands()
@@ -218,9 +218,9 @@ export function registerFooter(pi: ExtensionAPI): void {
 		});
 	});
 
-	// Track skill detail lookups via discover({ name }) calls.
+	// Track skill detail lookups via skill({ name }) calls.
 	pi.on("tool_call", async (event) => {
-		if (isToolCallEventType("discover", event)) {
+		if (isToolCallEventType("skill", event)) {
 			const skillName = event.input.name as string | undefined;
 			if (skillName && skillNameSet.has(skillName)) {
 				if (trackSkillInvocation(skillName)) requestRender?.();

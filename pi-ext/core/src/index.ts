@@ -5,6 +5,7 @@
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { registerContextInjection } from "./context-injection";
 import { registerDiscoverTool } from "./discover";
+import { registerSkillTool } from "./skill";
 import { registerEscalate } from "./escalate";
 import { registerFooter } from "./footer";
 import { registerHandoff } from "./handoff";
@@ -26,6 +27,7 @@ export default function (pi: ExtensionAPI) {
 	registerOpenCommand(pi, getState);
 	registerTitle(pi);
 	registerDiscoverTool(pi);
+	registerSkillTool(pi);
 
 	// Escalate surfaces decisions to the user — subagents should report
 	// back to their parent instead.

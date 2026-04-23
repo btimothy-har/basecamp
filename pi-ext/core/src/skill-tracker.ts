@@ -1,7 +1,7 @@
 /**
  * Shared skill invocation tracker.
  *
- * Records which skills the model has loaded via discover({ name }) during
+ * Records which skills the model has loaded via skill({ name }) during
  * the current session. Shared between footer.ts (display) and tool.ts
  * (dispatch guard).
  */

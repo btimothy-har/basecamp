@@ -184,12 +184,16 @@ export function buildCapabilitiesIndex(opts: {
 
 	lines.push(
 		"",
-		"Use the `discover` tool to search capabilities or get full details for any listed item.",
+		"Use `discover` to browse, search, or get details on any listed item.",
+		"Use `skill` to load a skill's full instructions into context before using it.",
 		"",
-		"Modes:",
+		"`discover` modes:",
 		'- List a category with descriptions: `discover({ type: "skills" })`',
 		'- Search by keyword: `discover({ type: "skills", query: "python" })`',
 		'- Get details for one item: `discover({ name: "python-development" })`',
+		"",
+		"`skill` example:",
+		'- Load skill instructions: `skill({ name: "python-development" })`',
 	);
 
 	return lines.join("\n");
