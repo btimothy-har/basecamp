@@ -5,7 +5,6 @@
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { registerContextInjection } from "./context-injection";
 import { registerDiscoverTool } from "./discover";
-import { registerSkillTool } from "./skill";
 import { registerEscalate } from "./escalate";
 import { registerFooter } from "./footer";
 import { registerHandoff } from "./handoff";
@@ -13,6 +12,7 @@ import { registerHeader } from "./header";
 import { registerOpenCommand } from "./open";
 import { registerPrompt } from "./prompt";
 import { getState, registerSession } from "./session";
+import { registerSkillTool } from "./skill";
 import { registerTitle } from "./title";
 
 export default function (pi: ExtensionAPI) {

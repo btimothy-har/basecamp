@@ -166,7 +166,7 @@ export function registerDiscoverTool(pi: ExtensionAPI): void {
 			"Look up available tools, skills, and agents. " +
 			'Use { type: "skills" } to list all skills, { type: "skills", query: "python" } to search, ' +
 			'or { name: "python-development" } to get details on a specific item. ' +
-			'To load full skill instructions, use the `skill` tool.',
+			"To load full skill instructions, use the `skill` tool.",
 
 		parameters: DiscoverParams,
 

@@ -321,9 +321,7 @@ Available agents are discovered from user (~/.pi/agents/) and builtin definition
 			try {
 				checkDepth();
 				if (!hasInvokedSkill("agents")) {
-					throw new Error(
-						'Load the agents skill first: call skill({ name: "agents" }) before dispatching.',
-					);
+					throw new Error('Load the agents skill first: call skill({ name: "agents" }) before dispatching.');
 				}
 			} catch (error) {
 				const msg = error instanceof Error ? error.message : String(error);

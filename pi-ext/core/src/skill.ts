@@ -17,7 +17,7 @@ import { hasInvokedSkill, trackSkillInvocation } from "./skill-tracker";
 const SkillParams = Type.Object(
 	{
 		name: Type.String({
-			description: "Exact name of the skill to load (e.g. \"python-development\").",
+			description: 'Exact name of the skill to load (e.g. "python-development").',
 		}),
 	},
 	{
@@ -37,7 +37,11 @@ function renderCall(args: { name?: string }, theme: Theme) {
 	return new Text(theme.fg("toolTitle", theme.bold("skill ")) + theme.fg("dim", preview), 0, 0);
 }
 
-function renderResult(result: { content?: Array<{ type: string; text?: string }> }, meta: { isPartial: boolean }, theme: Theme) {
+function renderResult(
+	result: { content?: Array<{ type: string; text?: string }> },
+	meta: { isPartial: boolean },
+	theme: Theme,
+) {
 	if (meta.isPartial) return renderPartial(theme);
 
 	const { Text } = require("@mariozechner/pi-tui");
