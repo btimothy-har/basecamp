@@ -1,7 +1,7 @@
 ---
 name: security-reviewer
 description: Focused security analysis — injection, auth, secrets, input validation, data exposure
-model: balanced
+model: complex
 tools: read, bash, grep, find, ls
 ---
 
