@@ -6,22 +6,19 @@
  *   Line 2: invoked skills ... context bar
  *   Line 3: agent statuses (only when active)
  *
- * Skills are marked as loaded when the agent calls `skill({ name })`
- * for a known skill. Tracked via `skill` tool_call events, not `read`
- * path interception.
+ * Skills are tracked by the skill tool itself (skill.ts). The footer
+ * re-renders on `tool_result` events to pick up newly loaded skills.
  */
 
 import { existsSync, type FSWatcher, readFileSync, statSync, watch } from "node:fs";
 import * as os from "node:os";
 import { dirname, join, resolve } from "node:path";
 import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-agent";
-import { isToolCallEventType } from "@mariozechner/pi-coding-agent";
 import { truncateToWidth, visibleWidth } from "@mariozechner/pi-tui";
 import { getState } from "./session";
-import { getInvokedSkills, resetInvokedSkills, trackSkillInvocation } from "./skill-tracker.ts";
+import { getInvokedSkills, resetInvokedSkills } from "./skill-tracker.ts";
 
 type ThemeFg = (color: Parameters<import("@mariozechner/pi-coding-agent").Theme["fg"]>[0], text: string) => string;
-let skillNameSet = new Set<string>();
 let requestRender: (() => void) | null = null;
 
 /**
@@ -150,14 +147,6 @@ export function registerFooter(pi: ExtensionAPI): void {
 		ctx = sessionCtx;
 		resetInvokedSkills();
 
-		// Build skill name set for skill-based tracking
-		skillNameSet = new Set(
-			pi
-				.getCommands()
-				.filter((c) => c.source === "skill")
-				.map((c) => c.name.replace(/^skill:/, "")),
-		);
-
 		// Replace default footer
 		if (!sessionCtx.hasUI) return;
 
@@ -218,13 +207,9 @@ export function registerFooter(pi: ExtensionAPI): void {
 		});
 	});
 
-	// Track skill detail lookups via skill({ name }) calls.
-	pi.on("tool_call", async (event) => {
-		if (isToolCallEventType("skill", event)) {
-			const skillName = event.input.name as string | undefined;
-			if (skillName && skillNameSet.has(skillName)) {
-				if (trackSkillInvocation(skillName)) requestRender?.();
-			}
+	pi.on("tool_result", async (event) => {
+		if (event.toolName === "skill" && !event.isError) {
+			requestRender?.();
 		}
 	});
 }
