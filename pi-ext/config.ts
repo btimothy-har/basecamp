@@ -27,6 +27,7 @@ interface BasecampConfig {
 	language?: string;
 	models?: Record<string, string>;
 	pi_command?: string;
+	worktree_branch_prefix?: string;
 }
 
 export interface SessionState {
@@ -114,6 +115,14 @@ export function readConfig(): BasecampConfig {
 	} catch {
 		return {};
 	}
+}
+
+export function getWorktreeBranchPrefix(): string {
+	const config = readConfig();
+	const prefix = config.worktree_branch_prefix;
+	// Empty string or undefined → default to "wt/"
+	if (!prefix?.trim()) return "wt/";
+	return prefix;
 }
 
 // ---------------------------------------------------------------------------
