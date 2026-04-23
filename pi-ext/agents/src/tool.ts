@@ -21,6 +21,7 @@ import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-age
 import { getMarkdownTheme } from "@mariozechner/pi-coding-agent";
 import { type Component, Container, Markdown, Spacer, Text } from "@mariozechner/pi-tui";
 import { getPiCommand, resolveModelAlias } from "../../config.ts";
+import { hasInvokedSkill } from "../../core/src/skill-tracker.ts";
 import type { AgentStreamEvent } from "./executor.ts";
 import { spawnAgent } from "./executor.ts";
 import type { AgentConfig, AgentDetails, AgentPartialDetails, ModelStrategy, ToolCallRecord } from "./types.ts";
@@ -319,6 +320,11 @@ Available agents are discovered from user (~/.pi/agents/) and builtin definition
 		async execute(_id, params, signal, onUpdate, ctx) {
 			try {
 				checkDepth();
+				if (!hasInvokedSkill("agents")) {
+					throw new Error(
+						'Load the agents skill first: call discover({ name: "agents" }) before dispatching.',
+					);
+				}
 			} catch (error) {
 				const msg = error instanceof Error ? error.message : String(error);
 				return { content: [{ type: "text", text: msg }], isError: true, details: null as unknown as AgentDetails };

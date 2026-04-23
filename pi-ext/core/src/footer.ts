@@ -18,10 +18,9 @@ import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-age
 import { isToolCallEventType } from "@mariozechner/pi-coding-agent";
 import { truncateToWidth, visibleWidth } from "@mariozechner/pi-tui";
 import { getState } from "./session";
+import { getInvokedSkills, resetInvokedSkills, trackSkillInvocation } from "./skill-tracker.ts";
 
 type ThemeFg = (color: Parameters<import("@mariozechner/pi-coding-agent").Theme["fg"]>[0], text: string) => string;
-
-const invokedSkills: string[] = [];
 let skillNameSet = new Set<string>();
 let requestRender: (() => void) | null = null;
 
@@ -149,6 +148,7 @@ export function registerFooter(pi: ExtensionAPI): void {
 
 	pi.on("session_start", (_event, sessionCtx) => {
 		ctx = sessionCtx;
+		resetInvokedSkills();
 
 		// Build skill name set for discover-based tracking
 		skillNameSet = new Set(
@@ -180,8 +180,9 @@ export function registerFooter(pi: ExtensionAPI): void {
 
 					// ── Line 2: skills ... context bar ──
 					let l2Left = "";
-					if (invokedSkills.length > 0) {
-						const skillList = invokedSkills.map((s) => fg("accent", s)).join(fg("dim", ", "));
+					const skills = getInvokedSkills();
+					if (skills.length > 0) {
+						const skillList = skills.map((s) => fg("accent", s)).join(fg("dim", ", "));
 						l2Left = `${fg("muted", "📖 ")}${skillList}`;
 					}
 
@@ -221,9 +222,8 @@ export function registerFooter(pi: ExtensionAPI): void {
 	pi.on("tool_call", async (event) => {
 		if (isToolCallEventType("discover", event)) {
 			const skillName = event.input.name as string | undefined;
-			if (skillName && skillNameSet.has(skillName) && !invokedSkills.includes(skillName)) {
-				invokedSkills.push(skillName);
-				requestRender?.();
+			if (skillName && skillNameSet.has(skillName)) {
+				if (trackSkillInvocation(skillName)) requestRender?.();
 			}
 		}
 	});

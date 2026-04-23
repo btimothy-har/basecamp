@@ -16,6 +16,7 @@
 		],
 		"skills": [
 			"./core/skills",
+			"./agents/skills",
 			"./observer/skills",
 			"./data/skills",
 			"./engineering/skills",
