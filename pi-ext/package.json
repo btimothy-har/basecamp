@@ -22,7 +22,8 @@
 			"./tasks/skills"
 		],
 		"prompts": [
-			"./core/prompts"
+			"./core/prompts",
+			"./engineering/prompts"
 		]
 	},
 	"scripts": {
