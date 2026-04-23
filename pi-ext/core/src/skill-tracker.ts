@@ -2,14 +2,28 @@
  * Shared skill invocation tracker.
  *
  * Records which skills the model has loaded via skill({ name }) during
- * the current session. Shared between footer.ts (display) and tool.ts
- * (dispatch guard).
+ * the current session. Backed by a process-scoped singleton so separate
+ * extension entrypoints still see one shared tracker.
  */
 
-const invokedSkills = new Set<string>();
+type SkillTrackerState = {
+	invokedSkills: Set<string>;
+};
+
+const trackerKey = Symbol.for("basecamp.skillTracker");
+
+type GlobalWithSkillTracker = typeof globalThis & {
+	[trackerKey]?: SkillTrackerState;
+};
+
+function getTrackerState(): SkillTrackerState {
+	const globalObject = globalThis as GlobalWithSkillTracker;
+	globalObject[trackerKey] ??= { invokedSkills: new Set<string>() };
+	return globalObject[trackerKey];
+}
 
 export function resetInvokedSkills(): void {
-	invokedSkills.clear();
+	getTrackerState().invokedSkills.clear();
 }
 
 /**
@@ -17,6 +31,7 @@ export function resetInvokedSkills(): void {
  * (caller may want to trigger a re-render or similar side-effect).
  */
 export function trackSkillInvocation(name: string): boolean {
+	const { invokedSkills } = getTrackerState();
 	const sizeBefore = invokedSkills.size;
 	invokedSkills.add(name);
 	return invokedSkills.size !== sizeBefore;
@@ -24,10 +39,10 @@ export function trackSkillInvocation(name: string): boolean {
 
 /** Returns true if the named skill has been invoked this session. */
 export function hasInvokedSkill(name: string): boolean {
-	return invokedSkills.has(name);
+	return getTrackerState().invokedSkills.has(name);
 }
 
 /** Returns invoked skills in invocation order for footer display. */
 export function getInvokedSkills(): readonly string[] {
-	return [...invokedSkills];
+	return [...getTrackerState().invokedSkills];
 }
