@@ -146,6 +146,19 @@ class Settings:
             else:
                 data.pop("models", None)
 
+    @property
+    def worktree_branch_prefix(self) -> str | None:
+        val = self._read().get("worktree_branch_prefix")
+        return val if isinstance(val, str) and val.strip() else None
+
+    @worktree_branch_prefix.setter
+    def worktree_branch_prefix(self, value: str | None) -> None:
+        with self._locked_update() as data:
+            if value is None:
+                data.pop("worktree_branch_prefix", None)
+            else:
+                data["worktree_branch_prefix"] = value
+
     # --- observer config (nested) ---
 
     @property
