@@ -9,12 +9,17 @@
  *   - List all of a type:    { type: "skills" }
  *   - Keyword search:        { type: "skills", query: "python data" }
  *   - Single item detail:    { name: "python-development" }
+ *
+ * Skill detail lookups include the full SKILL.md content inline so a
+ * separate `read` call is unnecessary.
  */
 
+import { readFileSync } from "node:fs";
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { Type } from "@sinclair/typebox";
 import { DEFAULT_AGENT_MAX_DEPTH } from "../../agents/src/types";
 import { discoverAgents } from "../../discovery";
+import { escapeXml } from "../../utils";
 
 // ============================================================================
 // Types
@@ -110,7 +115,7 @@ function formatList(items: DiscoverableItem[]): string {
 		.join("\n");
 }
 
-function formatDetail(item: DiscoverableItem): string {
+function formatDetail(item: DiscoverableItem, fileContent?: string): string {
 	const lines: string[] = [`**${item.name}** (${item.kind})`];
 
 	if (item.description) lines.push(`Description: ${item.description}`);
@@ -122,8 +127,8 @@ function formatDetail(item: DiscoverableItem): string {
 		}
 	}
 
-	if (item.kind === "skill" && item.path) {
-		lines.push("", "Read the skill file for full instructions.");
+	if (item.kind === "skill" && fileContent) {
+		lines.push("", `<skill name="${escapeXml(item.name)}">\n${fileContent}\n</skill>`);
 	}
 
 	return lines.join("\n");
@@ -164,7 +169,8 @@ export function registerDiscoverTool(pi: ExtensionAPI): void {
 		description:
 			"Look up available tools, skills, and agents. " +
 			'Use { type: "skills" } to list all skills, { type: "skills", query: "python" } to search, ' +
-			'or { name: "python-development" } to get details on a specific item.',
+			'or { name: "python-development" } to get details on a specific item. ' +
+			"Skill detail lookups include the full skill content inline.",
 
 		parameters: DiscoverParams,
 
@@ -188,7 +194,17 @@ export function registerDiscoverTool(pi: ExtensionAPI): void {
 					};
 				}
 
-				return { details: null, content: [{ type: "text", text: formatDetail(item) }] };
+				// For skills, read the file and include full content inline.
+				let fileContent: string | undefined;
+				if (item.kind === "skill" && item.path) {
+					try {
+						fileContent = readFileSync(item.path, "utf8");
+					} catch {
+						// Fall back gracefully — content will be omitted from output.
+					}
+				}
+
+				return { details: null, content: [{ type: "text", text: formatDetail(item, fileContent) }] };
 			}
 
 			// Mode 2 & 3: List or search by type

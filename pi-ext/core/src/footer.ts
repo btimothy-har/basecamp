@@ -6,8 +6,9 @@
  *   Line 2: invoked skills ... context bar
  *   Line 3: agent statuses (only when active)
  *
- * Skills are tracked by intercepting `read` tool calls for SKILL.md
- * files that match known skill locations from pi's skill registry.
+ * Skills are marked as loaded when the agent calls `discover({ name })`
+ * for a known skill. Tracked via `discover` tool_call events, not `read`
+ * path interception.
  */
 
 import { existsSync, type FSWatcher, readFileSync, statSync, watch } from "node:fs";
@@ -21,16 +22,8 @@ import { getState } from "./session";
 type ThemeFg = (color: Parameters<import("@mariozechner/pi-coding-agent").Theme["fg"]>[0], text: string) => string;
 
 const invokedSkills: string[] = [];
-let skillPathMap = new Map<string, string>();
+let skillNameSet = new Set<string>();
 let requestRender: (() => void) | null = null;
-
-function trackSkillRead(filePath: string): void {
-	const skillName = skillPathMap.get(filePath);
-	if (skillName && !invokedSkills.includes(skillName)) {
-		invokedSkills.push(skillName);
-		requestRender?.();
-	}
-}
 
 /**
  * Worktree branch watcher — pi's FooterDataProvider watches the main repo's
@@ -157,12 +150,13 @@ export function registerFooter(pi: ExtensionAPI): void {
 	pi.on("session_start", (_event, sessionCtx) => {
 		ctx = sessionCtx;
 
-		// Build skill path map
-		const skills = pi.getCommands().filter((c) => c.source === "skill");
-		skillPathMap = new Map();
-		for (const skill of skills) {
-			skillPathMap.set(skill.sourceInfo.path, skill.name.replace(/^skill:/, ""));
-		}
+		// Build skill name set for discover-based tracking
+		skillNameSet = new Set(
+			pi
+				.getCommands()
+				.filter((c) => c.source === "skill")
+				.map((c) => c.name.replace(/^skill:/, "")),
+		);
 
 		// Replace default footer
 		if (!sessionCtx.hasUI) return;
@@ -223,10 +217,14 @@ export function registerFooter(pi: ExtensionAPI): void {
 		});
 	});
 
-	// Track skill reads
+	// Track skill detail lookups via discover({ name }) calls.
 	pi.on("tool_call", async (event) => {
-		if (isToolCallEventType("read", event)) {
-			trackSkillRead(event.input.path);
+		if (isToolCallEventType("discover", event)) {
+			const skillName = event.input.name as string | undefined;
+			if (skillName && skillNameSet.has(skillName) && !invokedSkills.includes(skillName)) {
+				invokedSkills.push(skillName);
+				requestRender?.();
+			}
 		}
 	});
 }

@@ -164,19 +164,27 @@ export function buildCapabilitiesIndex(opts: {
 }): string {
 	const lines: string[] = [];
 
+	const summaryCounts = [
+		`${opts.toolNames.length} tools`,
+		`${opts.skillNames.length} skills`,
+		...(opts.includeAgents ? [`${opts.agentNames.length} agents`] : []),
+	];
+	lines.push(`Available in this session: ${summaryCounts.join(", ")}.`);
+	lines.push("");
+
 	if (opts.toolNames.length > 0) {
-		lines.push(`Tools: ${opts.toolNames.join(", ")}`);
+		lines.push(`Tools (${opts.toolNames.length}): ${opts.toolNames.join(", ")}`);
 	}
 	if (opts.skillNames.length > 0) {
-		lines.push(`Skills: ${opts.skillNames.join(", ")}`);
+		lines.push(`Skills (${opts.skillNames.length}): ${opts.skillNames.join(", ")}`);
 	}
 	if (opts.includeAgents && opts.agentNames.length > 0) {
-		lines.push(`Agents: ${opts.agentNames.join(", ")}`);
+		lines.push(`Agents (${opts.agentNames.length}): ${opts.agentNames.join(", ")}`);
 	}
 
 	lines.push(
 		"",
-		"Use the `discover` tool to learn about any tool, skill, or agent before using it.",
+		"Use the `discover` tool to search capabilities or get full details for any listed item.",
 		"",
 		"Modes:",
 		'- List a category with descriptions: `discover({ type: "skills" })`',
