@@ -28,8 +28,8 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import type { ExtensionAPI, ExtensionContext, Theme } from "@mariozechner/pi-coding-agent";
-import { visibleWidth, wrapTextWithAnsi } from "@mariozechner/pi-tui";
 import { Type } from "@sinclair/typebox";
+import { renderTaskWidgetLines } from "./render";
 
 // ============================================================================
 // Types
@@ -91,99 +91,6 @@ function requireTasks(state: TasksState, index: number): Task {
 		throw new Error(`Invalid task index ${index}. Valid range: 0–${state.tasks.length - 1}.`);
 	}
 	return state.tasks[index]!;
-}
-
-// ============================================================================
-// Widget Rendering
-// ============================================================================
-
-const WINDOW_SIZE = 3;
-
-function renderWidget(
-	state: TasksState,
-	fg: (color: Parameters<Theme["fg"]>[0], text: string) => string,
-	_bold: Theme["bold"],
-	width: number,
-): string[] {
-	const hasContent = state.goal || state.tasks.length > 0;
-	if (!hasContent) return [];
-
-	const inner: string[] = [];
-	const boxWidth = width;
-
-	if (state.goal) {
-		inner.push(`${fg("dim", "Goal")}  ${state.goal}`);
-	}
-
-	if (state.tasks.length > 0) {
-		const completedCount = state.tasks.filter((t) => t.status === "completed").length;
-		const deletedCount = state.tasks.filter((t) => t.status === "deleted").length;
-
-		// Find window start: first active task, or first pending if none active
-		const activeIdx = state.tasks.findIndex((t) => t.status === "active");
-		const firstPendingIdx = state.tasks.findIndex((t) => t.status === "pending");
-		const windowStart = activeIdx >= 0 ? activeIdx : firstPendingIdx >= 0 ? firstPendingIdx : state.tasks.length;
-
-		// Window: up to WINDOW_SIZE tasks from windowStart (skip completed)
-		const windowTasks: Task[] = [];
-		for (let i = windowStart; i < state.tasks.length && windowTasks.length < WINDOW_SIZE; i++) {
-			const task = state.tasks[i];
-			if (task && task.status !== "completed") {
-				windowTasks.push(task);
-			}
-		}
-
-		// Remaining pending tasks after the window
-		const pendingInWindow = windowTasks.filter((t) => t.status === "pending").length;
-		const totalPending = state.tasks.filter((t) => t.status === "pending").length;
-		const remainingCount = totalPending - pendingInWindow;
-
-		if (state.goal) {
-			inner.push("");
-		}
-
-		// Header: collapsed counts
-		const counts: string[] = [];
-		if (completedCount > 0) counts.push(`+${completedCount} completed`);
-		if (deletedCount > 0) counts.push(`+${deletedCount} deleted`);
-		if (counts.length > 0) {
-			inner.push(fg("muted", `(${counts.join(", ")})`));
-		}
-
-		// Window
-		for (const task of windowTasks) {
-			const notesMark = task.notes ? fg("dim", " 📝") : "";
-			if (task.status === "deleted") {
-				inner.push(`${fg("dim", "✕")} ${fg("dim", task.label)}`);
-			} else if (task.status === "active") {
-				inner.push(`${fg("accent", "→")} ${fg("accent", task.label)}${notesMark}`);
-				inner.push(`  ${fg("dim", task.description)}`);
-			} else {
-				inner.push(`${fg("muted", "☐")} ${task.label}${notesMark}`);
-			}
-		}
-
-		// Footer: remaining
-		if (remainingCount > 0) {
-			inner.push(fg("muted", `(+${remainingCount} to do)`));
-		}
-	}
-
-	// Box-draw border
-	const contentWidth = boxWidth - 4;
-	const top = fg("dim", `╭${"─".repeat(boxWidth - 2)}╮`);
-	const bottom = fg("dim", `╰${"─".repeat(boxWidth - 2)}╯`);
-	const lines: string[] = [top];
-	for (const line of inner) {
-		const wrapped = wrapTextWithAnsi(line, contentWidth);
-		for (const wl of wrapped) {
-			const vw = visibleWidth(wl);
-			const pad = Math.max(0, contentWidth - vw);
-			lines.push(`${fg("dim", "│")} ${wl}${" ".repeat(pad)} ${fg("dim", "│")}`);
-		}
-	}
-	lines.push(bottom);
-	return lines;
 }
 
 // ============================================================================
@@ -342,7 +249,6 @@ export function registerTasks(pi: ExtensionAPI): TasksAccess {
 			"basecamp-tasks",
 			(_tui, theme) => {
 				const fg = theme.fg.bind(theme);
-				const bold = theme.bold.bind(theme);
 				let cachedLines: string[] | null = null;
 				let cachedWidth = 0;
 
@@ -353,7 +259,7 @@ export function registerTasks(pi: ExtensionAPI): TasksAccess {
 					render(width: number): string[] {
 						if (cachedLines && cachedWidth === width) return cachedLines;
 						cachedWidth = width;
-						cachedLines = renderWidget(state, fg, bold, width);
+						cachedLines = renderTaskWidgetLines(state, { fg }, width);
 						return cachedLines;
 					},
 				};

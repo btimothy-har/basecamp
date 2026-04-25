@@ -17,6 +17,7 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { getPiCommand } from "../../config.ts";
+import type { TaskProgressSnapshot, TaskProgressStatus, TaskProgressTask } from "../../tasks/src/render";
 import { buildSkillInjection, resolveSkills } from "./skills.ts";
 import type { AgentConfig, ToolCallRecord, UsageStats } from "./types.ts";
 
@@ -26,6 +27,7 @@ import type { AgentConfig, ToolCallRecord, UsageStats } from "./types.ts";
 
 export type AgentStreamEvent =
 	| { kind: "tool_start"; toolCall: ToolCallRecord }
+	| { kind: "task_progress"; taskProgress: TaskProgressSnapshot }
 	| { kind: "message"; text: string; model?: string }
 	| { kind: "turn_end"; usage: Partial<UsageStats> };
 
@@ -44,6 +46,7 @@ export interface SpawnResult {
 	toolCalls: ToolCallRecord[];
 	usage: UsageStats;
 	durationMs: number;
+	taskProgress?: TaskProgressSnapshot;
 }
 
 // ============================================================================
@@ -148,12 +151,158 @@ function extractToolCallArgs(args: unknown): Record<string, unknown> {
 	return {};
 }
 
+const TASK_TOOL_NAMES = new Set([
+	"update_goal",
+	"create_tasks",
+	"start_task",
+	"complete_task",
+	"get_task",
+	"annotate_task",
+	"delete_task",
+]);
+
+function isTaskProgressStatus(value: unknown): value is TaskProgressStatus {
+	return value === "pending" || value === "active" || value === "completed" || value === "deleted";
+}
+
+function extractToolResultText(result: unknown): string {
+	if (!result || typeof result !== "object") return "";
+	const content = (result as { content?: unknown }).content;
+	return extractTextFromContent(content);
+}
+
+function parseToolResultJson(result: unknown): Record<string, unknown> | null {
+	const text = extractToolResultText(result);
+	if (!text.trim()) return null;
+	try {
+		const parsed = JSON.parse(text);
+		return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? (parsed as Record<string, unknown>) : null;
+	} catch {
+		return null;
+	}
+}
+
+function taskFromUnknown(value: unknown, index: number, previous?: TaskProgressTask): TaskProgressTask | null {
+	if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+	const raw = value as Record<string, unknown>;
+	const label = typeof raw.label === "string" ? raw.label : previous?.label;
+	const status = isTaskProgressStatus(raw.status) ? raw.status : previous?.status;
+	if (!label || !status) return null;
+	return { index, label, status, notes: typeof raw.notes === "string" ? raw.notes : (previous?.notes ?? null) };
+}
+
+function previousTaskByIndex(snapshot: TaskProgressSnapshot | undefined, index: number): TaskProgressTask | undefined {
+	return snapshot?.tasks.find((task, fallbackIndex) => (task.index ?? fallbackIndex) === index);
+}
+
+function tasksFromResultRecord(
+	tasks: unknown,
+	previous: TaskProgressSnapshot | undefined,
+): TaskProgressTask[] | undefined {
+	if (!tasks || typeof tasks !== "object" || Array.isArray(tasks)) return undefined;
+	const entries = Object.entries(tasks as Record<string, unknown>)
+		.map(([key, value]) => ({ index: Number(key), value }))
+		.filter((entry) => Number.isInteger(entry.index) && entry.index >= 0)
+		.sort((a, b) => a.index - b.index);
+	const parsed: TaskProgressTask[] = [];
+	for (const entry of entries) {
+		const task = taskFromUnknown(entry.value, entry.index, previousTaskByIndex(previous, entry.index));
+		if (task) parsed.push(task);
+	}
+	return parsed;
+}
+
+function tasksFromCreateArgs(
+	args: Record<string, unknown>,
+	previous: TaskProgressSnapshot | undefined,
+): TaskProgressTask[] {
+	const tasks = Array.isArray(args.tasks) ? args.tasks : [];
+	return tasks
+		.map((value, index) => {
+			const previousTask = previousTaskByIndex(previous, index);
+			if (!value || typeof value !== "object" || Array.isArray(value)) return previousTask;
+			const label = (value as Record<string, unknown>).label;
+			return typeof label === "string" ? { index, label, status: previousTask?.status ?? "pending" } : previousTask;
+		})
+		.filter((task): task is TaskProgressTask => Boolean(task));
+}
+
+function mergeTaskProgress(
+	previous: TaskProgressSnapshot | undefined,
+	toolName: string,
+	args: Record<string, unknown>,
+	result: unknown,
+): TaskProgressSnapshot | undefined {
+	if (!TASK_TOOL_NAMES.has(toolName)) return undefined;
+	const parsed = parseToolResultJson(result);
+	const next: TaskProgressSnapshot = {
+		goal: (typeof parsed?.goal === "string" ? parsed.goal : undefined) ?? previous?.goal ?? null,
+		tasks: previous?.tasks ? previous.tasks.map((task) => ({ ...task })) : [],
+	};
+	const resultTasks = tasksFromResultRecord(parsed?.tasks, previous);
+
+	if (toolName === "update_goal") {
+		next.goal =
+			(typeof parsed?.goal === "string" ? parsed.goal : undefined) ??
+			(typeof args.goal === "string" ? args.goal : null);
+		next.tasks = resultTasks ?? [];
+		return next;
+	}
+
+	if (toolName === "create_tasks") {
+		const argTasks = tasksFromCreateArgs(args, previous);
+		const statuses = new Map((resultTasks ?? []).map((task) => [task.index ?? 0, task.status]));
+		next.tasks =
+			argTasks.length > 0
+				? argTasks.map((task) => ({ ...task, status: statuses.get(task.index ?? 0) ?? task.status }))
+				: (resultTasks ?? []);
+		return next;
+	}
+
+	if (resultTasks) {
+		next.tasks = resultTasks;
+		return next;
+	}
+
+	const index =
+		typeof parsed?.index === "number" ? parsed.index : typeof args.task === "number" ? args.task : undefined;
+	if (index === undefined) return previous;
+	const label = typeof parsed?.label === "string" ? parsed.label : previousTaskByIndex(previous, index)?.label;
+	const status = isTaskProgressStatus(parsed?.status)
+		? parsed.status
+		: toolName === "complete_task"
+			? "completed"
+			: toolName === "delete_task"
+				? "deleted"
+				: toolName === "start_task"
+					? "active"
+					: undefined;
+	if (!label || !status) return previous;
+
+	if (toolName === "start_task") {
+		next.tasks = next.tasks.map((task) => (task.status === "active" ? { ...task, status: "pending" } : task));
+	}
+
+	const existing = next.tasks.findIndex((task, fallbackIndex) => (task.index ?? fallbackIndex) === index);
+	const task = {
+		index,
+		label,
+		status,
+		notes: typeof parsed?.notes === "string" ? parsed.notes : (previousTaskByIndex(previous, index)?.notes ?? null),
+	};
+	if (existing >= 0) next.tasks[existing] = task;
+	else next.tasks.push(task);
+	next.tasks.sort((a, b) => (a.index ?? 0) - (b.index ?? 0));
+	return next;
+}
+
 interface ParsedEvents {
 	output: string;
 	model?: string;
 	error?: string;
 	toolCalls: ToolCallRecord[];
 	usage: UsageStats;
+	taskProgress?: TaskProgressSnapshot;
 }
 
 /**
@@ -162,9 +311,11 @@ interface ParsedEvents {
  */
 function processEventLine(
 	line: string,
-	onEvent?: (event: AgentStreamEvent) => void,
+	onEvent: ((event: AgentStreamEvent) => void) | undefined,
+	currentTaskProgress: TaskProgressSnapshot | undefined,
 ): {
 	toolCall?: ToolCallRecord;
+	taskProgress?: TaskProgressSnapshot;
 	messageEnd?: { text: string; model?: string; error?: string; usage: Partial<UsageStats> };
 } | null {
 	if (!line.trim()) return null;
@@ -173,6 +324,8 @@ function processEventLine(
 			type?: string;
 			toolName?: string;
 			args?: unknown;
+			result?: unknown;
+			isError?: boolean;
 			message?: {
 				role?: string;
 				model?: string;
@@ -195,6 +348,17 @@ function processEventLine(
 			};
 			onEvent?.({ kind: "tool_start", toolCall });
 			return { toolCall };
+		}
+
+		if (evt.type === "tool_execution_end" && evt.toolName && !evt.isError) {
+			const taskProgress = mergeTaskProgress(
+				currentTaskProgress,
+				evt.toolName,
+				extractToolCallArgs(evt.args),
+				evt.result,
+			);
+			if (taskProgress) onEvent?.({ kind: "task_progress", taskProgress });
+			return taskProgress ? { taskProgress } : null;
 		}
 
 		if (evt.type === "message_end" && evt.message?.role === "assistant") {
@@ -238,6 +402,7 @@ function parseJsonEvents(lines: string[]): ParsedEvents {
 		cost: 0,
 		turns: 0,
 	};
+	let taskProgress: TaskProgressSnapshot | undefined;
 
 	for (const line of lines) {
 		if (!line.trim()) continue;
@@ -246,6 +411,8 @@ function parseJsonEvents(lines: string[]): ParsedEvents {
 				type?: string;
 				toolName?: string;
 				args?: unknown;
+				result?: unknown;
+				isError?: boolean;
 				message?: {
 					role?: string;
 					model?: string;
@@ -266,6 +433,11 @@ function parseJsonEvents(lines: string[]): ParsedEvents {
 					name: evt.toolName,
 					args: extractToolCallArgs(evt.args),
 				});
+			}
+
+			if (evt.type === "tool_execution_end" && evt.toolName && !evt.isError) {
+				taskProgress =
+					mergeTaskProgress(taskProgress, evt.toolName, extractToolCallArgs(evt.args), evt.result) ?? taskProgress;
 			}
 
 			if (evt.type === "message_end" && evt.message?.role === "assistant") {
@@ -289,7 +461,7 @@ function parseJsonEvents(lines: string[]): ParsedEvents {
 		}
 	}
 
-	return { output, model, error, toolCalls, usage };
+	return { output, model, error, toolCalls, usage, taskProgress };
 }
 
 // ============================================================================
@@ -326,6 +498,7 @@ export function spawnAgent(
 		const stdoutLines: string[] = [];
 		let stderrBuf = "";
 		let stdoutBuf = "";
+		let taskProgress: TaskProgressSnapshot | undefined;
 		let settled = false;
 
 		const finish = (exitCode: number) => {
@@ -352,6 +525,7 @@ export function spawnAgent(
 				toolCalls: parsed.toolCalls,
 				usage: parsed.usage,
 				durationMs,
+				taskProgress: parsed.taskProgress,
 			});
 		};
 
@@ -361,7 +535,8 @@ export function spawnAgent(
 			stdoutBuf = parts.pop() || "";
 			for (const part of parts) {
 				stdoutLines.push(part);
-				processEventLine(part, opts.onEvent);
+				const processed = processEventLine(part, opts.onEvent, taskProgress);
+				if (processed?.taskProgress) taskProgress = processed.taskProgress;
 			}
 		});
 

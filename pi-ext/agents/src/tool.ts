@@ -20,8 +20,9 @@ import * as path from "node:path";
 import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-agent";
 import { getMarkdownTheme } from "@mariozechner/pi-coding-agent";
 import { type Component, Container, Markdown, Spacer, Text } from "@mariozechner/pi-tui";
-import { getPiCommand, resolveModelAlias } from "../../config.ts";
+import { resolveModelAlias } from "../../config.ts";
 import { hasInvokedSkill } from "../../core/src/skill-tracker.ts";
+import { formatTaskProgressSummary, renderCompactTaskProgressLines } from "../../tasks/src/render";
 import type { AgentStreamEvent } from "./executor.ts";
 import { spawnAgent } from "./executor.ts";
 import type { AgentConfig, AgentDetails, AgentPartialDetails, ModelStrategy, ToolCallRecord } from "./types.ts";
@@ -226,8 +227,16 @@ function renderPartialView(
 
 	let text = `${fg("accent", "\u23f3")} ${fg("toolTitle", theme.bold(partial.agent))}${sourceLabel}${modelLabel}${stats}`;
 
+	if (partial.taskProgress) {
+		const taskLines = renderCompactTaskProgressLines(partial.taskProgress, { fg });
+		if (taskLines.length > 0) {
+			text += `\n\n${taskLines.map((line) => `  ${line}`).join("\n")}`;
+		}
+	}
+
 	// Last N tool calls (scrolling window)
 	if (partial.toolCalls.length > 0) {
+		if (partial.taskProgress) text += `\n${fg("muted", "  Tools")}`;
 		const toShow = partial.toolCalls.slice(-COLLAPSED_TOOL_COUNT);
 		const skipped = partial.toolCalls.length - toShow.length;
 		if (skipped > 0) text += `\n${fg("muted", `  ... ${skipped} earlier`)}`;
@@ -246,48 +255,6 @@ function renderPartialView(
 	}
 
 	return new Text(text, 0, 0);
-}
-
-// ============================================================================
-// Summary Generation
-// ============================================================================
-
-/**
- * Generate a concise summary of agent output using a fast model.
- * Falls back to undefined on any failure — caller uses raw output preview.
- */
-async function generateSummary(task: string, output: string, cwd: string): Promise<string | undefined> {
-	try {
-		const { execFile } = await import("node:child_process");
-		const { promisify } = await import("node:util");
-		const execFileAsync = promisify(execFile);
-
-		// Truncate output to avoid blowing up the context
-		const maxChars = 4000;
-		const truncated = output.length > maxChars ? `${output.slice(0, maxChars)}\n...` : output;
-
-		const prompt = [
-			"Summarize this agent's output in 2-3 sentences. Be specific about what was found/done. No preamble.",
-			"",
-			`Task: ${task}`,
-			"",
-			"Output:",
-			truncated,
-		].join("\n");
-
-		const summaryModel = resolveModelAlias("fast");
-		const [piCmd, ...piPrefix] = getPiCommand();
-		const { stdout } = await execFileAsync(piCmd, [...piPrefix, "-p", "--model", summaryModel, prompt], {
-			cwd,
-			timeout: 15_000,
-			env: { ...process.env },
-		});
-
-		const summary = stdout.trim();
-		return summary || undefined;
-	} catch {
-		return undefined;
-	}
 }
 
 // ============================================================================
@@ -376,6 +343,9 @@ Available agents are discovered from user (~/.pi/agents/) and builtin definition
 					case "tool_start":
 						partial.toolCalls.push(event.toolCall);
 						break;
+					case "task_progress":
+						partial.taskProgress = event.taskProgress;
+						break;
 					case "message":
 						if (event.text) partial.latestMessage = event.text;
 						if (event.model) partial.model = event.model;
@@ -407,6 +377,7 @@ Available agents are discovered from user (~/.pi/agents/) and builtin definition
 					fs.mkdirSync(retrySessionDir, { recursive: true });
 					partial.toolCalls = [];
 					partial.turnCount = 0;
+					partial.taskProgress = undefined;
 					partial.latestMessage = undefined;
 					result = await spawnAgent(
 						agentConfig,
@@ -421,12 +392,6 @@ Available agents are discovered from user (~/.pi/agents/) and builtin definition
 				// Clear footer status — result is now in the main panel
 				clearStatus(ctx, agentId);
 
-				// Generate summary for successful completions
-				let summary: string | undefined;
-				if (ok && result.output) {
-					summary = await generateSummary(params.task, result.output, ctx.cwd);
-				}
-
 				// Build structured details for renderResult
 				const details: AgentDetails = {
 					agent: agentLabel,
@@ -439,7 +404,7 @@ Available agents are discovered from user (~/.pi/agents/) and builtin definition
 					toolCalls: result.toolCalls,
 					usage: result.usage,
 					durationMs: result.durationMs,
-					summary,
+					taskProgress: result.taskProgress,
 				};
 
 				// Build text content for the LLM (it doesn't see renderResult)
@@ -528,6 +493,15 @@ Available agents are discovered from user (~/.pi/agents/) and builtin definition
 				container.addChild(new Text(fg("muted", "─── Task ───"), 0, 0));
 				container.addChild(new Text(fg("dim", details.task), 0, 0));
 
+				if (details.taskProgress) {
+					const taskLines = renderCompactTaskProgressLines(details.taskProgress, { fg });
+					if (taskLines.length > 0) {
+						container.addChild(new Spacer(1));
+						container.addChild(new Text(fg("muted", "─── Progress ───"), 0, 0));
+						container.addChild(new Text(taskLines.join("\n"), 0, 0));
+					}
+				}
+
 				// Tool calls
 				if (details.toolCalls.length > 0) {
 					container.addChild(new Spacer(1));
@@ -565,10 +539,12 @@ Available agents are discovered from user (~/.pi/agents/) and builtin definition
 				text += `\n${fg("error", `Error: ${details.error}`)}`;
 			}
 
-			// Summary or output preview
-			if (details.summary) {
-				text += `\n${fg("toolOutput", details.summary)}`;
-			} else if (details.output) {
+			const taskSummary = details.taskProgress ? formatTaskProgressSummary(details.taskProgress) : null;
+			if (taskSummary) {
+				text += `\n${fg("dim", `Tasks: ${taskSummary}`)}`;
+			}
+
+			if (details.output) {
 				const preview = details.output.split("\n").slice(0, 3).join("\n");
 				text += `\n${fg("toolOutput", preview)}`;
 				if (details.output.split("\n").length > 3) {

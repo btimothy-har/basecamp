@@ -3,6 +3,7 @@
  */
 
 import { type Static, Type } from "@sinclair/typebox";
+import type { TaskProgressSnapshot } from "../../tasks/src/render";
 
 // Re-export shared types so existing imports within agents/src still work.
 export type { AgentConfig, ModelStrategy } from "../../discovery.ts";
@@ -36,8 +37,7 @@ export interface AgentDetails {
 	toolCalls: ToolCallRecord[];
 	usage: UsageStats;
 	durationMs: number;
-	/** LLM-generated summary of the agent's output (set after completion). */
-	summary?: string;
+	taskProgress?: TaskProgressSnapshot;
 }
 
 /** Partial details emitted during agent execution via onUpdate. */
@@ -47,6 +47,7 @@ export interface AgentPartialDetails {
 	model?: string;
 	toolCalls: ToolCallRecord[];
 	turnCount: number;
+	taskProgress?: TaskProgressSnapshot;
 	/** Latest assistant message text (intermediate, not final). */
 	latestMessage?: string;
 }
