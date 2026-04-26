@@ -16,7 +16,7 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
-import { getLanguage, getLogseqGraph, getTimezone, type SessionState } from "../../config";
+import { getLanguage, getLogseqGraph, getTimezone, type SessionState } from "../../../config";
 import {
 	buildCapabilitiesIndex,
 	buildGitContext,
@@ -25,9 +25,9 @@ import {
 	type ContextFile,
 	discoverContextFiles,
 	type GitStatus,
-} from "../../context";
-import { discoverAgents } from "../../discovery";
-import { getEffectiveCwd, getGitStatus, getState } from "./session";
+} from "../../../context";
+import { discoverAgents } from "../../../discovery";
+import { getEffectiveCwd, getGitStatus, getState } from "../runtime/session";
 
 // ---------------------------------------------------------------------------
 // Paths

@@ -15,7 +15,7 @@
  */
 
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
-import { getPiCommand } from "../../config.ts";
+import { getPiCommand } from "../../../config.ts";
 
 const HANDOFF_INSTRUCTIONS = `\
 Summarize this conversation for handoff to a new session. The new session \

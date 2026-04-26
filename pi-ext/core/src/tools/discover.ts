@@ -14,8 +14,8 @@
  */
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { Type } from "@sinclair/typebox";
-import { DEFAULT_AGENT_MAX_DEPTH } from "../../agents/src/types";
-import { discoverAgents } from "../../discovery";
+import { DEFAULT_AGENT_MAX_DEPTH } from "../../../agents/src/types";
+import { discoverAgents } from "../../../discovery";
 
 // ============================================================================
 // Types

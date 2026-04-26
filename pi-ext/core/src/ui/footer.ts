@@ -15,8 +15,8 @@ import * as os from "node:os";
 import { dirname, join, resolve } from "node:path";
 import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-agent";
 import { truncateToWidth, visibleWidth } from "@mariozechner/pi-tui";
-import { getState } from "./session";
-import { getInvokedSkills } from "./skill-tracker.ts";
+import { getState } from "../runtime/session";
+import { getInvokedSkills } from "../tools/skill-tracker.ts";
 
 type ThemeFg = (color: Parameters<import("@mariozechner/pi-coding-agent").Theme["fg"]>[0], text: string) => string;
 let requestRender: (() => void) | null = null;

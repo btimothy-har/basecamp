@@ -7,7 +7,7 @@
  */
 
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
-import { exec } from "../../core/src/session";
+import { exec } from "../../core/src/runtime/session";
 import { setActivePR, unlocked } from "./guards";
 import { getScratchDir, loadTemplate, resolvePrNumber } from "./utils";
 

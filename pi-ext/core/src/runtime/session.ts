@@ -17,8 +17,8 @@ import * as fsSync from "node:fs";
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
-import { resolveSessionState, type SessionState } from "../../config";
-import type { GitStatus } from "../../context";
+import { resolveSessionState, type SessionState } from "../../../config";
+import type { GitStatus } from "../../../context";
 import { getOrCreateWorktree, registerWorktreeGuards } from "./worktree";
 
 // ---------------------------------------------------------------------------

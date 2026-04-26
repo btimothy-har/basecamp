@@ -10,7 +10,7 @@ import type { AgentMessage } from "@mariozechner/pi-agent-core";
 import type { AssistantMessage, TextContent, ToolCall, ToolResultMessage, UserMessage } from "@mariozechner/pi-ai";
 import type { ExtensionAPI, ExtensionContext, SessionEntry, Theme } from "@mariozechner/pi-coding-agent";
 import { visibleWidth } from "@mariozechner/pi-tui";
-import { getPiCommand, resolveModelAlias } from "../../config.ts";
+import { getPiCommand, resolveModelAlias } from "../../../config.ts";
 
 // ============================================================================
 // Background Title Extraction

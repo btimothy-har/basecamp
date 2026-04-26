@@ -8,7 +8,7 @@
 import * as os from "node:os";
 import type { ExtensionAPI, Theme } from "@mariozechner/pi-coding-agent";
 import { truncateToWidth } from "@mariozechner/pi-tui";
-import { getState } from "./session";
+import { getState } from "../runtime/session";
 
 type ThemeFg = (color: Parameters<Theme["fg"]>[0], text: string) => string;
 

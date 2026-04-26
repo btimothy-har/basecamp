@@ -4,7 +4,7 @@
 
 import * as path from "node:path";
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
-import { exec } from "../../core/src/session";
+import { exec } from "../../core/src/runtime/session";
 import { loadTemplate as _loadTemplate } from "../../templates";
 
 const RESOURCES = path.resolve(__dirname, "..", "resources");

@@ -18,8 +18,8 @@ import * as os from "node:os";
 import * as path from "node:path";
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { createLocalBashOperations, isToolCallEventType } from "@mariozechner/pi-coding-agent";
-import type { SessionState } from "../../config";
-import { getWorktreeBranchPrefix } from "../../config";
+import type { SessionState } from "../../../config";
+import { getWorktreeBranchPrefix } from "../../../config";
 
 // ---------------------------------------------------------------------------
 // Constants

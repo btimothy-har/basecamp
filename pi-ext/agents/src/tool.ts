@@ -21,7 +21,7 @@ import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-age
 import { getMarkdownTheme } from "@mariozechner/pi-coding-agent";
 import { type Component, Container, Markdown, Spacer, Text } from "@mariozechner/pi-tui";
 import { resolveModelAlias } from "../../config.ts";
-import { hasInvokedSkill } from "../../core/src/skill-tracker.ts";
+import { hasInvokedSkill } from "../../core/src/tools/skill-tracker.ts";
 import { formatTaskProgressSummary, renderCompactTaskProgressLines } from "../../tasks/src/render";
 import type { AgentStreamEvent } from "./executor.ts";
 import { spawnAgent } from "./executor.ts";
