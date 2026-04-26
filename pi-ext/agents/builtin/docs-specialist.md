@@ -17,6 +17,7 @@ Evaluate:
 - **Completeness** — Are critical assumptions, edge cases, and preconditions documented?
 - **Clarity** — Is the language unambiguous and actionable?
 - **Long-term value** — Does the documentation provide lasting utility beyond the immediate context?
+- **Comment/docstring value** — Does it capture context the code cannot express, especially why, constraints, or non-obvious business rules?
 
 ## Process
 
@@ -48,8 +49,11 @@ Based on the description of the task provided, always:
 - Comments explain WHY not WHAT (unless WHAT is non-obvious)
 
 **Long-term Value**
-- Flag comments that merely restate obvious code
-- Flag transient/immediate-only explanations
+- Keep comments and docstrings that explain context code cannot express: why, constraints, tradeoffs, or non-obvious business rules
+- Flag obvious what-comments, section-divider comments, and narrative progress comments
+- Flag redundant docstrings that repeat names, signatures, or straightforward implementation mechanics
+- Flag speculative, filler, or "future-proofing" comments without concrete value
+- Flag TODOs or FIXMEs when the issue is already resolved
 - Avoid documentation burden without lasting utility
 
 ## Output
@@ -68,7 +72,7 @@ Could be made clearer or more complete:
 - file:line — what's lacking → suggestion
 
 ### Recommended Removals (reduce burden)
-Add no value or create confusion:
+Add no value, create confusion, or are low-value documentation agentisms:
 - file:line — rationale
 
 ### Summary
