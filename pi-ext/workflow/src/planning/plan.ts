@@ -12,9 +12,9 @@
 
 import type { ExtensionAPI, Theme } from "@mariozechner/pi-coding-agent";
 import { Type } from "@sinclair/typebox";
+import type { GoalCycle, ReviewState, TaskStatus, TasksAccess } from "../tasks/tasks";
 import type { PlanDraft, SectionName } from "./review";
 import { SECTION_NAMES, showPlanReadOnly, showReviewOverlay } from "./review";
-import type { GoalCycle, ReviewState, TaskStatus, TasksAccess } from "./tasks";
 
 // ============================================================================
 // Draft diffing — preserve approvals on unchanged content

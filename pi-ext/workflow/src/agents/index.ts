@@ -1,5 +1,5 @@
 /**
- * Agents extension — agent tool, agent discovery, slash commands.
+ * Agent workflow registration — agent tool, discovery, slash commands.
  */
 
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
@@ -9,7 +9,7 @@ import { discoverAgents } from "./discovery";
 import { registerAgentTool } from "./tool";
 import { type AgentConfig, DEFAULT_AGENT_MAX_DEPTH } from "./types";
 
-export default function (pi: ExtensionAPI) {
+export function registerAgents(pi: ExtensionAPI) {
 	let agents: AgentConfig[] = [];
 	let sessionName = "";
 

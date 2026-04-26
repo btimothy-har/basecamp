@@ -9,18 +9,16 @@
 	"pi": {
 		"extensions": [
 			"./core/src",
-			"./tasks/src",
+			"./workflow/src",
 			"./observer/src",
-			"./agents/src",
 			"./git/src"
 		],
 		"skills": [
 			"./core/skills",
-			"./agents/skills",
+			"./workflow/skills",
 			"./observer/skills",
 			"./data/skills",
-			"./engineering/skills",
-			"./tasks/skills"
+			"./engineering/skills"
 		],
 		"prompts": [
 			"./core/prompts",

@@ -2,8 +2,8 @@
  * Shared context builders — reusable prompt fragments.
  *
  * Pure functions that format state into text blocks for prompt injection.
- * Used by both the parent session prompt (core/src/prompt/prompt.ts) and
- * the worker prompt builder (agents/src/spawner.ts).
+ * Used by the parent session prompt (core/src/prompt/prompt.ts) and other
+ * runtime components that need consistent prompt context.
  *
  * Each function returns null when the context is not applicable,
  * so callers can filter with a simple truthiness check.

@@ -1,12 +1,12 @@
 /**
  * Agent discovery — three-tier scan with frontmatter parsing.
  *
- * Shared module: used by both agents/src (tool registration) and
+ * Shared module: used by both workflow/src/agents (tool registration) and
  * core/src (prompt assembly for agent listing in system prompt).
  *
  * Priority (highest wins on name collision):
  *   1. User:    ~/.pi/agents/
- *   2. Builtin: pi-ext/agents/builtin/ (shipped with basecamp)
+ *   2. Builtin: pi-ext/workflow/agents/builtin/ (shipped with basecamp)
  */
 
 import * as fs from "node:fs";
@@ -45,7 +45,7 @@ export interface AgentConfig {
 // ============================================================================
 
 const USER_AGENTS_DIR = path.join(os.homedir(), ".pi", "agents");
-const BUILTIN_AGENTS_DIR = path.join(path.dirname(fileURLToPath(import.meta.url)), "agents", "builtin");
+const BUILTIN_AGENTS_DIR = path.join(path.dirname(fileURLToPath(import.meta.url)), "workflow", "agents", "builtin");
 
 // ============================================================================
 // Frontmatter Parser

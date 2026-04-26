@@ -14,7 +14,7 @@
 import type { ExtensionContext, Theme } from "@mariozechner/pi-coding-agent";
 import { DynamicBorder, getSelectListTheme } from "@mariozechner/pi-coding-agent";
 import { Container, Editor, type EditorTheme, matchesKey, Spacer, Text } from "@mariozechner/pi-tui";
-import type { GoalCycle, ReviewState, Task } from "./tasks";
+import type { GoalCycle, ReviewState, Task } from "../tasks/tasks";
 
 // ============================================================================
 // Types
