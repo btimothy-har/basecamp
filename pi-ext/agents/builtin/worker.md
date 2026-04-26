@@ -1,7 +1,7 @@
 ---
 name: worker
 description: Execute implementation tasks — code changes, refactors, feature work
-model: balanced
+model: inherit
 tools: read, write, edit, bash, grep, find, ls
 ---
 
