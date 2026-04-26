@@ -14,78 +14,19 @@
  */
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { Type } from "@sinclair/typebox";
-import { discoverAgents } from "../../../discovery";
-
-const DEFAULT_AGENT_MAX_DEPTH = 2;
-
-// ============================================================================
-// Types
-// ============================================================================
-
-interface DiscoverableItem {
-	name: string;
-	kind: "tool" | "skill" | "agent";
-	description: string;
-	/** File path — skills and agents only. */
-	path?: string;
-	/** Extra metadata for detail view. */
-	meta?: Record<string, string>;
-}
-
-// ============================================================================
-// Data Collection
-// ============================================================================
-
-function collectTools(pi: ExtensionAPI): DiscoverableItem[] {
-	const activeNames = new Set(pi.getActiveTools());
-	return pi
-		.getAllTools()
-		.filter((t) => activeNames.has(t.name))
-		.map((t) => ({
-			name: t.name,
-			kind: "tool" as const,
-			description: t.description,
-		}));
-}
-
-function collectSkills(pi: ExtensionAPI): DiscoverableItem[] {
-	return pi
-		.getCommands()
-		.filter((c) => c.source === "skill")
-		.map((c) => ({
-			name: c.name.replace(/^skill:/, ""),
-			kind: "skill" as const,
-			description: c.description ?? "",
-			path: c.sourceInfo.path,
-		}));
-}
-
-function collectAgents(cwd: string): DiscoverableItem[] {
-	// At max depth, agent tool isn't registered — don't show agents
-	const depth = Number(process.env.BASECAMP_AGENT_DEPTH ?? "0");
-	const maxDepth = Number(process.env.BASECAMP_AGENT_MAX_DEPTH ?? DEFAULT_AGENT_MAX_DEPTH);
-	if (depth >= maxDepth) return [];
-
-	return discoverAgents(cwd).map((a) => ({
-		name: a.name,
-		kind: "agent" as const,
-		description: a.description,
-		path: a.filePath,
-		meta: {
-			source: a.source,
-			model: a.model,
-			...(a.tools ? { tools: a.tools.join(", ") } : {}),
-			...(a.skills ? { skills: a.skills.join(", ") } : {}),
-		},
-	}));
-}
+import {
+	type CatalogItem,
+	type CatalogType,
+	listCatalogItems,
+	listCatalogItemsByType,
+} from "../../../platform/catalog";
 
 // ============================================================================
 // Search
 // ============================================================================
 
 /** Case-insensitive OR match: any keyword substring-matches name or description. */
-function matchesQuery(item: DiscoverableItem, query: string): boolean {
+function matchesQuery(item: CatalogItem, query: string): boolean {
 	const keywords = query
 		.toLowerCase()
 		.split(/\s+/)
@@ -100,20 +41,33 @@ function matchesQuery(item: DiscoverableItem, query: string): boolean {
 // Formatting
 // ============================================================================
 
-function formatList(items: DiscoverableItem[]): string {
+function formatKind(type: CatalogType): string {
+	switch (type) {
+		case "tools":
+			return "tool";
+		case "skills":
+			return "skill";
+		case "agents":
+			return "agent";
+		default:
+			return type;
+	}
+}
+
+function formatList(items: CatalogItem[]): string {
 	if (items.length === 0) return "No results found.";
 
 	return items
 		.map((item) => {
-			let line = `**${item.name}** (${item.kind})`;
+			let line = `**${item.name}** (${formatKind(item.type)})`;
 			if (item.description) line += ` — ${item.description}`;
 			return line;
 		})
 		.join("\n");
 }
 
-function formatDetail(item: DiscoverableItem): string {
-	const lines: string[] = [`**${item.name}** (${item.kind})`];
+function formatDetail(item: CatalogItem): string {
+	const lines: string[] = [`**${item.name}** (${formatKind(item.type)})`];
 
 	if (item.description) lines.push(`Description: ${item.description}`);
 	if (item.path) lines.push(`Path: ${item.path}`);
@@ -124,7 +78,7 @@ function formatDetail(item: DiscoverableItem): string {
 		}
 	}
 
-	if (item.kind === "skill") {
+	if (item.type === "skills") {
 		lines.push("", `To load instructions, call: skill({ name: "${item.name}" })`);
 	}
 
@@ -173,15 +127,17 @@ export function registerDiscoverTool(pi: ExtensionAPI): void {
 
 		async execute(_id, params, _signal, _onUpdate, ctx) {
 			const { type, query, name } = params;
+			const catalogContext = { cwd: ctx.cwd };
 
 			// Mode 1: Detail lookup by name
 			if (name) {
-				const all = [...collectTools(pi), ...collectSkills(pi), ...collectAgents(ctx.cwd)];
+				const all = listCatalogItems(catalogContext);
 				const item = all.find((i) => i.name === name);
 
 				if (!item) {
+					const lowerName = name.toLowerCase();
 					const suggestions = all
-						.filter((i) => i.name.includes(name.toLowerCase()))
+						.filter((i) => i.name.toLowerCase().includes(lowerName))
 						.map((i) => i.name)
 						.slice(0, 5);
 					const hint = suggestions.length > 0 ? ` Did you mean: ${suggestions.join(", ")}?` : "";
@@ -208,18 +164,7 @@ export function registerDiscoverTool(pi: ExtensionAPI): void {
 				};
 			}
 
-			let items: DiscoverableItem[];
-			switch (type) {
-				case "tools":
-					items = collectTools(pi);
-					break;
-				case "skills":
-					items = collectSkills(pi);
-					break;
-				case "agents":
-					items = collectAgents(ctx.cwd);
-					break;
-			}
+			let items = listCatalogItemsByType(type, catalogContext);
 
 			if (query) {
 				items = items.filter((i) => matchesQuery(i, query));

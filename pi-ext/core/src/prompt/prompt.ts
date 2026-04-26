@@ -16,7 +16,8 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
-import { getLanguage, getLogseqGraph, getTimezone, type SessionState } from "../../../config";
+import { listCatalogItemsByType } from "../../../platform/catalog";
+import { getLanguage, getLogseqGraph, getTimezone, type SessionState } from "../../../platform/config";
 import {
 	buildCapabilitiesIndex,
 	buildGitContext,
@@ -25,8 +26,7 @@ import {
 	type ContextFile,
 	discoverContextFiles,
 	type GitStatus,
-} from "../../../context";
-import { discoverAgents } from "../../../discovery";
+} from "../../../platform/context";
 import { getEffectiveCwd, getGitStatus, getState } from "../runtime/session";
 
 // ---------------------------------------------------------------------------
@@ -268,24 +268,13 @@ export function registerPrompt(pi: ExtensionAPI): void {
 
 		const state = getState();
 
-		// Collect active tool names
-		const activeNames = new Set(pi.getActiveTools());
-		const toolNames = pi
-			.getAllTools()
-			.filter((t) => activeNames.has(t.name))
-			.map((t) => t.name);
-
-		// Collect skill names
-		const skillNames = pi
-			.getCommands()
-			.filter((c) => c.source === "skill")
-			.map((c) => c.name.replace(/^skill:/, ""));
+		const catalogContext = { cwd: ctx.cwd };
+		const toolNames = listCatalogItemsByType("tools", catalogContext).map((item) => item.name);
+		const skillNames = listCatalogItemsByType("skills", catalogContext).map((item) => item.name);
+		const agentNames = listCatalogItemsByType("agents", catalogContext).map((item) => item.name);
 
 		// Discover CLAUDE.md / AGENTS.md from cwd
 		const contextFiles = discoverContextFiles(ctx.cwd);
-
-		// Discover available agent names
-		const agentNames = discoverAgents(ctx.cwd).map((a) => a.name);
 
 		// Agent prompt: replaces working style for subagents
 		const agentPromptFile = pi.getFlag("agent-prompt") as string | undefined;

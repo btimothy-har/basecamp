@@ -14,7 +14,7 @@
 import * as path from "node:path";
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { isEditToolResult, isReadToolResult, isWriteToolResult } from "@mariozechner/pi-coding-agent";
-import { type ContextFile, loadContextFileFromDir } from "../../../context";
+import { type ContextFile, loadContextFileFromDir } from "../../../platform/context";
 import { getEffectiveCwd } from "../runtime/session";
 
 // ---------------------------------------------------------------------------

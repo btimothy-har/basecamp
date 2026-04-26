@@ -5,8 +5,8 @@
 import { type Static, Type } from "@sinclair/typebox";
 import type { TaskProgressSnapshot } from "../tasks/render";
 
-// Re-export shared types so existing imports within workflow/src/agents still work.
-export type { AgentConfig, ModelStrategy } from "../../../discovery.ts";
+// Re-export agent discovery types so runtime modules have one import surface.
+export type { AgentConfig, ModelStrategy } from "./discovery.ts";
 
 // ============================================================================
 // Tool Result Details (for renderResult)

@@ -8,6 +8,7 @@ import { registerOpenCommand } from "./commands/open";
 import { registerContextInjection } from "./prompt/context-injection";
 import { registerPrompt } from "./prompt/prompt";
 import { getState, registerSession } from "./runtime/session";
+import { registerCoreCatalogProviders } from "./tools/catalog-providers";
 import { registerDiscoverTool } from "./tools/discover";
 import { registerEscalate } from "./tools/escalate/index.js";
 import { registerSkillTool } from "./tools/skill";
@@ -21,6 +22,7 @@ export default function (pi: ExtensionAPI) {
 
 	registerSession(pi);
 	registerSkillLifecycle(pi);
+	registerCoreCatalogProviders(pi);
 	registerPrompt(pi);
 	registerContextInjection(pi);
 	registerHeader(pi);

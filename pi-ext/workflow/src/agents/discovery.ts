@@ -1,9 +1,150 @@
 /**
- * Re-export agent discovery from the shared module.
+ * Agent discovery — builtin definitions plus user overrides.
  *
- * Discovery lives in pi-ext/discovery.ts so both workflow/src/agents (tool
- * registration) and core/src (prompt assembly) can import it without
- * cross-module imports.
+ * Owned by workflow because agents are workflow-domain capabilities. Core only
+ * sees generic catalog metadata exposed by the workflow agent catalog provider.
+ *
+ * Priority (highest wins on name collision):
+ *   1. User:    ~/.pi/agents/
+ *   2. Builtin: pi-ext/workflow/agents/builtin/ (shipped with basecamp)
  */
 
-export { discoverAgents } from "../../../discovery.ts";
+import * as fs from "node:fs";
+import * as os from "node:os";
+import * as path from "node:path";
+import { fileURLToPath } from "node:url";
+
+// ============================================================================
+// Types
+// ============================================================================
+
+/**
+ * Model resolution strategy for an agent.
+ *
+ * - "inherit"  — use the spawning parent's current model
+ * - "default"  — use pi's default model (no --model flag)
+ * - string     — model alias (e.g. "fast") or explicit model ID; aliases
+ *                are resolved from ~/.pi/basecamp/config.json `models` map
+ */
+export type ModelStrategy = "inherit" | "default" | (string & {});
+
+export interface AgentConfig {
+	name: string;
+	description: string;
+	model: ModelStrategy;
+	thinking?: string;
+	tools?: string[];
+	skills?: string[];
+	systemPrompt: string;
+	source: "builtin" | "user";
+	filePath: string;
+}
+
+// ============================================================================
+// Constants
+// ============================================================================
+
+const USER_AGENTS_DIR = path.join(os.homedir(), ".pi", "agents");
+const BUILTIN_AGENTS_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..", "agents", "builtin");
+
+// ============================================================================
+// Frontmatter Parser
+// ============================================================================
+
+interface ParsedFile {
+	frontmatter: Record<string, string>;
+	body: string;
+}
+
+function parseFrontmatter(content: string): ParsedFile {
+	const match = content.match(/^---\r?\n([\s\S]*?)\r?\n---\r?\n([\s\S]*)$/);
+	if (!match) return { frontmatter: {}, body: content.trim() };
+
+	const fm: Record<string, string> = {};
+	for (const line of match[1]!.split("\n")) {
+		const colon = line.indexOf(":");
+		if (colon === -1) continue;
+		const key = line.slice(0, colon).trim();
+		const value = line.slice(colon + 1).trim();
+		if (key) fm[key] = value;
+	}
+	return { frontmatter: fm, body: match[2]!.trim() };
+}
+
+function parseCsv(value: string | undefined): string[] | undefined {
+	if (!value) return undefined;
+	const items = value
+		.split(",")
+		.map((s) => s.trim())
+		.filter(Boolean);
+	return items.length > 0 ? items : undefined;
+}
+
+// ============================================================================
+// Directory Scanner
+// ============================================================================
+
+function loadAgentsFromDir(dir: string, source: AgentConfig["source"]): AgentConfig[] {
+	if (!fs.existsSync(dir)) return [];
+
+	let entries: fs.Dirent[];
+	try {
+		entries = fs.readdirSync(dir, { withFileTypes: true });
+	} catch {
+		return [];
+	}
+
+	const agents: AgentConfig[] = [];
+	for (const entry of entries) {
+		if (!entry.name.endsWith(".md")) continue;
+		if (!entry.isFile() && !entry.isSymbolicLink()) continue;
+
+		const filePath = path.join(dir, entry.name);
+		let content: string;
+		try {
+			content = fs.readFileSync(filePath, "utf-8");
+		} catch {
+			continue;
+		}
+
+		const { frontmatter: fm, body } = parseFrontmatter(content);
+		if (!fm.name || !fm.description) continue;
+
+		// Model strategy: "inherit", "default", or an explicit model string.
+		// Missing model defaults to "default" (pi's default model).
+		const model: ModelStrategy = (fm.model as ModelStrategy) || "default";
+
+		agents.push({
+			name: fm.name,
+			description: fm.description,
+			model,
+			thinking: fm.thinking || undefined,
+			tools: parseCsv(fm.tools),
+			skills: parseCsv(fm.skills),
+			systemPrompt: body,
+			source,
+			filePath,
+		});
+	}
+
+	return agents;
+}
+
+// ============================================================================
+// Public API
+// ============================================================================
+
+/**
+ * Discover all agent definitions, merging by priority.
+ * User agents override builtins by name.
+ */
+export function discoverAgents(_cwd?: string): AgentConfig[] {
+	const builtin = loadAgentsFromDir(BUILTIN_AGENTS_DIR, "builtin");
+	const user = loadAgentsFromDir(USER_AGENTS_DIR, "user");
+
+	// Name-keyed merge: last write wins (user > builtin)
+	const map = new Map<string, AgentConfig>();
+	for (const agent of builtin) map.set(agent.name, agent);
+	for (const agent of user) map.set(agent.name, agent);
+	return Array.from(map.values());
+}

@@ -16,7 +16,7 @@ import { spawn } from "node:child_process";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import { getPiCommand } from "../../../config.ts";
+import { getPiCommand } from "../../../platform/config.ts";
 import type { TaskProgressSnapshot, TaskProgressStatus, TaskProgressTask } from "../tasks/render";
 import { buildSkillInjection, resolveSkills } from "./skills.ts";
 import type { AgentConfig, ToolCallRecord, UsageStats } from "./types.ts";

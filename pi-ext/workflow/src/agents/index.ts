@@ -4,6 +4,7 @@
 
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 
+import { registerAgentCatalogProvider } from "./catalog";
 import { registerAgentCommands } from "./commands";
 import { discoverAgents } from "./discovery";
 import { registerAgentTool } from "./tool";
@@ -20,6 +21,7 @@ export function registerAgents(pi: ExtensionAPI) {
 	// --- Agent discovery, session naming, status line ---
 	pi.on("session_start", async (_event, ctx) => {
 		agents = discoverAgents(ctx.cwd);
+		registerAgentCatalogProvider(agents);
 
 		sessionName = pi.getSessionName()?.trim() || "";
 		if (!sessionName) {
