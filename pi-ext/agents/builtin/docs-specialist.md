@@ -18,12 +18,13 @@ Evaluate:
 - **Clarity** — Is the language unambiguous and actionable?
 - **Long-term value** — Does the documentation provide lasting utility beyond the immediate context?
 - **Comment/docstring value** — Does it capture context the code cannot express, especially why, constraints, or non-obvious business rules?
+- **Documentation placement/layering** — Is each fact documented in the right layer, with one canonical owner and duplication avoided?
 
 ## Process
 
 Based on the description of the task provided, always:
 
-1. **Read all relevant files** — Examine comments, docstrings, README sections, and inline documentation
+1. **Read all relevant files** — Examine comments, docstrings, README sections, metadata/schema docs (for example dbt `.yml`), and inline documentation
 2. **Review systematically** — Go through files in a logical order, evaluating documentation quality
 3. **Report findings only** — Do not write documentation or modify files — provide your findings
 
@@ -48,6 +49,13 @@ Based on the description of the task provided, always:
 - No TODOs or FIXMEs that have been addressed
 - Comments explain WHY not WHAT (unless WHAT is non-obvious)
 
+**Documentation Placement & Duplication**
+- Prefer one canonical place for each fact; other locations should link or reference only when useful
+- README/top-level docs should cover project purpose, setup, architecture, and operational or user-facing workflows
+- Metadata/schema docs (for example, dbt `.yml`) should own discoverable model, source, column, entity, and contract descriptions
+- Inline code comments, docstrings, and SQL comments should stay near local non-obvious constraints, business rules, workarounds, tradeoffs, and code-specific rationale
+- Flag model/entity descriptions that should move to metadata/schema docs when that is the discoverable source, and flag duplicated docs that restate the same fact across README, metadata/schema docs, and inline comments
+
 **Long-term Value**
 - Keep comments and docstrings that explain context code cannot express: why, constraints, tradeoffs, or non-obvious business rules
 - Flag obvious what-comments, section-divider comments, and narrative progress comments
@@ -68,11 +76,11 @@ Factually incorrect or strongly misleading:
 - file:line — problem → fix
 
 ### Improvement Opportunities (enhance)
-Could be made clearer or more complete:
-- file:line — what's lacking → suggestion
+Could be made clearer, more complete, or better placed/layered:
+- file:line — what's lacking or misplaced → suggestion
 
 ### Recommended Removals (reduce burden)
-Add no value, create confusion, or are low-value documentation agentisms:
+Add no value, duplicate another source, create confusion, or are low-value documentation agentisms:
 - file:line — rationale
 
 ### Summary

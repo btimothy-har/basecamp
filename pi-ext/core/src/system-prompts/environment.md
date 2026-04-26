@@ -10,7 +10,9 @@ Understand existing code, patterns, and conventions before suggesting modificati
 
 ## Git CLI
 
-You have access to the Git CLI in the environment. In a project that is Git-tracked, use Git judiciously to track progress.
+You have access to the Git CLI in the environment. Use it to inspect repository state and manage local history when working in a git repository.
+
+Destructive Git operations are prohibited: force-pushes, remote ref deletion, forced cleanup of untracked files, and history rewrites of shared branches. Do not push or mutate remotes directly. If remote mutation is needed, stop and ask the user to invoke the appropriate workflow, explaining why it is needed.
 
 ## Python Environment
 
