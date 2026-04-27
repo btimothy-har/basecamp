@@ -17,12 +17,12 @@ Build a scope summary:
 
 ## Step 2: Dispatch Reviewers
 
-Use the worker tool to dispatch all 4 agents. Include the scope summary and relevant file paths in each task.
+Use the `agent` tool to dispatch all 4 agents in the same assistant turn. Include the scope summary and relevant file paths in each task.
 
-1. `{ agent: "security-reviewer", task: "Review these changes for security vulnerabilities: {scope}" }`
-2. `{ agent: "test-reviewer", task: "Review test coverage and quality for these changes: {scope}" }`
-3. `{ agent: "docs-reviewer", task: "Review documentation accuracy and completeness for these changes: {scope}" }`
-4. `{ agent: "simplification-reviewer", task: "Review these changes for simplification opportunities: {scope}" }`
+1. `{ agent: "security-specialist", task: "Review these changes for security vulnerabilities: {scope}" }`
+2. `{ agent: "testing-specialist", task: "Review test coverage and quality for these changes: {scope}" }`
+3. `{ agent: "docs-specialist", task: "Review documentation accuracy and completeness for these changes: {scope}" }`
+4. `{ agent: "code-clarity-specialist", task: "Review these changes for simplification opportunities: {scope}" }`
 
 ## Step 3: Synthesize
 

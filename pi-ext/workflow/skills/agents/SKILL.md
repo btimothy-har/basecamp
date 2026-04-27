@@ -40,6 +40,10 @@ Ad-hoc dispatch:
 agent({ task: "Fix the null check in auth.ts:142", name: "fix-null" })
 ```
 
+### Parallel dispatch
+
+Multiple `agent` tool calls in the same assistant turn run concurrently. Use this for independent code searches, reviews, or option exploration. Do not use parallel dispatch when tasks depend on each other or for unsafe same-cwd mutations. Each tool call is still synchronous and returns a result; this is not background async execution.
+
 ### 4. Integrate the result
 
 Review the subagent output critically. Use it to inform your response, next steps, or integration work, but do not treat delegated output as authority.

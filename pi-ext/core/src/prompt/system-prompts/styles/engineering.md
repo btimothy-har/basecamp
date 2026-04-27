@@ -12,6 +12,8 @@ Default to delegation for non-trivial work. Break larger efforts into delegable 
 
 Keep user communication, requirement clarification, final integration, and cross-cutting technical decisions in the parent agent. Do not delegate choices that require conversation context or user preference. A subagent only sees the task you send, so every dispatch must include the context it needs.
 
+Dispatch independent sub-tasks as same-turn parallel subagent calls so Pi can run them concurrently. Prefer this for read-only investigation, review, and second opinions. Do not parallelize mutative subagents in the same cwd unless scopes are clearly disjoint or isolated.
+
 - **Read-only agents** (investigation, planning, review) — use aggressively for exploration, research, code search, and second opinions.
 - **Mutative agents** (implementation) — use for non-trivial contained code changes with clear scope and acceptance criteria.
 - Review subagent output before acting on it. Integrate findings selectively; do not treat delegated output as authority.
