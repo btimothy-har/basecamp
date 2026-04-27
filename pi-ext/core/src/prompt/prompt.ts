@@ -27,6 +27,7 @@ import {
 	discoverContextFiles,
 	type GitStatus,
 } from "../../../platform/context";
+import { isSupervisorMode } from "../runtime/mode";
 import { getEffectiveCwd, getGitStatus, getState } from "../runtime/session";
 
 // ---------------------------------------------------------------------------
@@ -175,7 +176,8 @@ export interface AssembleOptions {
  *
  * Layer order:
  *   1. Working style — OR agent prompt (static per user/agent)
- *   1b. Language (static per user, interactive sessions only)
+ *   1b. Supervisor mode overlay (primary sessions only, when active)
+ *   1c. Language (static per user, interactive sessions only)
  *   2. environment.md (static — tool/environment guidelines)
  *   3. Logseq graph (semi-static — conditional, path rarely changes)
  *   4. Capabilities index (semi-static — tool/skill/agent names)
@@ -197,7 +199,15 @@ export function assemblePrompt(opts: AssembleOptions): string {
 			parts.push(style);
 		}
 
-		// 1b. Language (interactive sessions only — skipped for agents)
+		// 1b. Supervisor mode overlay (interactive sessions only — skipped for agents)
+		if (isSupervisorMode()) {
+			const supervisor = loadPromptFile("modes/supervisor.md").trim();
+			if (supervisor) {
+				parts.push(supervisor);
+			}
+		}
+
+		// 1c. Language (interactive sessions only — skipped for agents)
 		const languageName = getLanguage();
 		if (languageName) {
 			const lang = loadLanguagePrompt(languageName).trim();

@@ -16,6 +16,7 @@ import { dirname, join, resolve } from "node:path";
 import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-agent";
 import { truncateToWidth, visibleWidth } from "@mariozechner/pi-tui";
 import { getInvokedSkills } from "../../../platform/skill-tracker";
+import { isSupervisorMode, onAgentModeChange } from "../runtime/mode";
 import { getState } from "../runtime/session";
 
 type ThemeFg = (color: Parameters<import("@mariozechner/pi-coding-agent").Theme["fg"]>[0], text: string) => string;
@@ -151,7 +152,8 @@ export function registerFooter(pi: ExtensionAPI): void {
 
 		sessionCtx.ui.setFooter((tui, theme, footerData) => {
 			requestRender = () => tui.requestRender();
-			const unsub = footerData.onBranchChange(() => tui.requestRender());
+			const unsubBranch = footerData.onBranchChange(() => tui.requestRender());
+			const unsubMode = onAgentModeChange(() => tui.requestRender());
 
 			return {
 				invalidate() {},
@@ -198,7 +200,8 @@ export function registerFooter(pi: ExtensionAPI): void {
 				},
 
 				dispose() {
-					unsub();
+					unsubBranch();
+					unsubMode();
 					disposeWorktreeWatcher();
 					requestRender = null;
 				},
@@ -249,10 +252,11 @@ function buildModelSegment(fg: ThemeFg, ctx: ExtensionContext | null, pi: Extens
 	}
 
 	const modelId = ctx?.model?.id ?? "no-model";
+	const modelPart = isSupervisorMode() ? [fg("text", modelId), fg("warning", "⛑")].join(" ") : fg("text", modelId);
 	if (totalCost > 0) {
-		parts.push([fg("muted", `$${totalCost.toFixed(2)}`), fg("dim", "·"), fg("text", modelId)].join(" "));
+		parts.push([fg("muted", `$${totalCost.toFixed(2)}`), fg("dim", "·"), modelPart].join(" "));
 	} else {
-		parts.push(fg("text", modelId));
+		parts.push(modelPart);
 	}
 
 	if (ctx?.model?.reasoning) {

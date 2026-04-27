@@ -3,6 +3,7 @@
  */
 
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
+import { registerModeCommand } from "./commands/mode";
 import { registerOpenCommand } from "./commands/open";
 import { registerContextInjection } from "./prompt/context-injection";
 import { registerPrompt } from "./prompt/prompt";
@@ -31,9 +32,9 @@ export default function (pi: ExtensionAPI) {
 	registerDiscoverTool(pi);
 	registerSkillTool(pi);
 
-	// Escalate surfaces decisions to the user — subagents should report
-	// back to their parent instead.
+	// Primary-only interactions should not be available to subagents.
 	if (!isSubagent) {
+		registerModeCommand(pi);
 		registerEscalate(pi);
 	}
 }
