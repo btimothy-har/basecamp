@@ -3,7 +3,6 @@
  */
 
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
-import { registerHandoff } from "./commands/handoff";
 import { registerOpenCommand } from "./commands/open";
 import { registerContextInjection } from "./prompt/context-injection";
 import { registerPrompt } from "./prompt/prompt";
@@ -27,7 +26,6 @@ export default function (pi: ExtensionAPI) {
 	registerContextInjection(pi);
 	registerHeader(pi);
 	registerFooter(pi);
-	registerHandoff(pi);
 	registerOpenCommand(pi, getState);
 	registerTitle(pi);
 	registerDiscoverTool(pi);

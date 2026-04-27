@@ -88,7 +88,6 @@ basecamp project remove <name>           # Remove a project
 | Command | Description |
 |---------|-------------|
 | `/open` | Open project directories in VS Code |
-| `/handoff` | Generate session handoff for continuing work |
 | `/agents` | Browse available agent definitions |
 | `/pull-request` | Create or update a pull request |
 | `/pr-comments` | Address PR review comments |
