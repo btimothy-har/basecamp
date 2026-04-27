@@ -20,6 +20,7 @@ import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { resolveSessionState, type SessionState } from "../../../platform/config";
 import type { GitStatus } from "../../../platform/context";
 import { registerCwdProvider } from "../../../platform/exec";
+import { resetAgentMode } from "./mode";
 import { getOrCreateWorktree, registerWorktreeGuards } from "./worktree";
 
 // ---------------------------------------------------------------------------
@@ -161,6 +162,8 @@ export function registerSession(pi: ExtensionAPI): void {
 
 	// --- Session start: resolve everything ---
 	pi.on("session_start", async (_event, ctx) => {
+		resetAgentMode();
+
 		const projectName = (pi.getFlag("project") as string | undefined) ?? null;
 		const label = (pi.getFlag("label") as string | undefined) ?? null;
 		const styleOverride = (pi.getFlag("style") as string | undefined) ?? undefined;
