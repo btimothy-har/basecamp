@@ -19,6 +19,7 @@ import * as path from "node:path";
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { resolveSessionState, type SessionState } from "../../../platform/config";
 import type { GitStatus } from "../../../platform/context";
+import { registerCwdProvider } from "../../../platform/exec";
 import { getOrCreateWorktree, registerWorktreeGuards } from "./worktree";
 
 // ---------------------------------------------------------------------------
@@ -35,16 +36,6 @@ export function getGitStatus(): GitStatus | null {
 export function getEffectiveCwd(): string {
 	const s = getState();
 	return s.worktreeDir ?? s.primaryDir;
-}
-
-/** Exec a command in the effective working directory (worktree if active). */
-export function exec(
-	pi: ExtensionAPI,
-	command: string,
-	args: string[],
-	options?: Parameters<ExtensionAPI["exec"]>[2],
-): ReturnType<ExtensionAPI["exec"]> {
-	return pi.exec(command, args, { ...options, cwd: options?.cwd ?? getEffectiveCwd() });
 }
 
 export function getState(): SessionState {
@@ -145,6 +136,8 @@ async function collectGitStatus(pi: ExtensionAPI, dir: string): Promise<GitStatu
 // ---------------------------------------------------------------------------
 
 export function registerSession(pi: ExtensionAPI): void {
+	registerCwdProvider(getEffectiveCwd);
+
 	// Register CLI flags
 	pi.registerFlag("project", {
 		description: "Basecamp project name (from ~/.pi/basecamp/config.json)",
