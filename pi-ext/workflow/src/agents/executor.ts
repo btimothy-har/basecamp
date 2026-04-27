@@ -53,7 +53,7 @@ export interface SpawnResult {
 // Pi CLI Argument Builder
 // ============================================================================
 
-interface PiArgsOpts {
+export interface PiArgsOpts {
 	name: string;
 	model: string | undefined;
 	cwd: string;
@@ -62,13 +62,13 @@ interface PiArgsOpts {
 	extensionTools: string[];
 }
 
-function ensureAgentDir(name: string): string {
+export function ensureAgentDir(name: string): string {
 	const dir = path.join(AGENT_BASE, name);
 	fs.mkdirSync(dir, { recursive: true });
 	return dir;
 }
 
-function buildPiArgs(agent: AgentConfig | null, task: string, opts: PiArgsOpts): { args: string[]; agentDir: string } {
+export function buildPiArgs(agent: AgentConfig | null, task: string, opts: PiArgsOpts): { args: string[]; agentDir: string } {
 	const agentDir = ensureAgentDir(opts.name);
 	const [piCmd, ...piPrefix] = getPiCommand();
 	const args = [piCmd, ...piPrefix, "--mode", "json", "-p"];
