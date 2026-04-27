@@ -48,34 +48,43 @@ observer/src/observer/
 ├── services/                   # DB, config, chroma, migrations, registration
 └── migrations/                 # Schema migrations
 
-pi-ext/                         # Pi extension
+pi-ext/                         # Pi extension package
 ├── package.json                # Extension manifest (extensions, skills, prompts)
-├── config.ts                   # Config reader (~/.pi/basecamp/config.json)
-├── context.ts                  # Context assembly (git, tools, skills, projects)
+├── platform/                   # Shared extension platform modules
+│   ├── catalog.ts              # Capability catalog providers/queries
+│   ├── config.ts               # Config reader + SessionState resolver
+│   ├── context.ts              # Prompt context builders + AGENTS.md discovery
+│   ├── exec.ts                 # Cwd-aware exec seam for extension modules
+│   ├── skill-content.ts        # Shared skill file loading/rendering helpers
+│   ├── skill-tracker.ts        # Shared skill invocation state
+│   ├── templates.ts            # Markdown template loader
+│   └── utils.ts                # Shared small utilities
 ├── core/
 │   ├── src/
-│   │   ├── session.ts          # Session bootstrap (flags, env, worktree, cwd)
-│   │   ├── prompt.ts           # System prompt assembly pipeline
-│   │   ├── worktree.ts         # Worktree CRUD + bash/tool guards
-│   │   ├── handoff.ts          # /handoff slash command
-│   │   ├── open.ts             # /open slash command
-│   │   └── system-prompts/     # Bundled prompts (environment, system, styles)
-│   ├── skills/                 # gather skill
+│   │   ├── runtime/            # Session bootstrap, worktree setup, tool guards
+│   │   ├── prompt/             # System prompt assembly + context injection
+│   │   │   └── system-prompts/ # Bundled environment/style/language prompts
+│   │   ├── tools/              # discover, skill, escalate, catalog providers
+│   │   ├── ui/                 # Header, footer, session title widget
+│   │   ├── commands/           # /handoff and /open commands
+│   │   └── index.ts            # Core extension registration
+│   ├── skills/                 # gather + pi-development skills
 │   └── prompts/                # Logseq session prompts (reflect, plan)
-├── agents/
+├── workflow/
 │   ├── src/
-│   │   ├── tool.ts             # Agent dispatch tool registration
-│   │   ├── executor.ts         # Subagent process management
-│   │   ├── discovery.ts        # Agent definition discovery (project, user, builtin)
-│   │   ├── commands.ts         # /agents slash command
-│   │   ├── skills.ts           # Skill discovery for subagents
-│   │   └── types.ts            # Agent/skill type definitions
-│   └── builtin/                # Built-in agent definitions (scout, worker, etc.)
+│   │   ├── agents/             # Agent discovery, dispatch tool, commands, skills
+│   │   ├── planning/           # plan tool, review UI, plan commands
+│   │   ├── tasks/              # Goal/task tools, state, rendering, commands
+│   │   └── index.ts            # Workflow extension registration
+│   ├── agents/builtin/         # Built-in agent definitions
+│   └── skills/                 # agents + planning skills
 ├── git/
-│   └── src/                    # Git guards, PR workflow commands
+│   ├── src/                    # Git guards, PR workflow commands, pr_publish tool
+│   └── resources/              # PR workflow prompt templates
 ├── observer/
-│   └── src/                    # Observer integration (session ingest trigger)
-├── engineering/skills/         # Code review, context gathering, python dev
+│   ├── src/                    # Observer integration (session ingest trigger)
+│   └── skills/                 # recall skill
+├── engineering/                # Engineering prompts + skills
 └── data/skills/                # SQL, data warehousing
 
 core/tests/                     # pytest suite for basecamp-core
