@@ -312,7 +312,7 @@ ASYNC: { agent: "scout", task: "Investigate the auth module", async: true }
 
 Available agents are discovered from user (~/.pi/agents/) and builtin definitions.`,
 
-		promptSnippet: "Dispatch a subagent (runs synchronously, returns output)",
+		promptSnippet: "Dispatch a subagent to perform a task. Runs sync (returns output) or async (background, result auto-delivered)",
 
 		parameters: AgentToolParams,
 

@@ -24,6 +24,7 @@ import {
 
 const POLL_INTERVAL_MS = 500;
 const WATCHER_RESTART_DELAY_MS = 3000;
+const MAX_PARSE_RETRIES = 3;
 
 // ============================================================================
 // State
@@ -35,6 +36,7 @@ export interface AsyncWatcherState {
 	poller: NodeJS.Timeout | null;
 	restartTimer: NodeJS.Timeout | null;
 	seen: Set<string>;
+	parseRetries: Map<string, number>;
 	onUpdate?: () => void;
 }
 
@@ -45,6 +47,7 @@ export function createWatcherState(): AsyncWatcherState {
 		poller: null,
 		restartTimer: null,
 		seen: new Set(),
+		parseRetries: new Map(),
 	};
 }
 
@@ -52,20 +55,32 @@ export function createWatcherState(): AsyncWatcherState {
 // Result Watcher
 // ============================================================================
 
-function processResultFile(filePath: string, events: EventBus, seen: Set<string>): void {
+function processResultFile(filePath: string, events: EventBus, state: AsyncWatcherState): void {
 	const fileName = path.basename(filePath);
-	if (seen.has(fileName)) return;
+	if (state.seen.has(fileName)) return;
 
 	let data: AsyncResult;
 	try {
 		const raw = fs.readFileSync(filePath, "utf-8");
 		data = JSON.parse(raw) as AsyncResult;
 	} catch {
-		// File might not be fully written yet — will retry on next watch event.
+		const attempts = (state.parseRetries.get(fileName) ?? 0) + 1;
+		state.parseRetries.set(fileName, attempts);
+		if (attempts < MAX_PARSE_RETRIES) return;
+
+		// Permanently malformed — stop retrying
+		state.seen.add(fileName);
+		state.parseRetries.delete(fileName);
+		try {
+			fs.unlinkSync(filePath);
+		} catch {
+			// Best effort cleanup.
+		}
 		return;
 	}
 
-	seen.add(fileName);
+	state.seen.add(fileName);
+	state.parseRetries.delete(fileName);
 
 	try {
 		fs.unlinkSync(filePath);
@@ -84,7 +99,7 @@ function startWatcher(state: AsyncWatcherState, events: EventBus): void {
 			if (eventType !== "rename" || !fileName) return;
 			const name = fileName.toString();
 			if (!name.endsWith(".json")) return;
-			processResultFile(path.join(ASYNC_RESULTS_DIR, name), events, state.seen);
+			processResultFile(path.join(ASYNC_RESULTS_DIR, name), events, state);
 		});
 
 		state.watcher.on("error", () => {
@@ -118,7 +133,7 @@ function primeExistingResults(state: AsyncWatcherState, events: EventBus): void 
 	try {
 		for (const file of fs.readdirSync(ASYNC_RESULTS_DIR)) {
 			if (!file.endsWith(".json")) continue;
-			processResultFile(path.join(ASYNC_RESULTS_DIR, file), events, state.seen);
+			processResultFile(path.join(ASYNC_RESULTS_DIR, file), events, state);
 		}
 	} catch {
 		// Directory might not exist yet.
@@ -258,6 +273,7 @@ export function stopAsyncWatcher(state: AsyncWatcherState): void {
 export function resetAsyncWatcher(state: AsyncWatcherState): void {
 	state.jobs.clear();
 	state.seen.clear();
+	state.parseRetries.clear();
 	state.onUpdate?.();
 }
 
