@@ -11,16 +11,16 @@
  */
 
 import * as fs from "node:fs";
+import * as path from "node:path";
 import type { EventBus } from "@mariozechner/pi-coding-agent";
 import {
-	type AsyncJobState,
-	type AsyncResult,
-	type AsyncStatus,
 	AGENT_ASYNC_COMPLETE_EVENT,
 	AGENT_ASYNC_STARTED_EVENT,
 	ASYNC_RESULTS_DIR,
+	type AsyncJobState,
+	type AsyncResult,
+	type AsyncStatus,
 } from "./types.ts";
-import * as path from "node:path";
 
 const POLL_INTERVAL_MS = 500;
 const WATCHER_RESTART_DELAY_MS = 3000;

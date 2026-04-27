@@ -68,7 +68,11 @@ export function ensureAgentDir(name: string): string {
 	return dir;
 }
 
-export function buildPiArgs(agent: AgentConfig | null, task: string, opts: PiArgsOpts): { args: string[]; agentDir: string } {
+export function buildPiArgs(
+	agent: AgentConfig | null,
+	task: string,
+	opts: PiArgsOpts,
+): { args: string[]; agentDir: string } {
 	const agentDir = ensureAgentDir(opts.name);
 	const [piCmd, ...piPrefix] = getPiCommand();
 	const args = [piCmd, ...piPrefix, "--mode", "json", "-p"];

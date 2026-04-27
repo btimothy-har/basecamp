@@ -26,7 +26,7 @@ import { isAsyncAvailable, spawnAsyncAgent } from "./async-spawn.ts";
 import type { AgentStreamEvent } from "./executor.ts";
 import { spawnAgent } from "./executor.ts";
 import type { AgentConfig, AgentDetails, AgentPartialDetails, ModelStrategy, ToolCallRecord } from "./types.ts";
-import { AGENT_ASYNC_STARTED_EVENT, AgentToolParams, DEFAULT_AGENT_MAX_DEPTH, canDispatchAsync } from "./types.ts";
+import { AGENT_ASYNC_STARTED_EVENT, AgentToolParams, canDispatchAsync, DEFAULT_AGENT_MAX_DEPTH } from "./types.ts";
 
 // ============================================================================
 // Model Resolution

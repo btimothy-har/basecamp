@@ -62,7 +62,9 @@ export const AgentToolParams = Type.Object({
 	agent: Type.Optional(Type.String({ description: "Agent definition name" })),
 	task: Type.String({ description: "Task description" }),
 	name: Type.Optional(Type.String({ description: "Name suffix (auto-generated prefix)" })),
-	async: Type.Optional(Type.Boolean({ description: "Run in background, return handle immediately (read-only agents only)" })),
+	async: Type.Optional(
+		Type.Boolean({ description: "Run in background, return handle immediately (read-only agents only)" }),
+	),
 });
 
 export type AgentToolInput = Static<typeof AgentToolParams>;
@@ -156,9 +158,10 @@ export const AGENT_ASYNC_COMPLETE_EVENT = "agent:async-complete";
 
 const WRITE_TOOLS = new Set(["write", "edit"]);
 
-export function canDispatchAsync(
-	agentConfig: import("./discovery.ts").AgentConfig | null,
-): { ok: boolean; reason?: string } {
+export function canDispatchAsync(agentConfig: import("./discovery.ts").AgentConfig | null): {
+	ok: boolean;
+	reason?: string;
+} {
 	if (!agentConfig) {
 		return { ok: false, reason: "Ad-hoc agents cannot be dispatched asynchronously" };
 	}

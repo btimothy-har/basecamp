@@ -7,7 +7,7 @@
  */
 
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
-import { type AsyncResult, AGENT_ASYNC_COMPLETE_EVENT } from "./types.ts";
+import { AGENT_ASYNC_COMPLETE_EVENT, type AsyncResult } from "./types.ts";
 
 const SEEN_TTL_MS = 10 * 60 * 1000;
 const seen = new Map<string, number>();
@@ -37,10 +37,7 @@ function formatResult(result: AsyncResult): string {
 	const status = result.success ? "completed" : "failed";
 	const duration = formatDuration(result.durationMs);
 
-	const lines = [
-		`Background agent ${status}: **${result.agent}** (${duration})`,
-		"",
-	];
+	const lines = [`Background agent ${status}: **${result.agent}** (${duration})`, ""];
 
 	if (result.error) {
 		lines.push(`**Error:** ${result.error}`, "");

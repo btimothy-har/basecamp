@@ -11,7 +11,7 @@
 import { spawn } from "node:child_process";
 import * as fs from "node:fs";
 import * as path from "node:path";
-import type { AsyncRunnerConfig, AsyncResult, AsyncStatus, UsageStats } from "./types.ts";
+import type { AsyncResult, AsyncRunnerConfig, AsyncStatus, UsageStats } from "./types.ts";
 
 // ============================================================================
 // JSON Event Parsing (adapted from executor.ts)

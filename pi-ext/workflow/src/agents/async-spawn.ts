@@ -7,14 +7,13 @@
  */
 
 import { spawn } from "node:child_process";
-import { createRequire } from "node:module";
 import * as fs from "node:fs";
+import { createRequire } from "node:module";
 import * as path from "node:path";
 import { fileURLToPath } from "node:url";
 import type { AgentConfig } from "./discovery.ts";
-import { buildPiArgs, ensureAgentDir } from "./executor.ts";
-import { buildSkillInjection, resolveSkills } from "./skills.ts";
-import { type AsyncRunnerConfig, ASYNC_BASE_DIR, ASYNC_RESULTS_DIR } from "./types.ts";
+import { buildPiArgs } from "./executor.ts";
+import { ASYNC_BASE_DIR, ASYNC_RESULTS_DIR, type AsyncRunnerConfig } from "./types.ts";
 
 const require = createRequire(import.meta.url);
 
@@ -71,11 +70,7 @@ export interface AsyncSpawnResult {
 	error?: string;
 }
 
-export function spawnAsyncAgent(
-	agent: AgentConfig,
-	task: string,
-	opts: AsyncSpawnOpts,
-): AsyncSpawnResult {
+export function spawnAsyncAgent(agent: AgentConfig, task: string, opts: AsyncSpawnOpts): AsyncSpawnResult {
 	if (!jitiCliPath) {
 		return { asyncId: opts.name, asyncDir: "", error: "jiti not available — cannot spawn async runner" };
 	}

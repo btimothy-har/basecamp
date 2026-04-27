@@ -2,11 +2,11 @@
  * agent_status tool — non-blocking snapshot of background async agents.
  */
 
-import { Type } from "@sinclair/typebox";
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { Text } from "@mariozechner/pi-tui";
+import { Type } from "@sinclair/typebox";
 import type { AsyncWatcherState } from "./async-watcher.ts";
-import { getAllJobs, getActiveJobs } from "./async-watcher.ts";
+import { getAllJobs } from "./async-watcher.ts";
 
 function formatDuration(ms: number): string {
 	if (ms < 1000) return `${ms}ms`;
@@ -28,14 +28,10 @@ export function registerAgentStatusTool(pi: ExtensionAPI, state: AsyncWatcherSta
 		}),
 
 		async execute(_toolCallId, params, _signal, _onUpdate, _ctx) {
-			const jobs = params.id
-				? getAllJobs(state).filter((j) => j.asyncId === params.id)
-				: getAllJobs(state);
+			const jobs = params.id ? getAllJobs(state).filter((j) => j.asyncId === params.id) : getAllJobs(state);
 
 			if (jobs.length === 0) {
-				const msg = params.id
-					? `No background agent found with ID "${params.id}"`
-					: "No background agents tracked.";
+				const msg = params.id ? `No background agent found with ID "${params.id}"` : "No background agents tracked.";
 				return { content: [{ type: "text", text: msg }], details: undefined };
 			}
 
