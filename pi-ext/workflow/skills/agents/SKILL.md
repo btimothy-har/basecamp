@@ -31,7 +31,7 @@ The subagent has no conversation history. Make the task self-contained:
 Using the `agent` tool:
 
 ```
-agent({ agent: "investigate", task: "Investigate the auth module — find token refresh flow, session management, and middleware chain. Key entry: src/auth/index.ts" })
+agent({ agent: "scout", task: "Investigate the auth module — find token refresh flow, session management, and middleware chain. Key entry: src/auth/index.ts" })
 ```
 
 Ad-hoc dispatch:

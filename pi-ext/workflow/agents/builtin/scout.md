@@ -1,5 +1,5 @@
 ---
-name: investigate
+name: scout
 description: Codebase investigation and context gathering — returns structured findings for handoff
 model: fast
 tools: read, bash, grep, find, ls
