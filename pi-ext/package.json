@@ -17,7 +17,6 @@
 			"./core/skills",
 			"./workflow/skills",
 			"./observer/skills",
-			"./data/skills",
 			"./engineering/skills"
 		],
 		"prompts": [
