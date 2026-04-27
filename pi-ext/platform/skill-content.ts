@@ -7,7 +7,7 @@
 
 import { readFileSync } from "node:fs";
 import { stripFrontmatter } from "@mariozechner/pi-coding-agent";
-import { escapeXml } from "../../../platform/utils";
+import { escapeXml } from "./utils";
 
 /**
  * Read a skill file and return its content with frontmatter stripped.

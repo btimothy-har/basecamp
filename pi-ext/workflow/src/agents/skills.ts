@@ -10,7 +10,7 @@
  */
 
 import { loadSkills, type Skill } from "@mariozechner/pi-coding-agent";
-import { buildSkillBlock, readSkillContent } from "../../../core/src/tools/skill-content";
+import { buildSkillBlock, readSkillContent } from "../../../platform/skill-content";
 
 // ============================================================================
 // Types
