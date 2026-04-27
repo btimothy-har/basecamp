@@ -59,6 +59,7 @@ interface PiArgsOpts {
 	cwd: string;
 	sessionDir: string;
 	env: Record<string, string>;
+	extensionTools: string[];
 }
 
 function ensureAgentDir(name: string): string {
@@ -112,11 +113,11 @@ function buildPiArgs(agent: AgentConfig | null, task: string, opts: PiArgsOpts):
 		args.push("--agent-prompt", promptFile);
 	}
 
-	// Tool allowlist — restrict built-in tools available to the subagent.
-	// Extension-registered tools (discover, plan, etc.) are always active
-	// via pi's includeAllExtensionTools behavior and can't be controlled here.
+	// Tool allowlist — agent frontmatter controls built-ins; basecamp extension
+	// tools are added dynamically so Pi 0.68+ keeps workflow tools available.
 	if (agent?.tools?.length) {
-		args.push("--tools", agent.tools.join(","));
+		const tools = [...new Set([...agent.tools, ...opts.extensionTools])];
+		args.push("--tools", tools.join(","));
 	}
 
 	// Task — use a file for large tasks to avoid arg length limits
@@ -481,6 +482,7 @@ export function spawnAgent(
 		cwd: string;
 		env: Record<string, string>;
 		sessionDir: string;
+		extensionTools: string[];
 		onEvent?: (event: AgentStreamEvent) => void;
 	},
 	signal?: AbortSignal,

@@ -17,6 +17,7 @@ import { randomUUID } from "node:crypto";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
+import { fileURLToPath } from "node:url";
 import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-agent";
 import { getMarkdownTheme } from "@mariozechner/pi-coding-agent";
 import { type Component, Container, Markdown, Spacer, Text } from "@mariozechner/pi-tui";
@@ -261,6 +262,40 @@ function renderPartialView(
 // Tool Registration
 // ============================================================================
 
+const BASECAMP_EXTENSION_ROOT = fs.realpathSync(
+	path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..", ".."),
+);
+
+type ToolInfo = ReturnType<ExtensionAPI["getAllTools"]>[number];
+
+function resolveToolSourcePath(value: string | undefined): string | null {
+	if (!value || value.startsWith("<")) return null;
+	try {
+		return fs.realpathSync(value);
+	} catch {
+		return path.resolve(value);
+	}
+}
+
+function isWithinBasecampExtensionRoot(value: string | undefined): boolean {
+	const sourcePath = resolveToolSourcePath(value);
+	if (!sourcePath) return false;
+	const relative = path.relative(BASECAMP_EXTENSION_ROOT, sourcePath);
+	return relative === "" || (relative !== "" && !relative.startsWith("..") && !path.isAbsolute(relative));
+}
+
+function isBasecampExtensionTool(tool: ToolInfo): boolean {
+	if (tool.sourceInfo.source === "builtin" || tool.sourceInfo.source === "sdk") return false;
+	return isWithinBasecampExtensionRoot(tool.sourceInfo.baseDir) || isWithinBasecampExtensionRoot(tool.sourceInfo.path);
+}
+
+function getBasecampExtensionToolNames(pi: ExtensionAPI): string[] {
+	return pi
+		.getAllTools()
+		.filter(isBasecampExtensionTool)
+		.map((tool) => tool.name);
+}
+
 export function registerAgentTool(
 	pi: ExtensionAPI,
 	getAgents: () => AgentConfig[],
@@ -320,6 +355,7 @@ Available agents are discovered from user (~/.pi/agents/) and builtin definition
 			const parentSession = getSessionName();
 			const env = buildAgentEnv({ name, parentSession, project });
 			const agentLabel = params.agent ?? "ad-hoc";
+			const extensionTools = getBasecampExtensionToolNames(pi);
 
 			// Progressive rendering state
 			const partial: AgentPartialDetails = {
@@ -364,7 +400,7 @@ Available agents are discovered from user (~/.pi/agents/) and builtin definition
 				let result = await spawnAgent(
 					agentConfig,
 					params.task,
-					{ name, model, cwd: ctx.cwd, env, sessionDir, onEvent },
+					{ name, model, cwd: ctx.cwd, env, sessionDir, extensionTools, onEvent },
 					signal,
 				);
 
@@ -382,7 +418,7 @@ Available agents are discovered from user (~/.pi/agents/) and builtin definition
 					result = await spawnAgent(
 						agentConfig,
 						params.task,
-						{ name, model: undefined, cwd: ctx.cwd, env, sessionDir: retrySessionDir, onEvent },
+						{ name, model: undefined, cwd: ctx.cwd, env, sessionDir: retrySessionDir, extensionTools, onEvent },
 						signal,
 					);
 				}
