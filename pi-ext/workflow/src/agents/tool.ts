@@ -265,6 +265,7 @@ function renderPartialView(
 const BASECAMP_EXTENSION_ROOT = fs.realpathSync(
 	path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..", ".."),
 );
+const SUBAGENT_EXCLUDED_EXTENSION_TOOLS = new Set(["escalate", "pr_publish"]);
 
 type ToolInfo = ReturnType<ExtensionAPI["getAllTools"]>[number];
 
@@ -292,7 +293,7 @@ function isBasecampExtensionTool(tool: ToolInfo): boolean {
 function getBasecampExtensionToolNames(pi: ExtensionAPI): string[] {
 	return pi
 		.getAllTools()
-		.filter(isBasecampExtensionTool)
+		.filter((tool) => isBasecampExtensionTool(tool) && !SUBAGENT_EXCLUDED_EXTENSION_TOOLS.has(tool.name))
 		.map((tool) => tool.name);
 }
 
