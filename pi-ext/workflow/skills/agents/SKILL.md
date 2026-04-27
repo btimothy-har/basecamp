@@ -47,3 +47,41 @@ Multiple `agent` tool calls in the same assistant turn run concurrently. Use thi
 ### 4. Integrate the result
 
 Review the subagent output critically. Use it to inform your response, next steps, or integration work, but do not treat delegated output as authority.
+
+## Async Dispatch
+
+Read-only agents can run in the background with `async: true`. The tool returns immediately with a handle ID, and the result is delivered automatically when the agent completes.
+
+### When to use async
+
+- **Long investigations** that don't block your current work
+- **Multiple independent reviews** dispatched in parallel while you continue coding
+- **Background research** where you don't need the result immediately
+
+### Constraints
+
+- **Read-only agents only** — agents with `write` or `edit` tools are blocked from async dispatch
+- **No ad-hoc agents** — only named agents with explicit tool restrictions
+- **Results auto-delivered** — when complete, the result appears as a message that triggers a new turn
+
+### Examples
+
+Fire-and-forget:
+
+```
+agent({ agent: "scout", task: "Find all usages of the deprecated auth API", async: true })
+```
+
+Multiple background agents:
+
+```
+agent({ agent: "scout", task: "Investigate the payment module", async: true })
+agent({ agent: "code-clarity-specialist", task: "Review src/api/routes.ts", async: true })
+```
+
+Check status of running background agents:
+
+```
+agent_status()
+agent_status({ id: "agent-abc123" })
+```
