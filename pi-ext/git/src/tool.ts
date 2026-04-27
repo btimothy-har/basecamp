@@ -9,7 +9,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { Type } from "@sinclair/typebox";
-import { exec } from "../../core/src/session";
+import { exec } from "../../platform/exec";
 import { activePR } from "./guards";
 import { showPrReview } from "./review";
 import { getScratchDir } from "./utils";

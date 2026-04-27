@@ -88,7 +88,6 @@ basecamp project remove <name>           # Remove a project
 | Command | Description |
 |---------|-------------|
 | `/open` | Open project directories in VS Code |
-| `/handoff` | Generate session handoff for continuing work |
 | `/agents` | Browse available agent definitions |
 | `/pull-request` | Create or update a pull request |
 | `/pr-comments` | Address PR review comments |
@@ -99,11 +98,11 @@ basecamp project remove <name>           # Remove a project
 Dispatch subagents from within a session using the `agent` tool:
 
 ```
-agent("investigate", "Investigate the auth module")
+agent("scout", "Investigate the auth module")
 agent("worker", "Fix the login bug")
 ```
 
-Built-in agents: `investigate`, `planner`, `worker`, `security-reviewer`, `test-reviewer`, `docs-reviewer`, `simplification-reviewer`.
+Built-in agents: `scout`, `worker`, `security-specialist`, `testing-specialist`, `docs-specialist`, `code-clarity-specialist`.
 
 Custom agents can be defined as markdown files in `~/.pi/agents/` (user-level).
 
