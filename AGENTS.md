@@ -84,8 +84,7 @@ pi-ext/                         # Pi extension package
 ├── observer/
 │   ├── src/                    # Observer integration (session ingest trigger)
 │   └── skills/                 # recall skill
-├── engineering/                # Engineering prompts + skills
-└── data/skills/                # SQL, data warehousing
+└── engineering/                # Engineering prompts + skills (code review, Python, marimo, SQL, data warehousing)
 
 core/tests/                     # pytest suite for basecamp-core
 ```
