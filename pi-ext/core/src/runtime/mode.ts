@@ -1,13 +1,19 @@
-export type AgentMode = "worker" | "supervisor";
+export type AgentMode = "planning" | "supervisor" | "executor";
+
+export const AGENT_MODES: readonly AgentMode[] = ["planning", "supervisor", "executor"];
+
+const DEFAULT_AGENT_MODE: AgentMode = "executor";
 
 type AgentModeListener = (mode: AgentMode) => void;
-
-const DEFAULT_AGENT_MODE: AgentMode = "supervisor";
 
 let mode: AgentMode = DEFAULT_AGENT_MODE;
 const listeners = new Set<AgentModeListener>();
 
-function setAgentMode(nextMode: AgentMode): AgentMode {
+export function getAgentMode(): AgentMode {
+	return mode;
+}
+
+export function setAgentMode(nextMode: AgentMode): AgentMode {
 	if (mode === nextMode) return mode;
 
 	mode = nextMode;
@@ -17,12 +23,9 @@ function setAgentMode(nextMode: AgentMode): AgentMode {
 	return mode;
 }
 
-export function isSupervisorMode(): boolean {
-	return mode === "supervisor";
-}
-
-export function toggleAgentMode(): AgentMode {
-	return setAgentMode(isSupervisorMode() ? "worker" : "supervisor");
+export function cycleAgentMode(): AgentMode {
+	const index = AGENT_MODES.indexOf(mode);
+	return setAgentMode(AGENT_MODES[(index + 1) % AGENT_MODES.length]!);
 }
 
 export function resetAgentMode(): void {

@@ -16,7 +16,7 @@ import { dirname, join, resolve } from "node:path";
 import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-agent";
 import { truncateToWidth, visibleWidth } from "@mariozechner/pi-tui";
 import { getInvokedSkills } from "../../../platform/skill-tracker";
-import { isSupervisorMode, onAgentModeChange } from "../runtime/mode";
+import { type AgentMode, getAgentMode, onAgentModeChange } from "../runtime/mode";
 import { getState } from "../runtime/session";
 
 type ThemeFg = (color: Parameters<import("@mariozechner/pi-coding-agent").Theme["fg"]>[0], text: string) => string;
@@ -222,6 +222,8 @@ function buildLocationSegment(
 	footerData: { getGitBranch(): string | null },
 ): string {
 	const parts: string[] = [];
+	const modeSegment = buildModeSegment(fg, getAgentMode());
+	if (modeSegment) parts.push(modeSegment);
 	parts.push(fg("dim", shortenPath(state.primaryDir)));
 
 	if (state.worktreeLabel) {
@@ -238,6 +240,12 @@ function buildLocationSegment(
 	return parts.join(fg("dim", "  "));
 }
 
+function buildModeSegment(fg: ThemeFg, mode: AgentMode): string | null {
+	if (mode === "planning") return fg("warning", "[plan]");
+	if (mode === "supervisor") return fg("warning", "[supervisor]");
+	return null;
+}
+
 function buildModelSegment(fg: ThemeFg, ctx: ExtensionContext | null, pi: ExtensionAPI): string {
 	const parts: string[] = [];
 	let totalCost = 0;
@@ -252,7 +260,7 @@ function buildModelSegment(fg: ThemeFg, ctx: ExtensionContext | null, pi: Extens
 	}
 
 	const modelId = ctx?.model?.id ?? "no-model";
-	const modelPart = isSupervisorMode() ? [fg("text", modelId), fg("warning", "⛑")].join(" ") : fg("text", modelId);
+	const modelPart = fg("text", modelId);
 	if (totalCost > 0) {
 		parts.push([fg("muted", `$${totalCost.toFixed(2)}`), fg("dim", "·"), modelPart].join(" "));
 	} else {

@@ -1,17 +1,18 @@
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
-import { toggleAgentMode } from "../runtime/mode";
+import { type AgentMode, cycleAgentMode } from "../runtime/mode";
 
-export function registerModeCommand(pi: ExtensionAPI): void {
-	pi.registerCommand("mode", {
-		description: "Toggle supervisor mode",
-		handler: async (args, ctx) => {
-			if (args?.trim()) {
-				ctx.ui.notify("/mode takes no arguments", "error");
-				return;
-			}
+const MODE_LABELS: Record<AgentMode, string> = {
+	planning: "Planning/discovery",
+	supervisor: "Supervisor",
+	executor: "IC/executor",
+};
 
-			const mode = toggleAgentMode();
-			ctx.ui.notify(mode === "supervisor" ? "Supervisor mode on" : "Supervisor mode off", "info");
+export function registerModeShortcut(pi: ExtensionAPI): void {
+	pi.registerShortcut("shift+tab", {
+		description: "Cycle execution posture",
+		handler: async (ctx) => {
+			const mode = cycleAgentMode();
+			ctx.ui.notify(`${MODE_LABELS[mode]} mode`, "info");
 		},
 	});
 }
