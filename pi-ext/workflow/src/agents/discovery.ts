@@ -1,16 +1,11 @@
 /**
- * Agent discovery — builtin definitions plus user overrides.
+ * Agent discovery — basecamp-owned builtin definitions.
  *
  * Owned by workflow because agents are workflow-domain capabilities. Core only
  * sees generic catalog metadata exposed by the workflow agent catalog provider.
- *
- * Priority (highest wins on name collision):
- *   1. User:    ~/.pi/agents/
- *   2. Builtin: pi-ext/workflow/agents/builtin/ (shipped with basecamp)
  */
 
 import * as fs from "node:fs";
-import * as os from "node:os";
 import * as path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -33,10 +28,9 @@ export interface AgentConfig {
 	description: string;
 	model: ModelStrategy;
 	thinking?: string;
-	tools?: string[];
 	skills?: string[];
 	systemPrompt: string;
-	source: "builtin" | "user";
+	source: "builtin";
 	filePath: string;
 }
 
@@ -44,7 +38,6 @@ export interface AgentConfig {
 // Constants
 // ============================================================================
 
-const USER_AGENTS_DIR = path.join(os.homedir(), ".pi", "agents");
 const BUILTIN_AGENTS_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..", "agents", "builtin");
 
 // ============================================================================
@@ -84,7 +77,7 @@ function parseCsv(value: string | undefined): string[] | undefined {
 // Directory Scanner
 // ============================================================================
 
-function loadAgentsFromDir(dir: string, source: AgentConfig["source"]): AgentConfig[] {
+function loadAgentsFromDir(dir: string): AgentConfig[] {
 	if (!fs.existsSync(dir)) return [];
 
 	let entries: fs.Dirent[];
@@ -119,10 +112,9 @@ function loadAgentsFromDir(dir: string, source: AgentConfig["source"]): AgentCon
 			description: fm.description,
 			model,
 			thinking: fm.thinking || undefined,
-			tools: parseCsv(fm.tools),
 			skills: parseCsv(fm.skills),
 			systemPrompt: body,
-			source,
+			source: "builtin",
 			filePath,
 		});
 	}
@@ -134,17 +126,7 @@ function loadAgentsFromDir(dir: string, source: AgentConfig["source"]): AgentCon
 // Public API
 // ============================================================================
 
-/**
- * Discover all agent definitions, merging by priority.
- * User agents override builtins by name.
- */
-export function discoverAgents(_cwd?: string): AgentConfig[] {
-	const builtin = loadAgentsFromDir(BUILTIN_AGENTS_DIR, "builtin");
-	const user = loadAgentsFromDir(USER_AGENTS_DIR, "user");
-
-	// Name-keyed merge: last write wins (user > builtin)
-	const map = new Map<string, AgentConfig>();
-	for (const agent of builtin) map.set(agent.name, agent);
-	for (const agent of user) map.set(agent.name, agent);
-	return Array.from(map.values());
+/** Discover all basecamp-owned agent definitions. */
+export function discoverAgents(): AgentConfig[] {
+	return loadAgentsFromDir(BUILTIN_AGENTS_DIR);
 }

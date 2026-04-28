@@ -156,6 +156,10 @@ export function registerSession(pi: ExtensionAPI): void {
 		description: "Agent prompt file — replaces working style + system.md (used by worker spawner)",
 		type: "string",
 	});
+	pi.registerFlag("read-only", {
+		description: "Prepend read-only operating constraints to the system prompt",
+		type: "boolean",
+	});
 
 	// Register worktree tool guards (reads state lazily)
 	registerWorktreeGuards(pi, getState);

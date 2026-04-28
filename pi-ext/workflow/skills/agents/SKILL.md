@@ -14,9 +14,9 @@ Delegate bounded work through the `agent` tool. Keep user communication, require
 Use `discover({ type: "agents" })` to inspect available agents and their descriptions.
 
 Choose the narrowest agent that fits the job:
-- **Investigation, planning, or review agents** — use for read-only exploration, research, code search, and second opinions.
-- **Implementation agents** — use for contained code changes with clear scope and acceptance criteria.
-- **Ad-hoc dispatch** — use when no named agent fits the task.
+- **Named read-only agents** — use for exploration, research, code search, review, and second opinions.
+- **worker** — the only mutative agent; use for contained code changes with clear scope and acceptance criteria.
+- **Ad-hoc dispatch** — sync-only, read-only, and solo; use only when no named read-only agent fits the task.
 
 ### 2. Write the brief
 
@@ -37,12 +37,12 @@ agent({ agent: "scout", task: "Investigate the auth module — find token refres
 Ad-hoc dispatch:
 
 ```
-agent({ task: "Fix the null check in auth.ts:142", name: "fix-null" })
+agent({ task: "Summarize how auth errors are handled in src/auth", name: "auth-errors" })
 ```
 
 ### Parallel dispatch
 
-Multiple `agent` tool calls in the same assistant turn run concurrently. Use this for independent code searches, reviews, or option exploration. Do not use parallel dispatch when tasks depend on each other or for unsafe same-cwd mutations. Each tool call is still synchronous and returns a result; this is not background async execution.
+Multiple `agent` tool calls in the same assistant turn run concurrently. Use this only for independent named read-only agents, such as code searches, reviews, or option exploration. Do not include `worker` or ad-hoc dispatch in parallel calls; they must run solo. Each sync tool call still returns a result; this is not background async execution.
 
 ### 4. Integrate the result
 
@@ -60,8 +60,8 @@ Read-only agents can run in the background with `async: true`. The tool returns 
 
 ### Constraints
 
-- **Read-only agents only** — agents with `write` or `edit` tools are blocked from async dispatch
-- **No ad-hoc agents** — only named agents with explicit tool restrictions
+- **Named read-only agents only** — async dispatch does not support `worker` or ad-hoc agents
+- **Parallel-safe with read-only agents** — multiple async named read-only agents can run together
 - **Results auto-delivered** — when complete, the result appears as a message that triggers a new turn
 
 ### Examples

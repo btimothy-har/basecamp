@@ -7,7 +7,7 @@
 import type { ExtensionAPI, ExtensionCommandContext, Theme } from "@mariozechner/pi-coding-agent";
 import { DynamicBorder, getMarkdownTheme } from "@mariozechner/pi-coding-agent";
 import { Container, Markdown, matchesKey, Spacer, Text } from "@mariozechner/pi-tui";
-import type { AgentConfig } from "./types.ts";
+import { type AgentConfig, getAgentToolAllowlist } from "./types.ts";
 
 // ============================================================================
 // Agent List (two-line select)
@@ -103,7 +103,7 @@ function buildDetailMarkdown(agent: AgentConfig): string {
 	meta.push(`| **Source** | ${agent.source} |`);
 	meta.push(`| **Model** | \`${agent.model}\` |`);
 	if (agent.thinking) meta.push(`| **Thinking** | ${agent.thinking} |`);
-	if (agent.tools) meta.push(`| **Tools** | ${agent.tools.join(", ")} |`);
+	meta.push(`| **Tools** | ${getAgentToolAllowlist(agent).join(", ")} |`);
 	if (agent.skills) meta.push(`| **Skills** | ${agent.skills.join(", ")} |`);
 
 	const sections = [agent.description, "", ...meta];

@@ -47,7 +47,7 @@ export function registerAgents(pi: ExtensionAPI) {
 
 	// --- Agent discovery, session naming, async lifecycle ---
 	pi.on("session_start", async (_event, ctx) => {
-		agents = discoverAgents(ctx.cwd);
+		agents = discoverAgents();
 		registerAgentCatalogProvider(agents);
 
 		sessionName = pi.getSessionName()?.trim() || "";

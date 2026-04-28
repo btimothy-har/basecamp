@@ -158,8 +158,9 @@ export interface AssembleOptions {
 	skillNames: string[];
 	agentNames: string[];
 	contextFiles: ContextFile[];
-	/** Agent prompt — when set, replaces working style (worker mode) */
+	/** Agent prompt — when set, replaces primary-session posture and working style */
 	agentPrompt?: string;
+	readOnly?: boolean;
 	/** Model ID (e.g. "claude-sonnet-4-20250514") */
 	modelId?: string;
 }
@@ -170,27 +171,43 @@ export interface AssembleOptions {
  * This fully replaces pi's default system prompt. Tools, skills,
  * and context files are sourced dynamically so we control placement.
  *
- * Layers are ordered static → semi-static → dynamic to maximize
- * prefix caching. Content that doesn't change between sessions
- * sits at the front so the LLM provider can cache the prefix.
+ * Execution posture overlays are placed first so operating constraints lead.
+ * Remaining layers are ordered static → semi-static → dynamic to maximize
+ * prefix caching where possible.
  *
  * Layer order:
- *   1. Working style — OR agent prompt (static per user/agent)
- *   1b. Supervisor mode overlay (primary sessions only, when active)
- *   1c. Language (static per user, interactive sessions only)
- *   2. environment.md (static — tool/environment guidelines)
- *   3. Logseq graph (semi-static — conditional, path rarely changes)
- *   4. Capabilities index (semi-static — tool/skill/agent names)
- *   5. Project context (semi-static — changes per project)
- *   6. Env block (dynamic — identity, user, platform, date, dirs)
- *   7. Git status snapshot (dynamic)
+ *   0. Read-only overlay (when --read-only is set)
+ *   1. Execution posture overlay: executor or supervisor (primary sessions only)
+ *   2. Working style — OR agent prompt (static per user/agent)
+ *   2b. Language (static per user, interactive sessions only)
+ *   3. environment.md (static — tool/environment guidelines)
+ *   4. Logseq graph (semi-static — conditional, path rarely changes)
+ *   5. Capabilities index (semi-static — tool/skill/agent names)
+ *   6. Project context (semi-static — changes per project)
+ *   7. Env block (dynamic — identity, user, platform, date, dirs)
+ *   8. Git status snapshot (dynamic)
  */
 export function assemblePrompt(opts: AssembleOptions): string {
 	const { state, gitStatus, toolNames, skillNames, agentNames, contextFiles, modelId } = opts;
 
 	const parts: string[] = [];
 
-	// 1. Working style — OR agent prompt (subagents)
+	if (opts.readOnly) {
+		const readOnly = loadPromptFile("modes/read-only.md").trim();
+		if (readOnly) {
+			parts.push(readOnly);
+		}
+	}
+
+	// 1. Execution posture overlay (interactive sessions only — skipped for agents)
+	if (!opts.agentPrompt) {
+		const posture = loadPromptFile(isSupervisorMode() ? "modes/supervisor.md" : "modes/executor.md").trim();
+		if (posture) {
+			parts.push(posture);
+		}
+	}
+
+	// 2. Working style — OR agent prompt (subagents)
 	if (opts.agentPrompt) {
 		parts.push(opts.agentPrompt);
 	} else {
@@ -199,15 +216,7 @@ export function assemblePrompt(opts: AssembleOptions): string {
 			parts.push(style);
 		}
 
-		// 1b. Supervisor mode overlay (interactive sessions only — skipped for agents)
-		if (isSupervisorMode()) {
-			const supervisor = loadPromptFile("modes/supervisor.md").trim();
-			if (supervisor) {
-				parts.push(supervisor);
-			}
-		}
-
-		// 1c. Language (interactive sessions only — skipped for agents)
+		// 2b. Language (interactive sessions only — skipped for agents)
 		const languageName = getLanguage();
 		if (languageName) {
 			const lang = loadLanguagePrompt(languageName).trim();
@@ -217,13 +226,13 @@ export function assemblePrompt(opts: AssembleOptions): string {
 		}
 	}
 
-	// 2. Environment guidelines (fully static — no template substitutions)
+	// 3. Environment guidelines (fully static — no template substitutions)
 	const environment = loadPromptFile("environment.md").trim();
 	if (environment) {
 		parts.push(environment);
 	}
 
-	// 3. Logseq graph (when configured and not in logseq working style)
+	// 4. Logseq graph (when configured and not in logseq working style)
 	if (state.workingStyle !== "logseq") {
 		const logseqGraph = getLogseqGraph();
 		if (logseqGraph) {
@@ -235,7 +244,7 @@ export function assemblePrompt(opts: AssembleOptions): string {
 		}
 	}
 
-	// 4. Capabilities index (names only + discover tool instructions)
+	// 5. Capabilities index (names only + discover tool instructions)
 	parts.push(
 		buildCapabilitiesIndex({
 			toolNames,
@@ -245,16 +254,16 @@ export function assemblePrompt(opts: AssembleOptions): string {
 		}),
 	);
 
-	// 5. Project context (basecamp context + CLAUDE.md/AGENTS.md)
+	// 6. Project context (basecamp context + CLAUDE.md/AGENTS.md)
 	const projectContext = buildProjectContext(state, contextFiles);
 	if (projectContext) {
 		parts.push(projectContext);
 	}
 
-	// 6. Env block (dynamic — identity, user, platform, date, directories, scratch dir)
+	// 7. Env block (dynamic — identity, user, platform, date, directories, scratch dir)
 	parts.push(buildEnvBlock(state, modelId));
 
-	// 7. Git status
+	// 8. Git status
 	if (gitStatus) {
 		parts.push(buildGitContext(gitStatus));
 	}
@@ -305,6 +314,7 @@ export function registerPrompt(pi: ExtensionAPI): void {
 			agentNames,
 			contextFiles,
 			agentPrompt,
+			readOnly: pi.getFlag("read-only") === true,
 			modelId: ctx.model?.id,
 		});
 
