@@ -18,6 +18,7 @@ import { truncateToWidth, visibleWidth } from "@mariozechner/pi-tui";
 import { getInvokedSkills } from "../../../platform/skill-tracker";
 import { type AgentMode, getAgentMode, onAgentModeChange } from "../runtime/mode";
 import { getState } from "../runtime/session";
+import { getModeLabel } from "./mode-style";
 
 type ThemeFg = (color: Parameters<import("@mariozechner/pi-coding-agent").Theme["fg"]>[0], text: string) => string;
 let requestRender: (() => void) | null = null;
@@ -241,9 +242,8 @@ function buildLocationSegment(
 }
 
 function buildModeSegment(fg: ThemeFg, mode: AgentMode): string | null {
-	if (mode === "planning") return fg("warning", "[plan]");
-	if (mode === "supervisor") return fg("warning", "[supervisor]");
-	return null;
+	const style = getModeLabel(mode);
+	return style ? fg(style.color, style.label) : null;
 }
 
 function buildModelSegment(fg: ThemeFg, ctx: ExtensionContext | null, pi: ExtensionAPI): string {

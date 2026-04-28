@@ -15,6 +15,7 @@ import { registerSkillTool } from "./tools/skill";
 import { registerSkillLifecycle } from "./tools/skill-tracker";
 import { registerFooter } from "./ui/footer";
 import { registerHeader } from "./ui/header";
+import { registerModeEditor } from "./ui/mode-editor";
 import { registerTitle } from "./ui/title";
 
 export default function (pi: ExtensionAPI) {
@@ -27,6 +28,7 @@ export default function (pi: ExtensionAPI) {
 	registerContextInjection(pi);
 	registerHeader(pi);
 	registerFooter(pi);
+	registerModeEditor(pi);
 	registerOpenCommand(pi, getState);
 	registerTitle(pi);
 	registerDiscoverTool(pi);
