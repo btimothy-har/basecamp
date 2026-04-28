@@ -1,141 +1,56 @@
 ---
 name: recall
-description: "Semantic memory over past Claude Code sessions. Invoke when Claude needs to recall decisions, patterns, context, or actions from past sessions, or when the user asks about previous work."
+description: "Semantic memory over past sessions. Use when you need prior decisions, context, constraints, patterns, or actions from earlier work."
 ---
 
 # Recall
 
-Semantic search over extracted knowledge from past Claude Code sessions.
+Use the `recall` tool to search semantic memory from past sessions.
 
-## Retrieval Modes
+## When to Use
 
-**Semantic search** (`recall search`): hybrid KNN+FTS retrieval over session summaries or artifacts. Requires a query string. Use when looking for sessions or knowledge related to a topic.
+Invoke recall when:
 
-**Parametric list** (`recall list`): date-ordered browsing with strict filters. No query needed. Use when browsing by time range, session, or artifact type.
+- The user asks what happened before or refers to prior work
+- You need previous decisions, constraints, patterns, or implementation context
+- You are about to change code that may have project-specific history
+- Current context is insufficient but past sessions likely contain the answer
 
-**Session detail** (`recall session`): full structured detail for a specific session ID.
+Do not use recall for information that is already available in the current conversation, repository files, or tool results.
 
-## Commands
+## Modes
 
-```bash
-# Semantic search — find sessions by topic
-recall search "<query>"
-recall search "<query>" --type decisions
-recall search "<query>" --type knowledge,decisions
-recall search "<query>" --after 2026-03-01
-recall search "<query>" --after 2026-03-01 --before 2026-03-15
+- `search` — topic search over past session summaries or artifacts
+- `list` — browse recent/date-filtered memory without a query
+- `session` — fetch full detail after finding a relevant session ID
 
-# Parametric list — browse by date/filters (no query needed)
-recall list --after 2026-03-01
-recall list --after 2026-03-01 --before 2026-03-15
-recall list --type decisions --after 2026-03-01
-recall list --session <session_id>
-recall list --session <session_id> --type decisions
+## Common Patterns
 
-# Session detail — full structured output
-recall session <session_id>
-```
+Start broad, then fetch detail:
 
-## Flags
+1. `recall({ mode: "search", query: "<topic>" })`
+2. If a result looks relevant, call `recall({ mode: "session", sessionId: "<id>" })`
 
-### `recall search`
+Use `types` when the user asks for a specific kind of memory:
 
-| Flag | Short | Default | Description |
-|------|-------|---------|-------------|
-| `--type` | `-t` | — | Comma-separated: `knowledge`, `decisions`, `constraints`, `actions` |
-| `--cross-project` | `-x` | off | Search across all projects (default: current project only) |
-| `--top-k` | `-k` | 10 | Max results |
-| `--threshold` | — | 0.3 | Minimum relevance score (0–1) |
-| `--after` | — | — | Only include results after this date (YYYY-MM-DD or ISO datetime) |
-| `--before` | — | — | Only include results before this date (YYYY-MM-DD or ISO datetime) |
+- `decisions` — what was decided and why
+- `knowledge` — facts, patterns, and implementation context
+- `constraints` — limitations, requirements, and boundaries
+- `actions` — what was done or planned
 
-### `recall list`
+Use `crossProject: true` only when context may live outside the current project.
 
-| Flag | Short | Default | Description |
-|------|-------|---------|-------------|
-| `--type` | `-t` | — | Comma-separated: `knowledge`, `decisions`, `constraints`, `actions` |
-| `--cross-project` | `-x` | off | List across all projects |
-| `--top-k` | `-k` | 10 | Max results |
-| `--after` | — | — | Only include results after this date (YYYY-MM-DD or ISO datetime) |
-| `--before` | — | — | Only include results before this date (YYYY-MM-DD or ISO datetime) |
-| `--session` | — | — | Filter artifacts within a specific session |
+## Mode Selection
 
-## When to Use Each Mode
-
-| Goal | Command |
-|------|---------|
-| "What sessions dealt with X?" | `recall search "X"` |
-| "What did we decide about X?" | `recall search "X" --type decisions` |
-| "What do we know about X?" | `recall search "X" --type knowledge` |
-| "What did we do about X?" | `recall search "X" --type actions` |
-| "What limitations exist for X?" | `recall search "X" --type constraints` |
-| "What sessions happened this week?" | `recall list --after 2026-03-20` |
-| "What decisions were made recently?" | `recall list --type decisions --after 2026-03-01` |
-| "What artifacts exist for session X?" | `recall list --session <id>` |
-| "Search only recent sessions" | `recall search "X" --after 2026-03-01` |
-| Context might exist in other projects | add `--cross-project` |
-
-## Two-Step Pattern
-
-When you need full context, not just snippets:
-
-1. `recall search "<query>"` → find relevant session IDs from summaries
-2. `recall session <session_id>` → get the full structured session (summary, knowledge, decisions, constraints, actions)
-
-## Output Format
-
-All output is JSON.
-
-**Search results** (semantic, scored):
-```json
-{
-  "results": [
-    {
-      "session_id": "abc123",
-      "text": "...",
-      "title": "Short descriptive title",
-      "type": "summary" | "decisions" | "knowledge" | "actions" | "constraints",
-      "score": 0.82,
-      "created_at": "2026-01-15T10:30:00"
-    }
-  ],
-  "count": 3
-}
-```
-
-**List results** (parametric, date-ordered, no score):
-```json
-{
-  "results": [
-    {
-      "session_id": "abc123",
-      "text": "...",
-      "title": "Short descriptive title",
-      "started_at": "2026-01-15T10:30:00",
-      "ended_at": "2026-01-15T11:45:00"
-    }
-  ],
-  "count": 3
-}
-```
-
-**Session detail** (`recall session <id>`):
-```json
-{
-  "session_id": "abc123",
-  "started_at": "...",
-  "ended_at": "...",
-  "sections": {
-    "summary": "...",
-    "decisions": "...",
-    "knowledge": "...",
-    "actions": "...",
-    "constraints": "..."
-  }
-}
-```
+| Need | Mode |
+|------|------|
+| Find sessions or artifacts about a topic | `search` |
+| Find decisions about a topic | `search` with `types: ["decisions"]` |
+| Browse recent work or a date range | `list` |
+| Inspect artifacts from a known session | `list` with `sessionId` |
+| Read full structured detail for a session | `session` |
 
 ## Automatic Behaviors
 
-- **Project scoping** — searches and lists are automatically scoped to `BASECAMP_REPO` (current project)
-- **Session exclusion** — the current session is automatically excluded from search results
+- Searches and lists are scoped to the current project by default
+- The current session is excluded from search results
