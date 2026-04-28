@@ -2,7 +2,7 @@ export type AgentMode = "planning" | "supervisor" | "executor";
 
 export const AGENT_MODES: readonly AgentMode[] = ["planning", "supervisor", "executor"];
 
-const DEFAULT_AGENT_MODE: AgentMode = "planning";
+const DEFAULT_AGENT_MODE: AgentMode = "executor";
 
 type AgentModeListener = (mode: AgentMode) => void;
 

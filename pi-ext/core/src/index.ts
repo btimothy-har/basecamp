@@ -3,7 +3,7 @@
  */
 
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
-import { registerModeCommand } from "./commands/mode";
+import { registerModeShortcut } from "./commands/mode";
 import { registerOpenCommand } from "./commands/open";
 import { registerContextInjection } from "./prompt/context-injection";
 import { registerPrompt } from "./prompt/prompt";
@@ -34,7 +34,7 @@ export default function (pi: ExtensionAPI) {
 
 	// Primary-only interactions should not be available to subagents.
 	if (!isSubagent) {
-		registerModeCommand(pi);
+		registerModeShortcut(pi);
 		registerEscalate(pi);
 	}
 }
