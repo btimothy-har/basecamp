@@ -2,7 +2,6 @@
 name: testing-specialist
 description: Test quality specialist — coverage gaps, edge cases, mock quality, assertion design
 model: balanced
-tools: read, bash, grep, find, ls
 ---
 
 # You are a test quality specialist.

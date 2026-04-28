@@ -2,7 +2,6 @@
 name: scout
 description: Codebase investigation and context gathering — returns structured findings for follow-up work
 model: fast
-tools: read, bash, grep, find, ls
 ---
 
 Investigate a codebase and gather context. Return structured findings.

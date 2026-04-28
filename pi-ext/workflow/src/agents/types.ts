@@ -6,6 +6,7 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { type Static, Type } from "@sinclair/typebox";
 import type { TaskProgressSnapshot } from "../tasks/render";
+import type { AgentConfig } from "./discovery.ts";
 
 // Re-export agent discovery types so runtime modules have one import surface.
 export type { AgentConfig, ModelStrategy } from "./discovery.ts";
@@ -30,7 +31,7 @@ export interface UsageStats {
 
 export interface AgentDetails {
 	agent: string;
-	agentSource: "builtin" | "user" | "ad-hoc";
+	agentSource: "builtin" | "ad-hoc";
 	task: string;
 	exitCode: number;
 	output: string;
@@ -45,7 +46,7 @@ export interface AgentDetails {
 /** Partial details emitted during agent execution via onUpdate. */
 export interface AgentPartialDetails {
 	agent: string;
-	agentSource: "builtin" | "user" | "ad-hoc";
+	agentSource: "builtin" | "ad-hoc";
 	model?: string;
 	toolCalls: ToolCallRecord[];
 	turnCount: number;
@@ -63,7 +64,7 @@ export const AgentToolParams = Type.Object({
 	task: Type.String({ description: "Task description" }),
 	name: Type.Optional(Type.String({ description: "Name suffix (auto-generated prefix)" })),
 	async: Type.Optional(
-		Type.Boolean({ description: "Run in background, return handle immediately (read-only agents only)" }),
+		Type.Boolean({ description: "Run in background, return handle immediately (named read-only agents only)" }),
 	),
 });
 
@@ -106,7 +107,7 @@ export interface AsyncStatus {
 export interface AsyncResult {
 	runId: string;
 	agent: string;
-	agentSource: "builtin" | "user";
+	agentSource: "builtin";
 	task: string;
 	success: boolean;
 	output: string;
@@ -124,7 +125,7 @@ export interface AsyncJobState {
 	asyncId: string;
 	asyncDir: string;
 	agent: string;
-	agentSource: "builtin" | "user";
+	agentSource: "builtin";
 	task: string;
 	status: "queued" | "running" | "complete" | "failed";
 	startedAt: number;
@@ -139,7 +140,7 @@ export interface AsyncJobState {
 export interface AsyncRunnerConfig {
 	runId: string;
 	agent: string;
-	agentSource: "builtin" | "user";
+	agentSource: "builtin";
 	task: string;
 	cwd: string;
 	model: string | undefined;
@@ -153,29 +154,35 @@ export const AGENT_ASYNC_STARTED_EVENT = "agent:async-started";
 export const AGENT_ASYNC_COMPLETE_EVENT = "agent:async-complete";
 
 // ============================================================================
-// Async Dispatch Validation
+// Agent Tool Policy
 // ============================================================================
 
-const WRITE_TOOLS = new Set(["write", "edit"]);
+export const MUTATIVE_AGENT_NAME = "worker";
+export const READ_ONLY_AGENT_TOOLS = ["read", "bash", "grep", "find", "ls"] as const;
+export const MUTATIVE_AGENT_TOOLS = ["read", "write", "edit", "bash", "grep", "find", "ls"] as const;
 
-export function canDispatchAsync(agentConfig: import("./discovery.ts").AgentConfig | null): {
+export type AgentRunKind = "named-read-only" | "mutative" | "ad-hoc";
+
+export function getAgentRunKind(agentConfig: AgentConfig | null): AgentRunKind {
+	if (!agentConfig) return "ad-hoc";
+	return agentConfig.name === MUTATIVE_AGENT_NAME ? "mutative" : "named-read-only";
+}
+
+export function getAgentToolAllowlist(agentConfig: AgentConfig | null): string[] {
+	return [...(getAgentRunKind(agentConfig) === "mutative" ? MUTATIVE_AGENT_TOOLS : READ_ONLY_AGENT_TOOLS)];
+}
+
+export function canDispatchAsync(agentConfig: AgentConfig | null): {
 	ok: boolean;
 	reason?: string;
 } {
 	if (!agentConfig) {
 		return { ok: false, reason: "Ad-hoc agents cannot be dispatched asynchronously" };
 	}
-	if (!agentConfig.tools?.length) {
+	if (getAgentRunKind(agentConfig) !== "named-read-only") {
 		return {
 			ok: false,
-			reason: `Agent "${agentConfig.name}" has no tool restrictions — async requires a read-only toolset`,
-		};
-	}
-	const writeTools = agentConfig.tools.filter((t) => WRITE_TOOLS.has(t));
-	if (writeTools.length > 0) {
-		return {
-			ok: false,
-			reason: `Agent "${agentConfig.name}" has write tools (${writeTools.join(", ")}) — async requires a read-only toolset`,
+			reason: `Agent "${agentConfig.name}" is mutative — async requires a named read-only agent`,
 		};
 	}
 	return { ok: true };

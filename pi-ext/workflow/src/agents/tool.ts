@@ -3,7 +3,7 @@
  *
  * Subagents run synchronously or asynchronously as child processes.
  * Sync: output returned as tool result for immediate reasoning.
- * Async: agent runs in background, result delivered via sendMessage.
+ * Async: agent runs in background, result delivered by async-notify via sendMessage.
  *
  * Usage:
  *   { agent: "scout", task: "..." }                    → sync dispatch
@@ -25,8 +25,23 @@ import { formatTaskProgressSummary, renderCompactTaskProgressLines } from "../ta
 import { isAsyncAvailable, spawnAsyncAgent } from "./async-spawn.ts";
 import type { AgentStreamEvent } from "./executor.ts";
 import { spawnAgent } from "./executor.ts";
-import type { AgentConfig, AgentDetails, AgentPartialDetails, ModelStrategy, ToolCallRecord } from "./types.ts";
-import { AGENT_ASYNC_STARTED_EVENT, AgentToolParams, canDispatchAsync, DEFAULT_AGENT_MAX_DEPTH } from "./types.ts";
+import type {
+	AgentConfig,
+	AgentDetails,
+	AgentPartialDetails,
+	AgentRunKind,
+	AsyncResult,
+	ModelStrategy,
+	ToolCallRecord,
+} from "./types.ts";
+import {
+	AGENT_ASYNC_COMPLETE_EVENT,
+	AGENT_ASYNC_STARTED_EVENT,
+	AgentToolParams,
+	canDispatchAsync,
+	DEFAULT_AGENT_MAX_DEPTH,
+	getAgentRunKind,
+} from "./types.ts";
 
 // ============================================================================
 // Model Resolution
@@ -264,7 +279,7 @@ function renderPartialView(
 const BASECAMP_EXTENSION_ROOT = fs.realpathSync(
 	path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..", ".."),
 );
-const SUBAGENT_EXCLUDED_EXTENSION_TOOLS = new Set(["escalate", "pr_publish"]);
+const SUBAGENT_EXCLUDED_EXTENSION_TOOLS = new Set(["agent", "escalate", "pr_publish"]);
 
 type ToolInfo = ReturnType<ExtensionAPI["getAllTools"]>[number];
 
@@ -296,24 +311,88 @@ function getBasecampExtensionToolNames(pi: ExtensionAPI): string[] {
 		.map((tool) => tool.name);
 }
 
+interface AgentRunGuardState {
+	namedReadOnly: number;
+	exclusiveLabel: string | null;
+}
+
+type AgentRunGuardResult = { ok: true; release: () => void } | { ok: false; message: string };
+
+function formatActiveAgentRuns(state: AgentRunGuardState): string {
+	if (state.exclusiveLabel) return `"${state.exclusiveLabel}"`;
+	if (state.namedReadOnly === 1) return "1 named read-only agent";
+	return `${state.namedReadOnly} named read-only agents`;
+}
+
+function beginAgentRun(state: AgentRunGuardState, kind: AgentRunKind, label: string): AgentRunGuardResult {
+	if (kind === "named-read-only") {
+		if (state.exclusiveLabel) {
+			return {
+				ok: false,
+				message: `Agent "${label}" cannot start while ${formatActiveAgentRuns(state)} is running. Parallel dispatch is allowed only among named read-only basecamp agents.`,
+			};
+		}
+		state.namedReadOnly++;
+		let released = false;
+		return {
+			ok: true,
+			release: () => {
+				if (released) return;
+				released = true;
+				state.namedReadOnly = Math.max(0, state.namedReadOnly - 1);
+			},
+		};
+	}
+
+	if (state.exclusiveLabel || state.namedReadOnly > 0) {
+		return {
+			ok: false,
+			message: `Agent "${label}" must run solo. Wait for ${formatActiveAgentRuns(state)} to finish before dispatching worker or ad-hoc agents.`,
+		};
+	}
+
+	state.exclusiveLabel = label;
+	let released = false;
+	return {
+		ok: true,
+		release: () => {
+			if (released) return;
+			released = true;
+			if (state.exclusiveLabel === label) state.exclusiveLabel = null;
+		},
+	};
+}
+
 export function registerAgentTool(
 	pi: ExtensionAPI,
 	getAgents: () => AgentConfig[],
 	getSessionName: () => string,
 ): void {
+	const runGuardState: AgentRunGuardState = { namedReadOnly: 0, exclusiveLabel: null };
+	const asyncRunReleases = new Map<string, () => void>();
+
+	pi.events.on(AGENT_ASYNC_COMPLETE_EVENT, (data: unknown) => {
+		const result = data as AsyncResult;
+		if (!result.runId) return;
+		const release = asyncRunReleases.get(result.runId);
+		if (!release) return;
+		asyncRunReleases.delete(result.runId);
+		release();
+	});
+
 	pi.registerTool({
 		name: "agent",
 		label: "Agent",
 		description: `Dispatch a subagent to perform a task synchronously. The subagent runs as a child process and its output is returned as the tool result.
 
 DISPATCH: { agent: "scout", task: "Investigate the auth module" }
-AD-HOC: { task: "Fix the login bug" }
+AD-HOC: { task: "Summarize auth error handling" }
 ASYNC: { agent: "scout", task: "Investigate the auth module", async: true }
 
-Available agents are discovered from user (~/.pi/agents/) and builtin definitions.`,
+Available named agents are basecamp builtin definitions. Ad-hoc dispatch is sync-only and must run solo.`,
 
 		promptSnippet:
-			"Dispatch a subagent to perform a task. Runs sync (returns output) or async (background, result auto-delivered)",
+			"Dispatch a subagent. Parallel calls are allowed only for named read-only agents; worker and ad-hoc must run solo",
 
 		parameters: AgentToolParams,
 
@@ -358,8 +437,8 @@ Available agents are discovered from user (~/.pi/agents/) and builtin definition
 			const env = buildAgentEnv({ name, parentSession, project });
 			const agentLabel = params.agent ?? "ad-hoc";
 			const extensionTools = getBasecampExtensionToolNames(pi);
+			const runKind = getAgentRunKind(agentConfig);
 
-			// ---- Async dispatch path ----
 			if (params.async) {
 				if (!isAsyncAvailable()) {
 					return {
@@ -376,24 +455,56 @@ Available agents are discovered from user (~/.pi/agents/) and builtin definition
 						details: null as unknown as AgentDetails,
 					};
 				}
+			}
 
-				const asyncResult = spawnAsyncAgent(agentConfig!, params.task, {
-					name,
-					model,
-					cwd: ctx.cwd,
-					env,
-					sessionDir,
-					extensionTools,
-					sessionId: process.env.BASECAMP_SESSION_NAME,
-				});
+			const runGuard = beginAgentRun(runGuardState, runKind, agentLabel);
+			if (!runGuard.ok) {
+				return {
+					content: [{ type: "text", text: runGuard.message }],
+					isError: true,
+					details: null as unknown as AgentDetails,
+				};
+			}
+			let releaseAgentRun: (() => void) | null = runGuard.release;
+			const releaseAgentRunNow = () => {
+				releaseAgentRun?.();
+				releaseAgentRun = null;
+			};
+
+			// ---- Async dispatch path ----
+			if (params.async) {
+				let asyncResult: ReturnType<typeof spawnAsyncAgent>;
+				try {
+					asyncResult = spawnAsyncAgent(agentConfig!, params.task, {
+						name,
+						model,
+						cwd: ctx.cwd,
+						env,
+						sessionDir,
+						extensionTools,
+						sessionId: process.env.BASECAMP_SESSION_NAME,
+					});
+				} catch (error) {
+					releaseAgentRunNow();
+					const msg = error instanceof Error ? error.message : String(error);
+					return {
+						content: [{ type: "text", text: `Async dispatch failed: ${msg}` }],
+						isError: true,
+						details: null as unknown as AgentDetails,
+					};
+				}
 
 				if (asyncResult.error) {
+					releaseAgentRunNow();
 					return {
 						content: [{ type: "text", text: `Async dispatch failed: ${asyncResult.error}` }],
 						isError: true,
 						details: null as unknown as AgentDetails,
 					};
 				}
+
+				if (releaseAgentRun) asyncRunReleases.set(asyncResult.asyncId, releaseAgentRun);
+				releaseAgentRun = null;
 
 				pi.events.emit(AGENT_ASYNC_STARTED_EVENT, {
 					id: asyncResult.asyncId,
@@ -523,6 +634,8 @@ Available agents are discovered from user (~/.pi/agents/) and builtin definition
 				clearStatus(ctx, agentId);
 				const msg = error instanceof Error ? error.message : String(error);
 				return { content: [{ type: "text", text: msg }], isError: true, details: null as unknown as AgentDetails };
+			} finally {
+				releaseAgentRunNow();
 			}
 		},
 

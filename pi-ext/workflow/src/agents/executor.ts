@@ -19,7 +19,7 @@ import * as path from "node:path";
 import { getPiCommand } from "../../../platform/config.ts";
 import type { TaskProgressSnapshot, TaskProgressStatus, TaskProgressTask } from "../tasks/render";
 import { buildSkillInjection, resolveSkills } from "./skills.ts";
-import type { AgentConfig, ToolCallRecord, UsageStats } from "./types.ts";
+import { type AgentConfig, getAgentToolAllowlist, type ToolCallRecord, type UsageStats } from "./types.ts";
 
 // ============================================================================
 // Streaming Event Types
@@ -117,12 +117,10 @@ export function buildPiArgs(
 		args.push("--agent-prompt", promptFile);
 	}
 
-	// Tool allowlist — agent frontmatter controls built-ins; basecamp extension
+	// Tool allowlist is policy-owned, not frontmatter-owned. Basecamp extension
 	// tools are added dynamically so Pi 0.68+ keeps workflow tools available.
-	if (agent?.tools?.length) {
-		const tools = [...new Set([...agent.tools, ...opts.extensionTools])];
-		args.push("--tools", tools.join(","));
-	}
+	const tools = [...new Set([...getAgentToolAllowlist(agent), ...opts.extensionTools])];
+	args.push("--tools", tools.join(","));
 
 	// Task — use a file for large tasks to avoid arg length limits
 	const taskText = `Task: ${task}`;

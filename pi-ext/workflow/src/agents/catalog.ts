@@ -4,7 +4,7 @@
 
 import { type CatalogItem, registerCatalogProvider } from "../../../platform/catalog";
 import type { AgentConfig } from "./discovery.ts";
-import { DEFAULT_AGENT_MAX_DEPTH } from "./types";
+import { DEFAULT_AGENT_MAX_DEPTH, getAgentToolAllowlist } from "./types";
 
 function agentsAvailable(): boolean {
 	const depth = Number(process.env.BASECAMP_AGENT_DEPTH ?? "0");
@@ -21,7 +21,7 @@ function toCatalogItem(agent: AgentConfig): CatalogItem {
 		meta: {
 			source: agent.source,
 			model: agent.model,
-			...(agent.tools ? { tools: agent.tools.join(", ") } : {}),
+			tools: getAgentToolAllowlist(agent).join(", "),
 			...(agent.skills ? { skills: agent.skills.join(", ") } : {}),
 		},
 	};

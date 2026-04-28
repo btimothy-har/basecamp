@@ -203,7 +203,7 @@ function handleStarted(state: AsyncWatcherState, data: unknown): void {
 	const info = data as {
 		id?: string;
 		agent?: string;
-		agentSource?: "builtin" | "user";
+		agentSource?: "builtin";
 		task?: string;
 		asyncDir?: string;
 	};
