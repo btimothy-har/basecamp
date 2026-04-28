@@ -124,6 +124,10 @@ function buildFeedbackResult(draft: PlanDraft): string {
 type ImplementationMode = "supervisor" | "executor";
 type ApprovedPlanMode = "analysis" | ImplementationMode;
 
+type PendingPlanHandoff = {
+	mode: ImplementationMode;
+};
+
 const IMPLEMENTATION_MODE_CHOICES = ["Execute as Supervisor", "Execute as IC/executor"] as const;
 
 async function selectImplementationMode(ctx: ExtensionContext): Promise<ImplementationMode | null> {
@@ -133,6 +137,14 @@ async function selectImplementationMode(ctx: ExtensionContext): Promise<Implemen
 	if (choice === "Execute as Supervisor") return "supervisor";
 	if (choice === "Execute as IC/executor") return "executor";
 	return null;
+}
+
+function buildHandoffMessage(handoff: PendingPlanHandoff): string {
+	return [
+		`Automatic plan handoff: the implementation plan was approved for ${handoff.mode} mode.`,
+		"The system prompt has been refreshed for the selected execution posture.",
+		"Begin executing the approved plan now. Use the active goal and task list; do not call plan() again unless the user asks.",
+	].join("\n");
 }
 
 function buildApprovedResult(draft: PlanDraft, mode: ApprovedPlanMode): string {
@@ -174,7 +186,9 @@ function buildApprovedResult(draft: PlanDraft, mode: ApprovedPlanMode): string {
 		result.next_step = "Analysis plan approved, you may begin executing the analysis tasks.";
 	} else {
 		result.implementation_mode = mode;
-		result.next_step = "Plan approved, you may begin implementing the plan.";
+		result.handoff_status = "scheduled";
+		result.next_step =
+			"Plan approved, but do not start implementation or call tools in this turn. End the turn now; Basecamp will automatically send a fresh handoff message after this run ends so the selected execution prompt is loaded before work begins.";
 	}
 
 	// Only include notes if any exist
@@ -211,6 +225,18 @@ export interface PlanAccess {
 
 export function registerPlan(pi: ExtensionAPI, tasksAccess: TasksAccess): PlanAccess {
 	let draft: PlanDraft | null = null;
+	let pendingHandoff: PendingPlanHandoff | null = null;
+
+	pi.on("agent_end", async () => {
+		const handoff = pendingHandoff;
+		if (!handoff) return;
+		pendingHandoff = null;
+
+		// Pi clears isStreaming after awaited agent_end handlers finish; defer to the next macrotask.
+		setTimeout(() => {
+			pi.sendUserMessage(buildHandoffMessage(handoff));
+		}, 0);
+	});
 
 	pi.registerTool({
 		name: "plan",
@@ -306,6 +332,7 @@ export function registerPlan(pi: ExtensionAPI, tasksAccess: TasksAccess): PlanAc
 
 				setAgentMode(implementationMode);
 				tasksAccess.activateGoalCycle(draft.goal.content, approvedTasks, planRef, implementationMode);
+				pendingHandoff = { mode: implementationMode };
 
 				const result = buildApprovedResult(draft, implementationMode);
 				draft = null;

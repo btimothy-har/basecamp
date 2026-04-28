@@ -56,7 +56,7 @@ The user reviews via an interactive overlay. They may:
 
 If feedback is returned, address it and re-submit. Unchanged approved sections keep their status.
 
-Once every item is approved and submitted, follow the plan result. Implementation plans ask the user whether to execute as supervisor or IC/executor; if the approved result includes an implementation mode, begin executing in that posture. Analysis-mode plans stay in analysis mode; begin the approved analysis tasks without supervisor/executor handoff.
+Once every item is approved and submitted, follow the plan result. Implementation plans ask the user whether to execute as supervisor or IC/executor; if the approved result includes a scheduled handoff, do not begin implementation in the current turn. End the turn and let Basecamp start the fresh handoff turn so the selected posture prompt is loaded. Analysis-mode plans stay in analysis mode; begin the approved analysis tasks without supervisor/executor handoff.
 
 ---
 
