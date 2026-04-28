@@ -6,24 +6,42 @@ const DEFAULT_AGENT_MODE: AgentMode = "executor";
 
 type AgentModeListener = (mode: AgentMode) => void;
 
-let mode: AgentMode = DEFAULT_AGENT_MODE;
-const listeners = new Set<AgentModeListener>();
+type AgentModeState = {
+	mode: AgentMode;
+	listeners: Set<AgentModeListener>;
+};
+
+const MODE_STATE_KEY = "__basecampAgentModeState";
+
+type GlobalWithAgentModeState = typeof globalThis & {
+	[MODE_STATE_KEY]?: AgentModeState;
+};
+
+function getModeState(): AgentModeState {
+	const scope = globalThis as GlobalWithAgentModeState;
+	// Pi loads package extension entries with separate Jiti module caches, so
+	// module-level state is not shared between core/workflow extension entries.
+	scope[MODE_STATE_KEY] ??= { mode: DEFAULT_AGENT_MODE, listeners: new Set() };
+	return scope[MODE_STATE_KEY];
+}
 
 export function getAgentMode(): AgentMode {
-	return mode;
+	return getModeState().mode;
 }
 
 export function setAgentMode(nextMode: AgentMode): AgentMode {
-	if (mode === nextMode) return mode;
+	const state = getModeState();
+	if (state.mode === nextMode) return state.mode;
 
-	mode = nextMode;
-	for (const listener of listeners) {
-		listener(mode);
+	state.mode = nextMode;
+	for (const listener of state.listeners) {
+		listener(state.mode);
 	}
-	return mode;
+	return state.mode;
 }
 
 export function cycleAgentMode(): AgentMode {
+	const mode = getAgentMode();
 	const index = AGENT_MODES.indexOf(mode);
 	return setAgentMode(AGENT_MODES[(index + 1) % AGENT_MODES.length]!);
 }
@@ -33,8 +51,9 @@ export function resetAgentMode(): void {
 }
 
 export function onAgentModeChange(listener: AgentModeListener): () => void {
-	listeners.add(listener);
+	const state = getModeState();
+	state.listeners.add(listener);
 	return () => {
-		listeners.delete(listener);
+		state.listeners.delete(listener);
 	};
 }
