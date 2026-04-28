@@ -19,7 +19,13 @@ import * as path from "node:path";
 import { getPiCommand } from "../../../platform/config.ts";
 import type { TaskProgressSnapshot, TaskProgressStatus, TaskProgressTask } from "../tasks/render";
 import { buildSkillInjection, resolveSkills } from "./skills.ts";
-import { type AgentConfig, getAgentToolAllowlist, type ToolCallRecord, type UsageStats } from "./types.ts";
+import {
+	type AgentConfig,
+	getAgentRunKind,
+	getAgentToolAllowlist,
+	type ToolCallRecord,
+	type UsageStats,
+} from "./types.ts";
 
 // ============================================================================
 // Streaming Event Types
@@ -86,6 +92,8 @@ export function buildPiArgs(
 	// Suppress prompt templates — subagents get focused instructions
 	// from the agent persona, not ambient discovery
 	args.push("--no-prompt-templates");
+
+	if (getAgentRunKind(agent) !== "mutative") args.push("--read-only");
 
 	// Skills: if the agent declares specific skills, resolve them by name
 	// via pi's loadSkills() API, inject their content into the system prompt,

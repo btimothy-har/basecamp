@@ -160,6 +160,7 @@ export interface AssembleOptions {
 	contextFiles: ContextFile[];
 	/** Agent prompt — when set, replaces working style (worker mode) */
 	agentPrompt?: string;
+	readOnly?: boolean;
 	/** Model ID (e.g. "claude-sonnet-4-20250514") */
 	modelId?: string;
 }
@@ -175,6 +176,7 @@ export interface AssembleOptions {
  * sits at the front so the LLM provider can cache the prefix.
  *
  * Layer order:
+ *   0. Read-only mode overlay (when --read-only is set)
  *   1. Working style — OR agent prompt (static per user/agent)
  *   1b. Supervisor mode overlay (primary sessions only, when active)
  *   1c. Language (static per user, interactive sessions only)
@@ -189,6 +191,13 @@ export function assemblePrompt(opts: AssembleOptions): string {
 	const { state, gitStatus, toolNames, skillNames, agentNames, contextFiles, modelId } = opts;
 
 	const parts: string[] = [];
+
+	if (opts.readOnly) {
+		const readOnly = loadPromptFile("modes/read-only.md").trim();
+		if (readOnly) {
+			parts.push(readOnly);
+		}
+	}
 
 	// 1. Working style — OR agent prompt (subagents)
 	if (opts.agentPrompt) {
@@ -305,6 +314,7 @@ export function registerPrompt(pi: ExtensionAPI): void {
 			agentNames,
 			contextFiles,
 			agentPrompt,
+			readOnly: pi.getFlag("read-only") === true,
 			modelId: ctx.model?.id,
 		});
 
