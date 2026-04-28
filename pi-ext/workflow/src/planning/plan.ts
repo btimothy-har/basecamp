@@ -124,10 +124,6 @@ type ImplementationMode = "supervisor" | "executor";
 
 const IMPLEMENTATION_MODE_CHOICES = ["Execute as Supervisor", "Execute as IC/executor"] as const;
 
-function implementationModeLabel(mode: ImplementationMode): string {
-	return mode === "supervisor" ? "Supervisor" : "IC/executor";
-}
-
 async function selectImplementationMode(ctx: ExtensionContext): Promise<ImplementationMode | null> {
 	if (!ctx.hasUI) return null;
 
@@ -159,7 +155,7 @@ function buildApprovedResult(draft: PlanDraft, implementationMode: Implementatio
 	const result: Record<string, unknown> = {
 		status: "approved",
 		implementation_mode: implementationMode,
-		next_step: `Plan approved. Begin implementing as ${implementationModeLabel(implementationMode)}.`,
+		next_step: "Plan approved, you may begin implementing the plan.",
 		goal: draft.goal.content,
 		context: draft.context.content,
 		design: draft.design.content,
@@ -271,7 +267,8 @@ export function registerPlan(pi: ExtensionAPI, tasksAccess: TasksAccess): PlanAc
 								type: "text",
 								text: JSON.stringify({
 									status: "handoff_cancelled",
-									message: "Plan approved, but no implementation mode was selected.",
+									next_step:
+										"Plan approved, but an execution pathway was not selected. Seek user confirmation to begin implementation.",
 								}),
 							},
 						],
