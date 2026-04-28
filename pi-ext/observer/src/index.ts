@@ -7,9 +7,13 @@
  * Hooks:
  *   session_before_compact / session_shutdown → full pipeline (ingest --process)
  *   tool_call (agent tool dispatch) → ingest only (no --process)
+ *
+ * Tool:
+ *   recall — semantic search over past sessions (spawns Python CLI)
  */
 
 import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-agent";
+import { registerRecallTool } from "./recall-tool.js";
 
 /** Sessions with fewer turns than this are not worth indexing for recall. */
 const MIN_TURNS_FOR_INGEST = 1;
@@ -47,6 +51,7 @@ function triggerIngest(pi: ExtensionAPI, ctx: ExtensionContext, processFlag: boo
 
 export default function (pi: ExtensionAPI): void {
 	registerObserver(pi);
+	registerRecallTool(pi);
 }
 
 export function registerObserver(pi: ExtensionAPI): void {
