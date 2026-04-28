@@ -29,6 +29,7 @@ import * as os from "node:os";
 import * as path from "node:path";
 import type { ExtensionAPI, ExtensionContext, Theme } from "@mariozechner/pi-coding-agent";
 import { Type } from "@sinclair/typebox";
+import { type AgentMode, getAgentMode, setAgentMode } from "../../../core/src/runtime/mode";
 import { renderTaskWidgetLines } from "./render";
 
 // ============================================================================
@@ -65,6 +66,7 @@ export interface GoalCycle {
 		success: string;
 		boundaries: string;
 	} | null;
+	agentMode?: AgentMode | null;
 	active: boolean;
 	archivedAt: string | null;
 }
@@ -74,7 +76,7 @@ export interface TasksAccess {
 	getState(): Readonly<TasksState>;
 	setNotes(index: number, notes: string): void;
 	/** Create a new goal cycle, archiving any active one. Sets state + persists. */
-	activateGoalCycle(goal: string, tasks: Task[], planRef: GoalCycle["planRef"]): void;
+	activateGoalCycle(goal: string, tasks: Task[], planRef: GoalCycle["planRef"], agentMode: AgentMode | null): void;
 	/** Get the active GoalCycle's planRef, if any. */
 	getPlanRef(): GoalCycle["planRef"];
 	/** Get the current ExtensionContext (null before session_start). */
@@ -324,7 +326,14 @@ export function registerTasks(pi: ExtensionAPI): TasksAccess {
 			}
 
 			// Start a new cycle
-			cycles.push({ goal: params.goal, tasks: [], planRef: null, active: true, archivedAt: null });
+			cycles.push({
+				goal: params.goal,
+				tasks: [],
+				planRef: null,
+				agentMode: getAgentMode(),
+				active: true,
+				archivedAt: null,
+			});
 			state.goal = params.goal;
 			state.tasks = [];
 			guardBlockCount = 0;
@@ -597,6 +606,7 @@ export function registerTasks(pi: ExtensionAPI): TasksAccess {
 		if (active) {
 			state.goal = active.goal;
 			state.tasks = active.tasks;
+			if (active.agentMode) setAgentMode(active.agentMode);
 		}
 
 		updateWidget();
@@ -633,14 +643,14 @@ export function registerTasks(pi: ExtensionAPI): TasksAccess {
 			updateWidget();
 			persistState();
 		},
-		activateGoalCycle(goal: string, tasks: Task[], planRef: GoalCycle["planRef"]) {
+		activateGoalCycle(goal: string, tasks: Task[], planRef: GoalCycle["planRef"], agentMode: AgentMode | null) {
 			const active = cycles.find((c) => c.active);
 			if (active) {
 				active.tasks = state.tasks;
 				active.active = false;
 				active.archivedAt = new Date().toISOString();
 			}
-			cycles.push({ goal, tasks, planRef, active: true, archivedAt: null });
+			cycles.push({ goal, tasks, planRef, agentMode, active: true, archivedAt: null });
 			state.goal = goal;
 			state.tasks = tasks;
 			guardBlockCount = 0;

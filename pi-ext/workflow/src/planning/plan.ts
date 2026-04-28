@@ -277,7 +277,7 @@ export function registerPlan(pi: ExtensionAPI, tasksAccess: TasksAccess): PlanAc
 				};
 
 				if (getAgentMode() === "analysis") {
-					tasksAccess.activateGoalCycle(draft.goal.content, approvedTasks, planRef);
+					tasksAccess.activateGoalCycle(draft.goal.content, approvedTasks, planRef, "analysis");
 
 					const result = buildApprovedResult(draft, "analysis");
 					draft = null;
@@ -305,7 +305,7 @@ export function registerPlan(pi: ExtensionAPI, tasksAccess: TasksAccess): PlanAc
 				}
 
 				setAgentMode(implementationMode);
-				tasksAccess.activateGoalCycle(draft.goal.content, approvedTasks, planRef);
+				tasksAccess.activateGoalCycle(draft.goal.content, approvedTasks, planRef, implementationMode);
 
 				const result = buildApprovedResult(draft, implementationMode);
 				draft = null;
