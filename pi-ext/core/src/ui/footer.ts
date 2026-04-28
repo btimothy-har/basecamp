@@ -222,7 +222,8 @@ function buildLocationSegment(
 	footerData: { getGitBranch(): string | null },
 ): string {
 	const parts: string[] = [];
-	parts.push(buildModeSegment(fg, getAgentMode()));
+	const modeSegment = buildModeSegment(fg, getAgentMode());
+	if (modeSegment) parts.push(modeSegment);
 	parts.push(fg("dim", shortenPath(state.primaryDir)));
 
 	if (state.worktreeLabel) {
@@ -239,10 +240,10 @@ function buildLocationSegment(
 	return parts.join(fg("dim", "  "));
 }
 
-function buildModeSegment(fg: ThemeFg, mode: AgentMode): string {
-	const label = mode === "executor" ? "ic" : mode;
-	const color: Parameters<ThemeFg>[0] = mode === "executor" ? "muted" : "warning";
-	return `${fg("muted", "mode ")}${fg(color, label)}`;
+function buildModeSegment(fg: ThemeFg, mode: AgentMode): string | null {
+	if (mode === "planning") return fg("warning", "[plan]");
+	if (mode === "supervisor") return fg("warning", "[supervisor]");
+	return null;
 }
 
 function buildModelSegment(fg: ThemeFg, ctx: ExtensionContext | null, pi: ExtensionAPI): string {
