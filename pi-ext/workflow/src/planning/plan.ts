@@ -188,7 +188,7 @@ function buildApprovedResult(draft: PlanDraft, mode: ApprovedPlanMode): string {
 		result.implementation_mode = mode;
 		result.handoff_status = "scheduled";
 		result.next_step =
-			"Plan approved, but do not start implementation or call tools in this turn. End the turn now; Basecamp will automatically send a fresh handoff message after this run ends so the selected execution prompt is loaded before work begins.";
+			"Plan has been approved. Do not start implementation; wait for the user's confirmation to start work. Acknowledge and end the turn.";
 	}
 
 	// Only include notes if any exist
