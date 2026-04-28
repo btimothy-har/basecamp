@@ -1,6 +1,6 @@
-export type AgentMode = "planning" | "supervisor" | "executor";
+export type AgentMode = "analysis" | "planning" | "supervisor" | "executor";
 
-export const AGENT_MODES: readonly AgentMode[] = ["planning", "supervisor", "executor"];
+export const AGENT_MODES: readonly AgentMode[] = ["analysis", "planning", "supervisor", "executor"];
 
 const DEFAULT_AGENT_MODE: AgentMode = "executor";
 

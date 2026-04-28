@@ -171,13 +171,13 @@ export interface AssembleOptions {
  * This fully replaces pi's default system prompt. Tools, skills,
  * and context files are sourced dynamically so we control placement.
  *
- * Execution posture overlays are placed first so operating constraints lead.
+ * Session mode overlays are placed first so operating constraints lead.
  * Remaining layers are ordered static → semi-static → dynamic to maximize
  * prefix caching where possible.
  *
  * Layer order:
  *   0. Read-only overlay (when --read-only is set)
- *   1. Execution posture overlay: planning, supervisor, or executor (primary sessions only)
+ *   1. Session mode overlay: analysis, planning, supervisor, or executor (primary sessions only)
  *   2. Working style — OR agent prompt (static per user/agent)
  *   2b. Language (static per user, interactive sessions only)
  *   3. environment.md (static — tool/environment guidelines)
@@ -199,7 +199,7 @@ export function assemblePrompt(opts: AssembleOptions): string {
 		}
 	}
 
-	// 1. Execution posture overlay (primary sessions only — skipped for agents)
+	// 1. Session mode overlay (primary sessions only — skipped for agents)
 	if (!opts.agentPrompt) {
 		const posture = loadPromptFile(`modes/${getAgentMode()}.md`).trim();
 		if (posture) {
