@@ -14,7 +14,7 @@ type ModeLabelStyle = {
 const MODE_STYLES: Record<AgentMode, ModeStyle> = {
 	planning: { label: "[plan]", color: "warning" },
 	supervisor: { label: "[supervisor]", color: "accent" },
-	executor: { label: null, color: "borderMuted" },
+	executor: { label: null, color: "text" },
 };
 
 export function getModeColor(mode: AgentMode): ThemeColor {
