@@ -9,9 +9,9 @@ Delegate bounded work through the `agent` tool. Keep user communication, require
 
 ## Process
 
-### 1. Inspect available agents
+### 1. Review available agents
 
-Use `discover({ type: "agents" })` to inspect available agents and their descriptions.
+Review the Agents section in the capabilities index for available agents and their descriptions.
 
 Choose the narrowest agent that fits the job:
 - **Named read-only agents** — use for exploration, research, code search, review, and second opinions.

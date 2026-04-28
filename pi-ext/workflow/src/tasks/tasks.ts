@@ -223,7 +223,6 @@ const TASK_TOOLS = new Set([
 	"delete_task",
 	"escalate",
 	"plan",
-	"discover",
 	"skill",
 	"read",
 ]);

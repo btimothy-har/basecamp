@@ -11,6 +11,7 @@
 
 import * as fs from "node:fs";
 import * as path from "node:path";
+import type { CatalogItem } from "./catalog";
 import type { SessionState } from "./config";
 
 // ============================================================================
@@ -147,50 +148,59 @@ export function buildGitContext(git: GitStatus): string {
 // Capabilities Index
 // ============================================================================
 
+function normalizeCapabilityDescription(description: string): string {
+	return description.trim().replace(/\s+/g, " ");
+}
+
+function formatCapabilityItem(item: CatalogItem): string {
+	const description = normalizeCapabilityDescription(item.description);
+	return description ? `- ${item.name} — ${description}` : `- ${item.name} — (no description)`;
+}
+
+function pushCapabilitySection(lines: string[], label: string, items: CatalogItem[]): void {
+	if (items.length === 0) return;
+	if (lines.at(-1) !== "") lines.push("");
+
+	lines.push(`${label} (${items.length}):`);
+	for (const item of items) {
+		lines.push(formatCapabilityItem(item));
+	}
+}
+
+function ensureBlankLine(lines: string[]): void {
+	if (lines.at(-1) !== "") lines.push("");
+}
+
 /**
  * Build a compact capabilities index for the system prompt.
  *
- * Lists only names grouped by type, plus instructions for the discover
- * tool. Replaces the previous verbose XML/list builders that dumped
- * full descriptions into the prompt.
- *
- * The model uses the `discover` tool for details on any item.
+ * Lists capability names and descriptions grouped by type. Full skill
+ * instructions remain on demand through the `skill` tool.
  */
 export function buildCapabilitiesIndex(opts: {
-	toolNames: string[];
-	skillNames: string[];
-	agentNames: string[];
+	toolItems: CatalogItem[];
+	skillItems: CatalogItem[];
+	agentItems: CatalogItem[];
 	includeAgents: boolean;
 }): string {
 	const lines: string[] = [];
+	const agentItems = opts.includeAgents ? opts.agentItems : [];
 
 	const summaryCounts = [
-		`${opts.toolNames.length} tools`,
-		`${opts.skillNames.length} skills`,
-		...(opts.includeAgents ? [`${opts.agentNames.length} agents`] : []),
+		`${opts.toolItems.length} tools`,
+		`${opts.skillItems.length} skills`,
+		...(opts.includeAgents ? [`${agentItems.length} agents`] : []),
 	];
 	lines.push(`Available in this session: ${summaryCounts.join(", ")}.`);
 	lines.push("");
 
-	if (opts.toolNames.length > 0) {
-		lines.push(`Tools (${opts.toolNames.length}): ${opts.toolNames.join(", ")}`);
-	}
-	if (opts.skillNames.length > 0) {
-		lines.push(`Skills (${opts.skillNames.length}): ${opts.skillNames.join(", ")}`);
-	}
-	if (opts.includeAgents && opts.agentNames.length > 0) {
-		lines.push(`Agents (${opts.agentNames.length}): ${opts.agentNames.join(", ")}`);
-	}
+	pushCapabilitySection(lines, "Tools", opts.toolItems);
+	pushCapabilitySection(lines, "Skills", opts.skillItems);
+	pushCapabilitySection(lines, "Agents", agentItems);
 
+	ensureBlankLine(lines);
 	lines.push(
-		"",
-		"Use `discover` to browse, search, or get details on any listed item.",
 		"Use `skill` to load a skill's full instructions into context before using it.",
-		"",
-		"`discover` modes:",
-		'- List a category with descriptions: `discover({ type: "skills" })`',
-		'- Search by keyword: `discover({ type: "skills", query: "python" })`',
-		'- Get details for one item: `discover({ name: "python-development" })`',
 		"",
 		"`skill` example:",
 		'- Load skill instructions: `skill({ name: "python-development" })`',
