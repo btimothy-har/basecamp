@@ -222,6 +222,7 @@ function buildLocationSegment(
 	footerData: { getGitBranch(): string | null },
 ): string {
 	const parts: string[] = [];
+	parts.push(buildModeSegment(fg, getAgentMode()));
 	parts.push(fg("dim", shortenPath(state.primaryDir)));
 
 	if (state.worktreeLabel) {
@@ -238,10 +239,10 @@ function buildLocationSegment(
 	return parts.join(fg("dim", "  "));
 }
 
-function buildModeTag(fg: ThemeFg, mode: AgentMode): string {
-	if (mode === "planning") return fg("warning", "[plan]");
-	if (mode === "supervisor") return fg("warning", "[sup]");
-	return fg("muted", "[ic]");
+function buildModeSegment(fg: ThemeFg, mode: AgentMode): string {
+	const label = mode === "executor" ? "ic" : mode;
+	const color: Parameters<ThemeFg>[0] = mode === "executor" ? "muted" : "warning";
+	return `${fg("muted", "mode ")}${fg(color, label)}`;
 }
 
 function buildModelSegment(fg: ThemeFg, ctx: ExtensionContext | null, pi: ExtensionAPI): string {
@@ -258,7 +259,7 @@ function buildModelSegment(fg: ThemeFg, ctx: ExtensionContext | null, pi: Extens
 	}
 
 	const modelId = ctx?.model?.id ?? "no-model";
-	const modelPart = [fg("text", modelId), buildModeTag(fg, getAgentMode())].join(" ");
+	const modelPart = fg("text", modelId);
 	if (totalCost > 0) {
 		parts.push([fg("muted", `$${totalCost.toFixed(2)}`), fg("dim", "·"), modelPart].join(" "));
 	} else {
