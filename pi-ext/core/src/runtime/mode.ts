@@ -2,7 +2,9 @@ export type AgentMode = "worker" | "supervisor";
 
 type AgentModeListener = (mode: AgentMode) => void;
 
-let mode: AgentMode = "worker";
+const DEFAULT_AGENT_MODE: AgentMode = "supervisor";
+
+let mode: AgentMode = DEFAULT_AGENT_MODE;
 const listeners = new Set<AgentModeListener>();
 
 function setAgentMode(nextMode: AgentMode): AgentMode {
@@ -24,7 +26,7 @@ export function toggleAgentMode(): AgentMode {
 }
 
 export function resetAgentMode(): void {
-	setAgentMode("worker");
+	setAgentMode(DEFAULT_AGENT_MODE);
 }
 
 export function onAgentModeChange(listener: AgentModeListener): () => void {

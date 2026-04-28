@@ -4,4 +4,4 @@ Default to direct execution. Delegate only when a subtask materially benefits fr
 
 Handle small, linear, or highly contextual work directly.
 
-When delegating, keep user communication, requirement clarification, task tracking, final integration, and cross-cutting technical decisions in the primary session. Give subagents enough context, review their output critically, and integrate findings selectively.
+When delegating, invoke the `agents` skill while you keep user communication, requirement clarification, task tracking, final integration, and cross-cutting technical decisions in the primary session.
