@@ -135,6 +135,10 @@ async function selectImplementationMode(ctx: ExtensionContext): Promise<Implemen
 	return null;
 }
 
+function buildHandoffMessage(): string {
+	return "Plan looks good, let's proceed with the implementation.";
+}
+
 function buildApprovedResult(draft: PlanDraft, mode: ApprovedPlanMode): string {
 	// Collect user notes from approved-with-feedback sections
 	const notes: Record<string, string> = {};
@@ -174,7 +178,9 @@ function buildApprovedResult(draft: PlanDraft, mode: ApprovedPlanMode): string {
 		result.next_step = "Analysis plan approved, you may begin executing the analysis tasks.";
 	} else {
 		result.implementation_mode = mode;
-		result.next_step = "Plan approved, you may begin implementing the plan.";
+		result.handoff_status = "scheduled";
+		result.next_step =
+			"Plan has been approved. Do not start implementation; wait for the user's confirmation to start work. Acknowledge and end the turn.";
 	}
 
 	// Only include notes if any exist
@@ -211,6 +217,17 @@ export interface PlanAccess {
 
 export function registerPlan(pi: ExtensionAPI, tasksAccess: TasksAccess): PlanAccess {
 	let draft: PlanDraft | null = null;
+	let pendingHandoff = false;
+
+	pi.on("agent_end", async () => {
+		if (!pendingHandoff) return;
+		pendingHandoff = false;
+
+		// Pi clears isStreaming after awaited agent_end handlers finish; defer to the next macrotask.
+		setTimeout(() => {
+			pi.sendUserMessage(buildHandoffMessage());
+		}, 0);
+	});
 
 	pi.registerTool({
 		name: "plan",
@@ -306,6 +323,7 @@ export function registerPlan(pi: ExtensionAPI, tasksAccess: TasksAccess): PlanAc
 
 				setAgentMode(implementationMode);
 				tasksAccess.activateGoalCycle(draft.goal.content, approvedTasks, planRef, implementationMode);
+				pendingHandoff = true;
 
 				const result = buildApprovedResult(draft, implementationMode);
 				draft = null;

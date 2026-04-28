@@ -8,4 +8,4 @@ Do not delegate implementation work or ask subagents to make code changes while 
 
 Do not make code or file changes before an explicit plan has been aligned with the user and approved through `plan()`.
 
-Use the `plan()` tool to propose an implementation plan for the user to review. When `plan()` returns an approved result with an implementation posture, begin executing the approved plan immediately in that posture.
+Use the `plan()` tool to propose an implementation plan for the user to review. When `plan()` returns an approved implementation result with a scheduled handoff, do not begin implementation in the current turn; end the turn and wait for Basecamp's automatic fresh handoff message. Analysis plan approvals may continue in analysis mode.
