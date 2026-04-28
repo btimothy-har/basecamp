@@ -12,7 +12,7 @@ type ModeLabelStyle = {
 };
 
 const MODE_STYLES: Record<AgentMode, ModeStyle> = {
-	analysis: { label: "[analysis]", color: "success" },
+	analysis: { label: "[analysis]", color: "syntaxType" },
 	planning: { label: "[plan]", color: "warning" },
 	supervisor: { label: "[supervisor]", color: "accent" },
 	executor: { label: null, color: "text" },
