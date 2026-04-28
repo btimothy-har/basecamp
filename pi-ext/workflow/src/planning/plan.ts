@@ -124,10 +124,6 @@ function buildFeedbackResult(draft: PlanDraft): string {
 type ImplementationMode = "supervisor" | "executor";
 type ApprovedPlanMode = "analysis" | ImplementationMode;
 
-type PendingPlanHandoff = {
-	mode: ImplementationMode;
-};
-
 const IMPLEMENTATION_MODE_CHOICES = ["Execute as Supervisor", "Execute as IC/executor"] as const;
 
 async function selectImplementationMode(ctx: ExtensionContext): Promise<ImplementationMode | null> {
@@ -139,12 +135,8 @@ async function selectImplementationMode(ctx: ExtensionContext): Promise<Implemen
 	return null;
 }
 
-function buildHandoffMessage(handoff: PendingPlanHandoff): string {
-	return [
-		`Automatic plan handoff: the implementation plan was approved for ${handoff.mode} mode.`,
-		"The system prompt has been refreshed for the selected execution posture.",
-		"Begin executing the approved plan now. Use the active goal and task list; do not call plan() again unless the user asks.",
-	].join("\n");
+function buildHandoffMessage(): string {
+	return "Plan looks good, let's proceed with the implementation.";
 }
 
 function buildApprovedResult(draft: PlanDraft, mode: ApprovedPlanMode): string {
@@ -225,16 +217,15 @@ export interface PlanAccess {
 
 export function registerPlan(pi: ExtensionAPI, tasksAccess: TasksAccess): PlanAccess {
 	let draft: PlanDraft | null = null;
-	let pendingHandoff: PendingPlanHandoff | null = null;
+	let pendingHandoff = false;
 
 	pi.on("agent_end", async () => {
-		const handoff = pendingHandoff;
-		if (!handoff) return;
-		pendingHandoff = null;
+		if (!pendingHandoff) return;
+		pendingHandoff = false;
 
 		// Pi clears isStreaming after awaited agent_end handlers finish; defer to the next macrotask.
 		setTimeout(() => {
-			pi.sendUserMessage(buildHandoffMessage(handoff));
+			pi.sendUserMessage(buildHandoffMessage());
 		}, 0);
 	});
 
@@ -332,7 +323,7 @@ export function registerPlan(pi: ExtensionAPI, tasksAccess: TasksAccess): PlanAc
 
 				setAgentMode(implementationMode);
 				tasksAccess.activateGoalCycle(draft.goal.content, approvedTasks, planRef, implementationMode);
-				pendingHandoff = { mode: implementationMode };
+				pendingHandoff = true;
 
 				const result = buildApprovedResult(draft, implementationMode);
 				draft = null;
