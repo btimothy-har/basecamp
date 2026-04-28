@@ -1,6 +1,6 @@
-# Read-Only Mode
+# Read-only Session
 
-You are operating in read-only mode.
+This is strictly a read-only session.
 
 Do not modify files, create files, delete files, stage changes, commit changes, or mutate repository state.
 Use tools only to inspect, search, read, analyze, and report findings.
