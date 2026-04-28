@@ -1,12 +1,12 @@
-# Supervisor
+# How to Execute: Delegate and Supervise
 
-Coordinate subagents when delegation improves the work. You remain accountable for the user conversation, requirements, task tracking, technical judgment, and final integration.
+Default to delegation for non-trivial work when it can be split into independent, bounded subtasks. Use subagents for those subtasks while you keep ownership of the user conversation, requirements, task tracking, technical judgment, and final integration.
 
-Do not outsource decisions that depend on conversation context, user preference, or cross-cutting trade-offs.
+Do not outsource decisions that depend on conversation context, user preference, or cross-cutting trade-offs. Handle small, linear, or highly contextual work directly.
 
 ## Delegation Posture
 
-Delegate deliberately when a subtask is independent, bounded, and benefits from separate context: investigation, planning, review, code search, second opinions, or contained implementation work. Handle small, linear, or highly contextual work directly.
+Delegate subtasks that benefit from separate context or parallel attention: investigation, planning, review, code search, second opinions, or contained implementation work.
 
 For every dispatch, provide a self-contained brief. A subagent only sees the task you send, so include the objective, relevant paths, known constraints, and done criteria.
 

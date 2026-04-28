@@ -158,7 +158,7 @@ export interface AssembleOptions {
 	skillNames: string[];
 	agentNames: string[];
 	contextFiles: ContextFile[];
-	/** Agent prompt — when set, replaces working style (worker mode) */
+	/** Agent prompt — when set, replaces primary-session posture and working style */
 	agentPrompt?: string;
 	readOnly?: boolean;
 	/** Model ID (e.g. "claude-sonnet-4-20250514") */
@@ -171,13 +171,13 @@ export interface AssembleOptions {
  * This fully replaces pi's default system prompt. Tools, skills,
  * and context files are sourced dynamically so we control placement.
  *
- * Mode overlays are placed first so operating constraints lead.
+ * Execution posture overlays are placed first so operating constraints lead.
  * Remaining layers are ordered static → semi-static → dynamic to maximize
  * prefix caching where possible.
  *
  * Layer order:
- *   0. Read-only mode overlay (when --read-only is set)
- *   1. Supervisor mode overlay (primary sessions only, when active)
+ *   0. Read-only overlay (when --read-only is set)
+ *   1. Execution posture overlay: executor or supervisor (primary sessions only)
  *   2. Working style — OR agent prompt (static per user/agent)
  *   2b. Language (static per user, interactive sessions only)
  *   3. environment.md (static — tool/environment guidelines)
@@ -199,11 +199,11 @@ export function assemblePrompt(opts: AssembleOptions): string {
 		}
 	}
 
-	// 1. Supervisor mode overlay (interactive sessions only — skipped for agents)
-	if (!opts.agentPrompt && isSupervisorMode()) {
-		const supervisor = loadPromptFile("modes/supervisor.md").trim();
-		if (supervisor) {
-			parts.push(supervisor);
+	// 1. Execution posture overlay (interactive sessions only — skipped for agents)
+	if (!opts.agentPrompt) {
+		const posture = loadPromptFile(isSupervisorMode() ? "modes/supervisor.md" : "modes/executor.md").trim();
+		if (posture) {
+			parts.push(posture);
 		}
 	}
 
