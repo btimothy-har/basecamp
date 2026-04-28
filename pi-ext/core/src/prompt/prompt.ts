@@ -27,7 +27,7 @@ import {
 	discoverContextFiles,
 	type GitStatus,
 } from "../../../platform/context";
-import { isSupervisorMode } from "../runtime/mode";
+import { getAgentMode } from "../runtime/mode";
 import { getEffectiveCwd, getGitStatus, getState } from "../runtime/session";
 
 // ---------------------------------------------------------------------------
@@ -177,7 +177,7 @@ export interface AssembleOptions {
  *
  * Layer order:
  *   0. Read-only overlay (when --read-only is set)
- *   1. Execution posture overlay: executor or supervisor (primary sessions only)
+ *   1. Execution posture overlay: planning, supervisor, or executor (primary sessions only)
  *   2. Working style — OR agent prompt (static per user/agent)
  *   2b. Language (static per user, interactive sessions only)
  *   3. environment.md (static — tool/environment guidelines)
@@ -199,9 +199,9 @@ export function assemblePrompt(opts: AssembleOptions): string {
 		}
 	}
 
-	// 1. Execution posture overlay (interactive sessions only — skipped for agents)
+	// 1. Execution posture overlay (primary sessions only — skipped for agents)
 	if (!opts.agentPrompt) {
-		const posture = loadPromptFile(isSupervisorMode() ? "modes/supervisor.md" : "modes/executor.md").trim();
+		const posture = loadPromptFile(`modes/${getAgentMode()}.md`).trim();
 		if (posture) {
 			parts.push(posture);
 		}

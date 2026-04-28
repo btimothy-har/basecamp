@@ -3,15 +3,17 @@
  *
  * The plan() tool submits a structured plan (goal, context, design, success,
  * boundaries, tasks) and blocks until the user reviews it via an auto-pop
- * overlay. On approval, creates a GoalCycle with planRef and populates tasks.
- * On feedback, returns structured feedback for the agent to revise.
+ * overlay. On approval, asks for the implementation posture, creates a
+ * GoalCycle with planRef, and populates tasks. On feedback, returns structured
+ * feedback for the agent to revise.
  *
  * Re-submissions diff against the previous draft — unchanged approved sections
  * keep their ✓ status, changed sections reset to ★ (needs re-review).
  */
 
-import type { ExtensionAPI, Theme } from "@mariozechner/pi-coding-agent";
+import type { ExtensionAPI, ExtensionContext, Theme } from "@mariozechner/pi-coding-agent";
 import { Type } from "@sinclair/typebox";
+import { setAgentMode } from "../../../core/src/runtime/mode";
 import type { GoalCycle, ReviewState, TaskStatus, TasksAccess } from "../tasks/tasks";
 import type { PlanDraft, SectionName } from "./review";
 import { SECTION_NAMES, showPlanReadOnly, showReviewOverlay } from "./review";
@@ -118,7 +120,24 @@ function buildFeedbackResult(draft: PlanDraft): string {
 	return JSON.stringify(result);
 }
 
-function buildApprovedResult(draft: PlanDraft): string {
+type ImplementationMode = "supervisor" | "executor";
+
+const IMPLEMENTATION_MODE_CHOICES = ["Execute as Supervisor", "Execute as IC/executor"] as const;
+
+function implementationModeLabel(mode: ImplementationMode): string {
+	return mode === "supervisor" ? "Supervisor" : "IC/executor";
+}
+
+async function selectImplementationMode(ctx: ExtensionContext): Promise<ImplementationMode | null> {
+	if (!ctx.hasUI) return null;
+
+	const choice = await ctx.ui.select("Execute approved plan as", [...IMPLEMENTATION_MODE_CHOICES]);
+	if (choice === "Execute as Supervisor") return "supervisor";
+	if (choice === "Execute as IC/executor") return "executor";
+	return null;
+}
+
+function buildApprovedResult(draft: PlanDraft, implementationMode: ImplementationMode): string {
 	// Collect user notes from approved-with-feedback sections
 	const notes: Record<string, string> = {};
 	for (const name of SECTION_NAMES) {
@@ -139,7 +158,8 @@ function buildApprovedResult(draft: PlanDraft): string {
 
 	const result: Record<string, unknown> = {
 		status: "approved",
-		next_step: "Plan approved. Begin implementing.",
+		implementation_mode: implementationMode,
+		next_step: `Plan approved. Begin implementing as ${implementationModeLabel(implementationMode)}.`,
 		goal: draft.goal.content,
 		context: draft.context.content,
 		design: draft.design.content,
@@ -193,8 +213,9 @@ export function registerPlan(pi: ExtensionAPI, tasksAccess: TasksAccess): PlanAc
 		label: "Plan",
 		description:
 			"Submit a structured plan for user review. Blocks until the user approves or provides feedback. " +
-			"On approval, creates the goal and tasks. On feedback, returns structured feedback for revision.",
-		promptSnippet: "Submit a structured plan for review and approval",
+			"On approval, asks for supervisor vs IC/executor implementation posture, sets it, and creates the goal and tasks. " +
+			"On feedback, returns structured feedback for revision.",
+		promptSnippet: "Submit a structured plan for review, approval, and implementation handoff",
 		parameters: Type.Object({
 			goal: Type.String({ description: "Overarching objective" }),
 			context: Type.String({ description: "What exists, constraints, what triggered this work" }),
@@ -242,6 +263,24 @@ export function registerPlan(pi: ExtensionAPI, tasksAccess: TasksAccess): PlanAc
 			}
 
 			if (isAllApproved(draft)) {
+				const implementationMode = await selectImplementationMode(ctx);
+				if (!implementationMode) {
+					return {
+						content: [
+							{
+								type: "text",
+								text: JSON.stringify({
+									status: "handoff_cancelled",
+									message: "Plan approved, but no implementation mode was selected.",
+								}),
+							},
+						],
+						details: undefined,
+					};
+				}
+
+				setAgentMode(implementationMode);
+
 				const approvedTasks = draft.tasks.map((t) => ({ ...t, review: null }));
 				const planRef: GoalCycle["planRef"] = {
 					context: draft.context.content,
@@ -252,7 +291,7 @@ export function registerPlan(pi: ExtensionAPI, tasksAccess: TasksAccess): PlanAc
 
 				tasksAccess.activateGoalCycle(draft.goal.content, approvedTasks, planRef);
 
-				const result = buildApprovedResult(draft);
+				const result = buildApprovedResult(draft, implementationMode);
 				draft = null;
 				return {
 					content: [{ type: "text", text: result }],
@@ -289,7 +328,12 @@ export function registerPlan(pi: ExtensionAPI, tasksAccess: TasksAccess): PlanAc
 				}
 
 				if (parsed.status === "approved") {
-					return renderSuccess("plan approved", theme);
+					const mode = parsed.implementation_mode ? ` → ${parsed.implementation_mode}` : "";
+					return renderSuccess(`plan approved${mode}`, theme);
+				}
+
+				if (parsed.status === "handoff_cancelled") {
+					return new Text(theme.fg("warning", "handoff cancelled"), 0, 0);
 				}
 
 				if (parsed.status === "feedback") {
