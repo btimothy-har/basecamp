@@ -2,9 +2,8 @@
  * Shared capability catalog.
  *
  * Extensions register lightweight providers for capability metadata (tools,
- * skills, agents). Core consumes the catalog for prompt capability summaries
- * and the public `discover` tool, while feature modules keep ownership of
- * their own domain-specific discovery.
+ * skills, agents). Core consumes the catalog for prompt capability summaries,
+ * while feature modules keep ownership of their own domain-specific discovery.
  *
  * The registry is process-scoped via globalThis so it survives `/reload` in
  * the same pi process. Re-registering a provider with the same id replaces the

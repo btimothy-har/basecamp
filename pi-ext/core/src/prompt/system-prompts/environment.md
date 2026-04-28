@@ -48,4 +48,4 @@ You have access to a scratch directory (path shown in session details below). Us
 
 ## Subagents
 
-The `agent` tool is available in this environment for delegating bounded work to subagents. Subagents run synchronously and return their output as the tool result. Use `discover` to inspect available agents when delegation is useful. Use the `agents` skill for agent-selection and dispatch details.
+The `agent` tool is available in this environment for delegating bounded work to subagents. Subagents run synchronously and return their output as the tool result. When delegation is available, available agents and descriptions are listed in the capabilities index. Use the `agents` skill for agent-selection and dispatch details.

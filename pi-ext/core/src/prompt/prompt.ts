@@ -16,7 +16,7 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
-import { listCatalogItemsByType } from "../../../platform/catalog";
+import { type CatalogItem, listCatalogItemsByType } from "../../../platform/catalog";
 import { getLanguage, getLogseqGraph, getTimezone, type SessionState } from "../../../platform/config";
 import {
 	buildCapabilitiesIndex,
@@ -154,9 +154,9 @@ function buildEnvBlock(state: SessionState, modelId?: string): string {
 export interface AssembleOptions {
 	state: SessionState;
 	gitStatus: GitStatus | null;
-	toolNames: string[];
-	skillNames: string[];
-	agentNames: string[];
+	toolItems: CatalogItem[];
+	skillItems: CatalogItem[];
+	agentItems: CatalogItem[];
 	contextFiles: ContextFile[];
 	/** Agent prompt — when set, replaces primary-session posture and working style */
 	agentPrompt?: string;
@@ -182,13 +182,13 @@ export interface AssembleOptions {
  *   2b. Language (static per user, interactive sessions only)
  *   3. environment.md (static — tool/environment guidelines)
  *   4. Logseq graph (semi-static — conditional, path rarely changes)
- *   5. Capabilities index (semi-static — tool/skill/agent names)
+ *   5. Capabilities index (semi-static — tool/skill/agent names and descriptions)
  *   6. Project context (semi-static — changes per project)
  *   7. Env block (dynamic — identity, user, platform, date, dirs)
  *   8. Git status snapshot (dynamic)
  */
 export function assemblePrompt(opts: AssembleOptions): string {
-	const { state, gitStatus, toolNames, skillNames, agentNames, contextFiles, modelId } = opts;
+	const { state, gitStatus, toolItems, skillItems, agentItems, contextFiles, modelId } = opts;
 
 	const parts: string[] = [];
 
@@ -244,12 +244,12 @@ export function assemblePrompt(opts: AssembleOptions): string {
 		}
 	}
 
-	// 5. Capabilities index (names only + discover tool instructions)
+	// 5. Capabilities index (names and descriptions)
 	parts.push(
 		buildCapabilitiesIndex({
-			toolNames,
-			skillNames,
-			agentNames,
+			toolItems,
+			skillItems,
+			agentItems,
 			includeAgents: !opts.agentPrompt,
 		}),
 	);
@@ -288,9 +288,9 @@ export function registerPrompt(pi: ExtensionAPI): void {
 		const state = getState();
 
 		const catalogContext = { cwd: ctx.cwd };
-		const toolNames = listCatalogItemsByType("tools", catalogContext).map((item) => item.name);
-		const skillNames = listCatalogItemsByType("skills", catalogContext).map((item) => item.name);
-		const agentNames = listCatalogItemsByType("agents", catalogContext).map((item) => item.name);
+		const toolItems = listCatalogItemsByType("tools", catalogContext);
+		const skillItems = listCatalogItemsByType("skills", catalogContext);
+		const agentItems = listCatalogItemsByType("agents", catalogContext);
 
 		// Discover CLAUDE.md / AGENTS.md from cwd
 		const contextFiles = discoverContextFiles(ctx.cwd);
@@ -309,9 +309,9 @@ export function registerPrompt(pi: ExtensionAPI): void {
 		const prompt = assemblePrompt({
 			state,
 			gitStatus: getGitStatus(),
-			toolNames,
-			skillNames,
-			agentNames,
+			toolItems,
+			skillItems,
+			agentItems,
 			contextFiles,
 			agentPrompt,
 			readOnly: pi.getFlag("read-only") === true,

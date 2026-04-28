@@ -5,8 +5,8 @@
  * block. Subsequent calls for the same skill in the same session return
  * a short dedup notice rather than re-loading the file.
  *
- * Use `discover` to browse or search available skills and get metadata.
- * Use this tool to actually load the instructions.
+ * Available skills and descriptions are listed in the capabilities index.
+ * Use this tool to load the full instructions.
  */
 
 import type { ExtensionAPI, Theme } from "@mariozechner/pi-coding-agent";
@@ -76,7 +76,7 @@ export function registerSkillTool(pi: ExtensionAPI): void {
 		description:
 			"Load full instructions for a named skill. " +
 			"Each skill is loaded at most once per session — repeat calls return a short notice. " +
-			'Use discover({ type: "skills" }) to browse available skills.',
+			"Available skills are listed in the system prompt capabilities index.",
 
 		parameters: SkillParams,
 
