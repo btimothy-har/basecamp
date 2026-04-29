@@ -25,23 +25,154 @@ import { getWorktreeBranchPrefix } from "../../../platform/config";
 // ---------------------------------------------------------------------------
 
 const WORKTREES_DIR = path.join(os.homedir(), ".worktrees");
+const WORKTREE_LABEL_RE = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
 
-// ---------------------------------------------------------------------------
-// Worktree creation
-// ---------------------------------------------------------------------------
-
-interface WorktreeResult {
+export interface WorktreeResult {
 	worktreeDir: string;
+	label: string;
 	branch: string;
 	created: boolean;
 }
 
-/**
- * Get or create a worktree for a project.
- *
- * Checks ~/.worktrees/<repo>/<label>/ first. If it exists and has valid
- * metadata, returns it. Otherwise creates a new worktree via git.
- */
+interface WorktreeMetadata {
+	name?: string;
+	path?: string;
+	branch?: string;
+	project?: string;
+	repo_name?: string;
+	source_dir?: string;
+}
+
+function resolveExistingPath(value: string): string {
+	return fs.realpathSync.native(value);
+}
+
+function ensureWorktreeLabel(label: string): void {
+	if (!WORKTREE_LABEL_RE.test(label)) {
+		throw new Error(`Invalid worktree label "${label}". Use letters, numbers, dots, underscores, or hyphens.`);
+	}
+}
+
+function metadataPath(repoName: string, label: string): string {
+	return path.join(WORKTREES_DIR, repoName, ".meta", `${label}.json`);
+}
+
+function readMetadata(filePath: string): WorktreeMetadata {
+	try {
+		return JSON.parse(fs.readFileSync(filePath, "utf8"));
+	} catch (err) {
+		const msg = err instanceof Error ? err.message : String(err);
+		throw new Error(`Failed to read worktree metadata: ${msg}`);
+	}
+}
+
+function validateMetadata(
+	meta: WorktreeMetadata,
+	opts: { primaryDir: string; repoName: string; label: string; worktreeDir: string },
+): void {
+	if (meta.name && meta.name !== opts.label) {
+		throw new Error(`Worktree metadata label mismatch: expected ${opts.label}, found ${meta.name}`);
+	}
+	if (meta.repo_name && meta.repo_name !== opts.repoName) {
+		throw new Error(`Worktree metadata repo mismatch: expected ${opts.repoName}, found ${meta.repo_name}`);
+	}
+	if (meta.path && path.resolve(meta.path) !== path.resolve(opts.worktreeDir)) {
+		throw new Error(`Worktree metadata path mismatch: expected ${opts.worktreeDir}, found ${meta.path}`);
+	}
+	if (!meta.source_dir) {
+		throw new Error("Worktree metadata is missing source_dir");
+	}
+	if (resolveExistingPath(meta.source_dir) !== resolveExistingPath(opts.primaryDir)) {
+		throw new Error(`Worktree source mismatch: expected ${opts.primaryDir}, found ${meta.source_dir}`);
+	}
+}
+
+async function gitOutput(pi: ExtensionAPI, primaryDir: string, args: string[], timeout = 10_000): Promise<string> {
+	const result = await pi.exec("git", ["-C", primaryDir, ...args], { timeout });
+	if (result.code !== 0) {
+		throw new Error(result.stderr.trim() || `git ${args.join(" ")} failed`);
+	}
+	return result.stdout.trim();
+}
+
+async function tryGitOutput(pi: ExtensionAPI, primaryDir: string, args: string[]): Promise<string | null> {
+	try {
+		return await gitOutput(pi, primaryDir, args);
+	} catch {
+		return null;
+	}
+}
+
+async function detectDefaultBranch(pi: ExtensionAPI, primaryDir: string): Promise<string> {
+	const originHead = await tryGitOutput(pi, primaryDir, [
+		"symbolic-ref",
+		"--quiet",
+		"--short",
+		"refs/remotes/origin/HEAD",
+	]);
+	if (originHead?.startsWith("origin/")) return originHead.slice("origin/".length);
+	if (await tryGitOutput(pi, primaryDir, ["rev-parse", "--verify", "main"])) return "main";
+	if (await tryGitOutput(pi, primaryDir, ["rev-parse", "--verify", "master"])) return "master";
+	throw new Error("Could not determine default branch (expected origin/HEAD, main, or master)");
+}
+
+export async function validateProtectedCheckout(pi: ExtensionAPI, primaryDir: string): Promise<string> {
+	const defaultBranch = await detectDefaultBranch(pi, primaryDir);
+	const branch = await gitOutput(pi, primaryDir, ["branch", "--show-current"]);
+	if (branch !== defaultBranch) {
+		throw new Error(`Protected checkout must be on ${defaultBranch}; currently on ${branch || "detached HEAD"}`);
+	}
+
+	const status = await gitOutput(pi, primaryDir, ["status", "--porcelain"]);
+	if (status) {
+		throw new Error(`Protected checkout must be clean before worktree activation:\n${status}`);
+	}
+
+	return defaultBranch;
+}
+
+function validateWorktreePath(repoName: string, label: string, worktreeDir: string): void {
+	const expected = path.join(WORKTREES_DIR, repoName, label);
+	if (path.resolve(worktreeDir) !== path.resolve(expected)) {
+		throw new Error(`Worktree path must be ${expected}`);
+	}
+}
+
+export async function attachWorktreeDir(
+	pi: ExtensionAPI,
+	primaryDir: string,
+	repoName: string,
+	worktreeDir: string,
+): Promise<WorktreeResult> {
+	await validateProtectedCheckout(pi, primaryDir);
+
+	const resolvedDir = path.resolve(worktreeDir);
+	const relative = path.relative(path.join(WORKTREES_DIR, repoName), resolvedDir);
+	const [label, ...rest] = relative.split(path.sep);
+	if (!label || rest.length > 0 || relative.startsWith("..") || path.isAbsolute(relative)) {
+		throw new Error(`Worktree must be directly under ${path.join(WORKTREES_DIR, repoName)}`);
+	}
+	ensureWorktreeLabel(label);
+	validateWorktreePath(repoName, label, resolvedDir);
+	if (!fs.existsSync(resolvedDir) || !fs.statSync(resolvedDir).isDirectory()) {
+		throw new Error(`Worktree directory not found: ${resolvedDir}`);
+	}
+
+	const metaFile = metadataPath(repoName, label);
+	if (!fs.existsSync(metaFile)) {
+		throw new Error(`Worktree metadata not found: ${metaFile}`);
+	}
+	const meta = readMetadata(metaFile);
+	validateMetadata(meta, { primaryDir, repoName, label, worktreeDir: resolvedDir });
+
+	return {
+		worktreeDir: resolvedDir,
+		label,
+		branch: meta.branch ?? `${getWorktreeBranchPrefix()}${label}`,
+		created: false,
+	};
+}
+
 export async function getOrCreateWorktree(
 	pi: ExtensionAPI,
 	primaryDir: string,
@@ -50,40 +181,32 @@ export async function getOrCreateWorktree(
 	projectName: string,
 	branchPrefix?: string,
 ): Promise<WorktreeResult> {
+	ensureWorktreeLabel(label);
+	const defaultBranch = await validateProtectedCheckout(pi, primaryDir);
 	const worktreeDir = path.join(WORKTREES_DIR, repoName, label);
 	const prefix = branchPrefix ?? getWorktreeBranchPrefix();
 	const branch = `${prefix}${label}`;
 	const metaDir = path.join(WORKTREES_DIR, repoName, ".meta");
-	const metaFile = path.join(metaDir, `${label}.json`);
+	const metaFile = metadataPath(repoName, label);
 
-	// Check if worktree already exists
-	if (fs.existsSync(worktreeDir) && fs.existsSync(metaFile)) {
-		// Read branch from metadata
-		try {
-			const meta = JSON.parse(fs.readFileSync(metaFile, "utf8"));
-			return {
-				worktreeDir,
-				branch: meta.branch ?? branch,
-				created: false,
-			};
-		} catch {
-			// Metadata corrupt — fall through to create
+	if (fs.existsSync(worktreeDir)) {
+		if (!fs.existsSync(metaFile)) {
+			throw new Error(`Worktree metadata not found: ${metaFile}`);
 		}
+		const meta = readMetadata(metaFile);
+		validateMetadata(meta, { primaryDir, repoName, label, worktreeDir });
+		return { worktreeDir, label, branch: meta.branch ?? branch, created: false };
 	}
 
-	// Create parent directories
 	fs.mkdirSync(path.dirname(worktreeDir), { recursive: true });
 
-	// Create the worktree
-	const result = await pi.exec("git", ["-C", primaryDir, "worktree", "add", "-b", branch, worktreeDir], {
+	const result = await pi.exec("git", ["-C", primaryDir, "worktree", "add", "-b", branch, worktreeDir, defaultBranch], {
 		timeout: 30_000,
 	});
-
 	if (result.code !== 0) {
 		throw new Error(`Failed to create worktree: ${result.stderr}`);
 	}
 
-	// Write metadata
 	fs.mkdirSync(metaDir, { recursive: true });
 	const meta = {
 		name: label,
@@ -96,7 +219,7 @@ export async function getOrCreateWorktree(
 	};
 	fs.writeFileSync(metaFile, JSON.stringify(meta, null, 2));
 
-	return { worktreeDir, branch, created: true };
+	return { worktreeDir, label, branch, created: true };
 }
 
 // ---------------------------------------------------------------------------
