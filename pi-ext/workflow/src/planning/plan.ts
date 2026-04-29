@@ -123,7 +123,7 @@ function buildFeedbackResult(draft: PlanDraft): string {
 	return JSON.stringify(result);
 }
 
-type ImplementationMode = "supervisor" | "executor";
+export type ImplementationMode = "supervisor" | "executor";
 type ApprovedPlanMode = "analysis" | ImplementationMode;
 
 const IMPLEMENTATION_MODE_CHOICES = ["Execute as Supervisor", "Execute as IC/executor"] as const;
@@ -179,8 +179,12 @@ async function selectWorktreeLabel(pi: ExtensionAPI, ctx: ExtensionContext, goal
 	return labelsByChoice.get(choice) ?? null;
 }
 
-function buildHandoffMessage(): string {
-	return "Plan looks good, let's proceed with the implementation.";
+export function buildHandoffMessage(mode: ImplementationMode): string {
+	if (mode === "supervisor") {
+		return "Plan looks good — proceed as supervisor. Delegate bounded investigation and implementation to subagents; keep synthesis, decisions, and integration here.";
+	}
+
+	return "Plan looks good — proceed with direct implementation.";
 }
 
 function buildWorktreeActivationFailedResult(label: string, error: unknown): string {
@@ -280,15 +284,16 @@ export interface PlanAccess {
 
 export function registerPlan(pi: ExtensionAPI, tasksAccess: TasksAccess): PlanAccess {
 	let draft: PlanDraft | null = null;
-	let pendingHandoff = false;
+	let pendingHandoffMode: ImplementationMode | null = null;
 
 	pi.on("agent_end", async () => {
-		if (!pendingHandoff) return;
-		pendingHandoff = false;
+		if (!pendingHandoffMode) return;
+		const mode = pendingHandoffMode;
+		pendingHandoffMode = null;
 
 		// Pi clears isStreaming after awaited agent_end handlers finish; defer to the next macrotask.
 		setTimeout(() => {
-			pi.sendUserMessage(buildHandoffMessage());
+			pi.sendUserMessage(buildHandoffMessage(mode));
 		}, 0);
 	});
 
@@ -413,7 +418,7 @@ export function registerPlan(pi: ExtensionAPI, tasksAccess: TasksAccess): PlanAc
 
 				setAgentMode(implementationMode);
 				tasksAccess.activateGoalCycle(draft.goal.content, approvedTasks, planRef, implementationMode);
-				pendingHandoff = true;
+				pendingHandoffMode = implementationMode;
 
 				const result = buildApprovedResult(draft, implementationMode, worktree);
 				draft = null;

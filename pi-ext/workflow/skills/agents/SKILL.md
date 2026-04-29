@@ -7,6 +7,24 @@ description: "Select a subagent, write a self-contained brief, dispatch it, and 
 
 Delegate bounded work through the `agent` tool. Keep user communication, requirement clarification, final integration, and cross-cutting decisions in the parent agent. Subagents run synchronously and return their output as the tool result.
 
+## Supervisor Delegation
+
+When operating delegation-first, use this skill before non-trivial execution. Split work into bounded dispatches instead of defaulting to direct implementation.
+
+Use agents by task shape:
+- **scout** for investigation, dependency tracing, broad code search, and context gathering.
+- **worker** for contained implementation with clear scope and acceptance criteria.
+- **specialists** for focused review: clarity, docs, security, testing, SQL, or data concerns when available.
+- **ad-hoc** only for a narrow read-only question that no named agent fits.
+
+Keep these responsibilities in the parent session:
+- User conversation, requirement clarification, and preference decisions.
+- Goal/task tracking and drift detection.
+- Architecture choices, cross-cutting trade-offs, and final integration.
+- Critical review of subagent output; never relay it as authority.
+
+Prefer read-only agents first when the code surface is unclear. Dispatch mutative `worker` agents only after the implementation scope and done criteria are explicit. If you choose not to delegate non-trivial work, state the reason briefly before proceeding.
+
 ## Process
 
 ### 1. Review available agents
