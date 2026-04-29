@@ -8,6 +8,7 @@ from pathlib import Path
 import basecamp.config.project as project_config
 import pytest
 from basecamp.settings import Settings
+from pydantic import ValidationError
 
 
 @pytest.fixture
@@ -137,6 +138,12 @@ class TestProperties:
 
         assert "bigquery" not in json.loads(cfg.path.read_text())
 
+    def test_bigquery_empty_dict_clears(self, cfg: Settings) -> None:
+        cfg.bigquery = {"enabled": True}
+        cfg.bigquery = {}
+
+        assert "bigquery" not in json.loads(cfg.path.read_text())
+
 
 class TestProjectBigQueryConfig:
     """Project-level BigQuery config serialization."""
@@ -190,6 +197,40 @@ class TestProjectBigQueryConfig:
 
         data = json.loads(cfg.path.read_text())
         assert "bigquery" not in data["projects"]["demo"]
+
+    def test_save_and_load_projects_preserves_unknown_bigquery_fields(
+        self,
+        cfg: Settings,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        monkeypatch.setattr(project_config, "settings", cfg)
+        bigquery = project_config.BigQueryConfig(
+            enabled=True,
+            future_option="keep-me",
+        )
+
+        project_config.save_projects(
+            {
+                "demo": project_config.ProjectConfig(
+                    dirs=["src/demo"],
+                    bigquery=bigquery,
+                ),
+            },
+        )
+
+        data = json.loads(cfg.path.read_text())
+        assert data["projects"]["demo"]["bigquery"] == {
+            "enabled": True,
+            "future_option": "keep-me",
+        }
+
+        loaded = project_config.load_projects()
+        assert loaded["demo"].bigquery is not None
+        assert loaded["demo"].bigquery.model_extra == {"future_option": "keep-me"}
+
+    def test_bigquery_rejects_invalid_output_format(self) -> None:
+        with pytest.raises(ValidationError):
+            project_config.BigQueryConfig(default_output_format="parquet")
 
 
 class TestLocking:

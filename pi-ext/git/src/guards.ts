@@ -121,6 +121,8 @@ function tokenizeShellLike(segment: string): string[] {
 }
 
 function isBqQuerySegment(segment: string): boolean {
+	// Match the common agent-generated forms: `bq query` and `bq --global_flag ... query`.
+	// Unknown value-taking flags intentionally stop matching rather than risk blocking unrelated commands.
 	const tokens = tokenizeShellLike(segment);
 	if (tokens[0] !== "bq") return false;
 
