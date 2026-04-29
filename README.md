@@ -6,7 +6,7 @@ Multi-project workspace launcher for AI coding agents. Configures project direct
 git clone https://github.com/btimothy-har/basecamp.git
 cd basecamp && uv run install.py
 basecamp setup
-pi --project basecamp
+bpi basecamp
 ```
 
 ## Why basecamp?
@@ -21,7 +21,7 @@ basecamp solves this with a pi extension that:
 
 1. **Replaces the default system prompt** — Full control over behavior, consistency across sessions, tailored to your workflow
 2. **Configures project context** — Loads project-specific prompts and working styles automatically
-3. **Supports isolated worktrees** — Use `--label <label>` to work in a labeled worktree for parallel conversations
+3. **Supports isolated worktrees** — Planning starts in the protected checkout; approved implementation work activates a labeled worktree
 4. **Manages multi-repo projects** — Groups related repositories under one project definition
 
 ## Installation
@@ -66,12 +66,12 @@ uv tool uninstall basecamp-core && uv tool uninstall basecamp-observer
 
 ### Launching Sessions
 
-Sessions are launched via `pi` with basecamp flags:
+Sessions are launched through basecamp/pi in the protected primary checkout. Worktrees are selected later, when an implementation plan is approved.
 
 ```bash
-pi --project <project>               # Launch in project's primary directory
-pi --project <project> --label <l>   # Work in labeled worktree (creates if new)
-pi --project <project> --style eng   # Override working style
+bpi <project>             # Launch in project's primary directory
+bpi .                     # Launch in the current git repo
+bpi <project> --style eng # Override working style
 ```
 
 ### Managing Projects
@@ -183,19 +183,16 @@ Single-repo projects typically use `AGENTS.md` in the repo itself.
 
 ## Git Worktrees
 
-Use `--label <label>` to work in an isolated git worktree for parallel conversations:
+Basecamp starts sessions in the protected primary checkout for planning and discovery. When an implementation plan is approved, Basecamp prompts for an execution worktree using existing worktrees plus a suggested label derived from the plan goal.
 
-```bash
-pi --project myproject --label auth      # Create or re-enter "auth" worktree
-pi --project myproject --label bugfix    # Create or re-enter "bugfix" worktree
-```
+Worktrees live in `~/.worktrees/<repo>/<label>/` with branches named `wt/<label>` by default.
 
-Worktrees live in `~/.worktrees/<repo>/<label>/` with branches named `wt/<label>`.
-
-- Worktrees are opt-in via `--label <label>` flag
-- Label is both the directory name and worktree identifier
-- `/open` in-session opens the worktree directory in VS Code
-- Secondary directories stay on the main branch
+- The protected checkout must be on the default branch with a clean working tree before activation
+- Implementation edits happen in the active worktree, not the protected checkout
+- Relative file-tool paths target the active worktree after activation
+- `--worktree-dir` is an internal attach-only Pi flag for existing worktrees; it does not create worktrees
+- `/open` in-session opens the active worktree directory in VS Code
+- Secondary directories stay on their configured checkouts in this phase
 - Only works with git repositories
 
 ## Semantic Memory (Observer)
