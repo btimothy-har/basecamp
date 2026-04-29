@@ -15,6 +15,8 @@
 import type { ExtensionAPI, ExtensionContext, Theme } from "@mariozechner/pi-coding-agent";
 import { Type } from "@sinclair/typebox";
 import { getAgentMode, setAgentMode } from "../../../core/src/runtime/mode";
+import { activateWorktree, getState } from "../../../core/src/runtime/session";
+import { listWorktrees, type WorktreeResult } from "../../../core/src/runtime/worktree";
 import type { GoalCycle, ReviewState, TaskStatus, TasksAccess } from "../tasks/tasks";
 import type { PlanDraft, SectionName } from "./review";
 import { SECTION_NAMES, showPlanReadOnly, showReviewOverlay } from "./review";
@@ -125,6 +127,7 @@ type ImplementationMode = "supervisor" | "executor";
 type ApprovedPlanMode = "analysis" | ImplementationMode;
 
 const IMPLEMENTATION_MODE_CHOICES = ["Execute as Supervisor", "Execute as IC/executor"] as const;
+const CUSTOM_WORKTREE_CHOICE = "Enter custom worktree label";
 
 async function selectImplementationMode(ctx: ExtensionContext): Promise<ImplementationMode | null> {
 	if (!ctx.hasUI) return null;
@@ -135,11 +138,62 @@ async function selectImplementationMode(ctx: ExtensionContext): Promise<Implemen
 	return null;
 }
 
+function suggestWorktreeLabel(goal: string): string {
+	const slug = goal
+		.toLowerCase()
+		.replace(/[^a-z0-9]+/g, "-")
+		.replace(/^-+|-+$/g, "")
+		.slice(0, 48)
+		.replace(/-+$/g, "");
+	return slug || "worktree";
+}
+
+async function selectWorktreeLabel(pi: ExtensionAPI, ctx: ExtensionContext, goal: string): Promise<string | null> {
+	if (!ctx.hasUI) return null;
+
+	const state = getState();
+	const suggested = suggestWorktreeLabel(goal);
+	const existing = await listWorktrees(pi, state.primaryDir, state.repoName);
+	const choices: string[] = [];
+	const labelsByChoice = new Map<string, string>();
+
+	const suggestedExisting = existing.find((wt) => wt.label === suggested);
+	const suggestedChoice = `${suggestedExisting ? "Resume" : "Create"}: ${suggested}`;
+	choices.push(suggestedChoice);
+	labelsByChoice.set(suggestedChoice, suggested);
+
+	for (const wt of existing) {
+		if (wt.label === suggested) continue;
+		const choice = `Resume: ${wt.label} (${wt.branch})`;
+		choices.push(choice);
+		labelsByChoice.set(choice, wt.label);
+	}
+	choices.push(CUSTOM_WORKTREE_CHOICE);
+
+	const choice = await ctx.ui.select("Execution worktree", choices);
+	if (!choice) return null;
+	if (choice === CUSTOM_WORKTREE_CHOICE) {
+		const label = await ctx.ui.input("Worktree label", suggested);
+		return label?.trim() || null;
+	}
+	return labelsByChoice.get(choice) ?? null;
+}
+
 function buildHandoffMessage(): string {
 	return "Plan looks good, let's proceed with the implementation.";
 }
 
-function buildApprovedResult(draft: PlanDraft, mode: ApprovedPlanMode): string {
+function buildWorktreeActivationFailedResult(label: string, error: unknown): string {
+	const message = error instanceof Error ? error.message : String(error);
+	return JSON.stringify({
+		status: "worktree_activation_failed",
+		worktree_label: label,
+		message,
+		next_step: "Fix the protected checkout or choose another worktree, then resubmit the approved plan.",
+	});
+}
+
+function buildApprovedResult(draft: PlanDraft, mode: ApprovedPlanMode, worktree?: WorktreeResult): string {
 	// Collect user notes from approved-with-feedback sections
 	const notes: Record<string, string> = {};
 	for (const name of SECTION_NAMES) {
@@ -181,6 +235,15 @@ function buildApprovedResult(draft: PlanDraft, mode: ApprovedPlanMode): string {
 		result.handoff_status = "scheduled";
 		result.next_step =
 			"Plan has been approved. Do not start implementation; wait for the user's confirmation to start work. Acknowledge and end the turn.";
+	}
+
+	if (worktree) {
+		result.worktree = {
+			label: worktree.label,
+			path: worktree.worktreeDir,
+			branch: worktree.branch,
+			created: worktree.created,
+		};
 	}
 
 	// Only include notes if any exist
@@ -321,11 +384,38 @@ export function registerPlan(pi: ExtensionAPI, tasksAccess: TasksAccess): PlanAc
 					};
 				}
 
+				const worktreeLabel = await selectWorktreeLabel(pi, ctx, draft.goal.content);
+				if (!worktreeLabel) {
+					return {
+						content: [
+							{
+								type: "text",
+								text: JSON.stringify({
+									status: "handoff_cancelled",
+									next_step:
+										"Plan approved, but an execution worktree was not selected. Seek user confirmation before implementation.",
+								}),
+							},
+						],
+						details: undefined,
+					};
+				}
+
+				let worktree: WorktreeResult;
+				try {
+					worktree = await activateWorktree(pi, worktreeLabel);
+				} catch (err) {
+					return {
+						content: [{ type: "text", text: buildWorktreeActivationFailedResult(worktreeLabel, err) }],
+						details: undefined,
+					};
+				}
+
 				setAgentMode(implementationMode);
 				tasksAccess.activateGoalCycle(draft.goal.content, approvedTasks, planRef, implementationMode);
 				pendingHandoff = true;
 
-				const result = buildApprovedResult(draft, implementationMode);
+				const result = buildApprovedResult(draft, implementationMode, worktree);
 				draft = null;
 				return {
 					content: [{ type: "text", text: result }],
@@ -369,6 +459,10 @@ export function registerPlan(pi: ExtensionAPI, tasksAccess: TasksAccess): PlanAc
 
 				if (parsed.status === "handoff_cancelled") {
 					return new Text(theme.fg("warning", "handoff cancelled"), 0, 0);
+				}
+
+				if (parsed.status === "worktree_activation_failed") {
+					return new Text(theme.fg("error", "worktree activation failed"), 0, 0);
 				}
 
 				if (parsed.status === "feedback") {

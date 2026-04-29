@@ -14,6 +14,8 @@ You have access to the Git CLI in the environment. Use it to inspect repository 
 
 Destructive Git operations are prohibited: force-pushes, remote ref deletion, forced cleanup of untracked files, and history rewrites of shared branches. Do not push or mutate remotes directly. If remote mutation is needed, stop and ask the user to invoke the appropriate workflow, explaining why it is needed.
 
+When Basecamp reports an active worktree, bash already runs from that worktree. Use simple bash commands from the active worktree; do not `cd` or `git -C` into the protected checkout. The protected checkout must stay on the default branch with a clean working tree.
+
 ## Python Environment
 
 Use Python 3.12+ with the `uv` package manager for all Python work.

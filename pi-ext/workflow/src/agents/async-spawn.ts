@@ -57,6 +57,7 @@ export interface AsyncSpawnOpts {
 	name: string;
 	model: string | undefined;
 	cwd: string;
+	worktreeDir?: string | null;
 	env: Record<string, string>;
 	sessionDir: string;
 	extensionTools: string[];

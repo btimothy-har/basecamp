@@ -63,6 +63,7 @@ export interface PiArgsOpts {
 	name: string;
 	model: string | undefined;
 	cwd: string;
+	worktreeDir?: string | null;
 	sessionDir: string;
 	env: Record<string, string>;
 	extensionTools: string[];
@@ -84,6 +85,7 @@ export function buildPiArgs(
 	const args = [piCmd, ...piPrefix, "--mode", "json", "-p"];
 
 	if (opts.model) args.push("--model", opts.model);
+	if (opts.worktreeDir) args.push("--worktree-dir", opts.worktreeDir);
 
 	// Session directory for the subagent's own session
 	fs.mkdirSync(opts.sessionDir, { recursive: true });
@@ -493,6 +495,7 @@ export function spawnAgent(
 		env: Record<string, string>;
 		sessionDir: string;
 		extensionTools: string[];
+		worktreeDir?: string | null;
 		onEvent?: (event: AgentStreamEvent) => void;
 	},
 	signal?: AbortSignal,

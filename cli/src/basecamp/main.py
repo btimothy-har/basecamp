@@ -7,7 +7,6 @@ import rich_click as click
 from basecamp.cli.config import run_config_menu
 from basecamp.cli.launch import execute_launch
 from basecamp.cli.setup import execute_setup
-from basecamp.cli.worktree import worktree_clean
 from basecamp.config import load_projects
 from basecamp.exceptions import BlockedArgError, LauncherError
 from basecamp.ui import err_console
@@ -20,7 +19,16 @@ click.rich_click.SHOW_ARGUMENTS = True
 CONTEXT_SETTINGS = {"help_option_names": ["-h", "--help"]}
 
 # Args that basecamp controls — block from passthrough to pi.
-_BLOCKED_ARGS = {"--system-prompt", "--append-system-prompt", "--project", "--label", "--style", "--agent-prompt"}
+_BLOCKED_ARGS = {
+    "--system-prompt",
+    "--append-system-prompt",
+    "--project",
+    "--label",
+    "-l",
+    "--style",
+    "--agent-prompt",
+    "--worktree-dir",
+}
 
 
 def _handle_error(e: LauncherError) -> None:
@@ -36,10 +44,9 @@ def basecamp() -> None:
 
 @basecamp.command(context_settings={"ignore_unknown_options": True, "allow_extra_args": True})
 @click.argument("project", required=False, default=None)
-@click.option("--label", "-l", hidden=True, help="Work in a labeled git worktree (creates if new)")
 @click.option("--style", "-s", help="Override working style")
 @click.pass_context
-def pi(ctx: click.Context, project: str | None, label: str | None, style: str | None) -> None:
+def pi(ctx: click.Context, project: str | None, style: str | None) -> None:
     """Launch pi with a basecamp project.
 
     Run without a project name (or with ".") to launch in the current directory.
@@ -52,20 +59,12 @@ def pi(ctx: click.Context, project: str | None, label: str | None, style: str | 
                     raise BlockedArgError(blocked)
 
         if project is None or project == ".":
-            execute_launch(None, None, label=label, style=style, extra_args=ctx.args)
+            execute_launch(None, None, style=style, extra_args=ctx.args)
         else:
             projects = load_projects()
-            execute_launch(project, projects, label=label, style=style, extra_args=ctx.args)
+            execute_launch(project, projects, style=style, extra_args=ctx.args)
     except LauncherError as e:
         _handle_error(e)
-
-
-@basecamp.group()
-def worktree() -> None:
-    """Manage git worktrees."""
-
-
-worktree.add_command(worktree_clean)
 
 
 @basecamp.command()
@@ -94,10 +93,9 @@ _bpi_ctx = {"ignore_unknown_options": True, "allow_extra_args": True, "help_opti
 
 @click.command(context_settings=_bpi_ctx)
 @click.argument("project", required=False, default=None)
-@click.option("--label", "-l", hidden=True, help="Work in a labeled git worktree (creates if new)")
 @click.option("--style", "-s", help="Override working style")
 @click.pass_context
-def bpi(ctx: click.Context, project: str | None, label: str | None, style: str | None) -> None:
+def bpi(ctx: click.Context, project: str | None, style: str | None) -> None:
     """Launch pi with a basecamp project (shorthand for `basecamp pi`).
 
     Run without a project name (or with ".") to launch in the current directory.
@@ -110,10 +108,10 @@ def bpi(ctx: click.Context, project: str | None, label: str | None, style: str |
                     raise BlockedArgError(blocked)
 
         if project is None or project == ".":
-            execute_launch(None, None, label=label, style=style, extra_args=ctx.args)
+            execute_launch(None, None, style=style, extra_args=ctx.args)
         else:
             projects = load_projects()
-            execute_launch(project, projects, label=label, style=style, extra_args=ctx.args)
+            execute_launch(project, projects, style=style, extra_args=ctx.args)
     except LauncherError as e:
         _handle_error(e)
 

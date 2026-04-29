@@ -230,7 +230,7 @@ function buildLocationSegment(
 	if (state.worktreeLabel) {
 		parts.push(fg("warning", `⌥ ${state.worktreeLabel}`));
 	} else {
-		parts.push(fg("muted", "⌥ main"));
+		parts.push(fg("muted", "⌥ protected"));
 	}
 
 	const branch = state.worktreeDir ? worktreeBranchCache : footerData.getGitBranch();
