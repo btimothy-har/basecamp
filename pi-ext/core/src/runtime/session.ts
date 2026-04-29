@@ -20,18 +20,19 @@ import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { resolveSessionState, type SessionState } from "../../../platform/config";
 import type { GitStatus } from "../../../platform/context";
 import { registerCwdProvider } from "../../../platform/exec";
+import {
+	getSessionGitStatus,
+	getSessionState,
+	requireSessionState,
+	resetSessionRuntime,
+	setSessionGitStatus,
+	setSessionState,
+} from "../../../platform/session";
 import { resetAgentMode } from "./mode";
 import { attachWorktreeDir, getOrCreateWorktree, registerWorktreeGuards, type WorktreeResult } from "./worktree";
 
-// ---------------------------------------------------------------------------
-// Module state
-// ---------------------------------------------------------------------------
-
-let state: SessionState | null = null;
-let gitStatus: GitStatus | null = null;
-
 export function getGitStatus(): GitStatus | null {
-	return gitStatus;
+	return getSessionGitStatus();
 }
 
 export function getEffectiveCwd(): string {
@@ -41,7 +42,7 @@ export function getEffectiveCwd(): string {
 
 export function getState(): SessionState {
 	return (
-		state ?? {
+		getSessionState() ?? {
 			projectName: null,
 			project: null,
 			primaryDir: process.cwd(),
@@ -59,11 +60,6 @@ export function getState(): SessionState {
 	);
 }
 
-function requireState(): SessionState {
-	if (!state) throw new Error("Basecamp session state is not initialized");
-	return state;
-}
-
 function setBasecampEnv(s: SessionState): void {
 	process.env.BASECAMP_PROJECT = s.projectName ?? "";
 	process.env.BASECAMP_REPO = s.repoName;
@@ -73,18 +69,18 @@ function setBasecampEnv(s: SessionState): void {
 }
 
 async function applyWorktree(pi: ExtensionAPI, wt: WorktreeResult): Promise<void> {
-	const s = requireState();
+	const s = requireSessionState();
 	s.worktreeDir = wt.worktreeDir;
 	s.worktreeLabel = wt.label;
 	s.worktreeBranch = wt.branch;
 
 	process.chdir(getEffectiveCwd());
-	gitStatus = s.isRepo ? await collectGitStatus(pi, getEffectiveCwd()) : null;
+	setSessionGitStatus(s.isRepo ? await collectGitStatus(pi, getEffectiveCwd()) : null);
 	setBasecampEnv(s);
 }
 
 export async function activateWorktree(pi: ExtensionAPI, label: string): Promise<WorktreeResult> {
-	const s = requireState();
+	const s = requireSessionState();
 	if (!s.isRepo) throw new Error("Worktree activation requires a git repository");
 	const wt = await getOrCreateWorktree(pi, s.primaryDir, s.repoName, label);
 	await applyWorktree(pi, wt);
@@ -92,7 +88,7 @@ export async function activateWorktree(pi: ExtensionAPI, label: string): Promise
 }
 
 export async function attachWorktree(pi: ExtensionAPI, worktreeDir: string): Promise<WorktreeResult> {
-	const s = requireState();
+	const s = requireSessionState();
 	if (!s.isRepo) throw new Error("Worktree attachment requires a git repository");
 	const wt = await attachWorktreeDir(pi, s.primaryDir, s.repoName, worktreeDir);
 	await applyWorktree(pi, wt);
@@ -207,6 +203,7 @@ export function registerSession(pi: ExtensionAPI): void {
 	// --- Session start: resolve everything ---
 	pi.on("session_start", async (_event, ctx) => {
 		resetAgentMode();
+		resetSessionRuntime();
 
 		const projectName = (pi.getFlag("project") as string | undefined) ?? null;
 		const worktreeDir = (pi.getFlag("worktree-dir") as string | undefined) ?? null;
@@ -216,14 +213,16 @@ export function registerSession(pi: ExtensionAPI): void {
 		const gitInfo = await resolveGitInfo(pi, ctx.cwd);
 
 		// Build session state
-		state = resolveSessionState({
-			projectName,
-			cwd: gitInfo.toplevel ?? ctx.cwd,
-			repoName: gitInfo.repoName,
-			isRepo: gitInfo.isRepo,
-			remoteUrl: gitInfo.remoteUrl,
-			styleOverride,
-		});
+		setSessionState(
+			resolveSessionState({
+				projectName,
+				cwd: gitInfo.toplevel ?? ctx.cwd,
+				repoName: gitInfo.repoName,
+				isRepo: gitInfo.isRepo,
+				remoteUrl: gitInfo.remoteUrl,
+				styleOverride,
+			}),
+		);
 
 		if (worktreeDir) {
 			try {
@@ -234,6 +233,7 @@ export function registerSession(pi: ExtensionAPI): void {
 				ctx.ui.notify(`basecamp: worktree attach failed — ${msg}`, "error");
 			}
 		}
+		const state = requireSessionState();
 
 		try {
 			process.chdir(getEffectiveCwd());
@@ -263,11 +263,7 @@ export function registerSession(pi: ExtensionAPI): void {
 		}
 
 		// Collect git status from the effective working dir
-		if (state.isRepo) {
-			gitStatus = await collectGitStatus(pi, getEffectiveCwd());
-		} else {
-			gitStatus = null;
-		}
+		setSessionGitStatus(state.isRepo ? await collectGitStatus(pi, getEffectiveCwd()) : null);
 
 		// Create work directories
 		await fs.mkdir(path.join(state.scratchDir, "pull-requests"), { recursive: true });
