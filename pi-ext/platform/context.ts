@@ -29,16 +29,18 @@ export interface GitStatus {
  * Build the worktree warning block.
  *
  * Returns null if no worktree is active. When active, this is
- * safety-critical — the model must use absolute paths targeting
- * the worktree directory, not the main branch checkout.
+ * safety-critical: project edits must happen in the worktree while the
+ * protected checkout stays on the default branch with a clean status.
  */
 export function buildWorktreeWarning(state: SessionState): string | null {
 	if (!state.worktreeDir || !state.worktreeLabel) return null;
 
 	return [
-		`Worktree: ${state.worktreeLabel}`,
+		`Active worktree: ${state.worktreeLabel}`,
+		`Worktree path: ${state.worktreeDir}`,
+		`Protected checkout: ${state.primaryDir}`,
 		"",
-		"⚠ WORKTREE ACTIVE: Isolated git worktree. Use absolute paths for all file operations. Bash runs in the working directory automatically.",
+		"⚠ WORKTREE ACTIVE: Relative file-tool paths target the active worktree. Do not edit the protected checkout. Bash runs in the worktree automatically; do not cd or git -C into the protected checkout.",
 	].join("\n");
 }
 

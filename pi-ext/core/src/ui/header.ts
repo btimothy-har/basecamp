@@ -31,13 +31,13 @@ function buildBanner(fg: ThemeFg, width: number): string[] {
 	// Info rows
 	const rows: [string, string][] = [];
 
-	rows.push(["Primary", shortenPath(state.primaryDir)]);
+	rows.push(["Protected", shortenPath(state.primaryDir)]);
 
-	if (state.worktreeLabel) {
+	if (state.worktreeLabel && state.worktreeDir) {
 		const branch = state.worktreeBranch ? fg("dim", ` (${state.worktreeBranch})`) : "";
-		rows.push(["Worktree", `${state.worktreeLabel}${branch}`]);
+		rows.push(["Worktree", `${state.worktreeLabel}${branch} ${fg("dim", "·")} ${shortenPath(state.worktreeDir)}`]);
 	} else {
-		rows.push(["Worktree", "main"]);
+		rows.push(["Worktree", "not active"]);
 	}
 
 	if (state.secondaryDirs.length > 0) {
