@@ -86,12 +86,4 @@ gh repo view --json url -q .url  # repo base URL
 
 URL form: `{url}/blob/{hash}/{path}#L10-L25` — e.g. `` [`path/file.py#L10-L25`](https://github.com/org/repo/blob/abc1234/path/file.py#L10-L25) ``.
 
-Draft the title and body, then call `pr_publish` with them. The user reviews in a read-only overlay and can:
-
-- **Publish** (Enter) — publishes directly
-- **Feedback** (Tab → type → Enter) — returns feedback for you to revise and call `pr_publish` again
-- **Cancel** (Esc) — ask the user what they want to change
-
-## Updating
-
-For subsequent changes, invoke `/pull-request` again — it handles pushing. Then call `pr_publish` with the updated description.
+Draft the title and body, then call `pr_publish` with them.
