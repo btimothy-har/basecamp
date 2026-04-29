@@ -19,7 +19,15 @@ If the diff mixes unrelated concerns or is too large for a single review pass, s
 
 ## Step 2: Verify Readiness
 
-Call `git_status` to verify the current repository state, then rebase against the base branch.
+Call `git_status` before mutating local history. Confirm that:
+
+- The current branch is the PR branch
+- The working tree is clean
+- Upstream/ahead/behind state matches the expected PR state
+
+If `git_status` reports uncommitted changes, stop and ask the user how to handle them before rebasing. Do not stash, discard, or fold them into the PR unless the user explicitly asks.
+
+Rebase against the fetched base branch as part of this workflow:
 
 ```bash
 git rebase origin/{{BASE}}
@@ -86,4 +94,4 @@ Draft the title and body, then call `pr_publish` with them. The user reviews in 
 
 ## Updating
 
-For subsequent changes, invoke `/pull-request` again — it handles pushing and then call `pr_publish` with the updated description.
+For subsequent changes, invoke `/pull-request` again — it handles pushing. Then call `pr_publish` with the updated description.
