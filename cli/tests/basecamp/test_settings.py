@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import basecamp.config.project as project_config
 import pytest
 from basecamp.settings import Settings
 
@@ -37,7 +38,7 @@ class TestReadWrite:
 
 
 class TestProperties:
-    """Public property API: install_dir, projects."""
+    """Public property API: install_dir, projects, and global defaults."""
 
     def test_install_dir_empty(self, cfg: Settings) -> None:
         assert cfg.install_dir is None
@@ -104,6 +105,91 @@ class TestProperties:
         assert data["install_dir"] == "/tmp/ws"
         assert data["logseq_graph"] == "Documents/brain"
         assert data["timezone"] == "America/Toronto"
+
+    def test_bigquery_empty(self, cfg: Settings) -> None:
+        assert cfg.bigquery == {}
+
+    def test_bigquery_set_and_get(self, cfg: Settings) -> None:
+        bigquery = {
+            "enabled": True,
+            "default_project_id": "analytics-prod",
+            "default_location": "US",
+            "default_output_format": "json",
+            "default_max_rows": 1000,
+            "auto_dry_run": True,
+        }
+
+        cfg.bigquery = bigquery
+
+        assert cfg.bigquery == bigquery
+
+    def test_bigquery_preserves_other_settings(self, cfg: Settings) -> None:
+        cfg.install_dir = "/tmp/ws"
+        cfg.bigquery = {"enabled": False}
+
+        data = json.loads(cfg.path.read_text())
+        assert data["install_dir"] == "/tmp/ws"
+        assert data["bigquery"] == {"enabled": False}
+
+    def test_bigquery_clear(self, cfg: Settings) -> None:
+        cfg.bigquery = {"enabled": True}
+        cfg.bigquery = None
+
+        assert "bigquery" not in json.loads(cfg.path.read_text())
+
+
+class TestProjectBigQueryConfig:
+    """Project-level BigQuery config serialization."""
+
+    def test_save_and_load_projects_preserves_bigquery(
+        self,
+        cfg: Settings,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        monkeypatch.setattr(project_config, "settings", cfg)
+        bigquery = project_config.BigQueryConfig(
+            enabled=True,
+            default_project_id="analytics-prod",
+            default_location="US",
+            default_output_format="csv",
+            default_max_rows=500,
+            auto_dry_run=True,
+        )
+
+        project_config.save_projects(
+            {
+                "demo": project_config.ProjectConfig(
+                    dirs=["src/demo"],
+                    description="Demo",
+                    bigquery=bigquery,
+                ),
+            },
+        )
+
+        data = json.loads(cfg.path.read_text())
+        assert data["projects"]["demo"]["bigquery"] == {
+            "enabled": True,
+            "default_project_id": "analytics-prod",
+            "default_location": "US",
+            "default_output_format": "csv",
+            "default_max_rows": 500,
+            "auto_dry_run": True,
+        }
+
+        loaded = project_config.load_projects()
+        assert loaded["demo"].bigquery == bigquery
+
+    def test_save_projects_omits_absent_bigquery(
+        self,
+        cfg: Settings,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        monkeypatch.setattr(project_config, "settings", cfg)
+
+        project_config.save_projects({"demo": project_config.ProjectConfig(dirs=["src/demo"])})
+
+        data = json.loads(cfg.path.read_text())
+        assert "bigquery" not in data["projects"]["demo"]
 
 
 class TestLocking:

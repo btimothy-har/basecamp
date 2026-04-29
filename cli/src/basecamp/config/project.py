@@ -1,9 +1,24 @@
 """Project configuration models and loaders for basecamp."""
 
-from pydantic import BaseModel
+from typing import Any, Literal
+
+from pydantic import BaseModel, ConfigDict
 
 from basecamp.exceptions import ProjectNotFoundError
 from basecamp.settings import settings
+
+
+class BigQueryConfig(BaseModel):
+    """Optional BigQuery convenience defaults for query tooling."""
+
+    model_config = ConfigDict(extra="allow")
+
+    enabled: bool | None = None
+    default_project_id: str | None = None
+    default_location: str | None = None
+    default_output_format: Literal["csv", "json"] | None = None
+    default_max_rows: int | None = None
+    auto_dry_run: bool | None = None
 
 
 class ProjectConfig(BaseModel):
@@ -13,6 +28,7 @@ class ProjectConfig(BaseModel):
     description: str = ""
     working_style: str | None = None
     context: str | None = None
+    bigquery: BigQueryConfig | None = None
 
 
 def resolve_project(project_name: str, projects: dict[str, ProjectConfig]) -> ProjectConfig:
@@ -44,6 +60,16 @@ def load_projects() -> dict[str, ProjectConfig]:
     return {name: ProjectConfig.model_validate(data) for name, data in raw.items()}
 
 
+def _dump_project(project: ProjectConfig) -> dict[str, Any]:
+    """Serialize a project while omitting absent BigQuery config."""
+    data = project.model_dump()
+    if project.bigquery is None:
+        data.pop("bigquery", None)
+    else:
+        data["bigquery"] = project.bigquery.model_dump(exclude_none=True)
+    return data
+
+
 def save_projects(projects: dict[str, ProjectConfig]) -> None:
     """Persist project configurations to config.json."""
-    settings.projects = {name: p.model_dump() for name, p in projects.items()}
+    settings.projects = {name: _dump_project(project) for name, project in projects.items()}
