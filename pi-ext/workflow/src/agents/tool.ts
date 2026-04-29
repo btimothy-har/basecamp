@@ -19,6 +19,7 @@ import { fileURLToPath } from "node:url";
 import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-agent";
 import { getMarkdownTheme } from "@mariozechner/pi-coding-agent";
 import { type Component, Container, Markdown, Spacer, Text } from "@mariozechner/pi-tui";
+import { getState } from "../../../core/src/runtime/session";
 import { resolveModelAlias } from "../../../platform/config.ts";
 import { hasInvokedSkill } from "../../../platform/skill-tracker";
 import { formatTaskProgressSummary, renderCompactTaskProgressLines } from "../tasks/render";
@@ -438,6 +439,20 @@ Available named agents are basecamp builtin definitions. Ad-hoc dispatch is sync
 			const agentLabel = params.agent ?? "ad-hoc";
 			const extensionTools = getBasecampExtensionToolNames(pi);
 			const runKind = getAgentRunKind(agentConfig);
+			const worktreeDir = getState().worktreeDir;
+
+			if (runKind === "mutative" && !worktreeDir) {
+				return {
+					content: [
+						{
+							type: "text",
+							text: "Mutative worker agents require an active execution worktree. Approve an implementation plan and activate a worktree first.",
+						},
+					],
+					isError: true,
+					details: null as unknown as AgentDetails,
+				};
+			}
 
 			if (params.async) {
 				if (!isAsyncAvailable()) {
@@ -479,6 +494,7 @@ Available named agents are basecamp builtin definitions. Ad-hoc dispatch is sync
 						name,
 						model,
 						cwd: ctx.cwd,
+						worktreeDir,
 						env,
 						sessionDir,
 						extensionTools,
@@ -565,7 +581,7 @@ Available named agents are basecamp builtin definitions. Ad-hoc dispatch is sync
 				let result = await spawnAgent(
 					agentConfig,
 					params.task,
-					{ name, model, cwd: ctx.cwd, env, sessionDir, extensionTools, onEvent },
+					{ name, model, cwd: ctx.cwd, worktreeDir, env, sessionDir, extensionTools, onEvent },
 					signal,
 				);
 
@@ -583,7 +599,16 @@ Available named agents are basecamp builtin definitions. Ad-hoc dispatch is sync
 					result = await spawnAgent(
 						agentConfig,
 						params.task,
-						{ name, model: undefined, cwd: ctx.cwd, env, sessionDir: retrySessionDir, extensionTools, onEvent },
+						{
+							name,
+							model: undefined,
+							cwd: ctx.cwd,
+							worktreeDir,
+							env,
+							sessionDir: retrySessionDir,
+							extensionTools,
+							onEvent,
+						},
 						signal,
 					);
 				}
