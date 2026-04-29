@@ -8,8 +8,8 @@
  * Extensions load normally in subagents. The basecamp prompt hook
  * sees --agent-prompt and slots the agent persona in place of
  * working style + system.md. Everything else (env block,
- * environment.md, tools, project context, git status) is
- * assembled by the same prompt.ts code path as the parent.
+ * environment.md, tools, project context) is assembled by the
+ * same prompt.ts code path as the parent.
  */
 
 import { spawn } from "node:child_process";

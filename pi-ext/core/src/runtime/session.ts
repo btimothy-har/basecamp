@@ -8,7 +8,6 @@
  *   - Changes cwd to the effective working directory
  *   - Loads .env from the project directory
  *   - Caches session state (dirs, working style, context, worktree info)
- *   - Collects git status snapshot
  *   - Creates work directories
  *   - Sets BASECAMP_* env vars
  */
@@ -18,23 +17,11 @@ import * as fs from "node:fs/promises";
 import * as path from "node:path";
 import type { ExtensionAPI, ExtensionContext, SessionStartEvent } from "@mariozechner/pi-coding-agent";
 import { resolveSessionState, type SessionState } from "../../../platform/config";
-import type { GitStatus } from "../../../platform/context";
 import { registerCwdProvider } from "../../../platform/exec";
-import {
-	getSessionGitStatus,
-	getSessionState,
-	requireSessionState,
-	resetSessionRuntime,
-	setSessionGitStatus,
-	setSessionState,
-} from "../../../platform/session";
+import { getSessionState, requireSessionState, resetSessionRuntime, setSessionState } from "../../../platform/session";
 import { resetAgentMode } from "./mode";
 import { attachWorktreeDir, getOrCreateWorktree, registerWorktreeGuards, type WorktreeResult } from "./worktree";
 import { appendWorktreeAffinity, latestWorktreeAffinity, repoMatchesAffinity } from "./worktree-affinity";
-
-export function getGitStatus(): GitStatus | null {
-	return getSessionGitStatus();
-}
 
 export function getEffectiveCwd(): string {
 	const s = getState();
@@ -80,7 +67,6 @@ async function applyWorktree(pi: ExtensionAPI, wt: WorktreeResult, options: Work
 	s.worktreeBranch = wt.branch;
 
 	process.chdir(getEffectiveCwd());
-	setSessionGitStatus(s.isRepo ? await collectGitStatus(pi, getEffectiveCwd()) : null);
 	setBasecampEnv(s);
 	if (options.persistAffinity ?? true) appendWorktreeAffinity(pi, s, wt);
 }
@@ -149,47 +135,6 @@ async function resolveGitInfo(
 		return { repoName, isRepo: true, remoteUrl, toplevel };
 	} catch {
 		return { repoName: path.basename(dir), isRepo: false, remoteUrl: null, toplevel: null };
-	}
-}
-
-async function collectGitStatus(pi: ExtensionAPI, dir: string): Promise<GitStatus | null> {
-	try {
-		const branchResult = await pi.exec("git", ["branch", "--show-current"], {
-			cwd: dir,
-			timeout: 10_000,
-		});
-		const branch = branchResult.code === 0 ? branchResult.stdout.trim() : null;
-		if (branch === null) return null;
-
-		// Detect main branch
-		let mainBranch = "main";
-		const checkMain = await pi.exec("git", ["rev-parse", "--verify", "main"], {
-			cwd: dir,
-			timeout: 10_000,
-		});
-		if (checkMain.code !== 0) {
-			const checkMaster = await pi.exec("git", ["rev-parse", "--verify", "master"], {
-				cwd: dir,
-				timeout: 10_000,
-			});
-			if (checkMaster.code === 0) mainBranch = "master";
-		}
-
-		const statusResult = await pi.exec("git", ["status", "--short"], {
-			cwd: dir,
-			timeout: 10_000,
-		});
-		const status = statusResult.code === 0 ? statusResult.stdout.trim() : "";
-
-		const logResult = await pi.exec("git", ["log", "--oneline", "-5"], {
-			cwd: dir,
-			timeout: 10_000,
-		});
-		const recentCommits = logResult.code === 0 ? logResult.stdout.trim() : "";
-
-		return { branch, mainBranch, status, recentCommits };
-	} catch {
-		return null;
 	}
 }
 
@@ -288,9 +233,6 @@ export function registerSession(pi: ExtensionAPI): void {
 		} catch {
 			/* no .env file is fine */
 		}
-
-		// Collect git status from the effective working dir
-		setSessionGitStatus(state.isRepo ? await collectGitStatus(pi, getEffectiveCwd()) : null);
 
 		// Create work directories
 		await fs.mkdir(path.join(state.scratchDir, "pull-requests"), { recursive: true });
