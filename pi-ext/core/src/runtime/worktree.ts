@@ -8,8 +8,9 @@
  *      - bash (tool_call): mutate event.input.command to prepend cd <worktree>
  *      - bash (user_bash / !cmd): return custom operations with worktree as cwd
  *
- * Worktree metadata is stored in ~/.worktrees/<repo>/.meta/<label>.json.
- * This module reads that metadata and creates worktrees via git CLI.
+ * Git is the source of truth for registered worktrees. Basecamp keeps the
+ * path convention ~/.worktrees/<repo>/<label>, but does not maintain a
+ * separate worktree metadata registry.
  */
 
 import * as fs from "node:fs";
@@ -41,18 +42,9 @@ export interface WorktreeSummary {
 	createdAt: string;
 }
 
-interface WorktreeMetadata {
-	name?: string;
-	path?: string;
-	branch?: string;
-	created_at?: string;
-	project?: string;
-	repo_name?: string;
-	source_dir?: string;
-}
-
-function resolveExistingPath(value: string): string {
-	return fs.realpathSync.native(value);
+interface GitWorktreeRecord {
+	path: string;
+	branch: string | null;
 }
 
 function ensureWorktreeLabel(label: string): void {
@@ -61,62 +53,26 @@ function ensureWorktreeLabel(label: string): void {
 	}
 }
 
-function metadataPath(repoName: string, label: string): string {
-	return path.join(WORKTREES_DIR, repoName, ".meta", `${label}.json`);
-}
+function parseWorktreeList(output: string): GitWorktreeRecord[] {
+	const records: GitWorktreeRecord[] = [];
+	let current: GitWorktreeRecord | null = null;
 
-function readMetadata(filePath: string): WorktreeMetadata {
-	try {
-		return JSON.parse(fs.readFileSync(filePath, "utf8"));
-	} catch (err) {
-		const msg = err instanceof Error ? err.message : String(err);
-		throw new Error(`Failed to read worktree metadata: ${msg}`);
-	}
-}
-
-export function listWorktrees(repoName: string): WorktreeSummary[] {
-	const metaDir = path.join(WORKTREES_DIR, repoName, ".meta");
-	if (!fs.existsSync(metaDir) || !fs.statSync(metaDir).isDirectory()) return [];
-
-	const worktrees: WorktreeSummary[] = [];
-	for (const entry of fs.readdirSync(metaDir, { withFileTypes: true })) {
-		if (!entry.isFile() || !entry.name.endsWith(".json")) continue;
-		try {
-			const meta = readMetadata(path.join(metaDir, entry.name));
-			const label = meta.name ?? path.basename(entry.name, ".json");
-			const worktreePath = meta.path ?? path.join(WORKTREES_DIR, repoName, label);
-			if (!fs.existsSync(worktreePath) || !fs.statSync(worktreePath).isDirectory()) continue;
-			worktrees.push({
-				label,
-				path: worktreePath,
-				branch: meta.branch ?? `${getWorktreeBranchPrefix()}${label}`,
-				createdAt: meta.created_at ?? "",
-			});
-		} catch {}
+	for (const line of `${output}\n`.split("\n")) {
+		if (!line.trim()) {
+			if (current) records.push(current);
+			current = null;
+			continue;
+		}
+		if (line.startsWith("worktree ")) {
+			if (current) records.push(current);
+			current = { path: line.slice("worktree ".length), branch: null };
+		} else if (current && line.startsWith("branch ")) {
+			const ref = line.slice("branch ".length);
+			current.branch = ref.startsWith("refs/heads/") ? ref.slice("refs/heads/".length) : ref;
+		}
 	}
 
-	return worktrees.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
-}
-
-function validateMetadata(
-	meta: WorktreeMetadata,
-	opts: { primaryDir: string; repoName: string; label: string; worktreeDir: string },
-): void {
-	if (meta.name && meta.name !== opts.label) {
-		throw new Error(`Worktree metadata label mismatch: expected ${opts.label}, found ${meta.name}`);
-	}
-	if (meta.repo_name && meta.repo_name !== opts.repoName) {
-		throw new Error(`Worktree metadata repo mismatch: expected ${opts.repoName}, found ${meta.repo_name}`);
-	}
-	if (meta.path && path.resolve(meta.path) !== path.resolve(opts.worktreeDir)) {
-		throw new Error(`Worktree metadata path mismatch: expected ${opts.worktreeDir}, found ${meta.path}`);
-	}
-	if (!meta.source_dir) {
-		throw new Error("Worktree metadata is missing source_dir");
-	}
-	if (resolveExistingPath(meta.source_dir) !== resolveExistingPath(opts.primaryDir)) {
-		throw new Error(`Worktree source mismatch: expected ${opts.primaryDir}, found ${meta.source_dir}`);
-	}
+	return records;
 }
 
 async function gitOutput(pi: ExtensionAPI, primaryDir: string, args: string[], timeout = 10_000): Promise<string> {
@@ -133,6 +89,37 @@ async function tryGitOutput(pi: ExtensionAPI, primaryDir: string, args: string[]
 	} catch {
 		return null;
 	}
+}
+
+async function gitWorktreeRecords(pi: ExtensionAPI, primaryDir: string): Promise<GitWorktreeRecord[]> {
+	const output = await gitOutput(pi, primaryDir, ["worktree", "list", "--porcelain"]);
+	return parseWorktreeList(output);
+}
+
+function branchName(record: GitWorktreeRecord): string {
+	return record.branch ?? "detached";
+}
+
+function findWorktreeRecord(records: GitWorktreeRecord[], worktreeDir: string): GitWorktreeRecord | null {
+	const resolved = path.resolve(worktreeDir);
+	return records.find((record) => path.resolve(record.path) === resolved) ?? null;
+}
+
+function labelFromWorktreePath(repoName: string, worktreeDir: string): string {
+	const resolvedDir = path.resolve(worktreeDir);
+	const root = path.join(WORKTREES_DIR, repoName);
+	const relative = path.relative(root, resolvedDir);
+	const [label, ...rest] = relative.split(path.sep);
+	if (!label || rest.length > 0 || relative.startsWith("..") || path.isAbsolute(relative)) {
+		throw new Error(`Worktree must be directly under ${root}`);
+	}
+	ensureWorktreeLabel(label);
+	validateWorktreePath(repoName, label, resolvedDir);
+	return label;
+}
+
+async function branchExists(pi: ExtensionAPI, primaryDir: string, branch: string): Promise<boolean> {
+	return (await tryGitOutput(pi, primaryDir, ["rev-parse", "--verify", `refs/heads/${branch}`])) !== null;
 }
 
 async function detectDefaultBranch(pi: ExtensionAPI, primaryDir: string): Promise<string> {
@@ -170,6 +157,27 @@ function validateWorktreePath(repoName: string, label: string, worktreeDir: stri
 	}
 }
 
+export async function listWorktrees(
+	pi: ExtensionAPI,
+	primaryDir: string,
+	repoName: string,
+): Promise<WorktreeSummary[]> {
+	const root = path.join(WORKTREES_DIR, repoName);
+	const records = await gitWorktreeRecords(pi, primaryDir);
+	return records
+		.map((record) => {
+			try {
+				const label = labelFromWorktreePath(repoName, record.path);
+				if (!path.resolve(record.path).startsWith(path.resolve(root))) return null;
+				return { label, path: path.resolve(record.path), branch: branchName(record), createdAt: "" };
+			} catch {
+				return null;
+			}
+		})
+		.filter((wt): wt is WorktreeSummary => wt !== null)
+		.sort((a, b) => a.label.localeCompare(b.label));
+}
+
 export async function attachWorktreeDir(
 	pi: ExtensionAPI,
 	primaryDir: string,
@@ -179,30 +187,17 @@ export async function attachWorktreeDir(
 	await validateProtectedCheckout(pi, primaryDir);
 
 	const resolvedDir = path.resolve(worktreeDir);
-	const relative = path.relative(path.join(WORKTREES_DIR, repoName), resolvedDir);
-	const [label, ...rest] = relative.split(path.sep);
-	if (!label || rest.length > 0 || relative.startsWith("..") || path.isAbsolute(relative)) {
-		throw new Error(`Worktree must be directly under ${path.join(WORKTREES_DIR, repoName)}`);
-	}
-	ensureWorktreeLabel(label);
-	validateWorktreePath(repoName, label, resolvedDir);
+	const label = labelFromWorktreePath(repoName, resolvedDir);
 	if (!fs.existsSync(resolvedDir) || !fs.statSync(resolvedDir).isDirectory()) {
 		throw new Error(`Worktree directory not found: ${resolvedDir}`);
 	}
 
-	const metaFile = metadataPath(repoName, label);
-	if (!fs.existsSync(metaFile)) {
-		throw new Error(`Worktree metadata not found: ${metaFile}`);
+	const record = findWorktreeRecord(await gitWorktreeRecords(pi, primaryDir), resolvedDir);
+	if (!record) {
+		throw new Error(`Git does not know about worktree: ${resolvedDir}`);
 	}
-	const meta = readMetadata(metaFile);
-	validateMetadata(meta, { primaryDir, repoName, label, worktreeDir: resolvedDir });
 
-	return {
-		worktreeDir: resolvedDir,
-		label,
-		branch: meta.branch ?? `${getWorktreeBranchPrefix()}${label}`,
-		created: false,
-	};
+	return { worktreeDir: resolvedDir, label, branch: branchName(record), created: false };
 }
 
 export async function getOrCreateWorktree(
@@ -210,46 +205,30 @@ export async function getOrCreateWorktree(
 	primaryDir: string,
 	repoName: string,
 	label: string,
-	projectName: string,
 	branchPrefix?: string,
 ): Promise<WorktreeResult> {
 	ensureWorktreeLabel(label);
 	const defaultBranch = await validateProtectedCheckout(pi, primaryDir);
 	const worktreeDir = path.join(WORKTREES_DIR, repoName, label);
-	const prefix = branchPrefix ?? getWorktreeBranchPrefix();
-	const branch = `${prefix}${label}`;
-	const metaDir = path.join(WORKTREES_DIR, repoName, ".meta");
-	const metaFile = metadataPath(repoName, label);
-
+	const branch = `${branchPrefix ?? getWorktreeBranchPrefix()}${label}`;
+	const records = await gitWorktreeRecords(pi, primaryDir);
+	const existing = findWorktreeRecord(records, worktreeDir);
+	if (existing) {
+		return { worktreeDir, label, branch: branchName(existing), created: false };
+	}
 	if (fs.existsSync(worktreeDir)) {
-		if (!fs.existsSync(metaFile)) {
-			throw new Error(`Worktree metadata not found: ${metaFile}`);
-		}
-		const meta = readMetadata(metaFile);
-		validateMetadata(meta, { primaryDir, repoName, label, worktreeDir });
-		return { worktreeDir, label, branch: meta.branch ?? branch, created: false };
+		throw new Error(`Worktree path exists but is not registered with git: ${worktreeDir}`);
 	}
 
 	fs.mkdirSync(path.dirname(worktreeDir), { recursive: true });
 
-	const result = await pi.exec("git", ["-C", primaryDir, "worktree", "add", "-b", branch, worktreeDir, defaultBranch], {
-		timeout: 30_000,
-	});
+	const args = (await branchExists(pi, primaryDir, branch))
+		? ["-C", primaryDir, "worktree", "add", worktreeDir, branch]
+		: ["-C", primaryDir, "worktree", "add", "-b", branch, worktreeDir, defaultBranch];
+	const result = await pi.exec("git", args, { timeout: 30_000 });
 	if (result.code !== 0) {
 		throw new Error(`Failed to create worktree: ${result.stderr}`);
 	}
-
-	fs.mkdirSync(metaDir, { recursive: true });
-	const meta = {
-		name: label,
-		path: worktreeDir,
-		branch,
-		created_at: new Date().toISOString(),
-		project: projectName,
-		repo_name: repoName,
-		source_dir: primaryDir,
-	};
-	fs.writeFileSync(metaFile, JSON.stringify(meta, null, 2));
 
 	return { worktreeDir, label, branch, created: true };
 }

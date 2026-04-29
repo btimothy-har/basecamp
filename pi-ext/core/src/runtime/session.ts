@@ -86,7 +86,7 @@ async function applyWorktree(pi: ExtensionAPI, wt: WorktreeResult): Promise<void
 export async function activateWorktree(pi: ExtensionAPI, label: string): Promise<WorktreeResult> {
 	const s = requireState();
 	if (!s.isRepo) throw new Error("Worktree activation requires a git repository");
-	const wt = await getOrCreateWorktree(pi, s.primaryDir, s.repoName, label, s.projectName ?? s.repoName);
+	const wt = await getOrCreateWorktree(pi, s.primaryDir, s.repoName, label);
 	await applyWorktree(pi, wt);
 	return wt;
 }

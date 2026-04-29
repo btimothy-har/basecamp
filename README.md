@@ -185,13 +185,14 @@ Single-repo projects typically use `AGENTS.md` in the repo itself.
 
 Basecamp starts sessions in the protected primary checkout for planning and discovery. When an implementation plan is approved, Basecamp prompts for an execution worktree using existing worktrees plus a suggested label derived from the plan goal.
 
-Worktrees live in `~/.worktrees/<repo>/<label>/` with branches named `wt/<label>` by default.
+Worktrees live in `~/.worktrees/<repo>/<label>/` with branches named `wt/<label>` by default. Git is the source of truth for worktree registration; Basecamp does not maintain a separate metadata registry.
 
 - The protected checkout must be on the default branch with a clean working tree before activation
 - Implementation edits happen in the active worktree, not the protected checkout
 - Relative file-tool paths target the active worktree after activation
-- `--worktree-dir` is an internal attach-only Pi flag for existing worktrees; it does not create worktrees
+- `--worktree-dir` is an internal attach-only Pi flag for existing Git-registered worktrees; it does not create worktrees
 - `/open` in-session opens the active worktree directory in VS Code
+- Use native Git commands (`git worktree list`, `git worktree remove`) to inspect or clean up worktrees
 - Secondary directories stay on their configured checkouts in this phase
 - Only works with git repositories
 

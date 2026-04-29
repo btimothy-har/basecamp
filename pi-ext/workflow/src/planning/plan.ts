@@ -148,12 +148,12 @@ function suggestWorktreeLabel(goal: string): string {
 	return slug || "worktree";
 }
 
-async function selectWorktreeLabel(ctx: ExtensionContext, goal: string): Promise<string | null> {
+async function selectWorktreeLabel(pi: ExtensionAPI, ctx: ExtensionContext, goal: string): Promise<string | null> {
 	if (!ctx.hasUI) return null;
 
 	const state = getState();
 	const suggested = suggestWorktreeLabel(goal);
-	const existing = listWorktrees(state.repoName);
+	const existing = await listWorktrees(pi, state.primaryDir, state.repoName);
 	const choices: string[] = [];
 	const labelsByChoice = new Map<string, string>();
 
@@ -384,7 +384,7 @@ export function registerPlan(pi: ExtensionAPI, tasksAccess: TasksAccess): PlanAc
 					};
 				}
 
-				const worktreeLabel = await selectWorktreeLabel(ctx, draft.goal.content);
+				const worktreeLabel = await selectWorktreeLabel(pi, ctx, draft.goal.content);
 				if (!worktreeLabel) {
 					return {
 						content: [

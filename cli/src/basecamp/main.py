@@ -7,7 +7,6 @@ import rich_click as click
 from basecamp.cli.config import run_config_menu
 from basecamp.cli.launch import execute_launch
 from basecamp.cli.setup import execute_setup
-from basecamp.cli.worktree import worktree_clean
 from basecamp.config import load_projects
 from basecamp.exceptions import BlockedArgError, LauncherError
 from basecamp.ui import err_console
@@ -66,14 +65,6 @@ def pi(ctx: click.Context, project: str | None, style: str | None) -> None:
             execute_launch(project, projects, style=style, extra_args=ctx.args)
     except LauncherError as e:
         _handle_error(e)
-
-
-@basecamp.group()
-def worktree() -> None:
-    """Manage git worktrees."""
-
-
-worktree.add_command(worktree_clean)
 
 
 @basecamp.command()
