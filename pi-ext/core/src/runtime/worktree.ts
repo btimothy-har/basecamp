@@ -4,7 +4,7 @@
  * Two-layer defense when a worktree is active:
  *   1. Prompt: env block tells model to use worktree dir with absolute paths
  *   2. Tool guards:
- *      - read/edit/write/grep/find/ls: block if path resolves under main repo
+ *      - read/edit/write/grep/find/ls: retarget relative worktree paths and block protected checkout paths
  *      - bash (tool_call): mutate event.input.command to prepend cd <worktree>
  *      - bash (user_bash / !cmd): return custom operations with worktree as cwd
  *
@@ -271,10 +271,21 @@ function shellQuote(s: string): string {
 	return `'${s.replace(/'/g, "'\\''")}'`;
 }
 
+function isPathWithin(child: string, parent: string): boolean {
+	const relative = path.relative(parent, child);
+	return relative === "" || (!!relative && !relative.startsWith("..") && !path.isAbsolute(relative));
+}
+
+function isSecondaryPath(state: SessionState, resolved: string): boolean {
+	return state.secondaryDirs.some((dir: string) => isPathWithin(resolved, dir));
+}
+
+const STRUCTURED_PATH_TOOLS = new Set(["read", "edit", "write", "grep", "find", "ls"]);
+const STRUCTURED_MUTATION_TOOLS = new Set(["edit", "write"]);
+const OPTIONAL_PATH_TOOLS = new Set(["grep", "find", "ls"]);
+
 /**
- * Register tool_call guards for worktree enforcement.
- *
- * Only active when state.worktreeDir is set.
+ * Register tool_call guards for protected checkout and worktree enforcement.
  */
 export function registerWorktreeGuards(pi: ExtensionAPI, getState: () => SessionState): void {
 	// user_bash fires when the user types !cmd directly in pi's terminal.
@@ -293,15 +304,13 @@ export function registerWorktreeGuards(pi: ExtensionAPI, getState: () => Session
 		};
 	});
 
-	pi.on("tool_call", async (event, ctx) => {
+	pi.on("tool_call", async (event) => {
 		const state = getState();
-		if (!state.worktreeDir) return;
-
-		const mainRepo = ctx.cwd;
+		const protectedCheckout = state.primaryDir;
 		const worktreeDir = state.worktreeDir;
 
-		// --- Bash: rewrite cwd ---
 		if (isToolCallEventType("bash", event)) {
+			if (!worktreeDir) return;
 			const cmd = event.input.command;
 			const quoted = shellQuote(worktreeDir);
 			const alreadyCd = cmd?.startsWith(`cd ${worktreeDir}`) || cmd?.startsWith(`cd ${quoted}`);
@@ -311,34 +320,52 @@ export function registerWorktreeGuards(pi: ExtensionAPI, getState: () => Session
 			return;
 		}
 
-		// --- Path-based tools: block if resolves under main repo ---
-		const pathTools = ["read", "edit", "write", "grep", "find", "ls"];
-		if (!pathTools.includes(event.toolName)) return;
+		if (!STRUCTURED_PATH_TOOLS.has(event.toolName)) return;
 
-		const inputPath = (event.input as { path?: string }).path;
-		if (!inputPath) return;
+		const input = event.input as { path?: string };
+		if (worktreeDir && OPTIONAL_PATH_TOOLS.has(event.toolName) && !input.path) {
+			input.path = worktreeDir;
+			return;
+		}
+		if (!input.path) return;
 
-		const expanded = expandPath(inputPath);
-		const resolved = path.isAbsolute(expanded) ? path.resolve(expanded) : path.resolve(mainRepo, expanded);
+		const expanded = expandPath(input.path);
+		const isAbsolute = path.isAbsolute(expanded);
+		const baseDir = worktreeDir ?? protectedCheckout;
+		const resolved = isAbsolute ? path.resolve(expanded) : path.resolve(baseDir, expanded);
 
-		// Allow secondary project dirs
-		if (state.secondaryDirs.some((d: string) => resolved === d || resolved.startsWith(`${d}/`))) {
+		if (isSecondaryPath(state, resolved)) return;
+
+		if (!worktreeDir) {
+			if (STRUCTURED_MUTATION_TOOLS.has(event.toolName) && isPathWithin(resolved, protectedCheckout)) {
+				return {
+					block: true,
+					reason:
+						`Path "${input.path}" resolves to the protected checkout (${protectedCheckout}). ` +
+						"Activate an execution worktree before editing project files.",
+				};
+			}
 			return;
 		}
 
-		// Allow anything outside main repo (scratch, /tmp, ~, etc.)
-		if (resolved !== mainRepo && !resolved.startsWith(`${mainRepo}/`)) {
-			return;
+		if (!isAbsolute && !isPathWithin(resolved, worktreeDir)) {
+			return {
+				block: true,
+				reason: `Relative path "${input.path}" escapes the active worktree (${worktreeDir}).`,
+			};
 		}
 
-		// It's under main repo — block unless it's also under worktree
-		if (!resolved.startsWith(`${worktreeDir}/`) && resolved !== worktreeDir) {
+		if (isPathWithin(resolved, protectedCheckout)) {
 			return {
 				block: true,
 				reason:
-					`Path "${inputPath}" resolves to main repo (${mainRepo}). ` +
-					`Use absolute path under worktree: ${worktreeDir}`,
+					`Path "${input.path}" resolves to the protected checkout (${protectedCheckout}). ` +
+					`Use the active worktree instead: ${worktreeDir}`,
 			};
+		}
+
+		if (!isAbsolute) {
+			input.path = resolved;
 		}
 	});
 }
