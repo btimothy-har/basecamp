@@ -31,6 +31,7 @@ export interface PlanDraft {
 	design: PlanSection;
 	success: PlanSection;
 	boundaries: PlanSection;
+	worktreeSlug: string | null;
 	tasks: Task[];
 	tasksReview: ReviewState;
 }
