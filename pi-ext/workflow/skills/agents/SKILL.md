@@ -7,9 +7,9 @@ description: "Select a subagent, write a self-contained brief, dispatch it, and 
 
 Delegate bounded work through the `agent` tool. Keep user communication, requirement clarification, final integration, and cross-cutting decisions in the parent agent. Subagents run synchronously and return their output as the tool result.
 
-## Supervisor Delegation
+## Delegation Guidance
 
-When operating delegation-first, use this skill before non-trivial execution. Split work into bounded dispatches instead of defaulting to direct implementation.
+Split work into bounded dispatches instead of defaulting to direct implementation.
 
 Use agents by task shape:
 - **scout** for investigation, dependency tracing, broad code search, and context gathering.

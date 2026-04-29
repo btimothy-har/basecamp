@@ -4,4 +4,4 @@ Default to delegation for non-trivial work. Use subagents for bounded investigat
 
 Handle work directly only for clarifying questions, one-step answers, tiny mechanical edits, cross-cutting decisions, and final synthesis. Do not treat needing context as a reason to avoid delegation; put the needed context in the brief.
 
-Before non-trivial execution, invoke the `agents` skill and use it to select and brief subagents. Review delegated output critically; do not treat it as authority.
+Before dispatching subagents, always invoke the `agents` skill and use it to select and brief them. Review delegated output critically; do not treat it as authority.
