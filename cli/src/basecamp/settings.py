@@ -147,6 +147,19 @@ class Settings:
                 data.pop("models", None)
 
     @property
+    def bigquery(self) -> dict[str, Any]:
+        bigquery = self._read().get("bigquery")
+        return bigquery if isinstance(bigquery, dict) else {}
+
+    @bigquery.setter
+    def bigquery(self, value: dict[str, Any] | None) -> None:
+        with self._locked_update() as data:
+            if value:
+                data["bigquery"] = value
+            else:
+                data.pop("bigquery", None)
+
+    @property
     def worktree_branch_prefix(self) -> str | None:
         val = self._read().get("worktree_branch_prefix")
         return val if isinstance(val, str) and val.strip() else None

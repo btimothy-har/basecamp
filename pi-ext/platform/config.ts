@@ -13,15 +13,28 @@ import * as path from "node:path";
 // Types
 // ---------------------------------------------------------------------------
 
+export type BigQueryOutputFormat = "csv" | "json";
+
+export interface BigQueryConfig {
+	enabled?: boolean;
+	default_project_id?: string;
+	default_location?: string;
+	default_output_format?: BigQueryOutputFormat;
+	default_max_rows?: number;
+	auto_dry_run?: boolean;
+}
+
 export interface ProjectConfig {
 	dirs: string[];
 	description?: string;
 	working_style?: string | null;
 	context?: string | null;
+	bigquery?: BigQueryConfig | null;
 }
 
-interface BasecampConfig {
+export interface BasecampConfig {
 	projects?: Record<string, ProjectConfig>;
+	bigquery?: BigQueryConfig | null;
 	timezone?: string;
 	logseq_graph?: string;
 	language?: string;
@@ -115,6 +128,15 @@ export function readConfig(): BasecampConfig {
 	} catch {
 		return {};
 	}
+}
+
+/** Resolve BigQuery defaults with per-project values overriding global values. */
+export function resolveBigQueryConfig(project?: ProjectConfig | null): BigQueryConfig {
+	const config = readConfig();
+	return {
+		...(config.bigquery ?? {}),
+		...(project?.bigquery ?? {}),
+	};
 }
 
 export function getWorktreeBranchPrefix(): string {

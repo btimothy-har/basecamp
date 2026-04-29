@@ -250,6 +250,7 @@ def _prompt_edit_fields(existing: ProjectConfig) -> ProjectConfig | None:
         description=description.strip(),
         working_style=working_style,
         context=context,
+        bigquery=existing.bigquery,
     )
 
 

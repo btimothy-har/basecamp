@@ -2,6 +2,7 @@
 
 from basecamp.config.directories import resolve_dir, validate_dirs
 from basecamp.config.project import (
+    BigQueryConfig,
     ProjectConfig,
     load_projects,
     resolve_project,
@@ -10,6 +11,7 @@ from basecamp.config.project import (
 
 __all__ = [
     # Project
+    "BigQueryConfig",
     "ProjectConfig",
     "load_projects",
     "resolve_project",

@@ -9,6 +9,7 @@ import { registerWorktreeCommand } from "./commands/worktree";
 import { registerContextInjection } from "./prompt/context-injection";
 import { registerPrompt } from "./prompt/prompt";
 import { getState, registerSession } from "./runtime/session";
+import { registerBqQueryTool } from "./tools/bq-query";
 import { registerCoreCatalogProviders } from "./tools/catalog-providers";
 import { registerEscalate } from "./tools/escalate/index.js";
 import { registerSkillTool } from "./tools/skill";
@@ -32,6 +33,7 @@ export default function (pi: ExtensionAPI) {
 	registerOpenCommand(pi, getState);
 	registerTitle(pi);
 	registerSkillTool(pi);
+	registerBqQueryTool(pi);
 
 	// Primary-only interactions should not be available to subagents.
 	if (!isSubagent) {

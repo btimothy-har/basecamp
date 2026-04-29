@@ -4,6 +4,7 @@
  * Block rules gate regex scopes to a command, test regex triggers the block.
  * gh commands are blocked by default with an allow-list of safe operations.
  * Workflow commands can unlock specific operations via the unlocked state.
+ * Raw BigQuery query execution is blocked so agents use the file-based tool.
  */
 
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
@@ -71,12 +72,80 @@ const PR_COMMENT_RE = /^gh\s+pr\s+comment(\s|$)/;
 const GH_API_PR_RE = /^gh\s+api\s+repos\/[^/]+\/[^/]+\/pulls\//;
 const GH_RE = /^gh\s+/;
 
+const BQ_QUERY_REASON =
+	'Raw `bq query` execution through bash is blocked. Write the SQL to a .sql file and use bq_query({ path: "..." }) instead.';
+
+const BQ_GLOBAL_FLAGS_WITH_VALUE = new Set([
+	"api",
+	"api_version",
+	"apilog",
+	"application_default_credential_file",
+	"bigqueryrc",
+	"billing_project",
+	"ca_certificates_file",
+	"client_id",
+	"client_secret",
+	"credential_file",
+	"dataset_id",
+	"discovery_file",
+	"flagfile",
+	"format",
+	"httplib2_debuglevel",
+	"job_id_prefix",
+	"location",
+	"max_rows_per_request",
+	"oauth2_credential_file",
+	"project_id",
+	"proxy_address",
+	"proxy_password",
+	"proxy_port",
+	"proxy_username",
+	"service_account",
+	"service_account_credential_file",
+	"trace",
+]);
+
 /** Split a command on shell separators so each segment is checked independently. */
 function splitSegments(cmd: string): string[] {
 	return cmd
 		.split(/\s*(?:&&|\|\||[;|])\s*/)
 		.map((s) => s.trim())
 		.filter(Boolean);
+}
+
+const SHELL_WORD_RE = /(?:[^\s"'\\]+|\\.|"(?:\\.|[^"\\])*"|'[^']*')+/g;
+
+/** Tokenize just enough shell syntax to identify the command and flags without matching words containing bq. */
+function tokenizeShellLike(segment: string): string[] {
+	return (segment.match(SHELL_WORD_RE) ?? []).map((token) => token.replace(/^("|')(.*)\1$/, "$2"));
+}
+
+function isBqQuerySegment(segment: string): boolean {
+	// Match the common agent-generated forms: `bq query` and `bq --global_flag ... query`.
+	// Unknown value-taking flags intentionally stop matching rather than risk blocking unrelated commands.
+	const tokens = tokenizeShellLike(segment);
+	if (tokens[0] !== "bq") return false;
+
+	for (let index = 1; index < tokens.length; index += 1) {
+		const token = tokens[index];
+		if (token === undefined) return false;
+		if (token === "query") return true;
+
+		if (token.startsWith("--") && token !== "--") {
+			const rawFlag = token.slice(2);
+			const equalsIndex = rawFlag.indexOf("=");
+			const flagName = equalsIndex === -1 ? rawFlag : rawFlag.slice(0, equalsIndex);
+			if (!flagName) return false;
+			if (equalsIndex === -1 && BQ_GLOBAL_FLAGS_WITH_VALUE.has(flagName)) index += 1;
+			continue;
+		}
+
+		if (/^-[A-Za-z]+$/.test(token)) continue;
+
+		return false;
+	}
+
+	return false;
 }
 
 // ---------------------------------------------------------------------------
@@ -94,6 +163,11 @@ export function registerGuards(pi: ExtensionAPI): void {
 			// Workflow overrides apply per-segment
 			if (unlocked.prComment && (PR_COMMENT_RE.test(segment) || GH_API_PR_RE.test(segment))) {
 				continue;
+			}
+
+			// BigQuery: block raw query execution so output goes through bq_query.
+			if (isBqQuerySegment(segment)) {
+				return { block: true, reason: BQ_QUERY_REASON };
 			}
 
 			// Check block rules
