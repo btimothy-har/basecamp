@@ -6,7 +6,7 @@
  * (getAllTools, getCommands) so we don't lose those sections.
  *
  * Reads bundled prompt files (environment.md, working styles) and assembles
- * them with runtime context (env block, git status).
+ * them with runtime context (env block).
  *
  * User overrides in ~/.pi/prompts/ (and ~/.pi/styles/, ~/.pi/languages/) take
  * precedence over bundled defaults.
@@ -20,15 +20,13 @@ import { type CatalogItem, listCatalogItemsByType } from "../../../platform/cata
 import { getLanguage, getLogseqGraph, getTimezone, type SessionState } from "../../../platform/config";
 import {
 	buildCapabilitiesIndex,
-	buildGitContext,
 	buildProjectContext,
 	buildWorktreeWarning,
 	type ContextFile,
 	discoverContextFiles,
-	type GitStatus,
 } from "../../../platform/context";
 import { getAgentMode } from "../runtime/mode";
-import { getEffectiveCwd, getGitStatus, getState } from "../runtime/session";
+import { getEffectiveCwd, getState } from "../runtime/session";
 
 // ---------------------------------------------------------------------------
 // Paths
@@ -113,6 +111,7 @@ function buildEnvBlock(state: SessionState, modelId?: string): string {
 
 	const modelName = modelId ?? "an AI assistant";
 
+	const currentDir = getEffectiveCwd();
 	const lines: string[] = [
 		`You are ${modelName}. You are operating inside pi-coding-agent, a terminal based AI harness.`,
 		"",
@@ -120,18 +119,27 @@ function buildEnvBlock(state: SessionState, modelId?: string): string {
 		`Platform: ${process.platform}`,
 		`Today's date: ${today}`,
 		"",
-		`Working directory (Basecamp effective): ${getEffectiveCwd()}`,
-		`Protected checkout (Pi session root): ${state.primaryDir}`,
-		`Is directory a git repo: ${state.isRepo ? "Yes" : "No"}`,
 	];
 
-	if (state.remoteUrl) {
-		lines.push(`Git remote: ${state.remoteUrl}`);
+	if (state.worktreeDir && state.worktreeLabel) {
+		const branch = state.worktreeBranch ? `, branch: ${state.worktreeBranch}` : "";
+		lines.push(`Working directory: ${currentDir} (active worktree: ${state.worktreeLabel}${branch})`);
+		lines.push(`Protected repository checkout: ${state.primaryDir}`);
+	} else if (state.isRepo) {
+		lines.push(`Working directory: ${currentDir} (protected repository checkout; no active worktree)`);
+	} else {
+		lines.push(`Working directory: ${currentDir}`);
 	}
 
 	const worktreeWarning = buildWorktreeWarning(state);
 	if (worktreeWarning) {
-		lines.push(worktreeWarning);
+		lines.push("", worktreeWarning, "");
+	}
+
+	lines.push(`Is directory a git repo: ${state.isRepo ? "Yes" : "No"}`);
+
+	if (state.remoteUrl) {
+		lines.push(`Git remote: ${state.remoteUrl}`);
 	}
 
 	if (state.secondaryDirs.length > 0) {
@@ -154,7 +162,6 @@ function buildEnvBlock(state: SessionState, modelId?: string): string {
 
 export interface AssembleOptions {
 	state: SessionState;
-	gitStatus: GitStatus | null;
 	toolItems: CatalogItem[];
 	skillItems: CatalogItem[];
 	agentItems: CatalogItem[];
@@ -186,10 +193,9 @@ export interface AssembleOptions {
  *   5. Capabilities index (semi-static — tool/skill/agent names and descriptions)
  *   6. Project context (semi-static — changes per project)
  *   7. Env block (dynamic — identity, user, platform, date, dirs)
- *   8. Git status snapshot (dynamic)
  */
 export function assemblePrompt(opts: AssembleOptions): string {
-	const { state, gitStatus, toolItems, skillItems, agentItems, contextFiles, modelId } = opts;
+	const { state, toolItems, skillItems, agentItems, contextFiles, modelId } = opts;
 
 	const parts: string[] = [];
 
@@ -264,11 +270,6 @@ export function assemblePrompt(opts: AssembleOptions): string {
 	// 7. Env block (dynamic — identity, user, platform, date, directories, scratch dir)
 	parts.push(buildEnvBlock(state, modelId));
 
-	// 8. Git status
-	if (gitStatus) {
-		parts.push(buildGitContext(gitStatus));
-	}
-
 	return parts.join("\n\n");
 }
 
@@ -309,7 +310,6 @@ export function registerPrompt(pi: ExtensionAPI): void {
 
 		const prompt = assemblePrompt({
 			state,
-			gitStatus: getGitStatus(),
 			toolItems,
 			skillItems,
 			agentItems,

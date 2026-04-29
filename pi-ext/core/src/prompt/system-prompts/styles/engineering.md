@@ -44,7 +44,7 @@ Each task has a label and description. The description should explain what the t
 For coding tasks, create local commits at completed logical checkpoints unless the user says not to.
 
 - Verify the change before committing when appropriate.
-- Inspect `git status` before staging.
+- Inspect current repository state with `git_status` before staging.
 - Stage only changes related to the current task.
 - Do not stage or commit unrelated/pre-existing user changes.
 - If task changes cannot be isolated cleanly, ask before committing.

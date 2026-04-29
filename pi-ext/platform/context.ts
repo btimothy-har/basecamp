@@ -14,17 +14,6 @@ import * as path from "node:path";
 import type { CatalogItem } from "./catalog";
 import type { SessionState } from "./config";
 
-// ============================================================================
-// Types
-// ============================================================================
-
-export interface GitStatus {
-	branch: string | null;
-	mainBranch: string;
-	status: string;
-	recentCommits: string;
-}
-
 /**
  * Build the worktree warning block.
  *
@@ -35,13 +24,7 @@ export interface GitStatus {
 export function buildWorktreeWarning(state: SessionState): string | null {
 	if (!state.worktreeDir || !state.worktreeLabel) return null;
 
-	return [
-		`Active worktree: ${state.worktreeLabel}`,
-		`Worktree path: ${state.worktreeDir}`,
-		`Protected checkout: ${state.primaryDir}`,
-		"",
-		"⚠ WORKTREE ACTIVE: Relative file-tool paths target the active worktree. Do not edit the protected checkout. Bash runs in the worktree automatically; do not cd or git -C into the protected checkout.",
-	].join("\n");
+	return "⚠ WORKTREE ACTIVE: Relative file-tool paths and bash commands run from the working directory. Do not edit the protected repository checkout.";
 }
 
 /**
@@ -121,29 +104,6 @@ export function discoverContextFiles(cwd: string): ContextFile[] {
 	}
 
 	return files;
-}
-
-/**
- * Format a git status snapshot for inclusion in a prompt.
- *
- * The snapshot is taken at session start and does not update
- * during the conversation — the model is told this explicitly.
- */
-export function buildGitContext(git: GitStatus): string {
-	const lines = [
-		"gitStatus: This is the git status at the start of the conversation. " +
-			"Note that this status is a snapshot in time, and will not update during the conversation.",
-		`Current branch: ${git.branch ?? "unknown"}`,
-		"",
-		`Main branch (you will usually use this for PRs): ${git.mainBranch}`,
-		"",
-		"Status:",
-		git.status || "(clean)",
-		"",
-		"Recent commits:",
-		git.recentCommits,
-	];
-	return lines.join("\n");
 }
 
 // ============================================================================

@@ -7,11 +7,9 @@
  */
 
 import type { SessionState } from "./config";
-import type { GitStatus } from "./context";
 
 interface BasecampSessionRuntime {
 	state: SessionState | null;
-	gitStatus: GitStatus | null;
 }
 
 const sessionKey = Symbol.for("basecamp.session");
@@ -22,14 +20,12 @@ type GlobalWithBasecampSession = typeof globalThis & {
 
 function getSessionRuntime(): BasecampSessionRuntime {
 	const globalObject = globalThis as GlobalWithBasecampSession;
-	globalObject[sessionKey] ??= { state: null, gitStatus: null };
+	globalObject[sessionKey] ??= { state: null };
 	return globalObject[sessionKey];
 }
 
 export function resetSessionRuntime(): void {
-	const runtime = getSessionRuntime();
-	runtime.state = null;
-	runtime.gitStatus = null;
+	getSessionRuntime().state = null;
 }
 
 export function getSessionState(): SessionState | null {
@@ -44,12 +40,4 @@ export function requireSessionState(): SessionState {
 	const state = getSessionState();
 	if (!state) throw new Error("Basecamp session state is not initialized");
 	return state;
-}
-
-export function getSessionGitStatus(): GitStatus | null {
-	return getSessionRuntime().gitStatus;
-}
-
-export function setSessionGitStatus(gitStatus: GitStatus | null): void {
-	getSessionRuntime().gitStatus = gitStatus;
 }

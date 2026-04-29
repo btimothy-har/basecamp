@@ -19,8 +19,9 @@ If the diff mixes unrelated concerns or is too large for a single review pass, s
 
 ## Step 2: Verify Readiness
 
+Call `git_status` to verify the current repository state, then rebase against the base branch.
+
 ```bash
-git status
 git rebase origin/{{BASE}}
 ```
 
