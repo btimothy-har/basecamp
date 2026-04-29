@@ -35,7 +35,7 @@ export interface SessionState {
 	projectName: string | null;
 	/** Resolved project config, or null for unprojected sessions */
 	project: ProjectConfig | null;
-	/** Primary working directory — worktree dir if active, else project dirs[0] or ctx.cwd */
+	/** Protected primary checkout directory — project dirs[0] or ctx.cwd */
 	primaryDir: string;
 	/** Secondary project directories (dirs[1..]) */
 	secondaryDirs: string[];
