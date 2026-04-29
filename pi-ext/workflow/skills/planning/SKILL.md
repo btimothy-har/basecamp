@@ -40,14 +40,17 @@ Now call `plan()`. The sections should reflect what was discussed — not new th
 
 ```
 plan({
-  goal:       // one sentence — what are we achieving
-  context:    // what exists, constraints, triggers
-  design:     // the agreed approach — patterns, trade-offs, decisions
-  success:    // what done looks like — concrete and verifiable
-  boundaries: // what's out of scope — prevents drift
-  tasks:      // ordered steps, each with label + description + criteria
+  goal:        // one sentence — what are we achieving
+  context:     // what exists, constraints, triggers
+  design:      // the agreed approach — patterns, trade-offs, decisions
+  success:     // what done looks like — concrete and verifiable
+  boundaries:  // what's out of scope — prevents drift
+  tasks:       // ordered steps, each with label + description + criteria
+  worktreeSlug: "handoff-labels" // optional hidden metadata for implementation handoff
 })
 ```
+
+For implementation plans, include `worktreeSlug` as hidden metadata: a short semantic kebab-case slug with no session prefix, e.g. `handoff-labels`. Omit it for analysis-only plans. This is not a user-reviewed plan section; the user sees the worktree selector later and can override the final label there.
 
 The user reviews via an interactive overlay. They may:
 - **Approve** sections/tasks
