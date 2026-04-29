@@ -121,7 +121,7 @@ function buildEnvBlock(state: SessionState, modelId?: string): string {
 		`Today's date: ${today}`,
 		"",
 		`Working directory (Basecamp effective): ${getEffectiveCwd()}`,
-		`Protected checkout (Pi session cwd): ${state.primaryDir}`,
+		`Protected checkout (Pi session root): ${state.primaryDir}`,
 		`Is directory a git repo: ${state.isRepo ? "Yes" : "No"}`,
 	];
 

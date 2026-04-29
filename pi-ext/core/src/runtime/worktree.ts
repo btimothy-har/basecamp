@@ -2,7 +2,7 @@
  * Worktree — creation, attachment, and tool-level enforcement.
  *
  * Two-layer defense when a worktree is active:
- *   1. Prompt: env block tells model to use worktree dir with absolute paths
+ *   1. Prompt: env block explains active worktree/protected checkout semantics
  *   2. Tool guards:
  *      - read/edit/write/grep/find/ls: retarget relative worktree paths and block protected checkout paths
  *      - bash (tool_call): mutate event.input.command to prepend cd <worktree>
@@ -39,7 +39,6 @@ export interface WorktreeSummary {
 	label: string;
 	path: string;
 	branch: string;
-	createdAt: string;
 }
 
 interface GitWorktreeRecord {
@@ -162,14 +161,12 @@ export async function listWorktrees(
 	primaryDir: string,
 	repoName: string,
 ): Promise<WorktreeSummary[]> {
-	const root = path.join(WORKTREES_DIR, repoName);
 	const records = await gitWorktreeRecords(pi, primaryDir);
 	return records
 		.map((record) => {
 			try {
 				const label = labelFromWorktreePath(repoName, record.path);
-				if (!path.resolve(record.path).startsWith(path.resolve(root))) return null;
-				return { label, path: path.resolve(record.path), branch: branchName(record), createdAt: "" };
+				return { label, path: path.resolve(record.path), branch: branchName(record) };
 			} catch {
 				return null;
 			}

@@ -191,9 +191,10 @@ Worktrees live in `~/.worktrees/<repo>/<label>/` with branches named `wt/<label>
 - Implementation edits happen in the active worktree, not the protected checkout
 - Relative file-tool paths target the active worktree after activation
 - `--worktree-dir` is an internal attach-only Pi flag for existing Git-registered worktrees; it does not create worktrees
+- `/worktree [label]` switches the active worktree during a resumed session
 - `/open` in-session opens the active worktree directory in VS Code
 - Use native Git commands (`git worktree list`, `git worktree remove`) to inspect or clean up worktrees
-- Secondary directories stay on their configured checkouts in this phase
+- Secondary directories stay on their configured checkouts throughout the session
 - Only works with git repositories
 
 ## Semantic Memory (Observer)
