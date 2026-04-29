@@ -39,10 +39,19 @@ Determine the database from project context (dbt profiles, connection configs, e
 ```bash
 # PostgreSQL
 psql -h localhost -U username -d database_name -f script.sql
-
-# BigQuery (via bq CLI)
-bq query --use_legacy_sql=false < script.sql
 ```
+
+For BigQuery, save SQL to a `.sql` file (often under the scratch directory), then use the `bq_query` tool instead of inline `bq query`:
+
+```text
+# Validate only
+bq_query({ path: "/tmp/pi/<repo>/query.sql", dryRun: true })
+
+# Execute; results are written to scratch, CSV by default
+bq_query({ path: "/tmp/pi/<repo>/query.sql", maxRows: 1000 })
+```
+
+Optional BigQuery parameters: `projectId`, `location`, `maxRows`, `outputFormat`. The tool runs a dry-run preflight by default and returns a summary only; read the output file deliberately when you need row data.
 
 ### Code Standards
 
