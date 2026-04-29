@@ -109,7 +109,7 @@ Session launch sets `BASECAMP_*` env vars on `process.env`. Subagents spawned vi
 
 ### Worktree Design
 
-Worktrees live in `~/.worktrees/<repo>/<label>/` rather than inside the repo to avoid polluting project directories. Git is the source of truth for worktree registration (`git worktree list --porcelain`); Basecamp does not maintain a parallel metadata registry. Sessions start in the protected checkout, approved implementation plans activate a worktree inside the Pi session, and `/worktree [label]` can switch to an existing Git-registered worktree after session resume.
+Worktrees live in `~/.worktrees/<repo>/<label>/` rather than inside the repo to avoid polluting project directories. Git is the source of truth for worktree registration (`git worktree list --porcelain`); Basecamp does not maintain a parallel metadata registry. Sessions start in the protected checkout, approved implementation plans activate a worktree inside the Pi session, resumed/reloaded/forked sessions restore their last active worktree when still in the same repo, and `/worktree [label]` can switch to an existing Git-registered worktree after session resume.
 
 ## Development
 

@@ -16,7 +16,7 @@
 import * as fsSync from "node:fs";
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
-import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
+import type { ExtensionAPI, ExtensionContext, SessionStartEvent } from "@mariozechner/pi-coding-agent";
 import { resolveSessionState, type SessionState } from "../../../platform/config";
 import type { GitStatus } from "../../../platform/context";
 import { registerCwdProvider } from "../../../platform/exec";
@@ -30,6 +30,7 @@ import {
 } from "../../../platform/session";
 import { resetAgentMode } from "./mode";
 import { attachWorktreeDir, getOrCreateWorktree, registerWorktreeGuards, type WorktreeResult } from "./worktree";
+import { appendWorktreeAffinity, latestWorktreeAffinity, repoMatchesAffinity } from "./worktree-affinity";
 
 export function getGitStatus(): GitStatus | null {
 	return getSessionGitStatus();
@@ -68,7 +69,11 @@ function setBasecampEnv(s: SessionState): void {
 	process.env.BASECAMP_WORKTREE_LABEL = s.worktreeLabel ?? "";
 }
 
-async function applyWorktree(pi: ExtensionAPI, wt: WorktreeResult): Promise<void> {
+interface WorktreeApplyOptions {
+	persistAffinity?: boolean;
+}
+
+async function applyWorktree(pi: ExtensionAPI, wt: WorktreeResult, options: WorktreeApplyOptions = {}): Promise<void> {
 	const s = requireSessionState();
 	s.worktreeDir = wt.worktreeDir;
 	s.worktreeLabel = wt.label;
@@ -77,6 +82,7 @@ async function applyWorktree(pi: ExtensionAPI, wt: WorktreeResult): Promise<void
 	process.chdir(getEffectiveCwd());
 	setSessionGitStatus(s.isRepo ? await collectGitStatus(pi, getEffectiveCwd()) : null);
 	setBasecampEnv(s);
+	if (options.persistAffinity ?? true) appendWorktreeAffinity(pi, s, wt);
 }
 
 export async function activateWorktree(pi: ExtensionAPI, label: string): Promise<WorktreeResult> {
@@ -93,6 +99,25 @@ export async function attachWorktree(pi: ExtensionAPI, worktreeDir: string): Pro
 	const wt = await attachWorktreeDir(pi, s.primaryDir, s.repoName, worktreeDir);
 	await applyWorktree(pi, wt);
 	return wt;
+}
+
+const WORKTREE_AFFINITY_RESTORE_REASONS = new Set<SessionStartEvent["reason"]>(["resume", "reload", "fork"]);
+
+async function restoreWorktreeAffinity(pi: ExtensionAPI, ctx: ExtensionContext): Promise<void> {
+	const state = requireSessionState();
+	if (!state.isRepo) return;
+
+	const affinity = latestWorktreeAffinity(ctx.sessionManager.getBranch());
+	if (!affinity || !repoMatchesAffinity(state, affinity)) return;
+
+	try {
+		const wt = await attachWorktreeDir(pi, state.primaryDir, state.repoName, affinity.worktreeDir);
+		await applyWorktree(pi, wt, { persistAffinity: false });
+		ctx.ui.notify(`basecamp: restored worktree → ${wt.label}`, "info");
+	} catch (err) {
+		const msg = err instanceof Error ? err.message : String(err);
+		ctx.ui.notify(`basecamp: saved worktree restore skipped — ${msg}`, "warning");
+	}
 }
 
 // ---------------------------------------------------------------------------
@@ -201,7 +226,7 @@ export function registerSession(pi: ExtensionAPI): void {
 	registerWorktreeGuards(pi, getState);
 
 	// --- Session start: resolve everything ---
-	pi.on("session_start", async (_event, ctx) => {
+	pi.on("session_start", async (event, ctx) => {
 		resetAgentMode();
 		resetSessionRuntime();
 
@@ -232,6 +257,8 @@ export function registerSession(pi: ExtensionAPI): void {
 				const msg = err instanceof Error ? err.message : String(err);
 				ctx.ui.notify(`basecamp: worktree attach failed — ${msg}`, "error");
 			}
+		} else if (WORKTREE_AFFINITY_RESTORE_REASONS.has(event.reason)) {
+			await restoreWorktreeAffinity(pi, ctx);
 		}
 		const state = requireSessionState();
 
