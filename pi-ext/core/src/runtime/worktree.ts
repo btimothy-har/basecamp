@@ -34,10 +34,18 @@ export interface WorktreeResult {
 	created: boolean;
 }
 
+export interface WorktreeSummary {
+	label: string;
+	path: string;
+	branch: string;
+	createdAt: string;
+}
+
 interface WorktreeMetadata {
 	name?: string;
 	path?: string;
 	branch?: string;
+	created_at?: string;
 	project?: string;
 	repo_name?: string;
 	source_dir?: string;
@@ -64,6 +72,30 @@ function readMetadata(filePath: string): WorktreeMetadata {
 		const msg = err instanceof Error ? err.message : String(err);
 		throw new Error(`Failed to read worktree metadata: ${msg}`);
 	}
+}
+
+export function listWorktrees(repoName: string): WorktreeSummary[] {
+	const metaDir = path.join(WORKTREES_DIR, repoName, ".meta");
+	if (!fs.existsSync(metaDir) || !fs.statSync(metaDir).isDirectory()) return [];
+
+	const worktrees: WorktreeSummary[] = [];
+	for (const entry of fs.readdirSync(metaDir, { withFileTypes: true })) {
+		if (!entry.isFile() || !entry.name.endsWith(".json")) continue;
+		try {
+			const meta = readMetadata(path.join(metaDir, entry.name));
+			const label = meta.name ?? path.basename(entry.name, ".json");
+			const worktreePath = meta.path ?? path.join(WORKTREES_DIR, repoName, label);
+			if (!fs.existsSync(worktreePath) || !fs.statSync(worktreePath).isDirectory()) continue;
+			worktrees.push({
+				label,
+				path: worktreePath,
+				branch: meta.branch ?? `${getWorktreeBranchPrefix()}${label}`,
+				createdAt: meta.created_at ?? "",
+			});
+		} catch {}
+	}
+
+	return worktrees.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
 }
 
 function validateMetadata(
