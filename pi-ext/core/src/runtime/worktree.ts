@@ -1,5 +1,5 @@
 /**
- * Worktree — creation via --label flag and tool-level enforcement.
+ * Worktree — creation, attachment, and tool-level enforcement.
  *
  * Two-layer defense when a worktree is active:
  *   1. Prompt: env block tells model to use worktree dir with absolute paths
@@ -8,9 +8,8 @@
  *      - bash (tool_call): mutate event.input.command to prepend cd <worktree>
  *      - bash (user_bash / !cmd): return custom operations with worktree as cwd
  *
- * Worktree metadata is stored in ~/.worktrees/<repo>/.meta/<label>.json
- * by the Python git/worktrees.py module. This module reads that metadata
- * and creates worktrees via git CLI.
+ * Worktree metadata is stored in ~/.worktrees/<repo>/.meta/<label>.json.
+ * This module reads that metadata and creates worktrees via git CLI.
  */
 
 import * as fs from "node:fs";

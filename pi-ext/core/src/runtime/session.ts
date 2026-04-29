@@ -2,9 +2,9 @@
  * Session — state management and session bootstrap.
  *
  * session_start:
- *   - Reads --project / --label / --style flags
+ *   - Reads --project / --worktree-dir / --style flags
  *   - Resolves project config from ~/.pi/basecamp/config.json
- *   - Creates/enters worktree if --label provided
+ *   - Attaches to an existing worktree if --worktree-dir provided
  *   - Changes cwd to the effective working directory
  *   - Loads .env from the project directory
  *   - Caches session state (dirs, working style, context, worktree info)
@@ -21,7 +21,7 @@ import { resolveSessionState, type SessionState } from "../../../platform/config
 import type { GitStatus } from "../../../platform/context";
 import { registerCwdProvider } from "../../../platform/exec";
 import { resetAgentMode } from "./mode";
-import { getOrCreateWorktree, registerWorktreeGuards } from "./worktree";
+import { registerWorktreeGuards } from "./worktree";
 
 // ---------------------------------------------------------------------------
 // Module state
@@ -144,8 +144,8 @@ export function registerSession(pi: ExtensionAPI): void {
 		description: "Basecamp project name (from ~/.pi/basecamp/config.json)",
 		type: "string",
 	});
-	pi.registerFlag("label", {
-		description: "Work in a labeled git worktree (creates if new)",
+	pi.registerFlag("worktree-dir", {
+		description: "Attach to an existing Basecamp worktree directory",
 		type: "string",
 	});
 	pi.registerFlag("style", {
@@ -169,7 +169,6 @@ export function registerSession(pi: ExtensionAPI): void {
 		resetAgentMode();
 
 		const projectName = (pi.getFlag("project") as string | undefined) ?? null;
-		const label = (pi.getFlag("label") as string | undefined) ?? null;
 		const styleOverride = (pi.getFlag("style") as string | undefined) ?? undefined;
 
 		// Resolve git info from ctx.cwd (the directory pi was started in)
@@ -184,26 +183,6 @@ export function registerSession(pi: ExtensionAPI): void {
 			remoteUrl: gitInfo.remoteUrl,
 			styleOverride,
 		});
-
-		// Handle worktree if --label provided
-		if (label) {
-			if (!projectName) {
-				ctx.ui.notify("basecamp: --label requires --project", "error");
-			} else if (!state.isRepo) {
-				ctx.ui.notify("basecamp: --label requires a git repository", "error");
-			} else {
-				try {
-					const wt = await getOrCreateWorktree(pi, state.primaryDir, state.repoName, label, projectName);
-					state.worktreeDir = wt.worktreeDir;
-					state.worktreeLabel = label;
-					state.worktreeBranch = wt.branch;
-					ctx.ui.notify(`basecamp: worktree ${wt.created ? "created" : "attached"} → ${label}`, "info");
-				} catch (err) {
-					const msg = err instanceof Error ? err.message : String(err);
-					ctx.ui.notify(`basecamp: worktree failed — ${msg}`, "error");
-				}
-			}
-		}
 
 		// Change to the effective working directory
 		try {
