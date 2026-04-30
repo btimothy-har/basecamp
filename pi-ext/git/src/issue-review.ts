@@ -43,10 +43,7 @@ function isNavKey(data: string): boolean {
 	return NAV_KEYS.some((key) => kb.matches(data, key));
 }
 
-export async function showIssueReview(
-	input: IssueReviewInput,
-	ctx: ExtensionContext,
-): Promise<IssueReviewResult> {
+export async function showIssueReview(input: IssueReviewInput, ctx: ExtensionContext): Promise<IssueReviewResult> {
 	return ctx.ui.custom<IssueReviewResult>((tui, theme, _kb, done) => {
 		const border = new DynamicBorder((s: string) => theme.fg("border", s));
 		const header = new Text(theme.fg("accent", theme.bold("GitHub Issue Review")), 1, 0);

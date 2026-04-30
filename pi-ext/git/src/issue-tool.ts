@@ -83,7 +83,11 @@ function lstatOrThrow(targetPath: string, label: string): fs.Stats {
 }
 
 function normalizeRemoteRepoPath(rawPath: string): string {
-	return rawPath.trim().replace(/^\/+/, "").replace(/\/+$/, "").replace(/\.git$/i, "");
+	return rawPath
+		.trim()
+		.replace(/^\/+/, "")
+		.replace(/\/+$/, "")
+		.replace(/\.git$/i, "");
 }
 
 function buildGhRepoTarget(hostValue: string, rawRepoPath: string, remoteUrl: string): string {
@@ -125,7 +129,8 @@ function repoTargetFromRemoteUrl(remoteUrl: string): string {
 function getSessionRepoTarget(): string {
 	const state = requireSessionState();
 	if (!state.isRepo) throw new Error("Cannot publish issue: Basecamp session is not in a git repository.");
-	if (!state.remoteUrl?.trim()) throw new Error("Cannot publish issue: git remote URL is not configured for this session.");
+	if (!state.remoteUrl?.trim())
+		throw new Error("Cannot publish issue: git remote URL is not configured for this session.");
 	return repoTargetFromRemoteUrl(state.remoteUrl);
 }
 
@@ -213,7 +218,9 @@ function assertNoSecrets(text: string): void {
 	}
 
 	if (hasHighEntropyToken(text)) {
-		throw new Error("Issue draft contains a suspected secret (high-entropy token-like string). Remove it before publishing.");
+		throw new Error(
+			"Issue draft contains a suspected secret (high-entropy token-like string). Remove it before publishing.",
+		);
 	}
 }
 
@@ -364,7 +371,9 @@ export function registerIssueTool(pi: ExtensionAPI): void {
 			}
 
 			if (ghResult.code !== 0) {
-				throw new Error(`Failed to create GitHub issue: ${ghResult.stderr.trim() || ghResult.stdout.trim()}\nDraft: ${draftPath}`);
+				throw new Error(
+					`Failed to create GitHub issue: ${ghResult.stderr.trim() || ghResult.stdout.trim()}\nDraft: ${draftPath}`,
+				);
 			}
 
 			const issueUrl = ghResult.stdout.trim();
