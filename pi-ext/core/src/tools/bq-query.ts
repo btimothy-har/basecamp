@@ -22,6 +22,11 @@ const DEFAULT_AUTO_DRY_RUN = true;
 const BQ_TIMEOUT_MS = 10 * 60 * 1000;
 const MAX_ERROR_CHARS = 20_000;
 const MAX_DESCRIPTION_CHARS = 500;
+const DISPLAY_ELLIPSIS = "…";
+const MAX_CALL_LINE_CHARS = 110;
+const MAX_CALL_PATH_CHARS = 42;
+const MAX_RESULT_LINE_CHARS = 220;
+const MIN_DISPLAY_DESCRIPTION_CHARS = 24;
 const ANSI_ESCAPE_PATTERN = new RegExp(`${String.fromCharCode(27)}\\[[0-?]*[ -/]*[@-~]`, "g");
 const CONTROL_CHARS_PATTERN = /[\p{Cc}]+/gu;
 
@@ -137,13 +142,48 @@ function sanitizeQueryDescription(value: unknown): string {
 		throw new Error("description is required and must be a non-empty TLDR of the query.");
 	}
 
-	const chars = Array.from(sanitized);
-	if (chars.length <= MAX_DESCRIPTION_CHARS) return sanitized;
+	return truncateForDisplay(sanitized, MAX_DESCRIPTION_CHARS);
+}
 
+function displayLength(value: string): number {
+	return Array.from(value).length;
+}
+
+function truncateForDisplay(value: string, maxChars: number): string {
+	const chars = Array.from(value);
+	if (chars.length <= maxChars) return value;
+	if (maxChars <= 0) return "";
+	if (maxChars === 1) return DISPLAY_ELLIPSIS;
 	return `${chars
-		.slice(0, MAX_DESCRIPTION_CHARS - 1)
+		.slice(0, maxChars - 1)
 		.join("")
-		.trimEnd()}…`;
+		.trimEnd()}${DISPLAY_ELLIPSIS}`;
+}
+
+function truncatePathTail(value: string, maxChars: number): string {
+	const chars = Array.from(value);
+	if (chars.length <= maxChars) return value;
+	if (maxChars <= 0) return "";
+	if (maxChars === 1) return DISPLAY_ELLIPSIS;
+	return `${DISPLAY_ELLIPSIS}${chars.slice(-(maxChars - 1)).join("")}`;
+}
+
+function descriptionPreview(value: unknown, maxChars: number): string | null {
+	try {
+		return truncateForDisplay(sanitizeQueryDescription(value), maxChars);
+	} catch {
+		return null;
+	}
+}
+
+function sqlPathPreview(value: unknown, maxChars: number): string {
+	if (typeof value !== "string") return "...";
+	const sanitized = value
+		.replace(ANSI_ESCAPE_PATTERN, " ")
+		.replace(CONTROL_CHARS_PATTERN, " ")
+		.replace(/\s+/g, " ")
+		.trim();
+	return sanitized ? truncatePathTail(sanitized, maxChars) : "...";
 }
 
 function expandHome(rawPath: string): string {
@@ -644,9 +684,17 @@ function buildSuccessText(details: BqQueryDetails, outputBytes: number): string 
 
 function renderCall(args: BqQueryInput, theme: Theme) {
 	const { Text } = require("@mariozechner/pi-tui");
-	const rawPath = typeof args.path === "string" && args.path ? args.path : "...";
-	const preview = rawPath.length > 70 ? `${rawPath.slice(0, 70)}...` : rawPath;
-	return new Text(theme.fg("toolTitle", theme.bold("bq_query ")) + theme.fg("dim", preview), 0, 0);
+	const sqlPath = sqlPathPreview(args.path, MAX_CALL_PATH_CHARS);
+	const descriptionBudget = Math.max(
+		MIN_DISPLAY_DESCRIPTION_CHARS,
+		MAX_CALL_LINE_CHARS - "bq_query ".length - " · ".length - displayLength(sqlPath),
+	);
+	const description = descriptionPreview(args.description, descriptionBudget) ?? "...";
+	return new Text(
+		theme.fg("toolTitle", theme.bold("bq_query ")) + theme.fg("dim", `${description} · ${sqlPath}`),
+		0,
+		0,
+	);
 }
 
 function renderResult(
@@ -670,10 +718,17 @@ function renderResult(
 
 	const bytes = details.job?.totalBytesProcessed ?? details.dryRun.estimatedBytes;
 	const suffix = bytes ? ` — ${formatBytes(bytes)}` : "";
+	const outputSummary = ` → ${details.outputPath ?? "no output"}${suffix}`;
+	const descriptionBudget = MAX_RESULT_LINE_CHARS - "✓ bq_query".length - displayLength(outputSummary) - 1;
+	const description =
+		descriptionBudget >= MIN_DISPLAY_DESCRIPTION_CHARS
+			? descriptionPreview(details.description, descriptionBudget)
+			: null;
 	return new Text(
 		theme.fg("success", "✓") +
 			theme.fg("toolTitle", theme.bold(" bq_query")) +
-			theme.fg("dim", ` → ${details.outputPath ?? "no output"}${suffix}`),
+			(description ? theme.fg("dim", ` ${description}`) : "") +
+			theme.fg("dim", outputSummary),
 		0,
 		0,
 	);
