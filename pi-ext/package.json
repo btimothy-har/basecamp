@@ -17,6 +17,7 @@
 			"./core/skills",
 			"./workflow/skills",
 			"./observer/skills",
+			"./git/skills",
 			"./engineering/skills"
 		],
 		"prompts": [

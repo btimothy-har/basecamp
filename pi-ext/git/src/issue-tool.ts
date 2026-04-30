@@ -1,5 +1,5 @@
 /**
- * issue_publish tool — publishes a file-backed GitHub issue draft after review.
+ * publish_issue tool — publishes a file-backed GitHub issue draft after review.
  */
 
 import * as crypto from "node:crypto";
@@ -145,7 +145,7 @@ function validateDraftPath(draftPath: string, activeDraftPath: string, cwd: stri
 	}
 
 	if (requestedAbs !== activeAbs) {
-		throw new Error(`Draft path does not match the active /log-issue draft. Use: ${activeDraftPath}`);
+		throw new Error(`Draft path does not match the active /create-issue draft. Use: ${activeDraftPath}`);
 	}
 
 	const stat = lstatOrThrow(requestedAbs, "Issue draft file");
@@ -299,30 +299,30 @@ function createBodyFile(cwd: string, body: string): string {
 
 export function registerIssueTool(pi: ExtensionAPI): void {
 	pi.registerTool({
-		name: "issue_publish",
+		name: "publish_issue",
 		label: "Publish Issue",
 		description:
-			"Submit the markdown issue draft created by /log-issue for user review. User can approve to publish, " +
-			"provide feedback for revision, or cancel. Only available after /log-issue has been invoked.",
+			"Submit the markdown issue draft created by /create-issue for user review. User can approve to publish, " +
+			"provide feedback for revision, or cancel. Only available after /create-issue has been invoked.",
 		promptSnippet: "Show issue draft for review — user can publish or give feedback for revision",
 		parameters: Type.Object(
 			{
-				draftPath: Type.String({ description: "path to the markdown issue draft created by /log-issue" }),
+				draftPath: Type.String({ description: "path to the markdown issue draft created by /create-issue" }),
 			},
 			{ additionalProperties: false },
 		),
 		async execute(_id, params, _signal, _onUpdate, ctx) {
 			const draft = activeIssueDraft;
 			if (!draft) {
-				throw new Error("No active issue draft. Run /log-issue first.");
+				throw new Error("No active issue draft. Run /create-issue first.");
 			}
 
 			if (!ctx.hasUI) {
-				throw new Error("issue_publish requires an interactive UI. Run /log-issue in an interactive session.");
+				throw new Error("publish_issue requires an interactive UI. Run /create-issue in an interactive session.");
 			}
 
 			if (pi.getFlag("read-only") === true) {
-				throw new Error("issue_publish is disabled in read-only mode.");
+				throw new Error("publish_issue is disabled in read-only mode.");
 			}
 
 			const draftPath = validateDraftPath(params.draftPath, draft.draftPath, ctx.cwd);
@@ -364,7 +364,7 @@ export function registerIssueTool(pi: ExtensionAPI): void {
 					content: [
 						{
 							type: "text",
-							text: `User feedback on issue draft:\n\n${review.text}\n\nEdit the same draft file at ${draftPath}, then call issue_publish again with the same draftPath.`,
+							text: `User feedback on issue draft:\n\n${review.text}\n\nEdit the same draft file at ${draftPath}, then call publish_issue again with the same draftPath.`,
 						},
 					],
 					details: null,

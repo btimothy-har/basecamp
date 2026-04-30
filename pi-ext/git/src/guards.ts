@@ -47,7 +47,7 @@ const GH_ALLOW: RegExp[] = [
 // Workflow state
 // ---------------------------------------------------------------------------
 
-/** Active PR workflow — set by /pull-request, read by pr_publish tool. */
+/** Active PR workflow — set by /create-pr, read by publish_pr tool. */
 export let activePR: { number: string; base: string } | null = null;
 
 export function setActivePR(pr: { number: string; base: string }): void {
@@ -58,7 +58,7 @@ export function clearActivePR(): void {
 	activePR = null;
 }
 
-/** Active issue draft workflow — set by /log-issue, read by issue workflow tools. */
+/** Active issue draft workflow — set by /create-issue, read by issue workflow tools. */
 export let activeIssueDraft: { draftPath: string; topic: string } | null = null;
 
 export function setActiveIssueDraft(draft: { draftPath: string; topic: string }): void {
@@ -302,11 +302,11 @@ function findPipedGhMutationSegment(cmd: string): string | null {
 
 function ghMutationBlockReason(ghSegment: string): string | null {
 	if (GH_PR_MUTATE_RE.test(ghSegment) || PR_COMMENT_RE.test(ghSegment)) {
-		return "PR mutations are blocked. The user needs to invoke /pull-request to start the PR workflow.";
+		return "PR mutations are blocked. The user needs to invoke /create-pr to start the PR workflow.";
 	}
 
 	if (GH_ISSUE_MUTATE_RE.test(ghSegment)) {
-		return "Issue mutations are blocked. Invoke /log-issue for new issue creation; ask the user to run existing-issue mutations themselves if needed.";
+		return "Issue mutations are blocked. Invoke /create-issue for new issue creation; ask the user to run existing-issue mutations themselves if needed.";
 	}
 
 	return null;

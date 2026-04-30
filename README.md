@@ -96,7 +96,8 @@ Use the **Projects** section to list, add, edit, or remove configured projects.
 |---------|-------------|
 | `/open` | Open project directories in VS Code |
 | `/agents` | Browse available agent definitions |
-| `/pull-request` | Create or update a pull request |
+| `/create-pr` | Create or update a pull request |
+| `/create-issue` | Draft and publish a GitHub issue through review |
 | `/pr-comments` | Address PR review comments |
 | `/pr-walkthrough` | Generate PR walkthrough |
 

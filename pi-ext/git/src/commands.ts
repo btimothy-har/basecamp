@@ -1,8 +1,8 @@
 /**
  * Git commands — PR, issue, and git workflow commands.
  *
- *   /pull-request [base]            — create/find draft PR, review, describe, publish
- *   /log-issue [topic]              — draft and publish a GitHub issue through review
+ *   /create-pr [context]            — create/find draft PR, review, describe, publish
+ *   /create-issue [topic]           — draft and publish a GitHub issue through review
  *   /pr-comments [number]           — synthesize review findings, post as PR comments
  *   /pr-walkthrough [number] [base] — interactive step-by-step walkthrough
  */
@@ -53,24 +53,19 @@ async function ensurePushed(pi: ExtensionAPI, branchName: string, ctx: any): Pro
 }
 
 export function registerCommands(pi: ExtensionAPI): void {
-	// --- /pull-request [base] ---
-	pi.registerCommand("pull-request", {
-		description: "Review and publish a pull request",
+	// --- /create-pr [context] ---
+	pi.registerCommand("create-pr", {
+		description: "Create, review, and publish a pull request",
 		handler: async (args, ctx) => {
-			const base = args?.trim() || "main";
+			const reviewContext = args?.trim() || "";
+			const baseInput = (await ctx.ui.input("Base branch", "main"))?.trim();
+			const base = baseInput || "main";
 
 			const branch = await exec(pi, "git", ["branch", "--show-current"]);
 			const branchName = branch.stdout.trim();
 			if (!branchName) {
 				ctx.ui.notify("Not on a branch — cannot create PR", "error");
 				return;
-			}
-
-			// Collect context upfront before any git operations
-			let context = "";
-			if (await ctx.ui.confirm("Add context?", "Add review context for this PR?")) {
-				const input = await ctx.ui.input("PR context", "");
-				context = input ? `\n**Review context:** ${input}\n` : "";
 			}
 
 			const existing = await exec(pi, "gh", ["pr", "list", "--head", branchName, "--json", "number,url", "-q", ".[0]"]);
@@ -124,21 +119,29 @@ export function registerCommands(pi: ExtensionAPI): void {
 			}
 
 			setActivePR({ number: prNumber, base });
-			pi.sendUserMessage(loadTemplate("pull-request", { PR_NUMBER: prNumber, BASE: base, CONTEXT: context }));
+			const reviewContextBlock = reviewContext ? `\n\nAdditional context:\n${reviewContext}` : "";
+			pi.sendUserMessage(`Please prepare this pull request for my review.
+
+Context:
+- PR: #${prNumber}
+- Base branch: ${base}
+- Current branch: ${branchName}${reviewContextBlock}
+
+Start by calling skill({ name: "pull-request" }), then review the changes, draft the PR title/body, and submit it with publish_pr.`);
 		},
 	});
 
-	// --- /log-issue [topic] ---
-	pi.registerCommand("log-issue", {
-		description: "Drafts and publishes a GitHub issue through review",
+	// --- /create-issue [topic] ---
+	pi.registerCommand("create-issue", {
+		description: "Draft and publish a GitHub issue through review",
 		handler: async (args, ctx) => {
 			if (!ctx.hasUI) {
-				ctx.ui.notify("/log-issue requires an interactive UI. Run it from an interactive session.", "error");
+				ctx.ui.notify("/create-issue requires an interactive UI. Run it from an interactive session.", "error");
 				return;
 			}
 
 			if (pi.getFlag("read-only") === true) {
-				ctx.ui.notify("/log-issue is disabled in read-only mode.", "error");
+				ctx.ui.notify("/create-issue is disabled in read-only mode.", "error");
 				return;
 			}
 
@@ -154,7 +157,7 @@ export function registerCommands(pi: ExtensionAPI): void {
 			const topic = topicArg || (await ctx.ui.input("Issue topic", ""))?.trim();
 
 			if (!topic) {
-				ctx.ui.notify("Issue topic required. Usage: /log-issue <topic>", "error");
+				ctx.ui.notify("Issue topic required. Usage: /create-issue <topic>", "error");
 				return;
 			}
 
@@ -168,7 +171,13 @@ export function registerCommands(pi: ExtensionAPI): void {
 
 			setActiveIssueDraft({ draftPath, topic });
 			ctx.ui.notify(`Drafting GitHub issue: ${topic}`, "info");
-			pi.sendUserMessage(loadTemplate("log-issue", { TOPIC: topic, DRAFT_PATH: draftPath }));
+			pi.sendUserMessage(`Please draft this GitHub issue for my review.
+
+Context:
+- Topic: ${topic}
+- Draft path: ${draftPath}
+
+Start by calling skill({ name: "issue-logging" }), then investigate as needed, write the issue draft to the provided path, and submit it with publish_issue.`);
 		},
 	});
 
