@@ -20,6 +20,7 @@ const DEFAULT_OUTPUT_FORMAT: BigQueryOutputFormat = "csv";
 const DEFAULT_MAX_ROWS = 100;
 const DEFAULT_AUTO_DRY_RUN = true;
 const BQ_TIMEOUT_MS = 10 * 60 * 1000;
+const BQ_SCAN_APPROVAL_THRESHOLD_BYTES = 1_000_000_000_000n;
 const MAX_ERROR_CHARS = 20_000;
 const MAX_DESCRIPTION_CHARS = 500;
 const DISPLAY_ELLIPSIS = "…";
@@ -104,6 +105,17 @@ interface JobSummary {
 	message?: string;
 }
 
+type BqScanApprovalReason = "over_threshold" | "estimate_unknown" | null;
+
+interface BqScanApprovalMetadata {
+	thresholdBytes: string;
+	estimatedBytes: string | null;
+	required: boolean;
+	reason: BqScanApprovalReason;
+	approved: boolean | null;
+	granted: boolean | null;
+}
+
 interface BqQueryDetails {
 	description: string | null;
 	sqlPath: string;
@@ -117,6 +129,7 @@ interface BqQueryDetails {
 	rowCount: number | null;
 	diagnosticPath: string | null;
 	dryRun: DryRunSummary;
+	approval: BqScanApprovalMetadata;
 	job: JobSummary | null;
 }
 
@@ -593,6 +606,42 @@ function summarizeJob(stdout: string): JobSummary {
 	};
 }
 
+function parseDryRunEstimatedBytes(value: string | null): bigint | null {
+	if (value === null || !/^\d+$/.test(value)) return null;
+
+	try {
+		return BigInt(value);
+	} catch {
+		return null;
+	}
+}
+
+function buildScanApprovalMetadata(rawEstimatedBytes: string | null): BqScanApprovalMetadata {
+	const thresholdBytes = BQ_SCAN_APPROVAL_THRESHOLD_BYTES.toString();
+	const estimatedBytes = parseDryRunEstimatedBytes(rawEstimatedBytes);
+
+	if (estimatedBytes === null) {
+		return {
+			thresholdBytes,
+			estimatedBytes: null,
+			required: true,
+			reason: "estimate_unknown",
+			approved: null,
+			granted: null,
+		};
+	}
+
+	const required = estimatedBytes > BQ_SCAN_APPROVAL_THRESHOLD_BYTES;
+	return {
+		thresholdBytes,
+		estimatedBytes: estimatedBytes.toString(),
+		required,
+		reason: required ? "over_threshold" : null,
+		approved: null,
+		granted: null,
+	};
+}
+
 function formatBytes(bytes: string | null): string {
 	if (!bytes) return "unknown";
 	const value = Number(bytes);
@@ -606,6 +655,24 @@ function formatBytes(bytes: string | null): string {
 		scaled /= 1024;
 	}
 	return unit === "bytes" ? `${value} bytes` : `${scaled.toFixed(2)} ${unit}`;
+}
+
+function formatScanApprovalRequirement(approval: BqScanApprovalMetadata): string | null {
+	if (!approval.required) return null;
+
+	const threshold = `${approval.thresholdBytes} bytes (${formatBytes(approval.thresholdBytes)})`;
+	if (approval.reason === "over_threshold") {
+		const estimate = approval.estimatedBytes
+			? `${approval.estimatedBytes} bytes (${formatBytes(approval.estimatedBytes)})`
+			: "unknown";
+		return `estimated scan ${estimate} exceeds approval threshold ${threshold}`;
+	}
+
+	if (approval.reason === "estimate_unknown") {
+		return `scan estimate is unknown; approval threshold is ${threshold}`;
+	}
+
+	return `approval threshold is ${threshold}`;
 }
 
 function diagnosticText(result: BqCaptureResult | BqFileResult): string {
@@ -643,6 +710,8 @@ function buildDryRunText(details: BqQueryDetails): string {
 	if (details.dryRun.schemaFieldCount !== null) {
 		lines.push(`Schema fields: ${details.dryRun.schemaFieldCount}`);
 	}
+	const approvalRequirement = formatScanApprovalRequirement(details.approval);
+	if (approvalRequirement) lines.push(`Approval would be required before execution: ${approvalRequirement}.`);
 	if (details.dryRun.message) lines.push(`Dry-run note: ${details.dryRun.message}`);
 	return lines.join("\n");
 }
@@ -668,6 +737,11 @@ function buildSuccessText(details: BqQueryDetails, outputBytes: number): string 
 		if (details.dryRun.message) lines.push(`Dry-run note: ${details.dryRun.message}`);
 	} else {
 		lines.push("Dry run: skipped");
+	}
+
+	const approvalRequirement = formatScanApprovalRequirement(details.approval);
+	if (approvalRequirement) {
+		lines.push(`Approval would have been required before execution (not enforced yet): ${approvalRequirement}.`);
 	}
 
 	if (details.job?.fetched) {
@@ -795,6 +869,7 @@ export function registerBqQueryTool(pi: ExtensionAPI): void {
 					rowCount: null,
 					diagnosticPath: null,
 					dryRun: emptyDryRun(),
+					approval: buildScanApprovalMetadata(null),
 					job: null,
 				};
 
@@ -814,6 +889,7 @@ export function registerBqQueryTool(pi: ExtensionAPI): void {
 
 					if (dryRun.code !== 0) {
 						details.dryRun = { ...emptyDryRun(), ran: true, jobId: dryRunJobId };
+						details.approval = buildScanApprovalMetadata(details.dryRun.estimatedBytes);
 						details.diagnosticPath = await writeDiagnostic(
 							outputDir,
 							dryRunJobId,
@@ -832,6 +908,7 @@ export function registerBqQueryTool(pi: ExtensionAPI): void {
 					}
 
 					details.dryRun = summarizeDryRun(dryRunJobId, dryRun.stdout);
+					details.approval = buildScanApprovalMetadata(details.dryRun.estimatedBytes);
 				}
 
 				if (dryRunOnly) {
@@ -904,6 +981,7 @@ export function registerBqQueryTool(pi: ExtensionAPI): void {
 						rowCount: null,
 						diagnosticPath: null,
 						dryRun: emptyDryRun(),
+						approval: buildScanApprovalMetadata(null),
 						job: null,
 					},
 					content: [{ type: "text", text: `bq_query failed: ${message}` }],
