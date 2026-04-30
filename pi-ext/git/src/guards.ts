@@ -37,7 +37,7 @@ const GH_ALLOW: RegExp[] = [
 	/^gh\s+issue\s+(view|list|ls|status)(\s|$)/,
 	/^gh\s+(pr|run)\s+(view|list|diff|checks|status)(\s|$)/,
 	/^gh\s+pr\s+checkout(\s|$)/,
-	/^gh\s+repo\s+(view|list|clone|set-default)(\s|$)/,
+	/^gh\s+repo\s+(view|list|clone)(\s|$)/,
 	/^gh\s+run\s+watch(\s|$)/,
 	/^gh\s+search\s/,
 	/^gh\s+browse(\s|$)/,
@@ -134,6 +134,76 @@ function tokenizeShellLike(segment: string): string[] {
 	return (segment.match(SHELL_WORD_RE) ?? []).map((token) => token.replace(/^("|')(.*)\1$/, "$2"));
 }
 
+function isShellAssignment(token: string): boolean {
+	return /^[A-Za-z_][A-Za-z0-9_]*=.*/.test(token);
+}
+
+function isGhExecutable(token: string): boolean {
+	const normalized = token.replace(/\\/g, "/");
+	return normalized === "gh" || normalized.endsWith("/gh");
+}
+
+function skipEnvArguments(tokens: string[], startIndex: number): number {
+	let index = startIndex;
+
+	while (index < tokens.length) {
+		const token = tokens[index];
+		if (token === undefined) return index;
+		if (token === "--") return index + 1;
+		if (isShellAssignment(token)) {
+			index += 1;
+			continue;
+		}
+
+		if (token === "-u" || token === "--unset" || token === "-C" || token === "--chdir") {
+			index += 2;
+			continue;
+		}
+
+		if (token.startsWith("--unset=") || token.startsWith("--chdir=")) {
+			index += 1;
+			continue;
+		}
+
+		if (token === "-i" || token === "--ignore-environment") {
+			index += 1;
+			continue;
+		}
+
+		break;
+	}
+
+	return index;
+}
+
+function normalizeGhSegment(segment: string): string | null {
+	const tokens = tokenizeShellLike(segment);
+	let index = 0;
+
+	while (index < tokens.length) {
+		const token = tokens[index];
+		if (token === undefined) return null;
+		if (isShellAssignment(token)) {
+			index += 1;
+			continue;
+		}
+		if (token === "command") {
+			index += 1;
+			continue;
+		}
+		if (token === "env") {
+			index = skipEnvArguments(tokens, index + 1);
+			continue;
+		}
+		break;
+	}
+
+	const executable = tokens[index];
+	if (executable === undefined || !isGhExecutable(executable)) return null;
+
+	return ["gh", ...tokens.slice(index + 1)].join(" ");
+}
+
 function isBqQuerySegment(segment: string): boolean {
 	// Match the common agent-generated forms: `bq query` and `bq --global_flag ... query`.
 	// Unknown value-taking flags intentionally stop matching rather than risk blocking unrelated commands.
@@ -174,8 +244,10 @@ export function registerGuards(pi: ExtensionAPI): void {
 		if (!cmd) return;
 
 		for (const segment of splitSegments(cmd)) {
+			const ghSegment = normalizeGhSegment(segment);
+
 			// Workflow overrides apply per-segment
-			if (unlocked.prComment && (PR_COMMENT_RE.test(segment) || GH_API_PR_RE.test(segment))) {
+			if (unlocked.prComment && ghSegment && (PR_COMMENT_RE.test(ghSegment) || GH_API_PR_RE.test(ghSegment))) {
 				continue;
 			}
 
@@ -191,8 +263,10 @@ export function registerGuards(pi: ExtensionAPI): void {
 				}
 			}
 
+			if (!ghSegment) continue;
+
 			// gh pr mutate: block with workflow-specific message
-			if (GH_PR_MUTATE_RE.test(segment)) {
+			if (GH_PR_MUTATE_RE.test(ghSegment)) {
 				return {
 					block: true,
 					reason: "PR mutations are blocked. The user needs to invoke /pull-request to start the PR workflow.",
@@ -200,7 +274,7 @@ export function registerGuards(pi: ExtensionAPI): void {
 			}
 
 			// gh issue mutate: block with workflow-specific message
-			if (GH_ISSUE_MUTATE_RE.test(segment)) {
+			if (GH_ISSUE_MUTATE_RE.test(ghSegment)) {
 				return {
 					block: true,
 					reason:
@@ -209,7 +283,7 @@ export function registerGuards(pi: ExtensionAPI): void {
 			}
 
 			// gh: block by default, allow-list overrides
-			if (GH_RE.test(segment) && !GH_ALLOW.some((r) => r.test(segment))) {
+			if (GH_RE.test(ghSegment) && !GH_ALLOW.some((r) => r.test(ghSegment))) {
 				return {
 					block: true,
 					reason:

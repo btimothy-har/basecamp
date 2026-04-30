@@ -49,7 +49,7 @@ Rules:
 
 ## Step 4: Publish Through Review
 
-After writing the draft, call the future `issue_publish` tool with the draft path:
+After writing the draft, call the `issue_publish` tool with the draft path:
 
 ```text
 issue_publish({ draftPath: "{{DRAFT_PATH}}" })

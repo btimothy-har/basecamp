@@ -7,6 +7,7 @@ import { DynamicBorder, getSelectListTheme } from "@mariozechner/pi-coding-agent
 import { Container, Editor, type EditorTheme, getKeybindings, Spacer, Text } from "@mariozechner/pi-tui";
 
 export interface IssueReviewInput {
+	repoTarget: string;
 	repo: string;
 	visibility: string;
 	draftPath: string;
@@ -30,6 +31,13 @@ const NAV_KEYS = [
 	"tui.editor.pageDown",
 ] as const;
 
+const BODY_INSERTION_MARKER = "\uE000basecamp-issue-body\uE000";
+const FEEDBACK_INSERTION_MARKER = "\uE000basecamp-issue-feedback\uE000";
+
+function stripInsertionMarkers(line: string): string {
+	return line.replaceAll(BODY_INSERTION_MARKER, "").replaceAll(FEEDBACK_INSERTION_MARKER, "");
+}
+
 function isNavKey(data: string): boolean {
 	const kb = getKeybindings();
 	return NAV_KEYS.some((key) => kb.matches(data, key));
@@ -42,6 +50,7 @@ export async function showIssueReview(
 	return ctx.ui.custom<IssueReviewResult>((tui, theme, _kb, done) => {
 		const border = new DynamicBorder((s: string) => theme.fg("border", s));
 		const header = new Text(theme.fg("accent", theme.bold("GitHub Issue Review")), 1, 0);
+		const targetLine = new Text(`${theme.fg("dim", "Target")}  ${theme.fg("accent", input.repoTarget)}`, 1, 0);
 		const repoLine = new Text(
 			`${theme.fg("dim", "Repo")}  ${theme.fg("accent", input.repo)}  ${theme.fg("dim", "Visibility")}  ${input.visibility}`,
 			1,
@@ -50,7 +59,7 @@ export async function showIssueReview(
 		const draftLine = new Text(`${theme.fg("dim", "Draft/source")}  ${input.draftPath}`, 1, 0);
 		const topicLine = input.topic ? new Text(`${theme.fg("dim", "Topic")}  ${input.topic}`, 1, 0) : null;
 		const titleLine = new Text(`${theme.fg("dim", "Title")}  ${theme.fg("accent", theme.bold(input.title))}`, 1, 0);
-		const bodyLabel = new Text(theme.fg("dim", "Body"), 0, 0);
+		const bodyLabel = new Text(`${theme.fg("dim", "Body")}${BODY_INSERTION_MARKER}`, 0, 0);
 		const hint = new Text("", 1, 0);
 		const feedbackLabel = new Text("", 0, 0);
 
@@ -89,10 +98,12 @@ export async function showIssueReview(
 		function updateHint(): void {
 			if (feedbackFocused) {
 				hint.setText(theme.fg("dim", "[Enter: Submit feedback]  [Esc: Back]"));
-				feedbackLabel.setText(theme.fg("accent", "Feedback"));
+				feedbackLabel.setText(`${theme.fg("accent", "Feedback")}${FEEDBACK_INSERTION_MARKER}`);
 			} else {
 				hint.setText(theme.fg("dim", "[Enter: Publish]  [Tab: Feedback]  [Esc: Cancel]"));
-				feedbackLabel.setText(`${theme.fg("dim", "Feedback")}  ${theme.fg("dim", "[Tab]")}`);
+				feedbackLabel.setText(
+					`${theme.fg("dim", "Feedback")}  ${theme.fg("dim", "[Tab]")}${FEEDBACK_INSERTION_MARKER}`,
+				);
 			}
 		}
 
@@ -101,6 +112,7 @@ export async function showIssueReview(
 		const container = new Container();
 		container.addChild(border);
 		container.addChild(header);
+		container.addChild(targetLine);
 		container.addChild(repoLine);
 		container.addChild(draftLine);
 		if (topicLine) container.addChild(topicLine);
@@ -117,8 +129,8 @@ export async function showIssueReview(
 		return {
 			render: (width: number) => {
 				const lines = container.render(width);
-				const bodyIdx = lines.findIndex((l) => l.includes("Body"));
-				let feedbackIdx = lines.findIndex((l) => l.includes("Feedback"));
+				const bodyIdx = lines.findIndex((l) => l.includes(BODY_INSERTION_MARKER));
+				let feedbackIdx = lines.findIndex((l) => l.includes(FEEDBACK_INSERTION_MARKER));
 
 				if (bodyIdx >= 0) {
 					const viewerLines = viewer.render(width - 2);
@@ -131,7 +143,7 @@ export async function showIssueReview(
 					lines.splice(feedbackIdx + 1, 0, ...feedbackLines);
 				}
 
-				return lines;
+				return lines.map(stripInsertionMarkers);
 			},
 			invalidate: () => container.invalidate(),
 			handleInput: (data: string) => {

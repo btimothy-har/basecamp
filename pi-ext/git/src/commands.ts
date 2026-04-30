@@ -9,7 +9,7 @@
 
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { exec } from "../../platform/exec";
-import { setActiveIssueDraft, setActivePR, unlocked } from "./guards";
+import { activeIssueDraft, setActiveIssueDraft, setActivePR, unlocked } from "./guards";
 import { createIssueDraftPath, getScratchDir, loadTemplate, resolvePrNumber } from "./utils";
 
 type PushResult = "pushed" | "up-to-date" | "cancelled" | "diverged" | "failed";
@@ -132,14 +132,24 @@ export function registerCommands(pi: ExtensionAPI): void {
 	pi.registerCommand("log-issue", {
 		description: "Drafts and publishes a GitHub issue through review",
 		handler: async (args, ctx) => {
+			if (!ctx.hasUI) {
+				ctx.ui.notify("/log-issue requires an interactive UI. Run it from an interactive session.", "error");
+				return;
+			}
+
+			if (activeIssueDraft) {
+				const confirmed = await ctx.ui.confirm(
+					"Replace active issue draft?",
+					`An issue draft is already active at ${activeIssueDraft.draftPath}. Replace it?`,
+				);
+				if (!confirmed) return;
+			}
+
 			const topicArg = args?.trim();
-			const topic = topicArg || (ctx.hasUI ? (await ctx.ui.input("Issue topic", ""))?.trim() : undefined);
+			const topic = topicArg || (await ctx.ui.input("Issue topic", ""))?.trim();
 
 			if (!topic) {
-				ctx.ui.notify(
-					ctx.hasUI ? "Issue topic required. Usage: /log-issue <topic>" : "Usage: /log-issue <topic>",
-					"error",
-				);
+				ctx.ui.notify("Issue topic required. Usage: /log-issue <topic>", "error");
 				return;
 			}
 
