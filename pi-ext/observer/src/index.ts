@@ -12,7 +12,10 @@
  *   recall — semantic search over past sessions (spawns Python CLI)
  */
 
+import * as path from "node:path";
 import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-agent";
+import { getSessionEffectiveCwd } from "../../platform/config";
+import { getSessionState } from "../../platform/session";
 import { registerRecallTool } from "./recall-tool.js";
 
 /** Sessions with fewer turns than this are not worth indexing for recall. */
@@ -31,10 +34,12 @@ function triggerIngest(pi: ExtensionAPI, ctx: ExtensionContext, processFlag: boo
 	const sessionFile = ctx.sessionManager.getSessionFile();
 	if (!sessionId || !sessionFile) return;
 
+	const state = getSessionState();
+	const cwd = state ? getSessionEffectiveCwd(state) : path.resolve(ctx.cwd);
 	const payload = JSON.stringify({
 		session_id: sessionId,
 		transcript_path: sessionFile,
-		cwd: ctx.cwd,
+		cwd,
 	});
 
 	const observerCmd = processFlag ? "observer ingest --process" : "observer ingest";

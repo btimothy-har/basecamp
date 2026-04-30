@@ -12,8 +12,9 @@ import * as fs from "node:fs/promises";
 import * as path from "node:path";
 import type { AgentToolResult, ExtensionAPI, Theme } from "@mariozechner/pi-coding-agent";
 import { type Static, Type } from "@sinclair/typebox";
-import { type BigQueryOutputFormat, resolveBigQueryConfig } from "../../../platform/config";
+import { type BigQueryOutputFormat, isPathWithin, resolveBigQueryConfig } from "../../../platform/config";
 import { requireSessionState } from "../../../platform/session";
+import { getEffectiveCwd } from "../runtime/session";
 
 const DEFAULT_OUTPUT_FORMAT: BigQueryOutputFormat = "csv";
 const DEFAULT_MAX_ROWS = 100;
@@ -118,11 +119,6 @@ function expandHome(rawPath: string): string {
 	if (rawPath === "~") return process.env.HOME ?? rawPath;
 	if (rawPath.startsWith("~/")) return path.join(process.env.HOME ?? "~", rawPath.slice(2));
 	return rawPath;
-}
-
-function isPathWithin(child: string, parent: string): boolean {
-	const relative = path.relative(parent, child);
-	return relative === "" || (!!relative && !relative.startsWith("..") && !path.isAbsolute(relative));
 }
 
 async function existingRealpath(filePath: string): Promise<string | null> {
@@ -660,7 +656,7 @@ export function registerBqQueryTool(pi: ExtensionAPI): void {
 		promptSnippet: "Run BigQuery SQL from a .sql file and save result rows to scratch space",
 		parameters: BqQueryParams,
 
-		async execute(_id, params, signal, _onUpdate, ctx): Promise<BqToolResult> {
+		async execute(_id, params, signal, _onUpdate, _ctx): Promise<BqToolResult> {
 			let sqlPath = "";
 			let jobId = "";
 			let details: BqQueryDetails | null = null;
@@ -679,8 +675,10 @@ export function registerBqQueryTool(pi: ExtensionAPI): void {
 				const dryRunOnly = params.dryRun === true;
 				const shouldPreflight = dryRunOnly || (config.auto_dry_run ?? DEFAULT_AUTO_DRY_RUN);
 
-				const allowedSqlRoots = [ctx.cwd, state.scratchDir, ...state.secondaryDirs];
-				sqlPath = await resolveSqlPath(params.path, ctx.cwd, allowedSqlRoots);
+				const effectiveCwd = getEffectiveCwd();
+				const projectSqlRoot = state.worktreeDir ?? state.repoRoot;
+				const allowedSqlRoots = [effectiveCwd, projectSqlRoot, state.scratchDir, ...state.additionalDirs];
+				sqlPath = await resolveSqlPath(params.path, effectiveCwd, allowedSqlRoots);
 				const sql = await fs.readFile(sqlPath, "utf8");
 				const now = new Date();
 				const hash = queryHash(sql);
@@ -717,7 +715,7 @@ export function registerBqQueryTool(pi: ExtensionAPI): void {
 							dryRun: true,
 						}),
 						sql,
-						ctx.cwd,
+						effectiveCwd,
 						signal,
 					);
 
@@ -755,7 +753,7 @@ export function registerBqQueryTool(pi: ExtensionAPI): void {
 				const execution = await runBqToFile(
 					buildQueryArgs({ format: outputFormat, projectId, location, jobId, maxRows }),
 					sql,
-					ctx.cwd,
+					effectiveCwd,
 					outputPath,
 					signal,
 				);
@@ -780,7 +778,7 @@ export function registerBqQueryTool(pi: ExtensionAPI): void {
 					};
 				}
 
-				const metadata = await runBqCapture(buildShowArgs(projectId, location, jobId), "", ctx.cwd, signal);
+				const metadata = await runBqCapture(buildShowArgs(projectId, location, jobId), "", effectiveCwd, signal);
 				if (metadata.code === 0) {
 					details.job = summarizeJob(metadata.stdout);
 				} else {

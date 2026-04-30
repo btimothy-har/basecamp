@@ -23,7 +23,7 @@ async function getRegisteredWorktrees(
 	}
 
 	try {
-		const worktrees = await listWorktrees(pi, state.primaryDir, state.repoName);
+		const worktrees = await listWorktrees(pi, state.repoRoot, state.repoName);
 		if (worktrees.length === 0) {
 			ctx.ui.notify(`No Basecamp worktrees registered for ${state.repoName}`, "info");
 			return null;

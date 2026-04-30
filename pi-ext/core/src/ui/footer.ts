@@ -17,7 +17,7 @@ import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-age
 import { truncateToWidth, visibleWidth } from "@mariozechner/pi-tui";
 import { getInvokedSkills } from "../../../platform/skill-tracker";
 import { type AgentMode, getAgentMode, onAgentModeChange } from "../runtime/mode";
-import { getState } from "../runtime/session";
+import { getEffectiveCwd, getState } from "../runtime/session";
 import { getModeLabel } from "./mode-style";
 
 type ThemeFg = (color: Parameters<import("@mariozechner/pi-coding-agent").Theme["fg"]>[0], text: string) => string;
@@ -225,7 +225,7 @@ function buildLocationSegment(
 	const parts: string[] = [];
 	const modeSegment = buildModeSegment(fg, getAgentMode());
 	if (modeSegment) parts.push(modeSegment);
-	parts.push(fg("dim", shortenPath(state.primaryDir)));
+	parts.push(fg("dim", shortenPath(getEffectiveCwd())));
 
 	if (state.worktreeLabel) {
 		parts.push(fg("warning", `⌥ ${state.worktreeLabel}`));

@@ -31,7 +31,7 @@ function buildBanner(fg: ThemeFg, width: number): string[] {
 	// Info rows
 	const rows: [string, string][] = [];
 
-	rows.push(["Protected", shortenPath(state.primaryDir)]);
+	rows.push(["Protected", shortenPath(state.repoRoot)]);
 
 	if (state.worktreeLabel && state.worktreeDir) {
 		const branch = state.worktreeBranch ? fg("dim", ` (${state.worktreeBranch})`) : "";
@@ -40,10 +40,10 @@ function buildBanner(fg: ThemeFg, width: number): string[] {
 		rows.push(["Worktree", "not active"]);
 	}
 
-	if (state.secondaryDirs.length > 0) {
-		for (let i = 0; i < state.secondaryDirs.length; i++) {
+	if (state.additionalDirs.length > 0) {
+		for (let i = 0; i < state.additionalDirs.length; i++) {
 			const label = i === 0 ? "Added dirs" : "";
-			rows.push([label, shortenPath(state.secondaryDirs[i]!)]);
+			rows.push([label, shortenPath(state.additionalDirs[i]!)]);
 		}
 	}
 

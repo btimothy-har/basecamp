@@ -9,14 +9,9 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
-import { readConfig, type SessionState } from "../../../platform/config";
+import { readConfig, resolveProjectDirectories, type SessionState } from "../../../platform/config";
 
 const WORKSPACES_DIR = path.join(os.homedir(), ".workspaces");
-
-function resolveDir(dir: string): string {
-	if (path.isAbsolute(dir)) return dir;
-	return path.join(os.homedir(), dir);
-}
 
 export function registerOpenCommand(pi: ExtensionAPI, getState: () => SessionState): void {
 	pi.registerCommand("open", {
@@ -31,10 +26,10 @@ export function registerOpenCommand(pi: ExtensionAPI, getState: () => SessionSta
 				return;
 			}
 
-			// Resolve project dirs
+			// Resolve project directories
 			let dirs: string[];
 			if (projectName === state.projectName && state.project) {
-				dirs = state.project.dirs;
+				dirs = [state.repoRoot, ...state.additionalDirs];
 			} else {
 				const config = readConfig();
 				const project = config.projects?.[projectName];
@@ -42,7 +37,7 @@ export function registerOpenCommand(pi: ExtensionAPI, getState: () => SessionSta
 					ctx.ui.notify(`Project '${projectName}' not found`, "error");
 					return;
 				}
-				dirs = project.dirs;
+				dirs = resolveProjectDirectories(project);
 			}
 
 			if (dirs.length === 0) {
@@ -50,8 +45,7 @@ export function registerOpenCommand(pi: ExtensionAPI, getState: () => SessionSta
 				return;
 			}
 
-			// Resolve directories
-			const resolved = dirs.map(resolveDir).filter((d) => {
+			const resolved = dirs.filter((d) => {
 				try {
 					return fs.statSync(d).isDirectory();
 				} catch {
@@ -64,8 +58,8 @@ export function registerOpenCommand(pi: ExtensionAPI, getState: () => SessionSta
 				return;
 			}
 
-			// Use worktree dir if active
-			const primary = state.worktreeDir ?? resolved[0];
+			// Use worktree dir if active for the current project
+			const primary = projectName === state.projectName && state.worktreeDir ? state.worktreeDir : resolved[0]!;
 			const secondary = resolved.slice(1);
 
 			// Build workspace file

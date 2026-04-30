@@ -124,9 +124,12 @@ function buildEnvBlock(state: SessionState, modelId?: string): string {
 	if (state.worktreeDir && state.worktreeLabel) {
 		const branch = state.worktreeBranch ? `, branch: ${state.worktreeBranch}` : "";
 		lines.push(`Working directory: ${currentDir} (active worktree: ${state.worktreeLabel}${branch})`);
-		lines.push(`Protected repository checkout: ${state.primaryDir}`);
+		lines.push(`Protected repository checkout: ${state.repoRoot}`);
 	} else if (state.isRepo) {
 		lines.push(`Working directory: ${currentDir} (protected repository checkout; no active worktree)`);
+		if (path.resolve(currentDir) !== path.resolve(state.repoRoot)) {
+			lines.push(`Protected repository checkout: ${state.repoRoot}`);
+		}
 	} else {
 		lines.push(`Working directory: ${currentDir}`);
 	}
@@ -142,10 +145,10 @@ function buildEnvBlock(state: SessionState, modelId?: string): string {
 		lines.push(`Git remote: ${state.remoteUrl}`);
 	}
 
-	if (state.secondaryDirs.length > 0) {
+	if (state.additionalDirs.length > 0) {
 		lines.push("");
 		lines.push("Other directories:");
-		for (const dir of state.secondaryDirs) {
+		for (const dir of state.additionalDirs) {
 			lines.push(`- ${dir}`);
 		}
 	}
@@ -288,14 +291,15 @@ export function registerPrompt(pi: ExtensionAPI): void {
 		}
 
 		const state = getState();
+		const effectiveCwd = getEffectiveCwd();
 
-		const catalogContext = { cwd: ctx.cwd };
+		const catalogContext = { cwd: effectiveCwd };
 		const toolItems = listCatalogItemsByType("tools", catalogContext);
 		const skillItems = listCatalogItemsByType("skills", catalogContext);
 		const agentItems = listCatalogItemsByType("agents", catalogContext);
 
-		// Discover CLAUDE.md / AGENTS.md from cwd
-		const contextFiles = discoverContextFiles(ctx.cwd);
+		// Discover CLAUDE.md / AGENTS.md from effective cwd
+		const contextFiles = discoverContextFiles(effectiveCwd);
 
 		// Agent prompt: replaces working style for subagents
 		const agentPromptFile = pi.getFlag("agent-prompt") as string | undefined;

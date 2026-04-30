@@ -183,7 +183,7 @@ async function selectWorktreeLabel(
 
 	const state = getState();
 	const suggested = suggestWorktreeLabel(ctx, goal, worktreeSlug);
-	const existing = await listWorktrees(pi, state.primaryDir, state.repoName);
+	const existing = await listWorktrees(pi, state.repoRoot, state.repoName);
 	const choices: string[] = [];
 	const labelsByChoice = new Map<string, string>();
 

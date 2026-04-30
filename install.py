@@ -29,6 +29,32 @@ CLI_DIR: Final = REPO_DIR / "cli"
 EXTENSION_DIR: Final = REPO_DIR / "pi-ext"
 
 
+def migrate_project_dirs(config: dict[str, object]) -> None:
+    """Standalone copy of the settings migration; install.py runs before imports are reliable."""
+    projects = config.get("projects")
+    if not isinstance(projects, dict):
+        return
+
+    for project in projects.values():
+        if not isinstance(project, dict) or "dirs" not in project:
+            continue
+        dirs = project["dirs"]
+        has_repo_root = isinstance(project.get("repo_root"), str) and bool(project["repo_root"])
+        has_additional_dirs = isinstance(project.get("additional_dirs"), list)
+        if has_repo_root and has_additional_dirs:
+            project.pop("dirs")
+            continue
+        if not isinstance(dirs, list) or not all(isinstance(item, str) for item in dirs):
+            continue
+        if not has_repo_root and not dirs:
+            continue
+        if not has_repo_root:
+            project["repo_root"] = dirs[0]
+        if not has_additional_dirs:
+            project["additional_dirs"] = dirs[1:]
+        project.pop("dirs")
+
+
 def save_install_dir(repo_dir: Path) -> None:
     config_file = Path.home() / ".pi" / "basecamp" / "config.json"
     try:
@@ -36,6 +62,7 @@ def save_install_dir(repo_dir: Path) -> None:
         existing = existing if isinstance(existing, dict) else {}
     except (json.JSONDecodeError, OSError):
         existing = {}
+    migrate_project_dirs(existing)
     existing["install_dir"] = str(repo_dir)
     config_file.parent.mkdir(parents=True, mode=0o700, exist_ok=True)
     content = (json.dumps(existing, indent=2) + os.linesep).encode()
@@ -102,7 +129,7 @@ def install_cli(*, editable: bool) -> None:
         args.append("-e")
     args.append(str(CLI_DIR))
 
-    console.print("  Installing [bold]basecamp[/bold] CLI (bpi, observer, recall)...")
+    console.print("  Installing [bold]basecamp[/bold] CLI (setup, config, observer, recall)...")
     result = subprocess.run(args, check=False, capture_output=True, text=True)
     if result.returncode != 0:
         console.print("\n[red]Failed to install basecamp:[/red]")
@@ -145,8 +172,8 @@ def main() -> None:
     console.print("[green]✓[/green] Done.")
     console.print()
     console.print(
-        "If [bold]bpi[/bold], [bold]basecamp[/bold], [bold]observer[/bold], or [bold]recall[/bold]"
-        " aren't found, add uv's tool bin to your PATH:",
+        "If [bold]basecamp[/bold], [bold]observer[/bold], or [bold]recall[/bold] aren't found, "
+        "add uv's tool bin to your PATH:",
     )
     console.print('  [dim]export PATH="$HOME/.local/bin:$PATH"[/dim]')
 
