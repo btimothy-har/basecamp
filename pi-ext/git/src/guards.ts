@@ -34,7 +34,7 @@ const BLOCK_RULES: { gate: RegExp; test: RegExp; reason: string }[] = [
 ];
 
 const GH_ALLOW: RegExp[] = [
-	/^gh\s+issue(\s|$)/,
+	/^gh\s+issue\s+(view|list|ls|status)(\s|$)/,
 	/^gh\s+(pr|run)\s+(view|list|diff|checks|status)(\s|$)/,
 	/^gh\s+pr\s+checkout(\s|$)/,
 	/^gh\s+repo\s+(view|list|clone|set-default)(\s|$)/,
@@ -58,16 +58,30 @@ export function clearActivePR(): void {
 	activePR = null;
 }
 
+/** Active issue draft workflow — set by /log-issue, read by issue workflow tools. */
+export let activeIssueDraft: { draftPath: string; topic: string } | null = null;
+
+export function setActiveIssueDraft(draft: { draftPath: string; topic: string }): void {
+	activeIssueDraft = draft;
+}
+
+export function clearActiveIssueDraft(): void {
+	activeIssueDraft = null;
+}
+
 export const unlocked = {
 	prComment: false,
 };
 
 export function lockAll(): void {
 	activePR = null;
+	activeIssueDraft = null;
 	unlocked.prComment = false;
 }
 
 const GH_PR_MUTATE_RE = /^gh\s+pr\s+(create|edit|merge|close|ready|reopen)(\s|$)/;
+const GH_ISSUE_MUTATE_RE =
+	/^gh\s+issue\s+(create|edit|comment|close|reopen|delete|transfer|lock|unlock|pin|unpin|develop|new)(\s|$)/;
 const PR_COMMENT_RE = /^gh\s+pr\s+comment(\s|$)/;
 const GH_API_PR_RE = /^gh\s+api\s+repos\/[^/]+\/[^/]+\/pulls\//;
 const GH_RE = /^gh\s+/;
@@ -185,12 +199,21 @@ export function registerGuards(pi: ExtensionAPI): void {
 				};
 			}
 
+			// gh issue mutate: block with workflow-specific message
+			if (GH_ISSUE_MUTATE_RE.test(segment)) {
+				return {
+					block: true,
+					reason:
+						"Issue mutations are blocked. Invoke /log-issue for new issue creation; ask the user to run existing-issue mutations themselves if needed.",
+				};
+			}
+
 			// gh: block by default, allow-list overrides
 			if (GH_RE.test(segment) && !GH_ALLOW.some((r) => r.test(segment))) {
 				return {
 					block: true,
 					reason:
-						"This gh command is blocked. Allowed: gh issue (all), gh pr/run/repo (read-only), gh search, gh browse. Ask the user to run this command themselves if needed.",
+						"This gh command is blocked. Allowed: gh issue view/list/ls/status, gh pr/run/repo (read-only), gh search, gh browse. Ask the user to run this command themselves if needed.",
 				};
 			}
 		}
