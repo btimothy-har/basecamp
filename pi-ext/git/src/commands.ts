@@ -132,7 +132,7 @@ Runtime context:
 - Base branch: ${base}
 - Current branch: ${branchName}${reviewContextLine}
 
-First call skill({ name: "create-pr" }) before continuing. Then use the runtime context to proceed.`);
+First call skill({ name: "create-pr" }) before continuing.`);
 		},
 	});
 
@@ -182,7 +182,7 @@ Runtime context:
 - Topic: ${topic}
 - Draft path: ${draftPath}
 
-First call skill({ name: "create-issue" }) before continuing. Then use the runtime context to proceed.`);
+First call skill({ name: "create-issue" }) before continuing.`);
 		},
 	});
 

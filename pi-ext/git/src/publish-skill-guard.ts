@@ -19,11 +19,9 @@ export function registerPublishSkillGuard(pi: ExtensionAPI): void {
 		const skillName = requiredSkillForTool(toolName);
 		if (!skillName || hasInvokedSkill(skillName)) return;
 
-		const reason = [
-			`The ${toolName} tool requires the ${skillName} skill.`,
-			`Call skill({ name: "${skillName}" }) first, then retry ${toolName}.`,
-		].join(" ");
-
-		return { block: true, reason };
+		return {
+			block: true,
+			reason: `The ${toolName} tool requires the ${skillName} skill. Call skill({ name: "${skillName}" }) first, then retry ${toolName}.`,
+		};
 	});
 }

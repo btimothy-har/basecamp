@@ -2,7 +2,7 @@
  * pr_publish tool — lets the LLM submit a PR description for user review
  * via a read-only overlay with feedback support, then publishes to GitHub.
  *
- * Gated behind /pull-request: only works when activePR is set.
+ * Gated behind /create-pr: only works when activePR is set.
  */
 
 import * as fs from "node:fs";
@@ -20,7 +20,7 @@ export function registerTool(pi: ExtensionAPI): void {
 		label: "Publish PR",
 		description:
 			"Submit a PR title and description for user review. User can approve to publish, " +
-			"or provide feedback for revision. Only available after /pull-request has been invoked.",
+			"or provide feedback for revision. Only available after /create-pr has been invoked.",
 		promptSnippet: "Show PR description for review — user can publish or give feedback for revision",
 		parameters: Type.Object({
 			title: Type.String({ description: "PR title. Imperative mood, <70 chars." }),
@@ -28,7 +28,7 @@ export function registerTool(pi: ExtensionAPI): void {
 		}),
 		async execute(_id, params, _signal, _onUpdate, ctx) {
 			if (!activePR) {
-				throw new Error("No active PR workflow. Run /pull-request first.");
+				throw new Error("No active PR workflow. Run /create-pr first.");
 			}
 
 			const { number: prNumber } = activePR;
