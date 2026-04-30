@@ -21,9 +21,15 @@ const DEFAULT_MAX_ROWS = 100;
 const DEFAULT_AUTO_DRY_RUN = true;
 const BQ_TIMEOUT_MS = 10 * 60 * 1000;
 const MAX_ERROR_CHARS = 20_000;
+const MAX_DESCRIPTION_CHARS = 500;
+const ANSI_ESCAPE_PATTERN = new RegExp(`${String.fromCharCode(27)}\\[[0-?]*[ -/]*[@-~]`, "g");
+const CONTROL_CHARS_PATTERN = /[\p{Cc}]+/gu;
 
 const BqQueryParams = Type.Object({
 	path: Type.String({ description: "Path to a .sql file. Relative paths resolve from the current effective cwd." }),
+	description: Type.String({
+		description: "Required short TLDR of what this query does. Do not include raw SQL or result rows.",
+	}),
 	dryRun: Type.Optional(
 		Type.Boolean({
 			description: "Validate the SQL with a BigQuery dry run and do not execute it. Defaults to false.",
@@ -94,6 +100,7 @@ interface JobSummary {
 }
 
 interface BqQueryDetails {
+	description: string | null;
 	sqlPath: string;
 	outputPath: string | null;
 	outputFormat: BigQueryOutputFormat;
@@ -113,6 +120,30 @@ type BqToolResult = AgentToolResult<BqQueryDetails> & { isError?: boolean };
 function trimOrNull(value: string | undefined): string | null {
 	const trimmed = value?.trim();
 	return trimmed ? trimmed : null;
+}
+
+function sanitizeQueryDescription(value: unknown): string {
+	if (typeof value !== "string") {
+		throw new Error("description is required and must be a non-empty TLDR of the query.");
+	}
+
+	const sanitized = value
+		.replace(ANSI_ESCAPE_PATTERN, " ")
+		.replace(CONTROL_CHARS_PATTERN, " ")
+		.replace(/\s+/g, " ")
+		.trim();
+
+	if (!sanitized) {
+		throw new Error("description is required and must be a non-empty TLDR of the query.");
+	}
+
+	const chars = Array.from(sanitized);
+	if (chars.length <= MAX_DESCRIPTION_CHARS) return sanitized;
+
+	return `${chars
+		.slice(0, MAX_DESCRIPTION_CHARS - 1)
+		.join("")
+		.trimEnd()}…`;
 }
 
 function expandHome(rawPath: string): string {
@@ -559,12 +590,13 @@ function csvRowCount(result: BqFileResult): number {
 }
 
 function buildDryRunText(details: BqQueryDetails): string {
-	const lines = [
-		"BigQuery dry run passed.",
+	const lines = ["BigQuery dry run passed."];
+	if (details.description) lines.push(`Description: ${details.description}`);
+	lines.push(
 		`SQL: ${details.sqlPath}`,
 		`Dry-run job ID: ${details.dryRun.jobId ?? "unknown"}`,
 		`Estimated bytes: ${formatBytes(details.dryRun.estimatedBytes)}`,
-	];
+	);
 	if (details.projectId) lines.push(`Project: ${details.projectId}`);
 	if (details.location) lines.push(`Location: ${details.location}`);
 	if (details.dryRun.statementType) lines.push(`Statement type: ${details.dryRun.statementType}`);
@@ -576,8 +608,9 @@ function buildDryRunText(details: BqQueryDetails): string {
 }
 
 function buildSuccessText(details: BqQueryDetails, outputBytes: number): string {
-	const lines = [
-		"BigQuery query complete.",
+	const lines = ["BigQuery query complete."];
+	if (details.description) lines.push(`Description: ${details.description}`);
+	lines.push(
 		`SQL: ${details.sqlPath}`,
 		`Job ID: ${details.jobId}`,
 		`Output: ${details.outputPath}`,
@@ -585,7 +618,7 @@ function buildSuccessText(details: BqQueryDetails, outputBytes: number): string 
 		`Rows: ${details.rowCount ?? "unknown"}`,
 		`Format: ${details.outputFormat}`,
 		`Max rows: ${details.maxRows}`,
-	];
+	);
 	if (details.projectId) lines.push(`Project: ${details.projectId}`);
 	if (details.location) lines.push(`Location: ${details.location}`);
 
@@ -652,16 +685,20 @@ export function registerBqQueryTool(pi: ExtensionAPI): void {
 		label: "BigQuery Query",
 		description:
 			"Run a BigQuery query from a .sql file with the bq CLI. " +
+			"Requires a short plain-language description/TLDR. " +
 			"SQL is read from the file and sent via stdin; raw rows are written to a scratch output file, not returned.",
-		promptSnippet: "Run BigQuery SQL from a .sql file and save result rows to scratch space",
+		promptSnippet: "Run BigQuery SQL from a .sql file with a short TLDR and save result rows to scratch space",
 		parameters: BqQueryParams,
 
 		async execute(_id, params, signal, _onUpdate, _ctx): Promise<BqToolResult> {
+			let description: string | null = null;
 			let sqlPath = "";
 			let jobId = "";
 			let details: BqQueryDetails | null = null;
 
 			try {
+				description = sanitizeQueryDescription(params.description);
+
 				const state = requireSessionState();
 				const config = resolveBigQueryConfig(state.project);
 				if (config.enabled === false) {
@@ -691,6 +728,7 @@ export function registerBqQueryTool(pi: ExtensionAPI): void {
 					: path.join(outputDir, `${safeStem(sqlPath)}-${timestampForFile(now)}-${hash}-${jobId}.${outputFormat}`);
 
 				details = {
+					description,
 					sqlPath,
 					outputPath,
 					outputFormat,
@@ -799,6 +837,7 @@ export function registerBqQueryTool(pi: ExtensionAPI): void {
 				return {
 					isError: true,
 					details: details ?? {
+						description,
 						sqlPath: sqlPath || params.path,
 						outputPath: null,
 						outputFormat: DEFAULT_OUTPUT_FORMAT,
