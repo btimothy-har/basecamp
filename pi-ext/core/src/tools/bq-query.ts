@@ -10,7 +10,7 @@ import { createHash } from "node:crypto";
 import * as fsSync from "node:fs";
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
-import type { AgentToolResult, ExtensionAPI, Theme } from "@mariozechner/pi-coding-agent";
+import type { AgentToolResult, ExtensionAPI, ExtensionContext, Theme } from "@mariozechner/pi-coding-agent";
 import { type Static, Type } from "@sinclair/typebox";
 import { type BigQueryOutputFormat, isPathWithin, resolveBigQueryConfig } from "../../../platform/config";
 import { requireSessionState } from "../../../platform/session";
@@ -18,7 +18,6 @@ import { getEffectiveCwd } from "../runtime/session";
 
 const DEFAULT_OUTPUT_FORMAT: BigQueryOutputFormat = "csv";
 const DEFAULT_MAX_ROWS = 100;
-const DEFAULT_AUTO_DRY_RUN = true;
 const BQ_TIMEOUT_MS = 10 * 60 * 1000;
 const BQ_SCAN_APPROVAL_THRESHOLD_BYTES = 1_000_000_000_000n;
 const MAX_ERROR_CHARS = 20_000;
@@ -67,7 +66,6 @@ interface BqCaptureResult {
 interface BqFileResult {
 	code: number;
 	stderr: string;
-	stdoutTail: string;
 	outputBytes: number;
 	outputLineBreaks: number;
 	outputEndsWithNewline: boolean;
@@ -105,7 +103,7 @@ interface JobSummary {
 	message?: string;
 }
 
-type BqScanApprovalReason = "over_threshold" | "estimate_unknown" | null;
+type BqScanApprovalReason = "over_threshold" | "estimate_unknown" | "estimate_non_authoritative" | null;
 
 interface BqScanApprovalMetadata {
 	thresholdBytes: string;
@@ -410,7 +408,6 @@ function runBqToFile(
 		const child = spawn("bq", args, { cwd, stdio: ["pipe", "pipe", "pipe"] });
 		const output = fsSync.createWriteStream(outputPath, { flags: "wx", mode: 0o600 });
 		let stderr = "";
-		let stdoutTail = "";
 		let outputBytes = 0;
 		let outputLineBreaks = 0;
 		let outputEndsWithNewline = false;
@@ -433,7 +430,6 @@ function runBqToFile(
 				resolve({
 					code: closeCode ?? 1,
 					stderr,
-					stdoutTail,
 					outputBytes,
 					outputLineBreaks,
 					outputEndsWithNewline,
@@ -458,7 +454,6 @@ function runBqToFile(
 		child.stdout.on("data", (chunk: Buffer) => {
 			const text = chunk.toString("utf8");
 			outputBytes += chunk.length;
-			stdoutTail = appendLimited(stdoutTail, text);
 			outputLineBreaks += text.split("\n").length - 1;
 			outputEndsWithNewline = text.endsWith("\n");
 		});
@@ -616,9 +611,18 @@ function parseDryRunEstimatedBytes(value: string | null): bigint | null {
 	}
 }
 
-function buildScanApprovalMetadata(rawEstimatedBytes: string | null): BqScanApprovalMetadata {
+function isNonAuthoritativeDryRunStatementType(statementType: string | null): boolean {
+	const normalized = statementType?.trim().toUpperCase();
+	return normalized === "SCRIPT";
+}
+
+function buildScanApprovalMetadata(
+	rawEstimatedBytes: string | null,
+	statementType: string | null = null,
+): BqScanApprovalMetadata {
 	const thresholdBytes = BQ_SCAN_APPROVAL_THRESHOLD_BYTES.toString();
 	const estimatedBytes = parseDryRunEstimatedBytes(rawEstimatedBytes);
+	const estimateNonAuthoritative = isNonAuthoritativeDryRunStatementType(statementType);
 
 	if (estimatedBytes === null) {
 		return {
@@ -631,12 +635,13 @@ function buildScanApprovalMetadata(rawEstimatedBytes: string | null): BqScanAppr
 		};
 	}
 
-	const required = estimatedBytes > BQ_SCAN_APPROVAL_THRESHOLD_BYTES;
+	const overThreshold = estimatedBytes > BQ_SCAN_APPROVAL_THRESHOLD_BYTES;
+	const required = overThreshold || estimateNonAuthoritative;
 	return {
 		thresholdBytes,
 		estimatedBytes: estimatedBytes.toString(),
 		required,
-		reason: required ? "over_threshold" : null,
+		reason: overThreshold ? "over_threshold" : estimateNonAuthoritative ? "estimate_non_authoritative" : null,
 		approved: null,
 		granted: null,
 	};
@@ -657,29 +662,235 @@ function formatBytes(bytes: string | null): string {
 	return unit === "bytes" ? `${value} bytes` : `${scaled.toFixed(2)} ${unit}`;
 }
 
-function formatScanApprovalRequirement(approval: BqScanApprovalMetadata): string | null {
+function formatDecimalBytes(bytes: string | null): string {
+	if (!bytes) return "unknown";
+	const value = Number(bytes);
+	if (!Number.isFinite(value)) return `${bytes} bytes`;
+	const units = ["bytes", "KB", "MB", "GB", "TB", "PB"];
+	let scaled = value;
+	let unit = units[0] ?? "bytes";
+	for (const candidate of units) {
+		unit = candidate;
+		if (Math.abs(scaled) < 1000 || candidate === units[units.length - 1]) break;
+		scaled /= 1000;
+	}
+	return unit === "bytes" ? `${value} bytes` : `${scaled.toFixed(2)} ${unit}`;
+}
+
+function formatScanBytesWithRaw(bytes: string | null): string {
+	if (!bytes) return "unknown";
+	return `${formatDecimalBytes(bytes)} / ${bytes} bytes`;
+}
+
+function safeApprovalPromptValue(value: string | null, fallback: string): string {
+	if (!value) return fallback;
+	const sanitized = value
+		.replace(ANSI_ESCAPE_PATTERN, " ")
+		.replace(CONTROL_CHARS_PATTERN, " ")
+		.replace(/\s+/g, " ")
+		.trim();
+	return sanitized || fallback;
+}
+
+function withScanApprovalDecision(
+	approval: BqScanApprovalMetadata,
+	approved: boolean | null,
+	granted: boolean | null,
+): BqScanApprovalMetadata {
+	return { ...approval, approved, granted };
+}
+
+function formatNonAuthoritativeEstimateNote(statementType: string | null): string {
+	const statementTypeText = safeApprovalPromptValue(statementType, "");
+	return statementTypeText
+		? `dry-run estimate may be non-authoritative for statement type ${statementTypeText}`
+		: "dry-run estimate may be non-authoritative";
+}
+
+function formatScanApprovalRequirement(details: BqQueryDetails): string | null {
+	const approval = details.approval;
 	if (!approval.required) return null;
 
-	const threshold = `${approval.thresholdBytes} bytes (${formatBytes(approval.thresholdBytes)})`;
+	const threshold = formatScanBytesWithRaw(approval.thresholdBytes);
+	const nonAuthoritativeNote = isNonAuthoritativeDryRunStatementType(details.dryRun.statementType)
+		? `; ${formatNonAuthoritativeEstimateNote(details.dryRun.statementType)}`
+		: "";
+
 	if (approval.reason === "over_threshold") {
-		const estimate = approval.estimatedBytes
-			? `${approval.estimatedBytes} bytes (${formatBytes(approval.estimatedBytes)})`
-			: "unknown";
-		return `estimated scan ${estimate} exceeds approval threshold ${threshold}`;
+		const estimate = approval.estimatedBytes ? formatScanBytesWithRaw(approval.estimatedBytes) : "unknown";
+		return `estimated scan ${estimate} exceeds approval threshold ${threshold}${nonAuthoritativeNote}`;
 	}
 
 	if (approval.reason === "estimate_unknown") {
-		return `scan estimate is unknown; approval threshold is ${threshold}`;
+		return `scan estimate is unknown or unparseable${nonAuthoritativeNote}; approval threshold is ${threshold}`;
+	}
+
+	if (approval.reason === "estimate_non_authoritative") {
+		const estimate = approval.estimatedBytes ? formatScanBytesWithRaw(approval.estimatedBytes) : "unknown";
+		return `${formatNonAuthoritativeEstimateNote(details.dryRun.statementType)}; estimated scan ${estimate} may be incomplete; approval threshold is ${threshold}`;
 	}
 
 	return `approval threshold is ${threshold}`;
 }
 
+function formatScanApprovalStatus(details: BqQueryDetails): string {
+	const approval = details.approval;
+	const threshold = formatScanBytesWithRaw(approval.thresholdBytes);
+
+	if (!approval.required) {
+		const estimate = approval.estimatedBytes ? formatScanBytesWithRaw(approval.estimatedBytes) : "unknown";
+		return `Approval: not required; estimated scan ${estimate} is at or below threshold ${threshold}.`;
+	}
+
+	if (approval.reason === "estimate_unknown") {
+		const requirement =
+			formatScanApprovalRequirement(details) ??
+			`scan estimate is unknown or unparseable; approval threshold is ${threshold}`;
+		if (approval.granted === false) {
+			return `Approval: required but not granted; ${requirement}.`;
+		}
+		return `Approval: required before execution; ${requirement}.`;
+	}
+
+	const requirement = formatScanApprovalRequirement(details) ?? `approval threshold is ${threshold}`;
+	if (approval.reason === "over_threshold" || approval.reason === "estimate_non_authoritative") {
+		if (approval.approved === true && approval.granted === true) {
+			return `Approval: required and granted; ${requirement}.`;
+		}
+		if (approval.approved === false) return `Approval: required and declined; ${requirement}.`;
+		if (approval.granted === false) return `Approval: required but not granted; ${requirement}.`;
+		return `Approval: required before execution; ${requirement}.`;
+	}
+
+	if (approval.granted === false) {
+		return "Approval: required but not granted; approval requirement could not be determined.";
+	}
+	return "Approval: required before execution; approval requirement could not be determined.";
+}
+
+function buildScanApprovalPrompt(details: BqQueryDetails): string {
+	const lines = [
+		`TLDR: ${safeApprovalPromptValue(details.description, "unavailable")}`,
+		`SQL file: ${safeApprovalPromptValue(details.sqlPath, "unknown")}`,
+		`Project: ${safeApprovalPromptValue(details.projectId, "default")}`,
+		`Location: ${safeApprovalPromptValue(details.location, "default")}`,
+		`Estimated scan: ${formatScanBytesWithRaw(details.approval.estimatedBytes)}`,
+		`Approval threshold: ${formatScanBytesWithRaw(details.approval.thresholdBytes)}`,
+		`Output format: ${details.outputFormat}`,
+		`Max rows: ${details.maxRows}`,
+	];
+	if (details.dryRun.statementType) {
+		lines.push(`Statement type: ${safeApprovalPromptValue(details.dryRun.statementType, "unknown")}`);
+	}
+	const requirement = formatScanApprovalRequirement(details);
+	if (requirement) lines.push(`Approval requirement: ${requirement}.`);
+	lines.push("Note: maxRows limits returned rows, not scanned bytes.");
+	return lines.join("\n");
+}
+
+function buildApprovalGateFailureText(details: BqQueryDetails, headline: string): string {
+	const lines = [headline];
+	if (details.description) lines.push(`Description: ${details.description}`);
+	lines.push(
+		`SQL file: ${details.sqlPath}`,
+		`Dry-run job ID: ${details.dryRun.jobId ?? "unknown"}`,
+		`Estimated scan: ${formatScanBytesWithRaw(details.approval.estimatedBytes)}`,
+	);
+	if (details.dryRun.statementType) {
+		lines.push(`Statement type: ${safeApprovalPromptValue(details.dryRun.statementType, "unknown")}`);
+	}
+	lines.push(formatScanApprovalStatus(details));
+	if (details.dryRun.message) lines.push(`Dry-run note: ${details.dryRun.message}`);
+	return lines.join("\n");
+}
+
+async function evaluateScanApproval(
+	details: BqQueryDetails,
+	ctx: ExtensionContext,
+	signal: AbortSignal | undefined,
+): Promise<BqToolResult | null> {
+	const approval = details.approval;
+
+	if (!approval.required) {
+		details.approval = withScanApprovalDecision(approval, null, true);
+		return null;
+	}
+
+	if (approval.reason === "estimate_unknown") {
+		details.approval = withScanApprovalDecision(approval, null, false);
+		return {
+			isError: true,
+			details,
+			content: [
+				{
+					type: "text",
+					text: buildApprovalGateFailureText(
+						details,
+						"BigQuery execution blocked; dry-run scan estimate was missing or unparseable, so execution was not attempted.",
+					),
+				},
+			],
+		};
+	}
+
+	if (approval.reason === "over_threshold" || approval.reason === "estimate_non_authoritative") {
+		if (!ctx.hasUI) {
+			details.approval = withScanApprovalDecision(approval, null, false);
+			return {
+				isError: true,
+				details,
+				content: [
+					{
+						type: "text",
+						text: buildApprovalGateFailureText(
+							details,
+							"BigQuery execution blocked; interactive approval is unavailable, so execution was not attempted.",
+						),
+					},
+				],
+			};
+		}
+
+		const approved = await ctx.ui.confirm("Approve BigQuery execution?", buildScanApprovalPrompt(details), { signal });
+		if (!approved) {
+			details.approval = withScanApprovalDecision(details.approval, false, false);
+			return {
+				isError: true,
+				details,
+				content: [
+					{
+						type: "text",
+						text: buildApprovalGateFailureText(
+							details,
+							"BigQuery execution declined by user; execution was not attempted.",
+						),
+					},
+				],
+			};
+		}
+
+		details.approval = withScanApprovalDecision(details.approval, true, true);
+		return null;
+	}
+
+	details.approval = withScanApprovalDecision(approval, null, false);
+	return {
+		isError: true,
+		details,
+		content: [
+			{
+				type: "text",
+				text: buildApprovalGateFailureText(
+					details,
+					"BigQuery execution blocked; approval requirement could not be determined, so execution was not attempted.",
+				),
+			},
+		],
+	};
+}
+
 function diagnosticText(result: BqCaptureResult | BqFileResult): string {
-	const stderr = result.stderr.trim();
-	if (stderr) return stderr;
-	if ("stdoutTail" in result) return result.stdoutTail.trim();
-	return result.stdout.trim().slice(-MAX_ERROR_CHARS);
+	return result.stderr.trim();
 }
 
 function formatProcessFailure(result: BqCaptureResult | BqFileResult, fallback: string): string {
@@ -700,17 +911,19 @@ function buildDryRunText(details: BqQueryDetails): string {
 	const lines = ["BigQuery dry run passed."];
 	if (details.description) lines.push(`Description: ${details.description}`);
 	lines.push(
-		`SQL: ${details.sqlPath}`,
+		`SQL file: ${details.sqlPath}`,
 		`Dry-run job ID: ${details.dryRun.jobId ?? "unknown"}`,
-		`Estimated bytes: ${formatBytes(details.dryRun.estimatedBytes)}`,
+		`Estimated scan: ${formatScanBytesWithRaw(details.dryRun.estimatedBytes)}`,
 	);
 	if (details.projectId) lines.push(`Project: ${details.projectId}`);
 	if (details.location) lines.push(`Location: ${details.location}`);
-	if (details.dryRun.statementType) lines.push(`Statement type: ${details.dryRun.statementType}`);
+	if (details.dryRun.statementType) {
+		lines.push(`Statement type: ${safeApprovalPromptValue(details.dryRun.statementType, "unknown")}`);
+	}
 	if (details.dryRun.schemaFieldCount !== null) {
 		lines.push(`Schema fields: ${details.dryRun.schemaFieldCount}`);
 	}
-	const approvalRequirement = formatScanApprovalRequirement(details.approval);
+	const approvalRequirement = formatScanApprovalRequirement(details);
 	if (approvalRequirement) lines.push(`Approval would be required before execution: ${approvalRequirement}.`);
 	if (details.dryRun.message) lines.push(`Dry-run note: ${details.dryRun.message}`);
 	return lines.join("\n");
@@ -720,7 +933,7 @@ function buildSuccessText(details: BqQueryDetails, outputBytes: number): string 
 	const lines = ["BigQuery query complete."];
 	if (details.description) lines.push(`Description: ${details.description}`);
 	lines.push(
-		`SQL: ${details.sqlPath}`,
+		`SQL file: ${details.sqlPath}`,
 		`Job ID: ${details.jobId}`,
 		`Output: ${details.outputPath}`,
 		`Output bytes: ${outputBytes}`,
@@ -732,17 +945,16 @@ function buildSuccessText(details: BqQueryDetails, outputBytes: number): string 
 	if (details.location) lines.push(`Location: ${details.location}`);
 
 	if (details.dryRun.ran) {
-		lines.push(`Dry run: passed; estimated bytes ${formatBytes(details.dryRun.estimatedBytes)}`);
-		if (details.dryRun.statementType) lines.push(`Statement type: ${details.dryRun.statementType}`);
+		lines.push(`Dry run: passed; estimated scan ${formatScanBytesWithRaw(details.dryRun.estimatedBytes)}`);
+		if (details.dryRun.statementType) {
+			lines.push(`Statement type: ${safeApprovalPromptValue(details.dryRun.statementType, "unknown")}`);
+		}
 		if (details.dryRun.message) lines.push(`Dry-run note: ${details.dryRun.message}`);
 	} else {
 		lines.push("Dry run: skipped");
 	}
 
-	const approvalRequirement = formatScanApprovalRequirement(details.approval);
-	if (approvalRequirement) {
-		lines.push(`Approval would have been required before execution (not enforced yet): ${approvalRequirement}.`);
-	}
+	lines.push(formatScanApprovalStatus(details));
 
 	if (details.job?.fetched) {
 		if (details.job.state) lines.push(`Job state: ${details.job.state}`);
@@ -819,7 +1031,7 @@ export function registerBqQueryTool(pi: ExtensionAPI): void {
 		promptSnippet: "Run BigQuery SQL from a .sql file with a short TLDR and save result rows to scratch space",
 		parameters: BqQueryParams,
 
-		async execute(_id, params, signal, _onUpdate, _ctx): Promise<BqToolResult> {
+		async execute(_id, params, signal, _onUpdate, ctx): Promise<BqToolResult> {
 			let description: string | null = null;
 			let sqlPath = "";
 			let jobId = "";
@@ -839,7 +1051,6 @@ export function registerBqQueryTool(pi: ExtensionAPI): void {
 				const outputFormat = params.outputFormat ?? config.default_output_format ?? DEFAULT_OUTPUT_FORMAT;
 				const maxRows = validateMaxRows(params.maxRows ?? config.default_max_rows ?? DEFAULT_MAX_ROWS);
 				const dryRunOnly = params.dryRun === true;
-				const shouldPreflight = dryRunOnly || (config.auto_dry_run ?? DEFAULT_AUTO_DRY_RUN);
 
 				const effectiveCwd = getEffectiveCwd();
 				const projectSqlRoot = state.worktreeDir ?? state.repoRoot;
@@ -873,43 +1084,41 @@ export function registerBqQueryTool(pi: ExtensionAPI): void {
 					job: null,
 				};
 
-				if (shouldPreflight) {
-					const dryRun = await runBqCapture(
-						buildQueryArgs({
-							format: "json",
-							projectId,
-							location,
-							jobId: dryRunJobId,
-							dryRun: true,
-						}),
-						sql,
-						effectiveCwd,
-						signal,
-					);
+				const dryRun = await runBqCapture(
+					buildQueryArgs({
+						format: "json",
+						projectId,
+						location,
+						jobId: dryRunJobId,
+						dryRun: true,
+					}),
+					sql,
+					effectiveCwd,
+					signal,
+				);
 
-					if (dryRun.code !== 0) {
-						details.dryRun = { ...emptyDryRun(), ran: true, jobId: dryRunJobId };
-						details.approval = buildScanApprovalMetadata(details.dryRun.estimatedBytes);
-						details.diagnosticPath = await writeDiagnostic(
-							outputDir,
-							dryRunJobId,
-							formatProcessFailure(dryRun, "Unknown dry-run failure"),
-						);
-						return {
-							isError: true,
-							details,
-							content: [
-								{
-									type: "text",
-									text: `BigQuery dry-run failed; execution was not attempted. Diagnostics: ${details.diagnosticPath}`,
-								},
-							],
-						};
-					}
-
-					details.dryRun = summarizeDryRun(dryRunJobId, dryRun.stdout);
+				if (dryRun.code !== 0) {
+					details.dryRun = { ...emptyDryRun(), ran: true, jobId: dryRunJobId };
 					details.approval = buildScanApprovalMetadata(details.dryRun.estimatedBytes);
+					details.diagnosticPath = await writeDiagnostic(
+						outputDir,
+						dryRunJobId,
+						formatProcessFailure(dryRun, "Unknown dry-run failure"),
+					);
+					return {
+						isError: true,
+						details,
+						content: [
+							{
+								type: "text",
+								text: `BigQuery dry-run failed; execution was not attempted. Diagnostics: ${details.diagnosticPath}`,
+							},
+						],
+					};
 				}
+
+				details.dryRun = summarizeDryRun(dryRunJobId, dryRun.stdout);
+				details.approval = buildScanApprovalMetadata(details.dryRun.estimatedBytes, details.dryRun.statementType);
 
 				if (dryRunOnly) {
 					return {
@@ -917,6 +1126,9 @@ export function registerBqQueryTool(pi: ExtensionAPI): void {
 						content: [{ type: "text", text: buildDryRunText(details) }],
 					};
 				}
+
+				const approvalFailure = await evaluateScanApproval(details, ctx, signal);
+				if (approvalFailure) return approvalFailure;
 
 				if (!outputPath) throw new Error("Internal error: missing BigQuery output path.");
 
