@@ -1,6 +1,6 @@
 ---
 name: pull-request
-description: "Prepare a GitHub pull request: review branch changes, verify readiness, draft a PR title/body, and submit through pr_publish when an active publish workflow is available."
+description: "Prepare a pull request: review branch changes, verify readiness, and draft a clear PR title/body."
 ---
 
 # Pull Request
@@ -20,9 +20,11 @@ If the current session already provided these values, use them. Otherwise, deriv
 
 ## Publication Rule
 
-`pr_publish` is the only path for publishing the PR title and description. Do not update the PR title or body through shell commands.
+`publish_pr` is the only path for publishing the PR title and description. Do not update the PR title or body through shell commands.
 
-`pr_publish` requires active Basecamp PR workflow state. If publication is requested but no active workflow exists, ask the user to start the publish workflow with `/create-pr` so Basecamp can create or select the draft PR and enable reviewed publishing. You can still review changes and draft the title/body before that workflow is active.
+`publish_pr` requires active Basecamp PR workflow state. If publication is requested but no active workflow exists, ask the user to start the publish workflow with `/create-pr` so Basecamp can create or select the draft PR and enable reviewed publishing. You can still review changes and draft the title/body before that workflow is active.
+
+If `publish_pr` is not available in your tool list (for example in a subagent), do not try to publish via shell. Write the drafted title/body to a temporary or scratch markdown file when file writes are available, and report the file path back to the parent/user. If file writes are not available, include the draft title/body in your response/report instead.
 
 ## Review Changes
 
@@ -112,4 +114,4 @@ URL form: `{url}/blob/{hash}/{path}#L10-L25`, for example: ``[`path/file.py#L10-
 
 ## Submit for Review
 
-When active PR publish workflow state is available, call `pr_publish` with the drafted title and body. If the user provides feedback, revise the title/body and call `pr_publish` again.
+When active PR publish workflow state is available and `publish_pr` is available, call `publish_pr` with the drafted title and body. If the user provides feedback, revise the title/body and call `publish_pr` again. If `publish_pr` is unavailable, follow the fallback in the Publication Rule.

@@ -47,7 +47,7 @@ const GH_ALLOW: RegExp[] = [
 // Workflow state
 // ---------------------------------------------------------------------------
 
-/** Active PR workflow — set by /create-pr, read by pr_publish tool. */
+/** Active PR workflow — set by /create-pr, read by publish_pr tool. */
 export let activePR: { number: string; base: string } | null = null;
 
 export function setActivePR(pr: { number: string; base: string }): void {

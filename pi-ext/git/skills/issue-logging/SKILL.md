@@ -1,6 +1,6 @@
 ---
 name: issue-logging
-description: "Prepare a GitHub issue: investigate a topic, draft issue markdown, and submit through issue_publish when an active publish workflow is available."
+description: "Log a GitHub issue: investigate a topic, check for duplicates, and draft a clear issue report."
 ---
 
 # Issue Logging
@@ -21,9 +21,11 @@ If the current session already provided a topic and draft path, use them. Otherw
 
 ## Publication Rule
 
-`issue_publish` is the only path for creating the GitHub issue. Do not create or mutate GitHub issues through shell commands.
+`publish_issue` is the only path for creating the GitHub issue. Do not create or mutate GitHub issues through shell commands.
 
-`issue_publish` requires active Basecamp issue workflow state and its draft path. If publication is requested but no active workflow or draft path exists, ask the user to start the publish workflow with `/create-issue <topic>` so Basecamp can allocate the draft path and enable reviewed publishing. You can still investigate and draft issue content before that workflow is active.
+`publish_issue` requires active Basecamp issue workflow state and its draft path. If publication is requested but no active workflow or draft path exists, ask the user to start the publish workflow with `/create-issue <topic>` so Basecamp can allocate the draft path and enable reviewed publishing. You can still investigate and draft issue content before that workflow is active.
+
+If `publish_issue` is not available in your tool list (for example in a subagent), do not try to publish via shell. Write the publishable issue draft to a temporary or scratch markdown file when file writes are available, and report the file path back to the parent/user. If an active draft path was explicitly provided for this workflow, use that path instead of inventing another one. If file writes are not available, include the draft in your response/report instead.
 
 ## Investigate
 
@@ -67,4 +69,4 @@ Rules:
 
 ## Submit for Review
 
-When active issue publish workflow state and a draft path are available, call `issue_publish` with the draft path. If the user provides feedback, edit the same draft file and call `issue_publish` again.
+When active issue publish workflow state and a draft path are available and `publish_issue` is available, call `publish_issue` with the draft path. If the user provides feedback, edit the same draft file and call `publish_issue` again. If `publish_issue` is unavailable, follow the fallback in the Publication Rule.

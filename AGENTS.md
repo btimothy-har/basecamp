@@ -78,7 +78,7 @@ pi-ext/                         # Pi extension package
 │   ├── agents/builtin/         # Built-in agent definitions
 │   └── skills/                 # agents + planning skills
 ├── git/
-│   ├── src/                    # Git guards, PR workflow commands, pr_publish tool
+│   ├── src/                    # Git guards, PR/issue workflow commands, publish tools
 │   └── resources/              # PR workflow prompt templates
 ├── observer/
 │   ├── src/                    # Observer integration (session ingest trigger)

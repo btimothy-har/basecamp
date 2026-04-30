@@ -1,5 +1,5 @@
 /**
- * pr_publish tool — lets the LLM submit a PR description for user review
+ * publish_pr tool — lets the LLM submit a PR description for user review
  * via a read-only overlay with feedback support, then publishes to GitHub.
  *
  * Gated behind /create-pr: only works when activePR is set.
@@ -16,7 +16,7 @@ import { getScratchDir } from "./utils";
 
 export function registerTool(pi: ExtensionAPI): void {
 	pi.registerTool({
-		name: "pr_publish",
+		name: "publish_pr",
 		label: "Publish PR",
 		description:
 			"Submit a PR title and description for user review. User can approve to publish, " +
@@ -47,7 +47,7 @@ export function registerTool(pi: ExtensionAPI): void {
 					content: [
 						{
 							type: "text",
-							text: `User feedback on PR description:\n\n${result.text}\n\nRevise the PR description based on this feedback and call pr_publish again.`,
+							text: `User feedback on PR description:\n\n${result.text}\n\nRevise the PR description based on this feedback and call publish_pr again.`,
 						},
 					],
 					details: null,

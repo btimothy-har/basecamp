@@ -8,8 +8,8 @@ import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { hasInvokedSkill } from "../../platform/skill-tracker";
 
 function requiredSkillForTool(toolName: string): "pull-request" | "issue-logging" | null {
-	if (toolName === "pr_publish") return "pull-request";
-	if (toolName === "issue_publish") return "issue-logging";
+	if (toolName === "publish_pr") return "pull-request";
+	if (toolName === "publish_issue") return "issue-logging";
 	return null;
 }
 

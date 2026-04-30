@@ -1,5 +1,5 @@
 /**
- * issue_publish tool — publishes a file-backed GitHub issue draft after review.
+ * publish_issue tool — publishes a file-backed GitHub issue draft after review.
  */
 
 import * as crypto from "node:crypto";
@@ -299,7 +299,7 @@ function createBodyFile(cwd: string, body: string): string {
 
 export function registerIssueTool(pi: ExtensionAPI): void {
 	pi.registerTool({
-		name: "issue_publish",
+		name: "publish_issue",
 		label: "Publish Issue",
 		description:
 			"Submit the markdown issue draft created by /create-issue for user review. User can approve to publish, " +
@@ -318,11 +318,11 @@ export function registerIssueTool(pi: ExtensionAPI): void {
 			}
 
 			if (!ctx.hasUI) {
-				throw new Error("issue_publish requires an interactive UI. Run /create-issue in an interactive session.");
+				throw new Error("publish_issue requires an interactive UI. Run /create-issue in an interactive session.");
 			}
 
 			if (pi.getFlag("read-only") === true) {
-				throw new Error("issue_publish is disabled in read-only mode.");
+				throw new Error("publish_issue is disabled in read-only mode.");
 			}
 
 			const draftPath = validateDraftPath(params.draftPath, draft.draftPath, ctx.cwd);
@@ -364,7 +364,7 @@ export function registerIssueTool(pi: ExtensionAPI): void {
 					content: [
 						{
 							type: "text",
-							text: `User feedback on issue draft:\n\n${review.text}\n\nEdit the same draft file at ${draftPath}, then call issue_publish again with the same draftPath.`,
+							text: `User feedback on issue draft:\n\n${review.text}\n\nEdit the same draft file at ${draftPath}, then call publish_issue again with the same draftPath.`,
 						},
 					],
 					details: null,
