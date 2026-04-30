@@ -5,7 +5,7 @@ description: "Log a GitHub issue: investigate a topic, check for duplicates, and
 
 # Issue Logging
 
-Prepare a GitHub issue for review. Start from whatever context is available: the user's request, the current conversation, code investigation, logs, docs, or handoff details already provided.
+Prepare a GitHub issue for review. Describe the problem to be solved, not the solution to implement. Start from whatever context is available: the user's request, the current conversation, code investigation, logs, docs, or handoff details already provided.
 
 ## Context
 
@@ -14,7 +14,7 @@ Establish the issue context before drafting:
 - Issue topic or problem statement
 - Observed behavior and expected behavior
 - Reproduction steps or concrete examples, when available
-- Scope, impact, environment, and related context
+- Scope, impact, environment, evidence, and related context
 - Draft path, if one is already provided
 
 If the current session already provided a topic and draft path, use them. Otherwise, investigate first and ask the user for missing essentials instead of inventing details.
@@ -29,12 +29,13 @@ If the user wants the issue published and the workflow is not active, ask them t
 
 ## Investigate
 
-Understand the topic before drafting:
+Understand the problem before drafting:
 
 - Inspect relevant code, docs, tests, logs, or prior conversation context.
 - Identify the user-facing problem, expected behavior, observed behavior, and likely scope.
-- Collect concrete reproduction steps or examples when available.
-- Note uncertainty explicitly instead of inventing details.
+- Collect concrete reproduction steps, examples, error messages, or affected paths when available.
+- Separate evidence from hypotheses; label uncertainty explicitly instead of inventing details.
+- Avoid prescribing the implementation. Mention possible causes or solution ideas only when they are factual context, explicitly requested, or clearly labeled as non-binding.
 
 ## Check GitHub Context
 
@@ -65,7 +66,9 @@ Rules:
 - All remaining content is the issue body.
 - Do not include frontmatter or wrapper text outside the issue draft.
 - Follow the repository's issue template when one applies.
-- Include sections that fit the topic, such as summary, steps to reproduce, expected behavior, actual behavior, impact, environment, acceptance criteria, and related context.
+- Frame the issue around the problem, evidence, impact, and desired behavior.
+- Do not mandate implementation details, architecture, libraries, or specific code changes unless the user explicitly asked for that solution.
+- Include sections that fit the topic, such as summary, steps to reproduce, expected behavior, actual behavior, impact, environment, evidence, related context, and outcome-focused acceptance criteria.
 
 ## Submit for Review
 
