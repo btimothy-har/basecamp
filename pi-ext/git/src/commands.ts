@@ -1,17 +1,22 @@
 /**
  * Git commands — PR workflow commands.
  *
- *   /pull-request [base]          — create/find draft PR, review, describe, publish
- *   /pr-comments [number]         — synthesize review findings, post as PR comments
+ *   /pull-request [base]            — create/find draft PR, review, describe, publish
+ *   /log-issue [topic]              — draft and publish a GitHub issue through review
+ *   /pr-comments [number]           — synthesize review findings, post as PR comments
  *   /pr-walkthrough [number] [base] — interactive step-by-step walkthrough
  */
 
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { exec } from "../../platform/exec";
-import { setActivePR, unlocked } from "./guards";
-import { getScratchDir, loadTemplate, resolvePrNumber } from "./utils";
+import { setActiveIssueDraft, setActivePR, unlocked } from "./guards";
+import { createIssueDraftPath, getScratchDir, loadTemplate, resolvePrNumber } from "./utils";
 
 type PushResult = "pushed" | "up-to-date" | "cancelled" | "diverged" | "failed";
+
+function errorMessage(error: unknown): string {
+	return error instanceof Error ? error.message : String(error);
+}
 
 async function ensurePushed(pi: ExtensionAPI, branchName: string, ctx: any): Promise<PushResult> {
 	const upstream = await exec(pi, "git", ["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"]);
@@ -120,6 +125,35 @@ export function registerCommands(pi: ExtensionAPI): void {
 
 			setActivePR({ number: prNumber, base });
 			pi.sendUserMessage(loadTemplate("pull-request", { PR_NUMBER: prNumber, BASE: base, CONTEXT: context }));
+		},
+	});
+
+	// --- /log-issue [topic] ---
+	pi.registerCommand("log-issue", {
+		description: "Drafts and publishes a GitHub issue through review",
+		handler: async (args, ctx) => {
+			const topicArg = args?.trim();
+			const topic = topicArg || (ctx.hasUI ? (await ctx.ui.input("Issue topic", ""))?.trim() : undefined);
+
+			if (!topic) {
+				ctx.ui.notify(
+					ctx.hasUI ? "Issue topic required. Usage: /log-issue <topic>" : "Usage: /log-issue <topic>",
+					"error",
+				);
+				return;
+			}
+
+			let draftPath: string;
+			try {
+				draftPath = createIssueDraftPath(ctx.cwd);
+			} catch (error) {
+				ctx.ui.notify(`Failed to prepare issue draft directory: ${errorMessage(error)}`, "error");
+				return;
+			}
+
+			setActiveIssueDraft({ draftPath, topic });
+			ctx.ui.notify(`Drafting GitHub issue: ${topic}`, "info");
+			pi.sendUserMessage(loadTemplate("log-issue", { TOPIC: topic, DRAFT_PATH: draftPath }));
 		},
 	});
 
