@@ -11,6 +11,7 @@ import type { AssistantMessage, TextContent, ToolCall, ToolResultMessage, UserMe
 import type { ExtensionAPI, ExtensionContext, SessionEntry, Theme } from "@mariozechner/pi-coding-agent";
 import { visibleWidth } from "@mariozechner/pi-tui";
 import { getPiCommand, resolveModelAlias } from "../../../platform/config.ts";
+import { getEffectiveCwd } from "../runtime/session";
 
 // ============================================================================
 // Background Title Extraction
@@ -269,7 +270,7 @@ export function registerTitle(pi: ExtensionAPI): void {
 		}
 		if (!conversation.trim()) return;
 
-		extractTitle(conversation, agentCtx.cwd, agentCtx.model?.id)
+		extractTitle(conversation, getEffectiveCwd(), agentCtx.model?.id)
 			.then((extracted) => {
 				if (controller.signal.aborted) return;
 				if (extracted) {

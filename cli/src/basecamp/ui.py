@@ -35,15 +35,17 @@ def display_projects(projects: dict[str, ProjectConfig]) -> None:
     table = Table(title="Available Projects", show_header=True, header_style="bold cyan")
     table.add_column("Project", style="green")
     table.add_column("Description")
-    table.add_column("Primary Directory", style="blue")
+    table.add_column("Repo Root", style="blue")
+    table.add_column("Additional Dirs", style="dim")
     table.add_column("Working Style", style="dim")
 
     for name, project in projects.items():
-        primary_dir = project.dirs[0] if project.dirs else "-"
+        additional_dirs = "\n".join(project.additional_dirs) if project.additional_dirs else "-"
         table.add_row(
             name,
             project.description or "-",
-            primary_dir,
+            project.repo_root,
+            additional_dirs,
             project.working_style or "-",
         )
 

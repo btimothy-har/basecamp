@@ -74,13 +74,12 @@ def _prompt_project_fields(
         return None
     name = name.strip()
 
-    # Primary directory
-    primary = _prompt_directory("Primary directory:")
-    if primary is None:
+    repo_root_input = _prompt_directory("Repository root:")
+    if repo_root_input is None:
         return None
-    dirs = [_to_relative(primary)]
+    repo_root = _to_relative(repo_root_input)
 
-    # Additional directories
+    additional_dirs: list[str] = []
     while True:
         add_more = questionary.confirm(
             "Add another directory?",
@@ -93,9 +92,8 @@ def _prompt_project_fields(
         extra = _prompt_directory("Additional directory:")
         if extra is None:
             return None
-        dirs.append(_to_relative(extra))
+        additional_dirs.append(_to_relative(extra))
 
-    # Working style
     style_choices = ["none", *_available_styles()]
     working_style = questionary.select(
         "Working style:",
@@ -107,14 +105,12 @@ def _prompt_project_fields(
     if working_style == "none":
         working_style = None
 
-    # Description
     description = questionary.text(
         "Description (optional):",
     ).ask()
     if description is None:
         return None
 
-    # Context file (resolves to ~/.pi/context/{name}.md)
     context_files = _available_contexts()
     context: str | None = None
     if context_files:
@@ -132,7 +128,8 @@ def _prompt_project_fields(
         console.print(f"  [dim]No context files found in {USER_CONTEXT_DIR}/[/dim]")
 
     project = ProjectConfig(
-        dirs=dirs,
+        repo_root=repo_root,
+        additional_dirs=additional_dirs,
         description=description.strip(),
         working_style=working_style,
         context=context,
@@ -172,26 +169,23 @@ def _prompt_edit_fields(existing: ProjectConfig) -> ProjectConfig | None:
 
     Returns updated ProjectConfig or None if the user cancelled.
     """
-    # Primary directory
-    dir_default = f"~/{existing.dirs[0]}" if existing.dirs else "~/"
-    primary = _prompt_directory("Primary directory:", default=dir_default)
-    if primary is None:
+    root_default = f"~/{existing.repo_root}" if existing.repo_root else "~/"
+    repo_root_input = _prompt_directory("Repository root:", default=root_default)
+    if repo_root_input is None:
         return None
-    dirs = [_to_relative(primary)]
+    repo_root = _to_relative(repo_root_input)
 
-    # Keep existing additional directories
-    if len(existing.dirs) > 1:
-        for d in existing.dirs[1:]:
-            keep = questionary.confirm(
-                f"Keep additional directory ~/{d}?",
-                default=True,
-            ).ask()
-            if keep is None:
-                return None
-            if keep:
-                dirs.append(d)
+    additional_dirs: list[str] = []
+    for directory in existing.additional_dirs:
+        keep = questionary.confirm(
+            f"Keep additional directory ~/{directory}?",
+            default=True,
+        ).ask()
+        if keep is None:
+            return None
+        if keep:
+            additional_dirs.append(directory)
 
-    # Add more directories
     while True:
         add_more = questionary.confirm(
             "Add another directory?",
@@ -204,9 +198,8 @@ def _prompt_edit_fields(existing: ProjectConfig) -> ProjectConfig | None:
         extra = _prompt_directory("Additional directory:")
         if extra is None:
             return None
-        dirs.append(_to_relative(extra))
+        additional_dirs.append(_to_relative(extra))
 
-    # Working style
     style_choices = ["none", *_available_styles()]
     style_default = existing.working_style if existing.working_style else "none"
     working_style = questionary.select(
@@ -219,7 +212,6 @@ def _prompt_edit_fields(existing: ProjectConfig) -> ProjectConfig | None:
     if working_style == "none":
         working_style = None
 
-    # Description
     description = questionary.text(
         "Description (optional):",
         default=existing.description,
@@ -227,7 +219,6 @@ def _prompt_edit_fields(existing: ProjectConfig) -> ProjectConfig | None:
     if description is None:
         return None
 
-    # Context file (resolves to ~/.pi/context/{name}.md)
     context_files = _available_contexts()
     context: str | None = None
     if context_files:
@@ -246,7 +237,8 @@ def _prompt_edit_fields(existing: ProjectConfig) -> ProjectConfig | None:
         console.print(f"  [dim]No context files found in {USER_CONTEXT_DIR}/[/dim]")
 
     return ProjectConfig(
-        dirs=dirs,
+        repo_root=repo_root,
+        additional_dirs=additional_dirs,
         description=description.strip(),
         working_style=working_style,
         context=context,

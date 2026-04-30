@@ -439,7 +439,9 @@ Available named agents are basecamp builtin definitions. Ad-hoc dispatch is sync
 			const agentLabel = params.agent ?? "ad-hoc";
 			const extensionTools = getBasecampExtensionToolNames(pi);
 			const runKind = getAgentRunKind(agentConfig);
-			const worktreeDir = getState().worktreeDir;
+			const state = getState();
+			const worktreeDir = state.worktreeDir;
+			const spawnCwd = state.launchCwd;
 
 			if (runKind === "mutative" && !worktreeDir) {
 				return {
@@ -493,7 +495,7 @@ Available named agents are basecamp builtin definitions. Ad-hoc dispatch is sync
 					asyncResult = spawnAsyncAgent(agentConfig!, params.task, {
 						name,
 						model,
-						cwd: ctx.cwd,
+						cwd: spawnCwd,
 						worktreeDir,
 						env,
 						sessionDir,
@@ -581,7 +583,7 @@ Available named agents are basecamp builtin definitions. Ad-hoc dispatch is sync
 				let result = await spawnAgent(
 					agentConfig,
 					params.task,
-					{ name, model, cwd: ctx.cwd, worktreeDir, env, sessionDir, extensionTools, onEvent },
+					{ name, model, cwd: spawnCwd, worktreeDir, env, sessionDir, extensionTools, onEvent },
 					signal,
 				);
 
@@ -602,7 +604,7 @@ Available named agents are basecamp builtin definitions. Ad-hoc dispatch is sync
 						{
 							name,
 							model: undefined,
-							cwd: ctx.cwd,
+							cwd: spawnCwd,
 							worktreeDir,
 							env,
 							sessionDir: retrySessionDir,

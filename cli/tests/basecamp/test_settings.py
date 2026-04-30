@@ -52,12 +52,12 @@ class TestProperties:
         assert cfg.projects == {}
 
     def test_projects_set_and_get(self, cfg: Settings) -> None:
-        projects = {"myproj": {"dirs": ["~/myproj"]}}
+        projects = {"myproj": {"repo_root": "myproj", "additional_dirs": []}}
         cfg.projects = projects
         assert cfg.projects == projects
 
     def test_install_dir_preserves_projects(self, cfg: Settings) -> None:
-        projects = {"myproj": {"dirs": ["~/myproj"]}}
+        projects = {"myproj": {"repo_root": "myproj", "additional_dirs": []}}
         cfg.projects = projects
         cfg.install_dir = "/tmp/ws"
 
@@ -67,11 +67,11 @@ class TestProperties:
 
     def test_projects_preserves_install_dir(self, cfg: Settings) -> None:
         cfg.install_dir = "/tmp/ws"
-        cfg.projects = {"myproj": {"dirs": ["~/myproj"]}}
+        cfg.projects = {"myproj": {"repo_root": "myproj", "additional_dirs": []}}
 
         data = json.loads(cfg.path.read_text())
         assert data["install_dir"] == "/tmp/ws"
-        assert data["projects"]["myproj"] == {"dirs": ["~/myproj"]}
+        assert data["projects"]["myproj"] == {"repo_root": "myproj", "additional_dirs": []}
 
     def test_logseq_graph_empty(self, cfg: Settings) -> None:
         assert cfg.logseq_graph is None
@@ -82,12 +82,12 @@ class TestProperties:
 
     def test_logseq_graph_preserves_other_settings(self, cfg: Settings) -> None:
         cfg.install_dir = "/tmp/ws"
-        cfg.projects = {"proj": {"dirs": ["~/proj"]}}
+        cfg.projects = {"proj": {"repo_root": "proj", "additional_dirs": []}}
         cfg.logseq_graph = "Documents/brain"
 
         data = json.loads(cfg.path.read_text())
         assert data["install_dir"] == "/tmp/ws"
-        assert data["projects"] == {"proj": {"dirs": ["~/proj"]}}
+        assert data["projects"] == {"proj": {"repo_root": "proj", "additional_dirs": []}}
         assert data["logseq_graph"] == "Documents/brain"
 
     def test_timezone_empty(self, cfg: Settings) -> None:
@@ -145,6 +145,138 @@ class TestProperties:
         assert "bigquery" not in json.loads(cfg.path.read_text())
 
 
+class TestProjectDirsMigration:
+    """Legacy dirs-to-repo-root migration."""
+
+    def test_migrate_legacy_project_dirs(self, cfg: Settings) -> None:
+        cfg._write(
+            {
+                "install_dir": "/tmp/ws",
+                "projects": {
+                    "demo": {
+                        "dirs": ["src/demo", "src/shared"],
+                        "description": "Demo",
+                    },
+                },
+            }
+        )
+
+        assert cfg.migrate_project_dirs() is True
+        assert cfg.migrate_project_dirs() is False
+
+        data = json.loads(cfg.path.read_text())
+        assert data["install_dir"] == "/tmp/ws"
+        assert data["projects"]["demo"] == {
+            "repo_root": "src/demo",
+            "additional_dirs": ["src/shared"],
+            "description": "Demo",
+        }
+
+    def test_projects_getter_migrates_legacy_project_dirs(self, cfg: Settings) -> None:
+        cfg._write({"projects": {"demo": {"dirs": ["src/demo", "src/shared"]}}})
+
+        assert cfg.projects == {
+            "demo": {
+                "repo_root": "src/demo",
+                "additional_dirs": ["src/shared"],
+            }
+        }
+
+        data = json.loads(cfg.path.read_text())
+        assert "dirs" not in data["projects"]["demo"]
+
+    def test_migrate_noops_for_new_project_schema(self, cfg: Settings) -> None:
+        cfg._write(
+            {
+                "projects": {
+                    "demo": {
+                        "repo_root": "src/demo",
+                        "additional_dirs": ["src/shared"],
+                    },
+                },
+            }
+        )
+        before = cfg.path.read_text()
+
+        assert cfg.migrate_project_dirs() is False
+        assert cfg.path.read_text() == before
+
+    def test_migrate_leaves_empty_legacy_dirs_untouched(self, cfg: Settings) -> None:
+        cfg._write({"projects": {"demo": {"dirs": []}}})
+        before = cfg.path.read_text()
+
+        assert cfg.migrate_project_dirs() is False
+        assert cfg.path.read_text() == before
+
+    def test_projects_setter_migrates_legacy_project_dirs(self, cfg: Settings) -> None:
+        cfg.projects = {"demo": {"dirs": ["src/demo", "src/shared"]}}
+
+        assert cfg.projects == {
+            "demo": {
+                "repo_root": "src/demo",
+                "additional_dirs": ["src/shared"],
+            }
+        }
+
+    def test_migrate_preserves_explicit_new_fields(self, cfg: Settings) -> None:
+        cfg._write(
+            {
+                "projects": {
+                    "demo": {
+                        "repo_root": "src/demo",
+                        "additional_dirs": ["src/explicit"],
+                        "dirs": ["src/legacy", "src/legacy-extra"],
+                    },
+                },
+            }
+        )
+
+        assert cfg.migrate_project_dirs() is True
+
+        data = json.loads(cfg.path.read_text())
+        assert data["projects"]["demo"] == {
+            "repo_root": "src/demo",
+            "additional_dirs": ["src/explicit"],
+        }
+
+
+class TestProjectConfigSchema:
+    """Project config schema serialization."""
+
+    def test_save_and_load_projects_uses_repo_root_schema(
+        self,
+        cfg: Settings,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        monkeypatch.setattr(project_config, "settings", cfg)
+
+        project_config.save_projects(
+            {
+                "demo": project_config.ProjectConfig(
+                    repo_root="src/demo",
+                    additional_dirs=["src/shared"],
+                    description="Demo",
+                ),
+            },
+        )
+
+        data = json.loads(cfg.path.read_text())
+        assert "dirs" not in data["projects"]["demo"]
+        assert data["projects"]["demo"]["repo_root"] == "src/demo"
+        assert data["projects"]["demo"]["additional_dirs"] == ["src/shared"]
+
+        loaded = project_config.load_projects()
+        assert loaded["demo"].repo_root == "src/demo"
+        assert loaded["demo"].additional_dirs == ["src/shared"]
+
+    def test_project_config_rejects_legacy_dirs(self) -> None:
+        with pytest.raises(ValidationError):
+            project_config.ProjectConfig(
+                repo_root="src/demo",
+                dirs=["src/demo"],
+            )
+
+
 class TestProjectBigQueryConfig:
     """Project-level BigQuery config serialization."""
 
@@ -166,7 +298,7 @@ class TestProjectBigQueryConfig:
         project_config.save_projects(
             {
                 "demo": project_config.ProjectConfig(
-                    dirs=["src/demo"],
+                    repo_root="src/demo",
                     description="Demo",
                     bigquery=bigquery,
                 ),
@@ -193,7 +325,7 @@ class TestProjectBigQueryConfig:
     ) -> None:
         monkeypatch.setattr(project_config, "settings", cfg)
 
-        project_config.save_projects({"demo": project_config.ProjectConfig(dirs=["src/demo"])})
+        project_config.save_projects({"demo": project_config.ProjectConfig(repo_root="src/demo")})
 
         data = json.loads(cfg.path.read_text())
         assert "bigquery" not in data["projects"]["demo"]
@@ -212,7 +344,7 @@ class TestProjectBigQueryConfig:
         project_config.save_projects(
             {
                 "demo": project_config.ProjectConfig(
-                    dirs=["src/demo"],
+                    repo_root="src/demo",
                     bigquery=bigquery,
                 ),
             },
@@ -242,11 +374,11 @@ class TestLocking:
 
     def test_sequential_updates_preserved(self, cfg: Settings) -> None:
         cfg.install_dir = "/tmp/ws"
-        cfg.projects = {"proj": {"dirs": ["~/proj"]}}
+        cfg.projects = {"proj": {"repo_root": "proj", "additional_dirs": []}}
 
         data = json.loads(cfg.path.read_text())
         assert data["install_dir"] == "/tmp/ws"
-        assert data["projects"] == {"proj": {"dirs": ["~/proj"]}}
+        assert data["projects"] == {"proj": {"repo_root": "proj", "additional_dirs": []}}
 
     def test_path_returns_configured_path(self, cfg: Settings) -> None:
         assert cfg.path.name == "config.json"

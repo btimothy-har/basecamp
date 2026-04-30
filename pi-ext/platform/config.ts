@@ -1,7 +1,7 @@
 /**
  * Config — reads ~/.pi/basecamp/config.json and resolves project state.
  *
- * The config file is managed by the Python CLI (basecamp project add/edit/remove).
+ * The config file is managed by the Python CLI's `basecamp config` menu.
  * This module is read-only — it never writes to config.json.
  */
 
@@ -25,7 +25,8 @@ export interface BigQueryConfig {
 }
 
 export interface ProjectConfig {
-	dirs: string[];
+	repo_root: string;
+	additional_dirs: string[];
 	description?: string;
 	working_style?: string | null;
 	context?: string | null;
@@ -44,17 +45,19 @@ export interface BasecampConfig {
 }
 
 export interface SessionState {
-	/** Project name (from --project flag), or null for unprojected sessions */
+	/** Detected project name, or null for unprojected sessions */
 	projectName: string | null;
 	/** Resolved project config, or null for unprojected sessions */
 	project: ProjectConfig | null;
-	/** Protected primary checkout directory — project dirs[0] or ctx.cwd */
-	primaryDir: string;
-	/** Secondary project directories (dirs[1..]) */
-	secondaryDirs: string[];
+	/** Directory Pi was launched from */
+	launchCwd: string;
+	/** Git repository root / protected checkout (launch cwd for non-repo sessions) */
+	repoRoot: string;
+	/** Additional project directories */
+	additionalDirs: string[];
 	/** Git repo name (from toplevel dirname) */
 	repoName: string;
-	/** Whether primaryDir is inside a git repo */
+	/** Whether launchCwd is inside a git repo */
 	isRepo: boolean;
 	/** Git remote URL */
 	remoteUrl: string | null;
@@ -70,6 +73,8 @@ export interface SessionState {
 	worktreeBranch: string | null;
 	/** Project context file content (cached), or null */
 	contextContent: string | null;
+	/** Non-fatal project detection warnings to surface at session start */
+	projectWarnings: string[];
 }
 
 // ---------------------------------------------------------------------------
@@ -152,20 +157,48 @@ export function getWorktreeBranchPrefix(): string {
 // ---------------------------------------------------------------------------
 
 /** Resolve a home-relative dir (as stored in config) to absolute path. */
-function resolveDir(dir: string): string {
+export function resolveConfigDir(dir: string): string {
+	if (dir === "~") return os.homedir();
+	if (dir.startsWith("~/")) return path.join(os.homedir(), dir.slice(2));
 	if (path.isAbsolute(dir)) return dir;
 	return path.join(os.homedir(), dir);
 }
 
 /** Validate and resolve project dirs. Returns only dirs that exist. */
-function resolveDirs(dirs: string[]): string[] {
-	return dirs.map(resolveDir).filter((d) => {
+function resolveExistingDirs(dirs: string[]): string[] {
+	return dirs.map(resolveConfigDir).filter((d) => {
 		try {
 			return fs.statSync(d).isDirectory();
 		} catch {
 			return false;
 		}
 	});
+}
+
+function projectAdditionalDirs(project: ProjectConfig): string[] {
+	return Array.isArray(project.additional_dirs) ? project.additional_dirs : [];
+}
+
+/** Resolve a project's repository root and additional directories. */
+export function resolveProjectDirectories(project: ProjectConfig): string[] {
+	return [resolveConfigDir(project.repo_root), ...resolveExistingDirs(projectAdditionalDirs(project))];
+}
+
+export function isPathWithin(child: string, parent: string): boolean {
+	const relative = path.relative(parent, child);
+	return relative === "" || (!!relative && !relative.startsWith("..") && !path.isAbsolute(relative));
+}
+
+/** Compute the cwd tools should use for the current session state. */
+export function getSessionEffectiveCwd(state: SessionState): string {
+	if (!state.worktreeDir) return state.launchCwd;
+
+	if (isPathWithin(state.launchCwd, state.repoRoot)) {
+		const relative = path.relative(state.repoRoot, state.launchCwd);
+		return path.resolve(state.worktreeDir, relative);
+	}
+
+	return state.worktreeDir;
 }
 
 // ---------------------------------------------------------------------------
@@ -186,54 +219,90 @@ function loadContextFile(contextName: string): string | null {
 // ---------------------------------------------------------------------------
 
 export interface ResolveOptions {
-	projectName: string | null;
-	cwd: string;
+	launchCwd: string;
+	repoRoot: string;
 	repoName: string;
 	isRepo: boolean;
 	remoteUrl: string | null;
 	styleOverride?: string;
 }
 
-export function resolveSessionState(opts: ResolveOptions): SessionState {
-	const { projectName, cwd, repoName, isRepo, remoteUrl, styleOverride } = opts;
+interface ProjectDetection {
+	projectName: string | null;
+	project: ProjectConfig | null;
+	warnings: string[];
+}
 
-	let project: ProjectConfig | null = null;
-	let primaryDir = cwd;
-	let secondaryDirs: string[] = [];
+function detectProjectByRepoRoot(repoRoot: string, isRepo: boolean): ProjectDetection {
+	if (!isRepo) return { projectName: null, project: null, warnings: [] };
+
+	const target = path.resolve(repoRoot);
+	const projects = readConfig().projects ?? {};
+	const matches: Array<[string, ProjectConfig]> = [];
+
+	for (const [name, project] of Object.entries(projects)) {
+		if (!project || typeof project.repo_root !== "string" || !project.repo_root.trim()) continue;
+		const configuredRoot = path.resolve(resolveConfigDir(project.repo_root));
+		if (configuredRoot === target) {
+			matches.push([name, project]);
+		}
+	}
+
+	if (matches.length === 1) {
+		const [projectName, project] = matches[0]!;
+		return { projectName, project, warnings: [] };
+	}
+
+	if (matches.length > 1) {
+		return {
+			projectName: null,
+			project: null,
+			warnings: [
+				`Project detection ambiguous: repo_root ${target} is configured for ${matches
+					.map(([name]) => name)
+					.join(", ")}; session is unprojected.`,
+			],
+		};
+	}
+
+	return { projectName: null, project: null, warnings: [] };
+}
+
+export function resolveSessionState(opts: ResolveOptions): SessionState {
+	const launchCwd = path.resolve(opts.launchCwd);
+	const repoRoot = path.resolve(opts.repoRoot);
+	const { repoName, isRepo, remoteUrl, styleOverride } = opts;
+
+	const detection = detectProjectByRepoRoot(repoRoot, isRepo);
+	const project = detection.project;
+	const projectName = detection.projectName;
+	let additionalDirs: string[] = [];
 	let workingStyle = "engineering";
 	let contextContent: string | null = null;
 
-	if (projectName) {
-		const config = readConfig();
-		project = config.projects?.[projectName] ?? null;
-
-		if (project) {
-			const resolved = resolveDirs(project.dirs);
-			if (resolved.length > 0 && resolved[0]) {
-				primaryDir = resolved[0];
-				secondaryDirs = resolved.slice(1);
-			}
-			if (project.working_style) {
-				workingStyle = project.working_style;
-			}
-			if (project.context) {
-				contextContent = loadContextFile(project.context);
-			}
+	if (project) {
+		additionalDirs = resolveExistingDirs(projectAdditionalDirs(project));
+		if (project.working_style) {
+			workingStyle = project.working_style;
+		}
+		if (project.context) {
+			contextContent = loadContextFile(project.context);
 		}
 	}
 
 	// Override style if --style flag was passed
-	if (styleOverride) {
-		workingStyle = styleOverride;
+	if (styleOverride?.trim()) {
+		workingStyle = styleOverride.trim();
 	}
 
-	const scratchDir = path.join("/tmp/pi", repoName || path.basename(primaryDir));
+	const scratchDir = path.join("/tmp/pi", repoName || path.basename(repoRoot));
 
 	return {
 		projectName,
 		project,
-		primaryDir,
-		secondaryDirs,
+		launchCwd,
+		repoRoot,
+		additionalDirs,
 		repoName,
 		isRepo,
 		remoteUrl,
@@ -243,5 +312,6 @@ export function resolveSessionState(opts: ResolveOptions): SessionState {
 		worktreeLabel: null,
 		worktreeBranch: null,
 		contextContent,
+		projectWarnings: detection.warnings,
 	};
 }

@@ -2,9 +2,8 @@
 
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
-from basecamp.exceptions import ProjectNotFoundError
 from basecamp.settings import settings
 
 
@@ -24,29 +23,14 @@ class BigQueryConfig(BaseModel):
 class ProjectConfig(BaseModel):
     """Configuration for a single project."""
 
-    dirs: list[str]
+    model_config = ConfigDict(extra="forbid")
+
+    repo_root: str
+    additional_dirs: list[str] = Field(default_factory=list)
     description: str = ""
     working_style: str | None = None
     context: str | None = None
     bigquery: BigQueryConfig | None = None
-
-
-def resolve_project(project_name: str, projects: dict[str, ProjectConfig]) -> ProjectConfig:
-    """Resolve a project name to its configuration.
-
-    Args:
-        project_name: The project name to resolve.
-        projects: Dict of project name → config.
-
-    Returns:
-        The ProjectConfig for the requested project.
-
-    Raises:
-        ProjectNotFoundError: If the project is not found.
-    """
-    if project_name in projects:
-        return projects[project_name]
-    raise ProjectNotFoundError(project_name, list(projects.keys()))
 
 
 def load_projects() -> dict[str, ProjectConfig]:

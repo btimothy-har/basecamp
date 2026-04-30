@@ -2,35 +2,34 @@
 
 ## What is basecamp
 
-A multi-project workspace launcher for AI coding agents. Configures project directories, manages isolated git worktrees, and provides semantic memory over past sessions.
+A project-aware Pi extension for AI coding agents. Configures project context, manages isolated git worktrees, and provides semantic memory over past sessions.
 
-Two packages, one pi extension:
+One Python package, one Pi extension:
 
 | Package | Directory | Purpose |
 |---------|-----------|---------|
-| `basecamp-core` | `core/` | CLI tool — project config and setup |
-| `basecamp-observer` | `observer/` | Semantic memory — session ingestion, LLM extraction, vector search, `recall` CLI |
+| `basecamp` | `cli/` | CLI tools for setup/config, observer ingestion, semantic search, and `recall` |
 
-See `core/AGENTS.md` and `observer/AGENTS.md` for package-specific architecture and decisions.
+Package-specific architecture lives in the repo map below.
 
 ## Repo Map
 
 ```
-core/src/core/
-├── main.py                     # Click entry point (setup, project commands)
+cli/src/basecamp/
+├── main.py                     # Click entry point (setup, config)
 ├── cli/
-│   ├── project.py              # Interactive project CRUD
+│   ├── project.py              # Interactive project CRUD used by config menu
 │   └── setup.py                # Environment setup (prerequisites, scaffolding)
 ├── config/
 │   ├── project.py              # ProjectConfig Pydantic model, load/save
-│   └── directories.py          # Directory resolution and validation
-├── settings.py                 # File-backed config with locking
+│   └── directories.py          # Directory storage helpers
+├── settings.py                 # File-backed config with locking + migrations
 ├── constants.py                # Path constants
 ├── exceptions.py               # Exception hierarchy
 ├── ui.py                       # Console output helpers
 └── utils.py                    # Shared utilities
 
-observer/src/observer/
+cli/src/observer/
 ├── cli/
 │   ├── observer.py             # Click entry point (db, setup, ingest, reprocess)
 │   └── recall.py               # Click entry point — recall CLI for semantic search
@@ -86,7 +85,7 @@ pi-ext/                         # Pi extension package
 │   └── skills/                 # recall skill
 └── engineering/                # Engineering prompts + skills (code review, Python, marimo, SQL, data warehousing)
 
-core/tests/                     # pytest suite for basecamp-core
+cli/tests/                      # pytest suite for basecamp CLI and observer
 ```
 
 ## Architecture Decisions
@@ -109,17 +108,17 @@ Session launch sets `BASECAMP_*` env vars on `process.env`. Subagents spawned vi
 
 ### Worktree Design
 
-Worktrees live in `~/.worktrees/<repo>/<label>/` rather than inside the repo to avoid polluting project directories. Git is the source of truth for worktree registration (`git worktree list --porcelain`); Basecamp does not maintain a parallel metadata registry. Sessions start in the protected checkout, approved implementation plans activate a worktree inside the Pi session, resumed/reloaded/forked sessions restore their last active worktree when still in the same repo, and `/worktree [label]` can switch to an existing Git-registered worktree after session resume.
+Worktrees live in `~/.worktrees/<repo>/<label>/` rather than inside the repo to avoid polluting project directories. Git is the source of truth for worktree registration (`git worktree list --porcelain`); Basecamp does not maintain a parallel metadata registry. Sessions are launched with plain `pi` from a repository or subdirectory; Basecamp detects the configured repo root, approved implementation plans activate a worktree inside the Pi session, resumed/reloaded/forked sessions restore their last active worktree when still in the same repo, and `/worktree [label]` can switch to an existing Git-registered worktree after session resume.
 
 ## Development
 
 - **Python**: 3.12+, managed with `uv`
-- **Install (dev)**: `uv run install.py -e` (editable mode for both packages)
+- **Install (dev)**: `uv run install.py -e` (editable mode)
 - **Lint**: `uv run ruff check` / `uv run ruff format`
 
 ### Testing
 
 - **Run**: `uv run pytest` from repo root
-- **Config**: root `pyproject.toml` — `testpaths = ["core/tests"]`, `pythonpath = ["core/src"]`
-- **Core tests** cover settings and config. `TESTING=1` is set by pytest config.
-- **Observer tests** are in `observer/tests/` (not currently run from root pytest config). Core tests don't depend on observer.
+- **Config**: root `pyproject.toml` — `testpaths = ["cli/tests"]`, `pythonpath = ["cli/src"]`
+- **Basecamp tests** cover settings and config. `TESTING=1` is set by pytest config.
+- **Observer tests** live under `cli/tests/observer/` and run from the root pytest config.

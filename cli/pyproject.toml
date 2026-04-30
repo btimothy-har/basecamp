@@ -16,7 +16,6 @@ dependencies = [
 
 [project.scripts]
 basecamp = "basecamp.main:basecamp"
-bpi = "basecamp.main:bpi"
 observer = "basecamp.cli.observer:main"
 recall = "basecamp.cli.recall:main"
 

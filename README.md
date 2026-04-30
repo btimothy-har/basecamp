@@ -1,12 +1,12 @@
 # basecamp
 
-Multi-project workspace launcher for AI coding agents. Configures project directories, manages isolated git worktrees, and provides semantic memory over past sessions.
+Project-aware Pi extension for AI coding agents. Configures project context, manages isolated git worktrees, and provides semantic memory over past sessions.
 
 ```bash
 git clone https://github.com/btimothy-har/basecamp.git
 cd basecamp && uv run install.py
 basecamp setup
-bpi basecamp
+pi
 ```
 
 ## Why basecamp?
@@ -17,11 +17,11 @@ When working with AI coding agents across multiple projects, you face friction:
 - **Branch conflicts** — Parallel conversations on the same repo compete for the working directory
 - **Repetitive setup** — Re-configuring directories and prompts for each session
 
-basecamp solves this with a pi extension that:
+basecamp solves this with a Pi extension that:
 
 1. **Replaces the default system prompt** — Full control over behavior, consistency across sessions, tailored to your workflow
-2. **Configures project context** — Loads project-specific prompts and working styles automatically
-3. **Supports isolated worktrees** — Planning starts in the protected checkout; approved implementation work activates a labeled worktree
+2. **Configures project context** — Detects configured projects from the repo you launch Pi in and loads project-specific prompts automatically
+3. **Supports isolated worktrees** — Planning starts in the protected repo root; approved implementation work activates a labeled worktree
 4. **Manages multi-repo projects** — Groups related repositories under one project definition
 
 ## Installation
@@ -36,7 +36,7 @@ uv run install.py -e        # editable (recommended for development)
 uv run install.py --no-editable
 ```
 
-This installs two tools (`basecamp` and `observer`) and saves the install directory to `~/.pi/basecamp/config.json`.
+This installs `basecamp`, `observer`, and `recall`, registers the Pi extension, and saves the install directory to `~/.pi/basecamp/config.json`.
 
 Then initialize the environment:
 
@@ -44,7 +44,7 @@ Then initialize the environment:
 basecamp setup                     # check prerequisites, scaffold dirs, create default config
 ```
 
-If `basecamp` or `observer` aren't in your PATH:
+If `basecamp`, `observer`, or `recall` aren't in your PATH:
 
 ```bash
 export PATH="$HOME/.local/bin:$PATH"
@@ -53,35 +53,42 @@ export PATH="$HOME/.local/bin:$PATH"
 ### Upgrading
 
 ```bash
-uv tool upgrade basecamp-core && uv tool upgrade basecamp-observer
+uv tool upgrade basecamp
 ```
 
 ### Uninstalling
 
 ```bash
-uv tool uninstall basecamp-core && uv tool uninstall basecamp-observer
+uv tool uninstall basecamp
 ```
 
 ## Usage
 
 ### Launching Sessions
 
-Sessions are launched through basecamp/pi in the protected primary checkout. Worktrees are selected later, when an implementation plan is approved.
+Launch sessions with plain Pi from the repo or subdirectory you want to work in. Basecamp detects the git repository root and loads the matching project when its `repo_root` is configured.
 
 ```bash
-bpi <project>             # Launch in project's primary directory
-bpi .                     # Launch in the current git repo
-bpi <project> --style eng # Override working style
+cd ~/GitHub/web-app
+pi                         # Detects project by repo_root
+
+cd ~/GitHub/web-app/src/api
+pi                         # Also detects the same project from the git root
+
+pi --style advisor         # Optional working style override
 ```
+
+If the launch cwd's git root does not match a configured `repo_root`, Basecamp starts an unprojected Pi session.
 
 ### Managing Projects
 
+Project configuration is managed through the interactive menu:
+
 ```bash
-basecamp project list                    # List available projects
-basecamp project add                     # Interactively add a new project
-basecamp project edit <name>             # Interactively edit a project
-basecamp project remove <name>           # Remove a project
+basecamp config
 ```
+
+Use the **Projects** section to list, add, edit, or remove configured projects.
 
 ### Slash Commands (in-session)
 
@@ -114,12 +121,14 @@ Projects are defined in `~/.pi/basecamp/config.json`:
 {
   "projects": {
     "web-app": {
-      "dirs": ["GitHub/web-app"],
+      "repo_root": "GitHub/web-app",
+      "additional_dirs": [],
       "description": "Main web application",
       "working_style": "engineering"
     },
     "data-pipeline": {
-      "dirs": ["GitHub/pipeline", "GitHub/pipeline-config"],
+      "repo_root": "GitHub/pipeline",
+      "additional_dirs": ["GitHub/pipeline-config"],
       "description": "ETL pipeline and configuration",
       "working_style": "engineering",
       "context": "pipeline"
@@ -130,10 +139,13 @@ Projects are defined in `~/.pi/basecamp/config.json`:
 
 | Field | Required | Description |
 |-------|----------|-------------|
-| `dirs` | Yes | Paths relative to `$HOME`. First is primary (cwd), rest are additional context |
-| `description` | No | Shown in `basecamp project list` |
+| `repo_root` | Yes | Path relative to `$HOME` for the git repository root used to detect the project |
+| `additional_dirs` | No | Extra project directories included in prompt context and allowed file roots |
+| `description` | No | Shown in `basecamp config` project listings |
 | `working_style` | No | Loads matching working style prompt (see below) |
 | `context` | No | Loads `~/.pi/context/{name}.md` for project context |
+
+The install/setup/config flows migrate legacy `dirs` entries to `repo_root` and `additional_dirs` locally.
 
 ## Prompt System
 
@@ -183,24 +195,24 @@ Single-repo projects typically use `AGENTS.md` in the repo itself.
 
 ## Git Worktrees
 
-Basecamp starts sessions in the protected primary checkout for planning and discovery. When an implementation plan is approved, Basecamp prompts for an execution worktree using existing worktrees plus a suggested label derived from the plan goal.
+Before a worktree is active, the effective working directory is where you launched Pi; the repository root is the protected checkout boundary for tool guards. When an implementation plan is approved, Basecamp prompts for an execution worktree using existing worktrees plus a suggested label derived from the plan goal.
 
 Worktrees live in `~/.worktrees/<repo>/<label>/` with branches named `wt/<label>` by default. Git is the source of truth for worktree registration; Basecamp does not maintain a separate metadata registry.
 
 - The protected checkout must be on the default branch with a clean working tree before activation
 - Implementation edits happen in the active worktree, not the protected checkout
-- Relative file-tool paths target the active worktree after activation
+- Relative file-tool paths target the active worktree after activation, preserving the launch subdirectory when applicable
 - `--worktree-dir` is an internal attach-only Pi flag for existing Git-registered worktrees; it does not create worktrees
 - Resumed/reloaded/forked sessions restore their last active worktree when still in the same repo
 - `/worktree [label]` switches the active worktree during a resumed session
 - `/open` in-session opens the active worktree directory in VS Code
 - Use native Git commands (`git worktree list`, `git worktree remove`) to inspect or clean up worktrees
-- Secondary directories stay on their configured checkouts throughout the session
+- Additional directories stay on their configured checkouts throughout the session
 - Only works with git repositories
 
 ## Semantic Memory (Observer)
 
-basecamp-observer provides semantic memory across sessions. It ingests session transcripts, extracts structured knowledge via LLM, and makes it searchable.
+The `observer` CLI provides semantic memory across sessions. It ingests session transcripts, extracts structured knowledge via LLM, and makes it searchable.
 
 ### How it works
 
