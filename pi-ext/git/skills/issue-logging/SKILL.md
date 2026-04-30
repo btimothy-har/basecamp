@@ -5,7 +5,7 @@ description: "Log a GitHub issue: investigate a topic, check for duplicates, and
 
 # Issue Logging
 
-Prepare a GitHub issue for user-reviewed publication. Work from any context already available: an active issue workflow handoff, the current conversation, code investigation, logs, docs, or the user's request.
+Prepare a GitHub issue for review. Start from whatever context is available: the user's request, the current conversation, code investigation, logs, docs, or handoff details already provided.
 
 ## Context
 
@@ -15,17 +15,17 @@ Establish the issue context before drafting:
 - Observed behavior and expected behavior
 - Reproduction steps or concrete examples, when available
 - Scope, impact, environment, and related context
-- Draft path, when an active issue publish workflow provides one
+- Draft path, if one is already provided
 
 If the current session already provided a topic and draft path, use them. Otherwise, investigate first and ask the user for missing essentials instead of inventing details.
 
 ## Publication Rule
 
-`publish_issue` is the only path for creating the GitHub issue. Do not create or mutate GitHub issues through shell commands.
+`publish_issue` is the only agent path for creating the GitHub issue. Do not create or mutate GitHub issues through shell commands.
 
-`publish_issue` requires active Basecamp issue workflow state and its draft path. If publication is requested but no active workflow or draft path exists, ask the user to start the publish workflow with `/create-issue <topic>` so Basecamp can allocate the draft path and enable reviewed publishing. You can still investigate and draft issue content before that workflow is active.
+If `publish_issue` is unavailable or reports that no issue workflow/draft path is active, do not work around it. If a draft path was provided, write the publishable issue draft there. Otherwise, save it to a temporary or scratch markdown file when your tools allow file writes, and report the file path back to the parent/user. If file writes are not available, include the draft in your response/report instead.
 
-If `publish_issue` is not available in your tool list (for example in a subagent), do not try to publish via shell. Write the publishable issue draft to a temporary or scratch markdown file when file writes are available, and report the file path back to the parent/user. If an active draft path was explicitly provided for this workflow, use that path instead of inventing another one. If file writes are not available, include the draft in your response/report instead.
+If the user wants the issue published and the workflow is not active, ask them to start `/create-issue <topic>` in the primary session.
 
 ## Investigate
 
@@ -48,7 +48,7 @@ If useful, check whether the repository has issue templates. GitHub commonly sto
 
 ## Draft the Issue
 
-When a draft path is available, write the issue draft to exactly that path and nowhere else. If no draft path is available yet, keep the draft in the conversation or a scratch note until an issue publish workflow provides one.
+When a draft path is available, write the issue draft to exactly that path and nowhere else. If no draft path is available yet, keep the draft in the conversation or save it to a temporary/scratch markdown file when your tools allow file writes.
 
 Use this markdown contract for the publishable draft:
 
@@ -69,4 +69,4 @@ Rules:
 
 ## Submit for Review
 
-When active issue publish workflow state and a draft path are available and `publish_issue` is available, call `publish_issue` with the draft path. If the user provides feedback, edit the same draft file and call `publish_issue` again. If `publish_issue` is unavailable, follow the fallback in the Publication Rule.
+When `publish_issue` is available and a draft path is ready, call `publish_issue` with the draft path. If the user provides feedback, edit the same draft file and call `publish_issue` again. If `publish_issue` is unavailable or blocked, follow the fallback in the Publication Rule.

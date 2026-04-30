@@ -5,7 +5,7 @@ description: "Prepare a pull request: review branch changes, verify readiness, a
 
 # Pull Request
 
-Prepare a pull request for user-reviewed publication. Work from any context already available: an active PR workflow handoff, the current branch, an existing PR, or the user's request.
+Prepare a pull request for review. Start from whatever context is available: the user's request, the current conversation, the current branch, an existing PR, or handoff details already provided.
 
 ## Context
 
@@ -13,18 +13,18 @@ Establish the PR context before drafting:
 
 - Current branch or PR branch
 - Base branch
-- PR number, when an active draft PR already exists
+- PR number, when one is already known
 - User review context, constraints, linked issues, or release notes
 
 If the current session already provided these values, use them. Otherwise, derive what you can from git and read-only GitHub commands. If a required value is missing or ambiguous, ask the user instead of guessing.
 
 ## Publication Rule
 
-`publish_pr` is the only path for publishing the PR title and description. Do not update the PR title or body through shell commands.
+`publish_pr` is the only agent path for updating the PR title and description. Do not update PR metadata through shell commands.
 
-`publish_pr` requires active Basecamp PR workflow state. If publication is requested but no active workflow exists, ask the user to start the publish workflow with `/create-pr` so Basecamp can create or select the draft PR and enable reviewed publishing. You can still review changes and draft the title/body before that workflow is active.
+If `publish_pr` is unavailable or reports that no PR workflow is active, do not work around it. Save the drafted title/body to a temporary or scratch markdown file when your tools allow file writes, and report the file path back to the parent/user. If file writes are not available, include the draft title/body in your response/report instead.
 
-If `publish_pr` is not available in your tool list (for example in a subagent), do not try to publish via shell. Write the drafted title/body to a temporary or scratch markdown file when file writes are available, and report the file path back to the parent/user. If file writes are not available, include the draft title/body in your response/report instead.
+If the user wants the PR published and the workflow is not active, ask them to start `/create-pr` in the primary session.
 
 ## Review Changes
 
@@ -114,4 +114,4 @@ URL form: `{url}/blob/{hash}/{path}#L10-L25`, for example: ``[`path/file.py#L10-
 
 ## Submit for Review
 
-When active PR publish workflow state is available and `publish_pr` is available, call `publish_pr` with the drafted title and body. If the user provides feedback, revise the title/body and call `publish_pr` again. If `publish_pr` is unavailable, follow the fallback in the Publication Rule.
+When `publish_pr` is available, call it with the drafted title and body. If the user provides feedback, revise the title/body and call `publish_pr` again. If `publish_pr` is unavailable or blocked, follow the fallback in the Publication Rule.
