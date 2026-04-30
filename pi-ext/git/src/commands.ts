@@ -1,8 +1,8 @@
 /**
  * Git commands — PR, issue, and git workflow commands.
  *
- *   /pull-request [base]            — create/find draft PR, review, describe, publish
- *   /log-issue [topic]              — draft and publish a GitHub issue through review
+ *   /create-pr [base]               — create/find draft PR, review, describe, publish
+ *   /create-issue [topic]           — draft and publish a GitHub issue through review
  *   /pr-comments [number]           — synthesize review findings, post as PR comments
  *   /pr-walkthrough [number] [base] — interactive step-by-step walkthrough
  */
@@ -53,9 +53,9 @@ async function ensurePushed(pi: ExtensionAPI, branchName: string, ctx: any): Pro
 }
 
 export function registerCommands(pi: ExtensionAPI): void {
-	// --- /pull-request [base] ---
-	pi.registerCommand("pull-request", {
-		description: "Review and publish a pull request",
+	// --- /create-pr [base] ---
+	pi.registerCommand("create-pr", {
+		description: "Create, review, and publish a pull request",
 		handler: async (args, ctx) => {
 			const base = args?.trim() || "main";
 
@@ -67,10 +67,10 @@ export function registerCommands(pi: ExtensionAPI): void {
 			}
 
 			// Collect context upfront before any git operations
-			let context = "";
+			let reviewContext = "";
 			if (await ctx.ui.confirm("Add context?", "Add review context for this PR?")) {
 				const input = await ctx.ui.input("PR context", "");
-				context = input ? `\n**Review context:** ${input}\n` : "";
+				reviewContext = input || "";
 			}
 
 			const existing = await exec(pi, "gh", ["pr", "list", "--head", branchName, "--json", "number,url", "-q", ".[0]"]);
@@ -124,21 +124,29 @@ export function registerCommands(pi: ExtensionAPI): void {
 			}
 
 			setActivePR({ number: prNumber, base });
-			pi.sendUserMessage(loadTemplate("pull-request", { PR_NUMBER: prNumber, BASE: base, CONTEXT: context }));
+			const reviewContextLine = reviewContext ? `\n- Review context: ${reviewContext}` : "";
+			pi.sendUserMessage(`Continue the /create-pr workflow.
+
+Runtime context:
+- PR number: ${prNumber}
+- Base branch: ${base}
+- Current branch: ${branchName}${reviewContextLine}
+
+First call skill({ name: "create-pr" }) before continuing. Then use the runtime context to proceed.`);
 		},
 	});
 
-	// --- /log-issue [topic] ---
-	pi.registerCommand("log-issue", {
-		description: "Drafts and publishes a GitHub issue through review",
+	// --- /create-issue [topic] ---
+	pi.registerCommand("create-issue", {
+		description: "Draft and publish a GitHub issue through review",
 		handler: async (args, ctx) => {
 			if (!ctx.hasUI) {
-				ctx.ui.notify("/log-issue requires an interactive UI. Run it from an interactive session.", "error");
+				ctx.ui.notify("/create-issue requires an interactive UI. Run it from an interactive session.", "error");
 				return;
 			}
 
 			if (pi.getFlag("read-only") === true) {
-				ctx.ui.notify("/log-issue is disabled in read-only mode.", "error");
+				ctx.ui.notify("/create-issue is disabled in read-only mode.", "error");
 				return;
 			}
 
@@ -154,7 +162,7 @@ export function registerCommands(pi: ExtensionAPI): void {
 			const topic = topicArg || (await ctx.ui.input("Issue topic", ""))?.trim();
 
 			if (!topic) {
-				ctx.ui.notify("Issue topic required. Usage: /log-issue <topic>", "error");
+				ctx.ui.notify("Issue topic required. Usage: /create-issue <topic>", "error");
 				return;
 			}
 
@@ -168,7 +176,13 @@ export function registerCommands(pi: ExtensionAPI): void {
 
 			setActiveIssueDraft({ draftPath, topic });
 			ctx.ui.notify(`Drafting GitHub issue: ${topic}`, "info");
-			pi.sendUserMessage(loadTemplate("log-issue", { TOPIC: topic, DRAFT_PATH: draftPath }));
+			pi.sendUserMessage(`Continue the /create-issue workflow.
+
+Runtime context:
+- Topic: ${topic}
+- Draft path: ${draftPath}
+
+First call skill({ name: "create-issue" }) before continuing. Then use the runtime context to proceed.`);
 		},
 	});
 
