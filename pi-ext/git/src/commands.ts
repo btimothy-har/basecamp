@@ -1,7 +1,7 @@
 /**
  * Git commands — PR, issue, and git workflow commands.
  *
- *   /create-pr [base]               — create/find draft PR, review, describe, publish
+ *   /create-pr [context]            — create/find draft PR, review, describe, publish
  *   /create-issue [topic]           — draft and publish a GitHub issue through review
  *   /pr-comments [number]           — synthesize review findings, post as PR comments
  *   /pr-walkthrough [number] [base] — interactive step-by-step walkthrough
@@ -53,24 +53,19 @@ async function ensurePushed(pi: ExtensionAPI, branchName: string, ctx: any): Pro
 }
 
 export function registerCommands(pi: ExtensionAPI): void {
-	// --- /create-pr [base] ---
+	// --- /create-pr [context] ---
 	pi.registerCommand("create-pr", {
 		description: "Create, review, and publish a pull request",
 		handler: async (args, ctx) => {
-			const base = args?.trim() || "main";
+			const reviewContext = args?.trim() || "";
+			const baseInput = (await ctx.ui.input("Base branch", "main"))?.trim();
+			const base = baseInput || "main";
 
 			const branch = await exec(pi, "git", ["branch", "--show-current"]);
 			const branchName = branch.stdout.trim();
 			if (!branchName) {
 				ctx.ui.notify("Not on a branch — cannot create PR", "error");
 				return;
-			}
-
-			// Collect context upfront before any git operations
-			let reviewContext = "";
-			if (await ctx.ui.confirm("Add context?", "Add review context for this PR?")) {
-				const input = await ctx.ui.input("PR context", "");
-				reviewContext = input || "";
 			}
 
 			const existing = await exec(pi, "gh", ["pr", "list", "--head", branchName, "--json", "number,url", "-q", ".[0]"]);
@@ -124,15 +119,18 @@ export function registerCommands(pi: ExtensionAPI): void {
 			}
 
 			setActivePR({ number: prNumber, base });
-			const reviewContextLine = reviewContext ? `\n- Review context: ${reviewContext}` : "";
-			pi.sendUserMessage(`Continue the /create-pr workflow.
+			const reviewContextBlock = reviewContext ? `\n\nUser context:\n${reviewContext}` : "";
+			pi.sendUserMessage(`PR publishing is ready.
 
-Runtime context:
-- PR number: ${prNumber}
+Context:
+- PR: #${prNumber}
 - Base branch: ${base}
-- Current branch: ${branchName}${reviewContextLine}
+- Current branch: ${branchName}${reviewContextBlock}
 
-First call skill({ name: "pull-request" }) before continuing.`);
+Next:
+1. Call skill({ name: "pull-request" }).
+2. Prepare the PR title/body.
+3. Submit it with publish_pr.`);
 		},
 	});
 
@@ -176,13 +174,16 @@ First call skill({ name: "pull-request" }) before continuing.`);
 
 			setActiveIssueDraft({ draftPath, topic });
 			ctx.ui.notify(`Drafting GitHub issue: ${topic}`, "info");
-			pi.sendUserMessage(`Continue the /create-issue workflow.
+			pi.sendUserMessage(`Issue publishing is ready.
 
-Runtime context:
+Context:
 - Topic: ${topic}
 - Draft path: ${draftPath}
 
-First call skill({ name: "issue-logging" }) before continuing.`);
+Next:
+1. Call skill({ name: "issue-logging" }).
+2. Draft the issue at the provided path.
+3. Submit it with publish_issue.`);
 		},
 	});
 
