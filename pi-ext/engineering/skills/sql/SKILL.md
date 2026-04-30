@@ -41,17 +41,25 @@ Determine the database from project context (dbt profiles, connection configs, e
 psql -h localhost -U username -d database_name -f script.sql
 ```
 
-For BigQuery, save SQL to a `.sql` file (often under the scratch directory), then use the `bq_query` tool instead of inline `bq query`:
+For BigQuery, save SQL to a `.sql` file (often under the scratch directory), then use the `bq_query` tool instead of inline `bq query`. Include a short required `description` (TLDR, no raw SQL/result rows):
 
 ```text
 # Validate only
-bq_query({ path: "/tmp/pi/<repo>/query.sql", dryRun: true })
+bq_query({
+  path: "/tmp/pi/<repo>/query.sql",
+  description: "Estimate monthly active users by region",
+  dryRun: true,
+})
 
 # Execute; results are written to scratch, CSV by default
-bq_query({ path: "/tmp/pi/<repo>/query.sql", maxRows: 1000 })
+bq_query({
+  path: "/tmp/pi/<repo>/query.sql",
+  description: "Export monthly active users by region",
+  maxRows: 1000,
+})
 ```
 
-Optional BigQuery parameters: `projectId`, `location`, `maxRows`, `outputFormat`. The tool runs a dry-run preflight by default and returns a summary only; read the output file deliberately when you need row data.
+Required BigQuery parameters: `path`, `description`. Optional: `projectId`, `location`, `maxRows`, `outputFormat`, `dryRun`. Non-dry-run executions always run a dry-run preflight first. Queries estimated over 1 TB require approval; unknown/unparseable estimates block execution; `SCRIPT`/non-authoritative estimates require approval. `maxRows` limits returned rows only, not scanned bytes. The tool returns a summary only; read the output file deliberately when you need row data.
 
 ### Code Standards
 
