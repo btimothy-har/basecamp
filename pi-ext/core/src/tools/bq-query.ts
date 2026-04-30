@@ -677,9 +677,8 @@ function formatDecimalBytes(bytes: string | null): string {
 	return unit === "bytes" ? `${value} bytes` : `${scaled.toFixed(2)} ${unit}`;
 }
 
-function formatScanBytesWithRaw(bytes: string | null): string {
-	if (!bytes) return "unknown";
-	return `${formatDecimalBytes(bytes)} / ${bytes} bytes`;
+function formatScanBytes(bytes: string | null): string {
+	return formatDecimalBytes(bytes);
 }
 
 function safeApprovalPromptValue(value: string | null, fallback: string): string {
@@ -711,13 +710,13 @@ function formatScanApprovalRequirement(details: BqQueryDetails): string | null {
 	const approval = details.approval;
 	if (!approval.required) return null;
 
-	const threshold = formatScanBytesWithRaw(approval.thresholdBytes);
+	const threshold = formatScanBytes(approval.thresholdBytes);
 	const nonAuthoritativeNote = isNonAuthoritativeDryRunStatementType(details.dryRun.statementType)
 		? `; ${formatNonAuthoritativeEstimateNote(details.dryRun.statementType)}`
 		: "";
 
 	if (approval.reason === "over_threshold") {
-		const estimate = approval.estimatedBytes ? formatScanBytesWithRaw(approval.estimatedBytes) : "unknown";
+		const estimate = approval.estimatedBytes ? formatScanBytes(approval.estimatedBytes) : "unknown";
 		return `estimated scan ${estimate} exceeds approval threshold ${threshold}${nonAuthoritativeNote}`;
 	}
 
@@ -726,7 +725,7 @@ function formatScanApprovalRequirement(details: BqQueryDetails): string | null {
 	}
 
 	if (approval.reason === "estimate_non_authoritative") {
-		const estimate = approval.estimatedBytes ? formatScanBytesWithRaw(approval.estimatedBytes) : "unknown";
+		const estimate = approval.estimatedBytes ? formatScanBytes(approval.estimatedBytes) : "unknown";
 		return `${formatNonAuthoritativeEstimateNote(details.dryRun.statementType)}; estimated scan ${estimate} may be incomplete; approval threshold is ${threshold}`;
 	}
 
@@ -735,10 +734,10 @@ function formatScanApprovalRequirement(details: BqQueryDetails): string | null {
 
 function formatScanApprovalStatus(details: BqQueryDetails): string {
 	const approval = details.approval;
-	const threshold = formatScanBytesWithRaw(approval.thresholdBytes);
+	const threshold = formatScanBytes(approval.thresholdBytes);
 
 	if (!approval.required) {
-		const estimate = approval.estimatedBytes ? formatScanBytesWithRaw(approval.estimatedBytes) : "unknown";
+		const estimate = approval.estimatedBytes ? formatScanBytes(approval.estimatedBytes) : "unknown";
 		return `Approval: not required; estimated scan ${estimate} is at or below threshold ${threshold}.`;
 	}
 
@@ -774,8 +773,8 @@ function buildScanApprovalPrompt(details: BqQueryDetails): string {
 		`SQL file: ${safeApprovalPromptValue(details.sqlPath, "unknown")}`,
 		`Project: ${safeApprovalPromptValue(details.projectId, "default")}`,
 		`Location: ${safeApprovalPromptValue(details.location, "default")}`,
-		`Estimated scan: ${formatScanBytesWithRaw(details.approval.estimatedBytes)}`,
-		`Approval threshold: ${formatScanBytesWithRaw(details.approval.thresholdBytes)}`,
+		`Estimated scan: ${formatScanBytes(details.approval.estimatedBytes)}`,
+		`Approval threshold: ${formatScanBytes(details.approval.thresholdBytes)}`,
 		`Output format: ${details.outputFormat}`,
 		`Max rows: ${details.maxRows}`,
 	];
@@ -794,7 +793,7 @@ function buildApprovalGateFailureText(details: BqQueryDetails, headline: string)
 	lines.push(
 		`SQL file: ${details.sqlPath}`,
 		`Dry-run job ID: ${details.dryRun.jobId ?? "unknown"}`,
-		`Estimated scan: ${formatScanBytesWithRaw(details.approval.estimatedBytes)}`,
+		`Estimated scan: ${formatScanBytes(details.approval.estimatedBytes)}`,
 	);
 	if (details.dryRun.statementType) {
 		lines.push(`Statement type: ${safeApprovalPromptValue(details.dryRun.statementType, "unknown")}`);
@@ -913,7 +912,7 @@ function buildDryRunText(details: BqQueryDetails): string {
 	lines.push(
 		`SQL file: ${details.sqlPath}`,
 		`Dry-run job ID: ${details.dryRun.jobId ?? "unknown"}`,
-		`Estimated scan: ${formatScanBytesWithRaw(details.dryRun.estimatedBytes)}`,
+		`Estimated scan: ${formatScanBytes(details.dryRun.estimatedBytes)}`,
 	);
 	if (details.projectId) lines.push(`Project: ${details.projectId}`);
 	if (details.location) lines.push(`Location: ${details.location}`);
@@ -945,7 +944,7 @@ function buildSuccessText(details: BqQueryDetails, outputBytes: number): string 
 	if (details.location) lines.push(`Location: ${details.location}`);
 
 	if (details.dryRun.ran) {
-		lines.push(`Dry run: passed; estimated scan ${formatScanBytesWithRaw(details.dryRun.estimatedBytes)}`);
+		lines.push(`Dry run: passed; estimated scan ${formatScanBytes(details.dryRun.estimatedBytes)}`);
 		if (details.dryRun.statementType) {
 			lines.push(`Statement type: ${safeApprovalPromptValue(details.dryRun.statementType, "unknown")}`);
 		}
