@@ -85,6 +85,8 @@ const GH_ISSUE_MUTATE_RE =
 const PR_COMMENT_RE = /^gh\s+pr\s+comment(\s|$)/;
 const GH_API_PR_RE = /^gh\s+api\s+repos\/[^/]+\/[^/]+\/pulls\//;
 const GH_RE = /^gh\s+/;
+const GH_MUTATION_LITERAL_RE =
+	/(?:^|[^\w./-])(gh\s+(?:(?:pr)\s+(?:create|edit|merge|close|ready|reopen|comment)|(?:issue)\s+(?:create|edit|comment|close|reopen|delete|transfer|lock|unlock|pin|unpin|develop|new)))(?=\s|$)/;
 
 const BQ_QUERY_REASON =
 	'Raw `bq query` execution through bash is blocked. Write the SQL to a .sql file and use bq_query({ path: "..." }) instead.';
@@ -138,9 +140,21 @@ function isShellAssignment(token: string): boolean {
 	return /^[A-Za-z_][A-Za-z0-9_]*=.*/.test(token);
 }
 
-function isGhExecutable(token: string): boolean {
+function commandBaseName(token: string): string {
 	const normalized = token.replace(/\\/g, "/");
-	return normalized === "gh" || normalized.endsWith("/gh");
+	return normalized.split("/").pop() ?? normalized;
+}
+
+function isGhExecutable(token: string): boolean {
+	return commandBaseName(token) === "gh";
+}
+
+function isShellExecutable(token: string): boolean {
+	return ["bash", "dash", "fish", "ksh", "sh", "zsh"].includes(commandBaseName(token));
+}
+
+function isXargsExecutable(token: string): boolean {
+	return commandBaseName(token) === "xargs";
 }
 
 function skipEnvArguments(tokens: string[], startIndex: number): number {
@@ -160,6 +174,11 @@ function skipEnvArguments(tokens: string[], startIndex: number): number {
 			continue;
 		}
 
+		if (token.startsWith("-u") || token.startsWith("-C")) {
+			index += 1;
+			continue;
+		}
+
 		if (token.startsWith("--unset=") || token.startsWith("--chdir=")) {
 			index += 1;
 			continue;
@@ -176,13 +195,12 @@ function skipEnvArguments(tokens: string[], startIndex: number): number {
 	return index;
 }
 
-function normalizeGhSegment(segment: string): string | null {
-	const tokens = tokenizeShellLike(segment);
+function commandIndexAfterPrefixes(tokens: string[]): number {
 	let index = 0;
 
 	while (index < tokens.length) {
 		const token = tokens[index];
-		if (token === undefined) return null;
+		if (token === undefined) return index;
 		if (isShellAssignment(token)) {
 			index += 1;
 			continue;
@@ -198,10 +216,100 @@ function normalizeGhSegment(segment: string): string | null {
 		break;
 	}
 
+	return index;
+}
+
+function normalizeGhSegment(segment: string): string | null {
+	const tokens = tokenizeShellLike(segment);
+	const index = commandIndexAfterPrefixes(tokens);
 	const executable = tokens[index];
 	if (executable === undefined || !isGhExecutable(executable)) return null;
 
 	return ["gh", ...tokens.slice(index + 1)].join(" ");
+}
+
+function shellScriptArgument(tokens: string[], commandIndex: number): string | null {
+	for (let index = commandIndex + 1; index < tokens.length; index += 1) {
+		const token = tokens[index];
+		if (token === undefined) return null;
+		if (token === "-c" || /^-[A-Za-z]*c[A-Za-z]*$/.test(token)) return tokens[index + 1] ?? null;
+	}
+
+	return null;
+}
+
+function literalGhMutationSegment(text: string): string | null {
+	return text.match(GH_MUTATION_LITERAL_RE)?.[1] ?? null;
+}
+
+function findGhMutationFromTokens(tokens: string[], startIndex: number): string | null {
+	for (let index = startIndex; index < tokens.length; index += 1) {
+		const token = tokens[index];
+		if (token === undefined || !isGhExecutable(token)) continue;
+
+		const ghSegment = ["gh", ...tokens.slice(index + 1)].join(" ");
+		if (GH_PR_MUTATE_RE.test(ghSegment) || GH_ISSUE_MUTATE_RE.test(ghSegment) || PR_COMMENT_RE.test(ghSegment)) {
+			return ghSegment;
+		}
+	}
+
+	return null;
+}
+
+function findNestedGhMutationSegment(segment: string): string | null {
+	const tokens = tokenizeShellLike(segment);
+	const commandIndex = commandIndexAfterPrefixes(tokens);
+	const executable = tokens[commandIndex];
+	if (executable === undefined) return null;
+
+	if (isShellExecutable(executable)) {
+		const script = shellScriptArgument(tokens, commandIndex);
+		return script ? literalGhMutationSegment(script) : null;
+	}
+
+	if (isXargsExecutable(executable)) return findGhMutationFromTokens(tokens, commandIndex + 1);
+
+	return null;
+}
+
+function isShellStdinSegment(segment: string): boolean {
+	const tokens = tokenizeShellLike(segment);
+	const commandIndex = commandIndexAfterPrefixes(tokens);
+	const executable = tokens[commandIndex];
+	return (
+		executable !== undefined && isShellExecutable(executable) && shellScriptArgument(tokens, commandIndex) === null
+	);
+}
+
+function findPipedGhMutationSegment(cmd: string): string | null {
+	const parts = cmd.split("|");
+	let left = "";
+
+	for (let index = 0; index < parts.length - 1; index += 1) {
+		const part = parts[index];
+		if (part === undefined) continue;
+		left = left ? `${left}|${part}` : part;
+
+		const right = parts[index + 1];
+		if (right === undefined || !isShellStdinSegment(right.trim())) continue;
+
+		const mutation = literalGhMutationSegment(left);
+		if (mutation) return mutation;
+	}
+
+	return null;
+}
+
+function ghMutationBlockReason(ghSegment: string): string | null {
+	if (GH_PR_MUTATE_RE.test(ghSegment) || PR_COMMENT_RE.test(ghSegment)) {
+		return "PR mutations are blocked. The user needs to invoke /pull-request to start the PR workflow.";
+	}
+
+	if (GH_ISSUE_MUTATE_RE.test(ghSegment)) {
+		return "Issue mutations are blocked. Invoke /log-issue for new issue creation; ask the user to run existing-issue mutations themselves if needed.";
+	}
+
+	return null;
 }
 
 function isBqQuerySegment(segment: string): boolean {
@@ -243,6 +351,12 @@ export function registerGuards(pi: ExtensionAPI): void {
 		const cmd = event.input.command;
 		if (!cmd) return;
 
+		const pipedGhMutation = findPipedGhMutationSegment(cmd);
+		if (pipedGhMutation) {
+			const reason = ghMutationBlockReason(pipedGhMutation);
+			if (reason) return { block: true, reason };
+		}
+
 		for (const segment of splitSegments(cmd)) {
 			const ghSegment = normalizeGhSegment(segment);
 
@@ -263,24 +377,18 @@ export function registerGuards(pi: ExtensionAPI): void {
 				}
 			}
 
-			if (!ghSegment) continue;
-
-			// gh pr mutate: block with workflow-specific message
-			if (GH_PR_MUTATE_RE.test(ghSegment)) {
-				return {
-					block: true,
-					reason: "PR mutations are blocked. The user needs to invoke /pull-request to start the PR workflow.",
-				};
+			if (!ghSegment) {
+				const nestedGhMutation = findNestedGhMutationSegment(segment);
+				if (nestedGhMutation) {
+					const reason = ghMutationBlockReason(nestedGhMutation);
+					if (reason) return { block: true, reason };
+				}
+				continue;
 			}
 
-			// gh issue mutate: block with workflow-specific message
-			if (GH_ISSUE_MUTATE_RE.test(ghSegment)) {
-				return {
-					block: true,
-					reason:
-						"Issue mutations are blocked. Invoke /log-issue for new issue creation; ask the user to run existing-issue mutations themselves if needed.",
-				};
-			}
+			// gh mutations: block with workflow-specific message
+			const mutationReason = ghMutationBlockReason(ghSegment);
+			if (mutationReason) return { block: true, reason: mutationReason };
 
 			// gh: block by default, allow-list overrides
 			if (GH_RE.test(ghSegment) && !GH_ALLOW.some((r) => r.test(ghSegment))) {

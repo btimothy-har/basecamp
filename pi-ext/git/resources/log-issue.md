@@ -18,7 +18,7 @@ Understand the topic before drafting:
 
 Search for related existing issues using read-only GitHub CLI operations only:
 
-- Use `gh issue list`/`gh issue ls` with appropriate keywords and `--state all`.
+- Use `gh issue list --search "keywords" --state all` (or `gh issue ls` with appropriate keywords and `--state all`).
 - Use `gh issue view <number>` to inspect likely matches.
 - If an existing issue already covers the topic, stop and report the matching issue instead of drafting a duplicate.
 

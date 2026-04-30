@@ -1,5 +1,5 @@
 /**
- * Git commands — PR workflow commands.
+ * Git commands — PR, issue, and git workflow commands.
  *
  *   /pull-request [base]            — create/find draft PR, review, describe, publish
  *   /log-issue [topic]              — draft and publish a GitHub issue through review
@@ -134,6 +134,11 @@ export function registerCommands(pi: ExtensionAPI): void {
 		handler: async (args, ctx) => {
 			if (!ctx.hasUI) {
 				ctx.ui.notify("/log-issue requires an interactive UI. Run it from an interactive session.", "error");
+				return;
+			}
+
+			if (pi.getFlag("read-only") === true) {
+				ctx.ui.notify("/log-issue is disabled in read-only mode.", "error");
 				return;
 			}
 

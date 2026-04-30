@@ -224,6 +224,20 @@ function assertNoSecrets(text: string): void {
 	}
 }
 
+function assertNoTerminalControlSequences(text: string, label: string): void {
+	for (let index = 0; index < text.length; index += 1) {
+		const code = text.charCodeAt(index);
+		const isAllowedWhitespace = code === 0x09 || code === 0x0a || code === 0x0d;
+		const isControl = code <= 0x1f || (code >= 0x7f && code <= 0x9f);
+
+		if (isControl && !isAllowedWhitespace) {
+			throw new Error(
+				`${label} contains terminal/control characters. Remove ANSI/OSC escape sequences and control characters before review or publishing.`,
+			);
+		}
+	}
+}
+
 function stringField(value: unknown, key: string): string | null {
 	if (typeof value !== "object" || value === null) return null;
 	const field = (value as Record<string, unknown>)[key];
@@ -287,7 +301,9 @@ export function registerIssueTool(pi: ExtensionAPI): void {
 	pi.registerTool({
 		name: "issue_publish",
 		label: "Publish Issue",
-		description: "Publish the markdown issue draft created by /log-issue after user review.",
+		description:
+			"Submit the markdown issue draft created by /log-issue for user review. User can approve to publish, " +
+			"provide feedback for revision, or cancel. Only available after /log-issue has been invoked.",
 		promptSnippet: "Show issue draft for review — user can publish or give feedback for revision",
 		parameters: Type.Object(
 			{
@@ -311,6 +327,8 @@ export function registerIssueTool(pi: ExtensionAPI): void {
 
 			const draftPath = validateDraftPath(params.draftPath, draft.draftPath, ctx.cwd);
 			const markdown = fs.readFileSync(draftPath, "utf8");
+			assertNoTerminalControlSequences(markdown, "Issue draft");
+			assertNoTerminalControlSequences(draft.topic, "Issue topic");
 			assertNoSecrets(markdown);
 			const { title, body } = parseIssueDraft(markdown);
 
