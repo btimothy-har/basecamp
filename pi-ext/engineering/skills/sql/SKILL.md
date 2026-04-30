@@ -59,7 +59,7 @@ bq_query({
 })
 ```
 
-Required BigQuery parameters: `path`, `description`. Optional: `projectId`, `location`, `maxRows`, `outputFormat`, `dryRun`. Non-dry-run executions always run a dry-run preflight first. Queries estimated over 1 TB require approval; unknown/unparseable estimates block execution; `SCRIPT`/non-authoritative estimates require approval. `maxRows` limits returned rows only, not scanned bytes. The tool returns a summary only; read the output file deliberately when you need row data.
+Required BigQuery parameters: `path`, `description`. Optional: `projectId`, `location`, `maxRows`, `outputFormat`, `dryRun`, `force`. Non-dry-run executions always run a dry-run preflight first. In interactive parent sessions, queries estimated over 1 TB or `SCRIPT`/non-authoritative estimates require user approval, and unknown/unparseable estimates block execution. In no-UI contexts, authoritative estimates at or below 5 TB execute after the dry run; estimates above 5 TB, unknown/unparseable estimates, and `SCRIPT`/non-authoritative estimates are soft-locked unless intentionally rerun with `force: true`. `force` only bypasses the no-UI soft lock; it does not bypass interactive approval, dry-run failures, execution errors, or output privacy behavior. `maxRows` limits returned rows only, not scanned bytes. The tool returns a summary only; read the output file deliberately when you need row data.
 
 ### Code Standards
 
