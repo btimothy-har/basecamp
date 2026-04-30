@@ -131,8 +131,57 @@ function buildFeedbackResult(draft: PlanDraft): string {
 	return JSON.stringify(result);
 }
 
+function collectApprovedNotes(draft: PlanDraft): Record<string, string> {
+	const notes: Record<string, string> = {};
+	for (const name of SECTION_NAMES) {
+		const r = draft[name].review;
+		if (r.approved && r.feedback) notes[name] = r.feedback;
+	}
+
+	if (draft.tasksReview.approved && draft.tasksReview.feedback) {
+		notes.tasks = draft.tasksReview.feedback;
+	}
+
+	return notes;
+}
+
 export type ImplementationMode = "supervisor" | "executor";
 type ApprovedPlanMode = "analysis" | ImplementationMode;
+
+interface HandoffTaskContext {
+	index: number;
+	label: string;
+	description: string;
+	criteria: string;
+	notes: string | null;
+	status: TaskStatus;
+}
+
+interface HandoffPlanContext {
+	goal: string;
+	context: string;
+	design: string;
+	success: string;
+	boundaries: string;
+	notes: Record<string, string>;
+	tasks: HandoffTaskContext[];
+}
+
+interface HandoffWorktreeContext {
+	label: string;
+	path: string;
+	branch: string;
+	created: boolean;
+	repoName: string;
+	repoRoot: string;
+}
+
+interface PendingImplementationHandoff {
+	mode: ImplementationMode;
+	compact: boolean;
+	worktree: HandoffWorktreeContext;
+	plan: HandoffPlanContext;
+}
 
 const IMPLEMENTATION_MODE_CHOICES = ["Execute as Supervisor", "Execute as IC/executor"] as const;
 const CUSTOM_WORKTREE_CHOICE = "Enter custom worktree label";
@@ -209,6 +258,16 @@ async function selectWorktreeLabel(
 	return labelsByChoice.get(choice) ?? null;
 }
 
+async function selectHandoffCompaction(ctx: ExtensionContext, worktree: WorktreeResult): Promise<boolean> {
+	if (!ctx.hasUI) return false;
+
+	const disposition = worktree.created ? "created" : "resumed";
+	return ctx.ui.confirm(
+		"Compact planning context before execution?",
+		`Worktree ${disposition}: ${worktree.label} (${worktree.branch})\n${worktree.worktreeDir}\n\nCompact the planning conversation into a focused execution summary before starting work?`,
+	);
+}
+
 export function buildHandoffMessage(mode: ImplementationMode): string {
 	if (mode === "supervisor") {
 		return "Plan looks good — proceed as supervisor. Delegate bounded investigation and implementation to subagents; keep synthesis, decisions, and integration here.";
@@ -228,17 +287,7 @@ function buildWorktreeActivationFailedResult(label: string, error: unknown): str
 }
 
 function buildApprovedResult(draft: PlanDraft, mode: ApprovedPlanMode, worktree?: WorktreeResult): string {
-	// Collect user notes from approved-with-feedback sections
-	const notes: Record<string, string> = {};
-	for (const name of SECTION_NAMES) {
-		const r = draft[name].review;
-		if (r.approved && r.feedback) notes[name] = r.feedback;
-	}
-
-	// Include collective task feedback if present
-	if (draft.tasksReview.approved && draft.tasksReview.feedback) {
-		notes.tasks = draft.tasksReview.feedback;
-	}
+	const notes = collectApprovedNotes(draft);
 
 	const tasks: Record<number, { label: string; status: string; criteria: string }> = {};
 	for (let i = 0; i < draft.tasks.length; i++) {
@@ -286,6 +335,104 @@ function buildApprovedResult(draft: PlanDraft, mode: ApprovedPlanMode, worktree?
 	return JSON.stringify(result);
 }
 
+function buildPendingImplementationHandoff(
+	draft: PlanDraft,
+	mode: ImplementationMode,
+	compact: boolean,
+	worktree: WorktreeResult,
+): PendingImplementationHandoff {
+	const state = getState();
+	return {
+		mode,
+		compact,
+		worktree: {
+			label: worktree.label,
+			path: worktree.worktreeDir,
+			branch: worktree.branch,
+			created: worktree.created,
+			repoName: state.repoName,
+			repoRoot: state.repoRoot,
+		},
+		plan: {
+			goal: draft.goal.content,
+			context: draft.context.content,
+			design: draft.design.content,
+			success: draft.success.content,
+			boundaries: draft.boundaries.content,
+			notes: collectApprovedNotes(draft),
+			tasks: draft.tasks.map((task, index) => ({
+				index,
+				label: task.label,
+				description: task.description,
+				criteria: task.criteria,
+				notes: task.notes,
+				status: task.status,
+			})),
+		},
+	};
+}
+
+function buildHandoffCompactionInstructions(handoff: PendingImplementationHandoff): string {
+	const lines: string[] = [
+		"This compaction runs immediately before executing an approved Basecamp implementation plan.",
+		"Focus the summary on execution-ready context; omit planning chatter that is not needed for implementation.",
+		"",
+		"Approved plan:",
+		`Goal: ${handoff.plan.goal}`,
+		`Context: ${handoff.plan.context}`,
+		`Design: ${handoff.plan.design}`,
+		`Success: ${handoff.plan.success}`,
+		`Boundaries: ${handoff.plan.boundaries}`,
+		"",
+		"Execution handoff:",
+		`Mode: ${handoff.mode}`,
+		`Selected worktree: ${handoff.worktree.label} (${handoff.worktree.branch})`,
+		`Worktree path: ${handoff.worktree.path}`,
+		`Worktree status: ${handoff.worktree.created ? "created" : "resumed"}`,
+		`Repository: ${handoff.worktree.repoName}`,
+		`Protected checkout: ${handoff.worktree.repoRoot}`,
+		"",
+		"User feedback/notes from approval:",
+	];
+
+	const notes = Object.entries(handoff.plan.notes);
+	if (notes.length === 0) {
+		lines.push("- None recorded.");
+	} else {
+		for (const [section, note] of notes) {
+			lines.push(`- ${section}: ${note}`);
+		}
+	}
+
+	lines.push("", "Tasks:");
+	for (const task of handoff.plan.tasks) {
+		lines.push(`- [${task.index}] ${task.label} (${task.status})`);
+		lines.push(`  Description: ${task.description}`);
+		lines.push(`  Criteria: ${task.criteria}`);
+		if (task.notes) lines.push(`  Notes: ${task.notes}`);
+	}
+
+	const nextTask =
+		handoff.plan.tasks.find((task) => task.status === "active") ??
+		handoff.plan.tasks.find((task) => task.status === "pending");
+	lines.push("", "Next execution task:");
+	if (nextTask) {
+		lines.push(`- [${nextTask.index}] ${nextTask.label}`);
+		lines.push(`  Description: ${nextTask.description}`);
+		lines.push(`  Criteria: ${nextTask.criteria}`);
+	} else {
+		lines.push("- No open task was recorded; inspect the task list before editing.");
+	}
+
+	lines.push(
+		"",
+		"Preserve any relevant files, functions, commands, constraints, and risks mentioned in the conversation, plan sections, task descriptions, or user notes.",
+		"Make the resulting summary sufficient for the next agent turn to start execution without reopening the full planning transcript.",
+	);
+
+	return lines.join("\n");
+}
+
 // ============================================================================
 // Tool render helpers
 // ============================================================================
@@ -314,16 +461,36 @@ export interface PlanAccess {
 
 export function registerPlan(pi: ExtensionAPI, tasksAccess: TasksAccess): PlanAccess {
 	let draft: PlanDraft | null = null;
-	let pendingHandoffMode: ImplementationMode | null = null;
+	let pendingImplementationHandoff: PendingImplementationHandoff | null = null;
 
-	pi.on("agent_end", async () => {
-		if (!pendingHandoffMode) return;
-		const mode = pendingHandoffMode;
-		pendingHandoffMode = null;
+	pi.on("agent_end", async (_event, ctx) => {
+		if (!pendingImplementationHandoff) return;
+		const handoff = pendingImplementationHandoff;
+		pendingImplementationHandoff = null;
 
 		// Pi clears isStreaming after awaited agent_end handlers finish; defer to the next macrotask.
 		setTimeout(() => {
-			pi.sendUserMessage(buildHandoffMessage(mode));
+			let handoffSent = false;
+			const sendHandoff = () => {
+				if (handoffSent) return;
+				handoffSent = true;
+				pi.sendUserMessage(buildHandoffMessage(handoff.mode));
+			};
+
+			if (!handoff.compact) {
+				sendHandoff();
+				return;
+			}
+
+			try {
+				ctx.compact({
+					customInstructions: buildHandoffCompactionInstructions(handoff),
+					onComplete: sendHandoff,
+					onError: sendHandoff,
+				});
+			} catch {
+				sendHandoff();
+			}
 		}, 0);
 	});
 
@@ -453,9 +620,16 @@ export function registerPlan(pi: ExtensionAPI, tasksAccess: TasksAccess): PlanAc
 					};
 				}
 
+				const compactHandoff = await selectHandoffCompaction(ctx, worktree);
+
 				setAgentMode(implementationMode);
 				tasksAccess.activateGoalCycle(draft.goal.content, approvedTasks, planRef, implementationMode);
-				pendingHandoffMode = implementationMode;
+				pendingImplementationHandoff = buildPendingImplementationHandoff(
+					draft,
+					implementationMode,
+					compactHandoff,
+					worktree,
+				);
 
 				const result = buildApprovedResult(draft, implementationMode, worktree);
 				draft = null;
