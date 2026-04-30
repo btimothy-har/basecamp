@@ -1,11 +1,11 @@
 ---
-name: create-issue
+name: issue-logging
 description: "Prepare a GitHub issue: investigate a topic, draft issue markdown, and submit through issue_publish when an active publish workflow is available."
 ---
 
-# Create Issue
+# Issue Logging
 
-Use this skill to prepare a GitHub issue for user-reviewed publication. Work from any context already available: an active issue workflow handoff, the current conversation, code investigation, logs, docs, or the user's request.
+Prepare a GitHub issue for user-reviewed publication. Work from any context already available: an active issue workflow handoff, the current conversation, code investigation, logs, docs, or the user's request.
 
 ## Context
 

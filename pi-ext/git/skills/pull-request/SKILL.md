@@ -1,11 +1,11 @@
 ---
-name: create-pr
+name: pull-request
 description: "Prepare a GitHub pull request: review branch changes, verify readiness, draft a PR title/body, and submit through pr_publish when an active publish workflow is available."
 ---
 
-# Create PR
+# Pull Request
 
-Use this skill to prepare a pull request for user-reviewed publication. Work from any context already available: an active PR workflow handoff, the current branch, an existing PR, or the user's request.
+Prepare a pull request for user-reviewed publication. Work from any context already available: an active PR workflow handoff, the current branch, an existing PR, or the user's request.
 
 ## Context
 
