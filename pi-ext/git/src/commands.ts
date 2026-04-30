@@ -119,18 +119,15 @@ export function registerCommands(pi: ExtensionAPI): void {
 			}
 
 			setActivePR({ number: prNumber, base });
-			const reviewContextBlock = reviewContext ? `\n\nUser context:\n${reviewContext}` : "";
-			pi.sendUserMessage(`PR publishing is ready.
+			const reviewContextBlock = reviewContext ? `\n\nAdditional context:\n${reviewContext}` : "";
+			pi.sendUserMessage(`Please prepare this pull request for my review.
 
 Context:
 - PR: #${prNumber}
 - Base branch: ${base}
 - Current branch: ${branchName}${reviewContextBlock}
 
-Next:
-1. Call skill({ name: "pull-request" }).
-2. Prepare the PR title/body.
-3. Submit it with publish_pr.`);
+Start by calling skill({ name: "pull-request" }), then review the changes, draft the PR title/body, and submit it with publish_pr.`);
 		},
 	});
 
@@ -174,16 +171,13 @@ Next:
 
 			setActiveIssueDraft({ draftPath, topic });
 			ctx.ui.notify(`Drafting GitHub issue: ${topic}`, "info");
-			pi.sendUserMessage(`Issue publishing is ready.
+			pi.sendUserMessage(`Please draft this GitHub issue for my review.
 
 Context:
 - Topic: ${topic}
 - Draft path: ${draftPath}
 
-Next:
-1. Call skill({ name: "issue-logging" }).
-2. Draft the issue at the provided path.
-3. Submit it with publish_issue.`);
+Start by calling skill({ name: "issue-logging" }), then investigate as needed, write the issue draft to the provided path, and submit it with publish_issue.`);
 		},
 	});
 
