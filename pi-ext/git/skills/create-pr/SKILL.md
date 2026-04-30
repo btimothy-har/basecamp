@@ -1,21 +1,34 @@
 ---
 name: create-pr
-description: "Use for the /create-pr pull request workflow: review branch changes, verify readiness, draft a PR title/body, and publish through pr_publish."
+description: "Prepare a GitHub pull request: review branch changes, verify readiness, draft a PR title/body, and submit through pr_publish when an active publish workflow is available."
 ---
 
 # Create PR
 
-## Runtime Context
+Use this skill to prepare a pull request for user-reviewed publication. Work from any context already available: an active PR workflow handoff, the current branch, an existing PR, or the user's request.
 
-This skill is intended for the `/create-pr` workflow. The command message supplies the runtime context for the workflow, including the PR number, the base branch, and any additional user context or constraints.
+## Context
 
-Use the exact runtime context supplied by `/create-pr` wherever this workflow needs those values. If required context is missing, conflicting, or ambiguous, stop and ask the user instead of guessing.
+Establish the PR context before drafting:
 
-## Step 1: Review Changes
+- Current branch or PR branch
+- Base branch
+- PR number, when an active draft PR already exists
+- User review context, constraints, linked issues, or release notes
 
-Review the branch changes for the PR identified in the runtime context and prepare to publish it against the supplied base branch.
+If the current session already provided these values, use them. Otherwise, derive what you can from git and read-only GitHub commands. If a required value is missing or ambiguous, ask the user instead of guessing.
 
-Fetch the base branch and diff the current branch against it. For shell commands, set `BASE` to the base branch supplied by `/create-pr` before running the commands:
+## Publication Rule
+
+`pr_publish` is the only path for publishing the PR title and description. Do not update the PR title or body through shell commands.
+
+`pr_publish` requires active Basecamp PR workflow state. If publication is requested but no active workflow exists, ask the user to start the publish workflow with `/create-pr` so Basecamp can create or select the draft PR and enable reviewed publishing. You can still review changes and draft the title/body before that workflow is active.
+
+## Review Changes
+
+Review the current branch against the base branch.
+
+Use a shell variable or inline the actual base branch when running these commands:
 
 ```bash
 git fetch origin "$BASE"
@@ -28,17 +41,17 @@ Read the full diff. Identify scope, motivation, and key decisions. Search for re
 
 If the diff mixes unrelated concerns or is too large for a single review pass, stop and propose how to split the work into separate PRs before proceeding.
 
-## Step 2: Verify Readiness
+## Verify Readiness
 
 Call `git_status` before mutating local history. Confirm that:
 
-- The current branch is the PR branch identified by the runtime context.
+- The current branch is the branch being prepared for the PR.
 - The working tree is clean.
 - Upstream/ahead/behind state matches the expected PR state.
 
 If `git_status` reports uncommitted changes, stop and ask the user how to handle them before rebasing. Do not stash, discard, or fold them into the PR unless the user explicitly asks.
 
-Rebase against the fetched base branch as part of this workflow, using the base branch from the runtime context:
+Rebase against the fetched base branch as part of this workflow:
 
 ```bash
 git rebase "origin/$BASE"
@@ -50,7 +63,7 @@ If the rebase has conflicts, file paths shown by git are relative to the current
 
 If the rebase replayed commits and rewrote history, stop and tell the user to force push manually. Do not attempt a force push.
 
-## Step 3: Write and Publish
+## Draft the PR Description
 
 Check the repo for a PR template. GitHub looks for templates in this order:
 
@@ -97,4 +110,6 @@ gh repo view --json url -q .url
 
 URL form: `{url}/blob/{hash}/{path}#L10-L25`, for example: ``[`path/file.py#L10-L25`](https://github.com/org/repo/blob/abc1234/path/file.py#L10-L25)``.
 
-Draft the title and body, then call `pr_publish` with them. Do not publish the PR description through shell commands; publication must go through `pr_publish` so the user can review before GitHub is updated.
+## Submit for Review
+
+When active PR publish workflow state is available, call `pr_publish` with the drafted title and body. If the user provides feedback, revise the title/body and call `pr_publish` again.

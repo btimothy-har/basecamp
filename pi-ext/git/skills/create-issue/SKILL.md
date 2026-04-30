@@ -1,17 +1,31 @@
 ---
 name: create-issue
-description: "Use for the /create-issue workflow: investigate a topic, draft a GitHub issue at the supplied draft path, and publish through issue_publish."
+description: "Prepare a GitHub issue: investigate a topic, draft issue markdown, and submit through issue_publish when an active publish workflow is available."
 ---
 
 # Create Issue
 
-## Runtime Context
+Use this skill to prepare a GitHub issue for user-reviewed publication. Work from any context already available: an active issue workflow handoff, the current conversation, code investigation, logs, docs, or the user's request.
 
-This skill is intended for the `/create-issue` workflow. The command message supplies the runtime context for the workflow, including the issue topic, the draft path, and any additional user context or constraints.
+## Context
 
-Use the exact runtime context supplied by `/create-issue` wherever this workflow needs those values. If the topic or draft path is missing, conflicting, or ambiguous, stop and ask the user instead of guessing. Write the draft only to the draft path supplied by `/create-issue`.
+Establish the issue context before drafting:
 
-## Step 1: Investigate
+- Issue topic or problem statement
+- Observed behavior and expected behavior
+- Reproduction steps or concrete examples, when available
+- Scope, impact, environment, and related context
+- Draft path, when an active issue publish workflow provides one
+
+If the current session already provided a topic and draft path, use them. Otherwise, investigate first and ask the user for missing essentials instead of inventing details.
+
+## Publication Rule
+
+`issue_publish` is the only path for creating the GitHub issue. Do not create or mutate GitHub issues through shell commands.
+
+`issue_publish` requires active Basecamp issue workflow state and its draft path. If publication is requested but no active workflow or draft path exists, ask the user to start the publish workflow with `/create-issue <topic>` so Basecamp can allocate the draft path and enable reviewed publishing. You can still investigate and draft issue content before that workflow is active.
+
+## Investigate
 
 Understand the topic before drafting:
 
@@ -20,7 +34,7 @@ Understand the topic before drafting:
 - Collect concrete reproduction steps or examples when available.
 - Note uncertainty explicitly instead of inventing details.
 
-## Step 2: Check GitHub Context
+## Check GitHub Context
 
 Search for related existing issues using read-only GitHub CLI operations only:
 
@@ -30,11 +44,11 @@ Search for related existing issues using read-only GitHub CLI operations only:
 
 If useful, check whether the repository has issue templates. GitHub commonly stores them under `.github/ISSUE_TEMPLATE/` or as issue template files in `.github/`. Read the relevant template before drafting.
 
-## Step 3: Write the Draft
+## Draft the Issue
 
-Write the issue draft to exactly the draft path supplied by `/create-issue` and nowhere else.
+When a draft path is available, write the issue draft to exactly that path and nowhere else. If no draft path is available yet, keep the draft in the conversation or a scratch note until an issue publish workflow provides one.
 
-Use this markdown contract:
+Use this markdown contract for the publishable draft:
 
 ```markdown
 # Issue title
@@ -51,8 +65,6 @@ Rules:
 - Follow the repository's issue template when one applies.
 - Include sections that fit the topic, such as summary, steps to reproduce, expected behavior, actual behavior, impact, environment, acceptance criteria, and related context.
 
-## Step 4: Publish Through Review
+## Submit for Review
 
-After writing the draft, call `issue_publish` with the same draft path supplied by `/create-issue`.
-
-Do not directly create or mutate GitHub issues from the shell. Publication must go through `issue_publish` so the user can review before anything is posted.
+When active issue publish workflow state and a draft path are available, call `issue_publish` with the draft path. If the user provides feedback, edit the same draft file and call `issue_publish` again.
