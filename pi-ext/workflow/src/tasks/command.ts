@@ -7,7 +7,8 @@
 
 import type { ExtensionAPI, ExtensionCommandContext, Theme } from "@mariozechner/pi-coding-agent";
 import { DynamicBorder } from "@mariozechner/pi-coding-agent";
-import { Container, matchesKey, Spacer, Text } from "@mariozechner/pi-tui";
+import { Container, matchesKey, Spacer, Text, visibleWidth } from "@mariozechner/pi-tui";
+import { renderTaskDescriptionLines } from "./render";
 import type { Task, TaskStatus, TasksAccess } from "./tasks";
 
 const STATUS_MARKERS: Record<TaskStatus, string> = { completed: "✓", active: "→", pending: "☐", deleted: "✕" };
@@ -128,13 +129,13 @@ async function showTaskList(tasks: TasksAccess, ctx: ExtensionCommandContext): P
 // Task Detail
 // ============================================================================
 
-function renderTaskDetail(task: Task, index: number, theme: Theme): string[] {
+function renderTaskDetail(task: Task, index: number, width: number, theme: Theme): string[] {
 	const lines: string[] = [];
 	const statusIcon = STATUS_MARKERS[task.status];
 
 	lines.push(`${theme.fg("dim", `[${index}]`)} ${statusIcon} ${theme.fg("accent", theme.bold(task.label))}`);
 	lines.push("");
-	lines.push(`${theme.fg("dim", "Description")}  ${task.description}`);
+	lines.push(...renderTaskDetailDescription(task.description, width, theme));
 	lines.push(`${theme.fg("dim", "Criteria")}  ${task.criteria}`);
 
 	if (task.notes) {
@@ -142,6 +143,22 @@ function renderTaskDetail(task: Task, index: number, theme: Theme): string[] {
 		lines.push(`${theme.fg("dim", "Notes")}  ${task.notes}`);
 	}
 
+	return lines;
+}
+
+function renderTaskDetailDescription(description: string, width: number, theme: Theme): string[] {
+	const label = "Description";
+	const prefix = `${theme.fg("dim", label)}  `;
+	const prefixWidth = visibleWidth(prefix);
+	const descriptionLines = renderTaskDescriptionLines(description, Math.max(0, width - prefixWidth));
+
+	if (descriptionLines.length === 0) return [prefix];
+
+	const lines = [`${prefix}${descriptionLines[0]!}`];
+	const continuationPrefix = " ".repeat(prefixWidth);
+	for (const line of descriptionLines.slice(1)) {
+		lines.push(`${continuationPrefix}${line}`);
+	}
 	return lines;
 }
 
@@ -165,7 +182,7 @@ async function showTaskDetail(tasks: TasksAccess, index: number, ctx: ExtensionC
 			render: (width: number) => {
 				const task = tasks.getState().tasks[index];
 				if (task) {
-					detailText.setText(renderTaskDetail(task, index, theme).join("\n"));
+					detailText.setText(renderTaskDetail(task, index, width, theme).join("\n"));
 				}
 				return container.render(width);
 			},
