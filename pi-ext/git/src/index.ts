@@ -7,6 +7,7 @@ import { registerCommands } from "./commands";
 import { registerGuards } from "./guards";
 import { registerIssueTool } from "./issue-tool";
 import { registerPublishSkillGuard } from "./publish-skill-guard";
+import { registerSafeGitTool } from "./safe-git-tool";
 import { registerStatusTool } from "./status";
 import { registerTool } from "./tool";
 
@@ -15,6 +16,7 @@ export default function (pi: ExtensionAPI) {
 	registerPublishSkillGuard(pi);
 	registerCommands(pi);
 	registerStatusTool(pi);
+	registerSafeGitTool(pi);
 	registerTool(pi);
 	registerIssueTool(pi);
 }

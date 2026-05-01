@@ -17,19 +17,27 @@ import { isToolCallEventType } from "@mariozechner/pi-coding-agent";
 const BLOCK_RULES: { gate: RegExp; test: RegExp; reason: string }[] = [
 	{
 		gate: /^git\s+push\b/,
-		test: /\s(--force|--force-with-lease)(\s|$)|\s-[a-zA-Z]*f/,
-		reason: "Force push is blocked. Ask the user to run this command themselves if needed.",
+		test: /\s(?:--force|--force-with-lease|--force-if-includes)(?:\s|=|$)|\s-[a-zA-Z]*f|\s\+[^\s]+/,
+		reason:
+			'Force push is blocked through bash. Use safe_git({ command: "git push ...", reason: "..." }) to request user approval, or ask the user to run it manually.',
 	},
 	{
 		gate: /^git\s+push\b/,
-		test: /\s--delete(\s|$)|\s:[^\s]/,
-		reason: "Deleting remote refs is blocked. Ask the user to run this command themselves if needed.",
+		test: /\s(?:--mirror|--all|--tags)(?:\s|$)/,
+		reason:
+			'Broad git push is blocked through bash. Use safe_git({ command: "git push ...", reason: "..." }) to request user approval, or ask the user to run it manually.',
+	},
+	{
+		gate: /^git\s+push\b/,
+		test: /\s(?:--delete|-d)(?:\s|$)|\s:[^\s]/,
+		reason:
+			'Deleting remote refs is blocked through bash. Use safe_git({ command: "git push ...", reason: "..." }) to request user approval, or ask the user to run it manually.',
 	},
 	{
 		gate: /^git\s+clean\b/,
 		test: /\s-[a-zA-Z]*f|\s--force/,
 		reason:
-			"git clean -f is blocked — permanently deletes untracked files. Ask the user to run this command themselves if needed.",
+			'git clean -f is blocked through bash because it permanently deletes untracked files. Use safe_git({ command: "git clean ...", reason: "..." }) to request user approval, or ask the user to run it manually.',
 	},
 ];
 
@@ -149,6 +157,10 @@ function isGhExecutable(token: string): boolean {
 	return commandBaseName(token) === "gh";
 }
 
+function isGitExecutable(token: string): boolean {
+	return commandBaseName(token) === "git";
+}
+
 function isShellExecutable(token: string): boolean {
 	return ["bash", "dash", "fish", "ksh", "sh", "zsh"].includes(commandBaseName(token));
 }
@@ -226,6 +238,15 @@ function normalizeGhSegment(segment: string): string | null {
 	if (executable === undefined || !isGhExecutable(executable)) return null;
 
 	return ["gh", ...tokens.slice(index + 1)].join(" ");
+}
+
+function normalizeGitSegment(segment: string): string | null {
+	const tokens = tokenizeShellLike(segment);
+	const index = commandIndexAfterPrefixes(tokens);
+	const executable = tokens[index];
+	if (executable === undefined || !isGitExecutable(executable)) return null;
+
+	return ["git", ...tokens.slice(index + 1)].join(" ");
 }
 
 function shellScriptArgument(tokens: string[], commandIndex: number): string | null {
@@ -312,6 +333,48 @@ function ghMutationBlockReason(ghSegment: string): string | null {
 	return null;
 }
 
+function gitBlockReason(gitSegment: string): string | null {
+	for (const rule of BLOCK_RULES) {
+		if (rule.gate.test(gitSegment) && rule.test.test(gitSegment)) return rule.reason;
+	}
+	return null;
+}
+
+function literalGitBlockedSegment(text: string): string | null {
+	for (const segment of splitSegments(text)) {
+		const gitSegment = normalizeGitSegment(segment);
+		if (gitSegment && gitBlockReason(gitSegment)) return gitSegment;
+	}
+	return null;
+}
+
+function findGitBlockFromTokens(tokens: string[], startIndex: number): string | null {
+	for (let index = startIndex; index < tokens.length; index += 1) {
+		const token = tokens[index];
+		if (token === undefined || !isGitExecutable(token)) continue;
+
+		const gitSegment = ["git", ...tokens.slice(index + 1)].join(" ");
+		if (gitBlockReason(gitSegment)) return gitSegment;
+	}
+	return null;
+}
+
+function findNestedGitBlockedSegment(segment: string): string | null {
+	const tokens = tokenizeShellLike(segment);
+	const commandIndex = commandIndexAfterPrefixes(tokens);
+	const executable = tokens[commandIndex];
+	if (executable === undefined) return null;
+
+	if (isShellExecutable(executable)) {
+		const script = shellScriptArgument(tokens, commandIndex);
+		return script ? literalGitBlockedSegment(script) : null;
+	}
+
+	if (isXargsExecutable(executable)) return findGitBlockFromTokens(tokens, commandIndex + 1);
+
+	return null;
+}
+
 function isBqQuerySegment(segment: string): boolean {
 	// Match the common agent-generated forms: `bq query` and `bq --global_flag ... query`.
 	// Unknown value-taking flags intentionally stop matching rather than risk blocking unrelated commands.
@@ -357,8 +420,15 @@ export function registerGuards(pi: ExtensionAPI): void {
 			if (reason) return { block: true, reason };
 		}
 
+		const nestedGitBlock = findNestedGitBlockedSegment(cmd);
+		if (nestedGitBlock) {
+			const reason = gitBlockReason(nestedGitBlock);
+			if (reason) return { block: true, reason };
+		}
+
 		for (const segment of splitSegments(cmd)) {
 			const ghSegment = normalizeGhSegment(segment);
+			const gitSegment = normalizeGitSegment(segment);
 
 			// Workflow overrides apply per-segment
 			if (unlocked.prComment && ghSegment && (PR_COMMENT_RE.test(ghSegment) || GH_API_PR_RE.test(ghSegment))) {
@@ -370,12 +440,8 @@ export function registerGuards(pi: ExtensionAPI): void {
 				return { block: true, reason: BQ_QUERY_REASON };
 			}
 
-			// Check block rules
-			for (const rule of BLOCK_RULES) {
-				if (rule.gate.test(segment) && rule.test.test(segment)) {
-					return { block: true, reason: rule.reason };
-				}
-			}
+			const gitReason = gitSegment ? gitBlockReason(gitSegment) : null;
+			if (gitReason) return { block: true, reason: gitReason };
 
 			if (!ghSegment) {
 				const nestedGhMutation = findNestedGhMutationSegment(segment);

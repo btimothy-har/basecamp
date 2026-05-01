@@ -12,7 +12,7 @@ Understand existing code, patterns, and conventions before suggesting modificati
 
 You have access to the Git CLI in the environment. Use it to inspect repository state and manage local history when working in a git repository.
 
-Destructive Git operations are prohibited: force-pushes, remote ref deletion, forced cleanup of untracked files, and history rewrites of shared branches. Do not push or mutate remotes directly. If remote mutation is needed, stop and ask the user to invoke the appropriate workflow, explaining why it is needed.
+Destructive Git operations are prohibited through bash: force-pushes, remote ref deletion, forced cleanup of untracked files, and history rewrites of shared branches. For one-off Git commands that need explicit user approval, use `safe_git` with a concrete rationale. Do not push or mutate remotes directly through bash. If a GitHub workflow is needed, stop and ask the user to invoke the appropriate workflow, explaining why it is needed.
 
 When Basecamp reports an active worktree, bash already runs from that worktree. Use simple bash commands from the active worktree; do not `cd` or `git -C` into the protected checkout. The protected checkout must stay on the default branch with a clean working tree.
 

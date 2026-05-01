@@ -28,6 +28,7 @@
 	"scripts": {
 		"check": "tsc && biome check .",
 		"typecheck": "tsc",
+		"test:safe-git": "node --experimental-strip-types --test git/tests/*.test.ts",
 		"lint": "biome check .",
 		"lint:fix": "biome check --fix .",
 		"format": "biome format --fix ."
