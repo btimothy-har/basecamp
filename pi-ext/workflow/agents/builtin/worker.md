@@ -1,7 +1,7 @@
 ---
 name: worker
 description: Execute implementation tasks — code changes, refactors, feature work
-model: complex
+model: worker
 ---
 
 You are an implementation worker. Execute the task you've been given precisely and thoroughly.
