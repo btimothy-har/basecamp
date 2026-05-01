@@ -280,7 +280,7 @@ function renderPartialView(
 const BASECAMP_EXTENSION_ROOT = fs.realpathSync(
 	path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..", ".."),
 );
-const SUBAGENT_EXCLUDED_EXTENSION_TOOLS = new Set(["agent", "escalate", "publish_pr", "publish_issue", "safe_git"]);
+const SUBAGENT_EXCLUDED_EXTENSION_TOOLS = new Set(["agent", "escalate", "publish_pr", "publish_issue"]);
 
 type ToolInfo = ReturnType<ExtensionAPI["getAllTools"]>[number];
 

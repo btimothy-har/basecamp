@@ -1,7 +1,6 @@
 /**
- * Git protect — guards against destructive git and gh operations.
+ * Git protect — routes git through safe_git and guards gh/bq operations.
  *
- * Block rules gate regex scopes to a command, test regex triggers the block.
  * gh commands are blocked by default with an allow-list of safe operations.
  * Workflow commands can unlock specific operations via the unlocked state.
  * Raw BigQuery query execution is blocked so agents use the file-based tool.
@@ -11,35 +10,12 @@ import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { isToolCallEventType } from "@mariozechner/pi-coding-agent";
 
 // ---------------------------------------------------------------------------
-// Block rules
+// Git block reason
 // ---------------------------------------------------------------------------
 
-const BLOCK_RULES: { gate: RegExp; test: RegExp; reason: string }[] = [
-	{
-		gate: /^git\s+push\b/,
-		test: /\s(?:--force|--force-with-lease|--force-if-includes)(?:\s|=|$)|\s-[a-zA-Z]*f|\s\+[^\s]+/,
-		reason:
-			'Force push is blocked through bash. Use safe_git({ command: "git push ...", reason: "..." }) to request user approval, or ask the user to run it manually.',
-	},
-	{
-		gate: /^git\s+push\b/,
-		test: /\s(?:--mirror|--all|--tags)(?:\s|$)/,
-		reason:
-			'Broad git push is blocked through bash. Use safe_git({ command: "git push ...", reason: "..." }) to request user approval, or ask the user to run it manually.',
-	},
-	{
-		gate: /^git\s+push\b/,
-		test: /\s(?:--delete|-d)(?:\s|$)|\s:[^\s]/,
-		reason:
-			'Deleting remote refs is blocked through bash. Use safe_git({ command: "git push ...", reason: "..." }) to request user approval, or ask the user to run it manually.',
-	},
-	{
-		gate: /^git\s+clean\b/,
-		test: /\s-[a-zA-Z]*f|\s--force/,
-		reason:
-			'git clean -f is blocked through bash because it permanently deletes untracked files. Use safe_git({ command: "git clean ...", reason: "..." }) to request user approval, or ask the user to run it manually.',
-	},
-];
+const GIT_BLOCKED_REASON =
+	'All git commands are blocked through bash. Use safe_git({ command: "git ...", reason: "..." }) instead. ' +
+	"Commands outside the approval blocklist execute automatically; blocklisted destructive operations require user approval.";
 
 const GH_ALLOW: RegExp[] = [
 	/^gh\s+issue\s+(view|list|ls|status)(\s|$)/,
@@ -139,9 +115,39 @@ function splitSegments(cmd: string): string[] {
 
 const SHELL_WORD_RE = /(?:[^\s"'\\]+|\\.|"(?:\\.|[^"\\])*"|'[^']*')+/g;
 
-/** Tokenize just enough shell syntax to identify the command and flags without matching words containing bq. */
+/** Tokenize shell syntax and strip quotes from each word to normalize `g"it"` → `git`. */
 function tokenizeShellLike(segment: string): string[] {
-	return (segment.match(SHELL_WORD_RE) ?? []).map((token) => token.replace(/^("|')(.*)\1$/, "$2"));
+	return (segment.match(SHELL_WORD_RE) ?? []).map((token) => {
+		let result = "";
+		let i = 0;
+		while (i < token.length) {
+			const ch = token[i]!;
+			if (ch === "\\" && i + 1 < token.length) {
+				result += token[i + 1];
+				i += 2;
+			} else if (ch === "'") {
+				const end = token.indexOf("'", i + 1);
+				result += end === -1 ? token.slice(i + 1) : token.slice(i + 1, end);
+				i = end === -1 ? token.length : end + 1;
+			} else if (ch === '"') {
+				let j = i + 1;
+				while (j < token.length && token[j] !== '"') {
+					if (token[j] === "\\" && j + 1 < token.length) {
+						result += token[j + 1];
+						j += 2;
+					} else {
+						result += token[j];
+						j += 1;
+					}
+				}
+				i = j + 1;
+			} else {
+				result += ch;
+				i += 1;
+			}
+		}
+		return result;
+	});
 }
 
 function isShellAssignment(token: string): boolean {
@@ -207,6 +213,28 @@ function skipEnvArguments(tokens: string[], startIndex: number): number {
 	return index;
 }
 
+const WRAPPER_SKIP_ONE = new Set(["command", "sudo", "nohup", "time", "nice", "ionice"]);
+
+function commandIndexAfterAssignmentsAndEnv(tokens: string[]): number {
+	let index = 0;
+
+	while (index < tokens.length) {
+		const token = tokens[index];
+		if (token === undefined) return index;
+		if (isShellAssignment(token)) {
+			index += 1;
+			continue;
+		}
+		if (commandBaseName(token) === "env") {
+			index = skipEnvArguments(tokens, index + 1);
+			continue;
+		}
+		break;
+	}
+
+	return index;
+}
+
 function commandIndexAfterPrefixes(tokens: string[]): number {
 	let index = 0;
 
@@ -217,11 +245,11 @@ function commandIndexAfterPrefixes(tokens: string[]): number {
 			index += 1;
 			continue;
 		}
-		if (token === "command") {
+		if (WRAPPER_SKIP_ONE.has(commandBaseName(token))) {
 			index += 1;
 			continue;
 		}
-		if (token === "env") {
+		if (commandBaseName(token) === "env") {
 			index = skipEnvArguments(tokens, index + 1);
 			continue;
 		}
@@ -333,46 +361,66 @@ function ghMutationBlockReason(ghSegment: string): string | null {
 	return null;
 }
 
-function gitBlockReason(gitSegment: string): string | null {
-	for (const rule of BLOCK_RULES) {
-		if (rule.gate.test(gitSegment) && rule.test.test(gitSegment)) return rule.reason;
-	}
-	return null;
-}
-
-function literalGitBlockedSegment(text: string): string | null {
-	for (const segment of splitSegments(text)) {
-		const gitSegment = normalizeGitSegment(segment);
-		if (gitSegment && gitBlockReason(gitSegment)) return gitSegment;
-	}
-	return null;
-}
-
-function findGitBlockFromTokens(tokens: string[], startIndex: number): string | null {
+function hasGitInTokens(tokens: string[], startIndex: number): boolean {
 	for (let index = startIndex; index < tokens.length; index += 1) {
 		const token = tokens[index];
-		if (token === undefined || !isGitExecutable(token)) continue;
-
-		const gitSegment = ["git", ...tokens.slice(index + 1)].join(" ");
-		if (gitBlockReason(gitSegment)) return gitSegment;
+		if (token !== undefined && isGitExecutable(token)) return true;
 	}
-	return null;
+	return false;
 }
 
-function findNestedGitBlockedSegment(segment: string): string | null {
+function hasDirectGitCommand(segment: string): boolean {
+	const gitSegment = normalizeGitSegment(segment);
+	if (gitSegment !== null) return true;
+
+	const tokens = tokenizeShellLike(segment);
+	const commandIndex = commandIndexAfterAssignmentsAndEnv(tokens);
+	const executable = tokens[commandIndex];
+	return executable !== undefined && WRAPPER_SKIP_ONE.has(commandBaseName(executable))
+		? hasGitInTokens(tokens, commandIndex + 1)
+		: false;
+}
+
+function hasNestedGitCommand(segment: string): boolean {
 	const tokens = tokenizeShellLike(segment);
 	const commandIndex = commandIndexAfterPrefixes(tokens);
 	const executable = tokens[commandIndex];
-	if (executable === undefined) return null;
+	if (executable === undefined) return false;
 
 	if (isShellExecutable(executable)) {
 		const script = shellScriptArgument(tokens, commandIndex);
-		return script ? literalGitBlockedSegment(script) : null;
+		if (!script) return false;
+		for (const scriptSegment of splitSegments(script)) {
+			if (hasDirectGitCommand(scriptSegment)) return true;
+			if (hasNestedGitCommand(scriptSegment)) return true;
+		}
+		return false;
 	}
 
-	if (isXargsExecutable(executable)) return findGitBlockFromTokens(tokens, commandIndex + 1);
+	if (isXargsExecutable(executable)) {
+		return hasGitInTokens(tokens, commandIndex + 1);
+	}
 
-	return null;
+	return false;
+}
+
+/** Detect command substitution containing git: `$(git ...)` or backticks. Pre-split check preserves shell quoting. */
+function hasCommandSubstitutionGit(cmd: string): boolean {
+	const dollarMatch = cmd.match(/\$\(([^)]+)\)/g) ?? [];
+	const backtickMatch = cmd.match(/`([^`]+)`/g) ?? [];
+	for (const m of dollarMatch) {
+		const inner = m.slice(2, -1);
+		for (const seg of splitSegments(inner)) {
+			if (hasDirectGitCommand(seg) || hasNestedGitCommand(seg)) return true;
+		}
+	}
+	for (const m of backtickMatch) {
+		const inner = m.slice(1, -1);
+		for (const seg of splitSegments(inner)) {
+			if (hasDirectGitCommand(seg) || hasNestedGitCommand(seg)) return true;
+		}
+	}
+	return false;
 }
 
 function isBqQuerySegment(segment: string): boolean {
@@ -420,15 +468,17 @@ export function registerGuards(pi: ExtensionAPI): void {
 			if (reason) return { block: true, reason };
 		}
 
-		const nestedGitBlock = findNestedGitBlockedSegment(cmd);
-		if (nestedGitBlock) {
-			const reason = gitBlockReason(nestedGitBlock);
-			if (reason) return { block: true, reason };
+		if (hasCommandSubstitutionGit(cmd)) {
+			return { block: true, reason: GIT_BLOCKED_REASON };
+		}
+
+		// Must run before splitSegments because quoted shell scripts can contain separators.
+		if (hasNestedGitCommand(cmd)) {
+			return { block: true, reason: GIT_BLOCKED_REASON };
 		}
 
 		for (const segment of splitSegments(cmd)) {
 			const ghSegment = normalizeGhSegment(segment);
-			const gitSegment = normalizeGitSegment(segment);
 
 			// Workflow overrides apply per-segment
 			if (unlocked.prComment && ghSegment && (PR_COMMENT_RE.test(ghSegment) || GH_API_PR_RE.test(ghSegment))) {
@@ -440,8 +490,13 @@ export function registerGuards(pi: ExtensionAPI): void {
 				return { block: true, reason: BQ_QUERY_REASON };
 			}
 
-			const gitReason = gitSegment ? gitBlockReason(gitSegment) : null;
-			if (gitReason) return { block: true, reason: gitReason };
+			if (hasDirectGitCommand(segment)) {
+				return { block: true, reason: GIT_BLOCKED_REASON };
+			}
+
+			if (hasNestedGitCommand(segment)) {
+				return { block: true, reason: GIT_BLOCKED_REASON };
+			}
 
 			if (!ghSegment) {
 				const nestedGhMutation = findNestedGhMutationSegment(segment);

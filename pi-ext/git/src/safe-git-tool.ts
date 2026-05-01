@@ -1,15 +1,16 @@
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { Type } from "@sinclair/typebox";
-import { getSessionEffectiveCwd, isPathWithin } from "../../platform/config";
-import { exec } from "../../platform/exec";
-import { requireSessionState } from "../../platform/session";
+import { getSessionEffectiveCwd, isPathWithin } from "../../platform/config.ts";
+import { exec } from "../../platform/exec.ts";
+import { requireSessionState } from "../../platform/session.ts";
 import {
 	formatRiskSummary,
 	isHighRisk,
+	isReadOnly,
 	type ParsedGitCommand,
 	parseGitCommand,
 	type RiskClassification,
-} from "./safe-git-policy";
+} from "./safe-git-policy.ts";
 
 const OUTPUT_LIMIT = 16_000;
 const AUDIT_OUTPUT_LIMIT = 1_000;
@@ -273,9 +274,10 @@ export function registerSafeGitTool(pi: ExtensionAPI): void {
 		name: "safe_git",
 		label: "Safe Git",
 		description:
-			"Request user-approved execution of one validated git command with a required reason. " +
+			"Execute git commands through safe_git. Commands outside the approval blocklist execute automatically; " +
+			"force-push, broad push, remote ref deletion, and forced clean require user approval. " +
 			"The command is parsed into git argv and never run through a shell.",
-		promptSnippet: "Route a single validated git command to the user for approval before execution",
+		promptSnippet: "Execute git commands — non-blocklisted auto-executes, blocklisted requires approval",
 		parameters: SafeGitParams,
 		async execute(_id, params, signal, _onUpdate, ctx) {
 			const rawReason = params.reason.trim();
@@ -285,32 +287,33 @@ export function registerSafeGitTool(pi: ExtensionAPI): void {
 				return toolResult(details, true);
 			}
 
-			if (!ctx.hasUI) {
-				const details = rejectionDetails(
-					"safe_git requires an interactive UI for user approval; execution was not attempted.",
-					rawReason,
-				);
-				audit(pi, details);
-				return toolResult(details, true);
-			}
-
-			if (pi.getFlag("read-only") === true) {
-				const details = rejectionDetails("safe_git is disabled in read-only mode.", rawReason);
-				audit(pi, details);
-				return toolResult(details, true);
-			}
-
-			if (Number(process.env.BASECAMP_AGENT_DEPTH ?? "0") > 0) {
-				const details = rejectionDetails("safe_git is disabled in subagents.", rawReason);
-				audit(pi, details);
-				return toolResult(details, true);
-			}
-
 			const parsed = parseGitCommand(params.command);
 			if (!parsed.ok) {
 				const details = rejectionDetails(`safe_git rejected command: ${parsed.reason}`, rawReason);
 				audit(pi, details);
 				return toolResult(details, true);
+			}
+
+			const { risk } = parsed;
+			const isSubagent = Number(process.env.BASECAMP_AGENT_DEPTH ?? "0") > 0;
+			const isReadOnlyMode = pi.getFlag("read-only") === true;
+			const hasUI = ctx.hasUI;
+
+			const isRestrictedContext = isSubagent || isReadOnlyMode || !hasUI;
+			if (isRestrictedContext) {
+				if (!isReadOnly(risk) || risk.approvalRequired) {
+					let reason: string;
+					if (isSubagent) {
+						reason = "Subagents can only execute read-only git commands (status, log, diff, etc.).";
+					} else if (isReadOnlyMode) {
+						reason = "Read-only mode: only read-only git commands (status, log, diff, etc.) are allowed.";
+					} else {
+						reason = "Non-interactive context: only read-only git commands (status, log, diff, etc.) are allowed.";
+					}
+					const details = rejectionDetails(reason, rawReason, parsed.command.normalizedCommand, risk);
+					audit(pi, details);
+					return toolResult(details, true);
+				}
 			}
 
 			const state = requireSessionState();
@@ -325,13 +328,14 @@ export function registerSafeGitTool(pi: ExtensionAPI): void {
 			}
 
 			const cwd = getSessionEffectiveCwd(state);
-			if (parsed.risk.requiresWorktree) {
+
+			if (risk.requiresWorktree) {
 				if (!state.worktreeDir) {
 					const details = rejectionDetails(
 						"This git command can mutate repository state. Activate an execution worktree before using safe_git.",
 						rawReason,
 						parsed.command.normalizedCommand,
-						parsed.risk,
+						risk,
 					);
 					audit(pi, details);
 					return toolResult(details, true);
@@ -342,22 +346,40 @@ export function registerSafeGitTool(pi: ExtensionAPI): void {
 						`Mutating git commands must run inside the active worktree (${state.worktreeDir}), not ${cwd}.`,
 						rawReason,
 						parsed.command.normalizedCommand,
-						parsed.risk,
+						risk,
 					);
 					audit(pi, details);
 					return toolResult(details, true);
 				}
 			}
 
-			const context = await collectGitContext(pi, cwd, state.repoName);
-			const preview = await buildPreview(pi, parsed.command, parsed.risk, context);
+			if (!risk.approvalRequired) {
+				const context = await collectGitContext(pi, cwd, state.repoName);
 
-			if (shouldBlockDefaultBranch(parsed.risk, context)) {
+				const execution = await git(pi, parsed.command.argv.slice(1), EXEC_TIMEOUT_MS);
+				const details: SafeGitDetails = {
+					decision: "executed",
+					normalizedCommand: parsed.command.normalizedCommand,
+					reason: rawReason,
+					risk,
+					context,
+					exitCode: execution.code,
+					stdout: execution.stdout,
+					stderr: execution.stderr,
+				};
+				audit(pi, details);
+				return toolResult(details, execution.code !== 0);
+			}
+
+			const context = await collectGitContext(pi, cwd, state.repoName);
+			const preview = await buildPreview(pi, parsed.command, risk, context);
+
+			if (shouldBlockDefaultBranch(risk, context)) {
 				const details: SafeGitDetails = {
 					decision: "rejected",
 					normalizedCommand: parsed.command.normalizedCommand,
 					reason: rawReason,
-					risk: parsed.risk,
+					risk,
 					context,
 					preview,
 					message: `safe_git rejected high-risk execution on the default branch (${context.defaultBranch}). Ask the user to run it manually if needed.`,
@@ -368,7 +390,7 @@ export function registerSafeGitTool(pi: ExtensionAPI): void {
 
 			const approved = await ctx.ui.confirm(
 				"Approve safe_git execution?",
-				approvalPrompt(parsed.command, rawReason, parsed.risk, context, preview),
+				approvalPrompt(parsed.command, rawReason, risk, context, preview),
 				{ signal },
 			);
 			if (!approved) {
@@ -376,7 +398,7 @@ export function registerSafeGitTool(pi: ExtensionAPI): void {
 					decision: "declined",
 					normalizedCommand: parsed.command.normalizedCommand,
 					reason: rawReason,
-					risk: parsed.risk,
+					risk,
 					context,
 					preview,
 					message: "User declined safe_git execution; command was not run.",
@@ -385,14 +407,14 @@ export function registerSafeGitTool(pi: ExtensionAPI): void {
 				return toolResult(details, true);
 			}
 
-			if (parsed.risk.typedConfirmationRequired) {
+			if (risk.typedConfirmationRequired) {
 				const typed = (await ctx.ui.input("Type exact command to approve", ""))?.trim();
 				if (typed !== parsed.command.normalizedCommand) {
 					const details: SafeGitDetails = {
 						decision: "declined",
 						normalizedCommand: parsed.command.normalizedCommand,
 						reason: rawReason,
-						risk: parsed.risk,
+						risk,
 						context,
 						preview,
 						message: "Typed confirmation did not match; command was not run.",
@@ -407,7 +429,7 @@ export function registerSafeGitTool(pi: ExtensionAPI): void {
 				decision: "executed",
 				normalizedCommand: parsed.command.normalizedCommand,
 				reason: rawReason,
-				risk: parsed.risk,
+				risk,
 				context,
 				preview,
 				exitCode: execution.code,
