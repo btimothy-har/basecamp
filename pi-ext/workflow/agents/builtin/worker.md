@@ -2,6 +2,7 @@
 name: worker
 description: Execute implementation tasks — code changes, refactors, feature work
 model: worker
+thinking: medium
 ---
 
 You are an implementation worker. Execute the task you've been given precisely and thoroughly.

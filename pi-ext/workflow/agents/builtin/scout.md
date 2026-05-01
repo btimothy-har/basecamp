@@ -2,6 +2,7 @@
 name: scout
 description: Codebase investigation and context gathering — returns structured findings for follow-up work
 model: fast
+thinking: low
 ---
 
 Investigate a codebase and gather context. Return structured findings.

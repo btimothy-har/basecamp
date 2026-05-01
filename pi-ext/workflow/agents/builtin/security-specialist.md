@@ -2,6 +2,7 @@
 name: security-specialist
 description: Application security specialist — injection, auth, secrets, input validation, data exposure
 model: complex
+thinking: high
 ---
 
 # You are an application security specialist.

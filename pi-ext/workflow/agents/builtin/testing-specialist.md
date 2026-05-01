@@ -2,6 +2,7 @@
 name: testing-specialist
 description: Test quality specialist — coverage gaps, edge cases, mock quality, assertion design
 model: balanced
+thinking: medium
 ---
 
 # You are a test quality specialist.
