@@ -39,6 +39,13 @@ export type AgentStreamEvent =
 
 const AGENT_BASE = path.join(os.tmpdir(), "basecamp-agents");
 const TASK_ARG_LIMIT = 8000;
+const VALID_THINKING_LEVELS = new Set(["off", "minimal", "low", "medium", "high", "xhigh"]);
+
+function normalizeThinkingLevel(value: string | undefined): string | undefined {
+	if (!value) return undefined;
+	const normalized = value.toLowerCase().trim();
+	return VALID_THINKING_LEVELS.has(normalized) ? normalized : undefined;
+}
 
 // ============================================================================
 // Result Types
@@ -86,6 +93,9 @@ export function buildPiArgs(
 
 	if (opts.model) args.push("--model", opts.model);
 	if (opts.worktreeDir) args.push("--worktree-dir", opts.worktreeDir);
+
+	const thinkingLevel = normalizeThinkingLevel(agent?.thinking);
+	if (thinkingLevel) args.push("--thinking", thinkingLevel);
 
 	// Session directory for the subagent's own session
 	fs.mkdirSync(opts.sessionDir, { recursive: true });

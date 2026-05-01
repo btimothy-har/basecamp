@@ -178,7 +178,6 @@ interface HandoffWorktreeContext {
 
 interface PendingImplementationHandoff {
 	mode: ImplementationMode;
-	compact: boolean;
 	worktree: HandoffWorktreeContext;
 	plan: HandoffPlanContext;
 }
@@ -258,15 +257,7 @@ async function selectWorktreeLabel(
 	return labelsByChoice.get(choice) ?? null;
 }
 
-async function selectHandoffCompaction(ctx: ExtensionContext, worktree: WorktreeResult): Promise<boolean> {
-	if (!ctx.hasUI) return false;
-
-	const disposition = worktree.created ? "created" : "resumed";
-	return ctx.ui.confirm(
-		"Compact planning context before execution?",
-		`Worktree ${disposition}: ${worktree.label} (${worktree.branch})\n${worktree.worktreeDir}\n\nCompact the planning conversation into a focused execution summary before starting work?`,
-	);
-}
+const HANDOFF_COMPACTION_THRESHOLD_PERCENT = 30;
 
 export function buildHandoffMessage(mode: ImplementationMode): string {
 	if (mode === "supervisor") {
@@ -338,13 +329,11 @@ function buildApprovedResult(draft: PlanDraft, mode: ApprovedPlanMode, worktree?
 function buildPendingImplementationHandoff(
 	draft: PlanDraft,
 	mode: ImplementationMode,
-	compact: boolean,
 	worktree: WorktreeResult,
 ): PendingImplementationHandoff {
 	const state = getState();
 	return {
 		mode,
-		compact,
 		worktree: {
 			label: worktree.label,
 			path: worktree.worktreeDir,
@@ -477,7 +466,10 @@ export function registerPlan(pi: ExtensionAPI, tasksAccess: TasksAccess): PlanAc
 				pi.sendUserMessage(buildHandoffMessage(handoff.mode));
 			};
 
-			if (!handoff.compact) {
+			const usagePercent = ctx.getContextUsage()?.percent;
+			const shouldCompact = typeof usagePercent === "number" && usagePercent > HANDOFF_COMPACTION_THRESHOLD_PERCENT;
+
+			if (!shouldCompact) {
 				sendHandoff();
 				return;
 			}
@@ -620,16 +612,9 @@ export function registerPlan(pi: ExtensionAPI, tasksAccess: TasksAccess): PlanAc
 					};
 				}
 
-				const compactHandoff = await selectHandoffCompaction(ctx, worktree);
-
 				setAgentMode(implementationMode);
 				tasksAccess.activateGoalCycle(draft.goal.content, approvedTasks, planRef, implementationMode);
-				pendingImplementationHandoff = buildPendingImplementationHandoff(
-					draft,
-					implementationMode,
-					compactHandoff,
-					worktree,
-				);
+				pendingImplementationHandoff = buildPendingImplementationHandoff(draft, implementationMode, worktree);
 
 				const result = buildApprovedResult(draft, implementationMode, worktree);
 				draft = null;

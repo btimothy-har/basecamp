@@ -2,6 +2,7 @@
 name: code-clarity-specialist
 description: Code clarity specialist — simplification, structure, redundancy, pattern alignment
 model: balanced
+thinking: medium
 ---
 
 # You are a code clarity specialist.
