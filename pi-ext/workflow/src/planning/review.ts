@@ -15,6 +15,7 @@ import type { ExtensionContext, Theme } from "@mariozechner/pi-coding-agent";
 import { DynamicBorder, getSelectListTheme } from "@mariozechner/pi-coding-agent";
 import { Container, Editor, type EditorTheme, matchesKey, Spacer, Text } from "@mariozechner/pi-tui";
 import type { GoalCycle, ReviewState, Task } from "../tasks/tasks";
+import { deriveGoalContextReviewState } from "./draft-logic";
 
 // ============================================================================
 // Types
@@ -64,8 +65,7 @@ function reviewMarker(review: ReviewState, theme: Theme): string {
 
 function countPending(draft: PlanDraft): number {
 	let count = 0;
-	// Goal+Context share review state — count as one item
-	if (draft.goal.review.approved === null) count++;
+	if (deriveGoalContextReviewState(draft).approved === null) count++;
 	for (const name of INDIVIDUAL_SECTIONS) {
 		if (draft[name].review.approved === null) count++;
 	}
@@ -87,7 +87,7 @@ function getListItems(draft: PlanDraft): ReviewItem[] {
 }
 
 function getItemReview(draft: PlanDraft, item: ReviewItem): ReviewState {
-	if (item.kind === "goalContext") return draft.goal.review;
+	if (item.kind === "goalContext") return deriveGoalContextReviewState(draft);
 	if (item.kind === "section") return draft[item.name].review;
 	return draft.tasksReview;
 }
@@ -116,7 +116,7 @@ function renderListView(items: ReviewItem[], selected: number, draft: PlanDraft,
 		const cursor = i === selected ? theme.fg("accent", "▸") : " ";
 
 		if (item.kind === "goalContext") {
-			const marker = reviewMarker(draft.goal.review, theme);
+			const marker = reviewMarker(deriveGoalContextReviewState(draft), theme);
 			const preview = draft.goal.content.length > 40 ? `${draft.goal.content.slice(0, 40)}…` : draft.goal.content;
 			lines.push(`${cursor} ${marker} ${theme.bold("Goal")}  ${theme.fg("dim", preview)}`);
 		} else if (item.kind === "section") {
@@ -137,7 +137,7 @@ function renderDrillDownContent(draft: PlanDraft, item: ReviewItem, theme: Theme
 	const lines: string[] = [];
 
 	if (item.kind === "goalContext") {
-		const marker = reviewMarker(draft.goal.review, theme);
+		const marker = reviewMarker(deriveGoalContextReviewState(draft), theme);
 		lines.push(`${marker} ${theme.fg("accent", theme.bold("Goal"))}`);
 		lines.push("");
 		lines.push(draft.goal.content);

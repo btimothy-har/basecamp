@@ -18,28 +18,13 @@ import { getAgentMode, setAgentMode } from "../../../core/src/runtime/mode";
 import { activateWorktree, getState } from "../../../core/src/runtime/session";
 import { listWorktrees, type WorktreeResult } from "../../../core/src/runtime/worktree";
 import type { GoalCycle, ReviewState, TaskStatus, TasksAccess } from "../tasks/tasks";
-import type { PlanDraft, SectionName } from "./review";
+import { computeGoalContextReview, computeSectionReview, freshReview, tasksMatch } from "./draft-logic";
+import type { PlanDraft } from "./review";
 import { SECTION_NAMES, showPlanReadOnly, showReviewOverlay } from "./review";
 
 // ============================================================================
 // Draft diffing — preserve approvals on unchanged content
 // ============================================================================
-
-function freshReview(): ReviewState {
-	return { approved: null, feedback: null };
-}
-
-function tasksMatch(tasks: { label: string; description: string; criteria: string }[], previous: PlanDraft): boolean {
-	if (tasks.length !== previous.tasks.length) return false;
-	for (let i = 0; i < tasks.length; i++) {
-		const curr = tasks[i]!;
-		const prev = previous.tasks[i]!;
-		if (curr.label !== prev.label || curr.description !== prev.description || curr.criteria !== prev.criteria) {
-			return false;
-		}
-	}
-	return true;
-}
 
 function buildDraft(
 	params: {
@@ -53,30 +38,30 @@ function buildDraft(
 	tasks: { label: string; description: string; criteria: string }[],
 	previous: PlanDraft | null,
 ): PlanDraft {
-	function sectionReview(name: SectionName, content: string): ReviewState {
-		if (!previous) return freshReview();
-		const prev = previous[name];
-		if (prev.content === content && prev.review.approved) {
-			return { approved: true, feedback: null };
-		}
-		return freshReview();
-	}
+	const goalContextState = computeGoalContextReview(
+		params.goal,
+		params.context,
+		previous ? { goal: previous.goal, context: previous.context } : null,
+	);
 
 	// Tasks are reviewed as a collective unit — preserve approval if list is unchanged
 	function collectiveTasksReview(): ReviewState {
 		if (!previous) return freshReview();
-		if (tasksMatch(tasks, previous) && previous.tasksReview.approved) {
+		if (tasksMatch(tasks, previous.tasks) && previous.tasksReview.approved) {
 			return { approved: true, feedback: null };
 		}
 		return freshReview();
 	}
 
 	return {
-		goal: { content: params.goal, review: sectionReview("goal", params.goal) },
-		context: { content: params.context, review: sectionReview("context", params.context) },
-		design: { content: params.design, review: sectionReview("design", params.design) },
-		success: { content: params.success, review: sectionReview("success", params.success) },
-		boundaries: { content: params.boundaries, review: sectionReview("boundaries", params.boundaries) },
+		goal: { content: params.goal, review: goalContextState },
+		context: { content: params.context, review: goalContextState },
+		design: { content: params.design, review: computeSectionReview(params.design, previous?.design ?? null) },
+		success: { content: params.success, review: computeSectionReview(params.success, previous?.success ?? null) },
+		boundaries: {
+			content: params.boundaries,
+			review: computeSectionReview(params.boundaries, previous?.boundaries ?? null),
+		},
 		worktreeSlug: params.worktreeSlug ?? null,
 		tasks: tasks.map((t) => ({
 			label: t.label,
