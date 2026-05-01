@@ -306,6 +306,8 @@ const EXECUTION_ARG_FLAGS = new Set([
 	"--upload-pack",
 ]);
 
+const OUTPUT_FILE_FLAGS = new Set(["--output", "-o"]);
+
 const EXECUTION_CONFIG_KEYS = [
 	/^alias\./i,
 	/^core\.sshcommand$/i,
@@ -333,14 +335,20 @@ type RiskInput = {
 	details?: HighRiskDetails | null;
 };
 
+/**
+ * Categories that require explicit user approval before execution.
+ * Matches the historically bash-blocked destructive operations.
+ */
+const APPROVAL_REQUIRED_CATEGORIES = new Set(["force-push", "broad-push", "remote-ref-deletion", "forced-clean"]);
+
 function risk(input: RiskInput): RiskClassification {
 	const highRisk = input.level === "high-risk";
 	return {
 		level: input.level,
 		category: input.category,
 		requiresWorktree: input.requiresWorktree,
-		approvalRequired: true,
-		typedConfirmationRequired: highRisk,
+		approvalRequired: APPROVAL_REQUIRED_CATEGORIES.has(input.category),
+		typedConfirmationRequired: highRisk && APPROVAL_REQUIRED_CATEGORIES.has(input.category),
 		details: input.details ?? null,
 	};
 }
@@ -482,6 +490,9 @@ function validateArgs(subcommand: string, args: string[]): string | null {
 		if (EXECUTION_ARG_FLAGS.has(arg) || [...EXECUTION_ARG_FLAGS].some((flag) => arg.startsWith(`${flag}=`))) {
 			return `Git execution option "${arg}" is not allowed`;
 		}
+		if (OUTPUT_FILE_FLAGS.has(arg) || [...OUTPUT_FILE_FLAGS].some((flag) => arg.startsWith(`${flag}=`))) {
+			return `Output file flag "${arg}" is not allowed; redirect stdout instead`;
+		}
 		if (subcommand === "clone" && (arg === "-c" || arg === "--config" || arg.startsWith("--config="))) {
 			return `Git config injection option "${arg}" is not allowed`;
 		}
@@ -573,6 +584,14 @@ function classifyBranch(args: string[]): RiskClassification {
 			details: { operation: "branch", target: positions[0], flags: flags(args) },
 		});
 	}
+	if (hasFlag(args, ["--set-upstream-to", "-u", "--unset-upstream"])) {
+		return risk({
+			level: "mutating",
+			category: "branch-tracking",
+			requiresWorktree: true,
+			details: { operation: "branch-tracking", flags: flags(args) },
+		});
+	}
 	if (positions.length > 0 && !hasFlag(args, ["--list", "--show-current", "--contains", "--merged", "--no-merged"])) {
 		return risk({
 			level: "mutating",
@@ -650,7 +669,7 @@ function classifyStash(args: string[]): RiskClassification {
 
 function classifyNotes(args: string[]): RiskClassification {
 	const op = positionalArgs(args)[0];
-	if (["add", "append", "edit", "remove", "prune", "merge"].includes(op ?? "")) {
+	if (["add", "append", "copy", "edit", "remove", "prune", "merge"].includes(op ?? "")) {
 		return risk({
 			level: "mutating",
 			category: "notes-mutation",
@@ -969,4 +988,8 @@ export function formatRiskSummary(risk: RiskClassification): string {
 
 export function isHighRisk(risk: RiskClassification): boolean {
 	return risk.level === "high-risk";
+}
+
+export function isReadOnly(risk: RiskClassification): boolean {
+	return risk.level === "safe";
 }

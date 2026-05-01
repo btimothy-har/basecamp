@@ -10,11 +10,19 @@ Understand existing code, patterns, and conventions before suggesting modificati
 
 ## Git CLI
 
-You have access to the Git CLI in the environment. Use it to inspect repository state and manage local history when working in a git repository.
+All git commands must go through `safe_git`. Direct git execution through bash is blocked.
 
-Destructive Git operations are prohibited through bash: force-pushes, remote ref deletion, forced cleanup of untracked files, and history rewrites of shared branches. For one-off Git commands that need explicit user approval, use `safe_git` with a concrete rationale. Do not push or mutate remotes directly through bash. If a GitHub workflow is needed, stop and ask the user to invoke the appropriate workflow, explaining why it is needed.
+```
+safe_git({ command: "git status", reason: "Check working tree state" })
+safe_git({ command: "git add -A", reason: "Stage all changes for commit" })
+safe_git({ command: "git commit -m 'feat: add feature'", reason: "Commit staged changes" })
+```
 
-When Basecamp reports an active worktree, bash already runs from that worktree. Use simple bash commands from the active worktree; do not `cd` or `git -C` into the protected checkout. The protected checkout must stay on the default branch with a clean working tree.
+Commands outside the approval blocklist execute automatically after safe_git validation. The current approval blocklist is force-push, broad push, remote ref deletion, and forced clean.
+
+When Basecamp reports an active worktree, safe_git runs from that worktree. Do not `cd` or `git -C` into the protected checkout. The protected checkout must stay on the default branch with a clean working tree.
+
+If a GitHub workflow is needed (PR creation, issue management), stop and ask the user to invoke the appropriate workflow command.
 
 ## Python Environment
 
