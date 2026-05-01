@@ -2,9 +2,12 @@
  * git_status tool — current repository state for the Basecamp working directory.
  */
 
+import * as path from "node:path";
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { Type } from "@sinclair/typebox";
-import { exec } from "../../platform/exec";
+import type { SessionState } from "../../platform/config.ts";
+import { exec } from "../../platform/exec.ts";
+import { getSessionState } from "../../platform/session.ts";
 
 interface GitCommandResult {
 	code: number;
@@ -13,11 +16,29 @@ interface GitCommandResult {
 
 const StatusParams = Type.Object({});
 
+export interface WorktreeInfo {
+	label: string;
+	path: string;
+	branch: string;
+}
+
+export interface GitStatusDetails {
+	repoName: string;
+	repoRoot: string;
+	effectiveRoot: string;
+	worktree: WorktreeInfo | null;
+	branch: string;
+	defaultBranch: string;
+	upstream: string;
+	workingTreeStatus: string[];
+	recentCommits: string[];
+}
+
 async function git(pi: ExtensionAPI, args: string[]): Promise<GitCommandResult> {
 	const result = await exec(pi, "git", args, { timeout: 10_000 });
 	return {
 		code: result.code,
-		stdout: result.stdout.trim(),
+		stdout: result.stdout.trimEnd(),
 	};
 }
 
@@ -65,6 +86,45 @@ async function upstreamSummary(pi: ExtensionAPI): Promise<string> {
 	return `${upstream.stdout} (ahead ${ahead}, behind ${behind})`;
 }
 
+function formatOutput(state: SessionState | null, details: GitStatusDetails): string[] {
+	const lines: string[] = [];
+
+	if (details.worktree) {
+		lines.push(
+			`Repository: ${details.repoName}`,
+			`Protected checkout: ${details.repoRoot}`,
+			"",
+			`Active worktree: ${details.worktree.label} (branch: ${details.worktree.branch})`,
+			`Worktree root: ${details.worktree.path}`,
+			"Git status source: active worktree",
+		);
+		if (path.resolve(details.effectiveRoot) !== path.resolve(details.worktree.path)) {
+			lines.push(`Git status root: ${details.effectiveRoot}`);
+		}
+	} else if (state) {
+		lines.push(`Repository: ${details.repoName}`, `Repository root: ${details.repoRoot}`);
+	} else {
+		lines.push(`Git root: ${details.effectiveRoot}`);
+	}
+
+	lines.push(
+		"",
+		`Branch: ${details.branch}`,
+		`Default branch: ${details.defaultBranch}`,
+		`Upstream: ${details.upstream}`,
+	);
+
+	if (details.workingTreeStatus.length > 0) {
+		lines.push("", "Working tree:", ...details.workingTreeStatus);
+	} else {
+		lines.push("", "Working tree: clean");
+	}
+
+	lines.push("", "Recent commits:", ...(details.recentCommits.length > 0 ? details.recentCommits : ["none"]));
+
+	return lines;
+}
+
 export function registerStatusTool(pi: ExtensionAPI): void {
 	pi.registerTool({
 		name: "git_status",
@@ -73,8 +133,8 @@ export function registerStatusTool(pi: ExtensionAPI): void {
 			"Get current repository state for the Basecamp working directory; call before staging, committing, pushing, or PR work.",
 		parameters: StatusParams,
 		async execute() {
-			const root = await git(pi, ["rev-parse", "--show-toplevel"]);
-			if (root.code !== 0 || !root.stdout) {
+			const effectiveRootResult = await git(pi, ["rev-parse", "--show-toplevel"]);
+			if (effectiveRootResult.code !== 0 || !effectiveRootResult.stdout) {
 				return {
 					isError: true,
 					details: null,
@@ -82,7 +142,10 @@ export function registerStatusTool(pi: ExtensionAPI): void {
 				};
 			}
 
-			const [branch, defaultBranch, upstream, status, recentCommits] = await Promise.all([
+			const effectiveRoot = effectiveRootResult.stdout;
+			const state = getSessionState();
+
+			const [branch, defaultBranch, upstream, statusResult, recentCommitsResult] = await Promise.all([
 				currentBranch(pi),
 				detectDefaultBranch(pi),
 				upstreamSummary(pi),
@@ -90,27 +153,43 @@ export function registerStatusTool(pi: ExtensionAPI): void {
 				git(pi, ["log", "--oneline", "-5"]),
 			]);
 
-			const lines = [
-				`Repository root: ${root.stdout}`,
-				`Branch: ${branch}`,
-				`Default branch: ${defaultBranch}`,
-				`Upstream: ${upstream}`,
-			];
+			const workingTreeStatus =
+				statusResult.code === 0 && statusResult.stdout
+					? statusResult.stdout.split("\n").filter((line) => line.trim())
+					: [];
+			const recentCommits =
+				recentCommitsResult.code === 0 && recentCommitsResult.stdout
+					? recentCommitsResult.stdout.split("\n").filter((line) => line.trim())
+					: [];
 
-			if (status.code === 0 && status.stdout) {
-				lines.push("", "Working tree:", status.stdout);
-			} else {
-				lines.push("", "Working tree: clean");
-			}
+			const worktree: WorktreeInfo | null =
+				state?.worktreeDir && state.worktreeLabel
+					? {
+							label: state.worktreeLabel,
+							path: state.worktreeDir,
+							branch,
+						}
+					: null;
 
-			lines.push(
-				"",
-				"Recent commits:",
-				recentCommits.code === 0 && recentCommits.stdout ? recentCommits.stdout : "none",
-			);
+			const repoName = state?.repoName ?? (path.basename(effectiveRoot) || "unknown");
+			const repoRoot = state?.repoRoot ?? effectiveRoot;
+
+			const details: GitStatusDetails = {
+				repoName,
+				repoRoot,
+				effectiveRoot,
+				worktree,
+				branch,
+				defaultBranch,
+				upstream,
+				workingTreeStatus,
+				recentCommits,
+			};
+
+			const lines = formatOutput(state, details);
 
 			return {
-				details: null,
+				details,
 				content: [{ type: "text", text: lines.join("\n") }],
 			};
 		},
