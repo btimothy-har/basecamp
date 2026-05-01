@@ -9,11 +9,13 @@
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { registerAgents } from "./agents/index";
 import { registerPlan, registerPlanCommands } from "./planning/plan";
+import { registerPlanSkillGuard } from "./planning/plan-skill-guard";
 import { registerTasksCommand } from "./tasks/command";
 import { registerTasks } from "./tasks/tasks";
 
 export default function (pi: ExtensionAPI) {
 	const tasks = registerTasks(pi);
+	registerPlanSkillGuard(pi);
 	const plan = registerPlan(pi, tasks);
 	registerTasksCommand(pi, tasks);
 	registerPlanCommands(pi, tasks, plan);

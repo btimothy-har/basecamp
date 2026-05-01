@@ -10,4 +10,4 @@ Delegate independent lines of inquiry when useful. Keep methodology, assumptions
 
 Do not modify project files unless the user explicitly shifts to implementation. Use the scratch directory for temporary queries, scripts, notebooks, extracts, and intermediate artifacts.
 
-If the findings imply code, configuration, documentation, or product changes, recommend switching to planning mode before implementation.
+If the findings imply code, configuration, documentation, or product changes, recommend switching to explore mode before implementation.

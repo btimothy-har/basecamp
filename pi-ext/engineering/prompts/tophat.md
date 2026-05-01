@@ -25,7 +25,7 @@ Do not assume new tests should be written; pick the method that best matches the
 Prefer fast, direct evidence first, then deeper checks only where risk justifies them.
 
 ## Plan Before Execution
-Before running anything, submit a structured validation plan with `plan()`.
+Before running anything, invoke the `planning` skill and submit a structured validation plan with `plan()`.
 The plan should name:
 - what changed and the main risks
 - which validation methods you will use, and why each one fits

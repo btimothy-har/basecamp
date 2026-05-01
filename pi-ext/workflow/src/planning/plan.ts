@@ -706,15 +706,15 @@ export function registerPlan(pi: ExtensionAPI, tasksAccess: TasksAccess): PlanAc
 
 export function registerPlanCommands(pi: ExtensionAPI, tasksAccess: TasksAccess, plan: PlanAccess): void {
 	pi.registerCommand("plan", {
-		description: "Start structured planning for a topic",
+		description: "Explore a topic and formalise an execution plan",
 		handler: async (args, ctx) => {
-			const topic = args?.trim() || (ctx.hasUI ? await ctx.ui.input("What do you want to plan?") : undefined);
+			const topic = args?.trim() || (ctx.hasUI ? await ctx.ui.input("What do you want to explore?") : undefined);
 			if (!topic) {
 				ctx.ui.notify("Usage: /plan <topic>", "error");
 				return;
 			}
 			pi.sendUserMessage(
-				`I want to plan: ${topic}\n\nInvoke the \`planning\` skill and follow its full process. Do not skip phases — explore the problem space first, discuss approach with me, then formalise via \`plan()\`.`,
+				`I want to explore and plan: ${topic}\n\nInvoke the \`planning\` skill. Do not jump straight to \`plan()\` — explore the problem space first, discuss the approach with me, then formalise the agreed execution plan. Do not prototype or edit code before the plan is approved.`,
 			);
 		},
 	});
