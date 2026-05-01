@@ -1,13 +1,15 @@
 ---
 name: planning
-description: "Invoke for structured planning before execution. Triggers: 'plan this', 'let's plan', architectural decisions, multi-step features, refactors. Do NOT skip to plan() — explore and discuss first."
+description: "Invoke for structured exploration before execution. Triggers: 'plan this', 'let's plan', architectural decisions, multi-step features, refactors. Do NOT skip to plan() — explore and discuss first."
 ---
 
-# Planning
+# Explore to Plan
 
 ## Purpose
 
-Turn a user's intent into a structured, reviewed plan via the `plan()` tool. Planning is a **three-phase process** — exploration, discussion, then formalisation. Do not jump straight to `plan()`.
+Guide a user's intent through exploration and discussion into a structured, reviewed plan via the `plan()` tool. This is a **three-phase process** — exploration, discussion, then formalisation. Do not jump straight to `plan()`.
+
+Exploration is non-mutative. Prototypes, spikes, and repo edits are implementation work; they require an approved plan and execution handoff first.
 
 ---
 
@@ -43,7 +45,7 @@ plan({
   goal:        // one sentence — what are we achieving
   context:     // what exists, constraints, triggers
   design:      // the agreed approach — patterns, trade-offs, decisions
-  success:     // what done looks like — concrete and verifiable
+  success:     // what done looks like — plan-level success criteria
   boundaries:  // what's out of scope — prevents drift
   tasks:       // ordered steps, each with label + description + criteria
   worktreeSlug: "handoff-labels" // optional hidden metadata for implementation handoff
@@ -63,7 +65,7 @@ Once every item is approved and submitted, follow the plan result. Implementatio
 
 ---
 
-## When NOT to plan
+## When NOT to formalise with `plan()`
 
 Not everything needs `plan()`. Use `update_goal` → `create_tasks` for:
 - Bug fixes with obvious cause
@@ -71,7 +73,7 @@ Not everything needs `plan()`. Use `update_goal` → `create_tasks` for:
 - One-shot tasks
 - Anything where the approach is self-evident
 
-The user chooses when to plan (via `/plan`). Don't suggest planning for simple work.
+The user chooses when to start an explore-to-plan workflow via `/plan`. Don't suggest formal planning for simple work.
 
 ---
 

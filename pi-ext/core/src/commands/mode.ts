@@ -3,7 +3,7 @@ import { type AgentMode, cycleAgentMode } from "../runtime/mode";
 
 const MODE_LABELS: Record<AgentMode, string> = {
 	analysis: "Analysis/research",
-	planning: "Planning/discovery",
+	planning: "Explore",
 	supervisor: "Supervisor",
 	executor: "IC/executor",
 };
