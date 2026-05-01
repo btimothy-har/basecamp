@@ -17,13 +17,19 @@ import { isToolCallEventType } from "@mariozechner/pi-coding-agent";
 const BLOCK_RULES: { gate: RegExp; test: RegExp; reason: string }[] = [
 	{
 		gate: /^git\s+push\b/,
-		test: /\s(--force|--force-with-lease)(\s|$)|\s-[a-zA-Z]*f/,
+		test: /\s(?:--force|--force-with-lease|--force-if-includes)(?:\s|=|$)|\s-[a-zA-Z]*f|\s\+[^\s]+/,
 		reason:
 			'Force push is blocked through bash. Use safe_git({ command: "git push ...", reason: "..." }) to request user approval, or ask the user to run it manually.',
 	},
 	{
 		gate: /^git\s+push\b/,
-		test: /\s--delete(\s|$)|\s:[^\s]/,
+		test: /\s(?:--mirror|--all|--tags)(?:\s|$)/,
+		reason:
+			'Broad git push is blocked through bash. Use safe_git({ command: "git push ...", reason: "..." }) to request user approval, or ask the user to run it manually.',
+	},
+	{
+		gate: /^git\s+push\b/,
+		test: /\s(?:--delete|-d)(?:\s|$)|\s:[^\s]/,
 		reason:
 			'Deleting remote refs is blocked through bash. Use safe_git({ command: "git push ...", reason: "..." }) to request user approval, or ask the user to run it manually.',
 	},

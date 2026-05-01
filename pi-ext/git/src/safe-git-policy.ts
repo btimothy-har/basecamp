@@ -97,7 +97,6 @@ const BUILTIN_COMMANDS = new Set([
 	"fast-export",
 	"fast-import",
 	"fetch",
-	"filter-branch",
 	"fmt-merge-msg",
 	"for-each-ref",
 	"format-patch",
@@ -296,7 +295,16 @@ const LOW_LEVEL_MUTATION_COMMANDS = new Set([
 	"write-tree",
 ]);
 
-const EXECUTION_ARG_FLAGS = new Set(["--exec", "--extcmd", "--upload-pack", "--receive-pack"]);
+const EXECUTION_ARG_FLAGS = new Set([
+	"--exec",
+	"--extcmd",
+	"--external-diff",
+	"--ext-diff",
+	"--open-files-in-pager",
+	"--receive-pack",
+	"--textconv",
+	"--upload-pack",
+]);
 
 const EXECUTION_CONFIG_KEYS = [
 	/^alias\./i,
@@ -436,8 +444,8 @@ function isPathExecutable(token: string): boolean {
 }
 
 function isForbiddenGlobalFlag(token: string): boolean {
-	if (token === "-C" || token.startsWith("-C")) return true;
-	if (token === "-c" || token.startsWith("-c")) return true;
+	if (token.startsWith("-C")) return true;
+	if (token.startsWith("-c")) return true;
 	if (FORBIDDEN_GLOBAL_FLAGS.has(token)) return true;
 	return [...FORBIDDEN_GLOBAL_FLAGS].some((flag) => token.startsWith(`${flag}=`));
 }
@@ -467,12 +475,15 @@ function parseGlobalArgs(
 	return { ok: true, globalArgs, subcommandIndex: index };
 }
 
-function validateArgs(args: string[]): string | null {
+function validateArgs(subcommand: string, args: string[]): string | null {
 	for (const arg of args) {
 		if (arg.includes("\0")) return "NUL bytes are not allowed";
 		if (isForbiddenArgFlag(arg)) return `Git context flag "${arg}" is not allowed`;
 		if (EXECUTION_ARG_FLAGS.has(arg) || [...EXECUTION_ARG_FLAGS].some((flag) => arg.startsWith(`${flag}=`))) {
 			return `Git execution option "${arg}" is not allowed`;
+		}
+		if (subcommand === "clone" && (arg === "-c" || arg === "--config" || arg.startsWith("--config="))) {
+			return `Git config injection option "${arg}" is not allowed`;
 		}
 	}
 	return null;
@@ -521,7 +532,6 @@ function executionSensitiveConfigKey(args: string[]): string | null {
 function classifyConfig(args: string[]): RiskClassification | { rejected: string } {
 	const sensitiveKey = executionSensitiveConfigKey(args);
 	const scopeEscape = hasFlag(args, ["--global", "--system", "--file", "--blob"]);
-	const getLike = hasFlag(args, ["--get", "--get-all", "--get-regexp", "--list", "-l", "--name-only", "--show-origin"]);
 	const unset = hasFlag(args, ["--unset", "--unset-all", "--rename-section", "--remove-section"]);
 	const setLike = unset || positionalArgs(args).length >= 2 || hasFlag(args, ["--add", "--replace-all"]);
 
@@ -542,7 +552,7 @@ function classifyConfig(args: string[]): RiskClassification | { rejected: string
 		});
 	}
 
-	return risk({ level: getLike || args.length > 0 ? "safe" : "safe", category: "read-only", requiresWorktree: false });
+	return risk({ level: "safe", category: "read-only", requiresWorktree: false });
 }
 
 function classifyBranch(args: string[]): RiskClassification {
@@ -613,8 +623,15 @@ function classifyRemote(args: string[]): RiskClassification {
 
 function classifyStash(args: string[]): RiskClassification {
 	const op = positionalArgs(args)[0] ?? "push";
-	if (["list", "show", "branch"].includes(op))
-		return risk({ level: "safe", category: "read-only", requiresWorktree: false });
+	if (["list", "show"].includes(op)) return risk({ level: "safe", category: "read-only", requiresWorktree: false });
+	if (op === "branch") {
+		return risk({
+			level: "mutating",
+			category: "stash-branch",
+			requiresWorktree: true,
+			details: { operation: "stash branch", flags: flags(args) },
+		});
+	}
 	if (["drop", "clear"].includes(op)) {
 		return risk({
 			level: "high-risk",
@@ -680,15 +697,16 @@ function classifySymbolicRef(args: string[]): RiskClassification {
 function classifyPush(args: string[]): RiskClassification {
 	const hasForce = hasFlag(args, ["--force", "--force-with-lease", "--force-if-includes"]) || hasShortFlag(args, "f");
 	const hasDelete = hasFlag(args, ["--delete"]) || hasShortFlag(args, "d");
+	const forceRefspec = args.find((arg) => arg.startsWith("+") && arg.length > 1);
 	const refDelete = args.find((arg) => arg.startsWith(":") && arg.length > 1);
 	const mirrorOrAll = hasFlag(args, ["--mirror", "--all", "--tags"]);
 
-	if (hasForce) {
+	if (hasForce || forceRefspec) {
 		return risk({
 			level: "high-risk",
 			category: "force-push",
 			requiresWorktree: true,
-			details: { operation: "force-push", flags: flags(args) },
+			details: { operation: "force-push", target: forceRefspec, flags: flags(args) },
 		});
 	}
 	if (hasDelete || refDelete) {
@@ -735,7 +753,7 @@ function classifyReset(args: string[]): RiskClassification {
 }
 
 function classifyCheckout(args: string[]): RiskClassification {
-	const hasPathspec = args.includes("--") || positionalArgs(args).some((arg) => arg.includes("/"));
+	const hasPathspec = args.includes("--");
 	if (hasFlag(args, ["--force"]) || hasShortFlag(args, "f") || hasPathspec) {
 		return risk({
 			level: "high-risk",
@@ -921,7 +939,7 @@ export function parseGitCommand(input: string): ParseResult {
 	if (subcommand.startsWith("!")) return { ok: false, reason: "External git aliases are not allowed" };
 
 	const args = tokens.slice(globalParse.subcommandIndex + 1);
-	const argError = validateArgs(args);
+	const argError = validateArgs(subcommand, args);
 	if (argError) return { ok: false, reason: argError };
 
 	const classification = classifyCommand(subcommand, args);

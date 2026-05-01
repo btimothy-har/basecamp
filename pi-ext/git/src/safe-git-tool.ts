@@ -249,11 +249,17 @@ function approvalPrompt(
 	return lines.map((line) => sanitizeText(line, 4_000)).join("\n");
 }
 
-function rejectionDetails(reason: string, commandReason: string, normalizedCommand?: string): SafeGitDetails {
+function rejectionDetails(
+	reason: string,
+	commandReason: string,
+	normalizedCommand?: string,
+	risk?: RiskClassification,
+): SafeGitDetails {
 	return {
 		decision: "rejected",
 		normalizedCommand,
 		reason: commandReason,
+		risk,
 		message: reason,
 	};
 }
@@ -325,8 +331,8 @@ export function registerSafeGitTool(pi: ExtensionAPI): void {
 						"This git command can mutate repository state. Activate an execution worktree before using safe_git.",
 						rawReason,
 						parsed.command.normalizedCommand,
+						parsed.risk,
 					);
-					details.risk = parsed.risk;
 					audit(pi, details);
 					return toolResult(details, true);
 				}
@@ -336,8 +342,8 @@ export function registerSafeGitTool(pi: ExtensionAPI): void {
 						`Mutating git commands must run inside the active worktree (${state.worktreeDir}), not ${cwd}.`,
 						rawReason,
 						parsed.command.normalizedCommand,
+						parsed.risk,
 					);
-					details.risk = parsed.risk;
 					audit(pi, details);
 					return toolResult(details, true);
 				}
