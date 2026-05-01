@@ -9,6 +9,14 @@ description: "Invoke for structured exploration before execution. Triggers: 'pla
 
 Guide a user's intent through exploration and discussion into a structured, reviewed plan via the `plan()` tool. This is a **three-phase process** — exploration, discussion, then formalisation. Do not jump straight to `plan()`.
 
+A plan is an evidence-backed agreement, not a task list with a header. Before calling `plan()`, you and the user should share an understanding of what exists, what problem is being solved and why, which approach is being chosen, which trade-offs are accepted, what done looks like, and what is out of scope. Tasks come from that agreement; they are not the plan itself.
+
+A `plan()` call is **not**:
+- A premature task list assembled before the approach is agreed
+- A generic checklist of default implementation steps
+- A substitute for discovery — open questions belong in exploration or discussion
+- A place to defer unresolved decisions that would change the approach
+
 Exploration is non-mutative. Prototypes, spikes, and repo edits are implementation work; they require an approved plan and execution handoff first.
 
 ---
@@ -17,11 +25,11 @@ Exploration is non-mutative. Prototypes, spikes, and repo edits are implementati
 
 ### Phase 1: Explore
 
-Invoke the `gather` skill. Investigate the problem space autonomously — read code, check docs, understand what exists. Then engage the user to fill gaps.
+Invoke the `gather` skill. Investigate the problem space autonomously — read code, check docs, understand what exists. Then engage the user to fill gaps you cannot resolve from available context.
 
 **Push back if the request is vague.** Don't plan what you don't understand. If the user says "plan the auth refactor" but you don't know the current auth system, investigate first.
 
-**Exit criteria:** You can explain what exists, what's changing, and why — without guessing.
+**Exit criteria:** You can explain what exists, what's changing, and why — without guessing. If you cannot, the plan lacks evidence; keep exploring.
 
 ### Phase 2: Discuss
 
@@ -32,13 +40,13 @@ Align on approach **before** formalising. This is a conversation, not a presenta
 - Challenge scope — apply YAGNI, suggest phasing
 - Agree on boundaries: what's in, what's out
 
-**Push back if the user wants to skip discussion.** A plan without shared understanding is just a task list with extra steps.
+**Push back if the user wants to skip discussion.** Formalising before shared understanding creates a task list, not a plan.
 
-**Exit criteria:** Both you and the user agree on what to build, how, and what's explicitly out of scope.
+**Exit criteria:** Both you and the user agree on what to build, how to approach it, why that approach over alternatives, and what's explicitly out of scope.
 
 ### Phase 3: Formalise
 
-Now call `plan()`. The sections should reflect what was discussed — not new thinking.
+Now call `plan()`. The sections should reflect what was discussed — not new thinking. If significant unknowns remain, return to exploration or discussion before formalising.
 
 ```
 plan({
@@ -123,4 +131,4 @@ Not "keep it simple" or "no gold-plating."
 
 ### Tasks
 
-Ordered list. Smallest meaningful units of work — logical chunks, not individual file edits. Each task needs a label, description (what and why), and criteria (what done looks like for this task).
+Ordered list. Smallest meaningful units of work — logical chunks, not individual file edits. Each task needs a label, description (what and why), and criteria (what done looks like for this task). Tasks should follow directly from the agreed approach; if a task requires a decision that has not been made, make that decision before formalising.
