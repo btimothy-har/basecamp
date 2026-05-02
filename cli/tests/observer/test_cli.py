@@ -199,3 +199,25 @@ class TestSetup:
         providers = setup_env.observer.provider_configs
         assert providers["openai"].api_key_env == "EXISTING_KEY"
         assert providers["openai"].base_url_env is None
+
+    def test_setup_provider_clear_api_key_with_empty_string(self, runner, setup_env):
+        from basecamp.settings import ProviderConfig  # noqa: PLC0415
+
+        setup_env.observer.set_provider(
+            "openai",
+            ProviderConfig(api_key_env="EXISTING_KEY", base_url_env="EXISTING_URL"),
+        )
+
+        result = runner.invoke(
+            main,
+            [
+                "setup",
+                "--openai-api-key-env",
+                "",
+            ],
+        )
+
+        assert result.exit_code == 0
+        providers = setup_env.observer.provider_configs
+        assert providers["openai"].api_key_env is None
+        assert providers["openai"].base_url_env == "EXISTING_URL"

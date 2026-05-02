@@ -187,6 +187,21 @@ class TestProviderFactory:
             call_kwargs = mock_init.call_args.kwargs
             assert call_kwargs["api_key"] == "my-custom-key"
 
+    def test_openai_chat_uses_openai_config(self, monkeypatch, tmp_path):
+        """OpenAI provider variants use the shared openai provider config."""
+        test_settings = Settings(path=tmp_path / "config.json")
+        test_settings.observer.set_provider(
+            "openai",
+            ProviderConfig(api_key_env="CUSTOM_OPENAI_KEY"),
+        )
+        monkeypatch.setattr(model_resolver.settings_mod, "settings", test_settings)
+        monkeypatch.setenv("CUSTOM_OPENAI_KEY", "my-custom-key")
+
+        with patch.object(OpenAIProvider, "__init__", return_value=None) as mock_init:
+            _provider_factory("openai-chat")
+            call_kwargs = mock_init.call_args.kwargs
+            assert call_kwargs["api_key"] == "my-custom-key"
+
     def test_openai_responses_uses_openai_config(self, monkeypatch, tmp_path):
         """OpenAI provider variants use the shared openai provider config."""
         test_settings = Settings(path=tmp_path / "config.json")

@@ -62,7 +62,7 @@ def _create_provider(provider_name: str, config: ProviderConfig | None) -> Provi
 def _provider_config(provider_name: str) -> ProviderConfig | None:
     configs = settings_mod.settings.observer.provider_configs
     if provider_name in _OPENAI_PROVIDERS:
-        return configs.get(provider_name) or configs.get("openai")
+        return configs.get("openai")
     return configs.get(provider_name)
 
 

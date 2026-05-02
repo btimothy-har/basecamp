@@ -16,13 +16,8 @@ class TestToolSummarizer:
         assert result.output.summary == "test summary"
 
     @pytest.mark.asyncio
-    async def test_propagates_errors(self):
-        """Agent raises when the model raises."""
-        failing_model = TestModel()
-
-        # Override to raise during request
-        with agents.tool_summarizer.override(model=failing_model):
-            # TestModel won't raise on its own, so verify it at least runs
+    async def test_runs_with_override_model(self):
+        with agents.tool_summarizer.override(model=TestModel()):
             result = await agents.tool_summarizer.run("prompt")
             assert isinstance(result.output, SummaryResult)
 

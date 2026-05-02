@@ -240,6 +240,17 @@ class TestProviderConfig:
         assert cfg.api_key_env == "KEY"
         assert cfg.base_url_env is None
 
+    def test_from_dict_uses_default_for_missing_keys(self):
+        default = ProviderConfig(api_key_env="DEFAULT_KEY", base_url_env="DEFAULT_URL")
+        cfg = ProviderConfig.from_dict({"base_url_env": "CUSTOM_URL"}, default=default)
+        assert cfg.api_key_env == "DEFAULT_KEY"
+        assert cfg.base_url_env == "CUSTOM_URL"
+
+    def test_from_dict_treats_whitespace_as_unset(self):
+        cfg = ProviderConfig.from_dict({"api_key_env": " ", "base_url_env": "\t"})
+        assert cfg.api_key_env is None
+        assert cfg.base_url_env is None
+
     def test_equality(self):
         cfg1 = ProviderConfig(api_key_env="KEY", base_url_env="URL")
         cfg2 = ProviderConfig(api_key_env="KEY", base_url_env="URL")

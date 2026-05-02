@@ -185,7 +185,7 @@ def mode(target: str | None) -> None:
 @click.option(
     "--openai-api-key-env",
     default=None,
-    help="Env var name for OpenAI API key (default: OPENAI_API_KEY).",
+    help="Env var name for OpenAI API key (default: OPENAI_API_KEY). Pass empty string to clear.",
 )
 @click.option(
     "--openai-base-url-env",
@@ -195,7 +195,7 @@ def mode(target: str | None) -> None:
 @click.option(
     "--anthropic-api-key-env",
     default=None,
-    help="Env var name for Anthropic API key (default: ANTHROPIC_API_KEY).",
+    help="Env var name for Anthropic API key (default: ANTHROPIC_API_KEY). Pass empty string to clear.",
 )
 @click.option(
     "--anthropic-base-url-env",
@@ -233,7 +233,7 @@ def setup(
     from basecamp.constants import OBSERVER_CHROMA_DIR as CHROMA_DIR
     from basecamp.constants import OBSERVER_DB_PATH as DB_PATH
 
-    constants.OBSERVER_DIR.mkdir(parents=True, exist_ok=True)
+    constants.OBSERVER_DIR.mkdir(parents=True, mode=0o700, exist_ok=True)
 
     from observer.services.db import Database
 
@@ -259,22 +259,22 @@ def setup(
     providers = obs.provider_configs
 
     if openai_api_key_env is not None or openai_base_url_env is not None:
-        current = providers.get("openai", obs.DEFAULT_PROVIDERS["openai"])
+        current = providers["openai"]
         new_api_key = openai_api_key_env if openai_api_key_env is not None else current.api_key_env
         new_base_url = (openai_base_url_env or None) if openai_base_url_env is not None else current.base_url_env
         obs.set_provider("openai", ProviderConfig(api_key_env=new_api_key or None, base_url_env=new_base_url))
         changed = True
 
     if anthropic_api_key_env is not None or anthropic_base_url_env is not None:
-        current = providers.get("anthropic", obs.DEFAULT_PROVIDERS["anthropic"])
+        current = providers["anthropic"]
         new_api_key = anthropic_api_key_env if anthropic_api_key_env is not None else current.api_key_env
         new_base_url = (anthropic_base_url_env or None) if anthropic_base_url_env is not None else current.base_url_env
         obs.set_provider("anthropic", ProviderConfig(api_key_env=new_api_key or None, base_url_env=new_base_url))
         changed = True
 
     providers = obs.provider_configs
-    openai_cfg = providers.get("openai", obs.DEFAULT_PROVIDERS["openai"])
-    anthropic_cfg = providers.get("anthropic", obs.DEFAULT_PROVIDERS["anthropic"])
+    openai_cfg = providers["openai"]
+    anthropic_cfg = providers["anthropic"]
 
     console.print(f"Database:         [blue]{DB_PATH}[/blue]")
     console.print(f"ChromaDB:         [blue]{CHROMA_DIR}[/blue]")

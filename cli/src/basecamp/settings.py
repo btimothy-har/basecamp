@@ -14,7 +14,7 @@ from collections.abc import Generator
 from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, ClassVar
 
 from basecamp.utils import atomic_write_json
 
@@ -251,6 +251,7 @@ class ProviderConfig:
 
     @classmethod
     def from_dict(cls, data: dict[str, Any], default: ProviderConfig | None = None) -> ProviderConfig:
+        """Load stored env var names, using defaults for omitted keys."""
         api_key_env = data.get("api_key_env", default.api_key_env if default else None)
         base_url_env = data.get("base_url_env", default.base_url_env if default else None)
         return cls(
@@ -276,7 +277,7 @@ class ObserverConfig:
     DEFAULT_EXTRACTION_MODEL = "anthropic:claude-sonnet-4-20250514"
     DEFAULT_SUMMARY_MODEL = "anthropic:claude-3-5-haiku-latest"
 
-    DEFAULT_PROVIDERS: dict[str, ProviderConfig] = {
+    DEFAULT_PROVIDERS: ClassVar[dict[str, ProviderConfig]] = {
         "openai": ProviderConfig(api_key_env="OPENAI_API_KEY", base_url_env="OPENAI_BASE_URL"),
         "anthropic": ProviderConfig(api_key_env="ANTHROPIC_API_KEY", base_url_env="ANTHROPIC_BASE_URL"),
     }
@@ -328,7 +329,7 @@ class ObserverConfig:
         """
         data = self._data()
         providers_raw = data.get("providers")
-        result = {k: ProviderConfig(v.api_key_env, v.base_url_env) for k, v in self.DEFAULT_PROVIDERS.items()}
+        result = dict(self.DEFAULT_PROVIDERS)
 
         if isinstance(providers_raw, dict):
             for name, cfg in providers_raw.items():
@@ -353,16 +354,8 @@ class ObserverConfig:
 
     @property
     def extraction_model(self) -> str:
-        """Return extraction model ref.
-
-        Prefers new shape (observer.models.extraction), falls back to legacy
-        (observer.extraction_model), then default.
-        """
-        data = self._data()
-        models = data.get("models")
-        if isinstance(models, dict) and models.get("extraction"):
-            return models["extraction"]
-        return data.get("extraction_model") or self.DEFAULT_EXTRACTION_MODEL
+        """Return extraction model ref."""
+        return self.model_refs["extraction"]
 
     @extraction_model.setter
     def extraction_model(self, value: str) -> None:
@@ -374,16 +367,8 @@ class ObserverConfig:
 
     @property
     def summary_model(self) -> str:
-        """Return summary model ref.
-
-        Prefers new shape (observer.models.summary), falls back to legacy
-        (observer.summary_model), then default.
-        """
-        data = self._data()
-        models = data.get("models")
-        if isinstance(models, dict) and models.get("summary"):
-            return models["summary"]
-        return data.get("summary_model") or self.DEFAULT_SUMMARY_MODEL
+        """Return summary model ref."""
+        return self.model_refs["summary"]
 
     @summary_model.setter
     def summary_model(self, value: str) -> None:

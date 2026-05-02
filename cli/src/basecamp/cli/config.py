@@ -254,8 +254,8 @@ def _observer_menu() -> None:
     while True:
         obs = settings.observer
         providers = obs.provider_configs
-        openai_cfg = providers.get("openai", obs.DEFAULT_PROVIDERS["openai"])
-        anthropic_cfg = providers.get("anthropic", obs.DEFAULT_PROVIDERS["anthropic"])
+        openai_cfg = providers["openai"]
+        anthropic_cfg = providers["anthropic"]
 
         console.print()
         console.print(f"  Extraction model: [bold]{obs.extraction_model}[/bold]")
@@ -307,8 +307,8 @@ def _provider_config_menu() -> None:
     while True:
         obs = settings.observer
         providers = obs.provider_configs
-        openai_cfg = providers.get("openai", obs.DEFAULT_PROVIDERS["openai"])
-        anthropic_cfg = providers.get("anthropic", obs.DEFAULT_PROVIDERS["anthropic"])
+        openai_cfg = providers["openai"]
+        anthropic_cfg = providers["anthropic"]
 
         console.print()
         console.print("  [bold]OpenAI[/bold]")
@@ -344,7 +344,7 @@ def _configure_single_provider(provider_name: str, current: ProviderConfig) -> N
     provider_label = _PROVIDER_LABELS.get(provider_name, provider_name)
 
     console.print(f"\n  [bold]{provider_label} Configuration[/bold]")
-    console.print("  (Leave empty to clear a value)")
+    console.print("  Enter environment variable names, not secret values. Leave empty to clear a value.")
 
     api_key = questionary.text(
         "API key env var name:",

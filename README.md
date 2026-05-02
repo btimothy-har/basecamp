@@ -225,18 +225,28 @@ The `observer` CLI provides semantic memory across sessions. It ingests session 
 
 ```bash
 observer setup                         # Initialize database and config
+observer setup --summary-model gpt-4o-mini --extraction-model anthropic:claude-sonnet-4-20250514
+observer setup --openai-api-key-env OPENAI_API_KEY --openai-base-url-env OPENAI_BASE_URL
 observer db status                     # Show database and index status
 observer db migrate                    # Run pending schema migrations
-observer config set mode on            # Enable full pipeline (default: on)
-observer config set mode off           # Ingestion only, no LLM processing
+observer mode on                       # Enable full pipeline (default: on)
+observer mode off                      # Ingestion only, no LLM processing
 ```
+
+Factory defaults use Anthropic models for both summary and extraction. Configured model refs use `[provider:]model_id` syntax. If the provider is omitted from a configured ref, observer routes through OpenAI (`gpt-4o-mini` → `openai:gpt-4o-mini`). Use provider prefixes for non-default routes such as `anthropic:claude-sonnet-4-20250514`, `openai-chat:gpt-4o`, `openai-responses:gpt-4o`, or `openrouter:...`.
+
+Provider routing is delegated to pydantic-ai. Basecamp does not validate that model IDs exist, so bad refs fail when the observer pipeline runs.
+
+Provider config stores environment variable names, not secret values. At runtime observer reads those env vars for API keys and optional base URLs, so custom OpenAI-compatible endpoints can use `openai:<model>` plus `--openai-base-url-env <ENV_VAR>`. The `openai`, `openai-chat`, and `openai-responses` routes share the OpenAI provider env settings.
+
+Only point base URL env vars at endpoints you trust with transcript content and provider credentials.
 
 ### Storage
 
-All data is local — no servers or external services:
+Persistent storage is local:
 - `~/.pi/observer/observer.db` — SQLite (relational model + FTS5 keyword search)
 - `~/.pi/observer/chroma/` — ChromaDB (vector embeddings, HNSW index)
-- `~/.pi/observer/config.json` — Observer settings
+- `~/.pi/basecamp/config.json` — Observer settings, model refs, and provider env var names
 
 ## Extension
 
