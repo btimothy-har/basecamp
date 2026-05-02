@@ -229,6 +229,9 @@ function buildLocationSegment(
 
 	if (state.worktreeLabel) {
 		parts.push(fg("warning", `⌥ ${state.worktreeLabel}`));
+		if (state.unsafeEdit) parts.push(fg("error", "⚠ unsafe-edit"));
+	} else if (state.unsafeEdit) {
+		parts.push(fg("error", "⌥ unsafe-edit"));
 	} else {
 		parts.push(fg("muted", "⌥ protected"));
 	}

@@ -75,6 +75,8 @@ export interface SessionState {
 	contextContent: string | null;
 	/** Non-fatal project detection warnings to surface at session start */
 	projectWarnings: string[];
+	/** Unsafe edit mode: allows edit/write to target protected checkout directly */
+	unsafeEdit: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -313,5 +315,6 @@ export function resolveSessionState(opts: ResolveOptions): SessionState {
 		worktreeBranch: null,
 		contextContent,
 		projectWarnings: detection.warnings,
+		unsafeEdit: false,
 	};
 }

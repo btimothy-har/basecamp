@@ -19,6 +19,7 @@ import { getSessionEffectiveCwd, resolveSessionState, type SessionState } from "
 import { registerCwdProvider } from "../../../platform/exec";
 import { getSessionState, requireSessionState, resetSessionRuntime, setSessionState } from "../../../platform/session";
 import { resetAgentMode } from "./mode";
+import { applyUnsafeEditFlag } from "./unsafe-edit.ts";
 import { attachWorktreeDir, getOrCreateWorktree, registerWorktreeGuards, type WorktreeResult } from "./worktree";
 import { appendWorktreeAffinity, latestWorktreeAffinity, repoMatchesAffinity } from "./worktree-affinity";
 
@@ -45,6 +46,7 @@ export function getState(): SessionState {
 			worktreeBranch: null,
 			contextContent: null,
 			projectWarnings: [],
+			unsafeEdit: false,
 		}
 	);
 }
@@ -167,6 +169,10 @@ export function registerSession(pi: ExtensionAPI): void {
 		description: "Prepend read-only operating constraints to the system prompt",
 		type: "boolean",
 	});
+	pi.registerFlag("unsafe-edit", {
+		description: "Allow edit/write to target protected checkout directly (safe_git protections still apply)",
+		type: "boolean",
+	});
 
 	// Register worktree tool guards (reads state lazily)
 	registerWorktreeGuards(pi, getState);
@@ -211,6 +217,19 @@ export function registerSession(pi: ExtensionAPI): void {
 			await restoreWorktreeAffinity(pi, ctx);
 		}
 		const state = requireSessionState();
+
+		const unsafeEditResult = applyUnsafeEditFlag(state, pi.getFlag("unsafe-edit") === true, {
+			readOnly: pi.getFlag("read-only") === true,
+			hasUI: ctx.hasUI,
+			isSubagent: Number(process.env.BASECAMP_AGENT_DEPTH ?? "0") > 0,
+		});
+		if (unsafeEditResult === "ignored-read-only") {
+			ctx.ui.notify("basecamp: --unsafe-edit ignored because --read-only is active", "warning");
+		} else if (unsafeEditResult === "ignored-subagent") {
+			ctx.ui.notify("basecamp: --unsafe-edit ignored in subagent sessions", "warning");
+		} else if (unsafeEditResult === "ignored-non-interactive") {
+			ctx.ui.notify("basecamp: --unsafe-edit ignored without interactive UI", "warning");
+		}
 
 		// Load .env from the repository root
 		const dotenvPath = path.join(state.repoRoot, ".env");

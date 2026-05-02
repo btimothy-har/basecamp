@@ -40,6 +40,10 @@ function buildBanner(fg: ThemeFg, width: number): string[] {
 		rows.push(["Worktree", "not active"]);
 	}
 
+	if (state.unsafeEdit) {
+		rows.push(["Unsafe edit", `${fg("error", "active")} ${fg("dim", "(--unsafe-edit)")}`]);
+	}
+
 	if (state.additionalDirs.length > 0) {
 		for (let i = 0; i < state.additionalDirs.length; i++) {
 			const label = i === 0 ? "Added dirs" : "";
