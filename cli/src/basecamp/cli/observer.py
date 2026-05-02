@@ -9,7 +9,7 @@ import sys
 import click
 
 from basecamp import constants
-from basecamp.settings import settings
+from basecamp.settings import ProviderConfig, settings
 from basecamp.ui import console
 
 
@@ -168,39 +168,107 @@ def mode(target: str | None) -> None:
     console.print(f"[green]✓[/green] Switched to [bold]{target}[/bold] mode.")
 
 
+def _merge_provider_config(
+    current: ProviderConfig,
+    api_key_env: str | None,
+    base_url_env: str | None,
+) -> ProviderConfig:
+    return ProviderConfig(
+        api_key_env=(api_key_env or None) if api_key_env is not None else current.api_key_env,
+        base_url_env=(base_url_env or None) if base_url_env is not None else current.base_url_env,
+    )
+
+
+def _validate_observer_model_ref(model_ref: str) -> None:
+    from observer.exceptions import InvalidModelRefError
+    from observer.llm.model_resolver import parse_model_ref
+
+    target = settings.models.get(model_ref, model_ref)
+    try:
+        parse_model_ref(target)
+    except InvalidModelRefError as e:
+        raise click.ClickException(str(e)) from e
+
+
 @main.command()
 @click.option(
     "--extraction-model",
     "-e",
     default=None,
-    help="Model for extraction (e.g. anthropic:claude-sonnet-4-20250514)",
+    help="Model for extraction (provider:model_id).",
 )
 @click.option(
     "--summary-model",
     "-s",
     default=None,
-    help="Model for summaries (e.g. anthropic:claude-3-5-haiku-latest)",
+    help="Model for summaries (provider:model_id).",
 )
 @click.option("--mode", "-m", "target_mode", type=click.Choice(["on", "off"]), default=None, help="Processing mode")
-def setup(extraction_model: str | None, summary_model: str | None, target_mode: str | None) -> None:
+@click.option(
+    "--openai-api-key-env",
+    default=None,
+    help="Env var name for OpenAI API key (default: OPENAI_API_KEY). Pass empty string to clear.",
+)
+@click.option(
+    "--openai-base-url-env",
+    default=None,
+    help="Env var name for OpenAI base URL (default: OPENAI_BASE_URL). Pass empty string to clear.",
+)
+@click.option(
+    "--anthropic-api-key-env",
+    default=None,
+    help="Env var name for Anthropic API key (default: ANTHROPIC_API_KEY). Pass empty string to clear.",
+)
+@click.option(
+    "--anthropic-base-url-env",
+    default=None,
+    help="Env var name for Anthropic base URL (default: ANTHROPIC_BASE_URL). Pass empty string to clear.",
+)
+@click.option(
+    "--openrouter-api-key-env",
+    default=None,
+    help="Env var name for OpenRouter API key (default: OPENROUTER_API_KEY). Pass empty string to clear.",
+)
+@click.option(
+    "--openrouter-base-url-env",
+    default=None,
+    help="Env var name for OpenRouter base URL (default: OPENROUTER_BASE_URL). Pass empty string to clear.",
+)
+def setup(
+    extraction_model: str | None,
+    summary_model: str | None,
+    target_mode: str | None,
+    openai_api_key_env: str | None,
+    openai_base_url_env: str | None,
+    anthropic_api_key_env: str | None,
+    anthropic_base_url_env: str | None,
+    openrouter_api_key_env: str | None,
+    openrouter_base_url_env: str | None,
+) -> None:
     """Configure observer: initialize database and set model preferences.
 
     \b
-    Models use pydantic-ai's provider:model format:
+    Model syntax: provider:model_id
+    Supported providers: openai, anthropic, openrouter.
+    The openai provider uses the OpenAI Responses API.
+
+    Examples:
+      openai:gpt-4o-mini
       anthropic:claude-3-5-haiku-latest
       anthropic:claude-sonnet-4-20250514
-      openai:gpt-4o-mini
-      openai:gpt-4o
+      openrouter:anthropic/claude-3.5-sonnet
+
+    Provider env var flags set which environment variable names are
+    read at runtime for API keys and base URLs. These store env var
+    names, not secret values.
 
     With no flags, shows current config and initializes the database.
     """
     from basecamp.constants import OBSERVER_CHROMA_DIR as CHROMA_DIR
     from basecamp.constants import OBSERVER_DB_PATH as DB_PATH
 
-    # Ensure directories exist
-    constants.OBSERVER_DIR.mkdir(parents=True, exist_ok=True)
+    constants.OBSERVER_DIR.mkdir(parents=True, mode=0o700, exist_ok=True)
 
-    # Initialize SQLite + ChromaDB
     from observer.services.db import Database
 
     Database.close_if_open()
@@ -210,25 +278,59 @@ def setup(extraction_model: str | None, summary_model: str | None, target_mode: 
 
     get_collection()
 
-    # Apply any provided settings
     obs = settings.observer
     changed = False
     if extraction_model is not None:
+        _validate_observer_model_ref(extraction_model)
         obs.extraction_model = extraction_model
         changed = True
     if summary_model is not None:
+        _validate_observer_model_ref(summary_model)
         obs.summary_model = summary_model
         changed = True
     if target_mode is not None:
         obs.mode = target_mode
         changed = True
 
-    # Show current config
+    providers = obs.provider_configs
+
+    if openai_api_key_env is not None or openai_base_url_env is not None:
+        obs.set_provider("openai", _merge_provider_config(providers["openai"], openai_api_key_env, openai_base_url_env))
+        changed = True
+
+    if anthropic_api_key_env is not None or anthropic_base_url_env is not None:
+        obs.set_provider(
+            "anthropic",
+            _merge_provider_config(providers["anthropic"], anthropic_api_key_env, anthropic_base_url_env),
+        )
+        changed = True
+
+    if openrouter_api_key_env is not None or openrouter_base_url_env is not None:
+        obs.set_provider(
+            "openrouter",
+            _merge_provider_config(providers["openrouter"], openrouter_api_key_env, openrouter_base_url_env),
+        )
+        changed = True
+
+    providers = obs.provider_configs
+    openai_cfg = providers["openai"]
+    anthropic_cfg = providers["anthropic"]
+    openrouter_cfg = providers["openrouter"]
+
     console.print(f"Database:         [blue]{DB_PATH}[/blue]")
     console.print(f"ChromaDB:         [blue]{CHROMA_DIR}[/blue]")
     console.print(f"Extraction model: [bold]{obs.extraction_model}[/bold]")
     console.print(f"Summary model:    [bold]{obs.summary_model}[/bold]")
     console.print(f"Mode:             [bold]{obs.mode}[/bold]")
+    console.print()
+    console.print("[dim]Provider env var names:[/dim]")
+    console.print(f"  OpenAI API key:      [bold]{openai_cfg.api_key_env or '(not set)'}[/bold]")
+    console.print(f"  OpenAI base URL:     [bold]{openai_cfg.base_url_env or '(not set)'}[/bold]")
+    console.print(f"  Anthropic API key:   [bold]{anthropic_cfg.api_key_env or '(not set)'}[/bold]")
+    console.print(f"  Anthropic base URL:  [bold]{anthropic_cfg.base_url_env or '(not set)'}[/bold]")
+    console.print(f"  OpenRouter API key:  [bold]{openrouter_cfg.api_key_env or '(not set)'}[/bold]")
+    console.print(f"  OpenRouter base URL: [bold]{openrouter_cfg.base_url_env or '(not set)'}[/bold]")
+    console.print()
     console.print(f"Config:           [dim]{settings.path}[/dim]")
 
     if changed:
