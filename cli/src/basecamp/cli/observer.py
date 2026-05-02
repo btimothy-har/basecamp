@@ -168,6 +168,28 @@ def mode(target: str | None) -> None:
     console.print(f"[green]✓[/green] Switched to [bold]{target}[/bold] mode.")
 
 
+def _merge_provider_config(
+    current: ProviderConfig,
+    api_key_env: str | None,
+    base_url_env: str | None,
+) -> ProviderConfig:
+    return ProviderConfig(
+        api_key_env=(api_key_env or None) if api_key_env is not None else current.api_key_env,
+        base_url_env=(base_url_env or None) if base_url_env is not None else current.base_url_env,
+    )
+
+
+def _validate_observer_model_ref(model_ref: str) -> None:
+    from observer.exceptions import InvalidModelRefError
+    from observer.llm.model_resolver import parse_model_ref
+
+    target = settings.models.get(model_ref, model_ref)
+    try:
+        parse_model_ref(target)
+    except InvalidModelRefError as e:
+        raise click.ClickException(str(e)) from e
+
+
 @main.command()
 @click.option(
     "--extraction-model",
@@ -259,9 +281,11 @@ def setup(
     obs = settings.observer
     changed = False
     if extraction_model is not None:
+        _validate_observer_model_ref(extraction_model)
         obs.extraction_model = extraction_model
         changed = True
     if summary_model is not None:
+        _validate_observer_model_ref(summary_model)
         obs.summary_model = summary_model
         changed = True
     if target_mode is not None:
@@ -271,26 +295,21 @@ def setup(
     providers = obs.provider_configs
 
     if openai_api_key_env is not None or openai_base_url_env is not None:
-        current = providers["openai"]
-        new_api_key = openai_api_key_env if openai_api_key_env is not None else current.api_key_env
-        new_base_url = (openai_base_url_env or None) if openai_base_url_env is not None else current.base_url_env
-        obs.set_provider("openai", ProviderConfig(api_key_env=new_api_key or None, base_url_env=new_base_url))
+        obs.set_provider("openai", _merge_provider_config(providers["openai"], openai_api_key_env, openai_base_url_env))
         changed = True
 
     if anthropic_api_key_env is not None or anthropic_base_url_env is not None:
-        current = providers["anthropic"]
-        new_api_key = anthropic_api_key_env if anthropic_api_key_env is not None else current.api_key_env
-        new_base_url = (anthropic_base_url_env or None) if anthropic_base_url_env is not None else current.base_url_env
-        obs.set_provider("anthropic", ProviderConfig(api_key_env=new_api_key or None, base_url_env=new_base_url))
+        obs.set_provider(
+            "anthropic",
+            _merge_provider_config(providers["anthropic"], anthropic_api_key_env, anthropic_base_url_env),
+        )
         changed = True
 
     if openrouter_api_key_env is not None or openrouter_base_url_env is not None:
-        current = providers["openrouter"]
-        new_api_key = openrouter_api_key_env if openrouter_api_key_env is not None else current.api_key_env
-        new_base_url = (
-            (openrouter_base_url_env or None) if openrouter_base_url_env is not None else current.base_url_env
+        obs.set_provider(
+            "openrouter",
+            _merge_provider_config(providers["openrouter"], openrouter_api_key_env, openrouter_base_url_env),
         )
-        obs.set_provider("openrouter", ProviderConfig(api_key_env=new_api_key or None, base_url_env=new_base_url))
         changed = True
 
     providers = obs.provider_configs

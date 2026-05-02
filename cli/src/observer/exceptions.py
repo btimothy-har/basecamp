@@ -80,6 +80,15 @@ class InvalidModelRefError(ObserverError):
         self.reason = reason
 
 
+class ProviderConfigError(ObserverError):
+    """Raised when provider environment configuration is invalid."""
+
+    def __init__(self, provider: str, detail: str) -> None:
+        super().__init__(f"Provider config error for {provider!r}: {detail}")
+        self.provider = provider
+        self.detail = detail
+
+
 class TranscriptNotSavedError(ValueError):
     """Raised when a transcript must be saved before ingestion."""
 

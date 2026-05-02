@@ -85,7 +85,7 @@ class TestSetup:
 
         Database.close_if_open()
 
-    def test_setup_initializes_db(self, runner, setup_env):  # noqa: ARG002
+    def test_setup_initializes_db(self, runner, setup_env):
         result = runner.invoke(
             main,
             [
@@ -103,8 +103,26 @@ class TestSetup:
         assert "configuration updated" in result.output.lower()
         assert "anthropic:claude-sonnet-4-20250514" in result.output
         assert "anthropic:claude-3-5-haiku-latest" in result.output
+        assert setup_env.observer.extraction_model == "anthropic:claude-sonnet-4-20250514"
+        assert setup_env.observer.summary_model == "anthropic:claude-3-5-haiku-latest"
 
-    def test_setup_shows_provider_env_defaults(self, runner, setup_env):  # noqa: ARG002
+    @pytest.mark.usefixtures("setup_env")
+    def test_setup_rejects_bare_model_ref(self, runner):
+        result = runner.invoke(main, ["setup", "--summary-model", "gpt-4o-mini"])
+
+        assert result.exit_code != 0
+        assert "provider:model_id" in result.output
+
+    def test_setup_accepts_explicit_alias_target(self, runner, setup_env):
+        setup_env.models = {"fast": "openai:gpt-4o-mini"}
+
+        result = runner.invoke(main, ["setup", "--summary-model", "fast"])
+
+        assert result.exit_code == 0
+        assert setup_env.observer.summary_model == "fast"
+
+    @pytest.mark.usefixtures("setup_env")
+    def test_setup_shows_provider_env_defaults(self, runner):
         result = runner.invoke(main, ["setup"])
 
         assert result.exit_code == 0

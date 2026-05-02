@@ -297,11 +297,7 @@ class ObserverConfig:
 
     @property
     def model_refs(self) -> dict[str, str]:
-        """Return the models dict from new config shape.
-
-        Returns:
-            Dict with 'summary' and 'extraction' keys, using defaults if not set.
-        """
+        """Return observer model refs, preferring new shape over legacy keys."""
         data = self._data()
         models = data.get("models")
         if isinstance(models, dict):

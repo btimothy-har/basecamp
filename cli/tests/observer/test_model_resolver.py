@@ -6,7 +6,7 @@ from unittest.mock import patch
 
 import pytest
 from basecamp.settings import ProviderConfig, Settings
-from observer.exceptions import InvalidModelRefError
+from observer.exceptions import InvalidModelRefError, ProviderConfigError
 from observer.llm import model_resolver
 from observer.llm.model_resolver import (
     _SUPPORTED_PROVIDERS,
@@ -192,31 +192,66 @@ class TestCreateProviders:
         assert isinstance(provider, ObserverOpenRouterProvider)
         assert provider.base_url == "https://custom.openrouter.ai"
 
-    def test_none_values_when_env_vars_missing(self, monkeypatch):
-        """Provider receives None when env vars are not set."""
+    def test_openai_missing_api_key_without_base_url_raises(self, monkeypatch):
+        """Missing OpenAI API key raises unless a custom endpoint is configured."""
         monkeypatch.delenv("MISSING_KEY", raising=False)
         monkeypatch.delenv("MISSING_URL", raising=False)
 
         config = ProviderConfig(api_key_env="MISSING_KEY", base_url_env="MISSING_URL")
 
-        with patch.object(OpenAIProvider, "__init__", return_value=None) as mock_init:
+        with pytest.raises(ProviderConfigError) as exc_info:
             _create_openai_provider(config)
-            mock_init.assert_called_once_with(api_key=None, base_url=None)
+        assert "MISSING_KEY" in str(exc_info.value)
 
-    def test_none_config_passes_none_values(self):
-        """None config results in None values passed to provider."""
-        with patch.object(OpenAIProvider, "__init__", return_value=None) as mock_init:
-            _create_openai_provider(None)
-            mock_init.assert_called_once_with(api_key=None, base_url=None)
+    def test_openai_custom_endpoint_can_omit_api_key(self, monkeypatch):
+        """OpenAI-compatible custom endpoints can run without a real API key."""
+        monkeypatch.delenv("MISSING_KEY", raising=False)
+        monkeypatch.setenv("CUSTOM_OPENAI_URL", "https://custom.openai.com")
 
-    def test_empty_env_var_treated_as_none(self, monkeypatch):
-        """Empty environment variable treated as None."""
-        monkeypatch.setenv("EMPTY_KEY", "")
-        config = ProviderConfig(api_key_env="EMPTY_KEY")
+        config = ProviderConfig(api_key_env="MISSING_KEY", base_url_env="CUSTOM_OPENAI_URL")
 
         with patch.object(OpenAIProvider, "__init__", return_value=None) as mock_init:
             _create_openai_provider(config)
-            mock_init.assert_called_once_with(api_key=None, base_url=None)
+            mock_init.assert_called_once_with(
+                api_key="api-key-not-set",
+                base_url="https://custom.openai.com",
+            )
+
+    def test_openai_uses_explicit_default_base_url(self, monkeypatch):
+        """OpenAI does not fall back to OPENAI_BASE_URL when config clears it."""
+        monkeypatch.setenv("TEST_OPENAI_KEY", "test-key-123")
+        monkeypatch.setenv("OPENAI_BASE_URL", "https://unconfigured.example.com")
+
+        config = ProviderConfig(api_key_env="TEST_OPENAI_KEY")
+
+        with patch.object(OpenAIProvider, "__init__", return_value=None) as mock_init:
+            _create_openai_provider(config)
+            mock_init.assert_called_once_with(
+                api_key="test-key-123",
+                base_url="https://api.openai.com/v1",
+            )
+
+    def test_anthropic_missing_api_key_raises(self, monkeypatch):
+        """Anthropic does not fall back to ANTHROPIC_API_KEY for custom config."""
+        monkeypatch.delenv("MISSING_KEY", raising=False)
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "default-key")
+
+        config = ProviderConfig(api_key_env="MISSING_KEY")
+
+        with pytest.raises(ProviderConfigError) as exc_info:
+            _create_anthropic_provider(config)
+        assert "MISSING_KEY" in str(exc_info.value)
+
+    def test_openrouter_missing_api_key_raises(self, monkeypatch):
+        """OpenRouter does not fall back to OPENROUTER_API_KEY for custom config."""
+        monkeypatch.delenv("MISSING_KEY", raising=False)
+        monkeypatch.setenv("OPENROUTER_API_KEY", "default-key")
+
+        config = ProviderConfig(api_key_env="MISSING_KEY")
+
+        with pytest.raises(ProviderConfigError) as exc_info:
+            _create_openrouter_provider(config)
+        assert "MISSING_KEY" in str(exc_info.value)
 
 
 class TestObserverOpenRouterProvider:

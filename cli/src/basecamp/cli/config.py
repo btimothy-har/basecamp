@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import questionary
+from observer.exceptions import InvalidModelRefError
+from observer.llm.model_resolver import parse_model_ref
 
 from basecamp.cli.language import (
     BUNDLED_LANGUAGES,
@@ -131,7 +133,7 @@ def _model_menu() -> None:
             alias = questionary.text("Alias name (e.g. fast, balanced, complex):").ask()
             if not alias:
                 continue
-            model_id = questionary.text("Model ID (e.g. claude-haiku-4-5):").ask()
+            model_id = questionary.text("Model ref (e.g. anthropic:claude-haiku-4-5):").ask()
             if not model_id:
                 continue
             execute_model_set(alias.strip(), model_id.strip())
@@ -250,6 +252,16 @@ def _worktree_menu() -> None:
             console.print("[green]✓[/green] Branch prefix cleared (using default 'wt/')")
 
 
+def _validate_observer_model_ref(model_ref: str) -> bool:
+    target = settings.models.get(model_ref, model_ref)
+    try:
+        parse_model_ref(target)
+    except InvalidModelRefError as e:
+        console.print(f"[red]Error:[/red] {e}")
+        return False
+    return True
+
+
 def _observer_menu() -> None:
     """Observer configuration sub-menu."""
     while True:
@@ -289,12 +301,12 @@ def _observer_menu() -> None:
 
         if action == "Set extraction model":
             model = questionary.text("Extraction model (provider:model_id):", default=obs.extraction_model).ask()
-            if model:
+            if model and _validate_observer_model_ref(model.strip()):
                 obs.extraction_model = model.strip()
                 console.print(f"[green]✓[/green] Extraction model → [bold]{model.strip()}[/bold]")
         elif action == "Set summary model":
             model = questionary.text("Summary model (provider:model_id):", default=obs.summary_model).ask()
-            if model:
+            if model and _validate_observer_model_ref(model.strip()):
                 obs.summary_model = model.strip()
                 console.print(f"[green]✓[/green] Summary model → [bold]{model.strip()}[/bold]")
         elif action == "Toggle mode":
