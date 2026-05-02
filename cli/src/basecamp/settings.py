@@ -12,6 +12,7 @@ import json
 import os
 from collections.abc import Generator
 from contextlib import contextmanager
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -238,15 +239,47 @@ class Settings:
         return ObserverConfig(self)
 
 
+@dataclass(frozen=True)
+class ProviderConfig:
+    """Provider config — stores env var names, not secrets."""
+
+    api_key_env: str | None = None
+    base_url_env: str | None = None
+
+    def to_dict(self) -> dict[str, str | None]:
+        return {"api_key_env": self.api_key_env, "base_url_env": self.base_url_env}
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any], default: ProviderConfig | None = None) -> ProviderConfig:
+        api_key_env = data.get("api_key_env", default.api_key_env if default else None)
+        base_url_env = data.get("base_url_env", default.base_url_env if default else None)
+        return cls(
+            api_key_env=api_key_env if isinstance(api_key_env, str) and api_key_env.strip() else None,
+            base_url_env=base_url_env if isinstance(base_url_env, str) and base_url_env.strip() else None,
+        )
+
+
 class ObserverConfig:
     """Observer config namespace — reads/writes through parent Settings.
 
     Access via ``settings.observer.extraction_model`` etc.
     All I/O is delegated to the parent's locked read/write.
+
+    Supports two config shapes:
+    - Legacy: ``observer.extraction_model``, ``observer.summary_model``
+    - New: ``observer.models.extraction``, ``observer.models.summary``,
+           ``observer.providers.<name>.api_key_env``, etc.
+
+    Reads prefer new shape, fall back to legacy. Writes use new shape.
     """
 
     DEFAULT_EXTRACTION_MODEL = "anthropic:claude-sonnet-4-20250514"
     DEFAULT_SUMMARY_MODEL = "anthropic:claude-3-5-haiku-latest"
+
+    DEFAULT_PROVIDERS: dict[str, ProviderConfig] = {
+        "openai": ProviderConfig(api_key_env="OPENAI_API_KEY", base_url_env="OPENAI_BASE_URL"),
+        "anthropic": ProviderConfig(api_key_env="ANTHROPIC_API_KEY", base_url_env="ANTHROPIC_BASE_URL"),
+    }
 
     def __init__(self, parent: Settings) -> None:
         self._parent = parent
@@ -261,22 +294,104 @@ class ObserverConfig:
         return bool(self._data())
 
     @property
+    def model_refs(self) -> dict[str, str]:
+        """Return the models dict from new config shape.
+
+        Returns:
+            Dict with 'summary' and 'extraction' keys, using defaults if not set.
+        """
+        data = self._data()
+        models = data.get("models")
+        if isinstance(models, dict):
+            return {
+                "summary": models.get("summary") or self.DEFAULT_SUMMARY_MODEL,
+                "extraction": models.get("extraction") or self.DEFAULT_EXTRACTION_MODEL,
+            }
+        return {
+            "summary": data.get("summary_model") or self.DEFAULT_SUMMARY_MODEL,
+            "extraction": data.get("extraction_model") or self.DEFAULT_EXTRACTION_MODEL,
+        }
+
+    @model_refs.setter
+    def model_refs(self, value: dict[str, str]) -> None:
+        """Set models dict in new config shape."""
+        with self._parent._locked_update() as data:
+            obs = data.setdefault("observer", {})
+            obs["models"] = value
+
+    @property
+    def provider_configs(self) -> dict[str, ProviderConfig]:
+        """Return provider configs, merging with defaults.
+
+        Returns:
+            Dict of provider name to ProviderConfig, with defaults for openai/anthropic.
+        """
+        data = self._data()
+        providers_raw = data.get("providers")
+        result = {k: ProviderConfig(v.api_key_env, v.base_url_env) for k, v in self.DEFAULT_PROVIDERS.items()}
+
+        if isinstance(providers_raw, dict):
+            for name, cfg in providers_raw.items():
+                if isinstance(cfg, dict):
+                    result[name] = ProviderConfig.from_dict(cfg, default=result.get(name))
+
+        return result
+
+    @provider_configs.setter
+    def provider_configs(self, value: dict[str, ProviderConfig]) -> None:
+        """Set provider configs in new config shape."""
+        with self._parent._locked_update() as data:
+            obs = data.setdefault("observer", {})
+            obs["providers"] = {name: cfg.to_dict() for name, cfg in value.items()}
+
+    def set_provider(self, name: str, config: ProviderConfig) -> None:
+        """Set a single provider config."""
+        with self._parent._locked_update() as data:
+            obs = data.setdefault("observer", {})
+            providers = obs.setdefault("providers", {})
+            providers[name] = config.to_dict()
+
+    @property
     def extraction_model(self) -> str:
-        return self._data().get("extraction_model") or self.DEFAULT_EXTRACTION_MODEL
+        """Return extraction model ref.
+
+        Prefers new shape (observer.models.extraction), falls back to legacy
+        (observer.extraction_model), then default.
+        """
+        data = self._data()
+        models = data.get("models")
+        if isinstance(models, dict) and models.get("extraction"):
+            return models["extraction"]
+        return data.get("extraction_model") or self.DEFAULT_EXTRACTION_MODEL
 
     @extraction_model.setter
     def extraction_model(self, value: str) -> None:
+        """Set extraction model using new nested shape."""
         with self._parent._locked_update() as data:
-            data.setdefault("observer", {})["extraction_model"] = value
+            obs = data.setdefault("observer", {})
+            models = obs.setdefault("models", {})
+            models["extraction"] = value
 
     @property
     def summary_model(self) -> str:
-        return self._data().get("summary_model") or self.DEFAULT_SUMMARY_MODEL
+        """Return summary model ref.
+
+        Prefers new shape (observer.models.summary), falls back to legacy
+        (observer.summary_model), then default.
+        """
+        data = self._data()
+        models = data.get("models")
+        if isinstance(models, dict) and models.get("summary"):
+            return models["summary"]
+        return data.get("summary_model") or self.DEFAULT_SUMMARY_MODEL
 
     @summary_model.setter
     def summary_model(self, value: str) -> None:
+        """Set summary model using new nested shape."""
         with self._parent._locked_update() as data:
-            data.setdefault("observer", {})["summary_model"] = value
+            obs = data.setdefault("observer", {})
+            models = obs.setdefault("models", {})
+            models["summary"] = value
 
     @property
     def mode(self) -> str:
