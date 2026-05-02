@@ -126,11 +126,7 @@ function buildEnvBlock(state: SessionState, modelId?: string): string {
 		lines.push(`Working directory: ${currentDir} (active worktree: ${state.worktreeLabel}${branch})`);
 		lines.push(`Protected repository checkout: ${state.repoRoot}`);
 	} else if (state.isRepo) {
-		if (state.unsafeEdit) {
-			lines.push(`Working directory: ${currentDir} (⚠ UNSAFE EDIT ACTIVE — editing protected checkout directly)`);
-		} else {
-			lines.push(`Working directory: ${currentDir} (protected repository checkout; no active worktree)`);
-		}
+		lines.push(`Working directory: ${currentDir} (protected repository checkout; no active worktree)`);
 		if (path.resolve(currentDir) !== path.resolve(state.repoRoot)) {
 			lines.push(`Protected repository checkout: ${state.repoRoot}`);
 		}
@@ -141,18 +137,6 @@ function buildEnvBlock(state: SessionState, modelId?: string): string {
 	const worktreeWarning = buildWorktreeWarning(state);
 	if (worktreeWarning) {
 		lines.push("", worktreeWarning, "");
-	}
-
-	if (state.unsafeEdit) {
-		const unsafeEditScope = state.worktreeDir
-			? "Use absolute paths for intentional protected checkout edits; relative paths remain constrained to the active worktree."
-			: "edit/write tools may target the protected repository checkout directly.";
-		lines.push(
-			"",
-			`⚠ UNSAFE EDIT ACTIVE: ${unsafeEditScope} ` +
-				"safe_git protections still apply — mutating git commands require an active worktree.",
-			"",
-		);
 	}
 
 	lines.push(`Is directory a git repo: ${state.isRepo ? "Yes" : "No"}`);
