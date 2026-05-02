@@ -24,6 +24,7 @@ from basecamp.ui import console
 _PROVIDER_LABELS = {
     "openai": "OpenAI",
     "anthropic": "Anthropic",
+    "openrouter": "OpenRouter",
 }
 
 
@@ -256,6 +257,7 @@ def _observer_menu() -> None:
         providers = obs.provider_configs
         openai_cfg = providers["openai"]
         anthropic_cfg = providers["anthropic"]
+        openrouter_cfg = providers["openrouter"]
 
         console.print()
         console.print(f"  Extraction model: [bold]{obs.extraction_model}[/bold]")
@@ -263,10 +265,12 @@ def _observer_menu() -> None:
         console.print(f"  Mode:             [bold]{obs.mode}[/bold]")
         console.print()
         console.print("  [dim]Provider env var names:[/dim]")
-        console.print(f"    OpenAI API key:     [bold]{openai_cfg.api_key_env or '(not set)'}[/bold]")
-        console.print(f"    OpenAI base URL:    [bold]{openai_cfg.base_url_env or '(not set)'}[/bold]")
-        console.print(f"    Anthropic API key:  [bold]{anthropic_cfg.api_key_env or '(not set)'}[/bold]")
-        console.print(f"    Anthropic base URL: [bold]{anthropic_cfg.base_url_env or '(not set)'}[/bold]")
+        console.print(f"    OpenAI API key:      [bold]{openai_cfg.api_key_env or '(not set)'}[/bold]")
+        console.print(f"    OpenAI base URL:     [bold]{openai_cfg.base_url_env or '(not set)'}[/bold]")
+        console.print(f"    Anthropic API key:   [bold]{anthropic_cfg.api_key_env or '(not set)'}[/bold]")
+        console.print(f"    Anthropic base URL:  [bold]{anthropic_cfg.base_url_env or '(not set)'}[/bold]")
+        console.print(f"    OpenRouter API key:  [bold]{openrouter_cfg.api_key_env or '(not set)'}[/bold]")
+        console.print(f"    OpenRouter base URL: [bold]{openrouter_cfg.base_url_env or '(not set)'}[/bold]")
 
         action = questionary.select(
             "Observer:",
@@ -284,12 +288,12 @@ def _observer_menu() -> None:
             return
 
         if action == "Set extraction model":
-            model = questionary.text("Extraction model ([provider:]model_id):", default=obs.extraction_model).ask()
+            model = questionary.text("Extraction model (provider:model_id):", default=obs.extraction_model).ask()
             if model:
                 obs.extraction_model = model.strip()
                 console.print(f"[green]✓[/green] Extraction model → [bold]{model.strip()}[/bold]")
         elif action == "Set summary model":
-            model = questionary.text("Summary model ([provider:]model_id):", default=obs.summary_model).ask()
+            model = questionary.text("Summary model (provider:model_id):", default=obs.summary_model).ask()
             if model:
                 obs.summary_model = model.strip()
                 console.print(f"[green]✓[/green] Summary model → [bold]{model.strip()}[/bold]")
@@ -309,6 +313,7 @@ def _provider_config_menu() -> None:
         providers = obs.provider_configs
         openai_cfg = providers["openai"]
         anthropic_cfg = providers["anthropic"]
+        openrouter_cfg = providers["openrouter"]
 
         console.print()
         console.print("  [bold]OpenAI[/bold]")
@@ -317,12 +322,16 @@ def _provider_config_menu() -> None:
         console.print("  [bold]Anthropic[/bold]")
         console.print(f"    API key env:  [bold]{anthropic_cfg.api_key_env or '(not set)'}[/bold]")
         console.print(f"    Base URL env: [bold]{anthropic_cfg.base_url_env or '(not set)'}[/bold]")
+        console.print("  [bold]OpenRouter[/bold]")
+        console.print(f"    API key env:  [bold]{openrouter_cfg.api_key_env or '(not set)'}[/bold]")
+        console.print(f"    Base URL env: [bold]{openrouter_cfg.base_url_env or '(not set)'}[/bold]")
 
         action = questionary.select(
             "Configure provider:",
             choices=[
                 "OpenAI",
                 "Anthropic",
+                "OpenRouter",
                 questionary.Separator(),
                 "← Back",
             ],
@@ -335,6 +344,8 @@ def _provider_config_menu() -> None:
             _configure_single_provider("openai", openai_cfg)
         elif action == "Anthropic":
             _configure_single_provider("anthropic", anthropic_cfg)
+        elif action == "OpenRouter":
+            _configure_single_provider("openrouter", openrouter_cfg)
 
 
 def _configure_single_provider(provider_name: str, current: ProviderConfig) -> None:

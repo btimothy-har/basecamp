@@ -173,13 +173,13 @@ def mode(target: str | None) -> None:
     "--extraction-model",
     "-e",
     default=None,
-    help="Model for extraction ([provider:]model_id). Provider defaults to openai.",
+    help="Model for extraction (provider:model_id).",
 )
 @click.option(
     "--summary-model",
     "-s",
     default=None,
-    help="Model for summaries ([provider:]model_id). Provider defaults to openai.",
+    help="Model for summaries (provider:model_id).",
 )
 @click.option("--mode", "-m", "target_mode", type=click.Choice(["on", "off"]), default=None, help="Processing mode")
 @click.option(
@@ -202,6 +202,16 @@ def mode(target: str | None) -> None:
     default=None,
     help="Env var name for Anthropic base URL (default: ANTHROPIC_BASE_URL). Pass empty string to clear.",
 )
+@click.option(
+    "--openrouter-api-key-env",
+    default=None,
+    help="Env var name for OpenRouter API key (default: OPENROUTER_API_KEY). Pass empty string to clear.",
+)
+@click.option(
+    "--openrouter-base-url-env",
+    default=None,
+    help="Env var name for OpenRouter base URL (default: OPENROUTER_BASE_URL). Pass empty string to clear.",
+)
 def setup(
     extraction_model: str | None,
     summary_model: str | None,
@@ -210,18 +220,20 @@ def setup(
     openai_base_url_env: str | None,
     anthropic_api_key_env: str | None,
     anthropic_base_url_env: str | None,
+    openrouter_api_key_env: str | None,
+    openrouter_base_url_env: str | None,
 ) -> None:
     """Configure observer: initialize database and set model preferences.
 
     \b
-    Model syntax: [provider:]model_id
-    Provider defaults to 'openai' if omitted.
+    Model syntax: provider:model_id
+    Supported providers: openai, anthropic, openrouter.
+    The openai provider uses the OpenAI Responses API.
 
     Examples:
-      gpt-4o-mini                       → openai:gpt-4o-mini
+      openai:gpt-4o-mini
       anthropic:claude-3-5-haiku-latest
       anthropic:claude-sonnet-4-20250514
-      openai-responses:gpt-4o
       openrouter:anthropic/claude-3.5-sonnet
 
     Provider env var flags set which environment variable names are
@@ -272,9 +284,19 @@ def setup(
         obs.set_provider("anthropic", ProviderConfig(api_key_env=new_api_key or None, base_url_env=new_base_url))
         changed = True
 
+    if openrouter_api_key_env is not None or openrouter_base_url_env is not None:
+        current = providers["openrouter"]
+        new_api_key = openrouter_api_key_env if openrouter_api_key_env is not None else current.api_key_env
+        new_base_url = (
+            (openrouter_base_url_env or None) if openrouter_base_url_env is not None else current.base_url_env
+        )
+        obs.set_provider("openrouter", ProviderConfig(api_key_env=new_api_key or None, base_url_env=new_base_url))
+        changed = True
+
     providers = obs.provider_configs
     openai_cfg = providers["openai"]
     anthropic_cfg = providers["anthropic"]
+    openrouter_cfg = providers["openrouter"]
 
     console.print(f"Database:         [blue]{DB_PATH}[/blue]")
     console.print(f"ChromaDB:         [blue]{CHROMA_DIR}[/blue]")
@@ -283,10 +305,12 @@ def setup(
     console.print(f"Mode:             [bold]{obs.mode}[/bold]")
     console.print()
     console.print("[dim]Provider env var names:[/dim]")
-    console.print(f"  OpenAI API key:     [bold]{openai_cfg.api_key_env or '(not set)'}[/bold]")
-    console.print(f"  OpenAI base URL:    [bold]{openai_cfg.base_url_env or '(not set)'}[/bold]")
-    console.print(f"  Anthropic API key:  [bold]{anthropic_cfg.api_key_env or '(not set)'}[/bold]")
-    console.print(f"  Anthropic base URL: [bold]{anthropic_cfg.base_url_env or '(not set)'}[/bold]")
+    console.print(f"  OpenAI API key:      [bold]{openai_cfg.api_key_env or '(not set)'}[/bold]")
+    console.print(f"  OpenAI base URL:     [bold]{openai_cfg.base_url_env or '(not set)'}[/bold]")
+    console.print(f"  Anthropic API key:   [bold]{anthropic_cfg.api_key_env or '(not set)'}[/bold]")
+    console.print(f"  Anthropic base URL:  [bold]{anthropic_cfg.base_url_env or '(not set)'}[/bold]")
+    console.print(f"  OpenRouter API key:  [bold]{openrouter_cfg.api_key_env or '(not set)'}[/bold]")
+    console.print(f"  OpenRouter base URL: [bold]{openrouter_cfg.base_url_env or '(not set)'}[/bold]")
     console.print()
     console.print(f"Config:           [dim]{settings.path}[/dim]")
 

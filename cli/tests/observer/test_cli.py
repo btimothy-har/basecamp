@@ -221,3 +221,94 @@ class TestSetup:
         providers = setup_env.observer.provider_configs
         assert providers["openai"].api_key_env is None
         assert providers["openai"].base_url_env == "EXISTING_URL"
+
+    @pytest.mark.usefixtures("setup_env")
+    def test_setup_shows_openrouter_provider_defaults(self, runner):
+        result = runner.invoke(main, ["setup"])
+
+        assert result.exit_code == 0
+        assert "OpenRouter API key" in result.output
+        assert "OPENROUTER_API_KEY" in result.output
+        assert "OpenRouter base URL" in result.output
+        assert "OPENROUTER_BASE_URL" in result.output
+
+    def test_setup_openrouter_provider_flags(self, runner, setup_env):
+        result = runner.invoke(
+            main,
+            [
+                "setup",
+                "--openrouter-api-key-env",
+                "MY_OPENROUTER_KEY",
+                "--openrouter-base-url-env",
+                "MY_OPENROUTER_URL",
+            ],
+        )
+
+        assert result.exit_code == 0
+        assert "configuration updated" in result.output.lower()
+        assert "MY_OPENROUTER_KEY" in result.output
+        assert "MY_OPENROUTER_URL" in result.output
+
+        providers = setup_env.observer.provider_configs
+        assert providers["openrouter"].api_key_env == "MY_OPENROUTER_KEY"
+        assert providers["openrouter"].base_url_env == "MY_OPENROUTER_URL"
+
+    def test_setup_openrouter_preserves_existing(self, runner, setup_env):
+        from basecamp.settings import ProviderConfig  # noqa: PLC0415
+
+        setup_env.observer.set_provider(
+            "openrouter",
+            ProviderConfig(api_key_env="EXISTING_KEY", base_url_env="EXISTING_URL"),
+        )
+
+        result = runner.invoke(
+            main,
+            [
+                "setup",
+                "--openrouter-api-key-env",
+                "NEW_KEY",
+            ],
+        )
+
+        assert result.exit_code == 0
+        providers = setup_env.observer.provider_configs
+        assert providers["openrouter"].api_key_env == "NEW_KEY"
+        assert providers["openrouter"].base_url_env == "EXISTING_URL"
+
+    def test_setup_openrouter_clear_with_empty_string(self, runner, setup_env):
+        from basecamp.settings import ProviderConfig  # noqa: PLC0415
+
+        setup_env.observer.set_provider(
+            "openrouter",
+            ProviderConfig(api_key_env="EXISTING_KEY", base_url_env="EXISTING_URL"),
+        )
+
+        result = runner.invoke(
+            main,
+            [
+                "setup",
+                "--openrouter-base-url-env",
+                "",
+            ],
+        )
+
+        assert result.exit_code == 0
+        providers = setup_env.observer.provider_configs
+        assert providers["openrouter"].api_key_env == "EXISTING_KEY"
+        assert providers["openrouter"].base_url_env is None
+
+
+class TestSetupHelpText:
+    def test_setup_help_uses_explicit_provider_syntax(self, runner):
+        """Help text should not advertise bare model refs or old syntax."""
+        result = runner.invoke(main, ["setup", "--help"])
+
+        assert result.exit_code == 0
+        assert "provider:model_id" in result.output
+        assert "Supported providers: openai, anthropic, openrouter" in result.output
+        assert "OpenAI Responses" in result.output
+
+        assert "[provider:]" not in result.output
+        assert "Provider defaults to" not in result.output
+        assert "openai-chat:" not in result.output
+        assert "openai-responses:" not in result.output
