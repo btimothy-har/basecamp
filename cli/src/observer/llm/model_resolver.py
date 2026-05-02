@@ -39,8 +39,7 @@ def parse_model_ref(model_ref: str) -> tuple[ProviderName, str]:
     if not separator:
         raise InvalidModelRefError(
             model_ref,
-            "model reference must use explicit 'provider:model_id' format. "
-            f"Supported providers: {_provider_names()}",
+            f"model reference must use explicit 'provider:model_id' format. Supported providers: {_provider_names()}",
         )
 
     if not provider:
