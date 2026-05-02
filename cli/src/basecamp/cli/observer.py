@@ -9,7 +9,7 @@ import sys
 import click
 
 from basecamp import constants
-from basecamp.settings import settings
+from basecamp.settings import ProviderConfig, settings
 from basecamp.ui import console
 
 
@@ -173,34 +173,68 @@ def mode(target: str | None) -> None:
     "--extraction-model",
     "-e",
     default=None,
-    help="Model for extraction (e.g. anthropic:claude-sonnet-4-20250514)",
+    help="Model for extraction ([provider:]model_id). Provider defaults to openai.",
 )
 @click.option(
     "--summary-model",
     "-s",
     default=None,
-    help="Model for summaries (e.g. anthropic:claude-3-5-haiku-latest)",
+    help="Model for summaries ([provider:]model_id). Provider defaults to openai.",
 )
 @click.option("--mode", "-m", "target_mode", type=click.Choice(["on", "off"]), default=None, help="Processing mode")
-def setup(extraction_model: str | None, summary_model: str | None, target_mode: str | None) -> None:
+@click.option(
+    "--openai-api-key-env",
+    default=None,
+    help="Env var name for OpenAI API key (default: OPENAI_API_KEY).",
+)
+@click.option(
+    "--openai-base-url-env",
+    default=None,
+    help="Env var name for OpenAI base URL (default: OPENAI_BASE_URL). Pass empty string to clear.",
+)
+@click.option(
+    "--anthropic-api-key-env",
+    default=None,
+    help="Env var name for Anthropic API key (default: ANTHROPIC_API_KEY).",
+)
+@click.option(
+    "--anthropic-base-url-env",
+    default=None,
+    help="Env var name for Anthropic base URL (default: ANTHROPIC_BASE_URL). Pass empty string to clear.",
+)
+def setup(
+    extraction_model: str | None,
+    summary_model: str | None,
+    target_mode: str | None,
+    openai_api_key_env: str | None,
+    openai_base_url_env: str | None,
+    anthropic_api_key_env: str | None,
+    anthropic_base_url_env: str | None,
+) -> None:
     """Configure observer: initialize database and set model preferences.
 
     \b
-    Models use pydantic-ai's provider:model format:
+    Model syntax: [provider:]model_id
+    Provider defaults to 'openai' if omitted.
+
+    Examples:
+      gpt-4o-mini                       → openai:gpt-4o-mini
       anthropic:claude-3-5-haiku-latest
       anthropic:claude-sonnet-4-20250514
-      openai:gpt-4o-mini
-      openai:gpt-4o
+      openai-responses:gpt-4o
+      openrouter:anthropic/claude-3.5-sonnet
+
+    Provider env var flags set which environment variable names are
+    read at runtime for API keys and base URLs. These store env var
+    names, not secret values.
 
     With no flags, shows current config and initializes the database.
     """
     from basecamp.constants import OBSERVER_CHROMA_DIR as CHROMA_DIR
     from basecamp.constants import OBSERVER_DB_PATH as DB_PATH
 
-    # Ensure directories exist
     constants.OBSERVER_DIR.mkdir(parents=True, exist_ok=True)
 
-    # Initialize SQLite + ChromaDB
     from observer.services.db import Database
 
     Database.close_if_open()
@@ -210,7 +244,6 @@ def setup(extraction_model: str | None, summary_model: str | None, target_mode: 
 
     get_collection()
 
-    # Apply any provided settings
     obs = settings.observer
     changed = False
     if extraction_model is not None:
@@ -223,12 +256,38 @@ def setup(extraction_model: str | None, summary_model: str | None, target_mode: 
         obs.mode = target_mode
         changed = True
 
-    # Show current config
+    providers = obs.provider_configs
+
+    if openai_api_key_env is not None or openai_base_url_env is not None:
+        current = providers.get("openai", obs.DEFAULT_PROVIDERS["openai"])
+        new_api_key = openai_api_key_env if openai_api_key_env is not None else current.api_key_env
+        new_base_url = (openai_base_url_env or None) if openai_base_url_env is not None else current.base_url_env
+        obs.set_provider("openai", ProviderConfig(api_key_env=new_api_key or None, base_url_env=new_base_url))
+        changed = True
+
+    if anthropic_api_key_env is not None or anthropic_base_url_env is not None:
+        current = providers.get("anthropic", obs.DEFAULT_PROVIDERS["anthropic"])
+        new_api_key = anthropic_api_key_env if anthropic_api_key_env is not None else current.api_key_env
+        new_base_url = (anthropic_base_url_env or None) if anthropic_base_url_env is not None else current.base_url_env
+        obs.set_provider("anthropic", ProviderConfig(api_key_env=new_api_key or None, base_url_env=new_base_url))
+        changed = True
+
+    providers = obs.provider_configs
+    openai_cfg = providers.get("openai", obs.DEFAULT_PROVIDERS["openai"])
+    anthropic_cfg = providers.get("anthropic", obs.DEFAULT_PROVIDERS["anthropic"])
+
     console.print(f"Database:         [blue]{DB_PATH}[/blue]")
     console.print(f"ChromaDB:         [blue]{CHROMA_DIR}[/blue]")
     console.print(f"Extraction model: [bold]{obs.extraction_model}[/bold]")
     console.print(f"Summary model:    [bold]{obs.summary_model}[/bold]")
     console.print(f"Mode:             [bold]{obs.mode}[/bold]")
+    console.print()
+    console.print("[dim]Provider env var names:[/dim]")
+    console.print(f"  OpenAI API key:     [bold]{openai_cfg.api_key_env or '(not set)'}[/bold]")
+    console.print(f"  OpenAI base URL:    [bold]{openai_cfg.base_url_env or '(not set)'}[/bold]")
+    console.print(f"  Anthropic API key:  [bold]{anthropic_cfg.api_key_env or '(not set)'}[/bold]")
+    console.print(f"  Anthropic base URL: [bold]{anthropic_cfg.base_url_env or '(not set)'}[/bold]")
+    console.print()
     console.print(f"Config:           [dim]{settings.path}[/dim]")
 
     if changed:
