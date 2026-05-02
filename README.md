@@ -225,36 +225,18 @@ The `observer` CLI provides semantic memory across sessions. It ingests session 
 
 ```bash
 observer setup                         # Initialize database and config
-observer setup --summary-model openai:gpt-4o-mini --extraction-model anthropic:claude-sonnet-4-20250514
-observer setup --openai-api-key-env OPENAI_API_KEY --openai-base-url-env OPENAI_BASE_URL
-observer setup --openrouter-api-key-env OPENROUTER_API_KEY --openrouter-base-url-env OPENROUTER_BASE_URL
 observer db status                     # Show database and index status
 observer db migrate                    # Run pending schema migrations
-observer mode on                       # Enable full pipeline (default: on)
-observer mode off                      # Ingestion only, no LLM processing
+observer config set mode on            # Enable full pipeline (default: on)
+observer config set mode off           # Ingestion only, no LLM processing
 ```
-
-Factory defaults use Anthropic models for both summary and extraction. All model refs require explicit `provider:model_id` syntax—bare model IDs are invalid.
-
-Supported providers:
-- `openai:<model>` — Routes through OpenAI Responses API
-- `anthropic:<model>` — Routes through Anthropic
-- `openrouter:<model>` — Routes through OpenRouter
-
-Top-level model aliases (configured via `basecamp config`) are supported, but alias targets must also use explicit provider refs.
-
-Basecamp validates provider syntax but does not validate that model IDs exist; bad model IDs fail when the observer pipeline runs.
-
-Provider config stores environment variable names, not secret values. At runtime observer reads those env vars for API keys and optional base URLs. Defaults are `OPENAI_API_KEY` / `OPENAI_BASE_URL`, `ANTHROPIC_API_KEY` / `ANTHROPIC_BASE_URL`, and `OPENROUTER_API_KEY` / `OPENROUTER_BASE_URL`.
-
-Only point base URL env vars at endpoints you trust with transcript content and provider credentials.
 
 ### Storage
 
-Persistent storage is local:
+All data is local — no servers or external services:
 - `~/.pi/observer/observer.db` — SQLite (relational model + FTS5 keyword search)
 - `~/.pi/observer/chroma/` — ChromaDB (vector embeddings, HNSW index)
-- `~/.pi/basecamp/config.json` — Observer settings, model refs, and provider env var names
+- `~/.pi/observer/config.json` — Observer settings
 
 ## Extension
 

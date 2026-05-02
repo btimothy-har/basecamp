@@ -71,24 +71,6 @@ class PromptAttributeError(AttributeError):
         super().__init__(f"module {module!r} has no attribute {name!r}")
 
 
-class InvalidModelRefError(ObserverError):
-    """Raised when a model reference is invalid or uses an unsupported provider."""
-
-    def __init__(self, model_ref: str, reason: str) -> None:
-        super().__init__(f"Invalid model reference {model_ref!r}: {reason}")
-        self.model_ref = model_ref
-        self.reason = reason
-
-
-class ProviderConfigError(ObserverError):
-    """Raised when provider environment configuration is invalid."""
-
-    def __init__(self, provider: str, detail: str) -> None:
-        super().__init__(f"Provider config error for {provider!r}: {detail}")
-        self.provider = provider
-        self.detail = detail
-
-
 class TranscriptNotSavedError(ValueError):
     """Raised when a transcript must be saved before ingestion."""
 
