@@ -11,19 +11,18 @@ Usage::
 
     result = await agents.tool_summarizer.run("prompt")
 
-API keys are resolved from environment variables by pydantic-ai's
-provider implementations (ANTHROPIC_API_KEY, OPENAI_API_KEY, etc.).
+Model refs and provider env vars are resolved by observer.llm.model_resolver.
 """
 
 from __future__ import annotations
 
 from typing import Any
 
-from basecamp.settings import settings
 from pydantic import BaseModel
 from pydantic_ai import Agent
 
 from observer.llm import prompts
+from observer.llm.model_resolver import resolve_role_model
 
 
 class SummaryResult(BaseModel):
@@ -45,17 +44,17 @@ _cache: dict[str, Any] = {}
 
 _AGENTS = {
     "tool_summarizer": lambda: Agent(
-        settings.observer.summary_model,
+        resolve_role_model("summary"),
         system_prompt=prompts.tool_summarize,
         output_type=SummaryResult,
     ),
     "thinking_summarizer": lambda: Agent(
-        settings.observer.summary_model,
+        resolve_role_model("summary"),
         system_prompt=prompts.thinking_summarize,
         output_type=SummaryResult,
     ),
     "section_extractor": lambda: Agent(
-        settings.observer.extraction_model,
+        resolve_role_model("extraction"),
         system_prompt=prompts.extract,
         output_type=ExtractionResult,
     ),
