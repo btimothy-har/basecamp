@@ -61,6 +61,7 @@ function baseSessionState(overrides: Partial<SessionState> = {}): SessionState {
 		worktreeBranch: null,
 		contextContent: null,
 		projectWarnings: [],
+		unsafeEdit: false,
 		...overrides,
 	};
 }

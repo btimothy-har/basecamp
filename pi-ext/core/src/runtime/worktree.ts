@@ -23,7 +23,7 @@ import {
 	getWorktreeBranchPrefix,
 	isPathWithin,
 	type SessionState,
-} from "../../../platform/config";
+} from "../../../platform/config.ts";
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -303,8 +303,11 @@ export function registerWorktreeGuards(pi: ExtensionAPI, getState: () => Session
 		const expanded = expandPath(input.path);
 		const isAbsolute = path.isAbsolute(expanded);
 		const resolved = isAbsolute ? path.resolve(expanded) : path.resolve(effectiveCwd, expanded);
+		const isStructuredMutation = STRUCTURED_MUTATION_TOOLS.has(event.toolName);
+		const isProtectedPath = isPathWithin(resolved, protectedCheckout);
 
-		if (!worktreeDir && STRUCTURED_MUTATION_TOOLS.has(event.toolName) && isPathWithin(resolved, protectedCheckout)) {
+		if (!worktreeDir && isStructuredMutation && isProtectedPath) {
+			if (state.unsafeEdit) return;
 			return {
 				block: true,
 				reason:
@@ -313,7 +316,9 @@ export function registerWorktreeGuards(pi: ExtensionAPI, getState: () => Session
 			};
 		}
 
-		if (worktreeDir && STRUCTURED_MUTATION_TOOLS.has(event.toolName) && isPathWithin(resolved, protectedCheckout)) {
+		if (worktreeDir && isStructuredMutation && isProtectedPath) {
+			// Relative paths are retargeted to the worktree; use absolute paths for intentional protected checkout edits.
+			if (state.unsafeEdit && isAbsolute) return;
 			return {
 				block: true,
 				reason:
@@ -333,7 +338,7 @@ export function registerWorktreeGuards(pi: ExtensionAPI, getState: () => Session
 			};
 		}
 
-		if (isPathWithin(resolved, protectedCheckout)) {
+		if (isProtectedPath) {
 			return {
 				block: true,
 				reason:

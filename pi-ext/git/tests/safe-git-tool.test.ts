@@ -132,6 +132,7 @@ function baseSessionState() {
 		worktreeBranch: "bh/feature",
 		contextContent: null,
 		projectWarnings: [],
+		unsafeEdit: false,
 	};
 }
 
@@ -142,6 +143,13 @@ function noWorktreeSessionState() {
 		worktreeDir: null,
 		worktreeLabel: null,
 		worktreeBranch: null,
+	};
+}
+
+function unsafeEditSessionState() {
+	return {
+		...noWorktreeSessionState(),
+		unsafeEdit: true,
 	};
 }
 
@@ -385,6 +393,36 @@ describe("safe_git tool", () => {
 			const entry = mockPi.appendedEntries.find((e) => e.type === "safe-git");
 			assert.ok(entry, "Should append safe-git entry");
 			assert.equal((entry.data as { decision: string }).decision, "rejected");
+		});
+	});
+
+	describe("unsafeEdit mode", () => {
+		it("still rejects mutating git commands without worktree", async () => {
+			setSessionState(unsafeEditSessionState());
+			const result = await execute("git add -A");
+
+			assert.equal(result.isError, true);
+			assert.equal(result.details.decision, "rejected");
+			assert.match(resultText(result), /worktree/i);
+			const addCall = mockPi.execCalls.find((c) => c.args[0] === "add");
+			assert.ok(!addCall, "Should NOT have called git add");
+		});
+
+		it("still allows read-only commands", async () => {
+			setSessionState(unsafeEditSessionState());
+			const result = await execute("git status");
+
+			assert.equal(result.isError, false);
+			assert.equal(result.details.decision, "executed");
+		});
+
+		it("still rejects approval-required commands without worktree", async () => {
+			setSessionState(unsafeEditSessionState());
+			const result = await execute("git push --force origin feature-branch");
+
+			assert.equal(result.isError, true);
+			assert.equal(result.details.decision, "rejected");
+			assert.match(resultText(result), /worktree/i);
 		});
 	});
 });
