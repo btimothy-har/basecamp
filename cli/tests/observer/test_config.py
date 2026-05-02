@@ -136,7 +136,7 @@ class TestObserverProviderConfigs:
     """Tests for provider_configs property."""
 
     def test_provider_configs_defaults(self):
-        """provider_configs returns defaults for openai and anthropic."""
+        """provider_configs returns defaults for openai, anthropic, and openrouter."""
         providers = settings_mod.settings.observer.provider_configs
 
         assert "openai" in providers
@@ -146,6 +146,10 @@ class TestObserverProviderConfigs:
         assert "anthropic" in providers
         assert providers["anthropic"].api_key_env == "ANTHROPIC_API_KEY"
         assert providers["anthropic"].base_url_env == "ANTHROPIC_BASE_URL"
+
+        assert "openrouter" in providers
+        assert providers["openrouter"].api_key_env == "OPENROUTER_API_KEY"
+        assert providers["openrouter"].base_url_env == "OPENROUTER_BASE_URL"
 
     def test_provider_configs_custom_override(self):
         """Custom provider config overrides defaults."""

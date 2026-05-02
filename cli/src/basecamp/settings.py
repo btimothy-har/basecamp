@@ -280,6 +280,7 @@ class ObserverConfig:
     DEFAULT_PROVIDERS: ClassVar[dict[str, ProviderConfig]] = {
         "openai": ProviderConfig(api_key_env="OPENAI_API_KEY", base_url_env="OPENAI_BASE_URL"),
         "anthropic": ProviderConfig(api_key_env="ANTHROPIC_API_KEY", base_url_env="ANTHROPIC_BASE_URL"),
+        "openrouter": ProviderConfig(api_key_env="OPENROUTER_API_KEY", base_url_env="OPENROUTER_BASE_URL"),
     }
 
     def __init__(self, parent: Settings) -> None:
