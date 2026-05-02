@@ -3,8 +3,6 @@
 from __future__ import annotations
 
 import questionary
-from observer.exceptions import InvalidModelRefError
-from observer.llm.model_resolver import parse_model_ref
 
 from basecamp.cli.language import (
     BUNDLED_LANGUAGES,
@@ -20,14 +18,8 @@ from basecamp.cli.project import (
     execute_project_remove,
 )
 from basecamp.config import load_projects
-from basecamp.settings import ProviderConfig, settings
+from basecamp.settings import settings
 from basecamp.ui import console
-
-_PROVIDER_LABELS = {
-    "openai": "OpenAI",
-    "anthropic": "Anthropic",
-    "openrouter": "OpenRouter",
-}
 
 
 def run_config_menu() -> None:
@@ -133,7 +125,7 @@ def _model_menu() -> None:
             alias = questionary.text("Alias name (e.g. fast, balanced, complex):").ask()
             if not alias:
                 continue
-            model_id = questionary.text("Model ref (e.g. anthropic:claude-haiku-4-5):").ask()
+            model_id = questionary.text("Model ID (e.g. claude-haiku-4-5):").ask()
             if not model_id:
                 continue
             execute_model_set(alias.strip(), model_id.strip())
@@ -252,37 +244,15 @@ def _worktree_menu() -> None:
             console.print("[green]✓[/green] Branch prefix cleared (using default 'wt/')")
 
 
-def _validate_observer_model_ref(model_ref: str) -> bool:
-    target = settings.models.get(model_ref, model_ref)
-    try:
-        parse_model_ref(target)
-    except InvalidModelRefError as e:
-        console.print(f"[red]Error:[/red] {e}")
-        return False
-    return True
-
-
 def _observer_menu() -> None:
     """Observer configuration sub-menu."""
     while True:
         obs = settings.observer
-        providers = obs.provider_configs
-        openai_cfg = providers["openai"]
-        anthropic_cfg = providers["anthropic"]
-        openrouter_cfg = providers["openrouter"]
 
         console.print()
         console.print(f"  Extraction model: [bold]{obs.extraction_model}[/bold]")
         console.print(f"  Summary model:    [bold]{obs.summary_model}[/bold]")
         console.print(f"  Mode:             [bold]{obs.mode}[/bold]")
-        console.print()
-        console.print("  [dim]Provider env var names:[/dim]")
-        console.print(f"    OpenAI API key:      [bold]{openai_cfg.api_key_env or '(not set)'}[/bold]")
-        console.print(f"    OpenAI base URL:     [bold]{openai_cfg.base_url_env or '(not set)'}[/bold]")
-        console.print(f"    Anthropic API key:   [bold]{anthropic_cfg.api_key_env or '(not set)'}[/bold]")
-        console.print(f"    Anthropic base URL:  [bold]{anthropic_cfg.base_url_env or '(not set)'}[/bold]")
-        console.print(f"    OpenRouter API key:  [bold]{openrouter_cfg.api_key_env or '(not set)'}[/bold]")
-        console.print(f"    OpenRouter base URL: [bold]{openrouter_cfg.base_url_env or '(not set)'}[/bold]")
 
         action = questionary.select(
             "Observer:",
@@ -290,7 +260,6 @@ def _observer_menu() -> None:
                 "Set extraction model",
                 "Set summary model",
                 "Toggle mode",
-                "Configure providers",
                 questionary.Separator(),
                 "← Back",
             ],
@@ -300,99 +269,16 @@ def _observer_menu() -> None:
             return
 
         if action == "Set extraction model":
-            model = questionary.text("Extraction model (provider:model_id):", default=obs.extraction_model).ask()
-            if model and _validate_observer_model_ref(model.strip()):
+            model = questionary.text("Extraction model (provider:model):", default=obs.extraction_model).ask()
+            if model:
                 obs.extraction_model = model.strip()
                 console.print(f"[green]✓[/green] Extraction model → [bold]{model.strip()}[/bold]")
         elif action == "Set summary model":
-            model = questionary.text("Summary model (provider:model_id):", default=obs.summary_model).ask()
-            if model and _validate_observer_model_ref(model.strip()):
+            model = questionary.text("Summary model (provider:model):", default=obs.summary_model).ask()
+            if model:
                 obs.summary_model = model.strip()
                 console.print(f"[green]✓[/green] Summary model → [bold]{model.strip()}[/bold]")
         elif action == "Toggle mode":
             new_mode = "off" if obs.mode == "on" else "on"
             obs.mode = new_mode
             console.print(f"[green]✓[/green] Mode → [bold]{new_mode}[/bold]")
-        elif action == "Configure providers":
-            _provider_config_menu()
-
-
-def _provider_config_menu() -> None:
-    """Provider configuration sub-menu for observer."""
-
-    while True:
-        obs = settings.observer
-        providers = obs.provider_configs
-        openai_cfg = providers["openai"]
-        anthropic_cfg = providers["anthropic"]
-        openrouter_cfg = providers["openrouter"]
-
-        console.print()
-        console.print("  [bold]OpenAI[/bold]")
-        console.print(f"    API key env:  [bold]{openai_cfg.api_key_env or '(not set)'}[/bold]")
-        console.print(f"    Base URL env: [bold]{openai_cfg.base_url_env or '(not set)'}[/bold]")
-        console.print("  [bold]Anthropic[/bold]")
-        console.print(f"    API key env:  [bold]{anthropic_cfg.api_key_env or '(not set)'}[/bold]")
-        console.print(f"    Base URL env: [bold]{anthropic_cfg.base_url_env or '(not set)'}[/bold]")
-        console.print("  [bold]OpenRouter[/bold]")
-        console.print(f"    API key env:  [bold]{openrouter_cfg.api_key_env or '(not set)'}[/bold]")
-        console.print(f"    Base URL env: [bold]{openrouter_cfg.base_url_env or '(not set)'}[/bold]")
-
-        action = questionary.select(
-            "Configure provider:",
-            choices=[
-                "OpenAI",
-                "Anthropic",
-                "OpenRouter",
-                questionary.Separator(),
-                "← Back",
-            ],
-        ).ask()
-
-        if action is None or action == "← Back":
-            return
-
-        if action == "OpenAI":
-            _configure_single_provider("openai", openai_cfg)
-        elif action == "Anthropic":
-            _configure_single_provider("anthropic", anthropic_cfg)
-        elif action == "OpenRouter":
-            _configure_single_provider("openrouter", openrouter_cfg)
-
-
-def _configure_single_provider(provider_name: str, current: ProviderConfig) -> None:
-    """Configure a single provider's env var names."""
-    obs = settings.observer
-
-    provider_label = _PROVIDER_LABELS.get(provider_name, provider_name)
-
-    console.print(f"\n  [bold]{provider_label} Configuration[/bold]")
-    console.print("  Enter environment variable names, not secret values. Leave empty to clear a value.")
-
-    api_key = questionary.text(
-        "API key env var name:",
-        default=current.api_key_env or "",
-    ).ask()
-    if api_key is None:
-        return
-
-    base_url = questionary.text(
-        "Base URL env var name (optional):",
-        default=current.base_url_env or "",
-    ).ask()
-    if base_url is None:
-        return
-
-    new_api_key = api_key.strip() or None
-    new_base_url = base_url.strip() or None
-
-    obs.set_provider(provider_name, ProviderConfig(api_key_env=new_api_key, base_url_env=new_base_url))
-    console.print(f"[green]✓[/green] {provider_label} provider updated.")
-    if new_api_key:
-        console.print(f"    API key env: [bold]{new_api_key}[/bold]")
-    else:
-        console.print("    API key env: [dim](cleared)[/dim]")
-    if new_base_url:
-        console.print(f"    Base URL env: [bold]{new_base_url}[/bold]")
-    else:
-        console.print("    Base URL env: [dim](cleared)[/dim]")

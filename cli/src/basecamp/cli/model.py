@@ -13,8 +13,7 @@ def execute_model_list() -> None:
     models = settings.models
     if not models:
         console.print("\n[dim]No model aliases configured.[/dim]")
-        console.print("[dim]Use [bold]basecamp config[/bold] → Models to add one.[/dim]")
-        console.print("[dim]Observer aliases should target [bold]provider:model_id[/bold] refs.[/dim]\n")
+        console.print("[dim]Use [bold]basecamp model set <alias> <model-id>[/bold] to add one.[/dim]\n")
         return
 
     table = Table(title="Model Aliases", show_header=True, header_style="bold cyan")
