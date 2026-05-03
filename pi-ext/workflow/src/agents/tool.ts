@@ -19,9 +19,9 @@ import { fileURLToPath } from "node:url";
 import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-agent";
 import { getMarkdownTheme } from "@mariozechner/pi-coding-agent";
 import { type Component, Container, Markdown, Spacer, Text } from "@mariozechner/pi-tui";
-import { getState } from "../../../core/src/runtime/session";
 import { resolveModelAlias } from "../../../platform/config.ts";
 import { hasInvokedSkill } from "../../../platform/skill-tracker";
+import { getWorkspaceState } from "../../../platform/workspace";
 import { formatTaskProgressSummary, renderCompactTaskProgressLines } from "../tasks/render";
 import { isAsyncAvailable, spawnAsyncAgent } from "./async-spawn.ts";
 import type { AgentStreamEvent } from "./executor.ts";
@@ -439,9 +439,9 @@ Available named agents are basecamp builtin definitions. Ad-hoc dispatch is sync
 			const agentLabel = params.agent ?? "ad-hoc";
 			const extensionTools = getBasecampExtensionToolNames(pi);
 			const runKind = getAgentRunKind(agentConfig);
-			const state = getState();
-			const worktreeDir = state.worktreeDir;
-			const spawnCwd = state.launchCwd;
+			const workspace = getWorkspaceState();
+			const worktreeDir = workspace?.executionTarget?.path ?? null;
+			const spawnCwd = workspace?.launchCwd ?? process.cwd();
 
 			if (runKind === "mutative" && !worktreeDir) {
 				return {
