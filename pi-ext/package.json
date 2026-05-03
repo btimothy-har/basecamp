@@ -8,6 +8,7 @@
 	],
 	"pi": {
 		"extensions": [
+			"./workspace/src",
 			"./core/src",
 			"./workflow/src",
 			"./observer/src",
