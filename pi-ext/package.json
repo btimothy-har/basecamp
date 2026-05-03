@@ -10,6 +10,7 @@
 		"extensions": [
 			"./workspace/src",
 			"./core/src",
+			"./projects/src",
 			"./workflow/src",
 			"./observer/src",
 			"./git/src"
