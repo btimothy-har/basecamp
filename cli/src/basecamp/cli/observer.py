@@ -278,6 +278,10 @@ def ingest(run_process: bool) -> None:  # noqa: FBT001
         session_id=data["session_id"],
         transcript_path=data["transcript_path"],
         cwd=data["cwd"],
+        repo_name=data.get("repo_name"),
+        repo_root=data.get("repo_root"),
+        repo_remote_url=data.get("repo_remote_url"),
+        execution_target=data.get("execution_target"),
     )
 
     try:

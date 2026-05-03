@@ -1,43 +1,59 @@
-/**
- * Process-scoped Basecamp session runtime state.
- *
- * Pi loads package extension entries with separate Jiti module caches. State
- * shared by core/workflow entries must live on globalThis rather than in a
- * module-local variable.
- */
+export type AgentMode = "analysis" | "planning" | "supervisor" | "executor";
 
-import type { SessionState } from "./config";
+export const AGENT_MODES: readonly AgentMode[] = ["analysis", "planning", "supervisor", "executor"];
 
-interface BasecampSessionRuntime {
-	state: SessionState | null;
-}
+const DEFAULT_AGENT_MODE: AgentMode = "executor";
 
-const sessionKey = Symbol.for("basecamp.session");
+type AgentModeListener = (mode: AgentMode) => void;
 
-type GlobalWithBasecampSession = typeof globalThis & {
-	[sessionKey]?: BasecampSessionRuntime;
+type AgentModeState = {
+	mode: AgentMode;
+	listeners: Set<AgentModeListener>;
 };
 
-function getSessionRuntime(): BasecampSessionRuntime {
-	const globalObject = globalThis as GlobalWithBasecampSession;
-	globalObject[sessionKey] ??= { state: null };
-	return globalObject[sessionKey];
+const MODE_STATE_KEY = "__basecampAgentModeState";
+
+type GlobalWithAgentModeState = typeof globalThis & {
+	[MODE_STATE_KEY]?: AgentModeState;
+};
+
+function getModeState(): AgentModeState {
+	const scope = globalThis as GlobalWithAgentModeState;
+	// Pi loads package extension entries with separate Jiti module caches, so
+	// module-level state is not shared between extension entries.
+	scope[MODE_STATE_KEY] ??= { mode: DEFAULT_AGENT_MODE, listeners: new Set() };
+	return scope[MODE_STATE_KEY];
 }
 
-export function resetSessionRuntime(): void {
-	getSessionRuntime().state = null;
+export function getAgentMode(): AgentMode {
+	return getModeState().mode;
 }
 
-export function getSessionState(): SessionState | null {
-	return getSessionRuntime().state;
+export function setAgentMode(nextMode: AgentMode): AgentMode {
+	const state = getModeState();
+	if (state.mode === nextMode) return state.mode;
+
+	state.mode = nextMode;
+	for (const listener of state.listeners) {
+		listener(state.mode);
+	}
+	return state.mode;
 }
 
-export function setSessionState(state: SessionState): void {
-	getSessionRuntime().state = state;
+export function cycleAgentMode(): AgentMode {
+	const mode = getAgentMode();
+	const index = AGENT_MODES.indexOf(mode);
+	return setAgentMode(AGENT_MODES[(index + 1) % AGENT_MODES.length]!);
 }
 
-export function requireSessionState(): SessionState {
-	const state = getSessionState();
-	if (!state) throw new Error("Basecamp session state is not initialized");
-	return state;
+export function resetAgentMode(): void {
+	setAgentMode(DEFAULT_AGENT_MODE);
+}
+
+export function onAgentModeChange(listener: AgentModeListener): () => void {
+	const state = getModeState();
+	state.listeners.add(listener);
+	return () => {
+		state.listeners.delete(listener);
+	};
 }

@@ -2,7 +2,7 @@
  * Shared context builders — reusable prompt fragments.
  *
  * Pure functions that format state into text blocks for prompt injection.
- * Used by the parent session prompt (core/src/prompt/prompt.ts) and other
+ * Used by the parent session prompt and other
  * runtime components that need consistent prompt context.
  *
  * Each function returns null when the context is not applicable,
@@ -12,7 +12,7 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import type { CatalogItem } from "./catalog";
-import type { SessionState } from "./config";
+import type { WorkspaceState } from "./workspace";
 
 /**
  * Build the worktree warning block.
@@ -21,27 +21,30 @@ import type { SessionState } from "./config";
  * safety-critical: project edits must happen in the worktree while the
  * protected checkout stays on the default branch with a clean status.
  */
-export function buildWorktreeWarning(state: SessionState): string | null {
-	if (!state.worktreeDir || !state.worktreeLabel) return null;
+export function buildWorktreeWarning(workspace: WorkspaceState | null): string | null {
+	if (!workspace?.activeWorktree) return null;
 
-	return "⚠ WORKTREE ACTIVE: Relative file-tool paths and bash commands run from the working directory. Do not edit the protected repository checkout.";
+	return "⚠ WORKSPACE ACTIVE: Relative file-tool paths and bash commands run from the working directory. Do not edit the protected repository checkout.";
 }
 
 /**
  * Format project context for the system prompt.
  *
  * Merges two sources:
- *   1. Basecamp project context (from ~/.pi/context/)
+ *   1. Project context (from the project resolver)
  *   2. Pi-native context files (AGENTS.md / CLAUDE.md walked from cwd)
  *
  * Returns null if neither source has content.
  */
-export function buildProjectContext(state: SessionState, contextFiles?: ContextFile[]): string | null {
+export function buildProjectContext(
+	project: { contextContent: string | null } | null,
+	contextFiles?: ContextFile[],
+): string | null {
 	const parts: string[] = [];
 
-	// Basecamp project context
-	if (state.contextContent) {
-		parts.push(state.contextContent);
+	// Project context
+	if (project?.contextContent) {
+		parts.push(project.contextContent);
 	}
 
 	// Pi-native context files (CLAUDE.md / AGENTS.md)

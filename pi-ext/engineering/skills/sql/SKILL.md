@@ -41,7 +41,7 @@ Determine the database from project context (dbt profiles, connection configs, e
 psql -h localhost -U username -d database_name -f script.sql
 ```
 
-For BigQuery, save SQL to a `.sql` file (often under the scratch directory), then use the `bq_query` tool instead of inline `bq query`. Include a short required `description` (TLDR, no raw SQL/result rows):
+For BigQuery, save SQL to a `.sql` file under the scratch directory (`/tmp/pi/**`), then use the `bq_query` tool instead of inline `bq query`. Include a short required `description` (TLDR, no raw SQL/result rows):
 
 ```text
 # Validate only

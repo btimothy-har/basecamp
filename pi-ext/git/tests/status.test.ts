@@ -1,7 +1,6 @@
 import assert from "node:assert/strict";
 import { afterEach, describe, it } from "node:test";
-import type { SessionState } from "../../platform/config.ts";
-import { resetSessionRuntime, setSessionState } from "../../platform/session.ts";
+import { registerWorkspaceService, type WorkspaceState } from "../../platform/workspace.ts";
 import { type GitStatusDetails, registerStatusTool } from "../src/status.ts";
 
 interface RegisteredTool {
@@ -44,33 +43,40 @@ const WORKTREE_DIR = "/Users/test/.worktrees/repo/wt-label";
 const WORKTREE_LABEL = "wt-label";
 const WORKTREE_BRANCH = "wt/feature-branch";
 
-function baseSessionState(overrides: Partial<SessionState> = {}): SessionState {
+let workspaceState: WorkspaceState | null = null;
+
+function setWorkspaceState(state: WorkspaceState | null): void {
+	workspaceState = state;
+}
+
+function baseWorkspaceState(overrides: Partial<WorkspaceState> = {}): WorkspaceState {
 	return {
-		projectName: "test-project",
-		project: null,
 		launchCwd: REPO_ROOT,
-		repoRoot: REPO_ROOT,
-		additionalDirs: [],
-		repoName: "repo",
-		isRepo: true,
-		remoteUrl: "git@github.com:user/repo.git",
+		effectiveCwd: REPO_ROOT,
 		scratchDir: "/tmp/pi/repo",
-		workingStyle: "engineering",
-		worktreeDir: null,
-		worktreeLabel: null,
-		worktreeBranch: null,
-		contextContent: null,
-		projectWarnings: [],
+		repo: {
+			isRepo: true,
+			name: "repo",
+			root: REPO_ROOT,
+			remoteUrl: "git@github.com:user/repo.git",
+		},
+		protectedRoot: REPO_ROOT,
+		activeWorktree: null,
 		unsafeEdit: false,
 		...overrides,
 	};
 }
 
-function activeWorktreeState(): SessionState {
-	return baseSessionState({
-		worktreeDir: WORKTREE_DIR,
-		worktreeLabel: WORKTREE_LABEL,
-		worktreeBranch: WORKTREE_BRANCH,
+function activeWorktreeState(): WorkspaceState {
+	return baseWorkspaceState({
+		effectiveCwd: WORKTREE_DIR,
+		activeWorktree: {
+			kind: "git-worktree",
+			label: WORKTREE_LABEL,
+			path: WORKTREE_DIR,
+			branch: WORKTREE_BRANCH,
+			created: false,
+		},
 	});
 }
 
@@ -114,13 +120,38 @@ function createGitExecHandler(effectiveRoot: string, branch = "main"): ExecHandl
 	};
 }
 
+registerWorkspaceService({
+	initialize: async () => {
+		if (workspaceState === null) throw new Error("Workspace state is not initialized");
+		return { state: workspaceState, unsafeEditResult: "disabled" };
+	},
+	current: () => workspaceState,
+	require: () => {
+		if (workspaceState === null) throw new Error("Workspace state is not initialized");
+		return workspaceState;
+	},
+	getEffectiveCwd: () => {
+		if (workspaceState === null) throw new Error("Workspace state is not initialized");
+		return workspaceState.effectiveCwd;
+	},
+	listWorktrees: async () => (workspaceState?.activeWorktree ? [workspaceState.activeWorktree] : []),
+	activateWorktree: async () => {
+		if (workspaceState?.activeWorktree) return workspaceState.activeWorktree;
+		throw new Error("No active worktree");
+	},
+	attachWorktreePath: async () => {
+		if (workspaceState?.activeWorktree) return workspaceState.activeWorktree;
+		throw new Error("No active worktree");
+	},
+});
+
 afterEach(() => {
-	resetSessionRuntime();
+	workspaceState = null;
 });
 
 describe("git_status", () => {
 	it("shows repository root in inactive session (no worktree)", async () => {
-		setSessionState(baseSessionState());
+		setWorkspaceState(baseWorkspaceState());
 		const { pi, getRegisteredTool } = createMockPi(createGitExecHandler(REPO_ROOT));
 
 		registerStatusTool(pi);
@@ -147,7 +178,7 @@ describe("git_status", () => {
 	});
 
 	it("shows protected checkout and worktree info in active worktree session", async () => {
-		setSessionState(activeWorktreeState());
+		setWorkspaceState(activeWorktreeState());
 		const { pi, getRegisteredTool } = createMockPi(createGitExecHandler(WORKTREE_DIR, WORKTREE_BRANCH));
 
 		registerStatusTool(pi);
@@ -179,7 +210,7 @@ describe("git_status", () => {
 	});
 
 	it("falls back to git root when session state is unavailable", async () => {
-		resetSessionRuntime();
+		setWorkspaceState(null);
 		const { pi, getRegisteredTool } = createMockPi(createGitExecHandler(REPO_ROOT));
 
 		registerStatusTool(pi);
@@ -203,7 +234,7 @@ describe("git_status", () => {
 	});
 
 	it("returns structured details with branch, status, and commits", async () => {
-		setSessionState(baseSessionState());
+		setWorkspaceState(baseWorkspaceState());
 		const { pi, getRegisteredTool } = createMockPi(createGitExecHandler(REPO_ROOT));
 
 		registerStatusTool(pi);
@@ -222,7 +253,7 @@ describe("git_status", () => {
 	});
 
 	it("handles non-git directory gracefully", async () => {
-		setSessionState(baseSessionState());
+		setWorkspaceState(baseWorkspaceState());
 		const { pi, getRegisteredTool } = createMockPi(() => ({
 			code: 128,
 			stdout: "",

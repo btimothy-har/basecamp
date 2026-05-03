@@ -14,8 +14,7 @@
 
 import * as path from "node:path";
 import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-agent";
-import { getSessionEffectiveCwd } from "../../platform/config";
-import { getSessionState } from "../../platform/session";
+import { getWorkspaceState } from "../../platform/workspace";
 import { registerRecallTool } from "./recall-tool.js";
 
 /** Sessions with fewer turns than this are not worth indexing for recall. */
@@ -34,12 +33,14 @@ function triggerIngest(pi: ExtensionAPI, ctx: ExtensionContext, processFlag: boo
 	const sessionFile = ctx.sessionManager.getSessionFile();
 	if (!sessionId || !sessionFile) return;
 
-	const state = getSessionState();
-	const cwd = state ? getSessionEffectiveCwd(state) : path.resolve(ctx.cwd);
+	const workspace = getWorkspaceState();
 	const payload = JSON.stringify({
 		session_id: sessionId,
 		transcript_path: sessionFile,
-		cwd,
+		cwd: workspace?.effectiveCwd ?? path.resolve(ctx.cwd),
+		repo_name: workspace?.repo?.name ?? null,
+		repo_root: workspace?.repo?.root ?? null,
+		repo_remote_url: workspace?.repo?.remoteUrl ?? null,
 	});
 
 	const observerCmd = processFlag ? "observer ingest --process" : "observer ingest";

@@ -19,20 +19,19 @@ import { fileURLToPath } from "node:url";
 import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-agent";
 import { getMarkdownTheme } from "@mariozechner/pi-coding-agent";
 import { type Component, Container, Markdown, Spacer, Text } from "@mariozechner/pi-tui";
-import { getState } from "../../../core/src/runtime/session";
-import { resolveModelAlias } from "../../../platform/config.ts";
 import { hasInvokedSkill } from "../../../platform/skill-tracker";
+import { getWorkspaceState } from "../../../platform/workspace";
 import { formatTaskProgressSummary, renderCompactTaskProgressLines } from "../tasks/render";
 import { isAsyncAvailable, spawnAsyncAgent } from "./async-spawn.ts";
 import type { AgentStreamEvent } from "./executor.ts";
 import { spawnAgent } from "./executor.ts";
+import { resolveModel } from "./model-resolution.ts";
 import type {
 	AgentConfig,
 	AgentDetails,
 	AgentPartialDetails,
 	AgentRunKind,
 	AsyncResult,
-	ModelStrategy,
 	ToolCallRecord,
 } from "./types.ts";
 import {
@@ -43,28 +42,6 @@ import {
 	DEFAULT_AGENT_MAX_DEPTH,
 	getAgentRunKind,
 } from "./types.ts";
-
-// ============================================================================
-// Model Resolution
-// ============================================================================
-
-interface ParentModel {
-	id: string;
-	provider: string;
-}
-
-function resolveModel(strategy: ModelStrategy, parentModel: ParentModel | undefined): string | undefined {
-	switch (strategy) {
-		case "default":
-			return undefined;
-		case "inherit":
-			if (!parentModel) return undefined;
-			// Provider-qualify to avoid ambiguous resolution across providers
-			return `${parentModel.provider}/${parentModel.id}`;
-		default:
-			return resolveModelAlias(strategy);
-	}
-}
 
 // ============================================================================
 // Depth Guard
@@ -439,9 +416,9 @@ Available named agents are basecamp builtin definitions. Ad-hoc dispatch is sync
 			const agentLabel = params.agent ?? "ad-hoc";
 			const extensionTools = getBasecampExtensionToolNames(pi);
 			const runKind = getAgentRunKind(agentConfig);
-			const state = getState();
-			const worktreeDir = state.worktreeDir;
-			const spawnCwd = state.launchCwd;
+			const workspace = getWorkspaceState();
+			const worktreeDir = workspace?.activeWorktree?.path ?? null;
+			const spawnCwd = workspace?.launchCwd ?? process.cwd();
 
 			if (runKind === "mutative" && !worktreeDir) {
 				return {

@@ -51,24 +51,30 @@ pi-ext/                         # Pi extension package
 ├── package.json                # Extension manifest (extensions, skills, prompts)
 ├── platform/                   # Shared extension platform modules
 │   ├── catalog.ts              # Capability catalog providers/queries
-│   ├── config.ts               # Config reader + SessionState resolver
 │   ├── context.ts              # Prompt context builders + AGENTS.md discovery
 │   ├── exec.ts                 # Cwd-aware exec seam for extension modules
+│   ├── model-aliases.ts        # Process-scoped model alias provider seam
 │   ├── skill-content.ts        # Shared skill file loading/rendering helpers
 │   ├── skill-tracker.ts        # Shared skill invocation state
+│   ├── session.ts              # Process-scoped session mode state seam
 │   ├── templates.ts            # Markdown template loader
+│   ├── workspace.ts            # Process-scoped workspace provider/state interfaces
 │   └── utils.ts                # Shared small utilities
-├── core/
+├── session/
 │   ├── src/
-│   │   ├── runtime/            # Session bootstrap, worktree setup, tool guards
-│   │   ├── prompt/             # System prompt assembly + context injection
-│   │   │   └── system-prompts/ # Bundled environment/style/language prompts
-│   │   ├── tools/              # discover, skill, escalate, catalog providers
-│   │   ├── ui/                 # Header, footer, session title widget
-│   │   ├── commands/           # /open command
-│   │   └── index.ts            # Core extension registration
-│   ├── skills/                 # gather + pi-development skills
-│   └── prompts/                # Logseq session prompts (reflect, plan)
+│   │   ├── runtime/            # Session lifecycle hooks
+│   │   ├── ui/                 # Footer, mode editor, session title widget
+│   │   ├── commands/           # Mode shortcuts/commands
+│   │   └── index.ts            # Session extension registration
+│   └── tests/                  # Session UI/model tests
+├── capabilities/
+│   └── src/                    # Skill tool, skill lifecycle tracking, catalog providers
+├── model-aliases/
+│   └── src/                    # Native model alias config reader/provider registration
+├── projects/
+│   └── src/                    # Project config/state, prompt assembly, context injection, header
+├── workspace/
+│   └── src/                    # Repo/worktree service, guards, affinity, commands, unsafe-edit
 ├── workflow/
 │   ├── src/
 │   │   ├── agents/             # Agent discovery, dispatch tool, commands, skills
@@ -76,14 +82,17 @@ pi-ext/                         # Pi extension package
 │   │   ├── tasks/              # Goal/task tools, state, rendering, commands
 │   │   └── index.ts            # Workflow extension registration
 │   ├── agents/builtin/         # Built-in agent definitions
-│   └── skills/                 # agents + planning skills
+│   └── skills/                 # agents + gather + planning skills
 ├── git/
 │   ├── src/                    # Git guards, PR/issue workflow commands, publish tools
 │   └── resources/              # PR workflow prompt templates
 ├── observer/
 │   ├── src/                    # Observer integration (session ingest trigger)
 │   └── skills/                 # recall skill
-└── engineering/                # Engineering prompts + skills (code review, Python, marimo, SQL, data warehousing)
+└── engineering/
+    ├── src/                    # Engineering runtime tools (BigQuery query execution)
+    ├── prompts/                # Engineering prompt templates
+    └── skills/                 # Engineering/Pi skills (code review, Python, pi-development, marimo, SQL, data warehousing)
 
 cli/tests/                      # pytest suite for basecamp CLI and observer
 ```
@@ -98,13 +107,17 @@ Prompts are layered (environment → working style → project context → tools
 
 ### Extension
 
-All skills, agents, hooks, and system prompts are bundled in a single pi extension (`pi-ext/`). This replaces the previous Claude Code plugin system.
+All skills, agents, hooks, and system prompts are bundled in a single pi extension package (`pi-ext/`). Runtime concerns are split across focused extension entrypoints: `session` owns mode/session UI, `capabilities` owns skill loading and catalog registration, `projects` owns project context and prompt assembly, `workflow` owns planning/tasks/agents, and `engineering` owns engineering runtime tools plus engineering/Pi development skills. This replaces the previous Claude Code plugin system.
+
+### Model Aliases
+
+Model alias resolution is owned by `pi-ext/model-aliases`, backed by `~/.pi/model-aliases/config.json` with schema `{ "version": 1, "aliases": { "fast": "claude-haiku-4-5" } }`. `pi-ext/platform/model-aliases.ts` is only the provider seam; it must not read config, define aliases, or own model-selection policy.
 
 ### Environment Variable Chain
 
 Session launch sets `BASECAMP_*` env vars on `process.env`. Subagents spawned via the `agent` tool inherit these automatically as child processes.
 
-`BASECAMP_REPO` is always the git repo name, never a worktree label or directory name. This ensures observer can scope searches consistently regardless of whether the session is in a worktree. `BASECAMP_WORKTREE_DIR` and `BASECAMP_WORKTREE_LABEL` are set to the active worktree values, or empty strings when no worktree is active.
+Relevant vars include `BASECAMP_PROJECT`, `BASECAMP_REPO`, `BASECAMP_SCRATCH_DIR`, `BASECAMP_WORKTREE_DIR`, and `BASECAMP_WORKTREE_LABEL`. `BASECAMP_REPO` is always the git repo name, never a worktree label or directory name. Observer scopes memory by repo/project/session, not the current active worktree. `BASECAMP_WORKTREE_DIR` and `BASECAMP_WORKTREE_LABEL` are set to the active worktree values, or empty strings when no worktree is active.
 
 ### Worktree Design
 

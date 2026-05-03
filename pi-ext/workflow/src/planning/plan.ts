@@ -14,9 +14,14 @@
 
 import type { ExtensionAPI, ExtensionContext, Theme } from "@mariozechner/pi-coding-agent";
 import { Type } from "@sinclair/typebox";
-import { getAgentMode, setAgentMode } from "../../../core/src/runtime/mode";
-import { activateWorktree, getState } from "../../../core/src/runtime/session";
-import { listWorktrees, type WorktreeResult } from "../../../core/src/runtime/worktree";
+import { getAgentMode, setAgentMode } from "../../../platform/session";
+import {
+	activateWorkspaceWorktree,
+	getWorkspaceState,
+	listWorkspaceWorktrees,
+	requireWorkspaceState,
+	type WorkspaceWorktree,
+} from "../../../platform/workspace";
 import type { GoalCycle, ReviewState, TaskStatus, TasksAccess } from "../tasks/tasks";
 import { computeGoalContextReview, computeSectionReview, freshReview, tasksMatch } from "./draft-logic";
 import type { PlanDraft } from "./review";
@@ -161,6 +166,13 @@ interface HandoffWorktreeContext {
 	repoRoot: string;
 }
 
+type HandoffWorktreeResult = {
+	worktreeDir: string;
+	label: string;
+	branch: string;
+	created: boolean;
+};
+
 interface PendingImplementationHandoff {
 	mode: ImplementationMode;
 	worktree: HandoffWorktreeContext;
@@ -207,16 +219,20 @@ function suggestWorktreeLabel(ctx: ExtensionContext, goal: string, worktreeSlug:
 }
 
 async function selectWorktreeLabel(
-	pi: ExtensionAPI,
 	ctx: ExtensionContext,
 	goal: string,
 	worktreeSlug: string | null,
 ): Promise<string | null> {
 	if (!ctx.hasUI) return null;
 
-	const state = getState();
+	const workspace = getWorkspaceState();
+	if (!workspace?.repo) {
+		ctx.ui.notify("Execution worktrees require a git repository.", "error");
+		return null;
+	}
+
 	const suggested = suggestWorktreeLabel(ctx, goal, worktreeSlug);
-	const existing = await listWorktrees(pi, state.repoRoot, state.repoName);
+	const existing = await listWorkspaceWorktrees();
 	const choices: string[] = [];
 	const labelsByChoice = new Map<string, string>();
 
@@ -227,7 +243,7 @@ async function selectWorktreeLabel(
 
 	for (const wt of existing) {
 		if (wt.label === suggested) continue;
-		const choice = `Resume: ${wt.label} (${wt.branch})`;
+		const choice = `Resume: ${wt.label} (${wt.branch ?? "detached"})`;
 		choices.push(choice);
 		labelsByChoice.set(choice, wt.label);
 	}
@@ -262,7 +278,7 @@ function buildWorktreeActivationFailedResult(label: string, error: unknown): str
 	});
 }
 
-function buildApprovedResult(draft: PlanDraft, mode: ApprovedPlanMode, worktree?: WorktreeResult): string {
+function buildApprovedResult(draft: PlanDraft, mode: ApprovedPlanMode, worktree?: HandoffWorktreeResult): string {
 	const notes = collectApprovedNotes(draft);
 
 	const tasks: Record<number, { label: string; status: string; criteria: string }> = {};
@@ -314,9 +330,10 @@ function buildApprovedResult(draft: PlanDraft, mode: ApprovedPlanMode, worktree?
 function buildPendingImplementationHandoff(
 	draft: PlanDraft,
 	mode: ImplementationMode,
-	worktree: WorktreeResult,
+	worktree: HandoffWorktreeResult,
 ): PendingImplementationHandoff {
-	const state = getState();
+	const repo = requireWorkspaceState().repo;
+	if (!repo) throw new Error("Implementation handoff requires a git repository");
 	return {
 		mode,
 		worktree: {
@@ -324,8 +341,8 @@ function buildPendingImplementationHandoff(
 			path: worktree.worktreeDir,
 			branch: worktree.branch,
 			created: worktree.created,
-			repoName: state.repoName,
-			repoRoot: state.repoRoot,
+			repoName: repo.name,
+			repoRoot: repo.root,
 		},
 		plan: {
 			goal: draft.goal.content,
@@ -427,6 +444,15 @@ function renderPartial(theme: Theme) {
 
 export interface PlanAccess {
 	getDraft(): PlanDraft | null;
+}
+
+function workspaceWorktreeToHandoffWorktree(target: WorkspaceWorktree): HandoffWorktreeResult {
+	return {
+		worktreeDir: target.path,
+		label: target.label,
+		branch: target.branch ?? "detached",
+		created: target.created,
+	};
 }
 
 // ============================================================================
@@ -570,7 +596,7 @@ export function registerPlan(pi: ExtensionAPI, tasksAccess: TasksAccess): PlanAc
 					};
 				}
 
-				const worktreeLabel = await selectWorktreeLabel(pi, ctx, draft.goal.content, draft.worktreeSlug);
+				const worktreeLabel = await selectWorktreeLabel(ctx, draft.goal.content, draft.worktreeSlug);
 				if (!worktreeLabel) {
 					return {
 						content: [
@@ -587,9 +613,9 @@ export function registerPlan(pi: ExtensionAPI, tasksAccess: TasksAccess): PlanAc
 					};
 				}
 
-				let worktree: WorktreeResult;
+				let worktree: HandoffWorktreeResult;
 				try {
-					worktree = await activateWorktree(pi, worktreeLabel);
+					worktree = workspaceWorktreeToHandoffWorktree(await activateWorkspaceWorktree(worktreeLabel));
 				} catch (err) {
 					return {
 						content: [{ type: "text", text: buildWorktreeActivationFailedResult(worktreeLabel, err) }],

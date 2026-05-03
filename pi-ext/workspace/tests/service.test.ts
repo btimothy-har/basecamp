@@ -1,0 +1,144 @@
+import assert from "node:assert/strict";
+import * as fs from "node:fs/promises";
+import * as path from "node:path";
+import { describe, it } from "node:test";
+import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
+import { SCRATCH_ROOT, WORKTREES_ROOT } from "../src/constants.ts";
+import { WorkspaceRuntimeService } from "../src/service.ts";
+
+const REPO_ROOT = "/repo";
+const REPO_NAME = "repo";
+const LABEL = "feature";
+const BRANCH = "wt/feature";
+const REMOTE_URL = "git@github.com:test/repo.git";
+const WORKTREE_DIR = path.join(WORKTREES_ROOT, REPO_NAME, LABEL);
+const SCRATCH_DIR = path.join(SCRATCH_ROOT, REPO_NAME);
+
+interface ExecCall {
+	command: string;
+	args: string[];
+	options?: { cwd?: string; timeout?: number };
+}
+
+type ExecResult = { code: number; stdout: string; stderr: string };
+
+function restoreBasecampEnv(snapshot: Record<string, string | undefined>): void {
+	for (const key of Object.keys(process.env)) {
+		if (key.startsWith("BASECAMP_") && !(key in snapshot)) delete process.env[key];
+	}
+	for (const [key, value] of Object.entries(snapshot)) {
+		if (value === undefined) delete process.env[key];
+		else process.env[key] = value;
+	}
+}
+
+function snapshotBasecampEnv(): Record<string, string | undefined> {
+	return Object.fromEntries(
+		Object.entries(process.env)
+			.filter(([key]) => key.startsWith("BASECAMP_"))
+			.map(([key, value]) => [key, value]),
+	);
+}
+
+function gitWorktreeListOutput(): string {
+	return [
+		`worktree ${REPO_ROOT}`,
+		"branch refs/heads/main",
+		"",
+		`worktree ${WORKTREE_DIR}`,
+		`branch refs/heads/${BRANCH}`,
+		"",
+	].join("\n");
+}
+
+function argsEqual(actual: string[], expected: string[]): boolean {
+	return actual.length === expected.length && actual.every((arg, index) => arg === expected[index]);
+}
+
+function unexpectedExecCall(call: ExecCall): Error {
+	return new Error(`Unexpected exec call: ${call.command} ${JSON.stringify(call.args)}`);
+}
+
+function createPi(): { pi: ExtensionAPI; calls: ExecCall[] } {
+	const calls: ExecCall[] = [];
+	const pi = {
+		async exec(command: string, args: string[], options?: { cwd?: string; timeout?: number }): Promise<ExecResult> {
+			const call = { command, args, options };
+			calls.push(call);
+
+			if (command !== "git") throw unexpectedExecCall(call);
+			if (argsEqual(args, ["rev-parse", "--show-toplevel"])) {
+				return { code: 0, stdout: `${REPO_ROOT}\n`, stderr: "" };
+			}
+			if (argsEqual(args, ["-C", REPO_ROOT, "remote", "get-url", "origin"])) {
+				return { code: 0, stdout: `${REMOTE_URL}\n`, stderr: "" };
+			}
+			if (argsEqual(args, ["-C", REPO_ROOT, "symbolic-ref", "--quiet", "--short", "refs/remotes/origin/HEAD"])) {
+				return { code: 0, stdout: "origin/main\n", stderr: "" };
+			}
+			if (argsEqual(args, ["-C", REPO_ROOT, "branch", "--show-current"])) {
+				return { code: 0, stdout: "main\n", stderr: "" };
+			}
+			if (argsEqual(args, ["-C", REPO_ROOT, "status", "--porcelain"])) {
+				return { code: 0, stdout: "", stderr: "" };
+			}
+			if (argsEqual(args, ["-C", REPO_ROOT, "worktree", "list", "--porcelain"])) {
+				return { code: 0, stdout: gitWorktreeListOutput(), stderr: "" };
+			}
+
+			throw unexpectedExecCall(call);
+		},
+	} as ExtensionAPI;
+	return { pi, calls };
+}
+
+async function initializeAndActivate(
+	launchCwd: string,
+): Promise<{ service: WorkspaceRuntimeService; calls: ExecCall[] }> {
+	const { pi, calls } = createPi();
+	const service = new WorkspaceRuntimeService(pi);
+	await service.initialize({
+		launchCwd,
+		unsafeEditFlag: false,
+		unsafeEditConstraints: { readOnly: false, hasUI: true, isSubagent: false },
+	});
+	await service.activateWorktree(LABEL);
+	return { service, calls };
+}
+
+describe("WorkspaceRuntimeService effective cwd", () => {
+	it("preserves protected repo subdirectory when activating an existing worktree", async (t) => {
+		const envSnapshot = snapshotBasecampEnv();
+		t.after(async () => {
+			restoreBasecampEnv(envSnapshot);
+			await fs.rm(SCRATCH_DIR, { recursive: true, force: true });
+		});
+
+		const launchCwd = path.join(REPO_ROOT, "packages", "app");
+		const { service, calls } = await initializeAndActivate(launchCwd);
+
+		assert.equal(service.getEffectiveCwd(), path.join(WORKTREE_DIR, "packages", "app"));
+		assert.equal(service.current()?.activeWorktree?.created, false);
+		assert.ok(
+			calls.some(
+				(call) => call.command === "git" && argsEqual(call.args, ["-C", REPO_ROOT, "worktree", "list", "--porcelain"]),
+			),
+		);
+	});
+
+	it("uses worktree root when launch cwd is outside protected root", async (t) => {
+		const envSnapshot = snapshotBasecampEnv();
+		t.after(async () => {
+			restoreBasecampEnv(envSnapshot);
+			await fs.rm(SCRATCH_DIR, { recursive: true, force: true });
+		});
+
+		const { service } = await initializeAndActivate("/outside");
+
+		assert.equal(service.current()?.protectedRoot, REPO_ROOT);
+		assert.equal(service.current()?.launchCwd, path.resolve("/outside"));
+		assert.equal(service.getEffectiveCwd(), WORKTREE_DIR);
+		assert.equal(process.env.BASECAMP_WORKTREE_DIR, WORKTREE_DIR);
+		assert.equal(process.env.BASECAMP_WORKTREE_LABEL, LABEL);
+	});
+});

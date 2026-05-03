@@ -94,8 +94,11 @@ Use the **Projects** section to list, add, edit, or remove configured projects.
 
 | Command | Description |
 |---------|-------------|
-| `/open` | Open project directories in VS Code |
 | `/agents` | Browse available agent definitions |
+| `/plan` | Create a reviewed implementation plan and activate an execution worktree when approved |
+| `/show-plan` | Show the current plan and task progress |
+| `/tasks` | Show the current goal and task list |
+| `/worktree [label]` | Switch to an existing Git-registered worktree |
 | `/create-pr` | Create or update a pull request |
 | `/create-issue` | Draft and publish a GitHub issue through review |
 | `/pr-comments` | Address PR review comments |
@@ -196,17 +199,17 @@ Single-repo projects typically use `AGENTS.md` in the repo itself.
 
 ## Git Worktrees
 
-Before a worktree is active, the effective working directory is where you launched Pi; the repository root is the protected checkout boundary for tool guards. When an implementation plan is approved, Basecamp prompts for an execution worktree using existing worktrees plus a suggested label derived from the plan goal.
+Before a worktree is active, the effective working directory is where you launched Pi; the repository root is the protected checkout boundary for workspace guards. When an implementation plan is approved, Basecamp uses the workspace service to prompt for an execution worktree using existing worktrees plus a suggested label derived from the plan goal.
 
-Worktrees live in `~/.worktrees/<repo>/<label>/` with branches named `wt/<label>` by default. Git is the source of truth for worktree registration; Basecamp does not maintain a separate metadata registry.
+The workspace service owns the `~/.worktrees/<repo>/<label>/` storage convention, `wt/<label>` default branch names, and `/tmp/pi/<repo>` scratch directories. Git is the source of truth for worktree registration; Basecamp consumes workspace state for project and observer context and does not maintain a separate metadata registry.
 
 - The protected checkout must be on the default branch with a clean working tree before activation
 - Implementation edits happen in the active worktree, not the protected checkout
 - Relative file-tool paths target the active worktree after activation, preserving the launch subdirectory when applicable
+- Mutating `safe_git` commands are blocked unless the effective cwd is inside the active execution worktree
 - `--worktree-dir` is an internal attach-only Pi flag for existing Git-registered worktrees; it does not create worktrees
 - Resumed/reloaded/forked sessions restore their last active worktree when still in the same repo
 - `/worktree [label]` switches the active worktree during a resumed session
-- `/open` in-session opens the active worktree directory in VS Code
 - Use native Git commands (`git worktree list`, `git worktree remove`) to inspect or clean up worktrees
 - Additional directories stay on their configured checkouts throughout the session
 - Only works with git repositories
@@ -217,7 +220,7 @@ The `observer` CLI provides semantic memory across sessions. It ingests session 
 
 ### How it works
 
-1. **Ingest** — A hook triggers `observer ingest` at session end, parsing new transcript events incrementally
+1. **Ingest** — Hooks trigger `observer ingest` at session shutdown, before compaction, and on agent dispatch (ingest-only), parsing new transcript events incrementally
 2. **Process** — A background job refines events into work items, extracts structured artifacts (summary, knowledge, decisions, constraints, actions), and embeds them into ChromaDB
 3. **Search** — The `recall` skill provides hybrid search (semantic + keyword) with time-decay scoring, scoped to the current project
 
