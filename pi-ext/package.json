@@ -11,6 +11,7 @@
 			"./workspace/src",
 			"./model-aliases/src",
 			"./session/src",
+			"./capabilities/src",
 			"./core/src",
 			"./projects/src",
 			"./workflow/src",

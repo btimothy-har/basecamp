@@ -3,7 +3,7 @@
  */
 
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
-import { resetInvokedSkills } from "../../../platform/skill-tracker";
+import { resetInvokedSkills } from "../../platform/skill-tracker";
 
 /** Register lifecycle handlers to reset skill state on session events. */
 export function registerSkillLifecycle(pi: ExtensionAPI): void {

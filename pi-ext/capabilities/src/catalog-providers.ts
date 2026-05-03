@@ -1,11 +1,11 @@
 /**
- * Core catalog providers for Pi-native tools and skills.
+ * Capability catalog providers for Pi-native tools and skills.
  */
 
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
-import { registerCatalogProvider } from "../../../platform/catalog";
+import { registerCatalogProvider } from "../../platform/catalog";
 
-export function registerCoreCatalogProviders(pi: ExtensionAPI): void {
+export function registerCapabilityCatalogProviders(pi: ExtensionAPI): void {
 	registerCatalogProvider({
 		id: "tools",
 		list: () => {
