@@ -5,7 +5,6 @@
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { registerModeShortcut } from "./commands/mode";
 import { registerContextInjection } from "./prompt/context-injection";
-import { registerPrompt } from "./prompt/prompt";
 import { registerSession } from "./runtime/session";
 import { registerBqQueryTool } from "./tools/bq-query";
 import { registerCoreCatalogProviders } from "./tools/catalog-providers";
@@ -13,7 +12,6 @@ import { registerEscalate } from "./tools/escalate/index.js";
 import { registerSkillTool } from "./tools/skill";
 import { registerSkillLifecycle } from "./tools/skill-tracker";
 import { registerFooter } from "./ui/footer";
-import { registerHeader } from "./ui/header";
 import { registerModeEditor } from "./ui/mode-editor";
 import { registerTitle } from "./ui/title";
 
@@ -23,9 +21,7 @@ export default function (pi: ExtensionAPI) {
 	registerSession(pi);
 	registerSkillLifecycle(pi);
 	registerCoreCatalogProviders(pi);
-	registerPrompt(pi);
 	registerContextInjection(pi);
-	registerHeader(pi);
 	registerFooter(pi);
 	registerModeEditor(pi);
 	registerTitle(pi);

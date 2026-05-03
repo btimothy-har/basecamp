@@ -10,7 +10,6 @@ import type { AgentMessage } from "@mariozechner/pi-agent-core";
 import type { AssistantMessage, TextContent, ToolCall, ToolResultMessage, UserMessage } from "@mariozechner/pi-ai";
 import type { ExtensionAPI, ExtensionContext, SessionEntry, Theme } from "@mariozechner/pi-coding-agent";
 import { visibleWidth } from "@mariozechner/pi-tui";
-import { getPiCommand, resolveModelAlias } from "../../../platform/config.ts";
 import { getWorkspaceService, getWorkspaceState, type WorkspaceState } from "../../../platform/workspace";
 
 // ============================================================================
@@ -37,18 +36,22 @@ function getTitleExtractionCwd(workspace: WorkspaceState | null = getWorkspaceSt
 	return workspace?.effectiveCwd ?? process.cwd();
 }
 
-function piPrint(model: string, systemPrompt: string, prompt: string, cwd: string, timeout: number): Promise<string> {
+function piPrint(
+	model: string | undefined,
+	systemPrompt: string,
+	prompt: string,
+	cwd: string,
+	timeout: number,
+): Promise<string> {
 	return new Promise((resolve, reject) => {
-		const [piCmd, ...piPrefix] = getPiCommand();
-		const proc = spawn(
-			piCmd,
-			[...piPrefix, "-p", "--no-session", "--no-tools", "--model", model, "--system-prompt", systemPrompt],
-			{
-				cwd,
-				env: { ...process.env },
-				stdio: ["pipe", "pipe", "pipe"],
-			},
-		);
+		const args = ["-p", "--no-session", "--no-tools"];
+		if (model) args.push("--model", model);
+		args.push("--system-prompt", systemPrompt);
+		const proc = spawn("pi", args, {
+			cwd,
+			env: { ...process.env },
+			stdio: ["pipe", "pipe", "pipe"],
+		});
 
 		let stdout = "";
 		let stderr = "";
@@ -121,8 +124,7 @@ async function extractTitle(
 	onError?: (msg: string) => void,
 ): Promise<string | null> {
 	try {
-		const model = resolveModelAlias("fast", fallbackModel);
-		const stdout = await piPrint(model, TITLE_SYSTEM_PROMPT, TITLE_PROMPT + conversation, cwd, 30_000);
+		const stdout = await piPrint(fallbackModel, TITLE_SYSTEM_PROMPT, TITLE_PROMPT + conversation, cwd, 30_000);
 		const firstLine = stdout.trim().split("\n")[0] ?? "";
 		const cleaned = firstLine
 			.replace(/\*\*/g, "")

@@ -12,9 +12,10 @@ import * as fs from "node:fs/promises";
 import * as path from "node:path";
 import type { AgentToolResult, ExtensionAPI, ExtensionContext, Theme } from "@mariozechner/pi-coding-agent";
 import { type Static, Type } from "@sinclair/typebox";
-import { type BigQueryOutputFormat, isPathWithin, resolveBigQueryConfig } from "../../../platform/config";
-import { requireBasecampProjectState } from "../../../platform/project";
 import { getWorkspaceEffectiveCwd, requireWorkspaceState } from "../../../platform/workspace";
+import { getProjectState } from "../../../projects/src/project.ts";
+
+type BigQueryOutputFormat = "csv" | "json";
 
 const DEFAULT_OUTPUT_FORMAT: BigQueryOutputFormat = "csv";
 const DEFAULT_MAX_ROWS = 100;
@@ -47,11 +48,9 @@ const BqQueryParams = Type.Object({
 				"No-UI only: intentionally override the dry-run soft lock for unknown/non-authoritative estimates or estimates above 5 TB. Does not bypass interactive confirmation, dry-run failures, or execution errors. Defaults to false.",
 		}),
 	),
-	projectId: Type.Optional(Type.String({ description: "BigQuery project ID. Overrides configured defaults." })),
-	location: Type.Optional(Type.String({ description: "BigQuery job location. Overrides configured defaults." })),
-	maxRows: Type.Optional(
-		Type.Number({ description: "Maximum rows for bq query output. Defaults to config, then 100." }),
-	),
+	projectId: Type.Optional(Type.String({ description: "BigQuery project ID. Uses the bq CLI default when omitted." })),
+	location: Type.Optional(Type.String({ description: "BigQuery job location. Uses the bq CLI default when omitted." })),
+	maxRows: Type.Optional(Type.Number({ description: "Maximum rows for bq query output. Defaults to 100." })),
 	outputFormat: Type.Optional(
 		Type.Union([
 			Type.Literal("csv", { description: "Write CSV query output." }),
@@ -211,6 +210,11 @@ function expandHome(rawPath: string): string {
 	if (rawPath === "~") return process.env.HOME ?? rawPath;
 	if (rawPath.startsWith("~/")) return path.join(process.env.HOME ?? "~", rawPath.slice(2));
 	return rawPath;
+}
+
+function isPathWithin(child: string, parent: string): boolean {
+	const relative = path.relative(parent, child);
+	return relative === "" || (!!relative && !relative.startsWith("..") && !path.isAbsolute(relative));
 }
 
 async function existingRealpath(filePath: string): Promise<string | null> {
@@ -1099,22 +1103,22 @@ export function registerBqQueryTool(pi: ExtensionAPI): void {
 			try {
 				description = sanitizeQueryDescription(params.description);
 
-				const project = requireBasecampProjectState();
+				const project = getProjectState();
 				const workspace = requireWorkspaceState();
-				const config = resolveBigQueryConfig(project.project);
-				if (config.enabled === false) {
-					throw new Error("bq_query is disabled by Basecamp BigQuery config.");
-				}
-
-				const projectId = trimOrNull(params.projectId) ?? trimOrNull(config.default_project_id);
-				const location = trimOrNull(params.location) ?? trimOrNull(config.default_location);
-				const outputFormat = params.outputFormat ?? config.default_output_format ?? DEFAULT_OUTPUT_FORMAT;
-				const maxRows = validateMaxRows(params.maxRows ?? config.default_max_rows ?? DEFAULT_MAX_ROWS);
+				const projectId = trimOrNull(params.projectId);
+				const location = trimOrNull(params.location);
+				const outputFormat = params.outputFormat ?? DEFAULT_OUTPUT_FORMAT;
+				const maxRows = validateMaxRows(params.maxRows ?? DEFAULT_MAX_ROWS);
 				const dryRunOnly = params.dryRun === true;
 
 				const effectiveCwd = getWorkspaceEffectiveCwd();
 				const workspaceSqlRoot = workspace.activeWorktree?.path ?? workspace.repo?.root ?? workspace.launchCwd;
-				const allowedSqlRoots = [effectiveCwd, workspaceSqlRoot, workspace.scratchDir, ...project.additionalDirs];
+				const allowedSqlRoots = [
+					effectiveCwd,
+					workspaceSqlRoot,
+					workspace.scratchDir,
+					...(project?.additionalDirs ?? []),
+				];
 				sqlPath = await resolveSqlPath(params.path, effectiveCwd, allowedSqlRoots);
 				const sql = await fs.readFile(sqlPath, "utf8");
 				const now = new Date();

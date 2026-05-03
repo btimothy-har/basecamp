@@ -2,7 +2,7 @@
  * Shared context builders — reusable prompt fragments.
  *
  * Pure functions that format state into text blocks for prompt injection.
- * Used by the parent session prompt (core/src/prompt/prompt.ts) and other
+ * Used by the parent session prompt and other
  * runtime components that need consistent prompt context.
  *
  * Each function returns null when the context is not applicable,
@@ -12,7 +12,6 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import type { CatalogItem } from "./catalog";
-import type { BasecampProjectState } from "./config";
 import type { WorkspaceState } from "./workspace";
 
 /**
@@ -32,15 +31,18 @@ export function buildWorktreeWarning(workspace: WorkspaceState | null): string |
  * Format project context for the system prompt.
  *
  * Merges two sources:
- *   1. Basecamp project context (from ~/.pi/context/)
+ *   1. Project context (from the project resolver)
  *   2. Pi-native context files (AGENTS.md / CLAUDE.md walked from cwd)
  *
  * Returns null if neither source has content.
  */
-export function buildProjectContext(project: BasecampProjectState | null, contextFiles?: ContextFile[]): string | null {
+export function buildProjectContext(
+	project: { contextContent: string | null } | null,
+	contextFiles?: ContextFile[],
+): string | null {
 	const parts: string[] = [];
 
-	// Basecamp project context
+	// Project context
 	if (project?.contextContent) {
 		parts.push(project.contextContent);
 	}

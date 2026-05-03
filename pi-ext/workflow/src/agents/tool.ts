@@ -19,7 +19,6 @@ import { fileURLToPath } from "node:url";
 import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-agent";
 import { getMarkdownTheme } from "@mariozechner/pi-coding-agent";
 import { type Component, Container, Markdown, Spacer, Text } from "@mariozechner/pi-tui";
-import { resolveModelAlias } from "../../../platform/config.ts";
 import { hasInvokedSkill } from "../../../platform/skill-tracker";
 import { getWorkspaceState } from "../../../platform/workspace";
 import { formatTaskProgressSummary, renderCompactTaskProgressLines } from "../tasks/render";
@@ -62,7 +61,7 @@ function resolveModel(strategy: ModelStrategy, parentModel: ParentModel | undefi
 			// Provider-qualify to avoid ambiguous resolution across providers
 			return `${parentModel.provider}/${parentModel.id}`;
 		default:
-			return resolveModelAlias(strategy);
+			return strategy;
 	}
 }
 

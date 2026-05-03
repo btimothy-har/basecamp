@@ -18,8 +18,7 @@ import { fileURLToPath } from "node:url";
  *
  * - "inherit"  — use the spawning parent's current model
  * - "default"  — use pi's default model (no --model flag)
- * - string     — model alias (e.g. "fast") or explicit model ID; aliases
- *                are resolved from ~/.pi/basecamp/config.json `models` map
+ * - string     — explicit model ID passed directly to pi
  */
 export type ModelStrategy = "inherit" | "default" | (string & {});
 

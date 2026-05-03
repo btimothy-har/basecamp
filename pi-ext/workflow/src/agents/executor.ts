@@ -5,7 +5,7 @@
  * parses JSON events, and returns the subagent's final output
  * plus structured metadata (tool calls, usage) for rich rendering.
  *
- * Extensions load normally in subagents. The basecamp prompt hook
+ * Extensions load normally in subagents. The projects prompt hook
  * sees --agent-prompt and slots the agent persona in place of
  * working style + system.md. Everything else (env block,
  * environment.md, tools, project context) is assembled by the
@@ -16,7 +16,6 @@ import { spawn } from "node:child_process";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import { getPiCommand } from "../../../platform/config.ts";
 import type { TaskProgressSnapshot, TaskProgressStatus, TaskProgressTask } from "../tasks/render";
 import { buildSkillInjection, resolveSkills } from "./skills.ts";
 import {
@@ -88,8 +87,7 @@ export function buildPiArgs(
 	opts: PiArgsOpts,
 ): { args: string[]; agentDir: string } {
 	const agentDir = ensureAgentDir(opts.name);
-	const [piCmd, ...piPrefix] = getPiCommand();
-	const args = [piCmd, ...piPrefix, "--mode", "json", "-p"];
+	const args = ["pi", "--mode", "json", "-p"];
 
 	if (opts.model) args.push("--model", opts.model);
 	if (opts.worktreeDir) args.push("--worktree-dir", opts.worktreeDir);
@@ -123,7 +121,7 @@ export function buildPiArgs(
 	}
 
 	// Agent prompt: written to a file, passed via --agent-prompt flag.
-	// prompt.ts reads this and slots it in place of working style + system.md.
+	// The projects prompt reads this in place of working style + system.md.
 	// If skills were resolved, append them to the agent's system prompt.
 	const effectivePrompt = agent?.systemPrompt
 		? skillInjection
