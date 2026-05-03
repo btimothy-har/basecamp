@@ -13,7 +13,6 @@ import * as path from "node:path";
 import type { AgentToolResult, ExtensionAPI, ExtensionContext, Theme } from "@mariozechner/pi-coding-agent";
 import { type Static, Type } from "@sinclair/typebox";
 import { getWorkspaceEffectiveCwd, requireWorkspaceState } from "../../../platform/workspace";
-import { getProjectState } from "../../../projects/src/project.ts";
 
 type BigQueryOutputFormat = "csv" | "json";
 
@@ -31,9 +30,13 @@ const MAX_RESULT_LINE_CHARS = 220;
 const MIN_DISPLAY_DESCRIPTION_CHARS = 24;
 const ANSI_ESCAPE_PATTERN = new RegExp(`${String.fromCharCode(27)}\\[[0-?]*[ -/]*[@-~]`, "g");
 const CONTROL_CHARS_PATTERN = /[\p{Cc}]+/gu;
+const TMP_PI_ROOT = "/tmp/pi";
+const SCRATCH_SQL_PATH_ERROR = "bq_query SQL files must live under /tmp/pi/** (the workspace scratch directory).";
 
 const BqQueryParams = Type.Object({
-	path: Type.String({ description: "Path to a .sql file. Relative paths resolve from the current effective cwd." }),
+	path: Type.String({
+		description: "Path to a .sql file under the workspace scratch directory (`/tmp/pi/**`). Relative paths resolve from the current effective cwd.",
+	}),
 	description: Type.String({
 		description: "Required short TLDR of what this query does. Do not include raw SQL or result rows.",
 	}),
@@ -225,7 +228,7 @@ async function existingRealpath(filePath: string): Promise<string | null> {
 	}
 }
 
-async function resolveSqlPath(rawPath: string, cwd: string, allowedRoots: string[]): Promise<string> {
+async function resolveSqlPath(rawPath: string, cwd: string, scratchDir: string): Promise<string> {
 	const expanded = expandHome(rawPath);
 	const resolved = path.resolve(cwd, expanded);
 	if (path.extname(resolved).toLowerCase() !== ".sql") {
@@ -236,11 +239,12 @@ async function resolveSqlPath(rawPath: string, cwd: string, allowedRoots: string
 	if (!stat.isFile()) throw new Error(`bq_query path is not a file: ${resolved}`);
 
 	const realSqlPath = await fs.realpath(resolved);
-	const realRoots = (await Promise.all(allowedRoots.map((root) => existingRealpath(root)))).filter(
-		(root): root is string => root !== null,
-	);
-	if (!realRoots.some((root) => isPathWithin(realSqlPath, root))) {
-		throw new Error("bq_query SQL files must live under the effective cwd, scratch directory, or project directories.");
+	const [realScratchDir, realTmpPiRoot] = await Promise.all([existingRealpath(scratchDir), existingRealpath(TMP_PI_ROOT)]);
+	if (!realScratchDir || !realTmpPiRoot || !isPathWithin(realScratchDir, realTmpPiRoot)) {
+		throw new Error(SCRATCH_SQL_PATH_ERROR);
+	}
+	if (!isPathWithin(realSqlPath, realScratchDir)) {
+		throw new Error(SCRATCH_SQL_PATH_ERROR);
 	}
 
 	return realSqlPath;
@@ -1103,7 +1107,6 @@ export function registerBqQueryTool(pi: ExtensionAPI): void {
 			try {
 				description = sanitizeQueryDescription(params.description);
 
-				const project = getProjectState();
 				const workspace = requireWorkspaceState();
 				const projectId = trimOrNull(params.projectId);
 				const location = trimOrNull(params.location);
@@ -1112,14 +1115,7 @@ export function registerBqQueryTool(pi: ExtensionAPI): void {
 				const dryRunOnly = params.dryRun === true;
 
 				const effectiveCwd = getWorkspaceEffectiveCwd();
-				const workspaceSqlRoot = workspace.activeWorktree?.path ?? workspace.repo?.root ?? workspace.launchCwd;
-				const allowedSqlRoots = [
-					effectiveCwd,
-					workspaceSqlRoot,
-					workspace.scratchDir,
-					...(project?.additionalDirs ?? []),
-				];
-				sqlPath = await resolveSqlPath(params.path, effectiveCwd, allowedSqlRoots);
+				sqlPath = await resolveSqlPath(params.path, effectiveCwd, workspace.scratchDir);
 				const sql = await fs.readFile(sqlPath, "utf8");
 				const now = new Date();
 				const hash = queryHash(sql);

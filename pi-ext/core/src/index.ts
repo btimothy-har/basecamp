@@ -1,10 +1,7 @@
 /**
- * Core extension — BigQuery tool.
+ * Core extension — temporary no-op while manifest entries are removed in a follow-up task.
  */
 
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
-import { registerBqQueryTool } from "./tools/bq-query";
 
-export default function (pi: ExtensionAPI) {
-	registerBqQueryTool(pi);
-}
+export default function (_pi: ExtensionAPI): void {}

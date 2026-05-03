@@ -13,6 +13,7 @@
 			"./session/src",
 			"./capabilities/src",
 			"./core/src",
+			"./engineering/src",
 			"./projects/src",
 			"./workflow/src",
 			"./observer/src",
