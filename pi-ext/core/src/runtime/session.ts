@@ -18,6 +18,7 @@ import type { ExtensionAPI, ExtensionContext, SessionStartEvent } from "@marioze
 import { getSessionEffectiveCwd, resolveSessionState, type SessionState } from "../../../platform/config";
 import { registerCwdProvider } from "../../../platform/exec";
 import { getSessionState, requireSessionState, resetSessionRuntime, setSessionState } from "../../../platform/session";
+import { resolveGitInfo } from "../../../workspace/src/repo";
 import { resetAgentMode } from "./mode";
 import { applyUnsafeEditFlag } from "./unsafe-edit.ts";
 import { attachWorktreeDir, getOrCreateWorktree, registerWorktreeGuards, type WorktreeResult } from "./worktree";
@@ -105,43 +106,6 @@ async function restoreWorktreeAffinity(pi: ExtensionAPI, ctx: ExtensionContext):
 	} catch (err) {
 		const msg = err instanceof Error ? err.message : String(err);
 		ctx.ui.notify(`basecamp: saved worktree restore skipped — ${msg}`, "warning");
-	}
-}
-
-// ---------------------------------------------------------------------------
-// Git helpers
-// ---------------------------------------------------------------------------
-
-async function resolveGitInfo(
-	pi: ExtensionAPI,
-	dir: string,
-): Promise<{ repoName: string; isRepo: boolean; remoteUrl: string | null; toplevel: string | null }> {
-	const cwd = path.resolve(dir);
-	try {
-		const result = await pi.exec("git", ["rev-parse", "--show-toplevel"], {
-			cwd,
-			timeout: 10_000,
-		});
-		if (result.code !== 0 || !result.stdout.trim()) {
-			return { repoName: path.basename(cwd), isRepo: false, remoteUrl: null, toplevel: null };
-		}
-
-		const toplevel = path.resolve(result.stdout.trim());
-		const repoName = path.basename(toplevel);
-
-		let remoteUrl: string | null = null;
-		try {
-			const remote = await pi.exec("git", ["-C", toplevel, "remote", "get-url", "origin"], {
-				timeout: 10_000,
-			});
-			if (remote.code === 0 && remote.stdout.trim()) remoteUrl = remote.stdout.trim();
-		} catch {
-			/* no remote */
-		}
-
-		return { repoName, isRepo: true, remoteUrl, toplevel };
-	} catch {
-		return { repoName: path.basename(cwd), isRepo: false, remoteUrl: null, toplevel: null };
 	}
 }
 
