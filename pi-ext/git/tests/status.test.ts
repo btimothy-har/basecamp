@@ -135,6 +135,10 @@ registerWorkspaceService({
 		if (workspaceState?.executionTarget) return workspaceState.executionTarget;
 		throw new Error("No execution target");
 	},
+	attachExecutionTargetPath: async () => {
+		if (workspaceState?.executionTarget) return workspaceState.executionTarget;
+		throw new Error("No execution target");
+	},
 });
 
 afterEach(() => {

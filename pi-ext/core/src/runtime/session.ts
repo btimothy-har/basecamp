@@ -18,6 +18,7 @@ import type { ExtensionAPI, ExtensionContext, SessionStartEvent } from "@marioze
 import { getSessionEffectiveCwd, resolveSessionState, type SessionState } from "../../../platform/config";
 import { getSessionState, requireSessionState, resetSessionRuntime, setSessionState } from "../../../platform/session";
 import {
+	attachWorkspaceExecutionTargetPath,
 	type ExecutionTarget,
 	getWorkspaceService,
 	registerWorkspaceAllowedRootsProvider,
@@ -118,7 +119,7 @@ async function attachWorktree(
 ): Promise<WorktreeResult> {
 	const s = requireSessionState();
 	if (!s.isRepo) throw new Error("Worktree attachment requires a git repository");
-	const target = await registerWorkspaceRuntime(pi).attachExecutionTargetPath(worktreeDir);
+	const target = await attachWorkspaceExecutionTargetPath(worktreeDir);
 	const wt = executionTargetToWorktree(target);
 	await applyWorktree(pi, wt, options);
 	return wt;

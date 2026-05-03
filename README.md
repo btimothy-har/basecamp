@@ -95,6 +95,10 @@ Use the **Projects** section to list, add, edit, or remove configured projects.
 | Command | Description |
 |---------|-------------|
 | `/agents` | Browse available agent definitions |
+| `/plan` | Create a reviewed implementation plan and activate an execution worktree when approved |
+| `/show-plan` | Show the current plan and task progress |
+| `/tasks` | Show the current goal and task list |
+| `/worktree [label]` | Switch to an existing Git-registered worktree |
 | `/create-pr` | Create or update a pull request |
 | `/create-issue` | Draft and publish a GitHub issue through review |
 | `/pr-comments` | Address PR review comments |
@@ -202,6 +206,7 @@ The workspace service owns the `~/.worktrees/<repo>/<label>/` storage convention
 - The protected checkout must be on the default branch with a clean working tree before activation
 - Implementation edits happen in the active worktree, not the protected checkout
 - Relative file-tool paths target the active worktree after activation, preserving the launch subdirectory when applicable
+- Mutating `safe_git` commands are blocked unless the effective cwd is inside the active execution worktree
 - `--worktree-dir` is an internal attach-only Pi flag for existing Git-registered worktrees; it does not create worktrees
 - Resumed/reloaded/forked sessions restore their last active worktree when still in the same repo
 - `/worktree [label]` switches the active worktree during a resumed session
@@ -215,7 +220,7 @@ The `observer` CLI provides semantic memory across sessions. It ingests session 
 
 ### How it works
 
-1. **Ingest** — A hook triggers `observer ingest` at session end, parsing new transcript events incrementally
+1. **Ingest** — Hooks trigger `observer ingest` at session shutdown, before compaction, and on agent dispatch (ingest-only), parsing new transcript events incrementally
 2. **Process** — A background job refines events into work items, extracts structured artifacts (summary, knowledge, decisions, constraints, actions), and embeds them into ChromaDB
 3. **Search** — The `recall` skill provides hybrid search (semantic + keyword) with time-decay scoring, scoped to the current project
 

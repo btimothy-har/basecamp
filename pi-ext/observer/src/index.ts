@@ -34,14 +34,6 @@ function triggerIngest(pi: ExtensionAPI, ctx: ExtensionContext, processFlag: boo
 	if (!sessionId || !sessionFile) return;
 
 	const workspace = getWorkspaceState();
-	const executionTarget = workspace?.executionTarget
-		? {
-				kind: workspace.executionTarget.kind,
-				label: workspace.executionTarget.label,
-				path: workspace.executionTarget.path,
-				branch: workspace.executionTarget.branch,
-			}
-		: null;
 	const payload = JSON.stringify({
 		session_id: sessionId,
 		transcript_path: sessionFile,
@@ -49,7 +41,6 @@ function triggerIngest(pi: ExtensionAPI, ctx: ExtensionContext, processFlag: boo
 		repo_name: workspace?.repo?.name ?? null,
 		repo_root: workspace?.repo?.root ?? null,
 		repo_remote_url: workspace?.repo?.remoteUrl ?? null,
-		execution_target: executionTarget,
 	});
 
 	const observerCmd = processFlag ? "observer ingest --process" : "observer ingest";

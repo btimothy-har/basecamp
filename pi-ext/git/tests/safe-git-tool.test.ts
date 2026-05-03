@@ -181,6 +181,10 @@ describe("safe_git tool", () => {
 				if (workspaceState?.executionTarget) return workspaceState.executionTarget;
 				throw new Error("No execution target");
 			},
+			attachExecutionTargetPath: async () => {
+				if (workspaceState?.executionTarget) return workspaceState.executionTarget;
+				throw new Error("No execution target");
+			},
 		});
 		mockPi = createMockPi();
 		mockUI = createMockUI();

@@ -39,6 +39,7 @@ export interface WorkspaceService {
 	getEffectiveCwd(): string;
 	listExecutionTargets(): Promise<ExecutionTarget[]>;
 	activateExecutionTarget(label: string): Promise<ExecutionTarget>;
+	attachExecutionTargetPath(path: string): Promise<ExecutionTarget>;
 	onChange?(listener: (state: WorkspaceState | null) => void): () => void;
 }
 
@@ -105,4 +106,8 @@ export function listWorkspaceExecutionTargets(): Promise<ExecutionTarget[]> {
 
 export function activateWorkspaceExecutionTarget(label: string): Promise<ExecutionTarget> {
 	return requireWorkspaceService().activateExecutionTarget(label);
+}
+
+export function attachWorkspaceExecutionTargetPath(path: string): Promise<ExecutionTarget> {
+	return requireWorkspaceService().attachExecutionTargetPath(path);
 }
