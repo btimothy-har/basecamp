@@ -12,7 +12,6 @@
 			"./model-aliases/src",
 			"./session/src",
 			"./capabilities/src",
-			"./core/src",
 			"./engineering/src",
 			"./projects/src",
 			"./workflow/src",
@@ -20,21 +19,18 @@
 			"./git/src"
 		],
 		"skills": [
-			"./core/skills",
 			"./workflow/skills",
 			"./observer/skills",
 			"./git/skills",
 			"./engineering/skills"
 		],
 		"prompts": [
-			"./core/prompts",
 			"./engineering/prompts"
 		]
 	},
 	"scripts": {
 		"check": "tsc && biome check .",
 		"typecheck": "tsc",
-		"test:core": "node --experimental-strip-types --test session/tests/*.test.ts",
 		"test:session": "node --experimental-strip-types --test session/tests/*.test.ts",
 		"test:model-aliases": "node --experimental-strip-types --test model-aliases/tests/*.test.ts platform/tests/model-aliases.test.ts workflow/tests/model-resolution.test.ts session/tests/title-model.test.ts",
 		"test:projects": "node --experimental-strip-types --test projects/tests/*.test.ts",

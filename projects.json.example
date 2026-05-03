@@ -18,7 +18,7 @@
     },
     "minimal": {
       "dirs": ["GitHub/simple-project"],
-      "description": "Environment + core prompts only (no working style)"
+      "description": "Environment prompts only (no working style)"
     },
     "advisor-project": {
       "dirs": ["GitHub/advisor-project"],
