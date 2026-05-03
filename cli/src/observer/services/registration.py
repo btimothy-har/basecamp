@@ -16,8 +16,6 @@ from observer.services.db import Database
 
 logger = logging.getLogger(__name__)
 
-WORKTREES_DIR = Path.home() / ".worktrees"
-
 
 @dataclass
 class HookInput:
@@ -26,6 +24,10 @@ class HookInput:
     session_id: str
     transcript_path: str
     cwd: str
+    repo_name: str | None = None
+    repo_root: str | None = None
+    repo_remote_url: str | None = None
+    execution_target: dict[str, object] | None = None
 
 
 @dataclass
@@ -78,39 +80,38 @@ def resolve_repo_root(cwd: str) -> Path | None:
         return None
 
 
-def detect_worktree(cwd: str) -> tuple[str, str, str] | None:
-    """Detect if cwd is inside a basecamp worktree.
-
-    Returns (label, path, branch) if cwd is under ~/.worktrees/<repo>/<label>/,
-    otherwise None.
-    """
-    try:
-        cwd_path = Path(cwd).resolve()
-        worktrees_resolved = WORKTREES_DIR.resolve()
-
-        if not cwd_path.is_relative_to(worktrees_resolved):
-            return None
-
-        relative = cwd_path.relative_to(worktrees_resolved)
-        parts = relative.parts
-        if len(parts) < 2:
-            return None
-
-        label = parts[1]
-        worktree_path = str(worktrees_resolved / parts[0] / label)
-        branch = f"wt/{label}"
-        return label, worktree_path, branch  # noqa: TRY300
-    except (ValueError, IndexError):
+def normalize_execution_target(target: dict[str, object] | None) -> tuple[str, str, str] | None:
+    """Normalize explicit execution target metadata from hook input."""
+    if not isinstance(target, dict):
         return None
+
+    label = target.get("label")
+    path = target.get("path")
+    if not isinstance(label, str) or not label.strip():
+        return None
+    if not isinstance(path, str) or not path.strip():
+        return None
+
+    branch = target.get("branch")
+    if not isinstance(branch, str) or not branch.strip():
+        branch = "detached"
+
+    return label.strip(), path.strip(), branch.strip()
 
 
 def register_session(hook_input: HookInput) -> RegistrationResult:
     """Upsert project, worktree (if applicable), and transcript."""
-    repo_root = resolve_repo_root(hook_input.cwd)
+    if isinstance(hook_input.repo_root, str) and hook_input.repo_root.strip():
+        repo_root = Path(hook_input.repo_root.strip()).resolve()
+    else:
+        repo_root = resolve_repo_root(hook_input.cwd)
     if repo_root is None:
         raise RegistrationError(hook_input.cwd)
 
-    project_name = repo_root.name
+    if isinstance(hook_input.repo_name, str) and hook_input.repo_name.strip():
+        project_name = hook_input.repo_name.strip()
+    else:
+        project_name = repo_root.name
     repo_path = str(repo_root)
 
     # Upsert project
@@ -120,9 +121,9 @@ def register_session(hook_input: HookInput) -> RegistrationResult:
         with Database().session() as session:
             project = project.save(session)
 
-    # Detect and upsert worktree
+    # Upsert explicitly provided execution target
     worktree: Worktree | None = None
-    wt_info = detect_worktree(hook_input.cwd)
+    wt_info = normalize_execution_target(hook_input.execution_target)
     if wt_info is not None and project.id is not None:
         label, wt_path, branch = wt_info
         worktree = Worktree.get_by_project_and_label(project.id, label)

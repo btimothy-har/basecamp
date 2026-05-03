@@ -4,14 +4,12 @@ import subprocess
 from datetime import UTC, datetime
 from unittest.mock import patch
 
-import observer.services.registration as reg
 import pytest
 from observer.data.transcript import Transcript
 from observer.exceptions import RegistrationError
 from observer.services.db import Database
 from observer.services.registration import (
     HookInput,
-    detect_worktree,
     register_session,
     resolve_repo_root,
 )
@@ -28,51 +26,6 @@ class TestResolveRepoRoot:
         failed = subprocess.CompletedProcess(args=[], returncode=128, stdout="", stderr="")
         with patch("observer.services.registration.subprocess.run", return_value=failed):
             assert resolve_repo_root("/not/a/repo") is None
-
-
-class TestDetectWorktree:
-    def test_in_worktree(self, tmp_path, monkeypatch):  # noqa: ARG002
-        worktrees_dir = tmp_path / ".worktrees"
-        monkeypatch.setattr(reg, "WORKTREES_DIR", worktrees_dir)
-
-        wt_path = worktrees_dir / "myrepo" / "feat-auth"
-        wt_path.mkdir(parents=True)
-
-        result = detect_worktree(str(wt_path))
-        assert result is not None
-        label, path, branch = result
-        assert label == "feat-auth"
-        assert path == str(wt_path)
-        assert branch == "wt/feat-auth"
-
-    def test_not_in_worktree(self, tmp_path, monkeypatch):  # noqa: ARG002
-        monkeypatch.setattr(reg, "WORKTREES_DIR", tmp_path / ".worktrees")
-        result = detect_worktree(str(tmp_path / "some" / "other" / "dir"))
-        assert result is None
-
-    def test_nested_in_worktree(self, tmp_path, monkeypatch):  # noqa: ARG002
-        worktrees_dir = tmp_path / ".worktrees"
-        monkeypatch.setattr(reg, "WORKTREES_DIR", worktrees_dir)
-
-        nested = worktrees_dir / "myrepo" / "feat" / "src" / "deep"
-        nested.mkdir(parents=True)
-
-        result = detect_worktree(str(nested))
-        assert result is not None
-        label, path, branch = result
-        assert label == "feat"
-        assert branch == "wt/feat"
-
-    def test_too_shallow(self, tmp_path, monkeypatch):  # noqa: ARG002
-        worktrees_dir = tmp_path / ".worktrees"
-        monkeypatch.setattr(reg, "WORKTREES_DIR", worktrees_dir)
-
-        # Only one level deep — repo dir without label
-        shallow = worktrees_dir / "myrepo"
-        shallow.mkdir(parents=True)
-
-        result = detect_worktree(str(shallow))
-        assert result is None
 
 
 class TestRegisterSession:
@@ -92,6 +45,42 @@ class TestRegisterSession:
         assert result.project.name == "myrepo"
         assert result.project.repo_path == str(repo.resolve())
         assert result.transcript.session_id == "sess-1"
+        assert result.worktree is None
+
+    def test_explicit_repo_metadata_does_not_require_git_inference(self, db, tmp_path):  # noqa: ARG002
+        repo = tmp_path / "explicit-repo"
+
+        hook = HookInput(
+            session_id="sess-explicit-repo",
+            transcript_path="/path/to/transcript.jsonl",
+            cwd="/not/a/repo",
+            repo_name="  explicit-name  ",
+            repo_root=str(repo),
+        )
+        with patch("observer.services.registration.resolve_repo_root", return_value=None) as mock_resolve:
+            result = register_session(hook)
+
+        mock_resolve.assert_not_called()
+        assert result.created is True
+        assert result.project.name == "explicit-name"
+        assert result.project.repo_path == str(repo.resolve())
+        assert result.worktree is None
+
+    def test_missing_repo_root_falls_back_to_resolve_repo_root(self, db, tmp_path):  # noqa: ARG002
+        repo = tmp_path / "fallback-repo"
+        repo.mkdir()
+        subprocess.run(["git", "init", str(repo)], capture_output=True, check=True)
+
+        hook = HookInput(
+            session_id="sess-fallback",
+            transcript_path="/path/to/transcript.jsonl",
+            cwd=str(repo),
+        )
+        result = register_session(hook)
+
+        assert result.created is True
+        assert result.project.name == "fallback-repo"
+        assert result.project.repo_path == str(repo.resolve())
         assert result.worktree is None
 
     def test_idempotent_re_register(self, db, tmp_path):  # noqa: ARG002
@@ -136,24 +125,90 @@ class TestRegisterSession:
         assert r2.created is False
         assert r2.transcript.ended_at is None
 
-    def test_with_worktree(self, db, tmp_path, monkeypatch):  # noqa: ARG002
-        worktrees_dir = tmp_path / ".worktrees"
-        monkeypatch.setattr(reg, "WORKTREES_DIR", worktrees_dir)
-
-        wt_path = worktrees_dir / "myrepo" / "bg-mem"
+    def test_explicit_execution_target_creates_worktree(self, db, tmp_path):  # noqa: ARG002
+        repo = tmp_path / "myrepo"
+        wt_path = tmp_path / ".worktrees" / "myrepo" / "bg-mem"
         wt_path.mkdir(parents=True)
-        subprocess.run(["git", "init", str(wt_path)], capture_output=True, check=True)
 
         hook = HookInput(
             session_id="sess-wt",
             transcript_path="/path/to/transcript.jsonl",
             cwd=str(wt_path),
+            repo_root=str(repo),
+            execution_target={
+                "kind": "git-worktree",
+                "label": "bg-mem",
+                "path": str(wt_path),
+                "branch": "bh/bg-mem",
+            },
         )
         result = register_session(hook)
 
         assert result.worktree is not None
         assert result.worktree.label == "bg-mem"
-        assert result.worktree.branch == "wt/bg-mem"
+        assert result.worktree.path == str(wt_path)
+        assert result.worktree.branch == "bh/bg-mem"
+        assert result.transcript.worktree_id == result.worktree.id
+
+    def test_cwd_under_worktrees_without_execution_target_does_not_create_worktree(self, db, tmp_path):  # noqa: ARG002
+        wt_path = tmp_path / ".worktrees" / "myrepo" / "bg-mem"
+        wt_path.mkdir(parents=True)
+        subprocess.run(["git", "init", str(wt_path)], capture_output=True, check=True)
+
+        hook = HookInput(
+            session_id="sess-no-explicit-wt",
+            transcript_path="/path/to/transcript.jsonl",
+            cwd=str(wt_path),
+        )
+        result = register_session(hook)
+
+        assert result.created is True
+        assert result.worktree is None
+        assert result.transcript.worktree_id is None
+
+    def test_malformed_execution_target_does_not_create_worktree(self, db, tmp_path):  # noqa: ARG002
+        repo = tmp_path / "myrepo"
+        wt_path = tmp_path / ".worktrees" / "myrepo" / "bg-mem"
+        wt_path.mkdir(parents=True)
+
+        hook = HookInput(
+            session_id="sess-bad-wt",
+            transcript_path="/path/to/transcript.jsonl",
+            cwd=str(wt_path),
+            repo_root=str(repo),
+            execution_target={
+                "kind": "git-worktree",
+                "label": "bg-mem",
+                "branch": "bh/bg-mem",
+            },
+        )
+        result = register_session(hook)
+
+        assert result.created is True
+        assert result.worktree is None
+        assert result.transcript.worktree_id is None
+
+    def test_execution_target_without_branch_defaults_to_detached(self, db, tmp_path):  # noqa: ARG002
+        repo = tmp_path / "myrepo"
+        wt_path = tmp_path / ".worktrees" / "myrepo" / "detached-work"
+        wt_path.mkdir(parents=True)
+
+        hook = HookInput(
+            session_id="sess-detached-wt",
+            transcript_path="/path/to/transcript.jsonl",
+            cwd=str(wt_path),
+            repo_root=str(repo),
+            execution_target={
+                "kind": "git-worktree",
+                "label": "detached-work",
+                "path": str(wt_path),
+                "branch": "",
+            },
+        )
+        result = register_session(hook)
+
+        assert result.worktree is not None
+        assert result.worktree.branch == "detached"
         assert result.transcript.worktree_id == result.worktree.id
 
     def test_not_a_git_repo(self, db):  # noqa: ARG002
