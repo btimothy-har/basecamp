@@ -41,7 +41,6 @@ export interface BasecampConfig {
 	language?: string;
 	models?: Record<string, string>;
 	pi_command?: string;
-	worktree_branch_prefix?: string;
 }
 
 export interface BasecampProjectState {
@@ -151,14 +150,6 @@ export function resolveBigQueryConfig(project?: ProjectConfig | null): BigQueryC
 		...(config.bigquery ?? {}),
 		...(project?.bigquery ?? {}),
 	};
-}
-
-export function getWorktreeBranchPrefix(): string {
-	const config = readConfig();
-	const prefix = config.worktree_branch_prefix;
-	// Empty string or undefined → default to "wt/"
-	if (!prefix?.trim()) return "wt/";
-	return prefix;
 }
 
 // ---------------------------------------------------------------------------

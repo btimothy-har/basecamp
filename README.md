@@ -94,7 +94,6 @@ Use the **Projects** section to list, add, edit, or remove configured projects.
 
 | Command | Description |
 |---------|-------------|
-| `/open` | Open project directories in VS Code |
 | `/agents` | Browse available agent definitions |
 | `/create-pr` | Create or update a pull request |
 | `/create-issue` | Draft and publish a GitHub issue through review |
@@ -206,7 +205,6 @@ Worktrees live in `~/.worktrees/<repo>/<label>/` with branches named `wt/<label>
 - `--worktree-dir` is an internal attach-only Pi flag for existing Git-registered worktrees; it does not create worktrees
 - Resumed/reloaded/forked sessions restore their last active worktree when still in the same repo
 - `/worktree [label]` switches the active worktree during a resumed session
-- `/open` in-session opens the active worktree directory in VS Code
 - Use native Git commands (`git worktree list`, `git worktree remove`) to inspect or clean up worktrees
 - Additional directories stay on their configured checkouts throughout the session
 - Only works with git repositories

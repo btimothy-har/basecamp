@@ -65,7 +65,7 @@ pi-ext/                         # Pi extension package
 │   │   │   └── system-prompts/ # Bundled environment/style/language prompts
 │   │   ├── tools/              # discover, skill, escalate, catalog providers
 │   │   ├── ui/                 # Header, footer, session title widget
-│   │   ├── commands/           # /open command
+│   │   ├── commands/           # Mode shortcuts/commands
 │   │   └── index.ts            # Core extension registration
 │   ├── skills/                 # gather + pi-development skills
 │   └── prompts/                # Logseq session prompts (reflect, plan)
