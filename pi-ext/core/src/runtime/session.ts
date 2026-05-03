@@ -30,8 +30,8 @@ import {
 	registerWorkspaceAllowedRootsProvider,
 	requireWorkspaceService,
 	requireWorkspaceState,
-	workspaceMatchesWorktreeAffinity,
 	type WorkspaceWorktree,
+	workspaceMatchesWorktreeAffinity,
 } from "../../../platform/workspace";
 import { resetAgentMode } from "./mode";
 

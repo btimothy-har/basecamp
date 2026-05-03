@@ -4,10 +4,10 @@ import { describe, it } from "node:test";
 import type { SessionEntry } from "@mariozechner/pi-coding-agent";
 import {
 	latestWorkspaceWorktreeAffinity,
-	workspaceMatchesWorktreeAffinity,
 	WORKTREE_AFFINITY_ENTRY,
 	type WorkspaceState,
 	type WorkspaceWorktreeAffinity,
+	workspaceMatchesWorktreeAffinity,
 } from "../../platform/workspace.ts";
 
 const REPO_ROOT = "/repo";

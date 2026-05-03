@@ -17,10 +17,10 @@ import { Type } from "@sinclair/typebox";
 import { getAgentMode, setAgentMode } from "../../../core/src/runtime/mode";
 import {
 	activateWorkspaceWorktree,
-	type WorkspaceWorktree,
 	getWorkspaceState,
 	listWorkspaceWorktrees,
 	requireWorkspaceState,
+	type WorkspaceWorktree,
 } from "../../../platform/workspace";
 import type { GoalCycle, ReviewState, TaskStatus, TasksAccess } from "../tasks/tasks";
 import { computeGoalContextReview, computeSectionReview, freshReview, tasksMatch } from "./draft-logic";

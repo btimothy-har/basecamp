@@ -5,8 +5,6 @@ import { registerCwdProvider } from "../../platform/exec.ts";
 import {
 	type RepoContext,
 	registerWorkspaceService,
-	type UnsafeEditConstraints,
-	type UnsafeEditFlagResult,
 	type WorkspaceInitializeOptions,
 	type WorkspaceInitializeResult,
 	type WorkspaceService,
@@ -16,7 +14,12 @@ import {
 import { SCRATCH_ROOT } from "./constants.ts";
 import { resolveGitInfo } from "./repo.ts";
 import { applyUnsafeEditFlag } from "./unsafe-edit.ts";
-import { attachWorktreeDir, getOrCreateWorktree, listWorktrees as listGitWorktrees, type WorktreeResult } from "./worktree.ts";
+import {
+	attachWorktreeDir,
+	getOrCreateWorktree,
+	listWorktrees as listGitWorktrees,
+	type WorktreeResult,
+} from "./worktree.ts";
 
 interface WorkspaceRuntimeGlobal {
 	service: WorkspaceRuntimeService | null;

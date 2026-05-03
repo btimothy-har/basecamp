@@ -120,7 +120,9 @@ export function registerContextInjection(pi: ExtensionAPI): void {
 		if (!filePath) return;
 
 		// Resolve to absolute path
-		const resolved = path.isAbsolute(filePath) ? path.resolve(filePath) : path.resolve(getWorkspaceEffectiveCwd(), filePath);
+		const resolved = path.isAbsolute(filePath)
+			? path.resolve(filePath)
+			: path.resolve(getWorkspaceEffectiveCwd(), filePath);
 		const fileDir = path.dirname(resolved);
 
 		// Discover new context files between this file's dir and the system prompt boundary

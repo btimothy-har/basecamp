@@ -349,10 +349,7 @@ export function registerSafeGitTool(pi: ExtensionAPI): void {
 					return toolResult(details, true);
 				}
 
-				if (
-					!isPathWithin(cwd, activeWorktreePath) ||
-					(protectedRoot !== null && isPathWithin(cwd, protectedRoot))
-				) {
+				if (!isPathWithin(cwd, activeWorktreePath) || (protectedRoot !== null && isPathWithin(cwd, protectedRoot))) {
 					const details = rejectionDetails(
 						`Mutating git commands must run inside the active worktree (${activeWorktreePath}), not ${cwd}.`,
 						rawReason,

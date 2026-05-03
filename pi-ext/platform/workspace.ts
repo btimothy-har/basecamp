@@ -194,10 +194,7 @@ export function latestWorkspaceWorktreeAffinity(entries: SessionEntry[]): Worksp
 	return null;
 }
 
-export function workspaceMatchesWorktreeAffinity(
-	state: WorkspaceState,
-	affinity: WorkspaceWorktreeAffinity,
-): boolean {
+export function workspaceMatchesWorktreeAffinity(state: WorkspaceState, affinity: WorkspaceWorktreeAffinity): boolean {
 	if (!state.repo) return false;
 	if (state.repo.name !== affinity.repoName) return false;
 	if (path.resolve(state.repo.root) !== path.resolve(affinity.repoRoot)) return false;
