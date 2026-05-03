@@ -20,6 +20,7 @@ import { getSessionState, requireSessionState, resetSessionRuntime, setSessionSt
 import {
 	type ExecutionTarget,
 	getWorkspaceService,
+	registerWorkspaceAllowedRootsProvider,
 	requireWorkspaceState,
 	type WorkspaceState,
 } from "../../../platform/workspace";
@@ -30,7 +31,7 @@ import {
 } from "../../../workspace/src/affinity.ts";
 import { registerWorkspaceRuntime } from "../../../workspace/src/service.ts";
 import { resetAgentMode } from "./mode";
-import { registerWorktreeGuards, type WorktreeResult } from "./worktree";
+import { type WorktreeResult } from "./worktree";
 
 export function getEffectiveCwd(): string {
 	const workspace = getWorkspaceService();
@@ -229,8 +230,10 @@ export function registerSession(pi: ExtensionAPI): void {
 		type: "boolean",
 	});
 
-	// Register worktree tool guards (reads state lazily)
-	registerWorktreeGuards(pi, getState);
+	registerWorkspaceAllowedRootsProvider({
+		id: "basecamp-project",
+		roots: () => getSessionState()?.additionalDirs ?? [],
+	});
 
 	// --- Session start: resolve everything ---
 	pi.on("session_start", async (event, ctx) => {

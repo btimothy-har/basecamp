@@ -42,8 +42,14 @@ export interface WorkspaceService {
 	onChange?(listener: (state: WorkspaceState | null) => void): () => void;
 }
 
+export interface WorkspaceAllowedRootsProvider {
+	id: string;
+	roots(): string[];
+}
+
 interface WorkspaceRuntime {
 	service: WorkspaceService | null;
+	allowedRootProviders: Map<string, WorkspaceAllowedRootsProvider>;
 }
 
 const workspaceKey = Symbol.for("basecamp.workspace");
@@ -54,7 +60,8 @@ type GlobalWithWorkspace = typeof globalThis & {
 
 function getWorkspaceRuntime(): WorkspaceRuntime {
 	const globalObject = globalThis as GlobalWithWorkspace;
-	globalObject[workspaceKey] ??= { service: null };
+	globalObject[workspaceKey] ??= { service: null, allowedRootProviders: new Map() };
+	globalObject[workspaceKey].allowedRootProviders ??= new Map();
 	return globalObject[workspaceKey];
 }
 
@@ -64,6 +71,14 @@ export function registerWorkspaceService(service: WorkspaceService): void {
 
 export function getWorkspaceService(): WorkspaceService | null {
 	return getWorkspaceRuntime().service;
+}
+
+export function registerWorkspaceAllowedRootsProvider(provider: WorkspaceAllowedRootsProvider): void {
+	getWorkspaceRuntime().allowedRootProviders.set(provider.id, provider);
+}
+
+export function listWorkspaceAllowedRoots(): string[] {
+	return Array.from(getWorkspaceRuntime().allowedRootProviders.values()).flatMap((provider) => provider.roots());
 }
 
 export function requireWorkspaceService(): WorkspaceService {
