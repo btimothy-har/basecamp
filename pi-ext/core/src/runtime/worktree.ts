@@ -18,7 +18,7 @@ export {
 	validateWorktreePath,
 	type WorktreeResult,
 	type WorktreeSummary,
-} from "../../../workspace/src/worktree";
+} from "../../../workspace/src/worktree.ts";
 
 // ---------------------------------------------------------------------------
 // Tool guards

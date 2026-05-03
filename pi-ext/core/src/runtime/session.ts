@@ -16,15 +16,16 @@ import * as fs from "node:fs/promises";
 import * as path from "node:path";
 import type { ExtensionAPI, ExtensionContext, SessionStartEvent } from "@mariozechner/pi-coding-agent";
 import { getSessionEffectiveCwd, resolveSessionState, type SessionState } from "../../../platform/config";
-import { registerCwdProvider } from "../../../platform/exec";
 import { getSessionState, requireSessionState, resetSessionRuntime, setSessionState } from "../../../platform/session";
-import { resolveGitInfo } from "../../../workspace/src/repo";
+import { type ExecutionTarget, getWorkspaceService, type WorkspaceState } from "../../../platform/workspace";
+import { registerWorkspaceRuntime } from "../../../workspace/src/service.ts";
 import { resetAgentMode } from "./mode";
-import { applyUnsafeEditFlag } from "./unsafe-edit.ts";
-import { attachWorktreeDir, getOrCreateWorktree, registerWorktreeGuards, type WorktreeResult } from "./worktree";
+import { registerWorktreeGuards, type WorktreeResult } from "./worktree";
 import { appendWorktreeAffinity, latestWorktreeAffinity, repoMatchesAffinity } from "./worktree-affinity";
 
 export function getEffectiveCwd(): string {
+	const workspace = getWorkspaceService();
+	if (workspace?.current()) return workspace.getEffectiveCwd();
 	return getSessionEffectiveCwd(getState());
 }
 
@@ -74,23 +75,53 @@ async function applyWorktree(pi: ExtensionAPI, wt: WorktreeResult, options: Work
 	if (options.persistAffinity ?? true) appendWorktreeAffinity(pi, s, wt);
 }
 
+function executionTargetToWorktree(target: ExecutionTarget): WorktreeResult {
+	return {
+		worktreeDir: target.path,
+		label: target.label,
+		branch: target.branch ?? "detached",
+		created: target.created,
+	};
+}
+
 export async function activateWorktree(pi: ExtensionAPI, label: string): Promise<WorktreeResult> {
 	const s = requireSessionState();
 	if (!s.isRepo) throw new Error("Worktree activation requires a git repository");
-	const wt = await getOrCreateWorktree(pi, s.repoRoot, s.repoName, label);
+	const target = await registerWorkspaceRuntime(pi).activateExecutionTarget(label);
+	const wt = executionTargetToWorktree(target);
 	await applyWorktree(pi, wt);
 	return wt;
 }
 
-export async function attachWorktree(pi: ExtensionAPI, worktreeDir: string): Promise<WorktreeResult> {
+export async function attachWorktree(
+	pi: ExtensionAPI,
+	worktreeDir: string,
+	options: WorktreeApplyOptions = {},
+): Promise<WorktreeResult> {
 	const s = requireSessionState();
 	if (!s.isRepo) throw new Error("Worktree attachment requires a git repository");
-	const wt = await attachWorktreeDir(pi, s.repoRoot, s.repoName, worktreeDir);
-	await applyWorktree(pi, wt);
+	const target = await registerWorkspaceRuntime(pi).attachExecutionTargetPath(worktreeDir);
+	const wt = executionTargetToWorktree(target);
+	await applyWorktree(pi, wt, options);
 	return wt;
 }
 
 const WORKTREE_AFFINITY_RESTORE_REASONS = new Set<SessionStartEvent["reason"]>(["resume", "reload", "fork"]);
+
+function setSessionStateFromWorkspace(workspaceState: WorkspaceState, styleOverride: string | undefined): void {
+	const repoRoot = workspaceState.repo?.root ?? workspaceState.launchCwd;
+	const sessionState = resolveSessionState({
+		launchCwd: workspaceState.launchCwd,
+		repoRoot,
+		repoName: workspaceState.repo?.name ?? path.basename(repoRoot),
+		isRepo: workspaceState.repo?.isRepo ?? false,
+		remoteUrl: workspaceState.repo?.remoteUrl ?? null,
+		styleOverride,
+	});
+	sessionState.scratchDir = workspaceState.scratchDir;
+	sessionState.unsafeEdit = workspaceState.unsafeEdit;
+	setSessionState(sessionState);
+}
 
 async function restoreWorktreeAffinity(pi: ExtensionAPI, ctx: ExtensionContext): Promise<void> {
 	const state = requireSessionState();
@@ -100,8 +131,7 @@ async function restoreWorktreeAffinity(pi: ExtensionAPI, ctx: ExtensionContext):
 	if (!affinity || !repoMatchesAffinity(state, affinity)) return;
 
 	try {
-		const wt = await attachWorktreeDir(pi, state.repoRoot, state.repoName, affinity.worktreeDir);
-		await applyWorktree(pi, wt, { persistAffinity: false });
+		const wt = await attachWorktree(pi, affinity.worktreeDir, { persistAffinity: false });
 		ctx.ui.notify(`basecamp: restored worktree → ${wt.label}`, "info");
 	} catch (err) {
 		const msg = err instanceof Error ? err.message : String(err);
@@ -114,7 +144,7 @@ async function restoreWorktreeAffinity(pi: ExtensionAPI, ctx: ExtensionContext):
 // ---------------------------------------------------------------------------
 
 export function registerSession(pi: ExtensionAPI): void {
-	registerCwdProvider(getEffectiveCwd);
+	const workspace = registerWorkspaceRuntime(pi);
 
 	// Register CLI flags
 	pi.registerFlag("worktree-dir", {
@@ -150,20 +180,18 @@ export function registerSession(pi: ExtensionAPI): void {
 		const styleOverride = (pi.getFlag("style") as string | undefined) ?? undefined;
 		const launchCwd = path.resolve(ctx.cwd);
 
-		// Resolve git info from ctx.cwd (the directory pi was launched in)
-		const gitInfo = await resolveGitInfo(pi, launchCwd);
+		const { state: workspaceState, unsafeEditResult } = await workspace.initialize({
+			launchCwd,
+			unsafeEditFlag: pi.getFlag("unsafe-edit") === true,
+			unsafeEditConstraints: {
+				readOnly: pi.getFlag("read-only") === true,
+				hasUI: ctx.hasUI,
+				isSubagent: Number(process.env.BASECAMP_AGENT_DEPTH ?? "0") > 0,
+			},
+		});
 
-		// Build session state
-		setSessionState(
-			resolveSessionState({
-				launchCwd,
-				repoRoot: gitInfo.toplevel ?? launchCwd,
-				repoName: gitInfo.repoName,
-				isRepo: gitInfo.isRepo,
-				remoteUrl: gitInfo.remoteUrl,
-				styleOverride,
-			}),
-		);
+		// Build legacy session state from workspace runtime state for compatibility.
+		setSessionStateFromWorkspace(workspaceState, styleOverride);
 
 		for (const warning of requireSessionState().projectWarnings) {
 			ctx.ui.notify(`basecamp: ${warning}`, "warning");
@@ -182,11 +210,6 @@ export function registerSession(pi: ExtensionAPI): void {
 		}
 		const state = requireSessionState();
 
-		const unsafeEditResult = applyUnsafeEditFlag(state, pi.getFlag("unsafe-edit") === true, {
-			readOnly: pi.getFlag("read-only") === true,
-			hasUI: ctx.hasUI,
-			isSubagent: Number(process.env.BASECAMP_AGENT_DEPTH ?? "0") > 0,
-		});
 		if (unsafeEditResult === "ignored-read-only") {
 			ctx.ui.notify("basecamp: --unsafe-edit ignored because --read-only is active", "warning");
 		} else if (unsafeEditResult === "ignored-subagent") {
