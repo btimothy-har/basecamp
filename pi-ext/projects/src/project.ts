@@ -1,7 +1,6 @@
 export interface ProjectConfig {
 	repoRoot: string;
 	additionalDirs: string[];
-	description?: string;
 	workingStyle?: string | null;
 	context?: string | null;
 }
