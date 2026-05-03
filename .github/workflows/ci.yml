@@ -30,15 +30,27 @@ jobs:
         node-version: 22
 
     - name: Install Extension Dependencies
-      working-directory: pi-ext
+      working-directory: pi-extension
+      run: npm ci
+
+    - name: Install Observer Extension Dependencies
+      working-directory: pi-observer
       run: npm ci
 
     - name: Typecheck (Extension)
-      working-directory: pi-ext
+      working-directory: pi-extension
+      run: npx tsc
+
+    - name: Typecheck (Observer Extension)
+      working-directory: pi-observer
       run: npx tsc
 
     - name: Lint (Extension)
-      working-directory: pi-ext
+      working-directory: pi-extension
+      run: npx biome check .
+
+    - name: Lint (Observer Extension)
+      working-directory: pi-observer
       run: npx biome check .
 
     - name: Run Tests

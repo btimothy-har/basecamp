@@ -25,8 +25,9 @@ console = Console()
 
 REPO_DIR: Final = Path(__file__).parent
 
-CLI_DIR: Final = REPO_DIR / "cli"
-EXTENSION_DIR: Final = REPO_DIR / "pi-ext"
+CLI_DIR: Final = REPO_DIR / "basecamp-cli"
+OBSERVER_DIR: Final = REPO_DIR / "pi-observer"
+EXTENSION_DIR: Final = REPO_DIR / "pi-extension"
 
 
 def migrate_project_dirs(config: dict[str, object]) -> None:
@@ -85,54 +86,54 @@ def save_install_dir(repo_dir: Path) -> None:
         os.close(dir_fd)
 
 
-def install_extension() -> None:
-    """Install the pi extension: npm dependencies + register with pi."""
+def install_pi_package(package_dir: Path, label: str) -> None:
+    """Install a Pi package: npm dependencies + register with pi."""
     npm = shutil.which("npm")
     if not npm:
-        console.print("  [yellow]⚠[/yellow] npm not found — skipping extension install")
+        console.print(f"  [yellow]⚠[/yellow] npm not found — skipping {label} install")
         return
 
-    console.print("  Installing [bold]npm dependencies[/bold]...")
+    console.print(f"  Installing [bold]{label}[/bold] npm dependencies...")
     result = subprocess.run(
         [npm, "install"],
-        cwd=EXTENSION_DIR,
+        cwd=package_dir,
         check=False,
         capture_output=True,
         text=True,
     )
     if result.returncode != 0:
-        console.print("\n[red]npm install failed:[/red]")
+        console.print(f"\n[red]npm install failed for {label}:[/red]")
         console.print(result.stderr.strip())
         sys.exit(1)
 
     pi = shutil.which("pi")
     if not pi:
-        console.print("  [yellow]⚠[/yellow] pi not found — skipping extension registration")
+        console.print(f"  [yellow]⚠[/yellow] pi not found — skipping {label} registration")
         return
 
-    console.print("  Registering [bold]extension[/bold] with pi...")
+    console.print(f"  Registering [bold]{label}[/bold] with pi...")
     result = subprocess.run(
-        [pi, "install", str(EXTENSION_DIR)],
+        [pi, "install", str(package_dir)],
         check=False,
         capture_output=True,
         text=True,
     )
     if result.returncode != 0:
-        console.print("\n[red]pi install failed:[/red]")
+        console.print(f"\n[red]pi install failed for {label}:[/red]")
         console.print(result.stderr.strip())
         sys.exit(1)
 
 
-def install_cli(*, editable: bool) -> None:
+def install_python_tool(package_dir: Path, command_name: str, *, editable: bool) -> None:
     args = ["uv", "tool", "install", "--force", "--reinstall"]
     if editable:
         args.append("-e")
-    args.append(str(CLI_DIR))
+    args.append(str(package_dir))
 
-    console.print("  Installing [bold]basecamp[/bold] CLI (setup, config, observer, recall)...")
+    console.print(f"  Installing [bold]{command_name}[/bold] Python tool...")
     result = subprocess.run(args, check=False, capture_output=True, text=True)
     if result.returncode != 0:
-        console.print("\n[red]Failed to install basecamp:[/red]")
+        console.print(f"\n[red]Failed to install {command_name}:[/red]")
         console.print(result.stderr.strip())
         sys.exit(1)
 
@@ -159,12 +160,16 @@ def main() -> None:
     console.print(Panel.fit("basecamp setup", style="bold blue"))
     console.print()
 
-    install_cli(editable=editable)
+    console.print("[bold]Python tools[/bold]")
+    console.print()
+    install_python_tool(CLI_DIR, "basecamp", editable=editable)
+    install_python_tool(OBSERVER_DIR, "pi-observer", editable=editable)
 
     console.print()
-    console.print("[bold]pi extension[/bold]")
+    console.print("[bold]Pi packages[/bold]")
     console.print()
-    install_extension()
+    install_pi_package(EXTENSION_DIR, "basecamp Pi extension")
+    install_pi_package(OBSERVER_DIR, "pi-observer Pi package")
 
     save_install_dir(REPO_DIR)
 
@@ -172,8 +177,7 @@ def main() -> None:
     console.print("[green]✓[/green] Done.")
     console.print()
     console.print(
-        "If [bold]basecamp[/bold], [bold]observer[/bold], or [bold]recall[/bold] aren't found, "
-        "add uv's tool bin to your PATH:",
+        "If [bold]basecamp[/bold] or [bold]pi-observer[/bold] aren't found, add uv's tool bin to your PATH:",
     )
     console.print('  [dim]export PATH="$HOME/.local/bin:$PATH"[/dim]')
 

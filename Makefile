@@ -7,12 +7,13 @@ compile:
 
 test:
 	uv run pytest
-	cd observer && uv run pytest
 
 lint:
 	uv run ruff check . && uv run ruff format --check .
-	cd extension && npm run check
+	npm --prefix pi-extension run check
+	npm --prefix pi-observer run check
 
 fix:
 	uv run ruff check --fix . && uv run ruff format .
-	cd extension && npm run lint:fix && npm run format
+	npm --prefix pi-extension run lint:fix && npm --prefix pi-extension run format
+	npm --prefix pi-observer run lint:fix && npm --prefix pi-observer run format

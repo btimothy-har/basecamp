@@ -36,7 +36,7 @@ uv run install.py -e        # editable (recommended for development)
 uv run install.py --no-editable
 ```
 
-This installs `basecamp`, `observer`, and `recall`, registers the Pi extension, and saves the install directory to `~/.pi/basecamp/config.json`.
+This installs the Python tools `basecamp` and `pi-observer`, registers the Pi packages in `pi-extension/` and `pi-observer/`, and saves the Basecamp install directory to `~/.pi/basecamp/config.json`.
 
 Then initialize the environment:
 
@@ -44,7 +44,7 @@ Then initialize the environment:
 basecamp setup                     # check prerequisites, scaffold dirs, create default config
 ```
 
-If `basecamp`, `observer`, or `recall` aren't in your PATH:
+If `basecamp` or `pi-observer` aren't in your PATH:
 
 ```bash
 export PATH="$HOME/.local/bin:$PATH"
@@ -54,12 +54,14 @@ export PATH="$HOME/.local/bin:$PATH"
 
 ```bash
 uv tool upgrade basecamp
+uv tool upgrade pi-observer
 ```
 
 ### Uninstalling
 
 ```bash
 uv tool uninstall basecamp
+uv tool uninstall pi-observer
 ```
 
 ## Usage
@@ -201,7 +203,7 @@ Single-repo projects typically use `AGENTS.md` in the repo itself.
 
 Before a worktree is active, the effective working directory is where you launched Pi; the repository root is the protected checkout boundary for workspace guards. When an implementation plan is approved, Basecamp uses the workspace service to prompt for an execution worktree using existing worktrees plus a suggested label derived from the plan goal.
 
-The workspace service owns the `~/.worktrees/<repo>/<label>/` storage convention, `wt/<label>` default branch names, and `/tmp/pi/<repo>` scratch directories. Git is the source of truth for worktree registration; Basecamp consumes workspace state for project and observer context and does not maintain a separate metadata registry.
+The workspace service owns the `~/.worktrees/<repo>/<label>/` storage convention, `wt/<label>` default branch names, and `/tmp/pi/<repo>` scratch directories. Git is the source of truth for worktree registration; Basecamp consumes workspace state for project context and exposes `BASECAMP_*` env vars that `pi-observer` can use.
 
 - The protected checkout must be on the default branch with a clean working tree before activation
 - Implementation edits happen in the active worktree, not the protected checkout
@@ -216,22 +218,23 @@ The workspace service owns the `~/.worktrees/<repo>/<label>/` storage convention
 
 ## Semantic Memory (Observer)
 
-The `observer` CLI provides semantic memory across sessions. It ingests session transcripts, extracts structured knowledge via LLM, and makes it searchable.
+The `pi-observer` CLI and Pi package provide semantic memory across sessions. They ingest session transcripts, extract structured knowledge via LLM, and make it searchable.
 
 ### How it works
 
-1. **Ingest** — Hooks trigger `observer ingest` at session shutdown, before compaction, and on agent dispatch (ingest-only), parsing new transcript events incrementally
+1. **Ingest** — Hooks trigger `pi-observer ingest` at session shutdown, before compaction, and on agent dispatch (ingest-only), parsing new transcript events incrementally
 2. **Process** — A background job refines events into work items, extracts structured artifacts (summary, knowledge, decisions, constraints, actions), and embeds them into ChromaDB
-3. **Search** — The `recall` skill provides hybrid search (semantic + keyword) with time-decay scoring, scoped to the current project
+3. **Search** — The `recall` skill and `pi-observer recall` command provide hybrid search (semantic + keyword) with time-decay scoring, scoped to the current project
 
 ### Observer CLI
 
 ```bash
-observer setup                         # Initialize database and config
-observer db status                     # Show database and index status
-observer db migrate                    # Run pending schema migrations
-observer config set mode on            # Enable full pipeline (default: on)
-observer config set mode off           # Ingestion only, no LLM processing
+pi-observer setup                         # Initialize database and config
+pi-observer db status                     # Show database and index status
+pi-observer db migrate                    # Run pending schema migrations
+pi-observer config set mode on            # Enable full pipeline (default: on)
+pi-observer config set mode off           # Ingestion only, no LLM processing
+pi-observer recall search "worktrees"     # Search semantic memory from the shell
 ```
 
 ### Storage
@@ -239,11 +242,16 @@ observer config set mode off           # Ingestion only, no LLM processing
 All data is local — no servers or external services:
 - `~/.pi/observer/observer.db` — SQLite (relational model + FTS5 keyword search)
 - `~/.pi/observer/chroma/` — ChromaDB (vector embeddings, HNSW index)
-- `~/.pi/basecamp/config.json` — Basecamp settings, including observer settings under the `observer` key
+- `~/.pi/observer/config.json` — Observer settings
+- `~/.pi/basecamp/config.json` — Basecamp settings, including the installed repo path
 
-## Extension
+## Package Layout
 
-All skills, agents, hooks, and system prompts are bundled in a single pi extension at `pi-ext/`.
+basecamp is split into root-level products:
+
+- `basecamp-cli/` — Python package for the `basecamp` setup/config CLI
+- `pi-extension/` — Pi package for project context, session UI, worktrees, workflow, git, and engineering skills
+- `pi-observer/` — Python package for the `pi-observer` CLI plus a Pi package for transcript ingestion and semantic recall
 
 ## License
 
