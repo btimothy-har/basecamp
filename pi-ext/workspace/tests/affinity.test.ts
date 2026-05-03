@@ -4,7 +4,7 @@ import { describe, it } from "node:test";
 import type { SessionEntry } from "@mariozechner/pi-coding-agent";
 import type { WorkspaceState } from "../../platform/workspace.ts";
 import { latestWorkspaceAffinity, repoMatchesWorkspaceAffinity, type WorkspaceAffinity } from "../src/affinity.ts";
-import { WORKSPACE_AFFINITY_ENTRY } from "../src/constants.ts";
+import { WORKTREE_AFFINITY_ENTRY } from "../src/constants.ts";
 
 const REPO_ROOT = "/repo";
 const REPO_NAME = "repo";
@@ -17,11 +17,12 @@ function affinity(overrides: Partial<WorkspaceAffinity> = {}): WorkspaceAffinity
 		repoName: REPO_NAME,
 		repoRoot: REPO_ROOT,
 		remoteUrl: REMOTE_URL,
-		executionTarget: {
+		worktree: {
 			kind: "git-worktree",
 			label: "feature",
 			path: WORKTREE_DIR,
 			branch: "bh/feature",
+			created: false,
 		},
 		updatedAt: "2026-05-03T00:00:00.000Z",
 		...overrides,
@@ -31,7 +32,7 @@ function affinity(overrides: Partial<WorkspaceAffinity> = {}): WorkspaceAffinity
 function entry(data: unknown, overrides: Record<string, unknown> = {}): SessionEntry {
 	return {
 		type: "custom",
-		customType: WORKSPACE_AFFINITY_ENTRY,
+		customType: WORKTREE_AFFINITY_ENTRY,
 		data,
 		...overrides,
 	} as unknown as SessionEntry;
@@ -59,10 +60,10 @@ describe("workspace affinity", () => {
 	describe("latestWorkspaceAffinity", () => {
 		it("returns the latest valid affinity entry when scanning backward", () => {
 			const older = affinity({
-				executionTarget: { kind: "git-worktree", label: "older", path: "/wt/older", branch: "old" },
+				worktree: { kind: "git-worktree", label: "older", path: "/wt/older", branch: "old", created: false },
 			});
 			const latest = affinity({
-				executionTarget: { kind: "git-worktree", label: "latest", path: "/wt/latest", branch: "new" },
+				worktree: { kind: "git-worktree", label: "latest", path: "/wt/latest", branch: "new", created: false },
 			});
 
 			assert.deepEqual(latestWorkspaceAffinity([entry(older), entry(latest)]), latest);
@@ -70,7 +71,7 @@ describe("workspace affinity", () => {
 
 		it("skips invalid latest affinity entries in favor of earlier valid ones", () => {
 			const valid = affinity({
-				executionTarget: { kind: "git-worktree", label: "valid", path: "/wt/valid", branch: "valid" },
+				worktree: { kind: "git-worktree", label: "valid", path: "/wt/valid", branch: "valid", created: false },
 			});
 
 			assert.deepEqual(
@@ -88,7 +89,7 @@ describe("workspace affinity", () => {
 				entry(affinity(), { customType: "other.custom-entry" }),
 				entry(affinity(), { type: "message" }),
 				entry({ ...affinity(), version: 2 }),
-				entry({ ...affinity(), executionTarget: { kind: "git-worktree", label: "feature", path: WORKTREE_DIR } }),
+				entry({ ...affinity(), worktree: { kind: "git-worktree", label: "feature", path: WORKTREE_DIR } }),
 				entry(null),
 			];
 
@@ -98,7 +99,7 @@ describe("workspace affinity", () => {
 		it("accepts null remoteUrl and null branch as valid affinity data", () => {
 			const valid = affinity({
 				remoteUrl: null,
-				executionTarget: { kind: "git-worktree", label: "feature", path: WORKTREE_DIR, branch: null },
+				worktree: { kind: "git-worktree", label: "feature", path: WORKTREE_DIR, branch: null, created: false },
 			});
 
 			assert.deepEqual(latestWorkspaceAffinity([entry(valid)]), valid);

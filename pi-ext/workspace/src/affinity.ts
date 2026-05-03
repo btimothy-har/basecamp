@@ -8,19 +8,14 @@
 import * as path from "node:path";
 import type { CustomEntry, ExtensionAPI, SessionEntry } from "@mariozechner/pi-coding-agent";
 import type { WorkspaceWorktree, WorkspaceState } from "../../platform/workspace";
-import { WORKSPACE_AFFINITY_ENTRY } from "./constants.ts";
+import { WORKTREE_AFFINITY_ENTRY } from "./constants.ts";
 
 export interface WorkspaceAffinity {
 	version: 1;
 	repoName: string;
 	repoRoot: string;
 	remoteUrl: string | null;
-	executionTarget: {
-		kind: string;
-		label: string;
-		path: string;
-		branch: string | null;
-	};
+	worktree: WorkspaceWorktree;
 	updatedAt: string;
 }
 
@@ -28,13 +23,14 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 	return typeof value === "object" && value !== null;
 }
 
-function isWorkspaceWorktreeAffinity(value: unknown): value is WorkspaceAffinity["executionTarget"] {
+function isWorkspaceWorktree(value: unknown): value is WorkspaceWorktree {
 	return (
 		isRecord(value) &&
 		typeof value.kind === "string" &&
 		typeof value.label === "string" &&
 		typeof value.path === "string" &&
-		(typeof value.branch === "string" || value.branch === null)
+		(typeof value.branch === "string" || value.branch === null) &&
+		typeof value.created === "boolean"
 	);
 }
 
@@ -45,13 +41,13 @@ function isWorkspaceAffinity(value: unknown): value is WorkspaceAffinity {
 		typeof value.repoName === "string" &&
 		typeof value.repoRoot === "string" &&
 		(typeof value.remoteUrl === "string" || value.remoteUrl === null) &&
-		isWorkspaceWorktreeAffinity(value.executionTarget) &&
+		isWorkspaceWorktree(value.worktree) &&
 		typeof value.updatedAt === "string"
 	);
 }
 
 function isAffinityEntry(entry: SessionEntry): entry is CustomEntry<unknown> {
-	return entry.type === "custom" && entry.customType === WORKSPACE_AFFINITY_ENTRY;
+	return entry.type === "custom" && entry.customType === WORKTREE_AFFINITY_ENTRY;
 }
 
 export function latestWorkspaceAffinity(entries: SessionEntry[]): WorkspaceAffinity | null {
@@ -73,17 +69,12 @@ export function repoMatchesWorkspaceAffinity(state: WorkspaceState, affinity: Wo
 export function appendWorkspaceAffinity(pi: ExtensionAPI, state: WorkspaceState, target: WorkspaceWorktree): void {
 	if (!state.repo) return;
 
-	pi.appendEntry(WORKSPACE_AFFINITY_ENTRY, {
+	pi.appendEntry(WORKTREE_AFFINITY_ENTRY, {
 		version: 1,
 		repoName: state.repo.name,
 		repoRoot: state.repo.root,
 		remoteUrl: state.repo.remoteUrl,
-		executionTarget: {
-			kind: target.kind,
-			label: target.label,
-			path: target.path,
-			branch: target.branch,
-		},
+		worktree: target,
 		updatedAt: new Date().toISOString(),
 	} satisfies WorkspaceAffinity);
 }

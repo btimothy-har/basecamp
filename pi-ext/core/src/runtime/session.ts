@@ -184,7 +184,7 @@ async function restoreWorktreeAffinity(pi: ExtensionAPI, ctx: ExtensionContext):
 	if (!affinity || !repoMatchesWorkspaceAffinity(workspaceState, affinity)) return;
 
 	try {
-		const wt = await attachWorktree(pi, affinity.executionTarget.path, { persistAffinity: false });
+		const wt = await attachWorktree(pi, affinity.worktree.path, { persistAffinity: false });
 		ctx.ui.notify(`basecamp: restored worktree → ${wt.label}`, "info");
 	} catch (err) {
 		const msg = err instanceof Error ? err.message : String(err);
