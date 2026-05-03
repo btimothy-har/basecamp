@@ -5,9 +5,8 @@
 import * as path from "node:path";
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { Type } from "@sinclair/typebox";
-import type { SessionState } from "../../platform/config.ts";
 import { exec } from "../../platform/exec.ts";
-import { getSessionState } from "../../platform/session.ts";
+import { getWorkspaceState, type WorkspaceState } from "../../platform/workspace.ts";
 
 interface GitCommandResult {
 	code: number;
@@ -86,7 +85,7 @@ async function upstreamSummary(pi: ExtensionAPI): Promise<string> {
 	return `${upstream.stdout} (ahead ${ahead}, behind ${behind})`;
 }
 
-function formatOutput(state: SessionState | null, details: GitStatusDetails): string[] {
+function formatOutput(workspace: WorkspaceState | null, details: GitStatusDetails): string[] {
 	const lines: string[] = [];
 
 	if (details.worktree) {
@@ -101,7 +100,7 @@ function formatOutput(state: SessionState | null, details: GitStatusDetails): st
 		if (path.resolve(details.effectiveRoot) !== path.resolve(details.worktree.path)) {
 			lines.push(`Git status root: ${details.effectiveRoot}`);
 		}
-	} else if (state) {
+	} else if (workspace?.repo) {
 		lines.push(`Repository: ${details.repoName}`, `Repository root: ${details.repoRoot}`);
 	} else {
 		lines.push(`Git root: ${details.effectiveRoot}`);
@@ -143,7 +142,7 @@ export function registerStatusTool(pi: ExtensionAPI): void {
 			}
 
 			const effectiveRoot = effectiveRootResult.stdout;
-			const state = getSessionState();
+			const workspace = getWorkspaceState();
 
 			const [branch, defaultBranch, upstream, statusResult, recentCommitsResult] = await Promise.all([
 				currentBranch(pi),
@@ -162,17 +161,16 @@ export function registerStatusTool(pi: ExtensionAPI): void {
 					? recentCommitsResult.stdout.split("\n").filter((line) => line.trim())
 					: [];
 
-			const worktree: WorktreeInfo | null =
-				state?.worktreeDir && state.worktreeLabel
-					? {
-							label: state.worktreeLabel,
-							path: state.worktreeDir,
-							branch,
-						}
-					: null;
+			const worktree: WorktreeInfo | null = workspace?.executionTarget
+				? {
+						label: workspace.executionTarget.label,
+						path: workspace.executionTarget.path,
+						branch: workspace.executionTarget.branch ?? branch,
+					}
+				: null;
 
-			const repoName = state?.repoName ?? (path.basename(effectiveRoot) || "unknown");
-			const repoRoot = state?.repoRoot ?? effectiveRoot;
+			const repoName = workspace?.repo?.name ?? (path.basename(effectiveRoot) || "unknown");
+			const repoRoot = workspace?.protectedRoot ?? workspace?.repo?.root ?? effectiveRoot;
 
 			const details: GitStatusDetails = {
 				repoName,
@@ -186,7 +184,7 @@ export function registerStatusTool(pi: ExtensionAPI): void {
 				recentCommits,
 			};
 
-			const lines = formatOutput(state, details);
+			const lines = formatOutput(workspace, details);
 
 			return {
 				details,

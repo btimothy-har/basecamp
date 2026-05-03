@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { afterEach, beforeEach, describe, it } from "node:test";
-import { resetSessionRuntime, setSessionState } from "../../platform/session.ts";
+import { registerWorkspaceService, type WorkspaceState } from "../../platform/workspace.ts";
 import { registerSafeGitTool } from "../src/safe-git-tool.ts";
 
 interface ExecCall {
@@ -115,40 +115,47 @@ function createMockPi(): MockPi {
 	};
 }
 
-function baseSessionState() {
+let workspaceState: WorkspaceState | null = null;
+
+function setWorkspaceState(state: WorkspaceState): void {
+	workspaceState = state;
+}
+
+function baseWorkspaceState(): WorkspaceState {
 	return {
-		projectName: "test-project",
-		project: null,
 		launchCwd: "/tmp/test-worktree",
-		repoRoot: "/tmp/test-repo",
-		additionalDirs: [],
-		repoName: "test-repo",
-		isRepo: true,
-		remoteUrl: "git@github.com:test/test-repo.git",
+		effectiveCwd: "/tmp/test-worktree",
 		scratchDir: "/tmp/pi/test-repo",
-		workingStyle: "engineering",
-		worktreeDir: "/tmp/test-worktree",
-		worktreeLabel: "feature",
-		worktreeBranch: "bh/feature",
-		contextContent: null,
-		projectWarnings: [],
+		repo: {
+			isRepo: true,
+			name: "test-repo",
+			root: "/tmp/test-repo",
+			remoteUrl: "git@github.com:test/test-repo.git",
+		},
+		protectedRoot: "/tmp/test-repo",
+		executionTarget: {
+			kind: "git-worktree",
+			label: "feature",
+			path: "/tmp/test-worktree",
+			branch: "bh/feature",
+			created: false,
+		},
 		unsafeEdit: false,
 	};
 }
 
-function noWorktreeSessionState() {
+function noWorktreeWorkspaceState(): WorkspaceState {
 	return {
-		...baseSessionState(),
+		...baseWorkspaceState(),
 		launchCwd: "/tmp/test-repo",
-		worktreeDir: null,
-		worktreeLabel: null,
-		worktreeBranch: null,
+		effectiveCwd: "/tmp/test-repo",
+		executionTarget: null,
 	};
 }
 
-function unsafeEditSessionState() {
+function unsafeEditWorkspaceState(): WorkspaceState {
 	return {
-		...noWorktreeSessionState(),
+		...noWorktreeWorkspaceState(),
 		unsafeEdit: true,
 	};
 }
@@ -158,14 +165,30 @@ describe("safe_git tool", () => {
 	let mockUI: MockUI;
 
 	beforeEach(() => {
-		resetSessionRuntime();
+		workspaceState = null;
+		registerWorkspaceService({
+			current: () => workspaceState,
+			require: () => {
+				if (workspaceState === null) throw new Error("Workspace state is not initialized");
+				return workspaceState;
+			},
+			getEffectiveCwd: () => {
+				if (workspaceState === null) throw new Error("Workspace state is not initialized");
+				return workspaceState.effectiveCwd;
+			},
+			listExecutionTargets: async () => (workspaceState?.executionTarget ? [workspaceState.executionTarget] : []),
+			activateExecutionTarget: async () => {
+				if (workspaceState?.executionTarget) return workspaceState.executionTarget;
+				throw new Error("No execution target");
+			},
+		});
 		mockPi = createMockPi();
 		mockUI = createMockUI();
 		registerSafeGitTool(mockPi as never);
 	});
 
 	afterEach(() => {
-		resetSessionRuntime();
+		workspaceState = null;
 		delete process.env.BASECAMP_AGENT_DEPTH;
 	});
 
@@ -191,7 +214,7 @@ describe("safe_git tool", () => {
 
 	describe("auto-approved commands", () => {
 		it("executes read-only commands without confirm", async () => {
-			setSessionState(baseSessionState());
+			setWorkspaceState(baseWorkspaceState());
 			const result = await execute("git status");
 
 			assert.equal(result.isError, false);
@@ -202,7 +225,7 @@ describe("safe_git tool", () => {
 		});
 
 		it("executes mutating commands without confirm when worktree active", async () => {
-			setSessionState(baseSessionState());
+			setWorkspaceState(baseWorkspaceState());
 			const result = await execute("git add -A");
 
 			assert.equal(result.isError, false);
@@ -213,7 +236,7 @@ describe("safe_git tool", () => {
 		});
 
 		it("rejects mutating commands without worktree", async () => {
-			setSessionState(noWorktreeSessionState());
+			setWorkspaceState(noWorktreeWorkspaceState());
 			const result = await execute("git add -A");
 
 			assert.equal(result.isError, true);
@@ -224,7 +247,7 @@ describe("safe_git tool", () => {
 
 	describe("approval-required commands", () => {
 		it("calls confirm and typed input for force push then executes", async () => {
-			setSessionState(baseSessionState());
+			setWorkspaceState(baseWorkspaceState());
 			mockUI.confirmResult = true;
 			mockUI.inputResult = "git push --force origin feature-branch";
 
@@ -239,7 +262,7 @@ describe("safe_git tool", () => {
 		});
 
 		it("returns declined when user declines confirm", async () => {
-			setSessionState(baseSessionState());
+			setWorkspaceState(baseWorkspaceState());
 			mockUI.confirmResult = false;
 
 			const result = await execute("git push --force origin feature-branch");
@@ -252,7 +275,7 @@ describe("safe_git tool", () => {
 		});
 
 		it("returns declined when typed confirmation does not match", async () => {
-			setSessionState(baseSessionState());
+			setWorkspaceState(baseWorkspaceState());
 			mockUI.confirmResult = true;
 			mockUI.inputResult = "wrong command";
 
@@ -266,7 +289,7 @@ describe("safe_git tool", () => {
 
 	describe("default branch protection", () => {
 		it("blocks approval-required high-risk on default branch before confirm", async () => {
-			setSessionState(baseSessionState());
+			setWorkspaceState(baseWorkspaceState());
 			mockPi.exec = async (_cmd, args) => {
 				if (args[0] === "branch" && args[1] === "--show-current") {
 					return { code: 0, stdout: "main\n", stderr: "" };
@@ -300,7 +323,7 @@ describe("safe_git tool", () => {
 
 	describe("read-only mode", () => {
 		it("allows read-only auto-approved commands", async () => {
-			setSessionState(baseSessionState());
+			setWorkspaceState(baseWorkspaceState());
 			mockPi.flags["read-only"] = true;
 
 			const result = await execute("git status");
@@ -310,7 +333,7 @@ describe("safe_git tool", () => {
 		});
 
 		it("rejects mutating commands", async () => {
-			setSessionState(baseSessionState());
+			setWorkspaceState(baseWorkspaceState());
 			mockPi.flags["read-only"] = true;
 
 			const result = await execute("git add -A");
@@ -323,7 +346,7 @@ describe("safe_git tool", () => {
 
 	describe("no-UI context", () => {
 		it("allows read-only auto-approved commands", async () => {
-			setSessionState(baseSessionState());
+			setWorkspaceState(baseWorkspaceState());
 
 			const result = await executeNoUI("git status");
 
@@ -332,7 +355,7 @@ describe("safe_git tool", () => {
 		});
 
 		it("rejects approval-required commands", async () => {
-			setSessionState(baseSessionState());
+			setWorkspaceState(baseWorkspaceState());
 
 			const result = await executeNoUI("git push --force origin feature-branch");
 
@@ -344,7 +367,7 @@ describe("safe_git tool", () => {
 
 	describe("subagent environment", () => {
 		it("allows read-only auto-approved commands", async () => {
-			setSessionState(baseSessionState());
+			setWorkspaceState(baseWorkspaceState());
 			process.env.BASECAMP_AGENT_DEPTH = "1";
 
 			const result = await execute("git status");
@@ -354,7 +377,7 @@ describe("safe_git tool", () => {
 		});
 
 		it("rejects mutating commands", async () => {
-			setSessionState(baseSessionState());
+			setWorkspaceState(baseWorkspaceState());
 			process.env.BASECAMP_AGENT_DEPTH = "1";
 
 			const result = await execute("git add -A");
@@ -365,7 +388,7 @@ describe("safe_git tool", () => {
 		});
 
 		it("rejects approval-required commands", async () => {
-			setSessionState(baseSessionState());
+			setWorkspaceState(baseWorkspaceState());
 			process.env.BASECAMP_AGENT_DEPTH = "1";
 
 			const result = await execute("git push --force origin feature-branch");
@@ -378,7 +401,7 @@ describe("safe_git tool", () => {
 
 	describe("audit logging", () => {
 		it("logs executed commands to appendEntry", async () => {
-			setSessionState(baseSessionState());
+			setWorkspaceState(baseWorkspaceState());
 			await execute("git status");
 
 			const entry = mockPi.appendedEntries.find((e) => e.type === "safe-git");
@@ -387,7 +410,7 @@ describe("safe_git tool", () => {
 		});
 
 		it("logs rejected commands to appendEntry", async () => {
-			setSessionState(noWorktreeSessionState());
+			setWorkspaceState(noWorktreeWorkspaceState());
 			await execute("git add -A");
 
 			const entry = mockPi.appendedEntries.find((e) => e.type === "safe-git");
@@ -398,7 +421,7 @@ describe("safe_git tool", () => {
 
 	describe("unsafeEdit mode", () => {
 		it("still rejects mutating git commands without worktree", async () => {
-			setSessionState(unsafeEditSessionState());
+			setWorkspaceState(unsafeEditWorkspaceState());
 			const result = await execute("git add -A");
 
 			assert.equal(result.isError, true);
@@ -409,7 +432,7 @@ describe("safe_git tool", () => {
 		});
 
 		it("still allows read-only commands", async () => {
-			setSessionState(unsafeEditSessionState());
+			setWorkspaceState(unsafeEditWorkspaceState());
 			const result = await execute("git status");
 
 			assert.equal(result.isError, false);
@@ -417,7 +440,7 @@ describe("safe_git tool", () => {
 		});
 
 		it("still rejects approval-required commands without worktree", async () => {
-			setSessionState(unsafeEditSessionState());
+			setWorkspaceState(unsafeEditWorkspaceState());
 			const result = await execute("git push --force origin feature-branch");
 
 			assert.equal(result.isError, true);

@@ -8,7 +8,7 @@ import * as path from "node:path";
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { Type } from "@sinclair/typebox";
 import { exec } from "../../platform/exec";
-import { requireSessionState } from "../../platform/session";
+import { requireWorkspaceState } from "../../platform/workspace";
 import { activeIssueDraft, clearActiveIssueDraft } from "./guards";
 import { showIssueReview } from "./issue-review";
 import { getIssueDraftDir } from "./utils";
@@ -126,12 +126,12 @@ function repoTargetFromRemoteUrl(remoteUrl: string): string {
 	}
 }
 
-function getSessionRepoTarget(): string {
-	const state = requireSessionState();
-	if (!state.isRepo) throw new Error("Cannot publish issue: Basecamp session is not in a git repository.");
-	if (!state.remoteUrl?.trim())
-		throw new Error("Cannot publish issue: git remote URL is not configured for this session.");
-	return repoTargetFromRemoteUrl(state.remoteUrl);
+function getWorkspaceRepoTarget(): string {
+	const workspace = requireWorkspaceState();
+	if (workspace.repo === null) throw new Error("Cannot publish issue: workspace is not in a git repository.");
+	if (!workspace.repo.remoteUrl?.trim())
+		throw new Error("Cannot publish issue: git remote URL is not configured for this workspace.");
+	return repoTargetFromRemoteUrl(workspace.repo.remoteUrl);
 }
 
 function validateDraftPath(draftPath: string, activeDraftPath: string, cwd: string): string {
@@ -332,7 +332,7 @@ export function registerIssueTool(pi: ExtensionAPI): void {
 			assertNoSecrets(markdown);
 			const { title, body } = parseIssueDraft(markdown);
 
-			const repoTarget = getSessionRepoTarget();
+			const repoTarget = getWorkspaceRepoTarget();
 			const repoInfo = await resolveRepo(pi, repoTarget);
 			const review = await showIssueReview(
 				{

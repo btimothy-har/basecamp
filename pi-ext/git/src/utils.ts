@@ -8,6 +8,7 @@ import * as path from "node:path";
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { exec } from "../../platform/exec";
 import { loadTemplate as _loadTemplate } from "../../platform/templates";
+import { getWorkspaceState } from "../../platform/workspace";
 
 const RESOURCES = path.resolve(__dirname, "..", "resources");
 const PRIVATE_DIR_MODE = 0o700;
@@ -17,7 +18,7 @@ export function loadTemplate(name: string, vars: Record<string, string>): string
 }
 
 export function getScratchDir(cwd: string): string {
-	return process.env.BASECAMP_SCRATCH_DIR || `/tmp/pi/${path.basename(cwd)}`;
+	return getWorkspaceState()?.scratchDir ?? `/tmp/pi/${path.basename(cwd)}`;
 }
 
 function isNotFoundError(error: unknown): boolean {

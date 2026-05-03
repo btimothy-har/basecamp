@@ -1,8 +1,8 @@
+import * as path from "node:path";
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { Type } from "@sinclair/typebox";
-import { getSessionEffectiveCwd, isPathWithin } from "../../platform/config.ts";
 import { exec } from "../../platform/exec.ts";
-import { requireSessionState } from "../../platform/session.ts";
+import { requireWorkspaceState } from "../../platform/workspace.ts";
 import {
 	formatRiskSummary,
 	isHighRisk,
@@ -50,6 +50,11 @@ interface ExecTextResult {
 	code: number;
 	stdout: string;
 	stderr: string;
+}
+
+function isPathWithin(child: string, parent: string): boolean {
+	const relative = path.relative(parent, child);
+	return relative === "" || (!!relative && !relative.startsWith("..") && !path.isAbsolute(relative));
 }
 
 function stripAnsi(value: string): string {
@@ -316,8 +321,8 @@ export function registerSafeGitTool(pi: ExtensionAPI): void {
 				}
 			}
 
-			const state = requireSessionState();
-			if (!state.isRepo) {
+			const workspace = requireWorkspaceState();
+			if (workspace.repo === null) {
 				const details = rejectionDetails(
 					"safe_git requires a git repository session.",
 					rawReason,
@@ -327,10 +332,13 @@ export function registerSafeGitTool(pi: ExtensionAPI): void {
 				return toolResult(details, true);
 			}
 
-			const cwd = getSessionEffectiveCwd(state);
+			const cwd = workspace.effectiveCwd;
+			const activeExecutionTargetPath = workspace.executionTarget?.path ?? null;
+			const protectedRoot = workspace.protectedRoot;
+			const repoName = workspace.repo.name || path.basename(protectedRoot ?? cwd) || "unknown";
 
 			if (risk.requiresWorktree) {
-				if (!state.worktreeDir) {
+				if (!activeExecutionTargetPath) {
 					const details = rejectionDetails(
 						"This git command can mutate repository state. Activate an execution worktree before using safe_git.",
 						rawReason,
@@ -341,9 +349,12 @@ export function registerSafeGitTool(pi: ExtensionAPI): void {
 					return toolResult(details, true);
 				}
 
-				if (!isPathWithin(cwd, state.worktreeDir) || isPathWithin(cwd, state.repoRoot)) {
+				if (
+					!isPathWithin(cwd, activeExecutionTargetPath) ||
+					(protectedRoot !== null && isPathWithin(cwd, protectedRoot))
+				) {
 					const details = rejectionDetails(
-						`Mutating git commands must run inside the active worktree (${state.worktreeDir}), not ${cwd}.`,
+						`Mutating git commands must run inside the active worktree (${activeExecutionTargetPath}), not ${cwd}.`,
 						rawReason,
 						parsed.command.normalizedCommand,
 						risk,
@@ -354,7 +365,7 @@ export function registerSafeGitTool(pi: ExtensionAPI): void {
 			}
 
 			if (!risk.approvalRequired) {
-				const context = await collectGitContext(pi, cwd, state.repoName);
+				const context = await collectGitContext(pi, cwd, repoName);
 
 				const execution = await git(pi, parsed.command.argv.slice(1), EXEC_TIMEOUT_MS);
 				const details: SafeGitDetails = {
@@ -371,7 +382,7 @@ export function registerSafeGitTool(pi: ExtensionAPI): void {
 				return toolResult(details, execution.code !== 0);
 			}
 
-			const context = await collectGitContext(pi, cwd, state.repoName);
+			const context = await collectGitContext(pi, cwd, repoName);
 			const preview = await buildPreview(pi, parsed.command, risk, context);
 
 			if (shouldBlockDefaultBranch(risk, context)) {
