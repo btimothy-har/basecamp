@@ -2,7 +2,6 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
-import { getAgentMode } from "../../platform/session.ts";
 import { type CatalogItem, listCatalogItemsByType } from "../../platform/catalog.ts";
 import {
 	buildCapabilitiesIndex,
@@ -11,6 +10,7 @@ import {
 	type ContextFile,
 	discoverContextFiles,
 } from "../../platform/context.ts";
+import { getAgentMode } from "../../platform/session.ts";
 import { getWorkspaceService, getWorkspaceState, type WorkspaceState } from "../../platform/workspace.ts";
 import { getProjectState, type ProjectState } from "./project.ts";
 

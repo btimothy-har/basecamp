@@ -35,7 +35,8 @@ const SCRATCH_SQL_PATH_ERROR = "bq_query SQL files must live under /tmp/pi/** (t
 
 const BqQueryParams = Type.Object({
 	path: Type.String({
-		description: "Path to a .sql file under the workspace scratch directory (`/tmp/pi/**`). Relative paths resolve from the current effective cwd.",
+		description:
+			"Path to a .sql file under the workspace scratch directory (`/tmp/pi/**`). Relative paths resolve from the current effective cwd.",
 	}),
 	description: Type.String({
 		description: "Required short TLDR of what this query does. Do not include raw SQL or result rows.",
@@ -239,7 +240,10 @@ async function resolveSqlPath(rawPath: string, cwd: string, scratchDir: string):
 	if (!stat.isFile()) throw new Error(`bq_query path is not a file: ${resolved}`);
 
 	const realSqlPath = await fs.realpath(resolved);
-	const [realScratchDir, realTmpPiRoot] = await Promise.all([existingRealpath(scratchDir), existingRealpath(TMP_PI_ROOT)]);
+	const [realScratchDir, realTmpPiRoot] = await Promise.all([
+		existingRealpath(scratchDir),
+		existingRealpath(TMP_PI_ROOT),
+	]);
 	if (!realScratchDir || !realTmpPiRoot || !isPathWithin(realScratchDir, realTmpPiRoot)) {
 		throw new Error(SCRATCH_SQL_PATH_ERROR);
 	}
