@@ -14,23 +14,12 @@
 import * as path from "node:path";
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { isEditToolResult, isReadToolResult, isWriteToolResult } from "@mariozechner/pi-coding-agent";
-import { type ContextFile, loadContextFileFromDir } from "../../../platform/context";
-import { getWorkspaceEffectiveCwd } from "../../../platform/workspace";
+import { type ContextFile, loadContextFileFromDir } from "../../platform/context.ts";
+import { getWorkspaceEffectiveCwd } from "../../platform/workspace.ts";
 
-// ---------------------------------------------------------------------------
-// Session state
-// ---------------------------------------------------------------------------
-
-/** Paths already injected this session — never send the same file twice. */
 const injectedPaths = new Set<string>();
-
-/** Directories whose CLAUDE.md is already in the system prompt (cwd → root). */
 let systemPromptDirs: Set<string> | null = null;
 
-/**
- * Build the set of directories that already have their context file in the
- * system prompt. Called lazily on first tool_result so session state is ready.
- */
 function getSystemPromptDirs(): Set<string> {
 	if (systemPromptDirs) return systemPromptDirs;
 
@@ -46,15 +35,6 @@ function getSystemPromptDirs(): Set<string> {
 	return systemPromptDirs;
 }
 
-// ---------------------------------------------------------------------------
-// Discovery
-// ---------------------------------------------------------------------------
-
-/**
- * Walk from `startDir` upward, stopping before any directory already
- * covered by the system prompt. Returns new context files in root-first
- * order (closest-to-cwd first, then deeper ancestors).
- */
 function discoverNestedContextFiles(startDir: string): ContextFile[] {
 	const covered = getSystemPromptDirs();
 	const files: ContextFile[] = [];
@@ -77,10 +57,6 @@ function discoverNestedContextFiles(startDir: string): ContextFile[] {
 	return files;
 }
 
-// ---------------------------------------------------------------------------
-// Message formatting
-// ---------------------------------------------------------------------------
-
 function formatInjectionMessage(files: ContextFile[]): string {
 	const parts: string[] = [];
 
@@ -98,17 +74,20 @@ function formatInjectionMessage(files: ContextFile[]): string {
 	);
 }
 
-// ---------------------------------------------------------------------------
-// Registration
-// ---------------------------------------------------------------------------
-
-/** Extract file path from a tool_result event's input. */
 function getFilePath(event: { toolName: string; input: Record<string, unknown> }): string | null {
 	const p = event.input.path;
 	return typeof p === "string" ? p : null;
 }
 
+function resetContextInjectionState(): void {
+	injectedPaths.clear();
+	systemPromptDirs = null;
+}
+
 export function registerContextInjection(pi: ExtensionAPI): void {
+	pi.on("session_start", resetContextInjectionState);
+	pi.on("session_compact", resetContextInjectionState);
+
 	pi.on("tool_result", async (event) => {
 		// Only act on successful read/edit/write
 		if (event.isError) return;
@@ -119,22 +98,18 @@ export function registerContextInjection(pi: ExtensionAPI): void {
 		const filePath = getFilePath(event);
 		if (!filePath) return;
 
-		// Resolve to absolute path
 		const resolved = path.isAbsolute(filePath)
 			? path.resolve(filePath)
 			: path.resolve(getWorkspaceEffectiveCwd(), filePath);
 		const fileDir = path.dirname(resolved);
 
-		// Discover new context files between this file's dir and the system prompt boundary
 		const newFiles = discoverNestedContextFiles(fileDir);
 		if (newFiles.length === 0) return;
 
-		// Mark as injected before sending
 		for (const f of newFiles) {
 			injectedPaths.add(f.path);
 		}
 
-		// Steer the message into the conversation
 		pi.sendMessage(
 			{
 				customType: "context-injection",
