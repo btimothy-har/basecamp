@@ -15,7 +15,7 @@ import * as path from "node:path";
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { isEditToolResult, isReadToolResult, isWriteToolResult } from "@mariozechner/pi-coding-agent";
 import { type ContextFile, loadContextFileFromDir } from "../../../platform/context";
-import { getEffectiveCwd } from "../runtime/session";
+import { getWorkspaceEffectiveCwd } from "../../../platform/workspace";
 
 // ---------------------------------------------------------------------------
 // Session state
@@ -35,7 +35,7 @@ function getSystemPromptDirs(): Set<string> {
 	if (systemPromptDirs) return systemPromptDirs;
 
 	systemPromptDirs = new Set<string>();
-	let dir = getEffectiveCwd();
+	let dir = getWorkspaceEffectiveCwd();
 	while (true) {
 		systemPromptDirs.add(dir);
 		const parent = path.dirname(dir);
@@ -120,7 +120,7 @@ export function registerContextInjection(pi: ExtensionAPI): void {
 		if (!filePath) return;
 
 		// Resolve to absolute path
-		const resolved = path.isAbsolute(filePath) ? path.resolve(filePath) : path.resolve(getEffectiveCwd(), filePath);
+		const resolved = path.isAbsolute(filePath) ? path.resolve(filePath) : path.resolve(getWorkspaceEffectiveCwd(), filePath);
 		const fileDir = path.dirname(resolved);
 
 		// Discover new context files between this file's dir and the system prompt boundary

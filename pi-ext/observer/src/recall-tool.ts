@@ -116,11 +116,9 @@ export function registerRecallTool(pi: ExtensionAPI): void {
 		parameters: RecallToolParams,
 
 		async execute(_id, params, _signal, _onUpdate, ctx) {
-			const repo = process.env.BASECAMP_REPO ?? process.env.BASECAMP_PROJECT;
 			const claudeSessionId = ctx.sessionManager?.getSessionId();
 
 			const env: Record<string, string> = {};
-			if (repo) env.BASECAMP_REPO = repo;
 			if (claudeSessionId) env.CLAUDE_SESSION_ID = claudeSessionId;
 
 			let args: string[];

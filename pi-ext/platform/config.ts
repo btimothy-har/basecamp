@@ -58,33 +58,6 @@ export interface BasecampProjectState {
 	projectWarnings: string[];
 }
 
-/**
- * Legacy compatibility state for current consumers.
- * Workspace/repo fields below are temporary until consumers migrate to workspace state.
- */
-export interface SessionState extends BasecampProjectState {
-	/** Legacy workspace compatibility: directory Pi was launched from */
-	launchCwd: string;
-	/** Legacy workspace compatibility: git repository root / protected checkout (launch cwd for non-repo sessions) */
-	repoRoot: string;
-	/** Legacy workspace compatibility: git repo name (from toplevel dirname) */
-	repoName: string;
-	/** Legacy workspace compatibility: whether launchCwd is inside a git repo */
-	isRepo: boolean;
-	/** Legacy workspace compatibility: git remote URL */
-	remoteUrl: string | null;
-	/** Legacy workspace compatibility: scratch directory path */
-	scratchDir: string;
-	/** Legacy workspace compatibility: worktree directory (absolute), or null if no worktree */
-	worktreeDir: string | null;
-	/** Legacy workspace compatibility: worktree label, or null if no worktree */
-	worktreeLabel: string | null;
-	/** Legacy workspace compatibility: worktree branch name, or null if no worktree */
-	worktreeBranch: string | null;
-	/** Legacy workspace compatibility: unsafe edit mode allows edit/write to target protected checkout directly */
-	unsafeEdit: boolean;
-}
-
 // ---------------------------------------------------------------------------
 // Config I/O
 // ---------------------------------------------------------------------------
@@ -189,21 +162,6 @@ export function isPathWithin(child: string, parent: string): boolean {
 	return relative === "" || (!!relative && !relative.startsWith("..") && !path.isAbsolute(relative));
 }
 
-/**
- * Compute the cwd tools should use for the current session state.
- * @deprecated Workspace owns effective cwd resolution; use workspace service instead.
- */
-export function getSessionEffectiveCwd(state: SessionState): string {
-	if (!state.worktreeDir) return state.launchCwd;
-
-	if (isPathWithin(state.launchCwd, state.repoRoot)) {
-		const relative = path.relative(state.repoRoot, state.launchCwd);
-		return path.resolve(state.worktreeDir, relative);
-	}
-
-	return state.worktreeDir;
-}
-
 // ---------------------------------------------------------------------------
 // Context file loading
 // ---------------------------------------------------------------------------
@@ -225,13 +183,6 @@ export interface ResolveProjectOptions {
 	repoRoot: string;
 	isRepo: boolean;
 	styleOverride?: string;
-}
-
-export interface ResolveOptions extends ResolveProjectOptions {
-	launchCwd: string;
-	repoName: string;
-	remoteUrl: string | null;
-	scratchDir: string;
 }
 
 interface ProjectDetection {
@@ -308,26 +259,5 @@ export function resolveBasecampProjectState(opts: ResolveProjectOptions): Baseca
 		workingStyle,
 		contextContent,
 		projectWarnings: detection.warnings,
-	};
-}
-
-export function resolveSessionState(opts: ResolveOptions): SessionState {
-	const launchCwd = path.resolve(opts.launchCwd);
-	const repoRoot = path.resolve(opts.repoRoot);
-	const { repoName, isRepo, remoteUrl, scratchDir } = opts;
-	const projectState = resolveBasecampProjectState(opts);
-
-	return {
-		...projectState,
-		launchCwd,
-		repoRoot,
-		repoName,
-		isRepo,
-		remoteUrl,
-		scratchDir,
-		worktreeDir: null,
-		worktreeLabel: null,
-		worktreeBranch: null,
-		unsafeEdit: false,
 	};
 }

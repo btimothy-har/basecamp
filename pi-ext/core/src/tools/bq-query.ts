@@ -13,8 +13,8 @@ import * as path from "node:path";
 import type { AgentToolResult, ExtensionAPI, ExtensionContext, Theme } from "@mariozechner/pi-coding-agent";
 import { type Static, Type } from "@sinclair/typebox";
 import { type BigQueryOutputFormat, isPathWithin, resolveBigQueryConfig } from "../../../platform/config";
-import { requireSessionState } from "../../../platform/session";
-import { getEffectiveCwd } from "../runtime/session";
+import { requireBasecampProjectState } from "../../../platform/project";
+import { getWorkspaceEffectiveCwd, requireWorkspaceState } from "../../../platform/workspace";
 
 const DEFAULT_OUTPUT_FORMAT: BigQueryOutputFormat = "csv";
 const DEFAULT_MAX_ROWS = 100;
@@ -1099,8 +1099,9 @@ export function registerBqQueryTool(pi: ExtensionAPI): void {
 			try {
 				description = sanitizeQueryDescription(params.description);
 
-				const state = requireSessionState();
-				const config = resolveBigQueryConfig(state.project);
+				const project = requireBasecampProjectState();
+				const workspace = requireWorkspaceState();
+				const config = resolveBigQueryConfig(project.project);
 				if (config.enabled === false) {
 					throw new Error("bq_query is disabled by Basecamp BigQuery config.");
 				}
@@ -1111,16 +1112,16 @@ export function registerBqQueryTool(pi: ExtensionAPI): void {
 				const maxRows = validateMaxRows(params.maxRows ?? config.default_max_rows ?? DEFAULT_MAX_ROWS);
 				const dryRunOnly = params.dryRun === true;
 
-				const effectiveCwd = getEffectiveCwd();
-				const projectSqlRoot = state.worktreeDir ?? state.repoRoot;
-				const allowedSqlRoots = [effectiveCwd, projectSqlRoot, state.scratchDir, ...state.additionalDirs];
+				const effectiveCwd = getWorkspaceEffectiveCwd();
+				const workspaceSqlRoot = workspace.activeWorktree?.path ?? workspace.repo?.root ?? workspace.launchCwd;
+				const allowedSqlRoots = [effectiveCwd, workspaceSqlRoot, workspace.scratchDir, ...project.additionalDirs];
 				sqlPath = await resolveSqlPath(params.path, effectiveCwd, allowedSqlRoots);
 				const sql = await fs.readFile(sqlPath, "utf8");
 				const now = new Date();
 				const hash = queryHash(sql);
 				jobId = `basecamp_${timestampForJob(now)}_${hash}`;
 				const dryRunJobId = `${jobId}_dryrun`;
-				const outputDir = path.join(state.scratchDir, "bigquery");
+				const outputDir = path.join(workspace.scratchDir, "bigquery");
 				await ensurePrivateDir(outputDir);
 				const outputPath = dryRunOnly
 					? null
