@@ -1,5 +1,5 @@
 /**
- * Core extension — session lifecycle, prompt assembly, worktrees, commands.
+ * Core extension — shared tools, UI, catalog providers, and mode commands.
  */
 
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
