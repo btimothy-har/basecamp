@@ -1,14 +1,14 @@
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
-import { registerCwdProvider } from "../../platform/exec";
+import { registerCwdProvider } from "../../platform/exec.ts";
 import {
 	type ExecutionTarget,
 	type RepoContext,
 	registerWorkspaceService,
 	type WorkspaceService,
 	type WorkspaceState,
-} from "../../platform/workspace";
+} from "../../platform/workspace.ts";
 import { SCRATCH_ROOT } from "./constants.ts";
 import { resolveGitInfo } from "./repo.ts";
 import { applyUnsafeEditFlag, type UnsafeEditConstraints, type UnsafeEditFlagResult } from "./unsafe-edit.ts";
@@ -80,10 +80,13 @@ function setWorkspaceEnv(state: WorkspaceState): void {
 }
 
 export class WorkspaceRuntimeService implements WorkspaceService {
+	private pi: ExtensionAPI;
 	private state: WorkspaceState | null = null;
 	private readonly listeners = new Set<(state: WorkspaceState | null) => void>();
 
-	constructor(private pi: ExtensionAPI) {}
+	constructor(pi: ExtensionAPI) {
+		this.pi = pi;
+	}
 
 	updatePi(pi: ExtensionAPI): void {
 		this.pi = pi;
