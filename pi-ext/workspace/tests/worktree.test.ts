@@ -93,7 +93,10 @@ describe("worktree pure utilities", () => {
 
 			assert.throws(() => labelFromWorktreePath(REPO_NAME, repoRoot), /directly under/);
 			assert.throws(() => labelFromWorktreePath(REPO_NAME, path.join(repoRoot, LABEL, "nested")), /directly under/);
-			assert.throws(() => labelFromWorktreePath(REPO_NAME, path.join(WORKTREES_ROOT, "other", LABEL)), /directly under/);
+			assert.throws(
+				() => labelFromWorktreePath(REPO_NAME, path.join(WORKTREES_ROOT, "other", LABEL)),
+				/directly under/,
+			);
 		});
 	});
 

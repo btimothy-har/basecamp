@@ -144,11 +144,11 @@ describe("workspace affinity", () => {
 				repoMatchesWorkspaceAffinity(
 					workspaceState({
 						repo: {
-								isRepo: true,
-								name: REPO_NAME,
-								root: REPO_ROOT,
-								remoteUrl: "git@github.com:test/other.git",
-							},
+							isRepo: true,
+							name: REPO_NAME,
+							root: REPO_ROOT,
+							remoteUrl: "git@github.com:test/other.git",
+						},
 					}),
 					affinity(),
 				),

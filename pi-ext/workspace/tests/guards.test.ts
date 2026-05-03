@@ -4,8 +4,8 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { describe, it } from "node:test";
 import type { UserBashEvent, UserBashEventResult } from "@mariozechner/pi-coding-agent";
-import { registerWorkspaceGuards } from "../src/guards.ts";
 import type { WorkspaceState as BasecampWorkspaceState } from "../../platform/workspace.ts";
+import { registerWorkspaceGuards } from "../src/guards.ts";
 
 interface GuardEvent {
 	type: "tool_call";
@@ -16,7 +16,9 @@ interface GuardEvent {
 
 type GuardResult = { block?: boolean; reason?: string } | undefined;
 type GuardHandler = (event: GuardEvent) => GuardResult | Promise<GuardResult>;
-type UserBashHandler = (event: UserBashEvent) => UserBashEventResult | Promise<UserBashEventResult | undefined> | undefined;
+type UserBashHandler = (
+	event: UserBashEvent,
+) => UserBashEventResult | Promise<UserBashEventResult | undefined> | undefined;
 
 const REPO_ROOT = "/repo";
 const WORKTREE_DIR = "/worktrees/repo/feature";

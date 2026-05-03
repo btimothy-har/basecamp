@@ -1,8 +1,9 @@
 import assert from "node:assert/strict";
+import * as fs from "node:fs/promises";
 import * as path from "node:path";
 import { describe, it } from "node:test";
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
-import { WORKTREES_ROOT } from "../src/constants.ts";
+import { SCRATCH_ROOT, WORKTREES_ROOT } from "../src/constants.ts";
 import { WorkspaceRuntimeService } from "../src/service.ts";
 
 const REPO_ROOT = "/repo";
@@ -11,6 +12,7 @@ const LABEL = "feature";
 const BRANCH = "wt/feature";
 const REMOTE_URL = "git@github.com:test/repo.git";
 const WORKTREE_DIR = path.join(WORKTREES_ROOT, REPO_NAME, LABEL);
+const SCRATCH_DIR = path.join(SCRATCH_ROOT, REPO_NAME);
 
 interface ExecCall {
 	command: string;
@@ -49,33 +51,42 @@ function gitWorktreeListOutput(): string {
 	].join("\n");
 }
 
+function argsEqual(actual: string[], expected: string[]): boolean {
+	return actual.length === expected.length && actual.every((arg, index) => arg === expected[index]);
+}
+
+function unexpectedExecCall(call: ExecCall): Error {
+	return new Error(`Unexpected exec call: ${call.command} ${JSON.stringify(call.args)}`);
+}
+
 function createPi(): { pi: ExtensionAPI; calls: ExecCall[] } {
 	const calls: ExecCall[] = [];
 	const pi = {
 		async exec(command: string, args: string[], options?: { cwd?: string; timeout?: number }): Promise<ExecResult> {
-			calls.push({ command, args, options });
-			assert.equal(command, "git");
+			const call = { command, args, options };
+			calls.push(call);
 
-			if (args.join(" ") === "rev-parse --show-toplevel") {
+			if (command !== "git") throw unexpectedExecCall(call);
+			if (argsEqual(args, ["rev-parse", "--show-toplevel"])) {
 				return { code: 0, stdout: `${REPO_ROOT}\n`, stderr: "" };
 			}
-			if (args.join(" ") === `-C ${REPO_ROOT} remote get-url origin`) {
+			if (argsEqual(args, ["-C", REPO_ROOT, "remote", "get-url", "origin"])) {
 				return { code: 0, stdout: `${REMOTE_URL}\n`, stderr: "" };
 			}
-			if (args.join(" ") === `-C ${REPO_ROOT} symbolic-ref --quiet --short refs/remotes/origin/HEAD`) {
+			if (argsEqual(args, ["-C", REPO_ROOT, "symbolic-ref", "--quiet", "--short", "refs/remotes/origin/HEAD"])) {
 				return { code: 0, stdout: "origin/main\n", stderr: "" };
 			}
-			if (args.join(" ") === `-C ${REPO_ROOT} branch --show-current`) {
+			if (argsEqual(args, ["-C", REPO_ROOT, "branch", "--show-current"])) {
 				return { code: 0, stdout: "main\n", stderr: "" };
 			}
-			if (args.join(" ") === `-C ${REPO_ROOT} status --porcelain`) {
+			if (argsEqual(args, ["-C", REPO_ROOT, "status", "--porcelain"])) {
 				return { code: 0, stdout: "", stderr: "" };
 			}
-			if (args.join(" ") === `-C ${REPO_ROOT} worktree list --porcelain`) {
+			if (argsEqual(args, ["-C", REPO_ROOT, "worktree", "list", "--porcelain"])) {
 				return { code: 0, stdout: gitWorktreeListOutput(), stderr: "" };
 			}
 
-			throw new Error(`Unexpected git call: ${args.join(" ")}`);
+			throw unexpectedExecCall(call);
 		},
 	} as ExtensionAPI;
 	return { pi, calls };
@@ -98,19 +109,29 @@ async function initializeAndActivate(
 describe("WorkspaceRuntimeService effective cwd", () => {
 	it("preserves protected repo subdirectory when activating an existing worktree", async (t) => {
 		const envSnapshot = snapshotBasecampEnv();
-		t.after(() => restoreBasecampEnv(envSnapshot));
+		t.after(async () => {
+			restoreBasecampEnv(envSnapshot);
+			await fs.rm(SCRATCH_DIR, { recursive: true, force: true });
+		});
 
 		const launchCwd = path.join(REPO_ROOT, "packages", "app");
 		const { service, calls } = await initializeAndActivate(launchCwd);
 
 		assert.equal(service.getEffectiveCwd(), path.join(WORKTREE_DIR, "packages", "app"));
 		assert.equal(service.current()?.executionTarget?.created, false);
-		assert.ok(calls.some((call) => call.args.join(" ") === `-C ${REPO_ROOT} worktree list --porcelain`));
+		assert.ok(
+			calls.some(
+				(call) => call.command === "git" && argsEqual(call.args, ["-C", REPO_ROOT, "worktree", "list", "--porcelain"]),
+			),
+		);
 	});
 
 	it("uses worktree root when launch cwd is outside protected root", async (t) => {
 		const envSnapshot = snapshotBasecampEnv();
-		t.after(() => restoreBasecampEnv(envSnapshot));
+		t.after(async () => {
+			restoreBasecampEnv(envSnapshot);
+			await fs.rm(SCRATCH_DIR, { recursive: true, force: true });
+		});
 
 		const { service } = await initializeAndActivate("/outside");
 
