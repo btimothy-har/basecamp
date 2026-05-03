@@ -143,9 +143,9 @@ function setSessionStateFromWorkspace(workspaceState: WorkspaceState, styleOverr
 		repoName: workspaceState.repo?.name ?? path.basename(repoRoot),
 		isRepo: workspaceState.repo?.isRepo ?? false,
 		remoteUrl: workspaceState.repo?.remoteUrl ?? null,
+		scratchDir: workspaceState.scratchDir,
 		styleOverride,
 	});
-	sessionState.scratchDir = workspaceState.scratchDir;
 	sessionState.unsafeEdit = workspaceState.unsafeEdit;
 	setSessionState(sessionState);
 }

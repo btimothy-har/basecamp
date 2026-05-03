@@ -6,7 +6,7 @@
  * module-local variable.
  */
 
-import type { SessionState } from "./config";
+import type { BasecampProjectState, SessionState } from "./config";
 
 interface BasecampSessionRuntime {
 	state: SessionState | null;
@@ -30,6 +30,26 @@ export function resetSessionRuntime(): void {
 
 export function getSessionState(): SessionState | null {
 	return getSessionRuntime().state;
+}
+
+export function getProjectState(): BasecampProjectState | null {
+	const state = getSessionState();
+	if (!state) return null;
+	return {
+		projectName: state.projectName,
+		project: state.project,
+		additionalDirs: state.additionalDirs,
+		workingStyle: state.workingStyle,
+		contextContent: state.contextContent,
+		projectWarnings: state.projectWarnings,
+	};
+}
+
+export function requireProjectState(): BasecampProjectState {
+	const state = getProjectState();
+	if (!state)
+		throw new Error("Basecamp project state is not initialized; session startup has not resolved project config");
+	return state;
 }
 
 export function setSessionState(state: SessionState): void {
