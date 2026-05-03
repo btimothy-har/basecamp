@@ -16,10 +16,10 @@ import type { ExtensionAPI, ExtensionContext, Theme } from "@mariozechner/pi-cod
 import { Type } from "@sinclair/typebox";
 import { getAgentMode, setAgentMode } from "../../../core/src/runtime/mode";
 import {
-	activateWorkspaceExecutionTarget,
-	type ExecutionTarget,
+	activateWorkspaceWorktree,
+	type WorkspaceWorktree,
 	getWorkspaceState,
-	listWorkspaceExecutionTargets,
+	listWorkspaceWorktrees,
 	requireWorkspaceState,
 } from "../../../platform/workspace";
 import type { GoalCycle, ReviewState, TaskStatus, TasksAccess } from "../tasks/tasks";
@@ -232,7 +232,7 @@ async function selectWorktreeLabel(
 	}
 
 	const suggested = suggestWorktreeLabel(ctx, goal, worktreeSlug);
-	const existing = await listWorkspaceExecutionTargets();
+	const existing = await listWorkspaceWorktrees();
 	const choices: string[] = [];
 	const labelsByChoice = new Map<string, string>();
 
@@ -446,7 +446,7 @@ export interface PlanAccess {
 	getDraft(): PlanDraft | null;
 }
 
-function executionTargetToHandoffWorktree(target: ExecutionTarget): HandoffWorktreeResult {
+function workspaceWorktreeToHandoffWorktree(target: WorkspaceWorktree): HandoffWorktreeResult {
 	return {
 		worktreeDir: target.path,
 		label: target.label,
@@ -615,7 +615,7 @@ export function registerPlan(pi: ExtensionAPI, tasksAccess: TasksAccess): PlanAc
 
 				let worktree: HandoffWorktreeResult;
 				try {
-					worktree = executionTargetToHandoffWorktree(await activateWorkspaceExecutionTarget(worktreeLabel));
+					worktree = workspaceWorktreeToHandoffWorktree(await activateWorkspaceWorktree(worktreeLabel));
 				} catch (err) {
 					return {
 						content: [{ type: "text", text: buildWorktreeActivationFailedResult(worktreeLabel, err) }],

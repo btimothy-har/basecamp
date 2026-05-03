@@ -333,12 +333,12 @@ export function registerSafeGitTool(pi: ExtensionAPI): void {
 			}
 
 			const cwd = workspace.effectiveCwd;
-			const activeExecutionTargetPath = workspace.executionTarget?.path ?? null;
+			const activeWorktreePath = workspace.activeWorktree?.path ?? null;
 			const protectedRoot = workspace.protectedRoot;
 			const repoName = workspace.repo.name || path.basename(protectedRoot ?? cwd) || "unknown";
 
 			if (risk.requiresWorktree) {
-				if (!activeExecutionTargetPath) {
+				if (!activeWorktreePath) {
 					const details = rejectionDetails(
 						"This git command can mutate repository state. Activate an execution worktree before using safe_git.",
 						rawReason,
@@ -350,11 +350,11 @@ export function registerSafeGitTool(pi: ExtensionAPI): void {
 				}
 
 				if (
-					!isPathWithin(cwd, activeExecutionTargetPath) ||
+					!isPathWithin(cwd, activeWorktreePath) ||
 					(protectedRoot !== null && isPathWithin(cwd, protectedRoot))
 				) {
 					const details = rejectionDetails(
-						`Mutating git commands must run inside the active worktree (${activeExecutionTargetPath}), not ${cwd}.`,
+						`Mutating git commands must run inside the active worktree (${activeWorktreePath}), not ${cwd}.`,
 						rawReason,
 						parsed.command.normalizedCommand,
 						risk,

@@ -13,10 +13,10 @@ export interface RepoContext {
 	remoteUrl: string | null;
 }
 
-export type ExecutionTargetKind = "git-worktree" | (string & {});
+export type WorkspaceWorktreeKind = "git-worktree" | (string & {});
 
-export interface ExecutionTarget {
-	kind: ExecutionTargetKind;
+export interface WorkspaceWorktree {
+	kind: WorkspaceWorktreeKind;
 	label: string;
 	path: string;
 	branch: string | null;
@@ -29,7 +29,7 @@ export interface WorkspaceState {
 	scratchDir: string;
 	repo: RepoContext | null;
 	protectedRoot: string | null;
-	executionTarget: ExecutionTarget | null;
+	activeWorktree: WorkspaceWorktree | null;
 	unsafeEdit: boolean;
 }
 
@@ -37,9 +37,9 @@ export interface WorkspaceService {
 	current(): WorkspaceState | null;
 	require(): WorkspaceState;
 	getEffectiveCwd(): string;
-	listExecutionTargets(): Promise<ExecutionTarget[]>;
-	activateExecutionTarget(label: string): Promise<ExecutionTarget>;
-	attachExecutionTargetPath(path: string): Promise<ExecutionTarget>;
+	listWorktrees(): Promise<WorkspaceWorktree[]>;
+	activateWorktree(label: string): Promise<WorkspaceWorktree>;
+	attachWorktreePath(path: string): Promise<WorkspaceWorktree>;
 	onChange?(listener: (state: WorkspaceState | null) => void): () => void;
 }
 
@@ -100,14 +100,14 @@ export function getWorkspaceEffectiveCwd(): string {
 	return requireWorkspaceService().getEffectiveCwd();
 }
 
-export function listWorkspaceExecutionTargets(): Promise<ExecutionTarget[]> {
-	return requireWorkspaceService().listExecutionTargets();
+export function listWorkspaceWorktrees(): Promise<WorkspaceWorktree[]> {
+	return requireWorkspaceService().listWorktrees();
 }
 
-export function activateWorkspaceExecutionTarget(label: string): Promise<ExecutionTarget> {
-	return requireWorkspaceService().activateExecutionTarget(label);
+export function activateWorkspaceWorktree(label: string): Promise<WorkspaceWorktree> {
+	return requireWorkspaceService().activateWorktree(label);
 }
 
-export function attachWorkspaceExecutionTargetPath(path: string): Promise<ExecutionTarget> {
-	return requireWorkspaceService().attachExecutionTargetPath(path);
+export function attachWorkspaceWorktreePath(path: string): Promise<WorkspaceWorktree> {
+	return requireWorkspaceService().attachWorktreePath(path);
 }

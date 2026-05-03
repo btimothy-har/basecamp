@@ -61,7 +61,7 @@ export function registerWorktreeCommand(pi: ExtensionAPI): void {
 			const worktrees = await getRegisteredWorktrees(pi, ctx);
 			if (!worktrees || !state?.repo) return;
 
-			const activeTarget = state.executionTarget;
+			const activeTarget = state.activeWorktree;
 			const requestedLabel = args?.trim() || null;
 			let label = requestedLabel;
 
@@ -85,7 +85,7 @@ export function registerWorktreeCommand(pi: ExtensionAPI): void {
 			}
 
 			try {
-				const target = await workspace.attachExecutionTargetPath(match.path);
+				const target = await workspace.attachWorktreePath(match.path);
 				appendWorkspaceAffinity(pi, workspace.require(), target);
 				ctx.ui.notify(`Worktree active: ${target.label} (${target.branch ?? "detached"})`, "info");
 			} catch (err) {

@@ -22,7 +22,7 @@ function shortenPath(p: string): string {
 function buildBanner(fg: ThemeFg, width: number): string[] {
 	const workspace = getWorkspaceState();
 	const project = getProjectState();
-	const executionTarget = workspace?.executionTarget ?? null;
+	const activeWorktree = workspace?.activeWorktree ?? null;
 	const protectedRoot = workspace?.protectedRoot ?? workspace?.repo?.root ?? null;
 	const lines: string[] = [];
 
@@ -39,9 +39,9 @@ function buildBanner(fg: ThemeFg, width: number): string[] {
 		rows.push(["Protected", shortenPath(protectedRoot)]);
 	}
 
-	if (executionTarget) {
-		const branch = executionTarget.branch ? fg("dim", ` (${executionTarget.branch})`) : "";
-		rows.push(["Worktree", `${executionTarget.label}${branch} ${fg("dim", "·")} ${shortenPath(executionTarget.path)}`]);
+	if (activeWorktree) {
+		const branch = activeWorktree.branch ? fg("dim", ` (${activeWorktree.branch})`) : "";
+		rows.push(["Worktree", `${activeWorktree.label}${branch} ${fg("dim", "·")} ${shortenPath(activeWorktree.path)}`]);
 	} else {
 		rows.push(["Worktree", "not active"]);
 	}

@@ -61,7 +61,7 @@ function baseWorkspaceState(overrides: Partial<WorkspaceState> = {}): WorkspaceS
 			remoteUrl: "git@github.com:user/repo.git",
 		},
 		protectedRoot: REPO_ROOT,
-		executionTarget: null,
+		activeWorktree: null,
 		unsafeEdit: false,
 		...overrides,
 	};
@@ -70,7 +70,7 @@ function baseWorkspaceState(overrides: Partial<WorkspaceState> = {}): WorkspaceS
 function activeWorktreeState(): WorkspaceState {
 	return baseWorkspaceState({
 		effectiveCwd: WORKTREE_DIR,
-		executionTarget: {
+		activeWorktree: {
 			kind: "git-worktree",
 			label: WORKTREE_LABEL,
 			path: WORKTREE_DIR,
@@ -130,14 +130,14 @@ registerWorkspaceService({
 		if (workspaceState === null) throw new Error("Workspace state is not initialized");
 		return workspaceState.effectiveCwd;
 	},
-	listExecutionTargets: async () => (workspaceState?.executionTarget ? [workspaceState.executionTarget] : []),
-	activateExecutionTarget: async () => {
-		if (workspaceState?.executionTarget) return workspaceState.executionTarget;
-		throw new Error("No execution target");
+	listWorktrees: async () => (workspaceState?.activeWorktree ? [workspaceState.activeWorktree] : []),
+	activateWorktree: async () => {
+		if (workspaceState?.activeWorktree) return workspaceState.activeWorktree;
+		throw new Error("No active worktree");
 	},
-	attachExecutionTargetPath: async () => {
-		if (workspaceState?.executionTarget) return workspaceState.executionTarget;
-		throw new Error("No execution target");
+	attachWorktreePath: async () => {
+		if (workspaceState?.activeWorktree) return workspaceState.activeWorktree;
+		throw new Error("No active worktree");
 	},
 });
 

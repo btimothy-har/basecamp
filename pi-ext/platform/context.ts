@@ -23,7 +23,7 @@ import type { WorkspaceState } from "./workspace";
  * protected checkout stays on the default branch with a clean status.
  */
 export function buildWorktreeWarning(workspace: WorkspaceState | null): string | null {
-	if (!workspace?.executionTarget) return null;
+	if (!workspace?.activeWorktree) return null;
 
 	return "⚠ WORKSPACE ACTIVE: Relative file-tool paths and bash commands run from the working directory. Do not edit the protected repository checkout.";
 }

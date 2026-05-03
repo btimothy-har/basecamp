@@ -1,5 +1,5 @@
 /**
- * Pi session affinity for the active workspace execution target.
+ * Pi session affinity for the active workspace worktree.
  *
  * This is session state, not worktree metadata. Git remains the source of
  * truth for whether a worktree exists and belongs to the repo.
@@ -7,7 +7,7 @@
 
 import * as path from "node:path";
 import type { CustomEntry, ExtensionAPI, SessionEntry } from "@mariozechner/pi-coding-agent";
-import type { ExecutionTarget, WorkspaceState } from "../../platform/workspace";
+import type { WorkspaceWorktree, WorkspaceState } from "../../platform/workspace";
 import { WORKSPACE_AFFINITY_ENTRY } from "./constants.ts";
 
 export interface WorkspaceAffinity {
@@ -28,7 +28,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 	return typeof value === "object" && value !== null;
 }
 
-function isExecutionTargetAffinity(value: unknown): value is WorkspaceAffinity["executionTarget"] {
+function isWorkspaceWorktreeAffinity(value: unknown): value is WorkspaceAffinity["executionTarget"] {
 	return (
 		isRecord(value) &&
 		typeof value.kind === "string" &&
@@ -45,7 +45,7 @@ function isWorkspaceAffinity(value: unknown): value is WorkspaceAffinity {
 		typeof value.repoName === "string" &&
 		typeof value.repoRoot === "string" &&
 		(typeof value.remoteUrl === "string" || value.remoteUrl === null) &&
-		isExecutionTargetAffinity(value.executionTarget) &&
+		isWorkspaceWorktreeAffinity(value.executionTarget) &&
 		typeof value.updatedAt === "string"
 	);
 }
@@ -70,7 +70,7 @@ export function repoMatchesWorkspaceAffinity(state: WorkspaceState, affinity: Wo
 	return true;
 }
 
-export function appendWorkspaceAffinity(pi: ExtensionAPI, state: WorkspaceState, target: ExecutionTarget): void {
+export function appendWorkspaceAffinity(pi: ExtensionAPI, state: WorkspaceState, target: WorkspaceWorktree): void {
 	if (!state.repo) return;
 
 	pi.appendEntry(WORKSPACE_AFFINITY_ENTRY, {

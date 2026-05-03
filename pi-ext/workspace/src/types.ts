@@ -1,6 +1,6 @@
 export type {
-	ExecutionTarget,
-	ExecutionTargetKind,
+	WorkspaceWorktree,
+	WorkspaceWorktreeKind,
 	RepoContext,
 	WorkspaceService,
 	WorkspaceState,

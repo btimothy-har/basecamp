@@ -36,7 +36,7 @@ function baseWorkspaceState(overrides: Partial<BasecampWorkspaceState> = {}): Ba
 			remoteUrl: "git@github.com:test/repo.git",
 		},
 		protectedRoot: REPO_ROOT,
-		executionTarget: null,
+		activeWorktree: null,
 		unsafeEdit: false,
 		...overrides,
 	};
@@ -46,7 +46,7 @@ function activeWorktreeState(overrides: Partial<BasecampWorkspaceState> = {}): B
 	return baseWorkspaceState({
 		launchCwd: REPO_ROOT,
 		effectiveCwd: WORKTREE_DIR,
-		executionTarget: {
+		activeWorktree: {
 			kind: "git-worktree",
 			label: "feature",
 			path: WORKTREE_DIR,
@@ -147,7 +147,7 @@ describe("worktree guards bash cwd", () => {
 		const { event, result } = await runToolCallGuard(
 			activeWorktreeState({
 				effectiveCwd,
-				executionTarget: {
+				activeWorktree: {
 					kind: "git-worktree",
 					label: "it's feature",
 					path: effectiveCwd,
@@ -211,7 +211,7 @@ describe("worktree guards user bash cwd", () => {
 						root: repoRoot,
 						remoteUrl: "git@github.com:test/repo.git",
 					},
-					executionTarget: {
+					activeWorktree: {
 						kind: "git-worktree",
 						label: "feature",
 						path: effectiveCwd,

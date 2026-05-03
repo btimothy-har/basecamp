@@ -36,7 +36,7 @@ export interface RegisterWorkspaceGuardsOptions {
 }
 
 /**
- * Register tool_call guards for protected checkout and execution-target enforcement.
+ * Register tool_call guards for protected checkout and active worktree enforcement.
  */
 export function registerWorkspaceGuards(pi: ExtensionAPI, options: RegisterWorkspaceGuardsOptions = {}): void {
 	const getState = options.getState ?? getWorkspaceState;
@@ -46,7 +46,7 @@ export function registerWorkspaceGuards(pi: ExtensionAPI, options: RegisterWorks
 	// Override operations so shell commands run from the workspace effective cwd.
 	pi.on("user_bash", async () => {
 		const state = getState();
-		if (!state?.executionTarget) return;
+		if (!state?.activeWorktree) return;
 
 		const effectiveCwd = state.effectiveCwd;
 		const local = createLocalBashOperations();
@@ -62,7 +62,7 @@ export function registerWorkspaceGuards(pi: ExtensionAPI, options: RegisterWorks
 		if (!state) return;
 
 		const protectedCheckout = state.protectedRoot;
-		const worktreeDir = state.executionTarget?.path ?? null;
+		const worktreeDir = state.activeWorktree?.path ?? null;
 		const effectiveCwd = state.effectiveCwd;
 
 		if (isToolCallEventType("bash", event)) {

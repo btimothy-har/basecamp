@@ -102,7 +102,7 @@ async function initializeAndActivate(
 		unsafeEditFlag: false,
 		unsafeEditConstraints: { readOnly: false, hasUI: true, isSubagent: false },
 	});
-	await service.activateExecutionTarget(LABEL);
+	await service.activateWorktree(LABEL);
 	return { service, calls };
 }
 
@@ -118,7 +118,7 @@ describe("WorkspaceRuntimeService effective cwd", () => {
 		const { service, calls } = await initializeAndActivate(launchCwd);
 
 		assert.equal(service.getEffectiveCwd(), path.join(WORKTREE_DIR, "packages", "app"));
-		assert.equal(service.current()?.executionTarget?.created, false);
+		assert.equal(service.current()?.activeWorktree?.created, false);
 		assert.ok(
 			calls.some(
 				(call) => call.command === "git" && argsEqual(call.args, ["-C", REPO_ROOT, "worktree", "list", "--porcelain"]),

@@ -15,7 +15,7 @@ function baseWorkspaceState(overrides: Partial<WorkspaceState> = {}): WorkspaceS
 			remoteUrl: "git@github.com:test/repo.git",
 		},
 		protectedRoot: "/repo",
-		executionTarget: null,
+		activeWorktree: null,
 		unsafeEdit: false,
 		...overrides,
 	};

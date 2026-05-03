@@ -18,8 +18,8 @@ import type { ExtensionAPI, ExtensionContext, SessionStartEvent } from "@marioze
 import { getSessionEffectiveCwd, resolveSessionState, type SessionState } from "../../../platform/config";
 import { getSessionState, requireSessionState, resetSessionRuntime, setSessionState } from "../../../platform/session";
 import {
-	attachWorkspaceExecutionTargetPath,
-	type ExecutionTarget,
+	attachWorkspaceWorktreePath,
+	type WorkspaceWorktree,
 	getWorkspaceService,
 	registerWorkspaceAllowedRootsProvider,
 	requireWorkspaceState,
@@ -76,7 +76,7 @@ interface WorktreeApplyOptions {
 	persistAffinity?: boolean;
 }
 
-function worktreeResultToExecutionTarget(wt: WorktreeResult): ExecutionTarget {
+function worktreeResultToWorkspaceWorktree(wt: WorktreeResult): WorkspaceWorktree {
 	return {
 		kind: "git-worktree",
 		label: wt.label,
@@ -96,14 +96,14 @@ async function applyWorktree(pi: ExtensionAPI, wt: WorktreeResult, options: Work
 	if (options.persistAffinity ?? true) {
 		const workspaceState = requireWorkspaceState();
 		const target =
-			workspaceState.executionTarget?.path === wt.worktreeDir
-				? workspaceState.executionTarget
-				: worktreeResultToExecutionTarget(wt);
+			workspaceState.activeWorktree?.path === wt.worktreeDir
+				? workspaceState.activeWorktree
+				: worktreeResultToWorkspaceWorktree(wt);
 		appendWorkspaceAffinity(pi, workspaceState, target);
 	}
 }
 
-function executionTargetToWorktree(target: ExecutionTarget): WorktreeResult {
+function workspaceWorktreeToWorktree(target: WorkspaceWorktree): WorktreeResult {
 	return {
 		worktreeDir: target.path,
 		label: target.label,
@@ -119,8 +119,8 @@ async function attachWorktree(
 ): Promise<WorktreeResult> {
 	const s = requireSessionState();
 	if (!s.isRepo) throw new Error("Worktree attachment requires a git repository");
-	const target = await attachWorkspaceExecutionTargetPath(worktreeDir);
-	const wt = executionTargetToWorktree(target);
+	const target = await attachWorkspaceWorktreePath(worktreeDir);
+	const wt = workspaceWorktreeToWorktree(target);
 	await applyWorktree(pi, wt, options);
 	return wt;
 }
@@ -160,9 +160,9 @@ function syncLegacySessionStateFromWorkspace(workspaceState: WorkspaceState | nu
 
 	sessionState.scratchDir = workspaceState.scratchDir;
 	sessionState.unsafeEdit = workspaceState.unsafeEdit;
-	sessionState.worktreeDir = workspaceState.executionTarget?.path ?? null;
-	sessionState.worktreeLabel = workspaceState.executionTarget?.label ?? null;
-	sessionState.worktreeBranch = workspaceState.executionTarget?.branch ?? null;
+	sessionState.worktreeDir = workspaceState.activeWorktree?.path ?? null;
+	sessionState.worktreeLabel = workspaceState.activeWorktree?.label ?? null;
+	sessionState.worktreeBranch = workspaceState.activeWorktree?.branch ?? null;
 	setBasecampEnv(sessionState);
 }
 

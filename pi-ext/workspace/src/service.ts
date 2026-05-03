@@ -3,16 +3,16 @@ import * as path from "node:path";
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { registerCwdProvider } from "../../platform/exec.ts";
 import {
-	type ExecutionTarget,
 	type RepoContext,
 	registerWorkspaceService,
 	type WorkspaceService,
 	type WorkspaceState,
+	type WorkspaceWorktree,
 } from "../../platform/workspace.ts";
 import { SCRATCH_ROOT } from "./constants.ts";
 import { resolveGitInfo } from "./repo.ts";
 import { applyUnsafeEditFlag, type UnsafeEditConstraints, type UnsafeEditFlagResult } from "./unsafe-edit.ts";
-import { attachWorktreeDir, getOrCreateWorktree, listWorktrees, type WorktreeResult } from "./worktree.ts";
+import { attachWorktreeDir, getOrCreateWorktree, listWorktrees as listGitWorktrees, type WorktreeResult } from "./worktree.ts";
 
 interface WorkspaceRuntimeGlobal {
 	service: WorkspaceRuntimeService | null;
@@ -41,8 +41,8 @@ function getWorkspaceRuntimeGlobal(): WorkspaceRuntimeGlobal {
 	return globalObject[workspaceRuntimeKey];
 }
 
-function executionTargetRequiresRepo(): never {
-	throw new Error("Execution targets require a git repository");
+function worktreeRequiresRepo(): never {
+	throw new Error("Workspace worktrees require a git repository");
 }
 
 function isPathWithin(child: string, parent: string): boolean {
@@ -51,7 +51,7 @@ function isPathWithin(child: string, parent: string): boolean {
 }
 
 function computeEffectiveCwd(state: WorkspaceState): string {
-	const targetPath = state.executionTarget?.path;
+	const targetPath = state.activeWorktree?.path;
 	if (!targetPath || !state.protectedRoot) return state.launchCwd;
 
 	if (isPathWithin(state.launchCwd, state.protectedRoot)) {
@@ -62,7 +62,7 @@ function computeEffectiveCwd(state: WorkspaceState): string {
 	return targetPath;
 }
 
-function worktreeToExecutionTarget(wt: WorktreeResult): ExecutionTarget {
+function worktreeResultToWorkspaceWorktree(wt: WorktreeResult): WorkspaceWorktree {
 	return {
 		kind: "git-worktree",
 		label: wt.label,
@@ -75,8 +75,8 @@ function worktreeToExecutionTarget(wt: WorktreeResult): ExecutionTarget {
 function setWorkspaceEnv(state: WorkspaceState): void {
 	process.env.BASECAMP_REPO = state.repo?.name ?? path.basename(state.scratchDir);
 	process.env.BASECAMP_SCRATCH_DIR = state.scratchDir;
-	process.env.BASECAMP_WORKTREE_DIR = state.executionTarget?.path ?? "";
-	process.env.BASECAMP_WORKTREE_LABEL = state.executionTarget?.label ?? "";
+	process.env.BASECAMP_WORKTREE_DIR = state.activeWorktree?.path ?? "";
+	process.env.BASECAMP_WORKTREE_LABEL = state.activeWorktree?.label ?? "";
 }
 
 export class WorkspaceRuntimeService implements WorkspaceService {
@@ -111,7 +111,7 @@ export class WorkspaceRuntimeService implements WorkspaceService {
 			scratchDir,
 			repo,
 			protectedRoot: repo?.root ?? null,
-			executionTarget: null,
+			activeWorktree: null,
 			unsafeEdit: false,
 		};
 		state.effectiveCwd = computeEffectiveCwd(state);
@@ -139,10 +139,10 @@ export class WorkspaceRuntimeService implements WorkspaceService {
 		return this.state?.effectiveCwd ?? process.cwd();
 	}
 
-	async listExecutionTargets(): Promise<ExecutionTarget[]> {
+	async listWorktrees(): Promise<WorkspaceWorktree[]> {
 		const state = this.require();
-		if (!state.repo) executionTargetRequiresRepo();
-		const worktrees = await listWorktrees(this.pi, state.repo.root, state.repo.name);
+		if (!state.repo) worktreeRequiresRepo();
+		const worktrees = await listGitWorktrees(this.pi, state.repo.root, state.repo.name);
 		return worktrees.map((wt) => ({
 			kind: "git-worktree",
 			label: wt.label,
@@ -152,18 +152,18 @@ export class WorkspaceRuntimeService implements WorkspaceService {
 		}));
 	}
 
-	async activateExecutionTarget(label: string): Promise<ExecutionTarget> {
+	async activateWorktree(label: string): Promise<WorkspaceWorktree> {
 		const state = this.require();
-		if (!state.repo) executionTargetRequiresRepo();
+		if (!state.repo) worktreeRequiresRepo();
 		const wt = await getOrCreateWorktree(this.pi, state.repo.root, state.repo.name, label);
-		return this.applyExecutionTarget(worktreeToExecutionTarget(wt));
+		return this.applyWorktree(worktreeResultToWorkspaceWorktree(wt));
 	}
 
-	async attachExecutionTargetPath(worktreeDir: string): Promise<ExecutionTarget> {
+	async attachWorktreePath(worktreeDir: string): Promise<WorkspaceWorktree> {
 		const state = this.require();
-		if (!state.repo) executionTargetRequiresRepo();
+		if (!state.repo) worktreeRequiresRepo();
 		const wt = await attachWorktreeDir(this.pi, state.repo.root, state.repo.name, worktreeDir);
-		return this.applyExecutionTarget(worktreeToExecutionTarget(wt));
+		return this.applyWorktree(worktreeResultToWorkspaceWorktree(wt));
 	}
 
 	onChange(listener: (state: WorkspaceState | null) => void): () => void {
@@ -171,9 +171,9 @@ export class WorkspaceRuntimeService implements WorkspaceService {
 		return () => this.listeners.delete(listener);
 	}
 
-	private applyExecutionTarget(target: ExecutionTarget): ExecutionTarget {
+	private applyWorktree(target: WorkspaceWorktree): WorkspaceWorktree {
 		const state = this.require();
-		state.executionTarget = target;
+		state.activeWorktree = target;
 		state.effectiveCwd = computeEffectiveCwd(state);
 		setWorkspaceEnv(state);
 		this.notify();

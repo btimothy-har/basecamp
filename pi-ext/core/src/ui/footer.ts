@@ -174,9 +174,9 @@ export function registerFooter(pi: ExtensionAPI): void {
 					const fg = theme.fg.bind(theme);
 					const workspace = getWorkspaceState();
 					const effectiveCwd = getFooterEffectiveCwd(workspace);
-					const executionTarget = workspace?.executionTarget ?? null;
+					const activeWorktree = workspace?.activeWorktree ?? null;
 
-					if (executionTarget) initWorktreeWatcher(executionTarget.path);
+					if (activeWorktree) initWorktreeWatcher(activeWorktree.path);
 
 					// ── Line 1: cwd | worktree | branch ... cost + model ──
 					const l1Left = buildLocationSegment(fg, workspace, effectiveCwd, footerData);
@@ -239,12 +239,12 @@ function buildLocationSegment(
 ): string {
 	const parts: string[] = [];
 	const modeSegment = buildModeSegment(fg, getAgentMode());
-	const executionTarget = workspace?.executionTarget ?? null;
+	const activeWorktree = workspace?.activeWorktree ?? null;
 	if (modeSegment) parts.push(modeSegment);
 	parts.push(fg("dim", shortenPath(effectiveCwd)));
 
-	if (executionTarget) {
-		parts.push(fg("warning", `⌥ ${executionTarget.label}`));
+	if (activeWorktree) {
+		parts.push(fg("warning", `⌥ ${activeWorktree.label}`));
 		if (workspace?.unsafeEdit) parts.push(fg("error", "⚠ unsafe-edit"));
 	} else if (workspace?.unsafeEdit) {
 		parts.push(fg("error", "⌥ unsafe-edit"));
@@ -252,7 +252,7 @@ function buildLocationSegment(
 		parts.push(fg("muted", "⌥ protected"));
 	}
 
-	const branch = executionTarget ? (worktreeBranchCache ?? executionTarget.branch) : footerData.getGitBranch();
+	const branch = activeWorktree ? (worktreeBranchCache ?? activeWorktree.branch) : footerData.getGitBranch();
 	if (branch) {
 		parts.push(fg("accent", `⎇ ${branch}`));
 	}

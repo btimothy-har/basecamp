@@ -161,11 +161,11 @@ export function registerStatusTool(pi: ExtensionAPI): void {
 					? recentCommitsResult.stdout.split("\n").filter((line) => line.trim())
 					: [];
 
-			const worktree: WorktreeInfo | null = workspace?.executionTarget
+			const worktree: WorktreeInfo | null = workspace?.activeWorktree
 				? {
-						label: workspace.executionTarget.label,
-						path: workspace.executionTarget.path,
-						branch: workspace.executionTarget.branch ?? branch,
+						label: workspace.activeWorktree.label,
+						path: workspace.activeWorktree.path,
+						branch: workspace.activeWorktree.branch ?? branch,
 					}
 				: null;
 

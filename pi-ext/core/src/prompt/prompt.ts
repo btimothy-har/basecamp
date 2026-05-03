@@ -129,7 +129,7 @@ function buildEnvBlock(
 
 	const modelName = modelId ?? "an AI assistant";
 	const repo = workspace?.repo ?? null;
-	const executionTarget = workspace?.executionTarget ?? null;
+	const activeWorktree = workspace?.activeWorktree ?? null;
 	const protectedRoot = workspace?.protectedRoot ?? repo?.root ?? null;
 	const lines: string[] = [
 		`You are ${modelName}. You are operating inside pi-coding-agent, a terminal based AI harness.`,
@@ -140,9 +140,9 @@ function buildEnvBlock(
 		"",
 	];
 
-	if (executionTarget) {
-		const branch = executionTarget.branch ? `, branch: ${executionTarget.branch}` : "";
-		lines.push(`Working directory: ${effectiveCwd} (active worktree: ${executionTarget.label}${branch})`);
+	if (activeWorktree) {
+		const branch = activeWorktree.branch ? `, branch: ${activeWorktree.branch}` : "";
+		lines.push(`Working directory: ${effectiveCwd} (active worktree: ${activeWorktree.label}${branch})`);
 		if (protectedRoot) lines.push(`Protected repository checkout: ${protectedRoot}`);
 	} else if (repo?.isRepo) {
 		lines.push(`Working directory: ${effectiveCwd} (protected repository checkout; no active worktree)`);

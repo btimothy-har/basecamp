@@ -49,7 +49,7 @@ function workspaceState(overrides: Partial<WorkspaceState> = {}): WorkspaceState
 			remoteUrl: REMOTE_URL,
 		},
 		protectedRoot: REPO_ROOT,
-		executionTarget: null,
+		activeWorktree: null,
 		unsafeEdit: false,
 		...overrides,
 	};

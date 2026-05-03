@@ -440,7 +440,7 @@ Available named agents are basecamp builtin definitions. Ad-hoc dispatch is sync
 			const extensionTools = getBasecampExtensionToolNames(pi);
 			const runKind = getAgentRunKind(agentConfig);
 			const workspace = getWorkspaceState();
-			const worktreeDir = workspace?.executionTarget?.path ?? null;
+			const worktreeDir = workspace?.activeWorktree?.path ?? null;
 			const spawnCwd = workspace?.launchCwd ?? process.cwd();
 
 			if (runKind === "mutative" && !worktreeDir) {

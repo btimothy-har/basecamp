@@ -133,7 +133,7 @@ function baseWorkspaceState(): WorkspaceState {
 			remoteUrl: "git@github.com:test/test-repo.git",
 		},
 		protectedRoot: "/tmp/test-repo",
-		executionTarget: {
+		activeWorktree: {
 			kind: "git-worktree",
 			label: "feature",
 			path: "/tmp/test-worktree",
@@ -149,7 +149,7 @@ function noWorktreeWorkspaceState(): WorkspaceState {
 		...baseWorkspaceState(),
 		launchCwd: "/tmp/test-repo",
 		effectiveCwd: "/tmp/test-repo",
-		executionTarget: null,
+		activeWorktree: null,
 	};
 }
 
@@ -176,14 +176,14 @@ describe("safe_git tool", () => {
 				if (workspaceState === null) throw new Error("Workspace state is not initialized");
 				return workspaceState.effectiveCwd;
 			},
-			listExecutionTargets: async () => (workspaceState?.executionTarget ? [workspaceState.executionTarget] : []),
-			activateExecutionTarget: async () => {
-				if (workspaceState?.executionTarget) return workspaceState.executionTarget;
-				throw new Error("No execution target");
+			listWorktrees: async () => (workspaceState?.activeWorktree ? [workspaceState.activeWorktree] : []),
+			activateWorktree: async () => {
+				if (workspaceState?.activeWorktree) return workspaceState.activeWorktree;
+				throw new Error("No active worktree");
 			},
-			attachExecutionTargetPath: async () => {
-				if (workspaceState?.executionTarget) return workspaceState.executionTarget;
-				throw new Error("No execution target");
+			attachWorktreePath: async () => {
+				if (workspaceState?.activeWorktree) return workspaceState.activeWorktree;
+				throw new Error("No active worktree");
 			},
 		});
 		mockPi = createMockPi();
