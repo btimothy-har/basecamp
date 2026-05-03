@@ -30,8 +30,8 @@ import {
 	repoMatchesWorkspaceAffinity,
 } from "../../../workspace/src/affinity.ts";
 import { registerWorkspaceRuntime } from "../../../workspace/src/service.ts";
+import { type WorktreeResult } from "../../../workspace/src/worktree.ts";
 import { resetAgentMode } from "./mode";
-import { type WorktreeResult } from "./worktree";
 
 export function getEffectiveCwd(): string {
 	const workspace = getWorkspaceService();
@@ -111,16 +111,7 @@ function executionTargetToWorktree(target: ExecutionTarget): WorktreeResult {
 	};
 }
 
-export async function activateWorktree(pi: ExtensionAPI, label: string): Promise<WorktreeResult> {
-	const s = requireSessionState();
-	if (!s.isRepo) throw new Error("Worktree activation requires a git repository");
-	const target = await registerWorkspaceRuntime(pi).activateExecutionTarget(label);
-	const wt = executionTargetToWorktree(target);
-	await applyWorktree(pi, wt);
-	return wt;
-}
-
-export async function attachWorktree(
+async function attachWorktree(
 	pi: ExtensionAPI,
 	worktreeDir: string,
 	options: WorktreeApplyOptions = {},

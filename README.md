@@ -195,9 +195,9 @@ Single-repo projects typically use `AGENTS.md` in the repo itself.
 
 ## Git Worktrees
 
-Before a worktree is active, the effective working directory is where you launched Pi; the repository root is the protected checkout boundary for tool guards. When an implementation plan is approved, Basecamp prompts for an execution worktree using existing worktrees plus a suggested label derived from the plan goal.
+Before a worktree is active, the effective working directory is where you launched Pi; the repository root is the protected checkout boundary for workspace guards. When an implementation plan is approved, Basecamp uses the workspace service to prompt for an execution worktree using existing worktrees plus a suggested label derived from the plan goal.
 
-Worktrees live in `~/.worktrees/<repo>/<label>/` with branches named `wt/<label>` by default. Git is the source of truth for worktree registration; Basecamp does not maintain a separate metadata registry.
+The workspace service owns the `~/.worktrees/<repo>/<label>/` storage convention, `wt/<label>` default branch names, and `/tmp/pi/<repo>` scratch directories. Git is the source of truth for worktree registration; Basecamp consumes workspace state for project and observer context and does not maintain a separate metadata registry.
 
 - The protected checkout must be on the default branch with a clean working tree before activation
 - Implementation edits happen in the active worktree, not the protected checkout

@@ -51,16 +51,17 @@ pi-ext/                         # Pi extension package
 ├── package.json                # Extension manifest (extensions, skills, prompts)
 ├── platform/                   # Shared extension platform modules
 │   ├── catalog.ts              # Capability catalog providers/queries
-│   ├── config.ts               # Config reader + SessionState resolver
+│   ├── config.ts               # Config reader + Basecamp config/project state resolver
 │   ├── context.ts              # Prompt context builders + AGENTS.md discovery
 │   ├── exec.ts                 # Cwd-aware exec seam for extension modules
 │   ├── skill-content.ts        # Shared skill file loading/rendering helpers
 │   ├── skill-tracker.ts        # Shared skill invocation state
 │   ├── templates.ts            # Markdown template loader
+│   ├── workspace.ts            # Process-scoped workspace provider/state interfaces
 │   └── utils.ts                # Shared small utilities
 ├── core/
 │   ├── src/
-│   │   ├── runtime/            # Session bootstrap, worktree setup, tool guards
+│   │   ├── runtime/            # Basecamp session/project bootstrap compatibility
 │   │   ├── prompt/             # System prompt assembly + context injection
 │   │   │   └── system-prompts/ # Bundled environment/style/language prompts
 │   │   ├── tools/              # discover, skill, escalate, catalog providers
@@ -69,6 +70,8 @@ pi-ext/                         # Pi extension package
 │   │   └── index.ts            # Core extension registration
 │   ├── skills/                 # gather + pi-development skills
 │   └── prompts/                # Logseq session prompts (reflect, plan)
+├── workspace/
+│   └── src/                    # Repo/worktree service, guards, affinity, commands, unsafe-edit
 ├── workflow/
 │   ├── src/
 │   │   ├── agents/             # Agent discovery, dispatch tool, commands, skills
