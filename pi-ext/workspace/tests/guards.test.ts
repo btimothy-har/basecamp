@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import * as path from "node:path";
 import { describe, it } from "node:test";
 import type { WorkspaceState } from "../../platform/workspace.ts";
-import { registerWorkspaceGuards } from "../../workspace/src/guards.ts";
+import { registerWorkspaceGuards } from "../src/guards.ts";
 
 interface GuardEvent {
 	type: "tool_call";
