@@ -53,6 +53,7 @@ pi-ext/                         # Pi extension package
 │   ├── catalog.ts              # Capability catalog providers/queries
 │   ├── context.ts              # Prompt context builders + AGENTS.md discovery
 │   ├── exec.ts                 # Cwd-aware exec seam for extension modules
+│   ├── model-aliases.ts        # Process-scoped model alias provider seam
 │   ├── skill-content.ts        # Shared skill file loading/rendering helpers
 │   ├── skill-tracker.ts        # Shared skill invocation state
 │   ├── templates.ts            # Markdown template loader
@@ -68,6 +69,8 @@ pi-ext/                         # Pi extension package
 │   │   └── index.ts            # Core extension registration
 │   ├── skills/                 # gather + pi-development skills
 │   └── prompts/                # Logseq session prompts (reflect, plan)
+├── model-aliases/
+│   └── src/                    # Native model alias config reader/provider registration
 ├── projects/
 │   └── src/                    # Project config/state, prompt assembly, header, system prompts
 ├── workspace/
@@ -102,6 +105,10 @@ Prompts are layered (environment → working style → project context → tools
 ### Extension
 
 All skills, agents, hooks, and system prompts are bundled in a single pi extension (`pi-ext/`). This replaces the previous Claude Code plugin system.
+
+### Model Aliases
+
+Model alias resolution is owned by `pi-ext/model-aliases`, backed by `~/.pi/model-aliases/config.json` with schema `{ "version": 1, "aliases": { "fast": "claude-haiku-4-5" } }`. `pi-ext/platform/model-aliases.ts` is only the provider seam; it must not read config, define aliases, or own model-selection policy.
 
 ### Environment Variable Chain
 

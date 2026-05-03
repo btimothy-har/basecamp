@@ -25,13 +25,13 @@ import { formatTaskProgressSummary, renderCompactTaskProgressLines } from "../ta
 import { isAsyncAvailable, spawnAsyncAgent } from "./async-spawn.ts";
 import type { AgentStreamEvent } from "./executor.ts";
 import { spawnAgent } from "./executor.ts";
+import { resolveModel } from "./model-resolution.ts";
 import type {
 	AgentConfig,
 	AgentDetails,
 	AgentPartialDetails,
 	AgentRunKind,
 	AsyncResult,
-	ModelStrategy,
 	ToolCallRecord,
 } from "./types.ts";
 import {
@@ -42,28 +42,6 @@ import {
 	DEFAULT_AGENT_MAX_DEPTH,
 	getAgentRunKind,
 } from "./types.ts";
-
-// ============================================================================
-// Model Resolution
-// ============================================================================
-
-interface ParentModel {
-	id: string;
-	provider: string;
-}
-
-function resolveModel(strategy: ModelStrategy, parentModel: ParentModel | undefined): string | undefined {
-	switch (strategy) {
-		case "default":
-			return undefined;
-		case "inherit":
-			if (!parentModel) return undefined;
-			// Provider-qualify to avoid ambiguous resolution across providers
-			return `${parentModel.provider}/${parentModel.id}`;
-		default:
-			return strategy;
-	}
-}
 
 // ============================================================================
 // Depth Guard

@@ -11,6 +11,7 @@ import type { AssistantMessage, TextContent, ToolCall, ToolResultMessage, UserMe
 import type { ExtensionAPI, ExtensionContext, SessionEntry, Theme } from "@mariozechner/pi-coding-agent";
 import { visibleWidth } from "@mariozechner/pi-tui";
 import { getWorkspaceService, getWorkspaceState, type WorkspaceState } from "../../../platform/workspace";
+import { resolveTitleModel } from "./title-model.ts";
 
 // ============================================================================
 // Background Title Extraction
@@ -120,11 +121,11 @@ function serializeBranch(entries: SessionEntry[]): string {
 async function extractTitle(
 	conversation: string,
 	cwd: string,
-	fallbackModel?: string,
+	model?: string,
 	onError?: (msg: string) => void,
 ): Promise<string | null> {
 	try {
-		const stdout = await piPrint(fallbackModel, TITLE_SYSTEM_PROMPT, TITLE_PROMPT + conversation, cwd, 30_000);
+		const stdout = await piPrint(model, TITLE_SYSTEM_PROMPT, TITLE_PROMPT + conversation, cwd, 30_000);
 		const firstLine = stdout.trim().split("\n")[0] ?? "";
 		const cleaned = firstLine
 			.replace(/\*\*/g, "")
@@ -236,7 +237,7 @@ export function registerTitle(pi: ExtensionAPI): void {
 
 			cmdCtx.ui.notify("Extracting title...", "info");
 			const onError = (msg: string) => cmdCtx.ui.notify(`Title error: ${msg}`, "error");
-			const extracted = await extractTitle(conversation, cmdCtx.cwd, cmdCtx.model?.id, onError);
+			const extracted = await extractTitle(conversation, cmdCtx.cwd, resolveTitleModel(), onError);
 			if (extracted) {
 				title = extracted;
 				const display = displayTitle();
@@ -284,7 +285,7 @@ export function registerTitle(pi: ExtensionAPI): void {
 		}
 		if (!conversation.trim()) return;
 
-		extractTitle(conversation, getTitleExtractionCwd(), agentCtx.model?.id)
+		extractTitle(conversation, getTitleExtractionCwd(), resolveTitleModel())
 			.then((extracted) => {
 				if (controller.signal.aborted) return;
 				if (extracted) {
