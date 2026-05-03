@@ -20,7 +20,7 @@ type GlobalWithAgentModeState = typeof globalThis & {
 function getModeState(): AgentModeState {
 	const scope = globalThis as GlobalWithAgentModeState;
 	// Pi loads package extension entries with separate Jiti module caches, so
-	// module-level state is not shared between core/workflow extension entries.
+	// module-level state is not shared between extension entries.
 	scope[MODE_STATE_KEY] ??= { mode: DEFAULT_AGENT_MODE, listeners: new Set() };
 	return scope[MODE_STATE_KEY];
 }

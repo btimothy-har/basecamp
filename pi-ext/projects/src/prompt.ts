@@ -2,7 +2,7 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
-import { getAgentMode } from "../../core/src/runtime/mode.ts";
+import { getAgentMode } from "../../platform/session.ts";
 import { type CatalogItem, listCatalogItemsByType } from "../../platform/catalog.ts";
 import {
 	buildCapabilitiesIndex,

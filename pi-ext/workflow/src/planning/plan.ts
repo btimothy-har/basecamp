@@ -14,7 +14,7 @@
 
 import type { ExtensionAPI, ExtensionContext, Theme } from "@mariozechner/pi-coding-agent";
 import { Type } from "@sinclair/typebox";
-import { getAgentMode, setAgentMode } from "../../../core/src/runtime/mode";
+import { getAgentMode, setAgentMode } from "../../../platform/session";
 import {
 	activateWorkspaceWorktree,
 	getWorkspaceState,

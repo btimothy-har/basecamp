@@ -1,5 +1,5 @@
 import type { ThemeColor } from "@mariozechner/pi-coding-agent";
-import type { AgentMode } from "../runtime/mode";
+import type { AgentMode } from "../../../platform/session";
 
 type ModeStyle = {
 	label: string | null;
