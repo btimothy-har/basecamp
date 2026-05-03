@@ -8,7 +8,8 @@
 import * as os from "node:os";
 import type { ExtensionAPI, Theme } from "@mariozechner/pi-coding-agent";
 import { truncateToWidth } from "@mariozechner/pi-tui";
-import { getState } from "../runtime/session";
+import { getProjectState } from "../../../platform/session";
+import { getWorkspaceState } from "../../../platform/workspace";
 
 type ThemeFg = (color: Parameters<Theme["fg"]>[0], text: string) => string;
 
@@ -19,39 +20,45 @@ function shortenPath(p: string): string {
 }
 
 function buildBanner(fg: ThemeFg, width: number): string[] {
-	const state = getState();
+	const workspace = getWorkspaceState();
+	const project = getProjectState();
+	const executionTarget = workspace?.executionTarget ?? null;
+	const protectedRoot = workspace?.protectedRoot ?? workspace?.repo?.root ?? null;
 	const lines: string[] = [];
 
 	// Title line
-	const title = state.projectName
-		? `${fg("accent", "basecamp")} ${fg("dim", "·")} ${fg("text", state.projectName)}`
+	const title = project?.projectName
+		? `${fg("accent", "basecamp")} ${fg("dim", "·")} ${fg("text", project.projectName)}`
 		: fg("accent", "basecamp");
 	lines.push(truncateToWidth(title, width, fg("dim", "…")));
 
 	// Info rows
 	const rows: [string, string][] = [];
 
-	rows.push(["Protected", shortenPath(state.repoRoot)]);
+	if (protectedRoot) {
+		rows.push(["Protected", shortenPath(protectedRoot)]);
+	}
 
-	if (state.worktreeLabel && state.worktreeDir) {
-		const branch = state.worktreeBranch ? fg("dim", ` (${state.worktreeBranch})`) : "";
-		rows.push(["Worktree", `${state.worktreeLabel}${branch} ${fg("dim", "·")} ${shortenPath(state.worktreeDir)}`]);
+	if (executionTarget) {
+		const branch = executionTarget.branch ? fg("dim", ` (${executionTarget.branch})`) : "";
+		rows.push(["Worktree", `${executionTarget.label}${branch} ${fg("dim", "·")} ${shortenPath(executionTarget.path)}`]);
 	} else {
 		rows.push(["Worktree", "not active"]);
 	}
 
-	if (state.unsafeEdit) {
+	if (workspace?.unsafeEdit) {
 		rows.push(["Unsafe edit", `${fg("error", "active")} ${fg("dim", "(--unsafe-edit)")}`]);
 	}
 
-	if (state.additionalDirs.length > 0) {
-		for (let i = 0; i < state.additionalDirs.length; i++) {
+	const additionalDirs = project?.additionalDirs ?? [];
+	if (additionalDirs.length > 0) {
+		for (let i = 0; i < additionalDirs.length; i++) {
 			const label = i === 0 ? "Added dirs" : "";
-			rows.push([label, shortenPath(state.additionalDirs[i]!)]);
+			rows.push([label, shortenPath(additionalDirs[i]!)]);
 		}
 	}
 
-	rows.push(["Style", state.workingStyle]);
+	rows.push(["Style", project?.workingStyle ?? "engineering"]);
 
 	// Render rows with aligned labels, truncated to terminal width
 	const labelWidth = Math.max(...rows.map(([label]) => label.length));

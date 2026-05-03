@@ -11,7 +11,7 @@ import type { AssistantMessage, TextContent, ToolCall, ToolResultMessage, UserMe
 import type { ExtensionAPI, ExtensionContext, SessionEntry, Theme } from "@mariozechner/pi-coding-agent";
 import { visibleWidth } from "@mariozechner/pi-tui";
 import { getPiCommand, resolveModelAlias } from "../../../platform/config.ts";
-import { getEffectiveCwd } from "../runtime/session";
+import { getWorkspaceService, getWorkspaceState, type WorkspaceState } from "../../../platform/workspace";
 
 // ============================================================================
 // Background Title Extraction
@@ -24,6 +24,18 @@ const TITLE_PROMPT = `Give a short title (4-5 words) that captures the overall t
 
 Conversation:
 `;
+
+function getTitleExtractionCwd(workspace: WorkspaceState | null = getWorkspaceState()): string {
+	const service = getWorkspaceService();
+	if (service && workspace) {
+		try {
+			return service.getEffectiveCwd();
+		} catch {
+			// Fall through to workspace/process fallback
+		}
+	}
+	return workspace?.effectiveCwd ?? process.cwd();
+}
 
 function piPrint(model: string, systemPrompt: string, prompt: string, cwd: string, timeout: number): Promise<string> {
 	return new Promise((resolve, reject) => {
@@ -270,7 +282,7 @@ export function registerTitle(pi: ExtensionAPI): void {
 		}
 		if (!conversation.trim()) return;
 
-		extractTitle(conversation, getEffectiveCwd(), agentCtx.model?.id)
+		extractTitle(conversation, getTitleExtractionCwd(), agentCtx.model?.id)
 			.then((extracted) => {
 				if (controller.signal.aborted) return;
 				if (extracted) {

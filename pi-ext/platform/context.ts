@@ -12,7 +12,8 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import type { CatalogItem } from "./catalog";
-import type { SessionState } from "./config";
+import type { BasecampProjectState } from "./config";
+import type { WorkspaceState } from "./workspace";
 
 /**
  * Build the worktree warning block.
@@ -21,10 +22,10 @@ import type { SessionState } from "./config";
  * safety-critical: project edits must happen in the worktree while the
  * protected checkout stays on the default branch with a clean status.
  */
-export function buildWorktreeWarning(state: SessionState): string | null {
-	if (!state.worktreeDir || !state.worktreeLabel) return null;
+export function buildWorktreeWarning(workspace: WorkspaceState | null): string | null {
+	if (!workspace?.executionTarget) return null;
 
-	return "⚠ WORKTREE ACTIVE: Relative file-tool paths and bash commands run from the working directory. Do not edit the protected repository checkout.";
+	return "⚠ WORKSPACE ACTIVE: Relative file-tool paths and bash commands run from the working directory. Do not edit the protected repository checkout.";
 }
 
 /**
@@ -36,12 +37,12 @@ export function buildWorktreeWarning(state: SessionState): string | null {
  *
  * Returns null if neither source has content.
  */
-export function buildProjectContext(state: SessionState, contextFiles?: ContextFile[]): string | null {
+export function buildProjectContext(project: BasecampProjectState | null, contextFiles?: ContextFile[]): string | null {
 	const parts: string[] = [];
 
 	// Basecamp project context
-	if (state.contextContent) {
-		parts.push(state.contextContent);
+	if (project?.contextContent) {
+		parts.push(project.contextContent);
 	}
 
 	// Pi-native context files (CLAUDE.md / AGENTS.md)

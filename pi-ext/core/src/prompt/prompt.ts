@@ -17,7 +17,7 @@ import * as os from "node:os";
 import * as path from "node:path";
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { type CatalogItem, listCatalogItemsByType } from "../../../platform/catalog";
-import { getLanguage, getLogseqGraph, getTimezone, type SessionState } from "../../../platform/config";
+import { type BasecampProjectState, getLanguage, getLogseqGraph, getTimezone } from "../../../platform/config";
 import {
 	buildCapabilitiesIndex,
 	buildProjectContext,
@@ -25,8 +25,9 @@ import {
 	type ContextFile,
 	discoverContextFiles,
 } from "../../../platform/context";
+import { getProjectState } from "../../../platform/session";
+import { getWorkspaceService, getWorkspaceState, type WorkspaceState } from "../../../platform/workspace";
 import { getAgentMode } from "../runtime/mode";
-import { getEffectiveCwd, getState } from "../runtime/session";
 
 // ---------------------------------------------------------------------------
 // Paths
@@ -99,7 +100,24 @@ function loadLanguagePrompt(name: string): string {
 // Env block
 // ---------------------------------------------------------------------------
 
-function buildEnvBlock(state: SessionState, modelId?: string): string {
+function getPromptEffectiveCwd(workspace: WorkspaceState | null = getWorkspaceState()): string {
+	const service = getWorkspaceService();
+	if (service && workspace) {
+		try {
+			return service.getEffectiveCwd();
+		} catch {
+			// Fall through to state/process fallback
+		}
+	}
+	return workspace?.effectiveCwd ?? process.cwd();
+}
+
+function buildEnvBlock(
+	workspace: WorkspaceState | null,
+	project: BasecampProjectState | null,
+	effectiveCwd: string,
+	modelId?: string,
+): string {
 	const user = process.env.USER || os.userInfo().username || "unknown";
 	const tz = getTimezone();
 	const today = new Intl.DateTimeFormat("en-CA", {
@@ -110,8 +128,9 @@ function buildEnvBlock(state: SessionState, modelId?: string): string {
 	}).format(new Date());
 
 	const modelName = modelId ?? "an AI assistant";
-
-	const currentDir = getEffectiveCwd();
+	const repo = workspace?.repo ?? null;
+	const executionTarget = workspace?.executionTarget ?? null;
+	const protectedRoot = workspace?.protectedRoot ?? repo?.root ?? null;
 	const lines: string[] = [
 		`You are ${modelName}. You are operating inside pi-coding-agent, a terminal based AI harness.`,
 		"",
@@ -121,40 +140,41 @@ function buildEnvBlock(state: SessionState, modelId?: string): string {
 		"",
 	];
 
-	if (state.worktreeDir && state.worktreeLabel) {
-		const branch = state.worktreeBranch ? `, branch: ${state.worktreeBranch}` : "";
-		lines.push(`Working directory: ${currentDir} (active worktree: ${state.worktreeLabel}${branch})`);
-		lines.push(`Protected repository checkout: ${state.repoRoot}`);
-	} else if (state.isRepo) {
-		lines.push(`Working directory: ${currentDir} (protected repository checkout; no active worktree)`);
-		if (path.resolve(currentDir) !== path.resolve(state.repoRoot)) {
-			lines.push(`Protected repository checkout: ${state.repoRoot}`);
+	if (executionTarget) {
+		const branch = executionTarget.branch ? `, branch: ${executionTarget.branch}` : "";
+		lines.push(`Working directory: ${effectiveCwd} (active worktree: ${executionTarget.label}${branch})`);
+		if (protectedRoot) lines.push(`Protected repository checkout: ${protectedRoot}`);
+	} else if (repo?.isRepo) {
+		lines.push(`Working directory: ${effectiveCwd} (protected repository checkout; no active worktree)`);
+		if (protectedRoot && path.resolve(effectiveCwd) !== path.resolve(protectedRoot)) {
+			lines.push(`Protected repository checkout: ${protectedRoot}`);
 		}
 	} else {
-		lines.push(`Working directory: ${currentDir}`);
+		lines.push(`Working directory: ${effectiveCwd}`);
 	}
 
-	const worktreeWarning = buildWorktreeWarning(state);
+	const worktreeWarning = buildWorktreeWarning(workspace);
 	if (worktreeWarning) {
 		lines.push("", worktreeWarning, "");
 	}
 
-	lines.push(`Is directory a git repo: ${state.isRepo ? "Yes" : "No"}`);
+	lines.push(`Is directory a git repo: ${repo?.isRepo ? "Yes" : "No"}`);
 
-	if (state.remoteUrl) {
-		lines.push(`Git remote: ${state.remoteUrl}`);
+	if (repo?.remoteUrl) {
+		lines.push(`Git remote: ${repo.remoteUrl}`);
 	}
 
-	if (state.additionalDirs.length > 0) {
+	const additionalDirs = project?.additionalDirs ?? [];
+	if (additionalDirs.length > 0) {
 		lines.push("");
 		lines.push("Other directories:");
-		for (const dir of state.additionalDirs) {
+		for (const dir of additionalDirs) {
 			lines.push(`- ${dir}`);
 		}
 	}
 
 	lines.push("");
-	lines.push(`Scratch directory: ${state.scratchDir}`);
+	lines.push(`Scratch directory: ${workspace?.scratchDir ?? path.join("/tmp", "pi", path.basename(effectiveCwd))}`);
 
 	return lines.join("\n");
 }
@@ -164,7 +184,9 @@ function buildEnvBlock(state: SessionState, modelId?: string): string {
 // ---------------------------------------------------------------------------
 
 export interface AssembleOptions {
-	state: SessionState;
+	workspace: WorkspaceState | null;
+	project: BasecampProjectState | null;
+	effectiveCwd: string;
 	toolItems: CatalogItem[];
 	skillItems: CatalogItem[];
 	agentItems: CatalogItem[];
@@ -198,7 +220,8 @@ export interface AssembleOptions {
  *   7. Env block (dynamic — identity, user, platform, date, dirs)
  */
 export function assemblePrompt(opts: AssembleOptions): string {
-	const { state, toolItems, skillItems, agentItems, contextFiles, modelId } = opts;
+	const { workspace, project, effectiveCwd, toolItems, skillItems, agentItems, contextFiles, modelId } = opts;
+	const workingStyle = project?.workingStyle ?? "engineering";
 
 	const parts: string[] = [];
 
@@ -221,7 +244,7 @@ export function assemblePrompt(opts: AssembleOptions): string {
 	if (opts.agentPrompt) {
 		parts.push(opts.agentPrompt);
 	} else {
-		const style = loadWorkingStyle(state.workingStyle).trim();
+		const style = loadWorkingStyle(workingStyle).trim();
 		if (style) {
 			parts.push(style);
 		}
@@ -243,7 +266,7 @@ export function assemblePrompt(opts: AssembleOptions): string {
 	}
 
 	// 4. Logseq graph (when configured and not in logseq working style)
-	if (state.workingStyle !== "logseq") {
+	if (workingStyle !== "logseq") {
 		const logseqGraph = getLogseqGraph();
 		if (logseqGraph) {
 			let logseq = loadPromptFile("logseq.md").trim();
@@ -265,13 +288,13 @@ export function assemblePrompt(opts: AssembleOptions): string {
 	);
 
 	// 6. Project context (basecamp context + CLAUDE.md/AGENTS.md)
-	const projectContext = buildProjectContext(state, contextFiles);
+	const projectContext = buildProjectContext(project, contextFiles);
 	if (projectContext) {
 		parts.push(projectContext);
 	}
 
 	// 7. Env block (dynamic — identity, user, platform, date, directories, scratch dir)
-	parts.push(buildEnvBlock(state, modelId));
+	parts.push(buildEnvBlock(workspace, project, effectiveCwd, modelId));
 
 	return parts.join("\n\n");
 }
@@ -290,8 +313,9 @@ export function registerPrompt(pi: ExtensionAPI): void {
 			return;
 		}
 
-		const state = getState();
-		const effectiveCwd = getEffectiveCwd();
+		const workspace = getWorkspaceState();
+		const project = getProjectState();
+		const effectiveCwd = getPromptEffectiveCwd(workspace);
 
 		const catalogContext = { cwd: effectiveCwd };
 		const toolItems = listCatalogItemsByType("tools", catalogContext);
@@ -313,7 +337,9 @@ export function registerPrompt(pi: ExtensionAPI): void {
 		}
 
 		const prompt = assemblePrompt({
-			state,
+			workspace,
+			project,
+			effectiveCwd,
 			toolItems,
 			skillItems,
 			agentItems,

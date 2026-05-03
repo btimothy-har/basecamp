@@ -16,8 +16,8 @@ import { dirname, join, resolve } from "node:path";
 import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-agent";
 import { truncateToWidth, visibleWidth } from "@mariozechner/pi-tui";
 import { getInvokedSkills } from "../../../platform/skill-tracker";
+import { getWorkspaceService, getWorkspaceState, type WorkspaceState } from "../../../platform/workspace";
 import { type AgentMode, getAgentMode, onAgentModeChange } from "../runtime/mode";
-import { getEffectiveCwd, getState } from "../runtime/session";
 import { getModeLabel } from "./mode-style";
 
 type ThemeFg = (color: Parameters<import("@mariozechner/pi-coding-agent").Theme["fg"]>[0], text: string) => string;
@@ -87,6 +87,18 @@ function disposeWorktreeWatcher(): void {
 	worktreeHeadWatcher = null;
 	worktreeWatcherInitialized = false;
 	worktreeBranchCache = null;
+}
+
+function getFooterEffectiveCwd(workspace: WorkspaceState | null): string {
+	const service = getWorkspaceService();
+	if (service && workspace) {
+		try {
+			return service.getEffectiveCwd();
+		} catch {
+			// Fall through to workspace/process fallback
+		}
+	}
+	return workspace?.effectiveCwd ?? process.cwd();
 }
 
 function shortenPath(p: string): string {
@@ -160,12 +172,14 @@ export function registerFooter(pi: ExtensionAPI): void {
 				invalidate() {},
 				render(width: number): string[] {
 					const fg = theme.fg.bind(theme);
-					const state = getState();
+					const workspace = getWorkspaceState();
+					const effectiveCwd = getFooterEffectiveCwd(workspace);
+					const executionTarget = workspace?.executionTarget ?? null;
 
-					if (state.worktreeDir) initWorktreeWatcher(state.worktreeDir);
+					if (executionTarget) initWorktreeWatcher(executionTarget.path);
 
 					// ── Line 1: cwd | worktree | branch ... cost + model ──
-					const l1Left = buildLocationSegment(fg, state, footerData);
+					const l1Left = buildLocationSegment(fg, workspace, effectiveCwd, footerData);
 					const l1Right = buildModelSegment(fg, ctx, pi);
 					const line1 = layoutLine(l1Left, l1Right, width, fg);
 
@@ -219,24 +233,26 @@ export function registerFooter(pi: ExtensionAPI): void {
 
 function buildLocationSegment(
 	fg: ThemeFg,
-	state: ReturnType<typeof getState>,
+	workspace: WorkspaceState | null,
+	effectiveCwd: string,
 	footerData: { getGitBranch(): string | null },
 ): string {
 	const parts: string[] = [];
 	const modeSegment = buildModeSegment(fg, getAgentMode());
+	const executionTarget = workspace?.executionTarget ?? null;
 	if (modeSegment) parts.push(modeSegment);
-	parts.push(fg("dim", shortenPath(getEffectiveCwd())));
+	parts.push(fg("dim", shortenPath(effectiveCwd)));
 
-	if (state.worktreeLabel) {
-		parts.push(fg("warning", `⌥ ${state.worktreeLabel}`));
-		if (state.unsafeEdit) parts.push(fg("error", "⚠ unsafe-edit"));
-	} else if (state.unsafeEdit) {
+	if (executionTarget) {
+		parts.push(fg("warning", `⌥ ${executionTarget.label}`));
+		if (workspace?.unsafeEdit) parts.push(fg("error", "⚠ unsafe-edit"));
+	} else if (workspace?.unsafeEdit) {
 		parts.push(fg("error", "⌥ unsafe-edit"));
 	} else {
 		parts.push(fg("muted", "⌥ protected"));
 	}
 
-	const branch = state.worktreeDir ? worktreeBranchCache : footerData.getGitBranch();
+	const branch = executionTarget ? (worktreeBranchCache ?? executionTarget.branch) : footerData.getGitBranch();
 	if (branch) {
 		parts.push(fg("accent", `⎇ ${branch}`));
 	}
