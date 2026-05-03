@@ -25,7 +25,7 @@ import {
 	type ContextFile,
 	discoverContextFiles,
 } from "../../../platform/context";
-import { getProjectState } from "../../../platform/session";
+import { getBasecampProjectState } from "../../../platform/project";
 import { getWorkspaceService, getWorkspaceState, type WorkspaceState } from "../../../platform/workspace";
 import { getAgentMode } from "../runtime/mode";
 
@@ -314,7 +314,7 @@ export function registerPrompt(pi: ExtensionAPI): void {
 		}
 
 		const workspace = getWorkspaceState();
-		const project = getProjectState();
+		const project = getBasecampProjectState();
 		const effectiveCwd = getPromptEffectiveCwd(workspace);
 
 		const catalogContext = { cwd: effectiveCwd };

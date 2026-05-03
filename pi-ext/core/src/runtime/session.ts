@@ -15,15 +15,26 @@ import * as fsSync from "node:fs";
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
 import type { ExtensionAPI, ExtensionContext, SessionStartEvent } from "@mariozechner/pi-coding-agent";
-import { getSessionEffectiveCwd, resolveSessionState, type SessionState } from "../../../platform/config";
+import {
+	type BasecampProjectState,
+	getSessionEffectiveCwd,
+	resolveSessionState,
+	type SessionState,
+} from "../../../platform/config";
+import {
+	getBasecampProjectState,
+	requireBasecampProjectState,
+	resetBasecampProjectRuntime,
+	setBasecampProjectState,
+} from "../../../platform/project";
 import { getSessionState, requireSessionState, resetSessionRuntime, setSessionState } from "../../../platform/session";
 import {
 	attachWorkspaceWorktreePath,
-	type WorkspaceWorktree,
 	getWorkspaceService,
 	registerWorkspaceAllowedRootsProvider,
 	requireWorkspaceState,
 	type WorkspaceState,
+	type WorkspaceWorktree,
 } from "../../../platform/workspace";
 import {
 	appendWorkspaceAffinity,
@@ -70,6 +81,17 @@ function setBasecampEnv(s: SessionState): void {
 	process.env.BASECAMP_SCRATCH_DIR = s.scratchDir;
 	process.env.BASECAMP_WORKTREE_DIR = s.worktreeDir ?? "";
 	process.env.BASECAMP_WORKTREE_LABEL = s.worktreeLabel ?? "";
+}
+
+function sessionStateToProjectState(s: SessionState): BasecampProjectState {
+	return {
+		projectName: s.projectName,
+		project: s.project,
+		additionalDirs: s.additionalDirs,
+		workingStyle: s.workingStyle,
+		contextContent: s.contextContent,
+		projectWarnings: s.projectWarnings,
+	};
 }
 
 interface WorktreeApplyOptions {
@@ -140,6 +162,7 @@ function setSessionStateFromWorkspace(workspaceState: WorkspaceState, styleOverr
 	});
 	sessionState.unsafeEdit = workspaceState.unsafeEdit;
 	setSessionState(sessionState);
+	setBasecampProjectState(sessionStateToProjectState(sessionState));
 }
 
 interface LegacySessionSyncGlobal {
@@ -224,13 +247,14 @@ export function registerSession(pi: ExtensionAPI): void {
 
 	registerWorkspaceAllowedRootsProvider({
 		id: "basecamp-project",
-		roots: () => getSessionState()?.additionalDirs ?? [],
+		roots: () => getBasecampProjectState()?.additionalDirs ?? [],
 	});
 
 	// --- Session start: resolve everything ---
 	pi.on("session_start", async (event, ctx) => {
 		resetAgentMode();
 		resetSessionRuntime();
+		resetBasecampProjectRuntime();
 
 		const worktreeDir = (pi.getFlag("worktree-dir") as string | undefined) ?? null;
 		const styleOverride = (pi.getFlag("style") as string | undefined) ?? undefined;
@@ -249,7 +273,7 @@ export function registerSession(pi: ExtensionAPI): void {
 		// Build legacy session state from workspace runtime state for compatibility.
 		setSessionStateFromWorkspace(workspaceState, styleOverride);
 
-		for (const warning of requireSessionState().projectWarnings) {
+		for (const warning of requireBasecampProjectState().projectWarnings) {
 			ctx.ui.notify(`basecamp: ${warning}`, "warning");
 		}
 

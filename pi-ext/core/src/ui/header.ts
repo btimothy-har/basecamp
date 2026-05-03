@@ -8,7 +8,7 @@
 import * as os from "node:os";
 import type { ExtensionAPI, Theme } from "@mariozechner/pi-coding-agent";
 import { truncateToWidth } from "@mariozechner/pi-tui";
-import { getProjectState } from "../../../platform/session";
+import { getBasecampProjectState } from "../../../platform/project";
 import { getWorkspaceState } from "../../../platform/workspace";
 
 type ThemeFg = (color: Parameters<Theme["fg"]>[0], text: string) => string;
@@ -21,7 +21,7 @@ function shortenPath(p: string): string {
 
 function buildBanner(fg: ThemeFg, width: number): string[] {
 	const workspace = getWorkspaceState();
-	const project = getProjectState();
+	const project = getBasecampProjectState();
 	const activeWorktree = workspace?.activeWorktree ?? null;
 	const protectedRoot = workspace?.protectedRoot ?? workspace?.repo?.root ?? null;
 	const lines: string[] = [];
