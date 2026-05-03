@@ -7,7 +7,6 @@ import { registerWorktreeCommand } from "./commands.ts";
 import { registerWorkspaceGuards } from "./guards.ts";
 import { registerWorkspaceRuntime } from "./service.ts";
 
-export * from "./affinity.ts";
 export * from "./commands.ts";
 export * from "./constants.ts";
 export * from "./guards.ts";

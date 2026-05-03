@@ -23,17 +23,16 @@ import {
 	setBasecampProjectState,
 } from "../../../platform/project";
 import {
+	appendWorkspaceWorktreeAffinity,
 	attachWorkspaceWorktreePath,
+	initializeWorkspace,
+	latestWorkspaceWorktreeAffinity,
 	registerWorkspaceAllowedRootsProvider,
+	requireWorkspaceService,
 	requireWorkspaceState,
+	workspaceMatchesWorktreeAffinity,
 	type WorkspaceWorktree,
 } from "../../../platform/workspace";
-import {
-	appendWorkspaceAffinity,
-	latestWorkspaceAffinity,
-	repoMatchesWorkspaceAffinity,
-} from "../../../workspace/src/affinity.ts";
-import { registerWorkspaceRuntime } from "../../../workspace/src/service.ts";
 import { resetAgentMode } from "./mode";
 
 function setBasecampProjectEnv(): void {
@@ -46,7 +45,7 @@ interface WorktreeApplyOptions {
 
 function applyWorktree(pi: ExtensionAPI, target: WorkspaceWorktree, options: WorktreeApplyOptions = {}): void {
 	if (options.persistAffinity ?? true) {
-		appendWorkspaceAffinity(pi, requireWorkspaceState(), target);
+		appendWorkspaceWorktreeAffinity(pi, requireWorkspaceState(), target);
 	}
 }
 
@@ -66,8 +65,8 @@ async function restoreWorktreeAffinity(pi: ExtensionAPI, ctx: ExtensionContext):
 	const workspaceState = requireWorkspaceState();
 	if (!workspaceState.repo) return;
 
-	const affinity = latestWorkspaceAffinity(ctx.sessionManager.getBranch());
-	if (!affinity || !repoMatchesWorkspaceAffinity(workspaceState, affinity)) return;
+	const affinity = latestWorkspaceWorktreeAffinity(ctx.sessionManager.getBranch());
+	if (!affinity || !workspaceMatchesWorktreeAffinity(workspaceState, affinity)) return;
 
 	try {
 		const wt = await attachWorktree(pi, affinity.worktree.path, { persistAffinity: false });
@@ -79,7 +78,7 @@ async function restoreWorktreeAffinity(pi: ExtensionAPI, ctx: ExtensionContext):
 }
 
 export function registerSession(pi: ExtensionAPI): void {
-	const workspace = registerWorkspaceRuntime(pi);
+	requireWorkspaceService();
 
 	pi.registerFlag("worktree-dir", {
 		description: "Attach to an existing workspace worktree directory",
@@ -115,7 +114,7 @@ export function registerSession(pi: ExtensionAPI): void {
 		const styleOverride = (pi.getFlag("style") as string | undefined) ?? undefined;
 		const launchCwd = path.resolve(ctx.cwd);
 
-		const { state: workspaceState, unsafeEditResult } = await workspace.initialize({
+		const { state: workspaceState, unsafeEditResult } = await initializeWorkspace({
 			launchCwd,
 			unsafeEditFlag: pi.getFlag("unsafe-edit") === true,
 			unsafeEditConstraints: {

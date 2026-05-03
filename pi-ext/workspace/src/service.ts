@@ -5,13 +5,17 @@ import { registerCwdProvider } from "../../platform/exec.ts";
 import {
 	type RepoContext,
 	registerWorkspaceService,
+	type UnsafeEditConstraints,
+	type UnsafeEditFlagResult,
+	type WorkspaceInitializeOptions,
+	type WorkspaceInitializeResult,
 	type WorkspaceService,
 	type WorkspaceState,
 	type WorkspaceWorktree,
 } from "../../platform/workspace.ts";
 import { SCRATCH_ROOT } from "./constants.ts";
 import { resolveGitInfo } from "./repo.ts";
-import { applyUnsafeEditFlag, type UnsafeEditConstraints, type UnsafeEditFlagResult } from "./unsafe-edit.ts";
+import { applyUnsafeEditFlag } from "./unsafe-edit.ts";
 import { attachWorktreeDir, getOrCreateWorktree, listWorktrees as listGitWorktrees, type WorktreeResult } from "./worktree.ts";
 
 interface WorkspaceRuntimeGlobal {
@@ -23,17 +27,6 @@ const workspaceRuntimeKey = Symbol.for("basecamp.workspace.runtime");
 type GlobalWithWorkspaceRuntime = typeof globalThis & {
 	[workspaceRuntimeKey]?: WorkspaceRuntimeGlobal;
 };
-
-export interface WorkspaceInitializeOptions {
-	launchCwd: string;
-	unsafeEditFlag: boolean;
-	unsafeEditConstraints: UnsafeEditConstraints;
-}
-
-export interface WorkspaceInitializeResult {
-	state: WorkspaceState;
-	unsafeEditResult: UnsafeEditFlagResult;
-}
 
 function getWorkspaceRuntimeGlobal(): WorkspaceRuntimeGlobal {
 	const globalObject = globalThis as GlobalWithWorkspaceRuntime;

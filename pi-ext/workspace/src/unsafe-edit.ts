@@ -1,17 +1,4 @@
-import type { WorkspaceState } from "../../platform/workspace";
-
-export interface UnsafeEditConstraints {
-	readOnly: boolean;
-	hasUI: boolean;
-	isSubagent: boolean;
-}
-
-export type UnsafeEditFlagResult =
-	| "disabled"
-	| "enabled"
-	| "ignored-read-only"
-	| "ignored-subagent"
-	| "ignored-non-interactive";
+import type { UnsafeEditConstraints, UnsafeEditFlagResult, WorkspaceState } from "../../platform/workspace";
 
 export function applyUnsafeEditFlag(
 	state: WorkspaceState,

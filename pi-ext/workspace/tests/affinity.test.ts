@@ -2,16 +2,20 @@ import assert from "node:assert/strict";
 import * as path from "node:path";
 import { describe, it } from "node:test";
 import type { SessionEntry } from "@mariozechner/pi-coding-agent";
-import type { WorkspaceState } from "../../platform/workspace.ts";
-import { latestWorkspaceAffinity, repoMatchesWorkspaceAffinity, type WorkspaceAffinity } from "../src/affinity.ts";
-import { WORKTREE_AFFINITY_ENTRY } from "../src/constants.ts";
+import {
+	latestWorkspaceWorktreeAffinity,
+	workspaceMatchesWorktreeAffinity,
+	WORKTREE_AFFINITY_ENTRY,
+	type WorkspaceState,
+	type WorkspaceWorktreeAffinity,
+} from "../../platform/workspace.ts";
 
 const REPO_ROOT = "/repo";
 const REPO_NAME = "repo";
 const REMOTE_URL = "git@github.com:test/repo.git";
 const WORKTREE_DIR = "/worktrees/repo/feature";
 
-function affinity(overrides: Partial<WorkspaceAffinity> = {}): WorkspaceAffinity {
+function affinity(overrides: Partial<WorkspaceWorktreeAffinity> = {}): WorkspaceWorktreeAffinity {
 	return {
 		version: 1,
 		repoName: REPO_NAME,
@@ -57,7 +61,7 @@ function workspaceState(overrides: Partial<WorkspaceState> = {}): WorkspaceState
 }
 
 describe("workspace affinity", () => {
-	describe("latestWorkspaceAffinity", () => {
+	describe("latestWorkspaceWorktreeAffinity", () => {
 		it("returns the latest valid affinity entry when scanning backward", () => {
 			const older = affinity({
 				worktree: { kind: "git-worktree", label: "older", path: "/wt/older", branch: "old", created: false },
@@ -66,7 +70,7 @@ describe("workspace affinity", () => {
 				worktree: { kind: "git-worktree", label: "latest", path: "/wt/latest", branch: "new", created: false },
 			});
 
-			assert.deepEqual(latestWorkspaceAffinity([entry(older), entry(latest)]), latest);
+			assert.deepEqual(latestWorkspaceWorktreeAffinity([entry(older), entry(latest)]), latest);
 		});
 
 		it("skips invalid latest affinity entries in favor of earlier valid ones", () => {
@@ -75,7 +79,7 @@ describe("workspace affinity", () => {
 			});
 
 			assert.deepEqual(
-				latestWorkspaceAffinity([
+				latestWorkspaceWorktreeAffinity([
 					entry(valid),
 					entry({ ...affinity(), version: 2 }),
 					entry({ ...affinity(), repoName: 42 }),
@@ -93,7 +97,7 @@ describe("workspace affinity", () => {
 				entry(null),
 			];
 
-			assert.equal(latestWorkspaceAffinity(entries), null);
+			assert.equal(latestWorkspaceWorktreeAffinity(entries), null);
 		});
 
 		it("accepts null remoteUrl and null branch as valid affinity data", () => {
@@ -102,25 +106,25 @@ describe("workspace affinity", () => {
 				worktree: { kind: "git-worktree", label: "feature", path: WORKTREE_DIR, branch: null, created: false },
 			});
 
-			assert.deepEqual(latestWorkspaceAffinity([entry(valid)]), valid);
+			assert.deepEqual(latestWorkspaceWorktreeAffinity([entry(valid)]), valid);
 		});
 	});
 
-	describe("repoMatchesWorkspaceAffinity", () => {
+	describe("workspaceMatchesWorktreeAffinity", () => {
 		it("returns false when there is no repo", () => {
-			assert.equal(repoMatchesWorkspaceAffinity(workspaceState({ repo: null }), affinity()), false);
+			assert.equal(workspaceMatchesWorktreeAffinity(workspaceState({ repo: null }), affinity()), false);
 		});
 
 		it("returns false for repo name or repo root mismatches", () => {
 			assert.equal(
-				repoMatchesWorkspaceAffinity(
+				workspaceMatchesWorktreeAffinity(
 					workspaceState({ repo: { isRepo: true, name: "other", root: REPO_ROOT, remoteUrl: REMOTE_URL } }),
 					affinity(),
 				),
 				false,
 			);
 			assert.equal(
-				repoMatchesWorkspaceAffinity(
+				workspaceMatchesWorktreeAffinity(
 					workspaceState({ repo: { isRepo: true, name: REPO_NAME, root: "/other", remoteUrl: REMOTE_URL } }),
 					affinity(),
 				),
@@ -130,7 +134,7 @@ describe("workspace affinity", () => {
 
 		it("normalizes equivalent repo root paths", () => {
 			assert.equal(
-				repoMatchesWorkspaceAffinity(
+				workspaceMatchesWorktreeAffinity(
 					workspaceState({
 						repo: { isRepo: true, name: REPO_NAME, root: `${REPO_ROOT}${path.sep}`, remoteUrl: REMOTE_URL },
 					}),
@@ -142,7 +146,7 @@ describe("workspace affinity", () => {
 
 		it("only fails remote URL mismatches when both remotes are non-null and different", () => {
 			assert.equal(
-				repoMatchesWorkspaceAffinity(
+				workspaceMatchesWorktreeAffinity(
 					workspaceState({
 						repo: {
 							isRepo: true,
@@ -156,13 +160,13 @@ describe("workspace affinity", () => {
 				false,
 			);
 			assert.equal(
-				repoMatchesWorkspaceAffinity(
+				workspaceMatchesWorktreeAffinity(
 					workspaceState({ repo: { isRepo: true, name: REPO_NAME, root: REPO_ROOT, remoteUrl: null } }),
 					affinity(),
 				),
 				true,
 			);
-			assert.equal(repoMatchesWorkspaceAffinity(workspaceState(), affinity({ remoteUrl: null })), true);
+			assert.equal(workspaceMatchesWorktreeAffinity(workspaceState(), affinity({ remoteUrl: null })), true);
 		});
 	});
 });

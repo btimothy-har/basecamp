@@ -121,6 +121,10 @@ function createGitExecHandler(effectiveRoot: string, branch = "main"): ExecHandl
 }
 
 registerWorkspaceService({
+	initialize: async () => {
+		if (workspaceState === null) throw new Error("Workspace state is not initialized");
+		return { state: workspaceState, unsafeEditResult: "disabled" };
+	},
 	current: () => workspaceState,
 	require: () => {
 		if (workspaceState === null) throw new Error("Workspace state is not initialized");

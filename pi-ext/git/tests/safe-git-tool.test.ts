@@ -167,6 +167,10 @@ describe("safe_git tool", () => {
 	beforeEach(() => {
 		workspaceState = null;
 		registerWorkspaceService({
+			initialize: async () => {
+				if (workspaceState === null) throw new Error("Workspace state is not initialized");
+				return { state: workspaceState, unsafeEditResult: "disabled" };
+			},
 			current: () => workspaceState,
 			require: () => {
 				if (workspaceState === null) throw new Error("Workspace state is not initialized");
