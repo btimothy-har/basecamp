@@ -1,31 +1,29 @@
 /**
- * /worktree command — switch the active Basecamp worktree.
+ * /worktree command — switch the active workspace worktree.
  */
 
 import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-agent";
-import type { SessionState } from "../../../platform/config";
-import { activateWorktree } from "../runtime/session";
-import { listWorktrees, type WorktreeSummary } from "../runtime/worktree";
+import { appendWorkspaceAffinity } from "./affinity.ts";
+import { requireWorkspaceRuntime } from "./service.ts";
+import { listWorktrees, type WorktreeSummary } from "./worktree.ts";
 
 function formatWorktreeChoice(wt: WorktreeSummary, activeLabel: string | null): string {
 	const marker = wt.label === activeLabel ? " (active)" : "";
 	return `${wt.label}${marker} — ${wt.branch}`;
 }
 
-async function getRegisteredWorktrees(
-	pi: ExtensionAPI,
-	state: SessionState,
-	ctx: ExtensionContext,
-): Promise<WorktreeSummary[] | null> {
-	if (!state.isRepo) {
+async function getRegisteredWorktrees(pi: ExtensionAPI, ctx: ExtensionContext): Promise<WorktreeSummary[] | null> {
+	const workspace = requireWorkspaceRuntime();
+	const state = workspace.current();
+	if (!state?.repo) {
 		ctx.ui.notify("/worktree requires a git repository", "error");
 		return null;
 	}
 
 	try {
-		const worktrees = await listWorktrees(pi, state.repoRoot, state.repoName);
+		const worktrees = await listWorktrees(pi, state.repo.root, state.repo.name);
 		if (worktrees.length === 0) {
-			ctx.ui.notify(`No Basecamp worktrees registered for ${state.repoName}`, "info");
+			ctx.ui.notify(`No workspace worktrees registered for ${state.repo.name}`, "info");
 			return null;
 		}
 		return worktrees;
@@ -50,23 +48,25 @@ async function selectWorktreeLabel(
 		return choice;
 	});
 
-	const choice = await ctx.ui.select("Switch active worktree", choices);
+	const choice = await ctx.ui.select("Switch active workspace worktree", choices);
 	return choice ? (labelsByChoice.get(choice) ?? null) : null;
 }
 
-export function registerWorktreeCommand(pi: ExtensionAPI, getState: () => SessionState): void {
+export function registerWorktreeCommand(pi: ExtensionAPI): void {
 	pi.registerCommand("worktree", {
-		description: "Switch the active Basecamp worktree",
+		description: "Switch the active workspace worktree",
 		handler: async (args, ctx) => {
-			const state = getState();
-			const worktrees = await getRegisteredWorktrees(pi, state, ctx);
-			if (!worktrees) return;
+			const workspace = requireWorkspaceRuntime();
+			const state = workspace.current();
+			const worktrees = await getRegisteredWorktrees(pi, ctx);
+			if (!worktrees || !state?.repo) return;
 
+			const activeTarget = state.executionTarget;
 			const requestedLabel = args?.trim() || null;
 			let label = requestedLabel;
 
 			if (!label) {
-				label = await selectWorktreeLabel(ctx, worktrees, state.worktreeLabel);
+				label = await selectWorktreeLabel(ctx, worktrees, activeTarget?.label ?? null);
 				if (!label) {
 					ctx.ui.notify("Worktree switch cancelled", "info");
 					return;
@@ -75,18 +75,19 @@ export function registerWorktreeCommand(pi: ExtensionAPI, getState: () => Sessio
 
 			const match = worktrees.find((wt) => wt.label === label);
 			if (!match) {
-				ctx.ui.notify(`Unknown Basecamp worktree '${label}'. Use /worktree to choose a registered worktree.`, "error");
+				ctx.ui.notify(`Unknown workspace worktree '${label}'. Use /worktree to choose a registered worktree.`, "error");
 				return;
 			}
 
-			if (state.worktreeLabel === match.label && state.worktreeDir === match.path) {
+			if (activeTarget?.label === match.label && activeTarget.path === match.path) {
 				ctx.ui.notify(`Worktree already active: ${match.label}`, "info");
 				return;
 			}
 
 			try {
-				const wt = await activateWorktree(pi, match.label);
-				ctx.ui.notify(`Worktree active: ${wt.label} (${wt.branch})`, "info");
+				const target = await workspace.attachExecutionTargetPath(match.path);
+				appendWorkspaceAffinity(pi, workspace.require(), target);
+				ctx.ui.notify(`Worktree active: ${target.label} (${target.branch ?? "detached"})`, "info");
 			} catch (err) {
 				const msg = err instanceof Error ? err.message : String(err);
 				ctx.ui.notify(`Worktree switch failed: ${msg}`, "error");

@@ -5,7 +5,6 @@
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { registerModeShortcut } from "./commands/mode";
 import { registerOpenCommand } from "./commands/open";
-import { registerWorktreeCommand } from "./commands/worktree";
 import { registerContextInjection } from "./prompt/context-injection";
 import { registerPrompt } from "./prompt/prompt";
 import { getState, registerSession } from "./runtime/session";
@@ -38,7 +37,6 @@ export default function (pi: ExtensionAPI) {
 	// Primary-only interactions should not be available to subagents.
 	if (!isSubagent) {
 		registerModeShortcut(pi);
-		registerWorktreeCommand(pi, getState);
 		registerEscalate(pi);
 	}
 }

@@ -17,11 +17,20 @@ import * as path from "node:path";
 import type { ExtensionAPI, ExtensionContext, SessionStartEvent } from "@mariozechner/pi-coding-agent";
 import { getSessionEffectiveCwd, resolveSessionState, type SessionState } from "../../../platform/config";
 import { getSessionState, requireSessionState, resetSessionRuntime, setSessionState } from "../../../platform/session";
-import { type ExecutionTarget, getWorkspaceService, type WorkspaceState } from "../../../platform/workspace";
+import {
+	type ExecutionTarget,
+	getWorkspaceService,
+	requireWorkspaceState,
+	type WorkspaceState,
+} from "../../../platform/workspace";
+import {
+	appendWorkspaceAffinity,
+	latestWorkspaceAffinity,
+	repoMatchesWorkspaceAffinity,
+} from "../../../workspace/src/affinity.ts";
 import { registerWorkspaceRuntime } from "../../../workspace/src/service.ts";
 import { resetAgentMode } from "./mode";
 import { registerWorktreeGuards, type WorktreeResult } from "./worktree";
-import { appendWorktreeAffinity, latestWorktreeAffinity, repoMatchesAffinity } from "./worktree-affinity";
 
 export function getEffectiveCwd(): string {
 	const workspace = getWorkspaceService();
@@ -65,6 +74,16 @@ interface WorktreeApplyOptions {
 	persistAffinity?: boolean;
 }
 
+function worktreeResultToExecutionTarget(wt: WorktreeResult): ExecutionTarget {
+	return {
+		kind: "git-worktree",
+		label: wt.label,
+		path: wt.worktreeDir,
+		branch: wt.branch,
+		created: wt.created,
+	};
+}
+
 async function applyWorktree(pi: ExtensionAPI, wt: WorktreeResult, options: WorktreeApplyOptions = {}): Promise<void> {
 	const s = requireSessionState();
 	s.worktreeDir = wt.worktreeDir;
@@ -72,7 +91,14 @@ async function applyWorktree(pi: ExtensionAPI, wt: WorktreeResult, options: Work
 	s.worktreeBranch = wt.branch;
 
 	setBasecampEnv(s);
-	if (options.persistAffinity ?? true) appendWorktreeAffinity(pi, s, wt);
+	if (options.persistAffinity ?? true) {
+		const workspaceState = requireWorkspaceState();
+		const target =
+			workspaceState.executionTarget?.path === wt.worktreeDir
+				? workspaceState.executionTarget
+				: worktreeResultToExecutionTarget(wt);
+		appendWorkspaceAffinity(pi, workspaceState, target);
+	}
 }
 
 function executionTargetToWorktree(target: ExecutionTarget): WorktreeResult {
@@ -123,15 +149,49 @@ function setSessionStateFromWorkspace(workspaceState: WorkspaceState, styleOverr
 	setSessionState(sessionState);
 }
 
-async function restoreWorktreeAffinity(pi: ExtensionAPI, ctx: ExtensionContext): Promise<void> {
-	const state = requireSessionState();
-	if (!state.isRepo) return;
+interface LegacySessionSyncGlobal {
+	registered: boolean;
+}
 
-	const affinity = latestWorktreeAffinity(ctx.sessionManager.getBranch());
-	if (!affinity || !repoMatchesAffinity(state, affinity)) return;
+const legacySessionSyncKey = Symbol.for("basecamp.workspace.legacy-session-sync");
+
+type GlobalWithLegacySessionSync = typeof globalThis & {
+	[legacySessionSyncKey]?: LegacySessionSyncGlobal;
+};
+
+function syncLegacySessionStateFromWorkspace(workspaceState: WorkspaceState | null): void {
+	if (!workspaceState) return;
+
+	const sessionState = getSessionState();
+	if (!sessionState) return;
+
+	sessionState.scratchDir = workspaceState.scratchDir;
+	sessionState.unsafeEdit = workspaceState.unsafeEdit;
+	sessionState.worktreeDir = workspaceState.executionTarget?.path ?? null;
+	sessionState.worktreeLabel = workspaceState.executionTarget?.label ?? null;
+	sessionState.worktreeBranch = workspaceState.executionTarget?.branch ?? null;
+	setBasecampEnv(sessionState);
+}
+
+function registerLegacySessionStateSync(workspace: ReturnType<typeof registerWorkspaceRuntime>): void {
+	const globalObject = globalThis as GlobalWithLegacySessionSync;
+	globalObject[legacySessionSyncKey] ??= { registered: false };
+	const sync = globalObject[legacySessionSyncKey];
+	if (sync.registered) return;
+
+	workspace.onChange(syncLegacySessionStateFromWorkspace);
+	sync.registered = true;
+}
+
+async function restoreWorktreeAffinity(pi: ExtensionAPI, ctx: ExtensionContext): Promise<void> {
+	const workspaceState = requireWorkspaceState();
+	if (!workspaceState.repo) return;
+
+	const affinity = latestWorkspaceAffinity(ctx.sessionManager.getBranch());
+	if (!affinity || !repoMatchesWorkspaceAffinity(workspaceState, affinity)) return;
 
 	try {
-		const wt = await attachWorktree(pi, affinity.worktreeDir, { persistAffinity: false });
+		const wt = await attachWorktree(pi, affinity.executionTarget.path, { persistAffinity: false });
 		ctx.ui.notify(`basecamp: restored worktree → ${wt.label}`, "info");
 	} catch (err) {
 		const msg = err instanceof Error ? err.message : String(err);
@@ -145,10 +205,11 @@ async function restoreWorktreeAffinity(pi: ExtensionAPI, ctx: ExtensionContext):
 
 export function registerSession(pi: ExtensionAPI): void {
 	const workspace = registerWorkspaceRuntime(pi);
+	registerLegacySessionStateSync(workspace);
 
 	// Register CLI flags
 	pi.registerFlag("worktree-dir", {
-		description: "Attach to an existing Basecamp worktree directory",
+		description: "Attach to an existing workspace worktree directory",
 		type: "string",
 	});
 	pi.registerFlag("style", {
