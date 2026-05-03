@@ -24,7 +24,6 @@ PI_DIR = Path.home() / ".pi"
 USER_DIR = PI_DIR / "basecamp"
 USER_PROMPTS_DIR = PI_DIR / "prompts"
 USER_STYLES_DIR = PI_DIR / "styles"
-USER_LANGUAGES_DIR = PI_DIR / "languages"
 USER_CONTEXT_DIR = PI_DIR / "context"
 USER_AGENTS_DIR = PI_DIR / "agents"
 

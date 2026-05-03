@@ -25,7 +25,14 @@ def _to_relative(path_str: str) -> str:
 def _available_styles() -> list[str]:
     """Scan extension + user dirs for available working styles."""
     styles: set[str] = set()
-    ext_styles = SCRIPT_DIR / "pi-ext" / "system-prompts" / "styles"
+    ext_styles = (
+        SCRIPT_DIR
+        / "pi-ext"
+        / "projects"
+        / "src"
+        / "system-prompts"
+        / "styles"
+    )
     if ext_styles.exists():
         styles.update(p.stem for p in ext_styles.glob("*.md"))
     if USER_STYLES_DIR.exists():
@@ -242,7 +249,6 @@ def _prompt_edit_fields(existing: ProjectConfig) -> ProjectConfig | None:
         description=description.strip(),
         working_style=working_style,
         context=context,
-        bigquery=existing.bigquery,
     )
 
 

@@ -4,13 +4,6 @@ from __future__ import annotations
 
 import questionary
 
-from basecamp.cli.language import (
-    BUNDLED_LANGUAGES,
-    execute_language_clear,
-    execute_language_set,
-    execute_language_show,
-)
-from basecamp.cli.model import execute_model_list, execute_model_remove, execute_model_set
 from basecamp.cli.project import (
     execute_project_add,
     execute_project_edit,
@@ -30,9 +23,6 @@ def run_config_menu() -> None:
             "Configure:",
             choices=[
                 "Projects",
-                "Models",
-                "Language",
-                "Pi Command",
                 "Observer",
                 questionary.Separator(),
                 "Done",
@@ -44,12 +34,6 @@ def run_config_menu() -> None:
 
         if section == "Projects":
             _project_menu()
-        elif section == "Models":
-            _model_menu()
-        elif section == "Language":
-            _language_menu()
-        elif section == "Pi Command":
-            _pi_command_menu()
         elif section == "Observer":
             _observer_menu()
 
@@ -98,112 +82,6 @@ def _project_menu() -> None:
             ).ask()
             if name and name != "← Back":
                 execute_project_remove(name)
-
-
-def _model_menu() -> None:
-    """Model alias configuration sub-menu."""
-    while True:
-        execute_model_list()
-
-        action = questionary.select(
-            "Models:",
-            choices=[
-                "Set",
-                "Remove",
-                questionary.Separator(),
-                "← Back",
-            ],
-        ).ask()
-
-        if action is None or action == "← Back":
-            return
-
-        if action == "Set":
-            alias = questionary.text("Alias name (e.g. fast, balanced, complex):").ask()
-            if not alias:
-                continue
-            model_id = questionary.text("Model ID (e.g. claude-haiku-4-5):").ask()
-            if not model_id:
-                continue
-            execute_model_set(alias.strip(), model_id.strip())
-        elif action == "Remove":
-            models = settings.models
-            if not models:
-                console.print("[dim]No model aliases configured.[/dim]")
-                continue
-            alias = questionary.select(
-                "Remove which alias?",
-                choices=[*list(models.keys()), questionary.Separator(), "← Back"],
-            ).ask()
-            if alias and alias != "← Back":
-                execute_model_remove(alias)
-
-
-def _language_menu() -> None:
-    """Language configuration sub-menu."""
-    while True:
-        execute_language_show()
-
-        action = questionary.select(
-            "Language:",
-            choices=[
-                "Set",
-                "Clear",
-                questionary.Separator(),
-                "← Back",
-            ],
-        ).ask()
-
-        if action is None or action == "← Back":
-            return
-
-        if action == "Set":
-            choices = [*BUNDLED_LANGUAGES, "Other (custom)"]
-            lang = questionary.select("Language:", choices=choices).ask()
-            if lang is None:
-                continue
-            if lang == "Other (custom)":
-                lang = questionary.text("Language name:").ask()
-                if not lang:
-                    continue
-            execute_language_set(lang.strip())
-        elif action == "Clear":
-            execute_language_clear()
-
-
-def _pi_command_menu() -> None:
-    """Pi command configuration sub-menu."""
-    while True:
-        current = settings.pi_command
-        if current:
-            console.print(f"\nPi command: [bold green]{current}[/bold green]")
-        else:
-            console.print("\n[dim]No custom pi command (using default 'pi').[/dim]")
-
-        action = questionary.select(
-            "Pi Command:",
-            choices=[
-                "Set",
-                "Clear",
-                questionary.Separator(),
-                "← Back",
-            ],
-        ).ask()
-
-        if action is None or action == "← Back":
-            return
-
-        if action == "Set":
-            value = questionary.text(
-                "Pi command (path or name):",
-                default=current or "pi",
-            ).ask()
-            if value and value.strip():
-                settings.pi_command = value.strip()
-                console.print(f"[green]✓[/green] Pi command → [bold]{value.strip()}[/bold]")
-        elif action == "Clear":
-            settings.pi_command = None
-            console.print("[green]✓[/green] Pi command cleared (using default 'pi')")
 
 
 def _observer_menu() -> None:

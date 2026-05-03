@@ -1,4 +1,4 @@
-"""Persistent configuration for basecamp-core.
+"""Persistent configuration for basecamp.
 
 Stores settings in ~/.pi/basecamp/config.json so they survive across
 installations and invocation paths without relying on environment variables.
@@ -142,83 +142,6 @@ class Settings:
         with self._locked_update() as data:
             data["projects"] = copy.deepcopy(value)
             _migrate_project_dirs(data)
-
-    @property
-    def logseq_graph(self) -> str | None:
-        val = self._read().get("logseq_graph")
-        return val if isinstance(val, str) and val.strip() else None
-
-    @logseq_graph.setter
-    def logseq_graph(self, value: str) -> None:
-        with self._locked_update() as data:
-            data["logseq_graph"] = value
-
-    @property
-    def timezone(self) -> str | None:
-        val = self._read().get("timezone")
-        return val if isinstance(val, str) and val.strip() else None
-
-    @timezone.setter
-    def timezone(self, value: str | None) -> None:
-        with self._locked_update() as data:
-            if value is None:
-                data.pop("timezone", None)
-            else:
-                data["timezone"] = value
-
-    @property
-    def language(self) -> str | None:
-        val = self._read().get("language")
-        return val if isinstance(val, str) and val.strip() else None
-
-    @language.setter
-    def language(self, value: str | None) -> None:
-        with self._locked_update() as data:
-            if value is None:
-                data.pop("language", None)
-            else:
-                data["language"] = value
-
-    @property
-    def pi_command(self) -> str | None:
-        val = self._read().get("pi_command")
-        return val if isinstance(val, str) and val.strip() else None
-
-    @pi_command.setter
-    def pi_command(self, value: str | None) -> None:
-        with self._locked_update() as data:
-            if value is None:
-                data.pop("pi_command", None)
-            else:
-                data["pi_command"] = value
-
-    @property
-    def models(self) -> dict[str, str]:
-        models = self._read().get("models")
-        return models if isinstance(models, dict) else {}
-
-    @models.setter
-    def models(self, value: dict[str, str]) -> None:
-        with self._locked_update() as data:
-            if value:
-                data["models"] = value
-            else:
-                data.pop("models", None)
-
-    @property
-    def bigquery(self) -> dict[str, Any]:
-        bigquery = self._read().get("bigquery")
-        return bigquery if isinstance(bigquery, dict) else {}
-
-    @bigquery.setter
-    def bigquery(self, value: dict[str, Any] | None) -> None:
-        with self._locked_update() as data:
-            if value:
-                data["bigquery"] = value
-            else:
-                data.pop("bigquery", None)
-
-    # --- observer config (nested) ---
 
     @property
     def observer(self) -> ObserverConfig:

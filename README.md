@@ -147,9 +147,9 @@ Projects are defined in `~/.pi/basecamp/config.json`:
 | `additional_dirs` | No | Extra project directories included in prompt context and allowed file roots |
 | `description` | No | Shown in `basecamp config` project listings |
 | `working_style` | No | Loads matching working style prompt (see below) |
-| `context` | No | Loads `~/.pi/context/{name}.md` for project context |
+| `context` | No | Stem only (no `.md`); loads `~/.pi/context/{name}.md` for project context |
 
-The install/setup/config flows migrate legacy `dirs` entries to `repo_root` and `additional_dirs` locally.
+Existing local config files with the older project directory schema are migrated to `repo_root` and `additional_dirs` by setup/config flows.
 
 ## Prompt System
 
@@ -166,20 +166,20 @@ Pi's tool definitions and skill listings are sourced dynamically and included in
 The system prompt is assembled from layered sources:
 
 ```
-Runtime context (paths, platform, date)
+mode prompt, plus read-only constraints when applicable
+         ↓
+working style prompt, or subagent prompt for dispatched agents
          ↓
 environment.md (CLI usage, Python/uv)
          ↓
-working_styles/{name}.md (if configured)
+capabilities index (tools, skills, and parent-session agents)
          ↓
-system.md (working principles, tools, agents)
+project context (configured context plus AGENTS.md/CLAUDE.md)
          ↓
-project context (if configured)
-         ↓
-tools + skills (dynamically sourced from pi)
+runtime environment (paths, platform, date, git/worktree state)
 ```
 
-Override `system.md` by placing a file at `~/.pi/prompts/system.md`.
+Built-in prompt files can be overridden per loaded prompt path under `~/.pi/prompts/` (for example, `~/.pi/prompts/environment.md` or `~/.pi/prompts/modes/executor.md`).
 
 ### Working Styles
 
@@ -189,11 +189,11 @@ Override `system.md` by placing a file at `~/.pi/prompts/system.md`.
 | `advisor` | Advisor role, efficient discovery, direct communication, decision support |
 | `logseq` | Knowledge graph curation, structured entries, user-driven content approval |
 
-Create custom working styles in `~/.pi/styles/`.
+Create custom working styles as `{name}.md` files in `~/.pi/styles/`.
 
 ### Project Context
 
-For multi-repo projects, add cross-repo context in `~/.pi/context/`. The `context` field in project config points to this file.
+For multi-repo projects, add cross-repo context in `~/.pi/context/`. The `context` field in project config is the file stem only; Basecamp appends `.md` when loading the matching file.
 
 Single-repo projects typically use `AGENTS.md` in the repo itself.
 
@@ -239,7 +239,7 @@ observer config set mode off           # Ingestion only, no LLM processing
 All data is local — no servers or external services:
 - `~/.pi/observer/observer.db` — SQLite (relational model + FTS5 keyword search)
 - `~/.pi/observer/chroma/` — ChromaDB (vector embeddings, HNSW index)
-- `~/.pi/observer/config.json` — Observer settings
+- `~/.pi/basecamp/config.json` — Basecamp settings, including observer settings under the `observer` key
 
 ## Extension
 

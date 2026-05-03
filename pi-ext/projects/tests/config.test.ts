@@ -34,6 +34,21 @@ describe("resolveProjectState", () => {
 		assert.deepEqual(state.warnings, []);
 	});
 
+	it("returns default unprojected state when config has no projects", async (t) => {
+		const homeDir = await createTempHome(t);
+		const repoRoot = path.join(homeDir, "repo");
+		await writeConfig(homeDir, {
+			stale_setting: { preserve: true },
+		});
+
+		const state = resolveProjectState({ repoRoot, isRepo: true, homeDir });
+
+		assert.equal(state.projectName, null);
+		assert.equal(state.project, null);
+		assert.deepEqual(state.additionalDirs, []);
+		assert.deepEqual(state.warnings, []);
+	});
+
 	it("matches a project by repo_root and maps supported fields", async (t) => {
 		const homeDir = await createTempHome(t);
 		const repoRoot = path.join(homeDir, "repo");
@@ -41,7 +56,6 @@ describe("resolveProjectState", () => {
 		await fs.mkdir(repoRoot, { recursive: true });
 		await fs.mkdir(extraDir, { recursive: true });
 		await writeConfig(homeDir, {
-			bigquery: { default_project_id: "ignored-global" },
 			projects: {
 				demo: {
 					repo_root: "~/repo",
@@ -49,7 +63,6 @@ describe("resolveProjectState", () => {
 					description: "ignored legacy metadata",
 					working_style: "research",
 					context: null,
-					bigquery: { default_project_id: "ignored-project" },
 				},
 			},
 		});
@@ -63,7 +76,6 @@ describe("resolveProjectState", () => {
 		assert.equal("description" in (state.project as object), false);
 		assert.equal(state.project?.workingStyle, "research");
 		assert.equal(state.project?.context, null);
-		assert.equal("bigquery" in (state.project as object), false);
 		assert.equal(state.workingStyle, "research");
 	});
 

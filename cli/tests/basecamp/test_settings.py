@@ -39,7 +39,7 @@ class TestReadWrite:
 
 
 class TestProperties:
-    """Public property API: install_dir, projects, and global defaults."""
+    """Public property API: install_dir and projects."""
 
     def test_install_dir_empty(self, cfg: Settings) -> None:
         assert cfg.install_dir is None
@@ -73,76 +73,16 @@ class TestProperties:
         assert data["install_dir"] == "/tmp/ws"
         assert data["projects"]["myproj"] == {"repo_root": "myproj", "additional_dirs": []}
 
-    def test_logseq_graph_empty(self, cfg: Settings) -> None:
-        assert cfg.logseq_graph is None
+    def test_writes_preserve_unknown_top_level_keys(self, cfg: Settings) -> None:
+        cfg._write({"stale_setting": {"preserve": True}})
 
-    def test_logseq_graph_set_and_get(self, cfg: Settings) -> None:
-        cfg.logseq_graph = "Documents/brain"
-        assert cfg.logseq_graph == "Documents/brain"
-
-    def test_logseq_graph_preserves_other_settings(self, cfg: Settings) -> None:
         cfg.install_dir = "/tmp/ws"
-        cfg.projects = {"proj": {"repo_root": "proj", "additional_dirs": []}}
-        cfg.logseq_graph = "Documents/brain"
+        cfg.projects = {"myproj": {"repo_root": "myproj", "additional_dirs": []}}
 
         data = json.loads(cfg.path.read_text())
         assert data["install_dir"] == "/tmp/ws"
-        assert data["projects"] == {"proj": {"repo_root": "proj", "additional_dirs": []}}
-        assert data["logseq_graph"] == "Documents/brain"
-
-    def test_timezone_empty(self, cfg: Settings) -> None:
-        assert cfg.timezone is None
-
-    def test_timezone_set_and_get(self, cfg: Settings) -> None:
-        cfg.timezone = "America/Toronto"
-        assert cfg.timezone == "America/Toronto"
-
-    def test_timezone_preserves_other_settings(self, cfg: Settings) -> None:
-        cfg.install_dir = "/tmp/ws"
-        cfg.logseq_graph = "Documents/brain"
-        cfg.timezone = "America/Toronto"
-
-        data = json.loads(cfg.path.read_text())
-        assert data["install_dir"] == "/tmp/ws"
-        assert data["logseq_graph"] == "Documents/brain"
-        assert data["timezone"] == "America/Toronto"
-
-    def test_bigquery_empty(self, cfg: Settings) -> None:
-        assert cfg.bigquery == {}
-
-    def test_bigquery_set_and_get(self, cfg: Settings) -> None:
-        bigquery = {
-            "enabled": True,
-            "default_project_id": "analytics-prod",
-            "default_location": "US",
-            "default_output_format": "json",
-            "default_max_rows": 1000,
-            "auto_dry_run": True,
-        }
-
-        cfg.bigquery = bigquery
-
-        assert cfg.bigquery == bigquery
-
-    def test_bigquery_preserves_other_settings(self, cfg: Settings) -> None:
-        cfg.install_dir = "/tmp/ws"
-        cfg.bigquery = {"enabled": False}
-
-        data = json.loads(cfg.path.read_text())
-        assert data["install_dir"] == "/tmp/ws"
-        assert data["bigquery"] == {"enabled": False}
-
-    def test_bigquery_clear(self, cfg: Settings) -> None:
-        cfg.bigquery = {"enabled": True}
-        cfg.bigquery = None
-
-        assert "bigquery" not in json.loads(cfg.path.read_text())
-
-    def test_bigquery_empty_dict_clears(self, cfg: Settings) -> None:
-        cfg.bigquery = {"enabled": True}
-        cfg.bigquery = {}
-
-        assert "bigquery" not in json.loads(cfg.path.read_text())
+        assert data["projects"] == {"myproj": {"repo_root": "myproj", "additional_dirs": []}}
+        assert data["stale_setting"] == {"preserve": True}
 
 
 class TestProjectDirsMigration:
@@ -276,93 +216,12 @@ class TestProjectConfigSchema:
                 dirs=["src/demo"],
             )
 
-
-class TestProjectBigQueryConfig:
-    """Project-level BigQuery config serialization."""
-
-    def test_save_and_load_projects_preserves_bigquery(
-        self,
-        cfg: Settings,
-        monkeypatch: pytest.MonkeyPatch,
-    ) -> None:
-        monkeypatch.setattr(project_config, "settings", cfg)
-        bigquery = project_config.BigQueryConfig(
-            enabled=True,
-            default_project_id="analytics-prod",
-            default_location="US",
-            default_output_format="csv",
-            default_max_rows=500,
-            auto_dry_run=True,
-        )
-
-        project_config.save_projects(
-            {
-                "demo": project_config.ProjectConfig(
-                    repo_root="src/demo",
-                    description="Demo",
-                    bigquery=bigquery,
-                ),
-            },
-        )
-
-        data = json.loads(cfg.path.read_text())
-        assert data["projects"]["demo"]["bigquery"] == {
-            "enabled": True,
-            "default_project_id": "analytics-prod",
-            "default_location": "US",
-            "default_output_format": "csv",
-            "default_max_rows": 500,
-            "auto_dry_run": True,
-        }
-
-        loaded = project_config.load_projects()
-        assert loaded["demo"].bigquery == bigquery
-
-    def test_save_projects_omits_absent_bigquery(
-        self,
-        cfg: Settings,
-        monkeypatch: pytest.MonkeyPatch,
-    ) -> None:
-        monkeypatch.setattr(project_config, "settings", cfg)
-
-        project_config.save_projects({"demo": project_config.ProjectConfig(repo_root="src/demo")})
-
-        data = json.loads(cfg.path.read_text())
-        assert "bigquery" not in data["projects"]["demo"]
-
-    def test_save_and_load_projects_preserves_unknown_bigquery_fields(
-        self,
-        cfg: Settings,
-        monkeypatch: pytest.MonkeyPatch,
-    ) -> None:
-        monkeypatch.setattr(project_config, "settings", cfg)
-        bigquery = project_config.BigQueryConfig(
-            enabled=True,
-            future_option="keep-me",
-        )
-
-        project_config.save_projects(
-            {
-                "demo": project_config.ProjectConfig(
-                    repo_root="src/demo",
-                    bigquery=bigquery,
-                ),
-            },
-        )
-
-        data = json.loads(cfg.path.read_text())
-        assert data["projects"]["demo"]["bigquery"] == {
-            "enabled": True,
-            "future_option": "keep-me",
-        }
-
-        loaded = project_config.load_projects()
-        assert loaded["demo"].bigquery is not None
-        assert loaded["demo"].bigquery.model_extra == {"future_option": "keep-me"}
-
-    def test_bigquery_rejects_invalid_output_format(self) -> None:
+    def test_project_config_rejects_obsolete_bigquery(self) -> None:
         with pytest.raises(ValidationError):
-            project_config.BigQueryConfig(default_output_format="parquet")
+            project_config.ProjectConfig(
+                repo_root="src/demo",
+                bigquery={"enabled": True},
+            )
 
 
 class TestLocking:
