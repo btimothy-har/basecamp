@@ -1,4 +1,6 @@
 import assert from "node:assert/strict";
+import * as fs from "node:fs";
+import * as os from "node:os";
 import * as path from "node:path";
 import { describe, it } from "node:test";
 import { WORKTREES_ROOT } from "../constants.ts";
@@ -8,6 +10,7 @@ import {
 	findWorktreeRecord,
 	labelFromWorktreePath,
 	parseWorktreeList,
+	validateNoSymlinkedWorktreePath,
 	validateWorktreePath,
 } from "../worktree.ts";
 
@@ -109,6 +112,59 @@ describe("worktree pure utilities", () => {
 			assert.throws(
 				() => validateWorktreePath(REPO_NAME, LABEL, path.join(WORKTREES_ROOT, REPO_NAME, "different")),
 				new RegExp(`Worktree path must be ${WORKTREE_DIR.replaceAll("\\", "\\\\")}`),
+			);
+		});
+	});
+
+	describe("validateNoSymlinkedWorktreePath", () => {
+		function createTempRoot(t: { after(fn: () => void): void }): string {
+			const root = fs.mkdtempSync(path.join(os.tmpdir(), "basecamp-worktrees-"));
+			t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+			return root;
+		}
+
+		it("allows normal worktree paths", (t) => {
+			const root = createTempRoot(t);
+			const worktreeDir = path.join(root, REPO_NAME, LABEL);
+			fs.mkdirSync(worktreeDir, { recursive: true });
+
+			assert.doesNotThrow(() => validateNoSymlinkedWorktreePath(worktreeDir, root));
+		});
+
+		it("allows missing leaf paths for new worktree creation", (t) => {
+			const root = createTempRoot(t);
+			fs.mkdirSync(path.join(root, REPO_NAME), { recursive: true });
+
+			assert.doesNotThrow(() => validateNoSymlinkedWorktreePath(path.join(root, REPO_NAME, LABEL), root));
+		});
+
+		it("rejects symlinked worktree directories", (t) => {
+			const root = createTempRoot(t);
+			const repoRoot = path.join(root, REPO_NAME);
+			const realWorktree = fs.mkdtempSync(path.join(os.tmpdir(), "basecamp-real-worktree-"));
+			t.after(() => fs.rmSync(realWorktree, { recursive: true, force: true }));
+			fs.mkdirSync(repoRoot, { recursive: true });
+
+			const symlinkedWorktree = path.join(repoRoot, LABEL);
+			fs.symlinkSync(realWorktree, symlinkedWorktree, "dir");
+
+			assert.throws(
+				() => validateNoSymlinkedWorktreePath(symlinkedWorktree, root),
+				/Worktree path must not contain symlinks/,
+			);
+		});
+
+		it("rejects symlinked parent directories", (t) => {
+			const root = createTempRoot(t);
+			const realRepo = fs.mkdtempSync(path.join(os.tmpdir(), "basecamp-real-repo-"));
+			t.after(() => fs.rmSync(realRepo, { recursive: true, force: true }));
+
+			const symlinkedRepo = path.join(root, REPO_NAME);
+			fs.symlinkSync(realRepo, symlinkedRepo, "dir");
+
+			assert.throws(
+				() => validateNoSymlinkedWorktreePath(path.join(symlinkedRepo, LABEL), root),
+				/Worktree path must not contain symlinks/,
 			);
 		});
 	});

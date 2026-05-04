@@ -78,6 +78,37 @@ export function validateWorktreePath(repoName: string, label: string, worktreeDi
 	}
 }
 
+function isMissingPathError(error: unknown): boolean {
+	return typeof error === "object" && error !== null && "code" in error && error.code === "ENOENT";
+}
+
+export function validateNoSymlinkedWorktreePath(worktreeDir: string, root = WORKTREES_ROOT): void {
+	const resolvedRoot = path.resolve(root);
+	const resolvedDir = path.resolve(worktreeDir);
+	const relative = path.relative(resolvedRoot, resolvedDir);
+	if (relative.startsWith("..") || path.isAbsolute(relative)) {
+		throw new Error(`Worktree path must be under ${resolvedRoot}`);
+	}
+
+	const componentPaths = [resolvedRoot];
+	let current = resolvedRoot;
+	for (const part of relative.split(path.sep).filter(Boolean)) {
+		current = path.join(current, part);
+		componentPaths.push(current);
+	}
+
+	for (const componentPath of componentPaths) {
+		try {
+			if (fs.lstatSync(componentPath).isSymbolicLink()) {
+				throw new Error(`Worktree path must not contain symlinks: ${componentPath}`);
+			}
+		} catch (error) {
+			if (isMissingPathError(error)) return;
+			throw error;
+		}
+	}
+}
+
 export function ensureWorktreeLabel(label: string): void {
 	if (!WORKTREE_LABEL_RE.test(label)) {
 		throw new Error(`Invalid worktree label "${label}". Use letters, numbers, dots, underscores, or hyphens.`);
@@ -105,6 +136,7 @@ export async function listWorktrees(pi: ExtensionAPI, repoRoot: string, repoName
 		.map((record) => {
 			try {
 				const label = labelFromWorktreePath(repoName, record.path);
+				validateNoSymlinkedWorktreePath(record.path);
 				return { label, path: path.resolve(record.path), branch: branchName(record) };
 			} catch {
 				return null;
@@ -124,6 +156,7 @@ export async function attachWorktreeDir(
 
 	const resolvedDir = path.resolve(worktreeDir);
 	const label = labelFromWorktreePath(repoName, resolvedDir);
+	validateNoSymlinkedWorktreePath(resolvedDir);
 	if (!fs.existsSync(resolvedDir) || !fs.statSync(resolvedDir).isDirectory()) {
 		throw new Error(`Worktree directory not found: ${resolvedDir}`);
 	}
@@ -146,6 +179,7 @@ export async function getOrCreateWorktree(
 	ensureWorktreeLabel(label);
 	const defaultBranch = await validateProtectedCheckout(pi, repoRoot);
 	const worktreeDir = path.join(WORKTREES_ROOT, repoName, label);
+	validateNoSymlinkedWorktreePath(worktreeDir);
 	const branch = `${branchPrefix}${label}`;
 	const records = await gitWorktreeRecords(pi, repoRoot);
 	const existing = findWorktreeRecord(records, worktreeDir);
