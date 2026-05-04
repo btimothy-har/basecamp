@@ -1,48 +1,46 @@
-export type AgentMode = "analysis" | "planning" | "supervisor" | "executor";
+import {
+	getCurrentSessionState,
+	SESSION_STATE_AGENT_MODES,
+	type SessionStateAgentMode,
+	updateCurrentSessionStateIfInitialized,
+} from "../state/src/index.ts";
 
-export const AGENT_MODES: readonly AgentMode[] = ["analysis", "planning", "supervisor", "executor"];
+export type AgentMode = SessionStateAgentMode;
+
+export const AGENT_MODES: readonly AgentMode[] = SESSION_STATE_AGENT_MODES;
 
 const DEFAULT_AGENT_MODE: AgentMode = "executor";
 
 type AgentModeListener = (mode: AgentMode) => void;
 
-type AgentModeState = {
-	mode: AgentMode;
-	listeners: Set<AgentModeListener>;
-};
+let mode: AgentMode = DEFAULT_AGENT_MODE;
+const listeners = new Set<AgentModeListener>();
 
-const MODE_STATE_KEY = "__basecampAgentModeState";
+function updateLiveAgentMode(nextMode: AgentMode): AgentMode {
+	if (mode === nextMode) return mode;
 
-type GlobalWithAgentModeState = typeof globalThis & {
-	[MODE_STATE_KEY]?: AgentModeState;
-};
-
-function getModeState(): AgentModeState {
-	const scope = globalThis as GlobalWithAgentModeState;
-	// Pi loads package extension entries with separate Jiti module caches, so
-	// module-level state is not shared between extension entries.
-	scope[MODE_STATE_KEY] ??= { mode: DEFAULT_AGENT_MODE, listeners: new Set() };
-	return scope[MODE_STATE_KEY];
+	mode = nextMode;
+	for (const listener of listeners) {
+		listener(mode);
+	}
+	return mode;
 }
 
 export function getAgentMode(): AgentMode {
-	return getModeState().mode;
+	return mode;
 }
 
 export function setAgentMode(nextMode: AgentMode): AgentMode {
-	const state = getModeState();
-	if (state.mode === nextMode) return state.mode;
+	updateCurrentSessionStateIfInitialized({ agentMode: nextMode });
+	return updateLiveAgentMode(nextMode);
+}
 
-	state.mode = nextMode;
-	for (const listener of state.listeners) {
-		listener(state.mode);
-	}
-	return state.mode;
+export function restoreAgentModeFromSessionState(): AgentMode {
+	return updateLiveAgentMode(getCurrentSessionState().agentMode ?? DEFAULT_AGENT_MODE);
 }
 
 export function cycleAgentMode(): AgentMode {
-	const mode = getAgentMode();
-	const index = AGENT_MODES.indexOf(mode);
+	const index = AGENT_MODES.indexOf(getAgentMode());
 	return setAgentMode(AGENT_MODES[(index + 1) % AGENT_MODES.length]!);
 }
 
@@ -51,9 +49,8 @@ export function resetAgentMode(): void {
 }
 
 export function onAgentModeChange(listener: AgentModeListener): () => void {
-	const state = getModeState();
-	state.listeners.add(listener);
+	listeners.add(listener);
 	return () => {
-		state.listeners.delete(listener);
+		listeners.delete(listener);
 	};
 }

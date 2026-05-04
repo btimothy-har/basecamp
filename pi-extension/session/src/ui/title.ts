@@ -10,7 +10,8 @@ import type { AgentMessage } from "@mariozechner/pi-agent-core";
 import type { AssistantMessage, TextContent, ToolCall, ToolResultMessage, UserMessage } from "@mariozechner/pi-ai";
 import type { ExtensionAPI, ExtensionContext, SessionEntry, Theme } from "@mariozechner/pi-coding-agent";
 import { visibleWidth } from "@mariozechner/pi-tui";
-import { getWorkspaceService, getWorkspaceState, type WorkspaceState } from "../../../platform/workspace";
+import { getWorkspaceService, getWorkspaceState, type WorkspaceState } from "../../../platform/workspace.ts";
+import { getCurrentSessionState, updateCurrentSessionStateIfInitialized } from "../../../state/src/index.ts";
 import { resolveTitleModel } from "./title-model.ts";
 
 // ============================================================================
@@ -221,7 +222,7 @@ export function registerTitle(pi: ExtensionAPI): void {
 	}
 
 	function persistState(): void {
-		pi.appendEntry("title-state", { title });
+		updateCurrentSessionStateIfInitialized({ title });
 	}
 
 	// --- Command: /title ---
@@ -256,13 +257,9 @@ export function registerTitle(pi: ExtensionAPI): void {
 		title = null;
 		sessionTag = shortSessionId(sessionCtx.sessionManager.getSessionId());
 
-		const entries = sessionCtx.sessionManager.getEntries();
-		const titleEntry = entries
-			.filter((e) => e.type === "custom" && (e as { customType?: string }).customType === "title-state")
-			.pop() as { data?: { title: string | null } } | undefined;
+		title = getCurrentSessionState().title;
 
-		if (titleEntry?.data?.title) {
-			title = titleEntry.data.title;
+		if (title) {
 			const display = displayTitle();
 			if (sessionCtx.hasUI) sessionCtx.ui.setTitle(display ?? title);
 		}

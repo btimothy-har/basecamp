@@ -30,6 +30,7 @@ import * as path from "node:path";
 import type { ExtensionAPI, ExtensionContext, Theme } from "@mariozechner/pi-coding-agent";
 import { Type } from "@sinclair/typebox";
 import { type AgentMode, getAgentMode, setAgentMode } from "../../../platform/session";
+import { getCurrentSessionState } from "../../../state/src/index.ts";
 import { renderTaskWidgetLines } from "./render";
 
 // ============================================================================
@@ -606,7 +607,7 @@ export function registerTasks(pi: ExtensionAPI): TasksAccess {
 		if (active) {
 			state.goal = active.goal;
 			state.tasks = active.tasks;
-			if (active.agentMode) setAgentMode(active.agentMode);
+			if (!getCurrentSessionState().agentMode && active.agentMode) setAgentMode(active.agentMode);
 		}
 
 		updateWidget();
