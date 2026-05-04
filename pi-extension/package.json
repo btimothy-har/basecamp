@@ -8,14 +8,7 @@
 	],
 	"pi": {
 		"extensions": [
-			"./workspace/src",
-			"./model-aliases/src",
-			"./session/src",
-			"./capabilities/src",
-			"./engineering/src",
-			"./projects/src",
-			"./workflow/src",
-			"./git/src"
+			"./src"
 		],
 		"skills": [
 			"./workflow/skills",
