@@ -17,6 +17,15 @@ export interface SessionStateWorktree {
 	created: boolean;
 }
 
+export interface SessionStateActiveWorktree {
+	version: 1;
+	repoName: string;
+	repoRoot: string;
+	remoteUrl: string | null;
+	worktree: SessionStateWorktree;
+	updatedAt: string;
+}
+
 export interface SessionStateIdentity {
 	sessionId: string;
 	sessionFile?: string | null;
@@ -27,7 +36,7 @@ export interface BasecampSessionState {
 	sessionId: string;
 	sessionFile: string | null;
 	updatedAt: string;
-	activeWorktree: SessionStateWorktree | null;
+	activeWorktree: SessionStateActiveWorktree | null;
 	agentMode: SessionStateAgentMode | null;
 	title: string | null;
 }
@@ -79,6 +88,18 @@ function isAgentMode(value: unknown): value is SessionStateAgentMode {
 	return typeof value === "string" && SESSION_STATE_AGENT_MODES.includes(value as SessionStateAgentMode);
 }
 
+function isSessionStateActiveWorktree(value: unknown): value is SessionStateActiveWorktree {
+	return (
+		isRecord(value) &&
+		value.version === 1 &&
+		typeof value.repoName === "string" &&
+		typeof value.repoRoot === "string" &&
+		(typeof value.remoteUrl === "string" || value.remoteUrl === null) &&
+		isSessionStateWorktree(value.worktree) &&
+		typeof value.updatedAt === "string"
+	);
+}
+
 function isSessionState(value: unknown): value is BasecampSessionState {
 	return (
 		isRecord(value) &&
@@ -86,7 +107,7 @@ function isSessionState(value: unknown): value is BasecampSessionState {
 		typeof value.sessionId === "string" &&
 		(typeof value.sessionFile === "string" || value.sessionFile === null) &&
 		typeof value.updatedAt === "string" &&
-		(value.activeWorktree === null || isSessionStateWorktree(value.activeWorktree)) &&
+		(value.activeWorktree === null || isSessionStateActiveWorktree(value.activeWorktree)) &&
 		(value.agentMode === null || isAgentMode(value.agentMode)) &&
 		(typeof value.title === "string" || value.title === null)
 	);
@@ -200,7 +221,9 @@ function loadForkInheritedFields(
 
 	const parentState = loadSessionState({ sessionId: parentSessionId, sessionFile: parentSessionFile }, stateDir);
 	return {
-		activeWorktree: parentState.activeWorktree ? { ...parentState.activeWorktree } : null,
+		activeWorktree: parentState.activeWorktree
+			? { ...parentState.activeWorktree, worktree: { ...parentState.activeWorktree.worktree } }
+			: null,
 		agentMode: parentState.agentMode,
 		title: parentState.title,
 	};
@@ -237,6 +260,11 @@ export function updateCurrentSessionState(updater: SessionStateUpdater): Basecam
 	const patch = typeof updater === "function" ? updater(existing) : updater;
 	currentState = saveSessionState({ ...existing, ...patch }, currentStateDir);
 	return currentState;
+}
+
+export function updateCurrentSessionStateIfInitialized(updater: SessionStateUpdater): BasecampSessionState | null {
+	if (!currentState) return null;
+	return updateCurrentSessionState(updater);
 }
 
 export function resetCurrentSessionState(): void {

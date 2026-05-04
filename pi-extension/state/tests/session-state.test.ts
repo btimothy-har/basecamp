@@ -93,14 +93,26 @@ describe("session state file helpers", () => {
 		const dir = await createTempDir(t);
 		await writeStateFile(dir, "invalid", "{ invalid json");
 		await writeStateFile(dir, "wrong-shape", { version: 1, sessionId: "wrong-shape" });
+		await writeStateFile(dir, "old-worktree-shape", {
+			...createDefaultSessionState({ sessionId: "old-worktree-shape", sessionFile: null }),
+			activeWorktree: {
+				kind: "git-worktree",
+				label: "feature",
+				path: "/tmp/worktree",
+				branch: "feature",
+				created: false,
+			},
+		});
 
 		const invalid = loadSessionState({ sessionId: "invalid", sessionFile: null }, dir);
 		const wrongShape = loadSessionState({ sessionId: "wrong-shape", sessionFile: null }, dir);
+		const oldWorktreeShape = loadSessionState({ sessionId: "old-worktree-shape", sessionFile: null }, dir);
 
 		assert.equal(invalid.sessionId, "invalid");
 		assert.equal(invalid.title, null);
 		assert.equal(wrongShape.sessionId, "wrong-shape");
 		assert.equal(wrongShape.agentMode, null);
+		assert.equal(oldWorktreeShape.activeWorktree, null);
 	});
 
 	it("saves atomically with a fresh updatedAt and loads valid state", async (t) => {
@@ -111,11 +123,18 @@ describe("session state file helpers", () => {
 			sessionFile: "/tmp/session.json",
 			updatedAt: "old",
 			activeWorktree: {
-				kind: "git-worktree",
-				label: "feature",
-				path: "/tmp/worktree",
-				branch: "feature",
-				created: false,
+				version: 1,
+				repoName: "repo",
+				repoRoot: "/tmp/repo",
+				remoteUrl: "git@github.com:test/repo.git",
+				worktree: {
+					kind: "git-worktree",
+					label: "feature",
+					path: "/tmp/worktree",
+					branch: "feature",
+					created: false,
+				},
+				updatedAt: "2026-05-03T00:00:00.000Z",
 			},
 			agentMode: "supervisor",
 			title: "Saved title",
@@ -167,11 +186,18 @@ describe("fork session state", () => {
 			{
 				...createDefaultSessionState({ sessionId: "parent", sessionFile: parentSessionFile }),
 				activeWorktree: {
-					kind: "git-worktree",
-					label: "feature",
-					path: "/tmp/worktree",
-					branch: "feature",
-					created: false,
+					version: 1,
+					repoName: "repo",
+					repoRoot: "/tmp/repo",
+					remoteUrl: "git@github.com:test/repo.git",
+					worktree: {
+						kind: "git-worktree",
+						label: "feature",
+						path: "/tmp/worktree",
+						branch: "feature",
+						created: false,
+					},
+					updatedAt: "2026-05-03T00:00:00.000Z",
 				},
 				agentMode: "executor",
 				title: "Parent title",

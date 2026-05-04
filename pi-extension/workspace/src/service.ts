@@ -11,6 +11,8 @@ import {
 	type WorkspaceState,
 	type WorkspaceWorktree,
 } from "../../platform/workspace.ts";
+import { updateCurrentSessionStateIfInitialized } from "../../state/src/index.ts";
+import { buildActiveWorktreeState } from "./affinity.ts";
 import { SCRATCH_ROOT } from "./constants.ts";
 import { resolveGitInfo } from "./repo.ts";
 import { applyUnsafeEditFlag } from "./unsafe-edit.ts";
@@ -171,6 +173,8 @@ export class WorkspaceRuntimeService implements WorkspaceService {
 		const state = this.require();
 		state.activeWorktree = target;
 		state.effectiveCwd = computeEffectiveCwd(state);
+		const activeWorktree = buildActiveWorktreeState(state, target);
+		if (activeWorktree) updateCurrentSessionStateIfInitialized({ activeWorktree });
 		setWorkspaceEnv(state);
 		this.notify();
 		return target;

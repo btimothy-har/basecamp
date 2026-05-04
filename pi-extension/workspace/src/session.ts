@@ -7,48 +7,31 @@ import * as fs from "node:fs/promises";
 import * as path from "node:path";
 import type { ExtensionAPI, ExtensionContext, SessionStartEvent } from "@mariozechner/pi-coding-agent";
 import {
-	appendWorkspaceWorktreeAffinity,
 	attachWorkspaceWorktreePath,
 	initializeWorkspace,
-	latestWorkspaceWorktreeAffinity,
 	requireWorkspaceService,
 	requireWorkspaceState,
 	type UnsafeEditFlagResult,
 	type WorkspaceWorktree,
-	workspaceMatchesWorktreeAffinity,
 } from "../../platform/workspace.ts";
+import { getCurrentSessionState } from "../../state/src/index.ts";
+import { workspaceMatchesActiveWorktreeState } from "./affinity.ts";
 
-interface WorktreeApplyOptions {
-	persistAffinity?: boolean;
+async function attachWorktree(worktreeDir: string): Promise<WorkspaceWorktree> {
+	return attachWorkspaceWorktreePath(worktreeDir);
 }
 
-function applyWorktree(pi: ExtensionAPI, target: WorkspaceWorktree, options: WorktreeApplyOptions = {}): void {
-	if (options.persistAffinity ?? true) {
-		appendWorkspaceWorktreeAffinity(pi, requireWorkspaceState(), target);
-	}
-}
+const WORKTREE_STATE_RESTORE_REASONS = new Set<SessionStartEvent["reason"]>(["resume", "reload", "fork"]);
 
-async function attachWorktree(
-	pi: ExtensionAPI,
-	worktreeDir: string,
-	options: WorktreeApplyOptions = {},
-): Promise<WorkspaceWorktree> {
-	const target = await attachWorkspaceWorktreePath(worktreeDir);
-	applyWorktree(pi, target, options);
-	return target;
-}
-
-const WORKTREE_AFFINITY_RESTORE_REASONS = new Set<SessionStartEvent["reason"]>(["resume", "reload", "fork"]);
-
-async function restoreWorktreeAffinity(pi: ExtensionAPI, ctx: ExtensionContext): Promise<void> {
+async function restoreActiveWorktreeState(ctx: ExtensionContext): Promise<void> {
 	const workspaceState = requireWorkspaceState();
 	if (!workspaceState.repo) return;
 
-	const affinity = latestWorkspaceWorktreeAffinity(ctx.sessionManager.getBranch());
-	if (!affinity || !workspaceMatchesWorktreeAffinity(workspaceState, affinity)) return;
+	const activeWorktree = getCurrentSessionState().activeWorktree;
+	if (!activeWorktree || !workspaceMatchesActiveWorktreeState(workspaceState, activeWorktree)) return;
 
 	try {
-		const wt = await attachWorktree(pi, affinity.worktree.path, { persistAffinity: false });
+		const wt = await attachWorktree(activeWorktree.worktree.path);
 		ctx.ui.notify(`basecamp: restored worktree → ${wt.label}`, "info");
 	} catch (err) {
 		const msg = err instanceof Error ? err.message : String(err);
@@ -119,14 +102,14 @@ export function registerWorkspaceSession(pi: ExtensionAPI): void {
 
 		if (worktreeDir) {
 			try {
-				const wt = await attachWorktree(pi, worktreeDir);
+				const wt = await attachWorktree(worktreeDir);
 				ctx.ui.notify(`basecamp: worktree attached → ${wt.label}`, "info");
 			} catch (err) {
 				const msg = err instanceof Error ? err.message : String(err);
 				ctx.ui.notify(`basecamp: worktree attach failed — ${msg}`, "error");
 			}
-		} else if (WORKTREE_AFFINITY_RESTORE_REASONS.has(event.reason)) {
-			await restoreWorktreeAffinity(pi, ctx);
+		} else if (WORKTREE_STATE_RESTORE_REASONS.has(event.reason)) {
+			await restoreActiveWorktreeState(ctx);
 		}
 
 		notifyUnsafeEditResult(ctx, unsafeEditResult);

@@ -3,7 +3,6 @@
  */
 
 import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-agent";
-import { appendWorkspaceWorktreeAffinity } from "../../platform/workspace.ts";
 import { requireWorkspaceRuntime } from "./service.ts";
 import { listWorktrees, type WorktreeSummary } from "./worktree.ts";
 
@@ -86,7 +85,6 @@ export function registerWorktreeCommand(pi: ExtensionAPI): void {
 
 			try {
 				const target = await workspace.attachWorktreePath(match.path);
-				appendWorkspaceWorktreeAffinity(pi, workspace.require(), target);
 				ctx.ui.notify(`Worktree active: ${target.label} (${target.branch ?? "detached"})`, "info");
 			} catch (err) {
 				const msg = err instanceof Error ? err.message : String(err);

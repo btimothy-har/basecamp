@@ -1,8 +1,14 @@
 import assert from "node:assert/strict";
 import * as fs from "node:fs/promises";
+import * as os from "node:os";
 import * as path from "node:path";
 import { describe, it } from "node:test";
-import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
+import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-agent";
+import {
+	getCurrentSessionState,
+	initializeCurrentSessionState,
+	resetCurrentSessionState,
+} from "../../state/src/index.ts";
 import { SCRATCH_ROOT, WORKTREES_ROOT } from "../src/constants.ts";
 import { WorkspaceRuntimeService } from "../src/service.ts";
 
@@ -57,6 +63,15 @@ function argsEqual(actual: string[], expected: string[]): boolean {
 
 function unexpectedExecCall(call: ExecCall): Error {
 	return new Error(`Unexpected exec call: ${call.command} ${JSON.stringify(call.args)}`);
+}
+
+function createContext(sessionId: string): ExtensionContext {
+	return {
+		sessionManager: {
+			getSessionId: () => sessionId,
+			getSessionFile: () => null,
+		},
+	} as unknown as ExtensionContext;
 }
 
 function createPi(): { pi: ExtensionAPI; calls: ExecCall[] } {
@@ -140,5 +155,36 @@ describe("WorkspaceRuntimeService effective cwd", () => {
 		assert.equal(service.getEffectiveCwd(), WORKTREE_DIR);
 		assert.equal(process.env.BASECAMP_WORKTREE_DIR, WORKTREE_DIR);
 		assert.equal(process.env.BASECAMP_WORKTREE_LABEL, LABEL);
+	});
+
+	it("writes active worktree metadata when current session state is initialized", async (t) => {
+		const envSnapshot = snapshotBasecampEnv();
+		const stateDir = await fs.mkdtemp(path.join(os.tmpdir(), "basecamp-workspace-state-"));
+		t.after(async () => {
+			resetCurrentSessionState();
+			restoreBasecampEnv(envSnapshot);
+			await fs.rm(SCRATCH_DIR, { recursive: true, force: true });
+			await fs.rm(stateDir, { recursive: true, force: true });
+		});
+
+		initializeCurrentSessionState(createContext("workspace-service-state"), stateDir);
+		await initializeAndActivate(REPO_ROOT);
+
+		const activeWorktree = getCurrentSessionState().activeWorktree;
+		assert.deepEqual(activeWorktree, {
+			version: 1,
+			repoName: REPO_NAME,
+			repoRoot: REPO_ROOT,
+			remoteUrl: REMOTE_URL,
+			worktree: {
+				kind: "git-worktree",
+				label: LABEL,
+				path: WORKTREE_DIR,
+				branch: BRANCH,
+				created: false,
+			},
+			updatedAt: activeWorktree?.updatedAt,
+		});
+		assert.match(activeWorktree?.updatedAt ?? "", /^\d{4}-\d{2}-\d{2}T/);
 	});
 });
