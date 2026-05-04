@@ -1,6 +1,6 @@
 import type { ExtensionAPI, ExtensionCommandContext, Theme } from "@mariozechner/pi-coding-agent";
-import { DynamicBorder } from "@mariozechner/pi-coding-agent";
-import { Container, matchesKey, Spacer, Text } from "@mariozechner/pi-tui";
+import { DynamicBorder, getSelectListTheme } from "@mariozechner/pi-coding-agent";
+import { Container, Editor, type EditorTheme, matchesKey, Spacer, Text } from "@mariozechner/pi-tui";
 import {
 	type ConfiguredModelAliases,
 	defaultModelAliasConfigPath,
@@ -145,6 +145,54 @@ function errorMessage(error: unknown): string {
 	return error instanceof Error ? error.message : String(error);
 }
 
+async function promptWithInitialValue(
+	ctx: ExtensionCommandContext,
+	label: string,
+	initialValue: string,
+): Promise<string | undefined> {
+	return ctx.ui.custom<string | undefined>((tui, theme, _kb, done) => {
+		const border = new DynamicBorder((s: string) => theme.fg("border", s));
+		const labelText = new Text(theme.fg("accent", theme.bold(label)), 1, 0);
+		const hint = new Text(theme.fg("dim", "Enter submit  Esc cancel"), 1, 0);
+
+		const editorTheme: EditorTheme = {
+			borderColor: (s: string) => theme.fg("dim", s),
+			selectList: getSelectListTheme(),
+		};
+		const editor = new Editor(tui, editorTheme, { paddingX: 0 });
+		editor.setText(initialValue);
+		editor.focused = true;
+		editor.onSubmit = (value: string) => {
+			done(value);
+		};
+
+		const container = new Container();
+		container.addChild(border);
+		container.addChild(labelText);
+		container.addChild(new Spacer(1));
+		container.addChild(hint);
+		container.addChild(border);
+
+		return {
+			render: (width: number) => {
+				const lines = container.render(width);
+				const editorLines = editor.render(width - 2);
+				lines.splice(2, 0, ...editorLines);
+				return lines;
+			},
+			invalidate: () => container.invalidate(),
+			handleInput: (data: string) => {
+				if (matchesKey(data, "escape")) {
+					done(undefined);
+					return;
+				}
+				editor.handleInput(data);
+				container.invalidate();
+			},
+		};
+	});
+}
+
 function readLatestAliasesForMutation(ctx: ExtensionCommandContext): ConfiguredModelAliases | null {
 	const result = loadModelAliasConfig();
 	if (!result.ok) {
@@ -205,7 +253,7 @@ async function editAliasModel(alias: string, ctx: ExtensionCommandContext): Prom
 		return;
 	}
 
-	const modelInput = await ctx.ui.input("Model name", currentModel);
+	const modelInput = await promptWithInitialValue(ctx, "Model name", currentModel);
 	if (modelInput === undefined) return;
 
 	const model = modelInput.trim();
@@ -227,7 +275,7 @@ async function editAliasModel(alias: string, ctx: ExtensionCommandContext): Prom
 }
 
 async function renameAlias(alias: string, ctx: ExtensionCommandContext): Promise<string | undefined> {
-	const aliasInput = await ctx.ui.input("Alias name", alias);
+	const aliasInput = await promptWithInitialValue(ctx, "Alias name", alias);
 	if (aliasInput === undefined) return undefined;
 
 	const nextAlias = aliasInput.trim();
