@@ -1,5 +1,5 @@
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
-import { type AgentMode, cycleAgentMode } from "../../../platform/session";
+import { type AgentMode, cycleAgentMode } from "../agent-mode.ts";
 
 const MODE_LABELS: Record<AgentMode, string> = {
 	analysis: "Analysis/research",

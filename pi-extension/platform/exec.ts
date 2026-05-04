@@ -3,8 +3,7 @@
  *
  * Provides a platform seam for commands that should run in the effective
  * session cwd without importing session runtime state directly. The cwd provider
- * is process-scoped via globalThis so separate extension entrypoints and
- * `/reload` share one current provider.
+ * is process-scoped via globalThis so `/reload` preserves one current provider.
  */
 
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";

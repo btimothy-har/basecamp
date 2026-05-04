@@ -7,7 +7,15 @@
 
 import { readFileSync } from "node:fs";
 import { stripFrontmatter } from "@mariozechner/pi-coding-agent";
-import { escapeXml } from "./utils";
+
+function escapeXml(str: string): string {
+	return str
+		.replace(/&/g, "&amp;")
+		.replace(/</g, "&lt;")
+		.replace(/>/g, "&gt;")
+		.replace(/"/g, "&quot;")
+		.replace(/'/g, "&apos;");
+}
 
 /**
  * Read a skill file and return its content with frontmatter stripped.

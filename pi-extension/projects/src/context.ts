@@ -11,8 +11,8 @@
 
 import * as fs from "node:fs";
 import * as path from "node:path";
-import type { CatalogItem } from "./catalog";
-import type { WorkspaceState } from "./workspace";
+import type { CatalogItem } from "../../platform/catalog.ts";
+import type { WorkspaceState } from "../../platform/workspace.ts";
 
 /**
  * Build the worktree warning block.
@@ -42,12 +42,10 @@ export function buildProjectContext(
 ): string | null {
 	const parts: string[] = [];
 
-	// Project context
 	if (project?.contextContent) {
 		parts.push(project.contextContent);
 	}
 
-	// Pi-native context files (CLAUDE.md / AGENTS.md)
 	if (contextFiles && contextFiles.length > 0) {
 		parts.push(
 			"Project-specific instructions and guidelines:\n\n" +
@@ -58,10 +56,6 @@ export function buildProjectContext(
 	if (parts.length === 0) return null;
 	return `# Project Context\n\n${parts.join("\n\n")}`;
 }
-
-// ============================================================================
-// Context File Discovery
-// ============================================================================
 
 export interface ContextFile {
 	path: string;
@@ -98,7 +92,7 @@ export function discoverContextFiles(cwd: string): ContextFile[] {
 	while (true) {
 		const file = loadContextFileFromDir(dir);
 		if (file && !seen.has(file.path)) {
-			files.unshift(file); // root-first order
+			files.unshift(file);
 			seen.add(file.path);
 		}
 		const parent = path.dirname(dir);
@@ -108,10 +102,6 @@ export function discoverContextFiles(cwd: string): ContextFile[] {
 
 	return files;
 }
-
-// ============================================================================
-// Capabilities Index
-// ============================================================================
 
 function normalizeCapabilityDescription(description: string): string {
 	return description.trim().replace(/\s+/g, " ");

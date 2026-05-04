@@ -3,7 +3,7 @@ import {
 	SESSION_STATE_AGENT_MODES,
 	type SessionStateAgentMode,
 	updateCurrentSessionStateIfInitialized,
-} from "../state/src/index.ts";
+} from "../../state/src/index.ts";
 
 export type AgentMode = SessionStateAgentMode;
 

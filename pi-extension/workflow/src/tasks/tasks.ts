@@ -29,7 +29,7 @@ import * as os from "node:os";
 import * as path from "node:path";
 import type { ExtensionAPI, ExtensionContext, Theme } from "@mariozechner/pi-coding-agent";
 import { Type } from "@sinclair/typebox";
-import { type AgentMode, getAgentMode, setAgentMode } from "../../../platform/session";
+import { type AgentMode, getAgentMode, setAgentMode } from "../../../session/src/agent-mode.ts";
 import { getCurrentSessionState } from "../../../state/src/index.ts";
 import { renderTaskWidgetLines } from "./render";
 

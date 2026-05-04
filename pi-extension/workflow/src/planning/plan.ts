@@ -14,7 +14,6 @@
 
 import type { ExtensionAPI, ExtensionContext, Theme } from "@mariozechner/pi-coding-agent";
 import { Type } from "@sinclair/typebox";
-import { getAgentMode, setAgentMode } from "../../../platform/session";
 import {
 	activateWorkspaceWorktree,
 	getWorkspaceState,
@@ -22,6 +21,7 @@ import {
 	requireWorkspaceState,
 	type WorkspaceWorktree,
 } from "../../../platform/workspace";
+import { getAgentMode, setAgentMode } from "../../../session/src/agent-mode.ts";
 import type { GoalCycle, ReviewState, TaskStatus, TasksAccess } from "../tasks/tasks";
 import { computeGoalContextReview, computeSectionReview, freshReview, tasksMatch } from "./draft-logic";
 import type { PlanDraft } from "./review";

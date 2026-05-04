@@ -2,8 +2,8 @@
  * Shared skill invocation tracker.
  *
  * Records which skills the model has loaded via skill({ name }) during
- * the current session. Backed by a process-scoped singleton so separate
- * extension entrypoints still see one shared tracker.
+ * the current session. Backed by a process-scoped singleton so `/reload`
+ * preserves one shared tracker.
  */
 
 type SkillTrackerState = {

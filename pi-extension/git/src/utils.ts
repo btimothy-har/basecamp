@@ -7,8 +7,8 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { exec } from "../../platform/exec";
-import { loadTemplate as _loadTemplate } from "../../platform/templates";
 import { getWorkspaceState } from "../../platform/workspace";
+import { loadTemplate as _loadTemplate } from "./templates.ts";
 
 const RESOURCES = path.resolve(__dirname, "..", "resources");
 const PRIVATE_DIR_MODE = 0o700;

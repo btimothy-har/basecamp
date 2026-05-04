@@ -1,9 +1,9 @@
 /**
  * Process-scoped workspace provider registry.
  *
- * Pi loads package extension entries with separate Jiti module caches. Workspace
- * state shared by extension entries must live on globalThis rather than in a
- * module-local variable.
+ * Workspace state is shared through globalThis so `/reload` preserves the
+ * current service and registered providers instead of resetting module-local
+ * variables.
  */
 
 export interface RepoContext {
