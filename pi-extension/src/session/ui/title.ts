@@ -208,6 +208,7 @@ function appendBounded(parts: string[], part: string, maxChars: number): boolean
 export function buildTitleContext(entries: SessionEntry[], latestPrompt?: string): string {
 	const parts: string[] = [];
 	const recentMessages = entries.filter((entry) => entry.type === "message").slice(-MAX_RECENT_MESSAGES);
+	const recentParts: string[] = [];
 
 	for (const entry of recentMessages) {
 		const msg = entry.message as AgentMessage;
@@ -235,7 +236,23 @@ export function buildTitleContext(entries: SessionEntry[], latestPrompt?: string
 			part = `[Tool:${result.toolName}] result omitted${result.isError ? " (error)" : ""}`;
 		}
 
-		if (part && !appendBounded(parts, truncate(part, MAX_ENTRY_CHARS), MAX_CONTEXT_CHARS)) break;
+		if (part) recentParts.push(truncate(part, MAX_ENTRY_CHARS));
+	}
+
+	let recentLength = 0;
+	for (let index = recentParts.length - 1; index >= 0; index -= 1) {
+		const part = recentParts[index]!;
+		const separatorLength = parts.length === 0 ? 0 : 2;
+		const nextLength = recentLength + separatorLength + part.length;
+		if (nextLength <= MAX_CONTEXT_CHARS) {
+			parts.unshift(part);
+			recentLength = nextLength;
+			continue;
+		}
+
+		const remaining = MAX_CONTEXT_CHARS - recentLength - separatorLength;
+		if (remaining > 40) parts.unshift(truncate(part, remaining));
+		break;
 	}
 
 	const pendingPrompt = latestPrompt ? compactText(latestPrompt, MAX_LATEST_PROMPT_CHARS) : "";

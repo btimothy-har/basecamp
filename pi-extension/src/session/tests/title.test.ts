@@ -217,6 +217,27 @@ describe("buildTitleContext", () => {
 		assert.match(context, /\[Pending User Prompt\]\npending prompt after recent messages/);
 	});
 
+	it("keeps newest recent messages when the context budget is exceeded", () => {
+		const largeMessage = (index: number) =>
+			[
+				`oversized message ${index}`,
+				...Array.from({ length: 80 }, (_, line) => `detail ${line} ${"x".repeat(40)}`),
+			].join("\n");
+		const entries = Array.from({ length: 12 }, (_, index) => entry({ role: "user", content: largeMessage(index + 1) }));
+
+		const context = buildTitleContext(entries);
+
+		assert.ok(context.length <= 8_000, `context length ${context.length} exceeded bound`);
+		assert.doesNotMatch(context, /\boversized message 1\b/);
+		assert.doesNotMatch(context, /\boversized message 2\b/);
+		assert.doesNotMatch(context, /\boversized message 3\b/);
+		assert.match(context, /\boversized message 4\b/);
+		assert.match(context, /\boversized message 12\b/);
+		assert.match(context, /…\n\n\[User\]\noversized message 5/);
+		assert.ok(context.indexOf("oversized message 4") < context.indexOf("oversized message 5"));
+		assert.ok(context.indexOf("oversized message 5") < context.indexOf("oversized message 12"));
+	});
+
 	it("represents tool calls as compact metadata and summarized args", () => {
 		const context = buildTitleContext([
 			entry({
