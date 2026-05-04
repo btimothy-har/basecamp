@@ -7,6 +7,7 @@ compile:
 
 test:
 	uv run pytest
+	npm --prefix pi-extension test
 
 lint:
 	uv run ruff check . && uv run ruff format --check .

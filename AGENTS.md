@@ -22,6 +22,7 @@ basecamp-cli/
 ├── src/basecamp/
 │   ├── main.py                 # Click entry point (setup, config)
 │   ├── cli/
+│   │   ├── config.py           # Interactive configuration menu
 │   │   ├── project.py          # Interactive project CRUD used by config menu
 │   │   └── setup.py            # Environment setup (prerequisites, scaffolding)
 │   ├── config/                 # ProjectConfig model and directory helpers
@@ -34,15 +35,18 @@ basecamp-cli/
 
 pi-extension/                   # Core Pi package
 ├── package.json                # Extension manifest (extensions, skills, prompts)
-├── platform/                   # Shared extension platform modules
-├── session/                    # Session lifecycle hooks, UI, mode commands
-├── capabilities/               # Skill tool, skill lifecycle tracking, catalog providers
-├── model-aliases/              # Native model alias config reader/provider registration
-├── projects/                   # Project config/state, prompt assembly, context injection, header
-├── workspace/                  # Repo/worktree service, guards, affinity, commands, unsafe-edit
-├── workflow/                   # Agents, planning, tasks, escalation, workflow skills
-├── git/                        # Git guards, PR/issue workflow commands, publish tools
-└── engineering/                # Engineering runtime tools, prompts, and engineering/Pi skills
+├── index.ts                    # Registers the composed extension modules
+└── src/
+    ├── platform/               # Shared extension platform modules
+    ├── session/                # Session lifecycle hooks, UI, mode commands
+    ├── capabilities/           # Skill tool, skill lifecycle tracking, catalog providers
+    ├── model-aliases/          # Native model alias config reader/provider registration
+    ├── projects/               # Project config/state, prompt assembly, context injection, header
+    ├── workspace/              # Repo/worktree service, guards, affinity, commands, unsafe-edit
+    ├── workflow/               # Agents, planning, tasks, escalation, workflow skills
+    ├── git/                    # Git guards, PR/issue workflow commands, publish tools
+    ├── state/                  # Session state persistence
+    └── engineering/            # Engineering runtime tools, prompts, and engineering/Pi skills
 
 pi-observer/
 ├── pyproject.toml              # Python package exposing the `pi-observer` CLI
@@ -76,7 +80,7 @@ Core session, project, workspace, workflow, git, model-alias, capability, and en
 
 ### Model Aliases
 
-Model alias resolution is owned by `pi-extension/model-aliases`, backed by `~/.pi/model-aliases/config.json` with schema `{ "version": 1, "aliases": { "fast": "claude-haiku-4-5" } }`. `pi-extension/platform/model-aliases.ts` is only the provider seam; it must not read config, define aliases, or own model-selection policy.
+Model alias resolution is owned by `pi-extension/src/model-aliases`, backed by `~/.pi/model-aliases/config.json` with schema `{ "version": 1, "aliases": { "fast": "claude-haiku-4-5" } }`. `pi-extension/src/platform/model-aliases.ts` is only the provider seam; it must not read config, define aliases, or own model-selection policy.
 
 ### Environment Variable Chain
 
@@ -98,7 +102,8 @@ Worktrees live in `~/.worktrees/<repo>/<label>/` rather than inside the repo to 
 
 ### Testing
 
-- **Run**: `uv run pytest` from repo root
-- **Config**: root `pyproject.toml` — `testpaths = ["basecamp-cli/tests", "pi-observer/tests"]`, `pythonpath = ["basecamp-cli/src", "pi-observer/src"]`
+- **Run all**: `make test` from repo root runs Python pytest plus the pi-extension TypeScript unit suites.
+- **Python**: `uv run pytest` uses root `pyproject.toml` — `testpaths = ["basecamp-cli/tests", "pi-observer/tests"]`, `pythonpath = ["basecamp-cli/src", "pi-observer/src"]`.
+- **TypeScript**: `npm --prefix pi-extension test` runs the session/state/project/workspace/git/workflow unit suites.
 - **Basecamp tests** live under `basecamp-cli/tests/` and cover settings/config.
 - **Observer tests** live under `pi-observer/tests/` and cover observer CLI, pipeline, search, and storage. `TESTING=1` is set by pytest config.

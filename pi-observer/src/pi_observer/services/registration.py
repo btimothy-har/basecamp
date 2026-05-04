@@ -1,4 +1,4 @@
-"""Session registration — upserts project/worktree/transcript from hook input."""
+"""Session registration from observer hook input."""
 
 from __future__ import annotations
 
@@ -10,7 +10,6 @@ from pathlib import Path
 
 from pi_observer.data.project import Project
 from pi_observer.data.transcript import Transcript
-from pi_observer.data.worktree import Worktree
 from pi_observer.exceptions import RegistrationError
 from pi_observer.services.db import Database
 
@@ -26,8 +25,6 @@ class HookInput:
     cwd: str
     repo_name: str | None = None
     repo_root: str | None = None
-    repo_remote_url: str | None = None
-    execution_target: dict[str, object] | None = None
 
 
 @dataclass
@@ -35,7 +32,6 @@ class RegistrationResult:
     """Result of a registration operation."""
 
     project: Project
-    worktree: Worktree | None
     transcript: Transcript
     created: bool
 
@@ -80,27 +76,8 @@ def resolve_repo_root(cwd: str) -> Path | None:
         return None
 
 
-def normalize_execution_target(target: dict[str, object] | None) -> tuple[str, str, str] | None:
-    """Normalize explicit execution target metadata from hook input."""
-    if not isinstance(target, dict):
-        return None
-
-    label = target.get("label")
-    path = target.get("path")
-    if not isinstance(label, str) or not label.strip():
-        return None
-    if not isinstance(path, str) or not path.strip():
-        return None
-
-    branch = target.get("branch")
-    if not isinstance(branch, str) or not branch.strip():
-        branch = "detached"
-
-    return label.strip(), path.strip(), branch.strip()
-
-
 def register_session(hook_input: HookInput) -> RegistrationResult:
-    """Upsert project, worktree (if applicable), and transcript."""
+    """Upsert project and transcript."""
     if isinstance(hook_input.repo_root, str) and hook_input.repo_root.strip():
         repo_root = Path(hook_input.repo_root.strip()).resolve()
     else:
@@ -114,30 +91,12 @@ def register_session(hook_input: HookInput) -> RegistrationResult:
         project_name = repo_root.name
     repo_path = str(repo_root)
 
-    # Upsert project
     project = Project.get_by_repo_path(repo_path)
     if project is None:
         project = Project(name=project_name, repo_path=repo_path)
         with Database().session() as session:
             project = project.save(session)
 
-    # Upsert explicitly provided execution target
-    worktree: Worktree | None = None
-    wt_info = normalize_execution_target(hook_input.execution_target)
-    if wt_info is not None and project.id is not None:
-        label, wt_path, branch = wt_info
-        worktree = Worktree.get_by_project_and_label(project.id, label)
-        if worktree is None:
-            worktree = Worktree(
-                project_id=project.id,
-                label=label,
-                path=wt_path,
-                branch=branch,
-            )
-            with Database().session() as session:
-                worktree = worktree.save(session)
-
-    # Upsert transcript (idempotent on session_id)
     existing = Transcript.get_by_session_id(hook_input.session_id)
     if existing is not None:
         if existing.ended_at is not None:
@@ -146,14 +105,12 @@ def register_session(hook_input: HookInput) -> RegistrationResult:
                 existing = existing.save(session)
         return RegistrationResult(
             project=project,
-            worktree=worktree,
             transcript=existing,
             created=False,
         )
 
     transcript = Transcript(
         project_id=project.id,
-        worktree_id=worktree.id if worktree else None,
         session_id=hook_input.session_id,
         path=hook_input.transcript_path,
         started_at=datetime.now(UTC),
@@ -163,7 +120,6 @@ def register_session(hook_input: HookInput) -> RegistrationResult:
 
     return RegistrationResult(
         project=project,
-        worktree=worktree,
         transcript=transcript,
         created=True,
     )

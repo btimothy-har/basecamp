@@ -53,6 +53,10 @@ jobs:
       working-directory: pi-observer
       run: npx biome check .
 
-    - name: Run Tests
+    - name: Run Python Tests
       run: |
         uv run pytest
+
+    - name: Run Extension Tests
+      working-directory: pi-extension
+      run: npm test
