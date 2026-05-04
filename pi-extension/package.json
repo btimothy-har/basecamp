@@ -35,11 +35,13 @@
 		"format": "biome format --fix ."
 	},
 	"peerDependencies": {
+		"@mariozechner/pi-ai": "*",
 		"@mariozechner/pi-coding-agent": "*",
 		"@sinclair/typebox": "*"
 	},
 	"devDependencies": {
 		"@biomejs/biome": "^2.0.0",
+		"@mariozechner/pi-ai": "^0.67.2",
 		"@mariozechner/pi-coding-agent": "^0.67.1",
 		"@mariozechner/pi-tui": "^0.67.1",
 		"@sinclair/typebox": "^0.34.0",
