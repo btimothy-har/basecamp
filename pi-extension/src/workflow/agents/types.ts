@@ -2,8 +2,6 @@
  * Type definitions for the agent system.
  */
 
-import * as os from "node:os";
-import * as path from "node:path";
 import { type Static, Type } from "@sinclair/typebox";
 import type { TaskProgressSnapshot } from "../tasks/render";
 import type { AgentConfig } from "./discovery.ts";
@@ -63,9 +61,6 @@ export const AgentToolParams = Type.Object({
 	agent: Type.Optional(Type.String({ description: "Agent definition name" })),
 	task: Type.String({ description: "Task description" }),
 	name: Type.Optional(Type.String({ description: "Name suffix (auto-generated prefix)" })),
-	async: Type.Optional(
-		Type.Boolean({ description: "Run in background, return handle immediately (named read-only agents only)" }),
-	),
 });
 
 export type AgentToolInput = Static<typeof AgentToolParams>;
@@ -75,83 +70,6 @@ export type AgentToolInput = Static<typeof AgentToolParams>;
 // ============================================================================
 
 export const DEFAULT_AGENT_MAX_DEPTH = 2;
-
-const TEMP_SCOPE = `basecamp-agents-uid-${process.getuid?.() ?? "shared"}`;
-export const ASYNC_BASE_DIR = path.join(os.tmpdir(), TEMP_SCOPE, "async-runs");
-export const ASYNC_RESULTS_DIR = path.join(os.tmpdir(), TEMP_SCOPE, "async-results");
-
-// ============================================================================
-// Async Agent Types
-// ============================================================================
-
-/** Written by the runner script periodically to asyncDir/status.json. */
-export interface AsyncStatus {
-	runId: string;
-	agent: string;
-	task: string;
-	state: "running" | "complete" | "failed";
-	startedAt: number;
-	lastUpdate: number;
-	endedAt?: number;
-	pid?: number;
-	cwd: string;
-	model?: string;
-	toolCount: number;
-	turnCount: number;
-	usage: UsageStats;
-	error?: string;
-	taskProgress?: TaskProgressSnapshot;
-}
-
-/** Written by the runner script to ASYNC_RESULTS_DIR/{id}.json on completion. */
-export interface AsyncResult {
-	runId: string;
-	agent: string;
-	agentSource: "builtin";
-	task: string;
-	success: boolean;
-	output: string;
-	error?: string;
-	model?: string;
-	usage: UsageStats;
-	durationMs: number;
-	taskProgress?: TaskProgressSnapshot;
-	sessionId?: string;
-	cwd: string;
-}
-
-/** In-memory state tracked by the parent for each async job. */
-export interface AsyncJobState {
-	asyncId: string;
-	asyncDir: string;
-	agent: string;
-	agentSource: "builtin";
-	task: string;
-	status: "queued" | "running" | "complete" | "failed";
-	startedAt: number;
-	updatedAt: number;
-	model?: string;
-	toolCount?: number;
-	turnCount?: number;
-	taskProgress?: TaskProgressSnapshot;
-}
-
-/** Config file written to asyncDir for the runner script to read. */
-export interface AsyncRunnerConfig {
-	runId: string;
-	agent: string;
-	agentSource: "builtin";
-	task: string;
-	cwd: string;
-	model: string | undefined;
-	piArgs: string[];
-	asyncDir: string;
-	resultsDir: string;
-	sessionId?: string;
-}
-
-export const AGENT_ASYNC_STARTED_EVENT = "agent:async-started";
-export const AGENT_ASYNC_COMPLETE_EVENT = "agent:async-complete";
 
 // ============================================================================
 // Agent Tool Policy
@@ -170,20 +88,4 @@ export function getAgentRunKind(agentConfig: AgentConfig | null): AgentRunKind {
 
 export function getAgentToolAllowlist(agentConfig: AgentConfig | null): string[] {
 	return [...(getAgentRunKind(agentConfig) === "mutative" ? MUTATIVE_AGENT_TOOLS : READ_ONLY_AGENT_TOOLS)];
-}
-
-export function canDispatchAsync(agentConfig: AgentConfig | null): {
-	ok: boolean;
-	reason?: string;
-} {
-	if (!agentConfig) {
-		return { ok: false, reason: "Ad-hoc agents cannot be dispatched asynchronously" };
-	}
-	if (getAgentRunKind(agentConfig) !== "named-read-only") {
-		return {
-			ok: false,
-			reason: `Agent "${agentConfig.name}" is mutative — async requires a named read-only agent`,
-		};
-	}
-	return { ok: true };
 }

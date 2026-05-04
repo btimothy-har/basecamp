@@ -1,14 +1,12 @@
 /**
  * Agent tool — registered as a pi tool the LLM calls to dispatch subagents.
  *
- * Subagents run synchronously or asynchronously as child processes.
- * Sync: output returned as tool result for immediate reasoning.
- * Async: agent runs in background, result delivered by async-notify via sendMessage.
+ * Subagents run synchronously as child processes.
+ * Output is returned as the tool result for immediate reasoning.
  *
  * Usage:
- *   { agent: "scout", task: "..." }                    → sync dispatch
- *   { agent: "scout", task: "...", async: true }        → async (background)
- *   { task: "Fix the bug" }                             → ad-hoc (sync only)
+ *   { agent: "scout", task: "..." }                    → named dispatch
+ *   { task: "Fix the bug" }                             → ad-hoc dispatch
  */
 
 import { randomUUID } from "node:crypto";
@@ -22,26 +20,11 @@ import { type Component, Container, Markdown, Spacer, Text } from "@mariozechner
 import { hasInvokedSkill } from "../../platform/skill-tracker";
 import { getWorkspaceState } from "../../platform/workspace";
 import { formatTaskProgressSummary, renderCompactTaskProgressLines } from "../tasks/render";
-import { isAsyncAvailable, spawnAsyncAgent } from "./async-spawn.ts";
 import type { AgentStreamEvent } from "./executor.ts";
 import { spawnAgent } from "./executor.ts";
 import { resolveModel } from "./model-resolution.ts";
-import type {
-	AgentConfig,
-	AgentDetails,
-	AgentPartialDetails,
-	AgentRunKind,
-	AsyncResult,
-	ToolCallRecord,
-} from "./types.ts";
-import {
-	AGENT_ASYNC_COMPLETE_EVENT,
-	AGENT_ASYNC_STARTED_EVENT,
-	AgentToolParams,
-	canDispatchAsync,
-	DEFAULT_AGENT_MAX_DEPTH,
-	getAgentRunKind,
-} from "./types.ts";
+import type { AgentConfig, AgentDetails, AgentPartialDetails, AgentRunKind, ToolCallRecord } from "./types.ts";
+import { AgentToolParams, DEFAULT_AGENT_MAX_DEPTH, getAgentRunKind } from "./types.ts";
 
 // ============================================================================
 // Depth Guard
@@ -347,16 +330,6 @@ export function registerAgentTool(
 	getSessionName: () => string,
 ): void {
 	const runGuardState: AgentRunGuardState = { namedReadOnly: 0, exclusiveLabel: null };
-	const asyncRunReleases = new Map<string, () => void>();
-
-	pi.events.on(AGENT_ASYNC_COMPLETE_EVENT, (data: unknown) => {
-		const result = data as AsyncResult;
-		if (!result.runId) return;
-		const release = asyncRunReleases.get(result.runId);
-		if (!release) return;
-		asyncRunReleases.delete(result.runId);
-		release();
-	});
 
 	pi.registerTool({
 		name: "agent",
@@ -365,9 +338,8 @@ export function registerAgentTool(
 
 DISPATCH: { agent: "scout", task: "Investigate the auth module" }
 AD-HOC: { task: "Summarize auth error handling" }
-ASYNC: { agent: "scout", task: "Investigate the auth module", async: true }
 
-Available named agents are basecamp builtin definitions. Ad-hoc dispatch is sync-only and must run solo.`,
+Available named agents are basecamp builtin definitions. Ad-hoc dispatch must run solo.`,
 
 		promptSnippet:
 			"Dispatch a subagent. Parallel calls are allowed only for named read-only agents; worker and ad-hoc must run solo",
@@ -433,24 +405,6 @@ Available named agents are basecamp builtin definitions. Ad-hoc dispatch is sync
 				};
 			}
 
-			if (params.async) {
-				if (!isAsyncAvailable()) {
-					return {
-						content: [{ type: "text", text: "Async dispatch unavailable: jiti runtime not found" }],
-						isError: true,
-						details: null as unknown as AgentDetails,
-					};
-				}
-				const check = canDispatchAsync(agentConfig);
-				if (!check.ok) {
-					return {
-						content: [{ type: "text", text: check.reason! }],
-						isError: true,
-						details: null as unknown as AgentDetails,
-					};
-				}
-			}
-
 			const runGuard = beginAgentRun(runGuardState, runKind, agentLabel);
 			if (!runGuard.ok) {
 				return {
@@ -464,58 +418,6 @@ Available named agents are basecamp builtin definitions. Ad-hoc dispatch is sync
 				releaseAgentRun?.();
 				releaseAgentRun = null;
 			};
-
-			// ---- Async dispatch path ----
-			if (params.async) {
-				let asyncResult: ReturnType<typeof spawnAsyncAgent>;
-				try {
-					asyncResult = spawnAsyncAgent(agentConfig!, params.task, {
-						name,
-						model,
-						cwd: spawnCwd,
-						worktreeDir,
-						env,
-						sessionDir,
-						extensionTools,
-						sessionId: process.env.BASECAMP_SESSION_NAME,
-					});
-				} catch (error) {
-					releaseAgentRunNow();
-					const msg = error instanceof Error ? error.message : String(error);
-					return {
-						content: [{ type: "text", text: `Async dispatch failed: ${msg}` }],
-						isError: true,
-						details: null as unknown as AgentDetails,
-					};
-				}
-
-				if (asyncResult.error) {
-					releaseAgentRunNow();
-					return {
-						content: [{ type: "text", text: `Async dispatch failed: ${asyncResult.error}` }],
-						isError: true,
-						details: null as unknown as AgentDetails,
-					};
-				}
-
-				if (releaseAgentRun) asyncRunReleases.set(asyncResult.asyncId, releaseAgentRun);
-				releaseAgentRun = null;
-
-				pi.events.emit(AGENT_ASYNC_STARTED_EVENT, {
-					id: asyncResult.asyncId,
-					pid: asyncResult.pid,
-					agent: agentLabel,
-					agentSource: agentConfig!.source,
-					task: params.task,
-					asyncDir: asyncResult.asyncDir,
-				});
-
-				const text = `Background agent dispatched: **${agentLabel}** [${asyncResult.asyncId}]\nResult will be delivered automatically when complete.`;
-				return {
-					content: [{ type: "text", text }],
-					details: null as unknown as AgentDetails,
-				};
-			}
 
 			// Progressive rendering state
 			const partial: AgentPartialDetails = {
@@ -651,9 +553,7 @@ Available named agents are basecamp builtin definitions. Ad-hoc dispatch is sync
 			const agentName = args.agent || "ad-hoc";
 			const task = args.task || "...";
 			const preview = task.length > 70 ? `${task.slice(0, 70)}...` : task;
-			const asyncLabel = args.async ? theme.fg("warning", " [async]") : "";
-
-			let text = theme.fg("toolTitle", theme.bold("agent ")) + theme.fg("accent", agentName) + asyncLabel;
+			let text = theme.fg("toolTitle", theme.bold("agent ")) + theme.fg("accent", agentName);
 			text += `\n  ${theme.fg("dim", preview)}`;
 			return new Text(text, 0, 0);
 		},
