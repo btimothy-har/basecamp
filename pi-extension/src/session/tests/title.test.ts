@@ -202,6 +202,21 @@ describe("buildTitleContext", () => {
 		assert.match(context, /\[Pending User Prompt\]\nAdd focused tests next\./);
 	});
 
+	it("uses the 30 most recent message entries and keeps the pending prompt", () => {
+		const entries: SessionEntry[] = [
+			...Array.from({ length: 35 }, (_, index) => entry({ role: "user", content: `message ${index + 1}` })),
+			{ type: "summary", text: "non-message entry after recent messages" } as unknown as SessionEntry,
+			{ type: "checkpoint", text: "another non-message entry" } as unknown as SessionEntry,
+		];
+
+		const context = buildTitleContext(entries, "pending prompt after recent messages");
+
+		assert.doesNotMatch(context, /\bmessage 5\b/);
+		assert.match(context, /\bmessage 6\b/);
+		assert.match(context, /\bmessage 35\b/);
+		assert.match(context, /\[Pending User Prompt\]\npending prompt after recent messages/);
+	});
+
 	it("represents tool calls as compact metadata and summarized args", () => {
 		const context = buildTitleContext([
 			entry({
