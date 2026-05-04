@@ -3,7 +3,7 @@ import * as fs from "node:fs/promises";
 import * as os from "node:os";
 import * as path from "node:path";
 import { describe, it } from "node:test";
-import { readModelAliasConfig } from "../config.ts";
+import { readModelAliasConfig, writeModelAliasConfig } from "../config.ts";
 
 async function createTempDir(t: { after(fn: () => Promise<void>): void }): Promise<string> {
 	const dir = await fs.mkdtemp(path.join(os.tmpdir(), "basecamp-model-aliases-"));
@@ -80,5 +80,43 @@ describe("readModelAliasConfig", () => {
 
 			assert.deepEqual(readModelAliasConfig(configPath), {});
 		}
+	});
+});
+
+describe("writeModelAliasConfig", () => {
+	it("writes a valid config and creates the parent directory", async (t) => {
+		const dir = await createTempDir(t);
+		const configPath = path.join(dir, "nested", "config.json");
+
+		writeModelAliasConfig(
+			{
+				" fast ": " anthropic/claude-3-5-haiku-latest ",
+				strong: "anthropic/claude-sonnet-4-5",
+			},
+			configPath,
+		);
+
+		const content = JSON.parse(await fs.readFile(configPath, "utf8"));
+		assert.deepEqual(content, {
+			version: 1,
+			aliases: {
+				fast: "anthropic/claude-3-5-haiku-latest",
+				strong: "anthropic/claude-sonnet-4-5",
+			},
+		});
+		assert.deepEqual(readModelAliasConfig(configPath), {
+			fast: "anthropic/claude-3-5-haiku-latest",
+			strong: "anthropic/claude-sonnet-4-5",
+		});
+	});
+
+	it("throws instead of writing invalid aliases", async (t) => {
+		const dir = await createTempDir(t);
+		const configPath = path.join(dir, "config.json");
+
+		assert.throws(() => writeModelAliasConfig({ " ": "provider/model" }, configPath));
+		assert.throws(() => writeModelAliasConfig({ fast: " " }, configPath));
+		assert.throws(() => writeModelAliasConfig({ fast: 42 } as never, configPath));
+		assert.equal(await fs.stat(configPath).catch(() => undefined), undefined);
 	});
 });

@@ -5,15 +5,13 @@ import { readModelAliasConfig } from "./config.ts";
 const PROVIDER_ID = "native-config";
 
 export default function (_pi: ExtensionAPI): void {
-	const aliases = readModelAliasConfig();
-
 	registerModelAliasProvider({
 		id: PROVIDER_ID,
 		resolve(alias: string): string | undefined {
-			return aliases[alias];
+			return readModelAliasConfig()[alias];
 		},
 		list(): ModelAlias[] {
-			return Object.entries(aliases).map(([alias, model]) => ({
+			return Object.entries(readModelAliasConfig()).map(([alias, model]) => ({
 				alias,
 				model,
 				providerId: PROVIDER_ID,
