@@ -7,6 +7,7 @@ import subprocess
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import TypeGuard
 
 from pi_observer.data.project import Project
 from pi_observer.data.transcript import Transcript
@@ -76,13 +77,32 @@ def resolve_repo_root(cwd: str) -> Path | None:
         return None
 
 
+def _is_valid_repo_root(repo_root: Path | None) -> TypeGuard[Path]:
+    return (
+        repo_root is not None
+        and repo_root.is_absolute()
+        and repo_root.exists()
+        and repo_root.is_dir()
+    )
+
+
 def register_session(hook_input: HookInput) -> RegistrationResult:
     """Upsert project and transcript."""
+    repo_root: Path | None = None
     if isinstance(hook_input.repo_root, str) and hook_input.repo_root.strip():
-        repo_root = Path(hook_input.repo_root.strip()).resolve()
-    else:
-        repo_root = resolve_repo_root(hook_input.cwd)
+        explicit_repo_root = Path(hook_input.repo_root.strip()).resolve()
+        if _is_valid_repo_root(explicit_repo_root):
+            repo_root = explicit_repo_root
+        else:
+            logger.warning(
+                "Invalid explicit repo_root %s for session %s; falling back to cwd git inference",
+                explicit_repo_root,
+                hook_input.session_id,
+            )
+
     if repo_root is None:
+        repo_root = resolve_repo_root(hook_input.cwd)
+    if not _is_valid_repo_root(repo_root):
         raise RegistrationError(hook_input.cwd)
 
     if isinstance(hook_input.repo_name, str) and hook_input.repo_name.strip():

@@ -49,6 +49,7 @@ class TestRegisterSession:
 
     def test_explicit_repo_metadata_does_not_require_git_inference(self, db, tmp_path):  # noqa: ARG002
         repo = tmp_path / "explicit-repo"
+        repo.mkdir()
 
         hook = HookInput(
             session_id="sess-explicit-repo",
@@ -65,6 +66,38 @@ class TestRegisterSession:
         assert result.project.name == "explicit-name"
         assert result.project.repo_path == str(repo.resolve())
         assert result.transcript.worktree_id is None
+
+    def test_invalid_explicit_repo_root_falls_back_to_resolve_repo_root(
+        self,
+        db,  # noqa: ARG002
+        tmp_path,
+        caplog,
+    ):
+        fallback_repo = tmp_path / "fallback-repo"
+        fallback_repo.mkdir()
+        invalid_repo = tmp_path / "missing-repo"
+
+        hook = HookInput(
+            session_id="sess-invalid-explicit-repo",
+            transcript_path="/path/to/transcript.jsonl",
+            cwd=str(fallback_repo),
+            repo_root=str(invalid_repo),
+        )
+        with (
+            patch(
+                "pi_observer.services.registration.resolve_repo_root",
+                return_value=fallback_repo.resolve(),
+            ) as mock_resolve,
+            caplog.at_level("WARNING", logger="pi_observer.services.registration"),
+        ):
+            result = register_session(hook)
+
+        mock_resolve.assert_called_once_with(str(fallback_repo))
+        assert result.created is True
+        assert result.project.name == "fallback-repo"
+        assert result.project.repo_path == str(fallback_repo.resolve())
+        assert "Invalid explicit repo_root" in caplog.text
+        assert str(invalid_repo.resolve()) in caplog.text
 
     def test_missing_repo_root_falls_back_to_resolve_repo_root(self, db, tmp_path):  # noqa: ARG002
         repo = tmp_path / "fallback-repo"
