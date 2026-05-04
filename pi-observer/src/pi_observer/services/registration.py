@@ -78,12 +78,7 @@ def resolve_repo_root(cwd: str) -> Path | None:
 
 
 def _is_valid_repo_root(repo_root: Path | None) -> TypeGuard[Path]:
-    return (
-        repo_root is not None
-        and repo_root.is_absolute()
-        and repo_root.exists()
-        and repo_root.is_dir()
-    )
+    return repo_root is not None and repo_root.is_absolute() and repo_root.exists() and repo_root.is_dir()
 
 
 def register_session(hook_input: HookInput) -> RegistrationResult:
