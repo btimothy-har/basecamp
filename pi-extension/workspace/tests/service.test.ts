@@ -3,14 +3,18 @@ import * as fs from "node:fs/promises";
 import * as os from "node:os";
 import * as path from "node:path";
 import { describe, it } from "node:test";
-import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-agent";
+import type { ExtensionAPI, ExtensionContext, SessionStartEvent } from "@mariozechner/pi-coding-agent";
+import { registerWorkspaceService } from "../../platform/workspace.ts";
 import {
+	createDefaultSessionState,
 	getCurrentSessionState,
 	initializeCurrentSessionState,
 	resetCurrentSessionState,
+	saveSessionState,
 } from "../../state/src/index.ts";
 import { SCRATCH_ROOT, WORKTREES_ROOT } from "../src/constants.ts";
 import { WorkspaceRuntimeService } from "../src/service.ts";
+import { registerWorkspaceSession } from "../src/session.ts";
 
 const REPO_ROOT = "/repo";
 const REPO_NAME = "repo";
@@ -46,13 +50,13 @@ function snapshotBasecampEnv(): Record<string, string | undefined> {
 	);
 }
 
-function gitWorktreeListOutput(): string {
+function gitWorktreeListOutput(worktreeDir = WORKTREE_DIR, branch = BRANCH): string {
 	return [
 		`worktree ${REPO_ROOT}`,
 		"branch refs/heads/main",
 		"",
-		`worktree ${WORKTREE_DIR}`,
-		`branch refs/heads/${BRANCH}`,
+		`worktree ${worktreeDir}`,
+		`branch refs/heads/${branch}`,
 		"",
 	].join("\n");
 }
@@ -74,7 +78,23 @@ function createContext(sessionId: string): ExtensionContext {
 	} as unknown as ExtensionContext;
 }
 
-function createPi(): { pi: ExtensionAPI; calls: ExecCall[] } {
+function createWorkspaceSessionContext(sessionId: string, notifications: string[]): ExtensionContext {
+	return {
+		cwd: REPO_ROOT,
+		hasUI: true,
+		ui: {
+			notify(message: string) {
+				notifications.push(message);
+			},
+		},
+		sessionManager: {
+			getSessionId: () => sessionId,
+			getSessionFile: () => null,
+		},
+	} as unknown as ExtensionContext;
+}
+
+function createPi(piOptions: { worktreeDir?: string; branch?: string } = {}): { pi: ExtensionAPI; calls: ExecCall[] } {
 	const calls: ExecCall[] = [];
 	const pi = {
 		async exec(command: string, args: string[], options?: { cwd?: string; timeout?: number }): Promise<ExecResult> {
@@ -98,13 +118,40 @@ function createPi(): { pi: ExtensionAPI; calls: ExecCall[] } {
 				return { code: 0, stdout: "", stderr: "" };
 			}
 			if (argsEqual(args, ["-C", REPO_ROOT, "worktree", "list", "--porcelain"])) {
-				return { code: 0, stdout: gitWorktreeListOutput(), stderr: "" };
+				return { code: 0, stdout: gitWorktreeListOutput(piOptions.worktreeDir, piOptions.branch), stderr: "" };
 			}
 
 			throw unexpectedExecCall(call);
 		},
 	} as ExtensionAPI;
 	return { pi, calls };
+}
+
+function createSessionPi(options: { worktreeDir: string; branch: string }): {
+	pi: ExtensionAPI;
+	calls: ExecCall[];
+	sessionStart: (event: SessionStartEvent, ctx: ExtensionContext) => Promise<void>;
+} {
+	const { pi, calls } = createPi(options);
+	let sessionStart: ((event: SessionStartEvent, ctx: ExtensionContext) => Promise<void>) | null = null;
+	const sessionPi = {
+		...pi,
+		registerFlag() {},
+		getFlag() {
+			return undefined;
+		},
+		on(event: string, handler: (event: SessionStartEvent, ctx: ExtensionContext) => Promise<void>) {
+			if (event === "session_start") sessionStart = handler;
+		},
+	} as unknown as ExtensionAPI;
+	return {
+		pi: sessionPi,
+		calls,
+		sessionStart(event, ctx) {
+			if (!sessionStart) throw new Error("session_start handler was not registered");
+			return sessionStart(event, ctx);
+		},
+	};
 }
 
 async function initializeAndActivate(
@@ -186,5 +233,57 @@ describe("WorkspaceRuntimeService effective cwd", () => {
 			updatedAt: activeWorktree?.updatedAt,
 		});
 		assert.match(activeWorktree?.updatedAt ?? "", /^\d{4}-\d{2}-\d{2}T/);
+	});
+
+	it("restores active worktree metadata from session state on resume", async (t) => {
+		const envSnapshot = snapshotBasecampEnv();
+		const stateDir = await fs.mkdtemp(path.join(os.tmpdir(), "basecamp-workspace-restore-"));
+		const label = `restore-${process.pid}-${Date.now()}`;
+		const branch = `wt/${label}`;
+		const worktreeDir = path.join(WORKTREES_ROOT, REPO_NAME, label);
+		const notifications: string[] = [];
+		t.after(async () => {
+			resetCurrentSessionState();
+			restoreBasecampEnv(envSnapshot);
+			await fs.rm(SCRATCH_DIR, { recursive: true, force: true });
+			await fs.rm(stateDir, { recursive: true, force: true });
+			await fs.rm(worktreeDir, { recursive: true, force: true });
+		});
+
+		await fs.mkdir(worktreeDir, { recursive: true });
+		const ctx = createWorkspaceSessionContext("workspace-restore-state", notifications);
+		saveSessionState(
+			{
+				...createDefaultSessionState({ sessionId: "workspace-restore-state", sessionFile: null }),
+				activeWorktree: {
+					version: 1,
+					repoName: REPO_NAME,
+					repoRoot: REPO_ROOT,
+					remoteUrl: REMOTE_URL,
+					worktree: {
+						kind: "git-worktree",
+						label,
+						path: worktreeDir,
+						branch,
+						created: false,
+					},
+					updatedAt: "2026-05-04T00:00:00.000Z",
+				},
+			},
+			stateDir,
+		);
+		initializeCurrentSessionState(ctx, stateDir);
+
+		const { pi, sessionStart } = createSessionPi({ worktreeDir, branch });
+		const service = new WorkspaceRuntimeService(pi);
+		registerWorkspaceService(service);
+		registerWorkspaceSession(pi);
+
+		await sessionStart({ type: "session_start", reason: "resume" }, ctx);
+
+		assert.equal(service.current()?.activeWorktree?.label, label);
+		assert.equal(service.current()?.activeWorktree?.path, worktreeDir);
+		assert.equal(getCurrentSessionState().activeWorktree?.worktree.path, worktreeDir);
+		assert.ok(notifications.includes(`basecamp: restored worktree → ${label}`));
 	});
 });

@@ -18,6 +18,7 @@ export interface SessionStateWorktree {
 }
 
 export interface SessionStateActiveWorktree {
+	// Guard the nested worktree schema separately from the outer session-state document.
 	version: 1;
 	repoName: string;
 	repoRoot: string;
@@ -151,6 +152,7 @@ function sessionIdentityFromContext(ctx: ExtensionContext): SessionStateIdentity
 }
 
 function readFirstJsonlLine(filePath: string): string | null {
+	// Transcripts can be large; read only until the header newline instead of loading the whole file.
 	let fd: number | null = null;
 	try {
 		fd = fs.openSync(filePath, "r");
