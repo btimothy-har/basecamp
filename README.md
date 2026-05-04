@@ -36,7 +36,7 @@ uv run install.py -e        # editable (recommended for development)
 uv run install.py --no-editable
 ```
 
-This installs `basecamp`, `observer`, and `recall`, registers the Pi extension, and saves the install directory to `~/.pi/basecamp/config.json`.
+This installs the Python tools `basecamp` and `pi-observer`, registers the Pi packages in `pi-extension/` and `pi-observer/`, and saves the Basecamp install directory to `~/.pi/basecamp/config.json`.
 
 Then initialize the environment:
 
@@ -44,7 +44,7 @@ Then initialize the environment:
 basecamp setup                     # check prerequisites, scaffold dirs, create default config
 ```
 
-If `basecamp`, `observer`, or `recall` aren't in your PATH:
+If `basecamp` or `pi-observer` aren't in your PATH:
 
 ```bash
 export PATH="$HOME/.local/bin:$PATH"
@@ -54,12 +54,14 @@ export PATH="$HOME/.local/bin:$PATH"
 
 ```bash
 uv tool upgrade basecamp
+uv tool upgrade pi-observer
 ```
 
 ### Uninstalling
 
 ```bash
 uv tool uninstall basecamp
+uv tool uninstall pi-observer
 ```
 
 ## Usage
@@ -94,8 +96,11 @@ Use the **Projects** section to list, add, edit, or remove configured projects.
 
 | Command | Description |
 |---------|-------------|
-| `/open` | Open project directories in VS Code |
 | `/agents` | Browse available agent definitions |
+| `/plan` | Create a reviewed implementation plan and activate an execution worktree when approved |
+| `/show-plan` | Show the current plan and task progress |
+| `/tasks` | Show the current goal and task list |
+| `/worktree [label]` | Switch to an existing Git-registered worktree |
 | `/create-pr` | Create or update a pull request |
 | `/create-issue` | Draft and publish a GitHub issue through review |
 | `/pr-comments` | Address PR review comments |
@@ -144,9 +149,9 @@ Projects are defined in `~/.pi/basecamp/config.json`:
 | `additional_dirs` | No | Extra project directories included in prompt context and allowed file roots |
 | `description` | No | Shown in `basecamp config` project listings |
 | `working_style` | No | Loads matching working style prompt (see below) |
-| `context` | No | Loads `~/.pi/context/{name}.md` for project context |
+| `context` | No | Stem only (no `.md`); loads `~/.pi/context/{name}.md` for project context |
 
-The install/setup/config flows migrate legacy `dirs` entries to `repo_root` and `additional_dirs` locally.
+Existing local config files with the older project directory schema are migrated to `repo_root` and `additional_dirs` by setup/config flows.
 
 ## Prompt System
 
@@ -163,20 +168,20 @@ Pi's tool definitions and skill listings are sourced dynamically and included in
 The system prompt is assembled from layered sources:
 
 ```
-Runtime context (paths, platform, date)
+mode prompt, plus read-only constraints when applicable
+         ↓
+working style prompt, or subagent prompt for dispatched agents
          ↓
 environment.md (CLI usage, Python/uv)
          ↓
-working_styles/{name}.md (if configured)
+capabilities index (tools, skills, and parent-session agents)
          ↓
-system.md (working principles, tools, agents)
+project context (configured context plus AGENTS.md/CLAUDE.md)
          ↓
-project context (if configured)
-         ↓
-tools + skills (dynamically sourced from pi)
+runtime environment (paths, platform, date, git/worktree state)
 ```
 
-Override `system.md` by placing a file at `~/.pi/prompts/system.md`.
+Built-in prompt files can be overridden per loaded prompt path under `~/.pi/prompts/` (for example, `~/.pi/prompts/environment.md` or `~/.pi/prompts/modes/executor.md`).
 
 ### Working Styles
 
@@ -186,49 +191,50 @@ Override `system.md` by placing a file at `~/.pi/prompts/system.md`.
 | `advisor` | Advisor role, efficient discovery, direct communication, decision support |
 | `logseq` | Knowledge graph curation, structured entries, user-driven content approval |
 
-Create custom working styles in `~/.pi/styles/`.
+Create custom working styles as `{name}.md` files in `~/.pi/styles/`.
 
 ### Project Context
 
-For multi-repo projects, add cross-repo context in `~/.pi/context/`. The `context` field in project config points to this file.
+For multi-repo projects, add cross-repo context in `~/.pi/context/`. The `context` field in project config is the file stem only; Basecamp appends `.md` when loading the matching file.
 
 Single-repo projects typically use `AGENTS.md` in the repo itself.
 
 ## Git Worktrees
 
-Before a worktree is active, the effective working directory is where you launched Pi; the repository root is the protected checkout boundary for tool guards. When an implementation plan is approved, Basecamp prompts for an execution worktree using existing worktrees plus a suggested label derived from the plan goal.
+Before a worktree is active, the effective working directory is where you launched Pi; the repository root is the protected checkout boundary for workspace guards. When an implementation plan is approved, Basecamp uses the workspace service to prompt for an execution worktree using existing worktrees plus a suggested label derived from the plan goal.
 
-Worktrees live in `~/.worktrees/<repo>/<label>/` with branches named `wt/<label>` by default. Git is the source of truth for worktree registration; Basecamp does not maintain a separate metadata registry.
+The workspace service owns the `~/.worktrees/<repo>/<label>/` storage convention, `wt/<label>` default branch names, and `/tmp/pi/<repo>` scratch directories. Git is the source of truth for worktree registration; Basecamp consumes workspace state for project context and exposes `BASECAMP_*` env vars that `pi-observer` can use.
 
 - The protected checkout must be on the default branch with a clean working tree before activation
 - Implementation edits happen in the active worktree, not the protected checkout
 - Relative file-tool paths target the active worktree after activation, preserving the launch subdirectory when applicable
+- Mutating `safe_git` commands are blocked unless the effective cwd is inside the active execution worktree
 - `--worktree-dir` is an internal attach-only Pi flag for existing Git-registered worktrees; it does not create worktrees
 - Resumed/reloaded/forked sessions restore their last active worktree when still in the same repo
 - `/worktree [label]` switches the active worktree during a resumed session
-- `/open` in-session opens the active worktree directory in VS Code
 - Use native Git commands (`git worktree list`, `git worktree remove`) to inspect or clean up worktrees
 - Additional directories stay on their configured checkouts throughout the session
 - Only works with git repositories
 
 ## Semantic Memory (Observer)
 
-The `observer` CLI provides semantic memory across sessions. It ingests session transcripts, extracts structured knowledge via LLM, and makes it searchable.
+The `pi-observer` CLI and Pi package provide semantic memory across sessions. They ingest session transcripts, extract structured knowledge via LLM, and make it searchable.
 
 ### How it works
 
-1. **Ingest** — A hook triggers `observer ingest` at session end, parsing new transcript events incrementally
+1. **Ingest** — Hooks trigger `pi-observer ingest` at session shutdown, before compaction, and on agent dispatch (ingest-only), parsing new transcript events incrementally
 2. **Process** — A background job refines events into work items, extracts structured artifacts (summary, knowledge, decisions, constraints, actions), and embeds them into ChromaDB
-3. **Search** — The `recall` skill provides hybrid search (semantic + keyword) with time-decay scoring, scoped to the current project
+3. **Search** — The `recall` skill and `pi-observer recall` command provide hybrid search (semantic + keyword) with time-decay scoring, scoped to the current project
 
 ### Observer CLI
 
 ```bash
-observer setup                         # Initialize database and config
-observer db status                     # Show database and index status
-observer db migrate                    # Run pending schema migrations
-observer config set mode on            # Enable full pipeline (default: on)
-observer config set mode off           # Ingestion only, no LLM processing
+pi-observer setup                         # Initialize database and config
+pi-observer db status                     # Show database and index status
+pi-observer db migrate                    # Run pending schema migrations
+pi-observer config set mode on            # Enable full pipeline (default: on)
+pi-observer config set mode off           # Ingestion only, no LLM processing
+pi-observer recall search "worktrees"     # Search semantic memory from the shell
 ```
 
 ### Storage
@@ -237,10 +243,15 @@ All data is local — no servers or external services:
 - `~/.pi/observer/observer.db` — SQLite (relational model + FTS5 keyword search)
 - `~/.pi/observer/chroma/` — ChromaDB (vector embeddings, HNSW index)
 - `~/.pi/observer/config.json` — Observer settings
+- `~/.pi/basecamp/config.json` — Basecamp settings, including the installed repo path
 
-## Extension
+## Package Layout
 
-All skills, agents, hooks, and system prompts are bundled in a single pi extension at `pi-ext/`.
+basecamp is split into root-level products:
+
+- `basecamp-cli/` — Python package for the `basecamp` setup/config CLI
+- `pi-extension/` — Pi package for project context, session UI, worktrees, workflow, git, and engineering skills
+- `pi-observer/` — Python package for the `pi-observer` CLI plus a Pi package for transcript ingestion and semantic recall
 
 ## License
 

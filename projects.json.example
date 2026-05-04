@@ -1,27 +1,32 @@
 {
   "projects": {
     "myproject": {
-      "dirs": ["GitHub/my-project"],
+      "repo_root": "GitHub/my-project",
+      "additional_dirs": [],
       "description": "Full stack project with engineering working style",
       "working_style": "engineering"
     },
     "monorepo": {
-      "dirs": ["GitHub/main-repo", "GitHub/shared-lib"],
-      "description": "First dir is primary (cwd), rest are --add-dir",
+      "repo_root": "GitHub/main-repo",
+      "additional_dirs": ["GitHub/shared-lib"],
+      "description": "repo_root detects the project, additional_dirs add extra roots",
       "working_style": "engineering"
     },
     "data-pipeline": {
-      "dirs": ["GitHub/pipeline", "GitHub/pipeline-config"],
+      "repo_root": "GitHub/pipeline",
+      "additional_dirs": ["GitHub/pipeline-config"],
       "description": "Multi-repo project with custom context",
       "working_style": "engineering",
-      "context": "pipeline.md"
+      "context": "pipeline"
     },
     "minimal": {
-      "dirs": ["GitHub/simple-project"],
-      "description": "Environment + core prompts only (no working style)"
+      "repo_root": "GitHub/simple-project",
+      "additional_dirs": [],
+      "description": "Project using the default engineering working style"
     },
     "advisor-project": {
-      "dirs": ["GitHub/advisor-project"],
+      "repo_root": "GitHub/advisor-project",
+      "additional_dirs": [],
       "description": "Project using advisor working style",
       "working_style": "advisor"
     }
