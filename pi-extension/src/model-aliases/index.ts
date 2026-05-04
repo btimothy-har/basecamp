@@ -1,23 +1,27 @@
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
-import { type ModelAlias, registerModelAliasProvider } from "../platform/model-aliases.ts";
+import { type ModelAlias, type ModelAliasProvider, registerModelAliasProvider } from "../platform/model-aliases.ts";
+import { registerModelAliasCommands } from "./commands.ts";
 import { readModelAliasConfig } from "./config.ts";
 
 const PROVIDER_ID = "native-config";
 
-export default function (_pi: ExtensionAPI): void {
-	const aliases = readModelAliasConfig();
-
-	registerModelAliasProvider({
+export function createNativeConfigModelAliasProvider(configPath?: string): ModelAliasProvider {
+	return {
 		id: PROVIDER_ID,
 		resolve(alias: string): string | undefined {
-			return aliases[alias];
+			return readModelAliasConfig(configPath)[alias];
 		},
 		list(): ModelAlias[] {
-			return Object.entries(aliases).map(([alias, model]) => ({
+			return Object.entries(readModelAliasConfig(configPath)).map(([alias, model]) => ({
 				alias,
 				model,
 				providerId: PROVIDER_ID,
 			}));
 		},
-	});
+	};
+}
+
+export default function (pi: ExtensionAPI): void {
+	registerModelAliasProvider(createNativeConfigModelAliasProvider());
+	registerModelAliasCommands(pi);
 }
