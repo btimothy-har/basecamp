@@ -1,7 +1,7 @@
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-agent";
+import type { ExtensionAPI, ExtensionContext, SessionStartEvent } from "@mariozechner/pi-coding-agent";
 
 export const SESSION_STATE_VERSION = 1;
 export const DEFAULT_SESSION_STATE_DIR = path.join(os.homedir(), ".pi", "session-state");
@@ -129,9 +129,101 @@ function sessionIdentityFromContext(ctx: ExtensionContext): SessionStateIdentity
 	};
 }
 
+function readFirstJsonlLine(filePath: string): string | null {
+	let fd: number | null = null;
+	try {
+		fd = fs.openSync(filePath, "r");
+		const buffer = Buffer.alloc(4096);
+		const chunks: string[] = [];
+		let totalBytes = 0;
+		const maxHeaderBytes = 64 * 1024;
+
+		while (totalBytes < maxHeaderBytes) {
+			const bytesRead = fs.readSync(fd, buffer, 0, Math.min(buffer.length, maxHeaderBytes - totalBytes), null);
+			if (bytesRead === 0) break;
+
+			const chunk = buffer.subarray(0, bytesRead).toString("utf8");
+			const newlineIndex = chunk.indexOf("\n");
+			if (newlineIndex >= 0) {
+				chunks.push(chunk.slice(0, newlineIndex));
+				return chunks.join("");
+			}
+
+			chunks.push(chunk);
+			totalBytes += bytesRead;
+		}
+
+		return chunks.length > 0 ? chunks.join("") : null;
+	} catch {
+		return null;
+	} finally {
+		if (fd !== null) fs.closeSync(fd);
+	}
+}
+
+export function readSessionIdFromTranscriptHeader(sessionFile: string): string | null {
+	const line = readFirstJsonlLine(sessionFile);
+	if (!line) return null;
+
+	try {
+		const parsed: unknown = JSON.parse(line);
+		if (!isRecord(parsed)) return null;
+		if (parsed.type !== "session") return null;
+		return typeof parsed.id === "string" ? parsed.id : null;
+	} catch {
+		return null;
+	}
+}
+
+function getParentSessionFileFromHeader(ctx: ExtensionContext): string | null {
+	try {
+		const parentSession = ctx.sessionManager.getHeader()?.parentSession;
+		return typeof parentSession === "string" && parentSession.length > 0 ? parentSession : null;
+	} catch {
+		return null;
+	}
+}
+
+function resolveParentSessionFile(event: SessionStartEvent, ctx: ExtensionContext): string | null {
+	if (typeof event.previousSessionFile === "string" && event.previousSessionFile.length > 0) {
+		return event.previousSessionFile;
+	}
+	return getParentSessionFileFromHeader(ctx);
+}
+
+function loadForkInheritedFields(
+	parentSessionFile: string,
+	stateDir?: string,
+): Pick<BasecampSessionState, "activeWorktree" | "agentMode" | "title"> | null {
+	const parentSessionId = readSessionIdFromTranscriptHeader(parentSessionFile);
+	if (!parentSessionId) return null;
+
+	const parentState = loadSessionState({ sessionId: parentSessionId, sessionFile: parentSessionFile }, stateDir);
+	return {
+		activeWorktree: parentState.activeWorktree ? { ...parentState.activeWorktree } : null,
+		agentMode: parentState.agentMode,
+		title: parentState.title,
+	};
+}
+
 export function initializeCurrentSessionState(ctx: ExtensionContext, stateDir?: string): BasecampSessionState {
 	currentStateDir = stateDir;
 	currentState = loadSessionState(sessionIdentityFromContext(ctx), stateDir);
+	return currentState;
+}
+
+export function initializeCurrentSessionStateForEvent(
+	event: SessionStartEvent,
+	ctx: ExtensionContext,
+	stateDir?: string,
+): BasecampSessionState {
+	if (event.reason !== "fork") return initializeCurrentSessionState(ctx, stateDir);
+
+	currentStateDir = stateDir;
+	const childState = createDefaultSessionState(sessionIdentityFromContext(ctx));
+	const parentSessionFile = resolveParentSessionFile(event, ctx);
+	const inheritedFields = parentSessionFile ? loadForkInheritedFields(parentSessionFile, stateDir) : null;
+	currentState = saveSessionState({ ...childState, ...inheritedFields }, stateDir);
 	return currentState;
 }
 
@@ -153,8 +245,8 @@ export function resetCurrentSessionState(): void {
 }
 
 export function registerState(pi: ExtensionAPI): void {
-	pi.on("session_start", async (_event, ctx) => {
-		initializeCurrentSessionState(ctx);
+	pi.on("session_start", async (event, ctx) => {
+		initializeCurrentSessionStateForEvent(event, ctx);
 	});
 
 	pi.on("session_shutdown", async () => {

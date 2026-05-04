@@ -10,6 +10,7 @@ import {
 	createDefaultSessionState,
 	getCurrentSessionState,
 	initializeCurrentSessionState,
+	initializeCurrentSessionStateForEvent,
 	loadSessionState,
 	resetCurrentSessionState,
 	saveSessionState,
@@ -31,11 +32,28 @@ async function writeStateFile(stateDir: string, sessionId: string, content: unkn
 	await fs.writeFile(filePath, text ?? "null", "utf8");
 }
 
-function createContext(sessionId: string, sessionFile?: string): ExtensionContext {
+async function writeTranscriptHeader(filePath: string, sessionId: string): Promise<void> {
+	await fs.mkdir(path.dirname(filePath), { recursive: true });
+	await fs.writeFile(
+		filePath,
+		`${JSON.stringify({ type: "session", version: 3, id: sessionId, timestamp: "2026-01-01T00:00:00.000Z", cwd: "/tmp" })}\n${JSON.stringify({ type: "message", id: "m1", parentId: null })}\n`,
+		"utf8",
+	);
+}
+
+function createContext(sessionId: string, sessionFile?: string, parentSession?: string): ExtensionContext {
 	return {
 		sessionManager: {
 			getSessionId: () => sessionId,
 			getSessionFile: () => sessionFile,
+			getHeader: () => ({
+				type: "session",
+				version: 3,
+				id: sessionId,
+				timestamp: "2026-01-01T00:00:00.000Z",
+				cwd: "/tmp",
+				parentSession,
+			}),
 		},
 	} as unknown as ExtensionContext;
 }
@@ -133,6 +151,102 @@ describe("session state file helpers", () => {
 		assert.equal(idMismatch.sessionId, "expected");
 		assert.equal(fileMismatch.title, null);
 		assert.equal(fileMismatch.sessionFile, "/tmp/session.json");
+	});
+});
+
+describe("fork session state", () => {
+	it("copies selected parent state fields into the child state file", async (t) => {
+		const dir = await createTempDir(t);
+		t.after(() => {
+			resetCurrentSessionState();
+		});
+		const parentSessionFile = path.join(dir, "parent.jsonl");
+		const childSessionFile = path.join(dir, "child.jsonl");
+		await writeTranscriptHeader(parentSessionFile, "parent");
+		const parentState = saveSessionState(
+			{
+				...createDefaultSessionState({ sessionId: "parent", sessionFile: parentSessionFile }),
+				activeWorktree: {
+					kind: "git-worktree",
+					label: "feature",
+					path: "/tmp/worktree",
+					branch: "feature",
+					created: false,
+				},
+				agentMode: "executor",
+				title: "Parent title",
+			},
+			dir,
+		);
+
+		const childState = initializeCurrentSessionStateForEvent(
+			{ type: "session_start", reason: "fork", previousSessionFile: parentSessionFile },
+			createContext("child", childSessionFile),
+			dir,
+		);
+		const loadedChild = loadSessionState({ sessionId: "child", sessionFile: childSessionFile }, dir);
+		const loadedParent = loadSessionState({ sessionId: "parent", sessionFile: parentSessionFile }, dir);
+
+		assert.equal(childState.sessionId, "child");
+		assert.equal(childState.sessionFile, childSessionFile);
+		assert.deepEqual(childState.activeWorktree, parentState.activeWorktree);
+		assert.equal(childState.agentMode, "executor");
+		assert.equal(childState.title, "Parent title");
+		assert.deepEqual(loadedChild, childState);
+		assert.deepEqual(loadedParent, parentState);
+	});
+
+	it("saves child defaults when the parent session cannot be read", async (t) => {
+		const dir = await createTempDir(t);
+		t.after(() => {
+			resetCurrentSessionState();
+		});
+		const childSessionFile = path.join(dir, "child-missing-parent.jsonl");
+
+		const childState = initializeCurrentSessionStateForEvent(
+			{ type: "session_start", reason: "fork", previousSessionFile: path.join(dir, "missing-parent.jsonl") },
+			createContext("child-missing-parent", childSessionFile),
+			dir,
+		);
+		const childStateFileExists = await fs
+			.access(buildSessionStatePath("child-missing-parent", dir))
+			.then(() => true)
+			.catch(() => false);
+
+		assert.equal(childStateFileExists, true);
+		assert.equal(childState.sessionId, "child-missing-parent");
+		assert.equal(childState.sessionFile, childSessionFile);
+		assert.equal(childState.activeWorktree, null);
+		assert.equal(childState.agentMode, null);
+		assert.equal(childState.title, null);
+	});
+
+	it("falls back to the child header parentSession when previousSessionFile is absent", async (t) => {
+		const dir = await createTempDir(t);
+		t.after(() => {
+			resetCurrentSessionState();
+		});
+		const parentSessionFile = path.join(dir, "header-parent.jsonl");
+		const childSessionFile = path.join(dir, "header-child.jsonl");
+		await writeTranscriptHeader(parentSessionFile, "header-parent");
+		saveSessionState(
+			{
+				...createDefaultSessionState({ sessionId: "header-parent", sessionFile: parentSessionFile }),
+				agentMode: "planning",
+				title: "Header parent title",
+			},
+			dir,
+		);
+
+		const childState = initializeCurrentSessionStateForEvent(
+			{ type: "session_start", reason: "fork" },
+			createContext("header-child", childSessionFile, parentSessionFile),
+			dir,
+		);
+
+		assert.equal(childState.sessionId, "header-child");
+		assert.equal(childState.agentMode, "planning");
+		assert.equal(childState.title, "Header parent title");
 	});
 });
 
