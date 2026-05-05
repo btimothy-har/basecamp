@@ -199,21 +199,52 @@ Start by calling skill({ name: "issue-logging" }), then investigate as needed, w
 	pi.registerCommand("pr-walkthrough", {
 		description: "Interactive step-by-step PR walkthrough",
 		handler: async (args, ctx) => {
-			const parts = args?.trim().split(/\s+/) || [];
+			const parts = args?.trim().split(/\s+/).filter(Boolean) || [];
 			const prArg = parts[0];
 			const base = parts[1] || "main";
 
-			const pr = await resolvePrNumber(pi, prArg, ctx);
-			if (!pr) return;
+			if (prArg) {
+				const pr = await resolvePrNumber(pi, prArg, ctx);
+				if (!pr) return;
 
-			ctx.ui.notify(`Checking out PR #${pr.number} (${pr.branch})...`, "info");
-			const checkout = await exec(pi, "gh", ["pr", "checkout", pr.number]);
-			if (checkout.code !== 0) {
-				ctx.ui.notify(`Failed to checkout PR: ${checkout.stderr}`, "error");
+				ctx.ui.notify(`Checking out PR #${pr.number} (${pr.branch})...`, "info");
+				const checkout = await exec(pi, "gh", ["pr", "checkout", pr.number]);
+				if (checkout.code !== 0) {
+					ctx.ui.notify(`Failed to checkout PR: ${checkout.stderr}`, "error");
+					return;
+				}
+
+				pi.sendUserMessage(
+					loadTemplate("pr-walkthrough", {
+						TARGET_LABEL: `PR #${pr.number}`,
+						TARGET_JSON: JSON.stringify({ kind: "pr", prNumber: Number(pr.number), branch: pr.branch, base }, null, 2),
+						TARGET_CONTEXT_COMMANDS: `gh pr view ${pr.number} --json number,title,body,state,author,headRefName,headRefOid,baseRefName,labels,assignees,reviewRequests,closingIssuesReferences,commits`,
+						TARGET_GOAL: `Context-first PR walkthrough for PR #${pr.number}`,
+						BRANCH: pr.branch,
+						BASE: base,
+					}),
+				);
 				return;
 			}
 
-			pi.sendUserMessage(loadTemplate("pr-walkthrough", { PR_NUMBER: pr.number, BRANCH: pr.branch, BASE: base }));
+			const branch = await exec(pi, "git", ["branch", "--show-current"]);
+			const branchName = branch.stdout.trim();
+			if (!branchName) {
+				ctx.ui.notify("Not on a branch — pass a PR number to review a detached checkout", "error");
+				return;
+			}
+
+			ctx.ui.notify(`Review packet workflow for branch ${branchName} against ${base}`, "info");
+			pi.sendUserMessage(
+				loadTemplate("pr-walkthrough", {
+					TARGET_LABEL: `branch ${branchName}`,
+					TARGET_JSON: JSON.stringify({ kind: "branch", branch: branchName, base }, null, 2),
+					TARGET_CONTEXT_COMMANDS: `gh pr list --head ${branchName} --json number,title,body,state,author,headRefName,headRefOid,baseRefName,labels,assignees,reviewRequests,closingIssuesReferences,commits`,
+					TARGET_GOAL: `Context-first branch walkthrough for ${branchName}`,
+					BRANCH: branchName,
+					BASE: base,
+				}),
+			);
 		},
 	});
 }

@@ -1,6 +1,6 @@
-# PR Walkthrough — PR #{{PR_NUMBER}}
+# PR Walkthrough — {{TARGET_LABEL}}
 
-Prepare a context-first review packet for PR #{{PR_NUMBER}} on branch `{{BRANCH}}`, then call the `review_packet` tool. The goal is to help the user understand the change before inspecting individual diffs.
+Prepare a context-first review packet for {{TARGET_LABEL}} on branch `{{BRANCH}}`, then call the `review_packet` tool. The goal is to help the user understand the change before inspecting individual diffs.
 
 Do **not** treat the raw diff as the primary review object. Use diffs, logs, and file references as supporting evidence for the architecture, behavior, decisions, validation, and risks you explain.
 
@@ -9,22 +9,17 @@ Do **not** treat the raw diff as the primary review object. Use diffs, logs, and
 Use this target when calling `review_packet`:
 
 ```json
-{
-  "kind": "pr",
-  "prNumber": {{PR_NUMBER}},
-  "branch": "{{BRANCH}}",
-  "base": "{{BASE}}"
-}
+{{TARGET_JSON}}
 ```
 
 If you determine the current head SHA, include it as `headSha`.
 
 ## Step 1: Gather PR and Git Context
 
-Collect enough context to explain the PR in plain language before drilling into files:
+Collect enough context to explain the target in plain language before drilling into files:
 
 ```bash
-gh pr view {{PR_NUMBER}} --json number,title,body,state,author,headRefName,headRefOid,baseRefName,labels,assignees,reviewRequests,closingIssuesReferences,commits
+{{TARGET_CONTEXT_COMMANDS}}
 
 git rev-parse HEAD
 git log --oneline origin/{{BASE}}..HEAD
@@ -32,6 +27,8 @@ git diff --stat origin/{{BASE}}...HEAD
 git diff --name-status origin/{{BASE}}...HEAD
 git diff origin/{{BASE}}...HEAD
 ```
+
+For branch targets, PR metadata is optional. If the `gh pr list --head` command returns no PR, proceed with the branch review using git context.
 
 If `origin/{{BASE}}` is missing or stale, use the best available base ref and explain the fallback in the packet.
 
@@ -44,14 +41,11 @@ Create a structured packet using the `ReviewPacketSchema` fields directly:
 ```ts
 {
   target: {
-    kind: "pr",
-    prNumber: {{PR_NUMBER}},
-    branch: "{{BRANCH}}",
-    base: "{{BASE}}",
+    ...{{TARGET_JSON}},
     headSha: "<optional current HEAD sha>"
   },
   source: {
-    goal: "Context-first PR walkthrough for PR #{{PR_NUMBER}}"
+    goal: "{{TARGET_GOAL}}"
   },
   cards: [
     // Review cards, ordered from context/architecture to evidence/risks.
