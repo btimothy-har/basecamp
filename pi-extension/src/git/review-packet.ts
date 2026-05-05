@@ -159,17 +159,18 @@ export function normalizeReviewCards(cards: readonly ReviewCard[]): ReviewCard[]
 export function normalizeReviewPacket(packet: ReviewPacket): ReviewPacket {
 	const branch = packet.target.branch.trim();
 	const base = packet.target.base.trim();
+	const prNumber = packet.target.prNumber;
 
 	if (!branch) throw new Error("Review target branch is required.");
 	if (!base) throw new Error("Review target base is required.");
-	if (packet.target.kind === "pr" && (!Number.isInteger(packet.target.prNumber) || packet.target.prNumber < 1)) {
+	if (packet.target.kind === "pr" && (!Number.isInteger(prNumber) || prNumber === undefined || prNumber < 1)) {
 		throw new Error("Review target prNumber is required for PR reviews.");
 	}
 
 	return {
 		target: {
 			kind: packet.target.kind,
-			prNumber: packet.target.prNumber,
+			prNumber,
 			branch,
 			base,
 			headSha: trimmedOptional(packet.target.headSha),

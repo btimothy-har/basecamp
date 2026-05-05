@@ -82,9 +82,7 @@ describe("normalizeReviewCards", () => {
 	it("rejects invalid references", () => {
 		assert.throws(
 			() =>
-				normalizeReviewCards([
-					card({ id: "card", references: [{ path: " ", whyRelevant: "supports the claim" }] }),
-				]),
+				normalizeReviewCards([card({ id: "card", references: [{ path: " ", whyRelevant: "supports the claim" }] })]),
 			/Review reference path is required: card/,
 		);
 		assert.throws(
