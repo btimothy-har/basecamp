@@ -5,9 +5,9 @@ description: "Create a context-first code walkthrough review packet for a branch
 
 # Code Walkthrough
 
-Create a context-first review packet for a branch or pull request, then call `review_packet`. The goal is to help the user understand the work before inspecting individual diffs.
+Create a code-focused review packet for a branch or pull request, then call `review_packet`. The goal is to help the user review the actual code with enough context to understand why the changes matter.
 
-Do not treat the raw diff as the primary review object. Use diffs, logs, and file references as supporting evidence for the architecture, behavior, decisions, validation, and risks you explain.
+Keep orientation brief. The walkthrough is for code review, not prose review: every substantive claim should be backed by visible code or diff evidence. Use narrative to explain significance, but make concrete changed code the review surface.
 
 ## Context
 
@@ -23,7 +23,7 @@ If target JSON is provided, use it as the `target` object when calling `review_p
 
 ## Gather Evidence
 
-Collect enough context to explain the target in plain language before drilling into files:
+Collect enough context to explain the target, then inspect the changed code directly:
 
 ```bash
 git rev-parse HEAD
@@ -37,7 +37,7 @@ When a PR metadata command is provided, run it read-only. For branch targets, PR
 
 If `origin/$BASE` is missing or stale, use the best available base ref and explain the fallback in the packet.
 
-Read the relevant source and test files directly so line references and explanations are grounded in code, not just patch text.
+Read the relevant source and test files directly so line references and explanations are grounded in code, not just patch text. For each important changed area, capture a short code or diff excerpt that the reviewer can inspect in the packet.
 
 ## Build the Packet
 
@@ -63,25 +63,27 @@ Recommended card sequence:
    - What the work appears to accomplish in one or two sentences.
    - Problem or user/developer need it addresses.
    - Scope and complexity: files touched, subsystems affected, size of diff.
+   - Keep this card short; it frames the review but is not the review surface.
 
-2. **Architecture / lay of the land** (`kind: "architecture"`)
+2. **Primary code changes** (`kind: "diff-evidence"`)
+   - Show the concrete changed code reviewers need to inspect.
+   - Use `references[].quote` for changed hunks, before/after snippets, or compact code excerpts.
+   - Group related changes rather than listing every touched file.
+   - Explain why each excerpt matters in `whyRelevant`.
+
+3. **Architecture / lay of the land** (`kind: "architecture"`)
    - Relevant modules, ownership boundaries, data/control flow, extension points, commands, tools, UI, APIs, storage, or external services involved.
    - How the existing system is structured before this work.
    - Where the work fits into that structure.
 
-3. **Behavior walkthrough** (`kind: "walkthrough"`)
+4. **Behavior walkthrough** (`kind: "walkthrough"`)
    - The main runtime path from entrypoint to outcome.
    - Inputs, transformations, validation, side effects, and outputs.
    - Conditions that activate the new or changed behavior.
 
-4. **Decisions and trade-offs** (`kind: "decision"`)
+5. **Decisions and trade-offs** (`kind: "decision"`)
    - Design choices the work makes and why they matter.
    - Trade-offs, assumptions, compatibility constraints, and future implications.
-
-5. **Diff evidence** (`kind: "diff-evidence"`)
-   - The most important concrete code changes that support the earlier context.
-   - Keep this as evidence, not the primary narrative.
-   - Group related changes rather than listing every touched file.
 
 6. **Validation** (`kind: "validation"`)
    - Tests added or changed and scenarios covered.
@@ -100,7 +102,7 @@ Use multiple cards per kind when that improves clarity, but keep the packet conc
 
 ## Reference Quality
 
-Every reference must explain why the code evidence matters using `whyRelevant`.
+Every reference must explain why the code evidence matters using `whyRelevant`. For code review, most references should also include `quote` with an explicit code or diff excerpt. Do not use `quote` for a prose paraphrase.
 
 Good references include:
 
@@ -109,15 +111,17 @@ Good references include:
   "path": "path/to/file.ts",
   "lineStart": 42,
   "lineEnd": 58,
-  "quote": "optional short quote",
+  "quote": "if (changed) {\n  return newBehavior();\n}",
   "whyRelevant": "This is the command entrypoint that starts the new walkthrough behavior, so it anchors the runtime path described in this card."
 }
 ```
 
 Reference guidance:
 
-- Prefer source/test file line references over raw diff snippets.
+- Prefer source/test file line references plus short code excerpts over prose-only references.
 - Use diff output to find what changed, then read files to understand why it matters.
+- For complex changes, include compact before/after or changed-hunk snippets in `quote`.
+- Keep excerpts reviewable: include enough surrounding lines to understand the change, but avoid dumping full files.
 - Explain the significance of each reference, not just where it is.
 - Cite PR metadata only when it materially affects orientation, scope, risk, or open questions.
 

@@ -120,8 +120,14 @@ function formatReference(reference: ReviewReference, index: number): string[] {
 				? `:${reference.lineStart}`
 				: `:${reference.lineStart}-${reference.lineEnd}`;
 	const commit = reference.commit ? ` @ ${reference.commit}` : "";
-	const lines = [`${index + 1}. ${reference.path}${range}${commit}`, `   ${reference.whyRelevant}`];
-	if (reference.quote) lines.push(`   “${reference.quote}”`);
+	const lines = [`${index + 1}. ${reference.path}${range}${commit}`, `Why this matters: ${reference.whyRelevant}`];
+
+	if (reference.quote) {
+		lines.push("Code / diff excerpt:", "```");
+		lines.push(...reference.quote.replace(/\r\n?/g, "\n").split("\n"));
+		lines.push("```");
+	}
+
 	return lines;
 }
 
@@ -130,17 +136,16 @@ function renderCardContent(card: ReviewCard, draft: CardFeedbackDraft | undefine
 	lines.push(card.title);
 	lines.push(`Kind: ${kindLabel(card.kind)}`);
 	lines.push(`State: ${reviewFeedbackCategoryLabel(draft?.category ?? "pending")}`);
-	lines.push("");
-	lines.push(card.body);
 
 	if (card.references && card.references.length > 0) {
-		lines.push("");
-		lines.push("Supporting references / diff evidence");
+		lines.push("", "Code / diff evidence");
 		for (let i = 0; i < card.references.length; i++) {
 			lines.push("");
 			lines.push(...formatReference(card.references[i]!, i));
 		}
 	}
+
+	lines.push("", "Review notes", card.body);
 
 	return lines;
 }
