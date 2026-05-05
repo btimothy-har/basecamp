@@ -1,83 +1,140 @@
 # PR Walkthrough — PR #{{PR_NUMBER}}
 
-Interactive, step-by-step walkthrough of PR #{{PR_NUMBER}} on branch `{{BRANCH}}`.
+Prepare a context-first review packet for PR #{{PR_NUMBER}} on branch `{{BRANCH}}`, then call the `review_packet` tool. The goal is to help the user understand the change before inspecting individual diffs.
 
-## Step 1: Gather Context
+Do **not** treat the raw diff as the primary review object. Use diffs, logs, and file references as supporting evidence for the architecture, behavior, decisions, validation, and risks you explain.
+
+## Target
+
+Use this target when calling `review_packet`:
+
+```json
+{
+  "kind": "pr",
+  "prNumber": {{PR_NUMBER}},
+  "branch": "{{BRANCH}}",
+  "base": "{{BASE}}"
+}
+```
+
+If you determine the current head SHA, include it as `headSha`.
+
+## Step 1: Gather PR and Git Context
+
+Collect enough context to explain the PR in plain language before drilling into files:
 
 ```bash
+gh pr view {{PR_NUMBER}} --json number,title,body,state,author,headRefName,headRefOid,baseRefName,labels,assignees,reviewRequests,closingIssuesReferences,commits
+
+git rev-parse HEAD
 git log --oneline origin/{{BASE}}..HEAD
 git diff --stat origin/{{BASE}}...HEAD
+git diff --name-status origin/{{BASE}}...HEAD
+git diff origin/{{BASE}}...HEAD
 ```
 
-Check for linked issues and PR description:
-```bash
-gh pr view {{PR_NUMBER}} --json title,body,labels,assignees
+If `origin/{{BASE}}` is missing or stale, use the best available base ref and explain the fallback in the packet.
+
+Also inspect the relevant source and test files directly so line references and explanations are grounded in code, not just patch text.
+
+## Step 2: Build a Context-First Packet
+
+Create a structured packet using the `ReviewPacketSchema` fields directly:
+
+```ts
+{
+  target: {
+    kind: "pr",
+    prNumber: {{PR_NUMBER}},
+    branch: "{{BRANCH}}",
+    base: "{{BASE}}",
+    headSha: "<optional current HEAD sha>"
+  },
+  source: {
+    goal: "Context-first PR walkthrough for PR #{{PR_NUMBER}}"
+  },
+  cards: [
+    // Review cards, ordered from context/architecture to evidence/risks.
+  ]
+}
 ```
 
-Present a brief summary before beginning the walkthrough.
+Recommended card sequence:
 
-## Step 2: Set the Stage
+1. **Orientation** (`kind: "orientation"`)
+   - What the PR appears to accomplish in one or two sentences.
+   - Problem or user/developer need it addresses.
+   - Scope and complexity: files touched, subsystems affected, size of diff.
 
-Provide:
-- Single sentence summarizing what the PR accomplishes
-- Problem or need that motivated the change
-- Scope indicator (how many files, rough complexity)
+2. **Architecture / lay of the land** (`kind: "architecture"`)
+   - Relevant modules, ownership boundaries, data/control flow, extension points, commands, tools, UI, APIs, storage, or external services involved.
+   - How the existing system is structured before this PR.
+   - Where the PR fits into that structure.
 
-## Step 3: Entry Point
+3. **Behavior walkthrough** (`kind: "walkthrough"`)
+   - The main runtime path from entrypoint to outcome.
+   - Inputs, transformations, validation, side effects, and outputs.
+   - Conditions that activate the new/changed behavior.
 
-Identify where the change begins execution:
-- The first file/function where the new behavior triggers
-- How this integrates with existing code paths
-- What conditions activate this code
+4. **Decisions and trade-offs** (`kind: "decision"`)
+   - Design choices the PR makes and why they matter.
+   - Trade-offs, assumptions, compatibility constraints, and future implications.
 
-Quote relevant code with file and line references.
+5. **Diff evidence** (`kind: "diff-evidence"`)
+   - The most important concrete code changes that support the earlier context.
+   - Keep this as evidence, not the primary narrative.
+   - Group related changes rather than listing every touched file.
 
-## Step 4: Data Flow
+6. **Validation** (`kind: "validation"`)
+   - Tests added/changed and scenarios covered.
+   - Manual verification or commands that appear relevant.
+   - Gaps where validation is missing or unclear.
 
-Trace through the system, citing code at each step:
-1. Input handling — what data enters and how
-2. Processing — transformations, validations, business logic
-3. Side effects — database calls, external services, state changes
-4. Output — what returns to the caller
+7. **Risks** (`kind: "risk"`)
+   - Correctness, UX, compatibility, migration, security, performance, operational, or maintainability risks.
+   - Include impact and why the evidence points to the risk.
 
-## Step 5: Key Decisions
+8. **Open questions** (`kind: "open-question"`)
+   - Questions for the author or reviewer that would change confidence or review focus.
+   - Avoid questions already answered by PR metadata or code.
 
-Highlight architectural choices and trade-offs:
-- Why this approach over alternatives
-- Trade-offs made (performance vs simplicity, etc.)
-- Assumptions embedded in the design
-- Future implications or constraints introduced
+Use multiple cards per kind when that improves clarity, but keep the packet concise enough for an interactive walkthrough.
 
-## Step 6: Tests
+## Reference Quality
 
-Cover:
-- Test file locations with line references
-- What scenarios are covered
-- Notable test techniques (mocking, fixtures, edge cases)
-- Any gaps in coverage
+Every reference must explain why the code evidence matters using `whyRelevant`.
 
-## Step 7: Wrap Up
+Good references include:
 
-Provide:
-- Brief recap of what was added/changed
-- Key takeaways for the reviewer
-- Open questions for the PR author
-- Suggested focus areas for deeper review
+```json
+{
+  "path": "path/to/file.ts",
+  "lineStart": 42,
+  "lineEnd": 58,
+  "quote": "optional short quote",
+  "whyRelevant": "This is the command entrypoint that starts the new walkthrough behavior, so it anchors the runtime path described in this card."
+}
+```
 
-## Pacing
+Reference guidance:
 
-Adapt based on user signals:
+- Prefer source/test file line references over raw diff snippets.
+- Use diff output to find what changed, then read files to understand why it matters.
+- Explain the significance of each reference, not just where it is.
+- Cite PR metadata only when it materially affects orientation, scope, risk, or open questions.
 
-| Signal | Response |
-|--------|----------|
-| "Makes sense" / "Got it" | Move to next step |
-| Confusion | Slow down, add context, re-explain |
-| "Skip ahead" | Summarize remaining, jump to wrap-up |
-| Question asked | Answer fully before continuing |
-| Deep dive request | Expand that area, pause progression |
+## Step 3: Call `review_packet`
 
-## Citation Format
+After gathering context and building the packet, call `review_packet` with the structured packet object. Do not present a long standalone walkthrough first; the tool is the walkthrough entrypoint.
 
-- File reference: `path/to/file.py:42`
-- Line range: `path/to/file.py:10-25`
-- In prose: "The validation happens in `validators.py:validate_input` (line 42), which calls..."
+## Step 4: Handle Feedback
+
+After `review_packet` returns:
+
+- Consolidate the returned feedback by card and category.
+- Summarize next steps for the user.
+- For `needs_explanation` or `question`, answer or identify the extra investigation needed.
+- For `needs_code_change`, describe the requested change and affected files, but **do not edit code automatically**.
+- If the user cancelled, acknowledge cancellation and offer to rebuild or narrow the packet.
+
+Do not post GitHub comments, update PR metadata, or mutate the PR unless the user explicitly starts a separate workflow.
