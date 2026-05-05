@@ -25,7 +25,7 @@ function isNotFoundError(error: unknown): boolean {
 	return typeof error === "object" && error !== null && "code" in error && error.code === "ENOENT";
 }
 
-function ensurePrivateDirectory(dir: string): void {
+export function ensurePrivateDirectory(dir: string): void {
 	try {
 		const stat = fs.lstatSync(dir);
 		if (stat.isSymbolicLink()) throw new Error(`Unsafe scratch directory: ${dir} is a symlink`);

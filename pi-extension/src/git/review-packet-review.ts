@@ -17,6 +17,8 @@ import {
 	type ReviewFeedbackCategory,
 	type ReviewPacket,
 	type ReviewReference,
+	reviewFeedbackCategoryLabel,
+	reviewFeedbackRequiresText,
 } from "./review-packet";
 
 export interface ReviewPacketReviewResult {
@@ -52,32 +54,6 @@ function stripInsertionMarkers(line: string): string {
 function isNavKey(data: string): boolean {
 	const kb = getKeybindings();
 	return NAV_KEYS.some((key) => kb.matches(data, key));
-}
-
-function requiresFeedbackText(category: ReviewFeedbackCategory): boolean {
-	return (
-		category === "needs_explanation" ||
-		category === "question" ||
-		category === "needs_code_change" ||
-		category === "pending"
-	);
-}
-
-function categoryLabel(category: ReviewFeedbackCategory): string {
-	switch (category) {
-		case "approved":
-			return "Approved";
-		case "needs_explanation":
-			return "Needs explanation";
-		case "question":
-			return "Question";
-		case "needs_code_change":
-			return "Needs code change";
-		case "skip":
-			return "Skip";
-		case "pending":
-			return "Pending";
-	}
 }
 
 function kindLabel(kind: ReviewCard["kind"]): string {
@@ -153,7 +129,7 @@ function renderCardContent(card: ReviewCard, draft: CardFeedbackDraft | undefine
 	const lines: string[] = [];
 	lines.push(card.title);
 	lines.push(`Kind: ${kindLabel(card.kind)}`);
-	lines.push(`State: ${categoryLabel(draft?.category ?? "pending")}`);
+	lines.push(`State: ${reviewFeedbackCategoryLabel(draft?.category ?? "pending")}`);
 	lines.push("");
 	lines.push(card.body);
 
@@ -188,7 +164,7 @@ function buildReviewFeedback(cards: readonly ReviewCard[], drafts: Map<string, C
 	for (const card of cards) {
 		const draft = drafts.get(card.id);
 		if (!draft) continue;
-		if (requiresFeedbackText(draft.category) && !draft.text) continue;
+		if (reviewFeedbackRequiresText(draft.category) && !draft.text) continue;
 		feedback.push({ cardId: card.id, category: draft.category, text: draft.text ?? undefined });
 	}
 
@@ -339,8 +315,8 @@ async function showCardDrillDown(
 			const current = draftFor(card.id, drafts);
 			const category = pendingCategory ?? current.category;
 			const text = value.trim();
-			if (requiresFeedbackText(category) && !text) {
-				statusMessage = `${categoryLabel(category)} requires feedback text.`;
+			if (reviewFeedbackRequiresText(category) && !text) {
+				statusMessage = `${reviewFeedbackCategoryLabel(category)} requires feedback text.`;
 				updateHint();
 				container.invalidate();
 				return;
@@ -377,9 +353,9 @@ async function showCardDrillDown(
 		function chooseCategory(category: ReviewFeedbackCategory): void {
 			const current = draftFor(card.id, drafts);
 			statusMessage = null;
-			if (requiresFeedbackText(category) && !current.text) {
+			if (reviewFeedbackRequiresText(category) && !current.text) {
 				pendingCategory = category;
-				focusFeedback(`${categoryLabel(category)} requires feedback text.`);
+				focusFeedback(`${reviewFeedbackCategoryLabel(category)} requires feedback text.`);
 				return;
 			}
 			pendingCategory = null;
@@ -392,7 +368,7 @@ async function showCardDrillDown(
 		function updateHint(): void {
 			const current = draftFor(card.id, drafts);
 			const activeCategory = pendingCategory ?? current.category;
-			const state = `${theme.fg("dim", "State")}  ${categoryLabel(activeCategory)}`;
+			const state = `${theme.fg("dim", "State")}  ${reviewFeedbackCategoryLabel(activeCategory)}`;
 			const message = statusMessage ? `  ${theme.fg("warning", statusMessage)}` : "";
 			if (feedbackFocused) {
 				hint.setText(`${state}${message}\n${theme.fg("dim", "[Enter: Save]  [Esc: Clear/Back]")}`);

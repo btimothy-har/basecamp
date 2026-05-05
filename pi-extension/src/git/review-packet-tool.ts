@@ -14,12 +14,12 @@ import { getWorkspaceState } from "../platform/workspace";
 import {
 	type ConsolidatedReviewFeedback,
 	normalizeReviewPacket,
-	type ReviewFeedbackCategory,
 	type ReviewPacket,
 	ReviewPacketSchema,
+	reviewFeedbackCategoryLabel,
 } from "./review-packet";
 import { type ReviewPacketReviewResult, showReviewPacket } from "./review-packet-review";
-import { getScratchDir } from "./utils";
+import { ensurePrivateDirectory, getScratchDir } from "./utils";
 
 interface ReviewPacketTargetMetadata {
 	kind: ReviewPacket["target"]["kind"];
@@ -49,28 +49,10 @@ interface ReviewPacketToolDetails {
 	message?: string;
 }
 
-const PRIVATE_DIR_MODE = 0o700;
 const PRIVATE_FILE_MODE = 0o600;
 
 function isSubagent(): boolean {
 	return Number.parseInt(process.env.BASECAMP_AGENT_DEPTH ?? "0", 10) > 0;
-}
-
-function categoryLabel(category: ReviewFeedbackCategory): string {
-	switch (category) {
-		case "approved":
-			return "approved";
-		case "needs_explanation":
-			return "needs explanation";
-		case "question":
-			return "question";
-		case "needs_code_change":
-			return "needs code change";
-		case "skip":
-			return "skip";
-		case "pending":
-			return "pending";
-	}
 }
 
 function targetMetadata(packet: ReviewPacket, cwd: string): ReviewPacketTargetMetadata {
@@ -103,14 +85,13 @@ function feedbackSummary(packet: ReviewPacket, feedback: readonly ConsolidatedRe
 	return feedback.map((item) => {
 		const title = cardTitle(packet, item.cardId);
 		const texts = item.texts.length > 0 ? ` — ${item.texts.join(" | ")}` : "";
-		return `- ${item.cardId} (${categoryLabel(item.category)}): ${title}${texts}`;
+		return `- ${item.cardId} (${reviewFeedbackCategoryLabel(item.category).toLowerCase()}): ${title}${texts}`;
 	});
 }
 
 function ensureArtifactDir(cwd: string): string {
 	const dir = path.join(getScratchDir(cwd), "review-packets");
-	fs.mkdirSync(dir, { recursive: true, mode: PRIVATE_DIR_MODE });
-	fs.chmodSync(dir, PRIVATE_DIR_MODE);
+	ensurePrivateDirectory(dir);
 	return dir;
 }
 
@@ -132,34 +113,20 @@ function persistArtifact(cwd: string, artifact: ReviewPacketArtifact): string {
 	return artifactPath;
 }
 
-function toolResult(details: ReviewPacketToolDetails, isError = false) {
-	const lines: string[] = [];
-	if (details.message) lines.push(details.message);
-	if (details.target) lines.push(`Target: ${targetSummary(details.target)}`);
-	if (details.artifactPath) lines.push(`Artifact: ${details.artifactPath}`);
-
-	if (!details.message) {
-		if (details.cancelled) {
-			lines.push("User cancelled review packet walkthrough.");
-		} else if (details.feedback.length === 0) {
-			lines.push("User submitted the review packet with no feedback.");
-		} else {
-			lines.push("User feedback on review packet:", ...feedbackSummaryForDetails(details));
-		}
-	}
-
+function errorResult(message: string): {
+	isError: true;
+	details: ReviewPacketToolDetails;
+	content: { type: "text"; text: string }[];
+} {
 	return {
-		isError,
-		details,
-		content: [{ type: "text" as const, text: lines.join("\n") }],
+		isError: true,
+		details: {
+			cancelled: false,
+			feedback: [],
+			message,
+		},
+		content: [{ type: "text", text: message }],
 	};
-}
-
-function feedbackSummaryForDetails(details: ReviewPacketToolDetails): string[] {
-	return details.feedback.map((item) => {
-		const texts = item.texts.length > 0 ? ` — ${item.texts.join(" | ")}` : "";
-		return `- ${item.cardId} (${categoryLabel(item.category)})${texts}`;
-	});
 }
 
 export function registerReviewPacketTool(pi: ExtensionAPI): void {
@@ -173,39 +140,20 @@ export function registerReviewPacketTool(pi: ExtensionAPI): void {
 		parameters: ReviewPacketSchema,
 		async execute(_id, params, _signal, _onUpdate, ctx) {
 			if (!ctx.hasUI) {
-				return toolResult(
-					{
-						cancelled: false,
-						feedback: [],
-						message: "review_packet requires an interactive UI and cannot run in this non-interactive/no-UI context.",
-					},
-					true,
+				return errorResult(
+					"review_packet requires an interactive UI and cannot run in this non-interactive/no-UI context.",
 				);
 			}
 
 			if (isSubagent()) {
-				return toolResult(
-					{
-						cancelled: false,
-						feedback: [],
-						message: "review_packet is disabled in subagents because it opens user-facing UI.",
-					},
-					true,
-				);
+				return errorResult("review_packet is disabled in subagents because it opens user-facing UI.");
 			}
 
 			let packet: ReviewPacket;
 			try {
 				packet = normalizeReviewPacket(params as ReviewPacket);
 			} catch (error) {
-				return toolResult(
-					{
-						cancelled: false,
-						feedback: [],
-						message: `Invalid review packet: ${error instanceof Error ? error.message : String(error)}`,
-					},
-					true,
-				);
+				return errorResult(`Invalid review packet: ${error instanceof Error ? error.message : String(error)}`);
 			}
 
 			const reviewResult = await showReviewPacket(packet, ctx);

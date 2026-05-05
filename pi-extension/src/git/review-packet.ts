@@ -3,19 +3,27 @@ import { type Static, Type } from "@sinclair/typebox";
 export const ReviewTargetKindSchema = Type.Union([Type.Literal("pr"), Type.Literal("branch")]);
 export type ReviewTargetKind = Static<typeof ReviewTargetKindSchema>;
 
+export const REVIEW_PACKET_LIMITS = {
+	cards: 50,
+	referencesPerCard: 20,
+	shortText: 200,
+	body: 50_000,
+	quote: 5_000,
+} as const;
+
 export const ReviewTargetSchema = Type.Object({
 	kind: ReviewTargetKindSchema,
 	prNumber: Type.Optional(Type.Number()),
-	branch: Type.String(),
-	base: Type.String(),
-	headSha: Type.Optional(Type.String()),
+	branch: Type.String({ maxLength: REVIEW_PACKET_LIMITS.shortText }),
+	base: Type.String({ maxLength: REVIEW_PACKET_LIMITS.shortText }),
+	headSha: Type.Optional(Type.String({ maxLength: REVIEW_PACKET_LIMITS.shortText })),
 });
 export type ReviewTarget = Static<typeof ReviewTargetSchema>;
 
 export const ReviewSourceContextSchema = Type.Object({
-	sessionId: Type.Optional(Type.String()),
-	worktreeLabel: Type.Optional(Type.String()),
-	goal: Type.Optional(Type.String()),
+	sessionId: Type.Optional(Type.String({ maxLength: REVIEW_PACKET_LIMITS.shortText })),
+	worktreeLabel: Type.Optional(Type.String({ maxLength: REVIEW_PACKET_LIMITS.shortText })),
+	goal: Type.Optional(Type.String({ maxLength: REVIEW_PACKET_LIMITS.body })),
 });
 export type ReviewSourceContext = Static<typeof ReviewSourceContextSchema>;
 
@@ -32,28 +40,28 @@ export const ReviewCardKindSchema = Type.Union([
 export type ReviewCardKind = Static<typeof ReviewCardKindSchema>;
 
 export const ReviewReferenceSchema = Type.Object({
-	path: Type.String(),
+	path: Type.String({ maxLength: REVIEW_PACKET_LIMITS.shortText }),
 	lineStart: Type.Optional(Type.Number()),
 	lineEnd: Type.Optional(Type.Number()),
-	commit: Type.Optional(Type.String()),
-	quote: Type.Optional(Type.String()),
-	whyRelevant: Type.String(),
+	commit: Type.Optional(Type.String({ maxLength: REVIEW_PACKET_LIMITS.shortText })),
+	quote: Type.Optional(Type.String({ maxLength: REVIEW_PACKET_LIMITS.quote })),
+	whyRelevant: Type.String({ maxLength: REVIEW_PACKET_LIMITS.body }),
 });
 export type ReviewReference = Static<typeof ReviewReferenceSchema>;
 
 export const ReviewCardSchema = Type.Object({
-	id: Type.String(),
+	id: Type.String({ maxLength: REVIEW_PACKET_LIMITS.shortText }),
 	kind: ReviewCardKindSchema,
-	title: Type.String(),
-	body: Type.String(),
-	references: Type.Optional(Type.Array(ReviewReferenceSchema)),
+	title: Type.String({ maxLength: REVIEW_PACKET_LIMITS.shortText }),
+	body: Type.String({ maxLength: REVIEW_PACKET_LIMITS.body }),
+	references: Type.Optional(Type.Array(ReviewReferenceSchema, { maxItems: REVIEW_PACKET_LIMITS.referencesPerCard })),
 });
 export type ReviewCard = Static<typeof ReviewCardSchema>;
 
 export const ReviewPacketSchema = Type.Object({
 	target: ReviewTargetSchema,
 	source: Type.Optional(ReviewSourceContextSchema),
-	cards: Type.Array(ReviewCardSchema),
+	cards: Type.Array(ReviewCardSchema, { maxItems: REVIEW_PACKET_LIMITS.cards }),
 });
 export type ReviewPacket = Static<typeof ReviewPacketSchema>;
 
@@ -68,9 +76,9 @@ export const ReviewFeedbackCategorySchema = Type.Union([
 export type ReviewFeedbackCategory = Static<typeof ReviewFeedbackCategorySchema>;
 
 export const ReviewFeedbackSchema = Type.Object({
-	cardId: Type.String(),
+	cardId: Type.String({ maxLength: REVIEW_PACKET_LIMITS.shortText }),
 	category: ReviewFeedbackCategorySchema,
-	text: Type.Optional(Type.String()),
+	text: Type.Optional(Type.String({ maxLength: REVIEW_PACKET_LIMITS.body })),
 });
 export type ReviewFeedback = Static<typeof ReviewFeedbackSchema>;
 
@@ -104,6 +112,9 @@ function normalizeReference(reference: ReviewReference, cardId: string): ReviewR
 	const whyRelevant = reference.whyRelevant.trim();
 
 	if (!path) throw new Error(`Review reference path is required: ${cardId}`);
+	if (path.startsWith("/") || path.split(/[\\/]+/).includes("..")) {
+		throw new Error(`Review reference path must be repo-relative: ${cardId}`);
+	}
 	if (!whyRelevant) throw new Error(`Review reference whyRelevant is required: ${cardId}`);
 	if (reference.lineStart !== undefined && reference.lineStart < 1) {
 		throw new Error(`Review reference lineStart must be positive: ${cardId}`);
@@ -163,7 +174,7 @@ export function normalizeReviewPacket(packet: ReviewPacket): ReviewPacket {
 
 	if (!branch) throw new Error("Review target branch is required.");
 	if (!base) throw new Error("Review target base is required.");
-	if (packet.target.kind === "pr" && (!Number.isInteger(prNumber) || prNumber === undefined || prNumber < 1)) {
+	if (packet.target.kind === "pr" && (typeof prNumber !== "number" || !Number.isInteger(prNumber) || prNumber < 1)) {
 		throw new Error("Review target prNumber is required for PR reviews.");
 	}
 
@@ -186,8 +197,25 @@ export function normalizeReviewPacket(packet: ReviewPacket): ReviewPacket {
 	};
 }
 
-function requiresFeedbackText(category: ReviewFeedbackCategory): boolean {
+export function reviewFeedbackRequiresText(category: ReviewFeedbackCategory): boolean {
 	return category !== "approved" && category !== "skip";
+}
+
+export function reviewFeedbackCategoryLabel(category: ReviewFeedbackCategory): string {
+	switch (category) {
+		case "approved":
+			return "Approved";
+		case "needs_explanation":
+			return "Needs explanation";
+		case "question":
+			return "Question";
+		case "needs_code_change":
+			return "Needs code change";
+		case "skip":
+			return "Skip";
+		case "pending":
+			return "Pending";
+	}
 }
 
 function feedbackKey(cardId: string, category: ReviewFeedbackCategory): string {
@@ -203,7 +231,7 @@ export function consolidateReviewFeedback(feedback: readonly ReviewFeedback[]): 
 		if (!cardId) throw new Error("Review feedback cardId is required.");
 
 		const text = item.text?.trim();
-		if (requiresFeedbackText(item.category) && !text) {
+		if (reviewFeedbackRequiresText(item.category) && !text) {
 			throw new Error(`Review feedback text is required for ${item.category}: ${cardId}`);
 		}
 

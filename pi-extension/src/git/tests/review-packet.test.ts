@@ -7,6 +7,8 @@ import {
 	type ReviewCard,
 	type ReviewFeedback,
 	type ReviewPacket,
+	reviewFeedbackCategoryLabel,
+	reviewFeedbackRequiresText,
 } from "../review-packet.ts";
 
 function card(overrides: Partial<ReviewCard>): ReviewCard {
@@ -102,6 +104,13 @@ describe("normalizeReviewCards", () => {
 				]),
 			/Review reference lineEnd must be greater than or equal to lineStart: card/,
 		);
+		assert.throws(
+			() =>
+				normalizeReviewCards([
+					card({ id: "card", references: [{ path: "../src/file.ts", whyRelevant: "supports the claim" }] }),
+				]),
+			/Review reference path must be repo-relative: card/,
+		);
 	});
 });
 
@@ -160,14 +169,45 @@ describe("normalizeReviewPacket", () => {
 				}),
 			/Review target base is required/,
 		);
-		assert.throws(
-			() =>
-				normalizeReviewPacket({
-					target: { kind: "pr", branch: "feature", base: "main" },
-					cards: [card({ id: "orientation", kind: "orientation" })],
-				}),
-			/Review target prNumber is required for PR reviews/,
-		);
+		for (const prNumber of [undefined, 0, -1, 1.5]) {
+			assert.throws(
+				() =>
+					normalizeReviewPacket({
+						target: { kind: "pr", prNumber, branch: "feature", base: "main" },
+						cards: [card({ id: "orientation", kind: "orientation" })],
+					}),
+				/Review target prNumber is required for PR reviews/,
+			);
+		}
+	});
+
+	it("normalizes whitespace-only source fields to undefined", () => {
+		const normalized = normalizeReviewPacket({
+			target: { kind: "branch", branch: "feature", base: "main" },
+			source: { sessionId: " ", worktreeLabel: " ", goal: " " },
+			cards: [card({ id: "orientation", kind: "orientation" })],
+		});
+
+		assert.deepEqual(normalized.source, {
+			sessionId: undefined,
+			worktreeLabel: undefined,
+			goal: undefined,
+		});
+	});
+});
+
+describe("feedback helpers", () => {
+	it("identifies feedback states that require text", () => {
+		for (const category of ["needs_explanation", "question", "needs_code_change", "pending"] as const) {
+			assert.equal(reviewFeedbackRequiresText(category), true);
+		}
+		assert.equal(reviewFeedbackRequiresText("approved"), false);
+		assert.equal(reviewFeedbackRequiresText("skip"), false);
+	});
+
+	it("formats feedback category labels", () => {
+		assert.equal(reviewFeedbackCategoryLabel("needs_code_change"), "Needs code change");
+		assert.equal(reviewFeedbackCategoryLabel("pending"), "Pending");
 	});
 });
 
