@@ -104,9 +104,10 @@ function renderListView(
 		const card = cards[i]!;
 		const cursor = i === selected ? theme.fg("accent", "▸") : " ";
 		const marker = cardMarker(drafts.get(card.id), theme);
-		const title = i === selected ? theme.fg("accent", theme.bold(card.title)) : theme.bold(card.title);
+		const header = kindLabel(card.kind);
+		const label = i === selected ? theme.fg("accent", theme.bold(header)) : theme.bold(header);
 		const preview = card.body.length > 48 ? `${card.body.slice(0, 48)}…` : card.body;
-		lines.push(`${cursor} ${marker} ${title}  ${theme.fg("dim", kindLabel(card.kind))}  ${theme.fg("dim", preview)}`);
+		lines.push(`${cursor} ${marker} ${label}  ${theme.fg("dim", card.title)}  ${theme.fg("dim", preview)}`);
 	}
 
 	return lines;
