@@ -3,9 +3,8 @@
  *
  *   /create-pr [context]            — create/find draft PR, review, describe, publish
  *   /create-issue [topic]           — draft and publish a GitHub issue through review
- *   /pr-comments [number]           — synthesize review findings, post as PR comments
+ *   /pr-comments [number]             — synthesize review findings, post as PR comments
  *   /code-walkthrough [number] [base] — context-first code walkthrough
- *   /pr-walkthrough [number] [base]   — alias for /code-walkthrough
  */
 
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
@@ -246,12 +245,6 @@ Start by calling skill({ name: "issue-logging" }), then investigate as needed, w
 	// --- /code-walkthrough [number] [base] ---
 	pi.registerCommand("code-walkthrough", {
 		description: "Context-first code walkthrough review",
-		handler: startCodeWalkthrough,
-	});
-
-	// --- /pr-walkthrough [number] [base] ---
-	pi.registerCommand("pr-walkthrough", {
-		description: "Alias for /code-walkthrough",
 		handler: startCodeWalkthrough,
 	});
 }
