@@ -192,6 +192,12 @@ function setDraft(
 	drafts.set(cardId, { category, text: text?.trim() || null });
 }
 
+function isCardReviewed(card: ReviewCard, drafts: Map<string, CardFeedbackDraft>): boolean {
+	const draft = drafts.get(card.id);
+	if (!draft || draft.category === "pending") return false;
+	return !reviewFeedbackRequiresText(draft.category) || Boolean(draft.text);
+}
+
 function buildReviewFeedback(cards: readonly ReviewCard[], drafts: Map<string, CardFeedbackDraft>): ReviewFeedback[] {
 	const feedback: ReviewFeedback[] = [];
 
@@ -261,6 +267,30 @@ export async function showReviewPacket(packet: ReviewPacket, ctx: ExtensionConte
 					if (matchesSelectCancel(data)) {
 						done("cancel");
 					} else if (data === "s" || data === "S") {
+						const unreviewedCards = cards.filter((card) => !isCardReviewed(card, drafts));
+						const firstUnreviewed = unreviewedCards[0];
+						if (firstUnreviewed) {
+							const groupIndex = groups.findIndex((group) => group.kind === firstUnreviewed.kind);
+							const group = groupIndex >= 0 ? groups[groupIndex] : undefined;
+							if (group) {
+								selected = groupIndex;
+								groupPositions.set(
+									group.kind,
+									Math.max(
+										0,
+										group.cards.findIndex((card) => card.id === firstUnreviewed.id),
+									),
+								);
+							}
+							hint.setText(
+								theme.fg(
+									"warning",
+									`${unreviewedCards.length} card${unreviewedCards.length === 1 ? "" : "s"} still pending review`,
+								),
+							);
+							container.invalidate();
+							return;
+						}
 						done("submit");
 					} else if (data === " " || matchesInputSubmit(data)) {
 						done(selected);
