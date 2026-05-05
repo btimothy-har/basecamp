@@ -31,6 +31,11 @@ interface CardFeedbackDraft {
 	text: string | null;
 }
 
+interface CardGroup {
+	kind: ReviewCard["kind"];
+	cards: ReviewCard[];
+}
+
 const NAV_KEYS = [
 	"tui.editor.cursorUp",
 	"tui.editor.cursorDown",
@@ -92,22 +97,45 @@ function cardMarker(draft: CardFeedbackDraft | undefined, theme: Theme): string 
 	return `${marker}${note}`;
 }
 
+function groupCardsByKind(cards: readonly ReviewCard[]): CardGroup[] {
+	const groups: CardGroup[] = [];
+	const byKind = new Map<ReviewCard["kind"], CardGroup>();
+
+	for (const card of cards) {
+		let group = byKind.get(card.kind);
+		if (!group) {
+			group = { kind: card.kind, cards: [] };
+			byKind.set(card.kind, group);
+			groups.push(group);
+		}
+		group.cards.push(card);
+	}
+
+	return groups;
+}
+
 function renderListView(
-	cards: readonly ReviewCard[],
+	groups: readonly CardGroup[],
 	drafts: Map<string, CardFeedbackDraft>,
+	groupPositions: Map<ReviewCard["kind"], number>,
 	selected: number,
 	theme: Theme,
 ): string[] {
 	const lines: string[] = [];
 
-	for (let i = 0; i < cards.length; i++) {
-		const card = cards[i]!;
+	for (let i = 0; i < groups.length; i++) {
+		const group = groups[i]!;
+		const currentIdx = Math.min(groupPositions.get(group.kind) ?? 0, group.cards.length - 1);
+		const card = group.cards[currentIdx]!;
 		const cursor = i === selected ? theme.fg("accent", "▸") : " ";
 		const marker = cardMarker(drafts.get(card.id), theme);
-		const header = kindLabel(card.kind);
+		const header = kindLabel(group.kind);
 		const label = i === selected ? theme.fg("accent", theme.bold(header)) : theme.bold(header);
 		const preview = card.body.length > 48 ? `${card.body.slice(0, 48)}…` : card.body;
-		lines.push(`${cursor} ${marker} ${label}  ${theme.fg("dim", card.title)}  ${theme.fg("dim", preview)}`);
+		const count = group.cards.length === 1 ? "1 card" : `${currentIdx + 1} of ${group.cards.length}`;
+		lines.push(
+			`${cursor} ${marker} ${label}  ${theme.fg("dim", count)}  ${theme.fg("dim", card.title)}  ${theme.fg("dim", preview)}`,
+		);
 	}
 
 	return lines;
@@ -188,6 +216,8 @@ function consolidatedResult(
 export async function showReviewPacket(packet: ReviewPacket, ctx: ExtensionContext): Promise<ReviewPacketReviewResult> {
 	const normalized = normalizeReviewPacket(packet);
 	const cards = normalized.cards;
+	const groups = groupCardsByKind(cards);
+	const groupPositions = new Map<ReviewCard["kind"], number>();
 	const drafts = new Map<string, CardFeedbackDraft>();
 	let lastSelected = 0;
 
@@ -195,7 +225,7 @@ export async function showReviewPacket(packet: ReviewPacket, ctx: ExtensionConte
 
 	while (true) {
 		const selection = await ctx.ui.custom<number | "submit" | "cancel">((_tui, theme, _kb, done) => {
-			let selected = Math.min(lastSelected, cards.length - 1);
+			let selected = Math.min(lastSelected, groups.length - 1);
 			const target =
 				normalized.target.kind === "pr"
 					? `PR #${normalized.target.prNumber}  ${normalized.target.branch} → ${normalized.target.base}`
@@ -222,7 +252,7 @@ export async function showReviewPacket(packet: ReviewPacket, ctx: ExtensionConte
 
 			return {
 				render: (width: number) => {
-					listText.setText(renderListView(cards, drafts, selected, theme).join("\n"));
+					listText.setText(renderListView(groups, drafts, groupPositions, selected, theme).join("\n"));
 					return container.render(width);
 				},
 				invalidate: () => container.invalidate(),
@@ -240,7 +270,7 @@ export async function showReviewPacket(packet: ReviewPacket, ctx: ExtensionConte
 							container.invalidate();
 						}
 					} else if (matchesMoveDown(data)) {
-						if (selected < cards.length - 1) {
+						if (selected < groups.length - 1) {
 							selected++;
 							container.invalidate();
 						}
@@ -253,7 +283,10 @@ export async function showReviewPacket(packet: ReviewPacket, ctx: ExtensionConte
 		if (selection === "cancel") return consolidatedResult(true, cards, drafts);
 
 		lastSelected = selection;
-		await showCardDrillDown(cards[selection]!, cards, drafts, selection, ctx);
+		const group = groups[selection]!;
+		const startIndex = Math.min(groupPositions.get(group.kind) ?? 0, group.cards.length - 1);
+		const selectedCardIndex = await showCardDrillDown(group, drafts, startIndex, ctx);
+		groupPositions.set(group.kind, selectedCardIndex);
 	}
 }
 
@@ -278,19 +311,15 @@ function matchesMoveDown(data: string): boolean {
 }
 
 async function showCardDrillDown(
-	card: ReviewCard,
-	cards: readonly ReviewCard[],
+	group: CardGroup,
 	drafts: Map<string, CardFeedbackDraft>,
-	index: number,
+	startIndex: number,
 	ctx: ExtensionContext,
-): Promise<void> {
+): Promise<number> {
+	let currentIdx = startIndex;
 	await ctx.ui.custom<void>((tui, theme, _kb, done) => {
 		const border = new DynamicBorder((s: string) => theme.fg("border", s));
-		const header = new Text(
-			`${theme.fg("accent", theme.bold("Review Card"))}  ${theme.fg("dim", `${index + 1} of ${cards.length}`)}`,
-			1,
-			0,
-		);
+		const header = new Text("", 1, 0);
 		const cardLabel = new Text(`${theme.fg("dim", "Card")}${CARD_INSERTION_MARKER}`, 0, 0);
 		const feedbackLabel = new Text("", 0, 0);
 		const hint = new Text("", 1, 0);
@@ -301,16 +330,11 @@ async function showCardDrillDown(
 		};
 
 		const viewer = new Editor(tui, editorTheme, { paddingX: 0 });
-		viewer.setText(renderCardContent(card, drafts.get(card.id)).join("\n"));
 		const viewerState = viewer as unknown as { state: { cursorLine: number; cursorCol: number }; scrollOffset: number };
-		viewerState.state.cursorLine = 0;
-		viewerState.state.cursorCol = 0;
-		viewerState.scrollOffset = 0;
 		viewer.focused = true;
 		viewer.disableSubmit = true;
 
 		const feedback = new Editor(tui, editorTheme, { paddingX: 0 });
-		feedback.setText(draftFor(card.id, drafts).text ?? "");
 		feedback.focused = false;
 
 		let feedbackFocused = false;
@@ -318,6 +342,7 @@ async function showCardDrillDown(
 		let statusMessage: string | null = null;
 
 		feedback.onSubmit = (value: string) => {
+			const card = group.cards[currentIdx]!;
 			const current = draftFor(card.id, drafts);
 			const category = pendingCategory ?? current.category;
 			const text = value.trim();
@@ -340,6 +365,10 @@ async function showCardDrillDown(
 		};
 
 		function updateViewer(): void {
+			const card = group.cards[currentIdx]!;
+			header.setText(
+				`${theme.fg("accent", theme.bold(kindLabel(group.kind)))}  ${theme.fg("dim", `${currentIdx + 1} of ${group.cards.length}`)}`,
+			);
 			viewer.setText(renderCardContent(card, drafts.get(card.id)).join("\n"));
 			viewerState.state.cursorLine = 0;
 			viewerState.state.cursorCol = 0;
@@ -347,6 +376,7 @@ async function showCardDrillDown(
 		}
 
 		function focusFeedback(message: string | null = null): void {
+			const card = group.cards[currentIdx]!;
 			statusMessage = message;
 			feedbackFocused = true;
 			feedback.focused = true;
@@ -357,6 +387,7 @@ async function showCardDrillDown(
 		}
 
 		function chooseCategory(category: ReviewFeedbackCategory): void {
+			const card = group.cards[currentIdx]!;
 			const current = draftFor(card.id, drafts);
 			statusMessage = null;
 			if (reviewFeedbackRequiresText(category) && !current.text) {
@@ -372,6 +403,7 @@ async function showCardDrillDown(
 		}
 
 		function updateHint(): void {
+			const card = group.cards[currentIdx]!;
 			const current = draftFor(card.id, drafts);
 			const activeCategory = pendingCategory ?? current.category;
 			const state = `${theme.fg("dim", "State")}  ${reviewFeedbackCategoryLabel(activeCategory)}`;
@@ -381,7 +413,7 @@ async function showCardDrillDown(
 				feedbackLabel.setText(`${theme.fg("accent", "Feedback")}${FEEDBACK_INSERTION_MARKER}`);
 			} else {
 				const keys =
-					"[a: Approve]  [e: Needs explanation]  [q: Question]  [c: Code change]  [k: Skip]  [Tab: Feedback]  [Esc: Back]";
+					"[←→: Navigate]  [a: Approve]  [e: Needs explanation]  [q: Question]  [c: Code change]  [k: Skip]  [Tab: Feedback]  [Esc: Back]";
 				hint.setText(`${state}${message}\n${theme.fg("dim", keys)}`);
 				const text = current.text;
 				feedbackLabel.setText(
@@ -392,6 +424,19 @@ async function showCardDrillDown(
 			}
 		}
 
+		function navigate(delta: number): void {
+			const nextIdx = currentIdx + delta;
+			if (nextIdx < 0 || nextIdx >= group.cards.length) return;
+			currentIdx = nextIdx;
+			pendingCategory = null;
+			statusMessage = null;
+			feedback.setText(draftFor(group.cards[currentIdx]!.id, drafts).text ?? "");
+			updateViewer();
+			updateHint();
+			container.invalidate();
+		}
+
+		updateViewer();
 		updateHint();
 
 		const container = new Container();
@@ -446,6 +491,15 @@ async function showCardDrillDown(
 					return;
 				}
 
+				if (matchesKey(data, "left")) {
+					navigate(-1);
+					return;
+				}
+				if (matchesKey(data, "right")) {
+					navigate(1);
+					return;
+				}
+
 				if (isNavKey(data)) {
 					viewer.handleInput(data);
 					container.invalidate();
@@ -470,4 +524,5 @@ async function showCardDrillDown(
 			},
 		};
 	});
+	return currentIdx;
 }
