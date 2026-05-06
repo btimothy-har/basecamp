@@ -7,7 +7,7 @@ description: "Create a context-first code walkthrough review packet for a branch
 
 Create a code-focused review packet for a branch or pull request, then call `review_packet`. The goal is to help the user review the actual code with enough context to understand why the changes matter.
 
-Keep orientation brief. The walkthrough is for code review, not prose review: every substantive claim should be backed by visible code or diff evidence. Use narrative to explain significance, but make concrete changed code the review surface.
+Keep orientation brief. The walkthrough is for code review, not prose review: every substantive claim should be backed by visible code evidence. Use narrative to explain significance, make concrete changed code the review surface, and reserve raw diff evidence for `diff-evidence` cards.
 
 ## Context
 
@@ -65,45 +65,51 @@ Recommended card sequence:
    - Scope and complexity: files touched, subsystems affected, size of diff.
    - Keep this card short; it frames the review but is not the review surface.
 
-2. **Primary code changes** (`kind: "diff-evidence"`)
-   - Show the concrete changed code reviewers need to inspect.
-   - Use `references[].diff` for changed-code evidence. Provide structured intent; the code resolves it into git diffs for the packet.
-   - Do not put raw git commands or pasted diff output in the packet when a structured diff reference can represent the evidence.
-   - Group related changes rather than listing every touched file.
-   - Explain why each diff matters in `whyRelevant`.
-
-3. **Architecture / lay of the land** (`kind: "architecture"`)
+2. **Architecture / lay of the land** (`kind: "architecture"`)
    - Relevant modules, ownership boundaries, data/control flow, extension points, commands, tools, UI, APIs, storage, or external services involved.
    - How the existing system is structured before this work.
    - Where the work fits into that structure.
+   - Use prose in `body`, source line anchors in `references`, exact `quote` snippets where useful, and ASCII diagrams in `body` when helpful; do not include `references[].diff`.
 
-4. **Behavior walkthrough** (`kind: "walkthrough"`)
+3. **Behavior walkthrough** (`kind: "walkthrough"`)
    - The main runtime path from entrypoint to outcome.
    - Inputs, transformations, validation, side effects, and outputs.
    - Conditions that activate the new or changed behavior.
+   - Use prose in `body`, source line anchors in `references`, exact `quote` snippets where useful, and ASCII diagrams in `body` when helpful; do not include `references[].diff`.
 
-5. **Decisions and trade-offs** (`kind: "decision"`)
+4. **Decisions and trade-offs** (`kind: "decision"`)
    - Design choices the work makes and why they matter.
    - Trade-offs, assumptions, compatibility constraints, and future implications.
+   - Use prose in `body`, source line anchors in `references`, and exact `quote` snippets where useful; do not include `references[].diff`.
+
+5. **Primary code changes / Git Diffs** (`kind: "diff-evidence"`)
+   - Show the concrete changed code reviewers need to inspect.
+   - This is the only card kind where `references[].diff` belongs. Provide structured intent; the code resolves it into git diffs for the packet.
+   - Do not put raw git commands or pasted diff output in the packet when a structured diff reference can represent the evidence.
+   - Group related changes rather than listing every touched file.
+   - Explain why each diff matters in `whyRelevant`.
 
 6. **Validation** (`kind: "validation"`)
    - Tests added or changed and scenarios covered.
    - Manual verification or commands that appear relevant.
    - Gaps where validation is missing or unclear.
+   - Use prose in `body`, source line anchors in `references`, and exact `quote` snippets for test cases or command output where useful; do not include `references[].diff`.
 
 7. **Risks** (`kind: "risk"`)
    - Correctness, UX, compatibility, migration, security, performance, operational, or maintainability risks.
    - Include impact and why the evidence points to the risk.
+   - Use prose in `body`, source line anchors in `references`, and exact `quote` snippets where useful; do not include `references[].diff`.
 
 8. **Open questions** (`kind: "open-question"`)
    - Questions for the author or reviewer that would change confidence or review focus.
    - Avoid questions already answered by metadata or code.
+   - Use prose in `body`, source line anchors in `references`, and exact `quote` snippets where useful; do not include `references[].diff`.
 
 Use multiple cards per kind when that improves clarity, but keep the packet concise enough for an interactive walkthrough.
 
 ## Reference Quality
 
-Every reference must include a repo-relative `path` and explain why the code evidence matters using `whyRelevant`. For changed code, most references should include `diff` with structured fields that describe the desired evidence:
+Every reference must include a repo-relative `path` and explain why the code evidence matters using `whyRelevant`. Use `references[].diff` only in `diff-evidence` / Git Diffs cards, with structured fields that describe the desired evidence:
 
 - `base`: base ref or commit for the comparison.
 - `head`: optional head ref or commit; omit to compare the base against the checked-out review worktree.
@@ -111,9 +117,9 @@ Every reference must include a repo-relative `path` and explain why the code evi
 - `lineStart` and `lineEnd`: changed line range to focus.
 - `contextLines`: surrounding unchanged lines to include.
 
-The review packet tool resolves `references[].diff` into git diffs. Provide structured intent, not raw git commands or pasted diff output. Reserve `quote` for static/non-diff excerpts, PR metadata, config text, or evidence that cannot be represented as a structured diff. Do not use `quote` for a prose paraphrase.
+The review packet tool resolves `references[].diff` into git diffs for `diff-evidence` cards. Provide structured intent, not raw git commands or pasted diff output. In all other card kinds, do not include `references[].diff`; put explanations, summaries, and ASCII diagrams in the card `body`, use source line anchors in `references`, and reserve `quote` for exact static snippets, PR metadata, config text, or command output. Do not use `quote` for prose paraphrase or generated ASCII diagrams.
 
-Good references include:
+Good `diff-evidence` references include:
 
 ```json
 {
@@ -133,9 +139,9 @@ Good references include:
 
 Reference guidance:
 
-- Prefer structured diff references for changed-code evidence.
+- Use structured diff references only in `diff-evidence` cards for changed-code evidence.
+- In orientation, architecture, walkthrough, decision, validation, risk, and open-question cards, do not include `references[].diff`; use prose in `body`, source/test file line references, and exact `quote` snippets where useful.
 - Use diff output to find what changed, then read source/test files directly to understand why it matters and to choose accurate line references.
-- Use source/test file line references plus `quote` only for static code excerpts or evidence that is not well represented as a diff.
 - Keep evidence reviewable: include enough surrounding context to understand the change, but avoid dumping full files.
 - Explain the significance of each reference, not just where it is.
 - Cite PR metadata only when it materially affects orientation, scope, risk, or open questions.

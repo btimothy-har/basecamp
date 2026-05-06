@@ -22,6 +22,7 @@ function card(overrides: Partial<DisplayReviewCard> = {}): DisplayReviewCard {
 describe("renderReviewCardContent", () => {
 	it("reports resolved diff evidence as side-by-side eligible while stacked content remains divider-free", () => {
 		const reviewCard = card({
+			kind: "diff-evidence",
 			references: [
 				{
 					path: "src/file.ts",
@@ -60,6 +61,7 @@ describe("renderReviewCardContent", () => {
 	it("marks resolved diff evidence as side-by-side eligible at the minimum width", () => {
 		const sections = getReviewCardContentSections(
 			card({
+				kind: "diff-evidence",
 				references: [
 					{
 						path: "src/file.ts",
@@ -115,6 +117,7 @@ describe("renderReviewCardContent", () => {
 
 	it("falls back to stacked sections for resolved diff evidence at narrow widths", () => {
 		const reviewCard = card({
+			kind: "diff-evidence",
 			references: [
 				{
 					path: "src/file.ts",
@@ -168,6 +171,36 @@ describe("renderReviewCardContent", () => {
 		assert.match(output, /const value = 1;/);
 	});
 
+	it("suppresses resolved diff output and side-by-side eligibility for non-diff cards", () => {
+		const reviewCard = card({
+			references: [
+				{
+					path: "src/file.ts",
+					lineStart: 7,
+					whyRelevant: "anchors the walkthrough",
+					quote: "const value = 1;",
+					resolvedDiff: {
+						status: "resolved",
+						message: "Resolved from git diff.",
+						text: "@@ -7 +7 @@\n-old\n+new",
+						truncated: false,
+						args: ["diff"],
+					},
+				},
+			],
+		});
+		const options = { width: REVIEW_PACKET_SIDE_BY_SIDE_MIN_WIDTH + 24, feedbackCategoryLabel: "Pending" };
+		const sections = getReviewCardContentSections(reviewCard, options);
+		const output = renderReviewCardContent(reviewCard, options).join("\n");
+
+		assert.equal(sections.sideBySideEligible, false);
+		assert.match(output, /1\. src\/file\.ts:7/);
+		assert.match(output, /Why this matters: anchors the walkthrough/);
+		assert.match(output, /Quote:\n```\nconst value = 1;\n```/);
+		assert.doesNotMatch(output, /Resolved diff/);
+		assert.doesNotMatch(output, /\+new/);
+	});
+
 	it("omits an evidence section for prose-only cards", () => {
 		const lines = renderReviewCardContent(card(), {
 			width: REVIEW_PACKET_SIDE_BY_SIDE_MIN_WIDTH + 24,
@@ -181,6 +214,7 @@ describe("renderReviewCardContent", () => {
 	it("renders failed and truncated resolved diff statuses and messages", () => {
 		const lines = renderReviewCardContent(
 			card({
+				kind: "diff-evidence",
 				references: [
 					{
 						path: "src/missing.ts",

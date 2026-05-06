@@ -180,7 +180,11 @@ function renderProseLines(card: DisplayReviewCard, feedbackCategoryLabel: string
 	];
 }
 
-function renderReferenceEvidence(reference: DisplayReviewReference, index: number): string[] {
+function renderReferenceEvidence(
+	reference: DisplayReviewReference,
+	index: number,
+	includeResolvedDiff: boolean,
+): string[] {
 	const lines = [formatReferenceLocation(reference, index), `Why this matters: ${reference.whyRelevant}`];
 
 	if (reference.quote) {
@@ -189,7 +193,7 @@ function renderReferenceEvidence(reference: DisplayReviewReference, index: numbe
 		lines.push("```");
 	}
 
-	if (reference.resolvedDiff) {
+	if (includeResolvedDiff && reference.resolvedDiff) {
 		const resolvedDiff = reference.resolvedDiff;
 		lines.push(`Resolved diff status: ${resolvedDiff.status}${resolvedDiff.truncated ? " (truncated)" : ""}`);
 		if (resolvedDiff.message) lines.push(`Resolved diff message: ${resolvedDiff.message}`);
@@ -206,15 +210,18 @@ function renderReferenceEvidence(reference: DisplayReviewReference, index: numbe
 function renderEvidenceLines(card: DisplayReviewCard): string[] {
 	const lines: string[] = [];
 	const references = card.references ?? [];
+	const includeResolvedDiff = card.kind === "diff-evidence";
 	for (let i = 0; i < references.length; i++) {
 		if (lines.length > 0) lines.push("");
-		lines.push(...renderReferenceEvidence(references[i]!, i));
+		lines.push(...renderReferenceEvidence(references[i]!, i, includeResolvedDiff));
 	}
 	return lines;
 }
 
 function hasResolvedDiffEvidence(card: DisplayReviewCard): boolean {
-	return Boolean(card.references?.some((reference) => Boolean(reference.resolvedDiff)));
+	return (
+		card.kind === "diff-evidence" && Boolean(card.references?.some((reference) => Boolean(reference.resolvedDiff)))
+	);
 }
 
 export interface ReviewCardContentSections {
