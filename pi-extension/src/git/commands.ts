@@ -5,7 +5,6 @@
  *   /create-issue [topic]                     — draft and publish a GitHub issue through review
  *   /pr-comments [number]                     — synthesize review findings, post as PR comments
  *   /code-walkthrough [pr|branch] [base]      — context-first code walkthrough
- *   /code-review [pr|branch] [base]           — structured code review packet
  */
 
 import * as crypto from "node:crypto";
@@ -17,12 +16,7 @@ import { createIssueDraftPath, getScratchDir, loadTemplate, resolvePrNumber } fr
 
 type PushResult = "pushed" | "up-to-date" | "cancelled" | "diverged" | "failed";
 
-type ReviewTargetKind = "pr" | "branch";
-
-type ReviewWorkflowOptions = {
-	template: string;
-	workflowLabel: string;
-};
+type WalkthroughTargetKind = "pr" | "branch";
 
 function errorMessage(error: unknown): string {
 	return error instanceof Error ? error.message : String(error);
@@ -32,7 +26,7 @@ function isPrNumberTarget(target: string): boolean {
 	return /^\d+$/.test(target);
 }
 
-function reviewWorktreeLabel(kind: ReviewTargetKind, target: string): string {
+function reviewWorktreeLabel(kind: WalkthroughTargetKind, target: string): string {
 	if (kind === "pr") return `review-pr-${target}`;
 
 	const slug =
@@ -266,11 +260,7 @@ Start by calling skill({ name: "issue-logging" }), then investigate as needed, w
 		},
 	});
 
-	async function startReviewWorkflow(
-		args: string | undefined,
-		ctx: any,
-		options: ReviewWorkflowOptions,
-	): Promise<void> {
+	async function startCodeWalkthrough(args: string | undefined, ctx: any): Promise<void> {
 		const parts = args?.trim().split(/\s+/).filter(Boolean) || [];
 		const targetArg = parts[0];
 		const base = parts[1] || "main";
@@ -291,7 +281,7 @@ Start by calling skill({ name: "issue-logging" }), then investigate as needed, w
 			if (!(await refreshReviewWorktree(worktreePath, ctx))) return;
 
 			pi.sendUserMessage(
-				loadTemplate(options.template, {
+				loadTemplate("pr-walkthrough", {
 					TARGET_LABEL: `PR #${pr.number}`,
 					TARGET_JSON: JSON.stringify({ kind: "pr", prNumber: Number(pr.number), branch: pr.branch, base }, null, 2),
 					TARGET_CONTEXT_COMMANDS: `gh pr view ${pr.number} --json number,title,body,state,author,headRefName,headRefOid,baseRefName,labels,assignees,reviewRequests,closingIssuesReferences,commits`,
@@ -311,9 +301,9 @@ Start by calling skill({ name: "issue-logging" }), then investigate as needed, w
 			if (!(await checkoutBranchForReview(pi, branchName, ctx))) return;
 			if (!(await refreshReviewWorktree(worktreePath, ctx))) return;
 
-			ctx.ui.notify(`${options.workflowLabel} workflow for branch ${branchName} against ${base}`, "info");
+			ctx.ui.notify(`Code walkthrough workflow for branch ${branchName} against ${base}`, "info");
 			pi.sendUserMessage(
-				loadTemplate(options.template, {
+				loadTemplate("pr-walkthrough", {
 					TARGET_LABEL: `branch ${branchName}`,
 					TARGET_JSON: JSON.stringify({ kind: "branch", branch: branchName, base }, null, 2),
 					TARGET_CONTEXT_COMMANDS: `gh pr list --head ${branchName} --json number,title,body,state,author,headRefName,headRefOid,baseRefName,labels,assignees,reviewRequests,closingIssuesReferences,commits`,
@@ -331,10 +321,9 @@ Start by calling skill({ name: "issue-logging" }), then investigate as needed, w
 			return;
 		}
 
-		// Current branch is already checked out in the active session/worktree; named targets activate a review worktree above.
-		ctx.ui.notify(`${options.workflowLabel} workflow for branch ${branchName} against ${base}`, "info");
+		ctx.ui.notify(`Code walkthrough workflow for branch ${branchName} against ${base}`, "info");
 		pi.sendUserMessage(
-			loadTemplate(options.template, {
+			loadTemplate("pr-walkthrough", {
 				TARGET_LABEL: `branch ${branchName}`,
 				TARGET_JSON: JSON.stringify({ kind: "branch", branch: branchName, base }, null, 2),
 				TARGET_CONTEXT_COMMANDS: `gh pr list --head ${branchName} --json number,title,body,state,author,headRefName,headRefOid,baseRefName,labels,assignees,reviewRequests,closingIssuesReferences,commits`,
@@ -344,23 +333,9 @@ Start by calling skill({ name: "issue-logging" }), then investigate as needed, w
 		);
 	}
 
-	function startCodeWalkthrough(args: string | undefined, ctx: any): Promise<void> {
-		return startReviewWorkflow(args, ctx, { template: "pr-walkthrough", workflowLabel: "Code walkthrough" });
-	}
-
-	function startCodeReview(args: string | undefined, ctx: any): Promise<void> {
-		return startReviewWorkflow(args, ctx, { template: "code-review", workflowLabel: "Code review" });
-	}
-
 	// --- /code-walkthrough [pr|branch] [base] ---
 	pi.registerCommand("code-walkthrough", {
 		description: "Context-first code walkthrough for a PR number, branch, or current branch",
 		handler: startCodeWalkthrough,
-	});
-
-	// --- /code-review [pr|branch] [base] ---
-	pi.registerCommand("code-review", {
-		description: "Structured code review packet for a PR number, branch, or current branch",
-		handler: startCodeReview,
 	});
 }
