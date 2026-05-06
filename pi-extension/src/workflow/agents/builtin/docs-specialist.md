@@ -66,8 +66,6 @@ Based on the description of the task provided, always:
 
 ## Output
 
-Do not paste code diffs inline. For changed-code evidence, cite file/line and provide a structured diff reference. Use `quote` only for static/non-diff excerpts that cannot be represented by `diff`.
-
 Your report should be written in the following format:
 
 ```
@@ -75,24 +73,16 @@ Your report should be written in the following format:
 
 ### Critical Issues (must address)
 Factually incorrect or strongly misleading:
-- [SEVERITY] file:line — problem → fix
-  Confidence: 0-100
-  Evidence: { "path": "file", "lineStart": 1, "lineEnd": 2, "whyRelevant": "Why this changed documentation proves the finding.", "diff": { "base": "base-ref", "head": "head-ref", "path": "file", "lineStart": 1, "lineEnd": 2, "contextLines": 5 } }
+- file:line — problem → fix
 
 ### Improvement Opportunities (enhance)
 Could be made clearer, more complete, or better placed/layered:
-- [SEVERITY] file:line — what's lacking or misplaced → suggestion
-  Confidence: 0-100
-  Evidence: { "path": "file", "lineStart": 1, "lineEnd": 2, "whyRelevant": "Why this changed documentation proves the finding.", "diff": { "base": "base-ref", "head": "head-ref", "path": "file", "lineStart": 1, "lineEnd": 2, "contextLines": 5 } }
+- file:line — what's lacking or misplaced → suggestion
 
 ### Recommended Removals (reduce burden)
 Add no value, duplicate another source, create confusion, or are low-value documentation agentisms:
-- [SEVERITY] file:line — rationale
-  Confidence: 0-100
-  Evidence: { "path": "file", "lineStart": 1, "lineEnd": 2, "whyRelevant": "Why this changed documentation proves the finding.", "diff": { "base": "base-ref", "head": "head-ref", "path": "file", "lineStart": 1, "lineEnd": 2, "contextLines": 5 } }
+- file:line — rationale
 
 ### Summary
 Brief assessment on overall documentation quality.
 ```
-
-Severity: 🔴 Incorrect/misleading · 🟠 Important completeness or placement issue · 🟡 Useful improvement · 🟢 Low-impact cleanup
