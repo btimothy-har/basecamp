@@ -378,6 +378,7 @@ export async function resolveReviewPacketDiffs(
 	const tasks: (() => Promise<void>)[] = [];
 
 	for (const card of cards) {
+		if (card.kind !== "diff-evidence") continue;
 		card.references?.forEach((reference, index, references) => {
 			if (!reference.diff) return;
 			tasks.push(async () => {

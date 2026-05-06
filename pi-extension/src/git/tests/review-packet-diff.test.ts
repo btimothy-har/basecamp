@@ -37,10 +37,13 @@ function reference(overrides: Partial<ReviewReference> = {}): ReviewReference {
 	};
 }
 
-function packet(references: ReviewReference[]): ReviewPacket {
+function packet(
+	references: ReviewReference[],
+	kind: ReviewPacket["cards"][number]["kind"] = "diff-evidence",
+): ReviewPacket {
 	return {
 		target: { kind: "branch", branch: "feature", base: "main" },
-		cards: [{ id: "card", kind: "walkthrough", title: "Card", body: "Body", references }],
+		cards: [{ id: "card", kind, title: "Card", body: "Body", references }],
 	};
 }
 
@@ -252,6 +255,19 @@ describe("resolveReviewPacketDiffs", () => {
 		const resolved = await resolveReviewPacketDiffs(mockPi as never, input);
 
 		assert.equal(mockPi.execCalls.length, 0);
+		assert.equal(resolved.cards[0]?.references?.[0]?.resolvedDiff, undefined);
+	});
+
+	it("does not execute git or attach resolvedDiff for non-diff-evidence cards", async () => {
+		const mockPi = createMockPi(async () => {
+			throw new Error("should not execute");
+		});
+		const input = packet([reference()], "walkthrough");
+
+		const resolved = await resolveReviewPacketDiffs(mockPi as never, input);
+
+		assert.equal(mockPi.execCalls.length, 0);
+		assert.equal(resolved.cards[0]?.references?.[0]?.diff?.base, "main");
 		assert.equal(resolved.cards[0]?.references?.[0]?.resolvedDiff, undefined);
 	});
 
