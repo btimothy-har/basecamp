@@ -110,19 +110,23 @@ When applying interview techniques, present structured options whenever possible
 
 ## Pipeline
 
-Three phases that turn ambiguous requests into clear requirements. Each phase scales to context depth—run briefly for small gaps, thoroughly for new features.
+Three phases that turn ambiguous requests into clear requirements. Each phase scales to context depth—run briefly for small gaps, thoroughly for complex features/refactors/architectural decisions.
 
 ```
 Task/Gap arrives
   |
 Phase 1: Interview (gather context)
   |
-Phase 2: Design (explore approaches)
+Phase 2: Discover (test assumptions before converging)
   |
 Phase 3: Capture (document requirements)
   |
 Execute with full understanding
 ```
+
+Use the lightest process that resolves the uncertainty:
+- **Small/simple gaps**: ask one concise clarifying question, offer concrete options when useful, then proceed.
+- **Complex features/refactors/architectural decisions**: collaborate falsification-first—map assumptions, test strawmen and scenarios, look for disconfirming evidence, then converge.
 
 Continue each phase until the user indicates readiness to proceed.
 
@@ -136,34 +140,48 @@ Gather context from the user that cannot be discovered autonomously.
 
 **Scaling**: Small gap → one focused question. New feature → multiple rounds until requirements are clear.
 
-### Phase 2: Design
+### Phase 2: Discover
 
-Turn gathered context into agreed approaches through collaborative scope negotiation.
+Turn gathered context into agreed approaches through collaborative falsification before recommendation. Keep the posture constructive, curious, and practical.
 
 **Approach**:
-1. **Explore approaches** — Present 2-3 distinct options with trade-offs
-2. **Recommend** — Lead with a recommendation and reasoning
-3. **Apply YAGNI** — Push back on scope; suggest phasing for large ideas
-4. **Agree on scope** — Confirm: "So we're building X, not Y—correct?"
+1. **Choose depth** — Small/simple gap → quick confirmation. Complex work → falsification-first discovery.
+2. **Map assumptions** — Name what must be true for the request or approach to work.
+3. **Create disposable strawmen** — Sketch 2-3 lightweight approaches as tools for learning, not proposals to defend.
+4. **Falsify scenarios** — Test each strawman against happy paths, edge cases, constraints, and failure modes.
+5. **Seek disconfirming evidence** — Ask what would make an option wrong, risky, too complex, or unnecessary.
+6. **Apply YAGNI** — Push back on scope; suggest phasing for large ideas.
+7. **Converge deliberately** — Only after assumptions and failure modes are clear, summarize the trade-off and recommend or confirm a direction.
+8. **Agree on scope** — Confirm: "So we're building X, not Y—correct?"
 
-**Presenting Trade-offs**:
+**Small/Simple Gap Pattern**:
 ```
-For [feature], three approaches exist:
+I found one unclear detail: [specific gap].
+Do you want A ([trade-off]) or B ([trade-off])?
+```
 
+**Complex Discovery Pattern**:
+```
+For [feature/refactor/decision], here are the assumptions I think we need to test:
+- [Assumption 1]
+- [Assumption 2]
+- [Assumption 3]
+
+Disposable strawmen:
 A. **[Option A]** (simplest)
-   - [Benefit]
-   - [Limitation]
+   - Works if [assumption]
+   - Fails/struggles if [scenario]
 
 B. **[Option B]** (moderate)
-   - [Benefit]
-   - [Limitation]
+   - Works if [assumption]
+   - Fails/struggles if [scenario]
 
 C. **[Option C]** (complex)
-   - [Benefit]
-   - [Limitation]
+   - Works if [assumption]
+   - Fails/struggles if [scenario]
 
-Recommendation: Start with A, add B if [condition].
-Which direction fits the need?
+What evidence, constraint, or scenario would rule these out?
+After that, we can converge on the smallest viable path that survives.
 ```
 
 **Scope Negotiation**:
@@ -171,11 +189,14 @@ Which direction fits the need?
 | Situation | Response |
 |-----------|----------|
 | Feature creep | "Good idea—add to a future phase?" |
-| Gold-plating | "Simpler version would work. Worth the extra complexity?" |
+| Gold-plating | "Simpler version might survive the scenarios. What failure would require the extra complexity?" |
 | Unclear priority | "If only two of these three, which two matter most?" |
-| Time pressure | "Given timeline, suggest cutting X. Thoughts?" |
+| Time pressure | "Given constraints, what assumption can we safely defer testing?" |
+| Early convergence | "Before recommending, let's check what would make this approach wrong." |
 
-**Scaling**: Small gap → quick confirmation of approach. New feature → full trade-off presentation and scope agreement.
+**Scaling**: Small gap → concise clarifying question and quick confirmation. Complex work → assumption mapping, disposable strawmen, scenario falsification, disconfirming evidence, then recommendation/convergence.
+
+When discovery produces a consequential implementation path, switch to the `planning` skill to formalize the recommendation, boundaries, and handoff rather than treating the gather pipeline as the execution plan.
 
 ### Phase 3: Capture
 
