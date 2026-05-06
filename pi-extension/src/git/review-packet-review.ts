@@ -7,7 +7,17 @@
 
 import type { ExtensionContext, Theme } from "@mariozechner/pi-coding-agent";
 import { DynamicBorder, getSelectListTheme } from "@mariozechner/pi-coding-agent";
-import { Container, Editor, type EditorTheme, getKeybindings, matchesKey, Spacer, Text } from "@mariozechner/pi-tui";
+import {
+	Container,
+	Editor,
+	type EditorTheme,
+	getKeybindings,
+	matchesKey,
+	Spacer,
+	Text,
+	truncateToWidth,
+	visibleWidth,
+} from "@mariozechner/pi-tui";
 import {
 	type ConsolidatedReviewFeedback,
 	consolidateReviewFeedback,
@@ -50,7 +60,7 @@ const NAV_KEYS = [
 
 export const REVIEW_PACKET_SIDE_BY_SIDE_MIN_WIDTH = 96;
 
-const REVIEW_PACKET_COLUMN_SEPARATOR = " │ ";
+const REVIEW_PACKET_PANEL_GAP = 2;
 const CARD_INSERTION_MARKER = "\uE000basecamp-review-packet-card\uE000";
 const FEEDBACK_INSERTION_MARKER = "\uE000basecamp-review-packet-feedback\uE000";
 
@@ -207,47 +217,74 @@ function hasResolvedDiffEvidence(card: DisplayReviewCard): boolean {
 	return Boolean(card.references?.some((reference) => Boolean(reference.resolvedDiff)));
 }
 
-function wrapLine(line: string, width: number): string[] {
-	if (width <= 0) return [line];
-	if (line.length <= width) return [line];
-	const chunks: string[] = [];
-	for (let index = 0; index < line.length; index += width) chunks.push(line.slice(index, index + width));
-	return chunks;
+export interface ReviewCardContentSections {
+	proseLines: string[];
+	evidenceLines: string[];
+	sideBySideEligible: boolean;
 }
 
-function wrapLines(lines: readonly string[], width: number): string[] {
-	return lines.flatMap((line) => wrapLine(line, width));
+export interface ComposeReviewCardPanelsOptions {
+	width: number;
+	gap?: number;
 }
 
-function renderSideBySideColumns(
-	proseLines: readonly string[],
-	evidenceLines: readonly string[],
-	width: number,
+interface ReviewCardPanelLayout {
+	proseWidth: number;
+	evidenceWidth: number;
+	gap: number;
+}
+
+function getReviewCardPanelLayout(width: number, gapOption?: number): ReviewCardPanelLayout {
+	const normalizedWidth = Math.max(1, width);
+	const gap = Math.max(0, gapOption ?? REVIEW_PACKET_PANEL_GAP);
+	const availableWidth = Math.max(1, normalizedWidth - gap);
+	const proseWidth = Math.max(1, Math.floor(availableWidth / 2));
+	const evidenceWidth = Math.max(1, availableWidth - proseWidth);
+	return { proseWidth, evidenceWidth, gap };
+}
+
+export function getReviewCardContentSections(
+	card: DisplayReviewCard,
+	options: RenderReviewCardContentOptions,
+): ReviewCardContentSections {
+	const feedbackCategoryLabel = options.feedbackCategoryLabel ?? reviewFeedbackCategoryLabel("pending");
+	const proseLines = renderProseLines(card, feedbackCategoryLabel);
+	const evidenceLines = renderEvidenceLines(card);
+	const sideBySideEligible =
+		evidenceLines.length > 0 && options.width >= REVIEW_PACKET_SIDE_BY_SIDE_MIN_WIDTH && hasResolvedDiffEvidence(card);
+
+	return { proseLines, evidenceLines, sideBySideEligible };
+}
+
+function fitLineToWidth(line: string, width: number): string {
+	if (width <= 0) return "";
+	const fitted = visibleWidth(line) > width ? truncateToWidth(line, width, "") : line;
+	return `${fitted}${" ".repeat(Math.max(0, width - visibleWidth(fitted)))}`;
+}
+
+export function composeReviewCardPanels(
+	prosePanelLines: readonly string[],
+	evidencePanelLines: readonly string[],
+	options: ComposeReviewCardPanelsOptions,
 ): string[] {
-	const availableWidth = Math.max(1, width - REVIEW_PACKET_COLUMN_SEPARATOR.length);
-	const leftWidth = Math.max(20, Math.floor(availableWidth / 2));
-	const rightWidth = Math.max(20, availableWidth - leftWidth);
-	const left = wrapLines(proseLines, leftWidth);
-	const right = wrapLines(["Evidence", "", ...evidenceLines], rightWidth);
-	const maxLines = Math.max(left.length, right.length);
+	const width = Math.max(1, options.width);
+	const { proseWidth, evidenceWidth, gap } = getReviewCardPanelLayout(width, options.gap);
+	const gapText = " ".repeat(gap);
+	const maxLines = Math.max(prosePanelLines.length, evidencePanelLines.length);
 	const lines: string[] = [];
 
 	for (let i = 0; i < maxLines; i++) {
-		lines.push(`${(left[i] ?? "").padEnd(leftWidth)}${REVIEW_PACKET_COLUMN_SEPARATOR}${right[i] ?? ""}`.trimEnd());
+		const left = fitLineToWidth(prosePanelLines[i] ?? "", proseWidth);
+		const right = fitLineToWidth(evidencePanelLines[i] ?? "", evidenceWidth);
+		lines.push(truncateToWidth(`${left}${gapText}${right}`.trimEnd(), width, ""));
 	}
 
 	return lines;
 }
 
 export function renderReviewCardContent(card: DisplayReviewCard, options: RenderReviewCardContentOptions): string[] {
-	const feedbackCategoryLabel = options.feedbackCategoryLabel ?? reviewFeedbackCategoryLabel("pending");
-	const proseLines = renderProseLines(card, feedbackCategoryLabel);
-	const evidenceLines = renderEvidenceLines(card);
-
+	const { proseLines, evidenceLines } = getReviewCardContentSections(card, options);
 	if (evidenceLines.length === 0) return proseLines;
-	if (options.width >= REVIEW_PACKET_SIDE_BY_SIDE_MIN_WIDTH && hasResolvedDiffEvidence(card)) {
-		return renderSideBySideColumns(proseLines, evidenceLines, options.width);
-	}
 	return [...proseLines, "", "Evidence", "", ...evidenceLines];
 }
 
@@ -438,9 +475,18 @@ async function showCardDrillDown(
 		};
 
 		const viewer = new Editor(tui, editorTheme, { paddingX: 0 });
-		const viewerState = viewer as unknown as { state: { cursorLine: number; cursorCol: number }; scrollOffset: number };
+		const proseViewer = new Editor(tui, editorTheme, { paddingX: 0 });
+		const evidenceViewer = new Editor(tui, editorTheme, { paddingX: 0 });
+		type ViewerState = { state: { cursorLine: number; cursorCol: number }; scrollOffset: number };
+		const viewerState = viewer as unknown as ViewerState;
+		const proseViewerState = proseViewer as unknown as ViewerState;
+		const evidenceViewerState = evidenceViewer as unknown as ViewerState;
 		viewer.focused = true;
 		viewer.disableSubmit = true;
+		proseViewer.focused = false;
+		proseViewer.disableSubmit = true;
+		evidenceViewer.focused = false;
+		evidenceViewer.disableSubmit = true;
 
 		const feedback = new Editor(tui, editorTheme, { paddingX: 0 });
 		feedback.focused = false;
@@ -451,11 +497,24 @@ async function showCardDrillDown(
 		let viewerDirty = true;
 		let renderedCardId: string | null = null;
 		let renderedContentWidth = 0;
+		let renderedSideBySide = false;
+
+		function resetViewerState(state: ViewerState): void {
+			state.state.cursorLine = 0;
+			state.state.cursorCol = 0;
+			state.scrollOffset = 0;
+		}
 
 		function resetViewerScroll(): void {
-			viewerState.state.cursorLine = 0;
-			viewerState.state.cursorCol = 0;
-			viewerState.scrollOffset = 0;
+			resetViewerState(viewerState);
+			resetViewerState(proseViewerState);
+			resetViewerState(evidenceViewerState);
+		}
+
+		function setReviewViewersFocused(focused: boolean): void {
+			viewer.focused = focused;
+			proseViewer.focused = false;
+			evidenceViewer.focused = false;
 		}
 
 		feedback.onSubmit = (value: string) => {
@@ -474,7 +533,7 @@ async function showCardDrillDown(
 			pendingCategory = null;
 			feedbackFocused = false;
 			feedback.focused = false;
-			viewer.focused = true;
+			setReviewViewersFocused(true);
 			statusMessage = null;
 			updateViewer();
 			updateHint();
@@ -491,21 +550,37 @@ async function showCardDrillDown(
 		function renderViewerContent(width: number): string[] {
 			const card = group.cards[currentIdx]!;
 			const contentWidth = Math.max(1, width);
+			const sections = getReviewCardContentSections(card, {
+				width: contentWidth,
+				feedbackCategoryLabel: reviewFeedbackCategoryLabel(drafts.get(card.id)?.category ?? "pending"),
+			});
 			const cardChanged = renderedCardId !== card.id;
 			const widthChanged = renderedContentWidth !== contentWidth;
-			if (viewerDirty || cardChanged || widthChanged) {
-				viewer.setText(
-					renderReviewCardContent(card, {
-						width: contentWidth,
-						feedbackCategoryLabel: reviewFeedbackCategoryLabel(drafts.get(card.id)?.category ?? "pending"),
-					}).join("\n"),
-				);
+			const layoutChanged = renderedSideBySide !== sections.sideBySideEligible;
+			if (viewerDirty || cardChanged || widthChanged || layoutChanged) {
+				if (sections.sideBySideEligible) {
+					proseViewer.setText(sections.proseLines.join("\n"));
+					evidenceViewer.setText(["Evidence", "", ...sections.evidenceLines].join("\n"));
+				} else {
+					viewer.setText(
+						renderReviewCardContent(card, {
+							width: contentWidth,
+							feedbackCategoryLabel: reviewFeedbackCategoryLabel(drafts.get(card.id)?.category ?? "pending"),
+						}).join("\n"),
+					);
+				}
 				renderedCardId = card.id;
 				renderedContentWidth = contentWidth;
+				renderedSideBySide = sections.sideBySideEligible;
 				viewerDirty = false;
 				resetViewerScroll();
 			}
-			return viewer.render(contentWidth);
+			if (!sections.sideBySideEligible) return viewer.render(contentWidth);
+			const { proseWidth, evidenceWidth, gap } = getReviewCardPanelLayout(contentWidth);
+			return composeReviewCardPanels(proseViewer.render(proseWidth), evidenceViewer.render(evidenceWidth), {
+				width: contentWidth,
+				gap,
+			});
 		}
 
 		function focusFeedback(message: string | null = null): void {
@@ -513,7 +588,7 @@ async function showCardDrillDown(
 			statusMessage = message;
 			feedbackFocused = true;
 			feedback.focused = true;
-			viewer.focused = false;
+			setReviewViewersFocused(false);
 			feedback.setText(draftFor(card.id, drafts).text ?? "");
 			updateHint();
 			container.invalidate();
@@ -611,7 +686,7 @@ async function showCardDrillDown(
 						} else {
 							feedbackFocused = false;
 							feedback.focused = false;
-							viewer.focused = true;
+							setReviewViewersFocused(true);
 							pendingCategory = null;
 							statusMessage = null;
 							updateHint();
@@ -634,7 +709,12 @@ async function showCardDrillDown(
 				}
 
 				if (isNavKey(data)) {
-					viewer.handleInput(data);
+					if (renderedSideBySide) {
+						proseViewer.handleInput(data);
+						evidenceViewer.handleInput(data);
+					} else {
+						viewer.handleInput(data);
+					}
 					container.invalidate();
 					return;
 				}

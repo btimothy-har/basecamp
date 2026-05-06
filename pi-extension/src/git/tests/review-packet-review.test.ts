@@ -1,7 +1,13 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
+import { visibleWidth } from "@mariozechner/pi-tui";
 import type { DisplayReviewCard } from "../review-packet-diff.ts";
-import { REVIEW_PACKET_SIDE_BY_SIDE_MIN_WIDTH, renderReviewCardContent } from "../review-packet-review.ts";
+import {
+	composeReviewCardPanels,
+	getReviewCardContentSections,
+	REVIEW_PACKET_SIDE_BY_SIDE_MIN_WIDTH,
+	renderReviewCardContent,
+} from "../review-packet-review.ts";
 
 function card(overrides: Partial<DisplayReviewCard> = {}): DisplayReviewCard {
 	return {
@@ -14,36 +20,45 @@ function card(overrides: Partial<DisplayReviewCard> = {}): DisplayReviewCard {
 }
 
 describe("renderReviewCardContent", () => {
-	it("renders resolved diff evidence in columns at wide widths", () => {
-		const lines = renderReviewCardContent(
-			card({
-				references: [
-					{
-						path: "src/file.ts",
-						lineStart: 10,
-						lineEnd: 12,
-						whyRelevant: "shows the changed branch",
-						resolvedDiff: {
-							status: "resolved",
-							text: "@@ -10,2 +10,2 @@\n-old\n+new",
-							truncated: false,
-							args: ["diff"],
-						},
+	it("reports resolved diff evidence as side-by-side eligible while stacked content remains divider-free", () => {
+		const reviewCard = card({
+			references: [
+				{
+					path: "src/file.ts",
+					lineStart: 10,
+					lineEnd: 12,
+					whyRelevant: "shows the changed branch",
+					resolvedDiff: {
+						status: "resolved",
+						text: "@@ -10,2 +10,2 @@\n-old\n+new",
+						truncated: false,
+						args: ["diff"],
 					},
-				],
-			}),
-			{ width: REVIEW_PACKET_SIDE_BY_SIDE_MIN_WIDTH + 24, feedbackCategoryLabel: "Approved" },
-		);
+				},
+			],
+		});
+		const sections = getReviewCardContentSections(reviewCard, {
+			width: REVIEW_PACKET_SIDE_BY_SIDE_MIN_WIDTH + 24,
+			feedbackCategoryLabel: "Approved",
+		});
+		const lines = renderReviewCardContent(reviewCard, {
+			width: REVIEW_PACKET_SIDE_BY_SIDE_MIN_WIDTH + 24,
+			feedbackCategoryLabel: "Approved",
+		});
 		const output = lines.join("\n");
 
-		assert.ok(lines.some((line) => line.includes(" │ ")));
+		assert.equal(sections.sideBySideEligible, true);
+		assert.equal(
+			lines.some((line) => line.includes(" │ ")),
+			false,
+		);
 		assert.match(output, /State: Approved/);
 		assert.match(output, /Resolved diff status: resolved/);
 		assert.match(output, /\+new/);
 	});
 
-	it("renders resolved diff evidence in columns at the minimum side-by-side width", () => {
-		const lines = renderReviewCardContent(
+	it("marks resolved diff evidence as side-by-side eligible at the minimum width", () => {
+		const sections = getReviewCardContentSections(
 			card({
 				references: [
 					{
@@ -61,29 +76,64 @@ describe("renderReviewCardContent", () => {
 			{ width: REVIEW_PACKET_SIDE_BY_SIDE_MIN_WIDTH, feedbackCategoryLabel: "Pending" },
 		);
 
-		assert.ok(lines.some((line) => line.includes(" │ ")));
+		assert.equal(sections.sideBySideEligible, true);
+	});
+
+	it("composes asymmetric rendered panel lines without exceeding the requested width", () => {
+		const width = 24;
+		const lines = composeReviewCardPanels(
+			["┌prose panel──────┐"],
+			["┌evidence panel───┐", "│01234567890123456789│", "└─────────────────┘"],
+			{ width, gap: 2 },
+		);
+
+		assert.equal(lines.length, 3);
+		assert.equal(
+			lines.every((line) => visibleWidth(line) <= width),
+			true,
+		);
+		assert.equal(
+			lines.some((line) => line.includes(" │ ")),
+			false,
+		);
+	});
+
+	it("places prose on the left and evidence after the configured panel gap", () => {
+		const lines = composeReviewCardPanels(["left"], ["right"], { width: 24, gap: 2 });
+
+		assert.equal(lines[0]?.startsWith("left"), true);
+		assert.equal(lines[0]?.indexOf("right"), 13);
+	});
+
+	it("uses the default panel gap when composing panels", () => {
+		const lines = composeReviewCardPanels(["left"], ["right"], { width: 20 });
+
+		assert.equal(lines[0]?.startsWith("left"), true);
+		assert.equal(lines[0]?.indexOf("right"), 11);
+		assert.equal(visibleWidth(lines[0] ?? "") <= 20, true);
 	});
 
 	it("falls back to stacked sections for resolved diff evidence at narrow widths", () => {
-		const lines = renderReviewCardContent(
-			card({
-				references: [
-					{
-						path: "src/file.ts",
-						whyRelevant: "shows the changed branch",
-						resolvedDiff: {
-							status: "resolved",
-							text: "+narrow",
-							truncated: false,
-							args: ["diff"],
-						},
+		const reviewCard = card({
+			references: [
+				{
+					path: "src/file.ts",
+					whyRelevant: "shows the changed branch",
+					resolvedDiff: {
+						status: "resolved",
+						text: "+narrow",
+						truncated: false,
+						args: ["diff"],
 					},
-				],
-			}),
-			{ width: REVIEW_PACKET_SIDE_BY_SIDE_MIN_WIDTH - 1, feedbackCategoryLabel: "Pending" },
-		);
+				},
+			],
+		});
+		const options = { width: REVIEW_PACKET_SIDE_BY_SIDE_MIN_WIDTH - 1, feedbackCategoryLabel: "Pending" };
+		const sections = getReviewCardContentSections(reviewCard, options);
+		const lines = renderReviewCardContent(reviewCard, options);
 		const output = lines.join("\n");
 
+		assert.equal(sections.sideBySideEligible, false);
 		assert.equal(lines.includes("Evidence"), true);
 		assert.equal(
 			lines.some((line) => line.includes(" │ ")),
@@ -94,20 +144,21 @@ describe("renderReviewCardContent", () => {
 	});
 
 	it("keeps quote-only references stacked and includes the quote", () => {
-		const lines = renderReviewCardContent(
-			card({
-				references: [
-					{
-						path: "src/file.ts",
-						whyRelevant: "anchors the walkthrough",
-						quote: "const value = 1;",
-					},
-				],
-			}),
-			{ width: REVIEW_PACKET_SIDE_BY_SIDE_MIN_WIDTH + 24, feedbackCategoryLabel: "Pending" },
-		);
+		const reviewCard = card({
+			references: [
+				{
+					path: "src/file.ts",
+					whyRelevant: "anchors the walkthrough",
+					quote: "const value = 1;",
+				},
+			],
+		});
+		const options = { width: REVIEW_PACKET_SIDE_BY_SIDE_MIN_WIDTH + 24, feedbackCategoryLabel: "Pending" };
+		const sections = getReviewCardContentSections(reviewCard, options);
+		const lines = renderReviewCardContent(reviewCard, options);
 		const output = lines.join("\n");
 
+		assert.equal(sections.sideBySideEligible, false);
 		assert.equal(lines.includes("Evidence"), true);
 		assert.equal(
 			lines.some((line) => line.includes(" │ ")),
