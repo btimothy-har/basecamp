@@ -73,6 +73,89 @@ describe("normalizeReviewCards", () => {
 		assert.equal(input[0]?.id, " orientation ");
 	});
 
+	it("trims and preserves valid structured diff references", () => {
+		const cards = normalizeReviewCards([
+			card({
+				id: "card",
+				references: [
+					{
+						path: " src/summary.ts ",
+						whyRelevant: " points at the changed file ",
+						diff: {
+							base: " origin/main ",
+							head: " feature/review-packet ",
+							path: " pi-extension/src/git/review-packet.ts ",
+							lineStart: 20,
+							lineEnd: 40,
+							contextLines: 50,
+						},
+					},
+				],
+			}),
+		]);
+
+		assert.deepEqual(cards[0]?.references?.[0]?.diff, {
+			base: "origin/main",
+			head: "feature/review-packet",
+			path: "pi-extension/src/git/review-packet.ts",
+			lineStart: 20,
+			lineEnd: 40,
+			contextLines: 50,
+		});
+	});
+
+	it("rejects invalid structured diff reference fields", () => {
+		function normalizeDiff(diff: NonNullable<NonNullable<ReviewCard["references"]>[number]["diff"]>): void {
+			normalizeReviewCards([
+				card({
+					id: "card",
+					references: [{ path: "src/file.ts", whyRelevant: "supports the claim", diff }],
+				}),
+			]);
+		}
+
+		for (const base of [" ", "-main", "main..feature", "main branch", "main\0feature", "main\u001bfeature"]) {
+			assert.throws(
+				() => normalizeDiff({ base }),
+				/Review reference diff base (is required|must be a simple revision): card/,
+			);
+		}
+		for (const head of ["-feature", "main..feature", "feature branch", "feature\0branch", "feature\u007fbranch"]) {
+			assert.throws(
+				() => normalizeDiff({ base: "main", head }),
+				/Review reference diff head must be a simple revision: card/,
+			);
+		}
+		for (const path of ["/src/file.ts", "src/../file.ts", "C:\\src\\file.ts"]) {
+			assert.throws(
+				() => normalizeDiff({ base: "main", path }),
+				/Review reference diff path must be repo-relative: card/,
+			);
+		}
+		for (const lineStart of [0, -1, 1.5]) {
+			assert.throws(
+				() => normalizeDiff({ base: "main", lineStart }),
+				/Review reference diff lineStart must be a positive integer: card/,
+			);
+		}
+		for (const lineEnd of [0, -1, 1.5]) {
+			assert.throws(
+				() => normalizeDiff({ base: "main", lineEnd }),
+				/Review reference diff lineEnd must be a positive integer: card/,
+			);
+		}
+		assert.throws(
+			() => normalizeDiff({ base: "main", lineStart: 4, lineEnd: 3 }),
+			/Review reference diff lineEnd must be greater than or equal to lineStart: card/,
+		);
+		for (const contextLines of [-1, 51, 1.5]) {
+			assert.throws(
+				() => normalizeDiff({ base: "main", contextLines }),
+				/Review reference diff contextLines must be an integer from 0 to 50: card/,
+			);
+		}
+	});
+
 	it("rejects duplicate or empty stable ids", () => {
 		assert.throws(
 			() => normalizeReviewCards([card({ id: "same" }), card({ id: " same ", title: "Other" })]),

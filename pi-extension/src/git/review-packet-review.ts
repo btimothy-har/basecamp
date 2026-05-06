@@ -11,15 +11,14 @@ import { Container, Editor, type EditorTheme, getKeybindings, matchesKey, Spacer
 import {
 	type ConsolidatedReviewFeedback,
 	consolidateReviewFeedback,
-	normalizeReviewPacket,
 	type ReviewCard,
 	type ReviewFeedback,
 	type ReviewFeedbackCategory,
-	type ReviewPacket,
 	type ReviewReference,
 	reviewFeedbackCategoryLabel,
 	reviewFeedbackRequiresText,
-} from "./review-packet";
+} from "./review-packet.ts";
+import type { DisplayReviewCard, DisplayReviewPacket, DisplayReviewReference } from "./review-packet-diff.ts";
 
 export interface ReviewPacketReviewResult {
 	cancelled: boolean;
@@ -33,7 +32,7 @@ interface CardFeedbackDraft {
 
 interface CardGroup {
 	kind: ReviewCard["kind"];
-	cards: ReviewCard[];
+	cards: DisplayReviewCard[];
 }
 
 const NAV_KEYS = [
@@ -49,8 +48,16 @@ const NAV_KEYS = [
 	"tui.editor.pageDown",
 ] as const;
 
+export const REVIEW_PACKET_SIDE_BY_SIDE_MIN_WIDTH = 96;
+
+const REVIEW_PACKET_COLUMN_SEPARATOR = " │ ";
 const CARD_INSERTION_MARKER = "\uE000basecamp-review-packet-card\uE000";
 const FEEDBACK_INSERTION_MARKER = "\uE000basecamp-review-packet-feedback\uE000";
+
+export interface RenderReviewCardContentOptions {
+	width: number;
+	feedbackCategoryLabel?: string;
+}
 
 function stripInsertionMarkers(line: string): string {
 	return line.replaceAll(CARD_INSERTION_MARKER, "").replaceAll(FEEDBACK_INSERTION_MARKER, "");
@@ -97,7 +104,7 @@ function cardMarker(draft: CardFeedbackDraft | undefined, theme: Theme): string 
 	return `${marker}${note}`;
 }
 
-function groupCardsByKind(cards: readonly ReviewCard[]): CardGroup[] {
+function groupCardsByKind(cards: readonly DisplayReviewCard[]): CardGroup[] {
 	const groups: CardGroup[] = [];
 	const byKind = new Map<ReviewCard["kind"], CardGroup>();
 
@@ -141,7 +148,7 @@ function renderListView(
 	return lines;
 }
 
-function formatReference(reference: ReviewReference, index: number): string[] {
+function formatReferenceLocation(reference: ReviewReference, index: number): string {
 	const range =
 		reference.lineStart === undefined
 			? ""
@@ -149,34 +156,99 @@ function formatReference(reference: ReviewReference, index: number): string[] {
 				? `:${reference.lineStart}`
 				: `:${reference.lineStart}-${reference.lineEnd}`;
 	const commit = reference.commit ? ` @ ${reference.commit}` : "";
-	const lines = [`${index + 1}. ${reference.path}${range}${commit}`, `Why this matters: ${reference.whyRelevant}`];
+	return `${index + 1}. ${reference.path}${range}${commit}`;
+}
+
+function renderProseLines(card: DisplayReviewCard, feedbackCategoryLabel: string): string[] {
+	return [
+		card.title,
+		`Kind: ${kindLabel(card.kind)}`,
+		`State: ${feedbackCategoryLabel}`,
+		"",
+		"Review notes",
+		card.body,
+	];
+}
+
+function renderReferenceEvidence(reference: DisplayReviewReference, index: number): string[] {
+	const lines = [formatReferenceLocation(reference, index), `Why this matters: ${reference.whyRelevant}`];
 
 	if (reference.quote) {
-		lines.push("Code / diff excerpt:", "```");
+		lines.push("Quote:", "```");
 		lines.push(...reference.quote.replace(/\r\n?/g, "\n").split("\n"));
 		lines.push("```");
+	}
+
+	if (reference.resolvedDiff) {
+		const resolvedDiff = reference.resolvedDiff;
+		lines.push(`Resolved diff status: ${resolvedDiff.status}${resolvedDiff.truncated ? " (truncated)" : ""}`);
+		if (resolvedDiff.message) lines.push(`Resolved diff message: ${resolvedDiff.message}`);
+		if (resolvedDiff.text) {
+			lines.push("Resolved diff:", "```");
+			lines.push(...resolvedDiff.text.replace(/\r\n?/g, "\n").split("\n"));
+			lines.push("```");
+		}
 	}
 
 	return lines;
 }
 
-function renderCardContent(card: ReviewCard, draft: CardFeedbackDraft | undefined): string[] {
+function renderEvidenceLines(card: DisplayReviewCard): string[] {
 	const lines: string[] = [];
-	lines.push(card.title);
-	lines.push(`Kind: ${kindLabel(card.kind)}`);
-	lines.push(`State: ${reviewFeedbackCategoryLabel(draft?.category ?? "pending")}`);
+	const references = card.references ?? [];
+	for (let i = 0; i < references.length; i++) {
+		if (lines.length > 0) lines.push("");
+		lines.push(...renderReferenceEvidence(references[i]!, i));
+	}
+	return lines;
+}
 
-	if (card.references && card.references.length > 0) {
-		lines.push("", "Code / diff evidence");
-		for (let i = 0; i < card.references.length; i++) {
-			lines.push("");
-			lines.push(...formatReference(card.references[i]!, i));
-		}
+function hasResolvedDiffEvidence(card: DisplayReviewCard): boolean {
+	return Boolean(card.references?.some((reference) => Boolean(reference.resolvedDiff)));
+}
+
+function wrapLine(line: string, width: number): string[] {
+	if (width <= 0) return [line];
+	if (line.length <= width) return [line];
+	const chunks: string[] = [];
+	for (let index = 0; index < line.length; index += width) chunks.push(line.slice(index, index + width));
+	return chunks;
+}
+
+function wrapLines(lines: readonly string[], width: number): string[] {
+	return lines.flatMap((line) => wrapLine(line, width));
+}
+
+function renderSideBySideColumns(
+	proseLines: readonly string[],
+	evidenceLines: readonly string[],
+	width: number,
+): string[] {
+	const availableWidth = Math.max(1, width - REVIEW_PACKET_COLUMN_SEPARATOR.length);
+	const leftWidth = Math.max(20, Math.floor(availableWidth / 2));
+	const rightWidth = Math.max(20, availableWidth - leftWidth);
+	const left = wrapLines(proseLines, leftWidth);
+	const right = wrapLines(["Evidence", "", ...evidenceLines], rightWidth);
+	const maxLines = Math.max(left.length, right.length);
+	const lines: string[] = [];
+
+	for (let i = 0; i < maxLines; i++) {
+		lines.push(`${(left[i] ?? "").padEnd(leftWidth)}${REVIEW_PACKET_COLUMN_SEPARATOR}${right[i] ?? ""}`.trimEnd());
 	}
 
-	lines.push("", "Review notes", card.body);
-
 	return lines;
+}
+
+export function renderReviewCardContent(card: DisplayReviewCard, options: RenderReviewCardContentOptions): string[] {
+	const feedbackCategoryLabel = options.feedbackCategoryLabel ?? reviewFeedbackCategoryLabel("pending");
+	const proseLines = renderProseLines(card, feedbackCategoryLabel);
+	const evidenceLines = renderEvidenceLines(card);
+
+	if (evidenceLines.length === 0) return proseLines;
+	if (options.width >= REVIEW_PACKET_SIDE_BY_SIDE_MIN_WIDTH && hasResolvedDiffEvidence(card)) {
+		return renderSideBySideColumns(proseLines, evidenceLines, options.width);
+	}
+	return [...proseLines, "", "Evidence", "", ...evidenceLines];
 }
 
 function draftFor(cardId: string, drafts: Map<string, CardFeedbackDraft>): CardFeedbackDraft {
@@ -192,13 +264,16 @@ function setDraft(
 	drafts.set(cardId, { category, text: text?.trim() || null });
 }
 
-function isCardReviewed(card: ReviewCard, drafts: Map<string, CardFeedbackDraft>): boolean {
+function isCardReviewed(card: DisplayReviewCard, drafts: Map<string, CardFeedbackDraft>): boolean {
 	const draft = drafts.get(card.id);
 	if (!draft || draft.category === "pending") return false;
 	return !reviewFeedbackRequiresText(draft.category) || Boolean(draft.text);
 }
 
-function buildReviewFeedback(cards: readonly ReviewCard[], drafts: Map<string, CardFeedbackDraft>): ReviewFeedback[] {
+function buildReviewFeedback(
+	cards: readonly DisplayReviewCard[],
+	drafts: Map<string, CardFeedbackDraft>,
+): ReviewFeedback[] {
 	const feedback: ReviewFeedback[] = [];
 
 	for (const card of cards) {
@@ -213,14 +288,17 @@ function buildReviewFeedback(cards: readonly ReviewCard[], drafts: Map<string, C
 
 function consolidatedResult(
 	cancelled: boolean,
-	cards: readonly ReviewCard[],
+	cards: readonly DisplayReviewCard[],
 	drafts: Map<string, CardFeedbackDraft>,
 ): ReviewPacketReviewResult {
 	return { cancelled, feedback: consolidateReviewFeedback(buildReviewFeedback(cards, drafts)) };
 }
 
-export async function showReviewPacket(packet: ReviewPacket, ctx: ExtensionContext): Promise<ReviewPacketReviewResult> {
-	const normalized = normalizeReviewPacket(packet);
+export async function showReviewPacket(
+	packet: DisplayReviewPacket,
+	ctx: ExtensionContext,
+): Promise<ReviewPacketReviewResult> {
+	const normalized = packet;
 	const cards = normalized.cards;
 	const groups = groupCardsByKind(cards);
 	const groupPositions = new Map<ReviewCard["kind"], number>();
@@ -370,6 +448,15 @@ async function showCardDrillDown(
 		let feedbackFocused = false;
 		let pendingCategory: ReviewFeedbackCategory | null = null;
 		let statusMessage: string | null = null;
+		let viewerDirty = true;
+		let renderedCardId: string | null = null;
+		let renderedContentWidth = 0;
+
+		function resetViewerScroll(): void {
+			viewerState.state.cursorLine = 0;
+			viewerState.state.cursorCol = 0;
+			viewerState.scrollOffset = 0;
+		}
 
 		feedback.onSubmit = (value: string) => {
 			const card = group.cards[currentIdx]!;
@@ -395,14 +482,30 @@ async function showCardDrillDown(
 		};
 
 		function updateViewer(): void {
-			const card = group.cards[currentIdx]!;
 			header.setText(
 				`${theme.fg("accent", theme.bold(kindLabel(group.kind)))}  ${theme.fg("dim", `${currentIdx + 1} of ${group.cards.length}`)}`,
 			);
-			viewer.setText(renderCardContent(card, drafts.get(card.id)).join("\n"));
-			viewerState.state.cursorLine = 0;
-			viewerState.state.cursorCol = 0;
-			viewerState.scrollOffset = 0;
+			viewerDirty = true;
+		}
+
+		function renderViewerContent(width: number): string[] {
+			const card = group.cards[currentIdx]!;
+			const contentWidth = Math.max(1, width);
+			const cardChanged = renderedCardId !== card.id;
+			const widthChanged = renderedContentWidth !== contentWidth;
+			if (viewerDirty || cardChanged || widthChanged) {
+				viewer.setText(
+					renderReviewCardContent(card, {
+						width: contentWidth,
+						feedbackCategoryLabel: reviewFeedbackCategoryLabel(drafts.get(card.id)?.category ?? "pending"),
+					}).join("\n"),
+				);
+				renderedCardId = card.id;
+				renderedContentWidth = contentWidth;
+				viewerDirty = false;
+				resetViewerScroll();
+			}
+			return viewer.render(contentWidth);
 		}
 
 		function focusFeedback(message: string | null = null): void {
@@ -487,7 +590,7 @@ async function showCardDrillDown(
 				let feedbackIdx = lines.findIndex((line) => line.includes(FEEDBACK_INSERTION_MARKER));
 
 				if (cardIdx >= 0) {
-					const viewerLines = viewer.render(width - 2);
+					const viewerLines = renderViewerContent(width - 2);
 					lines.splice(cardIdx + 1, 0, ...viewerLines);
 					if (feedbackIdx > cardIdx) feedbackIdx += viewerLines.length;
 				}

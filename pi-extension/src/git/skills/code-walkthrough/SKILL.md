@@ -37,7 +37,7 @@ When a PR metadata command is provided, run it read-only. For branch targets, PR
 
 If `origin/$BASE` is missing or stale, use the best available base ref and explain the fallback in the packet.
 
-Read the relevant source and test files directly so line references and explanations are grounded in code, not just patch text. For each important changed area, capture a short code or diff excerpt that the reviewer can inspect in the packet.
+Read the relevant source and test files directly so line references and explanations are grounded in code, not just patch text. For each important changed area, identify the changed line range and context that the reviewer should inspect in the packet.
 
 ## Build the Packet
 
@@ -67,9 +67,10 @@ Recommended card sequence:
 
 2. **Primary code changes** (`kind: "diff-evidence"`)
    - Show the concrete changed code reviewers need to inspect.
-   - Use `references[].quote` for changed hunks, before/after snippets, or compact code excerpts.
+   - Use `references[].diff` for changed-code evidence. Provide structured intent; the code resolves it into git diffs for the packet.
+   - Do not put raw git commands or pasted diff output in the packet when a structured diff reference can represent the evidence.
    - Group related changes rather than listing every touched file.
-   - Explain why each excerpt matters in `whyRelevant`.
+   - Explain why each diff matters in `whyRelevant`.
 
 3. **Architecture / lay of the land** (`kind: "architecture"`)
    - Relevant modules, ownership boundaries, data/control flow, extension points, commands, tools, UI, APIs, storage, or external services involved.
@@ -102,7 +103,15 @@ Use multiple cards per kind when that improves clarity, but keep the packet conc
 
 ## Reference Quality
 
-Every reference must explain why the code evidence matters using `whyRelevant`. For code review, most references should also include `quote` with an explicit code or diff excerpt. Do not use `quote` for a prose paraphrase.
+Every reference must include a repo-relative `path` and explain why the code evidence matters using `whyRelevant`. For changed code, most references should include `diff` with structured fields that describe the desired evidence:
+
+- `base`: base ref or commit for the comparison.
+- `head`: optional head ref or commit; omit to compare the base against the checked-out review worktree.
+- `path`: optional file path override; omit to use the reference `path`.
+- `lineStart` and `lineEnd`: changed line range to focus.
+- `contextLines`: surrounding unchanged lines to include.
+
+The review packet tool resolves `references[].diff` into git diffs. Provide structured intent, not raw git commands or pasted diff output. Reserve `quote` for static/non-diff excerpts, PR metadata, config text, or evidence that cannot be represented as a structured diff. Do not use `quote` for a prose paraphrase.
 
 Good references include:
 
@@ -111,17 +120,23 @@ Good references include:
   "path": "path/to/file.ts",
   "lineStart": 42,
   "lineEnd": 58,
-  "quote": "if (changed) {\n  return newBehavior();\n}",
+  "diff": {
+    "base": "origin/main",
+    "head": "HEAD",
+    "lineStart": 42,
+    "lineEnd": 58,
+    "contextLines": 4
+  },
   "whyRelevant": "This is the command entrypoint that starts the new walkthrough behavior, so it anchors the runtime path described in this card."
 }
 ```
 
 Reference guidance:
 
-- Prefer source/test file line references plus short code excerpts over prose-only references.
-- Use diff output to find what changed, then read files to understand why it matters.
-- For complex changes, include compact before/after or changed-hunk snippets in `quote`.
-- Keep excerpts reviewable: include enough surrounding lines to understand the change, but avoid dumping full files.
+- Prefer structured diff references for changed-code evidence.
+- Use diff output to find what changed, then read source/test files directly to understand why it matters and to choose accurate line references.
+- Use source/test file line references plus `quote` only for static code excerpts or evidence that is not well represented as a diff.
+- Keep evidence reviewable: include enough surrounding context to understand the change, but avoid dumping full files.
 - Explain the significance of each reference, not just where it is.
 - Cite PR metadata only when it materially affects orientation, scope, risk, or open questions.
 
