@@ -72,6 +72,8 @@ Based on the description of the task provided, always:
 
 ## Output
 
+Do not paste code diffs inline. For changed-code evidence, cite file/line and provide a structured diff reference. Use `quote` only for static/non-diff excerpts that cannot be represented by `diff`.
+
 Your report should be written in the following format:
 
 ```
@@ -79,10 +81,14 @@ Your report should be written in the following format:
 
 ### High Impact (80–100)
 - [CATEGORY] file:line — description
+  Confidence: 0-100
+  Evidence: { "path": "file", "lineStart": 1, "lineEnd": 2, "whyRelevant": "Why this changed code proves the finding.", "diff": { "base": "base-ref", "head": "head-ref", "path": "file", "lineStart": 1, "lineEnd": 2, "contextLines": 5 } }
   Current pattern, reader cost, suggested direction, and why behavior is preserved.
 
 ### Moderate Impact (60–79)
 - [CATEGORY] file:line — description
+  Confidence: 0-100
+  Evidence: { "path": "file", "lineStart": 1, "lineEnd": 2, "whyRelevant": "Why this changed code proves the finding.", "diff": { "base": "base-ref", "head": "head-ref", "path": "file", "lineStart": 1, "lineEnd": 2, "contextLines": 5 } }
   Current pattern, reader cost, suggested direction, and why behavior is preserved.
 
 ### Summary

@@ -19,7 +19,8 @@ import {
 	type ReviewReference,
 	reviewFeedbackCategoryLabel,
 	reviewFeedbackRequiresText,
-} from "./review-packet";
+} from "./review-packet.ts";
+import type { DisplayReviewCard, DisplayReviewPacket, DisplayReviewReference } from "./review-packet-diff.ts";
 
 export interface ReviewPacketReviewResult {
 	cancelled: boolean;
@@ -32,9 +33,16 @@ interface CardFeedbackDraft {
 }
 
 interface CardGroup {
-	kind: ReviewCard["kind"];
-	cards: ReviewCard[];
+	kind: DisplayReviewCard["kind"];
+	cards: DisplayReviewCard[];
 }
+
+interface RenderReviewCardContentOptions {
+	stateLabel: string;
+	width: number;
+}
+
+type ReviewPacketForDisplay = ReviewPacket | DisplayReviewPacket;
 
 const NAV_KEYS = [
 	"tui.editor.cursorUp",
@@ -97,9 +105,9 @@ function cardMarker(draft: CardFeedbackDraft | undefined, theme: Theme): string 
 	return `${marker}${note}`;
 }
 
-function groupCardsByKind(cards: readonly ReviewCard[]): CardGroup[] {
+function groupCardsByKind(cards: readonly DisplayReviewCard[]): CardGroup[] {
 	const groups: CardGroup[] = [];
-	const byKind = new Map<ReviewCard["kind"], CardGroup>();
+	const byKind = new Map<DisplayReviewCard["kind"], CardGroup>();
 
 	for (const card of cards) {
 		let group = byKind.get(card.kind);
@@ -117,7 +125,7 @@ function groupCardsByKind(cards: readonly ReviewCard[]): CardGroup[] {
 function renderListView(
 	groups: readonly CardGroup[],
 	drafts: Map<string, CardFeedbackDraft>,
-	groupPositions: Map<ReviewCard["kind"], number>,
+	groupPositions: Map<DisplayReviewCard["kind"], number>,
 	selected: number,
 	theme: Theme,
 ): string[] {
@@ -141,7 +149,7 @@ function renderListView(
 	return lines;
 }
 
-function formatReference(reference: ReviewReference, index: number): string[] {
+function referenceLocation(reference: ReviewReference): string {
 	const range =
 		reference.lineStart === undefined
 			? ""
@@ -149,7 +157,11 @@ function formatReference(reference: ReviewReference, index: number): string[] {
 				? `:${reference.lineStart}`
 				: `:${reference.lineStart}-${reference.lineEnd}`;
 	const commit = reference.commit ? ` @ ${reference.commit}` : "";
-	const lines = [`${index + 1}. ${reference.path}${range}${commit}`, `Why this matters: ${reference.whyRelevant}`];
+	return `${reference.path}${range}${commit}`;
+}
+
+function formatEvidenceReference(reference: DisplayReviewReference, index: number): string[] {
+	const lines = [`${index + 1}. ${referenceLocation(reference)}`, `Why this matters: ${reference.whyRelevant}`];
 
 	if (reference.quote) {
 		lines.push("Code / diff excerpt:", "```");
@@ -157,26 +169,91 @@ function formatReference(reference: ReviewReference, index: number): string[] {
 		lines.push("```");
 	}
 
-	return lines;
-}
-
-function renderCardContent(card: ReviewCard, draft: CardFeedbackDraft | undefined): string[] {
-	const lines: string[] = [];
-	lines.push(card.title);
-	lines.push(`Kind: ${kindLabel(card.kind)}`);
-	lines.push(`State: ${reviewFeedbackCategoryLabel(draft?.category ?? "pending")}`);
-
-	if (card.references && card.references.length > 0) {
-		lines.push("", "Code / diff evidence");
-		for (let i = 0; i < card.references.length; i++) {
-			lines.push("");
-			lines.push(...formatReference(card.references[i]!, i));
+	if (reference.resolvedDiff) {
+		const status = reference.resolvedDiff.truncated
+			? `${reference.resolvedDiff.status} (truncated)`
+			: reference.resolvedDiff.status;
+		lines.push(`Resolved diff status: ${status}`);
+		if (reference.resolvedDiff.message) lines.push(`Resolved diff message: ${reference.resolvedDiff.message}`);
+		if (reference.resolvedDiff.text) {
+			lines.push("Resolved diff text:", "```");
+			lines.push(...reference.resolvedDiff.text.replace(/\r\n?/g, "\n").split("\n"));
+			lines.push("```");
 		}
 	}
 
-	lines.push("", "Review notes", card.body);
+	return lines;
+}
+
+function hardWrapLine(line: string, width: number): string[] {
+	const safeWidth = Math.max(1, width);
+	if (line.length === 0) return [""];
+	const wrapped: string[] = [];
+	for (let index = 0; index < line.length; index += safeWidth) wrapped.push(line.slice(index, index + safeWidth));
+	return wrapped;
+}
+
+function wrapLines(lines: readonly string[], width: number): string[] {
+	return lines.flatMap((line) => hardWrapLine(line, width));
+}
+
+function padRight(value: string, width: number): string {
+	return value.length >= width ? value : `${value}${" ".repeat(width - value.length)}`;
+}
+
+function composeColumns(left: readonly string[], right: readonly string[], width: number): string[] {
+	const separator = " │ ";
+	const available = Math.max(1, width - separator.length);
+	const leftWidth = Math.max(30, Math.floor(available * 0.42));
+	const rightWidth = Math.max(30, available - leftWidth);
+	const adjustedLeftWidth = Math.min(leftWidth, available - rightWidth);
+	const adjustedRightWidth = available - adjustedLeftWidth;
+	const wrappedLeft = wrapLines(left, adjustedLeftWidth);
+	const wrappedRight = wrapLines(right, adjustedRightWidth);
+	const rows = Math.max(wrappedLeft.length, wrappedRight.length);
+	const lines: string[] = [];
+
+	for (let index = 0; index < rows; index++) {
+		lines.push(`${padRight(wrappedLeft[index] ?? "", adjustedLeftWidth)}${separator}${wrappedRight[index] ?? ""}`);
+	}
 
 	return lines;
+}
+
+function evidenceLines(card: DisplayReviewCard): string[] {
+	const lines = ["Code / diff evidence"];
+	for (let i = 0; i < (card.references?.length ?? 0); i++) {
+		lines.push("");
+		lines.push(...formatEvidenceReference(card.references![i]!, i));
+	}
+	return lines;
+}
+
+function proseLines(card: DisplayReviewCard, stateLabel: string): string[] {
+	return [card.title, `Kind: ${kindLabel(card.kind)}`, `State: ${stateLabel}`, "", "Review notes", card.body];
+}
+
+function hasResolvedDiffEvidence(card: DisplayReviewCard): boolean {
+	return Boolean(card.references?.some((reference) => reference.resolvedDiff));
+}
+
+export function renderReviewCardContent(card: DisplayReviewCard, options: RenderReviewCardContentOptions): string[] {
+	const width = Math.max(20, options.width);
+	const prose = proseLines(card, options.stateLabel);
+	if (!card.references || card.references.length === 0) return wrapLines(prose, width);
+
+	const evidence = evidenceLines(card);
+	if (!hasResolvedDiffEvidence(card)) return wrapLines([...prose, "", ...evidence], width);
+	if (width < 96) return wrapLines(["Prose", "-----", ...prose, "", "Evidence", "--------", ...evidence], width);
+
+	return composeColumns(["Prose", "-----", ...prose], ["Evidence", "--------", ...evidence], width);
+}
+
+function renderCardContent(card: DisplayReviewCard, draft: CardFeedbackDraft | undefined, width: number): string[] {
+	return renderReviewCardContent(card, {
+		stateLabel: reviewFeedbackCategoryLabel(draft?.category ?? "pending"),
+		width,
+	});
 }
 
 function draftFor(cardId: string, drafts: Map<string, CardFeedbackDraft>): CardFeedbackDraft {
@@ -192,13 +269,16 @@ function setDraft(
 	drafts.set(cardId, { category, text: text?.trim() || null });
 }
 
-function isCardReviewed(card: ReviewCard, drafts: Map<string, CardFeedbackDraft>): boolean {
+function isCardReviewed(card: DisplayReviewCard, drafts: Map<string, CardFeedbackDraft>): boolean {
 	const draft = drafts.get(card.id);
 	if (!draft || draft.category === "pending") return false;
 	return !reviewFeedbackRequiresText(draft.category) || Boolean(draft.text);
 }
 
-function buildReviewFeedback(cards: readonly ReviewCard[], drafts: Map<string, CardFeedbackDraft>): ReviewFeedback[] {
+function buildReviewFeedback(
+	cards: readonly DisplayReviewCard[],
+	drafts: Map<string, CardFeedbackDraft>,
+): ReviewFeedback[] {
 	const feedback: ReviewFeedback[] = [];
 
 	for (const card of cards) {
@@ -213,17 +293,37 @@ function buildReviewFeedback(cards: readonly ReviewCard[], drafts: Map<string, C
 
 function consolidatedResult(
 	cancelled: boolean,
-	cards: readonly ReviewCard[],
+	cards: readonly DisplayReviewCard[],
 	drafts: Map<string, CardFeedbackDraft>,
 ): ReviewPacketReviewResult {
 	return { cancelled, feedback: consolidateReviewFeedback(buildReviewFeedback(cards, drafts)) };
 }
 
-export async function showReviewPacket(packet: ReviewPacket, ctx: ExtensionContext): Promise<ReviewPacketReviewResult> {
-	const normalized = normalizeReviewPacket(packet);
+function normalizePacketForDisplay(packet: ReviewPacketForDisplay): DisplayReviewPacket {
+	const normalized = normalizeReviewPacket(packet as ReviewPacket);
+	const inputCards = new Map(packet.cards.map((card) => [card.id.trim(), card]));
+	const cards = normalized.cards.map((card): DisplayReviewCard => {
+		const inputCard = inputCards.get(card.id);
+		return {
+			...card,
+			references: card.references?.map((reference, index): DisplayReviewReference => {
+				// Normalization sorts cards but preserves reference order, so index matching keeps resolved display data attached.
+				const inputReference = inputCard?.references?.[index] as DisplayReviewReference | undefined;
+				return inputReference?.resolvedDiff ? { ...reference, resolvedDiff: inputReference.resolvedDiff } : reference;
+			}),
+		};
+	});
+	return { ...normalized, cards };
+}
+
+export async function showReviewPacket(
+	packet: ReviewPacketForDisplay,
+	ctx: ExtensionContext,
+): Promise<ReviewPacketReviewResult> {
+	const normalized = normalizePacketForDisplay(packet);
 	const cards = normalized.cards;
 	const groups = groupCardsByKind(cards);
-	const groupPositions = new Map<ReviewCard["kind"], number>();
+	const groupPositions = new Map<DisplayReviewCard["kind"], number>();
 	const drafts = new Map<string, CardFeedbackDraft>();
 	let lastSelected = 0;
 
@@ -360,6 +460,7 @@ async function showCardDrillDown(
 		};
 
 		const viewer = new Editor(tui, editorTheme, { paddingX: 0 });
+		// Editor has no public scroll-reset API; reset internal state when switching cards or layout width.
 		const viewerState = viewer as unknown as { state: { cursorLine: number; cursorCol: number }; scrollOffset: number };
 		viewer.focused = true;
 		viewer.disableSubmit = true;
@@ -370,6 +471,7 @@ async function showCardDrillDown(
 		let feedbackFocused = false;
 		let pendingCategory: ReviewFeedbackCategory | null = null;
 		let statusMessage: string | null = null;
+		let viewerWidth = 80;
 
 		feedback.onSubmit = (value: string) => {
 			const card = group.cards[currentIdx]!;
@@ -399,10 +501,18 @@ async function showCardDrillDown(
 			header.setText(
 				`${theme.fg("accent", theme.bold(kindLabel(group.kind)))}  ${theme.fg("dim", `${currentIdx + 1} of ${group.cards.length}`)}`,
 			);
-			viewer.setText(renderCardContent(card, drafts.get(card.id)).join("\n"));
+			viewer.setText(renderCardContent(card, drafts.get(card.id), viewerWidth).join("\n"));
 			viewerState.state.cursorLine = 0;
 			viewerState.state.cursorCol = 0;
 			viewerState.scrollOffset = 0;
+		}
+
+		function updateViewerWidth(width: number): void {
+			const nextWidth = Math.max(20, width);
+			if (nextWidth === viewerWidth) return;
+			viewerWidth = nextWidth;
+			// Split-pane text is width-dependent, so recompute only when the terminal layout changes.
+			updateViewer();
 		}
 
 		function focusFeedback(message: string | null = null): void {
@@ -487,7 +597,9 @@ async function showCardDrillDown(
 				let feedbackIdx = lines.findIndex((line) => line.includes(FEEDBACK_INSERTION_MARKER));
 
 				if (cardIdx >= 0) {
-					const viewerLines = viewer.render(width - 2);
+					const contentWidth = Math.max(20, width - 2);
+					updateViewerWidth(contentWidth);
+					const viewerLines = viewer.render(contentWidth);
 					lines.splice(cardIdx + 1, 0, ...viewerLines);
 					if (feedbackIdx > cardIdx) feedbackIdx += viewerLines.length;
 				}

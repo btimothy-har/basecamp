@@ -37,7 +37,7 @@ When a PR metadata command is provided, run it read-only. For branch targets, PR
 
 If `origin/$BASE` is missing or stale, use the best available base ref and explain the fallback in the packet.
 
-Read the relevant source and test files directly so line references and explanations are grounded in code, not just patch text. For each important changed area, capture a short code or diff excerpt that the reviewer can inspect in the packet.
+Read the relevant source and test files directly so line references and explanations are grounded in code, not just patch text. For each important changed area, capture line references and a structured diff reference that the reviewer can inspect in the packet.
 
 ## Build the Packet
 
@@ -67,9 +67,9 @@ Recommended card sequence:
 
 2. **Primary code changes** (`kind: "diff-evidence"`)
    - Show the concrete changed code reviewers need to inspect.
-   - Use `references[].quote` for changed hunks, before/after snippets, or compact code excerpts.
+   - Use `references[].diff` for changed hunks or before/after evidence.
    - Group related changes rather than listing every touched file.
-   - Explain why each excerpt matters in `whyRelevant`.
+   - Explain why each diff reference matters in `whyRelevant`.
 
 3. **Architecture / lay of the land** (`kind: "architecture"`)
    - Relevant modules, ownership boundaries, data/control flow, extension points, commands, tools, UI, APIs, storage, or external services involved.
@@ -102,7 +102,7 @@ Use multiple cards per kind when that improves clarity, but keep the packet conc
 
 ## Reference Quality
 
-Every reference must explain why the code evidence matters using `whyRelevant`. For code review, most references should also include `quote` with an explicit code or diff excerpt. Do not use `quote` for a prose paraphrase.
+Every reference must explain why the code evidence matters using `whyRelevant`. For changed-code evidence, references should use structured `diff` refs instead of pasted diff excerpts. Use `quote` only for static/non-diff code excerpts or metadata that cannot be represented by `diff`; never use `quote` for prose paraphrase.
 
 Good references include:
 
@@ -111,17 +111,24 @@ Good references include:
   "path": "path/to/file.ts",
   "lineStart": 42,
   "lineEnd": 58,
-  "quote": "if (changed) {\n  return newBehavior();\n}",
+  "diff": {
+    "base": "origin/main",
+    "head": "feature-branch",
+    "path": "path/to/file.ts",
+    "lineStart": 42,
+    "lineEnd": 58,
+    "contextLines": 5
+  },
   "whyRelevant": "This is the command entrypoint that starts the new walkthrough behavior, so it anchors the runtime path described in this card."
 }
 ```
 
 Reference guidance:
 
-- Prefer source/test file line references plus short code excerpts over prose-only references.
+- Prefer source/test file line references plus structured diff references over prose-only references.
 - Use diff output to find what changed, then read files to understand why it matters.
-- For complex changes, include compact before/after or changed-hunk snippets in `quote`.
-- Keep excerpts reviewable: include enough surrounding lines to understand the change, but avoid dumping full files.
+- For complex changes, tune `lineStart`, `lineEnd`, and `contextLines` rather than pasting hunks into `quote`.
+- Keep evidence reviewable: include enough surrounding context to understand the change, but avoid dumping full files or full diffs.
 - Explain the significance of each reference, not just where it is.
 - Cite PR metadata only when it materially affects orientation, scope, risk, or open questions.
 

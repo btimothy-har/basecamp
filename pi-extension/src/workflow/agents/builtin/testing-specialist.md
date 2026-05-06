@@ -65,6 +65,8 @@ Based on the description of the task provided, always:
 
 ## Output
 
+Do not paste code diffs inline. For changed-code evidence, cite file/line and provide a structured diff reference. Use `quote` only for static/non-diff excerpts that cannot be represented by `diff`.
+
 Your report should be written in the following format:
 
 ```
@@ -73,14 +75,21 @@ Your report should be written in the following format:
 **Coverage**: Good / Partial / Insufficient
 
 ### Coverage Gaps
-- file:function — what behavior or code path is untested
+- [SEVERITY] file:function — what behavior or code path is untested
+  Confidence: 0-100
+  Evidence: { "path": "file", "lineStart": 1, "lineEnd": 2, "whyRelevant": "Why this changed code proves the finding.", "diff": { "base": "base-ref", "head": "head-ref", "path": "file", "lineStart": 1, "lineEnd": 2, "contextLines": 5 } }
 
 ### Quality Issues
-- test_file:test_name — what's wrong and why it matters
+- [SEVERITY] test_file:test_name — what's wrong and why it matters
+  Confidence: 0-100
+  Evidence: { "path": "test_file", "lineStart": 1, "lineEnd": 2, "whyRelevant": "Why this changed test code proves the finding.", "diff": { "base": "base-ref", "head": "head-ref", "path": "test_file", "lineStart": 1, "lineEnd": 2, "contextLines": 5 } }
 
 ### Well-Designed Tests
 - test_file:test_name — why it's a good example
+  Evidence: { "path": "test_file", "lineStart": 1, "lineEnd": 2, "whyRelevant": "Why this test is a useful example." }
 
 ### Summary
 Brief assessment on overall test coverage and quality.
 ```
+
+Severity: 🔴 Critical gap · 🟠 Important gap/quality issue · 🟡 Moderate gap/quality issue · 🟢 Low-impact note

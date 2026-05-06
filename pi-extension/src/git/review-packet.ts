@@ -9,6 +9,7 @@ export const REVIEW_PACKET_LIMITS = {
 	shortText: 200,
 	body: 50_000,
 	quote: 5_000,
+	diffContextLines: 50,
 } as const;
 
 export const ReviewTargetSchema = Type.Object({
@@ -39,12 +40,23 @@ export const ReviewCardKindSchema = Type.Union([
 ]);
 export type ReviewCardKind = Static<typeof ReviewCardKindSchema>;
 
+export const ReviewDiffReferenceSchema = Type.Object({
+	base: Type.String({ maxLength: REVIEW_PACKET_LIMITS.shortText }),
+	head: Type.Optional(Type.String({ maxLength: REVIEW_PACKET_LIMITS.shortText })),
+	path: Type.Optional(Type.String({ maxLength: REVIEW_PACKET_LIMITS.shortText })),
+	lineStart: Type.Optional(Type.Number()),
+	lineEnd: Type.Optional(Type.Number()),
+	contextLines: Type.Optional(Type.Number({ maximum: REVIEW_PACKET_LIMITS.diffContextLines })),
+});
+export type ReviewDiffReference = Static<typeof ReviewDiffReferenceSchema>;
+
 export const ReviewReferenceSchema = Type.Object({
 	path: Type.String({ maxLength: REVIEW_PACKET_LIMITS.shortText }),
 	lineStart: Type.Optional(Type.Number()),
 	lineEnd: Type.Optional(Type.Number()),
 	commit: Type.Optional(Type.String({ maxLength: REVIEW_PACKET_LIMITS.shortText })),
 	quote: Type.Optional(Type.String({ maxLength: REVIEW_PACKET_LIMITS.quote })),
+	diff: Type.Optional(ReviewDiffReferenceSchema),
 	whyRelevant: Type.String({ maxLength: REVIEW_PACKET_LIMITS.body }),
 });
 export type ReviewReference = Static<typeof ReviewReferenceSchema>;
@@ -107,14 +119,65 @@ function trimmedOptional(value: string | undefined): string | undefined {
 	return trimmed ? trimmed : undefined;
 }
 
+function assertRepoRelativePath(path: string, label: string, cardId: string): void {
+	if (path.startsWith("/") || path.split(/[\\/]+/).includes("..")) {
+		throw new Error(`${label} must be repo-relative: ${cardId}`);
+	}
+}
+
+function assertGitRevision(value: string, label: string, cardId: string): void {
+	if (value.startsWith("-") || value.includes("..") || /\s/.test(value)) {
+		throw new Error(`${label} must be a simple revision, not an option or range: ${cardId}`);
+	}
+}
+
+function assertPositiveInteger(value: number | undefined, label: string, cardId: string): void {
+	if (value !== undefined && (!Number.isInteger(value) || value < 1)) {
+		throw new Error(`${label} must be a positive integer: ${cardId}`);
+	}
+}
+
+function normalizeDiffReference(diff: ReviewDiffReference, cardId: string): ReviewDiffReference {
+	const base = diff.base.trim();
+	const head = trimmedOptional(diff.head);
+	const path = trimmedOptional(diff.path);
+
+	if (!base) throw new Error(`Review reference diff base is required: ${cardId}`);
+	assertGitRevision(base, "Review reference diff base", cardId);
+	if (head) assertGitRevision(head, "Review reference diff head", cardId);
+	if (path) assertRepoRelativePath(path, "Review reference diff path", cardId);
+	assertPositiveInteger(diff.lineStart, "Review reference diff lineStart", cardId);
+	assertPositiveInteger(diff.lineEnd, "Review reference diff lineEnd", cardId);
+	if (diff.lineStart !== undefined && diff.lineEnd !== undefined && diff.lineEnd < diff.lineStart) {
+		throw new Error(`Review reference diff lineEnd must be greater than or equal to lineStart: ${cardId}`);
+	}
+	if (
+		diff.contextLines !== undefined &&
+		(!Number.isInteger(diff.contextLines) ||
+			diff.contextLines < 0 ||
+			diff.contextLines > REVIEW_PACKET_LIMITS.diffContextLines)
+	) {
+		throw new Error(
+			`Review reference diff contextLines must be a non-negative integer no greater than ${REVIEW_PACKET_LIMITS.diffContextLines}: ${cardId}`,
+		);
+	}
+
+	return {
+		base,
+		head,
+		path,
+		lineStart: diff.lineStart,
+		lineEnd: diff.lineEnd,
+		contextLines: diff.contextLines,
+	};
+}
+
 function normalizeReference(reference: ReviewReference, cardId: string): ReviewReference {
 	const path = reference.path.trim();
 	const whyRelevant = reference.whyRelevant.trim();
 
 	if (!path) throw new Error(`Review reference path is required: ${cardId}`);
-	if (path.startsWith("/") || path.split(/[\\/]+/).includes("..")) {
-		throw new Error(`Review reference path must be repo-relative: ${cardId}`);
-	}
+	assertRepoRelativePath(path, "Review reference path", cardId);
 	if (!whyRelevant) throw new Error(`Review reference whyRelevant is required: ${cardId}`);
 	if (reference.lineStart !== undefined && reference.lineStart < 1) {
 		throw new Error(`Review reference lineStart must be positive: ${cardId}`);
@@ -132,6 +195,7 @@ function normalizeReference(reference: ReviewReference, cardId: string): ReviewR
 		lineEnd: reference.lineEnd,
 		commit: trimmedOptional(reference.commit),
 		quote: trimmedOptional(reference.quote),
+		...(reference.diff ? { diff: normalizeDiffReference(reference.diff, cardId) } : {}),
 		whyRelevant,
 	};
 }
