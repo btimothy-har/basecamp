@@ -5,19 +5,30 @@ description: Multi-dimensional code review using specialized sub-agents
 
 # Code Review
 
-Dispatch specialized review agents to analyze code changes in parallel, then synthesize their findings into a verdict.
+Dispatch specialized review agents to analyze code changes in parallel, then synthesize their findings into an interactive `review_packet`.
 
 ## Step 1: Determine Scope
 
 Identify what to review. Use the user's input — a PR number, branch, file list, or default to unstaged changes.
 
-Build a scope summary:
-- What changed (files, rough line count)
-- The intent behind the changes (PR description, commit messages, linked issues)
+Gather:
+- Scope summary: what changed, rough line count, affected subsystems, and intent from PR metadata, commits, or the user
+- Diff anchors: `base`, optional `head`, and relevant paths for changed-code evidence
+- Review focus or constraints from the user
+
+Structured diff references use this shape:
+
+```json
+{ "diff": { "base": "origin/main", "head": "feature", "path": "src/file.ts", "lineStart": 42, "lineEnd": 58, "contextLines": 5 } }
+```
+
+Use `base` alone for `git diff base -- path`; use `base` + `head` for merge-base range `git diff base...head -- path`. `path` may be omitted when it matches the reference path. Keep `contextLines` small and never above 50.
 
 ## Step 2: Dispatch Reviewers
 
-Use the `agent` tool to dispatch all 4 agents in the same assistant turn. Include the scope summary and relevant file paths in each task.
+Use the `agent` tool to dispatch all 4 agents in the same assistant turn. Include the scope summary, base/head anchors, relevant file paths, and this evidence contract in each task:
+
+> For each finding, include file/line plus a structured `evidence` reference with `path`, optional `lineStart`/`lineEnd`, required `whyRelevant`, and `diff` for changed-code evidence. Do not paste code diffs inline. Use `quote` only for static/non-diff excerpts that cannot be represented by `diff`.
 
 1. `{ agent: "security-specialist", task: "Review these changes for security vulnerabilities: {scope}" }`
 2. `{ agent: "testing-specialist", task: "Review test coverage and quality for these changes: {scope}" }`
@@ -38,8 +49,18 @@ Before scoring, verify each finding:
 - Is this a real issue? Is the code path reachable?
 - Is it new? Pre-existing issues in unchanged code score lower.
 - What's the impact? Hot paths and security-sensitive code score higher.
+- Does the evidence cite file/line and include a structured diff reference for changed-code evidence?
 
-## Step 4: Verdict
+## Step 4: Build Review Packet and Verdict
+
+Build `review_packet` cards from verified findings, grouped by severity and dimension. Each finding card should include:
+- Title with severity, dimension, and affected file/function
+- Body with concise impact and remediation guidance
+- `references[]` from the specialist evidence, preserving structured `diff` refs for changed-code evidence
+
+Call `review_packet` for interactive display. Do not output a long standalone markdown verdict instead of the packet.
+
+Verdict guidance:
 
 | Findings | Verdict |
 |----------|---------|
@@ -51,7 +72,9 @@ Before scoring, verify each finding:
 
 Weight by impact — security vulnerabilities, data integrity risks, and missing tests for critical paths weigh heavier. Style preferences, documentation gaps in internal tools, and naming nitpicks weigh lighter.
 
-## Output
+## Fallback Output
+
+If `review_packet` is unavailable, provide concise markdown without inline code diffs:
 
 ```markdown
 ## Code Review
@@ -61,9 +84,11 @@ Weight by impact — security vulnerabilities, data integrity risks, and missing
 
 ### 🔴 Blocking Issues (90–100)
 - [DIMENSION] file:line — description
+  Evidence: structured diff ref `{ base, head?, path?, lineStart?, lineEnd?, contextLines? }`
 
 ### 🟠 Important Issues (80–89)
 - [DIMENSION] file:line — description
+  Evidence: structured diff ref `{ base, head?, path?, lineStart?, lineEnd?, contextLines? }`
 
 ### Positive Notes
 - What's well done
