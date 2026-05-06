@@ -1,15 +1,15 @@
 ---
 name: gather
-description: "Invoke when gathering requirements or asking questions. Task start triggers: 'help me with', 'I want to', 'build/create/implement', feature requests, architectural decisions, scope clarification. Mid-task triggers: clarifying requirements, choosing approaches, handling edge cases, confirming decisions. Adapts depth to context."
+description: "Invoke when gathering requirements or asking questions. Task start triggers: 'help me with', 'I want to', 'build/create/implement', feature requests, requirements ambiguity, scope clarification. Mid-task triggers: clarifying requirements, small non-architectural decisions, handling edge cases, confirming decisions. Redirect architectural, multi-step, or consequential approach discovery to planning."
 ---
 
 # Gather
 
 ## Purpose
 
-Gather information from users to enable informed execution. This skill provides interview techniques (micro-skills) and a pipeline (process) for turning ambiguous requests into clear requirements.
+Gather information from users to enable informed execution. This skill provides interview techniques (micro-skills) and a lightweight pipeline for turning ambiguous requests into clear requirements.
 
-The pipeline runs for both task-start and mid-task triggers. Each phase scales to context—a small gap needs brief treatment; a new feature needs full exploration.
+Use gather as the front door for requirements ambiguity, scope clarification, preferences, priorities, and small discovery gaps. When the request requires architectural exploration, multi-step implementation strategy, or consequential approach selection, gather enough context to name the uncertainty, then hand off to the `planning` skill.
 
 ---
 
@@ -110,25 +110,26 @@ When applying interview techniques, present structured options whenever possible
 
 ## Pipeline
 
-Three phases that turn ambiguous requests into clear requirements. Each phase scales to context depth—run briefly for small gaps, thoroughly for complex features/refactors/architectural decisions.
+Three phases that turn ambiguous requests into clear requirements. Keep the process lightweight and proportional to the uncertainty.
 
 ```
 Task/Gap arrives
   |
 Phase 1: Interview (gather context)
   |
-Phase 2: Discover (test assumptions before converging)
+Phase 2: Clarify (resolve lightweight uncertainty)
   |
 Phase 3: Capture (document requirements)
   |
-Execute with full understanding
+Execute or hand off to planning
 ```
 
 Use the lightest process that resolves the uncertainty:
 - **Small/simple gaps**: ask one concise clarifying question, offer concrete options when useful, then proceed.
-- **Complex features/refactors/architectural decisions**: collaborate falsification-first—map assumptions, test strawmen and scenarios, look for disconfirming evidence, then converge.
+- **Requirements and scope ambiguity**: interview until success criteria, boundaries, constraints, edge cases, and priorities are clear enough to execute.
+- **Architectural, multi-step, or consequential approach discovery**: identify the key assumptions/questions, then use `planning` for full falsification, convergence, and execution handoff.
 
-Continue each phase until the user indicates readiness to proceed.
+Continue until requirements are clear enough to proceed or the remaining uncertainty belongs in `planning`.
 
 ### Phase 1: Interview
 
@@ -140,19 +141,17 @@ Gather context from the user that cannot be discovered autonomously.
 
 **Scaling**: Small gap → one focused question. New feature → multiple rounds until requirements are clear.
 
-### Phase 2: Discover
+### Phase 2: Clarify
 
-Turn gathered context into agreed approaches through collaborative falsification before recommendation. Keep the posture constructive, curious, and practical.
+Resolve lightweight uncertainty constructively and collaboratively. Gather should clarify requirements, not own full architecture-level falsification or convergence.
 
 **Approach**:
-1. **Choose depth** — Small/simple gap → quick confirmation. Complex work → falsification-first discovery.
-2. **Map assumptions** — Name what must be true for the request or approach to work.
-3. **Create disposable strawmen** — Sketch 2-3 lightweight approaches as tools for learning, not proposals to defend.
-4. **Falsify scenarios** — Test each strawman against happy paths, edge cases, constraints, and failure modes.
-5. **Seek disconfirming evidence** — Ask what would make an option wrong, risky, too complex, or unnecessary.
-6. **Apply YAGNI** — Push back on scope; suggest phasing for large ideas.
-7. **Converge deliberately** — Only after assumptions and failure modes are clear, summarize the trade-off and recommend or confirm a direction.
-8. **Agree on scope** — Confirm: "So we're building X, not Y—correct?"
+1. **Choose depth** — Small/simple gap → quick confirmation. Broader requirements ambiguity → focused interview. Consequential approach uncertainty → hand off to `planning`.
+2. **Name the uncertainty** — State the specific missing requirement, scenario, preference, priority, or boundary.
+3. **Offer concrete options** — Present 2-3 viable choices when helpful, with brief trade-offs.
+4. **Probe scenarios** — Ask about edge cases or failure modes that affect requirements.
+5. **Negotiate scope** — Apply YAGNI, suggest phasing, and separate must-haves from future ideas.
+6. **Confirm the result** — Summarize what is in scope, out of scope, and how the clarified case should behave.
 
 **Small/Simple Gap Pattern**:
 ```
@@ -160,28 +159,25 @@ I found one unclear detail: [specific gap].
 Do you want A ([trade-off]) or B ([trade-off])?
 ```
 
-**Complex Discovery Pattern**:
+**Requirements Clarification Pattern**:
 ```
-For [feature/refactor/decision], here are the assumptions I think we need to test:
-- [Assumption 1]
-- [Assumption 2]
-- [Assumption 3]
+To make this executable, I need to clarify [specific requirement/scope gap].
+The main options are:
+A. **[Option A]** — [brief trade-off]
+B. **[Option B]** — [brief trade-off]
 
-Disposable strawmen:
-A. **[Option A]** (simplest)
-   - Works if [assumption]
-   - Fails/struggles if [scenario]
+Which matches your intent?
+```
 
-B. **[Option B]** (moderate)
-   - Works if [assumption]
-   - Fails/struggles if [scenario]
+**Planning Handoff Pattern**:
+```
+This looks consequential enough that the remaining uncertainty is about approach, not just requirements.
+I think the key assumptions/questions are:
+- [Assumption/question 1]
+- [Assumption/question 2]
+- [Assumption/question 3]
 
-C. **[Option C]** (complex)
-   - Works if [assumption]
-   - Fails/struggles if [scenario]
-
-What evidence, constraint, or scenario would rule these out?
-After that, we can converge on the smallest viable path that survives.
+I'll switch to `planning` to evaluate the options and converge on an implementation path.
 ```
 
 **Scope Negotiation**:
@@ -189,14 +185,11 @@ After that, we can converge on the smallest viable path that survives.
 | Situation | Response |
 |-----------|----------|
 | Feature creep | "Good idea—add to a future phase?" |
-| Gold-plating | "Simpler version might survive the scenarios. What failure would require the extra complexity?" |
+| Gold-plating | "What failure would require that extra complexity?" |
 | Unclear priority | "If only two of these three, which two matter most?" |
-| Time pressure | "Given constraints, what assumption can we safely defer testing?" |
-| Early convergence | "Before recommending, let's check what would make this approach wrong." |
+| Constraint pressure | "Given constraints, which requirement is safest to defer?" |
 
-**Scaling**: Small gap → concise clarifying question and quick confirmation. Complex work → assumption mapping, disposable strawmen, scenario falsification, disconfirming evidence, then recommendation/convergence.
-
-When discovery produces a consequential implementation path, switch to the `planning` skill to formalize the recommendation, boundaries, and handoff rather than treating the gather pipeline as the execution plan.
+**Scaling**: Small gap → concise clarifying question and quick confirmation. Requirements ambiguity → focused interview and capture. Architectural, multi-step, or consequential implementation choices → identify assumptions/questions and invoke `planning`.
 
 ### Phase 3: Capture
 
@@ -231,6 +224,7 @@ Document agreed requirements for execution.
 - **Context first** — Briefly explain what led to the question
 - **Options when possible** — Easier to pick than open-ended
 - **Respect signals** — If user says "just pick one," use your judgment
+- **Stay non-mutative** — Do not create files, edit code, or delegate implementation work while resolving requirements
 
 ---
 
