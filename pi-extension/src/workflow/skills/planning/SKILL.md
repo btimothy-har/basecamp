@@ -15,6 +15,8 @@ Planning turns discovery into approved execution. The `plan()` tool is for appro
 
 Exploration is non-mutative. Read code, inspect docs, search history, run safe read-only checks, and use subagents when useful. Do not use `plan()` to authorise discovery itself; use it when discovery has produced enough context to propose a bounded execution path.
 
+During exploration, treat early ideas as disposable strawmen: compare them against actual constraints, look for evidence that would make them a poor fit, and revise or discard them before converging. The goal is not to prolong debate; it is to test assumptions and alternatives enough that the final recommendation is justified.
+
 Prototypes, spikes, repo edits, expensive validation runs, and substantial analysis execution require an approved plan and handoff first.
 
 ---
@@ -29,7 +31,7 @@ Use `plan()` when the approach matters and the next work phase needs explicit us
 - Validation plans that run meaningful checks, commands, queries, or review workflows
 - Work that needs clear success criteria, scope boundaries, or execution handoff
 
-Do not use `plan()` to begin exploration. If you do not yet understand the current system, constraints, options, or success criteria, keep investigating and discussing. For simple, obvious work, use `update_goal` → `create_tasks` instead.
+Do not use `plan()` to begin exploration. If you do not yet understand the current system, constraints, options, success criteria, invalidated alternatives, surviving assumptions, or remaining uncertainty, keep investigating and discussing. For simple, obvious work, use `update_goal` → `create_tasks` instead.
 
 ---
 
@@ -39,28 +41,33 @@ Do not use `plan()` to begin exploration. If you do not yet understand the curre
 
 Investigate before formalising. Read the relevant code, docs, configuration, schemas, prior decisions, or logs needed to understand the problem. Use the `gather` skill when user requirements need clarification, and ask only for gaps you cannot resolve from available context.
 
-You are ready to move toward a plan when you can explain what exists, what is changing, why it matters, and what constraints shape the solution without guessing.
+You are ready to move toward a plan when you can explain what exists, what is changing, why it matters, and what constraints shape the solution from evidence rather than untested assumptions.
 
 ### Shape the Approach
 
-Planning is collaborative design work. Surface viable approaches with trade-offs, recommend one, and explain why it fits better than the alternatives. Challenge scope when the simpler path would satisfy the goal.
+Planning is collaborative design work. Surface viable approaches with trade-offs, test them enough to justify convergence, then recommend one and explain why it is the strongest survivor. Challenge scope when the simpler path would satisfy the goal.
+
+Before recommending convergence, test the leading option against disconfirming evidence and compare it with plausible alternatives. It is acceptable to sketch disposable strawmen, then retire them when the evidence or constraints show they do not fit. Preserve the useful learning: which alternatives were invalidated, which assumptions survived, what uncertainty remains, and why the recommended plan survived the comparison.
 
 If the user wants to skip to `plan()` before the approach is agreed, push back: formalising before shared understanding creates a task list, not a plan.
 
 Good approach discussion answers:
 - What are we solving, and why now?
 - What options were considered?
-- Which option are we choosing, and why?
+- Which options were invalidated, and by what evidence or constraint?
+- Which assumptions survived exploration?
+- What uncertainty remains, and why is it acceptable for this plan?
+- Which option are we choosing, and why did it survive comparison?
 - What trade-offs or risks are we accepting?
 - What is explicitly out of scope?
 
 ### Agree on Scope
 
-Before calling `plan()`, align on the boundaries that prevent drift. Decide what the work includes, what it excludes, what success looks like, and which unresolved questions matter enough to resolve now. Do not hide unresolved decisions inside tasks; if a task depends on a decision that has not been made, make the decision before formalising.
+Before calling `plan()`, align on the boundaries that prevent drift. Decide what the work includes, what it excludes, what success looks like, which assumptions are stable enough to proceed on, and which unresolved questions matter enough to resolve now. Make uncertainty explicit rather than hiding it: if it could change the recommended approach, keep exploring; if it can be managed within the plan, name the risk or boundary. Do not hide unresolved decisions inside tasks; if a task depends on a decision that has not been made, make the decision before formalising.
 
 ### Formalise with `plan()`
 
-Call `plan()` only after discovery and discussion have converged. The plan sections should reflect the agreed direction, not introduce new thinking.
+Call `plan()` only after discovery and discussion have converged. Convergence requires a final recommendation, not just a list of options: you should be able to state which alternatives were invalidated, which assumptions survived, what uncertainty remains, and why the recommended plan is the best next step. The plan sections should reflect the agreed direction, not introduce new thinking.
 
 ```
 plan({
@@ -93,7 +100,7 @@ A good plan is specific enough that another agent could execute without reopenin
 
 - **Goal** — one clear outcome, not a vague improvement area
 - **Context** — evidence from the actual system, source data, workflow, or user need
-- **Design** — the chosen approach and why it wins over alternatives
+- **Design** — the chosen approach, why it survived comparison, which alternatives were invalidated, which assumptions remain, and what uncertainty is accepted
 - **Success** — concrete, verifiable criteria
 - **Boundaries** — explicit exclusions that prevent drift
 - **Tasks** — ordered execution chunks that follow from the agreed approach
