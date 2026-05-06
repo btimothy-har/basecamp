@@ -42,6 +42,28 @@ describe("renderReviewCardContent", () => {
 		assert.match(output, /\+new/);
 	});
 
+	it("renders resolved diff evidence in columns at the minimum side-by-side width", () => {
+		const lines = renderReviewCardContent(
+			card({
+				references: [
+					{
+						path: "src/file.ts",
+						whyRelevant: "shows the changed branch",
+						resolvedDiff: {
+							status: "resolved",
+							text: "+new",
+							truncated: false,
+							args: ["diff"],
+						},
+					},
+				],
+			}),
+			{ width: REVIEW_PACKET_SIDE_BY_SIDE_MIN_WIDTH, feedbackCategoryLabel: "Pending" },
+		);
+
+		assert.ok(lines.some((line) => line.includes(" │ ")));
+	});
+
 	it("falls back to stacked sections for resolved diff evidence at narrow widths", () => {
 		const lines = renderReviewCardContent(
 			card({

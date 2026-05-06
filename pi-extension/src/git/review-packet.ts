@@ -123,13 +123,21 @@ function isRepoRelativePath(path: string): boolean {
 	return !path.startsWith("/") && !/^[A-Za-z]:[\\/]/.test(path) && !path.split(/[\\/]+/).includes("..");
 }
 
+function hasUnsafeControl(value: string): boolean {
+	for (const char of value) {
+		const code = char.charCodeAt(0);
+		if (code < 0x20 || code === 0x7f) return true;
+	}
+	return false;
+}
+
 function normalizeDiffRevision(value: string | undefined, field: "base" | "head", cardId: string): string | undefined {
 	const revision = trimmedOptional(value);
 	if (!revision) {
 		if (field === "base") throw new Error(`Review reference diff base is required: ${cardId}`);
 		return undefined;
 	}
-	if (revision.startsWith("-") || revision.includes("..") || /\s/.test(revision)) {
+	if (revision.startsWith("-") || revision.includes("..") || /\s/.test(revision) || hasUnsafeControl(revision)) {
 		throw new Error(`Review reference diff ${field} must be a simple revision: ${cardId}`);
 	}
 	return revision;

@@ -60,7 +60,14 @@ interface ResolveReviewPacketDiffsOptions {
 }
 
 function validateRevision(value: string | undefined, label: string): string {
-	if (!value || value !== value.trim() || value.startsWith("-") || value.includes("..") || /\s/.test(value)) {
+	if (
+		!value ||
+		value !== value.trim() ||
+		value.startsWith("-") ||
+		value.includes("..") ||
+		/\s/.test(value) ||
+		hasUnsafeControl(value)
+	) {
 		throw new Error(`${label} must be a simple revision, not an option, range, or whitespace-containing value.`);
 	}
 	return value;

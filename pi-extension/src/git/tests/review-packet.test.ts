@@ -114,13 +114,13 @@ describe("normalizeReviewCards", () => {
 			]);
 		}
 
-		for (const base of [" ", "-main", "main..feature", "main branch"]) {
+		for (const base of [" ", "-main", "main..feature", "main branch", "main\0feature", "main\u001bfeature"]) {
 			assert.throws(
 				() => normalizeDiff({ base }),
 				/Review reference diff base (is required|must be a simple revision): card/,
 			);
 		}
-		for (const head of ["-feature", "main..feature", "feature branch"]) {
+		for (const head of ["-feature", "main..feature", "feature branch", "feature\0branch", "feature\u007fbranch"]) {
 			assert.throws(
 				() => normalizeDiff({ base: "main", head }),
 				/Review reference diff head must be a simple revision: card/,

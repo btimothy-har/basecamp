@@ -74,6 +74,34 @@ index 1111111..2222222 100644
 +new 24
 `;
 
+const MULTI_FILE_DIFF = `diff --git a/src/first.ts b/src/first.ts
+index 1111111..2222222 100644
+--- a/src/first.ts
++++ b/src/first.ts
+@@ -1,2 +1,2 @@
+ unchanged first
+-old first
++new first
+diff --git a/src/second.ts b/src/second.ts
+index 3333333..4444444 100644
+--- a/src/second.ts
++++ b/src/second.ts
+@@ -50,2 +50,3 @@
+ unchanged second
+-old second
++new second
++added second
+`;
+
+const DELETION_ONLY_DIFF = `diff --git a/src/delete.ts b/src/delete.ts
+index 1111111..2222222 100644
+--- a/src/delete.ts
++++ b/src/delete.ts
+@@ -8,2 +8,0 @@
+-removed 8
+-removed 9
+`;
+
 describe("buildReviewDiffArgs", () => {
 	it("builds fixed git diff argv with explicit context, revision range, and diff path", () => {
 		const args = buildReviewDiffArgs(
@@ -109,17 +137,53 @@ describe("buildReviewDiffArgs", () => {
 		assert.deepEqual(buildReviewDiffArgs(reference({ diff: undefined })), []);
 	});
 
-	it("rejects option, range, and whitespace revisions", () => {
-		for (const base of ["-main", "main..feature", "main feature", " main", "main\nfeature", ""]) {
+	it("rejects option, range, whitespace, and control character revisions", () => {
+		for (const base of ["-main", "main..feature", "main feature", " main", "main\nfeature", "main\0feature", ""]) {
 			assert.throws(
 				() => buildReviewDiffArgs(reference({ diff: { base } })),
 				/Review diff base must be a simple revision/,
 			);
 		}
-		for (const head of ["-feature", "main..feature", "feature branch", "feature ", "feature\tbranch"]) {
+		for (const head of [
+			"-feature",
+			"main..feature",
+			"feature branch",
+			"feature ",
+			"feature\tbranch",
+			"feature\u007fbranch",
+		]) {
 			assert.throws(
 				() => buildReviewDiffArgs(reference({ diff: { base: "main", head } })),
 				/Review diff head must be a simple revision/,
+			);
+		}
+	});
+
+	it("defensively rejects unsafe paths when normalization is bypassed", () => {
+		for (const path of [
+			"/src/file.ts",
+			"src/../file.ts",
+			"C:\\src\\file.ts",
+			"src/file\0.ts",
+			"src/file\u001f.ts",
+			"",
+		]) {
+			assert.throws(
+				() => buildReviewDiffArgs(reference({ path, diff: { base: "main" } })),
+				/Review diff path must be a repo-relative path/,
+			);
+		}
+		assert.throws(
+			() => buildReviewDiffArgs(reference({ diff: { base: "main", path: " src/file.ts" } })),
+			/Review diff path must be a repo-relative path/,
+		);
+	});
+
+	it("defensively rejects invalid context lines when normalization is bypassed", () => {
+		for (const contextLines of [-1, 51, 1.5, Number.NaN]) {
+			assert.throws(
+				() => buildReviewDiffArgs(reference({ diff: { base: "main", contextLines } })),
+				/Review diff contextLines must be an integer from 0 to 50/,
 			);
 		}
 	});
@@ -142,6 +206,26 @@ describe("unified diff helpers", () => {
 
 	it("returns null when no hunk intersects the requested new-file line range", () => {
 		assert.equal(filterUnifiedDiffToNewLineRange(SAMPLE_DIFF, { start: 200, end: 220 }), null);
+	});
+
+	it("filters multi-file diffs to only matching blocks and hunks", () => {
+		const filtered = filterUnifiedDiffToNewLineRange(MULTI_FILE_DIFF, { start: 50, end: 52 });
+
+		assert.ok(filtered);
+		assert.doesNotMatch(filtered, /diff --git a\/src\/first\.ts b\/src\/first\.ts/);
+		assert.doesNotMatch(filtered, /new first/);
+		assert.match(filtered, /diff --git a\/src\/second\.ts b\/src\/second\.ts/);
+		assert.match(filtered, /@@ -50,2 \+50,3 @@/);
+		assert.match(filtered, /\+added second/);
+	});
+
+	it("treats deletion-only hunks as intersecting their new-file anchor line", () => {
+		const filtered = filterUnifiedDiffToNewLineRange(DELETION_ONLY_DIFF, { start: 8, end: 8 });
+
+		assert.ok(filtered);
+		assert.match(filtered, /@@ -8,2 \+8,0 @@/);
+		assert.match(filtered, /-removed 8/);
+		assert.equal(filterUnifiedDiffToNewLineRange(DELETION_ONLY_DIFF, { start: 9, end: 9 }), null);
 	});
 
 	it("sanitizes control characters and truncates resolved diff text", () => {
