@@ -18,6 +18,7 @@ import {
 	ReviewPacketSchema,
 	reviewFeedbackCategoryLabel,
 } from "./review-packet";
+import { type DisplayReviewPacket, resolveReviewPacketDiffs } from "./review-packet-diff";
 import { type ReviewPacketReviewResult, showReviewPacket } from "./review-packet-review";
 import { ensurePrivateDirectory, getScratchDir } from "./utils";
 
@@ -37,7 +38,7 @@ interface ReviewPacketTargetMetadata {
 interface ReviewPacketArtifact {
 	createdAt: string;
 	target: ReviewPacketTargetMetadata;
-	packet: ReviewPacket;
+	packet: DisplayReviewPacket;
 	reviewResult: ReviewPacketReviewResult;
 }
 
@@ -156,13 +157,14 @@ export function registerReviewPacketTool(pi: ExtensionAPI): void {
 				return errorResult(`Invalid review packet: ${error instanceof Error ? error.message : String(error)}`);
 			}
 
-			const reviewResult = await showReviewPacket(packet, ctx);
-			const target = targetMetadata(packet, ctx.cwd);
+			const displayPacket = await resolveReviewPacketDiffs(pi, packet);
+			const reviewResult = await showReviewPacket(displayPacket, ctx);
+			const target = targetMetadata(displayPacket, ctx.cwd);
 			const createdAt = new Date().toISOString();
 			const artifactPath = persistArtifact(ctx.cwd, {
 				createdAt,
 				target,
-				packet,
+				packet: displayPacket,
 				reviewResult,
 			});
 
@@ -179,7 +181,7 @@ export function registerReviewPacketTool(pi: ExtensionAPI): void {
 			} else if (reviewResult.feedback.length === 0) {
 				textLines.push("User submitted the review packet with no feedback.");
 			} else {
-				textLines.push("User feedback on review packet:", ...feedbackSummary(packet, reviewResult.feedback));
+				textLines.push("User feedback on review packet:", ...feedbackSummary(displayPacket, reviewResult.feedback));
 			}
 			textLines.push(`Target: ${targetSummary(target)}`, `Artifact: ${artifactPath}`);
 
