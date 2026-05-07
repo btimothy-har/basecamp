@@ -139,47 +139,91 @@ def logs(lines: int, follow: bool) -> None:  # noqa: FBT001
     os.execvp("tail", args)
 
 
-@main.group()
+@main.command()
 def config() -> None:
-    """Observer configuration commands."""
+    """Interactive observer configuration."""
+    import questionary
 
+    curated_extraction_models = [
+        "anthropic:claude-sonnet-4-6",
+        "anthropic:claude-opus-4-1",
+        "openai:gpt-4.1",
+    ]
+    curated_summary_models = [
+        "anthropic:claude-haiku-4-5",
+        "anthropic:claude-sonnet-4-6",
+        "openai:gpt-4.1-mini",
+    ]
 
-@config.command("show")
-def config_show() -> None:
-    """Show observer configuration."""
-    console.print(f"Mode:             [bold]{settings.mode}[/bold]")
-    console.print(f"Extraction model: [bold]{settings.extraction_model}[/bold]")
-    console.print(f"Summary model:    [bold]{settings.summary_model}[/bold]")
-    console.print(f"Config:           [dim]{settings.path}[/dim]")
+    def _show() -> None:
+        console.print()
+        console.print("[bold]Observer Configuration[/bold]")
+        console.print(f"  Mode:             [bold]{settings.mode}[/bold]")
+        console.print(f"  Extraction model: [bold]{settings.extraction_model}[/bold]")
+        console.print(f"  Summary model:    [bold]{settings.summary_model}[/bold]")
+        console.print(f"  Config:           [dim]{settings.path}[/dim]")
 
+    while True:
+        _show()
+        try:
+            choice = questionary.select(
+                "Select a key to modify:",
+                choices=[
+                    "Set Mode",
+                    "Set Extraction Model",
+                    "Set Summary Model",
+                    questionary.Separator(),
+                    "Done",
+                ],
+            ).ask()
+        except (KeyboardInterrupt, EOFError):
+            break
 
-@config.group("set")
-def config_set() -> None:
-    """Set observer configuration values."""
+        if choice is None or choice == "Done":
+            break
 
+        if choice == "Set Mode":
+            mode = questionary.select(
+                "Processing mode:",
+                choices=["on", "off", "← Cancel"],
+            ).ask()
+            if mode and mode != "← Cancel":
+                settings.mode = mode
+                console.print(f"[green]✓[/green] Mode → [bold]{mode}[/bold]")
 
-@config_set.command("mode")
-@click.argument("value", type=click.Choice(["on", "off"]))
-def config_set_mode(value: str) -> None:
-    """Set observer processing mode."""
-    settings.mode = value
-    console.print(f"[green]✓[/green] Mode → [bold]{value}[/bold]")
+        elif choice == "Set Extraction Model":
+            extraction_choices: list[str | object] = [*curated_extraction_models]
+            if settings.extraction_model not in curated_extraction_models:
+                extraction_choices.append(settings.extraction_model)
+            extraction_choices.extend([questionary.Separator(), "Custom...", "← Cancel"])
 
+            model = questionary.select("Extraction model:", choices=extraction_choices).ask()
+            if model and model != "← Cancel":
+                if model == "Custom...":
+                    model = questionary.text(
+                        "Enter model (e.g. anthropic:claude-sonnet-4-6):",
+                    ).ask()
+                    if not model:
+                        continue
+                settings.extraction_model = model
+                console.print(f"[green]✓[/green] Extraction model → [bold]{model}[/bold]")
 
-@config_set.command("extraction-model")
-@click.argument("value")
-def config_set_extraction_model(value: str) -> None:
-    """Set model used for artifact extraction."""
-    settings.extraction_model = value
-    console.print(f"[green]✓[/green] Extraction model → [bold]{value}[/bold]")
+        elif choice == "Set Summary Model":
+            summary_choices: list[str | object] = [*curated_summary_models]
+            if settings.summary_model not in curated_summary_models:
+                summary_choices.append(settings.summary_model)
+            summary_choices.extend([questionary.Separator(), "Custom...", "← Cancel"])
 
-
-@config_set.command("summary-model")
-@click.argument("value")
-def config_set_summary_model(value: str) -> None:
-    """Set model used for summaries."""
-    settings.summary_model = value
-    console.print(f"[green]✓[/green] Summary model → [bold]{value}[/bold]")
+            model = questionary.select("Summary model:", choices=summary_choices).ask()
+            if model and model != "← Cancel":
+                if model == "Custom...":
+                    model = questionary.text(
+                        "Enter model (e.g. anthropic:claude-haiku-4-5):",
+                    ).ask()
+                    if not model:
+                        continue
+                settings.summary_model = model
+                console.print(f"[green]✓[/green] Summary model → [bold]{model}[/bold]")
 
 
 @main.command()

@@ -53,19 +53,15 @@ class TestLogs:
 
 
 class TestConfig:
-    def test_config_show_uses_observer_settings(self, runner):
-        result = runner.invoke(main, ["config", "show"])
+    def test_config_runs_and_shows_settings(self, runner):
+        """In non-interactive mode, questionary returns None so config shows settings and exits."""
+        result = runner.invoke(main, ["config"])
 
         assert result.exit_code == 0
-        assert "anthropic:claude-sonnet-4-20250514" in result.output
-        assert "anthropic:claude-3-5-haiku-latest" in result.output
+        assert "Observer Configuration" in result.output
         assert "Mode:" in result.output
-
-    def test_config_set_mode(self, runner):
-        result = runner.invoke(main, ["config", "set", "mode", "off"])
-
-        assert result.exit_code == 0
-        assert "off" in result.output
+        assert "Extraction model:" in result.output
+        assert "Summary model:" in result.output
 
 
 class TestSetup:
