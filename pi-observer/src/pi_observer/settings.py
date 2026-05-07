@@ -15,8 +15,8 @@ from pathlib import Path
 from typing import Any
 
 _DEFAULT_PATH = Path.home() / ".pi" / "observer" / "config.json"
-DEFAULT_EXTRACTION_MODEL = "anthropic:claude-sonnet-4-20250514"
-DEFAULT_SUMMARY_MODEL = "anthropic:claude-3-5-haiku-latest"
+DEFAULT_EXTRACTION_MODEL = "anthropic:claude-sonnet-4-6"
+DEFAULT_SUMMARY_MODEL = "anthropic:claude-haiku-4-5"
 DEFAULT_MODE = "on"
 
 

@@ -8,10 +8,10 @@ from pi_observer import settings as settings_mod
 
 class TestObserverConfigReadWrite:
     def test_extraction_model_default(self):
-        assert settings_mod.settings.extraction_model == "anthropic:claude-sonnet-4-20250514"
+        assert settings_mod.settings.extraction_model == "anthropic:claude-sonnet-4-6"
 
     def test_summary_model_default(self):
-        assert settings_mod.settings.summary_model == "anthropic:claude-3-5-haiku-latest"
+        assert settings_mod.settings.summary_model == "anthropic:claude-haiku-4-5"
 
     def test_set_extraction_model(self):
         settings_mod.settings.extraction_model = "openai:gpt-4o"
