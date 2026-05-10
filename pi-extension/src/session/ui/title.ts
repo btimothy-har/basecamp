@@ -386,8 +386,25 @@ export function registerTitle(pi: ExtensionAPI, options: RegisterTitleOptions = 
 	}
 
 	pi.registerCommand("title", {
-		description: "Generate a session title from the conversation",
-		handler: async (_args, cmdCtx) => {
+		description: "Generate a session title from the conversation, or set one manually",
+		handler: async (args, cmdCtx) => {
+			const raw = Array.isArray(args) ? args.join(" ") : String(args ?? "");
+			const manualTitle = raw.trim();
+
+			if (manualTitle) {
+				const validated = validateTitleResponse(manualTitle);
+				if (!validated) {
+					cmdCtx.ui.notify(
+						"Title must be 1–5 words. No punctuation, markdown, quotes, colons, or semicolons.",
+						"error",
+					);
+					return;
+				}
+				applyTitle(validated);
+				cmdCtx.ui.notify(`Title: ${displayTitle()}`, "info");
+				return;
+			}
+
 			const branch = cmdCtx.sessionManager.getBranch();
 			const conversation = buildTitleContext(branch);
 			if (!conversation.trim()) {
