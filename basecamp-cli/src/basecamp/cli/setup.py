@@ -6,10 +6,7 @@ from basecamp.config import ProjectConfig, save_projects
 from basecamp.config.directories import to_home_relative
 from basecamp.constants import (
     SCRIPT_DIR,
-    USER_AGENTS_DIR,
     USER_CONTEXT_DIR,
-    USER_DIR,
-    USER_PROMPTS_DIR,
     USER_STYLES_DIR,
 )
 from basecamp.settings import settings
@@ -27,12 +24,10 @@ def _check_prerequisite(name: str, command: str) -> bool:
 
 
 def _scaffold_dirs() -> None:
-    """Create the ~/.pi/ resource directories."""
+    """Create user customization directories used by project config."""
     dirs = [
-        USER_PROMPTS_DIR,
         USER_STYLES_DIR,
         USER_CONTEXT_DIR,
-        USER_AGENTS_DIR,
     ]
     for path in dirs:
         path.mkdir(parents=True, exist_ok=True)
@@ -70,7 +65,8 @@ def execute_setup() -> None:
 
     console.print("[bold]Scaffolding directories...[/bold]")
     _scaffold_dirs()
-    console.print(f"  [green]✓[/green] {USER_DIR}")
+    console.print(f"  [green]✓[/green] {USER_STYLES_DIR}")
+    console.print(f"  [green]✓[/green] {USER_CONTEXT_DIR}")
     console.print()
 
     config_path = settings.path

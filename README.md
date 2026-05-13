@@ -41,7 +41,7 @@ This installs the Python tools `basecamp` and `pi-observer`, registers the Pi pa
 Then initialize the environment:
 
 ```bash
-basecamp setup                     # check prerequisites, scaffold dirs, create default config
+basecamp setup                     # check prerequisites, create styles/context dirs, create default config
 ```
 
 If `basecamp` or `pi-observer` aren't in your PATH:
@@ -117,7 +117,7 @@ agent("worker", "Fix the login bug")
 
 Built-in agents: `scout`, `worker`, `security-specialist`, `testing-specialist`, `docs-specialist`, `code-clarity-specialist`.
 
-Custom agents can be defined as markdown files in `~/.pi/agents/` (user-level).
+Use ad-hoc dispatch for one-off subagent tasks that do not need a built-in agent definition.
 
 ## Configuration
 
@@ -181,7 +181,7 @@ project context (configured context plus AGENTS.md/CLAUDE.md)
 runtime environment (paths, platform, date, git/worktree state)
 ```
 
-Built-in prompt files can be overridden per loaded prompt path under `~/.pi/prompts/` (for example, `~/.pi/prompts/environment.md` or `~/.pi/prompts/modes/executor.md`).
+Built-in prompt files can be overridden by creating matching files under `~/.pi/prompts/` (for example, `~/.pi/prompts/environment.md` or `~/.pi/prompts/modes/executor.md`).
 
 ### Working Styles
 
