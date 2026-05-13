@@ -2,7 +2,7 @@
  * Custom footer — replaces pi's default footer.
  *
  * Three-line layout:
- *   Line 1: cwd | worktree | branch ... cost + model
+ *   Line 1: cwd | worktree | branch ... model
  *   Line 2: invoked skills ... context bar
  *   Line 3: agent statuses (only when active)
  *
@@ -178,7 +178,7 @@ export function registerFooter(pi: ExtensionAPI): void {
 
 					if (activeWorktree) initWorktreeWatcher(activeWorktree.path);
 
-					// ── Line 1: cwd | worktree | branch ... cost + model ──
+					// ── Line 1: cwd | worktree | branch ... model ──
 					const l1Left = buildLocationSegment(fg, workspace, effectiveCwd, footerData);
 					const l1Right = buildModelSegment(fg, ctx, pi);
 					const line1 = layoutLine(l1Left, l1Right, width, fg);
@@ -266,25 +266,7 @@ function buildModeSegment(fg: ThemeFg, mode: AgentMode): string | null {
 }
 
 function buildModelSegment(fg: ThemeFg, ctx: ExtensionContext | null, pi: ExtensionAPI): string {
-	const parts: string[] = [];
-	let totalCost = 0;
-
-	if (ctx) {
-		for (const entry of ctx.sessionManager.getEntries()) {
-			if (entry.type === "message" && entry.message.role === "assistant") {
-				const u = (entry.message as { usage: { cost: { total: number } } }).usage;
-				totalCost += u.cost.total;
-			}
-		}
-	}
-
-	const modelId = ctx?.model?.id ?? "no-model";
-	const modelPart = fg("text", modelId);
-	if (totalCost > 0) {
-		parts.push([fg("muted", `$${totalCost.toFixed(2)}`), fg("dim", "·"), modelPart].join(" "));
-	} else {
-		parts.push(modelPart);
-	}
+	const parts = [fg("text", ctx?.model?.id ?? "no-model")];
 
 	if (ctx?.model?.reasoning) {
 		parts.push(fg("muted", pi.getThinkingLevel()));
