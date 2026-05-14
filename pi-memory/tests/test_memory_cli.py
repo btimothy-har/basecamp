@@ -353,18 +353,27 @@ def create_job_transcript(database: Database) -> int:
         return transcript.id
 
 
-def create_recall_transcript(database: Database) -> tuple[int, int]:
+def create_recall_transcript(
+    database: Database,
+    *,
+    session_id: str = "pi-session-recall-cli",
+    transcript_path: str = "/tmp/pi/cli-recall.jsonl",
+    entry_id: str = "cli-recall-entry-1",
+    text: str = "Local recall CLI should find the aurora transcript.",
+    byte_start: int = 7,
+    byte_end: int = 107,
+) -> tuple[int, int]:
     with database.session() as db_session:
-        memory_session = MemorySession(session_id="pi-session-recall-cli")
+        memory_session = MemorySession(session_id=session_id)
         transcript = Transcript(
             session=memory_session,
-            path="/tmp/pi/cli-recall.jsonl",
+            path=transcript_path,
             cursor_offset=128,
             file_size=128,
         )
         transcript.entries.append(
             TranscriptEntry(
-                entry_id="cli-recall-entry-1",
+                entry_id=entry_id,
                 entry_type="message",
                 message_role="user",
                 timestamp=datetime(2026, 1, 2, 3, 4, 5, tzinfo=UTC),
@@ -373,20 +382,20 @@ def create_recall_transcript(database: Database) -> tuple[int, int]:
                         "type": "message",
                         "message": {
                             "role": "user",
-                            "content": "Local recall CLI should find the aurora transcript.",
+                            "content": text,
                         },
                     },
                 ),
-                byte_start=7,
-                byte_end=107,
+                byte_start=byte_start,
+                byte_end=byte_end,
             ),
         )
         db_session.add(transcript)
         db_session.flush()
         transcript_id = transcript.id
-        entry_id = transcript.entries[0].id
+        stored_entry_id = transcript.entries[0].id
         index_transcript(db_session, transcript_id)
-        return transcript_id, entry_id
+        return transcript_id, stored_entry_id
 
 
 def get_cli_job(database: Database, job_id: int) -> Job:
@@ -478,6 +487,100 @@ def test_recall_reports_json_results(memory_database: Database) -> None:
     assert hit["byte_end"] == 107
     assert "aurora" in hit["excerpt"].lower()
     assert hit["match_reason"] == "Matched raw transcript text for: aurora"
+
+
+def test_recall_limit_option_restricts_json_results(memory_database: Database) -> None:
+    create_recall_transcript(
+        memory_database,
+        session_id="pi-session-recall-limit-1",
+        transcript_path="/tmp/pi/cli-recall-limit-1.jsonl",
+        entry_id="cli-recall-limit-1",
+        text="Shared aurora recall result one.",
+        byte_start=0,
+        byte_end=50,
+    )
+    create_recall_transcript(
+        memory_database,
+        session_id="pi-session-recall-limit-2",
+        transcript_path="/tmp/pi/cli-recall-limit-2.jsonl",
+        entry_id="cli-recall-limit-2",
+        text="Shared aurora recall result two.",
+        byte_start=0,
+        byte_end=50,
+    )
+
+    result = CliRunner().invoke(
+        cli_module.main,
+        ["recall", "--query", "shared aurora", "--db-url", memory_database.url, "--limit", "1", "--json"],
+    )
+
+    assert result.exit_code == 0
+    payload = json.loads(result.output)
+    assert payload["result_count"] == 1
+    assert len(payload["results"]) == 1
+
+
+def test_recall_session_id_option_filters_json_results(memory_database: Database) -> None:
+    create_recall_transcript(
+        memory_database,
+        session_id="pi-session-recall-other",
+        transcript_path="/tmp/pi/cli-recall-other.jsonl",
+        entry_id="cli-recall-other",
+        text="Filtered aurora recall other session.",
+        byte_start=0,
+        byte_end=50,
+    )
+    _transcript_id, entry_id = create_recall_transcript(
+        memory_database,
+        session_id="pi-session-recall-target",
+        transcript_path="/tmp/pi/cli-recall-target.jsonl",
+        entry_id="cli-recall-target",
+        text="Filtered aurora recall target session.",
+        byte_start=0,
+        byte_end=50,
+    )
+
+    result = CliRunner().invoke(
+        cli_module.main,
+        [
+            "recall",
+            "--query",
+            "filtered aurora",
+            "--db-url",
+            memory_database.url,
+            "--session-id",
+            "pi-session-recall-target",
+            "--json",
+        ],
+    )
+
+    assert result.exit_code == 0
+    payload = json.loads(result.output)
+    assert payload["result_count"] == 1
+    hit = payload["results"][0]
+    assert hit["session_id"] == "pi-session-recall-target"
+    assert hit["transcript_entry_id"] == entry_id
+
+
+@pytest.mark.parametrize("limit", ["0", "51"])
+def test_recall_rejects_out_of_range_limit(memory_database: Database, limit: str) -> None:
+    result = CliRunner().invoke(
+        cli_module.main,
+        ["recall", "--query", "aurora", "--db-url", memory_database.url, "--limit", limit],
+    )
+
+    assert result.exit_code == 2
+    assert "Invalid value for '--limit'" in result.output
+
+
+def test_recall_requires_non_empty_session_id(memory_database: Database) -> None:
+    result = CliRunner().invoke(
+        cli_module.main,
+        ["recall", "--query", "aurora", "--db-url", memory_database.url, "--session-id", "  "],
+    )
+
+    assert result.exit_code == 2
+    assert "Invalid value for '--session-id': must not be empty" in result.output
 
 
 def test_recall_reports_empty_results(memory_database: Database) -> None:

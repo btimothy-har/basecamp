@@ -554,14 +554,22 @@ Job table shape:
 jobs
 - id
 - kind
-- status: queued | running | succeeded | failed | cancelled
+- status: queued | claimed | running | completed | failed | cancelled
 - payload_json
 - priority
 - due_at
 - attempts
 - max_attempts
-- locked_at
-- locked_by
+- run_id
+- claimed_at
+- claimed_by
+- started_at
+- heartbeat_at
+- lease_expires_at
+- running_pid
+- finished_at
+- exit_code
+- result_json
 - last_error
 - created_at
 - updated_at

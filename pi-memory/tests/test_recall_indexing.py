@@ -216,3 +216,83 @@ def test_index_transcript_is_idempotent_and_replaces_changed_content(database: D
     assert row_count == 1
     assert old_matches == []
     assert new_matches == [entry_id]
+
+
+def test_index_transcript_rebuild_preserves_other_transcripts(database: Database) -> None:
+    with database.session() as session:
+        first_session = MemorySession(session_id="pi-session-1")
+        first_transcript = Transcript(session=first_session, path="/tmp/pi/first.jsonl")
+        first_transcript.entries.append(
+            entry(
+                {
+                    "type": "message",
+                    "message": {"role": "user", "content": [{"type": "text", "text": "orchid original"}]},
+                },
+                "message",
+                "user",
+            ),
+        )
+
+        second_session = MemorySession(session_id="pi-session-2")
+        second_transcript = Transcript(session=second_session, path="/tmp/pi/second.jsonl")
+        second_transcript.entries.append(
+            entry(
+                {
+                    "type": "message",
+                    "message": {"role": "user", "content": [{"type": "text", "text": "quasar retained"}]},
+                },
+                "message",
+                "user",
+            ),
+        )
+
+        session.add_all([first_transcript, second_transcript])
+        session.flush()
+        first_transcript_id = first_transcript.id
+        first_entry_id = first_transcript.entries[0].id
+        second_entry_id = second_transcript.entries[0].id
+
+        index_transcript(session, first_transcript_id)
+        index_transcript(session, second_transcript.id)
+        first_transcript.entries[0].raw_line = json.dumps(
+            {
+                "type": "message",
+                "message": {"role": "user", "content": [{"type": "text", "text": "nebula replacement"}]},
+            },
+        )
+        result = index_transcript(session, first_transcript_id)
+
+    assert result.total_entries == 1
+    assert result.indexed_entries == 1
+
+    with database.engine.connect() as connection:
+        row_count = connection.execute(text("SELECT count(*) FROM transcript_entries_fts")).scalar_one()
+        replaced_matches = (
+            connection.execute(
+                text("SELECT rowid FROM transcript_entries_fts WHERE transcript_entries_fts MATCH :query"),
+                {"query": "nebula"},
+            )
+            .scalars()
+            .all()
+        )
+        old_matches = (
+            connection.execute(
+                text("SELECT rowid FROM transcript_entries_fts WHERE transcript_entries_fts MATCH :query"),
+                {"query": "orchid"},
+            )
+            .scalars()
+            .all()
+        )
+        retained_matches = (
+            connection.execute(
+                text("SELECT rowid FROM transcript_entries_fts WHERE transcript_entries_fts MATCH :query"),
+                {"query": "quasar"},
+            )
+            .scalars()
+            .all()
+        )
+
+    assert row_count == 2
+    assert replaced_matches == [first_entry_id]
+    assert old_matches == []
+    assert retained_matches == [second_entry_id]
