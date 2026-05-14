@@ -14,7 +14,9 @@ import click
 import uvicorn
 
 from pi_memory.constants import DEFAULT_HOST, DEFAULT_PORT, SERVICE_NAME
+from pi_memory.db import Database
 from pi_memory.ingest import IngestResult, ObserveInput, TranscriptFileMissingError, TranscriptIngestService
+from pi_memory.jobs import JobRunner, JobRunnerError, JobStoreError
 from pi_memory.server import ServerAlreadyRunningError, ServerState, create_app
 
 DEFAULT_STATUS_TIMEOUT_SECONDS = 1.0
@@ -138,6 +140,33 @@ def observe(
         raise click.ClickException(str(error)) from error
 
     _emit_observe_result(result, json_output=json_output)
+
+
+@main.command("run-job")
+@click.option("--job-id", required=True, type=int, help="Claimed job id to run.")
+@click.option(
+    "--run-id",
+    callback=lambda _ctx, _param, value: _require_non_empty(value),
+    required=True,
+    help="Run token for the claimed job.",
+)
+@click.option(
+    "--db-url",
+    callback=lambda _ctx, _param, value: _require_non_empty(value),
+    required=True,
+    help="Database URL containing the claimed job.",
+)
+def run_job(job_id: int, run_id: str, db_url: str) -> None:
+    """Run a single claimed background job."""
+    job_database = Database(db_url)
+    try:
+        job = JobRunner(database=job_database).run(job_id, run_id)
+    except (JobRunnerError, JobStoreError) as error:
+        raise click.ClickException(str(error)) from error
+    finally:
+        job_database.close_if_open()
+
+    click.echo(f"Job {job.id} completed")
 
 
 @main.command()

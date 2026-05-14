@@ -7,8 +7,19 @@ from pathlib import Path
 import pi_memory.cli.main as cli_module
 import pytest
 from click.testing import CliRunner
-from pi_memory.db import Database, MemorySession, Observation, TranscriptEntry
+from pi_memory.db import (
+    JOB_KIND_PROCESS_TRANSCRIPT,
+    JOB_STATUS_CLAIMED,
+    JOB_STATUS_COMPLETED,
+    Database,
+    Job,
+    MemorySession,
+    Observation,
+    Transcript,
+    TranscriptEntry,
+)
 from pi_memory.ingest import TranscriptIngestService
+from pi_memory.jobs import JobStore
 from pi_memory.server import ServerState
 from sqlalchemy import func, select
 
@@ -238,3 +249,112 @@ def test_serve_reports_occupied_port_and_cleans_state(tmp_path, monkeypatch) -> 
     assert "the port is already in use by another process" in result.output
     assert not state.lock_path.exists()
     assert not state.metadata_path.exists()
+
+
+def create_job_transcript(database: Database) -> int:
+    with database.session() as db_session:
+        memory_session = MemorySession(session_id="pi-session-cli")
+        transcript = Transcript(
+            session=memory_session,
+            path="/tmp/pi/cli-transcript.jsonl",
+            cursor_offset=10,
+            file_size=10,
+        )
+        db_session.add(transcript)
+        db_session.flush()
+        db_session.add(
+            TranscriptEntry(
+                transcript_id=transcript.id,
+                entry_id="cli-entry-1",
+                entry_type="message",
+                message_role="user",
+                raw_line='{"content":"hidden"}',
+                byte_start=0,
+                byte_end=10,
+            ),
+        )
+        db_session.flush()
+        return transcript.id
+
+
+def get_cli_job(database: Database, job_id: int) -> Job:
+    with database.session() as db_session:
+        return db_session.get_one(Job, job_id)
+
+
+def test_run_job_succeeds_against_isolated_db(tmp_path) -> None:
+    db_url = sqlite_url(tmp_path / "memory-run-job.db")
+    database = Database(db_url)
+    try:
+        database.initialize()
+        transcript_id = create_job_transcript(database)
+        store = JobStore(database=database)
+        store.enqueue(JOB_KIND_PROCESS_TRANSCRIPT, payload_json={"transcript_id": transcript_id})
+        claimed = store.claim_next("worker-1")
+        assert claimed is not None
+        runner = CliRunner()
+
+        result = runner.invoke(
+            cli_module.main,
+            ["run-job", "--job-id", str(claimed.id), "--run-id", claimed.run_id, "--db-url", db_url],
+        )
+
+        assert result.exit_code == 0
+        assert f"Job {claimed.id} completed" in result.output
+        job = get_cli_job(database, claimed.id)
+        assert job.status == JOB_STATUS_COMPLETED
+        assert job.attempts == 1
+        assert job.result_json == {
+            "transcript_id": transcript_id,
+            "session_id": "pi-session-cli",
+            "entry_count": 1,
+            "cursor_offset": 10,
+            "file_size": 10,
+        }
+    finally:
+        database.close_if_open()
+
+
+def test_run_job_wrong_run_id_exits_one_without_incrementing_attempts(tmp_path) -> None:
+    db_url = sqlite_url(tmp_path / "memory-run-job-wrong-token.db")
+    database = Database(db_url)
+    try:
+        database.initialize()
+        transcript_id = create_job_transcript(database)
+        store = JobStore(database=database)
+        store.enqueue(JOB_KIND_PROCESS_TRANSCRIPT, payload_json={"transcript_id": transcript_id})
+        claimed = store.claim_next("worker-1")
+        assert claimed is not None
+        runner = CliRunner()
+
+        result = runner.invoke(
+            cli_module.main,
+            ["run-job", "--job-id", str(claimed.id), "--run-id", "wrong-run", "--db-url", db_url],
+        )
+
+        assert result.exit_code == 1
+        assert f"Error: Job {claimed.id} run token does not match" in result.output
+        job = get_cli_job(database, claimed.id)
+        assert job.status == JOB_STATUS_CLAIMED
+        assert job.attempts == 0
+    finally:
+        database.close_if_open()
+
+
+def test_run_job_help_lists_required_options() -> None:
+    result = CliRunner().invoke(cli_module.main, ["run-job", "--help"])
+
+    assert result.exit_code == 0
+    assert "--job-id" in result.output
+    assert "--run-id" in result.output
+    assert "--db-url" in result.output
+
+
+def test_run_job_requires_non_empty_options(tmp_path) -> None:
+    result = CliRunner().invoke(
+        cli_module.main,
+        ["run-job", "--job-id", "1", "--run-id", "  ", "--db-url", sqlite_url(tmp_path / "memory.db")],
+    )
+
+    assert result.exit_code == 2
+    assert "Invalid value for '--run-id': must not be empty" in result.output
