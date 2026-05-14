@@ -1,7 +1,7 @@
 from pathlib import Path
 
 import pytest
-from pi_memory.db import Base, Database, MemorySession
+from pi_memory.db import Base, Database, Job, MemorySession
 from sqlalchemy import func, select, text
 
 
@@ -96,5 +96,7 @@ def test_session_context_rolls_back_on_error(tmp_path) -> None:
         database.close_if_open()
 
 
-def test_base_registers_phase_2_schema_models() -> None:
+def test_base_registers_phase_3_schema_models() -> None:
     assert "sessions" in Base.metadata.tables
+    assert "jobs" in Base.metadata.tables
+    assert Job.__table__ is Base.metadata.tables["jobs"]

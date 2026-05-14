@@ -1,7 +1,16 @@
 from pathlib import Path
 
 import pytest
-from pi_memory.db import Database, MemorySession, Observation, Transcript, TranscriptEntry
+from pi_memory.db import (
+    JOB_KIND_PROCESS_TRANSCRIPT,
+    JOB_STATUS_QUEUED,
+    Database,
+    Job,
+    MemorySession,
+    Observation,
+    Transcript,
+    TranscriptEntry,
+)
 from sqlalchemy import inspect
 from sqlalchemy.exc import IntegrityError
 
@@ -32,12 +41,87 @@ def create_transcript(database: Database) -> int:
 def test_initialize_creates_pi_transcript_schema_tables(database: Database) -> None:
     inspector = inspect(database.engine)
 
-    assert {
+    assert set(inspector.get_table_names()) == {
+        "jobs",
         "sessions",
         "transcripts",
         "observations",
         "transcript_entries",
-    }.issubset(inspector.get_table_names())
+    }
+
+
+def test_job_defaults_are_applied(database: Database) -> None:
+    with database.session() as session:
+        job = Job(kind=JOB_KIND_PROCESS_TRANSCRIPT)
+        session.add(job)
+        session.flush()
+        session.refresh(job)
+
+        assert job.kind == JOB_KIND_PROCESS_TRANSCRIPT
+        assert job.status == JOB_STATUS_QUEUED
+        assert job.payload_json == {}
+        assert job.priority == 0
+        assert job.due_at is not None
+        assert job.attempts == 0
+        assert job.max_attempts == 3
+        assert job.created_at is not None
+        assert job.updated_at is not None
+
+
+def test_job_rejects_invalid_status(database: Database) -> None:
+    with pytest.raises(IntegrityError):
+        with database.session() as session:
+            session.add(Job(kind=JOB_KIND_PROCESS_TRANSCRIPT, status="invalid"))
+
+
+def test_job_rejects_empty_kind(database: Database) -> None:
+    with pytest.raises(IntegrityError):
+        with database.session() as session:
+            session.add(Job(kind=""))
+
+
+@pytest.mark.parametrize(
+    ("attempts", "max_attempts"),
+    [
+        (-1, 3),
+        (4, 3),
+        (0, 0),
+    ],
+)
+def test_job_rejects_invalid_attempt_limits(
+    database: Database,
+    attempts: int,
+    max_attempts: int,
+) -> None:
+    with pytest.raises(IntegrityError):
+        with database.session() as session:
+            session.add(
+                Job(
+                    kind=JOB_KIND_PROCESS_TRANSCRIPT,
+                    attempts=attempts,
+                    max_attempts=max_attempts,
+                ),
+            )
+
+
+def test_job_rejects_negative_priority(database: Database) -> None:
+    with pytest.raises(IntegrityError):
+        with database.session() as session:
+            session.add(Job(kind=JOB_KIND_PROCESS_TRANSCRIPT, priority=-1))
+
+
+def test_job_indexes_exist(database: Database) -> None:
+    inspector = inspect(database.engine)
+    indexes = {index["name"] for index in inspector.get_indexes("jobs")}
+
+    assert {
+        "ix_jobs_queue_claim",
+        "ix_jobs_status_updated",
+        "ix_jobs_kind_status",
+        "ix_jobs_run_id",
+        "ix_jobs_status_lease_expires",
+        "ix_jobs_created_at",
+    }.issubset(indexes)
 
 
 def test_session_identity_is_unique(database: Database) -> None:
