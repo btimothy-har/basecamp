@@ -36,7 +36,7 @@ uv run install.py -e        # editable (recommended for development)
 uv run install.py --no-editable
 ```
 
-This installs the Python tools `basecamp` and `pi-observer`, registers the Pi packages in `pi-extension/` and `pi-observer/`, and saves the Basecamp install directory to `~/.pi/basecamp/config.json`.
+This installs the Python tools `basecamp`, `pi-observer`, and `pi-memory`, registers the Pi packages in `pi-extension/`, `pi-observer/`, and `pi-memory/`, and saves the Basecamp install directory to `~/.pi/basecamp/config.json`.
 
 Then initialize the environment:
 
@@ -44,7 +44,7 @@ Then initialize the environment:
 basecamp setup                     # check prerequisites, create styles/context dirs, create default config
 ```
 
-If `basecamp` or `pi-observer` aren't in your PATH:
+If `basecamp`, `pi-observer`, or `pi-memory` aren't in your PATH:
 
 ```bash
 export PATH="$HOME/.local/bin:$PATH"
@@ -55,6 +55,7 @@ export PATH="$HOME/.local/bin:$PATH"
 ```bash
 uv tool upgrade basecamp
 uv tool upgrade pi-observer
+uv tool upgrade pi-memory
 ```
 
 ### Uninstalling
@@ -62,6 +63,7 @@ uv tool upgrade pi-observer
 ```bash
 uv tool uninstall basecamp
 uv tool uninstall pi-observer
+uv tool uninstall pi-memory
 ```
 
 ## Usage
@@ -218,7 +220,7 @@ The workspace service owns the `~/.worktrees/<repo>/<label>/` storage convention
 
 ## Semantic Memory (Observer)
 
-The `pi-observer` CLI and Pi package provide semantic memory across sessions. They ingest session transcripts, extract structured knowledge via LLM, and make it searchable.
+The `pi-observer` CLI and Pi package provide semantic memory across sessions. They ingest session transcripts, extract structured knowledge via LLM, and make it searchable. The `pi-memory/` package is present as a new scaffold for future memory service work; current semantic memory behavior remains in `pi-observer/`.
 
 ### How it works
 
@@ -252,6 +254,7 @@ basecamp is split into root-level products:
 - `basecamp-cli/` — Python package for the `basecamp` setup/config CLI
 - `pi-extension/` — Pi package for project context, session UI, worktrees, workflow, git, and engineering skills
 - `pi-observer/` — Python package for the `pi-observer` CLI plus a Pi package for transcript ingestion and semantic recall
+- `pi-memory/` — Python and Pi package scaffold for future memory service work
 
 ## License
 
