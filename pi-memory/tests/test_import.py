@@ -37,6 +37,20 @@ def test_status_help_resolves() -> None:
     assert "--json" in result.output
 
 
+def test_serve_rejects_non_loopback_host() -> None:
+    result = CliRunner().invoke(cli_module.main, ["serve", "--host", "0.0.0.0"])
+
+    assert result.exit_code == 2
+    assert "must resolve to a loopback address" in result.output
+
+
+def test_status_rejects_non_loopback_host() -> None:
+    result = CliRunner().invoke(cli_module.main, ["status", "--host", "0.0.0.0"])
+
+    assert result.exit_code == 2
+    assert "must resolve to a loopback address" in result.output
+
+
 def test_status_reports_healthy_service(monkeypatch) -> None:
     def fetch_status(*, url: str, timeout: float) -> dict[str, Any]:
         assert url == "http://127.0.0.2:9876/v1/status"

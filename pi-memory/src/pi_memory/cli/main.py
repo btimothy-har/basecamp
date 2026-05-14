@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import errno
+import ipaddress
 import json
 import socket
 import urllib.error
@@ -16,6 +17,13 @@ from pi_memory.constants import DEFAULT_HOST, DEFAULT_PORT, SERVICE_NAME
 from pi_memory.server import ServerAlreadyRunningError, ServerState, create_app
 
 DEFAULT_STATUS_TIMEOUT_SECONDS = 1.0
+
+
+class NonLoopbackHostError(click.BadParameter):
+    """Raised when a service host is not loopback-only."""
+
+    def __init__(self) -> None:
+        super().__init__("must resolve to a loopback address")
 
 
 class PortBindError(click.ClickException):
@@ -70,9 +78,10 @@ def main() -> None:
 @main.command()
 @click.option(
     "--host",
+    callback=lambda _ctx, _param, value: _require_loopback_host(value),
     default=DEFAULT_HOST,
     show_default=True,
-    help="Host interface to bind. Defaults to localhost for local Pi sessions.",
+    help="Loopback host interface to bind. Defaults to localhost for local Pi sessions.",
 )
 @click.option(
     "--port",
@@ -104,9 +113,10 @@ def serve(host: str, port: int) -> None:
 @main.command()
 @click.option(
     "--host",
+    callback=lambda _ctx, _param, value: _require_loopback_host(value),
     default=DEFAULT_HOST,
     show_default=True,
-    help="Host interface where the local service is listening.",
+    help="Loopback host interface where the local service is listening.",
 )
 @click.option(
     "--port",
@@ -149,6 +159,26 @@ def _ensure_port_available(*, host: str, port: int) -> None:
         if error.errno == errno.EADDRINUSE:
             raise PortBindError.in_use(host=host, port=port) from error
         raise PortBindError(host=host, port=port, reason=str(error)) from error
+
+
+def _require_loopback_host(host: str) -> str:
+    if _is_loopback_host(host):
+        return host
+    raise NonLoopbackHostError()
+
+
+def _is_loopback_host(host: str) -> bool:
+    try:
+        return ipaddress.ip_address(host).is_loopback
+    except ValueError:
+        pass
+
+    try:
+        addresses = socket.getaddrinfo(host, None)
+    except socket.gaierror:
+        return False
+
+    return bool(addresses) and all(ipaddress.ip_address(address[4][0]).is_loopback for address in addresses)
 
 
 def _status_url(*, host: str, port: int) -> str:
