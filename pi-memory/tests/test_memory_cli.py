@@ -2,6 +2,7 @@ import json
 import socket
 from collections.abc import Iterator
 from contextlib import contextmanager
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pi_memory.cli.main as cli_module
@@ -354,6 +355,122 @@ def create_job_transcript(database: Database) -> int:
 def get_cli_job(database: Database, job_id: int) -> Job:
     with database.session() as db_session:
         return db_session.get_one(Job, job_id)
+
+
+def create_inspection_job(database: Database) -> tuple[int, datetime]:
+    now = datetime(2026, 1, 1, 10, tzinfo=UTC)
+    with database.session() as db_session:
+        job = Job(
+            kind=JOB_KIND_PROCESS_TRANSCRIPT,
+            status=JOB_STATUS_COMPLETED,
+            payload_json={"transcript_id": 1, "session_id": "pi-session-cli"},
+            result_json={"ok": True},
+            priority=3,
+            due_at=now,
+            attempts=2,
+            max_attempts=5,
+            run_id="run-1",
+            claimed_at=now + timedelta(minutes=1),
+            claimed_by="worker-1",
+            started_at=now + timedelta(minutes=2),
+            heartbeat_at=now + timedelta(minutes=3),
+            lease_expires_at=now + timedelta(minutes=4),
+            running_pid=123,
+            finished_at=now + timedelta(minutes=5),
+            exit_code=0,
+            last_error="previous failure",
+            created_at=now - timedelta(minutes=1),
+            updated_at=now + timedelta(minutes=6),
+        )
+        db_session.add(job)
+        db_session.flush()
+        return job.id, now
+
+
+def parse_cli_time(value: str) -> datetime:
+    parsed = datetime.fromisoformat(value)
+    if parsed.tzinfo is None:
+        return parsed.replace(tzinfo=UTC)
+    return parsed
+
+
+def test_job_reports_json_inspection(memory_database: Database) -> None:
+    job_id, now = create_inspection_job(memory_database)
+    runner = CliRunner()
+
+    result = runner.invoke(
+        cli_module.main,
+        [
+            "job",
+            "--job-id",
+            str(job_id),
+            "--db-url",
+            memory_database.url,
+            "--json",
+        ],
+    )
+
+    assert result.exit_code == 0
+    payload = json.loads(result.output)
+    assert payload["id"] == job_id
+    assert payload["kind"] == JOB_KIND_PROCESS_TRANSCRIPT
+    assert payload["status"] == JOB_STATUS_COMPLETED
+    assert payload["payload_json"] == {"transcript_id": 1, "session_id": "pi-session-cli"}
+    assert payload["result_json"] == {"ok": True}
+    assert payload["attempts"] == 2
+    assert payload["max_attempts"] == 5
+    assert payload["last_error"] == "previous failure"
+    assert parse_cli_time(payload["due_at"]) == now
+    assert "raw_line" not in payload
+    assert "content" not in payload
+
+
+def test_job_reports_human_readable_inspection(memory_database: Database) -> None:
+    job_id, _now = create_inspection_job(memory_database)
+    runner = CliRunner()
+
+    result = runner.invoke(
+        cli_module.main,
+        ["job", "--job-id", str(job_id), "--db-url", memory_database.url],
+    )
+
+    assert result.exit_code == 0
+    fields = parse_observe_output(result.output)
+    assert "Job" in result.output
+    assert fields["id"] == str(job_id)
+    assert fields["kind"] == JOB_KIND_PROCESS_TRANSCRIPT
+    assert fields["status"] == JOB_STATUS_COMPLETED
+    assert fields["attempts"] == "2"
+    assert fields["last_error"] == "previous failure"
+
+
+def test_job_missing_reports_click_error(memory_database: Database) -> None:
+    result = CliRunner().invoke(
+        cli_module.main,
+        ["job", "--job-id", "999", "--db-url", memory_database.url],
+    )
+
+    assert result.exit_code == 1
+    assert "Error: Job 999 was not found" in result.output
+
+
+def test_job_help_lists_required_options() -> None:
+    result = CliRunner().invoke(cli_module.main, ["job", "--help"])
+
+    assert result.exit_code == 0
+    assert "--job-id" in result.output
+    assert "--db-url" in result.output
+    assert "--json" in result.output
+
+
+def test_job_requires_non_empty_db_url() -> None:
+    result = CliRunner().invoke(
+        cli_module.main,
+        ["job", "--job-id", "1", "--db-url", "  "],
+    )
+
+    assert result.exit_code == 2
+    assert "Invalid value for '--db-url': must not be empty" in result.output
 
 
 def test_run_job_succeeds_against_isolated_db(tmp_path) -> None:

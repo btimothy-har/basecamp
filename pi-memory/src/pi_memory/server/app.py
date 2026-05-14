@@ -17,7 +17,7 @@ from pi_memory.ingest import (
     TranscriptFileMissingError,
     TranscriptIngestService,
 )
-from pi_memory.jobs import JobDispatcher, JobStore, enqueue_process_transcript_job
+from pi_memory.jobs import JobDispatcher, JobStore, enqueue_process_transcript_job, serialize_job
 
 NonEmptyString = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)]
 
@@ -110,6 +110,14 @@ def create_app(
 
         job = enqueue_process_transcript_job(app.state.job_store, result)
         return _observe_response(result, job_id=None if job is None else job.id)
+
+    @app.get("/v1/jobs/{job_id}")
+    def get_job(job_id: int) -> dict[str, object]:
+        """Return read-only debugging details for a background job."""
+        job = app.state.job_store.get(job_id)
+        if job is None:
+            raise HTTPException(status_code=404, detail=f"Job {job_id} was not found")
+        return serialize_job(job)
 
     return app
 

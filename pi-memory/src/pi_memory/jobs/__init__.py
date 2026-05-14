@@ -1,6 +1,7 @@
 """Durable job queue services for pi-memory."""
 
 from pi_memory.jobs.dispatcher import ClaimedJobMissingRunIdError, JobDispatcher, JobDispatcherError
+from pi_memory.jobs.inspection import serialize_job
 from pi_memory.jobs.observe import enqueue_process_transcript_job
 from pi_memory.jobs.runner import (
     InvalidJobPayloadError,
@@ -34,6 +35,7 @@ __all__ = [
     "JobStore",
     "JobStoreError",
     "PermanentJobError",
+    "serialize_job",
     "enqueue_process_transcript_job",
     "RecoverStaleResult",
     "TranscriptNotFoundError",

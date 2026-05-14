@@ -1,12 +1,12 @@
 import os
 from collections.abc import Iterator
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
 from pi_memory.constants import SERVICE_NAME, SERVICE_VERSION
-from pi_memory.db import JOB_KIND_PROCESS_TRANSCRIPT, Database, Job
+from pi_memory.db import JOB_KIND_PROCESS_TRANSCRIPT, Database, Job, MemorySession, Transcript, TranscriptEntry
 from pi_memory.ingest import TranscriptIngestService
 from pi_memory.jobs import JobStore
 from pi_memory.server import create_app
@@ -268,6 +268,85 @@ def test_observe_endpoint_missing_transcript_returns_404(
 
     assert response.status_code == 404
     assert "Transcript file does not exist" in response.json()["detail"]
+
+
+def test_get_job_endpoint_returns_serialized_job_without_transcript_content(tmp_path) -> None:
+    database = Database(sqlite_url(tmp_path / "memory-jobs.db"))
+    app = create_app(memory_dir=tmp_path / "memory", job_store=JobStore(database=database))
+    now = datetime(2026, 1, 1, 10, tzinfo=UTC)
+    try:
+        job = app.state.job_store.enqueue(
+            JOB_KIND_PROCESS_TRANSCRIPT,
+            payload_json={"transcript_id": 1, "session_id": "pi-session-1"},
+            due_at=now,
+            now=now,
+        )
+        with database.session() as db_session:
+            memory_session = MemorySession(session_id="pi-session-1")
+            transcript = Transcript(
+                session=memory_session,
+                path="/tmp/pi/transcript.jsonl",
+                cursor_offset=10,
+                file_size=10,
+            )
+            db_session.add(transcript)
+            db_session.flush()
+            db_session.add(
+                TranscriptEntry(
+                    transcript_id=transcript.id,
+                    entry_id="entry-1",
+                    entry_type="message",
+                    message_role="user",
+                    raw_line='{"content":"secret transcript text"}',
+                    byte_start=0,
+                    byte_end=10,
+                ),
+            )
+            stored = db_session.get_one(Job, job.id)
+            stored.result_json = {"ok": True}
+            stored.last_error = "previous failure"
+            stored.attempts = 2
+            stored.created_at = now - timedelta(minutes=1)
+            stored.updated_at = now + timedelta(minutes=1)
+
+        response = TestClient(app).get(f"/v1/jobs/{job.id}")
+    finally:
+        database.close_if_open()
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["id"] == job.id
+    assert data["kind"] == JOB_KIND_PROCESS_TRANSCRIPT
+    assert data["status"] == "queued"
+    assert data["payload_json"] == {"transcript_id": 1, "session_id": "pi-session-1"}
+    assert data["result_json"] == {"ok": True}
+    assert data["attempts"] == 2
+    assert data["last_error"] == "previous failure"
+    assert _parse_response_time(data["due_at"]) == now
+    assert _parse_response_time(data["created_at"]) == now - timedelta(minutes=1)
+    assert _parse_response_time(data["updated_at"]) == now + timedelta(minutes=1)
+    assert "raw_line" not in data
+    assert "content" not in data
+    assert "secret transcript text" not in str(data)
+
+
+def _parse_response_time(value: str) -> datetime:
+    parsed = datetime.fromisoformat(value)
+    if parsed.tzinfo is None:
+        return parsed.replace(tzinfo=UTC)
+    return parsed
+
+
+def test_get_job_endpoint_returns_404_for_missing_job(tmp_path) -> None:
+    database = Database(sqlite_url(tmp_path / "memory-missing-job.db"))
+    app = create_app(memory_dir=tmp_path / "memory", job_store=JobStore(database=database))
+    try:
+        response = TestClient(app).get("/v1/jobs/999")
+    finally:
+        database.close_if_open()
+
+    assert response.status_code == 404
+    assert response.json()["detail"] == "Job 999 was not found"
 
 
 @pytest.mark.parametrize(

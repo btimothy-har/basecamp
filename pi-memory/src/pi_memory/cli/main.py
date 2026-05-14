@@ -23,6 +23,7 @@ from pi_memory.jobs import (
     JobStore,
     JobStoreError,
     enqueue_process_transcript_job,
+    serialize_job,
 )
 from pi_memory.server import ServerAlreadyRunningError, ServerState, create_app
 
@@ -53,6 +54,13 @@ class PortBindError(click.ClickException):
     def in_use(cls, *, host: str, port: int) -> PortBindError:
         """Return an error for a port already bound by another process."""
         return cls(host=host, port=port, reason="the port is already in use by another process")
+
+
+class JobInspectionNotFoundError(click.ClickException):
+    """Raised when the requested inspection job does not exist."""
+
+    def __init__(self, job_id: int) -> None:
+        super().__init__(f"Job {job_id} was not found")
 
 
 class StatusProbeError(Exception):
@@ -175,6 +183,32 @@ def run_job(job_id: int, run_id: str, db_url: str) -> None:
         job_database.close_if_open()
 
     click.echo(f"Job {job.id} completed")
+
+
+@main.command("job")
+@click.option("--job-id", required=True, type=int, help="Job id to inspect.")
+@click.option(
+    "--db-url",
+    callback=lambda _ctx, _param, value: _require_non_empty(value),
+    required=True,
+    help="Database URL containing the job.",
+)
+@click.option(
+    "--json",
+    "json_output",
+    is_flag=True,
+    help="Emit parseable JSON output.",
+)
+def inspect_job(job_id: int, db_url: str, *, json_output: bool) -> None:
+    """Inspect a background job directly from the database."""
+    job_database = Database(db_url)
+    try:
+        job = JobStore(database=job_database).get(job_id)
+        if job is None:
+            raise JobInspectionNotFoundError(job_id)
+        _emit_job(serialize_job(job), json_output=json_output)
+    finally:
+        job_database.close_if_open()
 
 
 @main.command()
@@ -357,6 +391,16 @@ def _emit_observe_result(result: IngestResult, *, job_id: int | None, json_outpu
         return
 
     click.echo("Observed transcript")
+    for name, value in payload.items():
+        click.echo(f"  {name}: {value}")
+
+
+def _emit_job(payload: dict[str, Any], *, json_output: bool) -> None:
+    if json_output:
+        click.echo(json.dumps(payload, sort_keys=True))
+        return
+
+    click.echo("Job")
     for name, value in payload.items():
         click.echo(f"  {name}: {value}")
 
