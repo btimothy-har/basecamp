@@ -1,7 +1,19 @@
 from pathlib import Path
 
 import pytest
-from pi_memory.db import Base, Database, Job, MemorySession, Transcript, TranscriptEntry
+from pi_memory.db import (
+    ActivityUnit,
+    AnalysisRun,
+    Base,
+    Database,
+    Episode,
+    EpisodeManifest,
+    Job,
+    MemorySession,
+    SessionSnapshotShell,
+    Transcript,
+    TranscriptEntry,
+)
 from sqlalchemy import func, select, text
 
 
@@ -201,8 +213,18 @@ def test_session_context_rolls_back_on_error(tmp_path) -> None:
         database.close_if_open()
 
 
-def test_base_registers_phase_3_schema_models() -> None:
+def test_base_registers_schema_models() -> None:
     assert "sessions" in Base.metadata.tables
     assert "jobs" in Base.metadata.tables
+    assert "analysis_runs" in Base.metadata.tables
+    assert "activity_units" in Base.metadata.tables
+    assert "episodes" in Base.metadata.tables
+    assert "episode_manifests" in Base.metadata.tables
+    assert "session_snapshot_shells" in Base.metadata.tables
     assert "transcript_entries_fts" not in Base.metadata.tables
     assert Job.__table__ is Base.metadata.tables["jobs"]
+    assert AnalysisRun.__table__ is Base.metadata.tables["analysis_runs"]
+    assert ActivityUnit.__table__ is Base.metadata.tables["activity_units"]
+    assert Episode.__table__ is Base.metadata.tables["episodes"]
+    assert EpisodeManifest.__table__ is Base.metadata.tables["episode_manifests"]
+    assert SessionSnapshotShell.__table__ is Base.metadata.tables["session_snapshot_shells"]
