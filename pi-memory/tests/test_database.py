@@ -1,7 +1,7 @@
 from pathlib import Path
 
 import pytest
-from pi_memory.db import Base, Database, Job, MemorySession
+from pi_memory.db import Base, Database, Job, MemorySession, Transcript, TranscriptEntry
 from sqlalchemy import func, select, text
 
 
@@ -59,6 +59,107 @@ def test_configure_switches_to_isolated_database(tmp_path) -> None:
         database.close_if_open()
 
 
+def test_initialize_creates_transcript_entries_fts_projection(tmp_path) -> None:
+    db_path = tmp_path / "memory.db"
+    database = Database(sqlite_url(db_path))
+
+    try:
+        database.initialize()
+
+        with database.engine.connect() as connection:
+            create_sql = connection.execute(
+                text(
+                    """
+                    SELECT sql
+                    FROM sqlite_master
+                    WHERE type = 'table' AND name = 'transcript_entries_fts'
+                    """,
+                ),
+            ).scalar_one()
+
+        assert "CREATE VIRTUAL TABLE" in create_sql.upper()
+        assert "FTS5" in create_sql.upper()
+        assert "search_text" in create_sql
+    finally:
+        database.close_if_open()
+
+
+def test_transcript_entries_fts_projection_persists_after_reopen(tmp_path) -> None:
+    db_path = tmp_path / "memory.db"
+    database = Database(sqlite_url(db_path))
+
+    try:
+        database.initialize()
+    finally:
+        database.close_if_open()
+
+    reopened = Database(sqlite_url(db_path))
+    try:
+        with reopened.engine.connect() as connection:
+            count = connection.execute(
+                text(
+                    """
+                    SELECT count(*)
+                    FROM sqlite_master
+                    WHERE type = 'table' AND name = 'transcript_entries_fts'
+                    """,
+                ),
+            ).scalar_one()
+
+        assert count == 1
+    finally:
+        reopened.close_if_open()
+
+
+def test_transcript_entries_fts_projection_uses_transcript_entry_rowid(tmp_path) -> None:
+    db_path = tmp_path / "memory.db"
+    database = Database(sqlite_url(db_path))
+
+    try:
+        database.initialize()
+        with database.session() as session:
+            memory_session = MemorySession(session_id="pi-session-1")
+            transcript = Transcript(path="/tmp/pi/transcript.jsonl", session=memory_session)
+            entry = TranscriptEntry(
+                transcript=transcript,
+                entry_type="message",
+                raw_line='{"type":"message"}',
+                byte_start=0,
+                byte_end=18,
+            )
+            session.add(entry)
+            session.flush()
+            entry_id = entry.id
+            session.execute(
+                text(
+                    """
+                    INSERT INTO transcript_entries_fts(rowid, search_text)
+                    VALUES (:rowid, :search_text)
+                    """,
+                ),
+                {
+                    "rowid": entry_id,
+                    "search_text": "Derived projection text for nebula recall.",
+                },
+            )
+
+        with database.engine.connect() as connection:
+            rowids = connection.execute(
+                text(
+                    """
+                    SELECT rowid
+                    FROM transcript_entries_fts
+                    WHERE transcript_entries_fts MATCH :query
+                    """,
+                ),
+                {"query": "nebula"},
+            ).scalars().all()
+
+        assert rowids == [entry_id]
+    finally:
+        database.close_if_open()
+
+
 def test_session_context_commits_and_closes(tmp_path) -> None:
     db_path = tmp_path / "memory.db"
     database = Database(sqlite_url(db_path))
@@ -99,4 +200,5 @@ def test_session_context_rolls_back_on_error(tmp_path) -> None:
 def test_base_registers_phase_3_schema_models() -> None:
     assert "sessions" in Base.metadata.tables
     assert "jobs" in Base.metadata.tables
+    assert "transcript_entries_fts" not in Base.metadata.tables
     assert Job.__table__ is Base.metadata.tables["jobs"]

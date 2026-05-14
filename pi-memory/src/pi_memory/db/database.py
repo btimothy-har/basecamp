@@ -6,7 +6,7 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
 
-from sqlalchemy import Engine, create_engine, event
+from sqlalchemy import Engine, create_engine, event, text
 from sqlalchemy.engine import make_url
 from sqlalchemy.orm import Session, sessionmaker
 
@@ -60,6 +60,15 @@ class Database:
         self._ensure_parent_directory()
         with self.engine.begin() as connection:
             Base.metadata.create_all(connection)
+            if _is_sqlite_url(self._url):
+                connection.execute(
+                    text(
+                        """
+                        CREATE VIRTUAL TABLE IF NOT EXISTS transcript_entries_fts
+                        USING fts5(search_text)
+                        """,
+                    ),
+                )
 
     @contextmanager
     def session(self) -> Iterator[Session]:

@@ -40,13 +40,19 @@ def create_transcript(database: Database) -> int:
 
 def test_initialize_creates_pi_transcript_schema_tables(database: Database) -> None:
     inspector = inspect(database.engine)
+    table_names = set(inspector.get_table_names())
 
-    assert set(inspector.get_table_names()) == {
+    assert {
         "jobs",
         "sessions",
         "transcripts",
         "observations",
         "transcript_entries",
+    }.issubset(table_names)
+    assert not {
+        name
+        for name in table_names
+        if name.startswith(("artifacts", "candidates", "graph", "memories", "snapshots"))
     }
 
 
