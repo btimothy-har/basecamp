@@ -1,0 +1,1093 @@
+# Memory Agent North Star
+
+Status: proposed architecture and implementation roadmap
+
+Related issue: [#123](https://github.com/btimothy-har/basecamp/issues/123)
+
+## Context
+
+`pi-observer` currently provides semantic recall over previous Pi coding sessions by ingesting transcript JSONL, extracting structured artifacts, storing those artifacts in SQLite, and indexing them in ChromaDB. That implementation proves the value of local session recall, but the next memory system should not be constrained by the current observer's lifecycle, schema, or package boundaries.
+
+The north-star system is a clean cutover: a Python-first local memory service that continuously captures full Pi transcripts, derives evolving session understanding, promotes durable source-backed memory artifacts into an associative graph, and serves explainable recall through a thin Pi adapter.
+
+The current observer is useful inspiration. It should not be treated as a compatibility target.
+
+## One-sentence north star
+
+Build a Python-first local memory service that continuously captures full Pi transcripts, derives replaceable session-level understanding, promotes durable source-backed memory artifacts into an associative graph, and serves explainable recall through a thin Pi adapter using SQLite as canonical storage and ChromaDB as a rebuildable semantic index.
+
+## Clean cutover stance
+
+This design intentionally replaces the current observer behavior rather than migrating or preserving historical observer stores.
+
+The new system should not require compatibility with:
+
+- the existing `~/.pi/observer` data directory;
+- current observer SQLite schemas;
+- current observer Chroma collections;
+- current extraction artifact shapes;
+- current CLI behavior;
+- current Pi extension orchestration behavior.
+
+No legacy migration should be added unless a future product decision explicitly changes that requirement. The clean cutover lets the new system optimize for the desired architecture instead of carrying forward accidental constraints.
+
+## Goals
+
+- Store full Pi transcripts locally as the canonical source of truth.
+- Keep memory analysis, indexing, reconciliation, and hygiene in Python.
+- Keep the Pi extension as a thin sensor and UI adapter.
+- Run a local FastAPI service on a fixed localhost port.
+- Have Pi start or reconnect to the service when a session launches.
+- Ingest transcript observations continuously rather than only at shutdown.
+- Maintain replaceable working session snapshots during active sessions.
+- Promote durable memory only through reconciliation.
+- Represent durable memory as typed, source-backed, revisable artifacts.
+- Model relationships between artifacts, concepts, sessions, episodes, source spans, files, modules, goals, and preferences as a graph.
+- Use SQLite as the canonical store for transcripts, sessions, jobs, artifacts, revisions, source spans, graph nodes, graph edges, statuses, and provenance.
+- Use ChromaDB as a rebuildable vector index over SQLite-backed records.
+- Use service-owned durable jobs for heavy work and hygiene.
+- Return recall packets with provenance and explanation, not only vector snippets.
+
+## Non-goals
+
+- No historical observer data migration.
+- No compatibility requirement for old observer schemas or Chroma collections.
+- No cloud sync.
+- No multi-user server model.
+- No external graph server as an initial dependency.
+- No treating embeddings as canonical memory.
+- No heavy memory logic in the Pi extension.
+- No FastAPI `BackgroundTasks` as the durable job system.
+- No reliance on `session_shutdown` as the only finalization point.
+- No partial service implementation as part of this document-only milestone.
+
+## Design principles
+
+### Raw transcript is canonical
+
+The full transcript is the durable record of what happened. Derived memory can be deleted, reprocessed, reindexed, reclassified, or superseded.
+
+```text
+raw transcript + source spans = source of truth
+derived artifacts + graph = interpretation
+```
+
+### Derived memory is revisable
+
+A memory artifact is not a permanent summary line. It is a typed, source-backed claim that can be refined, superseded, contradicted, retracted, archived, or reinforced.
+
+### Continuous ingest, reconciled promotion
+
+The system should ingest session data continuously, but should not append permanent artifacts on every analysis pass. Active sessions use replaceable working snapshots. Durable project memory is promoted through reconciliation.
+
+### Pi is thin
+
+Pi observes and renders. The Python service thinks.
+
+```text
+Pi = sensor + UI
+Python service = memory brain
+SQLite/Chroma = memory substrate
+```
+
+### One canonical store, rebuildable indexes
+
+SQLite owns canonical memory, graph, jobs, sessions, transcripts, and provenance. ChromaDB owns vector indexes, but every Chroma entry must be reconstructable from SQLite.
+
+### Graph is associative context, not magic truth
+
+The graph helps find relevant neighborhoods and explain recall. It does not by itself decide supersession, correctness, or user intent.
+
+## Current observer as inspiration
+
+The existing observer already has useful ideas:
+
+- it stores full raw transcript payloads;
+- it uses SQLite for durable local data;
+- it uses ChromaDB for semantic retrieval;
+- it extracts summaries, decisions, constraints, knowledge, and actions;
+- it exposes recall through Pi tooling.
+
+The new design should carry forward those lessons while avoiding the constraints that make the current shape hard to evolve:
+
+- fire-and-forget lifecycle orchestration from the Pi extension;
+- analysis centered on shutdown instead of continuous durable ingest;
+- artifact extraction without graph-informed reconciliation;
+- no durable job system for recovery, retries, and hygiene;
+- limited distinction between canonical transcript data and derived memory state;
+- recall focused on indexed artifacts rather than explainable graph-backed memory packets.
+
+## Target architecture
+
+```text
+Pi extension
+  - starts/checks local memory service
+  - observes session lifecycle
+  - sends session metadata/transcript path
+  - exposes recall/memory tool
+  - renders recall packets
+
+FastAPI memory service
+  - validates local HTTP requests
+  - records observations
+  - enqueues work
+  - exposes recall/status/job APIs
+
+Worker/scheduler loop
+  - ingests transcript deltas
+  - segments episodes
+  - updates session maps
+  - extracts candidate memories
+  - maps candidates to graph neighborhoods
+  - reconciles candidates with durable memory
+  - promotes artifacts
+  - updates Chroma/FTS indexes
+  - runs hygiene/catch-up
+
+SQLite memory.db
+  - canonical transcript/session/job/artifact/graph/provenance store
+
+ChromaDB
+  - rebuildable vector index over SQLite-backed memory
+```
+
+### Pi extension responsibilities
+
+The Pi extension should remain small and operationally boring.
+
+Responsibilities:
+
+- check service health on session launch;
+- start the local service if unavailable;
+- send session observations, transcript path, repository metadata, and lifecycle events;
+- expose recall and memory-status tools or commands;
+- render recall results in a useful format;
+- degrade gracefully if the service is unavailable.
+
+Non-responsibilities:
+
+- transcript parsing;
+- LLM analysis;
+- artifact extraction;
+- graph reconciliation;
+- Chroma indexing;
+- durable storage;
+- long-running background work.
+
+### Python service responsibilities
+
+The Python service owns the memory system.
+
+Responsibilities:
+
+- provide a local HTTP API;
+- validate requests from the Pi adapter;
+- maintain the canonical SQLite database;
+- enqueue and execute durable jobs;
+- parse transcript deltas;
+- maintain rolling session snapshots;
+- extract candidate memory artifacts;
+- reconcile candidates against graph neighborhoods;
+- promote durable memory artifacts;
+- maintain derived indexes;
+- serve explainable recall packets.
+
+### Worker and scheduler responsibilities
+
+Heavy work should not run inside request handlers. The service should run a worker/scheduler loop backed by SQLite jobs.
+
+Responsibilities:
+
+- claim queued jobs;
+- retry failed jobs according to job policy;
+- recover stale running jobs after restart;
+- enqueue catch-up work for stale sessions;
+- run periodic hygiene;
+- keep ChromaDB and FTS projections aligned with SQLite.
+
+The first implementation can run FastAPI and the worker in the same local process. If needed later, the service can split into separate `serve` and `worker` commands using the same SQLite job queue.
+
+## Runtime lifecycle
+
+The desired lifecycle is:
+
+```text
+raw transcript
+  -> episodes
+  -> session map
+  -> candidate memories
+  -> graph reconciliation
+  -> promoted durable memory
+  -> recall / resurfacing / maintenance
+```
+
+### 1. Service startup
+
+Pi launch checks the local service:
+
+```text
+GET http://127.0.0.1:<fixed-port>/health
+```
+
+If unavailable, Pi starts the service:
+
+```text
+pi-memory serve --host 127.0.0.1 --port <fixed-port>
+```
+
+The exact command name remains open, but the behavior should be stable: one local service process, one fixed localhost port, and a guard against duplicate servers.
+
+Startup sequence:
+
+```text
+start server
+  -> initialize SQLite
+  -> acquire service lock
+  -> recover stale running jobs
+  -> scan sessions needing ingest/finalization
+  -> start worker loop
+  -> start scheduler loop
+```
+
+### 2. Continuous observation
+
+Pi sends lightweight observations during session activity:
+
+```text
+POST /v1/observe
+```
+
+Observation payloads should include enough information for the service to locate and interpret session transcript data:
+
+```text
+session_id
+transcript_path
+cwd
+repo
+worktree
+branch
+event_type
+timestamp
+```
+
+The endpoint should return quickly. It can enqueue work, but heavy ingest and analysis should run through durable jobs.
+
+### 3. Transcript ingest
+
+The service tracks per-session transcript cursors.
+
+```text
+session_id
+transcript_path
+cursor_offset
+last_observed_at
+last_ingested_at
+```
+
+Ingest reads transcript deltas, stores raw events, advances the cursor, and remains idempotent. Duplicate observations should be harmless.
+
+### 4. Episode segmentation
+
+Raw transcript events are grouped into meaningful episodes. Episodes provide manageable analysis units and source-span boundaries.
+
+Example episodes:
+
+- observer architecture investigation;
+- local-first clarification;
+- ingestion timing discussion;
+- artifact supersession discussion;
+- graph memory design;
+- implementation and validation loop.
+
+Episode state can start simple:
+
+```text
+open -> closed -> analyzed
+```
+
+### 5. Rolling session analysis
+
+During an active session, the system maintains a replaceable session map.
+
+```text
+session_analysis_snapshot
+- session_id
+- analyzed_through_offset
+- goal
+- summary
+- candidate decisions
+- candidate constraints
+- candidate knowledge
+- candidate preferences
+- candidate patterns
+- open questions
+- status: working | finalized
+```
+
+Each new rolling analysis replaces the previous working snapshot for that session. This prevents cumulative analysis from creating permanent duplicate or stale artifacts.
+
+### 6. Candidate extraction
+
+From a session snapshot, the service extracts candidate durable memories. Candidates are not durable memory yet.
+
+Candidate shape:
+
+```text
+kind
+title
+statement
+canonical_key
+concepts
+entities
+files/modules
+source_spans
+confidence
+durability
+```
+
+Candidate kinds:
+
+- decision;
+- constraint;
+- knowledge;
+- preference;
+- pattern;
+- open question;
+- action.
+
+### 7. Graph mapping
+
+Candidates are attached to the memory graph.
+
+Graph nodes may include:
+
+- Artifact;
+- ArtifactRevision;
+- Concept;
+- Session;
+- Episode;
+- SourceSpan;
+- Project;
+- Repo;
+- Worktree;
+- Branch;
+- File;
+- Module;
+- Tool;
+- Goal;
+- Question;
+- UserPreference.
+
+Graph edges may include:
+
+- about;
+- mentions;
+- derived_from;
+- supported_by;
+- refines;
+- supersedes;
+- contradicts;
+- depends_on;
+- motivated_by;
+- applies_to;
+- implements;
+- touches;
+- similar_to;
+- used_in_recall.
+
+Edges should carry provenance and confidence where useful:
+
+```text
+confidence
+source_span_id
+analysis_run_id
+metadata_json
+created_at
+```
+
+### 8. Reconciliation
+
+Promotion is a reconciliation process. For each candidate, the service finds nearby existing memory by:
+
+- same canonical key;
+- shared concepts;
+- same files/modules/entities;
+- same decision or constraint topic;
+- semantic similarity via ChromaDB;
+- recently active related sessions.
+
+Then it classifies the relationship:
+
+- new;
+- duplicate;
+- refines;
+- supersedes;
+- contradicts;
+- supports;
+- related;
+- unrelated.
+
+Suggested mutation rules:
+
+```text
+new
+  -> create active artifact
+
+duplicate
+  -> merge support/source evidence
+
+refines
+  -> create new revision or update current artifact
+
+supersedes
+  -> mark old artifact superseded; create active artifact
+
+contradicts high confidence
+  -> create artifact and add conflict edge
+
+contradicts low confidence
+  -> keep both visible; mark needs_review
+
+related
+  -> keep both; write relation edge
+```
+
+Semantic similarity alone must not auto-supersede.
+
+### 9. Promotion
+
+Promoted artifacts become durable project memory.
+
+Artifact states:
+
+- candidate;
+- active;
+- superseded;
+- conflicting;
+- retracted;
+- archived;
+- needs_review.
+
+Artifacts are source-backed and revisable.
+
+Example:
+
+```text
+Artifact A:
+  Decision: Use batch-only session-end analysis.
+  status: superseded
+
+Artifact B:
+  Decision: Use continuous ingest plus graph-informed promotion.
+  status: active
+  supersedes: Artifact A
+```
+
+### 10. Recall
+
+Recall returns memory packets, not raw vector snippets.
+
+A recall result should include:
+
+- artifact;
+- kind;
+- status;
+- statement;
+- reason returned;
+- related concepts;
+- source spans;
+- relationship context;
+- supersession or conflict context.
+
+Example:
+
+```text
+Decision: Use continuous ingest plus graph-informed promotion.
+
+Why relevant:
+- matches concept "memory lifecycle"
+- active project decision
+- supersedes older batch-only analysis idea
+- supported by session X / episode Y
+```
+
+### 11. Hygiene and maintenance
+
+The service periodically enqueues hygiene jobs:
+
+- catch up stale sessions;
+- reconcile duplicate candidates;
+- resolve conflict candidates;
+- compact graph clutter;
+- rebuild Chroma index;
+- repair FTS index;
+- refresh salience.
+
+Hygiene should be conservative. It should not silently delete memory. Prefer lowering salience, marking superseded, or flagging review.
+
+## Local HTTP API
+
+The initial API shape should be small and local-only:
+
+```text
+GET  /health
+GET  /v1/capabilities
+GET  /v1/status
+POST /v1/observe
+POST /v1/sessions/{session_id}/sync
+POST /v1/sessions/{session_id}/finalize
+POST /v1/recall/search
+GET  /v1/jobs/{job_id}
+```
+
+Requests should be quick and idempotent. Long work returns job IDs.
+
+Exact request and response schemas should be defined during the service foundation phase, not in this architecture document.
+
+## Durable jobs
+
+FastAPI request handlers should not do heavy memory work. They should enqueue jobs in SQLite.
+
+Job table shape:
+
+```text
+jobs
+- id
+- kind
+- status: queued | running | succeeded | failed | cancelled
+- payload_json
+- priority
+- due_at
+- attempts
+- max_attempts
+- locked_at
+- locked_by
+- last_error
+- created_at
+- updated_at
+```
+
+Job kinds:
+
+- `ingest_session`;
+- `segment_episodes`;
+- `update_session_map`;
+- `extract_candidates`;
+- `reconcile_candidates`;
+- `promote_artifacts`;
+- `update_indexes`;
+- `hygiene_reconcile_duplicates`;
+- `hygiene_resolve_conflicts`;
+- `hygiene_compact_graph`;
+- `catchup_stale_sessions`.
+
+On startup, stale running jobs should be returned to the queue or marked failed according to retry policy.
+
+## Storage model
+
+Canonical local storage should live under a new memory-owned directory:
+
+```text
+~/.pi/memory/
+  memory.db
+  chroma/
+  logs/
+  server.json
+```
+
+This path is intentionally separate from the current observer store.
+
+### SQLite canonical tables
+
+Likely canonical tables:
+
+- `sessions`;
+- `transcript_events`;
+- `episodes`;
+- `analysis_runs`;
+- `session_snapshots`;
+- `memory_artifacts`;
+- `artifact_revisions`;
+- `source_spans`;
+- `memory_nodes`;
+- `memory_edges`;
+- `artifact_sources`;
+- `jobs`.
+
+SQLite owns:
+
+- transcript metadata and raw event records;
+- session state;
+- episode boundaries;
+- analysis runs;
+- session snapshots;
+- durable memory artifacts;
+- artifact revisions;
+- graph nodes and edges;
+- source spans and provenance;
+- job queue and scheduling;
+- artifact status, salience, and confidence.
+
+### ChromaDB vector index
+
+ChromaDB indexes selected text from SQLite:
+
+- artifact statements;
+- artifact titles;
+- source excerpts;
+- episode summaries;
+- concept labels and descriptions.
+
+Chroma metadata should reference SQLite IDs. It should not duplicate canonical state.
+
+Invariant:
+
+> Anything in ChromaDB must be reconstructable from SQLite.
+
+ChromaDB is never canonical memory.
+
+### Graph backend
+
+Start with graph-shaped SQLite tables as canonical graph storage.
+
+Use ChromaDB for semantic candidate generation. Optionally use NetworkX for in-memory graph analysis or hygiene jobs. Consider Kùzu later only if graph traversal or path queries become difficult in SQLite.
+
+Do not start with Neo4j, ArangoDB, RDF, or another external graph server.
+
+## Phased implementation plan
+
+Implementation should proceed through runnable vertical slices. The ordering matters: prove the service boundary and durable ingest before building graph/reconciliation complexity.
+
+### Phase 0: Lock architecture and cutover stance
+
+Purpose: turn the north-star direction into repo-local guidance before code churn.
+
+Deliverables:
+
+- Add this architecture document.
+- Record the clean-cutover stance.
+- Record canonical-vs-derived storage rules.
+- Record the phased implementation sequence.
+- Decide whether implementation will use the existing `pi-observer` package path, a new `pi-memory` package, or a transition path.
+
+Validation:
+
+- The document exists and is discoverable.
+- The document is consistent with issue #123.
+- Open decisions are explicit.
+
+Deferred:
+
+- API schemas.
+- DB implementation.
+- LLM prompts.
+- Runtime changes.
+
+### Phase 1: Service skeleton and Pi bootstrap
+
+Purpose: prove the runtime boundary between Pi and the Python memory service.
+
+Deliverables:
+
+- FastAPI app.
+- Fixed localhost port.
+- `GET /health` endpoint.
+- `GET /v1/status` endpoint.
+- Python CLI, such as `pi-memory serve` and `pi-memory status`.
+- Pi extension startup check.
+- Pi service bootstrap if health check fails.
+- Server lock or pid metadata file.
+- Graceful degraded behavior if the service cannot start.
+
+Validation:
+
+- Service starts via CLI.
+- Pi can start service if it is not running.
+- Multiple Pi sessions do not spawn duplicate servers.
+- Health and status endpoints work.
+- Startup failures are visible and non-fatal to the Pi session.
+
+Deferred:
+
+- Transcript parsing.
+- Jobs.
+- Recall.
+- ChromaDB.
+- LLM analysis.
+
+### Phase 2: Canonical SQLite store and transcript ingest
+
+Purpose: establish full transcript capture as the source of truth.
+
+Deliverables:
+
+- SQLite `memory.db` initialization.
+- Initial tables for sessions, observations, and transcript events.
+- `POST /v1/observe` endpoint.
+- Session registration/upsert.
+- Transcript cursor tracking.
+- Incremental transcript ingest from `transcript_path`.
+- Parser support for Pi transcript format.
+- Idempotent observe behavior.
+
+Validation:
+
+- Repeated observe calls do not duplicate events.
+- Cursor advances correctly.
+- Partial trailing JSONL lines are handled safely.
+- Restart does not lose cursor state.
+- Parser and ingest tests cover representative transcripts.
+
+Deferred:
+
+- Episode segmentation.
+- Artifact extraction.
+- Graph memory.
+- ChromaDB indexing.
+
+### Phase 3: Durable job queue and worker loop
+
+Purpose: create the durable execution spine for heavy work.
+
+Deliverables:
+
+- SQLite `jobs` table.
+- Internal worker/scheduler loop in the service process.
+- Job claim/lease semantics.
+- Startup recovery for stale running jobs.
+- `GET /v1/jobs/{job_id}` endpoint.
+- Job enqueue from `/v1/observe`.
+- Initial job kinds such as `ingest_session`, `catchup_stale_sessions`, and a test/no-op job.
+
+Validation:
+
+- Jobs run outside request handlers.
+- Failed jobs record errors.
+- Stale running jobs recover on restart.
+- Duplicate jobs are coalesced or harmless.
+- Service can shut down and resume work.
+
+Deferred:
+
+- LLM analysis.
+- Promotion logic.
+- Hygiene sophistication.
+
+### Phase 4: Baseline recall over raw transcripts
+
+Purpose: get end-to-end recall working before durable memory exists.
+
+Deliverables:
+
+- FTS index over transcript events or session text.
+- `POST /v1/recall/search` endpoint.
+- Pi recall tool calls the local service.
+- Recall result includes session ID, excerpt, source offset/span, and basic match reason.
+
+Validation:
+
+- Recall queries return source-backed results.
+- Recall works after service restart.
+- Pi tool renders returned results.
+- Recall does not require ChromaDB or LLM artifacts yet.
+
+Deferred:
+
+- Durable memory artifacts.
+- Graph traversal.
+- Supersession.
+- LLM extraction.
+
+### Phase 5: Episodes and rolling session snapshots
+
+Purpose: introduce analysis without permanent memory promotion.
+
+Deliverables:
+
+- `episodes` table.
+- `analysis_runs` table.
+- `session_snapshots` table.
+- Episode segmentation job.
+- Rolling session-map analysis job.
+- Replaceable latest snapshot per active session.
+- Snapshot source-span references.
+
+Snapshot fields should include:
+
+- goal;
+- summary;
+- candidate decisions;
+- candidate constraints;
+- candidate knowledge;
+- candidate preferences;
+- candidate patterns;
+- open questions;
+- analyzed transcript offset.
+
+Validation:
+
+- New transcript events cause snapshot updates.
+- New snapshots replace prior working interpretation.
+- Snapshots cite source spans.
+- Analysis can be rerun from transcript data.
+
+Deferred:
+
+- Durable project memory.
+- Cross-session reconciliation.
+- Graph promotion.
+
+### Phase 6: Durable artifact and graph schema
+
+Purpose: create the durable memory substrate.
+
+Deliverables:
+
+- `memory_artifacts` table.
+- `artifact_revisions` table.
+- `source_spans` table.
+- `memory_nodes` table.
+- `memory_edges` table.
+- `artifact_sources` table.
+- Artifact states: active, superseded, conflicting, retracted, archived, needs_review.
+- Artifact kinds: decision, constraint, knowledge, preference, pattern, open question, action.
+- Basic graph writes from artifacts to concepts, source spans, sessions, episodes, files, or modules.
+
+Validation:
+
+- Session snapshots can produce candidate artifacts.
+- Candidate artifacts can be written as active artifacts.
+- Source spans link back to transcript offsets.
+- Graph neighborhood queries work in SQLite.
+
+Deferred:
+
+- Complex reconciliation.
+- Supersession automation.
+- Advanced graph algorithms.
+
+### Phase 7: ChromaDB projection and hybrid recall
+
+Purpose: add performant semantic retrieval while keeping SQLite canonical.
+
+Deliverables:
+
+- Chroma collection or collections.
+- Vector index abstraction.
+- Indexing for artifact statements, titles, selected source spans, episode summaries, and concept labels.
+- Rebuild command or job.
+- Hybrid recall across FTS, ChromaDB, and graph neighborhood expansion.
+- Chroma metadata that references SQLite IDs.
+
+Validation:
+
+- Chroma collection can be deleted and rebuilt from SQLite.
+- Recall degrades safely if ChromaDB is stale or unavailable.
+- Vector hits resolve back to SQLite artifacts.
+- Metadata filters work for project, kind, and status.
+
+Deferred:
+
+- Advanced ranking.
+- Sophisticated graph algorithms.
+- Automatic supersession.
+
+### Phase 8: Promotion and reconciliation
+
+Purpose: make durable memory evolve safely.
+
+Deliverables:
+
+- Candidate promotion job.
+- Graph-neighborhood candidate selection.
+- Relationship classifier for new, duplicate, refines, supersedes, contradicts, supports, related, and unrelated.
+- Conservative mutation rules.
+- Revision and supersession edge writes.
+- Conflict edges and review statuses.
+
+Validation:
+
+- Later artifacts can supersede older artifacts with evidence.
+- Related artifacts remain separate.
+- Conflicts are visible, not silently resolved.
+- Recall defaults to active artifacts but can expose history.
+- Semantic-only similarity cannot auto-supersede prior memory.
+
+Deferred:
+
+- Fully automatic global truth maintenance.
+- User review UI unless proven necessary.
+
+### Phase 9: Hygiene and maintenance
+
+Purpose: prevent memory degradation over time.
+
+Deliverables:
+
+- Scheduled catch-up for stale sessions.
+- Reprocessing for failed analyses.
+- Rebuild jobs for derived indexes.
+- Duplicate-active-artifact detection.
+- Unresolved-conflict detection.
+- Salience and usage tracking.
+- Maintenance CLI commands such as jobs, reindex, reprocess-session, and graph-status.
+
+Validation:
+
+- Restart catches missed work.
+- Index rebuild is safe.
+- Hygiene jobs are idempotent.
+- Cleanup uses explicit status transitions instead of silent deletion.
+
+Deferred:
+
+- Rich UI.
+- Complex graph algorithms unless proven necessary.
+
+### Phase 10: Clean cutover from old observer
+
+Purpose: replace the current observer behavior.
+
+Deliverables:
+
+- Current Pi observer hooks route to the new service.
+- Old recall path is replaced by service-backed recall.
+- Old CLI commands are removed, redirected, or documented as obsolete.
+- Old observer DB and Chroma paths are no longer used by the active memory system.
+- Install and package registration use the new service behavior.
+- Docs are updated.
+
+Validation:
+
+- Fresh install works with the new memory service.
+- No old observer state is required.
+- Python tests and TypeScript checks pass.
+- Manual Pi launch starts or reconnects to the service.
+- Service-backed recall works in a fresh environment.
+- Old observer paths are not read except for explicit cleanup or status messaging if added later.
+
+Deferred:
+
+- Historical migration.
+- Backwards compatibility.
+
+## Milestone grouping
+
+The phases can be grouped into larger implementation milestones.
+
+### Milestone 1: Service foundation
+
+Includes phases 0 through 3.
+
+Outcome:
+
+```text
+Python service runs, Pi starts it, transcripts are captured, and durable jobs work.
+```
+
+### Milestone 2: Useful recall
+
+Includes phases 4 and 5.
+
+Outcome:
+
+```text
+Recall works from raw transcripts and session snapshots; graph promotion is not required yet.
+```
+
+### Milestone 3: Durable graph memory
+
+Includes phases 6 through 8.
+
+Outcome:
+
+```text
+Source-backed durable memory artifacts exist, are indexed in ChromaDB, and are connected by graph relationships.
+```
+
+### Milestone 4: Production cutover
+
+Includes phases 9 and 10.
+
+Outcome:
+
+```text
+The old observer is replaced by the service-backed memory system, with hygiene and recovery behavior in place.
+```
+
+## Critical decisions before implementation
+
+Resolve these before or during Phase 1:
+
+1. Package and command naming:
+   - keep `pi-observer`;
+   - rename to `pi-memory`;
+   - split during transition, then remove the old observer.
+
+2. Fixed localhost port and collision behavior.
+
+3. Whether the first implementation happens in the existing `pi-observer` package path or a new package path.
+
+4. First recall target:
+   - raw transcript FTS first;
+   - session snapshots first;
+   - wait for durable artifacts.
+
+5. Initial API schemas for observe, status, jobs, and recall.
+
+6. Initial SQLite schema and migration policy for the new clean store.
+
+7. Initial artifact taxonomy and status set.
+
+8. Model/provider configuration for analysis jobs.
+
+9. Episode segmentation strategy.
+
+10. Rolling analysis thresholds:
+    - turns;
+    - transcript bytes;
+    - token estimates;
+    - lifecycle events.
+
+11. Finalization triggers:
+    - compaction;
+    - shutdown;
+    - stale-session catch-up;
+    - manual command.
+
+12. Recall response shape and Pi rendering behavior.
+
+## Validation expectations for the full system
+
+The completed memory system should satisfy these checks:
+
+- service starts on a fixed localhost port;
+- Pi starts or reconnects to the service if absent;
+- duplicate observe calls are idempotent;
+- transcript cursoring works across restarts;
+- service restart recovers stale jobs;
+- shutdown is not required for finalization;
+- ChromaDB can be rebuilt from SQLite;
+- recall returns source-backed artifacts or excerpts;
+- recall explains why results were returned;
+- superseded/conflicting memory remains inspectable;
+- old observer stores are not required;
+- no heavy memory logic runs in the Pi extension.
+
+## Sequencing guidance
+
+Do not start with the graph reconciler.
+
+Start with:
+
+```text
+service -> ingest -> jobs -> basic recall
+```
+
+Then add:
+
+```text
+snapshots -> artifacts -> graph -> promotion
+```
+
+The graph is the north star, but the first implementation risk is the service boundary and durable ingest pipeline.
