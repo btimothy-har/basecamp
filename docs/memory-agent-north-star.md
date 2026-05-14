@@ -1,6 +1,6 @@
 # Memory Agent North Star
 
-Status: proposed architecture and implementation roadmap
+Status: proposed architecture and implementation roadmap. Phase 4 raw transcript recall is implemented in `pi-memory`; Pi recall tool wiring remains deferred.
 
 Related issue: [#123](https://github.com/btimothy-har/basecamp/issues/123)
 
@@ -775,28 +775,33 @@ Deferred:
 
 ### Phase 4: Baseline recall over raw transcripts
 
-Purpose: get end-to-end recall working before durable memory exists.
+Purpose: get end-to-end recall working before durable memory exists, while establishing raw transcript recall as a durable provenance and fallback layer rather than throwaway scaffolding.
 
-Deliverables:
+Implemented in `pi-memory`:
 
-- FTS index over transcript events or session text.
-- `POST /v1/recall/search` endpoint.
-- Pi recall tool calls the local service.
-- Recall result includes session ID, excerpt, source offset/span, and basic match reason.
+- SQLite FTS5 projection `transcript_entries_fts` over canonical `transcript_entries`.
+- Derived, rebuildable FTS content populated from deterministic extracted search text by `process_transcript` jobs.
+- `RecallSearchService` searches FTS and joins matches back to canonical transcript and session rows.
+- `POST /v1/recall/search` endpoint returning typed `raw_transcript` source-backed results.
+- Local CLI recall via `pi-memory recall --query --db-url [--json]` for isolated databases.
+- Recall results include session identity, transcript entry/source context, excerpt text, rank/score information, and basic match reason.
 
 Validation:
 
-- Recall queries return source-backed results.
-- Recall works after service restart.
-- Pi tool renders returned results.
-- Recall does not require ChromaDB or LLM artifacts yet.
+- API recall queries return source-backed raw transcript results.
+- CLI recall queries return the same source-backed layer, including JSON output when requested.
+- Recall works after database and service restart because canonical transcript entries and the rebuildable FTS projection are persisted in SQLite.
+- Recall does not require ChromaDB, embeddings, graph records, snapshots, candidates, durable artifacts, or LLM output.
+- No Pi recall tool validation is required in Phase 4 because Pi tool wiring and cutover are deferred.
 
 Deferred:
 
+- Pi recall tool wiring and Pi extension recall-surface cutover.
+- Session snapshots and candidate extraction.
 - Durable memory artifacts.
-- Graph traversal.
-- Supersession.
-- LLM extraction.
+- Graph traversal and graph-backed recall.
+- Supersession and reconciliation.
+- LLM extraction, embeddings, ChromaDB indexing, and hybrid recall.
 
 ### Phase 5: Episodes and rolling session snapshots
 
