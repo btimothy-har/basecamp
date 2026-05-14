@@ -53,10 +53,7 @@ class BuiltSessionSnapshotShell:
 def build_episode_manifest(episode: NormalizedEpisode) -> BuiltEpisodeManifest:
     """Build a deterministic bounded manifest for one normalized episode."""
     included_activities = _included_activities(episode.activities)
-    activity_maps = [
-        _activity_map(index=index, activity=activity)
-        for index, activity in included_activities
-    ]
+    activity_maps = [_activity_map(index=index, activity=activity) for index, activity in included_activities]
     activity_map_json = {
         "kind": "episode_manifest_activity_map",
         "version": MANIFEST_VERSION,
@@ -79,9 +76,7 @@ def build_episode_manifest(episode: NormalizedEpisode) -> BuiltEpisodeManifest:
         byte_end=episode.byte_end,
         activity_map_json=activity_map_json,
         source_spans_json=_source_spans(episode, included_activities),
-        omitted_raw_text_bytes=sum(
-            activity.result_text_byte_count for activity in episode.activities
-        ),
+        omitted_raw_text_bytes=sum(activity.result_text_byte_count for activity in episode.activities),
     )
 
 

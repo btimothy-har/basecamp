@@ -111,9 +111,7 @@ def segment_activities(
 
     if current:
         status = (
-            EPISODE_STATUS_OPEN
-            if final_close_reason == EPISODE_CLOSE_REASON_CURRENT_CURSOR
-            else EPISODE_STATUS_CLOSED
+            EPISODE_STATUS_OPEN if final_close_reason == EPISODE_CLOSE_REASON_CURRENT_CURSOR else EPISODE_STATUS_CLOSED
         )
         episodes.append(
             _episode(
@@ -164,12 +162,8 @@ def _episode(
         timestamp_start=_min_timestamp(episode_activities),
         timestamp_end=_max_timestamp(episode_activities),
         activity_count=len(episode_activities),
-        message_count=sum(
-            1 for activity in episode_activities if activity.kind in MESSAGE_ACTIVITY_KINDS
-        ),
-        tool_pair_count=sum(
-            1 for activity in episode_activities if activity.kind == ACTIVITY_KIND_TOOL_PAIR
-        ),
+        message_count=sum(1 for activity in episode_activities if activity.kind in MESSAGE_ACTIVITY_KINDS),
+        tool_pair_count=sum(1 for activity in episode_activities if activity.kind == ACTIVITY_KIND_TOOL_PAIR),
         boundary_metadata=boundary_metadata,
     )
 

@@ -286,31 +286,37 @@ last_ingested_at
 
 Ingest reads transcript deltas, stores raw events, advances the cursor, and remains idempotent. Duplicate observations should be harmless.
 
-### 4. Episode segmentation
+### 4. Deterministic transcript structure
 
-Raw transcript events are grouped into meaningful episodes. Episodes provide manageable analysis units and source-span boundaries.
+Raw transcript entries are first normalized into source-backed activity units, then grouped into structural episodes. This layer is deterministic and rebuildable from canonical SQLite transcript rows.
 
-Example episodes:
+Activity units include:
 
-- observer architecture investigation;
-- local-first clarification;
-- ingestion timing discussion;
-- artifact supersession discussion;
-- graph memory design;
-- implementation and validation loop.
+- user text;
+- assistant text;
+- assistant thinking;
+- paired tool call/result receipts;
+- pending tool calls;
+- orphan tool results;
+- compaction events;
+- session events;
+- custom events.
 
-Episode state can start simple:
+Episode boundaries are lifecycle boundaries, not size boundaries:
+
+- transcript/session scope;
+- compaction;
+- large timestamp gap;
+- EOF or current cursor.
+
+Raw tool output remains in `transcript_entries.raw_line`. Episode manifests store bounded activity maps, counts, receipts, and source-span references so later interpretation can fetch the raw spans when needed.
+
+### 5. Rolling session interpretation
+
+After deterministic structure exists, an LLM-backed analysis stage can maintain a replaceable session interpretation.
 
 ```text
-open -> closed -> analyzed
-```
-
-### 5. Rolling session analysis
-
-During an active session, the system maintains a replaceable session map.
-
-```text
-session_analysis_snapshot
+session_interpretation_snapshot
 - session_id
 - analyzed_through_offset
 - goal
@@ -324,7 +330,7 @@ session_analysis_snapshot
 - status: working | finalized
 ```
 
-Each new rolling analysis replaces the previous working snapshot for that session. This prevents cumulative analysis from creating permanent duplicate or stale artifacts.
+Each new rolling interpretation replaces the previous working interpretation for that session. This prevents cumulative analysis from creating permanent duplicate or stale artifacts. The interpretation stage consumes deterministic activity units, episode manifests, and raw source spans; it does not replace them.
 
 ### 6. Candidate extraction
 
@@ -607,28 +613,37 @@ This path is intentionally separate from the current observer store.
 
 ### SQLite canonical tables
 
-Likely canonical tables:
+Current canonical and derived tables:
 
 - `sessions`;
-- `transcript_events`;
-- `episodes`;
+- `transcripts`;
+- `observations`;
+- `transcript_entries`;
+- `jobs`;
 - `analysis_runs`;
-- `session_snapshots`;
+- `activity_units`;
+- `episodes`;
+- `episode_manifests`;
+- `session_snapshot_shells`.
+
+Future durable-memory tables:
+
 - `memory_artifacts`;
 - `artifact_revisions`;
 - `source_spans`;
 - `memory_nodes`;
 - `memory_edges`;
-- `artifact_sources`;
-- `jobs`.
+- `artifact_sources`.
 
 SQLite owns:
 
-- transcript metadata and raw event records;
+- transcript metadata and raw entry records;
 - session state;
+- rebuildable activity units;
 - episode boundaries;
+- episode manifests and source-span references;
 - analysis runs;
-- session snapshots;
+- deterministic session snapshot shells;
 - durable memory artifacts;
 - artifact revisions;
 - graph nodes and edges;
@@ -811,21 +826,71 @@ Deferred:
 - Supersession and reconciliation.
 - LLM extraction, embeddings, ChromaDB indexing, and hybrid recall.
 
-### Phase 5: Episodes and rolling session snapshots
+### Phase 5A: Deterministic episode manifests and snapshot shells
 
-Purpose: introduce analysis without permanent memory promotion.
+Purpose: introduce deterministic transcript structure without permanent memory promotion or model-backed interpretation.
+
+Implemented in `pi-memory`:
+
+- `analysis_runs` table.
+- `activity_units` table.
+- `episodes` table.
+- `episode_manifests` table.
+- `session_snapshot_shells` table.
+- Deterministic activity normalization over canonical `transcript_entries`.
+- Tool call/result pairing by `toolCall.id == message.toolCallId`.
+- Tool receipts with bounded metadata, counts, and source references rather than full raw output copies.
+- Episode segmentation on compaction, timestamp gap, transcript/session scope, and EOF/current cursor.
+- Bounded episode manifests with head/tail activity maps, omitted activity ranges, `omitted_raw_text_bytes`, and source spans.
+- Deterministic session snapshot shells with counts, analyzed-through offsets, and `ready_for_interpretation` status.
+- `process_transcript` job persistence that rebuilds Phase 5A rows idempotently after FTS indexing.
+
+`process_transcript` result JSON now includes a safe nested `phase_5a` object:
+
+```text
+phase_5a
+- analysis_run_id
+- status
+- activity_count
+- episode_count
+- manifest_count
+- snapshot_shell_id
+- analyzed_through_entry_id
+- analyzed_through_byte_offset
+```
+
+Validation:
+
+- Running `process_transcript` indexes raw transcript FTS and rebuilds deterministic Phase 5A rows in the same transaction.
+- Re-running analysis for a transcript replaces derived rows without duplicating activities, episodes, manifests, or session snapshot shells.
+- Episode boundaries do not depend on raw byte size, raw tool output size, or entry count.
+- Episode manifests reference raw source spans and do not duplicate full raw tool output.
+- Snapshot shells contain no goal, summary, candidate decisions, candidate constraints, candidate knowledge, candidate preferences, candidate patterns, or open questions.
+
+Deferred to Phase 5B:
+
+- LLM-backed tool/result summarization.
+- Rolling session interpretation with goals, summaries, candidate decisions, constraints, knowledge, preferences, patterns, and open questions.
+- Prompt/version management for interpretation jobs.
+
+Deferred to later phases:
+
+- Durable project memory.
+- Cross-session reconciliation.
+- Graph promotion.
+
+### Phase 5B: LLM-backed rolling session interpretation
+
+Purpose: consume Phase 5A episode manifests and raw source spans to maintain a replaceable working interpretation of the active session.
 
 Deliverables:
 
-- `episodes` table.
-- `analysis_runs` table.
-- `session_snapshots` table.
-- Episode segmentation job.
-- Rolling session-map analysis job.
-- Replaceable latest snapshot per active session.
-- Snapshot source-span references.
+- Interpretation job over deterministic episode manifests.
+- Bounded raw-span fetching for tool output and long transcript content.
+- Replaceable latest working interpretation per active session.
+- Source-span citations from every interpreted claim back to Phase 5A activity/episode/source rows.
 
-Snapshot fields should include:
+Interpretation fields may include:
 
 - goal;
 - summary;
@@ -839,10 +904,10 @@ Snapshot fields should include:
 
 Validation:
 
-- New transcript events cause snapshot updates.
-- New snapshots replace prior working interpretation.
-- Snapshots cite source spans.
-- Analysis can be rerun from transcript data.
+- New transcript events cause interpretation updates after deterministic structure is rebuilt.
+- New interpretations replace prior working interpretations.
+- Interpretations cite source spans.
+- Interpretation can be rerun from canonical transcript data plus Phase 5A derived structure.
 
 Deferred:
 
@@ -1054,13 +1119,14 @@ Resolve these before or during Phase 1:
 
 8. Model/provider configuration for analysis jobs.
 
-9. Episode segmentation strategy.
+9. Episode segmentation strategy:
+   - resolved for Phase 5A as transcript/session scope, compaction, one-hour timestamp gap, and EOF/current cursor;
+   - raw byte size, raw tool output size, and entry count are not episode boundaries.
 
 10. Rolling analysis thresholds:
-    - turns;
-    - transcript bytes;
-    - token estimates;
-    - lifecycle events.
+    - Phase 5A only uses deterministic lifecycle boundaries plus bounded manifest budgets;
+    - LLM interpretation thresholds for Phase 5B remain open;
+    - possible 5B triggers include turns, transcript bytes, token estimates, lifecycle events, compaction, and stale-session catch-up.
 
 11. Finalization triggers:
     - compaction;
