@@ -362,6 +362,7 @@ def test_observe_records_observation_with_request_metadata(
     with database.session() as db_session:
         observation = db_session.scalar(select(Observation))
 
+    assert observation.id == result.observation_id
     assert observation.session_id is not None
     assert observation.transcript_id == result.transcript_id
     assert observation.request_id == "request-1"

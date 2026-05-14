@@ -16,7 +16,14 @@ import uvicorn
 from pi_memory.constants import DEFAULT_HOST, DEFAULT_PORT, SERVICE_NAME
 from pi_memory.db import Database
 from pi_memory.ingest import IngestResult, ObserveInput, TranscriptFileMissingError, TranscriptIngestService
-from pi_memory.jobs import JobDispatcher, JobRunner, JobRunnerError, JobStoreError
+from pi_memory.jobs import (
+    JobDispatcher,
+    JobRunner,
+    JobRunnerError,
+    JobStore,
+    JobStoreError,
+    enqueue_process_transcript_job,
+)
 from pi_memory.server import ServerAlreadyRunningError, ServerState, create_app
 
 DEFAULT_STATUS_TIMEOUT_SECONDS = 1.0
@@ -139,7 +146,8 @@ def observe(
     except TranscriptFileMissingError as error:
         raise click.ClickException(str(error)) from error
 
-    _emit_observe_result(result, json_output=json_output)
+    job = enqueue_process_transcript_job(JobStore(), result)
+    _emit_observe_result(result, job_id=None if job is None else job.id, json_output=json_output)
 
 
 @main.command("run-job")
@@ -330,16 +338,18 @@ def _emit_healthy(*, url: str, service_status: dict[str, Any], json_output: bool
     _echo_status_field("memory_dir", service_status)
 
 
-def _emit_observe_result(result: IngestResult, *, json_output: bool) -> None:
+def _emit_observe_result(result: IngestResult, *, job_id: int | None, json_output: bool) -> None:
     payload = {
         "session_id": result.session_id,
         "transcript_id": result.transcript_id,
+        "observation_id": result.observation_id,
         "entries_ingested": result.entries_ingested,
         "cursor_offset": result.cursor_offset,
         "file_size": result.file_size,
         "observed_at": result.observed_at.isoformat(),
         "malformed_lines": result.malformed_lines,
         "unsupported_lines": result.unsupported_lines,
+        "job_id": job_id,
     }
 
     if json_output:

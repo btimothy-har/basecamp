@@ -17,7 +17,7 @@ from pi_memory.ingest import (
     TranscriptFileMissingError,
     TranscriptIngestService,
 )
-from pi_memory.jobs import JobDispatcher
+from pi_memory.jobs import JobDispatcher, JobStore, enqueue_process_transcript_job
 
 NonEmptyString = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)]
 
@@ -45,12 +45,14 @@ class ObserveResponse(BaseModel):
 
     session_id: str
     transcript_id: int
+    observation_id: int
     entries_ingested: int
     cursor_offset: int
     file_size: int
     observed_at: datetime
     malformed_lines: int
     unsupported_lines: int
+    job_id: int | None
 
 
 def create_app(
@@ -60,6 +62,7 @@ def create_app(
     memory_dir: Path = MEMORY_DIR,
     started_at: datetime | None = None,
     ingest_service: TranscriptIngestService | None = None,
+    job_store: JobStore | None = None,
     dispatcher: JobDispatcher | None = None,
 ) -> FastAPI:
     """Create the local Pi memory FastAPI application."""
@@ -73,6 +76,7 @@ def create_app(
     app.state.port = port
     app.state.memory_dir = service_memory_dir
     app.state.ingest_service = TranscriptIngestService() if ingest_service is None else ingest_service
+    app.state.job_store = JobStore() if job_store is None else job_store
     app.state.dispatcher = dispatcher
 
     @app.get("/health")
@@ -97,12 +101,15 @@ def create_app(
         }
 
     @app.post("/v1/observe", response_model=ObserveResponse)
-    def observe(request: ObserveRequest) -> IngestResult:
+    def observe(request: ObserveRequest) -> dict[str, object]:
         """Observe a Pi transcript file and return ingest diagnostics."""
         try:
-            return app.state.ingest_service.observe(_observe_input(request))
+            result = app.state.ingest_service.observe(_observe_input(request))
         except TranscriptFileMissingError as error:
             raise HTTPException(status_code=404, detail=str(error)) from error
+
+        job = enqueue_process_transcript_job(app.state.job_store, result)
+        return _observe_response(result, job_id=None if job is None else job.id)
 
     return app
 
@@ -131,3 +138,18 @@ def _observe_input(request: ObserveRequest) -> ObserveInput:
         request_id=request.request_id,
         request_metadata=request.request_metadata,
     )
+
+
+def _observe_response(result: IngestResult, *, job_id: int | None) -> dict[str, object]:
+    return {
+        "session_id": result.session_id,
+        "transcript_id": result.transcript_id,
+        "observation_id": result.observation_id,
+        "entries_ingested": result.entries_ingested,
+        "cursor_offset": result.cursor_offset,
+        "file_size": result.file_size,
+        "observed_at": result.observed_at,
+        "malformed_lines": result.malformed_lines,
+        "unsupported_lines": result.unsupported_lines,
+        "job_id": job_id,
+    }

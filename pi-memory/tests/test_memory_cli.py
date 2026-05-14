@@ -52,16 +52,37 @@ def cli_ingest_service(memory_database: Database) -> TranscriptIngestService:
 
 
 @pytest.fixture
+def cli_job_store(memory_database: Database) -> JobStore:
+    return JobStore(database=memory_database)
+
+
+@pytest.fixture
 def use_cli_ingest_service(monkeypatch, cli_ingest_service: TranscriptIngestService) -> TranscriptIngestService:
     monkeypatch.setattr(cli_module, "TranscriptIngestService", lambda: cli_ingest_service)
     return cli_ingest_service
+
+
+@pytest.fixture
+def use_cli_job_store(monkeypatch, cli_job_store: JobStore) -> JobStore:
+    monkeypatch.setattr(cli_module, "JobStore", lambda: cli_job_store)
+    return cli_job_store
 
 
 def write_transcript(path: Path, content: bytes | None = None) -> None:
     path.write_bytes(content or b'{"type":"session","id":"session-1"}\n')
 
 
-@pytest.mark.usefixtures("use_cli_ingest_service")
+def parse_observe_output(output: str) -> dict[str, str]:
+    fields = {}
+    for line in output.splitlines():
+        if not line.startswith("  "):
+            continue
+        name, value = line.strip().split(": ", maxsplit=1)
+        fields[name] = value
+    return fields
+
+
+@pytest.mark.usefixtures("use_cli_ingest_service", "use_cli_job_store")
 def test_observe_reports_human_readable_ingest_diagnostics(tmp_path) -> None:
     transcript_path = tmp_path / "transcript.jsonl"
     write_transcript(transcript_path)
@@ -79,18 +100,21 @@ def test_observe_reports_human_readable_ingest_diagnostics(tmp_path) -> None:
     )
 
     assert result.exit_code == 0
+    fields = parse_observe_output(result.output)
     assert "Observed transcript" in result.output
-    assert "  session_id: pi-session-1" in result.output
-    assert "  transcript_id: 1" in result.output
-    assert "  entries_ingested: 1" in result.output
-    assert f"  cursor_offset: {transcript_path.stat().st_size}" in result.output
-    assert f"  file_size: {transcript_path.stat().st_size}" in result.output
-    assert "  observed_at: " in result.output
-    assert "  malformed_lines: 0" in result.output
-    assert "  unsupported_lines: 0" in result.output
+    assert fields["session_id"] == "pi-session-1"
+    assert fields["transcript_id"] == "1"
+    assert isinstance(int(fields["observation_id"]), int)
+    assert fields["entries_ingested"] == "1"
+    assert fields["cursor_offset"] == str(transcript_path.stat().st_size)
+    assert fields["file_size"] == str(transcript_path.stat().st_size)
+    assert fields["observed_at"]
+    assert fields["malformed_lines"] == "0"
+    assert fields["unsupported_lines"] == "0"
+    assert isinstance(int(fields["job_id"]), int)
 
 
-@pytest.mark.usefixtures("use_cli_ingest_service")
+@pytest.mark.usefixtures("use_cli_ingest_service", "use_cli_job_store")
 def test_observe_reports_json_ingest_diagnostics(tmp_path) -> None:
     transcript_path = tmp_path / "transcript.jsonl"
     write_transcript(transcript_path)
@@ -113,18 +137,22 @@ def test_observe_reports_json_ingest_diagnostics(tmp_path) -> None:
     assert payload == {
         "session_id": "pi-session-1",
         "transcript_id": 1,
+        "observation_id": payload["observation_id"],
         "entries_ingested": 1,
         "cursor_offset": transcript_path.stat().st_size,
         "file_size": transcript_path.stat().st_size,
         "observed_at": payload["observed_at"],
         "malformed_lines": 0,
         "unsupported_lines": 0,
+        "job_id": payload["job_id"],
     }
+    assert isinstance(payload["observation_id"], int)
+    assert isinstance(payload["job_id"], int)
     assert isinstance(payload["observed_at"], str)
     assert payload["observed_at"]
 
 
-@pytest.mark.usefixtures("use_cli_ingest_service")
+@pytest.mark.usefixtures("use_cli_ingest_service", "use_cli_job_store")
 def test_observe_repeated_cli_call_is_idempotent(tmp_path, memory_database: Database) -> None:
     transcript_path = tmp_path / "transcript.jsonl"
     write_transcript(transcript_path)
@@ -143,16 +171,27 @@ def test_observe_repeated_cli_call_is_idempotent(tmp_path, memory_database: Data
 
     assert first_result.exit_code == 0
     assert second_result.exit_code == 0
-    assert json.loads(first_result.output)["entries_ingested"] == 1
-    assert json.loads(second_result.output)["entries_ingested"] == 0
+    first_payload = json.loads(first_result.output)
+    second_payload = json.loads(second_result.output)
+    assert first_payload["entries_ingested"] == 1
+    assert isinstance(first_payload["job_id"], int)
+    assert second_payload["entries_ingested"] == 0
+    assert second_payload["job_id"] is None
     with memory_database.session() as db_session:
         entry_count = db_session.scalar(select(func.count()).select_from(TranscriptEntry))
         observation_count = db_session.scalar(select(func.count()).select_from(Observation))
+        job_count = db_session.scalar(select(func.count()).select_from(Job))
+        job = db_session.scalar(select(Job))
     assert entry_count == 1
     assert observation_count == 2
+    assert job_count == 1
+    assert job is not None
+    assert job.id == first_payload["job_id"]
+    assert job.payload_json["observation_id"] == first_payload["observation_id"]
+    assert "raw_line" not in job.payload_json
 
 
-@pytest.mark.usefixtures("use_cli_ingest_service")
+@pytest.mark.usefixtures("use_cli_ingest_service", "use_cli_job_store")
 def test_observe_stores_cli_metadata(tmp_path, memory_database: Database) -> None:
     transcript_path = tmp_path / "transcript.jsonl"
     write_transcript(transcript_path)
@@ -193,7 +232,7 @@ def test_observe_stores_cli_metadata(tmp_path, memory_database: Database) -> Non
     assert observation.request_id == "request-1"
 
 
-@pytest.mark.usefixtures("use_cli_ingest_service")
+@pytest.mark.usefixtures("use_cli_ingest_service", "use_cli_job_store")
 def test_observe_missing_transcript_reports_click_error(tmp_path) -> None:
     missing_path = tmp_path / "missing.jsonl"
     runner = CliRunner()
@@ -264,10 +303,14 @@ def test_serve_constructs_dispatcher_and_passes_it_to_app(tmp_path, monkeypatch)
         captured["host"] = host
         captured["port"] = port
 
+    def fake_ensure_port_available(*, host: str, port: int) -> None:
+        captured["ensured_host"] = host
+        captured["ensured_port"] = port
+
     monkeypatch.setattr(cli_module, "ServerState", lambda: ServerState(memory_dir=tmp_path))
     monkeypatch.setattr(cli_module, "JobDispatcher", fake_job_dispatcher)
     monkeypatch.setattr(cli_module.uvicorn, "run", fake_run)
-    monkeypatch.setattr(cli_module, "_ensure_port_available", lambda *, host, port: None)
+    monkeypatch.setattr(cli_module, "_ensure_port_available", fake_ensure_port_available)
 
     result = CliRunner().invoke(
         cli_module.main,

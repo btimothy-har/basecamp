@@ -44,6 +44,7 @@ class IngestResult:
 
     session_id: str
     transcript_id: int
+    observation_id: int
     entries_ingested: int
     cursor_offset: int
     file_size: int
@@ -88,19 +89,20 @@ class TranscriptIngestService:
             transcript.file_size = parsed.file_size
 
             observed_at = datetime.now(UTC)
-            db_session.add(
-                Observation(
-                    session_id=memory_session.id,
-                    transcript_id=transcript.id,
-                    observed_at=observed_at,
-                    request_id=request.request_id,
-                    request_metadata=request.request_metadata,
-                ),
+            observation = Observation(
+                session_id=memory_session.id,
+                transcript_id=transcript.id,
+                observed_at=observed_at,
+                request_id=request.request_id,
+                request_metadata=request.request_metadata,
             )
+            db_session.add(observation)
+            db_session.flush()
 
             return IngestResult(
                 session_id=memory_session.session_id,
                 transcript_id=transcript.id,
+                observation_id=observation.id,
                 entries_ingested=entries_ingested,
                 cursor_offset=transcript.cursor_offset,
                 file_size=parsed.file_size,

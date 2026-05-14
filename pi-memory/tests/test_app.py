@@ -6,8 +6,9 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 from pi_memory.constants import SERVICE_NAME, SERVICE_VERSION
-from pi_memory.db import Database
+from pi_memory.db import JOB_KIND_PROCESS_TRANSCRIPT, Database, Job
 from pi_memory.ingest import TranscriptIngestService
+from pi_memory.jobs import JobStore
 from pi_memory.server import create_app
 
 
@@ -21,6 +22,7 @@ def observe_client(tmp_path) -> Iterator[TestClient]:
     app = create_app(
         memory_dir=tmp_path / "memory",
         ingest_service=TranscriptIngestService(database=database),
+        job_store=JobStore(database=database),
     )
     try:
         yield TestClient(app)
@@ -36,13 +38,44 @@ def message_line(
     entry_id: str,
     parent_id: str | None = None,
     role: str = "user",
+    content: str | None = None,
 ) -> bytes:
     parent = "" if parent_id is None else f',"parentId":"{parent_id}"'
-    return (f'{{"type":"message","id":"{entry_id}"{parent},"message":{{"role":"{role}"}}}}\n').encode()
+    message_content = "" if content is None else f',"content":"{content}"'
+    return (
+        f'{{"type":"message","id":"{entry_id}"{parent},"message":{{"role":"{role}"{message_content}}}}}\n'
+    ).encode()
 
 
 def observe_payload(path: Path, session_id: str = "pi-session-1") -> dict[str, object]:
     return {"session_id": session_id, "transcript_path": str(path)}
+
+
+def observe_jobs(client: TestClient) -> list[Job]:
+    return client.app.state.job_store.list_jobs(kind=JOB_KIND_PROCESS_TRANSCRIPT)
+
+
+def assert_observe_job_payload(
+    job: Job,
+    data: dict[str, object],
+    *,
+    forbidden_text: str | None = None,
+) -> None:
+    assert job.kind == JOB_KIND_PROCESS_TRANSCRIPT
+    assert job.payload_json["transcript_id"] == data["transcript_id"]
+    assert job.payload_json["session_id"] == data["session_id"]
+    assert job.payload_json["observation_id"] == data["observation_id"]
+    assert job.payload_json["entries_ingested"] == data["entries_ingested"]
+    assert job.payload_json["cursor_offset"] == data["cursor_offset"]
+    assert job.payload_json["file_size"] == data["file_size"]
+    assert job.payload_json["malformed_lines"] == data["malformed_lines"]
+    assert job.payload_json["unsupported_lines"] == data["unsupported_lines"]
+    assert datetime.fromisoformat(job.payload_json["observed_at"]) == datetime.fromisoformat(
+        data["observed_at"],
+    )
+    assert "raw_line" not in job.payload_json
+    if forbidden_text is not None:
+        assert forbidden_text not in str(job.payload_json)
 
 
 class FakeDispatcher:
@@ -122,6 +155,7 @@ def test_observe_endpoint_ingests_transcript_and_returns_diagnostics(
         "message-1",
         parent_id="session-1",
         role="assistant",
+        content="do not enqueue raw",
     )
     path.write_bytes(content)
 
@@ -144,21 +178,29 @@ def test_observe_endpoint_ingests_transcript_and_returns_diagnostics(
     assert set(data) == {
         "session_id",
         "transcript_id",
+        "observation_id",
         "entries_ingested",
         "cursor_offset",
         "file_size",
         "observed_at",
         "malformed_lines",
         "unsupported_lines",
+        "job_id",
     }
     assert data["session_id"] == "pi-session-1"
     assert isinstance(data["transcript_id"], int)
+    assert isinstance(data["observation_id"], int)
+    assert isinstance(data["job_id"], int)
     assert data["entries_ingested"] == 2
     assert data["cursor_offset"] == len(content)
     assert data["file_size"] == len(content)
     assert datetime.fromisoformat(data["observed_at"])
     assert data["malformed_lines"] == 0
     assert data["unsupported_lines"] == 0
+    jobs = observe_jobs(observe_client)
+    assert len(jobs) == 1
+    assert jobs[0].id == data["job_id"]
+    assert_observe_job_payload(jobs[0], data, forbidden_text="do not enqueue raw")
 
 
 def test_observe_endpoint_repeated_request_ingests_zero_entries(
@@ -174,9 +216,16 @@ def test_observe_endpoint_repeated_request_ingests_zero_entries(
 
     assert first_response.status_code == 200
     assert second_response.status_code == 200
-    assert first_response.json()["entries_ingested"] == 2
-    assert second_response.json()["entries_ingested"] == 0
-    assert second_response.json()["cursor_offset"] == len(content)
+    first_data = first_response.json()
+    second_data = second_response.json()
+    assert first_data["entries_ingested"] == 2
+    assert isinstance(first_data["job_id"], int)
+    assert second_data["entries_ingested"] == 0
+    assert second_data["job_id"] is None
+    assert second_data["cursor_offset"] == len(content)
+    jobs = observe_jobs(observe_client)
+    assert len(jobs) == 1
+    assert jobs[0].id == first_data["job_id"]
 
 
 def test_observe_endpoint_ingests_only_appended_entry(
@@ -194,9 +243,19 @@ def test_observe_endpoint_ingests_only_appended_entry(
 
     assert first_response.status_code == 200
     assert second_response.status_code == 200
-    assert first_response.json()["entries_ingested"] == 1
-    assert second_response.json()["entries_ingested"] == 1
-    assert second_response.json()["cursor_offset"] == len(initial_content) + len(appended_line)
+    first_data = first_response.json()
+    second_data = second_response.json()
+    assert first_data["entries_ingested"] == 1
+    assert second_data["entries_ingested"] == 1
+    assert isinstance(first_data["job_id"], int)
+    assert isinstance(second_data["job_id"], int)
+    assert second_data["cursor_offset"] == len(initial_content) + len(appended_line)
+    jobs = observe_jobs(observe_client)
+    assert len(jobs) == 2
+    assert {job.id for job in jobs} == {first_data["job_id"], second_data["job_id"]}
+    for job in jobs:
+        data = first_data if job.id == first_data["job_id"] else second_data
+        assert_observe_job_payload(job, data)
 
 
 def test_observe_endpoint_missing_transcript_returns_404(
