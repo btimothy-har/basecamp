@@ -10,6 +10,8 @@ DEFAULT_HOST: Final = "127.0.0.1"
 DEFAULT_PORT: Final = 8765
 
 MEMORY_DIR: Final = Path("~/.pi/memory").expanduser()
+MEMORY_DB_PATH: Final = MEMORY_DIR / "memory.db"
+MEMORY_DB_URL: Final = f"sqlite:///{MEMORY_DB_PATH}"
 SERVER_METADATA_PATH: Final = MEMORY_DIR / "server.json"
 SERVER_LOCK_PATH: Final = MEMORY_DIR / "server.lock"
 LOGS_DIR: Final = MEMORY_DIR / "logs"
