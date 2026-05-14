@@ -14,6 +14,7 @@ import click
 import uvicorn
 
 from pi_memory.constants import DEFAULT_HOST, DEFAULT_PORT, SERVICE_NAME
+from pi_memory.ingest import IngestResult, ObserveInput, TranscriptFileMissingError, TranscriptIngestService
 from pi_memory.server import ServerAlreadyRunningError, ServerState, create_app
 
 DEFAULT_STATUS_TIMEOUT_SECONDS = 1.0
@@ -24,6 +25,13 @@ class NonLoopbackHostError(click.BadParameter):
 
     def __init__(self) -> None:
         super().__init__("must resolve to a loopback address")
+
+
+class NonEmptyStringError(click.BadParameter):
+    """Raised when an option value is empty after trimming whitespace."""
+
+    def __init__(self) -> None:
+        super().__init__("must not be empty")
 
 
 class PortBindError(click.ClickException):
@@ -73,6 +81,63 @@ class StatusProbeError(Exception):
 @click.group()
 def main() -> None:
     """Pi memory service."""
+
+
+@main.command()
+@click.option(
+    "--session-id",
+    callback=lambda _ctx, _param, value: _require_non_empty(value),
+    required=True,
+    help="Pi session id for the transcript observation.",
+)
+@click.option(
+    "--transcript-path",
+    required=True,
+    type=click.Path(path_type=str),
+    help="Path to the local transcript file to observe.",
+)
+@click.option("--cwd", help="Session working directory metadata.")
+@click.option("--repo-name", help="Repository name metadata.")
+@click.option("--repo-root", help="Repository root metadata.")
+@click.option("--worktree-label", help="Worktree label metadata.")
+@click.option("--worktree-path", help="Worktree path metadata.")
+@click.option("--request-id", help="Request id metadata for this observation.")
+@click.option(
+    "--json",
+    "json_output",
+    is_flag=True,
+    help="Emit parseable JSON output.",
+)
+def observe(
+    session_id: str,
+    transcript_path: str,
+    cwd: str | None,
+    repo_name: str | None,
+    repo_root: str | None,
+    worktree_label: str | None,
+    worktree_path: str | None,
+    request_id: str | None,
+    *,
+    json_output: bool,
+) -> None:
+    """Observe a local Pi transcript file without running the HTTP service."""
+    try:
+        result = TranscriptIngestService().observe(
+            ObserveInput(
+                session_id=session_id,
+                transcript_path=transcript_path,
+                cwd=cwd,
+                repo_name=repo_name,
+                repo_root=repo_root,
+                worktree_label=worktree_label,
+                worktree_path=worktree_path,
+                request_id=request_id,
+            ),
+        )
+    except TranscriptFileMissingError as error:
+        raise click.ClickException(str(error)) from error
+
+    _emit_observe_result(result, json_output=json_output)
 
 
 @main.command()
@@ -167,6 +232,12 @@ def _require_loopback_host(host: str) -> str:
     raise NonLoopbackHostError()
 
 
+def _require_non_empty(value: str) -> str:
+    if value.strip():
+        return value
+    raise NonEmptyStringError()
+
+
 def _is_loopback_host(host: str) -> bool:
     try:
         return ipaddress.ip_address(host).is_loopback
@@ -227,6 +298,27 @@ def _emit_healthy(*, url: str, service_status: dict[str, Any], json_output: bool
     _echo_status_field("pid", service_status)
     _echo_status_field("uptime_seconds", service_status)
     _echo_status_field("memory_dir", service_status)
+
+
+def _emit_observe_result(result: IngestResult, *, json_output: bool) -> None:
+    payload = {
+        "session_id": result.session_id,
+        "transcript_id": result.transcript_id,
+        "entries_ingested": result.entries_ingested,
+        "cursor_offset": result.cursor_offset,
+        "file_size": result.file_size,
+        "observed_at": result.observed_at.isoformat(),
+        "malformed_lines": result.malformed_lines,
+        "unsupported_lines": result.unsupported_lines,
+    }
+
+    if json_output:
+        click.echo(json.dumps(payload, sort_keys=True))
+        return
+
+    click.echo("Observed transcript")
+    for name, value in payload.items():
+        click.echo(f"  {name}: {value}")
 
 
 def _emit_unavailable(*, url: str, error: str, json_output: bool) -> None:
