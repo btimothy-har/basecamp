@@ -129,8 +129,7 @@ def test_parse_skips_entries_with_missing_or_non_string_type(tmp_path) -> None:
 def test_parse_accepts_real_pi_extra_entry_types(tmp_path) -> None:
     path = tmp_path / "transcript.jsonl"
     custom_message_line = (
-        b'{"type":"custom_message","id":"custom-message-1","parentId":"session-1",'
-        b'"message":{"role":"user"}}\n'
+        b'{"type":"custom_message","id":"custom-message-1","parentId":"session-1","message":{"role":"user"}}\n'
     )
     session_info_line = b'{"type":"session_info","id":"session-info-1"}\n'
     thinking_level_change_line = b'{"type":"thinking_level_change","id":"thinking-level-1"}\n'
@@ -138,11 +137,7 @@ def test_parse_accepts_real_pi_extra_entry_types(tmp_path) -> None:
     compaction_line = b'{"type":"compaction","id":"compaction-1"}\n'
     write_transcript(
         path,
-        custom_message_line
-        + session_info_line
-        + thinking_level_change_line
-        + custom_line
-        + compaction_line,
+        custom_message_line + session_info_line + thinking_level_change_line + custom_line + compaction_line,
     )
 
     result = PiTranscriptParser().parse(path)

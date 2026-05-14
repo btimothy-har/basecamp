@@ -189,21 +189,14 @@ def test_observe_persists_all_typed_pi_entries(
     service: TranscriptIngestService,
 ) -> None:
     path = tmp_path / "transcript.jsonl"
-    custom_message_line = (
-        b'{"type":"custom_message","id":"custom-message-1",'
-        b'"message":{"role":"assistant"}}\n'
-    )
+    custom_message_line = b'{"type":"custom_message","id":"custom-message-1","message":{"role":"assistant"}}\n'
     session_info_line = b'{"type":"session_info","id":"session-info-1"}\n'
     thinking_level_change_line = b'{"type":"thinking_level_change","id":"thinking-level-1"}\n'
     custom_line = b'{"type":"custom","id":"custom-1"}\n'
     compaction_line = b'{"type":"compaction","id":"compaction-1"}\n'
     write_transcript(
         path,
-        custom_message_line
-        + session_info_line
-        + thinking_level_change_line
-        + custom_line
-        + compaction_line,
+        custom_message_line + session_info_line + thinking_level_change_line + custom_line + compaction_line,
     )
 
     result = service.observe(ObserveInput(session_id="pi-session-1", transcript_path=path))
