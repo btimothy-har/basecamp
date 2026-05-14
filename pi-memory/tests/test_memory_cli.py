@@ -251,6 +251,37 @@ def test_serve_reports_occupied_port_and_cleans_state(tmp_path, monkeypatch) -> 
     assert not state.metadata_path.exists()
 
 
+def test_serve_constructs_dispatcher_and_passes_it_to_app(tmp_path, monkeypatch) -> None:
+    dispatcher = object()
+    captured: dict[str, object] = {}
+
+    def fake_job_dispatcher() -> object:
+        captured["dispatcher_constructed"] = True
+        return dispatcher
+
+    def fake_run(app, host: str, port: int) -> None:
+        captured["app"] = app
+        captured["host"] = host
+        captured["port"] = port
+
+    monkeypatch.setattr(cli_module, "ServerState", lambda: ServerState(memory_dir=tmp_path))
+    monkeypatch.setattr(cli_module, "JobDispatcher", fake_job_dispatcher)
+    monkeypatch.setattr(cli_module.uvicorn, "run", fake_run)
+    monkeypatch.setattr(cli_module, "_ensure_port_available", lambda *, host, port: None)
+
+    result = CliRunner().invoke(
+        cli_module.main,
+        ["serve", "--host", "127.0.0.1", "--port", "8765"],
+    )
+
+    assert result.exit_code == 0
+    assert captured["dispatcher_constructed"] is True
+    assert captured["app"].state.dispatcher is dispatcher
+    assert captured["host"] == "127.0.0.1"
+    assert captured["port"] == 8765
+    assert "pi-memory stopped" in result.output
+
+
 def create_job_transcript(database: Database) -> int:
     with database.session() as db_session:
         memory_session = MemorySession(session_id="pi-session-cli")

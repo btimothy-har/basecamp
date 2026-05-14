@@ -45,6 +45,32 @@ def observe_payload(path: Path, session_id: str = "pi-session-1") -> dict[str, o
     return {"session_id": session_id, "transcript_path": str(path)}
 
 
+class FakeDispatcher:
+    def __init__(self) -> None:
+        self.started = False
+        self.stopped = False
+
+    def start(self) -> None:
+        self.started = True
+
+    def stop(self) -> None:
+        self.stopped = True
+
+
+def test_lifespan_starts_and_stops_dispatcher(tmp_path) -> None:
+    dispatcher = FakeDispatcher()
+    app = create_app(memory_dir=tmp_path, dispatcher=dispatcher)
+
+    assert app.state.dispatcher is dispatcher
+    with TestClient(app) as client:
+        assert dispatcher.started is True
+        response = client.get("/health")
+        assert response.status_code == 200
+        assert response.json() == {"status": "ok"}
+
+    assert dispatcher.stopped is True
+
+
 def test_health_endpoint(tmp_path) -> None:
     app = create_app(memory_dir=tmp_path)
     client = TestClient(app)

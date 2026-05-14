@@ -1,6 +1,8 @@
 """FastAPI application factory for pi-memory."""
 
 import os
+from collections.abc import AsyncIterator, Callable
+from contextlib import AbstractAsyncContextManager, asynccontextmanager
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Annotated, Any
@@ -15,6 +17,7 @@ from pi_memory.ingest import (
     TranscriptFileMissingError,
     TranscriptIngestService,
 )
+from pi_memory.jobs import JobDispatcher
 
 NonEmptyString = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)]
 
@@ -57,17 +60,20 @@ def create_app(
     memory_dir: Path = MEMORY_DIR,
     started_at: datetime | None = None,
     ingest_service: TranscriptIngestService | None = None,
+    dispatcher: JobDispatcher | None = None,
 ) -> FastAPI:
     """Create the local Pi memory FastAPI application."""
     service_started_at = datetime.now(UTC) if started_at is None else started_at
     service_memory_dir = memory_dir.expanduser()
+    lifespan = _dispatcher_lifespan(dispatcher) if dispatcher is not None else None
 
-    app = FastAPI(title=SERVICE_NAME, version=SERVICE_VERSION)
+    app = FastAPI(title=SERVICE_NAME, version=SERVICE_VERSION, lifespan=lifespan)
     app.state.started_at = service_started_at
     app.state.host = host
     app.state.port = port
     app.state.memory_dir = service_memory_dir
     app.state.ingest_service = TranscriptIngestService() if ingest_service is None else ingest_service
+    app.state.dispatcher = dispatcher
 
     @app.get("/health")
     def health() -> dict[str, str]:
@@ -99,6 +105,18 @@ def create_app(
             raise HTTPException(status_code=404, detail=str(error)) from error
 
     return app
+
+
+def _dispatcher_lifespan(dispatcher: JobDispatcher) -> Callable[[FastAPI], AbstractAsyncContextManager[None]]:
+    @asynccontextmanager
+    async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
+        dispatcher.start()
+        try:
+            yield
+        finally:
+            dispatcher.stop()
+
+    return lifespan
 
 
 def _observe_input(request: ObserveRequest) -> ObserveInput:

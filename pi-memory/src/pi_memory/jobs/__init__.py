@@ -1,5 +1,6 @@
 """Durable job queue services for pi-memory."""
 
+from pi_memory.jobs.dispatcher import ClaimedJobMissingRunIdError, JobDispatcher, JobDispatcherError
 from pi_memory.jobs.runner import (
     InvalidJobPayloadError,
     JobRunner,
@@ -19,7 +20,10 @@ from pi_memory.jobs.store import (
 )
 
 __all__ = [
+    "ClaimedJobMissingRunIdError",
     "InvalidJobPayloadError",
+    "JobDispatcher",
+    "JobDispatcherError",
     "JobInvalidTransitionError",
     "JobLeaseExpiredError",
     "JobNotFoundError",

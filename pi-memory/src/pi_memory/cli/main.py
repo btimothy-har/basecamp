@@ -16,7 +16,7 @@ import uvicorn
 from pi_memory.constants import DEFAULT_HOST, DEFAULT_PORT, SERVICE_NAME
 from pi_memory.db import Database
 from pi_memory.ingest import IngestResult, ObserveInput, TranscriptFileMissingError, TranscriptIngestService
-from pi_memory.jobs import JobRunner, JobRunnerError, JobStoreError
+from pi_memory.jobs import JobDispatcher, JobRunner, JobRunnerError, JobStoreError
 from pi_memory.server import ServerAlreadyRunningError, ServerState, create_app
 
 DEFAULT_STATUS_TIMEOUT_SECONDS = 1.0
@@ -196,6 +196,7 @@ def serve(host: str, port: int) -> None:
                 port=port,
                 memory_dir=state.memory_dir,
                 started_at=metadata.started_at_datetime,
+                dispatcher=JobDispatcher(),
             )
             uvicorn.run(app, host=host, port=port)
     except ServerAlreadyRunningError as error:
