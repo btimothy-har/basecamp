@@ -144,16 +144,20 @@ def test_transcript_entries_fts_projection_uses_transcript_entry_rowid(tmp_path)
             )
 
         with database.engine.connect() as connection:
-            rowids = connection.execute(
-                text(
-                    """
+            rowids = (
+                connection.execute(
+                    text(
+                        """
                     SELECT rowid
                     FROM transcript_entries_fts
                     WHERE transcript_entries_fts MATCH :query
                     """,
-                ),
-                {"query": "nebula"},
-            ).scalars().all()
+                    ),
+                    {"query": "nebula"},
+                )
+                .scalars()
+                .all()
+            )
 
         assert rowids == [entry_id]
     finally:

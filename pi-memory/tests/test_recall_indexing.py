@@ -196,14 +196,22 @@ def test_index_transcript_is_idempotent_and_replaces_changed_content(database: D
 
     with database.engine.connect() as connection:
         row_count = connection.execute(text("SELECT count(*) FROM transcript_entries_fts")).scalar_one()
-        old_matches = connection.execute(
-            text("SELECT rowid FROM transcript_entries_fts WHERE transcript_entries_fts MATCH :query"),
-            {"query": "orchid"},
-        ).scalars().all()
-        new_matches = connection.execute(
-            text("SELECT rowid FROM transcript_entries_fts WHERE transcript_entries_fts MATCH :query"),
-            {"query": "nebula"},
-        ).scalars().all()
+        old_matches = (
+            connection.execute(
+                text("SELECT rowid FROM transcript_entries_fts WHERE transcript_entries_fts MATCH :query"),
+                {"query": "orchid"},
+            )
+            .scalars()
+            .all()
+        )
+        new_matches = (
+            connection.execute(
+                text("SELECT rowid FROM transcript_entries_fts WHERE transcript_entries_fts MATCH :query"),
+                {"query": "nebula"},
+            )
+            .scalars()
+            .all()
+        )
 
     assert row_count == 1
     assert old_matches == []

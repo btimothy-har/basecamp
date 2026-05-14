@@ -124,10 +124,14 @@ def test_process_transcript_completes_and_writes_safe_result(database: Database,
     assert "find nebula notes" not in str(completed.result_json)
 
     with database.engine.connect() as connection:
-        matches = connection.execute(
-            text("SELECT rowid FROM transcript_entries_fts WHERE transcript_entries_fts MATCH :query"),
-            {"query": "nebula"},
-        ).scalars().all()
+        matches = (
+            connection.execute(
+                text("SELECT rowid FROM transcript_entries_fts WHERE transcript_entries_fts MATCH :query"),
+                {"query": "nebula"},
+            )
+            .scalars()
+            .all()
+        )
 
     assert len(matches) == 1
 

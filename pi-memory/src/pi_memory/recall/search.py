@@ -112,10 +112,7 @@ class RecallSearchService:
                 },
             ).mappings()
 
-            results = tuple(
-                _recall_result(row, rank, terms)
-                for rank, row in enumerate(rows, start=1)
-            )
+            results = tuple(_recall_result(row, rank, terms) for rank, row in enumerate(rows, start=1))
 
         return RawTranscriptSearchResult(query=query, terms=terms, match_query=match_query, results=results)
 

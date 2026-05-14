@@ -50,9 +50,7 @@ def test_initialize_creates_pi_transcript_schema_tables(database: Database) -> N
         "transcript_entries",
     }.issubset(table_names)
     assert not {
-        name
-        for name in table_names
-        if name.startswith(("artifacts", "candidates", "graph", "memories", "snapshots"))
+        name for name in table_names if name.startswith(("artifacts", "candidates", "graph", "memories", "snapshots"))
     }
 
 
