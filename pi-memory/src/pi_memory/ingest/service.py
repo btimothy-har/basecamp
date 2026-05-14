@@ -84,6 +84,8 @@ class TranscriptIngestService:
         if not transcript_path.is_file():
             raise TranscriptFileMissingError(transcript_path)
 
+        self._database.initialize()
+
         with self._database.session() as db_session:
             memory_session = _upsert_session(db_session, request)
             transcript = _upsert_transcript(db_session, memory_session.id, transcript_path)
