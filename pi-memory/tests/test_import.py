@@ -11,4 +11,12 @@ def test_cli_help_resolves() -> None:
     result = CliRunner().invoke(main, ["--help"])
 
     assert result.exit_code == 0
-    assert "Pi memory service placeholder." in result.output
+    assert "Pi memory service." in result.output
+
+
+def test_serve_help_resolves() -> None:
+    result = CliRunner().invoke(main, ["serve", "--help"])
+
+    assert result.exit_code == 0
+    assert "--host" in result.output
+    assert "--port" in result.output

@@ -1,5 +1,7 @@
-"""Pi memory package scaffold."""
+"""Pi memory service package."""
+
+from pi_memory.constants import SERVICE_VERSION
 
 __all__ = ["__version__"]
 
-__version__ = "0.1.0"
+__version__ = SERVICE_VERSION

@@ -5,6 +5,8 @@ description = "Memory service scaffold for Pi coding sessions"
 requires-python = ">=3.12"
 dependencies = [
     "click>=8.1",
+    "fastapi>=0.115.0",
+    "uvicorn>=0.30.0",
 ]
 
 [project.scripts]
