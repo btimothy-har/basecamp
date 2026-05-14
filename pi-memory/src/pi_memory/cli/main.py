@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import errno
 import json
+import socket
 import urllib.error
 import urllib.request
 from typing import Any
@@ -14,6 +16,18 @@ from pi_memory.constants import DEFAULT_HOST, DEFAULT_PORT, SERVICE_NAME
 from pi_memory.server import ServerAlreadyRunningError, ServerState, create_app
 
 DEFAULT_STATUS_TIMEOUT_SECONDS = 1.0
+
+
+class PortBindError(click.ClickException):
+    """Raised when the local service cannot bind its requested port."""
+
+    def __init__(self, *, host: str, port: int, reason: str) -> None:
+        super().__init__(f"{SERVICE_NAME} cannot start at http://{host}:{port}: {reason}")
+
+    @classmethod
+    def in_use(cls, *, host: str, port: int) -> PortBindError:
+        """Return an error for a port already bound by another process."""
+        return cls(host=host, port=port, reason="the port is already in use by another process")
 
 
 class StatusProbeError(Exception):
@@ -73,6 +87,7 @@ def serve(host: str, port: int) -> None:
 
     try:
         with state.register(host=host, port=port) as metadata:
+            _ensure_port_available(host=host, port=port)
             app = create_app(
                 host=host,
                 port=port,
@@ -124,6 +139,16 @@ def status(host: str, port: int, timeout: float, *, json_output: bool) -> None:
         raise click.exceptions.Exit(1) from error
 
     _emit_healthy(url=url, service_status=service_status, json_output=json_output)
+
+
+def _ensure_port_available(*, host: str, port: int) -> None:
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+            sock.bind((host, port))
+    except OSError as error:
+        if error.errno == errno.EADDRINUSE:
+            raise PortBindError.in_use(host=host, port=port) from error
+        raise PortBindError(host=host, port=port, reason=str(error)) from error
 
 
 def _status_url(*, host: str, port: int) -> str:

@@ -33,13 +33,31 @@ export async function isServiceHealthy(url = statusUrl(), timeoutMs = STATUS_TIM
 	}
 }
 
-function startService(onError: (error: Error) => void): void {
-	const child = spawn(SERVICE_NAME, ["serve", "--host", DEFAULT_HOST, "--port", String(DEFAULT_PORT)], {
-		detached: true,
-		stdio: "ignore",
+type StartServiceResult = { ok: true } | { ok: false; error: Error };
+
+function toError(error: unknown): Error {
+	return error instanceof Error ? error : new Error(String(error));
+}
+
+function startService(): Promise<StartServiceResult> {
+	return new Promise((resolve) => {
+		try {
+			const child = spawn(SERVICE_NAME, ["serve", "--host", DEFAULT_HOST, "--port", String(DEFAULT_PORT)], {
+				detached: true,
+				stdio: "ignore",
+			});
+
+			child.once("spawn", () => {
+				child.unref();
+				resolve({ ok: true });
+			});
+			child.once("error", (error) => {
+				resolve({ ok: false, error });
+			});
+		} catch (error) {
+			resolve({ ok: false, error: toError(error) });
+		}
 	});
-	child.once("error", onError);
-	child.unref();
 }
 
 async function waitUntilHealthy(): Promise<boolean> {
@@ -56,20 +74,14 @@ async function waitUntilHealthy(): Promise<boolean> {
 async function ensureServiceRunning(ctx: ExtensionContext): Promise<void> {
 	if (await isServiceHealthy()) return;
 
-	const spawnFailure: { error: Error | null } = { error: null };
-	try {
-		startService((error) => {
-			spawnFailure.error = error;
-		});
-	} catch (error) {
-		const message = error instanceof Error ? error.message : String(error);
-		ctx.ui.notify(`${SERVICE_NAME}: failed to start local service — ${message}`, "warning");
+	const startResult = await startService();
+	if (!startResult.ok) {
+		ctx.ui.notify(`${SERVICE_NAME}: failed to start local service — ${startResult.error.message}`, "warning");
 		return;
 	}
 
 	if (!(await waitUntilHealthy())) {
-		const suffix = spawnFailure.error ? ` — ${spawnFailure.error.message}` : ` at ${statusUrl()}`;
-		ctx.ui.notify(`${SERVICE_NAME}: local service did not become healthy${suffix}`, "warning");
+		ctx.ui.notify(`${SERVICE_NAME}: local service did not become healthy at ${statusUrl()}`, "warning");
 	}
 }
 
