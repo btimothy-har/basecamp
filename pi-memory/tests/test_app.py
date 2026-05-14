@@ -1,3 +1,4 @@
+import json
 import os
 from collections.abc import Iterator
 from datetime import UTC, datetime, timedelta
@@ -9,6 +10,7 @@ from pi_memory.constants import SERVICE_NAME, SERVICE_VERSION
 from pi_memory.db import JOB_KIND_PROCESS_TRANSCRIPT, Database, Job, MemorySession, Transcript, TranscriptEntry
 from pi_memory.ingest import TranscriptIngestService
 from pi_memory.jobs import JobStore
+from pi_memory.recall import RecallSearchService, index_transcript
 from pi_memory.server import create_app
 
 
@@ -26,6 +28,19 @@ def observe_client(tmp_path) -> Iterator[TestClient]:
     )
     try:
         yield TestClient(app)
+    finally:
+        database.close_if_open()
+
+
+@pytest.fixture
+def recall_client(tmp_path) -> Iterator[tuple[TestClient, Database]]:
+    database = Database(sqlite_url(tmp_path / "recall.db"))
+    app = create_app(
+        memory_dir=tmp_path / "memory",
+        recall_service=RecallSearchService(database=database),
+    )
+    try:
+        yield TestClient(app), database
     finally:
         database.close_if_open()
 
@@ -51,6 +66,43 @@ def observe_payload(path: Path, session_id: str = "pi-session-1") -> dict[str, o
 
 def observe_jobs(client: TestClient) -> list[Job]:
     return client.app.state.job_store.list_jobs(kind=JOB_KIND_PROCESS_TRANSCRIPT)
+
+
+def add_recall_transcript(
+    database: Database,
+    *,
+    session_id: str = "pi-session-recall",
+    transcript_path: str = "/tmp/pi/recall.jsonl",
+    text: str = "The comet recall endpoint should find this raw transcript line.",
+    should_index: bool = True,
+) -> tuple[int, int]:
+    database.initialize()
+    with database.session() as db_session:
+        memory_session = MemorySession(session_id=session_id)
+        transcript = Transcript(session=memory_session, path=transcript_path, file_size=512)
+        transcript.entries.append(
+            TranscriptEntry(
+                entry_id="recall-entry-1",
+                entry_type="message",
+                message_role="assistant",
+                timestamp=datetime(2026, 1, 2, 3, 4, 5, tzinfo=UTC),
+                raw_line=json.dumps(
+                    {
+                        "type": "message",
+                        "message": {"role": "assistant", "content": text},
+                    },
+                ),
+                byte_start=24,
+                byte_end=124,
+            ),
+        )
+        db_session.add(transcript)
+        db_session.flush()
+        transcript_id = transcript.id
+        entry_id = transcript.entries[0].id
+        if should_index:
+            index_transcript(db_session, transcript_id)
+    return transcript_id, entry_id
 
 
 def assert_observe_job_payload(
@@ -142,6 +194,83 @@ def test_status_endpoint_includes_service_metadata(tmp_path) -> None:
     assert data["host"] == "127.0.0.1"
     assert data["port"] == 9876
     assert data["memory_dir"] == str(tmp_path)
+
+
+def test_recall_search_endpoint_returns_indexed_raw_transcript_hit(
+    recall_client: tuple[TestClient, Database],
+) -> None:
+    client, database = recall_client
+    transcript_id, entry_id = add_recall_transcript(database)
+
+    response = client.post("/v1/recall/search", json={"query": "comet recall"})
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["query"] == "comet recall"
+    assert data["terms"] == ["comet", "recall"]
+    assert data["match_query"] == '"comet" "recall"'
+    assert data["result_count"] == 1
+    assert len(data["results"]) == 1
+    hit = data["results"][0]
+    assert hit == {
+        "result_type": "raw_transcript",
+        "rank": 1,
+        "score": hit["score"],
+        "session_id": "pi-session-recall",
+        "transcript_id": transcript_id,
+        "transcript_path": "/tmp/pi/recall.jsonl",
+        "transcript_entry_id": entry_id,
+        "pi_entry_id": "recall-entry-1",
+        "entry_type": "message",
+        "message_role": "assistant",
+        "timestamp": hit["timestamp"],
+        "byte_start": 24,
+        "byte_end": 124,
+        "excerpt": hit["excerpt"],
+        "match_reason": "Matched raw transcript text for: comet, recall",
+    }
+    assert hit["score"] <= 0
+    assert datetime.fromisoformat(hit["timestamp"])
+    assert "comet" in hit["excerpt"].lower()
+    assert "<mark>" in hit["excerpt"]
+
+
+def test_recall_search_endpoint_returns_empty_results_for_no_match_or_unindexed_data(
+    recall_client: tuple[TestClient, Database],
+) -> None:
+    client, database = recall_client
+    add_recall_transcript(database, text="unindexed comet recall line", should_index=False)
+
+    no_match = client.post("/v1/recall/search", json={"query": "missing"})
+    unindexed = client.post("/v1/recall/search", json={"query": "comet recall"})
+
+    assert no_match.status_code == 200
+    assert no_match.json()["results"] == []
+    assert no_match.json()["result_count"] == 0
+    assert unindexed.status_code == 200
+    assert unindexed.json()["results"] == []
+    assert unindexed.json()["result_count"] == 0
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        {"query": ""},
+        {"query": "   "},
+        {"query": "comet", "limit": 0},
+        {"query": "comet", "limit": 51},
+        {"query": "comet", "unexpected": "field"},
+    ],
+)
+def test_recall_search_endpoint_invalid_payload_returns_422(
+    recall_client: tuple[TestClient, Database],
+    payload: dict[str, object],
+) -> None:
+    client, _database = recall_client
+
+    response = client.post("/v1/recall/search", json=payload)
+
+    assert response.status_code == 422
 
 
 def test_observe_endpoint_ingests_transcript_and_returns_diagnostics(

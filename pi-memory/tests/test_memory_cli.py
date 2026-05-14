@@ -21,6 +21,7 @@ from pi_memory.db import (
 )
 from pi_memory.ingest import TranscriptIngestService
 from pi_memory.jobs import JobStore
+from pi_memory.recall import index_transcript
 from pi_memory.server import ServerState
 from sqlalchemy import func, select
 
@@ -352,6 +353,42 @@ def create_job_transcript(database: Database) -> int:
         return transcript.id
 
 
+def create_recall_transcript(database: Database) -> tuple[int, int]:
+    with database.session() as db_session:
+        memory_session = MemorySession(session_id="pi-session-recall-cli")
+        transcript = Transcript(
+            session=memory_session,
+            path="/tmp/pi/cli-recall.jsonl",
+            cursor_offset=128,
+            file_size=128,
+        )
+        transcript.entries.append(
+            TranscriptEntry(
+                entry_id="cli-recall-entry-1",
+                entry_type="message",
+                message_role="user",
+                timestamp=datetime(2026, 1, 2, 3, 4, 5, tzinfo=UTC),
+                raw_line=json.dumps(
+                    {
+                        "type": "message",
+                        "message": {
+                            "role": "user",
+                            "content": "Local recall CLI should find the aurora transcript.",
+                        },
+                    },
+                ),
+                byte_start=7,
+                byte_end=107,
+            ),
+        )
+        db_session.add(transcript)
+        db_session.flush()
+        transcript_id = transcript.id
+        entry_id = transcript.entries[0].id
+        index_transcript(db_session, transcript_id)
+        return transcript_id, entry_id
+
+
 def get_cli_job(database: Database, job_id: int) -> Job:
     with database.session() as db_session:
         return db_session.get_one(Job, job_id)
@@ -392,6 +429,87 @@ def parse_cli_time(value: str) -> datetime:
     if parsed.tzinfo is None:
         return parsed.replace(tzinfo=UTC)
     return parsed
+
+
+def test_recall_reports_human_readable_results(memory_database: Database) -> None:
+    create_recall_transcript(memory_database)
+
+    result = CliRunner().invoke(
+        cli_module.main,
+        ["recall", "--query", "aurora transcript", "--db-url", memory_database.url],
+    )
+
+    assert result.exit_code == 0
+    assert "Recall results for: aurora transcript" in result.output
+    assert "1. session=pi-session-recall-cli" in result.output
+    assert "source=/tmp/pi/cli-recall.jsonl:7-107" in result.output
+    assert "entry=message/user" in result.output
+    assert "excerpt=" in result.output
+    assert "aurora" in result.output.lower()
+    assert "match=Matched raw transcript text for: aurora, transcript" in result.output
+
+
+def test_recall_reports_json_results(memory_database: Database) -> None:
+    transcript_id, entry_id = create_recall_transcript(memory_database)
+
+    result = CliRunner().invoke(
+        cli_module.main,
+        ["recall", "--query", "aurora", "--db-url", memory_database.url, "--json"],
+    )
+
+    assert result.exit_code == 0
+    payload = json.loads(result.output)
+    assert payload["query"] == "aurora"
+    assert payload["terms"] == ["aurora"]
+    assert payload["match_query"] == '"aurora"'
+    assert payload["result_count"] == 1
+    hit = payload["results"][0]
+    assert hit["result_type"] == "raw_transcript"
+    assert hit["rank"] == 1
+    assert hit["session_id"] == "pi-session-recall-cli"
+    assert hit["transcript_id"] == transcript_id
+    assert hit["transcript_path"] == "/tmp/pi/cli-recall.jsonl"
+    assert hit["transcript_entry_id"] == entry_id
+    assert hit["pi_entry_id"] == "cli-recall-entry-1"
+    assert hit["entry_type"] == "message"
+    assert hit["message_role"] == "user"
+    assert parse_cli_time(hit["timestamp"]) == datetime(2026, 1, 2, 3, 4, 5, tzinfo=UTC)
+    assert hit["byte_start"] == 7
+    assert hit["byte_end"] == 107
+    assert "aurora" in hit["excerpt"].lower()
+    assert hit["match_reason"] == "Matched raw transcript text for: aurora"
+
+
+def test_recall_reports_empty_results(memory_database: Database) -> None:
+    create_recall_transcript(memory_database)
+
+    result = CliRunner().invoke(
+        cli_module.main,
+        ["recall", "--query", "missing", "--db-url", memory_database.url],
+    )
+
+    assert result.exit_code == 0
+    assert "No recall results for: missing" in result.output
+
+
+def test_recall_requires_non_empty_query(memory_database: Database) -> None:
+    result = CliRunner().invoke(
+        cli_module.main,
+        ["recall", "--query", "  ", "--db-url", memory_database.url],
+    )
+
+    assert result.exit_code == 2
+    assert "Invalid value for '--query': must not be empty" in result.output
+
+
+def test_recall_requires_non_empty_db_url() -> None:
+    result = CliRunner().invoke(
+        cli_module.main,
+        ["recall", "--query", "aurora", "--db-url", "  "],
+    )
+
+    assert result.exit_code == 2
+    assert "Invalid value for '--db-url': must not be empty" in result.output
 
 
 def test_job_reports_json_inspection(memory_database: Database) -> None:

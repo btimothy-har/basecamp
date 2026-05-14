@@ -5,10 +5,10 @@ from collections.abc import AsyncIterator, Callable
 from contextlib import AbstractAsyncContextManager, asynccontextmanager
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Annotated, Any
+from typing import Annotated, Any, Literal
 
 from fastapi import FastAPI, HTTPException
-from pydantic import BaseModel, ConfigDict, StringConstraints
+from pydantic import BaseModel, ConfigDict, Field, StringConstraints
 
 from pi_memory.constants import DEFAULT_HOST, DEFAULT_PORT, MEMORY_DIR, SERVICE_NAME, SERVICE_VERSION
 from pi_memory.ingest import (
@@ -18,6 +18,7 @@ from pi_memory.ingest import (
     TranscriptIngestService,
 )
 from pi_memory.jobs import JobDispatcher, JobStore, enqueue_process_transcript_job, serialize_job
+from pi_memory.recall import RawTranscriptRecallResult, RawTranscriptSearchResult, RecallSearchService
 
 NonEmptyString = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)]
 
@@ -55,6 +56,46 @@ class ObserveResponse(BaseModel):
     job_id: int | None
 
 
+class RecallSearchRequest(BaseModel):
+    """Request body for searching indexed raw transcript entries."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    query: NonEmptyString
+    limit: int = Field(default=10, ge=1, le=50)
+    session_id: NonEmptyString | None = None
+
+
+class RecallSearchHitResponse(BaseModel):
+    """Source-backed raw transcript recall hit."""
+
+    result_type: Literal["raw_transcript"]
+    rank: int
+    score: float
+    session_id: str
+    transcript_id: int
+    transcript_path: str
+    transcript_entry_id: int
+    pi_entry_id: str | None
+    entry_type: str
+    message_role: str | None
+    timestamp: datetime | None
+    byte_start: int
+    byte_end: int
+    excerpt: str
+    match_reason: str
+
+
+class RecallSearchResponse(BaseModel):
+    """Response body for raw transcript recall search."""
+
+    query: str
+    terms: list[str]
+    match_query: str | None
+    result_count: int
+    results: list[RecallSearchHitResponse]
+
+
 def create_app(
     *,
     host: str = DEFAULT_HOST,
@@ -64,6 +105,7 @@ def create_app(
     ingest_service: TranscriptIngestService | None = None,
     job_store: JobStore | None = None,
     dispatcher: JobDispatcher | None = None,
+    recall_service: RecallSearchService | None = None,
 ) -> FastAPI:
     """Create the local Pi memory FastAPI application."""
     service_started_at = datetime.now(UTC) if started_at is None else started_at
@@ -78,6 +120,7 @@ def create_app(
     app.state.ingest_service = TranscriptIngestService() if ingest_service is None else ingest_service
     app.state.job_store = JobStore() if job_store is None else job_store
     app.state.dispatcher = dispatcher
+    app.state.recall_service = RecallSearchService() if recall_service is None else recall_service
 
     @app.get("/health")
     def health() -> dict[str, str]:
@@ -118,6 +161,16 @@ def create_app(
         if job is None:
             raise HTTPException(status_code=404, detail=f"Job {job_id} was not found")
         return serialize_job(job)
+
+    @app.post("/v1/recall/search", response_model=RecallSearchResponse)
+    def recall_search(request: RecallSearchRequest) -> dict[str, object]:
+        """Search indexed raw transcript entries."""
+        result = app.state.recall_service.search(
+            request.query,
+            limit=request.limit,
+            session_id=request.session_id,
+        )
+        return _recall_search_response(result)
 
     return app
 
@@ -160,4 +213,34 @@ def _observe_response(result: IngestResult, *, job_id: int | None) -> dict[str, 
         "malformed_lines": result.malformed_lines,
         "unsupported_lines": result.unsupported_lines,
         "job_id": job_id,
+    }
+
+
+def _recall_search_response(result: RawTranscriptSearchResult) -> dict[str, object]:
+    return {
+        "query": result.query,
+        "terms": list(result.terms),
+        "match_query": result.match_query,
+        "result_count": len(result.results),
+        "results": [_recall_search_hit_response(hit) for hit in result.results],
+    }
+
+
+def _recall_search_hit_response(result: RawTranscriptRecallResult) -> dict[str, object]:
+    return {
+        "result_type": result.result_type,
+        "rank": result.rank,
+        "score": result.score,
+        "session_id": result.session_id,
+        "transcript_id": result.transcript_id,
+        "transcript_path": result.transcript_path,
+        "transcript_entry_id": result.transcript_entry_id,
+        "pi_entry_id": result.pi_entry_id,
+        "entry_type": result.entry_type,
+        "message_role": result.message_role,
+        "timestamp": result.timestamp,
+        "byte_start": result.byte_start,
+        "byte_end": result.byte_end,
+        "excerpt": result.excerpt,
+        "match_reason": result.match_reason,
     }

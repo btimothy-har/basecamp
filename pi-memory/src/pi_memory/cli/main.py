@@ -25,6 +25,7 @@ from pi_memory.jobs import (
     enqueue_process_transcript_job,
     serialize_job,
 )
+from pi_memory.recall import RawTranscriptRecallResult, RawTranscriptSearchResult, RecallSearchService
 from pi_memory.server import ServerAlreadyRunningError, ServerState, create_app
 
 DEFAULT_STATUS_TIMEOUT_SECONDS = 1.0
@@ -156,6 +157,59 @@ def observe(
 
     job = enqueue_process_transcript_job(JobStore(), result)
     _emit_observe_result(result, job_id=None if job is None else job.id, json_output=json_output)
+
+
+@main.command()
+@click.option(
+    "--query",
+    callback=lambda _ctx, _param, value: _require_non_empty(value),
+    required=True,
+    help="Search query for indexed raw transcript entries.",
+)
+@click.option(
+    "--db-url",
+    callback=lambda _ctx, _param, value: _require_non_empty(value),
+    required=True,
+    help="Database URL containing indexed transcript entries.",
+)
+@click.option(
+    "--limit",
+    default=10,
+    show_default=True,
+    type=click.IntRange(1, 50),
+    help="Maximum number of recall results.",
+)
+@click.option(
+    "--session-id",
+    callback=lambda _ctx, _param, value: None if value is None else _require_non_empty(value),
+    help="Optional Pi session id filter.",
+)
+@click.option(
+    "--json",
+    "json_output",
+    is_flag=True,
+    help="Emit parseable JSON output.",
+)
+def recall(
+    query: str,
+    db_url: str,
+    limit: int,
+    session_id: str | None,
+    *,
+    json_output: bool,
+) -> None:
+    """Search indexed raw transcript entries without running the HTTP service."""
+    recall_database = Database(db_url)
+    try:
+        result = RecallSearchService(database=recall_database).search(
+            query,
+            limit=limit,
+            session_id=session_id,
+        )
+    finally:
+        recall_database.close_if_open()
+
+    _emit_recall_result(result, json_output=json_output)
 
 
 @main.command("run-job")
@@ -403,6 +457,56 @@ def _emit_job(payload: dict[str, Any], *, json_output: bool) -> None:
     click.echo("Job")
     for name, value in payload.items():
         click.echo(f"  {name}: {value}")
+
+
+def _emit_recall_result(result: RawTranscriptSearchResult, *, json_output: bool) -> None:
+    payload = _recall_payload(result)
+    if json_output:
+        click.echo(json.dumps(payload, sort_keys=True))
+        return
+
+    if not result.results:
+        click.echo(f"No recall results for: {result.query}")
+        return
+
+    click.echo(f"Recall results for: {result.query}")
+    for hit in result.results:
+        role = "" if hit.message_role is None else f"/{hit.message_role}"
+        click.echo(f"{hit.rank}. session={hit.session_id} score={hit.score:.6g}")
+        click.echo(f"   source={hit.transcript_path}:{hit.byte_start}-{hit.byte_end}")
+        click.echo(f"   entry={hit.entry_type}{role} transcript_entry_id={hit.transcript_entry_id}")
+        click.echo(f"   excerpt={hit.excerpt}")
+        click.echo(f"   match={hit.match_reason}")
+
+
+def _recall_payload(result: RawTranscriptSearchResult) -> dict[str, Any]:
+    return {
+        "query": result.query,
+        "terms": list(result.terms),
+        "match_query": result.match_query,
+        "result_count": len(result.results),
+        "results": [_recall_hit_payload(hit) for hit in result.results],
+    }
+
+
+def _recall_hit_payload(result: RawTranscriptRecallResult) -> dict[str, Any]:
+    return {
+        "result_type": result.result_type,
+        "rank": result.rank,
+        "score": result.score,
+        "session_id": result.session_id,
+        "transcript_id": result.transcript_id,
+        "transcript_path": result.transcript_path,
+        "transcript_entry_id": result.transcript_entry_id,
+        "pi_entry_id": result.pi_entry_id,
+        "entry_type": result.entry_type,
+        "message_role": result.message_role,
+        "timestamp": None if result.timestamp is None else result.timestamp.isoformat(),
+        "byte_start": result.byte_start,
+        "byte_end": result.byte_end,
+        "excerpt": result.excerpt,
+        "match_reason": result.match_reason,
+    }
 
 
 def _emit_unavailable(*, url: str, error: str, json_output: bool) -> None:
