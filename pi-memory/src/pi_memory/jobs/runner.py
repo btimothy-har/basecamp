@@ -6,10 +6,9 @@ import os
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import func, select
-
-from pi_memory.db import JOB_KIND_PROCESS_TRANSCRIPT, Database, Job, Transcript, TranscriptEntry, database
+from pi_memory.db import JOB_KIND_PROCESS_TRANSCRIPT, Database, Job, Transcript, database
 from pi_memory.jobs.store import JobStore
+from pi_memory.recall import index_transcript
 
 EXPECTED_OBJECT_PAYLOAD_ERROR = "expected object payload"
 TRANSCRIPT_ID_INTEGER_ERROR = "transcript_id must be an integer"
@@ -91,15 +90,14 @@ class JobRunner:
             if transcript is None:
                 raise TranscriptNotFoundError(transcript_id)
 
-            entry_count = session.scalar(
-                select(func.count()).select_from(TranscriptEntry).where(TranscriptEntry.transcript_id == transcript_id),
-            )
+            index_result = index_transcript(session, transcript_id)
             return {
                 "transcript_id": transcript.id,
                 "session_id": transcript.session.session_id,
-                "entry_count": entry_count,
+                "entry_count": index_result.total_entries,
                 "cursor_offset": transcript.cursor_offset,
                 "file_size": transcript.file_size,
+                "indexed_entry_count": index_result.indexed_entries,
             }
 
 

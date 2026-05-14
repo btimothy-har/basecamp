@@ -501,6 +501,7 @@ def test_run_job_succeeds_against_isolated_db(tmp_path) -> None:
             "entry_count": 1,
             "cursor_offset": 10,
             "file_size": 10,
+            "indexed_entry_count": 0,
         }
     finally:
         database.close_if_open()

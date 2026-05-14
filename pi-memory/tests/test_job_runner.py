@@ -23,6 +23,7 @@ from pi_memory.jobs import (
     TranscriptNotFoundError,
     UnsupportedJobKindError,
 )
+from sqlalchemy import text
 
 
 def sqlite_url(path: Path) -> str:
@@ -66,7 +67,10 @@ def create_transcript(database: Database) -> int:
                     entry_id="entry-1",
                     entry_type="message",
                     message_role="user",
-                    raw_line='{"secret":"do not expose one"}',
+                    raw_line=(
+                        '{"type":"message","message":{"role":"user",'
+                        '"content":[{"type":"text","text":"find nebula notes"}]}}'
+                    ),
                     byte_start=0,
                     byte_end=100,
                 ),
@@ -114,8 +118,18 @@ def test_process_transcript_completes_and_writes_safe_result(database: Database,
         "entry_count": 2,
         "cursor_offset": 200,
         "file_size": 250,
+        "indexed_entry_count": 1,
     }
     assert "do not expose" not in str(completed.result_json)
+    assert "find nebula notes" not in str(completed.result_json)
+
+    with database.engine.connect() as connection:
+        matches = connection.execute(
+            text("SELECT rowid FROM transcript_entries_fts WHERE transcript_entries_fts MATCH :query"),
+            {"query": "nebula"},
+        ).scalars().all()
+
+    assert len(matches) == 1
 
 
 def test_wrong_run_id_is_rejected_without_incrementing_attempts(database: Database, store: JobStore) -> None:

@@ -220,6 +220,7 @@ def test_run_once_claims_spawns_and_observes_child_completion(database: Database
         "entry_count": 1,
         "cursor_offset": 50,
         "file_size": 50,
+        "indexed_entry_count": 0,
     }
 
 
