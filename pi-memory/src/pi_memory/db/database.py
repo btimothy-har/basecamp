@@ -64,12 +64,12 @@ class Database:
     @contextmanager
     def session(self) -> Iterator[Session]:
         """Yield a SQLAlchemy session scoped to a context manager."""
-        if self._session_factory is None:
-            _ = self.engine
-        if self._session_factory is None:
+        _ = self.engine
+        session_factory = self._session_factory
+        if session_factory is None:
             raise DatabaseSessionFactoryError()
 
-        session = self._session_factory()
+        session = session_factory()
         try:
             yield session
             session.commit()

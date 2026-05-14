@@ -1,7 +1,8 @@
 from pathlib import Path
 
-from pi_memory.db import Base, Database
-from sqlalchemy import text
+import pytest
+from pi_memory.db import Base, Database, MemorySession
+from sqlalchemy import func, select, text
 
 
 def sqlite_url(path: Path) -> str:
@@ -72,5 +73,28 @@ def test_session_context_commits_and_closes(tmp_path) -> None:
         database.close_if_open()
 
 
-def test_base_is_available_for_schema_registration() -> None:
-    assert Base.metadata is not None
+class IntentionalRollbackError(Exception):
+    """Raised by tests to exercise transaction rollback."""
+
+
+def test_session_context_rolls_back_on_error(tmp_path) -> None:
+    db_path = tmp_path / "memory.db"
+    database = Database(sqlite_url(db_path))
+
+    try:
+        database.initialize()
+        with pytest.raises(IntentionalRollbackError):
+            with database.session() as session:
+                session.add(MemorySession(session_id="pi-session-1"))
+                raise IntentionalRollbackError()
+
+        with database.session() as session:
+            count = session.scalar(select(func.count()).select_from(MemorySession))
+
+        assert count == 0
+    finally:
+        database.close_if_open()
+
+
+def test_base_registers_phase_2_schema_models() -> None:
+    assert "sessions" in Base.metadata.tables

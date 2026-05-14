@@ -38,10 +38,7 @@ def message_line(
     role: str = "user",
 ) -> bytes:
     parent = "" if parent_id is None else f',"parentId":"{parent_id}"'
-    return (
-        f'{{"type":"message","id":"{entry_id}"{parent},'
-        f'"message":{{"role":"{role}"}}}}\n'
-    ).encode()
+    return (f'{{"type":"message","id":"{entry_id}"{parent},"message":{{"role":"{role}"}}}}\n').encode()
 
 
 def observe_payload(path: Path, session_id: str = "pi-session-1") -> dict[str, object]:
@@ -198,6 +195,11 @@ def test_observe_endpoint_missing_transcript_returns_404(
         {"session_id": "   ", "transcript_path": "/tmp/transcript.jsonl"},
         {"session_id": "pi-session-1", "transcript_path": ""},
         {"session_id": "pi-session-1", "transcript_path": "   "},
+        {
+            "session_id": "pi-session-1",
+            "transcript_path": "/tmp/transcript.jsonl",
+            "cwd": "",
+        },
         {
             "session_id": "pi-session-1",
             "transcript_path": "/tmp/transcript.jsonl",

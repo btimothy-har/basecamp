@@ -35,6 +35,17 @@ def test_parse_from_end_offset_returns_no_new_entries(tmp_path) -> None:
     assert result.file_size == len(content)
 
 
+def test_parse_negative_offset_starts_at_beginning(tmp_path) -> None:
+    path = tmp_path / "transcript.jsonl"
+    content = b'{"type":"session","id":"session-1"}\n'
+    write_transcript(path, content)
+
+    result = PiTranscriptParser().parse(path, offset=-5)
+
+    assert [entry.entry_id for entry in result.entries] == ["session-1"]
+    assert result.cursor_offset == len(content)
+
+
 def test_parse_preserves_cursor_when_offset_is_past_eof(tmp_path) -> None:
     path = tmp_path / "transcript.jsonl"
     content = b'{"type":"session","id":"session-1"}\n'
@@ -71,6 +82,19 @@ def test_parse_supports_incremental_append_after_partial_trailing_line(tmp_path)
     assert second_result.cursor_offset == second_result.file_size
 
 
+def test_parse_skips_non_object_json_lines_and_advances_cursor(tmp_path) -> None:
+    path = tmp_path / "transcript.jsonl"
+    non_object_line = b"[]\n"
+    valid_line = b'{"type":"session","id":"session-1"}\n'
+    write_transcript(path, non_object_line + valid_line)
+
+    result = PiTranscriptParser().parse(path)
+
+    assert [entry.entry_id for entry in result.entries] == ["session-1"]
+    assert result.malformed_lines == 1
+    assert result.cursor_offset == len(non_object_line) + len(valid_line)
+
+
 def test_parse_skips_malformed_complete_lines_and_advances_cursor(tmp_path) -> None:
     path = tmp_path / "transcript.jsonl"
     malformed_line = b'{"type":"message",\n'
@@ -87,7 +111,7 @@ def test_parse_skips_malformed_complete_lines_and_advances_cursor(tmp_path) -> N
     assert result.entries[0].byte_start == len(malformed_line) + len(invalid_utf8_line)
 
 
-def test_parse_skips_unsupported_legacy_claude_style_line(tmp_path) -> None:
+def test_parse_skips_unsupported_legacy_non_pi_style_line(tmp_path) -> None:
     path = tmp_path / "transcript.jsonl"
     legacy_line = b'{"type":"user","uuid":"legacy-1","message":{"role":"user"}}\n'
     pi_line = b'{"type":"message","id":"pi-1","message":{"role":"assistant"}}\n'
@@ -153,12 +177,10 @@ def test_parse_handles_missing_invalid_and_naive_timestamps(tmp_path) -> None:
     path = tmp_path / "transcript.jsonl"
     missing_timestamp_line = b'{"type":"message","id":"missing","message":{"role":"user"}}\n'
     invalid_timestamp_line = (
-        b'{"type":"message","id":"invalid","timestamp":"not-a-date",'
-        b'"message":{"role":"assistant"}}\n'
+        b'{"type":"message","id":"invalid","timestamp":"not-a-date","message":{"role":"assistant"}}\n'
     )
     naive_timestamp_line = (
-        b'{"type":"message","id":"naive","timestamp":"2026-05-14T12:32:00",'
-        b'"message":{"role":"assistant"}}\n'
+        b'{"type":"message","id":"naive","timestamp":"2026-05-14T12:32:00","message":{"role":"assistant"}}\n'
     )
     write_transcript(path, missing_timestamp_line + invalid_timestamp_line + naive_timestamp_line)
 

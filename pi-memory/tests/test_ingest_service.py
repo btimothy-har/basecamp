@@ -319,7 +319,6 @@ def test_observe_records_observation_with_request_metadata(
             transcript_path=path,
             request_id="request-1",
             request_metadata={"trigger": "test"},
-            payload={"transcript_path": str(path)},
         ),
     )
 
@@ -330,7 +329,6 @@ def test_observe_records_observation_with_request_metadata(
     assert observation.transcript_id == result.transcript_id
     assert observation.request_id == "request-1"
     assert observation.request_metadata == {"trigger": "test"}
-    assert observation.payload == {"transcript_path": str(path)}
     assert result.observed_at is not None
 
 
@@ -364,7 +362,7 @@ def test_observe_skips_idless_duplicate_entries_by_byte_span(
     service: TranscriptIngestService,
 ) -> None:
     path = tmp_path / "transcript.jsonl"
-    content = b'{"type":"model_change","model":"claude-sonnet-4-5"}\n'
+    content = b'{"type":"model_change","model":"test-model"}\n'
     write_transcript(path, content)
 
     first_result = service.observe(ObserveInput(session_id="pi-session-1", transcript_path=path))

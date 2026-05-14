@@ -67,9 +67,7 @@ def create_app(
     app.state.host = host
     app.state.port = port
     app.state.memory_dir = service_memory_dir
-    app.state.ingest_service = (
-        TranscriptIngestService() if ingest_service is None else ingest_service
-    )
+    app.state.ingest_service = TranscriptIngestService() if ingest_service is None else ingest_service
 
     @app.get("/health")
     def health() -> dict[str, str]:

@@ -74,8 +74,6 @@ class Observation(Base):
     observed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     request_id: Mapped[str | None] = mapped_column(index=True)
     request_metadata: Mapped[dict[str, Any] | None] = mapped_column(JSON)
-    payload: Mapped[dict[str, Any] | None] = mapped_column(JSON)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     session: Mapped[MemorySession] = relationship(back_populates="observations")
     transcript: Mapped[Transcript | None] = relationship(back_populates="observations")

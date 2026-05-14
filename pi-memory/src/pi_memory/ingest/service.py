@@ -14,14 +14,6 @@ from sqlalchemy.orm import Session
 from pi_memory.db import Database, MemorySession, Observation, Transcript, TranscriptEntry, database
 from pi_memory.transcripts import ParsedPiEntry, PiTranscriptParser
 
-_SESSION_METADATA_FIELDS = (
-    "cwd",
-    "repo_name",
-    "repo_root",
-    "worktree_label",
-    "worktree_path",
-)
-
 
 class TranscriptFileMissingError(FileNotFoundError):
     """Raised when an observe request references a missing transcript file."""
@@ -44,7 +36,6 @@ class ObserveInput:
     worktree_path: str | None = None
     request_id: str | None = None
     request_metadata: dict[str, Any] | None = None
-    payload: dict[str, Any] | None = None
 
 
 @dataclass(frozen=True)
@@ -104,7 +95,6 @@ class TranscriptIngestService:
                     observed_at=observed_at,
                     request_id=request.request_id,
                     request_metadata=request.request_metadata,
-                    payload=request.payload,
                 ),
             )
 
@@ -126,10 +116,16 @@ def _upsert_session(db_session: Session, request: ObserveInput) -> MemorySession
         memory_session = MemorySession(session_id=request.session_id)
         db_session.add(memory_session)
 
-    for field in _SESSION_METADATA_FIELDS:
-        value = getattr(request, field)
-        if value is not None:
-            setattr(memory_session, field, value)
+    if request.cwd is not None:
+        memory_session.cwd = request.cwd
+    if request.repo_name is not None:
+        memory_session.repo_name = request.repo_name
+    if request.repo_root is not None:
+        memory_session.repo_root = request.repo_root
+    if request.worktree_label is not None:
+        memory_session.worktree_label = request.worktree_label
+    if request.worktree_path is not None:
+        memory_session.worktree_path = request.worktree_path
 
     db_session.flush()
     return memory_session
