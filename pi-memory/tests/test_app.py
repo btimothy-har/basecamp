@@ -42,9 +42,7 @@ def message_line(
 ) -> bytes:
     parent = "" if parent_id is None else f',"parentId":"{parent_id}"'
     message_content = "" if content is None else f',"content":"{content}"'
-    return (
-        f'{{"type":"message","id":"{entry_id}"{parent},"message":{{"role":"{role}"{message_content}}}}}\n'
-    ).encode()
+    return (f'{{"type":"message","id":"{entry_id}"{parent},"message":{{"role":"{role}"{message_content}}}}}\n').encode()
 
 
 def observe_payload(path: Path, session_id: str = "pi-session-1") -> dict[str, object]:
