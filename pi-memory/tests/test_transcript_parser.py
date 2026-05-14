@@ -111,18 +111,60 @@ def test_parse_skips_malformed_complete_lines_and_advances_cursor(tmp_path) -> N
     assert result.entries[0].byte_start == len(malformed_line) + len(invalid_utf8_line)
 
 
-def test_parse_skips_unsupported_legacy_non_pi_style_line(tmp_path) -> None:
+def test_parse_skips_entries_with_missing_or_non_string_type(tmp_path) -> None:
     path = tmp_path / "transcript.jsonl"
-    legacy_line = b'{"type":"user","uuid":"legacy-1","message":{"role":"user"}}\n'
-    pi_line = b'{"type":"message","id":"pi-1","message":{"role":"assistant"}}\n'
-    write_transcript(path, legacy_line + pi_line)
+    missing_type_line = b'{"id":"missing-type"}\n'
+    non_string_type_line = b'{"type":123,"id":"non-string-type"}\n'
+    valid_line = b'{"type":"message","id":"pi-1","message":{"role":"assistant"}}\n'
+    write_transcript(path, missing_type_line + non_string_type_line + valid_line)
 
     result = PiTranscriptParser().parse(path)
 
     assert [entry.entry_id for entry in result.entries] == ["pi-1"]
-    assert result.unsupported_lines == 1
+    assert result.unsupported_lines == 2
     assert result.malformed_lines == 0
-    assert result.cursor_offset == len(legacy_line) + len(pi_line)
+    assert result.cursor_offset == len(missing_type_line) + len(non_string_type_line) + len(valid_line)
+
+
+def test_parse_accepts_real_pi_extra_entry_types(tmp_path) -> None:
+    path = tmp_path / "transcript.jsonl"
+    custom_message_line = (
+        b'{"type":"custom_message","id":"custom-message-1","parentId":"session-1",'
+        b'"message":{"role":"user"}}\n'
+    )
+    session_info_line = b'{"type":"session_info","id":"session-info-1"}\n'
+    thinking_level_change_line = b'{"type":"thinking_level_change","id":"thinking-level-1"}\n'
+    custom_line = b'{"type":"custom","id":"custom-1"}\n'
+    compaction_line = b'{"type":"compaction","id":"compaction-1"}\n'
+    write_transcript(
+        path,
+        custom_message_line
+        + session_info_line
+        + thinking_level_change_line
+        + custom_line
+        + compaction_line,
+    )
+
+    result = PiTranscriptParser().parse(path)
+
+    assert [entry.entry_type for entry in result.entries] == [
+        "custom_message",
+        "session_info",
+        "thinking_level_change",
+        "custom",
+        "compaction",
+    ]
+    assert [entry.entry_id for entry in result.entries] == [
+        "custom-message-1",
+        "session-info-1",
+        "thinking-level-1",
+        "custom-1",
+        "compaction-1",
+    ]
+    assert result.entries[0].parent_id == "session-1"
+    assert [entry.message_role for entry in result.entries] == ["user", None, None, None, None]
+    assert result.unsupported_lines == 0
+    assert result.malformed_lines == 0
 
 
 def test_parse_pi_session_header_and_model_change(tmp_path) -> None:

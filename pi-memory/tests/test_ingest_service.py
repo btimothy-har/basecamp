@@ -170,7 +170,7 @@ def test_observe_skips_malformed_and_unsupported_complete_lines_while_ingesting_
 ) -> None:
     path = tmp_path / "transcript.jsonl"
     malformed_line = b'{"type":"message",\n'
-    unsupported_line = b'{"type":"user","uuid":"legacy-1","message":{"role":"user"}}\n'
+    unsupported_line = b'{"type":123,"id":"unsupported-1"}\n'
     valid_line = message_line("message-1")
     write_transcript(path, malformed_line + unsupported_line + valid_line)
 
@@ -181,6 +181,50 @@ def test_observe_skips_malformed_and_unsupported_complete_lines_while_ingesting_
     assert result.unsupported_lines == 1
     assert result.cursor_offset == result.file_size
     assert [entry.entry_id for entry in transcript_entries(database)] == ["message-1"]
+
+
+def test_observe_persists_all_typed_pi_entries(
+    tmp_path,
+    database: Database,
+    service: TranscriptIngestService,
+) -> None:
+    path = tmp_path / "transcript.jsonl"
+    custom_message_line = (
+        b'{"type":"custom_message","id":"custom-message-1",'
+        b'"message":{"role":"assistant"}}\n'
+    )
+    session_info_line = b'{"type":"session_info","id":"session-info-1"}\n'
+    thinking_level_change_line = b'{"type":"thinking_level_change","id":"thinking-level-1"}\n'
+    custom_line = b'{"type":"custom","id":"custom-1"}\n'
+    compaction_line = b'{"type":"compaction","id":"compaction-1"}\n'
+    write_transcript(
+        path,
+        custom_message_line
+        + session_info_line
+        + thinking_level_change_line
+        + custom_line
+        + compaction_line,
+    )
+
+    result = service.observe(ObserveInput(session_id="pi-session-1", transcript_path=path))
+
+    entries = transcript_entries(database)
+    assert result.entries_ingested == 5
+    assert [entry.entry_type for entry in entries] == [
+        "custom_message",
+        "session_info",
+        "thinking_level_change",
+        "custom",
+        "compaction",
+    ]
+    assert [entry.entry_id for entry in entries] == [
+        "custom-message-1",
+        "session-info-1",
+        "thinking-level-1",
+        "custom-1",
+        "compaction-1",
+    ]
+    assert entries[0].message_role == "assistant"
 
 
 def test_observe_missing_transcript_raises_custom_error_without_db_rows(

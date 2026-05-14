@@ -6,9 +6,7 @@ import json
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Final
-
-VALID_ENTRY_TYPES: Final[frozenset[str]] = frozenset({"session", "model_change", "message"})
+from typing import Any
 
 
 @dataclass(frozen=True)
@@ -110,9 +108,14 @@ def _load_payload(line: str) -> dict[str, Any] | None:
     return payload
 
 
-def _parse_entry(payload: dict[str, Any], raw_line: str, byte_start: int, byte_end: int) -> ParsedPiEntry | None:
+def _parse_entry(
+    payload: dict[str, Any],
+    raw_line: str,
+    byte_start: int,
+    byte_end: int,
+) -> ParsedPiEntry | None:
     entry_type = payload.get("type")
-    if not isinstance(entry_type, str) or entry_type not in VALID_ENTRY_TYPES:
+    if not isinstance(entry_type, str):
         return None
 
     return ParsedPiEntry(
@@ -120,7 +123,7 @@ def _parse_entry(payload: dict[str, Any], raw_line: str, byte_start: int, byte_e
         entry_id=_optional_string(payload.get("id")),
         parent_id=_optional_string(payload.get("parentId")),
         entry_type=entry_type,
-        message_role=_message_role(payload, entry_type),
+        message_role=_message_role(payload),
         timestamp=_timestamp(payload.get("timestamp")),
         byte_start=byte_start,
         byte_end=byte_end,
@@ -133,10 +136,7 @@ def _optional_string(value: object) -> str | None:
     return None
 
 
-def _message_role(payload: dict[str, Any], entry_type: str) -> str | None:
-    if entry_type != "message":
-        return None
-
+def _message_role(payload: dict[str, Any]) -> str | None:
     message = payload.get("message")
     if not isinstance(message, dict):
         return None
