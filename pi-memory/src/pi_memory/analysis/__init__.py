@@ -13,6 +13,7 @@ from pi_memory.analysis.manifests import (
     build_episode_manifests,
     build_session_snapshot_shell,
 )
+from pi_memory.analysis.persistence import TranscriptAnalysisResult, analyze_transcript_structure
 
 __all__ = [
     "MANIFEST_HEAD_ACTIVITIES",
@@ -23,6 +24,8 @@ __all__ = [
     "BuiltSessionSnapshotShell",
     "NormalizedActivity",
     "NormalizedEpisode",
+    "TranscriptAnalysisResult",
+    "analyze_transcript_structure",
     "build_episode_manifest",
     "build_episode_manifests",
     "build_session_snapshot_shell",

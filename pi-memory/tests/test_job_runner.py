@@ -5,13 +5,19 @@ from pathlib import Path
 
 import pytest
 from pi_memory.db import (
+    ANALYSIS_STATUS_COMPLETED,
     JOB_KIND_PROCESS_TRANSCRIPT,
     JOB_STATUS_CLAIMED,
     JOB_STATUS_COMPLETED,
     JOB_STATUS_FAILED,
+    ActivityUnit,
+    AnalysisRun,
     Database,
+    Episode,
+    EpisodeManifest,
     Job,
     MemorySession,
+    SessionSnapshotShell,
     Transcript,
     TranscriptEntry,
 )
@@ -23,7 +29,7 @@ from pi_memory.jobs import (
     TranscriptNotFoundError,
     UnsupportedJobKindError,
 )
-from sqlalchemy import text
+from sqlalchemy import func, select, text
 
 
 def sqlite_url(path: Path) -> str:
@@ -89,6 +95,20 @@ def create_transcript(database: Database) -> int:
         return transcript.id
 
 
+def create_empty_transcript(database: Database) -> int:
+    with database.session() as session:
+        memory_session = MemorySession(session_id="pi-session-empty")
+        transcript = Transcript(
+            session=memory_session,
+            path="/tmp/pi/empty-transcript.jsonl",
+            cursor_offset=0,
+            file_size=0,
+        )
+        session.add(transcript)
+        session.flush()
+        return transcript.id
+
+
 def claim_process_transcript_job(store: JobStore, transcript_id: int | None = None, payload_json=None) -> Job:
     if payload_json is None:
         payload_json = {"transcript_id": transcript_id}
@@ -103,6 +123,31 @@ def get_job(database: Database, job_id: int) -> Job:
         return session.get_one(Job, job_id)
 
 
+UNSET = object()
+
+
+def assert_phase_5a_result(
+    phase_5a: dict[str, object],
+    *,
+    activity_count: int,
+    episode_count: int,
+    manifest_count: int,
+    analyzed_through_byte_offset: int,
+    analyzed_through_entry_id: int | None | object = UNSET,
+) -> None:
+    assert isinstance(phase_5a["analysis_run_id"], int)
+    assert phase_5a["status"] == ANALYSIS_STATUS_COMPLETED
+    assert phase_5a["activity_count"] == activity_count
+    assert phase_5a["episode_count"] == episode_count
+    assert phase_5a["manifest_count"] == manifest_count
+    assert isinstance(phase_5a["snapshot_shell_id"], int)
+    if analyzed_through_entry_id is UNSET:
+        assert isinstance(phase_5a["analyzed_through_entry_id"], int)
+    else:
+        assert phase_5a["analyzed_through_entry_id"] == analyzed_through_entry_id
+    assert phase_5a["analyzed_through_byte_offset"] == analyzed_through_byte_offset
+
+
 def test_process_transcript_completes_and_writes_safe_result(database: Database, store: JobStore) -> None:
     transcript_id = create_transcript(database)
     claimed = claim_process_transcript_job(store, transcript_id)
@@ -112,7 +157,11 @@ def test_process_transcript_completes_and_writes_safe_result(database: Database,
     assert completed.status == JOB_STATUS_COMPLETED
     assert completed.attempts == 1
     assert completed.exit_code == 0
-    assert completed.result_json == {
+    assert completed.result_json is not None
+    phase_5a = completed.result_json["phase_5a"]
+    assert isinstance(phase_5a, dict)
+    base_result = {key: value for key, value in completed.result_json.items() if key != "phase_5a"}
+    assert base_result == {
         "transcript_id": transcript_id,
         "session_id": "pi-session-1",
         "entry_count": 2,
@@ -120,6 +169,13 @@ def test_process_transcript_completes_and_writes_safe_result(database: Database,
         "file_size": 250,
         "indexed_entry_count": 1,
     }
+    assert_phase_5a_result(
+        phase_5a,
+        activity_count=2,
+        episode_count=1,
+        manifest_count=1,
+        analyzed_through_byte_offset=200,
+    )
     assert "do not expose" not in str(completed.result_json)
     assert "find nebula notes" not in str(completed.result_json)
 
@@ -133,6 +189,176 @@ def test_process_transcript_completes_and_writes_safe_result(database: Database,
             .all()
         )
 
+    assert len(matches) == 1
+
+
+def test_process_transcript_handles_empty_transcript(database: Database, store: JobStore) -> None:
+    transcript_id = create_empty_transcript(database)
+    claimed = claim_process_transcript_job(store, transcript_id)
+
+    completed = JobRunner(database=database).run(claimed.id, claimed.run_id, running_pid=123, now=at(10))
+
+    assert completed.result_json is not None
+    phase_5a = completed.result_json["phase_5a"]
+    assert isinstance(phase_5a, dict)
+    assert completed.result_json["entry_count"] == 0
+    assert completed.result_json["indexed_entry_count"] == 0
+    assert_phase_5a_result(
+        phase_5a,
+        activity_count=0,
+        episode_count=0,
+        manifest_count=0,
+        analyzed_through_entry_id=None,
+        analyzed_through_byte_offset=0,
+    )
+    with database.session() as session:
+        assert session.scalar(select(func.count()).select_from(AnalysisRun)) == 1
+        assert session.scalar(select(func.count()).select_from(ActivityUnit)) == 0
+        assert session.scalar(select(func.count()).select_from(Episode)) == 0
+        assert session.scalar(select(func.count()).select_from(EpisodeManifest)) == 0
+        assert session.scalar(select(func.count()).select_from(SessionSnapshotShell)) == 1
+        shell = session.scalar(select(SessionSnapshotShell))
+        assert shell is not None
+        assert shell.analyzed_through_entry_id is None
+        assert shell.analyzed_through_byte_offset == 0
+
+
+def test_process_transcript_persists_phase_5a_rows(database: Database, store: JobStore) -> None:
+    transcript_id = create_transcript(database)
+    claimed = claim_process_transcript_job(store, transcript_id)
+
+    completed = JobRunner(database=database).run(claimed.id, claimed.run_id, running_pid=123, now=at(10))
+    assert completed.result_json is not None
+    phase_5a = completed.result_json["phase_5a"]
+    assert isinstance(phase_5a, dict)
+
+    with database.session() as session:
+        analysis_run = session.scalar(select(AnalysisRun).where(AnalysisRun.transcript_id == transcript_id))
+        assert analysis_run is not None
+        assert analysis_run.id == phase_5a["analysis_run_id"]
+        assert analysis_run.job_id == claimed.id
+        assert analysis_run.status == ANALYSIS_STATUS_COMPLETED
+        assert analysis_run.source_byte_start == 0
+        assert analysis_run.source_byte_end == 200
+        assert analysis_run.activity_count == 2
+        assert analysis_run.episode_count == 1
+        assert analysis_run.manifest_count == 1
+        assert analysis_run.diagnostics_json == {
+            "phase": "5A",
+            "analysis_kind": "transcript_structure",
+            "entry_count": 2,
+        }
+
+        assert session.scalar(select(func.count()).select_from(ActivityUnit)) == 2
+        assert session.scalar(select(func.count()).select_from(Episode)) == 1
+        assert session.scalar(select(func.count()).select_from(EpisodeManifest)) == 1
+        assert session.scalar(select(func.count()).select_from(SessionSnapshotShell)) == 1
+
+        entry_ids = list(
+            session.scalars(
+                select(TranscriptEntry.id)
+                .where(TranscriptEntry.transcript_id == transcript_id)
+                .order_by(TranscriptEntry.byte_start),
+            ),
+        )
+        assert phase_5a["analyzed_through_entry_id"] == entry_ids[-1]
+        activities = list(session.scalars(select(ActivityUnit).order_by(ActivityUnit.ordinal)))
+        assert all(activity.episode_id is not None for activity in activities)
+        assert [activity.source_entry_ids_json for activity in activities] == [[entry_ids[0]], [entry_ids[1]]]
+
+        episode = session.scalar(select(Episode))
+        assert episode is not None
+        assert episode.activity_count == 2
+        assert episode.byte_start == 0
+        assert episode.byte_end == 200
+
+        manifest = session.scalar(select(EpisodeManifest))
+        assert manifest is not None
+        assert manifest.episode_id == episode.id
+        assert manifest.activity_map_json["kind"] == "episode_manifest_activity_map"
+        assert manifest.source_spans_json[0] == {
+            "kind": "episode",
+            "episode_ordinal": 0,
+            "byte_start": 0,
+            "byte_end": 200,
+            "first_entry_id": episode.first_entry_id,
+            "last_entry_id": episode.last_entry_id,
+            "timestamp_start": None,
+            "timestamp_end": None,
+        }
+
+        shell = session.scalar(select(SessionSnapshotShell))
+        assert shell is not None
+        assert shell.id == phase_5a["snapshot_shell_id"]
+        assert shell.analysis_run_id == analysis_run.id
+        assert shell.transcript_id == transcript_id
+        assert shell.activity_count == 2
+        assert shell.episode_count == 1
+        assert shell.manifest_count == 1
+        assert shell.analyzed_through_byte_offset == 200
+        assert shell.snapshot_json["kind"] == "session_snapshot_shell"
+        assert shell.snapshot_json["counts"] == {
+            "activity_count": 2,
+            "episode_count": 1,
+            "manifest_count": 1,
+            "tool_pair_count": 0,
+        }
+
+
+def test_process_transcript_phase_5a_rerun_replaces_derived_rows(
+    database: Database,
+    store: JobStore,
+) -> None:
+    transcript_id = create_transcript(database)
+    first_claimed = claim_process_transcript_job(store, transcript_id)
+    first_completed = JobRunner(database=database).run(
+        first_claimed.id,
+        first_claimed.run_id,
+        running_pid=123,
+        now=at(10),
+    )
+    assert first_completed.result_json is not None
+    first_phase_5a = first_completed.result_json["phase_5a"]
+    assert isinstance(first_phase_5a, dict)
+
+    second_claimed = claim_process_transcript_job(store, transcript_id)
+    second_completed = JobRunner(database=database).run(
+        second_claimed.id,
+        second_claimed.run_id,
+        running_pid=123,
+        now=at(10),
+    )
+    assert second_completed.result_json is not None
+    second_phase_5a = second_completed.result_json["phase_5a"]
+    assert isinstance(second_phase_5a, dict)
+
+    assert_phase_5a_result(
+        second_phase_5a,
+        activity_count=2,
+        episode_count=1,
+        manifest_count=1,
+        analyzed_through_byte_offset=200,
+    )
+    with database.session() as session:
+        assert session.scalar(select(func.count()).select_from(AnalysisRun)) == 1
+        assert session.scalar(select(func.count()).select_from(ActivityUnit)) == 2
+        assert session.scalar(select(func.count()).select_from(Episode)) == 1
+        assert session.scalar(select(func.count()).select_from(EpisodeManifest)) == 1
+        assert session.scalar(select(func.count()).select_from(SessionSnapshotShell)) == 1
+        analysis_run = session.scalar(select(AnalysisRun))
+        assert analysis_run is not None
+        assert analysis_run.id == second_phase_5a["analysis_run_id"]
+        assert analysis_run.job_id == second_claimed.id
+
+    with database.engine.connect() as connection:
+        matches = (
+            connection.execute(
+                text("SELECT rowid FROM transcript_entries_fts WHERE transcript_entries_fts MATCH :query"),
+                {"query": "nebula"},
+            )
+            .scalars()
+            .all()
+        )
     assert len(matches) == 1
 
 
@@ -153,6 +379,7 @@ def test_wrong_run_id_is_rejected_without_incrementing_attempts(database: Databa
     [
         ({}, InvalidJobPayloadError),
         ({"transcript_id": "not-an-int"}, InvalidJobPayloadError),
+        ({"transcript_id": True}, InvalidJobPayloadError),
         ({"transcript_id": 99999}, TranscriptNotFoundError),
     ],
 )

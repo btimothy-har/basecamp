@@ -6,6 +6,7 @@ import os
 from datetime import datetime
 from typing import Any
 
+from pi_memory.analysis import analyze_transcript_structure
 from pi_memory.db import JOB_KIND_PROCESS_TRANSCRIPT, Database, Job, Transcript, database
 from pi_memory.jobs.store import JobStore
 from pi_memory.recall import index_transcript
@@ -91,6 +92,7 @@ class JobRunner:
                 raise TranscriptNotFoundError(transcript_id)
 
             index_result = index_transcript(session, transcript_id)
+            analysis_result = analyze_transcript_structure(session, transcript, job_id=job.id)
             return {
                 "transcript_id": transcript.id,
                 "session_id": transcript.session.session_id,
@@ -98,6 +100,7 @@ class JobRunner:
                 "cursor_offset": transcript.cursor_offset,
                 "file_size": transcript.file_size,
                 "indexed_entry_count": index_result.indexed_entries,
+                "phase_5a": analysis_result.to_result_json(),
             }
 
 

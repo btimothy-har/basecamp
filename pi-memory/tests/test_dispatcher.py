@@ -8,6 +8,7 @@ from pathlib import Path
 
 import pytest
 from pi_memory.db import (
+    ANALYSIS_STATUS_COMPLETED,
     JOB_KIND_PROCESS_TRANSCRIPT,
     JOB_STATUS_COMPLETED,
     JOB_STATUS_FAILED,
@@ -214,7 +215,11 @@ def test_run_once_claims_spawns_and_observes_child_completion(database: Database
     completed = get_job(database, job.id)
     assert completed.status == JOB_STATUS_COMPLETED
     assert completed.attempts == 1
-    assert completed.result_json == {
+    assert completed.result_json is not None
+    phase_5a = completed.result_json["phase_5a"]
+    assert isinstance(phase_5a, dict)
+    base_result = {key: value for key, value in completed.result_json.items() if key != "phase_5a"}
+    assert base_result == {
         "transcript_id": transcript_id,
         "session_id": "pi-session-dispatcher",
         "entry_count": 1,
@@ -222,6 +227,14 @@ def test_run_once_claims_spawns_and_observes_child_completion(database: Database
         "file_size": 50,
         "indexed_entry_count": 0,
     }
+    assert isinstance(phase_5a["analysis_run_id"], int)
+    assert phase_5a["status"] == ANALYSIS_STATUS_COMPLETED
+    assert phase_5a["activity_count"] == 1
+    assert phase_5a["episode_count"] == 1
+    assert phase_5a["manifest_count"] == 1
+    assert isinstance(phase_5a["snapshot_shell_id"], int)
+    assert isinstance(phase_5a["analyzed_through_entry_id"], int)
+    assert phase_5a["analyzed_through_byte_offset"] == 50
 
 
 def test_spawn_failure_releases_claim_to_future_due_at_without_incrementing_attempts(
