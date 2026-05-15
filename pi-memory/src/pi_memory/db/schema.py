@@ -14,6 +14,7 @@ class Base(DeclarativeBase):
 
 
 JOB_KIND_PROCESS_TRANSCRIPT = "process_transcript"
+JOB_KIND_INTERPRET_SESSION = "interpret_session"
 
 JOB_STATUS_QUEUED = "queued"
 JOB_STATUS_CLAIMED = "claimed"
@@ -81,6 +82,23 @@ EPISODE_CLOSE_REASONS = (
 SESSION_SNAPSHOT_STATUS_READY_FOR_INTERPRETATION = "ready_for_interpretation"
 SESSION_SNAPSHOT_STATUSES = (SESSION_SNAPSHOT_STATUS_READY_FOR_INTERPRETATION,)
 
+SESSION_INTERPRETATION_STATUS_COMPLETED = "completed"
+SESSION_INTERPRETATION_STATUS_BLOCKED = "blocked"
+SESSION_INTERPRETATION_STATUS_SKIPPED_NO_CLAIM_SOURCES = "skipped_no_claim_sources"
+SESSION_INTERPRETATION_STATUSES = (
+    SESSION_INTERPRETATION_STATUS_COMPLETED,
+    SESSION_INTERPRETATION_STATUS_BLOCKED,
+    SESSION_INTERPRETATION_STATUS_SKIPPED_NO_CLAIM_SOURCES,
+)
+SESSION_INTERPRETATION_BLOCKED_REASON_PHASE_5A_NOT_READY = "phase_5a_not_ready"
+SESSION_INTERPRETATION_BLOCKED_REASON_PARENT_TRANSCRIPT_NOT_INGESTED = "parent_transcript_not_ingested"
+SESSION_INTERPRETATION_BLOCKED_REASON_SOURCE_ORIGIN_INCOMPLETE = "source_origin_incomplete"
+SESSION_INTERPRETATION_BLOCKED_REASONS = (
+    SESSION_INTERPRETATION_BLOCKED_REASON_PHASE_5A_NOT_READY,
+    SESSION_INTERPRETATION_BLOCKED_REASON_PARENT_TRANSCRIPT_NOT_INGESTED,
+    SESSION_INTERPRETATION_BLOCKED_REASON_SOURCE_ORIGIN_INCOMPLETE,
+)
+
 SOURCE_ORIGIN_LOCAL = "local"
 SOURCE_ORIGIN_INHERITED = "inherited"
 SOURCE_ORIGIN_MIXED = "mixed"
@@ -142,6 +160,7 @@ class Job(Base):
     )
 
     analysis_runs: Mapped[list[AnalysisRun]] = relationship(back_populates="job")
+    session_interpretation_snapshots: Mapped[list[SessionInterpretationSnapshot]] = relationship(back_populates="job")
 
 
 class MemorySession(Base):
@@ -173,6 +192,10 @@ class MemorySession(Base):
         cascade="all, delete-orphan",
     )
     session_snapshot_shells: Mapped[list[SessionSnapshotShell]] = relationship(
+        back_populates="session",
+        cascade="all, delete-orphan",
+    )
+    session_interpretation_snapshot: Mapped[SessionInterpretationSnapshot | None] = relationship(
         back_populates="session",
         cascade="all, delete-orphan",
     )
@@ -231,6 +254,9 @@ class Transcript(Base):
         cascade="all, delete-orphan",
     )
     session_snapshot_shells: Mapped[list[SessionSnapshotShell]] = relationship(back_populates="transcript")
+    session_interpretation_snapshots: Mapped[list[SessionInterpretationSnapshot]] = relationship(
+        back_populates="transcript",
+    )
 
 
 class Observation(Base):
@@ -358,6 +384,9 @@ class AnalysisRun(Base):
         cascade="all, delete-orphan",
     )
     session_snapshot_shells: Mapped[list[SessionSnapshotShell]] = relationship(back_populates="analysis_run")
+    session_interpretation_snapshots: Mapped[list[SessionInterpretationSnapshot]] = relationship(
+        back_populates="analysis_run",
+    )
 
 
 class ActivityUnit(Base):
@@ -598,3 +627,68 @@ class SessionSnapshotShell(Base):
     session: Mapped[MemorySession] = relationship(back_populates="session_snapshot_shells")
     transcript: Mapped[Transcript | None] = relationship(back_populates="session_snapshot_shells")
     analysis_run: Mapped[AnalysisRun | None] = relationship(back_populates="session_snapshot_shells")
+
+
+class SessionInterpretationSnapshot(Base):
+    """Replaceable current interpretation snapshot for a session."""
+
+    __tablename__ = "session_interpretation_snapshots"
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('completed', 'blocked', 'skipped_no_claim_sources')",
+            name="ck_session_interpretation_snapshots_status_valid",
+        ),
+        CheckConstraint(
+            "blocked_reason IS NULL OR blocked_reason IN ("
+            "'phase_5a_not_ready', 'parent_transcript_not_ingested', 'source_origin_incomplete')",
+            name="ck_session_interpretation_snapshots_blocked_reason_valid",
+        ),
+        CheckConstraint(
+            "(status = 'blocked' AND blocked_reason IS NOT NULL) OR "
+            "(status != 'blocked' AND blocked_reason IS NULL)",
+            name="ck_session_interpretation_snapshots_blocked_reason_matches_status",
+        ),
+        CheckConstraint(
+            "analyzed_through_byte_offset >= 0",
+            name="ck_session_interpretation_snapshots_byte_offset_non_negative",
+        ),
+        CheckConstraint(
+            "claim_source_activity_count >= 0",
+            name="ck_session_interpretation_snapshots_claim_source_activity_count_non_negative",
+        ),
+        CheckConstraint("schema_version > 0", name="ck_session_interpretation_snapshots_schema_version_positive"),
+        Index("ix_session_interpretation_snapshots_status_updated_at", "status", "updated_at"),
+        Index("ix_session_interpretation_snapshots_analysis_run_id", "analysis_run_id"),
+        Index("ix_session_interpretation_snapshots_job_id", "job_id"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    session_id: Mapped[int] = mapped_column(ForeignKey("sessions.id", ondelete="CASCADE"), unique=True, index=True)
+    transcript_id: Mapped[int | None] = mapped_column(ForeignKey("transcripts.id", ondelete="SET NULL"), index=True)
+    analysis_run_id: Mapped[int | None] = mapped_column(ForeignKey("analysis_runs.id", ondelete="SET NULL"))
+    job_id: Mapped[int | None] = mapped_column(ForeignKey("jobs.id", ondelete="SET NULL"))
+    status: Mapped[str]
+    blocked_reason: Mapped[str | None]
+    analyzed_through_entry_id: Mapped[int | None] = mapped_column(
+        ForeignKey("transcript_entries.id", ondelete="SET NULL"),
+        index=True,
+    )
+    analyzed_through_byte_offset: Mapped[int] = mapped_column(default=0, server_default="0")
+    origin_counts_json: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict, server_default=text("'{}'"))
+    claim_source_activity_count: Mapped[int] = mapped_column(default=0, server_default="0")
+    interpretation_json: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict, server_default=text("'{}'"))
+    citations_json: Mapped[list[dict[str, Any]]] = mapped_column(JSON, default=list, server_default=text("'[]'"))
+    model_metadata_json: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict, server_default=text("'{}'"))
+    prompt_version: Mapped[str | None]
+    schema_version: Mapped[int] = mapped_column(default=1, server_default="1")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+    )
+
+    session: Mapped[MemorySession] = relationship(back_populates="session_interpretation_snapshot")
+    transcript: Mapped[Transcript | None] = relationship(back_populates="session_interpretation_snapshots")
+    analysis_run: Mapped[AnalysisRun | None] = relationship(back_populates="session_interpretation_snapshots")
+    job: Mapped[Job | None] = relationship(back_populates="session_interpretation_snapshots")

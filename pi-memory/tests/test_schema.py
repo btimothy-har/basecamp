@@ -7,8 +7,12 @@ from pi_memory.db import (
     ANALYSIS_STATUS_RUNNING,
     EPISODE_CLOSE_REASON_TRANSCRIPT_END,
     EPISODE_STATUS_CLOSED,
+    JOB_KIND_INTERPRET_SESSION,
     JOB_KIND_PROCESS_TRANSCRIPT,
     JOB_STATUS_QUEUED,
+    SESSION_INTERPRETATION_BLOCKED_REASON_PHASE_5A_NOT_READY,
+    SESSION_INTERPRETATION_STATUS_BLOCKED,
+    SESSION_INTERPRETATION_STATUS_COMPLETED,
     SESSION_SNAPSHOT_STATUS_READY_FOR_INTERPRETATION,
     SOURCE_ORIGIN_UNKNOWN,
     ActivityUnit,
@@ -19,6 +23,7 @@ from pi_memory.db import (
     Job,
     MemorySession,
     Observation,
+    SessionInterpretationSnapshot,
     SessionSnapshotShell,
     Transcript,
     TranscriptEntry,
@@ -75,6 +80,7 @@ def test_initialize_creates_pi_transcript_schema_tables(database: Database) -> N
         "episodes",
         "episode_manifests",
         "session_snapshot_shells",
+        "session_interpretation_snapshots",
     }.issubset(table_names)
 
 
@@ -197,6 +203,150 @@ def test_session_snapshot_shell_defaults_are_applied(database: Database) -> None
         assert snapshot_shell.snapshot_json == {}
         assert snapshot_shell.created_at is not None
         assert snapshot_shell.updated_at is not None
+
+
+def test_session_interpretation_snapshot_defaults_are_applied(database: Database) -> None:
+    with database.session() as session:
+        memory_session = MemorySession(session_id="pi-session-1")
+        job = Job(kind=JOB_KIND_INTERPRET_SESSION)
+        snapshot = SessionInterpretationSnapshot(
+            session=memory_session,
+            job=job,
+            status=SESSION_INTERPRETATION_STATUS_COMPLETED,
+        )
+        session.add(snapshot)
+        session.flush()
+        session.refresh(snapshot)
+
+        assert snapshot.status == SESSION_INTERPRETATION_STATUS_COMPLETED
+        assert snapshot.blocked_reason is None
+        assert snapshot.analyzed_through_byte_offset == 0
+        assert snapshot.origin_counts_json == {}
+        assert snapshot.claim_source_activity_count == 0
+        assert snapshot.interpretation_json == {}
+        assert snapshot.citations_json == []
+        assert snapshot.model_metadata_json == {}
+        assert snapshot.prompt_version is None
+        assert snapshot.schema_version == 1
+        assert snapshot.created_at is not None
+        assert snapshot.updated_at is not None
+        assert memory_session.session_interpretation_snapshot == snapshot
+        assert job.session_interpretation_snapshots == [snapshot]
+
+
+def test_session_interpretation_snapshot_accepts_blocked_reason(database: Database) -> None:
+    with database.session() as session:
+        memory_session = MemorySession(session_id="pi-session-1")
+        snapshot = SessionInterpretationSnapshot(
+            session=memory_session,
+            status=SESSION_INTERPRETATION_STATUS_BLOCKED,
+            blocked_reason=SESSION_INTERPRETATION_BLOCKED_REASON_PHASE_5A_NOT_READY,
+        )
+        session.add(snapshot)
+        session.flush()
+        session.refresh(snapshot)
+
+        assert snapshot.blocked_reason == SESSION_INTERPRETATION_BLOCKED_REASON_PHASE_5A_NOT_READY
+
+
+def test_session_interpretation_snapshot_requires_status(database: Database) -> None:
+    with pytest.raises(IntegrityError):
+        with database.session() as session:
+            memory_session = MemorySession(session_id="pi-session-1")
+            session.add(SessionInterpretationSnapshot(session=memory_session))
+
+
+def test_session_interpretation_snapshot_rejects_invalid_status(database: Database) -> None:
+    with pytest.raises(IntegrityError):
+        with database.session() as session:
+            memory_session = MemorySession(session_id="pi-session-1")
+            session.add(
+                SessionInterpretationSnapshot(
+                    session=memory_session,
+                    status="running",
+                ),
+            )
+
+
+def test_session_interpretation_snapshot_rejects_invalid_blocked_reason(database: Database) -> None:
+    with pytest.raises(IntegrityError):
+        with database.session() as session:
+            memory_session = MemorySession(session_id="pi-session-1")
+            session.add(
+                SessionInterpretationSnapshot(
+                    session=memory_session,
+                    status=SESSION_INTERPRETATION_STATUS_BLOCKED,
+                    blocked_reason="llm_timeout",
+                ),
+            )
+
+
+def test_session_interpretation_snapshot_requires_blocked_reason_for_blocked_status(database: Database) -> None:
+    with pytest.raises(IntegrityError):
+        with database.session() as session:
+            memory_session = MemorySession(session_id="pi-session-1")
+            session.add(
+                SessionInterpretationSnapshot(
+                    session=memory_session,
+                    status=SESSION_INTERPRETATION_STATUS_BLOCKED,
+                ),
+            )
+
+
+def test_session_interpretation_snapshot_rejects_blocked_reason_for_completed_status(database: Database) -> None:
+    with pytest.raises(IntegrityError):
+        with database.session() as session:
+            memory_session = MemorySession(session_id="pi-session-1")
+            session.add(
+                SessionInterpretationSnapshot(
+                    session=memory_session,
+                    status=SESSION_INTERPRETATION_STATUS_COMPLETED,
+                    blocked_reason=SESSION_INTERPRETATION_BLOCKED_REASON_PHASE_5A_NOT_READY,
+                ),
+            )
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("analyzed_through_byte_offset", -1),
+        ("claim_source_activity_count", -1),
+        ("schema_version", 0),
+    ],
+)
+def test_session_interpretation_snapshot_rejects_invalid_counts(
+    database: Database,
+    field: str,
+    value: int,
+) -> None:
+    with pytest.raises(IntegrityError):
+        with database.session() as session:
+            memory_session = MemorySession(session_id="pi-session-1")
+            session.add(
+                SessionInterpretationSnapshot(
+                    session=memory_session,
+                    status=SESSION_INTERPRETATION_STATUS_COMPLETED,
+                    **{field: value},
+                ),
+            )
+
+
+def test_only_one_session_interpretation_snapshot_per_session(database: Database) -> None:
+    with pytest.raises(IntegrityError):
+        with database.session() as session:
+            memory_session = MemorySession(session_id="pi-session-1")
+            session.add_all(
+                [
+                    SessionInterpretationSnapshot(
+                        session=memory_session,
+                        status=SESSION_INTERPRETATION_STATUS_COMPLETED,
+                    ),
+                    SessionInterpretationSnapshot(
+                        session=memory_session,
+                        status=SESSION_INTERPRETATION_STATUS_COMPLETED,
+                    ),
+                ],
+            )
 
 
 def test_analysis_run_rejects_invalid_status(database: Database) -> None:
@@ -591,6 +741,21 @@ def test_phase_5a_indexes_exist(database: Database) -> None:
         "ix_episode_manifests_episode_id",
     }.issubset(manifest_indexes)
     assert {"ix_session_snapshot_shells_status_updated_at"}.issubset(snapshot_indexes)
+
+
+def test_phase_5b_indexes_exist(database: Database) -> None:
+    inspector = inspect(database.engine)
+
+    snapshot_indexes = {index["name"] for index in inspector.get_indexes("session_interpretation_snapshots")}
+
+    assert {
+        "ix_session_interpretation_snapshots_session_id",
+        "ix_session_interpretation_snapshots_transcript_id",
+        "ix_session_interpretation_snapshots_analysis_run_id",
+        "ix_session_interpretation_snapshots_job_id",
+        "ix_session_interpretation_snapshots_analyzed_through_entry_id",
+        "ix_session_interpretation_snapshots_status_updated_at",
+    }.issubset(snapshot_indexes)
 
 
 def test_job_rejects_invalid_status(database: Database) -> None:
