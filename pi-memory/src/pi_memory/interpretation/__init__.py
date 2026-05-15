@@ -9,6 +9,7 @@ from pi_memory.interpretation.contracts import (
     InterpretationOutput,
     InterpretationValidationError,
     ValidatedInterpretation,
+    is_claim_source_eligible,
     validate_interpretation_output,
 )
 from pi_memory.interpretation.factory import create_session_interpreter
@@ -74,6 +75,7 @@ __all__ = [
     "SourceRef",
     "ValidatedInterpretation",
     "build_interpretation_packet",
+    "is_claim_source_eligible",
     "serialize_session_interpretation_snapshot",
     "validate_interpretation_output",
 ]

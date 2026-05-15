@@ -543,23 +543,28 @@ Hygiene should be conservative. It should not silently delete memory. Prefer low
 
 ## Local HTTP API
 
-The initial API shape should be small and local-only:
+The API shape stays small and local-only. Current implemented endpoints are:
 
 ```text
 GET  /health
-GET  /v1/capabilities
 GET  /v1/status
 POST /v1/observe
+GET  /v1/jobs/{job_id}
+POST /v1/recall/search
+GET  /v1/sessions/{session_id}/interpretation
+```
+
+Planned endpoint candidates remain separate from the implemented surface:
+
+```text
+GET  /v1/capabilities
 POST /v1/sessions/{session_id}/sync
 POST /v1/sessions/{session_id}/finalize
-POST /v1/recall/search
-GET  /v1/jobs/{job_id}
-GET  /v1/sessions/{session_id}/interpretation
 ```
 
 Requests should be quick and idempotent. Long work returns job IDs.
 
-Exact request and response schemas should be defined during the service foundation phase, not in this architecture document.
+Exact request and response schemas should live with the implementation and tests, not only in this architecture document.
 
 ## Durable jobs
 
@@ -923,7 +928,7 @@ Implemented in `pi-memory`:
 - Read-only inspection via `GET /v1/sessions/{session_id}/interpretation` and `pi-memory interpretation --session-id --db-url [--json]`.
 - Model-agnostic PydanticAI configuration via `pi-memory config`, `~/.pi/memory/config.json`, and the `PI_MEMORY_INTERPRETATION_MODEL` environment override.
 
-PydanticAI-backed interpretation requires `interpretation_model` to be configured with any PydanticAI-supported model string, such as `anthropic:claude-sonnet-4-5` or `openai:gpt-4o`. `pi-memory` does not store API keys; provider credentials stay in the environment variables expected by PydanticAI/provider packages, such as `ANTHROPIC_API_KEY` or `OPENAI_API_KEY`.
+PydanticAI-backed interpretation requires `interpretation_model` to be configured with any PydanticAI-supported model string, such as `anthropic:claude-sonnet-4-5` or `openai:gpt-4o`. When interpretation jobs run, `pi-memory` sends bounded session interpretation packets, including cited source excerpts, to the configured PydanticAI provider. `pi-memory` does not store API keys; provider credentials stay in the environment variables expected by PydanticAI/provider packages, such as `ANTHROPIC_API_KEY` or `OPENAI_API_KEY`.
 
 Current interpretation fields include:
 

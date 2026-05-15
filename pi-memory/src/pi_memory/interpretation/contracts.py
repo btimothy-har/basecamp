@@ -173,11 +173,12 @@ def _cited_source_ref_ids(output: InterpretationOutput) -> tuple[str, ...]:
 
 def _validate_claim_support(output: InterpretationOutput, source_refs: Mapping[str, SourceRef]) -> None:
     for index, claim in enumerate(output.claims):
-        if not any(_can_support_claim(source_refs[source_ref_id]) for source_ref_id in claim.source_ref_ids):
+        if not any(is_claim_source_eligible(source_refs[source_ref_id]) for source_ref_id in claim.source_ref_ids):
             raise InterpretationValidationError.unsupported_claim_sources(index)
 
 
-def _can_support_claim(source_ref: SourceRef) -> bool:
+def is_claim_source_eligible(source_ref: SourceRef) -> bool:
+    """Whether a source ref may support interpretation claims."""
     return source_ref.claim_source_allowed and source_ref.source_origin in _ALLOWED_CLAIM_SOURCE_ORIGINS
 
 

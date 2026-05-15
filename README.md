@@ -178,7 +178,7 @@ You can also use an environment override, which is inherited by dispatcher-spawn
 export PI_MEMORY_INTERPRETATION_MODEL=openai:gpt-4o
 ```
 
-`pi-memory` does not store API keys. Configure provider credentials with the environment variables expected by PydanticAI/provider packages, such as `ANTHROPIC_API_KEY` or `OPENAI_API_KEY`.
+When interpretation jobs run, `pi-memory` sends bounded session interpretation packets, including cited source excerpts, to the configured PydanticAI provider. `pi-memory` does not store API keys. Configure provider credentials with the environment variables expected by PydanticAI/provider packages, such as `ANTHROPIC_API_KEY` or `OPENAI_API_KEY`.
 
 Clear the persisted model setting:
 

@@ -12,12 +12,12 @@ try:
 except ImportError:
     PydanticAIAgent = None
 
-from pi_memory.db import SOURCE_ORIGIN_LOCAL, SOURCE_ORIGIN_MIXED
 from pi_memory.interpretation.contracts import (
     InterpretationCitation,
     InterpretationClaim,
     InterpretationOpenQuestion,
     InterpretationOutput,
+    is_claim_source_eligible,
 )
 from pi_memory.interpretation.packets import BoundedText, EpisodePacket, InterpretationPacket, SourceRef
 
@@ -28,7 +28,6 @@ DETERMINISTIC_INTERPRETER_MODEL = "deterministic-session-interpreter-v1"
 DETERMINISTIC_INTERPRETER_MODE = "deterministic"
 PYDANTIC_AI_INTERPRETER_MODE = "pydantic-ai"
 
-_CLAIM_SOURCE_ORIGINS = frozenset((SOURCE_ORIGIN_LOCAL, SOURCE_ORIGIN_MIXED))
 _PYDANTIC_AI_ERROR_MESSAGE = "PydanticAI session interpretation failed"
 
 AgentFactory = Callable[..., Any]
@@ -173,8 +172,6 @@ def _extract_pydantic_ai_output(run_result: Any) -> InterpretationOutput:
     output = getattr(run_result, "output", None)
     if isinstance(output, InterpretationOutput):
         return output
-    if isinstance(output, Mapping):
-        return InterpretationOutput.model_validate(output)
     return InterpretationOutput.model_validate(output)
 
 
@@ -299,17 +296,13 @@ def _provider_from_model(model: str) -> str | None:
 
 def _first_claim_source(packet: InterpretationPacket) -> SourceRef | None:
     for source_ref in _source_refs(packet):
-        if _can_support_claim(source_ref):
+        if is_claim_source_eligible(source_ref):
             return source_ref
     return None
 
 
 def _source_refs(packet: InterpretationPacket) -> tuple[SourceRef, ...]:
     return tuple(source_ref for episode_packet in packet.episode_packets for source_ref in episode_packet.source_refs)
-
-
-def _can_support_claim(source_ref: SourceRef) -> bool:
-    return source_ref.claim_source_allowed and source_ref.source_origin in _CLAIM_SOURCE_ORIGINS
 
 
 def _goal(packet: InterpretationPacket) -> str:

@@ -122,7 +122,7 @@ class NetworkAccessError(AssertionError):
 
 
 class FakePydanticAgent:
-    def __init__(self, output: InterpretationOutput | None = None, error: Exception | None = None) -> None:
+    def __init__(self, output: Any = None, error: Exception | None = None) -> None:
         self.output = output
         self.error = error
         self.prompts: list[str] = []
@@ -296,6 +296,21 @@ def test_pydantic_ai_interpreter_uses_agent_factory_and_returns_output() -> None
         "mode": PYDANTIC_AI_INTERPRETER_MODE,
         "schema_version": INTERPRETATION_SCHEMA_VERSION,
     }
+    validate_interpretation_output(result.output, source_packet)
+
+
+def test_pydantic_ai_interpreter_accepts_mapping_output() -> None:
+    source_packet = packet(source_ref("local-ref"))
+    output = interpretation_output(source_packet, "local-ref")
+    agent = FakePydanticAgent(output=output.model_dump(mode="json"))
+    interpreter = PydanticAISessionInterpreter(
+        "test-provider:test-model",
+        agent_factory=FakePydanticAgentFactory(agent),
+    )
+
+    result = interpreter.interpret(source_packet)
+
+    assert result.output == output
     validate_interpretation_output(result.output, source_packet)
 
 
