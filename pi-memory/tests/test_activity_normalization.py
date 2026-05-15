@@ -15,6 +15,10 @@ from pi_memory.db import (
     ACTIVITY_KIND_SESSION_EVENT,
     ACTIVITY_KIND_TOOL_PAIR,
     ACTIVITY_KIND_USER_TEXT,
+    SOURCE_ORIGIN_INHERITED,
+    SOURCE_ORIGIN_LOCAL,
+    SOURCE_ORIGIN_MIXED,
+    SOURCE_ORIGIN_UNKNOWN,
     TranscriptEntry,
 )
 
@@ -291,6 +295,47 @@ def test_input_entries_are_sorted_deterministically_by_byte_start_then_id() -> N
 
     assert [activity.source_entry_ids for activity in activities] == [(1,), (5,), (2,)]
     assert [activity.text_char_count for activity in activities] == [5, 6, 5]
+
+
+def test_source_origins_aggregate_and_partition_source_entries() -> None:
+    local_user = message_entry(1, "user", "local")
+    inherited_user = message_entry(2, "user", "inherited")
+    unknown_user = message_entry(3, "user", "unknown")
+    no_id_user = message_entry(4, "user", "no id")
+    no_id_user.id = None
+    assistant = message_entry(
+        5,
+        "assistant",
+        [{"type": "toolCall", "id": "call-1", "name": "bash", "arguments": {"cmd": "pwd"}}],
+    )
+    result = message_entry(6, "toolResult", "ok", toolCallId="call-1")
+
+    activities = normalize_transcript_entries(
+        [local_user, inherited_user, unknown_user, no_id_user, assistant, result],
+        entry_source_origins={
+            1: SOURCE_ORIGIN_LOCAL,
+            2: SOURCE_ORIGIN_INHERITED,
+            3: SOURCE_ORIGIN_UNKNOWN,
+            5: SOURCE_ORIGIN_INHERITED,
+            6: SOURCE_ORIGIN_LOCAL,
+        },
+    )
+
+    assert [activity.source_origin for activity in activities] == [
+        SOURCE_ORIGIN_LOCAL,
+        SOURCE_ORIGIN_INHERITED,
+        SOURCE_ORIGIN_UNKNOWN,
+        SOURCE_ORIGIN_UNKNOWN,
+        SOURCE_ORIGIN_MIXED,
+    ]
+    assert activities[0].source_metadata_json["source_entry_ids_by_origin"] == {SOURCE_ORIGIN_LOCAL: [1]}
+    assert activities[1].source_metadata_json["source_entry_ids_by_origin"] == {SOURCE_ORIGIN_INHERITED: [2]}
+    assert activities[2].source_metadata_json["source_entry_ids_by_origin"] == {SOURCE_ORIGIN_UNKNOWN: [3]}
+    assert activities[3].source_metadata_json["source_entry_ids_by_origin"] == {SOURCE_ORIGIN_UNKNOWN: []}
+    assert activities[4].source_metadata_json["source_entry_ids_by_origin"] == {
+        SOURCE_ORIGIN_INHERITED: [5],
+        SOURCE_ORIGIN_LOCAL: [6],
+    }
 
 
 def test_large_tool_result_receipt_has_counts_and_bounded_preview_without_full_output() -> None:

@@ -11,7 +11,7 @@ from sqlalchemy.engine import Connection, make_url
 from sqlalchemy.orm import Session, sessionmaker
 
 from pi_memory.constants import MEMORY_DB_URL
-from pi_memory.db.schema import Base
+from pi_memory.db.schema import SOURCE_ORIGIN_UNKNOWN, Base
 
 
 class DatabaseSessionFactoryError(RuntimeError):
@@ -62,6 +62,7 @@ class Database:
             Base.metadata.create_all(connection)
             if _is_sqlite_url(self._url):
                 _upgrade_sqlite_transcript_lineage(connection)
+                _upgrade_sqlite_activity_source_origin(connection)
                 connection.execute(
                     text(
                         """
@@ -127,6 +128,36 @@ def _upgrade_sqlite_transcript_lineage(connection: Connection) -> None:
             ON transcripts (parent_transcript_path)
             """,
         ),
+    )
+
+
+def _upgrade_sqlite_activity_source_origin(connection: Connection) -> None:
+    """Add activity source-origin columns and indexes to existing SQLite databases."""
+    table_exists = connection.execute(
+        text(
+            """
+            SELECT 1
+            FROM sqlite_master
+            WHERE type = 'table' AND name = 'activity_units'
+            """,
+        ),
+    ).scalar_one_or_none()
+    if table_exists is None:
+        return
+
+    columns = {row[1] for row in connection.execute(text("PRAGMA table_info(activity_units)"))}
+    if "source_origin" not in columns:
+        connection.execute(
+            text(
+                f"""
+                ALTER TABLE activity_units
+                ADD COLUMN source_origin VARCHAR DEFAULT '{SOURCE_ORIGIN_UNKNOWN}' NOT NULL
+                """,
+            ),
+        )
+
+    connection.execute(
+        text("CREATE INDEX IF NOT EXISTS ix_activity_units_source_origin ON activity_units (source_origin)"),
     )
 
 

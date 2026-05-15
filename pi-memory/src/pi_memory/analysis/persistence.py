@@ -20,6 +20,9 @@ from pi_memory.analysis.manifests import (
 from pi_memory.db import (
     ANALYSIS_KIND_TRANSCRIPT_STRUCTURE,
     ANALYSIS_STATUS_COMPLETED,
+    SOURCE_ORIGIN_INHERITED,
+    SOURCE_ORIGIN_LOCAL,
+    SOURCE_ORIGIN_UNKNOWN,
     ActivityUnit,
     AnalysisRun,
     Episode,
@@ -74,8 +77,10 @@ def analyze_transcript_structure(
     Returns:
         Safe persisted analysis summary for process_transcript results.
     """
+    _resolve_parent_transcript_id(session, transcript)
     entries = _transcript_entries(session, transcript.id)
-    activities = normalize_transcript_entries(entries)
+    entry_source_origins = _entry_source_origins(session, transcript, entries)
+    activities = normalize_transcript_entries(entries, entry_source_origins=entry_source_origins)
     episodes = segment_activities(activities)
     manifests = build_episode_manifests(episodes)
     snapshot_shell = build_session_snapshot_shell(episodes, manifests)
@@ -120,6 +125,67 @@ def _transcript_entries(session: Session, transcript_id: int) -> list[Transcript
             .order_by(TranscriptEntry.byte_start, TranscriptEntry.id),
         ),
     )
+
+
+def _resolve_parent_transcript_id(session: Session, transcript: Transcript) -> None:
+    if transcript.parent_transcript_path is None or transcript.parent_transcript_id is not None:
+        return
+
+    parent_id = session.scalar(
+        select(Transcript.id)
+        .where(
+            Transcript.path == transcript.parent_transcript_path,
+            Transcript.id != transcript.id,
+        )
+        .order_by(Transcript.id)
+        .limit(1),
+    )
+    if parent_id is None:
+        return
+
+    transcript.parent_transcript_id = parent_id
+    session.flush()
+
+
+def _entry_source_origins(
+    session: Session,
+    transcript: Transcript,
+    entries: list[TranscriptEntry],
+) -> dict[int, str]:
+    if transcript.parent_transcript_path is None:
+        return {entry.id: SOURCE_ORIGIN_LOCAL for entry in entries if entry.id is not None}
+
+    if transcript.parent_transcript_id is None:
+        return {
+            entry.id: SOURCE_ORIGIN_LOCAL if entry.entry_type == "session" else SOURCE_ORIGIN_UNKNOWN
+            for entry in entries
+            if entry.id is not None
+        }
+
+    parent_entry_ids = set(
+        session.scalars(
+            select(TranscriptEntry.entry_id).where(
+                TranscriptEntry.transcript_id == transcript.parent_transcript_id,
+                TranscriptEntry.entry_id.is_not(None),
+            ),
+        ),
+    )
+    origins: dict[int, str] = {}
+    for entry in entries:
+        if entry.id is None:
+            continue
+        origins[entry.id] = _entry_source_origin(entry, parent_entry_ids)
+    return origins
+
+
+def _entry_source_origin(entry: TranscriptEntry, parent_entry_ids: set[str]) -> str:
+    if entry.entry_type == "session":
+        return SOURCE_ORIGIN_LOCAL
+    if entry.entry_id is None:
+        return SOURCE_ORIGIN_UNKNOWN
+    if entry.entry_id in parent_entry_ids:
+        return SOURCE_ORIGIN_INHERITED
+    return SOURCE_ORIGIN_LOCAL
 
 
 def _delete_previous_phase_5a_rows(session: Session, transcript: Transcript) -> None:
@@ -216,9 +282,9 @@ def _persist_activity_units(
     episodes: list[NormalizedEpisode],
     episode_rows: dict[int, Episode],
 ) -> None:
-    episode_by_activity = _episode_by_activity(episodes, episode_rows)
+    episode_by_activity_sequence = _episode_by_activity_sequence(episodes, episode_rows)
     for ordinal, activity in enumerate(activities):
-        episode = episode_by_activity[id(activity)]
+        episode = episode_by_activity_sequence[activity.sequence]
         session.add(
             ActivityUnit(
                 analysis_run_id=analysis_run_id,
@@ -244,21 +310,20 @@ def _persist_activity_units(
                 result_text_line_count=activity.result_text_line_count,
                 receipt_json=activity.receipt_json,
                 source_metadata_json=activity.source_metadata_json,
+                source_origin=activity.source_origin,
             ),
         )
 
 
-def _episode_by_activity(
+def _episode_by_activity_sequence(
     episodes: list[NormalizedEpisode],
     episode_rows: dict[int, Episode],
 ) -> dict[int, Episode]:
     mapping: dict[int, Episode] = {}
-    # `segment_activities` keeps the original NormalizedActivity objects in episodes.
-    # Identity mapping avoids relying on non-unique byte spans or source ids.
     for episode in episodes:
         row = episode_rows[episode.ordinal]
         for activity in episode.activities:
-            mapping[id(activity)] = row
+            mapping[activity.sequence] = row
     return mapping
 
 

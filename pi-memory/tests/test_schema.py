@@ -10,6 +10,7 @@ from pi_memory.db import (
     JOB_KIND_PROCESS_TRANSCRIPT,
     JOB_STATUS_QUEUED,
     SESSION_SNAPSHOT_STATUS_READY_FOR_INTERPRETATION,
+    SOURCE_ORIGIN_UNKNOWN,
     ActivityUnit,
     AnalysisRun,
     Database,
@@ -206,6 +207,19 @@ def test_analysis_run_rejects_invalid_status(database: Database) -> None:
             session.add(AnalysisRun(session_id=session_id, transcript_id=transcript_id, status="invalid"))
 
 
+def test_fresh_schema_includes_activity_unit_source_origin_column_index_and_constraint(database: Database) -> None:
+    inspector = inspect(database.engine)
+
+    columns = {column["name"]: column for column in inspector.get_columns("activity_units")}
+    indexes = {index["name"] for index in inspector.get_indexes("activity_units")}
+    constraints = {constraint["name"] for constraint in inspector.get_check_constraints("activity_units")}
+
+    assert columns["source_origin"]["nullable"] is False
+    assert "unknown" in str(columns["source_origin"].get("default"))
+    assert "ix_activity_units_source_origin" in indexes
+    assert "ck_activity_units_source_origin_valid" in constraints
+
+
 def test_activity_unit_defaults_are_applied(database: Database) -> None:
     session_id, transcript_id, analysis_run_id = create_analysis_run(database)
 
@@ -230,6 +244,7 @@ def test_activity_unit_defaults_are_applied(database: Database) -> None:
         assert activity_unit.result_text_line_count == 0
         assert activity_unit.receipt_json == {}
         assert activity_unit.source_metadata_json == {}
+        assert activity_unit.source_origin == SOURCE_ORIGIN_UNKNOWN
         assert activity_unit.created_at is not None
         assert activity_unit.updated_at is not None
 
@@ -295,6 +310,25 @@ def test_episode_manifest_defaults_are_applied(database: Database) -> None:
         assert manifest.omitted_raw_text_bytes == 0
         assert manifest.created_at is not None
         assert manifest.updated_at is not None
+
+
+def test_activity_unit_rejects_invalid_source_origin(database: Database) -> None:
+    session_id, transcript_id, analysis_run_id = create_analysis_run(database)
+
+    with pytest.raises(IntegrityError):
+        with database.session() as session:
+            session.add(
+                ActivityUnit(
+                    analysis_run_id=analysis_run_id,
+                    session_id=session_id,
+                    transcript_id=transcript_id,
+                    ordinal=0,
+                    kind=ACTIVITY_KIND_USER_TEXT,
+                    byte_start=0,
+                    byte_end=1,
+                    source_origin="remote",
+                ),
+            )
 
 
 def test_activity_unit_rejects_invalid_kind(database: Database) -> None:
@@ -530,6 +564,7 @@ def test_phase_5a_indexes_exist(database: Database) -> None:
         "ix_activity_units_episode_ordinal",
         "ix_activity_units_kind",
         "ix_activity_units_tool_call_id",
+        "ix_activity_units_source_origin",
     }.issubset(activity_indexes)
     assert {
         "ix_episodes_analysis_run_ordinal",

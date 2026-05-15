@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -10,6 +11,10 @@ from pi_memory.db import (
     JOB_STATUS_CLAIMED,
     JOB_STATUS_COMPLETED,
     JOB_STATUS_FAILED,
+    SOURCE_ORIGIN_INHERITED,
+    SOURCE_ORIGIN_LOCAL,
+    SOURCE_ORIGIN_MIXED,
+    SOURCE_ORIGIN_UNKNOWN,
     ActivityUnit,
     AnalysisRun,
     Database,
@@ -105,6 +110,191 @@ def create_empty_transcript(database: Database) -> int:
             file_size=0,
         )
         session.add(transcript)
+        session.flush()
+        return transcript.id
+
+
+def raw_event(entry_type: str, **extra: object) -> str:
+    return json.dumps({"type": entry_type, **extra}, separators=(",", ":"))
+
+
+def raw_message(role: str, content: object, **extra: object) -> str:
+    return json.dumps(
+        {"type": "message", "message": {"role": role, "content": content, **extra}},
+        separators=(",", ":"),
+    )
+
+
+def add_transcript_entry(
+    session,
+    *,
+    transcript_id: int,
+    entry_id: str | None,
+    entry_type: str,
+    raw_line: str,
+    byte_start: int,
+    message_role: str | None = None,
+) -> TranscriptEntry:
+    entry = TranscriptEntry(
+        transcript_id=transcript_id,
+        entry_id=entry_id,
+        entry_type=entry_type,
+        message_role=message_role,
+        raw_line=raw_line,
+        byte_start=byte_start,
+        byte_end=byte_start + len(raw_line.encode("utf-8")),
+    )
+    session.add(entry)
+    return entry
+
+
+def create_resolved_fork_child_transcript(database: Database) -> int:
+    with database.session() as session:
+        parent_session = MemorySession(session_id="pi-parent-session")
+        child_session = MemorySession(session_id="pi-child-session")
+        parent = Transcript(session=parent_session, path="/tmp/pi/parent.jsonl")
+        child = Transcript(
+            session=child_session,
+            path="/tmp/pi/child.jsonl",
+            parent_transcript_path="/tmp/pi/parent.jsonl",
+        )
+        session.add_all([parent, child])
+        session.flush()
+        add_transcript_entry(
+            session,
+            transcript_id=parent.id,
+            entry_id="parent-user",
+            entry_type="message",
+            message_role="user",
+            raw_line=raw_message("user", "copied parent prompt"),
+            byte_start=0,
+        )
+        add_transcript_entry(
+            session,
+            transcript_id=parent.id,
+            entry_id="parent-call",
+            entry_type="message",
+            message_role="assistant",
+            raw_line=raw_message(
+                "assistant",
+                [{"type": "toolCall", "id": "call-1", "name": "bash", "arguments": {"cmd": "pwd"}}],
+            ),
+            byte_start=100,
+        )
+        add_transcript_entry(
+            session,
+            transcript_id=child.id,
+            entry_id="child-session",
+            entry_type="session",
+            raw_line=raw_event("session", cwd="/workspace"),
+            byte_start=0,
+        )
+        add_transcript_entry(
+            session,
+            transcript_id=child.id,
+            entry_id="parent-user",
+            entry_type="message",
+            message_role="user",
+            raw_line=raw_message("user", "copied parent prompt"),
+            byte_start=100,
+        )
+        add_transcript_entry(
+            session,
+            transcript_id=child.id,
+            entry_id="parent-call",
+            entry_type="message",
+            message_role="assistant",
+            raw_line=raw_message(
+                "assistant",
+                [{"type": "toolCall", "id": "call-1", "name": "bash", "arguments": {"cmd": "pwd"}}],
+            ),
+            byte_start=200,
+        )
+        add_transcript_entry(
+            session,
+            transcript_id=child.id,
+            entry_id="child-result",
+            entry_type="message",
+            message_role="toolResult",
+            raw_line=raw_message("toolResult", "ok", toolCallId="call-1", isError=False),
+            byte_start=300,
+        )
+        add_transcript_entry(
+            session,
+            transcript_id=child.id,
+            entry_id="child-user",
+            entry_type="message",
+            message_role="user",
+            raw_line=raw_message("user", "new child prompt"),
+            byte_start=400,
+        )
+        session.flush()
+        return child.id
+
+
+def create_unresolved_fork_child_transcript(database: Database) -> int:
+    with database.session() as session:
+        memory_session = MemorySession(session_id="pi-session-unresolved")
+        child = Transcript(
+            session=memory_session,
+            path="/tmp/pi/unresolved-child.jsonl",
+            parent_transcript_path="/tmp/pi/missing-parent.jsonl",
+        )
+        session.add(child)
+        session.flush()
+        add_transcript_entry(
+            session,
+            transcript_id=child.id,
+            entry_id="child-session",
+            entry_type="session",
+            raw_line=raw_event("session", cwd="/workspace"),
+            byte_start=0,
+        )
+        add_transcript_entry(
+            session,
+            transcript_id=child.id,
+            entry_id="unknown-user",
+            entry_type="message",
+            message_role="user",
+            raw_line=raw_message("user", "copied or new is unknown"),
+            byte_start=100,
+        )
+        session.flush()
+        return child.id
+
+
+def create_compaction_boundary_transcript(database: Database) -> int:
+    with database.session() as session:
+        memory_session = MemorySession(session_id="pi-session-compaction")
+        transcript = Transcript(session=memory_session, path="/tmp/pi/compaction.jsonl")
+        session.add(transcript)
+        session.flush()
+        add_transcript_entry(
+            session,
+            transcript_id=transcript.id,
+            entry_id="before",
+            entry_type="message",
+            message_role="user",
+            raw_line=raw_message("user", "before compaction"),
+            byte_start=0,
+        )
+        add_transcript_entry(
+            session,
+            transcript_id=transcript.id,
+            entry_id="compact",
+            entry_type="compaction",
+            raw_line=raw_event("compaction", summary="compacted earlier context"),
+            byte_start=100,
+        )
+        add_transcript_entry(
+            session,
+            transcript_id=transcript.id,
+            entry_id="after",
+            entry_type="message",
+            message_role="user",
+            raw_line=raw_message("user", "after compaction"),
+            byte_start=200,
+        )
         session.flush()
         return transcript.id
 
@@ -303,6 +493,97 @@ def test_process_transcript_persists_phase_5a_rows(database: Database, store: Jo
             "manifest_count": 1,
             "tool_pair_count": 0,
         }
+
+
+def test_process_transcript_persists_resolved_fork_source_origins(
+    database: Database,
+    store: JobStore,
+) -> None:
+    transcript_id = create_resolved_fork_child_transcript(database)
+    claimed = claim_process_transcript_job(store, transcript_id)
+
+    completed = JobRunner(database=database).run(claimed.id, claimed.run_id, running_pid=123, now=at(10))
+
+    assert completed.status == JOB_STATUS_COMPLETED
+    with database.session() as session:
+        transcript = session.get_one(Transcript, transcript_id)
+        assert transcript.parent_transcript_id is not None
+        assert transcript.parent_transcript is not None
+        assert transcript.session_id != transcript.parent_transcript.session_id
+
+        activities = list(session.scalars(select(ActivityUnit).order_by(ActivityUnit.ordinal)))
+        assert [activity.source_origin for activity in activities] == [
+            SOURCE_ORIGIN_LOCAL,
+            SOURCE_ORIGIN_INHERITED,
+            SOURCE_ORIGIN_MIXED,
+            SOURCE_ORIGIN_LOCAL,
+        ]
+        assert activities[0].kind == "session_event"
+        assert activities[0].source_metadata_json["source_entry_ids_by_origin"] == {
+            SOURCE_ORIGIN_LOCAL: activities[0].source_entry_ids_json,
+        }
+        assert activities[1].kind == "user_text"
+        assert activities[1].source_metadata_json["source_entry_ids_by_origin"] == {
+            SOURCE_ORIGIN_INHERITED: activities[1].source_entry_ids_json,
+        }
+        assert activities[2].kind == "tool_pair"
+        assert activities[2].source_metadata_json["source_entry_ids_by_origin"] == {
+            SOURCE_ORIGIN_INHERITED: [activities[2].source_entry_ids_json[0]],
+            SOURCE_ORIGIN_LOCAL: [activities[2].source_entry_ids_json[1]],
+        }
+        assert activities[3].kind == "user_text"
+        assert activities[3].source_metadata_json["source_entry_ids_by_origin"] == {
+            SOURCE_ORIGIN_LOCAL: activities[3].source_entry_ids_json,
+        }
+
+
+def test_process_transcript_persists_unresolved_fork_source_origins(
+    database: Database,
+    store: JobStore,
+) -> None:
+    transcript_id = create_unresolved_fork_child_transcript(database)
+    claimed = claim_process_transcript_job(store, transcript_id)
+
+    completed = JobRunner(database=database).run(claimed.id, claimed.run_id, running_pid=123, now=at(10))
+
+    assert completed.status == JOB_STATUS_COMPLETED
+    with database.session() as session:
+        transcript = session.get_one(Transcript, transcript_id)
+        assert transcript.parent_transcript_path == "/tmp/pi/missing-parent.jsonl"
+        assert transcript.parent_transcript_id is None
+
+        activities = list(session.scalars(select(ActivityUnit).order_by(ActivityUnit.ordinal)))
+        assert [activity.kind for activity in activities] == ["session_event", "user_text"]
+        assert [activity.source_origin for activity in activities] == [SOURCE_ORIGIN_LOCAL, SOURCE_ORIGIN_UNKNOWN]
+        assert activities[0].source_metadata_json["source_entry_ids_by_origin"] == {
+            SOURCE_ORIGIN_LOCAL: activities[0].source_entry_ids_json,
+        }
+        assert activities[1].source_metadata_json["source_entry_ids_by_origin"] == {
+            SOURCE_ORIGIN_UNKNOWN: activities[1].source_entry_ids_json,
+        }
+
+
+def test_process_transcript_assigns_activity_units_to_compaction_boundary_episodes(
+    database: Database,
+    store: JobStore,
+) -> None:
+    transcript_id = create_compaction_boundary_transcript(database)
+    claimed = claim_process_transcript_job(store, transcript_id)
+
+    completed = JobRunner(database=database).run(claimed.id, claimed.run_id, running_pid=123, now=at(10))
+
+    assert completed.status == JOB_STATUS_COMPLETED
+    with database.session() as session:
+        episodes = list(session.scalars(select(Episode).order_by(Episode.ordinal)))
+        activities = list(session.scalars(select(ActivityUnit).order_by(ActivityUnit.ordinal)))
+
+        assert [episode.activity_count for episode in episodes] == [2, 1]
+        assert [activity.kind for activity in activities] == ["user_text", "compaction", "user_text"]
+        assert [activity.episode_id for activity in activities] == [
+            episodes[0].id,
+            episodes[0].id,
+            episodes[1].id,
+        ]
 
 
 def test_process_transcript_phase_5a_rerun_replaces_derived_rows(

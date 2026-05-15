@@ -81,6 +81,17 @@ EPISODE_CLOSE_REASONS = (
 SESSION_SNAPSHOT_STATUS_READY_FOR_INTERPRETATION = "ready_for_interpretation"
 SESSION_SNAPSHOT_STATUSES = (SESSION_SNAPSHOT_STATUS_READY_FOR_INTERPRETATION,)
 
+SOURCE_ORIGIN_LOCAL = "local"
+SOURCE_ORIGIN_INHERITED = "inherited"
+SOURCE_ORIGIN_MIXED = "mixed"
+SOURCE_ORIGIN_UNKNOWN = "unknown"
+SOURCE_ORIGINS = (
+    SOURCE_ORIGIN_LOCAL,
+    SOURCE_ORIGIN_INHERITED,
+    SOURCE_ORIGIN_MIXED,
+    SOURCE_ORIGIN_UNKNOWN,
+)
+
 
 class Job(Base):
     """Durable SQLite-backed work queue job."""
@@ -366,11 +377,16 @@ class ActivityUnit(Base):
         CheckConstraint("text_char_count >= 0", name="ck_activity_units_text_char_count_non_negative"),
         CheckConstraint("result_text_byte_count >= 0", name="ck_activity_units_result_text_byte_count_non_negative"),
         CheckConstraint("result_text_line_count >= 0", name="ck_activity_units_result_text_line_count_non_negative"),
+        CheckConstraint(
+            "source_origin IN ('local', 'inherited', 'mixed', 'unknown')",
+            name="ck_activity_units_source_origin_valid",
+        ),
         Index("ix_activity_units_analysis_run_ordinal", "analysis_run_id", "ordinal"),
         Index("ix_activity_units_transcript_byte_start", "transcript_id", "byte_start"),
         Index("ix_activity_units_episode_ordinal", "episode_id", "ordinal"),
         Index("ix_activity_units_kind", "kind"),
         Index("ix_activity_units_tool_call_id", "tool_call_id"),
+        Index("ix_activity_units_source_origin", "source_origin"),
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -403,6 +419,7 @@ class ActivityUnit(Base):
     result_text_line_count: Mapped[int] = mapped_column(default=0, server_default="0")
     receipt_json: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict, server_default=text("'{}'"))
     source_metadata_json: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict, server_default=text("'{}'"))
+    source_origin: Mapped[str] = mapped_column(default=SOURCE_ORIGIN_UNKNOWN, server_default=SOURCE_ORIGIN_UNKNOWN)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),

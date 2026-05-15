@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 import json
-from collections.abc import Sequence
-from dataclasses import dataclass
+from collections.abc import Mapping, Sequence
+from dataclasses import dataclass, replace
 from datetime import datetime
 from typing import Any
 
@@ -18,6 +18,10 @@ from pi_memory.db import (
     ACTIVITY_KIND_SESSION_EVENT,
     ACTIVITY_KIND_TOOL_PAIR,
     ACTIVITY_KIND_USER_TEXT,
+    SOURCE_ORIGIN_LOCAL,
+    SOURCE_ORIGIN_MIXED,
+    SOURCE_ORIGIN_UNKNOWN,
+    SOURCE_ORIGINS,
     TranscriptEntry,
 )
 
@@ -48,6 +52,7 @@ class NormalizedActivity:
     receipt_json: dict[str, Any]
     source_metadata_json: dict[str, Any]
     sequence: int
+    source_origin: str = SOURCE_ORIGIN_LOCAL
 
 
 @dataclass(frozen=True)
@@ -72,12 +77,17 @@ class _PendingToolCall:
     arguments: Any
 
 
-def normalize_transcript_entries(entries: Sequence[TranscriptEntry]) -> list[NormalizedActivity]:
+def normalize_transcript_entries(
+    entries: Sequence[TranscriptEntry],
+    entry_source_origins: Mapping[int, str] | None = None,
+) -> list[NormalizedActivity]:
     """Normalize transcript entries into deterministic structural activities.
 
     Args:
         entries: Canonical transcript rows to normalize. Rows are sorted by
             ``(byte_start, id or 0)`` before processing.
+        entry_source_origins: Optional mapping from database transcript-entry id
+            to fork provenance origin.
 
     Returns:
         Activities in deterministic source-like order. Tool pairs retain the
@@ -138,7 +148,33 @@ def normalize_transcript_entries(entries: Sequence[TranscriptEntry]) -> list[Nor
         )
     )
 
-    return [item.activity for item in sorted(activities, key=lambda item: (item.order_byte_start, item.sequence))]
+    normalized = [item.activity for item in sorted(activities, key=lambda item: (item.order_byte_start, item.sequence))]
+    if entry_source_origins is None:
+        return normalized
+    return [_with_source_origin(activity, entry_source_origins) for activity in normalized]
+
+
+def _with_source_origin(
+    activity: NormalizedActivity,
+    entry_source_origins: Mapping[int, str],
+) -> NormalizedActivity:
+    origins_by_entry: dict[str, list[int]] = {}
+    for source_entry_id in activity.source_entry_ids:
+        origin = entry_source_origins.get(source_entry_id, SOURCE_ORIGIN_UNKNOWN)
+        if origin not in SOURCE_ORIGINS:
+            origin = SOURCE_ORIGIN_UNKNOWN
+        origins_by_entry.setdefault(origin, []).append(source_entry_id)
+
+    if activity.source_entry_ids:
+        origins = set(origins_by_entry)
+        source_origin = origins.pop() if len(origins) == 1 else SOURCE_ORIGIN_MIXED
+    else:
+        source_origin = SOURCE_ORIGIN_UNKNOWN
+        origins_by_entry = {SOURCE_ORIGIN_UNKNOWN: []}
+
+    metadata = dict(activity.source_metadata_json)
+    metadata["source_entry_ids_by_origin"] = origins_by_entry
+    return replace(activity, source_origin=source_origin, source_metadata_json=metadata)
 
 
 def _load_entry_payload(entry: TranscriptEntry) -> tuple[dict[str, Any] | None, dict[str, Any]]:
