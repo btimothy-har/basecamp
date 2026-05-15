@@ -129,6 +129,106 @@ def create_old_style_activity_units_database(path: Path) -> None:
         )
 
 
+def create_old_style_episode_manifests_database(path: Path) -> None:
+    with sqlite3.connect(path) as connection:
+        connection.executescript(
+            """
+            CREATE TABLE sessions (
+                id INTEGER NOT NULL,
+                session_id VARCHAR NOT NULL,
+                PRIMARY KEY (id),
+                UNIQUE (session_id)
+            );
+
+            CREATE TABLE transcripts (
+                id INTEGER NOT NULL,
+                session_id INTEGER NOT NULL,
+                path VARCHAR NOT NULL,
+                parent_transcript_path VARCHAR,
+                parent_transcript_id INTEGER,
+                cursor_offset INTEGER DEFAULT 0 NOT NULL,
+                PRIMARY KEY (id),
+                FOREIGN KEY(session_id) REFERENCES sessions (id) ON DELETE CASCADE
+            );
+
+            CREATE TABLE analysis_runs (
+                id INTEGER NOT NULL,
+                session_id INTEGER NOT NULL,
+                transcript_id INTEGER NOT NULL,
+                analysis_kind VARCHAR DEFAULT 'transcript_structure' NOT NULL,
+                status VARCHAR DEFAULT 'completed' NOT NULL,
+                analyzed_through_byte_offset INTEGER DEFAULT 0 NOT NULL,
+                activity_count INTEGER DEFAULT 0 NOT NULL,
+                episode_count INTEGER DEFAULT 0 NOT NULL,
+                manifest_count INTEGER DEFAULT 0 NOT NULL,
+                diagnostics_json JSON DEFAULT '{}' NOT NULL,
+                PRIMARY KEY (id),
+                FOREIGN KEY(session_id) REFERENCES sessions (id) ON DELETE CASCADE,
+                FOREIGN KEY(transcript_id) REFERENCES transcripts (id) ON DELETE CASCADE
+            );
+
+            CREATE TABLE episodes (
+                id INTEGER NOT NULL,
+                analysis_run_id INTEGER NOT NULL,
+                session_id INTEGER NOT NULL,
+                transcript_id INTEGER NOT NULL,
+                ordinal INTEGER NOT NULL,
+                status VARCHAR DEFAULT 'closed' NOT NULL,
+                close_reason VARCHAR DEFAULT 'transcript_end' NOT NULL,
+                activity_count INTEGER DEFAULT 0 NOT NULL,
+                message_count INTEGER DEFAULT 0 NOT NULL,
+                tool_pair_count INTEGER DEFAULT 0 NOT NULL,
+                byte_start INTEGER NOT NULL,
+                byte_end INTEGER NOT NULL,
+                boundary_metadata JSON DEFAULT '{}' NOT NULL,
+                PRIMARY KEY (id),
+                FOREIGN KEY(analysis_run_id) REFERENCES analysis_runs (id) ON DELETE CASCADE,
+                FOREIGN KEY(session_id) REFERENCES sessions (id) ON DELETE CASCADE,
+                FOREIGN KEY(transcript_id) REFERENCES transcripts (id) ON DELETE CASCADE
+            );
+
+            CREATE TABLE episode_manifests (
+                id INTEGER NOT NULL,
+                analysis_run_id INTEGER NOT NULL,
+                session_id INTEGER NOT NULL,
+                transcript_id INTEGER NOT NULL,
+                episode_id INTEGER NOT NULL,
+                manifest_version INTEGER DEFAULT 1 NOT NULL,
+                activity_count INTEGER DEFAULT 0 NOT NULL,
+                tool_pair_count INTEGER DEFAULT 0 NOT NULL,
+                first_entry_id INTEGER,
+                last_entry_id INTEGER,
+                byte_start INTEGER NOT NULL,
+                byte_end INTEGER NOT NULL,
+                activity_map_json JSON DEFAULT '{}' NOT NULL,
+                source_spans_json JSON DEFAULT '[]' NOT NULL,
+                omitted_raw_text_bytes INTEGER DEFAULT 0 NOT NULL,
+                PRIMARY KEY (id),
+                FOREIGN KEY(analysis_run_id) REFERENCES analysis_runs (id) ON DELETE CASCADE,
+                FOREIGN KEY(session_id) REFERENCES sessions (id) ON DELETE CASCADE,
+                FOREIGN KEY(transcript_id) REFERENCES transcripts (id) ON DELETE CASCADE,
+                FOREIGN KEY(episode_id) REFERENCES episodes (id) ON DELETE CASCADE
+            );
+
+            INSERT INTO sessions (id, session_id) VALUES (1, 'pi-session-1');
+            INSERT INTO transcripts (id, session_id, path) VALUES (1, 1, '/tmp/pi/transcript.jsonl');
+            INSERT INTO analysis_runs (id, session_id, transcript_id) VALUES (1, 1, 1);
+            INSERT INTO episodes (id, analysis_run_id, session_id, transcript_id, ordinal, byte_start, byte_end)
+            VALUES (1, 1, 1, 1, 0, 0, 1);
+            INSERT INTO episode_manifests (
+                id,
+                analysis_run_id,
+                session_id,
+                transcript_id,
+                episode_id,
+                byte_start,
+                byte_end,
+                omitted_raw_text_bytes
+            ) VALUES (1, 1, 1, 1, 1, 0, 1, 42);
+            """,
+        )
+
+
 def test_initialize_creates_parent_directory_and_database_file(tmp_path) -> None:
     db_path = tmp_path / "nested" / "memory.db"
     database = Database(sqlite_url(db_path))
@@ -244,6 +344,30 @@ def test_initialize_upgrades_old_sqlite_activity_units_with_source_origin(tmp_pa
                 text("SELECT source_origin FROM activity_units WHERE id = 1"),
             ).scalar_one()
         assert source_origin == "unknown"
+    finally:
+        database.close_if_open()
+
+
+def test_initialize_upgrades_old_sqlite_episode_manifests_with_tool_result_text_byte_count(
+    tmp_path,
+) -> None:
+    db_path = tmp_path / "memory.db"
+    create_old_style_episode_manifests_database(db_path)
+    database = Database(sqlite_url(db_path))
+
+    try:
+        database.initialize()
+        database.initialize()
+        inspector = inspect(database.engine)
+        columns = {column["name"] for column in inspector.get_columns("episode_manifests")}
+
+        assert "tool_result_text_byte_count" in columns
+        assert "omitted_raw_text_bytes" in columns
+        with database.engine.connect() as connection:
+            value = connection.execute(
+                text("SELECT tool_result_text_byte_count FROM episode_manifests WHERE id = 1"),
+            ).scalar_one()
+        assert value == 42
     finally:
         database.close_if_open()
 

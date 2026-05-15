@@ -508,8 +508,8 @@ class EpisodeManifest(Base):
         CheckConstraint("byte_start >= 0", name="ck_episode_manifests_byte_start_non_negative"),
         CheckConstraint("byte_end > byte_start", name="ck_episode_manifests_byte_end_after_start"),
         CheckConstraint(
-            "omitted_raw_text_bytes >= 0",
-            name="ck_episode_manifests_omitted_raw_text_bytes_non_negative",
+            "tool_result_text_byte_count >= 0",
+            name="ck_episode_manifests_tool_result_text_byte_count_non_negative",
         ),
         Index("ix_episode_manifests_analysis_run_id", "analysis_run_id"),
         Index("ix_episode_manifests_transcript_byte_start", "transcript_id", "byte_start"),
@@ -536,7 +536,7 @@ class EpisodeManifest(Base):
     byte_end: Mapped[int]
     activity_map_json: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict, server_default=text("'{}'"))
     source_spans_json: Mapped[list[dict[str, Any]]] = mapped_column(JSON, default=list, server_default=text("'[]'"))
-    omitted_raw_text_bytes: Mapped[int] = mapped_column(default=0, server_default="0")
+    tool_result_text_byte_count: Mapped[int] = mapped_column(default=0, server_default="0")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),

@@ -139,6 +139,49 @@ def test_timestamp_gap_splits_episode_and_records_gap_seconds() -> None:
     assert episodes[1].activities == (second,)
 
 
+def test_gap_exactly_at_threshold_splits_episode() -> None:
+    first = activity(1, timestamp_start=BASE_TIME, timestamp_end=BASE_TIME)
+    second = activity(
+        2,
+        timestamp_start=BASE_TIME + timedelta(hours=1),
+        timestamp_end=BASE_TIME + timedelta(hours=1, minutes=1),
+    )
+
+    episodes = segment_activities([first, second])
+
+    assert len(episodes) == 2
+    assert episodes[0].close_reason == EPISODE_CLOSE_REASON_TIME_GAP
+    assert episodes[0].boundary_metadata == {"gap_seconds": 3600.0}
+
+
+def test_gap_just_under_threshold_does_not_split_episode() -> None:
+    first = activity(1, timestamp_start=BASE_TIME, timestamp_end=BASE_TIME)
+    second = activity(
+        2,
+        timestamp_start=BASE_TIME + timedelta(hours=1, microseconds=-1),
+        timestamp_end=BASE_TIME + timedelta(hours=1),
+    )
+
+    episodes = segment_activities([first, second])
+
+    assert len(episodes) == 1
+    assert episodes[0].activities == (first, second)
+
+
+def test_custom_gap_threshold_splits_at_exact_threshold() -> None:
+    first = activity(1, timestamp_start=BASE_TIME, timestamp_end=BASE_TIME)
+    second = activity(
+        2,
+        timestamp_start=BASE_TIME + timedelta(minutes=15),
+        timestamp_end=BASE_TIME + timedelta(minutes=16),
+    )
+
+    episodes = segment_activities([first, second], gap_threshold=timedelta(minutes=15))
+
+    assert len(episodes) == 2
+    assert episodes[0].boundary_metadata == {"gap_seconds": 900.0}
+
+
 def test_compaction_closes_previous_episode_even_after_timestamp_gap() -> None:
     first = activity(
         1,
@@ -160,6 +203,32 @@ def test_compaction_closes_previous_episode_even_after_timestamp_gap() -> None:
         ACTIVITY_KIND_USER_TEXT,
         ACTIVITY_KIND_COMPACTION,
     ]
+
+
+def test_first_activity_compaction_forms_closed_compaction_episode() -> None:
+    compaction = activity(1, ACTIVITY_KIND_COMPACTION)
+    following = activity(2)
+
+    episodes = segment_activities([compaction, following])
+
+    assert len(episodes) == 2
+    assert episodes[0].close_reason == EPISODE_CLOSE_REASON_COMPACTION
+    assert episodes[0].activities == (compaction,)
+    assert episodes[1].activities == (following,)
+
+
+def test_consecutive_compactions_form_separate_closed_episodes() -> None:
+    first = activity(1, ACTIVITY_KIND_COMPACTION)
+    second = activity(2, ACTIVITY_KIND_COMPACTION)
+
+    episodes = segment_activities([first, second])
+
+    assert len(episodes) == 2
+    assert [episode.close_reason for episode in episodes] == [
+        EPISODE_CLOSE_REASON_COMPACTION,
+        EPISODE_CLOSE_REASON_COMPACTION,
+    ]
+    assert [episode.activities for episode in episodes] == [(first,), (second,)]
 
 
 def test_large_raw_tool_output_metrics_do_not_split_episode() -> None:

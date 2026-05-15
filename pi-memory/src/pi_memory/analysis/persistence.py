@@ -358,7 +358,7 @@ def _persist_episode_manifests(
                 byte_end=manifest.byte_end,
                 activity_map_json=manifest.activity_map_json,
                 source_spans_json=manifest.source_spans_json,
-                omitted_raw_text_bytes=manifest.omitted_raw_text_bytes,
+                tool_result_text_byte_count=manifest.tool_result_text_byte_count,
             ),
         )
 

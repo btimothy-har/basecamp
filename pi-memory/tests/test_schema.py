@@ -275,6 +275,20 @@ def test_episode_defaults_are_applied(database: Database) -> None:
         assert episode.updated_at is not None
 
 
+def test_fresh_schema_includes_episode_manifest_tool_result_text_byte_count_constraint(
+    database: Database,
+) -> None:
+    inspector = inspect(database.engine)
+
+    columns = {column["name"]: column for column in inspector.get_columns("episode_manifests")}
+    constraints = {constraint["name"] for constraint in inspector.get_check_constraints("episode_manifests")}
+
+    assert columns["tool_result_text_byte_count"]["nullable"] is False
+    assert "0" in str(columns["tool_result_text_byte_count"].get("default"))
+    assert "ck_episode_manifests_tool_result_text_byte_count_non_negative" in constraints
+    assert "omitted_raw_text_bytes" not in columns
+
+
 def test_episode_manifest_defaults_are_applied(database: Database) -> None:
     session_id, transcript_id, analysis_run_id = create_analysis_run(database)
 
@@ -307,7 +321,7 @@ def test_episode_manifest_defaults_are_applied(database: Database) -> None:
         assert manifest.tool_pair_count == 0
         assert manifest.activity_map_json == {}
         assert manifest.source_spans_json == []
-        assert manifest.omitted_raw_text_bytes == 0
+        assert manifest.tool_result_text_byte_count == 0
         assert manifest.created_at is not None
         assert manifest.updated_at is not None
 
@@ -518,7 +532,7 @@ def test_large_raw_size_metadata_does_not_create_episode_size_constraints(databa
             byte_start=0,
             byte_end=1,
             source_spans_json=[{"entry_id": 1, "raw_text_bytes": 10**12}],
-            omitted_raw_text_bytes=10**12,
+            tool_result_text_byte_count=10**12,
         )
         session.add_all([activity_unit, manifest])
         session.flush()
@@ -528,7 +542,7 @@ def test_large_raw_size_metadata_does_not_create_episode_size_constraints(databa
         assert activity_unit.result_text_byte_count == 10**12
         assert activity_unit.result_text_line_count == 10**9
         assert manifest.source_spans_json == [{"entry_id": 1, "raw_text_bytes": 10**12}]
-        assert manifest.omitted_raw_text_bytes == 10**12
+        assert manifest.tool_result_text_byte_count == 10**12
 
 
 def test_only_one_session_snapshot_shell_per_session(database: Database) -> None:

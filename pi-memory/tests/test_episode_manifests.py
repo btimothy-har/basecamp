@@ -14,6 +14,7 @@ from pi_memory.analysis import (
     build_episode_manifests,
     build_session_snapshot_shell,
 )
+from pi_memory.analysis.manifests import MAX_MANIFEST_STRING_CHARS
 from pi_memory.db import (
     ACTIVITY_KIND_COMPACTION,
     ACTIVITY_KIND_SESSION_EVENT,
@@ -148,7 +149,7 @@ def test_basic_manifest_includes_metadata_activity_map_spans_and_tool_receipt() 
     assert built.last_entry_id == 3
     assert built.byte_start == 100
     assert built.byte_end == 250
-    assert built.omitted_raw_text_bytes == 120
+    assert built.tool_result_text_byte_count == 120
 
     activity_map = built.activity_map_json
     assert activity_map["episode"]["ordinal"] == 0
@@ -167,6 +168,7 @@ def test_basic_manifest_includes_metadata_activity_map_spans_and_tool_receipt() 
     assert activity_map["claim_source_activity_count"] == 2
     assert activity_map["activities"][0]["source_origin"] == SOURCE_ORIGIN_LOCAL
     assert activity_map["activities"][0]["claim_source_allowed"] is True
+    assert activity_map["activities"][0]["raw_text_available"] is True
 
     tool_map = activity_map["activities"][1]
     assert tool_map["index"] == 1
@@ -177,6 +179,7 @@ def test_basic_manifest_includes_metadata_activity_map_spans_and_tool_receipt() 
     assert tool_map["tool_name"] == "bash"
     assert tool_map["source_origin"] == SOURCE_ORIGIN_LOCAL
     assert tool_map["claim_source_allowed"] is True
+    assert tool_map["raw_text_available"] is True
     assert tool_map["receipt_json"]["argument_keys"] == ["command"]
     assert tool_map["source_metadata_json"]["call_content_index"] == 1
 
@@ -249,7 +252,31 @@ def test_manifest_omits_large_raw_tool_output_from_receipt_details() -> None:
         "char_count": len(raw_output),
         "byte_count": len(raw_output.encode("utf-8")),
     }
-    assert built.omitted_raw_text_bytes == len(raw_output.encode("utf-8"))
+    assert built.tool_result_text_byte_count == len(raw_output.encode("utf-8"))
+
+
+def test_manifest_tool_result_text_byte_count_is_zero_for_non_tool_episode() -> None:
+    built = build_episode_manifest(episode([activity(1), activity(2)]))
+
+    assert built.tool_result_text_byte_count == 0
+
+
+def test_manifest_tool_result_text_byte_count_includes_omitted_activities() -> None:
+    count = MAX_MANIFEST_ACTIVITIES + 1
+    activities = [activity(index, result_text_byte_count=index) for index in range(count)]
+    hidden_tool = activity(
+        MANIFEST_HEAD_ACTIVITIES,
+        ACTIVITY_KIND_TOOL_PAIR,
+        result_text_byte_count=999,
+    )
+    activities[MANIFEST_HEAD_ACTIVITIES] = hidden_tool
+
+    built = build_episode_manifest(episode(activities))
+
+    assert built.activity_map_json["omitted_ranges"] == [
+        {"start_index": MANIFEST_HEAD_ACTIVITIES, "end_index": MANIFEST_HEAD_ACTIVITIES, "count": 1},
+    ]
+    assert built.tool_result_text_byte_count == sum(item.result_text_byte_count for item in activities)
 
 
 def test_large_episode_activity_map_is_bounded_to_head_and_tail_ranges() -> None:
@@ -278,6 +305,49 @@ def test_large_episode_activity_map_is_bounded_to_head_and_tail_ranges() -> None
     assert [item["index"] for item in activity_map["activities"][:3]] == [0, 1, 2]
     assert [item["index"] for item in activity_map["activities"][-3:]] == [102, 103, 104]
     assert len(built.source_spans_json) == MAX_MANIFEST_ACTIVITIES + 1
+
+
+def test_exact_manifest_activity_budget_includes_all_activities() -> None:
+    built = build_episode_manifest(episode([activity(index) for index in range(MAX_MANIFEST_ACTIVITIES)]))
+
+    activity_map = built.activity_map_json
+    assert len(activity_map["activities"]) == MAX_MANIFEST_ACTIVITIES
+    assert activity_map["included_activity_count"] == MAX_MANIFEST_ACTIVITIES
+    assert activity_map["omitted_activity_count"] == 0
+    assert activity_map["omitted_ranges"] == []
+
+
+def test_manifest_activity_budget_plus_one_omits_one_range() -> None:
+    count = MAX_MANIFEST_ACTIVITIES + 1
+    built = build_episode_manifest(episode([activity(index) for index in range(count)]))
+
+    activity_map = built.activity_map_json
+    assert len(activity_map["activities"]) == MAX_MANIFEST_ACTIVITIES
+    assert activity_map["omitted_activity_count"] == 1
+    assert activity_map["omitted_ranges"] == [
+        {"start_index": MANIFEST_HEAD_ACTIVITIES, "end_index": MANIFEST_HEAD_ACTIVITIES, "count": 1},
+    ]
+
+
+def test_manifest_string_budget_exact_boundary_keeps_raw_string() -> None:
+    exact = "x" * MAX_MANIFEST_STRING_CHARS
+    over = f"{exact}y"
+    built = build_episode_manifest(
+        episode(
+            [
+                activity(1, receipt_json={"exact": exact}),
+                activity(2, receipt_json={"over": over}),
+            ],
+        ),
+    )
+
+    receipt_jsons = [item["receipt_json"] for item in built.activity_map_json["activities"]]
+    assert receipt_jsons[0]["exact"] == exact
+    assert receipt_jsons[1]["over"] == {
+        "omitted": True,
+        "char_count": len(over),
+        "byte_count": len(over.encode("utf-8")),
+    }
 
 
 def test_snapshot_shell_from_multiple_episodes_has_counts_and_no_semantic_fields() -> None:

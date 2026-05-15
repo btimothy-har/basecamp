@@ -4,6 +4,7 @@ import json
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
+import pytest
 from pi_memory.analysis import normalize_transcript_entries
 from pi_memory.analysis.activity import PREVIEW_CHAR_LIMIT
 from pi_memory.db import (
@@ -93,6 +94,7 @@ def test_normalizes_user_text_assistant_text_and_thinking() -> None:
     assert [activity.text_char_count for activity in activities] == [11, 11, 6]
     assert [activity.message_role for activity in activities] == ["user", "assistant", "assistant"]
     assert [activity.source_entry_ids for activity in activities] == [(1,), (2,), (2,)]
+    assert [activity.raw_text_available for activity in activities] == [True, True, True]
 
 
 def test_pairs_multiple_tool_calls_with_results_in_call_order_and_spans() -> None:
@@ -186,9 +188,38 @@ def test_orphan_tool_result_without_matching_call() -> None:
     assert activity.tool_call_id == "missing-call"
     assert activity.tool_name == "bash"
     assert activity.is_error is False
+    assert activity.raw_text_available is True
     assert activity.result_text_byte_count == len(b"orphan output")
     assert activity.result_text_line_count == 1
     assert activity.receipt_json["result_status"] == "success"
+
+
+@pytest.mark.parametrize("status", ["failed", "failure"])
+def test_tool_result_failure_status_sets_is_error(status: str) -> None:
+    tool_result = message_entry(1, "toolResult", "bad", status=status)
+
+    activities = normalize_transcript_entries([tool_result])
+
+    assert activities[0].is_error is True
+    assert activities[0].receipt_json["result_status"] == status
+
+
+def test_tool_result_is_error_without_status_infers_error_result_status() -> None:
+    tool_result = message_entry(1, "toolResult", "bad", isError=True)
+
+    activities = normalize_transcript_entries([tool_result])
+
+    assert activities[0].is_error is True
+    assert activities[0].receipt_json["result_status"] == "error"
+
+
+def test_tool_result_without_status_or_is_error_has_unknown_result_status() -> None:
+    tool_result = message_entry(1, "toolResult", "ambiguous")
+
+    activities = normalize_transcript_entries([tool_result])
+
+    assert activities[0].is_error is None
+    assert activities[0].receipt_json["result_status"] is None
 
 
 def test_pending_tool_call_is_emitted_at_eof() -> None:
@@ -254,6 +285,21 @@ def test_compaction_metadata_extracts_bounded_fields() -> None:
     assert activity.source_metadata_json["summary"]["is_truncated"] is True
     assert activity.source_metadata_json["summary"]["char_count"] == len(summary)
     assert len(activity.source_metadata_json["summary"]["preview"]) == 1_200
+
+
+def test_compaction_metadata_handles_absent_optional_fields_and_empty_details() -> None:
+    compaction = entry(1, {"type": "compaction", "id": "entry-1", "details": {}})
+
+    activities = normalize_transcript_entries([compaction])
+
+    assert len(activities) == 1
+    assert activities[0].kind == ACTIVITY_KIND_COMPACTION
+    assert activities[0].source_metadata_json == {
+        "entry_type": "compaction",
+        "firstKeptEntryId": None,
+        "tokensBefore": None,
+        "details_keys": [],
+    }
 
 
 def test_branch_summary_becomes_custom_event_with_bounded_metadata() -> None:
@@ -325,6 +371,18 @@ def test_session_entry_becomes_session_event() -> None:
     assert len(activities) == 1
     assert activities[0].kind == ACTIVITY_KIND_SESSION_EVENT
     assert activities[0].source_metadata_json["entry_type"] == "session"
+
+
+def test_unknown_message_role_becomes_custom_event_with_message_role_metadata() -> None:
+    unknown = message_entry(1, "system", "hidden control text")
+
+    activities = normalize_transcript_entries([unknown])
+
+    assert len(activities) == 1
+    activity = activities[0]
+    assert activity.kind == ACTIVITY_KIND_CUSTOM_EVENT
+    assert activity.message_role == "system"
+    assert activity.source_metadata_json == {"entry_type": "message", "message_role": "system"}
 
 
 def test_malformed_json_becomes_custom_event() -> None:

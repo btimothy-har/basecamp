@@ -63,7 +63,7 @@ class BuiltEpisodeManifest:
     byte_end: int
     activity_map_json: dict[str, Any]
     source_spans_json: list[dict[str, Any]]
-    omitted_raw_text_bytes: int
+    tool_result_text_byte_count: int
 
 
 @dataclass(frozen=True)
@@ -109,7 +109,7 @@ def build_episode_manifest(episode: NormalizedEpisode) -> BuiltEpisodeManifest:
         byte_end=episode.byte_end,
         activity_map_json=activity_map_json,
         source_spans_json=_source_spans(episode, included_activities),
-        omitted_raw_text_bytes=sum(activity.result_text_byte_count for activity in episode.activities),
+        tool_result_text_byte_count=sum(activity.result_text_byte_count for activity in episode.activities),
     )
 
 

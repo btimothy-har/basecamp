@@ -63,6 +63,7 @@ class Database:
             if _is_sqlite_url(self._url):
                 _upgrade_sqlite_transcript_lineage(connection)
                 _upgrade_sqlite_activity_source_origin(connection)
+                _upgrade_sqlite_episode_manifest_tool_result_text_byte_count(connection)
                 connection.execute(
                     text(
                         """
@@ -133,16 +134,7 @@ def _upgrade_sqlite_transcript_lineage(connection: Connection) -> None:
 
 def _upgrade_sqlite_activity_source_origin(connection: Connection) -> None:
     """Add activity source-origin columns and indexes to existing SQLite databases."""
-    table_exists = connection.execute(
-        text(
-            """
-            SELECT 1
-            FROM sqlite_master
-            WHERE type = 'table' AND name = 'activity_units'
-            """,
-        ),
-    ).scalar_one_or_none()
-    if table_exists is None:
+    if not _sqlite_table_exists(connection, "activity_units"):
         return
 
     columns = {row[1] for row in connection.execute(text("PRAGMA table_info(activity_units)"))}
@@ -158,6 +150,48 @@ def _upgrade_sqlite_activity_source_origin(connection: Connection) -> None:
 
     connection.execute(
         text("CREATE INDEX IF NOT EXISTS ix_activity_units_source_origin ON activity_units (source_origin)"),
+    )
+
+
+def _upgrade_sqlite_episode_manifest_tool_result_text_byte_count(connection: Connection) -> None:
+    """Add manifest tool-result text byte count to existing SQLite databases."""
+    if not _sqlite_table_exists(connection, "episode_manifests"):
+        return
+
+    columns = {row[1] for row in connection.execute(text("PRAGMA table_info(episode_manifests)"))}
+    if "tool_result_text_byte_count" not in columns:
+        connection.execute(
+            text(
+                """
+                ALTER TABLE episode_manifests
+                ADD COLUMN tool_result_text_byte_count INTEGER DEFAULT 0 NOT NULL
+                """,
+            ),
+        )
+        if "omitted_raw_text_bytes" in columns:
+            connection.execute(
+                text(
+                    """
+                    UPDATE episode_manifests
+                    SET tool_result_text_byte_count = omitted_raw_text_bytes
+                    """,
+                ),
+            )
+
+
+def _sqlite_table_exists(connection: Connection, table_name: str) -> bool:
+    return (
+        connection.execute(
+            text(
+                """
+                SELECT 1
+                FROM sqlite_master
+                WHERE type = 'table' AND name = :table_name
+                """,
+            ),
+            {"table_name": table_name},
+        ).scalar_one_or_none()
+        is not None
     )
 
 
