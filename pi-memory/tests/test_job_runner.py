@@ -52,11 +52,18 @@ from pi_memory.jobs import (
     TranscriptNotFoundError,
     UnsupportedJobKindError,
 )
+from pi_memory.settings import INTERPRETATION_MODEL_ENV, INTERPRETER_MODE_ENV
 from sqlalchemy import delete, func, select, text
 
 
 def sqlite_url(path: Path) -> str:
     return f"sqlite:///{path}"
+
+
+@pytest.fixture(autouse=True)
+def default_interpreter_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv(INTERPRETER_MODE_ENV, "deterministic")
+    monkeypatch.delenv(INTERPRETATION_MODEL_ENV, raising=False)
 
 
 @pytest.fixture
@@ -454,6 +461,28 @@ def test_process_transcript_completes_and_writes_safe_result(database: Database,
         )
 
     assert len(matches) == 1
+
+
+def test_process_transcript_with_invalid_pydantic_ai_config_still_succeeds_lazily(
+    database: Database,
+    store: JobStore,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv(INTERPRETER_MODE_ENV, "pydantic-ai")
+    monkeypatch.delenv(INTERPRETATION_MODEL_ENV, raising=False)
+
+    def fail_factory() -> None:
+        pytest.fail("interpreter factory should not be called for process_transcript")
+
+    monkeypatch.setattr("pi_memory.jobs.runner.create_session_interpreter", fail_factory)
+    transcript_id = create_transcript(database)
+    claimed = claim_process_transcript_job(store, transcript_id)
+
+    completed = JobRunner(database=database).run(claimed.id, claimed.run_id, running_pid=123, now=at(10))
+
+    assert completed.status == JOB_STATUS_COMPLETED
+    assert completed.result_json is not None
+    assert isinstance(completed.result_json["interpret_session_job_id"], int)
 
 
 def test_process_transcript_enqueued_interpret_job_writes_snapshot(
@@ -940,6 +969,87 @@ def test_interpret_session_completed_writes_snapshot_and_safe_result(
         assert snapshot.interpretation_json["summary"].startswith("Deterministic interpretation")
         assert snapshot.citations_json
         assert snapshot.model_metadata_json["provider"] == "pi-memory"
+
+
+def test_interpret_session_explicit_interpreter_bypasses_configured_factory(
+    database: Database,
+    store: JobStore,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    transcript_id = create_transcript(database)
+    process_transcript(database, store, transcript_id)
+    monkeypatch.setenv(INTERPRETER_MODE_ENV, "pydantic-ai")
+    monkeypatch.delenv(INTERPRETATION_MODEL_ENV, raising=False)
+
+    def fail_factory() -> None:
+        pytest.fail("explicit interpreter should bypass configured factory")
+
+    monkeypatch.setattr("pi_memory.jobs.runner.create_session_interpreter", fail_factory)
+    interpreter = RecordingInterpreter()
+    claimed = claim_interpret_session_job(store, transcript_id)
+
+    completed = JobRunner(database=database, interpreter=interpreter).run(
+        claimed.id,
+        claimed.run_id,
+        running_pid=123,
+        now=at(10),
+    )
+
+    assert completed.status == JOB_STATUS_COMPLETED
+    assert len(interpreter.calls) == 1
+
+
+def test_interpret_session_configured_pydantic_ai_uses_configured_model(
+    database: Database,
+    store: JobStore,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class FakePydanticAISessionInterpreter:
+        instances: list[FakePydanticAISessionInterpreter] = []
+
+        def __init__(self, model: str) -> None:
+            self.model = model
+            self.calls: list[InterpretationPacket] = []
+            self.instances.append(self)
+
+        def interpret(self, packet: InterpretationPacket) -> InterpretationResult:
+            self.calls.append(packet)
+            deterministic = DeterministicSessionInterpreter().interpret(packet)
+            return InterpretationResult(
+                output=deterministic.output,
+                model_metadata={"provider": "openai", "model": self.model, "mode": "pydantic-ai"},
+                prompt_version=deterministic.prompt_version,
+            )
+
+    monkeypatch.setenv(INTERPRETER_MODE_ENV, "pydantic-ai")
+    monkeypatch.setenv(INTERPRETATION_MODEL_ENV, "openai:gpt-4.1-mini")
+    monkeypatch.setattr(
+        "pi_memory.interpretation.factory.PydanticAISessionInterpreter",
+        FakePydanticAISessionInterpreter,
+    )
+    transcript_id = create_transcript(database)
+    process = process_transcript(database, store, transcript_id)
+    assert process.result_json is not None
+    claimed = store.claim_next("worker-interpret")
+    assert claimed is not None
+
+    completed = JobRunner(database=database).run(
+        claimed.id,
+        claimed.run_id,
+        running_pid=123,
+        now=at(10),
+    )
+
+    assert completed.status == JOB_STATUS_COMPLETED
+    assert completed.result_json is not None
+    assert completed.result_json["model_metadata"] == {
+        "provider": "openai",
+        "model": "openai:gpt-4.1-mini",
+        "mode": "pydantic-ai",
+    }
+    assert len(FakePydanticAISessionInterpreter.instances) == 1
+    assert FakePydanticAISessionInterpreter.instances[0].model == "openai:gpt-4.1-mini"
+    assert len(FakePydanticAISessionInterpreter.instances[0].calls) == 1
 
 
 def test_interpret_session_blocks_without_phase_5a_and_does_not_call_interpreter(

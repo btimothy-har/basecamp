@@ -917,10 +917,13 @@ Implemented in `pi-memory`:
 - Skipped snapshots for sessions with no claim-source activities.
 - Structured `InterpretationOutput` contract with claim kinds `decision`, `constraint`, `knowledge`, `preference`, `pattern`, and `action`.
 - Citation validation that rejects unknown source refs and rejects claims supported only by inherited or unknown-origin refs.
-- Interpreter seam with deterministic local implementation for tests/development; model metadata and prompt/schema versions are recorded on completed snapshots.
+- Interpreter seam with deterministic local implementation for tests/development and opt-in PydanticAI provider calls for real interpretation; model metadata and prompt/schema versions are recorded on completed snapshots.
 - Post-Phase5A enqueueing: `process_transcript` enqueues `interpret_session` after raw FTS indexing and deterministic structure persistence.
 - Stale interpretation job no-op behavior. Auto-enqueued jobs carry `process_job_id` because SQLite may reuse analysis ids after Phase 5A rebuilds.
 - Read-only inspection via `GET /v1/sessions/{session_id}/interpretation` and `pi-memory interpretation --session-id --db-url [--json]`.
+- Model-agnostic interpreter configuration via `pi-memory config`, `~/.pi/memory/config.json`, and environment overrides `PI_MEMORY_INTERPRETER_MODE` / `PI_MEMORY_INTERPRETER_MODEL`.
+
+Real provider calls are opt-in. The default interpreter mode remains `deterministic`, which makes no network calls. To enable PydanticAI-backed interpretation, set `interpreter_mode = pydantic-ai` and configure `interpretation_model` with any PydanticAI-supported model string, such as `anthropic:claude-sonnet-4-5` or `openai:gpt-4o`. `pi-memory` does not store API keys; provider credentials stay in the environment variables expected by PydanticAI/provider packages, such as `ANTHROPIC_API_KEY` or `OPENAI_API_KEY`.
 
 Current interpretation fields include:
 
@@ -946,7 +949,7 @@ Validation:
 
 Deferred:
 
-- Real provider adapter beyond the deterministic local interpreter seam.
+- Provider-specific tuning, model routing, cost tracking, and throttling beyond the generic PydanticAI adapter.
 - Durable project memory.
 - Cross-session reconciliation.
 - Graph promotion.

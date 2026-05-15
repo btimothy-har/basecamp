@@ -25,6 +25,7 @@ from pi_memory.ingest import TranscriptIngestService
 from pi_memory.jobs import JobStore
 from pi_memory.recall import index_transcript
 from pi_memory.server import ServerState
+from pi_memory.settings import INTERPRETATION_MODEL_ENV, INTERPRETER_MODE_ENV, Settings
 from sqlalchemy import func, select
 
 
@@ -84,6 +85,86 @@ def parse_observe_output(output: str) -> dict[str, str]:
         name, value = line.strip().split(": ", maxsplit=1)
         fields[name] = value
     return fields
+
+
+def test_config_reports_effective_defaults(tmp_path, monkeypatch) -> None:
+    settings_path = tmp_path / "memory" / "config.json"
+    monkeypatch.delenv(INTERPRETER_MODE_ENV, raising=False)
+    monkeypatch.delenv(INTERPRETATION_MODEL_ENV, raising=False)
+    monkeypatch.setattr(cli_module, "MemorySettings", lambda: Settings(settings_path))
+
+    result = CliRunner().invoke(cli_module.main, ["config", "--json"])
+
+    assert result.exit_code == 0
+    assert json.loads(result.output) == {
+        "config_path": str(settings_path),
+        "interpreter_mode": "deterministic",
+        "interpretation_model": None,
+    }
+    assert not settings_path.exists()
+
+
+def test_config_persists_interpreter_settings(tmp_path, monkeypatch) -> None:
+    settings_path = tmp_path / "memory" / "config.json"
+    monkeypatch.delenv(INTERPRETER_MODE_ENV, raising=False)
+    monkeypatch.delenv(INTERPRETATION_MODEL_ENV, raising=False)
+    monkeypatch.setattr(cli_module, "MemorySettings", lambda: Settings(settings_path))
+
+    result = CliRunner().invoke(
+        cli_module.main,
+        [
+            "config",
+            "--interpreter-mode",
+            "pydantic-ai",
+            "--interpretation-model",
+            "anthropic:claude-sonnet-4-6",
+            "--json",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert json.loads(result.output) == {
+        "config_path": str(settings_path),
+        "interpreter_mode": "pydantic-ai",
+        "interpretation_model": "anthropic:claude-sonnet-4-6",
+    }
+    assert json.loads(settings_path.read_text()) == {
+        "interpreter_mode": "pydantic-ai",
+        "interpretation_model": "anthropic:claude-sonnet-4-6",
+    }
+
+
+def test_config_reports_env_overrides(tmp_path, monkeypatch) -> None:
+    settings_path = tmp_path / "memory" / "config.json"
+    Settings(settings_path).update(
+        interpreter_mode="pydantic-ai",
+        interpretation_model="anthropic:file-model",
+    )
+    monkeypatch.setenv(INTERPRETER_MODE_ENV, "deterministic")
+    monkeypatch.setenv(INTERPRETATION_MODEL_ENV, "openai:env-model")
+    monkeypatch.setattr(cli_module, "MemorySettings", lambda: Settings(settings_path))
+
+    result = CliRunner().invoke(cli_module.main, ["config"])
+
+    assert result.exit_code == 0
+    fields = parse_observe_output(result.output)
+    assert "Pi memory config" in result.output
+    assert fields["config_path"] == str(settings_path)
+    assert fields["interpreter_mode"] == "deterministic"
+    assert fields["interpretation_model"] == "openai:env-model"
+
+
+def test_config_rejects_pydantic_ai_without_model(tmp_path, monkeypatch) -> None:
+    settings_path = tmp_path / "memory" / "config.json"
+    monkeypatch.delenv(INTERPRETER_MODE_ENV, raising=False)
+    monkeypatch.delenv(INTERPRETATION_MODEL_ENV, raising=False)
+    monkeypatch.setattr(cli_module, "MemorySettings", lambda: Settings(settings_path))
+
+    result = CliRunner().invoke(cli_module.main, ["config", "--interpreter-mode", "pydantic-ai"])
+
+    assert result.exit_code == 1
+    assert "Error: interpretation_model is required when interpreter_mode is 'pydantic-ai'." in result.output
+    assert not settings_path.exists()
 
 
 @pytest.mark.usefixtures("use_cli_ingest_service", "use_cli_job_store")

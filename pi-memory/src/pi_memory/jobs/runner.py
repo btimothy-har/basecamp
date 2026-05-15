@@ -27,13 +27,13 @@ from pi_memory.db import (
 )
 from pi_memory.interpretation import (
     INTERPRETATION_SCHEMA_VERSION,
-    DeterministicSessionInterpreter,
     InterpretationResult,
     InterpretationValidationError,
     InterpreterUnavailableError,
     SessionInterpreter,
     ValidatedInterpretation,
     build_interpretation_packet,
+    create_session_interpreter,
     validate_interpretation_output,
 )
 from pi_memory.interpretation.packets import InterpretationPacket, InterpretationReadiness
@@ -86,7 +86,7 @@ class JobRunner:
     ) -> None:
         self._database = database
         self._store = JobStore(database=database)
-        self._interpreter = interpreter if interpreter is not None else DeterministicSessionInterpreter()
+        self._interpreter = interpreter
 
     def run(
         self,
@@ -188,7 +188,8 @@ class JobRunner:
                 )
                 return _snapshot_result_json(packet, snapshot)
 
-            result = self._interpreter.interpret(packet)
+            interpreter = self._session_interpreter()
+            result = interpreter.interpret(packet)
             validated = validate_interpretation_output(result.output, packet)
             snapshot = _replace_interpretation_snapshot(
                 session=session,
@@ -200,6 +201,11 @@ class JobRunner:
                 interpreter_result=result,
             )
             return _snapshot_result_json(packet, snapshot)
+
+    def _session_interpreter(self) -> SessionInterpreter:
+        if self._interpreter is not None:
+            return self._interpreter
+        return create_session_interpreter()
 
 
 def _payload_transcript_id(payload: Any) -> int:

@@ -155,6 +155,40 @@ Projects are defined in `~/.pi/basecamp/config.json`:
 
 Existing local config files with the older project directory schema are migrated to `repo_root` and `additional_dirs` by setup/config flows.
 
+### Pi memory interpretation
+
+`pi-memory` keeps session interpretation deterministic by default, so local installs do not make surprise model calls. Real model-backed interpretation is opt-in through PydanticAI using provider-neutral model strings.
+
+Inspect the current settings:
+
+```bash
+pi-memory config
+pi-memory config --json
+```
+
+Enable real interpretation with any PydanticAI-supported model:
+
+```bash
+pi-memory config \
+  --interpreter-mode pydantic-ai \
+  --interpretation-model anthropic:claude-sonnet-4-5
+```
+
+You can also use environment overrides, which are inherited by dispatcher-spawned `run-job` child processes:
+
+```bash
+export PI_MEMORY_INTERPRETER_MODE=pydantic-ai
+export PI_MEMORY_INTERPRETER_MODEL=openai:gpt-4o
+```
+
+`pi-memory` does not store API keys. Configure provider credentials with the environment variables expected by PydanticAI/provider packages, such as `ANTHROPIC_API_KEY` or `OPENAI_API_KEY`.
+
+Return to no-network deterministic interpretation:
+
+```bash
+pi-memory config --interpreter-mode deterministic --clear-interpretation-model
+```
+
 ## Prompt System
 
 basecamp replaces the default system prompt via a `before_agent_start` hook. This gives you:
@@ -220,7 +254,7 @@ The workspace service owns the `~/.worktrees/<repo>/<label>/` storage convention
 
 ## Semantic Memory (Observer)
 
-The `pi-observer` CLI and Pi package provide semantic memory across sessions. They ingest session transcripts, extract structured knowledge via LLM, and make it searchable. The `pi-memory/` package is present as a new scaffold for future memory service work; current semantic memory behavior remains in `pi-observer/`.
+The `pi-observer` CLI and Pi package provide the current semantic recall UI across sessions. They ingest session transcripts, extract structured knowledge via LLM, and make it searchable. The newer `pi-memory/` package runs a local memory service for canonical transcript capture, raw recall, deterministic episode structure, and opt-in PydanticAI session interpretation; Pi recall-tool behavior still remains in `pi-observer/` for now.
 
 ### How it works
 
@@ -254,7 +288,7 @@ basecamp is split into root-level products:
 - `basecamp-cli/` — Python package for the `basecamp` setup/config CLI
 - `pi-extension/` — Pi package for project context, session UI, worktrees, workflow, git, and engineering skills
 - `pi-observer/` — Python package for the `pi-observer` CLI plus a Pi package for transcript ingestion and semantic recall
-- `pi-memory/` — Python and Pi package scaffold for future memory service work
+- `pi-memory/` — Python and Pi package for the local memory service, transcript capture, jobs, raw recall, episode structure, and session interpretation
 
 ## License
 

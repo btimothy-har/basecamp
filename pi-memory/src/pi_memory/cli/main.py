@@ -28,6 +28,8 @@ from pi_memory.jobs import (
 )
 from pi_memory.recall import RawTranscriptRecallResult, RawTranscriptSearchResult, RecallSearchService
 from pi_memory.server import ServerAlreadyRunningError, ServerState, create_app
+from pi_memory.settings import SUPPORTED_INTERPRETER_MODES, SettingsError
+from pi_memory.settings import Settings as MemorySettings
 
 DEFAULT_STATUS_TIMEOUT_SECONDS = 1.0
 
@@ -44,6 +46,13 @@ class NonEmptyStringError(click.BadParameter):
 
     def __init__(self) -> None:
         super().__init__("must not be empty")
+
+
+class ConflictingInterpretationModelOptionsError(click.UsageError):
+    """Raised when mutually exclusive interpretation model options are used."""
+
+    def __init__(self) -> None:
+        super().__init__("--clear-interpretation-model cannot be used with --interpretation-model")
 
 
 class PortBindError(click.ClickException):
@@ -107,6 +116,59 @@ class StatusProbeError(Exception):
 @click.group()
 def main() -> None:
     """Pi memory service."""
+
+
+@main.command()
+@click.option(
+    "--interpreter-mode",
+    type=click.Choice(SUPPORTED_INTERPRETER_MODES),
+    help="Interpreter mode to persist in the config file.",
+)
+@click.option(
+    "--interpretation-model",
+    callback=lambda _ctx, _param, value: None if value is None else _require_non_empty(value),
+    help="Provider-neutral PydanticAI provider:model string to persist.",
+)
+@click.option(
+    "--clear-interpretation-model",
+    is_flag=True,
+    help="Remove the persisted interpretation model.",
+)
+@click.option(
+    "--json",
+    "json_output",
+    is_flag=True,
+    help="Emit parseable JSON output.",
+)
+def config(
+    interpreter_mode: str | None,
+    interpretation_model: str | None,
+    *,
+    clear_interpretation_model: bool,
+    json_output: bool,
+) -> None:
+    """Inspect or update pi-memory interpreter settings."""
+    if clear_interpretation_model and interpretation_model is not None:
+        raise ConflictingInterpretationModelOptionsError()
+
+    memory_settings = MemorySettings()
+    try:
+        if clear_interpretation_model:
+            memory_settings.update(
+                interpreter_mode=interpreter_mode,
+                interpretation_model=None,
+            )
+        elif interpretation_model is not None:
+            memory_settings.update(
+                interpreter_mode=interpreter_mode,
+                interpretation_model=interpretation_model,
+            )
+        elif interpreter_mode is not None:
+            memory_settings.update(interpreter_mode=interpreter_mode)
+
+        _emit_config(memory_settings.as_dict(), path=str(memory_settings.path), json_output=json_output)
+    except SettingsError as error:
+        raise click.ClickException(str(error)) from error
 
 
 @main.command()
@@ -488,6 +550,17 @@ def _emit_observe_result(result: IngestResult, *, job_id: int | None, json_outpu
         click.echo(f"  {name}: {value}")
 
 
+def _emit_config(payload: dict[str, str | None], *, path: str, json_output: bool) -> None:
+    output = {"config_path": path, **payload}
+    if json_output:
+        click.echo(json.dumps(output, sort_keys=True))
+        return
+
+    click.echo("Pi memory config")
+    for name, value in output.items():
+        click.echo(f"  {name}: {_display_optional(value)}")
+
+
 def _emit_job(payload: dict[str, Any], *, json_output: bool) -> None:
     if json_output:
         click.echo(json.dumps(payload, sort_keys=True))
@@ -564,6 +637,10 @@ def _emit_unavailable(*, url: str, error: str, json_output: bool) -> None:
         return
 
     click.echo(f"{SERVICE_NAME} is unavailable at {url}: {error}", err=True)
+
+
+def _display_optional(value: object) -> object:
+    return "<unset>" if value is None else value
 
 
 def _echo_status_field(name: str, service_status: dict[str, Any]) -> None:

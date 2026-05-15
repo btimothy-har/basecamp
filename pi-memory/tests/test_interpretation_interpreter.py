@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import socket
 from dataclasses import replace
+from types import SimpleNamespace
+from typing import Any
 
 import pytest
 from pi_memory.db import SOURCE_ORIGIN_INHERITED, SOURCE_ORIGIN_LOCAL, SOURCE_ORIGIN_MIXED
@@ -11,6 +13,7 @@ from pi_memory.interpretation import (
     DETERMINISTIC_INTERPRETER_PROVIDER,
     INTERPRETATION_PROMPT_VERSION,
     INTERPRETATION_SCHEMA_VERSION,
+    PYDANTIC_AI_INTERPRETER_MODE,
     BoundedText,
     DeterministicSessionInterpreter,
     EpisodePacket,
@@ -19,6 +22,8 @@ from pi_memory.interpretation import (
     InterpretationReadiness,
     InterpretationResult,
     InterpreterUnavailableError,
+    PydanticAIInterpreterError,
+    PydanticAISessionInterpreter,
     SessionInterpreter,
     SourceRef,
     validate_interpretation_output,
@@ -114,6 +119,48 @@ def packet(
 
 class NetworkAccessError(AssertionError):
     """Raised if deterministic interpretation attempts network access."""
+
+
+class FakePydanticAgent:
+    def __init__(self, output: InterpretationOutput | None = None, error: Exception | None = None) -> None:
+        self.output = output
+        self.error = error
+        self.prompts: list[str] = []
+
+    def run_sync(self, prompt: str) -> SimpleNamespace:
+        self.prompts.append(prompt)
+        if self.error is not None:
+            raise self.error
+        return SimpleNamespace(output=self.output)
+
+
+class FakePydanticAgentFactory:
+    def __init__(self, agent: FakePydanticAgent) -> None:
+        self.agent = agent
+        self.calls: list[tuple[str, dict[str, Any]]] = []
+
+    def __call__(self, model: str, **kwargs: Any) -> FakePydanticAgent:
+        self.calls.append((model, kwargs))
+        return self.agent
+
+
+def interpretation_output(source_packet: InterpretationPacket, source_ref_id: str) -> InterpretationOutput:
+    return InterpretationOutput(
+        analysis_run_id=source_packet.readiness.latest_analysis_run_id or 0,
+        analyzed_through_entry_id=source_packet.readiness.analyzed_through_entry_id,
+        analyzed_through_byte_offset=source_packet.readiness.analyzed_through_byte_offset,
+        goal="Interpret the session.",
+        summary="The session has a bounded source excerpt.",
+        claims=[
+            {
+                "source_ref_ids": [source_ref_id],
+                "kind": "knowledge",
+                "statement": "The bounded source supports a claim.",
+                "confidence": 0.75,
+            },
+        ],
+        citations=[{"source_ref_id": source_ref_id, "usage": "summary"}],
+    )
 
 
 def interpret_with_protocol(
@@ -229,3 +276,107 @@ def test_no_source_refs_raise_clear_error() -> None:
 
     with pytest.raises(InterpreterUnavailableError, match="no local or mixed claim-source"):
         DeterministicSessionInterpreter().interpret(source_packet)
+
+
+def test_pydantic_ai_interpreter_uses_agent_factory_and_returns_output() -> None:
+    source_packet = packet(source_ref("local-ref"))
+    output = interpretation_output(source_packet, "local-ref")
+    agent = FakePydanticAgent(output=output)
+    factory = FakePydanticAgentFactory(agent)
+    interpreter = PydanticAISessionInterpreter("test-provider:test-model", agent_factory=factory)
+
+    result = interpreter.interpret(source_packet)
+
+    assert factory.calls == [("test-provider:test-model", {"output_type": InterpretationOutput})]
+    assert result.output is output
+    assert result.prompt_version == INTERPRETATION_PROMPT_VERSION
+    assert result.model_metadata == {
+        "provider": "test-provider",
+        "model": "test-provider:test-model",
+        "mode": PYDANTIC_AI_INTERPRETER_MODE,
+        "schema_version": INTERPRETATION_SCHEMA_VERSION,
+    }
+    validate_interpretation_output(result.output, source_packet)
+
+
+def test_pydantic_ai_interpreter_renders_bounded_packet_prompt_only() -> None:
+    source_packet = replace(
+        packet(source_ref("local-ref")),
+        session_metadata={"secret": "SESSION_METADATA_SHOULD_NOT_APPEAR"},
+        transcript_metadata={"secret": "TRANSCRIPT_METADATA_SHOULD_NOT_APPEAR"},
+        source_analysis_metadata={"secret": "ANALYSIS_METADATA_SHOULD_NOT_APPEAR"},
+    )
+    output = interpretation_output(source_packet, "local-ref")
+    agent = FakePydanticAgent(output=output)
+    interpreter = PydanticAISessionInterpreter(
+        "plain-model-name",
+        prompt_version="test-prompt-v2",
+        agent_factory=FakePydanticAgentFactory(agent),
+    )
+
+    result = interpreter.interpret(source_packet)
+
+    assert result.prompt_version == "test-prompt-v2"
+    assert result.model_metadata["provider"] is None
+    prompt = agent.prompts[0]
+    assert "source excerpt" in prompt
+    assert "local-ref" in prompt
+    assert "analysis_run_id" in prompt
+    assert "analyzed_through_byte_offset" in prompt
+    assert "SESSION_METADATA_SHOULD_NOT_APPEAR" not in prompt
+    assert "TRANSCRIPT_METADATA_SHOULD_NOT_APPEAR" not in prompt
+    assert "ANALYSIS_METADATA_SHOULD_NOT_APPEAR" not in prompt
+
+
+def test_pydantic_ai_interpreter_readiness_guard_runs_before_model_call() -> None:
+    source_packet = packet(source_ref("local-ref"))
+    not_ready = replace(
+        source_packet,
+        readiness=replace(
+            source_packet.readiness,
+            is_ready=False,
+            blocked_reason="phase_5a_not_ready",
+        ),
+    )
+    agent = FakePydanticAgent(output=interpretation_output(source_packet, "local-ref"))
+    interpreter = PydanticAISessionInterpreter(
+        "test-provider:test-model",
+        agent_factory=FakePydanticAgentFactory(agent),
+    )
+
+    with pytest.raises(InterpreterUnavailableError, match="phase_5a_not_ready"):
+        interpreter.interpret(not_ready)
+
+    assert agent.prompts == []
+
+
+def test_pydantic_ai_interpreter_no_claim_sources_guard_runs_before_model_call() -> None:
+    source_packet = packet(source_ref("inherited-ref", source_origin=SOURCE_ORIGIN_INHERITED))
+    agent = FakePydanticAgent(output=interpretation_output(source_packet, "inherited-ref"))
+    interpreter = PydanticAISessionInterpreter(
+        "test-provider:test-model",
+        agent_factory=FakePydanticAgentFactory(agent),
+    )
+
+    with pytest.raises(InterpreterUnavailableError, match="no local or mixed claim-source"):
+        interpreter.interpret(source_packet)
+
+    assert agent.prompts == []
+
+
+def test_pydantic_ai_interpreter_wraps_provider_failures_without_leaking_details() -> None:
+    agent = FakePydanticAgent(error=RuntimeError("SECRET_PROMPT source excerpt API_KEY=abc123"))
+    interpreter = PydanticAISessionInterpreter(
+        "test-provider:test-model",
+        agent_factory=FakePydanticAgentFactory(agent),
+    )
+
+    with pytest.raises(PydanticAIInterpreterError) as exc_info:
+        interpreter.interpret(packet(source_ref("local-ref")))
+
+    assert not isinstance(exc_info.value, InterpreterUnavailableError)
+    message = str(exc_info.value)
+    assert "PydanticAI session interpretation failed" == message
+    assert "SECRET_PROMPT" not in message
+    assert "source excerpt" not in message
+    assert "API_KEY" not in message

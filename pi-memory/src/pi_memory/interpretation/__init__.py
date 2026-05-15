@@ -11,6 +11,7 @@ from pi_memory.interpretation.contracts import (
     ValidatedInterpretation,
     validate_interpretation_output,
 )
+from pi_memory.interpretation.factory import create_session_interpreter
 from pi_memory.interpretation.inspection import (
     SessionInterpretationInspectionService,
     serialize_session_interpretation_snapshot,
@@ -21,10 +22,14 @@ from pi_memory.interpretation.interpreter import (
     DETERMINISTIC_INTERPRETER_PROVIDER,
     INTERPRETATION_PROMPT_VERSION,
     INTERPRETATION_SCHEMA_VERSION,
+    PYDANTIC_AI_INTERPRETER_MODE,
     DeterministicSessionInterpreter,
     InterpretationResult,
     InterpreterError,
     InterpreterUnavailableError,
+    PydanticAIDependencyError,
+    PydanticAIInterpreterError,
+    PydanticAISessionInterpreter,
     SessionInterpreter,
 )
 from pi_memory.interpretation.packets import (
@@ -42,6 +47,7 @@ __all__ = [
     "CitationUsage",
     "ClaimKind",
     "BoundedText",
+    "create_session_interpreter",
     "DETERMINISTIC_INTERPRETER_MODE",
     "DETERMINISTIC_INTERPRETER_MODEL",
     "DETERMINISTIC_INTERPRETER_PROVIDER",
@@ -59,6 +65,10 @@ __all__ = [
     "InterpretationValidationError",
     "InterpreterError",
     "InterpreterUnavailableError",
+    "PYDANTIC_AI_INTERPRETER_MODE",
+    "PydanticAIDependencyError",
+    "PydanticAIInterpreterError",
+    "PydanticAISessionInterpreter",
     "SessionInterpretationInspectionService",
     "SessionInterpreter",
     "SourceRef",
