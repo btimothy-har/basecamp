@@ -15,6 +15,8 @@ from pi_memory.analysis import (
     build_session_snapshot_shell,
 )
 from pi_memory.db import (
+    ACTIVITY_KIND_COMPACTION,
+    ACTIVITY_KIND_SESSION_EVENT,
     ACTIVITY_KIND_TOOL_PAIR,
     ACTIVITY_KIND_USER_TEXT,
     EPISODE_CLOSE_REASON_CURRENT_CURSOR,
@@ -22,6 +24,10 @@ from pi_memory.db import (
     EPISODE_STATUS_CLOSED,
     EPISODE_STATUS_OPEN,
     SESSION_SNAPSHOT_STATUS_READY_FOR_INTERPRETATION,
+    SOURCE_ORIGIN_INHERITED,
+    SOURCE_ORIGIN_LOCAL,
+    SOURCE_ORIGIN_MIXED,
+    SOURCE_ORIGIN_UNKNOWN,
 )
 
 BASE_TIME = datetime(2026, 5, 15, 12, 0, tzinfo=UTC)
@@ -40,6 +46,7 @@ def activity(
     result_text_line_count: int = 0,
     receipt_json: dict[str, Any] | None = None,
     source_metadata_json: dict[str, Any] | None = None,
+    source_origin: str = SOURCE_ORIGIN_LOCAL,
 ) -> NormalizedActivity:
     start = sequence * 100 if byte_start is None else byte_start
     end = start + 50 if byte_end is None else byte_end
@@ -62,6 +69,7 @@ def activity(
         receipt_json=receipt_json or {},
         source_metadata_json=source_metadata_json or {},
         sequence=sequence,
+        source_origin=source_origin,
     )
 
 
@@ -150,6 +158,15 @@ def test_basic_manifest_includes_metadata_activity_map_spans_and_tool_receipt() 
     assert activity_map["episode"]["boundary_metadata"] == {"gap_seconds": 3600.0}
     assert activity_map["included_activity_count"] == 2
     assert activity_map["omitted_activity_count"] == 0
+    assert activity_map["origin_counts"] == {
+        "local_activity_count": 2,
+        "inherited_activity_count": 0,
+        "mixed_activity_count": 0,
+        "unknown_activity_count": 0,
+    }
+    assert activity_map["claim_source_activity_count"] == 2
+    assert activity_map["activities"][0]["source_origin"] == SOURCE_ORIGIN_LOCAL
+    assert activity_map["activities"][0]["claim_source_allowed"] is True
 
     tool_map = activity_map["activities"][1]
     assert tool_map["index"] == 1
@@ -158,6 +175,8 @@ def test_basic_manifest_includes_metadata_activity_map_spans_and_tool_receipt() 
     assert tool_map["source_entry_ids"] == [2, 3]
     assert tool_map["tool_call_id"] == "call-1"
     assert tool_map["tool_name"] == "bash"
+    assert tool_map["source_origin"] == SOURCE_ORIGIN_LOCAL
+    assert tool_map["claim_source_allowed"] is True
     assert tool_map["receipt_json"]["argument_keys"] == ["command"]
     assert tool_map["source_metadata_json"]["call_content_index"] == 1
 
@@ -168,6 +187,46 @@ def test_basic_manifest_includes_metadata_activity_map_spans_and_tool_receipt() 
         "activity",
     ]
     assert built.source_spans_json[2]["source_entry_ids"] == [2, 3]
+
+
+def test_manifest_origin_counts_and_claim_source_policy() -> None:
+    built = build_episode_manifest(
+        episode(
+            [
+                activity(1, source_origin=SOURCE_ORIGIN_LOCAL),
+                activity(2, source_origin=SOURCE_ORIGIN_INHERITED),
+                activity(3, ACTIVITY_KIND_TOOL_PAIR, source_origin=SOURCE_ORIGIN_MIXED),
+                activity(4, source_origin=SOURCE_ORIGIN_UNKNOWN),
+                activity(5, ACTIVITY_KIND_SESSION_EVENT, source_origin=SOURCE_ORIGIN_LOCAL),
+                activity(6, ACTIVITY_KIND_COMPACTION, source_origin=SOURCE_ORIGIN_LOCAL),
+            ],
+        ),
+    )
+
+    activity_map = built.activity_map_json
+    assert activity_map["origin_counts"] == {
+        "local_activity_count": 3,
+        "inherited_activity_count": 1,
+        "mixed_activity_count": 1,
+        "unknown_activity_count": 1,
+    }
+    assert activity_map["claim_source_activity_count"] == 2
+    assert [item["source_origin"] for item in activity_map["activities"]] == [
+        SOURCE_ORIGIN_LOCAL,
+        SOURCE_ORIGIN_INHERITED,
+        SOURCE_ORIGIN_MIXED,
+        SOURCE_ORIGIN_UNKNOWN,
+        SOURCE_ORIGIN_LOCAL,
+        SOURCE_ORIGIN_LOCAL,
+    ]
+    assert [item["claim_source_allowed"] for item in activity_map["activities"]] == [
+        True,
+        False,
+        True,
+        False,
+        False,
+        False,
+    ]
 
 
 def test_manifest_omits_large_raw_tool_output_from_receipt_details() -> None:
@@ -241,11 +300,24 @@ def test_snapshot_shell_from_multiple_episodes_has_counts_and_no_semantic_fields
     assert shell.manifest_count == 2
     assert shell.tool_pair_count == 1
     assert shell.snapshot_json["ready_for_interpretation"] is True
+    assert shell.snapshot_json["fork"] == {
+        "has_parent": False,
+        "parent_transcript_path": None,
+        "parent_transcript_id": None,
+        "parent_resolved": True,
+        "source_origin_complete": True,
+        "blocked_reason": None,
+    }
     assert shell.snapshot_json["counts"] == {
         "activity_count": 3,
         "episode_count": 2,
         "manifest_count": 2,
         "tool_pair_count": 1,
+        "local_activity_count": 3,
+        "inherited_activity_count": 0,
+        "mixed_activity_count": 0,
+        "unknown_activity_count": 0,
+        "claim_source_activity_count": 3,
     }
     assert shell.snapshot_json["episodes"] == [
         {
@@ -281,6 +353,19 @@ def test_empty_snapshot_input_returns_zero_ready_shell() -> None:
         "episode_count": 0,
         "manifest_count": 0,
         "tool_pair_count": 0,
+        "local_activity_count": 0,
+        "inherited_activity_count": 0,
+        "mixed_activity_count": 0,
+        "unknown_activity_count": 0,
+        "claim_source_activity_count": 0,
+    }
+    assert shell.snapshot_json["fork"] == {
+        "has_parent": False,
+        "parent_transcript_path": None,
+        "parent_transcript_id": None,
+        "parent_resolved": True,
+        "source_origin_complete": True,
+        "blocked_reason": None,
     }
     assert shell.snapshot_json["analyzed_through"] == {
         "entry_id": None,

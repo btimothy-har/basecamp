@@ -14,6 +14,7 @@ from pi_memory.analysis.episodes import NormalizedEpisode, segment_activities
 from pi_memory.analysis.manifests import (
     BuiltEpisodeManifest,
     BuiltSessionSnapshotShell,
+    ForkProvenance,
     build_episode_manifests,
     build_session_snapshot_shell,
 )
@@ -83,7 +84,14 @@ def analyze_transcript_structure(
     activities = normalize_transcript_entries(entries, entry_source_origins=entry_source_origins)
     episodes = segment_activities(activities)
     manifests = build_episode_manifests(episodes)
-    snapshot_shell = build_session_snapshot_shell(episodes, manifests)
+    snapshot_shell = build_session_snapshot_shell(
+        episodes,
+        manifests,
+        ForkProvenance(
+            parent_transcript_path=transcript.parent_transcript_path,
+            parent_transcript_id=transcript.parent_transcript_id,
+        ),
+    )
 
     _delete_previous_phase_5a_rows(session, transcript)
 

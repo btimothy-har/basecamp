@@ -9,7 +9,19 @@ from typing import Any
 
 from pi_memory.analysis.activity import NormalizedActivity
 from pi_memory.analysis.episodes import NormalizedEpisode
-from pi_memory.db import SESSION_SNAPSHOT_STATUS_READY_FOR_INTERPRETATION
+from pi_memory.db import (
+    ACTIVITY_KIND_ASSISTANT_TEXT,
+    ACTIVITY_KIND_ASSISTANT_THINKING,
+    ACTIVITY_KIND_CUSTOM_EVENT,
+    ACTIVITY_KIND_ORPHAN_TOOL_RESULT,
+    ACTIVITY_KIND_TOOL_PAIR,
+    ACTIVITY_KIND_USER_TEXT,
+    SESSION_SNAPSHOT_STATUS_READY_FOR_INTERPRETATION,
+    SOURCE_ORIGIN_LOCAL,
+    SOURCE_ORIGIN_MIXED,
+    SOURCE_ORIGIN_UNKNOWN,
+    SOURCE_ORIGINS,
+)
 
 MANIFEST_VERSION = 1
 SNAPSHOT_SHELL_VERSION = 1
@@ -17,6 +29,24 @@ MAX_MANIFEST_ACTIVITIES = 100
 MANIFEST_HEAD_ACTIVITIES = 80
 MANIFEST_TAIL_ACTIVITIES = 20
 MAX_MANIFEST_STRING_CHARS = 500
+CLAIM_SOURCE_ACTIVITY_KINDS = frozenset(
+    {
+        ACTIVITY_KIND_USER_TEXT,
+        ACTIVITY_KIND_ASSISTANT_TEXT,
+        ACTIVITY_KIND_ASSISTANT_THINKING,
+        ACTIVITY_KIND_TOOL_PAIR,
+        ACTIVITY_KIND_ORPHAN_TOOL_RESULT,
+        ACTIVITY_KIND_CUSTOM_EVENT,
+    },
+)
+
+
+@dataclass(frozen=True)
+class ForkProvenance:
+    """Transcript fork provenance context for snapshot readiness."""
+
+    parent_transcript_path: str | None = None
+    parent_transcript_id: int | None = None
 
 
 @dataclass(frozen=True)
@@ -54,6 +84,7 @@ def build_episode_manifest(episode: NormalizedEpisode) -> BuiltEpisodeManifest:
     """Build a deterministic bounded manifest for one normalized episode."""
     included_activities = _included_activities(episode.activities)
     activity_maps = [_activity_map(index=index, activity=activity) for index, activity in included_activities]
+    origin_counts = _activity_origin_counts(episode.activities)
     activity_map_json = {
         "kind": "episode_manifest_activity_map",
         "version": MANIFEST_VERSION,
@@ -63,6 +94,8 @@ def build_episode_manifest(episode: NormalizedEpisode) -> BuiltEpisodeManifest:
         "omitted_activity_count": episode.activity_count - len(activity_maps),
         "included_ranges": _included_ranges(included_activities),
         "omitted_ranges": _omitted_ranges(episode.activity_count, included_activities),
+        "origin_counts": origin_counts,
+        "claim_source_activity_count": _claim_source_activity_count(episode.activities),
         "activities": activity_maps,
     }
     return BuiltEpisodeManifest(
@@ -90,11 +123,18 @@ def build_episode_manifests(
 def build_session_snapshot_shell(
     episodes: Sequence[NormalizedEpisode],
     manifests: Sequence[BuiltEpisodeManifest],
+    fork_provenance: ForkProvenance | None = None,
 ) -> BuiltSessionSnapshotShell:
     """Build a deterministic no-claims session snapshot shell."""
     status = SESSION_SNAPSHOT_STATUS_READY_FOR_INTERPRETATION
+    provenance = fork_provenance or ForkProvenance()
+    activities = [activity for episode in episodes for activity in episode.activities]
     activity_count = sum(episode.activity_count for episode in episodes)
     tool_pair_count = sum(episode.tool_pair_count for episode in episodes)
+    origin_counts = _activity_origin_counts(activities)
+    claim_source_activity_count = _claim_source_activity_count(activities)
+    fork_json = _fork_json(provenance, origin_counts)
+    ready_for_interpretation = fork_json["blocked_reason"] is None
     analyzed_through_entry_id = _analyzed_through_entry_id(episodes)
     analyzed_through_byte_offset = max(
         (episode.byte_end for episode in episodes),
@@ -103,13 +143,16 @@ def build_session_snapshot_shell(
     snapshot_json = {
         "kind": "session_snapshot_shell",
         "version": SNAPSHOT_SHELL_VERSION,
-        "ready_for_interpretation": True,
+        "ready_for_interpretation": ready_for_interpretation,
         "status": status,
+        "fork": fork_json,
         "counts": {
             "activity_count": activity_count,
             "episode_count": len(episodes),
             "manifest_count": len(manifests),
             "tool_pair_count": tool_pair_count,
+            **origin_counts,
+            "claim_source_activity_count": claim_source_activity_count,
         },
         "analyzed_through": {
             "entry_id": analyzed_through_entry_id,
@@ -168,6 +211,8 @@ def _activity_map(index: int, activity: NormalizedActivity) -> dict[str, Any]:
         "tool_call_id": activity.tool_call_id,
         "tool_name": activity.tool_name,
         "is_error": activity.is_error,
+        "source_origin": activity.source_origin,
+        "claim_source_allowed": _claim_source_allowed(activity),
         "raw_text_available": activity.raw_text_available,
         "text_char_count": activity.text_char_count,
         "result_text_byte_count": activity.result_text_byte_count,
@@ -273,6 +318,53 @@ def _range(start: int, end: int) -> dict[str, int]:
         "end_index": end,
         "count": end - start + 1,
     }
+
+
+def _activity_origin_counts(activities: Sequence[NormalizedActivity]) -> dict[str, int]:
+    counts = {f"{origin}_activity_count": 0 for origin in SOURCE_ORIGINS}
+    for activity in activities:
+        origin = activity.source_origin
+        if origin not in SOURCE_ORIGINS:
+            origin = SOURCE_ORIGIN_UNKNOWN
+        counts[f"{origin}_activity_count"] += 1
+    return counts
+
+
+def _claim_source_activity_count(activities: Sequence[NormalizedActivity]) -> int:
+    return sum(1 for activity in activities if _claim_source_allowed(activity))
+
+
+def _claim_source_allowed(activity: NormalizedActivity) -> bool:
+    return (
+        activity.source_origin in {SOURCE_ORIGIN_LOCAL, SOURCE_ORIGIN_MIXED}
+        and activity.kind in CLAIM_SOURCE_ACTIVITY_KINDS
+    )
+
+
+def _fork_json(provenance: ForkProvenance, origin_counts: dict[str, int]) -> dict[str, Any]:
+    has_parent = provenance.parent_transcript_path is not None
+    parent_resolved = not has_parent or provenance.parent_transcript_id is not None
+    source_origin_complete = parent_resolved and origin_counts[f"{SOURCE_ORIGIN_UNKNOWN}_activity_count"] == 0
+    blocked_reason = _blocked_reason(
+        parent_resolved=parent_resolved,
+        source_origin_complete=source_origin_complete,
+    )
+    return {
+        "has_parent": has_parent,
+        "parent_transcript_path": provenance.parent_transcript_path,
+        "parent_transcript_id": provenance.parent_transcript_id,
+        "parent_resolved": parent_resolved,
+        "source_origin_complete": source_origin_complete,
+        "blocked_reason": blocked_reason,
+    }
+
+
+def _blocked_reason(*, parent_resolved: bool, source_origin_complete: bool) -> str | None:
+    if not parent_resolved:
+        return "parent_transcript_not_ingested"
+    if not source_origin_complete:
+        return "source_origin_incomplete"
+    return None
 
 
 def _analyzed_through_entry_id(episodes: Sequence[NormalizedEpisode]) -> int | None:

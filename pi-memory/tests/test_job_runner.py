@@ -492,6 +492,11 @@ def test_process_transcript_persists_phase_5a_rows(database: Database, store: Jo
             "episode_count": 1,
             "manifest_count": 1,
             "tool_pair_count": 0,
+            "local_activity_count": 2,
+            "inherited_activity_count": 0,
+            "mixed_activity_count": 0,
+            "unknown_activity_count": 0,
+            "claim_source_activity_count": 2,
         }
 
 
@@ -536,6 +541,52 @@ def test_process_transcript_persists_resolved_fork_source_origins(
             SOURCE_ORIGIN_LOCAL: activities[3].source_entry_ids_json,
         }
 
+        shell = session.scalar(select(SessionSnapshotShell))
+        assert shell is not None
+        assert shell.snapshot_json["ready_for_interpretation"] is True
+        assert shell.snapshot_json["fork"] == {
+            "has_parent": True,
+            "parent_transcript_path": "/tmp/pi/parent.jsonl",
+            "parent_transcript_id": transcript.parent_transcript_id,
+            "parent_resolved": True,
+            "source_origin_complete": True,
+            "blocked_reason": None,
+        }
+        assert shell.snapshot_json["counts"] == {
+            "activity_count": 4,
+            "episode_count": 1,
+            "manifest_count": 1,
+            "tool_pair_count": 1,
+            "local_activity_count": 2,
+            "inherited_activity_count": 1,
+            "mixed_activity_count": 1,
+            "unknown_activity_count": 0,
+            "claim_source_activity_count": 2,
+        }
+
+        manifest = session.scalar(select(EpisodeManifest))
+        assert manifest is not None
+        manifest_activities = manifest.activity_map_json["activities"]
+        assert [item["source_origin"] for item in manifest_activities] == [
+            SOURCE_ORIGIN_LOCAL,
+            SOURCE_ORIGIN_INHERITED,
+            SOURCE_ORIGIN_MIXED,
+            SOURCE_ORIGIN_LOCAL,
+        ]
+        assert [item["claim_source_allowed"] for item in manifest_activities] == [
+            False,
+            False,
+            True,
+            True,
+        ]
+        assert manifest.activity_map_json["origin_counts"] == {
+            "local_activity_count": 2,
+            "inherited_activity_count": 1,
+            "mixed_activity_count": 1,
+            "unknown_activity_count": 0,
+        }
+        assert manifest.activity_map_json["claim_source_activity_count"] == 2
+
 
 def test_process_transcript_persists_unresolved_fork_source_origins(
     database: Database,
@@ -560,6 +611,29 @@ def test_process_transcript_persists_unresolved_fork_source_origins(
         }
         assert activities[1].source_metadata_json["source_entry_ids_by_origin"] == {
             SOURCE_ORIGIN_UNKNOWN: activities[1].source_entry_ids_json,
+        }
+
+        shell = session.scalar(select(SessionSnapshotShell))
+        assert shell is not None
+        assert shell.snapshot_json["ready_for_interpretation"] is False
+        assert shell.snapshot_json["fork"] == {
+            "has_parent": True,
+            "parent_transcript_path": "/tmp/pi/missing-parent.jsonl",
+            "parent_transcript_id": None,
+            "parent_resolved": False,
+            "source_origin_complete": False,
+            "blocked_reason": "parent_transcript_not_ingested",
+        }
+        assert shell.snapshot_json["counts"] == {
+            "activity_count": 2,
+            "episode_count": 1,
+            "manifest_count": 1,
+            "tool_pair_count": 0,
+            "local_activity_count": 1,
+            "inherited_activity_count": 0,
+            "mixed_activity_count": 0,
+            "unknown_activity_count": 1,
+            "claim_source_activity_count": 0,
         }
 
 
