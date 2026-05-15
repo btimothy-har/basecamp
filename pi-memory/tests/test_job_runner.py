@@ -52,7 +52,7 @@ from pi_memory.jobs import (
     TranscriptNotFoundError,
     UnsupportedJobKindError,
 )
-from sqlalchemy import func, select, text
+from sqlalchemy import delete, func, select, text
 
 
 def sqlite_url(path: Path) -> str:
@@ -482,6 +482,44 @@ def test_process_transcript_enqueued_interpret_job_writes_snapshot(
         snapshot = session.scalar(select(SessionInterpretationSnapshot))
         assert snapshot is not None
         assert snapshot.job_id == interpret_session_job_id
+        assert snapshot.status == SESSION_INTERPRETATION_STATUS_COMPLETED
+
+
+def test_process_transcript_enqueued_interpret_job_writes_snapshot_without_snapshot_shells(
+    database: Database,
+    store: JobStore,
+) -> None:
+    transcript_id = create_transcript(database)
+    process = process_transcript(database, store, transcript_id)
+    assert process.result_json is not None
+    interpret_session_job_id = process.result_json["interpret_session_job_id"]
+    analysis_run_id = process.result_json["phase_5a"]["analysis_run_id"]
+
+    with database.session() as session:
+        assert session.scalar(select(func.count()).select_from(SessionSnapshotShell)) == 1
+        session.execute(delete(SessionSnapshotShell))
+        session.flush()
+        assert session.scalar(select(func.count()).select_from(SessionSnapshotShell)) == 0
+
+    claimed = store.claim_next("worker-interpret")
+    assert claimed is not None
+    assert claimed.id == interpret_session_job_id
+    completed = JobRunner(database=database).run(
+        claimed.id,
+        claimed.run_id,
+        running_pid=123,
+    )
+
+    assert completed.status == JOB_STATUS_COMPLETED
+    assert completed.result_json is not None
+    assert completed.result_json["status"] == SESSION_INTERPRETATION_STATUS_COMPLETED
+    assert completed.result_json["analysis_run_id"] == analysis_run_id
+    with database.session() as session:
+        assert session.scalar(select(func.count()).select_from(SessionSnapshotShell)) == 0
+        snapshot = session.scalar(select(SessionInterpretationSnapshot))
+        assert snapshot is not None
+        assert snapshot.job_id == interpret_session_job_id
+        assert snapshot.analysis_run_id == analysis_run_id
         assert snapshot.status == SESSION_INTERPRETATION_STATUS_COMPLETED
 
 

@@ -16,11 +16,12 @@ from pi_memory.db import (
     ActivityUnit,
     Database,
     MemorySession,
+    SessionSnapshotShell,
     Transcript,
     TranscriptEntry,
 )
 from pi_memory.interpretation import build_interpretation_packet
-from sqlalchemy import select
+from sqlalchemy import delete, func, select
 
 BASE_TIME = datetime(2026, 5, 15, 12, 0, tzinfo=UTC)
 
@@ -157,6 +158,27 @@ def test_ready_normal_transcript_after_phase_5a_analysis(database: Database) -> 
     assert len(packet.episode_packets) == 1
     assert packet.session_metadata["stable_session_id"] == "pi-session-1"
     assert packet.transcript_metadata["parent_transcript_path"] is None
+
+
+def test_packet_readiness_uses_phase_5a_rows_when_snapshot_shells_are_deleted(database: Database) -> None:
+    with database.session() as db_session:
+        transcript = create_transcript(db_session)
+        result = analyze_transcript_structure(db_session, transcript)
+        assert db_session.scalar(select(func.count()).select_from(SessionSnapshotShell)) == 1
+
+        db_session.execute(delete(SessionSnapshotShell))
+        db_session.flush()
+        assert db_session.scalar(select(func.count()).select_from(SessionSnapshotShell)) == 0
+
+        packet = build_interpretation_packet(db_session, transcript)
+
+    assert packet.readiness.is_ready is True
+    assert packet.readiness.latest_analysis_run_id == result.analysis_run_id
+    assert packet.readiness.claim_source_activity_count == 1
+    assert packet.readiness.activity_count == 1
+    assert packet.readiness.episode_count == 1
+    assert packet.readiness.manifest_count == 1
+    assert len(packet.episode_packets) == 1
 
 
 def test_requested_latest_analysis_id_builds_packet(database: Database) -> None:
