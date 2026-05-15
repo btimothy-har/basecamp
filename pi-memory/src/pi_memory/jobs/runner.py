@@ -11,11 +11,14 @@ from sqlalchemy.orm import Session
 
 from pi_memory.analysis import analyze_transcript_structure
 from pi_memory.db import (
+    ANALYSIS_KIND_TRANSCRIPT_STRUCTURE,
+    ANALYSIS_STATUS_COMPLETED,
     JOB_KIND_INTERPRET_SESSION,
     JOB_KIND_PROCESS_TRANSCRIPT,
     SESSION_INTERPRETATION_STATUS_BLOCKED,
     SESSION_INTERPRETATION_STATUS_COMPLETED,
     SESSION_INTERPRETATION_STATUS_SKIPPED_NO_CLAIM_SOURCES,
+    AnalysisRun,
     Database,
     Job,
     SessionInterpretationSnapshot,
@@ -34,12 +37,14 @@ from pi_memory.interpretation import (
     validate_interpretation_output,
 )
 from pi_memory.interpretation.packets import InterpretationPacket, InterpretationReadiness
+from pi_memory.jobs.interpretation import enqueue_interpret_session_job
 from pi_memory.jobs.store import JobStore
 from pi_memory.recall import index_transcript
 
 EXPECTED_OBJECT_PAYLOAD_ERROR = "expected object payload"
 TRANSCRIPT_ID_INTEGER_ERROR = "transcript_id must be an integer"
 ANALYSIS_RUN_ID_INTEGER_ERROR = "analysis_run_id must be an integer"
+PROCESS_JOB_ID_INTEGER_ERROR = "process_job_id must be an integer"
 
 
 class JobRunnerError(RuntimeError):
@@ -65,7 +70,7 @@ class InvalidJobPayloadError(PermanentJobError):
 
 
 class TranscriptNotFoundError(PermanentJobError):
-    """Raised when a process_transcript job references a missing transcript."""
+    """Raised when a job references a missing transcript."""
 
     def __init__(self, transcript_id: int) -> None:
         super().__init__(f"Transcript {transcript_id} was not found")
@@ -130,7 +135,7 @@ class JobRunner:
 
             index_result = index_transcript(session, transcript_id)
             analysis_result = analyze_transcript_structure(session, transcript, job_id=job.id)
-            return {
+            result_json = {
                 "transcript_id": transcript.id,
                 "session_id": transcript.session.session_id,
                 "entry_count": index_result.total_entries,
@@ -140,8 +145,18 @@ class JobRunner:
                 "phase_5a": analysis_result.to_result_json(),
             }
 
+        interpret_job = enqueue_interpret_session_job(
+            self._store,
+            transcript_id=transcript_id,
+            session_id=result_json["session_id"],
+            analysis_result=analysis_result,
+            process_job_id=job.id,
+        )
+        result_json["interpret_session_job_id"] = interpret_job.id
+        return result_json
+
     def _interpret_session(self, job: Job) -> dict[str, Any]:
-        transcript_id, analysis_run_id = _payload_interpret_session(job.payload_json)
+        transcript_id, analysis_run_id, process_job_id = _payload_interpret_session(job.payload_json)
         self._database.initialize()
         with self._database.session() as session:
             transcript = session.get(Transcript, transcript_id)
@@ -149,7 +164,7 @@ class JobRunner:
                 raise TranscriptNotFoundError(transcript_id)
 
             packet = build_interpretation_packet(session, transcript, analysis_run_id=analysis_run_id)
-            if packet.readiness.is_stale:
+            if packet.readiness.is_stale or _is_stale_process_job(session, transcript_id, process_job_id):
                 return _stale_result_json(packet)
 
             if packet.readiness.blocked_reason is not None:
@@ -197,7 +212,7 @@ def _payload_transcript_id(payload: Any) -> int:
     return transcript_id
 
 
-def _payload_interpret_session(payload: Any) -> tuple[int, int | None]:
+def _payload_interpret_session(payload: Any) -> tuple[int, int | None, int | None]:
     if not isinstance(payload, dict):
         raise InvalidJobPayloadError(EXPECTED_OBJECT_PAYLOAD_ERROR)
 
@@ -211,7 +226,32 @@ def _payload_interpret_session(payload: Any) -> tuple[int, int | None]:
     ):
         raise InvalidJobPayloadError(ANALYSIS_RUN_ID_INTEGER_ERROR)
 
-    return transcript_id, analysis_run_id
+    process_job_id = payload.get("process_job_id")
+    if process_job_id is not None and (
+        not isinstance(process_job_id, int) or isinstance(process_job_id, bool)
+    ):
+        raise InvalidJobPayloadError(PROCESS_JOB_ID_INTEGER_ERROR)
+
+    return transcript_id, analysis_run_id, process_job_id
+
+
+def _is_stale_process_job(session: Session, transcript_id: int, process_job_id: int | None) -> bool:
+    if process_job_id is None:
+        return False
+
+    # Phase 5A rebuilds delete and recreate analysis rows; SQLite may reuse ids.
+    # The process job id is the durable freshness token for auto-enqueued work.
+    latest_run = session.scalar(
+        select(AnalysisRun)
+        .where(
+            AnalysisRun.transcript_id == transcript_id,
+            AnalysisRun.analysis_kind == ANALYSIS_KIND_TRANSCRIPT_STRUCTURE,
+            AnalysisRun.status == ANALYSIS_STATUS_COMPLETED,
+        )
+        .order_by(AnalysisRun.id.desc())
+        .limit(1),
+    )
+    return latest_run is None or latest_run.job_id != process_job_id
 
 
 def _replace_interpretation_snapshot(
@@ -263,6 +303,7 @@ def _replace_interpretation_snapshot(
 def _stale_result_json(packet: InterpretationPacket) -> dict[str, Any]:
     result = _readiness_result_json(packet.readiness)
     result["status"] = "stale"
+    result["is_stale"] = True
     result["snapshot_id"] = None
     return result
 

@@ -4,7 +4,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
-from pi_memory.db import JOB_KIND_PROCESS_TRANSCRIPT, JOB_STATUS_QUEUED, Database, Job
+from pi_memory.db import JOB_KIND_INTERPRET_SESSION, JOB_KIND_PROCESS_TRANSCRIPT, JOB_STATUS_QUEUED, Database, Job
 from pi_memory.ingest import IngestResult
 from pi_memory.jobs import JobStore, enqueue_process_transcript_job
 from sqlalchemy import func, select
@@ -77,4 +77,12 @@ def test_enqueue_process_transcript_job_returns_none_without_new_entries(
     assert job is None
     with database.session() as session:
         job_count = session.scalar(select(func.count()).select_from(Job))
+        process_job_count = session.scalar(
+            select(func.count()).select_from(Job).where(Job.kind == JOB_KIND_PROCESS_TRANSCRIPT),
+        )
+        interpret_job_count = session.scalar(
+            select(func.count()).select_from(Job).where(Job.kind == JOB_KIND_INTERPRET_SESSION),
+        )
     assert job_count == 0
+    assert process_job_count == 0
+    assert interpret_job_count == 0

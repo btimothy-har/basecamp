@@ -401,7 +401,13 @@ def test_process_transcript_completes_and_writes_safe_result(database: Database,
     assert completed.result_json is not None
     phase_5a = completed.result_json["phase_5a"]
     assert isinstance(phase_5a, dict)
-    base_result = {key: value for key, value in completed.result_json.items() if key != "phase_5a"}
+    interpret_session_job_id = completed.result_json["interpret_session_job_id"]
+    assert isinstance(interpret_session_job_id, int)
+    base_result = {
+        key: value
+        for key, value in completed.result_json.items()
+        if key not in {"phase_5a", "interpret_session_job_id"}
+    }
     assert base_result == {
         "transcript_id": transcript_id,
         "session_id": "pi-session-1",
@@ -420,6 +426,23 @@ def test_process_transcript_completes_and_writes_safe_result(database: Database,
     assert "do not expose" not in str(completed.result_json)
     assert "find nebula notes" not in str(completed.result_json)
 
+    with database.session() as session:
+        interpret_job = session.get_one(Job, interpret_session_job_id)
+        assert interpret_job.kind == JOB_KIND_INTERPRET_SESSION
+        assert interpret_job.status == JOB_STATUS_QUEUED
+        assert interpret_job.payload_json == {
+            "transcript_id": transcript_id,
+            "analysis_run_id": phase_5a["analysis_run_id"],
+            "session_id": "pi-session-1",
+            "process_job_id": claimed.id,
+            "analyzed_through_entry_id": phase_5a["analyzed_through_entry_id"],
+            "analyzed_through_byte_offset": 200,
+            "activity_count": 2,
+            "episode_count": 1,
+            "manifest_count": 1,
+        }
+        assert "raw_line" not in interpret_job.payload_json
+
     with database.engine.connect() as connection:
         matches = (
             connection.execute(
@@ -431,6 +454,35 @@ def test_process_transcript_completes_and_writes_safe_result(database: Database,
         )
 
     assert len(matches) == 1
+
+
+def test_process_transcript_enqueued_interpret_job_writes_snapshot(
+    database: Database,
+    store: JobStore,
+) -> None:
+    transcript_id = create_transcript(database)
+    process = process_transcript(database, store, transcript_id)
+    assert process.result_json is not None
+    interpret_session_job_id = process.result_json["interpret_session_job_id"]
+
+    claimed = store.claim_next("worker-interpret")
+    assert claimed is not None
+    assert claimed.id == interpret_session_job_id
+    completed = JobRunner(database=database).run(
+        claimed.id,
+        claimed.run_id,
+        running_pid=123,
+    )
+
+    assert completed.status == JOB_STATUS_COMPLETED
+    assert completed.result_json is not None
+    assert completed.result_json["status"] == SESSION_INTERPRETATION_STATUS_COMPLETED
+    assert completed.result_json["analysis_run_id"] == process.result_json["phase_5a"]["analysis_run_id"]
+    with database.session() as session:
+        snapshot = session.scalar(select(SessionInterpretationSnapshot))
+        assert snapshot is not None
+        assert snapshot.job_id == interpret_session_job_id
+        assert snapshot.status == SESSION_INTERPRETATION_STATUS_COMPLETED
 
 
 def test_process_transcript_handles_empty_transcript(database: Database, store: JobStore) -> None:
@@ -726,6 +778,8 @@ def test_process_transcript_phase_5a_rerun_replaces_derived_rows(
     assert first_completed.result_json is not None
     first_phase_5a = first_completed.result_json["phase_5a"]
     assert isinstance(first_phase_5a, dict)
+    first_interpret_job_id = first_completed.result_json["interpret_session_job_id"]
+    assert isinstance(first_interpret_job_id, int)
 
     second_claimed = claim_process_transcript_job(store, transcript_id)
     second_completed = JobRunner(database=database).run(
@@ -737,6 +791,9 @@ def test_process_transcript_phase_5a_rerun_replaces_derived_rows(
     assert second_completed.result_json is not None
     second_phase_5a = second_completed.result_json["phase_5a"]
     assert isinstance(second_phase_5a, dict)
+    second_interpret_job_id = second_completed.result_json["interpret_session_job_id"]
+    assert isinstance(second_interpret_job_id, int)
+    assert second_interpret_job_id != first_interpret_job_id
 
     assert_phase_5a_result(
         second_phase_5a,
@@ -755,6 +812,29 @@ def test_process_transcript_phase_5a_rerun_replaces_derived_rows(
         assert analysis_run is not None
         assert analysis_run.id == second_phase_5a["analysis_run_id"]
         assert analysis_run.job_id == second_claimed.id
+        first_interpret_job = session.get_one(Job, first_interpret_job_id)
+        second_interpret_job = session.get_one(Job, second_interpret_job_id)
+        assert first_interpret_job.kind == JOB_KIND_INTERPRET_SESSION
+        assert second_interpret_job.kind == JOB_KIND_INTERPRET_SESSION
+        assert first_interpret_job.payload_json["analysis_run_id"] == first_phase_5a["analysis_run_id"]
+        assert first_interpret_job.payload_json["process_job_id"] == first_claimed.id
+        assert second_interpret_job.payload_json["analysis_run_id"] == second_phase_5a["analysis_run_id"]
+        assert second_interpret_job.payload_json["process_job_id"] == second_claimed.id
+
+    stale_claimed = store.claim_next("worker-interpret")
+    assert stale_claimed is not None
+    assert stale_claimed.id == first_interpret_job_id
+    stale_completed = JobRunner(database=database, interpreter=FailingInterpreter()).run(
+        stale_claimed.id,
+        stale_claimed.run_id,
+        running_pid=123,
+    )
+    assert stale_completed.result_json is not None
+    assert stale_completed.result_json["status"] == "stale"
+    assert stale_completed.result_json["is_stale"] is True
+    assert stale_completed.result_json["snapshot_id"] is None
+    with database.session() as session:
+        assert session.scalar(select(func.count()).select_from(SessionInterpretationSnapshot)) == 0
 
     with database.engine.connect() as connection:
         matches = (
@@ -1290,6 +1370,8 @@ def test_bad_process_transcript_data_terminal_fails_after_start(
         ({"transcript_id": True}, InvalidJobPayloadError),
         ({"transcript_id": 1, "analysis_run_id": "not-an-int"}, InvalidJobPayloadError),
         ({"transcript_id": 1, "analysis_run_id": False}, InvalidJobPayloadError),
+        ({"transcript_id": 1, "process_job_id": "not-an-int"}, InvalidJobPayloadError),
+        ({"transcript_id": 1, "process_job_id": False}, InvalidJobPayloadError),
         ({"transcript_id": 99999}, TranscriptNotFoundError),
     ],
 )
