@@ -162,6 +162,22 @@ def test_parse_accepts_real_pi_extra_entry_types(tmp_path) -> None:
     assert result.malformed_lines == 0
 
 
+def test_parse_session_header_exposes_parent_session_path(tmp_path) -> None:
+    path = tmp_path / "transcript.jsonl"
+    session_line = b'{"type":"session","id":"session-1","parentSession":"/tmp/parent.jsonl"}\n'
+    message_line = b'{"type":"message","id":"message-1","parentSession":"/tmp/ignored.jsonl"}\n'
+    invalid_session_line = b'{"type":"session","id":"session-2","parentSession":{"path":"/tmp/ignored.jsonl"}}\n'
+    write_transcript(path, session_line + message_line + invalid_session_line)
+
+    result = PiTranscriptParser().parse(path)
+
+    assert [entry.parent_session_path for entry in result.entries] == [
+        "/tmp/parent.jsonl",
+        None,
+        None,
+    ]
+
+
 def test_parse_pi_session_header_and_model_change(tmp_path) -> None:
     path = tmp_path / "transcript.jsonl"
     session_line = b'{"type":"session","id":"session-1","timestamp":"2026-05-14T12:30:00Z"}\n'

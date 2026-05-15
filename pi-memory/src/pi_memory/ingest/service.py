@@ -87,6 +87,8 @@ class TranscriptIngestService:
 
             transcript.cursor_offset = max(stored_cursor, parsed.cursor_offset)
             transcript.file_size = parsed.file_size
+            _update_transcript_lineage(db_session, transcript, parsed.entries)
+            _resolve_pending_child_transcripts(db_session, transcript)
 
             observed_at = datetime.now(UTC)
             observation = Observation(
@@ -143,6 +145,54 @@ def _upsert_transcript(db_session: Session, session_id: int, transcript_path: Pa
         db_session.add(transcript)
         db_session.flush()
     return transcript
+
+
+def _update_transcript_lineage(
+    db_session: Session,
+    transcript: Transcript,
+    entries: list[ParsedPiEntry],
+) -> None:
+    parent_path = _parsed_parent_transcript_path(entries)
+    if parent_path is not None and parent_path != transcript.parent_transcript_path:
+        transcript.parent_transcript_path = parent_path
+        transcript.parent_transcript_id = None
+
+    if transcript.parent_transcript_path is not None and transcript.parent_transcript_id is None:
+        transcript.parent_transcript_id = _find_parent_transcript_id(db_session, transcript)
+
+
+def _parsed_parent_transcript_path(entries: list[ParsedPiEntry]) -> str | None:
+    for entry in entries:
+        if entry.parent_session_path:
+            return entry.parent_session_path
+    return None
+
+
+def _find_parent_transcript_id(db_session: Session, transcript: Transcript) -> int | None:
+    if transcript.parent_transcript_path is None:
+        return None
+
+    return db_session.scalar(
+        select(Transcript.id)
+        .where(
+            Transcript.path == transcript.parent_transcript_path,
+            Transcript.id != transcript.id,
+        )
+        .order_by(Transcript.id)
+        .limit(1),
+    )
+
+
+def _resolve_pending_child_transcripts(db_session: Session, transcript: Transcript) -> None:
+    children = db_session.scalars(
+        select(Transcript).where(
+            Transcript.parent_transcript_path == transcript.path,
+            Transcript.parent_transcript_id.is_(None),
+            Transcript.id != transcript.id,
+        ),
+    )
+    for child in children:
+        child.parent_transcript_id = transcript.id
 
 
 def _insert_new_entries(db_session: Session, transcript_id: int, entries: list[ParsedPiEntry]) -> int:

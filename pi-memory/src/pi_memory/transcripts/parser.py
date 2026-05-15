@@ -16,6 +16,7 @@ class ParsedPiEntry:
     raw_line: str
     entry_id: str | None
     parent_id: str | None
+    parent_session_path: str | None
     entry_type: str
     message_role: str | None
     timestamp: datetime | None
@@ -122,6 +123,7 @@ def _parse_entry(
         raw_line=raw_line,
         entry_id=_optional_string(payload.get("id")),
         parent_id=_optional_string(payload.get("parentId")),
+        parent_session_path=_parent_session_path(payload, entry_type),
         entry_type=entry_type,
         message_role=_message_role(payload),
         timestamp=_timestamp(payload.get("timestamp")),
@@ -134,6 +136,12 @@ def _optional_string(value: object) -> str | None:
     if isinstance(value, str):
         return value
     return None
+
+
+def _parent_session_path(payload: dict[str, Any], entry_type: str) -> str | None:
+    if entry_type != "session":
+        return None
+    return _optional_string(payload.get("parentSession"))
 
 
 def _message_role(payload: dict[str, Any]) -> str | None:

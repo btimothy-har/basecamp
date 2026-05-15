@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import pytest
@@ -33,6 +34,11 @@ def write_transcript(path: Path, content: bytes) -> None:
 
 def session_line(entry_id: str = "session-1") -> bytes:
     return f'{{"type":"session","id":"{entry_id}"}}\n'.encode()
+
+
+def fork_session_line(entry_id: str, parent_path: Path) -> bytes:
+    payload = {"type": "session", "id": entry_id, "parentSession": str(parent_path)}
+    return (json.dumps(payload, separators=(",", ":")) + "\n").encode()
 
 
 def message_line(entry_id: str, parent_id: str | None = None, role: str = "user") -> bytes:
@@ -218,6 +224,79 @@ def test_observe_persists_all_typed_pi_entries(
         "compaction-1",
     ]
     assert entries[0].message_role == "assistant"
+
+
+def test_observe_child_after_parent_resolves_transcript_lineage(
+    tmp_path,
+    database: Database,
+    service: TranscriptIngestService,
+) -> None:
+    parent_path = tmp_path / "parent.jsonl"
+    child_path = tmp_path / "child.jsonl"
+    write_transcript(parent_path, session_line("parent-session"))
+    write_transcript(child_path, fork_session_line("child-session", parent_path) + message_line("child-message"))
+
+    parent_result = service.observe(ObserveInput(session_id="pi-parent", transcript_path=parent_path))
+    child_result = service.observe(ObserveInput(session_id="pi-child", transcript_path=child_path))
+    repeated_child_result = service.observe(ObserveInput(session_id="pi-child", transcript_path=child_path))
+
+    child_transcript = transcript_for(database, "pi-child", child_path)
+    assert child_result.entries_ingested == 2
+    assert repeated_child_result.entries_ingested == 0
+    assert child_transcript.parent_transcript_path == str(parent_path)
+    assert child_transcript.parent_transcript_id == parent_result.transcript_id
+
+
+def test_observe_child_before_parent_stores_path_then_parent_links_pending_child(
+    tmp_path,
+    database: Database,
+    service: TranscriptIngestService,
+) -> None:
+    parent_path = tmp_path / "parent.jsonl"
+    child_path = tmp_path / "child.jsonl"
+    write_transcript(child_path, fork_session_line("child-session", parent_path))
+
+    child_result = service.observe(ObserveInput(session_id="pi-child", transcript_path=child_path))
+    child_transcript = transcript_for(database, "pi-child", child_path)
+
+    assert child_result.entries_ingested == 1
+    assert child_transcript.parent_transcript_path == str(parent_path)
+    assert child_transcript.parent_transcript_id is None
+
+    write_transcript(parent_path, session_line("parent-session"))
+    parent_result = service.observe(ObserveInput(session_id="pi-parent", transcript_path=parent_path))
+
+    child_transcript = transcript_for(database, "pi-child", child_path)
+    assert child_transcript.parent_transcript_path == str(parent_path)
+    assert child_transcript.parent_transcript_id == parent_result.transcript_id
+
+
+def test_observe_duplicate_entry_ids_are_scoped_per_transcript(
+    tmp_path,
+    database: Database,
+    service: TranscriptIngestService,
+) -> None:
+    parent_path = tmp_path / "parent.jsonl"
+    child_path = tmp_path / "child.jsonl"
+    write_transcript(parent_path, session_line("copied-session") + message_line("copied-message"))
+    write_transcript(child_path, fork_session_line("copied-session", parent_path) + message_line("copied-message"))
+
+    parent_result = service.observe(ObserveInput(session_id="pi-parent", transcript_path=parent_path))
+    child_result = service.observe(ObserveInput(session_id="pi-child", transcript_path=child_path))
+
+    assert parent_result.entries_ingested == 2
+    assert child_result.entries_ingested == 2
+    with database.session() as db_session:
+        entry_counts = dict(
+            db_session.execute(
+                select(Transcript.path, func.count(TranscriptEntry.id))
+                .join(TranscriptEntry)
+                .group_by(Transcript.path),
+            ).all(),
+        )
+        total_entries = db_session.scalar(select(func.count()).select_from(TranscriptEntry))
+    assert entry_counts == {str(parent_path): 2, str(child_path): 2}
+    assert total_entries == 4
 
 
 def test_observe_missing_transcript_raises_custom_error_without_db_rows(
