@@ -289,9 +289,7 @@ def test_observe_duplicate_entry_ids_are_scoped_per_transcript(
     with database.session() as db_session:
         entry_counts = dict(
             db_session.execute(
-                select(Transcript.path, func.count(TranscriptEntry.id))
-                .join(TranscriptEntry)
-                .group_by(Transcript.path),
+                select(Transcript.path, func.count(TranscriptEntry.id)).join(TranscriptEntry).group_by(Transcript.path),
             ).all(),
         )
         total_entries = db_session.scalar(select(func.count()).select_from(TranscriptEntry))

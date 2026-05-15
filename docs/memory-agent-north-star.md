@@ -1,6 +1,6 @@
 # Memory Agent North Star
 
-Status: proposed architecture and implementation roadmap. Phase 4 raw transcript recall is implemented in `pi-memory`; Pi recall tool wiring remains deferred.
+Status: proposed architecture and implementation roadmap. `pi-memory` has implemented Phase 4 raw transcript recall and Phase 5A deterministic transcript structure/fork provenance; Pi recall tool wiring remains deferred.
 
 Related issue: [#123](https://github.com/btimothy-har/basecamp/issues/123)
 
@@ -59,7 +59,7 @@ No legacy migration should be added unless a future product decision explicitly 
 - No heavy memory logic in the Pi extension.
 - No FastAPI `BackgroundTasks` as the durable job system.
 - No reliance on `session_shutdown` as the only finalization point.
-- No partial service implementation as part of this document-only milestone.
+- No historical observer compatibility work unless a future product decision explicitly requires it.
 
 ## Design principles
 
@@ -300,7 +300,9 @@ Activity units include:
 - orphan tool results;
 - compaction events;
 - session events;
-- custom events.
+- custom events, including source-backed `branch_summary` events with bounded metadata.
+
+Activity source origins are fork-aware: `local`, `inherited`, `mixed`, or `unknown`. Parent/child transcript linkage is provenance for interpretation and eligibility decisions; raw child transcript rows remain exact records of the child transcript file.
 
 Episode boundaries are lifecycle boundaries, not size boundaries:
 
@@ -309,11 +311,11 @@ Episode boundaries are lifecycle boundaries, not size boundaries:
 - large timestamp gap;
 - EOF or current cursor.
 
-Raw tool output remains in `transcript_entries.raw_line`. Episode manifests store bounded activity maps, counts, receipts, and source-span references so later interpretation can fetch the raw spans when needed.
+Raw tool output remains in `transcript_entries.raw_line`. Episode manifests store bounded `activity_map_json` with included and omitted ranges, counts, receipts, and source-span references so later interpretation can fetch the raw spans when needed.
 
 ### 5. Rolling session interpretation
 
-After deterministic structure exists, an LLM-backed analysis stage can maintain a replaceable session interpretation.
+After deterministic structure exists, a future LLM-backed analysis stage can maintain a replaceable session interpretation.
 
 ```text
 session_interpretation_snapshot
@@ -329,6 +331,8 @@ session_interpretation_snapshot
 - open questions
 - status: working | finalized
 ```
+
+Phase 5B should parse parent and child sessions separately. Inherited child activity is context only; only `local` or `mixed` activity is eligible as a memory-claim source. If a child session records a parent transcript path that cannot be resolved, interpretation waits because `snapshot_json.ready_for_interpretation=false` with a blocked reason.
 
 Each new rolling interpretation replaces the previous working interpretation for that session. This prevents cumulative analysis from creating permanent duplicate or stale artifacts. The interpretation stage consumes deterministic activity units, episode manifests, and raw source spans; it does not replace them.
 
@@ -808,6 +812,7 @@ Implemented in `pi-memory`:
 - `POST /v1/recall/search` endpoint returning typed `raw_transcript` source-backed results.
 - Local CLI recall via `pi-memory recall --query --db-url [--json]` for isolated databases.
 - Recall results include session identity, transcript entry/source context, excerpt text, rank/score information, and basic match reason.
+- `branch_summary.summary` is indexed into raw FTS as source-backed deterministic text, without indexing `details` values.
 
 Validation:
 
@@ -837,12 +842,16 @@ Implemented in `pi-memory`:
 - `episodes` table.
 - `episode_manifests` table.
 - `session_snapshot_shells` table.
+- `Transcript` parent lineage fields `parent_transcript_path` and `parent_transcript_id`.
 - Deterministic activity normalization over canonical `transcript_entries`.
 - Tool call/result pairing by `toolCall.id == message.toolCallId`.
 - Tool receipts with bounded metadata, counts, and source references rather than full raw output copies.
+- Activity unit `source_origin` values: `local`, `inherited`, `mixed`, or `unknown`.
 - Episode segmentation on compaction, timestamp gap, transcript/session scope, and EOF/current cursor.
-- Bounded episode manifests with head/tail activity maps, omitted activity ranges, `omitted_raw_text_bytes`, and source spans.
-- Deterministic session snapshot shells with counts, analyzed-through offsets, and `ready_for_interpretation` status.
+- Bounded episode manifests with `activity_map_json` included/omitted ranges; included activity-map entries carry `source_origin` and `claim_source_allowed`.
+- Manifest `tool_result_text_byte_count` and source spans.
+- Deterministic session snapshot shells with counts, analyzed-through offsets, and `snapshot_json.ready_for_interpretation` / `blocked_reason` readiness gates.
+- `snapshot_json.fork` readiness metadata, origin counts, and `claim_source_activity_count`.
 - `process_transcript` job persistence that rebuilds Phase 5A rows idempotently after FTS indexing.
 
 `process_transcript` result JSON now includes a safe nested `phase_5a` object:
@@ -866,6 +875,7 @@ Validation:
 - Episode boundaries do not depend on raw byte size, raw tool output size, or entry count.
 - Episode manifests reference raw source spans and do not duplicate full raw tool output.
 - Snapshot shells contain no goal, summary, candidate decisions, candidate constraints, candidate knowledge, candidate preferences, candidate patterns, or open questions.
+- `SessionSnapshotShell.status` remains a shell lifecycle status; interpretation readiness is gated by `snapshot_json.ready_for_interpretation` and `blocked_reason`.
 
 Deferred to Phase 5B:
 
@@ -881,14 +891,16 @@ Deferred to later phases:
 
 ### Phase 5B: LLM-backed rolling session interpretation
 
-Purpose: consume Phase 5A episode manifests and raw source spans to maintain a replaceable working interpretation of the active session.
+Purpose: consume Phase 5A episode manifests and raw source spans to maintain a replaceable working interpretation of a session. This phase is future/deferred.
 
 Deliverables:
 
 - Interpretation job over deterministic episode manifests.
+- Parent and child sessions parsed separately; inherited child activity may inform context but is not eligible as a memory-claim source.
 - Bounded raw-span fetching for tool output and long transcript content.
 - Replaceable latest working interpretation per active session.
-- Source-span citations from every interpreted claim back to Phase 5A activity/episode/source rows.
+- Source-span citations from every interpreted claim back to Phase 5A activity/episode/source rows, limited to local or mixed activity for child-session claims.
+- Interpretation remains blocked when parent transcript lineage is declared but unresolved, using `snapshot_json.ready_for_interpretation=false` and a blocked reason.
 
 Interpretation fields may include:
 
