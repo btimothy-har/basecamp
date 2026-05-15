@@ -644,8 +644,7 @@ class SessionInterpretationSnapshot(Base):
             name="ck_session_interpretation_snapshots_blocked_reason_valid",
         ),
         CheckConstraint(
-            "(status = 'blocked' AND blocked_reason IS NOT NULL) OR "
-            "(status != 'blocked' AND blocked_reason IS NULL)",
+            "(status = 'blocked' AND blocked_reason IS NOT NULL) OR (status != 'blocked' AND blocked_reason IS NULL)",
             name="ck_session_interpretation_snapshots_blocked_reason_matches_status",
         ),
         CheckConstraint(

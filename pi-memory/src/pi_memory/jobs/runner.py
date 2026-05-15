@@ -221,15 +221,11 @@ def _payload_interpret_session(payload: Any) -> tuple[int, int | None, int | Non
         raise InvalidJobPayloadError(TRANSCRIPT_ID_INTEGER_ERROR)
 
     analysis_run_id = payload.get("analysis_run_id")
-    if analysis_run_id is not None and (
-        not isinstance(analysis_run_id, int) or isinstance(analysis_run_id, bool)
-    ):
+    if analysis_run_id is not None and (not isinstance(analysis_run_id, int) or isinstance(analysis_run_id, bool)):
         raise InvalidJobPayloadError(ANALYSIS_RUN_ID_INTEGER_ERROR)
 
     process_job_id = payload.get("process_job_id")
-    if process_job_id is not None and (
-        not isinstance(process_job_id, int) or isinstance(process_job_id, bool)
-    ):
+    if process_job_id is not None and (not isinstance(process_job_id, int) or isinstance(process_job_id, bool)):
         raise InvalidJobPayloadError(PROCESS_JOB_ID_INTEGER_ERROR)
 
     return transcript_id, analysis_run_id, process_job_id
@@ -348,8 +344,4 @@ def _readiness_result_json(readiness: InterpretationReadiness) -> dict[str, Any]
 def _safe_model_metadata(metadata: Any) -> dict[str, Any]:
     if not isinstance(metadata, dict):
         return {}
-    return {
-        key: metadata[key]
-        for key in ("provider", "model", "mode")
-        if key in metadata
-    }
+    return {key: metadata[key] for key in ("provider", "model", "mode") if key in metadata}

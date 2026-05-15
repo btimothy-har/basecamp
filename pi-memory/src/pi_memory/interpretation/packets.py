@@ -182,9 +182,7 @@ def build_interpretation_packet(
     """
     memory_session = session.get(MemorySession, transcript.session_id)
     latest_run = _latest_completed_analysis_run(session, transcript.id)
-    is_stale = analysis_run_id is not None and (
-        latest_run is None or analysis_run_id != latest_run.id
-    )
+    is_stale = analysis_run_id is not None and (latest_run is None or analysis_run_id != latest_run.id)
     active_run = None if is_stale else latest_run
     readiness = _readiness(
         session=session,
@@ -448,11 +446,7 @@ def _source_refs(
     source_metadata: Mapping[str, Any],
 ) -> tuple[SourceRef, ...]:
     row_ids = tuple(int(value) for value in activity.get("source_entry_ids") or ())
-    excerpts = tuple(
-        _bounded_text(entries[row_id].raw_line)
-        for row_id in row_ids
-        if row_id in entries
-    )
+    excerpts = tuple(_bounded_text(entries[row_id].raw_line) for row_id in row_ids if row_id in entries)
     source_ref_id = (
         f"ar{unit.analysis_run_id}:ep{episode.ordinal}:act{unit.ordinal}:"
         f"entries{','.join(str(row_id) for row_id in row_ids) or 'none'}"
@@ -479,9 +473,7 @@ def _source_refs(
 
 def _included_manifest_activities(manifest: EpisodeManifest) -> tuple[Mapping[str, Any], ...]:
     return tuple(
-        activity
-        for activity in _activity_map(manifest).get("activities", [])
-        if isinstance(activity, Mapping)
+        activity for activity in _activity_map(manifest).get("activities", []) if isinstance(activity, Mapping)
     )
 
 

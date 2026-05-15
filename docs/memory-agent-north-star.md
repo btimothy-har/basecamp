@@ -1,6 +1,6 @@
 # Memory Agent North Star
 
-Status: proposed architecture and implementation roadmap. `pi-memory` has implemented Phase 4 raw transcript recall and Phase 5A deterministic transcript structure/fork provenance; Pi recall tool wiring remains deferred.
+Status: proposed architecture and implementation roadmap. `pi-memory` has implemented Phase 4 raw transcript recall, Phase 5A deterministic transcript structure/fork provenance, and Phase 5B replaceable session interpretation over episode packets; Pi recall tool wiring remains deferred.
 
 Related issue: [#123](https://github.com/btimothy-har/basecamp/issues/123)
 
@@ -315,26 +315,32 @@ Raw tool output remains in `transcript_entries.raw_line`. Episode manifests stor
 
 ### 5. Rolling session interpretation
 
-After deterministic structure exists, a future LLM-backed analysis stage can maintain a replaceable session interpretation.
+After deterministic structure exists, an interpretation job maintains a replaceable session interpretation over bounded episode packets.
 
 ```text
-session_interpretation_snapshot
+session_interpretation_snapshots
 - session_id
-- analyzed_through_offset
-- goal
-- summary
-- candidate decisions
-- candidate constraints
-- candidate knowledge
-- candidate preferences
-- candidate patterns
-- open questions
-- status: working | finalized
+- transcript_id
+- analysis_run_id
+- job_id
+- status: completed | blocked | skipped_no_claim_sources
+- blocked_reason
+- analyzed_through_entry_id
+- analyzed_through_byte_offset
+- origin_counts_json
+- claim_source_activity_count
+- interpretation_json
+- citations_json
+- model_metadata_json
+- prompt_version
+- schema_version
 ```
 
-Phase 5B should parse parent and child sessions separately. Inherited child activity is context only; only `local` or `mixed` activity is eligible as a memory-claim source. If a child session records a parent transcript path that cannot be resolved, interpretation waits because `snapshot_json.ready_for_interpretation=false` with a blocked reason.
+Phase 5B parses parent and child sessions separately. Inherited child activity is context only; only `local` or `mixed` activity is eligible as a memory-claim source. If a child session records a parent transcript path that cannot be resolved, interpretation writes a blocked snapshot with `blocked_reason = parent_transcript_not_ingested`. If source origin is incomplete, it writes `blocked_reason = source_origin_incomplete`. If no claim-source activities exist, it writes `skipped_no_claim_sources` without calling the interpreter.
 
-Each new rolling interpretation replaces the previous working interpretation for that session. This prevents cumulative analysis from creating permanent duplicate or stale artifacts. The interpretation stage consumes deterministic activity units, episode manifests, and raw source spans; it does not replace them.
+Each new completed, blocked, or skipped interpretation replaces the previous current interpretation for that session. This prevents cumulative analysis from creating permanent duplicate or stale artifacts. The interpretation stage consumes `EpisodePacket` read models built from deterministic activity units, episode manifests, and bounded raw source spans; it does not replace them and it does not promote durable memory.
+
+`session_snapshot_shells` remains a non-destructive Phase 5A compatibility artifact for now, but it is no longer the active Phase 5B handoff model. Phase 5B computes readiness directly from transcript lineage, latest completed `analysis_runs`, and `activity_units.source_origin`; it builds interpretation packets from `episodes` and `episode_manifests` after readiness is known.
 
 ### 6. Candidate extraction
 
@@ -548,6 +554,7 @@ POST /v1/sessions/{session_id}/sync
 POST /v1/sessions/{session_id}/finalize
 POST /v1/recall/search
 GET  /v1/jobs/{job_id}
+GET  /v1/sessions/{session_id}/interpretation
 ```
 
 Requests should be quick and idempotent. Long work returns job IDs.
@@ -585,7 +592,12 @@ jobs
 - updated_at
 ```
 
-Job kinds:
+Implemented job kinds:
+
+- `process_transcript` for raw FTS indexing and deterministic Phase 5A structure rebuilding;
+- `interpret_session` for replaceable Phase 5B session interpretation.
+
+Future job kinds:
 
 - `ingest_session`;
 - `segment_episodes`;
@@ -628,7 +640,8 @@ Current canonical and derived tables:
 - `activity_units`;
 - `episodes`;
 - `episode_manifests`;
-- `session_snapshot_shells`.
+- `session_snapshot_shells`;
+- `session_interpretation_snapshots`.
 
 Future durable-memory tables:
 
@@ -647,7 +660,8 @@ SQLite owns:
 - episode boundaries;
 - episode manifests and source-span references;
 - analysis runs;
-- deterministic session snapshot shells;
+- deterministic session snapshot shells as a Phase 5A compatibility artifact;
+- replaceable current session interpretation snapshots;
 - durable memory artifacts;
 - artifact revisions;
 - graph nodes and edges;
@@ -863,7 +877,7 @@ phase_5a
 - activity_count
 - episode_count
 - manifest_count
-- snapshot_shell_id
+- snapshot_shell_id (Phase 5A compatibility artifact)
 - analyzed_through_entry_id
 - analyzed_through_byte_offset
 ```
@@ -875,13 +889,13 @@ Validation:
 - Episode boundaries do not depend on raw byte size, raw tool output size, or entry count.
 - Episode manifests reference raw source spans and do not duplicate full raw tool output.
 - Snapshot shells contain no goal, summary, candidate decisions, candidate constraints, candidate knowledge, candidate preferences, candidate patterns, or open questions.
-- `SessionSnapshotShell.status` remains a shell lifecycle status; interpretation readiness is gated by `snapshot_json.ready_for_interpretation` and `blocked_reason`.
+- `SessionSnapshotShell.status` remains a shell lifecycle status; Phase 5B no longer uses shell rows as the active interpretation handoff.
 
-Deferred to Phase 5B:
+Handed off to Phase 5B:
 
-- LLM-backed tool/result summarization.
-- Rolling session interpretation with goals, summaries, candidate decisions, constraints, knowledge, preferences, patterns, and open questions.
-- Prompt/version management for interpretation jobs.
+- Rolling session interpretation now consumes Phase 5A rows through `EpisodePacket` / `InterpretationPacket` read models.
+- `session_interpretation_snapshots` is now the active replaceable interpretation surface.
+- Snapshot shells can remain in existing local databases without destructive migration.
 
 Deferred to later phases:
 
@@ -891,41 +905,52 @@ Deferred to later phases:
 
 ### Phase 5B: LLM-backed rolling session interpretation
 
-Purpose: consume Phase 5A episode manifests and raw source spans to maintain a replaceable working interpretation of a session. This phase is future/deferred.
+Purpose: consume Phase 5A episodes/manifests and bounded raw source spans to maintain a replaceable working interpretation of a session without durable memory promotion.
 
-Deliverables:
+Implemented in `pi-memory`:
 
-- Interpretation job over deterministic episode manifests.
-- Parent and child sessions parsed separately; inherited child activity may inform context but is not eligible as a memory-claim source.
-- Bounded raw-span fetching for tool output and long transcript content.
-- Replaceable latest working interpretation per active session.
-- Source-span citations from every interpreted claim back to Phase 5A activity/episode/source rows, limited to local or mixed activity for child-session claims.
-- Interpretation remains blocked when parent transcript lineage is declared but unresolved, using `snapshot_json.ready_for_interpretation=false` and a blocked reason.
+- `session_interpretation_snapshots` table for one current interpretation per session.
+- `interpret_session` durable job kind.
+- `EpisodePacket`, `InterpretationPacket`, and `InterpretationReadiness` read models over Phase 5A rows.
+- Readiness computed without `session_snapshot_shells`.
+- Blocked snapshots for `phase_5a_not_ready`, `parent_transcript_not_ingested`, and `source_origin_incomplete`.
+- Skipped snapshots for sessions with no claim-source activities.
+- Structured `InterpretationOutput` contract with claim kinds `decision`, `constraint`, `knowledge`, `preference`, `pattern`, and `action`.
+- Citation validation that rejects unknown source refs and rejects claims supported only by inherited or unknown-origin refs.
+- Interpreter seam with deterministic local implementation for tests/development; model metadata and prompt/schema versions are recorded on completed snapshots.
+- Post-Phase5A enqueueing: `process_transcript` enqueues `interpret_session` after raw FTS indexing and deterministic structure persistence.
+- Stale interpretation job no-op behavior. Auto-enqueued jobs carry `process_job_id` because SQLite may reuse analysis ids after Phase 5A rebuilds.
+- Read-only inspection via `GET /v1/sessions/{session_id}/interpretation` and `pi-memory interpretation --session-id --db-url [--json]`.
 
-Interpretation fields may include:
+Current interpretation fields include:
 
 - goal;
 - summary;
-- candidate decisions;
-- candidate constraints;
-- candidate knowledge;
-- candidate preferences;
-- candidate patterns;
+- source-cited candidate claims;
 - open questions;
-- analyzed transcript offset.
+- citations;
+- analyzed transcript entry/byte offsets;
+- origin counts and claim-source counts;
+- prompt, schema, and model metadata;
+- snapshot `schema_version`.
 
 Validation:
 
-- New transcript events cause interpretation updates after deterministic structure is rebuilt.
-- New interpretations replace prior working interpretations.
-- Interpretations cite source spans.
+- New transcript events enqueue interpretation after deterministic structure is rebuilt.
+- New completed/blocked/skipped interpretations replace the prior current interpretation.
+- Interpretations cite source refs from episode packets.
+- Candidate claims require at least one `local` or `mixed` claim-source-allowed source ref.
+- Inherited activity may support summary/context/open questions but not claims by itself.
 - Interpretation can be rerun from canonical transcript data plus Phase 5A derived structure.
+- Phase 5B remains independent of `session_snapshot_shells`; existing shell tables can remain without destructive migration.
 
 Deferred:
 
+- Real provider adapter beyond the deterministic local interpreter seam.
 - Durable project memory.
 - Cross-session reconciliation.
 - Graph promotion.
+- Pi recall/tool UI exposure for interpretation snapshots.
 
 ### Phase 6: Durable artifact and graph schema
 
@@ -1137,8 +1162,8 @@ Resolve these before or during Phase 1:
 
 10. Rolling analysis thresholds:
     - Phase 5A only uses deterministic lifecycle boundaries plus bounded manifest budgets;
-    - LLM interpretation thresholds for Phase 5B remain open;
-    - possible 5B triggers include turns, transcript bytes, token estimates, lifecycle events, compaction, and stale-session catch-up.
+    - Phase 5B currently enqueues interpretation after each successful `process_transcript` rebuild;
+    - future throttling triggers may include turns, transcript bytes, token estimates, lifecycle events, compaction, and stale-session catch-up.
 
 11. Finalization triggers:
     - compaction;

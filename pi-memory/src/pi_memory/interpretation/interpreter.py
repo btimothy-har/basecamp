@@ -113,11 +113,7 @@ def _first_claim_source(packet: InterpretationPacket) -> SourceRef | None:
 
 
 def _source_refs(packet: InterpretationPacket) -> tuple[SourceRef, ...]:
-    return tuple(
-        source_ref
-        for episode_packet in packet.episode_packets
-        for source_ref in episode_packet.source_refs
-    )
+    return tuple(source_ref for episode_packet in packet.episode_packets for source_ref in episode_packet.source_refs)
 
 
 def _can_support_claim(source_ref: SourceRef) -> bool:
@@ -143,10 +139,7 @@ def _claim(source_ref: SourceRef) -> InterpretationClaim:
     return InterpretationClaim(
         source_ref_ids=[source_ref.source_ref_id],
         kind="knowledge",
-        statement=(
-            "The session contains locally attributable activity suitable for "
-            "interpretation."
-        ),
+        statement=("The session contains locally attributable activity suitable for interpretation."),
         confidence=0.5,
     )
 

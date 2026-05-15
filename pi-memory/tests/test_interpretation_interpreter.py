@@ -155,10 +155,7 @@ def test_deterministic_interpreter_returns_valid_output() -> None:
 
     assert result.output.analysis_run_id == source_packet.readiness.latest_analysis_run_id
     assert result.output.analyzed_through_entry_id == source_packet.readiness.analyzed_through_entry_id
-    assert (
-        result.output.analyzed_through_byte_offset
-        == source_packet.readiness.analyzed_through_byte_offset
-    )
+    assert result.output.analyzed_through_byte_offset == source_packet.readiness.analyzed_through_byte_offset
     assert result.output.claims[0].source_ref_ids == ["local-ref"]
     assert result.output.citations[0].source_ref_id == "local-ref"
     validated = validate_interpretation_output(result.output, source_packet)

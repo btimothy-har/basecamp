@@ -206,8 +206,7 @@ def _citations_json(
             for source_ref_id in question.source_ref_ids
         )
     citations.extend(
-        _enriched_citation(source_refs[citation.source_ref_id], usage=citation.usage)
-        for citation in output.citations
+        _enriched_citation(source_refs[citation.source_ref_id], usage=citation.usage) for citation in output.citations
     )
     return citations
 
