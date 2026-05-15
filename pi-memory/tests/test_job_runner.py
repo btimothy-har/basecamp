@@ -1,14 +1,23 @@
 from __future__ import annotations
 
+import asyncio
 import json
 from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
+from pi_memory.analysis import TranscriptAnalysisResult, analyze_transcript_structure
 from pi_memory.db import (
+    ACTIVITY_TEXT_KIND_DETERMINISTIC,
+    ACTIVITY_TEXT_KIND_TOOL_SUMMARY,
+    ACTIVITY_TEXT_KIND_UNAVAILABLE,
+    ACTIVITY_TEXT_STATUS_COMPLETED,
+    ACTIVITY_TEXT_STATUS_FAILED,
+    ACTIVITY_TEXT_STATUS_PENDING,
     ANALYSIS_STATUS_COMPLETED,
     JOB_KIND_INTERPRET_SESSION,
     JOB_KIND_PROCESS_TRANSCRIPT,
+    JOB_KIND_SUMMARIZE_TOOL_ACTIVITIES,
     JOB_STATUS_CLAIMED,
     JOB_STATUS_COMPLETED,
     JOB_STATUS_FAILED,
@@ -39,9 +48,14 @@ from pi_memory.interpretation import (
     INTERPRETATION_PROMPT_VERSION,
     INTERPRETATION_SCHEMA_VERSION,
     DeterministicSessionInterpreter,
+    DeterministicToolActivitySummarizer,
     InterpretationResult,
     InterpretationValidationError,
     InterpreterUnavailableError,
+    ToolActivitySummarizer,
+    ToolActivitySummaryInput,
+    ToolActivitySummaryOutput,
+    ToolActivitySummaryResult,
 )
 from pi_memory.interpretation.packets import InterpretationPacket
 from pi_memory.jobs import (
@@ -52,7 +66,12 @@ from pi_memory.jobs import (
     TranscriptNotFoundError,
     UnsupportedJobKindError,
 )
-from pi_memory.settings import INTERPRETATION_MODEL_ENV, MissingInterpretationModelError
+from pi_memory.settings import (
+    INTERPRETATION_MODEL_ENV,
+    TOOL_SUMMARY_CONCURRENCY_ENV,
+    TOOL_SUMMARY_MODEL_ENV,
+    MissingInterpretationModelError,
+)
 from sqlalchemy import delete, func, select, text
 
 
@@ -63,6 +82,8 @@ def sqlite_url(path: Path) -> str:
 @pytest.fixture(autouse=True)
 def clear_interpretation_model_env(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv(INTERPRETATION_MODEL_ENV, raising=False)
+    monkeypatch.delenv(TOOL_SUMMARY_MODEL_ENV, raising=False)
+    monkeypatch.delenv(TOOL_SUMMARY_CONCURRENCY_ENV, raising=False)
 
 
 @pytest.fixture
@@ -101,6 +122,61 @@ class FailingInterpreter:
     def interpret(self, _packet: InterpretationPacket) -> InterpretationResult:
         self.calls += 1
         raise self.error
+
+
+class PartiallyFailingToolSummarizer:
+    def __init__(self) -> None:
+        self.calls: list[ToolActivitySummaryInput] = []
+
+    def summarize(self, summary_input: ToolActivitySummaryInput) -> ToolActivitySummaryResult:
+        self.calls.append(summary_input)
+        if len(self.calls) == 1:
+            raise RuntimeError("RAW_TOOL_OUTPUT_SHOULD_NOT_LEAK")
+        output = ToolActivitySummaryOutput(
+            summary="The second tool result was summarized.",
+            cited_source_entry_ids=[entry.row_id for entry in summary_input.source_entries],
+        )
+        return ToolActivitySummaryResult(
+            output=output,
+            model_metadata={"provider": "test", "model": "fake", "mode": "fake", "schema_version": 1},
+            prompt_version="fake-tool-summary-v1",
+        )
+
+    async def summarize_async(self, summary_input: ToolActivitySummaryInput) -> ToolActivitySummaryResult:
+        return self.summarize(summary_input)
+
+
+class RecordingConcurrentToolSummarizer:
+    def __init__(self) -> None:
+        self.calls: list[ToolActivitySummaryInput] = []
+        self.active_calls = 0
+        self.max_active_calls = 0
+
+    def summarize(self, summary_input: ToolActivitySummaryInput) -> ToolActivitySummaryResult:
+        output = ToolActivitySummaryOutput(
+            summary=f"Tool activity {summary_input.activity_unit_id} was summarized.",
+            cited_source_entry_ids=[entry.row_id for entry in summary_input.source_entries],
+        )
+        return ToolActivitySummaryResult(
+            output=output,
+            model_metadata={"provider": "test", "model": "fake", "mode": "fake", "schema_version": 1},
+            prompt_version="fake-tool-summary-v1",
+        )
+
+    async def summarize_async(self, summary_input: ToolActivitySummaryInput) -> ToolActivitySummaryResult:
+        self.calls.append(summary_input)
+        self.active_calls += 1
+        self.max_active_calls = max(self.max_active_calls, self.active_calls)
+        await asyncio.sleep(0)
+        self.active_calls -= 1
+        return self.summarize(summary_input)
+
+
+def summarize_with_protocol(
+    summarizer: ToolActivitySummarizer,
+    summary_input: ToolActivitySummaryInput,
+) -> ToolActivitySummaryResult:
+    return summarizer.summarize(summary_input)
 
 
 def create_transcript(database: Database) -> int:
@@ -342,6 +418,55 @@ def create_compaction_boundary_transcript(database: Database) -> int:
         return transcript.id
 
 
+def create_tool_pair_transcript(database: Database, count: int, session_id: str = "pi-session-tools") -> int:
+    with database.session() as session:
+        memory_session = MemorySession(session_id=session_id)
+        transcript = Transcript(session=memory_session, path=f"/tmp/pi/{session_id}.jsonl")
+        session.add(transcript)
+        session.flush()
+        for index in range(count):
+            call_id = f"call-{index + 1}"
+            add_transcript_entry(
+                session,
+                transcript_id=transcript.id,
+                entry_id=call_id,
+                entry_type="message",
+                message_role="assistant",
+                raw_line=raw_message(
+                    "assistant",
+                    [
+                        {
+                            "type": "toolCall",
+                            "id": call_id,
+                            "name": "bash",
+                            "arguments": {"command": f"printf {index + 1}"},
+                        },
+                    ],
+                ),
+                byte_start=index * 200,
+            )
+            add_transcript_entry(
+                session,
+                transcript_id=transcript.id,
+                entry_id=f"result-{index + 1}",
+                entry_type="message",
+                message_role="toolResult",
+                raw_line=raw_message(
+                    "toolResult",
+                    f"output {index + 1}",
+                    toolCallId=call_id,
+                    isError=False,
+                ),
+                byte_start=index * 200 + 100,
+            )
+        session.flush()
+        return transcript.id
+
+
+def create_two_tool_pair_transcript(database: Database) -> int:
+    return create_tool_pair_transcript(database, 2, session_id="pi-session-two-tools")
+
+
 def claim_process_transcript_job(store: JobStore, transcript_id: int | None = None, payload_json=None) -> Job:
     if payload_json is None:
         payload_json = {"transcript_id": transcript_id}
@@ -360,9 +485,61 @@ def claim_interpret_session_job(store: JobStore, transcript_id: int | None = Non
     return claimed
 
 
+def analyze_transcript(database: Database, transcript_id: int, job_id: int | None = None) -> TranscriptAnalysisResult:
+    with database.session() as session:
+        transcript = session.get_one(Transcript, transcript_id)
+        return analyze_transcript_structure(session, transcript, job_id=job_id)
+
+
+def claim_summarize_tool_activities_job(
+    store: JobStore,
+    *,
+    transcript_id: int,
+    session_id: str,
+    analysis_result: TranscriptAnalysisResult,
+    process_job_id: int | None = None,
+) -> Job:
+    summarize_job = store.enqueue(
+        JOB_KIND_SUMMARIZE_TOOL_ACTIVITIES,
+        payload_json={
+            "transcript_id": transcript_id,
+            "analysis_run_id": analysis_result.analysis_run_id,
+            "session_id": session_id,
+            "process_job_id": process_job_id,
+            "analyzed_through_entry_id": analysis_result.analyzed_through_entry_id,
+            "analyzed_through_byte_offset": analysis_result.analyzed_through_byte_offset,
+            "activity_count": analysis_result.activity_count,
+            "episode_count": analysis_result.episode_count,
+            "manifest_count": analysis_result.manifest_count,
+        },
+        due_at=at(10),
+    )
+    claimed = store.claim_next("worker-1", now=at(10))
+    assert claimed is not None
+    assert claimed.id == summarize_job.id
+    return claimed
+
+
 def process_transcript(database: Database, store: JobStore, transcript_id: int) -> Job:
     claimed = claim_process_transcript_job(store, transcript_id)
     return JobRunner(database=database).run(claimed.id, claimed.run_id, running_pid=123, now=at(10))
+
+
+def run_summarize_tool_activities_job(
+    database: Database,
+    store: JobStore,
+    job_id: int,
+    tool_summarizer: ToolActivitySummarizer | None = None,
+) -> Job:
+    claimed = store.claim_next("worker-summarize")
+    assert claimed is not None
+    assert claimed.id == job_id
+    return JobRunner(database=database, tool_summarizer=tool_summarizer).run(
+        claimed.id,
+        claimed.run_id,
+        running_pid=123,
+        now=at(10),
+    )
 
 
 def get_job(database: Database, job_id: int) -> Job:
@@ -407,12 +584,12 @@ def test_process_transcript_completes_and_writes_safe_result(database: Database,
     assert completed.result_json is not None
     phase_5a = completed.result_json["phase_5a"]
     assert isinstance(phase_5a, dict)
-    interpret_session_job_id = completed.result_json["interpret_session_job_id"]
-    assert isinstance(interpret_session_job_id, int)
+    summarize_tool_activities_job_id = completed.result_json["summarize_tool_activities_job_id"]
+    assert isinstance(summarize_tool_activities_job_id, int)
     base_result = {
         key: value
         for key, value in completed.result_json.items()
-        if key not in {"phase_5a", "interpret_session_job_id"}
+        if key not in {"phase_5a", "summarize_tool_activities_job_id"}
     }
     assert base_result == {
         "transcript_id": transcript_id,
@@ -433,10 +610,10 @@ def test_process_transcript_completes_and_writes_safe_result(database: Database,
     assert "find nebula notes" not in str(completed.result_json)
 
     with database.session() as session:
-        interpret_job = session.get_one(Job, interpret_session_job_id)
-        assert interpret_job.kind == JOB_KIND_INTERPRET_SESSION
-        assert interpret_job.status == JOB_STATUS_QUEUED
-        assert interpret_job.payload_json == {
+        summarize_job = session.get_one(Job, summarize_tool_activities_job_id)
+        assert summarize_job.kind == JOB_KIND_SUMMARIZE_TOOL_ACTIVITIES
+        assert summarize_job.status == JOB_STATUS_QUEUED
+        assert summarize_job.payload_json == {
             "transcript_id": transcript_id,
             "analysis_run_id": phase_5a["analysis_run_id"],
             "session_id": "pi-session-1",
@@ -447,7 +624,7 @@ def test_process_transcript_completes_and_writes_safe_result(database: Database,
             "episode_count": 1,
             "manifest_count": 1,
         }
-        assert "raw_line" not in interpret_job.payload_json
+        assert "raw_line" not in summarize_job.payload_json
 
     with database.engine.connect() as connection:
         matches = (
@@ -462,6 +639,223 @@ def test_process_transcript_completes_and_writes_safe_result(database: Database,
     assert len(matches) == 1
 
 
+def test_summarize_tool_activities_updates_tool_pair_text_and_enqueues_interpretation(
+    database: Database,
+    store: JobStore,
+) -> None:
+    transcript_id = create_resolved_fork_child_transcript(database)
+    analysis_result = analyze_transcript(database, transcript_id)
+    claimed = claim_summarize_tool_activities_job(
+        store,
+        transcript_id=transcript_id,
+        session_id="pi-child-session",
+        analysis_result=analysis_result,
+    )
+
+    completed = JobRunner(
+        database=database,
+        tool_summarizer=DeterministicToolActivitySummarizer(),
+    ).run(claimed.id, claimed.run_id, running_pid=123, now=at(10))
+
+    assert completed.status == JOB_STATUS_COMPLETED
+    assert completed.result_json is not None
+    assert completed.result_json["status"] == "completed"
+    assert completed.result_json["tool_pair_activity_count"] == 1
+    assert completed.result_json["summarized_activity_count"] == 1
+    assert completed.result_json["failed_activity_count"] == 0
+    assert isinstance(completed.result_json["interpret_session_job_id"], int)
+    assert "ok" not in str(completed.result_json)
+
+    with database.session() as session:
+        tool_activity = session.scalar(
+            select(ActivityUnit).where(
+                ActivityUnit.analysis_run_id == analysis_result.analysis_run_id,
+                ActivityUnit.kind == "tool_pair",
+            ),
+        )
+        assert tool_activity is not None
+        assert tool_activity.activity_text_kind == ACTIVITY_TEXT_KIND_TOOL_SUMMARY
+        assert tool_activity.activity_text_status == ACTIVITY_TEXT_STATUS_COMPLETED
+        assert tool_activity.activity_text == (
+            "Tool summary:\nTool bash completed with result status success.\nOutcome: is_error=False"
+        )
+        assert tool_activity.activity_text_metadata_json["producer"] == "tool_activity_summarizer"
+        assert tool_activity.activity_text_metadata_json["prompt_version"] == "phase5b-tool-activity-summary-v1"
+        assert tool_activity.activity_text_metadata_json["model_metadata"] == {
+            "provider": "pi-memory",
+            "model": "deterministic-tool-activity-summarizer-v1",
+            "mode": "deterministic",
+        }
+
+        interpret_job = session.get_one(Job, completed.result_json["interpret_session_job_id"])
+        assert interpret_job.kind == JOB_KIND_INTERPRET_SESSION
+        assert interpret_job.payload_json["analysis_run_id"] == analysis_result.analysis_run_id
+        assert interpret_job.payload_json["transcript_id"] == transcript_id
+        assert "raw_line" not in str(interpret_job.payload_json)
+
+
+def test_summarize_tool_activities_handles_zero_tool_pairs_without_model(
+    database: Database,
+    store: JobStore,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    transcript_id = create_transcript(database)
+    analysis_result = analyze_transcript(database, transcript_id)
+    claimed = claim_summarize_tool_activities_job(
+        store,
+        transcript_id=transcript_id,
+        session_id="pi-session-1",
+        analysis_result=analysis_result,
+    )
+
+    def fail_factory() -> None:
+        pytest.fail("summarizer factory should not be called when there are no tool pairs")
+
+    monkeypatch.setattr("pi_memory.jobs.runner.create_tool_activity_summarizer", fail_factory)
+    completed = JobRunner(database=database).run(claimed.id, claimed.run_id, running_pid=123, now=at(10))
+
+    assert completed.result_json is not None
+    assert completed.result_json["tool_pair_activity_count"] == 0
+    assert completed.result_json["summarized_activity_count"] == 0
+    assert completed.result_json["failed_activity_count"] == 0
+    assert isinstance(completed.result_json["interpret_session_job_id"], int)
+
+
+def test_summarize_tool_activities_records_partial_failures_without_leaking_errors(
+    database: Database,
+    store: JobStore,
+) -> None:
+    transcript_id = create_two_tool_pair_transcript(database)
+    analysis_result = analyze_transcript(database, transcript_id)
+    claimed = claim_summarize_tool_activities_job(
+        store,
+        transcript_id=transcript_id,
+        session_id="pi-session-two-tools",
+        analysis_result=analysis_result,
+    )
+    summarizer = PartiallyFailingToolSummarizer()
+
+    completed = JobRunner(database=database, tool_summarizer=summarizer).run(
+        claimed.id,
+        claimed.run_id,
+        running_pid=123,
+        now=at(10),
+    )
+
+    assert completed.result_json is not None
+    assert completed.result_json["tool_pair_activity_count"] == 2
+    assert completed.result_json["summarized_activity_count"] == 1
+    assert completed.result_json["failed_activity_count"] == 1
+    assert "RAW_TOOL_OUTPUT_SHOULD_NOT_LEAK" not in str(completed.result_json)
+    assert len(summarizer.calls) == 2
+
+    with database.session() as session:
+        activities = list(
+            session.scalars(
+                select(ActivityUnit)
+                .where(ActivityUnit.analysis_run_id == analysis_result.analysis_run_id)
+                .order_by(ActivityUnit.ordinal),
+            ),
+        )
+        assert [activity.activity_text_status for activity in activities] == [
+            ACTIVITY_TEXT_STATUS_FAILED,
+            ACTIVITY_TEXT_STATUS_COMPLETED,
+        ]
+        assert activities[0].activity_text is None
+        assert activities[0].activity_text_metadata_json == {
+            "version": 1,
+            "producer": "tool_activity_summarizer",
+            "status": "failed",
+            "error_type": "RuntimeError",
+        }
+        assert activities[1].activity_text == "Tool summary:\nThe second tool result was summarized."
+
+
+def test_summarize_tool_activities_runs_single_tool_calls_with_configured_concurrency(
+    database: Database,
+    store: JobStore,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv(TOOL_SUMMARY_CONCURRENCY_ENV, "12")
+    transcript_id = create_tool_pair_transcript(database, 12, session_id="pi-session-concurrent-tools")
+    analysis_result = analyze_transcript(database, transcript_id)
+    claimed = claim_summarize_tool_activities_job(
+        store,
+        transcript_id=transcript_id,
+        session_id="pi-session-concurrent-tools",
+        analysis_result=analysis_result,
+    )
+    summarizer = RecordingConcurrentToolSummarizer()
+
+    completed = JobRunner(database=database, tool_summarizer=summarizer).run(
+        claimed.id,
+        claimed.run_id,
+        running_pid=123,
+        now=at(10),
+    )
+
+    assert completed.result_json is not None
+    assert completed.result_json["tool_pair_activity_count"] == 12
+    assert completed.result_json["summarized_activity_count"] == 12
+    assert completed.result_json["failed_activity_count"] == 0
+    assert len(summarizer.calls) == 12
+    assert summarizer.max_active_calls == 12
+    assert all(len(call.source_entries) == 2 for call in summarizer.calls)
+
+
+def test_summarize_tool_activities_stale_analysis_is_noop(database: Database, store: JobStore) -> None:
+    transcript_id = create_resolved_fork_child_transcript(database)
+    analysis_result = analyze_transcript(database, transcript_id)
+    stale_job = store.enqueue(
+        JOB_KIND_SUMMARIZE_TOOL_ACTIVITIES,
+        payload_json={"transcript_id": transcript_id, "analysis_run_id": analysis_result.analysis_run_id + 100},
+        due_at=at(10),
+    )
+    claimed = store.claim_next("worker-1", now=at(10))
+    assert claimed is not None
+    assert claimed.id == stale_job.id
+
+    completed = JobRunner(
+        database=database,
+        tool_summarizer=DeterministicToolActivitySummarizer(),
+    ).run(claimed.id, claimed.run_id, running_pid=123, now=at(10))
+
+    assert completed.result_json is not None
+    assert completed.result_json == {
+        "status": "stale",
+        "is_stale": True,
+        "transcript_id": transcript_id,
+        "analysis_run_id": analysis_result.analysis_run_id + 100,
+        "process_job_id": None,
+        "interpret_session_job_id": None,
+        "tool_pair_activity_count": 0,
+        "summarized_activity_count": 0,
+        "failed_activity_count": 0,
+    }
+
+
+def test_summarize_tool_activities_stale_process_job_is_noop(database: Database, store: JobStore) -> None:
+    transcript_id = create_resolved_fork_child_transcript(database)
+    process_job = store.enqueue(JOB_KIND_PROCESS_TRANSCRIPT, payload_json={"transcript_id": transcript_id})
+    analysis_result = analyze_transcript(database, transcript_id, job_id=process_job.id)
+    claimed = claim_summarize_tool_activities_job(
+        store,
+        transcript_id=transcript_id,
+        session_id="pi-child-session",
+        analysis_result=analysis_result,
+        process_job_id=process_job.id + 1,
+    )
+
+    completed = JobRunner(
+        database=database,
+        tool_summarizer=DeterministicToolActivitySummarizer(),
+    ).run(claimed.id, claimed.run_id, running_pid=123, now=at(10))
+
+    assert completed.result_json is not None
+    assert completed.result_json["status"] == "stale"
+    assert completed.result_json["interpret_session_job_id"] is None
+
+
 def test_process_transcript_without_interpretation_model_still_succeeds_lazily(
     database: Database,
     store: JobStore,
@@ -470,9 +864,10 @@ def test_process_transcript_without_interpretation_model_still_succeeds_lazily(
     monkeypatch.delenv(INTERPRETATION_MODEL_ENV, raising=False)
 
     def fail_factory() -> None:
-        pytest.fail("interpreter factory should not be called for process_transcript")
+        pytest.fail("model factories should not be called for process_transcript")
 
     monkeypatch.setattr("pi_memory.jobs.runner.create_session_interpreter", fail_factory)
+    monkeypatch.setattr("pi_memory.jobs.runner.create_tool_activity_summarizer", fail_factory)
     transcript_id = create_transcript(database)
     claimed = claim_process_transcript_job(store, transcript_id)
 
@@ -480,7 +875,7 @@ def test_process_transcript_without_interpretation_model_still_succeeds_lazily(
 
     assert completed.status == JOB_STATUS_COMPLETED
     assert completed.result_json is not None
-    assert isinstance(completed.result_json["interpret_session_job_id"], int)
+    assert isinstance(completed.result_json["summarize_tool_activities_job_id"], int)
 
 
 def test_process_transcript_enqueued_interpret_job_writes_snapshot(
@@ -490,7 +885,13 @@ def test_process_transcript_enqueued_interpret_job_writes_snapshot(
     transcript_id = create_transcript(database)
     process = process_transcript(database, store, transcript_id)
     assert process.result_json is not None
-    interpret_session_job_id = process.result_json["interpret_session_job_id"]
+    summarize_job = run_summarize_tool_activities_job(
+        database,
+        store,
+        process.result_json["summarize_tool_activities_job_id"],
+    )
+    assert summarize_job.result_json is not None
+    interpret_session_job_id = summarize_job.result_json["interpret_session_job_id"]
 
     claimed = store.claim_next("worker-interpret")
     assert claimed is not None
@@ -519,7 +920,7 @@ def test_process_transcript_enqueued_interpret_job_writes_snapshot_without_snaps
     transcript_id = create_transcript(database)
     process = process_transcript(database, store, transcript_id)
     assert process.result_json is not None
-    interpret_session_job_id = process.result_json["interpret_session_job_id"]
+    summarize_job_id = process.result_json["summarize_tool_activities_job_id"]
     analysis_run_id = process.result_json["phase_5a"]["analysis_run_id"]
 
     with database.session() as session:
@@ -527,6 +928,10 @@ def test_process_transcript_enqueued_interpret_job_writes_snapshot_without_snaps
         session.execute(delete(SessionSnapshotShell))
         session.flush()
         assert session.scalar(select(func.count()).select_from(SessionSnapshotShell)) == 0
+
+    summarize_job = run_summarize_tool_activities_job(database, store, summarize_job_id)
+    assert summarize_job.result_json is not None
+    interpret_session_job_id = summarize_job.result_json["interpret_session_job_id"]
 
     claimed = store.claim_next("worker-interpret")
     assert claimed is not None
@@ -623,6 +1028,19 @@ def test_process_transcript_persists_phase_5a_rows(database: Database, store: Jo
         activities = list(session.scalars(select(ActivityUnit).order_by(ActivityUnit.ordinal)))
         assert all(activity.episode_id is not None for activity in activities)
         assert [activity.source_entry_ids_json for activity in activities] == [[entry_ids[0]], [entry_ids[1]]]
+        assert [activity.activity_text_kind for activity in activities] == [
+            ACTIVITY_TEXT_KIND_DETERMINISTIC,
+            ACTIVITY_TEXT_KIND_DETERMINISTIC,
+        ]
+        assert [activity.activity_text_status for activity in activities] == [
+            ACTIVITY_TEXT_STATUS_COMPLETED,
+            ACTIVITY_TEXT_STATUS_COMPLETED,
+        ]
+        assert activities[0].activity_text == "User message:\nfind nebula notes"
+        assert activities[0].activity_text_metadata_json["producer"] == "phase_5a_deterministic"
+        assert activities[1].activity_text == "Custom event: message."
+        assert "do not expose" not in activities[1].activity_text
+        assert "raw_line" not in str([activity.activity_text_metadata_json for activity in activities])
 
         episode = session.scalar(select(Episode))
         assert episode is not None
@@ -692,6 +1110,7 @@ def test_process_transcript_persists_resolved_fork_source_origins(
             SOURCE_ORIGIN_LOCAL,
         ]
         assert activities[0].kind == "session_event"
+        assert activities[0].activity_text == "Session event: session; fields: cwd, type."
         assert activities[0].source_metadata_json["source_entry_ids_by_origin"] == {
             SOURCE_ORIGIN_LOCAL: activities[0].source_entry_ids_json,
         }
@@ -700,6 +1119,10 @@ def test_process_transcript_persists_resolved_fork_source_origins(
             SOURCE_ORIGIN_INHERITED: activities[1].source_entry_ids_json,
         }
         assert activities[2].kind == "tool_pair"
+        assert activities[2].activity_text is None
+        assert activities[2].activity_text_kind == ACTIVITY_TEXT_KIND_UNAVAILABLE
+        assert activities[2].activity_text_status == ACTIVITY_TEXT_STATUS_PENDING
+        assert activities[2].activity_text_metadata_json["reason"] == "awaiting_tool_summary"
         assert activities[2].source_metadata_json["source_entry_ids_by_origin"] == {
             SOURCE_ORIGIN_INHERITED: [activities[2].source_entry_ids_json[0]],
             SOURCE_ORIGIN_LOCAL: [activities[2].source_entry_ids_json[1]],
@@ -821,6 +1244,7 @@ def test_process_transcript_assigns_activity_units_to_compaction_boundary_episod
 
         assert [episode.activity_count for episode in episodes] == [2, 1]
         assert [activity.kind for activity in activities] == ["user_text", "compaction", "user_text"]
+        assert activities[1].activity_text == "Compaction summary:\ncompacted earlier context"
         assert [activity.episode_id for activity in activities] == [
             episodes[0].id,
             episodes[0].id,
@@ -843,8 +1267,8 @@ def test_process_transcript_phase_5a_rerun_replaces_derived_rows(
     assert first_completed.result_json is not None
     first_phase_5a = first_completed.result_json["phase_5a"]
     assert isinstance(first_phase_5a, dict)
-    first_interpret_job_id = first_completed.result_json["interpret_session_job_id"]
-    assert isinstance(first_interpret_job_id, int)
+    first_summarize_job_id = first_completed.result_json["summarize_tool_activities_job_id"]
+    assert isinstance(first_summarize_job_id, int)
 
     second_claimed = claim_process_transcript_job(store, transcript_id)
     second_completed = JobRunner(database=database).run(
@@ -856,9 +1280,9 @@ def test_process_transcript_phase_5a_rerun_replaces_derived_rows(
     assert second_completed.result_json is not None
     second_phase_5a = second_completed.result_json["phase_5a"]
     assert isinstance(second_phase_5a, dict)
-    second_interpret_job_id = second_completed.result_json["interpret_session_job_id"]
-    assert isinstance(second_interpret_job_id, int)
-    assert second_interpret_job_id != first_interpret_job_id
+    second_summarize_job_id = second_completed.result_json["summarize_tool_activities_job_id"]
+    assert isinstance(second_summarize_job_id, int)
+    assert second_summarize_job_id != first_summarize_job_id
 
     assert_phase_5a_result(
         second_phase_5a,
@@ -877,19 +1301,19 @@ def test_process_transcript_phase_5a_rerun_replaces_derived_rows(
         assert analysis_run is not None
         assert analysis_run.id == second_phase_5a["analysis_run_id"]
         assert analysis_run.job_id == second_claimed.id
-        first_interpret_job = session.get_one(Job, first_interpret_job_id)
-        second_interpret_job = session.get_one(Job, second_interpret_job_id)
-        assert first_interpret_job.kind == JOB_KIND_INTERPRET_SESSION
-        assert second_interpret_job.kind == JOB_KIND_INTERPRET_SESSION
-        assert first_interpret_job.payload_json["analysis_run_id"] == first_phase_5a["analysis_run_id"]
-        assert first_interpret_job.payload_json["process_job_id"] == first_claimed.id
-        assert second_interpret_job.payload_json["analysis_run_id"] == second_phase_5a["analysis_run_id"]
-        assert second_interpret_job.payload_json["process_job_id"] == second_claimed.id
+        first_summarize_job = session.get_one(Job, first_summarize_job_id)
+        second_summarize_job = session.get_one(Job, second_summarize_job_id)
+        assert first_summarize_job.kind == JOB_KIND_SUMMARIZE_TOOL_ACTIVITIES
+        assert second_summarize_job.kind == JOB_KIND_SUMMARIZE_TOOL_ACTIVITIES
+        assert first_summarize_job.payload_json["analysis_run_id"] == first_phase_5a["analysis_run_id"]
+        assert first_summarize_job.payload_json["process_job_id"] == first_claimed.id
+        assert second_summarize_job.payload_json["analysis_run_id"] == second_phase_5a["analysis_run_id"]
+        assert second_summarize_job.payload_json["process_job_id"] == second_claimed.id
 
-    stale_claimed = store.claim_next("worker-interpret")
+    stale_claimed = store.claim_next("worker-summarize")
     assert stale_claimed is not None
-    assert stale_claimed.id == first_interpret_job_id
-    stale_completed = JobRunner(database=database, interpreter=FailingInterpreter()).run(
+    assert stale_claimed.id == first_summarize_job_id
+    stale_completed = JobRunner(database=database).run(
         stale_claimed.id,
         stale_claimed.run_id,
         running_pid=123,
@@ -897,7 +1321,7 @@ def test_process_transcript_phase_5a_rerun_replaces_derived_rows(
     assert stale_completed.result_json is not None
     assert stale_completed.result_json["status"] == "stale"
     assert stale_completed.result_json["is_stale"] is True
-    assert stale_completed.result_json["snapshot_id"] is None
+    assert stale_completed.result_json["interpret_session_job_id"] is None
     with database.session() as session:
         assert session.scalar(select(func.count()).select_from(SessionInterpretationSnapshot)) == 0
 
@@ -1026,8 +1450,15 @@ def test_interpret_session_configured_pydantic_ai_uses_configured_model(
     transcript_id = create_transcript(database)
     process = process_transcript(database, store, transcript_id)
     assert process.result_json is not None
+    summarize_job = run_summarize_tool_activities_job(
+        database,
+        store,
+        process.result_json["summarize_tool_activities_job_id"],
+    )
+    assert summarize_job.result_json is not None
     claimed = store.claim_next("worker-interpret")
     assert claimed is not None
+    assert claimed.id == summarize_job.result_json["interpret_session_job_id"]
 
     completed = JobRunner(database=database).run(
         claimed.id,

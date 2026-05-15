@@ -14,6 +14,7 @@ class Base(DeclarativeBase):
 
 
 JOB_KIND_PROCESS_TRANSCRIPT = "process_transcript"
+JOB_KIND_SUMMARIZE_TOOL_ACTIVITIES = "summarize_tool_activities"
 JOB_KIND_INTERPRET_SESSION = "interpret_session"
 
 JOB_STATUS_QUEUED = "queued"
@@ -62,6 +63,26 @@ ACTIVITY_KINDS = (
     ACTIVITY_KIND_COMPACTION,
     ACTIVITY_KIND_SESSION_EVENT,
     ACTIVITY_KIND_CUSTOM_EVENT,
+)
+
+ACTIVITY_TEXT_KIND_DETERMINISTIC = "deterministic"
+ACTIVITY_TEXT_KIND_TOOL_SUMMARY = "tool_summary"
+ACTIVITY_TEXT_KIND_UNAVAILABLE = "unavailable"
+ACTIVITY_TEXT_KINDS = (
+    ACTIVITY_TEXT_KIND_DETERMINISTIC,
+    ACTIVITY_TEXT_KIND_TOOL_SUMMARY,
+    ACTIVITY_TEXT_KIND_UNAVAILABLE,
+)
+
+ACTIVITY_TEXT_STATUS_PENDING = "pending"
+ACTIVITY_TEXT_STATUS_COMPLETED = "completed"
+ACTIVITY_TEXT_STATUS_SKIPPED = "skipped"
+ACTIVITY_TEXT_STATUS_FAILED = "failed"
+ACTIVITY_TEXT_STATUSES = (
+    ACTIVITY_TEXT_STATUS_PENDING,
+    ACTIVITY_TEXT_STATUS_COMPLETED,
+    ACTIVITY_TEXT_STATUS_SKIPPED,
+    ACTIVITY_TEXT_STATUS_FAILED,
 )
 
 EPISODE_STATUS_OPEN = "open"
@@ -410,12 +431,25 @@ class ActivityUnit(Base):
             "source_origin IN ('local', 'inherited', 'mixed', 'unknown')",
             name="ck_activity_units_source_origin_valid",
         ),
+        CheckConstraint(
+            "activity_text_kind IN ('deterministic', 'tool_summary', 'unavailable')",
+            name="ck_activity_units_activity_text_kind_valid",
+        ),
+        CheckConstraint(
+            "activity_text_status IN ('pending', 'completed', 'skipped', 'failed')",
+            name="ck_activity_units_activity_text_status_valid",
+        ),
+        CheckConstraint(
+            "activity_text_status != 'completed' OR activity_text IS NOT NULL",
+            name="ck_activity_units_completed_activity_text_present",
+        ),
         Index("ix_activity_units_analysis_run_ordinal", "analysis_run_id", "ordinal"),
         Index("ix_activity_units_transcript_byte_start", "transcript_id", "byte_start"),
         Index("ix_activity_units_episode_ordinal", "episode_id", "ordinal"),
         Index("ix_activity_units_kind", "kind"),
         Index("ix_activity_units_tool_call_id", "tool_call_id"),
         Index("ix_activity_units_source_origin", "source_origin"),
+        Index("ix_activity_units_analysis_run_text_status", "analysis_run_id", "activity_text_status"),
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -449,6 +483,20 @@ class ActivityUnit(Base):
     receipt_json: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict, server_default=text("'{}'"))
     source_metadata_json: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict, server_default=text("'{}'"))
     source_origin: Mapped[str] = mapped_column(default=SOURCE_ORIGIN_UNKNOWN, server_default=SOURCE_ORIGIN_UNKNOWN)
+    activity_text: Mapped[str | None] = mapped_column(Text)
+    activity_text_kind: Mapped[str] = mapped_column(
+        default=ACTIVITY_TEXT_KIND_UNAVAILABLE,
+        server_default=ACTIVITY_TEXT_KIND_UNAVAILABLE,
+    )
+    activity_text_status: Mapped[str] = mapped_column(
+        default=ACTIVITY_TEXT_STATUS_PENDING,
+        server_default=ACTIVITY_TEXT_STATUS_PENDING,
+    )
+    activity_text_metadata_json: Mapped[dict[str, Any]] = mapped_column(
+        JSON,
+        default=dict,
+        server_default=text("'{}'"),
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),

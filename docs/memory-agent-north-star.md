@@ -1,6 +1,6 @@
 # Memory Agent North Star
 
-Status: proposed architecture and implementation roadmap. `pi-memory` has implemented Phase 4 raw transcript recall, Phase 5A deterministic transcript structure/fork provenance, and Phase 5B replaceable session interpretation over episode packets; Pi recall tool wiring remains deferred.
+Status: proposed architecture and implementation roadmap. `pi-memory` has implemented Phase 4 raw transcript recall, Phase 5A deterministic transcript structure/fork provenance, and Phase 5B replaceable session interpretation over chronological activity-text packets; Pi recall tool wiring remains deferred.
 
 Related issue: [#123](https://github.com/btimothy-har/basecamp/issues/123)
 
@@ -213,8 +213,9 @@ The desired lifecycle is:
 
 ```text
 raw transcript
-  -> episodes
-  -> session map
+  -> activity units / episodes
+  -> activity text
+  -> replaceable session interpretation
   -> candidate memories
   -> graph reconciliation
   -> promoted durable memory
@@ -311,11 +312,21 @@ Episode boundaries are lifecycle boundaries, not size boundaries:
 - large timestamp gap;
 - EOF or current cursor.
 
-Raw tool output remains in `transcript_entries.raw_line`. Episode manifests store bounded `activity_map_json` with included and omitted ranges, counts, receipts, and source-span references so later interpretation can fetch the raw spans when needed.
+Raw tool output remains in `transcript_entries.raw_line`. `activity_units.activity_text` is the derived chronological text spine for downstream interpretation: non-tool activity receives deterministic text during Phase 5A persistence, and paired tool call/result activity is marked pending until an LLM summarizer writes a compact source-backed summary. Activity text is derived and rebuildable; it does not replace canonical raw transcript rows.
 
-### 5. Rolling session interpretation
+Episode manifests store bounded `activity_map_json` with included and omitted ranges, counts, receipts, and source-span references so later interpretation can trace activity text back to raw transcript rows when needed.
 
-After deterministic structure exists, an interpretation job maintains a replaceable session interpretation over bounded episode packets.
+### 5. Tool activity summarization
+
+Before session interpretation, a durable `summarize_tool_activities` job fills pending tool-pair `activity_units.activity_text` rows for the target analysis run.
+
+Each model call receives exactly one tool call/result pair and returns exactly one structured summary for that `activity_unit_id`. Calls run concurrently in bounded `asyncio.gather` windows. The default window is 10; `PI_MEMORY_TOOL_SUMMARY_CONCURRENCY` or `pi-memory config --tool-summary-concurrency` can raise or lower it within the validated range of 1 through 100. `tool_summary_model` / `PI_MEMORY_TOOL_SUMMARY_MODEL` can use a separate PydanticAI-supported model string, falling back to `interpretation_model` when unset.
+
+Per-activity failures are recorded on the affected activity row with sanitized error metadata and do not prevent other tool summaries from completing. Failed or pending tool activities remain chronological context but do not expose claim citation ids.
+
+### 6. Rolling session interpretation
+
+After deterministic structure and tool activity text exist, an interpretation job maintains a replaceable session interpretation over cleaned chronological activity records.
 
 ```text
 session_interpretation_snapshots
@@ -338,11 +349,11 @@ session_interpretation_snapshots
 
 Phase 5B parses parent and child sessions separately. Inherited child activity is context only; only `local` or `mixed` activity is eligible as a memory-claim source. If a child session records a parent transcript path that cannot be resolved, interpretation writes a blocked snapshot with `blocked_reason = parent_transcript_not_ingested`. If source origin is incomplete, it writes `blocked_reason = source_origin_incomplete`. If no claim-source activities exist, it writes `skipped_no_claim_sources` without calling the interpreter.
 
-Each new completed, blocked, or skipped interpretation replaces the previous current interpretation for that session. This prevents cumulative analysis from creating permanent duplicate or stale artifacts. The interpretation stage consumes `EpisodePacket` read models built from deterministic activity units, episode manifests, and bounded raw source spans; it does not replace them and it does not promote durable memory.
+Each new completed, blocked, or skipped interpretation replaces the previous current interpretation for that session. This prevents cumulative analysis from creating permanent duplicate or stale artifacts. The interpretation stage consumes `EpisodePacket` read models built from chronological `activity_units.activity_text`, episode manifests, and source-ref metadata. Prompt rendering keeps activity text and direct `claim_source_ref_ids` in chronological order while omitting heavyweight raw transcript JSON. Server-side validation still uses the full packet/source-ref model. Interpretation does not replace the underlying activity rows and does not promote durable memory.
 
 `session_snapshot_shells` remains a non-destructive Phase 5A compatibility artifact for now, but it is no longer the active Phase 5B handoff model. Phase 5B computes readiness directly from transcript lineage, latest completed `analysis_runs`, and `activity_units.source_origin`; it builds interpretation packets from `episodes` and `episode_manifests` after readiness is known.
 
-### 6. Candidate extraction
+### 7. Candidate extraction
 
 From a session snapshot, the service extracts candidate durable memories. Candidates are not durable memory yet.
 
@@ -371,7 +382,7 @@ Candidate kinds:
 - open question;
 - action.
 
-### 7. Graph mapping
+### 8. Graph mapping
 
 Candidates are attached to the memory graph.
 
@@ -421,7 +432,7 @@ metadata_json
 created_at
 ```
 
-### 8. Reconciliation
+### 9. Reconciliation
 
 Promotion is a reconciliation process. For each candidate, the service finds nearby existing memory by:
 
@@ -470,7 +481,7 @@ related
 
 Semantic similarity alone must not auto-supersede.
 
-### 9. Promotion
+### 10. Promotion
 
 Promoted artifacts become durable project memory.
 
@@ -600,7 +611,8 @@ jobs
 Implemented job kinds:
 
 - `process_transcript` for raw FTS indexing and deterministic Phase 5A structure rebuilding;
-- `interpret_session` for replaceable Phase 5B session interpretation.
+- `summarize_tool_activities` for filling pending tool-pair activity text with source-backed per-tool summaries;
+- `interpret_session` for replaceable Phase 5B session interpretation over chronological activity text.
 
 Future job kinds:
 
@@ -661,7 +673,7 @@ SQLite owns:
 
 - transcript metadata and raw entry records;
 - session state;
-- rebuildable activity units;
+- rebuildable activity units, including derived `activity_text` projection fields;
 - episode boundaries;
 - episode manifests and source-span references;
 - analysis runs;
@@ -898,7 +910,7 @@ Validation:
 
 Handed off to Phase 5B:
 
-- Rolling session interpretation now consumes Phase 5A rows through `EpisodePacket` / `InterpretationPacket` read models.
+- Rolling session interpretation now consumes Phase 5A rows through chronological activity-text `EpisodePacket` / `InterpretationPacket` read models.
 - `session_interpretation_snapshots` is now the active replaceable interpretation surface.
 - Snapshot shells can remain in existing local databases without destructive migration.
 
@@ -910,25 +922,32 @@ Deferred to later phases:
 
 ### Phase 5B: LLM-backed rolling session interpretation
 
-Purpose: consume Phase 5A episodes/manifests and bounded raw source spans to maintain a replaceable working interpretation of a session without durable memory promotion.
+Purpose: consume Phase 5A activity units, episode manifests, and source provenance to maintain a replaceable working interpretation of a session without durable memory promotion.
 
 Implemented in `pi-memory`:
 
+- Inline activity-text projection on `activity_units`: `activity_text`, `activity_text_kind`, `activity_text_status`, and `activity_text_metadata_json`.
+- Deterministic activity text for non-tool activity during Phase 5A persistence.
+- `summarize_tool_activities` durable job kind between `process_transcript` and `interpret_session`.
+- Per-tool PydanticAI summarization where each prompt receives exactly one tool call/result pair and returns one summary for that activity unit.
+- Bounded concurrent tool summarization windows, configured by `tool_summary_concurrency` / `PI_MEMORY_TOOL_SUMMARY_CONCURRENCY` with a default of 10 and valid range of 1 through 100.
+- Separate `tool_summary_model` / `PI_MEMORY_TOOL_SUMMARY_MODEL`, falling back to `interpretation_model` when unset.
 - `session_interpretation_snapshots` table for one current interpretation per session.
-- `interpret_session` durable job kind.
-- `EpisodePacket`, `InterpretationPacket`, and `InterpretationReadiness` read models over Phase 5A rows.
+- `interpret_session` durable job kind over completed chronological activity text.
+- `EpisodePacket`, `InterpretationPacket`, and `InterpretationReadiness` read models over Phase 5A rows and activity text.
 - Readiness computed without `session_snapshot_shells`.
 - Blocked snapshots for `phase_5a_not_ready`, `parent_transcript_not_ingested`, and `source_origin_incomplete`.
 - Skipped snapshots for sessions with no claim-source activities.
 - Structured `InterpretationOutput` contract with claim kinds `decision`, `constraint`, `knowledge`, `preference`, `pattern`, and `action`.
-- Citation validation that rejects unknown source refs and rejects claims supported only by inherited or unknown-origin refs.
+- Citation validation that rejects unknown source refs, rejects claims supported only by inherited or unknown-origin refs, and rejects empty claim lists for interpretable packets with claim sources.
 - Interpreter seam with PydanticAI as the runtime implementation and deterministic local implementation retained only for tests/development injection; model metadata and prompt/schema versions are recorded on completed snapshots.
-- Post-Phase5A enqueueing: `process_transcript` enqueues `interpret_session` after raw FTS indexing and deterministic structure persistence.
-- Stale interpretation job no-op behavior. Auto-enqueued jobs carry `process_job_id` because SQLite may reuse analysis ids after Phase 5A rebuilds.
+- Job chain: `process_transcript` enqueues `summarize_tool_activities` after raw FTS indexing and deterministic structure persistence; `summarize_tool_activities` then enqueues `interpret_session`.
+- Stale interpretation and tool-summary job no-op behavior. Auto-enqueued jobs carry `process_job_id` because SQLite may reuse analysis ids after Phase 5A rebuilds.
+- Slim chronological prompt rendering: activity records carry `activity_text` plus direct `source_ref_ids` / `claim_source_ref_ids`; raw JSON transcript lines and heavyweight source-ref metadata stay out of the session interpretation prompt.
 - Read-only inspection via `GET /v1/sessions/{session_id}/interpretation` and `pi-memory interpretation --session-id --db-url [--json]`.
-- Model-agnostic PydanticAI configuration via `pi-memory config`, `~/.pi/memory/config.json`, and the `PI_MEMORY_INTERPRETATION_MODEL` environment override.
+- Model-agnostic PydanticAI configuration via `pi-memory config`, `~/.pi/memory/config.json`, `PI_MEMORY_INTERPRETATION_MODEL`, `PI_MEMORY_TOOL_SUMMARY_MODEL`, and `PI_MEMORY_TOOL_SUMMARY_CONCURRENCY`.
 
-PydanticAI-backed interpretation requires `interpretation_model` to be configured with any PydanticAI-supported model string, such as `anthropic:claude-sonnet-4-5` or `openai:gpt-4o`. When interpretation jobs run, `pi-memory` sends bounded session interpretation packets, including cited source excerpts, to the configured PydanticAI provider. `pi-memory` does not store API keys; provider credentials stay in the environment variables expected by PydanticAI/provider packages, such as `ANTHROPIC_API_KEY` or `OPENAI_API_KEY`.
+PydanticAI-backed interpretation requires `interpretation_model` to be configured with any PydanticAI-supported model string, such as `anthropic:claude-sonnet-4-6` or `openai:gpt-4o`. Tool summarization can use a separate lower-latency model such as `anthropic:claude-haiku-4-5`. When jobs run, `pi-memory` sends source-backed tool activity packets and chronological session activity-text packets to the configured PydanticAI provider. `pi-memory` does not store API keys; provider credentials stay in the environment variables expected by PydanticAI/provider packages, such as `ANTHROPIC_API_KEY` or `OPENAI_API_KEY`.
 
 Current interpretation fields include:
 
@@ -944,12 +963,14 @@ Current interpretation fields include:
 
 Validation:
 
-- New transcript events enqueue interpretation after deterministic structure is rebuilt.
+- New transcript events enqueue tool summarization after deterministic structure is rebuilt.
+- Tool summarization writes completed, failed, or skipped activity-text status per tool-pair activity without mutating canonical transcript rows.
 - New completed/blocked/skipped interpretations replace the prior current interpretation.
-- Interpretations cite source refs from episode packets.
+- Interpretations cite source refs from chronological activity packets.
 - Candidate claims require at least one `local` or `mixed` claim-source-allowed source ref.
+- Interpretable packets with claim sources must produce at least one source-backed claim; claimless summaries fail validation rather than silently replacing the snapshot.
 - Inherited activity may support summary/context/open questions but not claims by itself.
-- Interpretation can be rerun from canonical transcript data plus Phase 5A derived structure.
+- Interpretation can be rerun from canonical transcript data plus Phase 5A derived structure and activity-text projection.
 - Phase 5B remains independent of `session_snapshot_shells`; existing shell tables can remain without destructive migration.
 
 Deferred:
@@ -1170,7 +1191,7 @@ Resolve these before or during Phase 1:
 
 10. Rolling analysis thresholds:
     - Phase 5A only uses deterministic lifecycle boundaries plus bounded manifest budgets;
-    - Phase 5B currently enqueues interpretation after each successful `process_transcript` rebuild;
+    - Phase 5B currently enqueues `summarize_tool_activities` after each successful `process_transcript` rebuild, then enqueues `interpret_session` after tool activity text is filled;
     - future throttling triggers may include turns, transcript bytes, token estimates, lifecycle events, compaction, and stale-session catch-up.
 
 11. Finalization triggers:

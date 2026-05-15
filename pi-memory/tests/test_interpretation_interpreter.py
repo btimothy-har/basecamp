@@ -14,8 +14,11 @@ from pi_memory.interpretation import (
     INTERPRETATION_PROMPT_VERSION,
     INTERPRETATION_SCHEMA_VERSION,
     PYDANTIC_AI_INTERPRETER_MODE,
+    TOOL_ACTIVITY_SUMMARY_PROMPT_VERSION,
+    TOOL_ACTIVITY_SUMMARY_SCHEMA_VERSION,
     BoundedText,
     DeterministicSessionInterpreter,
+    DeterministicToolActivitySummarizer,
     EpisodePacket,
     InterpretationOutput,
     InterpretationPacket,
@@ -24,9 +27,18 @@ from pi_memory.interpretation import (
     InterpreterUnavailableError,
     PydanticAIInterpreterError,
     PydanticAISessionInterpreter,
+    PydanticAIToolActivitySummarizer,
+    PydanticAIToolSummaryError,
     SessionInterpreter,
     SourceRef,
+    ToolActivitySourceEntry,
+    ToolActivitySummarizer,
+    ToolActivitySummaryInput,
+    ToolActivitySummaryOutput,
+    ToolActivitySummaryResult,
+    ToolActivitySummaryValidationError,
     validate_interpretation_output,
+    validate_tool_activity_summary_output,
 )
 
 
@@ -170,6 +182,45 @@ def interpret_with_protocol(
     return interpreter.interpret(source_packet)
 
 
+def tool_summary_input(activity_unit_id: int = 10) -> ToolActivitySummaryInput:
+    return ToolActivitySummaryInput(
+        activity_unit_id=activity_unit_id,
+        analysis_run_id=123,
+        ordinal=2,
+        tool_call_id="call-1",
+        tool_name="bash",
+        is_error=False,
+        source_entries=(
+            ToolActivitySourceEntry(
+                row_id=30,
+                entry_id="call-entry",
+                entry_type="message",
+                message_role="assistant",
+                byte_start=100,
+                byte_end=200,
+                raw_line='{"message":{"content":[{"type":"toolCall","name":"bash","arguments":{"command":"pwd"}}]}}',
+            ),
+            ToolActivitySourceEntry(
+                row_id=31,
+                entry_id="result-entry",
+                entry_type="message",
+                message_role="toolResult",
+                byte_start=200,
+                byte_end=300,
+                raw_line='{"message":{"role":"toolResult","content":"/repo","isError":false}}',
+            ),
+        ),
+        receipt_metadata={"result_status": "success", "argument_keys": ["command"]},
+    )
+
+
+def summarize_with_protocol(
+    summarizer: ToolActivitySummarizer,
+    summary_input: ToolActivitySummaryInput,
+) -> ToolActivitySummaryResult:
+    return summarizer.summarize(summary_input)
+
+
 def test_protocol_result_metadata_shape() -> None:
     interpreter = DeterministicSessionInterpreter()
 
@@ -184,6 +235,33 @@ def test_protocol_result_metadata_shape() -> None:
         "mode": DETERMINISTIC_INTERPRETER_MODE,
         "schema_version": INTERPRETATION_SCHEMA_VERSION,
     }
+
+
+def test_tool_summary_protocol_result_metadata_shape() -> None:
+    summarizer = DeterministicToolActivitySummarizer()
+    summary_input = tool_summary_input()
+
+    result = summarize_with_protocol(summarizer, summary_input)
+
+    assert isinstance(result, ToolActivitySummaryResult)
+    assert isinstance(result.output, ToolActivitySummaryOutput)
+    assert result.prompt_version == TOOL_ACTIVITY_SUMMARY_PROMPT_VERSION
+    assert result.model_metadata == {
+        "provider": DETERMINISTIC_INTERPRETER_PROVIDER,
+        "model": "deterministic-tool-activity-summarizer-v1",
+        "mode": DETERMINISTIC_INTERPRETER_MODE,
+        "schema_version": TOOL_ACTIVITY_SUMMARY_SCHEMA_VERSION,
+    }
+    assert result.output.cited_source_entry_ids == [30, 31]
+    assert validate_tool_activity_summary_output(result.output, summary_input) is result.output
+
+
+def test_tool_summary_contract_rejects_unknown_source_entry_id() -> None:
+    summary_input = tool_summary_input()
+    output = ToolActivitySummaryOutput(summary="The tool returned the repository path.", cited_source_entry_ids=[999])
+
+    with pytest.raises(ToolActivitySummaryValidationError, match="999"):
+        validate_tool_activity_summary_output(output, summary_input)
 
 
 def test_custom_prompt_and_model_metadata_are_preserved() -> None:
@@ -314,6 +392,71 @@ def test_pydantic_ai_interpreter_accepts_mapping_output() -> None:
     validate_interpretation_output(result.output, source_packet)
 
 
+def test_pydantic_ai_tool_summarizer_uses_agent_factory_and_returns_output() -> None:
+    summary_input = tool_summary_input()
+    output = ToolActivitySummaryOutput(
+        summary="The bash tool returned the repository path.",
+        outcome="success",
+        key_details=["The observed output was /repo."],
+        cited_source_entry_ids=[30, 31],
+    )
+    agent = FakePydanticAgent(output=output)
+    factory = FakePydanticAgentFactory(agent)
+    summarizer = PydanticAIToolActivitySummarizer("test-provider:test-model", agent_factory=factory)
+
+    result = summarizer.summarize(summary_input)
+
+    assert factory.calls == [("test-provider:test-model", {"output_type": ToolActivitySummaryOutput})]
+    assert result.output is output
+    assert result.prompt_version == TOOL_ACTIVITY_SUMMARY_PROMPT_VERSION
+    assert result.model_metadata == {
+        "provider": "test-provider",
+        "model": "test-provider:test-model",
+        "mode": PYDANTIC_AI_INTERPRETER_MODE,
+        "schema_version": TOOL_ACTIVITY_SUMMARY_SCHEMA_VERSION,
+    }
+    validate_tool_activity_summary_output(result.output, summary_input)
+
+
+def test_pydantic_ai_tool_summarizer_renders_source_backed_prompt() -> None:
+    summary_input = tool_summary_input()
+    output = ToolActivitySummaryOutput(summary="The tool returned /repo.", cited_source_entry_ids=[30, 31])
+    agent = FakePydanticAgent(output=output)
+    summarizer = PydanticAIToolActivitySummarizer(
+        "plain-model-name",
+        prompt_version="tool-prompt-v2",
+        agent_factory=FakePydanticAgentFactory(agent),
+    )
+
+    result = summarizer.summarize(summary_input)
+
+    assert result.prompt_version == "tool-prompt-v2"
+    assert result.model_metadata["provider"] is None
+    prompt = agent.prompts[0]
+    assert "Tool activity JSON" in prompt
+    assert "Tool activity batch JSON" not in prompt
+    assert "cited_source_entry_ids" in prompt
+    assert "pwd" in prompt
+    assert "/repo" in prompt
+    assert "outside knowledge" in prompt
+
+
+@pytest.mark.asyncio
+async def test_pydantic_ai_tool_summarizer_async_returns_one_summary() -> None:
+    summary_input = tool_summary_input()
+    output = ToolActivitySummaryOutput(summary="The async tool returned /repo.", cited_source_entry_ids=[30, 31])
+    agent = FakePydanticAgent(output=output)
+    summarizer = PydanticAIToolActivitySummarizer(
+        "test-provider:test-model",
+        agent_factory=FakePydanticAgentFactory(agent),
+    )
+
+    result = await summarizer.summarize_async(summary_input)
+
+    assert result.output is output
+    assert len(agent.prompts) == 1
+
+
 def test_pydantic_ai_interpreter_renders_bounded_packet_prompt_only() -> None:
     source_packet = replace(
         packet(source_ref("local-ref")),
@@ -334,8 +477,10 @@ def test_pydantic_ai_interpreter_renders_bounded_packet_prompt_only() -> None:
     assert result.prompt_version == "test-prompt-v2"
     assert result.model_metadata["provider"] is None
     prompt = agent.prompts[0]
-    assert "source excerpt" in prompt
+    assert "source excerpt" not in prompt
     assert "local-ref" in prompt
+    assert "do not return an empty claims list" in prompt
+    assert "claim_source_ref_ids" in prompt
     assert "analysis_run_id" in prompt
     assert "analyzed_through_byte_offset" in prompt
     assert "SESSION_METADATA_SHOULD_NOT_APPEAR" not in prompt
@@ -394,4 +539,20 @@ def test_pydantic_ai_interpreter_wraps_provider_failures_without_leaking_details
     assert "PydanticAI session interpretation failed" == message
     assert "SECRET_PROMPT" not in message
     assert "source excerpt" not in message
+    assert "API_KEY" not in message
+
+
+def test_pydantic_ai_tool_summarizer_wraps_provider_failures_without_leaking_details() -> None:
+    agent = FakePydanticAgent(error=RuntimeError("SECRET_TOOL_OUTPUT API_KEY=abc123"))
+    summarizer = PydanticAIToolActivitySummarizer(
+        "test-provider:test-model",
+        agent_factory=FakePydanticAgentFactory(agent),
+    )
+
+    with pytest.raises(PydanticAIToolSummaryError) as exc_info:
+        summarizer.summarize(tool_summary_input())
+
+    message = str(exc_info.value)
+    assert "PydanticAI tool activity summarization failed" == message
+    assert "SECRET_TOOL_OUTPUT" not in message
     assert "API_KEY" not in message

@@ -9,8 +9,8 @@ from pathlib import Path
 import pytest
 from pi_memory.db import (
     ANALYSIS_STATUS_COMPLETED,
-    JOB_KIND_INTERPRET_SESSION,
     JOB_KIND_PROCESS_TRANSCRIPT,
+    JOB_KIND_SUMMARIZE_TOOL_ACTIVITIES,
     JOB_STATUS_COMPLETED,
     JOB_STATUS_FAILED,
     JOB_STATUS_QUEUED,
@@ -219,12 +219,12 @@ def test_run_once_claims_spawns_and_observes_child_completion(database: Database
     assert completed.result_json is not None
     phase_5a = completed.result_json["phase_5a"]
     assert isinstance(phase_5a, dict)
-    interpret_session_job_id = completed.result_json["interpret_session_job_id"]
-    assert isinstance(interpret_session_job_id, int)
+    summarize_tool_activities_job_id = completed.result_json["summarize_tool_activities_job_id"]
+    assert isinstance(summarize_tool_activities_job_id, int)
     base_result = {
         key: value
         for key, value in completed.result_json.items()
-        if key not in {"phase_5a", "interpret_session_job_id"}
+        if key not in {"phase_5a", "summarize_tool_activities_job_id"}
     }
     assert base_result == {
         "transcript_id": transcript_id,
@@ -242,11 +242,11 @@ def test_run_once_claims_spawns_and_observes_child_completion(database: Database
     assert isinstance(phase_5a["snapshot_shell_id"], int)
     assert isinstance(phase_5a["analyzed_through_entry_id"], int)
     assert phase_5a["analyzed_through_byte_offset"] == 50
-    interpret_job = get_job(database, interpret_session_job_id)
-    assert interpret_job.kind == JOB_KIND_INTERPRET_SESSION
-    assert interpret_job.payload_json["transcript_id"] == transcript_id
-    assert interpret_job.payload_json["analysis_run_id"] == phase_5a["analysis_run_id"]
-    assert interpret_job.payload_json["process_job_id"] == job.id
+    summarize_job = get_job(database, summarize_tool_activities_job_id)
+    assert summarize_job.kind == JOB_KIND_SUMMARIZE_TOOL_ACTIVITIES
+    assert summarize_job.payload_json["transcript_id"] == transcript_id
+    assert summarize_job.payload_json["analysis_run_id"] == phase_5a["analysis_run_id"]
+    assert summarize_job.payload_json["process_job_id"] == job.id
 
 
 def test_spawn_failure_releases_claim_to_future_due_at_without_incrementing_attempts(

@@ -9,6 +9,9 @@ import pytest
 from pi_memory.analysis import analyze_transcript_structure
 from pi_memory.db import (
     ACTIVITY_KIND_SESSION_EVENT,
+    ACTIVITY_KIND_TOOL_PAIR,
+    ACTIVITY_TEXT_KIND_TOOL_SUMMARY,
+    ACTIVITY_TEXT_STATUS_COMPLETED,
     SOURCE_ORIGIN_INHERITED,
     SOURCE_ORIGIN_LOCAL,
     SOURCE_ORIGIN_MIXED,
@@ -264,18 +267,20 @@ def test_resolved_fork_counts_mixed_and_inherited_claim_sources(database: Databa
         "mixed_activity_count": 1,
         "unknown_activity_count": 0,
     }
-    assert packet.readiness.claim_source_activity_count == 2
+    assert packet.readiness.claim_source_activity_count == 1
 
     episode = packet.episode_packets[0]
     assert episode.origin_counts == packet.readiness.origin_counts
-    assert episode.claim_source_activity_count == 2
+    assert episode.claim_source_activity_count == 1
     assert [activity.source_origin for activity in episode.included_activities] == [
         SOURCE_ORIGIN_LOCAL,
         SOURCE_ORIGIN_INHERITED,
         SOURCE_ORIGIN_MIXED,
         SOURCE_ORIGIN_LOCAL,
     ]
-    assert [activity.claim_source_allowed for activity in episode.included_activities] == [False, False, True, True]
+    assert [activity.claim_source_allowed for activity in episode.included_activities] == [False, False, False, True]
+    assert episode.included_activities[2].activity_text_status == "pending"
+    assert episode.included_activities[2].source_refs == ()
 
 
 def test_no_claim_source_is_ready_but_skips_model(database: Database) -> None:
@@ -357,20 +362,35 @@ def test_packet_shape_bounds_sources_and_preserves_manifest_ranges(database: Dat
     with database.session() as db_session:
         transcript = create_transcript(db_session, payloads=payloads)
         analyze_transcript_structure(db_session, transcript)
+        tool_row = db_session.scalar(
+            select(ActivityUnit).where(
+                ActivityUnit.transcript_id == transcript.id,
+                ActivityUnit.kind == ACTIVITY_KIND_TOOL_PAIR,
+            ),
+        )
+        assert tool_row is not None
+        tool_row.activity_text = "Tool summary:\nThe bash tool produced a long output that was summarized."
+        tool_row.activity_text_kind = ACTIVITY_TEXT_KIND_TOOL_SUMMARY
+        tool_row.activity_text_status = ACTIVITY_TEXT_STATUS_COMPLETED
+        tool_row.activity_text_metadata_json = {"producer": "test"}
+        db_session.flush()
 
         packet = build_interpretation_packet(db_session, transcript)
 
     episode = packet.episode_packets[0]
-    assert episode.included_ranges == (
-        {"start_index": 0, "end_index": 79, "count": 80},
-        {"start_index": 86, "end_index": 105, "count": 20},
-    )
-    assert episode.omitted_ranges == ({"start_index": 80, "end_index": 85, "count": 6},)
+    assert episode.included_ranges == ({"start_index": 0, "end_index": 105, "count": 106},)
+    assert episode.omitted_ranges == ()
     assert episode.origin_counts["local_activity_count"] == 106
     assert episode.claim_source_activity_count == 106
     assert episode.tool_result_text_byte_count == len(long_output.encode("utf-8"))
 
+    first_activity = episode.included_activities[0]
+    assert first_activity.activity_text == "User message:\nhello 0"
+    assert first_activity.source_refs[0].excerpts[0].text == "User message:\nhello 0"
+    assert '{"type":"message"' not in first_activity.source_refs[0].excerpts[0].text
+
     tool_activity = episode.included_activities[-1]
+    assert tool_activity.activity_text == "Tool summary:\nThe bash tool produced a long output that was summarized."
     assert tool_activity.claim_source_allowed is True
     assert tool_activity.source_origin == "local"
     assert tool_activity.result_text_byte_count == len(long_output.encode("utf-8"))
@@ -393,6 +413,8 @@ def test_packet_shape_bounds_sources_and_preserves_manifest_ranges(database: Dat
     for excerpt in source_ref.excerpts:
         assert excerpt.omitted_char_count == excerpt.original_char_count - len(excerpt.text)
         assert excerpt.omitted_byte_count == excerpt.original_byte_count - len(excerpt.text.encode("utf-8"))
+    assert source_ref.excerpts[0].text == "Tool summary:\nThe bash tool produced a long output that was summarized."
     assert long_output not in "".join(excerpt.text for excerpt in source_ref.excerpts)
+    assert "toolResult" not in "".join(excerpt.text for excerpt in source_ref.excerpts)
     assert source_ref.receipt_metadata["tool_name"] == "bash"
     assert "source_entry_ids_by_origin" in source_ref.source_metadata

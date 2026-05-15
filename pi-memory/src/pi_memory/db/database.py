@@ -11,7 +11,12 @@ from sqlalchemy.engine import Connection, make_url
 from sqlalchemy.orm import Session, sessionmaker
 
 from pi_memory.constants import MEMORY_DB_URL
-from pi_memory.db.schema import SOURCE_ORIGIN_UNKNOWN, Base
+from pi_memory.db.schema import (
+    ACTIVITY_TEXT_KIND_UNAVAILABLE,
+    ACTIVITY_TEXT_STATUS_PENDING,
+    SOURCE_ORIGIN_UNKNOWN,
+    Base,
+)
 
 
 class DatabaseSessionFactoryError(RuntimeError):
@@ -63,6 +68,7 @@ class Database:
             if _is_sqlite_url(self._url):
                 _upgrade_sqlite_transcript_lineage(connection)
                 _upgrade_sqlite_activity_source_origin(connection)
+                _upgrade_sqlite_activity_text(connection)
                 _upgrade_sqlite_episode_manifest_tool_result_text_byte_count(connection)
                 connection.execute(
                     text(
@@ -150,6 +156,52 @@ def _upgrade_sqlite_activity_source_origin(connection: Connection) -> None:
 
     connection.execute(
         text("CREATE INDEX IF NOT EXISTS ix_activity_units_source_origin ON activity_units (source_origin)"),
+    )
+
+
+def _upgrade_sqlite_activity_text(connection: Connection) -> None:
+    """Add derived activity text columns and indexes to existing SQLite databases."""
+    if not _sqlite_table_exists(connection, "activity_units"):
+        return
+
+    columns = {row[1] for row in connection.execute(text("PRAGMA table_info(activity_units)"))}
+    if "activity_text" not in columns:
+        connection.execute(text("ALTER TABLE activity_units ADD COLUMN activity_text TEXT"))
+    if "activity_text_kind" not in columns:
+        connection.execute(
+            text(
+                f"""
+                ALTER TABLE activity_units
+                ADD COLUMN activity_text_kind VARCHAR DEFAULT '{ACTIVITY_TEXT_KIND_UNAVAILABLE}' NOT NULL
+                """,
+            ),
+        )
+    if "activity_text_status" not in columns:
+        connection.execute(
+            text(
+                f"""
+                ALTER TABLE activity_units
+                ADD COLUMN activity_text_status VARCHAR DEFAULT '{ACTIVITY_TEXT_STATUS_PENDING}' NOT NULL
+                """,
+            ),
+        )
+    if "activity_text_metadata_json" not in columns:
+        connection.execute(
+            text(
+                """
+                ALTER TABLE activity_units
+                ADD COLUMN activity_text_metadata_json JSON DEFAULT '{}' NOT NULL
+                """,
+            ),
+        )
+
+    connection.execute(
+        text(
+            """
+            CREATE INDEX IF NOT EXISTS ix_activity_units_analysis_run_text_status
+            ON activity_units (analysis_run_id, activity_text_status)
+            """,
+        ),
     )
 
 

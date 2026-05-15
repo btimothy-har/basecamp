@@ -349,6 +349,44 @@ def test_initialize_upgrades_old_sqlite_activity_units_with_source_origin(tmp_pa
         database.close_if_open()
 
 
+def test_initialize_upgrades_old_sqlite_activity_units_with_activity_text_columns(tmp_path) -> None:
+    db_path = tmp_path / "memory.db"
+    create_old_style_activity_units_database(db_path)
+    database = Database(sqlite_url(db_path))
+
+    try:
+        database.initialize()
+        database.initialize()
+        inspector = inspect(database.engine)
+        columns = {column["name"] for column in inspector.get_columns("activity_units")}
+        indexes = {index["name"] for index in inspector.get_indexes("activity_units")}
+
+        assert {
+            "activity_text",
+            "activity_text_kind",
+            "activity_text_status",
+            "activity_text_metadata_json",
+        }.issubset(columns)
+        assert "ix_activity_units_analysis_run_text_status" in indexes
+        with database.engine.connect() as connection:
+            row = connection.execute(
+                text(
+                    """
+                    SELECT activity_text, activity_text_kind, activity_text_status, activity_text_metadata_json
+                    FROM activity_units
+                    WHERE id = 1
+                    """,
+                ),
+            ).one()
+
+        assert row.activity_text is None
+        assert row.activity_text_kind == "unavailable"
+        assert row.activity_text_status == "pending"
+        assert row.activity_text_metadata_json == "{}"
+    finally:
+        database.close_if_open()
+
+
 def test_initialize_upgrades_old_sqlite_episode_manifests_with_tool_result_text_byte_count(
     tmp_path,
 ) -> None:

@@ -25,7 +25,12 @@ from pi_memory.ingest import TranscriptIngestService
 from pi_memory.jobs import JobStore
 from pi_memory.recall import index_transcript
 from pi_memory.server import ServerState
-from pi_memory.settings import INTERPRETATION_MODEL_ENV, Settings
+from pi_memory.settings import (
+    DEFAULT_TOOL_SUMMARY_CONCURRENCY,
+    INTERPRETATION_MODEL_ENV,
+    TOOL_SUMMARY_MODEL_ENV,
+    Settings,
+)
 from sqlalchemy import func, select
 
 
@@ -90,6 +95,7 @@ def parse_observe_output(output: str) -> dict[str, str]:
 def test_config_reports_effective_defaults(tmp_path, monkeypatch) -> None:
     settings_path = tmp_path / "memory" / "config.json"
     monkeypatch.delenv(INTERPRETATION_MODEL_ENV, raising=False)
+    monkeypatch.delenv(TOOL_SUMMARY_MODEL_ENV, raising=False)
     monkeypatch.setattr(cli_module, "MemorySettings", lambda: Settings(settings_path))
 
     result = CliRunner().invoke(cli_module.main, ["config", "--json"])
@@ -98,6 +104,8 @@ def test_config_reports_effective_defaults(tmp_path, monkeypatch) -> None:
     assert json.loads(result.output) == {
         "config_path": str(settings_path),
         "interpretation_model": None,
+        "tool_summary_model": None,
+        "tool_summary_concurrency": DEFAULT_TOOL_SUMMARY_CONCURRENCY,
     }
     assert not settings_path.exists()
 
@@ -105,6 +113,7 @@ def test_config_reports_effective_defaults(tmp_path, monkeypatch) -> None:
 def test_config_persists_interpretation_model(tmp_path, monkeypatch) -> None:
     settings_path = tmp_path / "memory" / "config.json"
     monkeypatch.delenv(INTERPRETATION_MODEL_ENV, raising=False)
+    monkeypatch.delenv(TOOL_SUMMARY_MODEL_ENV, raising=False)
     monkeypatch.setattr(cli_module, "MemorySettings", lambda: Settings(settings_path))
 
     result = CliRunner().invoke(
@@ -121,6 +130,8 @@ def test_config_persists_interpretation_model(tmp_path, monkeypatch) -> None:
     assert json.loads(result.output) == {
         "config_path": str(settings_path),
         "interpretation_model": "anthropic:claude-sonnet-4-6",
+        "tool_summary_model": None,
+        "tool_summary_concurrency": DEFAULT_TOOL_SUMMARY_CONCURRENCY,
     }
     assert json.loads(settings_path.read_text()) == {
         "interpretation_model": "anthropic:claude-sonnet-4-6",
@@ -131,6 +142,7 @@ def test_config_reports_env_override(tmp_path, monkeypatch) -> None:
     settings_path = tmp_path / "memory" / "config.json"
     Settings(settings_path).update(interpretation_model="anthropic:file-model")
     monkeypatch.setenv(INTERPRETATION_MODEL_ENV, "openai:env-model")
+    monkeypatch.delenv(TOOL_SUMMARY_MODEL_ENV, raising=False)
     monkeypatch.setattr(cli_module, "MemorySettings", lambda: Settings(settings_path))
 
     result = CliRunner().invoke(cli_module.main, ["config"])
@@ -140,11 +152,14 @@ def test_config_reports_env_override(tmp_path, monkeypatch) -> None:
     assert "Pi memory config" in result.output
     assert fields["config_path"] == str(settings_path)
     assert fields["interpretation_model"] == "openai:env-model"
+    assert fields["tool_summary_model"] == "<unset>"
+    assert fields["tool_summary_concurrency"] == str(DEFAULT_TOOL_SUMMARY_CONCURRENCY)
 
 
 def test_config_rejects_empty_interpretation_model(tmp_path, monkeypatch) -> None:
     settings_path = tmp_path / "memory" / "config.json"
     monkeypatch.delenv(INTERPRETATION_MODEL_ENV, raising=False)
+    monkeypatch.delenv(TOOL_SUMMARY_MODEL_ENV, raising=False)
     monkeypatch.setattr(cli_module, "MemorySettings", lambda: Settings(settings_path))
 
     result = CliRunner().invoke(cli_module.main, ["config", "--interpretation-model", "  "])
@@ -154,10 +169,57 @@ def test_config_rejects_empty_interpretation_model(tmp_path, monkeypatch) -> Non
     assert not settings_path.exists()
 
 
+def test_config_persists_and_clears_tool_summary_model(tmp_path, monkeypatch) -> None:
+    settings_path = tmp_path / "memory" / "config.json"
+    monkeypatch.delenv(INTERPRETATION_MODEL_ENV, raising=False)
+    monkeypatch.delenv(TOOL_SUMMARY_MODEL_ENV, raising=False)
+    monkeypatch.setattr(cli_module, "MemorySettings", lambda: Settings(settings_path))
+
+    result = CliRunner().invoke(
+        cli_module.main,
+        ["config", "--tool-summary-model", "anthropic:claude-haiku-4-5", "--json"],
+    )
+
+    assert result.exit_code == 0
+    assert json.loads(result.output) == {
+        "config_path": str(settings_path),
+        "interpretation_model": None,
+        "tool_summary_model": "anthropic:claude-haiku-4-5",
+        "tool_summary_concurrency": DEFAULT_TOOL_SUMMARY_CONCURRENCY,
+    }
+    assert json.loads(settings_path.read_text()) == {"tool_summary_model": "anthropic:claude-haiku-4-5"}
+
+    result = CliRunner().invoke(cli_module.main, ["config", "--clear-tool-summary-model", "--json"])
+
+    assert result.exit_code == 0
+    assert json.loads(result.output)["tool_summary_model"] is None
+    assert json.loads(settings_path.read_text()) == {}
+
+
+def test_config_persists_and_clears_tool_summary_concurrency(tmp_path, monkeypatch) -> None:
+    settings_path = tmp_path / "memory" / "config.json"
+    monkeypatch.delenv(INTERPRETATION_MODEL_ENV, raising=False)
+    monkeypatch.delenv(TOOL_SUMMARY_MODEL_ENV, raising=False)
+    monkeypatch.setattr(cli_module, "MemorySettings", lambda: Settings(settings_path))
+
+    result = CliRunner().invoke(cli_module.main, ["config", "--tool-summary-concurrency", "25", "--json"])
+
+    assert result.exit_code == 0
+    assert json.loads(result.output)["tool_summary_concurrency"] == 25
+    assert json.loads(settings_path.read_text()) == {"tool_summary_concurrency": 25}
+
+    result = CliRunner().invoke(cli_module.main, ["config", "--clear-tool-summary-concurrency", "--json"])
+
+    assert result.exit_code == 0
+    assert json.loads(result.output)["tool_summary_concurrency"] == DEFAULT_TOOL_SUMMARY_CONCURRENCY
+    assert json.loads(settings_path.read_text()) == {}
+
+
 def test_config_clears_interpretation_model(tmp_path, monkeypatch) -> None:
     settings_path = tmp_path / "memory" / "config.json"
     Settings(settings_path).update(interpretation_model="anthropic:file-model")
     monkeypatch.delenv(INTERPRETATION_MODEL_ENV, raising=False)
+    monkeypatch.delenv(TOOL_SUMMARY_MODEL_ENV, raising=False)
     monkeypatch.setattr(cli_module, "MemorySettings", lambda: Settings(settings_path))
 
     result = CliRunner().invoke(cli_module.main, ["config", "--clear-interpretation-model", "--json"])
@@ -166,6 +228,8 @@ def test_config_clears_interpretation_model(tmp_path, monkeypatch) -> None:
     assert json.loads(result.output) == {
         "config_path": str(settings_path),
         "interpretation_model": None,
+        "tool_summary_model": None,
+        "tool_summary_concurrency": DEFAULT_TOOL_SUMMARY_CONCURRENCY,
     }
     assert json.loads(settings_path.read_text()) == {}
 
@@ -970,9 +1034,9 @@ def test_run_job_succeeds_against_isolated_db(tmp_path) -> None:
             "cursor_offset": 10,
             "file_size": 10,
             "indexed_entry_count": 0,
-            "interpret_session_job_id": base_result["interpret_session_job_id"],
+            "summarize_tool_activities_job_id": base_result["summarize_tool_activities_job_id"],
         }
-        assert isinstance(base_result["interpret_session_job_id"], int)
+        assert isinstance(base_result["summarize_tool_activities_job_id"], int)
         assert isinstance(phase_5a["analysis_run_id"], int)
         assert phase_5a["status"] == ANALYSIS_STATUS_COMPLETED
         assert phase_5a["activity_count"] == 1

@@ -55,6 +55,20 @@ class ConflictingInterpretationModelOptionsError(click.UsageError):
         super().__init__("--clear-interpretation-model cannot be used with --interpretation-model")
 
 
+class ConflictingToolSummaryModelOptionsError(click.UsageError):
+    """Raised when mutually exclusive tool-summary model options are used."""
+
+    def __init__(self) -> None:
+        super().__init__("--clear-tool-summary-model cannot be used with --tool-summary-model")
+
+
+class ConflictingToolSummaryConcurrencyOptionsError(click.UsageError):
+    """Raised when mutually exclusive tool-summary concurrency options are used."""
+
+    def __init__(self) -> None:
+        super().__init__("--clear-tool-summary-concurrency cannot be used with --tool-summary-concurrency")
+
+
 class PortBindError(click.ClickException):
     """Raised when the local service cannot bind its requested port."""
 
@@ -130,6 +144,26 @@ def main() -> None:
     help="Remove the persisted interpretation model.",
 )
 @click.option(
+    "--tool-summary-model",
+    callback=lambda _ctx, _param, value: None if value is None else _require_non_empty(value),
+    help="Provider-neutral PydanticAI provider:model string to persist for tool summaries.",
+)
+@click.option(
+    "--clear-tool-summary-model",
+    is_flag=True,
+    help="Remove the persisted tool-summary model.",
+)
+@click.option(
+    "--tool-summary-concurrency",
+    type=click.IntRange(1, 100),
+    help="Persist the maximum number of concurrent one-tool summary calls.",
+)
+@click.option(
+    "--clear-tool-summary-concurrency",
+    is_flag=True,
+    help="Remove the persisted tool-summary concurrency override.",
+)
+@click.option(
     "--json",
     "json_output",
     is_flag=True,
@@ -137,21 +171,39 @@ def main() -> None:
 )
 def config(
     interpretation_model: str | None,
+    tool_summary_model: str | None,
+    tool_summary_concurrency: int | None,
     *,
     clear_interpretation_model: bool,
+    clear_tool_summary_model: bool,
+    clear_tool_summary_concurrency: bool,
     json_output: bool,
 ) -> None:
     """Inspect or update pi-memory interpreter settings."""
     if clear_interpretation_model and interpretation_model is not None:
         raise ConflictingInterpretationModelOptionsError()
+    if clear_tool_summary_model and tool_summary_model is not None:
+        raise ConflictingToolSummaryModelOptionsError()
+    if clear_tool_summary_concurrency and tool_summary_concurrency is not None:
+        raise ConflictingToolSummaryConcurrencyOptionsError()
 
     memory_settings = MemorySettings()
     try:
+        update_payload: dict[str, str | int | None] = {}
         if clear_interpretation_model:
-            memory_settings.update(interpretation_model=None)
+            update_payload["interpretation_model"] = None
         elif interpretation_model is not None:
-            memory_settings.update(interpretation_model=interpretation_model)
-
+            update_payload["interpretation_model"] = interpretation_model
+        if clear_tool_summary_model:
+            update_payload["tool_summary_model"] = None
+        elif tool_summary_model is not None:
+            update_payload["tool_summary_model"] = tool_summary_model
+        if clear_tool_summary_concurrency:
+            update_payload["tool_summary_concurrency"] = None
+        elif tool_summary_concurrency is not None:
+            update_payload["tool_summary_concurrency"] = tool_summary_concurrency
+        if update_payload:
+            memory_settings.update(**update_payload)
         _emit_config(memory_settings.as_dict(), path=str(memory_settings.path), json_output=json_output)
     except SettingsError as error:
         raise click.ClickException(str(error)) from error

@@ -212,6 +212,12 @@ def test_malformed_output_fails(candidate: dict[str, Any]) -> None:
     assert_invalid(output("local-ref", **candidate), source_packet)
 
 
+def test_empty_claims_fail_when_claim_sources_are_available() -> None:
+    source_packet = packet(source_ref("local-ref"))
+
+    assert_invalid(output("local-ref", claims=[], citations=[]), source_packet)
+
+
 def test_missing_claim_source_ref_fails() -> None:
     source_packet = packet(source_ref("local-ref"))
 

@@ -3,6 +3,9 @@ from pathlib import Path
 import pytest
 from pi_memory.db import (
     ACTIVITY_KIND_USER_TEXT,
+    ACTIVITY_TEXT_KIND_UNAVAILABLE,
+    ACTIVITY_TEXT_STATUS_COMPLETED,
+    ACTIVITY_TEXT_STATUS_PENDING,
     ANALYSIS_KIND_TRANSCRIPT_STRUCTURE,
     ANALYSIS_STATUS_RUNNING,
     EPISODE_CLOSE_REASON_TRANSCRIPT_END,
@@ -370,6 +373,28 @@ def test_fresh_schema_includes_activity_unit_source_origin_column_index_and_cons
     assert "ck_activity_units_source_origin_valid" in constraints
 
 
+def test_fresh_schema_includes_activity_text_columns_indexes_and_constraints(database: Database) -> None:
+    inspector = inspect(database.engine)
+
+    columns = {column["name"]: column for column in inspector.get_columns("activity_units")}
+    indexes = {index["name"] for index in inspector.get_indexes("activity_units")}
+    constraints = {constraint["name"] for constraint in inspector.get_check_constraints("activity_units")}
+
+    assert columns["activity_text"]["nullable"] is True
+    assert columns["activity_text_kind"]["nullable"] is False
+    assert ACTIVITY_TEXT_KIND_UNAVAILABLE in str(columns["activity_text_kind"].get("default"))
+    assert columns["activity_text_status"]["nullable"] is False
+    assert ACTIVITY_TEXT_STATUS_PENDING in str(columns["activity_text_status"].get("default"))
+    assert columns["activity_text_metadata_json"]["nullable"] is False
+    assert "{}" in str(columns["activity_text_metadata_json"].get("default"))
+    assert "ix_activity_units_analysis_run_text_status" in indexes
+    assert {
+        "ck_activity_units_activity_text_kind_valid",
+        "ck_activity_units_activity_text_status_valid",
+        "ck_activity_units_completed_activity_text_present",
+    }.issubset(constraints)
+
+
 def test_activity_unit_defaults_are_applied(database: Database) -> None:
     session_id, transcript_id, analysis_run_id = create_analysis_run(database)
 
@@ -395,6 +420,10 @@ def test_activity_unit_defaults_are_applied(database: Database) -> None:
         assert activity_unit.receipt_json == {}
         assert activity_unit.source_metadata_json == {}
         assert activity_unit.source_origin == SOURCE_ORIGIN_UNKNOWN
+        assert activity_unit.activity_text is None
+        assert activity_unit.activity_text_kind == ACTIVITY_TEXT_KIND_UNAVAILABLE
+        assert activity_unit.activity_text_status == ACTIVITY_TEXT_STATUS_PENDING
+        assert activity_unit.activity_text_metadata_json == {}
         assert activity_unit.created_at is not None
         assert activity_unit.updated_at is not None
 
@@ -509,6 +538,63 @@ def test_activity_unit_rejects_invalid_kind(database: Database) -> None:
                     kind="semantic_summary",
                     byte_start=0,
                     byte_end=1,
+                ),
+            )
+
+
+def test_activity_unit_rejects_invalid_activity_text_kind(database: Database) -> None:
+    session_id, transcript_id, analysis_run_id = create_analysis_run(database)
+
+    with pytest.raises(IntegrityError):
+        with database.session() as session:
+            session.add(
+                ActivityUnit(
+                    analysis_run_id=analysis_run_id,
+                    session_id=session_id,
+                    transcript_id=transcript_id,
+                    ordinal=0,
+                    kind=ACTIVITY_KIND_USER_TEXT,
+                    byte_start=0,
+                    byte_end=1,
+                    activity_text_kind="raw_json",
+                ),
+            )
+
+
+def test_activity_unit_rejects_invalid_activity_text_status(database: Database) -> None:
+    session_id, transcript_id, analysis_run_id = create_analysis_run(database)
+
+    with pytest.raises(IntegrityError):
+        with database.session() as session:
+            session.add(
+                ActivityUnit(
+                    analysis_run_id=analysis_run_id,
+                    session_id=session_id,
+                    transcript_id=transcript_id,
+                    ordinal=0,
+                    kind=ACTIVITY_KIND_USER_TEXT,
+                    byte_start=0,
+                    byte_end=1,
+                    activity_text_status="waiting_for_worker",
+                ),
+            )
+
+
+def test_activity_unit_requires_activity_text_when_completed(database: Database) -> None:
+    session_id, transcript_id, analysis_run_id = create_analysis_run(database)
+
+    with pytest.raises(IntegrityError):
+        with database.session() as session:
+            session.add(
+                ActivityUnit(
+                    analysis_run_id=analysis_run_id,
+                    session_id=session_id,
+                    transcript_id=transcript_id,
+                    ordinal=0,
+                    kind=ACTIVITY_KIND_USER_TEXT,
+                    byte_start=0,
+                    byte_end=1,
+                    activity_text_status=ACTIVITY_TEXT_STATUS_COMPLETED,
                 ),
             )
 
@@ -729,6 +815,7 @@ def test_phase_5a_indexes_exist(database: Database) -> None:
         "ix_activity_units_kind",
         "ix_activity_units_tool_call_id",
         "ix_activity_units_source_origin",
+        "ix_activity_units_analysis_run_text_status",
     }.issubset(activity_indexes)
     assert {
         "ix_episodes_analysis_run_ordinal",

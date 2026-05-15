@@ -40,6 +40,10 @@ class InterpretationValidationError(Exception):
     def unsupported_claim_sources(cls, claim_index: int) -> InterpretationValidationError:
         return cls(f"Interpretation claim at index {claim_index} lacks local or mixed claim-source support")
 
+    @classmethod
+    def empty_claims(cls) -> InterpretationValidationError:
+        return cls("Interpretation output must include at least one claim when claim sources are available")
+
 
 class InterpretationClaim(BaseModel):
     """Source-backed claim extracted from an interpretation model response."""
@@ -115,6 +119,7 @@ def validate_interpretation_output(
     _validate_packet_identity(model, packet)
     source_refs = _source_refs_by_id(packet)
     _validate_source_ref_ids(model, source_refs)
+    _validate_claim_presence(model)
     _validate_claim_support(model, source_refs)
     return ValidatedInterpretation(
         output=model,
@@ -169,6 +174,11 @@ def _cited_source_ref_ids(output: InterpretationOutput) -> tuple[str, ...]:
         source_ref_ids.extend(question.source_ref_ids)
     source_ref_ids.extend(citation.source_ref_id for citation in output.citations)
     return tuple(source_ref_ids)
+
+
+def _validate_claim_presence(output: InterpretationOutput) -> None:
+    if not output.claims:
+        raise InterpretationValidationError.empty_claims()
 
 
 def _validate_claim_support(output: InterpretationOutput, source_refs: Mapping[str, SourceRef]) -> None:

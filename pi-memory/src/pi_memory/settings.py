@@ -17,6 +17,9 @@ from typing import Any, Final
 from pi_memory.constants import MEMORY_DIR
 
 INTERPRETATION_MODEL_ENV: Final = "PI_MEMORY_INTERPRETATION_MODEL"
+TOOL_SUMMARY_MODEL_ENV: Final = "PI_MEMORY_TOOL_SUMMARY_MODEL"
+TOOL_SUMMARY_CONCURRENCY_ENV: Final = "PI_MEMORY_TOOL_SUMMARY_CONCURRENCY"
+DEFAULT_TOOL_SUMMARY_CONCURRENCY: Final = 10
 
 _DEFAULT_PATH = MEMORY_DIR / "config.json"
 _UNSET = object()
@@ -31,6 +34,13 @@ class InvalidInterpretationModelError(SettingsError):
 
     def __init__(self) -> None:
         super().__init__("Invalid interpretation model: must be a non-empty string.")
+
+
+class InvalidToolSummaryConcurrencyError(SettingsError):
+    """Raised when tool-summary concurrency is invalid."""
+
+    def __init__(self) -> None:
+        super().__init__("Invalid tool summary concurrency: must be an integer from 1 to 100.")
 
 
 class MissingInterpretationModelError(SettingsError):
@@ -74,6 +84,20 @@ def _validate_interpretation_model(value: object) -> str:
     if isinstance(value, str) and value.strip():
         return value.strip()
     raise InvalidInterpretationModelError()
+
+
+def _validate_tool_summary_concurrency(value: object) -> int:
+    if isinstance(value, bool):
+        raise InvalidToolSummaryConcurrencyError()
+    if isinstance(value, int):
+        concurrency = value
+    elif isinstance(value, str) and value.strip().isdigit():
+        concurrency = int(value.strip())
+    else:
+        raise InvalidToolSummaryConcurrencyError()
+    if 1 <= concurrency <= 100:
+        return concurrency
+    raise InvalidToolSummaryConcurrencyError()
 
 
 class Settings:
@@ -128,6 +152,22 @@ class Settings:
     def interpretation_model(self, value: str) -> None:
         self.update(interpretation_model=value)
 
+    @property
+    def tool_summary_model(self) -> str | None:
+        """Return the explicit tool-summary model, including environment overrides."""
+        env_value = os.environ.get(TOOL_SUMMARY_MODEL_ENV)
+        if env_value is not None:
+            return _validate_interpretation_model(env_value)
+
+        value = self._read().get("tool_summary_model")
+        if value is None:
+            return None
+        return _validate_interpretation_model(value)
+
+    @tool_summary_model.setter
+    def tool_summary_model(self, value: str) -> None:
+        self.update(tool_summary_model=value)
+
     def require_interpretation_model(self) -> str:
         """Return the configured interpretation model or raise a clear setup error."""
         model = self.interpretation_model
@@ -135,20 +175,55 @@ class Settings:
             raise MissingInterpretationModelError()
         return model
 
-    def update(self, *, interpretation_model: str | None | object = _UNSET) -> None:
+    def require_tool_summary_model(self) -> str:
+        """Return the configured tool-summary model, falling back to interpretation model."""
+        return self.tool_summary_model or self.require_interpretation_model()
+
+    @property
+    def tool_summary_concurrency(self) -> int:
+        """Return the effective per-tool summary concurrency limit."""
+        env_value = os.environ.get(TOOL_SUMMARY_CONCURRENCY_ENV)
+        if env_value is not None:
+            return _validate_tool_summary_concurrency(env_value)
+
+        value = self._read().get("tool_summary_concurrency")
+        if value is None:
+            return DEFAULT_TOOL_SUMMARY_CONCURRENCY
+        return _validate_tool_summary_concurrency(value)
+
+    def update(
+        self,
+        *,
+        interpretation_model: str | None | object = _UNSET,
+        tool_summary_model: str | None | object = _UNSET,
+        tool_summary_concurrency: int | None | object = _UNSET,
+    ) -> None:
         """Persist file settings after validating the resulting file configuration."""
         with self._locked_update() as data:
             data.pop("interpreter_mode", None)
-            if interpretation_model is _UNSET:
-                return
-            if interpretation_model is None:
-                data.pop("interpretation_model", None)
-                return
-            data["interpretation_model"] = _validate_interpretation_model(interpretation_model)
+            if interpretation_model is not _UNSET:
+                if interpretation_model is None:
+                    data.pop("interpretation_model", None)
+                else:
+                    data["interpretation_model"] = _validate_interpretation_model(interpretation_model)
+            if tool_summary_model is not _UNSET:
+                if tool_summary_model is None:
+                    data.pop("tool_summary_model", None)
+                else:
+                    data["tool_summary_model"] = _validate_interpretation_model(tool_summary_model)
+            if tool_summary_concurrency is not _UNSET:
+                if tool_summary_concurrency is None:
+                    data.pop("tool_summary_concurrency", None)
+                else:
+                    data["tool_summary_concurrency"] = _validate_tool_summary_concurrency(tool_summary_concurrency)
 
-    def as_dict(self) -> dict[str, str | None]:
+    def as_dict(self) -> dict[str, str | int | None]:
         """Return effective settings with environment overrides applied."""
-        return {"interpretation_model": self.interpretation_model}
+        return {
+            "interpretation_model": self.interpretation_model,
+            "tool_summary_model": self.tool_summary_model,
+            "tool_summary_concurrency": self.tool_summary_concurrency,
+        }
 
 
 settings = Settings()

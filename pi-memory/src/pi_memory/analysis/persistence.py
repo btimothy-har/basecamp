@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import json
+from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any
@@ -19,6 +21,19 @@ from pi_memory.analysis.manifests import (
     build_session_snapshot_shell,
 )
 from pi_memory.db import (
+    ACTIVITY_KIND_ASSISTANT_TEXT,
+    ACTIVITY_KIND_ASSISTANT_THINKING,
+    ACTIVITY_KIND_COMPACTION,
+    ACTIVITY_KIND_CUSTOM_EVENT,
+    ACTIVITY_KIND_ORPHAN_TOOL_RESULT,
+    ACTIVITY_KIND_PENDING_TOOL_CALL,
+    ACTIVITY_KIND_SESSION_EVENT,
+    ACTIVITY_KIND_TOOL_PAIR,
+    ACTIVITY_KIND_USER_TEXT,
+    ACTIVITY_TEXT_KIND_DETERMINISTIC,
+    ACTIVITY_TEXT_KIND_UNAVAILABLE,
+    ACTIVITY_TEXT_STATUS_COMPLETED,
+    ACTIVITY_TEXT_STATUS_PENDING,
     ANALYSIS_KIND_TRANSCRIPT_STRUCTURE,
     ANALYSIS_STATUS_COMPLETED,
     SOURCE_ORIGIN_INHERITED,
@@ -59,6 +74,16 @@ class TranscriptAnalysisResult:
             "analyzed_through_entry_id": self.analyzed_through_entry_id,
             "analyzed_through_byte_offset": self.analyzed_through_byte_offset,
         }
+
+
+@dataclass(frozen=True)
+class ActivityTextProjection:
+    """Derived text projection for one activity unit."""
+
+    text: str | None
+    kind: str
+    status: str
+    metadata_json: dict[str, Any]
 
 
 def analyze_transcript_structure(
@@ -108,7 +133,7 @@ def analyze_transcript_structure(
     session.flush()
 
     episode_rows = _persist_episodes(session, transcript, analysis_run.id, episodes)
-    _persist_activity_units(session, transcript, analysis_run.id, activities, episodes, episode_rows)
+    _persist_activity_units(session, transcript, analysis_run.id, activities, episodes, episode_rows, entries)
     _persist_episode_manifests(session, transcript, analysis_run.id, manifests, episode_rows)
     snapshot_row = _persist_session_snapshot_shell(session, transcript, analysis_run.id, snapshot_shell)
     session.flush()
@@ -289,10 +314,13 @@ def _persist_activity_units(
     activities: list[NormalizedActivity],
     episodes: list[NormalizedEpisode],
     episode_rows: dict[int, Episode],
+    entries: list[TranscriptEntry],
 ) -> None:
     episode_by_activity_sequence = _episode_by_activity_sequence(episodes, episode_rows)
+    entries_by_id = {entry.id: entry for entry in entries if entry.id is not None}
     for ordinal, activity in enumerate(activities):
         episode = episode_by_activity_sequence[activity.sequence]
+        activity_text = _activity_text_projection(activity, entries_by_id)
         session.add(
             ActivityUnit(
                 analysis_run_id=analysis_run_id,
@@ -319,8 +347,201 @@ def _persist_activity_units(
                 receipt_json=activity.receipt_json,
                 source_metadata_json=activity.source_metadata_json,
                 source_origin=activity.source_origin,
+                activity_text=activity_text.text,
+                activity_text_kind=activity_text.kind,
+                activity_text_status=activity_text.status,
+                activity_text_metadata_json=activity_text.metadata_json,
             ),
         )
+
+
+def _activity_text_projection(
+    activity: NormalizedActivity,
+    entries_by_id: Mapping[int, TranscriptEntry],
+) -> ActivityTextProjection:
+    if activity.kind == ACTIVITY_KIND_TOOL_PAIR:
+        return ActivityTextProjection(
+            text=None,
+            kind=ACTIVITY_TEXT_KIND_UNAVAILABLE,
+            status=ACTIVITY_TEXT_STATUS_PENDING,
+            metadata_json={
+                "version": 1,
+                "producer": "tool_activity_summarizer",
+                "reason": "awaiting_tool_summary",
+                "source_entry_ids": list(activity.source_entry_ids),
+            },
+        )
+
+    text = _deterministic_activity_text(activity, entries_by_id)
+    return ActivityTextProjection(
+        text=text,
+        kind=ACTIVITY_TEXT_KIND_DETERMINISTIC,
+        status=ACTIVITY_TEXT_STATUS_COMPLETED,
+        metadata_json={
+            "version": 1,
+            "producer": "phase_5a_deterministic",
+            "activity_kind": activity.kind,
+            "source_entry_ids": list(activity.source_entry_ids),
+            "text_char_count": len(text),
+        },
+    )
+
+
+def _deterministic_activity_text(
+    activity: NormalizedActivity,
+    entries_by_id: Mapping[int, TranscriptEntry],
+) -> str:
+    if activity.kind == ACTIVITY_KIND_USER_TEXT:
+        return _message_activity_text("User message", activity, entries_by_id)
+    if activity.kind == ACTIVITY_KIND_ASSISTANT_TEXT:
+        return _message_activity_text("Assistant message", activity, entries_by_id)
+    if activity.kind == ACTIVITY_KIND_ASSISTANT_THINKING:
+        return _message_activity_text("Assistant thinking", activity, entries_by_id)
+    if activity.kind == ACTIVITY_KIND_COMPACTION:
+        return _compaction_activity_text(activity)
+    if activity.kind == ACTIVITY_KIND_SESSION_EVENT:
+        return _event_activity_text("Session event", activity)
+    if activity.kind == ACTIVITY_KIND_CUSTOM_EVENT:
+        return _custom_event_activity_text(activity)
+    if activity.kind == ACTIVITY_KIND_PENDING_TOOL_CALL:
+        return _pending_tool_call_activity_text(activity)
+    if activity.kind == ACTIVITY_KIND_ORPHAN_TOOL_RESULT:
+        return _orphan_tool_result_activity_text(activity)
+    return _event_activity_text("Activity", activity)
+
+
+def _message_activity_text(
+    label: str,
+    activity: NormalizedActivity,
+    entries_by_id: Mapping[int, TranscriptEntry],
+) -> str:
+    entry = _first_activity_entry(activity, entries_by_id)
+    body = _message_text(entry, _content_index(activity.source_metadata_json)) if entry is not None else ""
+    return _prefixed_text(label, body)
+
+
+def _compaction_activity_text(activity: NormalizedActivity) -> str:
+    metadata = activity.source_metadata_json
+    summary = _preview_value(metadata.get("summary"))
+    if summary is not None:
+        return _prefixed_text("Compaction summary", summary)
+
+    details = [f"{key}={metadata[key]}" for key in ("firstKeptEntryId", "tokensBefore") if key in metadata]
+    suffix = "; ".join(details) if details else "no summary text"
+    return f"Compaction event: {suffix}."
+
+
+def _custom_event_activity_text(activity: NormalizedActivity) -> str:
+    metadata = activity.source_metadata_json
+    if metadata.get("entry_type") == "branch_summary":
+        summary = _preview_value(metadata.get("summary"))
+        if summary is not None:
+            return _prefixed_text("Branch summary", summary)
+    return _event_activity_text("Custom event", activity)
+
+
+def _event_activity_text(label: str, activity: NormalizedActivity) -> str:
+    metadata = activity.source_metadata_json
+    entry_type = metadata.get("entry_type") or activity.kind
+    fields = _string_list(metadata.get("payload_keys"))
+    if fields:
+        return f"{label}: {entry_type}; fields: {', '.join(fields)}."
+    return f"{label}: {entry_type}."
+
+
+def _pending_tool_call_activity_text(activity: NormalizedActivity) -> str:
+    receipt = activity.receipt_json
+    tool_name = receipt.get("tool_name") or activity.tool_name or "unknown tool"
+    argument_keys = _string_list(receipt.get("argument_keys"))
+    if argument_keys:
+        return f"Pending tool call: {tool_name}; argument keys: {', '.join(argument_keys)}; result not observed."
+    return f"Pending tool call: {tool_name}; result not observed."
+
+
+def _orphan_tool_result_activity_text(activity: NormalizedActivity) -> str:
+    receipt = activity.receipt_json
+    tool_name = receipt.get("tool_name") or activity.tool_name or "unknown tool"
+    status = receipt.get("result_status") or "unknown"
+    byte_count = receipt.get("result_text_byte_count") or activity.result_text_byte_count
+    line_count = receipt.get("result_text_line_count") or activity.result_text_line_count
+    return f"Orphan tool result: {tool_name}; status={status}; output={byte_count} bytes over {line_count} lines."
+
+
+def _first_activity_entry(
+    activity: NormalizedActivity,
+    entries_by_id: Mapping[int, TranscriptEntry],
+) -> TranscriptEntry | None:
+    for entry_id in activity.source_entry_ids:
+        entry = entries_by_id.get(entry_id)
+        if entry is not None:
+            return entry
+    return None
+
+
+def _message_text(entry: TranscriptEntry, content_index: int | None) -> str:
+    payload = _entry_payload(entry)
+    message = payload.get("message") if payload is not None else None
+    if not isinstance(message, Mapping):
+        return ""
+
+    content = message.get("content")
+    if content_index is not None and isinstance(content, list) and 0 <= content_index < len(content):
+        return _block_text(content[content_index])
+    return "\n".join(fragment for fragment in _content_text_fragments(content) if fragment)
+
+
+def _entry_payload(entry: TranscriptEntry) -> dict[str, Any] | None:
+    try:
+        payload = json.loads(entry.raw_line)
+    except json.JSONDecodeError:
+        return None
+    return payload if isinstance(payload, dict) else None
+
+
+def _content_text_fragments(value: Any) -> list[str]:
+    if isinstance(value, str):
+        return [value]
+    if isinstance(value, list):
+        return [_block_text(item) for item in value]
+    if isinstance(value, dict):
+        text = _block_text(value)
+        return [text] if text else []
+    return []
+
+
+def _block_text(block: Any) -> str:
+    if isinstance(block, str):
+        return block
+    if not isinstance(block, Mapping):
+        return ""
+    for key in ("text", "thinking", "content"):
+        value = block.get(key)
+        if isinstance(value, str):
+            return value
+    return ""
+
+
+def _content_index(metadata: Mapping[str, Any]) -> int | None:
+    value = metadata.get("content_index")
+    return value if isinstance(value, int) else None
+
+
+def _preview_value(value: Any) -> str | None:
+    if isinstance(value, Mapping):
+        preview = value.get("preview")
+        if isinstance(preview, str):
+            return preview
+    return None
+
+
+def _string_list(value: Any) -> list[str]:
+    if not isinstance(value, list | tuple):
+        return []
+    return [item for item in value if isinstance(item, str)]
+
+
+def _prefixed_text(label: str, body: str) -> str:
+    return f"{label}:\n{body}" if body.strip() else f"{label}: (no text content)"
 
 
 def _episode_by_activity_sequence(

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterable, Mapping
+from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session
 
 from pi_memory.analysis.manifests import CLAIM_SOURCE_ACTIVITY_KINDS
 from pi_memory.db import (
+    ACTIVITY_TEXT_STATUS_COMPLETED,
     ANALYSIS_KIND_TRANSCRIPT_STRUCTURE,
     ANALYSIS_STATUS_COMPLETED,
     SESSION_INTERPRETATION_BLOCKED_REASON_PARENT_TRANSCRIPT_NOT_INGESTED,
@@ -26,7 +27,6 @@ from pi_memory.db import (
     EpisodeManifest,
     MemorySession,
     Transcript,
-    TranscriptEntry,
 )
 
 SOURCE_EXCERPT_CHAR_LIMIT = 500
@@ -53,7 +53,7 @@ class BoundedText:
 
 @dataclass(frozen=True)
 class SourceRef:
-    """Citation-ready transcript source reference for an included activity."""
+    """Citation-ready activity-text source reference for an included activity."""
 
     source_ref_id: str
     activity_unit_id: int
@@ -73,7 +73,7 @@ class SourceRef:
 
 @dataclass(frozen=True)
 class ActivityPacket:
-    """Bounded included activity payload copied from an episode manifest."""
+    """Chronological activity-text payload for session interpretation."""
 
     activity_unit_id: int
     episode_id: int
@@ -93,6 +93,10 @@ class ActivityPacket:
     text_char_count: int
     result_text_byte_count: int
     result_text_line_count: int
+    activity_text: str | None
+    activity_text_kind: str
+    activity_text_status: str
+    activity_text_metadata: Mapping[str, Any]
     receipt_metadata: Mapping[str, Any]
     source_metadata: Mapping[str, Any]
     source_refs: tuple[SourceRef, ...]
@@ -301,6 +305,8 @@ def _claim_source_activity_count(session: Session, analysis_run_id: int) -> int:
                 ActivityUnit.analysis_run_id == analysis_run_id,
                 ActivityUnit.source_origin.in_((SOURCE_ORIGIN_LOCAL, SOURCE_ORIGIN_MIXED)),
                 ActivityUnit.kind.in_(tuple(CLAIM_SOURCE_ACTIVITY_KINDS)),
+                ActivityUnit.activity_text_status == ACTIVITY_TEXT_STATUS_COMPLETED,
+                ActivityUnit.activity_text.is_not(None),
             ),
         )
         or 0,
@@ -316,9 +322,8 @@ def _episode_packets(session: Session, analysis_run_id: int) -> tuple[EpisodePac
     ).all()
     packets: list[EpisodePacket] = []
     for episode, manifest in rows:
-        activity_packets = _activity_packets(session, episode, manifest)
+        activity_packets = _activity_packets(session, episode)
         source_refs = tuple(ref for activity in activity_packets for ref in activity.source_refs)
-        activity_map = _activity_map(manifest)
         packets.append(
             EpisodePacket(
                 episode_id=episode.id,
@@ -331,10 +336,10 @@ def _episode_packets(session: Session, analysis_run_id: int) -> tuple[EpisodePac
                 activity_count=episode.activity_count,
                 message_count=episode.message_count,
                 tool_pair_count=episode.tool_pair_count,
-                included_ranges=_tuple_of_mappings(activity_map.get("included_ranges")),
-                omitted_ranges=_tuple_of_mappings(activity_map.get("omitted_ranges")),
-                origin_counts=_manifest_origin_counts(activity_map),
-                claim_source_activity_count=int(activity_map.get("claim_source_activity_count") or 0),
+                included_ranges=_all_activity_ranges(activity_packets),
+                omitted_ranges=(),
+                origin_counts=_activity_origin_counts(activity_packets),
+                claim_source_activity_count=sum(1 for activity in activity_packets if activity.source_refs),
                 tool_result_text_byte_count=manifest.tool_result_text_byte_count,
                 included_activities=activity_packets,
                 source_refs=source_refs,
@@ -343,32 +348,30 @@ def _episode_packets(session: Session, analysis_run_id: int) -> tuple[EpisodePac
     return tuple(packets)
 
 
-def _activity_packets(
-    session: Session,
-    episode: Episode,
-    manifest: EpisodeManifest,
-) -> tuple[ActivityPacket, ...]:
-    activities = _included_manifest_activities(manifest)
-    units = _activity_units_by_ordinal(
-        session=session,
-        analysis_run_id=episode.analysis_run_id,
-        episode_id=episode.id,
-        ordinals=[int(activity["index"]) for activity in activities if "index" in activity],
+def _activity_packets(session: Session, episode: Episode) -> tuple[ActivityPacket, ...]:
+    units = list(
+        session.scalars(
+            select(ActivityUnit)
+            .where(
+                ActivityUnit.analysis_run_id == episode.analysis_run_id,
+                ActivityUnit.episode_id == episode.id,
+            )
+            .order_by(ActivityUnit.ordinal, ActivityUnit.id),
+        ),
     )
-    entries = _entries_by_id(session, _source_entry_ids(activities))
     packets: list[ActivityPacket] = []
-    for activity in activities:
-        index = int(activity.get("index", 0))
-        unit = units.get(index)
-        if unit is None:
-            continue
-        receipt_metadata = _bounded_json(activity.get("receipt_json") or {})
-        source_metadata = _bounded_json(activity.get("source_metadata_json") or {})
+    for index, unit in enumerate(units):
+        receipt_metadata = _bounded_json(unit.receipt_json or {})
+        source_metadata = _bounded_json(unit.source_metadata_json or {})
+        activity_text_metadata = _bounded_json(unit.activity_text_metadata_json or {})
+        source_entry_row_ids = tuple(int(value) for value in unit.source_entry_ids_json or ())
+        claim_source_allowed = _activity_claim_source_allowed(unit)
         source_refs = _source_refs(
-            activity=activity,
             unit=unit,
             episode=episode,
-            entries=entries,
+            activity_index=index,
+            source_entry_row_ids=source_entry_row_ids,
+            claim_source_allowed=claim_source_allowed,
             receipt_metadata=receipt_metadata,
             source_metadata=source_metadata,
         )
@@ -378,20 +381,24 @@ def _activity_packets(
                 episode_id=episode.id,
                 episode_ordinal=episode.ordinal,
                 activity_index=index,
-                sequence=_optional_int(activity.get("sequence")),
-                kind=str(activity.get("kind") or unit.kind),
-                source_origin=str(activity.get("source_origin") or unit.source_origin),
-                claim_source_allowed=bool(activity.get("claim_source_allowed")),
-                source_entry_row_ids=tuple(int(value) for value in activity.get("source_entry_ids") or ()),
-                byte_start=int(activity.get("byte_start") or unit.byte_start),
-                byte_end=int(activity.get("byte_end") or unit.byte_end),
-                message_role=_optional_str(activity.get("message_role")),
-                tool_call_id=_optional_str(activity.get("tool_call_id")),
-                tool_name=_optional_str(activity.get("tool_name")),
-                is_error=activity.get("is_error") if isinstance(activity.get("is_error"), bool) else None,
-                text_char_count=int(activity.get("text_char_count") or 0),
-                result_text_byte_count=int(activity.get("result_text_byte_count") or 0),
-                result_text_line_count=int(activity.get("result_text_line_count") or 0),
+                sequence=unit.ordinal,
+                kind=unit.kind,
+                source_origin=unit.source_origin,
+                claim_source_allowed=claim_source_allowed,
+                source_entry_row_ids=source_entry_row_ids,
+                byte_start=unit.byte_start,
+                byte_end=unit.byte_end,
+                message_role=unit.message_role,
+                tool_call_id=unit.tool_call_id,
+                tool_name=unit.tool_name,
+                is_error=unit.is_error,
+                text_char_count=unit.text_char_count,
+                result_text_byte_count=unit.result_text_byte_count,
+                result_text_line_count=unit.result_text_line_count,
+                activity_text=unit.activity_text,
+                activity_text_kind=unit.activity_text_kind,
+                activity_text_status=unit.activity_text_status,
+                activity_text_metadata=activity_text_metadata,
                 receipt_metadata=receipt_metadata,
                 source_metadata=source_metadata,
                 source_refs=source_refs,
@@ -400,56 +407,22 @@ def _activity_packets(
     return tuple(packets)
 
 
-def _activity_units_by_ordinal(
-    *,
-    session: Session,
-    analysis_run_id: int,
-    episode_id: int,
-    ordinals: Iterable[int],
-) -> dict[int, ActivityUnit]:
-    wanted_ordinals = set(ordinals)
-    if not wanted_ordinals:
-        return {}
-    units = session.scalars(
-        select(ActivityUnit)
-        .where(
-            ActivityUnit.analysis_run_id == analysis_run_id,
-            ActivityUnit.episode_id == episode_id,
-        )
-        .order_by(ActivityUnit.ordinal, ActivityUnit.id),
-    )
-    return {unit.ordinal: unit for unit in units if unit.ordinal in wanted_ordinals}
-
-
-def _entries_by_id(session: Session, entry_ids: Iterable[int]) -> dict[int, TranscriptEntry]:
-    row_ids = tuple(sorted(set(entry_ids)))
-    if not row_ids:
-        return {}
-    entries = session.scalars(select(TranscriptEntry).where(TranscriptEntry.id.in_(row_ids)))
-    return {entry.id: entry for entry in entries if entry.id is not None}
-
-
-def _source_entry_ids(activities: Iterable[Mapping[str, Any]]) -> tuple[int, ...]:
-    ids: list[int] = []
-    for activity in activities:
-        ids.extend(int(value) for value in activity.get("source_entry_ids") or ())
-    return tuple(ids)
-
-
 def _source_refs(
     *,
-    activity: Mapping[str, Any],
     unit: ActivityUnit,
     episode: Episode,
-    entries: Mapping[int, TranscriptEntry],
+    activity_index: int,
+    source_entry_row_ids: tuple[int, ...],
+    claim_source_allowed: bool,
     receipt_metadata: Mapping[str, Any],
     source_metadata: Mapping[str, Any],
 ) -> tuple[SourceRef, ...]:
-    row_ids = tuple(int(value) for value in activity.get("source_entry_ids") or ())
-    excerpts = tuple(_bounded_text(entries[row_id].raw_line) for row_id in row_ids if row_id in entries)
+    if not claim_source_allowed or unit.activity_text is None:
+        return ()
+
     source_ref_id = (
         f"ar{unit.analysis_run_id}:ep{episode.ordinal}:act{unit.ordinal}:"
-        f"entries{','.join(str(row_id) for row_id in row_ids) or 'none'}"
+        f"entries{','.join(str(row_id) for row_id in source_entry_row_ids) or 'none'}"
     )
     return (
         SourceRef(
@@ -457,46 +430,43 @@ def _source_refs(
             activity_unit_id=unit.id,
             episode_id=episode.id,
             episode_ordinal=episode.ordinal,
-            activity_index=int(activity.get("index") or 0),
-            activity_kind=str(activity.get("kind") or unit.kind),
-            source_origin=str(activity.get("source_origin") or unit.source_origin),
-            claim_source_allowed=bool(activity.get("claim_source_allowed")),
-            source_entry_row_ids=row_ids,
-            byte_start=int(activity.get("byte_start") or unit.byte_start),
-            byte_end=int(activity.get("byte_end") or unit.byte_end),
-            excerpts=excerpts,
+            activity_index=activity_index,
+            activity_kind=unit.kind,
+            source_origin=unit.source_origin,
+            claim_source_allowed=claim_source_allowed,
+            source_entry_row_ids=source_entry_row_ids,
+            byte_start=unit.byte_start,
+            byte_end=unit.byte_end,
+            excerpts=(_bounded_text(unit.activity_text),),
             receipt_metadata=receipt_metadata,
             source_metadata=source_metadata,
         ),
     )
 
 
-def _included_manifest_activities(manifest: EpisodeManifest) -> tuple[Mapping[str, Any], ...]:
-    return tuple(
-        activity for activity in _activity_map(manifest).get("activities", []) if isinstance(activity, Mapping)
+def _activity_claim_source_allowed(unit: ActivityUnit) -> bool:
+    return (
+        unit.source_origin in {SOURCE_ORIGIN_LOCAL, SOURCE_ORIGIN_MIXED}
+        and unit.kind in CLAIM_SOURCE_ACTIVITY_KINDS
+        and unit.activity_text_status == ACTIVITY_TEXT_STATUS_COMPLETED
+        and unit.activity_text is not None
     )
 
 
-def _activity_map(manifest: EpisodeManifest) -> Mapping[str, Any]:
-    if isinstance(manifest.activity_map_json, Mapping):
-        return manifest.activity_map_json
-    return {}
-
-
-def _manifest_origin_counts(activity_map: Mapping[str, Any]) -> dict[str, int]:
-    value = activity_map.get("origin_counts")
-    if not isinstance(value, Mapping):
-        return _empty_origin_counts()
+def _activity_origin_counts(activities: tuple[ActivityPacket, ...]) -> dict[str, int]:
     counts = _empty_origin_counts()
-    for key in counts:
-        counts[key] = int(value.get(key) or 0)
+    for activity in activities:
+        key = f"{activity.source_origin}_activity_count"
+        if key not in counts:
+            key = f"{SOURCE_ORIGIN_UNKNOWN}_activity_count"
+        counts[key] += 1
     return counts
 
 
-def _tuple_of_mappings(value: Any) -> tuple[Mapping[str, int], ...]:
-    if not isinstance(value, list | tuple):
+def _all_activity_ranges(activities: tuple[ActivityPacket, ...]) -> tuple[Mapping[str, int], ...]:
+    if not activities:
         return ()
-    return tuple(item for item in value if isinstance(item, Mapping))
+    return ({"start_index": 0, "end_index": len(activities) - 1, "count": len(activities)},)
 
 
 def _bounded_text(value: str, limit: int = SOURCE_EXCERPT_CHAR_LIMIT) -> BoundedText:
