@@ -1,0 +1,229 @@
+"""Structured interpretation output contracts and pure validators."""
+
+from __future__ import annotations
+
+from collections.abc import Mapping
+from dataclasses import dataclass
+from typing import Annotated, Any, Literal
+
+from pydantic import BaseModel, ConfigDict, Field, StringConstraints, ValidationError
+
+from pi_memory.db import SOURCE_ORIGIN_LOCAL, SOURCE_ORIGIN_MIXED
+from pi_memory.interpretation.packets import InterpretationPacket, SourceRef
+
+NonEmptyString = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)]
+ClaimKind = Literal["decision", "constraint", "knowledge", "preference", "pattern", "action"]
+CitationUsage = Literal["summary", "claim", "open_question", "context"]
+_ALLOWED_CLAIM_SOURCE_ORIGINS = frozenset((SOURCE_ORIGIN_LOCAL, SOURCE_ORIGIN_MIXED))
+
+
+class InterpretationValidationError(Exception):
+    """Raised when structured interpretation output is invalid for a packet."""
+
+    @classmethod
+    def schema_error(cls) -> InterpretationValidationError:
+        return cls("Interpretation output does not match the required schema")
+
+    @classmethod
+    def identity_mismatch(cls, field_name: str) -> InterpretationValidationError:
+        return cls(f"Interpretation output {field_name} does not match the source packet")
+
+    @classmethod
+    def unknown_source_ref(cls, source_ref_id: str) -> InterpretationValidationError:
+        return cls(f"Interpretation output cites unknown source_ref_id: {source_ref_id}")
+
+    @classmethod
+    def packet_not_interpretable(cls) -> InterpretationValidationError:
+        return cls("Interpretation output cannot be applied to a non-interpretable source packet")
+
+    @classmethod
+    def unsupported_claim_sources(cls, claim_index: int) -> InterpretationValidationError:
+        return cls(f"Interpretation claim at index {claim_index} lacks local or mixed claim-source support")
+
+
+class InterpretationClaim(BaseModel):
+    """Source-backed claim extracted from an interpretation model response."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    source_ref_ids: list[NonEmptyString] = Field(min_length=1)
+    kind: ClaimKind
+    statement: NonEmptyString
+    confidence: float = Field(ge=0.0, le=1.0)
+
+
+class InterpretationOpenQuestion(BaseModel):
+    """Open question surfaced by an interpretation model response."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    question: NonEmptyString
+    source_ref_ids: list[NonEmptyString] = Field(default_factory=list)
+
+
+class InterpretationCitation(BaseModel):
+    """General citation emitted by an interpretation model response."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    source_ref_id: NonEmptyString
+    usage: CitationUsage
+
+
+class InterpretationOutput(BaseModel):
+    """Structured interpretation response expected from future model calls."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    analysis_run_id: int
+    analyzed_through_entry_id: int | None
+    analyzed_through_byte_offset: int = Field(ge=0)
+    goal: NonEmptyString | None = None
+    summary: NonEmptyString
+    claims: list[InterpretationClaim] = Field(default_factory=list)
+    open_questions: list[InterpretationOpenQuestion] = Field(default_factory=list)
+    citations: list[InterpretationCitation] = Field(default_factory=list)
+
+
+@dataclass(frozen=True)
+class ValidatedInterpretation:
+    """Validated interpretation payloads ready for future snapshot persistence."""
+
+    output: InterpretationOutput
+    interpretation_json: Mapping[str, Any]
+    citations_json: list[Mapping[str, Any]]
+
+
+def validate_interpretation_output(
+    output: InterpretationOutput | Mapping[str, Any],
+    packet: InterpretationPacket,
+) -> ValidatedInterpretation:
+    """Validate structured interpretation output against its source packet.
+
+    Args:
+        output: Pydantic output model or mapping produced by a model adapter.
+        packet: Read-only interpretation packet used as the output source.
+
+    Returns:
+        Frozen validated interpretation payload wrapper.
+
+    Raises:
+        InterpretationValidationError: If schema, packet identity, or citations are invalid.
+    """
+    model = _coerce_output(output)
+    _validate_packet_interpretable(packet)
+    _validate_packet_identity(model, packet)
+    source_refs = _source_refs_by_id(packet)
+    _validate_source_ref_ids(model, source_refs)
+    _validate_claim_support(model, source_refs)
+    return ValidatedInterpretation(
+        output=model,
+        interpretation_json=model.model_dump(mode="json", exclude_none=True),
+        citations_json=_citations_json(model, source_refs),
+    )
+
+
+def _coerce_output(output: InterpretationOutput | Mapping[str, Any]) -> InterpretationOutput:
+    if isinstance(output, InterpretationOutput):
+        return output
+    try:
+        return InterpretationOutput.model_validate(output)
+    except ValidationError as error:
+        raise InterpretationValidationError.schema_error() from error
+
+
+def _validate_packet_interpretable(packet: InterpretationPacket) -> None:
+    if not packet.readiness.can_call_model:
+        raise InterpretationValidationError.packet_not_interpretable()
+
+
+def _validate_packet_identity(output: InterpretationOutput, packet: InterpretationPacket) -> None:
+    readiness = packet.readiness
+    if output.analysis_run_id != readiness.latest_analysis_run_id:
+        raise InterpretationValidationError.identity_mismatch("analysis_run_id")
+    if output.analyzed_through_entry_id != readiness.analyzed_through_entry_id:
+        raise InterpretationValidationError.identity_mismatch("analyzed_through_entry_id")
+    if output.analyzed_through_byte_offset != readiness.analyzed_through_byte_offset:
+        raise InterpretationValidationError.identity_mismatch("analyzed_through_byte_offset")
+
+
+def _source_refs_by_id(packet: InterpretationPacket) -> dict[str, SourceRef]:
+    return {
+        source_ref.source_ref_id: source_ref
+        for episode_packet in packet.episode_packets
+        for source_ref in episode_packet.source_refs
+    }
+
+
+def _validate_source_ref_ids(output: InterpretationOutput, source_refs: Mapping[str, SourceRef]) -> None:
+    for source_ref_id in _cited_source_ref_ids(output):
+        if source_ref_id not in source_refs:
+            raise InterpretationValidationError.unknown_source_ref(source_ref_id)
+
+
+def _cited_source_ref_ids(output: InterpretationOutput) -> tuple[str, ...]:
+    source_ref_ids: list[str] = []
+    for claim in output.claims:
+        source_ref_ids.extend(claim.source_ref_ids)
+    for question in output.open_questions:
+        source_ref_ids.extend(question.source_ref_ids)
+    source_ref_ids.extend(citation.source_ref_id for citation in output.citations)
+    return tuple(source_ref_ids)
+
+
+def _validate_claim_support(output: InterpretationOutput, source_refs: Mapping[str, SourceRef]) -> None:
+    for index, claim in enumerate(output.claims):
+        if not any(_can_support_claim(source_refs[source_ref_id]) for source_ref_id in claim.source_ref_ids):
+            raise InterpretationValidationError.unsupported_claim_sources(index)
+
+
+def _can_support_claim(source_ref: SourceRef) -> bool:
+    return source_ref.claim_source_allowed and source_ref.source_origin in _ALLOWED_CLAIM_SOURCE_ORIGINS
+
+
+def _citations_json(
+    output: InterpretationOutput,
+    source_refs: Mapping[str, SourceRef],
+) -> list[Mapping[str, Any]]:
+    citations: list[Mapping[str, Any]] = []
+    for claim_index, claim in enumerate(output.claims):
+        citations.extend(
+            _enriched_citation(
+                source_refs[source_ref_id],
+                usage="claim",
+                claim_index=claim_index,
+                claim_kind=claim.kind,
+            )
+            for source_ref_id in claim.source_ref_ids
+        )
+    for question_index, question in enumerate(output.open_questions):
+        citations.extend(
+            _enriched_citation(
+                source_refs[source_ref_id],
+                usage="open_question",
+                open_question_index=question_index,
+            )
+            for source_ref_id in question.source_ref_ids
+        )
+    citations.extend(
+        _enriched_citation(source_refs[citation.source_ref_id], usage=citation.usage)
+        for citation in output.citations
+    )
+    return citations
+
+
+def _enriched_citation(source_ref: SourceRef, **metadata: Any) -> Mapping[str, Any]:
+    return {
+        **metadata,
+        "source_ref_id": source_ref.source_ref_id,
+        "activity_unit_id": source_ref.activity_unit_id,
+        "episode_id": source_ref.episode_id,
+        "episode_ordinal": source_ref.episode_ordinal,
+        "activity_index": source_ref.activity_index,
+        "activity_kind": source_ref.activity_kind,
+        "source_origin": source_ref.source_origin,
+        "claim_source_allowed": source_ref.claim_source_allowed,
+        "source_entry_row_ids": list(source_ref.source_entry_row_ids),
+        "byte_start": source_ref.byte_start,
+        "byte_end": source_ref.byte_end,
+    }
