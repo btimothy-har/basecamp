@@ -16,6 +16,7 @@ import uvicorn
 from pi_memory.constants import DEFAULT_HOST, DEFAULT_PORT, SERVICE_NAME
 from pi_memory.db import Database
 from pi_memory.ingest import IngestResult, ObserveInput, TranscriptFileMissingError, TranscriptIngestService
+from pi_memory.interpretation import SessionInterpretationInspectionService
 from pi_memory.jobs import (
     JobDispatcher,
     JobRunner,
@@ -62,6 +63,13 @@ class JobInspectionNotFoundError(click.ClickException):
 
     def __init__(self, job_id: int) -> None:
         super().__init__(f"Job {job_id} was not found")
+
+
+class SessionInterpretationInspectionNotFoundError(click.ClickException):
+    """Raised when the requested session interpretation snapshot does not exist."""
+
+    def __init__(self, session_id: str) -> None:
+        super().__init__(f"Interpretation snapshot for session {session_id} was not found")
 
 
 class StatusProbeError(Exception):
@@ -210,6 +218,37 @@ def recall(
         recall_database.close_if_open()
 
     _emit_recall_result(result, json_output=json_output)
+
+
+@main.command()
+@click.option(
+    "--session-id",
+    callback=lambda _ctx, _param, value: _require_non_empty(value),
+    required=True,
+    help="Stable Pi session id to inspect.",
+)
+@click.option(
+    "--db-url",
+    callback=lambda _ctx, _param, value: _require_non_empty(value),
+    required=True,
+    help="Database URL containing the interpretation snapshot.",
+)
+@click.option(
+    "--json",
+    "json_output",
+    is_flag=True,
+    help="Emit parseable JSON output.",
+)
+def interpretation(session_id: str, db_url: str, *, json_output: bool) -> None:
+    """Inspect a session interpretation snapshot directly from the database."""
+    interpretation_database = Database(db_url)
+    try:
+        payload = SessionInterpretationInspectionService(database=interpretation_database).get_by_session_id(session_id)
+        if payload is None:
+            raise SessionInterpretationInspectionNotFoundError(session_id)
+        _emit_interpretation(payload, json_output=json_output)
+    finally:
+        interpretation_database.close_if_open()
 
 
 @main.command("run-job")
@@ -455,6 +494,16 @@ def _emit_job(payload: dict[str, Any], *, json_output: bool) -> None:
         return
 
     click.echo("Job")
+    for name, value in payload.items():
+        click.echo(f"  {name}: {value}")
+
+
+def _emit_interpretation(payload: dict[str, Any], *, json_output: bool) -> None:
+    if json_output:
+        click.echo(json.dumps(payload, sort_keys=True))
+        return
+
+    click.echo("Session interpretation")
     for name, value in payload.items():
         click.echo(f"  {name}: {value}")
 

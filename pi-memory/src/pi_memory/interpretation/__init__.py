@@ -11,6 +11,10 @@ from pi_memory.interpretation.contracts import (
     ValidatedInterpretation,
     validate_interpretation_output,
 )
+from pi_memory.interpretation.inspection import (
+    SessionInterpretationInspectionService,
+    serialize_session_interpretation_snapshot,
+)
 from pi_memory.interpretation.interpreter import (
     DETERMINISTIC_INTERPRETER_MODE,
     DETERMINISTIC_INTERPRETER_MODEL,
@@ -55,9 +59,11 @@ __all__ = [
     "InterpretationValidationError",
     "InterpreterError",
     "InterpreterUnavailableError",
+    "SessionInterpretationInspectionService",
     "SessionInterpreter",
     "SourceRef",
     "ValidatedInterpretation",
     "build_interpretation_packet",
+    "serialize_session_interpretation_snapshot",
     "validate_interpretation_output",
 ]

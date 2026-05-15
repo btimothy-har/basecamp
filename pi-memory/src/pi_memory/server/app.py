@@ -17,6 +17,7 @@ from pi_memory.ingest import (
     TranscriptFileMissingError,
     TranscriptIngestService,
 )
+from pi_memory.interpretation import SessionInterpretationInspectionService
 from pi_memory.jobs import JobDispatcher, JobStore, enqueue_process_transcript_job, serialize_job
 from pi_memory.recall import RawTranscriptRecallResult, RawTranscriptSearchResult, RecallSearchService
 
@@ -106,6 +107,7 @@ def create_app(
     job_store: JobStore | None = None,
     dispatcher: JobDispatcher | None = None,
     recall_service: RecallSearchService | None = None,
+    interpretation_service: SessionInterpretationInspectionService | None = None,
 ) -> FastAPI:
     """Create the local Pi memory FastAPI application."""
     service_started_at = datetime.now(UTC) if started_at is None else started_at
@@ -121,6 +123,9 @@ def create_app(
     app.state.job_store = JobStore() if job_store is None else job_store
     app.state.dispatcher = dispatcher
     app.state.recall_service = RecallSearchService() if recall_service is None else recall_service
+    app.state.interpretation_service = (
+        SessionInterpretationInspectionService() if interpretation_service is None else interpretation_service
+    )
 
     @app.get("/health")
     def health() -> dict[str, str]:
@@ -161,6 +166,17 @@ def create_app(
         if job is None:
             raise HTTPException(status_code=404, detail=f"Job {job_id} was not found")
         return serialize_job(job)
+
+    @app.get("/v1/sessions/{session_id}/interpretation")
+    def get_session_interpretation(session_id: str) -> dict[str, object]:
+        """Return the latest safe interpretation snapshot for a Pi session."""
+        payload = app.state.interpretation_service.get_by_session_id(session_id)
+        if payload is None:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Interpretation snapshot for session {session_id} was not found",
+            )
+        return payload
 
     @app.post("/v1/recall/search", response_model=RecallSearchResponse)
     def recall_search(request: RecallSearchRequest) -> dict[str, object]:

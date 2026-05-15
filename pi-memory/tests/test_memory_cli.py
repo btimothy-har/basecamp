@@ -17,6 +17,7 @@ from pi_memory.db import (
     Job,
     MemorySession,
     Observation,
+    SessionInterpretationSnapshot,
     Transcript,
     TranscriptEntry,
 )
@@ -354,6 +355,66 @@ def create_job_transcript(database: Database) -> int:
         return transcript.id
 
 
+def create_interpretation_snapshot(database: Database) -> dict[str, object]:
+    now = datetime(2026, 1, 2, 3, 4, 5, tzinfo=UTC)
+    with database.session() as db_session:
+        memory_session = MemorySession(session_id="pi-session-interpret-cli")
+        transcript = Transcript(
+            session=memory_session,
+            path="/tmp/pi/cli-secret-transcript.jsonl",
+            cursor_offset=300,
+            file_size=300,
+        )
+        transcript.entries.append(
+            TranscriptEntry(
+                entry_id="cli-interpret-entry-1",
+                entry_type="message",
+                message_role="assistant",
+                raw_line='{"content":"SECRET_RAW_TRANSCRIPT_TOOL_OUTPUT"}',
+                byte_start=20,
+                byte_end=120,
+            ),
+        )
+        job = Job(kind=JOB_KIND_PROCESS_TRANSCRIPT, payload_json={"safe": True})
+        db_session.add_all([transcript, job])
+        db_session.flush()
+        snapshot = SessionInterpretationSnapshot(
+            session_id=memory_session.id,
+            transcript_id=transcript.id,
+            analysis_run_id=None,
+            job_id=job.id,
+            status="completed",
+            blocked_reason=None,
+            analyzed_through_entry_id=transcript.entries[0].id,
+            analyzed_through_byte_offset=120,
+            origin_counts_json={
+                "local_activity_count": 1,
+                "inherited_activity_count": 0,
+                "mixed_activity_count": 1,
+                "unknown_activity_count": 0,
+            },
+            claim_source_activity_count=2,
+            interpretation_json={"summary": "CLI safe interpretation", "claims": []},
+            citations_json=[{"claim_id": "claim-cli", "source_ref_id": "ar1:ep0:act0:entries1"}],
+            model_metadata_json={"provider": "deterministic", "model": "cli-test"},
+            prompt_version="phase5b-session-interpretation-v1",
+            schema_version=1,
+            created_at=now,
+            updated_at=now + timedelta(minutes=1),
+        )
+        db_session.add(snapshot)
+        db_session.flush()
+        return {
+            "session_row_id": memory_session.id,
+            "snapshot_id": snapshot.id,
+            "transcript_id": transcript.id,
+            "job_id": job.id,
+            "entry_id": transcript.entries[0].id,
+            "created_at": snapshot.created_at,
+            "updated_at": snapshot.updated_at,
+        }
+
+
 def create_recall_transcript(
     database: Database,
     *,
@@ -439,6 +500,103 @@ def parse_cli_time(value: str) -> datetime:
     if parsed.tzinfo is None:
         return parsed.replace(tzinfo=UTC)
     return parsed
+
+
+def test_interpretation_reports_json_snapshot(memory_database: Database) -> None:
+    expected = create_interpretation_snapshot(memory_database)
+
+    result = CliRunner().invoke(
+        cli_module.main,
+        [
+            "interpretation",
+            "--session-id",
+            "pi-session-interpret-cli",
+            "--db-url",
+            memory_database.url,
+            "--json",
+        ],
+    )
+
+    assert result.exit_code == 0
+    payload = json.loads(result.output)
+    assert payload == {
+        "session_id": "pi-session-interpret-cli",
+        "session_row_id": expected["session_row_id"],
+        "snapshot_id": expected["snapshot_id"],
+        "transcript_id": expected["transcript_id"],
+        "analysis_run_id": None,
+        "job_id": expected["job_id"],
+        "status": "completed",
+        "blocked_reason": None,
+        "analyzed_through_entry_id": expected["entry_id"],
+        "analyzed_through_byte_offset": 120,
+        "origin_counts": {
+            "local_activity_count": 1,
+            "inherited_activity_count": 0,
+            "mixed_activity_count": 1,
+            "unknown_activity_count": 0,
+        },
+        "claim_source_activity_count": 2,
+        "interpretation_json": {"summary": "CLI safe interpretation", "claims": []},
+        "citations_json": [{"claim_id": "claim-cli", "source_ref_id": "ar1:ep0:act0:entries1"}],
+        "model_metadata": {"provider": "deterministic", "model": "cli-test"},
+        "prompt_version": "phase5b-session-interpretation-v1",
+        "schema_version": 1,
+        "created_at": payload["created_at"],
+        "updated_at": payload["updated_at"],
+    }
+    assert parse_cli_time(payload["created_at"]) == expected["created_at"]
+    assert parse_cli_time(payload["updated_at"]) == expected["updated_at"]
+    assert "raw_line" not in payload
+    assert "transcript_path" not in payload
+    assert "/tmp/pi/cli-secret-transcript.jsonl" not in str(payload)
+    assert "SECRET_RAW_TRANSCRIPT_TOOL_OUTPUT" not in str(payload)
+
+
+def test_interpretation_reports_human_readable_snapshot(memory_database: Database) -> None:
+    expected = create_interpretation_snapshot(memory_database)
+
+    result = CliRunner().invoke(
+        cli_module.main,
+        [
+            "interpretation",
+            "--session-id",
+            "pi-session-interpret-cli",
+            "--db-url",
+            memory_database.url,
+        ],
+    )
+
+    assert result.exit_code == 0
+    fields = parse_observe_output(result.output)
+    assert "Session interpretation" in result.output
+    assert fields["session_id"] == "pi-session-interpret-cli"
+    assert fields["session_row_id"] == str(expected["session_row_id"])
+    assert fields["snapshot_id"] == str(expected["snapshot_id"])
+    assert fields["status"] == "completed"
+    assert fields["claim_source_activity_count"] == "2"
+    assert "origin_counts" in fields
+    assert "interpretation_json" in fields
+    assert "citations_json" in fields
+    assert "model_metadata" in fields
+    assert "/tmp/pi/cli-secret-transcript.jsonl" not in result.output
+    assert "SECRET_RAW_TRANSCRIPT_TOOL_OUTPUT" not in result.output
+
+
+def test_interpretation_missing_reports_click_error(memory_database: Database) -> None:
+    result = CliRunner().invoke(
+        cli_module.main,
+        [
+            "interpretation",
+            "--session-id",
+            "missing-session",
+            "--db-url",
+            memory_database.url,
+        ],
+    )
+
+    assert result.exit_code == 1
+    assert "Error: Interpretation snapshot for session missing-session was not found" in result.output
 
 
 def test_recall_reports_human_readable_results(memory_database: Database) -> None:
@@ -728,7 +886,9 @@ def test_run_job_succeeds_against_isolated_db(tmp_path) -> None:
             "cursor_offset": 10,
             "file_size": 10,
             "indexed_entry_count": 0,
+            "interpret_session_job_id": base_result["interpret_session_job_id"],
         }
+        assert isinstance(base_result["interpret_session_job_id"], int)
         assert isinstance(phase_5a["analysis_run_id"], int)
         assert phase_5a["status"] == ANALYSIS_STATUS_COMPLETED
         assert phase_5a["activity_count"] == 1

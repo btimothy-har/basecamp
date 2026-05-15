@@ -7,8 +7,17 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 from pi_memory.constants import SERVICE_NAME, SERVICE_VERSION
-from pi_memory.db import JOB_KIND_PROCESS_TRANSCRIPT, Database, Job, MemorySession, Transcript, TranscriptEntry
+from pi_memory.db import (
+    JOB_KIND_PROCESS_TRANSCRIPT,
+    Database,
+    Job,
+    MemorySession,
+    SessionInterpretationSnapshot,
+    Transcript,
+    TranscriptEntry,
+)
 from pi_memory.ingest import TranscriptIngestService
+from pi_memory.interpretation import SessionInterpretationInspectionService
 from pi_memory.jobs import JobStore
 from pi_memory.recall import RecallSearchService, index_transcript
 from pi_memory.server import create_app
@@ -38,6 +47,19 @@ def recall_client(tmp_path) -> Iterator[tuple[TestClient, Database]]:
     app = create_app(
         memory_dir=tmp_path / "memory",
         recall_service=RecallSearchService(database=database),
+    )
+    try:
+        yield TestClient(app), database
+    finally:
+        database.close_if_open()
+
+
+@pytest.fixture
+def interpretation_client(tmp_path) -> Iterator[tuple[TestClient, Database]]:
+    database = Database(sqlite_url(tmp_path / "interpretation.db"))
+    app = create_app(
+        memory_dir=tmp_path / "memory",
+        interpretation_service=SessionInterpretationInspectionService(database=database),
     )
     try:
         yield TestClient(app), database
@@ -103,6 +125,67 @@ def add_recall_transcript(
         if should_index:
             index_transcript(db_session, transcript_id)
     return transcript_id, entry_id
+
+
+def add_interpretation_snapshot(database: Database) -> dict[str, object]:
+    database.initialize()
+    now = datetime(2026, 1, 2, 3, 4, 5, tzinfo=UTC)
+    with database.session() as db_session:
+        memory_session = MemorySession(session_id="pi-session-interpret")
+        transcript = Transcript(
+            session=memory_session,
+            path="/tmp/pi/secret-transcript.jsonl",
+            cursor_offset=456,
+            file_size=456,
+        )
+        transcript.entries.append(
+            TranscriptEntry(
+                entry_id="interpret-entry-1",
+                entry_type="message",
+                message_role="assistant",
+                raw_line='{"content":"SECRET_RAW_TRANSCRIPT_TOOL_OUTPUT"}',
+                byte_start=100,
+                byte_end=200,
+            ),
+        )
+        job = Job(kind=JOB_KIND_PROCESS_TRANSCRIPT, payload_json={"safe": True})
+        db_session.add_all([transcript, job])
+        db_session.flush()
+        snapshot = SessionInterpretationSnapshot(
+            session_id=memory_session.id,
+            transcript_id=transcript.id,
+            analysis_run_id=None,
+            job_id=job.id,
+            status="completed",
+            blocked_reason=None,
+            analyzed_through_entry_id=transcript.entries[0].id,
+            analyzed_through_byte_offset=200,
+            origin_counts_json={
+                "local_activity_count": 2,
+                "inherited_activity_count": 1,
+                "mixed_activity_count": 0,
+                "unknown_activity_count": 0,
+            },
+            claim_source_activity_count=2,
+            interpretation_json={"summary": "Safe interpretation", "open_questions": []},
+            citations_json=[{"claim_id": "claim-1", "source_ref_id": "ar1:ep0:act0:entries1"}],
+            model_metadata_json={"provider": "deterministic", "model": "test"},
+            prompt_version="phase5b-session-interpretation-v1",
+            schema_version=1,
+            created_at=now,
+            updated_at=now + timedelta(minutes=1),
+        )
+        db_session.add(snapshot)
+        db_session.flush()
+        return {
+            "session_row_id": memory_session.id,
+            "snapshot_id": snapshot.id,
+            "transcript_id": transcript.id,
+            "job_id": job.id,
+            "entry_id": transcript.entries[0].id,
+            "created_at": snapshot.created_at,
+            "updated_at": snapshot.updated_at,
+        }
 
 
 def assert_observe_job_payload(
@@ -194,6 +277,61 @@ def test_status_endpoint_includes_service_metadata(tmp_path) -> None:
     assert data["host"] == "127.0.0.1"
     assert data["port"] == 9876
     assert data["memory_dir"] == str(tmp_path)
+
+
+def test_get_session_interpretation_endpoint_returns_safe_snapshot(
+    interpretation_client: tuple[TestClient, Database],
+) -> None:
+    client, database = interpretation_client
+    expected = add_interpretation_snapshot(database)
+
+    response = client.get("/v1/sessions/pi-session-interpret/interpretation")
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data == {
+        "session_id": "pi-session-interpret",
+        "session_row_id": expected["session_row_id"],
+        "snapshot_id": expected["snapshot_id"],
+        "transcript_id": expected["transcript_id"],
+        "analysis_run_id": None,
+        "job_id": expected["job_id"],
+        "status": "completed",
+        "blocked_reason": None,
+        "analyzed_through_entry_id": expected["entry_id"],
+        "analyzed_through_byte_offset": 200,
+        "origin_counts": {
+            "local_activity_count": 2,
+            "inherited_activity_count": 1,
+            "mixed_activity_count": 0,
+            "unknown_activity_count": 0,
+        },
+        "claim_source_activity_count": 2,
+        "interpretation_json": {"summary": "Safe interpretation", "open_questions": []},
+        "citations_json": [{"claim_id": "claim-1", "source_ref_id": "ar1:ep0:act0:entries1"}],
+        "model_metadata": {"provider": "deterministic", "model": "test"},
+        "prompt_version": "phase5b-session-interpretation-v1",
+        "schema_version": 1,
+        "created_at": data["created_at"],
+        "updated_at": data["updated_at"],
+    }
+    assert _parse_response_time(data["created_at"]) == expected["created_at"]
+    assert _parse_response_time(data["updated_at"]) == expected["updated_at"]
+    assert "raw_line" not in data
+    assert "transcript_path" not in data
+    assert "/tmp/pi/secret-transcript.jsonl" not in str(data)
+    assert "SECRET_RAW_TRANSCRIPT_TOOL_OUTPUT" not in str(data)
+
+
+def test_get_session_interpretation_endpoint_returns_404_when_absent(
+    interpretation_client: tuple[TestClient, Database],
+) -> None:
+    client, _database = interpretation_client
+
+    response = client.get("/v1/sessions/missing-session/interpretation")
+
+    assert response.status_code == 404
+    assert response.json()["detail"] == "Interpretation snapshot for session missing-session was not found"
 
 
 def test_recall_search_endpoint_returns_indexed_raw_transcript_hit(
