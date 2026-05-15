@@ -113,6 +113,33 @@ def test_initialize_keeps_transcript_entries_fts_virtual_table(database: Databas
     assert "FTS5" in create_sql.upper()
 
 
+def test_fresh_schema_includes_transcript_lineage_columns_indexes_and_constraints(database: Database) -> None:
+    inspector = inspect(database.engine)
+
+    columns = {column["name"]: column for column in inspector.get_columns("transcripts")}
+    indexes = {index["name"] for index in inspector.get_indexes("transcripts")}
+    foreign_keys = inspector.get_foreign_keys("transcripts")
+    constraints = {constraint["name"] for constraint in inspector.get_check_constraints("transcripts")}
+
+    assert columns["parent_transcript_path"]["nullable"] is True
+    assert columns["parent_transcript_id"]["nullable"] is True
+    assert {
+        "ix_transcripts_parent_transcript_id",
+        "ix_transcripts_parent_transcript_path",
+    }.issubset(indexes)
+    assert any(
+        foreign_key["constrained_columns"] == ["parent_transcript_id"]
+        and foreign_key["referred_table"] == "transcripts"
+        and foreign_key["options"].get("ondelete") == "SET NULL"
+        for foreign_key in foreign_keys
+    )
+    assert {
+        "ck_transcripts_parent_not_self",
+        "ck_transcripts_parent_id_requires_path",
+        "ck_transcripts_parent_path_non_empty",
+    }.issubset(constraints)
+
+
 def test_job_defaults_are_applied(database: Database) -> None:
     with database.session() as session:
         job = Job(kind=JOB_KIND_PROCESS_TRANSCRIPT)
@@ -593,6 +620,80 @@ def test_transcript_path_is_unique_per_session(database: Database) -> None:
                     Transcript(session=memory_session, path="/tmp/pi/transcript.jsonl"),
                     Transcript(session=memory_session, path="/tmp/pi/transcript.jsonl"),
                 ],
+            )
+
+
+def test_transcript_stores_unresolved_parent_path(database: Database) -> None:
+    with database.session() as session:
+        memory_session = MemorySession(session_id="pi-session-1")
+        transcript = Transcript(
+            session=memory_session,
+            path="/tmp/pi/child.jsonl",
+            parent_transcript_path="/tmp/pi/parent.jsonl",
+        )
+        session.add(transcript)
+        session.flush()
+        session.refresh(transcript)
+
+        assert transcript.parent_transcript_path == "/tmp/pi/parent.jsonl"
+        assert transcript.parent_transcript_id is None
+        assert transcript.parent_transcript is None
+
+
+def test_transcript_parent_relationships_preserve_children_on_parent_delete(database: Database) -> None:
+    with database.session() as session:
+        memory_session = MemorySession(session_id="pi-session-1")
+        parent = Transcript(session=memory_session, path="/tmp/pi/parent.jsonl")
+        child = Transcript(
+            session=memory_session,
+            path="/tmp/pi/child.jsonl",
+            parent_transcript=parent,
+            parent_transcript_path="/tmp/pi/parent.jsonl",
+        )
+        session.add_all([parent, child])
+        session.flush()
+
+        assert child.parent_transcript == parent
+        assert parent.child_transcripts == [child]
+
+        session.delete(parent)
+        session.flush()
+        session.refresh(child)
+
+        assert child.parent_transcript_path == "/tmp/pi/parent.jsonl"
+        assert child.parent_transcript_id is None
+        assert child.parent_transcript is None
+
+
+def test_transcript_rejects_invalid_parent_transcript_id(database: Database) -> None:
+    with pytest.raises(IntegrityError):
+        with database.session() as session:
+            memory_session = MemorySession(session_id="pi-session-1")
+            session.add(memory_session)
+            session.flush()
+            session.add(
+                Transcript(
+                    session_id=memory_session.id,
+                    path="/tmp/pi/child.jsonl",
+                    parent_transcript_path="/tmp/pi/missing-parent.jsonl",
+                    parent_transcript_id=12345,
+                ),
+            )
+
+
+def test_transcript_parent_id_requires_parent_path(database: Database) -> None:
+    with pytest.raises(IntegrityError):
+        with database.session() as session:
+            memory_session = MemorySession(session_id="pi-session-1")
+            parent = Transcript(session=memory_session, path="/tmp/pi/parent.jsonl")
+            session.add(parent)
+            session.flush()
+            session.add(
+                Transcript(
+                    session=memory_session,
+                    path="/tmp/pi/child.jsonl",
+                    parent_transcript_id=parent.id,
+                ),
             )
 
 

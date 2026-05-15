@@ -7,7 +7,7 @@ from contextlib import contextmanager
 from pathlib import Path
 
 from sqlalchemy import Engine, create_engine, event, text
-from sqlalchemy.engine import make_url
+from sqlalchemy.engine import Connection, make_url
 from sqlalchemy.orm import Session, sessionmaker
 
 from pi_memory.constants import MEMORY_DB_URL
@@ -61,6 +61,7 @@ class Database:
         with self.engine.begin() as connection:
             Base.metadata.create_all(connection)
             if _is_sqlite_url(self._url):
+                _upgrade_sqlite_transcript_lineage(connection)
                 connection.execute(
                     text(
                         """
@@ -99,6 +100,34 @@ class Database:
         path = _sqlite_file_path(self._url)
         if path is not None:
             path.parent.mkdir(parents=True, mode=0o700, exist_ok=True)
+
+
+def _upgrade_sqlite_transcript_lineage(connection: Connection) -> None:
+    """Add transcript lineage columns and indexes to existing SQLite databases."""
+    columns = {row[1] for row in connection.execute(text("PRAGMA table_info(transcripts)"))}
+    if "parent_transcript_path" not in columns:
+        connection.execute(text("ALTER TABLE transcripts ADD COLUMN parent_transcript_path VARCHAR"))
+    if "parent_transcript_id" not in columns:
+        connection.execute(
+            text(
+                """
+                ALTER TABLE transcripts
+                ADD COLUMN parent_transcript_id INTEGER REFERENCES transcripts(id) ON DELETE SET NULL
+                """,
+            ),
+        )
+
+    connection.execute(
+        text("CREATE INDEX IF NOT EXISTS ix_transcripts_parent_transcript_id ON transcripts (parent_transcript_id)"),
+    )
+    connection.execute(
+        text(
+            """
+            CREATE INDEX IF NOT EXISTS ix_transcripts_parent_transcript_path
+            ON transcripts (parent_transcript_path)
+            """,
+        ),
+    )
 
 
 def _configure_sqlite(engine: Engine) -> None:

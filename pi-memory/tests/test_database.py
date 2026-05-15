@@ -1,3 +1,4 @@
+import sqlite3
 from pathlib import Path
 
 import pytest
@@ -14,11 +15,40 @@ from pi_memory.db import (
     Transcript,
     TranscriptEntry,
 )
-from sqlalchemy import func, select, text
+from sqlalchemy import func, inspect, select, text
 
 
 def sqlite_url(path: Path) -> str:
     return f"sqlite:///{path}"
+
+
+def create_old_style_memory_database(path: Path) -> None:
+    with sqlite3.connect(path) as connection:
+        connection.executescript(
+            """
+            CREATE TABLE sessions (
+                id INTEGER NOT NULL,
+                session_id VARCHAR NOT NULL,
+                cwd VARCHAR,
+                PRIMARY KEY (id),
+                UNIQUE (session_id)
+            );
+
+            CREATE TABLE transcripts (
+                id INTEGER NOT NULL,
+                session_id INTEGER NOT NULL,
+                path VARCHAR NOT NULL,
+                cursor_offset INTEGER DEFAULT 0 NOT NULL,
+                file_size INTEGER,
+                PRIMARY KEY (id),
+                CONSTRAINT uq_transcripts_session_path UNIQUE (session_id, path),
+                FOREIGN KEY(session_id) REFERENCES sessions (id) ON DELETE CASCADE
+            );
+
+            CREATE INDEX ix_transcripts_session_cursor
+            ON transcripts (session_id, cursor_offset);
+            """,
+        )
 
 
 def test_initialize_creates_parent_directory_and_database_file(tmp_path) -> None:
@@ -92,6 +122,27 @@ def test_initialize_creates_transcript_entries_fts_projection(tmp_path) -> None:
         assert "CREATE VIRTUAL TABLE" in create_sql.upper()
         assert "FTS5" in create_sql.upper()
         assert "search_text" in create_sql
+    finally:
+        database.close_if_open()
+
+
+def test_initialize_upgrades_old_sqlite_transcripts_with_lineage_columns(tmp_path) -> None:
+    db_path = tmp_path / "memory.db"
+    create_old_style_memory_database(db_path)
+    database = Database(sqlite_url(db_path))
+
+    try:
+        database.initialize()
+        database.initialize()
+        inspector = inspect(database.engine)
+        columns = {column["name"] for column in inspector.get_columns("transcripts")}
+        indexes = {index["name"] for index in inspector.get_indexes("transcripts")}
+
+        assert {"parent_transcript_path", "parent_transcript_id"}.issubset(columns)
+        assert {
+            "ix_transcripts_parent_transcript_id",
+            "ix_transcripts_parent_transcript_path",
+        }.issubset(indexes)
     finally:
         database.close_if_open()
 

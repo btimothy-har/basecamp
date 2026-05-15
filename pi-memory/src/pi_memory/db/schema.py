@@ -173,12 +173,28 @@ class Transcript(Base):
     __tablename__ = "transcripts"
     __table_args__ = (
         UniqueConstraint("session_id", "path", name="uq_transcripts_session_path"),
+        CheckConstraint(
+            "parent_transcript_id IS NULL OR parent_transcript_id != id",
+            name="ck_transcripts_parent_not_self",
+        ),
+        CheckConstraint(
+            "parent_transcript_id IS NULL OR parent_transcript_path IS NOT NULL",
+            name="ck_transcripts_parent_id_requires_path",
+        ),
+        CheckConstraint(
+            "parent_transcript_path IS NULL OR length(parent_transcript_path) > 0",
+            name="ck_transcripts_parent_path_non_empty",
+        ),
         Index("ix_transcripts_session_cursor", "session_id", "cursor_offset"),
+        Index("ix_transcripts_parent_transcript_id", "parent_transcript_id"),
+        Index("ix_transcripts_parent_transcript_path", "parent_transcript_path"),
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)
     session_id: Mapped[int] = mapped_column(ForeignKey("sessions.id", ondelete="CASCADE"), index=True)
     path: Mapped[str]
+    parent_transcript_path: Mapped[str | None]
+    parent_transcript_id: Mapped[int | None] = mapped_column(ForeignKey("transcripts.id", ondelete="SET NULL"))
     cursor_offset: Mapped[int] = mapped_column(default=0, server_default="0")
     file_size: Mapped[int | None]
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
@@ -189,6 +205,11 @@ class Transcript(Base):
     )
 
     session: Mapped[MemorySession] = relationship(back_populates="transcripts")
+    parent_transcript: Mapped[Transcript | None] = relationship(
+        back_populates="child_transcripts",
+        remote_side=[id],
+    )
+    child_transcripts: Mapped[list[Transcript]] = relationship(back_populates="parent_transcript")
     observations: Mapped[list[Observation]] = relationship(back_populates="transcript")
     entries: Mapped[list[TranscriptEntry]] = relationship(back_populates="transcript", cascade="all, delete-orphan")
     analysis_runs: Mapped[list[AnalysisRun]] = relationship(back_populates="transcript", cascade="all, delete-orphan")
