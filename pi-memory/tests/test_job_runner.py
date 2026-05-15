@@ -7,10 +7,18 @@ from pathlib import Path
 import pytest
 from pi_memory.db import (
     ANALYSIS_STATUS_COMPLETED,
+    JOB_KIND_INTERPRET_SESSION,
     JOB_KIND_PROCESS_TRANSCRIPT,
     JOB_STATUS_CLAIMED,
     JOB_STATUS_COMPLETED,
     JOB_STATUS_FAILED,
+    JOB_STATUS_QUEUED,
+    SESSION_INTERPRETATION_BLOCKED_REASON_PARENT_TRANSCRIPT_NOT_INGESTED,
+    SESSION_INTERPRETATION_BLOCKED_REASON_PHASE_5A_NOT_READY,
+    SESSION_INTERPRETATION_BLOCKED_REASON_SOURCE_ORIGIN_INCOMPLETE,
+    SESSION_INTERPRETATION_STATUS_BLOCKED,
+    SESSION_INTERPRETATION_STATUS_COMPLETED,
+    SESSION_INTERPRETATION_STATUS_SKIPPED_NO_CLAIM_SOURCES,
     SOURCE_ORIGIN_INHERITED,
     SOURCE_ORIGIN_LOCAL,
     SOURCE_ORIGIN_MIXED,
@@ -22,10 +30,20 @@ from pi_memory.db import (
     EpisodeManifest,
     Job,
     MemorySession,
+    SessionInterpretationSnapshot,
     SessionSnapshotShell,
     Transcript,
     TranscriptEntry,
 )
+from pi_memory.interpretation import (
+    INTERPRETATION_PROMPT_VERSION,
+    INTERPRETATION_SCHEMA_VERSION,
+    DeterministicSessionInterpreter,
+    InterpretationResult,
+    InterpretationValidationError,
+    InterpreterUnavailableError,
+)
+from pi_memory.interpretation.packets import InterpretationPacket
 from pi_memory.jobs import (
     InvalidJobPayloadError,
     JobRunner,
@@ -58,6 +76,25 @@ def store(database: Database) -> JobStore:
 
 def at(hour: int, minute: int = 0) -> datetime:
     return datetime(2026, 1, 1, hour, minute, tzinfo=UTC)
+
+
+class RecordingInterpreter:
+    def __init__(self) -> None:
+        self.calls: list[InterpretationPacket] = []
+
+    def interpret(self, packet: InterpretationPacket) -> InterpretationResult:
+        self.calls.append(packet)
+        return DeterministicSessionInterpreter().interpret(packet)
+
+
+class FailingInterpreter:
+    def __init__(self, error: Exception | None = None) -> None:
+        self.calls = 0
+        self.error = error if error is not None else AssertionError("interpreter should not be called")
+
+    def interpret(self, _packet: InterpretationPacket) -> InterpretationResult:
+        self.calls += 1
+        raise self.error
 
 
 def create_transcript(database: Database) -> int:
@@ -306,6 +343,20 @@ def claim_process_transcript_job(store: JobStore, transcript_id: int | None = No
     claimed = store.claim_next("worker-1", now=at(10))
     assert claimed is not None
     return claimed
+
+
+def claim_interpret_session_job(store: JobStore, transcript_id: int | None = None, payload_json=None) -> Job:
+    if payload_json is None:
+        payload_json = {"transcript_id": transcript_id}
+    store.enqueue(JOB_KIND_INTERPRET_SESSION, payload_json=payload_json, due_at=at(10))
+    claimed = store.claim_next("worker-1", now=at(10))
+    assert claimed is not None
+    return claimed
+
+
+def process_transcript(database: Database, store: JobStore, transcript_id: int) -> Job:
+    claimed = claim_process_transcript_job(store, transcript_id)
+    return JobRunner(database=database).run(claimed.id, claimed.run_id, running_pid=123, now=at(10))
 
 
 def get_job(database: Database, job_id: int) -> Job:
@@ -717,6 +768,480 @@ def test_process_transcript_phase_5a_rerun_replaces_derived_rows(
     assert len(matches) == 1
 
 
+def test_interpret_session_completed_writes_snapshot_and_safe_result(
+    database: Database,
+    store: JobStore,
+) -> None:
+    transcript_id = create_transcript(database)
+    process_transcript(database, store, transcript_id)
+    interpreter = RecordingInterpreter()
+    claimed = claim_interpret_session_job(
+        store,
+        payload_json={"transcript_id": transcript_id, "analysis_run_id": None},
+    )
+
+    completed = JobRunner(database=database, interpreter=interpreter).run(
+        claimed.id,
+        claimed.run_id,
+        running_pid=123,
+        now=at(10),
+    )
+
+    assert completed.status == JOB_STATUS_COMPLETED
+    assert len(interpreter.calls) == 1
+    assert completed.result_json is not None
+    assert interpreter.calls[0].readiness.transcript_id == transcript_id
+    assert interpreter.calls[0].readiness.latest_analysis_run_id == completed.result_json["analysis_run_id"]
+    assert len(interpreter.calls[0].episode_packets) == 1
+    assert completed.result_json["status"] == SESSION_INTERPRETATION_STATUS_COMPLETED
+    assert completed.result_json["transcript_id"] == transcript_id
+    assert completed.result_json["session_id"] == "pi-session-1"
+    assert completed.result_json["claim_source_activity_count"] == 2
+    assert completed.result_json["is_stale"] is False
+    assert completed.result_json["prompt_version"] == INTERPRETATION_PROMPT_VERSION
+    assert completed.result_json["schema_version"] == INTERPRETATION_SCHEMA_VERSION
+    assert completed.result_json["model_metadata"] == {
+        "provider": "pi-memory",
+        "model": "deterministic-session-interpreter-v1",
+        "mode": "deterministic",
+    }
+    assert "interpretation_json" not in completed.result_json
+    assert "citations_json" not in completed.result_json
+    assert "do not expose" not in str(completed.result_json)
+    assert "find nebula notes" not in str(completed.result_json)
+
+    with database.session() as session:
+        snapshot = session.scalar(select(SessionInterpretationSnapshot))
+        assert snapshot is not None
+        assert snapshot.id == completed.result_json["snapshot_id"]
+        assert snapshot.status == SESSION_INTERPRETATION_STATUS_COMPLETED
+        assert snapshot.blocked_reason is None
+        assert snapshot.job_id == claimed.id
+        assert snapshot.transcript_id == transcript_id
+        assert snapshot.analysis_run_id == completed.result_json["analysis_run_id"]
+        assert snapshot.interpretation_json["summary"].startswith("Deterministic interpretation")
+        assert snapshot.citations_json
+        assert snapshot.model_metadata_json["provider"] == "pi-memory"
+
+
+def test_interpret_session_blocks_without_phase_5a_and_does_not_call_interpreter(
+    database: Database,
+    store: JobStore,
+) -> None:
+    transcript_id = create_transcript(database)
+    interpreter = FailingInterpreter()
+    claimed = claim_interpret_session_job(store, transcript_id)
+
+    completed = JobRunner(database=database, interpreter=interpreter).run(
+        claimed.id,
+        claimed.run_id,
+        running_pid=123,
+        now=at(10),
+    )
+
+    assert interpreter.calls == 0
+    assert completed.result_json is not None
+    assert completed.result_json["status"] == SESSION_INTERPRETATION_STATUS_BLOCKED
+    assert completed.result_json["blocked_reason"] == SESSION_INTERPRETATION_BLOCKED_REASON_PHASE_5A_NOT_READY
+    with database.session() as session:
+        snapshot = session.scalar(select(SessionInterpretationSnapshot))
+        assert snapshot is not None
+        assert snapshot.status == SESSION_INTERPRETATION_STATUS_BLOCKED
+        assert snapshot.blocked_reason == SESSION_INTERPRETATION_BLOCKED_REASON_PHASE_5A_NOT_READY
+        assert snapshot.interpretation_json == {}
+        assert snapshot.citations_json == []
+        assert snapshot.model_metadata_json == {}
+        assert snapshot.analysis_run_id is None
+
+
+def test_interpret_session_replaces_blocked_snapshot_after_phase_5a_becomes_ready(
+    database: Database,
+    store: JobStore,
+) -> None:
+    transcript_id = create_transcript(database)
+    blocked_claimed = claim_interpret_session_job(store, transcript_id)
+    blocked = JobRunner(database=database).run(
+        blocked_claimed.id,
+        blocked_claimed.run_id,
+        running_pid=123,
+        now=at(10),
+    )
+    assert blocked.result_json is not None
+    assert blocked.result_json["snapshot_id"] is not None
+
+    process_transcript(database, store, transcript_id)
+    completed_claimed = claim_interpret_session_job(store, transcript_id)
+    completed = JobRunner(database=database).run(
+        completed_claimed.id,
+        completed_claimed.run_id,
+        running_pid=123,
+        now=at(10),
+    )
+
+    assert completed.result_json is not None
+    assert completed.result_json["status"] == SESSION_INTERPRETATION_STATUS_COMPLETED
+    with database.session() as session:
+        snapshots = list(session.scalars(select(SessionInterpretationSnapshot)))
+        assert len(snapshots) == 1
+        assert snapshots[0].id == completed.result_json["snapshot_id"]
+        assert snapshots[0].job_id == completed_claimed.id
+        assert snapshots[0].job_id != blocked_claimed.id
+        assert snapshots[0].status == SESSION_INTERPRETATION_STATUS_COMPLETED
+
+
+def test_interpret_session_blocks_unresolved_parent_and_does_not_call_interpreter(
+    database: Database,
+    store: JobStore,
+) -> None:
+    transcript_id = create_unresolved_fork_child_transcript(database)
+    process_transcript(database, store, transcript_id)
+    interpreter = FailingInterpreter()
+    claimed = claim_interpret_session_job(store, transcript_id)
+
+    completed = JobRunner(database=database, interpreter=interpreter).run(
+        claimed.id,
+        claimed.run_id,
+        running_pid=123,
+        now=at(10),
+    )
+
+    assert interpreter.calls == 0
+    assert completed.result_json is not None
+    assert completed.result_json["status"] == SESSION_INTERPRETATION_STATUS_BLOCKED
+    assert completed.result_json["blocked_reason"] == (
+        SESSION_INTERPRETATION_BLOCKED_REASON_PARENT_TRANSCRIPT_NOT_INGESTED
+    )
+    assert completed.result_json["origin_counts"]["unknown_activity_count"] == 1
+    with database.session() as session:
+        snapshot = session.scalar(select(SessionInterpretationSnapshot))
+        assert snapshot is not None
+        assert snapshot.status == SESSION_INTERPRETATION_STATUS_BLOCKED
+        assert snapshot.blocked_reason == SESSION_INTERPRETATION_BLOCKED_REASON_PARENT_TRANSCRIPT_NOT_INGESTED
+        assert snapshot.claim_source_activity_count == 0
+
+
+def test_interpret_session_blocks_source_origin_incomplete_and_does_not_call_interpreter(
+    database: Database,
+    store: JobStore,
+) -> None:
+    transcript_id = create_transcript(database)
+    process_transcript(database, store, transcript_id)
+    with database.session() as session:
+        activity = session.scalar(select(ActivityUnit).where(ActivityUnit.transcript_id == transcript_id))
+        assert activity is not None
+        activity.source_origin = SOURCE_ORIGIN_UNKNOWN
+    interpreter = FailingInterpreter()
+    claimed = claim_interpret_session_job(store, transcript_id)
+
+    completed = JobRunner(database=database, interpreter=interpreter).run(
+        claimed.id,
+        claimed.run_id,
+        running_pid=123,
+        now=at(10),
+    )
+
+    assert interpreter.calls == 0
+    assert completed.result_json is not None
+    assert completed.result_json["status"] == SESSION_INTERPRETATION_STATUS_BLOCKED
+    assert completed.result_json["blocked_reason"] == SESSION_INTERPRETATION_BLOCKED_REASON_SOURCE_ORIGIN_INCOMPLETE
+    assert completed.result_json["origin_counts"]["unknown_activity_count"] == 1
+    with database.session() as session:
+        snapshot = session.scalar(select(SessionInterpretationSnapshot))
+        assert snapshot is not None
+        assert snapshot.status == SESSION_INTERPRETATION_STATUS_BLOCKED
+        assert snapshot.blocked_reason == SESSION_INTERPRETATION_BLOCKED_REASON_SOURCE_ORIGIN_INCOMPLETE
+        assert snapshot.origin_counts_json["unknown_activity_count"] == 1
+
+
+def test_interpret_session_skips_no_claim_sources_and_does_not_call_interpreter(
+    database: Database,
+    store: JobStore,
+) -> None:
+    transcript_id = create_empty_transcript(database)
+    process_transcript(database, store, transcript_id)
+    interpreter = FailingInterpreter()
+    claimed = claim_interpret_session_job(store, transcript_id)
+
+    completed = JobRunner(database=database, interpreter=interpreter).run(
+        claimed.id,
+        claimed.run_id,
+        running_pid=123,
+        now=at(10),
+    )
+
+    assert interpreter.calls == 0
+    assert completed.result_json is not None
+    assert completed.result_json["status"] == SESSION_INTERPRETATION_STATUS_SKIPPED_NO_CLAIM_SOURCES
+    assert completed.result_json["blocked_reason"] is None
+    assert completed.result_json["claim_source_activity_count"] == 0
+    with database.session() as session:
+        snapshot = session.scalar(select(SessionInterpretationSnapshot))
+        assert snapshot is not None
+        assert snapshot.status == SESSION_INTERPRETATION_STATUS_SKIPPED_NO_CLAIM_SOURCES
+        assert snapshot.blocked_reason is None
+        assert snapshot.interpretation_json == {}
+        assert snapshot.citations_json == []
+        assert snapshot.model_metadata_json == {}
+
+
+def test_interpret_session_replaces_skipped_snapshot_after_claim_source_arrives(
+    database: Database,
+    store: JobStore,
+) -> None:
+    transcript_id = create_empty_transcript(database)
+    process_transcript(database, store, transcript_id)
+    skipped_claimed = claim_interpret_session_job(store, transcript_id)
+    skipped = JobRunner(database=database).run(
+        skipped_claimed.id,
+        skipped_claimed.run_id,
+        running_pid=123,
+        now=at(10),
+    )
+    assert skipped.result_json is not None
+    assert skipped.result_json["status"] == SESSION_INTERPRETATION_STATUS_SKIPPED_NO_CLAIM_SOURCES
+    assert skipped.result_json["snapshot_id"] is not None
+
+    with database.session() as session:
+        transcript = session.get_one(Transcript, transcript_id)
+        raw_line = raw_message("user", "new claim source")
+        entry = TranscriptEntry(
+            transcript_id=transcript_id,
+            entry_id="entry-after-skip",
+            entry_type="message",
+            message_role="user",
+            raw_line=raw_line,
+            byte_start=0,
+            byte_end=len(raw_line.encode("utf-8")),
+        )
+        session.add(entry)
+        transcript.cursor_offset = entry.byte_end
+        transcript.file_size = entry.byte_end
+
+    process_transcript(database, store, transcript_id)
+    completed_claimed = claim_interpret_session_job(store, transcript_id)
+    completed = JobRunner(database=database).run(
+        completed_claimed.id,
+        completed_claimed.run_id,
+        running_pid=123,
+        now=at(10),
+    )
+
+    assert completed.result_json is not None
+    assert completed.result_json["status"] == SESSION_INTERPRETATION_STATUS_COMPLETED
+    with database.session() as session:
+        snapshots = list(session.scalars(select(SessionInterpretationSnapshot)))
+        assert len(snapshots) == 1
+        assert snapshots[0].id == completed.result_json["snapshot_id"]
+        assert snapshots[0].job_id == completed_claimed.id
+        assert snapshots[0].job_id != skipped_claimed.id
+        assert snapshots[0].status == SESSION_INTERPRETATION_STATUS_COMPLETED
+
+
+def test_interpret_session_stale_requested_analysis_noops_without_prior_snapshot(
+    database: Database,
+    store: JobStore,
+) -> None:
+    transcript_id = create_transcript(database)
+    process = process_transcript(database, store, transcript_id)
+    assert process.result_json is not None
+    analysis_run_id = process.result_json["phase_5a"]["analysis_run_id"]
+    interpreter = FailingInterpreter()
+    stale_claimed = claim_interpret_session_job(
+        store,
+        payload_json={"transcript_id": transcript_id, "analysis_run_id": analysis_run_id + 1},
+    )
+
+    stale_completed = JobRunner(database=database, interpreter=interpreter).run(
+        stale_claimed.id,
+        stale_claimed.run_id,
+        running_pid=123,
+        now=at(10),
+    )
+
+    assert interpreter.calls == 0
+    assert stale_completed.result_json is not None
+    assert stale_completed.result_json["status"] == "stale"
+    assert stale_completed.result_json["snapshot_id"] is None
+    with database.session() as session:
+        assert session.scalar(select(func.count()).select_from(SessionInterpretationSnapshot)) == 0
+
+
+def test_interpret_session_stale_requested_analysis_noops_without_replacing_snapshot(
+    database: Database,
+    store: JobStore,
+) -> None:
+    transcript_id = create_transcript(database)
+    first_process = process_transcript(database, store, transcript_id)
+    assert first_process.result_json is not None
+    old_analysis_run_id = first_process.result_json["phase_5a"]["analysis_run_id"]
+    first_interpret = claim_interpret_session_job(store, transcript_id)
+    first_completed = JobRunner(database=database).run(
+        first_interpret.id,
+        first_interpret.run_id,
+        running_pid=123,
+        now=at(10),
+    )
+    assert first_completed.result_json is not None
+    original_snapshot_id = first_completed.result_json["snapshot_id"]
+
+    stale_analysis_run_id = old_analysis_run_id + 1
+    interpreter = FailingInterpreter()
+    stale_claimed = claim_interpret_session_job(
+        store,
+        payload_json={"transcript_id": transcript_id, "analysis_run_id": stale_analysis_run_id},
+    )
+
+    stale_completed = JobRunner(database=database, interpreter=interpreter).run(
+        stale_claimed.id,
+        stale_claimed.run_id,
+        running_pid=123,
+        now=at(10),
+    )
+
+    assert interpreter.calls == 0
+    assert stale_completed.result_json is not None
+    assert stale_completed.result_json["status"] == "stale"
+    assert stale_completed.result_json["snapshot_id"] is None
+    assert stale_completed.result_json["analysis_run_id"] == old_analysis_run_id
+    assert stale_completed.result_json["requested_analysis_run_id"] == stale_analysis_run_id
+    with database.session() as session:
+        snapshots = list(session.scalars(select(SessionInterpretationSnapshot)))
+        assert len(snapshots) == 1
+        assert snapshots[0].id == original_snapshot_id
+        assert snapshots[0].job_id == first_interpret.id
+
+
+def test_interpret_session_replaces_prior_completed_snapshot(
+    database: Database,
+    store: JobStore,
+) -> None:
+    transcript_id = create_transcript(database)
+    process_transcript(database, store, transcript_id)
+    first_claimed = claim_interpret_session_job(store, transcript_id)
+    first_completed = JobRunner(database=database).run(
+        first_claimed.id,
+        first_claimed.run_id,
+        running_pid=123,
+        now=at(10),
+    )
+    assert first_completed.result_json is not None
+
+    second_claimed = claim_interpret_session_job(store, transcript_id)
+    second_completed = JobRunner(database=database).run(
+        second_claimed.id,
+        second_claimed.run_id,
+        running_pid=123,
+        now=at(10),
+    )
+    assert second_completed.result_json is not None
+
+    with database.session() as session:
+        snapshots = list(session.scalars(select(SessionInterpretationSnapshot)))
+        assert len(snapshots) == 1
+        assert snapshots[0].id == second_completed.result_json["snapshot_id"]
+        assert snapshots[0].job_id == second_claimed.id
+        assert snapshots[0].status == SESSION_INTERPRETATION_STATUS_COMPLETED
+
+
+def test_interpret_session_validation_failure_terminal_fails_and_preserves_prior_snapshot(
+    database: Database,
+    store: JobStore,
+) -> None:
+    transcript_id = create_transcript(database)
+    process_transcript(database, store, transcript_id)
+    first_claimed = claim_interpret_session_job(store, transcript_id)
+    first_completed = JobRunner(database=database).run(
+        first_claimed.id,
+        first_claimed.run_id,
+        running_pid=123,
+        now=at(10),
+    )
+    assert first_completed.result_json is not None
+    original_snapshot_id = first_completed.result_json["snapshot_id"]
+    bad_interpreter = FailingInterpreter(InterpreterUnavailableError.no_claim_sources())
+    failed_claimed = claim_interpret_session_job(store, transcript_id)
+
+    with pytest.raises(InterpreterUnavailableError):
+        JobRunner(database=database, interpreter=bad_interpreter).run(
+            failed_claimed.id,
+            failed_claimed.run_id,
+            running_pid=123,
+            now=at(10),
+        )
+
+    failed_job = get_job(database, failed_claimed.id)
+    assert failed_job.status == JOB_STATUS_FAILED
+    assert failed_job.attempts == 1
+    assert failed_job.last_error == "Interpretation packet has no local or mixed claim-source references"
+    with database.session() as session:
+        snapshots = list(session.scalars(select(SessionInterpretationSnapshot)))
+        assert len(snapshots) == 1
+        assert snapshots[0].id == original_snapshot_id
+        assert snapshots[0].job_id == first_claimed.id
+
+
+def test_interpret_session_validation_error_terminal_fails_and_preserves_prior_snapshot(
+    database: Database,
+    store: JobStore,
+) -> None:
+    transcript_id = create_transcript(database)
+    process_transcript(database, store, transcript_id)
+    first_claimed = claim_interpret_session_job(store, transcript_id)
+    first_completed = JobRunner(database=database).run(
+        first_claimed.id,
+        first_claimed.run_id,
+        running_pid=123,
+        now=at(10),
+    )
+    assert first_completed.result_json is not None
+    original_snapshot_id = first_completed.result_json["snapshot_id"]
+    bad_interpreter = FailingInterpreter(InterpretationValidationError.schema_error())
+    failed_claimed = claim_interpret_session_job(store, transcript_id)
+
+    with pytest.raises(InterpretationValidationError):
+        JobRunner(database=database, interpreter=bad_interpreter).run(
+            failed_claimed.id,
+            failed_claimed.run_id,
+            running_pid=123,
+            now=at(10),
+        )
+
+    failed_job = get_job(database, failed_claimed.id)
+    assert failed_job.status == JOB_STATUS_FAILED
+    assert failed_job.attempts == 1
+    assert failed_job.last_error == "Interpretation output does not match the required schema"
+    with database.session() as session:
+        snapshots = list(session.scalars(select(SessionInterpretationSnapshot)))
+        assert len(snapshots) == 1
+        assert snapshots[0].id == original_snapshot_id
+        assert snapshots[0].job_id == first_claimed.id
+
+
+def test_interpret_session_unexpected_interpreter_error_requeues_without_snapshot(
+    database: Database,
+    store: JobStore,
+) -> None:
+    transcript_id = create_transcript(database)
+    process_transcript(database, store, transcript_id)
+    failed_claimed = claim_interpret_session_job(store, transcript_id)
+    failing_interpreter = FailingInterpreter(RuntimeError("temporary model outage"))
+
+    with pytest.raises(RuntimeError, match="temporary model outage"):
+        JobRunner(database=database, interpreter=failing_interpreter).run(
+            failed_claimed.id,
+            failed_claimed.run_id,
+            running_pid=123,
+            now=at(10),
+        )
+
+    failed_job = get_job(database, failed_claimed.id)
+    assert failed_job.status == JOB_STATUS_QUEUED
+    assert failed_job.attempts == 1
+    assert failed_job.last_error == "temporary model outage"
+    with database.session() as session:
+        assert session.scalar(select(func.count()).select_from(SessionInterpretationSnapshot)) == 0
+
+
 def test_wrong_run_id_is_rejected_without_incrementing_attempts(database: Database, store: JobStore) -> None:
     transcript_id = create_transcript(database)
     claimed = claim_process_transcript_job(store, transcript_id)
@@ -745,6 +1270,36 @@ def test_bad_process_transcript_data_terminal_fails_after_start(
     expected_error: type[Exception],
 ) -> None:
     claimed = claim_process_transcript_job(store, payload_json=payload_json)
+
+    with pytest.raises(expected_error):
+        JobRunner(database=database).run(claimed.id, claimed.run_id, running_pid=123, now=at(10))
+
+    job = get_job(database, claimed.id)
+    assert job.status == JOB_STATUS_FAILED
+    assert job.attempts == 1
+    assert job.exit_code == 1
+    assert job.last_error
+
+
+@pytest.mark.parametrize(
+    ("payload_json", "expected_error"),
+    [
+        ([], InvalidJobPayloadError),
+        ({}, InvalidJobPayloadError),
+        ({"transcript_id": "not-an-int"}, InvalidJobPayloadError),
+        ({"transcript_id": True}, InvalidJobPayloadError),
+        ({"transcript_id": 1, "analysis_run_id": "not-an-int"}, InvalidJobPayloadError),
+        ({"transcript_id": 1, "analysis_run_id": False}, InvalidJobPayloadError),
+        ({"transcript_id": 99999}, TranscriptNotFoundError),
+    ],
+)
+def test_bad_interpret_session_data_terminal_fails_after_start(
+    database: Database,
+    store: JobStore,
+    payload_json: object,
+    expected_error: type[Exception],
+) -> None:
+    claimed = claim_interpret_session_job(store, payload_json=payload_json)
 
     with pytest.raises(expected_error):
         JobRunner(database=database).run(claimed.id, claimed.run_id, running_pid=123, now=at(10))
