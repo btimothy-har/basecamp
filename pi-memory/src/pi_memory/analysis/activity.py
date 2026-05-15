@@ -313,6 +313,18 @@ def _non_message_activity(entry: TranscriptEntry, payload: dict[str, Any], seque
             sequence,
         )
 
+    if entry.entry_type == "branch_summary":
+        return _ordered_activity(
+            _activity(
+                kind=ACTIVITY_KIND_CUSTOM_EVENT,
+                entry=entry,
+                source_metadata_json=_branch_summary_metadata(entry, payload),
+                sequence=sequence,
+            ),
+            entry.byte_start,
+            sequence,
+        )
+
     kind = ACTIVITY_KIND_SESSION_EVENT if entry.entry_type in SESSION_EVENT_TYPES else ACTIVITY_KIND_CUSTOM_EVENT
     return _ordered_activity(
         _activity(
@@ -664,6 +676,23 @@ def _compaction_metadata(payload: dict[str, Any]) -> dict[str, Any]:
     details = payload.get("details")
     if isinstance(details, dict):
         metadata["details_keys"] = sorted(details)
+    return metadata
+
+
+def _branch_summary_metadata(entry: TranscriptEntry, payload: dict[str, Any]) -> dict[str, Any]:
+    metadata = _event_metadata(entry, payload)
+    from_id = payload.get("fromId")
+    if isinstance(from_id, str):
+        metadata["fromId"] = from_id
+    summary = payload.get("summary")
+    if isinstance(summary, str):
+        metadata["summary"] = _preview(summary)
+    details = payload.get("details")
+    if isinstance(details, dict):
+        metadata["details_keys"] = sorted(details)
+    from_hook = payload.get("fromHook")
+    if isinstance(from_hook, bool):
+        metadata["fromHook"] = from_hook
     return metadata
 
 

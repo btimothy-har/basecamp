@@ -101,6 +101,18 @@ def entry(raw_payload: dict[str, object] | str, entry_type: str, message_role: s
             ["compaction", "Epsilon summary text."],
         ),
         (
+            entry(
+                {
+                    "type": "branch_summary",
+                    "summary": "Lambda branch summary text.",
+                    "fromId": "entry-parent",
+                    "details": {"hidden": "detail text should not be indexed"},
+                },
+                "branch_summary",
+            ),
+            ["branch_summary", "Lambda branch summary text.", "entry-parent"],
+        ),
+        (
             entry({"type": "session_info", "name": "Zeta session"}, "session_info"),
             ["session_info", "Zeta session"],
         ),
@@ -140,6 +152,23 @@ def test_extract_search_text_normalizes_whitespace() -> None:
     )
 
     assert extract_search_text(transcript_entry) == "message user Alpha beta gamma"
+
+
+def test_extract_search_text_branch_summary_omits_details_values() -> None:
+    transcript_entry = entry(
+        {
+            "type": "branch_summary",
+            "summary": "Starlight summary terms.",
+            "fromId": "entry-parent",
+            "details": {"secret": "forbidden detail terms"},
+        },
+        "branch_summary",
+    )
+
+    search_text = extract_search_text(transcript_entry)
+
+    assert search_text == "branch_summary Starlight summary terms. entry-parent"
+    assert "forbidden" not in search_text
 
 
 @pytest.mark.parametrize(
@@ -216,6 +245,58 @@ def test_index_transcript_is_idempotent_and_replaces_changed_content(database: D
     assert row_count == 1
     assert old_matches == []
     assert new_matches == [entry_id]
+
+
+def test_index_transcript_indexes_branch_summary_summary_terms(database: Database) -> None:
+    with database.session() as session:
+        memory_session = MemorySession(session_id="pi-session-1")
+        transcript = Transcript(session=memory_session, path="/tmp/pi/transcript.jsonl")
+        transcript.entries.append(
+            TranscriptEntry(
+                entry_id="entry-1",
+                entry_type="branch_summary",
+                raw_line=json.dumps(
+                    {
+                        "type": "branch_summary",
+                        "summary": "constellation fork provenance summary",
+                        "fromId": "entry-parent",
+                        "details": {"hidden": "shadowdetail"},
+                    },
+                ),
+                byte_start=0,
+                byte_end=100,
+            ),
+        )
+        session.add(transcript)
+        session.flush()
+        transcript_id = transcript.id
+        entry_id = transcript.entries[0].id
+
+        result = index_transcript(session, transcript_id)
+
+    assert result.total_entries == 1
+    assert result.indexed_entries == 1
+
+    with database.engine.connect() as connection:
+        summary_matches = (
+            connection.execute(
+                text("SELECT rowid FROM transcript_entries_fts WHERE transcript_entries_fts MATCH :query"),
+                {"query": "constellation"},
+            )
+            .scalars()
+            .all()
+        )
+        details_matches = (
+            connection.execute(
+                text("SELECT rowid FROM transcript_entries_fts WHERE transcript_entries_fts MATCH :query"),
+                {"query": "shadowdetail"},
+            )
+            .scalars()
+            .all()
+        )
+
+    assert summary_matches == [entry_id]
+    assert details_matches == []
 
 
 def test_index_transcript_rebuild_preserves_other_transcripts(database: Database) -> None:

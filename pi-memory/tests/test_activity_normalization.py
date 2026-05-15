@@ -5,6 +5,7 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from pi_memory.analysis import normalize_transcript_entries
+from pi_memory.analysis.activity import PREVIEW_CHAR_LIMIT
 from pi_memory.db import (
     ACTIVITY_KIND_ASSISTANT_TEXT,
     ACTIVITY_KIND_ASSISTANT_THINKING,
@@ -253,6 +254,67 @@ def test_compaction_metadata_extracts_bounded_fields() -> None:
     assert activity.source_metadata_json["summary"]["is_truncated"] is True
     assert activity.source_metadata_json["summary"]["char_count"] == len(summary)
     assert len(activity.source_metadata_json["summary"]["preview"]) == 1_200
+
+
+def test_branch_summary_becomes_custom_event_with_bounded_metadata() -> None:
+    summary = "Branch summary with searchable provenance context."
+    branch_summary = entry(
+        1,
+        {
+            "type": "branch_summary",
+            "id": "entry-1",
+            "fromId": "entry-parent",
+            "summary": summary,
+            "details": {"large": "do not persist", "small": True},
+            "fromHook": True,
+        },
+    )
+
+    activities = normalize_transcript_entries([branch_summary])
+
+    assert len(activities) == 1
+    activity = activities[0]
+    assert activity.kind == ACTIVITY_KIND_CUSTOM_EVENT
+    assert activity.source_metadata_json == {
+        "entry_type": "branch_summary",
+        "entry_id": "entry-1",
+        "payload_keys": ["details", "fromHook", "fromId", "id", "summary", "type"],
+        "fromId": "entry-parent",
+        "summary": {
+            "preview": summary,
+            "char_count": len(summary),
+            "is_truncated": False,
+        },
+        "details_keys": ["large", "small"],
+        "fromHook": True,
+    }
+
+
+def test_branch_summary_large_summary_is_truncated_without_raw_details_values() -> None:
+    hidden_tail = "DO_NOT_STORE_RAW_TAIL"
+    large_summary = "A" * PREVIEW_CHAR_LIMIT + hidden_tail
+    branch_summary = entry(
+        1,
+        {
+            "type": "branch_summary",
+            "id": "entry-1",
+            "fromId": "entry-parent",
+            "summary": large_summary,
+            "details": {"secret": "DETAIL_VALUE_SHOULD_NOT_APPEAR"},
+            "fromHook": False,
+        },
+    )
+
+    activities = normalize_transcript_entries([branch_summary])
+
+    metadata = activities[0].source_metadata_json
+    assert metadata["summary"]["is_truncated"] is True
+    assert metadata["summary"]["char_count"] == len(large_summary)
+    assert len(metadata["summary"]["preview"]) == PREVIEW_CHAR_LIMIT
+    metadata_json = json.dumps(metadata, sort_keys=True)
+    assert large_summary not in metadata_json
+    assert hidden_tail not in metadata_json
+    assert "DETAIL_VALUE_SHOULD_NOT_APPEAR" not in metadata_json
 
 
 def test_session_entry_becomes_session_event() -> None:

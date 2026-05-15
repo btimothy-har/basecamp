@@ -111,6 +111,8 @@ def _extract_payload_text(entry: TranscriptEntry, payload: dict[str, Any]) -> li
             return _custom_text(payload)
         case "compaction":
             return _string_field(payload, "summary")
+        case "branch_summary":
+            return _string_fields(payload, ["summary", "fromId"])
         case "session_info":
             return _string_field(payload, "name")
         case "model_change":
