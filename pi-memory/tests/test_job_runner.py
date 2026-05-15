@@ -52,7 +52,7 @@ from pi_memory.jobs import (
     TranscriptNotFoundError,
     UnsupportedJobKindError,
 )
-from pi_memory.settings import INTERPRETATION_MODEL_ENV, INTERPRETER_MODE_ENV
+from pi_memory.settings import INTERPRETATION_MODEL_ENV, MissingInterpretationModelError
 from sqlalchemy import delete, func, select, text
 
 
@@ -61,8 +61,7 @@ def sqlite_url(path: Path) -> str:
 
 
 @pytest.fixture(autouse=True)
-def default_interpreter_env(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv(INTERPRETER_MODE_ENV, "deterministic")
+def clear_interpretation_model_env(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv(INTERPRETATION_MODEL_ENV, raising=False)
 
 
@@ -463,12 +462,11 @@ def test_process_transcript_completes_and_writes_safe_result(database: Database,
     assert len(matches) == 1
 
 
-def test_process_transcript_with_invalid_pydantic_ai_config_still_succeeds_lazily(
+def test_process_transcript_without_interpretation_model_still_succeeds_lazily(
     database: Database,
     store: JobStore,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setenv(INTERPRETER_MODE_ENV, "pydantic-ai")
     monkeypatch.delenv(INTERPRETATION_MODEL_ENV, raising=False)
 
     def fail_factory() -> None:
@@ -497,7 +495,7 @@ def test_process_transcript_enqueued_interpret_job_writes_snapshot(
     claimed = store.claim_next("worker-interpret")
     assert claimed is not None
     assert claimed.id == interpret_session_job_id
-    completed = JobRunner(database=database).run(
+    completed = JobRunner(database=database, interpreter=DeterministicSessionInterpreter()).run(
         claimed.id,
         claimed.run_id,
         running_pid=123,
@@ -533,7 +531,7 @@ def test_process_transcript_enqueued_interpret_job_writes_snapshot_without_snaps
     claimed = store.claim_next("worker-interpret")
     assert claimed is not None
     assert claimed.id == interpret_session_job_id
-    completed = JobRunner(database=database).run(
+    completed = JobRunner(database=database, interpreter=DeterministicSessionInterpreter()).run(
         claimed.id,
         claimed.run_id,
         running_pid=123,
@@ -978,8 +976,7 @@ def test_interpret_session_explicit_interpreter_bypasses_configured_factory(
 ) -> None:
     transcript_id = create_transcript(database)
     process_transcript(database, store, transcript_id)
-    monkeypatch.setenv(INTERPRETER_MODE_ENV, "pydantic-ai")
-    monkeypatch.delenv(INTERPRETATION_MODEL_ENV, raising=False)
+    monkeypatch.setenv(INTERPRETATION_MODEL_ENV, "  ")
 
     def fail_factory() -> None:
         pytest.fail("explicit interpreter should bypass configured factory")
@@ -1021,7 +1018,6 @@ def test_interpret_session_configured_pydantic_ai_uses_configured_model(
                 prompt_version=deterministic.prompt_version,
             )
 
-    monkeypatch.setenv(INTERPRETER_MODE_ENV, "pydantic-ai")
     monkeypatch.setenv(INTERPRETATION_MODEL_ENV, "openai:gpt-4.1-mini")
     monkeypatch.setattr(
         "pi_memory.interpretation.factory.PydanticAISessionInterpreter",
@@ -1050,6 +1046,32 @@ def test_interpret_session_configured_pydantic_ai_uses_configured_model(
     assert len(FakePydanticAISessionInterpreter.instances) == 1
     assert FakePydanticAISessionInterpreter.instances[0].model == "openai:gpt-4.1-mini"
     assert len(FakePydanticAISessionInterpreter.instances[0].calls) == 1
+
+
+def test_interpret_session_without_model_requeues_without_snapshot(
+    database: Database,
+    store: JobStore,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    transcript_id = create_transcript(database)
+    process_transcript(database, store, transcript_id)
+    monkeypatch.delenv(INTERPRETATION_MODEL_ENV, raising=False)
+    claimed = claim_interpret_session_job(store, transcript_id)
+
+    with pytest.raises(MissingInterpretationModelError):
+        JobRunner(database=database).run(
+            claimed.id,
+            claimed.run_id,
+            running_pid=123,
+            now=at(10),
+        )
+
+    failed_job = get_job(database, claimed.id)
+    assert failed_job.status == JOB_STATUS_QUEUED
+    assert failed_job.attempts == 1
+    assert failed_job.last_error == "interpretation_model is required for session interpretation."
+    with database.session() as session:
+        assert session.scalar(select(func.count()).select_from(SessionInterpretationSnapshot)) == 0
 
 
 def test_interpret_session_blocks_without_phase_5a_and_does_not_call_interpreter(
@@ -1099,7 +1121,7 @@ def test_interpret_session_replaces_blocked_snapshot_after_phase_5a_becomes_read
 
     process_transcript(database, store, transcript_id)
     completed_claimed = claim_interpret_session_job(store, transcript_id)
-    completed = JobRunner(database=database).run(
+    completed = JobRunner(database=database, interpreter=DeterministicSessionInterpreter()).run(
         completed_claimed.id,
         completed_claimed.run_id,
         running_pid=123,
@@ -1247,7 +1269,7 @@ def test_interpret_session_replaces_skipped_snapshot_after_claim_source_arrives(
 
     process_transcript(database, store, transcript_id)
     completed_claimed = claim_interpret_session_job(store, transcript_id)
-    completed = JobRunner(database=database).run(
+    completed = JobRunner(database=database, interpreter=DeterministicSessionInterpreter()).run(
         completed_claimed.id,
         completed_claimed.run_id,
         running_pid=123,
@@ -1303,7 +1325,7 @@ def test_interpret_session_stale_requested_analysis_noops_without_replacing_snap
     assert first_process.result_json is not None
     old_analysis_run_id = first_process.result_json["phase_5a"]["analysis_run_id"]
     first_interpret = claim_interpret_session_job(store, transcript_id)
-    first_completed = JobRunner(database=database).run(
+    first_completed = JobRunner(database=database, interpreter=DeterministicSessionInterpreter()).run(
         first_interpret.id,
         first_interpret.run_id,
         running_pid=123,
@@ -1346,7 +1368,7 @@ def test_interpret_session_replaces_prior_completed_snapshot(
     transcript_id = create_transcript(database)
     process_transcript(database, store, transcript_id)
     first_claimed = claim_interpret_session_job(store, transcript_id)
-    first_completed = JobRunner(database=database).run(
+    first_completed = JobRunner(database=database, interpreter=DeterministicSessionInterpreter()).run(
         first_claimed.id,
         first_claimed.run_id,
         running_pid=123,
@@ -1355,7 +1377,7 @@ def test_interpret_session_replaces_prior_completed_snapshot(
     assert first_completed.result_json is not None
 
     second_claimed = claim_interpret_session_job(store, transcript_id)
-    second_completed = JobRunner(database=database).run(
+    second_completed = JobRunner(database=database, interpreter=DeterministicSessionInterpreter()).run(
         second_claimed.id,
         second_claimed.run_id,
         running_pid=123,
@@ -1378,7 +1400,7 @@ def test_interpret_session_validation_failure_terminal_fails_and_preserves_prior
     transcript_id = create_transcript(database)
     process_transcript(database, store, transcript_id)
     first_claimed = claim_interpret_session_job(store, transcript_id)
-    first_completed = JobRunner(database=database).run(
+    first_completed = JobRunner(database=database, interpreter=DeterministicSessionInterpreter()).run(
         first_claimed.id,
         first_claimed.run_id,
         running_pid=123,
@@ -1415,7 +1437,7 @@ def test_interpret_session_validation_error_terminal_fails_and_preserves_prior_s
     transcript_id = create_transcript(database)
     process_transcript(database, store, transcript_id)
     first_claimed = claim_interpret_session_job(store, transcript_id)
-    first_completed = JobRunner(database=database).run(
+    first_completed = JobRunner(database=database, interpreter=DeterministicSessionInterpreter()).run(
         first_claimed.id,
         first_claimed.run_id,
         running_pid=123,

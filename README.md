@@ -157,7 +157,7 @@ Existing local config files with the older project directory schema are migrated
 
 ### Pi memory interpretation
 
-`pi-memory` keeps session interpretation deterministic by default, so local installs do not make surprise model calls. Real model-backed interpretation is opt-in through PydanticAI using provider-neutral model strings.
+`pi-memory` session interpretation uses PydanticAI at runtime. Configure `interpretation_model` with any PydanticAI-supported model string before running interpretation jobs.
 
 Inspect the current settings:
 
@@ -166,27 +166,24 @@ pi-memory config
 pi-memory config --json
 ```
 
-Enable real interpretation with any PydanticAI-supported model:
+Set the interpretation model:
 
 ```bash
-pi-memory config \
-  --interpreter-mode pydantic-ai \
-  --interpretation-model anthropic:claude-sonnet-4-5
+pi-memory config --interpretation-model anthropic:claude-sonnet-4-5
 ```
 
-You can also use environment overrides, which are inherited by dispatcher-spawned `run-job` child processes:
+You can also use an environment override, which is inherited by dispatcher-spawned `run-job` child processes:
 
 ```bash
-export PI_MEMORY_INTERPRETER_MODE=pydantic-ai
-export PI_MEMORY_INTERPRETER_MODEL=openai:gpt-4o
+export PI_MEMORY_INTERPRETATION_MODEL=openai:gpt-4o
 ```
 
 `pi-memory` does not store API keys. Configure provider credentials with the environment variables expected by PydanticAI/provider packages, such as `ANTHROPIC_API_KEY` or `OPENAI_API_KEY`.
 
-Return to no-network deterministic interpretation:
+Clear the persisted model setting:
 
 ```bash
-pi-memory config --interpreter-mode deterministic --clear-interpretation-model
+pi-memory config --clear-interpretation-model
 ```
 
 ## Prompt System
@@ -254,7 +251,7 @@ The workspace service owns the `~/.worktrees/<repo>/<label>/` storage convention
 
 ## Semantic Memory (Observer)
 
-The `pi-observer` CLI and Pi package provide the current semantic recall UI across sessions. They ingest session transcripts, extract structured knowledge via LLM, and make it searchable. The newer `pi-memory/` package runs a local memory service for canonical transcript capture, raw recall, deterministic episode structure, and opt-in PydanticAI session interpretation; Pi recall-tool behavior still remains in `pi-observer/` for now.
+The `pi-observer` CLI and Pi package provide the current semantic recall UI across sessions. They ingest session transcripts, extract structured knowledge via LLM, and make it searchable. The newer `pi-memory/` package runs a local memory service for canonical transcript capture, raw recall, deterministic episode structure, and PydanticAI session interpretation; Pi recall-tool behavior still remains in `pi-observer/` for now.
 
 ### How it works
 

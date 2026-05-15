@@ -28,8 +28,8 @@ from pi_memory.jobs import (
 )
 from pi_memory.recall import RawTranscriptRecallResult, RawTranscriptSearchResult, RecallSearchService
 from pi_memory.server import ServerAlreadyRunningError, ServerState, create_app
-from pi_memory.settings import SUPPORTED_INTERPRETER_MODES, SettingsError
 from pi_memory.settings import Settings as MemorySettings
+from pi_memory.settings import SettingsError
 
 DEFAULT_STATUS_TIMEOUT_SECONDS = 1.0
 
@@ -120,11 +120,6 @@ def main() -> None:
 
 @main.command()
 @click.option(
-    "--interpreter-mode",
-    type=click.Choice(SUPPORTED_INTERPRETER_MODES),
-    help="Interpreter mode to persist in the config file.",
-)
-@click.option(
     "--interpretation-model",
     callback=lambda _ctx, _param, value: None if value is None else _require_non_empty(value),
     help="Provider-neutral PydanticAI provider:model string to persist.",
@@ -141,7 +136,6 @@ def main() -> None:
     help="Emit parseable JSON output.",
 )
 def config(
-    interpreter_mode: str | None,
     interpretation_model: str | None,
     *,
     clear_interpretation_model: bool,
@@ -154,17 +148,9 @@ def config(
     memory_settings = MemorySettings()
     try:
         if clear_interpretation_model:
-            memory_settings.update(
-                interpreter_mode=interpreter_mode,
-                interpretation_model=None,
-            )
+            memory_settings.update(interpretation_model=None)
         elif interpretation_model is not None:
-            memory_settings.update(
-                interpreter_mode=interpreter_mode,
-                interpretation_model=interpretation_model,
-            )
-        elif interpreter_mode is not None:
-            memory_settings.update(interpreter_mode=interpreter_mode)
+            memory_settings.update(interpretation_model=interpretation_model)
 
         _emit_config(memory_settings.as_dict(), path=str(memory_settings.path), json_output=json_output)
     except SettingsError as error:
