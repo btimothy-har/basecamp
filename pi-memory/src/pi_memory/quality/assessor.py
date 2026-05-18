@@ -18,6 +18,10 @@ except ImportError:
 
 from pi_memory.quality.contracts import (
     QUALITY_ASSESSMENT_SCHEMA_VERSION,
+    QUALITY_BOUNDED_TEXT_MAX_LENGTH,
+    QUALITY_CLAIM_ASSESSMENTS_MAX_LENGTH,
+    QUALITY_MISSING_HIGH_SIGNAL_ITEMS_MAX_LENGTH,
+    QUALITY_SEMANTIC_FINDINGS_MAX_LENGTH,
     QUALITY_STATUS_DEGRADED,
     QUALITY_STATUS_FAILED,
     QUALITY_STATUS_HEALTHY,
@@ -266,7 +270,14 @@ def _render_quality_assessment_prompt(packet: QualityPacket) -> str:
         "- Flag overbroad, vague, duplicate, noisy, or wrongly-kind claims.\n"
         "- Flag summary intent that is invented or not supported by the packet.\n"
         "- Identify missed high-signal decisions, constraints, preferences, patterns, knowledge, or actions.\n"
-        "- Findings and rationales must cite packet ids; do not quote long source text.\n\n"
+        "- Findings and rationales must cite packet ids; do not quote long source text.\n"
+        "- Output must satisfy these hard schema limits. Be concise rather than exhaustive.\n"
+        f"- Every message, rationale, and description string must be <= {QUALITY_BOUNDED_TEXT_MAX_LENGTH} "
+        "characters.\n"
+        f"- findings must contain <= {QUALITY_SEMANTIC_FINDINGS_MAX_LENGTH} items.\n"
+        f"- claim_assessments must contain <= {QUALITY_CLAIM_ASSESSMENTS_MAX_LENGTH} items.\n"
+        f"- missing_high_signal_items must contain <= {QUALITY_MISSING_HIGH_SIGNAL_ITEMS_MAX_LENGTH} items.\n"
+        "- overall_rationale may be null; if present, keep it to one short sentence.\n\n"
         f"Quality packet JSON:\n{packet_json}"
     )
 

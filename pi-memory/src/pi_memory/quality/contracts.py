@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
-from typing import Annotated, Any, Literal, TypeAlias
+from typing import Annotated, Any, Final, Literal, TypeAlias
 
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints, field_validator, model_validator
 
@@ -59,7 +59,15 @@ FINDING_CODE_MODEL_METADATA_MISSING = "model_metadata_missing"
 FINDING_CODE_PROMPT_VERSION_MISSING = "prompt_version_missing"
 FINDING_CODE_ANALYSIS_IDENTITY_MISMATCH = "analysis_identity_mismatch"
 
-BoundedText = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=500)]
+QUALITY_BOUNDED_TEXT_MAX_LENGTH: Final = 500
+QUALITY_SEMANTIC_FINDINGS_MAX_LENGTH: Final = 20
+QUALITY_CLAIM_ASSESSMENTS_MAX_LENGTH: Final = 50
+QUALITY_MISSING_HIGH_SIGNAL_ITEMS_MAX_LENGTH: Final = 20
+
+BoundedText = Annotated[
+    str,
+    StringConstraints(strip_whitespace=True, min_length=1, max_length=QUALITY_BOUNDED_TEXT_MAX_LENGTH),
+]
 FindingCode = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=120)]
 MetadataKey = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=80)]
 ReferenceId = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=160)]
@@ -160,9 +168,14 @@ class SemanticQualityAssessmentOutput(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     semantic_status: Literal["passed", "degraded", "failed"]
-    findings: list[QualityFinding] = Field(default_factory=list, max_length=20)
-    claim_assessments: list[QualityClaimAssessment] = Field(default_factory=list, max_length=50)
-    missing_high_signal_items: list[MissingHighSignalItem] = Field(default_factory=list, max_length=20)
+    findings: list[QualityFinding] = Field(default_factory=list, max_length=QUALITY_SEMANTIC_FINDINGS_MAX_LENGTH)
+    claim_assessments: list[QualityClaimAssessment] = Field(
+        default_factory=list, max_length=QUALITY_CLAIM_ASSESSMENTS_MAX_LENGTH
+    )
+    missing_high_signal_items: list[MissingHighSignalItem] = Field(
+        default_factory=list,
+        max_length=QUALITY_MISSING_HIGH_SIGNAL_ITEMS_MAX_LENGTH,
+    )
     overall_rationale: BoundedText | None = None
 
 

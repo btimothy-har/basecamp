@@ -9,6 +9,10 @@ from pi_memory.interpretation import BoundedText
 from pi_memory.quality import (
     DETERMINISTIC_QUALITY_ASSESSOR_MODE,
     PYDANTIC_AI_QUALITY_ASSESSOR_MODE,
+    QUALITY_BOUNDED_TEXT_MAX_LENGTH,
+    QUALITY_CLAIM_ASSESSMENTS_MAX_LENGTH,
+    QUALITY_MISSING_HIGH_SIGNAL_ITEMS_MAX_LENGTH,
+    QUALITY_SEMANTIC_FINDINGS_MAX_LENGTH,
     QUALITY_STATUS_HEALTHY,
     QUALITY_STATUS_NOT_ASSESSED,
     QUALITY_STATUS_REASON_SEMANTIC_ASSESSMENT_PENDING,
@@ -146,6 +150,13 @@ def test_pydantic_ai_quality_assessor_returns_report_and_safe_prompt(monkeypatch
         "schema_version": 1,
     }
     assert "Quality packet JSON" in prompts[0]
+    assert f"<= {QUALITY_BOUNDED_TEXT_MAX_LENGTH} characters" in prompts[0]
+    assert f"findings must contain <= {QUALITY_SEMANTIC_FINDINGS_MAX_LENGTH} items" in prompts[0]
+    assert f"claim_assessments must contain <= {QUALITY_CLAIM_ASSESSMENTS_MAX_LENGTH} items" in prompts[0]
+    assert (
+        f"missing_high_signal_items must contain <= {QUALITY_MISSING_HIGH_SIGNAL_ITEMS_MAX_LENGTH} items" in prompts[0]
+    )
+    assert "overall_rationale may be null" in prompts[0]
     assert "raw_line" not in prompts[0]
     assert os.environ["ANTHROPIC_API_KEY"] not in prompts[0]
 
