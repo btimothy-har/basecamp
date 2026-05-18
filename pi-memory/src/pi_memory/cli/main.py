@@ -26,6 +26,7 @@ from pi_memory.jobs import (
     enqueue_process_transcript_job,
     serialize_job,
 )
+from pi_memory.quality import QualityReportFilterError, SessionQualityReportInspectionService
 from pi_memory.recall import RawTranscriptRecallResult, RawTranscriptSearchResult, RecallSearchService
 from pi_memory.server import ServerAlreadyRunningError, ServerState, create_app
 from pi_memory.settings import Settings as MemorySettings
@@ -100,6 +101,13 @@ class SessionInterpretationInspectionNotFoundError(click.ClickException):
 
     def __init__(self, session_id: str) -> None:
         super().__init__(f"Interpretation snapshot for session {session_id} was not found")
+
+
+class QualityReportInspectionNotFoundError(click.ClickException):
+    """Raised when the requested quality report does not exist."""
+
+    def __init__(self, session_id: str) -> None:
+        super().__init__(f"Quality report for session {session_id} was not found")
 
 
 class StatusProbeError(Exception):
@@ -376,6 +384,132 @@ def interpretation(session_id: str, db_url: str, *, json_output: bool) -> None:
         interpretation_database.close_if_open()
 
 
+@main.command()
+@click.option(
+    "--session-id",
+    callback=lambda _ctx, _param, value: _require_non_empty(value),
+    required=True,
+    help="Stable Pi session id to inspect.",
+)
+@click.option(
+    "--db-url",
+    callback=lambda _ctx, _param, value: _require_non_empty(value),
+    required=True,
+    help="Database URL containing the quality report.",
+)
+@click.option(
+    "--json",
+    "json_output",
+    is_flag=True,
+    help="Emit parseable JSON output.",
+)
+def quality(session_id: str, db_url: str, *, json_output: bool) -> None:
+    """Inspect a session quality report directly from the database."""
+    quality_database = Database(db_url)
+    try:
+        payload = SessionQualityReportInspectionService(database=quality_database).get_by_session_id(session_id)
+        if payload is None:
+            raise QualityReportInspectionNotFoundError(session_id)
+        _emit_quality_report(payload, json_output=json_output)
+    finally:
+        quality_database.close_if_open()
+
+
+@main.command("quality-list")
+@click.option(
+    "--db-url",
+    callback=lambda _ctx, _param, value: _require_non_empty(value),
+    required=True,
+    help="Database URL containing quality reports.",
+)
+@click.option("--status", "quality_status", callback=lambda _ctx, _param, value: _optional_non_empty(value))
+@click.option("--derivation-status", callback=lambda _ctx, _param, value: _optional_non_empty(value))
+@click.option("--promotable/--not-promotable", default=None)
+@click.option("--current/--not-current", "is_current", default=None)
+@click.option("--repo-name", callback=lambda _ctx, _param, value: _optional_non_empty(value))
+@click.option("--worktree-label", callback=lambda _ctx, _param, value: _optional_non_empty(value))
+@click.option("--limit", type=click.IntRange(1, 100), default=10, show_default=True)
+@click.option("--offset", type=click.IntRange(0), default=0, show_default=True)
+@click.option("--json", "json_output", is_flag=True, help="Emit parseable JSON output.")
+def quality_list(
+    db_url: str,
+    quality_status: str | None,
+    derivation_status: str | None,
+    *,
+    promotable: bool | None,
+    is_current: bool | None,
+    repo_name: str | None,
+    worktree_label: str | None,
+    limit: int,
+    offset: int,
+    json_output: bool,
+) -> None:
+    """List quality reports directly from the database."""
+    quality_database = Database(db_url)
+    try:
+        payload = SessionQualityReportInspectionService(database=quality_database).list_reports(
+            quality_status=quality_status,
+            derivation_status=derivation_status,
+            promotable=promotable,
+            is_current=is_current,
+            repo_name=repo_name,
+            worktree_label=worktree_label,
+            limit=limit,
+            offset=offset,
+        ).to_payload()
+    except QualityReportFilterError as error:
+        raise click.ClickException(str(error)) from error
+    finally:
+        quality_database.close_if_open()
+    _emit_quality_report_list(payload, json_output=json_output)
+
+
+@main.command("quality-sample")
+@click.option(
+    "--db-url",
+    callback=lambda _ctx, _param, value: _require_non_empty(value),
+    required=True,
+    help="Database URL containing quality reports.",
+)
+@click.option("--count", type=click.IntRange(1, 100), default=5, show_default=True)
+@click.option("--status", "quality_status", callback=lambda _ctx, _param, value: _optional_non_empty(value))
+@click.option("--derivation-status", callback=lambda _ctx, _param, value: _optional_non_empty(value))
+@click.option("--promotable/--not-promotable", default=None)
+@click.option("--current/--not-current", "is_current", default=None)
+@click.option("--repo-name", callback=lambda _ctx, _param, value: _optional_non_empty(value))
+@click.option("--worktree-label", callback=lambda _ctx, _param, value: _optional_non_empty(value))
+@click.option("--json", "json_output", is_flag=True, help="Emit parseable JSON output.")
+def quality_sample(
+    db_url: str,
+    count: int,
+    quality_status: str | None,
+    derivation_status: str | None,
+    *,
+    promotable: bool | None,
+    is_current: bool | None,
+    repo_name: str | None,
+    worktree_label: str | None,
+    json_output: bool,
+) -> None:
+    """Sample quality reports directly from the database."""
+    quality_database = Database(db_url)
+    try:
+        payload = SessionQualityReportInspectionService(database=quality_database).sample_reports(
+            count=count,
+            quality_status=quality_status,
+            derivation_status=derivation_status,
+            promotable=promotable,
+            is_current=is_current,
+            repo_name=repo_name,
+            worktree_label=worktree_label,
+        )
+    except QualityReportFilterError as error:
+        raise click.ClickException(str(error)) from error
+    finally:
+        quality_database.close_if_open()
+    _emit_quality_report_list(payload, json_output=json_output)
+
+
 @main.command("run-job")
 @click.option("--job-id", required=True, type=int, help="Claimed job id to run.")
 @click.option(
@@ -546,6 +680,10 @@ def _require_non_empty(value: str) -> str:
     raise NonEmptyStringError()
 
 
+def _optional_non_empty(value: str | None) -> str | None:
+    return None if value is None else _require_non_empty(value)
+
+
 def _is_loopback_host(host: str) -> bool:
     try:
         return ipaddress.ip_address(host).is_loopback
@@ -675,6 +813,39 @@ def _emit_interpretation(payload: dict[str, Any], *, json_output: bool) -> None:
     click.echo("Session interpretation")
     for name, value in payload.items():
         click.echo(f"  {name}: {value}")
+
+
+def _emit_quality_report(payload: dict[str, Any], *, json_output: bool) -> None:
+    if json_output:
+        click.echo(json.dumps(payload, sort_keys=True))
+        return
+
+    click.echo("Session quality report")
+    for name, value in payload.items():
+        if isinstance(value, dict | list):
+            click.echo(f"  {name}: {json.dumps(value, sort_keys=True)}")
+        else:
+            click.echo(f"  {name}: {value}")
+
+
+def _emit_quality_report_list(payload: dict[str, Any], *, json_output: bool) -> None:
+    if json_output:
+        click.echo(json.dumps(payload, sort_keys=True))
+        return
+
+    results = payload.get("results")
+    reports = results if isinstance(results, list) else []
+    pagination = payload.get("pagination") if isinstance(payload.get("pagination"), dict) else {}
+    total = pagination.get("total", len(reports))
+    click.echo(f"Quality reports ({len(reports)} shown, total {total})")
+    for index, report in enumerate(reports, start=1):
+        if not isinstance(report, dict):
+            continue
+        click.echo(
+            f"{index}. session={report.get('session_id')} status={report.get('quality_status')} "
+            f"current={report.get('is_current')} promotable={report.get('promotable')}",
+        )
+        click.echo(f"   snapshot={report.get('snapshot_id')} report={report.get('quality_report_id')}")
 
 
 def _emit_recall_result(result: RawTranscriptSearchResult, *, json_output: bool) -> None:

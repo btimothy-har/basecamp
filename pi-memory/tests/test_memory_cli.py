@@ -17,6 +17,7 @@ from pi_memory.db import (
     Job,
     MemorySession,
     Observation,
+    SessionInterpretationQualityReport,
     SessionInterpretationSnapshot,
     Transcript,
     TranscriptEntry,
@@ -91,6 +92,46 @@ def parse_observe_output(output: str) -> dict[str, str]:
         name, value = line.strip().split(": ", maxsplit=1)
         fields[name] = value
     return fields
+
+
+def add_quality_report(
+    database: Database,
+    *,
+    session_id: str = "pi-session-quality",
+    quality_status: str = "healthy",
+    quality_reason: str | None = None,
+    promotable: bool = True,
+) -> dict[str, object]:
+    with database.session() as session:
+        memory_session = MemorySession(session_id=session_id, repo_name="basecamp", worktree_label="main")
+        transcript = Transcript(session=memory_session, path=f"/tmp/pi/{session_id}.jsonl")
+        snapshot = SessionInterpretationSnapshot(
+            session=memory_session,
+            transcript=transcript,
+            status="completed",
+            interpretation_json={"summary": "Safe interpretation"},
+            citations_json=[],
+            model_metadata_json={"provider": "test", "model": "interpret"},
+            prompt_version="phase5b-test",
+            schema_version=1,
+        )
+        report = SessionInterpretationQualityReport(
+            snapshot=snapshot,
+            quality_status=quality_status,
+            quality_reason=quality_reason,
+            derivation_status="current",
+            deterministic_status="passed",
+            semantic_status="passed" if quality_status == "healthy" else "degraded",
+            promotable=promotable,
+            semantic_findings_json=[] if quality_status == "healthy" else [{"severity": "warning"}],
+            model_metadata_json={"provider": "test", "model": "quality", "mode": "deterministic"},
+            assessment_metadata_json={"deterministic_check_version": 1},
+            prompt_version="phase5c-test",
+            schema_version=1,
+        )
+        session.add(report)
+        session.flush()
+        return {"session_id": session_id, "quality_report_id": report.id, "snapshot_id": snapshot.id}
 
 
 def test_config_reports_effective_defaults(tmp_path, monkeypatch) -> None:
@@ -866,6 +907,116 @@ def test_interpretation_missing_reports_click_error(memory_database: Database) -
 
     assert result.exit_code == 1
     assert "Error: Interpretation snapshot for session missing-session was not found" in result.output
+
+
+def test_quality_reports_json_report(memory_database: Database) -> None:
+    expected = add_quality_report(memory_database)
+
+    result = CliRunner().invoke(
+        cli_module.main,
+        [
+            "quality",
+            "--session-id",
+            str(expected["session_id"]),
+            "--db-url",
+            memory_database.url,
+            "--json",
+        ],
+    )
+
+    assert result.exit_code == 0
+    payload = json.loads(result.output)
+    assert payload["session_id"] == expected["session_id"]
+    assert payload["quality_report_id"] == expected["quality_report_id"]
+    assert payload["snapshot_id"] == expected["snapshot_id"]
+    assert payload["quality_status"] == "healthy"
+    assert payload["assessment_state"] == "complete"
+    assert payload["is_current"] is True
+    assert payload["promotable"] is True
+    assert "raw_line" not in str(payload)
+    assert "/tmp/pi" not in str(payload)
+
+
+def test_quality_reports_human_readable_report(memory_database: Database) -> None:
+    expected = add_quality_report(memory_database)
+
+    result = CliRunner().invoke(
+        cli_module.main,
+        ["quality", "--session-id", str(expected["session_id"]), "--db-url", memory_database.url],
+    )
+
+    assert result.exit_code == 0
+    fields = parse_observe_output(result.output)
+    assert "Session quality report" in result.output
+    assert fields["session_id"] == expected["session_id"]
+    assert fields["quality_status"] == "healthy"
+    assert fields["promotable"] == "True"
+
+
+def test_quality_missing_reports_click_error(memory_database: Database) -> None:
+    result = CliRunner().invoke(
+        cli_module.main,
+        ["quality", "--session-id", "missing-session", "--db-url", memory_database.url],
+    )
+
+    assert result.exit_code == 1
+    assert "Error: Quality report for session missing-session was not found" in result.output
+
+
+def test_quality_list_reports_json_filters(memory_database: Database) -> None:
+    add_quality_report(memory_database, session_id="healthy-1")
+    add_quality_report(
+        memory_database,
+        session_id="degraded-1",
+        quality_status="degraded",
+        quality_reason="semantic_degraded",
+        promotable=False,
+    )
+
+    result = CliRunner().invoke(
+        cli_module.main,
+        [
+            "quality-list",
+            "--db-url",
+            memory_database.url,
+            "--status",
+            "degraded",
+            "--not-promotable",
+            "--json",
+        ],
+    )
+
+    assert result.exit_code == 0
+    payload = json.loads(result.output)
+    assert payload["pagination"]["total"] == 1
+    assert payload["results"][0]["session_id"] == "degraded-1"
+    assert payload["results"][0]["quality_status"] == "degraded"
+    assert payload["results"][0]["promotable"] is False
+
+
+def test_quality_sample_reports_json_count(memory_database: Database) -> None:
+    for index in range(3):
+        add_quality_report(memory_database, session_id=f"sample-{index}")
+
+    result = CliRunner().invoke(
+        cli_module.main,
+        ["quality-sample", "--db-url", memory_database.url, "--count", "2", "--json"],
+    )
+
+    assert result.exit_code == 0
+    payload = json.loads(result.output)
+    assert payload["count"] == 2
+    assert len(payload["results"]) == 2
+
+
+def test_quality_list_rejects_invalid_filter(memory_database: Database) -> None:
+    result = CliRunner().invoke(
+        cli_module.main,
+        ["quality-list", "--db-url", memory_database.url, "--status", "invalid"],
+    )
+
+    assert result.exit_code == 1
+    assert "Invalid quality_status" in result.output
 
 
 def test_recall_reports_human_readable_results(memory_database: Database) -> None:

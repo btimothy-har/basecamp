@@ -66,6 +66,12 @@ from pi_memory.quality.contracts import (
 )
 from pi_memory.quality.deterministic import assess_deterministic_interpretation_quality
 from pi_memory.quality.factory import create_quality_assessor
+from pi_memory.quality.inspection import (
+    QualityReportFilterError,
+    QualityReportListResult,
+    SessionQualityReportInspectionService,
+    serialize_quality_report,
+)
 from pi_memory.quality.packets import (
     QUALITY_ACTIVITY_TEXT_CHAR_LIMIT,
     QUALITY_INTERPRETATION_TEXT_CHAR_LIMIT,
@@ -136,16 +142,20 @@ __all__ = [
     "QualityPacket",
     "QualityPacketReadiness",
     "QualityReportDraft",
+    "QualityReportFilterError",
+    "QualityReportListResult",
     "SEMANTIC_STATUS_ASSESSMENT_FAILED",
     "SEMANTIC_STATUS_DEGRADED",
     "SEMANTIC_STATUS_FAILED",
     "SEMANTIC_STATUS_NOT_ASSESSED",
     "SEMANTIC_STATUS_PASSED",
     "SemanticQualityAssessmentOutput",
+    "SessionQualityReportInspectionService",
     "assess_deterministic_interpretation_quality",
     "build_quality_packet",
     "compute_promotable",
     "create_quality_assessor",
     "quality_packet_prompt_data",
+    "serialize_quality_report",
     "validate_quality_assessment_output",
 ]
