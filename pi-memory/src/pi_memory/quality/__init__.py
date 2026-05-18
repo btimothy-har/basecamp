@@ -1,6 +1,21 @@
 """Quality assessment support for pi-memory."""
 
-from pi_memory.quality.assessor import PydanticAIQualityAssessor, QualityAssessor
+from pi_memory.quality.assessor import (
+    DETERMINISTIC_QUALITY_ASSESSOR_MODE,
+    DETERMINISTIC_QUALITY_ASSESSOR_MODEL,
+    PYDANTIC_AI_QUALITY_ASSESSOR_MODE,
+    QUALITY_ASSESSMENT_PROMPT_VERSION,
+    DeterministicQualityAssessor,
+    PydanticAIDependencyError,
+    PydanticAIQualityAssessmentError,
+    PydanticAIQualityAssessor,
+    QualityAssessmentError,
+    QualityAssessmentResult,
+    QualityAssessmentUnavailableError,
+    QualityAssessmentValidationError,
+    QualityAssessor,
+    validate_quality_assessment_output,
+)
 from pi_memory.quality.contracts import (
     DETERMINISTIC_STATUS_FAILED,
     DETERMINISTIC_STATUS_NOT_APPLICABLE,
@@ -51,8 +66,20 @@ from pi_memory.quality.contracts import (
 )
 from pi_memory.quality.deterministic import assess_deterministic_interpretation_quality
 from pi_memory.quality.factory import create_quality_assessor
+from pi_memory.quality.packets import (
+    QUALITY_ACTIVITY_TEXT_CHAR_LIMIT,
+    QUALITY_INTERPRETATION_TEXT_CHAR_LIMIT,
+    QUALITY_MAX_ACTIVITIES,
+    QualityActivityContext,
+    QualityPacket,
+    QualityPacketReadiness,
+    build_quality_packet,
+    quality_packet_prompt_data,
+)
 
 __all__ = [
+    "DETERMINISTIC_QUALITY_ASSESSOR_MODE",
+    "DETERMINISTIC_QUALITY_ASSESSOR_MODEL",
     "DETERMINISTIC_STATUS_FAILED",
     "DETERMINISTIC_STATUS_NOT_APPLICABLE",
     "DETERMINISTIC_STATUS_PASSED",
@@ -73,8 +100,16 @@ __all__ = [
     "FINDING_CODE_SUMMARY_EMPTY",
     "FINDING_CODE_TOOL_SUMMARY_INCOMPLETE",
     "MissingHighSignalItem",
+    "DeterministicQualityAssessor",
+    "PYDANTIC_AI_QUALITY_ASSESSOR_MODE",
+    "PydanticAIDependencyError",
+    "PydanticAIQualityAssessmentError",
     "PydanticAIQualityAssessor",
+    "QUALITY_ACTIVITY_TEXT_CHAR_LIMIT",
+    "QUALITY_ASSESSMENT_PROMPT_VERSION",
     "QUALITY_ASSESSMENT_SCHEMA_VERSION",
+    "QUALITY_INTERPRETATION_TEXT_CHAR_LIMIT",
+    "QUALITY_MAX_ACTIVITIES",
     "QUALITY_STATUS_ASSESSMENT_FAILED",
     "QUALITY_STATUS_DEGRADED",
     "QUALITY_STATUS_FAILED",
@@ -89,10 +124,17 @@ __all__ = [
     "QUALITY_STATUS_REASON_SEMANTIC_FAILED",
     "QUALITY_STATUS_REASON_SKIPPED",
     "QUALITY_STATUS_REASON_SUPERSEDED",
+    "QualityActivityContext",
+    "QualityAssessmentError",
+    "QualityAssessmentResult",
+    "QualityAssessmentUnavailableError",
+    "QualityAssessmentValidationError",
     "QualityAssessor",
     "QualityClaimAssessment",
     "QualityFinding",
     "QualityFindingReference",
+    "QualityPacket",
+    "QualityPacketReadiness",
     "QualityReportDraft",
     "SEMANTIC_STATUS_ASSESSMENT_FAILED",
     "SEMANTIC_STATUS_DEGRADED",
@@ -101,6 +143,9 @@ __all__ = [
     "SEMANTIC_STATUS_PASSED",
     "SemanticQualityAssessmentOutput",
     "assess_deterministic_interpretation_quality",
+    "build_quality_packet",
     "compute_promotable",
     "create_quality_assessor",
+    "quality_packet_prompt_data",
+    "validate_quality_assessment_output",
 ]

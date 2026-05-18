@@ -2,25 +2,346 @@
 
 from __future__ import annotations
 
-from typing import Any, Protocol
+import asyncio
+import inspect
+import json
+from collections.abc import Callable, Mapping
+from dataclasses import dataclass
+from typing import Any, Protocol, cast
 
-from pi_memory.quality.contracts import QualityReportDraft
+from pydantic import BaseModel, ValidationError
+
+try:
+    from pydantic_ai import Agent as PydanticAIAgent
+except ImportError:
+    PydanticAIAgent = None
+
+from pi_memory.quality.contracts import (
+    QUALITY_ASSESSMENT_SCHEMA_VERSION,
+    QUALITY_STATUS_DEGRADED,
+    QUALITY_STATUS_FAILED,
+    QUALITY_STATUS_HEALTHY,
+    QUALITY_STATUS_REASON_SEMANTIC_DEGRADED,
+    QUALITY_STATUS_REASON_SEMANTIC_FAILED,
+    SEMANTIC_STATUS_DEGRADED,
+    SEMANTIC_STATUS_FAILED,
+    SEMANTIC_STATUS_PASSED,
+    QualityReportDraft,
+    SemanticQualityAssessmentOutput,
+    compute_promotable,
+)
+from pi_memory.quality.packets import QualityPacket, quality_packet_prompt_data
+
+QUALITY_ASSESSMENT_PROMPT_VERSION = "phase5c-semantic-quality-assessment-v1"
+PYDANTIC_AI_QUALITY_ASSESSOR_MODE = "pydantic-ai"
+DETERMINISTIC_QUALITY_ASSESSOR_MODE = "deterministic"
+DETERMINISTIC_QUALITY_ASSESSOR_MODEL = "deterministic-quality-assessor-v1"
+_PYDANTIC_AI_ERROR_MESSAGE = "PydanticAI quality assessment failed"
+_PYDANTIC_AI_DEPENDENCY_ERROR_MESSAGE = "pydantic-ai is required for PydanticAIQualityAssessor"
+_PACKET_NOT_READY_MESSAGE = "Quality packet is not ready for semantic assessment"
+_SCHEMA_ERROR_MESSAGE = "Quality assessment output does not match the required schema"
+_UNKNOWN_SOURCE_REF_MESSAGE = "Quality assessment output cites an unknown source_ref_id"
+_UNKNOWN_CLAIM_INDEX_MESSAGE = "Quality assessment output cites an unknown claim index"
+
+AgentFactory = Callable[..., Any]
+
+
+@dataclass(frozen=True)
+class QualityAssessmentResult:
+    """Semantic quality assessment output and model metadata."""
+
+    output: SemanticQualityAssessmentOutput
+    model_metadata: Mapping[str, Any]
+    prompt_version: str
+    schema_version: int = QUALITY_ASSESSMENT_SCHEMA_VERSION
 
 
 class QualityAssessor(Protocol):
-    """Assesses memory quality packets."""
+    """Assesses semantic quality packets."""
 
-    def assess(self, packet: Any) -> QualityReportDraft:
-        """Assess a quality packet."""
+    def assess(self, packet: QualityPacket) -> QualityReportDraft:
+        """Assess a quality packet synchronously."""
+        ...
+
+    async def assess_async(self, packet: QualityPacket) -> QualityReportDraft:
+        """Assess a quality packet asynchronously."""
         ...
 
 
+class QualityAssessmentError(Exception):
+    """Base error for quality assessment failures."""
+
+
+class QualityAssessmentUnavailableError(QualityAssessmentError):
+    """Raised when a packet cannot be semantically assessed."""
+
+    @classmethod
+    def packet_not_ready(cls, reason: str | None) -> QualityAssessmentUnavailableError:
+        suffix = "" if reason is None else f": {reason}"
+        return cls(f"{_PACKET_NOT_READY_MESSAGE}{suffix}")
+
+
+class QualityAssessmentValidationError(QualityAssessmentError):
+    """Raised when semantic assessment output is invalid for a packet."""
+
+    @classmethod
+    def schema_error(cls) -> QualityAssessmentValidationError:
+        return cls(_SCHEMA_ERROR_MESSAGE)
+
+    @classmethod
+    def unknown_source_ref(cls, source_ref_id: str) -> QualityAssessmentValidationError:
+        return cls(f"{_UNKNOWN_SOURCE_REF_MESSAGE}: {source_ref_id}")
+
+    @classmethod
+    def unknown_claim_index(cls, claim_index: int) -> QualityAssessmentValidationError:
+        return cls(f"{_UNKNOWN_CLAIM_INDEX_MESSAGE}: {claim_index}")
+
+
+class PydanticAIQualityAssessmentError(QualityAssessmentError):
+    """Raised when a PydanticAI provider call fails during quality assessment."""
+
+    def __init__(self) -> None:
+        super().__init__(_PYDANTIC_AI_ERROR_MESSAGE)
+
+
+class PydanticAIDependencyError(QualityAssessmentError):
+    """Raised when PydanticAI is unavailable for quality assessment."""
+
+    def __init__(self) -> None:
+        super().__init__(_PYDANTIC_AI_DEPENDENCY_ERROR_MESSAGE)
+
+
 class PydanticAIQualityAssessor:
-    """PydanticAI-backed quality assessor placeholder."""
+    """PydanticAI-backed semantic quality assessor."""
 
-    def __init__(self, model: str) -> None:
+    def __init__(
+        self,
+        model: str,
+        *,
+        prompt_version: str = QUALITY_ASSESSMENT_PROMPT_VERSION,
+        agent_factory: AgentFactory | None = None,
+    ) -> None:
         self.model = model
+        self.prompt_version = prompt_version
+        self._agent = _create_pydantic_ai_agent(model, SemanticQualityAssessmentOutput, agent_factory)
 
-    def assess(self, packet: Any) -> QualityReportDraft:
-        """Assess a quality packet once runtime assessment is implemented."""
-        raise NotImplementedError("Quality assessment runtime is not implemented yet.")
+    def assess(self, packet: QualityPacket) -> QualityReportDraft:
+        """Assess a quality packet using PydanticAI synchronously."""
+        _validate_packet_ready_for_assessment(packet)
+        prompt = _render_quality_assessment_prompt(packet)
+        try:
+            run_result = self._agent.run_sync(prompt)
+            output = validate_quality_assessment_output(_extract_quality_assessment_output(run_result), packet)
+        except Exception as error:
+            raise PydanticAIQualityAssessmentError() from error
+        return _quality_report_from_semantic_output(
+            packet=packet,
+            output=output,
+            model_metadata=_pydantic_ai_model_metadata(self.model),
+            prompt_version=self.prompt_version,
+        )
+
+    async def assess_async(self, packet: QualityPacket) -> QualityReportDraft:
+        """Assess a quality packet using one async PydanticAI call."""
+        _validate_packet_ready_for_assessment(packet)
+        prompt = _render_quality_assessment_prompt(packet)
+        try:
+            run_result = await _run_pydantic_ai_agent(self._agent, prompt)
+            output = validate_quality_assessment_output(_extract_quality_assessment_output(run_result), packet)
+        except Exception as error:
+            raise PydanticAIQualityAssessmentError() from error
+        return _quality_report_from_semantic_output(
+            packet=packet,
+            output=output,
+            model_metadata=_pydantic_ai_model_metadata(self.model),
+            prompt_version=self.prompt_version,
+        )
+
+
+@dataclass(frozen=True)
+class DeterministicQualityAssessor:
+    """Deterministic test/development assessor with no model dependencies."""
+
+    prompt_version: str = QUALITY_ASSESSMENT_PROMPT_VERSION
+    model_metadata: Mapping[str, Any] | None = None
+
+    def assess(self, packet: QualityPacket) -> QualityReportDraft:
+        """Produce a deterministic healthy semantic assessment."""
+        _validate_packet_ready_for_assessment(packet)
+        output = SemanticQualityAssessmentOutput(
+            semantic_status=SEMANTIC_STATUS_PASSED,
+            findings=[],
+            claim_assessments=[],
+            missing_high_signal_items=[],
+            overall_rationale="Deterministic assessment found no semantic quality defects.",
+        )
+        return _quality_report_from_semantic_output(
+            packet=packet,
+            output=output,
+            model_metadata=self.model_metadata if self.model_metadata is not None else _deterministic_model_metadata(),
+            prompt_version=self.prompt_version,
+        )
+
+    async def assess_async(self, packet: QualityPacket) -> QualityReportDraft:
+        """Produce a deterministic healthy semantic assessment asynchronously."""
+        return self.assess(packet)
+
+
+def validate_quality_assessment_output(
+    output: SemanticQualityAssessmentOutput | Mapping[str, Any],
+    packet: QualityPacket,
+) -> SemanticQualityAssessmentOutput:
+    """Validate semantic assessment output against its quality packet."""
+    try:
+        model = (
+            output
+            if isinstance(output, SemanticQualityAssessmentOutput)
+            else SemanticQualityAssessmentOutput.model_validate(output)
+        )
+    except ValidationError as error:
+        raise QualityAssessmentValidationError.schema_error() from error
+
+    for assessment in model.claim_assessments:
+        if assessment.claim_index >= packet.claim_count:
+            raise QualityAssessmentValidationError.unknown_claim_index(assessment.claim_index)
+        _validate_source_ref_ids(assessment.source_ref_ids, packet)
+    for item in model.missing_high_signal_items:
+        _validate_source_ref_ids(item.source_ref_ids, packet)
+    for finding in model.findings:
+        for reference in finding.references:
+            if reference.kind == "source_ref" and reference.id not in packet.source_ref_ids:
+                raise QualityAssessmentValidationError.unknown_source_ref(reference.id)
+    return model
+
+
+def _validate_source_ref_ids(source_ref_ids: list[str], packet: QualityPacket) -> None:
+    for source_ref_id in source_ref_ids:
+        if source_ref_id not in packet.source_ref_ids:
+            raise QualityAssessmentValidationError.unknown_source_ref(source_ref_id)
+
+
+def _create_pydantic_ai_agent(model: str, output_type: type[BaseModel], agent_factory: AgentFactory | None) -> Any:
+    factory = agent_factory if agent_factory is not None else _pydantic_ai_agent_factory()
+    return factory(model, output_type=output_type)
+
+
+async def _run_pydantic_ai_agent(agent: Any, prompt: str) -> Any:
+    run = getattr(agent, "run", None)
+    if run is None:
+        return await asyncio.to_thread(agent.run_sync, prompt)
+    result = run(prompt)
+    if inspect.isawaitable(result):
+        return await result
+    return result
+
+
+def _pydantic_ai_agent_factory() -> AgentFactory:
+    if PydanticAIAgent is None:
+        raise PydanticAIDependencyError()
+    return cast(AgentFactory, PydanticAIAgent)
+
+
+def _extract_quality_assessment_output(run_result: Any) -> SemanticQualityAssessmentOutput:
+    output = getattr(run_result, "output", None)
+    if isinstance(output, SemanticQualityAssessmentOutput):
+        return output
+    return SemanticQualityAssessmentOutput.model_validate(output)
+
+
+def _render_quality_assessment_prompt(packet: QualityPacket) -> str:
+    packet_json = json.dumps(
+        quality_packet_prompt_data(packet),
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=False,
+    )
+    return (
+        "You are assessing the semantic quality of a Pi coding-session interpretation. "
+        "Use only the bounded packet data below. Do not reference raw transcript lines, "
+        "provider credentials, omitted content, or outside knowledge. Return a "
+        "SemanticQualityAssessmentOutput object.\n\n"
+        "Assessment criteria:\n"
+        "- semantic_status must be 'passed', 'degraded', or 'failed'.\n"
+        "- Judge whether claims are supported by cited activity_text and source refs.\n"
+        "- Flag overbroad, vague, duplicate, noisy, or wrongly-kind claims.\n"
+        "- Flag summary intent that is invented or not supported by the packet.\n"
+        "- Identify missed high-signal decisions, constraints, preferences, patterns, knowledge, or actions.\n"
+        "- Findings and rationales must cite packet ids; do not quote long source text.\n\n"
+        f"Quality packet JSON:\n{packet_json}"
+    )
+
+
+def _quality_report_from_semantic_output(
+    *,
+    packet: QualityPacket,
+    output: SemanticQualityAssessmentOutput,
+    model_metadata: Mapping[str, Any],
+    prompt_version: str,
+) -> QualityReportDraft:
+    quality_status, quality_reason = _semantic_quality_status(output.semantic_status)
+    deterministic_report = packet.deterministic_report
+    return QualityReportDraft(
+        quality_status=quality_status,
+        quality_reason=quality_reason,
+        derivation_status=deterministic_report.derivation_status,
+        deterministic_status=deterministic_report.deterministic_status,
+        semantic_status=output.semantic_status,
+        promotable=compute_promotable(
+            snapshot_status=packet.readiness.snapshot_status,
+            derivation_status=deterministic_report.derivation_status,
+            deterministic_status=deterministic_report.deterministic_status,
+            semantic_status=output.semantic_status,
+            quality_status=quality_status,
+        ),
+        deterministic_findings=list(deterministic_report.deterministic_findings),
+        semantic_findings=list(output.findings),
+        claim_assessments=list(output.claim_assessments),
+        missing_high_signal_items=list(output.missing_high_signal_items),
+        model_metadata=dict(model_metadata),
+        assessment_metadata={
+            **deterministic_report.assessment_metadata,
+            "semantic_finding_count": len(output.findings),
+            "claim_assessment_count": len(output.claim_assessments),
+            "missing_high_signal_item_count": len(output.missing_high_signal_items),
+        },
+        prompt_version=prompt_version,
+    )
+
+
+def _semantic_quality_status(semantic_status: str) -> tuple[str, str | None]:
+    if semantic_status == SEMANTIC_STATUS_PASSED:
+        return QUALITY_STATUS_HEALTHY, None
+    if semantic_status == SEMANTIC_STATUS_DEGRADED:
+        return QUALITY_STATUS_DEGRADED, QUALITY_STATUS_REASON_SEMANTIC_DEGRADED
+    if semantic_status == SEMANTIC_STATUS_FAILED:
+        return QUALITY_STATUS_FAILED, QUALITY_STATUS_REASON_SEMANTIC_FAILED
+    return QUALITY_STATUS_FAILED, QUALITY_STATUS_REASON_SEMANTIC_FAILED
+
+
+def _validate_packet_ready_for_assessment(packet: QualityPacket) -> None:
+    if not packet.readiness.can_assess_semantically:
+        reason = packet.readiness.quality_reason or packet.readiness.blocked_reason
+        raise QualityAssessmentUnavailableError.packet_not_ready(reason)
+
+
+def _pydantic_ai_model_metadata(model: str) -> Mapping[str, Any]:
+    return {
+        "provider": _provider_from_model(model),
+        "model": model,
+        "mode": PYDANTIC_AI_QUALITY_ASSESSOR_MODE,
+        "schema_version": QUALITY_ASSESSMENT_SCHEMA_VERSION,
+    }
+
+
+def _deterministic_model_metadata() -> Mapping[str, Any]:
+    return {
+        "provider": "pi-memory",
+        "model": DETERMINISTIC_QUALITY_ASSESSOR_MODEL,
+        "mode": DETERMINISTIC_QUALITY_ASSESSOR_MODE,
+        "schema_version": QUALITY_ASSESSMENT_SCHEMA_VERSION,
+    }
+
+
+def _provider_from_model(model: str) -> str | None:
+    provider, separator, _model_name = model.partition(":")
+    return provider if separator else None
