@@ -28,6 +28,7 @@ from pi_memory.server import ServerState
 from pi_memory.settings import (
     DEFAULT_TOOL_SUMMARY_CONCURRENCY,
     INTERPRETATION_MODEL_ENV,
+    QUALITY_MODEL_ENV,
     TOOL_SUMMARY_MODEL_ENV,
     Settings,
 )
@@ -96,6 +97,7 @@ def test_config_reports_effective_defaults(tmp_path, monkeypatch) -> None:
     settings_path = tmp_path / "memory" / "config.json"
     monkeypatch.delenv(INTERPRETATION_MODEL_ENV, raising=False)
     monkeypatch.delenv(TOOL_SUMMARY_MODEL_ENV, raising=False)
+    monkeypatch.delenv(QUALITY_MODEL_ENV, raising=False)
     monkeypatch.setattr(cli_module, "MemorySettings", lambda: Settings(settings_path))
 
     result = CliRunner().invoke(cli_module.main, ["config", "--json"])
@@ -105,6 +107,7 @@ def test_config_reports_effective_defaults(tmp_path, monkeypatch) -> None:
         "config_path": str(settings_path),
         "interpretation_model": None,
         "tool_summary_model": None,
+        "quality_model": None,
         "tool_summary_concurrency": DEFAULT_TOOL_SUMMARY_CONCURRENCY,
     }
     assert not settings_path.exists()
@@ -114,6 +117,7 @@ def test_config_persists_interpretation_model(tmp_path, monkeypatch) -> None:
     settings_path = tmp_path / "memory" / "config.json"
     monkeypatch.delenv(INTERPRETATION_MODEL_ENV, raising=False)
     monkeypatch.delenv(TOOL_SUMMARY_MODEL_ENV, raising=False)
+    monkeypatch.delenv(QUALITY_MODEL_ENV, raising=False)
     monkeypatch.setattr(cli_module, "MemorySettings", lambda: Settings(settings_path))
 
     result = CliRunner().invoke(
@@ -131,6 +135,7 @@ def test_config_persists_interpretation_model(tmp_path, monkeypatch) -> None:
         "config_path": str(settings_path),
         "interpretation_model": "anthropic:claude-sonnet-4-6",
         "tool_summary_model": None,
+        "quality_model": None,
         "tool_summary_concurrency": DEFAULT_TOOL_SUMMARY_CONCURRENCY,
     }
     assert json.loads(settings_path.read_text()) == {
@@ -143,6 +148,7 @@ def test_config_reports_env_override(tmp_path, monkeypatch) -> None:
     Settings(settings_path).update(interpretation_model="anthropic:file-model")
     monkeypatch.setenv(INTERPRETATION_MODEL_ENV, "openai:env-model")
     monkeypatch.delenv(TOOL_SUMMARY_MODEL_ENV, raising=False)
+    monkeypatch.delenv(QUALITY_MODEL_ENV, raising=False)
     monkeypatch.setattr(cli_module, "MemorySettings", lambda: Settings(settings_path))
 
     result = CliRunner().invoke(cli_module.main, ["config"])
@@ -153,6 +159,7 @@ def test_config_reports_env_override(tmp_path, monkeypatch) -> None:
     assert fields["config_path"] == str(settings_path)
     assert fields["interpretation_model"] == "openai:env-model"
     assert fields["tool_summary_model"] == "<unset>"
+    assert fields["quality_model"] == "<unset>"
     assert fields["tool_summary_concurrency"] == str(DEFAULT_TOOL_SUMMARY_CONCURRENCY)
 
 
@@ -160,6 +167,7 @@ def test_config_rejects_empty_interpretation_model(tmp_path, monkeypatch) -> Non
     settings_path = tmp_path / "memory" / "config.json"
     monkeypatch.delenv(INTERPRETATION_MODEL_ENV, raising=False)
     monkeypatch.delenv(TOOL_SUMMARY_MODEL_ENV, raising=False)
+    monkeypatch.delenv(QUALITY_MODEL_ENV, raising=False)
     monkeypatch.setattr(cli_module, "MemorySettings", lambda: Settings(settings_path))
 
     result = CliRunner().invoke(cli_module.main, ["config", "--interpretation-model", "  "])
@@ -173,6 +181,7 @@ def test_config_persists_and_clears_tool_summary_model(tmp_path, monkeypatch) ->
     settings_path = tmp_path / "memory" / "config.json"
     monkeypatch.delenv(INTERPRETATION_MODEL_ENV, raising=False)
     monkeypatch.delenv(TOOL_SUMMARY_MODEL_ENV, raising=False)
+    monkeypatch.delenv(QUALITY_MODEL_ENV, raising=False)
     monkeypatch.setattr(cli_module, "MemorySettings", lambda: Settings(settings_path))
 
     result = CliRunner().invoke(
@@ -185,6 +194,7 @@ def test_config_persists_and_clears_tool_summary_model(tmp_path, monkeypatch) ->
         "config_path": str(settings_path),
         "interpretation_model": None,
         "tool_summary_model": "anthropic:claude-haiku-4-5",
+        "quality_model": None,
         "tool_summary_concurrency": DEFAULT_TOOL_SUMMARY_CONCURRENCY,
     }
     assert json.loads(settings_path.read_text()) == {"tool_summary_model": "anthropic:claude-haiku-4-5"}
@@ -196,10 +206,71 @@ def test_config_persists_and_clears_tool_summary_model(tmp_path, monkeypatch) ->
     assert json.loads(settings_path.read_text()) == {}
 
 
+def test_config_persists_and_clears_quality_model(tmp_path, monkeypatch) -> None:
+    settings_path = tmp_path / "memory" / "config.json"
+    monkeypatch.delenv(INTERPRETATION_MODEL_ENV, raising=False)
+    monkeypatch.delenv(TOOL_SUMMARY_MODEL_ENV, raising=False)
+    monkeypatch.delenv(QUALITY_MODEL_ENV, raising=False)
+    monkeypatch.setattr(cli_module, "MemorySettings", lambda: Settings(settings_path))
+
+    result = CliRunner().invoke(
+        cli_module.main,
+        ["config", "--quality-model", "anthropic:claude-opus-4-1", "--json"],
+    )
+
+    assert result.exit_code == 0
+    assert json.loads(result.output) == {
+        "config_path": str(settings_path),
+        "interpretation_model": None,
+        "tool_summary_model": None,
+        "quality_model": "anthropic:claude-opus-4-1",
+        "tool_summary_concurrency": DEFAULT_TOOL_SUMMARY_CONCURRENCY,
+    }
+    assert json.loads(settings_path.read_text()) == {"quality_model": "anthropic:claude-opus-4-1"}
+
+    result = CliRunner().invoke(cli_module.main, ["config", "--clear-quality-model", "--json"])
+
+    assert result.exit_code == 0
+    assert json.loads(result.output)["quality_model"] is None
+    assert json.loads(settings_path.read_text()) == {}
+
+
+def test_config_rejects_conflicting_quality_model_options(tmp_path, monkeypatch) -> None:
+    settings_path = tmp_path / "memory" / "config.json"
+    monkeypatch.delenv(INTERPRETATION_MODEL_ENV, raising=False)
+    monkeypatch.delenv(TOOL_SUMMARY_MODEL_ENV, raising=False)
+    monkeypatch.delenv(QUALITY_MODEL_ENV, raising=False)
+    monkeypatch.setattr(cli_module, "MemorySettings", lambda: Settings(settings_path))
+
+    result = CliRunner().invoke(
+        cli_module.main,
+        ["config", "--quality-model", "anthropic:quality", "--clear-quality-model"],
+    )
+
+    assert result.exit_code == 2
+    assert "--clear-quality-model cannot be used with --quality-model" in result.output
+    assert not settings_path.exists()
+
+
+def test_config_rejects_empty_quality_model(tmp_path, monkeypatch) -> None:
+    settings_path = tmp_path / "memory" / "config.json"
+    monkeypatch.delenv(INTERPRETATION_MODEL_ENV, raising=False)
+    monkeypatch.delenv(TOOL_SUMMARY_MODEL_ENV, raising=False)
+    monkeypatch.delenv(QUALITY_MODEL_ENV, raising=False)
+    monkeypatch.setattr(cli_module, "MemorySettings", lambda: Settings(settings_path))
+
+    result = CliRunner().invoke(cli_module.main, ["config", "--quality-model", "  "])
+
+    assert result.exit_code == 2
+    assert "Invalid value for '--quality-model': must not be empty" in result.output
+    assert not settings_path.exists()
+
+
 def test_config_persists_and_clears_tool_summary_concurrency(tmp_path, monkeypatch) -> None:
     settings_path = tmp_path / "memory" / "config.json"
     monkeypatch.delenv(INTERPRETATION_MODEL_ENV, raising=False)
     monkeypatch.delenv(TOOL_SUMMARY_MODEL_ENV, raising=False)
+    monkeypatch.delenv(QUALITY_MODEL_ENV, raising=False)
     monkeypatch.setattr(cli_module, "MemorySettings", lambda: Settings(settings_path))
 
     result = CliRunner().invoke(cli_module.main, ["config", "--tool-summary-concurrency", "25", "--json"])
@@ -220,6 +291,7 @@ def test_config_clears_interpretation_model(tmp_path, monkeypatch) -> None:
     Settings(settings_path).update(interpretation_model="anthropic:file-model")
     monkeypatch.delenv(INTERPRETATION_MODEL_ENV, raising=False)
     monkeypatch.delenv(TOOL_SUMMARY_MODEL_ENV, raising=False)
+    monkeypatch.delenv(QUALITY_MODEL_ENV, raising=False)
     monkeypatch.setattr(cli_module, "MemorySettings", lambda: Settings(settings_path))
 
     result = CliRunner().invoke(cli_module.main, ["config", "--clear-interpretation-model", "--json"])
@@ -229,6 +301,7 @@ def test_config_clears_interpretation_model(tmp_path, monkeypatch) -> None:
         "config_path": str(settings_path),
         "interpretation_model": None,
         "tool_summary_model": None,
+        "quality_model": None,
         "tool_summary_concurrency": DEFAULT_TOOL_SUMMARY_CONCURRENCY,
     }
     assert json.loads(settings_path.read_text()) == {}

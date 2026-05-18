@@ -18,6 +18,7 @@ from pi_memory.constants import MEMORY_DIR
 
 INTERPRETATION_MODEL_ENV: Final = "PI_MEMORY_INTERPRETATION_MODEL"
 TOOL_SUMMARY_MODEL_ENV: Final = "PI_MEMORY_TOOL_SUMMARY_MODEL"
+QUALITY_MODEL_ENV: Final = "PI_MEMORY_QUALITY_MODEL"
 TOOL_SUMMARY_CONCURRENCY_ENV: Final = "PI_MEMORY_TOOL_SUMMARY_CONCURRENCY"
 DEFAULT_TOOL_SUMMARY_CONCURRENCY: Final = 10
 
@@ -185,6 +186,22 @@ class Settings:
     def tool_summary_model(self, value: str) -> None:
         self.update(tool_summary_model=value)
 
+    @property
+    def quality_model(self) -> str | None:
+        """Return the explicit quality model, including environment overrides."""
+        env_value = os.environ.get(QUALITY_MODEL_ENV)
+        if env_value is not None:
+            return _validate_interpretation_model(env_value)
+
+        value = self._read().get("quality_model")
+        if value is None:
+            return None
+        return _validate_interpretation_model(value)
+
+    @quality_model.setter
+    def quality_model(self, value: str) -> None:
+        self.update(quality_model=value)
+
     def require_interpretation_model(self) -> str:
         """Return the configured interpretation model or raise a clear setup error."""
         model = self.interpretation_model
@@ -195,6 +212,10 @@ class Settings:
     def require_tool_summary_model(self) -> str:
         """Return the configured tool-summary model, falling back to interpretation model."""
         return self.tool_summary_model or self.require_interpretation_model()
+
+    def require_quality_model(self) -> str:
+        """Return the configured quality model, falling back to summary/interpretation."""
+        return self.quality_model or self.tool_summary_model or self.require_interpretation_model()
 
     @property
     def tool_summary_concurrency(self) -> int:
@@ -213,6 +234,7 @@ class Settings:
         *,
         interpretation_model: str | None | object = _UNSET,
         tool_summary_model: str | None | object = _UNSET,
+        quality_model: str | None | object = _UNSET,
         tool_summary_concurrency: int | None | object = _UNSET,
     ) -> None:
         """Persist file settings after validating the resulting file configuration."""
@@ -228,6 +250,11 @@ class Settings:
                     data.pop("tool_summary_model", None)
                 else:
                     data["tool_summary_model"] = _validate_interpretation_model(tool_summary_model)
+            if quality_model is not _UNSET:
+                if quality_model is None:
+                    data.pop("quality_model", None)
+                else:
+                    data["quality_model"] = _validate_interpretation_model(quality_model)
             if tool_summary_concurrency is not _UNSET:
                 if tool_summary_concurrency is None:
                     data.pop("tool_summary_concurrency", None)
@@ -239,6 +266,7 @@ class Settings:
         return {
             "interpretation_model": self.interpretation_model,
             "tool_summary_model": self.tool_summary_model,
+            "quality_model": self.quality_model,
             "tool_summary_concurrency": self.tool_summary_concurrency,
         }
 

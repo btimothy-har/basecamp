@@ -62,6 +62,13 @@ class ConflictingToolSummaryModelOptionsError(click.UsageError):
         super().__init__("--clear-tool-summary-model cannot be used with --tool-summary-model")
 
 
+class ConflictingQualityModelOptionsError(click.UsageError):
+    """Raised when mutually exclusive quality model options are used."""
+
+    def __init__(self) -> None:
+        super().__init__("--clear-quality-model cannot be used with --quality-model")
+
+
 class ConflictingToolSummaryConcurrencyOptionsError(click.UsageError):
     """Raised when mutually exclusive tool-summary concurrency options are used."""
 
@@ -154,6 +161,16 @@ def main() -> None:
     help="Remove the persisted tool-summary model.",
 )
 @click.option(
+    "--quality-model",
+    callback=lambda _ctx, _param, value: None if value is None else _require_non_empty(value),
+    help="Provider-neutral PydanticAI provider:model string to persist for quality assessment.",
+)
+@click.option(
+    "--clear-quality-model",
+    is_flag=True,
+    help="Remove the persisted quality model.",
+)
+@click.option(
     "--tool-summary-concurrency",
     type=click.IntRange(1, 100),
     help="Persist the maximum number of concurrent one-tool summary calls.",
@@ -172,10 +189,12 @@ def main() -> None:
 def config(
     interpretation_model: str | None,
     tool_summary_model: str | None,
+    quality_model: str | None,
     tool_summary_concurrency: int | None,
     *,
     clear_interpretation_model: bool,
     clear_tool_summary_model: bool,
+    clear_quality_model: bool,
     clear_tool_summary_concurrency: bool,
     json_output: bool,
 ) -> None:
@@ -184,6 +203,8 @@ def config(
         raise ConflictingInterpretationModelOptionsError()
     if clear_tool_summary_model and tool_summary_model is not None:
         raise ConflictingToolSummaryModelOptionsError()
+    if clear_quality_model and quality_model is not None:
+        raise ConflictingQualityModelOptionsError()
     if clear_tool_summary_concurrency and tool_summary_concurrency is not None:
         raise ConflictingToolSummaryConcurrencyOptionsError()
 
@@ -198,6 +219,10 @@ def config(
             update_payload["tool_summary_model"] = None
         elif tool_summary_model is not None:
             update_payload["tool_summary_model"] = tool_summary_model
+        if clear_quality_model:
+            update_payload["quality_model"] = None
+        elif quality_model is not None:
+            update_payload["quality_model"] = quality_model
         if clear_tool_summary_concurrency:
             update_payload["tool_summary_concurrency"] = None
         elif tool_summary_concurrency is not None:
@@ -621,7 +646,7 @@ def _emit_observe_result(result: IngestResult, *, job_id: int | None, json_outpu
         click.echo(f"  {name}: {value}")
 
 
-def _emit_config(payload: dict[str, str | None], *, path: str, json_output: bool) -> None:
+def _emit_config(payload: dict[str, str | int | None], *, path: str, json_output: bool) -> None:
     output = {"config_path": path, **payload}
     if json_output:
         click.echo(json.dumps(output, sort_keys=True))
