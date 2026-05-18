@@ -21,9 +21,14 @@ from pi_memory.db import (
     ACTIVITY_TEXT_STATUS_FAILED,
     ANALYSIS_KIND_TRANSCRIPT_STRUCTURE,
     ANALYSIS_STATUS_COMPLETED,
+    JOB_KIND_ASSESS_INTERPRETATION_QUALITY,
     JOB_KIND_INTERPRET_SESSION,
     JOB_KIND_PROCESS_TRANSCRIPT,
     JOB_KIND_SUMMARIZE_TOOL_ACTIVITIES,
+    SESSION_INTERPRETATION_QUALITY_REASON_SEMANTIC_ASSESSMENT_FAILED,
+    SESSION_INTERPRETATION_QUALITY_REASON_SEMANTIC_ASSESSMENT_PENDING,
+    SESSION_INTERPRETATION_QUALITY_STATUS_ASSESSMENT_FAILED,
+    SESSION_INTERPRETATION_SEMANTIC_STATUS_ASSESSMENT_FAILED,
     SESSION_INTERPRETATION_STATUS_BLOCKED,
     SESSION_INTERPRETATION_STATUS_COMPLETED,
     SESSION_INTERPRETATION_STATUS_SKIPPED_NO_CLAIM_SOURCES,
@@ -31,6 +36,7 @@ from pi_memory.db import (
     AnalysisRun,
     Database,
     Job,
+    SessionInterpretationQualityReport,
     SessionInterpretationSnapshot,
     Transcript,
     TranscriptEntry,
@@ -54,10 +60,18 @@ from pi_memory.interpretation import (
 )
 from pi_memory.interpretation.packets import InterpretationPacket, InterpretationReadiness
 from pi_memory.jobs.interpretation import (
+    enqueue_assess_interpretation_quality_job,
     enqueue_interpret_session_job_for_analysis,
     enqueue_summarize_tool_activities_job,
 )
 from pi_memory.jobs.store import JobStore
+from pi_memory.quality import (
+    QualityAssessor,
+    QualityReportDraft,
+    assess_deterministic_interpretation_quality,
+    build_quality_packet,
+    create_quality_assessor,
+)
 from pi_memory.recall import index_transcript
 from pi_memory.settings import settings as memory_settings
 
@@ -65,6 +79,7 @@ EXPECTED_OBJECT_PAYLOAD_ERROR = "expected object payload"
 TRANSCRIPT_ID_INTEGER_ERROR = "transcript_id must be an integer"
 ANALYSIS_RUN_ID_INTEGER_ERROR = "analysis_run_id must be an integer"
 PROCESS_JOB_ID_INTEGER_ERROR = "process_job_id must be an integer"
+SNAPSHOT_ID_INTEGER_ERROR = "snapshot_id must be an integer"
 
 
 @dataclass(frozen=True)
@@ -137,11 +152,13 @@ class JobRunner:
         database: Database = database,
         interpreter: SessionInterpreter | None = None,
         tool_summarizer: ToolActivitySummarizer | None = None,
+        quality_assessor: QualityAssessor | None = None,
     ) -> None:
         self._database = database
         self._store = JobStore(database=database)
         self._interpreter = interpreter
         self._tool_summarizer = tool_summarizer
+        self._quality_assessor_adapter = quality_assessor
 
     def run(
         self,
@@ -168,7 +185,11 @@ class JobRunner:
             self._store.fail(job_id, run_id, error=str(error), exit_code=1, retry=False, now=now)
             raise
         except Exception as error:
-            self._store.fail(job_id, run_id, error=str(error), exit_code=1, retry=True, now=now)
+            if _is_final_quality_attempt(job):
+                self._write_assessment_failed_quality_report(job, error_type=type(error).__name__)
+                self._store.fail(job_id, run_id, error=type(error).__name__, exit_code=1, retry=False, now=now)
+            else:
+                self._store.fail(job_id, run_id, error=str(error), exit_code=1, retry=True, now=now)
             raise
 
         return self._store.complete(job_id, run_id, result_json=result_json, exit_code=0, now=now)
@@ -180,6 +201,8 @@ class JobRunner:
             return self._summarize_tool_activities(job)
         if job.kind == JOB_KIND_INTERPRET_SESSION:
             return self._interpret_session(job)
+        if job.kind == JOB_KIND_ASSESS_INTERPRETATION_QUALITY:
+            return self._assess_interpretation_quality(job)
         raise UnsupportedJobKindError(job.kind)
 
     def _process_transcript(self, job: Job) -> dict[str, Any]:
@@ -296,9 +319,8 @@ class JobRunner:
                     status=SESSION_INTERPRETATION_STATUS_BLOCKED,
                     blocked_reason=packet.readiness.blocked_reason,
                 )
-                return _snapshot_result_json(packet, snapshot)
-
-            if packet.readiness.should_skip_model:
+                result_json = _snapshot_result_json(packet, snapshot)
+            elif packet.readiness.should_skip_model:
                 snapshot = _replace_interpretation_snapshot(
                     session=session,
                     job=job,
@@ -306,21 +328,80 @@ class JobRunner:
                     packet=packet,
                     status=SESSION_INTERPRETATION_STATUS_SKIPPED_NO_CLAIM_SOURCES,
                 )
-                return _snapshot_result_json(packet, snapshot)
+                result_json = _snapshot_result_json(packet, snapshot)
+            else:
+                interpreter = self._session_interpreter()
+                result = interpreter.interpret(packet)
+                validated = validate_interpretation_output(result.output, packet)
+                snapshot = _replace_interpretation_snapshot(
+                    session=session,
+                    job=job,
+                    transcript=transcript,
+                    packet=packet,
+                    status=SESSION_INTERPRETATION_STATUS_COMPLETED,
+                    interpretation=validated,
+                    interpreter_result=result,
+                )
+                result_json = _snapshot_result_json(packet, snapshot)
+            snapshot_id = snapshot.id
+            stable_session_id = packet.readiness.stable_session_id
 
-            interpreter = self._session_interpreter()
-            result = interpreter.interpret(packet)
-            validated = validate_interpretation_output(result.output, packet)
-            snapshot = _replace_interpretation_snapshot(
-                session=session,
-                job=job,
-                transcript=transcript,
-                packet=packet,
-                status=SESSION_INTERPRETATION_STATUS_COMPLETED,
-                interpretation=validated,
-                interpreter_result=result,
+        quality_job = enqueue_assess_interpretation_quality_job(
+            self._store,
+            snapshot_id=snapshot_id,
+            session_id=stable_session_id,
+            interpretation_job_id=job.id,
+        )
+        result_json["assess_interpretation_quality_job_id"] = quality_job.id
+        return result_json
+
+    def _assess_interpretation_quality(self, job: Job) -> dict[str, Any]:
+        snapshot_id = _payload_snapshot_id(job.payload_json)
+        self._database.initialize()
+        with self._database.session() as session:
+            snapshot = session.get(SessionInterpretationSnapshot, snapshot_id)
+            if snapshot is None:
+                return {
+                    "status": "stale",
+                    "snapshot_id": snapshot_id,
+                    "quality_report_id": None,
+                    "stale_reason": "snapshot_not_found",
+                }
+            draft = assess_deterministic_interpretation_quality(session, snapshot)
+            if (
+                snapshot.status == SESSION_INTERPRETATION_STATUS_COMPLETED
+                and draft.quality_reason == SESSION_INTERPRETATION_QUALITY_REASON_SEMANTIC_ASSESSMENT_PENDING
+            ):
+                packet = build_quality_packet(session, snapshot, deterministic_report=draft)
+                draft = self._quality_assessor().assess(packet)
+            report = _replace_quality_report(session=session, job=job, snapshot=snapshot, draft=draft)
+            return _quality_report_result_json(snapshot, report)
+
+    def _write_assessment_failed_quality_report(self, job: Job, *, error_type: str) -> None:
+        try:
+            snapshot_id = _payload_snapshot_id(job.payload_json)
+        except InvalidJobPayloadError:
+            return
+        self._database.initialize()
+        with self._database.session() as session:
+            snapshot = session.get(SessionInterpretationSnapshot, snapshot_id)
+            if snapshot is None:
+                return
+            deterministic = assess_deterministic_interpretation_quality(session, snapshot)
+            draft = QualityReportDraft(
+                quality_status=SESSION_INTERPRETATION_QUALITY_STATUS_ASSESSMENT_FAILED,
+                quality_reason=SESSION_INTERPRETATION_QUALITY_REASON_SEMANTIC_ASSESSMENT_FAILED,
+                derivation_status=deterministic.derivation_status,
+                deterministic_status=deterministic.deterministic_status,
+                semantic_status=SESSION_INTERPRETATION_SEMANTIC_STATUS_ASSESSMENT_FAILED,
+                promotable=False,
+                deterministic_findings=list(deterministic.deterministic_findings),
+                assessment_metadata={
+                    **deterministic.assessment_metadata,
+                    "assessment_failed_error_type": error_type,
+                },
             )
-            return _snapshot_result_json(packet, snapshot)
+            _replace_quality_report(session=session, job=job, snapshot=snapshot, draft=draft)
 
     def _session_interpreter(self) -> SessionInterpreter:
         if self._interpreter is not None:
@@ -331,6 +412,11 @@ class JobRunner:
         if self._tool_summarizer is not None:
             return self._tool_summarizer
         return create_tool_activity_summarizer()
+
+    def _quality_assessor(self) -> QualityAssessor:
+        if self._quality_assessor_adapter is not None:
+            return self._quality_assessor_adapter
+        return create_quality_assessor()
 
 
 async def _summarize_tool_activity_work(
@@ -392,6 +478,16 @@ def _payload_summarize_tool_activities(payload: Any) -> tuple[int, int, int | No
     if analysis_run_id is None:
         raise InvalidJobPayloadError(ANALYSIS_RUN_ID_INTEGER_ERROR)
     return transcript_id, analysis_run_id, process_job_id
+
+
+def _payload_snapshot_id(payload: Any) -> int:
+    if not isinstance(payload, dict):
+        raise InvalidJobPayloadError(EXPECTED_OBJECT_PAYLOAD_ERROR)
+
+    snapshot_id = payload.get("snapshot_id")
+    if not isinstance(snapshot_id, int) or isinstance(snapshot_id, bool):
+        raise InvalidJobPayloadError(SNAPSHOT_ID_INTEGER_ERROR)
+    return snapshot_id
 
 
 def _payload_analysis_job(payload: Any) -> tuple[int, int | None, int | None]:
@@ -686,6 +782,46 @@ def _replace_interpretation_snapshot(
     return snapshot
 
 
+def _replace_quality_report(
+    *,
+    session: Session,
+    job: Job,
+    snapshot: SessionInterpretationSnapshot,
+    draft: QualityReportDraft,
+) -> SessionInterpretationQualityReport:
+    existing = session.scalar(
+        select(SessionInterpretationQualityReport).where(
+            SessionInterpretationQualityReport.snapshot_id == snapshot.id,
+        ),
+    )
+    if existing is not None:
+        session.delete(existing)
+        session.flush()
+
+    report = SessionInterpretationQualityReport(
+        snapshot_id=snapshot.id,
+        job_id=job.id,
+        quality_status=draft.quality_status,
+        quality_reason=draft.quality_reason,
+        derivation_status=draft.derivation_status,
+        deterministic_status=draft.deterministic_status,
+        semantic_status=draft.semantic_status,
+        promotable=draft.promotable,
+        deterministic_findings_json=draft.deterministic_findings_json,
+        semantic_findings_json=draft.semantic_findings_json,
+        claim_assessments_json=draft.claim_assessments_json,
+        missing_high_signal_items_json=draft.missing_high_signal_items_json,
+        model_metadata_json=draft.model_metadata_json,
+        assessment_metadata_json=draft.assessment_metadata_json,
+        prompt_version=draft.prompt_version,
+        schema_version=draft.schema_version,
+    )
+    session.add(report)
+    session.flush()
+    session.refresh(report)
+    return report
+
+
 def _stale_result_json(packet: InterpretationPacket) -> dict[str, Any]:
     result = _readiness_result_json(packet.readiness)
     result["status"] = "stale"
@@ -710,6 +846,33 @@ def _snapshot_result_json(
         },
     )
     return result
+
+
+def _quality_report_result_json(
+    snapshot: SessionInterpretationSnapshot,
+    report: SessionInterpretationQualityReport,
+) -> dict[str, Any]:
+    return {
+        "status": "completed",
+        "snapshot_id": snapshot.id,
+        "quality_report_id": report.id,
+        "session_row_id": snapshot.session_id,
+        "transcript_id": snapshot.transcript_id,
+        "analysis_run_id": snapshot.analysis_run_id,
+        "quality_status": report.quality_status,
+        "quality_reason": report.quality_reason,
+        "derivation_status": report.derivation_status,
+        "deterministic_status": report.deterministic_status,
+        "semantic_status": report.semantic_status,
+        "promotable": report.promotable,
+        "prompt_version": report.prompt_version,
+        "schema_version": report.schema_version,
+        "model_metadata": _safe_model_metadata(report.model_metadata_json),
+    }
+
+
+def _is_final_quality_attempt(job: Job) -> bool:
+    return job.kind == JOB_KIND_ASSESS_INTERPRETATION_QUALITY and job.attempts >= job.max_attempts
 
 
 def _readiness_result_json(readiness: InterpretationReadiness) -> dict[str, Any]:

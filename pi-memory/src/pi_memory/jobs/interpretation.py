@@ -3,7 +3,12 @@
 from __future__ import annotations
 
 from pi_memory.analysis import TranscriptAnalysisResult
-from pi_memory.db import JOB_KIND_INTERPRET_SESSION, JOB_KIND_SUMMARIZE_TOOL_ACTIVITIES, Job
+from pi_memory.db import (
+    JOB_KIND_ASSESS_INTERPRETATION_QUALITY,
+    JOB_KIND_INTERPRET_SESSION,
+    JOB_KIND_SUMMARIZE_TOOL_ACTIVITIES,
+    Job,
+)
 from pi_memory.jobs.store import JobStore
 
 
@@ -82,6 +87,24 @@ def enqueue_interpret_session_job_for_analysis(
             episode_count=episode_count,
             manifest_count=manifest_count,
         ),
+    )
+
+
+def enqueue_assess_interpretation_quality_job(
+    store: JobStore,
+    *,
+    snapshot_id: int,
+    session_id: str,
+    interpretation_job_id: int | None = None,
+) -> Job:
+    """Enqueue quality assessment after an interpretation snapshot is written."""
+    return store.enqueue(
+        JOB_KIND_ASSESS_INTERPRETATION_QUALITY,
+        payload_json={
+            "snapshot_id": snapshot_id,
+            "session_id": session_id,
+            "interpretation_job_id": interpretation_job_id,
+        },
     )
 
 

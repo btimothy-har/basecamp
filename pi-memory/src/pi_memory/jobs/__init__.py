@@ -3,6 +3,7 @@
 from pi_memory.jobs.dispatcher import ClaimedJobMissingRunIdError, JobDispatcher, JobDispatcherError
 from pi_memory.jobs.inspection import serialize_job
 from pi_memory.jobs.interpretation import (
+    enqueue_assess_interpretation_quality_job,
     enqueue_interpret_session_job,
     enqueue_interpret_session_job_for_analysis,
     enqueue_summarize_tool_activities_job,
@@ -41,6 +42,7 @@ __all__ = [
     "JobStoreError",
     "PermanentJobError",
     "serialize_job",
+    "enqueue_assess_interpretation_quality_job",
     "enqueue_interpret_session_job",
     "enqueue_interpret_session_job_for_analysis",
     "enqueue_process_transcript_job",
