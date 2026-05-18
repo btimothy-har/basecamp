@@ -4,11 +4,13 @@ from __future__ import annotations
 
 from typing import Any, Protocol
 
+from pi_memory.quality.contracts import QualityReportDraft
+
 
 class QualityAssessor(Protocol):
     """Assesses memory quality packets."""
 
-    def assess(self, packet: Any) -> Any:
+    def assess(self, packet: Any) -> QualityReportDraft:
         """Assess a quality packet."""
         ...
 
@@ -19,6 +21,6 @@ class PydanticAIQualityAssessor:
     def __init__(self, model: str) -> None:
         self.model = model
 
-    def assess(self, packet: Any) -> Any:
+    def assess(self, packet: Any) -> QualityReportDraft:
         """Assess a quality packet once runtime assessment is implemented."""
         raise NotImplementedError("Quality assessment runtime is not implemented yet.")

@@ -141,6 +141,7 @@ SESSION_INTERPRETATION_QUALITY_REASON_SUPERSEDED_SNAPSHOT = "superseded_snapshot
 SESSION_INTERPRETATION_QUALITY_REASON_DETERMINISTIC_INTEGRITY_FAILED = "deterministic_integrity_failed"
 SESSION_INTERPRETATION_QUALITY_REASON_SEMANTIC_DEGRADED = "semantic_degraded"
 SESSION_INTERPRETATION_QUALITY_REASON_SEMANTIC_FAILED = "semantic_failed"
+SESSION_INTERPRETATION_QUALITY_REASON_SEMANTIC_ASSESSMENT_PENDING = "semantic_assessment_pending"
 SESSION_INTERPRETATION_QUALITY_REASON_SEMANTIC_ASSESSMENT_FAILED = "semantic_assessment_failed"
 SESSION_INTERPRETATION_QUALITY_REASONS = (
     SESSION_INTERPRETATION_QUALITY_REASON_BLOCKED_INTERPRETATION,
@@ -150,6 +151,7 @@ SESSION_INTERPRETATION_QUALITY_REASONS = (
     SESSION_INTERPRETATION_QUALITY_REASON_DETERMINISTIC_INTEGRITY_FAILED,
     SESSION_INTERPRETATION_QUALITY_REASON_SEMANTIC_DEGRADED,
     SESSION_INTERPRETATION_QUALITY_REASON_SEMANTIC_FAILED,
+    SESSION_INTERPRETATION_QUALITY_REASON_SEMANTIC_ASSESSMENT_PENDING,
     SESSION_INTERPRETATION_QUALITY_REASON_SEMANTIC_ASSESSMENT_FAILED,
 )
 
@@ -825,7 +827,7 @@ class SessionInterpretationQualityReport(Base):
             "quality_reason IS NULL OR quality_reason IN ("
             "'blocked_interpretation', 'skipped_no_claim_sources', 'outdated_derivation', "
             "'superseded_snapshot', 'deterministic_integrity_failed', 'semantic_degraded', "
-            "'semantic_failed', 'semantic_assessment_failed')",
+            "'semantic_failed', 'semantic_assessment_pending', 'semantic_assessment_failed')",
             name="ck_session_interpretation_quality_reports_quality_reason_valid",
         ),
         CheckConstraint(
