@@ -447,16 +447,20 @@ def quality_list(
     """List quality reports directly from the database."""
     quality_database = Database(db_url)
     try:
-        payload = SessionQualityReportInspectionService(database=quality_database).list_reports(
-            quality_status=quality_status,
-            derivation_status=derivation_status,
-            promotable=promotable,
-            is_current=is_current,
-            repo_name=repo_name,
-            worktree_label=worktree_label,
-            limit=limit,
-            offset=offset,
-        ).to_payload()
+        payload = (
+            SessionQualityReportInspectionService(database=quality_database)
+            .list_reports(
+                quality_status=quality_status,
+                derivation_status=derivation_status,
+                promotable=promotable,
+                is_current=is_current,
+                repo_name=repo_name,
+                worktree_label=worktree_label,
+                limit=limit,
+                offset=offset,
+            )
+            .to_payload()
+        )
     except QualityReportFilterError as error:
         raise click.ClickException(str(error)) from error
     finally:

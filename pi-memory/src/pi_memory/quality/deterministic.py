@@ -500,9 +500,13 @@ def _transcript_entry_findings(
 
 
 def _citation_has_claim_source_origin(citation: Mapping[str, Any]) -> bool:
-    return citation.get("source_origin") in {SOURCE_ORIGIN_LOCAL, SOURCE_ORIGIN_MIXED} and citation.get(
-        "claim_source_allowed",
-    ) is True
+    return (
+        citation.get("source_origin") in {SOURCE_ORIGIN_LOCAL, SOURCE_ORIGIN_MIXED}
+        and citation.get(
+            "claim_source_allowed",
+        )
+        is True
+    )
 
 
 def _has_critical_findings(findings: list[QualityFinding]) -> bool:

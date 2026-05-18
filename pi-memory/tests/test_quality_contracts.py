@@ -159,10 +159,6 @@ def test_compute_promotable_matrix() -> None:
     assert compute_promotable(**{**base, "derivation_status": "outdated"}) is False
     assert compute_promotable(**{**base, "deterministic_status": "failed"}) is False
     assert (
-        compute_promotable(**{**base, "semantic_status": SESSION_INTERPRETATION_SEMANTIC_STATUS_NOT_ASSESSED})
-        is False
+        compute_promotable(**{**base, "semantic_status": SESSION_INTERPRETATION_SEMANTIC_STATUS_NOT_ASSESSED}) is False
     )
-    assert (
-        compute_promotable(**{**base, "quality_status": SESSION_INTERPRETATION_QUALITY_STATUS_NOT_ASSESSED})
-        is False
-    )
+    assert compute_promotable(**{**base, "quality_status": SESSION_INTERPRETATION_QUALITY_STATUS_NOT_ASSESSED}) is False
