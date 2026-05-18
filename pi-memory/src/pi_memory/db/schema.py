@@ -16,6 +16,7 @@ class Base(DeclarativeBase):
 JOB_KIND_PROCESS_TRANSCRIPT = "process_transcript"
 JOB_KIND_SUMMARIZE_TOOL_ACTIVITIES = "summarize_tool_activities"
 JOB_KIND_INTERPRET_SESSION = "interpret_session"
+JOB_KIND_ASSESS_INTERPRETATION_QUALITY = "assess_interpretation_quality"
 
 JOB_STATUS_QUEUED = "queued"
 JOB_STATUS_CLAIMED = "claimed"
@@ -120,6 +121,69 @@ SESSION_INTERPRETATION_BLOCKED_REASONS = (
     SESSION_INTERPRETATION_BLOCKED_REASON_SOURCE_ORIGIN_INCOMPLETE,
 )
 
+SESSION_INTERPRETATION_QUALITY_STATUS_HEALTHY = "healthy"
+SESSION_INTERPRETATION_QUALITY_STATUS_DEGRADED = "degraded"
+SESSION_INTERPRETATION_QUALITY_STATUS_FAILED = "failed"
+SESSION_INTERPRETATION_QUALITY_STATUS_NOT_ASSESSED = "not_assessed"
+SESSION_INTERPRETATION_QUALITY_STATUS_ASSESSMENT_FAILED = "assessment_failed"
+SESSION_INTERPRETATION_QUALITY_STATUSES = (
+    SESSION_INTERPRETATION_QUALITY_STATUS_HEALTHY,
+    SESSION_INTERPRETATION_QUALITY_STATUS_DEGRADED,
+    SESSION_INTERPRETATION_QUALITY_STATUS_FAILED,
+    SESSION_INTERPRETATION_QUALITY_STATUS_NOT_ASSESSED,
+    SESSION_INTERPRETATION_QUALITY_STATUS_ASSESSMENT_FAILED,
+)
+
+SESSION_INTERPRETATION_QUALITY_REASON_BLOCKED_INTERPRETATION = "blocked_interpretation"
+SESSION_INTERPRETATION_QUALITY_REASON_SKIPPED_NO_CLAIM_SOURCES = "skipped_no_claim_sources"
+SESSION_INTERPRETATION_QUALITY_REASON_OUTDATED_DERIVATION = "outdated_derivation"
+SESSION_INTERPRETATION_QUALITY_REASON_SUPERSEDED_SNAPSHOT = "superseded_snapshot"
+SESSION_INTERPRETATION_QUALITY_REASON_DETERMINISTIC_INTEGRITY_FAILED = "deterministic_integrity_failed"
+SESSION_INTERPRETATION_QUALITY_REASON_SEMANTIC_DEGRADED = "semantic_degraded"
+SESSION_INTERPRETATION_QUALITY_REASON_SEMANTIC_FAILED = "semantic_failed"
+SESSION_INTERPRETATION_QUALITY_REASON_SEMANTIC_ASSESSMENT_FAILED = "semantic_assessment_failed"
+SESSION_INTERPRETATION_QUALITY_REASONS = (
+    SESSION_INTERPRETATION_QUALITY_REASON_BLOCKED_INTERPRETATION,
+    SESSION_INTERPRETATION_QUALITY_REASON_SKIPPED_NO_CLAIM_SOURCES,
+    SESSION_INTERPRETATION_QUALITY_REASON_OUTDATED_DERIVATION,
+    SESSION_INTERPRETATION_QUALITY_REASON_SUPERSEDED_SNAPSHOT,
+    SESSION_INTERPRETATION_QUALITY_REASON_DETERMINISTIC_INTEGRITY_FAILED,
+    SESSION_INTERPRETATION_QUALITY_REASON_SEMANTIC_DEGRADED,
+    SESSION_INTERPRETATION_QUALITY_REASON_SEMANTIC_FAILED,
+    SESSION_INTERPRETATION_QUALITY_REASON_SEMANTIC_ASSESSMENT_FAILED,
+)
+
+SESSION_INTERPRETATION_DERIVATION_STATUS_CURRENT = "current"
+SESSION_INTERPRETATION_DERIVATION_STATUS_OUTDATED = "outdated"
+SESSION_INTERPRETATION_DERIVATION_STATUS_SUPERSEDED = "superseded"
+SESSION_INTERPRETATION_DERIVATION_STATUSES = (
+    SESSION_INTERPRETATION_DERIVATION_STATUS_CURRENT,
+    SESSION_INTERPRETATION_DERIVATION_STATUS_OUTDATED,
+    SESSION_INTERPRETATION_DERIVATION_STATUS_SUPERSEDED,
+)
+
+SESSION_INTERPRETATION_DETERMINISTIC_STATUS_PASSED = "passed"
+SESSION_INTERPRETATION_DETERMINISTIC_STATUS_FAILED = "failed"
+SESSION_INTERPRETATION_DETERMINISTIC_STATUS_NOT_APPLICABLE = "not_applicable"
+SESSION_INTERPRETATION_DETERMINISTIC_STATUSES = (
+    SESSION_INTERPRETATION_DETERMINISTIC_STATUS_PASSED,
+    SESSION_INTERPRETATION_DETERMINISTIC_STATUS_FAILED,
+    SESSION_INTERPRETATION_DETERMINISTIC_STATUS_NOT_APPLICABLE,
+)
+
+SESSION_INTERPRETATION_SEMANTIC_STATUS_PASSED = "passed"
+SESSION_INTERPRETATION_SEMANTIC_STATUS_DEGRADED = "degraded"
+SESSION_INTERPRETATION_SEMANTIC_STATUS_FAILED = "failed"
+SESSION_INTERPRETATION_SEMANTIC_STATUS_NOT_ASSESSED = "not_assessed"
+SESSION_INTERPRETATION_SEMANTIC_STATUS_ASSESSMENT_FAILED = "assessment_failed"
+SESSION_INTERPRETATION_SEMANTIC_STATUSES = (
+    SESSION_INTERPRETATION_SEMANTIC_STATUS_PASSED,
+    SESSION_INTERPRETATION_SEMANTIC_STATUS_DEGRADED,
+    SESSION_INTERPRETATION_SEMANTIC_STATUS_FAILED,
+    SESSION_INTERPRETATION_SEMANTIC_STATUS_NOT_ASSESSED,
+    SESSION_INTERPRETATION_SEMANTIC_STATUS_ASSESSMENT_FAILED,
+)
+
 SOURCE_ORIGIN_LOCAL = "local"
 SOURCE_ORIGIN_INHERITED = "inherited"
 SOURCE_ORIGIN_MIXED = "mixed"
@@ -182,6 +246,9 @@ class Job(Base):
 
     analysis_runs: Mapped[list[AnalysisRun]] = relationship(back_populates="job")
     session_interpretation_snapshots: Mapped[list[SessionInterpretationSnapshot]] = relationship(back_populates="job")
+    session_interpretation_quality_reports: Mapped[list[SessionInterpretationQualityReport]] = relationship(
+        back_populates="job",
+    )
 
 
 class MemorySession(Base):
@@ -739,3 +806,108 @@ class SessionInterpretationSnapshot(Base):
     transcript: Mapped[Transcript | None] = relationship(back_populates="session_interpretation_snapshots")
     analysis_run: Mapped[AnalysisRun | None] = relationship(back_populates="session_interpretation_snapshots")
     job: Mapped[Job | None] = relationship(back_populates="session_interpretation_snapshots")
+    quality_report: Mapped[SessionInterpretationQualityReport | None] = relationship(
+        back_populates="snapshot",
+        cascade="all, delete-orphan",
+    )
+
+
+class SessionInterpretationQualityReport(Base):
+    """Persisted quality assessment report for an interpretation snapshot."""
+
+    __tablename__ = "session_interpretation_quality_reports"
+    __table_args__ = (
+        CheckConstraint(
+            "quality_status IN ('healthy', 'degraded', 'failed', 'not_assessed', 'assessment_failed')",
+            name="ck_session_interpretation_quality_reports_quality_status_valid",
+        ),
+        CheckConstraint(
+            "quality_reason IS NULL OR quality_reason IN ("
+            "'blocked_interpretation', 'skipped_no_claim_sources', 'outdated_derivation', "
+            "'superseded_snapshot', 'deterministic_integrity_failed', 'semantic_degraded', "
+            "'semantic_failed', 'semantic_assessment_failed')",
+            name="ck_session_interpretation_quality_reports_quality_reason_valid",
+        ),
+        CheckConstraint(
+            "(quality_status = 'healthy' AND quality_reason IS NULL) OR "
+            "(quality_status != 'healthy' AND quality_reason IS NOT NULL)",
+            name="ck_session_interpretation_quality_reports_quality_reason_matches_status",
+        ),
+        CheckConstraint(
+            "derivation_status IN ('current', 'outdated', 'superseded')",
+            name="ck_session_interpretation_quality_reports_derivation_status_valid",
+        ),
+        CheckConstraint(
+            "deterministic_status IN ('passed', 'failed', 'not_applicable')",
+            name="ck_session_interpretation_quality_reports_deterministic_status_valid",
+        ),
+        CheckConstraint(
+            "semantic_status IN ('passed', 'degraded', 'failed', 'not_assessed', 'assessment_failed')",
+            name="ck_session_interpretation_quality_reports_semantic_status_valid",
+        ),
+        CheckConstraint("schema_version > 0", name="ck_session_interpretation_quality_reports_schema_version_positive"),
+        Index("ix_session_interpretation_quality_reports_quality_status_updated_at", "quality_status", "updated_at"),
+        Index(
+            "ix_session_interpretation_quality_reports_derivation_status_quality_status",
+            "derivation_status",
+            "quality_status",
+        ),
+        Index("ix_session_interpretation_quality_reports_promotable_updated_at", "promotable", "updated_at"),
+        Index("ix_session_interpretation_quality_reports_job_id", "job_id"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    snapshot_id: Mapped[int] = mapped_column(
+        ForeignKey("session_interpretation_snapshots.id", ondelete="CASCADE"),
+        unique=True,
+        index=True,
+    )
+    job_id: Mapped[int | None] = mapped_column(ForeignKey("jobs.id", ondelete="SET NULL"))
+    quality_status: Mapped[str]
+    quality_reason: Mapped[str | None]
+    derivation_status: Mapped[str] = mapped_column(
+        default=SESSION_INTERPRETATION_DERIVATION_STATUS_CURRENT,
+        server_default=SESSION_INTERPRETATION_DERIVATION_STATUS_CURRENT,
+    )
+    deterministic_status: Mapped[str] = mapped_column(
+        default=SESSION_INTERPRETATION_DETERMINISTIC_STATUS_PASSED,
+        server_default=SESSION_INTERPRETATION_DETERMINISTIC_STATUS_PASSED,
+    )
+    semantic_status: Mapped[str] = mapped_column(
+        default=SESSION_INTERPRETATION_SEMANTIC_STATUS_NOT_ASSESSED,
+        server_default=SESSION_INTERPRETATION_SEMANTIC_STATUS_NOT_ASSESSED,
+    )
+    promotable: Mapped[bool] = mapped_column(Boolean, default=False, server_default="0")
+    deterministic_findings_json: Mapped[list[dict[str, Any]]] = mapped_column(
+        JSON,
+        default=list,
+        server_default=text("'[]'"),
+    )
+    semantic_findings_json: Mapped[list[dict[str, Any]]] = mapped_column(
+        JSON,
+        default=list,
+        server_default=text("'[]'"),
+    )
+    claim_assessments_json: Mapped[list[dict[str, Any]]] = mapped_column(
+        JSON,
+        default=list,
+        server_default=text("'[]'"),
+    )
+    missing_high_signal_items_json: Mapped[list[dict[str, Any]]] = mapped_column(
+        JSON,
+        default=list,
+        server_default=text("'[]'"),
+    )
+    model_metadata_json: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict, server_default=text("'{}'"))
+    assessment_metadata_json: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict, server_default=text("'{}'"))
+    prompt_version: Mapped[str | None]
+    schema_version: Mapped[int] = mapped_column(default=1, server_default="1")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+    )
+
+    snapshot: Mapped[SessionInterpretationSnapshot] = relationship(back_populates="quality_report")
+    job: Mapped[Job | None] = relationship(back_populates="session_interpretation_quality_reports")
