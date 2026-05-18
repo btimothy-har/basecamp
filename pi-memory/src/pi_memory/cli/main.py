@@ -515,8 +515,9 @@ def _require_loopback_host(host: str) -> str:
 
 
 def _require_non_empty(value: str) -> str:
-    if value.strip():
-        return value
+    stripped = value.strip()
+    if stripped:
+        return stripped
     raise NonEmptyStringError()
 
 

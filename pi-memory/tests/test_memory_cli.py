@@ -424,6 +424,10 @@ def test_observe_requires_non_empty_session_id(tmp_path) -> None:
     assert "Invalid value for '--session-id': must not be empty" in result.output
 
 
+def test_non_empty_validator_returns_stripped_value() -> None:
+    assert cli_module._require_non_empty("  pi-session-1  ") == "pi-session-1"
+
+
 def test_serve_reports_occupied_port_and_cleans_state(tmp_path, monkeypatch) -> None:
     monkeypatch.setattr(cli_module, "ServerState", lambda: ServerState(memory_dir=tmp_path))
     runner = CliRunner()
