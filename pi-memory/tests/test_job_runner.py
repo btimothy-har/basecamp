@@ -78,7 +78,12 @@ from pi_memory.jobs import (
     TranscriptNotFoundError,
     UnsupportedJobKindError,
 )
-from pi_memory.quality import DeterministicQualityAssessor, QualityPacket, QualityReportDraft
+from pi_memory.quality import (
+    DeterministicQualityAssessor,
+    QualityPacket,
+    QualityReportDraft,
+    validate_quality_assessment_output,
+)
 from pi_memory.settings import (
     INTERPRETATION_MODEL_ENV,
     QUALITY_MODEL_ENV,
@@ -190,6 +195,60 @@ class RecordingQualityAssessor:
     def assess(self, packet: QualityPacket) -> QualityReportDraft:
         self.calls.append(packet)
         return DeterministicQualityAssessor().assess(packet)
+
+    async def assess_async(self, packet: QualityPacket) -> QualityReportDraft:
+        return self.assess(packet)
+
+
+class AliasedQualityAssessor:
+    def __init__(self) -> None:
+        self.calls: list[QualityPacket] = []
+
+    def assess(self, packet: QualityPacket) -> QualityReportDraft:
+        self.calls.append(packet)
+        output = validate_quality_assessment_output(
+            {
+                "semantic_status": SESSION_INTERPRETATION_SEMANTIC_STATUS_PASSED,
+                "findings": [
+                    {
+                        "code": "review_source_support",
+                        "severity": "warning",
+                        "message": "Source s0001 needs review.",
+                        "references": [{"kind": "source_ref", "id": "s0001"}],
+                    },
+                ],
+                "claim_assessments": [
+                    {
+                        "claim_index": 0,
+                        "status": "supported",
+                        "source_ref_ids": ["s0001"],
+                        "rationale": "s0001 supports this claim.",
+                    },
+                ],
+                "missing_high_signal_items": [
+                    {
+                        "kind": "decision",
+                        "description": "A decision near s0001 was missed.",
+                        "source_ref_ids": ["s0001"],
+                    },
+                ],
+            },
+            packet,
+        )
+        return QualityReportDraft(
+            quality_status=SESSION_INTERPRETATION_QUALITY_STATUS_HEALTHY,
+            quality_reason=None,
+            derivation_status=packet.deterministic_report.derivation_status,
+            deterministic_status=packet.deterministic_report.deterministic_status,
+            semantic_status=output.semantic_status,
+            promotable=True,
+            deterministic_findings=list(packet.deterministic_report.deterministic_findings),
+            semantic_findings=list(output.findings),
+            claim_assessments=list(output.claim_assessments),
+            missing_high_signal_items=list(output.missing_high_signal_items),
+            model_metadata={"provider": "test", "model": "alias-quality", "mode": "test"},
+            prompt_version="test-quality-alias-v1",
+        )
 
     async def assess_async(self, packet: QualityPacket) -> QualityReportDraft:
         return self.assess(packet)
@@ -1575,6 +1634,48 @@ def test_assess_quality_completed_snapshot_writes_semantic_report(
         assert report.quality_reason is None
         assert report.promotable is True
         assert report.model_metadata_json["model"] == "deterministic-quality-assessor-v1"
+
+
+def test_assess_quality_alias_output_persists_canonical_source_refs(
+    database: Database,
+    store: JobStore,
+) -> None:
+    transcript_id = create_transcript(database)
+    analyze_transcript(database, transcript_id)
+    claimed = claim_interpret_session_job(store, transcript_id)
+    completed = JobRunner(database=database, interpreter=RecordingInterpreter()).run(
+        claimed.id,
+        claimed.run_id,
+        running_pid=123,
+        now=at(10),
+    )
+    quality_job_id = completed.result_json["assess_interpretation_quality_job_id"]
+    quality_assessor = AliasedQualityAssessor()
+    claimed_quality = claim_quality_job(store, quality_job_id)
+
+    JobRunner(database=database, quality_assessor=quality_assessor).run(
+        claimed_quality.id,
+        claimed_quality.run_id,
+        running_pid=123,
+        now=at(10),
+    )
+
+    assert len(quality_assessor.calls) == 1
+    with database.session() as session:
+        snapshot = session.get_one(SessionInterpretationSnapshot, completed.result_json["snapshot_id"])
+        canonical_source_ref_id = snapshot.citations_json[0]["source_ref_id"]
+        report = session.scalar(select(SessionInterpretationQualityReport))
+        assert report is not None
+        assert report.claim_assessments_json[0]["source_ref_ids"] == [canonical_source_ref_id]
+        assert report.missing_high_signal_items_json[0]["source_ref_ids"] == [canonical_source_ref_id]
+        assert report.semantic_findings_json[0]["references"][0]["id"] == canonical_source_ref_id
+        assert "s0001" not in json.dumps(
+            {
+                "claim_assessments": report.claim_assessments_json,
+                "missing_high_signal_items": report.missing_high_signal_items_json,
+                "semantic_findings": report.semantic_findings_json,
+            },
+        )
 
 
 def test_assess_quality_blocked_snapshot_writes_non_model_report(database: Database, store: JobStore) -> None:

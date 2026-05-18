@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import inspect
 import json
+import re
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from typing import Any, Protocol, cast
@@ -34,9 +35,14 @@ from pi_memory.quality.contracts import (
     SemanticQualityAssessmentOutput,
     compute_promotable,
 )
-from pi_memory.quality.packets import QualityPacket, quality_packet_prompt_data
+from pi_memory.quality.packets import (
+    QualityPacket,
+    QualitySourceRefAliases,
+    build_quality_source_ref_aliases,
+    quality_packet_prompt_data,
+)
 
-QUALITY_ASSESSMENT_PROMPT_VERSION = "phase5c-semantic-quality-assessment-v1"
+QUALITY_ASSESSMENT_PROMPT_VERSION = "phase5c-semantic-quality-assessment-v2"
 PYDANTIC_AI_QUALITY_ASSESSOR_MODE = "pydantic-ai"
 DETERMINISTIC_QUALITY_ASSESSOR_MODE = "deterministic"
 DETERMINISTIC_QUALITY_ASSESSOR_MODEL = "deterministic-quality-assessor-v1"
@@ -46,6 +52,8 @@ _PACKET_NOT_READY_MESSAGE = "Quality packet is not ready for semantic assessment
 _SCHEMA_ERROR_MESSAGE = "Quality assessment output does not match the required schema"
 _UNKNOWN_SOURCE_REF_MESSAGE = "Quality assessment output cites an unknown source_ref_id"
 _UNKNOWN_CLAIM_INDEX_MESSAGE = "Quality assessment output cites an unknown claim index"
+_QUALITY_METADATA_TEXT_MAX_LENGTH = 300
+_SOURCE_REF_ALIAS_PATTERN = re.compile(r"(?<![A-Za-z0-9_])s\d{4}(?![A-Za-z0-9_])")
 
 AgentFactory = Callable[..., Any]
 
@@ -205,6 +213,7 @@ def validate_quality_assessment_output(
     except ValidationError as error:
         raise QualityAssessmentValidationError.schema_error() from error
 
+    model = _canonicalize_quality_assessment_source_refs(model, build_quality_source_ref_aliases(packet))
     for assessment in model.claim_assessments:
         if assessment.claim_index >= packet.claim_count:
             raise QualityAssessmentValidationError.unknown_claim_index(assessment.claim_index)
@@ -216,6 +225,113 @@ def validate_quality_assessment_output(
             if reference.kind == "source_ref" and reference.id not in packet.source_ref_ids:
                 raise QualityAssessmentValidationError.unknown_source_ref(reference.id)
     return model
+
+
+def _canonicalize_quality_assessment_source_refs(
+    output: SemanticQualityAssessmentOutput,
+    source_ref_aliases: QualitySourceRefAliases,
+) -> SemanticQualityAssessmentOutput:
+    claim_assessments = []
+    missing_high_signal_items = []
+    findings = []
+    changed = False
+    for assessment in output.claim_assessments:
+        source_ref_ids = [
+            source_ref_aliases.canonical_source_ref_id(source_ref_id) for source_ref_id in assessment.source_ref_ids
+        ]
+        rationale = _canonicalize_alias_text(
+            assessment.rationale,
+            source_ref_aliases,
+            max_length=QUALITY_BOUNDED_TEXT_MAX_LENGTH,
+        )
+        changed = changed or source_ref_ids != assessment.source_ref_ids or rationale != assessment.rationale
+        claim_assessments.append(
+            assessment.model_copy(update={"source_ref_ids": source_ref_ids, "rationale": rationale})
+        )
+    for item in output.missing_high_signal_items:
+        source_ref_ids = [
+            source_ref_aliases.canonical_source_ref_id(source_ref_id) for source_ref_id in item.source_ref_ids
+        ]
+        description = _canonicalize_alias_text(
+            item.description,
+            source_ref_aliases,
+            max_length=QUALITY_BOUNDED_TEXT_MAX_LENGTH,
+        )
+        changed = changed or source_ref_ids != item.source_ref_ids or description != item.description
+        missing_high_signal_items.append(
+            item.model_copy(update={"source_ref_ids": source_ref_ids, "description": description})
+        )
+    for finding in output.findings:
+        references = []
+        finding_changed = False
+        for reference in finding.references:
+            if reference.kind != "source_ref":
+                references.append(reference)
+                continue
+            reference_id = source_ref_aliases.canonical_source_ref_id(reference.id)
+            finding_changed = finding_changed or reference_id != reference.id
+            references.append(reference.model_copy(update={"id": reference_id}))
+        message = _canonicalize_alias_text(
+            finding.message,
+            source_ref_aliases,
+            max_length=QUALITY_BOUNDED_TEXT_MAX_LENGTH,
+        )
+        details = _canonicalize_alias_metadata(finding.details, source_ref_aliases)
+        finding_changed = finding_changed or message != finding.message or details != finding.details
+        changed = changed or finding_changed
+        findings.append(
+            finding.model_copy(update={"references": references, "message": message, "details": details})
+            if finding_changed
+            else finding
+        )
+    overall_rationale = _canonicalize_alias_text(
+        output.overall_rationale,
+        source_ref_aliases,
+        max_length=QUALITY_BOUNDED_TEXT_MAX_LENGTH,
+    )
+    changed = changed or overall_rationale != output.overall_rationale
+    if not changed:
+        return output
+    return output.model_copy(
+        update={
+            "claim_assessments": claim_assessments,
+            "missing_high_signal_items": missing_high_signal_items,
+            "findings": findings,
+            "overall_rationale": overall_rationale,
+        }
+    )
+
+
+def _canonicalize_alias_text(
+    value: str | None,
+    source_ref_aliases: QualitySourceRefAliases,
+    *,
+    max_length: int,
+) -> str | None:
+    if value is None:
+        return None
+    result = _SOURCE_REF_ALIAS_PATTERN.sub(
+        lambda match: source_ref_aliases.source_ref_id_by_alias.get(match.group(0), "unknown source ref"),
+        value,
+    )
+    if len(result) <= max_length:
+        return result
+    compact = _SOURCE_REF_ALIAS_PATTERN.sub("cited source", value)
+    if len(compact) <= max_length:
+        return compact
+    return compact[:max_length].rstrip()
+
+
+def _canonicalize_alias_metadata(
+    metadata: Mapping[str, Any],
+    source_ref_aliases: QualitySourceRefAliases,
+) -> Mapping[str, Any]:
+    return {
+        key: _canonicalize_alias_text(value, source_ref_aliases, max_length=_QUALITY_METADATA_TEXT_MAX_LENGTH)
+        if isinstance(value, str)
+        else value
+        for key, value in metadata.items()
+    }
 
 
 def _validate_source_ref_ids(source_ref_ids: list[str], packet: QualityPacket) -> None:
@@ -267,6 +383,8 @@ def _render_quality_assessment_prompt(packet: QualityPacket) -> str:
         "Assessment criteria:\n"
         "- semantic_status must be 'passed', 'degraded', or 'failed'.\n"
         "- Judge whether claims are supported by cited activity_text and source refs.\n"
+        "- Citation ids in Quality packet JSON are short source-ref aliases. Copy them exactly; "
+        "do not invent, shorten, or expand ids.\n"
         "- Flag overbroad, vague, duplicate, noisy, or wrongly-kind claims.\n"
         "- Flag summary intent that is invented or not supported by the packet.\n"
         "- Identify missed high-signal decisions, constraints, preferences, patterns, knowledge, or actions.\n"

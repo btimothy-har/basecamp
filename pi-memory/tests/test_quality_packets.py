@@ -21,7 +21,19 @@ from pi_memory.interpretation import (
     build_interpretation_packet,
     validate_interpretation_output,
 )
-from pi_memory.quality import QUALITY_ACTIVITY_TEXT_CHAR_LIMIT, build_quality_packet, quality_packet_prompt_data
+from pi_memory.quality import (
+    QUALITY_ACTIVITY_TEXT_CHAR_LIMIT,
+    QUALITY_STATUS_NOT_ASSESSED,
+    QUALITY_STATUS_REASON_SEMANTIC_ASSESSMENT_PENDING,
+    SEMANTIC_STATUS_NOT_ASSESSED,
+    QualityActivityContext,
+    QualityPacket,
+    QualityPacketReadiness,
+    QualityReportDraft,
+    build_quality_packet,
+    build_quality_source_ref_aliases,
+    quality_packet_prompt_data,
+)
 from sqlalchemy import select
 
 BASE_TIME = datetime(2026, 5, 15, 12, 0, tzinfo=UTC)
@@ -43,6 +55,87 @@ def database(tmp_path: Path) -> Database:
 
 def payload_line(payload: dict[str, Any]) -> str:
     return json.dumps(payload, separators=(",", ":")) + "\n"
+
+
+def quality_report() -> QualityReportDraft:
+    return QualityReportDraft(
+        quality_status=QUALITY_STATUS_NOT_ASSESSED,
+        quality_reason=QUALITY_STATUS_REASON_SEMANTIC_ASSESSMENT_PENDING,
+        deterministic_status="passed",
+        semantic_status=SEMANTIC_STATUS_NOT_ASSESSED,
+    )
+
+
+def packet_with_source_refs() -> QualityPacket:
+    deterministic_report = quality_report()
+    return QualityPacket(
+        snapshot_id=1,
+        session_metadata={},
+        snapshot_metadata={},
+        readiness=QualityPacketReadiness(
+            snapshot_id=1,
+            snapshot_status="completed",
+            derivation_status="current",
+            deterministic_status="passed",
+            quality_status=deterministic_report.quality_status,
+            quality_reason=deterministic_report.quality_reason,
+            semantic_status=deterministic_report.semantic_status,
+            can_assess_semantically=True,
+            blocked_reason=None,
+            deterministic_findings=(),
+        ),
+        interpretation={
+            "summary": "A session summary.",
+            "claims": [
+                {
+                    "source_ref_ids": ["ar1:ep0:act5:entries5", "ar1:ep0:act2:entries2"],
+                    "kind": "decision",
+                    "statement": "Use quality aliases.",
+                    "confidence": 0.9,
+                },
+            ],
+            "open_questions": [
+                {
+                    "question": "What remains?",
+                    "source_ref_ids": ["ar1:ep0:act3:entries3"],
+                },
+            ],
+            "citations": [{"source_ref_id": "ar1:ep0:act4:entries4", "usage": "summary"}],
+        },
+        citations=(
+            {"source_ref_id": "ar1:ep0:act5:entries5"},
+            {"source_ref_id": "ar1:ep0:act2:entries2"},
+            {"source_ref_id": "ar1:ep0:act5:entries5"},
+        ),
+        activities=(
+            QualityActivityContext(
+                activity_unit_id=2,
+                ordinal=2,
+                kind="message",
+                source_origin="local",
+                activity_text_kind="deterministic",
+                activity_text_status="completed",
+                byte_start=0,
+                byte_end=10,
+                source_ref_ids=("ar1:ep0:act3:entries3", "ar1:ep0:act2:entries2"),
+                activity_text=None,
+            ),
+            QualityActivityContext(
+                activity_unit_id=4,
+                ordinal=4,
+                kind="message",
+                source_origin="local",
+                activity_text_kind="deterministic",
+                activity_text_status="completed",
+                byte_start=10,
+                byte_end=20,
+                source_ref_ids=("ar1:ep0:act4:entries4",),
+                activity_text=None,
+            ),
+        ),
+        omitted_activity_count=0,
+        deterministic_report=deterministic_report,
+    )
 
 
 def create_completed_snapshot(database: Database, *, text: str) -> tuple[int, str]:
@@ -112,6 +205,38 @@ def create_completed_snapshot(database: Database, *, text: str) -> tuple[int, st
         db_session.add(snapshot)
         db_session.flush()
         return snapshot.id, raw_line
+
+
+def test_quality_source_ref_aliases_are_deterministic_and_unique() -> None:
+    aliases = build_quality_source_ref_aliases(packet_with_source_refs())
+
+    assert aliases.alias_by_source_ref_id == {
+        "ar1:ep0:act5:entries5": "s0001",
+        "ar1:ep0:act2:entries2": "s0002",
+        "ar1:ep0:act3:entries3": "s0003",
+        "ar1:ep0:act4:entries4": "s0004",
+    }
+    assert aliases.source_ref_id_by_alias == {
+        "s0001": "ar1:ep0:act5:entries5",
+        "s0002": "ar1:ep0:act2:entries2",
+        "s0003": "ar1:ep0:act3:entries3",
+        "s0004": "ar1:ep0:act4:entries4",
+    }
+    assert aliases.alias_for("ar1:ep0:act3:entries3") == "s0003"
+    assert aliases.canonical_source_ref_id("s0004") == "ar1:ep0:act4:entries4"
+    assert aliases.canonical_source_ref_id("ar1:ep0:act2:entries2") == "ar1:ep0:act2:entries2"
+
+
+def test_quality_packet_prompt_data_renders_source_ref_aliases() -> None:
+    prompt_data = quality_packet_prompt_data(packet_with_source_refs())
+
+    assert prompt_data["interpretation"]["claims"][0]["source_ref_ids"] == ["s0001", "s0002"]
+    assert prompt_data["interpretation"]["open_questions"][0]["source_ref_ids"] == ["s0003"]
+    assert prompt_data["interpretation"]["citations"][0]["source_ref_id"] == "s0004"
+    assert prompt_data["citations"][0]["source_ref_id"] == "s0001"
+    assert prompt_data["activities"][0]["source_ref_ids"] == ["s0003", "s0002"]
+    prompt_json = json.dumps(prompt_data, sort_keys=True)
+    assert "ar1:ep0:act" not in prompt_json
 
 
 def test_quality_packet_uses_bounded_activity_text_without_raw_lines(database: Database) -> None:

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import os
 from typing import Any
 
@@ -9,6 +10,7 @@ from pi_memory.interpretation import BoundedText
 from pi_memory.quality import (
     DETERMINISTIC_QUALITY_ASSESSOR_MODE,
     PYDANTIC_AI_QUALITY_ASSESSOR_MODE,
+    QUALITY_ASSESSMENT_PROMPT_VERSION,
     QUALITY_BOUNDED_TEXT_MAX_LENGTH,
     QUALITY_CLAIM_ASSESSMENTS_MAX_LENGTH,
     QUALITY_MISSING_HIGH_SIGNAL_ITEMS_MAX_LENGTH,
@@ -123,6 +125,37 @@ def semantic_output(status: str = SEMANTIC_STATUS_PASSED) -> dict[str, Any]:
     }
 
 
+def alias_semantic_output() -> dict[str, Any]:
+    return {
+        "semantic_status": SEMANTIC_STATUS_PASSED,
+        "findings": [
+            {
+                "code": "weak_source_support",
+                "severity": "warning",
+                "message": "Source s0001 needs review.",
+                "references": [{"kind": "source_ref", "id": "s0001"}],
+                "details": {"source_ref": "s0001"},
+            },
+        ],
+        "claim_assessments": [
+            {
+                "claim_index": 0,
+                "status": "supported",
+                "source_ref_ids": ["s0001"],
+                "rationale": "s0001 supports the claim.",
+            },
+        ],
+        "missing_high_signal_items": [
+            {
+                "kind": "decision",
+                "description": "A decision near s0001 was missed.",
+                "source_ref_ids": ["s0001"],
+            },
+        ],
+        "overall_rationale": "s0001 supports the interpretation.",
+    }
+
+
 def test_pydantic_ai_quality_assessor_returns_report_and_safe_prompt(monkeypatch: pytest.MonkeyPatch) -> None:
     prompts: list[str] = []
     monkeypatch.setenv("ANTHROPIC_API_KEY", "SECRET_PROVIDER_KEY_SHOULD_NOT_LEAK")
@@ -143,6 +176,7 @@ def test_pydantic_ai_quality_assessor_returns_report_and_safe_prompt(monkeypatch
     assert draft.quality_reason is None
     assert draft.semantic_status == SEMANTIC_STATUS_PASSED
     assert draft.promotable is True
+    assert draft.prompt_version == QUALITY_ASSESSMENT_PROMPT_VERSION
     assert draft.model_metadata == {
         "provider": "anthropic",
         "model": "anthropic:claude-haiku-4-5",
@@ -150,6 +184,10 @@ def test_pydantic_ai_quality_assessor_returns_report_and_safe_prompt(monkeypatch
         "schema_version": 1,
     }
     assert "Quality packet JSON" in prompts[0]
+    assert "short source-ref aliases" in prompts[0]
+    assert '"source_ref_id":"s0001"' in prompts[0]
+    assert '"source_ref_ids":["s0001"]' in prompts[0]
+    assert "source-1" not in prompts[0]
     assert f"<= {QUALITY_BOUNDED_TEXT_MAX_LENGTH} characters" in prompts[0]
     assert f"findings must contain <= {QUALITY_SEMANTIC_FINDINGS_MAX_LENGTH} items" in prompts[0]
     assert f"claim_assessments must contain <= {QUALITY_CLAIM_ASSESSMENTS_MAX_LENGTH} items" in prompts[0]
@@ -159,6 +197,33 @@ def test_pydantic_ai_quality_assessor_returns_report_and_safe_prompt(monkeypatch
     assert "overall_rationale may be null" in prompts[0]
     assert "raw_line" not in prompts[0]
     assert os.environ["ANTHROPIC_API_KEY"] not in prompts[0]
+
+
+def test_pydantic_ai_quality_assessor_persists_canonical_refs_from_alias_output() -> None:
+    class FakeAgent:
+        def __init__(self, _model: str, *, output_type: type) -> None:
+            self.output_type = output_type
+
+        def run_sync(self, _prompt: str) -> RunResult:
+            return RunResult(alias_semantic_output())
+
+    assessor = PydanticAIQualityAssessor("anthropic:claude-haiku-4-5", agent_factory=FakeAgent)
+    draft = assessor.assess(packet())
+
+    assert draft.claim_assessments[0].source_ref_ids == ["source-1"]
+    assert draft.claim_assessments[0].rationale == "source-1 supports the claim."
+    assert draft.missing_high_signal_items[0].source_ref_ids == ["source-1"]
+    assert draft.missing_high_signal_items[0].description == "A decision near source-1 was missed."
+    assert draft.semantic_findings[0].references[0].id == "source-1"
+    assert draft.semantic_findings[0].message == "Source source-1 needs review."
+    assert draft.semantic_findings[0].details["source_ref"] == "source-1"
+    assert "s0001" not in json.dumps(
+        {
+            "semantic_findings": draft.semantic_findings_json,
+            "claim_assessments": draft.claim_assessments_json,
+            "missing_high_signal_items": draft.missing_high_signal_items_json,
+        },
+    )
 
 
 def test_pydantic_ai_quality_assessor_supports_async_agents() -> None:
@@ -192,6 +257,25 @@ def test_quality_assessor_rejects_unready_packet() -> None:
         assessor.assess(packet(can_assess=False))
 
 
+def test_validate_quality_assessment_output_accepts_canonical_source_refs() -> None:
+    output = validate_quality_assessment_output(semantic_output(), packet())
+
+    assert output.claim_assessments[0].source_ref_ids == ["source-1"]
+
+
+def test_validate_quality_assessment_output_canonicalizes_alias_source_refs() -> None:
+    output = validate_quality_assessment_output(alias_semantic_output(), packet())
+
+    assert output.claim_assessments[0].source_ref_ids == ["source-1"]
+    assert output.claim_assessments[0].rationale == "source-1 supports the claim."
+    assert output.missing_high_signal_items[0].source_ref_ids == ["source-1"]
+    assert output.missing_high_signal_items[0].description == "A decision near source-1 was missed."
+    assert output.findings[0].references[0].id == "source-1"
+    assert output.findings[0].message == "Source source-1 needs review."
+    assert output.findings[0].details["source_ref"] == "source-1"
+    assert output.overall_rationale == "source-1 supports the interpretation."
+
+
 def test_validate_quality_assessment_output_rejects_unknown_claim_index() -> None:
     output = SemanticQualityAssessmentOutput.model_validate(
         {
@@ -217,6 +301,22 @@ def test_validate_quality_assessment_output_rejects_unknown_source_ref() -> None
     }
 
     with pytest.raises(QualityAssessmentValidationError, match="unknown source_ref_id"):
+        validate_quality_assessment_output(candidate, packet())
+
+
+def test_validate_quality_assessment_output_rejects_unknown_alias() -> None:
+    candidate = {
+        **semantic_output(),
+        "claim_assessments": [
+            {
+                "claim_index": 0,
+                "status": "supported",
+                "source_ref_ids": ["s9999"],
+            },
+        ],
+    }
+
+    with pytest.raises(QualityAssessmentValidationError, match="s9999"):
         validate_quality_assessment_output(candidate, packet())
 
 

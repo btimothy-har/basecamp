@@ -83,7 +83,9 @@ from pi_memory.quality.packets import (
     QualityActivityContext,
     QualityPacket,
     QualityPacketReadiness,
+    QualitySourceRefAliases,
     build_quality_packet,
+    build_quality_source_ref_aliases,
     quality_packet_prompt_data,
 )
 
@@ -150,6 +152,7 @@ __all__ = [
     "QualityPacket",
     "QualityPacketReadiness",
     "QualityReportDraft",
+    "QualitySourceRefAliases",
     "QualityReportFilterError",
     "QualityReportListResult",
     "SEMANTIC_STATUS_ASSESSMENT_FAILED",
@@ -161,6 +164,7 @@ __all__ = [
     "SessionQualityReportInspectionService",
     "assess_deterministic_interpretation_quality",
     "build_quality_packet",
+    "build_quality_source_ref_aliases",
     "compute_promotable",
     "create_quality_assessor",
     "quality_packet_prompt_data",

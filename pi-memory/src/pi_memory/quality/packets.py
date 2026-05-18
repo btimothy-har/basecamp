@@ -91,6 +91,38 @@ class QualityPacket:
         return frozenset(ids)
 
 
+@dataclass(frozen=True)
+class QualitySourceRefAliases:
+    """Prompt-safe source-ref aliases mapped to canonical source refs."""
+
+    alias_by_source_ref_id: Mapping[str, str]
+    source_ref_id_by_alias: Mapping[str, str]
+
+    def alias_for(self, source_ref_id: str) -> str:
+        """Return the prompt alias for a canonical source ref."""
+        return self.alias_by_source_ref_id[source_ref_id]
+
+    def canonical_source_ref_id(self, source_ref_id: str) -> str:
+        """Return the canonical source ref for an alias or canonical id."""
+        return self.source_ref_id_by_alias.get(source_ref_id, source_ref_id)
+
+
+def build_quality_source_ref_aliases(packet: QualityPacket) -> QualitySourceRefAliases:
+    """Build deterministic prompt aliases for quality packet source refs."""
+    alias_by_source_ref_id: dict[str, str] = {}
+    source_ref_id_by_alias: dict[str, str] = {}
+    for source_ref_id in _ordered_quality_source_ref_ids(packet):
+        if source_ref_id in alias_by_source_ref_id:
+            continue
+        alias = f"s{len(alias_by_source_ref_id) + 1:04d}"
+        alias_by_source_ref_id[source_ref_id] = alias
+        source_ref_id_by_alias[alias] = source_ref_id
+    return QualitySourceRefAliases(
+        alias_by_source_ref_id=alias_by_source_ref_id,
+        source_ref_id_by_alias=source_ref_id_by_alias,
+    )
+
+
 def build_quality_packet(
     session: Session,
     snapshot: SessionInterpretationSnapshot,
@@ -140,19 +172,31 @@ def build_quality_packet(
 
 def quality_packet_prompt_data(packet: QualityPacket) -> Mapping[str, Any]:
     """Return JSON-safe prompt data for semantic quality assessment."""
+    source_ref_aliases = build_quality_source_ref_aliases(packet)
     return {
         "session": dict(packet.session_metadata),
         "snapshot": dict(packet.snapshot_metadata),
         "readiness": _readiness_prompt_data(packet.readiness),
-        "interpretation": dict(packet.interpretation),
-        "citations": [dict(citation) for citation in packet.citations],
-        "activities": [_activity_prompt_data(activity) for activity in packet.activities],
+        "interpretation": _interpretation_alias_prompt_data(packet.interpretation, source_ref_aliases),
+        "citations": [_citation_prompt_data(citation, source_ref_aliases) for citation in packet.citations],
+        "activities": [_activity_prompt_data(activity, source_ref_aliases) for activity in packet.activities],
         "activity_bounds": {
             "included_activity_count": len(packet.activities),
             "omitted_activity_count": packet.omitted_activity_count,
             "activity_text_char_limit": QUALITY_ACTIVITY_TEXT_CHAR_LIMIT,
         },
     }
+
+
+def _ordered_quality_source_ref_ids(packet: QualityPacket) -> tuple[str, ...]:
+    source_ref_ids: list[str] = []
+    for citation in packet.citations:
+        source_ref_id = citation.get("source_ref_id")
+        if isinstance(source_ref_id, str):
+            source_ref_ids.append(source_ref_id)
+    for activity in packet.activities:
+        source_ref_ids.extend(activity.source_ref_ids)
+    return tuple(source_ref_ids)
 
 
 def _stable_session_id(session: Session, session_row_id: int) -> str:
@@ -252,7 +296,36 @@ def _readiness_prompt_data(readiness: QualityPacketReadiness) -> Mapping[str, An
     }
 
 
-def _activity_prompt_data(activity: QualityActivityContext) -> Mapping[str, Any]:
+def _interpretation_alias_prompt_data(
+    interpretation: Mapping[str, Any],
+    source_ref_aliases: QualitySourceRefAliases,
+) -> Mapping[str, Any]:
+    data = dict(interpretation)
+    claims = data.get("claims")
+    if isinstance(claims, list):
+        data["claims"] = [_source_ref_ids_alias_prompt_data(claim, source_ref_aliases) for claim in claims]
+    open_questions = data.get("open_questions")
+    if isinstance(open_questions, list):
+        data["open_questions"] = [
+            _source_ref_ids_alias_prompt_data(question, source_ref_aliases) for question in open_questions
+        ]
+    citations = data.get("citations")
+    if isinstance(citations, list):
+        data["citations"] = [_source_ref_id_alias_prompt_data(citation, source_ref_aliases) for citation in citations]
+    return data
+
+
+def _citation_prompt_data(
+    citation: Mapping[str, Any],
+    source_ref_aliases: QualitySourceRefAliases,
+) -> Mapping[str, Any]:
+    return _source_ref_id_alias_prompt_data(citation, source_ref_aliases)
+
+
+def _activity_prompt_data(
+    activity: QualityActivityContext,
+    source_ref_aliases: QualitySourceRefAliases,
+) -> Mapping[str, Any]:
     return {
         "activity_unit_id": activity.activity_unit_id,
         "ordinal": activity.ordinal,
@@ -262,11 +335,48 @@ def _activity_prompt_data(activity: QualityActivityContext) -> Mapping[str, Any]
         "activity_text_status": activity.activity_text_status,
         "byte_start": activity.byte_start,
         "byte_end": activity.byte_end,
-        "source_ref_ids": list(activity.source_ref_ids),
+        "source_ref_ids": [
+            _source_ref_alias_prompt_id(source_ref_id, source_ref_aliases) for source_ref_id in activity.source_ref_ids
+        ],
         "activity_text": _bounded_text_prompt_data(activity.activity_text)
         if activity.activity_text is not None
         else None,
     }
+
+
+def _source_ref_ids_alias_prompt_data(
+    value: Any,
+    source_ref_aliases: QualitySourceRefAliases,
+) -> Any:
+    if not isinstance(value, Mapping):
+        return value
+    data = dict(value)
+    source_ref_ids = data.get("source_ref_ids")
+    if isinstance(source_ref_ids, list):
+        data["source_ref_ids"] = [
+            _source_ref_alias_prompt_id(source_ref_id, source_ref_aliases)
+            if isinstance(source_ref_id, str)
+            else source_ref_id
+            for source_ref_id in source_ref_ids
+        ]
+    return data
+
+
+def _source_ref_id_alias_prompt_data(
+    value: Any,
+    source_ref_aliases: QualitySourceRefAliases,
+) -> Any:
+    if not isinstance(value, Mapping):
+        return value
+    data = dict(value)
+    source_ref_id = data.get("source_ref_id")
+    if isinstance(source_ref_id, str):
+        data["source_ref_id"] = _source_ref_alias_prompt_id(source_ref_id, source_ref_aliases)
+    return data
+
+
+def _source_ref_alias_prompt_id(source_ref_id: str, source_ref_aliases: QualitySourceRefAliases) -> str:
+    return source_ref_aliases.alias_by_source_ref_id.get(source_ref_id, source_ref_id)
 
 
 def _bounded_text(value: str, limit: int) -> BoundedText:
