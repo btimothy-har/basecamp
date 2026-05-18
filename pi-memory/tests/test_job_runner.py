@@ -67,6 +67,7 @@ from pi_memory.interpretation import (
     ToolActivitySummaryInput,
     ToolActivitySummaryOutput,
     ToolActivitySummaryResult,
+    build_source_ref_aliases,
 )
 from pi_memory.interpretation.packets import InterpretationPacket
 from pi_memory.jobs import (
@@ -126,6 +127,45 @@ class RecordingInterpreter:
     def interpret(self, packet: InterpretationPacket) -> InterpretationResult:
         self.calls.append(packet)
         return DeterministicSessionInterpreter().interpret(packet)
+
+
+class AliasedInterpreter:
+    def interpret(self, packet: InterpretationPacket) -> InterpretationResult:
+        result = DeterministicSessionInterpreter().interpret(packet)
+        aliases = build_source_ref_aliases(packet)
+        output = result.output
+        return InterpretationResult(
+            output=output.model_copy(
+                update={
+                    "claims": [
+                        claim.model_copy(
+                            update={
+                                "source_ref_ids": [
+                                    aliases.alias_for(source_ref_id) for source_ref_id in claim.source_ref_ids
+                                ],
+                            },
+                        )
+                        for claim in output.claims
+                    ],
+                    "open_questions": [
+                        question.model_copy(
+                            update={
+                                "source_ref_ids": [
+                                    aliases.alias_for(source_ref_id) for source_ref_id in question.source_ref_ids
+                                ],
+                            },
+                        )
+                        for question in output.open_questions
+                    ],
+                    "citations": [
+                        citation.model_copy(update={"source_ref_id": aliases.alias_for(citation.source_ref_id)})
+                        for citation in output.citations
+                    ],
+                },
+            ),
+            model_metadata=result.model_metadata,
+            prompt_version=result.prompt_version,
+        )
 
 
 class FailingInterpreter:
@@ -970,6 +1010,42 @@ def test_process_transcript_enqueued_interpret_job_writes_snapshot(
         assert snapshot is not None
         assert snapshot.job_id == interpret_session_job_id
         assert snapshot.status == SESSION_INTERPRETATION_STATUS_COMPLETED
+
+
+def test_interpret_session_alias_output_persists_canonical_source_refs(
+    database: Database,
+    store: JobStore,
+) -> None:
+    transcript_id = create_transcript(database)
+    process = process_transcript(database, store, transcript_id)
+    assert process.result_json is not None
+    summarize_job = run_summarize_tool_activities_job(
+        database,
+        store,
+        process.result_json["summarize_tool_activities_job_id"],
+    )
+    assert summarize_job.result_json is not None
+    claimed = store.claim_next("worker-interpret")
+    assert claimed is not None
+    assert claimed.id == summarize_job.result_json["interpret_session_job_id"]
+
+    completed = JobRunner(database=database, interpreter=AliasedInterpreter()).run(
+        claimed.id,
+        claimed.run_id,
+        running_pid=123,
+    )
+
+    assert completed.status == JOB_STATUS_COMPLETED
+    with database.session() as session:
+        snapshot = session.scalar(select(SessionInterpretationSnapshot))
+        assert snapshot is not None
+        assert snapshot.status == SESSION_INTERPRETATION_STATUS_COMPLETED
+        canonical_id = snapshot.interpretation_json["claims"][0]["source_ref_ids"][0]
+        assert canonical_id.startswith("ar")
+        assert snapshot.interpretation_json["citations"][0]["source_ref_id"] == canonical_id
+        assert {citation["source_ref_id"] for citation in snapshot.citations_json} == {canonical_id}
+        assert "s0001" not in json.dumps(snapshot.interpretation_json)
+        assert "s0001" not in json.dumps(snapshot.citations_json)
 
 
 def test_process_transcript_enqueued_interpret_job_writes_snapshot_without_snapshot_shells(

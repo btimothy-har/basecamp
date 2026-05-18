@@ -90,12 +90,44 @@ class InterpretationOutput(BaseModel):
 
 
 @dataclass(frozen=True)
+class SourceRefAliases:
+    """Prompt-safe source-ref aliases mapped to canonical source refs."""
+
+    alias_by_source_ref_id: Mapping[str, str]
+    source_ref_id_by_alias: Mapping[str, str]
+
+    def alias_for(self, source_ref_id: str) -> str:
+        """Return the prompt alias for a canonical source ref."""
+        return self.alias_by_source_ref_id[source_ref_id]
+
+    def canonical_source_ref_id(self, source_ref_id: str) -> str:
+        """Return the canonical source ref for an alias or canonical id."""
+        return self.source_ref_id_by_alias.get(source_ref_id, source_ref_id)
+
+
+@dataclass(frozen=True)
 class ValidatedInterpretation:
     """Validated interpretation payloads ready for future snapshot persistence."""
 
     output: InterpretationOutput
     interpretation_json: Mapping[str, Any]
     citations_json: list[Mapping[str, Any]]
+
+
+def build_source_ref_aliases(packet: InterpretationPacket) -> SourceRefAliases:
+    """Build deterministic prompt aliases for packet source refs."""
+    alias_by_source_ref_id: dict[str, str] = {}
+    source_ref_id_by_alias: dict[str, str] = {}
+    for source_ref in _ordered_source_refs(packet):
+        if source_ref.source_ref_id in alias_by_source_ref_id:
+            continue
+        alias = f"s{len(alias_by_source_ref_id) + 1:04d}"
+        alias_by_source_ref_id[source_ref.source_ref_id] = alias
+        source_ref_id_by_alias[alias] = source_ref.source_ref_id
+    return SourceRefAliases(
+        alias_by_source_ref_id=alias_by_source_ref_id,
+        source_ref_id_by_alias=source_ref_id_by_alias,
+    )
 
 
 def validate_interpretation_output(
@@ -117,6 +149,7 @@ def validate_interpretation_output(
     model = _coerce_output(output)
     _validate_packet_interpretable(packet)
     _validate_packet_identity(model, packet)
+    model = _canonicalize_output_source_refs(model, build_source_ref_aliases(packet))
     source_refs = _source_refs_by_id(packet)
     _validate_source_ref_ids(model, source_refs)
     _validate_claim_presence(model)
@@ -137,6 +170,35 @@ def _coerce_output(output: InterpretationOutput | Mapping[str, Any]) -> Interpre
         raise InterpretationValidationError.schema_error() from error
 
 
+def _canonicalize_output_source_refs(
+    output: InterpretationOutput,
+    source_ref_aliases: SourceRefAliases,
+) -> InterpretationOutput:
+    claims = []
+    open_questions = []
+    citations = []
+    changed = False
+    for claim in output.claims:
+        source_ref_ids = [
+            source_ref_aliases.canonical_source_ref_id(source_ref_id) for source_ref_id in claim.source_ref_ids
+        ]
+        changed = changed or source_ref_ids != claim.source_ref_ids
+        claims.append(claim.model_copy(update={"source_ref_ids": source_ref_ids}))
+    for question in output.open_questions:
+        source_ref_ids = [
+            source_ref_aliases.canonical_source_ref_id(source_ref_id) for source_ref_id in question.source_ref_ids
+        ]
+        changed = changed or source_ref_ids != question.source_ref_ids
+        open_questions.append(question.model_copy(update={"source_ref_ids": source_ref_ids}))
+    for citation in output.citations:
+        source_ref_id = source_ref_aliases.canonical_source_ref_id(citation.source_ref_id)
+        changed = changed or source_ref_id != citation.source_ref_id
+        citations.append(citation.model_copy(update={"source_ref_id": source_ref_id}))
+    if not changed:
+        return output
+    return output.model_copy(update={"claims": claims, "open_questions": open_questions, "citations": citations})
+
+
 def _validate_packet_interpretable(packet: InterpretationPacket) -> None:
     if not packet.readiness.can_call_model:
         raise InterpretationValidationError.packet_not_interpretable()
@@ -153,11 +215,11 @@ def _validate_packet_identity(output: InterpretationOutput, packet: Interpretati
 
 
 def _source_refs_by_id(packet: InterpretationPacket) -> dict[str, SourceRef]:
-    return {
-        source_ref.source_ref_id: source_ref
-        for episode_packet in packet.episode_packets
-        for source_ref in episode_packet.source_refs
-    }
+    return {source_ref.source_ref_id: source_ref for source_ref in _ordered_source_refs(packet)}
+
+
+def _ordered_source_refs(packet: InterpretationPacket) -> tuple[SourceRef, ...]:
+    return tuple(source_ref for episode_packet in packet.episode_packets for source_ref in episode_packet.source_refs)
 
 
 def _validate_source_ref_ids(output: InterpretationOutput, source_refs: Mapping[str, SourceRef]) -> None:

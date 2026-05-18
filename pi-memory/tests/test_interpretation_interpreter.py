@@ -16,6 +16,7 @@ from pi_memory.interpretation import (
     PYDANTIC_AI_INTERPRETER_MODE,
     TOOL_ACTIVITY_SUMMARY_PROMPT_VERSION,
     TOOL_ACTIVITY_SUMMARY_SCHEMA_VERSION,
+    ActivityPacket,
     BoundedText,
     DeterministicSessionInterpreter,
     DeterministicToolActivitySummarizer,
@@ -72,6 +73,36 @@ def source_ref(
         ),
         receipt_metadata={},
         source_metadata={},
+    )
+
+
+def activity_packet(source_ref: SourceRef) -> ActivityPacket:
+    return ActivityPacket(
+        activity_unit_id=source_ref.activity_unit_id,
+        episode_id=source_ref.episode_id,
+        episode_ordinal=source_ref.episode_ordinal,
+        activity_index=source_ref.activity_index,
+        sequence=1,
+        kind=source_ref.activity_kind,
+        source_origin=source_ref.source_origin,
+        claim_source_allowed=source_ref.claim_source_allowed,
+        source_entry_row_ids=source_ref.source_entry_row_ids,
+        byte_start=source_ref.byte_start,
+        byte_end=source_ref.byte_end,
+        message_role="user",
+        tool_call_id=None,
+        tool_name=None,
+        is_error=None,
+        text_char_count=25,
+        result_text_byte_count=0,
+        result_text_line_count=0,
+        activity_text="User message:\nUse aliases.",
+        activity_text_kind="message",
+        activity_text_status="completed",
+        activity_text_metadata={},
+        receipt_metadata={},
+        source_metadata={},
+        source_refs=(source_ref,),
     )
 
 
@@ -458,13 +489,18 @@ async def test_pydantic_ai_tool_summarizer_async_returns_one_summary() -> None:
 
 
 def test_pydantic_ai_interpreter_renders_bounded_packet_prompt_only() -> None:
+    canonical_id = "ar1:ep0:act196:entries240"
+    canonical_ref = source_ref(canonical_id)
+    base_packet = packet(canonical_ref)
+    episode = base_packet.episode_packets[0]
     source_packet = replace(
-        packet(source_ref("local-ref")),
+        base_packet,
         session_metadata={"secret": "SESSION_METADATA_SHOULD_NOT_APPEAR"},
         transcript_metadata={"secret": "TRANSCRIPT_METADATA_SHOULD_NOT_APPEAR"},
         source_analysis_metadata={"secret": "ANALYSIS_METADATA_SHOULD_NOT_APPEAR"},
+        episode_packets=(replace(episode, included_activities=(activity_packet(canonical_ref),)),),
     )
-    output = interpretation_output(source_packet, "local-ref")
+    output = interpretation_output(source_packet, canonical_id)
     agent = FakePydanticAgent(output=output)
     interpreter = PydanticAISessionInterpreter(
         "plain-model-name",
@@ -478,9 +514,11 @@ def test_pydantic_ai_interpreter_renders_bounded_packet_prompt_only() -> None:
     assert result.model_metadata["provider"] is None
     prompt = agent.prompts[0]
     assert "source excerpt" not in prompt
-    assert "local-ref" in prompt
+    assert canonical_id not in prompt
+    assert '"source_ref_ids":["s0001"]' in prompt
+    assert '"claim_source_ref_ids":["s0001"]' in prompt
+    assert "short source-ref aliases" in prompt
     assert "do not return an empty claims list" in prompt
-    assert "claim_source_ref_ids" in prompt
     assert "analysis_run_id" in prompt
     assert "analyzed_through_byte_offset" in prompt
     assert "SESSION_METADATA_SHOULD_NOT_APPEAR" not in prompt
