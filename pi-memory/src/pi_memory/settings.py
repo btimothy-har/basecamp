@@ -50,6 +50,13 @@ class MissingInterpretationModelError(SettingsError):
         super().__init__("interpretation_model is required for session interpretation.")
 
 
+class IncompleteSettingsWriteError(OSError):
+    """Raised when a settings write cannot make forward progress."""
+
+    def __init__(self) -> None:
+        super().__init__("os.write wrote zero bytes")
+
+
 def _atomic_write_json(
     path: Path,
     data: dict[str, Any],
@@ -63,7 +70,7 @@ def _atomic_write_json(
     fd, tmp_name = tempfile.mkstemp(dir=path.parent, suffix=".tmp")
     try:
         try:
-            os.write(fd, content)
+            _write_all(fd, content)
             os.fsync(fd)
             os.fchmod(fd, mode)
         finally:
@@ -78,6 +85,16 @@ def _atomic_write_json(
         os.fsync(dir_fd)
     finally:
         os.close(dir_fd)
+
+
+def _write_all(fd: int, content: bytes) -> None:
+    view = memoryview(content)
+    bytes_written = 0
+    while bytes_written < len(view):
+        written = os.write(fd, view[bytes_written:])
+        if written == 0:
+            raise IncompleteSettingsWriteError()
+        bytes_written += written
 
 
 def _validate_interpretation_model(value: object) -> str:

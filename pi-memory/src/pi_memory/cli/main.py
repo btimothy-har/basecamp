@@ -73,7 +73,7 @@ class PortBindError(click.ClickException):
     """Raised when the local service cannot bind its requested port."""
 
     def __init__(self, *, host: str, port: int, reason: str) -> None:
-        super().__init__(f"{SERVICE_NAME} cannot start at http://{host}:{port}: {reason}")
+        super().__init__(f"{SERVICE_NAME} cannot start at {_service_base_url(host=host, port=port)}: {reason}")
 
     @classmethod
     def in_use(cls, *, host: str, port: int) -> PortBindError:
@@ -483,12 +483,29 @@ def status(host: str, port: int, timeout: float, *, json_output: bool) -> None:
 
 def _ensure_port_available(*, host: str, port: int) -> None:
     try:
-        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
-            sock.bind((host, port))
-    except OSError as error:
-        if error.errno == errno.EADDRINUSE:
-            raise PortBindError.in_use(host=host, port=port) from error
+        addresses = socket.getaddrinfo(host, port, type=socket.SOCK_STREAM)
+    except socket.gaierror as error:
         raise PortBindError(host=host, port=port, reason=str(error)) from error
+
+    errors: list[OSError] = []
+    seen: set[tuple[int, int, int, Any]] = set()
+    for family, socktype, proto, _canonname, sockaddr in addresses:
+        key = (family, socktype, proto, sockaddr)
+        if key in seen:
+            continue
+        seen.add(key)
+        try:
+            with socket.socket(family, socktype, proto) as sock:
+                sock.bind(sockaddr)
+        except OSError as error:
+            if error.errno == errno.EADDRINUSE:
+                raise PortBindError.in_use(host=host, port=port) from error
+            errors.append(error)
+
+    if not seen:
+        raise PortBindError(host=host, port=port, reason="host did not resolve to a bind address")
+    if errors and len(errors) == len(seen):
+        raise PortBindError(host=host, port=port, reason=str(errors[0])) from errors[0]
 
 
 def _require_loopback_host(host: str) -> str:
@@ -518,7 +535,22 @@ def _is_loopback_host(host: str) -> bool:
 
 
 def _status_url(*, host: str, port: int) -> str:
-    return f"http://{host}:{port}/v1/status"
+    return f"{_service_base_url(host=host, port=port)}/v1/status"
+
+
+def _service_base_url(*, host: str, port: int) -> str:
+    return f"http://{_http_host(host)}:{port}"
+
+
+def _http_host(host: str) -> str:
+    try:
+        address = ipaddress.ip_address(host)
+    except ValueError:
+        return host
+
+    if address.version == 6:
+        return f"[{host}]"
+    return host
 
 
 def _fetch_status(*, url: str, timeout: float) -> dict[str, Any]:

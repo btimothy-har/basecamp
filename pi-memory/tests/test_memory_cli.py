@@ -442,6 +442,50 @@ def test_serve_reports_occupied_port_and_cleans_state(tmp_path, monkeypatch) -> 
     assert not state.metadata_path.exists()
 
 
+def test_status_url_brackets_ipv6_loopback_host() -> None:
+    assert cli_module._status_url(host="::1", port=8765) == "http://[::1]:8765/v1/status"
+
+
+def test_port_bind_error_brackets_ipv6_loopback_host() -> None:
+    error = cli_module.PortBindError.in_use(host="::1", port=8765)
+
+    assert "pi-memory cannot start at http://[::1]:8765" in str(error)
+
+
+def test_port_check_uses_resolved_socket_family(monkeypatch) -> None:
+    calls = []
+
+    class FakeSocket:
+        def __init__(self, family: int, socktype: int, proto: int) -> None:
+            calls.append(("socket", family, socktype, proto))
+
+        def __enter__(self) -> "FakeSocket":
+            return self
+
+        def __exit__(self, *_args: object) -> None:
+            return None
+
+        def bind(self, sockaddr: tuple[str, int, int, int]) -> None:
+            calls.append(("bind", sockaddr))
+
+    def fake_getaddrinfo(
+        host: str,
+        port: int,
+        **_kwargs: object,
+    ) -> list[tuple[int, int, int, str, tuple[str, int, int, int]]]:
+        return [(socket.AF_INET6, socket.SOCK_STREAM, 0, "", (host, port, 0, 0))]
+
+    monkeypatch.setattr(cli_module.socket, "getaddrinfo", fake_getaddrinfo)
+    monkeypatch.setattr(cli_module.socket, "socket", FakeSocket)
+
+    cli_module._ensure_port_available(host="::1", port=8765)
+
+    assert calls == [
+        ("socket", socket.AF_INET6, socket.SOCK_STREAM, 0),
+        ("bind", ("::1", 8765, 0, 0)),
+    ]
+
+
 def test_serve_constructs_dispatcher_and_passes_it_to_app(tmp_path, monkeypatch) -> None:
     dispatcher = object()
     captured: dict[str, object] = {}

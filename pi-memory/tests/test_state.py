@@ -63,3 +63,43 @@ def test_registration_replaces_stale_state(tmp_path, monkeypatch) -> None:
     with state.register(host="127.0.0.1", port=9877) as metadata:
         assert metadata.port == 9877
         assert state.lock_path.read_text(encoding="utf-8") == str(os.getpid())
+
+
+def test_registration_retries_incomplete_lock_before_replacing(tmp_path, monkeypatch) -> None:
+    state = ServerState(memory_dir=tmp_path)
+    state.ensure_dirs()
+    state.lock_path.write_text("", encoding="utf-8")
+    sleep_calls = []
+
+    monkeypatch.setattr(state_module.time, "sleep", lambda seconds: sleep_calls.append(seconds))
+
+    with state.register(host="127.0.0.1", port=9877) as metadata:
+        assert metadata.port == 9877
+        assert state.lock_path.read_text(encoding="utf-8") == str(os.getpid())
+
+    assert (
+        sleep_calls
+        == [
+            state_module.INCOMPLETE_STATE_RETRY_SECONDS,
+        ]
+        * state_module.INCOMPLETE_STATE_MAX_ATTEMPTS
+    )
+
+
+def test_registration_releases_lock_when_metadata_write_fails(tmp_path) -> None:
+    class MetadataWriteFailedError(OSError):
+        def __init__(self) -> None:
+            super().__init__("metadata write failed")
+
+    class FailingMetadataState(ServerState):
+        def _write_metadata(self, metadata: ServerMetadata) -> None:
+            _ = metadata
+            raise MetadataWriteFailedError()
+
+    state = FailingMetadataState(memory_dir=tmp_path)
+
+    with pytest.raises(OSError, match="metadata write failed"):
+        state.acquire(ServerMetadata.create(memory_dir=tmp_path))
+
+    assert not state.lock_path.exists()
+    assert not state.metadata_path.exists()

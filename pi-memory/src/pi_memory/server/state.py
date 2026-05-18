@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import time
 from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -19,6 +20,9 @@ from pi_memory.constants import (
     SERVICE_NAME,
     SERVICE_VERSION,
 )
+
+INCOMPLETE_STATE_MAX_ATTEMPTS = 20
+INCOMPLETE_STATE_RETRY_SECONDS = 0.05
 
 
 class ServerAlreadyRunningError(Exception):
@@ -124,7 +128,11 @@ class ServerState:
         """Acquire the local server lock and write process metadata."""
         self.ensure_dirs()
         self._acquire_lock()
-        self._write_metadata(metadata)
+        try:
+            self._write_metadata(metadata)
+        except OSError:
+            _unlink_missing(self.lock_path)
+            raise
 
     def release(self) -> None:
         """Remove server metadata and lock files during normal shutdown."""
@@ -133,6 +141,7 @@ class ServerState:
 
     def _acquire_lock(self) -> None:
         flags = os.O_CREAT | os.O_EXCL | os.O_WRONLY
+        incomplete_attempts = 0
         while True:
             try:
                 descriptor = os.open(self.lock_path, flags, 0o600)
@@ -140,7 +149,12 @@ class ServerState:
                 metadata = self.read_metadata()
                 if self._has_running_process(metadata):
                     raise ServerAlreadyRunningError(metadata) from None
+                if self._has_incomplete_state(metadata) and incomplete_attempts < INCOMPLETE_STATE_MAX_ATTEMPTS:
+                    incomplete_attempts += 1
+                    time.sleep(INCOMPLETE_STATE_RETRY_SECONDS)
+                    continue
                 self._remove_stale_state()
+                incomplete_attempts = 0
                 continue
 
             with os.fdopen(descriptor, "w", encoding="utf-8") as lock_file:
@@ -155,6 +169,9 @@ class ServerState:
     def _remove_stale_state(self) -> None:
         for path in (self.metadata_path, self.lock_path):
             _unlink_missing(path)
+
+    def _has_incomplete_state(self, metadata: dict[str, object] | None) -> bool:
+        return metadata is None and _lock_pid(self.lock_path) is None
 
     def _has_running_process(self, metadata: dict[str, object] | None) -> bool:
         pid = _metadata_pid(metadata) or _lock_pid(self.lock_path)

@@ -46,7 +46,7 @@ def test_parse_negative_offset_starts_at_beginning(tmp_path) -> None:
     assert result.cursor_offset == len(content)
 
 
-def test_parse_preserves_cursor_when_offset_is_past_eof(tmp_path) -> None:
+def test_parse_clamps_cursor_when_offset_is_past_eof(tmp_path) -> None:
     path = tmp_path / "transcript.jsonl"
     content = b'{"type":"session","id":"session-1"}\n'
     write_transcript(path, content)
@@ -54,7 +54,7 @@ def test_parse_preserves_cursor_when_offset_is_past_eof(tmp_path) -> None:
     result = PiTranscriptParser().parse(path, offset=len(content) + 100)
 
     assert result.entries == []
-    assert result.cursor_offset == len(content) + 100
+    assert result.cursor_offset == len(content)
     assert result.file_size == len(content)
 
 

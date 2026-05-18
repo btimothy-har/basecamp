@@ -49,7 +49,7 @@ class PiTranscriptParser:
             Parse result containing parsed entries, next cursor, file size, and skip counts.
         """
         file_size = path.stat().st_size
-        cursor_offset = max(offset, 0)
+        cursor_offset = min(max(offset, 0), file_size)
         entries: list[ParsedPiEntry] = []
         malformed_lines = 0
         unsupported_lines = 0

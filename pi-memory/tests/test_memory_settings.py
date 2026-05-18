@@ -1,6 +1,7 @@
 import json
 from pathlib import Path
 
+import pi_memory.settings as settings_module
 import pytest
 from pi_memory.settings import (
     DEFAULT_TOOL_SUMMARY_CONCURRENCY,
@@ -57,6 +58,27 @@ def test_file_model_persists(tmp_path: Path) -> None:
         "tool_summary_concurrency": DEFAULT_TOOL_SUMMARY_CONCURRENCY,
     }
     assert Settings(settings.path).require_interpretation_model() == "anthropic:claude-sonnet-4-6"
+
+
+def test_file_write_handles_partial_os_write(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    settings = memory_settings(tmp_path)
+    writes = []
+    real_write = settings_module.os.write
+
+    def partial_write(fd: int, data: bytes | bytearray | memoryview) -> int:
+        content = bytes(data)
+        size = max(1, len(content) // 2)
+        writes.append(size)
+        return real_write(fd, content[:size])
+
+    monkeypatch.setattr(settings_module.os, "write", partial_write)
+
+    settings.update(interpretation_model="anthropic:claude-sonnet-4-6")
+
+    assert len(writes) > 1
+    assert json.loads(settings.path.read_text()) == {
+        "interpretation_model": "anthropic:claude-sonnet-4-6",
+    }
 
 
 def test_env_override_wins_over_file_settings(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

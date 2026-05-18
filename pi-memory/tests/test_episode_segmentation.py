@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
-from typing import Any
+from typing import Any, Final, cast
 
 from pi_memory.analysis import NormalizedActivity, segment_activities
 from pi_memory.db import (
@@ -20,6 +20,7 @@ from pi_memory.db import (
 )
 
 BASE_TIME = datetime(2026, 5, 15, 12, 0, tzinfo=UTC)
+_TIMESTAMP_UNSET: Final = object()
 
 
 def activity(
@@ -28,8 +29,8 @@ def activity(
     *,
     byte_start: int | None = None,
     byte_end: int | None = None,
-    timestamp_start: datetime | None = None,
-    timestamp_end: datetime | None = None,
+    timestamp_start: datetime | None | object = _TIMESTAMP_UNSET,
+    timestamp_end: datetime | None | object = _TIMESTAMP_UNSET,
     source_entry_ids: tuple[int, ...] | None = None,
     sequence: int | None = None,
     source_metadata_json: dict[str, Any] | None = None,
@@ -44,8 +45,8 @@ def activity(
         source_entry_ids=(row_id,) if source_entry_ids is None else source_entry_ids,
         byte_start=start,
         byte_end=end,
-        timestamp_start=timestamp if timestamp_start is None else timestamp_start,
-        timestamp_end=timestamp if timestamp_end is None else timestamp_end,
+        timestamp_start=_timestamp_or_default(timestamp_start, timestamp),
+        timestamp_end=_timestamp_or_default(timestamp_end, timestamp),
         message_role="user" if kind == ACTIVITY_KIND_USER_TEXT else None,
         tool_call_id="call-1" if kind == ACTIVITY_KIND_TOOL_PAIR else None,
         tool_name="bash" if kind == ACTIVITY_KIND_TOOL_PAIR else None,
@@ -58,6 +59,12 @@ def activity(
         source_metadata_json=source_metadata_json or {},
         sequence=row_id if sequence is None else sequence,
     )
+
+
+def _timestamp_or_default(value: datetime | None | object, default: datetime) -> datetime | None:
+    if value is _TIMESTAMP_UNSET:
+        return default
+    return cast("datetime | None", value)
 
 
 def test_empty_input_returns_empty_list() -> None:

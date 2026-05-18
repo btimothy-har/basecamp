@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import subprocess
 import threading
 from collections.abc import Callable, Sequence
@@ -15,6 +16,8 @@ from pi_memory.jobs.store import JobStore, JobStoreError
 DEFAULT_COMMAND = ("pi-memory",)
 DEFAULT_LEASE_SECONDS = 60
 DEFAULT_POLL_INTERVAL_SECONDS = 1.0
+
+logger = logging.getLogger(__name__)
 
 
 class ChildProcess(Protocol):
@@ -141,7 +144,12 @@ class JobDispatcher:
 
     def _run_loop(self) -> None:
         while not self._stop_event.is_set():
-            job_was_claimed = self.run_once()
+            try:
+                job_was_claimed = self.run_once()
+            except JobStoreError:
+                logger.exception("Job dispatcher store error")
+                self._stop_event.wait(self._poll_interval)
+                continue
             if not job_was_claimed:
                 self._stop_event.wait(self._poll_interval)
 

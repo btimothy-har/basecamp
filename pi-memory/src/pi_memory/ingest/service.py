@@ -85,7 +85,7 @@ class TranscriptIngestService:
             parsed = self._parser.parse(transcript_path, offset=stored_cursor)
             entries_ingested = _insert_new_entries(db_session, transcript.id, parsed.entries)
 
-            transcript.cursor_offset = max(stored_cursor, parsed.cursor_offset)
+            transcript.cursor_offset = parsed.cursor_offset
             transcript.file_size = parsed.file_size
             _update_transcript_lineage(db_session, transcript, parsed.entries)
             _resolve_pending_child_transcripts(db_session, transcript)

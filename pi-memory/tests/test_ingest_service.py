@@ -147,6 +147,27 @@ def test_observe_ingests_only_appended_entries(
     assert [entry.entry_id for entry in transcript_entries(database)] == ["session-1", "message-1"]
 
 
+def test_observe_clamps_stale_cursor_when_transcript_shrinks(
+    tmp_path,
+    database: Database,
+    service: TranscriptIngestService,
+) -> None:
+    path = tmp_path / "transcript.jsonl"
+    initial_content = session_line() + message_line("message-1")
+    shrunk_content = session_line()
+    write_transcript(path, initial_content)
+
+    first_result = service.observe(ObserveInput(session_id="pi-session-1", transcript_path=path))
+    write_transcript(path, shrunk_content)
+    second_result = service.observe(ObserveInput(session_id="pi-session-1", transcript_path=path))
+
+    assert first_result.cursor_offset == len(initial_content)
+    assert second_result.entries_ingested == 0
+    assert second_result.cursor_offset == len(shrunk_content)
+    assert second_result.file_size == len(shrunk_content)
+    assert transcript_for(database, "pi-session-1", path).cursor_offset == len(shrunk_content)
+
+
 def test_observe_does_not_consume_partial_trailing_line_until_completed(
     tmp_path,
     database: Database,

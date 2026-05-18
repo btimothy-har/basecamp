@@ -389,6 +389,33 @@ class RacingReleaseStore(JobStore):
         raise RacingReleaseError
 
 
+class TemporaryStoreFailureError(JobStoreError):
+    def __init__(self) -> None:
+        super().__init__("temporary store failure")
+
+
+class FailingOnceStore(JobStore):
+    def __init__(self, database: Database) -> None:
+        super().__init__(database=database)
+        self.error_seen = threading.Event()
+        self.continued = threading.Event()
+        self.calls = 0
+
+    def claim_next(
+        self,
+        claimed_by: str,
+        lease_seconds: int = 60,
+        now: datetime | None = None,
+    ) -> Job | None:
+        _ = claimed_by, lease_seconds, now
+        self.calls += 1
+        if self.calls == 1:
+            self.error_seen.set()
+            raise TemporaryStoreFailureError()
+        self.continued.set()
+        return None
+
+
 def test_claimed_job_missing_run_id_raises_invariant_error(database: Database, store: JobStore) -> None:
     store.enqueue("test", due_at=at(10))
     dispatcher = JobDispatcher(
@@ -440,6 +467,26 @@ def test_start_recovers_stale_jobs_before_loop(database: Database, store: JobSto
     recovered = get_job(database, running.id)
     assert recovered.status == JOB_STATUS_FAILED
     assert recovered.last_error == "Job lease expired"
+
+
+def test_loop_continues_after_transient_store_error(database: Database, caplog: pytest.LogCaptureFixture) -> None:
+    store = FailingOnceStore(database=database)
+    dispatcher = JobDispatcher(
+        database=database,
+        store=store,
+        process_factory=lambda _argv: FakeProcess(exit_code=0),
+        poll_interval=0.01,
+        clock=lambda: at(10),
+    )
+
+    dispatcher.start()
+    assert store.error_seen.wait(timeout=1)
+    assert store.continued.wait(timeout=1)
+    dispatcher.stop(timeout=1)
+
+    assert dispatcher.is_alive is False
+    assert "Job dispatcher store error" in caplog.text
+    assert "temporary store failure" in caplog.text
 
 
 def test_start_stop_lifecycle_exits_and_terminates_active_child(database: Database, store: JobStore) -> None:
