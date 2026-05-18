@@ -36,7 +36,7 @@ uv run install.py -e        # editable (recommended for development)
 uv run install.py --no-editable
 ```
 
-This installs the Python tools `basecamp` and `pi-observer`, registers the Pi packages in `pi-extension/` and `pi-observer/`, and saves the Basecamp install directory to `~/.pi/basecamp/config.json`.
+This installs the Python tools `basecamp`, `pi-observer`, and `pi-memory`, registers the Pi packages in `pi-extension/`, `pi-observer/`, and `pi-memory/`, and saves the Basecamp install directory to `~/.pi/basecamp/config.json`.
 
 Then initialize the environment:
 
@@ -44,7 +44,7 @@ Then initialize the environment:
 basecamp setup                     # check prerequisites, create styles/context dirs, create default config
 ```
 
-If `basecamp` or `pi-observer` aren't in your PATH:
+If `basecamp`, `pi-observer`, or `pi-memory` aren't in your PATH:
 
 ```bash
 export PATH="$HOME/.local/bin:$PATH"
@@ -55,6 +55,7 @@ export PATH="$HOME/.local/bin:$PATH"
 ```bash
 uv tool upgrade basecamp
 uv tool upgrade pi-observer
+uv tool upgrade pi-memory
 ```
 
 ### Uninstalling
@@ -62,6 +63,7 @@ uv tool upgrade pi-observer
 ```bash
 uv tool uninstall basecamp
 uv tool uninstall pi-observer
+uv tool uninstall pi-memory
 ```
 
 ## Usage
@@ -153,6 +155,50 @@ Projects are defined in `~/.pi/basecamp/config.json`:
 
 Existing local config files with the older project directory schema are migrated to `repo_root` and `additional_dirs` by setup/config flows.
 
+### Pi memory interpretation
+
+`pi-memory` session interpretation uses PydanticAI at runtime. Configure `interpretation_model` with any PydanticAI-supported model string before running interpretation jobs.
+
+Inspect the current settings:
+
+```bash
+pi-memory config
+pi-memory config --json
+```
+
+Set the session interpretation model:
+
+```bash
+pi-memory config --interpretation-model anthropic:claude-sonnet-4-6
+```
+
+Tool activity summarization can use a smaller/faster model. If unset, it falls back to the interpretation model:
+
+```bash
+pi-memory config --tool-summary-model anthropic:claude-haiku-4-5
+pi-memory config --tool-summary-concurrency 25
+```
+
+Environment overrides are inherited by dispatcher-spawned `run-job` child processes:
+
+```bash
+export PI_MEMORY_INTERPRETATION_MODEL=anthropic:claude-sonnet-4-6
+export PI_MEMORY_TOOL_SUMMARY_MODEL=anthropic:claude-haiku-4-5
+export PI_MEMORY_TOOL_SUMMARY_CONCURRENCY=25
+```
+
+`PI_MEMORY_TOOL_SUMMARY_CONCURRENCY` controls the bounded window of independent one-tool summary calls. The default is conservative (`10`); valid values are `1` through `100`.
+
+When interpretation jobs run, `pi-memory` first stores raw transcript rows canonically in SQLite, then derives chronological `activity_units.activity_text` for downstream model prompts. Raw `transcript_entries.raw_line` remains the source of truth. Tool call/result pairs are summarized one at a time by the configured tool-summary model; session interpretation consumes the cleaned chronological activity text plus citation ids, not raw JSON transcript lines. `pi-memory` does not store API keys. Configure provider credentials with the environment variables expected by PydanticAI/provider packages, such as `ANTHROPIC_API_KEY` or `OPENAI_API_KEY`.
+
+Clear persisted settings:
+
+```bash
+pi-memory config --clear-interpretation-model
+pi-memory config --clear-tool-summary-model
+pi-memory config --clear-tool-summary-concurrency
+```
+
 ## Prompt System
 
 basecamp replaces the default system prompt via a `before_agent_start` hook. This gives you:
@@ -218,7 +264,7 @@ The workspace service owns the `~/.worktrees/<repo>/<label>/` storage convention
 
 ## Semantic Memory (Observer)
 
-The `pi-observer` CLI and Pi package provide semantic memory across sessions. They ingest session transcripts, extract structured knowledge via LLM, and make it searchable.
+The `pi-observer` CLI and Pi package provide the current semantic recall UI across sessions. They ingest session transcripts, extract structured knowledge via LLM, and make it searchable. The newer `pi-memory/` package runs a local memory service for canonical transcript capture, raw recall, deterministic episode structure, activity-text projection, tool activity summarization, and PydanticAI session interpretation; Pi recall-tool behavior still remains in `pi-observer/` for now.
 
 ### How it works
 
@@ -239,10 +285,12 @@ pi-observer recall search "worktrees"     # Search semantic memory from the shel
 
 ### Storage
 
-All data is local — no servers or external services:
-- `~/.pi/observer/observer.db` — SQLite (relational model + FTS5 keyword search)
-- `~/.pi/observer/chroma/` — ChromaDB (vector embeddings, HNSW index)
+All data is local. Current observer recall state and new memory-service state are intentionally separate:
+- `~/.pi/observer/observer.db` — current observer SQLite (relational model + FTS5 keyword search)
+- `~/.pi/observer/chroma/` — current observer ChromaDB (vector embeddings, HNSW index)
 - `~/.pi/observer/config.json` — Observer settings
+- `~/.pi/memory/memory.db` — new `pi-memory` canonical transcript, job, recall, episode, activity-text, and interpretation store
+- `~/.pi/memory/config.json` — new `pi-memory` model/concurrency settings
 - `~/.pi/basecamp/config.json` — Basecamp settings, including the installed repo path
 
 ## Package Layout
@@ -252,6 +300,7 @@ basecamp is split into root-level products:
 - `basecamp-cli/` — Python package for the `basecamp` setup/config CLI
 - `pi-extension/` — Pi package for project context, session UI, worktrees, workflow, git, and engineering skills
 - `pi-observer/` — Python package for the `pi-observer` CLI plus a Pi package for transcript ingestion and semantic recall
+- `pi-memory/` — Python and Pi package for the local memory service, transcript capture, jobs, raw recall, episode structure, and session interpretation
 
 ## License
 

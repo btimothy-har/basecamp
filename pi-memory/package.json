@@ -1,0 +1,30 @@
+{
+	"name": "pi-memory",
+	"type": "module",
+	"version": "0.1.0",
+	"description": "Pi memory package scaffold.",
+	"keywords": [
+		"pi-package"
+	],
+	"pi": {
+		"extensions": [
+			"./extension/src"
+		]
+	},
+	"scripts": {
+		"check": "tsc && biome check .",
+		"typecheck": "tsc",
+		"lint": "biome check .",
+		"lint:fix": "biome check --fix .",
+		"format": "biome format --fix ."
+	},
+	"peerDependencies": {
+		"@mariozechner/pi-coding-agent": "*"
+	},
+	"devDependencies": {
+		"@biomejs/biome": "^2.0.0",
+		"@mariozechner/pi-coding-agent": "^0.67.1",
+		"@types/node": "^22.0.0",
+		"typescript": "^5.8.0"
+	}
+}
