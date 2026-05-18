@@ -9,15 +9,19 @@ import pytest
 from pi_memory.interpretation import BoundedText
 from pi_memory.quality import (
     DETERMINISTIC_QUALITY_ASSESSOR_MODE,
+    FINDING_CODE_QUALITY_ASSESSMENT_REFERENCE_UNRESOLVED,
     PYDANTIC_AI_QUALITY_ASSESSOR_MODE,
     QUALITY_ASSESSMENT_PROMPT_VERSION,
     QUALITY_BOUNDED_TEXT_MAX_LENGTH,
     QUALITY_CLAIM_ASSESSMENTS_MAX_LENGTH,
     QUALITY_MISSING_HIGH_SIGNAL_ITEMS_MAX_LENGTH,
     QUALITY_SEMANTIC_FINDINGS_MAX_LENGTH,
+    QUALITY_STATUS_DEGRADED,
     QUALITY_STATUS_HEALTHY,
     QUALITY_STATUS_NOT_ASSESSED,
     QUALITY_STATUS_REASON_SEMANTIC_ASSESSMENT_PENDING,
+    QUALITY_STATUS_REASON_SEMANTIC_DEGRADED,
+    SEMANTIC_STATUS_DEGRADED,
     SEMANTIC_STATUS_NOT_ASSESSED,
     SEMANTIC_STATUS_PASSED,
     DeterministicQualityAssessor,
@@ -31,6 +35,7 @@ from pi_memory.quality import (
     QualityReportDraft,
     SemanticQualityAssessmentOutput,
     validate_quality_assessment_output,
+    validate_quality_assessment_result,
 )
 
 
@@ -156,6 +161,40 @@ def alias_semantic_output() -> dict[str, Any]:
     }
 
 
+def recoverable_reference_defect_output() -> dict[str, Any]:
+    return {
+        "semantic_status": SEMANTIC_STATUS_PASSED,
+        "findings": [
+            {
+                "code": "weak_source_support",
+                "severity": "warning",
+                "message": "A quality finding has mixed references.",
+                "references": [
+                    {"kind": "source_ref", "id": "source-1"},
+                    {"kind": "source_ref", "id": "activity_unit_id:111"},
+                    {"kind": "claim", "id": "0"},
+                ],
+            },
+        ],
+        "claim_assessments": [
+            {
+                "claim_index": 0,
+                "status": "supported",
+                "source_ref_ids": ["source-1", "1"],
+                "rationale": "The claim remains supported by the known source.",
+            },
+        ],
+        "missing_high_signal_items": [
+            {
+                "kind": "decision",
+                "description": "A missed decision has an invalid assessor source pointer.",
+                "source_ref_ids": ["activity_unit_id:111"],
+            },
+        ],
+        "overall_rationale": "The interpretation is mostly supported.",
+    }
+
+
 def test_pydantic_ai_quality_assessor_returns_report_and_safe_prompt(monkeypatch: pytest.MonkeyPatch) -> None:
     prompts: list[str] = []
     monkeypatch.setenv("ANTHROPIC_API_KEY", "SECRET_PROVIDER_KEY_SHOULD_NOT_LEAK")
@@ -226,6 +265,38 @@ def test_pydantic_ai_quality_assessor_persists_canonical_refs_from_alias_output(
     )
 
 
+def test_pydantic_ai_quality_assessor_degrades_and_promotes_recoverable_reference_defects() -> None:
+    class FakeAgent:
+        def __init__(self, _model: str, *, output_type: type) -> None:
+            self.output_type = output_type
+
+        def run_sync(self, _prompt: str) -> RunResult:
+            return RunResult(recoverable_reference_defect_output())
+
+    assessor = PydanticAIQualityAssessor("anthropic:claude-haiku-4-5", agent_factory=FakeAgent)
+    draft = assessor.assess(packet())
+
+    assert draft.quality_status == QUALITY_STATUS_DEGRADED
+    assert draft.quality_reason == QUALITY_STATUS_REASON_SEMANTIC_DEGRADED
+    assert draft.semantic_status == SEMANTIC_STATUS_DEGRADED
+    assert draft.promotable is True
+    assert draft.claim_assessments[0].source_ref_ids == ["source-1"]
+    assert draft.missing_high_signal_items[0].source_ref_ids == []
+    assert draft.assessment_metadata["quality_reference_defect_count"] == 3
+    finding = draft.semantic_findings[-1]
+    assert finding.code == FINDING_CODE_QUALITY_ASSESSMENT_REFERENCE_UNRESOLVED
+    assert finding.severity == "warning"
+    assert finding.references[0].kind == "snapshot"
+    persisted_payload = json.dumps(
+        {
+            "semantic_findings": draft.semantic_findings_json,
+            "claim_assessments": draft.claim_assessments_json,
+            "missing_high_signal_items": draft.missing_high_signal_items_json,
+        },
+    )
+    assert "activity_unit_id:111" not in persisted_payload
+
+
 def test_pydantic_ai_quality_assessor_supports_async_agents() -> None:
     class FakeAsyncAgent:
         def __init__(self, _model: str, *, output_type: type) -> None:
@@ -237,9 +308,9 @@ def test_pydantic_ai_quality_assessor_supports_async_agents() -> None:
     assessor = PydanticAIQualityAssessor("openai:gpt-fast", agent_factory=FakeAsyncAgent)
     draft = asyncio.run(assessor.assess_async(packet()))
 
-    assert draft.quality_status == "degraded"
-    assert draft.quality_reason == "semantic_degraded"
-    assert draft.promotable is False
+    assert draft.quality_status == QUALITY_STATUS_DEGRADED
+    assert draft.quality_reason == QUALITY_STATUS_REASON_SEMANTIC_DEGRADED
+    assert draft.promotable is True
 
 
 def test_deterministic_quality_assessor_returns_healthy_report() -> None:
@@ -288,23 +359,33 @@ def test_validate_quality_assessment_output_rejects_unknown_claim_index() -> Non
         validate_quality_assessment_output(output, packet())
 
 
-def test_validate_quality_assessment_output_rejects_unknown_source_ref() -> None:
-    candidate = {
-        **semantic_output(),
-        "missing_high_signal_items": [
-            {
-                "kind": "decision",
-                "description": "Missed decision.",
-                "source_ref_ids": ["missing-source"],
-            },
-        ],
-    }
+def test_validate_quality_assessment_result_omits_unresolved_source_refs() -> None:
+    result = validate_quality_assessment_result(recoverable_reference_defect_output(), packet())
+    output = result.output
 
-    with pytest.raises(QualityAssessmentValidationError, match="unknown source_ref_id"):
-        validate_quality_assessment_output(candidate, packet())
+    assert result.reference_defect_count == 3
+    assert [defect.field_path for defect in result.reference_defects] == [
+        "claim_assessments[0].source_ref_ids[1]",
+        "missing_high_signal_items[0].source_ref_ids[0]",
+        "findings[0].references[1].id",
+    ]
+    assert output.claim_assessments[0].source_ref_ids == ["source-1"]
+    assert output.missing_high_signal_items[0].source_ref_ids == []
+    assert [reference.model_dump(mode="json") for reference in output.findings[0].references] == [
+        {"kind": "source_ref", "id": "source-1"},
+        {"kind": "claim", "id": "0"},
+    ]
+    persisted_payload = json.dumps(
+        {
+            "findings": [finding.model_dump(mode="json") for finding in output.findings],
+            "claim_assessments": [assessment.model_dump(mode="json") for assessment in output.claim_assessments],
+            "missing_high_signal_items": [item.model_dump(mode="json") for item in output.missing_high_signal_items],
+        },
+    )
+    assert "activity_unit_id:111" not in persisted_payload
 
 
-def test_validate_quality_assessment_output_rejects_unknown_alias() -> None:
+def test_validate_quality_assessment_output_omits_unknown_alias() -> None:
     candidate = {
         **semantic_output(),
         "claim_assessments": [
@@ -316,8 +397,9 @@ def test_validate_quality_assessment_output_rejects_unknown_alias() -> None:
         ],
     }
 
-    with pytest.raises(QualityAssessmentValidationError, match="s9999"):
-        validate_quality_assessment_output(candidate, packet())
+    output = validate_quality_assessment_output(candidate, packet())
+
+    assert output.claim_assessments[0].source_ref_ids == []
 
 
 def test_pydantic_ai_quality_assessor_wraps_provider_failures() -> None:

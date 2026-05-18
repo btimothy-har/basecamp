@@ -58,6 +58,7 @@ FINDING_CODE_TOOL_SUMMARY_INCOMPLETE = "tool_summary_incomplete"
 FINDING_CODE_MODEL_METADATA_MISSING = "model_metadata_missing"
 FINDING_CODE_PROMPT_VERSION_MISSING = "prompt_version_missing"
 FINDING_CODE_ANALYSIS_IDENTITY_MISMATCH = "analysis_identity_mismatch"
+FINDING_CODE_QUALITY_ASSESSMENT_REFERENCE_UNRESOLVED = "quality_assessment_reference_unresolved"
 
 QUALITY_BOUNDED_TEXT_MAX_LENGTH: Final = 500
 QUALITY_SEMANTIC_FINDINGS_MAX_LENGTH: Final = 20
@@ -249,13 +250,19 @@ def compute_promotable(
     quality_status: str,
 ) -> bool:
     """Return whether a report is eligible for later memory promotion."""
-    return (
+    has_safe_memory_substrate = (
         snapshot_status == SESSION_INTERPRETATION_STATUS_COMPLETED
         and derivation_status == SESSION_INTERPRETATION_DERIVATION_STATUS_CURRENT
         and deterministic_status == SESSION_INTERPRETATION_DETERMINISTIC_STATUS_PASSED
-        and semantic_status == SESSION_INTERPRETATION_SEMANTIC_STATUS_PASSED
-        and quality_status == SESSION_INTERPRETATION_QUALITY_STATUS_HEALTHY
     )
+    has_promotable_quality = (
+        semantic_status == SESSION_INTERPRETATION_SEMANTIC_STATUS_PASSED
+        and quality_status == SESSION_INTERPRETATION_QUALITY_STATUS_HEALTHY
+    ) or (
+        semantic_status == SESSION_INTERPRETATION_SEMANTIC_STATUS_DEGRADED
+        and quality_status == SESSION_INTERPRETATION_QUALITY_STATUS_DEGRADED
+    )
+    return has_safe_memory_substrate and has_promotable_quality
 
 
 QUALITY_STATUS_REASON_BLOCKED = SESSION_INTERPRETATION_QUALITY_REASON_BLOCKED_INTERPRETATION

@@ -5,8 +5,12 @@ from pi_memory.db import (
     SESSION_INTERPRETATION_DERIVATION_STATUS_CURRENT,
     SESSION_INTERPRETATION_DETERMINISTIC_STATUS_PASSED,
     SESSION_INTERPRETATION_QUALITY_REASON_SEMANTIC_ASSESSMENT_PENDING,
+    SESSION_INTERPRETATION_QUALITY_STATUS_DEGRADED,
+    SESSION_INTERPRETATION_QUALITY_STATUS_FAILED,
     SESSION_INTERPRETATION_QUALITY_STATUS_HEALTHY,
     SESSION_INTERPRETATION_QUALITY_STATUS_NOT_ASSESSED,
+    SESSION_INTERPRETATION_SEMANTIC_STATUS_DEGRADED,
+    SESSION_INTERPRETATION_SEMANTIC_STATUS_FAILED,
     SESSION_INTERPRETATION_SEMANTIC_STATUS_NOT_ASSESSED,
     SESSION_INTERPRETATION_SEMANTIC_STATUS_PASSED,
     SESSION_INTERPRETATION_STATUS_COMPLETED,
@@ -155,6 +159,26 @@ def test_compute_promotable_matrix() -> None:
     }
 
     assert compute_promotable(**base) is True
+    assert (
+        compute_promotable(
+            **{
+                **base,
+                "semantic_status": SESSION_INTERPRETATION_SEMANTIC_STATUS_DEGRADED,
+                "quality_status": SESSION_INTERPRETATION_QUALITY_STATUS_DEGRADED,
+            }
+        )
+        is True
+    )
+    assert (
+        compute_promotable(
+            **{
+                **base,
+                "semantic_status": SESSION_INTERPRETATION_SEMANTIC_STATUS_FAILED,
+                "quality_status": SESSION_INTERPRETATION_QUALITY_STATUS_FAILED,
+            }
+        )
+        is False
+    )
     assert compute_promotable(**{**base, "snapshot_status": "blocked"}) is False
     assert compute_promotable(**{**base, "derivation_status": "outdated"}) is False
     assert compute_promotable(**{**base, "deterministic_status": "failed"}) is False

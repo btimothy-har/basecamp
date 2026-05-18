@@ -18,6 +18,7 @@ except ImportError:
     PydanticAIAgent = None
 
 from pi_memory.quality.contracts import (
+    FINDING_CODE_QUALITY_ASSESSMENT_REFERENCE_UNRESOLVED,
     QUALITY_ASSESSMENT_SCHEMA_VERSION,
     QUALITY_BOUNDED_TEXT_MAX_LENGTH,
     QUALITY_CLAIM_ASSESSMENTS_MAX_LENGTH,
@@ -31,6 +32,8 @@ from pi_memory.quality.contracts import (
     SEMANTIC_STATUS_DEGRADED,
     SEMANTIC_STATUS_FAILED,
     SEMANTIC_STATUS_PASSED,
+    QualityFinding,
+    QualityFindingReference,
     QualityReportDraft,
     SemanticQualityAssessmentOutput,
     compute_promotable,
@@ -53,6 +56,12 @@ _SCHEMA_ERROR_MESSAGE = "Quality assessment output does not match the required s
 _UNKNOWN_SOURCE_REF_MESSAGE = "Quality assessment output cites an unknown source_ref_id"
 _UNKNOWN_CLAIM_INDEX_MESSAGE = "Quality assessment output cites an unknown claim index"
 _QUALITY_METADATA_TEXT_MAX_LENGTH = 300
+_REFERENCE_DEFECTS_MAX_LENGTH = 20
+_REFERENCE_DEFECT_ID_MAX_LENGTH = 160
+_REFERENCE_DEFECT_PATH_MAX_LENGTH = 160
+_UNRESOLVED_REFERENCE_FINDING_MESSAGE = (
+    "Quality assessor cited unresolved source refs; invalid quality references were omitted."
+)
 _SOURCE_REF_ALIAS_PATTERN = re.compile(r"(?<![A-Za-z0-9_])s\d{4}(?![A-Za-z0-9_])")
 
 AgentFactory = Callable[..., Any]
@@ -66,6 +75,27 @@ class QualityAssessmentResult:
     model_metadata: Mapping[str, Any]
     prompt_version: str
     schema_version: int = QUALITY_ASSESSMENT_SCHEMA_VERSION
+
+
+@dataclass(frozen=True)
+class QualityReferenceDefect:
+    """Unresolved quality-assessor source reference omitted during validation."""
+
+    field_path: str
+    reference_id: str
+
+
+@dataclass(frozen=True)
+class ValidatedQualityAssessment:
+    """Validated semantic assessment with recoverable reference defects."""
+
+    output: SemanticQualityAssessmentOutput
+    reference_defects: tuple[QualityReferenceDefect, ...] = ()
+    omitted_reference_defect_count: int = 0
+
+    @property
+    def reference_defect_count(self) -> int:
+        return len(self.reference_defects) + self.omitted_reference_defect_count
 
 
 class QualityAssessor(Protocol):
@@ -143,12 +173,12 @@ class PydanticAIQualityAssessor:
         prompt = _render_quality_assessment_prompt(packet)
         try:
             run_result = self._agent.run_sync(prompt)
-            output = validate_quality_assessment_output(_extract_quality_assessment_output(run_result), packet)
+            validated = validate_quality_assessment_result(_extract_quality_assessment_output(run_result), packet)
         except Exception as error:
             raise PydanticAIQualityAssessmentError() from error
         return _quality_report_from_semantic_output(
             packet=packet,
-            output=output,
+            validated=validated,
             model_metadata=_pydantic_ai_model_metadata(self.model),
             prompt_version=self.prompt_version,
         )
@@ -159,12 +189,12 @@ class PydanticAIQualityAssessor:
         prompt = _render_quality_assessment_prompt(packet)
         try:
             run_result = await _run_pydantic_ai_agent(self._agent, prompt)
-            output = validate_quality_assessment_output(_extract_quality_assessment_output(run_result), packet)
+            validated = validate_quality_assessment_result(_extract_quality_assessment_output(run_result), packet)
         except Exception as error:
             raise PydanticAIQualityAssessmentError() from error
         return _quality_report_from_semantic_output(
             packet=packet,
-            output=output,
+            validated=validated,
             model_metadata=_pydantic_ai_model_metadata(self.model),
             prompt_version=self.prompt_version,
         )
@@ -189,7 +219,7 @@ class DeterministicQualityAssessor:
         )
         return _quality_report_from_semantic_output(
             packet=packet,
-            output=output,
+            validated=ValidatedQualityAssessment(output=output),
             model_metadata=self.model_metadata if self.model_metadata is not None else _deterministic_model_metadata(),
             prompt_version=self.prompt_version,
         )
@@ -199,13 +229,30 @@ class DeterministicQualityAssessor:
         return self.assess(packet)
 
 
+def validate_quality_assessment_result(
+    output: SemanticQualityAssessmentOutput | Mapping[str, Any],
+    packet: QualityPacket,
+) -> ValidatedQualityAssessment:
+    """Validate semantic assessment output against its quality packet."""
+    model = _coerce_quality_assessment_output(output)
+    model = _canonicalize_quality_assessment_source_refs(model, build_quality_source_ref_aliases(packet))
+    _validate_claim_indexes(model, packet)
+    return _omit_unresolved_quality_references(model, packet)
+
+
 def validate_quality_assessment_output(
     output: SemanticQualityAssessmentOutput | Mapping[str, Any],
     packet: QualityPacket,
 ) -> SemanticQualityAssessmentOutput:
-    """Validate semantic assessment output against its quality packet."""
+    """Validate semantic assessment output and return its sanitized payload."""
+    return validate_quality_assessment_result(output, packet).output
+
+
+def _coerce_quality_assessment_output(
+    output: SemanticQualityAssessmentOutput | Mapping[str, Any],
+) -> SemanticQualityAssessmentOutput:
     try:
-        model = (
+        return (
             output
             if isinstance(output, SemanticQualityAssessmentOutput)
             else SemanticQualityAssessmentOutput.model_validate(output)
@@ -213,18 +260,105 @@ def validate_quality_assessment_output(
     except ValidationError as error:
         raise QualityAssessmentValidationError.schema_error() from error
 
-    model = _canonicalize_quality_assessment_source_refs(model, build_quality_source_ref_aliases(packet))
-    for assessment in model.claim_assessments:
+
+def _validate_claim_indexes(output: SemanticQualityAssessmentOutput, packet: QualityPacket) -> None:
+    for assessment in output.claim_assessments:
         if assessment.claim_index >= packet.claim_count:
             raise QualityAssessmentValidationError.unknown_claim_index(assessment.claim_index)
-        _validate_source_ref_ids(assessment.source_ref_ids, packet)
-    for item in model.missing_high_signal_items:
-        _validate_source_ref_ids(item.source_ref_ids, packet)
-    for finding in model.findings:
-        for reference in finding.references:
-            if reference.kind == "source_ref" and reference.id not in packet.source_ref_ids:
-                raise QualityAssessmentValidationError.unknown_source_ref(reference.id)
-    return model
+
+
+def _omit_unresolved_quality_references(
+    output: SemanticQualityAssessmentOutput,
+    packet: QualityPacket,
+) -> ValidatedQualityAssessment:
+    valid_source_ref_ids = packet.source_ref_ids
+    reference_defects: list[QualityReferenceDefect] = []
+    claim_assessments = []
+    missing_high_signal_items = []
+    findings = []
+    changed = False
+
+    for assessment_index, assessment in enumerate(output.claim_assessments):
+        source_ref_ids = _known_source_ref_ids(
+            assessment.source_ref_ids,
+            valid_source_ref_ids,
+            field_path=f"claim_assessments[{assessment_index}].source_ref_ids",
+            reference_defects=reference_defects,
+        )
+        changed = changed or source_ref_ids != assessment.source_ref_ids
+        claim_assessments.append(
+            assessment.model_copy(update={"source_ref_ids": source_ref_ids})
+            if source_ref_ids != assessment.source_ref_ids
+            else assessment
+        )
+
+    for item_index, item in enumerate(output.missing_high_signal_items):
+        source_ref_ids = _known_source_ref_ids(
+            item.source_ref_ids,
+            valid_source_ref_ids,
+            field_path=f"missing_high_signal_items[{item_index}].source_ref_ids",
+            reference_defects=reference_defects,
+        )
+        changed = changed or source_ref_ids != item.source_ref_ids
+        missing_high_signal_items.append(
+            item.model_copy(update={"source_ref_ids": source_ref_ids})
+            if source_ref_ids != item.source_ref_ids
+            else item
+        )
+
+    for finding_index, finding in enumerate(output.findings):
+        references = []
+        finding_changed = False
+        for reference_index, reference in enumerate(finding.references):
+            if reference.kind != "source_ref" or reference.id in valid_source_ref_ids:
+                references.append(reference)
+                continue
+            reference_defects.append(
+                _reference_defect(
+                    field_path=f"findings[{finding_index}].references[{reference_index}].id",
+                    reference_id=reference.id,
+                )
+            )
+            finding_changed = True
+        changed = changed or finding_changed
+        findings.append(finding.model_copy(update={"references": references}) if finding_changed else finding)
+
+    if changed:
+        output = output.model_copy(
+            update={
+                "claim_assessments": claim_assessments,
+                "missing_high_signal_items": missing_high_signal_items,
+                "findings": findings,
+            }
+        )
+    return ValidatedQualityAssessment(
+        output=output,
+        reference_defects=tuple(reference_defects[:_REFERENCE_DEFECTS_MAX_LENGTH]),
+        omitted_reference_defect_count=max(len(reference_defects) - _REFERENCE_DEFECTS_MAX_LENGTH, 0),
+    )
+
+
+def _known_source_ref_ids(
+    source_ref_ids: list[str],
+    valid_source_ref_ids: frozenset[str],
+    *,
+    field_path: str,
+    reference_defects: list[QualityReferenceDefect],
+) -> list[str]:
+    known_source_ref_ids = []
+    for index, source_ref_id in enumerate(source_ref_ids):
+        if source_ref_id in valid_source_ref_ids:
+            known_source_ref_ids.append(source_ref_id)
+            continue
+        reference_defects.append(_reference_defect(field_path=f"{field_path}[{index}]", reference_id=source_ref_id))
+    return known_source_ref_ids
+
+
+def _reference_defect(*, field_path: str, reference_id: str) -> QualityReferenceDefect:
+    return QualityReferenceDefect(
+        field_path=field_path[:_REFERENCE_DEFECT_PATH_MAX_LENGTH],
+        reference_id=reference_id[:_REFERENCE_DEFECT_ID_MAX_LENGTH],
+    )
 
 
 def _canonicalize_quality_assessment_source_refs(
@@ -334,12 +468,6 @@ def _canonicalize_alias_metadata(
     }
 
 
-def _validate_source_ref_ids(source_ref_ids: list[str], packet: QualityPacket) -> None:
-    for source_ref_id in source_ref_ids:
-        if source_ref_id not in packet.source_ref_ids:
-            raise QualityAssessmentValidationError.unknown_source_ref(source_ref_id)
-
-
 def _create_pydantic_ai_agent(model: str, output_type: type[BaseModel], agent_factory: AgentFactory | None) -> Any:
     factory = agent_factory if agent_factory is not None else _pydantic_ai_agent_factory()
     return factory(model, output_type=output_type)
@@ -403,38 +531,85 @@ def _render_quality_assessment_prompt(packet: QualityPacket) -> str:
 def _quality_report_from_semantic_output(
     *,
     packet: QualityPacket,
-    output: SemanticQualityAssessmentOutput,
+    validated: ValidatedQualityAssessment,
     model_metadata: Mapping[str, Any],
     prompt_version: str,
 ) -> QualityReportDraft:
-    quality_status, quality_reason = _semantic_quality_status(output.semantic_status)
+    semantic_status = _semantic_status_with_reference_defects(validated)
+    quality_status, quality_reason = _semantic_quality_status(semantic_status)
+    output = validated.output
+    semantic_findings = list(output.findings)
+    if validated.reference_defect_count:
+        semantic_findings.append(_unresolved_reference_finding(packet, validated))
     deterministic_report = packet.deterministic_report
     return QualityReportDraft(
         quality_status=quality_status,
         quality_reason=quality_reason,
         derivation_status=deterministic_report.derivation_status,
         deterministic_status=deterministic_report.deterministic_status,
-        semantic_status=output.semantic_status,
+        semantic_status=semantic_status,
         promotable=compute_promotable(
             snapshot_status=packet.readiness.snapshot_status,
             derivation_status=deterministic_report.derivation_status,
             deterministic_status=deterministic_report.deterministic_status,
-            semantic_status=output.semantic_status,
+            semantic_status=semantic_status,
             quality_status=quality_status,
         ),
         deterministic_findings=list(deterministic_report.deterministic_findings),
-        semantic_findings=list(output.findings),
+        semantic_findings=semantic_findings,
         claim_assessments=list(output.claim_assessments),
         missing_high_signal_items=list(output.missing_high_signal_items),
         model_metadata=dict(model_metadata),
         assessment_metadata={
             **deterministic_report.assessment_metadata,
-            "semantic_finding_count": len(output.findings),
+            "semantic_finding_count": len(semantic_findings),
             "claim_assessment_count": len(output.claim_assessments),
             "missing_high_signal_item_count": len(output.missing_high_signal_items),
+            "quality_reference_defect_count": validated.reference_defect_count,
         },
         prompt_version=prompt_version,
     )
+
+
+def _semantic_status_with_reference_defects(validated: ValidatedQualityAssessment) -> str:
+    if validated.reference_defect_count and validated.output.semantic_status == SEMANTIC_STATUS_PASSED:
+        return SEMANTIC_STATUS_DEGRADED
+    return validated.output.semantic_status
+
+
+def _unresolved_reference_finding(
+    packet: QualityPacket,
+    validated: ValidatedQualityAssessment,
+) -> QualityFinding:
+    return QualityFinding(
+        code=FINDING_CODE_QUALITY_ASSESSMENT_REFERENCE_UNRESOLVED,
+        severity="warning",
+        message=_UNRESOLVED_REFERENCE_FINDING_MESSAGE,
+        references=[QualityFindingReference(kind="snapshot", id=str(packet.snapshot_id))],
+        details={
+            "unresolved_reference_count": validated.reference_defect_count,
+            "unresolved_reference_locations": _reference_defect_locations(validated.reference_defects),
+        },
+    )
+
+
+def _reference_defect_locations(reference_defects: tuple[QualityReferenceDefect, ...]) -> str:
+    locations = []
+    for defect in reference_defects:
+        location = _reference_defect_location(defect.field_path)
+        if location not in locations:
+            locations.append(location)
+    return "; ".join(locations)[:_QUALITY_METADATA_TEXT_MAX_LENGTH]
+
+
+def _reference_defect_location(field_path: str) -> str:
+    if field_path.startswith("claim_assessments"):
+        return "claim_assessments.source_ref_ids"
+    if field_path.startswith("missing_high_signal_items"):
+        return "missing_high_signal_items.source_ref_ids"
+    if field_path.startswith("findings"):
+        return "findings.references"
+    return "quality_assessment.references"
 
 
 def _semantic_quality_status(semantic_status: str) -> tuple[str, str | None]:

@@ -14,7 +14,10 @@ from pi_memory.quality.assessor import (
     QualityAssessmentUnavailableError,
     QualityAssessmentValidationError,
     QualityAssessor,
+    QualityReferenceDefect,
+    ValidatedQualityAssessment,
     validate_quality_assessment_output,
+    validate_quality_assessment_result,
 )
 from pi_memory.quality.contracts import (
     DETERMINISTIC_STATUS_FAILED,
@@ -31,6 +34,7 @@ from pi_memory.quality.contracts import (
     FINDING_CODE_MISSING_INTERPRETATION_PAYLOAD,
     FINDING_CODE_MODEL_METADATA_MISSING,
     FINDING_CODE_PROMPT_VERSION_MISSING,
+    FINDING_CODE_QUALITY_ASSESSMENT_REFERENCE_UNRESOLVED,
     FINDING_CODE_SNAPSHOT_OUTDATED,
     FINDING_CODE_SNAPSHOT_SUPERSEDED,
     FINDING_CODE_SOURCE_ORIGIN_INCOMPLETE,
@@ -106,6 +110,7 @@ __all__ = [
     "FINDING_CODE_MISSING_INTERPRETATION_PAYLOAD",
     "FINDING_CODE_MODEL_METADATA_MISSING",
     "FINDING_CODE_PROMPT_VERSION_MISSING",
+    "FINDING_CODE_QUALITY_ASSESSMENT_REFERENCE_UNRESOLVED",
     "FINDING_CODE_SNAPSHOT_OUTDATED",
     "FINDING_CODE_SNAPSHOT_SUPERSEDED",
     "FINDING_CODE_SOURCE_ORIGIN_INCOMPLETE",
@@ -151,6 +156,7 @@ __all__ = [
     "QualityFindingReference",
     "QualityPacket",
     "QualityPacketReadiness",
+    "QualityReferenceDefect",
     "QualityReportDraft",
     "QualitySourceRefAliases",
     "QualityReportFilterError",
@@ -162,6 +168,7 @@ __all__ = [
     "SEMANTIC_STATUS_PASSED",
     "SemanticQualityAssessmentOutput",
     "SessionQualityReportInspectionService",
+    "ValidatedQualityAssessment",
     "assess_deterministic_interpretation_quality",
     "build_quality_packet",
     "build_quality_source_ref_aliases",
@@ -170,4 +177,5 @@ __all__ = [
     "quality_packet_prompt_data",
     "serialize_quality_report",
     "validate_quality_assessment_output",
+    "validate_quality_assessment_result",
 ]

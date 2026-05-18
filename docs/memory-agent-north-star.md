@@ -366,7 +366,7 @@ The quality report deliberately separates axes that dashboards and future promot
 - promotion eligibility is the conservative `promotable` boolean;
 - wall-clock timestamps are recency metadata, not quality.
 
-Transcript age is not quality. An old report can remain healthy if it is current for its snapshot and both deterministic and semantic checks pass. A new report can be non-promotable if deterministic integrity fails, semantic assessment is pending/failed, or the derivation is outdated.
+Transcript age is not quality. An old report can remain promotable if it is current for its snapshot and deterministic checks pass, even when semantic quality is degraded. A new report can be non-promotable if deterministic integrity fails, semantic assessment is pending/failed, or the derivation is outdated.
 
 Completed/current snapshots first run deterministic checks for facts the service can prove locally: analyzed-through identity, required interpretation payload fields, claim presence for interpretable packets, citation/source-ref resolution, local/mixed claim-source eligibility, source-origin completeness, cited activity text completion, prompt version, and safe model metadata. Only completed/current/deterministic-passed packets call the configured semantic quality assessor. Blocked and skipped snapshots receive non-applicable deterministic reports without a model call.
 
@@ -1038,7 +1038,7 @@ Status taxonomy:
 - `derivation_status`: `current`, `outdated`, `superseded`; this is derived-state consistency, not transcript age.
 - `deterministic_status`: `passed`, `failed`, `not_applicable`.
 - `semantic_status`: `passed`, `degraded`, `failed`, `not_assessed`, `assessment_failed`.
-- `promotable`: true only when the snapshot is completed, current, deterministic-passed, semantic-passed, and healthy.
+- `promotable`: true when the snapshot is completed, current, deterministic-passed, and semantic quality is either healthy/passed or degraded with a degraded quality status.
 
 Validation:
 
