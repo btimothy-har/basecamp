@@ -38,6 +38,7 @@ from pi_memory.interpretation import (
     ToolActivitySummaryOutput,
     ToolActivitySummaryResult,
     ToolActivitySummaryValidationError,
+    build_episode_interpretation_packet,
     validate_interpretation_output,
     validate_tool_activity_summary_output,
 )
@@ -524,6 +525,58 @@ def test_pydantic_ai_interpreter_renders_bounded_packet_prompt_only() -> None:
     assert "SESSION_METADATA_SHOULD_NOT_APPEAR" not in prompt
     assert "TRANSCRIPT_METADATA_SHOULD_NOT_APPEAR" not in prompt
     assert "ANALYSIS_METADATA_SHOULD_NOT_APPEAR" not in prompt
+
+
+def test_pydantic_ai_interpreter_episode_packet_prompt_excludes_sibling_episodes() -> None:
+    first_ref = source_ref("ar1:ep0:act0:entries1")
+    second_ref = replace(
+        source_ref("ar1:ep1:act0:entries2"),
+        episode_id=21,
+        episode_ordinal=1,
+        activity_unit_id=11,
+    )
+    first_activity = replace(activity_packet(first_ref), activity_text="EPISODE_ZERO_ONLY")
+    second_activity = replace(
+        activity_packet(second_ref),
+        episode_id=21,
+        episode_ordinal=1,
+        activity_unit_id=11,
+        activity_text="EPISODE_ONE_ONLY",
+    )
+    base_packet = packet(first_ref)
+    first_episode = replace(
+        base_packet.episode_packets[0],
+        included_activities=(first_activity,),
+        source_refs=(first_ref,),
+    )
+    second_episode = replace(
+        base_packet.episode_packets[0],
+        episode_id=21,
+        manifest_id=22,
+        ordinal=1,
+        included_activities=(second_activity,),
+        source_refs=(second_ref,),
+    )
+    source_packet = replace(
+        base_packet,
+        readiness=replace(base_packet.readiness, activity_count=2, episode_count=2, manifest_count=2),
+        episode_packets=(first_episode, second_episode),
+    )
+    episode_packet = build_episode_interpretation_packet(source_packet, first_episode)
+    output = interpretation_output(episode_packet, first_ref.source_ref_id)
+    agent = FakePydanticAgent(output=output)
+    interpreter = PydanticAISessionInterpreter(
+        "test-provider:test-model",
+        agent_factory=FakePydanticAgentFactory(agent),
+    )
+
+    interpreter.interpret(episode_packet)
+
+    prompt = agent.prompts[0]
+    assert "EPISODE_ZERO_ONLY" in prompt
+    assert "EPISODE_ONE_ONLY" not in prompt
+    assert '"episode_count":1' in prompt
+    assert '"episodes":[{"activities"' in prompt
 
 
 def test_pydantic_ai_interpreter_readiness_guard_runs_before_model_call() -> None:

@@ -1646,6 +1646,9 @@ def test_interpret_session_interprets_each_claim_source_episode_separately(
     ]
     assert snapshot is not None
     assert len(snapshot.interpretation_json["claims"]) == 2
+    assert [
+        citation["episode_ordinal"] for citation in snapshot.citations_json if citation.get("usage") == "claim"
+    ] == [0, 1]
     assert snapshot.interpretation_json["aggregation"] == completed.result_json["episode_interpretation"]
 
 
@@ -2435,6 +2438,10 @@ def test_interpret_session_unexpected_interpreter_error_requeues_without_snapsho
     assert failed_job.last_error == "temporary model outage"
     with database.session() as session:
         assert session.scalar(select(func.count()).select_from(SessionInterpretationSnapshot)) == 0
+        episode_rows = list(session.scalars(select(EpisodeInterpretationSnapshot)))
+
+    assert [row.status for row in episode_rows] == [EPISODE_INTERPRETATION_STATUS_FAILED]
+    assert episode_rows[0].failure_metadata_json == {"error_type": "RuntimeError"}
 
 
 def test_wrong_run_id_is_rejected_without_incrementing_attempts(database: Database, store: JobStore) -> None:
