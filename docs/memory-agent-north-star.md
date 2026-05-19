@@ -1,6 +1,6 @@
 # Memory Agent North Star
 
-Status: proposed architecture and implementation roadmap. `pi-memory` has implemented Phase 4 raw transcript recall, Phase 5A deterministic transcript structure/fork provenance, and Phase 5B replaceable session interpretation over chronological activity-text packets; Pi recall tool wiring remains deferred.
+Status: proposed architecture and implementation roadmap. `pi-memory` has implemented Phase 4 raw transcript recall, Phase 5A deterministic transcript structure/fork provenance, Phase 5B replaceable session interpretation over chronological activity-text packets, and Phase 5C persisted interpretation quality reports; Pi recall tool wiring remains deferred.
 
 Related issue: [#123](https://github.com/btimothy-har/basecamp/issues/123)
 
@@ -352,6 +352,40 @@ Phase 5B parses parent and child sessions separately. Inherited child activity i
 Each new completed, blocked, or skipped interpretation replaces the previous current interpretation for that session. This prevents cumulative analysis from creating permanent duplicate or stale artifacts. The interpretation stage consumes `EpisodePacket` read models built from chronological `activity_units.activity_text`, episode manifests, and source-ref metadata. Prompt rendering keeps activity text and direct `claim_source_ref_ids` in chronological order while omitting heavyweight raw transcript JSON. Server-side validation still uses the full packet/source-ref model. Interpretation does not replace the underlying activity rows and does not promote durable memory.
 
 `session_snapshot_shells` remains a non-destructive Phase 5A compatibility artifact for now, but it is no longer the active Phase 5B handoff model. Phase 5B computes readiness directly from transcript lineage, latest completed `analysis_runs`, and `activity_units.source_origin`; it builds interpretation packets from `episodes` and `episode_manifests` after readiness is known.
+
+### 6.5. Interpretation quality reports
+
+Every non-stale interpretation snapshot enqueues an `assess_interpretation_quality` durable job. Quality is persisted separately from interpretation content in `session_interpretation_quality_reports`, keyed one-to-one by `snapshot_id`. The report is derived state over the current replaceable interpretation; it is not a durable memory artifact and does not mutate interpretation claims.
+
+The quality report deliberately separates axes that dashboards and future promotion logic should not collapse:
+
+- processing state remains on `session_interpretation_snapshots.status` (`completed`, `blocked`, `skipped_no_claim_sources`);
+- derivation/currentness is `derivation_status` (`current`, `outdated`, `superseded`) plus the read-model boolean `is_current`;
+- deterministic integrity is `deterministic_status` (`passed`, `failed`, `not_applicable`) and structured deterministic findings;
+- semantic quality is `semantic_status` (`passed`, `degraded`, `failed`, `not_assessed`, `assessment_failed`) plus structured semantic findings;
+- promotion eligibility is the conservative `promotable` boolean;
+- wall-clock timestamps are recency metadata, not quality.
+
+Transcript age is not quality. An old report can remain promotable if it is current for its snapshot and deterministic checks pass, even when semantic quality is degraded. A new report can be non-promotable if deterministic integrity fails, semantic assessment is pending/failed, or the derivation is outdated.
+
+Completed/current snapshots first run deterministic checks for facts the service can prove locally: analyzed-through identity, required interpretation payload fields, claim presence for interpretable packets, citation/source-ref resolution, local/mixed claim-source eligibility, source-origin completeness, cited activity text completion, prompt version, and safe model metadata. Only completed/current/deterministic-passed packets call the configured semantic quality assessor. Blocked and skipped snapshots receive non-applicable deterministic reports without a model call.
+
+Semantic assessment uses a PydanticAI-supported `quality_model` / `PI_MEMORY_QUALITY_MODEL`. If unset, it falls back to `tool_summary_model`, then `interpretation_model`. The quality prompt receives a bounded packet containing interpretation JSON, citations, chronological `activity_units.activity_text`, source-ref ids, and quality/deterministic metadata. It does not query or send full `transcript_entries.raw_line` transcript rows, and `pi-memory` does not persist provider API keys. Provider credentials remain in environment variables used by PydanticAI/provider packages.
+
+If semantic assessment fails transiently, the durable job retry policy applies. On the final failed attempt, `pi-memory` writes a visible safe report with `quality_status = assessment_failed` and `semantic_status = assessment_failed`, storing only safe error type metadata so dashboards are not blind and provider error bodies are not persisted.
+
+Read surfaces are available before any TUI/dashboard implementation:
+
+```text
+GET /v1/sessions/{session_id}/quality
+GET /v1/quality/reports
+GET /v1/quality/reports/sample
+pi-memory quality --session-id ... --db-url ... [--json]
+pi-memory quality-list --db-url ... [filters] [--json]
+pi-memory quality-sample --db-url ... [filters] [--json]
+```
+
+The later TUI should consume these persisted read surfaces. It should not own quality logic, reinterpretation, repair, manual claim editing, approval workflow, or Phase 6 promotion writes.
 
 ### 7. Candidate extraction
 
@@ -980,6 +1014,47 @@ Deferred:
 - Cross-session reconciliation.
 - Graph promotion.
 - Pi recall/tool UI exposure for interpretation snapshots.
+
+### Phase 5C: Always-on interpretation quality reports
+
+Purpose: assess replaceable session interpretations before any durable memory promotion, keeping currentness, deterministic integrity, semantic quality, and promotion eligibility separate.
+
+Implemented in `pi-memory`:
+
+- `session_interpretation_quality_reports` table keyed by `snapshot_id` with cascade delete from replaceable interpretation snapshots.
+- `assess_interpretation_quality` durable job kind, automatically enqueued after every completed, blocked, or skipped non-stale `interpret_session` snapshot write.
+- `quality_model` / `PI_MEMORY_QUALITY_MODEL` configuration, falling back to `tool_summary_model` and then `interpretation_model`.
+- Strict quality contracts for findings, claim assessments, missing high-signal items, semantic output, and persisted report drafts.
+- Deterministic integrity checks for citation/source-ref resolution, local/mixed claim-source eligibility, claim presence, source-origin completeness, analyzed-through identity, tool/activity-text completion, prompt version, and model metadata.
+- Bounded `QualityPacket` read model over interpretation JSON, citations, chronological activity text, and source refs; full raw transcript rows and provider secrets stay out of quality prompts.
+- PydanticAI-backed semantic quality assessor plus deterministic test/development assessor injection seam.
+- Final failure policy that writes a safe visible `assessment_failed` report after retries are exhausted.
+- Read-only reporting via `GET /v1/sessions/{session_id}/quality`, `GET /v1/quality/reports`, `GET /v1/quality/reports/sample`, `pi-memory quality`, `pi-memory quality-list`, and `pi-memory quality-sample`.
+
+Status taxonomy:
+
+- `quality_status`: `healthy`, `degraded`, `failed`, `not_assessed`, `assessment_failed`.
+- `quality_reason`: stable reason for non-healthy statuses, such as `blocked_interpretation`, `skipped_no_claim_sources`, `outdated_derivation`, `deterministic_integrity_failed`, `semantic_assessment_pending`, `semantic_degraded`, `semantic_failed`, or `semantic_assessment_failed`.
+- `derivation_status`: `current`, `outdated`, `superseded`; this is derived-state consistency, not transcript age.
+- `deterministic_status`: `passed`, `failed`, `not_applicable`.
+- `semantic_status`: `passed`, `degraded`, `failed`, `not_assessed`, `assessment_failed`.
+- `promotable`: true when the snapshot is completed, current, deterministic-passed, and semantic quality is either healthy/passed or degraded with a degraded quality status.
+
+Validation:
+
+- Completed/current deterministic-passed snapshots call the quality assessor and persist semantic findings.
+- Blocked and skipped snapshots persist non-applicable quality reports without model calls.
+- Replaced snapshot quality jobs complete as stale no-ops; outdated derivations are reported separately from semantic quality.
+- Provider failures retry through durable jobs; final failure persists `assessment_failed` without leaking provider error bodies.
+- Quality read surfaces return JSON-safe reports with session metadata, `assessment_state`, `is_current`, and severity `finding_counts` for future dashboards.
+
+Deferred:
+
+- Python TUI/Textual dashboard over quality reports.
+- Browser/Django UI.
+- Reinterpretation repair loop or automatic mutation of interpretation claims.
+- Manual claim editing, approval workflow, or annotation UI.
+- Durable memory artifacts, graph writes, Chroma indexes, or Phase 6 promotion.
 
 ### Phase 6: Durable artifact and graph schema
 

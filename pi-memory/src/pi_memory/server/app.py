@@ -19,9 +19,12 @@ from pi_memory.ingest import (
 )
 from pi_memory.interpretation import SessionInterpretationInspectionService
 from pi_memory.jobs import JobDispatcher, JobStore, enqueue_process_transcript_job, serialize_job
+from pi_memory.quality import QualityReportFilterError, SessionQualityReportInspectionService
 from pi_memory.recall import RawTranscriptRecallResult, RawTranscriptSearchResult, RecallSearchService
 
 NonEmptyString = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)]
+QualityStatusQuery = Literal["healthy", "degraded", "failed", "not_assessed", "assessment_failed"]
+DerivationStatusQuery = Literal["current", "outdated", "superseded"]
 
 
 class ObserveRequest(BaseModel):
@@ -108,6 +111,7 @@ def create_app(
     dispatcher: JobDispatcher | None = None,
     recall_service: RecallSearchService | None = None,
     interpretation_service: SessionInterpretationInspectionService | None = None,
+    quality_service: SessionQualityReportInspectionService | None = None,
 ) -> FastAPI:
     """Create the local Pi memory FastAPI application."""
     service_started_at = datetime.now(UTC) if started_at is None else started_at
@@ -126,6 +130,7 @@ def create_app(
     app.state.interpretation_service = (
         SessionInterpretationInspectionService() if interpretation_service is None else interpretation_service
     )
+    app.state.quality_service = SessionQualityReportInspectionService() if quality_service is None else quality_service
 
     @app.get("/health")
     def health() -> dict[str, str]:
@@ -177,6 +182,69 @@ def create_app(
                 detail=f"Interpretation snapshot for session {session_id} was not found",
             )
         return payload
+
+    @app.get("/v1/sessions/{session_id}/quality")
+    def get_session_quality(session_id: str) -> dict[str, object]:
+        """Return the latest safe quality report for a Pi session."""
+        payload = app.state.quality_service.get_by_session_id(session_id)
+        if payload is None:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Quality report for session {session_id} was not found",
+            )
+        return payload
+
+    @app.get("/v1/quality/reports")
+    def list_quality_reports(
+        quality_status: QualityStatusQuery | None = None,
+        derivation_status: DerivationStatusQuery | None = None,
+        *,
+        promotable: bool | None = None,
+        is_current: bool | None = None,
+        repo_name: str | None = None,
+        worktree_label: str | None = None,
+        limit: int = 10,
+        offset: int = 0,
+    ) -> dict[str, object]:
+        """List safe quality reports for dashboard consumers."""
+        try:
+            return app.state.quality_service.list_reports(
+                quality_status=quality_status,
+                derivation_status=derivation_status,
+                promotable=promotable,
+                is_current=is_current,
+                repo_name=repo_name,
+                worktree_label=worktree_label,
+                limit=limit,
+                offset=offset,
+            ).to_payload()
+        except QualityReportFilterError as error:
+            raise HTTPException(status_code=422, detail=str(error)) from error
+
+    @app.get("/v1/quality/reports/sample")
+    def sample_quality_reports(
+        count: int = 5,
+        quality_status: QualityStatusQuery | None = None,
+        derivation_status: DerivationStatusQuery | None = None,
+        *,
+        promotable: bool | None = None,
+        is_current: bool | None = None,
+        repo_name: str | None = None,
+        worktree_label: str | None = None,
+    ) -> dict[str, object]:
+        """Return a safe bounded sample of quality reports."""
+        try:
+            return app.state.quality_service.sample_reports(
+                count=count,
+                quality_status=quality_status,
+                derivation_status=derivation_status,
+                promotable=promotable,
+                is_current=is_current,
+                repo_name=repo_name,
+                worktree_label=worktree_label,
+            )
+        except QualityReportFilterError as error:
+            raise HTTPException(status_code=422, detail=str(error)) from error
 
     @app.post("/v1/recall/search", response_model=RecallSearchResponse)
     def recall_search(request: RecallSearchRequest) -> dict[str, object]:

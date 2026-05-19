@@ -21,11 +21,13 @@ from pi_memory.interpretation.contracts import (
     InterpretationClaim,
     InterpretationOpenQuestion,
     InterpretationOutput,
+    SourceRefAliases,
+    build_source_ref_aliases,
     is_claim_source_eligible,
 )
 from pi_memory.interpretation.packets import ActivityPacket, BoundedText, EpisodePacket, InterpretationPacket, SourceRef
 
-INTERPRETATION_PROMPT_VERSION = "phase5b-session-interpretation-v2"
+INTERPRETATION_PROMPT_VERSION = "phase5b-session-interpretation-v3"
 INTERPRETATION_SCHEMA_VERSION = 1
 TOOL_ACTIVITY_SUMMARY_PROMPT_VERSION = "phase5b-tool-activity-summary-v1"
 TOOL_ACTIVITY_SUMMARY_SCHEMA_VERSION = 1
@@ -361,9 +363,10 @@ def validate_tool_activity_summary_output(
 
 
 def _render_pydantic_ai_prompt(packet: InterpretationPacket) -> str:
+    source_ref_aliases = build_source_ref_aliases(packet)
     prompt_packet = {
         "readiness": _readiness_prompt_data(packet),
-        "episodes": [_episode_prompt_data(episode) for episode in packet.episode_packets],
+        "episodes": [_episode_prompt_data(episode, source_ref_aliases) for episode in packet.episode_packets],
     }
     packet_json = json.dumps(prompt_packet, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
     return (
@@ -377,6 +380,8 @@ def _render_pydantic_ai_prompt(packet: InterpretationPacket) -> str:
         "- Extract high-signal, source-backed claims about decisions, constraints, preferences, "
         "patterns, knowledge, and completed/deferred actions.\n"
         "- For substantial sessions, return roughly 8 to 20 claims; for short sessions, return at least one.\n"
+        "- Citation ids in Packet JSON are short source-ref aliases. Copy them exactly; "
+        "do not invent, shorten, or expand ids.\n"
         "- Every claim must cite one or more ids from an activity's claim_source_ref_ids.\n"
         "- Prefer specific engineering facts over generic claims like 'the session discussed X'.\n"
         "- Use citations for representative summary/open-question support; do not cite unavailable, "
@@ -469,8 +474,8 @@ def _readiness_prompt_data(packet: InterpretationPacket) -> Mapping[str, Any]:
     }
 
 
-def _episode_prompt_data(episode: EpisodePacket) -> Mapping[str, Any]:
-    activities = [_activity_prompt_data(activity) for activity in episode.included_activities]
+def _episode_prompt_data(episode: EpisodePacket, source_ref_aliases: SourceRefAliases) -> Mapping[str, Any]:
+    activities = [_activity_prompt_data(activity, source_ref_aliases) for activity in episode.included_activities]
     data: dict[str, Any] = {
         "ordinal": episode.ordinal,
         "status": episode.status,
@@ -482,11 +487,13 @@ def _episode_prompt_data(episode: EpisodePacket) -> Mapping[str, Any]:
         "activities": activities,
     }
     if not activities:
-        data["source_refs"] = [_source_ref_prompt_data(source_ref) for source_ref in episode.source_refs]
+        data["source_refs"] = [
+            _source_ref_prompt_data(source_ref, source_ref_aliases) for source_ref in episode.source_refs
+        ]
     return data
 
 
-def _activity_prompt_data(activity: ActivityPacket) -> Mapping[str, Any]:
+def _activity_prompt_data(activity: ActivityPacket, source_ref_aliases: SourceRefAliases) -> Mapping[str, Any]:
     return {
         "activity_index": activity.activity_index,
         "kind": activity.kind,
@@ -497,16 +504,20 @@ def _activity_prompt_data(activity: ActivityPacket) -> Mapping[str, Any]:
         "activity_text": activity.activity_text,
         "activity_text_kind": activity.activity_text_kind,
         "activity_text_status": activity.activity_text_status,
-        "source_ref_ids": [source_ref.source_ref_id for source_ref in activity.source_refs],
+        "source_ref_ids": [
+            source_ref_aliases.alias_for(source_ref.source_ref_id) for source_ref in activity.source_refs
+        ],
         "claim_source_ref_ids": [
-            source_ref.source_ref_id for source_ref in activity.source_refs if is_claim_source_eligible(source_ref)
+            source_ref_aliases.alias_for(source_ref.source_ref_id)
+            for source_ref in activity.source_refs
+            if is_claim_source_eligible(source_ref)
         ],
     }
 
 
-def _source_ref_prompt_data(source_ref: SourceRef) -> Mapping[str, Any]:
+def _source_ref_prompt_data(source_ref: SourceRef, source_ref_aliases: SourceRefAliases) -> Mapping[str, Any]:
     return {
-        "source_ref_id": source_ref.source_ref_id,
+        "source_ref_id": source_ref_aliases.alias_for(source_ref.source_ref_id),
         "activity_index": source_ref.activity_index,
         "activity_kind": source_ref.activity_kind,
         "source_origin": source_ref.source_origin,

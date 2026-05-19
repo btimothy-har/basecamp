@@ -56,12 +56,19 @@ def serialize_session_interpretation_snapshot(
         "claim_source_activity_count": snapshot.claim_source_activity_count,
         "interpretation_json": dict(snapshot.interpretation_json),
         "citations_json": list(snapshot.citations_json),
+        "episode_interpretation": _episode_interpretation_coverage(snapshot),
         "model_metadata": dict(snapshot.model_metadata_json),
         "prompt_version": snapshot.prompt_version,
         "schema_version": snapshot.schema_version,
         "created_at": _serialize_datetime(snapshot.created_at),
         "updated_at": _serialize_datetime(snapshot.updated_at),
     }
+
+
+def _episode_interpretation_coverage(snapshot: SessionInterpretationSnapshot) -> dict[str, Any]:
+    interpretation = snapshot.interpretation_json if isinstance(snapshot.interpretation_json, dict) else {}
+    coverage = interpretation.get("aggregation")
+    return dict(coverage) if isinstance(coverage, dict) else {}
 
 
 def _serialize_datetime(value: datetime | None) -> str | None:

@@ -11,6 +11,7 @@ from pi_memory.db import (
     EpisodeManifest,
     Job,
     MemorySession,
+    SessionInterpretationQualityReport,
     SessionInterpretationSnapshot,
     SessionSnapshotShell,
     Transcript,
@@ -537,6 +538,7 @@ def test_base_registers_schema_models() -> None:
     assert "episode_manifests" in Base.metadata.tables
     assert "session_snapshot_shells" in Base.metadata.tables
     assert "session_interpretation_snapshots" in Base.metadata.tables
+    assert "session_interpretation_quality_reports" in Base.metadata.tables
     assert "transcript_entries_fts" not in Base.metadata.tables
     assert Job.__table__ is Base.metadata.tables["jobs"]
     assert AnalysisRun.__table__ is Base.metadata.tables["analysis_runs"]
@@ -545,3 +547,6 @@ def test_base_registers_schema_models() -> None:
     assert EpisodeManifest.__table__ is Base.metadata.tables["episode_manifests"]
     assert SessionSnapshotShell.__table__ is Base.metadata.tables["session_snapshot_shells"]
     assert SessionInterpretationSnapshot.__table__ is Base.metadata.tables["session_interpretation_snapshots"]
+    assert (
+        SessionInterpretationQualityReport.__table__ is Base.metadata.tables["session_interpretation_quality_reports"]
+    )

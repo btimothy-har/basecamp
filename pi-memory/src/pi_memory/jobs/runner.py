@@ -4,12 +4,12 @@ from __future__ import annotations
 
 import asyncio
 import os
-from collections.abc import Iterable
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
 from pi_memory.analysis import analyze_transcript_structure
@@ -21,16 +21,26 @@ from pi_memory.db import (
     ACTIVITY_TEXT_STATUS_FAILED,
     ANALYSIS_KIND_TRANSCRIPT_STRUCTURE,
     ANALYSIS_STATUS_COMPLETED,
+    EPISODE_INTERPRETATION_STATUS_COMPLETED,
+    EPISODE_INTERPRETATION_STATUS_FAILED,
+    EPISODE_INTERPRETATION_STATUS_SKIPPED_NO_CLAIM_SOURCES,
+    JOB_KIND_ASSESS_INTERPRETATION_QUALITY,
     JOB_KIND_INTERPRET_SESSION,
     JOB_KIND_PROCESS_TRANSCRIPT,
     JOB_KIND_SUMMARIZE_TOOL_ACTIVITIES,
+    SESSION_INTERPRETATION_QUALITY_REASON_SEMANTIC_ASSESSMENT_FAILED,
+    SESSION_INTERPRETATION_QUALITY_REASON_SEMANTIC_ASSESSMENT_PENDING,
+    SESSION_INTERPRETATION_QUALITY_STATUS_ASSESSMENT_FAILED,
+    SESSION_INTERPRETATION_SEMANTIC_STATUS_ASSESSMENT_FAILED,
     SESSION_INTERPRETATION_STATUS_BLOCKED,
     SESSION_INTERPRETATION_STATUS_COMPLETED,
     SESSION_INTERPRETATION_STATUS_SKIPPED_NO_CLAIM_SOURCES,
     ActivityUnit,
     AnalysisRun,
     Database,
+    EpisodeInterpretationSnapshot,
     Job,
+    SessionInterpretationQualityReport,
     SessionInterpretationSnapshot,
     Transcript,
     TranscriptEntry,
@@ -38,6 +48,9 @@ from pi_memory.db import (
 )
 from pi_memory.interpretation import (
     INTERPRETATION_SCHEMA_VERSION,
+    EpisodeInterpretationCoverage,
+    EpisodeInterpretationFailureMetadata,
+    InterpretationOutput,
     InterpretationResult,
     InterpretationValidationError,
     InterpreterUnavailableError,
@@ -47,17 +60,27 @@ from pi_memory.interpretation import (
     ToolActivitySummaryInput,
     ToolActivitySummaryResult,
     ValidatedInterpretation,
+    build_episode_interpretation_packet,
     build_interpretation_packet,
     create_session_interpreter,
     create_tool_activity_summarizer,
+    validate_episode_interpretation_output,
     validate_interpretation_output,
 )
-from pi_memory.interpretation.packets import InterpretationPacket, InterpretationReadiness
+from pi_memory.interpretation.packets import EpisodePacket, InterpretationPacket, InterpretationReadiness
 from pi_memory.jobs.interpretation import (
+    enqueue_assess_interpretation_quality_job,
     enqueue_interpret_session_job_for_analysis,
     enqueue_summarize_tool_activities_job,
 )
 from pi_memory.jobs.store import JobStore
+from pi_memory.quality import (
+    QualityAssessor,
+    QualityReportDraft,
+    assess_deterministic_interpretation_quality,
+    build_quality_packet,
+    create_quality_assessor,
+)
 from pi_memory.recall import index_transcript
 from pi_memory.settings import settings as memory_settings
 
@@ -65,6 +88,7 @@ EXPECTED_OBJECT_PAYLOAD_ERROR = "expected object payload"
 TRANSCRIPT_ID_INTEGER_ERROR = "transcript_id must be an integer"
 ANALYSIS_RUN_ID_INTEGER_ERROR = "analysis_run_id must be an integer"
 PROCESS_JOB_ID_INTEGER_ERROR = "process_job_id must be an integer"
+SNAPSHOT_ID_INTEGER_ERROR = "snapshot_id must be an integer"
 
 
 @dataclass(frozen=True)
@@ -98,6 +122,19 @@ class ToolActivitySummaryContext:
     episode_count: int
     manifest_count: int
     work_items: tuple[ToolActivitySummaryWorkItem, ...]
+
+
+@dataclass(frozen=True)
+class EpisodeInterpretationOutcome:
+    """Persistable result for interpreting one episode."""
+
+    episode: EpisodePacket
+    packet: InterpretationPacket
+    status: str
+    validated: ValidatedInterpretation | None = None
+    interpreter_result: InterpretationResult | None = None
+    failure_metadata: dict[str, Any] | None = None
+    error: Exception | None = None
 
 
 class JobRunnerError(RuntimeError):
@@ -137,11 +174,13 @@ class JobRunner:
         database: Database = database,
         interpreter: SessionInterpreter | None = None,
         tool_summarizer: ToolActivitySummarizer | None = None,
+        quality_assessor: QualityAssessor | None = None,
     ) -> None:
         self._database = database
         self._store = JobStore(database=database)
         self._interpreter = interpreter
         self._tool_summarizer = tool_summarizer
+        self._quality_assessor_adapter = quality_assessor
 
     def run(
         self,
@@ -168,7 +207,11 @@ class JobRunner:
             self._store.fail(job_id, run_id, error=str(error), exit_code=1, retry=False, now=now)
             raise
         except Exception as error:
-            self._store.fail(job_id, run_id, error=str(error), exit_code=1, retry=True, now=now)
+            if _is_final_quality_attempt(job):
+                self._write_assessment_failed_quality_report(job, error_type=type(error).__name__)
+                self._store.fail(job_id, run_id, error=type(error).__name__, exit_code=1, retry=False, now=now)
+            else:
+                self._store.fail(job_id, run_id, error=str(error), exit_code=1, retry=True, now=now)
             raise
 
         return self._store.complete(job_id, run_id, result_json=result_json, exit_code=0, now=now)
@@ -180,6 +223,8 @@ class JobRunner:
             return self._summarize_tool_activities(job)
         if job.kind == JOB_KIND_INTERPRET_SESSION:
             return self._interpret_session(job)
+        if job.kind == JOB_KIND_ASSESS_INTERPRETATION_QUALITY:
+            return self._assess_interpretation_quality(job)
         raise UnsupportedJobKindError(job.kind)
 
     def _process_transcript(self, job: Job) -> dict[str, Any]:
@@ -278,6 +323,10 @@ class JobRunner:
     def _interpret_session(self, job: Job) -> dict[str, Any]:
         transcript_id, analysis_run_id, process_job_id = _payload_interpret_session(job.payload_json)
         self._database.initialize()
+        packet_for_model: InterpretationPacket | None = None
+        snapshot_id: int | None = None
+        stable_session_id = ""
+        result_json: dict[str, Any] = {}
         with self._database.session() as session:
             transcript = session.get(Transcript, transcript_id)
             if transcript is None:
@@ -296,9 +345,12 @@ class JobRunner:
                     status=SESSION_INTERPRETATION_STATUS_BLOCKED,
                     blocked_reason=packet.readiness.blocked_reason,
                 )
-                return _snapshot_result_json(packet, snapshot)
-
-            if packet.readiness.should_skip_model:
+                result_json = _snapshot_result_json(packet, snapshot)
+                snapshot_id = snapshot.id
+                stable_session_id = packet.readiness.stable_session_id
+            elif packet.readiness.should_skip_model:
+                outcomes = _skipped_episode_outcomes(packet)
+                _replace_episode_interpretation_snapshots(session=session, job=job, packet=packet, outcomes=outcomes)
                 snapshot = _replace_interpretation_snapshot(
                     session=session,
                     job=job,
@@ -306,21 +358,126 @@ class JobRunner:
                     packet=packet,
                     status=SESSION_INTERPRETATION_STATUS_SKIPPED_NO_CLAIM_SOURCES,
                 )
-                return _snapshot_result_json(packet, snapshot)
+                result_json = _snapshot_result_json(packet, snapshot)
+                snapshot_id = snapshot.id
+                stable_session_id = packet.readiness.stable_session_id
+            else:
+                packet_for_model = packet
+                snapshot_id = None
+                stable_session_id = packet.readiness.stable_session_id
+                result_json = {}
 
-            interpreter = self._session_interpreter()
-            result = interpreter.interpret(packet)
-            validated = validate_interpretation_output(result.output, packet)
-            snapshot = _replace_interpretation_snapshot(
-                session=session,
-                job=job,
-                transcript=transcript,
-                packet=packet,
-                status=SESSION_INTERPRETATION_STATUS_COMPLETED,
-                interpretation=validated,
-                interpreter_result=result,
+        if packet_for_model is not None:
+            outcomes = self._interpret_episode_outcomes(packet_for_model)
+            failure_error: Exception | None = None
+            with self._database.session() as session:
+                transcript = session.get(Transcript, transcript_id)
+                if transcript is None:
+                    raise TranscriptNotFoundError(transcript_id)
+
+                packet = build_interpretation_packet(session, transcript, analysis_run_id=analysis_run_id)
+                if packet.readiness.is_stale or _is_stale_process_job(session, transcript_id, process_job_id):
+                    return _stale_result_json(packet)
+
+                _replace_episode_interpretation_snapshots(session=session, job=job, packet=packet, outcomes=outcomes)
+                if _completed_episode_outcome_count(outcomes) == 0:
+                    failure_error = _all_episode_interpretations_failed_error(outcomes)
+                    snapshot_id = None
+                    stable_session_id = packet.readiness.stable_session_id
+                    result_json = _episode_failure_result_json(packet, outcomes)
+                else:
+                    interpretation, interpreter_result = _aggregate_episode_interpretations(packet, outcomes)
+                    snapshot = _replace_interpretation_snapshot(
+                        session=session,
+                        job=job,
+                        transcript=transcript,
+                        packet=packet,
+                        status=SESSION_INTERPRETATION_STATUS_COMPLETED,
+                        interpretation=interpretation,
+                        interpreter_result=interpreter_result,
+                    )
+                    result_json = _snapshot_result_json(packet, snapshot)
+                    snapshot_id = snapshot.id
+                    stable_session_id = packet.readiness.stable_session_id
+            if failure_error is not None:
+                raise failure_error
+
+        if snapshot_id is None:
+            return result_json
+
+        quality_job = enqueue_assess_interpretation_quality_job(
+            self._store,
+            snapshot_id=snapshot_id,
+            session_id=stable_session_id,
+            interpretation_job_id=job.id,
+        )
+        result_json["assess_interpretation_quality_job_id"] = quality_job.id
+        return result_json
+
+    def _interpret_episode_outcomes(self, packet: InterpretationPacket) -> tuple[EpisodeInterpretationOutcome, ...]:
+        interpreter = self._session_interpreter()
+        outcomes: list[EpisodeInterpretationOutcome] = []
+        for episode in packet.episode_packets:
+            episode_packet = build_episode_interpretation_packet(packet, episode)
+            if episode.claim_source_activity_count == 0:
+                outcomes.append(_skipped_episode_outcome(episode_packet, episode))
+                continue
+            try:
+                result = interpreter.interpret(episode_packet)
+                validated = validate_episode_interpretation_output(result.output, packet, episode)
+            except Exception as error:
+                outcomes.append(_failed_episode_outcome(episode_packet, episode, error))
+            else:
+                outcomes.append(_completed_episode_outcome(episode_packet, episode, validated, result))
+        return tuple(outcomes)
+
+    def _assess_interpretation_quality(self, job: Job) -> dict[str, Any]:
+        snapshot_id = _payload_snapshot_id(job.payload_json)
+        self._database.initialize()
+        with self._database.session() as session:
+            snapshot = session.get(SessionInterpretationSnapshot, snapshot_id)
+            if snapshot is None:
+                return {
+                    "status": "stale",
+                    "snapshot_id": snapshot_id,
+                    "quality_report_id": None,
+                    "stale_reason": "snapshot_not_found",
+                }
+            draft = assess_deterministic_interpretation_quality(session, snapshot)
+            if (
+                snapshot.status == SESSION_INTERPRETATION_STATUS_COMPLETED
+                and draft.quality_reason == SESSION_INTERPRETATION_QUALITY_REASON_SEMANTIC_ASSESSMENT_PENDING
+            ):
+                packet = build_quality_packet(session, snapshot, deterministic_report=draft)
+                draft = self._quality_assessor().assess(packet)
+            report = _replace_quality_report(session=session, job=job, snapshot=snapshot, draft=draft)
+            return _quality_report_result_json(snapshot, report)
+
+    def _write_assessment_failed_quality_report(self, job: Job, *, error_type: str) -> None:
+        try:
+            snapshot_id = _payload_snapshot_id(job.payload_json)
+        except InvalidJobPayloadError:
+            return
+        self._database.initialize()
+        with self._database.session() as session:
+            snapshot = session.get(SessionInterpretationSnapshot, snapshot_id)
+            if snapshot is None:
+                return
+            deterministic = assess_deterministic_interpretation_quality(session, snapshot)
+            draft = QualityReportDraft(
+                quality_status=SESSION_INTERPRETATION_QUALITY_STATUS_ASSESSMENT_FAILED,
+                quality_reason=SESSION_INTERPRETATION_QUALITY_REASON_SEMANTIC_ASSESSMENT_FAILED,
+                derivation_status=deterministic.derivation_status,
+                deterministic_status=deterministic.deterministic_status,
+                semantic_status=SESSION_INTERPRETATION_SEMANTIC_STATUS_ASSESSMENT_FAILED,
+                promotable=False,
+                deterministic_findings=list(deterministic.deterministic_findings),
+                assessment_metadata={
+                    **deterministic.assessment_metadata,
+                    "assessment_failed_error_type": error_type,
+                },
             )
-            return _snapshot_result_json(packet, snapshot)
+            _replace_quality_report(session=session, job=job, snapshot=snapshot, draft=draft)
 
     def _session_interpreter(self) -> SessionInterpreter:
         if self._interpreter is not None:
@@ -331,6 +488,11 @@ class JobRunner:
         if self._tool_summarizer is not None:
             return self._tool_summarizer
         return create_tool_activity_summarizer()
+
+    def _quality_assessor(self) -> QualityAssessor:
+        if self._quality_assessor_adapter is not None:
+            return self._quality_assessor_adapter
+        return create_quality_assessor()
 
 
 async def _summarize_tool_activity_work(
@@ -392,6 +554,16 @@ def _payload_summarize_tool_activities(payload: Any) -> tuple[int, int, int | No
     if analysis_run_id is None:
         raise InvalidJobPayloadError(ANALYSIS_RUN_ID_INTEGER_ERROR)
     return transcript_id, analysis_run_id, process_job_id
+
+
+def _payload_snapshot_id(payload: Any) -> int:
+    if not isinstance(payload, dict):
+        raise InvalidJobPayloadError(EXPECTED_OBJECT_PAYLOAD_ERROR)
+
+    snapshot_id = payload.get("snapshot_id")
+    if not isinstance(snapshot_id, int) or isinstance(snapshot_id, bool):
+        raise InvalidJobPayloadError(SNAPSHOT_ID_INTEGER_ERROR)
+    return snapshot_id
 
 
 def _payload_analysis_job(payload: Any) -> tuple[int, int | None, int | None]:
@@ -640,6 +812,256 @@ def _is_stale_process_job(session: Session, transcript_id: int, process_job_id: 
     return latest_run is None or latest_run.job_id != process_job_id
 
 
+def _completed_episode_outcome(
+    packet: InterpretationPacket,
+    episode: EpisodePacket,
+    validated: ValidatedInterpretation,
+    interpreter_result: InterpretationResult,
+) -> EpisodeInterpretationOutcome:
+    return EpisodeInterpretationOutcome(
+        episode=episode,
+        packet=packet,
+        status=EPISODE_INTERPRETATION_STATUS_COMPLETED,
+        validated=validated,
+        interpreter_result=interpreter_result,
+    )
+
+
+def _skipped_episode_outcome(
+    packet: InterpretationPacket,
+    episode: EpisodePacket,
+) -> EpisodeInterpretationOutcome:
+    return EpisodeInterpretationOutcome(
+        episode=episode,
+        packet=packet,
+        status=EPISODE_INTERPRETATION_STATUS_SKIPPED_NO_CLAIM_SOURCES,
+    )
+
+
+def _skipped_episode_outcomes(packet: InterpretationPacket) -> tuple[EpisodeInterpretationOutcome, ...]:
+    return tuple(
+        _skipped_episode_outcome(build_episode_interpretation_packet(packet, episode), episode)
+        for episode in packet.episode_packets
+    )
+
+
+def _failed_episode_outcome(
+    packet: InterpretationPacket,
+    episode: EpisodePacket,
+    error: Exception,
+) -> EpisodeInterpretationOutcome:
+    return EpisodeInterpretationOutcome(
+        episode=episode,
+        packet=packet,
+        status=EPISODE_INTERPRETATION_STATUS_FAILED,
+        failure_metadata=_episode_failure_metadata(error),
+        error=error,
+    )
+
+
+def _episode_failure_metadata(error: Exception) -> dict[str, Any]:
+    metadata = EpisodeInterpretationFailureMetadata(
+        error_type=type(error).__name__,
+        safe_message=_safe_episode_error_message(error),
+        cause_type=type(error.__cause__).__name__ if error.__cause__ is not None else None,
+    )
+    return metadata.model_dump(mode="json", exclude_none=True, exclude_defaults=True)
+
+
+def _safe_episode_error_message(error: Exception) -> str | None:
+    if isinstance(error, (InterpretationValidationError, InterpreterUnavailableError)):
+        return str(error)
+    if error.__class__.__module__.startswith("pi_memory."):
+        return str(error)
+    return None
+
+
+def _replace_episode_interpretation_snapshots(
+    *,
+    session: Session,
+    job: Job,
+    packet: InterpretationPacket,
+    outcomes: tuple[EpisodeInterpretationOutcome, ...],
+) -> None:
+    analysis_run_id = packet.readiness.latest_analysis_run_id
+    if analysis_run_id is None:
+        return
+
+    session.execute(
+        delete(EpisodeInterpretationSnapshot).where(
+            EpisodeInterpretationSnapshot.analysis_run_id == analysis_run_id,
+        ),
+    )
+    session.flush()
+    for outcome in outcomes:
+        session.add(_episode_interpretation_snapshot(job, outcome))
+    session.flush()
+
+
+def _episode_interpretation_snapshot(
+    job: Job,
+    outcome: EpisodeInterpretationOutcome,
+) -> EpisodeInterpretationSnapshot:
+    readiness = outcome.packet.readiness
+    interpretation = outcome.validated
+    result = outcome.interpreter_result
+    return EpisodeInterpretationSnapshot(
+        session_id=readiness.session_row_id,
+        transcript_id=readiness.transcript_id,
+        analysis_run_id=readiness.latest_analysis_run_id,
+        episode_id=outcome.episode.episode_id,
+        job_id=job.id,
+        status=outcome.status,
+        episode_ordinal=outcome.episode.ordinal,
+        activity_count=outcome.episode.activity_count,
+        claim_source_activity_count=outcome.episode.claim_source_activity_count,
+        analyzed_through_entry_id=readiness.analyzed_through_entry_id,
+        analyzed_through_byte_offset=readiness.analyzed_through_byte_offset,
+        interpretation_json=dict(interpretation.interpretation_json) if interpretation is not None else {},
+        citations_json=_episode_citations_json(interpretation),
+        model_metadata_json=dict(result.model_metadata) if result is not None else {},
+        failure_metadata_json=dict(outcome.failure_metadata or {}),
+        prompt_version=result.prompt_version if result is not None else None,
+        schema_version=INTERPRETATION_SCHEMA_VERSION,
+    )
+
+
+def _episode_citations_json(interpretation: ValidatedInterpretation | None) -> list[dict[str, Any]]:
+    if interpretation is None:
+        return []
+    return [dict(citation) for citation in interpretation.citations_json]
+
+
+def _aggregate_episode_interpretations(
+    packet: InterpretationPacket,
+    outcomes: tuple[EpisodeInterpretationOutcome, ...],
+) -> tuple[ValidatedInterpretation, InterpretationResult]:
+    completed = tuple(outcome for outcome in outcomes if outcome.validated is not None)
+    first_result = _first_interpreter_result(completed)
+    coverage = _episode_interpretation_coverage(packet, outcomes)
+    output = InterpretationOutput(
+        analysis_run_id=packet.readiness.latest_analysis_run_id or 0,
+        analyzed_through_entry_id=packet.readiness.analyzed_through_entry_id,
+        analyzed_through_byte_offset=packet.readiness.analyzed_through_byte_offset,
+        goal=_aggregated_goal(packet),
+        summary=_aggregated_summary(coverage),
+        claims=[claim for outcome in completed for claim in outcome.validated.output.claims],
+        open_questions=[question for outcome in completed for question in outcome.validated.output.open_questions],
+        citations=[citation for outcome in completed for citation in outcome.validated.output.citations],
+    )
+    validated = validate_interpretation_output(output, packet)
+    interpretation_json = dict(validated.interpretation_json)
+    interpretation_json["aggregation"] = coverage.model_dump(mode="json")
+    return (
+        ValidatedInterpretation(
+            output=validated.output,
+            interpretation_json=interpretation_json,
+            citations_json=validated.citations_json,
+        ),
+        InterpretationResult(
+            output=validated.output,
+            model_metadata=_aggregated_model_metadata(first_result.model_metadata, coverage),
+            prompt_version=first_result.prompt_version,
+        ),
+    )
+
+
+def _first_interpreter_result(outcomes: tuple[EpisodeInterpretationOutcome, ...]) -> InterpretationResult:
+    for outcome in outcomes:
+        if outcome.interpreter_result is not None:
+            return outcome.interpreter_result
+    raise InterpretationValidationError.empty_claims()
+
+
+def _aggregated_goal(packet: InterpretationPacket) -> str:
+    stable_session_id = packet.readiness.stable_session_id or "unknown session"
+    return f"Interpret session {stable_session_id} from episode-level memory claims."
+
+
+def _aggregated_summary(coverage: EpisodeInterpretationCoverage) -> str:
+    return (
+        "Episode-level interpretation extracted claims from "
+        f"{coverage.completed_episode_count} of {coverage.claim_source_episode_count} "
+        "claim-source episode(s)."
+    )
+
+
+def _aggregated_model_metadata(
+    model_metadata: Mapping[str, Any],
+    coverage: EpisodeInterpretationCoverage,
+) -> dict[str, Any]:
+    return {
+        **dict(model_metadata),
+        "aggregation_mode": coverage.aggregation_mode,
+        "coverage_status": coverage.coverage_status,
+        "completed_episode_count": coverage.completed_episode_count,
+        "failed_episode_count": coverage.failed_episode_count,
+        "skipped_episode_count": coverage.skipped_episode_count,
+    }
+
+
+def _episode_interpretation_coverage(
+    packet: InterpretationPacket,
+    outcomes: tuple[EpisodeInterpretationOutcome, ...],
+) -> EpisodeInterpretationCoverage:
+    claim_source_outcomes = tuple(outcome for outcome in outcomes if outcome.episode.claim_source_activity_count > 0)
+    completed = tuple(outcome for outcome in outcomes if outcome.status == EPISODE_INTERPRETATION_STATUS_COMPLETED)
+    skipped = tuple(
+        outcome for outcome in outcomes if outcome.status == EPISODE_INTERPRETATION_STATUS_SKIPPED_NO_CLAIM_SOURCES
+    )
+    failed = tuple(outcome for outcome in outcomes if outcome.status == EPISODE_INTERPRETATION_STATUS_FAILED)
+    return EpisodeInterpretationCoverage(
+        coverage_status=_episode_coverage_status(claim_source_outcomes, completed, failed),
+        total_episode_count=len(packet.episode_packets),
+        claim_source_episode_count=len(claim_source_outcomes),
+        completed_episode_count=len(completed),
+        skipped_episode_count=len(skipped),
+        failed_episode_count=len(failed),
+        total_claim_source_activity_count=packet.readiness.claim_source_activity_count,
+        completed_claim_source_activity_count=sum(outcome.episode.claim_source_activity_count for outcome in completed),
+        skipped_claim_source_activity_count=sum(outcome.episode.claim_source_activity_count for outcome in skipped),
+        failed_claim_source_activity_count=sum(outcome.episode.claim_source_activity_count for outcome in failed),
+    )
+
+
+def _episode_coverage_status(
+    claim_source_outcomes: tuple[EpisodeInterpretationOutcome, ...],
+    completed: tuple[EpisodeInterpretationOutcome, ...],
+    failed: tuple[EpisodeInterpretationOutcome, ...],
+) -> str:
+    if not claim_source_outcomes:
+        return "skipped_no_claim_sources"
+    if not failed and len(completed) == len(claim_source_outcomes):
+        return "complete"
+    return "partial"
+
+
+def _completed_episode_outcome_count(outcomes: tuple[EpisodeInterpretationOutcome, ...]) -> int:
+    return sum(1 for outcome in outcomes if outcome.status == EPISODE_INTERPRETATION_STATUS_COMPLETED)
+
+
+def _all_episode_interpretations_failed_error(outcomes: tuple[EpisodeInterpretationOutcome, ...]) -> Exception:
+    for outcome in outcomes:
+        if outcome.error is not None:
+            return outcome.error
+    return InterpretationValidationError.empty_claims()
+
+
+def _episode_failure_result_json(
+    packet: InterpretationPacket,
+    outcomes: tuple[EpisodeInterpretationOutcome, ...],
+) -> dict[str, Any]:
+    result = _readiness_result_json(packet.readiness)
+    result.update(
+        {
+            "status": "failed",
+            "snapshot_id": None,
+            "episode_interpretation": _episode_interpretation_coverage(packet, outcomes).model_dump(mode="json"),
+        },
+    )
+    return result
+
+
 def _replace_interpretation_snapshot(
     *,
     session: Session,
@@ -686,6 +1108,46 @@ def _replace_interpretation_snapshot(
     return snapshot
 
 
+def _replace_quality_report(
+    *,
+    session: Session,
+    job: Job,
+    snapshot: SessionInterpretationSnapshot,
+    draft: QualityReportDraft,
+) -> SessionInterpretationQualityReport:
+    existing = session.scalar(
+        select(SessionInterpretationQualityReport).where(
+            SessionInterpretationQualityReport.snapshot_id == snapshot.id,
+        ),
+    )
+    if existing is not None:
+        session.delete(existing)
+        session.flush()
+
+    report = SessionInterpretationQualityReport(
+        snapshot_id=snapshot.id,
+        job_id=job.id,
+        quality_status=draft.quality_status,
+        quality_reason=draft.quality_reason,
+        derivation_status=draft.derivation_status,
+        deterministic_status=draft.deterministic_status,
+        semantic_status=draft.semantic_status,
+        promotable=draft.promotable,
+        deterministic_findings_json=draft.deterministic_findings_json,
+        semantic_findings_json=draft.semantic_findings_json,
+        claim_assessments_json=draft.claim_assessments_json,
+        missing_high_signal_items_json=draft.missing_high_signal_items_json,
+        model_metadata_json=draft.model_metadata_json,
+        assessment_metadata_json=draft.assessment_metadata_json,
+        prompt_version=draft.prompt_version,
+        schema_version=draft.schema_version,
+    )
+    session.add(report)
+    session.flush()
+    session.refresh(report)
+    return report
+
+
 def _stale_result_json(packet: InterpretationPacket) -> dict[str, Any]:
     result = _readiness_result_json(packet.readiness)
     result["status"] = "stale"
@@ -709,7 +1171,43 @@ def _snapshot_result_json(
             "model_metadata": _safe_model_metadata(snapshot.model_metadata_json),
         },
     )
+    coverage = _snapshot_episode_interpretation_coverage(snapshot)
+    if coverage is not None:
+        result["episode_interpretation"] = coverage
     return result
+
+
+def _snapshot_episode_interpretation_coverage(snapshot: SessionInterpretationSnapshot) -> Mapping[str, Any] | None:
+    interpretation = snapshot.interpretation_json if isinstance(snapshot.interpretation_json, Mapping) else {}
+    coverage = interpretation.get("aggregation")
+    return coverage if isinstance(coverage, Mapping) else None
+
+
+def _quality_report_result_json(
+    snapshot: SessionInterpretationSnapshot,
+    report: SessionInterpretationQualityReport,
+) -> dict[str, Any]:
+    return {
+        "status": "completed",
+        "snapshot_id": snapshot.id,
+        "quality_report_id": report.id,
+        "session_row_id": snapshot.session_id,
+        "transcript_id": snapshot.transcript_id,
+        "analysis_run_id": snapshot.analysis_run_id,
+        "quality_status": report.quality_status,
+        "quality_reason": report.quality_reason,
+        "derivation_status": report.derivation_status,
+        "deterministic_status": report.deterministic_status,
+        "semantic_status": report.semantic_status,
+        "promotable": report.promotable,
+        "prompt_version": report.prompt_version,
+        "schema_version": report.schema_version,
+        "model_metadata": _safe_model_metadata(report.model_metadata_json),
+    }
+
+
+def _is_final_quality_attempt(job: Job) -> bool:
+    return job.kind == JOB_KIND_ASSESS_INTERPRETATION_QUALITY and job.attempts >= job.max_attempts
 
 
 def _readiness_result_json(readiness: InterpretationReadiness) -> dict[str, Any]:

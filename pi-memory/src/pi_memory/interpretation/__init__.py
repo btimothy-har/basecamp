@@ -1,15 +1,23 @@
 """Read-only interpretation packet builders for pi-memory."""
 
 from pi_memory.interpretation.contracts import (
+    SESSION_INTERPRETATION_AGGREGATION_MODE_EPISODE_CLAIM_CONCAT,
     CitationUsage,
     ClaimKind,
+    EpisodeInterpretationCoverage,
+    EpisodeInterpretationFailureMetadata,
+    EpisodeInterpretationStatus,
     InterpretationCitation,
     InterpretationClaim,
     InterpretationOpenQuestion,
     InterpretationOutput,
     InterpretationValidationError,
+    SessionInterpretationCoverageStatus,
+    SourceRefAliases,
     ValidatedInterpretation,
+    build_source_ref_aliases,
     is_claim_source_eligible,
+    validate_episode_interpretation_output,
     validate_interpretation_output,
 )
 from pi_memory.interpretation.factory import create_session_interpreter, create_tool_activity_summarizer
@@ -52,6 +60,7 @@ from pi_memory.interpretation.packets import (
     InterpretationPacket,
     InterpretationReadiness,
     SourceRef,
+    build_episode_interpretation_packet,
     build_interpretation_packet,
 )
 
@@ -67,6 +76,9 @@ __all__ = [
     "DETERMINISTIC_INTERPRETER_PROVIDER",
     "DeterministicSessionInterpreter",
     "DeterministicToolActivitySummarizer",
+    "EpisodeInterpretationCoverage",
+    "EpisodeInterpretationFailureMetadata",
+    "EpisodeInterpretationStatus",
     "EpisodePacket",
     "INTERPRETATION_PROMPT_VERSION",
     "INTERPRETATION_SCHEMA_VERSION",
@@ -86,9 +98,12 @@ __all__ = [
     "PydanticAISessionInterpreter",
     "PydanticAIToolActivitySummarizer",
     "PydanticAIToolSummaryError",
+    "SESSION_INTERPRETATION_AGGREGATION_MODE_EPISODE_CLAIM_CONCAT",
+    "SessionInterpretationCoverageStatus",
     "SessionInterpretationInspectionService",
     "SessionInterpreter",
     "SourceRef",
+    "SourceRefAliases",
     "TOOL_ACTIVITY_SUMMARY_PROMPT_VERSION",
     "TOOL_ACTIVITY_SUMMARY_SCHEMA_VERSION",
     "ToolActivitySourceEntry",
@@ -98,9 +113,12 @@ __all__ = [
     "ToolActivitySummaryResult",
     "ToolActivitySummaryValidationError",
     "ValidatedInterpretation",
+    "build_episode_interpretation_packet",
     "build_interpretation_packet",
+    "build_source_ref_aliases",
     "is_claim_source_eligible",
     "serialize_session_interpretation_snapshot",
+    "validate_episode_interpretation_output",
     "validate_interpretation_output",
     "validate_tool_activity_summary_output",
 ]

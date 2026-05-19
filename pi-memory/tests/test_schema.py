@@ -9,11 +9,19 @@ from pi_memory.db import (
     ANALYSIS_KIND_TRANSCRIPT_STRUCTURE,
     ANALYSIS_STATUS_RUNNING,
     EPISODE_CLOSE_REASON_TRANSCRIPT_END,
+    EPISODE_INTERPRETATION_STATUS_COMPLETED,
     EPISODE_STATUS_CLOSED,
+    JOB_KIND_ASSESS_INTERPRETATION_QUALITY,
     JOB_KIND_INTERPRET_SESSION,
     JOB_KIND_PROCESS_TRANSCRIPT,
     JOB_STATUS_QUEUED,
     SESSION_INTERPRETATION_BLOCKED_REASON_PHASE_5A_NOT_READY,
+    SESSION_INTERPRETATION_DERIVATION_STATUS_CURRENT,
+    SESSION_INTERPRETATION_DETERMINISTIC_STATUS_PASSED,
+    SESSION_INTERPRETATION_QUALITY_REASON_SEMANTIC_DEGRADED,
+    SESSION_INTERPRETATION_QUALITY_STATUS_DEGRADED,
+    SESSION_INTERPRETATION_QUALITY_STATUS_HEALTHY,
+    SESSION_INTERPRETATION_SEMANTIC_STATUS_NOT_ASSESSED,
     SESSION_INTERPRETATION_STATUS_BLOCKED,
     SESSION_INTERPRETATION_STATUS_COMPLETED,
     SESSION_SNAPSHOT_STATUS_READY_FOR_INTERPRETATION,
@@ -22,10 +30,12 @@ from pi_memory.db import (
     AnalysisRun,
     Database,
     Episode,
+    EpisodeInterpretationSnapshot,
     EpisodeManifest,
     Job,
     MemorySession,
     Observation,
+    SessionInterpretationQualityReport,
     SessionInterpretationSnapshot,
     SessionSnapshotShell,
     Transcript,
@@ -68,6 +78,18 @@ def create_analysis_run(database: Database) -> tuple[int, int, int]:
         return memory_session.id, transcript.id, analysis_run.id
 
 
+def create_interpretation_snapshot(database: Database) -> int:
+    with database.session() as session:
+        memory_session = MemorySession(session_id="pi-session-1")
+        snapshot = SessionInterpretationSnapshot(
+            session=memory_session,
+            status=SESSION_INTERPRETATION_STATUS_COMPLETED,
+        )
+        session.add(snapshot)
+        session.flush()
+        return snapshot.id
+
+
 def test_initialize_creates_pi_transcript_schema_tables(database: Database) -> None:
     inspector = inspect(database.engine)
     table_names = set(inspector.get_table_names())
@@ -82,8 +104,10 @@ def test_initialize_creates_pi_transcript_schema_tables(database: Database) -> N
         "activity_units",
         "episodes",
         "episode_manifests",
+        "episode_interpretation_snapshots",
         "session_snapshot_shells",
         "session_interpretation_snapshots",
+        "session_interpretation_quality_reports",
     }.issubset(table_names)
 
 
@@ -235,6 +259,254 @@ def test_session_interpretation_snapshot_defaults_are_applied(database: Database
         assert snapshot.updated_at is not None
         assert memory_session.session_interpretation_snapshot == snapshot
         assert job.session_interpretation_snapshots == [snapshot]
+
+
+def test_episode_interpretation_snapshot_defaults_are_applied(database: Database) -> None:
+    with database.session() as session:
+        memory_session = MemorySession(session_id="pi-session-1")
+        transcript = Transcript(session=memory_session, path="/tmp/pi/transcript.jsonl")
+        analysis_run = AnalysisRun(session=memory_session, transcript=transcript)
+        episode = Episode(
+            session=memory_session,
+            transcript=transcript,
+            analysis_run=analysis_run,
+            ordinal=0,
+            byte_start=0,
+            byte_end=1,
+            status=EPISODE_STATUS_CLOSED,
+            close_reason=EPISODE_CLOSE_REASON_TRANSCRIPT_END,
+        )
+        job = Job(kind=JOB_KIND_INTERPRET_SESSION)
+        snapshot = EpisodeInterpretationSnapshot(
+            session=memory_session,
+            transcript=transcript,
+            analysis_run=analysis_run,
+            episode=episode,
+            job=job,
+            status=EPISODE_INTERPRETATION_STATUS_COMPLETED,
+        )
+        session.add(snapshot)
+        session.flush()
+        session.refresh(snapshot)
+
+        assert snapshot.status == EPISODE_INTERPRETATION_STATUS_COMPLETED
+        assert snapshot.episode_ordinal == 0
+        assert snapshot.activity_count == 0
+        assert snapshot.claim_source_activity_count == 0
+        assert snapshot.analyzed_through_byte_offset == 0
+        assert snapshot.interpretation_json == {}
+        assert snapshot.citations_json == []
+        assert snapshot.model_metadata_json == {}
+        assert snapshot.failure_metadata_json == {}
+        assert snapshot.prompt_version is None
+        assert snapshot.schema_version == 1
+        assert snapshot.created_at is not None
+        assert snapshot.updated_at is not None
+        assert memory_session.episode_interpretation_snapshots == [snapshot]
+        assert transcript.episode_interpretation_snapshots == [snapshot]
+        assert analysis_run.episode_interpretation_snapshots == [snapshot]
+        assert episode.interpretation_snapshot == snapshot
+        assert job.episode_interpretation_snapshots == [snapshot]
+
+
+def test_fresh_schema_includes_episode_interpretation_snapshot_indexes_and_constraints(
+    database: Database,
+) -> None:
+    inspector = inspect(database.engine)
+
+    columns = {column["name"]: column for column in inspector.get_columns("episode_interpretation_snapshots")}
+    indexes = {index["name"] for index in inspector.get_indexes("episode_interpretation_snapshots")}
+    constraints = {
+        constraint["name"] for constraint in inspector.get_check_constraints("episode_interpretation_snapshots")
+    }
+
+    assert columns["failure_metadata_json"]["nullable"] is False
+    assert {
+        "ix_episode_interpretation_snapshots_analysis_ordinal",
+        "ix_episode_interpretation_snapshots_status_updated_at",
+        "ix_episode_interpretation_snapshots_job_id",
+    }.issubset(indexes)
+    assert {
+        "ck_episode_interpretation_snapshots_status_valid",
+        "ck_episode_interpretation_snapshots_claim_source_activity_count_non_negative",
+        "ck_episode_interpretation_snapshots_schema_version_positive",
+    }.issubset(constraints)
+
+
+def test_session_interpretation_quality_report_defaults_and_relationships_are_applied(database: Database) -> None:
+    with database.session() as session:
+        memory_session = MemorySession(session_id="pi-session-1")
+        snapshot = SessionInterpretationSnapshot(
+            session=memory_session,
+            status=SESSION_INTERPRETATION_STATUS_COMPLETED,
+        )
+        job = Job(kind=JOB_KIND_ASSESS_INTERPRETATION_QUALITY)
+        report = SessionInterpretationQualityReport(
+            snapshot=snapshot,
+            job=job,
+            quality_status=SESSION_INTERPRETATION_QUALITY_STATUS_HEALTHY,
+        )
+        session.add(report)
+        session.flush()
+        session.refresh(report)
+
+        assert report.snapshot == snapshot
+        assert snapshot.quality_report == report
+        assert report.job == job
+        assert job.session_interpretation_quality_reports == [report]
+        assert report.quality_status == SESSION_INTERPRETATION_QUALITY_STATUS_HEALTHY
+        assert report.quality_reason is None
+        assert report.derivation_status == SESSION_INTERPRETATION_DERIVATION_STATUS_CURRENT
+        assert report.deterministic_status == SESSION_INTERPRETATION_DETERMINISTIC_STATUS_PASSED
+        assert report.semantic_status == SESSION_INTERPRETATION_SEMANTIC_STATUS_NOT_ASSESSED
+        assert report.promotable is False
+        assert report.deterministic_findings_json == []
+        assert report.semantic_findings_json == []
+        assert report.claim_assessments_json == []
+        assert report.missing_high_signal_items_json == []
+        assert report.model_metadata_json == {}
+        assert report.assessment_metadata_json == {}
+        assert report.prompt_version is None
+        assert report.schema_version == 1
+        assert report.created_at is not None
+        assert report.updated_at is not None
+
+
+def test_session_interpretation_quality_report_accepts_non_healthy_reason(database: Database) -> None:
+    snapshot_id = create_interpretation_snapshot(database)
+
+    with database.session() as session:
+        report = SessionInterpretationQualityReport(
+            snapshot_id=snapshot_id,
+            quality_status=SESSION_INTERPRETATION_QUALITY_STATUS_DEGRADED,
+            quality_reason=SESSION_INTERPRETATION_QUALITY_REASON_SEMANTIC_DEGRADED,
+        )
+        session.add(report)
+        session.flush()
+        session.refresh(report)
+
+        assert report.quality_reason == SESSION_INTERPRETATION_QUALITY_REASON_SEMANTIC_DEGRADED
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("quality_status", "unknown"),
+        ("derivation_status", "stale"),
+        ("deterministic_status", "partial"),
+        ("semantic_status", "unknown"),
+    ],
+)
+def test_session_interpretation_quality_report_rejects_invalid_enums(
+    database: Database,
+    field: str,
+    value: str,
+) -> None:
+    snapshot_id = create_interpretation_snapshot(database)
+
+    with pytest.raises(IntegrityError):
+        with database.session() as session:
+            kwargs = {
+                "snapshot_id": snapshot_id,
+                "quality_status": SESSION_INTERPRETATION_QUALITY_STATUS_HEALTHY,
+                field: value,
+            }
+            session.add(SessionInterpretationQualityReport(**kwargs))
+
+
+def test_session_interpretation_quality_report_rejects_invalid_reason(database: Database) -> None:
+    snapshot_id = create_interpretation_snapshot(database)
+
+    with pytest.raises(IntegrityError):
+        with database.session() as session:
+            session.add(
+                SessionInterpretationQualityReport(
+                    snapshot_id=snapshot_id,
+                    quality_status=SESSION_INTERPRETATION_QUALITY_STATUS_DEGRADED,
+                    quality_reason="missing_citations",
+                ),
+            )
+
+
+def test_session_interpretation_quality_report_requires_reason_for_non_healthy_status(database: Database) -> None:
+    snapshot_id = create_interpretation_snapshot(database)
+
+    with pytest.raises(IntegrityError):
+        with database.session() as session:
+            session.add(
+                SessionInterpretationQualityReport(
+                    snapshot_id=snapshot_id,
+                    quality_status=SESSION_INTERPRETATION_QUALITY_STATUS_DEGRADED,
+                ),
+            )
+
+
+def test_session_interpretation_quality_report_rejects_reason_for_healthy_status(database: Database) -> None:
+    snapshot_id = create_interpretation_snapshot(database)
+
+    with pytest.raises(IntegrityError):
+        with database.session() as session:
+            session.add(
+                SessionInterpretationQualityReport(
+                    snapshot_id=snapshot_id,
+                    quality_status=SESSION_INTERPRETATION_QUALITY_STATUS_HEALTHY,
+                    quality_reason=SESSION_INTERPRETATION_QUALITY_REASON_SEMANTIC_DEGRADED,
+                ),
+            )
+
+
+def test_session_interpretation_quality_report_rejects_invalid_schema_version(database: Database) -> None:
+    snapshot_id = create_interpretation_snapshot(database)
+
+    with pytest.raises(IntegrityError):
+        with database.session() as session:
+            session.add(
+                SessionInterpretationQualityReport(
+                    snapshot_id=snapshot_id,
+                    quality_status=SESSION_INTERPRETATION_QUALITY_STATUS_HEALTHY,
+                    schema_version=0,
+                ),
+            )
+
+
+def test_only_one_session_interpretation_quality_report_per_snapshot(database: Database) -> None:
+    snapshot_id = create_interpretation_snapshot(database)
+
+    with pytest.raises(IntegrityError):
+        with database.session() as session:
+            session.add_all(
+                [
+                    SessionInterpretationQualityReport(
+                        snapshot_id=snapshot_id,
+                        quality_status=SESSION_INTERPRETATION_QUALITY_STATUS_HEALTHY,
+                    ),
+                    SessionInterpretationQualityReport(
+                        snapshot_id=snapshot_id,
+                        quality_status=SESSION_INTERPRETATION_QUALITY_STATUS_HEALTHY,
+                    ),
+                ],
+            )
+
+
+def test_session_interpretation_snapshot_delete_cascades_to_quality_report(database: Database) -> None:
+    with database.session() as session:
+        memory_session = MemorySession(session_id="pi-session-1")
+        snapshot = SessionInterpretationSnapshot(
+            session=memory_session,
+            status=SESSION_INTERPRETATION_STATUS_COMPLETED,
+        )
+        report = SessionInterpretationQualityReport(
+            snapshot=snapshot,
+            quality_status=SESSION_INTERPRETATION_QUALITY_STATUS_HEALTHY,
+        )
+        session.add(report)
+        session.flush()
+        report_id = report.id
+
+        session.delete(snapshot)
+        session.flush()
+
+        assert session.get(SessionInterpretationQualityReport, report_id) is None
 
 
 def test_session_interpretation_snapshot_accepts_blocked_reason(database: Database) -> None:
@@ -843,6 +1115,44 @@ def test_phase_5b_indexes_exist(database: Database) -> None:
         "ix_session_interpretation_snapshots_analyzed_through_entry_id",
         "ix_session_interpretation_snapshots_status_updated_at",
     }.issubset(snapshot_indexes)
+
+
+def test_phase_5c_quality_report_indexes_and_foreign_keys_exist(database: Database) -> None:
+    inspector = inspect(database.engine)
+
+    report_indexes = {index["name"] for index in inspector.get_indexes("session_interpretation_quality_reports")}
+    foreign_keys = inspector.get_foreign_keys("session_interpretation_quality_reports")
+
+    assert {
+        "ix_session_interpretation_quality_reports_snapshot_id",
+        "ix_session_interpretation_quality_reports_quality_status_updated_at",
+        "ix_session_interpretation_quality_reports_derivation_status_quality_status",
+        "ix_session_interpretation_quality_reports_promotable_updated_at",
+        "ix_session_interpretation_quality_reports_job_id",
+    }.issubset(report_indexes)
+    assert any(
+        foreign_key["constrained_columns"] == ["snapshot_id"]
+        and foreign_key["referred_table"] == "session_interpretation_snapshots"
+        and foreign_key["options"].get("ondelete") == "CASCADE"
+        for foreign_key in foreign_keys
+    )
+    assert any(
+        foreign_key["constrained_columns"] == ["job_id"]
+        and foreign_key["referred_table"] == "jobs"
+        and foreign_key["options"].get("ondelete") == "SET NULL"
+        for foreign_key in foreign_keys
+    )
+
+
+def test_job_accepts_assess_interpretation_quality_kind(database: Database) -> None:
+    with database.session() as session:
+        job = Job(kind=JOB_KIND_ASSESS_INTERPRETATION_QUALITY)
+        session.add(job)
+        session.flush()
+        session.refresh(job)
+
+        assert job.kind == JOB_KIND_ASSESS_INTERPRETATION_QUALITY
+        assert job.status == JOB_STATUS_QUEUED
 
 
 def test_job_rejects_invalid_status(database: Database) -> None:

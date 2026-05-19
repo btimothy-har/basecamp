@@ -15,6 +15,9 @@ from pi_memory.db import (
     ACTIVITY_TEXT_STATUS_FAILED,
     ACTIVITY_TEXT_STATUS_PENDING,
     ANALYSIS_STATUS_COMPLETED,
+    EPISODE_INTERPRETATION_STATUS_COMPLETED,
+    EPISODE_INTERPRETATION_STATUS_FAILED,
+    JOB_KIND_ASSESS_INTERPRETATION_QUALITY,
     JOB_KIND_INTERPRET_SESSION,
     JOB_KIND_PROCESS_TRANSCRIPT,
     JOB_KIND_SUMMARIZE_TOOL_ACTIVITIES,
@@ -25,6 +28,15 @@ from pi_memory.db import (
     SESSION_INTERPRETATION_BLOCKED_REASON_PARENT_TRANSCRIPT_NOT_INGESTED,
     SESSION_INTERPRETATION_BLOCKED_REASON_PHASE_5A_NOT_READY,
     SESSION_INTERPRETATION_BLOCKED_REASON_SOURCE_ORIGIN_INCOMPLETE,
+    SESSION_INTERPRETATION_QUALITY_REASON_BLOCKED_INTERPRETATION,
+    SESSION_INTERPRETATION_QUALITY_REASON_SEMANTIC_ASSESSMENT_FAILED,
+    SESSION_INTERPRETATION_QUALITY_REASON_SKIPPED_NO_CLAIM_SOURCES,
+    SESSION_INTERPRETATION_QUALITY_STATUS_ASSESSMENT_FAILED,
+    SESSION_INTERPRETATION_QUALITY_STATUS_HEALTHY,
+    SESSION_INTERPRETATION_QUALITY_STATUS_NOT_ASSESSED,
+    SESSION_INTERPRETATION_SEMANTIC_STATUS_ASSESSMENT_FAILED,
+    SESSION_INTERPRETATION_SEMANTIC_STATUS_NOT_ASSESSED,
+    SESSION_INTERPRETATION_SEMANTIC_STATUS_PASSED,
     SESSION_INTERPRETATION_STATUS_BLOCKED,
     SESSION_INTERPRETATION_STATUS_COMPLETED,
     SESSION_INTERPRETATION_STATUS_SKIPPED_NO_CLAIM_SOURCES,
@@ -36,9 +48,11 @@ from pi_memory.db import (
     AnalysisRun,
     Database,
     Episode,
+    EpisodeInterpretationSnapshot,
     EpisodeManifest,
     Job,
     MemorySession,
+    SessionInterpretationQualityReport,
     SessionInterpretationSnapshot,
     SessionSnapshotShell,
     Transcript,
@@ -56,6 +70,7 @@ from pi_memory.interpretation import (
     ToolActivitySummaryInput,
     ToolActivitySummaryOutput,
     ToolActivitySummaryResult,
+    build_source_ref_aliases,
 )
 from pi_memory.interpretation.packets import InterpretationPacket
 from pi_memory.jobs import (
@@ -66,8 +81,15 @@ from pi_memory.jobs import (
     TranscriptNotFoundError,
     UnsupportedJobKindError,
 )
+from pi_memory.quality import (
+    DeterministicQualityAssessor,
+    QualityPacket,
+    QualityReportDraft,
+    validate_quality_assessment_output,
+)
 from pi_memory.settings import (
     INTERPRETATION_MODEL_ENV,
+    QUALITY_MODEL_ENV,
     TOOL_SUMMARY_CONCURRENCY_ENV,
     TOOL_SUMMARY_MODEL_ENV,
     MissingInterpretationModelError,
@@ -82,6 +104,7 @@ def sqlite_url(path: Path) -> str:
 @pytest.fixture(autouse=True)
 def clear_interpretation_model_env(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv(INTERPRETATION_MODEL_ENV, raising=False)
+    monkeypatch.delenv(QUALITY_MODEL_ENV, raising=False)
     monkeypatch.delenv(TOOL_SUMMARY_MODEL_ENV, raising=False)
     monkeypatch.delenv(TOOL_SUMMARY_CONCURRENCY_ENV, raising=False)
 
@@ -114,6 +137,45 @@ class RecordingInterpreter:
         return DeterministicSessionInterpreter().interpret(packet)
 
 
+class AliasedInterpreter:
+    def interpret(self, packet: InterpretationPacket) -> InterpretationResult:
+        result = DeterministicSessionInterpreter().interpret(packet)
+        aliases = build_source_ref_aliases(packet)
+        output = result.output
+        return InterpretationResult(
+            output=output.model_copy(
+                update={
+                    "claims": [
+                        claim.model_copy(
+                            update={
+                                "source_ref_ids": [
+                                    aliases.alias_for(source_ref_id) for source_ref_id in claim.source_ref_ids
+                                ],
+                            },
+                        )
+                        for claim in output.claims
+                    ],
+                    "open_questions": [
+                        question.model_copy(
+                            update={
+                                "source_ref_ids": [
+                                    aliases.alias_for(source_ref_id) for source_ref_id in question.source_ref_ids
+                                ],
+                            },
+                        )
+                        for question in output.open_questions
+                    ],
+                    "citations": [
+                        citation.model_copy(update={"source_ref_id": aliases.alias_for(citation.source_ref_id)})
+                        for citation in output.citations
+                    ],
+                },
+            ),
+            model_metadata=result.model_metadata,
+            prompt_version=result.prompt_version,
+        )
+
+
 class FailingInterpreter:
     def __init__(self, error: Exception | None = None) -> None:
         self.calls = 0
@@ -122,6 +184,101 @@ class FailingInterpreter:
     def interpret(self, _packet: InterpretationPacket) -> InterpretationResult:
         self.calls += 1
         raise self.error
+
+
+class EpisodeOrdinalFailingInterpreter:
+    def __init__(self, failing_ordinal: int) -> None:
+        self.failing_ordinal = failing_ordinal
+        self.calls: list[InterpretationPacket] = []
+
+    def interpret(self, packet: InterpretationPacket) -> InterpretationResult:
+        self.calls.append(packet)
+        if packet.episode_packets[0].ordinal == self.failing_ordinal:
+            raise RuntimeError("RAW_EPISODE_FAILURE_SHOULD_NOT_LEAK")
+        return DeterministicSessionInterpreter().interpret(packet)
+
+
+class ProviderShouldNotLeakError(RuntimeError):
+    def __init__(self) -> None:
+        super().__init__("RAW_PROVIDER_ERROR_SHOULD_NOT_LEAK")
+
+
+class RecordingQualityAssessor:
+    def __init__(self) -> None:
+        self.calls: list[QualityPacket] = []
+
+    def assess(self, packet: QualityPacket) -> QualityReportDraft:
+        self.calls.append(packet)
+        return DeterministicQualityAssessor().assess(packet)
+
+    async def assess_async(self, packet: QualityPacket) -> QualityReportDraft:
+        return self.assess(packet)
+
+
+class AliasedQualityAssessor:
+    def __init__(self) -> None:
+        self.calls: list[QualityPacket] = []
+
+    def assess(self, packet: QualityPacket) -> QualityReportDraft:
+        self.calls.append(packet)
+        output = validate_quality_assessment_output(
+            {
+                "semantic_status": SESSION_INTERPRETATION_SEMANTIC_STATUS_PASSED,
+                "findings": [
+                    {
+                        "code": "review_source_support",
+                        "severity": "warning",
+                        "message": "Source s0001 needs review.",
+                        "references": [{"kind": "source_ref", "id": "s0001"}],
+                    },
+                ],
+                "claim_assessments": [
+                    {
+                        "claim_index": 0,
+                        "status": "supported",
+                        "source_ref_ids": ["s0001"],
+                        "rationale": "s0001 supports this claim.",
+                    },
+                ],
+                "missing_high_signal_items": [
+                    {
+                        "kind": "decision",
+                        "description": "A decision near s0001 was missed.",
+                        "source_ref_ids": ["s0001"],
+                    },
+                ],
+            },
+            packet,
+        )
+        return QualityReportDraft(
+            quality_status=SESSION_INTERPRETATION_QUALITY_STATUS_HEALTHY,
+            quality_reason=None,
+            derivation_status=packet.deterministic_report.derivation_status,
+            deterministic_status=packet.deterministic_report.deterministic_status,
+            semantic_status=output.semantic_status,
+            promotable=True,
+            deterministic_findings=list(packet.deterministic_report.deterministic_findings),
+            semantic_findings=list(output.findings),
+            claim_assessments=list(output.claim_assessments),
+            missing_high_signal_items=list(output.missing_high_signal_items),
+            model_metadata={"provider": "test", "model": "alias-quality", "mode": "test"},
+            prompt_version="test-quality-alias-v1",
+        )
+
+    async def assess_async(self, packet: QualityPacket) -> QualityReportDraft:
+        return self.assess(packet)
+
+
+class FailingQualityAssessor:
+    def __init__(self) -> None:
+        self.calls: list[QualityPacket] = []
+
+    def assess(self, packet: QualityPacket) -> QualityReportDraft:
+        self.calls.append(packet)
+        raise ProviderShouldNotLeakError()
+
+    async def assess_async(self, packet: QualityPacket) -> QualityReportDraft:
+        return self.assess(packet)
 
 
 class PartiallyFailingToolSummarizer:
@@ -482,6 +639,22 @@ def claim_interpret_session_job(store: JobStore, transcript_id: int | None = Non
     store.enqueue(JOB_KIND_INTERPRET_SESSION, payload_json=payload_json, due_at=at(10))
     claimed = store.claim_next("worker-1", now=at(10))
     assert claimed is not None
+    return claimed
+
+
+def enqueue_quality_job(store: JobStore, snapshot_id: int, *, max_attempts: int = 3) -> Job:
+    return store.enqueue(
+        JOB_KIND_ASSESS_INTERPRETATION_QUALITY,
+        payload_json={"snapshot_id": snapshot_id, "session_id": "pi-session-1"},
+        due_at=at(10),
+        max_attempts=max_attempts,
+    )
+
+
+def claim_quality_job(store: JobStore, job_id: int) -> Job:
+    claimed = store.claim_next("worker-quality")
+    assert claimed is not None
+    assert claimed.id == job_id
     return claimed
 
 
@@ -911,6 +1084,42 @@ def test_process_transcript_enqueued_interpret_job_writes_snapshot(
         assert snapshot is not None
         assert snapshot.job_id == interpret_session_job_id
         assert snapshot.status == SESSION_INTERPRETATION_STATUS_COMPLETED
+
+
+def test_interpret_session_alias_output_persists_canonical_source_refs(
+    database: Database,
+    store: JobStore,
+) -> None:
+    transcript_id = create_transcript(database)
+    process = process_transcript(database, store, transcript_id)
+    assert process.result_json is not None
+    summarize_job = run_summarize_tool_activities_job(
+        database,
+        store,
+        process.result_json["summarize_tool_activities_job_id"],
+    )
+    assert summarize_job.result_json is not None
+    claimed = store.claim_next("worker-interpret")
+    assert claimed is not None
+    assert claimed.id == summarize_job.result_json["interpret_session_job_id"]
+
+    completed = JobRunner(database=database, interpreter=AliasedInterpreter()).run(
+        claimed.id,
+        claimed.run_id,
+        running_pid=123,
+    )
+
+    assert completed.status == JOB_STATUS_COMPLETED
+    with database.session() as session:
+        snapshot = session.scalar(select(SessionInterpretationSnapshot))
+        assert snapshot is not None
+        assert snapshot.status == SESSION_INTERPRETATION_STATUS_COMPLETED
+        canonical_id = snapshot.interpretation_json["claims"][0]["source_ref_ids"][0]
+        assert canonical_id.startswith("ar")
+        assert snapshot.interpretation_json["citations"][0]["source_ref_id"] == canonical_id
+        assert {citation["source_ref_id"] for citation in snapshot.citations_json} == {canonical_id}
+        assert "s0001" not in json.dumps(snapshot.interpretation_json)
+        assert "s0001" not in json.dumps(snapshot.citations_json)
 
 
 def test_process_transcript_enqueued_interpret_job_writes_snapshot_without_snapshot_shells(
@@ -1388,9 +1597,317 @@ def test_interpret_session_completed_writes_snapshot_and_safe_result(
         assert snapshot.job_id == claimed.id
         assert snapshot.transcript_id == transcript_id
         assert snapshot.analysis_run_id == completed.result_json["analysis_run_id"]
-        assert snapshot.interpretation_json["summary"].startswith("Deterministic interpretation")
+        assert snapshot.interpretation_json["summary"].startswith("Episode-level interpretation")
+        assert snapshot.interpretation_json["aggregation"]["aggregation_mode"] == "episode_claim_concat"
+        assert snapshot.interpretation_json["aggregation"]["coverage_status"] == "complete"
         assert snapshot.citations_json
         assert snapshot.model_metadata_json["provider"] == "pi-memory"
+
+    quality_job_id = completed.result_json["assess_interpretation_quality_job_id"]
+    quality_job = get_job(database, quality_job_id)
+    assert quality_job.kind == JOB_KIND_ASSESS_INTERPRETATION_QUALITY
+    assert quality_job.payload_json["snapshot_id"] == completed.result_json["snapshot_id"]
+    assert quality_job.payload_json["interpretation_job_id"] == claimed.id
+
+
+def test_interpret_session_interprets_each_claim_source_episode_separately(
+    database: Database,
+    store: JobStore,
+) -> None:
+    transcript_id = create_compaction_boundary_transcript(database)
+    process_transcript(database, store, transcript_id)
+    interpreter = RecordingInterpreter()
+    claimed = claim_interpret_session_job(store, transcript_id)
+
+    completed = JobRunner(database=database, interpreter=interpreter).run(
+        claimed.id,
+        claimed.run_id,
+        running_pid=123,
+        now=at(10),
+    )
+
+    assert completed.status == JOB_STATUS_COMPLETED
+    assert len(interpreter.calls) == 2
+    assert [call.readiness.episode_count for call in interpreter.calls] == [1, 1]
+    assert [call.episode_packets[0].ordinal for call in interpreter.calls] == [0, 1]
+    assert completed.result_json is not None
+    assert completed.result_json["episode_interpretation"]["coverage_status"] == "complete"
+    with database.session() as session:
+        episode_rows = list(
+            session.scalars(
+                select(EpisodeInterpretationSnapshot).order_by(EpisodeInterpretationSnapshot.episode_ordinal),
+            ),
+        )
+        snapshot = session.scalar(select(SessionInterpretationSnapshot))
+
+    assert [row.status for row in episode_rows] == [
+        EPISODE_INTERPRETATION_STATUS_COMPLETED,
+        EPISODE_INTERPRETATION_STATUS_COMPLETED,
+    ]
+    assert snapshot is not None
+    assert len(snapshot.interpretation_json["claims"]) == 2
+    assert [
+        citation["episode_ordinal"] for citation in snapshot.citations_json if citation.get("usage") == "claim"
+    ] == [0, 1]
+    assert snapshot.interpretation_json["aggregation"] == completed.result_json["episode_interpretation"]
+
+
+def test_interpret_session_persists_partial_episode_failures(
+    database: Database,
+    store: JobStore,
+) -> None:
+    transcript_id = create_compaction_boundary_transcript(database)
+    process_transcript(database, store, transcript_id)
+    interpreter = EpisodeOrdinalFailingInterpreter(failing_ordinal=1)
+    claimed = claim_interpret_session_job(store, transcript_id)
+
+    completed = JobRunner(database=database, interpreter=interpreter).run(
+        claimed.id,
+        claimed.run_id,
+        running_pid=123,
+        now=at(10),
+    )
+
+    assert completed.status == JOB_STATUS_COMPLETED
+    assert len(interpreter.calls) == 2
+    assert completed.result_json is not None
+    assert completed.result_json["episode_interpretation"]["coverage_status"] == "partial"
+    assert completed.result_json["episode_interpretation"]["completed_episode_count"] == 1
+    assert completed.result_json["episode_interpretation"]["failed_episode_count"] == 1
+    assert "RAW_EPISODE_FAILURE_SHOULD_NOT_LEAK" not in str(completed.result_json)
+    with database.session() as session:
+        episode_rows = list(
+            session.scalars(
+                select(EpisodeInterpretationSnapshot).order_by(EpisodeInterpretationSnapshot.episode_ordinal),
+            ),
+        )
+        snapshot = session.scalar(select(SessionInterpretationSnapshot))
+
+    assert [row.status for row in episode_rows] == [
+        EPISODE_INTERPRETATION_STATUS_COMPLETED,
+        EPISODE_INTERPRETATION_STATUS_FAILED,
+    ]
+    assert episode_rows[1].failure_metadata_json == {"error_type": "RuntimeError"}
+    assert snapshot is not None
+    assert len(snapshot.interpretation_json["claims"]) == 1
+    assert snapshot.interpretation_json["aggregation"]["coverage_status"] == "partial"
+
+
+def test_assess_quality_completed_snapshot_writes_semantic_report(
+    database: Database,
+    store: JobStore,
+) -> None:
+    transcript_id = create_transcript(database)
+    analyze_transcript(database, transcript_id)
+    interpreter = RecordingInterpreter()
+    claimed = claim_interpret_session_job(store, transcript_id)
+    completed = JobRunner(database=database, interpreter=interpreter).run(
+        claimed.id,
+        claimed.run_id,
+        running_pid=123,
+        now=at(10),
+    )
+    quality_job_id = completed.result_json["assess_interpretation_quality_job_id"]
+    quality_assessor = RecordingQualityAssessor()
+    claimed_quality = claim_quality_job(store, quality_job_id)
+
+    quality = JobRunner(database=database, quality_assessor=quality_assessor).run(
+        claimed_quality.id,
+        claimed_quality.run_id,
+        running_pid=123,
+        now=at(10),
+    )
+
+    assert quality.status == JOB_STATUS_COMPLETED
+    assert quality.result_json is not None
+    assert quality.result_json["quality_status"] == SESSION_INTERPRETATION_QUALITY_STATUS_HEALTHY
+    assert quality.result_json["quality_reason"] is None
+    assert quality.result_json["semantic_status"] == SESSION_INTERPRETATION_SEMANTIC_STATUS_PASSED
+    assert quality.result_json["promotable"] is True
+    assert len(quality_assessor.calls) == 1
+    with database.session() as session:
+        report = session.scalar(select(SessionInterpretationQualityReport))
+        assert report is not None
+        assert report.snapshot_id == completed.result_json["snapshot_id"]
+        assert report.job_id == quality_job_id
+        assert report.quality_status == SESSION_INTERPRETATION_QUALITY_STATUS_HEALTHY
+        assert report.quality_reason is None
+        assert report.promotable is True
+        assert report.model_metadata_json["model"] == "deterministic-quality-assessor-v1"
+
+
+def test_assess_quality_alias_output_persists_canonical_source_refs(
+    database: Database,
+    store: JobStore,
+) -> None:
+    transcript_id = create_transcript(database)
+    analyze_transcript(database, transcript_id)
+    claimed = claim_interpret_session_job(store, transcript_id)
+    completed = JobRunner(database=database, interpreter=RecordingInterpreter()).run(
+        claimed.id,
+        claimed.run_id,
+        running_pid=123,
+        now=at(10),
+    )
+    quality_job_id = completed.result_json["assess_interpretation_quality_job_id"]
+    quality_assessor = AliasedQualityAssessor()
+    claimed_quality = claim_quality_job(store, quality_job_id)
+
+    JobRunner(database=database, quality_assessor=quality_assessor).run(
+        claimed_quality.id,
+        claimed_quality.run_id,
+        running_pid=123,
+        now=at(10),
+    )
+
+    assert len(quality_assessor.calls) == 1
+    with database.session() as session:
+        snapshot = session.get_one(SessionInterpretationSnapshot, completed.result_json["snapshot_id"])
+        canonical_source_ref_id = snapshot.citations_json[0]["source_ref_id"]
+        report = session.scalar(select(SessionInterpretationQualityReport))
+        assert report is not None
+        assert report.claim_assessments_json[0]["source_ref_ids"] == [canonical_source_ref_id]
+        assert report.missing_high_signal_items_json[0]["source_ref_ids"] == [canonical_source_ref_id]
+        assert report.semantic_findings_json[0]["references"][0]["id"] == canonical_source_ref_id
+        assert "s0001" not in json.dumps(
+            {
+                "claim_assessments": report.claim_assessments_json,
+                "missing_high_signal_items": report.missing_high_signal_items_json,
+                "semantic_findings": report.semantic_findings_json,
+            },
+        )
+
+
+def test_assess_quality_blocked_snapshot_writes_non_model_report(database: Database, store: JobStore) -> None:
+    with database.session() as session:
+        memory_session = MemorySession(session_id="pi-session-1")
+        snapshot = SessionInterpretationSnapshot(
+            session=memory_session,
+            status=SESSION_INTERPRETATION_STATUS_BLOCKED,
+            blocked_reason=SESSION_INTERPRETATION_BLOCKED_REASON_PHASE_5A_NOT_READY,
+        )
+        session.add(snapshot)
+        session.flush()
+        snapshot_id = snapshot.id
+    job = enqueue_quality_job(store, snapshot_id)
+    quality_assessor = FailingQualityAssessor()
+    claimed = claim_quality_job(store, job.id)
+
+    completed = JobRunner(database=database, quality_assessor=quality_assessor).run(
+        claimed.id,
+        claimed.run_id,
+        running_pid=123,
+        now=at(10),
+    )
+
+    assert completed.status == JOB_STATUS_COMPLETED
+    assert completed.result_json is not None
+    assert completed.result_json["quality_status"] == SESSION_INTERPRETATION_QUALITY_STATUS_NOT_ASSESSED
+    assert completed.result_json["quality_reason"] == SESSION_INTERPRETATION_QUALITY_REASON_BLOCKED_INTERPRETATION
+    assert completed.result_json["semantic_status"] == SESSION_INTERPRETATION_SEMANTIC_STATUS_NOT_ASSESSED
+    assert quality_assessor.calls == []
+
+
+def test_assess_quality_skipped_snapshot_writes_non_model_report(database: Database, store: JobStore) -> None:
+    with database.session() as session:
+        memory_session = MemorySession(session_id="pi-session-1")
+        snapshot = SessionInterpretationSnapshot(
+            session=memory_session,
+            status=SESSION_INTERPRETATION_STATUS_SKIPPED_NO_CLAIM_SOURCES,
+        )
+        session.add(snapshot)
+        session.flush()
+        snapshot_id = snapshot.id
+    job = enqueue_quality_job(store, snapshot_id)
+    quality_assessor = FailingQualityAssessor()
+    claimed = claim_quality_job(store, job.id)
+
+    completed = JobRunner(database=database, quality_assessor=quality_assessor).run(
+        claimed.id,
+        claimed.run_id,
+        running_pid=123,
+        now=at(10),
+    )
+
+    assert completed.status == JOB_STATUS_COMPLETED
+    assert completed.result_json is not None
+    assert completed.result_json["quality_status"] == SESSION_INTERPRETATION_QUALITY_STATUS_NOT_ASSESSED
+    assert completed.result_json["quality_reason"] == SESSION_INTERPRETATION_QUALITY_REASON_SKIPPED_NO_CLAIM_SOURCES
+    assert completed.result_json["semantic_status"] == SESSION_INTERPRETATION_SEMANTIC_STATUS_NOT_ASSESSED
+    assert quality_assessor.calls == []
+
+
+def test_assess_quality_deleted_snapshot_is_stale_noop(database: Database, store: JobStore) -> None:
+    with database.session() as session:
+        memory_session = MemorySession(session_id="pi-session-1")
+        snapshot = SessionInterpretationSnapshot(
+            session=memory_session,
+            status=SESSION_INTERPRETATION_STATUS_SKIPPED_NO_CLAIM_SOURCES,
+        )
+        session.add(snapshot)
+        session.flush()
+        snapshot_id = snapshot.id
+        session.delete(snapshot)
+
+    job = enqueue_quality_job(store, snapshot_id)
+    claimed = claim_quality_job(store, job.id)
+
+    completed = JobRunner(database=database, quality_assessor=FailingQualityAssessor()).run(
+        claimed.id,
+        claimed.run_id,
+        running_pid=123,
+        now=at(10),
+    )
+
+    assert completed.status == JOB_STATUS_COMPLETED
+    assert completed.result_json == {
+        "status": "stale",
+        "snapshot_id": snapshot_id,
+        "quality_report_id": None,
+        "stale_reason": "snapshot_not_found",
+    }
+    with database.session() as session:
+        assert session.scalar(select(func.count()).select_from(SessionInterpretationQualityReport)) == 0
+
+
+def test_assess_quality_final_failure_writes_assessment_failed_report(
+    database: Database,
+    store: JobStore,
+) -> None:
+    transcript_id = create_transcript(database)
+    analyze_transcript(database, transcript_id)
+    claimed = claim_interpret_session_job(store, transcript_id)
+    completed = JobRunner(database=database, interpreter=RecordingInterpreter()).run(
+        claimed.id,
+        claimed.run_id,
+        running_pid=123,
+        now=at(10),
+    )
+    snapshot_id = completed.result_json["snapshot_id"]
+    job = enqueue_quality_job(store, snapshot_id, max_attempts=1)
+    claimed_quality = claim_quality_job(store, job.id)
+
+    with pytest.raises(ProviderShouldNotLeakError, match="RAW_PROVIDER_ERROR_SHOULD_NOT_LEAK"):
+        JobRunner(database=database, quality_assessor=FailingQualityAssessor()).run(
+            claimed_quality.id,
+            claimed_quality.run_id,
+            running_pid=123,
+            now=at(10),
+        )
+
+    failed_job = get_job(database, job.id)
+    assert failed_job.status == JOB_STATUS_FAILED
+    assert failed_job.last_error == "ProviderShouldNotLeakError"
+    with database.session() as session:
+        report = session.scalar(select(SessionInterpretationQualityReport))
+        assert report is not None
+        assert report.snapshot_id == snapshot_id
+        assert report.quality_status == SESSION_INTERPRETATION_QUALITY_STATUS_ASSESSMENT_FAILED
+        assert report.quality_reason == SESSION_INTERPRETATION_QUALITY_REASON_SEMANTIC_ASSESSMENT_FAILED
+        assert report.semantic_status == SESSION_INTERPRETATION_SEMANTIC_STATUS_ASSESSMENT_FAILED
+        assert report.promotable is False
+        assert report.assessment_metadata_json["assessment_failed_error_type"] == "ProviderShouldNotLeakError"
+        assert "RAW_PROVIDER_ERROR_SHOULD_NOT_LEAK" not in str(report.assessment_metadata_json)
 
 
 def test_interpret_session_explicit_interpreter_bypasses_configured_factory(
@@ -1921,6 +2438,10 @@ def test_interpret_session_unexpected_interpreter_error_requeues_without_snapsho
     assert failed_job.last_error == "temporary model outage"
     with database.session() as session:
         assert session.scalar(select(func.count()).select_from(SessionInterpretationSnapshot)) == 0
+        episode_rows = list(session.scalars(select(EpisodeInterpretationSnapshot)))
+
+    assert [row.status for row in episode_rows] == [EPISODE_INTERPRETATION_STATUS_FAILED]
+    assert episode_rows[0].failure_metadata_json == {"error_type": "RuntimeError"}
 
 
 def test_wrong_run_id_is_rejected_without_incrementing_attempts(database: Database, store: JobStore) -> None:

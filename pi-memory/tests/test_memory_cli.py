@@ -4,6 +4,7 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from types import SimpleNamespace
 
 import pi_memory.cli.main as cli_module
 import pytest
@@ -17,6 +18,7 @@ from pi_memory.db import (
     Job,
     MemorySession,
     Observation,
+    SessionInterpretationQualityReport,
     SessionInterpretationSnapshot,
     Transcript,
     TranscriptEntry,
@@ -28,6 +30,7 @@ from pi_memory.server import ServerState
 from pi_memory.settings import (
     DEFAULT_TOOL_SUMMARY_CONCURRENCY,
     INTERPRETATION_MODEL_ENV,
+    QUALITY_MODEL_ENV,
     TOOL_SUMMARY_MODEL_ENV,
     Settings,
 )
@@ -92,10 +95,51 @@ def parse_observe_output(output: str) -> dict[str, str]:
     return fields
 
 
+def add_quality_report(
+    database: Database,
+    *,
+    session_id: str = "pi-session-quality",
+    quality_status: str = "healthy",
+    quality_reason: str | None = None,
+    promotable: bool = True,
+) -> dict[str, object]:
+    with database.session() as session:
+        memory_session = MemorySession(session_id=session_id, repo_name="basecamp", worktree_label="main")
+        transcript = Transcript(session=memory_session, path=f"/tmp/pi/{session_id}.jsonl")
+        snapshot = SessionInterpretationSnapshot(
+            session=memory_session,
+            transcript=transcript,
+            status="completed",
+            interpretation_json={"summary": "Safe interpretation"},
+            citations_json=[],
+            model_metadata_json={"provider": "test", "model": "interpret"},
+            prompt_version="phase5b-test",
+            schema_version=1,
+        )
+        report = SessionInterpretationQualityReport(
+            snapshot=snapshot,
+            quality_status=quality_status,
+            quality_reason=quality_reason,
+            derivation_status="current",
+            deterministic_status="passed",
+            semantic_status="passed" if quality_status == "healthy" else "degraded",
+            promotable=promotable,
+            semantic_findings_json=[] if quality_status == "healthy" else [{"severity": "warning"}],
+            model_metadata_json={"provider": "test", "model": "quality", "mode": "deterministic"},
+            assessment_metadata_json={"deterministic_check_version": 1},
+            prompt_version="phase5c-test",
+            schema_version=1,
+        )
+        session.add(report)
+        session.flush()
+        return {"session_id": session_id, "quality_report_id": report.id, "snapshot_id": snapshot.id}
+
+
 def test_config_reports_effective_defaults(tmp_path, monkeypatch) -> None:
     settings_path = tmp_path / "memory" / "config.json"
     monkeypatch.delenv(INTERPRETATION_MODEL_ENV, raising=False)
     monkeypatch.delenv(TOOL_SUMMARY_MODEL_ENV, raising=False)
+    monkeypatch.delenv(QUALITY_MODEL_ENV, raising=False)
     monkeypatch.setattr(cli_module, "MemorySettings", lambda: Settings(settings_path))
 
     result = CliRunner().invoke(cli_module.main, ["config", "--json"])
@@ -105,6 +149,7 @@ def test_config_reports_effective_defaults(tmp_path, monkeypatch) -> None:
         "config_path": str(settings_path),
         "interpretation_model": None,
         "tool_summary_model": None,
+        "quality_model": None,
         "tool_summary_concurrency": DEFAULT_TOOL_SUMMARY_CONCURRENCY,
     }
     assert not settings_path.exists()
@@ -114,6 +159,7 @@ def test_config_persists_interpretation_model(tmp_path, monkeypatch) -> None:
     settings_path = tmp_path / "memory" / "config.json"
     monkeypatch.delenv(INTERPRETATION_MODEL_ENV, raising=False)
     monkeypatch.delenv(TOOL_SUMMARY_MODEL_ENV, raising=False)
+    monkeypatch.delenv(QUALITY_MODEL_ENV, raising=False)
     monkeypatch.setattr(cli_module, "MemorySettings", lambda: Settings(settings_path))
 
     result = CliRunner().invoke(
@@ -131,6 +177,7 @@ def test_config_persists_interpretation_model(tmp_path, monkeypatch) -> None:
         "config_path": str(settings_path),
         "interpretation_model": "anthropic:claude-sonnet-4-6",
         "tool_summary_model": None,
+        "quality_model": None,
         "tool_summary_concurrency": DEFAULT_TOOL_SUMMARY_CONCURRENCY,
     }
     assert json.loads(settings_path.read_text()) == {
@@ -143,6 +190,7 @@ def test_config_reports_env_override(tmp_path, monkeypatch) -> None:
     Settings(settings_path).update(interpretation_model="anthropic:file-model")
     monkeypatch.setenv(INTERPRETATION_MODEL_ENV, "openai:env-model")
     monkeypatch.delenv(TOOL_SUMMARY_MODEL_ENV, raising=False)
+    monkeypatch.delenv(QUALITY_MODEL_ENV, raising=False)
     monkeypatch.setattr(cli_module, "MemorySettings", lambda: Settings(settings_path))
 
     result = CliRunner().invoke(cli_module.main, ["config"])
@@ -153,6 +201,7 @@ def test_config_reports_env_override(tmp_path, monkeypatch) -> None:
     assert fields["config_path"] == str(settings_path)
     assert fields["interpretation_model"] == "openai:env-model"
     assert fields["tool_summary_model"] == "<unset>"
+    assert fields["quality_model"] == "<unset>"
     assert fields["tool_summary_concurrency"] == str(DEFAULT_TOOL_SUMMARY_CONCURRENCY)
 
 
@@ -160,6 +209,7 @@ def test_config_rejects_empty_interpretation_model(tmp_path, monkeypatch) -> Non
     settings_path = tmp_path / "memory" / "config.json"
     monkeypatch.delenv(INTERPRETATION_MODEL_ENV, raising=False)
     monkeypatch.delenv(TOOL_SUMMARY_MODEL_ENV, raising=False)
+    monkeypatch.delenv(QUALITY_MODEL_ENV, raising=False)
     monkeypatch.setattr(cli_module, "MemorySettings", lambda: Settings(settings_path))
 
     result = CliRunner().invoke(cli_module.main, ["config", "--interpretation-model", "  "])
@@ -173,6 +223,7 @@ def test_config_persists_and_clears_tool_summary_model(tmp_path, monkeypatch) ->
     settings_path = tmp_path / "memory" / "config.json"
     monkeypatch.delenv(INTERPRETATION_MODEL_ENV, raising=False)
     monkeypatch.delenv(TOOL_SUMMARY_MODEL_ENV, raising=False)
+    monkeypatch.delenv(QUALITY_MODEL_ENV, raising=False)
     monkeypatch.setattr(cli_module, "MemorySettings", lambda: Settings(settings_path))
 
     result = CliRunner().invoke(
@@ -185,6 +236,7 @@ def test_config_persists_and_clears_tool_summary_model(tmp_path, monkeypatch) ->
         "config_path": str(settings_path),
         "interpretation_model": None,
         "tool_summary_model": "anthropic:claude-haiku-4-5",
+        "quality_model": None,
         "tool_summary_concurrency": DEFAULT_TOOL_SUMMARY_CONCURRENCY,
     }
     assert json.loads(settings_path.read_text()) == {"tool_summary_model": "anthropic:claude-haiku-4-5"}
@@ -196,10 +248,71 @@ def test_config_persists_and_clears_tool_summary_model(tmp_path, monkeypatch) ->
     assert json.loads(settings_path.read_text()) == {}
 
 
+def test_config_persists_and_clears_quality_model(tmp_path, monkeypatch) -> None:
+    settings_path = tmp_path / "memory" / "config.json"
+    monkeypatch.delenv(INTERPRETATION_MODEL_ENV, raising=False)
+    monkeypatch.delenv(TOOL_SUMMARY_MODEL_ENV, raising=False)
+    monkeypatch.delenv(QUALITY_MODEL_ENV, raising=False)
+    monkeypatch.setattr(cli_module, "MemorySettings", lambda: Settings(settings_path))
+
+    result = CliRunner().invoke(
+        cli_module.main,
+        ["config", "--quality-model", "anthropic:claude-opus-4-1", "--json"],
+    )
+
+    assert result.exit_code == 0
+    assert json.loads(result.output) == {
+        "config_path": str(settings_path),
+        "interpretation_model": None,
+        "tool_summary_model": None,
+        "quality_model": "anthropic:claude-opus-4-1",
+        "tool_summary_concurrency": DEFAULT_TOOL_SUMMARY_CONCURRENCY,
+    }
+    assert json.loads(settings_path.read_text()) == {"quality_model": "anthropic:claude-opus-4-1"}
+
+    result = CliRunner().invoke(cli_module.main, ["config", "--clear-quality-model", "--json"])
+
+    assert result.exit_code == 0
+    assert json.loads(result.output)["quality_model"] is None
+    assert json.loads(settings_path.read_text()) == {}
+
+
+def test_config_rejects_conflicting_quality_model_options(tmp_path, monkeypatch) -> None:
+    settings_path = tmp_path / "memory" / "config.json"
+    monkeypatch.delenv(INTERPRETATION_MODEL_ENV, raising=False)
+    monkeypatch.delenv(TOOL_SUMMARY_MODEL_ENV, raising=False)
+    monkeypatch.delenv(QUALITY_MODEL_ENV, raising=False)
+    monkeypatch.setattr(cli_module, "MemorySettings", lambda: Settings(settings_path))
+
+    result = CliRunner().invoke(
+        cli_module.main,
+        ["config", "--quality-model", "anthropic:quality", "--clear-quality-model"],
+    )
+
+    assert result.exit_code == 2
+    assert "--clear-quality-model cannot be used with --quality-model" in result.output
+    assert not settings_path.exists()
+
+
+def test_config_rejects_empty_quality_model(tmp_path, monkeypatch) -> None:
+    settings_path = tmp_path / "memory" / "config.json"
+    monkeypatch.delenv(INTERPRETATION_MODEL_ENV, raising=False)
+    monkeypatch.delenv(TOOL_SUMMARY_MODEL_ENV, raising=False)
+    monkeypatch.delenv(QUALITY_MODEL_ENV, raising=False)
+    monkeypatch.setattr(cli_module, "MemorySettings", lambda: Settings(settings_path))
+
+    result = CliRunner().invoke(cli_module.main, ["config", "--quality-model", "  "])
+
+    assert result.exit_code == 2
+    assert "Invalid value for '--quality-model': must not be empty" in result.output
+    assert not settings_path.exists()
+
+
 def test_config_persists_and_clears_tool_summary_concurrency(tmp_path, monkeypatch) -> None:
     settings_path = tmp_path / "memory" / "config.json"
     monkeypatch.delenv(INTERPRETATION_MODEL_ENV, raising=False)
     monkeypatch.delenv(TOOL_SUMMARY_MODEL_ENV, raising=False)
+    monkeypatch.delenv(QUALITY_MODEL_ENV, raising=False)
     monkeypatch.setattr(cli_module, "MemorySettings", lambda: Settings(settings_path))
 
     result = CliRunner().invoke(cli_module.main, ["config", "--tool-summary-concurrency", "25", "--json"])
@@ -220,6 +333,7 @@ def test_config_clears_interpretation_model(tmp_path, monkeypatch) -> None:
     Settings(settings_path).update(interpretation_model="anthropic:file-model")
     monkeypatch.delenv(INTERPRETATION_MODEL_ENV, raising=False)
     monkeypatch.delenv(TOOL_SUMMARY_MODEL_ENV, raising=False)
+    monkeypatch.delenv(QUALITY_MODEL_ENV, raising=False)
     monkeypatch.setattr(cli_module, "MemorySettings", lambda: Settings(settings_path))
 
     result = CliRunner().invoke(cli_module.main, ["config", "--clear-interpretation-model", "--json"])
@@ -229,6 +343,7 @@ def test_config_clears_interpretation_model(tmp_path, monkeypatch) -> None:
         "config_path": str(settings_path),
         "interpretation_model": None,
         "tool_summary_model": None,
+        "quality_model": None,
         "tool_summary_concurrency": DEFAULT_TOOL_SUMMARY_CONCURRENCY,
     }
     assert json.loads(settings_path.read_text()) == {}
@@ -735,6 +850,7 @@ def test_interpretation_reports_json_snapshot(memory_database: Database) -> None
         "claim_source_activity_count": 2,
         "interpretation_json": {"summary": "CLI safe interpretation", "claims": []},
         "citations_json": [{"claim_id": "claim-cli", "source_ref_id": "ar1:ep0:act0:entries1"}],
+        "episode_interpretation": {},
         "model_metadata": {"provider": "deterministic", "model": "cli-test"},
         "prompt_version": "phase5b-session-interpretation-v1",
         "schema_version": 1,
@@ -793,6 +909,162 @@ def test_interpretation_missing_reports_click_error(memory_database: Database) -
 
     assert result.exit_code == 1
     assert "Error: Interpretation snapshot for session missing-session was not found" in result.output
+
+
+def test_quality_reports_json_report(memory_database: Database) -> None:
+    expected = add_quality_report(memory_database)
+
+    result = CliRunner().invoke(
+        cli_module.main,
+        [
+            "quality",
+            "--session-id",
+            str(expected["session_id"]),
+            "--db-url",
+            memory_database.url,
+            "--json",
+        ],
+    )
+
+    assert result.exit_code == 0
+    payload = json.loads(result.output)
+    assert payload["session_id"] == expected["session_id"]
+    assert payload["quality_report_id"] == expected["quality_report_id"]
+    assert payload["snapshot_id"] == expected["snapshot_id"]
+    assert payload["quality_status"] == "healthy"
+    assert payload["assessment_state"] == "complete"
+    assert payload["is_current"] is True
+    assert payload["promotable"] is True
+    assert "raw_line" not in str(payload)
+    assert "/tmp/pi" not in str(payload)
+
+
+def test_quality_reports_human_readable_report(memory_database: Database) -> None:
+    expected = add_quality_report(memory_database)
+
+    result = CliRunner().invoke(
+        cli_module.main,
+        ["quality", "--session-id", str(expected["session_id"]), "--db-url", memory_database.url],
+    )
+
+    assert result.exit_code == 0
+    fields = parse_observe_output(result.output)
+    assert "Session quality report" in result.output
+    assert fields["session_id"] == expected["session_id"]
+    assert fields["quality_status"] == "healthy"
+    assert fields["promotable"] == "True"
+
+
+def test_quality_missing_reports_click_error(memory_database: Database) -> None:
+    result = CliRunner().invoke(
+        cli_module.main,
+        ["quality", "--session-id", "missing-session", "--db-url", memory_database.url],
+    )
+
+    assert result.exit_code == 1
+    assert "Error: Quality report for session missing-session was not found" in result.output
+
+
+def test_quality_list_reports_json_filters(memory_database: Database) -> None:
+    add_quality_report(memory_database, session_id="healthy-1")
+    add_quality_report(
+        memory_database,
+        session_id="degraded-1",
+        quality_status="degraded",
+        quality_reason="semantic_degraded",
+        promotable=False,
+    )
+
+    result = CliRunner().invoke(
+        cli_module.main,
+        [
+            "quality-list",
+            "--db-url",
+            memory_database.url,
+            "--status",
+            "degraded",
+            "--not-promotable",
+            "--json",
+        ],
+    )
+
+    assert result.exit_code == 0
+    payload = json.loads(result.output)
+    assert payload["pagination"]["total"] == 1
+    assert payload["results"][0]["session_id"] == "degraded-1"
+    assert payload["results"][0]["quality_status"] == "degraded"
+    assert payload["results"][0]["promotable"] is False
+
+
+def test_quality_sample_reports_json_count(memory_database: Database) -> None:
+    for index in range(3):
+        add_quality_report(memory_database, session_id=f"sample-{index}")
+
+    result = CliRunner().invoke(
+        cli_module.main,
+        ["quality-sample", "--db-url", memory_database.url, "--count", "2", "--json"],
+    )
+
+    assert result.exit_code == 0
+    payload = json.loads(result.output)
+    assert payload["count"] == 2
+    assert len(payload["results"]) == 2
+
+
+def test_quality_tui_help_lists_defaulted_db_url_option() -> None:
+    result = CliRunner().invoke(cli_module.main, ["quality-tui", "--help"])
+
+    assert result.exit_code == 0
+    assert "--db-url" in result.output
+    assert cli_module.MEMORY_DB_URL in result.output
+
+
+def test_quality_tui_requires_non_empty_db_url() -> None:
+    result = CliRunner().invoke(cli_module.main, ["quality-tui", "--db-url", "  "])
+
+    assert result.exit_code == 2
+    assert "Invalid value for '--db-url': must not be empty" in result.output
+
+
+def test_quality_tui_defaults_to_configured_memory_database(monkeypatch) -> None:
+    calls: dict[str, str] = {}
+
+    def fake_import_module(name: str) -> SimpleNamespace:
+        calls["module"] = name
+        return SimpleNamespace(run_quality_tui=lambda value: calls.setdefault("db_url", value))
+
+    monkeypatch.setattr(cli_module.importlib, "import_module", fake_import_module)
+
+    result = CliRunner().invoke(cli_module.main, ["quality-tui"])
+
+    assert result.exit_code == 0
+    assert calls == {"module": "pi_memory.tui", "db_url": cli_module.MEMORY_DB_URL}
+
+
+def test_quality_tui_forwards_db_url_to_lazy_imported_runner(monkeypatch) -> None:
+    db_url = "sqlite:////tmp/pi-memory-quality.db"
+    calls: dict[str, str] = {}
+
+    def fake_import_module(name: str) -> SimpleNamespace:
+        calls["module"] = name
+        return SimpleNamespace(run_quality_tui=lambda value: calls.setdefault("db_url", value))
+
+    monkeypatch.setattr(cli_module.importlib, "import_module", fake_import_module)
+
+    result = CliRunner().invoke(cli_module.main, ["quality-tui", "--db-url", db_url])
+
+    assert result.exit_code == 0
+    assert calls == {"module": "pi_memory.tui", "db_url": db_url}
+
+
+def test_quality_list_rejects_invalid_filter(memory_database: Database) -> None:
+    result = CliRunner().invoke(
+        cli_module.main,
+        ["quality-list", "--db-url", memory_database.url, "--status", "invalid"],
+    )
+
+    assert result.exit_code == 1
+    assert "Invalid quality_status" in result.output
 
 
 def test_recall_reports_human_readable_results(memory_database: Database) -> None:

@@ -12,6 +12,7 @@ from pi_memory.db import (
     Database,
     Job,
     MemorySession,
+    SessionInterpretationQualityReport,
     SessionInterpretationSnapshot,
     Transcript,
     TranscriptEntry,
@@ -19,6 +20,7 @@ from pi_memory.db import (
 from pi_memory.ingest import TranscriptIngestService
 from pi_memory.interpretation import SessionInterpretationInspectionService
 from pi_memory.jobs import JobStore
+from pi_memory.quality import SessionQualityReportInspectionService
 from pi_memory.recall import RecallSearchService, index_transcript
 from pi_memory.server import create_app
 
@@ -60,6 +62,19 @@ def interpretation_client(tmp_path) -> Iterator[tuple[TestClient, Database]]:
     app = create_app(
         memory_dir=tmp_path / "memory",
         interpretation_service=SessionInterpretationInspectionService(database=database),
+    )
+    try:
+        yield TestClient(app), database
+    finally:
+        database.close_if_open()
+
+
+@pytest.fixture
+def quality_client(tmp_path) -> Iterator[tuple[TestClient, Database]]:
+    database = Database(sqlite_url(tmp_path / "quality.db"))
+    app = create_app(
+        memory_dir=tmp_path / "memory",
+        quality_service=SessionQualityReportInspectionService(database=database),
     )
     try:
         yield TestClient(app), database
@@ -188,6 +203,72 @@ def add_interpretation_snapshot(database: Database) -> dict[str, object]:
         }
 
 
+def add_quality_report(
+    database: Database,
+    *,
+    session_id: str = "pi-session-quality",
+    quality_status: str = "healthy",
+    quality_reason: str | None = None,
+    derivation_status: str = "current",
+    promotable: bool = True,
+    repo_name: str = "basecamp",
+    worktree_label: str = "main",
+) -> dict[str, object]:
+    database.initialize()
+    now = datetime(2026, 1, 3, 4, 5, 6, tzinfo=UTC)
+    with database.session() as db_session:
+        memory_session = MemorySession(
+            session_id=session_id,
+            cwd="/repo",
+            repo_name=repo_name,
+            repo_root="/repo",
+            worktree_label=worktree_label,
+            worktree_path=f"/repo/{worktree_label}",
+        )
+        transcript = Transcript(session=memory_session, path=f"/tmp/pi/{session_id}.jsonl", file_size=123)
+        snapshot = SessionInterpretationSnapshot(
+            session=memory_session,
+            transcript=transcript,
+            status="completed",
+            interpretation_json={"summary": "Safe interpretation"},
+            citations_json=[],
+            model_metadata_json={"provider": "test", "model": "interpret"},
+            prompt_version="phase5b-test",
+            schema_version=1,
+        )
+        report = SessionInterpretationQualityReport(
+            snapshot=snapshot,
+            quality_status=quality_status,
+            quality_reason=quality_reason,
+            derivation_status=derivation_status,
+            deterministic_status="passed",
+            semantic_status="passed" if quality_status == "healthy" else "degraded",
+            promotable=promotable,
+            deterministic_findings_json=[],
+            semantic_findings_json=[{"code": "semantic_degraded", "severity": "warning", "message": "Weak citation."}]
+            if quality_status != "healthy"
+            else [],
+            claim_assessments_json=[],
+            missing_high_signal_items_json=[],
+            model_metadata_json={"provider": "test", "model": "quality", "mode": "deterministic"},
+            assessment_metadata_json={"deterministic_check_version": 1},
+            prompt_version="phase5c-test",
+            schema_version=1,
+            created_at=now,
+            updated_at=now + timedelta(minutes=1),
+        )
+        db_session.add(report)
+        db_session.flush()
+        return {
+            "session_id": session_id,
+            "session_row_id": memory_session.id,
+            "snapshot_id": snapshot.id,
+            "quality_report_id": report.id,
+            "created_at": report.created_at,
+            "updated_at": report.updated_at,
+        }
+
+
 def assert_observe_job_payload(
     job: Job,
     data: dict[str, object],
@@ -309,6 +390,7 @@ def test_get_session_interpretation_endpoint_returns_safe_snapshot(
         "claim_source_activity_count": 2,
         "interpretation_json": {"summary": "Safe interpretation", "open_questions": []},
         "citations_json": [{"claim_id": "claim-1", "source_ref_id": "ar1:ep0:act0:entries1"}],
+        "episode_interpretation": {},
         "model_metadata": {"provider": "deterministic", "model": "test"},
         "prompt_version": "phase5b-session-interpretation-v1",
         "schema_version": 1,
@@ -332,6 +414,105 @@ def test_get_session_interpretation_endpoint_returns_404_when_absent(
 
     assert response.status_code == 404
     assert response.json()["detail"] == "Interpretation snapshot for session missing-session was not found"
+
+
+def test_get_session_quality_endpoint_returns_safe_report(
+    quality_client: tuple[TestClient, Database],
+) -> None:
+    client, database = quality_client
+    expected = add_quality_report(database)
+
+    response = client.get(f"/v1/sessions/{expected['session_id']}/quality")
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["session_id"] == expected["session_id"]
+    assert data["session_row_id"] == expected["session_row_id"]
+    assert data["snapshot_id"] == expected["snapshot_id"]
+    assert data["quality_report_id"] == expected["quality_report_id"]
+    assert data["quality_status"] == "healthy"
+    assert data["quality_reason"] is None
+    assert data["assessment_state"] == "complete"
+    assert data["derivation_status"] == "current"
+    assert data["is_current"] is True
+    assert data["semantic_status"] == "passed"
+    assert data["promotable"] is True
+    assert data["finding_counts"] == {"critical": 0, "warning": 0, "info": 0}
+    assert data["session_metadata"]["repo_name"] == "basecamp"
+    assert "raw_line" not in str(data)
+    assert "/tmp/pi" not in str(data)
+
+
+def test_get_session_quality_endpoint_returns_404_when_absent(
+    quality_client: tuple[TestClient, Database],
+) -> None:
+    client, _database = quality_client
+
+    response = client.get("/v1/sessions/missing-session/quality")
+
+    assert response.status_code == 404
+    assert response.json()["detail"] == "Quality report for session missing-session was not found"
+
+
+def test_quality_report_list_endpoint_filters_and_paginates(
+    quality_client: tuple[TestClient, Database],
+) -> None:
+    client, database = quality_client
+    add_quality_report(database, session_id="healthy-1")
+    add_quality_report(
+        database,
+        session_id="degraded-1",
+        quality_status="degraded",
+        quality_reason="semantic_degraded",
+        promotable=False,
+        worktree_label="feature",
+    )
+    add_quality_report(
+        database,
+        session_id="outdated-1",
+        quality_status="not_assessed",
+        quality_reason="outdated_derivation",
+        derivation_status="outdated",
+        promotable=False,
+    )
+
+    response = client.get("/v1/quality/reports?quality_status=degraded&promotable=false&limit=5")
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["pagination"] == {"total": 1, "returned": 1, "limit": 5, "offset": 0}
+    assert data["query"]["quality_status"] == "degraded"
+    assert data["results"][0]["session_id"] == "degraded-1"
+    assert data["results"][0]["finding_counts"] == {"critical": 0, "warning": 1, "info": 0}
+
+    current_response = client.get("/v1/quality/reports?is_current=false")
+    assert current_response.status_code == 200
+    assert [result["session_id"] for result in current_response.json()["results"]] == ["outdated-1"]
+
+
+def test_quality_report_sample_endpoint_returns_bounded_results(
+    quality_client: tuple[TestClient, Database],
+) -> None:
+    client, database = quality_client
+    for index in range(4):
+        add_quality_report(database, session_id=f"sample-{index}")
+
+    response = client.get("/v1/quality/reports/sample?count=2")
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["count"] == 2
+    assert len(data["results"]) == 2
+
+
+def test_quality_report_list_invalid_filter_returns_422(
+    quality_client: tuple[TestClient, Database],
+) -> None:
+    client, _database = quality_client
+
+    response = client.get("/v1/quality/reports?quality_status=invalid")
+
+    assert response.status_code == 422
 
 
 def test_recall_search_endpoint_returns_indexed_raw_transcript_hit(

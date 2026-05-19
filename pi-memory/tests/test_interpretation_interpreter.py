@@ -16,6 +16,7 @@ from pi_memory.interpretation import (
     PYDANTIC_AI_INTERPRETER_MODE,
     TOOL_ACTIVITY_SUMMARY_PROMPT_VERSION,
     TOOL_ACTIVITY_SUMMARY_SCHEMA_VERSION,
+    ActivityPacket,
     BoundedText,
     DeterministicSessionInterpreter,
     DeterministicToolActivitySummarizer,
@@ -37,6 +38,7 @@ from pi_memory.interpretation import (
     ToolActivitySummaryOutput,
     ToolActivitySummaryResult,
     ToolActivitySummaryValidationError,
+    build_episode_interpretation_packet,
     validate_interpretation_output,
     validate_tool_activity_summary_output,
 )
@@ -72,6 +74,36 @@ def source_ref(
         ),
         receipt_metadata={},
         source_metadata={},
+    )
+
+
+def activity_packet(source_ref: SourceRef) -> ActivityPacket:
+    return ActivityPacket(
+        activity_unit_id=source_ref.activity_unit_id,
+        episode_id=source_ref.episode_id,
+        episode_ordinal=source_ref.episode_ordinal,
+        activity_index=source_ref.activity_index,
+        sequence=1,
+        kind=source_ref.activity_kind,
+        source_origin=source_ref.source_origin,
+        claim_source_allowed=source_ref.claim_source_allowed,
+        source_entry_row_ids=source_ref.source_entry_row_ids,
+        byte_start=source_ref.byte_start,
+        byte_end=source_ref.byte_end,
+        message_role="user",
+        tool_call_id=None,
+        tool_name=None,
+        is_error=None,
+        text_char_count=25,
+        result_text_byte_count=0,
+        result_text_line_count=0,
+        activity_text="User message:\nUse aliases.",
+        activity_text_kind="message",
+        activity_text_status="completed",
+        activity_text_metadata={},
+        receipt_metadata={},
+        source_metadata={},
+        source_refs=(source_ref,),
     )
 
 
@@ -458,13 +490,18 @@ async def test_pydantic_ai_tool_summarizer_async_returns_one_summary() -> None:
 
 
 def test_pydantic_ai_interpreter_renders_bounded_packet_prompt_only() -> None:
+    canonical_id = "ar1:ep0:act196:entries240"
+    canonical_ref = source_ref(canonical_id)
+    base_packet = packet(canonical_ref)
+    episode = base_packet.episode_packets[0]
     source_packet = replace(
-        packet(source_ref("local-ref")),
+        base_packet,
         session_metadata={"secret": "SESSION_METADATA_SHOULD_NOT_APPEAR"},
         transcript_metadata={"secret": "TRANSCRIPT_METADATA_SHOULD_NOT_APPEAR"},
         source_analysis_metadata={"secret": "ANALYSIS_METADATA_SHOULD_NOT_APPEAR"},
+        episode_packets=(replace(episode, included_activities=(activity_packet(canonical_ref),)),),
     )
-    output = interpretation_output(source_packet, "local-ref")
+    output = interpretation_output(source_packet, canonical_id)
     agent = FakePydanticAgent(output=output)
     interpreter = PydanticAISessionInterpreter(
         "plain-model-name",
@@ -478,14 +515,68 @@ def test_pydantic_ai_interpreter_renders_bounded_packet_prompt_only() -> None:
     assert result.model_metadata["provider"] is None
     prompt = agent.prompts[0]
     assert "source excerpt" not in prompt
-    assert "local-ref" in prompt
+    assert canonical_id not in prompt
+    assert '"source_ref_ids":["s0001"]' in prompt
+    assert '"claim_source_ref_ids":["s0001"]' in prompt
+    assert "short source-ref aliases" in prompt
     assert "do not return an empty claims list" in prompt
-    assert "claim_source_ref_ids" in prompt
     assert "analysis_run_id" in prompt
     assert "analyzed_through_byte_offset" in prompt
     assert "SESSION_METADATA_SHOULD_NOT_APPEAR" not in prompt
     assert "TRANSCRIPT_METADATA_SHOULD_NOT_APPEAR" not in prompt
     assert "ANALYSIS_METADATA_SHOULD_NOT_APPEAR" not in prompt
+
+
+def test_pydantic_ai_interpreter_episode_packet_prompt_excludes_sibling_episodes() -> None:
+    first_ref = source_ref("ar1:ep0:act0:entries1")
+    second_ref = replace(
+        source_ref("ar1:ep1:act0:entries2"),
+        episode_id=21,
+        episode_ordinal=1,
+        activity_unit_id=11,
+    )
+    first_activity = replace(activity_packet(first_ref), activity_text="EPISODE_ZERO_ONLY")
+    second_activity = replace(
+        activity_packet(second_ref),
+        episode_id=21,
+        episode_ordinal=1,
+        activity_unit_id=11,
+        activity_text="EPISODE_ONE_ONLY",
+    )
+    base_packet = packet(first_ref)
+    first_episode = replace(
+        base_packet.episode_packets[0],
+        included_activities=(first_activity,),
+        source_refs=(first_ref,),
+    )
+    second_episode = replace(
+        base_packet.episode_packets[0],
+        episode_id=21,
+        manifest_id=22,
+        ordinal=1,
+        included_activities=(second_activity,),
+        source_refs=(second_ref,),
+    )
+    source_packet = replace(
+        base_packet,
+        readiness=replace(base_packet.readiness, activity_count=2, episode_count=2, manifest_count=2),
+        episode_packets=(first_episode, second_episode),
+    )
+    episode_packet = build_episode_interpretation_packet(source_packet, first_episode)
+    output = interpretation_output(episode_packet, first_ref.source_ref_id)
+    agent = FakePydanticAgent(output=output)
+    interpreter = PydanticAISessionInterpreter(
+        "test-provider:test-model",
+        agent_factory=FakePydanticAgentFactory(agent),
+    )
+
+    interpreter.interpret(episode_packet)
+
+    prompt = agent.prompts[0]
+    assert "EPISODE_ZERO_ONLY" in prompt
+    assert "EPISODE_ONE_ONLY" not in prompt
+    assert '"episode_count":1' in prompt
+    assert '"episodes":[{"activities"' in prompt
 
 
 def test_pydantic_ai_interpreter_readiness_guard_runs_before_model_call() -> None:
