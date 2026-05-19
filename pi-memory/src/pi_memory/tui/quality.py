@@ -30,20 +30,16 @@ QualityFilterMode = Literal["all", "healthy", "degraded", "gaps"]
 
 QUALITY_LIMIT_STATUSES = {"assessment_failed", "failed", "not_assessed"}
 TABLE_COLUMNS = (
-    ("evidence", 20, "type"),
-    ("outcome", 18, "status"),
-    ("confidence", 14, "confidence"),
+    ("transcript", 28, "transcript"),
     ("session", 18, "session"),
-    ("transcript", 18, "transcript"),
-    ("outcome note", 42, "reason"),
-    ("findings", 12, "findings"),
-    ("ref limits", 11, "ref_limits"),
-    ("updated", 20, "updated"),
+    ("coverage", 18, "coverage"),
+    ("confidence", 12, "confidence"),
+    ("quality signals", 18, "signals"),
+    ("limits", 18, "limits"),
+    ("updated", 19, "updated"),
 )
-DISTRIBUTION_BAR_WIDTH = 24
-METRIC_CARD_WIDTH = 42
-MAX_DETAIL_FINDINGS = 8
-MAX_METADATA_ITEMS = 8
+DISTRIBUTION_BAR_WIDTH = 12
+MAX_DETAIL_FINDINGS = 2
 
 
 @dataclass(frozen=True)
@@ -131,12 +127,12 @@ class QualityTuiApp(App[None]):
     }
 
     #quality-overview {
-        height: auto;
+        height: 4;
         padding: 0 1;
     }
 
     #quality-distribution {
-        height: auto;
+        height: 6;
         border: solid $primary;
         padding: 0 1;
     }
@@ -151,7 +147,7 @@ class QualityTuiApp(App[None]):
     }
 
     #quality-detail {
-        height: 13;
+        height: 10;
         border: solid $accent;
         padding: 0 1;
     }
@@ -296,14 +292,12 @@ class QualityTuiApp(App[None]):
 
     def _table_cells(self, row: QualityDashboardRow) -> tuple[str, ...]:
         return (
-            _row_type_label(row),
-            _status_label(row.status),
-            _confidence_label(row),
-            _compact(row.session_id),
             _transcript_label(row),
-            _truncate(row.reason or "", 80),
-            _finding_counts_label(row.finding_counts),
-            str(row.reference_defect_count),
+            _compact(row.session_id),
+            _coverage_label(row),
+            _confidence_label(row),
+            _quality_signal_label(row),
+            _quality_limit_label(row),
             _format_datetime(row.updated_at),
         )
 
@@ -318,34 +312,27 @@ def _dashboard_overview_text(data: QualityDashboardData, db_url: str) -> str:
     coverage_gaps = _coverage_gap_count(data)
     assessment_failures = _quality_assessment_failure_count(data)
     not_assessed = data.quality_status_counts.get("not_assessed", 0)
-    cards = [
+    return "\n".join(
         (
-            "Coverage",
-            f"{data.quality_report_count} / {data.transcript_count} reports",
-            f"{_percentage_label(data.quality_report_count, data.transcript_count)} report coverage",
+            "Memory quality overview",
+            (
+                f"Coverage {data.quality_report_count}/{data.transcript_count} "
+                f"({_percentage_label(data.quality_report_count, data.transcript_count)}) | "
+                f"Confidence {data.promotable_count}/{data.transcript_count} "
+                f"({_percentage_label(data.promotable_count, data.transcript_count)})"
+            ),
+            (
+                f"Outcomes {data.quality_status_counts.get('healthy', 0)} healthy | "
+                f"{data.quality_status_counts.get('degraded', 0)} degraded | "
+                f"{not_assessed} not assessed | {assessment_failures} assessment failed | "
+                f"{coverage_gaps} no report"
+            ),
+            (
+                f"Limits {data.quality_reference_defect_report_count} ref-defect reports / "
+                f"{data.quality_reference_defect_count} refs omitted | DB {_truncate(db_url, 84)}"
+            ),
         ),
-        (
-            "Confidence",
-            f"{data.promotable_count} / {data.transcript_count} promotable",
-            f"{_percentage_label(data.promotable_count, data.transcript_count)} corpus confidence",
-        ),
-        (
-            "Assessment outcomes",
-            f"{data.quality_status_counts.get('healthy', 0)} healthy | "
-            f"{data.quality_status_counts.get('degraded', 0)} degraded",
-            f"{not_assessed} not assessed | {assessment_failures} assessment failed",
-        ),
-        (
-            "Quality limits",
-            f"{coverage_gaps} coverage gaps",
-            f"{data.quality_reference_defect_report_count} ref-defect reports / "
-            f"{data.quality_reference_defect_count} refs",
-        ),
-    ]
-    lines = ["Memory quality overview"]
-    lines.extend(_metric_card_rows(cards))
-    lines.append(f"Database: {_truncate(db_url, 140)}")
-    return "\n".join(lines)
+    )
 
 
 def _assessment_distribution_text(data: QualityDashboardData) -> str:
@@ -379,45 +366,13 @@ def _assessment_distribution_text(data: QualityDashboardData) -> str:
             f"{data.failed_interpretation_count} known interpretation gaps",
         ),
     ]
-    lines = ["Assessment outcomes and coverage gaps"]
+    lines = ["Transcript assessment outcomes"]
     lines.extend(_distribution_line(label, count, total, note) for label, count, note in rows)
-    lines.append(
-        "Evidence rows: "
-        f"{data.row_count} | report confidence: "
-        f"{_percentage_label(data.promotable_count, data.quality_report_count)} promotable | "
-        f"ref-defect refs omitted: {data.quality_reference_defect_count}"
-    )
     return "\n".join(lines)
 
 
-def _metric_card_rows(cards: list[tuple[str, str, str]]) -> list[str]:
-    rendered_cards = [_metric_card(title, line1, line2) for title, line1, line2 in cards]
-    rows: list[str] = []
-    for index in range(0, len(rendered_cards), 2):
-        card_pair = rendered_cards[index : index + 2]
-        rows.extend("  ".join(card[line_index] for card in card_pair) for line_index in range(4))
-    return rows
-
-
-def _metric_card(title: str, line1: str, line2: str) -> list[str]:
-    inner_width = METRIC_CARD_WIDTH - 2
-    title_label = f" {_truncate(title, max(inner_width - 2, 1))} "
-    top_border = "┌" + title_label + "─" * max(inner_width - len(title_label), 0) + "┐"
-    bottom_border = "└" + "─" * inner_width + "┘"
-    return [
-        top_border,
-        _metric_card_line(line1, inner_width),
-        _metric_card_line(line2, inner_width),
-        bottom_border,
-    ]
-
-
-def _metric_card_line(value: str, width: int) -> str:
-    return f"│{_truncate(value, width).ljust(width)}│"
-
-
 def _distribution_line(label: str, count: int, total: int, note: str) -> str:
-    return f"{label:<18} {_distribution_bar(count, total)} {count:>4}  {note}"
+    return f"{label:<17} {_distribution_bar(count, total)} {count:>4}  {_truncate(note, 34)}"
 
 
 def _distribution_bar(count: int, total: int) -> str:
@@ -450,6 +405,35 @@ def _row_type_label(row: QualityDashboardRow) -> str:
     return "coverage gap"
 
 
+def _coverage_label(row: QualityDashboardRow) -> str:
+    if row.row_type == "interpretation_failure":
+        return "no quality report"
+    return _status_label(row.status)
+
+
+def _quality_signal_label(row: QualityDashboardRow) -> str:
+    if row.row_type == "interpretation_failure":
+        return "interpretation gap"
+    detail = row.detail
+    claim_count = len(_as_list(detail.get("claim_assessments")))
+    missing_count = len(_as_list(detail.get("missing_high_signal_items")))
+    return f"claims {claim_count} | gaps {missing_count}"
+
+
+def _quality_limit_label(row: QualityDashboardRow) -> str:
+    if row.row_type == "interpretation_failure":
+        return "no assessment"
+    limits: list[str] = []
+    if row.reference_defect_count > 0:
+        limits.append(f"refs {row.reference_defect_count}")
+    finding_total = sum(row.finding_counts.values())
+    if finding_total > 0:
+        limits.append(f"findings {finding_total}")
+    if row.status in QUALITY_LIMIT_STATUSES:
+        limits.append(_status_label(row.status))
+    return " | ".join(limits) if limits else "none"
+
+
 def _status_label(status: str) -> str:
     labels = {
         "assessment_failed": "assessment failed",
@@ -471,16 +455,21 @@ def _confidence_label(row: QualityDashboardRow) -> str:
 
 def _detail_text(row: QualityDashboardRow) -> str:
     lines = [
-        f"{_row_type_label(row)}  outcome={_status_label(row.status)}  confidence={_confidence_label(row)}",
-        f"session={_display(row.session_id)}  transcript={_display(row.transcript_id)}",
-        f"path={_display(row.transcript_path)}",
-        f"repo={_display(row.repo_name)}  worktree={_display(row.worktree_label)}",
-        f"outcome note={_display(row.reason)}",
+        f"Transcript {_transcript_label(row)}",
+        f"path={_detail_path_label(row.transcript_path)}",
+        (
+            f"session={_compact(row.session_id)} | repo={_display_compact(row.repo_name)} | "
+            f"worktree={_display_compact(row.worktree_label)}"
+        ),
+        (
+            f"coverage={_coverage_label(row)} | confidence={_confidence_label(row)} | "
+            f"updated={_compact_datetime(row.updated_at)}"
+        ),
     ]
     if row.row_type == "quality_report":
         lines.extend(_quality_detail_lines(row))
     else:
-        lines.extend(_failure_detail_lines(row))
+        lines.extend(_coverage_gap_detail_lines(row))
     return "\n".join(lines)
 
 
@@ -488,87 +477,50 @@ def _quality_detail_lines(row: QualityDashboardRow) -> list[str]:
     detail = row.detail
     claim_count = len(_as_list(detail.get("claim_assessments")))
     missing_count = len(_as_list(detail.get("missing_high_signal_items")))
+    deterministic_findings = _as_list(detail.get("deterministic_findings"))
+    semantic_findings = _as_list(detail.get("semantic_findings"))
     lines = [
-        (f"deterministic={_display(row.deterministic_status)}  semantic={_display(row.semantic_status)}"),
         (
-            f"quality_report_id={_display(detail.get('quality_report_id'))}  "
-            f"snapshot_id={_display(detail.get('snapshot_id'))}"
+            f"checks: det={_display_compact(row.deterministic_status)} | "
+            f"semantic={_display_compact(row.semantic_status)} | "
+            f"derivation={_display_compact(detail.get('derivation_status'))}"
         ),
         (
-            f"snapshot_status={_display(detail.get('snapshot_status'))}  "
-            f"derivation={_display(detail.get('derivation_status'))}"
+            f"evidence: claims={claim_count} | gaps={missing_count} | "
+            f"findings {_finding_counts_label(row.finding_counts)} | ref limits={row.reference_defect_count}"
         ),
-        (
-            f"snapshot_job={_display(detail.get('snapshot_job_id'))}  "
-            f"quality_job={_display(detail.get('quality_job_id'))}"
-        ),
-        f"claims={claim_count}  missing_items={missing_count}",
-        (
-            f"prompt_version={_display(detail.get('prompt_version'))}  "
-            f"schema_version={_display(detail.get('schema_version'))}"
-        ),
-        (f"created={_format_datetime_value(detail.get('created_at'))}  updated={_format_datetime(row.updated_at)}"),
+        f"quality note={_display_detail(row.reason)}",
     ]
-    lines.extend(_finding_detail_lines("deterministic findings", _as_list(detail.get("deterministic_findings"))))
-    lines.extend(_finding_detail_lines("semantic findings", _as_list(detail.get("semantic_findings"))))
-    lines.append(f"assessment metadata: {_format_mapping(_as_dict(detail.get('assessment_metadata')))}")
-    lines.append(f"model metadata: {_format_mapping(_as_dict(detail.get('model_metadata')))}")
+    lines.extend(_compact_finding_lines("deterministic", deterministic_findings))
+    lines.extend(_compact_finding_lines("semantic", semantic_findings))
     return lines
 
 
-def _failure_detail_lines(row: QualityDashboardRow) -> list[str]:
+def _coverage_gap_detail_lines(row: QualityDashboardRow) -> list[str]:
     detail = row.detail
-    lines = [
-        (
-            f"job_id={_display(detail.get('job_id'))}  "
-            f"kind={_display(detail.get('job_kind'))}  "
-            f"status={_display(detail.get('job_status'))}"
-        ),
-        (
-            f"attempts={_display(detail.get('attempts'))}/"
-            f"{_display(detail.get('max_attempts'))}  "
-            f"run_id={_display(detail.get('run_id'))}  "
-            f"exit_code={_display(detail.get('exit_code'))}"
-        ),
-        (
-            f"created={_format_datetime_value(detail.get('created_at'))}  "
-            f"updated={_format_datetime(row.updated_at)}  "
-            f"finished={_format_datetime_value(detail.get('finished_at'))}"
-        ),
-        f"interpretation gap detail={_display(detail.get('last_error'))}",
-        f"payload: {_format_mapping(_as_dict(detail.get('payload')))}",
-        f"result: {_format_mapping(_as_dict(detail.get('result')))}",
+    return [
+        "quality report: none for this transcript",
+        "gap: no quality-assessable memory snapshot was produced.",
+        f"gap detail={_display_detail(detail.get('last_error'))}",
     ]
-    return lines
 
 
-def _finding_detail_lines(label: str, findings: list[Any]) -> list[str]:
+def _compact_finding_lines(label: str, findings: list[Any]) -> list[str]:
     if not findings:
-        return [f"{label}: 0"]
-    lines = [f"{label}: {len(findings)}"]
-    lines.extend(f"  - {_finding_label(finding)}" for finding in findings[:MAX_DETAIL_FINDINGS])
+        return []
+    shown = [_compact_finding_label(finding) for finding in findings[:MAX_DETAIL_FINDINGS]]
     if len(findings) > MAX_DETAIL_FINDINGS:
-        lines.append(f"  ... {len(findings) - MAX_DETAIL_FINDINGS} more")
-    return lines
+        shown.append(f"{len(findings) - MAX_DETAIL_FINDINGS} more")
+    return [f"{label} findings: " + " | ".join(shown)]
 
 
-def _finding_label(finding: Any) -> str:
+def _compact_finding_label(finding: Any) -> str:
     if not isinstance(finding, dict):
-        return _truncate(str(finding), 160)
-    severity = _display(finding.get("severity"))
-    code = _display(finding.get("code"))
-    message = _display(finding.get("message") or finding.get("description"))
-    return _truncate(f"{severity} {code}: {message}", 180)
-
-
-def _format_mapping(mapping: dict[str, Any]) -> str:
-    if not mapping:
-        return "n/a"
-    items = list(mapping.items())
-    parts = [f"{key}={_format_scalar(value)}" for key, value in items[:MAX_METADATA_ITEMS]]
-    if len(items) > MAX_METADATA_ITEMS:
-        parts.append(f"... {len(items) - MAX_METADATA_ITEMS} more")
-    return _truncate(", ".join(parts), 240)
+        return _truncate(str(finding), 64)
+    severity = _display_compact(finding.get("severity"))
+    code = _display_compact(finding.get("code"))
+    message = _display_detail(finding.get("message") or finding.get("description"), limit=52)
+    return _truncate(f"{severity} {code}: {message}", 72)
 
 
 def _format_scalar(value: Any) -> str:
@@ -582,10 +534,13 @@ def _format_scalar(value: Any) -> str:
 
 
 def _transcript_label(row: QualityDashboardRow) -> str:
+    if row.transcript_path:
+        path_label = row.transcript_path.rsplit("/", maxsplit=1)[-1]
+        if row.transcript_id is not None:
+            return _truncate(f"{row.transcript_id} {path_label}", 32)
+        return _truncate(path_label, 32)
     if row.transcript_id is not None:
         return str(row.transcript_id)
-    if row.transcript_path:
-        return _compact(row.transcript_path)
     return "n/a"
 
 
@@ -593,10 +548,22 @@ def _finding_counts_label(counts: dict[str, int]) -> str:
     return f"c:{counts.get('critical', 0)} w:{counts.get('warning', 0)} i:{counts.get('info', 0)}"
 
 
-def _display(value: Any) -> str:
+def _display_compact(value: Any) -> str:
     if value is None or value == "":
         return "n/a"
-    return _truncate(_format_scalar(value), 160)
+    return _truncate(_format_scalar(value), 24)
+
+
+def _display_detail(value: Any, *, limit: int = 72) -> str:
+    if value is None or value == "":
+        return "n/a"
+    return _truncate(_format_scalar(value), limit)
+
+
+def _detail_path_label(path: str | None) -> str:
+    if not path:
+        return "n/a"
+    return _truncate(path, 68)
 
 
 def _compact(value: str | None) -> str:
@@ -617,10 +584,10 @@ def _format_datetime(value: datetime | None) -> str:
     return value.isoformat(timespec="seconds")
 
 
-def _format_datetime_value(value: Any) -> str:
-    if isinstance(value, datetime):
-        return _format_datetime(value)
-    return _display(value)
+def _compact_datetime(value: datetime | None) -> str:
+    if value is None:
+        return "n/a"
+    return value.isoformat(timespec="minutes")
 
 
 def run_quality_tui(db_url: str) -> None:

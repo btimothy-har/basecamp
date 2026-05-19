@@ -284,7 +284,7 @@ async def test_quality_tui_opens_with_dashboard_overview_and_evidence_table(tmp_
         database.close_if_open()
 
     app = QualityTuiApp(db_url)
-    async with app.run_test(size=(140, 40)) as pilot:
+    async with app.run_test(size=(80, 24)) as pilot:
         await pilot.pause()
         overview = str(app.query_one("#quality-overview").render())
         distribution = str(app.query_one("#quality-distribution").render())
@@ -294,18 +294,31 @@ async def test_quality_tui_opens_with_dashboard_overview_and_evidence_table(tmp_
         assert "Memory quality overview" in overview
         assert "Coverage" in overview
         assert "Confidence" in overview
-        assert "Assessment outcomes and coverage gaps" in distribution
+        assert "Transcript assessment outcomes" in distribution
         assert "Evidence filters" in help_text
         assert "needs attention" not in f"{overview} {distribution} {help_text}".lower()
         assert table.row_count == 2
+        assert [str(cell) for cell in table.get_row_at(0)[:4]] == [
+            "1 reported.jsonl",
+            "reported-session",
+            "healthy",
+            "promotable",
+        ]
+        detail_text = str(app.query_one("#quality-detail").render()).lower()
+        assert "transcript 1 reported.jsonl" in detail_text
+        assert "job" not in detail_text
 
         await pilot.press("f")
         await pilot.pause()
 
         assert table.row_count == 1
-        assert [str(cell) for cell in table.get_row_at(0)[:3]] == [
-            "coverage gap",
-            "interpretation gap",
+        assert [str(cell) for cell in table.get_row_at(0)[:4]] == [
+            "2 failed.jsonl",
+            "failed-session",
+            "no quality report",
             "no report",
         ]
+        gap_detail_text = str(app.query_one("#quality-detail").render()).lower()
+        assert "quality report: none for this transcript" in gap_detail_text
+        assert "job" not in gap_detail_text
         await pilot.press("q")
