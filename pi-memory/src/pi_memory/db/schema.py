@@ -112,6 +112,16 @@ SESSION_INTERPRETATION_STATUSES = (
     SESSION_INTERPRETATION_STATUS_BLOCKED,
     SESSION_INTERPRETATION_STATUS_SKIPPED_NO_CLAIM_SOURCES,
 )
+
+EPISODE_INTERPRETATION_STATUS_COMPLETED = "completed"
+EPISODE_INTERPRETATION_STATUS_SKIPPED_NO_CLAIM_SOURCES = "skipped_no_claim_sources"
+EPISODE_INTERPRETATION_STATUS_FAILED = "failed"
+EPISODE_INTERPRETATION_STATUSES = (
+    EPISODE_INTERPRETATION_STATUS_COMPLETED,
+    EPISODE_INTERPRETATION_STATUS_SKIPPED_NO_CLAIM_SOURCES,
+    EPISODE_INTERPRETATION_STATUS_FAILED,
+)
+
 SESSION_INTERPRETATION_BLOCKED_REASON_PHASE_5A_NOT_READY = "phase_5a_not_ready"
 SESSION_INTERPRETATION_BLOCKED_REASON_PARENT_TRANSCRIPT_NOT_INGESTED = "parent_transcript_not_ingested"
 SESSION_INTERPRETATION_BLOCKED_REASON_SOURCE_ORIGIN_INCOMPLETE = "source_origin_incomplete"
@@ -247,6 +257,7 @@ class Job(Base):
     )
 
     analysis_runs: Mapped[list[AnalysisRun]] = relationship(back_populates="job")
+    episode_interpretation_snapshots: Mapped[list[EpisodeInterpretationSnapshot]] = relationship(back_populates="job")
     session_interpretation_snapshots: Mapped[list[SessionInterpretationSnapshot]] = relationship(back_populates="job")
     session_interpretation_quality_reports: Mapped[list[SessionInterpretationQualityReport]] = relationship(
         back_populates="job",
@@ -278,6 +289,10 @@ class MemorySession(Base):
     activity_units: Mapped[list[ActivityUnit]] = relationship(back_populates="session", cascade="all, delete-orphan")
     episodes: Mapped[list[Episode]] = relationship(back_populates="session", cascade="all, delete-orphan")
     episode_manifests: Mapped[list[EpisodeManifest]] = relationship(
+        back_populates="session",
+        cascade="all, delete-orphan",
+    )
+    episode_interpretation_snapshots: Mapped[list[EpisodeInterpretationSnapshot]] = relationship(
         back_populates="session",
         cascade="all, delete-orphan",
     )
@@ -340,6 +355,10 @@ class Transcript(Base):
     activity_units: Mapped[list[ActivityUnit]] = relationship(back_populates="transcript", cascade="all, delete-orphan")
     episodes: Mapped[list[Episode]] = relationship(back_populates="transcript", cascade="all, delete-orphan")
     episode_manifests: Mapped[list[EpisodeManifest]] = relationship(
+        back_populates="transcript",
+        cascade="all, delete-orphan",
+    )
+    episode_interpretation_snapshots: Mapped[list[EpisodeInterpretationSnapshot]] = relationship(
         back_populates="transcript",
         cascade="all, delete-orphan",
     )
@@ -470,6 +489,10 @@ class AnalysisRun(Base):
     )
     episodes: Mapped[list[Episode]] = relationship(back_populates="analysis_run", cascade="all, delete-orphan")
     episode_manifests: Mapped[list[EpisodeManifest]] = relationship(
+        back_populates="analysis_run",
+        cascade="all, delete-orphan",
+    )
+    episode_interpretation_snapshots: Mapped[list[EpisodeInterpretationSnapshot]] = relationship(
         back_populates="analysis_run",
         cascade="all, delete-orphan",
     )
@@ -641,6 +664,11 @@ class Episode(Base):
         cascade="all, delete-orphan",
         uselist=False,
     )
+    interpretation_snapshot: Mapped[EpisodeInterpretationSnapshot | None] = relationship(
+        back_populates="episode",
+        cascade="all, delete-orphan",
+        uselist=False,
+    )
 
 
 class EpisodeManifest(Base):
@@ -744,6 +772,75 @@ class SessionSnapshotShell(Base):
     session: Mapped[MemorySession] = relationship(back_populates="session_snapshot_shells")
     transcript: Mapped[Transcript | None] = relationship(back_populates="session_snapshot_shells")
     analysis_run: Mapped[AnalysisRun | None] = relationship(back_populates="session_snapshot_shells")
+
+
+class EpisodeInterpretationSnapshot(Base):
+    """Persisted interpretation result for one deterministic episode."""
+
+    __tablename__ = "episode_interpretation_snapshots"
+    __table_args__ = (
+        UniqueConstraint(
+            "analysis_run_id",
+            "episode_id",
+            name="uq_episode_interpretation_snapshots_analysis_episode",
+        ),
+        CheckConstraint(
+            "status IN ('completed', 'skipped_no_claim_sources', 'failed')",
+            name="ck_episode_interpretation_snapshots_status_valid",
+        ),
+        CheckConstraint("episode_ordinal >= 0", name="ck_episode_interpretation_snapshots_ordinal_non_negative"),
+        CheckConstraint("activity_count >= 0", name="ck_episode_interpretation_snapshots_activity_count_non_negative"),
+        CheckConstraint(
+            "claim_source_activity_count >= 0",
+            name="ck_episode_interpretation_snapshots_claim_source_activity_count_non_negative",
+        ),
+        CheckConstraint(
+            "analyzed_through_byte_offset >= 0",
+            name="ck_episode_interpretation_snapshots_byte_offset_non_negative",
+        ),
+        CheckConstraint("schema_version > 0", name="ck_episode_interpretation_snapshots_schema_version_positive"),
+        Index(
+            "ix_episode_interpretation_snapshots_analysis_ordinal",
+            "analysis_run_id",
+            "episode_ordinal",
+        ),
+        Index("ix_episode_interpretation_snapshots_status_updated_at", "status", "updated_at"),
+        Index("ix_episode_interpretation_snapshots_job_id", "job_id"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    session_id: Mapped[int] = mapped_column(ForeignKey("sessions.id", ondelete="CASCADE"), index=True)
+    transcript_id: Mapped[int] = mapped_column(ForeignKey("transcripts.id", ondelete="CASCADE"), index=True)
+    analysis_run_id: Mapped[int] = mapped_column(ForeignKey("analysis_runs.id", ondelete="CASCADE"), index=True)
+    episode_id: Mapped[int] = mapped_column(ForeignKey("episodes.id", ondelete="CASCADE"), index=True)
+    job_id: Mapped[int | None] = mapped_column(ForeignKey("jobs.id", ondelete="SET NULL"))
+    status: Mapped[str]
+    episode_ordinal: Mapped[int] = mapped_column(default=0, server_default="0")
+    activity_count: Mapped[int] = mapped_column(default=0, server_default="0")
+    claim_source_activity_count: Mapped[int] = mapped_column(default=0, server_default="0")
+    analyzed_through_entry_id: Mapped[int | None] = mapped_column(
+        ForeignKey("transcript_entries.id", ondelete="SET NULL"),
+        index=True,
+    )
+    analyzed_through_byte_offset: Mapped[int] = mapped_column(default=0, server_default="0")
+    interpretation_json: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict, server_default=text("'{}'"))
+    citations_json: Mapped[list[dict[str, Any]]] = mapped_column(JSON, default=list, server_default=text("'[]'"))
+    model_metadata_json: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict, server_default=text("'{}'"))
+    failure_metadata_json: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict, server_default=text("'{}'"))
+    prompt_version: Mapped[str | None]
+    schema_version: Mapped[int] = mapped_column(default=1, server_default="1")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+    )
+
+    session: Mapped[MemorySession] = relationship(back_populates="episode_interpretation_snapshots")
+    transcript: Mapped[Transcript] = relationship(back_populates="episode_interpretation_snapshots")
+    analysis_run: Mapped[AnalysisRun] = relationship(back_populates="episode_interpretation_snapshots")
+    episode: Mapped[Episode] = relationship(back_populates="interpretation_snapshot")
+    job: Mapped[Job | None] = relationship(back_populates="episode_interpretation_snapshots")
 
 
 class SessionInterpretationSnapshot(Base):

@@ -14,6 +14,9 @@ from pi_memory.interpretation.packets import InterpretationPacket, SourceRef
 NonEmptyString = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)]
 ClaimKind = Literal["decision", "constraint", "knowledge", "preference", "pattern", "action"]
 CitationUsage = Literal["summary", "claim", "open_question", "context"]
+EpisodeInterpretationStatus = Literal["completed", "skipped_no_claim_sources", "failed"]
+SessionInterpretationCoverageStatus = Literal["complete", "partial", "skipped_no_claim_sources"]
+SESSION_INTERPRETATION_AGGREGATION_MODE_EPISODE_CLAIM_CONCAT = "episode_claim_concat"
 _ALLOWED_CLAIM_SOURCE_ORIGINS = frozenset((SOURCE_ORIGIN_LOCAL, SOURCE_ORIGIN_MIXED))
 
 
@@ -112,6 +115,37 @@ class ValidatedInterpretation:
     output: InterpretationOutput
     interpretation_json: Mapping[str, Any]
     citations_json: list[Mapping[str, Any]]
+
+
+class EpisodeInterpretationFailureMetadata(BaseModel):
+    """Safe failure metadata for a failed episode interpretation."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    error_type: NonEmptyString
+    safe_message: NonEmptyString | None = None
+    cause_type: NonEmptyString | None = None
+    prompt_char_count: int | None = Field(default=None, ge=0)
+    prompt_byte_count: int | None = Field(default=None, ge=0)
+    model_metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class EpisodeInterpretationCoverage(BaseModel):
+    """Deterministic coverage metadata for an aggregated session interpretation."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    aggregation_mode: Literal["episode_claim_concat"] = SESSION_INTERPRETATION_AGGREGATION_MODE_EPISODE_CLAIM_CONCAT
+    coverage_status: SessionInterpretationCoverageStatus
+    total_episode_count: int = Field(ge=0)
+    claim_source_episode_count: int = Field(ge=0)
+    completed_episode_count: int = Field(ge=0)
+    skipped_episode_count: int = Field(ge=0)
+    failed_episode_count: int = Field(ge=0)
+    total_claim_source_activity_count: int = Field(ge=0)
+    completed_claim_source_activity_count: int = Field(ge=0)
+    skipped_claim_source_activity_count: int = Field(ge=0)
+    failed_claim_source_activity_count: int = Field(ge=0)
 
 
 def build_source_ref_aliases(packet: InterpretationPacket) -> SourceRefAliases:

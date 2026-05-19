@@ -9,6 +9,8 @@ from pi_memory.db import (
     ANALYSIS_KIND_TRANSCRIPT_STRUCTURE,
     ANALYSIS_STATUS_RUNNING,
     EPISODE_CLOSE_REASON_TRANSCRIPT_END,
+    EPISODE_INTERPRETATION_STATUS_COMPLETED,
+    EPISODE_INTERPRETATION_STATUS_FAILED,
     EPISODE_STATUS_CLOSED,
     JOB_KIND_ASSESS_INTERPRETATION_QUALITY,
     JOB_KIND_INTERPRET_SESSION,
@@ -29,6 +31,7 @@ from pi_memory.db import (
     AnalysisRun,
     Database,
     Episode,
+    EpisodeInterpretationSnapshot,
     EpisodeManifest,
     Job,
     MemorySession,
@@ -102,6 +105,7 @@ def test_initialize_creates_pi_transcript_schema_tables(database: Database) -> N
         "activity_units",
         "episodes",
         "episode_manifests",
+        "episode_interpretation_snapshots",
         "session_snapshot_shells",
         "session_interpretation_snapshots",
         "session_interpretation_quality_reports",
@@ -256,6 +260,78 @@ def test_session_interpretation_snapshot_defaults_are_applied(database: Database
         assert snapshot.updated_at is not None
         assert memory_session.session_interpretation_snapshot == snapshot
         assert job.session_interpretation_snapshots == [snapshot]
+
+
+def test_episode_interpretation_snapshot_defaults_are_applied(database: Database) -> None:
+    with database.session() as session:
+        memory_session = MemorySession(session_id="pi-session-1")
+        transcript = Transcript(session=memory_session, path="/tmp/pi/transcript.jsonl")
+        analysis_run = AnalysisRun(session=memory_session, transcript=transcript)
+        episode = Episode(
+            session=memory_session,
+            transcript=transcript,
+            analysis_run=analysis_run,
+            ordinal=0,
+            byte_start=0,
+            byte_end=1,
+            status=EPISODE_STATUS_CLOSED,
+            close_reason=EPISODE_CLOSE_REASON_TRANSCRIPT_END,
+        )
+        job = Job(kind=JOB_KIND_INTERPRET_SESSION)
+        snapshot = EpisodeInterpretationSnapshot(
+            session=memory_session,
+            transcript=transcript,
+            analysis_run=analysis_run,
+            episode=episode,
+            job=job,
+            status=EPISODE_INTERPRETATION_STATUS_COMPLETED,
+        )
+        session.add(snapshot)
+        session.flush()
+        session.refresh(snapshot)
+
+        assert snapshot.status == EPISODE_INTERPRETATION_STATUS_COMPLETED
+        assert snapshot.episode_ordinal == 0
+        assert snapshot.activity_count == 0
+        assert snapshot.claim_source_activity_count == 0
+        assert snapshot.analyzed_through_byte_offset == 0
+        assert snapshot.interpretation_json == {}
+        assert snapshot.citations_json == []
+        assert snapshot.model_metadata_json == {}
+        assert snapshot.failure_metadata_json == {}
+        assert snapshot.prompt_version is None
+        assert snapshot.schema_version == 1
+        assert snapshot.created_at is not None
+        assert snapshot.updated_at is not None
+        assert memory_session.episode_interpretation_snapshots == [snapshot]
+        assert transcript.episode_interpretation_snapshots == [snapshot]
+        assert analysis_run.episode_interpretation_snapshots == [snapshot]
+        assert episode.interpretation_snapshot == snapshot
+        assert job.episode_interpretation_snapshots == [snapshot]
+
+
+def test_fresh_schema_includes_episode_interpretation_snapshot_indexes_and_constraints(
+    database: Database,
+) -> None:
+    inspector = inspect(database.engine)
+
+    columns = {column["name"]: column for column in inspector.get_columns("episode_interpretation_snapshots")}
+    indexes = {index["name"] for index in inspector.get_indexes("episode_interpretation_snapshots")}
+    constraints = {
+        constraint["name"] for constraint in inspector.get_check_constraints("episode_interpretation_snapshots")
+    }
+
+    assert columns["failure_metadata_json"]["nullable"] is False
+    assert {
+        "ix_episode_interpretation_snapshots_analysis_ordinal",
+        "ix_episode_interpretation_snapshots_status_updated_at",
+        "ix_episode_interpretation_snapshots_job_id",
+    }.issubset(indexes)
+    assert {
+        "ck_episode_interpretation_snapshots_status_valid",
+        "ck_episode_interpretation_snapshots_claim_source_activity_count_non_negative",
+        "ck_episode_interpretation_snapshots_schema_version_positive",
+    }.issubset(constraints)
 
 
 def test_session_interpretation_quality_report_defaults_and_relationships_are_applied(database: Database) -> None:

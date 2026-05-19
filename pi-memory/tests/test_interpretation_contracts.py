@@ -5,6 +5,8 @@ from dataclasses import replace
 from typing import Any
 
 import pytest
+from pydantic import ValidationError
+
 from pi_memory.db import (
     SOURCE_ORIGIN_INHERITED,
     SOURCE_ORIGIN_LOCAL,
@@ -13,6 +15,8 @@ from pi_memory.db import (
 )
 from pi_memory.interpretation import (
     BoundedText,
+    EpisodeInterpretationCoverage,
+    EpisodeInterpretationFailureMetadata,
     EpisodePacket,
     InterpretationOutput,
     InterpretationPacket,
@@ -197,6 +201,49 @@ def test_valid_output_passes_and_produces_safe_json() -> None:
             "byte_end": 50,
         },
     ]
+
+
+def test_episode_interpretation_contracts_represent_failure_and_coverage() -> None:
+    failure = EpisodeInterpretationFailureMetadata(
+        error_type="PydanticAIInterpreterError",
+        safe_message="episode interpretation failed",
+        cause_type="UnexpectedModelBehavior",
+        prompt_char_count=123,
+        prompt_byte_count=456,
+        model_metadata={"provider": "test", "model": "fake"},
+    )
+    coverage = EpisodeInterpretationCoverage(
+        coverage_status="partial",
+        total_episode_count=3,
+        claim_source_episode_count=2,
+        completed_episode_count=1,
+        skipped_episode_count=1,
+        failed_episode_count=1,
+        total_claim_source_activity_count=8,
+        completed_claim_source_activity_count=5,
+        skipped_claim_source_activity_count=0,
+        failed_claim_source_activity_count=3,
+    )
+
+    assert failure.model_dump(mode="json")["error_type"] == "PydanticAIInterpreterError"
+    assert coverage.aggregation_mode == "episode_claim_concat"
+    assert coverage.coverage_status == "partial"
+
+
+def test_episode_interpretation_coverage_rejects_negative_counts() -> None:
+    with pytest.raises(ValidationError):
+        EpisodeInterpretationCoverage(
+            coverage_status="complete",
+            total_episode_count=-1,
+            claim_source_episode_count=0,
+            completed_episode_count=0,
+            skipped_episode_count=0,
+            failed_episode_count=0,
+            total_claim_source_activity_count=0,
+            completed_claim_source_activity_count=0,
+            skipped_claim_source_activity_count=0,
+            failed_claim_source_activity_count=0,
+        )
 
 
 def test_pydantic_model_output_is_accepted() -> None:
