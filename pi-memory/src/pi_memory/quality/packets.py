@@ -147,6 +147,7 @@ def build_quality_packet(
             "analyzed_through_byte_offset": snapshot.analyzed_through_byte_offset,
             "origin_counts": _bounded_json(snapshot.origin_counts_json or {}),
             "claim_source_activity_count": snapshot.claim_source_activity_count,
+            "episode_interpretation": _episode_interpretation_coverage(snapshot),
             "prompt_version": snapshot.prompt_version,
             "schema_version": snapshot.schema_version,
         },
@@ -211,6 +212,12 @@ def _can_assess_semantically(snapshot: SessionInterpretationSnapshot, report: Qu
         and report.deterministic_status == DETERMINISTIC_STATUS_PASSED
         and report.semantic_status == SEMANTIC_STATUS_NOT_ASSESSED
     )
+
+
+def _episode_interpretation_coverage(snapshot: SessionInterpretationSnapshot) -> Mapping[str, Any]:
+    interpretation = snapshot.interpretation_json if isinstance(snapshot.interpretation_json, Mapping) else {}
+    coverage = interpretation.get("aggregation")
+    return _bounded_json(coverage, string_limit=QUALITY_METADATA_CHAR_LIMIT) if isinstance(coverage, Mapping) else {}
 
 
 def _interpretation_prompt_data(value: Any) -> Mapping[str, Any]:

@@ -58,6 +58,7 @@ FINDING_CODE_TOOL_SUMMARY_INCOMPLETE = "tool_summary_incomplete"
 FINDING_CODE_MODEL_METADATA_MISSING = "model_metadata_missing"
 FINDING_CODE_PROMPT_VERSION_MISSING = "prompt_version_missing"
 FINDING_CODE_ANALYSIS_IDENTITY_MISMATCH = "analysis_identity_mismatch"
+FINDING_CODE_EPISODE_INTERPRETATION_PARTIAL = "episode_interpretation_partial"
 FINDING_CODE_QUALITY_ASSESSMENT_REFERENCE_UNRESOLVED = "quality_assessment_reference_unresolved"
 
 QUALITY_BOUNDED_TEXT_MAX_LENGTH: Final = 500

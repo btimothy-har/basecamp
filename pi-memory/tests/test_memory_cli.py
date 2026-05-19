@@ -850,6 +850,7 @@ def test_interpretation_reports_json_snapshot(memory_database: Database) -> None
         "claim_source_activity_count": 2,
         "interpretation_json": {"summary": "CLI safe interpretation", "claims": []},
         "citations_json": [{"claim_id": "claim-cli", "source_ref_id": "ar1:ep0:act0:entries1"}],
+        "episode_interpretation": {},
         "model_metadata": {"provider": "deterministic", "model": "cli-test"},
         "prompt_version": "phase5b-session-interpretation-v1",
         "schema_version": 1,

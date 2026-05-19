@@ -22,6 +22,7 @@ from pi_memory.db import (
     ActivityUnit,
     Database,
     Episode,
+    EpisodeInterpretationSnapshot,
     Job,
     MemorySession,
     SessionInterpretationQualityReport,
@@ -282,6 +283,7 @@ class QualityTuiApp(App[None]):
                 row.row_type == "interpretation_failure"
                 or row.status in QUALITY_LIMIT_STATUSES
                 or row.reference_defect_count > 0
+                or _has_episode_coverage_limit(row)
             )
         return True
 
@@ -452,8 +454,11 @@ def _timeline_detail_label(metadata: TranscriptSessionMetadata) -> str:
 
 def _quality_limit_label(row: QualityDashboardRow) -> str:
     if row.row_type == "interpretation_failure":
-        return "no assessment"
+        return _episode_coverage_limit_label(row) or "no assessment"
     limits: list[str] = []
+    episode_limit = _episode_coverage_limit_label(row)
+    if episode_limit:
+        limits.append(episode_limit)
     if row.reference_defect_count > 0:
         limits.append(f"refs {row.reference_defect_count}")
     finding_total = sum(row.finding_counts.values())
@@ -462,6 +467,26 @@ def _quality_limit_label(row: QualityDashboardRow) -> str:
     if row.status in QUALITY_LIMIT_STATUSES:
         limits.append(_status_label(row.status))
     return " | ".join(limits) if limits else "none"
+
+
+def _episode_coverage_limit_label(row: QualityDashboardRow) -> str | None:
+    coverage = _episode_interpretation_coverage(row)
+    status = coverage.get("coverage_status")
+    if status == "partial":
+        failed = coverage.get("failed_episode_count")
+        return f"ep partial {failed}" if isinstance(failed, int) and failed > 0 else "ep partial"
+    if row.row_type == "interpretation_failure" and status == "failed":
+        failed = coverage.get("failed_episode_count")
+        return f"ep failed {failed}" if isinstance(failed, int) and failed > 0 else "ep failed"
+    return None
+
+
+def _has_episode_coverage_limit(row: QualityDashboardRow) -> bool:
+    return _episode_coverage_limit_label(row) is not None
+
+
+def _episode_interpretation_coverage(row: QualityDashboardRow) -> dict[str, Any]:
+    return _as_dict(row.detail.get("episode_interpretation"))
 
 
 def _status_label(status: str) -> str:
@@ -511,6 +536,7 @@ def _quality_detail_lines(row: QualityDashboardRow) -> list[str]:
     claim_count = len(_as_list(detail.get("claim_assessments")))
     missing_count = len(_as_list(detail.get("missing_high_signal_items")))
     return [
+        _episode_coverage_detail_line(row),
         (
             f"checks: det={_display_compact(row.deterministic_status)} | "
             f"semantic={_display_compact(row.semantic_status)} | "
@@ -527,8 +553,22 @@ def _coverage_gap_detail_lines(row: QualityDashboardRow) -> list[str]:
     detail = row.detail
     return [
         "quality report: none for this transcript",
+        _episode_coverage_detail_line(row),
         f"gap detail={_display_detail(detail.get('last_error'))}",
     ]
+
+
+def _episode_coverage_detail_line(row: QualityDashboardRow) -> str:
+    coverage = _episode_interpretation_coverage(row)
+    if not coverage:
+        return "episodes: n/a"
+    return (
+        f"episodes: coverage={_display_compact(coverage.get('coverage_status'))} "
+        f"completed={_display_compact(coverage.get('completed_episode_count'))}/"
+        f"{_display_compact(coverage.get('claim_source_episode_count'))} "
+        f"failed={_display_compact(coverage.get('failed_episode_count'))} "
+        f"skipped={_display_compact(coverage.get('skipped_episode_count'))}"
+    )
 
 
 def _format_scalar(value: Any) -> str:
@@ -809,6 +849,7 @@ def _quality_report_row(
     semantic_findings = _as_list(report.semantic_findings_json)
     assessment_metadata = _as_dict(report.assessment_metadata_json)
     reference_defect_count = _reference_defect_count(assessment_metadata)
+    episode_interpretation = _snapshot_episode_interpretation_coverage(snapshot)
     return QualityDashboardRow(
         row_id=f"quality-report:{report.id}",
         row_type="quality_report",
@@ -832,6 +873,7 @@ def _quality_report_row(
             "snapshot_status": snapshot.status,
             "snapshot_job_id": snapshot.job_id,
             "analysis_run_id": snapshot.analysis_run_id,
+            "episode_interpretation": episode_interpretation,
             "quality_job_id": report.job_id,
             "quality_reason": report.quality_reason,
             "derivation_status": report.derivation_status,
@@ -846,6 +888,11 @@ def _quality_report_row(
             "created_at": report.created_at,
         },
     )
+
+
+def _snapshot_episode_interpretation_coverage(snapshot: SessionInterpretationSnapshot) -> dict[str, Any]:
+    interpretation = snapshot.interpretation_json if isinstance(snapshot.interpretation_json, dict) else {}
+    return _as_dict(interpretation.get("aggregation"))
 
 
 def _load_interpretation_failure_rows(
@@ -868,7 +915,16 @@ def _load_interpretation_failure_rows(
         and _payload_session_id(job.payload_json) not in reported_session_ids
     ]
     sessions, transcripts = _load_failure_context(db_session, pending_jobs)
-    return [_interpretation_failure_row(job, sessions=sessions, transcripts=transcripts) for job in pending_jobs]
+    episode_summaries = _load_failure_episode_summaries(db_session, pending_jobs)
+    return [
+        _interpretation_failure_row(
+            job,
+            sessions=sessions,
+            transcripts=transcripts,
+            episode_summaries=episode_summaries,
+        )
+        for job in pending_jobs
+    ]
 
 
 def _load_failure_context(
@@ -889,11 +945,60 @@ def _load_failure_context(
     return sessions, transcripts
 
 
+def _load_failure_episode_summaries(
+    db_session: Session,
+    jobs: list[Job],
+) -> dict[int, dict[str, Any]]:
+    job_ids = {job.id for job in jobs}
+    if not job_ids:
+        return {}
+    rows = db_session.execute(
+        select(
+            EpisodeInterpretationSnapshot.job_id,
+            EpisodeInterpretationSnapshot.status,
+            func.count(EpisodeInterpretationSnapshot.id),
+            func.sum(EpisodeInterpretationSnapshot.claim_source_activity_count),
+        )
+        .where(EpisodeInterpretationSnapshot.job_id.in_(job_ids))
+        .group_by(EpisodeInterpretationSnapshot.job_id, EpisodeInterpretationSnapshot.status),
+    ).all()
+    summaries: dict[int, dict[str, Any]] = {}
+    for job_id, status, count, claim_source_count in rows:
+        if job_id is None:
+            continue
+        summary = summaries.setdefault(
+            job_id,
+            {
+                "coverage_status": "failed",
+                "completed_episode_count": 0,
+                "skipped_episode_count": 0,
+                "failed_episode_count": 0,
+                "claim_source_episode_count": 0,
+                "total_claim_source_activity_count": 0,
+            },
+        )
+        _apply_episode_summary_count(summary, status, int(count), int(claim_source_count or 0))
+    return summaries
+
+
+def _apply_episode_summary_count(summary: dict[str, Any], status: str, count: int, claim_source_count: int) -> None:
+    if status == "completed":
+        summary["completed_episode_count"] += count
+        summary["claim_source_episode_count"] += count
+    elif status == "skipped_no_claim_sources":
+        summary["skipped_episode_count"] += count
+    elif status == "failed":
+        summary["failed_episode_count"] += count
+        summary["claim_source_episode_count"] += count
+    summary["total_claim_source_activity_count"] += claim_source_count
+
+
 def _interpretation_failure_row(
     job: Job,
     *,
     sessions: dict[str, MemorySession],
     transcripts: dict[int, Transcript],
+    episode_summaries: dict[int, dict[str, Any]],
 ) -> QualityDashboardRow:
     payload = _as_dict(job.payload_json)
     session_id = _payload_session_id(payload)
@@ -918,6 +1023,7 @@ def _interpretation_failure_row(
         updated_at=job.updated_at,
         interpretation_job_id=job.id,
         detail={
+            "episode_interpretation": episode_summaries.get(job.id, {}),
             "job_id": job.id,
             "job_kind": job.kind,
             "job_status": job.status,

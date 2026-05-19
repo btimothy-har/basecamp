@@ -6,6 +6,7 @@ from pi_memory.db import (
     ACTIVITY_KIND_TOOL_PAIR,
     ACTIVITY_KIND_USER_TEXT,
     ANALYSIS_STATUS_COMPLETED,
+    EPISODE_INTERPRETATION_STATUS_FAILED,
     EPISODE_STATUS_OPEN,
     JOB_KIND_INTERPRET_SESSION,
     JOB_STATUS_COMPLETED,
@@ -22,6 +23,7 @@ from pi_memory.db import (
     AnalysisRun,
     Database,
     Episode,
+    EpisodeInterpretationSnapshot,
     Job,
     MemorySession,
     SessionInterpretationQualityReport,
@@ -69,13 +71,52 @@ def test_quality_dashboard_loader_reads_reports_and_unreported_failures(tmp_path
             db_session.add_all([reported_job, failed_job])
             db_session.flush()
 
+            failed_analysis = AnalysisRun(
+                session_id=failed_session.id,
+                transcript_id=failed_transcript.id,
+                status=ANALYSIS_STATUS_COMPLETED,
+            )
+            failed_episode = Episode(
+                analysis_run=failed_analysis,
+                session_id=failed_session.id,
+                transcript_id=failed_transcript.id,
+                ordinal=0,
+                status=EPISODE_STATUS_OPEN,
+                byte_start=0,
+                byte_end=20,
+            )
+            db_session.add(failed_episode)
+            db_session.flush()
+            db_session.add(
+                EpisodeInterpretationSnapshot(
+                    session_id=failed_session.id,
+                    transcript_id=failed_transcript.id,
+                    analysis_run_id=failed_analysis.id,
+                    episode_id=failed_episode.id,
+                    job_id=failed_job.id,
+                    status=EPISODE_INTERPRETATION_STATUS_FAILED,
+                    episode_ordinal=0,
+                    activity_count=1,
+                    claim_source_activity_count=1,
+                    failure_metadata_json={"error_type": "RuntimeError"},
+                ),
+            )
+
             snapshot = SessionInterpretationSnapshot(
                 session_id=reported_session.id,
                 transcript_id=reported_transcript.id,
                 job_id=reported_job.id,
                 status=SESSION_INTERPRETATION_STATUS_COMPLETED,
                 blocked_reason=None,
-                interpretation_json={},
+                interpretation_json={
+                    "aggregation": {
+                        "coverage_status": "partial",
+                        "claim_source_episode_count": 2,
+                        "completed_episode_count": 1,
+                        "failed_episode_count": 1,
+                        "skipped_episode_count": 0,
+                    },
+                },
             )
             db_session.add(snapshot)
             db_session.flush()
@@ -108,6 +149,12 @@ def test_quality_dashboard_loader_reads_reports_and_unreported_failures(tmp_path
     assert data.quality_reference_defect_report_count == 1
     assert data.quality_reference_defect_count == 2
     assert {row.row_type for row in data.rows} == {"quality_report", "interpretation_failure"}
+    quality_row = next(row for row in data.rows if row.row_type == "quality_report")
+    failure_row = next(row for row in data.rows if row.row_type == "interpretation_failure")
+    assert quality_row.detail["episode_interpretation"]["coverage_status"] == "partial"
+    assert quality_row.detail["episode_interpretation"]["failed_episode_count"] == 1
+    assert failure_row.detail["episode_interpretation"]["coverage_status"] == "failed"
+    assert failure_row.detail["episode_interpretation"]["failed_episode_count"] == 1
 
 
 def test_quality_dashboard_loader_deduplicates_failed_jobs_by_reported_session_id(tmp_path: Path) -> None:

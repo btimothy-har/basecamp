@@ -535,7 +535,7 @@ def _quality_report_from_semantic_output(
     model_metadata: Mapping[str, Any],
     prompt_version: str,
 ) -> QualityReportDraft:
-    semantic_status = _semantic_status_with_reference_defects(validated)
+    semantic_status = _semantic_status_with_quality_limits(validated, packet)
     quality_status, quality_reason = _semantic_quality_status(semantic_status)
     output = validated.output
     semantic_findings = list(output.findings)
@@ -571,10 +571,22 @@ def _quality_report_from_semantic_output(
     )
 
 
+def _semantic_status_with_quality_limits(validated: ValidatedQualityAssessment, packet: QualityPacket) -> str:
+    semantic_status = _semantic_status_with_reference_defects(validated)
+    if semantic_status == SEMANTIC_STATUS_PASSED and _has_partial_episode_coverage(packet):
+        return SEMANTIC_STATUS_DEGRADED
+    return semantic_status
+
+
 def _semantic_status_with_reference_defects(validated: ValidatedQualityAssessment) -> str:
     if validated.reference_defect_count and validated.output.semantic_status == SEMANTIC_STATUS_PASSED:
         return SEMANTIC_STATUS_DEGRADED
     return validated.output.semantic_status
+
+
+def _has_partial_episode_coverage(packet: QualityPacket) -> bool:
+    coverage = packet.snapshot_metadata.get("episode_interpretation")
+    return isinstance(coverage, Mapping) and coverage.get("coverage_status") == "partial"
 
 
 def _unresolved_reference_finding(

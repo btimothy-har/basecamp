@@ -58,12 +58,16 @@ def report() -> QualityReportDraft:
     )
 
 
-def packet(*, can_assess: bool = True) -> QualityPacket:
+def packet(
+    *,
+    can_assess: bool = True,
+    snapshot_metadata: dict[str, Any] | None = None,
+) -> QualityPacket:
     deterministic_report = report()
     return QualityPacket(
         snapshot_id=1,
         session_metadata={"session_row_id": 1, "stable_session_id": "pi-session-1"},
-        snapshot_metadata={"snapshot_id": 1, "analysis_run_id": 2},
+        snapshot_metadata=snapshot_metadata or {"snapshot_id": 1, "analysis_run_id": 2},
         readiness=QualityPacketReadiness(
             snapshot_id=1,
             snapshot_status="completed",
@@ -319,6 +323,22 @@ def test_deterministic_quality_assessor_returns_healthy_report() -> None:
     assert draft.quality_status == QUALITY_STATUS_HEALTHY
     assert draft.model_metadata["mode"] == DETERMINISTIC_QUALITY_ASSESSOR_MODE
     assert draft.promotable is True
+
+
+def test_quality_assessor_degrades_passed_semantics_for_partial_episode_coverage() -> None:
+    draft = DeterministicQualityAssessor().assess(
+        packet(
+            snapshot_metadata={
+                "snapshot_id": 1,
+                "analysis_run_id": 2,
+                "episode_interpretation": {"coverage_status": "partial", "failed_episode_count": 1},
+            },
+        ),
+    )
+
+    assert draft.quality_status == QUALITY_STATUS_DEGRADED
+    assert draft.quality_reason == QUALITY_STATUS_REASON_SEMANTIC_DEGRADED
+    assert draft.semantic_status == SEMANTIC_STATUS_DEGRADED
 
 
 def test_quality_assessor_rejects_unready_packet() -> None:

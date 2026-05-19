@@ -39,6 +39,7 @@ from pi_memory.quality.contracts import (
     FINDING_CODE_CLAIM_SOURCE_REF_UNKNOWN,
     FINDING_CODE_CLAIM_WITHOUT_ELIGIBLE_LOCAL_SOURCE,
     FINDING_CODE_CLAIMLESS_COMPLETED_INTERPRETATION,
+    FINDING_CODE_EPISODE_INTERPRETATION_PARTIAL,
     FINDING_CODE_MISSING_INTERPRETATION_PAYLOAD,
     FINDING_CODE_MODEL_METADATA_MISSING,
     FINDING_CODE_PROMPT_VERSION_MISSING,
@@ -239,6 +240,7 @@ def _completed_integrity_findings(
     findings.extend(_payload_findings(snapshot, interpretation))
     findings.extend(_metadata_findings(snapshot))
     findings.extend(_source_origin_findings(snapshot))
+    findings.extend(_episode_interpretation_coverage_findings(snapshot, interpretation))
     if derivation_status == DERIVATION_STATUS_CURRENT:
         findings.extend(_citation_integrity_findings(db_session, snapshot, interpretation))
     return findings
@@ -346,6 +348,36 @@ def _source_origin_findings(snapshot: SessionInterpretationSnapshot) -> list[Qua
             ),
         ]
     return []
+
+
+def _episode_interpretation_coverage_findings(
+    snapshot: SessionInterpretationSnapshot,
+    interpretation: Mapping[str, Any],
+) -> list[QualityFinding]:
+    coverage = _mapping(interpretation.get("aggregation"))
+    if coverage.get("coverage_status") != "partial":
+        return []
+    return [
+        _finding(
+            code=FINDING_CODE_EPISODE_INTERPRETATION_PARTIAL,
+            severity=_WARNING_SEVERITY,
+            message="Session interpretation has partial episode coverage.",
+            references=(_reference("snapshot", snapshot.id),),
+            details=_episode_interpretation_coverage_details(coverage),
+        ),
+    ]
+
+
+def _episode_interpretation_coverage_details(coverage: Mapping[str, Any]) -> dict[str, int | str]:
+    keys = (
+        "coverage_status",
+        "total_episode_count",
+        "claim_source_episode_count",
+        "completed_episode_count",
+        "skipped_episode_count",
+        "failed_episode_count",
+    )
+    return {key: value for key in keys if isinstance((value := coverage.get(key)), int | str)}
 
 
 def _citation_integrity_findings(

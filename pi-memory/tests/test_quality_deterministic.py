@@ -43,6 +43,7 @@ from pi_memory.quality import (
     FINDING_CODE_ANALYSIS_IDENTITY_MISMATCH,
     FINDING_CODE_CITATION_SOURCE_REF_UNKNOWN,
     FINDING_CODE_CLAIM_WITHOUT_ELIGIBLE_LOCAL_SOURCE,
+    FINDING_CODE_EPISODE_INTERPRETATION_PARTIAL,
     FINDING_CODE_MODEL_METADATA_MISSING,
     FINDING_CODE_PROMPT_VERSION_MISSING,
     FINDING_CODE_SNAPSHOT_OUTDATED,
@@ -215,6 +216,34 @@ def test_current_completed_snapshot_passes_deterministic_checks_and_waits_for_se
     assert draft.semantic_status == SESSION_INTERPRETATION_SEMANTIC_STATUS_NOT_ASSESSED
     assert draft.promotable is False
     assert draft.deterministic_findings_json == []
+
+
+def test_partial_episode_coverage_adds_warning_without_failing_deterministic_checks(
+    database: Database,
+) -> None:
+    snapshot_id = create_completed_snapshot(database)
+    with database.session() as db_session:
+        snapshot = db_session.get_one(SessionInterpretationSnapshot, snapshot_id)
+        interpretation = dict(snapshot.interpretation_json)
+        interpretation["aggregation"] = {
+            "aggregation_mode": "episode_claim_concat",
+            "coverage_status": "partial",
+            "total_episode_count": 2,
+            "claim_source_episode_count": 2,
+            "completed_episode_count": 1,
+            "skipped_episode_count": 0,
+            "failed_episode_count": 1,
+        }
+        snapshot.interpretation_json = interpretation
+
+    with database.session() as db_session:
+        snapshot = db_session.get_one(SessionInterpretationSnapshot, snapshot_id)
+        draft = assess_deterministic_interpretation_quality(db_session, snapshot)
+
+    assert draft.deterministic_status == SESSION_INTERPRETATION_DETERMINISTIC_STATUS_PASSED
+    assert draft.quality_reason == SESSION_INTERPRETATION_QUALITY_REASON_SEMANTIC_ASSESSMENT_PENDING
+    assert draft.deterministic_findings[0].code == FINDING_CODE_EPISODE_INTERPRETATION_PARTIAL
+    assert draft.deterministic_findings[0].severity == "warning"
 
 
 def test_outdated_completed_snapshot_reports_derivation_separately(database: Database) -> None:

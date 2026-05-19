@@ -390,6 +390,7 @@ def test_get_session_interpretation_endpoint_returns_safe_snapshot(
         "claim_source_activity_count": 2,
         "interpretation_json": {"summary": "Safe interpretation", "open_questions": []},
         "citations_json": [{"claim_id": "claim-1", "source_ref_id": "ar1:ep0:act0:entries1"}],
+        "episode_interpretation": {},
         "model_metadata": {"provider": "deterministic", "model": "test"},
         "prompt_version": "phase5b-session-interpretation-v1",
         "schema_version": 1,

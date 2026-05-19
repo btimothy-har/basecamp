@@ -242,6 +242,7 @@ def serialize_quality_report(
         "semantic_findings": semantic_findings,
         "claim_assessments": list(report.claim_assessments_json),
         "missing_high_signal_items": list(report.missing_high_signal_items_json),
+        "episode_interpretation": _episode_interpretation_coverage(snapshot),
         "model_metadata": dict(report.model_metadata_json),
         "assessment_metadata": dict(report.assessment_metadata_json),
         "prompt_version": report.prompt_version,
@@ -249,6 +250,12 @@ def serialize_quality_report(
         "created_at": _serialize_datetime(report.created_at),
         "updated_at": _serialize_datetime(report.updated_at),
     }
+
+
+def _episode_interpretation_coverage(snapshot: SessionInterpretationSnapshot) -> dict[str, Any]:
+    interpretation = snapshot.interpretation_json if isinstance(snapshot.interpretation_json, dict) else {}
+    coverage = interpretation.get("aggregation")
+    return dict(coverage) if isinstance(coverage, dict) else {}
 
 
 def _quality_report_rows() -> Select[
