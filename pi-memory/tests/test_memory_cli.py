@@ -4,6 +4,7 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from types import SimpleNamespace
 
 import pi_memory.cli.main as cli_module
 import pytest
@@ -1007,6 +1008,36 @@ def test_quality_sample_reports_json_count(memory_database: Database) -> None:
     payload = json.loads(result.output)
     assert payload["count"] == 2
     assert len(payload["results"]) == 2
+
+
+def test_quality_tui_help_lists_required_options() -> None:
+    result = CliRunner().invoke(cli_module.main, ["quality-tui", "--help"])
+
+    assert result.exit_code == 0
+    assert "--db-url" in result.output
+
+
+def test_quality_tui_requires_non_empty_db_url() -> None:
+    result = CliRunner().invoke(cli_module.main, ["quality-tui", "--db-url", "  "])
+
+    assert result.exit_code == 2
+    assert "Invalid value for '--db-url': must not be empty" in result.output
+
+
+def test_quality_tui_forwards_db_url_to_lazy_imported_runner(monkeypatch) -> None:
+    db_url = "sqlite:////tmp/pi-memory-quality.db"
+    calls: dict[str, str] = {}
+
+    def fake_import_module(name: str) -> SimpleNamespace:
+        calls["module"] = name
+        return SimpleNamespace(run_quality_tui=lambda value: calls.setdefault("db_url", value))
+
+    monkeypatch.setattr(cli_module.importlib, "import_module", fake_import_module)
+
+    result = CliRunner().invoke(cli_module.main, ["quality-tui", "--db-url", db_url])
+
+    assert result.exit_code == 0
+    assert calls == {"module": "pi_memory.tui", "db_url": db_url}
 
 
 def test_quality_list_rejects_invalid_filter(memory_database: Database) -> None:

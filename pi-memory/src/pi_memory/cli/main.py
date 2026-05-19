@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import errno
+import importlib
 import ipaddress
 import json
 import socket
@@ -512,6 +513,21 @@ def quality_sample(
     finally:
         quality_database.close_if_open()
     _emit_quality_report_list(payload, json_output=json_output)
+
+
+@main.command("quality-tui")
+@click.option(
+    "--db-url",
+    callback=lambda _ctx, _param, value: _require_non_empty(value),
+    required=True,
+    help="Database URL containing quality reports.",
+)
+def quality_tui(db_url: str) -> None:
+    """Open the quality report Textual dashboard."""
+    # Textual is only needed for this command, so avoid loading it for every CLI invocation.
+    run_quality_tui = importlib.import_module("pi_memory.tui").run_quality_tui
+
+    run_quality_tui(db_url)
 
 
 @main.command("run-job")
