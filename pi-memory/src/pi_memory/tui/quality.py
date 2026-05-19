@@ -26,21 +26,22 @@ from pi_memory.db import (
 )
 
 QualityDashboardRowType = Literal["quality_report", "interpretation_failure"]
-QualityFilterMode = Literal["all", "healthy", "degraded", "failures"]
+QualityFilterMode = Literal["all", "healthy", "degraded", "gaps"]
 
-QUALITY_FAILURE_STATUSES = {"assessment_failed", "failed"}
-QUALITY_STATUSES = ("healthy", "degraded", "not_assessed", "assessment_failed", "failed")
+QUALITY_LIMIT_STATUSES = {"assessment_failed", "failed", "not_assessed"}
 TABLE_COLUMNS = (
-    ("type", 22, "type"),
-    ("status", 18, "status"),
-    ("promotable", 10, "promotable"),
+    ("evidence", 20, "type"),
+    ("outcome", 18, "status"),
+    ("confidence", 14, "confidence"),
     ("session", 18, "session"),
     ("transcript", 18, "transcript"),
-    ("reason/error", 42, "reason"),
+    ("outcome note", 42, "reason"),
     ("findings", 12, "findings"),
-    ("ref defects", 11, "ref_defects"),
+    ("ref limits", 11, "ref_limits"),
     ("updated", 20, "updated"),
 )
+DISTRIBUTION_BAR_WIDTH = 24
+METRIC_CARD_WIDTH = 42
 MAX_DETAIL_FINDINGS = 8
 MAX_METADATA_ITEMS = 8
 
@@ -114,12 +115,12 @@ class QualityTuiApp(App[None]):
     """Single-screen quality report dashboard."""
 
     TITLE = "pi-memory quality"
-    SUB_TITLE = "Quality report dashboard"
+    SUB_TITLE = "Memory quality observability"
     BINDINGS = [
         ("a", "show_all", "all"),
         ("h", "show_healthy", "healthy"),
         ("d", "show_degraded", "degraded"),
-        ("f", "show_failures", "failures"),
+        ("f", "show_gaps", "gaps/limits"),
         ("p", "toggle_promotable", "promotable"),
         ("r", "reload", "reload"),
         ("q", "quit", "quit"),
@@ -129,8 +130,14 @@ class QualityTuiApp(App[None]):
         layout: vertical;
     }
 
-    #quality-metrics {
+    #quality-overview {
         height: auto;
+        padding: 0 1;
+    }
+
+    #quality-distribution {
+        height: auto;
+        border: solid $primary;
         padding: 0 1;
     }
 
@@ -144,7 +151,7 @@ class QualityTuiApp(App[None]):
     }
 
     #quality-detail {
-        height: 16;
+        height: 13;
         border: solid $accent;
         padding: 0 1;
     }
@@ -162,10 +169,11 @@ class QualityTuiApp(App[None]):
         """Compose the quality dashboard."""
         yield Header()
         with Container(id="quality-screen"):
-            yield Static("Loading quality dashboard...", id="quality-metrics")
+            yield Static("Loading memory quality overview...", id="quality-overview")
+            yield Static("Loading assessment outcomes...", id="quality-distribution")
             yield Static(self._help_text(), id="quality-help")
             yield DataTable(id="quality-table")
-            yield Static("Select a row to show details.", id="quality-detail")
+            yield Static("Select an evidence row to show details.", id="quality-detail")
         yield Footer()
 
     def on_mount(self) -> None:
@@ -176,7 +184,7 @@ class QualityTuiApp(App[None]):
         self._reload_data()
 
     def action_show_all(self) -> None:
-        """Show all rows."""
+        """Show all evidence rows."""
         self._filter_mode = "all"
         self._refresh_dashboard()
 
@@ -190,9 +198,9 @@ class QualityTuiApp(App[None]):
         self._filter_mode = "degraded"
         self._refresh_dashboard()
 
-    def action_show_failures(self) -> None:
-        """Show interpretation and assessment failures."""
-        self._filter_mode = "failures"
+    def action_show_gaps(self) -> None:
+        """Show coverage gaps and quality limits."""
+        self._filter_mode = "gaps"
         self._refresh_dashboard()
 
     def action_toggle_promotable(self) -> None:
@@ -217,7 +225,8 @@ class QualityTuiApp(App[None]):
         self._refresh_dashboard()
 
     def _refresh_dashboard(self) -> None:
-        self.query_one("#quality-metrics", Static).update(self._metrics_text())
+        self.query_one("#quality-overview", Static).update(self._overview_text())
+        self.query_one("#quality-distribution", Static).update(self._distribution_text())
         self.query_one("#quality-help", Static).update(self._help_text())
         rows = self._filtered_rows()
         self._populate_table(rows)
@@ -251,49 +260,45 @@ class QualityTuiApp(App[None]):
             return row.row_type == "quality_report" and row.status == "healthy"
         if self._filter_mode == "degraded":
             return row.row_type == "quality_report" and row.status == "degraded"
-        if self._filter_mode == "failures":
-            return row.row_type == "interpretation_failure" or row.status in QUALITY_FAILURE_STATUSES
+        if self._filter_mode == "gaps":
+            return (
+                row.row_type == "interpretation_failure"
+                or row.status in QUALITY_LIMIT_STATUSES
+                or row.reference_defect_count > 0
+            )
         return True
 
-    def _metrics_text(self) -> str:
+    def _overview_text(self) -> str:
         if self.data is None:
-            return "Loading quality dashboard..."
-        counts = self.data.quality_status_counts
-        status_counts = "  ".join(f"{status}: {counts.get(status, 0)}" for status in QUALITY_STATUSES)
-        totals = (
-            f"Transcripts: {self.data.transcript_count}  "
-            f"Reports: {self.data.quality_report_count}  Rows: {self.data.row_count}"
-        )
-        return "\n".join(
-            (
-                f"Database: {self.db_url}",
-                totals,
-                status_counts,
-                "  ".join(
-                    (
-                        f"promotable: {self.data.promotable_count}",
-                        f"not promotable/no report: {self.data.non_promotable_count}",
-                        f"failed interpretations: {self.data.failed_interpretation_count}",
-                        "ref-defect reports/refs: "
-                        f"{self.data.quality_reference_defect_report_count}/"
-                        f"{self.data.quality_reference_defect_count}",
-                    ),
-                ),
-            ),
-        )
+            return "Loading memory quality overview..."
+        return _dashboard_overview_text(self.data, self.db_url)
+
+    def _distribution_text(self) -> str:
+        if self.data is None:
+            return "Loading assessment outcomes..."
+        return _assessment_distribution_text(self.data)
 
     def _help_text(self) -> str:
         promotable = "on" if self._promotable_only else "off"
         return (
-            "a all | h healthy | d degraded | f failures | p promotable-only "
-            f"({promotable}) | r reload | q quit | filter: {self._filter_mode}"
+            "Evidence filters: a all | h healthy | d degraded | f coverage gaps/limits | "
+            f"p promotable-only ({promotable}) | r reload | q quit | view: {self._filter_label()}"
         )
+
+    def _filter_label(self) -> str:
+        labels = {
+            "all": "all evidence",
+            "healthy": "healthy confidence",
+            "degraded": "degraded reports",
+            "gaps": "coverage gaps/limits",
+        }
+        return labels[self._filter_mode]
 
     def _table_cells(self, row: QualityDashboardRow) -> tuple[str, ...]:
         return (
-            row.row_type,
-            row.status,
-            _format_bool_value(row.promotable),
+            _row_type_label(row),
+            _status_label(row.status),
+            _confidence_label(row),
             _compact(row.session_id),
             _transcript_label(row),
             _truncate(row.reason or "", 80),
@@ -309,13 +314,168 @@ class QualityTuiApp(App[None]):
         self.query_one("#quality-detail", Static).update(_detail_text(row))
 
 
+def _dashboard_overview_text(data: QualityDashboardData, db_url: str) -> str:
+    coverage_gaps = _coverage_gap_count(data)
+    assessment_failures = _quality_assessment_failure_count(data)
+    not_assessed = data.quality_status_counts.get("not_assessed", 0)
+    cards = [
+        (
+            "Coverage",
+            f"{data.quality_report_count} / {data.transcript_count} reports",
+            f"{_percentage_label(data.quality_report_count, data.transcript_count)} report coverage",
+        ),
+        (
+            "Confidence",
+            f"{data.promotable_count} / {data.transcript_count} promotable",
+            f"{_percentage_label(data.promotable_count, data.transcript_count)} corpus confidence",
+        ),
+        (
+            "Assessment outcomes",
+            f"{data.quality_status_counts.get('healthy', 0)} healthy | "
+            f"{data.quality_status_counts.get('degraded', 0)} degraded",
+            f"{not_assessed} not assessed | {assessment_failures} assessment failed",
+        ),
+        (
+            "Quality limits",
+            f"{coverage_gaps} coverage gaps",
+            f"{data.quality_reference_defect_report_count} ref-defect reports / "
+            f"{data.quality_reference_defect_count} refs",
+        ),
+    ]
+    lines = ["Memory quality overview"]
+    lines.extend(_metric_card_rows(cards))
+    lines.append(f"Database: {_truncate(db_url, 140)}")
+    return "\n".join(lines)
+
+
+def _assessment_distribution_text(data: QualityDashboardData) -> str:
+    total = max(data.transcript_count, data.row_count, 1)
+    assessment_failures = _quality_assessment_failure_count(data)
+    coverage_gaps = _coverage_gap_count(data)
+    rows = [
+        (
+            "healthy",
+            data.quality_status_counts.get("healthy", 0),
+            "passed semantic quality",
+        ),
+        (
+            "degraded",
+            data.quality_status_counts.get("degraded", 0),
+            "quality limits captured; may still be promotable",
+        ),
+        (
+            "not assessed",
+            data.quality_status_counts.get("not_assessed", 0),
+            "report exists without semantic assessment",
+        ),
+        (
+            "assessment failed",
+            assessment_failures,
+            "quality assessment did not complete cleanly",
+        ),
+        (
+            "no quality report",
+            coverage_gaps,
+            f"{data.failed_interpretation_count} known interpretation gaps",
+        ),
+    ]
+    lines = ["Assessment outcomes and coverage gaps"]
+    lines.extend(_distribution_line(label, count, total, note) for label, count, note in rows)
+    lines.append(
+        "Evidence rows: "
+        f"{data.row_count} | report confidence: "
+        f"{_percentage_label(data.promotable_count, data.quality_report_count)} promotable | "
+        f"ref-defect refs omitted: {data.quality_reference_defect_count}"
+    )
+    return "\n".join(lines)
+
+
+def _metric_card_rows(cards: list[tuple[str, str, str]]) -> list[str]:
+    rendered_cards = [_metric_card(title, line1, line2) for title, line1, line2 in cards]
+    rows: list[str] = []
+    for index in range(0, len(rendered_cards), 2):
+        card_pair = rendered_cards[index : index + 2]
+        rows.extend("  ".join(card[line_index] for card in card_pair) for line_index in range(4))
+    return rows
+
+
+def _metric_card(title: str, line1: str, line2: str) -> list[str]:
+    inner_width = METRIC_CARD_WIDTH - 2
+    title_label = f" {_truncate(title, max(inner_width - 2, 1))} "
+    top_border = "┌" + title_label + "─" * max(inner_width - len(title_label), 0) + "┐"
+    bottom_border = "└" + "─" * inner_width + "┘"
+    return [
+        top_border,
+        _metric_card_line(line1, inner_width),
+        _metric_card_line(line2, inner_width),
+        bottom_border,
+    ]
+
+
+def _metric_card_line(value: str, width: int) -> str:
+    return f"│{_truncate(value, width).ljust(width)}│"
+
+
+def _distribution_line(label: str, count: int, total: int, note: str) -> str:
+    return f"{label:<18} {_distribution_bar(count, total)} {count:>4}  {note}"
+
+
+def _distribution_bar(count: int, total: int) -> str:
+    if total <= 0 or count <= 0:
+        filled_width = 0
+    else:
+        filled_width = round((count / total) * DISTRIBUTION_BAR_WIDTH)
+        filled_width = max(filled_width, 1)
+    filled_width = min(filled_width, DISTRIBUTION_BAR_WIDTH)
+    return "█" * filled_width + "░" * (DISTRIBUTION_BAR_WIDTH - filled_width)
+
+
+def _coverage_gap_count(data: QualityDashboardData) -> int:
+    return max(data.transcript_count - data.quality_report_count, 0)
+
+
+def _quality_assessment_failure_count(data: QualityDashboardData) -> int:
+    return data.quality_status_counts.get("assessment_failed", 0) + data.quality_status_counts.get("failed", 0)
+
+
+def _percentage_label(value: int, total: int) -> str:
+    if total <= 0:
+        return "n/a"
+    return f"{(value / total) * 100:.1f}%"
+
+
+def _row_type_label(row: QualityDashboardRow) -> str:
+    if row.row_type == "quality_report":
+        return "quality report"
+    return "coverage gap"
+
+
+def _status_label(status: str) -> str:
+    labels = {
+        "assessment_failed": "assessment failed",
+        "interpretation_failed": "interpretation gap",
+        "not_assessed": "not assessed",
+    }
+    return labels.get(status, status.replace("_", " "))
+
+
+def _confidence_label(row: QualityDashboardRow) -> str:
+    if row.promotable is True:
+        return "promotable"
+    if row.row_type == "interpretation_failure":
+        return "no report"
+    if row.promotable is False:
+        return "limited"
+    return "n/a"
+
+
 def _detail_text(row: QualityDashboardRow) -> str:
     lines = [
-        f"{row.row_type}  status={row.status}  promotable={_format_bool_value(row.promotable)}",
+        f"{_row_type_label(row)}  outcome={_status_label(row.status)}  confidence={_confidence_label(row)}",
         f"session={_display(row.session_id)}  transcript={_display(row.transcript_id)}",
         f"path={_display(row.transcript_path)}",
         f"repo={_display(row.repo_name)}  worktree={_display(row.worktree_label)}",
-        f"reason/error={_display(row.reason)}",
+        f"outcome note={_display(row.reason)}",
     ]
     if row.row_type == "quality_report":
         lines.extend(_quality_detail_lines(row))
@@ -375,7 +535,7 @@ def _failure_detail_lines(row: QualityDashboardRow) -> list[str]:
             f"updated={_format_datetime(row.updated_at)}  "
             f"finished={_format_datetime_value(detail.get('finished_at'))}"
         ),
-        f"last_error={_display(detail.get('last_error'))}",
+        f"interpretation gap detail={_display(detail.get('last_error'))}",
         f"payload: {_format_mapping(_as_dict(detail.get('payload')))}",
         f"result: {_format_mapping(_as_dict(detail.get('result')))}",
     ]
@@ -431,12 +591,6 @@ def _transcript_label(row: QualityDashboardRow) -> str:
 
 def _finding_counts_label(counts: dict[str, int]) -> str:
     return f"c:{counts.get('critical', 0)} w:{counts.get('warning', 0)} i:{counts.get('info', 0)}"
-
-
-def _format_bool_value(value: Any) -> str:
-    if value is None:
-        return "n/a"
-    return "yes" if value is True else "no"
 
 
 def _display(value: Any) -> str:
