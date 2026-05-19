@@ -15,6 +15,8 @@ from pi_memory.db import (
     ACTIVITY_TEXT_STATUS_FAILED,
     ACTIVITY_TEXT_STATUS_PENDING,
     ANALYSIS_STATUS_COMPLETED,
+    EPISODE_INTERPRETATION_STATUS_COMPLETED,
+    EPISODE_INTERPRETATION_STATUS_FAILED,
     JOB_KIND_ASSESS_INTERPRETATION_QUALITY,
     JOB_KIND_INTERPRET_SESSION,
     JOB_KIND_PROCESS_TRANSCRIPT,
@@ -46,6 +48,7 @@ from pi_memory.db import (
     AnalysisRun,
     Database,
     Episode,
+    EpisodeInterpretationSnapshot,
     EpisodeManifest,
     Job,
     MemorySession,
@@ -181,6 +184,18 @@ class FailingInterpreter:
     def interpret(self, _packet: InterpretationPacket) -> InterpretationResult:
         self.calls += 1
         raise self.error
+
+
+class EpisodeOrdinalFailingInterpreter:
+    def __init__(self, failing_ordinal: int) -> None:
+        self.failing_ordinal = failing_ordinal
+        self.calls: list[InterpretationPacket] = []
+
+    def interpret(self, packet: InterpretationPacket) -> InterpretationResult:
+        self.calls.append(packet)
+        if packet.episode_packets[0].ordinal == self.failing_ordinal:
+            raise RuntimeError("RAW_EPISODE_FAILURE_SHOULD_NOT_LEAK")
+        return DeterministicSessionInterpreter().interpret(packet)
 
 
 class ProviderShouldNotLeakError(RuntimeError):
@@ -1582,7 +1597,9 @@ def test_interpret_session_completed_writes_snapshot_and_safe_result(
         assert snapshot.job_id == claimed.id
         assert snapshot.transcript_id == transcript_id
         assert snapshot.analysis_run_id == completed.result_json["analysis_run_id"]
-        assert snapshot.interpretation_json["summary"].startswith("Deterministic interpretation")
+        assert snapshot.interpretation_json["summary"].startswith("Episode-level interpretation")
+        assert snapshot.interpretation_json["aggregation"]["aggregation_mode"] == "episode_claim_concat"
+        assert snapshot.interpretation_json["aggregation"]["coverage_status"] == "complete"
         assert snapshot.citations_json
         assert snapshot.model_metadata_json["provider"] == "pi-memory"
 
@@ -1591,6 +1608,86 @@ def test_interpret_session_completed_writes_snapshot_and_safe_result(
     assert quality_job.kind == JOB_KIND_ASSESS_INTERPRETATION_QUALITY
     assert quality_job.payload_json["snapshot_id"] == completed.result_json["snapshot_id"]
     assert quality_job.payload_json["interpretation_job_id"] == claimed.id
+
+
+def test_interpret_session_interprets_each_claim_source_episode_separately(
+    database: Database,
+    store: JobStore,
+) -> None:
+    transcript_id = create_compaction_boundary_transcript(database)
+    process_transcript(database, store, transcript_id)
+    interpreter = RecordingInterpreter()
+    claimed = claim_interpret_session_job(store, transcript_id)
+
+    completed = JobRunner(database=database, interpreter=interpreter).run(
+        claimed.id,
+        claimed.run_id,
+        running_pid=123,
+        now=at(10),
+    )
+
+    assert completed.status == JOB_STATUS_COMPLETED
+    assert len(interpreter.calls) == 2
+    assert [call.readiness.episode_count for call in interpreter.calls] == [1, 1]
+    assert [call.episode_packets[0].ordinal for call in interpreter.calls] == [0, 1]
+    assert completed.result_json is not None
+    assert completed.result_json["episode_interpretation"]["coverage_status"] == "complete"
+    with database.session() as session:
+        episode_rows = list(
+            session.scalars(
+                select(EpisodeInterpretationSnapshot).order_by(EpisodeInterpretationSnapshot.episode_ordinal),
+            ),
+        )
+        snapshot = session.scalar(select(SessionInterpretationSnapshot))
+
+    assert [row.status for row in episode_rows] == [
+        EPISODE_INTERPRETATION_STATUS_COMPLETED,
+        EPISODE_INTERPRETATION_STATUS_COMPLETED,
+    ]
+    assert snapshot is not None
+    assert len(snapshot.interpretation_json["claims"]) == 2
+    assert snapshot.interpretation_json["aggregation"] == completed.result_json["episode_interpretation"]
+
+
+def test_interpret_session_persists_partial_episode_failures(
+    database: Database,
+    store: JobStore,
+) -> None:
+    transcript_id = create_compaction_boundary_transcript(database)
+    process_transcript(database, store, transcript_id)
+    interpreter = EpisodeOrdinalFailingInterpreter(failing_ordinal=1)
+    claimed = claim_interpret_session_job(store, transcript_id)
+
+    completed = JobRunner(database=database, interpreter=interpreter).run(
+        claimed.id,
+        claimed.run_id,
+        running_pid=123,
+        now=at(10),
+    )
+
+    assert completed.status == JOB_STATUS_COMPLETED
+    assert len(interpreter.calls) == 2
+    assert completed.result_json is not None
+    assert completed.result_json["episode_interpretation"]["coverage_status"] == "partial"
+    assert completed.result_json["episode_interpretation"]["completed_episode_count"] == 1
+    assert completed.result_json["episode_interpretation"]["failed_episode_count"] == 1
+    assert "RAW_EPISODE_FAILURE_SHOULD_NOT_LEAK" not in str(completed.result_json)
+    with database.session() as session:
+        episode_rows = list(
+            session.scalars(
+                select(EpisodeInterpretationSnapshot).order_by(EpisodeInterpretationSnapshot.episode_ordinal),
+            ),
+        )
+        snapshot = session.scalar(select(SessionInterpretationSnapshot))
+
+    assert [row.status for row in episode_rows] == [
+        EPISODE_INTERPRETATION_STATUS_COMPLETED,
+        EPISODE_INTERPRETATION_STATUS_FAILED,
+    ]
+    assert episode_rows[1].failure_metadata_json == {"error_type": "RuntimeError"}
+    assert snapshot is not None
+    assert len(snapshot.interpretation_json["claims"]) == 1
+    assert snapshot.interpretation_json["aggregation"]["coverage_status"] == "partial"
 
 
 def test_assess_quality_completed_snapshot_writes_semantic_report(
