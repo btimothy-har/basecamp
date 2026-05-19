@@ -5,8 +5,6 @@ from dataclasses import replace
 from typing import Any
 
 import pytest
-from pydantic import ValidationError
-
 from pi_memory.db import (
     SOURCE_ORIGIN_INHERITED,
     SOURCE_ORIGIN_LOCAL,
@@ -22,10 +20,13 @@ from pi_memory.interpretation import (
     InterpretationPacket,
     InterpretationReadiness,
     SourceRef,
+    build_episode_interpretation_packet,
     build_source_ref_aliases,
+    validate_episode_interpretation_output,
     validate_interpretation_output,
 )
 from pi_memory.interpretation.contracts import InterpretationValidationError
+from pydantic import ValidationError
 
 
 def source_ref(
@@ -273,6 +274,48 @@ def test_alias_output_is_canonicalized_before_validation_and_json() -> None:
     assert validated.interpretation_json["open_questions"][0]["source_ref_ids"] == [canonical_id]
     assert validated.interpretation_json["citations"][0]["source_ref_id"] == canonical_id
     assert {citation["source_ref_id"] for citation in validated.citations_json} == {canonical_id}
+
+
+def test_episode_interpretation_validation_scopes_source_refs_to_one_episode() -> None:
+    first_ref = source_ref("episode-0-ref")
+    second_ref = replace(source_ref("episode-1-ref"), episode_id=21, episode_ordinal=1)
+    base_packet = packet(first_ref)
+    second_episode = replace(
+        base_packet.episode_packets[0],
+        episode_id=21,
+        ordinal=1,
+        manifest_id=22,
+        source_refs=(second_ref,),
+    )
+    source_packet = replace(
+        base_packet,
+        readiness=replace(
+            base_packet.readiness,
+            claim_source_activity_count=2,
+            activity_count=2,
+            episode_count=2,
+            manifest_count=2,
+        ),
+        episode_packets=(base_packet.episode_packets[0], second_episode),
+    )
+    first_episode_packet = build_episode_interpretation_packet(source_packet, source_packet.episode_packets[0])
+
+    validated = validate_episode_interpretation_output(
+        output("episode-0-ref"),
+        source_packet,
+        source_packet.episode_packets[0],
+    )
+
+    assert first_episode_packet.readiness.episode_count == 1
+    assert first_episode_packet.readiness.claim_source_activity_count == 1
+    assert len(first_episode_packet.episode_packets) == 1
+    assert validated.output.claims[0].source_ref_ids == ["episode-0-ref"]
+    with pytest.raises(InterpretationValidationError, match="episode-1-ref"):
+        validate_episode_interpretation_output(
+            output("episode-1-ref"),
+            source_packet,
+            source_packet.episode_packets[0],
+        )
 
 
 def test_unknown_alias_output_fails_as_unknown_source_ref() -> None:

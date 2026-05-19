@@ -23,7 +23,7 @@ from pi_memory.db import (
     Transcript,
     TranscriptEntry,
 )
-from pi_memory.interpretation import build_interpretation_packet
+from pi_memory.interpretation import build_episode_interpretation_packet, build_interpretation_packet
 from sqlalchemy import delete, func, select
 
 BASE_TIME = datetime(2026, 5, 15, 12, 0, tzinfo=UTC)
@@ -161,6 +161,28 @@ def test_ready_normal_transcript_after_phase_5a_analysis(database: Database) -> 
     assert len(packet.episode_packets) == 1
     assert packet.session_metadata["stable_session_id"] == "pi-session-1"
     assert packet.transcript_metadata["parent_transcript_path"] is None
+
+
+def test_episode_interpretation_packet_scopes_readiness_to_one_episode(database: Database) -> None:
+    with database.session() as db_session:
+        transcript = create_transcript(db_session)
+        analyze_transcript_structure(db_session, transcript)
+
+        packet = build_interpretation_packet(db_session, transcript)
+
+    episode = packet.episode_packets[0]
+    episode_packet = build_episode_interpretation_packet(packet, episode)
+
+    assert episode_packet.readiness.latest_analysis_run_id == packet.readiness.latest_analysis_run_id
+    assert episode_packet.readiness.analyzed_through_entry_id == packet.readiness.analyzed_through_entry_id
+    assert episode_packet.readiness.analyzed_through_byte_offset == packet.readiness.analyzed_through_byte_offset
+    assert episode_packet.readiness.episode_count == 1
+    assert episode_packet.readiness.manifest_count == 1
+    assert episode_packet.readiness.activity_count == episode.activity_count
+    assert episode_packet.readiness.claim_source_activity_count == episode.claim_source_activity_count
+    assert episode_packet.source_analysis_metadata["episode_id"] == episode.episode_id
+    assert episode_packet.source_analysis_metadata["episode_ordinal"] == episode.ordinal
+    assert episode_packet.episode_packets == (episode,)
 
 
 def test_packet_readiness_uses_phase_5a_rows_when_snapshot_shells_are_deleted(database: Database) -> None:

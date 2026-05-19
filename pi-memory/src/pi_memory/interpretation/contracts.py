@@ -9,7 +9,12 @@ from typing import Annotated, Any, Literal
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints, ValidationError
 
 from pi_memory.db import SOURCE_ORIGIN_LOCAL, SOURCE_ORIGIN_MIXED
-from pi_memory.interpretation.packets import InterpretationPacket, SourceRef
+from pi_memory.interpretation.packets import (
+    EpisodePacket,
+    InterpretationPacket,
+    SourceRef,
+    build_episode_interpretation_packet,
+)
 
 NonEmptyString = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)]
 ClaimKind = Literal["decision", "constraint", "knowledge", "preference", "pattern", "action"]
@@ -192,6 +197,18 @@ def validate_interpretation_output(
         output=model,
         interpretation_json=model.model_dump(mode="json", exclude_none=True),
         citations_json=_citations_json(model, source_refs),
+    )
+
+
+def validate_episode_interpretation_output(
+    output: InterpretationOutput | Mapping[str, Any],
+    packet: InterpretationPacket,
+    episode_packet: EpisodePacket,
+) -> ValidatedInterpretation:
+    """Validate structured interpretation output against one episode packet."""
+    return validate_interpretation_output(
+        output,
+        build_episode_interpretation_packet(packet, episode_packet),
     )
 
 

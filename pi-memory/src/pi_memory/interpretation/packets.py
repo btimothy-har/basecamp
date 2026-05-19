@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime
 from typing import Any
 
@@ -204,6 +204,30 @@ def build_interpretation_packet(
         source_analysis_metadata=_analysis_metadata(latest_run),
         readiness=readiness,
         episode_packets=episode_packets,
+    )
+
+
+def build_episode_interpretation_packet(
+    packet: InterpretationPacket,
+    episode_packet: EpisodePacket,
+) -> InterpretationPacket:
+    """Return an interpretation packet scoped to one episode."""
+    return InterpretationPacket(
+        session_metadata=packet.session_metadata,
+        transcript_metadata=packet.transcript_metadata,
+        source_analysis_metadata={
+            **dict(packet.source_analysis_metadata),
+            "episode_id": episode_packet.episode_id,
+            "episode_ordinal": episode_packet.ordinal,
+        },
+        readiness=replace(
+            packet.readiness,
+            claim_source_activity_count=episode_packet.claim_source_activity_count,
+            activity_count=episode_packet.activity_count,
+            episode_count=1,
+            manifest_count=1,
+        ),
+        episode_packets=(episode_packet,),
     )
 
 
