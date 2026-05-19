@@ -4,25 +4,30 @@ from __future__ import annotations
 
 import json
 from collections import Counter
-from dataclasses import dataclass, field
+from collections.abc import Iterable
+from dataclasses import dataclass, field, replace
 from datetime import datetime
 from typing import Any, Literal
 
-from sqlalchemy import func, select
+from sqlalchemy import case, func, select
 from sqlalchemy.orm import Session
 from textual.app import App, ComposeResult
 from textual.containers import Container
 from textual.widgets import DataTable, Footer, Header, Static
 
 from pi_memory.db import (
+    ACTIVITY_KIND_TOOL_PAIR,
     JOB_KIND_INTERPRET_SESSION,
     JOB_STATUS_FAILED,
+    ActivityUnit,
     Database,
+    Episode,
     Job,
     MemorySession,
     SessionInterpretationQualityReport,
     SessionInterpretationSnapshot,
     Transcript,
+    TranscriptEntry,
 )
 
 QualityDashboardRowType = Literal["quality_report", "interpretation_failure"]
@@ -34,12 +39,27 @@ TABLE_COLUMNS = (
     ("session", 18, "session"),
     ("coverage", 18, "coverage"),
     ("confidence", 12, "confidence"),
-    ("quality signals", 18, "signals"),
+    ("structure", 20, "structure"),
     ("limits", 18, "limits"),
     ("updated", 19, "updated"),
 )
 DISTRIBUTION_BAR_WIDTH = 12
-MAX_DETAIL_FINDINGS = 2
+
+
+@dataclass(frozen=True)
+class TranscriptSessionMetadata:
+    """Read-only transcript and session context for a dashboard row."""
+
+    entry_count: int = 0
+    activity_count: int = 0
+    episode_count: int = 0
+    tool_activity_count: int = 0
+    session_transcript_count: int = 0
+    first_timestamp: datetime | None = None
+    last_timestamp: datetime | None = None
+    file_size: int | None = None
+    cursor_offset: int | None = None
+    parent_transcript_path: str | None = None
 
 
 @dataclass(frozen=True)
@@ -62,6 +82,7 @@ class QualityDashboardRow:
     reference_defect_count: int
     updated_at: datetime | None
     interpretation_job_id: int | None
+    transcript_metadata: TranscriptSessionMetadata = field(default_factory=TranscriptSessionMetadata)
     detail: dict[str, Any] = field(default_factory=dict)
 
 
@@ -99,10 +120,10 @@ def load_quality_dashboard_data(db_url: str) -> QualityDashboardData:
             transcript_count = _load_transcript_count(db_session)
             report_rows = _load_quality_report_rows(db_session)
             failure_rows = _load_interpretation_failure_rows(db_session, report_rows)
+            rows = _with_transcript_metadata(db_session, [*report_rows, *failure_rows])
     finally:
         quality_database.close_if_open()
 
-    rows = [*report_rows, *failure_rows]
     rows.sort(key=_row_sort_key, reverse=True)
     return _dashboard_data(rows, transcript_count=transcript_count, quality_report_count=len(report_rows))
 
@@ -296,7 +317,7 @@ class QualityTuiApp(App[None]):
             _compact(row.session_id),
             _coverage_label(row),
             _confidence_label(row),
-            _quality_signal_label(row),
+            _structure_label(row.transcript_metadata),
             _quality_limit_label(row),
             _format_datetime(row.updated_at),
         )
@@ -411,13 +432,22 @@ def _coverage_label(row: QualityDashboardRow) -> str:
     return _status_label(row.status)
 
 
-def _quality_signal_label(row: QualityDashboardRow) -> str:
-    if row.row_type == "interpretation_failure":
-        return "interpretation gap"
-    detail = row.detail
-    claim_count = len(_as_list(detail.get("claim_assessments")))
-    missing_count = len(_as_list(detail.get("missing_high_signal_items")))
-    return f"claims {claim_count} | gaps {missing_count}"
+def _structure_label(metadata: TranscriptSessionMetadata) -> str:
+    return f"ent {metadata.entry_count} | act {metadata.activity_count} | ep {metadata.episode_count}"
+
+
+def _structure_detail_label(metadata: TranscriptSessionMetadata) -> str:
+    return (
+        f"ent={metadata.entry_count} act={metadata.activity_count} ep={metadata.episode_count} "
+        f"tools={metadata.tool_activity_count} session-tx={metadata.session_transcript_count}"
+    )
+
+
+def _timeline_detail_label(metadata: TranscriptSessionMetadata) -> str:
+    return (
+        f"{_time_span_label(metadata)} | file={_byte_count_label(metadata.file_size)} "
+        f"cursor={_byte_count_label(metadata.cursor_offset)} parent={_parent_label(metadata)}"
+    )
 
 
 def _quality_limit_label(row: QualityDashboardRow) -> str:
@@ -454,6 +484,7 @@ def _confidence_label(row: QualityDashboardRow) -> str:
 
 
 def _detail_text(row: QualityDashboardRow) -> str:
+    metadata = row.transcript_metadata
     lines = [
         f"Transcript {_transcript_label(row)}",
         f"path={_detail_path_label(row.transcript_path)}",
@@ -465,6 +496,8 @@ def _detail_text(row: QualityDashboardRow) -> str:
             f"coverage={_coverage_label(row)} | confidence={_confidence_label(row)} | "
             f"updated={_compact_datetime(row.updated_at)}"
         ),
+        f"structure: {_structure_detail_label(metadata)}",
+        f"timeline: {_timeline_detail_label(metadata)}",
     ]
     if row.row_type == "quality_report":
         lines.extend(_quality_detail_lines(row))
@@ -477,50 +510,25 @@ def _quality_detail_lines(row: QualityDashboardRow) -> list[str]:
     detail = row.detail
     claim_count = len(_as_list(detail.get("claim_assessments")))
     missing_count = len(_as_list(detail.get("missing_high_signal_items")))
-    deterministic_findings = _as_list(detail.get("deterministic_findings"))
-    semantic_findings = _as_list(detail.get("semantic_findings"))
-    lines = [
+    return [
         (
             f"checks: det={_display_compact(row.deterministic_status)} | "
             f"semantic={_display_compact(row.semantic_status)} | "
             f"derivation={_display_compact(detail.get('derivation_status'))}"
         ),
         (
-            f"evidence: claims={claim_count} | gaps={missing_count} | "
-            f"findings {_finding_counts_label(row.finding_counts)} | ref limits={row.reference_defect_count}"
+            f"memory: claims={claim_count} gaps={missing_count} f={_finding_counts_label(row.finding_counts)} "
+            f"refs={row.reference_defect_count} note={_display_detail(row.reason, limit=18)}"
         ),
-        f"quality note={_display_detail(row.reason)}",
     ]
-    lines.extend(_compact_finding_lines("deterministic", deterministic_findings))
-    lines.extend(_compact_finding_lines("semantic", semantic_findings))
-    return lines
 
 
 def _coverage_gap_detail_lines(row: QualityDashboardRow) -> list[str]:
     detail = row.detail
     return [
         "quality report: none for this transcript",
-        "gap: no quality-assessable memory snapshot was produced.",
         f"gap detail={_display_detail(detail.get('last_error'))}",
     ]
-
-
-def _compact_finding_lines(label: str, findings: list[Any]) -> list[str]:
-    if not findings:
-        return []
-    shown = [_compact_finding_label(finding) for finding in findings[:MAX_DETAIL_FINDINGS]]
-    if len(findings) > MAX_DETAIL_FINDINGS:
-        shown.append(f"{len(findings) - MAX_DETAIL_FINDINGS} more")
-    return [f"{label} findings: " + " | ".join(shown)]
-
-
-def _compact_finding_label(finding: Any) -> str:
-    if not isinstance(finding, dict):
-        return _truncate(str(finding), 64)
-    severity = _display_compact(finding.get("severity"))
-    code = _display_compact(finding.get("code"))
-    message = _display_detail(finding.get("message") or finding.get("description"), limit=52)
-    return _truncate(f"{severity} {code}: {message}", 72)
 
 
 def _format_scalar(value: Any) -> str:
@@ -546,6 +554,32 @@ def _transcript_label(row: QualityDashboardRow) -> str:
 
 def _finding_counts_label(counts: dict[str, int]) -> str:
     return f"c:{counts.get('critical', 0)} w:{counts.get('warning', 0)} i:{counts.get('info', 0)}"
+
+
+def _time_span_label(metadata: TranscriptSessionMetadata) -> str:
+    if metadata.first_timestamp is None and metadata.last_timestamp is None:
+        return "n/a"
+    if metadata.first_timestamp is None or metadata.last_timestamp is None:
+        return _compact_datetime(metadata.first_timestamp or metadata.last_timestamp)
+    if metadata.first_timestamp.date() == metadata.last_timestamp.date():
+        return f"{metadata.first_timestamp:%Y-%m-%d %H:%M}→{metadata.last_timestamp:%H:%M}"
+    return f"{_compact_datetime(metadata.first_timestamp)}→{_compact_datetime(metadata.last_timestamp)}"
+
+
+def _byte_count_label(value: int | None) -> str:
+    if value is None:
+        return "n/a"
+    if value < 1024:
+        return f"{value}B"
+    if value < 1024 * 1024:
+        return f"{value / 1024:.0f}K"
+    return f"{value / (1024 * 1024):.1f}M"
+
+
+def _parent_label(metadata: TranscriptSessionMetadata) -> str:
+    if not metadata.parent_transcript_path:
+        return "none"
+    return _truncate(metadata.parent_transcript_path.rsplit("/", maxsplit=1)[-1], 18)
 
 
 def _display_compact(value: Any) -> str:
@@ -601,6 +635,140 @@ def run_quality_tui(db_url: str) -> None:
 
 def _load_transcript_count(db_session: Session) -> int:
     return int(db_session.scalar(select(func.count()).select_from(Transcript)) or 0)
+
+
+def _with_transcript_metadata(
+    db_session: Session,
+    rows: list[QualityDashboardRow],
+) -> list[QualityDashboardRow]:
+    metadata_by_transcript_id = _load_metadata_by_transcript_id(db_session, rows)
+    return [
+        replace(
+            row,
+            transcript_metadata=metadata_by_transcript_id.get(row.transcript_id, TranscriptSessionMetadata()),
+        )
+        for row in rows
+    ]
+
+
+def _load_metadata_by_transcript_id(
+    db_session: Session,
+    rows: list[QualityDashboardRow],
+) -> dict[int, TranscriptSessionMetadata]:
+    transcript_ids = {row.transcript_id for row in rows if row.transcript_id is not None}
+    if not transcript_ids:
+        return {}
+
+    transcripts = _load_transcripts_by_id(db_session, transcript_ids)
+    entry_stats = _load_entry_stats_by_transcript_id(db_session, transcript_ids)
+    activity_stats = _load_activity_stats_by_transcript_id(db_session, transcript_ids)
+    episode_counts = _load_episode_counts_by_transcript_id(db_session, transcript_ids)
+    session_counts = _load_session_transcript_counts(db_session, transcripts.values())
+
+    return {
+        transcript_id: _transcript_metadata(
+            transcript=transcript,
+            entry_stats=entry_stats.get(transcript_id, (0, None, None)),
+            activity_stats=activity_stats.get(transcript_id, (0, 0)),
+            episode_count=episode_counts.get(transcript_id, 0),
+            session_transcript_count=session_counts.get(transcript.session_id, 0),
+        )
+        for transcript_id, transcript in transcripts.items()
+    }
+
+
+def _load_transcripts_by_id(db_session: Session, transcript_ids: set[int]) -> dict[int, Transcript]:
+    return {
+        transcript.id: transcript
+        for transcript in db_session.scalars(select(Transcript).where(Transcript.id.in_(transcript_ids))).all()
+    }
+
+
+def _load_entry_stats_by_transcript_id(
+    db_session: Session,
+    transcript_ids: set[int],
+) -> dict[int, tuple[int, datetime | None, datetime | None]]:
+    rows = db_session.execute(
+        select(
+            TranscriptEntry.transcript_id,
+            func.count(TranscriptEntry.id),
+            func.min(TranscriptEntry.timestamp),
+            func.max(TranscriptEntry.timestamp),
+        )
+        .where(TranscriptEntry.transcript_id.in_(transcript_ids))
+        .group_by(TranscriptEntry.transcript_id),
+    ).all()
+    return {
+        transcript_id: (int(entry_count), first_timestamp, last_timestamp)
+        for transcript_id, entry_count, first_timestamp, last_timestamp in rows
+    }
+
+
+def _load_activity_stats_by_transcript_id(
+    db_session: Session,
+    transcript_ids: set[int],
+) -> dict[int, tuple[int, int]]:
+    rows = db_session.execute(
+        select(
+            ActivityUnit.transcript_id,
+            func.count(ActivityUnit.id),
+            func.sum(case((ActivityUnit.kind == ACTIVITY_KIND_TOOL_PAIR, 1), else_=0)),
+        )
+        .where(ActivityUnit.transcript_id.in_(transcript_ids))
+        .group_by(ActivityUnit.transcript_id),
+    ).all()
+    stats: dict[int, tuple[int, int]] = {}
+    for transcript_id, activity_count, tool_count in rows:
+        stats[transcript_id] = (int(activity_count), int(tool_count or 0))
+    return stats
+
+
+def _load_episode_counts_by_transcript_id(db_session: Session, transcript_ids: set[int]) -> dict[int, int]:
+    rows = db_session.execute(
+        select(Episode.transcript_id, func.count(Episode.id))
+        .where(Episode.transcript_id.in_(transcript_ids))
+        .group_by(Episode.transcript_id),
+    ).all()
+    return {transcript_id: int(episode_count) for transcript_id, episode_count in rows}
+
+
+def _load_session_transcript_counts(
+    db_session: Session,
+    transcripts: Iterable[Transcript],
+) -> dict[int, int]:
+    session_database_ids = {transcript.session_id for transcript in transcripts}
+    if not session_database_ids:
+        return {}
+    rows = db_session.execute(
+        select(Transcript.session_id, func.count(Transcript.id))
+        .where(Transcript.session_id.in_(session_database_ids))
+        .group_by(Transcript.session_id),
+    ).all()
+    return {session_id: int(transcript_count) for session_id, transcript_count in rows}
+
+
+def _transcript_metadata(
+    *,
+    transcript: Transcript,
+    entry_stats: tuple[int, datetime | None, datetime | None],
+    activity_stats: tuple[int, int],
+    episode_count: int,
+    session_transcript_count: int,
+) -> TranscriptSessionMetadata:
+    entry_count, first_timestamp, last_timestamp = entry_stats
+    activity_count, tool_activity_count = activity_stats
+    return TranscriptSessionMetadata(
+        entry_count=entry_count,
+        activity_count=activity_count,
+        episode_count=episode_count,
+        tool_activity_count=tool_activity_count,
+        session_transcript_count=session_transcript_count,
+        first_timestamp=first_timestamp,
+        last_timestamp=last_timestamp,
+        file_size=transcript.file_size,
+        cursor_offset=transcript.cursor_offset,
+        parent_transcript_path=transcript.parent_transcript_path,
+    )
 
 
 def _load_quality_report_rows(db_session: Session) -> list[QualityDashboardRow]:

@@ -1,7 +1,12 @@
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
 from pi_memory.db import (
+    ACTIVITY_KIND_TOOL_PAIR,
+    ACTIVITY_KIND_USER_TEXT,
+    ANALYSIS_STATUS_COMPLETED,
+    EPISODE_STATUS_OPEN,
     JOB_KIND_INTERPRET_SESSION,
     JOB_STATUS_COMPLETED,
     JOB_STATUS_FAILED,
@@ -13,12 +18,16 @@ from pi_memory.db import (
     SESSION_INTERPRETATION_SEMANTIC_STATUS_DEGRADED,
     SESSION_INTERPRETATION_SEMANTIC_STATUS_PASSED,
     SESSION_INTERPRETATION_STATUS_COMPLETED,
+    ActivityUnit,
+    AnalysisRun,
     Database,
+    Episode,
     Job,
     MemorySession,
     SessionInterpretationQualityReport,
     SessionInterpretationSnapshot,
     Transcript,
+    TranscriptEntry,
 )
 from pi_memory.tui.quality import QualityTuiApp, load_quality_dashboard_data
 
@@ -240,10 +249,75 @@ async def test_quality_tui_opens_with_dashboard_overview_and_evidence_table(tmp_
             db_session.add_all([reported_session, failed_session])
             db_session.flush()
 
-            reported_transcript = Transcript(session_id=reported_session.id, path="/tmp/reported.jsonl")
-            failed_transcript = Transcript(session_id=failed_session.id, path="/tmp/failed.jsonl")
+            reported_transcript = Transcript(
+                session_id=reported_session.id,
+                path="/tmp/reported.jsonl",
+                file_size=2048,
+                cursor_offset=2048,
+            )
+            failed_transcript = Transcript(session_id=failed_session.id, path="/tmp/failed.jsonl", file_size=1024)
             db_session.add_all([reported_transcript, failed_transcript])
             db_session.flush()
+
+            reported_entry = TranscriptEntry(
+                transcript_id=reported_transcript.id,
+                entry_type="message",
+                message_role="user",
+                timestamp=datetime(2026, 5, 1, 12, 0, tzinfo=UTC),
+                raw_line='{"type":"message"}',
+                byte_start=0,
+                byte_end=20,
+            )
+            failed_entry = TranscriptEntry(
+                transcript_id=failed_transcript.id,
+                entry_type="message",
+                message_role="assistant",
+                timestamp=datetime(2026, 5, 1, 12, 5, tzinfo=UTC),
+                raw_line='{"type":"message"}',
+                byte_start=0,
+                byte_end=20,
+            )
+            db_session.add_all([reported_entry, failed_entry])
+            db_session.flush()
+
+            analysis_run = AnalysisRun(
+                session_id=reported_session.id,
+                transcript_id=reported_transcript.id,
+                status=ANALYSIS_STATUS_COMPLETED,
+            )
+            db_session.add(analysis_run)
+            db_session.flush()
+            db_session.add_all(
+                [
+                    ActivityUnit(
+                        analysis_run_id=analysis_run.id,
+                        session_id=reported_session.id,
+                        transcript_id=reported_transcript.id,
+                        ordinal=0,
+                        kind=ACTIVITY_KIND_USER_TEXT,
+                        byte_start=0,
+                        byte_end=10,
+                    ),
+                    ActivityUnit(
+                        analysis_run_id=analysis_run.id,
+                        session_id=reported_session.id,
+                        transcript_id=reported_transcript.id,
+                        ordinal=1,
+                        kind=ACTIVITY_KIND_TOOL_PAIR,
+                        byte_start=10,
+                        byte_end=20,
+                    ),
+                    Episode(
+                        analysis_run_id=analysis_run.id,
+                        session_id=reported_session.id,
+                        transcript_id=reported_transcript.id,
+                        ordinal=0,
+                        status=EPISODE_STATUS_OPEN,
+                        byte_start=0,
+                        byte_end=20,
+                    ),
+                ],
+            )
 
             snapshot_job = Job(
                 kind=JOB_KIND_INTERPRET_SESSION,
@@ -298,25 +372,30 @@ async def test_quality_tui_opens_with_dashboard_overview_and_evidence_table(tmp_
         assert "Evidence filters" in help_text
         assert "needs attention" not in f"{overview} {distribution} {help_text}".lower()
         assert table.row_count == 2
-        assert [str(cell) for cell in table.get_row_at(0)[:4]] == [
+        assert [str(cell) for cell in table.get_row_at(0)[:5]] == [
             "1 reported.jsonl",
             "reported-session",
             "healthy",
             "promotable",
+            "ent 1 | act 2 | ep 1",
         ]
         detail_text = str(app.query_one("#quality-detail").render()).lower()
         assert "transcript 1 reported.jsonl" in detail_text
+        assert "structure: ent=1 act=2 ep=1 tools=1 session-tx=1" in detail_text
+        assert "timeline: 2026-05-01 12:00" in detail_text
+        assert "file=2k" in detail_text
         assert "job" not in detail_text
 
         await pilot.press("f")
         await pilot.pause()
 
         assert table.row_count == 1
-        assert [str(cell) for cell in table.get_row_at(0)[:4]] == [
+        assert [str(cell) for cell in table.get_row_at(0)[:5]] == [
             "2 failed.jsonl",
             "failed-session",
             "no quality report",
             "no report",
+            "ent 1 | act 0 | ep 0",
         ]
         gap_detail_text = str(app.query_one("#quality-detail").render()).lower()
         assert "quality report: none for this transcript" in gap_detail_text
