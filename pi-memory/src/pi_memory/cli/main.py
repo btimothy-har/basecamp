@@ -14,7 +14,7 @@ from typing import Any
 import click
 import uvicorn
 
-from pi_memory.constants import DEFAULT_HOST, DEFAULT_PORT, SERVICE_NAME
+from pi_memory.constants import DEFAULT_HOST, DEFAULT_PORT, MEMORY_DB_URL, SERVICE_NAME
 from pi_memory.db import Database
 from pi_memory.ingest import IngestResult, ObserveInput, TranscriptFileMissingError, TranscriptIngestService
 from pi_memory.interpretation import SessionInterpretationInspectionService
@@ -518,8 +518,9 @@ def quality_sample(
 @main.command("quality-tui")
 @click.option(
     "--db-url",
-    callback=lambda _ctx, _param, value: _require_non_empty(value),
-    required=True,
+    callback=lambda _ctx, _param, value: MEMORY_DB_URL if value is None else _require_non_empty(value),
+    default=None,
+    show_default=MEMORY_DB_URL,
     help="Database URL containing quality reports.",
 )
 def quality_tui(db_url: str) -> None:

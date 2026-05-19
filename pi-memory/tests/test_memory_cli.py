@@ -1011,11 +1011,12 @@ def test_quality_sample_reports_json_count(memory_database: Database) -> None:
     assert len(payload["results"]) == 2
 
 
-def test_quality_tui_help_lists_required_options() -> None:
+def test_quality_tui_help_lists_defaulted_db_url_option() -> None:
     result = CliRunner().invoke(cli_module.main, ["quality-tui", "--help"])
 
     assert result.exit_code == 0
     assert "--db-url" in result.output
+    assert cli_module.MEMORY_DB_URL in result.output
 
 
 def test_quality_tui_requires_non_empty_db_url() -> None:
@@ -1023,6 +1024,21 @@ def test_quality_tui_requires_non_empty_db_url() -> None:
 
     assert result.exit_code == 2
     assert "Invalid value for '--db-url': must not be empty" in result.output
+
+
+def test_quality_tui_defaults_to_configured_memory_database(monkeypatch) -> None:
+    calls: dict[str, str] = {}
+
+    def fake_import_module(name: str) -> SimpleNamespace:
+        calls["module"] = name
+        return SimpleNamespace(run_quality_tui=lambda value: calls.setdefault("db_url", value))
+
+    monkeypatch.setattr(cli_module.importlib, "import_module", fake_import_module)
+
+    result = CliRunner().invoke(cli_module.main, ["quality-tui"])
+
+    assert result.exit_code == 0
+    assert calls == {"module": "pi_memory.tui", "db_url": cli_module.MEMORY_DB_URL}
 
 
 def test_quality_tui_forwards_db_url_to_lazy_imported_runner(monkeypatch) -> None:
