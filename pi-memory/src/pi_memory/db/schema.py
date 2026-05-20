@@ -17,6 +17,8 @@ JOB_KIND_PROCESS_TRANSCRIPT = "process_transcript"
 JOB_KIND_SUMMARIZE_TOOL_ACTIVITIES = "summarize_tool_activities"
 JOB_KIND_INTERPRET_SESSION = "interpret_session"
 JOB_KIND_ASSESS_INTERPRETATION_QUALITY = "assess_interpretation_quality"
+JOB_KIND_PROJECT_MEMORY_RECORDS = "project_memory_records"
+JOB_KIND_PROMOTE_DURABLE_MEMORY = "promote_durable_memory"
 
 JOB_STATUS_QUEUED = "queued"
 JOB_STATUS_CLAIMED = "claimed"

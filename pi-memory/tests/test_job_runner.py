@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+from dataclasses import replace
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -15,11 +16,16 @@ from pi_memory.db import (
     ACTIVITY_TEXT_STATUS_FAILED,
     ACTIVITY_TEXT_STATUS_PENDING,
     ANALYSIS_STATUS_COMPLETED,
+    DURABLE_MEMORY_ARCHIVED_REASON_SUPERSEDED,
+    DURABLE_MEMORY_STATUS_ARCHIVED,
+    DURABLE_MEMORY_STATUS_PROMOTED,
     EPISODE_INTERPRETATION_STATUS_COMPLETED,
     EPISODE_INTERPRETATION_STATUS_FAILED,
     JOB_KIND_ASSESS_INTERPRETATION_QUALITY,
     JOB_KIND_INTERPRET_SESSION,
     JOB_KIND_PROCESS_TRANSCRIPT,
+    JOB_KIND_PROJECT_MEMORY_RECORDS,
+    JOB_KIND_PROMOTE_DURABLE_MEMORY,
     JOB_KIND_SUMMARIZE_TOOL_ACTIVITIES,
     JOB_STATUS_CLAIMED,
     JOB_STATUS_COMPLETED,
@@ -47,10 +53,14 @@ from pi_memory.db import (
     ActivityUnit,
     AnalysisRun,
     Database,
+    DurableMemoryAuditEvent,
+    DurableMemoryItem,
+    DurableMemorySource,
     Episode,
     EpisodeInterpretationSnapshot,
     EpisodeManifest,
     Job,
+    MemoryProjectionRecord,
     MemorySession,
     SessionInterpretationQualityReport,
     SessionInterpretationSnapshot,
@@ -58,6 +68,7 @@ from pi_memory.db import (
     Transcript,
     TranscriptEntry,
 )
+from pi_memory.durable import DeterministicCandidateEvaluator
 from pi_memory.interpretation import (
     INTERPRETATION_PROMPT_VERSION,
     INTERPRETATION_SCHEMA_VERSION,
@@ -81,6 +92,7 @@ from pi_memory.jobs import (
     TranscriptNotFoundError,
     UnsupportedJobKindError,
 )
+from pi_memory.projection.deterministic import DeterministicMemoryProjection
 from pi_memory.quality import (
     DeterministicQualityAssessor,
     QualityPacket,
@@ -279,6 +291,36 @@ class FailingQualityAssessor:
 
     async def assess_async(self, packet: QualityPacket) -> QualityReportDraft:
         return self.assess(packet)
+
+
+class RecordingCandidateEvaluator:
+    def __init__(self) -> None:
+        self.calls = []
+        self._evaluator = DeterministicCandidateEvaluator()
+
+    def evaluate(self, packet):
+        self.calls.append(packet)
+        return self._evaluator.evaluate(packet)
+
+    async def evaluate_async(self, packet):
+        return self.evaluate(packet)
+
+
+class LowConfidenceCandidateEvaluator(RecordingCandidateEvaluator):
+    def evaluate(self, packet):
+        result = super().evaluate(packet)
+        metrics = result.output.metrics.model_copy(
+            update={
+                "confidence": result.output.metrics.confidence.model_copy(
+                    update={
+                        "score": 0.1,
+                        "label": "fail",
+                        "reason": "Low confidence for quarantine test.",
+                    },
+                ),
+            },
+        )
+        return replace(result, output=result.output.model_copy(update={"metrics": metrics}))
 
 
 class PartiallyFailingToolSummarizer:
@@ -718,6 +760,60 @@ def run_summarize_tool_activities_job(
 def get_job(database: Database, job_id: int) -> Job:
     with database.session() as session:
         return session.get_one(Job, job_id)
+
+
+def create_quality_report_from_transcript(database: Database, store: JobStore) -> tuple[Job, Job]:
+    transcript_id = create_transcript(database)
+    analyze_transcript(database, transcript_id)
+    claimed_interpret = claim_interpret_session_job(store, transcript_id)
+    interpreted = JobRunner(database=database, interpreter=RecordingInterpreter()).run(
+        claimed_interpret.id,
+        claimed_interpret.run_id,
+        running_pid=123,
+        now=at(10),
+    )
+    quality_job_id = interpreted.result_json["assess_interpretation_quality_job_id"]
+    claimed_quality = claim_quality_job(store, quality_job_id)
+    quality = JobRunner(database=database, quality_assessor=AliasedQualityAssessor()).run(
+        claimed_quality.id,
+        claimed_quality.run_id,
+        running_pid=123,
+        now=at(10),
+    )
+    return interpreted, quality
+
+
+def create_manual_quality_report(
+    database: Database,
+    *,
+    claims: list[dict[str, object]],
+    citations: list[dict[str, object]],
+    claim_assessments: list[dict[str, object]] | None = None,
+    promotable: bool = True,
+) -> tuple[int, int]:
+    with database.session() as session:
+        memory_session = MemorySession(session_id="pi-session-1", repo_name="basecamp")
+        snapshot = SessionInterpretationSnapshot(
+            session=memory_session,
+            status=SESSION_INTERPRETATION_STATUS_COMPLETED,
+            interpretation_json={"claims": claims},
+            citations_json=citations,
+        )
+        session.add(snapshot)
+        session.flush()
+        report = SessionInterpretationQualityReport(
+            snapshot_id=snapshot.id,
+            quality_status=SESSION_INTERPRETATION_QUALITY_STATUS_HEALTHY,
+            quality_reason=None,
+            derivation_status="current",
+            deterministic_status="passed",
+            semantic_status=SESSION_INTERPRETATION_SEMANTIC_STATUS_PASSED,
+            promotable=promotable,
+            claim_assessments_json=claim_assessments or [],
+        )
+        session.add(report)
+        session.flush()
+        return report.id, snapshot.id
 
 
 UNSET = object()
@@ -1724,6 +1820,10 @@ def test_assess_quality_completed_snapshot_writes_semantic_report(
     assert quality.result_json["quality_reason"] is None
     assert quality.result_json["semantic_status"] == SESSION_INTERPRETATION_SEMANTIC_STATUS_PASSED
     assert quality.result_json["promotable"] is True
+    project_job_id = quality.result_json["project_memory_records_job_id"]
+    promote_job_id = quality.result_json["promote_durable_memory_job_id"]
+    assert isinstance(project_job_id, int)
+    assert isinstance(promote_job_id, int)
     assert len(quality_assessor.calls) == 1
     with database.session() as session:
         report = session.scalar(select(SessionInterpretationQualityReport))
@@ -1734,6 +1834,17 @@ def test_assess_quality_completed_snapshot_writes_semantic_report(
         assert report.quality_reason is None
         assert report.promotable is True
         assert report.model_metadata_json["model"] == "deterministic-quality-assessor-v1"
+        project_job = session.get_one(Job, project_job_id)
+        promote_job = session.get_one(Job, promote_job_id)
+        assert project_job.kind == JOB_KIND_PROJECT_MEMORY_RECORDS
+        assert project_job.payload_json["scope"] == "quality_report"
+        assert project_job.payload_json["quality_report_id"] == report.id
+        assert project_job.payload_json["quality_job_id"] == quality_job_id
+        assert project_job.max_attempts == 3
+        assert promote_job.kind == JOB_KIND_PROMOTE_DURABLE_MEMORY
+        assert promote_job.payload_json["quality_report_id"] == report.id
+        assert promote_job.payload_json["quality_job_id"] == quality_job_id
+        assert promote_job.max_attempts == 5
 
 
 def test_assess_quality_alias_output_persists_canonical_source_refs(
@@ -1868,6 +1979,407 @@ def test_assess_quality_deleted_snapshot_is_stale_noop(database: Database, store
     }
     with database.session() as session:
         assert session.scalar(select(func.count()).select_from(SessionInterpretationQualityReport)) == 0
+
+
+def test_project_memory_records_job_projects_quality_report_claims(
+    database: Database,
+    store: JobStore,
+) -> None:
+    _, quality = create_quality_report_from_transcript(database, store)
+    projection = DeterministicMemoryProjection()
+    project_job_id = quality.result_json["project_memory_records_job_id"]
+    claimed = store.claim_next("worker-project")
+    assert claimed is not None
+    assert claimed.id == project_job_id
+
+    completed = JobRunner(database=database, memory_projection=projection).run(
+        claimed.id,
+        claimed.run_id,
+        running_pid=123,
+        now=at(10),
+    )
+
+    assert completed.status == JOB_STATUS_COMPLETED
+    assert completed.result_json["indexed_count"] == 1
+    assert completed.result_json["failed_count"] == 0
+    with database.session() as session:
+        record = session.scalar(select(MemoryProjectionRecord))
+        assert record is not None
+        assert record.record_type == "session_claim"
+        assert record.status == "indexed"
+        assert record.quality_report_id == quality.result_json["quality_report_id"]
+
+
+def test_promote_durable_memory_job_creates_sources_promotes_and_audits(
+    database: Database,
+    store: JobStore,
+) -> None:
+    _, quality = create_quality_report_from_transcript(database, store)
+    projection = DeterministicMemoryProjection()
+    evaluator = RecordingCandidateEvaluator()
+    promote_job_id = quality.result_json["promote_durable_memory_job_id"]
+    claimed_project = store.claim_next("worker-project")
+    assert claimed_project is not None
+    claimed_promote = store.claim_next("worker-promote")
+    assert claimed_promote is not None
+    assert claimed_promote.id == promote_job_id
+
+    completed = JobRunner(
+        database=database,
+        memory_projection=projection,
+        candidate_evaluator=evaluator,
+    ).run(claimed_promote.id, claimed_promote.run_id, running_pid=123, now=at(10))
+
+    assert completed.status == JOB_STATUS_COMPLETED
+    assert completed.result_json["final_status_counts"]["promoted"] == 1
+    assert len(evaluator.calls) == 1
+    with database.session() as session:
+        memory = session.scalar(select(DurableMemoryItem))
+        assert memory is not None
+        assert memory.status == "promoted"
+        assert memory.quality_report_id == quality.result_json["quality_report_id"]
+        assert memory.claim_index == 0
+        assert session.scalar(select(func.count()).select_from(DurableMemorySource)) == 1
+        event_types = list(session.scalars(select(DurableMemoryAuditEvent.event_type)))
+        assert "candidate_created" in event_types
+        assert "eligibility_evaluated" in event_types
+        assert "relation_assessed" in event_types
+        assert "promoted" in event_types
+        projection_record = session.scalar(
+            select(MemoryProjectionRecord).where(MemoryProjectionRecord.durable_memory_id == memory.id),
+        )
+        assert projection_record is not None
+        assert projection_record.status == "indexed"
+        assert projection_record.recall_visible is True
+        assert projection_record.relation_visible is True
+
+
+def test_promote_durable_memory_job_quarantines_low_confidence_candidate(
+    database: Database,
+    store: JobStore,
+) -> None:
+    _, quality = create_quality_report_from_transcript(database, store)
+    projection = DeterministicMemoryProjection()
+    evaluator = LowConfidenceCandidateEvaluator()
+    store.claim_next("worker-project")
+    claimed_promote = store.claim_next("worker-promote")
+    assert claimed_promote is not None
+
+    completed = JobRunner(
+        database=database,
+        memory_projection=projection,
+        candidate_evaluator=evaluator,
+    ).run(claimed_promote.id, claimed_promote.run_id, running_pid=123, now=at(10))
+
+    assert completed.result_json["final_status_counts"]["quarantined"] == 1
+    assert len(evaluator.calls) == 1
+    with database.session() as session:
+        memory = session.scalar(select(DurableMemoryItem))
+        assert memory is not None
+        assert memory.status == "quarantined"
+        assert memory.status_reason == "metric_low_confidence"
+        record = session.scalar(
+            select(MemoryProjectionRecord).where(MemoryProjectionRecord.durable_memory_id == memory.id),
+        )
+        assert record is not None
+        assert record.status == "deleted"
+        assert record.recall_visible is False
+        assert record.relation_visible is False
+
+
+def test_promote_durable_memory_job_rejects_ineligible_without_candidate_evaluator(
+    database: Database,
+    store: JobStore,
+) -> None:
+    report_id, _snapshot_id = create_manual_quality_report(
+        database,
+        claims=[
+            {
+                "kind": "decision",
+                "statement": "Use pytest for pi-memory tests.",
+                "confidence": 0.9,
+                "source_ref_ids": ["activity:1"],
+            },
+        ],
+        citations=[
+            {
+                "usage": "claim",
+                "claim_index": 0,
+                "source_ref_id": "activity:1",
+                "source_origin": SOURCE_ORIGIN_LOCAL,
+            },
+        ],
+        promotable=False,
+    )
+    store.enqueue(
+        JOB_KIND_PROMOTE_DURABLE_MEMORY,
+        payload_json={"quality_report_id": report_id, "session_id": "pi-session-1"},
+    )
+    claimed = store.claim_next("worker-promote")
+    assert claimed is not None
+    evaluator = RecordingCandidateEvaluator()
+
+    completed = JobRunner(
+        database=database,
+        memory_projection=DeterministicMemoryProjection(),
+        candidate_evaluator=evaluator,
+    ).run(claimed.id, claimed.run_id, running_pid=123, now=at(10))
+
+    assert completed.result_json["final_status_counts"]["rejected"] == 1
+    assert evaluator.calls == []
+    with database.session() as session:
+        memory = session.scalar(select(DurableMemoryItem))
+        assert memory is not None
+        assert memory.status == "rejected"
+        assert memory.status_reason == "eligibility_blocked_report_not_promotable"
+
+
+def test_promote_durable_memory_missing_report_completes_as_safe_noop(
+    database: Database,
+    store: JobStore,
+) -> None:
+    store.enqueue(
+        JOB_KIND_PROMOTE_DURABLE_MEMORY,
+        payload_json={"quality_report_id": 9999, "session_id": "pi-session-1"},
+    )
+    claimed = store.claim_next("worker-promote")
+    assert claimed is not None
+
+    completed = JobRunner(database=database, candidate_evaluator=RecordingCandidateEvaluator()).run(
+        claimed.id,
+        claimed.run_id,
+        running_pid=123,
+        now=at(10),
+    )
+
+    assert completed.status == JOB_STATUS_COMPLETED
+    assert completed.result_json["reason"] == "report_not_found"
+    assert completed.result_json["failed_packet_count"] == 1
+    with database.session() as session:
+        assert session.scalar(select(func.count()).select_from(DurableMemoryItem)) == 0
+
+
+def test_promote_durable_memory_continues_after_packet_error(
+    database: Database,
+    store: JobStore,
+) -> None:
+    report_id, _snapshot_id = create_manual_quality_report(
+        database,
+        claims=[
+            {
+                "kind": "decision",
+                "statement": "This claim is missing source refs.",
+                "confidence": 0.9,
+                "source_ref_ids": [],
+            },
+            {
+                "kind": "decision",
+                "statement": "Use pytest for durable promotion tests.",
+                "confidence": 0.9,
+                "source_ref_ids": ["activity:2"],
+            },
+        ],
+        citations=[
+            {
+                "usage": "claim",
+                "claim_index": 1,
+                "source_ref_id": "activity:2",
+                "source_origin": SOURCE_ORIGIN_LOCAL,
+            },
+        ],
+        claim_assessments=[
+            {"claim_index": 1, "status": "supported", "source_ref_ids": ["activity:2"]},
+        ],
+    )
+    store.enqueue(
+        JOB_KIND_PROMOTE_DURABLE_MEMORY,
+        payload_json={"quality_report_id": report_id, "session_id": "pi-session-1"},
+    )
+    claimed = store.claim_next("worker-promote")
+    assert claimed is not None
+    evaluator = RecordingCandidateEvaluator()
+
+    completed = JobRunner(
+        database=database,
+        memory_projection=DeterministicMemoryProjection(),
+        candidate_evaluator=evaluator,
+    ).run(claimed.id, claimed.run_id, running_pid=123, now=at(10))
+
+    assert completed.result_json["claim_count"] == 2
+    assert completed.result_json["processed_count"] == 1
+    assert completed.result_json["failed_packet_count"] == 1
+    assert completed.result_json["final_status_counts"]["promoted"] == 1
+    assert len(evaluator.calls) == 1
+    with database.session() as session:
+        assert session.scalar(select(func.count()).select_from(DurableMemoryItem)) == 1
+
+
+def test_promote_durable_memory_supersedes_archives_related_memory(
+    database: Database,
+    store: JobStore,
+) -> None:
+    report_id, snapshot_id = create_manual_quality_report(
+        database,
+        claims=[
+            {
+                "kind": "decision",
+                "statement": "Use SQLite instead of legacy observer storage.",
+                "confidence": 0.9,
+                "source_ref_ids": ["activity:1"],
+            },
+        ],
+        citations=[
+            {
+                "usage": "claim",
+                "claim_index": 0,
+                "source_ref_id": "activity:1",
+                "source_origin": SOURCE_ORIGIN_LOCAL,
+            },
+        ],
+        claim_assessments=[
+            {"claim_index": 0, "status": "supported", "source_ref_ids": ["activity:1"]},
+        ],
+    )
+    with database.session() as session:
+        report = session.get_one(SessionInterpretationQualityReport, report_id)
+        legacy = DurableMemoryItem(
+            session_id=report.snapshot.session_id,
+            transcript_id=None,
+            snapshot_id=snapshot_id,
+            quality_report_id=report_id,
+            status=DURABLE_MEMORY_STATUS_PROMOTED,
+            claim_index=99,
+            claim_kind="decision",
+            statement="Use legacy observer storage.",
+            confidence=0.9,
+            content_hash="legacy-storage-memory",
+        )
+        session.add(legacy)
+        session.flush()
+        legacy_id = legacy.id
+    store.enqueue(
+        JOB_KIND_PROMOTE_DURABLE_MEMORY,
+        payload_json={"quality_report_id": report_id, "session_id": "pi-session-1"},
+    )
+    claimed = store.claim_next("worker-promote")
+    assert claimed is not None
+
+    completed = JobRunner(
+        database=database,
+        memory_projection=DeterministicMemoryProjection(),
+        candidate_evaluator=RecordingCandidateEvaluator(),
+    ).run(claimed.id, claimed.run_id, running_pid=123, now=at(10))
+
+    assert completed.result_json["final_status_counts"]["promoted"] == 1
+    with database.session() as session:
+        legacy = session.get_one(DurableMemoryItem, legacy_id)
+        promoted = session.scalar(
+            select(DurableMemoryItem).where(
+                DurableMemoryItem.claim_index == 0,
+                DurableMemoryItem.quality_report_id == report_id,
+            ),
+        )
+        assert promoted is not None
+        assert promoted.status == DURABLE_MEMORY_STATUS_PROMOTED
+        assert legacy.status == DURABLE_MEMORY_STATUS_ARCHIVED
+        assert legacy.archived_reason == DURABLE_MEMORY_ARCHIVED_REASON_SUPERSEDED
+        assert legacy.superseded_by_id == promoted.id
+        legacy_record = session.scalar(
+            select(MemoryProjectionRecord).where(MemoryProjectionRecord.durable_memory_id == legacy_id),
+        )
+        assert legacy_record is not None
+        assert legacy_record.status == "deleted"
+        assert legacy_record.recall_visible is False
+        assert legacy_record.relation_visible is False
+
+
+def test_promote_durable_memory_retry_skips_terminal_same_content(
+    database: Database,
+    store: JobStore,
+) -> None:
+    _, quality = create_quality_report_from_transcript(database, store)
+    projection = DeterministicMemoryProjection()
+    evaluator = RecordingCandidateEvaluator()
+    store.claim_next("worker-project")
+    claimed_promote = store.claim_next("worker-promote")
+    assert claimed_promote is not None
+    runner = JobRunner(database=database, memory_projection=projection, candidate_evaluator=evaluator)
+    runner.run(claimed_promote.id, claimed_promote.run_id, running_pid=123, now=at(10))
+    with database.session() as session:
+        promoted_events = session.scalar(
+            select(func.count())
+            .select_from(DurableMemoryAuditEvent)
+            .where(DurableMemoryAuditEvent.event_type == "promoted"),
+        )
+    store.enqueue(
+        JOB_KIND_PROMOTE_DURABLE_MEMORY,
+        payload_json={"quality_report_id": quality.result_json["quality_report_id"], "session_id": "pi-session-1"},
+    )
+    claimed_retry = store.claim_next("worker-retry")
+    assert claimed_retry is not None
+
+    retried = runner.run(claimed_retry.id, claimed_retry.run_id, running_pid=123, now=at(10))
+
+    assert retried.result_json["skipped_packet_count"] == 1
+    assert len(evaluator.calls) == 1
+    with database.session() as session:
+        assert session.scalar(select(func.count()).select_from(DurableMemoryItem)) == 1
+        assert (
+            session.scalar(
+                select(func.count())
+                .select_from(DurableMemoryAuditEvent)
+                .where(DurableMemoryAuditEvent.event_type == "promoted"),
+            )
+            == promoted_events
+        )
+
+
+def test_rebuild_memory_projection_job_upserts_quality_claims_and_durable_memories(
+    database: Database,
+    store: JobStore,
+) -> None:
+    _, quality = create_quality_report_from_transcript(database, store)
+    projection = DeterministicMemoryProjection()
+    store.claim_next("worker-project")
+    claimed_promote = store.claim_next("worker-promote")
+    assert claimed_promote is not None
+    JobRunner(
+        database=database,
+        memory_projection=projection,
+        candidate_evaluator=RecordingCandidateEvaluator(),
+    ).run(claimed_promote.id, claimed_promote.run_id, running_pid=123, now=at(10))
+    rebuild_job = store.enqueue(JOB_KIND_PROJECT_MEMORY_RECORDS, payload_json={"scope": "all"})
+    claimed_rebuild = store.claim_next("worker-rebuild")
+    assert claimed_rebuild is not None
+    assert claimed_rebuild.id == rebuild_job.id
+
+    completed = JobRunner(database=database, memory_projection=projection).run(
+        claimed_rebuild.id,
+        claimed_rebuild.run_id,
+        running_pid=123,
+        now=at(10),
+    )
+
+    assert completed.result_json["quality_report_count"] == 1
+    assert completed.result_json["durable_memory_count"] == 1
+    with database.session() as session:
+        assert session.scalar(select(func.count()).select_from(MemoryProjectionRecord)) == 2
+        assert (
+            session.scalar(
+                select(func.count())
+                .select_from(MemoryProjectionRecord)
+                .where(MemoryProjectionRecord.record_type == "session_claim"),
+            )
+            == 1
+        )
+        assert (
+            session.scalar(
+                select(func.count())
+                .select_from(MemoryProjectionRecord)
+                .where(MemoryProjectionRecord.record_type == "durable_memory"),
+            )
+            == 1
+        )
 
 
 def test_assess_quality_final_failure_writes_assessment_failed_report(

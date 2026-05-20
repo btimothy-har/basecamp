@@ -24,6 +24,7 @@ from pi_memory.db import (
     DURABLE_MEMORY_STATUS_PROMOTED,
     MEMORY_LAYER_LONG_TERM,
     MEMORY_PROJECTION_RECORD_TYPE_DURABLE_MEMORY,
+    MEMORY_PROJECTION_STATUS_DELETED,
     MEMORY_PROJECTION_STATUS_FAILED,
     MEMORY_PROJECTION_STATUS_INDEXED,
     MEMORY_PROJECTION_STATUS_PENDING,
@@ -128,7 +129,7 @@ def project_durable_memory_record(
     session.flush()
 
     indexed_at = datetime.now(UTC)
-    record.status = MEMORY_PROJECTION_STATUS_INDEXED
+    record.status = _projected_record_status(memory)
     record.embedding_model = projection.embedding_model
     record.last_error = None
     record.indexed_at = indexed_at
@@ -160,6 +161,7 @@ def assess_durable_memory_relations(
     if memory is None:
         raise DurableMemoryNotFoundError(memory_id)
 
+    # Relation classification reads Chroma immediately, so first sync the bounded comparison set from SQLite.
     _project_candidate_and_promoted_memories(session, memory, projection)
     candidate_text = _memory_text(memory)
     hits = projection.query(
@@ -260,6 +262,12 @@ def _upsert_projection_record(
     for field_name, value in fields.items():
         setattr(record, field_name, value)
     return record
+
+
+def _projected_record_status(memory: DurableMemoryItem) -> str:
+    if memory.status in {DURABLE_MEMORY_STATUS_CANDIDATE, DURABLE_MEMORY_STATUS_PROMOTED}:
+        return MEMORY_PROJECTION_STATUS_INDEXED
+    return MEMORY_PROJECTION_STATUS_DELETED
 
 
 def _metadata_json(memory: DurableMemoryItem) -> dict[str, Any]:
