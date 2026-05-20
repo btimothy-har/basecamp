@@ -43,6 +43,11 @@ from pi_memory.durable.packets import (
     build_candidate_from_quality_report,
     build_durable_memory_evidence_packet,
 )
+from pi_memory.durable.reducer import (
+    DeterministicDurableMemoryReducer,
+    ReducerContext,
+    persist_reducer_decision,
+)
 from pi_memory.durable.relations import (
     DurableMemoryNotFoundError,
     DurableMemoryProjectionError,
@@ -70,6 +75,7 @@ __all__ = [
     "CandidateEvaluator",
     "CandidateMetricScore",
     "DeterministicCandidateEvaluator",
+    "DeterministicDurableMemoryReducer",
     "DurableMemoryAuditEventPayload",
     "DurableMemoryCandidate",
     "DurableMemoryEvidencePacket",
@@ -82,6 +88,7 @@ __all__ = [
     "PydanticAICandidateProviderError",
     "PydanticAIDependencyError",
     "QualityEligibilityEnvelope",
+    "ReducerContext",
     "ReducerDecision",
     "RelationAssessmentOutput",
     "RelationAssessmentResult",
@@ -96,6 +103,7 @@ __all__ = [
     "assess_durable_memory_relations",
     "project_durable_memory_record",
     "persist_candidate_evaluation",
+    "persist_reducer_decision",
     "render_candidate_evaluation_prompt",
     "validate_candidate_evaluation_output",
 ]
