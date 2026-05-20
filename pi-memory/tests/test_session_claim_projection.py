@@ -55,13 +55,19 @@ class ProjectionUnavailableError(RuntimeError):
 
 
 class FakeProjection:
-    def __init__(self, *, should_fail: bool = False) -> None:
+    def __init__(
+        self,
+        *,
+        should_fail: bool = False,
+        collection_name: str = MEMORY_PROJECTION_COLLECTION_NAME,
+    ) -> None:
         self.should_fail = should_fail
+        self._collection_name = collection_name
         self.upserts: list[list[ProjectionDocument]] = []
 
     @property
     def collection_name(self) -> str:
-        return MEMORY_PROJECTION_COLLECTION_NAME
+        return self._collection_name
 
     @property
     def embedding_model(self) -> str:
@@ -343,6 +349,27 @@ def test_rerunning_same_report_is_idempotent(database: Database) -> None:
     assert len(second_records) == 2
     assert [record.id for record in second_records] == first_ids
     assert [record.content_hash for record in second_records] == first_hashes
+    assert len(projection.upserts) == 2
+
+
+def test_custom_collection_name_is_persisted_and_idempotent(database: Database) -> None:
+    report_id, _snapshot_id = create_quality_report(database)
+    projection = FakeProjection(collection_name="custom-session-claims")
+
+    with database.session() as session:
+        first_result = project_session_claims(session, report_id, projection)
+    first_records = projection_records(database)
+    first_ids = [record.id for record in first_records]
+
+    with database.session() as session:
+        second_result = project_session_claims(session, report_id, projection)
+    second_records = projection_records(database)
+
+    assert first_result.indexed_count == 2
+    assert second_result.indexed_count == 2
+    assert len(second_records) == 2
+    assert [record.id for record in second_records] == first_ids
+    assert {record.collection_name for record in second_records} == {"custom-session-claims"}
     assert len(projection.upserts) == 2
 
 

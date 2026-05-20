@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+from collections.abc import Mapping, Sequence
 from dataclasses import replace
 from datetime import UTC, datetime
 from pathlib import Path
@@ -31,6 +32,7 @@ from pi_memory.db import (
     JOB_STATUS_COMPLETED,
     JOB_STATUS_FAILED,
     JOB_STATUS_QUEUED,
+    MEMORY_PROJECTION_STATUS_FAILED,
     SESSION_INTERPRETATION_BLOCKED_REASON_PARENT_TRANSCRIPT_NOT_INGESTED,
     SESSION_INTERPRETATION_BLOCKED_REASON_PHASE_5A_NOT_READY,
     SESSION_INTERPRETATION_BLOCKED_REASON_SOURCE_ORIGIN_INCOMPLETE,
@@ -92,6 +94,8 @@ from pi_memory.jobs import (
     TranscriptNotFoundError,
     UnsupportedJobKindError,
 )
+from pi_memory.jobs.runner import MemoryProjectionJobError
+from pi_memory.projection import ProjectionDocument, ProjectionHit, ProjectionMetadataValue
 from pi_memory.projection.deterministic import DeterministicMemoryProjection
 from pi_memory.quality import (
     DeterministicQualityAssessor,
@@ -291,6 +295,35 @@ class FailingQualityAssessor:
 
     async def assess_async(self, packet: QualityPacket) -> QualityReportDraft:
         return self.assess(packet)
+
+
+class MemoryProjectionUnavailableError(RuntimeError):
+    def __init__(self) -> None:
+        super().__init__("projection backend unavailable while indexing claims")
+
+
+class FailingMemoryProjection:
+    @property
+    def collection_name(self) -> str:
+        return "test-memory-projection"
+
+    @property
+    def embedding_model(self) -> str:
+        return "failing-embedding-model"
+
+    def upsert(self, documents: Sequence[ProjectionDocument]) -> None:
+        _ = documents
+        raise MemoryProjectionUnavailableError()
+
+    def query(
+        self,
+        _text: str,
+        *,
+        filters: Mapping[str, ProjectionMetadataValue] | None = None,
+        limit: int = 10,
+    ) -> list[ProjectionHit]:
+        _ = filters, limit
+        return []
 
 
 class RecordingCandidateEvaluator:
@@ -2008,6 +2041,39 @@ def test_project_memory_records_job_projects_quality_report_claims(
         assert record.record_type == "session_claim"
         assert record.status == "indexed"
         assert record.quality_report_id == quality.result_json["quality_report_id"]
+
+
+def test_project_memory_records_job_failure_persists_failed_projection_records(
+    database: Database,
+    store: JobStore,
+) -> None:
+    _, quality = create_quality_report_from_transcript(database, store)
+    project_job_id = quality.result_json["project_memory_records_job_id"]
+    claimed = store.claim_next("worker-project")
+    assert claimed is not None
+    assert claimed.id == project_job_id
+
+    with pytest.raises(MemoryProjectionJobError):
+        JobRunner(database=database, memory_projection=FailingMemoryProjection()).run(
+            claimed.id,
+            claimed.run_id,
+            running_pid=123,
+            now=at(10),
+        )
+
+    failed_job = get_job(database, project_job_id)
+    assert failed_job.status == JOB_STATUS_QUEUED
+    assert failed_job.attempts == 1
+    assert failed_job.exit_code == 1
+    assert failed_job.last_error == "memory projection failed for one or more quality-report claims"
+    with database.session() as session:
+        records = list(session.scalars(select(MemoryProjectionRecord).order_by(MemoryProjectionRecord.claim_index)))
+    assert len(records) == 1
+    assert records[0].status == MEMORY_PROJECTION_STATUS_FAILED
+    assert records[0].last_error is not None
+    assert records[0].last_error == "projection backend unavailable while indexing claims"
+    assert "Traceback" not in records[0].last_error
+    assert "RuntimeError" not in records[0].last_error
 
 
 def test_promote_durable_memory_job_creates_sources_promotes_and_audits(

@@ -374,7 +374,7 @@ Semantic assessment uses a PydanticAI-supported `quality_model` / `PI_MEMORY_QUA
 
 If semantic assessment fails transiently, the durable job retry policy applies. On the final failed attempt, `pi-memory` writes a visible safe report with `quality_status = assessment_failed` and `semantic_status = assessment_failed`, storing only safe error type metadata so dashboards are not blind and provider error bodies are not persisted.
 
-Read surfaces are available before any TUI/dashboard implementation:
+Read surfaces are implemented for API, CLI, and TUI inspection:
 
 ```text
 GET /v1/sessions/{session_id}/quality
@@ -383,9 +383,10 @@ GET /v1/quality/reports/sample
 pi-memory quality --session-id ... --db-url ... [--json]
 pi-memory quality-list --db-url ... [filters] [--json]
 pi-memory quality-sample --db-url ... [filters] [--json]
+pi-memory quality-tui --db-url ...
 ```
 
-The later TUI should consume these persisted read surfaces. It should not own quality logic, reinterpretation, repair, manual claim editing, approval workflow, or Phase 6 promotion writes.
+The quality TUI consumes these persisted reports and interpretation failure metadata. It does not own quality logic, reinterpretation, repair, manual claim editing, approval workflow, or Phase 6 promotion writes.
 
 ### 7. Candidate extraction
 
@@ -477,43 +478,42 @@ Promotion is a reconciliation process. For each candidate, the service finds nea
 - semantic similarity via ChromaDB;
 - recently active related sessions.
 
-Then it classifies the relationship:
+Current Phase 6 relation assessment is deterministic and repo-scoped. It classifies a candidate against resolved promoted durable-memory hits using:
 
-- new;
-- duplicate;
-- refines;
-- supersedes;
-- contradicts;
-- supports;
-- related;
-- unrelated.
+- `novel`;
+- `duplicate`;
+- `reinforces`;
+- `refines`;
+- `conflicts`;
+- `supersedes`;
+- `stale_signal`.
 
-Suggested mutation rules:
+Implemented mutation rules are conservative:
 
 ```text
-new
-  -> create active artifact
+novel
+  -> eligible for promotion when reducer thresholds pass
 
 duplicate
-  -> merge support/source evidence
+  -> reject duplicate candidate
+
+reinforces
+  -> promote when confidence is sufficient
 
 refines
-  -> create new revision or update current artifact
+  -> promote refined candidate when confidence is sufficient
+
+conflicts
+  -> quarantine for inspection
 
 supersedes
-  -> mark old artifact superseded; create active artifact
+  -> promote candidate and archive superseded memory when confidence is sufficient
 
-contradicts high confidence
-  -> create artifact and add conflict edge
-
-contradicts low confidence
-  -> keep both visible; mark needs_review
-
-related
-  -> keep both; write relation edge
+stale_signal
+  -> reject as stale signal
 ```
 
-Semantic similarity alone must not auto-supersede.
+Semantic similarity alone must not auto-supersede. Broader graph reconciliation and richer edge semantics remain future work.
 
 ### 10. Promotion
 
@@ -595,8 +595,15 @@ GET  /health
 GET  /v1/status
 POST /v1/observe
 GET  /v1/jobs/{job_id}
-POST /v1/recall/search
+POST /v1/recall/search              # raw transcript FTS recall
 GET  /v1/sessions/{session_id}/interpretation
+GET  /v1/sessions/{session_id}/quality
+GET  /v1/quality/reports
+GET  /v1/quality/reports/sample
+GET  /v1/durable-memory
+GET  /v1/durable-memory/{memory_id}
+GET  /v1/durable-memory/{memory_id}/audit
+GET  /v1/memory-projections
 ```
 
 Planned endpoint candidates remain separate from the implemented surface:
@@ -646,7 +653,10 @@ Implemented job kinds:
 
 - `process_transcript` for raw FTS indexing and deterministic Phase 5A structure rebuilding;
 - `summarize_tool_activities` for filling pending tool-pair activity text with source-backed per-tool summaries;
-- `interpret_session` for replaceable Phase 5B session interpretation over chronological activity text.
+- `interpret_session` for replaceable Phase 5B session interpretation over chronological activity text;
+- `assess_interpretation_quality` for persisted Phase 5C quality reports;
+- `project_memory_records` for quality-report projection and all-record rebuild/upsert passes;
+- `promote_durable_memory` for quality-gated durable memory promotion.
 
 Future job kinds:
 
@@ -655,7 +665,6 @@ Future job kinds:
 - `update_session_map`;
 - `extract_candidates`;
 - `reconcile_candidates`;
-- `promote_artifacts`;
 - `update_indexes`;
 - `hygiene_reconcile_duplicates`;
 - `hygiene_resolve_conflicts`;
@@ -692,9 +701,15 @@ Current canonical and derived tables:
 - `episodes`;
 - `episode_manifests`;
 - `session_snapshot_shells`;
-- `session_interpretation_snapshots`.
+- `session_interpretation_snapshots`;
+- `session_interpretation_quality_reports`;
+- `durable_memory_items`;
+- `durable_memory_sources`;
+- `durable_memory_relations`;
+- `durable_memory_audit_events`;
+- `memory_projection_records`.
 
-Future durable-memory tables:
+Future broader graph/artifact tables:
 
 - `memory_artifacts`;
 - `artifact_revisions`;
@@ -1029,16 +1044,16 @@ Implemented in `pi-memory`:
 - Bounded `QualityPacket` read model over interpretation JSON, citations, chronological activity text, and source refs; full raw transcript rows and provider secrets stay out of quality prompts.
 - PydanticAI-backed semantic quality assessor plus deterministic test/development assessor injection seam.
 - Final failure policy that writes a safe visible `assessment_failed` report after retries are exhausted.
-- Read-only reporting via `GET /v1/sessions/{session_id}/quality`, `GET /v1/quality/reports`, `GET /v1/quality/reports/sample`, `pi-memory quality`, `pi-memory quality-list`, and `pi-memory quality-sample`.
+- Read-only reporting via `GET /v1/sessions/{session_id}/quality`, `GET /v1/quality/reports`, `GET /v1/quality/reports/sample`, `pi-memory quality`, `pi-memory quality-list`, `pi-memory quality-sample`, and `pi-memory quality-tui`.
 
 Status taxonomy:
 
 - `quality_status`: `healthy`, `degraded`, `failed`, `not_assessed`, `assessment_failed`.
-- `quality_reason`: stable reason for non-healthy statuses, such as `blocked_interpretation`, `skipped_no_claim_sources`, `outdated_derivation`, `deterministic_integrity_failed`, `semantic_assessment_pending`, `semantic_degraded`, `semantic_failed`, or `semantic_assessment_failed`.
+- `quality_reason`: stable reason for non-healthy statuses, such as `blocked_interpretation`, `skipped_no_claim_sources`, `outdated_derivation`, `superseded_snapshot`, `deterministic_integrity_failed`, `semantic_assessment_pending`, `semantic_degraded`, `semantic_failed`, or `semantic_assessment_failed`.
 - `derivation_status`: `current`, `outdated`, `superseded`; this is derived-state consistency, not transcript age.
 - `deterministic_status`: `passed`, `failed`, `not_applicable`.
 - `semantic_status`: `passed`, `degraded`, `failed`, `not_assessed`, `assessment_failed`.
-- `promotable`: true when the snapshot is completed, current, deterministic-passed, and semantic quality is either healthy/passed or degraded with a degraded quality status.
+- `promotable`: true when the snapshot is completed, derivation is current, deterministic checks passed, and either `semantic_status = passed` with `quality_status = healthy`, or `semantic_status = degraded` with `quality_status = degraded`.
 
 Validation:
 
@@ -1050,11 +1065,11 @@ Validation:
 
 Deferred:
 
-- Python TUI/Textual dashboard over quality reports.
 - Browser/Django UI.
+- Dashboards beyond the current quality TUI.
 - Reinterpretation repair loop or automatic mutation of interpretation claims.
 - Manual claim editing, approval workflow, or annotation UI.
-- Durable memory artifacts, graph writes, Chroma indexes, or Phase 6 promotion.
+- Broader graph memory beyond Phase 6 durable relation/projection records.
 
 ### Phase 6: Durable memory promotion and unified semantic projection
 
@@ -1065,7 +1080,7 @@ Implemented in `pi-memory`:
 - Canonical durable-memory tables owned by SQLite:
   - `durable_memory_items` for candidate/promoted/quarantined/rejected/archived memory state;
   - `durable_memory_sources` for source-ref links back to interpretation evidence;
-  - `durable_memory_relations` for duplicate/reinforces/refines/conflicts/supersedes/stale-signal relation metadata;
+  - `durable_memory_relations` for `duplicate` / `reinforces` / `refines` / `conflicts` / `supersedes` / `stale_signal` relation metadata;
   - `durable_memory_audit_events` for immutable status and derivation audit events;
   - `memory_projection_records` for rebuildable Chroma projection metadata.
 - Durable statuses: `candidate`, `promoted`, `quarantined`, `rejected`, and `archived`.
@@ -1074,15 +1089,16 @@ Implemented in `pi-memory`:
 - Projection metadata that distinguishes:
   - `record_type = session_claim`, `memory_layer = short_term` for eligible quality-assessed session interpretation claims;
   - `record_type = durable_memory`, `memory_layer = long_term` for durable memory candidates/items.
-- Chroma projection seam with deterministic tests and a Chroma-backed implementation using configured embedding settings.
+- Chroma projection seam with deterministic tests and a Chroma-backed implementation using the configured embedding model from `PI_MEMORY_EMBEDDING_MODEL` or `pi-memory config --embedding-model`.
 - Short-term claim projection via `project_session_claims(...)` and `project_memory_records` jobs.
 - Durable candidate construction directly from source-cited interpretation claims; there is no separate candidate-extraction LLM in this phase.
 - Quality-report eligibility evaluation that consumes persisted `SessionInterpretationQualityReport` fields, finding codes, claim assessments, currentness, and `promotable` as authoritative input.
 - Single-call candidate evaluator over one candidate plus bounded source evidence, with provider-backed and deterministic implementations.
 - Chroma-assisted relation assessment that upserts/query candidates and promoted durable memories, resolves every hit through SQLite, then classifies relations deterministically.
+- Repo-scoped relation comparison: candidate and related durable memories are compared only when they share the same `repo_name`; missing repo metadata skips relation comparison and classifies the candidate as `novel` with no resolved hits.
 - Deterministic reducer that maps eligibility, evaluator metrics, and relation assessments into `promoted`, `quarantined`, `rejected`, or supersession/archive transitions with reason codes and audit events.
 - Durable job wiring:
-  - `project_memory_records` for quality-report projection and all-record rebuild/upsert passes;
+  - `project_memory_records` for quality-report projection and all-record rebuild/upsert passes, with per-record failure metadata persisted for retry and inspection;
   - `promote_durable_memory` for report-level promotion through eligibility, evaluation, relation assessment, reducer persistence, and projection refresh.
 - Read-only inspection surfaces:
   - `GET /v1/durable-memory`;

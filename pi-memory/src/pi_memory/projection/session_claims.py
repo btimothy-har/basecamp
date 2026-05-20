@@ -14,7 +14,6 @@ from sqlalchemy.orm import Session, joinedload
 
 from pi_memory.db import (
     MEMORY_LAYER_SHORT_TERM,
-    MEMORY_PROJECTION_COLLECTION_NAME,
     MEMORY_PROJECTION_RECORD_TYPE_SESSION_CLAIM,
     MEMORY_PROJECTION_STATUS_DELETED,
     MEMORY_PROJECTION_STATUS_FAILED,
@@ -100,7 +99,10 @@ def project_session_claims(
             reason=reason,
         )
 
-    records = [_upsert_claim_record(session, report, index, claim) for index, claim in enumerate(claims)]
+    records = [
+        _upsert_claim_record(session, report, index, claim, collection_name=projection.collection_name)
+        for index, claim in enumerate(claims)
+    ]
     deleted_count = _mark_missing_claims_deleted(
         session,
         snapshot_id=snapshot.id,
@@ -191,12 +193,14 @@ def _upsert_claim_record(
     report: SessionInterpretationQualityReport,
     claim_index: int,
     claim: Mapping[str, Any],
+    *,
+    collection_name: str,
 ) -> MemoryProjectionRecord:
     snapshot = report.snapshot
     record_key = _record_key(snapshot.id, claim_index)
     record = session.scalar(
         select(MemoryProjectionRecord).where(
-            MemoryProjectionRecord.collection_name == MEMORY_PROJECTION_COLLECTION_NAME,
+            MemoryProjectionRecord.collection_name == collection_name,
             MemoryProjectionRecord.record_key == record_key,
         ),
     )
@@ -225,7 +229,7 @@ def _upsert_claim_record(
     }
     if record is None:
         record = MemoryProjectionRecord(
-            collection_name=MEMORY_PROJECTION_COLLECTION_NAME,
+            collection_name=collection_name,
             record_key=record_key,
             **fields,
         )

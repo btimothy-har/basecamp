@@ -122,38 +122,63 @@ def _matches_filters(
 
 def create_memory_fixture(database: Database, memories: list[dict[str, Any]]) -> list[int]:
     with database.session() as session:
-        memory_session = MemorySession(
-            session_id="pi-session-1",
-            repo_name="basecamp",
-            worktree_label="wt-memory",
-        )
-        transcript = Transcript(session=memory_session, path="/tmp/pi/transcript.jsonl")
-        snapshot = SessionInterpretationSnapshot(
-            session=memory_session,
-            transcript=transcript,
-            status=SESSION_INTERPRETATION_STATUS_COMPLETED,
-            analyzed_through_byte_offset=123,
-            claim_source_activity_count=2,
-            interpretation_json={"summary": "Session summary.", "claims": []},
-            citations_json=[],
-            prompt_version="interpretation-v1",
-        )
-        report = SessionInterpretationQualityReport(
-            snapshot=snapshot,
-            quality_status=SESSION_INTERPRETATION_QUALITY_STATUS_HEALTHY,
-            quality_reason=None,
-            derivation_status=SESSION_INTERPRETATION_DERIVATION_STATUS_CURRENT,
-            deterministic_status=SESSION_INTERPRETATION_DETERMINISTIC_STATUS_PASSED,
-            semantic_status=SESSION_INTERPRETATION_SEMANTIC_STATUS_PASSED,
-            promotable=True,
-            claim_assessments_json=[],
-            prompt_version="quality-v1",
-        )
-        session.add(report)
-        session.flush()
+        context_by_repo: dict[
+            str | None,
+            tuple[
+                MemorySession,
+                Transcript,
+                SessionInterpretationSnapshot,
+                SessionInterpretationQualityReport,
+            ],
+        ] = {}
+
+        def context_for_repo(
+            repo_name: str | None,
+        ) -> tuple[
+            MemorySession,
+            Transcript,
+            SessionInterpretationSnapshot,
+            SessionInterpretationQualityReport,
+        ]:
+            if repo_name in context_by_repo:
+                return context_by_repo[repo_name]
+            suffix = "missing-repo" if repo_name is None else repo_name
+            memory_session = MemorySession(
+                session_id=f"pi-session-{len(context_by_repo) + 1}",
+                repo_name=repo_name,
+                worktree_label="wt-memory",
+            )
+            transcript = Transcript(session=memory_session, path=f"/tmp/pi/{suffix}/transcript.jsonl")
+            snapshot = SessionInterpretationSnapshot(
+                session=memory_session,
+                transcript=transcript,
+                status=SESSION_INTERPRETATION_STATUS_COMPLETED,
+                analyzed_through_byte_offset=123,
+                claim_source_activity_count=2,
+                interpretation_json={"summary": "Session summary.", "claims": []},
+                citations_json=[],
+                prompt_version="interpretation-v1",
+            )
+            report = SessionInterpretationQualityReport(
+                snapshot=snapshot,
+                quality_status=SESSION_INTERPRETATION_QUALITY_STATUS_HEALTHY,
+                quality_reason=None,
+                derivation_status=SESSION_INTERPRETATION_DERIVATION_STATUS_CURRENT,
+                deterministic_status=SESSION_INTERPRETATION_DETERMINISTIC_STATUS_PASSED,
+                semantic_status=SESSION_INTERPRETATION_SEMANTIC_STATUS_PASSED,
+                promotable=True,
+                claim_assessments_json=[],
+                prompt_version="quality-v1",
+            )
+            session.add(report)
+            session.flush()
+            context_by_repo[repo_name] = (memory_session, transcript, snapshot, report)
+            return context_by_repo[repo_name]
 
         ids: list[int] = []
         for index, spec in enumerate(memories):
+            repo_name = spec.get("repo_name", "basecamp")
+            memory_session, transcript, snapshot, report = context_for_repo(repo_name)
             memory = DurableMemoryItem(
                 session=memory_session,
                 transcript=transcript,
@@ -290,6 +315,58 @@ def test_duplicate_relation_persists_after_hit_resolves_through_sqlite(database:
     assert stored_relations[0].confidence == 1.0
     assert stored_relations[0].metadata_json["chroma_id"] == f"durable_memory:{promoted_id}"
     assert stored_relations[0].metadata_json["classifier_mode"] == "deterministic-chroma-v1"
+    assert projection.queries[0]["filters"]["repo_name"] == "basecamp"
+
+
+def test_cross_repo_promoted_memory_is_ignored_for_candidate_relations(database: Database) -> None:
+    promoted_id, candidate_id = create_memory_fixture(
+        database,
+        [
+            {
+                "repo_name": "other-repo",
+                "status": DURABLE_MEMORY_STATUS_PROMOTED,
+                "statement": "Use SQLite before relation classification.",
+            },
+            {"repo_name": "basecamp", "statement": "Use SQLite before relation classification."},
+        ],
+    )
+    projection = FakeDurableProjection()
+    projection.distances[f"durable_memory:{promoted_id}"] = 0.01
+
+    with database.session() as session:
+        result = assess_durable_memory_relations(session, candidate_id, projection)
+
+    assert result.assessment.relation_type == DURABLE_MEMORY_RELATION_TYPE_NOVEL
+    assert result.assessment.related_memory_id is None
+    assert result.resolved_hit_count == 0
+    assert relations(database) == []
+    assert projection.queries[0]["filters"]["repo_name"] == "basecamp"
+
+
+def test_missing_candidate_repo_skips_relation_query(database: Database) -> None:
+    promoted_id, candidate_id = create_memory_fixture(
+        database,
+        [
+            {
+                "repo_name": "basecamp",
+                "status": DURABLE_MEMORY_STATUS_PROMOTED,
+                "statement": "Use SQLite before relation classification.",
+            },
+            {"repo_name": None, "statement": "Use SQLite before relation classification."},
+        ],
+    )
+    projection = FakeDurableProjection()
+    projection.distances[f"durable_memory:{promoted_id}"] = 0.01
+
+    with database.session() as session:
+        result = assess_durable_memory_relations(session, candidate_id, projection)
+
+    assert result.assessment.relation_type == DURABLE_MEMORY_RELATION_TYPE_NOVEL
+    assert result.assessment.related_memory_id is None
+    assert result.assessment.rationale == "Candidate session has no repo_name; relation assessment skipped."
+    assert result.resolved_hit_count == 0
+    assert relations(database) == []
+    assert projection.queries == []
 
 
 def test_refines_relation_persists_when_candidate_contains_promoted_statement(database: Database) -> None:
@@ -385,6 +462,45 @@ def test_supersedes_relation_persists_without_status_or_archive_mutation(databas
     assert result.assessment.confidence >= 0.8
     assert len(stored_relations) == 1
     assert stored_relations[0].relation_type == DURABLE_MEMORY_RELATION_TYPE_SUPERSEDES
+
+
+def test_replace_wording_is_classified_as_supersedes(database: Database) -> None:
+    promoted_id, candidate_id = create_memory_fixture(
+        database,
+        [
+            {"status": DURABLE_MEMORY_STATUS_PROMOTED, "statement": "Use Poetry for Python packaging."},
+            {"statement": "Replace Poetry with uv for Python packaging."},
+        ],
+    )
+    projection = FakeDurableProjection()
+    projection.distances[f"durable_memory:{promoted_id}"] = 0.1
+
+    with database.session() as session:
+        result = assess_durable_memory_relations(session, candidate_id, projection)
+
+    assert result.assessment.relation_type == DURABLE_MEMORY_RELATION_TYPE_SUPERSEDES
+    assert result.assessment.related_memory_id == promoted_id
+    assert relations(database)[0].relation_type == DURABLE_MEMORY_RELATION_TYPE_SUPERSEDES
+
+
+def test_far_distance_resolved_hit_falls_back_to_novel(database: Database) -> None:
+    promoted_id, candidate_id = create_memory_fixture(
+        database,
+        [
+            {"status": DURABLE_MEMORY_STATUS_PROMOTED, "statement": "Use SQLite for durable memory storage."},
+            {"statement": "Prefer Postgres for analytics exports."},
+        ],
+    )
+    projection = FakeDurableProjection()
+    projection.distances[f"durable_memory:{promoted_id}"] = 0.8
+
+    with database.session() as session:
+        result = assess_durable_memory_relations(session, candidate_id, projection)
+
+    assert result.assessment.relation_type == DURABLE_MEMORY_RELATION_TYPE_NOVEL
+    assert result.assessment.related_memory_id is None
+    assert result.resolved_hit_count == 1
+    assert relations(database) == []
 
 
 def test_unresolvable_projection_hits_are_ignored_and_can_produce_novel(database: Database) -> None:

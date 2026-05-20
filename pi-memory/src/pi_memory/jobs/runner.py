@@ -66,6 +66,7 @@ from pi_memory.durable import (
     DeterministicDurableMemoryReducer,
     DurableMemoryEvidencePacket,
     DurableMemoryPacketError,
+    DurableMemoryProjectionError,
     ReducerContext,
     assess_durable_memory_relations,
     build_durable_memory_evidence_packet,
@@ -552,11 +553,13 @@ class JobRunner:
                 "failed_count": result.failed_count,
                 "reason": result.reason,
             }
-            if result.failed_count > 0:
-                raise MemoryProjectionJobError()
-            return result_json
+        if result.failed_count > 0:
+            raise MemoryProjectionJobError()
+        return result_json
 
     def _rebuild_memory_projection(self) -> dict[str, Any]:
+        durable_error: DurableMemoryProjectionError | None = None
+        durable_failed_count = 0
         with self._database.session() as session:
             projection = self._memory_projection()
             reports = list(
@@ -566,21 +569,32 @@ class JobRunner:
             )
             durable_memories = list(session.scalars(select(DurableMemoryItem).order_by(DurableMemoryItem.id)))
             report_results = [project_session_claims(session, report.id, projection) for report in reports]
-            durable_records = [
-                project_durable_memory_record(session, memory, projection) for memory in durable_memories
-            ]
-            return {
+            durable_records: list[MemoryProjectionRecord] = []
+            for memory in durable_memories:
+                record, error = _project_durable_memory_record_outcome(session, memory, projection)
+                if record is not None:
+                    durable_records.append(record)
+                    continue
+                durable_failed_count += 1
+                if durable_error is None:
+                    durable_error = error
+            result_json = {
                 "status": "completed",
                 "scope": "all",
                 "quality_report_count": len(report_results),
-                "durable_memory_count": len(durable_records),
+                "durable_memory_count": len(durable_records) + durable_failed_count,
                 "indexed_count": sum(result.indexed_count for result in report_results)
                 + _indexed_projection_record_count(durable_records),
                 "skipped_count": sum(result.skipped_count for result in report_results),
                 "deleted_count": sum(result.deleted_count for result in report_results)
                 + _deleted_projection_record_count(durable_records),
-                "failed_count": sum(result.failed_count for result in report_results),
+                "failed_count": sum(result.failed_count for result in report_results) + durable_failed_count,
             }
+        if durable_error is not None:
+            raise durable_error
+        if result_json["failed_count"] > 0:
+            raise MemoryProjectionJobError()
+        return result_json
 
     def _promote_durable_memory(self, job: Job) -> dict[str, Any]:
         quality_report_id = _payload_quality_report_id(job.payload_json)
@@ -1572,6 +1586,17 @@ def _project_archived_related_memory(
     related = session.get(DurableMemoryItem, related_memory_id)
     if related is not None and related.status == DURABLE_MEMORY_STATUS_ARCHIVED:
         project_durable_memory_record(session, related, projection)
+
+
+def _project_durable_memory_record_outcome(
+    session: Session,
+    memory: DurableMemoryItem,
+    projection: MemoryProjection,
+) -> tuple[MemoryProjectionRecord | None, DurableMemoryProjectionError | None]:
+    try:
+        return project_durable_memory_record(session, memory, projection), None
+    except DurableMemoryProjectionError as error:
+        return None, error
 
 
 def _indexed_projection_record_count(records: list[MemoryProjectionRecord]) -> int:

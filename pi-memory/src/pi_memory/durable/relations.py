@@ -31,6 +31,7 @@ from pi_memory.db import (
     DurableMemoryItem,
     DurableMemoryRelation,
     MemoryProjectionRecord,
+    MemorySession,
 )
 from pi_memory.durable.contracts import RelationAssessmentOutput, RelationType
 from pi_memory.projection.contracts import MemoryProjection, ProjectionDocument, ProjectionHit, ProjectionMetadataValue
@@ -161,19 +162,40 @@ def assess_durable_memory_relations(
     if memory is None:
         raise DurableMemoryNotFoundError(memory_id)
 
-    # Relation classification reads Chroma immediately, so first sync the bounded comparison set from SQLite.
-    _project_candidate_and_promoted_memories(session, memory, projection)
     candidate_text = _memory_text(memory)
+    candidate_repo_name = memory.session.repo_name
+    if candidate_repo_name is None:
+        assessment = _assessment(
+            DURABLE_MEMORY_RELATION_TYPE_NOVEL,
+            None,
+            None,
+            0.7,
+            "Candidate session has no repo_name; relation assessment skipped.",
+        )
+        result = RelationAssessmentResult(
+            memory_id=memory.id,
+            assessment=assessment,
+            resolved_hit_count=0,
+            related_memory_id=None,
+            distance=None,
+        )
+        memory.relation_summary_json = _result_json(result)
+        return result
+
+    # Relation classification reads Chroma immediately, so first sync the bounded comparison set from SQLite.
+    _project_candidate_and_promoted_memories(session, memory, projection, candidate_repo_name)
     hits = projection.query(
         candidate_text,
         filters={
             "record_type": MEMORY_PROJECTION_RECORD_TYPE_DURABLE_MEMORY,
             "memory_layer": MEMORY_LAYER_LONG_TERM,
             "relation_visible": True,
+            "status": DURABLE_MEMORY_STATUS_PROMOTED,
+            "repo_name": candidate_repo_name,
         },
         limit=limit + 1,
     )
-    resolved_hits = _resolve_hits(session, hits, memory_id)
+    resolved_hits = _resolve_hits(session, hits, memory_id, candidate_repo_name)
     best_hit = resolved_hits[0] if resolved_hits else None
     assessment = _classify_relation(candidate_text, best_hit)
     result = RelationAssessmentResult(
@@ -194,11 +216,15 @@ def _project_candidate_and_promoted_memories(
     session: Session,
     memory: DurableMemoryItem,
     projection: MemoryProjection,
+    candidate_repo_name: str,
 ) -> None:
     memories = list(
         session.scalars(
             select(DurableMemoryItem)
-            .where(DurableMemoryItem.status == DURABLE_MEMORY_STATUS_PROMOTED)
+            .where(
+                DurableMemoryItem.status == DURABLE_MEMORY_STATUS_PROMOTED,
+                DurableMemoryItem.session.has(MemorySession.repo_name == candidate_repo_name),
+            )
             .options(joinedload(DurableMemoryItem.session)),
         ),
     )
@@ -311,7 +337,12 @@ def _scalar_projection_filters(metadata_json: Mapping[str, Any]) -> dict[str, Pr
     }
 
 
-def _resolve_hits(session: Session, hits: list[ProjectionHit], memory_id: int) -> list[_ResolvedHit]:
+def _resolve_hits(
+    session: Session,
+    hits: list[ProjectionHit],
+    memory_id: int,
+    candidate_repo_name: str,
+) -> list[_ResolvedHit]:
     resolved: list[_ResolvedHit] = []
     for hit in hits:
         durable_memory_id = _int_metadata(hit.metadata.get("durable_memory_id"))
@@ -319,6 +350,8 @@ def _resolve_hits(session: Session, hits: list[ProjectionHit], memory_id: int) -
             continue
         memory = _load_memory(session, durable_memory_id)
         if memory is None:
+            continue
+        if memory.status != DURABLE_MEMORY_STATUS_PROMOTED or memory.session.repo_name != candidate_repo_name:
             continue
         resolved.append(_ResolvedHit(memory=memory, hit=hit, text=_memory_text(memory)))
     return resolved
