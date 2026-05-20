@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
-from collections.abc import Mapping, Sequence
+from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any
 
@@ -13,12 +13,12 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session, joinedload
 
 from pi_memory.db import (
-    SESSION_INTERPRETATION_STATUS_COMPLETED,
     ActivityUnit,
     SessionInterpretationQualityReport,
     SessionInterpretationSnapshot,
 )
 from pi_memory.durable.contracts import DurableMemoryCandidate, QualityEligibilityEnvelope
+from pi_memory.durable.eligibility import evaluate_claim_eligibility
 
 DURABLE_SOURCE_REF_LIMIT = 20
 DURABLE_ACTIVITY_TEXT_CHAR_LIMIT = 1_000
@@ -186,38 +186,7 @@ def _eligibility_envelope(
     report: SessionInterpretationQualityReport,
     claim_index: int,
 ) -> QualityEligibilityEnvelope:
-    snapshot = report.snapshot
-    claims = _claims(snapshot.interpretation_json)
-    block_reason = _block_reason(report, claim_index, claims)
-    return QualityEligibilityEnvelope(
-        quality_report_id=report.id,
-        snapshot_id=snapshot.id,
-        is_eligible=block_reason is None,
-        block_reason=block_reason,
-        warning_codes=[],
-        quality_status=report.quality_status,
-        semantic_status=report.semantic_status,
-        deterministic_status=report.deterministic_status,
-        derivation_status=report.derivation_status,
-        promotable=report.promotable,
-        claim_count=len(claims),
-    )
-
-
-def _block_reason(
-    report: SessionInterpretationQualityReport,
-    claim_index: int,
-    claims: Sequence[Mapping[str, Any]],
-) -> str | None:
-    if report.snapshot.status != SESSION_INTERPRETATION_STATUS_COMPLETED:
-        return "snapshot_not_completed"
-    if report.promotable is not True:
-        return "report_not_promotable"
-    if claim_index < 0 or claim_index >= len(claims):
-        return "claim_missing"
-    if not _source_ref_ids(claims[claim_index]):
-        return "claim_source_refs_missing"
-    return None
+    return evaluate_claim_eligibility(report, claim_index)
 
 
 def _claim_at(snapshot: SessionInterpretationSnapshot, claim_index: int) -> Mapping[str, Any]:

@@ -139,6 +139,9 @@ def create_quality_report(
             if promotable
             else SESSION_INTERPRETATION_SEMANTIC_STATUS_DEGRADED,
             promotable=promotable,
+            claim_assessments_json=[
+                {"claim_index": 0, "status": "supported", "source_ref_ids": source_ref_ids},
+            ],
             prompt_version="quality-v1",
         )
         session.add(report)
@@ -200,6 +203,7 @@ def test_evidence_packet_includes_canonical_source_refs_and_bounded_activity_tex
     assert packet.snapshot_id == snapshot_id
     assert packet.quality_report_id == report_id
     assert packet.candidate.source_ref_ids == ["source-1"]
+    assert packet.eligibility.is_eligible is True
     assert evidence.source_ref_id == "source-1"
     assert evidence.source_origin == SOURCE_ORIGIN_LOCAL
     assert evidence.activity_kind == ACTIVITY_KIND_USER_TEXT

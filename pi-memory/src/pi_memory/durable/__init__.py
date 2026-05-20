@@ -10,6 +10,7 @@ from pi_memory.durable.contracts import (
     ReducerDecision,
     RelationAssessmentOutput,
 )
+from pi_memory.durable.eligibility import evaluate_claim_eligibility, extract_warning_codes, find_claim_assessment
 from pi_memory.durable.packets import (
     DURABLE_ACTIVITY_TEXT_CHAR_LIMIT,
     DURABLE_METADATA_STRING_LIMIT,
@@ -37,7 +38,10 @@ __all__ = [
     "QualityEligibilityEnvelope",
     "ReducerDecision",
     "RelationAssessmentOutput",
+    "evaluate_claim_eligibility",
+    "extract_warning_codes",
     "SourceRefEvidence",
     "build_candidate_from_quality_report",
     "build_durable_memory_evidence_packet",
+    "find_claim_assessment",
 ]
