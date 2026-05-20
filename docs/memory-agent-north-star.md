@@ -1,6 +1,6 @@
 # Memory Agent North Star
 
-Status: proposed architecture and implementation roadmap. `pi-memory` has implemented Phase 4 raw transcript recall, Phase 5A deterministic transcript structure/fork provenance, Phase 5B replaceable session interpretation over chronological activity-text packets, and Phase 5C persisted interpretation quality reports; Pi recall tool wiring remains deferred.
+Status: proposed architecture and implementation roadmap. `pi-memory` has implemented Phase 4 raw transcript recall, Phase 5A deterministic transcript structure/fork provenance, Phase 5B replaceable session interpretation over chronological activity-text packets, Phase 5C persisted interpretation quality reports, and Phase 6 durable memory promotion with a unified rebuildable semantic projection; Pi recall tool wiring remains deferred.
 
 Related issue: [#123](https://github.com/btimothy-har/basecamp/issues/123)
 
@@ -1056,81 +1056,111 @@ Deferred:
 - Manual claim editing, approval workflow, or annotation UI.
 - Durable memory artifacts, graph writes, Chroma indexes, or Phase 6 promotion.
 
-### Phase 6: Durable artifact and graph schema
+### Phase 6: Durable memory promotion and unified semantic projection
 
-Purpose: create the durable memory substrate.
+Purpose: automatically convert quality-gated interpretation claims into source-cited durable memory items while indexing short-term and long-term memory records in one rebuildable semantic projection.
 
-Deliverables:
+Implemented in `pi-memory`:
 
-- `memory_artifacts` table.
-- `artifact_revisions` table.
-- `source_spans` table.
-- `memory_nodes` table.
-- `memory_edges` table.
-- `artifact_sources` table.
-- Artifact states: active, superseded, conflicting, retracted, archived, needs_review.
-- Artifact kinds: decision, constraint, knowledge, preference, pattern, open question, action.
-- Basic graph writes from artifacts to concepts, source spans, sessions, episodes, files, or modules.
+- Canonical durable-memory tables owned by SQLite:
+  - `durable_memory_items` for candidate/promoted/quarantined/rejected/archived memory state;
+  - `durable_memory_sources` for source-ref links back to interpretation evidence;
+  - `durable_memory_relations` for duplicate/reinforces/refines/conflicts/supersedes/stale-signal relation metadata;
+  - `durable_memory_audit_events` for immutable status and derivation audit events;
+  - `memory_projection_records` for rebuildable Chroma projection metadata.
+- Durable statuses: `candidate`, `promoted`, `quarantined`, `rejected`, and `archived`.
+- Archive reasons: `superseded`, `stale`, `manually_retired`, and `source_invalidated`, with `superseded_by_id` for supersession chains.
+- One `pi-memory` Chroma collection, `pi_memory_records`, used as a unified projection rather than separate short-term/long-term collections.
+- Projection metadata that distinguishes:
+  - `record_type = session_claim`, `memory_layer = short_term` for eligible quality-assessed session interpretation claims;
+  - `record_type = durable_memory`, `memory_layer = long_term` for durable memory candidates/items.
+- Chroma projection seam with deterministic tests and a Chroma-backed implementation using configured embedding settings.
+- Short-term claim projection via `project_session_claims(...)` and `project_memory_records` jobs.
+- Durable candidate construction directly from source-cited interpretation claims; there is no separate candidate-extraction LLM in this phase.
+- Quality-report eligibility evaluation that consumes persisted `SessionInterpretationQualityReport` fields, finding codes, claim assessments, currentness, and `promotable` as authoritative input.
+- Single-call candidate evaluator over one candidate plus bounded source evidence, with provider-backed and deterministic implementations.
+- Chroma-assisted relation assessment that upserts/query candidates and promoted durable memories, resolves every hit through SQLite, then classifies relations deterministically.
+- Deterministic reducer that maps eligibility, evaluator metrics, and relation assessments into `promoted`, `quarantined`, `rejected`, or supersession/archive transitions with reason codes and audit events.
+- Durable job wiring:
+  - `project_memory_records` for quality-report projection and all-record rebuild/upsert passes;
+  - `promote_durable_memory` for report-level promotion through eligibility, evaluation, relation assessment, reducer persistence, and projection refresh.
+- Read-only inspection surfaces:
+  - `GET /v1/durable-memory`;
+  - `GET /v1/durable-memory/{memory_id}`;
+  - `GET /v1/durable-memory/{memory_id}/audit`;
+  - `GET /v1/memory-projections`;
+  - `pi-memory durable`;
+  - `pi-memory durable-list`;
+  - `pi-memory durable-audit`;
+  - `pi-memory projection-list`.
+
+Core invariants:
+
+- SQLite is canonical for durable memory state, sources, relations, audit events, jobs, quality reports, transcripts, and projection metadata.
+- Chroma is disposable and rebuildable from SQLite. It is never canonical memory.
+- Every Chroma hit must resolve through SQLite before relation decisions or future recall packets are built.
+- Default recall visibility is limited to promoted durable memory and eligible short-term/session records; rejected, quarantined, archived, failed, and audit-only records remain inspectable but hidden from default recall views.
+- Raw transcript recall remains SQLite FTS-backed; Phase 6 does not index every raw transcript entry into Chroma.
+- Promotion consumes persisted Phase 5C quality reports. It does not recompute citation/source-origin/currentness/episode-coverage checks.
+- Provider calls remain behind candidate-evaluation seams and are not made by read-only inspection surfaces.
+- Inspection is audit-oriented and read-only; there is no manual approval workflow for every memory.
 
 Validation:
 
-- Session snapshots can produce candidate artifacts.
-- Candidate artifacts can be written as active artifacts.
-- Source spans link back to transcript offsets.
-- Graph neighborhood queries work in SQLite.
+- Schema tests cover durable memory/projection constraints and relationships.
+- Projection tests cover deterministic and Chroma-seam metadata behaviour.
+- Promotion tests cover eligibility blocking, candidate evaluation, relation assessment, reducer decisions, job retry/idempotency, supersession archival, and read-only inspection.
+- Full `pi-memory/tests` passes with deterministic seams and no provider calls.
 
 Deferred:
 
-- Complex reconciliation.
-- Supersession automation.
-- Advanced graph algorithms.
+- Final unified recall endpoint/tool and Pi/Basecamp active-coding prompt injection.
+- Full Textual durable-memory dashboard.
+- Browser/Django UI.
+- Manual repair/edit/approval workflow.
+- Broad graph memory, advanced graph algorithms, and global truth maintenance.
+- Indexing every raw transcript entry into Chroma.
+- Historical `pi-observer` SQLite or Chroma migration.
 
-### Phase 7: ChromaDB projection and hybrid recall
+### Phase 7: Unified recall over short-term and durable memory
 
-Purpose: add performant semantic retrieval while keeping SQLite canonical.
+Purpose: serve explainable recall packets from the canonical SQLite substrate plus rebuildable semantic projection.
 
-Deliverables:
+Planned deliverables:
 
-- Chroma collection or collections.
-- Vector index abstraction.
-- Indexing for artifact statements, titles, selected source spans, episode summaries, and concept labels.
-- Rebuild command or job.
-- Hybrid recall across FTS, ChromaDB, and graph neighborhood expansion.
-- Chroma metadata that references SQLite IDs.
+- A unified recall API/tool that queries the one `pi_memory_records` Chroma collection with metadata filters and resolves every hit through SQLite.
+- Short-term view over eligible session/episode claim records.
+- Long-term view over `record_type = durable_memory` and `status = promoted` records.
+- Hybrid ranking that can combine raw transcript FTS, semantic projection hits, recency, source quality, and relation context.
+- Recall packets with source citations, memory layer labels, quality/projection status, and explanation of why each item was returned.
 
 Validation:
 
-- Chroma collection can be deleted and rebuilt from SQLite.
-- Recall degrades safely if ChromaDB is stale or unavailable.
-- Vector hits resolve back to SQLite artifacts.
-- Metadata filters work for project, kind, and status.
+- Recall never trusts Chroma metadata without SQLite resolution.
+- Recall degrades safely if Chroma is stale, missing, or unavailable.
+- Hidden states (`rejected`, `quarantined`, `archived`, failed projection records, audit-only rows) stay out of default recall unless explicitly requested.
 
 Deferred:
 
-- Advanced ranking.
-- Sophisticated graph algorithms.
-- Automatic supersession.
+- Prompt injection into active Pi/Basecamp coding sessions until packet shape and ranking are proven.
+- Advanced graph neighborhood expansion.
 
-### Phase 8: Promotion and reconciliation
+### Phase 8: Graph memory and reconciliation automation
 
-Purpose: make durable memory evolve safely.
+Purpose: make durable memory evolve safely beyond the initial status/relation substrate.
 
-Deliverables:
+Planned deliverables:
 
-- Candidate promotion job.
-- Graph-neighborhood candidate selection.
-- Relationship classifier for new, duplicate, refines, supersedes, contradicts, supports, related, and unrelated.
-- Conservative mutation rules.
-- Revision and supersession edge writes.
-- Conflict edges and review statuses.
+- Graph-style nodes and edges for concepts, source spans, files/modules, sessions, goals, questions, and durable memory items when the SQLite relation substrate is no longer enough.
+- Graph-neighborhood candidate selection for richer relation context than top-K semantic projection hits alone.
+- Conservative global reconciliation rules for supersession, conflict visibility, archival, and revision-style history.
 
 Validation:
 
-- Later artifacts can supersede older artifacts with evidence.
-- Related artifacts remain separate.
+- Later memories can supersede older memories with source-backed evidence.
+- Related memories remain separate unless deterministic reducer rules archive a specific target.
 - Conflicts are visible, not silently resolved.
-- Recall defaults to active artifacts but can expose history.
-- Semantic-only similarity cannot auto-supersede prior memory.
+- Semantic similarity alone cannot auto-supersede prior memory.
 
 Deferred:
 
