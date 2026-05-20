@@ -16,6 +16,7 @@ import uvicorn
 
 from pi_memory.constants import DEFAULT_HOST, DEFAULT_PORT, MEMORY_DB_URL, SERVICE_NAME
 from pi_memory.db import Database
+from pi_memory.durable import DurableMemoryFilterError, DurableMemoryInspectionService
 from pi_memory.ingest import IngestResult, ObserveInput, TranscriptFileMissingError, TranscriptIngestService
 from pi_memory.interpretation import SessionInterpretationInspectionService
 from pi_memory.jobs import (
@@ -116,6 +117,13 @@ class QualityReportInspectionNotFoundError(click.ClickException):
 
     def __init__(self, session_id: str) -> None:
         super().__init__(f"Quality report for session {session_id} was not found")
+
+
+class DurableMemoryInspectionNotFoundError(click.ClickException):
+    """Raised when the requested durable memory does not exist."""
+
+    def __init__(self, memory_id: int) -> None:
+        super().__init__(f"Durable memory {memory_id} was not found")
 
 
 class StatusProbeError(Exception):
@@ -492,6 +500,158 @@ def quality_list(
     finally:
         quality_database.close_if_open()
     _emit_quality_report_list(payload, json_output=json_output)
+
+
+@main.command()
+@click.option("--memory-id", required=True, type=int, help="Durable memory row id to inspect.")
+@click.option(
+    "--db-url",
+    callback=lambda _ctx, _param, value: _require_non_empty(value),
+    required=True,
+    help="Database URL containing durable memories.",
+)
+@click.option("--include-audit", is_flag=True, help="Include durable memory audit events.")
+@click.option("--json", "json_output", is_flag=True, help="Emit parseable JSON output.")
+def durable(memory_id: int, db_url: str, *, include_audit: bool, json_output: bool) -> None:
+    """Inspect a durable memory directly from the database."""
+    durable_database = Database(db_url)
+    try:
+        payload = DurableMemoryInspectionService(database=durable_database).get_memory(
+            memory_id,
+            include_audit=include_audit,
+        )
+        if payload is None:
+            raise DurableMemoryInspectionNotFoundError(memory_id)
+        _emit_durable_memory(payload, json_output=json_output)
+    finally:
+        durable_database.close_if_open()
+
+
+@main.command("durable-list")
+@click.option(
+    "--db-url",
+    callback=lambda _ctx, _param, value: _require_non_empty(value),
+    required=True,
+    help="Database URL containing durable memories.",
+)
+@click.option("--status", callback=lambda _ctx, _param, value: _optional_non_empty(value))
+@click.option("--repo-name", callback=lambda _ctx, _param, value: _optional_non_empty(value))
+@click.option("--worktree-label", callback=lambda _ctx, _param, value: _optional_non_empty(value))
+@click.option("--session-id", callback=lambda _ctx, _param, value: _optional_non_empty(value))
+@click.option("--limit", type=click.IntRange(1, 100), default=10, show_default=True)
+@click.option("--offset", type=click.IntRange(0), default=0, show_default=True)
+@click.option("--json", "json_output", is_flag=True, help="Emit parseable JSON output.")
+def durable_list(
+    db_url: str,
+    status: str | None,
+    repo_name: str | None,
+    worktree_label: str | None,
+    session_id: str | None,
+    limit: int,
+    offset: int,
+    *,
+    json_output: bool,
+) -> None:
+    """List durable memories directly from the database."""
+    durable_database = Database(db_url)
+    try:
+        payload = (
+            DurableMemoryInspectionService(database=durable_database)
+            .list_memories(
+                status=status,
+                repo_name=repo_name,
+                worktree_label=worktree_label,
+                session_id=session_id,
+                limit=limit,
+                offset=offset,
+            )
+            .to_payload()
+        )
+    except DurableMemoryFilterError as error:
+        raise click.ClickException(str(error)) from error
+    finally:
+        durable_database.close_if_open()
+    _emit_durable_memory_list(payload, json_output=json_output)
+
+
+@main.command("durable-audit")
+@click.option("--memory-id", required=True, type=int, help="Durable memory row id to inspect.")
+@click.option(
+    "--db-url",
+    callback=lambda _ctx, _param, value: _require_non_empty(value),
+    required=True,
+    help="Database URL containing durable memories.",
+)
+@click.option("--limit", type=click.IntRange(1, 100), default=10, show_default=True)
+@click.option("--offset", type=click.IntRange(0), default=0, show_default=True)
+@click.option("--json", "json_output", is_flag=True, help="Emit parseable JSON output.")
+def durable_audit(memory_id: int, db_url: str, limit: int, offset: int, *, json_output: bool) -> None:
+    """Inspect durable memory audit events directly from the database."""
+    durable_database = Database(db_url)
+    try:
+        result = DurableMemoryInspectionService(database=durable_database).list_audit_events(
+            memory_id,
+            limit=limit,
+            offset=offset,
+        )
+        if result is None:
+            raise DurableMemoryInspectionNotFoundError(memory_id)
+        payload = result.to_payload()
+    except DurableMemoryFilterError as error:
+        raise click.ClickException(str(error)) from error
+    finally:
+        durable_database.close_if_open()
+    _emit_durable_memory_audit(payload, json_output=json_output)
+
+
+@main.command("projection-list")
+@click.option(
+    "--db-url",
+    callback=lambda _ctx, _param, value: _require_non_empty(value),
+    required=True,
+    help="Database URL containing memory projection records.",
+)
+@click.option("--record-type", callback=lambda _ctx, _param, value: _optional_non_empty(value))
+@click.option("--layer", "memory_layer", callback=lambda _ctx, _param, value: _optional_non_empty(value))
+@click.option("--status", "projection_status", callback=lambda _ctx, _param, value: _optional_non_empty(value))
+@click.option("--recall-visible/--not-recall-visible", default=None)
+@click.option("--relation-visible/--not-relation-visible", default=None)
+@click.option("--limit", type=click.IntRange(1, 100), default=10, show_default=True)
+@click.option("--offset", type=click.IntRange(0), default=0, show_default=True)
+@click.option("--json", "json_output", is_flag=True, help="Emit parseable JSON output.")
+def projection_list(
+    db_url: str,
+    record_type: str | None,
+    memory_layer: str | None,
+    projection_status: str | None,
+    *,
+    recall_visible: bool | None,
+    relation_visible: bool | None,
+    limit: int,
+    offset: int,
+    json_output: bool,
+) -> None:
+    """List memory projection records directly from the database."""
+    projection_database = Database(db_url)
+    try:
+        payload = (
+            DurableMemoryInspectionService(database=projection_database)
+            .list_projection_records(
+                record_type=record_type,
+                memory_layer=memory_layer,
+                projection_status=projection_status,
+                recall_visible=recall_visible,
+                relation_visible=relation_visible,
+                limit=limit,
+                offset=offset,
+            )
+            .to_payload()
+        )
+    except DurableMemoryFilterError as error:
+        raise click.ClickException(str(error)) from error
+    finally:
+        projection_database.close_if_open()
+    _emit_memory_projection_list(payload, json_output=json_output)
 
 
 @main.command("quality-sample")
@@ -892,6 +1052,79 @@ def _emit_quality_report_list(payload: dict[str, Any], *, json_output: bool) -> 
             f"current={report.get('is_current')} promotable={report.get('promotable')}",
         )
         click.echo(f"   snapshot={report.get('snapshot_id')} report={report.get('quality_report_id')}")
+
+
+def _emit_durable_memory(payload: dict[str, Any], *, json_output: bool) -> None:
+    if json_output:
+        click.echo(json.dumps(payload, sort_keys=True))
+        return
+
+    click.echo("Durable memory")
+    for name, value in payload.items():
+        if isinstance(value, dict | list):
+            click.echo(f"  {name}: {json.dumps(value, sort_keys=True)}")
+        else:
+            click.echo(f"  {name}: {value}")
+
+
+def _emit_durable_memory_list(payload: dict[str, Any], *, json_output: bool) -> None:
+    if json_output:
+        click.echo(json.dumps(payload, sort_keys=True))
+        return
+
+    results = payload.get("results")
+    memories = results if isinstance(results, list) else []
+    pagination = payload.get("pagination") if isinstance(payload.get("pagination"), dict) else {}
+    total = pagination.get("total", len(memories))
+    click.echo(f"Durable memories ({len(memories)} shown, total {total})")
+    for index, memory in enumerate(memories, start=1):
+        if not isinstance(memory, dict):
+            continue
+        click.echo(
+            f"{index}. memory={memory.get('memory_id')} session={memory.get('session_id')} "
+            f"status={memory.get('status')} kind={memory.get('claim_kind')}",
+        )
+        click.echo(f"   statement={memory.get('statement')}")
+
+
+def _emit_durable_memory_audit(payload: dict[str, Any], *, json_output: bool) -> None:
+    if json_output:
+        click.echo(json.dumps(payload, sort_keys=True))
+        return
+
+    results = payload.get("results")
+    events = results if isinstance(results, list) else []
+    pagination = payload.get("pagination") if isinstance(payload.get("pagination"), dict) else {}
+    total = pagination.get("total", len(events))
+    click.echo(f"Durable memory audit events ({len(events)} shown, total {total})")
+    for index, event in enumerate(events, start=1):
+        if not isinstance(event, dict):
+            continue
+        click.echo(
+            f"{index}. event={event.get('event_id')} memory={event.get('memory_id')} "
+            f"type={event.get('event_type')} {event.get('from_status')}->{event.get('to_status')}",
+        )
+        click.echo(f"   reason={event.get('reason_code')} created_at={event.get('created_at')}")
+
+
+def _emit_memory_projection_list(payload: dict[str, Any], *, json_output: bool) -> None:
+    if json_output:
+        click.echo(json.dumps(payload, sort_keys=True))
+        return
+
+    results = payload.get("results")
+    records = results if isinstance(results, list) else []
+    pagination = payload.get("pagination") if isinstance(payload.get("pagination"), dict) else {}
+    total = pagination.get("total", len(records))
+    click.echo(f"Memory projection records ({len(records)} shown, total {total})")
+    for index, record in enumerate(records, start=1):
+        if not isinstance(record, dict):
+            continue
+        click.echo(
+            f"{index}. projection={record.get('projection_record_id')} type={record.get('record_type')} "
+            f"layer={record.get('memory_layer')} status={record.get('status')}",
+        )
+        click.echo(f"   record_key={record.get('record_key')} chroma_id={record.get('chroma_id')}")
 
 
 def _emit_recall_result(result: RawTranscriptSearchResult, *, json_output: bool) -> None:

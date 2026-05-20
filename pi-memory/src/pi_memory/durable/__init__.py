@@ -32,6 +32,18 @@ from pi_memory.durable.evaluator import (
     validate_candidate_evaluation_output,
 )
 from pi_memory.durable.factory import create_candidate_evaluator
+from pi_memory.durable.inspection import (
+    DurableMemoryAuditListResult,
+    DurableMemoryFilterError,
+    DurableMemoryInspectionService,
+    DurableMemoryListResult,
+    MemoryProjectionListResult,
+    serialize_durable_memory,
+    serialize_durable_memory_audit_event,
+    serialize_durable_memory_relation,
+    serialize_durable_memory_source,
+    serialize_memory_projection_record,
+)
 from pi_memory.durable.packets import (
     DURABLE_ACTIVITY_TEXT_CHAR_LIMIT,
     DURABLE_METADATA_STRING_LIMIT,
@@ -77,8 +89,12 @@ __all__ = [
     "DeterministicCandidateEvaluator",
     "DeterministicDurableMemoryReducer",
     "DurableMemoryAuditEventPayload",
+    "DurableMemoryAuditListResult",
     "DurableMemoryCandidate",
     "DurableMemoryEvidencePacket",
+    "DurableMemoryFilterError",
+    "DurableMemoryInspectionService",
+    "DurableMemoryListResult",
     "DurableMemoryNotFoundError",
     "DurableMemoryPacketError",
     "DurableMemoryProjectionError",
@@ -87,6 +103,7 @@ __all__ = [
     "PydanticAICandidateEvaluator",
     "PydanticAICandidateProviderError",
     "PydanticAIDependencyError",
+    "MemoryProjectionListResult",
     "QualityEligibilityEnvelope",
     "ReducerContext",
     "ReducerDecision",
@@ -105,5 +122,10 @@ __all__ = [
     "persist_candidate_evaluation",
     "persist_reducer_decision",
     "render_candidate_evaluation_prompt",
+    "serialize_durable_memory",
+    "serialize_durable_memory_audit_event",
+    "serialize_durable_memory_relation",
+    "serialize_durable_memory_source",
+    "serialize_memory_projection_record",
     "validate_candidate_evaluation_output",
 ]
