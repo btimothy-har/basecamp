@@ -71,6 +71,13 @@ class ConflictingQualityModelOptionsError(click.UsageError):
         super().__init__("--clear-quality-model cannot be used with --quality-model")
 
 
+class ConflictingEmbeddingModelOptionsError(click.UsageError):
+    """Raised when mutually exclusive embedding model options are used."""
+
+    def __init__(self) -> None:
+        super().__init__("--clear-embedding-model cannot be used with --embedding-model")
+
+
 class ConflictingToolSummaryConcurrencyOptionsError(click.UsageError):
     """Raised when mutually exclusive tool-summary concurrency options are used."""
 
@@ -180,6 +187,16 @@ def main() -> None:
     help="Remove the persisted quality model.",
 )
 @click.option(
+    "--embedding-model",
+    callback=lambda _ctx, _param, value: None if value is None else _require_non_empty(value),
+    help="SentenceTransformer embedding model name to persist for Chroma projection.",
+)
+@click.option(
+    "--clear-embedding-model",
+    is_flag=True,
+    help="Remove the persisted embedding model override.",
+)
+@click.option(
     "--tool-summary-concurrency",
     type=click.IntRange(1, 100),
     help="Persist the maximum number of concurrent one-tool summary calls.",
@@ -199,11 +216,13 @@ def config(
     interpretation_model: str | None,
     tool_summary_model: str | None,
     quality_model: str | None,
+    embedding_model: str | None,
     tool_summary_concurrency: int | None,
     *,
     clear_interpretation_model: bool,
     clear_tool_summary_model: bool,
     clear_quality_model: bool,
+    clear_embedding_model: bool,
     clear_tool_summary_concurrency: bool,
     json_output: bool,
 ) -> None:
@@ -214,6 +233,8 @@ def config(
         raise ConflictingToolSummaryModelOptionsError()
     if clear_quality_model and quality_model is not None:
         raise ConflictingQualityModelOptionsError()
+    if clear_embedding_model and embedding_model is not None:
+        raise ConflictingEmbeddingModelOptionsError()
     if clear_tool_summary_concurrency and tool_summary_concurrency is not None:
         raise ConflictingToolSummaryConcurrencyOptionsError()
 
@@ -232,6 +253,10 @@ def config(
             update_payload["quality_model"] = None
         elif quality_model is not None:
             update_payload["quality_model"] = quality_model
+        if clear_embedding_model:
+            update_payload["embedding_model"] = None
+        elif embedding_model is not None:
+            update_payload["embedding_model"] = embedding_model
         if clear_tool_summary_concurrency:
             update_payload["tool_summary_concurrency"] = None
         elif tool_summary_concurrency is not None:

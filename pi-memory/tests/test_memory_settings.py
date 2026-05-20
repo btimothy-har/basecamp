@@ -4,11 +4,14 @@ from pathlib import Path
 import pi_memory.settings as settings_module
 import pytest
 from pi_memory.settings import (
+    DEFAULT_EMBEDDING_MODEL,
     DEFAULT_TOOL_SUMMARY_CONCURRENCY,
+    EMBEDDING_MODEL_ENV,
     INTERPRETATION_MODEL_ENV,
     QUALITY_MODEL_ENV,
     TOOL_SUMMARY_CONCURRENCY_ENV,
     TOOL_SUMMARY_MODEL_ENV,
+    InvalidEmbeddingModelError,
     InvalidInterpretationModelError,
     InvalidToolSummaryConcurrencyError,
     MissingInterpretationModelError,
@@ -25,6 +28,7 @@ def clear_memory_settings_env(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv(INTERPRETATION_MODEL_ENV, raising=False)
     monkeypatch.delenv(TOOL_SUMMARY_MODEL_ENV, raising=False)
     monkeypatch.delenv(QUALITY_MODEL_ENV, raising=False)
+    monkeypatch.delenv(EMBEDDING_MODEL_ENV, raising=False)
     monkeypatch.delenv(TOOL_SUMMARY_CONCURRENCY_ENV, raising=False)
 
 
@@ -35,6 +39,7 @@ def test_defaults_report_missing_model_without_creating_file(tmp_path: Path) -> 
         "interpretation_model": None,
         "tool_summary_model": None,
         "quality_model": None,
+        "embedding_model": DEFAULT_EMBEDDING_MODEL,
         "tool_summary_concurrency": DEFAULT_TOOL_SUMMARY_CONCURRENCY,
     }
     assert not settings.path.exists()
@@ -59,6 +64,7 @@ def test_file_model_persists(tmp_path: Path) -> None:
         "interpretation_model": "anthropic:claude-sonnet-4-6",
         "tool_summary_model": None,
         "quality_model": None,
+        "embedding_model": DEFAULT_EMBEDDING_MODEL,
         "tool_summary_concurrency": DEFAULT_TOOL_SUMMARY_CONCURRENCY,
     }
     assert Settings(settings.path).require_interpretation_model() == "anthropic:claude-sonnet-4-6"
@@ -95,6 +101,7 @@ def test_env_override_wins_over_file_settings(tmp_path: Path, monkeypatch: pytes
         "interpretation_model": "openai:env-model",
         "tool_summary_model": None,
         "quality_model": None,
+        "embedding_model": DEFAULT_EMBEDDING_MODEL,
         "tool_summary_concurrency": DEFAULT_TOOL_SUMMARY_CONCURRENCY,
     }
     assert settings.require_interpretation_model() == "openai:env-model"
@@ -117,6 +124,7 @@ def test_tool_summary_model_persists_and_env_override_wins(tmp_path: Path, monke
         "interpretation_model": "anthropic:claude-sonnet-4-6",
         "tool_summary_model": "openai:fast-summary-model",
         "quality_model": None,
+        "embedding_model": DEFAULT_EMBEDDING_MODEL,
         "tool_summary_concurrency": DEFAULT_TOOL_SUMMARY_CONCURRENCY,
     }
     assert settings.require_tool_summary_model() == "openai:fast-summary-model"
@@ -149,6 +157,7 @@ def test_quality_model_persists_and_env_override_wins(tmp_path: Path, monkeypatc
         "interpretation_model": "anthropic:claude-sonnet-4-6",
         "tool_summary_model": None,
         "quality_model": "openai:quality-env-model",
+        "embedding_model": DEFAULT_EMBEDDING_MODEL,
         "tool_summary_concurrency": DEFAULT_TOOL_SUMMARY_CONCURRENCY,
     }
     assert settings.require_quality_model() == "openai:quality-env-model"
@@ -181,6 +190,48 @@ def test_require_quality_model_fails_clearly_when_unconfigured(tmp_path: Path) -
 
     with pytest.raises(MissingInterpretationModelError, match="interpretation_model is required"):
         settings.require_quality_model()
+
+
+def test_embedding_model_persists_and_env_override_wins(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    settings = memory_settings(tmp_path)
+
+    settings.update(embedding_model="custom-embedding-model")
+
+    assert settings.embedding_model == "custom-embedding-model"
+    monkeypatch.setenv(EMBEDDING_MODEL_ENV, "env-embedding-model")
+    assert settings.embedding_model == "env-embedding-model"
+    assert settings.as_dict()["embedding_model"] == "env-embedding-model"
+    assert json.loads(settings.path.read_text()) == {"embedding_model": "custom-embedding-model"}
+
+
+def test_invalid_embedding_model_fails_clearly(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    settings = memory_settings(tmp_path)
+
+    with pytest.raises(InvalidEmbeddingModelError, match="must be a non-empty string"):
+        settings.update(embedding_model="  ")
+    monkeypatch.setenv(EMBEDDING_MODEL_ENV, "  ")
+    with pytest.raises(InvalidEmbeddingModelError, match="must be a non-empty string"):
+        settings.as_dict()
+
+
+def test_invalid_embedding_file_model_fails_clearly(tmp_path: Path) -> None:
+    settings = memory_settings(tmp_path)
+    settings.path.parent.mkdir(parents=True)
+    settings.path.write_text(json.dumps({"embedding_model": "  "}))
+
+    with pytest.raises(InvalidEmbeddingModelError, match="must be a non-empty string"):
+        settings.as_dict()
+
+
+def test_clear_embedding_model_returns_default(tmp_path: Path) -> None:
+    settings = memory_settings(tmp_path)
+    settings.update(embedding_model="custom-embedding-model")
+
+    settings.update(embedding_model=None)
+
+    assert settings.embedding_model == DEFAULT_EMBEDDING_MODEL
+    assert settings.as_dict()["embedding_model"] == DEFAULT_EMBEDDING_MODEL
+    assert json.loads(settings.path.read_text()) == {}
 
 
 def test_tool_summary_concurrency_persists_and_env_override_wins(
@@ -222,6 +273,7 @@ def test_clear_tool_summary_model_persists_absence(tmp_path: Path) -> None:
         "interpretation_model": "openai:any-model",
         "tool_summary_model": None,
         "quality_model": None,
+        "embedding_model": DEFAULT_EMBEDDING_MODEL,
         "tool_summary_concurrency": DEFAULT_TOOL_SUMMARY_CONCURRENCY,
     }
     assert json.loads(settings.path.read_text()) == {"interpretation_model": "openai:any-model"}
@@ -273,6 +325,7 @@ def test_clear_model_persists_absence(tmp_path: Path) -> None:
         "interpretation_model": None,
         "tool_summary_model": None,
         "quality_model": None,
+        "embedding_model": DEFAULT_EMBEDDING_MODEL,
         "tool_summary_concurrency": DEFAULT_TOOL_SUMMARY_CONCURRENCY,
     }
     assert json.loads(settings.path.read_text()) == {}
@@ -288,6 +341,7 @@ def test_clear_quality_model_persists_absence(tmp_path: Path) -> None:
         "interpretation_model": "openai:any-model",
         "tool_summary_model": None,
         "quality_model": None,
+        "embedding_model": DEFAULT_EMBEDDING_MODEL,
         "tool_summary_concurrency": DEFAULT_TOOL_SUMMARY_CONCURRENCY,
     }
     assert json.loads(settings.path.read_text()) == {"interpretation_model": "openai:any-model"}
