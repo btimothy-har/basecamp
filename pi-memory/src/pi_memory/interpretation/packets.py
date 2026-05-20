@@ -539,8 +539,6 @@ def _session_metadata(
         "session_row_id": memory_session.id,
         "stable_session_id": memory_session.session_id,
         "cwd": memory_session.cwd,
-        "repo_name": memory_session.repo_name,
-        "repo_root": memory_session.repo_root,
         "worktree_label": memory_session.worktree_label,
         "worktree_path": memory_session.worktree_path,
     }

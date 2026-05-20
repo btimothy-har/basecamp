@@ -11,6 +11,7 @@ from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints
 
 from pi_memory.constants import DEFAULT_HOST, DEFAULT_PORT, MEMORY_DIR, SERVICE_NAME, SERVICE_VERSION
+from pi_memory.durable import DurableMemoryFilterError, DurableMemoryInspectionService
 from pi_memory.ingest import (
     IngestResult,
     ObserveInput,
@@ -25,6 +26,10 @@ from pi_memory.recall import RawTranscriptRecallResult, RawTranscriptSearchResul
 NonEmptyString = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)]
 QualityStatusQuery = Literal["healthy", "degraded", "failed", "not_assessed", "assessment_failed"]
 DerivationStatusQuery = Literal["current", "outdated", "superseded"]
+DurableMemoryStatusQuery = Literal["candidate", "promoted", "quarantined", "rejected", "archived"]
+ProjectionRecordTypeQuery = Literal["session_claim", "durable_memory"]
+MemoryLayerQuery = Literal["short_term", "long_term"]
+ProjectionStatusQuery = Literal["pending", "indexed", "stale", "failed", "deleted"]
 
 
 class ObserveRequest(BaseModel):
@@ -35,8 +40,6 @@ class ObserveRequest(BaseModel):
     session_id: NonEmptyString
     transcript_path: NonEmptyString
     cwd: NonEmptyString | None = None
-    repo_name: NonEmptyString | None = None
-    repo_root: NonEmptyString | None = None
     worktree_label: NonEmptyString | None = None
     worktree_path: NonEmptyString | None = None
     request_id: NonEmptyString | None = None
@@ -112,6 +115,7 @@ def create_app(
     recall_service: RecallSearchService | None = None,
     interpretation_service: SessionInterpretationInspectionService | None = None,
     quality_service: SessionQualityReportInspectionService | None = None,
+    durable_memory_service: DurableMemoryInspectionService | None = None,
 ) -> FastAPI:
     """Create the local Pi memory FastAPI application."""
     service_started_at = datetime.now(UTC) if started_at is None else started_at
@@ -131,6 +135,9 @@ def create_app(
         SessionInterpretationInspectionService() if interpretation_service is None else interpretation_service
     )
     app.state.quality_service = SessionQualityReportInspectionService() if quality_service is None else quality_service
+    app.state.durable_memory_service = (
+        DurableMemoryInspectionService() if durable_memory_service is None else durable_memory_service
+    )
 
     @app.get("/health")
     def health() -> dict[str, str]:
@@ -201,7 +208,7 @@ def create_app(
         *,
         promotable: bool | None = None,
         is_current: bool | None = None,
-        repo_name: str | None = None,
+        cwd: str | None = None,
         worktree_label: str | None = None,
         limit: int = 10,
         offset: int = 0,
@@ -213,7 +220,7 @@ def create_app(
                 derivation_status=derivation_status,
                 promotable=promotable,
                 is_current=is_current,
-                repo_name=repo_name,
+                cwd=cwd,
                 worktree_label=worktree_label,
                 limit=limit,
                 offset=offset,
@@ -229,7 +236,7 @@ def create_app(
         *,
         promotable: bool | None = None,
         is_current: bool | None = None,
-        repo_name: str | None = None,
+        cwd: str | None = None,
         worktree_label: str | None = None,
     ) -> dict[str, object]:
         """Return a safe bounded sample of quality reports."""
@@ -240,10 +247,80 @@ def create_app(
                 derivation_status=derivation_status,
                 promotable=promotable,
                 is_current=is_current,
-                repo_name=repo_name,
+                cwd=cwd,
                 worktree_label=worktree_label,
             )
         except QualityReportFilterError as error:
+            raise HTTPException(status_code=422, detail=str(error)) from error
+
+    @app.get("/v1/durable-memory")
+    def list_durable_memories(
+        status: DurableMemoryStatusQuery | None = None,
+        cwd: str | None = None,
+        worktree_label: str | None = None,
+        session_id: str | None = None,
+        limit: int = 10,
+        offset: int = 0,
+    ) -> dict[str, object]:
+        """List safe durable memories for dashboard consumers."""
+        try:
+            return app.state.durable_memory_service.list_memories(
+                status=status,
+                cwd=cwd,
+                worktree_label=worktree_label,
+                session_id=session_id,
+                limit=limit,
+                offset=offset,
+            ).to_payload()
+        except DurableMemoryFilterError as error:
+            raise HTTPException(status_code=422, detail=str(error)) from error
+
+    @app.get("/v1/durable-memory/{memory_id}")
+    def get_durable_memory(memory_id: int, *, include_audit: bool = False) -> dict[str, object]:
+        """Return one safe durable memory payload."""
+        payload = app.state.durable_memory_service.get_memory(memory_id, include_audit=include_audit)
+        if payload is None:
+            raise HTTPException(status_code=404, detail=f"Durable memory {memory_id} was not found")
+        return payload
+
+    @app.get("/v1/durable-memory/{memory_id}/audit")
+    def list_durable_memory_audit_events(
+        memory_id: int,
+        limit: int = 10,
+        offset: int = 0,
+    ) -> dict[str, object]:
+        """Return a safe audit timeline for one durable memory."""
+        try:
+            result = app.state.durable_memory_service.list_audit_events(memory_id, limit=limit, offset=offset)
+        except DurableMemoryFilterError as error:
+            raise HTTPException(status_code=422, detail=str(error)) from error
+        if result is None:
+            raise HTTPException(status_code=404, detail=f"Durable memory {memory_id} was not found")
+        return result.to_payload()
+
+    @app.get("/v1/memory-projections")
+    def list_memory_projection_records(
+        record_type: ProjectionRecordTypeQuery | None = None,
+        memory_layer: MemoryLayerQuery | None = None,
+        projection_status: ProjectionStatusQuery | None = None,
+        *,
+        recall_visible: bool | None = None,
+        relation_visible: bool | None = None,
+        limit: int = 10,
+        offset: int = 0,
+    ) -> dict[str, object]:
+        """List safe memory projection records for dashboard consumers."""
+        try:
+            return app.state.durable_memory_service.list_projection_records(
+                record_type=record_type,
+                memory_layer=memory_layer,
+                projection_status=projection_status,
+                recall_visible=recall_visible,
+                relation_visible=relation_visible,
+                limit=limit,
+                offset=offset,
+            ).to_payload()
+        except DurableMemoryFilterError as error:
             raise HTTPException(status_code=422, detail=str(error)) from error
 
     @app.post("/v1/recall/search", response_model=RecallSearchResponse)
@@ -276,8 +353,6 @@ def _observe_input(request: ObserveRequest) -> ObserveInput:
         session_id=request.session_id,
         transcript_path=request.transcript_path,
         cwd=request.cwd,
-        repo_name=request.repo_name,
-        repo_root=request.repo_root,
         worktree_label=request.worktree_label,
         worktree_path=request.worktree_path,
         request_id=request.request_id,

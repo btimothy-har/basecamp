@@ -6,6 +6,8 @@ from pi_memory.analysis import TranscriptAnalysisResult
 from pi_memory.db import (
     JOB_KIND_ASSESS_INTERPRETATION_QUALITY,
     JOB_KIND_INTERPRET_SESSION,
+    JOB_KIND_PROJECT_MEMORY_RECORDS,
+    JOB_KIND_PROMOTE_DURABLE_MEMORY,
     JOB_KIND_SUMMARIZE_TOOL_ACTIVITIES,
     Job,
 )
@@ -105,6 +107,54 @@ def enqueue_assess_interpretation_quality_job(
             "session_id": session_id,
             "interpretation_job_id": interpretation_job_id,
         },
+    )
+
+
+def enqueue_project_memory_records_job(
+    store: JobStore,
+    *,
+    quality_report_id: int,
+    session_id: str,
+    quality_job_id: int | None = None,
+) -> Job:
+    """Enqueue short-term memory projection for one quality report."""
+    return store.enqueue(
+        JOB_KIND_PROJECT_MEMORY_RECORDS,
+        payload_json={
+            "scope": "quality_report",
+            "quality_report_id": quality_report_id,
+            "session_id": session_id,
+            "quality_job_id": quality_job_id,
+        },
+        max_attempts=3,
+    )
+
+
+def enqueue_rebuild_memory_projection_job(store: JobStore) -> Job:
+    """Enqueue an upsert rebuild pass for all canonical memory projections."""
+    return store.enqueue(
+        JOB_KIND_PROJECT_MEMORY_RECORDS,
+        payload_json={"scope": "all"},
+        max_attempts=3,
+    )
+
+
+def enqueue_promote_durable_memory_job(
+    store: JobStore,
+    *,
+    quality_report_id: int,
+    session_id: str,
+    quality_job_id: int | None = None,
+) -> Job:
+    """Enqueue durable-memory promotion for one quality report."""
+    return store.enqueue(
+        JOB_KIND_PROMOTE_DURABLE_MEMORY,
+        payload_json={
+            "quality_report_id": quality_report_id,
+            "session_id": session_id,
+            "quality_job_id": quality_job_id,
+        },
+        max_attempts=5,
     )
 
 

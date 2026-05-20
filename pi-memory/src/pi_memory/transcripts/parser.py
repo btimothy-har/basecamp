@@ -89,6 +89,22 @@ class PiTranscriptParser:
             unsupported_lines=unsupported_lines,
         )
 
+    def session_cwd(self, path: Path) -> str | None:
+        """Return the first transcript session event cwd, if present."""
+        with path.open("rb") as transcript:
+            while line := transcript.readline():
+                if not line.endswith(b"\n"):
+                    return None
+                decoded_line = _decode_line(line)
+                if decoded_line is None:
+                    continue
+                payload = _load_payload(decoded_line)
+                if payload is None:
+                    continue
+                if payload.get("type") == "session":
+                    return _optional_string(payload.get("cwd"))
+        return None
+
 
 def _decode_line(line: bytes) -> str | None:
     try:

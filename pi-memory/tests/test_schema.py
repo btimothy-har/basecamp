@@ -8,6 +8,12 @@ from pi_memory.db import (
     ACTIVITY_TEXT_STATUS_PENDING,
     ANALYSIS_KIND_TRANSCRIPT_STRUCTURE,
     ANALYSIS_STATUS_RUNNING,
+    DURABLE_MEMORY_ARCHIVED_REASON_STALE,
+    DURABLE_MEMORY_ARCHIVED_REASON_SUPERSEDED,
+    DURABLE_MEMORY_RELATION_TYPE_REINFORCES,
+    DURABLE_MEMORY_SOURCE_KIND_CLAIM,
+    DURABLE_MEMORY_STATUS_ARCHIVED,
+    DURABLE_MEMORY_STATUS_CANDIDATE,
     EPISODE_CLOSE_REASON_TRANSCRIPT_END,
     EPISODE_INTERPRETATION_STATUS_COMPLETED,
     EPISODE_STATUS_CLOSED,
@@ -15,6 +21,12 @@ from pi_memory.db import (
     JOB_KIND_INTERPRET_SESSION,
     JOB_KIND_PROCESS_TRANSCRIPT,
     JOB_STATUS_QUEUED,
+    MEMORY_LAYER_LONG_TERM,
+    MEMORY_LAYER_SHORT_TERM,
+    MEMORY_PROJECTION_COLLECTION_NAME,
+    MEMORY_PROJECTION_RECORD_TYPE_DURABLE_MEMORY,
+    MEMORY_PROJECTION_RECORD_TYPE_SESSION_CLAIM,
+    MEMORY_PROJECTION_STATUS_PENDING,
     SESSION_INTERPRETATION_BLOCKED_REASON_PHASE_5A_NOT_READY,
     SESSION_INTERPRETATION_DERIVATION_STATUS_CURRENT,
     SESSION_INTERPRETATION_DETERMINISTIC_STATUS_PASSED,
@@ -29,10 +41,15 @@ from pi_memory.db import (
     ActivityUnit,
     AnalysisRun,
     Database,
+    DurableMemoryAuditEvent,
+    DurableMemoryItem,
+    DurableMemoryRelation,
+    DurableMemorySource,
     Episode,
     EpisodeInterpretationSnapshot,
     EpisodeManifest,
     Job,
+    MemoryProjectionRecord,
     MemorySession,
     Observation,
     SessionInterpretationQualityReport,
@@ -90,6 +107,24 @@ def create_interpretation_snapshot(database: Database) -> int:
         return snapshot.id
 
 
+def create_interpretation_snapshot_and_quality_report(database: Database) -> tuple[int, int, int, int | None]:
+    with database.session() as session:
+        memory_session = MemorySession(session_id="pi-session-1")
+        transcript = Transcript(path="/tmp/pi/transcript.jsonl", session=memory_session)
+        snapshot = SessionInterpretationSnapshot(
+            session=memory_session,
+            transcript=transcript,
+            status=SESSION_INTERPRETATION_STATUS_COMPLETED,
+        )
+        quality_report = SessionInterpretationQualityReport(
+            snapshot=snapshot,
+            quality_status=SESSION_INTERPRETATION_QUALITY_STATUS_HEALTHY,
+        )
+        session.add(quality_report)
+        session.flush()
+        return memory_session.id, snapshot.id, quality_report.id, transcript.id
+
+
 def test_initialize_creates_pi_transcript_schema_tables(database: Database) -> None:
     inspector = inspect(database.engine)
     table_names = set(inspector.get_table_names())
@@ -108,10 +143,15 @@ def test_initialize_creates_pi_transcript_schema_tables(database: Database) -> N
         "session_snapshot_shells",
         "session_interpretation_snapshots",
         "session_interpretation_quality_reports",
+        "durable_memory_items",
+        "durable_memory_sources",
+        "durable_memory_relations",
+        "memory_projection_records",
+        "durable_memory_audit_events",
     }.issubset(table_names)
 
 
-def test_initialize_does_not_create_future_memory_tables(database: Database) -> None:
+def test_initialize_does_not_create_out_of_scope_memory_tables(database: Database) -> None:
     inspector = inspect(database.engine)
     table_names = set(inspector.get_table_names())
     forbidden_prefixes = (
@@ -172,6 +212,587 @@ def test_fresh_schema_includes_transcript_lineage_columns_indexes_and_constraint
         "ck_transcripts_parent_id_requires_path",
         "ck_transcripts_parent_path_non_empty",
     }.issubset(constraints)
+
+
+def test_durable_memory_schema_includes_indexes_foreign_keys_and_constraints(database: Database) -> None:
+    inspector = inspect(database.engine)
+
+    item_constraints = {constraint["name"] for constraint in inspector.get_check_constraints("durable_memory_items")}
+    item_indexes = {index["name"] for index in inspector.get_indexes("durable_memory_items")}
+    item_foreign_keys = inspector.get_foreign_keys("durable_memory_items")
+    source_indexes = {index["name"] for index in inspector.get_indexes("durable_memory_sources")}
+    source_foreign_keys = inspector.get_foreign_keys("durable_memory_sources")
+    relation_constraints = {
+        constraint["name"] for constraint in inspector.get_check_constraints("durable_memory_relations")
+    }
+    audit_indexes = {index["name"] for index in inspector.get_indexes("durable_memory_audit_events")}
+
+    assert {
+        "ck_durable_memory_items_status_valid",
+        "ck_durable_memory_items_archived_reason_matches_status",
+        "ck_durable_memory_items_superseded_by_matches_reason",
+        "ck_durable_memory_items_not_self_superseded",
+        "ck_durable_memory_items_confidence_range",
+        "ck_durable_memory_items_content_hash_non_empty",
+        "ck_durable_memory_items_schema_version_positive",
+    }.issubset(item_constraints)
+    assert {
+        "ix_durable_memory_items_session_status",
+        "ix_durable_memory_items_snapshot_id",
+        "ix_durable_memory_items_quality_report_id",
+        "ix_durable_memory_items_content_hash",
+    }.issubset(item_indexes)
+    assert any(
+        foreign_key["constrained_columns"] == ["transcript_id"]
+        and foreign_key["referred_table"] == "transcripts"
+        and foreign_key["options"].get("ondelete") == "SET NULL"
+        for foreign_key in item_foreign_keys
+    )
+    assert any(
+        foreign_key["constrained_columns"] == ["snapshot_id"]
+        and foreign_key["referred_table"] == "session_interpretation_snapshots"
+        and foreign_key["options"].get("ondelete") == "CASCADE"
+        for foreign_key in item_foreign_keys
+    )
+    assert {
+        "ix_durable_memory_sources_memory_id",
+        "ix_durable_memory_sources_snapshot_id",
+        "ix_durable_memory_sources_source_ref",
+    }.issubset(source_indexes)
+    assert any(
+        foreign_key["constrained_columns"] == ["activity_unit_id"]
+        and foreign_key["referred_table"] == "activity_units"
+        and foreign_key["options"].get("ondelete") == "SET NULL"
+        for foreign_key in source_foreign_keys
+    )
+    assert {
+        "ck_durable_memory_relations_relation_type_valid",
+        "ck_durable_memory_relations_not_self",
+        "ck_durable_memory_relations_similarity_score_range",
+        "ck_durable_memory_relations_confidence_range",
+    }.issubset(relation_constraints)
+    assert "ix_durable_memory_audit_events_memory_created" in audit_indexes
+
+
+def test_memory_projection_schema_includes_indexes_foreign_keys_and_constraints(database: Database) -> None:
+    inspector = inspect(database.engine)
+
+    constraints = {constraint["name"] for constraint in inspector.get_check_constraints("memory_projection_records")}
+    indexes = {index["name"] for index in inspector.get_indexes("memory_projection_records")}
+    foreign_keys = inspector.get_foreign_keys("memory_projection_records")
+    unique_constraints = {
+        tuple(constraint["column_names"])
+        for constraint in inspector.get_unique_constraints("memory_projection_records")
+    }
+
+    assert {
+        "ck_memory_projection_records_record_type_valid",
+        "ck_memory_projection_records_memory_layer_valid",
+        "ck_memory_projection_records_record_type_invariants",
+        "ck_memory_projection_records_status_valid",
+        "ck_memory_projection_records_source_id_positive",
+        "ck_memory_projection_records_content_hash_non_empty",
+    }.issubset(constraints)
+    assert {
+        "ix_memory_projection_records_collection_status",
+        "ix_memory_projection_records_source",
+        "ix_memory_projection_records_snapshot_id",
+        "ix_memory_projection_records_durable_memory_id",
+    }.issubset(indexes)
+    assert ("collection_name", "chroma_id") in unique_constraints
+    assert ("collection_name", "record_key") in unique_constraints
+    assert any(
+        foreign_key["constrained_columns"] == ["durable_memory_id"]
+        and foreign_key["referred_table"] == "durable_memory_items"
+        and foreign_key["options"].get("ondelete") == "CASCADE"
+        for foreign_key in foreign_keys
+    )
+
+
+def test_durable_memory_defaults_relationships_and_projection_defaults(database: Database) -> None:
+    session_id, snapshot_id, quality_report_id, transcript_id = create_interpretation_snapshot_and_quality_report(
+        database
+    )
+
+    with database.session() as session:
+        memory = DurableMemoryItem(
+            session_id=session_id,
+            transcript_id=transcript_id,
+            snapshot_id=snapshot_id,
+            quality_report_id=quality_report_id,
+            claim_index=0,
+            claim_kind="preference",
+            statement="Prefer durable facts in SQLite.",
+            confidence=0.75,
+            content_hash="hash-1",
+        )
+        related_memory = DurableMemoryItem(
+            session_id=session_id,
+            transcript_id=transcript_id,
+            snapshot_id=snapshot_id,
+            quality_report_id=quality_report_id,
+            claim_index=1,
+            claim_kind="preference",
+            statement="SQLite is canonical for memory.",
+            content_hash="hash-2",
+        )
+        session.add_all([memory, related_memory])
+        session.flush()
+        source = DurableMemorySource(
+            memory=memory,
+            snapshot_id=snapshot_id,
+            quality_report_id=quality_report_id,
+            claim_index=0,
+            source_ref="claim:0",
+        )
+        relation = DurableMemoryRelation(
+            memory=memory,
+            related_memory=related_memory,
+            relation_type=DURABLE_MEMORY_RELATION_TYPE_REINFORCES,
+            similarity_score=0.8,
+            confidence=0.9,
+        )
+        projection = MemoryProjectionRecord(
+            chroma_id="durable:1",
+            record_key="durable-memory:hash-1",
+            record_type=MEMORY_PROJECTION_RECORD_TYPE_DURABLE_MEMORY,
+            memory_layer=MEMORY_LAYER_LONG_TERM,
+            source_table="durable_memory_items",
+            source_id=memory.id,
+            durable_memory=memory,
+            content_hash="hash-1",
+        )
+        audit_event = DurableMemoryAuditEvent(
+            memory=memory,
+            event_type="created",
+            to_status=DURABLE_MEMORY_STATUS_CANDIDATE,
+        )
+        session.add_all([source, relation, projection, audit_event])
+        session.flush()
+        session.refresh(memory)
+        session.refresh(source)
+        session.refresh(projection)
+        session.refresh(audit_event)
+
+        assert memory.status == DURABLE_MEMORY_STATUS_CANDIDATE
+        assert memory.evaluation_json == {}
+        assert memory.relation_summary_json == {}
+        assert memory.metadata_json == {}
+        assert memory.schema_version == 1
+        assert source.source_origin == SOURCE_ORIGIN_UNKNOWN
+        assert source.source_kind == DURABLE_MEMORY_SOURCE_KIND_CLAIM
+        assert source.metadata_json == {}
+        assert projection.collection_name == MEMORY_PROJECTION_COLLECTION_NAME
+        assert projection.status == MEMORY_PROJECTION_STATUS_PENDING
+        assert projection.recall_visible is False
+        assert projection.relation_visible is False
+        assert audit_event.details_json == {}
+        assert memory.sources == [source]
+        assert memory.relations == [relation]
+        assert memory.projection_records == [projection]
+        assert memory.audit_events == [audit_event]
+
+
+def test_durable_memory_constraints_reject_invalid_rows(database: Database) -> None:
+    session_id, snapshot_id, quality_report_id, transcript_id = create_interpretation_snapshot_and_quality_report(
+        database
+    )
+
+    with pytest.raises(IntegrityError), database.session() as session:
+        session.add(
+            DurableMemoryItem(
+                session_id=session_id,
+                transcript_id=transcript_id,
+                snapshot_id=snapshot_id,
+                quality_report_id=quality_report_id,
+                status="invalid",
+                claim_index=0,
+                claim_kind="preference",
+                statement="Invalid status.",
+                content_hash="hash-invalid-status",
+            ),
+        )
+
+    with pytest.raises(IntegrityError), database.session() as session:
+        session.add(
+            DurableMemoryItem(
+                session_id=session_id,
+                transcript_id=transcript_id,
+                snapshot_id=snapshot_id,
+                quality_report_id=quality_report_id,
+                status=DURABLE_MEMORY_STATUS_CANDIDATE,
+                archived_reason=DURABLE_MEMORY_ARCHIVED_REASON_STALE,
+                claim_index=0,
+                claim_kind="preference",
+                statement="Non-archived rows cannot carry archived reasons.",
+                content_hash="hash-invalid-archived-reason",
+            ),
+        )
+
+    with pytest.raises(IntegrityError), database.session() as session:
+        session.add(
+            DurableMemoryItem(
+                session_id=session_id,
+                transcript_id=transcript_id,
+                snapshot_id=snapshot_id,
+                quality_report_id=quality_report_id,
+                status=DURABLE_MEMORY_STATUS_ARCHIVED,
+                claim_index=0,
+                claim_kind="preference",
+                statement="Archived rows need an archived reason.",
+                content_hash="hash-invalid-archived-missing-reason",
+            ),
+        )
+
+    with pytest.raises(IntegrityError), database.session() as session:
+        session.add(
+            DurableMemoryItem(
+                session_id=session_id,
+                transcript_id=transcript_id,
+                snapshot_id=snapshot_id,
+                quality_report_id=quality_report_id,
+                status=DURABLE_MEMORY_STATUS_ARCHIVED,
+                archived_reason=DURABLE_MEMORY_ARCHIVED_REASON_SUPERSEDED,
+                claim_index=0,
+                claim_kind="preference",
+                statement="Superseded archived rows need a replacement.",
+                content_hash="hash-invalid-superseded",
+            ),
+        )
+
+    with database.session() as session:
+        replacement = DurableMemoryItem(
+            session_id=session_id,
+            transcript_id=transcript_id,
+            snapshot_id=snapshot_id,
+            quality_report_id=quality_report_id,
+            claim_index=1,
+            claim_kind="preference",
+            statement="Replacement memory.",
+            content_hash="hash-replacement",
+        )
+        session.add(replacement)
+        session.flush()
+        replacement_id = replacement.id
+
+    with pytest.raises(IntegrityError), database.session() as session:
+        session.add(
+            DurableMemoryItem(
+                session_id=session_id,
+                transcript_id=transcript_id,
+                snapshot_id=snapshot_id,
+                quality_report_id=quality_report_id,
+                superseded_by_id=replacement_id,
+                claim_index=0,
+                claim_kind="preference",
+                statement="Only superseded archived rows can reference a replacement.",
+                content_hash="hash-invalid-superseded-by",
+            ),
+        )
+
+    with pytest.raises(IntegrityError), database.session() as session:
+        session.add(
+            DurableMemoryItem(
+                session_id=session_id,
+                transcript_id=transcript_id,
+                snapshot_id=snapshot_id,
+                quality_report_id=quality_report_id,
+                status_reason="",
+                claim_index=0,
+                claim_kind="preference",
+                statement="Empty status reasons are invalid.",
+                content_hash="hash-invalid-status-reason",
+            ),
+        )
+
+    with pytest.raises(IntegrityError), database.session() as session:
+        session.add(
+            DurableMemoryItem(
+                session_id=session_id,
+                transcript_id=transcript_id,
+                snapshot_id=snapshot_id,
+                quality_report_id=quality_report_id,
+                claim_index=-1,
+                claim_kind="preference",
+                statement="Negative claim indexes are invalid.",
+                content_hash="hash-invalid-claim-index",
+            ),
+        )
+
+    with pytest.raises(IntegrityError), database.session() as session:
+        session.add(
+            DurableMemoryItem(
+                session_id=session_id,
+                transcript_id=transcript_id,
+                snapshot_id=snapshot_id,
+                quality_report_id=quality_report_id,
+                claim_index=0,
+                claim_kind="preference",
+                statement="Out of range confidence is invalid.",
+                confidence=1.5,
+                content_hash="hash-invalid-confidence",
+            ),
+        )
+
+
+def test_durable_memory_accepts_archived_reason_states(database: Database) -> None:
+    session_id, snapshot_id, quality_report_id, transcript_id = create_interpretation_snapshot_and_quality_report(
+        database
+    )
+
+    with database.session() as session:
+        replacement = DurableMemoryItem(
+            session_id=session_id,
+            transcript_id=transcript_id,
+            snapshot_id=snapshot_id,
+            quality_report_id=quality_report_id,
+            claim_index=0,
+            claim_kind="preference",
+            statement="Replacement memory.",
+            content_hash="hash-archive-replacement",
+        )
+        stale = DurableMemoryItem(
+            session_id=session_id,
+            transcript_id=transcript_id,
+            snapshot_id=snapshot_id,
+            quality_report_id=quality_report_id,
+            status=DURABLE_MEMORY_STATUS_ARCHIVED,
+            archived_reason=DURABLE_MEMORY_ARCHIVED_REASON_STALE,
+            claim_index=1,
+            claim_kind="preference",
+            statement="Archived stale memory.",
+            content_hash="hash-archived-stale",
+        )
+        session.add_all([replacement, stale])
+        session.flush()
+        superseded = DurableMemoryItem(
+            session_id=session_id,
+            transcript_id=transcript_id,
+            snapshot_id=snapshot_id,
+            quality_report_id=quality_report_id,
+            status=DURABLE_MEMORY_STATUS_ARCHIVED,
+            archived_reason=DURABLE_MEMORY_ARCHIVED_REASON_SUPERSEDED,
+            superseded_by_id=replacement.id,
+            claim_index=2,
+            claim_kind="preference",
+            statement="Archived superseded memory.",
+            content_hash="hash-archived-superseded",
+        )
+        session.add(superseded)
+        session.flush()
+        session.refresh(stale)
+        session.refresh(superseded)
+
+        assert stale.archived_reason == DURABLE_MEMORY_ARCHIVED_REASON_STALE
+        assert stale.superseded_by_id is None
+        assert superseded.superseded_by_id == replacement.id
+
+
+def test_durable_memory_source_relation_and_audit_constraints(database: Database) -> None:
+    session_id, snapshot_id, quality_report_id, transcript_id = create_interpretation_snapshot_and_quality_report(
+        database
+    )
+
+    with database.session() as session:
+        memory = DurableMemoryItem(
+            session_id=session_id,
+            transcript_id=transcript_id,
+            snapshot_id=snapshot_id,
+            quality_report_id=quality_report_id,
+            claim_index=0,
+            claim_kind="preference",
+            statement="A sourceable memory.",
+            content_hash="hash-sourceable",
+        )
+        related_memory = DurableMemoryItem(
+            session_id=session_id,
+            transcript_id=transcript_id,
+            snapshot_id=snapshot_id,
+            quality_report_id=quality_report_id,
+            claim_index=1,
+            claim_kind="preference",
+            statement="A related memory.",
+            content_hash="hash-related-sourceable",
+        )
+        session.add_all([memory, related_memory])
+        session.flush()
+        memory_id = memory.id
+        related_memory_id = related_memory.id
+
+    with pytest.raises(IntegrityError), database.session() as session:
+        session.add(
+            DurableMemorySource(
+                memory_id=memory_id,
+                snapshot_id=snapshot_id,
+                quality_report_id=quality_report_id,
+                claim_index=0,
+                source_ref="",
+            ),
+        )
+
+    with pytest.raises(IntegrityError), database.session() as session:
+        session.add(
+            DurableMemorySource(
+                memory_id=memory_id,
+                snapshot_id=snapshot_id,
+                quality_report_id=quality_report_id,
+                claim_index=0,
+                source_ref="claim:0",
+                source_origin="remote",
+            ),
+        )
+
+    with pytest.raises(IntegrityError), database.session() as session:
+        session.add(
+            DurableMemorySource(
+                memory_id=memory_id,
+                snapshot_id=snapshot_id,
+                quality_report_id=quality_report_id,
+                claim_index=0,
+                source_ref="claim:0",
+                source_kind="audit",
+            ),
+        )
+
+    with pytest.raises(IntegrityError), database.session() as session:
+        session.add(
+            DurableMemoryRelation(
+                memory_id=memory_id,
+                related_memory_id=memory_id,
+                relation_type=DURABLE_MEMORY_RELATION_TYPE_REINFORCES,
+            ),
+        )
+
+    with pytest.raises(IntegrityError), database.session() as session:
+        session.add(
+            DurableMemoryRelation(
+                memory_id=memory_id,
+                related_memory_id=related_memory_id,
+                relation_type=DURABLE_MEMORY_RELATION_TYPE_REINFORCES,
+                similarity_score=1.5,
+            ),
+        )
+
+    with pytest.raises(IntegrityError), database.session() as session:
+        session.add(DurableMemoryAuditEvent(memory_id=memory_id, event_type=""))
+
+    with pytest.raises(IntegrityError), database.session() as session:
+        session.add(DurableMemoryAuditEvent(memory_id=memory_id, event_type="invalid-status", from_status="bogus"))
+
+
+def test_memory_projection_records_enforce_type_invariants(database: Database) -> None:
+    session_id, snapshot_id, quality_report_id, transcript_id = create_interpretation_snapshot_and_quality_report(
+        database
+    )
+
+    with database.session() as session:
+        memory = DurableMemoryItem(
+            session_id=session_id,
+            transcript_id=transcript_id,
+            snapshot_id=snapshot_id,
+            quality_report_id=quality_report_id,
+            claim_index=0,
+            claim_kind="preference",
+            statement="A projectable memory.",
+            content_hash="hash-projectable",
+        )
+        session.add(memory)
+        session.flush()
+        memory_id = memory.id
+
+    with database.session() as session:
+        projection = MemoryProjectionRecord(
+            chroma_id="session-claim:0",
+            record_key="session-claim:0",
+            record_type=MEMORY_PROJECTION_RECORD_TYPE_SESSION_CLAIM,
+            memory_layer=MEMORY_LAYER_SHORT_TERM,
+            source_table="session_interpretation_snapshots",
+            source_id=snapshot_id,
+            snapshot_id=snapshot_id,
+            quality_report_id=quality_report_id,
+            claim_index=0,
+            content_hash="hash-session-claim",
+        )
+        session.add(projection)
+        session.flush()
+        session.refresh(projection)
+
+        assert projection.collection_name == MEMORY_PROJECTION_COLLECTION_NAME
+        assert projection.status == MEMORY_PROJECTION_STATUS_PENDING
+
+    with pytest.raises(IntegrityError), database.session() as session:
+        session.add(
+            MemoryProjectionRecord(
+                chroma_id="session-claim:0",
+                record_key="session-claim:duplicate-chroma-id",
+                record_type=MEMORY_PROJECTION_RECORD_TYPE_SESSION_CLAIM,
+                memory_layer=MEMORY_LAYER_SHORT_TERM,
+                source_table="session_interpretation_snapshots",
+                source_id=snapshot_id,
+                snapshot_id=snapshot_id,
+                claim_index=1,
+                content_hash="hash-duplicate-chroma-id",
+            ),
+        )
+
+    with pytest.raises(IntegrityError), database.session() as session:
+        session.add(
+            MemoryProjectionRecord(
+                chroma_id="session-claim-missing-snapshot",
+                record_key="session-claim-missing-snapshot",
+                record_type=MEMORY_PROJECTION_RECORD_TYPE_SESSION_CLAIM,
+                memory_layer=MEMORY_LAYER_SHORT_TERM,
+                source_table="session_interpretation_snapshots",
+                source_id=snapshot_id,
+                claim_index=0,
+                content_hash="hash-invalid-missing-snapshot",
+            ),
+        )
+
+    with pytest.raises(IntegrityError), database.session() as session:
+        session.add(
+            MemoryProjectionRecord(
+                chroma_id="session-claim-invalid-source-id",
+                record_key="session-claim-invalid-source-id",
+                record_type=MEMORY_PROJECTION_RECORD_TYPE_SESSION_CLAIM,
+                memory_layer=MEMORY_LAYER_SHORT_TERM,
+                source_table="session_interpretation_snapshots",
+                source_id=0,
+                snapshot_id=snapshot_id,
+                claim_index=0,
+                content_hash="hash-invalid-source-id",
+            ),
+        )
+
+    with pytest.raises(IntegrityError), database.session() as session:
+        session.add(
+            MemoryProjectionRecord(
+                chroma_id="session-claim-invalid",
+                record_key="session-claim-invalid",
+                record_type=MEMORY_PROJECTION_RECORD_TYPE_SESSION_CLAIM,
+                memory_layer=MEMORY_LAYER_LONG_TERM,
+                source_table="session_interpretation_snapshots",
+                source_id=snapshot_id,
+                snapshot_id=snapshot_id,
+                claim_index=0,
+                content_hash="hash-invalid-session-claim",
+            ),
+        )
+
+    with pytest.raises(IntegrityError), database.session() as session:
+        session.add(
+            MemoryProjectionRecord(
+                chroma_id="durable-invalid",
+                record_key="durable-invalid",
+                record_type=MEMORY_PROJECTION_RECORD_TYPE_DURABLE_MEMORY,
+                memory_layer=MEMORY_LAYER_LONG_TERM,
+                source_table="durable_memory_items",
+                source_id=memory_id,
+                durable_memory_id=memory_id,
+                claim_index=0,
+                content_hash="hash-invalid-durable",
+            ),
+        )
 
 
 def test_job_defaults_are_applied(database: Database) -> None:

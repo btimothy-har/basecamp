@@ -7,7 +7,7 @@ import os
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Any
+from typing import Any, Literal
 
 from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
@@ -21,13 +21,22 @@ from pi_memory.db import (
     ACTIVITY_TEXT_STATUS_FAILED,
     ANALYSIS_KIND_TRANSCRIPT_STRUCTURE,
     ANALYSIS_STATUS_COMPLETED,
+    DURABLE_MEMORY_SOURCE_KIND_CLAIM,
+    DURABLE_MEMORY_STATUS_ARCHIVED,
+    DURABLE_MEMORY_STATUS_CANDIDATE,
+    DURABLE_MEMORY_STATUS_PROMOTED,
+    DURABLE_MEMORY_STATUS_QUARANTINED,
+    DURABLE_MEMORY_STATUS_REJECTED,
     EPISODE_INTERPRETATION_STATUS_COMPLETED,
     EPISODE_INTERPRETATION_STATUS_FAILED,
     EPISODE_INTERPRETATION_STATUS_SKIPPED_NO_CLAIM_SOURCES,
     JOB_KIND_ASSESS_INTERPRETATION_QUALITY,
     JOB_KIND_INTERPRET_SESSION,
     JOB_KIND_PROCESS_TRANSCRIPT,
+    JOB_KIND_PROJECT_MEMORY_RECORDS,
+    JOB_KIND_PROMOTE_DURABLE_MEMORY,
     JOB_KIND_SUMMARIZE_TOOL_ACTIVITIES,
+    MEMORY_PROJECTION_STATUS_DELETED,
     SESSION_INTERPRETATION_QUALITY_REASON_SEMANTIC_ASSESSMENT_FAILED,
     SESSION_INTERPRETATION_QUALITY_REASON_SEMANTIC_ASSESSMENT_PENDING,
     SESSION_INTERPRETATION_QUALITY_STATUS_ASSESSMENT_FAILED,
@@ -35,17 +44,37 @@ from pi_memory.db import (
     SESSION_INTERPRETATION_STATUS_BLOCKED,
     SESSION_INTERPRETATION_STATUS_COMPLETED,
     SESSION_INTERPRETATION_STATUS_SKIPPED_NO_CLAIM_SOURCES,
+    SOURCE_ORIGIN_UNKNOWN,
+    SOURCE_ORIGINS,
     ActivityUnit,
     AnalysisRun,
     Database,
+    DurableMemoryAuditEvent,
+    DurableMemoryItem,
+    DurableMemorySource,
     EpisodeInterpretationSnapshot,
     Job,
+    MemoryProjectionRecord,
     SessionInterpretationQualityReport,
     SessionInterpretationSnapshot,
     Transcript,
     TranscriptEntry,
     database,
 )
+from pi_memory.durable import (
+    CandidateEvaluator,
+    DeterministicDurableMemoryReducer,
+    DurableMemoryEvidencePacket,
+    DurableMemoryPacketError,
+    DurableMemoryProjectionError,
+    ReducerContext,
+    assess_durable_memory_relations,
+    build_durable_memory_evidence_packet,
+    create_candidate_evaluator,
+    persist_reducer_decision,
+    project_durable_memory_record,
+)
+from pi_memory.durable.relations import RelationAssessmentResult
 from pi_memory.interpretation import (
     INTERPRETATION_SCHEMA_VERSION,
     EpisodeInterpretationCoverage,
@@ -71,9 +100,13 @@ from pi_memory.interpretation.packets import EpisodePacket, InterpretationPacket
 from pi_memory.jobs.interpretation import (
     enqueue_assess_interpretation_quality_job,
     enqueue_interpret_session_job_for_analysis,
+    enqueue_project_memory_records_job,
+    enqueue_promote_durable_memory_job,
     enqueue_summarize_tool_activities_job,
 )
 from pi_memory.jobs.store import JobStore
+from pi_memory.projection import create_memory_projection, project_session_claims
+from pi_memory.projection.contracts import MemoryProjection
 from pi_memory.quality import (
     QualityAssessor,
     QualityReportDraft,
@@ -89,6 +122,16 @@ TRANSCRIPT_ID_INTEGER_ERROR = "transcript_id must be an integer"
 ANALYSIS_RUN_ID_INTEGER_ERROR = "analysis_run_id must be an integer"
 PROCESS_JOB_ID_INTEGER_ERROR = "process_job_id must be an integer"
 SNAPSHOT_ID_INTEGER_ERROR = "snapshot_id must be an integer"
+QUALITY_REPORT_ID_INTEGER_ERROR = "quality_report_id must be an integer"
+PROJECT_MEMORY_SCOPE_ERROR = "memory projection scope must be 'quality_report' or 'all'"
+PROMOTION_TERMINAL_STATUSES = {
+    DURABLE_MEMORY_STATUS_ARCHIVED,
+    DURABLE_MEMORY_STATUS_PROMOTED,
+    DURABLE_MEMORY_STATUS_QUARANTINED,
+    DURABLE_MEMORY_STATUS_REJECTED,
+}
+
+type CandidateUpsertOutcome = Literal["created", "updated", "skipped"]
 
 
 @dataclass(frozen=True)
@@ -166,6 +209,13 @@ class TranscriptNotFoundError(PermanentJobError):
         super().__init__(f"Transcript {transcript_id} was not found")
 
 
+class MemoryProjectionJobError(JobRunnerError):
+    """Raised when a projection job should be retried safely."""
+
+    def __init__(self) -> None:
+        super().__init__("memory projection failed for one or more quality-report claims")
+
+
 class JobRunner:
     """Run a claimed durable job to completion or recorded failure."""
 
@@ -175,12 +225,18 @@ class JobRunner:
         interpreter: SessionInterpreter | None = None,
         tool_summarizer: ToolActivitySummarizer | None = None,
         quality_assessor: QualityAssessor | None = None,
+        memory_projection: MemoryProjection | None = None,
+        candidate_evaluator: CandidateEvaluator | None = None,
+        durable_reducer: DeterministicDurableMemoryReducer | None = None,
     ) -> None:
         self._database = database
         self._store = JobStore(database=database)
         self._interpreter = interpreter
         self._tool_summarizer = tool_summarizer
         self._quality_assessor_adapter = quality_assessor
+        self._memory_projection_adapter = memory_projection
+        self._candidate_evaluator_adapter = candidate_evaluator
+        self._durable_reducer = durable_reducer or DeterministicDurableMemoryReducer()
 
     def run(
         self,
@@ -225,6 +281,10 @@ class JobRunner:
             return self._interpret_session(job)
         if job.kind == JOB_KIND_ASSESS_INTERPRETATION_QUALITY:
             return self._assess_interpretation_quality(job)
+        if job.kind == JOB_KIND_PROJECT_MEMORY_RECORDS:
+            return self._project_memory_records(job)
+        if job.kind == JOB_KIND_PROMOTE_DURABLE_MEMORY:
+            return self._promote_durable_memory(job)
         raise UnsupportedJobKindError(job.kind)
 
     def _process_transcript(self, job: Job) -> dict[str, Any]:
@@ -451,7 +511,200 @@ class JobRunner:
                 packet = build_quality_packet(session, snapshot, deterministic_report=draft)
                 draft = self._quality_assessor().assess(packet)
             report = _replace_quality_report(session=session, job=job, snapshot=snapshot, draft=draft)
-            return _quality_report_result_json(snapshot, report)
+            result_json = _quality_report_result_json(snapshot, report)
+
+        # Always enqueue; downstream jobs are safe no-ops or rejection audit paths when promotable is false.
+        project_job = enqueue_project_memory_records_job(
+            self._store,
+            quality_report_id=result_json["quality_report_id"],
+            session_id=result_json["session_id"],
+            quality_job_id=job.id,
+        )
+        promote_job = enqueue_promote_durable_memory_job(
+            self._store,
+            quality_report_id=result_json["quality_report_id"],
+            session_id=result_json["session_id"],
+            quality_job_id=job.id,
+        )
+        result_json["project_memory_records_job_id"] = project_job.id
+        result_json["promote_durable_memory_job_id"] = promote_job.id
+        return result_json
+
+    def _project_memory_records(self, job: Job) -> dict[str, Any]:
+        scope = _payload_memory_projection_scope(job.payload_json)
+        self._database.initialize()
+        if scope == "quality_report":
+            return self._project_quality_report_memory_records(job)
+        return self._rebuild_memory_projection()
+
+    def _project_quality_report_memory_records(self, job: Job) -> dict[str, Any]:
+        quality_report_id = _payload_quality_report_id(job.payload_json)
+        with self._database.session() as session:
+            result = project_session_claims(session, quality_report_id, self._memory_projection())
+            result_json = {
+                "status": "completed",
+                "scope": "quality_report",
+                "quality_report_id": result.report_id,
+                "snapshot_id": result.snapshot_id,
+                "eligible": result.eligible,
+                "indexed_count": result.indexed_count,
+                "skipped_count": result.skipped_count,
+                "deleted_count": result.deleted_count,
+                "failed_count": result.failed_count,
+                "reason": result.reason,
+            }
+        if result.failed_count > 0:
+            raise MemoryProjectionJobError()
+        return result_json
+
+    def _rebuild_memory_projection(self) -> dict[str, Any]:
+        durable_error: DurableMemoryProjectionError | None = None
+        durable_failed_count = 0
+        with self._database.session() as session:
+            projection = self._memory_projection()
+            reports = list(
+                session.scalars(
+                    select(SessionInterpretationQualityReport).order_by(SessionInterpretationQualityReport.id)
+                ),
+            )
+            durable_memories = list(session.scalars(select(DurableMemoryItem).order_by(DurableMemoryItem.id)))
+            report_results = [project_session_claims(session, report.id, projection) for report in reports]
+            durable_records: list[MemoryProjectionRecord] = []
+            for memory in durable_memories:
+                record, error = _project_durable_memory_record_outcome(session, memory, projection)
+                if record is not None:
+                    durable_records.append(record)
+                    continue
+                durable_failed_count += 1
+                if durable_error is None:
+                    durable_error = error
+            result_json = {
+                "status": "completed",
+                "scope": "all",
+                "quality_report_count": len(report_results),
+                "durable_memory_count": len(durable_records) + durable_failed_count,
+                "indexed_count": sum(result.indexed_count for result in report_results)
+                + _indexed_projection_record_count(durable_records),
+                "skipped_count": sum(result.skipped_count for result in report_results),
+                "deleted_count": sum(result.deleted_count for result in report_results)
+                + _deleted_projection_record_count(durable_records),
+                "failed_count": sum(result.failed_count for result in report_results) + durable_failed_count,
+            }
+        if durable_error is not None:
+            raise durable_error
+        if result_json["failed_count"] > 0:
+            raise MemoryProjectionJobError()
+        return result_json
+
+    def _promote_durable_memory(self, job: Job) -> dict[str, Any]:
+        quality_report_id = _payload_quality_report_id(job.payload_json)
+        self._database.initialize()
+        counts = {
+            DURABLE_MEMORY_STATUS_PROMOTED: 0,
+            DURABLE_MEMORY_STATUS_REJECTED: 0,
+            DURABLE_MEMORY_STATUS_QUARANTINED: 0,
+            DURABLE_MEMORY_STATUS_ARCHIVED: 0,
+        }
+        skipped_packet_count = 0
+        failed_packet_count = 0
+        processed_count = 0
+        with self._database.session() as session:
+            report = session.get(SessionInterpretationQualityReport, quality_report_id)
+            if report is None:
+                return {
+                    "status": "completed",
+                    "quality_report_id": quality_report_id,
+                    "claim_count": 0,
+                    "processed_count": 0,
+                    "skipped_packet_count": 0,
+                    "failed_packet_count": 1,
+                    "final_status_counts": counts,
+                    "reason": "report_not_found",
+                }
+            claim_count = _quality_report_claim_count(report)
+            for claim_index in range(claim_count):
+                try:
+                    outcome = self._promote_quality_report_claim(session, job, quality_report_id, claim_index)
+                except DurableMemoryPacketError:
+                    failed_packet_count += 1
+                    continue
+                if outcome == "skipped":
+                    skipped_packet_count += 1
+                    continue
+                processed_count += 1
+                counts[outcome] = counts.get(outcome, 0) + 1
+
+        return {
+            "status": "completed",
+            "quality_report_id": quality_report_id,
+            "claim_count": claim_count,
+            "processed_count": processed_count,
+            "skipped_packet_count": skipped_packet_count,
+            "failed_packet_count": failed_packet_count,
+            "final_status_counts": counts,
+        }
+
+    def _promote_quality_report_claim(
+        self,
+        session: Session,
+        job: Job,
+        quality_report_id: int,
+        claim_index: int,
+    ) -> str:
+        packet = build_durable_memory_evidence_packet(session, quality_report_id, claim_index)
+        memory, upsert_outcome = _upsert_durable_memory_candidate(session, packet, job.id)
+        if upsert_outcome == "skipped":
+            return "skipped"
+        _replace_durable_memory_sources(session, memory, packet)
+        if upsert_outcome == "created":
+            _add_durable_memory_audit_event(
+                session,
+                memory,
+                event_type="candidate_created",
+                from_status=None,
+                to_status=memory.status,
+                reason_code="candidate_created",
+                details={"quality_report_id": quality_report_id, "claim_index": claim_index},
+            )
+        _add_durable_memory_audit_event(
+            session,
+            memory,
+            event_type="eligibility_evaluated",
+            from_status=memory.status,
+            to_status=memory.status,
+            reason_code="eligible" if packet.eligibility.is_eligible else f"blocked_{packet.eligibility.block_reason}",
+            details={"is_eligible": packet.eligibility.is_eligible, "block_reason": packet.eligibility.block_reason},
+        )
+        if not packet.eligibility.is_eligible:
+            decision = self._durable_reducer.decide(ReducerContext(memory, packet.eligibility, None, None))
+            persist_reducer_decision(session, memory, decision)
+            project_durable_memory_record(session, memory, self._memory_projection())
+            return memory.status
+
+        evaluation_result = self._candidate_evaluator().evaluate(packet)
+        preliminary_decision = self._durable_reducer.decide(
+            ReducerContext(memory, packet.eligibility, evaluation_result.output, None),
+        )
+        if preliminary_decision.reason_code != "metrics_all_healthy":
+            persist_reducer_decision(session, memory, preliminary_decision, evaluation_result=evaluation_result)
+            project_durable_memory_record(session, memory, self._memory_projection())
+            return memory.status
+
+        relation_result = assess_durable_memory_relations(session, memory.id, self._memory_projection())
+        _add_relation_assessed_audit_event(session, memory, relation_result)
+        final_decision = self._durable_reducer.decide(
+            ReducerContext(memory, packet.eligibility, evaluation_result.output, relation_result),
+        )
+        persist_reducer_decision(
+            session,
+            memory,
+            final_decision,
+            evaluation_result=evaluation_result,
+            relation_result=relation_result,
+        )
+        project_durable_memory_record(session, memory, self._memory_projection())
+        _project_archived_related_memory(session, memory, relation_result, self._memory_projection())
+        return memory.status
 
     def _write_assessment_failed_quality_report(self, job: Job, *, error_type: str) -> None:
         try:
@@ -493,6 +746,16 @@ class JobRunner:
         if self._quality_assessor_adapter is not None:
             return self._quality_assessor_adapter
         return create_quality_assessor()
+
+    def _memory_projection(self) -> MemoryProjection:
+        if self._memory_projection_adapter is None:
+            self._memory_projection_adapter = create_memory_projection()
+        return self._memory_projection_adapter
+
+    def _candidate_evaluator(self) -> CandidateEvaluator:
+        if self._candidate_evaluator_adapter is None:
+            self._candidate_evaluator_adapter = create_candidate_evaluator()
+        return self._candidate_evaluator_adapter
 
 
 async def _summarize_tool_activity_work(
@@ -564,6 +827,26 @@ def _payload_snapshot_id(payload: Any) -> int:
     if not isinstance(snapshot_id, int) or isinstance(snapshot_id, bool):
         raise InvalidJobPayloadError(SNAPSHOT_ID_INTEGER_ERROR)
     return snapshot_id
+
+
+def _payload_quality_report_id(payload: Any) -> int:
+    if not isinstance(payload, dict):
+        raise InvalidJobPayloadError(EXPECTED_OBJECT_PAYLOAD_ERROR)
+
+    quality_report_id = payload.get("quality_report_id")
+    if not isinstance(quality_report_id, int) or isinstance(quality_report_id, bool):
+        raise InvalidJobPayloadError(QUALITY_REPORT_ID_INTEGER_ERROR)
+    return quality_report_id
+
+
+def _payload_memory_projection_scope(payload: Any) -> str:
+    if not isinstance(payload, dict):
+        raise InvalidJobPayloadError(EXPECTED_OBJECT_PAYLOAD_ERROR)
+
+    scope = payload.get("scope")
+    if scope not in {"quality_report", "all"}:
+        raise InvalidJobPayloadError(PROJECT_MEMORY_SCOPE_ERROR)
+    return scope
 
 
 def _payload_analysis_job(payload: Any) -> tuple[int, int | None, int | None]:
@@ -1148,6 +1431,188 @@ def _replace_quality_report(
     return report
 
 
+def _quality_report_claim_count(report: SessionInterpretationQualityReport) -> int:
+    claims = report.snapshot.interpretation_json.get("claims")
+    if not isinstance(claims, list):
+        return 0
+    return sum(1 for claim in claims if isinstance(claim, Mapping))
+
+
+def _upsert_durable_memory_candidate(
+    session: Session,
+    packet: DurableMemoryEvidencePacket,
+    job_id: int,
+) -> tuple[DurableMemoryItem, CandidateUpsertOutcome]:
+    candidate = packet.candidate
+    report = session.get_one(SessionInterpretationQualityReport, candidate.quality_report_id)
+    memory = session.scalar(
+        select(DurableMemoryItem).where(
+            DurableMemoryItem.quality_report_id == candidate.quality_report_id,
+            DurableMemoryItem.claim_index == candidate.claim_index,
+        ),
+    )
+    outcome: CandidateUpsertOutcome = "updated"
+    if memory is None:
+        outcome = "created"
+        memory = DurableMemoryItem(
+            session_id=report.snapshot.session_id,
+            transcript_id=report.snapshot.transcript_id,
+            snapshot_id=candidate.snapshot_id,
+            quality_report_id=candidate.quality_report_id,
+            claim_index=candidate.claim_index,
+            status=DURABLE_MEMORY_STATUS_CANDIDATE,
+            claim_kind=candidate.claim_kind,
+            statement=candidate.statement,
+            confidence=candidate.confidence,
+            content_hash=candidate.content_hash,
+        )
+        session.add(memory)
+    elif memory.status in PROMOTION_TERMINAL_STATUSES and memory.content_hash == candidate.content_hash:
+        return memory, "skipped"
+
+    memory.session_id = report.snapshot.session_id
+    memory.transcript_id = report.snapshot.transcript_id
+    memory.snapshot_id = candidate.snapshot_id
+    memory.quality_report_id = candidate.quality_report_id
+    memory.job_id = job_id
+    memory.status = DURABLE_MEMORY_STATUS_CANDIDATE
+    memory.status_reason = None
+    memory.archived_reason = None
+    memory.superseded_by_id = None
+    memory.claim_kind = candidate.claim_kind
+    memory.statement = candidate.statement
+    memory.confidence = candidate.confidence
+    memory.content_hash = candidate.content_hash
+    memory.metadata_json = {
+        **dict(memory.metadata_json or {}),
+        "source_ref_ids": list(candidate.source_ref_ids),
+        "omitted_source_count": packet.omitted_source_count,
+    }
+    session.flush()
+    session.refresh(memory)
+    return memory, outcome
+
+
+def _is_terminal_same_content(memory: DurableMemoryItem, packet: DurableMemoryEvidencePacket) -> bool:
+    return memory.status in PROMOTION_TERMINAL_STATUSES and memory.content_hash == packet.candidate.content_hash
+
+
+def _replace_durable_memory_sources(
+    session: Session,
+    memory: DurableMemoryItem,
+    packet: DurableMemoryEvidencePacket,
+) -> None:
+    session.execute(delete(DurableMemorySource).where(DurableMemorySource.memory_id == memory.id))
+    for evidence in packet.source_evidence:
+        source_origin = evidence.source_origin if evidence.source_origin in SOURCE_ORIGINS else SOURCE_ORIGIN_UNKNOWN
+        session.add(
+            DurableMemorySource(
+                memory_id=memory.id,
+                snapshot_id=packet.snapshot_id,
+                quality_report_id=packet.quality_report_id,
+                activity_unit_id=evidence.activity_unit_id,
+                claim_index=packet.candidate.claim_index,
+                source_ref=evidence.source_ref_id,
+                source_origin=source_origin,
+                source_kind=DURABLE_MEMORY_SOURCE_KIND_CLAIM,
+                metadata_json=_source_metadata_json(evidence),
+            ),
+        )
+    session.flush()
+
+
+def _source_metadata_json(evidence: Any) -> dict[str, Any]:
+    return {
+        "activity_kind": evidence.activity_kind,
+        "activity_ordinal": evidence.activity_ordinal,
+        "episode_ordinal": evidence.episode_ordinal,
+        "citation_metadata": dict(evidence.citation_metadata),
+    }
+
+
+def _add_durable_memory_audit_event(
+    session: Session,
+    memory: DurableMemoryItem,
+    *,
+    event_type: str,
+    from_status: str | None,
+    to_status: str | None,
+    reason_code: str,
+    details: Mapping[str, Any],
+) -> DurableMemoryAuditEvent:
+    event = DurableMemoryAuditEvent(
+        memory=memory,
+        job_id=memory.job_id,
+        event_type=event_type,
+        from_status=from_status,
+        to_status=to_status,
+        reason_code=reason_code,
+        details_json={key: _audit_detail_value(value) for key, value in details.items()},
+    )
+    session.add(event)
+    return event
+
+
+def _add_relation_assessed_audit_event(
+    session: Session,
+    memory: DurableMemoryItem,
+    result: RelationAssessmentResult,
+) -> None:
+    _add_durable_memory_audit_event(
+        session,
+        memory,
+        event_type="relation_assessed",
+        from_status=memory.status,
+        to_status=memory.status,
+        reason_code=result.assessment.relation_type,
+        details={
+            "relation_type": result.assessment.relation_type,
+            "related_memory_id": result.related_memory_id,
+            "resolved_hit_count": result.resolved_hit_count,
+            "distance": result.distance,
+        },
+    )
+
+
+def _project_archived_related_memory(
+    session: Session,
+    memory: DurableMemoryItem,
+    relation_result: RelationAssessmentResult,
+    projection: MemoryProjection,
+) -> None:
+    related_memory_id = relation_result.related_memory_id
+    if related_memory_id is None or related_memory_id == memory.id:
+        return
+    related = session.get(DurableMemoryItem, related_memory_id)
+    if related is not None and related.status == DURABLE_MEMORY_STATUS_ARCHIVED:
+        project_durable_memory_record(session, related, projection)
+
+
+def _project_durable_memory_record_outcome(
+    session: Session,
+    memory: DurableMemoryItem,
+    projection: MemoryProjection,
+) -> tuple[MemoryProjectionRecord | None, DurableMemoryProjectionError | None]:
+    try:
+        return project_durable_memory_record(session, memory, projection), None
+    except DurableMemoryProjectionError as error:
+        return None, error
+
+
+def _indexed_projection_record_count(records: list[MemoryProjectionRecord]) -> int:
+    return sum(1 for record in records if record.status != MEMORY_PROJECTION_STATUS_DELETED)
+
+
+def _deleted_projection_record_count(records: list[MemoryProjectionRecord]) -> int:
+    return sum(1 for record in records if record.status == MEMORY_PROJECTION_STATUS_DELETED)
+
+
+def _audit_detail_value(value: Any) -> str | int | float | bool | None:
+    if value is None or isinstance(value, bool | int | float):
+        return value
+    return str(value)[:400]
+
+
 def _stale_result_json(packet: InterpretationPacket) -> dict[str, Any]:
     result = _readiness_result_json(packet.readiness)
     result["status"] = "stale"
@@ -1191,6 +1656,7 @@ def _quality_report_result_json(
         "status": "completed",
         "snapshot_id": snapshot.id,
         "quality_report_id": report.id,
+        "session_id": snapshot.session.session_id,
         "session_row_id": snapshot.session_id,
         "transcript_id": snapshot.transcript_id,
         "analysis_run_id": snapshot.analysis_run_id,

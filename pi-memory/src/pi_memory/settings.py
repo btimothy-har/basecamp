@@ -19,7 +19,9 @@ from pi_memory.constants import MEMORY_DIR
 INTERPRETATION_MODEL_ENV: Final = "PI_MEMORY_INTERPRETATION_MODEL"
 TOOL_SUMMARY_MODEL_ENV: Final = "PI_MEMORY_TOOL_SUMMARY_MODEL"
 QUALITY_MODEL_ENV: Final = "PI_MEMORY_QUALITY_MODEL"
+EMBEDDING_MODEL_ENV: Final = "PI_MEMORY_EMBEDDING_MODEL"
 TOOL_SUMMARY_CONCURRENCY_ENV: Final = "PI_MEMORY_TOOL_SUMMARY_CONCURRENCY"
+DEFAULT_EMBEDDING_MODEL: Final = "all-MiniLM-L6-v2"
 DEFAULT_TOOL_SUMMARY_CONCURRENCY: Final = 10
 
 _DEFAULT_PATH = MEMORY_DIR / "config.json"
@@ -42,6 +44,13 @@ class InvalidToolSummaryConcurrencyError(SettingsError):
 
     def __init__(self) -> None:
         super().__init__("Invalid tool summary concurrency: must be an integer from 1 to 100.")
+
+
+class InvalidEmbeddingModelError(SettingsError):
+    """Raised when an embedding model value is invalid."""
+
+    def __init__(self) -> None:
+        super().__init__("Invalid embedding model: must be a non-empty string.")
 
 
 class MissingInterpretationModelError(SettingsError):
@@ -99,9 +108,17 @@ def _write_all(fd: int, content: bytes) -> None:
 
 
 def _validate_interpretation_model(value: object) -> str:
+    return _validate_non_empty_string(value, InvalidInterpretationModelError())
+
+
+def _validate_embedding_model(value: object) -> str:
+    return _validate_non_empty_string(value, InvalidEmbeddingModelError())
+
+
+def _validate_non_empty_string(value: object, error: SettingsError) -> str:
     if isinstance(value, str) and value.strip():
         return value.strip()
-    raise InvalidInterpretationModelError()
+    raise error
 
 
 def _validate_tool_summary_concurrency(value: object) -> int:
@@ -202,6 +219,22 @@ class Settings:
     def quality_model(self, value: str) -> None:
         self.update(quality_model=value)
 
+    @property
+    def embedding_model(self) -> str:
+        """Return the effective embedding model, including environment overrides."""
+        env_value = os.environ.get(EMBEDDING_MODEL_ENV)
+        if env_value is not None:
+            return _validate_embedding_model(env_value)
+
+        value = self._read().get("embedding_model")
+        if value is None:
+            return DEFAULT_EMBEDDING_MODEL
+        return _validate_embedding_model(value)
+
+    @embedding_model.setter
+    def embedding_model(self, value: str) -> None:
+        self.update(embedding_model=value)
+
     def require_interpretation_model(self) -> str:
         """Return the configured interpretation model or raise a clear setup error."""
         model = self.interpretation_model
@@ -235,6 +268,7 @@ class Settings:
         interpretation_model: str | None | object = _UNSET,
         tool_summary_model: str | None | object = _UNSET,
         quality_model: str | None | object = _UNSET,
+        embedding_model: str | None | object = _UNSET,
         tool_summary_concurrency: int | None | object = _UNSET,
     ) -> None:
         """Persist file settings after validating the resulting file configuration."""
@@ -255,6 +289,11 @@ class Settings:
                     data.pop("quality_model", None)
                 else:
                     data["quality_model"] = _validate_interpretation_model(quality_model)
+            if embedding_model is not _UNSET:
+                if embedding_model is None:
+                    data.pop("embedding_model", None)
+                else:
+                    data["embedding_model"] = _validate_embedding_model(embedding_model)
             if tool_summary_concurrency is not _UNSET:
                 if tool_summary_concurrency is None:
                     data.pop("tool_summary_concurrency", None)
@@ -267,6 +306,7 @@ class Settings:
             "interpretation_model": self.interpretation_model,
             "tool_summary_model": self.tool_summary_model,
             "quality_model": self.quality_model,
+            "embedding_model": self.embedding_model,
             "tool_summary_concurrency": self.tool_summary_concurrency,
         }
 

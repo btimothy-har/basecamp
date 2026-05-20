@@ -6,6 +6,9 @@ from pi_memory.jobs.interpretation import (
     enqueue_assess_interpretation_quality_job,
     enqueue_interpret_session_job,
     enqueue_interpret_session_job_for_analysis,
+    enqueue_project_memory_records_job,
+    enqueue_promote_durable_memory_job,
+    enqueue_rebuild_memory_projection_job,
     enqueue_summarize_tool_activities_job,
 )
 from pi_memory.jobs.observe import enqueue_process_transcript_job
@@ -46,6 +49,9 @@ __all__ = [
     "enqueue_interpret_session_job",
     "enqueue_interpret_session_job_for_analysis",
     "enqueue_process_transcript_job",
+    "enqueue_project_memory_records_job",
+    "enqueue_promote_durable_memory_job",
+    "enqueue_rebuild_memory_projection_job",
     "enqueue_summarize_tool_activities_job",
     "RecoverStaleResult",
     "TranscriptNotFoundError",
