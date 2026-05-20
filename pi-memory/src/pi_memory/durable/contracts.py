@@ -16,7 +16,7 @@ from pi_memory.db import (
 _DURABLE_TEXT_MAX_LENGTH = 2_000
 _DURABLE_RATIONALE_MAX_LENGTH = 1_500
 _DURABLE_REASON_MAX_LENGTH = 600
-_DURABLE_DETAIL_STRING_MAX_LENGTH = 400
+DURABLE_AUDIT_DETAIL_STRING_MAX_LENGTH = 400
 _ELIGIBLE_WITH_BLOCK_REASON_MESSAGE = "eligible envelopes must not include a block reason"
 _INELIGIBLE_WITHOUT_BLOCK_REASON_MESSAGE = "ineligible envelopes require a block reason"
 _NOVEL_WITH_RELATED_MEMORY_MESSAGE = "novel relation assessments must not include related_memory_id"
@@ -218,7 +218,7 @@ class DurableMemoryAuditEventPayload(BaseModel):
     @classmethod
     def _validate_details(cls, details: Mapping[str, AuditDetailValue]) -> Mapping[str, AuditDetailValue]:
         for value in details.values():
-            if isinstance(value, str) and len(value) > _DURABLE_DETAIL_STRING_MAX_LENGTH:
+            if isinstance(value, str) and len(value) > DURABLE_AUDIT_DETAIL_STRING_MAX_LENGTH:
                 raise ValueError(_AUDIT_DETAIL_STRING_TOO_LONG)
         return details
 
