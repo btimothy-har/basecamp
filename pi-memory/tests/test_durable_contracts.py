@@ -82,7 +82,7 @@ def test_candidate_evaluation_output_accepts_valid_shape() -> None:
     output = CandidateEvaluationOutput(
         normalized_statement="Use durable memory contracts for later reducers.",
         memory_type="decision",
-        scope="repo",
+        scope="cwd",
         metrics=metrics(),
         overall_rationale="The claim is source-backed and durable.",
     )
@@ -100,7 +100,7 @@ def test_contracts_reject_extra_fields_bad_enums_and_bounds() -> None:
         CandidateEvaluationOutput(
             normalized_statement="A statement.",
             memory_type="observation",
-            scope="repo",
+            scope="cwd",
             metrics=metrics(),
         )
     with pytest.raises(ValidationError):

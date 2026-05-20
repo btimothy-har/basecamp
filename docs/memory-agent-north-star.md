@@ -159,7 +159,7 @@ Responsibilities:
 
 - check service health on session launch;
 - start the local service if unavailable;
-- send session observations, transcript path, repository metadata, and lifecycle events;
+- send session observations, transcript path, launch `cwd`, and lifecycle events;
 - expose recall and memory-status tools or commands;
 - render recall results in a useful format;
 - degrade gracefully if the service is unavailable.
@@ -264,7 +264,6 @@ Observation payloads should include enough information for the service to locate
 session_id
 transcript_path
 cwd
-repo
 worktree
 branch
 event_type
@@ -430,7 +429,7 @@ Graph nodes may include:
 - Episode;
 - SourceSpan;
 - Project;
-- Repo;
+- SessionCwd;
 - Worktree;
 - Branch;
 - File;
@@ -478,7 +477,7 @@ Promotion is a reconciliation process. For each candidate, the service finds nea
 - semantic similarity via ChromaDB;
 - recently active related sessions.
 
-Current Phase 6 relation assessment is deterministic and repo-scoped. It classifies a candidate against resolved promoted durable-memory hits using:
+Current Phase 6 relation assessment is deterministic and session-cwd scoped. It classifies a candidate against resolved promoted durable-memory hits from the same launch `cwd` using:
 
 - `novel`;
 - `duplicate`;
@@ -767,7 +766,7 @@ Implementation should proceed through runnable vertical slices. The ordering mat
 
 ### Phase 0: Lock architecture and cutover stance
 
-Purpose: turn the north-star direction into repo-local guidance before code churn.
+Purpose: turn the north-star direction into codebase-local guidance before code churn.
 
 Deliverables:
 
@@ -1061,7 +1060,7 @@ Validation:
 - Blocked and skipped snapshots persist non-applicable quality reports without model calls.
 - Replaced snapshot quality jobs complete as stale no-ops; outdated derivations are reported separately from semantic quality.
 - Provider failures retry through durable jobs; final failure persists `assessment_failed` without leaking provider error bodies.
-- Quality read surfaces return JSON-safe reports with session metadata, `assessment_state`, `is_current`, and severity `finding_counts` for future dashboards.
+- Quality read surfaces return JSON-safe reports with session metadata including `cwd`, `assessment_state`, `is_current`, and severity `finding_counts` for future dashboards.
 
 Deferred:
 
@@ -1095,7 +1094,7 @@ Implemented in `pi-memory`:
 - Quality-report eligibility evaluation that consumes persisted `SessionInterpretationQualityReport` fields, finding codes, claim assessments, currentness, and `promotable` as authoritative input.
 - Single-call candidate evaluator over one candidate plus bounded source evidence, with provider-backed and deterministic implementations.
 - Chroma-assisted relation assessment that upserts/query candidates and promoted durable memories, resolves every hit through SQLite, then classifies relations deterministically.
-- Repo-scoped relation comparison: candidate and related durable memories are compared only when they share the same `repo_name`; missing repo metadata skips relation comparison and classifies the candidate as `novel` with no resolved hits.
+- Session-cwd-scoped relation comparison: candidate and related durable memories are compared only when they share the same `MemorySession.cwd`; missing cwd skips relation comparison and classifies the candidate as `novel` with no resolved hits.
 - Deterministic reducer that maps eligibility, evaluator metrics, and relation assessments into `promoted`, `quarantined`, `rejected`, or supersession/archive transitions with reason codes and audit events.
 - Durable job wiring:
   - `project_memory_records` for quality-report projection and all-record rebuild/upsert passes, with per-record failure metadata persisted for retry and inspection;

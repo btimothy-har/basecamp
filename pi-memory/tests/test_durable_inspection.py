@@ -78,8 +78,6 @@ def create_durable_fixture(database: Database) -> dict[str, Any]:
         first_session = MemorySession(
             session_id="pi-session-durable-1",
             cwd="/repo",
-            repo_name="basecamp",
-            repo_root="/repo",
             worktree_label="wt-memory",
             worktree_path="/worktrees/wt-memory",
             created_at=now,
@@ -88,8 +86,6 @@ def create_durable_fixture(database: Database) -> dict[str, Any]:
         second_session = MemorySession(
             session_id="pi-session-durable-2",
             cwd="/repo-other",
-            repo_name="other-repo",
-            repo_root="/repo-other",
             worktree_label="main",
             worktree_path="/repo-other",
             created_at=now + timedelta(seconds=1),
@@ -297,7 +293,9 @@ def test_get_memory_by_id_excludes_audit_by_default(database: Database, durable_
     assert payload is not None
     assert payload["memory_id"] == durable_fixture["memory_id"]
     assert payload["session_id"] == "pi-session-durable-1"
-    assert payload["session_metadata"]["repo_name"] == "basecamp"
+    assert payload["session_metadata"]["cwd"] == "/repo"
+    assert "repo_name" not in payload["session_metadata"]
+    assert "repo_root" not in payload["session_metadata"]
     assert payload["claim_kind"] == "decision"
     assert payload["evaluation_json"] == {"score": 0.92}
     assert payload["sources"][0]["source_ref"] == "claim:0"
@@ -328,7 +326,7 @@ def test_list_memories_filters_and_paginates(database: Database, durable_fixture
 
     filtered = service.list_memories(
         status=DURABLE_MEMORY_STATUS_PROMOTED,
-        repo_name="basecamp",
+        cwd="/repo",
         worktree_label="wt-memory",
         session_id="pi-session-durable-1",
         limit=10,
@@ -338,6 +336,7 @@ def test_list_memories_filters_and_paginates(database: Database, durable_fixture
 
     assert filtered["pagination"] == {"total": 1, "returned": 1, "limit": 10, "offset": 0}
     assert filtered["query"]["status"] == DURABLE_MEMORY_STATUS_PROMOTED
+    assert filtered["query"]["cwd"] == "/repo"
     assert filtered["results"][0]["memory_id"] == durable_fixture["memory_id"]
     assert paged["pagination"]["total"] == 2
     assert paged["pagination"]["returned"] == 1
@@ -439,7 +438,10 @@ def test_api_lists_gets_audit_and_projections(
     durable_client: TestClient,
     durable_fixture: dict[str, Any],
 ) -> None:
-    list_response = durable_client.get("/v1/durable-memory", params={"status": DURABLE_MEMORY_STATUS_PROMOTED})
+    list_response = durable_client.get(
+        "/v1/durable-memory",
+        params={"status": DURABLE_MEMORY_STATUS_PROMOTED, "cwd": "/repo"},
+    )
     get_response = durable_client.get(f"/v1/durable-memory/{durable_fixture['memory_id']}")
     audit_response = durable_client.get(f"/v1/durable-memory/{durable_fixture['memory_id']}/audit")
     projection_response = durable_client.get(
@@ -449,6 +451,7 @@ def test_api_lists_gets_audit_and_projections(
 
     assert list_response.status_code == 200
     assert list_response.json()["pagination"]["total"] == 1
+    assert list_response.json()["query"]["cwd"] == "/repo"
     assert get_response.status_code == 200
     assert get_response.json()["memory_id"] == durable_fixture["memory_id"]
     assert "audit_events" not in get_response.json()
@@ -525,8 +528,8 @@ def test_cli_durable_list_filter(database: Database, durable_fixture: dict[str, 
             database.url,
             "--status",
             DURABLE_MEMORY_STATUS_PROMOTED,
-            "--repo-name",
-            "basecamp",
+            "--cwd",
+            "/repo",
             "--json",
         ],
     )
@@ -534,6 +537,7 @@ def test_cli_durable_list_filter(database: Database, durable_fixture: dict[str, 
     assert result.exit_code == 0
     payload = json.loads(result.output)
     assert payload["pagination"]["total"] == 1
+    assert payload["query"]["cwd"] == "/repo"
     assert payload["results"][0]["memory_id"] == durable_fixture["memory_id"]
 
 

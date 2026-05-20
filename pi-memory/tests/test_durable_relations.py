@@ -122,7 +122,7 @@ def _matches_filters(
 
 def create_memory_fixture(database: Database, memories: list[dict[str, Any]]) -> list[int]:
     with database.session() as session:
-        context_by_repo: dict[
+        context_by_cwd: dict[
             str | None,
             tuple[
                 MemorySession,
@@ -132,20 +132,20 @@ def create_memory_fixture(database: Database, memories: list[dict[str, Any]]) ->
             ],
         ] = {}
 
-        def context_for_repo(
-            repo_name: str | None,
+        def context_for_cwd(
+            cwd: str | None,
         ) -> tuple[
             MemorySession,
             Transcript,
             SessionInterpretationSnapshot,
             SessionInterpretationQualityReport,
         ]:
-            if repo_name in context_by_repo:
-                return context_by_repo[repo_name]
-            suffix = "missing-repo" if repo_name is None else repo_name
+            if cwd in context_by_cwd:
+                return context_by_cwd[cwd]
+            suffix = "missing-cwd" if cwd is None else cwd.strip("/").replace("/", "-")
             memory_session = MemorySession(
-                session_id=f"pi-session-{len(context_by_repo) + 1}",
-                repo_name=repo_name,
+                session_id=f"pi-session-{len(context_by_cwd) + 1}",
+                cwd=cwd,
                 worktree_label="wt-memory",
             )
             transcript = Transcript(session=memory_session, path=f"/tmp/pi/{suffix}/transcript.jsonl")
@@ -172,13 +172,13 @@ def create_memory_fixture(database: Database, memories: list[dict[str, Any]]) ->
             )
             session.add(report)
             session.flush()
-            context_by_repo[repo_name] = (memory_session, transcript, snapshot, report)
-            return context_by_repo[repo_name]
+            context_by_cwd[cwd] = (memory_session, transcript, snapshot, report)
+            return context_by_cwd[cwd]
 
         ids: list[int] = []
         for index, spec in enumerate(memories):
-            repo_name = spec.get("repo_name", "basecamp")
-            memory_session, transcript, snapshot, report = context_for_repo(repo_name)
+            cwd = spec.get("cwd", "/repo/basecamp")
+            memory_session, transcript, snapshot, report = context_for_cwd(cwd)
             memory = DurableMemoryItem(
                 session=memory_session,
                 transcript=transcript,
@@ -251,7 +251,8 @@ def test_projection_creates_long_term_durable_records_and_chroma_docs(database: 
     assert candidate_record.relation_visible is True
     assert candidate_record.metadata_json["normalized_statement"] == "Use the normalized candidate statement."
     assert candidate_record.metadata_json["session_id"] == "pi-session-1"
-    assert candidate_record.metadata_json["repo_name"] == "basecamp"
+    assert candidate_record.metadata_json["session_cwd"] == "/repo/basecamp"
+    assert "repo_name" not in candidate_record.metadata_json
     assert candidate_record.metadata_json["transcript_id"] is not None
     assert candidate_record.metadata_json["snapshot_id"] is not None
     assert candidate_record.metadata_json["quality_report_id"] is not None
@@ -268,6 +269,8 @@ def test_projection_creates_long_term_durable_records_and_chroma_docs(database: 
     assert candidate_doc.metadata["relation_visible"] is True
     assert candidate_doc.metadata["recall_visible"] is False
     assert candidate_doc.metadata["session_id"] == "pi-session-1"
+    assert candidate_doc.metadata["session_cwd"] == "/repo/basecamp"
+    assert "repo_name" not in candidate_doc.metadata
     assert promoted_doc.metadata["recall_visible"] is True
 
 
@@ -315,19 +318,19 @@ def test_duplicate_relation_persists_after_hit_resolves_through_sqlite(database:
     assert stored_relations[0].confidence == 1.0
     assert stored_relations[0].metadata_json["chroma_id"] == f"durable_memory:{promoted_id}"
     assert stored_relations[0].metadata_json["classifier_mode"] == "deterministic-chroma-v1"
-    assert projection.queries[0]["filters"]["repo_name"] == "basecamp"
+    assert projection.queries[0]["filters"]["session_cwd"] == "/repo/basecamp"
 
 
-def test_cross_repo_promoted_memory_is_ignored_for_candidate_relations(database: Database) -> None:
+def test_cross_cwd_promoted_memory_is_ignored_for_candidate_relations(database: Database) -> None:
     promoted_id, candidate_id = create_memory_fixture(
         database,
         [
             {
-                "repo_name": "other-repo",
+                "cwd": "/repo/other",
                 "status": DURABLE_MEMORY_STATUS_PROMOTED,
                 "statement": "Use SQLite before relation classification.",
             },
-            {"repo_name": "basecamp", "statement": "Use SQLite before relation classification."},
+            {"cwd": "/repo/basecamp", "statement": "Use SQLite before relation classification."},
         ],
     )
     projection = FakeDurableProjection()
@@ -340,19 +343,19 @@ def test_cross_repo_promoted_memory_is_ignored_for_candidate_relations(database:
     assert result.assessment.related_memory_id is None
     assert result.resolved_hit_count == 0
     assert relations(database) == []
-    assert projection.queries[0]["filters"]["repo_name"] == "basecamp"
+    assert projection.queries[0]["filters"]["session_cwd"] == "/repo/basecamp"
 
 
-def test_missing_candidate_repo_skips_relation_query(database: Database) -> None:
+def test_missing_candidate_cwd_skips_relation_query(database: Database) -> None:
     promoted_id, candidate_id = create_memory_fixture(
         database,
         [
             {
-                "repo_name": "basecamp",
+                "cwd": "/repo/basecamp",
                 "status": DURABLE_MEMORY_STATUS_PROMOTED,
                 "statement": "Use SQLite before relation classification.",
             },
-            {"repo_name": None, "statement": "Use SQLite before relation classification."},
+            {"cwd": None, "statement": "Use SQLite before relation classification."},
         ],
     )
     projection = FakeDurableProjection()
@@ -363,7 +366,7 @@ def test_missing_candidate_repo_skips_relation_query(database: Database) -> None
 
     assert result.assessment.relation_type == DURABLE_MEMORY_RELATION_TYPE_NOVEL
     assert result.assessment.related_memory_id is None
-    assert result.assessment.rationale == "Candidate session has no repo_name; relation assessment skipped."
+    assert result.assessment.rationale == "Candidate session has no cwd; relation assessment skipped."
     assert result.resolved_hit_count == 0
     assert relations(database) == []
     assert projection.queries == []

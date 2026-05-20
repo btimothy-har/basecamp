@@ -143,7 +143,7 @@ class DurableMemoryInspectionService:
         self,
         *,
         status: str | None = None,
-        repo_name: str | None = None,
+        cwd: str | None = None,
         worktree_label: str | None = None,
         session_id: str | None = None,
         limit: int = 10,
@@ -154,7 +154,7 @@ class DurableMemoryInspectionService:
         self._database.initialize()
         query_values = _query_payload(
             status=status,
-            repo_name=repo_name,
+            cwd=cwd,
             worktree_label=worktree_label,
             session_id=session_id,
             limit=limit,
@@ -164,7 +164,7 @@ class DurableMemoryInspectionService:
             filtered = _apply_memory_filters(
                 _memory_rows(),
                 status=status,
-                repo_name=repo_name,
+                cwd=cwd,
                 worktree_label=worktree_label,
                 session_id=session_id,
             )
@@ -173,7 +173,7 @@ class DurableMemoryInspectionService:
                     _apply_memory_filters(
                         select(func.count()).select_from(DurableMemoryItem).join(MemorySession),
                         status=status,
-                        repo_name=repo_name,
+                        cwd=cwd,
                         worktree_label=worktree_label,
                         session_id=session_id,
                     ),
@@ -434,14 +434,14 @@ def _apply_memory_filters(
     query: Select,
     *,
     status: str | None,
-    repo_name: str | None,
+    cwd: str | None,
     worktree_label: str | None,
     session_id: str | None,
 ) -> Select:
     if status is not None:
         query = query.where(DurableMemoryItem.status == status)
-    if repo_name is not None:
-        query = query.where(MemorySession.repo_name == repo_name)
+    if cwd is not None:
+        query = query.where(MemorySession.cwd == cwd)
     if worktree_label is not None:
         query = query.where(MemorySession.worktree_label == worktree_label)
     if session_id is not None:
@@ -528,8 +528,6 @@ def _list_payload(
 def _session_metadata(session: MemorySession) -> dict[str, Any]:
     return {
         "cwd": session.cwd,
-        "repo_name": session.repo_name,
-        "repo_root": session.repo_root,
         "worktree_label": session.worktree_label,
         "worktree_path": session.worktree_path,
     }

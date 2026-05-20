@@ -111,14 +111,14 @@ class DeterministicCandidateEvaluator:
         output = CandidateEvaluationOutput(
             normalized_statement=packet.candidate.statement,
             memory_type=packet.candidate.claim_kind,
-            scope="repo" if packet.repo_name else "session",
+            scope="cwd" if packet.session_cwd else "session",
             metrics={
                 "is_supported": _metric(0.9, "pass", "Candidate has bounded source evidence in the packet."),
                 "is_vague": _metric(0.1, "pass", "Candidate statement is concrete enough for deterministic testing."),
                 "is_durable": _metric(0.8, "pass", "Candidate is treated as durable for deterministic testing."),
                 "is_transient": _metric(0.1, "pass", "Candidate is not treated as transient in deterministic mode."),
                 "is_overgeneralized": _metric(0.1, "pass", "Candidate is not broadened beyond its statement."),
-                "scope_fit": _metric(0.8, "pass", "Scope is derived from packet repository metadata."),
+                "scope_fit": _metric(0.8, "pass", "Scope is derived from packet session cwd metadata."),
                 "type_fit": _metric(0.8, "pass", "Memory type preserves the candidate claim kind."),
                 "confidence": _metric(packet.candidate.confidence, "pass", "Confidence preserves the candidate score."),
             },
@@ -199,7 +199,7 @@ def candidate_evaluation_prompt_data(packet: DurableMemoryEvidencePacket) -> dic
         "eligibility": packet.eligibility.model_dump(mode="json"),
         "session_metadata": {
             "session_id": packet.session_id,
-            "repo_name": packet.repo_name,
+            "session_cwd": packet.session_cwd,
             "worktree_label": packet.worktree_label,
             "snapshot_id": packet.snapshot_id,
             "quality_report_id": packet.quality_report_id,
@@ -230,7 +230,7 @@ def render_candidate_evaluation_prompt(packet: DurableMemoryEvidencePacket) -> s
         "Required output:\n"
         "- normalized_statement: concise source-backed statement.\n"
         "- memory_type: one of the allowed candidate claim kinds.\n"
-        "- scope: session, repo, project, global, or unknown based only on packet metadata and evidence.\n"
+        "- scope: session, cwd, project, global, or unknown based only on packet metadata and evidence.\n"
         "- metrics: provide all eight metric scores with score 0.0-1.0, label pass/warning/fail, and concise reason.\n"
         "- overall_rationale: null or one short evidence-grounded sentence.\n\n"
         f"Durable-memory candidate packet JSON:\n{packet_json}"

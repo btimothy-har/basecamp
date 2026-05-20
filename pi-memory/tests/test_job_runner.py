@@ -825,7 +825,7 @@ def create_manual_quality_report(
     promotable: bool = True,
 ) -> tuple[int, int]:
     with database.session() as session:
-        memory_session = MemorySession(session_id="pi-session-1", repo_name="basecamp")
+        memory_session = MemorySession(session_id="pi-session-1", cwd="/repo/basecamp")
         snapshot = SessionInterpretationSnapshot(
             session=memory_session,
             status=SESSION_INTERPRETATION_STATUS_COMPLETED,

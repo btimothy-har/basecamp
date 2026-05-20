@@ -59,7 +59,7 @@ def create_quality_report(
     promotable: bool = True,
 ) -> int:
     with database.session() as session:
-        memory_session = MemorySession(session_id="pi-session-1", repo_name="basecamp", worktree_label="wt-memory")
+        memory_session = MemorySession(session_id="pi-session-1", cwd="/repo/basecamp", worktree_label="wt-memory")
         transcript = Transcript(session=memory_session, path="/tmp/pi/transcript.jsonl")
         analysis_run = AnalysisRun(
             session=memory_session,

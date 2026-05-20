@@ -95,10 +95,10 @@ def eligibility() -> QualityEligibilityEnvelope:
     )
 
 
-def packet(*, repo_name: str | None = "basecamp") -> DurableMemoryEvidencePacket:
+def packet(*, session_cwd: str | None = "/repo/basecamp") -> DurableMemoryEvidencePacket:
     return DurableMemoryEvidencePacket(
         session_id="pi-session-1",
-        repo_name=repo_name,
+        session_cwd=session_cwd,
         worktree_label="wt-memory",
         snapshot_id=1,
         quality_report_id=2,
@@ -132,7 +132,7 @@ def evaluation_output() -> dict[str, Any]:
     return {
         "normalized_statement": "Use durable-memory candidate evaluators.",
         "memory_type": "decision",
-        "scope": "repo",
+        "scope": "cwd",
         "metrics": {
             "is_supported": metric,
             "is_vague": {"score": 0.1, "label": "pass", "reason": "The statement is concrete."},
@@ -153,7 +153,7 @@ def test_deterministic_evaluator_returns_valid_output_and_evaluation_json() -> N
 
     assert result.output.normalized_statement == "Use durable-memory candidate evaluators."
     assert result.output.memory_type == "decision"
-    assert result.output.scope == "repo"
+    assert result.output.scope == "cwd"
     assert set(result.output.metrics.model_dump()) == {
         "is_supported",
         "is_vague",
@@ -177,9 +177,9 @@ def test_deterministic_evaluator_returns_valid_output_and_evaluation_json() -> N
     assert result.evaluation_json["output"]["metrics"]["is_supported"]["label"] == "pass"
 
 
-def test_deterministic_evaluator_uses_session_scope_without_repo_and_async_matches_sync() -> None:
+def test_deterministic_evaluator_uses_session_scope_without_cwd_and_async_matches_sync() -> None:
     evaluator = DeterministicCandidateEvaluator()
-    evidence_packet = packet(repo_name=None)
+    evidence_packet = packet(session_cwd=None)
 
     sync_result = evaluator.evaluate(evidence_packet)
     async_result = asyncio.run(evaluator.evaluate_async(evidence_packet))
@@ -237,7 +237,8 @@ def test_pydantic_ai_evaluator_uses_fake_agent_and_bounded_prompt() -> None:
     }
     assert "Durable-memory candidate packet JSON" in prompts[0]
     assert '"statement":"Use durable-memory candidate evaluators."' in prompts[0]
-    assert '"repo_name":"basecamp"' in prompts[0]
+    assert '"session_cwd":"/repo/basecamp"' in prompts[0]
+    assert "repo_name" not in prompts[0]
     assert '"activity_text":{"is_truncated":false' in prompts[0]
     assert "Evidence supports using durable-memory candidate evaluators." in prompts[0]
     assert "Do not decide whether to promote" in prompts[0]
@@ -347,7 +348,7 @@ def test_candidate_evaluator_factory_uses_quality_model(tmp_path: Path, monkeypa
 
 def test_persist_candidate_evaluation_writes_json_and_audit_without_status_transition(database: Database) -> None:
     with database.session() as session:
-        memory_session = MemorySession(session_id="pi-session-1", repo_name="basecamp")
+        memory_session = MemorySession(session_id="pi-session-1", cwd="/repo/basecamp")
         snapshot = SessionInterpretationSnapshot(
             session=memory_session,
             status=SESSION_INTERPRETATION_STATUS_COMPLETED,

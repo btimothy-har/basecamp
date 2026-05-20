@@ -99,7 +99,7 @@ class SessionQualityReportInspectionService:
         derivation_status: str | None = None,
         promotable: bool | None = None,
         is_current: bool | None = None,
-        repo_name: str | None = None,
+        cwd: str | None = None,
         worktree_label: str | None = None,
         limit: int = 10,
         offset: int = 0,
@@ -117,7 +117,7 @@ class SessionQualityReportInspectionService:
             derivation_status=derivation_status,
             promotable=promotable,
             is_current=is_current,
-            repo_name=repo_name,
+            cwd=cwd,
             worktree_label=worktree_label,
             limit=limit,
             offset=offset,
@@ -129,7 +129,7 @@ class SessionQualityReportInspectionService:
                 derivation_status=derivation_status,
                 promotable=promotable,
                 is_current=is_current,
-                repo_name=repo_name,
+                cwd=cwd,
                 worktree_label=worktree_label,
             )
             count_query = _apply_filters(
@@ -138,7 +138,7 @@ class SessionQualityReportInspectionService:
                 derivation_status=derivation_status,
                 promotable=promotable,
                 is_current=is_current,
-                repo_name=repo_name,
+                cwd=cwd,
                 worktree_label=worktree_label,
                 include_joins=True,
             )
@@ -165,7 +165,7 @@ class SessionQualityReportInspectionService:
         derivation_status: str | None = None,
         promotable: bool | None = None,
         is_current: bool | None = None,
-        repo_name: str | None = None,
+        cwd: str | None = None,
         worktree_label: str | None = None,
     ) -> dict[str, Any]:
         """Return a bounded random sample of quality reports."""
@@ -179,7 +179,7 @@ class SessionQualityReportInspectionService:
                     derivation_status=derivation_status,
                     promotable=promotable,
                     is_current=is_current,
-                    repo_name=repo_name,
+                    cwd=cwd,
                     worktree_label=worktree_label,
                 )
                 .order_by(func.random())
@@ -192,7 +192,7 @@ class SessionQualityReportInspectionService:
                 derivation_status=derivation_status,
                 promotable=promotable,
                 is_current=is_current,
-                repo_name=repo_name,
+                cwd=cwd,
                 worktree_label=worktree_label,
                 limit=count,
                 offset=0,
@@ -218,8 +218,6 @@ def serialize_quality_report(
         "session_row_id": memory_session.id,
         "session_metadata": {
             "cwd": memory_session.cwd,
-            "repo_name": memory_session.repo_name,
-            "repo_root": memory_session.repo_root,
             "worktree_label": memory_session.worktree_label,
             "worktree_path": memory_session.worktree_path,
         },
@@ -278,7 +276,7 @@ def _apply_filters(
     derivation_status: str | None,
     promotable: bool | None,
     is_current: bool | None,
-    repo_name: str | None,
+    cwd: str | None,
     worktree_label: str | None,
     include_joins: bool = False,
 ) -> Select:
@@ -302,8 +300,8 @@ def _apply_filters(
             )
         else:
             query = query.where(SessionInterpretationQualityReport.derivation_status == expected)
-    if repo_name is not None:
-        query = query.where(MemorySession.repo_name == repo_name)
+    if cwd is not None:
+        query = query.where(MemorySession.cwd == cwd)
     if worktree_label is not None:
         query = query.where(MemorySession.worktree_label == worktree_label)
     return query

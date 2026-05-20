@@ -99,7 +99,7 @@ def create_quality_report(
     with database.session() as session:
         memory_session = MemorySession(
             session_id="pi-session-1",
-            repo_name="basecamp",
+            cwd="/repo/basecamp",
             worktree_label="wt-memory",
         )
         transcript = Transcript(session=memory_session, path="/tmp/pi/transcript.jsonl")
@@ -306,7 +306,8 @@ def test_records_and_documents_have_required_invariants_and_metadata(database: D
     assert record.relation_visible is True
     assert len(record.content_hash) == 64
     assert record.metadata_json["session_id"] == "pi-session-1"
-    assert record.metadata_json["repo_name"] == "basecamp"
+    assert record.metadata_json["session_cwd"] == "/repo/basecamp"
+    assert "repo_name" not in record.metadata_json
     assert record.metadata_json["worktree_label"] == "wt-memory"
     assert record.metadata_json["transcript_id"] is not None
     assert record.metadata_json["quality_status"] == SESSION_INTERPRETATION_QUALITY_STATUS_HEALTHY
@@ -321,7 +322,8 @@ def test_records_and_documents_have_required_invariants_and_metadata(database: D
     assert document.metadata["memory_layer"] == MEMORY_LAYER_SHORT_TERM
     assert document.metadata["quality_status"] == SESSION_INTERPRETATION_QUALITY_STATUS_HEALTHY
     assert document.metadata["session_id"] == "pi-session-1"
-    assert document.metadata["repo_name"] == "basecamp"
+    assert document.metadata["session_cwd"] == "/repo/basecamp"
+    assert "repo_name" not in document.metadata
     assert document.metadata["worktree_label"] == "wt-memory"
     assert document.metadata["claim_kind"] == "decision"
     assert document.metadata["claim_confidence"] == 0.91

@@ -32,8 +32,11 @@ def write_transcript(path: Path, content: bytes) -> None:
     path.write_bytes(content)
 
 
-def session_line(entry_id: str = "session-1") -> bytes:
-    return f'{{"type":"session","id":"{entry_id}"}}\n'.encode()
+def session_line(entry_id: str = "session-1", *, cwd: str | None = None) -> bytes:
+    payload = {"type": "session", "id": entry_id}
+    if cwd is not None:
+        payload["cwd"] = cwd
+    return (json.dumps(payload, separators=(",", ":")) + "\n").encode()
 
 
 def fork_session_line(entry_id: str, parent_path: Path) -> bytes:
@@ -404,20 +407,37 @@ def test_observe_multi_session_and_transcript_cursors_are_independent(
     assert transcript_for(database, "pi-session-1", other_path).cursor_offset == len(other_content)
 
 
-def test_observe_updates_only_request_provided_session_metadata(
+def test_observe_populates_session_cwd_from_transcript_session_event(
     tmp_path,
     database: Database,
     service: TranscriptIngestService,
 ) -> None:
     path = tmp_path / "transcript.jsonl"
-    write_transcript(path, session_line())
+    write_transcript(path, session_line(cwd="/launch/basecamp"))
+
+    service.observe(ObserveInput(session_id="pi-session-1", transcript_path=path))
+
+    with database.session() as db_session:
+        memory_session = db_session.scalar(select(MemorySession).where(MemorySession.session_id == "pi-session-1"))
+
+    assert memory_session.cwd == "/launch/basecamp"
+    assert not hasattr(memory_session, "repo_name")
+    assert not hasattr(memory_session, "repo_root")
+
+
+def test_observe_explicit_cwd_wins_over_transcript_cwd_and_worktree_metadata_is_optional(
+    tmp_path,
+    database: Database,
+    service: TranscriptIngestService,
+) -> None:
+    path = tmp_path / "transcript.jsonl"
+    write_transcript(path, session_line(cwd="/launch/basecamp"))
 
     service.observe(
         ObserveInput(
             session_id="pi-session-1",
             transcript_path=path,
-            cwd="/workspace/one",
-            repo_name="basecamp",
+            cwd="/explicit/cwd",
             worktree_label="first",
         ),
     )
@@ -425,7 +445,7 @@ def test_observe_updates_only_request_provided_session_metadata(
         ObserveInput(
             session_id="pi-session-1",
             transcript_path=path,
-            repo_root="/workspace/two",
+            cwd="/explicit/cwd-2",
             worktree_path="/worktrees/second",
         ),
     )
@@ -433,9 +453,7 @@ def test_observe_updates_only_request_provided_session_metadata(
     with database.session() as db_session:
         memory_session = db_session.scalar(select(MemorySession).where(MemorySession.session_id == "pi-session-1"))
 
-    assert memory_session.cwd == "/workspace/one"
-    assert memory_session.repo_name == "basecamp"
-    assert memory_session.repo_root == "/workspace/two"
+    assert memory_session.cwd == "/explicit/cwd-2"
     assert memory_session.worktree_label == "first"
     assert memory_session.worktree_path == "/worktrees/second"
 

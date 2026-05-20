@@ -76,7 +76,7 @@ class DurableMemoryEvidencePacket:
     """Read-only bounded evidence for durable-memory candidate evaluation."""
 
     session_id: str
-    repo_name: str | None
+    session_cwd: str | None
     worktree_label: str | None
     snapshot_id: int
     quality_report_id: int
@@ -158,7 +158,7 @@ def build_durable_memory_evidence_packet(
     memory_session = report.snapshot.session
     return DurableMemoryEvidencePacket(
         session_id=memory_session.session_id,
-        repo_name=memory_session.repo_name,
+        session_cwd=memory_session.cwd,
         worktree_label=memory_session.worktree_label,
         snapshot_id=report.snapshot.id,
         quality_report_id=report.id,

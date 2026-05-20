@@ -56,7 +56,7 @@ def add_indexed_transcript(
     entries: list[TranscriptEntry],
 ) -> tuple[int, list[int]]:
     with database.session() as session:
-        memory_session = MemorySession(session_id=session_id, cwd="/tmp/project", repo_name="basecamp")
+        memory_session = MemorySession(session_id=session_id, cwd="/tmp/project")
         transcript = Transcript(session=memory_session, path=path, file_size=4096)
         transcript.entries.extend(entries)
         session.add(transcript)

@@ -290,8 +290,6 @@ def config(
     help="Path to the local transcript file to observe.",
 )
 @click.option("--cwd", help="Session working directory metadata.")
-@click.option("--repo-name", help="Repository name metadata.")
-@click.option("--repo-root", help="Repository root metadata.")
 @click.option("--worktree-label", help="Worktree label metadata.")
 @click.option("--worktree-path", help="Worktree path metadata.")
 @click.option("--request-id", help="Request id metadata for this observation.")
@@ -305,8 +303,6 @@ def observe(
     session_id: str,
     transcript_path: str,
     cwd: str | None,
-    repo_name: str | None,
-    repo_root: str | None,
     worktree_label: str | None,
     worktree_path: str | None,
     request_id: str | None,
@@ -320,8 +316,6 @@ def observe(
                 session_id=session_id,
                 transcript_path=transcript_path,
                 cwd=cwd,
-                repo_name=repo_name,
-                repo_root=repo_root,
                 worktree_label=worktree_label,
                 worktree_path=worktree_path,
                 request_id=request_id,
@@ -460,7 +454,7 @@ def quality(session_id: str, db_url: str, *, json_output: bool) -> None:
 @click.option("--derivation-status", callback=lambda _ctx, _param, value: _optional_non_empty(value))
 @click.option("--promotable/--not-promotable", default=None)
 @click.option("--current/--not-current", "is_current", default=None)
-@click.option("--repo-name", callback=lambda _ctx, _param, value: _optional_non_empty(value))
+@click.option("--cwd", callback=lambda _ctx, _param, value: _optional_non_empty(value))
 @click.option("--worktree-label", callback=lambda _ctx, _param, value: _optional_non_empty(value))
 @click.option("--limit", type=click.IntRange(1, 100), default=10, show_default=True)
 @click.option("--offset", type=click.IntRange(0), default=0, show_default=True)
@@ -472,7 +466,7 @@ def quality_list(
     *,
     promotable: bool | None,
     is_current: bool | None,
-    repo_name: str | None,
+    cwd: str | None,
     worktree_label: str | None,
     limit: int,
     offset: int,
@@ -488,7 +482,7 @@ def quality_list(
                 derivation_status=derivation_status,
                 promotable=promotable,
                 is_current=is_current,
-                repo_name=repo_name,
+                cwd=cwd,
                 worktree_label=worktree_label,
                 limit=limit,
                 offset=offset,
@@ -535,7 +529,7 @@ def durable(memory_id: int, db_url: str, *, include_audit: bool, json_output: bo
     help="Database URL containing durable memories.",
 )
 @click.option("--status", callback=lambda _ctx, _param, value: _optional_non_empty(value))
-@click.option("--repo-name", callback=lambda _ctx, _param, value: _optional_non_empty(value))
+@click.option("--cwd", callback=lambda _ctx, _param, value: _optional_non_empty(value))
 @click.option("--worktree-label", callback=lambda _ctx, _param, value: _optional_non_empty(value))
 @click.option("--session-id", callback=lambda _ctx, _param, value: _optional_non_empty(value))
 @click.option("--limit", type=click.IntRange(1, 100), default=10, show_default=True)
@@ -544,7 +538,7 @@ def durable(memory_id: int, db_url: str, *, include_audit: bool, json_output: bo
 def durable_list(
     db_url: str,
     status: str | None,
-    repo_name: str | None,
+    cwd: str | None,
     worktree_label: str | None,
     session_id: str | None,
     limit: int,
@@ -559,7 +553,7 @@ def durable_list(
             DurableMemoryInspectionService(database=durable_database)
             .list_memories(
                 status=status,
-                repo_name=repo_name,
+                cwd=cwd,
                 worktree_label=worktree_label,
                 session_id=session_id,
                 limit=limit,
@@ -666,7 +660,7 @@ def projection_list(
 @click.option("--derivation-status", callback=lambda _ctx, _param, value: _optional_non_empty(value))
 @click.option("--promotable/--not-promotable", default=None)
 @click.option("--current/--not-current", "is_current", default=None)
-@click.option("--repo-name", callback=lambda _ctx, _param, value: _optional_non_empty(value))
+@click.option("--cwd", callback=lambda _ctx, _param, value: _optional_non_empty(value))
 @click.option("--worktree-label", callback=lambda _ctx, _param, value: _optional_non_empty(value))
 @click.option("--json", "json_output", is_flag=True, help="Emit parseable JSON output.")
 def quality_sample(
@@ -677,7 +671,7 @@ def quality_sample(
     *,
     promotable: bool | None,
     is_current: bool | None,
-    repo_name: str | None,
+    cwd: str | None,
     worktree_label: str | None,
     json_output: bool,
 ) -> None:
@@ -690,7 +684,7 @@ def quality_sample(
             derivation_status=derivation_status,
             promotable=promotable,
             is_current=is_current,
-            repo_name=repo_name,
+            cwd=cwd,
             worktree_label=worktree_label,
         )
     except QualityReportFilterError as error:

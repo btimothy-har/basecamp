@@ -30,8 +30,6 @@ class ObserveInput:
     session_id: str
     transcript_path: Path | str
     cwd: str | None = None
-    repo_name: str | None = None
-    repo_root: str | None = None
     worktree_label: str | None = None
     worktree_path: str | None = None
     request_id: str | None = None
@@ -77,9 +75,10 @@ class TranscriptIngestService:
             raise TranscriptFileMissingError(transcript_path)
 
         self._database.initialize()
+        transcript_cwd = self._parser.session_cwd(transcript_path)
 
         with self._database.session() as db_session:
-            memory_session = _upsert_session(db_session, request)
+            memory_session = _upsert_session(db_session, request, transcript_cwd=transcript_cwd)
             transcript = _upsert_transcript(db_session, memory_session.id, transcript_path)
             stored_cursor = transcript.cursor_offset or 0
             parsed = self._parser.parse(transcript_path, offset=stored_cursor)
@@ -114,18 +113,15 @@ class TranscriptIngestService:
             )
 
 
-def _upsert_session(db_session: Session, request: ObserveInput) -> MemorySession:
+def _upsert_session(db_session: Session, request: ObserveInput, *, transcript_cwd: str | None) -> MemorySession:
     memory_session = db_session.scalar(select(MemorySession).where(MemorySession.session_id == request.session_id))
     if memory_session is None:
         memory_session = MemorySession(session_id=request.session_id)
         db_session.add(memory_session)
 
-    if request.cwd is not None:
-        memory_session.cwd = request.cwd
-    if request.repo_name is not None:
-        memory_session.repo_name = request.repo_name
-    if request.repo_root is not None:
-        memory_session.repo_root = request.repo_root
+    effective_cwd = request.cwd if request.cwd is not None else transcript_cwd
+    if effective_cwd is not None:
+        memory_session.cwd = effective_cwd
     if request.worktree_label is not None:
         memory_session.worktree_label = request.worktree_label
     if request.worktree_path is not None:

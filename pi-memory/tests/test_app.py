@@ -82,8 +82,11 @@ def quality_client(tmp_path) -> Iterator[tuple[TestClient, Database]]:
         database.close_if_open()
 
 
-def session_line(entry_id: str = "session-1") -> bytes:
-    return f'{{"type":"session","id":"{entry_id}"}}\n'.encode()
+def session_line(entry_id: str = "session-1", *, cwd: str | None = None) -> bytes:
+    payload = {"type": "session", "id": entry_id}
+    if cwd is not None:
+        payload["cwd"] = cwd
+    return (json.dumps(payload, separators=(",", ":")) + "\n").encode()
 
 
 def message_line(
@@ -211,7 +214,7 @@ def add_quality_report(
     quality_reason: str | None = None,
     derivation_status: str = "current",
     promotable: bool = True,
-    repo_name: str = "basecamp",
+    cwd: str = "/repo/main",
     worktree_label: str = "main",
 ) -> dict[str, object]:
     database.initialize()
@@ -219,9 +222,7 @@ def add_quality_report(
     with database.session() as db_session:
         memory_session = MemorySession(
             session_id=session_id,
-            cwd="/repo",
-            repo_name=repo_name,
-            repo_root="/repo",
+            cwd=cwd,
             worktree_label=worktree_label,
             worktree_path=f"/repo/{worktree_label}",
         )
@@ -438,7 +439,9 @@ def test_get_session_quality_endpoint_returns_safe_report(
     assert data["semantic_status"] == "passed"
     assert data["promotable"] is True
     assert data["finding_counts"] == {"critical": 0, "warning": 0, "info": 0}
-    assert data["session_metadata"]["repo_name"] == "basecamp"
+    assert data["session_metadata"]["cwd"] == "/repo/main"
+    assert "repo_name" not in data["session_metadata"]
+    assert "repo_root" not in data["session_metadata"]
     assert "raw_line" not in str(data)
     assert "/tmp/pi" not in str(data)
 
@@ -465,6 +468,7 @@ def test_quality_report_list_endpoint_filters_and_paginates(
         quality_status="degraded",
         quality_reason="semantic_degraded",
         promotable=False,
+        cwd="/repo/feature",
         worktree_label="feature",
     )
     add_quality_report(
@@ -476,12 +480,13 @@ def test_quality_report_list_endpoint_filters_and_paginates(
         promotable=False,
     )
 
-    response = client.get("/v1/quality/reports?quality_status=degraded&promotable=false&limit=5")
+    response = client.get("/v1/quality/reports?quality_status=degraded&promotable=false&cwd=/repo/feature&limit=5")
 
     assert response.status_code == 200
     data = response.json()
     assert data["pagination"] == {"total": 1, "returned": 1, "limit": 5, "offset": 0}
     assert data["query"]["quality_status"] == "degraded"
+    assert data["query"]["cwd"] == "/repo/feature"
     assert data["results"][0]["session_id"] == "degraded-1"
     assert data["results"][0]["finding_counts"] == {"critical": 0, "warning": 1, "info": 0}
 
@@ -610,8 +615,6 @@ def test_observe_endpoint_ingests_transcript_and_returns_diagnostics(
         json={
             **observe_payload(path),
             "cwd": "/workspace/basecamp",
-            "repo_name": "basecamp",
-            "repo_root": "/workspace/basecamp",
             "worktree_label": "task-branch",
             "worktree_path": "/worktrees/task-branch",
             "request_id": "request-1",
@@ -814,6 +817,16 @@ def test_get_job_endpoint_returns_404_for_missing_job(tmp_path) -> None:
             "session_id": "pi-session-1",
             "transcript_path": "/tmp/transcript.jsonl",
             "request_metadata": "bad",
+        },
+        {
+            "session_id": "pi-session-1",
+            "transcript_path": "/tmp/transcript.jsonl",
+            "repo_name": "basecamp",
+        },
+        {
+            "session_id": "pi-session-1",
+            "transcript_path": "/tmp/transcript.jsonl",
+            "repo_root": "/workspace/basecamp",
         },
         {
             "session_id": "pi-session-1",

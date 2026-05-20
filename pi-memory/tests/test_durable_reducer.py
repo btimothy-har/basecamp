@@ -101,7 +101,7 @@ def evaluation(
     return CandidateEvaluationOutput(
         normalized_statement="Use durable-memory reducer tests.",
         memory_type="decision",
-        scope="repo",
+        scope="cwd",
         metrics={
             "is_supported": metric(is_supported, "Supported by source evidence."),
             "is_vague": metric(is_vague, "Concrete enough for promotion."),
@@ -514,7 +514,7 @@ def create_memory_fixture(database: Database, memories: list[dict[str, Any]]) ->
     with database.session() as session:
         memory_session = MemorySession(
             session_id="pi-session-1",
-            repo_name="basecamp",
+            cwd="/repo/basecamp",
             worktree_label="wt-memory",
         )
         transcript = Transcript(session=memory_session, path="/tmp/pi/transcript.jsonl")

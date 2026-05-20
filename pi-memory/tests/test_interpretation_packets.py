@@ -106,8 +106,6 @@ def create_transcript(
     memory_session = MemorySession(
         session_id=stable_session_id,
         cwd="/repo",
-        repo_name="repo",
-        repo_root="/repo",
         worktree_label="main",
         worktree_path="/repo",
     )

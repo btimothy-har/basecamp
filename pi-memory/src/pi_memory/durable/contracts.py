@@ -43,7 +43,7 @@ ReasonCode = Annotated[
 ReferenceId = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=180)]
 
 ClaimKind = Literal["decision", "constraint", "knowledge", "preference", "pattern", "action"]
-MemoryScope = Literal["session", "repo", "project", "global", "unknown"]
+MemoryScope = Literal["session", "cwd", "project", "global", "unknown"]
 MetricLabel = Literal["pass", "warning", "fail"]
 EligibilityBlockReason = Literal[
     "report_not_found",

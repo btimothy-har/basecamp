@@ -342,15 +342,13 @@ class Job(Base):
 
 
 class MemorySession(Base):
-    """Stable Pi session identity and optional request-provided metadata."""
+    """Stable Pi session identity and optional location metadata."""
 
     __tablename__ = "sessions"
 
     id: Mapped[int] = mapped_column(primary_key=True)
     session_id: Mapped[str] = mapped_column(unique=True, index=True)
     cwd: Mapped[str | None]
-    repo_name: Mapped[str | None]
-    repo_root: Mapped[str | None]
     worktree_label: Mapped[str | None]
     worktree_path: Mapped[str | None]
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

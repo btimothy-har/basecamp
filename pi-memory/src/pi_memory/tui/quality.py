@@ -72,7 +72,7 @@ class QualityDashboardRow:
     session_id: str | None
     transcript_id: int | None
     transcript_path: str | None
-    repo_name: str | None
+    cwd: str | None
     worktree_label: str | None
     status: str
     reason: str | None
@@ -514,7 +514,7 @@ def _detail_text(row: QualityDashboardRow) -> str:
         f"Transcript {_transcript_label(row)}",
         f"path={_detail_path_label(row.transcript_path)}",
         (
-            f"session={_compact(row.session_id)} | repo={_display_compact(row.repo_name)} | "
+            f"session={_compact(row.session_id)} | cwd={_display_compact(row.cwd)} | "
             f"worktree={_display_compact(row.worktree_label)}"
         ),
         (
@@ -856,7 +856,7 @@ def _quality_report_row(
         session_id=memory_session.session_id,
         transcript_id=snapshot.transcript_id,
         transcript_path=None if transcript is None else transcript.path,
-        repo_name=memory_session.repo_name,
+        cwd=memory_session.cwd,
         worktree_label=memory_session.worktree_label,
         status=report.quality_status,
         reason=report.quality_reason,
@@ -1011,7 +1011,7 @@ def _interpretation_failure_row(
         session_id=session_id,
         transcript_id=transcript_id,
         transcript_path=None if transcript is None else transcript.path,
-        repo_name=None if memory_session is None else memory_session.repo_name,
+        cwd=None if memory_session is None else memory_session.cwd,
         worktree_label=None if memory_session is None else memory_session.worktree_label,
         status="interpretation_failed",
         reason=job.last_error,

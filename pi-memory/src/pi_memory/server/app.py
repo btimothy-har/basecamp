@@ -40,8 +40,6 @@ class ObserveRequest(BaseModel):
     session_id: NonEmptyString
     transcript_path: NonEmptyString
     cwd: NonEmptyString | None = None
-    repo_name: NonEmptyString | None = None
-    repo_root: NonEmptyString | None = None
     worktree_label: NonEmptyString | None = None
     worktree_path: NonEmptyString | None = None
     request_id: NonEmptyString | None = None
@@ -210,7 +208,7 @@ def create_app(
         *,
         promotable: bool | None = None,
         is_current: bool | None = None,
-        repo_name: str | None = None,
+        cwd: str | None = None,
         worktree_label: str | None = None,
         limit: int = 10,
         offset: int = 0,
@@ -222,7 +220,7 @@ def create_app(
                 derivation_status=derivation_status,
                 promotable=promotable,
                 is_current=is_current,
-                repo_name=repo_name,
+                cwd=cwd,
                 worktree_label=worktree_label,
                 limit=limit,
                 offset=offset,
@@ -238,7 +236,7 @@ def create_app(
         *,
         promotable: bool | None = None,
         is_current: bool | None = None,
-        repo_name: str | None = None,
+        cwd: str | None = None,
         worktree_label: str | None = None,
     ) -> dict[str, object]:
         """Return a safe bounded sample of quality reports."""
@@ -249,7 +247,7 @@ def create_app(
                 derivation_status=derivation_status,
                 promotable=promotable,
                 is_current=is_current,
-                repo_name=repo_name,
+                cwd=cwd,
                 worktree_label=worktree_label,
             )
         except QualityReportFilterError as error:
@@ -258,7 +256,7 @@ def create_app(
     @app.get("/v1/durable-memory")
     def list_durable_memories(
         status: DurableMemoryStatusQuery | None = None,
-        repo_name: str | None = None,
+        cwd: str | None = None,
         worktree_label: str | None = None,
         session_id: str | None = None,
         limit: int = 10,
@@ -268,7 +266,7 @@ def create_app(
         try:
             return app.state.durable_memory_service.list_memories(
                 status=status,
-                repo_name=repo_name,
+                cwd=cwd,
                 worktree_label=worktree_label,
                 session_id=session_id,
                 limit=limit,
@@ -355,8 +353,6 @@ def _observe_input(request: ObserveRequest) -> ObserveInput:
         session_id=request.session_id,
         transcript_path=request.transcript_path,
         cwd=request.cwd,
-        repo_name=request.repo_name,
-        repo_root=request.repo_root,
         worktree_label=request.worktree_label,
         worktree_path=request.worktree_path,
         request_id=request.request_id,

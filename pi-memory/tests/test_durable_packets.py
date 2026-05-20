@@ -64,7 +64,7 @@ def create_quality_report(
     with database.session() as session:
         memory_session = MemorySession(
             session_id="pi-session-1",
-            repo_name="basecamp",
+            cwd="/repo/basecamp",
             worktree_label="wt-memory",
         )
         transcript = Transcript(session=memory_session, path="/tmp/pi/transcript.jsonl")
@@ -198,7 +198,7 @@ def test_evidence_packet_includes_canonical_source_refs_and_bounded_activity_tex
 
     evidence = packet.source_evidence[0]
     assert packet.session_id == "pi-session-1"
-    assert packet.repo_name == "basecamp"
+    assert packet.session_cwd == "/repo/basecamp"
     assert packet.worktree_label == "wt-memory"
     assert packet.snapshot_id == snapshot_id
     assert packet.quality_report_id == report_id

@@ -89,7 +89,7 @@ def use_cli_job_store(monkeypatch, cli_job_store: JobStore) -> JobStore:
 
 
 def write_transcript(path: Path, content: bytes | None = None) -> None:
-    path.write_bytes(content or b'{"type":"session","id":"session-1"}\n')
+    path.write_bytes(content or b'{"type":"session","id":"session-1","cwd":"/transcript/cwd"}\n')
 
 
 def parse_observe_output(output: str) -> dict[str, str]:
@@ -111,7 +111,7 @@ def add_quality_report(
     promotable: bool = True,
 ) -> dict[str, object]:
     with database.session() as session:
-        memory_session = MemorySession(session_id=session_id, repo_name="basecamp", worktree_label="main")
+        memory_session = MemorySession(session_id=session_id, cwd="/repo/main", worktree_label="main")
         transcript = Transcript(session=memory_session, path=f"/tmp/pi/{session_id}.jsonl")
         snapshot = SessionInterpretationSnapshot(
             session=memory_session,
@@ -523,7 +523,7 @@ def test_observe_repeated_cli_call_is_idempotent(tmp_path, memory_database: Data
 
 
 @pytest.mark.usefixtures("use_cli_ingest_service", "use_cli_job_store")
-def test_observe_stores_cli_metadata(tmp_path, memory_database: Database) -> None:
+def test_observe_stores_cli_cwd_and_worktree_metadata(tmp_path, memory_database: Database) -> None:
     transcript_path = tmp_path / "transcript.jsonl"
     write_transcript(transcript_path)
     runner = CliRunner()
@@ -537,10 +537,6 @@ def test_observe_stores_cli_metadata(tmp_path, memory_database: Database) -> Non
             "--transcript-path",
             str(transcript_path),
             "--cwd",
-            "/workspace/basecamp",
-            "--repo-name",
-            "basecamp",
-            "--repo-root",
             "/workspace/basecamp",
             "--worktree-label",
             "task-1",
@@ -556,11 +552,33 @@ def test_observe_stores_cli_metadata(tmp_path, memory_database: Database) -> Non
         memory_session = db_session.scalar(select(MemorySession).where(MemorySession.session_id == "pi-session-1"))
         observation = db_session.scalar(select(Observation))
     assert memory_session.cwd == "/workspace/basecamp"
-    assert memory_session.repo_name == "basecamp"
-    assert memory_session.repo_root == "/workspace/basecamp"
+    assert not hasattr(memory_session, "repo_name")
+    assert not hasattr(memory_session, "repo_root")
     assert memory_session.worktree_label == "task-1"
     assert memory_session.worktree_path == "/worktrees/basecamp/task-1"
     assert observation.request_id == "request-1"
+
+
+@pytest.mark.usefixtures("use_cli_ingest_service", "use_cli_job_store")
+def test_observe_rejects_repo_metadata_options(tmp_path) -> None:
+    transcript_path = tmp_path / "transcript.jsonl"
+    write_transcript(transcript_path)
+
+    result = CliRunner().invoke(
+        cli_module.main,
+        [
+            "observe",
+            "--session-id",
+            "pi-session-1",
+            "--transcript-path",
+            str(transcript_path),
+            "--repo-name",
+            "basecamp",
+        ],
+    )
+
+    assert result.exit_code == 2
+    assert "No such option '--repo-name'" in result.output
 
 
 @pytest.mark.usefixtures("use_cli_ingest_service", "use_cli_job_store")
@@ -1048,6 +1066,8 @@ def test_quality_list_reports_json_filters(memory_database: Database) -> None:
             "--status",
             "degraded",
             "--not-promotable",
+            "--cwd",
+            "/repo/main",
             "--json",
         ],
     )
@@ -1055,6 +1075,7 @@ def test_quality_list_reports_json_filters(memory_database: Database) -> None:
     assert result.exit_code == 0
     payload = json.loads(result.output)
     assert payload["pagination"]["total"] == 1
+    assert payload["query"]["cwd"] == "/repo/main"
     assert payload["results"][0]["session_id"] == "degraded-1"
     assert payload["results"][0]["quality_status"] == "degraded"
     assert payload["results"][0]["promotable"] is False

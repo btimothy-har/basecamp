@@ -72,7 +72,7 @@ _METADATA_SCALAR_KEYS = (
     "statement",
     "normalized_statement",
     "session_id",
-    "repo_name",
+    "session_cwd",
     "transcript_id",
     "snapshot_id",
     "quality_report_id",
@@ -163,14 +163,14 @@ def assess_durable_memory_relations(
         raise DurableMemoryNotFoundError(memory_id)
 
     candidate_text = _memory_text(memory)
-    candidate_repo_name = memory.session.repo_name
-    if candidate_repo_name is None:
+    candidate_cwd = memory.session.cwd
+    if candidate_cwd is None:
         assessment = _assessment(
             DURABLE_MEMORY_RELATION_TYPE_NOVEL,
             None,
             None,
             0.7,
-            "Candidate session has no repo_name; relation assessment skipped.",
+            "Candidate session has no cwd; relation assessment skipped.",
         )
         result = RelationAssessmentResult(
             memory_id=memory.id,
@@ -183,7 +183,7 @@ def assess_durable_memory_relations(
         return result
 
     # Relation classification reads Chroma immediately, so first sync the bounded comparison set from SQLite.
-    _project_candidate_and_promoted_memories(session, memory, projection, candidate_repo_name)
+    _project_candidate_and_promoted_memories(session, memory, projection, candidate_cwd)
     hits = projection.query(
         candidate_text,
         filters={
@@ -191,11 +191,11 @@ def assess_durable_memory_relations(
             "memory_layer": MEMORY_LAYER_LONG_TERM,
             "relation_visible": True,
             "status": DURABLE_MEMORY_STATUS_PROMOTED,
-            "repo_name": candidate_repo_name,
+            "session_cwd": candidate_cwd,
         },
         limit=limit + 1,
     )
-    resolved_hits = _resolve_hits(session, hits, memory_id, candidate_repo_name)
+    resolved_hits = _resolve_hits(session, hits, memory_id, candidate_cwd)
     best_hit = resolved_hits[0] if resolved_hits else None
     assessment = _classify_relation(candidate_text, best_hit)
     result = RelationAssessmentResult(
@@ -216,14 +216,14 @@ def _project_candidate_and_promoted_memories(
     session: Session,
     memory: DurableMemoryItem,
     projection: MemoryProjection,
-    candidate_repo_name: str,
+    candidate_cwd: str,
 ) -> None:
     memories = list(
         session.scalars(
             select(DurableMemoryItem)
             .where(
                 DurableMemoryItem.status == DURABLE_MEMORY_STATUS_PROMOTED,
-                DurableMemoryItem.session.has(MemorySession.repo_name == candidate_repo_name),
+                DurableMemoryItem.session.has(MemorySession.cwd == candidate_cwd),
             )
             .options(joinedload(DurableMemoryItem.session)),
         ),
@@ -306,7 +306,7 @@ def _metadata_json(memory: DurableMemoryItem) -> dict[str, Any]:
         "statement": memory.statement,
         "normalized_statement": normalized_statement,
         "session_id": memory_session.session_id,
-        "repo_name": memory_session.repo_name,
+        "session_cwd": memory_session.cwd,
         "transcript_id": memory.transcript_id,
         "snapshot_id": memory.snapshot_id,
         "quality_report_id": memory.quality_report_id,
@@ -341,7 +341,7 @@ def _resolve_hits(
     session: Session,
     hits: list[ProjectionHit],
     memory_id: int,
-    candidate_repo_name: str,
+    candidate_cwd: str,
 ) -> list[_ResolvedHit]:
     resolved: list[_ResolvedHit] = []
     for hit in hits:
@@ -351,7 +351,7 @@ def _resolve_hits(
         memory = _load_memory(session, durable_memory_id)
         if memory is None:
             continue
-        if memory.status != DURABLE_MEMORY_STATUS_PROMOTED or memory.session.repo_name != candidate_repo_name:
+        if memory.status != DURABLE_MEMORY_STATUS_PROMOTED or memory.session.cwd != candidate_cwd:
             continue
         resolved.append(_ResolvedHit(memory=memory, hit=hit, text=_memory_text(memory)))
     return resolved

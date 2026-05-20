@@ -44,9 +44,9 @@ def test_quality_dashboard_loader_reads_reports_and_unreported_failures(tmp_path
     database.initialize()
     try:
         with database.session() as db_session:
-            reported_session = MemorySession(session_id="reported-session", repo_name="basecamp", worktree_label="wt")
-            failed_session = MemorySession(session_id="failed-session", repo_name="basecamp", worktree_label="wt")
-            other_session = MemorySession(session_id="other-session", repo_name="basecamp", worktree_label="wt")
+            reported_session = MemorySession(session_id="reported-session", cwd="/repo/basecamp", worktree_label="wt")
+            failed_session = MemorySession(session_id="failed-session", cwd="/repo/basecamp", worktree_label="wt")
+            other_session = MemorySession(session_id="other-session", cwd="/repo/basecamp", worktree_label="wt")
             db_session.add_all([reported_session, failed_session, other_session])
             db_session.flush()
 
@@ -163,7 +163,7 @@ def test_quality_dashboard_loader_deduplicates_failed_jobs_by_reported_session_i
     database.initialize()
     try:
         with database.session() as db_session:
-            memory_session = MemorySession(session_id="reported-session", repo_name="basecamp", worktree_label="wt")
+            memory_session = MemorySession(session_id="reported-session", cwd="/repo/basecamp", worktree_label="wt")
             db_session.add(memory_session)
             db_session.flush()
 
@@ -225,8 +225,8 @@ def test_quality_dashboard_loader_aggregates_promotable_reports_without_failure_
     database.initialize()
     try:
         with database.session() as db_session:
-            reported_session = MemorySession(session_id="promotable-session", repo_name="basecamp", worktree_label="wt")
-            failed_session = MemorySession(session_id="failed-session", repo_name="basecamp", worktree_label="wt")
+            reported_session = MemorySession(session_id="promotable-session", cwd="/repo/basecamp", worktree_label="wt")
+            failed_session = MemorySession(session_id="failed-session", cwd="/repo/basecamp", worktree_label="wt")
             db_session.add_all([reported_session, failed_session])
             db_session.flush()
 
@@ -291,8 +291,8 @@ async def test_quality_tui_opens_with_dashboard_overview_and_evidence_table(tmp_
     database.initialize()
     try:
         with database.session() as db_session:
-            reported_session = MemorySession(session_id="reported-session", repo_name="basecamp", worktree_label="wt")
-            failed_session = MemorySession(session_id="failed-session", repo_name="basecamp", worktree_label="wt")
+            reported_session = MemorySession(session_id="reported-session", cwd="/repo/basecamp", worktree_label="wt")
+            failed_session = MemorySession(session_id="failed-session", cwd="/repo/basecamp", worktree_label="wt")
             db_session.add_all([reported_session, failed_session])
             db_session.flush()
 
