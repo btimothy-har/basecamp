@@ -7,9 +7,14 @@ from pi_memory.db import (
     AnalysisRun,
     Base,
     Database,
+    DurableMemoryAuditEvent,
+    DurableMemoryItem,
+    DurableMemoryRelation,
+    DurableMemorySource,
     Episode,
     EpisodeManifest,
     Job,
+    MemoryProjectionRecord,
     MemorySession,
     SessionInterpretationQualityReport,
     SessionInterpretationSnapshot,
@@ -327,6 +332,30 @@ def test_initialize_upgrades_old_sqlite_transcripts_with_lineage_columns(tmp_pat
         database.close_if_open()
 
 
+def test_initialize_adds_phase_6_memory_tables_to_existing_sqlite_database(tmp_path) -> None:
+    db_path = tmp_path / "memory.db"
+    create_old_style_memory_database(db_path)
+    database = Database(sqlite_url(db_path))
+
+    try:
+        database.initialize()
+        database.initialize()
+        inspector = inspect(database.engine)
+        table_names = set(inspector.get_table_names())
+
+        assert {
+            "durable_memory_items",
+            "durable_memory_sources",
+            "durable_memory_relations",
+            "memory_projection_records",
+            "durable_memory_audit_events",
+        }.issubset(table_names)
+        assert "sessions" in table_names
+        assert "transcripts" in table_names
+    finally:
+        database.close_if_open()
+
+
 def test_initialize_upgrades_old_sqlite_activity_units_with_source_origin(tmp_path) -> None:
     db_path = tmp_path / "memory.db"
     create_old_style_activity_units_database(db_path)
@@ -539,6 +568,11 @@ def test_base_registers_schema_models() -> None:
     assert "session_snapshot_shells" in Base.metadata.tables
     assert "session_interpretation_snapshots" in Base.metadata.tables
     assert "session_interpretation_quality_reports" in Base.metadata.tables
+    assert "durable_memory_items" in Base.metadata.tables
+    assert "durable_memory_sources" in Base.metadata.tables
+    assert "durable_memory_relations" in Base.metadata.tables
+    assert "memory_projection_records" in Base.metadata.tables
+    assert "durable_memory_audit_events" in Base.metadata.tables
     assert "transcript_entries_fts" not in Base.metadata.tables
     assert Job.__table__ is Base.metadata.tables["jobs"]
     assert AnalysisRun.__table__ is Base.metadata.tables["analysis_runs"]
@@ -550,3 +584,8 @@ def test_base_registers_schema_models() -> None:
     assert (
         SessionInterpretationQualityReport.__table__ is Base.metadata.tables["session_interpretation_quality_reports"]
     )
+    assert DurableMemoryItem.__table__ is Base.metadata.tables["durable_memory_items"]
+    assert DurableMemorySource.__table__ is Base.metadata.tables["durable_memory_sources"]
+    assert DurableMemoryRelation.__table__ is Base.metadata.tables["durable_memory_relations"]
+    assert MemoryProjectionRecord.__table__ is Base.metadata.tables["memory_projection_records"]
+    assert DurableMemoryAuditEvent.__table__ is Base.metadata.tables["durable_memory_audit_events"]
