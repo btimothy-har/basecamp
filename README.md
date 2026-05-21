@@ -262,14 +262,14 @@ The workspace service owns the `~/.worktrees/<repo>/<label>/` storage convention
 
 ## Semantic Memory
 
-`pi-memory` is the active memory subsystem. It runs a local Python service for canonical transcript capture, durable job processing, raw recall, deterministic episode structure, activity-text projection, tool activity summarization, session interpretation, interpretation quality reports, durable memory promotion, and rebuildable semantic projection. Pi integration stays thin: the Pi package starts or reconnects to the local service and delegates memory behavior to the service.
+`pi-memory` is the active memory subsystem. It runs a local Python service for canonical transcript capture, durable job processing, raw recall, deterministic episode structure, activity-text projection, tool activity summarization, session interpretation, interpretation quality reports, durable memory promotion, and rebuildable semantic projection. Pi integration stays thin: the Pi package starts or reconnects to the local service through unauthenticated `/health` checks and delegates memory behavior to the service.
 
 The former `pi-observer` subsystem is deprecated and no longer installed, registered, tested, or documented as a user workflow. Historical observer stores are not required by `pi-memory`.
 
 ### How it works
 
 1. **Serve** — `pi-memory serve` runs the local FastAPI service backed by SQLite and service-owned durable jobs.
-2. **Observe** — `pi-memory observe` or the HTTP observe endpoint records transcript observations, stores transcript deltas canonically, and enqueues processing jobs when new entries are available.
+2. **Observe** — `pi-memory observe` or the authenticated HTTP observe endpoint records transcript observations, stores transcript deltas canonically, and enqueues processing jobs when new entries are available. HTTP observe accepts only `.jsonl` transcript paths under approved transcript roots.
 3. **Process** — Durable jobs derive raw recall indexes, deterministic episode/activity structure, tool activity summaries, session interpretations, quality reports, projection records, and durable memory candidates.
 4. **Recall** — Raw transcript recall is available today; unified recall over session claims and durable memory projection is the next service-backed recall surface.
 
@@ -282,7 +282,7 @@ pi-memory config            # Inspect persisted model/concurrency settings
 pi-memory observe PATH      # Record a transcript observation
 ```
 
-Internal inspection commands are grouped under `pi-memory debug ...` and are not part of the stable user workflow.
+Internal inspection commands are grouped under `pi-memory debug ...` and are not part of the stable user workflow. HTTP `/v1/*` endpoints require the per-launch bearer token stored in the local server metadata file; `/health` stays unauthenticated for service bootstrap checks. Status output is intentionally redacted and does not expose process ids or memory-directory paths.
 
 ### Storage
 

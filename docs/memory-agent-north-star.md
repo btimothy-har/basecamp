@@ -236,7 +236,7 @@ If unavailable, Pi starts the service:
 pi-memory serve --host 127.0.0.1 --port <fixed-port>
 ```
 
-The exact command name remains open, but the behavior should be stable: one local service process, one fixed localhost port, and a guard against duplicate servers.
+The command name is `pi-memory serve`. The behavior should remain stable: one local service process, one fixed localhost port, per-launch bearer auth for `/v1/*` endpoints, and a guard against duplicate servers.
 
 Startup sequence:
 
@@ -258,7 +258,7 @@ Pi sends lightweight observations during session activity:
 POST /v1/observe
 ```
 
-Observation payloads should include enough information for the service to locate and interpret session transcript data:
+Observation payloads should include enough information for the service to locate and interpret session transcript data. `/v1/observe` requires bearer auth and only accepts `.jsonl` transcript paths under service-approved transcript roots:
 
 ```text
 session_id
@@ -587,7 +587,7 @@ Hygiene should be conservative. It should not silently delete memory. Prefer low
 
 ## Local HTTP API
 
-The API shape stays small and local-only. Current stable endpoints are:
+The API shape stays small and local-only. `/health` is unauthenticated for bootstrap checks; every `/v1/*` endpoint requires the per-launch bearer token stored in the local server metadata file. Current stable endpoints are:
 
 ```text
 GET  /health
@@ -618,7 +618,7 @@ POST /v1/sessions/{session_id}/sync
 POST /v1/sessions/{session_id}/finalize
 ```
 
-Requests should be quick and idempotent. Long work returns job IDs.
+Requests should be quick and idempotent. Long work returns job IDs. Public status responses intentionally omit process ids and filesystem paths; process metadata remains local server-state only.
 
 Exact request and response schemas should live with the implementation and tests, not only in this architecture document.
 
@@ -652,6 +652,8 @@ jobs
 - created_at
 - updated_at
 ```
+
+The dispatcher may spawn hidden `pi-memory run-job` children, but run tokens and database URLs are passed through the child environment rather than process arguments.
 
 Implemented job kinds:
 
@@ -803,11 +805,11 @@ Deliverables:
 - FastAPI app.
 - Fixed localhost port.
 - `GET /health` endpoint.
-- `GET /v1/status` endpoint.
+- Authenticated `GET /v1/status` endpoint with redacted service metadata.
 - Python CLI, such as `pi-memory serve` and `pi-memory status`.
-- Pi extension startup check.
+- Pi extension startup check against unauthenticated `/health`.
 - Pi service bootstrap if health check fails.
-- Server lock or pid metadata file.
+- Server lock and 0600 metadata file containing the local bearer token.
 - Graceful degraded behavior if the service cannot start.
 
 Validation:
@@ -815,7 +817,7 @@ Validation:
 - Service starts via CLI.
 - Pi can start service if it is not running.
 - Multiple Pi sessions do not spawn duplicate servers.
-- Health and status endpoints work.
+- Health works unauthenticated; status works with the local bearer token.
 - Startup failures are visible and non-fatal to the Pi session.
 
 Deferred:

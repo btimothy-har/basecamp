@@ -177,8 +177,7 @@ def main() -> None:
     console.print("[green]✓[/green] Done.")
     console.print()
     console.print(
-        "If [bold]basecamp[/bold] or [bold]pi-memory[/bold] aren't found, "
-        "add uv's tool bin to your PATH:",
+        "If [bold]basecamp[/bold] or [bold]pi-memory[/bold] aren't found, add uv's tool bin to your PATH:",
     )
     console.print('  [dim]export PATH="$HOME/.local/bin:$PATH"[/dim]')
 
