@@ -125,7 +125,7 @@ async def run_pydantic_ai_agent(agent: Any, prompt: str) -> Any:
 
 def _validate_openrouter_base_url(base_url: str) -> None:
     parsed = urlparse(base_url)
-    if parsed.scheme != "https" or not parsed.hostname or parsed.username or parsed.password:
+    if parsed.scheme != "https" or not parsed.hostname or "@" in parsed.netloc:
         raise ValueError(_OPENROUTER_BASE_URL_ERROR)
 
 

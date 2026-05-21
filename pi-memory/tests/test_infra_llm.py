@@ -173,6 +173,7 @@ def test_resolve_openrouter_model_with_custom_base_url_missing_openrouter_key_re
     "invalid_base_url",
     [
         "http://openrouter.example.test/v1",
+        "https://@openrouter.example.test/v1",
         "https://user:pass@openrouter.example.test/v1",
     ],
 )
