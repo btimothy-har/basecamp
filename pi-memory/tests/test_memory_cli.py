@@ -1413,7 +1413,7 @@ def test_job_requires_non_empty_db_url() -> None:
     assert "Invalid value for '--db-url': must not be empty" in result.output
 
 
-def test_run_job_succeeds_against_isolated_db(tmp_path) -> None:
+def test_run_job_succeeds_against_isolated_db(tmp_path, monkeypatch) -> None:
     db_url = sqlite_url(tmp_path / "memory-run-job.db")
     database = Database(db_url)
     try:
@@ -1424,10 +1424,12 @@ def test_run_job_succeeds_against_isolated_db(tmp_path) -> None:
         claimed = store.claim_next("worker-1")
         assert claimed is not None
         runner = CliRunner()
+        monkeypatch.setenv("PI_MEMORY_JOB_RUN_ID", claimed.run_id)
+        monkeypatch.setenv("PI_MEMORY_JOB_DB_URL", db_url)
 
         result = runner.invoke(
             cli_module.main,
-            ["run-job", "--job-id", str(claimed.id), "--run-id", claimed.run_id, "--db-url", db_url],
+            ["run-job", "--job-id", str(claimed.id)],
         )
 
         assert result.exit_code == 0
@@ -1486,13 +1488,15 @@ def test_run_job_wrong_run_id_exits_one_without_incrementing_attempts(tmp_path) 
         database.close_if_open()
 
 
-def test_run_job_help_lists_required_options() -> None:
+def test_run_job_help_lists_internal_options() -> None:
     result = CliRunner().invoke(cli_module.main, ["run-job", "--help"])
 
     assert result.exit_code == 0
     assert "--job-id" in result.output
     assert "--run-id" in result.output
+    assert "PI_MEMORY_JOB_RUN_ID" in result.output
     assert "--db-url" in result.output
+    assert "PI_MEMORY_JOB_DB_URL" in result.output
 
 
 def test_run_job_requires_non_empty_options(tmp_path) -> None:
@@ -1503,3 +1507,10 @@ def test_run_job_requires_non_empty_options(tmp_path) -> None:
 
     assert result.exit_code == 2
     assert "Invalid value for '--run-id': must not be empty" in result.output
+
+
+def test_run_job_requires_env_or_options() -> None:
+    result = CliRunner().invoke(cli_module.main, ["run-job", "--job-id", "1"])
+
+    assert result.exit_code == 2
+    assert "PI_MEMORY_JOB_RUN_ID is required" in result.output

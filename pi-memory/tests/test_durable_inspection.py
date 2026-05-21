@@ -68,7 +68,7 @@ def durable_client(database: Database) -> TestClient:
     app = create_app(
         durable_memory_service=DurableMemoryInspectionService(database=database),
     )
-    return TestClient(app)
+    return TestClient(app, headers={"Authorization": f"Bearer {app.state.auth_token}"})
 
 
 def create_durable_fixture(database: Database) -> dict[str, Any]:

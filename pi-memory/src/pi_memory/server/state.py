@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import json
 import os
+import secrets
+import tempfile
 import time
 from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
@@ -45,6 +47,7 @@ class ServerMetadata:
     host: str
     port: int
     memory_dir: str
+    auth_token: str
 
     @classmethod
     def create(
@@ -55,10 +58,12 @@ class ServerMetadata:
         memory_dir: Path = MEMORY_DIR,
         pid: int | None = None,
         started_at: datetime | None = None,
+        auth_token: str | None = None,
     ) -> ServerMetadata:
         """Create metadata for a server process."""
         service_pid = os.getpid() if pid is None else pid
         service_started_at = datetime.now(UTC) if started_at is None else started_at
+        service_auth_token = secrets.token_urlsafe(32) if auth_token is None else auth_token
         return cls(
             service_name=SERVICE_NAME,
             version=SERVICE_VERSION,
@@ -67,6 +72,7 @@ class ServerMetadata:
             host=host,
             port=port,
             memory_dir=str(memory_dir.expanduser()),
+            auth_token=service_auth_token,
         )
 
     @property
@@ -162,9 +168,19 @@ class ServerState:
             return
 
     def _write_metadata(self, metadata: ServerMetadata) -> None:
-        temporary_path = self.metadata_path.with_suffix(".json.tmp")
-        temporary_path.write_text(json.dumps(metadata.to_dict(), indent=2) + "\n", encoding="utf-8")
-        temporary_path.replace(self.metadata_path)
+        content = (json.dumps(metadata.to_dict(), indent=2) + "\n").encode()
+        descriptor, temporary_name = tempfile.mkstemp(dir=self.metadata_path.parent, suffix=".json.tmp")
+        temporary_path = Path(temporary_name)
+        try:
+            try:
+                os.write(descriptor, content)
+                os.fchmod(descriptor, 0o600)
+            finally:
+                os.close(descriptor)
+            temporary_path.replace(self.metadata_path)
+        except OSError:
+            _unlink_missing(temporary_path)
+            raise
 
     def _remove_stale_state(self) -> None:
         for path in (self.metadata_path, self.lock_path):

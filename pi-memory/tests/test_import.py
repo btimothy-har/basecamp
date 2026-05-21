@@ -70,9 +70,9 @@ def test_status_reports_healthy_service(monkeypatch) -> None:
         return {
             "service_name": "pi-memory",
             "version": "0.1.0",
-            "pid": 123,
             "uptime_seconds": 4.5,
-            "memory_dir": "/tmp/pi-memory",
+            "host": "127.0.0.2",
+            "port": 9876,
         }
 
     monkeypatch.setattr(cli_module, "_fetch_status", fetch_status)
@@ -85,9 +85,11 @@ def test_status_reports_healthy_service(monkeypatch) -> None:
     assert result.exit_code == 0
     assert "pi-memory is healthy at http://127.0.0.2:9876/v1/status" in result.output
     assert "version: 0.1.0" in result.output
-    assert "pid: 123" in result.output
     assert "uptime_seconds: 4.5" in result.output
-    assert "memory_dir: /tmp/pi-memory" in result.output
+    assert "host: 127.0.0.2" in result.output
+    assert "port: 9876" in result.output
+    assert "pid" not in result.output
+    assert "memory_dir" not in result.output
 
 
 def test_status_reports_unavailable_service(monkeypatch) -> None:
@@ -110,9 +112,9 @@ def test_status_json_reports_healthy_service(monkeypatch) -> None:
     service_status = {
         "service_name": "pi-memory",
         "version": "0.1.0",
-        "pid": 123,
         "uptime_seconds": 4.5,
-        "memory_dir": "/tmp/pi-memory",
+        "host": "127.0.0.1",
+        "port": 8765,
     }
 
     def fetch_status(*, url: str, timeout: float) -> dict[str, Any]:
