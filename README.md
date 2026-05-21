@@ -36,7 +36,7 @@ uv run install.py -e        # editable (recommended for development)
 uv run install.py --no-editable
 ```
 
-This installs the Python tools `basecamp`, `pi-observer`, and `pi-memory`, registers the Pi packages in `pi-extension/`, `pi-observer/`, and `pi-memory/`, and saves the Basecamp install directory to `~/.pi/basecamp/config.json`.
+This installs the Python tools `basecamp` and `pi-memory`, registers the Pi packages in `pi-extension/` and `pi-memory/`, and saves the Basecamp install directory to `~/.pi/basecamp/config.json`.
 
 Then initialize the environment:
 
@@ -44,7 +44,7 @@ Then initialize the environment:
 basecamp setup                     # check prerequisites, create styles/context dirs, create default config
 ```
 
-If `basecamp`, `pi-observer`, or `pi-memory` aren't in your PATH:
+If `basecamp` or `pi-memory` aren't in your PATH:
 
 ```bash
 export PATH="$HOME/.local/bin:$PATH"
@@ -54,7 +54,6 @@ export PATH="$HOME/.local/bin:$PATH"
 
 ```bash
 uv tool upgrade basecamp
-uv tool upgrade pi-observer
 uv tool upgrade pi-memory
 ```
 
@@ -62,7 +61,6 @@ uv tool upgrade pi-memory
 
 ```bash
 uv tool uninstall basecamp
-uv tool uninstall pi-observer
 uv tool uninstall pi-memory
 ```
 
@@ -249,7 +247,7 @@ Single-repo projects typically use `AGENTS.md` in the repo itself.
 
 Before a worktree is active, the effective working directory is where you launched Pi; the repository root is the protected checkout boundary for workspace guards. When an implementation plan is approved, Basecamp uses the workspace service to prompt for an execution worktree using existing worktrees plus a suggested label derived from the plan goal.
 
-The workspace service owns the `~/.worktrees/<repo>/<label>/` storage convention, `wt/<label>` default branch names, and `/tmp/pi/<repo>` scratch directories. Git is the source of truth for worktree registration; Basecamp consumes workspace state for project context and exposes `BASECAMP_*` env vars that `pi-observer` can use.
+The workspace service owns the `~/.worktrees/<repo>/<label>/` storage convention, `wt/<label>` default branch names, and `/tmp/pi/<repo>` scratch directories. Git is the source of truth for worktree registration; Basecamp consumes workspace state for project context and exposes `BASECAMP_*` env vars to child processes and integrated services.
 
 - The protected checkout must be on the default branch with a clean working tree before activation
 - Implementation edits happen in the active worktree, not the protected checkout
@@ -262,35 +260,34 @@ The workspace service owns the `~/.worktrees/<repo>/<label>/` storage convention
 - Additional directories stay on their configured checkouts throughout the session
 - Only works with git repositories
 
-## Semantic Memory (Observer)
+## Semantic Memory
 
-The `pi-observer` CLI and Pi package provide the current semantic recall UI across sessions. They ingest session transcripts, extract structured knowledge via LLM, and make it searchable. The newer `pi-memory/` package runs a local memory service for canonical transcript capture, raw recall, deterministic episode structure, activity-text projection, tool activity summarization, and PydanticAI session interpretation; Pi recall-tool behavior still remains in `pi-observer/` for now.
+`pi-memory` is the active memory subsystem. It runs a local Python service for canonical transcript capture, durable job processing, raw recall, deterministic episode structure, activity-text projection, tool activity summarization, session interpretation, interpretation quality reports, durable memory promotion, and rebuildable semantic projection. Pi integration stays thin: the Pi package starts or reconnects to the local service and delegates memory behavior to the service.
+
+The former `pi-observer` subsystem is deprecated and no longer installed, registered, tested, or documented as a user workflow. Historical observer stores are not required by `pi-memory`.
 
 ### How it works
 
-1. **Ingest** — Hooks trigger `pi-observer ingest` at session shutdown, before compaction, and on agent dispatch (ingest-only), parsing new transcript events incrementally
-2. **Process** — A background job refines events into work items, extracts structured artifacts (summary, knowledge, decisions, constraints, actions), and embeds them into ChromaDB
-3. **Search** — The `recall` skill and `pi-observer recall` command provide hybrid search (semantic + keyword) with time-decay scoring, scoped to the current project
+1. **Serve** — `pi-memory serve` runs the local FastAPI service backed by SQLite and service-owned durable jobs.
+2. **Observe** — `pi-memory observe` or the HTTP observe endpoint records transcript observations, stores transcript deltas canonically, and enqueues processing jobs when new entries are available.
+3. **Process** — Durable jobs derive raw recall indexes, deterministic episode/activity structure, tool activity summaries, session interpretations, quality reports, projection records, and durable memory candidates.
+4. **Recall** — Raw transcript recall is available today; unified recall over session claims and durable memory projection is the next service-backed recall surface.
 
-### Observer CLI
+### pi-memory CLI
 
 ```bash
-pi-observer setup                         # Initialize database and config
-pi-observer db status                     # Show database and index status
-pi-observer db migrate                    # Run pending schema migrations
-pi-observer config set mode on            # Enable full pipeline (default: on)
-pi-observer config set mode off           # Ingestion only, no LLM processing
-pi-observer recall search "worktrees"     # Search semantic memory from the shell
+pi-memory serve             # Run the local memory service
+pi-memory status            # Show service status
+pi-memory config            # Inspect persisted model/concurrency settings
+pi-memory observe PATH      # Record a transcript observation
 ```
 
 ### Storage
 
-All data is local. Current observer recall state and new memory-service state are intentionally separate:
-- `~/.pi/observer/observer.db` — current observer SQLite (relational model + FTS5 keyword search)
-- `~/.pi/observer/chroma/` — current observer ChromaDB (vector embeddings, HNSW index)
-- `~/.pi/observer/config.json` — Observer settings
-- `~/.pi/memory/memory.db` — new `pi-memory` canonical transcript, job, recall, episode, activity-text, and interpretation store
-- `~/.pi/memory/config.json` — new `pi-memory` model/concurrency settings
+All active memory data is local to `pi-memory`:
+
+- `~/.pi/memory/memory.db` — canonical transcript, job, recall, episode, activity-text, interpretation, quality, projection, and durable-memory store
+- `~/.pi/memory/config.json` — model/concurrency settings
 - `~/.pi/basecamp/config.json` — Basecamp settings, including the installed repo path
 
 ## Package Layout
@@ -299,8 +296,9 @@ basecamp is split into root-level products:
 
 - `basecamp-cli/` — Python package for the `basecamp` setup/config CLI
 - `pi-extension/` — Pi package for project context, session UI, worktrees, workflow, git, and engineering skills
-- `pi-observer/` — Python package for the `pi-observer` CLI plus a Pi package for transcript ingestion and semantic recall
-- `pi-memory/` — Python and Pi package for the local memory service, transcript capture, jobs, raw recall, episode structure, and session interpretation
+- `pi-memory/` — Python and Pi package for the active local memory service, transcript capture, jobs, raw recall, episode structure, session interpretation, quality reports, durable memory, and semantic projection
+
+`pi-observer/` contains deprecated historical memory code and is excluded from active install, test, lint, and package-registration workflows.
 
 ## License
 

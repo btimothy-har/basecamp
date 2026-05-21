@@ -1,16 +1,16 @@
 # Memory Agent North Star
 
-Status: proposed architecture and implementation roadmap. `pi-memory` has implemented Phase 4 raw transcript recall, Phase 5A deterministic transcript structure/fork provenance, Phase 5B replaceable session interpretation over chronological activity-text packets, Phase 5C persisted interpretation quality reports, and Phase 6 durable memory promotion with a unified rebuildable semantic projection; Pi recall tool wiring remains deferred.
+Status: active `pi-memory` architecture and implementation roadmap. `pi-memory` has implemented Phase 4 raw transcript recall, Phase 5A deterministic transcript structure/fork provenance, Phase 5B replaceable session interpretation over chronological activity-text packets, Phase 5C persisted interpretation quality reports, and Phase 6 durable memory promotion with a unified rebuildable semantic projection. `pi-observer` is deprecated and removed from active install/test/package-registration paths; Pi recall tool wiring remains deferred.
 
 Related issue: [#123](https://github.com/btimothy-har/basecamp/issues/123)
 
 ## Context
 
-`pi-observer` currently provides semantic recall over previous Pi coding sessions by ingesting transcript JSONL, extracting structured artifacts, storing those artifacts in SQLite, and indexing them in ChromaDB. That implementation proves the value of local session recall, but the next memory system should not be constrained by the current observer's lifecycle, schema, or package boundaries.
+`pi-observer` previously provided semantic recall over Pi coding sessions by ingesting transcript JSONL, extracting structured artifacts, storing those artifacts in SQLite, and indexing them in ChromaDB. That implementation proved the value of local session recall, but the active memory system is now `pi-memory` and should not be constrained by the old observer lifecycle, schema, or package boundaries.
 
 The north-star system is a clean cutover: a Python-first local memory service that continuously captures full Pi transcripts, derives evolving session understanding, promotes durable source-backed memory artifacts into an associative graph, and serves explainable recall through a thin Pi adapter.
 
-The current observer is useful inspiration. It should not be treated as a compatibility target.
+The deprecated observer is useful inspiration. It should not be treated as a compatibility target.
 
 ## One-sentence north star
 
@@ -18,16 +18,16 @@ Build a Python-first local memory service that continuously captures full Pi tra
 
 ## Clean cutover stance
 
-This design intentionally replaces the current observer behavior rather than migrating or preserving historical observer stores.
+This design intentionally replaces the deprecated observer behavior rather than migrating or preserving historical observer stores.
 
 The new system should not require compatibility with:
 
 - the existing `~/.pi/observer` data directory;
-- current observer SQLite schemas;
-- current observer Chroma collections;
-- current extraction artifact shapes;
-- current CLI behavior;
-- current Pi extension orchestration behavior.
+- deprecated observer SQLite schemas;
+- deprecated observer Chroma collections;
+- deprecated extraction artifact shapes;
+- deprecated CLI behavior;
+- deprecated Pi extension orchestration behavior.
 
 No legacy migration should be added unless a future product decision explicitly changes that requirement. The clean cutover lets the new system optimize for the desired architecture instead of carrying forward accidental constraints.
 
@@ -98,9 +98,9 @@ SQLite owns canonical memory, graph, jobs, sessions, transcripts, and provenance
 
 The graph helps find relevant neighborhoods and explain recall. It does not by itself decide supersession, correctness, or user intent.
 
-## Current observer as inspiration
+## Deprecated observer as inspiration
 
-The existing observer already has useful ideas:
+The old observer had useful ideas:
 
 - it stores full raw transcript payloads;
 - it uses SQLite for durable local data;
@@ -108,7 +108,7 @@ The existing observer already has useful ideas:
 - it extracts summaries, decisions, constraints, knowledge, and actions;
 - it exposes recall through Pi tooling.
 
-The new design should carry forward those lessons while avoiding the constraints that make the current shape hard to evolve:
+The new design should carry forward those lessons while avoiding the constraints that made the observer shape hard to evolve:
 
 - fire-and-forget lifecycle orchestration from the Pi extension;
 - analysis centered on shutdown instead of continuous durable ingest;
@@ -684,7 +684,7 @@ Canonical local storage should live under a new memory-owned directory:
   server.json
 ```
 
-This path is intentionally separate from the current observer store.
+This path is intentionally separate from deprecated observer stores.
 
 ### SQLite canonical tables
 
@@ -774,7 +774,7 @@ Deliverables:
 - Record the clean-cutover stance.
 - Record canonical-vs-derived storage rules.
 - Record the phased implementation sequence.
-- Decide whether implementation will use the existing `pi-observer` package path, a new `pi-memory` package, or a transition path.
+- Record `pi-memory` as the active package path and command surface.
 
 Validation:
 
@@ -1210,13 +1210,13 @@ Deferred:
 
 ### Phase 10: Clean cutover from old observer
 
-Purpose: replace the current observer behavior.
+Purpose: keep `pi-memory` as the only active memory subsystem.
 
 Deliverables:
 
-- Current Pi observer hooks route to the new service.
+- Deprecated observer hooks are removed from active package registration.
 - Old recall path is replaced by service-backed recall.
-- Old CLI commands are removed, redirected, or documented as obsolete.
+- Old CLI commands are removed from active install/test/lint paths and documented as obsolete if the source remains in the repository.
 - Old observer DB and Chroma paths are no longer used by the active memory system.
 - Install and package registration use the new service behavior.
 - Docs are updated.
@@ -1276,51 +1276,47 @@ Includes phases 9 and 10.
 Outcome:
 
 ```text
-The old observer is replaced by the service-backed memory system, with hygiene and recovery behavior in place.
+pi-memory is the only active memory subsystem, with hygiene and recovery behavior in place.
 ```
 
-## Critical decisions before implementation
+## Critical decisions
 
-Resolve these before or during Phase 1:
+Resolved and remaining decisions for the `pi-memory` roadmap:
 
 1. Package and command naming:
-   - keep `pi-observer`;
-   - rename to `pi-memory`;
-   - split during transition, then remove the old observer.
+   - resolved to `pi-memory` as the active package and command.
 
 2. Fixed localhost port and collision behavior.
 
-3. Whether the first implementation happens in the existing `pi-observer` package path or a new package path.
-
-4. First recall target:
+3. First recall target:
    - raw transcript FTS first;
    - session snapshots first;
    - wait for durable artifacts.
 
-5. Initial API schemas for observe, status, jobs, and recall.
+4. Initial API schemas for observe, status, jobs, and recall.
 
-6. Initial SQLite schema and migration policy for the new clean store.
+5. Initial SQLite schema and migration policy for the new clean store.
 
-7. Initial artifact taxonomy and status set.
+6. Initial artifact taxonomy and status set.
 
-8. Model/provider configuration for analysis jobs.
+7. Model/provider configuration for analysis jobs.
 
-9. Episode segmentation strategy:
+8. Episode segmentation strategy:
    - resolved for Phase 5A as transcript/session scope, compaction, one-hour timestamp gap, and EOF/current cursor;
    - raw byte size, raw tool output size, and entry count are not episode boundaries.
 
-10. Rolling analysis thresholds:
+9. Rolling analysis thresholds:
     - Phase 5A only uses deterministic lifecycle boundaries plus bounded manifest budgets;
     - Phase 5B currently enqueues `summarize_tool_activities` after each successful `process_transcript` rebuild, then enqueues `interpret_session` after tool activity text is filled;
     - future throttling triggers may include turns, transcript bytes, token estimates, lifecycle events, compaction, and stale-session catch-up.
 
-11. Finalization triggers:
+10. Finalization triggers:
     - compaction;
     - shutdown;
     - stale-session catch-up;
     - manual command.
 
-12. Recall response shape and Pi rendering behavior.
+11. Recall response shape and Pi rendering behavior.
 
 ## Validation expectations for the full system
 

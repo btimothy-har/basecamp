@@ -1,14 +1,15 @@
 [tool.uv.workspace]
-members = ["basecamp-cli", "pi-observer", "pi-memory"]
+members = ["basecamp-cli", "pi-memory"]
 
 [tool.pytest.ini_options]
-testpaths = ["basecamp-cli/tests", "pi-observer/tests", "pi-memory/tests"]
-pythonpath = ["basecamp-cli/src", "pi-observer/src", "pi-memory/src"]
+testpaths = ["basecamp-cli/tests", "pi-memory/tests"]
+pythonpath = ["basecamp-cli/src", "pi-memory/src"]
 env = ["TESTING=1"]
 
 [tool.ruff]
 line-length = 120
 fix = true
+extend-exclude = ["pi-observer"]
 
 [tool.ruff.lint]
 select = [
