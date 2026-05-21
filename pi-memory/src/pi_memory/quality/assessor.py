@@ -2,21 +2,21 @@
 
 from __future__ import annotations
 
-import asyncio
-import inspect
 import json
 import re
-from collections.abc import Callable, Mapping
+from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import Any, Protocol, cast
+from typing import Any, Protocol
 
-from pydantic import BaseModel, ValidationError
+from pydantic import ValidationError
 
-try:
-    from pydantic_ai import Agent as PydanticAIAgent
-except ImportError:
-    PydanticAIAgent = None
-
+from pi_memory.infra.llm import (
+    AgentFactory,
+    create_pydantic_ai_agent,
+    pydantic_ai_model_metadata,
+    run_pydantic_ai_agent,
+    run_pydantic_ai_agent_sync,
+)
 from pi_memory.quality.contracts import (
     FINDING_CODE_QUALITY_ASSESSMENT_REFERENCE_UNRESOLVED,
     QUALITY_ASSESSMENT_SCHEMA_VERSION,
@@ -63,8 +63,6 @@ _UNRESOLVED_REFERENCE_FINDING_MESSAGE = (
     "Quality assessor cited unresolved source refs; invalid quality references were omitted."
 )
 _SOURCE_REF_ALIAS_PATTERN = re.compile(r"(?<![A-Za-z0-9_])s\d{4}(?![A-Za-z0-9_])")
-
-AgentFactory = Callable[..., Any]
 
 
 @dataclass(frozen=True)
@@ -165,21 +163,30 @@ class PydanticAIQualityAssessor:
     ) -> None:
         self.model = model
         self.prompt_version = prompt_version
-        self._agent = _create_pydantic_ai_agent(model, SemanticQualityAssessmentOutput, agent_factory)
+        self._agent = create_pydantic_ai_agent(
+            model,
+            SemanticQualityAssessmentOutput,
+            agent_factory=agent_factory,
+            dependency_error_factory=PydanticAIDependencyError,
+        )
 
     def assess(self, packet: QualityPacket) -> QualityReportDraft:
         """Assess a quality packet using PydanticAI synchronously."""
         _validate_packet_ready_for_assessment(packet)
         prompt = _render_quality_assessment_prompt(packet)
         try:
-            run_result = self._agent.run_sync(prompt)
+            run_result = run_pydantic_ai_agent_sync(self._agent, prompt)
             validated = validate_quality_assessment_result(_extract_quality_assessment_output(run_result), packet)
         except Exception as error:
             raise PydanticAIQualityAssessmentError() from error
         return _quality_report_from_semantic_output(
             packet=packet,
             validated=validated,
-            model_metadata=_pydantic_ai_model_metadata(self.model),
+            model_metadata=pydantic_ai_model_metadata(
+                self.model,
+                mode=PYDANTIC_AI_QUALITY_ASSESSOR_MODE,
+                schema_version=QUALITY_ASSESSMENT_SCHEMA_VERSION,
+            ),
             prompt_version=self.prompt_version,
         )
 
@@ -188,14 +195,18 @@ class PydanticAIQualityAssessor:
         _validate_packet_ready_for_assessment(packet)
         prompt = _render_quality_assessment_prompt(packet)
         try:
-            run_result = await _run_pydantic_ai_agent(self._agent, prompt)
+            run_result = await run_pydantic_ai_agent(self._agent, prompt)
             validated = validate_quality_assessment_result(_extract_quality_assessment_output(run_result), packet)
         except Exception as error:
             raise PydanticAIQualityAssessmentError() from error
         return _quality_report_from_semantic_output(
             packet=packet,
             validated=validated,
-            model_metadata=_pydantic_ai_model_metadata(self.model),
+            model_metadata=pydantic_ai_model_metadata(
+                self.model,
+                mode=PYDANTIC_AI_QUALITY_ASSESSOR_MODE,
+                schema_version=QUALITY_ASSESSMENT_SCHEMA_VERSION,
+            ),
             prompt_version=self.prompt_version,
         )
 
@@ -468,27 +479,6 @@ def _canonicalize_alias_metadata(
     }
 
 
-def _create_pydantic_ai_agent(model: str, output_type: type[BaseModel], agent_factory: AgentFactory | None) -> Any:
-    factory = agent_factory if agent_factory is not None else _pydantic_ai_agent_factory()
-    return factory(model, output_type=output_type)
-
-
-async def _run_pydantic_ai_agent(agent: Any, prompt: str) -> Any:
-    run = getattr(agent, "run", None)
-    if run is None:
-        return await asyncio.to_thread(agent.run_sync, prompt)
-    result = run(prompt)
-    if inspect.isawaitable(result):
-        return await result
-    return result
-
-
-def _pydantic_ai_agent_factory() -> AgentFactory:
-    if PydanticAIAgent is None:
-        raise PydanticAIDependencyError()
-    return cast(AgentFactory, PydanticAIAgent)
-
-
 def _extract_quality_assessment_output(run_result: Any) -> SemanticQualityAssessmentOutput:
     output = getattr(run_result, "output", None)
     if isinstance(output, SemanticQualityAssessmentOutput):
@@ -640,15 +630,6 @@ def _validate_packet_ready_for_assessment(packet: QualityPacket) -> None:
         raise QualityAssessmentUnavailableError.packet_not_ready(reason)
 
 
-def _pydantic_ai_model_metadata(model: str) -> Mapping[str, Any]:
-    return {
-        "provider": _provider_from_model(model),
-        "model": model,
-        "mode": PYDANTIC_AI_QUALITY_ASSESSOR_MODE,
-        "schema_version": QUALITY_ASSESSMENT_SCHEMA_VERSION,
-    }
-
-
 def _deterministic_model_metadata() -> Mapping[str, Any]:
     return {
         "provider": "pi-memory",
@@ -656,8 +637,3 @@ def _deterministic_model_metadata() -> Mapping[str, Any]:
         "mode": DETERMINISTIC_QUALITY_ASSESSOR_MODE,
         "schema_version": QUALITY_ASSESSMENT_SCHEMA_VERSION,
     }
-
-
-def _provider_from_model(model: str) -> str | None:
-    provider, separator, _model_name = model.partition(":")
-    return provider if separator else None

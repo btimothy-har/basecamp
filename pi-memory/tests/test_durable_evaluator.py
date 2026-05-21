@@ -4,8 +4,8 @@ import asyncio
 from pathlib import Path
 from typing import Any
 
-import pi_memory.durable.evaluator as evaluator_module
 import pi_memory.durable.factory as durable_factory
+import pi_memory.infra.llm.pydantic_ai as llm_module
 import pytest
 from pi_memory.db import (
     DURABLE_MEMORY_STATUS_CANDIDATE,
@@ -46,7 +46,7 @@ from pi_memory.settings import MissingInterpretationModelError, Settings
 
 class ProviderDetailsError(RuntimeError):
     def __init__(self) -> None:
-        super().__init__("provider details")
+        super().__init__("provider details API_KEY=abc123")
 
 
 class RunResult:
@@ -263,7 +263,43 @@ def test_pydantic_ai_async_evaluator_uses_async_agent() -> None:
     result = asyncio.run(evaluator.evaluate_async(packet()))
 
     assert isinstance(result.output, CandidateEvaluationOutput)
+    assert result.prompt_version == CANDIDATE_EVALUATION_PROMPT_VERSION
+    assert result.schema_version == CANDIDATE_EVALUATION_SCHEMA_VERSION
+    assert result.model_metadata == {
+        "provider": "anthropic",
+        "model": "anthropic:claude-haiku-4-5",
+        "mode": PYDANTIC_AI_CANDIDATE_EVALUATOR_MODE,
+        "schema_version": CANDIDATE_EVALUATION_SCHEMA_VERSION,
+    }
     assert prompts and "Durable-memory candidate packet JSON" in prompts[0]
+
+
+def test_pydantic_ai_async_evaluator_falls_back_to_run_sync() -> None:
+    prompts: list[str] = []
+
+    class RunSyncOnlyAgent:
+        def __init__(self, _model: str, *, output_type: type) -> None:
+            self.output_type = output_type
+
+        def run_sync(self, prompt: str) -> RunResult:
+            prompts.append(prompt)
+            return RunResult(evaluation_output())
+
+    evaluator = PydanticAICandidateEvaluator("anthropic:claude-haiku-4-5", agent_factory=RunSyncOnlyAgent)
+
+    result = asyncio.run(evaluator.evaluate_async(packet()))
+
+    assert isinstance(result.output, CandidateEvaluationOutput)
+    assert result.prompt_version == CANDIDATE_EVALUATION_PROMPT_VERSION
+    assert result.schema_version == CANDIDATE_EVALUATION_SCHEMA_VERSION
+    assert result.model_metadata == {
+        "provider": "anthropic",
+        "model": "anthropic:claude-haiku-4-5",
+        "mode": PYDANTIC_AI_CANDIDATE_EVALUATOR_MODE,
+        "schema_version": CANDIDATE_EVALUATION_SCHEMA_VERSION,
+    }
+    assert len(prompts) == 1
+    assert "Durable-memory candidate packet JSON" in prompts[0]
 
 
 def test_pydantic_ai_async_evaluator_wraps_provider_exceptions() -> None:
@@ -280,10 +316,27 @@ def test_pydantic_ai_async_evaluator_wraps_provider_exceptions() -> None:
         asyncio.run(evaluator.evaluate_async(packet()))
 
     assert isinstance(error.value.__cause__, ProviderDetailsError)
+    message = str(error.value)
+    assert "provider details" not in message
+    assert "API_KEY" not in message
+
+
+def test_pydantic_ai_async_evaluator_invalid_output_raises_validation_error() -> None:
+    class InvalidAsyncAgent:
+        def __init__(self, _model: str, *, output_type: type) -> None:
+            self.output_type = output_type
+
+        async def run(self, _prompt: str) -> RunResult:
+            return RunResult({"normalized_statement": "missing required fields"})
+
+    evaluator = PydanticAICandidateEvaluator("anthropic:claude-haiku-4-5", agent_factory=InvalidAsyncAgent)
+
+    with pytest.raises(CandidateEvaluationValidationError):
+        asyncio.run(evaluator.evaluate_async(packet()))
 
 
 def test_pydantic_ai_evaluator_requires_dependency_without_factory(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(evaluator_module, "PydanticAIAgent", None)
+    monkeypatch.setattr(llm_module, "PydanticAIAgent", None)
 
     with pytest.raises(PydanticAIDependencyError):
         PydanticAICandidateEvaluator("anthropic:claude-haiku-4-5")

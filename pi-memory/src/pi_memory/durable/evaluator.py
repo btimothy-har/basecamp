@@ -2,20 +2,13 @@
 
 from __future__ import annotations
 
-import asyncio
-import inspect
 import json
-from collections.abc import Callable, Mapping
+from collections.abc import Mapping
 from dataclasses import asdict, dataclass
-from typing import Any, Protocol, cast
+from typing import Any, Protocol
 
-from pydantic import BaseModel, ValidationError
+from pydantic import ValidationError
 from sqlalchemy.orm import Session
-
-try:
-    from pydantic_ai import Agent as PydanticAIAgent
-except ImportError:
-    PydanticAIAgent = None
 
 from pi_memory.db import DurableMemoryAuditEvent, DurableMemoryItem
 from pi_memory.durable.contracts import (
@@ -24,6 +17,13 @@ from pi_memory.durable.contracts import (
     CandidateMetricScore,
 )
 from pi_memory.durable.packets import DurableMemoryEvidencePacket, SourceRefEvidence
+from pi_memory.infra.llm import (
+    AgentFactory,
+    create_pydantic_ai_agent,
+    pydantic_ai_model_metadata,
+    run_pydantic_ai_agent,
+    run_pydantic_ai_agent_sync,
+)
 
 CANDIDATE_EVALUATION_PROMPT_VERSION = "phase6-candidate-evaluation-v1"
 CANDIDATE_EVALUATION_SCHEMA_VERSION = 1
@@ -33,8 +33,6 @@ DETERMINISTIC_CANDIDATE_EVALUATOR_MODEL = "deterministic-candidate-evaluator-v1"
 _PYDANTIC_AI_ERROR_MESSAGE = "PydanticAI candidate evaluation failed"
 _PYDANTIC_AI_DEPENDENCY_ERROR_MESSAGE = "pydantic-ai is required for PydanticAICandidateEvaluator"
 _SCHEMA_ERROR_MESSAGE = "Candidate evaluation output does not match the required schema"
-
-AgentFactory = Callable[..., Any]
 
 
 @dataclass(frozen=True)
@@ -147,19 +145,28 @@ class PydanticAICandidateEvaluator:
     ) -> None:
         self.model = model
         self.prompt_version = prompt_version
-        self._agent = _create_pydantic_ai_agent(model, CandidateEvaluationOutput, agent_factory)
+        self._agent = create_pydantic_ai_agent(
+            model,
+            CandidateEvaluationOutput,
+            agent_factory=agent_factory,
+            dependency_error_factory=PydanticAIDependencyError,
+        )
 
     def evaluate(self, packet: DurableMemoryEvidencePacket) -> CandidateEvaluationResult:
         """Evaluate a candidate using one synchronous PydanticAI call."""
         prompt = render_candidate_evaluation_prompt(packet)
         try:
-            run_result = self._agent.run_sync(prompt)
+            run_result = run_pydantic_ai_agent_sync(self._agent, prompt)
         except Exception as error:
             raise PydanticAICandidateProviderError() from error
         output = validate_candidate_evaluation_output(_extract_candidate_evaluation_output(run_result))
         return CandidateEvaluationResult(
             output=output,
-            model_metadata=_pydantic_ai_model_metadata(self.model),
+            model_metadata=pydantic_ai_model_metadata(
+                self.model,
+                mode=PYDANTIC_AI_CANDIDATE_EVALUATOR_MODE,
+                schema_version=CANDIDATE_EVALUATION_SCHEMA_VERSION,
+            ),
             prompt_version=self.prompt_version,
         )
 
@@ -167,13 +174,17 @@ class PydanticAICandidateEvaluator:
         """Evaluate a candidate using one async PydanticAI call."""
         prompt = render_candidate_evaluation_prompt(packet)
         try:
-            run_result = await _run_pydantic_ai_agent(self._agent, prompt)
+            run_result = await run_pydantic_ai_agent(self._agent, prompt)
         except Exception as error:
             raise PydanticAICandidateProviderError() from error
         output = validate_candidate_evaluation_output(_extract_candidate_evaluation_output(run_result))
         return CandidateEvaluationResult(
             output=output,
-            model_metadata=_pydantic_ai_model_metadata(self.model),
+            model_metadata=pydantic_ai_model_metadata(
+                self.model,
+                mode=PYDANTIC_AI_CANDIDATE_EVALUATOR_MODE,
+                schema_version=CANDIDATE_EVALUATION_SCHEMA_VERSION,
+            ),
             prompt_version=self.prompt_version,
         )
 
@@ -284,42 +295,11 @@ def _json_safe(value: Any) -> Any:
     return str(value)
 
 
-def _create_pydantic_ai_agent(model: str, output_type: type[BaseModel], agent_factory: AgentFactory | None) -> Any:
-    factory = agent_factory if agent_factory is not None else _pydantic_ai_agent_factory()
-    return factory(model, output_type=output_type)
-
-
-async def _run_pydantic_ai_agent(agent: Any, prompt: str) -> Any:
-    # Support both async-capable PydanticAI agents and test doubles exposing run_sync only.
-    run = getattr(agent, "run", None)
-    if run is None:
-        return await asyncio.to_thread(agent.run_sync, prompt)
-    result = run(prompt)
-    if inspect.isawaitable(result):
-        return await result
-    return result
-
-
-def _pydantic_ai_agent_factory() -> AgentFactory:
-    if PydanticAIAgent is None:
-        raise PydanticAIDependencyError()
-    return cast(AgentFactory, PydanticAIAgent)
-
-
 def _extract_candidate_evaluation_output(run_result: Any) -> CandidateEvaluationOutput | Mapping[str, Any]:
     output = getattr(run_result, "output", None)
     if isinstance(output, CandidateEvaluationOutput | Mapping):
         return output
     return {}
-
-
-def _pydantic_ai_model_metadata(model: str) -> Mapping[str, Any]:
-    return {
-        "provider": _provider_from_model(model),
-        "model": model,
-        "mode": PYDANTIC_AI_CANDIDATE_EVALUATOR_MODE,
-        "schema_version": CANDIDATE_EVALUATION_SCHEMA_VERSION,
-    }
 
 
 def _deterministic_model_metadata() -> Mapping[str, Any]:
@@ -329,11 +309,6 @@ def _deterministic_model_metadata() -> Mapping[str, Any]:
         "mode": DETERMINISTIC_CANDIDATE_EVALUATOR_MODE,
         "schema_version": CANDIDATE_EVALUATION_SCHEMA_VERSION,
     }
-
-
-def _provider_from_model(model: str) -> str | None:
-    provider, separator, _model_name = model.partition(":")
-    return provider if separator else None
 
 
 def _audit_details(result: CandidateEvaluationResult) -> dict[str, Any]:

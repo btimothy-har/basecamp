@@ -180,7 +180,7 @@ def debug() -> None:
 @click.option(
     "--interpretation-model",
     callback=lambda _ctx, _param, value: None if value is None else _require_non_empty(value),
-    help="Provider-neutral PydanticAI provider:model string to persist.",
+    help="PydanticAI provider:model string to persist.",
 )
 @click.option(
     "--clear-interpretation-model",
@@ -190,7 +190,7 @@ def debug() -> None:
 @click.option(
     "--tool-summary-model",
     callback=lambda _ctx, _param, value: None if value is None else _require_non_empty(value),
-    help="Provider-neutral PydanticAI provider:model string to persist for tool summaries.",
+    help="PydanticAI provider:model string to persist for tool summaries.",
 )
 @click.option(
     "--clear-tool-summary-model",
@@ -200,7 +200,7 @@ def debug() -> None:
 @click.option(
     "--quality-model",
     callback=lambda _ctx, _param, value: None if value is None else _require_non_empty(value),
-    help="Provider-neutral PydanticAI provider:model string to persist for quality assessment.",
+    help="PydanticAI provider:model string to persist for quality assessment.",
 )
 @click.option(
     "--clear-quality-model",
@@ -247,7 +247,7 @@ def config(
     clear_tool_summary_concurrency: bool,
     json_output: bool,
 ) -> None:
-    """Inspect or update pi-memory interpreter settings."""
+    """Inspect or update pi-memory model and concurrency settings."""
     if clear_interpretation_model and interpretation_model is not None:
         raise ConflictingInterpretationModelOptionsError()
     if clear_tool_summary_model and tool_summary_model is not None:

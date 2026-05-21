@@ -5,6 +5,7 @@ import json
 import os
 from typing import Any
 
+import pi_memory.infra.llm.pydantic_ai as llm_module
 import pytest
 from pi_memory.interpretation import BoundedText
 from pi_memory.quality import (
@@ -25,6 +26,7 @@ from pi_memory.quality import (
     SEMANTIC_STATUS_NOT_ASSESSED,
     SEMANTIC_STATUS_PASSED,
     DeterministicQualityAssessor,
+    PydanticAIDependencyError,
     PydanticAIQualityAssessmentError,
     PydanticAIQualityAssessor,
     QualityActivityContext,
@@ -39,9 +41,9 @@ from pi_memory.quality import (
 )
 
 
-class ProviderBodyShouldBeHiddenError(RuntimeError):
+class ProviderDetailsWithApiKeyError(RuntimeError):
     def __init__(self) -> None:
-        super().__init__("provider body should be hidden")
+        super().__init__("provider details API_KEY=abc123")
 
 
 class RunResult:
@@ -315,6 +317,40 @@ def test_pydantic_ai_quality_assessor_supports_async_agents() -> None:
     assert draft.quality_status == QUALITY_STATUS_DEGRADED
     assert draft.quality_reason == QUALITY_STATUS_REASON_SEMANTIC_DEGRADED
     assert draft.promotable is True
+    assert draft.prompt_version == QUALITY_ASSESSMENT_PROMPT_VERSION
+    assert draft.model_metadata == {
+        "provider": "openai",
+        "model": "openai:gpt-fast",
+        "mode": PYDANTIC_AI_QUALITY_ASSESSOR_MODE,
+        "schema_version": 1,
+    }
+
+
+def test_pydantic_ai_quality_assessor_async_falls_back_to_run_sync() -> None:
+    prompts: list[str] = []
+
+    class RunSyncOnlyAgent:
+        def __init__(self, _model: str, *, output_type: type) -> None:
+            self.output_type = output_type
+
+        def run_sync(self, prompt: str) -> RunResult:
+            prompts.append(prompt)
+            return RunResult(semantic_output())
+
+    assessor = PydanticAIQualityAssessor("openai:gpt-fast", agent_factory=RunSyncOnlyAgent)
+
+    draft = asyncio.run(assessor.assess_async(packet()))
+
+    assert draft.quality_status == QUALITY_STATUS_HEALTHY
+    assert draft.prompt_version == QUALITY_ASSESSMENT_PROMPT_VERSION
+    assert draft.model_metadata == {
+        "provider": "openai",
+        "model": "openai:gpt-fast",
+        "mode": PYDANTIC_AI_QUALITY_ASSESSOR_MODE,
+        "schema_version": 1,
+    }
+    assert len(prompts) == 1
+    assert "Quality packet JSON" in prompts[0]
 
 
 def test_deterministic_quality_assessor_returns_healthy_report() -> None:
@@ -422,15 +458,29 @@ def test_validate_quality_assessment_output_omits_unknown_alias() -> None:
     assert output.claim_assessments[0].source_ref_ids == []
 
 
+def test_pydantic_ai_quality_assessor_requires_dependency_without_factory(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(llm_module, "PydanticAIAgent", None)
+
+    with pytest.raises(PydanticAIDependencyError):
+        PydanticAIQualityAssessor("anthropic:claude-haiku-4-5")
+
+
 def test_pydantic_ai_quality_assessor_wraps_provider_failures() -> None:
     class FailingAgent:
         def __init__(self, _model: str, *, output_type: type) -> None:
             self.output_type = output_type
 
         def run_sync(self, _prompt: str) -> None:
-            raise ProviderBodyShouldBeHiddenError()
+            raise ProviderDetailsWithApiKeyError()
 
     assessor = PydanticAIQualityAssessor("anthropic:model", agent_factory=FailingAgent)
 
-    with pytest.raises(PydanticAIQualityAssessmentError, match="PydanticAI quality assessment failed"):
+    with pytest.raises(PydanticAIQualityAssessmentError) as exc_info:
         assessor.assess(packet())
+
+    message = str(exc_info.value)
+    assert message == "PydanticAI quality assessment failed"
+    assert "provider details" not in message
+    assert "API_KEY" not in message
