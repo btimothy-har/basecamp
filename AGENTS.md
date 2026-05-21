@@ -76,7 +76,7 @@ Prompts are layered (environment → working style → project context → tools
 
 ### Pi Packages
 
-Core session, project, workspace, workflow, git, model-alias, capability, and engineering functionality is bundled in `pi-extension/`. Memory functionality is owned by `pi-memory/`, which runs the local Python service and provides the thin Pi package that starts or reconnects to it. `pi-observer/` is deprecated historical code and is excluded from active install, test, lint, and package-registration workflows.
+Core session, project, workspace, workflow, git, model-alias, capability, and engineering functionality is bundled in `pi-extension/`. Memory functionality is owned by `pi-memory/`, which runs the local Python service and provides the thin Pi package that starts or reconnects to it. The old `pi-observer` implementation has been removed from the active source tree; use git history for reference if needed.
 
 ### Model Aliases
 

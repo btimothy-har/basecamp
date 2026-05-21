@@ -264,7 +264,7 @@ The workspace service owns the `~/.worktrees/<repo>/<label>/` storage convention
 
 `pi-memory` is the active memory subsystem. It runs a local Python service for canonical transcript capture, durable job processing, raw recall, deterministic episode structure, activity-text projection, tool activity summarization, session interpretation, interpretation quality reports, durable memory promotion, and rebuildable semantic projection. Pi integration stays thin: the Pi package starts or reconnects to the local service through unauthenticated `/health` checks and delegates memory behavior to the service.
 
-The former `pi-observer` subsystem is deprecated and no longer installed, registered, tested, or documented as a user workflow. Historical observer stores are not required by `pi-memory`.
+The former `pi-observer` subsystem has been removed from the active source tree. Historical observer stores are not required by `pi-memory`; use git history if the old implementation is needed for reference.
 
 ### How it works
 
@@ -299,8 +299,6 @@ basecamp is split into root-level products:
 - `basecamp-cli/` — Python package for the `basecamp` setup/config CLI
 - `pi-extension/` — Pi package for project context, session UI, worktrees, workflow, git, and engineering skills
 - `pi-memory/` — Python and Pi package for the active local memory service, transcript capture, jobs, raw recall, episode structure, session interpretation, quality reports, durable memory, and semantic projection
-
-`pi-observer/` contains deprecated historical memory code and is excluded from active install, test, lint, and package-registration workflows.
 
 ## License
 

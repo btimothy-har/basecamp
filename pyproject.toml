@@ -9,7 +9,6 @@ env = ["TESTING=1"]
 [tool.ruff]
 line-length = 120
 fix = true
-extend-exclude = ["pi-observer"]
 
 [tool.ruff.lint]
 select = [

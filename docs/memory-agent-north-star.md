@@ -1,6 +1,6 @@
 # Memory Agent North Star
 
-Status: active `pi-memory` architecture and implementation roadmap. `pi-memory` has implemented Phase 4 raw transcript recall, Phase 5A deterministic transcript structure/fork provenance, Phase 5B replaceable session interpretation over chronological activity-text packets, Phase 5C persisted interpretation quality reports, and Phase 6 durable memory promotion with a unified rebuildable semantic projection. `pi-observer` is deprecated and removed from active install/test/package-registration paths; Pi recall tool wiring remains deferred.
+Status: active `pi-memory` architecture and implementation roadmap. `pi-memory` has implemented Phase 4 raw transcript recall, Phase 5A deterministic transcript structure/fork provenance, Phase 5B replaceable session interpretation over chronological activity-text packets, Phase 5C persisted interpretation quality reports, and Phase 6 durable memory promotion with a unified rebuildable semantic projection. `pi-observer` has been removed from the active source tree; Pi recall tool wiring remains deferred.
 
 Related issue: [#123](https://github.com/btimothy-har/basecamp/issues/123)
 
@@ -10,7 +10,7 @@ Related issue: [#123](https://github.com/btimothy-har/basecamp/issues/123)
 
 The north-star system is a clean cutover: a Python-first local memory service that continuously captures full Pi transcripts, derives evolving session understanding, promotes durable source-backed memory artifacts into an associative graph, and serves explainable recall through a thin Pi adapter.
 
-The deprecated observer is useful inspiration. It should not be treated as a compatibility target.
+The deprecated observer is useful historical inspiration available through git history. It should not be treated as a compatibility target.
 
 ## One-sentence north star
 
@@ -609,6 +609,8 @@ GET  /v1/debug/durable-memory/{memory_id}
 GET  /v1/debug/durable-memory/{memory_id}/audit
 GET  /v1/debug/memory-projections
 ```
+
+The broad direct-DB debug CLI is temporary developer scaffolding. Longer term, debug inspection should move toward a service-backed TUI/debug experience that renders these read models without expanding the stable user CLI.
 
 Planned endpoint candidates remain separate from the implemented surface:
 
@@ -1222,8 +1224,9 @@ Purpose: keep `pi-memory` as the only active memory subsystem.
 Deliverables:
 
 - Deprecated observer hooks are removed from active package registration.
+- Old observer source is removed from the active repository tree.
 - Old recall path is replaced by service-backed recall.
-- Old CLI commands are removed from active install/test/lint paths and documented as obsolete if the source remains in the repository.
+- Old CLI commands are removed from active install/test/lint paths.
 - Old observer DB and Chroma paths are no longer used by the active memory system.
 - Install and package registration use the new service behavior.
 - Docs are updated.
