@@ -637,5 +637,3 @@ def _deterministic_model_metadata() -> Mapping[str, Any]:
         "mode": DETERMINISTIC_QUALITY_ASSESSOR_MODE,
         "schema_version": QUALITY_ASSESSMENT_SCHEMA_VERSION,
     }
-
-

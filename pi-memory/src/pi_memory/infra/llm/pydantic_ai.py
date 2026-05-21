@@ -31,9 +31,7 @@ except ImportError:
 
 AgentFactory = Callable[..., Any]
 
-_OPENROUTER_BASE_URL_ERROR = (
-    "OPENROUTER_BASE_URL must be a valid https URL without embedded credentials"
-)
+_OPENROUTER_BASE_URL_ERROR = "OPENROUTER_BASE_URL must be a valid https URL without embedded credentials"
 
 
 @dataclass(frozen=True)

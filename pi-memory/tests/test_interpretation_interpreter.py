@@ -522,11 +522,7 @@ def test_pydantic_ai_tool_summarizer_redacts_secret_raw_line_content_in_prompt()
                 message_role="toolResult",
                 byte_start=300,
                 byte_end=400,
-                raw_line=(
-                    "-----BEGIN PRIVATE KEY-----\n"
-                    + secret_private_key
-                    + "\n-----END PRIVATE KEY-----"
-                ),
+                raw_line=("-----BEGIN PRIVATE KEY-----\n" + secret_private_key + "\n-----END PRIVATE KEY-----"),
             ),
             ToolActivitySourceEntry(
                 row_id=33,

@@ -65,9 +65,7 @@ _ESCAPED_JSON_AUTHORIZATION_BEARER_PATTERN = re.compile(
     r'(\\"authorization\\"\s*:\s*\\"Bearer\s+)([^\\"]+)(\\")',
     re.IGNORECASE,
 )
-_PEM_PRIVATE_KEY_PATTERN = re.compile(
-    r"-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?-----END [A-Z ]*PRIVATE KEY-----"
-)
+_PEM_PRIVATE_KEY_PATTERN = re.compile(r"-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?-----END [A-Z ]*PRIVATE KEY-----")
 _INCOMPLETE_PEM_PRIVATE_KEY_PATTERN = re.compile(r"-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*")
 _REDACTED_PRIVATE_KEY_BLOCK = "-----BEGIN PRIVATE KEY-----\n[REDACTED]\n-----END PRIVATE KEY-----"
 
