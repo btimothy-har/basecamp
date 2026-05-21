@@ -167,3 +167,26 @@ def test_resolve_openrouter_model_with_custom_base_url_missing_openrouter_key_re
     resolved = resolve_pydantic_ai_model("openrouter:openai/gpt-5.5")
 
     assert resolved == "openrouter:openai/gpt-5.5"
+
+
+@pytest.mark.parametrize(
+    "invalid_base_url",
+    [
+        "http://openrouter.example.test/v1",
+        "https://user:pass@openrouter.example.test/v1",
+    ],
+)
+def test_resolve_openrouter_model_rejects_unsafe_custom_base_url_without_secret_leaks(
+    monkeypatch: pytest.MonkeyPatch,
+    invalid_base_url: str,
+) -> None:
+    fake_key = "fake-openrouter-api-key"
+    monkeypatch.setenv("OPENROUTER_API_KEY", fake_key)
+    monkeypatch.setenv("OPENROUTER_BASE_URL", invalid_base_url)
+
+    with pytest.raises(ValueError) as exc_info:
+        resolve_pydantic_ai_model("openrouter:openai/gpt-5.5")
+
+    message = str(exc_info.value)
+    assert "OPENROUTER_BASE_URL must be a valid https URL" in message
+    assert fake_key not in message

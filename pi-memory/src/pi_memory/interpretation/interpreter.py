@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Annotated, Any, Protocol
@@ -39,6 +40,36 @@ PYDANTIC_AI_INTERPRETER_MODE = "pydantic-ai"
 _PYDANTIC_AI_ERROR_MESSAGE = "PydanticAI session interpretation failed"
 _PYDANTIC_AI_TOOL_SUMMARY_ERROR_MESSAGE = "PydanticAI tool activity summarization failed"
 _TOOL_SOURCE_RAW_LINE_CHAR_LIMIT = 12_000
+
+_REDACTED_SECRET = "[REDACTED]"
+_SECRET_KEY_PATTERN = r"[A-Z0-9_-]*(?:API[_-]?KEY|TOKEN|SECRET|PASSWORD)[A-Z0-9_-]*"
+_SECRET_VALUE_PATTERN = r"(?:\\\"(?:[^\\]|\\.)*?\\\"|\"[^\"]*\"|'[^']*'|[^\s\"',}}]+)"
+_SECRET_ASSIGNMENT_PATTERN = re.compile(
+    rf"\b({_SECRET_KEY_PATTERN})(\s*[:=]\s*){_SECRET_VALUE_PATTERN}",
+    re.IGNORECASE,
+)
+_JSON_SECRET_PATTERN = re.compile(rf'("{_SECRET_KEY_PATTERN}"\s*:\s*")([^\"]+)(")', re.IGNORECASE)
+_ESCAPED_JSON_SECRET_PATTERN = re.compile(
+    rf'(\\"{_SECRET_KEY_PATTERN}\\"\s*:\s*\\")([^\\"]+)(\\")',
+    re.IGNORECASE,
+)
+_AUTHORIZATION_BEARER_PATTERN = re.compile(
+    r"(\bAuthorization\s*:\s*Bearer\s+)([^\s,\"']+)",
+    re.IGNORECASE,
+)
+_JSON_AUTHORIZATION_BEARER_PATTERN = re.compile(
+    r'("authorization"\s*:\s*"Bearer\s+)([^\"]+)(")',
+    re.IGNORECASE,
+)
+_ESCAPED_JSON_AUTHORIZATION_BEARER_PATTERN = re.compile(
+    r'(\\"authorization\\"\s*:\s*\\"Bearer\s+)([^\\"]+)(\\")',
+    re.IGNORECASE,
+)
+_PEM_PRIVATE_KEY_PATTERN = re.compile(
+    r"-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?-----END [A-Z ]*PRIVATE KEY-----"
+)
+_INCOMPLETE_PEM_PRIVATE_KEY_PATTERN = re.compile(r"-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*")
+_REDACTED_PRIVATE_KEY_BLOCK = "-----BEGIN PRIVATE KEY-----\n[REDACTED]\n-----END PRIVATE KEY-----"
 
 ToolSummaryText = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=2_000)]
 
@@ -424,17 +455,30 @@ def _tool_source_entry_prompt_data(entry: ToolActivitySourceEntry) -> Mapping[st
 
 
 def _bounded_raw_line(value: str) -> Mapping[str, Any]:
-    text = value[:_TOOL_SOURCE_RAW_LINE_CHAR_LIMIT]
+    original_text = value[:_TOOL_SOURCE_RAW_LINE_CHAR_LIMIT]
+    text = _redact_raw_line_secrets(original_text)
     original_bytes = len(value.encode("utf-8"))
-    text_bytes = len(text.encode("utf-8"))
+    original_text_bytes = len(original_text.encode("utf-8"))
     return {
         "text": text,
         "original_char_count": len(value),
         "original_byte_count": original_bytes,
         "is_truncated": len(value) > _TOOL_SOURCE_RAW_LINE_CHAR_LIMIT,
-        "omitted_char_count": max(len(value) - len(text), 0),
-        "omitted_byte_count": max(original_bytes - text_bytes, 0),
+        "omitted_char_count": max(len(value) - len(original_text), 0),
+        "omitted_byte_count": max(original_bytes - original_text_bytes, 0),
     }
+
+
+def _redact_raw_line_secrets(value: str) -> str:
+    redacted = _PEM_PRIVATE_KEY_PATTERN.sub(_REDACTED_PRIVATE_KEY_BLOCK, value)
+    redacted = _INCOMPLETE_PEM_PRIVATE_KEY_PATTERN.sub(_REDACTED_PRIVATE_KEY_BLOCK, redacted)
+    redacted = _SECRET_ASSIGNMENT_PATTERN.sub(rf"\1\2{_REDACTED_SECRET}", redacted)
+    redacted = _JSON_SECRET_PATTERN.sub(rf"\1{_REDACTED_SECRET}\3", redacted)
+    redacted = _ESCAPED_JSON_SECRET_PATTERN.sub(rf"\1{_REDACTED_SECRET}\3", redacted)
+    redacted = _AUTHORIZATION_BEARER_PATTERN.sub(rf"\1{_REDACTED_SECRET}", redacted)
+    redacted = _JSON_AUTHORIZATION_BEARER_PATTERN.sub(rf"\1{_REDACTED_SECRET}\3", redacted)
+    redacted = _ESCAPED_JSON_AUTHORIZATION_BEARER_PATTERN.sub(rf"\1{_REDACTED_SECRET}\3", redacted)
+    return redacted
 
 
 def _bounded_json(value: Any) -> Any:
@@ -450,8 +494,9 @@ def _bounded_json(value: Any) -> Any:
 
 
 def _bounded_metadata_string(value: str) -> str | Mapping[str, Any]:
-    if len(value) <= 500:
-        return value
+    redacted = _redact_raw_line_secrets(value)
+    if len(redacted) <= 500:
+        return redacted
     return {
         "omitted": True,
         "char_count": len(value),

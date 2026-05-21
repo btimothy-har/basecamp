@@ -475,6 +475,110 @@ def test_pydantic_ai_tool_summarizer_renders_source_backed_prompt() -> None:
     assert "outside knowledge" in prompt
 
 
+def test_pydantic_ai_tool_summarizer_redacts_secret_raw_line_content_in_prompt() -> None:
+    secret_api_key = "sk-live-api-key-secret"
+    secret_bearer = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.secret"
+    secret_private_key = "very-secret-private-key-body"
+    secret_github_token = "ghp_live-token-secret"
+    secret_client_secret = "client-secret-value"
+    secret_escaped_api_key = "sk-escaped-api-key-secret"
+    secret_escaped_bearer = "escaped-bearer-token-secret"
+    summary_input = ToolActivitySummaryInput(
+        activity_unit_id=10,
+        analysis_run_id=123,
+        ordinal=2,
+        tool_call_id="call-1",
+        tool_name="bash",
+        is_error=False,
+        source_entries=(
+            ToolActivitySourceEntry(
+                row_id=30,
+                entry_id="call-entry",
+                entry_type="message",
+                message_role="assistant",
+                byte_start=100,
+                byte_end=200,
+                raw_line=f"run api_key={secret_api_key} GITHUB_TOKEN={secret_github_token} for command pwd",
+            ),
+            ToolActivitySourceEntry(
+                row_id=31,
+                entry_id="result-entry",
+                entry_type="message",
+                message_role="toolResult",
+                byte_start=200,
+                byte_end=300,
+                raw_line=(
+                    '{"api_key":"'
+                    + secret_api_key
+                    + '","authorization":"Bearer '
+                    + secret_bearer
+                    + '","output":"/repo"}'
+                ),
+            ),
+            ToolActivitySourceEntry(
+                row_id=32,
+                entry_id="pem-entry",
+                entry_type="message",
+                message_role="toolResult",
+                byte_start=300,
+                byte_end=400,
+                raw_line=(
+                    "-----BEGIN PRIVATE KEY-----\n"
+                    + secret_private_key
+                    + "\n-----END PRIVATE KEY-----"
+                ),
+            ),
+            ToolActivitySourceEntry(
+                row_id=33,
+                entry_id="escaped-entry",
+                entry_type="message",
+                message_role="toolResult",
+                byte_start=400,
+                byte_end=500,
+                raw_line=(
+                    f'{{\\"api_key\\":\\"{secret_escaped_api_key}\\",'
+                    f'\\"authorization\\":\\"Bearer {secret_escaped_bearer}\\",'
+                    '\\"command\\":\\"pwd\\"}'
+                ),
+            ),
+        ),
+        receipt_metadata={
+            "result_status": "success",
+            "argument_keys": ["command"],
+            "arguments_preview": f'{{"client_secret":"{secret_client_secret}","command":"pwd"}}',
+        },
+    )
+    output = ToolActivitySummaryOutput(summary="The tool returned /repo.", cited_source_entry_ids=[30, 31, 32, 33])
+    agent = FakePydanticAgent(output=output)
+    summarizer = PydanticAIToolActivitySummarizer(
+        "plain-model-name",
+        agent_factory=FakePydanticAgentFactory(agent),
+    )
+
+    result = summarizer.summarize(summary_input)
+
+    assert result.output is output
+    assert result.output.cited_source_entry_ids == [30, 31, 32, 33]
+    prompt = agent.prompts[0]
+    assert "pwd" in prompt
+    assert "/repo" in prompt
+    assert "api_key=[REDACTED]" in prompt
+    assert "GITHUB_TOKEN=[REDACTED]" in prompt
+    assert "client_secret" in prompt
+    assert "api_key" in prompt
+    assert "authorization" in prompt
+    assert "Bearer [REDACTED]" in prompt
+    assert "-----BEGIN PRIVATE KEY-----" in prompt
+    assert "[REDACTED]" in prompt
+    assert secret_api_key not in prompt
+    assert secret_bearer not in prompt
+    assert secret_private_key not in prompt
+    assert secret_github_token not in prompt
+    assert secret_client_secret not in prompt
+    assert secret_escaped_api_key not in prompt
+    assert secret_escaped_bearer not in prompt
+
+
 @pytest.mark.asyncio
 async def test_pydantic_ai_tool_summarizer_async_returns_one_summary() -> None:
     summary_input = tool_summary_input()

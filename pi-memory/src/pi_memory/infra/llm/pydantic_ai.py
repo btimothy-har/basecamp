@@ -8,6 +8,7 @@ import os
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from typing import Any, cast
+from urllib.parse import urlparse
 
 try:
     from pydantic_ai import Agent as PydanticAIAgent
@@ -29,6 +30,10 @@ except ImportError:
     OpenRouterProvider = None
 
 AgentFactory = Callable[..., Any]
+
+_OPENROUTER_BASE_URL_ERROR = (
+    "OPENROUTER_BASE_URL must be a valid https URL without embedded credentials"
+)
 
 
 @dataclass(frozen=True)
@@ -79,6 +84,8 @@ def resolve_pydantic_ai_model(model: str) -> str | Any:
     if not openrouter_api_key:
         return model
 
+    _validate_openrouter_base_url(openrouter_base_url)
+
     if AsyncOpenAI is None or OpenRouterModel is None or OpenRouterProvider is None:
         return model
 
@@ -116,6 +123,12 @@ async def run_pydantic_ai_agent(agent: Any, prompt: str) -> Any:
     if inspect.isawaitable(result):
         return await result
     return result
+
+
+def _validate_openrouter_base_url(base_url: str) -> None:
+    parsed = urlparse(base_url)
+    if parsed.scheme != "https" or not parsed.hostname or parsed.username or parsed.password:
+        raise ValueError(_OPENROUTER_BASE_URL_ERROR)
 
 
 def _pydantic_ai_agent_factory(dependency_error_factory: Callable[[], Exception]) -> AgentFactory:
