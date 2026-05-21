@@ -155,7 +155,12 @@ Existing local config files with the older project directory schema are migrated
 
 ### Pi memory interpretation
 
-`pi-memory` session interpretation uses PydanticAI at runtime. Configure `interpretation_model` with any PydanticAI-supported model string before running interpretation jobs.
+`pi-memory` session interpretation uses PydanticAI at runtime. Configure `interpretation_model` with a PydanticAI `provider:model` string before running interpretation jobs. Examples include:
+
+- `openai:gpt-5.5`
+- `anthropic:claude-opus-4-6`
+- `google:gemini-2.5-pro`
+- `openrouter:openai/gpt-5.5`
 
 Inspect the current settings:
 
@@ -170,30 +175,33 @@ Set the session interpretation model:
 pi-memory config --interpretation-model anthropic:claude-sonnet-4-6
 ```
 
-Tool activity summarization can use a smaller/faster model. If unset, it falls back to the interpretation model:
+Tool activity summarization can use a smaller/faster model. If unset, it falls back to the interpretation model. Semantic quality assessment can use `quality_model`; if unset, it falls back to the tool-summary model and then the interpretation model.
 
 ```bash
 pi-memory config --tool-summary-model anthropic:claude-haiku-4-5
+pi-memory config --quality-model google:gemini-2.5-pro
 pi-memory config --tool-summary-concurrency 25
 ```
 
 Environment overrides are inherited by dispatcher-spawned `run-job` child processes:
 
 ```bash
-export PI_MEMORY_INTERPRETATION_MODEL=anthropic:claude-sonnet-4-6
+export PI_MEMORY_INTERPRETATION_MODEL=openrouter:openai/gpt-5.5
 export PI_MEMORY_TOOL_SUMMARY_MODEL=anthropic:claude-haiku-4-5
+export PI_MEMORY_QUALITY_MODEL=google:gemini-2.5-pro
 export PI_MEMORY_TOOL_SUMMARY_CONCURRENCY=25
 ```
 
 `PI_MEMORY_TOOL_SUMMARY_CONCURRENCY` controls the bounded window of independent one-tool summary calls. The default is conservative (`10`); valid values are `1` through `100`.
 
-When interpretation jobs run, `pi-memory` first stores raw transcript rows canonically in SQLite, then derives chronological `activity_units.activity_text` for downstream model prompts. Raw `transcript_entries.raw_line` remains the source of truth. Tool call/result pairs are summarized one at a time by the configured tool-summary model; session interpretation consumes the cleaned chronological activity text plus citation ids, not raw JSON transcript lines. `pi-memory` does not store API keys. Configure provider credentials with the environment variables expected by PydanticAI/provider packages, such as `ANTHROPIC_API_KEY` or `OPENAI_API_KEY`.
+When interpretation jobs run, `pi-memory` first stores raw transcript rows canonically in SQLite, then derives chronological `activity_units.activity_text` for downstream model prompts. Raw `transcript_entries.raw_line` remains the source of truth. Tool call/result pairs are summarized one at a time by the configured tool-summary model; session interpretation consumes the cleaned chronological activity text plus citation ids, not raw JSON transcript lines. `pi-memory` does not store API keys. Configure provider credentials with native provider environment variables: `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `GEMINI_API_KEY` or `GOOGLE_API_KEY`, and `OPENROUTER_API_KEY`. Set `OPENROUTER_BASE_URL` only when an `openrouter:...` model should use a non-default OpenRouter API base URL.
 
 Clear persisted settings:
 
 ```bash
 pi-memory config --clear-interpretation-model
 pi-memory config --clear-tool-summary-model
+pi-memory config --clear-quality-model
 pi-memory config --clear-tool-summary-concurrency
 ```
 
