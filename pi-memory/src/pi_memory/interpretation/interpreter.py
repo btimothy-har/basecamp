@@ -2,20 +2,20 @@
 
 from __future__ import annotations
 
-import asyncio
-import inspect
 import json
-from collections.abc import Callable, Mapping
+from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import Annotated, Any, Protocol, cast
+from typing import Annotated, Any, Protocol
 
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints
 
-try:
-    from pydantic_ai import Agent as PydanticAIAgent
-except ImportError:
-    PydanticAIAgent = None
-
+from pi_memory.infra.llm import (
+    AgentFactory,
+    create_pydantic_ai_agent,
+    pydantic_ai_model_metadata,
+    run_pydantic_ai_agent,
+    run_pydantic_ai_agent_sync,
+)
 from pi_memory.interpretation.contracts import (
     InterpretationCitation,
     InterpretationClaim,
@@ -40,7 +40,6 @@ _PYDANTIC_AI_ERROR_MESSAGE = "PydanticAI session interpretation failed"
 _PYDANTIC_AI_TOOL_SUMMARY_ERROR_MESSAGE = "PydanticAI tool activity summarization failed"
 _TOOL_SOURCE_RAW_LINE_CHAR_LIMIT = 12_000
 
-AgentFactory = Callable[..., Any]
 ToolSummaryText = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=2_000)]
 
 
@@ -182,20 +181,29 @@ class PydanticAISessionInterpreter:
         """
         self.model = model
         self.prompt_version = prompt_version
-        self._agent = _create_pydantic_ai_agent(model, InterpretationOutput, agent_factory)
+        self._agent = create_pydantic_ai_agent(
+            model,
+            InterpretationOutput,
+            agent_factory=agent_factory,
+            dependency_error_factory=PydanticAIDependencyError,
+        )
 
     def interpret(self, packet: InterpretationPacket) -> InterpretationResult:
         """Interpret a packet using PydanticAI synchronously."""
         _validate_packet_ready_for_interpretation(packet)
         prompt = _render_pydantic_ai_prompt(packet)
         try:
-            run_result = self._agent.run_sync(prompt)
+            run_result = run_pydantic_ai_agent_sync(self._agent, prompt)
             output = _extract_pydantic_ai_output(run_result)
         except Exception as error:
             raise PydanticAIInterpreterError() from error
         return InterpretationResult(
             output=output,
-            model_metadata=_pydantic_ai_model_metadata(self.model),
+            model_metadata=pydantic_ai_model_metadata(
+                self.model,
+                mode=PYDANTIC_AI_INTERPRETER_MODE,
+                schema_version=INTERPRETATION_SCHEMA_VERSION,
+            ),
             prompt_version=self.prompt_version,
         )
 
@@ -213,13 +221,18 @@ class PydanticAIToolActivitySummarizer:
         """Initialize a generic PydanticAI tool activity summarizer."""
         self.model = model
         self.prompt_version = prompt_version
-        self._agent = _create_pydantic_ai_agent(model, ToolActivitySummaryOutput, agent_factory)
+        self._agent = create_pydantic_ai_agent(
+            model,
+            ToolActivitySummaryOutput,
+            agent_factory=agent_factory,
+            dependency_error_factory=PydanticAIDependencyError,
+        )
 
     def summarize(self, summary_input: ToolActivitySummaryInput) -> ToolActivitySummaryResult:
         """Summarize one tool-pair activity using PydanticAI synchronously."""
         prompt = _render_tool_activity_summary_prompt(summary_input)
         try:
-            run_result = self._agent.run_sync(prompt)
+            run_result = run_pydantic_ai_agent_sync(self._agent, prompt)
             output = validate_tool_activity_summary_output(
                 _extract_tool_activity_summary_output(run_result),
                 summary_input,
@@ -228,7 +241,11 @@ class PydanticAIToolActivitySummarizer:
             raise PydanticAIToolSummaryError() from error
         return ToolActivitySummaryResult(
             output=output,
-            model_metadata=_pydantic_ai_model_metadata(self.model, TOOL_ACTIVITY_SUMMARY_SCHEMA_VERSION),
+            model_metadata=pydantic_ai_model_metadata(
+                self.model,
+                mode=PYDANTIC_AI_INTERPRETER_MODE,
+                schema_version=TOOL_ACTIVITY_SUMMARY_SCHEMA_VERSION,
+            ),
             prompt_version=self.prompt_version,
         )
 
@@ -236,7 +253,7 @@ class PydanticAIToolActivitySummarizer:
         """Summarize one tool-pair activity using one async PydanticAI call."""
         prompt = _render_tool_activity_summary_prompt(summary_input)
         try:
-            run_result = await _run_pydantic_ai_agent(self._agent, prompt)
+            run_result = await run_pydantic_ai_agent(self._agent, prompt)
             output = validate_tool_activity_summary_output(
                 _extract_tool_activity_summary_output(run_result),
                 summary_input,
@@ -245,7 +262,11 @@ class PydanticAIToolActivitySummarizer:
             raise PydanticAIToolSummaryError() from error
         return ToolActivitySummaryResult(
             output=output,
-            model_metadata=_pydantic_ai_model_metadata(self.model, TOOL_ACTIVITY_SUMMARY_SCHEMA_VERSION),
+            model_metadata=pydantic_ai_model_metadata(
+                self.model,
+                mode=PYDANTIC_AI_INTERPRETER_MODE,
+                schema_version=TOOL_ACTIVITY_SUMMARY_SCHEMA_VERSION,
+            ),
             prompt_version=self.prompt_version,
         )
 
@@ -310,27 +331,6 @@ class DeterministicSessionInterpreter:
             model_metadata=self.model_metadata if self.model_metadata is not None else _deterministic_model_metadata(),
             prompt_version=self.prompt_version,
         )
-
-
-def _create_pydantic_ai_agent(model: str, output_type: type[Any], agent_factory: AgentFactory | None) -> Any:
-    factory = agent_factory if agent_factory is not None else _pydantic_ai_agent_factory()
-    return factory(model, output_type=output_type)
-
-
-async def _run_pydantic_ai_agent(agent: Any, prompt: str) -> Any:
-    run = getattr(agent, "run", None)
-    if run is None:
-        return await asyncio.to_thread(agent.run_sync, prompt)
-    result = run(prompt)
-    if inspect.isawaitable(result):
-        return await result
-    return result
-
-
-def _pydantic_ai_agent_factory() -> AgentFactory:
-    if PydanticAIAgent is None:
-        raise PydanticAIDependencyError()
-    return cast(AgentFactory, PydanticAIAgent)
 
 
 def _extract_pydantic_ai_output(run_result: Any) -> InterpretationOutput:
@@ -557,18 +557,6 @@ def _validate_packet_ready_for_interpretation(packet: InterpretationPacket) -> N
     _first_required_claim_source(packet)
 
 
-def _pydantic_ai_model_metadata(
-    model: str,
-    schema_version: int = INTERPRETATION_SCHEMA_VERSION,
-) -> Mapping[str, Any]:
-    return {
-        "provider": _provider_from_model(model),
-        "model": model,
-        "mode": PYDANTIC_AI_INTERPRETER_MODE,
-        "schema_version": schema_version,
-    }
-
-
 def _deterministic_tool_activity_output(summary_input: ToolActivitySummaryInput) -> ToolActivitySummaryOutput:
     source_entry_ids = [entry.row_id for entry in summary_input.source_entries]
     tool_name = summary_input.tool_name or "unknown tool"
@@ -578,11 +566,6 @@ def _deterministic_tool_activity_output(summary_input: ToolActivitySummaryInput)
         outcome=f"is_error={summary_input.is_error}",
         cited_source_entry_ids=source_entry_ids,
     )
-
-
-def _provider_from_model(model: str) -> str | None:
-    provider, separator, _model_name = model.partition(":")
-    return provider if separator else None
 
 
 def _first_claim_source(packet: InterpretationPacket) -> SourceRef | None:

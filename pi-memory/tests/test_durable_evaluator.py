@@ -4,8 +4,8 @@ import asyncio
 from pathlib import Path
 from typing import Any
 
-import pi_memory.durable.evaluator as evaluator_module
 import pi_memory.durable.factory as durable_factory
+import pi_memory.infra.llm.pydantic_ai as llm_module
 import pytest
 from pi_memory.db import (
     DURABLE_MEMORY_STATUS_CANDIDATE,
@@ -283,7 +283,7 @@ def test_pydantic_ai_async_evaluator_wraps_provider_exceptions() -> None:
 
 
 def test_pydantic_ai_evaluator_requires_dependency_without_factory(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(evaluator_module, "PydanticAIAgent", None)
+    monkeypatch.setattr(llm_module, "PydanticAIAgent", None)
 
     with pytest.raises(PydanticAIDependencyError):
         PydanticAICandidateEvaluator("anthropic:claude-haiku-4-5")
