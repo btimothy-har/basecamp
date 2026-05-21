@@ -901,6 +901,7 @@ def test_interpretation_reports_json_snapshot(memory_database: Database) -> None
     result = CliRunner().invoke(
         cli_module.main,
         [
+            "debug",
             "interpretation",
             "--session-id",
             "pi-session-interpret-cli",
@@ -953,6 +954,7 @@ def test_interpretation_reports_human_readable_snapshot(memory_database: Databas
     result = CliRunner().invoke(
         cli_module.main,
         [
+            "debug",
             "interpretation",
             "--session-id",
             "pi-session-interpret-cli",
@@ -981,6 +983,7 @@ def test_interpretation_missing_reports_click_error(memory_database: Database) -
     result = CliRunner().invoke(
         cli_module.main,
         [
+            "debug",
             "interpretation",
             "--session-id",
             "missing-session",
@@ -999,6 +1002,7 @@ def test_quality_reports_json_report(memory_database: Database) -> None:
     result = CliRunner().invoke(
         cli_module.main,
         [
+            "debug",
             "quality",
             "--session-id",
             str(expected["session_id"]),
@@ -1026,7 +1030,7 @@ def test_quality_reports_human_readable_report(memory_database: Database) -> Non
 
     result = CliRunner().invoke(
         cli_module.main,
-        ["quality", "--session-id", str(expected["session_id"]), "--db-url", memory_database.url],
+        ["debug", "quality", "--session-id", str(expected["session_id"]), "--db-url", memory_database.url],
     )
 
     assert result.exit_code == 0
@@ -1040,7 +1044,7 @@ def test_quality_reports_human_readable_report(memory_database: Database) -> Non
 def test_quality_missing_reports_click_error(memory_database: Database) -> None:
     result = CliRunner().invoke(
         cli_module.main,
-        ["quality", "--session-id", "missing-session", "--db-url", memory_database.url],
+        ["debug", "quality", "--session-id", "missing-session", "--db-url", memory_database.url],
     )
 
     assert result.exit_code == 1
@@ -1060,6 +1064,7 @@ def test_quality_list_reports_json_filters(memory_database: Database) -> None:
     result = CliRunner().invoke(
         cli_module.main,
         [
+            "debug",
             "quality-list",
             "--db-url",
             memory_database.url,
@@ -1087,7 +1092,7 @@ def test_quality_sample_reports_json_count(memory_database: Database) -> None:
 
     result = CliRunner().invoke(
         cli_module.main,
-        ["quality-sample", "--db-url", memory_database.url, "--count", "2", "--json"],
+        ["debug", "quality-sample", "--db-url", memory_database.url, "--count", "2", "--json"],
     )
 
     assert result.exit_code == 0
@@ -1097,7 +1102,7 @@ def test_quality_sample_reports_json_count(memory_database: Database) -> None:
 
 
 def test_quality_tui_help_lists_defaulted_db_url_option() -> None:
-    result = CliRunner().invoke(cli_module.main, ["quality-tui", "--help"])
+    result = CliRunner().invoke(cli_module.main, ["debug", "quality-tui", "--help"])
 
     assert result.exit_code == 0
     assert "--db-url" in result.output
@@ -1105,7 +1110,7 @@ def test_quality_tui_help_lists_defaulted_db_url_option() -> None:
 
 
 def test_quality_tui_requires_non_empty_db_url() -> None:
-    result = CliRunner().invoke(cli_module.main, ["quality-tui", "--db-url", "  "])
+    result = CliRunner().invoke(cli_module.main, ["debug", "quality-tui", "--db-url", "  "])
 
     assert result.exit_code == 2
     assert "Invalid value for '--db-url': must not be empty" in result.output
@@ -1120,7 +1125,7 @@ def test_quality_tui_defaults_to_configured_memory_database(monkeypatch) -> None
 
     monkeypatch.setattr(cli_module.importlib, "import_module", fake_import_module)
 
-    result = CliRunner().invoke(cli_module.main, ["quality-tui"])
+    result = CliRunner().invoke(cli_module.main, ["debug", "quality-tui"])
 
     assert result.exit_code == 0
     assert calls == {"module": "pi_memory.tui", "db_url": cli_module.MEMORY_DB_URL}
@@ -1136,7 +1141,7 @@ def test_quality_tui_forwards_db_url_to_lazy_imported_runner(monkeypatch) -> Non
 
     monkeypatch.setattr(cli_module.importlib, "import_module", fake_import_module)
 
-    result = CliRunner().invoke(cli_module.main, ["quality-tui", "--db-url", db_url])
+    result = CliRunner().invoke(cli_module.main, ["debug", "quality-tui", "--db-url", db_url])
 
     assert result.exit_code == 0
     assert calls == {"module": "pi_memory.tui", "db_url": db_url}
@@ -1145,7 +1150,7 @@ def test_quality_tui_forwards_db_url_to_lazy_imported_runner(monkeypatch) -> Non
 def test_quality_list_rejects_invalid_filter(memory_database: Database) -> None:
     result = CliRunner().invoke(
         cli_module.main,
-        ["quality-list", "--db-url", memory_database.url, "--status", "invalid"],
+        ["debug", "quality-list", "--db-url", memory_database.url, "--status", "invalid"],
     )
 
     assert result.exit_code == 1
@@ -1157,7 +1162,7 @@ def test_recall_reports_human_readable_results(memory_database: Database) -> Non
 
     result = CliRunner().invoke(
         cli_module.main,
-        ["recall", "--query", "aurora transcript", "--db-url", memory_database.url],
+        ["debug", "recall", "--query", "aurora transcript", "--db-url", memory_database.url],
     )
 
     assert result.exit_code == 0
@@ -1175,7 +1180,7 @@ def test_recall_reports_json_results(memory_database: Database) -> None:
 
     result = CliRunner().invoke(
         cli_module.main,
-        ["recall", "--query", "aurora", "--db-url", memory_database.url, "--json"],
+        ["debug", "recall", "--query", "aurora", "--db-url", memory_database.url, "--json"],
     )
 
     assert result.exit_code == 0
@@ -1223,7 +1228,7 @@ def test_recall_limit_option_restricts_json_results(memory_database: Database) -
 
     result = CliRunner().invoke(
         cli_module.main,
-        ["recall", "--query", "shared aurora", "--db-url", memory_database.url, "--limit", "1", "--json"],
+        ["debug", "recall", "--query", "shared aurora", "--db-url", memory_database.url, "--limit", "1", "--json"],
     )
 
     assert result.exit_code == 0
@@ -1255,6 +1260,7 @@ def test_recall_session_id_option_filters_json_results(memory_database: Database
     result = CliRunner().invoke(
         cli_module.main,
         [
+            "debug",
             "recall",
             "--query",
             "filtered aurora",
@@ -1278,7 +1284,7 @@ def test_recall_session_id_option_filters_json_results(memory_database: Database
 def test_recall_rejects_out_of_range_limit(memory_database: Database, limit: str) -> None:
     result = CliRunner().invoke(
         cli_module.main,
-        ["recall", "--query", "aurora", "--db-url", memory_database.url, "--limit", limit],
+        ["debug", "recall", "--query", "aurora", "--db-url", memory_database.url, "--limit", limit],
     )
 
     assert result.exit_code == 2
@@ -1288,7 +1294,7 @@ def test_recall_rejects_out_of_range_limit(memory_database: Database, limit: str
 def test_recall_requires_non_empty_session_id(memory_database: Database) -> None:
     result = CliRunner().invoke(
         cli_module.main,
-        ["recall", "--query", "aurora", "--db-url", memory_database.url, "--session-id", "  "],
+        ["debug", "recall", "--query", "aurora", "--db-url", memory_database.url, "--session-id", "  "],
     )
 
     assert result.exit_code == 2
@@ -1300,7 +1306,7 @@ def test_recall_reports_empty_results(memory_database: Database) -> None:
 
     result = CliRunner().invoke(
         cli_module.main,
-        ["recall", "--query", "missing", "--db-url", memory_database.url],
+        ["debug", "recall", "--query", "missing", "--db-url", memory_database.url],
     )
 
     assert result.exit_code == 0
@@ -1310,7 +1316,7 @@ def test_recall_reports_empty_results(memory_database: Database) -> None:
 def test_recall_requires_non_empty_query(memory_database: Database) -> None:
     result = CliRunner().invoke(
         cli_module.main,
-        ["recall", "--query", "  ", "--db-url", memory_database.url],
+        ["debug", "recall", "--query", "  ", "--db-url", memory_database.url],
     )
 
     assert result.exit_code == 2
@@ -1320,7 +1326,7 @@ def test_recall_requires_non_empty_query(memory_database: Database) -> None:
 def test_recall_requires_non_empty_db_url() -> None:
     result = CliRunner().invoke(
         cli_module.main,
-        ["recall", "--query", "aurora", "--db-url", "  "],
+        ["debug", "recall", "--query", "aurora", "--db-url", "  "],
     )
 
     assert result.exit_code == 2
@@ -1334,6 +1340,7 @@ def test_job_reports_json_inspection(memory_database: Database) -> None:
     result = runner.invoke(
         cli_module.main,
         [
+            "debug",
             "job",
             "--job-id",
             str(job_id),
@@ -1364,7 +1371,7 @@ def test_job_reports_human_readable_inspection(memory_database: Database) -> Non
 
     result = runner.invoke(
         cli_module.main,
-        ["job", "--job-id", str(job_id), "--db-url", memory_database.url],
+        ["debug", "job", "--job-id", str(job_id), "--db-url", memory_database.url],
     )
 
     assert result.exit_code == 0
@@ -1380,7 +1387,7 @@ def test_job_reports_human_readable_inspection(memory_database: Database) -> Non
 def test_job_missing_reports_click_error(memory_database: Database) -> None:
     result = CliRunner().invoke(
         cli_module.main,
-        ["job", "--job-id", "999", "--db-url", memory_database.url],
+        ["debug", "job", "--job-id", "999", "--db-url", memory_database.url],
     )
 
     assert result.exit_code == 1
@@ -1388,7 +1395,7 @@ def test_job_missing_reports_click_error(memory_database: Database) -> None:
 
 
 def test_job_help_lists_required_options() -> None:
-    result = CliRunner().invoke(cli_module.main, ["job", "--help"])
+    result = CliRunner().invoke(cli_module.main, ["debug", "job", "--help"])
 
     assert result.exit_code == 0
     assert "--job-id" in result.output
@@ -1399,7 +1406,7 @@ def test_job_help_lists_required_options() -> None:
 def test_job_requires_non_empty_db_url() -> None:
     result = CliRunner().invoke(
         cli_module.main,
-        ["job", "--job-id", "1", "--db-url", "  "],
+        ["debug", "job", "--job-id", "1", "--db-url", "  "],
     )
 
     assert result.exit_code == 2

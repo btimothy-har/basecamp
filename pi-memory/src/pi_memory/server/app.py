@@ -171,7 +171,7 @@ def create_app(
         job = enqueue_process_transcript_job(app.state.job_store, result)
         return _observe_response(result, job_id=None if job is None else job.id)
 
-    @app.get("/v1/jobs/{job_id}")
+    @app.get("/v1/debug/jobs/{job_id}")
     def get_job(job_id: int) -> dict[str, object]:
         """Return read-only debugging details for a background job."""
         job = app.state.job_store.get(job_id)
@@ -179,7 +179,7 @@ def create_app(
             raise HTTPException(status_code=404, detail=f"Job {job_id} was not found")
         return serialize_job(job)
 
-    @app.get("/v1/sessions/{session_id}/interpretation")
+    @app.get("/v1/debug/sessions/{session_id}/interpretation")
     def get_session_interpretation(session_id: str) -> dict[str, object]:
         """Return the latest safe interpretation snapshot for a Pi session."""
         payload = app.state.interpretation_service.get_by_session_id(session_id)
@@ -190,7 +190,7 @@ def create_app(
             )
         return payload
 
-    @app.get("/v1/sessions/{session_id}/quality")
+    @app.get("/v1/debug/sessions/{session_id}/quality")
     def get_session_quality(session_id: str) -> dict[str, object]:
         """Return the latest safe quality report for a Pi session."""
         payload = app.state.quality_service.get_by_session_id(session_id)
@@ -201,7 +201,7 @@ def create_app(
             )
         return payload
 
-    @app.get("/v1/quality/reports")
+    @app.get("/v1/debug/quality/reports")
     def list_quality_reports(
         quality_status: QualityStatusQuery | None = None,
         derivation_status: DerivationStatusQuery | None = None,
@@ -228,7 +228,7 @@ def create_app(
         except QualityReportFilterError as error:
             raise HTTPException(status_code=422, detail=str(error)) from error
 
-    @app.get("/v1/quality/reports/sample")
+    @app.get("/v1/debug/quality/reports/sample")
     def sample_quality_reports(
         count: int = 5,
         quality_status: QualityStatusQuery | None = None,
@@ -253,7 +253,7 @@ def create_app(
         except QualityReportFilterError as error:
             raise HTTPException(status_code=422, detail=str(error)) from error
 
-    @app.get("/v1/durable-memory")
+    @app.get("/v1/debug/durable-memory")
     def list_durable_memories(
         status: DurableMemoryStatusQuery | None = None,
         cwd: str | None = None,
@@ -275,7 +275,7 @@ def create_app(
         except DurableMemoryFilterError as error:
             raise HTTPException(status_code=422, detail=str(error)) from error
 
-    @app.get("/v1/durable-memory/{memory_id}")
+    @app.get("/v1/debug/durable-memory/{memory_id}")
     def get_durable_memory(memory_id: int, *, include_audit: bool = False) -> dict[str, object]:
         """Return one safe durable memory payload."""
         payload = app.state.durable_memory_service.get_memory(memory_id, include_audit=include_audit)
@@ -283,7 +283,7 @@ def create_app(
             raise HTTPException(status_code=404, detail=f"Durable memory {memory_id} was not found")
         return payload
 
-    @app.get("/v1/durable-memory/{memory_id}/audit")
+    @app.get("/v1/debug/durable-memory/{memory_id}/audit")
     def list_durable_memory_audit_events(
         memory_id: int,
         limit: int = 10,
@@ -298,7 +298,7 @@ def create_app(
             raise HTTPException(status_code=404, detail=f"Durable memory {memory_id} was not found")
         return result.to_payload()
 
-    @app.get("/v1/memory-projections")
+    @app.get("/v1/debug/memory-projections")
     def list_memory_projection_records(
         record_type: ProjectionRecordTypeQuery | None = None,
         memory_layer: MemoryLayerQuery | None = None,

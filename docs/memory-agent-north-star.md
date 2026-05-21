@@ -373,16 +373,16 @@ Semantic assessment uses a PydanticAI-supported `quality_model` / `PI_MEMORY_QUA
 
 If semantic assessment fails transiently, the durable job retry policy applies. On the final failed attempt, `pi-memory` writes a visible safe report with `quality_status = assessment_failed` and `semantic_status = assessment_failed`, storing only safe error type metadata so dashboards are not blind and provider error bodies are not persisted.
 
-Read surfaces are implemented for API, CLI, and TUI inspection:
+Read surfaces are implemented behind explicit debug API, CLI, and TUI inspection affordances:
 
 ```text
-GET /v1/sessions/{session_id}/quality
-GET /v1/quality/reports
-GET /v1/quality/reports/sample
-pi-memory quality --session-id ... --db-url ... [--json]
-pi-memory quality-list --db-url ... [filters] [--json]
-pi-memory quality-sample --db-url ... [filters] [--json]
-pi-memory quality-tui --db-url ...
+GET /v1/debug/sessions/{session_id}/quality
+GET /v1/debug/quality/reports
+GET /v1/debug/quality/reports/sample
+pi-memory debug quality --session-id ... --db-url ... [--json]
+pi-memory debug quality-list --db-url ... [filters] [--json]
+pi-memory debug quality-sample --db-url ... [filters] [--json]
+pi-memory debug quality-tui --db-url ...
 ```
 
 The quality TUI consumes these persisted reports and interpretation failure metadata. It does not own quality logic, reinterpretation, repair, manual claim editing, approval workflow, or Phase 6 promotion writes.
@@ -587,22 +587,27 @@ Hygiene should be conservative. It should not silently delete memory. Prefer low
 
 ## Local HTTP API
 
-The API shape stays small and local-only. Current implemented endpoints are:
+The API shape stays small and local-only. Current stable endpoints are:
 
 ```text
 GET  /health
 GET  /v1/status
 POST /v1/observe
-GET  /v1/jobs/{job_id}
 POST /v1/recall/search              # raw transcript FTS recall
-GET  /v1/sessions/{session_id}/interpretation
-GET  /v1/sessions/{session_id}/quality
-GET  /v1/quality/reports
-GET  /v1/quality/reports/sample
-GET  /v1/durable-memory
-GET  /v1/durable-memory/{memory_id}
-GET  /v1/durable-memory/{memory_id}/audit
-GET  /v1/memory-projections
+```
+
+Internal inspection endpoints live under an explicit debug prefix:
+
+```text
+GET  /v1/debug/jobs/{job_id}
+GET  /v1/debug/sessions/{session_id}/interpretation
+GET  /v1/debug/sessions/{session_id}/quality
+GET  /v1/debug/quality/reports
+GET  /v1/debug/quality/reports/sample
+GET  /v1/debug/durable-memory
+GET  /v1/debug/durable-memory/{memory_id}
+GET  /v1/debug/durable-memory/{memory_id}/audit
+GET  /v1/debug/memory-projections
 ```
 
 Planned endpoint candidates remain separate from the implemented surface:
@@ -861,7 +866,7 @@ Deliverables:
 - Internal worker/scheduler loop in the service process.
 - Job claim/lease semantics.
 - Startup recovery for stale running jobs.
-- `GET /v1/jobs/{job_id}` endpoint.
+- `GET /v1/debug/jobs/{job_id}` endpoint.
 - Job enqueue from `/v1/observe`.
 - Initial job kinds such as `ingest_session`, `catchup_stale_sessions`, and a test/no-op job.
 
@@ -889,7 +894,7 @@ Implemented in `pi-memory`:
 - Derived, rebuildable FTS content populated from deterministic extracted search text by `process_transcript` jobs.
 - `RecallSearchService` searches FTS and joins matches back to canonical transcript and session rows.
 - `POST /v1/recall/search` endpoint returning typed `raw_transcript` source-backed results.
-- Local CLI recall via `pi-memory recall --query --db-url [--json]` for isolated databases.
+- Debug CLI recall via `pi-memory debug recall --query --db-url [--json]` for isolated databases.
 - Recall results include session identity, transcript entry/source context, excerpt text, rank/score information, and basic match reason.
 - `branch_summary.summary` is indexed into raw FTS as source-backed deterministic text, without indexing `details` values.
 
@@ -992,7 +997,7 @@ Implemented in `pi-memory`:
 - Job chain: `process_transcript` enqueues `summarize_tool_activities` after raw FTS indexing and deterministic structure persistence; `summarize_tool_activities` then enqueues `interpret_session`.
 - Stale interpretation and tool-summary job no-op behavior. Auto-enqueued jobs carry `process_job_id` because SQLite may reuse analysis ids after Phase 5A rebuilds.
 - Slim chronological prompt rendering: activity records carry `activity_text` plus direct `source_ref_ids` / `claim_source_ref_ids`; raw JSON transcript lines and heavyweight source-ref metadata stay out of the session interpretation prompt.
-- Read-only inspection via `GET /v1/sessions/{session_id}/interpretation` and `pi-memory interpretation --session-id --db-url [--json]`.
+- Read-only debug inspection via `GET /v1/debug/sessions/{session_id}/interpretation` and `pi-memory debug interpretation --session-id --db-url [--json]`.
 - Model-agnostic PydanticAI configuration via `pi-memory config`, `~/.pi/memory/config.json`, `PI_MEMORY_INTERPRETATION_MODEL`, `PI_MEMORY_TOOL_SUMMARY_MODEL`, and `PI_MEMORY_TOOL_SUMMARY_CONCURRENCY`.
 
 PydanticAI-backed interpretation requires `interpretation_model` to be configured with any PydanticAI-supported model string, such as `anthropic:claude-sonnet-4-6` or `openai:gpt-4o`. Tool summarization can use a separate lower-latency model such as `anthropic:claude-haiku-4-5`. When jobs run, `pi-memory` sends source-backed tool activity packets and chronological session activity-text packets to the configured PydanticAI provider. `pi-memory` does not store API keys; provider credentials stay in the environment variables expected by PydanticAI/provider packages, such as `ANTHROPIC_API_KEY` or `OPENAI_API_KEY`.
@@ -1043,7 +1048,7 @@ Implemented in `pi-memory`:
 - Bounded `QualityPacket` read model over interpretation JSON, citations, chronological activity text, and source refs; full raw transcript rows and provider secrets stay out of quality prompts.
 - PydanticAI-backed semantic quality assessor plus deterministic test/development assessor injection seam.
 - Final failure policy that writes a safe visible `assessment_failed` report after retries are exhausted.
-- Read-only reporting via `GET /v1/sessions/{session_id}/quality`, `GET /v1/quality/reports`, `GET /v1/quality/reports/sample`, `pi-memory quality`, `pi-memory quality-list`, `pi-memory quality-sample`, and `pi-memory quality-tui`.
+- Read-only debug reporting via `GET /v1/debug/sessions/{session_id}/quality`, `GET /v1/debug/quality/reports`, `GET /v1/debug/quality/reports/sample`, `pi-memory debug quality`, `pi-memory debug quality-list`, `pi-memory debug quality-sample`, and `pi-memory debug quality-tui`.
 
 Status taxonomy:
 
@@ -1099,15 +1104,15 @@ Implemented in `pi-memory`:
 - Durable job wiring:
   - `project_memory_records` for quality-report projection and all-record rebuild/upsert passes, with per-record failure metadata persisted for retry and inspection;
   - `promote_durable_memory` for report-level promotion through eligibility, evaluation, relation assessment, reducer persistence, and projection refresh.
-- Read-only inspection surfaces:
-  - `GET /v1/durable-memory`;
-  - `GET /v1/durable-memory/{memory_id}`;
-  - `GET /v1/durable-memory/{memory_id}/audit`;
-  - `GET /v1/memory-projections`;
-  - `pi-memory durable`;
-  - `pi-memory durable-list`;
-  - `pi-memory durable-audit`;
-  - `pi-memory projection-list`.
+- Read-only debug inspection surfaces:
+  - `GET /v1/debug/durable-memory`;
+  - `GET /v1/debug/durable-memory/{memory_id}`;
+  - `GET /v1/debug/durable-memory/{memory_id}/audit`;
+  - `GET /v1/debug/memory-projections`;
+  - `pi-memory debug durable`;
+  - `pi-memory debug durable-list`;
+  - `pi-memory debug durable-audit`;
+  - `pi-memory debug projection-list`.
 
 Core invariants:
 

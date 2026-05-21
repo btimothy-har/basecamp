@@ -282,6 +282,8 @@ pi-memory config            # Inspect persisted model/concurrency settings
 pi-memory observe PATH      # Record a transcript observation
 ```
 
+Internal inspection commands are grouped under `pi-memory debug ...` and are not part of the stable user workflow.
+
 ### Storage
 
 All active memory data is local to `pi-memory`:

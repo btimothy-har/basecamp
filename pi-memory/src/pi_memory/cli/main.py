@@ -163,6 +163,11 @@ def main() -> None:
     """Pi memory service."""
 
 
+@main.group()
+def debug() -> None:
+    """Inspect internal memory service state."""
+
+
 @main.command()
 @click.option(
     "--interpretation-model",
@@ -328,7 +333,7 @@ def observe(
     _emit_observe_result(result, job_id=None if job is None else job.id, json_output=json_output)
 
 
-@main.command()
+@debug.command()
 @click.option(
     "--query",
     callback=lambda _ctx, _param, value: _require_non_empty(value),
@@ -381,7 +386,7 @@ def recall(
     _emit_recall_result(result, json_output=json_output)
 
 
-@main.command()
+@debug.command()
 @click.option(
     "--session-id",
     callback=lambda _ctx, _param, value: _require_non_empty(value),
@@ -412,7 +417,7 @@ def interpretation(session_id: str, db_url: str, *, json_output: bool) -> None:
         interpretation_database.close_if_open()
 
 
-@main.command()
+@debug.command()
 @click.option(
     "--session-id",
     callback=lambda _ctx, _param, value: _require_non_empty(value),
@@ -443,7 +448,7 @@ def quality(session_id: str, db_url: str, *, json_output: bool) -> None:
         quality_database.close_if_open()
 
 
-@main.command("quality-list")
+@debug.command("quality-list")
 @click.option(
     "--db-url",
     callback=lambda _ctx, _param, value: _require_non_empty(value),
@@ -496,7 +501,7 @@ def quality_list(
     _emit_quality_report_list(payload, json_output=json_output)
 
 
-@main.command()
+@debug.command()
 @click.option("--memory-id", required=True, type=int, help="Durable memory row id to inspect.")
 @click.option(
     "--db-url",
@@ -521,7 +526,7 @@ def durable(memory_id: int, db_url: str, *, include_audit: bool, json_output: bo
         durable_database.close_if_open()
 
 
-@main.command("durable-list")
+@debug.command("durable-list")
 @click.option(
     "--db-url",
     callback=lambda _ctx, _param, value: _require_non_empty(value),
@@ -568,7 +573,7 @@ def durable_list(
     _emit_durable_memory_list(payload, json_output=json_output)
 
 
-@main.command("durable-audit")
+@debug.command("durable-audit")
 @click.option("--memory-id", required=True, type=int, help="Durable memory row id to inspect.")
 @click.option(
     "--db-url",
@@ -598,7 +603,7 @@ def durable_audit(memory_id: int, db_url: str, limit: int, offset: int, *, json_
     _emit_durable_memory_audit(payload, json_output=json_output)
 
 
-@main.command("projection-list")
+@debug.command("projection-list")
 @click.option(
     "--db-url",
     callback=lambda _ctx, _param, value: _require_non_empty(value),
@@ -648,7 +653,7 @@ def projection_list(
     _emit_memory_projection_list(payload, json_output=json_output)
 
 
-@main.command("quality-sample")
+@debug.command("quality-sample")
 @click.option(
     "--db-url",
     callback=lambda _ctx, _param, value: _require_non_empty(value),
@@ -694,7 +699,7 @@ def quality_sample(
     _emit_quality_report_list(payload, json_output=json_output)
 
 
-@main.command("quality-tui")
+@debug.command("quality-tui")
 @click.option(
     "--db-url",
     callback=lambda _ctx, _param, value: MEMORY_DB_URL if value is None else _require_non_empty(value),
@@ -710,7 +715,7 @@ def quality_tui(db_url: str) -> None:
     run_quality_tui(db_url)
 
 
-@main.command("run-job")
+@main.command("run-job", hidden=True)
 @click.option("--job-id", required=True, type=int, help="Claimed job id to run.")
 @click.option(
     "--run-id",
@@ -737,7 +742,7 @@ def run_job(job_id: int, run_id: str, db_url: str) -> None:
     click.echo(f"Job {job.id} completed")
 
 
-@main.command("job")
+@debug.command("job")
 @click.option("--job-id", required=True, type=int, help="Job id to inspect.")
 @click.option(
     "--db-url",

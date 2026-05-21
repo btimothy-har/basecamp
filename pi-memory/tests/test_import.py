@@ -17,6 +17,18 @@ def test_cli_help_resolves() -> None:
 
     assert result.exit_code == 0
     assert "Pi memory service." in result.output
+    assert "debug" in result.output
+    assert "quality-list" not in result.output
+    assert "run-job" not in result.output
+
+
+def test_debug_help_resolves() -> None:
+    result = CliRunner().invoke(cli_module.main, ["debug", "--help"])
+
+    assert result.exit_code == 0
+    assert "Inspect internal memory service state." in result.output
+    assert "quality-list" in result.output
+    assert "projection-list" in result.output
 
 
 def test_serve_help_resolves() -> None:
