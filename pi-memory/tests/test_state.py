@@ -17,11 +17,14 @@ def test_registration_writes_metadata_and_cleans_up(tmp_path) -> None:
         assert metadata.service_name == SERVICE_NAME
         assert metadata.version == SERVICE_VERSION
         assert metadata.pid == os.getpid()
+        assert metadata.auth_token
 
         data = json.loads(state.metadata_path.read_text(encoding="utf-8"))
         assert data["host"] == "127.0.0.1"
         assert data["port"] == 9876
         assert data["memory_dir"] == str(tmp_path)
+        assert data["auth_token"] == metadata.auth_token
+        assert state.metadata_path.stat().st_mode & 0o777 == 0o600
 
     assert not state.lock_path.exists()
     assert not state.metadata_path.exists()
@@ -54,6 +57,7 @@ def test_registration_replaces_stale_state(tmp_path, monkeypatch) -> None:
                 "host": "127.0.0.1",
                 "port": 9876,
                 "memory_dir": str(tmp_path),
+                "auth_token": "stale-token",
             },
         ),
         encoding="utf-8",

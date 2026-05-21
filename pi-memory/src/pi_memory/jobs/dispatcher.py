@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 import logging
+import os
 import subprocess
 import threading
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from datetime import UTC, datetime, timedelta
 from typing import Protocol
 from uuid import uuid4
@@ -36,7 +37,7 @@ class ChildProcess(Protocol):
         """Forcefully kill the process."""
 
 
-ProcessFactory = Callable[[Sequence[str]], ChildProcess]
+ProcessFactory = Callable[[Sequence[str], Mapping[str, str]], ChildProcess]
 Clock = Callable[[], datetime]
 
 
@@ -122,9 +123,10 @@ class JobDispatcher:
         if job.run_id is None:
             raise ClaimedJobMissingRunIdError(job.id)
 
-        argv = self._job_argv(job.id, job.run_id)
+        argv = self._job_argv(job.id)
+        env = self._job_env(job.run_id)
         try:
-            process = self._process_factory(argv)
+            process = self._process_factory(argv, env)
         except Exception as error:
             self._release_claim(job.id, job.run_id, f"Failed to spawn job child: {error}")
             return True
@@ -161,17 +163,19 @@ class JobDispatcher:
                 if self._stop_event.is_set():
                     self._terminate_active_process()
 
-    def _job_argv(self, job_id: int, run_id: str) -> tuple[str, ...]:
+    def _job_argv(self, job_id: int) -> tuple[str, ...]:
         return (
             *self._command,
             "run-job",
             "--job-id",
             str(job_id),
-            "--run-id",
-            run_id,
-            "--db-url",
-            self._database.url,
         )
+
+    def _job_env(self, run_id: str) -> dict[str, str]:
+        env = dict(os.environ)
+        env["PI_MEMORY_JOB_RUN_ID"] = run_id
+        env["PI_MEMORY_JOB_DB_URL"] = self._database.url
+        return env
 
     def _release_claim(self, job_id: int, run_id: str, error: str) -> None:
         now = self._clock()
@@ -214,8 +218,8 @@ class JobDispatcher:
             return
 
 
-def _popen(argv: Sequence[str]) -> ChildProcess:
-    return subprocess.Popen(list(argv))
+def _popen(argv: Sequence[str], env: Mapping[str, str]) -> ChildProcess:
+    return subprocess.Popen(list(argv), env=dict(env))
 
 
 def _terminate_process(process: ChildProcess, *, timeout: float) -> None:

@@ -68,7 +68,7 @@ def durable_client(database: Database) -> TestClient:
     app = create_app(
         durable_memory_service=DurableMemoryInspectionService(database=database),
     )
-    return TestClient(app)
+    return TestClient(app, headers={"Authorization": f"Bearer {app.state.auth_token}"})
 
 
 def create_durable_fixture(database: Database) -> dict[str, Any]:
@@ -439,13 +439,13 @@ def test_api_lists_gets_audit_and_projections(
     durable_fixture: dict[str, Any],
 ) -> None:
     list_response = durable_client.get(
-        "/v1/durable-memory",
+        "/v1/debug/durable-memory",
         params={"status": DURABLE_MEMORY_STATUS_PROMOTED, "cwd": "/repo"},
     )
-    get_response = durable_client.get(f"/v1/durable-memory/{durable_fixture['memory_id']}")
-    audit_response = durable_client.get(f"/v1/durable-memory/{durable_fixture['memory_id']}/audit")
+    get_response = durable_client.get(f"/v1/debug/durable-memory/{durable_fixture['memory_id']}")
+    audit_response = durable_client.get(f"/v1/debug/durable-memory/{durable_fixture['memory_id']}/audit")
     projection_response = durable_client.get(
-        "/v1/memory-projections",
+        "/v1/debug/memory-projections",
         params={"record_type": MEMORY_PROJECTION_RECORD_TYPE_DURABLE_MEMORY},
     )
 
@@ -466,13 +466,13 @@ def test_api_include_audit_404_and_invalid_filter(
     durable_fixture: dict[str, Any],
 ) -> None:
     include_response = durable_client.get(
-        f"/v1/durable-memory/{durable_fixture['memory_id']}",
+        f"/v1/debug/durable-memory/{durable_fixture['memory_id']}",
         params={"include_audit": True},
     )
-    missing_response = durable_client.get("/v1/durable-memory/9999")
-    missing_audit_response = durable_client.get("/v1/durable-memory/9999/audit")
-    invalid_response = durable_client.get("/v1/durable-memory", params={"status": "invalid"})
-    invalid_projection_response = durable_client.get("/v1/memory-projections", params={"record_type": "invalid"})
+    missing_response = durable_client.get("/v1/debug/durable-memory/9999")
+    missing_audit_response = durable_client.get("/v1/debug/durable-memory/9999/audit")
+    invalid_response = durable_client.get("/v1/debug/durable-memory", params={"status": "invalid"})
+    invalid_projection_response = durable_client.get("/v1/debug/memory-projections", params={"record_type": "invalid"})
 
     assert include_response.status_code == 200
     assert len(include_response.json()["audit_events"]) == 2
@@ -486,6 +486,7 @@ def test_cli_durable_json(database: Database, durable_fixture: dict[str, Any]) -
     result = CliRunner().invoke(
         cli_module.main,
         [
+            "debug",
             "durable",
             "--memory-id",
             str(durable_fixture["memory_id"]),
@@ -506,6 +507,7 @@ def test_cli_durable_human_output(database: Database, durable_fixture: dict[str,
     result = CliRunner().invoke(
         cli_module.main,
         [
+            "debug",
             "durable",
             "--memory-id",
             str(durable_fixture["memory_id"]),
@@ -523,6 +525,7 @@ def test_cli_durable_list_filter(database: Database, durable_fixture: dict[str, 
     result = CliRunner().invoke(
         cli_module.main,
         [
+            "debug",
             "durable-list",
             "--db-url",
             database.url,
@@ -545,6 +548,7 @@ def test_cli_durable_audit(database: Database, durable_fixture: dict[str, Any]) 
     result = CliRunner().invoke(
         cli_module.main,
         [
+            "debug",
             "durable-audit",
             "--memory-id",
             str(durable_fixture["memory_id"]),
@@ -568,6 +572,7 @@ def test_cli_projection_list(database: Database, durable_fixture: dict[str, Any]
     result = CliRunner().invoke(
         cli_module.main,
         [
+            "debug",
             "projection-list",
             "--db-url",
             database.url,
@@ -592,7 +597,7 @@ def test_cli_projection_list(database: Database, durable_fixture: dict[str, Any]
 def test_cli_projection_invalid_filter_exits_nonzero(database: Database) -> None:
     result = CliRunner().invoke(
         cli_module.main,
-        ["projection-list", "--db-url", database.url, "--record-type", "invalid", "--json"],
+        ["debug", "projection-list", "--db-url", database.url, "--record-type", "invalid", "--json"],
     )
 
     assert result.exit_code != 0
@@ -602,7 +607,7 @@ def test_cli_projection_invalid_filter_exits_nonzero(database: Database) -> None
 def test_cli_invalid_filter_exits_nonzero(database: Database) -> None:
     result = CliRunner().invoke(
         cli_module.main,
-        ["durable-list", "--db-url", database.url, "--status", "invalid", "--json"],
+        ["debug", "durable-list", "--db-url", database.url, "--status", "invalid", "--json"],
     )
 
     assert result.exit_code != 0

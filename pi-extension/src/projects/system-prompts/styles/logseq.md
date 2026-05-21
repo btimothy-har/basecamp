@@ -8,7 +8,7 @@ The user drives curation. You surface material, suggest structure, and make conn
 
 Inspect the tools available to you. Use them to discover what the user worked on.
 
-**Observer** — if available, the `recall` CLI provides semantic search over past Claude sessions.
+**Memory** — use available memory or recall tools to search past Pi sessions.
 
 **GitHub CLI** (`gh`) — pull requests, issues, reviews, and activity across repositories.
 

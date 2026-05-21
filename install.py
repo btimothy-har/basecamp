@@ -26,7 +26,6 @@ console = Console()
 REPO_DIR: Final = Path(__file__).parent
 
 CLI_DIR: Final = REPO_DIR / "basecamp-cli"
-OBSERVER_DIR: Final = REPO_DIR / "pi-observer"
 MEMORY_DIR: Final = REPO_DIR / "pi-memory"
 EXTENSION_DIR: Final = REPO_DIR / "pi-extension"
 
@@ -164,14 +163,12 @@ def main() -> None:
     console.print("[bold]Python tools[/bold]")
     console.print()
     install_python_tool(CLI_DIR, "basecamp", editable=editable)
-    install_python_tool(OBSERVER_DIR, "pi-observer", editable=editable)
     install_python_tool(MEMORY_DIR, "pi-memory", editable=editable)
 
     console.print()
     console.print("[bold]Pi packages[/bold]")
     console.print()
     install_pi_package(EXTENSION_DIR, "basecamp Pi extension")
-    install_pi_package(OBSERVER_DIR, "pi-observer Pi package")
     install_pi_package(MEMORY_DIR, "pi-memory Pi package")
 
     save_install_dir(REPO_DIR)
@@ -180,8 +177,7 @@ def main() -> None:
     console.print("[green]✓[/green] Done.")
     console.print()
     console.print(
-        "If [bold]basecamp[/bold], [bold]pi-observer[/bold], or [bold]pi-memory[/bold] aren't found, "
-        "add uv's tool bin to your PATH:",
+        "If [bold]basecamp[/bold] or [bold]pi-memory[/bold] aren't found, add uv's tool bin to your PATH:",
     )
     console.print('  [dim]export PATH="$HOME/.local/bin:$PATH"[/dim]')
 

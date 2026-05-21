@@ -1,5 +1,4 @@
 import json
-import os
 from collections.abc import Iterator
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -29,6 +28,10 @@ def sqlite_url(path: Path) -> str:
     return f"sqlite:///{path}"
 
 
+def authenticated_client(app) -> TestClient:
+    return TestClient(app, headers={"Authorization": f"Bearer {app.state.auth_token}"})
+
+
 @pytest.fixture
 def observe_client(tmp_path) -> Iterator[TestClient]:
     database = Database(sqlite_url(tmp_path / "memory.db"))
@@ -36,9 +39,10 @@ def observe_client(tmp_path) -> Iterator[TestClient]:
         memory_dir=tmp_path / "memory",
         ingest_service=TranscriptIngestService(database=database),
         job_store=JobStore(database=database),
+        allowed_transcript_roots=(tmp_path,),
     )
     try:
-        yield TestClient(app)
+        yield authenticated_client(app)
     finally:
         database.close_if_open()
 
@@ -51,7 +55,7 @@ def recall_client(tmp_path) -> Iterator[tuple[TestClient, Database]]:
         recall_service=RecallSearchService(database=database),
     )
     try:
-        yield TestClient(app), database
+        yield authenticated_client(app), database
     finally:
         database.close_if_open()
 
@@ -64,7 +68,7 @@ def interpretation_client(tmp_path) -> Iterator[tuple[TestClient, Database]]:
         interpretation_service=SessionInterpretationInspectionService(database=database),
     )
     try:
-        yield TestClient(app), database
+        yield authenticated_client(app), database
     finally:
         database.close_if_open()
 
@@ -77,7 +81,7 @@ def quality_client(tmp_path) -> Iterator[tuple[TestClient, Database]]:
         quality_service=SessionQualityReportInspectionService(database=database),
     )
     try:
-        yield TestClient(app), database
+        yield authenticated_client(app), database
     finally:
         database.close_if_open()
 
@@ -345,7 +349,7 @@ def test_status_endpoint_includes_service_metadata(tmp_path) -> None:
         memory_dir=tmp_path,
         started_at=started_at,
     )
-    client = TestClient(app)
+    client = authenticated_client(app)
 
     response = client.get("/v1/status")
 
@@ -353,12 +357,45 @@ def test_status_endpoint_includes_service_metadata(tmp_path) -> None:
     data = response.json()
     assert data["service_name"] == SERVICE_NAME
     assert data["version"] == SERVICE_VERSION
-    assert data["pid"] == os.getpid()
     assert data["started_at"] == started_at.isoformat()
     assert data["uptime_seconds"] >= 0
     assert data["host"] == "127.0.0.1"
     assert data["port"] == 9876
-    assert data["memory_dir"] == str(tmp_path)
+    assert "pid" not in data
+    assert "memory_dir" not in data
+
+
+def test_status_endpoint_requires_authentication(tmp_path) -> None:
+    app = create_app(memory_dir=tmp_path)
+    client = TestClient(app)
+
+    response = client.get("/v1/status")
+
+    assert response.status_code == 401
+    assert response.json()["detail"] == "Unauthorized"
+
+
+@pytest.mark.parametrize(
+    ("method", "path", "body"),
+    [
+        ("post", "/v1/recall/search", {"query": "memory"}),
+        ("get", "/v1/debug/jobs/1", None),
+    ],
+)
+def test_non_health_endpoints_require_authentication(
+    tmp_path,
+    method: str,
+    path: str,
+    body: dict[str, object] | None,
+) -> None:
+    app = create_app(memory_dir=tmp_path)
+    client = TestClient(app)
+
+    request = getattr(client, method)
+    response = request(path, json=body) if body is not None else request(path)
+
+    assert response.status_code == 401
+    assert response.json()["detail"] == "Unauthorized"
 
 
 def test_get_session_interpretation_endpoint_returns_safe_snapshot(
@@ -367,7 +404,7 @@ def test_get_session_interpretation_endpoint_returns_safe_snapshot(
     client, database = interpretation_client
     expected = add_interpretation_snapshot(database)
 
-    response = client.get("/v1/sessions/pi-session-interpret/interpretation")
+    response = client.get("/v1/debug/sessions/pi-session-interpret/interpretation")
 
     assert response.status_code == 200
     data = response.json()
@@ -411,7 +448,7 @@ def test_get_session_interpretation_endpoint_returns_404_when_absent(
 ) -> None:
     client, _database = interpretation_client
 
-    response = client.get("/v1/sessions/missing-session/interpretation")
+    response = client.get("/v1/debug/sessions/missing-session/interpretation")
 
     assert response.status_code == 404
     assert response.json()["detail"] == "Interpretation snapshot for session missing-session was not found"
@@ -423,7 +460,7 @@ def test_get_session_quality_endpoint_returns_safe_report(
     client, database = quality_client
     expected = add_quality_report(database)
 
-    response = client.get(f"/v1/sessions/{expected['session_id']}/quality")
+    response = client.get(f"/v1/debug/sessions/{expected['session_id']}/quality")
 
     assert response.status_code == 200
     data = response.json()
@@ -451,7 +488,7 @@ def test_get_session_quality_endpoint_returns_404_when_absent(
 ) -> None:
     client, _database = quality_client
 
-    response = client.get("/v1/sessions/missing-session/quality")
+    response = client.get("/v1/debug/sessions/missing-session/quality")
 
     assert response.status_code == 404
     assert response.json()["detail"] == "Quality report for session missing-session was not found"
@@ -480,7 +517,9 @@ def test_quality_report_list_endpoint_filters_and_paginates(
         promotable=False,
     )
 
-    response = client.get("/v1/quality/reports?quality_status=degraded&promotable=false&cwd=/repo/feature&limit=5")
+    response = client.get(
+        "/v1/debug/quality/reports?quality_status=degraded&promotable=false&cwd=/repo/feature&limit=5",
+    )
 
     assert response.status_code == 200
     data = response.json()
@@ -490,7 +529,7 @@ def test_quality_report_list_endpoint_filters_and_paginates(
     assert data["results"][0]["session_id"] == "degraded-1"
     assert data["results"][0]["finding_counts"] == {"critical": 0, "warning": 1, "info": 0}
 
-    current_response = client.get("/v1/quality/reports?is_current=false")
+    current_response = client.get("/v1/debug/quality/reports?is_current=false")
     assert current_response.status_code == 200
     assert [result["session_id"] for result in current_response.json()["results"]] == ["outdated-1"]
 
@@ -502,7 +541,7 @@ def test_quality_report_sample_endpoint_returns_bounded_results(
     for index in range(4):
         add_quality_report(database, session_id=f"sample-{index}")
 
-    response = client.get("/v1/quality/reports/sample?count=2")
+    response = client.get("/v1/debug/quality/reports/sample?count=2")
 
     assert response.status_code == 200
     data = response.json()
@@ -515,7 +554,7 @@ def test_quality_report_list_invalid_filter_returns_422(
 ) -> None:
     client, _database = quality_client
 
-    response = client.get("/v1/quality/reports?quality_status=invalid")
+    response = client.get("/v1/debug/quality/reports?quality_status=invalid")
 
     assert response.status_code == 422
 
@@ -719,6 +758,31 @@ def test_observe_endpoint_missing_transcript_returns_404(
     assert "Transcript file does not exist" in response.json()["detail"]
 
 
+def test_observe_endpoint_requires_authentication(tmp_path) -> None:
+    transcript_path = tmp_path / "transcript.jsonl"
+    transcript_path.write_bytes(session_line())
+    app = create_app(memory_dir=tmp_path / "memory", allowed_transcript_roots=(tmp_path,))
+
+    response = TestClient(app).post("/v1/observe", json=observe_payload(transcript_path))
+
+    assert response.status_code == 401
+    assert response.json()["detail"] == "Unauthorized"
+
+
+def test_observe_endpoint_rejects_paths_outside_allowed_roots(tmp_path) -> None:
+    allowed_root = tmp_path / "allowed"
+    outside_root = tmp_path / "outside"
+    outside_root.mkdir()
+    transcript_path = outside_root / "transcript.jsonl"
+    transcript_path.write_bytes(session_line())
+    app = create_app(memory_dir=tmp_path / "memory", allowed_transcript_roots=(allowed_root,))
+
+    response = authenticated_client(app).post("/v1/observe", json=observe_payload(transcript_path))
+
+    assert response.status_code == 403
+    assert "outside allowed transcript roots" in response.json()["detail"]
+
+
 def test_get_job_endpoint_returns_serialized_job_without_transcript_content(tmp_path) -> None:
     database = Database(sqlite_url(tmp_path / "memory-jobs.db"))
     app = create_app(memory_dir=tmp_path / "memory", job_store=JobStore(database=database))
@@ -758,7 +822,7 @@ def test_get_job_endpoint_returns_serialized_job_without_transcript_content(tmp_
             stored.created_at = now - timedelta(minutes=1)
             stored.updated_at = now + timedelta(minutes=1)
 
-        response = TestClient(app).get(f"/v1/jobs/{job.id}")
+        response = authenticated_client(app).get(f"/v1/debug/jobs/{job.id}")
     finally:
         database.close_if_open()
 
@@ -790,7 +854,7 @@ def test_get_job_endpoint_returns_404_for_missing_job(tmp_path) -> None:
     database = Database(sqlite_url(tmp_path / "memory-missing-job.db"))
     app = create_app(memory_dir=tmp_path / "memory", job_store=JobStore(database=database))
     try:
-        response = TestClient(app).get("/v1/jobs/999")
+        response = authenticated_client(app).get("/v1/debug/jobs/999")
     finally:
         database.close_if_open()
 

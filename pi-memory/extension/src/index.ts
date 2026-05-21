@@ -9,11 +9,15 @@ const STATUS_TIMEOUT_MS = 500;
 const READY_TIMEOUT_MS = 5_000;
 const READY_POLL_INTERVAL_MS = 200;
 
+export function healthUrl(host = DEFAULT_HOST, port = DEFAULT_PORT): string {
+	return `http://${host}:${port}/health`;
+}
+
 export function statusUrl(host = DEFAULT_HOST, port = DEFAULT_PORT): string {
 	return `http://${host}:${port}/v1/status`;
 }
 
-export async function isServiceHealthy(url = statusUrl(), timeoutMs = STATUS_TIMEOUT_MS): Promise<boolean> {
+export async function isServiceHealthy(url = healthUrl(), timeoutMs = STATUS_TIMEOUT_MS): Promise<boolean> {
 	const controller = new AbortController();
 	const timeout = setTimeout(() => controller.abort(), timeoutMs);
 
@@ -24,8 +28,8 @@ export async function isServiceHealthy(url = statusUrl(), timeoutMs = STATUS_TIM
 		});
 		if (!response.ok) return false;
 
-		const body = (await response.json()) as { service_name?: unknown };
-		return body.service_name === SERVICE_NAME;
+		const body = (await response.json()) as { status?: unknown };
+		return body.status === "ok";
 	} catch {
 		return false;
 	} finally {
@@ -81,7 +85,7 @@ async function ensureServiceRunning(ctx: ExtensionContext): Promise<void> {
 	}
 
 	if (!(await waitUntilHealthy())) {
-		ctx.ui.notify(`${SERVICE_NAME}: local service did not become healthy at ${statusUrl()}`, "warning");
+		ctx.ui.notify(`${SERVICE_NAME}: local service did not become healthy at ${healthUrl()}`, "warning");
 	}
 }
 

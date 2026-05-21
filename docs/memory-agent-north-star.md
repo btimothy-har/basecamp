@@ -1,16 +1,16 @@
 # Memory Agent North Star
 
-Status: proposed architecture and implementation roadmap. `pi-memory` has implemented Phase 4 raw transcript recall, Phase 5A deterministic transcript structure/fork provenance, Phase 5B replaceable session interpretation over chronological activity-text packets, Phase 5C persisted interpretation quality reports, and Phase 6 durable memory promotion with a unified rebuildable semantic projection; Pi recall tool wiring remains deferred.
+Status: active `pi-memory` architecture and implementation roadmap. `pi-memory` has implemented Phase 4 raw transcript recall, Phase 5A deterministic transcript structure/fork provenance, Phase 5B replaceable session interpretation over chronological activity-text packets, Phase 5C persisted interpretation quality reports, and Phase 6 durable memory promotion with a unified rebuildable semantic projection. `pi-observer` has been removed from the active source tree; Pi recall tool wiring remains deferred.
 
 Related issue: [#123](https://github.com/btimothy-har/basecamp/issues/123)
 
 ## Context
 
-`pi-observer` currently provides semantic recall over previous Pi coding sessions by ingesting transcript JSONL, extracting structured artifacts, storing those artifacts in SQLite, and indexing them in ChromaDB. That implementation proves the value of local session recall, but the next memory system should not be constrained by the current observer's lifecycle, schema, or package boundaries.
+`pi-observer` previously provided semantic recall over Pi coding sessions by ingesting transcript JSONL, extracting structured artifacts, storing those artifacts in SQLite, and indexing them in ChromaDB. That implementation proved the value of local session recall, but the active memory system is now `pi-memory` and should not be constrained by the old observer lifecycle, schema, or package boundaries.
 
 The north-star system is a clean cutover: a Python-first local memory service that continuously captures full Pi transcripts, derives evolving session understanding, promotes durable source-backed memory artifacts into an associative graph, and serves explainable recall through a thin Pi adapter.
 
-The current observer is useful inspiration. It should not be treated as a compatibility target.
+The deprecated observer is useful historical inspiration available through git history. It should not be treated as a compatibility target.
 
 ## One-sentence north star
 
@@ -18,16 +18,16 @@ Build a Python-first local memory service that continuously captures full Pi tra
 
 ## Clean cutover stance
 
-This design intentionally replaces the current observer behavior rather than migrating or preserving historical observer stores.
+This design intentionally replaces the deprecated observer behavior rather than migrating or preserving historical observer stores.
 
 The new system should not require compatibility with:
 
 - the existing `~/.pi/observer` data directory;
-- current observer SQLite schemas;
-- current observer Chroma collections;
-- current extraction artifact shapes;
-- current CLI behavior;
-- current Pi extension orchestration behavior.
+- deprecated observer SQLite schemas;
+- deprecated observer Chroma collections;
+- deprecated extraction artifact shapes;
+- deprecated CLI behavior;
+- deprecated Pi extension orchestration behavior.
 
 No legacy migration should be added unless a future product decision explicitly changes that requirement. The clean cutover lets the new system optimize for the desired architecture instead of carrying forward accidental constraints.
 
@@ -98,9 +98,9 @@ SQLite owns canonical memory, graph, jobs, sessions, transcripts, and provenance
 
 The graph helps find relevant neighborhoods and explain recall. It does not by itself decide supersession, correctness, or user intent.
 
-## Current observer as inspiration
+## Deprecated observer as inspiration
 
-The existing observer already has useful ideas:
+The old observer had useful ideas:
 
 - it stores full raw transcript payloads;
 - it uses SQLite for durable local data;
@@ -108,7 +108,7 @@ The existing observer already has useful ideas:
 - it extracts summaries, decisions, constraints, knowledge, and actions;
 - it exposes recall through Pi tooling.
 
-The new design should carry forward those lessons while avoiding the constraints that make the current shape hard to evolve:
+The new design should carry forward those lessons while avoiding the constraints that made the observer shape hard to evolve:
 
 - fire-and-forget lifecycle orchestration from the Pi extension;
 - analysis centered on shutdown instead of continuous durable ingest;
@@ -236,7 +236,7 @@ If unavailable, Pi starts the service:
 pi-memory serve --host 127.0.0.1 --port <fixed-port>
 ```
 
-The exact command name remains open, but the behavior should be stable: one local service process, one fixed localhost port, and a guard against duplicate servers.
+The command name is `pi-memory serve`. The behavior should remain stable: one local service process, one fixed localhost port, per-launch bearer auth for `/v1/*` endpoints, and a guard against duplicate servers.
 
 Startup sequence:
 
@@ -258,7 +258,7 @@ Pi sends lightweight observations during session activity:
 POST /v1/observe
 ```
 
-Observation payloads should include enough information for the service to locate and interpret session transcript data:
+Observation payloads should include enough information for the service to locate and interpret session transcript data. `/v1/observe` requires bearer auth and only accepts `.jsonl` transcript paths under service-approved transcript roots:
 
 ```text
 session_id
@@ -373,16 +373,16 @@ Semantic assessment uses a PydanticAI-supported `quality_model` / `PI_MEMORY_QUA
 
 If semantic assessment fails transiently, the durable job retry policy applies. On the final failed attempt, `pi-memory` writes a visible safe report with `quality_status = assessment_failed` and `semantic_status = assessment_failed`, storing only safe error type metadata so dashboards are not blind and provider error bodies are not persisted.
 
-Read surfaces are implemented for API, CLI, and TUI inspection:
+Read surfaces are implemented behind explicit debug API, CLI, and TUI inspection affordances:
 
 ```text
-GET /v1/sessions/{session_id}/quality
-GET /v1/quality/reports
-GET /v1/quality/reports/sample
-pi-memory quality --session-id ... --db-url ... [--json]
-pi-memory quality-list --db-url ... [filters] [--json]
-pi-memory quality-sample --db-url ... [filters] [--json]
-pi-memory quality-tui --db-url ...
+GET /v1/debug/sessions/{session_id}/quality
+GET /v1/debug/quality/reports
+GET /v1/debug/quality/reports/sample
+pi-memory debug quality --session-id ... --db-url ... [--json]
+pi-memory debug quality-list --db-url ... [filters] [--json]
+pi-memory debug quality-sample --db-url ... [filters] [--json]
+pi-memory debug quality-tui --db-url ...
 ```
 
 The quality TUI consumes these persisted reports and interpretation failure metadata. It does not own quality logic, reinterpretation, repair, manual claim editing, approval workflow, or Phase 6 promotion writes.
@@ -587,23 +587,30 @@ Hygiene should be conservative. It should not silently delete memory. Prefer low
 
 ## Local HTTP API
 
-The API shape stays small and local-only. Current implemented endpoints are:
+The API shape stays small and local-only. `/health` is unauthenticated for bootstrap checks; every `/v1/*` endpoint requires the per-launch bearer token stored in the local server metadata file. Current stable endpoints are:
 
 ```text
 GET  /health
 GET  /v1/status
 POST /v1/observe
-GET  /v1/jobs/{job_id}
 POST /v1/recall/search              # raw transcript FTS recall
-GET  /v1/sessions/{session_id}/interpretation
-GET  /v1/sessions/{session_id}/quality
-GET  /v1/quality/reports
-GET  /v1/quality/reports/sample
-GET  /v1/durable-memory
-GET  /v1/durable-memory/{memory_id}
-GET  /v1/durable-memory/{memory_id}/audit
-GET  /v1/memory-projections
 ```
+
+Internal inspection endpoints live under an explicit debug prefix:
+
+```text
+GET  /v1/debug/jobs/{job_id}
+GET  /v1/debug/sessions/{session_id}/interpretation
+GET  /v1/debug/sessions/{session_id}/quality
+GET  /v1/debug/quality/reports
+GET  /v1/debug/quality/reports/sample
+GET  /v1/debug/durable-memory
+GET  /v1/debug/durable-memory/{memory_id}
+GET  /v1/debug/durable-memory/{memory_id}/audit
+GET  /v1/debug/memory-projections
+```
+
+The broad direct-DB debug CLI is temporary developer scaffolding. Longer term, debug inspection should move toward a service-backed TUI/debug experience that renders these read models without expanding the stable user CLI.
 
 Planned endpoint candidates remain separate from the implemented surface:
 
@@ -613,7 +620,7 @@ POST /v1/sessions/{session_id}/sync
 POST /v1/sessions/{session_id}/finalize
 ```
 
-Requests should be quick and idempotent. Long work returns job IDs.
+Requests should be quick and idempotent. Long work returns job IDs. Public status responses intentionally omit process ids and filesystem paths; process metadata remains local server-state only.
 
 Exact request and response schemas should live with the implementation and tests, not only in this architecture document.
 
@@ -647,6 +654,8 @@ jobs
 - created_at
 - updated_at
 ```
+
+The dispatcher may spawn hidden `pi-memory run-job` children, but run tokens and database URLs are passed through the child environment rather than process arguments.
 
 Implemented job kinds:
 
@@ -684,7 +693,7 @@ Canonical local storage should live under a new memory-owned directory:
   server.json
 ```
 
-This path is intentionally separate from the current observer store.
+This path is intentionally separate from deprecated observer stores.
 
 ### SQLite canonical tables
 
@@ -774,7 +783,7 @@ Deliverables:
 - Record the clean-cutover stance.
 - Record canonical-vs-derived storage rules.
 - Record the phased implementation sequence.
-- Decide whether implementation will use the existing `pi-observer` package path, a new `pi-memory` package, or a transition path.
+- Record `pi-memory` as the active package path and command surface.
 
 Validation:
 
@@ -798,11 +807,11 @@ Deliverables:
 - FastAPI app.
 - Fixed localhost port.
 - `GET /health` endpoint.
-- `GET /v1/status` endpoint.
+- Authenticated `GET /v1/status` endpoint with redacted service metadata.
 - Python CLI, such as `pi-memory serve` and `pi-memory status`.
-- Pi extension startup check.
+- Pi extension startup check against unauthenticated `/health`.
 - Pi service bootstrap if health check fails.
-- Server lock or pid metadata file.
+- Server lock and 0600 metadata file containing the local bearer token.
 - Graceful degraded behavior if the service cannot start.
 
 Validation:
@@ -810,7 +819,7 @@ Validation:
 - Service starts via CLI.
 - Pi can start service if it is not running.
 - Multiple Pi sessions do not spawn duplicate servers.
-- Health and status endpoints work.
+- Health works unauthenticated; status works with the local bearer token.
 - Startup failures are visible and non-fatal to the Pi session.
 
 Deferred:
@@ -861,7 +870,7 @@ Deliverables:
 - Internal worker/scheduler loop in the service process.
 - Job claim/lease semantics.
 - Startup recovery for stale running jobs.
-- `GET /v1/jobs/{job_id}` endpoint.
+- `GET /v1/debug/jobs/{job_id}` endpoint.
 - Job enqueue from `/v1/observe`.
 - Initial job kinds such as `ingest_session`, `catchup_stale_sessions`, and a test/no-op job.
 
@@ -889,7 +898,7 @@ Implemented in `pi-memory`:
 - Derived, rebuildable FTS content populated from deterministic extracted search text by `process_transcript` jobs.
 - `RecallSearchService` searches FTS and joins matches back to canonical transcript and session rows.
 - `POST /v1/recall/search` endpoint returning typed `raw_transcript` source-backed results.
-- Local CLI recall via `pi-memory recall --query --db-url [--json]` for isolated databases.
+- Debug CLI recall via `pi-memory debug recall --query --db-url [--json]` for isolated databases.
 - Recall results include session identity, transcript entry/source context, excerpt text, rank/score information, and basic match reason.
 - `branch_summary.summary` is indexed into raw FTS as source-backed deterministic text, without indexing `details` values.
 
@@ -992,7 +1001,7 @@ Implemented in `pi-memory`:
 - Job chain: `process_transcript` enqueues `summarize_tool_activities` after raw FTS indexing and deterministic structure persistence; `summarize_tool_activities` then enqueues `interpret_session`.
 - Stale interpretation and tool-summary job no-op behavior. Auto-enqueued jobs carry `process_job_id` because SQLite may reuse analysis ids after Phase 5A rebuilds.
 - Slim chronological prompt rendering: activity records carry `activity_text` plus direct `source_ref_ids` / `claim_source_ref_ids`; raw JSON transcript lines and heavyweight source-ref metadata stay out of the session interpretation prompt.
-- Read-only inspection via `GET /v1/sessions/{session_id}/interpretation` and `pi-memory interpretation --session-id --db-url [--json]`.
+- Read-only debug inspection via `GET /v1/debug/sessions/{session_id}/interpretation` and `pi-memory debug interpretation --session-id --db-url [--json]`.
 - Model-agnostic PydanticAI configuration via `pi-memory config`, `~/.pi/memory/config.json`, `PI_MEMORY_INTERPRETATION_MODEL`, `PI_MEMORY_TOOL_SUMMARY_MODEL`, and `PI_MEMORY_TOOL_SUMMARY_CONCURRENCY`.
 
 PydanticAI-backed interpretation requires `interpretation_model` to be configured with any PydanticAI-supported model string, such as `anthropic:claude-sonnet-4-6` or `openai:gpt-4o`. Tool summarization can use a separate lower-latency model such as `anthropic:claude-haiku-4-5`. When jobs run, `pi-memory` sends source-backed tool activity packets and chronological session activity-text packets to the configured PydanticAI provider. `pi-memory` does not store API keys; provider credentials stay in the environment variables expected by PydanticAI/provider packages, such as `ANTHROPIC_API_KEY` or `OPENAI_API_KEY`.
@@ -1043,7 +1052,7 @@ Implemented in `pi-memory`:
 - Bounded `QualityPacket` read model over interpretation JSON, citations, chronological activity text, and source refs; full raw transcript rows and provider secrets stay out of quality prompts.
 - PydanticAI-backed semantic quality assessor plus deterministic test/development assessor injection seam.
 - Final failure policy that writes a safe visible `assessment_failed` report after retries are exhausted.
-- Read-only reporting via `GET /v1/sessions/{session_id}/quality`, `GET /v1/quality/reports`, `GET /v1/quality/reports/sample`, `pi-memory quality`, `pi-memory quality-list`, `pi-memory quality-sample`, and `pi-memory quality-tui`.
+- Read-only debug reporting via `GET /v1/debug/sessions/{session_id}/quality`, `GET /v1/debug/quality/reports`, `GET /v1/debug/quality/reports/sample`, `pi-memory debug quality`, `pi-memory debug quality-list`, `pi-memory debug quality-sample`, and `pi-memory debug quality-tui`.
 
 Status taxonomy:
 
@@ -1099,15 +1108,15 @@ Implemented in `pi-memory`:
 - Durable job wiring:
   - `project_memory_records` for quality-report projection and all-record rebuild/upsert passes, with per-record failure metadata persisted for retry and inspection;
   - `promote_durable_memory` for report-level promotion through eligibility, evaluation, relation assessment, reducer persistence, and projection refresh.
-- Read-only inspection surfaces:
-  - `GET /v1/durable-memory`;
-  - `GET /v1/durable-memory/{memory_id}`;
-  - `GET /v1/durable-memory/{memory_id}/audit`;
-  - `GET /v1/memory-projections`;
-  - `pi-memory durable`;
-  - `pi-memory durable-list`;
-  - `pi-memory durable-audit`;
-  - `pi-memory projection-list`.
+- Read-only debug inspection surfaces:
+  - `GET /v1/debug/durable-memory`;
+  - `GET /v1/debug/durable-memory/{memory_id}`;
+  - `GET /v1/debug/durable-memory/{memory_id}/audit`;
+  - `GET /v1/debug/memory-projections`;
+  - `pi-memory debug durable`;
+  - `pi-memory debug durable-list`;
+  - `pi-memory debug durable-audit`;
+  - `pi-memory debug projection-list`.
 
 Core invariants:
 
@@ -1210,13 +1219,14 @@ Deferred:
 
 ### Phase 10: Clean cutover from old observer
 
-Purpose: replace the current observer behavior.
+Purpose: keep `pi-memory` as the only active memory subsystem.
 
 Deliverables:
 
-- Current Pi observer hooks route to the new service.
+- Deprecated observer hooks are removed from active package registration.
+- Old observer source is removed from the active repository tree.
 - Old recall path is replaced by service-backed recall.
-- Old CLI commands are removed, redirected, or documented as obsolete.
+- Old CLI commands are removed from active install/test/lint paths.
 - Old observer DB and Chroma paths are no longer used by the active memory system.
 - Install and package registration use the new service behavior.
 - Docs are updated.
@@ -1276,51 +1286,47 @@ Includes phases 9 and 10.
 Outcome:
 
 ```text
-The old observer is replaced by the service-backed memory system, with hygiene and recovery behavior in place.
+pi-memory is the only active memory subsystem, with hygiene and recovery behavior in place.
 ```
 
-## Critical decisions before implementation
+## Critical decisions
 
-Resolve these before or during Phase 1:
+Resolved and remaining decisions for the `pi-memory` roadmap:
 
 1. Package and command naming:
-   - keep `pi-observer`;
-   - rename to `pi-memory`;
-   - split during transition, then remove the old observer.
+   - resolved to `pi-memory` as the active package and command.
 
 2. Fixed localhost port and collision behavior.
 
-3. Whether the first implementation happens in the existing `pi-observer` package path or a new package path.
-
-4. First recall target:
+3. First recall target:
    - raw transcript FTS first;
    - session snapshots first;
    - wait for durable artifacts.
 
-5. Initial API schemas for observe, status, jobs, and recall.
+4. Initial API schemas for observe, status, jobs, and recall.
 
-6. Initial SQLite schema and migration policy for the new clean store.
+5. Initial SQLite schema and migration policy for the new clean store.
 
-7. Initial artifact taxonomy and status set.
+6. Initial artifact taxonomy and status set.
 
-8. Model/provider configuration for analysis jobs.
+7. Model/provider configuration for analysis jobs.
 
-9. Episode segmentation strategy:
+8. Episode segmentation strategy:
    - resolved for Phase 5A as transcript/session scope, compaction, one-hour timestamp gap, and EOF/current cursor;
    - raw byte size, raw tool output size, and entry count are not episode boundaries.
 
-10. Rolling analysis thresholds:
+9. Rolling analysis thresholds:
     - Phase 5A only uses deterministic lifecycle boundaries plus bounded manifest budgets;
     - Phase 5B currently enqueues `summarize_tool_activities` after each successful `process_transcript` rebuild, then enqueues `interpret_session` after tool activity text is filled;
     - future throttling triggers may include turns, transcript bytes, token estimates, lifecycle events, compaction, and stale-session catch-up.
 
-11. Finalization triggers:
+10. Finalization triggers:
     - compaction;
     - shutdown;
     - stale-session catch-up;
     - manual command.
 
-12. Recall response shape and Pi rendering behavior.
+11. Recall response shape and Pi rendering behavior.
 
 ## Validation expectations for the full system
 

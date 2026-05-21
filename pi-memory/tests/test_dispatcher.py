@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import subprocess
 import threading
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
@@ -134,10 +134,14 @@ def argv_value(argv: Sequence[str], option: str) -> str:
     return argv[argv.index(option) + 1]
 
 
+def env_value(env: Mapping[str, str], name: str) -> str:
+    return env[name]
+
+
 def test_run_once_returns_false_and_does_not_spawn_when_queue_empty(database: Database) -> None:
     spawned = False
 
-    def process_factory(_argv: Sequence[str]) -> FakeProcess:
+    def process_factory(_argv: Sequence[str], _env: Mapping[str, str]) -> FakeProcess:
         nonlocal spawned
         spawned = True
         return FakeProcess()
@@ -160,7 +164,7 @@ def test_stop_before_start_is_safe_and_run_once_returns_false_when_stopped(
     job = store.enqueue("test", due_at=at(10))
     spawned = False
 
-    def process_factory(_argv: Sequence[str]) -> FakeProcess:
+    def process_factory(_argv: Sequence[str], _env: Mapping[str, str]) -> FakeProcess:
         nonlocal spawned
         spawned = True
         return FakeProcess()
@@ -190,12 +194,14 @@ def test_run_once_claims_spawns_and_observes_child_completion(database: Database
         due_at=at(10),
     )
     captured_argv: list[str] = []
+    captured_env: dict[str, str] = {}
 
-    def process_factory(argv: Sequence[str]) -> FakeProcess:
+    def process_factory(argv: Sequence[str], env: Mapping[str, str]) -> FakeProcess:
         captured_argv.extend(argv)
+        captured_env.update(env)
         JobRunner(database=database).run(
             int(argv_value(argv, "--job-id")),
-            argv_value(argv, "--run-id"),
+            env_value(env, "PI_MEMORY_JOB_RUN_ID"),
             running_pid=123,
             now=at(10),
         )
@@ -212,7 +218,10 @@ def test_run_once_claims_spawns_and_observes_child_completion(database: Database
 
     assert captured_argv[:2] == ["pi-memory", "run-job"]
     assert argv_value(captured_argv, "--job-id") == str(job.id)
-    assert argv_value(captured_argv, "--db-url") == database.url
+    assert "--run-id" not in captured_argv
+    assert "--db-url" not in captured_argv
+    assert captured_env["PI_MEMORY_JOB_DB_URL"] == database.url
+    assert captured_env["PI_MEMORY_JOB_RUN_ID"]
     completed = get_job(database, job.id)
     assert completed.status == JOB_STATUS_COMPLETED
     assert completed.attempts == 1
@@ -257,7 +266,7 @@ def test_spawn_failure_releases_claim_to_future_due_at_without_incrementing_atte
 
     spawn_error = OSError("missing executable")
 
-    def process_factory(_argv: Sequence[str]) -> FakeProcess:
+    def process_factory(_argv: Sequence[str], _env: Mapping[str, str]) -> FakeProcess:
         raise spawn_error
 
     dispatcher = JobDispatcher(
@@ -284,7 +293,7 @@ def test_child_exits_before_start_releases_claim_to_future_due_at_without_increm
     job = store.enqueue("test", due_at=at(10))
     dispatcher = JobDispatcher(
         database=database,
-        process_factory=lambda _argv: FakeProcess(exit_code=2),
+        process_factory=lambda _argv, _env: FakeProcess(exit_code=2),
         poll_interval=0.01,
         clock=lambda: at(10),
     )
@@ -302,10 +311,10 @@ def test_child_exits_before_start_releases_claim_to_future_due_at_without_increm
 def test_child_starts_then_exits_nonzero_retries_running_job(database: Database, store: JobStore) -> None:
     job = store.enqueue("test", due_at=at(10), max_attempts=3)
 
-    def process_factory(argv: Sequence[str]) -> FakeProcess:
+    def process_factory(argv: Sequence[str], env: Mapping[str, str]) -> FakeProcess:
         store.start(
             int(argv_value(argv, "--job-id")),
-            argv_value(argv, "--run-id"),
+            env_value(env, "PI_MEMORY_JOB_RUN_ID"),
             running_pid=123,
             now=at(10),
         )
@@ -331,10 +340,10 @@ def test_child_starts_then_exits_nonzero_retries_running_job(database: Database,
 def test_exhausted_running_job_failure_marks_job_failed(database: Database, store: JobStore) -> None:
     job = store.enqueue("test", due_at=at(10), max_attempts=1)
 
-    def process_factory(argv: Sequence[str]) -> FakeProcess:
+    def process_factory(argv: Sequence[str], env: Mapping[str, str]) -> FakeProcess:
         store.start(
             int(argv_value(argv, "--job-id")),
-            argv_value(argv, "--run-id"),
+            env_value(env, "PI_MEMORY_JOB_RUN_ID"),
             running_pid=123,
             now=at(10),
         )
@@ -421,7 +430,7 @@ def test_claimed_job_missing_run_id_raises_invariant_error(database: Database, s
     dispatcher = JobDispatcher(
         database=database,
         store=MissingRunIdStore(database=database),
-        process_factory=lambda _argv: FakeProcess(exit_code=0),
+        process_factory=lambda _argv, _env: FakeProcess(exit_code=0),
         poll_interval=0.01,
         clock=lambda: at(10),
     )
@@ -435,7 +444,7 @@ def test_claim_release_race_records_running_failure(database: Database, store: J
     dispatcher = JobDispatcher(
         database=database,
         store=RacingReleaseStore(database=database),
-        process_factory=lambda _argv: FakeProcess(exit_code=9),
+        process_factory=lambda _argv, _env: FakeProcess(exit_code=9),
         poll_interval=0.01,
         clock=lambda: at(10),
     )
@@ -457,7 +466,7 @@ def test_start_recovers_stale_jobs_before_loop(database: Database, store: JobSto
 
     dispatcher = JobDispatcher(
         database=database,
-        process_factory=lambda _argv: FakeProcess(exit_code=0),
+        process_factory=lambda _argv, _env: FakeProcess(exit_code=0),
         poll_interval=0.01,
         clock=lambda: at(10, 0, 2),
     )
@@ -474,7 +483,7 @@ def test_loop_continues_after_transient_store_error(database: Database, caplog: 
     dispatcher = JobDispatcher(
         database=database,
         store=store,
-        process_factory=lambda _argv: FakeProcess(exit_code=0),
+        process_factory=lambda _argv, _env: FakeProcess(exit_code=0),
         poll_interval=0.01,
         clock=lambda: at(10),
     )
@@ -494,10 +503,10 @@ def test_start_stop_lifecycle_exits_and_terminates_active_child(database: Databa
     process = BlockingProcess()
     process_created = threading.Event()
 
-    def process_factory(argv: Sequence[str]) -> BlockingProcess:
+    def process_factory(argv: Sequence[str], env: Mapping[str, str]) -> BlockingProcess:
         store.start(
             int(argv_value(argv, "--job-id")),
-            argv_value(argv, "--run-id"),
+            env_value(env, "PI_MEMORY_JOB_RUN_ID"),
             running_pid=123,
             now=at(10),
         )
@@ -529,7 +538,7 @@ def test_run_once_ignores_future_jobs(database: Database, store: JobStore) -> No
     store.enqueue("future", due_at=at(10) + timedelta(minutes=5))
     spawned = False
 
-    def process_factory(_argv: Sequence[str]) -> FakeProcess:
+    def process_factory(_argv: Sequence[str], _env: Mapping[str, str]) -> FakeProcess:
         nonlocal spawned
         spawned = True
         return FakeProcess()

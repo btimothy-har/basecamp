@@ -6,6 +6,7 @@ import errno
 import importlib
 import ipaddress
 import json
+import os
 import socket
 import urllib.error
 import urllib.request
@@ -86,6 +87,13 @@ class ConflictingToolSummaryConcurrencyOptionsError(click.UsageError):
         super().__init__("--clear-tool-summary-concurrency cannot be used with --tool-summary-concurrency")
 
 
+class MissingRunJobEnvironmentError(click.UsageError):
+    """Raised when internal run-job configuration is missing."""
+
+    def __init__(self, env_name: str) -> None:
+        super().__init__(f"{env_name} is required")
+
+
 class PortBindError(click.ClickException):
     """Raised when the local service cannot bind its requested port."""
 
@@ -161,6 +169,11 @@ class StatusProbeError(Exception):
 @click.group()
 def main() -> None:
     """Pi memory service."""
+
+
+@main.group()
+def debug() -> None:
+    """Inspect internal memory service state."""
 
 
 @main.command()
@@ -328,7 +341,7 @@ def observe(
     _emit_observe_result(result, job_id=None if job is None else job.id, json_output=json_output)
 
 
-@main.command()
+@debug.command()
 @click.option(
     "--query",
     callback=lambda _ctx, _param, value: _require_non_empty(value),
@@ -381,7 +394,7 @@ def recall(
     _emit_recall_result(result, json_output=json_output)
 
 
-@main.command()
+@debug.command()
 @click.option(
     "--session-id",
     callback=lambda _ctx, _param, value: _require_non_empty(value),
@@ -412,7 +425,7 @@ def interpretation(session_id: str, db_url: str, *, json_output: bool) -> None:
         interpretation_database.close_if_open()
 
 
-@main.command()
+@debug.command()
 @click.option(
     "--session-id",
     callback=lambda _ctx, _param, value: _require_non_empty(value),
@@ -443,7 +456,7 @@ def quality(session_id: str, db_url: str, *, json_output: bool) -> None:
         quality_database.close_if_open()
 
 
-@main.command("quality-list")
+@debug.command("quality-list")
 @click.option(
     "--db-url",
     callback=lambda _ctx, _param, value: _require_non_empty(value),
@@ -496,7 +509,7 @@ def quality_list(
     _emit_quality_report_list(payload, json_output=json_output)
 
 
-@main.command()
+@debug.command()
 @click.option("--memory-id", required=True, type=int, help="Durable memory row id to inspect.")
 @click.option(
     "--db-url",
@@ -521,7 +534,7 @@ def durable(memory_id: int, db_url: str, *, include_audit: bool, json_output: bo
         durable_database.close_if_open()
 
 
-@main.command("durable-list")
+@debug.command("durable-list")
 @click.option(
     "--db-url",
     callback=lambda _ctx, _param, value: _require_non_empty(value),
@@ -568,7 +581,7 @@ def durable_list(
     _emit_durable_memory_list(payload, json_output=json_output)
 
 
-@main.command("durable-audit")
+@debug.command("durable-audit")
 @click.option("--memory-id", required=True, type=int, help="Durable memory row id to inspect.")
 @click.option(
     "--db-url",
@@ -598,7 +611,7 @@ def durable_audit(memory_id: int, db_url: str, limit: int, offset: int, *, json_
     _emit_durable_memory_audit(payload, json_output=json_output)
 
 
-@main.command("projection-list")
+@debug.command("projection-list")
 @click.option(
     "--db-url",
     callback=lambda _ctx, _param, value: _require_non_empty(value),
@@ -648,7 +661,7 @@ def projection_list(
     _emit_memory_projection_list(payload, json_output=json_output)
 
 
-@main.command("quality-sample")
+@debug.command("quality-sample")
 @click.option(
     "--db-url",
     callback=lambda _ctx, _param, value: _require_non_empty(value),
@@ -694,7 +707,7 @@ def quality_sample(
     _emit_quality_report_list(payload, json_output=json_output)
 
 
-@main.command("quality-tui")
+@debug.command("quality-tui")
 @click.option(
     "--db-url",
     callback=lambda _ctx, _param, value: MEMORY_DB_URL if value is None else _require_non_empty(value),
@@ -710,25 +723,25 @@ def quality_tui(db_url: str) -> None:
     run_quality_tui(db_url)
 
 
-@main.command("run-job")
+@main.command("run-job", hidden=True)
 @click.option("--job-id", required=True, type=int, help="Claimed job id to run.")
 @click.option(
     "--run-id",
-    callback=lambda _ctx, _param, value: _require_non_empty(value),
-    required=True,
-    help="Run token for the claimed job.",
+    callback=lambda _ctx, _param, value: None if value is None else _require_non_empty(value),
+    help="Run token for the claimed job. Defaults to PI_MEMORY_JOB_RUN_ID.",
 )
 @click.option(
     "--db-url",
-    callback=lambda _ctx, _param, value: _require_non_empty(value),
-    required=True,
-    help="Database URL containing the claimed job.",
+    callback=lambda _ctx, _param, value: None if value is None else _require_non_empty(value),
+    help="Database URL containing the claimed job. Defaults to PI_MEMORY_JOB_DB_URL.",
 )
-def run_job(job_id: int, run_id: str, db_url: str) -> None:
+def run_job(job_id: int, run_id: str | None, db_url: str | None) -> None:
     """Run a single claimed background job."""
-    job_database = Database(db_url)
+    resolved_run_id = _run_job_value(run_id, "PI_MEMORY_JOB_RUN_ID")
+    resolved_db_url = _run_job_value(db_url, "PI_MEMORY_JOB_DB_URL")
+    job_database = Database(resolved_db_url)
     try:
-        job = JobRunner(database=job_database).run(job_id, run_id)
+        job = JobRunner(database=job_database).run(job_id, resolved_run_id)
     except (JobRunnerError, JobStoreError) as error:
         raise click.ClickException(str(error)) from error
     finally:
@@ -737,7 +750,7 @@ def run_job(job_id: int, run_id: str, db_url: str) -> None:
     click.echo(f"Job {job.id} completed")
 
 
-@main.command("job")
+@debug.command("job")
 @click.option("--job-id", required=True, type=int, help="Job id to inspect.")
 @click.option(
     "--db-url",
@@ -791,6 +804,7 @@ def serve(host: str, port: int) -> None:
                 memory_dir=state.memory_dir,
                 started_at=metadata.started_at_datetime,
                 dispatcher=JobDispatcher(),
+                auth_token=metadata.auth_token,
             )
             uvicorn.run(app, host=host, port=port)
     except ServerAlreadyRunningError as error:
@@ -884,6 +898,13 @@ def _optional_non_empty(value: str | None) -> str | None:
     return None if value is None else _require_non_empty(value)
 
 
+def _run_job_value(option_value: str | None, env_name: str) -> str:
+    value = option_value if option_value is not None else os.environ.get(env_name)
+    if value is None:
+        raise MissingRunJobEnvironmentError(env_name)
+    return _require_non_empty(value)
+
+
 def _is_loopback_host(host: str) -> bool:
     try:
         return ipaddress.ip_address(host).is_loopback
@@ -918,7 +939,11 @@ def _http_host(host: str) -> str:
 
 
 def _fetch_status(*, url: str, timeout: float) -> dict[str, Any]:
-    request = urllib.request.Request(url, headers={"Accept": "application/json"})
+    headers = {"Accept": "application/json"}
+    auth_header = _status_auth_header()
+    if auth_header is not None:
+        headers["Authorization"] = auth_header
+    request = urllib.request.Request(url, headers=headers)
 
     try:
         with urllib.request.urlopen(request, timeout=timeout) as response:
@@ -942,6 +967,16 @@ def _fetch_status(*, url: str, timeout: float) -> dict[str, Any]:
     return data
 
 
+def _status_auth_header() -> str | None:
+    metadata = ServerState().read_metadata()
+    if metadata is None:
+        return None
+    auth_token = metadata.get("auth_token")
+    if not isinstance(auth_token, str) or not auth_token:
+        return None
+    return f"Bearer {auth_token}"
+
+
 def _url_error_reason(error: urllib.error.URLError) -> str:
     reason = error.reason
     if isinstance(reason, TimeoutError):
@@ -956,9 +991,9 @@ def _emit_healthy(*, url: str, service_status: dict[str, Any], json_output: bool
 
     click.echo(f"{SERVICE_NAME} is healthy at {url}")
     _echo_status_field("version", service_status)
-    _echo_status_field("pid", service_status)
     _echo_status_field("uptime_seconds", service_status)
-    _echo_status_field("memory_dir", service_status)
+    _echo_status_field("host", service_status)
+    _echo_status_field("port", service_status)
 
 
 def _emit_observe_result(result: IngestResult, *, job_id: int | None, json_output: bool) -> None:
