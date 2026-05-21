@@ -5,6 +5,7 @@ from dataclasses import replace
 from types import SimpleNamespace
 from typing import Any
 
+import pi_memory.infra.llm.pydantic_ai as llm_module
 import pytest
 from pi_memory.db import SOURCE_ORIGIN_INHERITED, SOURCE_ORIGIN_LOCAL, SOURCE_ORIGIN_MIXED
 from pi_memory.interpretation import (
@@ -26,6 +27,7 @@ from pi_memory.interpretation import (
     InterpretationReadiness,
     InterpretationResult,
     InterpreterUnavailableError,
+    PydanticAIDependencyError,
     PydanticAIInterpreterError,
     PydanticAISessionInterpreter,
     PydanticAIToolActivitySummarizer,
@@ -486,6 +488,13 @@ async def test_pydantic_ai_tool_summarizer_async_returns_one_summary() -> None:
     result = await summarizer.summarize_async(summary_input)
 
     assert result.output is output
+    assert result.prompt_version == TOOL_ACTIVITY_SUMMARY_PROMPT_VERSION
+    assert result.model_metadata == {
+        "provider": "test-provider",
+        "model": "test-provider:test-model",
+        "mode": PYDANTIC_AI_INTERPRETER_MODE,
+        "schema_version": TOOL_ACTIVITY_SUMMARY_SCHEMA_VERSION,
+    }
     assert len(agent.prompts) == 1
 
 
@@ -613,6 +622,20 @@ def test_pydantic_ai_interpreter_no_claim_sources_guard_runs_before_model_call()
         interpreter.interpret(source_packet)
 
     assert agent.prompts == []
+
+
+def test_pydantic_ai_interpreter_requires_dependency_without_factory(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(llm_module, "PydanticAIAgent", None)
+
+    with pytest.raises(PydanticAIDependencyError):
+        PydanticAISessionInterpreter("anthropic:claude-haiku-4-5")
+
+
+def test_pydantic_ai_tool_summarizer_requires_dependency_without_factory(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(llm_module, "PydanticAIAgent", None)
+
+    with pytest.raises(PydanticAIDependencyError):
+        PydanticAIToolActivitySummarizer("anthropic:claude-haiku-4-5")
 
 
 def test_pydantic_ai_interpreter_wraps_provider_failures_without_leaking_details() -> None:
