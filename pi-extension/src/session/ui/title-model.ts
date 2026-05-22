@@ -4,7 +4,7 @@ import { resolveModelAlias } from "../../platform/model-aliases.ts";
 import { resolveModelFromString } from "../../platform/model-resolution.ts";
 
 export function resolveTitleModel(): string | undefined {
-	return resolveModelAlias("fast");
+	return resolveModelAlias("title");
 }
 
 export function resolveTitleModelForContext(
