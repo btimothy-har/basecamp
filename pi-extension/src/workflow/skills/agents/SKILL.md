@@ -13,6 +13,7 @@ Split work into bounded dispatches instead of defaulting to direct implementatio
 
 Use agents by task shape:
 - **scout** for investigation, dependency tracing, broad code search, and context gathering.
+- **devils-advocate** for contrarian second opinions on briefs, assumptions, conclusions, trade-offs, and proposed directions.
 - **worker** for contained implementation with clear scope and acceptance criteria.
 - **specialists** for focused review: clarity, docs, security, testing, SQL, or data concerns when available.
 - **ad-hoc** only for a narrow read-only question that no named agent fits.
