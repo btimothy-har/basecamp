@@ -55,6 +55,8 @@ class JobRunner:
                 retry=False,
                 now=now,
             )
+            if error.__cause__ is not None:
+                raise error.__cause__ from None
             raise
         except Exception as error:
             self._store.fail(

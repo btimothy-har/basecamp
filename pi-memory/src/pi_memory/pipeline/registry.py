@@ -4,8 +4,11 @@ from __future__ import annotations
 
 from pi_memory.infra.job_runner import BaseJob, JobRegistry
 from pi_memory.pipeline.services import PipelineServices
+from pi_memory.pipeline.stages.assess_interpretation_quality import AssessInterpretationQualityJob
 from pi_memory.pipeline.stages.interpret_session import InterpretSessionJob
 from pi_memory.pipeline.stages.process_transcript import ProcessTranscriptJob
+from pi_memory.pipeline.stages.project_memory_records import ProjectMemoryRecordsJob
+from pi_memory.pipeline.stages.promote_durable_memory import PromoteDurableMemoryJob
 from pi_memory.pipeline.stages.summarize_tool_activities import SummarizeToolActivitiesJob
 
 
@@ -20,4 +23,7 @@ def _stage_jobs(services: PipelineServices) -> tuple[BaseJob, ...]:
         ProcessTranscriptJob(),
         SummarizeToolActivitiesJob(services),
         InterpretSessionJob(services),
+        AssessInterpretationQualityJob(services),
+        ProjectMemoryRecordsJob(services),
+        PromoteDurableMemoryJob(services),
     )

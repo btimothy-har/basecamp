@@ -60,11 +60,24 @@ class TransientFailureError(RuntimeError):
         super().__init__("temporary outage")
 
 
+class WrappedPermanentFailureError(RuntimeError):
+    def __init__(self) -> None:
+        super().__init__("wrapped permanent outage")
+
+
 class PermanentFailureJob(BaseJob):
     kind = "permanent-failure"
 
     def run(self, _context: JobExecutionContext, _job: Job) -> dict[str, object]:
         raise InvalidPayloadError()
+
+
+class WrappedPermanentFailureJob(BaseJob):
+    kind = "wrapped-permanent-failure"
+
+    def run(self, _context: JobExecutionContext, _job: Job) -> dict[str, object]:
+        cause = WrappedPermanentFailureError()
+        raise PermanentJobError(type(cause).__name__) from cause
 
 
 class TransientFailureJob(BaseJob):
@@ -147,6 +160,21 @@ def test_permanent_job_error_fails_terminal(database: Database, store: JobStore)
     assert failed.status == JOB_STATUS_FAILED
     assert failed.attempts == 1
     assert failed.last_error == "invalid payload"
+    assert failed.exit_code == 1
+
+
+def test_permanent_job_error_can_preserve_wrapped_exception(database: Database, store: JobStore) -> None:
+    failing_job = WrappedPermanentFailureJob()
+    claimed = claim_job(store, kind=failing_job.kind, now=at(10))
+    runner = JobRunner(database=database, store=store, registry=JobRegistry([failing_job]))
+
+    with pytest.raises(WrappedPermanentFailureError):
+        runner.run(claimed.id, claimed.run_id, running_pid=123, now=at(10, 0, 1))
+
+    failed = get_job(database, claimed.id)
+    assert failed.status == JOB_STATUS_FAILED
+    assert failed.attempts == 1
+    assert failed.last_error == "WrappedPermanentFailureError"
     assert failed.exit_code == 1
 
 
