@@ -22,14 +22,13 @@ from pi_memory.interpretation import (
     validate_episode_interpretation_output,
 )
 from pi_memory.interpretation.packets import InterpretationPacket
-from pi_memory.pipeline import payloads
-from pi_memory.pipeline.errors import (
+from pi_memory.pipeline.runtime.adapters import PipelineAdapters
+from pi_memory.pipeline.runtime.errors import (
     PermanentInterpretationValidationError,
     PermanentInterpreterUnavailableError,
     TranscriptNotFoundError,
 )
-from pi_memory.pipeline.freshness import is_stale_process_job
-from pi_memory.pipeline.interpretation_snapshots import (
+from pi_memory.pipeline.stages.interpret_session.snapshots import (
     EpisodeInterpretationOutcome,
     aggregate_episode_interpretations,
     all_episode_interpretations_failed_error,
@@ -44,7 +43,8 @@ from pi_memory.pipeline.interpretation_snapshots import (
     snapshot_result_json,
     stale_result_json,
 )
-from pi_memory.pipeline.services import PipelineServices
+from pi_memory.pipeline.utils import payloads
+from pi_memory.pipeline.utils.freshness import is_stale_process_job
 
 
 class InterpretSessionJob:
@@ -52,8 +52,8 @@ class InterpretSessionJob:
 
     kind = JOB_KIND_INTERPRET_SESSION
 
-    def __init__(self, services: PipelineServices) -> None:
-        self._services = services
+    def __init__(self, adapters: PipelineAdapters) -> None:
+        self._adapters = adapters
 
     def run(self, context: JobExecutionContext, job: Job) -> dict[str, Any]:
         try:
@@ -168,7 +168,7 @@ class InterpretSessionJob:
         return result_json
 
     def _interpret_episode_outcomes(self, packet: InterpretationPacket) -> tuple[EpisodeInterpretationOutcome, ...]:
-        interpreter = self._services.session_interpreter()
+        interpreter = self._adapters.session_interpreter()
         outcomes: list[EpisodeInterpretationOutcome] = []
         for episode in packet.episode_packets:
             episode_packet = build_episode_interpretation_packet(packet, episode)

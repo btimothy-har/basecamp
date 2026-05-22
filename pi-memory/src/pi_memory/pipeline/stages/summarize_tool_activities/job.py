@@ -7,16 +7,16 @@ from typing import Any
 from pi_memory.db import JOB_KIND_SUMMARIZE_TOOL_ACTIVITIES, Job
 from pi_memory.infra.job_queue import enqueue_interpret_session_job_for_analysis
 from pi_memory.infra.job_runner import JobExecutionContext
-from pi_memory.pipeline import payloads
-from pi_memory.pipeline.freshness import is_stale_analysis_run, is_stale_process_job
-from pi_memory.pipeline.services import PipelineServices
-from pi_memory.pipeline.tool_activity import (
+from pi_memory.pipeline.runtime.adapters import PipelineAdapters
+from pi_memory.pipeline.stages.summarize_tool_activities.summaries import (
     apply_tool_summary_outcomes,
     summarize_tool_activity_work,
     tool_activity_summary_context,
     tool_summary_result_json,
     tool_summary_stale_result_json,
 )
+from pi_memory.pipeline.utils import payloads
+from pi_memory.pipeline.utils.freshness import is_stale_analysis_run, is_stale_process_job
 
 
 class SummarizeToolActivitiesJob:
@@ -24,8 +24,8 @@ class SummarizeToolActivitiesJob:
 
     kind = JOB_KIND_SUMMARIZE_TOOL_ACTIVITIES
 
-    def __init__(self, services: PipelineServices) -> None:
-        self._services = services
+    def __init__(self, adapters: PipelineAdapters) -> None:
+        self._adapters = adapters
 
     def run(self, context: JobExecutionContext, job: Job) -> dict[str, Any]:
         transcript_id, analysis_run_id, process_job_id = payloads.summarize_tool_activities(job.payload_json)
@@ -46,7 +46,7 @@ class SummarizeToolActivitiesJob:
 
         outcomes = (
             summarize_tool_activity_work(
-                self._services.tool_activity_summarizer(),
+                self._adapters.tool_activity_summarizer(),
                 summary_context.work_items,
             )
             if summary_context.work_items

@@ -31,7 +31,7 @@ from pi_memory.interpretation import (
     validate_interpretation_output,
 )
 from pi_memory.interpretation.packets import EpisodePacket, InterpretationPacket, InterpretationReadiness
-from pi_memory.pipeline.model_metadata import safe_model_metadata
+from pi_memory.pipeline.utils.metadata import safe_model_metadata
 
 
 @dataclass(frozen=True)

@@ -15,14 +15,14 @@ from pi_memory.db import (
 )
 from pi_memory.durable import DurableMemoryProjectionError
 from pi_memory.infra.job_runner import JobExecutionContext
-from pi_memory.pipeline import payloads
-from pi_memory.pipeline.errors import MemoryProjectionJobError
-from pi_memory.pipeline.projection_records import (
+from pi_memory.pipeline.runtime.adapters import PipelineAdapters
+from pi_memory.pipeline.runtime.errors import MemoryProjectionJobError
+from pi_memory.pipeline.stages.project_memory_records.records import (
     deleted_projection_record_count,
     indexed_projection_record_count,
     project_durable_memory_record_outcome,
 )
-from pi_memory.pipeline.services import PipelineServices
+from pi_memory.pipeline.utils import payloads
 from pi_memory.projection import project_session_claims
 
 
@@ -31,8 +31,8 @@ class ProjectMemoryRecordsJob:
 
     kind = JOB_KIND_PROJECT_MEMORY_RECORDS
 
-    def __init__(self, services: PipelineServices) -> None:
-        self._services = services
+    def __init__(self, adapters: PipelineAdapters) -> None:
+        self._adapters = adapters
 
     def run(self, context: JobExecutionContext, job: Job) -> dict[str, Any]:
         scope = payloads.memory_projection_scope(job.payload_json)
@@ -44,7 +44,7 @@ class ProjectMemoryRecordsJob:
     def _project_quality_report_memory_records(self, context: JobExecutionContext, job: Job) -> dict[str, Any]:
         quality_report_id = payloads.quality_report_id(job.payload_json)
         with context.database.session() as session:
-            result = project_session_claims(session, quality_report_id, self._services.memory_projection())
+            result = project_session_claims(session, quality_report_id, self._adapters.memory_projection())
             result_json = {
                 "status": "completed",
                 "scope": "quality_report",
@@ -65,7 +65,7 @@ class ProjectMemoryRecordsJob:
         durable_error: DurableMemoryProjectionError | None = None
         durable_failed_count = 0
         with context.database.session() as session:
-            projection = self._services.memory_projection()
+            projection = self._adapters.memory_projection()
             reports = list(
                 session.scalars(
                     select(SessionInterpretationQualityReport).order_by(SessionInterpretationQualityReport.id),

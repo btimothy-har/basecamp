@@ -2,14 +2,13 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping
 from typing import Any
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from pi_memory.db import Job, SessionInterpretationQualityReport, SessionInterpretationSnapshot
-from pi_memory.pipeline.model_metadata import safe_model_metadata
+from pi_memory.pipeline.utils.metadata import safe_model_metadata
 from pi_memory.quality import QualityReportDraft
 
 
@@ -51,13 +50,6 @@ def replace_quality_report(
     session.flush()
     session.refresh(report)
     return report
-
-
-def quality_report_claim_count(report: SessionInterpretationQualityReport) -> int:
-    claims = report.snapshot.interpretation_json.get("claims")
-    if not isinstance(claims, list):
-        return 0
-    return sum(1 for claim in claims if isinstance(claim, Mapping))
 
 
 def quality_report_result_json(

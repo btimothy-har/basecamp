@@ -1,4 +1,4 @@
-"""Pipeline dependency providers."""
+"""Pipeline adapter providers."""
 
 from __future__ import annotations
 
@@ -21,7 +21,7 @@ from pi_memory.quality import QualityAssessor, create_quality_assessor
 
 
 @dataclass
-class PipelineServices:
+class PipelineAdapters:
     """Lazy providers for executable memory pipeline stages."""
 
     interpreter: SessionInterpreter | None = None

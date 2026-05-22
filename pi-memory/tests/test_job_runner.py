@@ -93,7 +93,7 @@ from pi_memory.interpretation.packets import InterpretationPacket
 from pi_memory.pipeline import (
     InvalidJobPayloadError,
     MemoryProjectionJobError,
-    PipelineServices,
+    PipelineAdapters,
     TranscriptNotFoundError,
     create_job_registry,
 )
@@ -128,14 +128,14 @@ class JobRunner(InfraJobRunner):
         memory_projection: MemoryProjection | None = None,
         candidate_evaluator: CandidateEvaluator | None = None,
     ) -> None:
-        services = PipelineServices(
+        adapters = PipelineAdapters(
             interpreter=interpreter,
             tool_summarizer=tool_summarizer,
             quality_assessor=quality_assessor,
             memory_projection_adapter=memory_projection,
             candidate_evaluator_adapter=candidate_evaluator,
         )
-        super().__init__(database=database, registry=create_job_registry(services))
+        super().__init__(database=database, registry=create_job_registry(adapters))
 
 
 def sqlite_url(path: Path) -> str:
@@ -1038,7 +1038,7 @@ def test_summarize_tool_activities_handles_zero_tool_pairs_without_model(
     def fail_factory() -> None:
         pytest.fail("summarizer factory should not be called when there are no tool pairs")
 
-    monkeypatch.setattr("pi_memory.pipeline.services.create_tool_activity_summarizer", fail_factory)
+    monkeypatch.setattr("pi_memory.pipeline.runtime.adapters.create_tool_activity_summarizer", fail_factory)
     completed = JobRunner(database=database).run(claimed.id, claimed.run_id, running_pid=123, now=at(10))
 
     assert completed.result_json is not None
@@ -1193,8 +1193,8 @@ def test_process_transcript_without_interpretation_model_still_succeeds_lazily(
     def fail_factory() -> None:
         pytest.fail("model factories should not be called for process_transcript")
 
-    monkeypatch.setattr("pi_memory.pipeline.services.create_session_interpreter", fail_factory)
-    monkeypatch.setattr("pi_memory.pipeline.services.create_tool_activity_summarizer", fail_factory)
+    monkeypatch.setattr("pi_memory.pipeline.runtime.adapters.create_session_interpreter", fail_factory)
+    monkeypatch.setattr("pi_memory.pipeline.runtime.adapters.create_tool_activity_summarizer", fail_factory)
     transcript_id = create_transcript(database)
     claimed = claim_process_transcript_job(store, transcript_id)
 
@@ -2525,7 +2525,7 @@ def test_interpret_session_explicit_interpreter_bypasses_configured_factory(
     def fail_factory() -> None:
         pytest.fail("explicit interpreter should bypass configured factory")
 
-    monkeypatch.setattr("pi_memory.pipeline.services.create_session_interpreter", fail_factory)
+    monkeypatch.setattr("pi_memory.pipeline.runtime.adapters.create_session_interpreter", fail_factory)
     interpreter = RecordingInterpreter()
     claimed = claim_interpret_session_job(store, transcript_id)
 

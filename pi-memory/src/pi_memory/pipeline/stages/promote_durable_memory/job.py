@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from typing import Any
 
 from sqlalchemy.orm import Session
@@ -24,16 +25,15 @@ from pi_memory.durable import (
     project_durable_memory_record,
 )
 from pi_memory.infra.job_runner import JobExecutionContext
-from pi_memory.pipeline import payloads
-from pi_memory.pipeline.durable_memory import (
+from pi_memory.pipeline.runtime.adapters import PipelineAdapters
+from pi_memory.pipeline.stages.promote_durable_memory.persistence import (
     add_durable_memory_audit_event,
     add_relation_assessed_audit_event,
     project_archived_related_memory,
     replace_durable_memory_sources,
     upsert_durable_memory_candidate,
 )
-from pi_memory.pipeline.quality_reports import quality_report_claim_count
-from pi_memory.pipeline.services import PipelineServices
+from pi_memory.pipeline.utils import payloads
 
 
 class PromoteDurableMemoryJob:
@@ -41,8 +41,8 @@ class PromoteDurableMemoryJob:
 
     kind = JOB_KIND_PROMOTE_DURABLE_MEMORY
 
-    def __init__(self, services: PipelineServices) -> None:
-        self._services = services
+    def __init__(self, adapters: PipelineAdapters) -> None:
+        self._adapters = adapters
 
     def run(self, context: JobExecutionContext, job: Job) -> dict[str, Any]:
         quality_report_id = payloads.quality_report_id(job.payload_json)
@@ -69,7 +69,7 @@ class PromoteDurableMemoryJob:
                     "final_status_counts": counts,
                     "reason": "report_not_found",
                 }
-            claim_count = quality_report_claim_count(report)
+            claim_count = _quality_report_claim_count(report)
             for claim_index in range(claim_count):
                 try:
                     outcome = self._promote_quality_report_claim(session, job, quality_report_id, claim_index)
@@ -124,23 +124,23 @@ class PromoteDurableMemoryJob:
             details={"is_eligible": packet.eligibility.is_eligible, "block_reason": packet.eligibility.block_reason},
         )
         if not packet.eligibility.is_eligible:
-            decision = self._services.durable_reducer.decide(ReducerContext(memory, packet.eligibility, None, None))
+            decision = self._adapters.durable_reducer.decide(ReducerContext(memory, packet.eligibility, None, None))
             persist_reducer_decision(session, memory, decision)
-            project_durable_memory_record(session, memory, self._services.memory_projection())
+            project_durable_memory_record(session, memory, self._adapters.memory_projection())
             return memory.status
 
-        evaluation_result = self._services.candidate_evaluator().evaluate(packet)
-        preliminary_decision = self._services.durable_reducer.decide(
+        evaluation_result = self._adapters.candidate_evaluator().evaluate(packet)
+        preliminary_decision = self._adapters.durable_reducer.decide(
             ReducerContext(memory, packet.eligibility, evaluation_result.output, None),
         )
         if preliminary_decision.reason_code != "metrics_all_healthy":
             persist_reducer_decision(session, memory, preliminary_decision, evaluation_result=evaluation_result)
-            project_durable_memory_record(session, memory, self._services.memory_projection())
+            project_durable_memory_record(session, memory, self._adapters.memory_projection())
             return memory.status
 
-        relation_result = assess_durable_memory_relations(session, memory.id, self._services.memory_projection())
+        relation_result = assess_durable_memory_relations(session, memory.id, self._adapters.memory_projection())
         add_relation_assessed_audit_event(session, memory, relation_result)
-        final_decision = self._services.durable_reducer.decide(
+        final_decision = self._adapters.durable_reducer.decide(
             ReducerContext(memory, packet.eligibility, evaluation_result.output, relation_result),
         )
         persist_reducer_decision(
@@ -150,6 +150,13 @@ class PromoteDurableMemoryJob:
             evaluation_result=evaluation_result,
             relation_result=relation_result,
         )
-        project_durable_memory_record(session, memory, self._services.memory_projection())
-        project_archived_related_memory(session, memory, relation_result, self._services.memory_projection())
+        project_durable_memory_record(session, memory, self._adapters.memory_projection())
+        project_archived_related_memory(session, memory, relation_result, self._adapters.memory_projection())
         return memory.status
+
+
+def _quality_report_claim_count(report: SessionInterpretationQualityReport) -> int:
+    claims = report.snapshot.interpretation_json.get("claims")
+    if not isinstance(claims, list):
+        return 0
+    return sum(1 for claim in claims if isinstance(claim, Mapping))

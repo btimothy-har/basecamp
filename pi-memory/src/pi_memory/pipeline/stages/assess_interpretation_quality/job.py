@@ -16,10 +16,13 @@ from pi_memory.db import (
 )
 from pi_memory.infra.job_queue import enqueue_project_memory_records_job, enqueue_promote_durable_memory_job
 from pi_memory.infra.job_runner import JobExecutionContext, PermanentJobError
-from pi_memory.pipeline import payloads
-from pi_memory.pipeline.errors import InvalidJobPayloadError
-from pi_memory.pipeline.quality_reports import quality_report_result_json, replace_quality_report
-from pi_memory.pipeline.services import PipelineServices
+from pi_memory.pipeline.runtime.adapters import PipelineAdapters
+from pi_memory.pipeline.runtime.errors import InvalidJobPayloadError
+from pi_memory.pipeline.stages.assess_interpretation_quality.reports import (
+    quality_report_result_json,
+    replace_quality_report,
+)
+from pi_memory.pipeline.utils import payloads
 from pi_memory.quality import (
     QualityReportDraft,
     assess_deterministic_interpretation_quality,
@@ -32,8 +35,8 @@ class AssessInterpretationQualityJob:
 
     kind = JOB_KIND_ASSESS_INTERPRETATION_QUALITY
 
-    def __init__(self, services: PipelineServices) -> None:
-        self._services = services
+    def __init__(self, adapters: PipelineAdapters) -> None:
+        self._adapters = adapters
 
     def run(self, context: JobExecutionContext, job: Job) -> dict[str, Any]:
         try:
@@ -64,7 +67,7 @@ class AssessInterpretationQualityJob:
                 and draft.quality_reason == SESSION_INTERPRETATION_QUALITY_REASON_SEMANTIC_ASSESSMENT_PENDING
             ):
                 packet = build_quality_packet(session, snapshot, deterministic_report=draft)
-                draft = self._services.interpretation_quality_assessor().assess(packet)
+                draft = self._adapters.interpretation_quality_assessor().assess(packet)
             report = replace_quality_report(session=session, job=job, snapshot=snapshot, draft=draft)
             result_json = quality_report_result_json(snapshot, report)
 

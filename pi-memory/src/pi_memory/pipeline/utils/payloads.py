@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from pi_memory.pipeline.errors import InvalidJobPayloadError
+from pi_memory.pipeline.runtime.errors import InvalidJobPayloadError
 
 EXPECTED_OBJECT_PAYLOAD_ERROR = "expected object payload"
 TRANSCRIPT_ID_INTEGER_ERROR = "transcript_id must be an integer"
