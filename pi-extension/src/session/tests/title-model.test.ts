@@ -21,23 +21,23 @@ function contextWithModels(models: Model<Api>[], currentModel = model("current",
 }
 
 describe("resolveTitleModel", () => {
-	it("uses the configured fast alias", (t) => {
+	it("uses the configured title alias", (t) => {
 		clearModelAliasProvidersForTesting();
 		t.after(() => clearModelAliasProvidersForTesting());
 		registerModelAliasProvider({
 			id: "test",
 			resolve(alias) {
-				return alias === "fast" ? "anthropic/claude-3-5-haiku-latest" : undefined;
+				return alias === "title" ? "anthropic/claude-3-5-haiku-latest" : undefined;
 			},
 			list() {
-				return [{ alias: "fast", model: "anthropic/claude-3-5-haiku-latest", providerId: "test" }];
+				return [{ alias: "title", model: "anthropic/claude-3-5-haiku-latest", providerId: "test" }];
 			},
 		});
 
 		assert.equal(resolveTitleModel(), "anthropic/claude-3-5-haiku-latest");
 	});
 
-	it("returns undefined when fast is not configured", (t) => {
+	it("returns undefined when title is not configured", (t) => {
 		clearModelAliasProvidersForTesting();
 		t.after(() => clearModelAliasProvidersForTesting());
 
@@ -47,28 +47,28 @@ describe("resolveTitleModel", () => {
 
 describe("resolveTitleModelForContext", () => {
 	it("uses modelRegistry.find for canonical provider/modelId and returns the found model", () => {
-		const fast = model("anthropic", "claude-3-5-haiku-latest");
+		const titleModel = model("anthropic", "claude-3-5-haiku-latest");
 		let findArgs: [string, string] | null = null;
 		const ctx = {
 			model: model("current", "current-model"),
 			modelRegistry: {
 				find: (provider: string, id: string) => {
 					findArgs = [provider, id];
-					return fast;
+					return titleModel;
 				},
-				getAll: () => [fast],
+				getAll: () => [titleModel],
 			},
 		} as unknown as ExtensionContext;
 
-		assert.equal(resolveTitleModelForContext(ctx, "anthropic/claude-3-5-haiku-latest"), fast);
+		assert.equal(resolveTitleModelForContext(ctx, "anthropic/claude-3-5-haiku-latest"), titleModel);
 		assert.deepEqual(findArgs, ["anthropic", "claude-3-5-haiku-latest"]);
 	});
 
 	it("returns the unique exact bare model id from getAll", () => {
-		const fast = model("anthropic", "claude-3-5-haiku-latest");
-		const ctx = contextWithModels([model("openai", "gpt-4o-mini"), fast]);
+		const titleModel = model("anthropic", "claude-3-5-haiku-latest");
+		const ctx = contextWithModels([model("openai", "gpt-4o-mini"), titleModel]);
 
-		assert.equal(resolveTitleModelForContext(ctx, "claude-3-5-haiku-latest"), fast);
+		assert.equal(resolveTitleModelForContext(ctx, "claude-3-5-haiku-latest"), titleModel);
 	});
 
 	it("falls back to ctx.model for ambiguous bare model ids", () => {
