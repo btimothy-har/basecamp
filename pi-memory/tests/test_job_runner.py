@@ -70,7 +70,10 @@ from pi_memory.db import (
     Transcript,
     TranscriptEntry,
 )
-from pi_memory.durable import DeterministicCandidateEvaluator
+from pi_memory.durable import CandidateEvaluator, DeterministicCandidateEvaluator
+from pi_memory.infra.job_queue import JobRunTokenMismatchError, JobStore
+from pi_memory.infra.job_runner import JobRunner as InfraJobRunner
+from pi_memory.infra.job_runner.errors import UnsupportedJobKindError
 from pi_memory.interpretation import (
     INTERPRETATION_PROMPT_VERSION,
     INTERPRETATION_SCHEMA_VERSION,
@@ -79,6 +82,7 @@ from pi_memory.interpretation import (
     InterpretationResult,
     InterpretationValidationError,
     InterpreterUnavailableError,
+    SessionInterpreter,
     ToolActivitySummarizer,
     ToolActivitySummaryInput,
     ToolActivitySummaryOutput,
@@ -86,19 +90,19 @@ from pi_memory.interpretation import (
     build_source_ref_aliases,
 )
 from pi_memory.interpretation.packets import InterpretationPacket
-from pi_memory.jobs import (
+from pi_memory.pipeline import (
     InvalidJobPayloadError,
-    JobRunner,
-    JobRunTokenMismatchError,
-    JobStore,
+    MemoryProjectionJobError,
+    PipelineServices,
     TranscriptNotFoundError,
-    UnsupportedJobKindError,
+    create_job_registry,
 )
-from pi_memory.jobs.runner import MemoryProjectionJobError
 from pi_memory.projection import ProjectionDocument, ProjectionHit, ProjectionMetadataValue
+from pi_memory.projection.contracts import MemoryProjection
 from pi_memory.projection.deterministic import DeterministicMemoryProjection
 from pi_memory.quality import (
     DeterministicQualityAssessor,
+    QualityAssessor,
     QualityPacket,
     QualityReportDraft,
     validate_quality_assessment_output,
@@ -111,6 +115,27 @@ from pi_memory.settings import (
     MissingInterpretationModelError,
 )
 from sqlalchemy import delete, func, select, text
+
+
+class JobRunner(InfraJobRunner):
+    def __init__(
+        self,
+        *,
+        database: Database,
+        interpreter: SessionInterpreter | None = None,
+        tool_summarizer: ToolActivitySummarizer | None = None,
+        quality_assessor: QualityAssessor | None = None,
+        memory_projection: MemoryProjection | None = None,
+        candidate_evaluator: CandidateEvaluator | None = None,
+    ) -> None:
+        services = PipelineServices(
+            interpreter=interpreter,
+            tool_summarizer=tool_summarizer,
+            quality_assessor=quality_assessor,
+            memory_projection_adapter=memory_projection,
+            candidate_evaluator_adapter=candidate_evaluator,
+        )
+        super().__init__(database=database, registry=create_job_registry(services))
 
 
 def sqlite_url(path: Path) -> str:
@@ -1013,7 +1038,7 @@ def test_summarize_tool_activities_handles_zero_tool_pairs_without_model(
     def fail_factory() -> None:
         pytest.fail("summarizer factory should not be called when there are no tool pairs")
 
-    monkeypatch.setattr("pi_memory.jobs.runner.create_tool_activity_summarizer", fail_factory)
+    monkeypatch.setattr("pi_memory.pipeline.services.create_tool_activity_summarizer", fail_factory)
     completed = JobRunner(database=database).run(claimed.id, claimed.run_id, running_pid=123, now=at(10))
 
     assert completed.result_json is not None
@@ -1168,8 +1193,8 @@ def test_process_transcript_without_interpretation_model_still_succeeds_lazily(
     def fail_factory() -> None:
         pytest.fail("model factories should not be called for process_transcript")
 
-    monkeypatch.setattr("pi_memory.jobs.runner.create_session_interpreter", fail_factory)
-    monkeypatch.setattr("pi_memory.jobs.runner.create_tool_activity_summarizer", fail_factory)
+    monkeypatch.setattr("pi_memory.pipeline.services.create_session_interpreter", fail_factory)
+    monkeypatch.setattr("pi_memory.pipeline.services.create_tool_activity_summarizer", fail_factory)
     transcript_id = create_transcript(database)
     claimed = claim_process_transcript_job(store, transcript_id)
 
@@ -2500,7 +2525,7 @@ def test_interpret_session_explicit_interpreter_bypasses_configured_factory(
     def fail_factory() -> None:
         pytest.fail("explicit interpreter should bypass configured factory")
 
-    monkeypatch.setattr("pi_memory.jobs.runner.create_session_interpreter", fail_factory)
+    monkeypatch.setattr("pi_memory.pipeline.services.create_session_interpreter", fail_factory)
     interpreter = RecordingInterpreter()
     claimed = claim_interpret_session_job(store, transcript_id)
 

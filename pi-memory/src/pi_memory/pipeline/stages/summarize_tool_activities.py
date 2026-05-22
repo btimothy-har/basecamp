@@ -44,9 +44,13 @@ class SummarizeToolActivitiesJob:
                     process_job_id=process_job_id,
                 )
 
-        outcomes = summarize_tool_activity_work(
-            self._services.tool_activity_summarizer(),
-            summary_context.work_items,
+        outcomes = (
+            summarize_tool_activity_work(
+                self._services.tool_activity_summarizer(),
+                summary_context.work_items,
+            )
+            if summary_context.work_items
+            else []
         )
         with context.database.session() as session:
             if is_stale_analysis_run(session, transcript_id, analysis_run_id) or is_stale_process_job(

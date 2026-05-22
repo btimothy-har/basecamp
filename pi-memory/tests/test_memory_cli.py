@@ -23,8 +23,8 @@ from pi_memory.db import (
     Transcript,
     TranscriptEntry,
 )
+from pi_memory.infra.job_queue import JobStore
 from pi_memory.ingest import TranscriptIngestService
-from pi_memory.jobs import JobStore
 from pi_memory.recall import index_transcript
 from pi_memory.server import ServerState
 from pi_memory.settings import (

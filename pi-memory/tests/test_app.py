@@ -16,9 +16,9 @@ from pi_memory.db import (
     Transcript,
     TranscriptEntry,
 )
+from pi_memory.infra.job_queue import JobStore
 from pi_memory.ingest import TranscriptIngestService
 from pi_memory.interpretation import SessionInterpretationInspectionService
-from pi_memory.jobs import JobStore
 from pi_memory.quality import SessionQualityReportInspectionService
 from pi_memory.recall import RecallSearchService, index_transcript
 from pi_memory.server import create_app
