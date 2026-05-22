@@ -12,9 +12,9 @@ from pi_memory.db import (
     Database,
     Job,
 )
+from pi_memory.infra.job_queue.store import JobRunTokenMismatchError, JobStore
 from pi_memory.infra.job_runner import BaseJob, JobExecutionContext, JobRegistry, JobRunner, PermanentJobError
 from pi_memory.infra.job_runner.errors import UnsupportedJobKindError
-from pi_memory.jobs.store import JobRunTokenMismatchError, JobStore
 
 
 def sqlite_url(path: Path) -> str:

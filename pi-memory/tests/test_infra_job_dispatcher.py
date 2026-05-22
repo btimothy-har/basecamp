@@ -14,6 +14,7 @@ from pi_memory.db import (
     Database,
     Job,
 )
+from pi_memory.infra.job_queue.store import JobStore, JobStoreError
 from pi_memory.infra.job_runner import (
     BaseJob,
     ClaimedJobMissingRunIdError,
@@ -22,7 +23,6 @@ from pi_memory.infra.job_runner import (
     JobRegistry,
     JobRunner,
 )
-from pi_memory.jobs.store import JobStore, JobStoreError
 
 
 def sqlite_url(path: Path) -> str:

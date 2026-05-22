@@ -5,8 +5,8 @@ from pathlib import Path
 
 import pytest
 from pi_memory.db import JOB_KIND_INTERPRET_SESSION, JOB_KIND_PROCESS_TRANSCRIPT, JOB_STATUS_QUEUED, Database, Job
+from pi_memory.infra.job_queue import JobStore, enqueue_process_transcript_job
 from pi_memory.ingest import IngestResult
-from pi_memory.jobs import JobStore, enqueue_process_transcript_job
 from sqlalchemy import func, select
 
 

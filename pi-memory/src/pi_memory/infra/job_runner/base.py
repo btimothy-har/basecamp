@@ -7,7 +7,7 @@ from typing import Any, Protocol
 
 from pi_memory.db.database import Database
 from pi_memory.db.schema import Job
-from pi_memory.jobs.store import JobStore
+from pi_memory.infra.job_queue.store import JobStore
 
 
 class BaseJob(Protocol):

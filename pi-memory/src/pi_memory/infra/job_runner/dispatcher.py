@@ -12,7 +12,7 @@ from typing import Protocol
 from uuid import uuid4
 
 from pi_memory.db import JOB_STATUS_CLAIMED, JOB_STATUS_RUNNING, Database, database
-from pi_memory.jobs.store import JobStore, JobStoreError
+from pi_memory.infra.job_queue.store import JobStore, JobStoreError
 
 from .errors import ClaimedJobMissingRunIdError
 
