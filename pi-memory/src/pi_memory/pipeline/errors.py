@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from pi_memory.infra.job_runner import JobRunnerError, PermanentJobError
+from pi_memory.interpretation import InterpretationValidationError, InterpreterUnavailableError
 
 
 class InvalidJobPayloadError(PermanentJobError):
@@ -24,3 +25,11 @@ class MemoryProjectionJobError(JobRunnerError):
 
     def __init__(self) -> None:
         super().__init__("memory projection failed for one or more quality-report claims")
+
+
+class PermanentInterpretationValidationError(InterpretationValidationError, PermanentJobError):
+    """Interpretation validation error that should not be retried."""
+
+
+class PermanentInterpreterUnavailableError(InterpreterUnavailableError, PermanentJobError):
+    """Interpreter unavailable error that should not be retried."""
