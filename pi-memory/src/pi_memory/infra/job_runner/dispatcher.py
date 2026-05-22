@@ -1,4 +1,4 @@
-"""Service-owned dispatcher for durable pi-memory jobs."""
+"""Service-owned dispatcher for standalone infra job execution."""
 
 from __future__ import annotations
 
@@ -12,7 +12,9 @@ from typing import Protocol
 from uuid import uuid4
 
 from pi_memory.db import JOB_STATUS_CLAIMED, JOB_STATUS_RUNNING, Database, database
-from pi_memory.jobs.store import JobStore, JobStoreError
+from pi_memory.infra.job_queue.store import JobStore, JobStoreError
+
+from .errors import ClaimedJobMissingRunIdError
 
 DEFAULT_COMMAND = ("pi-memory",)
 DEFAULT_LEASE_SECONDS = 60
@@ -26,34 +28,27 @@ class ChildProcess(Protocol):
 
     def wait(self, timeout: float | None = None) -> int:
         """Wait for process completion and return its exit code."""
+        ...
 
     def poll(self) -> int | None:
         """Return the exit code if the process has exited, otherwise None."""
+        ...
 
     def terminate(self) -> None:
         """Request process termination."""
+        ...
 
     def kill(self) -> None:
         """Forcefully kill the process."""
+        ...
 
 
 ProcessFactory = Callable[[Sequence[str], Mapping[str, str]], ChildProcess]
 Clock = Callable[[], datetime]
 
 
-class JobDispatcherError(RuntimeError):
-    """Base class for dispatcher invariant errors."""
-
-
-class ClaimedJobMissingRunIdError(JobDispatcherError):
-    """Raised when a claimed job is missing its run token."""
-
-    def __init__(self, job_id: int) -> None:
-        super().__init__(f"Claimed job {job_id} is missing run_id")
-
-
 class JobDispatcher:
-    """Poll, claim, and dispatch jobs to one child process at a time."""
+    """Poll, claim, and dispatch infra jobs to one child process at a time."""
 
     def __init__(
         self,
@@ -92,7 +87,11 @@ class JobDispatcher:
             return
         self._stop_event.clear()
         self._store.recover_stale(now=self._clock())
-        self._thread = threading.Thread(target=self._run_loop, name="pi-memory-job-dispatcher", daemon=True)
+        self._thread = threading.Thread(
+            target=self._run_loop,
+            name="pi-memory-job-dispatcher",
+            daemon=True,
+        )
         self._thread.start()
 
     def stop(self, timeout: float | None = None) -> None:
@@ -128,7 +127,11 @@ class JobDispatcher:
         try:
             process = self._process_factory(argv, env)
         except Exception as error:
-            self._release_claim(job.id, job.run_id, f"Failed to spawn job child: {error}")
+            self._release_claim(
+                job.id,
+                job.run_id,
+                f"Failed to spawn job child: {error}",
+            )
             return True
 
         with self._active_lock:
@@ -213,7 +216,14 @@ class JobDispatcher:
 
     def _fail_running_job(self, job_id: int, run_id: str, error: str, exit_code: int) -> None:
         try:
-            self._store.fail(job_id, run_id, error=error, exit_code=exit_code, retry=True, now=self._clock())
+            self._store.fail(
+                job_id,
+                run_id,
+                error=error,
+                exit_code=exit_code,
+                retry=True,
+                now=self._clock(),
+            )
         except JobStoreError:
             return
 

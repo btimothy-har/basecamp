@@ -14,7 +14,7 @@ from pi_memory.db import (
     Database,
     Job,
 )
-from pi_memory.jobs import (
+from pi_memory.infra.job_queue import (
     JobInvalidTransitionError,
     JobLeaseExpiredError,
     JobRunTokenMismatchError,

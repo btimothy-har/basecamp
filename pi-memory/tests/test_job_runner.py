@@ -70,7 +70,10 @@ from pi_memory.db import (
     Transcript,
     TranscriptEntry,
 )
-from pi_memory.durable import DeterministicCandidateEvaluator
+from pi_memory.durable import CandidateEvaluator, DeterministicCandidateEvaluator
+from pi_memory.infra.job_queue import JobRunTokenMismatchError, JobStore
+from pi_memory.infra.job_runner import JobRunner as InfraJobRunner
+from pi_memory.infra.job_runner.errors import UnsupportedJobKindError
 from pi_memory.interpretation import (
     INTERPRETATION_PROMPT_VERSION,
     INTERPRETATION_SCHEMA_VERSION,
@@ -79,6 +82,7 @@ from pi_memory.interpretation import (
     InterpretationResult,
     InterpretationValidationError,
     InterpreterUnavailableError,
+    SessionInterpreter,
     ToolActivitySummarizer,
     ToolActivitySummaryInput,
     ToolActivitySummaryOutput,
@@ -86,19 +90,19 @@ from pi_memory.interpretation import (
     build_source_ref_aliases,
 )
 from pi_memory.interpretation.packets import InterpretationPacket
-from pi_memory.jobs import (
+from pi_memory.pipeline import (
     InvalidJobPayloadError,
-    JobRunner,
-    JobRunTokenMismatchError,
-    JobStore,
+    MemoryProjectionJobError,
+    PipelineAdapters,
     TranscriptNotFoundError,
-    UnsupportedJobKindError,
+    create_job_registry,
 )
-from pi_memory.jobs.runner import MemoryProjectionJobError
 from pi_memory.projection import ProjectionDocument, ProjectionHit, ProjectionMetadataValue
+from pi_memory.projection.contracts import MemoryProjection
 from pi_memory.projection.deterministic import DeterministicMemoryProjection
 from pi_memory.quality import (
     DeterministicQualityAssessor,
+    QualityAssessor,
     QualityPacket,
     QualityReportDraft,
     validate_quality_assessment_output,
@@ -111,6 +115,27 @@ from pi_memory.settings import (
     MissingInterpretationModelError,
 )
 from sqlalchemy import delete, func, select, text
+
+
+class JobRunner(InfraJobRunner):
+    def __init__(
+        self,
+        *,
+        database: Database,
+        interpreter: SessionInterpreter | None = None,
+        tool_summarizer: ToolActivitySummarizer | None = None,
+        quality_assessor: QualityAssessor | None = None,
+        memory_projection: MemoryProjection | None = None,
+        candidate_evaluator: CandidateEvaluator | None = None,
+    ) -> None:
+        adapters = PipelineAdapters(
+            interpreter=interpreter,
+            tool_summarizer=tool_summarizer,
+            quality_assessor=quality_assessor,
+            memory_projection_adapter=memory_projection,
+            candidate_evaluator_adapter=candidate_evaluator,
+        )
+        super().__init__(database=database, registry=create_job_registry(adapters))
 
 
 def sqlite_url(path: Path) -> str:
@@ -138,6 +163,43 @@ def database(tmp_path):
 @pytest.fixture
 def store(database: Database) -> JobStore:
     return JobStore(database=database)
+
+
+def test_pipeline_adapters_memoize_default_factories(monkeypatch: pytest.MonkeyPatch) -> None:
+    created_interpreters: list[object] = []
+    created_summarizers: list[object] = []
+    created_quality_assessors: list[object] = []
+
+    def create_interpreter() -> object:
+        interpreter = object()
+        created_interpreters.append(interpreter)
+        return interpreter
+
+    def create_summarizer() -> object:
+        summarizer = object()
+        created_summarizers.append(summarizer)
+        return summarizer
+
+    def create_quality_assessor() -> object:
+        quality_assessor = object()
+        created_quality_assessors.append(quality_assessor)
+        return quality_assessor
+
+    monkeypatch.setattr("pi_memory.pipeline.runtime.adapters.create_session_interpreter", create_interpreter)
+    monkeypatch.setattr("pi_memory.pipeline.runtime.adapters.create_tool_activity_summarizer", create_summarizer)
+    monkeypatch.setattr("pi_memory.pipeline.runtime.adapters.create_quality_assessor", create_quality_assessor)
+    adapters = PipelineAdapters()
+
+    interpreter = adapters.session_interpreter()
+    summarizer = adapters.tool_activity_summarizer()
+    quality_assessor = adapters.interpretation_quality_assessor()
+
+    assert adapters.session_interpreter() is interpreter
+    assert adapters.tool_activity_summarizer() is summarizer
+    assert adapters.interpretation_quality_assessor() is quality_assessor
+    assert created_interpreters == [interpreter]
+    assert created_summarizers == [summarizer]
+    assert created_quality_assessors == [quality_assessor]
 
 
 def at(hour: int, minute: int = 0) -> datetime:
@@ -1013,7 +1075,7 @@ def test_summarize_tool_activities_handles_zero_tool_pairs_without_model(
     def fail_factory() -> None:
         pytest.fail("summarizer factory should not be called when there are no tool pairs")
 
-    monkeypatch.setattr("pi_memory.jobs.runner.create_tool_activity_summarizer", fail_factory)
+    monkeypatch.setattr("pi_memory.pipeline.runtime.adapters.create_tool_activity_summarizer", fail_factory)
     completed = JobRunner(database=database).run(claimed.id, claimed.run_id, running_pid=123, now=at(10))
 
     assert completed.result_json is not None
@@ -1168,8 +1230,8 @@ def test_process_transcript_without_interpretation_model_still_succeeds_lazily(
     def fail_factory() -> None:
         pytest.fail("model factories should not be called for process_transcript")
 
-    monkeypatch.setattr("pi_memory.jobs.runner.create_session_interpreter", fail_factory)
-    monkeypatch.setattr("pi_memory.jobs.runner.create_tool_activity_summarizer", fail_factory)
+    monkeypatch.setattr("pi_memory.pipeline.runtime.adapters.create_session_interpreter", fail_factory)
+    monkeypatch.setattr("pi_memory.pipeline.runtime.adapters.create_tool_activity_summarizer", fail_factory)
     transcript_id = create_transcript(database)
     claimed = claim_process_transcript_job(store, transcript_id)
 
@@ -2488,6 +2550,57 @@ def test_assess_quality_final_failure_writes_assessment_failed_report(
         assert "RAW_PROVIDER_ERROR_SHOULD_NOT_LEAK" not in str(report.assessment_metadata_json)
 
 
+def test_assess_quality_final_downstream_failure_preserves_saved_report(
+    database: Database,
+    store: JobStore,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class DownstreamEnqueueError(RuntimeError):
+        def __init__(self) -> None:
+            super().__init__("downstream enqueue failed")
+
+    def fail_project_enqueue(*_args: object, **_kwargs: object) -> None:
+        raise DownstreamEnqueueError()
+
+    transcript_id = create_transcript(database)
+    analyze_transcript(database, transcript_id)
+    claimed = claim_interpret_session_job(store, transcript_id)
+    completed = JobRunner(database=database, interpreter=RecordingInterpreter()).run(
+        claimed.id,
+        claimed.run_id,
+        running_pid=123,
+        now=at(10),
+    )
+    assert completed.result_json is not None
+    snapshot_id = completed.result_json["snapshot_id"]
+    job = enqueue_quality_job(store, snapshot_id, max_attempts=1)
+    claimed_quality = claim_quality_job(store, job.id)
+    monkeypatch.setattr(
+        "pi_memory.pipeline.stages.assess_interpretation_quality.job.enqueue_project_memory_records_job",
+        fail_project_enqueue,
+    )
+
+    with pytest.raises(DownstreamEnqueueError, match="downstream enqueue failed"):
+        JobRunner(database=database, quality_assessor=RecordingQualityAssessor()).run(
+            claimed_quality.id,
+            claimed_quality.run_id,
+            running_pid=123,
+            now=at(10),
+        )
+
+    failed_job = get_job(database, job.id)
+    assert failed_job.status == JOB_STATUS_FAILED
+    with database.session() as session:
+        report = session.scalar(select(SessionInterpretationQualityReport))
+        assert report is not None
+        assert report.snapshot_id == snapshot_id
+        assert report.quality_status == SESSION_INTERPRETATION_QUALITY_STATUS_HEALTHY
+        assert report.quality_reason is None
+        assert report.semantic_status == SESSION_INTERPRETATION_SEMANTIC_STATUS_PASSED
+        assert report.promotable is True
+        assert "assessment_failed_error_type" not in report.assessment_metadata_json
+
+
 def test_interpret_session_explicit_interpreter_bypasses_configured_factory(
     database: Database,
     store: JobStore,
@@ -2500,7 +2613,7 @@ def test_interpret_session_explicit_interpreter_bypasses_configured_factory(
     def fail_factory() -> None:
         pytest.fail("explicit interpreter should bypass configured factory")
 
-    monkeypatch.setattr("pi_memory.jobs.runner.create_session_interpreter", fail_factory)
+    monkeypatch.setattr("pi_memory.pipeline.runtime.adapters.create_session_interpreter", fail_factory)
     interpreter = RecordingInterpreter()
     claimed = claim_interpret_session_job(store, transcript_id)
 

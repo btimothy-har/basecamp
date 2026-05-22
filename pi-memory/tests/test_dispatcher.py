@@ -20,7 +20,15 @@ from pi_memory.db import (
     Transcript,
     TranscriptEntry,
 )
-from pi_memory.jobs import ClaimedJobMissingRunIdError, JobDispatcher, JobRunner, JobStore, JobStoreError
+from pi_memory.infra.job_queue import JobStore, JobStoreError
+from pi_memory.infra.job_runner import ClaimedJobMissingRunIdError, JobDispatcher
+from pi_memory.infra.job_runner import JobRunner as InfraJobRunner
+from pi_memory.pipeline import create_job_registry
+
+
+class JobRunner(InfraJobRunner):
+    def __init__(self, *, database: Database) -> None:
+        super().__init__(database=database, registry=create_job_registry())
 
 
 def sqlite_url(path: Path) -> str:

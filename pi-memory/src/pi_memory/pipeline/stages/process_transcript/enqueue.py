@@ -1,10 +1,10 @@
-"""Job enqueue helpers for transcript observations."""
+"""Queue input contract for transcript processing jobs."""
 
 from __future__ import annotations
 
 from pi_memory.db import JOB_KIND_PROCESS_TRANSCRIPT, Job
+from pi_memory.infra.job_queue.store import JobStore
 from pi_memory.ingest import IngestResult
-from pi_memory.jobs.store import JobStore
 
 
 def enqueue_process_transcript_job(store: JobStore, result: IngestResult) -> Job | None:
