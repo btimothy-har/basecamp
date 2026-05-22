@@ -1,4 +1,4 @@
-"""Job enqueue helpers for transcript observations."""
+"""Queue input contract for transcript processing jobs."""
 
 from __future__ import annotations
 

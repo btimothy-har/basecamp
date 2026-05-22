@@ -12,7 +12,7 @@ from pydantic import BaseModel, ConfigDict, Field, StringConstraints
 
 from pi_memory.constants import DEFAULT_HOST, DEFAULT_PORT, MEMORY_DIR, SERVICE_NAME, SERVICE_VERSION
 from pi_memory.durable import DurableMemoryFilterError, DurableMemoryInspectionService
-from pi_memory.infra.job_queue import JobStore, enqueue_process_transcript_job, serialize_job
+from pi_memory.infra.job_queue import JobStore, serialize_job
 from pi_memory.infra.job_runner import JobDispatcher
 from pi_memory.ingest import (
     IngestResult,
@@ -21,6 +21,7 @@ from pi_memory.ingest import (
     TranscriptIngestService,
 )
 from pi_memory.interpretation import SessionInterpretationInspectionService
+from pi_memory.pipeline.stages.process_transcript.enqueue import enqueue_process_transcript_job
 from pi_memory.quality import QualityReportFilterError, SessionQualityReportInspectionService
 from pi_memory.recall import RawTranscriptRecallResult, RawTranscriptSearchResult, RecallSearchService
 

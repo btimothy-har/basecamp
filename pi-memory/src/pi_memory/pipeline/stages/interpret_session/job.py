@@ -12,7 +12,6 @@ from pi_memory.db import (
     Job,
     Transcript,
 )
-from pi_memory.infra.job_queue import enqueue_assess_interpretation_quality_job
 from pi_memory.infra.job_runner import JobExecutionContext
 from pi_memory.interpretation import (
     InterpretationValidationError,
@@ -28,6 +27,7 @@ from pi_memory.pipeline.runtime.errors import (
     PermanentInterpreterUnavailableError,
     TranscriptNotFoundError,
 )
+from pi_memory.pipeline.stages.assess_interpretation_quality.enqueue import enqueue_assess_interpretation_quality_job
 from pi_memory.pipeline.stages.interpret_session.snapshots import (
     EpisodeInterpretationOutcome,
     aggregate_episode_interpretations,

@@ -5,9 +5,9 @@ from __future__ import annotations
 from typing import Any
 
 from pi_memory.db import JOB_KIND_SUMMARIZE_TOOL_ACTIVITIES, Job
-from pi_memory.infra.job_queue import enqueue_interpret_session_job_for_analysis
 from pi_memory.infra.job_runner import JobExecutionContext
 from pi_memory.pipeline.runtime.adapters import PipelineAdapters
+from pi_memory.pipeline.stages.interpret_session.enqueue import enqueue_interpret_session_job_for_analysis
 from pi_memory.pipeline.stages.summarize_tool_activities.summaries import (
     apply_tool_summary_outcomes,
     summarize_tool_activity_work,

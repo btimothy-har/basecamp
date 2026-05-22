@@ -1,4 +1,4 @@
-"""Payload parsing for memory pipeline jobs."""
+"""Payload helpers for memory pipeline jobs."""
 
 from __future__ import annotations
 
@@ -83,3 +83,30 @@ def analysis_job(payload: Any) -> tuple[int, int | None, int | None]:
         raise InvalidJobPayloadError(PROCESS_JOB_ID_INTEGER_ERROR)
 
     return parsed_transcript_id, analysis_run_id, process_job_id
+
+
+def analysis_job_payload(
+    *,
+    transcript_id: int,
+    session_id: str,
+    analysis_run_id: int,
+    process_job_id: int | None,
+    analyzed_through_entry_id: int | None,
+    analyzed_through_byte_offset: int,
+    activity_count: int,
+    episode_count: int,
+    manifest_count: int,
+) -> dict[str, object]:
+    return {
+        "transcript_id": transcript_id,
+        "analysis_run_id": analysis_run_id,
+        # Remaining fields are audit/debug context for inspecting queued work.
+        # Runners use SQLite as truth and only require ids/freshness tokens.
+        "session_id": session_id,
+        "process_job_id": process_job_id,
+        "analyzed_through_entry_id": analyzed_through_entry_id,
+        "analyzed_through_byte_offset": analyzed_through_byte_offset,
+        "activity_count": activity_count,
+        "episode_count": episode_count,
+        "manifest_count": manifest_count,
+    }

@@ -14,7 +14,6 @@ from pi_memory.db import (
     Job,
     SessionInterpretationSnapshot,
 )
-from pi_memory.infra.job_queue import enqueue_project_memory_records_job, enqueue_promote_durable_memory_job
 from pi_memory.infra.job_runner import JobExecutionContext, PermanentJobError
 from pi_memory.pipeline.runtime.adapters import PipelineAdapters
 from pi_memory.pipeline.runtime.errors import InvalidJobPayloadError
@@ -22,6 +21,8 @@ from pi_memory.pipeline.stages.assess_interpretation_quality.reports import (
     quality_report_result_json,
     replace_quality_report,
 )
+from pi_memory.pipeline.stages.project_memory_records.enqueue import enqueue_project_memory_records_job
+from pi_memory.pipeline.stages.promote_durable_memory.enqueue import enqueue_promote_durable_memory_job
 from pi_memory.pipeline.utils import payloads
 from pi_memory.quality import (
     QualityReportDraft,

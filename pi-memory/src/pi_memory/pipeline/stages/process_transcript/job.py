@@ -6,9 +6,9 @@ from typing import Any
 
 from pi_memory.analysis import analyze_transcript_structure
 from pi_memory.db import JOB_KIND_PROCESS_TRANSCRIPT, Job, Transcript
-from pi_memory.infra.job_queue import enqueue_summarize_tool_activities_job
 from pi_memory.infra.job_runner import JobExecutionContext
 from pi_memory.pipeline.runtime.errors import TranscriptNotFoundError
+from pi_memory.pipeline.stages.summarize_tool_activities.enqueue import enqueue_summarize_tool_activities_job
 from pi_memory.pipeline.utils import payloads
 from pi_memory.recall import index_transcript
 
