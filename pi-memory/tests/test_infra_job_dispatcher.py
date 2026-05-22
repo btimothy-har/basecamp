@@ -617,4 +617,3 @@ def test_stop_forces_kill_if_process_ignores_terminate(
     assert failed.status == JOB_STATUS_FAILED
     assert failed.exit_code == -9
     assert failed.last_error == "Job child exited with code -9"
-
