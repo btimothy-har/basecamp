@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from sqlalchemy import select
+
 from pi_memory.db import (
     JOB_KIND_ASSESS_INTERPRETATION_QUALITY,
     SESSION_INTERPRETATION_QUALITY_REASON_SEMANTIC_ASSESSMENT_FAILED,
@@ -12,6 +14,7 @@ from pi_memory.db import (
     SESSION_INTERPRETATION_SEMANTIC_STATUS_ASSESSMENT_FAILED,
     SESSION_INTERPRETATION_STATUS_COMPLETED,
     Job,
+    SessionInterpretationQualityReport,
     SessionInterpretationSnapshot,
 )
 from pi_memory.infra.job_runner import JobExecutionContext, PermanentJobError
@@ -46,6 +49,8 @@ class AssessInterpretationQualityJob:
             raise
         except Exception as error:
             if not _is_final_quality_attempt(job):
+                raise
+            if _quality_report_exists(context, job):
                 raise
             self._write_assessment_failed_quality_report(context, job, error_type=type(error).__name__)
             raise PermanentJobError(type(error).__name__) from error
@@ -119,6 +124,23 @@ class AssessInterpretationQualityJob:
                 },
             )
             replace_quality_report(session=session, job=job, snapshot=snapshot, draft=draft)
+
+
+def _quality_report_exists(context: JobExecutionContext, job: Job) -> bool:
+    try:
+        snapshot_id = payloads.snapshot_id(job.payload_json)
+    except InvalidJobPayloadError:
+        return False
+    context.database.initialize()
+    with context.database.session() as session:
+        return (
+            session.scalar(
+                select(SessionInterpretationQualityReport.id).where(
+                    SessionInterpretationQualityReport.snapshot_id == snapshot_id,
+                ),
+            )
+            is not None
+        )
 
 
 def _is_final_quality_attempt(job: Job) -> bool:

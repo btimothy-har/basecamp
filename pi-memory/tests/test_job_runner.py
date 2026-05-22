@@ -165,6 +165,43 @@ def store(database: Database) -> JobStore:
     return JobStore(database=database)
 
 
+def test_pipeline_adapters_memoize_default_factories(monkeypatch: pytest.MonkeyPatch) -> None:
+    created_interpreters: list[object] = []
+    created_summarizers: list[object] = []
+    created_quality_assessors: list[object] = []
+
+    def create_interpreter() -> object:
+        interpreter = object()
+        created_interpreters.append(interpreter)
+        return interpreter
+
+    def create_summarizer() -> object:
+        summarizer = object()
+        created_summarizers.append(summarizer)
+        return summarizer
+
+    def create_quality_assessor() -> object:
+        quality_assessor = object()
+        created_quality_assessors.append(quality_assessor)
+        return quality_assessor
+
+    monkeypatch.setattr("pi_memory.pipeline.runtime.adapters.create_session_interpreter", create_interpreter)
+    monkeypatch.setattr("pi_memory.pipeline.runtime.adapters.create_tool_activity_summarizer", create_summarizer)
+    monkeypatch.setattr("pi_memory.pipeline.runtime.adapters.create_quality_assessor", create_quality_assessor)
+    adapters = PipelineAdapters()
+
+    interpreter = adapters.session_interpreter()
+    summarizer = adapters.tool_activity_summarizer()
+    quality_assessor = adapters.interpretation_quality_assessor()
+
+    assert adapters.session_interpreter() is interpreter
+    assert adapters.tool_activity_summarizer() is summarizer
+    assert adapters.interpretation_quality_assessor() is quality_assessor
+    assert created_interpreters == [interpreter]
+    assert created_summarizers == [summarizer]
+    assert created_quality_assessors == [quality_assessor]
+
+
 def at(hour: int, minute: int = 0) -> datetime:
     return datetime(2026, 1, 1, hour, minute, tzinfo=UTC)
 
@@ -2511,6 +2548,57 @@ def test_assess_quality_final_failure_writes_assessment_failed_report(
         assert report.promotable is False
         assert report.assessment_metadata_json["assessment_failed_error_type"] == "ProviderShouldNotLeakError"
         assert "RAW_PROVIDER_ERROR_SHOULD_NOT_LEAK" not in str(report.assessment_metadata_json)
+
+
+def test_assess_quality_final_downstream_failure_preserves_saved_report(
+    database: Database,
+    store: JobStore,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class DownstreamEnqueueError(RuntimeError):
+        def __init__(self) -> None:
+            super().__init__("downstream enqueue failed")
+
+    def fail_project_enqueue(*_args: object, **_kwargs: object) -> None:
+        raise DownstreamEnqueueError()
+
+    transcript_id = create_transcript(database)
+    analyze_transcript(database, transcript_id)
+    claimed = claim_interpret_session_job(store, transcript_id)
+    completed = JobRunner(database=database, interpreter=RecordingInterpreter()).run(
+        claimed.id,
+        claimed.run_id,
+        running_pid=123,
+        now=at(10),
+    )
+    assert completed.result_json is not None
+    snapshot_id = completed.result_json["snapshot_id"]
+    job = enqueue_quality_job(store, snapshot_id, max_attempts=1)
+    claimed_quality = claim_quality_job(store, job.id)
+    monkeypatch.setattr(
+        "pi_memory.pipeline.stages.assess_interpretation_quality.job.enqueue_project_memory_records_job",
+        fail_project_enqueue,
+    )
+
+    with pytest.raises(DownstreamEnqueueError, match="downstream enqueue failed"):
+        JobRunner(database=database, quality_assessor=RecordingQualityAssessor()).run(
+            claimed_quality.id,
+            claimed_quality.run_id,
+            running_pid=123,
+            now=at(10),
+        )
+
+    failed_job = get_job(database, job.id)
+    assert failed_job.status == JOB_STATUS_FAILED
+    with database.session() as session:
+        report = session.scalar(select(SessionInterpretationQualityReport))
+        assert report is not None
+        assert report.snapshot_id == snapshot_id
+        assert report.quality_status == SESSION_INTERPRETATION_QUALITY_STATUS_HEALTHY
+        assert report.quality_reason is None
+        assert report.semantic_status == SESSION_INTERPRETATION_SEMANTIC_STATUS_PASSED
+        assert report.promotable is True
+        assert "assessment_failed_error_type" not in report.assessment_metadata_json
 
 
 def test_interpret_session_explicit_interpreter_bypasses_configured_factory(

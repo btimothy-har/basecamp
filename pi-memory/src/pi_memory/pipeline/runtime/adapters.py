@@ -34,19 +34,19 @@ class PipelineAdapters:
     )
 
     def session_interpreter(self) -> SessionInterpreter:
-        if self.interpreter is not None:
-            return self.interpreter
-        return create_session_interpreter()
+        if self.interpreter is None:
+            self.interpreter = create_session_interpreter()
+        return self.interpreter
 
     def tool_activity_summarizer(self) -> ToolActivitySummarizer:
-        if self.tool_summarizer is not None:
-            return self.tool_summarizer
-        return create_tool_activity_summarizer()
+        if self.tool_summarizer is None:
+            self.tool_summarizer = create_tool_activity_summarizer()
+        return self.tool_summarizer
 
     def interpretation_quality_assessor(self) -> QualityAssessor:
-        if self.quality_assessor is not None:
-            return self.quality_assessor
-        return create_quality_assessor()
+        if self.quality_assessor is None:
+            self.quality_assessor = create_quality_assessor()
+        return self.quality_assessor
 
     def memory_projection(self) -> MemoryProjection:
         if self.memory_projection_adapter is None:
