@@ -21,8 +21,7 @@ from sqlalchemy.orm import (
     relationship,
 )
 
-from pi_memory.db.base import Base
-from pi_memory.db.constants import (
+from pi_memory.constants import (
     ACTIVITY_TEXT_KIND_UNAVAILABLE,
     ACTIVITY_TEXT_STATUS_PENDING,
     ANALYSIS_KIND_TRANSCRIPT_STRUCTURE,
@@ -31,6 +30,7 @@ from pi_memory.db.constants import (
     SESSION_SNAPSHOT_STATUS_READY_FOR_INTERPRETATION,
     SOURCE_ORIGIN_UNKNOWN,
 )
+from pi_memory.db.base import Base
 
 if TYPE_CHECKING:
     from pi_memory.db.models.durable import DurableMemorySource

@@ -9,7 +9,7 @@ from types import SimpleNamespace
 import pi_memory.cli.main as cli_module
 import pytest
 from click.testing import CliRunner
-from pi_memory.db.constants import (
+from pi_memory.constants import (
     ANALYSIS_STATUS_COMPLETED,
     JOB_KIND_PROCESS_TRANSCRIPT,
     JOB_STATUS_CLAIMED,

@@ -6,7 +6,7 @@ from typing import Any
 
 from sqlalchemy import select
 
-from pi_memory.db.constants import (
+from pi_memory.constants import (
     JOB_KIND_ASSESS_INTERPRETATION_QUALITY,
     SESSION_INTERPRETATION_QUALITY_REASON_SEMANTIC_ASSESSMENT_FAILED,
     SESSION_INTERPRETATION_QUALITY_REASON_SEMANTIC_ASSESSMENT_PENDING,

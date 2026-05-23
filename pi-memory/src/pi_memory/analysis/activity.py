@@ -8,7 +8,7 @@ from dataclasses import dataclass, replace
 from datetime import datetime
 from typing import Any
 
-from pi_memory.db.constants import (
+from pi_memory.constants import (
     ACTIVITY_KIND_ASSISTANT_TEXT,
     ACTIVITY_KIND_ASSISTANT_THINKING,
     ACTIVITY_KIND_COMPACTION,

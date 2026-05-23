@@ -7,7 +7,7 @@ from typing import Any
 import pi_memory.durable.factory as durable_factory
 import pi_memory.infra.llm.pydantic_ai as llm_module
 import pytest
-from pi_memory.db.constants import (
+from pi_memory.constants import (
     DURABLE_MEMORY_STATUS_CANDIDATE,
     SESSION_INTERPRETATION_DERIVATION_STATUS_CURRENT,
     SESSION_INTERPRETATION_DETERMINISTIC_STATUS_PASSED,

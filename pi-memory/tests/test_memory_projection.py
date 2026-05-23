@@ -6,7 +6,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
 
-from pi_memory.db.constants import (
+from pi_memory.constants import (
     MEMORY_LAYER_SHORT_TERM,
     MEMORY_PROJECTION_COLLECTION_NAME,
     MEMORY_PROJECTION_RECORD_TYPE_SESSION_CLAIM,

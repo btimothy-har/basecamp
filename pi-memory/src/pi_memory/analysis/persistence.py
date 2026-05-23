@@ -20,7 +20,7 @@ from pi_memory.analysis.manifests import (
     build_episode_manifests,
     build_session_snapshot_shell,
 )
-from pi_memory.db.constants import (
+from pi_memory.constants import (
     ACTIVITY_KIND_ASSISTANT_TEXT,
     ACTIVITY_KIND_ASSISTANT_THINKING,
     ACTIVITY_KIND_COMPACTION,

@@ -7,7 +7,7 @@ from typing import Any
 
 import pi_memory.infra.llm.pydantic_ai as llm_module
 import pytest
-from pi_memory.db.constants import (
+from pi_memory.constants import (
     SOURCE_ORIGIN_INHERITED,
     SOURCE_ORIGIN_LOCAL,
     SOURCE_ORIGIN_MIXED,

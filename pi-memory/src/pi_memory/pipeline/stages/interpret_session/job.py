@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from pi_memory.db.constants import (
+from pi_memory.constants import (
     JOB_KIND_INTERPRET_SESSION,
     SESSION_INTERPRETATION_STATUS_BLOCKED,
     SESSION_INTERPRETATION_STATUS_COMPLETED,

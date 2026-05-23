@@ -9,7 +9,7 @@ from typing import Any
 from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
-from pi_memory.db.constants import (
+from pi_memory.constants import (
     EPISODE_INTERPRETATION_STATUS_COMPLETED,
     EPISODE_INTERPRETATION_STATUS_FAILED,
     EPISODE_INTERPRETATION_STATUS_SKIPPED_NO_CLAIM_SOURCES,

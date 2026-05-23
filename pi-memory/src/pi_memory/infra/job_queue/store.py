@@ -10,7 +10,7 @@ from uuid import uuid4
 from sqlalchemy import Select, select, update
 from sqlalchemy.orm import Session
 
-from pi_memory.db.constants import (
+from pi_memory.constants import (
     JOB_STATUS_CANCELLED,
     JOB_STATUS_CLAIMED,
     JOB_STATUS_COMPLETED,

@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 from pi_memory.analysis import analyze_transcript_structure
-from pi_memory.db.constants import JOB_KIND_PROCESS_TRANSCRIPT
+from pi_memory.constants import JOB_KIND_PROCESS_TRANSCRIPT
 from pi_memory.db.models import (
     Job,
     Transcript,

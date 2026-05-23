@@ -4,7 +4,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
-from pi_memory.db.constants import (
+from pi_memory.constants import (
     JOB_STATUS_CLAIMED,
     JOB_STATUS_COMPLETED,
     JOB_STATUS_FAILED,

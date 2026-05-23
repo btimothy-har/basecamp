@@ -7,7 +7,7 @@ from typing import Any
 
 import pytest
 from pi_memory.analysis import analyze_transcript_structure
-from pi_memory.db.constants import (
+from pi_memory.constants import (
     ANALYSIS_STATUS_COMPLETED,
     SESSION_INTERPRETATION_BLOCKED_REASON_PHASE_5A_NOT_READY,
     SESSION_INTERPRETATION_DERIVATION_STATUS_CURRENT,

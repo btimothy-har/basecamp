@@ -11,7 +11,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from pi_memory.analysis.manifests import CLAIM_SOURCE_ACTIVITY_KINDS
-from pi_memory.db.constants import (
+from pi_memory.constants import (
     ACTIVITY_TEXT_STATUS_COMPLETED,
     ANALYSIS_KIND_TRANSCRIPT_STRUCTURE,
     ANALYSIS_STATUS_COMPLETED,

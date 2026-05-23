@@ -10,7 +10,7 @@ import pi_memory.cli.main as cli_module
 import pytest
 from click.testing import CliRunner
 from fastapi.testclient import TestClient
-from pi_memory.db.constants import (
+from pi_memory.constants import (
     DURABLE_MEMORY_RELATION_TYPE_REINFORCES,
     DURABLE_MEMORY_SOURCE_KIND_CLAIM,
     DURABLE_MEMORY_STATUS_CANDIDATE,

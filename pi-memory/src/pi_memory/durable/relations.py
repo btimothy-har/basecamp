@@ -13,7 +13,7 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.orm import Session, joinedload
 
-from pi_memory.db.constants import (
+from pi_memory.constants import (
     DURABLE_MEMORY_RELATION_TYPE_CONFLICTS,
     DURABLE_MEMORY_RELATION_TYPE_DUPLICATE,
     DURABLE_MEMORY_RELATION_TYPE_NOVEL,

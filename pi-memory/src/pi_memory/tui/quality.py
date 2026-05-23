@@ -15,7 +15,7 @@ from textual.app import App, ComposeResult
 from textual.containers import Container
 from textual.widgets import DataTable, Footer, Header, Static
 
-from pi_memory.db.constants import (
+from pi_memory.constants import (
     ACTIVITY_KIND_TOOL_PAIR,
     JOB_KIND_INTERPRET_SESSION,
     JOB_STATUS_FAILED,

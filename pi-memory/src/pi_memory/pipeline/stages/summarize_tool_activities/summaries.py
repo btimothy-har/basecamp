@@ -10,7 +10,7 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from pi_memory.db.constants import (
+from pi_memory.constants import (
     ACTIVITY_KIND_TOOL_PAIR,
     ACTIVITY_TEXT_KIND_TOOL_SUMMARY,
     ACTIVITY_TEXT_KIND_UNAVAILABLE,

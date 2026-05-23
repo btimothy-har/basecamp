@@ -7,7 +7,7 @@ from typing import Any
 
 from sqlalchemy.orm import Session
 
-from pi_memory.db.constants import (
+from pi_memory.constants import (
     DURABLE_MEMORY_STATUS_ARCHIVED,
     DURABLE_MEMORY_STATUS_PROMOTED,
     DURABLE_MEMORY_STATUS_QUARANTINED,

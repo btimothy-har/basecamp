@@ -190,7 +190,7 @@ def sqlite_url(path: Path) -> str:
 
 
 def test_constants_module_contains_expected_names() -> None:
-    constants = importlib.import_module("pi_memory.db.constants")
+    constants = importlib.import_module("pi_memory.constants")
 
     missing = [name for name in EXPECTED_CONSTANT_NAMES if not hasattr(constants, name)]
 

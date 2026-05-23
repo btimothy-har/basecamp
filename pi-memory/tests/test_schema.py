@@ -1,7 +1,7 @@
 from pathlib import Path
 
 import pytest
-from pi_memory.db.constants import (
+from pi_memory.constants import (
     ACTIVITY_KIND_USER_TEXT,
     ACTIVITY_TEXT_KIND_UNAVAILABLE,
     ACTIVITY_TEXT_STATUS_COMPLETED,

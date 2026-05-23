@@ -18,8 +18,8 @@ from sqlalchemy.orm import (
     relationship,
 )
 
+from pi_memory.constants import JOB_STATUS_QUEUED
 from pi_memory.db.base import Base
-from pi_memory.db.constants import JOB_STATUS_QUEUED
 
 if TYPE_CHECKING:
     from pi_memory.db.models.analysis import AnalysisRun

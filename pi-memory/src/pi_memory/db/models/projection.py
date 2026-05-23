@@ -21,11 +21,11 @@ from sqlalchemy.orm import (
     relationship,
 )
 
-from pi_memory.db.base import Base
-from pi_memory.db.constants import (
+from pi_memory.constants import (
     MEMORY_PROJECTION_COLLECTION_NAME,
     MEMORY_PROJECTION_STATUS_PENDING,
 )
+from pi_memory.db.base import Base
 
 if TYPE_CHECKING:
     from pi_memory.db.models.durable import DurableMemoryItem

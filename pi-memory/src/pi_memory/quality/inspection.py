@@ -8,7 +8,7 @@ from typing import Any
 
 from sqlalchemy import Select, func, select
 
-from pi_memory.db.constants import (
+from pi_memory.constants import (
     SESSION_INTERPRETATION_DERIVATION_STATUS_CURRENT,
     SESSION_INTERPRETATION_DERIVATION_STATUSES,
     SESSION_INTERPRETATION_QUALITY_STATUS_ASSESSMENT_FAILED,

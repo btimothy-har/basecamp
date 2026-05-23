@@ -2,7 +2,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
-from pi_memory.db.constants import (
+from pi_memory.constants import (
     ACTIVITY_KIND_TOOL_PAIR,
     ACTIVITY_KIND_USER_TEXT,
     ANALYSIS_STATUS_COMPLETED,

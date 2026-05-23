@@ -9,7 +9,7 @@ from typing import Any
 from sqlalchemy import Select, func, select
 from sqlalchemy.orm import selectinload
 
-from pi_memory.db.constants import (
+from pi_memory.constants import (
     DURABLE_MEMORY_STATUSES,
     MEMORY_LAYERS,
     MEMORY_PROJECTION_RECORD_TYPES,

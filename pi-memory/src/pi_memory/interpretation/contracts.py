@@ -8,7 +8,7 @@ from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints, ValidationError
 
-from pi_memory.db.constants import (
+from pi_memory.constants import (
     SOURCE_ORIGIN_LOCAL,
     SOURCE_ORIGIN_MIXED,
 )

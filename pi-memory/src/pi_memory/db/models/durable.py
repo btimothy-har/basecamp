@@ -20,12 +20,12 @@ from sqlalchemy.orm import (
     relationship,
 )
 
-from pi_memory.db.base import Base
-from pi_memory.db.constants import (
+from pi_memory.constants import (
     DURABLE_MEMORY_SOURCE_KIND_CLAIM,
     DURABLE_MEMORY_STATUS_CANDIDATE,
     SOURCE_ORIGIN_UNKNOWN,
 )
+from pi_memory.db.base import Base
 
 if TYPE_CHECKING:
     from pi_memory.db.models.analysis import ActivityUnit

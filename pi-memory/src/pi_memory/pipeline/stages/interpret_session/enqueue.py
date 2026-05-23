@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from pi_memory.analysis import TranscriptAnalysisResult
-from pi_memory.db.constants import JOB_KIND_INTERPRET_SESSION
+from pi_memory.constants import JOB_KIND_INTERPRET_SESSION
 from pi_memory.db.models import Job
 from pi_memory.infra.job_queue.store import JobStore
 from pi_memory.pipeline.utils import payloads

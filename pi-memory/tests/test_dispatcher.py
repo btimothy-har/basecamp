@@ -7,7 +7,7 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
-from pi_memory.db.constants import (
+from pi_memory.constants import (
     ANALYSIS_STATUS_COMPLETED,
     JOB_KIND_PROCESS_TRANSCRIPT,
     JOB_KIND_SUMMARIZE_TOOL_ACTIVITIES,

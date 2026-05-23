@@ -11,7 +11,7 @@ from datetime import UTC, datetime, timedelta
 from typing import Protocol
 from uuid import uuid4
 
-from pi_memory.db.constants import (
+from pi_memory.constants import (
     JOB_STATUS_CLAIMED,
     JOB_STATUS_RUNNING,
 )

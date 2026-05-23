@@ -9,7 +9,7 @@ from pathlib import Path
 
 import pytest
 from pi_memory.analysis import TranscriptAnalysisResult, analyze_transcript_structure
-from pi_memory.db.constants import (
+from pi_memory.constants import (
     ACTIVITY_TEXT_KIND_DETERMINISTIC,
     ACTIVITY_TEXT_KIND_TOOL_SUMMARY,
     ACTIVITY_TEXT_KIND_UNAVAILABLE,

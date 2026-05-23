@@ -10,13 +10,13 @@ from sqlalchemy import Engine, create_engine, event, text
 from sqlalchemy.engine import Connection, make_url
 from sqlalchemy.orm import Session, sessionmaker
 
-from pi_memory.constants import MEMORY_DB_URL
-from pi_memory.db.base import Base
-from pi_memory.db.constants import (
+from pi_memory.constants import (
     ACTIVITY_TEXT_KIND_UNAVAILABLE,
     ACTIVITY_TEXT_STATUS_PENDING,
+    MEMORY_DB_URL,
     SOURCE_ORIGIN_UNKNOWN,
 )
+from pi_memory.db.base import Base
 from pi_memory.db.models import ensure_models_registered
 
 

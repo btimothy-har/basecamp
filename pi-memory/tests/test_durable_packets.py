@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-from pi_memory.db.constants import (
+from pi_memory.constants import (
     ACTIVITY_KIND_USER_TEXT,
     ACTIVITY_TEXT_KIND_DETERMINISTIC,
     ACTIVITY_TEXT_STATUS_COMPLETED,

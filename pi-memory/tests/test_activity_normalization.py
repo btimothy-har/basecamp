@@ -7,7 +7,7 @@ from typing import Any
 import pytest
 from pi_memory.analysis import normalize_transcript_entries
 from pi_memory.analysis.activity import PREVIEW_CHAR_LIMIT
-from pi_memory.db.constants import (
+from pi_memory.constants import (
     ACTIVITY_KIND_ASSISTANT_TEXT,
     ACTIVITY_KIND_ASSISTANT_THINKING,
     ACTIVITY_KIND_COMPACTION,

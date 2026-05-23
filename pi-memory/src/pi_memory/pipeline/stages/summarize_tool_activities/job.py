@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from pi_memory.db.constants import JOB_KIND_SUMMARIZE_TOOL_ACTIVITIES
+from pi_memory.constants import JOB_KIND_SUMMARIZE_TOOL_ACTIVITIES
 from pi_memory.db.models import Job
 from pi_memory.infra.job_runner import JobExecutionContext
 from pi_memory.pipeline.runtime.adapters import PipelineAdapters

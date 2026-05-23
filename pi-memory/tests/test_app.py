@@ -5,8 +5,7 @@ from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
-from pi_memory.constants import SERVICE_NAME, SERVICE_VERSION
-from pi_memory.db.constants import JOB_KIND_PROCESS_TRANSCRIPT
+from pi_memory.constants import JOB_KIND_PROCESS_TRANSCRIPT, SERVICE_NAME, SERVICE_VERSION
 from pi_memory.db.database import Database
 from pi_memory.db.models import (
     Job,

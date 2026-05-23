@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import Any
 
-from pi_memory.db.constants import (
+from pi_memory.constants import (
     SESSION_INTERPRETATION_DERIVATION_STATUS_OUTDATED,
     SESSION_INTERPRETATION_DERIVATION_STATUS_SUPERSEDED,
     SESSION_INTERPRETATION_DETERMINISTIC_STATUS_FAILED,

@@ -20,12 +20,12 @@ from sqlalchemy.orm import (
     relationship,
 )
 
-from pi_memory.db.base import Base
-from pi_memory.db.constants import (
+from pi_memory.constants import (
     SESSION_INTERPRETATION_DERIVATION_STATUS_CURRENT,
     SESSION_INTERPRETATION_DETERMINISTIC_STATUS_PASSED,
     SESSION_INTERPRETATION_SEMANTIC_STATUS_NOT_ASSESSED,
 )
+from pi_memory.db.base import Base
 
 if TYPE_CHECKING:
     from pi_memory.db.models.analysis import (
