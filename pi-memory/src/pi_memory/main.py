@@ -2,163 +2,68 @@
 
 from __future__ import annotations
 
-import errno
 import importlib
-import ipaddress
-import json
-import os
-import socket
-import urllib.error
-import urllib.request
-from typing import Any
 
 import click
 import uvicorn
 
+from pi_memory.cli.errors import (
+    ConflictingEmbeddingModelOptionsError,
+    ConflictingInterpretationModelOptionsError,
+    ConflictingQualityModelOptionsError,
+    ConflictingToolSummaryConcurrencyOptionsError,
+    ConflictingToolSummaryModelOptionsError,
+)
+from pi_memory.cli.inspection import (
+    get_durable_memory_payload,
+    get_job_payload,
+    get_quality_report_payload,
+    get_session_interpretation_payload,
+    list_durable_audit_payload,
+    list_durable_memories_payload,
+    list_memory_projection_records_payload,
+    list_quality_reports_payload,
+    sample_quality_reports_payload,
+    search_recall,
+)
+from pi_memory.cli.rendering import (
+    _emit_config,
+    _emit_durable_memory,
+    _emit_durable_memory_audit,
+    _emit_durable_memory_list,
+    _emit_healthy,
+    _emit_interpretation,
+    _emit_job,
+    _emit_memory_projection_list,
+    _emit_observe_result,
+    _emit_quality_report,
+    _emit_quality_report_list,
+    _emit_recall_result,
+    _emit_unavailable,
+)
+from pi_memory.cli.service import (
+    DEFAULT_STATUS_TIMEOUT_SECONDS,
+    StatusProbeError,
+    _ensure_port_available,
+    _fetch_status,
+    _status_url,
+)
+from pi_memory.cli.validation import (
+    _optional_non_empty,
+    _require_loopback_host,
+    _require_non_empty,
+    _run_job_value,
+)
 from pi_memory.constants import DEFAULT_HOST, DEFAULT_PORT, MEMORY_DB_URL, SERVICE_NAME
 from pi_memory.db.database import Database
-from pi_memory.durable import DurableMemoryFilterError, DurableMemoryInspectionService
-from pi_memory.infra.job_queue import JobStore, JobStoreError, serialize_job
+from pi_memory.infra.job_queue import JobStore, JobStoreError
 from pi_memory.infra.job_runner import JobDispatcher, JobRunner, JobRunnerError
-from pi_memory.ingest import IngestResult, ObserveInput, TranscriptFileMissingError, TranscriptIngestService
-from pi_memory.interpretation import SessionInterpretationInspectionService
+from pi_memory.ingest import ObserveInput, TranscriptFileMissingError, TranscriptIngestService
 from pi_memory.pipeline.runtime import create_job_registry
 from pi_memory.pipeline.stages.process_transcript.enqueue import enqueue_process_transcript_job
-from pi_memory.quality import QualityReportFilterError, SessionQualityReportInspectionService
-from pi_memory.recall import RawTranscriptRecallResult, RawTranscriptSearchResult, RecallSearchService
 from pi_memory.server import ServerAlreadyRunningError, ServerState, create_app
 from pi_memory.settings import Settings as MemorySettings
 from pi_memory.settings import SettingsError
-
-DEFAULT_STATUS_TIMEOUT_SECONDS = 1.0
-
-
-class NonLoopbackHostError(click.BadParameter):
-    """Raised when a service host is not loopback-only."""
-
-    def __init__(self) -> None:
-        super().__init__("must resolve to a loopback address")
-
-
-class NonEmptyStringError(click.BadParameter):
-    """Raised when an option value is empty after trimming whitespace."""
-
-    def __init__(self) -> None:
-        super().__init__("must not be empty")
-
-
-class ConflictingInterpretationModelOptionsError(click.UsageError):
-    """Raised when mutually exclusive interpretation model options are used."""
-
-    def __init__(self) -> None:
-        super().__init__("--clear-interpretation-model cannot be used with --interpretation-model")
-
-
-class ConflictingToolSummaryModelOptionsError(click.UsageError):
-    """Raised when mutually exclusive tool-summary model options are used."""
-
-    def __init__(self) -> None:
-        super().__init__("--clear-tool-summary-model cannot be used with --tool-summary-model")
-
-
-class ConflictingQualityModelOptionsError(click.UsageError):
-    """Raised when mutually exclusive quality model options are used."""
-
-    def __init__(self) -> None:
-        super().__init__("--clear-quality-model cannot be used with --quality-model")
-
-
-class ConflictingEmbeddingModelOptionsError(click.UsageError):
-    """Raised when mutually exclusive embedding model options are used."""
-
-    def __init__(self) -> None:
-        super().__init__("--clear-embedding-model cannot be used with --embedding-model")
-
-
-class ConflictingToolSummaryConcurrencyOptionsError(click.UsageError):
-    """Raised when mutually exclusive tool-summary concurrency options are used."""
-
-    def __init__(self) -> None:
-        super().__init__("--clear-tool-summary-concurrency cannot be used with --tool-summary-concurrency")
-
-
-class MissingRunJobEnvironmentError(click.UsageError):
-    """Raised when internal run-job configuration is missing."""
-
-    def __init__(self, env_name: str) -> None:
-        super().__init__(f"{env_name} is required")
-
-
-class PortBindError(click.ClickException):
-    """Raised when the local service cannot bind its requested port."""
-
-    def __init__(self, *, host: str, port: int, reason: str) -> None:
-        super().__init__(f"{SERVICE_NAME} cannot start at {_service_base_url(host=host, port=port)}: {reason}")
-
-    @classmethod
-    def in_use(cls, *, host: str, port: int) -> PortBindError:
-        """Return an error for a port already bound by another process."""
-        return cls(host=host, port=port, reason="the port is already in use by another process")
-
-
-class JobInspectionNotFoundError(click.ClickException):
-    """Raised when the requested inspection job does not exist."""
-
-    def __init__(self, job_id: int) -> None:
-        super().__init__(f"Job {job_id} was not found")
-
-
-class SessionInterpretationInspectionNotFoundError(click.ClickException):
-    """Raised when the requested session interpretation snapshot does not exist."""
-
-    def __init__(self, session_id: str) -> None:
-        super().__init__(f"Interpretation snapshot for session {session_id} was not found")
-
-
-class QualityReportInspectionNotFoundError(click.ClickException):
-    """Raised when the requested quality report does not exist."""
-
-    def __init__(self, session_id: str) -> None:
-        super().__init__(f"Quality report for session {session_id} was not found")
-
-
-class DurableMemoryInspectionNotFoundError(click.ClickException):
-    """Raised when the requested durable memory does not exist."""
-
-    def __init__(self, memory_id: int) -> None:
-        super().__init__(f"Durable memory {memory_id} was not found")
-
-
-class StatusProbeError(Exception):
-    """Raised when the local service status probe fails."""
-
-    def __init__(self, message: str) -> None:
-        super().__init__(message)
-
-    @classmethod
-    def http_status(cls, code: int) -> StatusProbeError:
-        """Return an error for an unexpected HTTP response."""
-        return cls(f"HTTP {code} from status endpoint")
-
-    @classmethod
-    def unavailable(cls, reason: str) -> StatusProbeError:
-        """Return an error for an unavailable service."""
-        return cls(reason)
-
-    @classmethod
-    def timed_out(cls) -> StatusProbeError:
-        """Return an error for a timed out status probe."""
-        return cls("timed out waiting for status endpoint")
-
-    @classmethod
-    def invalid_json(cls) -> StatusProbeError:
-        """Return an error for an invalid JSON response."""
-        return cls("status endpoint returned invalid JSON")
-
-    @classmethod
-    def unexpected_json(cls) -> StatusProbeError:
-        """Return an error for an unexpected JSON response shape."""
-        return cls("status endpoint returned unexpected JSON")
 
 
 @click.group()
@@ -376,16 +281,12 @@ def recall(
     json_output: bool,
 ) -> None:
     """Search indexed raw transcript entries without running the HTTP service."""
-    recall_database = Database(db_url)
-    try:
-        result = RecallSearchService(database=recall_database).search(
-            query,
-            limit=limit,
-            session_id=session_id,
-        )
-    finally:
-        recall_database.close_if_open()
-
+    result = search_recall(
+        query=query,
+        db_url=db_url,
+        limit=limit,
+        session_id=session_id,
+    )
     _emit_recall_result(result, json_output=json_output)
 
 
@@ -410,14 +311,8 @@ def recall(
 )
 def interpretation(session_id: str, db_url: str, *, json_output: bool) -> None:
     """Inspect a session interpretation snapshot directly from the database."""
-    interpretation_database = Database(db_url)
-    try:
-        payload = SessionInterpretationInspectionService(database=interpretation_database).get_by_session_id(session_id)
-        if payload is None:
-            raise SessionInterpretationInspectionNotFoundError(session_id)
-        _emit_interpretation(payload, json_output=json_output)
-    finally:
-        interpretation_database.close_if_open()
+    payload = get_session_interpretation_payload(session_id=session_id, db_url=db_url)
+    _emit_interpretation(payload, json_output=json_output)
 
 
 @debug.command()
@@ -441,14 +336,8 @@ def interpretation(session_id: str, db_url: str, *, json_output: bool) -> None:
 )
 def quality(session_id: str, db_url: str, *, json_output: bool) -> None:
     """Inspect a session quality report directly from the database."""
-    quality_database = Database(db_url)
-    try:
-        payload = SessionQualityReportInspectionService(database=quality_database).get_by_session_id(session_id)
-        if payload is None:
-            raise QualityReportInspectionNotFoundError(session_id)
-        _emit_quality_report(payload, json_output=json_output)
-    finally:
-        quality_database.close_if_open()
+    payload = get_quality_report_payload(session_id=session_id, db_url=db_url)
+    _emit_quality_report(payload, json_output=json_output)
 
 
 @debug.command("quality-list")
@@ -481,26 +370,17 @@ def quality_list(
     json_output: bool,
 ) -> None:
     """List quality reports directly from the database."""
-    quality_database = Database(db_url)
-    try:
-        payload = (
-            SessionQualityReportInspectionService(database=quality_database)
-            .list_reports(
-                quality_status=quality_status,
-                derivation_status=derivation_status,
-                promotable=promotable,
-                is_current=is_current,
-                cwd=cwd,
-                worktree_label=worktree_label,
-                limit=limit,
-                offset=offset,
-            )
-            .to_payload()
-        )
-    except QualityReportFilterError as error:
-        raise click.ClickException(str(error)) from error
-    finally:
-        quality_database.close_if_open()
+    payload = list_quality_reports_payload(
+        db_url=db_url,
+        quality_status=quality_status,
+        derivation_status=derivation_status,
+        promotable=promotable,
+        is_current=is_current,
+        cwd=cwd,
+        worktree_label=worktree_label,
+        limit=limit,
+        offset=offset,
+    )
     _emit_quality_report_list(payload, json_output=json_output)
 
 
@@ -516,17 +396,12 @@ def quality_list(
 @click.option("--json", "json_output", is_flag=True, help="Emit parseable JSON output.")
 def durable(memory_id: int, db_url: str, *, include_audit: bool, json_output: bool) -> None:
     """Inspect a durable memory directly from the database."""
-    durable_database = Database(db_url)
-    try:
-        payload = DurableMemoryInspectionService(database=durable_database).get_memory(
-            memory_id,
-            include_audit=include_audit,
-        )
-        if payload is None:
-            raise DurableMemoryInspectionNotFoundError(memory_id)
-        _emit_durable_memory(payload, json_output=json_output)
-    finally:
-        durable_database.close_if_open()
+    payload = get_durable_memory_payload(
+        memory_id=memory_id,
+        db_url=db_url,
+        include_audit=include_audit,
+    )
+    _emit_durable_memory(payload, json_output=json_output)
 
 
 @debug.command("durable-list")
@@ -555,24 +430,15 @@ def durable_list(
     json_output: bool,
 ) -> None:
     """List durable memories directly from the database."""
-    durable_database = Database(db_url)
-    try:
-        payload = (
-            DurableMemoryInspectionService(database=durable_database)
-            .list_memories(
-                status=status,
-                cwd=cwd,
-                worktree_label=worktree_label,
-                session_id=session_id,
-                limit=limit,
-                offset=offset,
-            )
-            .to_payload()
-        )
-    except DurableMemoryFilterError as error:
-        raise click.ClickException(str(error)) from error
-    finally:
-        durable_database.close_if_open()
+    payload = list_durable_memories_payload(
+        db_url=db_url,
+        status=status,
+        cwd=cwd,
+        worktree_label=worktree_label,
+        session_id=session_id,
+        limit=limit,
+        offset=offset,
+    )
     _emit_durable_memory_list(payload, json_output=json_output)
 
 
@@ -589,20 +455,12 @@ def durable_list(
 @click.option("--json", "json_output", is_flag=True, help="Emit parseable JSON output.")
 def durable_audit(memory_id: int, db_url: str, limit: int, offset: int, *, json_output: bool) -> None:
     """Inspect durable memory audit events directly from the database."""
-    durable_database = Database(db_url)
-    try:
-        result = DurableMemoryInspectionService(database=durable_database).list_audit_events(
-            memory_id,
-            limit=limit,
-            offset=offset,
-        )
-        if result is None:
-            raise DurableMemoryInspectionNotFoundError(memory_id)
-        payload = result.to_payload()
-    except DurableMemoryFilterError as error:
-        raise click.ClickException(str(error)) from error
-    finally:
-        durable_database.close_if_open()
+    payload = list_durable_audit_payload(
+        memory_id=memory_id,
+        db_url=db_url,
+        limit=limit,
+        offset=offset,
+    )
     _emit_durable_memory_audit(payload, json_output=json_output)
 
 
@@ -634,25 +492,16 @@ def projection_list(
     json_output: bool,
 ) -> None:
     """List memory projection records directly from the database."""
-    projection_database = Database(db_url)
-    try:
-        payload = (
-            DurableMemoryInspectionService(database=projection_database)
-            .list_projection_records(
-                record_type=record_type,
-                memory_layer=memory_layer,
-                projection_status=projection_status,
-                recall_visible=recall_visible,
-                relation_visible=relation_visible,
-                limit=limit,
-                offset=offset,
-            )
-            .to_payload()
-        )
-    except DurableMemoryFilterError as error:
-        raise click.ClickException(str(error)) from error
-    finally:
-        projection_database.close_if_open()
+    payload = list_memory_projection_records_payload(
+        db_url=db_url,
+        record_type=record_type,
+        memory_layer=memory_layer,
+        projection_status=projection_status,
+        recall_visible=recall_visible,
+        relation_visible=relation_visible,
+        limit=limit,
+        offset=offset,
+    )
     _emit_memory_projection_list(payload, json_output=json_output)
 
 
@@ -684,21 +533,16 @@ def quality_sample(
     json_output: bool,
 ) -> None:
     """Sample quality reports directly from the database."""
-    quality_database = Database(db_url)
-    try:
-        payload = SessionQualityReportInspectionService(database=quality_database).sample_reports(
-            count=count,
-            quality_status=quality_status,
-            derivation_status=derivation_status,
-            promotable=promotable,
-            is_current=is_current,
-            cwd=cwd,
-            worktree_label=worktree_label,
-        )
-    except QualityReportFilterError as error:
-        raise click.ClickException(str(error)) from error
-    finally:
-        quality_database.close_if_open()
+    payload = sample_quality_reports_payload(
+        db_url=db_url,
+        count=count,
+        quality_status=quality_status,
+        derivation_status=derivation_status,
+        promotable=promotable,
+        is_current=is_current,
+        cwd=cwd,
+        worktree_label=worktree_label,
+    )
     _emit_quality_report_list(payload, json_output=json_output)
 
 
@@ -761,14 +605,8 @@ def run_job(job_id: int, run_id: str | None, db_url: str | None) -> None:
 )
 def inspect_job(job_id: int, db_url: str, *, json_output: bool) -> None:
     """Inspect a background job directly from the database."""
-    job_database = Database(db_url)
-    try:
-        job = JobStore(database=job_database).get(job_id)
-        if job is None:
-            raise JobInspectionNotFoundError(job_id)
-        _emit_job(serialize_job(job), json_output=json_output)
-    finally:
-        job_database.close_if_open()
+    payload = get_job_payload(job_id=job_id, db_url=db_url)
+    _emit_job(payload, json_output=json_output)
 
 
 @main.command()
@@ -847,373 +685,3 @@ def status(host: str, port: int, timeout: float, *, json_output: bool) -> None:
         raise click.exceptions.Exit(1) from error
 
     _emit_healthy(url=url, service_status=service_status, json_output=json_output)
-
-
-def _ensure_port_available(*, host: str, port: int) -> None:
-    try:
-        addresses = socket.getaddrinfo(host, port, type=socket.SOCK_STREAM)
-    except socket.gaierror as error:
-        raise PortBindError(host=host, port=port, reason=str(error)) from error
-
-    errors: list[OSError] = []
-    seen: set[tuple[int, int, int, Any]] = set()
-    for family, socktype, proto, _canonname, sockaddr in addresses:
-        key = (family, socktype, proto, sockaddr)
-        if key in seen:
-            continue
-        seen.add(key)
-        try:
-            with socket.socket(family, socktype, proto) as sock:
-                sock.bind(sockaddr)
-        except OSError as error:
-            if error.errno == errno.EADDRINUSE:
-                raise PortBindError.in_use(host=host, port=port) from error
-            errors.append(error)
-
-    if not seen:
-        raise PortBindError(host=host, port=port, reason="host did not resolve to a bind address")
-    if errors and len(errors) == len(seen):
-        raise PortBindError(host=host, port=port, reason=str(errors[0])) from errors[0]
-
-
-def _require_loopback_host(host: str) -> str:
-    if _is_loopback_host(host):
-        return host
-    raise NonLoopbackHostError()
-
-
-def _require_non_empty(value: str) -> str:
-    stripped = value.strip()
-    if stripped:
-        return stripped
-    raise NonEmptyStringError()
-
-
-def _optional_non_empty(value: str | None) -> str | None:
-    return None if value is None else _require_non_empty(value)
-
-
-def _run_job_value(option_value: str | None, env_name: str) -> str:
-    value = option_value if option_value is not None else os.environ.get(env_name)
-    if value is None:
-        raise MissingRunJobEnvironmentError(env_name)
-    return _require_non_empty(value)
-
-
-def _is_loopback_host(host: str) -> bool:
-    try:
-        return ipaddress.ip_address(host).is_loopback
-    except ValueError:
-        pass
-
-    try:
-        addresses = socket.getaddrinfo(host, None)
-    except socket.gaierror:
-        return False
-
-    return bool(addresses) and all(ipaddress.ip_address(address[4][0]).is_loopback for address in addresses)
-
-
-def _status_url(*, host: str, port: int) -> str:
-    return f"{_service_base_url(host=host, port=port)}/v1/status"
-
-
-def _service_base_url(*, host: str, port: int) -> str:
-    return f"http://{_http_host(host)}:{port}"
-
-
-def _http_host(host: str) -> str:
-    try:
-        address = ipaddress.ip_address(host)
-    except ValueError:
-        return host
-
-    if address.version == 6:
-        return f"[{host}]"
-    return host
-
-
-def _fetch_status(*, url: str, timeout: float) -> dict[str, Any]:
-    headers = {"Accept": "application/json"}
-    auth_header = _status_auth_header()
-    if auth_header is not None:
-        headers["Authorization"] = auth_header
-    request = urllib.request.Request(url, headers=headers)
-
-    try:
-        with urllib.request.urlopen(request, timeout=timeout) as response:
-            content = response.read().decode("utf-8")
-    except urllib.error.HTTPError as error:
-        raise StatusProbeError.http_status(error.code) from error
-    except urllib.error.URLError as error:
-        raise StatusProbeError.unavailable(_url_error_reason(error)) from error
-    except TimeoutError as error:
-        raise StatusProbeError.timed_out() from error
-    except OSError as error:
-        raise StatusProbeError.unavailable(str(error)) from error
-
-    try:
-        data = json.loads(content)
-    except json.JSONDecodeError as error:
-        raise StatusProbeError.invalid_json() from error
-
-    if not isinstance(data, dict):
-        raise StatusProbeError.unexpected_json()
-    return data
-
-
-def _status_auth_header() -> str | None:
-    metadata = ServerState().read_metadata()
-    if metadata is None:
-        return None
-    auth_token = metadata.get("auth_token")
-    if not isinstance(auth_token, str) or not auth_token:
-        return None
-    return f"Bearer {auth_token}"
-
-
-def _url_error_reason(error: urllib.error.URLError) -> str:
-    reason = error.reason
-    if isinstance(reason, TimeoutError):
-        return "timed out waiting for status endpoint"
-    return str(reason)
-
-
-def _emit_healthy(*, url: str, service_status: dict[str, Any], json_output: bool) -> None:
-    if json_output:
-        click.echo(json.dumps({"ok": True, "url": url, "status": service_status}, sort_keys=True))
-        return
-
-    click.echo(f"{SERVICE_NAME} is healthy at {url}")
-    _echo_status_field("version", service_status)
-    _echo_status_field("uptime_seconds", service_status)
-    _echo_status_field("host", service_status)
-    _echo_status_field("port", service_status)
-
-
-def _emit_observe_result(result: IngestResult, *, job_id: int | None, json_output: bool) -> None:
-    payload = {
-        "session_id": result.session_id,
-        "transcript_id": result.transcript_id,
-        "observation_id": result.observation_id,
-        "entries_ingested": result.entries_ingested,
-        "cursor_offset": result.cursor_offset,
-        "file_size": result.file_size,
-        "observed_at": result.observed_at.isoformat(),
-        "malformed_lines": result.malformed_lines,
-        "unsupported_lines": result.unsupported_lines,
-        "job_id": job_id,
-    }
-
-    if json_output:
-        click.echo(json.dumps(payload, sort_keys=True))
-        return
-
-    click.echo("Observed transcript")
-    for name, value in payload.items():
-        click.echo(f"  {name}: {value}")
-
-
-def _emit_config(payload: dict[str, str | int | None], *, path: str, json_output: bool) -> None:
-    output = {"config_path": path, **payload}
-    if json_output:
-        click.echo(json.dumps(output, sort_keys=True))
-        return
-
-    click.echo("Pi memory config")
-    for name, value in output.items():
-        click.echo(f"  {name}: {_display_optional(value)}")
-
-
-def _emit_job(payload: dict[str, Any], *, json_output: bool) -> None:
-    if json_output:
-        click.echo(json.dumps(payload, sort_keys=True))
-        return
-
-    click.echo("Job")
-    for name, value in payload.items():
-        click.echo(f"  {name}: {value}")
-
-
-def _emit_interpretation(payload: dict[str, Any], *, json_output: bool) -> None:
-    if json_output:
-        click.echo(json.dumps(payload, sort_keys=True))
-        return
-
-    click.echo("Session interpretation")
-    for name, value in payload.items():
-        click.echo(f"  {name}: {value}")
-
-
-def _emit_quality_report(payload: dict[str, Any], *, json_output: bool) -> None:
-    if json_output:
-        click.echo(json.dumps(payload, sort_keys=True))
-        return
-
-    click.echo("Session quality report")
-    for name, value in payload.items():
-        if isinstance(value, dict | list):
-            click.echo(f"  {name}: {json.dumps(value, sort_keys=True)}")
-        else:
-            click.echo(f"  {name}: {value}")
-
-
-def _emit_quality_report_list(payload: dict[str, Any], *, json_output: bool) -> None:
-    if json_output:
-        click.echo(json.dumps(payload, sort_keys=True))
-        return
-
-    results = payload.get("results")
-    reports = results if isinstance(results, list) else []
-    pagination = payload.get("pagination") if isinstance(payload.get("pagination"), dict) else {}
-    total = pagination.get("total", len(reports))
-    click.echo(f"Quality reports ({len(reports)} shown, total {total})")
-    for index, report in enumerate(reports, start=1):
-        if not isinstance(report, dict):
-            continue
-        click.echo(
-            f"{index}. session={report.get('session_id')} status={report.get('quality_status')} "
-            f"current={report.get('is_current')} promotable={report.get('promotable')}",
-        )
-        click.echo(f"   snapshot={report.get('snapshot_id')} report={report.get('quality_report_id')}")
-
-
-def _emit_durable_memory(payload: dict[str, Any], *, json_output: bool) -> None:
-    if json_output:
-        click.echo(json.dumps(payload, sort_keys=True))
-        return
-
-    click.echo("Durable memory")
-    for name, value in payload.items():
-        if isinstance(value, dict | list):
-            click.echo(f"  {name}: {json.dumps(value, sort_keys=True)}")
-        else:
-            click.echo(f"  {name}: {value}")
-
-
-def _emit_durable_memory_list(payload: dict[str, Any], *, json_output: bool) -> None:
-    if json_output:
-        click.echo(json.dumps(payload, sort_keys=True))
-        return
-
-    results = payload.get("results")
-    memories = results if isinstance(results, list) else []
-    pagination = payload.get("pagination") if isinstance(payload.get("pagination"), dict) else {}
-    total = pagination.get("total", len(memories))
-    click.echo(f"Durable memories ({len(memories)} shown, total {total})")
-    for index, memory in enumerate(memories, start=1):
-        if not isinstance(memory, dict):
-            continue
-        click.echo(
-            f"{index}. memory={memory.get('memory_id')} session={memory.get('session_id')} "
-            f"status={memory.get('status')} kind={memory.get('claim_kind')}",
-        )
-        click.echo(f"   statement={memory.get('statement')}")
-
-
-def _emit_durable_memory_audit(payload: dict[str, Any], *, json_output: bool) -> None:
-    if json_output:
-        click.echo(json.dumps(payload, sort_keys=True))
-        return
-
-    results = payload.get("results")
-    events = results if isinstance(results, list) else []
-    pagination = payload.get("pagination") if isinstance(payload.get("pagination"), dict) else {}
-    total = pagination.get("total", len(events))
-    click.echo(f"Durable memory audit events ({len(events)} shown, total {total})")
-    for index, event in enumerate(events, start=1):
-        if not isinstance(event, dict):
-            continue
-        click.echo(
-            f"{index}. event={event.get('event_id')} memory={event.get('memory_id')} "
-            f"type={event.get('event_type')} {event.get('from_status')}->{event.get('to_status')}",
-        )
-        click.echo(f"   reason={event.get('reason_code')} created_at={event.get('created_at')}")
-
-
-def _emit_memory_projection_list(payload: dict[str, Any], *, json_output: bool) -> None:
-    if json_output:
-        click.echo(json.dumps(payload, sort_keys=True))
-        return
-
-    results = payload.get("results")
-    records = results if isinstance(results, list) else []
-    pagination = payload.get("pagination") if isinstance(payload.get("pagination"), dict) else {}
-    total = pagination.get("total", len(records))
-    click.echo(f"Memory projection records ({len(records)} shown, total {total})")
-    for index, record in enumerate(records, start=1):
-        if not isinstance(record, dict):
-            continue
-        click.echo(
-            f"{index}. projection={record.get('projection_record_id')} type={record.get('record_type')} "
-            f"layer={record.get('memory_layer')} status={record.get('status')}",
-        )
-        click.echo(f"   record_key={record.get('record_key')} chroma_id={record.get('chroma_id')}")
-
-
-def _emit_recall_result(result: RawTranscriptSearchResult, *, json_output: bool) -> None:
-    payload = _recall_payload(result)
-    if json_output:
-        click.echo(json.dumps(payload, sort_keys=True))
-        return
-
-    if not result.results:
-        click.echo(f"No recall results for: {result.query}")
-        return
-
-    click.echo(f"Recall results for: {result.query}")
-    for hit in result.results:
-        role = "" if hit.message_role is None else f"/{hit.message_role}"
-        click.echo(f"{hit.rank}. session={hit.session_id} score={hit.score:.6g}")
-        click.echo(f"   source={hit.transcript_path}:{hit.byte_start}-{hit.byte_end}")
-        click.echo(f"   entry={hit.entry_type}{role} transcript_entry_id={hit.transcript_entry_id}")
-        click.echo(f"   excerpt={hit.excerpt}")
-        click.echo(f"   match={hit.match_reason}")
-
-
-def _recall_payload(result: RawTranscriptSearchResult) -> dict[str, Any]:
-    return {
-        "query": result.query,
-        "terms": list(result.terms),
-        "match_query": result.match_query,
-        "result_count": len(result.results),
-        "results": [_recall_hit_payload(hit) for hit in result.results],
-    }
-
-
-def _recall_hit_payload(result: RawTranscriptRecallResult) -> dict[str, Any]:
-    return {
-        "result_type": result.result_type,
-        "rank": result.rank,
-        "score": result.score,
-        "session_id": result.session_id,
-        "transcript_id": result.transcript_id,
-        "transcript_path": result.transcript_path,
-        "transcript_entry_id": result.transcript_entry_id,
-        "pi_entry_id": result.pi_entry_id,
-        "entry_type": result.entry_type,
-        "message_role": result.message_role,
-        "timestamp": None if result.timestamp is None else result.timestamp.isoformat(),
-        "byte_start": result.byte_start,
-        "byte_end": result.byte_end,
-        "excerpt": result.excerpt,
-        "match_reason": result.match_reason,
-    }
-
-
-def _emit_unavailable(*, url: str, error: str, json_output: bool) -> None:
-    if json_output:
-        click.echo(json.dumps({"ok": False, "url": url, "error": error}, sort_keys=True))
-        return
-
-    click.echo(f"{SERVICE_NAME} is unavailable at {url}: {error}", err=True)
-
-
-def _display_optional(value: object) -> object:
-    return "<unset>" if value is None else value
-
-
-def _echo_status_field(name: str, service_status: dict[str, Any]) -> None:
-    value = service_status.get(name)
-    if value is not None:
-        click.echo(f"  {name}: {value}")
