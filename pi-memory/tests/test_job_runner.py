@@ -97,8 +97,8 @@ from pi_memory.pipeline.runtime import (
     MemoryProjectionJobError,
     PipelineAdapters,
     TranscriptNotFoundError,
-    create_job_registry,
 )
+from pi_memory.pipeline.runtime.registry import create_job_registry
 from pi_memory.projection import ProjectionDocument, ProjectionHit, ProjectionMetadataValue
 from pi_memory.projection.contracts import MemoryProjection
 from pi_memory.projection.deterministic import DeterministicMemoryProjection

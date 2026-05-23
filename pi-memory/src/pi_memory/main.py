@@ -59,7 +59,7 @@ from pi_memory.db.database import Database
 from pi_memory.infra.job_queue import JobStore, JobStoreError
 from pi_memory.infra.job_runner import JobDispatcher, JobRunner, JobRunnerError
 from pi_memory.ingest import ObserveInput, TranscriptFileMissingError, TranscriptIngestService
-from pi_memory.pipeline.runtime import create_job_registry
+from pi_memory.pipeline.runtime.registry import create_job_registry
 from pi_memory.pipeline.stages.process_transcript.enqueue import enqueue_process_transcript_job
 from pi_memory.server import ServerAlreadyRunningError, ServerState, create_app
 from pi_memory.settings import Settings as MemorySettings
