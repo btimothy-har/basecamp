@@ -22,7 +22,7 @@ from pi_memory.infra.job_queue import JobStore, JobStoreError, serialize_job
 from pi_memory.infra.job_runner import JobDispatcher, JobRunner, JobRunnerError
 from pi_memory.ingest import IngestResult, ObserveInput, TranscriptFileMissingError, TranscriptIngestService
 from pi_memory.interpretation import SessionInterpretationInspectionService
-from pi_memory.pipeline import create_job_registry
+from pi_memory.pipeline.runtime import create_job_registry
 from pi_memory.pipeline.stages.process_transcript.enqueue import enqueue_process_transcript_job
 from pi_memory.quality import QualityReportFilterError, SessionQualityReportInspectionService
 from pi_memory.recall import RawTranscriptRecallResult, RawTranscriptSearchResult, RecallSearchService

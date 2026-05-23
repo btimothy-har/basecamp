@@ -92,7 +92,7 @@ from pi_memory.interpretation import (
     build_source_ref_aliases,
 )
 from pi_memory.interpretation.packets import InterpretationPacket
-from pi_memory.pipeline import (
+from pi_memory.pipeline.runtime import (
     InvalidJobPayloadError,
     MemoryProjectionJobError,
     PipelineAdapters,

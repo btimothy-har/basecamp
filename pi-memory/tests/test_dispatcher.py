@@ -25,7 +25,7 @@ from pi_memory.db.models import (
 from pi_memory.infra.job_queue import JobStore, JobStoreError
 from pi_memory.infra.job_runner import ClaimedJobMissingRunIdError, JobDispatcher
 from pi_memory.infra.job_runner import JobRunner as InfraJobRunner
-from pi_memory.pipeline import create_job_registry
+from pi_memory.pipeline.runtime import create_job_registry
 
 
 class JobRunner(InfraJobRunner):
