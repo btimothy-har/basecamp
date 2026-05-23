@@ -1,7 +1,7 @@
 import json
 from typing import Any
 
-import pi_memory.cli.main as cli_module
+import pi_memory.main as cli_module
 from click.testing import CliRunner
 from pi_memory import __version__
 

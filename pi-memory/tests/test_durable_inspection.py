@@ -6,7 +6,7 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
-import pi_memory.cli.main as cli_module
+import pi_memory.main as cli_module
 import pytest
 from click.testing import CliRunner
 from fastapi.testclient import TestClient
