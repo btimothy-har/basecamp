@@ -7,14 +7,16 @@ from typing import Any
 import pi_memory.durable.factory as durable_factory
 import pi_memory.infra.llm.pydantic_ai as llm_module
 import pytest
-from pi_memory.db import (
+from pi_memory.constants import (
     DURABLE_MEMORY_STATUS_CANDIDATE,
     SESSION_INTERPRETATION_DERIVATION_STATUS_CURRENT,
     SESSION_INTERPRETATION_DETERMINISTIC_STATUS_PASSED,
     SESSION_INTERPRETATION_QUALITY_STATUS_HEALTHY,
     SESSION_INTERPRETATION_SEMANTIC_STATUS_PASSED,
     SESSION_INTERPRETATION_STATUS_COMPLETED,
-    Database,
+)
+from pi_memory.db.database import Database
+from pi_memory.db.models import (
     DurableMemoryAuditEvent,
     DurableMemoryItem,
     MemorySession,

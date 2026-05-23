@@ -4,14 +4,14 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
-from pi_memory.db import (
+from pi_memory.constants import (
     JOB_STATUS_CLAIMED,
     JOB_STATUS_COMPLETED,
     JOB_STATUS_FAILED,
     JOB_STATUS_QUEUED,
-    Database,
-    Job,
 )
+from pi_memory.db.database import Database
+from pi_memory.db.models import Job
 from pi_memory.infra.job_queue.store import JobRunTokenMismatchError, JobStore
 from pi_memory.infra.job_runner import BaseJob, JobExecutionContext, JobRegistry, JobRunner, PermanentJobError
 from pi_memory.infra.job_runner.errors import UnsupportedJobKindError

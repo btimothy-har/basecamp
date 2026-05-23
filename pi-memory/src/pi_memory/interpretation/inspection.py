@@ -7,7 +7,14 @@ from typing import Any
 
 from sqlalchemy import select
 
-from pi_memory.db import Database, MemorySession, SessionInterpretationSnapshot, database
+from pi_memory.db.database import (
+    Database,
+    database,
+)
+from pi_memory.db.models import (
+    MemorySession,
+    SessionInterpretationSnapshot,
+)
 
 
 class SessionInterpretationInspectionService:

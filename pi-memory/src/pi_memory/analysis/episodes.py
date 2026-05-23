@@ -8,7 +8,7 @@ from datetime import datetime, timedelta
 from typing import Any
 
 from pi_memory.analysis.activity import NormalizedActivity
-from pi_memory.db import (
+from pi_memory.constants import (
     ACTIVITY_KIND_ASSISTANT_TEXT,
     ACTIVITY_KIND_ASSISTANT_THINKING,
     ACTIVITY_KIND_COMPACTION,

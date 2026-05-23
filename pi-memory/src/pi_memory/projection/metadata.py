@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from pi_memory.db.schema import MemoryProjectionRecord
+from pi_memory.db.models import MemoryProjectionRecord
 from pi_memory.projection.contracts import ProjectionMetadataValue
 
 

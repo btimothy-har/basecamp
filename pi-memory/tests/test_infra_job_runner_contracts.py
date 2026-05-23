@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import pytest
-from pi_memory.db import Job
+from pi_memory.db.models import Job
 from pi_memory.infra import job_runner
 from pi_memory.infra.job_runner import (
     BaseJob,

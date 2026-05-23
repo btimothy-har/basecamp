@@ -5,15 +5,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-from pi_memory.db import (
-    Database,
-    MemoryProjectionRecord,
-    MemorySession,
-    SessionInterpretationQualityReport,
-    SessionInterpretationSnapshot,
-    Transcript,
-)
-from pi_memory.db.schema import (
+from pi_memory.constants import (
     MEMORY_LAYER_SHORT_TERM,
     MEMORY_PROJECTION_COLLECTION_NAME,
     MEMORY_PROJECTION_RECORD_TYPE_SESSION_CLAIM,
@@ -30,6 +22,14 @@ from pi_memory.db.schema import (
     SESSION_INTERPRETATION_SEMANTIC_STATUS_PASSED,
     SESSION_INTERPRETATION_STATUS_BLOCKED,
     SESSION_INTERPRETATION_STATUS_COMPLETED,
+)
+from pi_memory.db.database import Database
+from pi_memory.db.models import (
+    MemoryProjectionRecord,
+    MemorySession,
+    SessionInterpretationQualityReport,
+    SessionInterpretationSnapshot,
+    Transcript,
 )
 from pi_memory.projection import ProjectionDocument, ProjectionHit, ProjectionMetadataValue, project_session_claims
 from sqlalchemy import select

@@ -10,7 +10,10 @@ from typing import Any, Literal
 
 from sqlalchemy import text
 
-from pi_memory.db import Database, database
+from pi_memory.db.database import (
+    Database,
+    database,
+)
 
 _MAX_LIMIT = 50
 _RESERVED_FTS_TOKENS = frozenset({"AND", "OR", "NOT", "NEAR"})

@@ -8,7 +8,7 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from pi_memory.db import (
+from pi_memory.constants import (
     ACTIVITY_TEXT_STATUS_COMPLETED,
     ANALYSIS_KIND_TRANSCRIPT_STRUCTURE,
     ANALYSIS_STATUS_COMPLETED,
@@ -16,6 +16,8 @@ from pi_memory.db import (
     SESSION_INTERPRETATION_STATUS_SKIPPED_NO_CLAIM_SOURCES,
     SOURCE_ORIGIN_LOCAL,
     SOURCE_ORIGIN_MIXED,
+)
+from pi_memory.db.models import (
     ActivityUnit,
     AnalysisRun,
     SessionInterpretationSnapshot,

@@ -11,7 +11,16 @@ from sqlalchemy import or_, select, tuple_
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from pi_memory.db import Database, MemorySession, Observation, Transcript, TranscriptEntry, database
+from pi_memory.db.database import (
+    Database,
+    database,
+)
+from pi_memory.db.models import (
+    MemorySession,
+    Observation,
+    Transcript,
+    TranscriptEntry,
+)
 from pi_memory.transcripts import ParsedPiEntry, PiTranscriptParser
 
 

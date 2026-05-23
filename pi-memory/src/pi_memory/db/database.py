@@ -10,13 +10,14 @@ from sqlalchemy import Engine, create_engine, event, text
 from sqlalchemy.engine import Connection, make_url
 from sqlalchemy.orm import Session, sessionmaker
 
-from pi_memory.constants import MEMORY_DB_URL
-from pi_memory.db.schema import (
+from pi_memory.constants import (
     ACTIVITY_TEXT_KIND_UNAVAILABLE,
     ACTIVITY_TEXT_STATUS_PENDING,
+    MEMORY_DB_URL,
     SOURCE_ORIGIN_UNKNOWN,
-    Base,
 )
+from pi_memory.db.base import Base
+from pi_memory.db.models import ensure_models_registered
 
 
 class DatabaseSessionFactoryError(RuntimeError):
@@ -63,6 +64,7 @@ class Database:
     def initialize(self) -> None:
         """Create database parent directories and registered tables."""
         self._ensure_parent_directory()
+        ensure_models_registered()
         with self.engine.begin() as connection:
             Base.metadata.create_all(connection)
             if _is_sqlite_url(self._url):

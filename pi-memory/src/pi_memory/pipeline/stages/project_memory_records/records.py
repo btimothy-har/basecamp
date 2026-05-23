@@ -4,7 +4,11 @@ from __future__ import annotations
 
 from sqlalchemy.orm import Session
 
-from pi_memory.db import MEMORY_PROJECTION_STATUS_DELETED, DurableMemoryItem, MemoryProjectionRecord
+from pi_memory.constants import MEMORY_PROJECTION_STATUS_DELETED
+from pi_memory.db.models import (
+    DurableMemoryItem,
+    MemoryProjectionRecord,
+)
 from pi_memory.durable import DurableMemoryProjectionError, project_durable_memory_record
 from pi_memory.projection.contracts import MemoryProjection
 

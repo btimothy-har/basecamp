@@ -10,7 +10,7 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from pi_memory.db import (
+from pi_memory.constants import (
     ACTIVITY_KIND_TOOL_PAIR,
     ACTIVITY_TEXT_KIND_TOOL_SUMMARY,
     ACTIVITY_TEXT_KIND_UNAVAILABLE,
@@ -18,6 +18,8 @@ from pi_memory.db import (
     ACTIVITY_TEXT_STATUS_FAILED,
     ANALYSIS_KIND_TRANSCRIPT_STRUCTURE,
     ANALYSIS_STATUS_COMPLETED,
+)
+from pi_memory.db.models import (
     ActivityUnit,
     AnalysisRun,
     Transcript,

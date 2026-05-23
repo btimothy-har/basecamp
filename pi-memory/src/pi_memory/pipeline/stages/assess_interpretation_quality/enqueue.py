@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from pi_memory.db import JOB_KIND_ASSESS_INTERPRETATION_QUALITY, Job
+from pi_memory.constants import JOB_KIND_ASSESS_INTERPRETATION_QUALITY
+from pi_memory.db.models import Job
 from pi_memory.infra.job_queue.store import JobStore
 
 

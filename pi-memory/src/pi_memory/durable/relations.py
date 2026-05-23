@@ -13,7 +13,7 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.orm import Session, joinedload
 
-from pi_memory.db import (
+from pi_memory.constants import (
     DURABLE_MEMORY_RELATION_TYPE_CONFLICTS,
     DURABLE_MEMORY_RELATION_TYPE_DUPLICATE,
     DURABLE_MEMORY_RELATION_TYPE_NOVEL,
@@ -28,6 +28,8 @@ from pi_memory.db import (
     MEMORY_PROJECTION_STATUS_FAILED,
     MEMORY_PROJECTION_STATUS_INDEXED,
     MEMORY_PROJECTION_STATUS_PENDING,
+)
+from pi_memory.db.models import (
     DurableMemoryItem,
     DurableMemoryRelation,
     MemoryProjectionRecord,
@@ -262,7 +264,7 @@ def _upsert_projection_record(
         "memory_layer": MEMORY_LAYER_LONG_TERM,
         "source_table": _SOURCE_TABLE,
         "source_id": memory.id,
-        "snapshot_id": memory.snapshot_id,
+        "snapshot_id": None,
         "quality_report_id": memory.quality_report_id,
         "durable_memory_id": memory.id,
         "claim_index": None,

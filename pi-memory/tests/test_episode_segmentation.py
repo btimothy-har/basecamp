@@ -4,7 +4,7 @@ from datetime import UTC, datetime, timedelta
 from typing import Any, Final, cast
 
 from pi_memory.analysis import NormalizedActivity, segment_activities
-from pi_memory.db import (
+from pi_memory.constants import (
     ACTIVITY_KIND_ASSISTANT_TEXT,
     ACTIVITY_KIND_COMPACTION,
     ACTIVITY_KIND_CUSTOM_EVENT,

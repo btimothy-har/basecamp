@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import Any
 
-from pi_memory.db import (
+from pi_memory.constants import (
     SESSION_INTERPRETATION_DERIVATION_STATUS_OUTDATED,
     SESSION_INTERPRETATION_DERIVATION_STATUS_SUPERSEDED,
     SESSION_INTERPRETATION_DETERMINISTIC_STATUS_FAILED,
@@ -14,8 +14,8 @@ from pi_memory.db import (
     SESSION_INTERPRETATION_SEMANTIC_STATUS_DEGRADED,
     SESSION_INTERPRETATION_SEMANTIC_STATUS_PASSED,
     SESSION_INTERPRETATION_STATUS_COMPLETED,
-    SessionInterpretationQualityReport,
 )
+from pi_memory.db.models import SessionInterpretationQualityReport
 from pi_memory.durable.contracts import QualityEligibilityEnvelope
 
 _CLAIM_STATUS_WARNING_CODES = {

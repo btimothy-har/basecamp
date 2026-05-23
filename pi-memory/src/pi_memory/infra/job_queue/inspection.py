@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any
 
-from pi_memory.db import Job
+from pi_memory.db.models import Job
 
 JOB_INSPECTION_FIELDS = (
     "id",

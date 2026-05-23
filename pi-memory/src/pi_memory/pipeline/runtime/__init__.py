@@ -8,7 +8,6 @@ from pi_memory.pipeline.runtime.errors import (
     PermanentInterpreterUnavailableError,
     TranscriptNotFoundError,
 )
-from pi_memory.pipeline.runtime.registry import create_job_registry
 
 __all__ = [
     "InvalidJobPayloadError",
@@ -17,5 +16,4 @@ __all__ = [
     "PermanentInterpreterUnavailableError",
     "PipelineAdapters",
     "TranscriptNotFoundError",
-    "create_job_registry",
 ]

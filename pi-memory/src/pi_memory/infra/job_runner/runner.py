@@ -6,8 +6,11 @@ import os
 from datetime import datetime
 from typing import Any
 
-from pi_memory.db import Database, database
-from pi_memory.db.schema import Job
+from pi_memory.db.database import (
+    Database,
+    database,
+)
+from pi_memory.db.models import Job
 from pi_memory.infra.job_queue.store import JobStore
 
 from .base import BaseJob, JobExecutionContext

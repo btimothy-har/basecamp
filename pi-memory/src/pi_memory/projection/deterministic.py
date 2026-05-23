@@ -7,7 +7,7 @@ import math
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 
-from pi_memory.db.schema import MEMORY_PROJECTION_COLLECTION_NAME
+from pi_memory.constants import MEMORY_PROJECTION_COLLECTION_NAME
 from pi_memory.projection.contracts import ProjectionDocument, ProjectionHit, ProjectionMetadataValue
 
 

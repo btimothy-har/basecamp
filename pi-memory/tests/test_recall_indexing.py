@@ -4,7 +4,12 @@ import json
 from pathlib import Path
 
 import pytest
-from pi_memory.db import Database, MemorySession, Transcript, TranscriptEntry
+from pi_memory.db.database import Database
+from pi_memory.db.models import (
+    MemorySession,
+    Transcript,
+    TranscriptEntry,
+)
 from pi_memory.recall import extract_search_text, index_transcript
 from sqlalchemy import text
 

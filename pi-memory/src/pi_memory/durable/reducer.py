@@ -8,7 +8,7 @@ from typing import Any
 
 from sqlalchemy.orm import Session
 
-from pi_memory.db import (
+from pi_memory.constants import (
     DURABLE_MEMORY_ARCHIVED_REASON_SUPERSEDED,
     DURABLE_MEMORY_RELATION_TYPE_CONFLICTS,
     DURABLE_MEMORY_RELATION_TYPE_DUPLICATE,
@@ -23,6 +23,8 @@ from pi_memory.db import (
     DURABLE_MEMORY_STATUS_QUARANTINED,
     DURABLE_MEMORY_STATUS_REJECTED,
     MEMORY_PROJECTION_STATUS_DELETED,
+)
+from pi_memory.db.models import (
     DurableMemoryAuditEvent,
     DurableMemoryItem,
 )

@@ -6,13 +6,15 @@ from typing import Any
 
 from sqlalchemy import select
 
-from pi_memory.db import (
+from pi_memory.constants import (
     JOB_KIND_ASSESS_INTERPRETATION_QUALITY,
     SESSION_INTERPRETATION_QUALITY_REASON_SEMANTIC_ASSESSMENT_FAILED,
     SESSION_INTERPRETATION_QUALITY_REASON_SEMANTIC_ASSESSMENT_PENDING,
     SESSION_INTERPRETATION_QUALITY_STATUS_ASSESSMENT_FAILED,
     SESSION_INTERPRETATION_SEMANTIC_STATUS_ASSESSMENT_FAILED,
     SESSION_INTERPRETATION_STATUS_COMPLETED,
+)
+from pi_memory.db.models import (
     Job,
     SessionInterpretationQualityReport,
     SessionInterpretationSnapshot,

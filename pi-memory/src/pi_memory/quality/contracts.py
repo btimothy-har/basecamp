@@ -7,7 +7,7 @@ from typing import Annotated, Any, Final, Literal, TypeAlias
 
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints, field_validator, model_validator
 
-from pi_memory.db import (
+from pi_memory.constants import (
     SESSION_INTERPRETATION_DERIVATION_STATUS_CURRENT,
     SESSION_INTERPRETATION_DERIVATION_STATUS_OUTDATED,
     SESSION_INTERPRETATION_DERIVATION_STATUS_SUPERSEDED,

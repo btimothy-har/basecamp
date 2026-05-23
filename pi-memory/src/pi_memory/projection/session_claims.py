@@ -12,7 +12,7 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.orm import Session, joinedload
 
-from pi_memory.db import (
+from pi_memory.constants import (
     MEMORY_LAYER_SHORT_TERM,
     MEMORY_PROJECTION_RECORD_TYPE_SESSION_CLAIM,
     MEMORY_PROJECTION_STATUS_DELETED,
@@ -20,6 +20,8 @@ from pi_memory.db import (
     MEMORY_PROJECTION_STATUS_INDEXED,
     MEMORY_PROJECTION_STATUS_PENDING,
     SESSION_INTERPRETATION_STATUS_COMPLETED,
+)
+from pi_memory.db.models import (
     MemoryProjectionRecord,
     SessionInterpretationQualityReport,
     SessionInterpretationSnapshot,

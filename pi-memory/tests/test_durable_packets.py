@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-from pi_memory.db import (
+from pi_memory.constants import (
     ACTIVITY_KIND_USER_TEXT,
     ACTIVITY_TEXT_KIND_DETERMINISTIC,
     ACTIVITY_TEXT_STATUS_COMPLETED,
@@ -22,9 +22,11 @@ from pi_memory.db import (
     SESSION_INTERPRETATION_STATUS_BLOCKED,
     SESSION_INTERPRETATION_STATUS_COMPLETED,
     SOURCE_ORIGIN_LOCAL,
+)
+from pi_memory.db.database import Database
+from pi_memory.db.models import (
     ActivityUnit,
     AnalysisRun,
-    Database,
     MemorySession,
     SessionInterpretationQualityReport,
     SessionInterpretationSnapshot,

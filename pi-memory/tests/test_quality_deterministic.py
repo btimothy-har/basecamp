@@ -7,7 +7,7 @@ from typing import Any
 
 import pytest
 from pi_memory.analysis import analyze_transcript_structure
-from pi_memory.db import (
+from pi_memory.constants import (
     ANALYSIS_STATUS_COMPLETED,
     SESSION_INTERPRETATION_BLOCKED_REASON_PHASE_5A_NOT_READY,
     SESSION_INTERPRETATION_DERIVATION_STATUS_CURRENT,
@@ -26,8 +26,10 @@ from pi_memory.db import (
     SESSION_INTERPRETATION_STATUS_BLOCKED,
     SESSION_INTERPRETATION_STATUS_COMPLETED,
     SESSION_INTERPRETATION_STATUS_SKIPPED_NO_CLAIM_SOURCES,
+)
+from pi_memory.db.database import Database
+from pi_memory.db.models import (
     AnalysisRun,
-    Database,
     MemorySession,
     SessionInterpretationSnapshot,
     Transcript,

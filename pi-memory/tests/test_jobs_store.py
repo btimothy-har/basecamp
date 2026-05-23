@@ -4,16 +4,16 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
-from pi_memory.db import (
+from pi_memory.constants import (
     JOB_STATUS_CANCELLED,
     JOB_STATUS_CLAIMED,
     JOB_STATUS_COMPLETED,
     JOB_STATUS_FAILED,
     JOB_STATUS_QUEUED,
     JOB_STATUS_RUNNING,
-    Database,
-    Job,
 )
+from pi_memory.db.database import Database
+from pi_memory.db.models import Job
 from pi_memory.infra.job_queue import (
     JobInvalidTransitionError,
     JobLeaseExpiredError,

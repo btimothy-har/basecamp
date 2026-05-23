@@ -6,15 +6,18 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from types import SimpleNamespace
 
-import pi_memory.cli.main as cli_module
+import pi_memory.cli.service as service_module
+import pi_memory.main as cli_module
 import pytest
 from click.testing import CliRunner
-from pi_memory.db import (
+from pi_memory.constants import (
     ANALYSIS_STATUS_COMPLETED,
     JOB_KIND_PROCESS_TRANSCRIPT,
     JOB_STATUS_CLAIMED,
     JOB_STATUS_COMPLETED,
-    Database,
+)
+from pi_memory.db.database import Database
+from pi_memory.db.models import (
     Job,
     MemorySession,
     Observation,
@@ -648,7 +651,7 @@ def test_status_url_brackets_ipv6_loopback_host() -> None:
 
 
 def test_port_bind_error_brackets_ipv6_loopback_host() -> None:
-    error = cli_module.PortBindError.in_use(host="::1", port=8765)
+    error = service_module.PortBindError.in_use(host="::1", port=8765)
 
     assert "pi-memory cannot start at http://[::1]:8765" in str(error)
 
@@ -676,8 +679,8 @@ def test_port_check_uses_resolved_socket_family(monkeypatch) -> None:
     ) -> list[tuple[int, int, int, str, tuple[str, int, int, int]]]:
         return [(socket.AF_INET6, socket.SOCK_STREAM, 0, "", (host, port, 0, 0))]
 
-    monkeypatch.setattr(cli_module.socket, "getaddrinfo", fake_getaddrinfo)
-    monkeypatch.setattr(cli_module.socket, "socket", FakeSocket)
+    monkeypatch.setattr(service_module.socket, "getaddrinfo", fake_getaddrinfo)
+    monkeypatch.setattr(service_module.socket, "socket", FakeSocket)
 
     cli_module._ensure_port_available(host="::1", port=8765)
 
