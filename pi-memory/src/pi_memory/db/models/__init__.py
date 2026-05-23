@@ -1,5 +1,7 @@
 """SQLAlchemy models for pi-memory."""
 
+from importlib import import_module
+
 from pi_memory.db.models.analysis import ActivityUnit as ActivityUnit
 from pi_memory.db.models.analysis import AnalysisRun as AnalysisRun
 from pi_memory.db.models.analysis import Episode as Episode
@@ -19,7 +21,17 @@ from pi_memory.db.models.interpretation import SessionInterpretationSnapshot as 
 from pi_memory.db.models.jobs import Job as Job
 from pi_memory.db.models.projection import MemoryProjectionRecord as MemoryProjectionRecord
 
+_MODEL_MODULES = (
+    "pi_memory.db.models.analysis",
+    "pi_memory.db.models.durable",
+    "pi_memory.db.models.ingestion",
+    "pi_memory.db.models.interpretation",
+    "pi_memory.db.models.jobs",
+    "pi_memory.db.models.projection",
+)
+
 
 def ensure_models_registered() -> None:
     """Load model modules into Base metadata."""
-    return None
+    for module_name in _MODEL_MODULES:
+        import_module(module_name)

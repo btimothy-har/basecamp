@@ -264,7 +264,7 @@ def _upsert_projection_record(
         "memory_layer": MEMORY_LAYER_LONG_TERM,
         "source_table": _SOURCE_TABLE,
         "source_id": memory.id,
-        "snapshot_id": memory.snapshot_id,
+        "snapshot_id": None,
         "quality_report_id": memory.quality_report_id,
         "durable_memory_id": memory.id,
         "claim_index": None,

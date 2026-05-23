@@ -73,9 +73,11 @@ class MemoryProjectionRecord(Base):
             name="ck_memory_projection_records_status_valid",
         ),
         CheckConstraint(
-            "(record_type = 'session_claim' AND snapshot_id IS NOT NULL AND claim_index >= 0 "
+            "(record_type = 'session_claim' AND snapshot_id IS NOT NULL "
+            "AND claim_index IS NOT NULL AND claim_index >= 0 "
             "AND durable_memory_id IS NULL AND memory_layer = 'short_term') OR "
-            "(record_type = 'durable_memory' AND durable_memory_id IS NOT NULL AND claim_index IS NULL "
+            "(record_type = 'durable_memory' AND snapshot_id IS NULL "
+            "AND durable_memory_id IS NOT NULL AND claim_index IS NULL "
             "AND memory_layer = 'long_term')",
             name="ck_memory_projection_records_record_type_invariants",
         ),

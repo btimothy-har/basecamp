@@ -59,38 +59,23 @@ class MemorySession(Base):
     observations: Mapped[list[Observation]] = relationship(
         "Observation", back_populates="session", cascade="all, delete-orphan"
     )
-    analysis_runs: Mapped[list[AnalysisRun]] = relationship(
-        "AnalysisRun", back_populates="session", cascade="all, delete-orphan"
-    )
-    activity_units: Mapped[list[ActivityUnit]] = relationship(
-        "ActivityUnit", back_populates="session", cascade="all, delete-orphan"
-    )
-    episodes: Mapped[list[Episode]] = relationship("Episode", back_populates="session", cascade="all, delete-orphan")
-    episode_manifests: Mapped[list[EpisodeManifest]] = relationship(
-        "EpisodeManifest",
-        back_populates="session",
-        cascade="all, delete-orphan",
-    )
+    analysis_runs: Mapped[list[AnalysisRun]] = relationship("AnalysisRun", back_populates="session")
+    activity_units: Mapped[list[ActivityUnit]] = relationship("ActivityUnit", back_populates="session")
+    episodes: Mapped[list[Episode]] = relationship("Episode", back_populates="session")
+    episode_manifests: Mapped[list[EpisodeManifest]] = relationship("EpisodeManifest", back_populates="session")
     episode_interpretation_snapshots: Mapped[list[EpisodeInterpretationSnapshot]] = relationship(
         "EpisodeInterpretationSnapshot",
         back_populates="session",
-        cascade="all, delete-orphan",
     )
     session_snapshot_shells: Mapped[list[SessionSnapshotShell]] = relationship(
         "SessionSnapshotShell",
         back_populates="session",
-        cascade="all, delete-orphan",
     )
     session_interpretation_snapshot: Mapped[SessionInterpretationSnapshot | None] = relationship(
         "SessionInterpretationSnapshot",
         back_populates="session",
-        cascade="all, delete-orphan",
     )
-    durable_memory_items: Mapped[list[DurableMemoryItem]] = relationship(
-        "DurableMemoryItem",
-        back_populates="session",
-        cascade="all, delete-orphan",
-    )
+    durable_memory_items: Mapped[list[DurableMemoryItem]] = relationship("DurableMemoryItem", back_populates="session")
 
 
 class Transcript(Base):
@@ -141,22 +126,13 @@ class Transcript(Base):
     entries: Mapped[list[TranscriptEntry]] = relationship(
         "TranscriptEntry", back_populates="transcript", cascade="all, delete-orphan"
     )
-    analysis_runs: Mapped[list[AnalysisRun]] = relationship(
-        "AnalysisRun", back_populates="transcript", cascade="all, delete-orphan"
-    )
-    activity_units: Mapped[list[ActivityUnit]] = relationship(
-        "ActivityUnit", back_populates="transcript", cascade="all, delete-orphan"
-    )
-    episodes: Mapped[list[Episode]] = relationship("Episode", back_populates="transcript", cascade="all, delete-orphan")
-    episode_manifests: Mapped[list[EpisodeManifest]] = relationship(
-        "EpisodeManifest",
-        back_populates="transcript",
-        cascade="all, delete-orphan",
-    )
+    analysis_runs: Mapped[list[AnalysisRun]] = relationship("AnalysisRun", back_populates="transcript")
+    activity_units: Mapped[list[ActivityUnit]] = relationship("ActivityUnit", back_populates="transcript")
+    episodes: Mapped[list[Episode]] = relationship("Episode", back_populates="transcript")
+    episode_manifests: Mapped[list[EpisodeManifest]] = relationship("EpisodeManifest", back_populates="transcript")
     episode_interpretation_snapshots: Mapped[list[EpisodeInterpretationSnapshot]] = relationship(
         "EpisodeInterpretationSnapshot",
         back_populates="transcript",
-        cascade="all, delete-orphan",
     )
     session_snapshot_shells: Mapped[list[SessionSnapshotShell]] = relationship(
         "SessionSnapshotShell", back_populates="transcript"

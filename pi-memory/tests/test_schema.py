@@ -769,6 +769,20 @@ def test_memory_projection_records_enforce_type_invariants(database: Database) -
     with pytest.raises(IntegrityError), database.session() as session:
         session.add(
             MemoryProjectionRecord(
+                chroma_id="session-claim-missing-claim-index",
+                record_key="session-claim-missing-claim-index",
+                record_type=MEMORY_PROJECTION_RECORD_TYPE_SESSION_CLAIM,
+                memory_layer=MEMORY_LAYER_SHORT_TERM,
+                source_table="session_interpretation_snapshots",
+                source_id=snapshot_id,
+                snapshot_id=snapshot_id,
+                content_hash="hash-invalid-missing-claim-index",
+            ),
+        )
+
+    with pytest.raises(IntegrityError), database.session() as session:
+        session.add(
+            MemoryProjectionRecord(
                 chroma_id="session-claim-invalid",
                 record_key="session-claim-invalid",
                 record_type=MEMORY_PROJECTION_RECORD_TYPE_SESSION_CLAIM,
@@ -793,6 +807,21 @@ def test_memory_projection_records_enforce_type_invariants(database: Database) -
                 durable_memory_id=memory_id,
                 claim_index=0,
                 content_hash="hash-invalid-durable",
+            ),
+        )
+
+    with pytest.raises(IntegrityError), database.session() as session:
+        session.add(
+            MemoryProjectionRecord(
+                chroma_id="durable-invalid-snapshot",
+                record_key="durable-invalid-snapshot",
+                record_type=MEMORY_PROJECTION_RECORD_TYPE_DURABLE_MEMORY,
+                memory_layer=MEMORY_LAYER_LONG_TERM,
+                source_table="durable_memory_items",
+                source_id=memory_id,
+                snapshot_id=snapshot_id,
+                durable_memory_id=memory_id,
+                content_hash="hash-invalid-durable-snapshot",
             ),
         )
 
@@ -1332,7 +1361,6 @@ def test_episode_defaults_are_applied(database: Database) -> None:
             session_id=session_id,
             transcript_id=transcript_id,
             ordinal=0,
-            close_reason=EPISODE_CLOSE_REASON_TRANSCRIPT_END,
             byte_start=0,
             byte_end=1,
         )
@@ -1341,6 +1369,7 @@ def test_episode_defaults_are_applied(database: Database) -> None:
         session.refresh(episode)
 
         assert episode.status == EPISODE_STATUS_CLOSED
+        assert episode.close_reason == EPISODE_CLOSE_REASON_TRANSCRIPT_END
         assert episode.activity_count == 0
         assert episode.message_count == 0
         assert episode.tool_pair_count == 0
@@ -1545,19 +1574,38 @@ def test_episode_rejects_invalid_close_reason(database: Database) -> None:
 def test_closed_episode_requires_close_reason(database: Database) -> None:
     session_id, transcript_id, analysis_run_id = create_analysis_run(database)
 
-    with pytest.raises(IntegrityError):
-        with database.session() as session:
-            session.add(
-                Episode(
-                    analysis_run_id=analysis_run_id,
-                    session_id=session_id,
-                    transcript_id=transcript_id,
-                    ordinal=0,
-                    status=EPISODE_STATUS_CLOSED,
-                    byte_start=0,
-                    byte_end=1,
-                ),
-            )
+    with pytest.raises(IntegrityError), database.session() as session:
+        session.execute(
+            text(
+                """
+                INSERT INTO episodes (
+                    analysis_run_id,
+                    session_id,
+                    transcript_id,
+                    ordinal,
+                    status,
+                    close_reason,
+                    byte_start,
+                    byte_end
+                ) VALUES (
+                    :analysis_run_id,
+                    :session_id,
+                    :transcript_id,
+                    0,
+                    :status,
+                    NULL,
+                    0,
+                    1
+                )
+                """,
+            ),
+            {
+                "analysis_run_id": analysis_run_id,
+                "session_id": session_id,
+                "transcript_id": transcript_id,
+                "status": EPISODE_STATUS_CLOSED,
+            },
+        )
 
 
 def test_episode_rejects_duplicate_ordinal_in_analysis_run(database: Database) -> None:

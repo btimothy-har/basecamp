@@ -26,6 +26,7 @@ from pi_memory.constants import (
     ACTIVITY_TEXT_STATUS_PENDING,
     ANALYSIS_KIND_TRANSCRIPT_STRUCTURE,
     ANALYSIS_STATUS_RUNNING,
+    EPISODE_CLOSE_REASON_TRANSCRIPT_END,
     EPISODE_STATUS_CLOSED,
     SESSION_SNAPSHOT_STATUS_READY_FOR_INTERPRETATION,
     SOURCE_ORIGIN_UNKNOWN,
@@ -269,7 +270,7 @@ class Episode(Base):
     transcript_id: Mapped[int] = mapped_column(ForeignKey("transcripts.id", ondelete="CASCADE"), index=True)
     ordinal: Mapped[int]
     status: Mapped[str] = mapped_column(default=EPISODE_STATUS_CLOSED, server_default=EPISODE_STATUS_CLOSED)
-    close_reason: Mapped[str | None]
+    close_reason: Mapped[str | None] = mapped_column(server_default=EPISODE_CLOSE_REASON_TRANSCRIPT_END)
     first_entry_id: Mapped[int | None] = mapped_column(
         ForeignKey("transcript_entries.id", ondelete="SET NULL"),
         index=True,

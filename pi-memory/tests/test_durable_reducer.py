@@ -571,7 +571,6 @@ def create_memory_fixture(database: Database, memories: list[dict[str, Any]]) ->
                 memory_layer=MEMORY_LAYER_LONG_TERM,
                 source_table="durable_memory_items",
                 source_id=memory.id,
-                snapshot_id=snapshot.id,
                 quality_report_id=report.id,
                 durable_memory_id=memory.id,
                 claim_index=None,
