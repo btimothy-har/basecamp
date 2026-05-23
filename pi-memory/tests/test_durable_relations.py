@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-from pi_memory.db import (
+from pi_memory.db.constants import (
     DURABLE_MEMORY_RELATION_TYPE_CONFLICTS,
     DURABLE_MEMORY_RELATION_TYPE_DUPLICATE,
     DURABLE_MEMORY_RELATION_TYPE_NOVEL,
@@ -14,16 +14,6 @@ from pi_memory.db import (
     DURABLE_MEMORY_RELATION_TYPE_SUPERSEDES,
     DURABLE_MEMORY_STATUS_CANDIDATE,
     DURABLE_MEMORY_STATUS_PROMOTED,
-    Database,
-    DurableMemoryItem,
-    DurableMemoryRelation,
-    MemoryProjectionRecord,
-    MemorySession,
-    SessionInterpretationQualityReport,
-    SessionInterpretationSnapshot,
-    Transcript,
-)
-from pi_memory.db.schema import (
     MEMORY_LAYER_LONG_TERM,
     MEMORY_PROJECTION_COLLECTION_NAME,
     MEMORY_PROJECTION_RECORD_TYPE_DURABLE_MEMORY,
@@ -34,6 +24,16 @@ from pi_memory.db.schema import (
     SESSION_INTERPRETATION_QUALITY_STATUS_HEALTHY,
     SESSION_INTERPRETATION_SEMANTIC_STATUS_PASSED,
     SESSION_INTERPRETATION_STATUS_COMPLETED,
+)
+from pi_memory.db.database import Database
+from pi_memory.db.models import (
+    DurableMemoryItem,
+    DurableMemoryRelation,
+    MemoryProjectionRecord,
+    MemorySession,
+    SessionInterpretationQualityReport,
+    SessionInterpretationSnapshot,
+    Transcript,
 )
 from pi_memory.durable import (
     DurableMemoryNotFoundError,

@@ -4,7 +4,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-from pi_memory.db import (
+from pi_memory.db.constants import (
     DURABLE_MEMORY_ARCHIVED_REASON_SUPERSEDED,
     DURABLE_MEMORY_RELATION_TYPE_CONFLICTS,
     DURABLE_MEMORY_RELATION_TYPE_DUPLICATE,
@@ -28,7 +28,9 @@ from pi_memory.db import (
     SESSION_INTERPRETATION_QUALITY_STATUS_HEALTHY,
     SESSION_INTERPRETATION_SEMANTIC_STATUS_PASSED,
     SESSION_INTERPRETATION_STATUS_COMPLETED,
-    Database,
+)
+from pi_memory.db.database import Database
+from pi_memory.db.models import (
     DurableMemoryAuditEvent,
     DurableMemoryItem,
     MemoryProjectionRecord,

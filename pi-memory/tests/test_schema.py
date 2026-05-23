@@ -1,7 +1,7 @@
 from pathlib import Path
 
 import pytest
-from pi_memory.db import (
+from pi_memory.db.constants import (
     ACTIVITY_KIND_USER_TEXT,
     ACTIVITY_TEXT_KIND_UNAVAILABLE,
     ACTIVITY_TEXT_STATUS_COMPLETED,
@@ -38,9 +38,11 @@ from pi_memory.db import (
     SESSION_INTERPRETATION_STATUS_COMPLETED,
     SESSION_SNAPSHOT_STATUS_READY_FOR_INTERPRETATION,
     SOURCE_ORIGIN_UNKNOWN,
+)
+from pi_memory.db.database import Database
+from pi_memory.db.models import (
     ActivityUnit,
     AnalysisRun,
-    Database,
     DurableMemoryAuditEvent,
     DurableMemoryItem,
     DurableMemoryRelation,

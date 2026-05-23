@@ -2,11 +2,11 @@ import sqlite3
 from pathlib import Path
 
 import pytest
-from pi_memory.db import (
+from pi_memory.db.base import Base
+from pi_memory.db.database import Database
+from pi_memory.db.models import (
     ActivityUnit,
     AnalysisRun,
-    Base,
-    Database,
     DurableMemoryAuditEvent,
     DurableMemoryItem,
     DurableMemoryRelation,

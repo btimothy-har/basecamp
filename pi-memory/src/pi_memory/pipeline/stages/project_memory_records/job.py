@@ -6,8 +6,8 @@ from typing import Any
 
 from sqlalchemy import select
 
-from pi_memory.db import (
-    JOB_KIND_PROJECT_MEMORY_RECORDS,
+from pi_memory.db.constants import JOB_KIND_PROJECT_MEMORY_RECORDS
+from pi_memory.db.models import (
     DurableMemoryItem,
     Job,
     MemoryProjectionRecord,

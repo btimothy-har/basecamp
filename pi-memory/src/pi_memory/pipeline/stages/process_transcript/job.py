@@ -5,7 +5,11 @@ from __future__ import annotations
 from typing import Any
 
 from pi_memory.analysis import analyze_transcript_structure
-from pi_memory.db import JOB_KIND_PROCESS_TRANSCRIPT, Job, Transcript
+from pi_memory.db.constants import JOB_KIND_PROCESS_TRANSCRIPT
+from pi_memory.db.models import (
+    Job,
+    Transcript,
+)
 from pi_memory.infra.job_runner import JobExecutionContext
 from pi_memory.pipeline.runtime.errors import TranscriptNotFoundError
 from pi_memory.pipeline.stages.summarize_tool_activities.enqueue import enqueue_summarize_tool_activities_job

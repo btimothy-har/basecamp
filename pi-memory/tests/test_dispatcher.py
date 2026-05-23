@@ -7,14 +7,16 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
-from pi_memory.db import (
+from pi_memory.db.constants import (
     ANALYSIS_STATUS_COMPLETED,
     JOB_KIND_PROCESS_TRANSCRIPT,
     JOB_KIND_SUMMARIZE_TOOL_ACTIVITIES,
     JOB_STATUS_COMPLETED,
     JOB_STATUS_FAILED,
     JOB_STATUS_QUEUED,
-    Database,
+)
+from pi_memory.db.database import Database
+from pi_memory.db.models import (
     Job,
     MemorySession,
     Transcript,

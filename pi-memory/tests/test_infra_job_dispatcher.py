@@ -7,13 +7,13 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
-from pi_memory.db import (
+from pi_memory.db.constants import (
     JOB_STATUS_COMPLETED,
     JOB_STATUS_FAILED,
     JOB_STATUS_QUEUED,
-    Database,
-    Job,
 )
+from pi_memory.db.database import Database
+from pi_memory.db.models import Job
 from pi_memory.infra.job_queue.store import JobStore, JobStoreError
 from pi_memory.infra.job_runner import (
     BaseJob,

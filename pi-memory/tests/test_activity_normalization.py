@@ -7,7 +7,7 @@ from typing import Any
 import pytest
 from pi_memory.analysis import normalize_transcript_entries
 from pi_memory.analysis.activity import PREVIEW_CHAR_LIMIT
-from pi_memory.db import (
+from pi_memory.db.constants import (
     ACTIVITY_KIND_ASSISTANT_TEXT,
     ACTIVITY_KIND_ASSISTANT_THINKING,
     ACTIVITY_KIND_COMPACTION,
@@ -21,8 +21,8 @@ from pi_memory.db import (
     SOURCE_ORIGIN_LOCAL,
     SOURCE_ORIGIN_MIXED,
     SOURCE_ORIGIN_UNKNOWN,
-    TranscriptEntry,
 )
+from pi_memory.db.models import TranscriptEntry
 
 BASE_TIME = datetime(2026, 5, 15, 12, 0, tzinfo=UTC)
 

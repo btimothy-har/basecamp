@@ -5,7 +5,12 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
-from pi_memory.db import Database, MemorySession, Transcript, TranscriptEntry
+from pi_memory.db.database import Database
+from pi_memory.db.models import (
+    MemorySession,
+    Transcript,
+    TranscriptEntry,
+)
 from pi_memory.recall import RecallSearchService, index_transcript
 
 

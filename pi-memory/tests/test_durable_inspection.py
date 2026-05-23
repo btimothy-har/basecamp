@@ -10,7 +10,7 @@ import pi_memory.cli.main as cli_module
 import pytest
 from click.testing import CliRunner
 from fastapi.testclient import TestClient
-from pi_memory.db import (
+from pi_memory.db.constants import (
     DURABLE_MEMORY_RELATION_TYPE_REINFORCES,
     DURABLE_MEMORY_SOURCE_KIND_CLAIM,
     DURABLE_MEMORY_STATUS_CANDIDATE,
@@ -27,7 +27,9 @@ from pi_memory.db import (
     SESSION_INTERPRETATION_DETERMINISTIC_STATUS_PASSED,
     SESSION_INTERPRETATION_QUALITY_STATUS_HEALTHY,
     SESSION_INTERPRETATION_SEMANTIC_STATUS_PASSED,
-    Database,
+)
+from pi_memory.db.database import Database
+from pi_memory.db.models import (
     DurableMemoryAuditEvent,
     DurableMemoryItem,
     DurableMemoryRelation,

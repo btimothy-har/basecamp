@@ -5,7 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from pi_memory.constants import MEMORY_CHROMA_DIR
-from pi_memory.db.schema import MEMORY_PROJECTION_COLLECTION_NAME
+from pi_memory.db.constants import MEMORY_PROJECTION_COLLECTION_NAME
 from pi_memory.projection.chroma import ChromaMemoryProjection, SentenceTransformerEmbeddingProvider
 from pi_memory.projection.contracts import EmbeddingProvider, MemoryProjection
 from pi_memory.settings import Settings, settings

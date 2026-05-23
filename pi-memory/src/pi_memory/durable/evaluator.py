@@ -10,7 +10,10 @@ from typing import Any, Protocol
 from pydantic import ValidationError
 from sqlalchemy.orm import Session
 
-from pi_memory.db import DurableMemoryAuditEvent, DurableMemoryItem
+from pi_memory.db.models import (
+    DurableMemoryAuditEvent,
+    DurableMemoryItem,
+)
 from pi_memory.durable.contracts import (
     DURABLE_AUDIT_DETAIL_STRING_MAX_LENGTH,
     CandidateEvaluationOutput,

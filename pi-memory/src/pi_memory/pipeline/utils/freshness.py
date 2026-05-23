@@ -5,11 +5,11 @@ from __future__ import annotations
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from pi_memory.db import (
+from pi_memory.db.constants import (
     ANALYSIS_KIND_TRANSCRIPT_STRUCTURE,
     ANALYSIS_STATUS_COMPLETED,
-    AnalysisRun,
 )
+from pi_memory.db.models import AnalysisRun
 
 
 def is_stale_analysis_run(session: Session, transcript_id: int, analysis_run_id: int) -> bool:

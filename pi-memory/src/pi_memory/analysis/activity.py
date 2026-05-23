@@ -8,7 +8,7 @@ from dataclasses import dataclass, replace
 from datetime import datetime
 from typing import Any
 
-from pi_memory.db import (
+from pi_memory.db.constants import (
     ACTIVITY_KIND_ASSISTANT_TEXT,
     ACTIVITY_KIND_ASSISTANT_THINKING,
     ACTIVITY_KIND_COMPACTION,
@@ -22,8 +22,8 @@ from pi_memory.db import (
     SOURCE_ORIGIN_MIXED,
     SOURCE_ORIGIN_UNKNOWN,
     SOURCE_ORIGINS,
-    TranscriptEntry,
 )
+from pi_memory.db.models import TranscriptEntry
 
 PREVIEW_CHAR_LIMIT = 1_200
 LARGE_FIELD_CHAR_LIMIT = 200

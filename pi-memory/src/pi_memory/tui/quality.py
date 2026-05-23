@@ -15,12 +15,14 @@ from textual.app import App, ComposeResult
 from textual.containers import Container
 from textual.widgets import DataTable, Footer, Header, Static
 
-from pi_memory.db import (
+from pi_memory.db.constants import (
     ACTIVITY_KIND_TOOL_PAIR,
     JOB_KIND_INTERPRET_SESSION,
     JOB_STATUS_FAILED,
+)
+from pi_memory.db.database import Database
+from pi_memory.db.models import (
     ActivityUnit,
-    Database,
     Episode,
     EpisodeInterpretationSnapshot,
     Job,

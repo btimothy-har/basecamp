@@ -16,7 +16,7 @@ import click
 import uvicorn
 
 from pi_memory.constants import DEFAULT_HOST, DEFAULT_PORT, MEMORY_DB_URL, SERVICE_NAME
-from pi_memory.db import Database
+from pi_memory.db.database import Database
 from pi_memory.durable import DurableMemoryFilterError, DurableMemoryInspectionService
 from pi_memory.infra.job_queue import JobStore, JobStoreError, serialize_job
 from pi_memory.infra.job_runner import JobDispatcher, JobRunner, JobRunnerError

@@ -9,19 +9,23 @@ from typing import Any
 from sqlalchemy import Select, func, select
 from sqlalchemy.orm import selectinload
 
-from pi_memory.db import (
+from pi_memory.db.constants import (
     DURABLE_MEMORY_STATUSES,
     MEMORY_LAYERS,
     MEMORY_PROJECTION_RECORD_TYPES,
     MEMORY_PROJECTION_STATUSES,
+)
+from pi_memory.db.database import (
     Database,
+    database,
+)
+from pi_memory.db.models import (
     DurableMemoryAuditEvent,
     DurableMemoryItem,
     DurableMemoryRelation,
     DurableMemorySource,
     MemoryProjectionRecord,
     MemorySession,
-    database,
 )
 
 

@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from pi_memory.db import JOB_KIND_PROMOTE_DURABLE_MEMORY, Job
+from pi_memory.db.constants import JOB_KIND_PROMOTE_DURABLE_MEMORY
+from pi_memory.db.models import Job
 from pi_memory.infra.job_queue.store import JobStore
 
 

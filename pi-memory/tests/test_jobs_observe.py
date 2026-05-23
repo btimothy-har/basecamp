@@ -4,7 +4,13 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
-from pi_memory.db import JOB_KIND_INTERPRET_SESSION, JOB_KIND_PROCESS_TRANSCRIPT, JOB_STATUS_QUEUED, Database, Job
+from pi_memory.db.constants import (
+    JOB_KIND_INTERPRET_SESSION,
+    JOB_KIND_PROCESS_TRANSCRIPT,
+    JOB_STATUS_QUEUED,
+)
+from pi_memory.db.database import Database
+from pi_memory.db.models import Job
 from pi_memory.infra.job_queue import JobStore
 from pi_memory.ingest import IngestResult
 from pi_memory.pipeline.stages.process_transcript.enqueue import enqueue_process_transcript_job

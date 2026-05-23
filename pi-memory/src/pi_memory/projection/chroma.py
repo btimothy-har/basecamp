@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Any
 
 from pi_memory.constants import MEMORY_CHROMA_DIR, MEMORY_MODEL_CACHE_DIR
-from pi_memory.db.schema import MEMORY_PROJECTION_COLLECTION_NAME
+from pi_memory.db.constants import MEMORY_PROJECTION_COLLECTION_NAME
 from pi_memory.projection.contracts import EmbeddingProvider, ProjectionDocument, ProjectionHit, ProjectionMetadataValue
 
 

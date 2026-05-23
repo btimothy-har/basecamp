@@ -5,7 +5,7 @@ from dataclasses import replace
 from typing import Any
 
 import pytest
-from pi_memory.db import (
+from pi_memory.db.constants import (
     SOURCE_ORIGIN_INHERITED,
     SOURCE_ORIGIN_LOCAL,
     SOURCE_ORIGIN_MIXED,

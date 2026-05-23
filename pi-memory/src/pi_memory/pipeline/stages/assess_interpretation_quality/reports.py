@@ -7,7 +7,11 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from pi_memory.db import Job, SessionInterpretationQualityReport, SessionInterpretationSnapshot
+from pi_memory.db.models import (
+    Job,
+    SessionInterpretationQualityReport,
+    SessionInterpretationSnapshot,
+)
 from pi_memory.pipeline.utils.metadata import safe_model_metadata
 from pi_memory.quality import QualityReportDraft
 

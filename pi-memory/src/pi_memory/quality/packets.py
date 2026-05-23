@@ -9,7 +9,11 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from pi_memory.db import ActivityUnit, MemorySession, SessionInterpretationSnapshot
+from pi_memory.db.models import (
+    ActivityUnit,
+    MemorySession,
+    SessionInterpretationSnapshot,
+)
 from pi_memory.interpretation.packets import BoundedText
 from pi_memory.quality.contracts import (
     DERIVATION_STATUS_CURRENT,

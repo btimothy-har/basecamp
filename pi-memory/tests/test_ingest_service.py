@@ -4,7 +4,13 @@ import json
 from pathlib import Path
 
 import pytest
-from pi_memory.db import Database, MemorySession, Observation, Transcript, TranscriptEntry
+from pi_memory.db.database import Database
+from pi_memory.db.models import (
+    MemorySession,
+    Observation,
+    Transcript,
+    TranscriptEntry,
+)
 from pi_memory.ingest import ObserveInput, TranscriptFileMissingError, TranscriptIngestService
 from sqlalchemy import func, select
 

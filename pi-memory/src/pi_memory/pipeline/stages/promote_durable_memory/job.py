@@ -7,12 +7,14 @@ from typing import Any
 
 from sqlalchemy.orm import Session
 
-from pi_memory.db import (
+from pi_memory.db.constants import (
     DURABLE_MEMORY_STATUS_ARCHIVED,
     DURABLE_MEMORY_STATUS_PROMOTED,
     DURABLE_MEMORY_STATUS_QUARANTINED,
     DURABLE_MEMORY_STATUS_REJECTED,
     JOB_KIND_PROMOTE_DURABLE_MEMORY,
+)
+from pi_memory.db.models import (
     Job,
     SessionInterpretationQualityReport,
 )

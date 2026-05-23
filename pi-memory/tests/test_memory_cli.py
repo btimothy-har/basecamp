@@ -9,12 +9,14 @@ from types import SimpleNamespace
 import pi_memory.cli.main as cli_module
 import pytest
 from click.testing import CliRunner
-from pi_memory.db import (
+from pi_memory.db.constants import (
     ANALYSIS_STATUS_COMPLETED,
     JOB_KIND_PROCESS_TRANSCRIPT,
     JOB_STATUS_CLAIMED,
     JOB_STATUS_COMPLETED,
-    Database,
+)
+from pi_memory.db.database import Database
+from pi_memory.db.models import (
     Job,
     MemorySession,
     Observation,

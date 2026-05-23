@@ -10,17 +10,19 @@ from uuid import uuid4
 from sqlalchemy import Select, select, update
 from sqlalchemy.orm import Session
 
-from pi_memory.db import (
+from pi_memory.db.constants import (
     JOB_STATUS_CANCELLED,
     JOB_STATUS_CLAIMED,
     JOB_STATUS_COMPLETED,
     JOB_STATUS_FAILED,
     JOB_STATUS_QUEUED,
     JOB_STATUS_RUNNING,
+)
+from pi_memory.db.database import (
     Database,
-    Job,
     database,
 )
+from pi_memory.db.models import Job
 
 TERMINAL_STATUSES = {
     JOB_STATUS_CANCELLED,

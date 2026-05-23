@@ -4,11 +4,13 @@ from __future__ import annotations
 
 from typing import Any
 
-from pi_memory.db import (
+from pi_memory.db.constants import (
     JOB_KIND_INTERPRET_SESSION,
     SESSION_INTERPRETATION_STATUS_BLOCKED,
     SESSION_INTERPRETATION_STATUS_COMPLETED,
     SESSION_INTERPRETATION_STATUS_SKIPPED_NO_CLAIM_SOURCES,
+)
+from pi_memory.db.models import (
     Job,
     Transcript,
 )

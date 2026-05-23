@@ -12,7 +12,7 @@ from pydantic import ValidationError
 from sqlalchemy import select
 from sqlalchemy.orm import Session, joinedload
 
-from pi_memory.db import (
+from pi_memory.db.models import (
     ActivityUnit,
     SessionInterpretationQualityReport,
     SessionInterpretationSnapshot,

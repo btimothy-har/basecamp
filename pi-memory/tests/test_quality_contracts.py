@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import pytest
-from pi_memory.db import (
+from pi_memory.db.constants import (
     SESSION_INTERPRETATION_DERIVATION_STATUS_CURRENT,
     SESSION_INTERPRETATION_DETERMINISTIC_STATUS_PASSED,
     SESSION_INTERPRETATION_QUALITY_REASON_SEMANTIC_ASSESSMENT_PENDING,

@@ -15,7 +15,7 @@ from pi_memory.analysis import (
     build_session_snapshot_shell,
 )
 from pi_memory.analysis.manifests import MAX_MANIFEST_STRING_CHARS
-from pi_memory.db import (
+from pi_memory.db.constants import (
     ACTIVITY_KIND_COMPACTION,
     ACTIVITY_KIND_SESSION_EVENT,
     ACTIVITY_KIND_TOOL_PAIR,

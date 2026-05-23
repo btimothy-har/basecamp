@@ -11,7 +11,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from pi_memory.analysis.manifests import CLAIM_SOURCE_ACTIVITY_KINDS
-from pi_memory.db import (
+from pi_memory.db.constants import (
     ACTIVITY_TEXT_STATUS_COMPLETED,
     ANALYSIS_KIND_TRANSCRIPT_STRUCTURE,
     ANALYSIS_STATUS_COMPLETED,
@@ -21,6 +21,8 @@ from pi_memory.db import (
     SOURCE_ORIGIN_LOCAL,
     SOURCE_ORIGIN_MIXED,
     SOURCE_ORIGIN_UNKNOWN,
+)
+from pi_memory.db.models import (
     ActivityUnit,
     AnalysisRun,
     Episode,

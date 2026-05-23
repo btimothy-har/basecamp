@@ -9,7 +9,7 @@ from pathlib import Path
 
 import pytest
 from pi_memory.analysis import TranscriptAnalysisResult, analyze_transcript_structure
-from pi_memory.db import (
+from pi_memory.db.constants import (
     ACTIVITY_TEXT_KIND_DETERMINISTIC,
     ACTIVITY_TEXT_KIND_TOOL_SUMMARY,
     ACTIVITY_TEXT_KIND_UNAVAILABLE,
@@ -52,9 +52,11 @@ from pi_memory.db import (
     SOURCE_ORIGIN_LOCAL,
     SOURCE_ORIGIN_MIXED,
     SOURCE_ORIGIN_UNKNOWN,
+)
+from pi_memory.db.database import Database
+from pi_memory.db.models import (
     ActivityUnit,
     AnalysisRun,
-    Database,
     DurableMemoryAuditEvent,
     DurableMemoryItem,
     DurableMemorySource,

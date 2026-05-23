@@ -8,7 +8,7 @@ from typing import Any, Literal
 from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
-from pi_memory.db import (
+from pi_memory.db.constants import (
     DURABLE_MEMORY_SOURCE_KIND_CLAIM,
     DURABLE_MEMORY_STATUS_ARCHIVED,
     DURABLE_MEMORY_STATUS_CANDIDATE,
@@ -17,6 +17,8 @@ from pi_memory.db import (
     DURABLE_MEMORY_STATUS_REJECTED,
     SOURCE_ORIGIN_UNKNOWN,
     SOURCE_ORIGINS,
+)
+from pi_memory.db.models import (
     DurableMemoryAuditEvent,
     DurableMemoryItem,
     DurableMemorySource,

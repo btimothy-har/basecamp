@@ -6,7 +6,7 @@ from typing import Any
 
 import pi_memory.durable.eligibility as eligibility_module
 import pytest
-from pi_memory.db import (
+from pi_memory.db.constants import (
     ANALYSIS_STATUS_COMPLETED,
     SESSION_INTERPRETATION_BLOCKED_REASON_PHASE_5A_NOT_READY,
     SESSION_INTERPRETATION_DERIVATION_STATUS_CURRENT,
@@ -20,8 +20,10 @@ from pi_memory.db import (
     SESSION_INTERPRETATION_SEMANTIC_STATUS_PASSED,
     SESSION_INTERPRETATION_STATUS_BLOCKED,
     SESSION_INTERPRETATION_STATUS_COMPLETED,
+)
+from pi_memory.db.database import Database
+from pi_memory.db.models import (
     AnalysisRun,
-    Database,
     MemorySession,
     SessionInterpretationQualityReport,
     SessionInterpretationSnapshot,

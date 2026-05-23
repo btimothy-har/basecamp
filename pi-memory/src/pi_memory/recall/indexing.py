@@ -10,7 +10,7 @@ from typing import Any
 from sqlalchemy import select, text
 from sqlalchemy.orm import Session
 
-from pi_memory.db import TranscriptEntry
+from pi_memory.db.models import TranscriptEntry
 
 _WHITESPACE_PATTERN = re.compile(r"\s+")
 

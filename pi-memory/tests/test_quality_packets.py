@@ -7,9 +7,9 @@ from typing import Any
 
 import pytest
 from pi_memory.analysis import analyze_transcript_structure
-from pi_memory.db import (
+from pi_memory.db.database import Database
+from pi_memory.db.models import (
     ActivityUnit,
-    Database,
     MemorySession,
     SessionInterpretationSnapshot,
     Transcript,
