@@ -7,6 +7,7 @@ import pytest
 from pi_memory.constants import (
     ANALYSIS_KIND_TRANSCRIPT_STRUCTURE,
     ANALYSIS_STATUS_COMPLETED,
+    DURABLE_MEMORY_STATUS_PROMOTED,
     EPISODE_CLOSE_REASON_CURRENT_CURSOR,
     EPISODE_CLOSE_REASON_TIME_GAP,
     EPISODE_STATUS_CLOSED,
@@ -20,6 +21,10 @@ from pi_memory.constants import (
     JOB_STATUS_COMPLETED,
     JOB_STATUS_FAILED,
     JOB_STATUS_QUEUED,
+    MEMORY_LAYER_SHORT_TERM,
+    MEMORY_PROJECTION_COLLECTION_NAME,
+    MEMORY_PROJECTION_RECORD_TYPE_SESSION_CLAIM,
+    MEMORY_PROJECTION_STATUS_INDEXED,
     SESSION_INTERPRETATION_QUALITY_STATUS_HEALTHY,
     SESSION_INTERPRETATION_STATUS_COMPLETED,
     SESSION_SNAPSHOT_STATUS_READY_FOR_INTERPRETATION,
@@ -27,8 +32,10 @@ from pi_memory.constants import (
 from pi_memory.db.database import Database
 from pi_memory.db.models import (
     AnalysisRun,
+    DurableMemoryItem,
     Episode,
     Job,
+    MemoryProjectionRecord,
     MemorySession,
     SessionInterpretationQualityReport,
     SessionInterpretationSnapshot,
@@ -36,6 +43,7 @@ from pi_memory.db.models import (
     Transcript,
     TranscriptEntry,
 )
+from pi_memory.durable import build_candidate_from_quality_report
 from pi_memory.pipeline.reconciliation import GateDecision, Reconciler, ReconciliationReport, ReconciliationRunOptions
 from pi_memory.pipeline.stages.assess_interpretation_quality.enqueue import (
     assess_interpretation_quality_idempotency_key,
@@ -50,6 +58,7 @@ from pi_memory.pipeline.stages.process_transcript.enqueue import (
 from pi_memory.pipeline.stages.project_memory_records.enqueue import project_memory_records_idempotency_key
 from pi_memory.pipeline.stages.promote_durable_memory.enqueue import promote_durable_memory_idempotency_key
 from pi_memory.pipeline.stages.summarize_tool_activities.enqueue import summarize_tool_activities_idempotency_key
+from pi_memory.projection.session_claims import session_claim_content_hash
 from sqlalchemy import func, select
 
 BASE_TIME = datetime(2026, 5, 15, 12, 0, tzinfo=UTC)
@@ -96,13 +105,23 @@ def create_completed_analysis(database: Database) -> tuple[int, int]:
         return analysis_run.id, process_job.id
 
 
-def create_quality_report(database: Database) -> int:
+def sample_quality_claim() -> dict[str, object]:
+    return {
+        "kind": "decision",
+        "statement": "Use artifact-aware reconciliation for terminal memory gates.",
+        "confidence": 0.9,
+        "source_ref_ids": ["activity:1"],
+    }
+
+
+def create_quality_report(database: Database, *, claims: list[dict[str, object]] | None = None) -> int:
     with database.session() as session:
         memory_session = MemorySession(session_id="pi-session-1", cwd="/repo/basecamp")
         snapshot = SessionInterpretationSnapshot(
             session=memory_session,
             status=SESSION_INTERPRETATION_STATUS_COMPLETED,
             analyzed_through_byte_offset=123,
+            interpretation_json={"claims": [] if claims is None else claims},
         )
         report = SessionInterpretationQualityReport(
             snapshot=snapshot,
@@ -113,6 +132,78 @@ def create_quality_report(database: Database) -> int:
         session.add(report)
         session.flush()
         return report.id
+
+
+def create_claim_quality_report(database: Database) -> tuple[int, int, dict[str, object]]:
+    claim = sample_quality_claim()
+    report_id = create_quality_report(database, claims=[claim])
+    with database.session() as session:
+        snapshot_id = session.get_one(SessionInterpretationQualityReport, report_id).snapshot_id
+    return report_id, snapshot_id, claim
+
+
+def create_projection_record_for_claim(
+    database: Database,
+    *,
+    report_id: int,
+    snapshot_id: int,
+    claim_index: int,
+    claim: dict[str, object],
+) -> int:
+    with database.session() as session:
+        record_key = f"session_claim:{snapshot_id}:{claim_index}"
+        record = MemoryProjectionRecord(
+            collection_name=MEMORY_PROJECTION_COLLECTION_NAME,
+            chroma_id=record_key,
+            record_key=record_key,
+            record_type=MEMORY_PROJECTION_RECORD_TYPE_SESSION_CLAIM,
+            memory_layer=MEMORY_LAYER_SHORT_TERM,
+            source_table="session_interpretation_snapshots",
+            source_id=snapshot_id,
+            snapshot_id=snapshot_id,
+            quality_report_id=report_id,
+            durable_memory_id=None,
+            claim_index=claim_index,
+            content_hash=session_claim_content_hash(claim),
+            embedding_model="test-embedding-model",
+            embedding_dimension=3,
+            status=MEMORY_PROJECTION_STATUS_INDEXED,
+            recall_visible=True,
+            relation_visible=True,
+            metadata_json={},
+            last_error=None,
+            indexed_at=BASE_TIME,
+        )
+        session.add(record)
+        session.flush()
+        return record.id
+
+
+def create_terminal_durable_item_for_claim(
+    database: Database,
+    *,
+    report_id: int,
+    snapshot_id: int,
+    claim_index: int,
+) -> int:
+    with database.session() as session:
+        report = session.get_one(SessionInterpretationQualityReport, report_id)
+        candidate = build_candidate_from_quality_report(report, claim_index)
+        memory = DurableMemoryItem(
+            session_id=report.snapshot.session_id,
+            transcript_id=report.snapshot.transcript_id,
+            snapshot_id=snapshot_id,
+            quality_report_id=report_id,
+            status=DURABLE_MEMORY_STATUS_PROMOTED,
+            claim_index=claim_index,
+            claim_kind=candidate.claim_kind,
+            statement=candidate.statement,
+            confidence=candidate.confidence,
+            content_hash=candidate.content_hash,
+        )
+        session.add(memory)
+        session.flush()
+        return memory.id
 
 
 def create_failed_summarize_artifact(database: Database) -> int:
@@ -989,7 +1080,7 @@ def test_reconciler_enqueues_missing_quality_projection_and_promotion_when_enabl
     database = Database(sqlite_url(tmp_path / "memory.db"))
     database.initialize()
     try:
-        quality_report_id = create_quality_report(database)
+        quality_report_id, _, _ = create_claim_quality_report(database)
         reconciler = Reconciler(database=database)
 
         report = reconciler.run_once(
@@ -1025,6 +1116,248 @@ def test_reconciler_enqueues_missing_quality_projection_and_promotion_when_enabl
             assert project_job.payload_json["quality_report_id"] == quality_report_id
             assert promote_job is not None
             assert promote_job.payload_json["quality_report_id"] == quality_report_id
+    finally:
+        database.close_if_open()
+
+
+def test_reconciler_treats_no_claim_quality_children_as_satisfied(
+    tmp_path: Path,
+) -> None:
+    database = Database(sqlite_url(tmp_path / "memory.db"))
+    database.initialize()
+    try:
+        quality_report_id = create_quality_report(database)
+        reconciler = Reconciler(database=database)
+
+        report = reconciler.run_once(
+            ReconciliationRunOptions(
+                enqueue_missing=True,
+                gate_names=("quality_to_project", "quality_to_promote"),
+            ),
+        )
+
+        project_decision = find_decision(report, "quality_to_project")
+        promote_decision = find_decision(report, "quality_to_promote")
+        assert project_decision is not None
+        assert project_decision.status == "satisfied"
+        assert project_decision.details["quality_report_id"] == quality_report_id
+        assert promote_decision is not None
+        assert promote_decision.status == "satisfied"
+        assert promote_decision.details["quality_report_id"] == quality_report_id
+        assert report.enqueued_job_ids == ()
+    finally:
+        database.close_if_open()
+
+
+def test_reconciler_enqueues_projection_cleanup_for_no_claim_report_with_visible_records(
+    tmp_path: Path,
+) -> None:
+    database = Database(sqlite_url(tmp_path / "memory.db"))
+    database.initialize()
+    try:
+        quality_report_id = create_quality_report(database)
+        with database.session() as session:
+            snapshot_id = session.get_one(SessionInterpretationQualityReport, quality_report_id).snapshot_id
+        stale_record_id = create_projection_record_for_claim(
+            database,
+            report_id=quality_report_id,
+            snapshot_id=snapshot_id,
+            claim_index=0,
+            claim=sample_quality_claim(),
+        )
+        reconciler = Reconciler(database=database)
+
+        report = reconciler.run_once(
+            ReconciliationRunOptions(enqueue_missing=True, gate_names=("quality_to_project",)),
+        )
+
+        decision = find_decision(report, "quality_to_project")
+        assert decision is not None
+        assert decision.status == "missing"
+        assert decision.can_enqueue
+        assert decision.details["artifact_inspection"]["stale_record_ids"] == (stale_record_id,)
+        assert len(report.enqueued_job_ids) == 1
+    finally:
+        database.close_if_open()
+
+
+def test_reconciler_treats_indexed_projection_artifact_as_satisfied_without_child_job(
+    tmp_path: Path,
+) -> None:
+    database = Database(sqlite_url(tmp_path / "memory.db"))
+    database.initialize()
+    try:
+        quality_report_id, snapshot_id, claim = create_claim_quality_report(database)
+        projection_record_id = create_projection_record_for_claim(
+            database,
+            report_id=quality_report_id,
+            snapshot_id=snapshot_id,
+            claim_index=0,
+            claim=claim,
+        )
+        reconciler = Reconciler(database=database)
+
+        report = reconciler.run_once(
+            ReconciliationRunOptions(enqueue_missing=True, gate_names=("quality_to_project",)),
+        )
+
+        decision = find_decision(report, "quality_to_project")
+        assert decision is not None
+        assert decision.status == "satisfied"
+        assert decision.existing_job_id is None
+        assert decision.details["artifact_inspection"]["incomplete_record_ids"] == ()
+        assert projection_record_id not in report.enqueued_job_ids
+        assert report.enqueued_job_ids == ()
+    finally:
+        database.close_if_open()
+
+
+def test_reconciler_treats_current_projection_artifact_as_satisfied_despite_failed_child_job(
+    tmp_path: Path,
+) -> None:
+    database = Database(sqlite_url(tmp_path / "memory.db"))
+    database.initialize()
+    try:
+        quality_report_id, snapshot_id, claim = create_claim_quality_report(database)
+        create_projection_record_for_claim(
+            database,
+            report_id=quality_report_id,
+            snapshot_id=snapshot_id,
+            claim_index=0,
+            claim=claim,
+        )
+        expected_key = project_memory_records_idempotency_key(quality_report_id)
+        with database.session() as session:
+            child = Job(
+                kind=JOB_KIND_PROJECT_MEMORY_RECORDS,
+                idempotency_key=expected_key,
+                status=JOB_STATUS_FAILED,
+                payload_json={"scope": "quality_report", "quality_report_id": quality_report_id},
+            )
+            session.add(child)
+            session.flush()
+            child_job_id = child.id
+        reconciler = Reconciler(database=database)
+
+        report = reconciler.run_once(
+            ReconciliationRunOptions(enqueue_missing=True, gate_names=("quality_to_project",)),
+        )
+
+        decision = find_decision(report, "quality_to_project")
+        assert decision is not None
+        assert decision.status == "satisfied"
+        assert decision.existing_job_id == child_job_id
+        assert decision.details["child_job_status"] == "failed"
+        assert report.enqueued_job_ids == ()
+    finally:
+        database.close_if_open()
+
+
+def test_reconciler_marks_completed_projection_child_failed_when_artifact_missing(
+    tmp_path: Path,
+) -> None:
+    database = Database(sqlite_url(tmp_path / "memory.db"))
+    database.initialize()
+    try:
+        quality_report_id, _, _ = create_claim_quality_report(database)
+        expected_key = project_memory_records_idempotency_key(quality_report_id)
+        with database.session() as session:
+            child = Job(
+                kind=JOB_KIND_PROJECT_MEMORY_RECORDS,
+                idempotency_key=expected_key,
+                status=JOB_STATUS_COMPLETED,
+                payload_json={"scope": "quality_report", "quality_report_id": quality_report_id},
+            )
+            session.add(child)
+            session.flush()
+            child_job_id = child.id
+        reconciler = Reconciler(database=database)
+
+        report = reconciler.run_once(
+            ReconciliationRunOptions(enqueue_missing=True, gate_names=("quality_to_project",)),
+        )
+
+        decision = find_decision(report, "quality_to_project")
+        assert decision is not None
+        assert decision.status == "failed"
+        assert decision.existing_job_id == child_job_id
+        assert decision.details["artifact_inspection"]["missing_claim_indexes"] == (0,)
+        assert report.enqueued_job_ids == ()
+    finally:
+        database.close_if_open()
+
+
+def test_reconciler_treats_terminal_durable_artifact_as_satisfied_without_child_job(
+    tmp_path: Path,
+) -> None:
+    database = Database(sqlite_url(tmp_path / "memory.db"))
+    database.initialize()
+    try:
+        quality_report_id, snapshot_id, _ = create_claim_quality_report(database)
+        durable_item_id = create_terminal_durable_item_for_claim(
+            database,
+            report_id=quality_report_id,
+            snapshot_id=snapshot_id,
+            claim_index=0,
+        )
+        reconciler = Reconciler(database=database)
+
+        report = reconciler.run_once(
+            ReconciliationRunOptions(enqueue_missing=True, gate_names=("quality_to_promote",)),
+        )
+
+        decision = find_decision(report, "quality_to_promote")
+        assert decision is not None
+        assert decision.status == "satisfied"
+        assert decision.existing_job_id is None
+        assert decision.details["artifact_inspection"]["content_mismatch_memory_ids"] == ()
+        assert durable_item_id not in report.enqueued_job_ids
+        assert report.enqueued_job_ids == ()
+    finally:
+        database.close_if_open()
+
+
+def test_reconciler_marks_completed_promotion_child_failed_when_packet_artifact_missing(
+    tmp_path: Path,
+) -> None:
+    database = Database(sqlite_url(tmp_path / "memory.db"))
+    database.initialize()
+    try:
+        quality_report_id = create_quality_report(
+            database,
+            claims=[
+                {
+                    "kind": "decision",
+                    "statement": "This claim cannot build a durable packet.",
+                    "confidence": 0.9,
+                    "source_ref_ids": [],
+                },
+            ],
+        )
+        expected_key = promote_durable_memory_idempotency_key(quality_report_id)
+        with database.session() as session:
+            child = Job(
+                kind=JOB_KIND_PROMOTE_DURABLE_MEMORY,
+                idempotency_key=expected_key,
+                status=JOB_STATUS_COMPLETED,
+                payload_json={"quality_report_id": quality_report_id},
+                result_json={"failed_packet_count": 1},
+            )
+            session.add(child)
+            session.flush()
+            child_job_id = child.id
+        reconciler = Reconciler(database=database)
+
+        report = reconciler.run_once(
+            ReconciliationRunOptions(enqueue_missing=True, gate_names=("quality_to_promote",)),
+        )
+
+        decision = find_decision(report, "quality_to_promote")
+        assert decision is not None
+        assert decision.status == "failed"
+        assert decision.existing_job_id == child_job_id
+        assert decision.details["artifact_inspection"]["packet_error_claim_indexes"] == (0,)
+        assert report.enqueued_job_ids == ()
     finally:
         database.close_if_open()
 

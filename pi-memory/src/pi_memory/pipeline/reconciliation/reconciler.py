@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime
 
@@ -18,6 +19,10 @@ from pi_memory.constants import (
     ACTIVITY_TEXT_STATUS_PENDING,
     ANALYSIS_KIND_TRANSCRIPT_STRUCTURE,
     ANALYSIS_STATUS_COMPLETED,
+    DURABLE_MEMORY_STATUS_ARCHIVED,
+    DURABLE_MEMORY_STATUS_PROMOTED,
+    DURABLE_MEMORY_STATUS_QUARANTINED,
+    DURABLE_MEMORY_STATUS_REJECTED,
     JOB_KIND_PROCESS_TRANSCRIPT,
     JOB_STATUS_CANCELLED,
     JOB_STATUS_CLAIMED,
@@ -25,6 +30,11 @@ from pi_memory.constants import (
     JOB_STATUS_FAILED,
     JOB_STATUS_QUEUED,
     JOB_STATUS_RUNNING,
+    MEMORY_LAYER_SHORT_TERM,
+    MEMORY_PROJECTION_COLLECTION_NAME,
+    MEMORY_PROJECTION_RECORD_TYPE_SESSION_CLAIM,
+    MEMORY_PROJECTION_STATUS_DELETED,
+    MEMORY_PROJECTION_STATUS_INDEXED,
     SESSION_INTERPRETATION_STATUS_BLOCKED,
     SESSION_INTERPRETATION_STATUS_COMPLETED,
     SESSION_INTERPRETATION_STATUS_SKIPPED_NO_CLAIM_SOURCES,
@@ -35,13 +45,16 @@ from pi_memory.db.database import Database, database
 from pi_memory.db.models import (
     ActivityUnit,
     AnalysisRun,
+    DurableMemoryItem,
     Job,
+    MemoryProjectionRecord,
     SessionInterpretationQualityReport,
     SessionInterpretationSnapshot,
     SessionSnapshotShell,
     Transcript,
     TranscriptEntry,
 )
+from pi_memory.durable import DurableMemoryPacketError, build_candidate_from_quality_report
 from pi_memory.infra.job_queue import JobStore
 from pi_memory.pipeline.reconciliation.contracts import (
     EnqueueSpec,
@@ -74,6 +87,7 @@ from pi_memory.pipeline.stages.summarize_tool_activities.enqueue import (
     summarize_tool_activities_idempotency_key,
     summarize_tool_activities_job_spec_from_fields,
 )
+from pi_memory.projection.session_claims import session_claim_content_hash
 
 GATE_TRANSCRIPT_TO_PROCESS = "transcript_to_process"
 GATE_ANALYSIS_TO_SUMMARIZE = "analysis_to_summarize"
@@ -81,6 +95,14 @@ GATE_SUMMARIZE_TO_INTERPRET = "summarize_to_interpret"
 GATE_SNAPSHOT_TO_QUALITY = "snapshot_to_quality"
 GATE_QUALITY_TO_PROJECT = "quality_to_project"
 GATE_QUALITY_TO_PROMOTE = "quality_to_promote"
+
+DURABLE_PROMOTION_TERMINAL_STATUSES = (
+    DURABLE_MEMORY_STATUS_ARCHIVED,
+    DURABLE_MEMORY_STATUS_PROMOTED,
+    DURABLE_MEMORY_STATUS_QUARANTINED,
+    DURABLE_MEMORY_STATUS_REJECTED,
+)
+PROJECTION_SOURCE_TABLE_SESSION_INTERPRETATION_SNAPSHOTS = "session_interpretation_snapshots"
 
 ACTIVE_PROCESS_STATUSES = (JOB_STATUS_QUEUED, JOB_STATUS_CLAIMED, JOB_STATUS_RUNNING)
 
@@ -130,6 +152,13 @@ class StructuralTarget:
                 liveness_policy_version=self.liveness_policy_version,
             ),
         )
+
+
+@dataclass(frozen=True)
+class ArtifactInspection:
+    satisfied: bool
+    reason: str
+    details: dict[str, object]
 
 
 class Reconciler:
@@ -826,25 +855,58 @@ class Reconciler:
                     quality_job_id=report.job_id,
                     idempotency_key=project_memory_records_idempotency_key(report.id),
                 )
-            else:
+                artifact_inspection = self._inspect_quality_projection_artifacts(session, report)
+            elif gate_name == GATE_QUALITY_TO_PROMOTE:
                 spec = promote_durable_memory_job_spec(
                     quality_report_id=report.id,
                     session_id=report.snapshot.session.session_id,
                     quality_job_id=report.job_id,
                     idempotency_key=promote_durable_memory_idempotency_key(report.id),
                 )
+                artifact_inspection = self._inspect_quality_promotion_artifacts(session, report)
+            else:
+                raise ValueError(gate_name)
 
             decision_status, existing_job_id, existing_job_ids = self._inspect_child_job_status(session, spec)
+            details = {
+                "quality_report_id": report.id,
+                "child_job_status": decision_status,
+                "artifact_inspection": artifact_inspection.details,
+            }
+            if artifact_inspection.satisfied:
+                decisions.append(
+                    GateDecision(
+                        target=target,
+                        status="satisfied",
+                        reason=artifact_inspection.reason,
+                        existing_job_id=existing_job_id,
+                        existing_job_ids=existing_job_ids,
+                        details=details,
+                    ),
+                )
+                continue
+
             if decision_status == "missing":
                 decisions.append(
                     GateDecision(
                         target=target,
                         status="missing",
-                        reason=f"quality-to-{gate_name.split('_')[-1]} child job is missing",
+                        reason=artifact_inspection.reason,
                         enqueue_spec=spec,
-                        details={
-                            "quality_report_id": report.id,
-                        },
+                        details=details,
+                    ),
+                )
+                continue
+
+            if decision_status == "satisfied":
+                decisions.append(
+                    GateDecision(
+                        target=target,
+                        status="failed",
+                        reason=f"terminal child job completed but {artifact_inspection.reason}",
+                        existing_job_id=existing_job_id,
+                        existing_job_ids=existing_job_ids,
+                        details=details,
                     ),
                 )
                 continue
@@ -856,13 +918,194 @@ class Reconciler:
                     reason=f"quality-to-{gate_name.split('_')[-1]} child job status observed",
                     existing_job_id=existing_job_id,
                     existing_job_ids=existing_job_ids,
-                    details={
-                        "quality_report_id": report.id,
-                    },
+                    details=details,
                 ),
             )
 
         return decisions
+
+    def _inspect_quality_projection_artifacts(
+        self,
+        session: Session,
+        report: SessionInterpretationQualityReport,
+    ) -> ArtifactInspection:
+        claims = self._quality_report_claims(report)
+        projection_eligible = self._quality_report_projection_eligible(report)
+        expected_indexes = set(range(len(claims))) if projection_eligible else set()
+        records = self._projection_records_for_snapshot(session, report.snapshot_id)
+        records_by_index = {record.claim_index: record for record in records if record.claim_index is not None}
+
+        missing_claim_indexes: list[int] = []
+        incomplete_record_ids: list[int] = []
+        stale_record_ids: list[int] = []
+        selected_record_ids: set[int] = set()
+        for claim_index in sorted(expected_indexes):
+            record = records_by_index.get(claim_index)
+            if record is None:
+                missing_claim_indexes.append(claim_index)
+                continue
+            selected_record_ids.add(record.id)
+            if not self._projection_record_satisfies_claim(record, report, claims[claim_index]):
+                incomplete_record_ids.append(record.id)
+
+        for record in records:
+            if record.id in selected_record_ids:
+                continue
+            if self._projection_record_needs_cleanup(record):
+                stale_record_ids.append(record.id)
+
+        details = {
+            "snapshot_id": report.snapshot_id,
+            "claim_count": len(claims),
+            "projection_eligible": projection_eligible,
+            "expected_claim_indexes": tuple(sorted(expected_indexes)),
+            "missing_claim_indexes": tuple(missing_claim_indexes),
+            "incomplete_record_ids": tuple(incomplete_record_ids),
+            "stale_record_ids": tuple(stale_record_ids),
+        }
+        if missing_claim_indexes or incomplete_record_ids or stale_record_ids:
+            return ArtifactInspection(
+                satisfied=False,
+                reason="quality report projection artifacts are incomplete or stale",
+                details=details,
+            )
+        if not projection_eligible:
+            return ArtifactInspection(
+                satisfied=True,
+                reason="quality report has no eligible projection records",
+                details=details,
+            )
+        if not claims:
+            return ArtifactInspection(
+                satisfied=True,
+                reason="quality report has no claims to project",
+                details=details,
+            )
+        return ArtifactInspection(
+            satisfied=True,
+            reason="quality report projection artifacts are current",
+            details=details,
+        )
+
+    def _inspect_quality_promotion_artifacts(
+        self,
+        session: Session,
+        report: SessionInterpretationQualityReport,
+    ) -> ArtifactInspection:
+        claims = self._quality_report_claims(report)
+        expected_content_hashes: dict[int, str] = {}
+        packet_error_claim_indexes: list[int] = []
+        for claim_index in range(len(claims)):
+            try:
+                candidate = build_candidate_from_quality_report(report, claim_index)
+            except DurableMemoryPacketError:
+                packet_error_claim_indexes.append(claim_index)
+                continue
+            expected_content_hashes[candidate.claim_index] = candidate.content_hash
+
+        items = tuple(
+            session.scalars(
+                select(DurableMemoryItem).where(
+                    DurableMemoryItem.quality_report_id == report.id,
+                    DurableMemoryItem.snapshot_id == report.snapshot_id,
+                ),
+            ).all(),
+        )
+        items_by_claim_index = {item.claim_index: item for item in items}
+        missing_claim_indexes: list[int] = []
+        non_terminal_memory_ids: list[int] = []
+        content_mismatch_memory_ids: list[int] = []
+        for claim_index, expected_content_hash in sorted(expected_content_hashes.items()):
+            item = items_by_claim_index.get(claim_index)
+            if item is None:
+                missing_claim_indexes.append(claim_index)
+                continue
+            if item.status not in DURABLE_PROMOTION_TERMINAL_STATUSES:
+                non_terminal_memory_ids.append(item.id)
+            if item.content_hash != expected_content_hash:
+                content_mismatch_memory_ids.append(item.id)
+
+        details = {
+            "snapshot_id": report.snapshot_id,
+            "claim_count": len(claims),
+            "expected_claim_indexes": tuple(sorted(expected_content_hashes)),
+            "packet_error_claim_indexes": tuple(packet_error_claim_indexes),
+            "missing_claim_indexes": tuple(missing_claim_indexes),
+            "non_terminal_memory_ids": tuple(non_terminal_memory_ids),
+            "content_mismatch_memory_ids": tuple(content_mismatch_memory_ids),
+        }
+        if packet_error_claim_indexes:
+            return ArtifactInspection(
+                satisfied=False,
+                reason="quality report contains claims that cannot build durable promotion packets",
+                details=details,
+            )
+        if missing_claim_indexes or non_terminal_memory_ids or content_mismatch_memory_ids:
+            return ArtifactInspection(
+                satisfied=False,
+                reason="quality report durable artifacts are incomplete",
+                details=details,
+            )
+        if not claims:
+            return ArtifactInspection(
+                satisfied=True,
+                reason="quality report has no durable claims",
+                details=details,
+            )
+        return ArtifactInspection(
+            satisfied=True,
+            reason="quality report durable artifacts are terminal",
+            details=details,
+        )
+
+    def _projection_records_for_snapshot(
+        self,
+        session: Session,
+        snapshot_id: int,
+    ) -> tuple[MemoryProjectionRecord, ...]:
+        return tuple(
+            session.scalars(
+                select(MemoryProjectionRecord)
+                .where(
+                    MemoryProjectionRecord.collection_name == MEMORY_PROJECTION_COLLECTION_NAME,
+                    MemoryProjectionRecord.record_type == MEMORY_PROJECTION_RECORD_TYPE_SESSION_CLAIM,
+                    MemoryProjectionRecord.memory_layer == MEMORY_LAYER_SHORT_TERM,
+                    MemoryProjectionRecord.source_table == PROJECTION_SOURCE_TABLE_SESSION_INTERPRETATION_SNAPSHOTS,
+                    MemoryProjectionRecord.source_id == snapshot_id,
+                    MemoryProjectionRecord.snapshot_id == snapshot_id,
+                )
+                .order_by(MemoryProjectionRecord.claim_index.asc(), MemoryProjectionRecord.id.asc()),
+            ).all(),
+        )
+
+    @staticmethod
+    def _projection_record_satisfies_claim(
+        record: MemoryProjectionRecord,
+        report: SessionInterpretationQualityReport,
+        claim: Mapping[str, object],
+    ) -> bool:
+        return (
+            record.quality_report_id == report.id
+            and record.status == MEMORY_PROJECTION_STATUS_INDEXED
+            and record.recall_visible
+            and record.relation_visible
+            and record.content_hash == session_claim_content_hash(claim)
+        )
+
+    @staticmethod
+    def _projection_record_needs_cleanup(record: MemoryProjectionRecord) -> bool:
+        return record.status != MEMORY_PROJECTION_STATUS_DELETED or record.recall_visible or record.relation_visible
+
+    @staticmethod
+    def _quality_report_projection_eligible(report: SessionInterpretationQualityReport) -> bool:
+        return report.snapshot.status == SESSION_INTERPRETATION_STATUS_COMPLETED and report.promotable is True
+
+    @staticmethod
+    def _quality_report_claims(report: SessionInterpretationQualityReport) -> tuple[Mapping[str, object], ...]:
+        claims = report.snapshot.interpretation_json.get("claims")
+        if not isinstance(claims, list):
+            return ()
+        return tuple(claim for claim in claims if isinstance(claim, Mapping))
 
     def _snapshot_matches_current_structural_target(
         self,

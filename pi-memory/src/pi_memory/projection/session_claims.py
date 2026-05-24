@@ -322,6 +322,11 @@ def _source_refs_for_claim(
     return [citations_by_ref.get(source_ref_id, {"source_ref_id": source_ref_id}) for source_ref_id in source_ref_ids]
 
 
+def session_claim_content_hash(claim: Mapping[str, Any]) -> str:
+    """Return the projection content hash for a persisted session claim."""
+    return _content_hash(claim)
+
+
 def _content_hash(claim: Mapping[str, Any]) -> str:
     payload = {
         "kind": _string_value(claim.get("kind")),
