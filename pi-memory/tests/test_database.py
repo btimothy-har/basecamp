@@ -22,11 +22,24 @@ from pi_memory.db.models import (
     Transcript,
     TranscriptEntry,
 )
+from pi_memory.db.sqlite_migrations import CURRENT_SQLITE_SCHEMA_VERSION
 from sqlalchemy import func, inspect, select, text
 
 
 def sqlite_url(path: Path) -> str:
     return f"sqlite:///{path}"
+
+
+def sqlite_user_version(database: Database) -> int:
+    with database.engine.connect() as connection:
+        return int(connection.execute(text("PRAGMA user_version")).scalar_one())
+
+
+def index_by_name(database: Database, table_name: str, index_name: str) -> dict[str, object] | None:
+    for index in inspect(database.engine).get_indexes(table_name):
+        if index["name"] == index_name:
+            return index
+    return None
 
 
 def create_old_style_memory_database(path: Path) -> None:
@@ -236,6 +249,40 @@ def create_old_style_episode_manifests_database(path: Path) -> None:
         )
 
 
+def create_old_style_jobs_database(path: Path) -> None:
+    with sqlite3.connect(path) as connection:
+        connection.executescript(
+            """
+            CREATE TABLE jobs (
+                id INTEGER NOT NULL,
+                kind VARCHAR NOT NULL,
+                status VARCHAR DEFAULT 'queued' NOT NULL,
+                payload_json JSON DEFAULT '{}' NOT NULL,
+                priority INTEGER DEFAULT 0 NOT NULL,
+                due_at DATETIME DEFAULT CURRENT_TIMESTAMP NOT NULL,
+                attempts INTEGER DEFAULT 0 NOT NULL,
+                max_attempts INTEGER DEFAULT 3 NOT NULL,
+                run_id VARCHAR,
+                claimed_at DATETIME,
+                claimed_by VARCHAR,
+                started_at DATETIME,
+                heartbeat_at DATETIME,
+                lease_expires_at DATETIME,
+                running_pid INTEGER,
+                finished_at DATETIME,
+                exit_code INTEGER,
+                result_json JSON,
+                last_error TEXT,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP NOT NULL,
+                updated_at DATETIME DEFAULT CURRENT_TIMESTAMP NOT NULL,
+                PRIMARY KEY (id)
+            );
+
+            INSERT INTO jobs (id, kind, payload_json) VALUES (1, 'interpret_session', '{}');
+            """,
+        )
+
+
 def test_initialize_creates_parent_directory_and_database_file(tmp_path) -> None:
     db_path = tmp_path / "nested" / "memory.db"
     database = Database(sqlite_url(db_path))
@@ -286,6 +333,60 @@ def test_configure_switches_to_isolated_database(tmp_path) -> None:
         database.close_if_open()
 
 
+def test_initialize_sets_current_sqlite_user_version(tmp_path) -> None:
+    db_path = tmp_path / "memory.db"
+    database = Database(sqlite_url(db_path))
+
+    try:
+        database.initialize()
+        first_version = sqlite_user_version(database)
+        database.initialize()
+
+        assert first_version == CURRENT_SQLITE_SCHEMA_VERSION
+        assert sqlite_user_version(database) == CURRENT_SQLITE_SCHEMA_VERSION
+    finally:
+        database.close_if_open()
+
+
+def test_initialize_creates_jobs_idempotency_schema(tmp_path) -> None:
+    db_path = tmp_path / "memory.db"
+    database = Database(sqlite_url(db_path))
+
+    try:
+        database.initialize()
+        inspector = inspect(database.engine)
+        columns = {column["name"] for column in inspector.get_columns("jobs")}
+        index = index_by_name(database, "jobs", "uq_jobs_idempotency_key")
+
+        assert "idempotency_key" in columns
+        assert index is not None
+        assert index["column_names"] == ["idempotency_key"]
+        assert index["unique"]
+    finally:
+        database.close_if_open()
+
+
+def test_initialize_upgrades_old_sqlite_jobs_with_idempotency_key(tmp_path) -> None:
+    db_path = tmp_path / "memory.db"
+    create_old_style_jobs_database(db_path)
+    database = Database(sqlite_url(db_path))
+
+    try:
+        database.initialize()
+        database.initialize()
+        inspector = inspect(database.engine)
+        columns = {column["name"] for column in inspector.get_columns("jobs")}
+        index = index_by_name(database, "jobs", "uq_jobs_idempotency_key")
+
+        assert "idempotency_key" in columns
+        assert index is not None
+        assert index["column_names"] == ["idempotency_key"]
+        assert index["unique"]
+        assert sqlite_user_version(database) == CURRENT_SQLITE_SCHEMA_VERSION
+    finally:
+        database.close_if_open()
+
+
 def test_initialize_creates_transcript_entries_fts_projection(tmp_path) -> None:
     db_path = tmp_path / "memory.db"
     database = Database(sqlite_url(db_path))
@@ -328,6 +429,7 @@ def test_initialize_upgrades_old_sqlite_transcripts_with_lineage_columns(tmp_pat
             "ix_transcripts_parent_transcript_id",
             "ix_transcripts_parent_transcript_path",
         }.issubset(indexes)
+        assert sqlite_user_version(database) == CURRENT_SQLITE_SCHEMA_VERSION
     finally:
         database.close_if_open()
 
@@ -375,6 +477,7 @@ def test_initialize_upgrades_old_sqlite_activity_units_with_source_origin(tmp_pa
                 text("SELECT source_origin FROM activity_units WHERE id = 1"),
             ).scalar_one()
         assert source_origin == "unknown"
+        assert sqlite_user_version(database) == CURRENT_SQLITE_SCHEMA_VERSION
     finally:
         database.close_if_open()
 
@@ -413,6 +516,7 @@ def test_initialize_upgrades_old_sqlite_activity_units_with_activity_text_column
         assert row.activity_text_kind == "unavailable"
         assert row.activity_text_status == "pending"
         assert row.activity_text_metadata_json == "{}"
+        assert sqlite_user_version(database) == CURRENT_SQLITE_SCHEMA_VERSION
     finally:
         database.close_if_open()
 
@@ -437,6 +541,34 @@ def test_initialize_upgrades_old_sqlite_episode_manifests_with_tool_result_text_
                 text("SELECT tool_result_text_byte_count FROM episode_manifests WHERE id = 1"),
             ).scalar_one()
         assert value == 42
+        assert sqlite_user_version(database) == CURRENT_SQLITE_SCHEMA_VERSION
+    finally:
+        database.close_if_open()
+
+
+def test_initialize_backfills_partially_upgraded_episode_manifest_byte_count(tmp_path) -> None:
+    db_path = tmp_path / "memory.db"
+    create_old_style_episode_manifests_database(db_path)
+    with sqlite3.connect(db_path) as connection:
+        connection.executescript(
+            """
+            ALTER TABLE episode_manifests
+            ADD COLUMN tool_result_text_byte_count INTEGER DEFAULT 0 NOT NULL;
+            PRAGMA user_version = 3;
+            """,
+        )
+    database = Database(sqlite_url(db_path))
+
+    try:
+        database.initialize()
+        database.initialize()
+        with database.engine.connect() as connection:
+            value = connection.execute(
+                text("SELECT tool_result_text_byte_count FROM episode_manifests WHERE id = 1"),
+            ).scalar_one()
+
+        assert value == 42
+        assert sqlite_user_version(database) == CURRENT_SQLITE_SCHEMA_VERSION
     finally:
         database.close_if_open()
 

@@ -6,18 +6,14 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
 
-from sqlalchemy import Engine, create_engine, event, text
-from sqlalchemy.engine import Connection, make_url
+from sqlalchemy import Engine, create_engine, event
+from sqlalchemy.engine import make_url
 from sqlalchemy.orm import Session, sessionmaker
 
-from pi_memory.constants import (
-    ACTIVITY_TEXT_KIND_UNAVAILABLE,
-    ACTIVITY_TEXT_STATUS_PENDING,
-    MEMORY_DB_URL,
-    SOURCE_ORIGIN_UNKNOWN,
-)
+from pi_memory.constants import MEMORY_DB_URL
 from pi_memory.db.base import Base
 from pi_memory.db.models import ensure_models_registered
+from pi_memory.db.sqlite_migrations import run_sqlite_migrations
 
 
 class DatabaseSessionFactoryError(RuntimeError):
@@ -68,18 +64,7 @@ class Database:
         with self.engine.begin() as connection:
             Base.metadata.create_all(connection)
             if _is_sqlite_url(self._url):
-                _upgrade_sqlite_transcript_lineage(connection)
-                _upgrade_sqlite_activity_source_origin(connection)
-                _upgrade_sqlite_activity_text(connection)
-                _upgrade_sqlite_episode_manifest_tool_result_text_byte_count(connection)
-                connection.execute(
-                    text(
-                        """
-                        CREATE VIRTUAL TABLE IF NOT EXISTS transcript_entries_fts
-                        USING fts5(search_text)
-                        """,
-                    ),
-                )
+                run_sqlite_migrations(connection)
 
     @contextmanager
     def session(self) -> Iterator[Session]:
@@ -110,143 +95,6 @@ class Database:
         path = _sqlite_file_path(self._url)
         if path is not None:
             path.parent.mkdir(parents=True, mode=0o700, exist_ok=True)
-
-
-def _upgrade_sqlite_transcript_lineage(connection: Connection) -> None:
-    """Add transcript lineage columns and indexes to existing SQLite databases."""
-    columns = {row[1] for row in connection.execute(text("PRAGMA table_info(transcripts)"))}
-    if "parent_transcript_path" not in columns:
-        connection.execute(text("ALTER TABLE transcripts ADD COLUMN parent_transcript_path VARCHAR"))
-    if "parent_transcript_id" not in columns:
-        connection.execute(
-            text(
-                """
-                ALTER TABLE transcripts
-                ADD COLUMN parent_transcript_id INTEGER REFERENCES transcripts(id) ON DELETE SET NULL
-                """,
-            ),
-        )
-
-    connection.execute(
-        text("CREATE INDEX IF NOT EXISTS ix_transcripts_parent_transcript_id ON transcripts (parent_transcript_id)"),
-    )
-    connection.execute(
-        text(
-            """
-            CREATE INDEX IF NOT EXISTS ix_transcripts_parent_transcript_path
-            ON transcripts (parent_transcript_path)
-            """,
-        ),
-    )
-
-
-def _upgrade_sqlite_activity_source_origin(connection: Connection) -> None:
-    """Add activity source-origin columns and indexes to existing SQLite databases."""
-    if not _sqlite_table_exists(connection, "activity_units"):
-        return
-
-    columns = {row[1] for row in connection.execute(text("PRAGMA table_info(activity_units)"))}
-    if "source_origin" not in columns:
-        connection.execute(
-            text(
-                f"""
-                ALTER TABLE activity_units
-                ADD COLUMN source_origin VARCHAR DEFAULT '{SOURCE_ORIGIN_UNKNOWN}' NOT NULL
-                """,
-            ),
-        )
-
-    connection.execute(
-        text("CREATE INDEX IF NOT EXISTS ix_activity_units_source_origin ON activity_units (source_origin)"),
-    )
-
-
-def _upgrade_sqlite_activity_text(connection: Connection) -> None:
-    """Add derived activity text columns and indexes to existing SQLite databases."""
-    if not _sqlite_table_exists(connection, "activity_units"):
-        return
-
-    columns = {row[1] for row in connection.execute(text("PRAGMA table_info(activity_units)"))}
-    if "activity_text" not in columns:
-        connection.execute(text("ALTER TABLE activity_units ADD COLUMN activity_text TEXT"))
-    if "activity_text_kind" not in columns:
-        connection.execute(
-            text(
-                f"""
-                ALTER TABLE activity_units
-                ADD COLUMN activity_text_kind VARCHAR DEFAULT '{ACTIVITY_TEXT_KIND_UNAVAILABLE}' NOT NULL
-                """,
-            ),
-        )
-    if "activity_text_status" not in columns:
-        connection.execute(
-            text(
-                f"""
-                ALTER TABLE activity_units
-                ADD COLUMN activity_text_status VARCHAR DEFAULT '{ACTIVITY_TEXT_STATUS_PENDING}' NOT NULL
-                """,
-            ),
-        )
-    if "activity_text_metadata_json" not in columns:
-        connection.execute(
-            text(
-                """
-                ALTER TABLE activity_units
-                ADD COLUMN activity_text_metadata_json JSON DEFAULT '{}' NOT NULL
-                """,
-            ),
-        )
-
-    connection.execute(
-        text(
-            """
-            CREATE INDEX IF NOT EXISTS ix_activity_units_analysis_run_text_status
-            ON activity_units (analysis_run_id, activity_text_status)
-            """,
-        ),
-    )
-
-
-def _upgrade_sqlite_episode_manifest_tool_result_text_byte_count(connection: Connection) -> None:
-    """Add manifest tool-result text byte count to existing SQLite databases."""
-    if not _sqlite_table_exists(connection, "episode_manifests"):
-        return
-
-    columns = {row[1] for row in connection.execute(text("PRAGMA table_info(episode_manifests)"))}
-    if "tool_result_text_byte_count" not in columns:
-        connection.execute(
-            text(
-                """
-                ALTER TABLE episode_manifests
-                ADD COLUMN tool_result_text_byte_count INTEGER DEFAULT 0 NOT NULL
-                """,
-            ),
-        )
-        if "omitted_raw_text_bytes" in columns:
-            connection.execute(
-                text(
-                    """
-                    UPDATE episode_manifests
-                    SET tool_result_text_byte_count = omitted_raw_text_bytes
-                    """,
-                ),
-            )
-
-
-def _sqlite_table_exists(connection: Connection, table_name: str) -> bool:
-    return (
-        connection.execute(
-            text(
-                """
-                SELECT 1
-                FROM sqlite_master
-                WHERE type = 'table' AND name = :table_name
-                """,
-            ),
-            {"table_name": table_name},
-        ).scalar_one_or_none()
-        is not None
-    )
 
 
 def _configure_sqlite(engine: Engine) -> None:

@@ -49,6 +49,7 @@ class Job(Base):
         CheckConstraint("priority >= 0", name="ck_jobs_priority_non_negative"),
         CheckConstraint("length(kind) > 0", name="ck_jobs_kind_non_empty"),
         Index("ix_jobs_queue_claim", "status", "due_at", "priority", "created_at"),
+        Index("uq_jobs_idempotency_key", "idempotency_key", unique=True),
         Index("ix_jobs_status_updated", "status", "updated_at"),
         Index("ix_jobs_kind_status", "kind", "status"),
         Index("ix_jobs_run_id", "run_id"),
@@ -58,6 +59,7 @@ class Job(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     kind: Mapped[str]
+    idempotency_key: Mapped[str | None]
     status: Mapped[str] = mapped_column(default=JOB_STATUS_QUEUED, server_default=JOB_STATUS_QUEUED)
     payload_json: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict, server_default=text("'{}'"))
     priority: Mapped[int] = mapped_column(default=0, server_default="0")

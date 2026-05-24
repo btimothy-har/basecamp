@@ -8,6 +8,7 @@ from typing import Any
 from uuid import uuid4
 
 from sqlalchemy import Select, select, update
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from pi_memory.constants import (
@@ -86,22 +87,37 @@ class JobStore:
         due_at: datetime | None = None,
         max_attempts: int = 3,
         now: datetime | None = None,
+        idempotency_key: str | None = None,
     ) -> Job:
-        """Create a queued job."""
+        """Create a queued job, or return the existing job for an idempotency key."""
         current_time = _coalesce_now(now)
         self._initialize()
-        with self._database.session() as session:
-            job = Job(
-                kind=kind,
-                payload_json={} if payload_json is None else payload_json,
-                priority=priority,
-                due_at=current_time if due_at is None else due_at,
-                max_attempts=max_attempts,
-            )
-            session.add(job)
-            session.flush()
-            session.refresh(job)
-            return job
+        if idempotency_key is not None:
+            existing = self._get_by_idempotency_key(kind, idempotency_key)
+            if existing is not None:
+                return existing
+
+        try:
+            with self._database.session() as session:
+                job = Job(
+                    kind=kind,
+                    idempotency_key=idempotency_key,
+                    payload_json={} if payload_json is None else payload_json,
+                    priority=priority,
+                    due_at=current_time if due_at is None else due_at,
+                    max_attempts=max_attempts,
+                )
+                session.add(job)
+                session.flush()
+                session.refresh(job)
+                return job
+        except IntegrityError:
+            if idempotency_key is None:
+                raise
+            existing = self._get_by_idempotency_key(kind, idempotency_key)
+            if existing is None:
+                raise
+            return existing
 
     def claim_next(
         self,
@@ -341,6 +357,10 @@ class JobStore:
         self._initialize()
         with self._database.session() as session:
             return session.get(Job, job_id)
+
+    def _get_by_idempotency_key(self, kind: str, idempotency_key: str) -> Job | None:
+        with self._database.session() as session:
+            return session.scalar(select(Job).where(Job.kind == kind, Job.idempotency_key == idempotency_key))
 
     def list_jobs(
         self,

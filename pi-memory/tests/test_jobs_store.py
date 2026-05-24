@@ -20,6 +20,7 @@ from pi_memory.infra.job_queue import (
     JobRunTokenMismatchError,
     JobStore,
 )
+from sqlalchemy.exc import IntegrityError
 
 
 def sqlite_url(path: Path) -> str:
@@ -91,6 +92,7 @@ def test_enqueue_defaults_and_explicit_fields(store: JobStore) -> None:
     assert default_job.kind == "process_transcript"
     assert default_job.status == JOB_STATUS_QUEUED
     assert default_job.payload_json == {}
+    assert default_job.idempotency_key is None
     assert default_job.priority == 0
     assert default_job.max_attempts == 3
     assert default_job.attempts == 0
@@ -100,6 +102,46 @@ def test_enqueue_defaults_and_explicit_fields(store: JobStore) -> None:
     assert explicit_job.priority == 2
     assert explicit_job.max_attempts == 5
     assert_same_time(explicit_job.due_at, explicit_due_at)
+
+
+def test_enqueue_returns_existing_job_for_idempotency_key(database: Database, store: JobStore) -> None:
+    first = store.enqueue(
+        "idempotent",
+        payload_json={"attempt": 1},
+        due_at=at(8),
+        idempotency_key="summarize:1:interpret_session",
+    )
+    second = store.enqueue(
+        "idempotent",
+        payload_json={"attempt": 2},
+        due_at=at(9),
+        idempotency_key="summarize:1:interpret_session",
+    )
+
+    assert second.id == first.id
+    assert second.payload_json == {"attempt": 1}
+    assert second.idempotency_key == "summarize:1:interpret_session"
+    assert_same_time(second.due_at, at(8))
+    assert [job.id for job in store.list_jobs(kind="idempotent")] == [first.id]
+    assert get_job(database, first.id).idempotency_key == "summarize:1:interpret_session"
+
+
+def test_enqueue_rejects_cross_kind_idempotency_key_collision(store: JobStore) -> None:
+    first = store.enqueue("first", due_at=at(8), idempotency_key="shared-key")
+
+    with pytest.raises(IntegrityError):
+        store.enqueue("second", due_at=at(8), idempotency_key="shared-key")
+
+    assert [job.id for job in store.list_jobs(kind="first")] == [first.id]
+    assert store.list_jobs(kind="second") == []
+
+
+def test_enqueue_without_idempotency_key_remains_append_only(store: JobStore) -> None:
+    first = store.enqueue("repeat", due_at=at(8))
+    second = store.enqueue("repeat", due_at=at(8))
+
+    assert first.id != second.id
+    assert {job.id for job in store.list_jobs(kind="repeat")} == {first.id, second.id}
 
 
 def test_claim_next_claims_only_due_queued_job_without_incrementing_attempts(

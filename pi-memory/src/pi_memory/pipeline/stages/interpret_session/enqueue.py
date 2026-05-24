@@ -44,6 +44,7 @@ def enqueue_interpret_session_job_for_analysis(
     activity_count: int,
     episode_count: int,
     manifest_count: int,
+    idempotency_key: str | None = None,
 ) -> Job:
     """Enqueue session interpretation for a known persisted analysis run."""
     return store.enqueue(
@@ -59,4 +60,5 @@ def enqueue_interpret_session_job_for_analysis(
             episode_count=episode_count,
             manifest_count=manifest_count,
         ),
+        idempotency_key=idempotency_key,
     )
