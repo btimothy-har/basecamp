@@ -12,9 +12,11 @@ import pytest
 from click.testing import CliRunner
 from pi_memory.constants import (
     ANALYSIS_STATUS_COMPLETED,
+    JOB_KIND_ASSESS_INTERPRETATION_QUALITY,
     JOB_KIND_PROCESS_TRANSCRIPT,
     JOB_STATUS_CLAIMED,
     JOB_STATUS_COMPLETED,
+    SESSION_INTERPRETATION_STATUS_COMPLETED,
 )
 from pi_memory.db.database import Database
 from pi_memory.db.models import (
@@ -861,6 +863,31 @@ def get_cli_job(database: Database, job_id: int) -> Job:
         return db_session.get_one(Job, job_id)
 
 
+def create_reconciliation_snapshot(database: Database) -> int:
+    with database.session() as db_session:
+        memory_session = MemorySession(session_id="pi-session-reconcile", cwd="/repo/main")
+        snapshot = SessionInterpretationSnapshot(
+            session=memory_session,
+            status=SESSION_INTERPRETATION_STATUS_COMPLETED,
+            transcript_id=None,
+            analysis_run_id=None,
+            job_id=None,
+            blocked_reason=None,
+            analyzed_through_entry_id=None,
+            analyzed_through_byte_offset=0,
+            origin_counts_json={},
+            claim_source_activity_count=0,
+            interpretation_json={},
+            citations_json=[],
+            model_metadata_json={},
+            prompt_version="debug-reconcile",
+            schema_version=1,
+        )
+        db_session.add(snapshot)
+        db_session.flush()
+        return snapshot.id
+
+
 def create_inspection_job(database: Database) -> tuple[int, datetime]:
     now = datetime(2026, 1, 1, 10, tzinfo=UTC)
     with database.session() as db_session:
@@ -1158,6 +1185,87 @@ def test_quality_list_rejects_invalid_filter(memory_database: Database) -> None:
 
     assert result.exit_code == 1
     assert "Invalid quality_status" in result.output
+
+
+def test_debug_reconcile_dry_run_json_reports_missing_snapshot_to_quality(memory_database: Database) -> None:
+    create_reconciliation_snapshot(memory_database)
+
+    result = CliRunner().invoke(
+        cli_module.main,
+        [
+            "debug",
+            "reconcile",
+            "--db-url",
+            memory_database.url,
+            "--json",
+        ],
+    )
+
+    assert result.exit_code == 0
+    payload = json.loads(result.output)
+    assert payload["counts"]["total"] == 1
+    assert payload["counts"]["missing"] == 1
+    assert payload["enqueued_job_ids"] == []
+
+    decisions = payload["decisions"]
+    assert len(decisions) == 1
+    decision = decisions[0]
+    assert decision["target"]["gate"] == "snapshot_to_quality"
+    assert decision["status"] == "missing"
+    assert decision["reason"] == "snapshot-to-quality child job is missing"
+    assert decision["details"] == {
+        "snapshot_id": decision["target"]["identity"]["snapshot_id"],
+        "snapshot_status": "completed",
+    }
+    assert decision["enqueue_spec"]["kind"] == "assess_interpretation_quality"
+    assert decision["enqueue_spec"]["idempotency_key"]
+
+
+def test_debug_reconcile_enqueue_missing_json_enqueues_quality_job(memory_database: Database) -> None:
+    snapshot_id = create_reconciliation_snapshot(memory_database)
+
+    result = CliRunner().invoke(
+        cli_module.main,
+        [
+            "debug",
+            "reconcile",
+            "--db-url",
+            memory_database.url,
+            "--enqueue-missing",
+            "--json",
+        ],
+    )
+
+    assert result.exit_code == 0
+    payload = json.loads(result.output)
+    assert payload["counts"]["missing"] == 1
+    assert len(payload["enqueued_job_ids"]) == 1
+    enqueued_job_id = payload["enqueued_job_ids"][0]
+
+    job = get_cli_job(memory_database, enqueued_job_id)
+    assert job.kind == JOB_KIND_ASSESS_INTERPRETATION_QUALITY
+    assert job.payload_json["snapshot_id"] == snapshot_id
+
+    decisions = payload["decisions"]
+    assert any(
+        decision["target"]["gate"] == "snapshot_to_quality" and decision["status"] == "missing"
+        for decision in decisions
+    )
+
+
+def test_debug_reconcile_human_output_includes_counts_and_status(memory_database: Database) -> None:
+    create_reconciliation_snapshot(memory_database)
+
+    result = CliRunner().invoke(
+        cli_module.main,
+        ["debug", "reconcile", "--db-url", memory_database.url],
+    )
+
+    assert result.exit_code == 0
+    assert "Reconciliation report" in result.output
+    assert "Counts:" in result.output
+    assert "missing=" in result.output
+    assert "status=missing" in result.output
 
 
 def test_recall_reports_human_readable_results(memory_database: Database) -> None:

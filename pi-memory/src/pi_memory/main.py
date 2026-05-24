@@ -39,6 +39,7 @@ from pi_memory.cli.rendering import (
     _emit_quality_report,
     _emit_quality_report_list,
     _emit_recall_result,
+    _emit_reconciliation_report,
     _emit_unavailable,
 )
 from pi_memory.cli.service import (
@@ -59,6 +60,7 @@ from pi_memory.db.database import Database
 from pi_memory.infra.job_queue import JobStore, JobStoreError
 from pi_memory.infra.job_runner import JobDispatcher, JobRunner, JobRunnerError
 from pi_memory.ingest import ObserveInput, TranscriptFileMissingError, TranscriptIngestService
+from pi_memory.pipeline.reconciliation import Reconciler, ReconciliationRunOptions
 from pi_memory.pipeline.runtime.registry import create_job_registry
 from pi_memory.pipeline.stages.process_transcript.enqueue import enqueue_process_transcript_job
 from pi_memory.server import ServerAlreadyRunningError, ServerState, create_app
@@ -288,6 +290,60 @@ def recall(
         session_id=session_id,
     )
     _emit_recall_result(result, json_output=json_output)
+
+
+@debug.command("reconcile")
+@click.option(
+    "--db-url",
+    callback=lambda _ctx, _param, value: _require_non_empty(value),
+    required=True,
+    help="Database URL containing the reconciliation subjects.",
+)
+@click.option(
+    "--enqueue-missing",
+    is_flag=True,
+    default=False,
+    help="Enqueue missing jobs for eligible reconciliation decisions.",
+)
+@click.option(
+    "--gate",
+    multiple=True,
+    callback=lambda _ctx, _param, values: tuple(_require_non_empty(value) for value in values),
+    help="Restrict reconciliation to one or more gate names; repeatable.",
+)
+@click.option(
+    "--max-enqueues",
+    type=click.IntRange(1),
+    help="Maximum number of missing jobs to enqueue when requested.",
+)
+@click.option(
+    "--json",
+    "json_output",
+    is_flag=True,
+    help="Emit parseable JSON output.",
+)
+def reconcile(
+    db_url: str,
+    gate: tuple[str, ...],
+    *,
+    enqueue_missing: bool,
+    max_enqueues: int | None,
+    json_output: bool,
+) -> None:
+    """Inspect and optionally enqueue missing pipeline jobs using reconciliation logic."""
+    database = Database(db_url)
+    try:
+        report = Reconciler(database=database).run_once(
+            ReconciliationRunOptions(
+                enqueue_missing=enqueue_missing,
+                gate_names=None if not gate else gate,
+                max_enqueues=max_enqueues,
+            ),
+        )
+    finally:
+        database.close_if_open()
+
+    _emit_reconciliation_report(report, json_output=json_output)
 
 
 @debug.command()

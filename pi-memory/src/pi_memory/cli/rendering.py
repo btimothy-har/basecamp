@@ -9,6 +9,7 @@ import click
 
 from pi_memory.constants import SERVICE_NAME
 from pi_memory.ingest import IngestResult
+from pi_memory.pipeline.reconciliation import ReconciliationReport
 from pi_memory.recall import RawTranscriptRecallResult, RawTranscriptSearchResult
 
 
@@ -182,6 +183,81 @@ def _emit_memory_projection_list(payload: dict[str, Any], *, json_output: bool) 
             f"layer={record.get('memory_layer')} status={record.get('status')}",
         )
         click.echo(f"   record_key={record.get('record_key')} chroma_id={record.get('chroma_id')}")
+
+
+def _emit_reconciliation_report(report: ReconciliationReport, *, json_output: bool) -> None:
+    payload = {
+        "as_of": report.as_of.isoformat(),
+        "counts": {
+            "total": report.total_decisions,
+            "satisfied": report.satisfied_count,
+            "missing": report.missing_count,
+            "in_flight": report.in_flight_count,
+            "blocked": report.blocked_count,
+            "failed": report.failed_count,
+        },
+        "enqueued_job_ids": list(report.enqueued_job_ids),
+        "decisions": [
+            _reconciliation_decision_payload(decision) for decision in report.decisions
+        ],
+    }
+
+    if json_output:
+        click.echo(json.dumps(payload, sort_keys=True))
+        return
+
+    click.echo(f"Reconciliation report as of {report.as_of.isoformat()}")
+    counts = payload["counts"]
+    click.echo(
+        "Counts: "
+        f"total={counts['total']} satisfied={counts['satisfied']} missing={counts['missing']} "
+        f"in_flight={counts['in_flight']} blocked={counts['blocked']} failed={counts['failed']}",
+    )
+    if report.enqueued_job_ids:
+        enqueued = ", ".join(str(job_id) for job_id in report.enqueued_job_ids)
+        click.echo(f"Enqueued job IDs: {enqueued}")
+    else:
+        click.echo("Enqueued job IDs: none")
+
+    for index, decision in enumerate(report.decisions, start=1):
+        target = decision.target
+        key_or_id = ", ".join(
+            f"{key}={value}" for key, value in target.identity.items()
+        )
+        if not key_or_id:
+            key_or_id = "<none>"
+        existing_job_ids = (
+            ", ".join(str(job_id) for job_id in decision.existing_job_ids)
+            if decision.existing_job_ids
+            else "none"
+        )
+        existing_job_id = str(decision.existing_job_id) if decision.existing_job_id is not None else "none"
+        enqueue_key = (
+            decision.enqueue_spec.idempotency_key if decision.enqueue_spec is not None else "none"
+        )
+        click.echo(
+            f"{index}. gate={target.gate} kind={target.kind} identity={key_or_id} "
+            f"status={decision.status} reason={decision.reason} existing_job_id={existing_job_id} "
+            f"existing_job_ids={existing_job_ids} enqueue_idempotency_key={enqueue_key}",
+        )
+
+
+def _reconciliation_decision_payload(decision: Any) -> dict[str, Any]:
+    enqueue_spec = None if decision.enqueue_spec is None else decision.enqueue_spec.model_dump(
+        mode="json",
+        include={"kind", "idempotency_key", "payload_json", "priority", "due_at", "max_attempts"},
+    )
+    return {
+        "target": decision.target.model_dump(),
+        "status": decision.status,
+        "reason": decision.reason,
+        "details": decision.details,
+        "existing_job_id": decision.existing_job_id,
+        "existing_job_ids": (
+            list(decision.existing_job_ids) if decision.existing_job_ids is not None else None
+        ),
+        "enqueue_spec": enqueue_spec,
+    }
 
 
 def _emit_recall_result(result: RawTranscriptSearchResult, *, json_output: bool) -> None:
