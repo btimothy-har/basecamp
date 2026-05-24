@@ -13,6 +13,7 @@ def enqueue_assess_interpretation_quality_job(
     snapshot_id: int,
     session_id: str,
     interpretation_job_id: int | None = None,
+    idempotency_key: str | None = None,
 ) -> Job:
     """Enqueue quality assessment after an interpretation snapshot is written."""
     return store.enqueue(
@@ -22,4 +23,5 @@ def enqueue_assess_interpretation_quality_job(
             "session_id": session_id,
             "interpretation_job_id": interpretation_job_id,
         },
+        idempotency_key=idempotency_key,
     )

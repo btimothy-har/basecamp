@@ -16,6 +16,7 @@ def enqueue_summarize_tool_activities_job(
     session_id: str,
     analysis_result: TranscriptAnalysisResult,
     process_job_id: int | None = None,
+    idempotency_key: str | None = None,
 ) -> Job:
     """Enqueue tool activity summarization after a successful Phase 5A analysis."""
     return store.enqueue(
@@ -31,4 +32,5 @@ def enqueue_summarize_tool_activities_job(
             episode_count=analysis_result.episode_count,
             manifest_count=analysis_result.manifest_count,
         ),
+        idempotency_key=idempotency_key,
     )

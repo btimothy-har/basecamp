@@ -8,6 +8,8 @@ from sqlalchemy import select
 
 from pi_memory.constants import (
     JOB_KIND_ASSESS_INTERPRETATION_QUALITY,
+    JOB_KIND_PROJECT_MEMORY_RECORDS,
+    JOB_KIND_PROMOTE_DURABLE_MEMORY,
     SESSION_INTERPRETATION_QUALITY_REASON_SEMANTIC_ASSESSMENT_FAILED,
     SESSION_INTERPRETATION_QUALITY_REASON_SEMANTIC_ASSESSMENT_PENDING,
     SESSION_INTERPRETATION_QUALITY_STATUS_ASSESSMENT_FAILED,
@@ -23,6 +25,7 @@ from pi_memory.infra.job_runner import JobExecutionContext, PermanentJobError
 from pi_memory.pipeline.runtime.adapters import PipelineAdapters
 from pi_memory.pipeline.runtime.errors import InvalidJobPayloadError
 from pi_memory.pipeline.stages.assess_interpretation_quality.reports import (
+    current_quality_report_for_job,
     quality_report_result_json,
     replace_quality_report,
 )
@@ -69,27 +72,34 @@ class AssessInterpretationQualityJob:
                     "quality_report_id": None,
                     "stale_reason": "snapshot_not_found",
                 }
-            draft = assess_deterministic_interpretation_quality(session, snapshot)
-            if (
-                snapshot.status == SESSION_INTERPRETATION_STATUS_COMPLETED
-                and draft.quality_reason == SESSION_INTERPRETATION_QUALITY_REASON_SEMANTIC_ASSESSMENT_PENDING
-            ):
-                packet = build_quality_packet(session, snapshot, deterministic_report=draft)
-                draft = self._adapters.interpretation_quality_assessor().assess(packet)
-            report = replace_quality_report(session=session, job=job, snapshot=snapshot, draft=draft)
-            result_json = quality_report_result_json(snapshot, report)
+            existing_report = current_quality_report_for_job(session=session, job=job, snapshot=snapshot)
+            if existing_report is not None:
+                result_json = quality_report_result_json(snapshot, existing_report)
+            else:
+                draft = assess_deterministic_interpretation_quality(session, snapshot)
+                if (
+                    snapshot.status == SESSION_INTERPRETATION_STATUS_COMPLETED
+                    and draft.quality_reason == SESSION_INTERPRETATION_QUALITY_REASON_SEMANTIC_ASSESSMENT_PENDING
+                ):
+                    packet = build_quality_packet(session, snapshot, deterministic_report=draft)
+                    draft = self._adapters.interpretation_quality_assessor().assess(packet)
+                report = replace_quality_report(session=session, job=job, snapshot=snapshot, draft=draft)
+                result_json = quality_report_result_json(snapshot, report)
 
+        quality_report_id = result_json["quality_report_id"]
         project_job = enqueue_project_memory_records_job(
             context.store,
-            quality_report_id=result_json["quality_report_id"],
+            quality_report_id=quality_report_id,
             session_id=result_json["session_id"],
             quality_job_id=job.id,
+            idempotency_key=_project_memory_records_idempotency_key(quality_report_id),
         )
         promote_job = enqueue_promote_durable_memory_job(
             context.store,
-            quality_report_id=result_json["quality_report_id"],
+            quality_report_id=quality_report_id,
             session_id=result_json["session_id"],
             quality_job_id=job.id,
+            idempotency_key=_promote_durable_memory_idempotency_key(quality_report_id),
         )
         result_json["project_memory_records_job_id"] = project_job.id
         result_json["promote_durable_memory_job_id"] = promote_job.id
@@ -126,6 +136,14 @@ class AssessInterpretationQualityJob:
                 },
             )
             replace_quality_report(session=session, job=job, snapshot=snapshot, draft=draft)
+
+
+def _project_memory_records_idempotency_key(quality_report_id: int) -> str:
+    return f"{JOB_KIND_PROJECT_MEMORY_RECORDS}:{JOB_KIND_ASSESS_INTERPRETATION_QUALITY}:{quality_report_id}"
+
+
+def _promote_durable_memory_idempotency_key(quality_report_id: int) -> str:
+    return f"{JOB_KIND_PROMOTE_DURABLE_MEMORY}:{JOB_KIND_ASSESS_INTERPRETATION_QUALITY}:{quality_report_id}"
 
 
 def _quality_report_exists(context: JobExecutionContext, job: Job) -> bool:

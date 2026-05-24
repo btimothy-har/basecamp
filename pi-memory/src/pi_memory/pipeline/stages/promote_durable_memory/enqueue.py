@@ -13,6 +13,7 @@ def enqueue_promote_durable_memory_job(
     quality_report_id: int,
     session_id: str,
     quality_job_id: int | None = None,
+    idempotency_key: str | None = None,
 ) -> Job:
     """Enqueue durable-memory promotion for one quality report."""
     return store.enqueue(
@@ -23,4 +24,5 @@ def enqueue_promote_durable_memory_job(
             "quality_job_id": quality_job_id,
         },
         max_attempts=5,
+        idempotency_key=idempotency_key,
     )

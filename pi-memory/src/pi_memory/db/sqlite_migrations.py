@@ -14,7 +14,7 @@ from pi_memory.constants import (
     SOURCE_ORIGIN_UNKNOWN,
 )
 
-CURRENT_SQLITE_SCHEMA_VERSION = 6
+CURRENT_SQLITE_SCHEMA_VERSION = 7
 
 
 @dataclass(frozen=True)
@@ -188,6 +188,32 @@ def _add_jobs_idempotency_key(connection: Connection) -> None:
     )
 
 
+def _add_durable_memory_claim_identity(connection: Connection) -> None:
+    if not _sqlite_table_exists(connection, "durable_memory_items"):
+        return
+
+    connection.execute(
+        text(
+            """
+            DELETE FROM durable_memory_items
+            WHERE id NOT IN (
+                SELECT MIN(id)
+                FROM durable_memory_items
+                GROUP BY quality_report_id, claim_index
+            )
+            """,
+        ),
+    )
+    connection.execute(
+        text(
+            """
+            CREATE UNIQUE INDEX IF NOT EXISTS uq_durable_memory_items_quality_claim
+            ON durable_memory_items (quality_report_id, claim_index)
+            """,
+        ),
+    )
+
+
 def _sqlite_table_columns(connection: Connection, table_name: str) -> set[str]:
     if not _sqlite_table_exists(connection, table_name):
         return set()
@@ -217,4 +243,5 @@ SQLITE_MIGRATIONS = (
     SQLiteMigration(4, _add_episode_manifest_tool_result_text_byte_count),
     SQLiteMigration(5, _create_transcript_entries_fts),
     SQLiteMigration(6, _add_jobs_idempotency_key),
+    SQLiteMigration(7, _add_durable_memory_claim_identity),
 )

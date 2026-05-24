@@ -209,6 +209,29 @@ def at(hour: int, minute: int = 0) -> datetime:
     return datetime(2026, 1, 1, hour, minute, tzinfo=UTC)
 
 
+class CrashAfterCompleteError(RuntimeError):
+    pass
+
+
+class CrashAfterCompleteStore(JobStore):
+    def __init__(self, database: Database) -> None:
+        super().__init__(database=database)
+        self.has_crashed = False
+
+    def complete(
+        self,
+        job_id: int,
+        run_id: str,
+        result_json: dict[str, object] | None = None,
+        exit_code: int = 0,
+        now: datetime | None = None,
+    ) -> Job:
+        if not self.has_crashed:
+            self.has_crashed = True
+            raise CrashAfterCompleteError()
+        return super().complete(job_id, run_id, result_json=result_json, exit_code=exit_code, now=now)
+
+
 class RecordingInterpreter:
     def __init__(self) -> None:
         self.calls: list[InterpretationPacket] = []
@@ -1717,6 +1740,50 @@ def test_process_transcript_assigns_activity_units_to_compaction_boundary_episod
         ]
 
 
+def test_process_transcript_retry_does_not_duplicate_summarize_job(
+    database: Database,
+    store: JobStore,
+) -> None:
+    transcript_id = create_transcript(database)
+    claimed = claim_process_transcript_job(store, transcript_id)
+    crashing_store = CrashAfterCompleteStore(database=database)
+
+    with pytest.raises(CrashAfterCompleteError):
+        JobRunner(database=database, store=crashing_store).run(
+            claimed.id,
+            claimed.run_id,
+            running_pid=123,
+            now=at(10),
+        )
+
+    with database.session() as session:
+        summarize_jobs = list(session.scalars(select(Job).where(Job.kind == JOB_KIND_SUMMARIZE_TOOL_ACTIVITIES)))
+        analysis_runs = list(session.scalars(select(AnalysisRun)))
+    assert len(summarize_jobs) == 1
+    assert len(analysis_runs) == 1
+    first_summarize_job = summarize_jobs[0]
+    first_analysis_run = analysis_runs[0]
+    assert first_summarize_job.idempotency_key == (
+        f"{JOB_KIND_SUMMARIZE_TOOL_ACTIVITIES}:{JOB_KIND_PROCESS_TRANSCRIPT}:{claimed.id}"
+    )
+
+    recovered = store.recover_stale(now=at(10, 2))
+    assert recovered.running_requeued == 1
+    retry_claimed = store.claim_next("worker-process")
+    assert retry_claimed is not None
+    assert retry_claimed.id == claimed.id
+    retried = JobRunner(database=database).run(retry_claimed.id, retry_claimed.run_id, running_pid=123)
+
+    assert retried.result_json is not None
+    assert retried.result_json["summarize_tool_activities_job_id"] == first_summarize_job.id
+    assert retried.result_json["phase_5a"]["analysis_run_id"] == first_analysis_run.id
+    with database.session() as session:
+        summarize_jobs = list(session.scalars(select(Job).where(Job.kind == JOB_KIND_SUMMARIZE_TOOL_ACTIVITIES)))
+        analysis_runs = list(session.scalars(select(AnalysisRun)))
+    assert [job.id for job in summarize_jobs] == [first_summarize_job.id]
+    assert [run.id for run in analysis_runs] == [first_analysis_run.id]
+
+
 def test_process_transcript_phase_5a_rerun_replaces_derived_rows(
     database: Database,
     store: JobStore,
@@ -1866,6 +1933,59 @@ def test_interpret_session_completed_writes_snapshot_and_safe_result(
     assert quality_job.payload_json["interpretation_job_id"] == claimed.id
 
 
+def test_interpret_session_retry_does_not_duplicate_quality_job(
+    database: Database,
+    store: JobStore,
+) -> None:
+    transcript_id = create_transcript(database)
+    analyze_transcript(database, transcript_id)
+    claimed = claim_interpret_session_job(store, transcript_id)
+    interpreter = RecordingInterpreter()
+    crashing_store = CrashAfterCompleteStore(database=database)
+
+    with pytest.raises(CrashAfterCompleteError):
+        JobRunner(database=database, interpreter=interpreter, store=crashing_store).run(
+            claimed.id,
+            claimed.run_id,
+            running_pid=123,
+            now=at(10),
+        )
+
+    assert len(interpreter.calls) == 1
+    with database.session() as session:
+        snapshots = list(session.scalars(select(SessionInterpretationSnapshot)))
+        quality_jobs = list(session.scalars(select(Job).where(Job.kind == JOB_KIND_ASSESS_INTERPRETATION_QUALITY)))
+    assert len(snapshots) == 1
+    assert len(quality_jobs) == 1
+    first_snapshot = snapshots[0]
+    first_quality_job = quality_jobs[0]
+    assert first_quality_job.idempotency_key == (
+        f"{JOB_KIND_ASSESS_INTERPRETATION_QUALITY}:{JOB_KIND_INTERPRET_SESSION}:{first_snapshot.id}"
+    )
+
+    recovered = store.recover_stale(now=at(10, 2))
+    assert recovered.running_requeued == 1
+    retry_claimed = store.claim_next("worker-interpret")
+    assert retry_claimed is not None
+    assert retry_claimed.id == claimed.id
+    failing_interpreter = FailingInterpreter()
+    retried = JobRunner(database=database, interpreter=failing_interpreter).run(
+        retry_claimed.id,
+        retry_claimed.run_id,
+        running_pid=123,
+    )
+
+    assert failing_interpreter.calls == 0
+    assert retried.result_json is not None
+    assert retried.result_json["snapshot_id"] == first_snapshot.id
+    assert retried.result_json["assess_interpretation_quality_job_id"] == first_quality_job.id
+    with database.session() as session:
+        quality_jobs = list(session.scalars(select(Job).where(Job.kind == JOB_KIND_ASSESS_INTERPRETATION_QUALITY)))
+        snapshots = list(session.scalars(select(SessionInterpretationSnapshot)))
+    assert [job.id for job in quality_jobs] == [first_quality_job.id]
+    assert [snapshot.id for snapshot in snapshots] == [first_snapshot.id]
+
+
 def test_interpret_session_interprets_each_claim_source_episode_separately(
     database: Database,
     store: JobStore,
@@ -2005,6 +2125,75 @@ def test_assess_quality_completed_snapshot_writes_semantic_report(
         assert promote_job.payload_json["quality_report_id"] == report.id
         assert promote_job.payload_json["quality_job_id"] == quality_job_id
         assert promote_job.max_attempts == 5
+
+
+def test_assess_quality_retry_does_not_duplicate_project_or_promote_jobs(
+    database: Database,
+    store: JobStore,
+) -> None:
+    transcript_id = create_transcript(database)
+    analyze_transcript(database, transcript_id)
+    claimed = claim_interpret_session_job(store, transcript_id)
+    completed = JobRunner(database=database, interpreter=RecordingInterpreter()).run(
+        claimed.id,
+        claimed.run_id,
+        running_pid=123,
+        now=at(10),
+    )
+    quality_job_id = completed.result_json["assess_interpretation_quality_job_id"]
+    claimed_quality = claim_quality_job(store, quality_job_id)
+    quality_assessor = RecordingQualityAssessor()
+    crashing_store = CrashAfterCompleteStore(database=database)
+
+    with pytest.raises(CrashAfterCompleteError):
+        JobRunner(database=database, quality_assessor=quality_assessor, store=crashing_store).run(
+            claimed_quality.id,
+            claimed_quality.run_id,
+            running_pid=123,
+            now=at(10),
+        )
+
+    assert len(quality_assessor.calls) == 1
+    with database.session() as session:
+        report = session.scalar(select(SessionInterpretationQualityReport))
+        assert report is not None
+        project_jobs = list(session.scalars(select(Job).where(Job.kind == JOB_KIND_PROJECT_MEMORY_RECORDS)))
+        promote_jobs = list(session.scalars(select(Job).where(Job.kind == JOB_KIND_PROMOTE_DURABLE_MEMORY)))
+    assert len(project_jobs) == 1
+    assert len(promote_jobs) == 1
+    first_project_job = project_jobs[0]
+    first_promote_job = promote_jobs[0]
+    assert first_project_job.idempotency_key == (
+        f"{JOB_KIND_PROJECT_MEMORY_RECORDS}:{JOB_KIND_ASSESS_INTERPRETATION_QUALITY}:{report.id}"
+    )
+    assert first_promote_job.idempotency_key == (
+        f"{JOB_KIND_PROMOTE_DURABLE_MEMORY}:{JOB_KIND_ASSESS_INTERPRETATION_QUALITY}:{report.id}"
+    )
+
+    recovered = store.recover_stale(now=at(10, 2))
+    assert recovered.running_requeued == 1
+    retry_claimed = store.claim_next("worker-quality")
+    assert retry_claimed is not None
+    assert retry_claimed.id == claimed_quality.id
+    failing_quality_assessor = FailingQualityAssessor()
+    retried = JobRunner(database=database, quality_assessor=failing_quality_assessor).run(
+        retry_claimed.id,
+        retry_claimed.run_id,
+        running_pid=123,
+    )
+
+    assert failing_quality_assessor.calls == []
+    assert retried.result_json is not None
+    assert retried.result_json["quality_report_id"] == report.id
+    assert retried.result_json["project_memory_records_job_id"] == first_project_job.id
+    assert retried.result_json["promote_durable_memory_job_id"] == first_promote_job.id
+    with database.session() as session:
+        project_jobs = list(session.scalars(select(Job).where(Job.kind == JOB_KIND_PROJECT_MEMORY_RECORDS)))
+        promote_jobs = list(session.scalars(select(Job).where(Job.kind == JOB_KIND_PROMOTE_DURABLE_MEMORY)))
+        reports = list(session.scalars(select(SessionInterpretationQualityReport)))
+    assert [job.id for job in project_jobs] == [first_project_job.id]
+    assert [job.id for job in promote_jobs] == [first_promote_job.id]
+    assert [quality_report.id for quality_report in reports] == [report.id]
 
 
 def test_assess_quality_alias_output_persists_canonical_source_refs(

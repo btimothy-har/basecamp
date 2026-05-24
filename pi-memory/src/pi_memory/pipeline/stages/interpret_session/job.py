@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 from pi_memory.constants import (
+    JOB_KIND_ASSESS_INTERPRETATION_QUALITY,
     JOB_KIND_INTERPRET_SESSION,
     SESSION_INTERPRETATION_STATUS_BLOCKED,
     SESSION_INTERPRETATION_STATUS_COMPLETED,
@@ -36,6 +37,7 @@ from pi_memory.pipeline.stages.interpret_session.snapshots import (
     all_episode_interpretations_failed_error,
     completed_episode_outcome,
     completed_episode_outcome_count,
+    current_interpretation_snapshot_for_job,
     episode_failure_result_json,
     failed_episode_outcome,
     replace_episode_interpretation_snapshots,
@@ -81,7 +83,17 @@ class InterpretSessionJob:
             if packet.readiness.is_stale or is_stale_process_job(session, transcript_id, process_job_id):
                 return stale_result_json(packet)
 
-            if packet.readiness.blocked_reason is not None:
+            existing_snapshot = current_interpretation_snapshot_for_job(
+                session=session,
+                job=job,
+                transcript=transcript,
+                packet=packet,
+            )
+            if existing_snapshot is not None:
+                result_json = snapshot_result_json(packet, existing_snapshot)
+                snapshot_id = existing_snapshot.id
+                stable_session_id = packet.readiness.stable_session_id
+            elif packet.readiness.blocked_reason is not None:
                 snapshot = replace_interpretation_snapshot(
                     session=session,
                     job=job,
@@ -165,6 +177,7 @@ class InterpretSessionJob:
             snapshot_id=snapshot_id,
             session_id=stable_session_id,
             interpretation_job_id=job.id,
+            idempotency_key=_assess_interpretation_quality_idempotency_key(snapshot_id),
         )
         result_json["assess_interpretation_quality_job_id"] = quality_job.id
         return result_json
@@ -185,3 +198,7 @@ class InterpretSessionJob:
             else:
                 outcomes.append(completed_episode_outcome(episode_packet, episode, validated, result))
         return tuple(outcomes)
+
+
+def _assess_interpretation_quality_idempotency_key(snapshot_id: int) -> str:
+    return f"{JOB_KIND_ASSESS_INTERPRETATION_QUALITY}:{JOB_KIND_INTERPRET_SESSION}:{snapshot_id}"
