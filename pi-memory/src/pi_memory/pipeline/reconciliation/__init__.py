@@ -16,11 +16,17 @@ from pi_memory.pipeline.reconciliation.contracts import (
 
 if TYPE_CHECKING:
     from pi_memory.pipeline.reconciliation.reconciler import Reconciler
+    from pi_memory.pipeline.reconciliation.scheduler import PipelineReconciliationScheduler
 
 
 def __getattr__(name: str) -> Any:
     if name == "Reconciler":
         return getattr(import_module("pi_memory.pipeline.reconciliation.reconciler"), name)
+    if name == "PipelineReconciliationScheduler":
+        return getattr(
+            import_module("pi_memory.pipeline.reconciliation.scheduler"),
+            name,
+        )
     raise AttributeError(name)
 
 
@@ -32,4 +38,5 @@ __all__ = [
     "ReconciliationReport",
     "ReconciliationRunOptions",
     "Reconciler",
+    "PipelineReconciliationScheduler",
 ]

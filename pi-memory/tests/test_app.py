@@ -308,18 +308,64 @@ class FakeDispatcher:
         self.stopped = True
 
 
-def test_lifespan_starts_and_stops_dispatcher(tmp_path) -> None:
+class FakeScheduler:
+    def __init__(self) -> None:
+        self.started = False
+        self.stopped = False
+
+    def start(self) -> None:
+        self.started = True
+
+    def stop(self) -> None:
+        self.stopped = True
+
+
+class FailingSchedulerStartError(RuntimeError):
+    def __init__(self) -> None:
+        super().__init__("scheduler start failed")
+
+
+class FailingScheduler:
+    def __init__(self) -> None:
+        self.stopped = False
+
+    def start(self) -> None:
+        raise FailingSchedulerStartError()
+
+    def stop(self) -> None:
+        self.stopped = True
+
+
+def test_lifespan_starts_and_stops_dispatcher_and_reconciliation_scheduler(tmp_path) -> None:
     dispatcher = FakeDispatcher()
-    app = create_app(memory_dir=tmp_path, dispatcher=dispatcher)
+    scheduler = FakeScheduler()
+    app = create_app(memory_dir=tmp_path, dispatcher=dispatcher, reconciliation_scheduler=scheduler)
 
     assert app.state.dispatcher is dispatcher
+    assert app.state.reconciliation_scheduler is scheduler
     with TestClient(app) as client:
         assert dispatcher.started is True
+        assert scheduler.started is True
         response = client.get("/health")
         assert response.status_code == 200
         assert response.json() == {"status": "ok"}
 
     assert dispatcher.stopped is True
+    assert scheduler.stopped is True
+
+
+def test_lifespan_stops_dispatcher_if_scheduler_start_fails(tmp_path) -> None:
+    dispatcher = FakeDispatcher()
+    scheduler = FailingScheduler()
+    app = create_app(memory_dir=tmp_path, dispatcher=dispatcher, reconciliation_scheduler=scheduler)
+
+    with pytest.raises(FailingSchedulerStartError, match="scheduler start failed"):
+        with TestClient(app):
+            pass
+
+    assert dispatcher.started is True
+    assert dispatcher.stopped is True
+    assert scheduler.stopped is False
 
 
 def test_health_endpoint(tmp_path) -> None:

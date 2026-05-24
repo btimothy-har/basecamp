@@ -21,6 +21,7 @@ from pi_memory.ingest import (
     TranscriptIngestService,
 )
 from pi_memory.interpretation import SessionInterpretationInspectionService
+from pi_memory.pipeline.reconciliation import PipelineReconciliationScheduler
 from pi_memory.pipeline.stages.process_transcript.enqueue import enqueue_process_transcript_job
 from pi_memory.quality import QualityReportFilterError, SessionQualityReportInspectionService
 from pi_memory.recall import RawTranscriptRecallResult, RawTranscriptSearchResult, RecallSearchService
@@ -129,6 +130,7 @@ def create_app(
     ingest_service: TranscriptIngestService | None = None,
     job_store: JobStore | None = None,
     dispatcher: JobDispatcher | None = None,
+    reconciliation_scheduler: PipelineReconciliationScheduler | None = None,
     recall_service: RecallSearchService | None = None,
     interpretation_service: SessionInterpretationInspectionService | None = None,
     quality_service: SessionQualityReportInspectionService | None = None,
@@ -142,7 +144,7 @@ def create_app(
     service_auth_token = secrets.token_urlsafe(32) if auth_token is None else auth_token
     service_transcript_roots = _resolved_transcript_roots(allowed_transcript_roots)
     require_auth = _auth_dependency(service_auth_token)
-    lifespan = _dispatcher_lifespan(dispatcher) if dispatcher is not None else None
+    lifespan = _service_lifespan(dispatcher, reconciliation_scheduler)
 
     app = FastAPI(title=SERVICE_NAME, version=SERVICE_VERSION, lifespan=lifespan)
     app.state.started_at = service_started_at
@@ -154,6 +156,7 @@ def create_app(
     app.state.ingest_service = TranscriptIngestService() if ingest_service is None else ingest_service
     app.state.job_store = JobStore() if job_store is None else job_store
     app.state.dispatcher = dispatcher
+    app.state.reconciliation_scheduler = reconciliation_scheduler
     app.state.recall_service = RecallSearchService() if recall_service is None else recall_service
     app.state.interpretation_service = (
         SessionInterpretationInspectionService() if interpretation_service is None else interpretation_service
@@ -380,14 +383,27 @@ def _is_valid_auth_header(authorization: str | None, auth_token: str) -> bool:
     return secrets.compare_digest(candidate, auth_token)
 
 
-def _dispatcher_lifespan(dispatcher: JobDispatcher) -> Callable[[FastAPI], AbstractAsyncContextManager[None]]:
+def _service_lifespan(
+    dispatcher: JobDispatcher | None,
+    reconciliation_scheduler: PipelineReconciliationScheduler | None,
+) -> Callable[[FastAPI], AbstractAsyncContextManager[None]]:
     @asynccontextmanager
     async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
-        dispatcher.start()
+        dispatcher_started = False
+        scheduler_started = False
         try:
+            if dispatcher is not None:
+                dispatcher.start()
+                dispatcher_started = True
+            if reconciliation_scheduler is not None:
+                reconciliation_scheduler.start()
+                scheduler_started = True
             yield
         finally:
-            dispatcher.stop()
+            if scheduler_started and reconciliation_scheduler is not None:
+                reconciliation_scheduler.stop()
+            if dispatcher_started and dispatcher is not None:
+                dispatcher.stop()
 
     return lifespan
 

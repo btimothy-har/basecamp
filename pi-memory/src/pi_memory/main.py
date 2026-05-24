@@ -60,7 +60,11 @@ from pi_memory.db.database import Database
 from pi_memory.infra.job_queue import JobStore, JobStoreError
 from pi_memory.infra.job_runner import JobDispatcher, JobRunner, JobRunnerError
 from pi_memory.ingest import ObserveInput, TranscriptFileMissingError, TranscriptIngestService
-from pi_memory.pipeline.reconciliation import Reconciler, ReconciliationRunOptions
+from pi_memory.pipeline.reconciliation import (
+    PipelineReconciliationScheduler,
+    Reconciler,
+    ReconciliationRunOptions,
+)
 from pi_memory.pipeline.runtime.registry import create_job_registry
 from pi_memory.pipeline.stages.process_transcript.enqueue import enqueue_process_transcript_job
 from pi_memory.server import ServerAlreadyRunningError, ServerState, create_app
@@ -693,6 +697,7 @@ def serve(host: str, port: int) -> None:
                 memory_dir=state.memory_dir,
                 started_at=metadata.started_at_datetime,
                 dispatcher=JobDispatcher(),
+                reconciliation_scheduler=PipelineReconciliationScheduler(),
                 auth_token=metadata.auth_token,
             )
             uvicorn.run(app, host=host, port=port)

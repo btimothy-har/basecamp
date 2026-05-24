@@ -694,11 +694,16 @@ def test_port_check_uses_resolved_socket_family(monkeypatch) -> None:
 
 def test_serve_constructs_dispatcher_and_passes_it_to_app(tmp_path, monkeypatch) -> None:
     dispatcher = object()
+    scheduler = object()
     captured: dict[str, object] = {}
 
     def fake_job_dispatcher() -> object:
         captured["dispatcher_constructed"] = True
         return dispatcher
+
+    def fake_reconciliation_scheduler() -> object:
+        captured["scheduler_constructed"] = True
+        return scheduler
 
     def fake_run(app, host: str, port: int) -> None:
         captured["app"] = app
@@ -711,6 +716,7 @@ def test_serve_constructs_dispatcher_and_passes_it_to_app(tmp_path, monkeypatch)
 
     monkeypatch.setattr(cli_module, "ServerState", lambda: ServerState(memory_dir=tmp_path))
     monkeypatch.setattr(cli_module, "JobDispatcher", fake_job_dispatcher)
+    monkeypatch.setattr(cli_module, "PipelineReconciliationScheduler", fake_reconciliation_scheduler)
     monkeypatch.setattr(cli_module.uvicorn, "run", fake_run)
     monkeypatch.setattr(cli_module, "_ensure_port_available", fake_ensure_port_available)
 
@@ -721,7 +727,9 @@ def test_serve_constructs_dispatcher_and_passes_it_to_app(tmp_path, monkeypatch)
 
     assert result.exit_code == 0
     assert captured["dispatcher_constructed"] is True
+    assert captured["scheduler_constructed"] is True
     assert captured["app"].state.dispatcher is dispatcher
+    assert captured["app"].state.reconciliation_scheduler is scheduler
     assert captured["host"] == "127.0.0.1"
     assert captured["port"] == 8765
     assert "pi-memory stopped" in result.output
