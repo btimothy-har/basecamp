@@ -13,7 +13,25 @@ from pi_memory.db.models import (
     SessionInterpretationSnapshot,
 )
 from pi_memory.pipeline.utils.metadata import safe_model_metadata
-from pi_memory.quality import QualityReportDraft
+from pi_memory.quality import QUALITY_ASSESSMENT_SCHEMA_VERSION, QualityReportDraft
+
+
+def current_quality_report_for_job(
+    *,
+    session: Session,
+    job: Job,
+    snapshot: SessionInterpretationSnapshot,
+) -> SessionInterpretationQualityReport | None:
+    existing = session.scalar(
+        select(SessionInterpretationQualityReport).where(
+            SessionInterpretationQualityReport.snapshot_id == snapshot.id,
+        ),
+    )
+    if existing is None or existing.job_id != job.id:
+        return None
+    if existing.schema_version != QUALITY_ASSESSMENT_SCHEMA_VERSION:
+        return None
+    return existing
 
 
 def replace_quality_report(

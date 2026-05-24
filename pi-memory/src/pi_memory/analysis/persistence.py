@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from pi_memory.analysis.activity import NormalizedActivity, normalize_transcript_entries
@@ -120,6 +120,19 @@ def analyze_transcript_structure(
         ),
     )
 
+    existing_result = _current_analysis_result_for_job(
+        session=session,
+        transcript=transcript,
+        job_id=job_id,
+        entries=entries,
+        activities=activities,
+        episodes=episodes,
+        manifests=manifests,
+        snapshot_shell=snapshot_shell,
+    )
+    if existing_result is not None:
+        return existing_result
+
     _delete_previous_phase_5a_rows(session, transcript)
 
     analysis_run = _analysis_run(
@@ -149,6 +162,106 @@ def analyze_transcript_structure(
         analyzed_through_entry_id=analysis_run.analyzed_through_entry_id,
         analyzed_through_byte_offset=analysis_run.analyzed_through_byte_offset,
         status=analysis_run.status,
+    )
+
+
+def _current_analysis_result_for_job(
+    *,
+    session: Session,
+    transcript: Transcript,
+    job_id: int | None,
+    entries: list[TranscriptEntry],
+    activities: list[NormalizedActivity],
+    episodes: list[NormalizedEpisode],
+    manifests: list[BuiltEpisodeManifest],
+    snapshot_shell: BuiltSessionSnapshotShell,
+) -> TranscriptAnalysisResult | None:
+    if job_id is None:
+        return None
+
+    analysis_run = session.scalar(
+        select(AnalysisRun)
+        .where(
+            AnalysisRun.transcript_id == transcript.id,
+            AnalysisRun.job_id == job_id,
+            AnalysisRun.analysis_kind == ANALYSIS_KIND_TRANSCRIPT_STRUCTURE,
+            AnalysisRun.status == ANALYSIS_STATUS_COMPLETED,
+        )
+        .order_by(AnalysisRun.id.desc())
+        .limit(1),
+    )
+    if analysis_run is None or not _analysis_run_matches(
+        analysis_run=analysis_run,
+        entries=entries,
+        activities=activities,
+        episodes=episodes,
+        manifests=manifests,
+        snapshot_shell=snapshot_shell,
+    ):
+        return None
+
+    snapshot_row = session.scalar(
+        select(SessionSnapshotShell).where(
+            SessionSnapshotShell.session_id == transcript.session_id,
+            SessionSnapshotShell.transcript_id == transcript.id,
+            SessionSnapshotShell.analysis_run_id == analysis_run.id,
+        ),
+    )
+    if snapshot_row is None or not _analysis_rows_complete(session, analysis_run.id, activities, episodes, manifests):
+        return None
+
+    return TranscriptAnalysisResult(
+        analysis_run_id=analysis_run.id,
+        activity_count=analysis_run.activity_count,
+        episode_count=analysis_run.episode_count,
+        manifest_count=analysis_run.manifest_count,
+        snapshot_shell_id=snapshot_row.id,
+        analyzed_through_entry_id=analysis_run.analyzed_through_entry_id,
+        analyzed_through_byte_offset=analysis_run.analyzed_through_byte_offset,
+        status=analysis_run.status,
+    )
+
+
+def _analysis_run_matches(
+    *,
+    analysis_run: AnalysisRun,
+    entries: list[TranscriptEntry],
+    activities: list[NormalizedActivity],
+    episodes: list[NormalizedEpisode],
+    manifests: list[BuiltEpisodeManifest],
+    snapshot_shell: BuiltSessionSnapshotShell,
+) -> bool:
+    return (
+        analysis_run.source_byte_start == min((entry.byte_start for entry in entries), default=None)
+        and analysis_run.source_byte_end == max((entry.byte_end for entry in entries), default=None)
+        and analysis_run.analyzed_through_entry_id == snapshot_shell.analyzed_through_entry_id
+        and analysis_run.analyzed_through_byte_offset == snapshot_shell.analyzed_through_byte_offset
+        and analysis_run.activity_count == len(activities)
+        and analysis_run.episode_count == len(episodes)
+        and analysis_run.manifest_count == len(manifests)
+    )
+
+
+def _analysis_rows_complete(
+    session: Session,
+    analysis_run_id: int,
+    activities: list[NormalizedActivity],
+    episodes: list[NormalizedEpisode],
+    manifests: list[BuiltEpisodeManifest],
+) -> bool:
+    return (
+        _analysis_row_count(session, ActivityUnit, analysis_run_id) == len(activities)
+        and _analysis_row_count(session, Episode, analysis_run_id) == len(episodes)
+        and _analysis_row_count(session, EpisodeManifest, analysis_run_id) == len(manifests)
+    )
+
+
+def _analysis_row_count(session: Session, model: type[Any], analysis_run_id: int) -> int:
+    return int(
+        session.scalar(
+            select(func.count()).select_from(model).where(model.analysis_run_id == analysis_run_id),
+        )
+        or 0,
     )
 
 

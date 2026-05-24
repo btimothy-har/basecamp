@@ -85,6 +85,7 @@ class DurableMemoryItem(Base):
         Index("ix_durable_memory_items_session_status", "session_id", "status"),
         Index("ix_durable_memory_items_snapshot_id", "snapshot_id"),
         Index("ix_durable_memory_items_quality_report_id", "quality_report_id"),
+        Index("uq_durable_memory_items_quality_claim", "quality_report_id", "claim_index", unique=True),
         Index("ix_durable_memory_items_content_hash", "content_hash"),
         Index("ix_durable_memory_items_superseded_by_id", "superseded_by_id"),
         Index("ix_durable_memory_items_job_id", "job_id"),

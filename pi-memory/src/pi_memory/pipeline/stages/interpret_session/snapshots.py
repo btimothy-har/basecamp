@@ -306,6 +306,25 @@ def episode_failure_result_json(
     return result
 
 
+def current_interpretation_snapshot_for_job(
+    *,
+    session: Session,
+    job: Job,
+    transcript: Transcript,
+    packet: InterpretationPacket,
+) -> SessionInterpretationSnapshot | None:
+    existing = session.scalar(
+        select(SessionInterpretationSnapshot).where(
+            SessionInterpretationSnapshot.session_id == transcript.session_id,
+        ),
+    )
+    if existing is None or existing.job_id != job.id:
+        return None
+    if not _snapshot_matches_packet(existing, transcript, packet):
+        return None
+    return existing
+
+
 def replace_interpretation_snapshot(
     *,
     session: Session,
@@ -350,6 +369,22 @@ def replace_interpretation_snapshot(
     session.flush()
     session.refresh(snapshot)
     return snapshot
+
+
+def _snapshot_matches_packet(
+    snapshot: SessionInterpretationSnapshot,
+    transcript: Transcript,
+    packet: InterpretationPacket,
+) -> bool:
+    readiness = packet.readiness
+    return (
+        snapshot.transcript_id == transcript.id
+        and snapshot.analysis_run_id == readiness.latest_analysis_run_id
+        and snapshot.analyzed_through_entry_id == readiness.analyzed_through_entry_id
+        and snapshot.analyzed_through_byte_offset == readiness.analyzed_through_byte_offset
+        and snapshot.claim_source_activity_count == readiness.claim_source_activity_count
+        and snapshot.schema_version == INTERPRETATION_SCHEMA_VERSION
+    )
 
 
 def stale_result_json(packet: InterpretationPacket) -> dict[str, Any]:

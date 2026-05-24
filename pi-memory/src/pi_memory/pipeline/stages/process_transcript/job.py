@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 from pi_memory.analysis import analyze_transcript_structure
-from pi_memory.constants import JOB_KIND_PROCESS_TRANSCRIPT
+from pi_memory.constants import JOB_KIND_PROCESS_TRANSCRIPT, JOB_KIND_SUMMARIZE_TOOL_ACTIVITIES
 from pi_memory.db.models import (
     Job,
     Transcript,
@@ -48,6 +48,11 @@ class ProcessTranscriptJob:
             session_id=result_json["session_id"],
             analysis_result=analysis_result,
             process_job_id=job.id,
+            idempotency_key=_summarize_tool_activities_idempotency_key(job.id),
         )
         result_json["summarize_tool_activities_job_id"] = summarize_job.id
         return result_json
+
+
+def _summarize_tool_activities_idempotency_key(process_job_id: int) -> str:
+    return f"{JOB_KIND_SUMMARIZE_TOOL_ACTIVITIES}:{JOB_KIND_PROCESS_TRANSCRIPT}:{process_job_id}"

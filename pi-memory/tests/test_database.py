@@ -366,6 +366,21 @@ def test_initialize_creates_jobs_idempotency_schema(tmp_path) -> None:
         database.close_if_open()
 
 
+def test_initialize_creates_durable_memory_claim_identity_schema(tmp_path) -> None:
+    db_path = tmp_path / "memory.db"
+    database = Database(sqlite_url(db_path))
+
+    try:
+        database.initialize()
+        index = index_by_name(database, "durable_memory_items", "uq_durable_memory_items_quality_claim")
+
+        assert index is not None
+        assert index["column_names"] == ["quality_report_id", "claim_index"]
+        assert index["unique"]
+    finally:
+        database.close_if_open()
+
+
 def test_initialize_upgrades_old_sqlite_jobs_with_idempotency_key(tmp_path) -> None:
     db_path = tmp_path / "memory.db"
     create_old_style_jobs_database(db_path)
@@ -381,6 +396,45 @@ def test_initialize_upgrades_old_sqlite_jobs_with_idempotency_key(tmp_path) -> N
         assert "idempotency_key" in columns
         assert index is not None
         assert index["column_names"] == ["idempotency_key"]
+        assert index["unique"]
+        assert sqlite_user_version(database) == CURRENT_SQLITE_SCHEMA_VERSION
+    finally:
+        database.close_if_open()
+
+
+def test_initialize_upgrades_old_sqlite_durable_memory_claim_identity(tmp_path) -> None:
+    db_path = tmp_path / "memory.db"
+    with sqlite3.connect(db_path) as connection:
+        connection.executescript(
+            """
+            CREATE TABLE durable_memory_items (
+                id INTEGER NOT NULL,
+                quality_report_id INTEGER NOT NULL,
+                claim_index INTEGER NOT NULL,
+                PRIMARY KEY (id)
+            );
+
+            INSERT INTO durable_memory_items (id, quality_report_id, claim_index)
+            VALUES
+                (1, 10, 0),
+                (2, 10, 0),
+                (3, 10, 1);
+
+            PRAGMA user_version = 6;
+            """,
+        )
+    database = Database(sqlite_url(db_path))
+
+    try:
+        database.initialize()
+        database.initialize()
+        index = index_by_name(database, "durable_memory_items", "uq_durable_memory_items_quality_claim")
+        with database.engine.connect() as connection:
+            ids = connection.execute(text("SELECT id FROM durable_memory_items ORDER BY id")).scalars().all()
+
+        assert ids == [1, 3]
+        assert index is not None
+        assert index["column_names"] == ["quality_report_id", "claim_index"]
         assert index["unique"]
         assert sqlite_user_version(database) == CURRENT_SQLITE_SCHEMA_VERSION
     finally:

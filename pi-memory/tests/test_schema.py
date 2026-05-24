@@ -242,6 +242,7 @@ def test_durable_memory_schema_includes_indexes_foreign_keys_and_constraints(dat
         "ix_durable_memory_items_session_status",
         "ix_durable_memory_items_snapshot_id",
         "ix_durable_memory_items_quality_report_id",
+        "uq_durable_memory_items_quality_claim",
         "ix_durable_memory_items_content_hash",
     }.issubset(item_indexes)
     assert any(
