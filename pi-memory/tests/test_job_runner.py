@@ -129,6 +129,7 @@ class JobRunner(InfraJobRunner):
         quality_assessor: QualityAssessor | None = None,
         memory_projection: MemoryProjection | None = None,
         candidate_evaluator: CandidateEvaluator | None = None,
+        store: JobStore | None = None,
     ) -> None:
         adapters = PipelineAdapters(
             interpreter=interpreter,
@@ -137,7 +138,7 @@ class JobRunner(InfraJobRunner):
             memory_projection_adapter=memory_projection,
             candidate_evaluator_adapter=candidate_evaluator,
         )
-        super().__init__(database=database, registry=create_job_registry(adapters))
+        super().__init__(database=database, store=store, registry=create_job_registry(adapters))
 
 
 def sqlite_url(path: Path) -> str:
@@ -1058,6 +1059,68 @@ def test_summarize_tool_activities_updates_tool_pair_text_and_enqueues_interpret
         assert interpret_job.payload_json["analysis_run_id"] == analysis_result.analysis_run_id
         assert interpret_job.payload_json["transcript_id"] == transcript_id
         assert "raw_line" not in str(interpret_job.payload_json)
+
+
+def test_summarize_tool_activities_retry_does_not_duplicate_interpret_job(
+    database: Database,
+    store: JobStore,
+) -> None:
+    class CrashAfterDispatchError(RuntimeError):
+        pass
+
+    class CrashOnCompleteStore(JobStore):
+        def __init__(self, database: Database) -> None:
+            super().__init__(database=database)
+            self.has_crashed = False
+
+        def complete(
+            self,
+            job_id: int,
+            run_id: str,
+            result_json: dict[str, object] | None = None,
+            exit_code: int = 0,
+            now: datetime | None = None,
+        ) -> Job:
+            if not self.has_crashed:
+                self.has_crashed = True
+                raise CrashAfterDispatchError()
+            return super().complete(job_id, run_id, result_json=result_json, exit_code=exit_code, now=now)
+
+    transcript_id = create_transcript(database)
+    analysis_result = analyze_transcript(database, transcript_id)
+    claimed = claim_summarize_tool_activities_job(
+        store,
+        transcript_id=transcript_id,
+        session_id="pi-session-1",
+        analysis_result=analysis_result,
+    )
+    crashing_store = CrashOnCompleteStore(database=database)
+
+    with pytest.raises(CrashAfterDispatchError):
+        JobRunner(database=database, store=crashing_store).run(
+            claimed.id,
+            claimed.run_id,
+            running_pid=123,
+            now=at(10),
+        )
+
+    with database.session() as session:
+        interpret_jobs = list(session.scalars(select(Job).where(Job.kind == JOB_KIND_INTERPRET_SESSION)))
+    assert len(interpret_jobs) == 1
+    first_interpret_job = interpret_jobs[0]
+    assert first_interpret_job.idempotency_key == (
+        f"{JOB_KIND_INTERPRET_SESSION}:{JOB_KIND_SUMMARIZE_TOOL_ACTIVITIES}:{claimed.id}"
+    )
+
+    recovered = store.recover_stale(now=at(10, 2))
+    assert recovered.running_requeued == 1
+    retried = run_summarize_tool_activities_job(database, store, claimed.id)
+
+    assert retried.result_json is not None
+    assert retried.result_json["interpret_session_job_id"] == first_interpret_job.id
+    with database.session() as session:
+        interpret_jobs = list(session.scalars(select(Job).where(Job.kind == JOB_KIND_INTERPRET_SESSION)))
+    assert [job.id for job in interpret_jobs] == [first_interpret_job.id]
 
 
 def test_summarize_tool_activities_handles_zero_tool_pairs_without_model(
