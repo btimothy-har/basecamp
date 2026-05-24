@@ -30,6 +30,10 @@ class EpisodeLiveness:
     ordinal: int
     status: EpisodeLivenessStatus
     close_reason: str | None
+    first_entry_id: int | None
+    last_entry_id: int | None
+    byte_start: int
+    byte_end: int
     timestamp_end: datetime | None
     as_of: datetime
     age_seconds: float | None
@@ -109,6 +113,10 @@ def evaluate_episode_liveness(
         ordinal=episode.ordinal,
         status=status,
         close_reason=episode.close_reason,
+        first_entry_id=episode.first_entry_id,
+        last_entry_id=episode.last_entry_id,
+        byte_start=episode.byte_start,
+        byte_end=episode.byte_end,
         timestamp_end=timestamp_end,
         as_of=normalized_as_of,
         age_seconds=age_seconds,

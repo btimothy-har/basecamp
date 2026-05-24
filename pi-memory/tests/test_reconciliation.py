@@ -1,11 +1,16 @@
 from __future__ import annotations
 
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
 from pi_memory.constants import (
     ANALYSIS_KIND_TRANSCRIPT_STRUCTURE,
     ANALYSIS_STATUS_COMPLETED,
+    EPISODE_CLOSE_REASON_CURRENT_CURSOR,
+    EPISODE_CLOSE_REASON_TIME_GAP,
+    EPISODE_STATUS_CLOSED,
+    EPISODE_STATUS_OPEN,
     JOB_KIND_INTERPRET_SESSION,
     JOB_KIND_PROCESS_TRANSCRIPT,
     JOB_KIND_PROJECT_MEMORY_RECORDS,
@@ -22,6 +27,7 @@ from pi_memory.constants import (
 from pi_memory.db.database import Database
 from pi_memory.db.models import (
     AnalysisRun,
+    Episode,
     Job,
     MemorySession,
     SessionInterpretationQualityReport,
@@ -45,6 +51,8 @@ from pi_memory.pipeline.stages.project_memory_records.enqueue import project_mem
 from pi_memory.pipeline.stages.promote_durable_memory.enqueue import promote_durable_memory_idempotency_key
 from pi_memory.pipeline.stages.summarize_tool_activities.enqueue import summarize_tool_activities_idempotency_key
 from sqlalchemy import func, select
+
+BASE_TIME = datetime(2026, 5, 15, 12, 0, tzinfo=UTC)
 
 
 def sqlite_url(path: Path) -> str:
@@ -279,6 +287,68 @@ def create_snapshot_shell_for_analysis(
         session.add(shell)
         session.flush()
         return shell.id
+
+
+def create_completed_summarize_job(database: Database, analysis_run_id: int, process_job_id: int) -> int:
+    with database.session() as session:
+        analysis_run = session.get(AnalysisRun, analysis_run_id)
+        if analysis_run is None:
+            raise RuntimeError
+
+        summarize_job = Job(
+            kind=JOB_KIND_SUMMARIZE_TOOL_ACTIVITIES,
+            idempotency_key=summarize_tool_activities_idempotency_key(process_job_id),
+            status=JOB_STATUS_COMPLETED,
+            payload_json={
+                "transcript_id": analysis_run.transcript_id,
+                "analysis_run_id": analysis_run.id,
+                "session_id": analysis_run.session.session_id,
+                "process_job_id": process_job_id,
+            },
+        )
+        session.add(summarize_job)
+        session.flush()
+        return summarize_job.id
+
+
+def create_episode_for_analysis(
+    database: Database,
+    analysis_run_id: int,
+    *,
+    ordinal: int,
+    status: str,
+    close_reason: str,
+    first_entry_id: int | None,
+    last_entry_id: int | None,
+    byte_start: int,
+    byte_end: int,
+    timestamp_end: datetime | None,
+) -> int:
+    with database.session() as session:
+        analysis_run = session.get(AnalysisRun, analysis_run_id)
+        if analysis_run is None:
+            raise RuntimeError
+
+        episode = Episode(
+            analysis_run=analysis_run,
+            session=analysis_run.session,
+            transcript=analysis_run.transcript,
+            ordinal=ordinal,
+            status=status,
+            close_reason=close_reason,
+            first_entry_id=first_entry_id,
+            last_entry_id=last_entry_id,
+            byte_start=byte_start,
+            byte_end=byte_end,
+            timestamp_start=timestamp_end,
+            timestamp_end=timestamp_end,
+            activity_count=1,
+            message_count=1,
+            tool_pair_count=0,
+        )
+        session.add(episode)
+        session.flush()
+        return episode.id
 
 
 def create_interpretation_snapshot_for_analysis(database: Database, analysis_run_id: int) -> int:
@@ -548,6 +618,149 @@ def test_reconciler_transcript_to_process_skips_enqueue_when_unkeyed_active_job_
                 ),
             ) == 1
 
+    finally:
+        database.close_if_open()
+
+
+def test_reconciler_blocks_interpret_for_live_current_cursor_episode(
+    tmp_path: Path,
+) -> None:
+    database = Database(sqlite_url(tmp_path / "memory.db"))
+    database.initialize()
+    try:
+        transcript_id, entry_ids, entry_bytes = create_transcript_with_entries(
+            database,
+            session_id="pi-session-live-semantic",
+            path="/tmp/live-semantic.jsonl",
+            entries=((0, 100), (100, 200)),
+        )
+        analysis_run_id, process_job_id = create_structural_analysis_run(
+            database,
+            transcript_id,
+            analyzed_through_entry_id=entry_ids[1],
+            analyzed_through_byte_offset=entry_bytes[1],
+        )
+        summarize_job_id = create_completed_summarize_job(database, analysis_run_id, process_job_id)
+        closed_episode_id = create_episode_for_analysis(
+            database,
+            analysis_run_id,
+            ordinal=0,
+            status=EPISODE_STATUS_CLOSED,
+            close_reason=EPISODE_CLOSE_REASON_TIME_GAP,
+            first_entry_id=entry_ids[0],
+            last_entry_id=entry_ids[0],
+            byte_start=0,
+            byte_end=entry_bytes[0],
+            timestamp_end=BASE_TIME - timedelta(hours=2),
+        )
+        live_episode_id = create_episode_for_analysis(
+            database,
+            analysis_run_id,
+            ordinal=1,
+            status=EPISODE_STATUS_OPEN,
+            close_reason=EPISODE_CLOSE_REASON_CURRENT_CURSOR,
+            first_entry_id=entry_ids[1],
+            last_entry_id=entry_ids[1],
+            byte_start=entry_bytes[0],
+            byte_end=entry_bytes[1],
+            timestamp_end=BASE_TIME - timedelta(minutes=30),
+        )
+
+        reconciler = Reconciler(database=database)
+        report = reconciler.run_once(
+            ReconciliationRunOptions(
+                enqueue_missing=True,
+                gate_names=("summarize_to_interpret",),
+                as_of=BASE_TIME,
+            ),
+        )
+
+        decision = find_decision(report, "summarize_to_interpret")
+        assert decision is not None
+        assert decision.status == "blocked"
+        assert not decision.can_enqueue
+        assert decision.existing_job_id == summarize_job_id
+        assert decision.details["semantic_liveness"] == {
+            "as_of": BASE_TIME.isoformat(),
+            "total_episode_count": 2,
+            "eligible_episode_count": 1,
+            "live_episode_count": 1,
+            "semantic_analyzed_through_entry_id": entry_ids[0],
+            "semantic_analyzed_through_byte_offset": entry_bytes[0],
+            "live_episode_ids": (live_episode_id,),
+        }
+        assert closed_episode_id != live_episode_id
+        assert report.enqueued_job_ids == ()
+    finally:
+        database.close_if_open()
+
+
+def test_reconciler_enqueues_interpret_for_idle_current_cursor_episode(
+    tmp_path: Path,
+) -> None:
+    database = Database(sqlite_url(tmp_path / "memory.db"))
+    database.initialize()
+    try:
+        transcript_id, entry_ids, entry_bytes = create_transcript_with_entries(
+            database,
+            session_id="pi-session-idle-semantic",
+            path="/tmp/idle-semantic.jsonl",
+            entries=((0, 100),),
+        )
+        analysis_run_id, process_job_id = create_structural_analysis_run(
+            database,
+            transcript_id,
+            analyzed_through_entry_id=entry_ids[0],
+            analyzed_through_byte_offset=entry_bytes[0],
+        )
+        summarize_job_id = create_completed_summarize_job(database, analysis_run_id, process_job_id)
+        create_episode_for_analysis(
+            database,
+            analysis_run_id,
+            ordinal=0,
+            status=EPISODE_STATUS_OPEN,
+            close_reason=EPISODE_CLOSE_REASON_CURRENT_CURSOR,
+            first_entry_id=entry_ids[0],
+            last_entry_id=entry_ids[0],
+            byte_start=0,
+            byte_end=entry_bytes[0],
+            timestamp_end=BASE_TIME - timedelta(hours=1),
+        )
+
+        reconciler = Reconciler(database=database)
+        report = reconciler.run_once(
+            ReconciliationRunOptions(
+                enqueue_missing=True,
+                gate_names=("summarize_to_interpret",),
+                as_of=BASE_TIME,
+            ),
+        )
+
+        decision = find_decision(report, "summarize_to_interpret")
+        assert decision is not None
+        assert decision.status == "missing"
+        assert decision.can_enqueue
+        assert decision.enqueue_spec is not None
+        assert decision.details["semantic_liveness"] == {
+            "as_of": BASE_TIME.isoformat(),
+            "total_episode_count": 1,
+            "eligible_episode_count": 1,
+            "live_episode_count": 0,
+            "semantic_analyzed_through_entry_id": entry_ids[0],
+            "semantic_analyzed_through_byte_offset": entry_bytes[0],
+            "live_episode_ids": (),
+        }
+        assert len(report.enqueued_job_ids) == 1
+
+        with database.session() as session:
+            interpret_job = session.scalar(
+                select(Job).where(
+                    Job.kind == JOB_KIND_INTERPRET_SESSION,
+                    Job.idempotency_key == interpret_session_idempotency_key(summarize_job_id),
+                ),
+            )
+            assert interpret_job is not None
+            assert interpret_job.payload_json["analysis_run_id"] == analysis_run_id
     finally:
         database.close_if_open()
 

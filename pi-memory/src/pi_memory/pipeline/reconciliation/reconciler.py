@@ -8,6 +8,11 @@ from datetime import UTC, datetime
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from pi_memory.analysis import (
+    EPISODE_LIVENESS_STATUS_LIVE,
+    EpisodeLiveness,
+    episode_liveness_for_analysis,
+)
 from pi_memory.constants import (
     ACTIVITY_KIND_TOOL_PAIR,
     ACTIVITY_TEXT_STATUS_PENDING,
@@ -137,6 +142,7 @@ class Reconciler:
     def run_once(self, options: ReconciliationRunOptions | None = None) -> ReconciliationReport:
         """Run one reconciliation sweep and optionally enqueue missing jobs."""
         current_options = ReconciliationRunOptions() if options is None else options
+        as_of = current_options.as_of or datetime.now(UTC)
         decisions: list[GateDecision] = []
 
         self._database.initialize()
@@ -178,6 +184,7 @@ class Reconciler:
                         latest_analysis_runs,
                         structural_targets,
                         analysis_run_snapshot_shells,
+                        as_of,
                     ),
                 )
 
@@ -216,7 +223,7 @@ class Reconciler:
             )
 
         return ReconciliationReport(
-            as_of=current_options.as_of or datetime.now(UTC),
+            as_of=as_of,
             decisions=tuple(decisions),
             enqueued_job_ids=tuple(enqueued_job_ids),
         )
@@ -442,6 +449,7 @@ class Reconciler:
         analysis_runs: tuple[AnalysisRun, ...],
         structural_targets: dict[int, StructuralTarget],
         analysis_run_snapshot_shells: dict[int, SessionSnapshotShell],
+        as_of: datetime,
     ) -> list[GateDecision]:
         decisions: list[GateDecision] = []
         for analysis_run in analysis_runs:
@@ -521,12 +529,29 @@ class Reconciler:
                 continue
 
             if summarize_job_id is None:
-                # Guard to keep typing clear; this path already checked non-missing statuses.
                 decisions.append(
                     GateDecision(
                         target=target,
                         status="blocked",
                         reason="summarize job id is missing",
+                    ),
+                )
+                continue
+
+            semantic_liveness = self._semantic_liveness_details(session, analysis_run, as_of)
+            if semantic_liveness["live_episode_count"] > 0:
+                decisions.append(
+                    GateDecision(
+                        target=target,
+                        status="blocked",
+                        reason="semantic interpretation is waiting for live episode eligibility",
+                        existing_job_id=summarize_job_id,
+                        existing_job_ids=summarize_job_existing_ids,
+                        details={
+                            "analysis_run_id": analysis_run.id,
+                            "summarize_job_id": summarize_job_id,
+                            "semantic_liveness": semantic_liveness,
+                        },
                     ),
                 )
                 continue
@@ -549,6 +574,7 @@ class Reconciler:
                         details={
                             "analysis_run_id": analysis_run.id,
                             "summarize_job_id": summarize_job_id,
+                            "semantic_liveness": semantic_liveness,
                         },
                     ),
                 )
@@ -564,6 +590,7 @@ class Reconciler:
                     details={
                         "analysis_run_id": analysis_run.id,
                         "summarize_job_id": summarize_job_id,
+                        "semantic_liveness": semantic_liveness,
                     },
                 ),
             )
@@ -618,6 +645,34 @@ class Reconciler:
             ),
         )
         return bool(pending_count and pending_count > 0)
+
+    def _semantic_liveness_details(
+        self,
+        session: Session,
+        analysis_run: AnalysisRun,
+        as_of: datetime,
+    ) -> dict[str, object]:
+        liveness = episode_liveness_for_analysis(session, analysis_run.id, as_of=as_of)
+        live = tuple(episode for episode in liveness if episode.status == EPISODE_LIVENESS_STATUS_LIVE)
+        eligible = tuple(episode for episode in liveness if episode.is_semantic_eligible)
+        semantic_through = self._semantic_through(eligible)
+        return {
+            "as_of": as_of.isoformat(),
+            "total_episode_count": len(liveness),
+            "eligible_episode_count": len(eligible),
+            "live_episode_count": len(live),
+            "semantic_analyzed_through_entry_id": semantic_through.last_entry_id
+            if semantic_through is not None
+            else None,
+            "semantic_analyzed_through_byte_offset": semantic_through.byte_end if semantic_through is not None else 0,
+            "live_episode_ids": tuple(episode.episode_id for episode in live),
+        }
+
+    @staticmethod
+    def _semantic_through(episodes: tuple[EpisodeLiveness, ...]) -> EpisodeLiveness | None:
+        if not episodes:
+            return None
+        return max(episodes, key=lambda episode: (episode.byte_end, episode.ordinal, episode.episode_id))
 
     def _gate_snapshot_to_quality(
         self,
