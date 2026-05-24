@@ -97,7 +97,6 @@ class Database:
             path.parent.mkdir(parents=True, mode=0o700, exist_ok=True)
 
 
-
 def _configure_sqlite(engine: Engine) -> None:
     @event.listens_for(engine, "connect")
     def _set_sqlite_pragmas(dbapi_connection, _connection_record) -> None:  # type: ignore[no-untyped-def]
