@@ -39,6 +39,8 @@ from pi_memory.constants import (
     SOURCE_ORIGIN_INHERITED,
     SOURCE_ORIGIN_LOCAL,
     SOURCE_ORIGIN_UNKNOWN,
+    STRUCTURAL_ANALYSIS_SCHEMA_VERSION,
+    STRUCTURAL_LIVENESS_POLICY_VERSION,
 )
 from pi_memory.db.models import (
     ActivityUnit,
@@ -143,6 +145,10 @@ def analyze_transcript_structure(
         episodes=episodes,
         manifests=manifests,
         snapshot_shell=snapshot_shell,
+        structural_analysis_schema_version=STRUCTURAL_ANALYSIS_SCHEMA_VERSION,
+        liveness_policy_version=STRUCTURAL_LIVENESS_POLICY_VERSION,
+        parent_transcript_path=transcript.parent_transcript_path,
+        parent_transcript_id=transcript.parent_transcript_id,
     )
     session.add(analysis_run)
     session.flush()
@@ -366,6 +372,10 @@ def _analysis_run(
     episodes: list[NormalizedEpisode],
     manifests: list[BuiltEpisodeManifest],
     snapshot_shell: BuiltSessionSnapshotShell,
+    structural_analysis_schema_version: int = STRUCTURAL_ANALYSIS_SCHEMA_VERSION,
+    liveness_policy_version: int = STRUCTURAL_LIVENESS_POLICY_VERSION,
+    parent_transcript_path: str | None = None,
+    parent_transcript_id: int | None = None,
 ) -> AnalysisRun:
     now = datetime.now(UTC)
     return AnalysisRun(
@@ -385,6 +395,10 @@ def _analysis_run(
             "phase": "5A",
             "analysis_kind": ANALYSIS_KIND_TRANSCRIPT_STRUCTURE,
             "entry_count": len(entries),
+            "structural_analysis_schema_version": structural_analysis_schema_version,
+            "liveness_policy_version": liveness_policy_version,
+            "parent_transcript_path": parent_transcript_path,
+            "parent_transcript_id": parent_transcript_id,
         },
         finished_at=now,
     )

@@ -52,6 +52,8 @@ from pi_memory.constants import (
     SOURCE_ORIGIN_LOCAL,
     SOURCE_ORIGIN_MIXED,
     SOURCE_ORIGIN_UNKNOWN,
+    STRUCTURAL_ANALYSIS_SCHEMA_VERSION,
+    STRUCTURAL_LIVENESS_POLICY_VERSION,
 )
 from pi_memory.db.database import Database
 from pi_memory.db.models import (
@@ -1498,6 +1500,10 @@ def test_process_transcript_persists_phase_5a_rows(database: Database, store: Jo
             "phase": "5A",
             "analysis_kind": "transcript_structure",
             "entry_count": 2,
+            "structural_analysis_schema_version": STRUCTURAL_ANALYSIS_SCHEMA_VERSION,
+            "liveness_policy_version": STRUCTURAL_LIVENESS_POLICY_VERSION,
+            "parent_transcript_path": None,
+            "parent_transcript_id": None,
         }
 
         assert session.scalar(select(func.count()).select_from(ActivityUnit)) == 2

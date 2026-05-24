@@ -12,9 +12,12 @@ from pi_memory.constants import (
     JOB_KIND_PROMOTE_DURABLE_MEMORY,
     JOB_KIND_SUMMARIZE_TOOL_ACTIVITIES,
     JOB_STATUS_CANCELLED,
+    JOB_STATUS_COMPLETED,
     JOB_STATUS_FAILED,
+    JOB_STATUS_QUEUED,
     SESSION_INTERPRETATION_QUALITY_STATUS_HEALTHY,
     SESSION_INTERPRETATION_STATUS_COMPLETED,
+    SESSION_SNAPSHOT_STATUS_READY_FOR_INTERPRETATION,
 )
 from pi_memory.db.database import Database
 from pi_memory.db.models import (
@@ -23,7 +26,9 @@ from pi_memory.db.models import (
     MemorySession,
     SessionInterpretationQualityReport,
     SessionInterpretationSnapshot,
+    SessionSnapshotShell,
     Transcript,
+    TranscriptEntry,
 )
 from pi_memory.pipeline.reconciliation import GateDecision, Reconciler, ReconciliationReport, ReconciliationRunOptions
 from pi_memory.pipeline.stages.assess_interpretation_quality.enqueue import (
@@ -31,6 +36,11 @@ from pi_memory.pipeline.stages.assess_interpretation_quality.enqueue import (
     assess_interpretation_quality_job_spec,
 )
 from pi_memory.pipeline.stages.interpret_session.enqueue import interpret_session_idempotency_key
+from pi_memory.pipeline.stages.process_transcript.enqueue import (
+    STRUCTURAL_ANALYSIS_SCHEMA_VERSION,
+    STRUCTURAL_LIVENESS_POLICY_VERSION,
+    process_transcript_idempotency_key,
+)
 from pi_memory.pipeline.stages.project_memory_records.enqueue import project_memory_records_idempotency_key
 from pi_memory.pipeline.stages.promote_durable_memory.enqueue import promote_durable_memory_idempotency_key
 from pi_memory.pipeline.stages.summarize_tool_activities.enqueue import summarize_tool_activities_idempotency_key
@@ -132,12 +142,534 @@ def create_failed_summarize_artifact(database: Database) -> int:
         return summarize_job.id
 
 
+def create_transcript_with_entries(
+    database: Database,
+    *,
+    session_id: str,
+    path: str,
+    entries: tuple[tuple[int, int], ...],
+    parent_transcript_path: str | None = None,
+    parent_transcript_id: int | None = None,
+) -> tuple[int, list[int], list[int]]:
+    with database.session() as session:
+        memory_session = MemorySession(session_id=session_id, cwd="/repo/basecamp")
+        transcript = Transcript(
+            session=memory_session,
+            path=path,
+            parent_transcript_path=parent_transcript_path,
+            parent_transcript_id=parent_transcript_id,
+            cursor_offset=max(byte_end for _, byte_end in entries),
+            file_size=max(byte_end for _, byte_end in entries),
+        )
+        session.add(transcript)
+        session.flush()
+
+        entry_rows: list[TranscriptEntry] = []
+        for index, (byte_start, byte_end) in enumerate(entries, start=1):
+            entry_rows.append(
+                TranscriptEntry(
+                    transcript_id=transcript.id,
+                    entry_id=f"entry-{index}",
+                    entry_type="message",
+                    message_role="user",
+                    raw_line='{"type":"message","message":{"role":"user","content":"message"}}',
+                    byte_start=byte_start,
+                    byte_end=byte_end,
+                ),
+            )
+        session.add_all(entry_rows)
+        session.flush()
+
+        entry_ids = [entry.id for entry in entry_rows]
+        entry_bytes = [entry.byte_end for entry in entry_rows]
+        return transcript.id, entry_ids, entry_bytes
+
+
+def create_structural_analysis_run(
+    database: Database,
+    transcript_id: int,
+    *,
+    analyzed_through_entry_id: int,
+    analyzed_through_byte_offset: int,
+    include_version_metadata: bool = True,
+    parent_transcript_path: str | None = None,
+    parent_transcript_id: int | None = None,
+) -> tuple[int, int | None]:
+    with database.session() as session:
+        transcript = session.get(Transcript, transcript_id)
+        if transcript is None:
+            raise RuntimeError
+
+        process_job = Job(
+            kind=JOB_KIND_PROCESS_TRANSCRIPT,
+            status=JOB_STATUS_COMPLETED,
+            payload_json={"transcript_id": transcript_id},
+        )
+        diagnostics = {
+            "phase": "5A",
+            "analysis_kind": ANALYSIS_KIND_TRANSCRIPT_STRUCTURE,
+            "entry_count": 2,
+        }
+        if include_version_metadata:
+            diagnostics.update(
+                {
+                    "structural_analysis_schema_version": STRUCTURAL_ANALYSIS_SCHEMA_VERSION,
+                    "liveness_policy_version": STRUCTURAL_LIVENESS_POLICY_VERSION,
+                    "parent_transcript_path": (
+                        transcript.parent_transcript_path
+                        if parent_transcript_path is None
+                        else parent_transcript_path
+                    ),
+                    "parent_transcript_id": (
+                        transcript.parent_transcript_id
+                        if parent_transcript_id is None
+                        else parent_transcript_id
+                    ),
+                },
+            )
+
+        analysis_run = AnalysisRun(
+            session=transcript.session,
+            transcript=transcript,
+            job=process_job,
+            analysis_kind=ANALYSIS_KIND_TRANSCRIPT_STRUCTURE,
+            status=ANALYSIS_STATUS_COMPLETED,
+            analyzed_through_entry_id=analyzed_through_entry_id,
+            analyzed_through_byte_offset=analyzed_through_byte_offset,
+            diagnostics_json=diagnostics,
+        )
+        session.add_all([process_job, analysis_run])
+        session.flush()
+        return analysis_run.id, process_job.id
+
+
+def create_snapshot_shell_for_analysis(
+    database: Database,
+    analysis_run_id: int,
+    *,
+    parent_transcript_path: str | None,
+    parent_transcript_id: int | None,
+    analyzed_through_entry_id: int | None,
+    analyzed_through_byte_offset: int,
+) -> int:
+    with database.session() as session:
+        analysis_run = session.get(AnalysisRun, analysis_run_id)
+        if analysis_run is None:
+            raise RuntimeError
+
+        shell = SessionSnapshotShell(
+            session_id=analysis_run.session_id,
+            transcript_id=analysis_run.transcript_id,
+            analysis_run_id=analysis_run_id,
+            status=SESSION_SNAPSHOT_STATUS_READY_FOR_INTERPRETATION,
+            analyzed_through_entry_id=analyzed_through_entry_id,
+            analyzed_through_byte_offset=analyzed_through_byte_offset,
+            activity_count=0,
+            episode_count=0,
+            manifest_count=0,
+            tool_pair_count=0,
+            snapshot_json={
+                "kind": "session_snapshot_shell",
+                "fork": {
+                    "parent_transcript_path": parent_transcript_path,
+                    "parent_transcript_id": parent_transcript_id,
+                },
+            },
+        )
+        session.add(shell)
+        session.flush()
+        return shell.id
+
+
+def create_interpretation_snapshot_for_analysis(database: Database, analysis_run_id: int) -> int:
+    with database.session() as session:
+        analysis_run = session.get(AnalysisRun, analysis_run_id)
+        if analysis_run is None:
+            raise RuntimeError
+
+        snapshot = SessionInterpretationSnapshot(
+            session=analysis_run.session,
+            transcript=analysis_run.transcript,
+            analysis_run=analysis_run,
+            status=SESSION_INTERPRETATION_STATUS_COMPLETED,
+            blocked_reason=None,
+            analyzed_through_entry_id=analysis_run.analyzed_through_entry_id,
+            analyzed_through_byte_offset=analysis_run.analyzed_through_byte_offset,
+        )
+        session.add(snapshot)
+        session.flush()
+        return snapshot.id
+
+
+def create_quality_report_for_snapshot(database: Database, snapshot_id: int) -> int:
+    with database.session() as session:
+        snapshot = session.get(SessionInterpretationSnapshot, snapshot_id)
+        if snapshot is None:
+            raise RuntimeError
+
+        report = SessionInterpretationQualityReport(
+            snapshot=snapshot,
+            quality_status=SESSION_INTERPRETATION_QUALITY_STATUS_HEALTHY,
+            quality_reason=None,
+            promotable=True,
+        )
+        session.add(report)
+        session.flush()
+        return report.id
+
+
 def find_decision(report: ReconciliationReport, gate: str) -> GateDecision | None:
     """Return the decision for one gate name if present."""
     for decision in report.decisions:
         if decision.target.gate == gate:
             return decision
     return None
+
+
+def find_decision_by_transcript(
+    report: ReconciliationReport,
+    gate: str,
+    transcript_id: int,
+) -> GateDecision | None:
+    """Return the decision for one transcript for a given gate."""
+    for decision in report.decisions:
+        if decision.target.gate != gate:
+            continue
+        if decision.target.identity.get("transcript_id") == transcript_id:
+            return decision
+    return None
+
+
+def test_reconciler_transcript_to_process_reconciles_growth_target(
+    tmp_path: Path,
+) -> None:
+    database = Database(sqlite_url(tmp_path / "memory.db"))
+    database.initialize()
+    try:
+        transcript_id, entry_ids, entry_bytes = create_transcript_with_entries(
+            database,
+            session_id="pi-session-structural-1",
+            path="/tmp/transcript-1.jsonl",
+            entries=((100, 200), (0, 100)),
+        )
+        create_structural_analysis_run(
+            database,
+            transcript_id,
+            analyzed_through_entry_id=entry_ids[1],
+            analyzed_through_byte_offset=entry_bytes[1],
+        )
+
+        reconciler = Reconciler(database=database)
+        report = reconciler.run_once(
+            ReconciliationRunOptions(
+                enqueue_missing=True,
+                gate_names=("transcript_to_process",),
+            ),
+        )
+
+        decision = find_decision(report, "transcript_to_process")
+        assert decision is not None
+        assert decision.status == "missing"
+        assert decision.can_enqueue
+        assert decision.enqueue_spec is not None
+        assert decision.enqueue_spec.payload_json["transcript_id"] == transcript_id
+        assert decision.enqueue_spec.payload_json["analyzed_through_entry_id"] == entry_ids[0]
+        assert decision.enqueue_spec.payload_json["analyzed_through_byte_offset"] == entry_bytes[0]
+        assert decision.enqueue_spec.idempotency_key == process_transcript_idempotency_key(
+            transcript_id=transcript_id,
+            analyzed_through_entry_id=entry_ids[0],
+            analyzed_through_byte_offset=entry_bytes[0],
+            parent_transcript_path=None,
+            parent_transcript_id=None,
+            structural_analysis_schema_version=STRUCTURAL_ANALYSIS_SCHEMA_VERSION,
+            liveness_policy_version=STRUCTURAL_LIVENESS_POLICY_VERSION,
+        )
+        assert len(report.enqueued_job_ids) == 1
+    finally:
+        database.close_if_open()
+
+
+def test_reconciler_transcript_to_process_reports_satisfied_when_target_is_current(
+    tmp_path: Path,
+) -> None:
+    database = Database(sqlite_url(tmp_path / "memory.db"))
+    database.initialize()
+    try:
+        transcript_id, entry_ids, entry_bytes = create_transcript_with_entries(
+            database,
+            session_id="pi-session-structural-2",
+            path="/tmp/transcript-2.jsonl",
+            entries=((0, 100), (100, 200)),
+        )
+        create_structural_analysis_run(
+            database,
+            transcript_id,
+            analyzed_through_entry_id=entry_ids[1],
+            analyzed_through_byte_offset=entry_bytes[1],
+        )
+
+        reconciler = Reconciler(database=database)
+        report = reconciler.run_once(
+            ReconciliationRunOptions(
+                enqueue_missing=True,
+                gate_names=("transcript_to_process",),
+            ),
+        )
+
+        decision = find_decision(report, "transcript_to_process")
+        assert decision is not None
+        assert decision.status == "satisfied"
+        assert not decision.can_enqueue
+        assert report.enqueued_job_ids == ()
+    finally:
+        database.close_if_open()
+
+
+def test_reconciler_transcript_to_process_reconciles_parent_resolution_change(
+    tmp_path: Path,
+) -> None:
+    database = Database(sqlite_url(tmp_path / "memory.db"))
+    database.initialize()
+    try:
+        child_transcript_id, entry_ids, entry_bytes = create_transcript_with_entries(
+            database,
+            session_id="pi-session-structural-3",
+            path="/tmp/child-transcript.jsonl",
+            entries=((0, 100), (100, 200)),
+            parent_transcript_path="/tmp/parent-transcript.jsonl",
+        )
+        analysis_run_id, _ = create_structural_analysis_run(
+            database,
+            child_transcript_id,
+            analyzed_through_entry_id=entry_ids[1],
+            analyzed_through_byte_offset=entry_bytes[1],
+            include_version_metadata=False,
+        )
+        create_snapshot_shell_for_analysis(
+            database,
+            analysis_run_id,
+            parent_transcript_path="/tmp/parent-transcript.jsonl",
+            parent_transcript_id=None,
+            analyzed_through_entry_id=entry_ids[1],
+            analyzed_through_byte_offset=entry_bytes[1],
+        )
+        parent_id, _, _ = create_transcript_with_entries(
+            database,
+            session_id="pi-session-structural-parent",
+            path="/tmp/parent-transcript.jsonl",
+            entries=((0, 50),),
+        )
+
+        reconciler = Reconciler(database=database)
+        report = reconciler.run_once(
+            ReconciliationRunOptions(
+                enqueue_missing=True,
+                gate_names=("transcript_to_process",),
+            ),
+        )
+
+        decision = find_decision_by_transcript(report, "transcript_to_process", child_transcript_id)
+        assert decision is not None
+        assert decision.status == "missing"
+        assert decision.can_enqueue
+        assert decision.enqueue_spec is not None
+        assert decision.enqueue_spec.payload_json["parent_transcript_id"] == parent_id
+        assert decision.enqueue_spec.payload_json["transcript_id"] == child_transcript_id
+
+        with database.session() as session:
+            child_job_ids = tuple(
+                job_id
+                for job_id in report.enqueued_job_ids
+                if (job := session.get(Job, job_id)) is not None
+                and job.payload_json.get("transcript_id") == child_transcript_id
+            )
+            assert len(child_job_ids) == 1
+            child_job = session.get(Job, child_job_ids[0])
+            assert child_job is not None
+            assert child_job.payload_json["transcript_id"] == child_transcript_id
+            expected_key = process_transcript_idempotency_key(
+                transcript_id=child_transcript_id,
+                analyzed_through_entry_id=entry_ids[1],
+                analyzed_through_byte_offset=entry_bytes[1],
+                parent_transcript_path="/tmp/parent-transcript.jsonl",
+                parent_transcript_id=parent_id,
+                structural_analysis_schema_version=STRUCTURAL_ANALYSIS_SCHEMA_VERSION,
+                liveness_policy_version=STRUCTURAL_LIVENESS_POLICY_VERSION,
+            )
+            assert child_job.idempotency_key == expected_key
+            child = session.get(Transcript, child_transcript_id)
+            assert child is not None
+            assert child.parent_transcript_id is None
+    finally:
+        database.close_if_open()
+
+
+def test_reconciler_transcript_to_process_skips_enqueue_when_unkeyed_active_job_exists(
+    tmp_path: Path,
+) -> None:
+    database = Database(sqlite_url(tmp_path / "memory.db"))
+    database.initialize()
+    try:
+        transcript_id, _, _ = create_transcript_with_entries(
+            database,
+            session_id="pi-session-structural-4",
+            path="/tmp/transcript-4.jsonl",
+            entries=((0, 100),),
+        )
+        with database.session() as session:
+            session.add(
+                Job(
+                    kind=JOB_KIND_PROCESS_TRANSCRIPT,
+                    status=JOB_STATUS_QUEUED,
+                    payload_json={"transcript_id": transcript_id},
+                ),
+            )
+            session.commit()
+
+        reconciler = Reconciler(database=database)
+        report = reconciler.run_once(
+            ReconciliationRunOptions(
+                enqueue_missing=True,
+                gate_names=("transcript_to_process",),
+            ),
+        )
+
+        decision = find_decision(report, "transcript_to_process")
+        assert decision is not None
+        assert decision.status == "in_flight"
+        assert not decision.can_enqueue
+        assert report.enqueued_job_ids == ()
+
+        with database.session() as session:
+            assert session.scalar(
+                select(func.count()).select_from(Job).where(
+                    Job.kind == JOB_KIND_PROCESS_TRANSCRIPT,
+                    Job.idempotency_key.is_(None),
+                ),
+            ) == 1
+
+    finally:
+        database.close_if_open()
+
+
+def test_reconciler_blocks_stale_analysis_before_summarize_or_interpret(
+    tmp_path: Path,
+) -> None:
+    database = Database(sqlite_url(tmp_path / "memory.db"))
+    database.initialize()
+    try:
+        transcript_id, entry_ids, entry_bytes = create_transcript_with_entries(
+            database,
+            session_id="pi-session-structural-stale-downstream",
+            path="/tmp/stale-downstream.jsonl",
+            entries=((0, 100), (100, 200)),
+        )
+        create_structural_analysis_run(
+            database,
+            transcript_id,
+            analyzed_through_entry_id=entry_ids[0],
+            analyzed_through_byte_offset=entry_bytes[0],
+        )
+
+        reconciler = Reconciler(database=database)
+        report = reconciler.run_once(
+            ReconciliationRunOptions(
+                enqueue_missing=True,
+                gate_names=("analysis_to_summarize", "summarize_to_interpret"),
+            ),
+        )
+
+        summarize_decision = find_decision(report, "analysis_to_summarize")
+        interpret_decision = find_decision(report, "summarize_to_interpret")
+        assert summarize_decision is not None
+        assert summarize_decision.status == "blocked"
+        assert not summarize_decision.can_enqueue
+        assert interpret_decision is not None
+        assert interpret_decision.status == "blocked"
+        assert not interpret_decision.can_enqueue
+        assert report.enqueued_job_ids == ()
+    finally:
+        database.close_if_open()
+
+
+def test_reconciler_blocks_snapshot_to_quality_for_stale_structural_analysis(
+    tmp_path: Path,
+) -> None:
+    database = Database(sqlite_url(tmp_path / "memory.db"))
+    database.initialize()
+    try:
+        transcript_id, entry_ids, entry_bytes = create_transcript_with_entries(
+            database,
+            session_id="pi-session-structural-stale-snapshot",
+            path="/tmp/stale-snapshot.jsonl",
+            entries=((0, 100), (100, 200)),
+        )
+        analysis_run_id, _ = create_structural_analysis_run(
+            database,
+            transcript_id,
+            analyzed_through_entry_id=entry_ids[0],
+            analyzed_through_byte_offset=entry_bytes[0],
+        )
+        snapshot_id = create_interpretation_snapshot_for_analysis(database, analysis_run_id)
+
+        reconciler = Reconciler(database=database)
+        report = reconciler.run_once(
+            ReconciliationRunOptions(
+                enqueue_missing=True,
+                gate_names=("snapshot_to_quality",),
+            ),
+        )
+
+        decision = find_decision(report, "snapshot_to_quality")
+        assert decision is not None
+        assert decision.status == "blocked"
+        assert not decision.can_enqueue
+        assert decision.details["snapshot_id"] == snapshot_id
+        assert report.enqueued_job_ids == ()
+    finally:
+        database.close_if_open()
+
+
+def test_reconciler_blocks_quality_children_for_stale_structural_analysis(
+    tmp_path: Path,
+) -> None:
+    database = Database(sqlite_url(tmp_path / "memory.db"))
+    database.initialize()
+    try:
+        transcript_id, entry_ids, entry_bytes = create_transcript_with_entries(
+            database,
+            session_id="pi-session-structural-stale-quality",
+            path="/tmp/stale-quality.jsonl",
+            entries=((0, 100), (100, 200)),
+        )
+        analysis_run_id, _ = create_structural_analysis_run(
+            database,
+            transcript_id,
+            analyzed_through_entry_id=entry_ids[0],
+            analyzed_through_byte_offset=entry_bytes[0],
+        )
+        snapshot_id = create_interpretation_snapshot_for_analysis(database, analysis_run_id)
+        quality_report_id = create_quality_report_for_snapshot(database, snapshot_id)
+
+        reconciler = Reconciler(database=database)
+        report = reconciler.run_once(
+            ReconciliationRunOptions(
+                enqueue_missing=True,
+                gate_names=("quality_to_project", "quality_to_promote"),
+            ),
+        )
+
+        project_decision = find_decision(report, "quality_to_project")
+        promote_decision = find_decision(report, "quality_to_promote")
+        assert project_decision is not None
+        assert project_decision.status == "blocked"
+        assert project_decision.details["quality_report_id"] == quality_report_id
+        assert promote_decision is not None
+        assert promote_decision.status == "blocked"
+        assert promote_decision.details["quality_report_id"] == quality_report_id
+        assert report.enqueued_job_ids == ()
+    finally:
+        database.close_if_open()
 
 
 def test_reconciler_enqueues_missing_analysis_to_summarize_when_enabled(

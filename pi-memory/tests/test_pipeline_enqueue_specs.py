@@ -25,8 +25,12 @@ from pi_memory.pipeline.stages.interpret_session.enqueue import (
     interpret_session_job_spec,
 )
 from pi_memory.pipeline.stages.process_transcript.enqueue import (
+    STRUCTURAL_ANALYSIS_SCHEMA_VERSION,
+    STRUCTURAL_LIVENESS_POLICY_VERSION,
     enqueue_process_transcript_job,
+    process_transcript_idempotency_key,
     process_transcript_job_spec,
+    process_transcript_job_spec_from_fields,
 )
 from pi_memory.pipeline.stages.project_memory_records.enqueue import (
     project_memory_records_idempotency_key,
@@ -93,6 +97,63 @@ def test_process_transcript_job_spec_has_expected_payload_for_enqueued_results()
         "unsupported_lines": 2,
     }
     assert spec.idempotency_key is None
+
+
+def test_process_transcript_job_spec_from_fields_includes_structural_target_and_key() -> None:
+    spec = process_transcript_job_spec_from_fields(
+        transcript_id=42,
+        analyzed_through_entry_id=123,
+        analyzed_through_byte_offset=456,
+        parent_transcript_path="/tmp/parent.jsonl",
+        parent_transcript_id=77,
+        structural_analysis_schema_version=STRUCTURAL_ANALYSIS_SCHEMA_VERSION,
+        liveness_policy_version=STRUCTURAL_LIVENESS_POLICY_VERSION,
+        idempotency_key=process_transcript_idempotency_key(
+            transcript_id=42,
+            analyzed_through_entry_id=123,
+            analyzed_through_byte_offset=456,
+            parent_transcript_path="/tmp/parent.jsonl",
+            parent_transcript_id=77,
+            structural_analysis_schema_version=STRUCTURAL_ANALYSIS_SCHEMA_VERSION,
+            liveness_policy_version=STRUCTURAL_LIVENESS_POLICY_VERSION,
+        ),
+    )
+
+    assert spec == EnqueueSpec(
+        kind=JOB_KIND_PROCESS_TRANSCRIPT,
+        payload_json={
+            "transcript_id": 42,
+            "analyzed_through_entry_id": 123,
+            "analyzed_through_byte_offset": 456,
+            "parent_transcript_path": "/tmp/parent.jsonl",
+            "parent_transcript_id": 77,
+            "structural_analysis_schema_version": STRUCTURAL_ANALYSIS_SCHEMA_VERSION,
+            "liveness_policy_version": STRUCTURAL_LIVENESS_POLICY_VERSION,
+        },
+        idempotency_key=process_transcript_idempotency_key(
+            transcript_id=42,
+            analyzed_through_entry_id=123,
+            analyzed_through_byte_offset=456,
+            parent_transcript_path="/tmp/parent.jsonl",
+            parent_transcript_id=77,
+            structural_analysis_schema_version=STRUCTURAL_ANALYSIS_SCHEMA_VERSION,
+            liveness_policy_version=STRUCTURAL_LIVENESS_POLICY_VERSION,
+        ),
+    )
+
+
+def test_process_transcript_idempotency_key_includes_structural_target() -> None:
+    assert process_transcript_idempotency_key(
+        transcript_id=42,
+        analyzed_through_entry_id=123,
+        analyzed_through_byte_offset=456,
+        parent_transcript_path="/tmp/parent.jsonl",
+        parent_transcript_id=77,
+        structural_analysis_schema_version=STRUCTURAL_ANALYSIS_SCHEMA_VERSION,
+        liveness_policy_version=STRUCTURAL_LIVENESS_POLICY_VERSION,
+    ) == (
+        "process_transcript:42:123:456:/tmp/parent.jsonl:77:schema-v1:liveness-v1"
+    )
 
 
 def test_process_transcript_job_spec_requires_new_entries() -> None:
