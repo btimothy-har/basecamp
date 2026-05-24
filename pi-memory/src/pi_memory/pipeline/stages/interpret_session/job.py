@@ -29,10 +29,6 @@ from pi_memory.pipeline.runtime.errors import (
     PermanentInterpreterUnavailableError,
     TranscriptNotFoundError,
 )
-from pi_memory.pipeline.stages.assess_interpretation_quality.enqueue import (
-    assess_interpretation_quality_idempotency_key,
-    enqueue_assess_interpretation_quality_job,
-)
 from pi_memory.pipeline.stages.interpret_session.snapshots import (
     EpisodeInterpretationOutcome,
     aggregate_episode_interpretations,
@@ -73,8 +69,6 @@ class InterpretSessionJob:
         transcript_id, analysis_run_id, process_job_id = payloads.interpret_session(job.payload_json)
         context.database.initialize()
         packet_for_model: InterpretationPacket | None = None
-        snapshot_id: int | None = None
-        stable_session_id = ""
         result_json: dict[str, Any] = {}
         with context.database.session() as session:
             transcript = session.get(Transcript, transcript_id)
@@ -93,8 +87,6 @@ class InterpretSessionJob:
             )
             if existing_snapshot is not None:
                 result_json = snapshot_result_json(packet, existing_snapshot)
-                snapshot_id = existing_snapshot.id
-                stable_session_id = packet.readiness.stable_session_id
             elif packet.readiness.blocked_reason is not None:
                 snapshot = replace_interpretation_snapshot(
                     session=session,
@@ -105,8 +97,6 @@ class InterpretSessionJob:
                     blocked_reason=packet.readiness.blocked_reason,
                 )
                 result_json = snapshot_result_json(packet, snapshot)
-                snapshot_id = snapshot.id
-                stable_session_id = packet.readiness.stable_session_id
             elif packet.readiness.should_skip_model:
                 outcomes = skipped_episode_outcomes(packet)
                 replace_episode_interpretation_snapshots(
@@ -123,12 +113,8 @@ class InterpretSessionJob:
                     status=SESSION_INTERPRETATION_STATUS_SKIPPED_NO_CLAIM_SOURCES,
                 )
                 result_json = snapshot_result_json(packet, snapshot)
-                snapshot_id = snapshot.id
-                stable_session_id = packet.readiness.stable_session_id
             else:
                 packet_for_model = packet
-                snapshot_id = None
-                stable_session_id = packet.readiness.stable_session_id
                 result_json = {}
 
         if packet_for_model is not None:
@@ -151,8 +137,6 @@ class InterpretSessionJob:
                 )
                 if completed_episode_outcome_count(outcomes) == 0:
                     failure_error = all_episode_interpretations_failed_error(outcomes)
-                    snapshot_id = None
-                    stable_session_id = packet.readiness.stable_session_id
                     result_json = episode_failure_result_json(packet, outcomes)
                 else:
                     interpretation, interpreter_result = aggregate_episode_interpretations(packet, outcomes)
@@ -166,22 +150,9 @@ class InterpretSessionJob:
                         interpreter_result=interpreter_result,
                     )
                     result_json = snapshot_result_json(packet, snapshot)
-                    snapshot_id = snapshot.id
-                    stable_session_id = packet.readiness.stable_session_id
             if failure_error is not None:
                 raise failure_error
 
-        if snapshot_id is None:
-            return result_json
-
-        quality_job = enqueue_assess_interpretation_quality_job(
-            context.store,
-            snapshot_id=snapshot_id,
-            session_id=stable_session_id,
-            interpretation_job_id=job.id,
-            idempotency_key=assess_interpretation_quality_idempotency_key(snapshot_id),
-        )
-        result_json["assess_interpretation_quality_job_id"] = quality_job.id
         return result_json
 
     def _interpret_episode_outcomes(self, packet: InterpretationPacket) -> tuple[EpisodeInterpretationOutcome, ...]:

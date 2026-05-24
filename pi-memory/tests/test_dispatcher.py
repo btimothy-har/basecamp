@@ -10,7 +10,6 @@ import pytest
 from pi_memory.constants import (
     ANALYSIS_STATUS_COMPLETED,
     JOB_KIND_PROCESS_TRANSCRIPT,
-    JOB_KIND_SUMMARIZE_TOOL_ACTIVITIES,
     JOB_STATUS_COMPLETED,
     JOB_STATUS_FAILED,
     JOB_STATUS_QUEUED,
@@ -238,13 +237,8 @@ def test_run_once_claims_spawns_and_observes_child_completion(database: Database
     assert completed.result_json is not None
     phase_5a = completed.result_json["phase_5a"]
     assert isinstance(phase_5a, dict)
-    summarize_tool_activities_job_id = completed.result_json["summarize_tool_activities_job_id"]
-    assert isinstance(summarize_tool_activities_job_id, int)
-    base_result = {
-        key: value
-        for key, value in completed.result_json.items()
-        if key not in {"phase_5a", "summarize_tool_activities_job_id"}
-    }
+    assert "summarize_tool_activities_job_id" not in completed.result_json
+    base_result = {key: value for key, value in completed.result_json.items() if key != "phase_5a"}
     assert base_result == {
         "transcript_id": transcript_id,
         "session_id": "pi-session-dispatcher",
@@ -261,11 +255,6 @@ def test_run_once_claims_spawns_and_observes_child_completion(database: Database
     assert isinstance(phase_5a["snapshot_shell_id"], int)
     assert isinstance(phase_5a["analyzed_through_entry_id"], int)
     assert phase_5a["analyzed_through_byte_offset"] == 50
-    summarize_job = get_job(database, summarize_tool_activities_job_id)
-    assert summarize_job.kind == JOB_KIND_SUMMARIZE_TOOL_ACTIVITIES
-    assert summarize_job.payload_json["transcript_id"] == transcript_id
-    assert summarize_job.payload_json["analysis_run_id"] == phase_5a["analysis_run_id"]
-    assert summarize_job.payload_json["process_job_id"] == job.id
 
 
 def test_spawn_failure_releases_claim_to_future_due_at_without_incrementing_attempts(

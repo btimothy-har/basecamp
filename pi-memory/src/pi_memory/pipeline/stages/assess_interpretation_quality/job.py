@@ -27,14 +27,6 @@ from pi_memory.pipeline.stages.assess_interpretation_quality.reports import (
     quality_report_result_json,
     replace_quality_report,
 )
-from pi_memory.pipeline.stages.project_memory_records.enqueue import (
-    enqueue_project_memory_records_job,
-    project_memory_records_idempotency_key,
-)
-from pi_memory.pipeline.stages.promote_durable_memory.enqueue import (
-    enqueue_promote_durable_memory_job,
-    promote_durable_memory_idempotency_key,
-)
 from pi_memory.pipeline.utils import payloads
 from pi_memory.quality import (
     QualityReportDraft,
@@ -44,7 +36,7 @@ from pi_memory.quality import (
 
 
 class AssessInterpretationQualityJob:
-    """Assess interpretation quality and enqueue downstream memory work."""
+    """Assess interpretation quality."""
 
     kind = JOB_KIND_ASSESS_INTERPRETATION_QUALITY
 
@@ -90,23 +82,6 @@ class AssessInterpretationQualityJob:
                 report = replace_quality_report(session=session, job=job, snapshot=snapshot, draft=draft)
                 result_json = quality_report_result_json(snapshot, report)
 
-        quality_report_id = result_json["quality_report_id"]
-        project_job = enqueue_project_memory_records_job(
-            context.store,
-            quality_report_id=quality_report_id,
-            session_id=result_json["session_id"],
-            quality_job_id=job.id,
-            idempotency_key=project_memory_records_idempotency_key(quality_report_id),
-        )
-        promote_job = enqueue_promote_durable_memory_job(
-            context.store,
-            quality_report_id=quality_report_id,
-            session_id=result_json["session_id"],
-            quality_job_id=job.id,
-            idempotency_key=promote_durable_memory_idempotency_key(quality_report_id),
-        )
-        result_json["project_memory_records_job_id"] = project_job.id
-        result_json["promote_durable_memory_job_id"] = promote_job.id
         return result_json
 
     def _write_assessment_failed_quality_report(

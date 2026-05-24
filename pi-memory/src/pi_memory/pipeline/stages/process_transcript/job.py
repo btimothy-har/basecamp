@@ -12,10 +12,6 @@ from pi_memory.db.models import (
 )
 from pi_memory.infra.job_runner import JobExecutionContext
 from pi_memory.pipeline.runtime.errors import TranscriptNotFoundError
-from pi_memory.pipeline.stages.summarize_tool_activities.enqueue import (
-    enqueue_summarize_tool_activities_job,
-    summarize_tool_activities_idempotency_key,
-)
 from pi_memory.pipeline.utils import payloads
 from pi_memory.recall import index_transcript
 
@@ -35,7 +31,7 @@ class ProcessTranscriptJob:
 
             index_result = index_transcript(session, transcript_id)
             analysis_result = analyze_transcript_structure(session, transcript, job_id=job.id)
-            result_json: dict[str, Any] = {
+            return {
                 "transcript_id": transcript.id,
                 "session_id": transcript.session.session_id,
                 "entry_count": index_result.total_entries,
@@ -44,15 +40,4 @@ class ProcessTranscriptJob:
                 "indexed_entry_count": index_result.indexed_entries,
                 "phase_5a": analysis_result.to_result_json(),
             }
-
-        summarize_job = enqueue_summarize_tool_activities_job(
-            context.store,
-            transcript_id=transcript_id,
-            session_id=result_json["session_id"],
-            analysis_result=analysis_result,
-            process_job_id=job.id,
-            idempotency_key=summarize_tool_activities_idempotency_key(job.id),
-        )
-        result_json["summarize_tool_activities_job_id"] = summarize_job.id
-        return result_json
 

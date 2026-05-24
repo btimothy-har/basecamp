@@ -1567,9 +1567,7 @@ def test_run_job_succeeds_against_isolated_db(tmp_path, monkeypatch) -> None:
             "cursor_offset": 10,
             "file_size": 10,
             "indexed_entry_count": 0,
-            "summarize_tool_activities_job_id": base_result["summarize_tool_activities_job_id"],
         }
-        assert isinstance(base_result["summarize_tool_activities_job_id"], int)
         assert isinstance(phase_5a["analysis_run_id"], int)
         assert phase_5a["status"] == ANALYSIS_STATUS_COMPLETED
         assert phase_5a["activity_count"] == 1
