@@ -93,7 +93,7 @@ class JobStore:
         current_time = _coalesce_now(now)
         self._initialize()
         if idempotency_key is not None:
-            existing = self._get_by_idempotency_key(idempotency_key)
+            existing = self._get_by_idempotency_key(kind, idempotency_key)
             if existing is not None:
                 return existing
 
@@ -114,7 +114,7 @@ class JobStore:
         except IntegrityError:
             if idempotency_key is None:
                 raise
-            existing = self._get_by_idempotency_key(idempotency_key)
+            existing = self._get_by_idempotency_key(kind, idempotency_key)
             if existing is None:
                 raise
             return existing
@@ -358,9 +358,9 @@ class JobStore:
         with self._database.session() as session:
             return session.get(Job, job_id)
 
-    def _get_by_idempotency_key(self, idempotency_key: str) -> Job | None:
+    def _get_by_idempotency_key(self, kind: str, idempotency_key: str) -> Job | None:
         with self._database.session() as session:
-            return session.scalar(select(Job).where(Job.idempotency_key == idempotency_key))
+            return session.scalar(select(Job).where(Job.kind == kind, Job.idempotency_key == idempotency_key))
 
     def list_jobs(
         self,

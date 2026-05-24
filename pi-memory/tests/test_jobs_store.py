@@ -20,6 +20,7 @@ from pi_memory.infra.job_queue import (
     JobRunTokenMismatchError,
     JobStore,
 )
+from sqlalchemy.exc import IntegrityError
 
 
 def sqlite_url(path: Path) -> str:
@@ -123,6 +124,16 @@ def test_enqueue_returns_existing_job_for_idempotency_key(database: Database, st
     assert_same_time(second.due_at, at(8))
     assert [job.id for job in store.list_jobs(kind="idempotent")] == [first.id]
     assert get_job(database, first.id).idempotency_key == "summarize:1:interpret_session"
+
+
+def test_enqueue_rejects_cross_kind_idempotency_key_collision(store: JobStore) -> None:
+    first = store.enqueue("first", due_at=at(8), idempotency_key="shared-key")
+
+    with pytest.raises(IntegrityError):
+        store.enqueue("second", due_at=at(8), idempotency_key="shared-key")
+
+    assert [job.id for job in store.list_jobs(kind="first")] == [first.id]
+    assert store.list_jobs(kind="second") == []
 
 
 def test_enqueue_without_idempotency_key_remains_append_only(store: JobStore) -> None:

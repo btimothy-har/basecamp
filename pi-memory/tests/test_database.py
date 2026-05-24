@@ -546,6 +546,33 @@ def test_initialize_upgrades_old_sqlite_episode_manifests_with_tool_result_text_
         database.close_if_open()
 
 
+def test_initialize_backfills_partially_upgraded_episode_manifest_byte_count(tmp_path) -> None:
+    db_path = tmp_path / "memory.db"
+    create_old_style_episode_manifests_database(db_path)
+    with sqlite3.connect(db_path) as connection:
+        connection.executescript(
+            """
+            ALTER TABLE episode_manifests
+            ADD COLUMN tool_result_text_byte_count INTEGER DEFAULT 0 NOT NULL;
+            PRAGMA user_version = 3;
+            """,
+        )
+    database = Database(sqlite_url(db_path))
+
+    try:
+        database.initialize()
+        database.initialize()
+        with database.engine.connect() as connection:
+            value = connection.execute(
+                text("SELECT tool_result_text_byte_count FROM episode_manifests WHERE id = 1"),
+            ).scalar_one()
+
+        assert value == 42
+        assert sqlite_user_version(database) == CURRENT_SQLITE_SCHEMA_VERSION
+    finally:
+        database.close_if_open()
+
+
 def test_transcript_entries_fts_projection_persists_after_reopen(tmp_path) -> None:
     db_path = tmp_path / "memory.db"
     database = Database(sqlite_url(db_path))

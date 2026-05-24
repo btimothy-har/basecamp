@@ -148,15 +148,16 @@ def _add_episode_manifest_tool_result_text_byte_count(connection: Connection) ->
                 """,
             ),
         )
-        if "omitted_raw_text_bytes" in columns:
-            connection.execute(
-                text(
-                    """
-                    UPDATE episode_manifests
-                    SET tool_result_text_byte_count = omitted_raw_text_bytes
-                    """,
-                ),
-            )
+    if "omitted_raw_text_bytes" in columns:
+        connection.execute(
+            text(
+                """
+                UPDATE episode_manifests
+                SET tool_result_text_byte_count = omitted_raw_text_bytes
+                WHERE tool_result_text_byte_count = 0 OR tool_result_text_byte_count IS NULL
+                """,
+            ),
+        )
 
 
 def _create_transcript_entries_fts(connection: Connection) -> None:
