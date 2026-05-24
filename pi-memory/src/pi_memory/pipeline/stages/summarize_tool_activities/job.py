@@ -4,11 +4,14 @@ from __future__ import annotations
 
 from typing import Any
 
-from pi_memory.constants import JOB_KIND_INTERPRET_SESSION, JOB_KIND_SUMMARIZE_TOOL_ACTIVITIES
+from pi_memory.constants import JOB_KIND_SUMMARIZE_TOOL_ACTIVITIES
 from pi_memory.db.models import Job
 from pi_memory.infra.job_runner import JobExecutionContext
 from pi_memory.pipeline.runtime.adapters import PipelineAdapters
-from pi_memory.pipeline.stages.interpret_session.enqueue import enqueue_interpret_session_job_for_analysis
+from pi_memory.pipeline.stages.interpret_session.enqueue import (
+    enqueue_interpret_session_job_for_analysis,
+    interpret_session_idempotency_key,
+)
 from pi_memory.pipeline.stages.summarize_tool_activities.summaries import (
     apply_tool_summary_outcomes,
     summarize_tool_activity_work,
@@ -78,11 +81,8 @@ class SummarizeToolActivitiesJob:
             activity_count=summary_context.activity_count,
             episode_count=summary_context.episode_count,
             manifest_count=summary_context.manifest_count,
-            idempotency_key=_interpret_session_idempotency_key(job.id),
+            idempotency_key=interpret_session_idempotency_key(job.id),
         )
         result_json["interpret_session_job_id"] = interpret_job.id
         return result_json
 
-
-def _interpret_session_idempotency_key(summarize_job_id: int) -> str:
-    return f"{JOB_KIND_INTERPRET_SESSION}:{JOB_KIND_SUMMARIZE_TOOL_ACTIVITIES}:{summarize_job_id}"

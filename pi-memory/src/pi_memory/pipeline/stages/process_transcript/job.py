@@ -5,14 +5,17 @@ from __future__ import annotations
 from typing import Any
 
 from pi_memory.analysis import analyze_transcript_structure
-from pi_memory.constants import JOB_KIND_PROCESS_TRANSCRIPT, JOB_KIND_SUMMARIZE_TOOL_ACTIVITIES
+from pi_memory.constants import JOB_KIND_PROCESS_TRANSCRIPT
 from pi_memory.db.models import (
     Job,
     Transcript,
 )
 from pi_memory.infra.job_runner import JobExecutionContext
 from pi_memory.pipeline.runtime.errors import TranscriptNotFoundError
-from pi_memory.pipeline.stages.summarize_tool_activities.enqueue import enqueue_summarize_tool_activities_job
+from pi_memory.pipeline.stages.summarize_tool_activities.enqueue import (
+    enqueue_summarize_tool_activities_job,
+    summarize_tool_activities_idempotency_key,
+)
 from pi_memory.pipeline.utils import payloads
 from pi_memory.recall import index_transcript
 
@@ -48,11 +51,8 @@ class ProcessTranscriptJob:
             session_id=result_json["session_id"],
             analysis_result=analysis_result,
             process_job_id=job.id,
-            idempotency_key=_summarize_tool_activities_idempotency_key(job.id),
+            idempotency_key=summarize_tool_activities_idempotency_key(job.id),
         )
         result_json["summarize_tool_activities_job_id"] = summarize_job.id
         return result_json
 
-
-def _summarize_tool_activities_idempotency_key(process_job_id: int) -> str:
-    return f"{JOB_KIND_SUMMARIZE_TOOL_ACTIVITIES}:{JOB_KIND_PROCESS_TRANSCRIPT}:{process_job_id}"

@@ -8,8 +8,6 @@ from sqlalchemy import select
 
 from pi_memory.constants import (
     JOB_KIND_ASSESS_INTERPRETATION_QUALITY,
-    JOB_KIND_PROJECT_MEMORY_RECORDS,
-    JOB_KIND_PROMOTE_DURABLE_MEMORY,
     SESSION_INTERPRETATION_QUALITY_REASON_SEMANTIC_ASSESSMENT_FAILED,
     SESSION_INTERPRETATION_QUALITY_REASON_SEMANTIC_ASSESSMENT_PENDING,
     SESSION_INTERPRETATION_QUALITY_STATUS_ASSESSMENT_FAILED,
@@ -29,8 +27,14 @@ from pi_memory.pipeline.stages.assess_interpretation_quality.reports import (
     quality_report_result_json,
     replace_quality_report,
 )
-from pi_memory.pipeline.stages.project_memory_records.enqueue import enqueue_project_memory_records_job
-from pi_memory.pipeline.stages.promote_durable_memory.enqueue import enqueue_promote_durable_memory_job
+from pi_memory.pipeline.stages.project_memory_records.enqueue import (
+    enqueue_project_memory_records_job,
+    project_memory_records_idempotency_key,
+)
+from pi_memory.pipeline.stages.promote_durable_memory.enqueue import (
+    enqueue_promote_durable_memory_job,
+    promote_durable_memory_idempotency_key,
+)
 from pi_memory.pipeline.utils import payloads
 from pi_memory.quality import (
     QualityReportDraft,
@@ -92,14 +96,14 @@ class AssessInterpretationQualityJob:
             quality_report_id=quality_report_id,
             session_id=result_json["session_id"],
             quality_job_id=job.id,
-            idempotency_key=_project_memory_records_idempotency_key(quality_report_id),
+            idempotency_key=project_memory_records_idempotency_key(quality_report_id),
         )
         promote_job = enqueue_promote_durable_memory_job(
             context.store,
             quality_report_id=quality_report_id,
             session_id=result_json["session_id"],
             quality_job_id=job.id,
-            idempotency_key=_promote_durable_memory_idempotency_key(quality_report_id),
+            idempotency_key=promote_durable_memory_idempotency_key(quality_report_id),
         )
         result_json["project_memory_records_job_id"] = project_job.id
         result_json["promote_durable_memory_job_id"] = promote_job.id
@@ -136,14 +140,6 @@ class AssessInterpretationQualityJob:
                 },
             )
             replace_quality_report(session=session, job=job, snapshot=snapshot, draft=draft)
-
-
-def _project_memory_records_idempotency_key(quality_report_id: int) -> str:
-    return f"{JOB_KIND_PROJECT_MEMORY_RECORDS}:{JOB_KIND_ASSESS_INTERPRETATION_QUALITY}:{quality_report_id}"
-
-
-def _promote_durable_memory_idempotency_key(quality_report_id: int) -> str:
-    return f"{JOB_KIND_PROMOTE_DURABLE_MEMORY}:{JOB_KIND_ASSESS_INTERPRETATION_QUALITY}:{quality_report_id}"
 
 
 def _quality_report_exists(context: JobExecutionContext, job: Job) -> bool:
