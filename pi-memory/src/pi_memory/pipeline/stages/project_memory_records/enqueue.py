@@ -8,7 +8,7 @@ from pi_memory.constants import (
 )
 from pi_memory.db.models import Job
 from pi_memory.infra.job_queue.store import JobStore
-from pi_memory.pipeline.reconciliation import EnqueueSpec
+from pi_memory.pipeline.reconciliation.contracts import EnqueueSpec
 
 
 def project_memory_records_idempotency_key(quality_report_id: int) -> str:

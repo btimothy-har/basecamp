@@ -6,7 +6,7 @@ from pi_memory.constants import JOB_KIND_PROCESS_TRANSCRIPT
 from pi_memory.db.models import Job
 from pi_memory.infra.job_queue.store import JobStore
 from pi_memory.ingest import IngestResult
-from pi_memory.pipeline.reconciliation import EnqueueSpec
+from pi_memory.pipeline.reconciliation.contracts import EnqueueSpec
 
 
 def process_transcript_job_spec(result: IngestResult) -> EnqueueSpec | None:
