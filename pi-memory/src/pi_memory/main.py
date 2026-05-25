@@ -7,6 +7,7 @@ import importlib
 import click
 import uvicorn
 
+from pi_memory.cli.backfill import run_raw_backfill
 from pi_memory.cli.errors import (
     ConflictingEmbeddingModelOptionsError,
     ConflictingInterpretationModelOptionsError,
@@ -27,6 +28,7 @@ from pi_memory.cli.inspection import (
     search_recall,
 )
 from pi_memory.cli.rendering import (
+    _emit_backfill_result,
     _emit_config,
     _emit_durable_memory,
     _emit_durable_memory_audit,
@@ -187,6 +189,45 @@ def config(
         _emit_config(memory_settings.as_dict(), path=str(memory_settings.path), json_output=json_output)
     except SettingsError as error:
         raise click.ClickException(str(error)) from error
+
+
+@main.command()
+@click.option(
+    "--root",
+    "roots",
+    multiple=True,
+    type=click.Path(path_type=str),
+    callback=lambda _ctx, _param, value: tuple(_require_non_empty(root) for root in value),
+    help="Transcript root directory or JSONL file to import. May be repeated.",
+)
+@click.option(
+    "--db-url",
+    default=MEMORY_DB_URL,
+    show_default=True,
+    callback=lambda _ctx, _param, value: _require_non_empty(value),
+    help="Database URL to backfill.",
+)
+@click.option(
+    "--dry-run",
+    is_flag=True,
+    help="Discover transcripts and session ids without modifying the database.",
+)
+@click.option(
+    "--json",
+    "json_output",
+    is_flag=True,
+    help="Emit parseable JSON output.",
+)
+def backfill(
+    roots: tuple[str, ...],
+    db_url: str,
+    *,
+    dry_run: bool,
+    json_output: bool,
+) -> None:
+    """Import raw local Pi transcript files into SQLite."""
+    result = run_raw_backfill(db_url=db_url, roots=None if not roots else roots, dry_run=dry_run)
+    _emit_backfill_result(result, json_output=json_output)
 
 
 @main.command()

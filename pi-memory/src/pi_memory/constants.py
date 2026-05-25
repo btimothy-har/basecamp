@@ -14,6 +14,12 @@ MEMORY_DB_PATH: Final = MEMORY_DIR / "memory.db"
 MEMORY_DB_URL: Final = f"sqlite:///{MEMORY_DB_PATH}"
 MEMORY_CHROMA_DIR: Final = MEMORY_DIR / "chroma"
 MEMORY_MODEL_CACHE_DIR: Final = MEMORY_DIR / "models"
+DEFAULT_TRANSCRIPT_ROOTS: Final = (
+    Path.home() / ".pi" / "agent" / "sessions",
+    Path.home() / ".pi" / "sessions",
+    Path.home() / ".pi" / "transcripts",
+    Path("/tmp/pi"),
+)
 SERVER_METADATA_PATH: Final = MEMORY_DIR / "server.json"
 SERVER_LOCK_PATH: Final = MEMORY_DIR / "server.lock"
 LOGS_DIR: Final = MEMORY_DIR / "logs"

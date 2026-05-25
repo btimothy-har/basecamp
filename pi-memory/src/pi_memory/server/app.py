@@ -10,7 +10,14 @@ from typing import Annotated, Any, Literal
 from fastapi import Depends, FastAPI, Header, HTTPException
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints
 
-from pi_memory.constants import DEFAULT_HOST, DEFAULT_PORT, MEMORY_DIR, SERVICE_NAME, SERVICE_VERSION
+from pi_memory.constants import (
+    DEFAULT_HOST,
+    DEFAULT_PORT,
+    DEFAULT_TRANSCRIPT_ROOTS,
+    MEMORY_DIR,
+    SERVICE_NAME,
+    SERVICE_VERSION,
+)
 from pi_memory.durable import DurableMemoryFilterError, DurableMemoryInspectionService
 from pi_memory.infra.job_queue import JobStore, serialize_job
 from pi_memory.infra.job_runner import JobDispatcher
@@ -34,11 +41,6 @@ MemoryLayerQuery = Literal["short_term", "long_term"]
 ProjectionStatusQuery = Literal["pending", "indexed", "stale", "failed", "deleted"]
 AuthHeader = Annotated[str | None, Header(alias="Authorization")]
 AUTH_HEADER_PREFIX = "Bearer "
-DEFAULT_TRANSCRIPT_ROOTS = (
-    Path.home() / ".pi" / "sessions",
-    Path.home() / ".pi" / "transcripts",
-    Path("/tmp/pi"),
-)
 
 
 class ObserveRequest(BaseModel):

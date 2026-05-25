@@ -89,6 +89,23 @@ class PiTranscriptParser:
             unsupported_lines=unsupported_lines,
         )
 
+    def session_id(self, path: Path) -> str | None:
+        """Return the first embedded Pi session id, if present."""
+        with path.open("rb") as transcript:
+            while line := transcript.readline():
+                if not line.endswith(b"\n"):
+                    return None
+                decoded_line = _decode_line(line)
+                if decoded_line is None:
+                    continue
+                payload = _load_payload(decoded_line)
+                if payload is None:
+                    continue
+                if payload.get("type") == "session":
+                    session_id = _non_empty_string(payload.get("id"))
+                    return session_id
+        return None
+
     def session_cwd(self, path: Path) -> str | None:
         """Return the first transcript session event cwd, if present."""
         with path.open("rb") as transcript:
@@ -150,6 +167,12 @@ def _parse_entry(
 
 def _optional_string(value: object) -> str | None:
     if isinstance(value, str):
+        return value
+    return None
+
+
+def _non_empty_string(value: object) -> str | None:
+    if isinstance(value, str) and value.strip():
         return value
     return None
 
