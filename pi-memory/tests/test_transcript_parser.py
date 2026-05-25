@@ -3,11 +3,16 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from pathlib import Path
 
+from pi_memory.constants import DEFAULT_TRANSCRIPT_ROOTS
 from pi_memory.transcripts import PiTranscriptParser, discover_transcript_paths
 
 
 def write_transcript(path: Path, content: bytes) -> None:
     path.write_bytes(content)
+
+
+def test_default_transcript_roots_include_pi_agent_sessions() -> None:
+    assert Path.home() / ".pi" / "agent" / "sessions" in DEFAULT_TRANSCRIPT_ROOTS
 
 
 def test_discover_transcript_paths_returns_sorted_jsonl_files(tmp_path) -> None:

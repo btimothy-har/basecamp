@@ -15,6 +15,7 @@ MEMORY_DB_URL: Final = f"sqlite:///{MEMORY_DB_PATH}"
 MEMORY_CHROMA_DIR: Final = MEMORY_DIR / "chroma"
 MEMORY_MODEL_CACHE_DIR: Final = MEMORY_DIR / "models"
 DEFAULT_TRANSCRIPT_ROOTS: Final = (
+    Path.home() / ".pi" / "agent" / "sessions",
     Path.home() / ".pi" / "sessions",
     Path.home() / ".pi" / "transcripts",
     Path("/tmp/pi"),
