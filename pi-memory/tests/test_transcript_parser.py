@@ -3,11 +3,60 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from pathlib import Path
 
-from pi_memory.transcripts import PiTranscriptParser
+from pi_memory.transcripts import PiTranscriptParser, discover_transcript_paths
 
 
 def write_transcript(path: Path, content: bytes) -> None:
     path.write_bytes(content)
+
+
+def test_discover_transcript_paths_returns_sorted_jsonl_files(tmp_path) -> None:
+    first_root = tmp_path / "first"
+    second_root = tmp_path / "second"
+    nested_root = first_root / "nested"
+    nested_root.mkdir(parents=True)
+    second_root.mkdir()
+    first = nested_root / "b.jsonl"
+    second = second_root / "a.jsonl"
+    ignored = first_root / "ignored.txt"
+    write_transcript(first, b"{}\n")
+    write_transcript(second, b"{}\n")
+    write_transcript(ignored, b"{}\n")
+
+    assert discover_transcript_paths([first_root, second_root, tmp_path / "missing"]) == [first, second]
+
+
+def test_discover_transcript_paths_accepts_jsonl_file_root(tmp_path) -> None:
+    transcript_path = tmp_path / "transcript.jsonl"
+    write_transcript(transcript_path, b"{}\n")
+
+    assert discover_transcript_paths([transcript_path]) == [transcript_path]
+
+
+def test_session_id_returns_first_session_entry_id(tmp_path) -> None:
+    path = tmp_path / "transcript.jsonl"
+    write_transcript(
+        path,
+        b'{"type":"message","id":"message-1","message":{"role":"user"}}\n'
+        b'{"type":"session","id":"session-1"}\n'
+        b'{"type":"session","id":"session-2"}\n',
+    )
+
+    assert PiTranscriptParser().session_id(path) == "session-1"
+
+
+def test_session_id_returns_none_when_session_entry_has_no_id(tmp_path) -> None:
+    path = tmp_path / "transcript.jsonl"
+    write_transcript(path, b'{"type":"session"}\n{"type":"message","id":"message-1"}\n')
+
+    assert PiTranscriptParser().session_id(path) is None
+
+
+def test_session_id_skips_malformed_lines(tmp_path) -> None:
+    path = tmp_path / "transcript.jsonl"
+    write_transcript(path, b'{"type":"message",\n{"type":"session","id":"session-1"}\n')
+
+    assert PiTranscriptParser().session_id(path) == "session-1"
 
 
 def test_parse_empty_file(tmp_path) -> None:

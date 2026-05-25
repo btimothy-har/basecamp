@@ -7,6 +7,7 @@ from typing import Any
 
 import click
 
+from pi_memory.backfill import BackfillFileResult, BackfillResult
 from pi_memory.constants import SERVICE_NAME
 from pi_memory.ingest import IngestResult
 from pi_memory.recall import RawTranscriptRecallResult, RawTranscriptSearchResult
@@ -22,6 +23,68 @@ def _emit_healthy(*, url: str, service_status: dict[str, Any], json_output: bool
     _echo_status_field("uptime_seconds", service_status)
     _echo_status_field("host", service_status)
     _echo_status_field("port", service_status)
+
+
+def _emit_backfill_result(result: BackfillResult, *, json_output: bool) -> None:
+    payload = _backfill_payload(result)
+    if json_output:
+        click.echo(json.dumps(payload, sort_keys=True))
+        return
+
+    click.echo("Backfilled transcripts" if not result.dry_run else "Backfill dry run")
+    for name, value in payload["counts"].items():
+        click.echo(f"  {name}: {value}")
+    click.echo(f"  db_url: {result.db_url}")
+    click.echo(f"  roots: {', '.join(str(root) for root in result.roots)}")
+
+    skipped_or_failed = [file for file in result.files if file.status in {"skipped", "error"}]
+    if skipped_or_failed:
+        click.echo("Files needing attention")
+        for file in skipped_or_failed:
+            reason = "" if file.reason is None else f" reason={file.reason}"
+            click.echo(f"  {file.status}: {file.path}{reason}")
+
+
+def _backfill_payload(result: BackfillResult) -> dict[str, Any]:
+    return {
+        "db_url": result.db_url,
+        "dry_run": result.dry_run,
+        "roots": [str(root) for root in result.roots],
+        "counts": {
+            "discovered": result.discovered,
+            "imported": result.imported,
+            "would_import": result.would_import,
+            "skipped": result.skipped,
+            "errors": result.errors,
+            "entries_ingested": result.entries_ingested,
+        },
+        "files": [_backfill_file_payload(file) for file in result.files],
+    }
+
+
+def _backfill_file_payload(file: BackfillFileResult) -> dict[str, Any]:
+    payload: dict[str, Any] = {
+        "path": str(file.path),
+        "status": file.status,
+        "session_id": file.session_id,
+        "reason": file.reason,
+    }
+    if file.ingest_result is None:
+        return payload
+
+    payload.update(
+        {
+            "transcript_id": file.ingest_result.transcript_id,
+            "observation_id": file.ingest_result.observation_id,
+            "entries_ingested": file.ingest_result.entries_ingested,
+            "cursor_offset": file.ingest_result.cursor_offset,
+            "file_size": file.ingest_result.file_size,
+            "observed_at": file.ingest_result.observed_at.isoformat(),
+            "malformed_lines": file.ingest_result.malformed_lines,
+            "unsupported_lines": file.ingest_result.unsupported_lines,
+        },
+    )
+    return payload
 
 
 def _emit_observe_result(result: IngestResult, *, job_id: int | None, json_output: bool) -> None:
