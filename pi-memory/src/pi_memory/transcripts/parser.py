@@ -103,8 +103,7 @@ class PiTranscriptParser:
                     continue
                 if payload.get("type") == "session":
                     session_id = _non_empty_string(payload.get("id"))
-                    if session_id is not None:
-                        return session_id
+                    return session_id
         return None
 
     def session_cwd(self, path: Path) -> str | None:

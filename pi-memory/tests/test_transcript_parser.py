@@ -50,9 +50,12 @@ def test_session_id_returns_first_session_entry_id(tmp_path) -> None:
     assert PiTranscriptParser().session_id(path) == "session-1"
 
 
-def test_session_id_returns_none_when_session_entry_has_no_id(tmp_path) -> None:
+def test_session_id_returns_none_when_first_session_entry_has_no_id(tmp_path) -> None:
     path = tmp_path / "transcript.jsonl"
-    write_transcript(path, b'{"type":"session"}\n{"type":"message","id":"message-1"}\n')
+    write_transcript(
+        path,
+        b'{"type":"session","id":"  "}\n{"type":"session","id":"session-2"}\n{"type":"message","id":"message-1"}\n',
+    )
 
     assert PiTranscriptParser().session_id(path) is None
 
