@@ -7,7 +7,7 @@ from typing import Any
 
 import click
 
-from pi_memory.backfill import BackfillFileResult, BackfillResult
+from pi_memory.cli.backfill import BackfillFileResult, BackfillResult
 from pi_memory.constants import SERVICE_NAME
 from pi_memory.ingest import IngestResult
 from pi_memory.recall import RawTranscriptRecallResult, RawTranscriptSearchResult

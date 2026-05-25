@@ -7,7 +7,7 @@ import importlib
 import click
 import uvicorn
 
-from pi_memory.backfill import run_raw_backfill
+from pi_memory.cli.backfill import run_raw_backfill
 from pi_memory.cli.errors import (
     ConflictingEmbeddingModelOptionsError,
     ConflictingInterpretationModelOptionsError,

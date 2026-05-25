@@ -4,7 +4,7 @@ import json
 from pathlib import Path
 
 from click.testing import CliRunner
-from pi_memory.backfill import MISSING_SESSION_ID_REASON, run_raw_backfill
+from pi_memory.cli.backfill import MISSING_SESSION_ID_REASON, run_raw_backfill
 from pi_memory.db.database import Database
 from pi_memory.db.models import Job, MemorySession, Observation, Transcript, TranscriptEntry
 from pi_memory.main import main
