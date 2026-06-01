@@ -28,6 +28,11 @@ REPO_DIR: Final = Path(__file__).parent
 CLI_DIR: Final = REPO_DIR / "basecamp-cli"
 EXTENSION_DIR: Final = REPO_DIR / "pi-extension"
 
+# Bundled memory stack. pi-session-search/pi-knowledge-search require Node >= 24
+# (node:sqlite FTS5), so the install is gated on the Node major version.
+MIN_NODE_MAJOR: Final = 24
+PI_TOTAL_RECALL_SPEC: Final = "pi-total-recall@1.8.0"
+
 
 def migrate_project_dirs(config: dict[str, object]) -> None:
     """Standalone copy of the settings migration; install.py runs before imports are reliable."""
@@ -123,6 +128,59 @@ def install_pi_package(package_dir: Path, label: str) -> None:
         sys.exit(1)
 
 
+def node_major_version() -> int | None:
+    """Best-effort Node major version on PATH; None if undetectable."""
+    node = shutil.which("node")
+    if not node:
+        return None
+    result = subprocess.run([node, "--version"], check=False, capture_output=True, text=True)
+    if result.returncode != 0:
+        return None
+    try:
+        return int(result.stdout.strip().lstrip("v").split(".")[0])
+    except (ValueError, IndexError):
+        return None
+
+
+def install_pi_npm_package(spec: str, label: str) -> None:
+    """Register a published Pi package with pi. Warns (not fatal) on failure."""
+    pi = shutil.which("pi")
+    if not pi:
+        console.print(f"  [yellow]\u26a0[/yellow] pi not found \u2014 skipping {label} registration")
+        return
+
+    console.print(f"  Registering [bold]{label}[/bold] with pi...")
+    result = subprocess.run(
+        [pi, "install", f"npm:{spec}"],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode != 0:
+        console.print(f"  [yellow]\u26a0[/yellow] pi install failed for {label} \u2014 basecamp core is unaffected.")
+        console.print(f"    [dim]{result.stderr.strip()}[/dim]")
+        console.print(f"    [dim]Retry later with: pi install npm:{spec}[/dim]")
+
+
+def install_memory_stack() -> None:
+    """Install the bundled pi-total-recall memory stack, gated on Node >= 24."""
+    major = node_major_version()
+    if major is None:
+        console.print(
+            "  [yellow]\u26a0[/yellow] Could not determine Node version \u2014 skipping memory stack "
+            f"({PI_TOTAL_RECALL_SPEC}). It requires Node >= {MIN_NODE_MAJOR}."
+        )
+        return
+    if major < MIN_NODE_MAJOR:
+        console.print(
+            f"  [yellow]\u26a0[/yellow] Node {major} detected; memory stack ({PI_TOTAL_RECALL_SPEC}) "
+            f"requires Node >= {MIN_NODE_MAJOR} \u2014 skipping."
+        )
+        console.print("    [dim]basecamp core is installed. Upgrade Node and re-run install.py to add memory.[/dim]")
+        return
+    install_pi_npm_package(PI_TOTAL_RECALL_SPEC, "pi-total-recall (memory stack)")
+
+
 def install_python_tool(package_dir: Path, command_name: str, *, editable: bool) -> None:
     args = ["uv", "tool", "install", "--force", "--reinstall"]
     if editable:
@@ -167,6 +225,7 @@ def main() -> None:
     console.print("[bold]Pi package[/bold]")
     console.print()
     install_pi_package(EXTENSION_DIR, "basecamp Pi extension")
+    install_memory_stack()
 
     save_install_dir(REPO_DIR)
 
