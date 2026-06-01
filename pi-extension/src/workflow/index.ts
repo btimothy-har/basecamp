@@ -6,7 +6,7 @@
  * src/agents, and src/escalate; this file only composes their registrations in order.
  */
 
-import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
+import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { registerAgents } from "./agents/index";
 import { registerEscalate } from "./escalate/index.js";
 import { registerPlan, registerPlanCommands } from "./planning/plan";

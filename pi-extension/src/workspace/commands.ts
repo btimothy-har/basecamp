@@ -2,7 +2,7 @@
  * /worktree command — switch the active workspace worktree.
  */
 
-import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-agent";
+import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { requireWorkspaceRuntime } from "./service.ts";
 import { listWorktrees, type WorktreeSummary } from "./worktree.ts";
 

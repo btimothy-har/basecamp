@@ -34,7 +34,7 @@ my-extension/
 ## Extension Entry Point
 
 ```typescript
-import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
+import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 
 export default function (pi: ExtensionAPI) {
   // Subscribe to events
@@ -54,7 +54,7 @@ Extensions are loaded via [jiti](https://github.com/unjs/jiti) — TypeScript wo
 
 ```typescript
 import { Type } from "@sinclair/typebox";
-import { StringEnum } from "@mariozechner/pi-ai";
+import { StringEnum } from "@earendil-works/pi-ai";
 
 pi.registerTool({
   name: "my_tool",
@@ -82,7 +82,7 @@ pi.registerTool({
 ```
 
 **Critical rules:**
-- Use `StringEnum` from `@mariozechner/pi-ai` for string enums — `Type.Union`/`Type.Literal` breaks Google's API
+- Use `StringEnum` from `@earendil-works/pi-ai` for string enums — `Type.Union`/`Type.Literal` breaks Google's API
 - Signal errors by **throwing**, not by return values
 - Truncate output to 50KB / 2000 lines — use `truncateHead()` or `truncateTail()` from pi
 - Use `withFileMutationQueue(absolutePath, fn)` if writing files, so parallel tool calls don't clobber each other
@@ -91,7 +91,7 @@ pi.registerTool({
 ### Output Truncation
 
 ```typescript
-import { truncateHead, DEFAULT_MAX_BYTES, DEFAULT_MAX_LINES, formatSize } from "@mariozechner/pi-coding-agent";
+import { truncateHead, DEFAULT_MAX_BYTES, DEFAULT_MAX_LINES, formatSize } from "@earendil-works/pi-coding-agent";
 
 const truncation = truncateHead(output, { maxLines: DEFAULT_MAX_LINES, maxBytes: DEFAULT_MAX_BYTES });
 let result = truncation.content;
@@ -103,7 +103,7 @@ if (truncation.truncated) {
 ### File Mutation Queue
 
 ```typescript
-import { withFileMutationQueue } from "@mariozechner/pi-coding-agent";
+import { withFileMutationQueue } from "@earendil-works/pi-coding-agent";
 import { resolve } from "node:path";
 
 async execute(_id, params, _signal, _onUpdate, ctx) {
@@ -124,7 +124,7 @@ Register a tool with the same name as a built-in (`read`, `bash`, `edit`, `write
 ### Custom Rendering
 
 ```typescript
-import { Text } from "@mariozechner/pi-tui";
+import { Text } from "@earendil-works/pi-tui";
 
 renderCall(args, theme, context) {
   const text = (context.lastComponent as Text | undefined) ?? new Text("", 0, 0);
@@ -190,7 +190,7 @@ turn_end → agent_end → session_shutdown
 ### Type-safe Tool Events
 
 ```typescript
-import { isToolCallEventType, isBashToolResult } from "@mariozechner/pi-coding-agent";
+import { isToolCallEventType, isBashToolResult } from "@earendil-works/pi-coding-agent";
 
 pi.on("tool_call", (event, ctx) => {
   if (isToolCallEventType("bash", event)) {

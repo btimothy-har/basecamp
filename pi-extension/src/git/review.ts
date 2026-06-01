@@ -11,9 +11,9 @@
  *   Esc         → cancel (viewer) or unfocus (feedback)
  */
 
-import type { ExtensionContext } from "@mariozechner/pi-coding-agent";
-import { DynamicBorder, getSelectListTheme } from "@mariozechner/pi-coding-agent";
-import { Container, Editor, type EditorTheme, getKeybindings, Spacer, Text } from "@mariozechner/pi-tui";
+import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
+import { DynamicBorder, getSelectListTheme } from "@earendil-works/pi-coding-agent";
+import { Container, Editor, type EditorTheme, getKeybindings, Spacer, Text } from "@earendil-works/pi-tui";
 
 export type PrReviewResult = { action: "publish" } | { action: "feedback"; text: string } | { action: "cancel" };
 

@@ -2,7 +2,7 @@
  * Git — guards against destructive operations + PR workflow commands.
  */
 
-import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
+import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { registerCommands } from "./commands";
 import { registerGuards } from "./guards";
 import { registerIssueTool } from "./issue-tool";

@@ -5,7 +5,7 @@ description: Developing pi extensions, skills, prompt templates, themes, and pac
 
 # Pi Development
 
-Build extensions, skills, prompt templates, themes, and packages for the [pi coding agent](https://github.com/badlogic/pi-mono).
+Build extensions, skills, prompt templates, themes, and packages for the [pi coding agent](https://github.com/earendil-works/pi).
 
 ## Concepts
 
@@ -22,7 +22,7 @@ Build extensions, skills, prompt templates, themes, and packages for the [pi cod
 TypeScript modules that extend pi's behavior. The entry point exports a default function receiving `ExtensionAPI`:
 
 ```typescript
-import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
+import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "@sinclair/typebox";
 
 export default function (pi: ExtensionAPI) {
@@ -42,7 +42,7 @@ export default function (pi: ExtensionAPI) {
 
 **Locations:** `~/.pi/agent/extensions/` (global), `.pi/extensions/` (project), or via packages.
 
-**Available imports:** `@mariozechner/pi-coding-agent` (types), `@sinclair/typebox` (schemas), `@mariozechner/pi-ai` (AI utilities like `StringEnum`), `@mariozechner/pi-tui` (TUI components). npm deps also work — add a `package.json` and `npm install`.
+**Available imports:** `@earendil-works/pi-coding-agent` (types), `@sinclair/typebox` (schemas), `@earendil-works/pi-ai` (AI utilities like `StringEnum`), `@earendil-works/pi-tui` (TUI components). npm deps also work — add a `package.json` and `npm install`.
 
 **Testing:** Use `pi -e ./my-extension.ts` for quick iteration. Place in auto-discovered locations for `/reload` support.
 
@@ -97,7 +97,7 @@ JSON files defining 51 color tokens for the TUI. Must define all tokens.
 
 ```json
 {
-  "$schema": "https://raw.githubusercontent.com/badlogic/pi-mono/main/packages/coding-agent/src/modes/interactive/theme/theme-schema.json",
+  "$schema": "https://raw.githubusercontent.com/earendil-works/pi/main/packages/coding-agent/src/modes/interactive/theme/theme-schema.json",
   "name": "my-theme",
   "vars": { "primary": "#00aaff" },
   "colors": {
@@ -131,7 +131,7 @@ Bundle extensions, skills, prompts, and themes for distribution via npm or git.
 }
 ```
 
-**Peer deps:** List `@mariozechner/pi-coding-agent`, `@sinclair/typebox`, `@mariozechner/pi-ai`, `@mariozechner/pi-tui` as `peerDependencies` with `"*"`.
+**Peer deps:** List `@earendil-works/pi-coding-agent`, `@sinclair/typebox`, `@earendil-works/pi-ai`, `@earendil-works/pi-tui` as `peerDependencies` with `"*"`.
 
 **Install:** `pi install npm:pkg` or `pi install git:github.com/user/repo`.
 
@@ -158,7 +158,7 @@ Bundle extensions, skills, prompts, and themes for distribution via npm or git.
 ### Tool Schema Tips
 
 - Use `Type.Object({})` from `@sinclair/typebox` for parameters
-- Use `StringEnum(["a", "b"] as const)` from `@mariozechner/pi-ai` — `Type.Union`/`Type.Literal` breaks Google
+- Use `StringEnum(["a", "b"] as const)` from `@earendil-works/pi-ai` — `Type.Union`/`Type.Literal` breaks Google
 - Use `Type.Optional(Type.String())` for optional params
 - Always truncate large tool output (50KB / 2000 lines max)
 - Use `withFileMutationQueue(path, fn)` if your tool writes files
@@ -173,10 +173,10 @@ turn_end → agent_end → session_shutdown
 
 ## Source Code — read [CODEBASE.md](references/CODEBASE.md)
 
-When the bundled docs aren't enough, clone the pi-mono repo and read the source:
+When the bundled docs aren't enough, clone the pi repo and read the source:
 
 ```bash
-git clone --depth 1 https://github.com/badlogic/pi-mono /tmp/pi-mono
+git clone --depth 1 https://github.com/earendil-works/pi /tmp/pi
 ```
 
 Key files to investigate:

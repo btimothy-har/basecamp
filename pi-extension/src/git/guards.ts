@@ -6,8 +6,8 @@
  * Raw BigQuery query execution is blocked so agents use the file-based tool.
  */
 
-import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
-import { isToolCallEventType } from "@mariozechner/pi-coding-agent";
+import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { isToolCallEventType } from "@earendil-works/pi-coding-agent";
 
 // ---------------------------------------------------------------------------
 // Git block reason

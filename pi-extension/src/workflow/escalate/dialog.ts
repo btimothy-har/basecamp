@@ -3,8 +3,8 @@ import {
 	type KeybindingsManager,
 	type Theme,
 	type ThemeColor,
-} from "@mariozechner/pi-coding-agent";
-import { type Component, Editor, type EditorTheme, type Focusable, matchesKey, type TUI } from "@mariozechner/pi-tui";
+} from "@earendil-works/pi-coding-agent";
+import { type Component, Editor, type EditorTheme, type Focusable, matchesKey, type TUI } from "@earendil-works/pi-tui";
 import type { DialogState, Question, QuestionAnswer, SelectAnswer, TextAnswer } from "./types.js";
 
 /** Focus area within an option question. */
@@ -170,7 +170,7 @@ export class EscalateDialog implements Component, Focusable {
 	}
 
 	private pushBoxLine(lines: string[], text: string, boxWidth: number, color: ThemeColor): void {
-		const { visibleWidth, truncateToWidth } = require("@mariozechner/pi-tui");
+		const { visibleWidth, truncateToWidth } = require("@earendil-works/pi-tui");
 		const contentWidth = boxWidth - 2;
 		const textWidth = visibleWidth(text) as number;
 		const truncated = textWidth > contentWidth ? (truncateToWidth(text, contentWidth) as string) : text;
@@ -182,7 +182,7 @@ export class EscalateDialog implements Component, Focusable {
 	}
 
 	private pushBoxWrapped(lines: string[], text: string, boxWidth: number, color: ThemeColor): void {
-		const { wrapTextWithAnsi, visibleWidth } = require("@mariozechner/pi-tui");
+		const { wrapTextWithAnsi, visibleWidth } = require("@earendil-works/pi-tui");
 		const contentWidth = boxWidth - 2;
 		const wrapped = wrapTextWithAnsi(text, contentWidth) as string[];
 		for (const line of wrapped) {

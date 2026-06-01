@@ -1,10 +1,10 @@
-import type { AgentToolResult, Theme, ToolRenderResultOptions } from "@mariozechner/pi-coding-agent";
-import type { Component } from "@mariozechner/pi-tui";
+import type { AgentToolResult, Theme, ToolRenderResultOptions } from "@earendil-works/pi-coding-agent";
+import type { Component } from "@earendil-works/pi-tui";
 import type { Question, QuestionAnswer } from "./types.js";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export function renderCall(args: { questions: Question[] }, theme: Theme, _context: any): Component {
-	const { Text } = require("@mariozechner/pi-tui");
+	const { Text } = require("@earendil-works/pi-tui");
 	const qs = args.questions;
 	const preview = qs?.[0]?.question ?? "...";
 	const trimmed = preview.length > 60 ? `${preview.slice(0, 60)}...` : preview;
@@ -33,7 +33,7 @@ export function renderResult(
 	theme: Theme,
 	_context: any,
 ): Component {
-	const { Text } = require("@mariozechner/pi-tui");
+	const { Text } = require("@earendil-works/pi-tui");
 	const qaList = result.details;
 	if (!qaList) {
 		return new Text(theme.fg("warning", "⚠") + theme.fg("dim", " dismissed"), 0, 0);

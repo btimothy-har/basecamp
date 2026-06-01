@@ -14,9 +14,9 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { fileURLToPath } from "node:url";
-import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-agent";
-import { getMarkdownTheme } from "@mariozechner/pi-coding-agent";
-import { type Component, Container, Markdown, Spacer, Text } from "@mariozechner/pi-tui";
+import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
+import { getMarkdownTheme } from "@earendil-works/pi-coding-agent";
+import { type Component, Container, Markdown, Spacer, Text } from "@earendil-works/pi-tui";
 import { hasInvokedSkill } from "../../platform/skill-tracker";
 import { getWorkspaceState } from "../../platform/workspace";
 import { formatTaskProgressSummary, renderCompactTaskProgressLines } from "../tasks/render";
@@ -83,7 +83,7 @@ function shortenPath(p: string): string {
 	return p.startsWith(home) ? `~${p.slice(home.length)}` : p;
 }
 
-type ThemeColor = Parameters<import("@mariozechner/pi-coding-agent").Theme["fg"]>[0];
+type ThemeColor = Parameters<import("@earendil-works/pi-coding-agent").Theme["fg"]>[0];
 
 function formatToolCallLine(tc: ToolCallRecord, fg: (color: ThemeColor, text: string) => string): string {
 	switch (tc.name) {
@@ -189,7 +189,7 @@ function clearStatus(ctx: ExtensionContext, id: string): void {
 function renderPartialView(
 	partial: AgentPartialDetails,
 	fg: (color: ThemeColor, text: string) => string,
-	theme: import("@mariozechner/pi-coding-agent").Theme,
+	theme: import("@earendil-works/pi-coding-agent").Theme,
 ): Component {
 	const sourceLabel = partial.agentSource !== "ad-hoc" ? fg("muted", ` (${partial.agentSource})`) : "";
 	const modelLabel = partial.model ? fg("muted", ` (${partial.model})`) : "";

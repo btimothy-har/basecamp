@@ -5,9 +5,9 @@
  * /tasks note <index> <text> — quick-add notes without the overlay
  */
 
-import type { ExtensionAPI, ExtensionCommandContext, Theme } from "@mariozechner/pi-coding-agent";
-import { DynamicBorder } from "@mariozechner/pi-coding-agent";
-import { Container, matchesKey, Spacer, Text, visibleWidth } from "@mariozechner/pi-tui";
+import type { ExtensionAPI, ExtensionCommandContext, Theme } from "@earendil-works/pi-coding-agent";
+import { DynamicBorder } from "@earendil-works/pi-coding-agent";
+import { Container, matchesKey, Spacer, Text, visibleWidth } from "@earendil-works/pi-tui";
 import { renderTaskDescriptionLines } from "./render";
 import type { Task, TaskStatus, TasksAccess } from "./tasks";
 

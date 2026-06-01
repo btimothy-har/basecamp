@@ -2,7 +2,7 @@
  * Workspace extension — shared workspace contract and future registrations.
  */
 
-import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
+import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { registerWorktreeCommand } from "./commands.ts";
 import { registerWorkspaceGuards } from "./guards.ts";
 import { registerWorkspaceRuntime } from "./service.ts";

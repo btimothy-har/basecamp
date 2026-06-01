@@ -2,7 +2,7 @@
  * Capabilities extension — skill tool, skill lifecycle, and catalog providers.
  */
 
-import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
+import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { registerCapabilityCatalogProviders } from "./catalog-providers";
 import { registerSkillTool } from "./skill";
 import { registerSkillLifecycle } from "./skill-tracker";

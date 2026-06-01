@@ -2,7 +2,7 @@
  * Skill invocation tracker lifecycle hooks.
  */
 
-import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
+import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { resetInvokedSkills } from "../platform/skill-tracker";
 
 /** Register lifecycle handlers to reset skill state on session events. */

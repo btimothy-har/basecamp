@@ -6,7 +6,7 @@
  */
 
 import { readFileSync } from "node:fs";
-import { stripFrontmatter } from "@mariozechner/pi-coding-agent";
+import { stripFrontmatter } from "@earendil-works/pi-coding-agent";
 
 function escapeXml(str: string): string {
 	return str

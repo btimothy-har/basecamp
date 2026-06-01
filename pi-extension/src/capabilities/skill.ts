@@ -9,7 +9,7 @@
  * Use this tool to load the full instructions.
  */
 
-import type { ExtensionAPI, Theme } from "@mariozechner/pi-coding-agent";
+import type { ExtensionAPI, Theme } from "@earendil-works/pi-coding-agent";
 import { Type } from "@sinclair/typebox";
 import { hasInvokedSkill, trackSkillInvocation } from "../platform/skill-tracker";
 import { loadSkillBlock } from "./skill-content.ts";
@@ -26,12 +26,12 @@ const SkillParams = Type.Object(
 );
 
 function renderPartial(theme: Theme) {
-	const { Text } = require("@mariozechner/pi-tui");
+	const { Text } = require("@earendil-works/pi-tui");
 	return new Text(theme.fg("dim", "..."), 0, 0);
 }
 
 function renderCall(args: { name?: string }, theme: Theme) {
-	const { Text } = require("@mariozechner/pi-tui");
+	const { Text } = require("@earendil-works/pi-tui");
 	const name = args.name || "...";
 	const preview = name.length > 50 ? `${name.slice(0, 50)}...` : name;
 	return new Text(theme.fg("toolTitle", theme.bold("skill ")) + theme.fg("dim", preview), 0, 0);
@@ -44,7 +44,7 @@ function renderResult(
 ) {
 	if (meta.isPartial) return renderPartial(theme);
 
-	const { Text } = require("@mariozechner/pi-tui");
+	const { Text } = require("@earendil-works/pi-tui");
 	const text = result.content?.find((item) => item.type === "text")?.text ?? "";
 
 	const loaded = text.match(/^<skill name="([^"]+)">/);

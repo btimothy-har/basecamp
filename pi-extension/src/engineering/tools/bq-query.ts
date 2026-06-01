@@ -10,7 +10,7 @@ import { createHash } from "node:crypto";
 import * as fsSync from "node:fs";
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
-import type { AgentToolResult, ExtensionAPI, ExtensionContext, Theme } from "@mariozechner/pi-coding-agent";
+import type { AgentToolResult, ExtensionAPI, ExtensionContext, Theme } from "@earendil-works/pi-coding-agent";
 import { type Static, Type } from "@sinclair/typebox";
 import { getWorkspaceEffectiveCwd, requireWorkspaceState } from "../../platform/workspace";
 
@@ -1038,7 +1038,7 @@ function buildSuccessText(details: BqQueryDetails, outputBytes: number): string 
 }
 
 function renderCall(args: BqQueryInput, theme: Theme) {
-	const { Text } = require("@mariozechner/pi-tui");
+	const { Text } = require("@earendil-works/pi-tui");
 	const sqlPath = sqlPathPreview(args.path, MAX_CALL_PATH_CHARS);
 	const descriptionBudget = Math.max(
 		MIN_DISPLAY_DESCRIPTION_CHARS,
@@ -1058,7 +1058,7 @@ function renderResult(
 	theme: Theme,
 	context?: { isError?: boolean },
 ) {
-	const { Text } = require("@mariozechner/pi-tui");
+	const { Text } = require("@earendil-works/pi-tui");
 	if (options.isPartial) return new Text(theme.fg("dim", "..."), 0, 0);
 
 	const details = result.details;

@@ -8,7 +8,7 @@
  */
 
 import * as crypto from "node:crypto";
-import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
+import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { exec } from "../platform/exec";
 import { activateWorkspaceWorktree, attachWorkspaceWorktreePath } from "../platform/workspace";
 import { activeIssueDraft, setActiveIssueDraft, setActivePR, unlocked } from "./guards";
