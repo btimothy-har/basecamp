@@ -3,6 +3,7 @@ import registerCapabilities from "./src/capabilities/index.ts";
 import registerEngineering from "./src/engineering/index.ts";
 import registerGit from "./src/git/index.ts";
 import registerModelAliases from "./src/model-aliases/index.ts";
+import registerPanes from "./src/panes/index.ts";
 import registerProjects from "./src/projects/index.ts";
 import registerSession from "./src/session/index.ts";
 import registerState from "./src/state/index.ts";
@@ -18,5 +19,6 @@ export default function (pi: ExtensionAPI): void {
 	registerEngineering(pi);
 	registerProjects(pi);
 	registerWorkflow(pi);
+	registerPanes(pi);
 	registerGit(pi);
 }
