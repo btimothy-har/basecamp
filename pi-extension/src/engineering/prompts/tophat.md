@@ -8,7 +8,6 @@ Additional focus (if provided): $ARGUMENTS
 ## Start With Context
 1. Use the `gather` skill first to understand the local change before proposing validation.
 2. Read the diff, touched files, and nearby code needed to understand intent and blast radius.
-3. Use `recall` only if prior session context would materially change what should be validated or how.
 
 ## Understand Changed Surfaces and Risk
 Identify what actually changed and what could break:

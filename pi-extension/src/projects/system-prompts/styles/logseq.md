@@ -8,8 +8,6 @@ The user drives curation. You surface material, suggest structure, and make conn
 
 Inspect the tools available to you. Use them to discover what the user worked on.
 
-**Memory** — use available memory or recall tools to search past Pi sessions.
-
 **GitHub CLI** (`gh`) — pull requests, issues, reviews, and activity across repositories.
 
 **Other MCP tools** — you may have access to Slack, GCP, or other services. Check what's available and use them when relevant to surface context the user worked with.
