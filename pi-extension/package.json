@@ -2,6 +2,9 @@
 	"name": "basecamp-pi-extension",
 	"type": "module",
 	"version": "1.0.0",
+	"engines": {
+		"node": ">=24"
+	},
 	"description": "Basecamp extension for pi \u2014 session lifecycle, git protection, project context, workflow, and engineering skills.",
 	"keywords": [
 		"pi-package"
