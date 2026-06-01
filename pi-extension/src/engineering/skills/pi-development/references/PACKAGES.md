@@ -40,17 +40,17 @@ Auto-discovers from conventional directories: `extensions/`, `skills/`, `prompts
 
 - **Runtime deps** → `dependencies` in `package.json` (installed by `npm install` on setup)
 - **Pi core packages** → `peerDependencies` with `"*"`:
-  - `@mariozechner/pi-ai`
-  - `@mariozechner/pi-agent-core`
-  - `@mariozechner/pi-coding-agent`
-  - `@mariozechner/pi-tui`
+  - `@earendil-works/pi-ai`
+  - `@earendil-works/pi-agent-core`
+  - `@earendil-works/pi-coding-agent`
+  - `@earendil-works/pi-tui`
   - `@sinclair/typebox`
 - **Other pi packages** → `dependencies` + `bundledDependencies`, reference via `node_modules/` paths
 
 ```json
 {
   "peerDependencies": {
-    "@mariozechner/pi-coding-agent": "*",
+    "@earendil-works/pi-coding-agent": "*",
     "@sinclair/typebox": "*"
   },
   "dependencies": {

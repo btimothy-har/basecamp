@@ -2,7 +2,7 @@
  * Session extension — mode lifecycle, shell UI, and session title behavior.
  */
 
-import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
+import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { registerModeShortcut } from "./commands/mode";
 import { registerCompactionModel } from "./runtime/compaction.ts";
 import { registerSession } from "./runtime/session";

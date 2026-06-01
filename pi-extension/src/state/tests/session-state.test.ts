@@ -3,7 +3,7 @@ import * as fs from "node:fs/promises";
 import * as os from "node:os";
 import * as path from "node:path";
 import { describe, it } from "node:test";
-import type { ExtensionContext } from "@mariozechner/pi-coding-agent";
+import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import {
 	type BasecampSessionState,
 	buildSessionStatePath,

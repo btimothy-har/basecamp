@@ -1,4 +1,4 @@
-import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
+import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import registerCapabilities from "./src/capabilities/index.ts";
 import registerEngineering from "./src/engineering/index.ts";
 import registerGit from "./src/git/index.ts";

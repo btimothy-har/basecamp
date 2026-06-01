@@ -1,5 +1,5 @@
-import type { Api, Model } from "@mariozechner/pi-ai";
-import type { ExtensionContext } from "@mariozechner/pi-coding-agent";
+import type { Api, Model } from "@earendil-works/pi-ai";
+import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { resolveModelAlias } from "../../platform/model-aliases.ts";
 import { resolveModelFromString } from "../../platform/model-resolution.ts";
 

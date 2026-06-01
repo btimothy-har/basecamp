@@ -2,7 +2,7 @@
  * Capability catalog providers for Pi-native tools and skills.
  */
 
-import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
+import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { registerCatalogProvider } from "../platform/catalog";
 
 export function registerCapabilityCatalogProviders(pi: ExtensionAPI): void {

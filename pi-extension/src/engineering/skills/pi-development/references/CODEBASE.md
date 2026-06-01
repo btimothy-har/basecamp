@@ -219,7 +219,7 @@ npx tsx ../../node_modules/vitest/dist/cli.js --run test/specific.test.ts
 
 ## Tips
 
-- **Type definitions:** Check `node_modules/@mariozechner/pi-coding-agent/dist/` in your project for compiled types when the source isn't available
+- **Type definitions:** Check `node_modules/@earendil-works/pi-coding-agent/dist/` in your project for compiled types when the source isn't available
 - **Public API:** `packages/coding-agent/src/index.ts` re-exports everything intended for extension authors
 - **Faux provider:** `packages/ai/src/providers/faux.ts` is a mock LLM for tests — use it to understand the streaming protocol
 - **Never run `npm test` or `npm run dev`** in the pi-mono repo (per AGENTS.md guidelines)

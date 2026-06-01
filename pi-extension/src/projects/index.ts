@@ -1,4 +1,4 @@
-import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
+import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { registerContextInjection } from "./context-injection.ts";
 import { registerHeader } from "./header.ts";
 import { registerPrompt } from "./prompt.ts";

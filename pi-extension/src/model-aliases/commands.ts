@@ -1,6 +1,6 @@
-import type { ExtensionAPI, ExtensionCommandContext, Theme } from "@mariozechner/pi-coding-agent";
-import { DynamicBorder, getSelectListTheme } from "@mariozechner/pi-coding-agent";
-import { Container, Editor, type EditorTheme, matchesKey, Spacer, Text } from "@mariozechner/pi-tui";
+import type { ExtensionAPI, ExtensionCommandContext, Theme } from "@earendil-works/pi-coding-agent";
+import { DynamicBorder, getSelectListTheme } from "@earendil-works/pi-coding-agent";
+import { Container, Editor, type EditorTheme, matchesKey, Spacer, Text } from "@earendil-works/pi-tui";
 import {
 	type ConfiguredModelAliases,
 	defaultModelAliasConfigPath,

@@ -4,9 +4,9 @@
  * /agents  — interactive agent browser (two-line list → detail overlay)
  */
 
-import type { ExtensionAPI, ExtensionCommandContext, Theme } from "@mariozechner/pi-coding-agent";
-import { DynamicBorder, getMarkdownTheme } from "@mariozechner/pi-coding-agent";
-import { Container, Markdown, matchesKey, Spacer, Text } from "@mariozechner/pi-tui";
+import type { ExtensionAPI, ExtensionCommandContext, Theme } from "@earendil-works/pi-coding-agent";
+import { DynamicBorder, getMarkdownTheme } from "@earendil-works/pi-coding-agent";
+import { Container, Markdown, matchesKey, Spacer, Text } from "@earendil-works/pi-tui";
 import { type AgentConfig, getAgentToolAllowlist } from "./types.ts";
 
 // ============================================================================

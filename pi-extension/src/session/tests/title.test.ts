@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import type { Api, AssistantMessage, Model } from "@mariozechner/pi-ai";
-import type { ExtensionContext, SessionEntry } from "@mariozechner/pi-coding-agent";
+import type { Api, AssistantMessage, Model } from "@earendil-works/pi-ai";
+import type { ExtensionContext, SessionEntry } from "@earendil-works/pi-coding-agent";
 import { clearModelAliasProvidersForTesting } from "../../platform/model-aliases.ts";
 import {
 	buildTitleContext,

@@ -12,8 +12,8 @@
  */
 
 import * as path from "node:path";
-import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
-import { isEditToolResult, isReadToolResult, isWriteToolResult } from "@mariozechner/pi-coding-agent";
+import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { isEditToolResult, isReadToolResult, isWriteToolResult } from "@earendil-works/pi-coding-agent";
 import { getWorkspaceEffectiveCwd } from "../platform/workspace.ts";
 import { type ContextFile, loadContextFileFromDir } from "./context.ts";
 

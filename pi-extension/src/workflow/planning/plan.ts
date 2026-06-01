@@ -12,7 +12,7 @@
  * keep their ✓ status, changed sections reset to ★ (needs re-review).
  */
 
-import type { ExtensionAPI, ExtensionContext, Theme } from "@mariozechner/pi-coding-agent";
+import type { ExtensionAPI, ExtensionContext, Theme } from "@earendil-works/pi-coding-agent";
 import { Type } from "@sinclair/typebox";
 import {
 	activateWorkspaceWorktree,
@@ -415,12 +415,12 @@ function buildHandoffCompactionInstructions(handoff: PendingImplementationHandof
 // ============================================================================
 
 function renderSuccess(message: string, theme: Theme) {
-	const { Text } = require("@mariozechner/pi-tui");
+	const { Text } = require("@earendil-works/pi-tui");
 	return new Text(theme.fg("success", "✓") + theme.fg("dim", ` ${message}`), 0, 0);
 }
 
 function renderPartial(theme: Theme) {
-	const { Text } = require("@mariozechner/pi-tui");
+	const { Text } = require("@earendil-works/pi-tui");
 	return new Text(theme.fg("dim", "..."), 0, 0);
 }
 
@@ -627,7 +627,7 @@ export function registerPlan(pi: ExtensionAPI, tasksAccess: TasksAccess): PlanAc
 			};
 		},
 		renderCall(args, theme) {
-			const { Text } = require("@mariozechner/pi-tui");
+			const { Text } = require("@earendil-works/pi-tui");
 			const goal = (args.goal as string) || "...";
 			const preview = goal.length > 50 ? `${goal.slice(0, 50)}...` : goal;
 			const taskCount = (args.tasks as unknown[])?.length ?? 0;
@@ -640,7 +640,7 @@ export function registerPlan(pi: ExtensionAPI, tasksAccess: TasksAccess): PlanAc
 		renderResult(result, { isPartial }, theme) {
 			if (isPartial) return renderPartial(theme);
 			try {
-				const { Text } = require("@mariozechner/pi-tui");
+				const { Text } = require("@earendil-works/pi-tui");
 				const first = result.content?.[0];
 				const text = first && "text" in first ? first.text : "{}";
 				const parsed = JSON.parse(text);

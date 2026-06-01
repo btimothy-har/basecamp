@@ -5,7 +5,7 @@
 import * as fsSync from "node:fs";
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
-import type { ExtensionAPI, ExtensionContext, SessionStartEvent } from "@mariozechner/pi-coding-agent";
+import type { ExtensionAPI, ExtensionContext, SessionStartEvent } from "@earendil-works/pi-coding-agent";
 import {
 	attachWorkspaceWorktreePath,
 	initializeWorkspace,

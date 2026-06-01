@@ -5,7 +5,7 @@
  * exists, or manually via `/title`.
  */
 
-import type { AgentMessage } from "@mariozechner/pi-agent-core";
+import type { AgentMessage } from "@earendil-works/pi-agent-core";
 import {
 	type AssistantMessage,
 	completeSimple,
@@ -13,9 +13,9 @@ import {
 	type ToolCall,
 	type ToolResultMessage,
 	type UserMessage,
-} from "@mariozechner/pi-ai";
-import type { ExtensionAPI, ExtensionContext, SessionEntry, Theme } from "@mariozechner/pi-coding-agent";
-import { visibleWidth } from "@mariozechner/pi-tui";
+} from "@earendil-works/pi-ai";
+import type { ExtensionAPI, ExtensionContext, SessionEntry, Theme } from "@earendil-works/pi-coding-agent";
+import { visibleWidth } from "@earendil-works/pi-tui";
 import { getCurrentSessionState, updateCurrentSessionStateIfInitialized } from "../../state/index.ts";
 import { resolveTitleModelForContext } from "./title-model.ts";
 

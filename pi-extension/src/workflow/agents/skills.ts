@@ -9,7 +9,7 @@
  * since skills are already baked into the prompt.
  */
 
-import { loadSkills, type Skill } from "@mariozechner/pi-coding-agent";
+import { getAgentDir, loadSkills, type Skill } from "@earendil-works/pi-coding-agent";
 import { buildSkillBlock, readSkillContent } from "../../capabilities/skill-content.ts";
 
 // ============================================================================
@@ -38,7 +38,7 @@ export interface SkillResolution {
 export function resolveSkills(skillNames: string[], cwd: string): SkillResolution {
 	if (skillNames.length === 0) return { resolved: [], missing: [] };
 
-	const { skills } = loadSkills({ cwd });
+	const { skills } = loadSkills({ cwd, agentDir: getAgentDir(), skillPaths: [], includeDefaults: true });
 	const skillMap = new Map<string, Skill>();
 	for (const skill of skills) {
 		skillMap.set(skill.name, skill);

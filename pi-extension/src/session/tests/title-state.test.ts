@@ -3,7 +3,7 @@ import * as fs from "node:fs/promises";
 import * as os from "node:os";
 import * as path from "node:path";
 import { afterEach, describe, it } from "node:test";
-import type { ExtensionAPI, ExtensionContext, SessionEntry, SessionStartEvent } from "@mariozechner/pi-coding-agent";
+import type { ExtensionAPI, ExtensionContext, SessionEntry, SessionStartEvent } from "@earendil-works/pi-coding-agent";
 import {
 	createDefaultSessionState,
 	getCurrentSessionState,

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import type { ExtensionAPI, ExtensionCommandContext, RegisteredCommand } from "@mariozechner/pi-coding-agent";
+import type { ExtensionAPI, ExtensionCommandContext, RegisteredCommand } from "@earendil-works/pi-coding-agent";
 import { registerModelAliasCommands } from "../commands.ts";
 
 function createPi() {

@@ -5,8 +5,8 @@
  * normalized packet cards and collects structured reviewer feedback.
  */
 
-import type { ExtensionContext, Theme } from "@mariozechner/pi-coding-agent";
-import { DynamicBorder, getSelectListTheme } from "@mariozechner/pi-coding-agent";
+import type { ExtensionContext, Theme } from "@earendil-works/pi-coding-agent";
+import { DynamicBorder, getSelectListTheme } from "@earendil-works/pi-coding-agent";
 import {
 	Container,
 	Editor,
@@ -17,7 +17,7 @@ import {
 	Text,
 	truncateToWidth,
 	visibleWidth,
-} from "@mariozechner/pi-tui";
+} from "@earendil-works/pi-tui";
 import {
 	type ConsolidatedReviewFeedback,
 	consolidateReviewFeedback,

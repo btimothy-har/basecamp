@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import type { Api, Model } from "@mariozechner/pi-ai";
-import type { ExtensionContext } from "@mariozechner/pi-coding-agent";
+import type { Api, Model } from "@earendil-works/pi-ai";
+import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { resolveModelFromString } from "../model-resolution.ts";
 
 function model(provider: string, id: string): Model<Api> {

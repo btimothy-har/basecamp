@@ -13,14 +13,14 @@
 import { existsSync, type FSWatcher, readFileSync, statSync, watch } from "node:fs";
 import * as os from "node:os";
 import { dirname, join, resolve } from "node:path";
-import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-agent";
-import { truncateToWidth, visibleWidth } from "@mariozechner/pi-tui";
+import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
+import { truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 import { getInvokedSkills } from "../../platform/skill-tracker";
 import { getWorkspaceService, getWorkspaceState, type WorkspaceState } from "../../platform/workspace";
 import { type AgentMode, getAgentMode, onAgentModeChange } from "../agent-mode.ts";
 import { getModeLabel } from "./mode-style";
 
-type ThemeFg = (color: Parameters<import("@mariozechner/pi-coding-agent").Theme["fg"]>[0], text: string) => string;
+type ThemeFg = (color: Parameters<import("@earendil-works/pi-coding-agent").Theme["fg"]>[0], text: string) => string;
 let requestRender: (() => void) | null = null;
 
 /**

@@ -1,5 +1,5 @@
 import * as path from "node:path";
-import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
+import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 
 export async function gitOutput(pi: ExtensionAPI, repoRoot: string, args: string[], timeout = 10_000): Promise<string> {
 	const result = await pi.exec("git", ["-C", repoRoot, ...args], { timeout });

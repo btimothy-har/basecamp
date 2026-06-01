@@ -1,4 +1,4 @@
-import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
+import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { type ModelAlias, type ModelAliasProvider, registerModelAliasProvider } from "../platform/model-aliases.ts";
 import { registerModelAliasCommands } from "./commands.ts";
 import { readModelAliasConfig } from "./config.ts";

@@ -11,9 +11,9 @@
  * Design, Success, Boundaries are individual items.
  */
 
-import type { ExtensionContext, Theme } from "@mariozechner/pi-coding-agent";
-import { DynamicBorder, getSelectListTheme } from "@mariozechner/pi-coding-agent";
-import { Container, Editor, type EditorTheme, matchesKey, Spacer, Text } from "@mariozechner/pi-tui";
+import type { ExtensionContext, Theme } from "@earendil-works/pi-coding-agent";
+import { DynamicBorder, getSelectListTheme } from "@earendil-works/pi-coding-agent";
+import { Container, Editor, type EditorTheme, matchesKey, Spacer, Text } from "@earendil-works/pi-tui";
 import type { GoalCycle, ReviewState, Task } from "../tasks/tasks";
 import { deriveGoalContextReviewState } from "./draft-logic";
 

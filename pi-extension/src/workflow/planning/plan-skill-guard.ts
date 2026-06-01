@@ -4,7 +4,7 @@
  * Requires the planning skill before interactive main-session plan() calls.
  */
 
-import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
+import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { hasInvokedSkill } from "../../platform/skill-tracker";
 
 const PLANNING_SKILL = "planning";

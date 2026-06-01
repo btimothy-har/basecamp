@@ -1,5 +1,5 @@
-import type { Api, Model } from "@mariozechner/pi-ai";
-import type { ExtensionContext } from "@mariozechner/pi-coding-agent";
+import type { Api, Model } from "@earendil-works/pi-ai";
+import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 
 export function resolveModelFromString(ctx: ExtensionContext, modelName?: string): Model<Api> | undefined {
 	if (!modelName) return ctx.model;

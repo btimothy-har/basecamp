@@ -27,7 +27,7 @@
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import type { ExtensionAPI, ExtensionContext, Theme } from "@mariozechner/pi-coding-agent";
+import type { ExtensionAPI, ExtensionContext, Theme } from "@earendil-works/pi-coding-agent";
 import { Type } from "@sinclair/typebox";
 import { type AgentMode, getAgentMode, setAgentMode } from "../../session/agent-mode.ts";
 import { getCurrentSessionState } from "../../state/index.ts";
@@ -180,12 +180,12 @@ function buildTaskContext(task: Task, index: number, state: TasksState): string 
 // ============================================================================
 
 function renderSuccess(message: string, theme: Theme) {
-	const { Text } = require("@mariozechner/pi-tui");
+	const { Text } = require("@earendil-works/pi-tui");
 	return new Text(theme.fg("success", "✓") + theme.fg("dim", ` ${message}`), 0, 0);
 }
 
 function renderPartial(theme: Theme) {
-	const { Text } = require("@mariozechner/pi-tui");
+	const { Text } = require("@earendil-works/pi-tui");
 	return new Text(theme.fg("dim", "..."), 0, 0);
 }
 
@@ -346,7 +346,7 @@ export function registerTasks(pi: ExtensionAPI): TasksAccess {
 			};
 		},
 		renderCall(args, theme) {
-			const { Text } = require("@mariozechner/pi-tui");
+			const { Text } = require("@earendil-works/pi-tui");
 			const goal = (args.goal as string) || "...";
 			const preview = goal.length > 60 ? `${goal.slice(0, 60)}...` : goal;
 			return new Text(theme.fg("toolTitle", theme.bold("update_goal ")) + theme.fg("dim", preview), 0, 0);
@@ -395,7 +395,7 @@ export function registerTasks(pi: ExtensionAPI): TasksAccess {
 			};
 		},
 		renderCall(args, theme) {
-			const { Text } = require("@mariozechner/pi-tui");
+			const { Text } = require("@earendil-works/pi-tui");
 			const tasks = args.tasks as { label: string }[] | undefined;
 			const count = tasks?.length ?? 0;
 			return new Text(theme.fg("toolTitle", theme.bold("create_tasks ")) + theme.fg("dim", `${count} tasks`), 0, 0);
@@ -435,7 +435,7 @@ export function registerTasks(pi: ExtensionAPI): TasksAccess {
 			};
 		},
 		renderCall(args, theme) {
-			const { Text } = require("@mariozechner/pi-tui");
+			const { Text } = require("@earendil-works/pi-tui");
 			const idx = args.task as number;
 			const label = state.tasks[idx]?.label ?? "...";
 			const preview = label.length > 50 ? `${label.slice(0, 50)}...` : label;
@@ -472,7 +472,7 @@ export function registerTasks(pi: ExtensionAPI): TasksAccess {
 			};
 		},
 		renderCall(args, theme) {
-			const { Text } = require("@mariozechner/pi-tui");
+			const { Text } = require("@earendil-works/pi-tui");
 			const idx = args.task as number;
 			const label = state.tasks[idx]?.label ?? "...";
 			const preview = label.length > 50 ? `${label.slice(0, 50)}...` : label;
@@ -505,7 +505,7 @@ export function registerTasks(pi: ExtensionAPI): TasksAccess {
 			};
 		},
 		renderCall(args, theme) {
-			const { Text } = require("@mariozechner/pi-tui");
+			const { Text } = require("@earendil-works/pi-tui");
 			const idx = args.task as number;
 			const label = state.tasks[idx]?.label ?? "...";
 			const preview = label.length > 50 ? `${label.slice(0, 50)}...` : label;
@@ -538,7 +538,7 @@ export function registerTasks(pi: ExtensionAPI): TasksAccess {
 			};
 		},
 		renderCall(args, theme) {
-			const { Text } = require("@mariozechner/pi-tui");
+			const { Text } = require("@earendil-works/pi-tui");
 			const idx = args.task as number;
 			const label = state.tasks[idx]?.label ?? "...";
 			const preview = label.length > 50 ? `${label.slice(0, 50)}...` : label;
@@ -581,7 +581,7 @@ export function registerTasks(pi: ExtensionAPI): TasksAccess {
 			};
 		},
 		renderCall(args, theme) {
-			const { Text } = require("@mariozechner/pi-tui");
+			const { Text } = require("@earendil-works/pi-tui");
 			const idx = args.task as number;
 			const label = state.tasks[idx]?.label ?? "...";
 			const preview = label.length > 50 ? `${label.slice(0, 50)}...` : label;
