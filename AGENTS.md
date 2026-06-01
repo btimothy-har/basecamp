@@ -2,7 +2,7 @@
 
 ## What is basecamp
 
-A project-aware Pi extension suite for AI coding agents. Configures project context, manages isolated git worktrees, and provides semantic memory over past sessions.
+A project-aware Pi extension suite for AI coding agents. Basecamp configures project context, manages isolated git worktrees, and provides workflow guardrails for coding sessions.
 
 Root-level products:
 
@@ -10,7 +10,6 @@ Root-level products:
 |---------|-----------|---------|
 | `basecamp` | `basecamp-cli/` | Python CLI for setup/config and project configuration |
 | Basecamp Pi extension | `pi-extension/` | Pi package for project context, session UI, worktrees, workflow, git, and engineering skills |
-| `pi-memory` | `pi-memory/` | Python local memory service plus Pi package for service startup/integration |
 
 Package-specific architecture lives in the repo map below.
 
@@ -47,23 +46,6 @@ pi-extension/                   # Core Pi package
     ├── git/                    # Git guards, PR/issue workflow commands, publish tools
     ├── state/                  # Session state persistence
     └── engineering/            # Engineering runtime tools, prompts, and engineering/Pi skills
-
-pi-memory/
-├── pyproject.toml              # Python package exposing the `pi-memory` CLI
-├── package.json                # Pi package manifest for memory service integration
-├── extension/src/              # Pi extension for service startup/reconnect
-├── src/pi_memory/
-│   ├── cli/                    # Click entry point for service/admin commands
-│   ├── db/                     # SQLAlchemy database/session/schema modules
-│   ├── ingest/                 # Transcript observation and incremental ingest service
-│   ├── jobs/                   # Durable job store, dispatcher, runner, and job handlers
-│   ├── interpretation/         # PydanticAI session interpretation contracts/factories
-│   ├── quality/                # Interpretation quality reports and checks
-│   ├── durable/                # Durable memory candidates, relations, reducer, and audit
-│   ├── projection/             # Rebuildable Chroma projection over SQLite-backed records
-│   ├── recall/                 # Raw transcript recall/search surface
-│   └── server/                 # FastAPI app and service lifecycle state
-└── tests/                      # pytest suite for memory service, jobs, recall, and projection
 ```
 
 ## Architecture Decisions
@@ -74,9 +56,9 @@ The system prompt is fully replaced, not appended. This gives complete control o
 
 Prompts are layered (environment → working style → project context → tools/skills) so that each concern is independently overridable. Project context is assembled directly into the system prompt alongside all other layers.
 
-### Pi Packages
+### Pi Package Scope
 
-Core session, project, workspace, workflow, git, model-alias, capability, and engineering functionality is bundled in `pi-extension/`. Memory functionality is owned by `pi-memory/`, which runs the local Python service and provides the thin Pi package that starts or reconnects to it. The old `pi-observer` implementation has been removed from the active source tree; use git history for reference if needed.
+Core session, project, workspace, workflow, git, model-alias, capability, and engineering functionality is bundled in `pi-extension/`. Basecamp no longer ships a separate automatic session-history or recall package. Keep future work in the core extension unless a new product boundary is deliberately introduced.
 
 ### Model Aliases
 
@@ -86,7 +68,7 @@ Model alias resolution is owned by `pi-extension/src/model-aliases`, backed by `
 
 Session launch sets `BASECAMP_*` env vars on `process.env`. Subagents spawned via the `agent` tool inherit these automatically as child processes.
 
-Relevant vars include `BASECAMP_PROJECT`, `BASECAMP_REPO`, `BASECAMP_SCRATCH_DIR`, `BASECAMP_WORKTREE_DIR`, and `BASECAMP_WORKTREE_LABEL`. `BASECAMP_REPO` is always the git repo name, never a worktree label or directory name. Memory services scope state by repo/project/session, not the current active worktree. `BASECAMP_WORKTREE_DIR` and `BASECAMP_WORKTREE_LABEL` are set to the active worktree values, or empty strings when no worktree is active.
+Relevant vars include `BASECAMP_PROJECT`, `BASECAMP_REPO`, `BASECAMP_SCRATCH_DIR`, `BASECAMP_WORKTREE_DIR`, and `BASECAMP_WORKTREE_LABEL`. `BASECAMP_REPO` is always the git repo name, never a worktree label or directory name. `BASECAMP_WORKTREE_DIR` and `BASECAMP_WORKTREE_LABEL` are set to the active worktree values, or empty strings when no worktree is active.
 
 ### Worktree Design
 
@@ -95,15 +77,14 @@ Worktrees live in `~/.worktrees/<repo>/<label>/` rather than inside the repo to 
 ## Development
 
 - **Python**: 3.12+, managed with `uv`
-- **Install (dev)**: `uv run install.py -e` (editable mode; installs `basecamp` and `pi-memory`, then registers the Basecamp and memory Pi packages)
+- **Install (dev)**: `uv run install.py -e` (editable mode; installs `basecamp`, then registers the Basecamp Pi package)
 - **Python lint**: `uv run ruff check .` / `uv run ruff format --check .`
-- **TypeScript check**: `npm --prefix pi-extension run check` and `npm --prefix pi-memory run check`
-- **Fix**: `make fix` runs Python fixes and both TypeScript package fix/format commands
+- **TypeScript check**: `npm --prefix pi-extension run check`
+- **Fix**: `make fix` runs Python fixes and the Pi extension fix/format commands
 
 ### Testing
 
 - **Run all**: `make test` from repo root runs Python pytest plus the pi-extension TypeScript unit suites.
-- **Python**: `uv run pytest` uses root `pyproject.toml` — `testpaths = ["basecamp-cli/tests", "pi-memory/tests"]`, `pythonpath = ["basecamp-cli/src", "pi-memory/src"]`.
+- **Python**: `uv run pytest` uses root `pyproject.toml` — `testpaths = ["basecamp-cli/tests"]`, `pythonpath = ["basecamp-cli/src"]`.
 - **TypeScript**: `npm --prefix pi-extension test` runs the session/state/project/workspace/git/workflow unit suites.
 - **Basecamp tests** live under `basecamp-cli/tests/` and cover settings/config.
-- **Memory tests** live under `pi-memory/tests/` and cover the memory service, jobs, recall, projection, and durable memory. `TESTING=1` is set by pytest config.
