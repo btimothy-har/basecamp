@@ -1,9 +1,9 @@
 [tool.uv.workspace]
-members = ["basecamp-cli", "pi-memory"]
+members = ["basecamp-cli"]
 
 [tool.pytest.ini_options]
-testpaths = ["basecamp-cli/tests", "pi-memory/tests"]
-pythonpath = ["basecamp-cli/src", "pi-memory/src"]
+testpaths = ["basecamp-cli/tests"]
+pythonpath = ["basecamp-cli/src"]
 env = ["TESTING=1"]
 
 [tool.ruff]

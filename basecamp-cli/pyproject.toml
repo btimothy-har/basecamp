@@ -1,7 +1,7 @@
 [project]
 name = "basecamp"
 version = "0.8.0"
-description = "Multi-project workspace launcher and semantic memory for AI coding agents"
+description = "Multi-project workspace launcher and workflow tooling for AI coding agents"
 requires-python = ">=3.12"
 dependencies = [
     "pydantic>=2.0",

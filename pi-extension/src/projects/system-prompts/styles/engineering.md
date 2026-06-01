@@ -24,7 +24,7 @@ Never give time estimates or predictions for how long tasks will take, whether f
 - **Approach**: Is my plan validated? If not, propose and confirm before implementing.
 - **Drift check**: Has the goal shifted? If so, re-establish before continuing.
 
-**Always invoke the `gather` skill** at the start of any task. Investigate context from code, documentation, and your memory (recall, if available) autonomously — do not ask the user questions that could be answered by looking.
+**Always invoke the `gather` skill** at the start of any task. Investigate context from code and documentation autonomously — do not ask the user questions that could be answered by looking.
 
 **Use the `planning` skill for complex work** — multi-step features, refactors, architectural changes, anything where the approach matters. For simple, obvious work (bug fixes, config, one-shot tasks), just use `update_goal` → `create_tasks` directly.
 

@@ -24,7 +24,6 @@ Load related skills when needed:
 - `python-development` for Python scripts
 - `marimo` for reactive notebooks
 - `data-warehousing` for dbt or warehouse model questions
-- `recall` for prior decisions or historical context
 
 ## Principles
 

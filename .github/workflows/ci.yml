@@ -33,24 +33,12 @@ jobs:
       working-directory: pi-extension
       run: npm ci
 
-    - name: Install Memory Extension Dependencies
-      working-directory: pi-memory
-      run: npm ci
-
     - name: Typecheck (Extension)
       working-directory: pi-extension
       run: npx tsc
 
-    - name: Typecheck (Memory Extension)
-      working-directory: pi-memory
-      run: npx tsc
-
     - name: Lint (Extension)
       working-directory: pi-extension
-      run: npx biome check .
-
-    - name: Lint (Memory Extension)
-      working-directory: pi-memory
       run: npx biome check .
 
     - name: Run Python Tests

@@ -1,6 +1,6 @@
 # basecamp
 
-Project-aware Pi extension for AI coding agents. Configures project context, manages isolated git worktrees, and provides semantic memory over past sessions.
+Project-aware Pi extension for AI coding agents. Configures project context, manages isolated git worktrees, and supports workflow automation.
 
 ```bash
 git clone https://github.com/btimothy-har/basecamp.git
@@ -36,7 +36,7 @@ uv run install.py -e        # editable (recommended for development)
 uv run install.py --no-editable
 ```
 
-This installs the Python tools `basecamp` and `pi-memory`, registers the Pi packages in `pi-extension/` and `pi-memory/`, and saves the Basecamp install directory to `~/.pi/basecamp/config.json`.
+This installs the Python tool `basecamp`, registers the Pi package in `pi-extension/`, and saves the Basecamp install directory to `~/.pi/basecamp/config.json`.
 
 Then initialize the environment:
 
@@ -44,7 +44,7 @@ Then initialize the environment:
 basecamp setup                     # check prerequisites, create styles/context dirs, create default config
 ```
 
-If `basecamp` or `pi-memory` aren't in your PATH:
+If `basecamp` isn't in your PATH:
 
 ```bash
 export PATH="$HOME/.local/bin:$PATH"
@@ -54,14 +54,12 @@ export PATH="$HOME/.local/bin:$PATH"
 
 ```bash
 uv tool upgrade basecamp
-uv tool upgrade pi-memory
 ```
 
 ### Uninstalling
 
 ```bash
 uv tool uninstall basecamp
-uv tool uninstall pi-memory
 ```
 
 ## Usage
@@ -153,58 +151,6 @@ Projects are defined in `~/.pi/basecamp/config.json`:
 
 Existing local config files with the older project directory schema are migrated to `repo_root` and `additional_dirs` by setup/config flows.
 
-### Pi memory interpretation
-
-`pi-memory` session interpretation uses PydanticAI at runtime. Configure `interpretation_model` with a PydanticAI `provider:model` string before running interpretation jobs. Examples include:
-
-- `openai:gpt-5.5`
-- `anthropic:claude-opus-4-6`
-- `google:gemini-2.5-pro`
-- `openrouter:openai/gpt-5.5`
-
-Inspect the current settings:
-
-```bash
-pi-memory config
-pi-memory config --json
-```
-
-Set the session interpretation model:
-
-```bash
-pi-memory config --interpretation-model anthropic:claude-sonnet-4-6
-```
-
-Tool activity summarization can use a smaller/faster model. If unset, it falls back to the interpretation model. Semantic quality assessment can use `quality_model`; if unset, it falls back to the tool-summary model and then the interpretation model.
-
-```bash
-pi-memory config --tool-summary-model anthropic:claude-haiku-4-5
-pi-memory config --quality-model google:gemini-2.5-pro
-pi-memory config --tool-summary-concurrency 25
-```
-
-Environment overrides are inherited by dispatcher-spawned `run-job` child processes:
-
-```bash
-export PI_MEMORY_INTERPRETATION_MODEL=openrouter:openai/gpt-5.5
-export PI_MEMORY_TOOL_SUMMARY_MODEL=anthropic:claude-haiku-4-5
-export PI_MEMORY_QUALITY_MODEL=google:gemini-2.5-pro
-export PI_MEMORY_TOOL_SUMMARY_CONCURRENCY=25
-```
-
-`PI_MEMORY_TOOL_SUMMARY_CONCURRENCY` controls the bounded window of independent one-tool summary calls. The default is conservative (`10`); valid values are `1` through `100`.
-
-When interpretation jobs run, `pi-memory` first stores raw transcript rows canonically in SQLite, then derives chronological `activity_units.activity_text` for downstream model prompts. Raw `transcript_entries.raw_line` remains the source of truth. Tool call/result pairs are summarized one at a time by the configured tool-summary model; session interpretation consumes the cleaned chronological activity text plus citation ids, not raw JSON transcript lines. `pi-memory` does not store API keys. Configure provider credentials with native provider environment variables: `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `GEMINI_API_KEY` or `GOOGLE_API_KEY`, and `OPENROUTER_API_KEY`. Set `OPENROUTER_BASE_URL` only when an `openrouter:...` model should use a non-default OpenRouter API base URL.
-
-Clear persisted settings:
-
-```bash
-pi-memory config --clear-interpretation-model
-pi-memory config --clear-tool-summary-model
-pi-memory config --clear-quality-model
-pi-memory config --clear-tool-summary-concurrency
-```
-
 ## Prompt System
 
 basecamp replaces the default system prompt via a `before_agent_start` hook. This gives you:
@@ -268,45 +214,12 @@ The workspace service owns the `~/.worktrees/<repo>/<label>/` storage convention
 - Additional directories stay on their configured checkouts throughout the session
 - Only works with git repositories
 
-## Semantic Memory
-
-`pi-memory` is the active memory subsystem. It runs a local Python service for canonical transcript capture, durable job processing, raw recall, deterministic episode structure, activity-text projection, tool activity summarization, session interpretation, interpretation quality reports, durable memory promotion, and rebuildable semantic projection. Pi integration stays thin: the Pi package starts or reconnects to the local service through unauthenticated `/health` checks and delegates memory behavior to the service.
-
-The former `pi-observer` subsystem has been removed from the active source tree. Historical observer stores are not required by `pi-memory`; use git history if the old implementation is needed for reference.
-
-### How it works
-
-1. **Serve** — `pi-memory serve` runs the local FastAPI service backed by SQLite and service-owned durable jobs.
-2. **Observe** — `pi-memory observe` or the authenticated HTTP observe endpoint records transcript observations, stores transcript deltas canonically, and enqueues processing jobs when new entries are available. HTTP observe accepts only `.jsonl` transcript paths under approved transcript roots.
-3. **Process** — Durable jobs derive raw recall indexes, deterministic episode/activity structure, tool activity summaries, session interpretations, quality reports, projection records, and durable memory candidates.
-4. **Recall** — Raw transcript recall is available today; unified recall over session claims and durable memory projection is the next service-backed recall surface.
-
-### pi-memory CLI
-
-```bash
-pi-memory serve             # Run the local memory service
-pi-memory status            # Show service status
-pi-memory config            # Inspect persisted model/concurrency settings
-pi-memory observe PATH      # Record a transcript observation
-```
-
-Internal inspection commands are grouped under `pi-memory debug ...` and are not part of the stable user workflow. HTTP `/v1/*` endpoints require the per-launch bearer token stored in the local server metadata file; `/health` stays unauthenticated for service bootstrap checks. Status output is intentionally redacted and does not expose process ids or memory-directory paths.
-
-### Storage
-
-All active memory data is local to `pi-memory`:
-
-- `~/.pi/memory/memory.db` — canonical transcript, job, recall, episode, activity-text, interpretation, quality, projection, and durable-memory store
-- `~/.pi/memory/config.json` — model/concurrency settings
-- `~/.pi/basecamp/config.json` — Basecamp settings, including the installed repo path
-
 ## Package Layout
 
 basecamp is split into root-level products:
 
 - `basecamp-cli/` — Python package for the `basecamp` setup/config CLI
 - `pi-extension/` — Pi package for project context, session UI, worktrees, workflow, git, and engineering skills
-- `pi-memory/` — Python and Pi package for the active local memory service, transcript capture, jobs, raw recall, episode structure, session interpretation, quality reports, durable memory, and semantic projection
 
 ## License
 
