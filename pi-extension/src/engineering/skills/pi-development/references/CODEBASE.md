@@ -1,12 +1,12 @@
 # Pi Codebase Reference
 
-When the bundled docs aren't enough, clone the pi-mono repo and investigate the source directly.
+When the bundled docs aren't enough, clone the pi repo and investigate the source directly.
 
 ## Cloning
 
 ```bash
-git clone https://github.com/badlogic/pi-mono /tmp/pi-mono
-cd /tmp/pi-mono
+git clone https://github.com/earendil-works/pi /tmp/pi
+cd /tmp/pi
 ```
 
 Shallow clone is fine for reading: `git clone --depth 1 ...`
@@ -14,7 +14,7 @@ Shallow clone is fine for reading: `git clone --depth 1 ...`
 ## Repository Layout
 
 ```
-pi-mono/
+pi/
 ├── AGENTS.md                  # Dev rules and contribution guidelines
 ├── CONTRIBUTING.md
 ├── packages/
@@ -199,7 +199,7 @@ The `examples/extensions/` directory has 50+ working extensions covering every A
 If you need to build and test:
 
 ```bash
-cd /tmp/pi-mono
+cd /tmp/pi
 npm install
 npm run build
 ```
@@ -207,13 +207,13 @@ npm run build
 Run from source:
 
 ```bash
-/tmp/pi-mono/pi-test.sh
+/tmp/pi/pi-test.sh
 ```
 
 Run a specific test:
 
 ```bash
-cd /tmp/pi-mono/packages/coding-agent
+cd /tmp/pi/packages/coding-agent
 npx tsx ../../node_modules/vitest/dist/cli.js --run test/specific.test.ts
 ```
 
@@ -222,4 +222,4 @@ npx tsx ../../node_modules/vitest/dist/cli.js --run test/specific.test.ts
 - **Type definitions:** Check `node_modules/@earendil-works/pi-coding-agent/dist/` in your project for compiled types when the source isn't available
 - **Public API:** `packages/coding-agent/src/index.ts` re-exports everything intended for extension authors
 - **Faux provider:** `packages/ai/src/providers/faux.ts` is a mock LLM for tests — use it to understand the streaming protocol
-- **Never run `npm test` or `npm run dev`** in the pi-mono repo (per AGENTS.md guidelines)
+- **Never run `npm test` or `npm run dev`** in the pi repo (per AGENTS.md guidelines)

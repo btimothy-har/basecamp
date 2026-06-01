@@ -5,7 +5,7 @@ description: Developing pi extensions, skills, prompt templates, themes, and pac
 
 # Pi Development
 
-Build extensions, skills, prompt templates, themes, and packages for the [pi coding agent](https://github.com/badlogic/pi-mono).
+Build extensions, skills, prompt templates, themes, and packages for the [pi coding agent](https://github.com/earendil-works/pi).
 
 ## Concepts
 
@@ -97,7 +97,7 @@ JSON files defining 51 color tokens for the TUI. Must define all tokens.
 
 ```json
 {
-  "$schema": "https://raw.githubusercontent.com/badlogic/pi-mono/main/packages/coding-agent/src/modes/interactive/theme/theme-schema.json",
+  "$schema": "https://raw.githubusercontent.com/earendil-works/pi/main/packages/coding-agent/src/modes/interactive/theme/theme-schema.json",
   "name": "my-theme",
   "vars": { "primary": "#00aaff" },
   "colors": {
@@ -173,10 +173,10 @@ turn_end → agent_end → session_shutdown
 
 ## Source Code — read [CODEBASE.md](references/CODEBASE.md)
 
-When the bundled docs aren't enough, clone the pi-mono repo and read the source:
+When the bundled docs aren't enough, clone the pi repo and read the source:
 
 ```bash
-git clone --depth 1 https://github.com/badlogic/pi-mono /tmp/pi-mono
+git clone --depth 1 https://github.com/earendil-works/pi /tmp/pi
 ```
 
 Key files to investigate:
