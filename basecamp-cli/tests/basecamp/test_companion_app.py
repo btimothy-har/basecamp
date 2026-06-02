@@ -158,6 +158,38 @@ def test_file_browser_preview_show_path(tmp_path: Path) -> None:
     asyncio.run(run_preview_test())
 
 
+def test_file_browser_selection_updates_preview(tmp_path: Path) -> None:
+    repo = tmp_path / "repo"
+    snapshot_path = tmp_path / "snapshot.json"
+    _build_repo(repo)
+    _write_snapshot(snapshot_path, session_id="abcd-1234-5678-90ef")
+
+    (repo / "nav_target.py").write_text("print('navigated')\n", encoding="utf-8")
+
+    app = CompanionApp(snapshot_path=snapshot_path, cwd=repo)
+
+    async def run_selection_test() -> None:
+        async with app.run_test() as pilot:
+            await pilot.pause(0.2)
+            app.query_one("#body", ContentSwitcher).current = "files-body"
+            await pilot.pause(0.3)
+
+            tree = app.query_one("#file-tree", DirectoryTree)
+            node = next(
+                child
+                for child in tree.root.children
+                if child.data is not None and child.data.path.name == "nav_target.py"
+            )
+            tree.post_message(DirectoryTree.FileSelected(node, node.data.path))
+            await pilot.pause(0.1)
+
+            preview_content = app.query_one("#file-preview-content", Static)
+            assert isinstance(preview_content.content, Syntax)
+            assert "print('navigated')" in preview_content.content.code
+
+    asyncio.run(run_selection_test())
+
+
 def test_diff_bindings_are_scoped_to_diff_body() -> None:
     diff_keys = {binding.key for binding in DiffBody.BINDINGS}
     app_keys = {binding.key for binding in CompanionApp.BINDINGS}
