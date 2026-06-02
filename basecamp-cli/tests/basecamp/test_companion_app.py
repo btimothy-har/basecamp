@@ -8,11 +8,13 @@ import subprocess
 import tempfile
 from pathlib import Path
 
+import basecamp.companion.app as companion_app
 from basecamp.companion.app import CompanionApp, DiffBody, DiffView, FileBrowser, FileList, WorkspacePanel
 from basecamp.companion.snapshot import collapse_home
 from rich.style import Style
 from rich.syntax import Syntax
 from textual.app import App, ComposeResult
+from textual.containers import VerticalScroll
 from textual.widgets import ContentSwitcher, DirectoryTree, Footer, ListView, Static
 
 
@@ -161,7 +163,7 @@ def test_file_browser_preview_show_path(tmp_path: Path) -> None:
     asyncio.run(run_preview_test())
 
 
-def test_file_browser_selection_updates_preview(tmp_path: Path) -> None:
+def test_file_browser_highlight_updates_preview_live(tmp_path: Path) -> None:
     repo = tmp_path / "repo"
     snapshot_path = tmp_path / "snapshot.json"
     _build_repo(repo)
@@ -171,10 +173,10 @@ def test_file_browser_selection_updates_preview(tmp_path: Path) -> None:
 
     app = CompanionApp(snapshot_path=snapshot_path, cwd=repo)
 
-    async def run_selection_test() -> None:
+    async def run_highlight_test() -> None:
         async with app.run_test() as pilot:
             await pilot.pause(0.2)
-            app.query_one("#body", ContentSwitcher).current = "files-body"
+            await pilot.press("m")
             await pilot.pause(0.3)
 
             tree = app.query_one("#file-tree", DirectoryTree)
@@ -183,14 +185,49 @@ def test_file_browser_selection_updates_preview(tmp_path: Path) -> None:
                 for child in tree.root.children
                 if child.data is not None and child.data.path.name == "nav_target.py"
             )
-            tree.post_message(DirectoryTree.FileSelected(node, node.data.path))
+            tree.post_message(DirectoryTree.NodeHighlighted(node))
             await pilot.pause(0.1)
 
             preview_content = app.query_one("#file-preview-content", Static)
             assert isinstance(preview_content.content, Syntax)
             assert "print('navigated')" in preview_content.content.code
 
-    asyncio.run(run_selection_test())
+    asyncio.run(run_highlight_test())
+
+
+def test_file_browser_selection_focuses_preview_then_escape_returns_tree(tmp_path: Path) -> None:
+    repo = tmp_path / "repo"
+    snapshot_path = tmp_path / "snapshot.json"
+    _build_repo(repo)
+    _write_snapshot(snapshot_path, session_id="abcd-1234-5678-90ef")
+
+    (repo / "focus_target.py").write_text("print('focused')\n", encoding="utf-8")
+
+    app = CompanionApp(snapshot_path=snapshot_path, cwd=repo)
+
+    async def run_focus_drill_test() -> None:
+        async with app.run_test() as pilot:
+            await pilot.pause(0.2)
+            await pilot.press("m")
+            await pilot.pause(0.3)
+
+            tree = app.query_one("#file-tree", DirectoryTree)
+            node = next(
+                child
+                for child in tree.root.children
+                if child.data is not None and child.data.path.name == "focus_target.py"
+            )
+            tree.post_message(DirectoryTree.FileSelected(node, node.data.path))
+            await pilot.pause(0.1)
+
+            preview = app.query_one("#file-preview", VerticalScroll)
+            assert preview.has_focus
+
+            await pilot.press("escape")
+            await pilot.pause(0.05)
+            assert tree.has_focus
+
+    asyncio.run(run_focus_drill_test())
 
 
 def test_diff_bindings_are_scoped_to_diff_body() -> None:
@@ -201,7 +238,7 @@ def test_diff_bindings_are_scoped_to_diff_body() -> None:
     assert {"left", "right", "c", "d"}.isdisjoint(app_keys)
 
 
-def test_modality_switches_body_and_focus(tmp_path: Path) -> None:
+def test_mode_toggle_switches_body_and_focus(tmp_path: Path) -> None:
     repo = tmp_path / "repo"
     snapshot_path = tmp_path / "snapshot.json"
     _build_repo(repo)
@@ -220,19 +257,99 @@ def test_modality_switches_body_and_focus(tmp_path: Path) -> None:
             assert body.current == "diff-body"
             assert diff_view.has_focus
 
-            await pilot.press("1")
+            await pilot.press("m")
             await pilot.pause(0.05)
 
             assert body.current == "files-body"
             assert file_tree.has_focus
 
-            await pilot.press("2")
+            await pilot.press("m")
             await pilot.pause(0.05)
 
             assert body.current == "diff-body"
             assert diff_view.has_focus
 
     asyncio.run(run_modality_test())
+
+
+def test_footer_binding_order_by_mode(tmp_path: Path) -> None:
+    repo = tmp_path / "repo"
+    snapshot_path = tmp_path / "snapshot.json"
+    _build_repo(repo)
+    _write_snapshot(snapshot_path, session_id="abcd-1234-5678-90ef")
+
+    app = CompanionApp(snapshot_path=snapshot_path, cwd=repo)
+
+    def visible_descriptions() -> list[str]:
+        return [binding.binding.description for binding in app.screen.active_bindings.values() if binding.binding.show]
+
+    async def run_footer_order_test() -> None:
+        async with app.run_test() as pilot:
+            await pilot.pause(0.2)
+
+            diff_descriptions = [
+                description
+                for description in visible_descriptions()
+                if description in {"Mode", "Prev file", "Next file", "Compact", "Diff scope", "Quit"}
+            ]
+            assert diff_descriptions == ["Mode", "Prev file", "Next file", "Compact", "Diff scope", "Quit"]
+
+            await pilot.press("m")
+            await pilot.pause(0.05)
+
+            files_descriptions = [
+                description
+                for description in visible_descriptions()
+                if description in {"Mode", "Open", "Root", "Back", "Quit"}
+            ]
+            assert files_descriptions == ["Mode", "Open", "Root", "Back", "Quit"]
+
+    asyncio.run(run_footer_order_test())
+
+
+def test_file_browser_open_in_editor(tmp_path: Path, monkeypatch) -> None:
+    repo = tmp_path / "repo"
+    snapshot_path = tmp_path / "snapshot.json"
+    _build_repo(repo)
+    _write_snapshot(snapshot_path, session_id="abcd-1234-5678-90ef")
+
+    target = repo / "open_target.py"
+    target.write_text("print('open')\n", encoding="utf-8")
+
+    popen_calls: list[list[str]] = []
+
+    def fake_popen(argv: list[str]) -> None:
+        popen_calls.append(argv)
+        return None
+
+    app = CompanionApp(snapshot_path=snapshot_path, cwd=repo)
+
+    async def run_open_test() -> None:
+        async with app.run_test() as pilot:
+            await pilot.pause(0.2)
+            await pilot.press("m")
+            await pilot.pause(0.3)
+
+            tree = app.query_one("#file-tree", DirectoryTree)
+            node = next(
+                child
+                for child in tree.root.children
+                if child.data is not None and child.data.path.name == "open_target.py"
+            )
+            tree.move_cursor(node)
+
+            monkeypatch.setattr(companion_app.shutil, "which", lambda _: "/fake/code")
+            monkeypatch.setattr(companion_app.subprocess, "Popen", fake_popen)
+            browser = app.query_one("#files-body", FileBrowser)
+            browser.action_open_in_editor()
+
+            assert popen_calls == [["/fake/code", str(target)]]
+
+            monkeypatch.setattr(companion_app.shutil, "which", lambda _: None)
+            browser.action_open_in_editor()
+            assert popen_calls == [["/fake/code", str(target)]]
+
+    asyncio.run(run_open_test())
 
 
 def test_file_browser_root_toggle_two_roots(tmp_path: Path) -> None:
@@ -311,7 +428,7 @@ def test_file_tree_root_label_collapses_home_path() -> None:
             async with app.run_test() as pilot:
                 await pilot.pause(0.2)
 
-                await pilot.press("1")
+                await pilot.press("m")
                 await pilot.pause(0.1)
 
                 tree = app.query_one("#file-tree", DirectoryTree)
@@ -337,7 +454,7 @@ def test_refresh_does_not_disturb_file_tree_focus(tmp_path: Path) -> None:
         async with app.run_test() as pilot:
             await pilot.pause(0.2)
 
-            await pilot.press("1")
+            await pilot.press("m")
             await pilot.pause(0.05)
 
             file_tree = app.query_one("#file-tree", DirectoryTree)

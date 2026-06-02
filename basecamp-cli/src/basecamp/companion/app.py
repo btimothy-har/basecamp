@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import shutil
+import subprocess
 from collections.abc import Iterable
 from pathlib import Path
 
@@ -12,9 +14,10 @@ from rich.style import Style
 from rich.syntax import Syntax
 from rich.text import Text
 from textual.app import App, ComposeResult
-from textual.binding import Binding
+from textual.binding import ActiveBinding, Binding
 from textual.containers import Horizontal, Vertical, VerticalScroll
 from textual.message import Message
+from textual.screen import Screen
 from textual.widgets import ContentSwitcher, DirectoryTree, Footer, Label, ListItem, ListView, Static
 from textual.widgets.tree import TreeNode
 
@@ -255,6 +258,7 @@ class DiffBody(Vertical):
     """Diff modality body containing the diff renderer and file list."""
 
     BINDINGS = [
+        Binding("m", "app.toggle_mode", "Mode", priority=True),
         Binding("left", "prev_file", "Prev file", priority=True),
         Binding("right", "next_file", "Next file", priority=True),
         Binding("c", "toggle_compact", "Compact", priority=True),
@@ -296,7 +300,10 @@ class FileBrowser(Horizontal):
     """Files modality body containing a tree and syntax preview."""
 
     BINDINGS = [
-        Binding("r", "toggle_root", "Root", show=True),
+        Binding("m", "app.toggle_mode", "Mode"),
+        Binding("o", "open_in_editor", "Open"),
+        Binding("r", "toggle_root", "Root"),
+        Binding("escape", "focus_tree", "Back"),
     ]
 
     _placeholder = "Select a file to preview"
@@ -375,21 +382,73 @@ class FileBrowser(Horizontal):
             )
         )
 
+    def on_tree_node_highlighted(self, event: DirectoryTree.NodeHighlighted) -> None:
+        data = getattr(event.node, "data", None)
+        if data is None:
+            return
+
+        path = data.path
+        if path.is_file():
+            self.show_path(path)
+            return
+
+        if path.is_dir():
+            self._clear_preview()
+
     def on_directory_tree_file_selected(self, event: DirectoryTree.FileSelected) -> None:
         self.show_path(event.path)
+        self.query_one("#file-preview", VerticalScroll).focus()
 
     def on_directory_tree_directory_selected(self, _: DirectoryTree.DirectorySelected) -> None:
         self._clear_preview()
+
+    def action_focus_tree(self) -> None:
+        self.query_one("#file-tree", _CompanionDirectoryTree).focus()
+
+    def action_open_in_editor(self) -> None:
+        tree = self.query_one("#file-tree", _CompanionDirectoryTree)
+        node = tree.cursor_node
+        if node is None or node.data is None:
+            return
+
+        path = node.data.path
+        code_path = shutil.which("code")
+        if code_path is None:
+            self.app.notify("VS Code (code) not found on PATH", severity="warning")
+            return
+
+        try:
+            subprocess.Popen([code_path, str(path)])  # noqa: S603
+        except OSError:
+            return
+
+
+class _MenuOrderedScreen(Screen):
+    """Default screen that orders footer bindings as [global mode][local][quit]."""
+
+    @property
+    def active_bindings(self) -> dict[str, ActiveBinding]:
+        def rank(active: ActiveBinding) -> int:
+            action = active.binding.action
+            if action.endswith("toggle_mode"):
+                return 0
+            if action == "quit":
+                return 2
+            return 1
+
+        bindings = super().active_bindings
+        return dict(sorted(bindings.items(), key=lambda item: rank(item[1])))
 
 
 class CompanionApp(App[None]):
     """Companion dashboard app."""
 
-    BINDINGS = [
-        Binding("q", "quit", "Quit"),
-        Binding("1", "switch_body('files-body')", "Files"),
-        Binding("2", "switch_body('diff-body')", "Diff"),
-    ]
+    BINDINGS = [Binding("q", "quit", "Quit")]
+
+    def get_default_screen(self) -> Screen:
+        """Use the menu-ordered screen so the footer reads mode-first, quit-last."""
+
+        return _MenuOrderedScreen()
 
     CSS = """
     Screen {
@@ -528,18 +587,16 @@ class CompanionApp(App[None]):
         self._set_diff_title()
         self._refresh()
 
-    def action_switch_body(self, body_id: str) -> None:
-        """Switch the active body and move focus to its primary widget."""
+    def action_toggle_mode(self) -> None:
+        """Toggle between diff and files bodies, focusing the active pane."""
 
         switcher = self.query_one("#body", ContentSwitcher)
-        if switcher.current == body_id:
-            return
-
-        switcher.current = body_id
-        if body_id == "files-body":
+        if switcher.current == "diff-body":
+            switcher.current = "files-body"
             self.query_one("#file-tree", _CompanionDirectoryTree).focus()
             return
 
+        switcher.current = "diff-body"
         self.query_one("#diff-view", DiffView).focus()
 
     def on_file_list_selection_changed(self, _: FileList.SelectionChanged) -> None:
