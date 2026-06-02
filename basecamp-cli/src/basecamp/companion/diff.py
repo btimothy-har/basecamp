@@ -63,6 +63,35 @@ def make_git_runner(cwd: Path) -> GitRunner:
     return run
 
 
+def main_worktree_path(git: GitRunner) -> Path | None:
+    """Return the primary checkout path (first entry of `git worktree list --porcelain`)."""
+
+    code, output = git(["worktree", "list", "--porcelain"])
+    if code != 0:
+        return None
+
+    for line in output.splitlines():
+        if line.startswith("worktree "):
+            path = line.removeprefix("worktree ").strip()
+            if path:
+                return Path(path)
+
+    return None
+
+
+def resolve_browse_roots(git: GitRunner, cwd: Path) -> list[Path]:
+    """Return distinct roots to browse: the active worktree (cwd) then the main checkout."""
+
+    worktree_root = cwd.resolve()
+    roots = [worktree_root]
+
+    main_root = main_worktree_path(git)
+    if main_root is not None and main_root.resolve() != worktree_root:
+        roots.append(main_root.resolve())
+
+    return roots
+
+
 def detect_base_branch(git: GitRunner) -> str | None:
     """Detect the most likely base branch reference."""
 
@@ -272,6 +301,38 @@ def is_probably_binary(data: bytes) -> bool:
         return True
 
     return False
+
+
+def read_text_for_preview(path: Path) -> tuple[str, str | None]:
+    """Return a guard message and UTF-8 text suitable for file preview."""
+
+    if path.is_dir():
+        return "", None
+
+    try:
+        size = path.stat().st_size
+    except OSError:
+        return "Unable to read file", None
+
+    # Reject by size before reading so oversize files are never loaded into memory
+    # (preview fires live on every cursor move).
+    if size > MAX_DIFF_BYTES:
+        return f"File too large ({size} bytes) — not shown", None
+
+    try:
+        data = path.read_bytes()
+    except OSError:
+        return "Unable to read file", None
+
+    if is_probably_binary(data):
+        return "Binary file — not shown", None
+
+    text = data.decode("utf-8")
+    line_count = len(text.splitlines())
+    if line_count > MAX_DIFF_LINES:
+        return f"File too large ({line_count} lines) — not shown", None
+
+    return "", text
 
 
 def collect_changes(git: GitRunner, mode: DiffMode = "all") -> tuple[str | None, list[FileStatus]]:

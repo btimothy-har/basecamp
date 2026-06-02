@@ -2,17 +2,24 @@
 
 from __future__ import annotations
 
+import shutil
+import subprocess
+from collections.abc import Iterable
 from pathlib import Path
 
+from pygments.lexer import Lexer
 from pygments.lexers import TextLexer, get_lexer_for_filename
 from pygments.util import ClassNotFound
+from rich.style import Style
 from rich.syntax import Syntax
 from rich.text import Text
 from textual.app import App, ComposeResult
-from textual.binding import Binding
-from textual.containers import Vertical, VerticalScroll
+from textual.binding import ActiveBinding, Binding
+from textual.containers import Horizontal, Vertical, VerticalScroll
 from textual.message import Message
-from textual.widgets import Footer, Label, ListItem, ListView, Static
+from textual.screen import Screen
+from textual.widgets import ContentSwitcher, DirectoryTree, Footer, Label, ListItem, ListView, Static
+from textual.widgets.tree import TreeNode
 
 from basecamp.companion.diff import (
     DIFF_MODES,
@@ -25,8 +32,19 @@ from basecamp.companion.diff import (
     file_diff_lines,
     git_status_summary,
     make_git_runner,
+    read_text_for_preview,
+    resolve_browse_roots,
 )
-from basecamp.companion.snapshot import CompanionSnapshot, load_snapshot, render_workspace_lines
+from basecamp.companion.snapshot import CompanionSnapshot, collapse_home, load_snapshot, render_workspace_lines
+
+
+def lexer_for_filename(file_path: str) -> Lexer:
+    """Return the best lexer for a filename, falling back to plain text."""
+
+    try:
+        return get_lexer_for_filename(file_path)
+    except ClassNotFound:
+        return TextLexer()
 
 
 class WorkspacePanel(Static):
@@ -183,12 +201,7 @@ class DiffView(VerticalScroll):
         )
 
     def _render_diff(self, file_path: str, diff_lines: list[DiffLine]) -> Text:
-        try:
-            lexer = get_lexer_for_filename(file_path)
-        except ClassNotFound:
-            lexer = TextLexer()
-
-        syntax = Syntax(code="", lexer=lexer, line_numbers=False, word_wrap=False)
+        syntax = Syntax(code="", lexer=lexer_for_filename(file_path), line_numbers=False, word_wrap=False)
         line_number_width = max(1, len(str(max((line.line_no or 0) for line in diff_lines) or 1)))
 
         color_map = {"added": "on #12301b", "removed": "on #3a1a1a", "context": "", "gap": ""}
@@ -241,16 +254,202 @@ class DiffView(VerticalScroll):
         self._last_signature = signature
 
 
-class CompanionApp(App[None]):
-    """Companion dashboard app."""
+class DiffBody(Vertical):
+    """Diff modality body containing the diff renderer and file list."""
 
     BINDINGS = [
-        Binding("q", "quit", "Quit"),
+        Binding("m", "app.toggle_mode", "Mode", priority=True),
         Binding("left", "prev_file", "Prev file", priority=True),
         Binding("right", "next_file", "Next file", priority=True),
         Binding("c", "toggle_compact", "Compact", priority=True),
         Binding("d", "cycle_diff_mode", "Diff scope", priority=True),
     ]
+
+    def compose(self) -> ComposeResult:
+        """Compose diff modality widgets."""
+
+        yield DiffView(id="diff-view")
+        yield FileList(id="file-list")
+
+    def action_prev_file(self) -> None:
+        self.app.action_prev_file()
+
+    def action_next_file(self) -> None:
+        self.app.action_next_file()
+
+    def action_toggle_compact(self) -> None:
+        self.app.action_toggle_compact()
+
+    def action_cycle_diff_mode(self) -> None:
+        self.app.action_cycle_diff_mode()
+
+
+class _CompanionDirectoryTree(DirectoryTree):
+    """Directory tree that hides internal git metadata."""
+
+    def filter_paths(self, paths: Iterable[Path]) -> Iterable[Path]:
+        return [path for path in paths if path.name != ".git"]
+
+    def render_label(self, node: TreeNode[object], base_style: Style, style: Style) -> Text:
+        if node.parent is None:
+            node._label = Text(collapse_home(str(self.path)))
+        return super().render_label(node, base_style, style)
+
+
+class FileBrowser(Horizontal):
+    """Files modality body containing a tree and syntax preview."""
+
+    BINDINGS = [
+        Binding("m", "app.toggle_mode", "Mode"),
+        Binding("o", "open_in_editor", "Open"),
+        Binding("r", "toggle_root", "Root"),
+        Binding("escape", "focus_tree", "Back"),
+    ]
+
+    _placeholder = "Select a file to preview"
+
+    def __init__(self, roots: list[Path], *args: object, **kwargs: object) -> None:
+        super().__init__(*args, **kwargs)
+        self.roots = roots
+        self._root_index = 0
+        self._root = roots[0]
+
+    def _tree_title(self) -> str:
+        if len(self.roots) < 2:
+            return "Files"
+        return "Files · worktree" if self._root_index == 0 else "Files · main"
+
+    def compose(self) -> ComposeResult:
+        # Keep tree reloads manual to preserve expansion/selection during timer refresh.
+        tree = _CompanionDirectoryTree(self._root, id="file-tree")
+        tree.border_title = self._tree_title()
+        yield tree
+
+        with VerticalScroll(id="file-preview"):
+            yield Static(self._placeholder, id="file-preview-content")
+
+    def on_mount(self) -> None:
+        self.query_one("#file-preview", VerticalScroll).border_title = "Preview"
+
+    def set_root(self, path: Path) -> None:
+        self._root = path
+        for index, root in enumerate(self.roots):
+            if root == path:
+                self._root_index = index
+                break
+
+        tree = self.query_one("#file-tree", _CompanionDirectoryTree)
+        tree.path = path
+        tree.border_title = self._tree_title()
+        self._clear_preview()
+
+    def action_toggle_root(self) -> None:
+        if len(self.roots) < 2:
+            return
+
+        next_index = (self._root_index + 1) % len(self.roots)
+        self.set_root(self.roots[next_index])
+
+    def _clear_preview(self) -> None:
+        preview = self.query_one("#file-preview", VerticalScroll)
+        preview.border_title = "Preview"
+        self.query_one("#file-preview-content", Static).update(self._placeholder)
+
+    def show_path(self, path: Path) -> None:
+        preview = self.query_one("#file-preview", VerticalScroll)
+        content = self.query_one("#file-preview-content", Static)
+
+        if path.is_dir():
+            self._clear_preview()
+            return
+
+        status_message, text = read_text_for_preview(path)
+        preview.border_title = str(path)
+
+        if status_message:
+            content.update(status_message)
+            return
+
+        if text is None:
+            self._clear_preview()
+            return
+
+        content.update(
+            Syntax(
+                text,
+                lexer=lexer_for_filename(str(path)),
+                line_numbers=True,
+                word_wrap=False,
+            )
+        )
+
+    def on_tree_node_highlighted(self, event: DirectoryTree.NodeHighlighted) -> None:
+        data = getattr(event.node, "data", None)
+        if data is None:
+            return
+
+        path = data.path
+        if path.is_file():
+            self.show_path(path)
+            return
+
+        if path.is_dir():
+            self._clear_preview()
+
+    def on_directory_tree_file_selected(self, event: DirectoryTree.FileSelected) -> None:
+        self.show_path(event.path)
+        self.query_one("#file-preview", VerticalScroll).focus()
+
+    def on_directory_tree_directory_selected(self, _: DirectoryTree.DirectorySelected) -> None:
+        self._clear_preview()
+
+    def action_focus_tree(self) -> None:
+        self.query_one("#file-tree", _CompanionDirectoryTree).focus()
+
+    def action_open_in_editor(self) -> None:
+        tree = self.query_one("#file-tree", _CompanionDirectoryTree)
+        node = tree.cursor_node
+        if node is None or node.data is None:
+            return
+
+        path = node.data.path
+        code_path = shutil.which("code")
+        if code_path is None:
+            self.app.notify("VS Code (code) not found on PATH", severity="warning")
+            return
+
+        try:
+            subprocess.Popen([code_path, str(path)])  # noqa: S603
+        except OSError:
+            return
+
+
+class _MenuOrderedScreen(Screen):
+    """Default screen that orders footer bindings as [global mode][local][quit]."""
+
+    @property
+    def active_bindings(self) -> dict[str, ActiveBinding]:
+        def rank(active: ActiveBinding) -> int:
+            action = active.binding.action
+            if action.endswith("toggle_mode"):
+                return 0
+            if action == "quit":
+                return 2
+            return 1
+
+        bindings = super().active_bindings
+        return dict(sorted(bindings.items(), key=lambda item: rank(item[1])))
+
+
+class CompanionApp(App[None]):
+    """Companion dashboard app."""
+
+    BINDINGS = [Binding("q", "quit", "Quit")]
+
+    def get_default_screen(self) -> Screen:
+        """Use the menu-ordered screen so the footer reads mode-first, quit-last."""
+
+        return _MenuOrderedScreen()
 
     CSS = """
     Screen {
@@ -285,9 +484,43 @@ class CompanionApp(App[None]):
         height: 1fr;
     }
 
+    #body {
+        height: 1fr;
+    }
+
+    #diff-body {
+        height: 1fr;
+    }
+
+    #files-body {
+        height: 1fr;
+        layout: horizontal;
+    }
+
+    #file-tree {
+        border: round $primary;
+        padding: 0 1;
+        width: 40%;
+    }
+
+    #file-preview {
+        border: round $secondary;
+        padding: 0 1;
+        width: 1fr;
+    }
+
     #session-bar {
         height: 1;
         padding: 0 1;
+        layout: horizontal;
+    }
+
+    #session-bar-mode {
+        width: auto;
+    }
+
+    #session-bar-meta {
+        width: 1fr;
         text-align: right;
     }
     """
@@ -309,9 +542,15 @@ class CompanionApp(App[None]):
         """Compose dashboard widgets."""
 
         yield WorkspacePanel(id="workspace-panel")
-        yield DiffView(id="diff-view")
-        yield FileList(id="file-list")
-        yield Static(id="session-bar")
+        yield ContentSwitcher(
+            DiffBody(id="diff-body"),
+            FileBrowser(resolve_browse_roots(self._git, self.cwd), id="files-body"),
+            id="body",
+            initial="files-body",
+        )
+        with Horizontal(id="session-bar"):
+            yield Static(id="session-bar-mode")
+            yield Static(id="session-bar-meta")
         yield Footer()
 
     def on_mount(self) -> None:
@@ -320,8 +559,9 @@ class CompanionApp(App[None]):
         self._set_diff_title()
         self._update_session_bar()
         self._refresh()
+        self._update_mode_indicator()
         self.set_interval(1.0, self._refresh)
-        self.query_one("#diff-view", DiffView).focus()
+        self.query_one("#file-tree", _CompanionDirectoryTree).focus()
 
     def _set_diff_title(self) -> None:
         parts = ["Diff", self._diff_mode]
@@ -333,7 +573,12 @@ class CompanionApp(App[None]):
         title = self._snapshot.title if self._snapshot else None
         short_session_id = self._snapshot.session_id.replace("-", "")[-6:] if self._snapshot else None
         parts = [part for part in (title, f"⬡ {short_session_id}" if short_session_id else None) if part]
-        self.query_one("#session-bar", Static).update(f"[dim]{'  ·  '.join(parts)}[/dim]")
+        self.query_one("#session-bar-meta", Static).update(f"[dim]{'  ·  '.join(parts)}[/dim]")
+
+    def _update_mode_indicator(self) -> None:
+        current = self.query_one("#body", ContentSwitcher).current
+        mode = "Files" if current == "files-body" else "Diff"
+        self.query_one("#session-bar-mode", Static).update(f"[dim]{mode}[/dim]")
 
     def action_prev_file(self) -> None:
         """Move file selection to the previous changed file."""
@@ -359,6 +604,19 @@ class CompanionApp(App[None]):
         self._diff_mode = DIFF_MODES[(index + 1) % len(DIFF_MODES)]
         self._set_diff_title()
         self._refresh()
+
+    def action_toggle_mode(self) -> None:
+        """Toggle between diff and files bodies, focusing the active pane."""
+
+        switcher = self.query_one("#body", ContentSwitcher)
+        if switcher.current == "diff-body":
+            switcher.current = "files-body"
+            self.query_one("#file-tree", _CompanionDirectoryTree).focus()
+        else:
+            switcher.current = "diff-body"
+            self.query_one("#diff-view", DiffView).focus()
+
+        self._update_mode_indicator()
 
     def on_file_list_selection_changed(self, _: FileList.SelectionChanged) -> None:
         """Update diff immediately when file selection changes."""

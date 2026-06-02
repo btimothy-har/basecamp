@@ -8,6 +8,7 @@ from pathlib import Path
 from basecamp.companion.diff import WorkspaceStatus
 from basecamp.companion.snapshot import (
     CompanionSnapshot,
+    collapse_home,
     companion_snapshot_path,
     load_snapshot,
     render_workspace_lines,
@@ -110,6 +111,22 @@ class TestCompanionSnapshotPath:
     def test_sanitizes_session_id_and_uses_base_dir(self, tmp_path: Path) -> None:
         path = companion_snapshot_path("a/b:c", base_dir=tmp_path)
         assert path == tmp_path / "a_b_c.json"
+
+
+class TestCollapseHome:
+    """Home-path collapse helper behavior."""
+
+    def test_collapse_path_under_home(self) -> None:
+        home = Path.home()
+        path = str(home / "repo" / "sub")
+        assert collapse_home(path) == "~/repo/sub"
+
+    def test_collapse_path_outside_home(self, tmp_path: Path) -> None:
+        path = str(tmp_path / "repo")
+        assert collapse_home(path) == path
+
+    def test_collapse_exact_home(self) -> None:
+        assert collapse_home(str(Path.home())) == "~"
 
 
 class TestRenderWorkspaceLines:

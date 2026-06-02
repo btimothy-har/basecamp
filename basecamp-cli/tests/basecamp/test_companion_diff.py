@@ -5,6 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from basecamp.companion.diff import (
+    MAX_DIFF_BYTES,
     MAX_DIFF_LINES,
     DiffLine,
     FileStatus,
@@ -16,6 +17,9 @@ from basecamp.companion.diff import (
     git_status_summary,
     is_probably_binary,
     list_changed_files,
+    main_worktree_path,
+    read_text_for_preview,
+    resolve_browse_roots,
 )
 
 
@@ -66,6 +70,51 @@ class TestDetectBaseBranch:
         )
 
         assert detect_base_branch(git) == "origin/master"
+
+
+class TestResolveBrowseRoots:
+    """Worktree/main-checkout root resolution."""
+
+    def test_main_worktree_path_returns_first_entry(self) -> None:
+        git = FakeGit(
+            {
+                ("worktree", "list", "--porcelain"): (
+                    0,
+                    "worktree /repo/main\nHEAD abc\nbranch refs/heads/main\n\n"
+                    "worktree /repo/.worktrees/feature\nHEAD def\nbranch refs/heads/feature\n",
+                ),
+            }
+        )
+
+        assert main_worktree_path(git) == Path("/repo/main")
+
+    def test_main_worktree_path_returns_none_on_git_failure(self) -> None:
+        git = FakeGit({("worktree", "list", "--porcelain"): (1, "")})
+
+        assert main_worktree_path(git) is None
+
+    def test_two_roots_when_worktree_differs_from_main(self, tmp_path: Path) -> None:
+        main = tmp_path / "main"
+        worktree = tmp_path / "feature"
+        main.mkdir()
+        worktree.mkdir()
+        git = FakeGit({("worktree", "list", "--porcelain"): (0, f"worktree {main}\n")})
+
+        assert resolve_browse_roots(git, worktree) == [worktree.resolve(), main.resolve()]
+
+    def test_single_root_when_cwd_is_main_checkout(self, tmp_path: Path) -> None:
+        main = tmp_path / "main"
+        main.mkdir()
+        git = FakeGit({("worktree", "list", "--porcelain"): (0, f"worktree {main}\n")})
+
+        assert resolve_browse_roots(git, main) == [main.resolve()]
+
+    def test_single_root_when_main_undetectable(self, tmp_path: Path) -> None:
+        worktree = tmp_path / "feature"
+        worktree.mkdir()
+        git = FakeGit({("worktree", "list", "--porcelain"): (1, "")})
+
+        assert resolve_browse_roots(git, worktree) == [worktree.resolve()]
 
 
 class TestListChangedFiles:
@@ -272,6 +321,58 @@ class TestCollapseUnchanged:
             DiffLine(kind="added", text="a1", line_no=12),
             DiffLine(kind="removed", text="r2", line_no=None),
         ]
+
+
+class TestReadTextForPreview:
+    """Preview helper guard behavior."""
+
+    def test_reads_normal_text(self, tmp_path: Path) -> None:
+        path = tmp_path / "ok.txt"
+        path.write_text("hello\npreview\n", encoding="utf-8")
+
+        message, text = read_text_for_preview(path)
+
+        assert message == ""
+        assert text == "hello\npreview\n"
+
+    def test_reports_binary_content(self, tmp_path: Path) -> None:
+        path = tmp_path / "binary.bin"
+        path.write_bytes(b"a\x00b")
+
+        message, text = read_text_for_preview(path)
+
+        assert message == "Binary file — not shown"
+        assert text is None
+
+    def test_reports_oversize_bytes(self, tmp_path: Path) -> None:
+        path = tmp_path / "big-bytes.txt"
+        path.write_bytes(b"x" * (MAX_DIFF_BYTES + 1))
+
+        message, text = read_text_for_preview(path)
+
+        assert message == f"File too large ({MAX_DIFF_BYTES + 1} bytes) — not shown"
+        assert text is None
+
+    def test_reports_oversize_lines(self, tmp_path: Path) -> None:
+        path = tmp_path / "big-lines.txt"
+        path.write_text("\n".join(["x"] * (MAX_DIFF_LINES + 1)), encoding="utf-8")
+
+        message, text = read_text_for_preview(path)
+
+        assert message == f"File too large ({MAX_DIFF_LINES + 1} lines) — not shown"
+        assert text is None
+
+    def test_directory_returns_empty_message_and_no_text(self, tmp_path: Path) -> None:
+        message, text = read_text_for_preview(tmp_path)
+
+        assert message == ""
+        assert text is None
+
+    def test_missing_path_reports_unable_to_read(self, tmp_path: Path) -> None:
+        message, text = read_text_for_preview(tmp_path / "missing.txt")
+
+        assert message == "Unable to read file"
+        assert text is None
 
 
 class TestBinaryAndGuards:
