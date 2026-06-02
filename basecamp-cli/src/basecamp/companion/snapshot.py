@@ -78,6 +78,15 @@ def load_snapshot(path: Path) -> CompanionSnapshot | None:
         return None
 
 
+def collapse_home(path: str) -> str:
+    """Collapse absolute home paths to `~` form for compact display."""
+
+    home = str(Path.home())
+    if path == home or path.startswith(f"{home}/"):
+        return f"~{path[len(home) :]}"
+    return path
+
+
 def render_workspace_lines(snapshot: CompanionSnapshot | None, status: WorkspaceStatus | None) -> list[str]:
     """Render the workspace/git panel as plain display lines."""
 
@@ -101,10 +110,6 @@ def render_workspace_lines(snapshot: CompanionSnapshot | None, status: Workspace
         )
 
     if snapshot is not None and snapshot.effective_cwd:
-        home = str(Path.home())
-        cwd = snapshot.effective_cwd
-        if cwd == home or cwd.startswith(f"{home}/"):
-            cwd = f"~{cwd[len(home) :]}"
-        lines.append(f"📂 {cwd}")
+        lines.append(f"📂 {collapse_home(snapshot.effective_cwd)}")
 
     return lines

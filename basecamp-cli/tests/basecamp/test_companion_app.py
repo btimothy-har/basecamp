@@ -5,9 +5,12 @@ from __future__ import annotations
 import asyncio
 import json
 import subprocess
+import tempfile
 from pathlib import Path
 
 from basecamp.companion.app import CompanionApp, DiffBody, DiffView, FileBrowser, FileList, WorkspacePanel
+from basecamp.companion.snapshot import collapse_home
+from rich.style import Style
 from rich.syntax import Syntax
 from textual.app import App, ComposeResult
 from textual.widgets import ContentSwitcher, DirectoryTree, Footer, ListView, Static
@@ -198,7 +201,7 @@ def test_diff_bindings_are_scoped_to_diff_body() -> None:
     assert {"left", "right", "c", "d"}.isdisjoint(app_keys)
 
 
-def test_modality_cycles_body_and_focus(tmp_path: Path) -> None:
+def test_modality_switches_body_and_focus(tmp_path: Path) -> None:
     repo = tmp_path / "repo"
     snapshot_path = tmp_path / "snapshot.json"
     _build_repo(repo)
@@ -217,13 +220,13 @@ def test_modality_cycles_body_and_focus(tmp_path: Path) -> None:
             assert body.current == "diff-body"
             assert diff_view.has_focus
 
-            await pilot.press("m")
+            await pilot.press("1")
             await pilot.pause(0.05)
 
             assert body.current == "files-body"
             assert file_tree.has_focus
 
-            await pilot.press("m")
+            await pilot.press("2")
             await pilot.pause(0.05)
 
             assert body.current == "diff-body"
@@ -295,6 +298,33 @@ def test_file_browser_root_toggle_single_root_noop(tmp_path: Path) -> None:
     asyncio.run(run_single_root_test())
 
 
+def test_file_tree_root_label_collapses_home_path() -> None:
+    with tempfile.TemporaryDirectory(prefix="basecamp-companion-", dir=Path.home()) as home_tmp:
+        repo = Path(home_tmp) / "repo"
+        snapshot_path = Path(home_tmp) / "snapshot.json"
+        _build_repo(repo)
+        _write_snapshot(snapshot_path, session_id="abcd-1234-5678-90ef")
+
+        app = CompanionApp(snapshot_path=snapshot_path, cwd=repo)
+
+        async def run_root_label_test() -> None:
+            async with app.run_test() as pilot:
+                await pilot.pause(0.2)
+
+                await pilot.press("1")
+                await pilot.pause(0.1)
+
+                tree = app.query_one("#file-tree", DirectoryTree)
+                tree.render_label(tree.root, Style(), Style())
+                root_label = tree.root._label.plain
+
+                assert root_label.startswith("~")
+                assert str(Path.home()) not in root_label
+                assert collapse_home(str(tree.root.data.path)) == f"~/{repo.relative_to(Path.home())}"
+
+        asyncio.run(run_root_label_test())
+
+
 def test_refresh_does_not_disturb_file_tree_focus(tmp_path: Path) -> None:
     repo = tmp_path / "repo"
     snapshot_path = tmp_path / "snapshot.json"
@@ -307,7 +337,7 @@ def test_refresh_does_not_disturb_file_tree_focus(tmp_path: Path) -> None:
         async with app.run_test() as pilot:
             await pilot.pause(0.2)
 
-            await pilot.press("m")
+            await pilot.press("1")
             await pilot.pause(0.05)
 
             file_tree = app.query_one("#file-tree", DirectoryTree)

@@ -8,13 +8,15 @@ from pathlib import Path
 from pygments.lexer import Lexer
 from pygments.lexers import TextLexer, get_lexer_for_filename
 from pygments.util import ClassNotFound
+from rich.style import Style
 from rich.syntax import Syntax
 from rich.text import Text
 from textual.app import App, ComposeResult
 from textual.binding import Binding
-from textual.containers import Vertical, VerticalScroll
+from textual.containers import Horizontal, Vertical, VerticalScroll
 from textual.message import Message
 from textual.widgets import ContentSwitcher, DirectoryTree, Footer, Label, ListItem, ListView, Static
+from textual.widgets.tree import TreeNode
 
 from basecamp.companion.diff import (
     DIFF_MODES,
@@ -30,7 +32,7 @@ from basecamp.companion.diff import (
     read_text_for_preview,
     resolve_browse_roots,
 )
-from basecamp.companion.snapshot import CompanionSnapshot, load_snapshot, render_workspace_lines
+from basecamp.companion.snapshot import CompanionSnapshot, collapse_home, load_snapshot, render_workspace_lines
 
 
 def lexer_for_filename(file_path: str) -> Lexer:
@@ -284,8 +286,13 @@ class _CompanionDirectoryTree(DirectoryTree):
     def filter_paths(self, paths: Iterable[Path]) -> Iterable[Path]:
         return [path for path in paths if path.name != ".git"]
 
+    def render_label(self, node: TreeNode[object], base_style: Style, style: Style) -> Text:
+        if node.parent is None:
+            node._label = Text(collapse_home(str(self.path)))
+        return super().render_label(node, base_style, style)
 
-class FileBrowser(Vertical):
+
+class FileBrowser(Horizontal):
     """Files modality body containing a tree and syntax preview."""
 
     BINDINGS = [
@@ -380,7 +387,8 @@ class CompanionApp(App[None]):
 
     BINDINGS = [
         Binding("q", "quit", "Quit"),
-        Binding("m", "cycle_modality", "Modality"),
+        Binding("1", "switch_body('files-body')", "Files"),
+        Binding("2", "switch_body('diff-body')", "Diff"),
     ]
 
     CSS = """
@@ -426,19 +434,19 @@ class CompanionApp(App[None]):
 
     #files-body {
         height: 1fr;
-        layout: vertical;
+        layout: horizontal;
     }
 
     #file-tree {
         border: round $primary;
-        height: 1fr;
         padding: 0 1;
+        width: 40%;
     }
 
     #file-preview {
         border: round $secondary;
-        height: 2fr;
         padding: 0 1;
+        width: 1fr;
     }
 
     #session-bar {
@@ -520,16 +528,18 @@ class CompanionApp(App[None]):
         self._set_diff_title()
         self._refresh()
 
-    def action_cycle_modality(self) -> None:
-        """Cycle between diff and files modality and hand focus to active body."""
+    def action_switch_body(self, body_id: str) -> None:
+        """Switch the active body and move focus to its primary widget."""
 
         switcher = self.query_one("#body", ContentSwitcher)
-        if switcher.current == "diff-body":
-            switcher.current = "files-body"
+        if switcher.current == body_id:
+            return
+
+        switcher.current = body_id
+        if body_id == "files-body":
             self.query_one("#file-tree", _CompanionDirectoryTree).focus()
             return
 
-        switcher.current = "diff-body"
         self.query_one("#diff-view", DiffView).focus()
 
     def on_file_list_selection_changed(self, _: FileList.SelectionChanged) -> None:
