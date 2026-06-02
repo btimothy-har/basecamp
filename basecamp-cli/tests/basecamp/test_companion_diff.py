@@ -8,6 +8,7 @@ from basecamp.companion.diff import (
     MAX_DIFF_LINES,
     DiffLine,
     FileStatus,
+    collapse_unchanged,
     compute_file_diff,
     detect_base_branch,
     file_diff_lines,
@@ -142,6 +143,78 @@ class TestComputeFileDiff:
         assert lines == [
             DiffLine(kind="context", text="same", line_no=1),
             DiffLine(kind="context", text="text", line_no=2),
+        ]
+
+
+class TestCollapseUnchanged:
+    """Compaction behavior for unchanged runs."""
+
+    def test_long_interior_run_collapses_with_gap(self) -> None:
+        lines = [
+            DiffLine(kind="added", text="changed-start", line_no=1),
+            *[DiffLine(kind="context", text=f"context-{index}", line_no=index + 1) for index in range(8)],
+            DiffLine(kind="removed", text="changed-end", line_no=None),
+        ]
+
+        collapsed = collapse_unchanged(lines, context=2)
+
+        assert collapsed == [
+            DiffLine(kind="added", text="changed-start", line_no=1),
+            DiffLine(kind="context", text="context-0", line_no=1),
+            DiffLine(kind="context", text="context-1", line_no=2),
+            DiffLine(kind="gap", text="⋯ 4 unchanged lines", line_no=None),
+            DiffLine(kind="context", text="context-6", line_no=7),
+            DiffLine(kind="context", text="context-7", line_no=8),
+            DiffLine(kind="removed", text="changed-end", line_no=None),
+        ]
+
+    def test_short_interior_run_is_not_collapsed(self) -> None:
+        lines = [
+            DiffLine(kind="removed", text="before", line_no=None),
+            *[DiffLine(kind="context", text=f"context-{index}", line_no=index + 1) for index in range(4)],
+            DiffLine(kind="added", text="after", line_no=5),
+        ]
+
+        collapsed = collapse_unchanged(lines, context=2)
+
+        assert collapsed == lines
+
+    def test_leading_and_trailing_runs_collapse(self) -> None:
+        lines = [
+            *[DiffLine(kind="context", text=f"lead-{index}", line_no=index + 1) for index in range(6)],
+            DiffLine(kind="added", text="change", line_no=7),
+            *[DiffLine(kind="context", text=f"tail-{index}", line_no=index + 8) for index in range(5)],
+        ]
+
+        collapsed = collapse_unchanged(lines, context=2)
+
+        assert collapsed == [
+            DiffLine(kind="gap", text="⋯ 4 unchanged lines", line_no=None),
+            DiffLine(kind="context", text="lead-4", line_no=5),
+            DiffLine(kind="context", text="lead-5", line_no=6),
+            DiffLine(kind="added", text="change", line_no=7),
+            DiffLine(kind="context", text="tail-0", line_no=8),
+            DiffLine(kind="context", text="tail-1", line_no=9),
+            DiffLine(kind="gap", text="⋯ 3 unchanged lines", line_no=None),
+        ]
+
+    def test_changed_lines_are_always_preserved_in_order(self) -> None:
+        lines = [
+            DiffLine(kind="context", text="lead", line_no=1),
+            DiffLine(kind="removed", text="r1", line_no=None),
+            *[DiffLine(kind="context", text=f"mid-{index}", line_no=index + 2) for index in range(10)],
+            DiffLine(kind="added", text="a1", line_no=12),
+            DiffLine(kind="removed", text="r2", line_no=None),
+            DiffLine(kind="context", text="tail", line_no=13),
+        ]
+
+        collapsed = collapse_unchanged(lines, context=2)
+
+        changed = [line for line in collapsed if line.kind in {"added", "removed"}]
+        assert changed == [
+            DiffLine(kind="removed", text="r1", line_no=None),
+            DiffLine(kind="added", text="a1", line_no=12),
+            DiffLine(kind="removed", text="r2", line_no=None),
         ]
 
 

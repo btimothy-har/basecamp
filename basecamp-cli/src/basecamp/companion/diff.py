@@ -28,7 +28,7 @@ class FileStatus:
 class DiffLine:
     """Line-level diff entry mapped to current-file line numbers."""
 
-    kind: Literal["context", "added", "removed"]
+    kind: Literal["context", "added", "removed", "gap"]
     text: str
     line_no: int | None
 
@@ -178,6 +178,70 @@ def compute_file_diff(base_text: str | None, current_text: str | None) -> list[D
             )
 
     return result
+
+
+def collapse_unchanged(lines: list[DiffLine], context: int = 3) -> list[DiffLine]:
+    """Collapse long unchanged runs while preserving changed-line order."""
+
+    if not lines:
+        return []
+
+    context = max(context, 0)
+    changed_indexes = [index for index, line in enumerate(lines) if line.kind in {"added", "removed"}]
+    if not changed_indexes:
+        return list(lines)
+
+    first_changed = changed_indexes[0]
+    last_changed = changed_indexes[-1]
+
+    def make_gap(hidden_count: int) -> DiffLine:
+        return DiffLine(kind="gap", text=f"⋯ {hidden_count} unchanged lines", line_no=None)
+
+    collapsed: list[DiffLine] = []
+    index = 0
+    while index < len(lines):
+        line = lines[index]
+        if line.kind != "context":
+            collapsed.append(line)
+            index += 1
+            continue
+
+        run_end = index
+        while run_end < len(lines) and lines[run_end].kind == "context":
+            run_end += 1
+
+        run = lines[index:run_end]
+        run_length = len(run)
+
+        if run_end <= first_changed:
+            keep = min(context, run_length)
+            hidden = run_length - keep
+            if hidden > 0:
+                collapsed.append(make_gap(hidden))
+            if keep > 0:
+                collapsed.extend(run[-keep:])
+        elif index > last_changed:
+            keep = min(context, run_length)
+            if keep > 0:
+                collapsed.extend(run[:keep])
+            hidden = run_length - keep
+            if hidden > 0:
+                collapsed.append(make_gap(hidden))
+        elif run_length > (2 * context):
+            keep = min(context, run_length)
+            if keep > 0:
+                collapsed.extend(run[:keep])
+            hidden = run_length - (2 * keep)
+            if hidden > 0:
+                collapsed.append(make_gap(hidden))
+            if keep > 0:
+                collapsed.extend(run[-keep:])
+        else:
+            collapsed.extend(run)
+
+        index = run_end
+
+    return collapsed
 
 
 def is_probably_binary(data: bytes) -> bool:

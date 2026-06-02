@@ -124,7 +124,7 @@ class TestRenderStateLines:
             json.dumps(
                 {
                     "version": 1,
-                    "sessionId": "session-1",
+                    "sessionId": "1111-2222-3333-abcdef",
                     "updatedAt": "2026-06-02T12:34:56Z",
                     "goal": "Build panel",
                     "tasks": [
@@ -148,6 +148,7 @@ class TestRenderStateLines:
 
         assert "Build panel" in rendered_text
         assert "1/3" in rendered_text
+        assert "Session: abcdef" in rendered_text
         assert "✓ Done task" in rendered_text
         assert "→ Active task" in rendered_text
         assert "☐ Pending task" in rendered_text

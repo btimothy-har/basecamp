@@ -92,10 +92,11 @@ def render_state_lines(snapshot: CompanionSnapshot | None) -> list[str]:
         worktree_text = snapshot.worktree.label
 
     progress_text = f"{snapshot.progress.completed}/{snapshot.progress.total}"
+    short_session_id = snapshot.session_id.replace("-", "")[-6:]
 
     lines = [
         f"🎯 {goal}",
-        f"Mode: {mode} | Worktree: {worktree_text} | Progress: {progress_text}",
+        f"Mode: {mode} | Worktree: {worktree_text} | Progress: {progress_text} | Session: {short_session_id}",
         "Tasks:",
     ]
 
