@@ -87,11 +87,13 @@ describe("panes/tmux", () => {
 	});
 
 	describe("buildSplitArgs", () => {
-		it("builds split-window argv", () => {
+		it("builds split-window argv sizing the companion pane to 65%", () => {
 			assert.deepEqual(buildSplitArgs("%2", "/tmp/worktree", "echo hi"), [
 				"split-window",
 				"-d",
 				"-h",
+				"-l",
+				"65%",
 				"-t",
 				"%2",
 				"-c",

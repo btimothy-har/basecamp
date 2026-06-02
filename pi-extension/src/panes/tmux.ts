@@ -18,8 +18,25 @@ export function buildCompanionCommand(snapshotPath: string, cwd: string): string
 	return `basecamp companion --snapshot ${shellQuote(snapshotPath)} --cwd ${shellQuote(cwd)}`;
 }
 
+/** Companion pane takes 65% of the width, leaving the pi pane at 35%. */
+export const COMPANION_SPLIT_PERCENT = "65%";
+
 export function buildSplitArgs(targetPane: string, cwd: string, command: string): string[] {
-	return ["split-window", "-d", "-h", "-t", targetPane, "-c", cwd, "-P", "-F", "#{pane_id}", command];
+	return [
+		"split-window",
+		"-d",
+		"-h",
+		"-l",
+		COMPANION_SPLIT_PERCENT,
+		"-t",
+		targetPane,
+		"-c",
+		cwd,
+		"-P",
+		"-F",
+		"#{pane_id}",
+		command,
+	];
 }
 
 export function buildRespawnArgs(paneId: string, cwd: string, command: string): string[] {

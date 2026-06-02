@@ -2,7 +2,7 @@ import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-a
 import { getInvokedSkills } from "../platform/skill-tracker.ts";
 import { getTasksAccess } from "../platform/tasks-access.ts";
 import { getWorkspaceService, getWorkspaceState } from "../platform/workspace.ts";
-import { getAgentMode } from "../session/agent-mode.ts";
+import { getAgentMode, onAgentModeChange } from "../session/agent-mode.ts";
 import {
 	buildSnapshot,
 	type CompanionSnapshotWorktree,
@@ -25,6 +25,7 @@ const TRIGGER_TOOLS = new Set([
 interface CompanionState {
 	ctx: ExtensionContext | null;
 	unsubscribeWorkspace: (() => void) | null;
+	unsubscribeAgentMode: (() => void) | null;
 }
 
 const companionKey = Symbol.for("basecamp.companion");
@@ -35,14 +36,15 @@ type GlobalWithCompanion = typeof globalThis & {
 
 function getCompanionState(): CompanionState {
 	const globalObject = globalThis as GlobalWithCompanion;
-	globalObject[companionKey] ??= { ctx: null, unsubscribeWorkspace: null };
+	globalObject[companionKey] ??= { ctx: null, unsubscribeWorkspace: null, unsubscribeAgentMode: null };
 	return globalObject[companionKey];
 }
 
-function clearWorkspaceSubscription(state: CompanionState): void {
-	if (!state.unsubscribeWorkspace) return;
-	state.unsubscribeWorkspace();
+function clearSubscriptions(state: CompanionState): void {
+	state.unsubscribeWorkspace?.();
 	state.unsubscribeWorkspace = null;
+	state.unsubscribeAgentMode?.();
+	state.unsubscribeAgentMode = null;
 }
 
 function getWorktreeSnapshot(): CompanionSnapshotWorktree | null {
@@ -86,17 +88,17 @@ function writeNow(): void {
 }
 
 export default function registerCompanion(pi: ExtensionAPI): void {
+	if (Number(process.env.BASECAMP_AGENT_DEPTH ?? "0") > 0) return;
+
 	const state = getCompanionState();
-	clearWorkspaceSubscription(state);
+	clearSubscriptions(state);
 
 	pi.on("session_start", (_event, sessionCtx) => {
-		clearWorkspaceSubscription(state);
+		clearSubscriptions(state);
 		state.ctx = sessionCtx;
 		writeNow();
-		state.unsubscribeWorkspace =
-			getWorkspaceService()?.onChange?.(() => {
-				writeNow();
-			}) ?? null;
+		state.unsubscribeWorkspace = getWorkspaceService()?.onChange?.(() => writeNow()) ?? null;
+		state.unsubscribeAgentMode = onAgentModeChange(() => writeNow());
 	});
 
 	pi.on("tool_result", (event) => {
@@ -113,7 +115,7 @@ export default function registerCompanion(pi: ExtensionAPI): void {
 			}
 		}
 
-		clearWorkspaceSubscription(state);
+		clearSubscriptions(state);
 		state.ctx = null;
 	});
 }
