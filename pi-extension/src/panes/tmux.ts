@@ -10,11 +10,20 @@ export function shouldCreatePane(input: PaneGuardInput): boolean {
 	return Boolean(input.tmux) && Boolean(input.tmuxPane) && input.hasUI && input.agentDepth === 0;
 }
 
-/** Prints "hello world" then blocks so the pane stays alive. Single string => tmux runs it via sh. */
-export const PANE_COMMAND = "printf 'hello world\\n'; exec tail -f /dev/null";
+function shellQuote(s: string): string {
+	return `'${s.replace(/'/g, "'\\''")}'`;
+}
 
-export function buildSplitArgs(targetPane: string, command: string): string[] {
-	return ["split-window", "-d", "-h", "-t", targetPane, "-P", "-F", "#{pane_id}", command];
+export function buildCompanionCommand(snapshotPath: string, cwd: string): string {
+	return `basecamp companion --snapshot ${shellQuote(snapshotPath)} --cwd ${shellQuote(cwd)}`;
+}
+
+export function buildSplitArgs(targetPane: string, cwd: string, command: string): string[] {
+	return ["split-window", "-d", "-h", "-t", targetPane, "-c", cwd, "-P", "-F", "#{pane_id}", command];
+}
+
+export function buildRespawnArgs(paneId: string, cwd: string, command: string): string[] {
+	return ["respawn-pane", "-k", "-t", paneId, "-c", cwd, command];
 }
 
 export function buildKillArgs(paneId: string): string[] {

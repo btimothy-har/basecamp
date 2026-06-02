@@ -1,15 +1,61 @@
 import type { ExtensionAPI, SessionShutdownEvent } from "@earendil-works/pi-coding-agent";
+import { companionSnapshotPath } from "../companion/snapshot.ts";
 import { exec } from "../platform/exec.ts";
+import { getWorkspaceService } from "../platform/workspace.ts";
 import { getPaneState } from "./state.ts";
-import { buildKillArgs, buildSplitArgs, PANE_COMMAND, parsePaneId, shouldCreatePane } from "./tmux.ts";
+import {
+	buildCompanionCommand,
+	buildKillArgs,
+	buildRespawnArgs,
+	buildSplitArgs,
+	parsePaneId,
+	shouldCreatePane,
+} from "./tmux.ts";
 
 const PANES_WARNING_PREFIX = "panes:";
+let didNotifyMissingBasecamp = false;
+
+async function basecampOnPath(pi: ExtensionAPI): Promise<boolean> {
+	try {
+		const result = await exec(pi, "which", ["basecamp"]);
+		return result.code === 0 && result.stdout.trim().length > 0;
+	} catch {
+		return false;
+	}
+}
+
+function resolveCwd(): string {
+	return getWorkspaceService()?.getEffectiveCwd?.() ?? process.cwd();
+}
+
+function subscribeWorktree(pi: ExtensionAPI, snapshotPath: string): void {
+	const state = getPaneState();
+	if (state.unsubscribeWorkspace) {
+		state.unsubscribeWorkspace();
+		state.unsubscribeWorkspace = null;
+	}
+
+	state.unsubscribeWorkspace =
+		getWorkspaceService()?.onChange?.(() => {
+			const newCwd = resolveCwd();
+			if (state.paneId && newCwd !== state.currentCwd) {
+				exec(pi, "tmux", buildRespawnArgs(state.paneId, newCwd, buildCompanionCommand(snapshotPath, newCwd))).catch(
+					() => {},
+				);
+				state.currentCwd = newCwd;
+			}
+		}) ?? null;
+}
 
 export default function registerPanes(pi: ExtensionAPI): void {
-	pi.on("session_start", async (_event, ctx) => {
-		const state = getPaneState();
-		if (state.paneId) return;
+	const state = getPaneState();
+	if (state.unsubscribeWorkspace) {
+		state.unsubscribeWorkspace();
+		state.unsubscribeWorkspace = null;
+	}
 
+	pi.on("session_start", async (_event, ctx) => {
+		const paneState = getPaneState();
 		const targetPane = process.env.TMUX_PANE;
 		const shouldCreate = shouldCreatePane({
 			tmux: process.env.TMUX,
@@ -19,27 +65,54 @@ export default function registerPanes(pi: ExtensionAPI): void {
 		});
 		if (!shouldCreate) return;
 
-		try {
-			const result = await exec(pi, "tmux", buildSplitArgs(targetPane as string, PANE_COMMAND));
-			state.paneId = parsePaneId(result.stdout);
-		} catch (err) {
-			const message = err instanceof Error ? err.message : String(err);
-			ctx.ui.notify(`${PANES_WARNING_PREFIX} failed to open pane — ${message}`, "warning");
+		const sessionId = ctx.sessionManager.getSessionId();
+		const snapshotPath = companionSnapshotPath(sessionId);
+		const effectiveCwd = resolveCwd();
+
+		if (!paneState.paneId) {
+			if (!(await basecampOnPath(pi))) {
+				if (!didNotifyMissingBasecamp) {
+					ctx.ui.notify("panes: basecamp CLI not found — companion pane disabled", "warning");
+					didNotifyMissingBasecamp = true;
+				}
+				return;
+			}
+
+			try {
+				const result = await exec(
+					pi,
+					"tmux",
+					buildSplitArgs(targetPane as string, effectiveCwd, buildCompanionCommand(snapshotPath, effectiveCwd)),
+				);
+				paneState.paneId = parsePaneId(result.stdout);
+				paneState.currentCwd = effectiveCwd;
+			} catch (err) {
+				const message = err instanceof Error ? err.message : String(err);
+				ctx.ui.notify(`${PANES_WARNING_PREFIX} failed to open pane — ${message}`, "warning");
+				return;
+			}
 		}
+
+		subscribeWorktree(pi, snapshotPath);
 	});
 
 	pi.on("session_shutdown", async (event: SessionShutdownEvent) => {
 		if (event.reason !== "quit") return;
 
-		const state = getPaneState();
-		if (!state.paneId) return;
-
-		try {
-			await exec(pi, "tmux", buildKillArgs(state.paneId));
-		} catch {
-			// best effort
+		const paneState = getPaneState();
+		if (paneState.paneId) {
+			try {
+				await exec(pi, "tmux", buildKillArgs(paneState.paneId));
+			} catch {
+				// best effort
+			}
 		}
 
-		state.paneId = null;
+		if (paneState.unsubscribeWorkspace) {
+			paneState.unsubscribeWorkspace();
+		}
+		paneState.paneId = null;
+		paneState.currentCwd = null;
+		paneState.unsubscribeWorkspace = null;
 	});
 }
