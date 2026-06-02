@@ -9,6 +9,7 @@ from pathlib import Path
 
 from basecamp.companion.app import CompanionApp, DiffBody, DiffView, FileBrowser, FileList, WorkspacePanel
 from rich.syntax import Syntax
+from textual.app import App, ComposeResult
 from textual.widgets import ContentSwitcher, DirectoryTree, Footer, ListView, Static
 
 
@@ -163,6 +164,129 @@ def test_diff_bindings_are_scoped_to_diff_body() -> None:
 
     assert {"left", "right", "c", "d"}.issubset(diff_keys)
     assert {"left", "right", "c", "d"}.isdisjoint(app_keys)
+
+
+def test_modality_cycles_body_and_focus(tmp_path: Path) -> None:
+    repo = tmp_path / "repo"
+    snapshot_path = tmp_path / "snapshot.json"
+    _build_repo(repo)
+    _write_snapshot(snapshot_path, session_id="abcd-1234-5678-90ef")
+
+    app = CompanionApp(snapshot_path=snapshot_path, cwd=repo)
+
+    async def run_modality_test() -> None:
+        async with app.run_test() as pilot:
+            await pilot.pause(0.2)
+
+            body = app.query_one("#body", ContentSwitcher)
+            diff_view = app.query_one("#diff-view", DiffView)
+            file_tree = app.query_one("#file-tree", DirectoryTree)
+
+            assert body.current == "diff-body"
+            assert diff_view.has_focus
+
+            await pilot.press("m")
+            await pilot.pause(0.05)
+
+            assert body.current == "files-body"
+            assert file_tree.has_focus
+
+            await pilot.press("m")
+            await pilot.pause(0.05)
+
+            assert body.current == "diff-body"
+            assert diff_view.has_focus
+
+    asyncio.run(run_modality_test())
+
+
+def test_file_browser_root_toggle_two_roots(tmp_path: Path) -> None:
+    worktree_root = tmp_path / "worktree"
+    main_root = tmp_path / "main"
+    worktree_root.mkdir()
+    main_root.mkdir()
+    (worktree_root / "only_worktree.txt").write_text("worktree\n", encoding="utf-8")
+    (main_root / "only_main.txt").write_text("main\n", encoding="utf-8")
+
+    browser = FileBrowser([worktree_root, main_root])
+
+    class BrowserHarness(App[None]):
+        def compose(self) -> ComposeResult:
+            yield browser
+
+    async def run_root_toggle_test() -> None:
+        async with BrowserHarness().run_test() as pilot:
+            await pilot.pause(0.1)
+
+            tree = browser.query_one("#file-tree", DirectoryTree)
+            assert tree.path == worktree_root
+            assert tree.border_title == "Files · worktree"
+
+            browser.action_toggle_root()
+            await pilot.pause(0.05)
+            assert tree.path == main_root
+            assert tree.border_title == "Files · main"
+
+            browser.action_toggle_root()
+            await pilot.pause(0.05)
+            assert tree.path == worktree_root
+            assert tree.border_title == "Files · worktree"
+
+    asyncio.run(run_root_toggle_test())
+
+
+def test_file_browser_root_toggle_single_root_noop(tmp_path: Path) -> None:
+    root = tmp_path / "repo"
+    root.mkdir()
+    (root / "only.txt").write_text("file\n", encoding="utf-8")
+
+    browser = FileBrowser([root])
+
+    class BrowserHarness(App[None]):
+        def compose(self) -> ComposeResult:
+            yield browser
+
+    async def run_single_root_test() -> None:
+        async with BrowserHarness().run_test() as pilot:
+            await pilot.pause(0.1)
+
+            tree = browser.query_one("#file-tree", DirectoryTree)
+            assert tree.path == root
+            assert tree.border_title == "Files"
+
+            browser.action_toggle_root()
+            await pilot.pause(0.05)
+
+            assert tree.path == root
+            assert tree.border_title == "Files"
+
+    asyncio.run(run_single_root_test())
+
+
+def test_refresh_does_not_disturb_file_tree_focus(tmp_path: Path) -> None:
+    repo = tmp_path / "repo"
+    snapshot_path = tmp_path / "snapshot.json"
+    _build_repo(repo)
+    _write_snapshot(snapshot_path, session_id="abcd-1234-5678-90ef")
+
+    app = CompanionApp(snapshot_path=snapshot_path, cwd=repo)
+
+    async def run_refresh_focus_test() -> None:
+        async with app.run_test() as pilot:
+            await pilot.pause(0.2)
+
+            await pilot.press("m")
+            await pilot.pause(0.05)
+
+            file_tree = app.query_one("#file-tree", DirectoryTree)
+            assert file_tree.has_focus
+
+            app._refresh()
+            await pilot.pause(0.05)
+
+            assert file_tree.has_focus
+
+    asyncio.run(run_refresh_focus_test())
 
 
 def test_refresh_is_noop_when_not_running(tmp_path: Path) -> None:

@@ -28,6 +28,7 @@ from basecamp.companion.diff import (
     git_status_summary,
     make_git_runner,
     read_text_for_preview,
+    resolve_browse_roots,
 )
 from basecamp.companion.snapshot import CompanionSnapshot, load_snapshot, render_workspace_lines
 
@@ -287,15 +288,27 @@ class _CompanionDirectoryTree(DirectoryTree):
 class FileBrowser(Vertical):
     """Files modality body containing a tree and syntax preview."""
 
+    BINDINGS = [
+        Binding("r", "toggle_root", "Root", show=True),
+    ]
+
     _placeholder = "Select a file to preview"
 
-    def __init__(self, root: Path, *args: object, **kwargs: object) -> None:
+    def __init__(self, roots: list[Path], *args: object, **kwargs: object) -> None:
         super().__init__(*args, **kwargs)
-        self._root = root
+        self.roots = roots
+        self._root_index = 0
+        self._root = roots[0]
+
+    def _tree_title(self) -> str:
+        if len(self.roots) < 2:
+            return "Files"
+        return "Files · worktree" if self._root_index == 0 else "Files · main"
 
     def compose(self) -> ComposeResult:
+        # Keep tree reloads manual to preserve expansion/selection during timer refresh.
         tree = _CompanionDirectoryTree(self._root, id="file-tree")
-        tree.border_title = "Files"
+        tree.border_title = self._tree_title()
         yield tree
 
         with VerticalScroll(id="file-preview"):
@@ -306,7 +319,21 @@ class FileBrowser(Vertical):
 
     def set_root(self, path: Path) -> None:
         self._root = path
-        self.query_one("#file-tree", _CompanionDirectoryTree).path = path
+        for index, root in enumerate(self.roots):
+            if root == path:
+                self._root_index = index
+                break
+
+        tree = self.query_one("#file-tree", _CompanionDirectoryTree)
+        tree.path = path
+        tree.border_title = self._tree_title()
+
+    def action_toggle_root(self) -> None:
+        if len(self.roots) < 2:
+            return
+
+        next_index = (self._root_index + 1) % len(self.roots)
+        self.set_root(self.roots[next_index])
 
     def _clear_preview(self) -> None:
         preview = self.query_one("#file-preview", VerticalScroll)
@@ -440,7 +467,7 @@ class CompanionApp(App[None]):
         yield WorkspacePanel(id="workspace-panel")
         yield ContentSwitcher(
             DiffBody(id="diff-body"),
-            FileBrowser(self.cwd, id="files-body"),
+            FileBrowser(resolve_browse_roots(self._git, self.cwd), id="files-body"),
             id="body",
             initial="diff-body",
         )
@@ -494,7 +521,16 @@ class CompanionApp(App[None]):
         self._refresh()
 
     def action_cycle_modality(self) -> None:
-        """Stub for future body modality cycling; currently no-op."""
+        """Cycle between diff and files modality and hand focus to active body."""
+
+        switcher = self.query_one("#body", ContentSwitcher)
+        if switcher.current == "diff-body":
+            switcher.current = "files-body"
+            self.query_one("#file-tree", _CompanionDirectoryTree).focus()
+            return
+
+        switcher.current = "diff-body"
+        self.query_one("#diff-view", DiffView).focus()
 
     def on_file_list_selection_changed(self, _: FileList.SelectionChanged) -> None:
         """Update diff immediately when file selection changes."""
