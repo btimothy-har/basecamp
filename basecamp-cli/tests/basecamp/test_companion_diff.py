@@ -16,6 +16,8 @@ from basecamp.companion.diff import (
     git_status_summary,
     is_probably_binary,
     list_changed_files,
+    main_worktree_path,
+    resolve_browse_roots,
 )
 
 
@@ -66,6 +68,51 @@ class TestDetectBaseBranch:
         )
 
         assert detect_base_branch(git) == "origin/master"
+
+
+class TestResolveBrowseRoots:
+    """Worktree/main-checkout root resolution."""
+
+    def test_main_worktree_path_returns_first_entry(self) -> None:
+        git = FakeGit(
+            {
+                ("worktree", "list", "--porcelain"): (
+                    0,
+                    "worktree /repo/main\nHEAD abc\nbranch refs/heads/main\n\n"
+                    "worktree /repo/.worktrees/feature\nHEAD def\nbranch refs/heads/feature\n",
+                ),
+            }
+        )
+
+        assert main_worktree_path(git) == Path("/repo/main")
+
+    def test_main_worktree_path_returns_none_on_git_failure(self) -> None:
+        git = FakeGit({("worktree", "list", "--porcelain"): (1, "")})
+
+        assert main_worktree_path(git) is None
+
+    def test_two_roots_when_worktree_differs_from_main(self, tmp_path: Path) -> None:
+        main = tmp_path / "main"
+        worktree = tmp_path / "feature"
+        main.mkdir()
+        worktree.mkdir()
+        git = FakeGit({("worktree", "list", "--porcelain"): (0, f"worktree {main}\n")})
+
+        assert resolve_browse_roots(git, worktree) == [worktree.resolve(), main.resolve()]
+
+    def test_single_root_when_cwd_is_main_checkout(self, tmp_path: Path) -> None:
+        main = tmp_path / "main"
+        main.mkdir()
+        git = FakeGit({("worktree", "list", "--porcelain"): (0, f"worktree {main}\n")})
+
+        assert resolve_browse_roots(git, main) == [main.resolve()]
+
+    def test_single_root_when_main_undetectable(self, tmp_path: Path) -> None:
+        worktree = tmp_path / "feature"
+        worktree.mkdir()
+        git = FakeGit({("worktree", "list", "--porcelain"): (1, "")})
+
+        assert resolve_browse_roots(git, worktree) == [worktree.resolve()]
 
 
 class TestListChangedFiles:

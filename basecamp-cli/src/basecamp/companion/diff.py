@@ -63,6 +63,35 @@ def make_git_runner(cwd: Path) -> GitRunner:
     return run
 
 
+def main_worktree_path(git: GitRunner) -> Path | None:
+    """Return the primary checkout path (first entry of `git worktree list --porcelain`)."""
+
+    code, output = git(["worktree", "list", "--porcelain"])
+    if code != 0:
+        return None
+
+    for line in output.splitlines():
+        if line.startswith("worktree "):
+            path = line.removeprefix("worktree ").strip()
+            if path:
+                return Path(path)
+
+    return None
+
+
+def resolve_browse_roots(git: GitRunner, cwd: Path) -> list[Path]:
+    """Return distinct roots to browse: the active worktree (cwd) then the main checkout."""
+
+    worktree_root = cwd.resolve()
+    roots = [worktree_root]
+
+    main_root = main_worktree_path(git)
+    if main_root is not None and main_root.resolve() != worktree_root:
+        roots.append(main_root.resolve())
+
+    return roots
+
+
 def detect_base_branch(git: GitRunner) -> str | None:
     """Detect the most likely base branch reference."""
 
