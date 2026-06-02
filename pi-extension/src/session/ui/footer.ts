@@ -180,14 +180,15 @@ export function registerFooter(pi: ExtensionAPI): void {
 					if (activeWorktree) initWorktreeWatcher(activeWorktree.path);
 
 					// ── Line 1: cwd | worktree | branch ... model ──
-					const l1Left = buildLocationSegment(fg, workspace, effectiveCwd, footerData);
+					// When the companion pane is active, location moves into the workspace panel.
+					const l1Left = isCompanionActive() ? "" : buildLocationSegment(fg, workspace, effectiveCwd, footerData);
 					const l1Right = buildModelSegment(fg, ctx, pi);
 					const line1 = layoutLine(l1Left, l1Right, width, fg);
 
 					// ── Line 2: skills ... context bar ──
 					let l2Left = "";
 					const skills = getInvokedSkills();
-					if (skills.length > 0 && !isCompanionActive()) {
+					if (skills.length > 0) {
 						const skillList = skills.map((s) => fg("accent", s)).join(fg("dim", ", "));
 						l2Left = `${fg("muted", "📖 ")}${skillList}`;
 					}

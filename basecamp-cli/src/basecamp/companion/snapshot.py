@@ -9,6 +9,8 @@ from pathlib import Path
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 from pydantic.alias_generators import to_camel
 
+from basecamp.companion.diff import WorkspaceStatus
+
 
 class CompanionBaseModel(BaseModel):
     """Base model for companion snapshot payloads."""
@@ -75,50 +77,36 @@ def load_snapshot(path: Path) -> CompanionSnapshot | None:
         return None
 
 
-def render_state_lines(snapshot: CompanionSnapshot | None) -> list[str]:
-    """Render the state panel as plain display lines."""
+def render_workspace_lines(snapshot: CompanionSnapshot | None, status: WorkspaceStatus | None) -> list[str]:
+    """Render the workspace/git panel as plain display lines."""
 
-    if snapshot is None:
+    if snapshot is None and status is None:
         return ["Waiting for session…"]
 
-    goal = snapshot.goal or "No goal set"
-    mode = snapshot.agent_mode or "unknown"
+    repo = (snapshot.repo_name if snapshot else None) or "—"
+    worktree_label = snapshot.worktree.label if snapshot and snapshot.worktree else None
+    branch = status.branch if status else None
+    head = worktree_label or branch or "detached"
 
-    if snapshot.worktree is None:
-        worktree_text = "none"
-    elif snapshot.worktree.branch:
-        worktree_text = f"{snapshot.worktree.label} ({snapshot.worktree.branch})"
-    else:
-        worktree_text = snapshot.worktree.label
+    lines = [f"📁 {repo} · {head}"]
 
-    progress_text = f"{snapshot.progress.completed}/{snapshot.progress.total}"
-    short_session_id = snapshot.session_id.replace("-", "")[-6:]
+    if status is not None:
+        base = status.base_branch or "?"
+        lines.append(f"⌥ {branch or '?'} → {base} (+{status.ahead})")
+        lines.append(
+            f"± {status.changed_files} changed · {status.staged} staged · "
+            f"{status.modified} modified · {status.untracked} new"
+        )
 
-    lines = [
-        f"🎯 {goal}",
-        f"Mode: {mode} | Worktree: {worktree_text} | Progress: {progress_text} | Session: {short_session_id}",
-        "Tasks:",
-    ]
+    if snapshot is not None and snapshot.effective_cwd:
+        home = str(Path.home())
+        cwd = snapshot.effective_cwd
+        if cwd == home or cwd.startswith(f"{home}/"):
+            cwd = f"~{cwd[len(home):]}"
+        lines.append(f"📂 {cwd}")
 
-    marker_by_status = {
-        "completed": "✓",
-        "active": "→",
-        "pending": "☐",
-    }
-
-    visible_task_count = 0
-    for task in snapshot.tasks:
-        if task.status == "deleted":
-            continue
-
-        visible_task_count += 1
-        marker = marker_by_status.get(task.status, "•")
-        lines.append(f"{marker} {task.label}")
-
-    if visible_task_count == 0:
-        lines.append("(no tasks)")
-
-    if snapshot.skills_used:
-        lines.append(f"📖 {', '.join(snapshot.skills_used)}")
+    if snapshot is not None:
+        short_session_id = snapshot.session_id.replace("-", "")[-6:]
+        lines.append(f"Session: {short_session_id}")
 
     return lines

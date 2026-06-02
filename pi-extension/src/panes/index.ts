@@ -86,10 +86,23 @@ export default function registerPanes(pi: ExtensionAPI): void {
 				);
 				paneState.paneId = parsePaneId(result.stdout);
 				paneState.currentCwd = effectiveCwd;
+				paneState.currentSnapshot = snapshotPath;
 			} catch (err) {
 				const message = err instanceof Error ? err.message : String(err);
 				ctx.ui.notify(`${PANES_WARNING_PREFIX} failed to open pane — ${message}`, "warning");
 				return;
+			}
+		} else if (snapshotPath !== paneState.currentSnapshot || effectiveCwd !== paneState.currentCwd) {
+			try {
+				await exec(
+					pi,
+					"tmux",
+					buildRespawnArgs(paneState.paneId, effectiveCwd, buildCompanionCommand(snapshotPath, effectiveCwd)),
+				);
+				paneState.currentCwd = effectiveCwd;
+				paneState.currentSnapshot = snapshotPath;
+			} catch {
+				// best effort
 			}
 		}
 
@@ -113,6 +126,7 @@ export default function registerPanes(pi: ExtensionAPI): void {
 		}
 		paneState.paneId = null;
 		paneState.currentCwd = null;
+		paneState.currentSnapshot = null;
 		paneState.unsubscribeWorkspace = null;
 	});
 }

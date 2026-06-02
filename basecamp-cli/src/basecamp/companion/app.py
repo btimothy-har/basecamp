@@ -10,34 +10,34 @@ from rich.syntax import Syntax
 from rich.text import Text
 from textual.app import App, ComposeResult
 from textual.binding import Binding
-from textual.containers import VerticalScroll
+from textual.containers import Vertical, VerticalScroll
 from textual.message import Message
-from textual.widgets import Static
+from textual.widgets import Footer, Label, ListItem, ListView, Static
 
 from basecamp.companion.diff import (
     DiffLine,
     FileStatus,
+    WorkspaceStatus,
     collapse_unchanged,
     collect_changes,
     file_diff_lines,
+    git_status_summary,
     make_git_runner,
 )
-from basecamp.companion.snapshot import CompanionSnapshot, load_snapshot, render_state_lines
+from basecamp.companion.snapshot import CompanionSnapshot, load_snapshot, render_workspace_lines
 
 
-class StatePanel(Static):
-    """Top state panel with session summary."""
+class WorkspacePanel(Static):
+    """Top panel summarizing the workspace and git status."""
 
-    def update_snapshot(self, snapshot: CompanionSnapshot | None) -> None:
-        """Update rendered state panel content from a snapshot."""
+    def update_workspace(self, snapshot: CompanionSnapshot | None, status: WorkspaceStatus | None) -> None:
+        """Update rendered workspace content."""
 
-        self.update("\n".join(render_state_lines(snapshot)))
+        self.update("\n".join(render_workspace_lines(snapshot, status)))
 
 
-class FileBar(Static):
-    """Compact changed-file selector bar."""
-
-    RENAMED_FROM_MAX = 32
+class FileList(Vertical):
+    """Scrollable list of changed files."""
 
     class SelectionChanged(Message):
         """Posted when the selected file changes."""
@@ -49,82 +49,82 @@ class FileBar(Static):
     def __init__(self, *args: object, **kwargs: object) -> None:
         super().__init__(*args, **kwargs)
         self._files: list[FileStatus] = []
-        self._index = 0
+        self._selected_path: str | None = None
         self._base_commit: str | None = None
-        self._compact = False
+
+    def compose(self) -> ComposeResult:
+        """Compose empty-state and list widgets."""
+
+        yield Static(id="file-list-empty")
+        yield ListView(id="file-list-list")
 
     @property
     def selected_file(self) -> FileStatus | None:
-        """Return the currently selected file, if any."""
+        """Return the currently highlighted file entry."""
 
-        if self._index < 0 or self._index >= len(self._files):
+        list_view = self.query_one("#file-list-list", ListView)
+        index = list_view.index
+        if index is None or index < 0 or index >= len(self._files):
             return None
-        return self._files[self._index]
-
-    def set_compact(self, *, compact: bool) -> None:
-        """Update compact/full mode indicator."""
-
-        if compact == self._compact:
-            return
-
-        self._compact = compact
-        self._refresh_display()
+        return self._files[index]
 
     def _glyph_for(self, status: FileStatus) -> str:
-        glyph_map = {
-            "added": "A",
-            "modified": "M",
-            "deleted": "D",
-            "renamed": "R",
-        }
+        glyph_map = {"added": "A", "modified": "M", "deleted": "D", "renamed": "R"}
         return glyph_map[status.status]
 
     def _label_for(self, status: FileStatus) -> str:
         glyph = self._glyph_for(status)
-        if status.status == "renamed" and status.old_path and len(status.old_path) <= self.RENAMED_FROM_MAX:
+        if status.status == "renamed" and status.old_path:
             return f"{glyph} {status.path} (from {status.old_path})"
         return f"{glyph} {status.path}"
 
-    def _mode_label(self) -> str:
-        return "COMPACT" if self._compact else "FULL"
+    def _set_empty_state(self, message: str) -> None:
+        empty = self.query_one("#file-list-empty", Static)
+        list_view = self.query_one("#file-list-list", ListView)
+        empty.display = True
+        empty.update(message)
+        list_view.display = False
 
-    def _refresh_display(self) -> None:
-        if self._base_commit is None:
-            body = "Not a git repository"
-        elif not self._files:
-            body = f"No changes vs {self._base_commit[:7]}"
-        else:
-            selected = self._files[self._index]
-            body = f"‹ {self._label_for(selected)} ({self._index + 1}/{len(self._files)}) ›"
-
-        self.update(f"{body} · {self._mode_label()}")
+    def _set_list_state(self) -> None:
+        self.query_one("#file-list-empty", Static).display = False
+        self.query_one("#file-list-list", ListView).display = True
 
     def update_changes(self, base_commit: str | None, files: list[FileStatus]) -> None:
-        """Refresh changed files while preserving selection by path when possible."""
+        """Rebuild the list while preserving selection by path."""
 
-        previous_index = self._index
-        previous_path = self.selected_file.path if self.selected_file is not None else None
-
+        previous_path = self.selected_file.path if self.selected_file else self._selected_path
         self._base_commit = base_commit
         self._files = list(files)
+        self.border_title = f"Changed files ({len(files)})"
 
-        if base_commit is None or not self._files:
-            self._index = 0
-            self._refresh_display()
+        list_view = self.query_one("#file-list-list", ListView)
+        list_view.clear()
+
+        if base_commit is None:
+            self._selected_path = None
+            self._set_empty_state("Not a git repository")
             self.post_message(self.SelectionChanged(None))
             return
 
-        if previous_path is not None:
-            for index, file_status in enumerate(self._files):
-                if file_status.path == previous_path:
-                    self._index = index
-                    break
-            else:
-                self._index = min(previous_index, len(self._files) - 1)
-        else:
-            self._index = min(previous_index, len(self._files) - 1)
+        if not files:
+            self._selected_path = None
+            self._set_empty_state(f"No changes vs {base_commit[:7]}")
+            self.post_message(self.SelectionChanged(None))
+            return
 
-        self._refresh_display()
+        self._set_list_state()
+        for file_status in files:
+            list_view.append(ListItem(Label(self._label_for(file_status))))
+
+        selected_index = 0
+        if previous_path is not None:
+            for index, file_status in enumerate(files):
+                if file_status.path == previous_path:
+                    selected_index = index
+                    break
+
+        list_view.index = selected_index
+        self._selected_path = files[selected_index].path
         self.post_message(self.SelectionChanged(self.selected_file))
 
     def select_next(self) -> None:
@@ -132,20 +132,25 @@ class FileBar(Static):
 
         if len(self._files) < 2:
             return
-
-        self._index = (self._index + 1) % len(self._files)
-        self._refresh_display()
-        self.post_message(self.SelectionChanged(self.selected_file))
+        list_view = self.query_one("#file-list-list", ListView)
+        current = list_view.index or 0
+        list_view.index = (current + 1) % len(self._files)
 
     def select_prev(self) -> None:
         """Select the previous file (wrap-around)."""
 
         if len(self._files) < 2:
             return
+        list_view = self.query_one("#file-list-list", ListView)
+        current = list_view.index or 0
+        list_view.index = (current - 1) % len(self._files)
 
-        self._index = (self._index - 1) % len(self._files)
-        self._refresh_display()
-        self.post_message(self.SelectionChanged(self.selected_file))
+    def on_list_view_highlighted(self, _: ListView.Highlighted) -> None:
+        """Publish selection changes for immediate diff refresh."""
+
+        selected_file = self.selected_file
+        self._selected_path = selected_file.path if selected_file else None
+        self.post_message(self.SelectionChanged(selected_file))
 
 
 class DiffView(VerticalScroll):
@@ -181,18 +186,8 @@ class DiffView(VerticalScroll):
         syntax = Syntax(code="", lexer=lexer, line_numbers=False, word_wrap=False)
         line_number_width = max(1, len(str(max((line.line_no or 0) for line in diff_lines) or 1)))
 
-        color_map = {
-            "added": "on #12301b",
-            "removed": "on #3a1a1a",
-            "context": "",
-            "gap": "",
-        }
-        marker_map = {
-            "added": "+",
-            "removed": "-",
-            "context": " ",
-            "gap": "⋯",
-        }
+        color_map = {"added": "on #12301b", "removed": "on #3a1a1a", "context": "", "gap": ""}
+        marker_map = {"added": "+", "removed": "-", "context": " ", "gap": "⋯"}
 
         rendered = Text()
         for line in diff_lines:
@@ -256,7 +251,7 @@ class CompanionApp(App[None]):
         layout: vertical;
     }
 
-    #state-panel {
+    #workspace-panel {
         border: round $accent;
         height: auto;
         padding: 0 1;
@@ -274,10 +269,14 @@ class CompanionApp(App[None]):
         width: 100%;
     }
 
-    #file-bar {
+    #file-list {
         border: round $primary;
-        height: auto;
+        height: 7;
         padding: 0 1;
+    }
+
+    #file-list-list {
+        height: 1fr;
     }
     """
 
@@ -296,35 +295,40 @@ class CompanionApp(App[None]):
     def compose(self) -> ComposeResult:
         """Compose dashboard widgets."""
 
-        yield StatePanel(id="state-panel")
+        yield WorkspacePanel(id="workspace-panel")
         yield DiffView(id="diff-view")
-        yield FileBar(id="file-bar")
+        yield FileList(id="file-list")
+        yield Footer()
 
     def on_mount(self) -> None:
         """Initial load and refresh timer."""
 
+        self._set_diff_title()
         self._refresh()
         self.set_interval(1.0, self._refresh)
         self.query_one("#diff-view", DiffView).focus()
 
+    def _set_diff_title(self) -> None:
+        self.query_one("#diff-view", DiffView).border_title = "Diff · compact" if self._compact else "Diff"
+
     def action_prev_file(self) -> None:
         """Move file selection to the previous changed file."""
 
-        self.query_one("#file-bar", FileBar).select_prev()
+        self.query_one("#file-list", FileList).select_prev()
 
     def action_next_file(self) -> None:
         """Move file selection to the next changed file."""
 
-        self.query_one("#file-bar", FileBar).select_next()
+        self.query_one("#file-list", FileList).select_next()
 
     def action_toggle_compact(self) -> None:
         """Toggle compact unchanged-line collapsing for the active diff."""
 
         self._compact = not self._compact
-        self.query_one("#file-bar", FileBar).set_compact(compact=self._compact)
+        self._set_diff_title()
         self._update_selected_file_diff()
 
-    def on_file_bar_selection_changed(self, _: FileBar.SelectionChanged) -> None:
+    def on_file_list_selection_changed(self, _: FileList.SelectionChanged) -> None:
         """Update diff immediately when file selection changes."""
 
         self._update_selected_file_diff()
@@ -332,14 +336,14 @@ class CompanionApp(App[None]):
     def _update_selected_file_diff(self) -> None:
         """Render selected file diff, handling empty/error states."""
 
-        file_bar = self.query_one("#file-bar", FileBar)
+        file_list = self.query_one("#file-list", FileList)
         diff_view = self.query_one("#diff-view", DiffView)
 
         if self._base_commit is None:
             diff_view.update_diff(file_path="", status_message="Not a git repository", diff_lines=[])
             return
 
-        selected_file = file_bar.selected_file
+        selected_file = file_list.selected_file
         if selected_file is None:
             diff_view.update_diff(
                 file_path="",
@@ -362,11 +366,7 @@ class CompanionApp(App[None]):
         if self._compact and not status_message and diff_lines:
             diff_lines = collapse_unchanged(diff_lines)
 
-        diff_view.update_diff(
-            file_path=selected_file.path,
-            status_message=status_message,
-            diff_lines=diff_lines,
-        )
+        diff_view.update_diff(file_path=selected_file.path, status_message=status_message, diff_lines=diff_lines)
 
     def _refresh(self) -> None:
         """Refresh state panel on snapshot changes and git views every tick."""
@@ -383,7 +383,6 @@ class CompanionApp(App[None]):
             self._snapshot_exists = file_exists
             self._snapshot_mtime_ns = snapshot_mtime_ns
             self._snapshot = load_snapshot(self.snapshot_path) if file_exists else None
-            self.query_one("#state-panel", StatePanel).update_snapshot(self._snapshot)
 
         try:
             base_commit, files = collect_changes(self._git)
@@ -393,7 +392,13 @@ class CompanionApp(App[None]):
         if base_commit != self._base_commit or files != self._files:
             self._base_commit = base_commit
             self._files = files
-            self.query_one("#file-bar", FileBar).update_changes(base_commit=base_commit, files=files)
+            self.query_one("#file-list", FileList).update_changes(base_commit=base_commit, files=files)
+
+        try:
+            status = git_status_summary(self._git, base_commit, len(files))
+        except Exception:
+            status = None
+        self.query_one("#workspace-panel", WorkspacePanel).update_workspace(self._snapshot, status)
 
         self._update_selected_file_diff()
 

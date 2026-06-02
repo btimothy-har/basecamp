@@ -10,8 +10,10 @@ from basecamp.companion.diff import (
     FileStatus,
     collapse_unchanged,
     compute_file_diff,
+    count_porcelain,
     detect_base_branch,
     file_diff_lines,
+    git_status_summary,
     is_probably_binary,
     list_changed_files,
 )
@@ -242,3 +244,34 @@ class TestBinaryAndGuards:
 
         assert message.startswith("File too large")
         assert lines == []
+
+
+class TestGitStatusSummary:
+    """Working-tree status summary behavior."""
+
+    def test_count_porcelain(self) -> None:
+        output = "\n".join(["M  staged.py", " M modified.py", "?? new.py", "MM both.py", " D gone.py"])
+        staged, modified, untracked = count_porcelain(output)
+        assert staged == 2  # staged.py, both.py
+        assert modified == 3  # modified.py, both.py, gone.py
+        assert untracked == 1  # new.py
+
+    def test_git_status_summary(self) -> None:
+        git = FakeGit(
+            {
+                ("rev-parse", "--abbrev-ref", "HEAD"): (0, "wt/feature\n"),
+                ("symbolic-ref", "--quiet", "refs/remotes/origin/HEAD"): (0, "refs/remotes/origin/main\n"),
+                ("rev-list", "--count", "base999..HEAD"): (0, "4\n"),
+                ("status", "--porcelain"): (0, "M  a.py\n M b.py\n?? c.py\n"),
+            }
+        )
+
+        status = git_status_summary(git, base_commit="base999", changed_files=7)
+
+        assert status.branch == "wt/feature"
+        assert status.base_branch == "origin/main"
+        assert status.ahead == 4
+        assert status.changed_files == 7
+        assert status.staged == 1
+        assert status.modified == 1
+        assert status.untracked == 1

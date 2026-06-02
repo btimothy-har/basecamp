@@ -3,6 +3,7 @@ const stateKey = Symbol.for("basecamp.panes");
 interface PaneState {
 	paneId: string | null;
 	currentCwd: string | null;
+	currentSnapshot: string | null;
 	unsubscribeWorkspace: (() => void) | null;
 }
 
@@ -12,7 +13,7 @@ type GlobalWithPanes = typeof globalThis & {
 
 export function getPaneState(): PaneState {
 	const globalObject = globalThis as GlobalWithPanes;
-	globalObject[stateKey] ??= { paneId: null, currentCwd: null, unsubscribeWorkspace: null };
+	globalObject[stateKey] ??= { paneId: null, currentCwd: null, currentSnapshot: null, unsubscribeWorkspace: null };
 	return globalObject[stateKey];
 }
 

@@ -7,8 +7,8 @@ import json
 import subprocess
 from pathlib import Path
 
-from basecamp.companion.app import CompanionApp, DiffView, FileBar
-from textual.widgets import Static
+from basecamp.companion.app import CompanionApp, DiffView, FileList, WorkspacePanel
+from textual.widgets import Footer, Static
 
 
 def _run_git(repo: Path, *args: str) -> None:
@@ -66,15 +66,16 @@ def test_companion_app_headless_smoke(tmp_path: Path) -> None:
         async with app.run_test() as pilot:
             await pilot.pause(0.3)
 
-            state_panel = app.query_one("#state-panel", Static)
-            assert "Session: 7890ef" in str(state_panel.render())
+            workspace_panel = app.query_one("#workspace-panel", WorkspacePanel)
+            workspace_text = str(workspace_panel.render())
+            assert "Session: 7890ef" in workspace_text
+            assert "main" in workspace_text
 
-            file_bar = app.query_one("#file-bar", FileBar)
-            bar_text = str(file_bar.render())
-            assert "(1/3)" in bar_text
-            assert "FULL" in bar_text
+            # Footer prints the hotkeys.
+            app.query_one(Footer)
 
-            selected_before = file_bar.selected_file
+            file_list = app.query_one("#file-list", FileList)
+            selected_before = file_list.selected_file
             assert selected_before is not None
             assert selected_before.path == "a_large.py"
 
@@ -89,9 +90,7 @@ def test_companion_app_headless_smoke(tmp_path: Path) -> None:
             compact_signature = diff_view._last_signature
             assert compact_signature is not None
             compact_line_count = len(compact_signature[2])
-            assert compact_line_count < full_line_count
-
-            assert compact_line_count > 0
+            assert 0 < compact_line_count < full_line_count
 
             diff_content = app.query_one("#diff-content", Static)
             assert str(diff_content.render()).strip() != ""
@@ -99,10 +98,8 @@ def test_companion_app_headless_smoke(tmp_path: Path) -> None:
             await pilot.press("right")
             await pilot.pause(0.1)
 
-            selected_after = file_bar.selected_file
+            selected_after = file_list.selected_file
             assert selected_after is not None
             assert selected_after.path != selected_before.path
-
-            assert "(2/3)" in str(file_bar.render())
 
     asyncio.run(run_smoke())

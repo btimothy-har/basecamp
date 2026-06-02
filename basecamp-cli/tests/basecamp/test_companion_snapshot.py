@@ -5,11 +5,12 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+from basecamp.companion.diff import WorkspaceStatus
 from basecamp.companion.snapshot import (
     CompanionSnapshot,
     companion_snapshot_path,
     load_snapshot,
-    render_state_lines,
+    render_workspace_lines,
 )
 
 
@@ -111,14 +112,14 @@ class TestCompanionSnapshotPath:
         assert path == tmp_path / "a_b_c.json"
 
 
-class TestRenderStateLines:
-    """State panel line rendering behavior."""
+class TestRenderWorkspaceLines:
+    """Workspace panel line rendering behavior."""
 
     def test_render_waiting(self) -> None:
-        lines = render_state_lines(None)
+        lines = render_workspace_lines(None, None)
         assert lines == ["Waiting for session…"]
 
-    def test_render_snapshot_lines(self, tmp_path: Path) -> None:
+    def test_render_workspace_and_session(self, tmp_path: Path) -> None:
         path = tmp_path / "snapshot.json"
         path.write_text(
             json.dumps(
@@ -126,31 +127,48 @@ class TestRenderStateLines:
                     "version": 1,
                     "sessionId": "1111-2222-3333-abcdef",
                     "updatedAt": "2026-06-02T12:34:56Z",
-                    "goal": "Build panel",
-                    "tasks": [
-                        {"label": "Done task", "status": "completed"},
-                        {"label": "Active task", "status": "active"},
-                        {"label": "Pending task", "status": "pending"},
-                        {"label": "Deleted task", "status": "deleted"},
-                    ],
-                    "progress": {"completed": 1, "total": 3},
-                    "skillsUsed": ["python-development", "sql"],
-                    "effectiveCwd": "/tmp/worktree",
+                    "repoName": "basecamp",
+                    "worktree": {"label": "wt-x", "branch": "wt/x", "path": "/tmp/wt"},
+                    "effectiveCwd": "/tmp/wt/sub",
                 }
             ),
             encoding="utf-8",
         )
         snapshot = load_snapshot(path)
         assert snapshot is not None
+        status = WorkspaceStatus(
+            branch="wt/x",
+            base_branch="main",
+            ahead=3,
+            changed_files=5,
+            staged=1,
+            modified=2,
+            untracked=1,
+        )
 
-        lines = render_state_lines(snapshot)
-        rendered_text = "\n".join(lines)
+        rendered_text = "\n".join(render_workspace_lines(snapshot, status))
 
-        assert "Build panel" in rendered_text
-        assert "1/3" in rendered_text
+        assert "basecamp" in rendered_text
+        assert "wt-x" in rendered_text
+        assert "main" in rendered_text
+        assert "+3" in rendered_text
+        assert "5 changed" in rendered_text
+        assert "1 staged" in rendered_text
+        assert "/tmp/wt/sub" in rendered_text
         assert "Session: abcdef" in rendered_text
-        assert "✓ Done task" in rendered_text
-        assert "→ Active task" in rendered_text
-        assert "☐ Pending task" in rendered_text
-        assert "Deleted task" not in rendered_text
-        assert "📖 python-development, sql" in rendered_text
+        # Agent state no longer appears in the workspace panel.
+        assert "Tasks" not in rendered_text
+
+    def test_render_status_without_snapshot(self) -> None:
+        status = WorkspaceStatus(
+            branch="feature",
+            base_branch="main",
+            ahead=0,
+            changed_files=0,
+            staged=0,
+            modified=0,
+            untracked=0,
+        )
+        rendered_text = "\n".join(render_workspace_lines(None, status))
+        assert "feature" in rendered_text
+        assert "Session:" not in rendered_text

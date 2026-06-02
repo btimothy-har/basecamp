@@ -33,6 +33,19 @@ class DiffLine:
     line_no: int | None
 
 
+@dataclass(frozen=True)
+class WorkspaceStatus:
+    """Summary of the working tree relative to the base branch."""
+
+    branch: str | None
+    base_branch: str | None
+    ahead: int
+    changed_files: int
+    staged: int
+    modified: int
+    untracked: int
+
+
 def make_git_runner(cwd: Path) -> GitRunner:
     """Build a git runner bound to a working directory."""
 
@@ -271,6 +284,57 @@ def collect_changes(git: GitRunner) -> tuple[str | None, list[FileStatus]]:
 
     changed_files = list_changed_files(git, base_commit)
     return base_commit, changed_files
+
+
+def count_porcelain(output: str) -> tuple[int, int, int]:
+    """Count (staged, modified, untracked) entries from `git status --porcelain`."""
+
+    staged = 0
+    modified = 0
+    untracked = 0
+    for line in output.splitlines():
+        if not line:
+            continue
+        if line.startswith("??"):
+            untracked += 1
+            continue
+        index_status = line[0]
+        worktree_status = line[1] if len(line) > 1 else " "
+        if index_status not in (" ", "?"):
+            staged += 1
+        if worktree_status in ("M", "D"):
+            modified += 1
+    return staged, modified, untracked
+
+
+def git_status_summary(git: GitRunner, base_commit: str | None, changed_files: int) -> WorkspaceStatus:
+    """Summarize branch, base-branch lead, and working-tree counts."""
+
+    code, branch_out = git(["rev-parse", "--abbrev-ref", "HEAD"])
+    branch = branch_out.strip() if code == 0 and branch_out.strip() else None
+
+    base_branch = detect_base_branch(git)
+
+    ahead = 0
+    if base_commit is not None:
+        code, ahead_out = git(["rev-list", "--count", f"{base_commit}..HEAD"])
+        if code == 0 and ahead_out.strip().isdigit():
+            ahead = int(ahead_out.strip())
+
+    staged = modified = untracked = 0
+    code, porcelain = git(["status", "--porcelain"])
+    if code == 0:
+        staged, modified, untracked = count_porcelain(porcelain)
+
+    return WorkspaceStatus(
+        branch=branch,
+        base_branch=base_branch,
+        ahead=ahead,
+        changed_files=changed_files,
+        staged=staged,
+        modified=modified,
+        untracked=untracked,
+    )
 
 
 def _line_count(text: str | None) -> int:
