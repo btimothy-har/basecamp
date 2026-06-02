@@ -511,6 +511,15 @@ class CompanionApp(App[None]):
     #session-bar {
         height: 1;
         padding: 0 1;
+        layout: horizontal;
+    }
+
+    #session-bar-mode {
+        width: auto;
+    }
+
+    #session-bar-meta {
+        width: 1fr;
         text-align: right;
     }
     """
@@ -536,9 +545,11 @@ class CompanionApp(App[None]):
             DiffBody(id="diff-body"),
             FileBrowser(resolve_browse_roots(self._git, self.cwd), id="files-body"),
             id="body",
-            initial="diff-body",
+            initial="files-body",
         )
-        yield Static(id="session-bar")
+        with Horizontal(id="session-bar"):
+            yield Static(id="session-bar-mode")
+            yield Static(id="session-bar-meta")
         yield Footer()
 
     def on_mount(self) -> None:
@@ -547,8 +558,9 @@ class CompanionApp(App[None]):
         self._set_diff_title()
         self._update_session_bar()
         self._refresh()
+        self._update_mode_indicator()
         self.set_interval(1.0, self._refresh)
-        self.query_one("#diff-view", DiffView).focus()
+        self.query_one("#file-tree", _CompanionDirectoryTree).focus()
 
     def _set_diff_title(self) -> None:
         parts = ["Diff", self._diff_mode]
@@ -560,7 +572,12 @@ class CompanionApp(App[None]):
         title = self._snapshot.title if self._snapshot else None
         short_session_id = self._snapshot.session_id.replace("-", "")[-6:] if self._snapshot else None
         parts = [part for part in (title, f"⬡ {short_session_id}" if short_session_id else None) if part]
-        self.query_one("#session-bar", Static).update(f"[dim]{'  ·  '.join(parts)}[/dim]")
+        self.query_one("#session-bar-meta", Static).update(f"[dim]{'  ·  '.join(parts)}[/dim]")
+
+    def _update_mode_indicator(self) -> None:
+        current = self.query_one("#body", ContentSwitcher).current
+        mode = "Files" if current == "files-body" else "Diff"
+        self.query_one("#session-bar-mode", Static).update(f"[dim]{mode}[/dim]")
 
     def action_prev_file(self) -> None:
         """Move file selection to the previous changed file."""
@@ -594,10 +611,11 @@ class CompanionApp(App[None]):
         if switcher.current == "diff-body":
             switcher.current = "files-body"
             self.query_one("#file-tree", _CompanionDirectoryTree).focus()
-            return
+        else:
+            switcher.current = "diff-body"
+            self.query_one("#diff-view", DiffView).focus()
 
-        switcher.current = "diff-body"
-        self.query_one("#diff-view", DiffView).focus()
+        self._update_mode_indicator()
 
     def on_file_list_selection_changed(self, _: FileList.SelectionChanged) -> None:
         """Update diff immediately when file selection changes."""

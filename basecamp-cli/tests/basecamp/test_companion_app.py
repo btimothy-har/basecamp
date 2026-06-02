@@ -81,12 +81,15 @@ def test_companion_app_headless_smoke(tmp_path: Path) -> None:
 
             # Textual Footer is restored; title + serial sit in the right-aligned bar above it.
             app.query_one(Footer)
-            session_bar_text = str(app.query_one("#session-bar", Static).render())
+            session_bar_text = str(app.query_one("#session-bar-meta", Static).render())
             assert "Smoke session title" in session_bar_text
             assert "7890ef" in session_bar_text
 
             # The file list is display-only (not focusable).
             assert app.query_one("#file-list-list", ListView).can_focus is False
+
+            await pilot.press("m")
+            await pilot.pause(0.1)
 
             file_list = app.query_one("#file-list", FileList)
             selected_before = file_list.selected_file
@@ -238,6 +241,53 @@ def test_diff_bindings_are_scoped_to_diff_body() -> None:
     assert {"left", "right", "c", "d"}.isdisjoint(app_keys)
 
 
+def test_default_mode_is_files_and_file_tree_is_focused(tmp_path: Path) -> None:
+    repo = tmp_path / "repo"
+    snapshot_path = tmp_path / "snapshot.json"
+    _build_repo(repo)
+    _write_snapshot(snapshot_path, session_id="abcd-1234-5678-90ef")
+
+    app = CompanionApp(snapshot_path=snapshot_path, cwd=repo)
+
+    async def run_default_mode_test() -> None:
+        async with app.run_test() as pilot:
+            await pilot.pause()
+
+            body = app.query_one("#body", ContentSwitcher)
+            file_tree = app.query_one("#file-tree", DirectoryTree)
+
+            assert body.current == "files-body"
+            assert file_tree.has_focus
+
+    asyncio.run(run_default_mode_test())
+
+
+def test_mode_indicator_tracks_active_mode(tmp_path: Path) -> None:
+    repo = tmp_path / "repo"
+    snapshot_path = tmp_path / "snapshot.json"
+    _build_repo(repo)
+    _write_snapshot(snapshot_path, session_id="abcd-1234-5678-90ef")
+
+    app = CompanionApp(snapshot_path=snapshot_path, cwd=repo)
+
+    async def run_mode_indicator_test() -> None:
+        async with app.run_test() as pilot:
+            await pilot.pause(0.2)
+
+            mode_bar = app.query_one("#session-bar-mode", Static)
+            assert "Files" in str(mode_bar.render())
+
+            await pilot.press("m")
+            await pilot.pause(0.05)
+            assert "Diff" in str(mode_bar.render())
+
+            await pilot.press("m")
+            await pilot.pause(0.05)
+            assert "Files" in str(mode_bar.render())
+
+    asyncio.run(run_mode_indicator_test())
+
+
 def test_mode_toggle_switches_body_and_focus(tmp_path: Path) -> None:
     repo = tmp_path / "repo"
     snapshot_path = tmp_path / "snapshot.json"
@@ -254,12 +304,6 @@ def test_mode_toggle_switches_body_and_focus(tmp_path: Path) -> None:
             diff_view = app.query_one("#diff-view", DiffView)
             file_tree = app.query_one("#file-tree", DirectoryTree)
 
-            assert body.current == "diff-body"
-            assert diff_view.has_focus
-
-            await pilot.press("m")
-            await pilot.pause(0.05)
-
             assert body.current == "files-body"
             assert file_tree.has_focus
 
@@ -268,6 +312,12 @@ def test_mode_toggle_switches_body_and_focus(tmp_path: Path) -> None:
 
             assert body.current == "diff-body"
             assert diff_view.has_focus
+
+            await pilot.press("m")
+            await pilot.pause(0.05)
+
+            assert body.current == "files-body"
+            assert file_tree.has_focus
 
     asyncio.run(run_modality_test())
 
@@ -287,22 +337,22 @@ def test_footer_binding_order_by_mode(tmp_path: Path) -> None:
         async with app.run_test() as pilot:
             await pilot.pause(0.2)
 
-            diff_descriptions = [
-                description
-                for description in visible_descriptions()
-                if description in {"Mode", "Prev file", "Next file", "Compact", "Diff scope", "Quit"}
-            ]
-            assert diff_descriptions == ["Mode", "Prev file", "Next file", "Compact", "Diff scope", "Quit"]
-
-            await pilot.press("m")
-            await pilot.pause(0.05)
-
             files_descriptions = [
                 description
                 for description in visible_descriptions()
                 if description in {"Mode", "Open", "Root", "Back", "Quit"}
             ]
             assert files_descriptions == ["Mode", "Open", "Root", "Back", "Quit"]
+
+            await pilot.press("m")
+            await pilot.pause(0.05)
+
+            diff_descriptions = [
+                description
+                for description in visible_descriptions()
+                if description in {"Mode", "Prev file", "Next file", "Compact", "Diff scope", "Quit"}
+            ]
+            assert diff_descriptions == ["Mode", "Prev file", "Next file", "Compact", "Diff scope", "Quit"]
 
     asyncio.run(run_footer_order_test())
 
@@ -453,9 +503,6 @@ def test_refresh_does_not_disturb_file_tree_focus(tmp_path: Path) -> None:
     async def run_refresh_focus_test() -> None:
         async with app.run_test() as pilot:
             await pilot.pause(0.2)
-
-            await pilot.press("m")
-            await pilot.pause(0.05)
 
             file_tree = app.query_one("#file-tree", DirectoryTree)
             assert file_tree.has_focus
