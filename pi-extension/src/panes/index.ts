@@ -15,10 +15,10 @@ import {
 const PANES_WARNING_PREFIX = "panes:";
 let didNotifyMissingBasecamp = false;
 
-async function basecampOnPath(pi: ExtensionAPI): Promise<boolean> {
+async function companionAvailable(pi: ExtensionAPI): Promise<boolean> {
 	try {
-		const result = await exec(pi, "which", ["basecamp"]);
-		return result.code === 0 && result.stdout.trim().length > 0;
+		const result = await exec(pi, "basecamp", ["companion", "--help"]);
+		return result.code === 0;
 	} catch {
 		return false;
 	}
@@ -70,9 +70,9 @@ export default function registerPanes(pi: ExtensionAPI): void {
 		const effectiveCwd = resolveCwd();
 
 		if (!paneState.paneId) {
-			if (!(await basecampOnPath(pi))) {
+			if (!(await companionAvailable(pi))) {
 				if (!didNotifyMissingBasecamp) {
-					ctx.ui.notify("panes: basecamp CLI not found — companion pane disabled", "warning");
+					ctx.ui.notify("panes: basecamp companion unavailable — companion pane disabled", "warning");
 					didNotifyMissingBasecamp = true;
 				}
 				return;
