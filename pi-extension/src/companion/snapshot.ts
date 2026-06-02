@@ -22,6 +22,7 @@ export interface CompanionSnapshotWorktree {
 export interface CompanionSnapshot {
 	version: typeof COMPANION_SNAPSHOT_VERSION;
 	sessionId: string;
+	title: string | null;
 	updatedAt: string;
 	goal: string | null;
 	tasks: CompanionSnapshotTask[];
@@ -36,6 +37,7 @@ export interface CompanionSnapshot {
 
 export interface SnapshotInput {
 	sessionId: string;
+	title: string | null;
 	goal: string | null;
 	rawTasks: CompanionSnapshotTask[];
 	agentMode: AgentMode | null;
@@ -62,6 +64,7 @@ export function buildSnapshot(input: SnapshotInput): CompanionSnapshot {
 	return {
 		version: COMPANION_SNAPSHOT_VERSION,
 		sessionId: input.sessionId,
+		title: input.title,
 		updatedAt: (input.now ?? new Date()).toISOString(),
 		goal: input.goal,
 		tasks: liveTasks,

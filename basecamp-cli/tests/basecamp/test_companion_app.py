@@ -8,7 +8,7 @@ import subprocess
 from pathlib import Path
 
 from basecamp.companion.app import CompanionApp, DiffView, FileList, WorkspacePanel
-from textual.widgets import Footer, Static
+from textual.widgets import Footer, ListView, Static
 
 
 def _run_git(repo: Path, *args: str) -> None:
@@ -21,6 +21,7 @@ def _write_snapshot(path: Path, session_id: str) -> None:
             {
                 "version": 1,
                 "sessionId": session_id,
+                "title": "Smoke session title",
                 "updatedAt": "2026-06-02T12:34:56Z",
                 "goal": "Companion smoke",
                 "progress": {"completed": 1, "total": 2},
@@ -68,11 +69,17 @@ def test_companion_app_headless_smoke(tmp_path: Path) -> None:
 
             workspace_panel = app.query_one("#workspace-panel", WorkspacePanel)
             workspace_text = str(workspace_panel.render())
-            assert "Session: 7890ef" in workspace_text
             assert "main" in workspace_text
+            assert "Session" not in workspace_text
 
-            # Footer prints the hotkeys.
+            # Textual Footer is restored; title + serial sit in the right-aligned bar above it.
             app.query_one(Footer)
+            session_bar_text = str(app.query_one("#session-bar", Static).render())
+            assert "Smoke session title" in session_bar_text
+            assert "7890ef" in session_bar_text
+
+            # The file list is display-only (not focusable).
+            assert app.query_one("#file-list-list", ListView).can_focus is False
 
             file_list = app.query_one("#file-list", FileList)
             selected_before = file_list.selected_file
@@ -101,5 +108,10 @@ def test_companion_app_headless_smoke(tmp_path: Path) -> None:
             selected_after = file_list.selected_file
             assert selected_after is not None
             assert selected_after.path != selected_before.path
+
+            # `d` cycles the diff scope (reflected in the diff border title).
+            await pilot.press("d")
+            await pilot.pause(0.1)
+            assert "uncommitted" in str(diff_view.border_title)
 
     asyncio.run(run_smoke())

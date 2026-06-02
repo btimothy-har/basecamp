@@ -155,8 +155,8 @@ class TestRenderWorkspaceLines:
         assert "5 changed" in rendered_text
         assert "1 staged" in rendered_text
         assert "/tmp/wt/sub" in rendered_text
-        assert "Session: abcdef" in rendered_text
-        # Agent state no longer appears in the workspace panel.
+        # Session id moved to the footer; agent state is not in the workspace panel.
+        assert "Session" not in rendered_text
         assert "Tasks" not in rendered_text
 
     def test_render_status_without_snapshot(self) -> None:

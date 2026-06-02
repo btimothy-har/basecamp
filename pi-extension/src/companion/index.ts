@@ -3,6 +3,7 @@ import { getInvokedSkills } from "../platform/skill-tracker.ts";
 import { getTasksAccess } from "../platform/tasks-access.ts";
 import { getWorkspaceService, getWorkspaceState } from "../platform/workspace.ts";
 import { getAgentMode, onAgentModeChange } from "../session/agent-mode.ts";
+import { getCurrentSessionState } from "../state/index.ts";
 import {
 	buildSnapshot,
 	type CompanionSnapshotWorktree,
@@ -65,8 +66,15 @@ function writeNow(): void {
 	try {
 		const tasksState = getTasksAccess()?.getState();
 		const sessionId = ctx.sessionManager.getSessionId();
+		let title: string | null = null;
+		try {
+			title = getCurrentSessionState().title;
+		} catch {
+			title = null;
+		}
 		const snapshot = buildSnapshot({
 			sessionId,
+			title,
 			goal: tasksState?.goal ?? null,
 			rawTasks:
 				tasksState?.tasks.map((task) => ({

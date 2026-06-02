@@ -99,7 +99,7 @@ class TestListChangedFiles:
             }
         )
 
-        files = list_changed_files(git, "abc123")
+        files = list_changed_files(git, ["abc123"], include_untracked=True)
 
         assert files == [
             FileStatus(path="alpha.txt", status="added"),
@@ -108,6 +108,49 @@ class TestListChangedFiles:
             FileStatus(path="new/name.txt", status="renamed", old_path="old/name.txt"),
             FileStatus(path="zeta.txt", status="added"),
         ]
+
+
+class TestDiffModes:
+    """Scope-aware file listing and per-file diff behavior."""
+
+    def test_list_changed_files_skips_untracked_when_excluded(self) -> None:
+        git = FakeGit(
+            {
+                ("diff", "--name-status", "-M", "base", "HEAD", "--"): (0, "M\tcommitted.py\n"),
+                ("ls-files", "--others", "--exclude-standard"): (0, "untracked.py\n"),
+            }
+        )
+        files = list_changed_files(git, ["base", "HEAD"], include_untracked=False)
+        assert files == [FileStatus(path="committed.py", status="modified")]
+
+    def test_uncommitted_mode_uses_head_base_and_worktree(self, tmp_path: Path) -> None:
+        (tmp_path / "f.py").write_text("a\nB\n", encoding="utf-8")
+        git = FakeGit({("show", "HEAD:f.py"): (0, "a\nb\n")})
+        status = FileStatus(path="f.py", status="modified")
+
+        message, lines = file_diff_lines(git, "base", status, tmp_path, mode="uncommitted")
+
+        assert message == ""
+        assert DiffLine(kind="removed", text="b", line_no=None) in lines
+        assert DiffLine(kind="added", text="B", line_no=2) in lines
+
+    def test_committed_mode_compares_base_to_head(self, tmp_path: Path) -> None:
+        # Worktree content is ignored in committed mode.
+        (tmp_path / "f.py").write_text("WORKTREE\n", encoding="utf-8")
+        git = FakeGit(
+            {
+                ("show", "base:f.py"): (0, "a\nb\n"),
+                ("show", "HEAD:f.py"): (0, "a\nB\n"),
+            }
+        )
+        status = FileStatus(path="f.py", status="modified")
+
+        message, lines = file_diff_lines(git, "base", status, tmp_path, mode="committed")
+
+        assert message == ""
+        assert DiffLine(kind="removed", text="b", line_no=None) in lines
+        assert DiffLine(kind="added", text="B", line_no=2) in lines
+        assert all(line.text != "WORKTREE" for line in lines)
 
 
 class TestComputeFileDiff:

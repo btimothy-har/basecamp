@@ -15,7 +15,9 @@ from textual.message import Message
 from textual.widgets import Footer, Label, ListItem, ListView, Static
 
 from basecamp.companion.diff import (
+    DIFF_MODES,
     DiffLine,
+    DiffMode,
     FileStatus,
     WorkspaceStatus,
     collapse_unchanged,
@@ -56,7 +58,10 @@ class FileList(Vertical):
         """Compose empty-state and list widgets."""
 
         yield Static(id="file-list-empty")
-        yield ListView(id="file-list-list")
+        # Display-only: navigation happens in the diff pane via ←/→.
+        list_view = ListView(id="file-list-list")
+        list_view.can_focus = False
+        yield list_view
 
     @property
     def selected_file(self) -> FileStatus | None:
@@ -244,6 +249,7 @@ class CompanionApp(App[None]):
         Binding("left", "prev_file", "Prev file", priority=True),
         Binding("right", "next_file", "Next file", priority=True),
         Binding("c", "toggle_compact", "Compact", priority=True),
+        Binding("d", "cycle_diff_mode", "Diff scope", priority=True),
     ]
 
     CSS = """
@@ -278,6 +284,12 @@ class CompanionApp(App[None]):
     #file-list-list {
         height: 1fr;
     }
+
+    #session-bar {
+        height: 1;
+        padding: 0 1;
+        text-align: right;
+    }
     """
 
     def __init__(self, snapshot_path: Path, cwd: Path) -> None:
@@ -291,6 +303,7 @@ class CompanionApp(App[None]):
         self._base_commit: str | None = None
         self._files: list[FileStatus] = []
         self._compact = False
+        self._diff_mode: DiffMode = "all"
 
     def compose(self) -> ComposeResult:
         """Compose dashboard widgets."""
@@ -298,18 +311,29 @@ class CompanionApp(App[None]):
         yield WorkspacePanel(id="workspace-panel")
         yield DiffView(id="diff-view")
         yield FileList(id="file-list")
+        yield Static(id="session-bar")
         yield Footer()
 
     def on_mount(self) -> None:
         """Initial load and refresh timer."""
 
         self._set_diff_title()
+        self._update_session_bar()
         self._refresh()
         self.set_interval(1.0, self._refresh)
         self.query_one("#diff-view", DiffView).focus()
 
     def _set_diff_title(self) -> None:
-        self.query_one("#diff-view", DiffView).border_title = "Diff · compact" if self._compact else "Diff"
+        parts = ["Diff", self._diff_mode]
+        if self._compact:
+            parts.append("compact")
+        self.query_one("#diff-view", DiffView).border_title = " · ".join(parts)
+
+    def _update_session_bar(self) -> None:
+        title = self._snapshot.title if self._snapshot else None
+        short_session_id = self._snapshot.session_id.replace("-", "")[-6:] if self._snapshot else None
+        parts = [part for part in (title, f"⬡ {short_session_id}" if short_session_id else None) if part]
+        self.query_one("#session-bar", Static).update(f"[dim]{'  ·  '.join(parts)}[/dim]")
 
     def action_prev_file(self) -> None:
         """Move file selection to the previous changed file."""
@@ -327,6 +351,14 @@ class CompanionApp(App[None]):
         self._compact = not self._compact
         self._set_diff_title()
         self._update_selected_file_diff()
+
+    def action_cycle_diff_mode(self) -> None:
+        """Cycle the diff scope between all, uncommitted, and committed."""
+
+        index = DIFF_MODES.index(self._diff_mode)
+        self._diff_mode = DIFF_MODES[(index + 1) % len(DIFF_MODES)]
+        self._set_diff_title()
+        self._refresh()
 
     def on_file_list_selection_changed(self, _: FileList.SelectionChanged) -> None:
         """Update diff immediately when file selection changes."""
@@ -358,6 +390,7 @@ class CompanionApp(App[None]):
                 base_commit=self._base_commit,
                 file=selected_file,
                 cwd=self.cwd,
+                mode=self._diff_mode,
             )
         except Exception:
             diff_view.update_diff(file_path=selected_file.path, status_message="Unable to load diff", diff_lines=[])
@@ -383,9 +416,10 @@ class CompanionApp(App[None]):
             self._snapshot_exists = file_exists
             self._snapshot_mtime_ns = snapshot_mtime_ns
             self._snapshot = load_snapshot(self.snapshot_path) if file_exists else None
+            self._update_session_bar()
 
         try:
-            base_commit, files = collect_changes(self._git)
+            base_commit, files = collect_changes(self._git, self._diff_mode)
         except Exception:
             base_commit, files = None, []
 

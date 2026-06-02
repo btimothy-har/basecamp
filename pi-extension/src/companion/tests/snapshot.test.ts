@@ -7,6 +7,7 @@ describe("companion/snapshot", () => {
 		it("excludes deleted tasks and computes progress over non-deleted tasks", () => {
 			const snapshot = buildSnapshot({
 				sessionId: "session-1",
+				title: "Companion writer",
 				goal: "Ship companion writer",
 				rawTasks: [
 					{ label: "A", status: "completed", notes: "done" },
@@ -30,12 +31,14 @@ describe("companion/snapshot", () => {
 				{ label: "D", status: "pending", notes: "todo" },
 			]);
 			assert.deepEqual(snapshot.progress, { completed: 1, total: 3 });
+			assert.equal(snapshot.title, "Companion writer");
 			assert.equal(snapshot.updatedAt, "2025-01-02T03:04:05.000Z");
 		});
 
 		it("handles null goal, empty tasks, and null worktree", () => {
 			const snapshot = buildSnapshot({
 				sessionId: "session-2",
+				title: null,
 				goal: null,
 				rawTasks: [],
 				agentMode: null,

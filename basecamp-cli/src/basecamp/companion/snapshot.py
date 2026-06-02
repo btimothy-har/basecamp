@@ -46,6 +46,7 @@ class CompanionSnapshot(CompanionBaseModel):
 
     version: int
     session_id: str
+    title: str | None = None
     updated_at: str
     goal: str | None = None
     tasks: list[CompanionTask] = Field(default_factory=list)
@@ -102,11 +103,7 @@ def render_workspace_lines(snapshot: CompanionSnapshot | None, status: Workspace
         home = str(Path.home())
         cwd = snapshot.effective_cwd
         if cwd == home or cwd.startswith(f"{home}/"):
-            cwd = f"~{cwd[len(home):]}"
+            cwd = f"~{cwd[len(home) :]}"
         lines.append(f"📂 {cwd}")
-
-    if snapshot is not None:
-        short_session_id = snapshot.session_id.replace("-", "")[-6:]
-        lines.append(f"Session: {short_session_id}")
 
     return lines
