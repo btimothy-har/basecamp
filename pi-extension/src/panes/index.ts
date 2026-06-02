@@ -35,13 +35,15 @@ function subscribeWorktree(pi: ExtensionAPI, snapshotPath: string): void {
 		state.unsubscribeWorkspace = null;
 	}
 
+	let respawnGeneration = 0;
 	state.unsubscribeWorkspace =
 		getWorkspaceService()?.onChange?.(() => {
 			const newCwd = resolveCwd();
 			if (state.paneId && newCwd !== state.currentCwd) {
+				const generation = ++respawnGeneration;
 				exec(pi, "tmux", buildRespawnArgs(state.paneId, newCwd, buildCompanionCommand(snapshotPath, newCwd)))
 					.then(() => {
-						state.currentCwd = newCwd;
+						if (generation === respawnGeneration) state.currentCwd = newCwd;
 					})
 					.catch(() => {});
 			}
