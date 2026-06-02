@@ -366,7 +366,8 @@ def file_diff_lines(
     """Return placeholder message plus full-file diff lines for one file in the given scope."""
 
     base_ref = "HEAD" if mode == "uncommitted" else base_commit
-    base_text = read_base_content(git, base_ref, file.path)
+    base_path = file.old_path or file.path
+    base_text = read_base_content(git, base_ref, base_path)
     if base_text is not None and "\x00" in base_text:
         return "Binary file — not shown", []
 

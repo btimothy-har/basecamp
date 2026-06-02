@@ -39,10 +39,11 @@ function subscribeWorktree(pi: ExtensionAPI, snapshotPath: string): void {
 		getWorkspaceService()?.onChange?.(() => {
 			const newCwd = resolveCwd();
 			if (state.paneId && newCwd !== state.currentCwd) {
-				exec(pi, "tmux", buildRespawnArgs(state.paneId, newCwd, buildCompanionCommand(snapshotPath, newCwd))).catch(
-					() => {},
-				);
-				state.currentCwd = newCwd;
+				exec(pi, "tmux", buildRespawnArgs(state.paneId, newCwd, buildCompanionCommand(snapshotPath, newCwd)))
+					.then(() => {
+						state.currentCwd = newCwd;
+					})
+					.catch(() => {});
 			}
 		}) ?? null;
 }

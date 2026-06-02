@@ -86,7 +86,8 @@ def render_workspace_lines(snapshot: CompanionSnapshot | None, status: Workspace
 
     repo = (snapshot.repo_name if snapshot else None) or "—"
     worktree_label = snapshot.worktree.label if snapshot and snapshot.worktree else None
-    branch = status.branch if status else None
+    worktree_branch = snapshot.worktree.branch if snapshot and snapshot.worktree else None
+    branch = status.branch if status else worktree_branch
     head = worktree_label or branch or "detached"
 
     lines = [f"📁 {repo} · {head}"]

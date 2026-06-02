@@ -152,6 +152,17 @@ class TestDiffModes:
         assert DiffLine(kind="added", text="B", line_no=2) in lines
         assert all(line.text != "WORKTREE" for line in lines)
 
+    def test_renamed_file_reads_base_from_old_path(self, tmp_path: Path) -> None:
+        (tmp_path / "new.py").write_text("a\nB\n", encoding="utf-8")
+        git = FakeGit({("show", "base:old.py"): (0, "a\nb\n")})
+        status = FileStatus(path="new.py", status="renamed", old_path="old.py")
+
+        message, lines = file_diff_lines(git, "base", status, tmp_path, mode="all")
+
+        assert message == ""
+        assert DiffLine(kind="removed", text="b", line_no=None) in lines
+        assert DiffLine(kind="added", text="B", line_no=2) in lines
+
 
 class TestComputeFileDiff:
     """Pure line-diff behavior."""
