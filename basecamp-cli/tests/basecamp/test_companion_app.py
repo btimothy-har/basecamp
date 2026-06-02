@@ -421,13 +421,19 @@ def test_file_browser_root_toggle_two_roots(tmp_path: Path) -> None:
             await pilot.pause(0.1)
 
             tree = browser.query_one("#file-tree", DirectoryTree)
+            content = browser.query_one("#file-preview-content", Static)
             assert tree.path == worktree_root
             assert tree.border_title == "Files · worktree"
+
+            browser.show_path(worktree_root / "only_worktree.txt")
+            await pilot.pause(0.05)
+            assert content.content != browser._placeholder
 
             browser.action_toggle_root()
             await pilot.pause(0.05)
             assert tree.path == main_root
             assert tree.border_title == "Files · main"
+            assert content.content == browser._placeholder
 
             browser.action_toggle_root()
             await pilot.pause(0.05)

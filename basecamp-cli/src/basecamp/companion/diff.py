@@ -310,15 +310,22 @@ def read_text_for_preview(path: Path) -> tuple[str, str | None]:
         return "", None
 
     try:
+        size = path.stat().st_size
+    except OSError:
+        return "Unable to read file", None
+
+    # Reject by size before reading so oversize files are never loaded into memory
+    # (preview fires live on every cursor move).
+    if size > MAX_DIFF_BYTES:
+        return f"File too large ({size} bytes) — not shown", None
+
+    try:
         data = path.read_bytes()
     except OSError:
         return "Unable to read file", None
 
     if is_probably_binary(data):
         return "Binary file — not shown", None
-
-    if len(data) > MAX_DIFF_BYTES:
-        return f"File too large ({len(data)} bytes) — not shown", None
 
     text = data.decode("utf-8")
     line_count = len(text.splitlines())
