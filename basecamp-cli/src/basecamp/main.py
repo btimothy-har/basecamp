@@ -1,6 +1,8 @@
 """Entry point for basecamp CLI."""
 
+import importlib
 import sys
+from pathlib import Path
 
 import rich_click as click
 
@@ -44,6 +46,27 @@ def setup() -> None:
 def config() -> None:
     """Interactive configuration menu."""
     run_config_menu()
+
+
+@basecamp.command()
+@click.option(
+    "--snapshot",
+    "snapshot_path",
+    required=True,
+    type=click.Path(path_type=Path),
+    help="Path to the companion snapshot JSON.",
+)
+@click.option(
+    "--cwd",
+    "cwd",
+    required=True,
+    type=click.Path(path_type=Path),
+    help="Git working directory for diffs.",
+)
+def companion(snapshot_path: Path, cwd: Path) -> None:
+    """Live session companion dashboard (runs in a tmux pane)."""
+    run_companion = importlib.import_module("basecamp.companion.app").run_companion
+    run_companion(snapshot_path, cwd)
 
 
 if __name__ == "__main__":

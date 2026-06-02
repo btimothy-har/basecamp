@@ -21,5 +21,6 @@ SCRIPT_DIR = Path(_install_dir)
 
 # User directories
 PI_DIR = Path.home() / ".pi"
+COMPANION_DIR = PI_DIR / "companion"
 USER_STYLES_DIR = PI_DIR / "styles"
 USER_CONTEXT_DIR = PI_DIR / "context"
