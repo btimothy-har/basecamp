@@ -1,5 +1,6 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import registerCapabilities from "./src/capabilities/index.ts";
+import registerCompanion from "./src/companion/index.ts";
 import registerEngineering from "./src/engineering/index.ts";
 import registerGit from "./src/git/index.ts";
 import registerModelAliases from "./src/model-aliases/index.ts";
@@ -19,6 +20,7 @@ export default function (pi: ExtensionAPI): void {
 	registerEngineering(pi);
 	registerProjects(pi);
 	registerWorkflow(pi);
+	registerCompanion(pi);
 	registerPanes(pi);
 	registerGit(pi);
 }

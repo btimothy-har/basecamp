@@ -15,6 +15,7 @@ import * as os from "node:os";
 import { dirname, join, resolve } from "node:path";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
+import { isCompanionActive } from "../../panes/state.ts";
 import { getInvokedSkills } from "../../platform/skill-tracker";
 import { getWorkspaceService, getWorkspaceState, type WorkspaceState } from "../../platform/workspace";
 import { type AgentMode, getAgentMode, onAgentModeChange } from "../agent-mode.ts";
@@ -179,7 +180,8 @@ export function registerFooter(pi: ExtensionAPI): void {
 					if (activeWorktree) initWorktreeWatcher(activeWorktree.path);
 
 					// ── Line 1: cwd | worktree | branch ... model ──
-					const l1Left = buildLocationSegment(fg, workspace, effectiveCwd, footerData);
+					// When the companion pane is active, location moves into the workspace panel.
+					const l1Left = isCompanionActive() ? "" : buildLocationSegment(fg, workspace, effectiveCwd, footerData);
 					const l1Right = buildModelSegment(fg, ctx, pi);
 					const line1 = layoutLine(l1Left, l1Right, width, fg);
 

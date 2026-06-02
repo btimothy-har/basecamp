@@ -1,6 +1,13 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { buildKillArgs, buildSplitArgs, parsePaneId, shouldCreatePane } from "../tmux.ts";
+import {
+	buildCompanionCommand,
+	buildKillArgs,
+	buildRespawnArgs,
+	buildSplitArgs,
+	parsePaneId,
+	shouldCreatePane,
+} from "../tmux.ts";
 
 describe("panes/tmux", () => {
 	describe("shouldCreatePane", () => {
@@ -63,17 +70,51 @@ describe("panes/tmux", () => {
 		});
 	});
 
+	describe("buildCompanionCommand", () => {
+		it("quotes snapshot path and cwd", () => {
+			assert.equal(
+				buildCompanionCommand("/tmp/with space/snapshot.json", "/tmp/worktree cwd"),
+				"basecamp companion --snapshot '/tmp/with space/snapshot.json' --cwd '/tmp/worktree cwd'",
+			);
+		});
+
+		it("escapes single quotes", () => {
+			assert.equal(
+				buildCompanionCommand("/tmp/it's-snapshot.json", "/tmp/it's-cwd"),
+				"basecamp companion --snapshot '/tmp/it'\\''s-snapshot.json' --cwd '/tmp/it'\\''s-cwd'",
+			);
+		});
+	});
+
 	describe("buildSplitArgs", () => {
-		it("builds split-window argv", () => {
-			assert.deepEqual(buildSplitArgs("%2", "echo hi"), [
+		it("builds split-window argv sizing the companion pane to 65%", () => {
+			assert.deepEqual(buildSplitArgs("%2", "/tmp/worktree", "echo hi"), [
 				"split-window",
 				"-d",
 				"-h",
+				"-l",
+				"65%",
 				"-t",
 				"%2",
+				"-c",
+				"/tmp/worktree",
 				"-P",
 				"-F",
 				"#{pane_id}",
+				"echo hi",
+			]);
+		});
+	});
+
+	describe("buildRespawnArgs", () => {
+		it("builds respawn-pane argv", () => {
+			assert.deepEqual(buildRespawnArgs("%3", "/tmp/new-worktree", "echo hi"), [
+				"respawn-pane",
+				"-k",
+				"-t",
+				"%3",
+				"-c",
+				"/tmp/new-worktree",
 				"echo hi",
 			]);
 		});

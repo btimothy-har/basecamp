@@ -29,6 +29,7 @@ import * as os from "node:os";
 import * as path from "node:path";
 import type { ExtensionAPI, ExtensionContext, Theme } from "@earendil-works/pi-coding-agent";
 import { Type } from "@sinclair/typebox";
+import { registerTasksAccess } from "../../platform/tasks-access.ts";
 import { type AgentMode, getAgentMode, setAgentMode } from "../../session/agent-mode.ts";
 import { getCurrentSessionState } from "../../state/index.ts";
 import { renderTaskWidgetLines } from "./render";
@@ -636,7 +637,7 @@ export function registerTasks(pi: ExtensionAPI): TasksAccess {
 		ctx = null;
 	});
 
-	return {
+	const access: TasksAccess = {
 		getState: () => state,
 		setNotes(index: number, notes: string) {
 			const target = requireTasks(state, index);
@@ -664,4 +665,7 @@ export function registerTasks(pi: ExtensionAPI): TasksAccess {
 		},
 		getContext: () => ctx,
 	};
+
+	registerTasksAccess(access);
+	return access;
 }
