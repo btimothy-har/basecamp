@@ -12,7 +12,7 @@ from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.containers import Vertical, VerticalScroll
 from textual.message import Message
-from textual.widgets import Footer, Label, ListItem, ListView, Static
+from textual.widgets import ContentSwitcher, Footer, Label, ListItem, ListView, Static
 
 from basecamp.companion.diff import (
     DIFF_MODES,
@@ -241,15 +241,41 @@ class DiffView(VerticalScroll):
         self._last_signature = signature
 
 
+class DiffBody(Vertical):
+    """Diff modality body containing the diff renderer and file list."""
+
+    BINDINGS = [
+        Binding("left", "prev_file", "Prev file", priority=True),
+        Binding("right", "next_file", "Next file", priority=True),
+        Binding("c", "toggle_compact", "Compact", priority=True),
+        Binding("d", "cycle_diff_mode", "Diff scope", priority=True),
+    ]
+
+    def compose(self) -> ComposeResult:
+        """Compose diff modality widgets."""
+
+        yield DiffView(id="diff-view")
+        yield FileList(id="file-list")
+
+    def action_prev_file(self) -> None:
+        self.app.action_prev_file()
+
+    def action_next_file(self) -> None:
+        self.app.action_next_file()
+
+    def action_toggle_compact(self) -> None:
+        self.app.action_toggle_compact()
+
+    def action_cycle_diff_mode(self) -> None:
+        self.app.action_cycle_diff_mode()
+
+
 class CompanionApp(App[None]):
     """Companion dashboard app."""
 
     BINDINGS = [
         Binding("q", "quit", "Quit"),
-        Binding("left", "prev_file", "Prev file", priority=True),
-        Binding("right", "next_file", "Next file", priority=True),
-        Binding("c", "toggle_compact", "Compact", priority=True),
-        Binding("d", "cycle_diff_mode", "Diff scope", priority=True),
+        Binding("m", "cycle_modality", "Modality"),
     ]
 
     CSS = """
@@ -285,6 +311,14 @@ class CompanionApp(App[None]):
         height: 1fr;
     }
 
+    #body {
+        height: 1fr;
+    }
+
+    #diff-body {
+        height: 1fr;
+    }
+
     #session-bar {
         height: 1;
         padding: 0 1;
@@ -309,8 +343,7 @@ class CompanionApp(App[None]):
         """Compose dashboard widgets."""
 
         yield WorkspacePanel(id="workspace-panel")
-        yield DiffView(id="diff-view")
-        yield FileList(id="file-list")
+        yield ContentSwitcher(DiffBody(id="diff-body"), id="body", initial="diff-body")
         yield Static(id="session-bar")
         yield Footer()
 
@@ -359,6 +392,9 @@ class CompanionApp(App[None]):
         self._diff_mode = DIFF_MODES[(index + 1) % len(DIFF_MODES)]
         self._set_diff_title()
         self._refresh()
+
+    def action_cycle_modality(self) -> None:
+        """Stub for future body modality cycling; currently no-op."""
 
     def on_file_list_selection_changed(self, _: FileList.SelectionChanged) -> None:
         """Update diff immediately when file selection changes."""

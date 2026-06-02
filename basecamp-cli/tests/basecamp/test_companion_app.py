@@ -7,7 +7,7 @@ import json
 import subprocess
 from pathlib import Path
 
-from basecamp.companion.app import CompanionApp, DiffView, FileList, WorkspacePanel
+from basecamp.companion.app import CompanionApp, DiffBody, DiffView, FileList, WorkspacePanel
 from textual.widgets import Footer, ListView, Static
 
 
@@ -115,6 +115,14 @@ def test_companion_app_headless_smoke(tmp_path: Path) -> None:
             assert "uncommitted" in str(diff_view.border_title)
 
     asyncio.run(run_smoke())
+
+
+def test_diff_bindings_are_scoped_to_diff_body() -> None:
+    diff_keys = {binding.key for binding in DiffBody.BINDINGS}
+    app_keys = {binding.key for binding in CompanionApp.BINDINGS}
+
+    assert {"left", "right", "c", "d"}.issubset(diff_keys)
+    assert {"left", "right", "c", "d"}.isdisjoint(app_keys)
 
 
 def test_refresh_is_noop_when_not_running(tmp_path: Path) -> None:
