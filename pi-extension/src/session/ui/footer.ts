@@ -15,6 +15,7 @@ import * as os from "node:os";
 import { dirname, join, resolve } from "node:path";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
+import { isCompanionActive } from "../../panes/state.ts";
 import { getInvokedSkills } from "../../platform/skill-tracker";
 import { getWorkspaceService, getWorkspaceState, type WorkspaceState } from "../../platform/workspace";
 import { type AgentMode, getAgentMode, onAgentModeChange } from "../agent-mode.ts";
@@ -186,7 +187,7 @@ export function registerFooter(pi: ExtensionAPI): void {
 					// ── Line 2: skills ... context bar ──
 					let l2Left = "";
 					const skills = getInvokedSkills();
-					if (skills.length > 0) {
+					if (skills.length > 0 && !isCompanionActive()) {
 						const skillList = skills.map((s) => fg("accent", s)).join(fg("dim", ", "));
 						l2Left = `${fg("muted", "📖 ")}${skillList}`;
 					}

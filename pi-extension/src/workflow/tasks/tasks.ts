@@ -29,6 +29,7 @@ import * as os from "node:os";
 import * as path from "node:path";
 import type { ExtensionAPI, ExtensionContext, Theme } from "@earendil-works/pi-coding-agent";
 import { Type } from "@sinclair/typebox";
+import { isCompanionActive } from "../../panes/state.ts";
 import { registerTasksAccess } from "../../platform/tasks-access.ts";
 import { type AgentMode, getAgentMode, setAgentMode } from "../../session/agent-mode.ts";
 import { getCurrentSessionState } from "../../state/index.ts";
@@ -260,6 +261,7 @@ export function registerTasks(pi: ExtensionAPI): TasksAccess {
 						cachedLines = null;
 					},
 					render(width: number): string[] {
+						if (isCompanionActive()) return [];
 						if (cachedLines && cachedWidth === width) return cachedLines;
 						cachedWidth = width;
 						cachedLines = renderTaskWidgetLines(state, { fg }, width);
