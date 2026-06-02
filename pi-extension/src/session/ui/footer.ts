@@ -180,8 +180,11 @@ export function registerFooter(pi: ExtensionAPI): void {
 					if (activeWorktree) initWorktreeWatcher(activeWorktree.path);
 
 					// ── Line 1: cwd | worktree | branch ... model ──
-					// When the companion pane is active, location moves into the workspace panel.
-					const l1Left = isCompanionActive() ? "" : buildLocationSegment(fg, workspace, effectiveCwd, footerData);
+					// When the companion pane is active, worktree/branch move into the workspace panel;
+					// the footer keeps a compact mode + cwd + edit-safety segment.
+					const l1Left = isCompanionActive()
+						? buildCompactLocationSegment(fg, workspace, effectiveCwd)
+						: buildLocationSegment(fg, workspace, effectiveCwd, footerData);
 					const l1Right = buildModelSegment(fg, ctx, pi);
 					const line1 = layoutLine(l1Left, l1Right, width, fg);
 
@@ -257,6 +260,21 @@ function buildLocationSegment(
 	const branch = activeWorktree ? (worktreeBranchCache ?? activeWorktree.branch) : footerData.getGitBranch();
 	if (branch) {
 		parts.push(fg("accent", `⎇ ${branch}`));
+	}
+
+	return parts.join(fg("dim", "  "));
+}
+
+function buildCompactLocationSegment(fg: ThemeFg, workspace: WorkspaceState | null, effectiveCwd: string): string {
+	const parts: string[] = [];
+	const modeSegment = buildModeSegment(fg, getAgentMode());
+	if (modeSegment) parts.push(modeSegment);
+	parts.push(fg("dim", shortenPath(effectiveCwd)));
+
+	if (workspace?.unsafeEdit) {
+		parts.push(fg("error", "⚠ unsafe-edit"));
+	} else if (!workspace?.activeWorktree) {
+		parts.push(fg("muted", "⌥ protected"));
 	}
 
 	return parts.join(fg("dim", "  "));
