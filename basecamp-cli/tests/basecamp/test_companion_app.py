@@ -115,3 +115,12 @@ def test_companion_app_headless_smoke(tmp_path: Path) -> None:
             assert "uncommitted" in str(diff_view.border_title)
 
     asyncio.run(run_smoke())
+
+
+def test_refresh_is_noop_when_not_running(tmp_path: Path) -> None:
+    """_refresh must not touch the DOM when the app isn't mounted (teardown race)."""
+
+    app = CompanionApp(snapshot_path=tmp_path / "missing.json", cwd=tmp_path)
+    assert app.is_running is False
+
+    app._refresh()  # would raise NoMatches/ScreenStackError without the guard

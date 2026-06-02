@@ -404,6 +404,11 @@ class CompanionApp(App[None]):
     def _refresh(self) -> None:
         """Refresh state panel on snapshot changes and git views every tick."""
 
+        # The 1s interval can fire during teardown; the app clears is_running
+        # before unmounting widgets, so bail to avoid querying a gone DOM.
+        if not self.is_running:
+            return
+
         try:
             file_exists = self.snapshot_path.exists()
             snapshot_mtime_ns = self.snapshot_path.stat().st_mtime_ns if file_exists else None
