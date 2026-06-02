@@ -7,8 +7,9 @@ import json
 import subprocess
 from pathlib import Path
 
-from basecamp.companion.app import CompanionApp, DiffBody, DiffView, FileList, WorkspacePanel
-from textual.widgets import Footer, ListView, Static
+from basecamp.companion.app import CompanionApp, DiffBody, DiffView, FileBrowser, FileList, WorkspacePanel
+from rich.syntax import Syntax
+from textual.widgets import ContentSwitcher, DirectoryTree, Footer, ListView, Static
 
 
 def _run_git(repo: Path, *args: str) -> None:
@@ -115,6 +116,45 @@ def test_companion_app_headless_smoke(tmp_path: Path) -> None:
             assert "uncommitted" in str(diff_view.border_title)
 
     asyncio.run(run_smoke())
+
+
+def test_file_browser_preview_show_path(tmp_path: Path) -> None:
+    repo = tmp_path / "repo"
+    snapshot_path = tmp_path / "snapshot.json"
+    _build_repo(repo)
+    _write_snapshot(snapshot_path, session_id="abcd-1234-5678-90ef")
+
+    text_file = repo / "preview.py"
+    text_file.write_text("print('hello')\n", encoding="utf-8")
+    binary_file = repo / "preview.bin"
+    binary_file.write_bytes(b"a\x00b")
+
+    app = CompanionApp(snapshot_path=snapshot_path, cwd=repo)
+
+    async def run_preview_test() -> None:
+        async with app.run_test() as pilot:
+            await pilot.pause(0.2)
+
+            body = app.query_one("#body", ContentSwitcher)
+            body.current = "files-body"
+            await pilot.pause(0.1)
+
+            browser = app.query_one("#files-body", FileBrowser)
+            tree = app.query_one("#file-tree", DirectoryTree)
+            assert tree.path == repo
+
+            browser.show_path(text_file)
+            await pilot.pause(0.05)
+
+            preview_content = app.query_one("#file-preview-content", Static)
+            assert isinstance(preview_content.content, Syntax)
+            assert "print('hello')" in preview_content.content.code
+
+            browser.show_path(binary_file)
+            await pilot.pause(0.05)
+            assert preview_content.content == "Binary file — not shown"
+
+    asyncio.run(run_preview_test())
 
 
 def test_diff_bindings_are_scoped_to_diff_body() -> None:

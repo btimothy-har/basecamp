@@ -303,6 +303,31 @@ def is_probably_binary(data: bytes) -> bool:
     return False
 
 
+def read_text_for_preview(path: Path) -> tuple[str, str | None]:
+    """Return a guard message and UTF-8 text suitable for file preview."""
+
+    if path.is_dir():
+        return "", None
+
+    try:
+        data = path.read_bytes()
+    except OSError:
+        return "Unable to read file", None
+
+    if is_probably_binary(data):
+        return "Binary file — not shown", None
+
+    if len(data) > MAX_DIFF_BYTES:
+        return f"File too large ({len(data)} bytes) — not shown", None
+
+    text = data.decode("utf-8")
+    line_count = len(text.splitlines())
+    if line_count > MAX_DIFF_LINES:
+        return f"File too large ({line_count} lines) — not shown", None
+
+    return "", text
+
+
 def collect_changes(git: GitRunner, mode: DiffMode = "all") -> tuple[str | None, list[FileStatus]]:
     """Collect base commit and changed file list for the given diff scope."""
 

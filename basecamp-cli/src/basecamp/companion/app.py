@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from pathlib import Path
 
+from pygments.lexer import Lexer
 from pygments.lexers import TextLexer, get_lexer_for_filename
 from pygments.util import ClassNotFound
 from rich.syntax import Syntax
@@ -12,7 +14,7 @@ from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.containers import Vertical, VerticalScroll
 from textual.message import Message
-from textual.widgets import ContentSwitcher, Footer, Label, ListItem, ListView, Static
+from textual.widgets import ContentSwitcher, DirectoryTree, Footer, Label, ListItem, ListView, Static
 
 from basecamp.companion.diff import (
     DIFF_MODES,
@@ -25,8 +27,18 @@ from basecamp.companion.diff import (
     file_diff_lines,
     git_status_summary,
     make_git_runner,
+    read_text_for_preview,
 )
 from basecamp.companion.snapshot import CompanionSnapshot, load_snapshot, render_workspace_lines
+
+
+def lexer_for_filename(file_path: str) -> Lexer:
+    """Return the best lexer for a filename, falling back to plain text."""
+
+    try:
+        return get_lexer_for_filename(file_path)
+    except ClassNotFound:
+        return TextLexer()
 
 
 class WorkspacePanel(Static):
@@ -183,12 +195,7 @@ class DiffView(VerticalScroll):
         )
 
     def _render_diff(self, file_path: str, diff_lines: list[DiffLine]) -> Text:
-        try:
-            lexer = get_lexer_for_filename(file_path)
-        except ClassNotFound:
-            lexer = TextLexer()
-
-        syntax = Syntax(code="", lexer=lexer, line_numbers=False, word_wrap=False)
+        syntax = Syntax(code="", lexer=lexer_for_filename(file_path), line_numbers=False, word_wrap=False)
         line_number_width = max(1, len(str(max((line.line_no or 0) for line in diff_lines) or 1)))
 
         color_map = {"added": "on #12301b", "removed": "on #3a1a1a", "context": "", "gap": ""}
@@ -270,6 +277,77 @@ class DiffBody(Vertical):
         self.app.action_cycle_diff_mode()
 
 
+class _CompanionDirectoryTree(DirectoryTree):
+    """Directory tree that hides internal git metadata."""
+
+    def filter_paths(self, paths: Iterable[Path]) -> Iterable[Path]:
+        return [path for path in paths if path.name != ".git"]
+
+
+class FileBrowser(Vertical):
+    """Files modality body containing a tree and syntax preview."""
+
+    _placeholder = "Select a file to preview"
+
+    def __init__(self, root: Path, *args: object, **kwargs: object) -> None:
+        super().__init__(*args, **kwargs)
+        self._root = root
+
+    def compose(self) -> ComposeResult:
+        tree = _CompanionDirectoryTree(self._root, id="file-tree")
+        tree.border_title = "Files"
+        yield tree
+
+        with VerticalScroll(id="file-preview"):
+            yield Static(self._placeholder, id="file-preview-content")
+
+    def on_mount(self) -> None:
+        self.query_one("#file-preview", VerticalScroll).border_title = "Preview"
+
+    def set_root(self, path: Path) -> None:
+        self._root = path
+        self.query_one("#file-tree", _CompanionDirectoryTree).path = path
+
+    def _clear_preview(self) -> None:
+        preview = self.query_one("#file-preview", VerticalScroll)
+        preview.border_title = "Preview"
+        self.query_one("#file-preview-content", Static).update(self._placeholder)
+
+    def show_path(self, path: Path) -> None:
+        preview = self.query_one("#file-preview", VerticalScroll)
+        content = self.query_one("#file-preview-content", Static)
+
+        if path.is_dir():
+            self._clear_preview()
+            return
+
+        status_message, text = read_text_for_preview(path)
+        preview.border_title = str(path)
+
+        if status_message:
+            content.update(status_message)
+            return
+
+        if text is None:
+            self._clear_preview()
+            return
+
+        content.update(
+            Syntax(
+                text,
+                lexer=lexer_for_filename(str(path)),
+                line_numbers=True,
+                word_wrap=False,
+            )
+        )
+
+    def on_directory_tree_file_selected(self, event: DirectoryTree.FileSelected) -> None:
+        self.show_path(event.path)
+
+    def on_directory_tree_directory_selected(self, _: DirectoryTree.DirectorySelected) -> None:
+        self._clear_preview()
+
+
 class CompanionApp(App[None]):
     """Companion dashboard app."""
 
@@ -319,6 +397,23 @@ class CompanionApp(App[None]):
         height: 1fr;
     }
 
+    #files-body {
+        height: 1fr;
+        layout: vertical;
+    }
+
+    #file-tree {
+        border: round $primary;
+        height: 1fr;
+        padding: 0 1;
+    }
+
+    #file-preview {
+        border: round $secondary;
+        height: 2fr;
+        padding: 0 1;
+    }
+
     #session-bar {
         height: 1;
         padding: 0 1;
@@ -343,7 +438,12 @@ class CompanionApp(App[None]):
         """Compose dashboard widgets."""
 
         yield WorkspacePanel(id="workspace-panel")
-        yield ContentSwitcher(DiffBody(id="diff-body"), id="body", initial="diff-body")
+        yield ContentSwitcher(
+            DiffBody(id="diff-body"),
+            FileBrowser(self.cwd, id="files-body"),
+            id="body",
+            initial="diff-body",
+        )
         yield Static(id="session-bar")
         yield Footer()
 
