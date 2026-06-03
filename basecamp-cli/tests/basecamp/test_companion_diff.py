@@ -100,21 +100,64 @@ class TestResolveBrowseRoots:
         worktree.mkdir()
         git = FakeGit({("worktree", "list", "--porcelain"): (0, f"worktree {main}\n")})
 
-        assert resolve_browse_roots(git, worktree) == [worktree.resolve(), main.resolve()]
+        assert resolve_browse_roots(git, worktree) == [
+            ("worktree", worktree.resolve()),
+            ("main", main.resolve()),
+        ]
 
     def test_single_root_when_cwd_is_main_checkout(self, tmp_path: Path) -> None:
         main = tmp_path / "main"
         main.mkdir()
         git = FakeGit({("worktree", "list", "--porcelain"): (0, f"worktree {main}\n")})
 
-        assert resolve_browse_roots(git, main) == [main.resolve()]
+        assert resolve_browse_roots(git, main) == [("main", main.resolve())]
 
     def test_single_root_when_main_undetectable(self, tmp_path: Path) -> None:
         worktree = tmp_path / "feature"
         worktree.mkdir()
         git = FakeGit({("worktree", "list", "--porcelain"): (1, "")})
 
-        assert resolve_browse_roots(git, worktree) == [worktree.resolve()]
+        assert resolve_browse_roots(git, worktree) == [("worktree", worktree.resolve())]
+
+    def test_scratch_appended_when_existing_directory_and_distinct(self, tmp_path: Path) -> None:
+        main = tmp_path / "main"
+        worktree = tmp_path / "feature"
+        scratch = tmp_path / "scratch"
+        main.mkdir()
+        worktree.mkdir()
+        scratch.mkdir()
+        git = FakeGit({("worktree", "list", "--porcelain"): (0, f"worktree {main}\n")})
+
+        assert resolve_browse_roots(git, worktree, scratch) == [
+            ("worktree", worktree.resolve()),
+            ("main", main.resolve()),
+            ("scratch", scratch.resolve()),
+        ]
+
+    def test_scratch_not_appended_when_missing_or_not_directory(self, tmp_path: Path) -> None:
+        main = tmp_path / "main"
+        worktree = tmp_path / "feature"
+        scratch = tmp_path / "missing-scratch"
+        main.mkdir()
+        worktree.mkdir()
+        git = FakeGit({("worktree", "list", "--porcelain"): (0, f"worktree {main}\n")})
+
+        assert resolve_browse_roots(git, worktree, scratch) == [
+            ("worktree", worktree.resolve()),
+            ("main", main.resolve()),
+        ]
+
+    def test_scratch_not_appended_when_duplicate_existing_root(self, tmp_path: Path) -> None:
+        main = tmp_path / "main"
+        worktree = tmp_path / "feature"
+        main.mkdir()
+        worktree.mkdir()
+        git = FakeGit({("worktree", "list", "--porcelain"): (0, f"worktree {main}\n")})
+
+        assert resolve_browse_roots(git, worktree, worktree) == [
+            ("worktree", worktree.resolve()),
+            ("main", main.resolve()),
+        ]
 
 
 class TestListChangedFiles:

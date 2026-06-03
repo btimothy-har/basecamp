@@ -79,15 +79,30 @@ def main_worktree_path(git: GitRunner) -> Path | None:
     return None
 
 
-def resolve_browse_roots(git: GitRunner, cwd: Path) -> list[Path]:
-    """Return distinct roots to browse: the active worktree (cwd) then the main checkout."""
+def resolve_browse_roots(
+    git: GitRunner,
+    cwd: Path,
+    scratch_dir: Path | None = None,
+) -> list[tuple[str, Path]]:
+    """Return labeled, distinct roots: working tree, main checkout, then scratch."""
 
     worktree_root = cwd.resolve()
-    roots = [worktree_root]
-
     main_root = main_worktree_path(git)
-    if main_root is not None and main_root.resolve() != worktree_root:
-        roots.append(main_root.resolve())
+    resolved_main = main_root.resolve() if main_root is not None else None
+
+    roots: list[tuple[str, Path]] = []
+    if resolved_main is not None and resolved_main == worktree_root:
+        roots.append(("main", worktree_root))
+    else:
+        roots.append(("worktree", worktree_root))
+        if resolved_main is not None:
+            roots.append(("main", resolved_main))
+
+    if scratch_dir is not None:
+        resolved_scratch = scratch_dir.resolve()
+        existing_paths = {path for _, path in roots}
+        if resolved_scratch.is_dir() and resolved_scratch not in existing_paths:
+            roots.append(("scratch", resolved_scratch))
 
     return roots
 

@@ -410,7 +410,7 @@ def test_file_browser_root_toggle_two_roots(tmp_path: Path) -> None:
     (worktree_root / "only_worktree.txt").write_text("worktree\n", encoding="utf-8")
     (main_root / "only_main.txt").write_text("main\n", encoding="utf-8")
 
-    browser = FileBrowser([worktree_root, main_root])
+    browser = FileBrowser([("worktree", worktree_root), ("main", main_root)])
 
     class BrowserHarness(App[None]):
         def compose(self) -> ComposeResult:
@@ -448,7 +448,7 @@ def test_file_browser_root_toggle_single_root_noop(tmp_path: Path) -> None:
     root.mkdir()
     (root / "only.txt").write_text("file\n", encoding="utf-8")
 
-    browser = FileBrowser([root])
+    browser = FileBrowser([("worktree", root)])
 
     class BrowserHarness(App[None]):
         def compose(self) -> ComposeResult:
@@ -469,6 +469,52 @@ def test_file_browser_root_toggle_single_root_noop(tmp_path: Path) -> None:
             assert tree.border_title == "Files"
 
     asyncio.run(run_single_root_test())
+
+
+def test_file_browser_three_roots_cycle_and_labels(tmp_path: Path) -> None:
+    worktree_root = tmp_path / "worktree"
+    main_root = tmp_path / "main"
+    scratch_root = tmp_path / "scratch"
+    worktree_root.mkdir()
+    main_root.mkdir()
+    scratch_root.mkdir()
+
+    browser = FileBrowser(
+        [
+            ("worktree", worktree_root),
+            ("main", main_root),
+            ("scratch", scratch_root),
+        ]
+    )
+
+    class BrowserHarness(App[None]):
+        def compose(self) -> ComposeResult:
+            yield browser
+
+    async def run_three_root_cycle_test() -> None:
+        async with BrowserHarness().run_test() as pilot:
+            await pilot.pause(0.1)
+
+            tree = browser.query_one("#file-tree", DirectoryTree)
+            assert tree.path == worktree_root
+            assert tree.border_title == "Files · worktree"
+
+            browser.action_toggle_root()
+            await pilot.pause(0.05)
+            assert tree.path == main_root
+            assert tree.border_title == "Files · main"
+
+            browser.action_toggle_root()
+            await pilot.pause(0.05)
+            assert tree.path == scratch_root
+            assert tree.border_title == "Files · scratch"
+
+            browser.action_toggle_root()
+            await pilot.pause(0.05)
+            assert tree.path == worktree_root
+            assert tree.border_title == "Files · worktree"
+
+    asyncio.run(run_three_root_cycle_test())
 
 
 def test_file_tree_root_label_collapses_home_path() -> None:
