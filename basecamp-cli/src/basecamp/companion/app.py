@@ -10,6 +10,8 @@ from pathlib import Path
 from pygments.lexer import Lexer
 from pygments.lexers import TextLexer, get_lexer_for_filename
 from pygments.util import ClassNotFound
+from rich.console import Group, RenderableType
+from rich.panel import Panel
 from rich.style import Style
 from rich.syntax import Syntax
 from rich.text import Text
@@ -85,46 +87,58 @@ def _render_bullets(items: list[str]) -> Text:
 _STATUS_GLYPH = {"completed": "✓", "active": "▶", "pending": "○", "deleted": "✕"}
 
 
-def _render_goal_lines(goals: list[CompanionGoal], selected: int, active: int | None) -> Text:
-    """Render the chronological goal list; mark active (●) and reverse-highlight the selection."""
+def _render_goals(goals: list[CompanionGoal], selected: int, active: int | None) -> RenderableType:
+    """Render goals as a stack of boxes, one per goal; highlight active + selected."""
 
     if not goals:
         return Text("No goals yet", style="dim")
 
-    rendered = Text()
+    panels: list[RenderableType] = []
     for index, goal in enumerate(goals):
-        if index:
-            rendered.append("\n")
-        marker = "●" if index == active else "○"
-        line = Text(f"{marker} {goal.goal}  [{goal.progress.completed}/{goal.progress.total}]")
-        if index == selected:
-            line.stylize("reverse")
-        elif index == active:
-            line.stylize("bold")
-        rendered.append_text(line)
-    return rendered
+        is_selected = index == selected
+        is_active = index == active
+        border_style = "yellow" if is_selected else "green" if is_active else "grey42"
+        panels.append(
+            Panel(
+                Text(goal.goal, style="bold" if is_selected else ""),
+                title=Text("● active", style="green") if is_active else None,
+                title_align="left",
+                subtitle=f"{goal.progress.completed}/{goal.progress.total}",
+                subtitle_align="right",
+                border_style=border_style,
+                padding=(0, 1),
+            )
+        )
+    return Group(*panels)
 
 
-def _render_task_detail(goal: CompanionGoal | None, task_index: int) -> Text:
-    """Render the selected task's status/label/description/annotation, or an empty state."""
+def _render_task_detail(goal: CompanionGoal | None, task_index: int) -> RenderableType:
+    """Render the selected task header plus a faded annotation box, or an empty state."""
 
     if goal is None or not goal.tasks:
         return Text("No tasks", style="dim")
 
     index = max(0, min(task_index, len(goal.tasks) - 1))
     task = goal.tasks[index]
-    rendered = Text()
-    rendered.append(f"[{index + 1}/{len(goal.tasks)}] ", style="dim")
-    rendered.append(f"{_STATUS_GLYPH.get(task.status, '•')} ")
-    rendered.append(task.label, style="bold")
+    header = Text()
+    header.append(f"[{index + 1}/{len(goal.tasks)}] ", style="dim")
+    header.append(f"{_STATUS_GLYPH.get(task.status, '•')} ")
+    header.append(task.label, style="bold")
     if task.description:
-        rendered.append("\n")
-        rendered.append(task.description)
-    if task.notes:
-        rendered.append("\n")
-        rendered.append("✎ ", style="dim")
-        rendered.append(task.notes, style="italic")
-    return rendered
+        header.append("\n")
+        header.append(task.description)
+
+    if not task.notes:
+        return header
+
+    annotation = Panel(
+        Text(task.notes, style="dim italic"),
+        title=Text("✎ note", style="dim"),
+        title_align="left",
+        border_style="grey42",
+        padding=(0, 1),
+    )
+    return Group(header, annotation)
 
 
 class WorkspacePanel(Static):
@@ -555,11 +569,12 @@ class DashboardBody(Widget):
         return len(goals) - 1 if goals else None
 
     @staticmethod
-    def _active_task_index(goal: CompanionGoal) -> int:
+    def _pinned_task_index(goal: CompanionGoal) -> int:
+        """Pin to the active task, else the last task (e.g. when all are completed)."""
         for index, task in enumerate(goal.tasks):
             if task.status == "active":
                 return index
-        return 0
+        return max(0, len(goal.tasks) - 1)
 
     def _selected_goal_obj(self) -> CompanionGoal | None:
         return self._goals[self._selected_goal] if self._goals else None
@@ -575,7 +590,7 @@ class DashboardBody(Widget):
 
         if self._following and active is not None:
             self._selected_goal = active
-            self._selected_task = self._active_task_index(goals[active])
+            self._selected_task = self._pinned_task_index(goals[active])
 
         self._clamp()
         self._render_dashboard()
@@ -624,7 +639,7 @@ class DashboardBody(Widget):
 
     def _render_dashboard(self) -> None:
         self.query_one("#dashboard-goals", Static).update(
-            _render_goal_lines(self._goals, self._selected_goal, self._active_index)
+            _render_goals(self._goals, self._selected_goal, self._active_index)
         )
         self.query_one("#dashboard-task", Static).update(
             _render_task_detail(self._selected_goal_obj(), self._selected_task)

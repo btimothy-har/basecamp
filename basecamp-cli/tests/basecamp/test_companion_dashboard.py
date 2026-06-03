@@ -11,12 +11,20 @@ from basecamp.companion.app import (
     CompanionApp,
     DashboardBody,
     _render_bullets,
-    _render_goal_lines,
+    _render_goals,
     _render_task_detail,
     next_body_mode,
 )
 from basecamp.companion.snapshot import CompanionGoal, CompanionProgress, CompanionSnapshot, CompanionTask
+from rich.console import Console, Group
 from textual.widgets import ContentSwitcher, Static
+
+
+def _to_text(renderable: object) -> str:
+    console = Console(width=60, no_color=True)
+    with console.capture() as capture:
+        console.print(renderable)
+    return capture.get()
 
 
 def _run_git(repo: Path, *args: str) -> None:
@@ -58,28 +66,36 @@ def test_render_bullets_preserves_literal_markup_text() -> None:
     assert "[bold]x[/]" in _render_bullets(["[bold]x[/]"]).plain
 
 
-def test_render_goal_lines_empty() -> None:
-    assert _render_goal_lines([], 0, None).plain == "No goals yet"
+def test_render_goals_empty() -> None:
+    assert "No goals yet" in _to_text(_render_goals([], 0, None))
 
 
-def test_render_goal_lines_marks_active_and_lists_all() -> None:
+def test_render_goals_one_box_per_goal_marks_active() -> None:
     goals = [
         _goal("First goal", [], active=False, completed=1, total=1),
         _goal("Second goal", [], active=True, completed=0, total=2),
     ]
-    plain = _render_goal_lines(goals, 1, 1).plain
-    assert "First goal" in plain
-    assert "Second goal" in plain
-    assert "●" in plain  # active marker
-    assert "[0/2]" in plain
+    rendered = _render_goals(goals, 1, 1)
+    assert isinstance(rendered, Group)
+    assert len(rendered.renderables) == 2
+    text = _to_text(rendered)
+    assert "First goal" in text
+    assert "Second goal" in text
+    assert "active" in text
+    assert "0/2" in text
+
+
+def test_render_goals_preserves_literal_markup() -> None:
+    goals = [_goal("[bold]x[/]", [], active=True, completed=0, total=0)]
+    assert "[bold]x[/]" in _to_text(_render_goals(goals, 0, 0))
 
 
 def test_render_task_detail_empty() -> None:
-    assert _render_task_detail(None, 0).plain == "No tasks"
-    assert _render_task_detail(_goal("g", [], active=True, completed=0, total=0), 0).plain == "No tasks"
+    assert "No tasks" in _to_text(_render_task_detail(None, 0))
+    assert "No tasks" in _to_text(_render_task_detail(_goal("g", [], active=True, completed=0, total=0), 0))
 
 
-def test_render_task_detail_shows_label_description_notes_and_position() -> None:
+def test_render_task_detail_shows_header_and_faded_annotation() -> None:
     goal = _goal(
         "g",
         [
@@ -90,17 +106,48 @@ def test_render_task_detail_shows_label_description_notes_and_position() -> None
         completed=1,
         total=2,
     )
-    plain = _render_task_detail(goal, 1).plain
-    assert "[2/2]" in plain
-    assert "T2" in plain
-    assert "desc two" in plain
-    assert "a note" in plain
+    text = _to_text(_render_task_detail(goal, 1))
+    assert "[2/2]" in text
+    assert "T2" in text
+    assert "desc two" in text
+    assert "a note" in text
+    assert "note" in text
 
 
 def test_next_body_mode_cycles_three_way() -> None:
     assert next_body_mode("diff-body") == "files-body"
     assert next_body_mode("files-body") == "dashboard-body"
     assert next_body_mode("dashboard-body") == "diff-body"
+
+
+def test_pinned_task_index_prefers_active() -> None:
+    goal = _goal(
+        "g",
+        [
+            CompanionTask(label="A", status="completed"),
+            CompanionTask(label="B", status="active"),
+            CompanionTask(label="C", status="pending"),
+        ],
+        active=True,
+        completed=1,
+        total=3,
+    )
+    assert DashboardBody._pinned_task_index(goal) == 1
+
+
+def test_pinned_task_index_falls_back_to_last_when_all_completed() -> None:
+    goal = _goal(
+        "g",
+        [CompanionTask(label="A", status="completed"), CompanionTask(label="B", status="completed")],
+        active=False,
+        completed=2,
+        total=2,
+    )
+    assert DashboardBody._pinned_task_index(goal) == 1
+
+
+def test_pinned_task_index_empty_goal_is_zero() -> None:
+    assert DashboardBody._pinned_task_index(_goal("g", [], active=True, completed=0, total=0)) == 0
 
 
 def test_dashboard_autopin_navigation_and_repin(tmp_path: Path) -> None:
