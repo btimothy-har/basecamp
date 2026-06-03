@@ -89,6 +89,8 @@ def test_companion_app_headless_smoke(tmp_path: Path) -> None:
             assert app.query_one("#file-list-list", ListView).can_focus is False
 
             await pilot.press("m")
+            await pilot.pause(0.05)
+            await pilot.press("m")
             await pilot.pause(0.1)
 
             file_list = app.query_one("#file-list", FileList)
@@ -179,8 +181,6 @@ def test_file_browser_highlight_updates_preview_live(tmp_path: Path) -> None:
     async def run_highlight_test() -> None:
         async with app.run_test() as pilot:
             await pilot.pause(0.2)
-            await pilot.press("m")
-            await pilot.pause(0.3)
 
             tree = app.query_one("#file-tree", DirectoryTree)
             node = next(
@@ -211,8 +211,6 @@ def test_file_browser_selection_focuses_preview_then_escape_returns_tree(tmp_pat
     async def run_focus_drill_test() -> None:
         async with app.run_test() as pilot:
             await pilot.pause(0.2)
-            await pilot.press("m")
-            await pilot.pause(0.3)
 
             tree = app.query_one("#file-tree", DirectoryTree)
             node = next(
@@ -279,6 +277,10 @@ def test_mode_indicator_tracks_active_mode(tmp_path: Path) -> None:
 
             await pilot.press("m")
             await pilot.pause(0.05)
+            assert "Dashboard" in str(mode_bar.render())
+
+            await pilot.press("m")
+            await pilot.pause(0.05)
             assert "Diff" in str(mode_bar.render())
 
             await pilot.press("m")
@@ -306,6 +308,11 @@ def test_mode_toggle_switches_body_and_focus(tmp_path: Path) -> None:
 
             assert body.current == "files-body"
             assert file_tree.has_focus
+
+            await pilot.press("m")
+            await pilot.pause(0.05)
+
+            assert body.current == "dashboard-body"
 
             await pilot.press("m")
             await pilot.pause(0.05)
@@ -347,6 +354,14 @@ def test_footer_binding_order_by_mode(tmp_path: Path) -> None:
             await pilot.press("m")
             await pilot.pause(0.05)
 
+            dashboard_descriptions = [
+                description for description in visible_descriptions() if description in {"Mode", "Quit"}
+            ]
+            assert dashboard_descriptions == ["Mode", "Quit"]
+
+            await pilot.press("m")
+            await pilot.pause(0.05)
+
             diff_descriptions = [
                 description
                 for description in visible_descriptions()
@@ -377,8 +392,6 @@ def test_file_browser_open_in_editor(tmp_path: Path, monkeypatch) -> None:
     async def run_open_test() -> None:
         async with app.run_test() as pilot:
             await pilot.pause(0.2)
-            await pilot.press("m")
-            await pilot.pause(0.3)
 
             tree = app.query_one("#file-tree", DirectoryTree)
             node = next(
@@ -530,7 +543,6 @@ def test_file_tree_root_label_collapses_home_path() -> None:
             async with app.run_test() as pilot:
                 await pilot.pause(0.2)
 
-                await pilot.press("m")
                 await pilot.pause(0.1)
 
                 tree = app.query_one("#file-tree", DirectoryTree)

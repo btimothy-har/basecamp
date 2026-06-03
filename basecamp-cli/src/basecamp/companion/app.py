@@ -21,6 +21,7 @@ from textual.screen import Screen
 from textual.widgets import ContentSwitcher, DirectoryTree, Footer, Label, ListItem, ListView, Static
 from textual.widgets.tree import TreeNode
 
+from basecamp.companion.analysis import CompanionAnalysis, load_analysis
 from basecamp.companion.diff import (
     DIFF_MODES,
     DiffLine,
@@ -37,6 +38,8 @@ from basecamp.companion.diff import (
 )
 from basecamp.companion.snapshot import CompanionSnapshot, collapse_home, load_snapshot, render_workspace_lines
 
+BODY_MODES = ("diff-body", "files-body", "dashboard-body")
+
 
 def lexer_for_filename(file_path: str) -> Lexer:
     """Return the best lexer for a filename, falling back to plain text."""
@@ -45,6 +48,62 @@ def lexer_for_filename(file_path: str) -> Lexer:
         return get_lexer_for_filename(file_path)
     except ClassNotFound:
         return TextLexer()
+
+
+def next_body_mode(current: str) -> str:
+    """Return the next body mode id, wrapping around at the end."""
+
+    if current not in BODY_MODES:
+        return BODY_MODES[0]
+
+    index = BODY_MODES.index(current)
+    return BODY_MODES[(index + 1) % len(BODY_MODES)]
+
+
+def _append_analysis_items(rendered: Text, title: str, items: list[str]) -> None:
+    """Append an analysis subsection when items are present."""
+
+    if not items:
+        return
+
+    rendered.append(f"{title}:\n", style="bold")
+    for item in items:
+        rendered.append("• ")
+        rendered.append(item)
+        rendered.append("\n")
+
+
+def render_analysis(analysis: CompanionAnalysis | None) -> Text:
+    """Render analysis sidecar content into markup-safe text."""
+
+    if analysis is None or not any(
+        (analysis.recap, analysis.decisions, analysis.todos, analysis.deferred, analysis.warnings)
+    ):
+        return Text("Waiting for analysis…", style="dim")
+
+    rendered = Text()
+
+    _append_analysis_items(rendered, "Recap", analysis.recap)
+
+    dropped_facts = [
+        ("Decisions", analysis.decisions),
+        ("Todos", analysis.todos),
+        ("Deferred", analysis.deferred),
+    ]
+    has_dropped_facts = any(items for _, items in dropped_facts)
+    if has_dropped_facts:
+        if rendered:
+            rendered.append("\n")
+        rendered.append("Dropped facts\n", style="bold")
+        for title, items in dropped_facts:
+            _append_analysis_items(rendered, title, items)
+
+    if analysis.warnings:
+        if rendered:
+            rendered.append("\n")
+        _append_analysis_items(rendered, "Warnings", analysis.warnings)
+
+    return rendered
 
 
 class WorkspacePanel(Static):
@@ -425,6 +484,21 @@ class FileBrowser(Horizontal):
             return
 
 
+class DashboardBody(VerticalScroll):
+    """Dashboard modality body containing analysis sections."""
+
+    BINDINGS = [Binding("m", "app.toggle_mode", "Mode")]
+
+    def compose(self) -> ComposeResult:
+        yield Static(id="dashboard-content")
+
+    def on_mount(self) -> None:
+        self.border_title = "Dashboard"
+
+    def update_analysis(self, analysis: CompanionAnalysis | None) -> None:
+        self.query_one("#dashboard-content", Static).update(render_analysis(analysis))
+
+
 class _MenuOrderedScreen(Screen):
     """Default screen that orders footer bindings as [global mode][local][quit]."""
 
@@ -498,6 +572,16 @@ class CompanionApp(App[None]):
         layout: horizontal;
     }
 
+    #dashboard-body {
+        border: round $accent;
+        height: 1fr;
+        padding: 0 1;
+    }
+
+    #dashboard-content {
+        width: 100%;
+    }
+
     #file-tree {
         border: round $primary;
         padding: 0 1;
@@ -529,12 +613,16 @@ class CompanionApp(App[None]):
     def __init__(self, snapshot_path: Path, cwd: Path, scratch_dir: Path | None = None) -> None:
         super().__init__()
         self.snapshot_path = snapshot_path
+        self.analysis_path = snapshot_path.parent / f"{snapshot_path.stem}.analysis.json"
         self.cwd = cwd
         self.scratch_dir = scratch_dir
         self._git = make_git_runner(cwd)
         self._snapshot_mtime_ns: int | None = None
         self._snapshot_exists: bool | None = None
         self._snapshot: CompanionSnapshot | None = None
+        self._analysis_mtime_ns: int | None = None
+        self._analysis_exists: bool | None = None
+        self._analysis: CompanionAnalysis | None = None
         self._base_commit: str | None = None
         self._files: list[FileStatus] = []
         self._compact = False
@@ -547,6 +635,7 @@ class CompanionApp(App[None]):
         yield ContentSwitcher(
             DiffBody(id="diff-body"),
             FileBrowser(resolve_browse_roots(self._git, self.cwd, self.scratch_dir), id="files-body"),
+            DashboardBody(id="dashboard-body"),
             id="body",
             initial="files-body",
         )
@@ -579,8 +668,12 @@ class CompanionApp(App[None]):
 
     def _update_mode_indicator(self) -> None:
         current = self.query_one("#body", ContentSwitcher).current
-        mode = "Files" if current == "files-body" else "Diff"
-        self.query_one("#session-bar-mode", Static).update(f"[dim]{mode}[/dim]")
+        labels = {
+            "diff-body": "Diff",
+            "files-body": "Files",
+            "dashboard-body": "Dashboard",
+        }
+        self.query_one("#session-bar-mode", Static).update(f"[dim]{labels.get(current, 'Diff')}[/dim]")
 
     def action_prev_file(self) -> None:
         """Move file selection to the previous changed file."""
@@ -608,15 +701,17 @@ class CompanionApp(App[None]):
         self._refresh()
 
     def action_toggle_mode(self) -> None:
-        """Toggle between diff and files bodies, focusing the active pane."""
+        """Cycle body modes, focusing the active pane."""
 
         switcher = self.query_one("#body", ContentSwitcher)
+        switcher.current = next_body_mode(switcher.current)
+
         if switcher.current == "diff-body":
-            switcher.current = "files-body"
+            self.query_one("#diff-view", DiffView).focus()
+        elif switcher.current == "files-body":
             self.query_one("#file-tree", _CompanionDirectoryTree).focus()
         else:
-            switcher.current = "diff-body"
-            self.query_one("#diff-view", DiffView).focus()
+            self.query_one("#dashboard-body", DashboardBody).focus()
 
         self._update_mode_indicator()
 
@@ -682,6 +777,20 @@ class CompanionApp(App[None]):
             self._snapshot_mtime_ns = snapshot_mtime_ns
             self._snapshot = load_snapshot(self.snapshot_path) if file_exists else None
             self._update_session_bar()
+
+        try:
+            analysis_exists = self.analysis_path.exists()
+            analysis_mtime_ns = self.analysis_path.stat().st_mtime_ns if analysis_exists else None
+        except OSError:
+            analysis_exists = False
+            analysis_mtime_ns = None
+
+        analysis_changed = analysis_exists != self._analysis_exists or analysis_mtime_ns != self._analysis_mtime_ns
+        if analysis_changed:
+            self._analysis_exists = analysis_exists
+            self._analysis_mtime_ns = analysis_mtime_ns
+            self._analysis = load_analysis(self.analysis_path) if analysis_exists else None
+            self.query_one("#dashboard-body", DashboardBody).update_analysis(self._analysis)
 
         try:
             base_commit, files = collect_changes(self._git, self._diff_mode)
