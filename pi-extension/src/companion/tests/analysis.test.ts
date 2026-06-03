@@ -3,7 +3,6 @@ import type { ChildProcess } from "node:child_process";
 import { EventEmitter } from "node:events";
 import { describe, it } from "node:test";
 import type { SessionEntry } from "@earendil-works/pi-coding-agent";
-import { clearModelAliasProvidersForTesting, registerModelAliasProvider } from "../../platform/model-aliases.ts";
 import {
 	type AnalysisDeps,
 	type AnalysisState,
@@ -11,9 +10,7 @@ import {
 	buildEnvelope,
 	countUserTurns,
 	MIN_USER_TURNS,
-	mapModelId,
 	maybeRunAnalysis,
-	resolveAnalysisModel,
 } from "../analysis.ts";
 
 function entry(message: unknown): SessionEntry {
@@ -36,43 +33,6 @@ class FakeChild extends EventEmitter {
 }
 
 describe("companion/analysis helpers", () => {
-	it("mapModelId replaces only the first slash", () => {
-		assert.equal(mapModelId("anthropic/claude-sonnet-4-6"), "anthropic:claude-sonnet-4-6");
-		assert.equal(mapModelId("openrouter/openai/gpt-5.5"), "openrouter:openai/gpt-5.5");
-		assert.equal(mapModelId("gpt-5.5"), "gpt-5.5");
-	});
-
-	it("resolveAnalysisModel prefers companion, then compaction, then fast", (t) => {
-		clearModelAliasProvidersForTesting();
-		t.after(() => clearModelAliasProvidersForTesting());
-
-		registerModelAliasProvider({
-			id: "provider-1",
-			resolve(alias) {
-				if (alias === "compaction") return "anthropic/claude-haiku-4-5";
-				if (alias === "fast") return "openrouter/openai/gpt-5.5";
-				return undefined;
-			},
-			list() {
-				return [];
-			},
-		});
-
-		assert.equal(resolveAnalysisModel(), "anthropic:claude-haiku-4-5");
-
-		registerModelAliasProvider({
-			id: "provider-2",
-			resolve(alias) {
-				return alias === "companion" ? "anthropic/claude-sonnet-4-6" : undefined;
-			},
-			list() {
-				return [];
-			},
-		});
-
-		assert.equal(resolveAnalysisModel(), "anthropic:claude-sonnet-4-6");
-	});
-
 	it("countUserTurns counts only user messages", () => {
 		const branch: SessionEntry[] = [
 			entry({ role: "user", content: "first" }),
@@ -113,7 +73,6 @@ describe("maybeRunAnalysis", () => {
 			branch: [entry({ role: "user", content: "first" }), entry({ role: "user", content: "second" })],
 			sessionId: "session-123",
 			tasksState: { goal: "Goal", tasks: [{ label: "Task", status: "pending" }] },
-			resolveModel: () => "anthropic:claude-sonnet-4-6",
 			cwd: "/tmp/worktree",
 			spawnFn: (() => {
 				throw new Error("spawnFn not configured");
@@ -176,24 +135,6 @@ describe("maybeRunAnalysis", () => {
 		assert.equal(called, 0);
 	});
 
-	it("skips when no analysis model resolves", () => {
-		const state: AnalysisState = { inFlight: false, child: null };
-		let called = 0;
-
-		maybeRunAnalysis(
-			state,
-			baseDeps({
-				resolveModel: () => undefined,
-				spawnFn: (() => {
-					called += 1;
-					return new FakeChild() as unknown as ChildProcess;
-				}) as unknown as AnalysisDeps["spawnFn"],
-			}),
-		);
-
-		assert.equal(called, 0);
-	});
-
 	it("spawns, writes envelope, and returns synchronously without waiting for close", () => {
 		const state: AnalysisState = { inFlight: false, child: null };
 		const child = new FakeChild();
@@ -220,13 +161,7 @@ describe("maybeRunAnalysis", () => {
 
 		assert.equal(calls.length, 1);
 		assert.equal(calls[0]?.command, "basecamp");
-		assert.deepEqual(calls[0]?.args, [
-			"companion-analyze",
-			"--session-id",
-			"session-123",
-			"--model",
-			"anthropic:claude-sonnet-4-6",
-		]);
+		assert.deepEqual(calls[0]?.args, ["companion-analyze", "--session-id", "session-123"]);
 		assert.equal(calls[0]?.cwd, "/tmp/worktree");
 
 		const expectedEnvelope = buildEnvelope(

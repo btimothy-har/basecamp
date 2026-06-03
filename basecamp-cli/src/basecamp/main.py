@@ -80,17 +80,17 @@ def companion(snapshot_path: Path, cwd: Path, scratch_dir: Path | None) -> None:
 
 @basecamp.command("companion-analyze")
 @click.option("--session-id", required=True, type=str)
-@click.option("--model", required=True, type=str)
 @click.option(
     "--base-dir",
     required=False,
     default=None,
     type=click.Path(path_type=Path),
 )
-def companion_analyze(session_id: str, model: str, base_dir: Path | None) -> None:
+def companion_analyze(session_id: str, base_dir: Path | None) -> None:
     """Best-effort companion analysis writer for a session."""
     analyzer = importlib.import_module("basecamp.companion.analyzer")
     analysis = importlib.import_module("basecamp.companion.analysis")
+    model = analyzer.resolve_companion_model()
 
     try:
         envelope = json.load(sys.stdin)

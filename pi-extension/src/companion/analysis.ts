@@ -1,7 +1,6 @@
 import { type ChildProcess, spawn } from "node:child_process";
 import type { ExtensionAPI, SessionEntry } from "@earendil-works/pi-coding-agent";
 import { isCompanionActive } from "../panes/state.ts";
-import { resolveModelAlias } from "../platform/model-aliases.ts";
 import { getTasksAccess } from "../platform/tasks-access.ts";
 import { getWorkspaceService } from "../platform/workspace.ts";
 import { buildTitleContext } from "../session/ui/title.ts";
@@ -29,7 +28,6 @@ export interface AnalysisDeps {
 	branch: SessionEntry[];
 	sessionId: string;
 	tasksState: AnalysisTasksState | null;
-	resolveModel: () => string | undefined;
 	cwd: string;
 	spawnFn: typeof spawn;
 }
@@ -44,15 +42,6 @@ function getAnalysisState(): AnalysisState {
 	const globalObject = globalThis as GlobalWithAnalysis;
 	globalObject[analysisKey] ??= { inFlight: false, child: null };
 	return globalObject[analysisKey];
-}
-
-export function mapModelId(resolved: string): string {
-	return resolved.replace("/", ":");
-}
-
-export function resolveAnalysisModel(): string | undefined {
-	const resolved = resolveModelAlias("companion") ?? resolveModelAlias("compaction") ?? resolveModelAlias("fast");
-	return resolved ? mapModelId(resolved) : undefined;
 }
 
 export function countUserTurns(branch: SessionEntry[]): number {
@@ -83,9 +72,6 @@ export function maybeRunAnalysis(state: AnalysisState, deps: AnalysisDeps): void
 	if (!deps.isActive()) return;
 	if (countUserTurns(deps.branch) < MIN_USER_TURNS) return;
 
-	const model = deps.resolveModel();
-	if (!model) return;
-
 	const context = buildTitleContext(deps.branch);
 	if (!context.trim()) return;
 
@@ -100,7 +86,7 @@ export function maybeRunAnalysis(state: AnalysisState, deps: AnalysisDeps): void
 	let watchdog: ReturnType<typeof setTimeout> | null = null;
 
 	try {
-		const child = deps.spawnFn("basecamp", ["companion-analyze", "--session-id", deps.sessionId, "--model", model], {
+		const child = deps.spawnFn("basecamp", ["companion-analyze", "--session-id", deps.sessionId], {
 			cwd: deps.cwd,
 			stdio: ["pipe", "ignore", "ignore"],
 		});
@@ -154,7 +140,6 @@ export default function registerCompanionAnalysis(pi: ExtensionAPI): void {
 				branch: ctx.sessionManager.getBranch(),
 				sessionId: ctx.sessionManager.getSessionId(),
 				tasksState: getTasksAccess()?.getState() ?? null,
-				resolveModel: resolveAnalysisModel,
 				cwd: getWorkspaceService()?.getEffectiveCwd?.() ?? process.cwd(),
 				spawnFn: spawn,
 			});

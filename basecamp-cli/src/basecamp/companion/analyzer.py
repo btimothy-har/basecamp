@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import json
+import os
 from collections.abc import Callable
 from datetime import UTC, datetime
 from typing import Any
@@ -21,6 +22,14 @@ except ImportError:
     PydanticAIAgent = None
 
 AgentFactory = Callable[..., Any]
+
+DEFAULT_COMPANION_MODEL = "anthropic:claude-sonnet-4-6"
+COMPANION_MODEL_ENV_VAR = "BASECAMP_COMPANION_MODEL"
+
+
+def resolve_companion_model() -> str:
+    """Resolve the analysis model from the env override, else the sonnet default."""
+    return os.environ.get(COMPANION_MODEL_ENV_VAR) or DEFAULT_COMPANION_MODEL
 
 SYSTEM_PROMPT = """Analyze the provided context from an AI coding agent's work session and produce a concise situational-awareness dashboard for the human supervisor watching it.
 
