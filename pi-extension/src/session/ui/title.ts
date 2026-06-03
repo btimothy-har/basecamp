@@ -205,20 +205,9 @@ function appendBounded(parts: string[], part: string, maxChars: number): boolean
 	return false;
 }
 
-export interface BuildTitleContextOptions {
-	maxMessages?: number;
-	maxContextChars?: number;
-}
-
-export function buildTitleContext(
-	entries: SessionEntry[],
-	latestPrompt?: string,
-	options: BuildTitleContextOptions = {},
-): string {
-	const maxMessages = options.maxMessages ?? MAX_RECENT_MESSAGES;
-	const maxContextChars = options.maxContextChars ?? MAX_CONTEXT_CHARS;
+export function buildTitleContext(entries: SessionEntry[], latestPrompt?: string): string {
 	const parts: string[] = [];
-	const recentMessages = entries.filter((entry) => entry.type === "message").slice(-maxMessages);
+	const recentMessages = entries.filter((entry) => entry.type === "message").slice(-MAX_RECENT_MESSAGES);
 	const recentParts: string[] = [];
 
 	for (const entry of recentMessages) {
@@ -255,19 +244,19 @@ export function buildTitleContext(
 		const part = recentParts[index]!;
 		const separatorLength = parts.length === 0 ? 0 : 2;
 		const nextLength = recentLength + separatorLength + part.length;
-		if (nextLength <= maxContextChars) {
+		if (nextLength <= MAX_CONTEXT_CHARS) {
 			parts.unshift(part);
 			recentLength = nextLength;
 			continue;
 		}
 
-		const remaining = maxContextChars - recentLength - separatorLength;
+		const remaining = MAX_CONTEXT_CHARS - recentLength - separatorLength;
 		if (remaining > 40) parts.unshift(truncate(part, remaining));
 		break;
 	}
 
 	const pendingPrompt = latestPrompt ? compactText(latestPrompt, MAX_LATEST_PROMPT_CHARS) : "";
-	if (pendingPrompt) appendBounded(parts, `[Pending User Prompt]\n${pendingPrompt}`, maxContextChars);
+	if (pendingPrompt) appendBounded(parts, `[Pending User Prompt]\n${pendingPrompt}`, MAX_CONTEXT_CHARS);
 
 	return parts.join("\n\n");
 }

@@ -57,6 +57,68 @@ class TestLoadSnapshot:
         assert snapshot.repo_name == "basecamp"
         assert snapshot.effective_cwd == "/tmp/worktree"
 
+    def test_load_snapshot_parses_goals(self, tmp_path: Path) -> None:
+        path = tmp_path / "snapshot.json"
+        path.write_text(
+            json.dumps(
+                {
+                    "version": 1,
+                    "sessionId": "session-goals",
+                    "updatedAt": "2026-06-02T12:34:56Z",
+                    "effectiveCwd": "/tmp/wt",
+                    "goals": [
+                        {
+                            "goal": "First goal",
+                            "tasks": [
+                                {
+                                    "label": "T1",
+                                    "description": "d1",
+                                    "criteria": "c1",
+                                    "status": "completed",
+                                    "notes": "n1",
+                                }
+                            ],
+                            "agentMode": "executor",
+                            "active": False,
+                            "archivedAt": "2025-01-01T00:00:00.000Z",
+                            "progress": {"completed": 1, "total": 1},
+                        },
+                        {
+                            "goal": "Active goal",
+                            "tasks": [
+                                {
+                                    "label": "T3",
+                                    "description": "d3",
+                                    "criteria": "c3",
+                                    "status": "active",
+                                    "notes": None,
+                                }
+                            ],
+                            "agentMode": None,
+                            "active": True,
+                            "archivedAt": None,
+                            "progress": {"completed": 0, "total": 1},
+                        },
+                    ],
+                }
+            ),
+            encoding="utf-8",
+        )
+
+        snapshot = load_snapshot(path)
+
+        assert snapshot is not None
+        assert len(snapshot.goals) == 2
+        assert snapshot.goals[0].goal == "First goal"
+        assert snapshot.goals[0].active is False
+        assert snapshot.goals[0].archived_at == "2025-01-01T00:00:00.000Z"
+        assert snapshot.goals[0].agent_mode == "executor"
+        assert snapshot.goals[0].tasks[0].description == "d1"
+        assert snapshot.goals[0].tasks[0].criteria == "c1"
+        assert snapshot.goals[0].progress.completed == 1
+        assert snapshot.goals[1].active is True
+        assert snapshot.goals[1].tasks[0].notes is None
+
     def test_load_snapshot_missing_file_returns_none(self, tmp_path: Path) -> None:
         path = tmp_path / "missing.json"
         assert load_snapshot(path) is None

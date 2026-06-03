@@ -5,8 +5,8 @@
  *   ✓ completed  →  active  ·  pending
  *
  * Each task has a label, description, and optional notes.
- * Description is set by the agent at creation. Notes are co-written
- * by the agent (via annotate_task) and the user (via /tasks command).
+ * Description is set by the agent at creation. Notes are set by the
+ * agent via annotate_task.
  *
  * Tools:
  *   - update_goal: set or change the session goal
@@ -73,7 +73,7 @@ export interface GoalCycle {
 	archivedAt: string | null;
 }
 
-/** Exposed to /tasks command and /plan for state access + mutation. */
+/** Exposed to /plan and the companion snapshot for state access + history. */
 export interface TasksAccess {
 	getState(): Readonly<TasksState>;
 	setNotes(index: number, notes: string): void;
@@ -83,6 +83,8 @@ export interface TasksAccess {
 	getPlanRef(): GoalCycle["planRef"];
 	/** Get the current ExtensionContext (null before session_start). */
 	getContext(): ExtensionContext | null;
+	/** Full goal-cycle history (archived + active), chronological. Returns a defensive copy. */
+	getCycles(): readonly GoalCycle[];
 }
 
 // ============================================================================
@@ -664,6 +666,12 @@ export function registerTasks(pi: ExtensionAPI): TasksAccess {
 			return active?.planRef ?? null;
 		},
 		getContext: () => ctx,
+		getCycles() {
+			return cycles.map((c) => ({
+				...c,
+				tasks: (c.active ? state.tasks : c.tasks).map((t) => ({ ...t })),
+			}));
+		},
 	};
 
 	registerTasksAccess(access);

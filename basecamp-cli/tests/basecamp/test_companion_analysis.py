@@ -36,14 +36,14 @@ class TestSectionCap:
                     "version": COMPANION_ANALYSIS_VERSION,
                     "sessionId": "s",
                     "updatedAt": "2026-06-04T12:34:56Z",
-                    "recap": [f"line {index}" for index in range(MAX_SECTION_ITEMS + 2)],
+                    "warnings": [f"line {index}" for index in range(MAX_SECTION_ITEMS + 2)],
                 }
             ),
             encoding="utf-8",
         )
         loaded = load_analysis(path)
         assert loaded is not None
-        assert len(loaded.recap) == MAX_SECTION_ITEMS
+        assert len(loaded.warnings) == MAX_SECTION_ITEMS
 
 
 class TestWriteAndLoadAnalysis:
@@ -56,7 +56,6 @@ class TestWriteAndLoadAnalysis:
             session_id="session-123",
             updated_at="2026-06-04T12:34:56Z",
             model="gpt-5.3",
-            recap=["Recap line"],
             decisions=["Decision line"],
             open_items=["Open item line"],
             warnings=["Warning line"],

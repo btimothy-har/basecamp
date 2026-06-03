@@ -22,7 +22,6 @@ def test_companion_analyze_writes_sidecar(monkeypatch, tmp_path: Path) -> None:
         session_id="s",
         updated_at="2026-06-04T12:34:56+00:00",
         model="anthropic:claude-haiku-4-5",
-        recap=["r"],
     )
 
     def fake_generate_analysis(**_: object) -> CompanionAnalysis:
@@ -57,7 +56,6 @@ def test_companion_analyze_failure_keeps_last_good(monkeypatch, tmp_path: Path) 
         session_id="s",
         updated_at="2026-06-04T12:34:56+00:00",
         model="anthropic:claude-haiku-4-5",
-        recap=["existing"],
     )
     write_analysis(path, prior)
     before = path.read_text(encoding="utf-8")

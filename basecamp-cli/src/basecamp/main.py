@@ -86,8 +86,7 @@ def companion(snapshot_path: Path, cwd: Path, scratch_dir: Path | None) -> None:
     default=None,
     type=click.Path(path_type=Path),
 )
-@click.option("--rebuild", is_flag=True, default=False, help="Ignore the prior sidecar and rebuild from full context.")
-def companion_analyze(session_id: str, base_dir: Path | None, *, rebuild: bool) -> None:
+def companion_analyze(session_id: str, base_dir: Path | None) -> None:
     """Best-effort companion analysis writer for a session."""
     analyzer = importlib.import_module("basecamp.companion.analyzer")
     analysis = importlib.import_module("basecamp.companion.analysis")
@@ -102,7 +101,7 @@ def companion_analyze(session_id: str, base_dir: Path | None, *, rebuild: bool) 
     already_tracked = envelope.get("alreadyTracked", "") if isinstance(envelope, dict) else ""
 
     path = analysis.companion_analysis_path(session_id, base_dir)
-    prior = None if rebuild else analysis.load_analysis(path)
+    prior = analysis.load_analysis(path)
 
     try:
         result = analyzer.generate_analysis(

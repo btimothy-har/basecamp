@@ -7,8 +7,6 @@ import { buildTitleContext } from "../session/ui/title.ts";
 
 export const MIN_USER_TURNS = 2;
 export const ANALYSIS_TIMEOUT_MS = 60_000;
-export const RECAP_MAX_MESSAGES = 2000;
-export const RECAP_MAX_CONTEXT_CHARS = 80_000;
 
 export interface AnalysisTaskSummary {
 	label: string;
@@ -75,7 +73,6 @@ interface StartAnalysisOptions {
 	sessionId: string;
 	context: string;
 	alreadyTracked: string;
-	rebuild: boolean;
 }
 
 export function startAnalysis(state: AnalysisState, options: StartAnalysisOptions): void {
@@ -90,7 +87,6 @@ export function startAnalysis(state: AnalysisState, options: StartAnalysisOption
 
 	try {
 		const args = ["companion-analyze", "--session-id", options.sessionId];
-		if (options.rebuild) args.push("--rebuild");
 
 		const child = options.spawnFn("basecamp", args, {
 			cwd: options.cwd,
@@ -148,7 +144,6 @@ export function maybeRunAnalysis(state: AnalysisState, deps: AnalysisDeps): void
 		sessionId: deps.sessionId,
 		context,
 		alreadyTracked: buildAlreadyTracked(deps.tasksState),
-		rebuild: false,
 	});
 }
 
@@ -156,37 +151,6 @@ export default function registerCompanionAnalysis(pi: ExtensionAPI): void {
 	if (Number(process.env.BASECAMP_AGENT_DEPTH ?? "0") > 0) return;
 
 	const state = getAnalysisState();
-
-	pi.registerCommand("recap", {
-		description: "Rebuild the companion dashboard from the full conversation",
-		handler: async (_args, cmdCtx) => {
-			try {
-				if (state.inFlight) {
-					cmdCtx.ui.notify("Companion analysis already running — try /recap again shortly", "warning");
-					return;
-				}
-				const context = buildTitleContext(cmdCtx.sessionManager.getBranch(), undefined, {
-					maxMessages: RECAP_MAX_MESSAGES,
-					maxContextChars: RECAP_MAX_CONTEXT_CHARS,
-				});
-				if (!context.trim()) {
-					cmdCtx.ui.notify("Nothing to recap yet", "warning");
-					return;
-				}
-				startAnalysis(state, {
-					spawnFn: spawn,
-					cwd: getWorkspaceService()?.getEffectiveCwd?.() ?? process.cwd(),
-					sessionId: cmdCtx.sessionManager.getSessionId(),
-					context,
-					alreadyTracked: buildAlreadyTracked(getTasksAccess()?.getState() ?? null),
-					rebuild: true,
-				});
-				cmdCtx.ui.notify("Rebuilding dashboard from full history…", "info");
-			} catch {
-				// best effort
-			}
-		},
-	});
 
 	pi.on("agent_end", (_event, ctx) => {
 		try {

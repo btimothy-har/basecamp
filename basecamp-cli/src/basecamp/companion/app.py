@@ -18,6 +18,7 @@ from textual.binding import ActiveBinding, Binding
 from textual.containers import Horizontal, Vertical, VerticalScroll
 from textual.message import Message
 from textual.screen import Screen
+from textual.widget import Widget
 from textual.widgets import ContentSwitcher, DirectoryTree, Footer, Label, ListItem, ListView, Static
 from textual.widgets.tree import TreeNode
 
@@ -36,7 +37,13 @@ from basecamp.companion.diff import (
     read_text_for_preview,
     resolve_browse_roots,
 )
-from basecamp.companion.snapshot import CompanionSnapshot, collapse_home, load_snapshot, render_workspace_lines
+from basecamp.companion.snapshot import (
+    CompanionGoal,
+    CompanionSnapshot,
+    collapse_home,
+    load_snapshot,
+    render_workspace_lines,
+)
 
 BODY_MODES = ("diff-body", "files-body", "dashboard-body")
 
@@ -72,6 +79,51 @@ def _render_bullets(items: list[str]) -> Text:
             rendered.append("\n")
         rendered.append("• ")
         rendered.append(item)
+    return rendered
+
+
+_STATUS_GLYPH = {"completed": "✓", "active": "▶", "pending": "○", "deleted": "✕"}
+
+
+def _render_goal_lines(goals: list[CompanionGoal], selected: int, active: int | None) -> Text:
+    """Render the chronological goal list; mark active (●) and reverse-highlight the selection."""
+
+    if not goals:
+        return Text("No goals yet", style="dim")
+
+    rendered = Text()
+    for index, goal in enumerate(goals):
+        if index:
+            rendered.append("\n")
+        marker = "●" if index == active else "○"
+        line = Text(f"{marker} {goal.goal}  [{goal.progress.completed}/{goal.progress.total}]")
+        if index == selected:
+            line.stylize("reverse")
+        elif index == active:
+            line.stylize("bold")
+        rendered.append_text(line)
+    return rendered
+
+
+def _render_task_detail(goal: CompanionGoal | None, task_index: int) -> Text:
+    """Render the selected task's status/label/description/annotation, or an empty state."""
+
+    if goal is None or not goal.tasks:
+        return Text("No tasks", style="dim")
+
+    index = max(0, min(task_index, len(goal.tasks) - 1))
+    task = goal.tasks[index]
+    rendered = Text()
+    rendered.append(f"[{index + 1}/{len(goal.tasks)}] ", style="dim")
+    rendered.append(f"{_STATUS_GLYPH.get(task.status, '•')} ")
+    rendered.append(task.label, style="bold")
+    if task.description:
+        rendered.append("\n")
+        rendered.append(task.description)
+    if task.notes:
+        rendered.append("\n")
+        rendered.append("✎ ", style="dim")
+        rendered.append(task.notes, style="italic")
     return rendered
 
 
@@ -453,41 +505,143 @@ class FileBrowser(Horizontal):
             return
 
 
-class DashboardBody(VerticalScroll):
-    """Dashboard modality body with a separate box per analysis section."""
+class DashboardBody(Widget):
+    """Goal-centric dashboard: chronological goals + task detail + inferred sections."""
 
-    BINDINGS = [Binding("m", "app.toggle_mode", "Mode")]
+    can_focus = True
+
+    BINDINGS = [
+        Binding("m", "app.toggle_mode", "Mode"),
+        Binding("up", "goal_prev", "Prev goal"),
+        Binding("down", "goal_next", "Next goal"),
+        Binding("left", "task_prev", "Prev task"),
+        Binding("right", "task_next", "Next task"),
+    ]
+
+    def __init__(self, *args: object, **kwargs: object) -> None:
+        super().__init__(*args, **kwargs)
+        self._goals: list[CompanionGoal] = []
+        self._analysis: CompanionAnalysis | None = None
+        self._selected_goal = 0
+        self._selected_task = 0
+        self._following = True
+        self._active_index: int | None = None
 
     def compose(self) -> ComposeResult:
-        yield Static(id="dashboard-recap", classes="dashboard-box")
-        with Horizontal(id="dashboard-middle"):
+        yield Static(id="dashboard-goals")
+        with Vertical(id="dashboard-main"):
+            yield Static(id="dashboard-task", classes="dashboard-box")
             yield Static(id="dashboard-decisions", classes="dashboard-box")
-            yield Static(id="dashboard-open", classes="dashboard-box")
-        yield Static(id="dashboard-warnings", classes="dashboard-box")
+            with Horizontal(id="dashboard-bottom"):
+                yield Static(id="dashboard-open", classes="dashboard-box")
+                yield Static(id="dashboard-warnings", classes="dashboard-box")
+
+    def render(self) -> Text:
+        return Text()
 
     def on_mount(self) -> None:
-        self.query_one("#dashboard-recap", Static).border_title = "Recap"
+        self.query_one("#dashboard-goals", Static).border_title = "Goals"
+        self.query_one("#dashboard-task", Static).border_title = "Task"
         self.query_one("#dashboard-decisions", Static).border_title = "Decisions"
         self.query_one("#dashboard-open", Static).border_title = "Open items"
         self.query_one("#dashboard-warnings", Static).border_title = "Warnings"
+        self._render_dashboard()
+
+    @staticmethod
+    def _active_goal_index(goals: list[CompanionGoal]) -> int | None:
+        for index, goal in enumerate(goals):
+            if goal.active:
+                return index
+        return len(goals) - 1 if goals else None
+
+    @staticmethod
+    def _active_task_index(goal: CompanionGoal) -> int:
+        for index, task in enumerate(goal.tasks):
+            if task.status == "active":
+                return index
+        return 0
+
+    def _selected_goal_obj(self) -> CompanionGoal | None:
+        return self._goals[self._selected_goal] if self._goals else None
+
+    def update_snapshot(self, snapshot: CompanionSnapshot | None) -> None:
+        goals = list(snapshot.goals) if snapshot else []
+        active = self._active_goal_index(goals)
+
+        if active != self._active_index:
+            self._following = True
+        self._active_index = active
+        self._goals = goals
+
+        if self._following and active is not None:
+            self._selected_goal = active
+            self._selected_task = self._active_task_index(goals[active])
+
+        self._clamp()
+        self._render_dashboard()
 
     def update_analysis(self, analysis: CompanionAnalysis | None) -> None:
-        recap = self.query_one("#dashboard-recap", Static)
-        decisions = self.query_one("#dashboard-decisions", Static)
-        open_items = self.query_one("#dashboard-open", Static)
-        warnings = self.query_one("#dashboard-warnings", Static)
+        self._analysis = analysis
+        self._render_sections()
 
-        if analysis is None:
-            recap.update(Text("Waiting for analysis…", style="dim"))
-            decisions.update(Text("—", style="dim"))
-            open_items.update(Text("—", style="dim"))
-            warnings.update(Text("—", style="dim"))
+    def _clamp(self) -> None:
+        if not self._goals:
+            self._selected_goal = 0
+            self._selected_task = 0
             return
+        self._selected_goal = max(0, min(self._selected_goal, len(self._goals) - 1))
+        tasks = self._goals[self._selected_goal].tasks
+        self._selected_task = max(0, min(self._selected_task, max(0, len(tasks) - 1)))
 
-        recap.update(_render_bullets(analysis.recap))
-        decisions.update(_render_bullets(analysis.decisions))
-        open_items.update(_render_bullets(analysis.open_items))
-        warnings.update(_render_bullets(analysis.warnings))
+    def action_goal_prev(self) -> None:
+        if self._selected_goal > 0:
+            self._selected_goal -= 1
+            self._selected_task = 0
+            self._following = False
+            self._clamp()
+            self._render_dashboard()
+
+    def action_goal_next(self) -> None:
+        if self._selected_goal < len(self._goals) - 1:
+            self._selected_goal += 1
+            self._selected_task = 0
+            self._following = False
+            self._clamp()
+            self._render_dashboard()
+
+    def action_task_prev(self) -> None:
+        if self._selected_task > 0:
+            self._selected_task -= 1
+            self._following = False
+            self._render_dashboard()
+
+    def action_task_next(self) -> None:
+        goal = self._selected_goal_obj()
+        if goal and self._selected_task < len(goal.tasks) - 1:
+            self._selected_task += 1
+            self._following = False
+            self._render_dashboard()
+
+    def _render_dashboard(self) -> None:
+        self.query_one("#dashboard-goals", Static).update(
+            _render_goal_lines(self._goals, self._selected_goal, self._active_index)
+        )
+        self.query_one("#dashboard-task", Static).update(
+            _render_task_detail(self._selected_goal_obj(), self._selected_task)
+        )
+        self._render_sections()
+
+    def _render_sections(self) -> None:
+        analysis = self._analysis
+        self.query_one("#dashboard-decisions", Static).update(
+            _render_bullets(analysis.decisions) if analysis else Text("—", style="dim")
+        )
+        self.query_one("#dashboard-open", Static).update(
+            _render_bullets(analysis.open_items) if analysis else Text("—", style="dim")
+        )
+        self.query_one("#dashboard-warnings", Static).update(
+            _render_bullets(analysis.warnings) if analysis else Text("—", style="dim")
+        )
 
 
 class _MenuOrderedScreen(Screen):
@@ -564,29 +718,55 @@ class CompanionApp(App[None]):
     }
 
     #dashboard-body {
+        layout: horizontal;
         height: 1fr;
         padding: 0 1;
     }
 
+    #dashboard-goals {
+        border: round $accent;
+        width: 34%;
+        height: 1fr;
+        padding: 0 1;
+        margin-right: 1;
+    }
+
+    #dashboard-main {
+        width: 1fr;
+        height: 1fr;
+    }
+
     .dashboard-box {
         border: round $accent;
-        height: auto;
-        width: 100%;
         padding: 0 1;
+    }
+
+    #dashboard-task {
+        height: auto;
+        min-height: 4;
+        width: 100%;
         margin-bottom: 1;
     }
 
-    #dashboard-middle {
-        height: auto;
+    #dashboard-decisions {
+        height: 1fr;
+        width: 100%;
+        margin-bottom: 1;
     }
 
-    #dashboard-decisions {
-        width: 1fr;
-        margin-right: 1;
+    #dashboard-bottom {
+        height: 1fr;
     }
 
     #dashboard-open {
         width: 1fr;
+        height: 1fr;
+        margin-right: 1;
+    }
+
+    #dashboard-warnings {
+        width: 1fr;
+        height: 1fr;
     }
 
     #file-tree {
@@ -784,6 +964,7 @@ class CompanionApp(App[None]):
             self._snapshot_mtime_ns = snapshot_mtime_ns
             self._snapshot = load_snapshot(self.snapshot_path) if file_exists else None
             self._update_session_bar()
+            self.query_one("#dashboard-body", DashboardBody).update_snapshot(self._snapshot)
 
         try:
             analysis_exists = self.analysis_path.exists()
