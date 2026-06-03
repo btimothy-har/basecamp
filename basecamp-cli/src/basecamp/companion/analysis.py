@@ -20,11 +20,10 @@ class AnalysisSections(CompanionBaseModel):
 
     recap: list[str] = Field(default_factory=list, max_length=MAX_SECTION_ITEMS)
     decisions: list[str] = Field(default_factory=list, max_length=MAX_SECTION_ITEMS)
-    todos: list[str] = Field(default_factory=list, max_length=MAX_SECTION_ITEMS)
-    deferred: list[str] = Field(default_factory=list, max_length=MAX_SECTION_ITEMS)
+    open_items: list[str] = Field(default_factory=list, max_length=MAX_SECTION_ITEMS)
     warnings: list[str] = Field(default_factory=list, max_length=MAX_SECTION_ITEMS)
 
-    @field_validator("recap", "decisions", "todos", "deferred", "warnings", mode="before")
+    @field_validator("recap", "decisions", "open_items", "warnings", mode="before")
     @classmethod
     def _cap_items(cls, value: object) -> object:
         """Truncate over-long sections so the cap never hard-fails validation."""

@@ -60,49 +60,18 @@ def next_body_mode(current: str) -> str:
     return BODY_MODES[(index + 1) % len(BODY_MODES)]
 
 
-def _append_analysis_items(rendered: Text, title: str, items: list[str]) -> None:
-    """Append an analysis subsection when items are present."""
+def _render_bullets(items: list[str]) -> Text:
+    """Render items as markup-safe bullet lines, or an em dash when empty."""
 
     if not items:
-        return
-
-    rendered.append(f"{title}:\n", style="bold")
-    for item in items:
-        rendered.append("• ")
-        rendered.append(item)
-        rendered.append("\n")
-
-
-def render_analysis(analysis: CompanionAnalysis | None) -> Text:
-    """Render analysis sidecar content into markup-safe text."""
-
-    if analysis is None or not any(
-        (analysis.recap, analysis.decisions, analysis.todos, analysis.deferred, analysis.warnings)
-    ):
-        return Text("Waiting for analysis…", style="dim")
+        return Text("—", style="dim")
 
     rendered = Text()
-
-    _append_analysis_items(rendered, "Recap", analysis.recap)
-
-    dropped_facts = [
-        ("Decisions", analysis.decisions),
-        ("Todos", analysis.todos),
-        ("Deferred", analysis.deferred),
-    ]
-    has_dropped_facts = any(items for _, items in dropped_facts)
-    if has_dropped_facts:
-        if rendered:
+    for index, item in enumerate(items):
+        if index:
             rendered.append("\n")
-        rendered.append("Dropped facts\n", style="bold")
-        for title, items in dropped_facts:
-            _append_analysis_items(rendered, title, items)
-
-    if analysis.warnings:
-        if rendered:
-            rendered.append("\n")
-        _append_analysis_items(rendered, "Warnings", analysis.warnings)
-
+        rendered.append("• ")
+        rendered.append(item)
     return rendered
 
 
@@ -485,18 +454,40 @@ class FileBrowser(Horizontal):
 
 
 class DashboardBody(VerticalScroll):
-    """Dashboard modality body containing analysis sections."""
+    """Dashboard modality body with a separate box per analysis section."""
 
     BINDINGS = [Binding("m", "app.toggle_mode", "Mode")]
 
     def compose(self) -> ComposeResult:
-        yield Static(id="dashboard-content")
+        yield Static(id="dashboard-recap", classes="dashboard-box")
+        with Horizontal(id="dashboard-middle"):
+            yield Static(id="dashboard-decisions", classes="dashboard-box")
+            yield Static(id="dashboard-open", classes="dashboard-box")
+        yield Static(id="dashboard-warnings", classes="dashboard-box")
 
     def on_mount(self) -> None:
-        self.border_title = "Dashboard"
+        self.query_one("#dashboard-recap", Static).border_title = "Recap"
+        self.query_one("#dashboard-decisions", Static).border_title = "Decisions"
+        self.query_one("#dashboard-open", Static).border_title = "Open items"
+        self.query_one("#dashboard-warnings", Static).border_title = "Warnings"
 
     def update_analysis(self, analysis: CompanionAnalysis | None) -> None:
-        self.query_one("#dashboard-content", Static).update(render_analysis(analysis))
+        recap = self.query_one("#dashboard-recap", Static)
+        decisions = self.query_one("#dashboard-decisions", Static)
+        open_items = self.query_one("#dashboard-open", Static)
+        warnings = self.query_one("#dashboard-warnings", Static)
+
+        if analysis is None:
+            recap.update(Text("Waiting for analysis…", style="dim"))
+            decisions.update(Text("—", style="dim"))
+            open_items.update(Text("—", style="dim"))
+            warnings.update(Text("—", style="dim"))
+            return
+
+        recap.update(_render_bullets(analysis.recap))
+        decisions.update(_render_bullets(analysis.decisions))
+        open_items.update(_render_bullets(analysis.open_items))
+        warnings.update(_render_bullets(analysis.warnings))
 
 
 class _MenuOrderedScreen(Screen):
@@ -573,13 +564,29 @@ class CompanionApp(App[None]):
     }
 
     #dashboard-body {
-        border: round $accent;
         height: 1fr;
         padding: 0 1;
     }
 
-    #dashboard-content {
+    .dashboard-box {
+        border: round $accent;
+        height: auto;
         width: 100%;
+        padding: 0 1;
+        margin-bottom: 1;
+    }
+
+    #dashboard-middle {
+        height: auto;
+    }
+
+    #dashboard-decisions {
+        width: 1fr;
+        margin-right: 1;
+    }
+
+    #dashboard-open {
+        width: 1fr;
     }
 
     #file-tree {

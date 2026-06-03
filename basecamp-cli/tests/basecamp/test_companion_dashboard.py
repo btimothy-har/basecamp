@@ -8,7 +8,7 @@ import subprocess
 from pathlib import Path
 
 from basecamp.companion.analysis import CompanionAnalysis
-from basecamp.companion.app import CompanionApp, DashboardBody, next_body_mode, render_analysis
+from basecamp.companion.app import CompanionApp, DashboardBody, _render_bullets, next_body_mode
 from textual.widgets import ContentSwitcher, Static
 
 
@@ -40,57 +40,18 @@ def _write_snapshot(path: Path, session_id: str) -> None:
     )
 
 
-def _analysis(**overrides: object) -> CompanionAnalysis:
-    payload = {
-        "version": 1,
-        "session_id": "session-123",
-        "updated_at": "2026-06-04T12:34:56Z",
-        "model": "test-model",
-        "recap": ["recap item"],
-        "decisions": ["decision item"],
-        "todos": ["todo item"],
-        "deferred": ["deferred item"],
-        "warnings": ["warning item"],
-    }
-    payload.update(overrides)
-    return CompanionAnalysis.model_validate(payload)
+def test_render_bullets_empty_shows_dash() -> None:
+    assert _render_bullets([]).plain == "—"
 
 
-def test_render_analysis_none_shows_waiting() -> None:
-    rendered = render_analysis(None)
-    assert rendered.plain == "Waiting for analysis…"
+def test_render_bullets_populated() -> None:
+    plain = _render_bullets(["first", "second"]).plain
+    assert "• first" in plain
+    assert "• second" in plain
 
 
-def test_render_analysis_empty_sections_shows_waiting() -> None:
-    rendered = render_analysis(
-        _analysis(
-            recap=[],
-            decisions=[],
-            todos=[],
-            deferred=[],
-            warnings=[],
-        )
-    )
-    assert rendered.plain == "Waiting for analysis…"
-
-
-def test_render_analysis_populated_sections() -> None:
-    rendered = render_analysis(_analysis())
-    plain = rendered.plain
-
-    assert "Recap:" in plain
-    assert "Dropped facts" in plain
-    assert "Decisions:" in plain
-    assert "Todos:" in plain
-    assert "Deferred:" in plain
-    assert "Warnings:" in plain
-    assert "• recap item" in plain
-    assert "• warning item" in plain
-
-
-def test_render_analysis_preserves_literal_markup_text() -> None:
-    rendered = render_analysis(_analysis(recap=["[bold]x[/]"]))
-    assert "[bold]x[/]" in rendered.plain
+def test_render_bullets_preserves_literal_markup_text() -> None:
+    assert "[bold]x[/]" in _render_bullets(["[bold]x[/]"]).plain
 
 
 def test_next_body_mode_cycles_three_way() -> None:
@@ -114,6 +75,8 @@ def test_dashboard_mode_loads_sidecar_and_cycles(tmp_path: Path) -> None:
                 "updatedAt": "2026-06-04T12:35:00Z",
                 "model": "test-model",
                 "recap": ["dashboard recap"],
+                "decisions": ["dashboard decision"],
+                "openItems": ["dashboard open item"],
                 "warnings": ["dashboard warning"],
             }
         ),
@@ -133,13 +96,23 @@ def test_dashboard_mode_loads_sidecar_and_cycles(tmp_path: Path) -> None:
             await pilot.pause(0.1)
 
             assert switcher.current == "dashboard-body"
+            assert app.query_one("#dashboard-body", DashboardBody).has_focus
 
-            dashboard = app.query_one("#dashboard-body", DashboardBody)
-            content = app.query_one("#dashboard-content", Static)
-            plain = content.content.plain if hasattr(content.content, "plain") else str(content.content)
-
-            assert dashboard.has_focus
-            assert "dashboard recap" in plain
-            assert "dashboard warning" in plain
+            for box_id in ("#dashboard-recap", "#dashboard-decisions", "#dashboard-open", "#dashboard-warnings"):
+                app.query_one(box_id, Static)
 
     asyncio.run(run_dashboard_test())
+
+
+def test_companion_analysis_round_trips_open_items() -> None:
+    analysis = CompanionAnalysis(
+        version=1,
+        session_id="s",
+        updated_at="2026-06-04T12:34:56Z",
+        recap=["arc"],
+        decisions=["chose boxes"],
+        open_items=["widen window later"],
+        warnings=["unverified claim"],
+    )
+    assert analysis.open_items == ["widen window later"]
+    assert "openItems" in analysis.model_dump(by_alias=True)

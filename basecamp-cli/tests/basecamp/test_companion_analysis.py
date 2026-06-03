@@ -58,8 +58,7 @@ class TestWriteAndLoadAnalysis:
             model="gpt-5.3",
             recap=["Recap line"],
             decisions=["Decision line"],
-            todos=["Todo line"],
-            deferred=["Deferred line"],
+            open_items=["Open item line"],
             warnings=["Warning line"],
         )
 
