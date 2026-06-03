@@ -2,15 +2,13 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import type { AgentMode } from "../session/agent-mode.ts";
-import type { GoalCycle, TaskStatus } from "../workflow/tasks/tasks.ts";
+import type { TaskStatus } from "../workflow/tasks/tasks.ts";
 
 export const COMPANION_SNAPSHOT_VERSION = 1;
 export const DEFAULT_COMPANION_DIR = path.join(os.homedir(), ".pi", "companion");
 
 export interface CompanionSnapshotTask {
 	label: string;
-	description: string;
-	criteria: string;
 	status: TaskStatus;
 	notes: string | null;
 }
@@ -21,15 +19,6 @@ export interface CompanionSnapshotWorktree {
 	path: string;
 }
 
-export interface CompanionSnapshotGoal {
-	goal: string;
-	tasks: CompanionSnapshotTask[];
-	agentMode: AgentMode | null;
-	active: boolean;
-	archivedAt: string | null;
-	progress: { completed: number; total: number };
-}
-
 export interface CompanionSnapshot {
 	version: typeof COMPANION_SNAPSHOT_VERSION;
 	sessionId: string;
@@ -38,7 +27,6 @@ export interface CompanionSnapshot {
 	goal: string | null;
 	tasks: CompanionSnapshotTask[];
 	progress: { completed: number; total: number };
-	goals: CompanionSnapshotGoal[];
 	agentMode: AgentMode | null;
 	worktree: CompanionSnapshotWorktree | null;
 	repoName: string | null;
@@ -52,7 +40,6 @@ export interface SnapshotInput {
 	title: string | null;
 	goal: string | null;
 	rawTasks: CompanionSnapshotTask[];
-	cycles: readonly GoalCycle[];
 	agentMode: AgentMode | null;
 	worktree: CompanionSnapshotWorktree | null;
 	repoName: string | null;
@@ -73,27 +60,6 @@ export function companionSnapshotPath(sessionId: string, dir = DEFAULT_COMPANION
 export function buildSnapshot(input: SnapshotInput): CompanionSnapshot {
 	const liveTasks = input.rawTasks.filter((task) => task.status !== "deleted");
 	const completed = liveTasks.filter((task) => task.status === "completed").length;
-	const goals: CompanionSnapshotGoal[] = input.cycles.map((cycle) => {
-		const cycleLive = cycle.tasks.filter((task) => task.status !== "deleted");
-		return {
-			goal: cycle.goal,
-			tasks: cycleLive.map((task) => ({
-				label: task.label,
-				description: task.description,
-				criteria: task.criteria,
-				status: task.status,
-				notes: task.notes,
-			})),
-			agentMode: cycle.agentMode ?? null,
-			active: cycle.active,
-			archivedAt: cycle.archivedAt,
-			progress: {
-				completed: cycleLive.filter((task) => task.status === "completed").length,
-				total: cycleLive.length,
-			},
-		};
-	});
-
 	return {
 		version: COMPANION_SNAPSHOT_VERSION,
 		sessionId: input.sessionId,
@@ -102,7 +68,6 @@ export function buildSnapshot(input: SnapshotInput): CompanionSnapshot {
 		goal: input.goal,
 		tasks: liveTasks,
 		progress: { completed, total: liveTasks.length },
-		goals,
 		agentMode: input.agentMode,
 		worktree: input.worktree,
 		repoName: input.repoName,

@@ -79,12 +79,9 @@ function writeNow(): void {
 			rawTasks:
 				tasksState?.tasks.map((task) => ({
 					label: task.label,
-					description: task.description,
-					criteria: task.criteria,
 					status: task.status,
 					notes: task.notes,
 				})) ?? [],
-			cycles: getTasksAccess()?.getCycles() ?? [],
 			agentMode: getAgentMode(),
 			worktree: getWorktreeSnapshot(),
 			repoName: getWorkspaceState()?.repo?.name ?? null,

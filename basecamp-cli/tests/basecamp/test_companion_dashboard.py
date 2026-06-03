@@ -10,13 +10,15 @@ from pathlib import Path
 from basecamp.companion.app import (
     CompanionApp,
     DashboardBody,
+    _goal_panel,
     _render_bullets,
-    _render_goals,
     _render_task_detail,
     next_body_mode,
 )
-from basecamp.companion.snapshot import CompanionGoal, CompanionProgress, CompanionSnapshot, CompanionTask
-from rich.console import Console, Group
+from basecamp.companion.snapshot import CompanionGoal, CompanionProgress, CompanionTask
+from basecamp.companion.source import DashboardModel
+from rich.console import Console
+from textual.containers import VerticalScroll
 from textual.widgets import ContentSwitcher, Static
 
 
@@ -66,28 +68,17 @@ def test_render_bullets_preserves_literal_markup_text() -> None:
     assert "[bold]x[/]" in _render_bullets(["[bold]x[/]"]).plain
 
 
-def test_render_goals_empty() -> None:
-    assert "No goals yet" in _to_text(_render_goals([], 0, None))
-
-
-def test_render_goals_one_box_per_goal_marks_active() -> None:
-    goals = [
-        _goal("First goal", [], active=False, completed=1, total=1),
-        _goal("Second goal", [], active=True, completed=0, total=2),
-    ]
-    rendered = _render_goals(goals, 1, 1)
-    assert isinstance(rendered, Group)
-    assert len(rendered.renderables) == 2
-    text = _to_text(rendered)
-    assert "First goal" in text
+def test_goal_panel_marks_active_and_shows_progress() -> None:
+    goal = _goal("Second goal", [], active=True, completed=0, total=2)
+    text = _to_text(_goal_panel(goal, is_selected=True, is_active=True))
     assert "Second goal" in text
     assert "active" in text
     assert "0/2" in text
 
 
-def test_render_goals_preserves_literal_markup() -> None:
-    goals = [_goal("[bold]x[/]", [], active=True, completed=0, total=0)]
-    assert "[bold]x[/]" in _to_text(_render_goals(goals, 0, 0))
+def test_goal_panel_preserves_literal_markup() -> None:
+    goal = _goal("[bold]x[/]", [], active=False, completed=0, total=0)
+    assert "[bold]x[/]" in _to_text(_goal_panel(goal, is_selected=False, is_active=False))
 
 
 def test_render_task_detail_empty() -> None:
@@ -152,64 +143,39 @@ def test_pinned_task_index_empty_goal_is_zero() -> None:
 
 def test_dashboard_autopin_navigation_and_repin(tmp_path: Path) -> None:
     repo = tmp_path / "repo"
+    tasks_dir = tmp_path / "tasks"
+    tasks_dir.mkdir()
     snapshot_path = tmp_path / "snapshot.json"
     _build_repo(repo)
+    session_id = "abcd-1234-5678-90ef"
     snapshot_path.write_text(
+        json.dumps({"version": 1, "sessionId": session_id, "updatedAt": "t", "effectiveCwd": str(repo)}),
+        encoding="utf-8",
+    )
+    (tasks_dir / f"{session_id}.json").write_text(
         json.dumps(
-            {
-                "version": 1,
-                "sessionId": "abcd-1234-5678-90ef",
-                "updatedAt": "2026-06-04T12:35:00Z",
-                "effectiveCwd": str(repo),
-                "goals": [
-                    {
-                        "goal": "First goal",
-                        "tasks": [
-                            {
-                                "label": "T1",
-                                "description": "d1",
-                                "criteria": "c1",
-                                "status": "completed",
-                                "notes": "n1",
-                            },
-                            {
-                                "label": "T2",
-                                "description": "d2",
-                                "criteria": "c2",
-                                "status": "completed",
-                                "notes": None,
-                            },
-                        ],
-                        "agentMode": "executor",
-                        "active": False,
-                        "archivedAt": "2025-01-01T00:00:00Z",
-                        "progress": {"completed": 2, "total": 2},
-                    },
-                    {
-                        "goal": "Second goal",
-                        "tasks": [
-                            {
-                                "label": "T3",
-                                "description": "d3",
-                                "criteria": "c3",
-                                "status": "completed",
-                                "notes": None,
-                            },
-                            {
-                                "label": "T4",
-                                "description": "d4",
-                                "criteria": "c4",
-                                "status": "active",
-                                "notes": "wip",
-                            },
-                        ],
-                        "agentMode": None,
-                        "active": True,
-                        "archivedAt": None,
-                        "progress": {"completed": 1, "total": 2},
-                    },
-                ],
-            }
+            [
+                {
+                    "goal": "First goal",
+                    "tasks": [
+                        {"label": "T1", "description": "d1", "criteria": "c1", "status": "completed", "notes": "n1"},
+                        {"label": "T2", "description": "d2", "criteria": "c2", "status": "completed", "notes": None},
+                    ],
+                    "agentMode": "executor",
+                    "active": False,
+                    "archivedAt": "2025-01-01T00:00:00Z",
+                },
+                {
+                    "goal": "Second goal",
+                    "tasks": [
+                        {"label": "T3", "description": "d3", "criteria": "c3", "status": "completed", "notes": None},
+                        {"label": "T4", "description": "d4", "criteria": "c4", "status": "active", "notes": "wip"},
+                    ],
+                    "agentMode": None,
+                    "active": True,
+                    "archivedAt": None,
+                },
+            ]
         ),
         encoding="utf-8",
     )
@@ -218,8 +184,8 @@ def test_dashboard_autopin_navigation_and_repin(tmp_path: Path) -> None:
         json.dumps(
             {
                 "version": 1,
-                "sessionId": "abcd-1234-5678-90ef",
-                "updatedAt": "2026-06-04T12:35:00Z",
+                "sessionId": session_id,
+                "updatedAt": "t",
                 "decisions": ["dec1"],
                 "openItems": ["open1"],
                 "warnings": ["warn1"],
@@ -228,7 +194,7 @@ def test_dashboard_autopin_navigation_and_repin(tmp_path: Path) -> None:
         encoding="utf-8",
     )
 
-    app = CompanionApp(snapshot_path=snapshot_path, cwd=repo)
+    app = CompanionApp(snapshot_path=snapshot_path, cwd=repo, tasks_dir=tasks_dir)
 
     async def run() -> None:
         async with app.run_test() as pilot:
@@ -240,21 +206,17 @@ def test_dashboard_autopin_navigation_and_repin(tmp_path: Path) -> None:
 
             dash = app.query_one("#dashboard-body", DashboardBody)
             assert dash.has_focus
-            for box_id in (
-                "#dashboard-goals",
-                "#dashboard-task",
-                "#dashboard-decisions",
-                "#dashboard-open",
-                "#dashboard-warnings",
-            ):
+            app.query_one("#dashboard-goals", VerticalScroll)
+            for box_id in ("#dashboard-task", "#dashboard-decisions", "#dashboard-open", "#dashboard-warnings"):
                 app.query_one(box_id, Static)
+            app.query_one("#goal-1", Static)
 
             assert dash._active_index == 1
             assert dash._following is True
             assert dash._selected_goal == 1
             assert dash._selected_task == 1
 
-            dash.action_goal_prev()
+            dash.action_goal_older()
             assert dash._selected_goal == 0
             assert dash._following is False
             assert dash._selected_task == 0
@@ -263,23 +225,17 @@ def test_dashboard_autopin_navigation_and_repin(tmp_path: Path) -> None:
             assert dash._selected_task == 1
             assert dash._following is False
 
-            repinned = CompanionSnapshot(
-                version=1,
-                session_id="abcd-1234-5678-90ef",
-                updated_at="2026-06-04T12:36:00Z",
+            repinned = DashboardModel(
                 goals=[
                     _goal("First goal", [], active=False, completed=2, total=2),
                     _goal("Second goal", [], active=False, completed=2, total=2),
                     _goal(
-                        "Third goal",
-                        [CompanionTask(label="T5", status="active")],
-                        active=True,
-                        completed=0,
-                        total=1,
+                        "Third goal", [CompanionTask(label="T5", status="active")], active=True, completed=0, total=1
                     ),
                 ],
+                analysis=None,
             )
-            dash.update_snapshot(repinned)
+            dash.update(repinned)
             assert dash._active_index == 2
             assert dash._following is True
             assert dash._selected_goal == 2

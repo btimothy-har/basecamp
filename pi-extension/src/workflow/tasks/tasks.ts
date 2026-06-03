@@ -83,8 +83,6 @@ export interface TasksAccess {
 	getPlanRef(): GoalCycle["planRef"];
 	/** Get the current ExtensionContext (null before session_start). */
 	getContext(): ExtensionContext | null;
-	/** Full goal-cycle history (archived + active), chronological. Returns a defensive copy. */
-	getCycles(): readonly GoalCycle[];
 }
 
 // ============================================================================
@@ -666,12 +664,6 @@ export function registerTasks(pi: ExtensionAPI): TasksAccess {
 			return active?.planRef ?? null;
 		},
 		getContext: () => ctx,
-		getCycles() {
-			return cycles.map((c) => ({
-				...c,
-				tasks: (c.active ? state.tasks : c.tasks).map((t) => ({ ...t })),
-			}));
-		},
 	};
 
 	registerTasksAccess(access);

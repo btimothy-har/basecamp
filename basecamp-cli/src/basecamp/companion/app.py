@@ -24,7 +24,8 @@ from textual.widget import Widget
 from textual.widgets import ContentSwitcher, DirectoryTree, Footer, Label, ListItem, ListView, Static
 from textual.widgets.tree import TreeNode
 
-from basecamp.companion.analysis import CompanionAnalysis, load_analysis
+from basecamp.companion.analysis import CompanionAnalysis
+from basecamp.companion.cycles import companion_tasks_path
 from basecamp.companion.diff import (
     DIFF_MODES,
     DiffLine,
@@ -46,6 +47,7 @@ from basecamp.companion.snapshot import (
     load_snapshot,
     render_workspace_lines,
 )
+from basecamp.companion.source import DashboardModel, DashboardSource
 
 BODY_MODES = ("diff-body", "files-body", "dashboard-body")
 
@@ -87,29 +89,19 @@ def _render_bullets(items: list[str]) -> Text:
 _STATUS_GLYPH = {"completed": "✓", "active": "▶", "pending": "○", "deleted": "✕"}
 
 
-def _render_goals(goals: list[CompanionGoal], selected: int, active: int | None) -> RenderableType:
-    """Render goals as a stack of boxes, one per goal; highlight active + selected."""
+def _goal_panel(goal: CompanionGoal, is_selected: bool, is_active: bool) -> Panel:  # noqa: FBT001
+    """Render a single goal as a bordered box; active is green, selection is yellow/bold."""
 
-    if not goals:
-        return Text("No goals yet", style="dim")
-
-    panels: list[RenderableType] = []
-    for index, goal in enumerate(goals):
-        is_selected = index == selected
-        is_active = index == active
-        border_style = "yellow" if is_selected else "green" if is_active else "grey42"
-        panels.append(
-            Panel(
-                Text(goal.goal, style="bold" if is_selected else ""),
-                title=Text("● active", style="green") if is_active else None,
-                title_align="left",
-                subtitle=f"{goal.progress.completed}/{goal.progress.total}",
-                subtitle_align="right",
-                border_style=border_style,
-                padding=(0, 1),
-            )
-        )
-    return Group(*panels)
+    border_style = "yellow" if is_selected else "green" if is_active else "grey42"
+    return Panel(
+        Text(goal.goal, style="bold" if is_selected else ""),
+        title=Text("● active", style="green") if is_active else None,
+        title_align="left",
+        subtitle=f"{goal.progress.completed}/{goal.progress.total}",
+        subtitle_align="right",
+        border_style=border_style,
+        padding=(0, 1),
+    )
 
 
 def _render_task_detail(goal: CompanionGoal | None, task_index: int) -> RenderableType:
@@ -526,8 +518,8 @@ class DashboardBody(Widget):
 
     BINDINGS = [
         Binding("m", "app.toggle_mode", "Mode"),
-        Binding("up", "goal_prev", "Prev goal"),
-        Binding("down", "goal_next", "Next goal"),
+        Binding("up", "goal_newer", "Newer goal"),
+        Binding("down", "goal_older", "Older goal"),
         Binding("left", "task_prev", "Prev task"),
         Binding("right", "task_next", "Next task"),
     ]
@@ -540,9 +532,10 @@ class DashboardBody(Widget):
         self._selected_task = 0
         self._following = True
         self._active_index: int | None = None
+        self._goal_widgets: list[Static] = []
 
     def compose(self) -> ComposeResult:
-        yield Static(id="dashboard-goals")
+        yield VerticalScroll(id="dashboard-goals")
         with Vertical(id="dashboard-main"):
             yield Static(id="dashboard-task", classes="dashboard-box")
             yield Static(id="dashboard-decisions", classes="dashboard-box")
@@ -554,7 +547,9 @@ class DashboardBody(Widget):
         return Text()
 
     def on_mount(self) -> None:
-        self.query_one("#dashboard-goals", Static).border_title = "Goals"
+        goals_panel = self.query_one("#dashboard-goals", VerticalScroll)
+        goals_panel.border_title = "Goals"
+        goals_panel.can_focus = False
         self.query_one("#dashboard-task", Static).border_title = "Task"
         self.query_one("#dashboard-decisions", Static).border_title = "Decisions"
         self.query_one("#dashboard-open", Static).border_title = "Open items"
@@ -579,8 +574,8 @@ class DashboardBody(Widget):
     def _selected_goal_obj(self) -> CompanionGoal | None:
         return self._goals[self._selected_goal] if self._goals else None
 
-    def update_snapshot(self, snapshot: CompanionSnapshot | None) -> None:
-        goals = list(snapshot.goals) if snapshot else []
+    def update(self, model: DashboardModel) -> None:
+        goals = list(model.goals)
         active = self._active_goal_index(goals)
 
         if active != self._active_index:
@@ -592,12 +587,9 @@ class DashboardBody(Widget):
             self._selected_goal = active
             self._selected_task = self._pinned_task_index(goals[active])
 
+        self._analysis = model.analysis
         self._clamp()
         self._render_dashboard()
-
-    def update_analysis(self, analysis: CompanionAnalysis | None) -> None:
-        self._analysis = analysis
-        self._render_sections()
 
     def _clamp(self) -> None:
         if not self._goals:
@@ -608,7 +600,7 @@ class DashboardBody(Widget):
         tasks = self._goals[self._selected_goal].tasks
         self._selected_task = max(0, min(self._selected_task, max(0, len(tasks) - 1)))
 
-    def action_goal_prev(self) -> None:
+    def action_goal_older(self) -> None:
         if self._selected_goal > 0:
             self._selected_goal -= 1
             self._selected_task = 0
@@ -616,7 +608,7 @@ class DashboardBody(Widget):
             self._clamp()
             self._render_dashboard()
 
-    def action_goal_next(self) -> None:
+    def action_goal_newer(self) -> None:
         if self._selected_goal < len(self._goals) - 1:
             self._selected_goal += 1
             self._selected_task = 0
@@ -638,13 +630,36 @@ class DashboardBody(Widget):
             self._render_dashboard()
 
     def _render_dashboard(self) -> None:
-        self.query_one("#dashboard-goals", Static).update(
-            _render_goals(self._goals, self._selected_goal, self._active_index)
-        )
+        self._sync_goals()
         self.query_one("#dashboard-task", Static).update(
             _render_task_detail(self._selected_goal_obj(), self._selected_task)
         )
         self._render_sections()
+
+    def _sync_goals(self) -> None:
+        container = self.query_one("#dashboard-goals", VerticalScroll)
+        if not self._goals:
+            if self._goal_widgets or not container.children:
+                self._goal_widgets = []
+                container.remove_children()
+                self.call_next(container.mount, Static(Text("No goals yet", style="dim")))
+            return
+        if len(self._goal_widgets) != len(self._goals):
+            self._goal_widgets = [Static(id=f"goal-{index}", classes="goal-box") for index in range(len(self._goals))]
+            container.remove_children()
+            self.call_next(container.mount, *reversed(self._goal_widgets))
+            self.call_next(self._paint_goals)
+        else:
+            self._paint_goals()
+
+    def _paint_goals(self) -> None:
+        for index, goal in enumerate(self._goals):
+            if index < len(self._goal_widgets):
+                self._goal_widgets[index].update(
+                    _goal_panel(goal, index == self._selected_goal, index == self._active_index)
+                )
+        if 0 <= self._selected_goal < len(self._goal_widgets):
+            self._goal_widgets[self._selected_goal].scroll_visible(animate=False)
 
     def _render_sections(self) -> None:
         analysis = self._analysis
@@ -746,6 +761,11 @@ class CompanionApp(App[None]):
         margin-right: 1;
     }
 
+    .goal-box {
+        height: auto;
+        width: 100%;
+    }
+
     #dashboard-main {
         width: 1fr;
         height: 1fr;
@@ -812,19 +832,24 @@ class CompanionApp(App[None]):
     }
     """
 
-    def __init__(self, snapshot_path: Path, cwd: Path, scratch_dir: Path | None = None) -> None:
+    def __init__(
+        self,
+        snapshot_path: Path,
+        cwd: Path,
+        scratch_dir: Path | None = None,
+        tasks_dir: Path | None = None,
+    ) -> None:
         super().__init__()
         self.snapshot_path = snapshot_path
         self.analysis_path = snapshot_path.parent / f"{snapshot_path.stem}.analysis.json"
         self.cwd = cwd
         self.scratch_dir = scratch_dir
+        self._tasks_dir = tasks_dir
         self._git = make_git_runner(cwd)
         self._snapshot_mtime_ns: int | None = None
         self._snapshot_exists: bool | None = None
         self._snapshot: CompanionSnapshot | None = None
-        self._analysis_mtime_ns: int | None = None
-        self._analysis_exists: bool | None = None
-        self._analysis: CompanionAnalysis | None = None
+        self._dashboard_source: DashboardSource | None = None
         self._base_commit: str | None = None
         self._files: list[FileStatus] = []
         self._compact = False
@@ -979,21 +1004,17 @@ class CompanionApp(App[None]):
             self._snapshot_mtime_ns = snapshot_mtime_ns
             self._snapshot = load_snapshot(self.snapshot_path) if file_exists else None
             self._update_session_bar()
-            self.query_one("#dashboard-body", DashboardBody).update_snapshot(self._snapshot)
 
-        try:
-            analysis_exists = self.analysis_path.exists()
-            analysis_mtime_ns = self.analysis_path.stat().st_mtime_ns if analysis_exists else None
-        except OSError:
-            analysis_exists = False
-            analysis_mtime_ns = None
+        if self._dashboard_source is None and self._snapshot is not None:
+            self._dashboard_source = DashboardSource(
+                companion_tasks_path(self._snapshot.session_id, self._tasks_dir),
+                self.analysis_path,
+            )
 
-        analysis_changed = analysis_exists != self._analysis_exists or analysis_mtime_ns != self._analysis_mtime_ns
-        if analysis_changed:
-            self._analysis_exists = analysis_exists
-            self._analysis_mtime_ns = analysis_mtime_ns
-            self._analysis = load_analysis(self.analysis_path) if analysis_exists else None
-            self.query_one("#dashboard-body", DashboardBody).update_analysis(self._analysis)
+        if self._dashboard_source is not None:
+            model = self._dashboard_source.poll()
+            if model is not None:
+                self.query_one("#dashboard-body", DashboardBody).update(model)
 
         try:
             base_commit, files = collect_changes(self._git, self._diff_mode)

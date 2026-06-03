@@ -64,7 +64,6 @@ class CompanionSnapshot(CompanionBaseModel):
     goal: str | None = None
     tasks: list[CompanionTask] = Field(default_factory=list)
     progress: CompanionProgress = Field(default_factory=CompanionProgress)
-    goals: list[CompanionGoal] = Field(default_factory=list)
     agent_mode: str | None = None
     worktree: CompanionWorktree | None = None
     repo_name: str | None = None
