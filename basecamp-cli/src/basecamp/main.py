@@ -63,10 +63,18 @@ def config() -> None:
     type=click.Path(path_type=Path),
     help="Git working directory for diffs.",
 )
-def companion(snapshot_path: Path, cwd: Path) -> None:
+@click.option(
+    "--scratch",
+    "scratch_dir",
+    required=False,
+    default=None,
+    type=click.Path(path_type=Path),
+    help="Path to the basecamp scratch directory.",
+)
+def companion(snapshot_path: Path, cwd: Path, scratch_dir: Path | None) -> None:
     """Live session companion dashboard (runs in a tmux pane)."""
     run_companion = importlib.import_module("basecamp.companion.app").run_companion
-    run_companion(snapshot_path, cwd)
+    run_companion(snapshot_path, cwd, scratch_dir)
 
 
 if __name__ == "__main__":

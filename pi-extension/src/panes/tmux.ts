@@ -14,8 +14,9 @@ function shellQuote(s: string): string {
 	return `'${s.replace(/'/g, "'\\''")}'`;
 }
 
-export function buildCompanionCommand(snapshotPath: string, cwd: string): string {
-	return `basecamp companion --snapshot ${shellQuote(snapshotPath)} --cwd ${shellQuote(cwd)}`;
+export function buildCompanionCommand(snapshotPath: string, cwd: string, scratchDir?: string): string {
+	const base = `basecamp companion --snapshot ${shellQuote(snapshotPath)} --cwd ${shellQuote(cwd)}`;
+	return scratchDir ? `${base} --scratch ${shellQuote(scratchDir)}` : base;
 }
 
 /** Companion pane takes 65% of the width, leaving the pi pane at 35%. */

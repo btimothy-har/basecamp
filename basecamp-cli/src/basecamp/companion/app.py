@@ -308,16 +308,16 @@ class FileBrowser(Horizontal):
 
     _placeholder = "Select a file to preview"
 
-    def __init__(self, roots: list[Path], *args: object, **kwargs: object) -> None:
+    def __init__(self, roots: list[tuple[str, Path]], *args: object, **kwargs: object) -> None:
         super().__init__(*args, **kwargs)
         self.roots = roots
         self._root_index = 0
-        self._root = roots[0]
+        self._label, self._root = roots[0]
 
     def _tree_title(self) -> str:
         if len(self.roots) < 2:
             return "Files"
-        return "Files · worktree" if self._root_index == 0 else "Files · main"
+        return f"Files · {self._label}"
 
     def compose(self) -> ComposeResult:
         # Keep tree reloads manual to preserve expansion/selection during timer refresh.
@@ -333,9 +333,10 @@ class FileBrowser(Horizontal):
 
     def set_root(self, path: Path) -> None:
         self._root = path
-        for index, root in enumerate(self.roots):
+        for index, (label, root) in enumerate(self.roots):
             if root == path:
                 self._root_index = index
+                self._label = label
                 break
 
         tree = self.query_one("#file-tree", _CompanionDirectoryTree)
@@ -348,7 +349,7 @@ class FileBrowser(Horizontal):
             return
 
         next_index = (self._root_index + 1) % len(self.roots)
-        self.set_root(self.roots[next_index])
+        self.set_root(self.roots[next_index][1])
 
     def _clear_preview(self) -> None:
         preview = self.query_one("#file-preview", VerticalScroll)
@@ -525,10 +526,11 @@ class CompanionApp(App[None]):
     }
     """
 
-    def __init__(self, snapshot_path: Path, cwd: Path) -> None:
+    def __init__(self, snapshot_path: Path, cwd: Path, scratch_dir: Path | None = None) -> None:
         super().__init__()
         self.snapshot_path = snapshot_path
         self.cwd = cwd
+        self.scratch_dir = scratch_dir
         self._git = make_git_runner(cwd)
         self._snapshot_mtime_ns: int | None = None
         self._snapshot_exists: bool | None = None
@@ -544,7 +546,7 @@ class CompanionApp(App[None]):
         yield WorkspacePanel(id="workspace-panel")
         yield ContentSwitcher(
             DiffBody(id="diff-body"),
-            FileBrowser(resolve_browse_roots(self._git, self.cwd), id="files-body"),
+            FileBrowser(resolve_browse_roots(self._git, self.cwd, self.scratch_dir), id="files-body"),
             id="body",
             initial="files-body",
         )
@@ -700,8 +702,8 @@ class CompanionApp(App[None]):
         self._update_selected_file_diff()
 
 
-def run_companion(snapshot_path: Path, cwd: Path) -> None:
+def run_companion(snapshot_path: Path, cwd: Path, scratch_dir: Path | None = None) -> None:
     """Run the companion dashboard app."""
 
-    app = CompanionApp(snapshot_path=snapshot_path, cwd=cwd)
+    app = CompanionApp(snapshot_path=snapshot_path, cwd=cwd, scratch_dir=scratch_dir)
     app.run()

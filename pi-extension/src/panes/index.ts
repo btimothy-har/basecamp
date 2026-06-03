@@ -1,7 +1,7 @@
 import type { ExtensionAPI, SessionShutdownEvent } from "@earendil-works/pi-coding-agent";
 import { companionSnapshotPath } from "../companion/snapshot.ts";
 import { exec } from "../platform/exec.ts";
-import { getWorkspaceService } from "../platform/workspace.ts";
+import { getWorkspaceService, getWorkspaceState } from "../platform/workspace.ts";
 import { getPaneState } from "./state.ts";
 import {
 	buildCompanionCommand,
@@ -28,6 +28,10 @@ function resolveCwd(): string {
 	return getWorkspaceService()?.getEffectiveCwd?.() ?? process.cwd();
 }
 
+function resolveScratchDir(): string | undefined {
+	return getWorkspaceState()?.scratchDir || undefined;
+}
+
 function subscribeWorktree(pi: ExtensionAPI, snapshotPath: string): void {
 	const state = getPaneState();
 	if (state.unsubscribeWorkspace) {
@@ -41,7 +45,11 @@ function subscribeWorktree(pi: ExtensionAPI, snapshotPath: string): void {
 			const newCwd = resolveCwd();
 			if (state.paneId && newCwd !== state.currentCwd) {
 				const generation = ++respawnGeneration;
-				exec(pi, "tmux", buildRespawnArgs(state.paneId, newCwd, buildCompanionCommand(snapshotPath, newCwd)))
+				exec(
+					pi,
+					"tmux",
+					buildRespawnArgs(state.paneId, newCwd, buildCompanionCommand(snapshotPath, newCwd, resolveScratchDir())),
+				)
 					.then(() => {
 						if (generation === respawnGeneration) state.currentCwd = newCwd;
 					})
@@ -85,7 +93,11 @@ export default function registerPanes(pi: ExtensionAPI): void {
 				const result = await exec(
 					pi,
 					"tmux",
-					buildSplitArgs(targetPane as string, effectiveCwd, buildCompanionCommand(snapshotPath, effectiveCwd)),
+					buildSplitArgs(
+						targetPane as string,
+						effectiveCwd,
+						buildCompanionCommand(snapshotPath, effectiveCwd, resolveScratchDir()),
+					),
 				);
 				paneState.paneId = parsePaneId(result.stdout);
 				paneState.currentCwd = effectiveCwd;
@@ -100,7 +112,11 @@ export default function registerPanes(pi: ExtensionAPI): void {
 				await exec(
 					pi,
 					"tmux",
-					buildRespawnArgs(paneState.paneId, effectiveCwd, buildCompanionCommand(snapshotPath, effectiveCwd)),
+					buildRespawnArgs(
+						paneState.paneId,
+						effectiveCwd,
+						buildCompanionCommand(snapshotPath, effectiveCwd, resolveScratchDir()),
+					),
 				);
 				paneState.currentCwd = effectiveCwd;
 				paneState.currentSnapshot = snapshotPath;

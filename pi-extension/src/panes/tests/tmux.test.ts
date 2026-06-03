@@ -84,6 +84,13 @@ describe("panes/tmux", () => {
 				"basecamp companion --snapshot '/tmp/it'\\''s-snapshot.json' --cwd '/tmp/it'\\''s-cwd'",
 			);
 		});
+
+		it("appends quoted scratch dir when provided", () => {
+			assert.equal(
+				buildCompanionCommand("/tmp/snap.json", "/tmp/cwd", "/tmp/pi/basecamp"),
+				"basecamp companion --snapshot '/tmp/snap.json' --cwd '/tmp/cwd' --scratch '/tmp/pi/basecamp'",
+			);
+		});
 	});
 
 	describe("buildSplitArgs", () => {
