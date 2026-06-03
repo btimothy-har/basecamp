@@ -7,11 +7,43 @@ from pathlib import Path
 
 from basecamp.companion.analysis import (
     COMPANION_ANALYSIS_VERSION,
+    MAX_SECTION_ITEMS,
     CompanionAnalysis,
     companion_analysis_path,
     load_analysis,
     write_analysis,
 )
+
+
+class TestSectionCap:
+    """Section item-count cap behavior."""
+
+    def test_construction_truncates_over_cap(self) -> None:
+        over_cap = [f"item {index}" for index in range(MAX_SECTION_ITEMS + 3)]
+        analysis = CompanionAnalysis(
+            version=COMPANION_ANALYSIS_VERSION,
+            session_id="s",
+            updated_at="2026-06-04T12:34:56Z",
+            warnings=over_cap,
+        )
+        assert analysis.warnings == over_cap[:MAX_SECTION_ITEMS]
+
+    def test_load_truncates_over_cap(self, tmp_path: Path) -> None:
+        path = tmp_path / "capped.analysis.json"
+        path.write_text(
+            json.dumps(
+                {
+                    "version": COMPANION_ANALYSIS_VERSION,
+                    "sessionId": "s",
+                    "updatedAt": "2026-06-04T12:34:56Z",
+                    "recap": [f"line {index}" for index in range(MAX_SECTION_ITEMS + 2)],
+                }
+            ),
+            encoding="utf-8",
+        )
+        loaded = load_analysis(path)
+        assert loaded is not None
+        assert len(loaded.recap) == MAX_SECTION_ITEMS
 
 
 class TestWriteAndLoadAnalysis:

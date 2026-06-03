@@ -7,25 +7,37 @@ import os
 import re
 from pathlib import Path
 
-from pydantic import Field, ValidationError
+from pydantic import Field, ValidationError, field_validator
 
 from basecamp.companion.snapshot import CompanionBaseModel
 
 COMPANION_ANALYSIS_VERSION = 1
+MAX_SECTION_ITEMS = 5
 
 
-class CompanionAnalysis(CompanionBaseModel):
+class AnalysisSections(CompanionBaseModel):
+    """Shared dashboard section fields."""
+
+    recap: list[str] = Field(default_factory=list, max_length=MAX_SECTION_ITEMS)
+    decisions: list[str] = Field(default_factory=list, max_length=MAX_SECTION_ITEMS)
+    todos: list[str] = Field(default_factory=list, max_length=MAX_SECTION_ITEMS)
+    deferred: list[str] = Field(default_factory=list, max_length=MAX_SECTION_ITEMS)
+    warnings: list[str] = Field(default_factory=list, max_length=MAX_SECTION_ITEMS)
+
+    @field_validator("recap", "decisions", "todos", "deferred", "warnings", mode="before")
+    @classmethod
+    def _cap_items(cls, value: object) -> object:
+        """Truncate over-long sections so the cap never hard-fails validation."""
+        return value[:MAX_SECTION_ITEMS] if isinstance(value, list) else value
+
+
+class CompanionAnalysis(AnalysisSections):
     """Top-level companion analysis payload."""
 
     version: int
     session_id: str
     updated_at: str
     model: str | None = None
-    recap: list[str] = Field(default_factory=list)
-    decisions: list[str] = Field(default_factory=list)
-    todos: list[str] = Field(default_factory=list)
-    deferred: list[str] = Field(default_factory=list)
-    warnings: list[str] = Field(default_factory=list)
 
 
 def companion_analysis_path(session_id: str, base_dir: Path | None = None) -> Path:
