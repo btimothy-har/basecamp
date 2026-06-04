@@ -60,7 +60,6 @@ export function companionSnapshotPath(sessionId: string, dir = DEFAULT_COMPANION
 export function buildSnapshot(input: SnapshotInput): CompanionSnapshot {
 	const liveTasks = input.rawTasks.filter((task) => task.status !== "deleted");
 	const completed = liveTasks.filter((task) => task.status === "completed").length;
-
 	return {
 		version: COMPANION_SNAPSHOT_VERSION,
 		sessionId: input.sessionId,
