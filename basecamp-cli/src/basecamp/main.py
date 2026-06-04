@@ -94,7 +94,8 @@ def companion_analyze(session_id: str, base_dir: Path | None) -> None:
 
     try:
         envelope = json.load(sys.stdin)
-    except json.JSONDecodeError:
+    except Exception:
+        # Best-effort: any stdin read/parse failure falls back to the last-good sidecar.
         envelope = {}
 
     context = envelope.get("context", "") if isinstance(envelope, dict) else ""

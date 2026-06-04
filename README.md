@@ -97,7 +97,6 @@ Use the **Projects** section to list, add, edit, or remove configured projects.
 | `/agents` | Browse available agent definitions |
 | `/plan` | Create a reviewed implementation plan and activate an execution worktree when approved |
 | `/show-plan` | Show the current plan and task progress |
-| `/tasks` | Show the current goal and task list |
 | `/worktree [label]` | Switch to an existing Git-registered worktree |
 | `/create-pr` | Create or update a pull request |
 | `/create-issue` | Draft and publish a GitHub issue through review |

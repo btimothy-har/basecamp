@@ -198,11 +198,17 @@ def test_dashboard_autopin_navigation_and_repin(tmp_path: Path) -> None:
 
     async def run() -> None:
         async with app.run_test() as pilot:
-            await pilot.pause(0.25)
+            await pilot.pause()
+            dash = app.query_one("#dashboard-body", DashboardBody)
+            # Wait for the dashboard to load goals + mount goal widgets (mount + first
+            # refresh + call_after_refresh) instead of a fixed sleep.
+            for _ in range(100):
+                if dash._active_index is not None and app.query("#goal-1"):
+                    break
+                await pilot.pause(0.02)
+
             switcher = app.query_one("#body", ContentSwitcher)
             assert switcher.current == "dashboard-body"
-
-            dash = app.query_one("#dashboard-body", DashboardBody)
             assert dash.has_focus
             app.query_one("#dashboard-goals", VerticalScroll)
             for box_id in ("#dashboard-task", "#dashboard-decisions", "#dashboard-open", "#dashboard-warnings"):

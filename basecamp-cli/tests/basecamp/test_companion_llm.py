@@ -128,8 +128,6 @@ async def test_run_pydantic_ai_agent_wrapper_falls_back_to_sync() -> None:
 
 
 def test_resolve_openrouter_custom_base_url(monkeypatch: pytest.MonkeyPatch) -> None:
-    pytest.importorskip("pydantic_ai.models.openrouter")
-
     class FakeAsyncOpenAI:
         def __init__(self, *, api_key: str, base_url: str) -> None:
             self.api_key = api_key
