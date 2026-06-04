@@ -864,7 +864,7 @@ class CompanionApp(App[None]):
             FileBrowser(resolve_browse_roots(self._git, self.cwd, self.scratch_dir), id="files-body"),
             DashboardBody(id="dashboard-body"),
             id="body",
-            initial="files-body",
+            initial="dashboard-body",
         )
         with Horizontal(id="session-bar"):
             yield Static(id="session-bar-mode")
@@ -879,7 +879,7 @@ class CompanionApp(App[None]):
         self._refresh()
         self._update_mode_indicator()
         self.set_interval(1.0, self._refresh)
-        self.query_one("#file-tree", _CompanionDirectoryTree).focus()
+        self.query_one("#dashboard-body", DashboardBody).focus()
 
     def _set_diff_title(self) -> None:
         parts = ["Diff", self._diff_mode]

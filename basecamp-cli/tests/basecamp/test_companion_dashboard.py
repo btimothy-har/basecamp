@@ -200,8 +200,6 @@ def test_dashboard_autopin_navigation_and_repin(tmp_path: Path) -> None:
         async with app.run_test() as pilot:
             await pilot.pause(0.25)
             switcher = app.query_one("#body", ContentSwitcher)
-            await pilot.press("m")
-            await pilot.pause(0.1)
             assert switcher.current == "dashboard-body"
 
             dash = app.query_one("#dashboard-body", DashboardBody)

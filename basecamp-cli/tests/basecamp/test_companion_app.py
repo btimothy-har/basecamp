@@ -9,7 +9,15 @@ import tempfile
 from pathlib import Path
 
 import basecamp.companion.app as companion_app
-from basecamp.companion.app import CompanionApp, DiffBody, DiffView, FileBrowser, FileList, WorkspacePanel
+from basecamp.companion.app import (
+    CompanionApp,
+    DashboardBody,
+    DiffBody,
+    DiffView,
+    FileBrowser,
+    FileList,
+    WorkspacePanel,
+)
 from basecamp.companion.snapshot import collapse_home
 from rich.style import Style
 from rich.syntax import Syntax
@@ -88,8 +96,7 @@ def test_companion_app_headless_smoke(tmp_path: Path) -> None:
             # The file list is display-only (not focusable).
             assert app.query_one("#file-list-list", ListView).can_focus is False
 
-            await pilot.press("m")
-            await pilot.pause(0.05)
+            # Dashboard is the default pane; one toggle reaches the diff view.
             await pilot.press("m")
             await pilot.pause(0.1)
 
@@ -239,7 +246,7 @@ def test_diff_bindings_are_scoped_to_diff_body() -> None:
     assert {"left", "right", "c", "d"}.isdisjoint(app_keys)
 
 
-def test_default_mode_is_files_and_file_tree_is_focused(tmp_path: Path) -> None:
+def test_default_mode_is_dashboard_and_focused(tmp_path: Path) -> None:
     repo = tmp_path / "repo"
     snapshot_path = tmp_path / "snapshot.json"
     _build_repo(repo)
@@ -252,10 +259,10 @@ def test_default_mode_is_files_and_file_tree_is_focused(tmp_path: Path) -> None:
             await pilot.pause()
 
             body = app.query_one("#body", ContentSwitcher)
-            file_tree = app.query_one("#file-tree", DirectoryTree)
+            dashboard = app.query_one("#dashboard-body", DashboardBody)
 
-            assert body.current == "files-body"
-            assert file_tree.has_focus
+            assert body.current == "dashboard-body"
+            assert dashboard.has_focus
 
     asyncio.run(run_default_mode_test())
 
@@ -273,10 +280,6 @@ def test_mode_indicator_tracks_active_mode(tmp_path: Path) -> None:
             await pilot.pause(0.2)
 
             mode_bar = app.query_one("#session-bar-mode", Static)
-            assert "Files" in str(mode_bar.render())
-
-            await pilot.press("m")
-            await pilot.pause(0.05)
             assert "Dashboard" in str(mode_bar.render())
 
             await pilot.press("m")
@@ -286,6 +289,10 @@ def test_mode_indicator_tracks_active_mode(tmp_path: Path) -> None:
             await pilot.press("m")
             await pilot.pause(0.05)
             assert "Files" in str(mode_bar.render())
+
+            await pilot.press("m")
+            await pilot.pause(0.05)
+            assert "Dashboard" in str(mode_bar.render())
 
     asyncio.run(run_mode_indicator_test())
 
@@ -305,14 +312,10 @@ def test_mode_toggle_switches_body_and_focus(tmp_path: Path) -> None:
             body = app.query_one("#body", ContentSwitcher)
             diff_view = app.query_one("#diff-view", DiffView)
             file_tree = app.query_one("#file-tree", DirectoryTree)
-
-            assert body.current == "files-body"
-            assert file_tree.has_focus
-
-            await pilot.press("m")
-            await pilot.pause(0.05)
+            dashboard = app.query_one("#dashboard-body", DashboardBody)
 
             assert body.current == "dashboard-body"
+            assert dashboard.has_focus
 
             await pilot.press("m")
             await pilot.pause(0.05)
@@ -325,6 +328,12 @@ def test_mode_toggle_switches_body_and_focus(tmp_path: Path) -> None:
 
             assert body.current == "files-body"
             assert file_tree.has_focus
+
+            await pilot.press("m")
+            await pilot.pause(0.05)
+
+            assert body.current == "dashboard-body"
+            assert dashboard.has_focus
 
     asyncio.run(run_modality_test())
 
@@ -344,16 +353,6 @@ def test_footer_binding_order_by_mode(tmp_path: Path) -> None:
         async with app.run_test() as pilot:
             await pilot.pause(0.2)
 
-            files_descriptions = [
-                description
-                for description in visible_descriptions()
-                if description in {"Mode", "Open", "Root", "Back", "Quit"}
-            ]
-            assert files_descriptions == ["Mode", "Open", "Root", "Back", "Quit"]
-
-            await pilot.press("m")
-            await pilot.pause(0.05)
-
             dashboard_descriptions = [
                 description for description in visible_descriptions() if description in {"Mode", "Quit"}
             ]
@@ -368,6 +367,16 @@ def test_footer_binding_order_by_mode(tmp_path: Path) -> None:
                 if description in {"Mode", "Prev file", "Next file", "Compact", "Diff scope", "Quit"}
             ]
             assert diff_descriptions == ["Mode", "Prev file", "Next file", "Compact", "Diff scope", "Quit"]
+
+            await pilot.press("m")
+            await pilot.pause(0.05)
+
+            files_descriptions = [
+                description
+                for description in visible_descriptions()
+                if description in {"Mode", "Open", "Root", "Back", "Quit"}
+            ]
+            assert files_descriptions == ["Mode", "Open", "Root", "Back", "Quit"]
 
     asyncio.run(run_footer_order_test())
 
@@ -567,6 +576,11 @@ def test_refresh_does_not_disturb_file_tree_focus(tmp_path: Path) -> None:
     async def run_refresh_focus_test() -> None:
         async with app.run_test() as pilot:
             await pilot.pause(0.2)
+
+            # Dashboard is the default pane; switch to files mode to focus the tree.
+            await pilot.press("m")
+            await pilot.press("m")
+            await pilot.pause(0.05)
 
             file_tree = app.query_one("#file-tree", DirectoryTree)
             assert file_tree.has_focus
