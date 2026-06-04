@@ -1,5 +1,5 @@
 import type { Theme } from "@earendil-works/pi-coding-agent";
-import { truncateToWidth, visibleWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
+import { visibleWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
 
 export type TaskProgressStatus = "pending" | "active" | "completed" | "deleted";
 
@@ -29,9 +29,6 @@ export interface TaskProgressRenderTheme {
 }
 
 const WINDOW_SIZE = 3;
-const TASK_DESCRIPTION_LINE_LIMIT = 3;
-const TASK_DESCRIPTION_ELLIPSIS = "…";
-const TASK_DESCRIPTION_WIDGET_PREFIX = "  ";
 const MARKERS: Record<TaskProgressStatus, string> = {
 	completed: "✓",
 	active: "→",
@@ -52,45 +49,6 @@ export function formatTaskProgressSummary(snapshot: TaskProgressSnapshot): strin
 	return `${counts.completed}/${counts.total} tasks completed`;
 }
 
-export function renderTaskDescriptionLines(description: string, availableWidth: number): string[] {
-	const width = Math.max(0, Math.floor(availableWidth));
-	if (width === 0) return [];
-
-	const lines: string[] = [];
-	let omitted = false;
-
-	for (const rawLine of description.split(/\r?\n/)) {
-		const text = rawLine.trim();
-		if (!text) continue;
-
-		for (const wrappedLine of wrapTextWithAnsi(text, width)) {
-			if (lines.length < TASK_DESCRIPTION_LINE_LIMIT) {
-				lines.push(wrappedLine);
-			} else {
-				omitted = true;
-				break;
-			}
-		}
-
-		if (omitted) break;
-	}
-
-	if (omitted && lines.length > 0) {
-		lines[lines.length - 1] = appendTaskDescriptionEllipsis(lines[lines.length - 1]!, width);
-	}
-
-	return lines;
-}
-
-function appendTaskDescriptionEllipsis(line: string, width: number): string {
-	const ellipsisWidth = visibleWidth(TASK_DESCRIPTION_ELLIPSIS);
-	if (width <= ellipsisWidth) return TASK_DESCRIPTION_ELLIPSIS;
-
-	const baseWidth = width - ellipsisWidth;
-	const base = visibleWidth(line) > baseWidth ? truncateToWidth(line, baseWidth, "") : line;
-	return `${base}${TASK_DESCRIPTION_ELLIPSIS}`;
-}
-
 export function renderTaskWidgetLines(
 	snapshot: TaskProgressSnapshot,
 	theme: TaskProgressRenderTheme,
@@ -103,10 +61,7 @@ export function renderTaskWidgetLines(
 		inner.push(`${theme.fg("dim", "Goal")}  ${snapshot.goal}`);
 	}
 
-	const contentWidth = width - 4;
 	const taskLines = renderTaskProgressBody(snapshot, theme, {
-		activeDescriptionWidth: Math.max(0, contentWidth - visibleWidth(TASK_DESCRIPTION_WIDGET_PREFIX)),
-		includeActiveDescription: true,
 		includeIndices: false,
 		includeNotes: true,
 	});
@@ -130,8 +85,6 @@ export function renderCompactTaskProgressLines(
 	}
 
 	const taskLines = renderTaskProgressBody(snapshot, theme, {
-		activeDescriptionWidth: 0,
-		includeActiveDescription: false,
 		includeIndices: true,
 		includeNotes: false,
 	});
@@ -147,8 +100,6 @@ function renderTaskProgressBody(
 	snapshot: TaskProgressSnapshot,
 	theme: TaskProgressRenderTheme,
 	opts: {
-		activeDescriptionWidth: number;
-		includeActiveDescription: boolean;
 		includeIndices: boolean;
 		includeNotes: boolean;
 	},
@@ -190,11 +141,6 @@ function renderTaskProgressBody(
 			lines.push(`${theme.fg("dim", marker)} ${theme.fg("dim", label)}`);
 		} else if (task.status === "active") {
 			lines.push(`${theme.fg("accent", marker)} ${theme.fg("accent", label)}${notesMark}`);
-			if (opts.includeActiveDescription && task.description) {
-				for (const descriptionLine of renderTaskDescriptionLines(task.description, opts.activeDescriptionWidth)) {
-					lines.push(`${TASK_DESCRIPTION_WIDGET_PREFIX}${theme.fg("dim", descriptionLine)}`);
-				}
-			}
 		} else {
 			lines.push(`${theme.fg("muted", marker)} ${label}${notesMark}`);
 		}
