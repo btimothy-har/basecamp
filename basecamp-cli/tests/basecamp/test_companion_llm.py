@@ -128,32 +128,44 @@ async def test_run_pydantic_ai_agent_wrapper_falls_back_to_sync() -> None:
 
 
 def test_resolve_openrouter_custom_base_url(monkeypatch: pytest.MonkeyPatch) -> None:
+    captured: dict[str, object] = {}
+
     class FakeAsyncOpenAI:
         def __init__(self, *, api_key: str, base_url: str) -> None:
             self.api_key = api_key
             self.base_url = base_url
+            captured["api_key"] = api_key
+            captured["base_url"] = base_url
 
     class FakeOpenRouterProvider:
         def __init__(self, *, openai_client: FakeAsyncOpenAI) -> None:
             self.openai_client = openai_client
+            captured["provider_client"] = openai_client
 
-    class FakeOpenRouterModel:
+    class FakeOpenAIChatModel:
         def __init__(self, model_name: str, *, provider: FakeOpenRouterProvider) -> None:
             self.model_name = model_name
             self.provider = provider
+            captured["model_name"] = model_name
+            captured["provider"] = provider
 
     monkeypatch.setenv("OPENROUTER_BASE_URL", "https://openrouter.example/api/v1")
     monkeypatch.setenv("OPENROUTER_API_KEY", "secret-key")
     monkeypatch.setattr(llm_module, "AsyncOpenAI", FakeAsyncOpenAI)
     monkeypatch.setattr(llm_module, "OpenRouterProvider", FakeOpenRouterProvider)
-    monkeypatch.setattr(llm_module, "OpenRouterModel", FakeOpenRouterModel)
+    monkeypatch.setattr(llm_module, "OpenAIChatModel", FakeOpenAIChatModel)
 
     resolved = resolve_pydantic_ai_model("openrouter:anthropic/claude-sonnet-4")
 
-    assert isinstance(resolved, FakeOpenRouterModel)
+    assert isinstance(resolved, FakeOpenAIChatModel)
     assert resolved.model_name == "anthropic/claude-sonnet-4"
-    assert resolved.provider.openai_client.base_url == "https://openrouter.example/api/v1"
-    assert resolved.provider.openai_client.api_key == "secret-key"
+    assert captured["api_key"] == "secret-key"
+    assert captured["base_url"] == "https://openrouter.example/api/v1"
+    assert isinstance(resolved.provider, FakeOpenRouterProvider)
+    assert isinstance(resolved.provider.openai_client, FakeAsyncOpenAI)
+    assert captured["provider"] is resolved.provider
+    assert resolved.provider.openai_client is captured["provider_client"]
+    assert captured["model_name"] == "anthropic/claude-sonnet-4"
 
 
 def test_resolve_openrouter_missing_key_returns_raw(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -168,10 +180,13 @@ def test_resolve_openrouter_missing_key_returns_raw(monkeypatch: pytest.MonkeyPa
 def test_resolve_openrouter_unsafe_base_url_rejected_without_secret_leak(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setenv("OPENROUTER_BASE_URL", "https://user:secret@example.com/api/v1")
+    unsafe_url = "https://user:secret@example.com/api/v1"
+    monkeypatch.setenv("OPENROUTER_BASE_URL", unsafe_url)
     monkeypatch.setenv("OPENROUTER_API_KEY", "secret-key")
 
-    with pytest.raises(ValueError, match=llm_module._OPENROUTER_BASE_URL_ERROR):
+    with pytest.raises(ValueError, match=llm_module._OPENROUTER_BASE_URL_ERROR) as excinfo:
         resolve_pydantic_ai_model("openrouter:anthropic/claude-sonnet-4")
 
-    assert "secret" not in llm_module._OPENROUTER_BASE_URL_ERROR
+    assert "secret" not in str(excinfo.value)
+    assert "user:secret" not in str(excinfo.value)
+    assert "secret-key" not in str(excinfo.value)
