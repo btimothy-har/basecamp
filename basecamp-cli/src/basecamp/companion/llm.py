@@ -21,13 +21,19 @@ except ImportError:
     pydantic_ai_parse_model_id = None
 
 try:
-    from openai import AsyncOpenAI
-    from pydantic_ai.models.openrouter import OpenRouterModel
+    from pydantic_ai.models.openai import OpenAIChatModel
+except ImportError:
+    OpenAIChatModel = None
+
+try:
     from pydantic_ai.providers.openrouter import OpenRouterProvider
 except ImportError:
-    AsyncOpenAI = None
-    OpenRouterModel = None
     OpenRouterProvider = None
+
+try:
+    from openai import AsyncOpenAI
+except ImportError:
+    AsyncOpenAI = None
 
 AgentFactory = Callable[..., Any]
 _OPENROUTER_BASE_URL_ERROR = "OPENROUTER_BASE_URL must be a valid https URL without embedded credentials"
@@ -77,15 +83,15 @@ def resolve_pydantic_ai_model(model: str) -> str | Any:
 
     _validate_openrouter_base_url(openrouter_base_url)
 
-    if AsyncOpenAI is None or OpenRouterModel is None or OpenRouterProvider is None:
+    if OpenAIChatModel is None or OpenRouterProvider is None or AsyncOpenAI is None:
         return model
 
-    openrouter_client = AsyncOpenAI(
-        api_key=openrouter_api_key,
-        base_url=openrouter_base_url,
+    return OpenAIChatModel(
+        reference.model_name,
+        provider=OpenRouterProvider(
+            openai_client=AsyncOpenAI(api_key=openrouter_api_key, base_url=openrouter_base_url)
+        ),
     )
-    provider = OpenRouterProvider(openai_client=openrouter_client)
-    return OpenRouterModel(reference.model_name, provider=provider)
 
 
 def create_pydantic_ai_agent(
