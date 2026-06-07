@@ -18,13 +18,35 @@ import type { WorkspaceState } from "../platform/workspace.ts";
  * Build the worktree warning block.
  *
  * Returns null if no worktree is active. When active, this is
- * safety-critical: project edits must happen in the worktree while the
- * protected checkout stays on the default branch with a clean status.
+ * safety-critical: by default project edits must happen in the worktree while
+ * the protected checkout stays on the default branch with a clean status.
  */
 export function buildWorktreeWarning(workspace: WorkspaceState | null): string | null {
 	if (!workspace?.activeWorktree) return null;
 
-	return "⚠ WORKSPACE ACTIVE: Relative file-tool paths and bash commands run from the working directory. Do not edit the protected repository checkout.";
+	if (!workspace.unsafeEdit) {
+		return "⚠ WORKSPACE ACTIVE: Relative file-tool paths and bash commands run from the working directory. Do not edit the protected repository checkout.";
+	}
+
+	return [
+		"⚠ WORKSPACE ACTIVE: Relative file-tool paths and bash commands run from the working directory.",
+		buildUnsafeEditGuidance(workspace),
+	].join("\n");
+}
+
+export function buildUnsafeEditGuidance(workspace: WorkspaceState | null): string | null {
+	if (!workspace?.unsafeEdit) return null;
+
+	const gitRestriction = workspace.activeWorktree
+		? "Commits and mutating `safe_git` commands must run from the active execution worktree."
+		: "Commits and mutating `safe_git` commands still require an active execution worktree.";
+
+	return [
+		"⚠ UNSAFE-EDIT MODE ACTIVE:",
+		"- Parent file `edit`/`write` calls may modify the protected checkout directly.",
+		`- ${gitRestriction}`,
+		"- Subagents do not inherit unsafe-edit authority.",
+	].join("\n");
 }
 
 /**

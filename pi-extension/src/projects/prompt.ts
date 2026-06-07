@@ -1,6 +1,7 @@
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
+import { fileURLToPath } from "node:url";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { type CatalogItem, listCatalogItemsByType } from "../platform/catalog.ts";
 import { getWorkspaceService, getWorkspaceState, type WorkspaceState } from "../platform/workspace.ts";
@@ -9,13 +10,15 @@ import {
 	buildCapabilitiesIndex,
 	buildMemoryGuidance,
 	buildProjectContext,
+	buildUnsafeEditGuidance,
 	buildWorktreeWarning,
 	type ContextFile,
 	discoverContextFiles,
 } from "./context.ts";
 import { getProjectState, type ProjectState } from "./project.ts";
 
-const PACKAGE_DIR = path.resolve(__dirname, "system-prompts");
+const MODULE_DIR = path.dirname(fileURLToPath(import.meta.url));
+const PACKAGE_DIR = path.resolve(MODULE_DIR, "system-prompts");
 const USER_PROMPTS_DIR = path.join(os.homedir(), ".pi", "prompts");
 const USER_STYLES_DIR = path.join(os.homedir(), ".pi", "styles");
 
@@ -97,6 +100,9 @@ function buildEnvBlock(
 	const worktreeWarning = buildWorktreeWarning(workspace);
 	if (worktreeWarning) {
 		lines.push("", worktreeWarning, "");
+	} else {
+		const unsafeEditGuidance = buildUnsafeEditGuidance(workspace);
+		if (unsafeEditGuidance) lines.push("", unsafeEditGuidance, "");
 	}
 
 	lines.push(`Is directory a git repo: ${repo?.isRepo ? "Yes" : "No"}`);
