@@ -49,7 +49,7 @@ const BqQueryParams = Type.Object({
 	force: Type.Optional(
 		Type.Boolean({
 			description:
-				"No-UI only: intentionally override the dry-run soft lock for unknown/non-authoritative estimates or estimates above 5 TB. Does not bypass interactive confirmation, dry-run failures, or execution errors. Defaults to false.",
+				"Bypass scan-approval gates (no-UI soft lock, estimate_unknown, interactive confirmation) and proceed with query execution. Does not bypass dry-run failures or execution errors. Defaults to false.",
 		}),
 	),
 	projectId: Type.Optional(Type.String({ description: "BigQuery project ID. Uses the bq CLI default when omitted." })),
@@ -804,6 +804,9 @@ function formatScanApprovalStatus(details: BqQueryDetails): string {
 	}
 
 	if (approval.reason === "estimate_unknown") {
+		if (approval.forced && approval.granted === true) {
+			return `Approval: overridden with force: true; ${requirement}.`;
+		}
 		if (approval.granted === false) {
 			return `Approval: required but not granted; ${requirement}.`;
 		}
@@ -811,6 +814,9 @@ function formatScanApprovalStatus(details: BqQueryDetails): string {
 	}
 
 	if (approval.reason === "over_threshold" || approval.reason === "estimate_non_authoritative") {
+		if (approval.forced && approval.granted === true) {
+			return `Approval: overridden with force: true; ${requirement}.`;
+		}
 		if (approval.approved === true && approval.granted === true) {
 			return `Approval: required and granted; ${requirement}.`;
 		}
@@ -874,12 +880,12 @@ async function evaluateScanApproval(
 		return null;
 	}
 
-	if (approval.mode === "no_ui_soft_lock") {
-		if (force) {
-			details.approval = withScanApprovalDecision(approval, null, true, true);
-			return null;
-		}
+	if (force) {
+		details.approval = withScanApprovalDecision(approval, null, true, true);
+		return null;
+	}
 
+	if (approval.mode === "no_ui_soft_lock") {
 		details.approval = withScanApprovalDecision(approval, null, false);
 		return {
 			isError: true,
