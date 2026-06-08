@@ -151,7 +151,9 @@ def create_app(store: Store, *, daemon_uds: str | None = None) -> FastAPI:
                 message=f"Failed to parse frame: {exc}",
             )
         finally:
-            if node_id is not None:
+            # Only drop the mapping if it still points at THIS socket; a reconnect
+            # under the same node_id may have already installed a newer connection.
+            if node_id is not None and registry.get_connection(node_id) is websocket:
                 registry.remove_connection(node_id)
 
     return app
@@ -368,7 +370,9 @@ async def _notify_run_finalized(run_id: str, *, registry: Registry, store: Store
             if not await _is_run_terminal(waiter_run_id, store):
                 all_terminal = False
                 break
-        if all_terminal:
+        # Re-check done(): an await happened above, so a concurrent finalize or the
+        # wait_for timeout may have already resolved/cancelled this future.
+        if all_terminal and not waiter.future.done():
             waiter.future.set_result(None)
 
 

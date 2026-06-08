@@ -33,6 +33,7 @@ def _start_daemon(store: Store, uds_path: Path) -> tuple[UdsServer, threading.Th
     while time.time() < deadline and not uds_path.exists():
         time.sleep(0.05)
 
+    assert uds_path.exists(), f"daemon failed to start: socket not created at {uds_path}"
     return server, thread
 
 

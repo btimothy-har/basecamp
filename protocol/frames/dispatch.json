@@ -15,7 +15,7 @@
       "BASECAMP_DAEMON_UDS": "/Users/example/.pi/agent/basecamp/daemon.sock"
     },
     "cwd": "/Users/example/repo",
-    "resume_path": "/Users/example/.pi/agent/sessions/agent-42.jsonl",
+    "resume_path": "/Users/example/.pi/agent/basecamp/agents/agent-42/session/agent-42.jsonl",
     "task": "Summarize test failures and propose a fix."
   }
 }

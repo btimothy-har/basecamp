@@ -74,13 +74,13 @@ export interface WaitFrame {
 	type: "wait";
 	v: typeof PROTOCOL_VERSION;
 	run_ids: string[];
-	mode: "all" | "first";
+	mode: "all";
 	timeout_s: number;
 }
 
 export interface WaitResultItem {
 	run_id: string;
-	status: string;
+	status: "completed" | "failed";
 	result: string | null;
 	error: string | null;
 }

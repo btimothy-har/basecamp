@@ -28,8 +28,11 @@ class UdsServer(uvicorn.Server):
         if uds:
             try:
                 os.chmod(uds, _SOCKET_MODE)
-            except OSError:
-                pass
+            except OSError as exc:
+                # Fail fast: serving on a socket we couldn't restrict to 0600 would
+                # break the local-user-only trust boundary.
+                msg = f"failed to restrict daemon socket {uds} to {oct(_SOCKET_MODE)}"
+                raise RuntimeError(msg) from exc
 
 
 def create_server(uds_path: str, store: Store, *, log_level: str = "info") -> UdsServer:
