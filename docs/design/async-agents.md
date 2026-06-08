@@ -64,7 +64,7 @@ Two ideas anchor the whole design:
 - **basecamp daemon** — a single, host-global Python process (FastAPI served by uvicorn over a Unix domain socket). It is coordinator (spawns agents), supervisor (owns the relationship/ACL graph), router (messages and result notifications), mutation-lease manager, and limit enforcer (depth + global concurrency). It exposes HTTP routes for read-only observability.
 - **SQLite store** — the daemon's source of truth: agents, runs, relationships, leases, queued messages/results. Survives daemon restarts.
 - **Transient agent processes** — `pi --mode json -p` children the daemon spawns per task. Each loads the basecamp extension and connects its own WebSocket back to the daemon.
-- **`.jsonl` thread files** — each agent's pi session transcript under `~/.pi/agent/sessions/`. Persisted indefinitely (pi enforces no TTL); resumed on re-task to continue the thread.
+- **`.jsonl` thread files** — each agent's pi session transcript. Async agents are spawned with `--session-dir` pointing at a **basecamp-managed durable location** (`~/.pi/agent/basecamp/agents/<name>/session/`), kept deliberately distinct from pi's default session store so an agent reads as a *distinct entity* rather than an ordinary, user-continuable session (§6.6). Persisted indefinitely (no TTL); resumed on re-task to continue the thread.
 - **Shared worktree(s)** — the execution worktree(s) agents read and write, with mutation serialized by the daemon's per-worktree lease.
 
 ### 4.2 Component diagram
@@ -211,6 +211,7 @@ The spawning extension and daemon rely on injected environment values.
 | `BASECAMP_DAEMON_UDS` | New | Daemon UDS path used for discovery/connection. |
 | `BASECAMP_AGENT_ID` | New | Durable agent identity for runs/thread continuity. |
 | `BASECAMP_SIBLING_GROUP` | New | Sibling-group identifier used by peer ACL checks. |
+| `BASECAMP_AGENT_TITLE` | New | Deterministic, human-readable session title for an async agent — a parenthesized agent name (or `Agent` for ad-hoc) plus a compact task label. The spawned agent appends a `[<4hex>]` session-id suffix and applies it as its session name (§6.6). |
 
 The daemon derives relationship graph membership and effective depth from these values. ACL and graph-rule details are defined in §7. Worktree identity is not a daemon-owned env value: it travels in the spawn spec (the `--worktree-dir` argument, §6.2) alongside basecamp's existing `BASECAMP_WORKTREE_DIR` / `BASECAMP_WORKTREE_LABEL` session env.
 
@@ -218,7 +219,7 @@ The daemon derives relationship graph membership and effective depth from these 
 
 ### 6.1 An agent is a thread, not a process
 
-At rest, an agent is persisted state, not a running program: a row in the daemon's SQLite store plus its thread file (`~/.pi/agent/sessions/<agent-id>.jsonl`). It is not a resident process and retains no in-memory runtime state between tasks.
+At rest, an agent is persisted state, not a running program: a row in the daemon's SQLite store plus its thread file (a `.jsonl` under the basecamp-managed durable session store, §6.6). It is not a resident process and retains no in-memory runtime state between tasks.
 
 "The agent persists" therefore means two things persist: durable identity (`BASECAMP_AGENT_ID`) and conversation history (the thread file). Execution is provided by a transient agent process that exists only for one run and then exits.
 
@@ -230,7 +231,7 @@ The spawn spec is the central TypeScript↔Python contract. It is a structured l
 
 - command + argv (the `pi --mode json -p ...` invocation and flags),
 - environment block (the injected `BASECAMP_*` set described in §5.4),
-- working directory,
+- working directory (the repo root for async agents, not the active worktree — §6.6),
 - resume slot (which thread file to continue),
 - task/prompt slot (the task content for this run).
 
@@ -299,6 +300,16 @@ Thread files persist indefinitely. pi enforces no TTL for sessions; removal occu
 v1 decision: no automatic pruning of agents or thread files. Cleanup is manual only. The accumulation risk is noted in §8; a TTL sweep is deferred beyond v1 (§10).
 
 The agent contract provides no reset/compact operation. To obtain a clean slate, create a new agent. Context-window pressure within a long-lived thread is handled by pi's own auto-compaction behavior.
+
+### 6.6 Agent identity & session storage (Phase 1 refinements)
+
+Making an async agent a *first-class persistent entity* (not a throwaway like a synchronous subagent) required three identity refinements, all on the async path only. The synchronous `agent` tool (§3) is intentionally untouched: its children are ephemeral one-shots that are never browsed or resumed, so worktree-derived identity and a temp session dir are correct for it.
+
+- **Repo association.** An agent's repo identity is derived by pi from the process's startup cwd (`resolveGitInfo` runs `git rev-parse --show-toplevel` and takes `repoName` from the toplevel's basename). `dispatch_agent` therefore sets the spawn-spec working directory to the **repo root** (`workspace.protectedRoot ?? workspace.repo.root ?? launchCwd ?? cwd`), not the active worktree. The `--worktree-dir` argument still travels in the argv and auto-attaches the worktree at the agent's `session_start`, so `effectiveCwd` becomes the worktree and all file work lands there. Net effect: the agent's pi session is associated with the real repo (e.g. `basecamp`) — mirroring its parent — while still doing work in the shared worktree. (A synchronous subagent launched from inside a worktree resolves its identity to the worktree dir; that is harmless for an ephemeral one-shot and is left as-is.)
+
+- **Deterministic titles.** Async agents run `pi --mode json -p` with no UI, so the interactive title model (gated on `hasUI`) never fires and they would otherwise show only a uuid-ish name. Instead, `dispatch_agent` builds a deterministic title — a `(<agent-name>)` prefix for a named agent, `(Agent)` for ad-hoc, plus a compact task-derived label — and passes it via `BASECAMP_AGENT_TITLE` (§5.4). The spawned agent appends its own session-id suffix `[<4hex>]` (the same format as interactive titles), applies it with `setSessionName` at `session_start` (not UI-gated), and registers it as its `session_name`, so the daemon's `agents.session_name` reflects the title rather than the agent uuid. No title-model call is made (agents are frequent and ephemeral; the task already describes the work), and no frame/protocol change is needed — the title rides existing env plus the register frame's `session_name`. Interactive top-level titling is unchanged.
+
+- **Durable, distinct session store.** The agent's `.jsonl` thread is the basis of re-tasking (§6.4), so it must survive. Async agents are spawned with `--session-dir` pointing at a durable, basecamp-owned location under the daemon runtime dir (`~/.pi/agent/basecamp/agents/<name>/session/`, alongside `daemon.db`/`daemon.sock`). Two properties matter: it is **durable** (unlike `$TMPDIR`, which the OS clears and which would destroy resumability), and it is **distinct** from pi's default session store (`~/.pi/agent/sessions/--<cwd>--/`). Keeping agents out of the default store is deliberate — a session there is treated as an ordinary, user-continuable session and would clutter the user's session browser, whereas an async agent should read as a separate entity, resumed by the daemon (via its spawn spec / session path), not casually continued by a user. The synchronous tool keeps its ephemeral `$TMPDIR` session dir.
 
 ## 7. Collaboration, safety & limits
 
@@ -443,7 +454,7 @@ Both limits are configurable tunables. They are complementary: depth cap bounds 
 ## 10. Phased roadmap
 
 - **Phase 1 — IMPLEMENTED walking skeleton.** Delivered components: daemon (`basecamp daemon`), extension daemon client + `dispatch_agent` / `wait_for_agent`, and shared frame protocol fixtures under `protocol/`. Goal was to prove the end-to-end spine with one persistent agent identity and asynchronous run completion.
-  - In scope: a single frame-schema source of truth + a daemon contract test (the protocol exists from Phase 1); `session_start` ensure-daemon + WebSocket handshake (§5.3); daemon spawns one transient agent process from a TypeScript-authored spawn spec (§6.2); async dispatch returns a handle immediately; telemetry + result reporting over WebSocket (§6.3); `wait_for_agent` for a single handle and wait-ALL over multiple handles (§7.3); process-exit crash backstop; SQLite persistence for agents/runs; depth cap retained. The existing in-process run guard (§3) also stays in place (see the sequencing note), so breadth remains bounded even though the global concurrency cap is not yet built.
+  - In scope: a single frame-schema source of truth + a daemon contract test (the protocol exists from Phase 1); `session_start` ensure-daemon + WebSocket handshake (§5.3); daemon spawns one transient agent process from a TypeScript-authored spawn spec (§6.2); async dispatch returns a handle immediately; telemetry + result reporting over WebSocket (§6.3); `wait_for_agent` for a single handle and wait-ALL over multiple handles (§7.3); process-exit crash backstop; SQLite persistence for agents/runs; async-agent identity refinements — repo-root spawn cwd, deterministic titles, and a durable/distinct session store (§6.6); depth cap retained. The existing in-process run guard (§3) also stays in place (see the sequencing note), so breadth remains bounded even though the global concurrency cap is not yet built.
   - Explicitly out of scope: peer message, ACL enforcement, mutation lease/deadlock detection, host-global concurrency cap, HTTP observability polish, re-task-on-message behavior, wait-FIRST joins, and the unsolicited result-ping push (in Phase 1 the dispatcher observes completion by calling `wait_for_agent`).
   - Acceptance criteria:
     - `session_start` produces a healthy daemon connection (spawn if absent, reuse if present, complete version handshake) without blocking first prompt availability.
