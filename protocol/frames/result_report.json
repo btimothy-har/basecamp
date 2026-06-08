@@ -1,0 +1,13 @@
+{
+  "type": "result_report",
+  "v": 1,
+  "run_id": "run-001",
+  "agent_id": "agent-42",
+  "status": "ok",
+  "result": "Applied patch and tests now pass.",
+  "error": null,
+  "usage": {
+    "input_tokens": 1200,
+    "output_tokens": 220
+  }
+}

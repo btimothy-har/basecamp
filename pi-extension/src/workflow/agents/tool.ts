@@ -17,9 +17,9 @@ import { fileURLToPath } from "node:url";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { getMarkdownTheme } from "@earendil-works/pi-coding-agent";
 import { type Component, Container, Markdown, Spacer, Text } from "@earendil-works/pi-tui";
-import { hasInvokedSkill } from "../../platform/skill-tracker";
-import { getWorkspaceState } from "../../platform/workspace";
-import { formatTaskProgressSummary, renderCompactTaskProgressLines } from "../tasks/render";
+import { hasInvokedSkill } from "../../platform/skill-tracker.ts";
+import { getWorkspaceState } from "../../platform/workspace.ts";
+import { formatTaskProgressSummary, renderCompactTaskProgressLines } from "../tasks/render.ts";
 import type { AgentStreamEvent } from "./executor.ts";
 import { spawnAgent } from "./executor.ts";
 import { resolveModel } from "./model-resolution.ts";
@@ -45,7 +45,7 @@ function checkDepth(): void {
 // Agent Environment
 // ============================================================================
 
-function buildAgentEnv(opts: { name: string; parentSession: string; project: string }): Record<string, string> {
+export function buildAgentEnv(opts: { name: string; parentSession: string; project: string }): Record<string, string> {
 	const depth = Number(process.env.BASECAMP_AGENT_DEPTH ?? "0");
 	const env: Record<string, string> = {};
 	for (const [k, v] of Object.entries(process.env)) {
@@ -264,7 +264,7 @@ function isBasecampExtensionTool(tool: ToolInfo): boolean {
 	return isWithinBasecampExtensionRoot(tool.sourceInfo.baseDir) || isWithinBasecampExtensionRoot(tool.sourceInfo.path);
 }
 
-function getBasecampExtensionToolNames(pi: ExtensionAPI): string[] {
+export function getBasecampExtensionToolNames(pi: ExtensionAPI): string[] {
 	return pi
 		.getAllTools()
 		.filter((tool) => isBasecampExtensionTool(tool) && !SUBAGENT_EXCLUDED_EXTENSION_TOOLS.has(tool.name))

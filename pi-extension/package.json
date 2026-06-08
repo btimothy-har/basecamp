@@ -44,6 +44,9 @@
 		"@earendil-works/pi-coding-agent": "*",
 		"@sinclair/typebox": "*"
 	},
+	"dependencies": {
+		"ws": "^8"
+	},
 	"devDependencies": {
 		"@biomejs/biome": "^2.0.0",
 		"@earendil-works/pi-agent-core": "^0.78.0",
@@ -52,6 +55,7 @@
 		"@earendil-works/pi-tui": "^0.78.0",
 		"@sinclair/typebox": "^0.34.0",
 		"@types/node": "^22.0.0",
+		"@types/ws": "^8.18.1",
 		"typescript": "^5.8.0"
 	}
 }

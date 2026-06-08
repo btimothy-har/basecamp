@@ -4,12 +4,14 @@ version = "0.8.0"
 description = "Multi-project workspace launcher and workflow tooling for AI coding agents"
 requires-python = ">=3.12"
 dependencies = [
+    "fastapi>=0.100.0",
     "pydantic>=2.0",
     "pydantic-ai-slim[anthropic,openai]",
     "pygments>=2.0",
     "questionary>=2.1.1",
     "rich-click>=1.8",
     "textual>=0.80",
+    "uvicorn[standard]>=0.20.0",
 ]
 
 [project.scripts]

@@ -1,0 +1,476 @@
+import assert from "node:assert/strict";
+import * as fs from "node:fs";
+import * as os from "node:os";
+import * as path from "node:path";
+import { afterEach, beforeEach, describe, it } from "node:test";
+import { getWorkspaceService, registerWorkspaceService, type WorkspaceService } from "../../platform/workspace.ts";
+import type { DaemonConnection } from "../agents/daemon/client.ts";
+import type { Frame } from "../agents/daemon/frames.ts";
+import { deriveDaemonIdentity } from "../agents/daemon/index.ts";
+import { resolveDaemonPaths } from "../agents/daemon/paths.ts";
+import { buildAgentTitleBase, registerDaemonTools } from "../agents/daemon/tools.ts";
+
+interface RegisteredTool {
+	name: string;
+	execute: (id: string, params: any, signal: AbortSignal, onUpdate: () => void, ctx: any) => Promise<any>;
+}
+
+class MockConnection implements DaemonConnection {
+	sent: Frame[] = [];
+	handlers = new Map<Frame["type"], Set<(frame: any) => void>>();
+
+	send(frame: Frame): void {
+		this.sent.push(frame);
+	}
+
+	on<T extends Frame["type"]>(type: T, handler: (frame: Extract<Frame, { type: T }>) => void): () => void {
+		const set = this.handlers.get(type) ?? new Set();
+		set.add(handler as any);
+		this.handlers.set(type, set);
+		return () => set.delete(handler as any);
+	}
+
+	onClose(): () => void {
+		return () => {};
+	}
+
+	close(): void {
+		// no-op
+	}
+
+	emit(frame: Frame): void {
+		const set = this.handlers.get(frame.type);
+		if (!set) return;
+		for (const handler of set) handler(frame as any);
+	}
+}
+
+function createMockPi() {
+	const tools: RegisteredTool[] = [];
+	const pi = {
+		registerTool(tool: RegisteredTool) {
+			tools.push(tool);
+		},
+		getSessionName() {
+			return "session-name";
+		},
+		getAllTools() {
+			return [];
+		},
+	};
+	return { pi: pi as any, tools };
+}
+
+function toolByName(tools: RegisteredTool[], name: string): RegisteredTool {
+	const tool = tools.find((candidate) => candidate.name === name);
+	assert.ok(tool, `Missing tool ${name}`);
+	return tool;
+}
+
+function createNullWorkspaceService(): WorkspaceService {
+	return {
+		initialize: async () => {
+			throw new Error("workspace is unavailable");
+		},
+		current: () => null,
+		require: () => {
+			throw new Error("workspace is unavailable");
+		},
+		getEffectiveCwd: () => process.cwd(),
+		listWorktrees: async () => [],
+		activateWorktree: async () => {
+			throw new Error("workspace is unavailable");
+		},
+		attachWorktreePath: async () => {
+			throw new Error("workspace is unavailable");
+		},
+	};
+}
+
+describe("daemon async tools", () => {
+	let priorHome: string | undefined;
+	let tmpHome: string;
+
+	beforeEach(() => {
+		priorHome = process.env.HOME;
+		tmpHome = fs.mkdtempSync(path.join(os.tmpdir(), "bc-test-home-"));
+		process.env.HOME = tmpHome;
+	});
+
+	afterEach(() => {
+		if (priorHome === undefined) delete process.env.HOME;
+		else process.env.HOME = priorHome;
+		fs.rmSync(tmpHome, { recursive: true, force: true });
+	});
+
+	describe("buildAgentTitleBase", () => {
+		it("formats named/ad-hoc titles, compacts whitespace, and truncates long tasks", () => {
+			assert.equal(buildAgentTitleBase("scout", "Investigate the auth flow"), "(scout) Investigate the auth flow");
+			assert.equal(buildAgentTitleBase(undefined, "hello world"), "(Agent) hello world");
+			assert.equal(buildAgentTitleBase("worker", "do   a\n  thing"), "(worker) do a thing");
+
+			const longTask = "x".repeat(80);
+			const truncated = buildAgentTitleBase("worker", longTask);
+			assert.equal(truncated.endsWith("…"), true);
+			assert.ok(truncated.length <= "(worker) ".length + 56);
+		});
+	});
+
+	it("dispatch_agent builds spec env/task split and returns handle on spawned ack", async () => {
+		const priorCustom = process.env.TEST_DAEMON_TOOLS;
+		const priorDepth = process.env.BASECAMP_AGENT_DEPTH;
+		const priorProject = process.env.BASECAMP_PROJECT;
+		process.env.TEST_DAEMON_TOOLS = "1";
+		process.env.BASECAMP_AGENT_DEPTH = "0";
+		process.env.BASECAMP_PROJECT = "proj";
+
+		try {
+			const connection = new MockConnection();
+			const { pi, tools } = createMockPi();
+			registerDaemonTools(pi, async () => connection);
+			const dispatchTool = toolByName(tools, "dispatch_agent");
+
+			const executePromise = dispatchTool.execute(
+				"1",
+				{ task: "hello world" },
+				new AbortController().signal,
+				() => {},
+				{ model: "claude-sonnet", sessionManager: { getSessionId: () => "session-id" } },
+			);
+
+			await new Promise((resolve) => setImmediate(resolve));
+			const outbound = connection.sent[0] as Extract<Frame, { type: "dispatch" }>;
+			assert.equal(outbound.type, "dispatch");
+			assert.equal(outbound.spec.task, "Task: hello world");
+			assert.notEqual(outbound.spec.argv.at(-1), "Task: hello world");
+			assert.equal(outbound.spec.env.TEST_DAEMON_TOOLS, "1");
+			assert.equal(outbound.spec.env.BASECAMP_PROJECT, "proj");
+			assert.equal(outbound.spec.env.BASECAMP_PARENT_SESSION, process.env.BASECAMP_SESSION_NAME ?? "session-name");
+			assert.equal(outbound.spec.env.BASECAMP_AGENT_TITLE, "(Agent) hello world");
+
+			connection.emit({
+				type: "dispatch_ack",
+				v: 1,
+				run_id: outbound.run_id,
+				status: "spawned",
+				reason: null,
+			});
+
+			const result = await executePromise;
+			assert.equal(result.isError, undefined);
+			assert.equal(result.details.runId, outbound.run_id);
+		} finally {
+			if (priorCustom === undefined) delete process.env.TEST_DAEMON_TOOLS;
+			else process.env.TEST_DAEMON_TOOLS = priorCustom;
+			if (priorDepth === undefined) delete process.env.BASECAMP_AGENT_DEPTH;
+			else process.env.BASECAMP_AGENT_DEPTH = priorDepth;
+			if (priorProject === undefined) delete process.env.BASECAMP_PROJECT;
+			else process.env.BASECAMP_PROJECT = priorProject;
+		}
+	});
+
+	it("dispatch_agent uses matching agent_id, --session-id, and durable session directory segment", async () => {
+		const connection = new MockConnection();
+		const { pi, tools } = createMockPi();
+		registerDaemonTools(pi, async () => connection);
+		const dispatchTool = toolByName(tools, "dispatch_agent");
+
+		const executePromise = dispatchTool.execute("1", { task: "hello world" }, new AbortController().signal, () => {}, {
+			model: "claude-sonnet",
+			sessionManager: { getSessionId: () => "session-id" },
+		});
+
+		await new Promise((resolve) => setImmediate(resolve));
+		const outbound = connection.sent[0] as Extract<Frame, { type: "dispatch" }>;
+		const sessionDirFlagIndex = outbound.spec.argv.indexOf("--session-dir");
+		assert.notEqual(sessionDirFlagIndex, -1);
+		const sessionDir = outbound.spec.argv[sessionDirFlagIndex + 1];
+		if (typeof sessionDir !== "string") throw new Error("Missing --session-dir value");
+		assert.equal(path.basename(sessionDir), "session");
+		assert.equal(sessionDir.startsWith(path.join(resolveDaemonPaths().runtimeDir, "agents")), true);
+		assert.equal(sessionDir.includes("basecamp-agents"), false);
+
+		const agentSegment = path.basename(path.dirname(sessionDir));
+		assert.match(agentSegment, /^[0-9a-f-]{36}$/);
+
+		const sessionIdFlagIndex = outbound.spec.argv.indexOf("--session-id");
+		assert.notEqual(sessionIdFlagIndex, -1);
+		const sessionId = outbound.spec.argv[sessionIdFlagIndex + 1];
+		assert.equal(sessionId, agentSegment);
+		assert.equal(outbound.agent_id, agentSegment);
+
+		connection.emit({
+			type: "dispatch_ack",
+			v: 1,
+			run_id: outbound.run_id,
+			status: "spawned",
+			reason: null,
+		});
+		await executePromise;
+	});
+
+	it("dispatch_agent prefers protected root cwd and still passes --worktree-dir", async () => {
+		const priorWorkspaceService = getWorkspaceService();
+		registerWorkspaceService({
+			initialize: async () => {
+				throw new Error("not used in this test");
+			},
+			current: () => ({
+				launchCwd: "/wt",
+				effectiveCwd: "/wt",
+				scratchDir: "/tmp/pi/basecamp",
+				repo: {
+					isRepo: true,
+					name: "basecamp",
+					root: "/repo-root",
+					remoteUrl: "git@github.com:btimothy-har/basecamp.git",
+				},
+				protectedRoot: "/repo-root",
+				activeWorktree: {
+					kind: "git-worktree",
+					label: "wt",
+					path: "/wt",
+					branch: "b",
+					created: false,
+				},
+				unsafeEdit: false,
+			}),
+			require: () => {
+				throw new Error("not used in this test");
+			},
+			getEffectiveCwd: () => "/wt",
+			listWorktrees: async () => [],
+			activateWorktree: async () => {
+				throw new Error("not used in this test");
+			},
+			attachWorktreePath: async () => {
+				throw new Error("not used in this test");
+			},
+		});
+
+		try {
+			const connection = new MockConnection();
+			const { pi, tools } = createMockPi();
+			registerDaemonTools(pi, async () => connection);
+			const dispatchTool = toolByName(tools, "dispatch_agent");
+
+			const executePromise = dispatchTool.execute(
+				"1",
+				{ task: "hello world" },
+				new AbortController().signal,
+				() => {},
+				{ model: "claude-sonnet", sessionManager: { getSessionId: () => "session-id" } },
+			);
+
+			await new Promise((resolve) => setImmediate(resolve));
+			const outbound = connection.sent[0] as Extract<Frame, { type: "dispatch" }>;
+			assert.equal(outbound.spec.cwd, "/repo-root");
+			const worktreeDirIndex = outbound.spec.argv.indexOf("--worktree-dir");
+			assert.notEqual(worktreeDirIndex, -1);
+			assert.equal(outbound.spec.argv[worktreeDirIndex + 1], "/wt");
+
+			connection.emit({
+				type: "dispatch_ack",
+				v: 1,
+				run_id: outbound.run_id,
+				status: "spawned",
+				reason: null,
+			});
+			await executePromise;
+		} finally {
+			registerWorkspaceService(priorWorkspaceService ?? createNullWorkspaceService());
+		}
+	});
+
+	it("dispatch_agent falls back to repo root cwd when protected root is unavailable", async () => {
+		const priorWorkspaceService = getWorkspaceService();
+		registerWorkspaceService({
+			initialize: async () => {
+				throw new Error("not used in this test");
+			},
+			current: () => ({
+				launchCwd: "/launch",
+				effectiveCwd: "/launch",
+				scratchDir: "/tmp/pi/basecamp",
+				repo: {
+					isRepo: true,
+					name: "basecamp",
+					root: "/repo-root",
+					remoteUrl: "git@github.com:btimothy-har/basecamp.git",
+				},
+				protectedRoot: null,
+				activeWorktree: null,
+				unsafeEdit: false,
+			}),
+			require: () => {
+				throw new Error("not used in this test");
+			},
+			getEffectiveCwd: () => "/launch",
+			listWorktrees: async () => [],
+			activateWorktree: async () => {
+				throw new Error("not used in this test");
+			},
+			attachWorktreePath: async () => {
+				throw new Error("not used in this test");
+			},
+		});
+
+		try {
+			const connection = new MockConnection();
+			const { pi, tools } = createMockPi();
+			registerDaemonTools(pi, async () => connection);
+			const dispatchTool = toolByName(tools, "dispatch_agent");
+
+			const executePromise = dispatchTool.execute(
+				"1",
+				{ task: "hello world" },
+				new AbortController().signal,
+				() => {},
+				{ model: "claude-sonnet", sessionManager: { getSessionId: () => "session-id" } },
+			);
+
+			await new Promise((resolve) => setImmediate(resolve));
+			const outbound = connection.sent[0] as Extract<Frame, { type: "dispatch" }>;
+			assert.equal(outbound.spec.cwd, "/repo-root");
+
+			connection.emit({
+				type: "dispatch_ack",
+				v: 1,
+				run_id: outbound.run_id,
+				status: "spawned",
+				reason: null,
+			});
+			await executePromise;
+		} finally {
+			registerWorkspaceService(priorWorkspaceService ?? createNullWorkspaceService());
+		}
+	});
+
+	it("dispatch_agent surfaces rejected ack reason as tool error", async () => {
+		const connection = new MockConnection();
+		const { pi, tools } = createMockPi();
+		registerDaemonTools(pi, async () => connection);
+		const dispatchTool = toolByName(tools, "dispatch_agent");
+
+		const executePromise = dispatchTool.execute("1", { task: "hello world" }, new AbortController().signal, () => {}, {
+			model: "claude-sonnet",
+			sessionManager: { getSessionId: () => "session-id" },
+		});
+		await new Promise((resolve) => setImmediate(resolve));
+		const outbound = connection.sent[0] as Extract<Frame, { type: "dispatch" }>;
+
+		connection.emit({
+			type: "dispatch_ack",
+			v: 1,
+			run_id: outbound.run_id,
+			status: "rejected",
+			reason: "depth_cap",
+		});
+
+		const result = await executePromise;
+		assert.equal(result.isError, true);
+		assert.match(result.content[0].text, /depth_cap/);
+	});
+
+	it("wait_for_agent sends wait and returns per-handle results", async () => {
+		const connection = new MockConnection();
+		const { pi, tools } = createMockPi();
+		registerDaemonTools(pi, async () => connection);
+		const waitTool = toolByName(tools, "wait_for_agent");
+
+		const executePromise = waitTool.execute(
+			"1",
+			{ handles: ["run-1", "run-2"], timeout_s: 30 },
+			new AbortController().signal,
+			() => {},
+			{},
+		);
+
+		await new Promise((resolve) => setImmediate(resolve));
+		const outbound = connection.sent[0] as Extract<Frame, { type: "wait" }>;
+		assert.equal(outbound.type, "wait");
+		assert.deepEqual(outbound.run_ids, ["run-1", "run-2"]);
+		assert.equal(outbound.timeout_s, 30);
+
+		connection.emit({
+			type: "wait_result",
+			v: 1,
+			results: [
+				{ run_id: "run-1", status: "completed", result: "done", error: null },
+				{ run_id: "run-2", status: "failed", result: null, error: "boom" },
+			],
+		});
+
+		const result = await executePromise;
+		assert.equal(result.isError, undefined);
+		assert.equal(result.details.items[0].status, "completed");
+		assert.equal(result.details.items[1].status, "failed");
+	});
+
+	it("wait_for_agent aborts promptly on AbortSignal", async () => {
+		const connection = new MockConnection();
+		const { pi, tools } = createMockPi();
+		registerDaemonTools(pi, async () => connection);
+		const waitTool = toolByName(tools, "wait_for_agent");
+
+		const controller = new AbortController();
+		const executePromise = waitTool.execute("1", { handles: "run-1", timeout_s: 30 }, controller.signal, () => {}, {});
+		controller.abort();
+
+		const result = await executePromise;
+		assert.equal(result.details.aborted, true);
+		assert.match(result.content[0].text, /wait aborted/i);
+	});
+
+	it("deriveDaemonIdentity prefers BASECAMP_AGENT_TITLE with short session-id suffix", () => {
+		const priorDepth = process.env.BASECAMP_AGENT_DEPTH;
+		const priorAgentId = process.env.BASECAMP_AGENT_ID;
+		const priorAgentTitle = process.env.BASECAMP_AGENT_TITLE;
+
+		process.env.BASECAMP_AGENT_DEPTH = "1";
+		process.env.BASECAMP_AGENT_ID = "agent-xyz";
+		process.env.BASECAMP_AGENT_TITLE = "(scout) do thing";
+
+		try {
+			const identity = deriveDaemonIdentity({
+				sessionManager: { getSessionId: () => "0199-aaaa-bbbb-cccc-ddddeeee9f3c" },
+			} as any);
+			assert.equal(identity.session_name, "(scout) do thing [9f3c]");
+			assert.equal(identity.role, "agent");
+		} finally {
+			if (priorDepth === undefined) delete process.env.BASECAMP_AGENT_DEPTH;
+			else process.env.BASECAMP_AGENT_DEPTH = priorDepth;
+			if (priorAgentId === undefined) delete process.env.BASECAMP_AGENT_ID;
+			else process.env.BASECAMP_AGENT_ID = priorAgentId;
+			if (priorAgentTitle === undefined) delete process.env.BASECAMP_AGENT_TITLE;
+			else process.env.BASECAMP_AGENT_TITLE = priorAgentTitle;
+		}
+	});
+
+	it("deriveDaemonIdentity falls back to BASECAMP_SESSION_NAME or node id when BASECAMP_AGENT_TITLE is unset", () => {
+		const priorDepth = process.env.BASECAMP_AGENT_DEPTH;
+		const priorAgentId = process.env.BASECAMP_AGENT_ID;
+		const priorAgentTitle = process.env.BASECAMP_AGENT_TITLE;
+		const priorSessionName = process.env.BASECAMP_SESSION_NAME;
+
+		process.env.BASECAMP_AGENT_DEPTH = "1";
+		process.env.BASECAMP_AGENT_ID = "agent-fallback";
+		delete process.env.BASECAMP_AGENT_TITLE;
+
+		try {
+			const identity = deriveDaemonIdentity({
+				sessionManager: { getSessionId: () => "session-id" },
+			} as any);
+			assert.equal(identity.session_name, process.env.BASECAMP_SESSION_NAME ?? "agent-fallback");
+		} finally {
+			if (priorDepth === undefined) delete process.env.BASECAMP_AGENT_DEPTH;
+			else process.env.BASECAMP_AGENT_DEPTH = priorDepth;
+			if (priorAgentId === undefined) delete process.env.BASECAMP_AGENT_ID;
+			else process.env.BASECAMP_AGENT_ID = priorAgentId;
+			if (priorAgentTitle === undefined) delete process.env.BASECAMP_AGENT_TITLE;
+			else process.env.BASECAMP_AGENT_TITLE = priorAgentTitle;
+			if (priorSessionName === undefined) delete process.env.BASECAMP_SESSION_NAME;
+			else process.env.BASECAMP_SESSION_NAME = priorSessionName;
+		}
+	});
+});

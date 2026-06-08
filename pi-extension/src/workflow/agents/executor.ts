@@ -71,6 +71,7 @@ export interface PiArgsOpts {
 	cwd: string;
 	worktreeDir?: string | null;
 	sessionDir: string;
+	sessionId?: string;
 	env: Record<string, string>;
 	extensionTools: string[];
 }
@@ -98,6 +99,7 @@ export function buildPiArgs(
 	// Session directory for the subagent's own session
 	fs.mkdirSync(opts.sessionDir, { recursive: true });
 	args.push("--session-dir", opts.sessionDir);
+	if (opts.sessionId) args.push("--session-id", opts.sessionId);
 
 	// Suppress prompt templates — subagents get focused instructions
 	// from the agent persona, not ambient discovery

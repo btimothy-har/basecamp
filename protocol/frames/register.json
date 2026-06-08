@@ -1,0 +1,11 @@
+{
+  "type": "register",
+  "v": 1,
+  "role": "session",
+  "node_id": "session-123",
+  "parent_id": null,
+  "sibling_group": "sg-main",
+  "depth": 0,
+  "session_name": "async-design",
+  "cwd": "/Users/example/repo"
+}

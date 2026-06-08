@@ -311,11 +311,11 @@ function renderTitleWidget(
 }
 
 /** Last 4 hex chars of UUIDv7 — random portion, safe for disambiguation. */
-function shortSessionId(sessionId: string): string {
+export function shortSessionId(sessionId: string): string {
 	return sessionId.replace(/-/g, "").slice(-4);
 }
 
-function formatTitle(title: string, tag: string): string {
+export function formatTitle(title: string, tag: string): string {
 	return `${title} [${tag}]`;
 }
 

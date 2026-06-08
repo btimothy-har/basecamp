@@ -7,6 +7,7 @@
  */
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { registerDaemonClient } from "./agents/daemon/index.ts";
 import { registerAgents } from "./agents/index";
 import { registerEscalate } from "./escalate/index.js";
 import { registerPlan, registerPlanCommands } from "./planning/plan";
@@ -21,6 +22,7 @@ export default function (pi: ExtensionAPI) {
 	const plan = registerPlan(pi, tasks);
 	registerPlanCommands(pi, tasks, plan);
 	registerAgents(pi);
+	registerDaemonClient(pi);
 
 	// Primary-only interactions should not be available to subagents.
 	if (!isSubagent) {

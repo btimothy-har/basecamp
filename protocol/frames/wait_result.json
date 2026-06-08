@@ -1,0 +1,18 @@
+{
+  "type": "wait_result",
+  "v": 1,
+  "results": [
+    {
+      "run_id": "run-001",
+      "status": "completed",
+      "result": "Applied patch and tests now pass.",
+      "error": null
+    },
+    {
+      "run_id": "run-002",
+      "status": "failed",
+      "result": null,
+      "error": "Process exited with code 1"
+    }
+  ]
+}
