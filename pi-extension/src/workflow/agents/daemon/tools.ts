@@ -1,5 +1,4 @@
 import { randomUUID } from "node:crypto";
-import * as os from "node:os";
 import * as path from "node:path";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Text } from "@earendil-works/pi-tui";
@@ -12,6 +11,7 @@ import { buildAgentEnv, getBasecampExtensionToolNames } from "../tool.ts";
 import { getAgentRunKind } from "../types.ts";
 import type { DaemonConnection } from "./client.ts";
 import { type DispatchAckFrame, PROTOCOL_VERSION, type WaitResultFrame } from "./frames.ts";
+import { resolveDaemonPaths } from "./paths.ts";
 
 interface DispatchDetails {
 	runId: string;
@@ -165,7 +165,7 @@ export function registerDaemonTools(pi: ExtensionAPI, getConnection: () => Promi
 				};
 			}
 
-			const sessionDir = path.join(os.tmpdir(), "basecamp-agents", name, "session");
+			const sessionDir = path.join(resolveDaemonPaths().runtimeDir, "agents", name, "session");
 			const { args } = buildPiArgs(agentConfig, params.task, {
 				name,
 				model,

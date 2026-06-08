@@ -1,9 +1,13 @@
 import assert from "node:assert/strict";
-import { describe, it } from "node:test";
+import * as fs from "node:fs";
+import * as os from "node:os";
+import * as path from "node:path";
+import { afterEach, beforeEach, describe, it } from "node:test";
 import { getWorkspaceService, registerWorkspaceService, type WorkspaceService } from "../../platform/workspace.ts";
 import type { DaemonConnection } from "../agents/daemon/client.ts";
 import type { Frame } from "../agents/daemon/frames.ts";
 import { deriveDaemonIdentity } from "../agents/daemon/index.ts";
+import { resolveDaemonPaths } from "../agents/daemon/paths.ts";
 import { buildAgentTitleBase, registerDaemonTools } from "../agents/daemon/tools.ts";
 
 interface RegisteredTool {
@@ -84,6 +88,21 @@ function createNullWorkspaceService(): WorkspaceService {
 }
 
 describe("daemon async tools", () => {
+	let priorHome: string | undefined;
+	let tmpHome: string;
+
+	beforeEach(() => {
+		priorHome = process.env.HOME;
+		tmpHome = fs.mkdtempSync(path.join(os.tmpdir(), "bc-test-home-"));
+		process.env.HOME = tmpHome;
+	});
+
+	afterEach(() => {
+		if (priorHome === undefined) delete process.env.HOME;
+		else process.env.HOME = priorHome;
+		fs.rmSync(tmpHome, { recursive: true, force: true });
+	});
+
 	describe("buildAgentTitleBase", () => {
 		it("formats named/ad-hoc titles, compacts whitespace, and truncates long tasks", () => {
 			assert.equal(buildAgentTitleBase("scout", "Investigate the auth flow"), "(scout) Investigate the auth flow");
@@ -148,6 +167,37 @@ describe("daemon async tools", () => {
 			if (priorProject === undefined) delete process.env.BASECAMP_PROJECT;
 			else process.env.BASECAMP_PROJECT = priorProject;
 		}
+	});
+
+	it("dispatch_agent uses a durable daemon runtime session directory", async () => {
+		const connection = new MockConnection();
+		const { pi, tools } = createMockPi();
+		registerDaemonTools(pi, async () => connection);
+		const dispatchTool = toolByName(tools, "dispatch_agent");
+
+		const executePromise = dispatchTool.execute("1", { task: "hello world" }, new AbortController().signal, () => {}, {
+			model: "claude-sonnet",
+			sessionManager: { getSessionId: () => "session-id" },
+		});
+
+		await new Promise((resolve) => setImmediate(resolve));
+		const outbound = connection.sent[0] as Extract<Frame, { type: "dispatch" }>;
+		const sessionDirFlagIndex = outbound.spec.argv.indexOf("--session-dir");
+		assert.notEqual(sessionDirFlagIndex, -1);
+		const sessionDir = outbound.spec.argv[sessionDirFlagIndex + 1];
+		if (typeof sessionDir !== "string") throw new Error("Missing --session-dir value");
+		assert.equal(path.basename(sessionDir), "session");
+		assert.equal(sessionDir.startsWith(path.join(resolveDaemonPaths().runtimeDir, "agents")), true);
+		assert.equal(sessionDir.includes("basecamp-agents"), false);
+
+		connection.emit({
+			type: "dispatch_ack",
+			v: 1,
+			run_id: outbound.run_id,
+			status: "spawned",
+			reason: null,
+		});
+		await executePromise;
 	});
 
 	it("dispatch_agent prefers protected root cwd and still passes --worktree-dir", async () => {
