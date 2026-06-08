@@ -22,6 +22,9 @@ class Store:
     def _connect(self) -> sqlite3.Connection:
         return sqlite3.connect(self.db_path)
 
+    def _now(self) -> str:
+        return datetime.now(UTC).isoformat()
+
     def _init_db(self) -> None:
         with self._connect() as connection:
             connection.execute(
@@ -48,12 +51,32 @@ class Store:
                     spec_json TEXT,
                     result TEXT,
                     error TEXT,
+                    exit_code INTEGER,
                     created_at TEXT,
                     started_at TEXT,
                     ended_at TEXT
                 )
                 """
             )
+            connection.execute(
+                """
+                CREATE TABLE IF NOT EXISTS run_events (
+                    run_id TEXT,
+                    seq INTEGER,
+                    kind TEXT,
+                    payload_json TEXT,
+                    ts TEXT,
+                    PRIMARY KEY (run_id, seq)
+                )
+                """
+            )
+            self._ensure_runs_exit_code_column(connection)
+
+    def _ensure_runs_exit_code_column(self, connection: sqlite3.Connection) -> None:
+        columns = connection.execute("PRAGMA table_info(runs)").fetchall()
+        names = {column[1] for column in columns}
+        if "exit_code" not in names:
+            connection.execute("ALTER TABLE runs ADD COLUMN exit_code INTEGER")
 
     def upsert_agent(
         self,
@@ -68,7 +91,7 @@ class Store:
     ) -> None:
         """Insert/update an agent row and refresh last-seen timestamp."""
 
-        now = datetime.now(UTC).isoformat()
+        now = self._now()
         with self._connect() as connection:
             connection.execute(
                 """
@@ -97,17 +120,55 @@ class Store:
                 (agent_id, parent_id, sibling_group, depth, role, session_name, cwd, now, now),
             )
 
-    def create_run(self, *, run_id: str, agent_id: str, spec: dict[str, Any]) -> None:
-        """Create a pending run row."""
+    def get_agent(self, agent_id: str) -> dict[str, Any] | None:
+        """Fetch an agent by id as a dict, or None when absent."""
 
-        now = datetime.now(UTC).isoformat()
+        with self._connect() as connection:
+            connection.row_factory = sqlite3.Row
+            row = connection.execute("SELECT * FROM agents WHERE id = ?", (agent_id,)).fetchone()
+            return dict(row) if row is not None else None
+
+    def create_run(self, *, run_id: str, agent_id: str, spec: dict[str, Any]) -> None:
+        """Create a running run row."""
+
+        now = self._now()
         with self._connect() as connection:
             connection.execute(
                 """
-                INSERT INTO runs (id, agent_id, status, spec_json, created_at)
-                VALUES (?, ?, 'pending', ?, ?)
+                INSERT INTO runs (id, agent_id, status, spec_json, created_at, started_at)
+                VALUES (?, ?, 'running', ?, ?, ?)
                 """,
-                (run_id, agent_id, json.dumps(spec), now),
+                (run_id, agent_id, json.dumps(spec), now, now),
+            )
+
+    def set_run_exit_code(self, *, run_id: str, exit_code: int | None) -> None:
+        """Persist subprocess exit code for a run."""
+
+        with self._connect() as connection:
+            connection.execute(
+                "UPDATE runs SET exit_code = ? WHERE id = ?",
+                (exit_code, run_id),
+            )
+
+    def set_run_result(
+        self,
+        *,
+        run_id: str,
+        status: str,
+        result: str | None,
+        error: str | None,
+    ) -> None:
+        """Persist terminal result/error state for a run."""
+
+        ended_at = self._now()
+        with self._connect() as connection:
+            connection.execute(
+                """
+                UPDATE runs
+                SET status = ?, result = ?, error = ?, ended_at = ?
+                WHERE id = ?
+                """,
+                (status, result, error, ended_at, run_id),
             )
 
     def get_run(self, run_id: str) -> dict[str, Any] | None:
@@ -123,3 +184,40 @@ class Store:
             if isinstance(spec_json, str):
                 result["spec_json"] = json.loads(spec_json)
             return result
+
+    def append_run_event(self, *, run_id: str, kind: str, payload: dict[str, Any]) -> int:
+        """Append an ordered event row for a run and return its sequence number."""
+
+        with self._connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            next_seq = connection.execute(
+                "SELECT COALESCE(MAX(seq), 0) + 1 FROM run_events WHERE run_id = ?",
+                (run_id,),
+            ).fetchone()[0]
+            connection.execute(
+                """
+                INSERT INTO run_events (run_id, seq, kind, payload_json, ts)
+                VALUES (?, ?, ?, ?, ?)
+                """,
+                (run_id, int(next_seq), kind, json.dumps(payload), self._now()),
+            )
+            return int(next_seq)
+
+    def get_run_events(self, run_id: str) -> list[dict[str, Any]]:
+        """Return run events in sequence order."""
+
+        with self._connect() as connection:
+            connection.row_factory = sqlite3.Row
+            rows = connection.execute(
+                "SELECT run_id, seq, kind, payload_json, ts FROM run_events WHERE run_id = ? ORDER BY seq ASC",
+                (run_id,),
+            ).fetchall()
+
+        results: list[dict[str, Any]] = []
+        for row in rows:
+            data = dict(row)
+            payload_json = data.get("payload_json")
+            if isinstance(payload_json, str):
+                data["payload_json"] = json.loads(payload_json)
+            results.append(data)
+        return results

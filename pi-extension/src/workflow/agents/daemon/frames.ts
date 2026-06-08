@@ -36,7 +36,7 @@ export interface DispatchFrame {
 		argv: string[];
 		env: Record<string, string>;
 		cwd: string;
-		resume_path: string;
+		resume_path: string | null;
 		task: string;
 	};
 }
@@ -45,7 +45,7 @@ export interface DispatchAckFrame {
 	type: "dispatch_ack";
 	v: typeof PROTOCOL_VERSION;
 	run_id: string;
-	status: string;
+	status: "spawned" | "rejected";
 	reason: string | null;
 }
 
@@ -63,13 +63,10 @@ export interface ResultReportFrame {
 	v: typeof PROTOCOL_VERSION;
 	run_id: string;
 	agent_id: string;
-	status: string;
+	status: "ok" | "error";
 	result: string | null;
 	error: string | null;
-	usage: {
-		input_tokens: number;
-		output_tokens: number;
-	};
+	usage: Record<string, unknown> | null;
 }
 
 export interface WaitFrame {

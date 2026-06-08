@@ -35,7 +35,7 @@ class UdsServer(uvicorn.Server):
 def create_server(uds_path: str, store: Store, *, log_level: str = "info") -> UdsServer:
     """Build a UDS-bound daemon server for the given store."""
 
-    app = create_app(store)
+    app = create_app(store, daemon_uds=uds_path)
     config = uvicorn.Config(app, uds=uds_path, log_level=log_level)
     return UdsServer(config)
 
