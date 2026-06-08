@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
+import { getWorkspaceService, registerWorkspaceService, type WorkspaceService } from "../../platform/workspace.ts";
 import type { DaemonConnection } from "../agents/daemon/client.ts";
 import type { Frame } from "../agents/daemon/frames.ts";
 import { registerDaemonTools } from "../agents/daemon/tools.ts";
@@ -61,6 +62,26 @@ function toolByName(tools: RegisteredTool[], name: string): RegisteredTool {
 	return tool;
 }
 
+function createNullWorkspaceService(): WorkspaceService {
+	return {
+		initialize: async () => {
+			throw new Error("workspace is unavailable");
+		},
+		current: () => null,
+		require: () => {
+			throw new Error("workspace is unavailable");
+		},
+		getEffectiveCwd: () => process.cwd(),
+		listWorktrees: async () => [],
+		activateWorktree: async () => {
+			throw new Error("workspace is unavailable");
+		},
+		attachWorktreePath: async () => {
+			throw new Error("workspace is unavailable");
+		},
+	};
+}
+
 describe("daemon async tools", () => {
 	it("dispatch_agent builds spec env/task split and returns handle on spawned ack", async () => {
 		const priorCustom = process.env.TEST_DAEMON_TOOLS;
@@ -111,6 +132,79 @@ describe("daemon async tools", () => {
 			else process.env.BASECAMP_AGENT_DEPTH = priorDepth;
 			if (priorProject === undefined) delete process.env.BASECAMP_PROJECT;
 			else process.env.BASECAMP_PROJECT = priorProject;
+		}
+	});
+
+	it("dispatch_agent prefers protected root cwd and still passes --worktree-dir", async () => {
+		const priorWorkspaceService = getWorkspaceService();
+		registerWorkspaceService({
+			initialize: async () => {
+				throw new Error("not used in this test");
+			},
+			current: () => ({
+				launchCwd: "/wt",
+				effectiveCwd: "/wt",
+				scratchDir: "/tmp/pi/basecamp",
+				repo: {
+					isRepo: true,
+					name: "basecamp",
+					root: "/repo-root",
+					remoteUrl: "git@github.com:btimothy-har/basecamp.git",
+				},
+				protectedRoot: "/repo-root",
+				activeWorktree: {
+					kind: "git-worktree",
+					label: "wt",
+					path: "/wt",
+					branch: "b",
+					created: false,
+				},
+				unsafeEdit: false,
+			}),
+			require: () => {
+				throw new Error("not used in this test");
+			},
+			getEffectiveCwd: () => "/wt",
+			listWorktrees: async () => [],
+			activateWorktree: async () => {
+				throw new Error("not used in this test");
+			},
+			attachWorktreePath: async () => {
+				throw new Error("not used in this test");
+			},
+		});
+
+		try {
+			const connection = new MockConnection();
+			const { pi, tools } = createMockPi();
+			registerDaemonTools(pi, async () => connection);
+			const dispatchTool = toolByName(tools, "dispatch_agent");
+
+			const executePromise = dispatchTool.execute(
+				"1",
+				{ task: "hello world" },
+				new AbortController().signal,
+				() => {},
+				{ model: "claude-sonnet", sessionManager: { getSessionId: () => "session-id" } },
+			);
+
+			await new Promise((resolve) => setImmediate(resolve));
+			const outbound = connection.sent[0] as Extract<Frame, { type: "dispatch" }>;
+			assert.equal(outbound.spec.cwd, "/repo-root");
+			const worktreeDirIndex = outbound.spec.argv.indexOf("--worktree-dir");
+			assert.notEqual(worktreeDirIndex, -1);
+			assert.equal(outbound.spec.argv[worktreeDirIndex + 1], "/wt");
+
+			connection.emit({
+				type: "dispatch_ack",
+				v: 1,
+				run_id: outbound.run_id,
+				status: "spawned",
+				reason: null,
+			});
+			await executePromise;
+		} finally {
+			registerWorkspaceService(priorWorkspaceService ?? createNullWorkspaceService());
 		}
 	});
 

@@ -139,7 +139,7 @@ export function registerDaemonTools(pi: ExtensionAPI, getConnection: () => Promi
 			const extensionTools = getBasecampExtensionToolNames(pi);
 			const workspace = getWorkspaceState();
 			const worktreeDir = workspace?.activeWorktree?.path ?? null;
-			const spawnCwd = workspace?.launchCwd ?? process.cwd();
+			const spawnCwd = workspace?.protectedRoot ?? workspace?.repo?.root ?? workspace?.launchCwd ?? process.cwd();
 
 			if (getAgentRunKind(agentConfig) === "mutative" && !worktreeDir) {
 				return {
