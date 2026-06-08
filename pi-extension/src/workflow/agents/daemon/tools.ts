@@ -52,6 +52,17 @@ function processEnvForSpawn(): Record<string, string> {
 	return env;
 }
 
+function compactAgentTaskLabel(task: string, maxChars = 56): string {
+	const oneLine = task.replace(/\s+/g, " ").trim();
+	if (oneLine.length <= maxChars) return oneLine;
+	return `${oneLine.slice(0, maxChars - 1).trimEnd()}…`;
+}
+
+export function buildAgentTitleBase(agentName: string | null | undefined, task: string): string {
+	const prefix = agentName?.trim() ? agentName.trim() : "Agent";
+	return `(${prefix}) ${compactAgentTaskLabel(task)}`;
+}
+
 function normalizeHandles(input: string | string[]): string[] {
 	const values = Array.isArray(input) ? input : [input];
 	return [...new Set(values.map((value) => value.trim()).filter(Boolean))];
@@ -174,7 +185,11 @@ export function registerDaemonTools(pi: ExtensionAPI, getConnection: () => Promi
 					argv: args.slice(0, -1),
 					task: `Task: ${params.task}`,
 					cwd: spawnCwd,
-					env: { ...processEnvForSpawn(), ...basecampEnv },
+					env: {
+						...processEnvForSpawn(),
+						...basecampEnv,
+						BASECAMP_AGENT_TITLE: buildAgentTitleBase(params.agent, params.task),
+					},
 					resume_path: null,
 				},
 			});

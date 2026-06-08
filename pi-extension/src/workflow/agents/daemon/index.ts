@@ -1,4 +1,5 @@
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
+import { formatTitle, shortSessionId } from "../../../session/ui/title.ts";
 import { DEFAULT_AGENT_MAX_DEPTH } from "../types.ts";
 import { connect, type DaemonConnection, type DaemonIdentity, ensureDaemon } from "./client.ts";
 import { resolveDaemonPaths } from "./paths.ts";
@@ -64,6 +65,12 @@ async function awaitDaemonConnection(): Promise<DaemonConnection | null> {
  * - session_name = BASECAMP_SESSION_NAME ?? node_id
  * - cwd = process.cwd()
  */
+function resolveDaemonAgentTitle(ctx: ExtensionContext): string | null {
+	const base = process.env.BASECAMP_AGENT_TITLE?.trim();
+	if (!base) return null;
+	return formatTitle(base, shortSessionId(ctx.sessionManager.getSessionId()));
+}
+
 export function deriveDaemonIdentity(ctx: ExtensionContext): DaemonIdentity {
 	const depth = Number(process.env.BASECAMP_AGENT_DEPTH ?? 0);
 	const safeDepth = Number.isFinite(depth) && depth >= 0 ? depth : 0;
@@ -74,7 +81,7 @@ export function deriveDaemonIdentity(ctx: ExtensionContext): DaemonIdentity {
 		parent_id: process.env.BASECAMP_PARENT_SESSION ?? null,
 		sibling_group: process.env.BASECAMP_SIBLING_GROUP ?? null,
 		depth: safeDepth,
-		session_name: process.env.BASECAMP_SESSION_NAME ?? nodeId,
+		session_name: resolveDaemonAgentTitle(ctx) ?? process.env.BASECAMP_SESSION_NAME ?? nodeId,
 		cwd: process.cwd(),
 	};
 }
@@ -139,6 +146,11 @@ export function registerDaemonClient(pi: ExtensionAPI): void {
 	}
 
 	pi.on("session_start", (_event, ctx) => {
+		if (isDaemonSpawnedAgent) {
+			const agentTitle = resolveDaemonAgentTitle(ctx);
+			if (agentTitle) pi.setSessionName(agentTitle);
+		}
+
 		state.connecting = (async () => {
 			try {
 				const connection = isTopLevel ? await ensureAndConnectTopLevel(ctx) : await connectSpawnedAgent(ctx);

@@ -3,7 +3,8 @@ import { describe, it } from "node:test";
 import { getWorkspaceService, registerWorkspaceService, type WorkspaceService } from "../../platform/workspace.ts";
 import type { DaemonConnection } from "../agents/daemon/client.ts";
 import type { Frame } from "../agents/daemon/frames.ts";
-import { registerDaemonTools } from "../agents/daemon/tools.ts";
+import { deriveDaemonIdentity } from "../agents/daemon/index.ts";
+import { buildAgentTitleBase, registerDaemonTools } from "../agents/daemon/tools.ts";
 
 interface RegisteredTool {
 	name: string;
@@ -83,6 +84,19 @@ function createNullWorkspaceService(): WorkspaceService {
 }
 
 describe("daemon async tools", () => {
+	describe("buildAgentTitleBase", () => {
+		it("formats named/ad-hoc titles, compacts whitespace, and truncates long tasks", () => {
+			assert.equal(buildAgentTitleBase("scout", "Investigate the auth flow"), "(scout) Investigate the auth flow");
+			assert.equal(buildAgentTitleBase(undefined, "hello world"), "(Agent) hello world");
+			assert.equal(buildAgentTitleBase("worker", "do   a\n  thing"), "(worker) do a thing");
+
+			const longTask = "x".repeat(80);
+			const truncated = buildAgentTitleBase("worker", longTask);
+			assert.equal(truncated.endsWith("…"), true);
+			assert.ok(truncated.length <= "(worker) ".length + 56);
+		});
+	});
+
 	it("dispatch_agent builds spec env/task split and returns handle on spawned ack", async () => {
 		const priorCustom = process.env.TEST_DAEMON_TOOLS;
 		const priorDepth = process.env.BASECAMP_AGENT_DEPTH;
@@ -113,6 +127,7 @@ describe("daemon async tools", () => {
 			assert.equal(outbound.spec.env.TEST_DAEMON_TOOLS, "1");
 			assert.equal(outbound.spec.env.BASECAMP_PROJECT, "proj");
 			assert.equal(outbound.spec.env.BASECAMP_PARENT_SESSION, process.env.BASECAMP_SESSION_NAME ?? "session-name");
+			assert.equal(outbound.spec.env.BASECAMP_AGENT_TITLE, "(Agent) hello world");
 
 			connection.emit({
 				type: "dispatch_ack",
@@ -282,5 +297,30 @@ describe("daemon async tools", () => {
 		const result = await executePromise;
 		assert.equal(result.details.aborted, true);
 		assert.match(result.content[0].text, /wait aborted/i);
+	});
+
+	it("deriveDaemonIdentity prefers BASECAMP_AGENT_TITLE with short session-id suffix", () => {
+		const priorDepth = process.env.BASECAMP_AGENT_DEPTH;
+		const priorAgentId = process.env.BASECAMP_AGENT_ID;
+		const priorAgentTitle = process.env.BASECAMP_AGENT_TITLE;
+
+		process.env.BASECAMP_AGENT_DEPTH = "1";
+		process.env.BASECAMP_AGENT_ID = "agent-xyz";
+		process.env.BASECAMP_AGENT_TITLE = "(scout) do thing";
+
+		try {
+			const identity = deriveDaemonIdentity({
+				sessionManager: { getSessionId: () => "0199-aaaa-bbbb-cccc-ddddeeee9f3c" },
+			} as any);
+			assert.equal(identity.session_name, "(scout) do thing [9f3c]");
+			assert.equal(identity.role, "agent");
+		} finally {
+			if (priorDepth === undefined) delete process.env.BASECAMP_AGENT_DEPTH;
+			else process.env.BASECAMP_AGENT_DEPTH = priorDepth;
+			if (priorAgentId === undefined) delete process.env.BASECAMP_AGENT_ID;
+			else process.env.BASECAMP_AGENT_ID = priorAgentId;
+			if (priorAgentTitle === undefined) delete process.env.BASECAMP_AGENT_TITLE;
+			else process.env.BASECAMP_AGENT_TITLE = priorAgentTitle;
+		}
 	});
 });
