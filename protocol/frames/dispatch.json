@@ -1,0 +1,20 @@
+{
+  "type": "dispatch",
+  "v": 1,
+  "run_id": "run-001",
+  "spec": {
+    "argv": [
+      "pi",
+      "--mode",
+      "json",
+      "-p"
+    ],
+    "env": {
+      "BASECAMP_AGENT_ID": "agent-42",
+      "BASECAMP_DAEMON_UDS": "/Users/example/.pi/agent/basecamp/daemon.sock"
+    },
+    "cwd": "/Users/example/repo",
+    "resume_path": "/Users/example/.pi/agent/sessions/agent-42.jsonl",
+    "task": "Summarize test failures and propose a fix."
+  }
+}

@@ -1,0 +1,11 @@
+{
+  "type": "telemetry",
+  "v": 1,
+  "run_id": "run-001",
+  "agent_id": "agent-42",
+  "kind": "tool_execution_start",
+  "payload": {
+    "tool": "read",
+    "path": "README.md"
+  }
+}
