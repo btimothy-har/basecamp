@@ -101,7 +101,7 @@ export type Frame =
 	| WaitFrame
 	| WaitResultFrame;
 
-const KNOWN_TYPES = new Set<Frame["type"]>([
+export const FRAME_TYPES = [
 	"register",
 	"registered",
 	"error",
@@ -111,7 +111,9 @@ const KNOWN_TYPES = new Set<Frame["type"]>([
 	"result_report",
 	"wait",
 	"wait_result",
-]);
+] as const;
+
+const KNOWN_TYPE_SET = new Set<string>(FRAME_TYPES);
 
 export function encodeFrame(frame: Frame): string {
 	return JSON.stringify(frame);
@@ -126,7 +128,7 @@ export function decodeFrame(raw: string | Buffer): Frame {
 	}
 
 	const record = parsed as Record<string, unknown>;
-	if (typeof record.type !== "string" || !KNOWN_TYPES.has(record.type as Frame["type"])) {
+	if (typeof record.type !== "string" || !KNOWN_TYPE_SET.has(record.type)) {
 		throw new Error(`Unknown frame type: ${String(record.type)}`);
 	}
 	if (record.v !== PROTOCOL_VERSION) {

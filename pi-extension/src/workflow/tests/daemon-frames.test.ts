@@ -3,7 +3,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import { describe, it } from "node:test";
 import { fileURLToPath } from "node:url";
-import { decodeFrame, encodeFrame, PROTOCOL_VERSION } from "../agents/daemon/frames.ts";
+import { decodeFrame, encodeFrame, FRAME_TYPES, PROTOCOL_VERSION } from "../agents/daemon/frames.ts";
 
 function fixturesDir(): string {
 	const here = path.dirname(fileURLToPath(import.meta.url));
@@ -11,6 +11,17 @@ function fixturesDir(): string {
 }
 
 describe("daemon frame codec", () => {
+	it("keeps frame types in parity with protocol fixtures", () => {
+		const dir = fixturesDir();
+		const fixtureTypes = new Set(
+			fs
+				.readdirSync(dir)
+				.filter((file) => file.endsWith(".json"))
+				.map((file) => file.replace(/\.json$/, "")),
+		);
+		assert.deepEqual(new Set(FRAME_TYPES), fixtureTypes);
+	});
+
 	it("decodes and re-encodes all protocol frame fixtures", () => {
 		const dir = fixturesDir();
 		const files = fs.readdirSync(dir).filter((file) => file.endsWith(".json"));

@@ -41,36 +41,45 @@ Canonical example fixtures live in `protocol/frames/*.json`.
 
 `basecamp daemon` sets `umask(0o177)` before binding UDS so the socket is created with restrictive user-only permissions (effectively `0600` under standard Unix socket mode masking).
 
-## Manual smoke check
+## Running the daemon (Phase 1)
+
+Default socket path:
+
+- `~/.pi/agent/basecamp/daemon.sock`
+
+Start daemon manually:
 
 ```bash
-basecamp daemon --uds /tmp/basecamp-daemon.sock
+basecamp daemon --uds ~/.pi/agent/basecamp/daemon.sock
 ```
 
-Then, in another shell:
+Health check:
 
 ```bash
-curl --unix-socket /tmp/basecamp-daemon.sock http://localhost/health
+curl --unix-socket ~/.pi/agent/basecamp/daemon.sock http://localhost/health
+# {"status":"ok","protocol":1}
 ```
 
-## Manual smoke check: dispatch/spawn/result round trip
+How it normally runs:
 
-Phase-1 note: `dispatch.spec.resume_path` is accepted in the schema but ignored for spawn in this slice (new child agents only).
+- The extension auto-runs ensure-daemon at session start.
+- `dispatch_agent` drives dispatch/spawn/result flow via daemon `/ws`.
+- `wait_for_agent` waits on run completion.
+- Phase-1 note: `dispatch.spec.resume_path` is accepted but ignored.
 
-1. Start daemon:
+Stop daemon:
 
-```bash
-basecamp daemon --uds /tmp/basecamp-daemon.sock
-```
+- If foreground: `Ctrl+C`.
+- If background: stop the daemon process by PID (for example `pkill -f "basecamp daemon --uds"`).
 
-2. In another shell, register a session node and dispatch a real `pi --mode json -p` child task:
+Optional manual dispatch smoke:
 
 ```bash
 uv run python - <<'PY'
-import json, uuid
+import json, os, uuid
 from websockets.sync.client import unix_connect
 
-uds = "/tmp/basecamp-daemon.sock"
+uds = os.path.expanduser("~/.pi/agent/basecamp/daemon.sock")
 run_id = f"run-{uuid.uuid4()}"
 
 with unix_connect(uds, uri="ws://localhost/ws") as ws:
@@ -100,13 +109,5 @@ with unix_connect(uds, uri="ws://localhost/ws") as ws:
         },
     }))
     print("dispatch_ack:", ws.recv())
-
-print("run_id:", run_id)
-print("Then inspect daemon db (~/.pi/agent/basecamp/daemon.db) runs/result + run_events for completion.")
 PY
 ```
-
-Expected:
-- `dispatch_ack` returns `{status:"spawned"}`.
-- the spawned agent connects back over `/ws`, sends telemetry, then `result_report`.
-- the daemon marks the run terminal (`completed`/`failed`) with `result`/`error` populated.

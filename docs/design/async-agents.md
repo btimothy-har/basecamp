@@ -1,10 +1,10 @@
 # Asynchronous Multi-Agent System — Design
 
-**Status:** Draft for review · **Scope:** Design only (no implementation) · **Phase 1 target:** walking skeleton (see Roadmap)
+**Status:** Phase 1 IMPLEMENTED (walking skeleton) · **Scope:** Design + status tracking for later phases · **Roadmap:** Phases 2–5 remain design targets
 
 This document describes the target architecture for basecamp's asynchronous, collaborating subagents, coordinated by a global, single-host daemon. It captures the converged design, the decisions and rejected alternatives behind it, the risk register, and a phased roadmap whose first phase is a deliberately minimal walking skeleton.
 
-It is a design artifact: nothing in the target architecture described here is implemented yet (§3 documents the existing synchronous behavior that this design replaces). The success bar is that a Phase 1 implementation plan can be written directly from this document.
+It remains primarily a design artifact for later phases: Phase 1 is implemented, while the remaining target architecture in this document is roadmap/design work (§3 documents the existing synchronous behavior that this design replaces).
 
 ---
 
@@ -442,7 +442,7 @@ Both limits are configurable tunables. They are complementary: depth cap bounds 
 
 ## 10. Phased roadmap
 
-- **Phase 1 — Walking skeleton.** Goal: prove the end-to-end spine with one persistent agent identity and asynchronous run completion.
+- **Phase 1 — IMPLEMENTED walking skeleton.** Delivered components: daemon (`basecamp daemon`), extension daemon client + `dispatch_agent` / `wait_for_agent`, and shared frame protocol fixtures under `protocol/`. Goal was to prove the end-to-end spine with one persistent agent identity and asynchronous run completion.
   - In scope: a single frame-schema source of truth + a daemon contract test (the protocol exists from Phase 1); `session_start` ensure-daemon + WebSocket handshake (§5.3); daemon spawns one transient agent process from a TypeScript-authored spawn spec (§6.2); async dispatch returns a handle immediately; telemetry + result reporting over WebSocket (§6.3); `wait_for_agent` for a single handle and wait-ALL over multiple handles (§7.3); process-exit crash backstop; SQLite persistence for agents/runs; depth cap retained. The existing in-process run guard (§3) also stays in place (see the sequencing note), so breadth remains bounded even though the global concurrency cap is not yet built.
   - Explicitly out of scope: peer message, ACL enforcement, mutation lease/deadlock detection, host-global concurrency cap, HTTP observability polish, re-task-on-message behavior, wait-FIRST joins, and the unsolicited result-ping push (in Phase 1 the dispatcher observes completion by calling `wait_for_agent`).
   - Acceptance criteria:
