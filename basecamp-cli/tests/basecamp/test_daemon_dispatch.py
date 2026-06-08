@@ -79,17 +79,23 @@ def _register_session(websocket, *, node_id: str, cwd: str) -> None:
     assert registered["type"] == "registered"
 
 
-def _dispatch(websocket, *, run_id: str, spec: dict[str, object]) -> dict[str, object]:
-    websocket.send(
-        json.dumps(
-            {
-                "type": "dispatch",
-                "v": 1,
-                "run_id": run_id,
-                "spec": spec,
-            }
-        )
-    )
+def _dispatch(
+    websocket,
+    *,
+    run_id: str,
+    spec: dict[str, object],
+    agent_id: str | None = None,
+) -> dict[str, object]:
+    payload: dict[str, object] = {
+        "type": "dispatch",
+        "v": 1,
+        "run_id": run_id,
+        "spec": spec,
+    }
+    if agent_id is not None:
+        payload["agent_id"] = agent_id
+
+    websocket.send(json.dumps(payload))
     return json.loads(websocket.recv())
 
 
@@ -133,6 +139,48 @@ def test_daemon_dispatch_spawn_and_result_round_trip(tmp_path: Path) -> None:
         agent = store.get_agent(agent_id)
         assert agent is not None
         assert agent["depth"] == 1
+        assert agent["parent_id"] == session_node
+    finally:
+        _stop_daemon(server, thread, uds_path)
+
+
+def test_dispatch_uses_provided_agent_id_for_store_and_child_env(tmp_path: Path) -> None:
+    db_path = tmp_path / "daemon.db"
+    uds_path = Path("/tmp") / f"basecamp-daemon-dispatch-provided-id-{os.getpid()}-{uuid.uuid4().hex[:8]}.sock"
+    store = Store(db_path=db_path)
+    server, thread = _start_daemon(store, uds_path)
+
+    run_id = f"run-{uuid.uuid4()}"
+    session_node = "session-node"
+    provided_agent_id = f"agent-{uuid.uuid4()}"
+
+    try:
+        with unix_connect(str(uds_path), uri="ws://localhost/ws") as websocket:
+            _register_session(websocket, node_id=session_node, cwd=str(tmp_path))
+            ack = _dispatch(websocket, run_id=run_id, spec=_dispatch_spec(tmp_path), agent_id=provided_agent_id)
+            assert ack == {
+                "type": "dispatch_ack",
+                "v": 1,
+                "run_id": run_id,
+                "status": "spawned",
+                "reason": None,
+            }
+
+        deadline = time.time() + 10
+        run = None
+        while time.time() < deadline:
+            run = store.get_run(run_id)
+            if run and run["status"] == "completed":
+                break
+            time.sleep(0.05)
+
+        assert run is not None
+        assert run["status"] == "completed"
+        assert run["agent_id"] == provided_agent_id
+
+        agent = store.get_agent(provided_agent_id)
+        assert agent is not None
+        assert agent["id"] == provided_agent_id
         assert agent["parent_id"] == session_node
     finally:
         _stop_daemon(server, thread, uds_path)

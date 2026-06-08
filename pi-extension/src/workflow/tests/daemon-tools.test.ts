@@ -169,7 +169,7 @@ describe("daemon async tools", () => {
 		}
 	});
 
-	it("dispatch_agent uses a durable daemon runtime session directory", async () => {
+	it("dispatch_agent uses matching agent_id, --session-id, and durable session directory segment", async () => {
 		const connection = new MockConnection();
 		const { pi, tools } = createMockPi();
 		registerDaemonTools(pi, async () => connection);
@@ -189,6 +189,15 @@ describe("daemon async tools", () => {
 		assert.equal(path.basename(sessionDir), "session");
 		assert.equal(sessionDir.startsWith(path.join(resolveDaemonPaths().runtimeDir, "agents")), true);
 		assert.equal(sessionDir.includes("basecamp-agents"), false);
+
+		const agentSegment = path.basename(path.dirname(sessionDir));
+		assert.match(agentSegment, /^[0-9a-f-]{36}$/);
+
+		const sessionIdFlagIndex = outbound.spec.argv.indexOf("--session-id");
+		assert.notEqual(sessionIdFlagIndex, -1);
+		const sessionId = outbound.spec.argv[sessionIdFlagIndex + 1];
+		assert.equal(sessionId, agentSegment);
+		assert.equal(outbound.agent_id, agentSegment);
 
 		connection.emit({
 			type: "dispatch_ack",
@@ -259,6 +268,70 @@ describe("daemon async tools", () => {
 			const worktreeDirIndex = outbound.spec.argv.indexOf("--worktree-dir");
 			assert.notEqual(worktreeDirIndex, -1);
 			assert.equal(outbound.spec.argv[worktreeDirIndex + 1], "/wt");
+
+			connection.emit({
+				type: "dispatch_ack",
+				v: 1,
+				run_id: outbound.run_id,
+				status: "spawned",
+				reason: null,
+			});
+			await executePromise;
+		} finally {
+			registerWorkspaceService(priorWorkspaceService ?? createNullWorkspaceService());
+		}
+	});
+
+	it("dispatch_agent falls back to repo root cwd when protected root is unavailable", async () => {
+		const priorWorkspaceService = getWorkspaceService();
+		registerWorkspaceService({
+			initialize: async () => {
+				throw new Error("not used in this test");
+			},
+			current: () => ({
+				launchCwd: "/launch",
+				effectiveCwd: "/launch",
+				scratchDir: "/tmp/pi/basecamp",
+				repo: {
+					isRepo: true,
+					name: "basecamp",
+					root: "/repo-root",
+					remoteUrl: "git@github.com:btimothy-har/basecamp.git",
+				},
+				protectedRoot: null,
+				activeWorktree: null,
+				unsafeEdit: false,
+			}),
+			require: () => {
+				throw new Error("not used in this test");
+			},
+			getEffectiveCwd: () => "/launch",
+			listWorktrees: async () => [],
+			activateWorktree: async () => {
+				throw new Error("not used in this test");
+			},
+			attachWorktreePath: async () => {
+				throw new Error("not used in this test");
+			},
+		});
+
+		try {
+			const connection = new MockConnection();
+			const { pi, tools } = createMockPi();
+			registerDaemonTools(pi, async () => connection);
+			const dispatchTool = toolByName(tools, "dispatch_agent");
+
+			const executePromise = dispatchTool.execute(
+				"1",
+				{ task: "hello world" },
+				new AbortController().signal,
+				() => {},
+				{ model: "claude-sonnet", sessionManager: { getSessionId: () => "session-id" } },
+			);
+
+			await new Promise((resolve) => setImmediate(resolve));
+			const outbound = connection.sent[0] as Extract<Frame, { type: "dispatch" }>;
+			assert.equal(outbound.spec.cwd, "/repo-root");
 
 			connection.emit({
 				type: "dispatch_ack",
@@ -371,6 +444,33 @@ describe("daemon async tools", () => {
 			else process.env.BASECAMP_AGENT_ID = priorAgentId;
 			if (priorAgentTitle === undefined) delete process.env.BASECAMP_AGENT_TITLE;
 			else process.env.BASECAMP_AGENT_TITLE = priorAgentTitle;
+		}
+	});
+
+	it("deriveDaemonIdentity falls back to BASECAMP_SESSION_NAME or node id when BASECAMP_AGENT_TITLE is unset", () => {
+		const priorDepth = process.env.BASECAMP_AGENT_DEPTH;
+		const priorAgentId = process.env.BASECAMP_AGENT_ID;
+		const priorAgentTitle = process.env.BASECAMP_AGENT_TITLE;
+		const priorSessionName = process.env.BASECAMP_SESSION_NAME;
+
+		process.env.BASECAMP_AGENT_DEPTH = "1";
+		process.env.BASECAMP_AGENT_ID = "agent-fallback";
+		delete process.env.BASECAMP_AGENT_TITLE;
+
+		try {
+			const identity = deriveDaemonIdentity({
+				sessionManager: { getSessionId: () => "session-id" },
+			} as any);
+			assert.equal(identity.session_name, process.env.BASECAMP_SESSION_NAME ?? "agent-fallback");
+		} finally {
+			if (priorDepth === undefined) delete process.env.BASECAMP_AGENT_DEPTH;
+			else process.env.BASECAMP_AGENT_DEPTH = priorDepth;
+			if (priorAgentId === undefined) delete process.env.BASECAMP_AGENT_ID;
+			else process.env.BASECAMP_AGENT_ID = priorAgentId;
+			if (priorAgentTitle === undefined) delete process.env.BASECAMP_AGENT_TITLE;
+			else process.env.BASECAMP_AGENT_TITLE = priorAgentTitle;
+			if (priorSessionName === undefined) delete process.env.BASECAMP_SESSION_NAME;
+			else process.env.BASECAMP_SESSION_NAME = priorSessionName;
 		}
 	});
 });

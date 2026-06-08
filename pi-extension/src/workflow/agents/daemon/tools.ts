@@ -165,7 +165,8 @@ export function registerDaemonTools(pi: ExtensionAPI, getConnection: () => Promi
 				};
 			}
 
-			const sessionDir = path.join(resolveDaemonPaths().runtimeDir, "agents", name, "session");
+			const agentId = randomUUID();
+			const sessionDir = path.join(resolveDaemonPaths().runtimeDir, "agents", agentId, "session");
 			const { args } = buildPiArgs(agentConfig, params.task, {
 				name,
 				model,
@@ -173,6 +174,7 @@ export function registerDaemonTools(pi: ExtensionAPI, getConnection: () => Promi
 				worktreeDir,
 				env: basecampEnv,
 				sessionDir,
+				sessionId: agentId,
 				extensionTools,
 			});
 
@@ -181,6 +183,7 @@ export function registerDaemonTools(pi: ExtensionAPI, getConnection: () => Promi
 				type: "dispatch",
 				v: PROTOCOL_VERSION,
 				run_id: runId,
+				agent_id: agentId,
 				spec: {
 					argv: args.slice(0, -1),
 					task: `Task: ${params.task}`,

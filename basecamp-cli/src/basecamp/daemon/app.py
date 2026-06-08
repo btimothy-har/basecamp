@@ -194,7 +194,7 @@ async def _handle_dispatch(
         )
         return
 
-    agent_id = str(uuid.uuid4())
+    agent_id = frame.agent_id or str(uuid.uuid4())
     spec_json = frame.spec.model_dump(mode="json")
     await asyncio.to_thread(
         store.upsert_agent,

@@ -57,6 +57,7 @@ class DispatchFrame(BaseModel):
     type: Literal["dispatch"]
     v: Literal[PROTOCOL_VERSION]
     run_id: str
+    agent_id: str | None = None
     spec: DispatchSpec
 
 

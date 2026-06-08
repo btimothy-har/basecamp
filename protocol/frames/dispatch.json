@@ -2,6 +2,7 @@
   "type": "dispatch",
   "v": 1,
   "run_id": "run-001",
+  "agent_id": "agent-42",
   "spec": {
     "argv": [
       "pi",

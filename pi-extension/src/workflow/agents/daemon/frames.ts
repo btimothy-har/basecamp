@@ -32,6 +32,7 @@ export interface DispatchFrame {
 	type: "dispatch";
 	v: typeof PROTOCOL_VERSION;
 	run_id: string;
+	agent_id?: string;
 	spec: {
 		argv: string[];
 		env: Record<string, string>;

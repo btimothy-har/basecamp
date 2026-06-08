@@ -62,15 +62,9 @@ async function awaitDaemonConnection(): Promise<DaemonConnection | null> {
  * - role = BASECAMP_AGENT_DEPTH > 0 ? "agent" : "session"
  * - parent_id = BASECAMP_PARENT_SESSION ?? null
  * - sibling_group = BASECAMP_SIBLING_GROUP ?? null
- * - session_name = BASECAMP_SESSION_NAME ?? node_id
+ * - session_name = BASECAMP_AGENT_TITLE (+ session-id suffix) ?? BASECAMP_SESSION_NAME ?? node_id
  * - cwd = process.cwd()
  */
-function resolveDaemonAgentTitle(ctx: ExtensionContext): string | null {
-	const base = process.env.BASECAMP_AGENT_TITLE?.trim();
-	if (!base) return null;
-	return formatTitle(base, shortSessionId(ctx.sessionManager.getSessionId()));
-}
-
 export function deriveDaemonIdentity(ctx: ExtensionContext): DaemonIdentity {
 	const depth = Number(process.env.BASECAMP_AGENT_DEPTH ?? 0);
 	const safeDepth = Number.isFinite(depth) && depth >= 0 ? depth : 0;
@@ -84,6 +78,12 @@ export function deriveDaemonIdentity(ctx: ExtensionContext): DaemonIdentity {
 		session_name: resolveDaemonAgentTitle(ctx) ?? process.env.BASECAMP_SESSION_NAME ?? nodeId,
 		cwd: process.cwd(),
 	};
+}
+
+function resolveDaemonAgentTitle(ctx: ExtensionContext): string | null {
+	const base = process.env.BASECAMP_AGENT_TITLE?.trim();
+	if (!base) return null;
+	return formatTitle(base, shortSessionId(ctx.sessionManager.getSessionId()));
 }
 
 async function ensureAndConnectTopLevel(ctx: ExtensionContext): Promise<DaemonConnection> {
@@ -148,7 +148,10 @@ export function registerDaemonClient(pi: ExtensionAPI): void {
 	pi.on("session_start", (_event, ctx) => {
 		if (isDaemonSpawnedAgent) {
 			const agentTitle = resolveDaemonAgentTitle(ctx);
-			if (agentTitle) pi.setSessionName(agentTitle);
+			if (agentTitle) {
+				pi.setSessionName(agentTitle);
+				process.env.BASECAMP_SESSION_NAME = agentTitle;
+			}
 		}
 
 		state.connecting = (async () => {
