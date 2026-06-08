@@ -11,6 +11,9 @@ from typing import Any
 DEFAULT_DB_PATH = Path("~/.pi/agent/basecamp/daemon.db").expanduser()
 
 
+TERMINAL_STATUSES = ("completed", "failed")
+
+
 class Store:
     """Daemon persistence layer backed by SQLite."""
 
@@ -171,6 +174,29 @@ class Store:
                 (status, result, error, ended_at, run_id),
             )
 
+    def set_run_result_if_unset(
+        self,
+        *,
+        run_id: str,
+        status: str,
+        result: str | None,
+        error: str | None,
+    ) -> bool:
+        """Set terminal run result using first-writer-wins semantics."""
+
+        ended_at = self._now()
+        with self._connect() as connection:
+            cursor = connection.execute(
+                """
+                UPDATE runs
+                SET status = ?, result = ?, error = ?, ended_at = ?
+                WHERE id = ?
+                  AND status IN ('pending', 'running')
+                """,
+                (status, result, error, ended_at, run_id),
+            )
+            return cursor.rowcount > 0
+
     def get_run(self, run_id: str) -> dict[str, Any] | None:
         """Fetch a run by id as a dict, or None when absent."""
 
@@ -184,6 +210,51 @@ class Store:
             if isinstance(spec_json, str):
                 result["spec_json"] = json.loads(spec_json)
             return result
+
+    def get_run_wait_results(self, run_ids: list[str], *, terminal_only: bool = False) -> list[dict[str, Any]]:
+        """Return wait result projections for requested run ids.
+
+        When ``terminal_only`` is true, returns only completed/failed runs.
+        """
+
+        if not run_ids:
+            return []
+
+        placeholders = ", ".join("?" for _ in run_ids)
+        where_terminal = " AND status IN ('completed', 'failed')" if terminal_only else ""
+        query = f"SELECT id, status, result, error FROM runs WHERE id IN ({placeholders}){where_terminal}"
+
+        with self._connect() as connection:
+            connection.row_factory = sqlite3.Row
+            rows = connection.execute(query, tuple(run_ids)).fetchall()
+
+        return [
+            {
+                "run_id": row["id"],
+                "status": row["status"],
+                "result": row["result"],
+                "error": row["error"],
+            }
+            for row in rows
+        ]
+
+    def are_runs_terminal(self, run_ids: list[str]) -> bool:
+        """Return True when all requested run ids exist and are terminal."""
+
+        if not run_ids:
+            return True
+
+        placeholders = ", ".join("?" for _ in run_ids)
+        with self._connect() as connection:
+            rows = connection.execute(
+                f"SELECT id, status FROM runs WHERE id IN ({placeholders})",
+                tuple(run_ids),
+            ).fetchall()
+
+        by_id = {row[0]: row[1] for row in rows}
+        if len(by_id) != len(run_ids):
+            return False
+        return all(by_id[run_id] in TERMINAL_STATUSES for run_id in run_ids)
 
     def append_run_event(self, *, run_id: str, kind: str, payload: dict[str, Any]) -> int:
         """Append an ordered event row for a run and return its sequence number."""

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import time
 
 from websockets.sync.client import unix_connect
 
@@ -14,6 +15,11 @@ def main() -> int:
     agent_id = os.environ["BASECAMP_AGENT_ID"]
     parent = os.environ.get("BASECAMP_PARENT_SESSION")
     depth = int(os.environ.get("BASECAMP_AGENT_DEPTH", "0"))
+
+    mode = os.environ.get("FAKE_DAEMON_AGENT_MODE", "ok")
+    sleep_ms = int(os.environ.get("FAKE_DAEMON_AGENT_SLEEP_MS", "0"))
+    if sleep_ms > 0:
+        time.sleep(sleep_ms / 1000)
 
     with unix_connect(uds_path, uri="ws://localhost/ws") as websocket:
         websocket.send(
@@ -45,6 +51,10 @@ def main() -> int:
                 }
             )
         )
+
+        if mode == "no_result_exit":
+            return int(os.environ.get("FAKE_DAEMON_AGENT_EXIT_CODE", "7"))
+
         websocket.send(
             json.dumps(
                 {

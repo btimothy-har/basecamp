@@ -1,7 +1,9 @@
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
+import { DEFAULT_AGENT_MAX_DEPTH } from "../types.ts";
 import { connect, type DaemonConnection, type DaemonIdentity, ensureDaemon } from "./client.ts";
 import { resolveDaemonPaths } from "./paths.ts";
 import { registerDaemonReporter } from "./reporter.ts";
+import { registerDaemonTools } from "./tools.ts";
 
 interface DaemonClientState {
 	connection: DaemonConnection | null;
@@ -34,6 +36,23 @@ function getDaemonClientState(): DaemonClientState {
 	const globalObject = globalThis as GlobalWithDaemonClient;
 	globalObject[daemonClientKey] ??= { connection: null, connecting: null };
 	return globalObject[daemonClientKey];
+}
+
+export function getActiveDaemonConnection(): DaemonConnection | null {
+	return getDaemonClientState().connection;
+}
+
+async function awaitDaemonConnection(): Promise<DaemonConnection | null> {
+	const state = getDaemonClientState();
+	if (state.connection) return state.connection;
+	if (state.connecting) {
+		try {
+			await state.connecting;
+		} catch {
+			// connection failures are surfaced by null result at callsites
+		}
+	}
+	return state.connection;
 }
 
 /**
@@ -97,9 +116,15 @@ export function registerDaemonClient(pi: ExtensionAPI): void {
 	const runId = process.env.BASECAMP_RUN_ID;
 	const isTopLevel = Number.isFinite(depth) ? depth <= 0 : true;
 	const isDaemonSpawnedAgent = !isTopLevel && Boolean(runId);
+	const maxDepth = Number(process.env.BASECAMP_AGENT_MAX_DEPTH ?? DEFAULT_AGENT_MAX_DEPTH);
+	const atMaxDepth = depth >= maxDepth;
 
 	if (!isTopLevel && !isDaemonSpawnedAgent) {
 		return;
+	}
+
+	if (isTopLevel && !atMaxDepth) {
+		registerDaemonTools(pi, awaitDaemonConnection);
 	}
 
 	const state = getDaemonClientState();

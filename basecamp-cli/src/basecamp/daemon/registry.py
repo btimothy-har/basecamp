@@ -4,17 +4,29 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import MutableMapping
+from dataclasses import dataclass
 
 from fastapi import WebSocket
 
 
+@dataclass
+class Waiter:
+    """In-memory wait registration for a connection and a run-id set."""
+
+    waiter_id: str
+    websocket: WebSocket
+    run_ids: set[str]
+    future: asyncio.Future[None]
+
+
 class Registry:
-    """Tracks connected nodes and runtime process ownership mappings."""
+    """Tracks runtime connections, run ownership/processes, and waiters."""
 
     def __init__(self) -> None:
         self._connections: MutableMapping[str, WebSocket] = {}
         self._runs: MutableMapping[str, str] = {}
         self._processes: MutableMapping[str, asyncio.subprocess.Process] = {}
+        self._waiters: MutableMapping[str, Waiter] = {}
 
     def set_connection(self, node_id: str, websocket: WebSocket) -> None:
         """Register or replace an active node connection."""
@@ -55,3 +67,18 @@ class Registry:
         """Drop and return the tracked process for a run."""
 
         return self._processes.pop(run_id, None)
+
+    def add_waiter(self, waiter: Waiter) -> None:
+        """Register a waiter by id."""
+
+        self._waiters[waiter.waiter_id] = waiter
+
+    def remove_waiter(self, waiter_id: str) -> None:
+        """Remove waiter registration by id if present."""
+
+        self._waiters.pop(waiter_id, None)
+
+    def list_waiters(self) -> list[Waiter]:
+        """Return a snapshot of active waiters."""
+
+        return list(self._waiters.values())

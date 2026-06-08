@@ -74,7 +74,7 @@ export interface WaitFrame {
 	v: typeof PROTOCOL_VERSION;
 	run_ids: string[];
 	mode: "all" | "first";
-	timeout_s?: number;
+	timeout_s: number;
 }
 
 export interface WaitResultItem {

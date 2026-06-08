@@ -18,13 +18,17 @@ from basecamp.daemon.frames import (
     RegisterFrame,
     ResultReportFrame,
     TelemetryFrame,
+    WaitFrame,
+    WaitResultFrame,
+    WaitResultItem,
     parse_frame,
     serialize_frame,
 )
-from basecamp.daemon.registry import Registry
+from basecamp.daemon.registry import Registry, Waiter
 from basecamp.daemon.store import Store
 
 DEFAULT_AGENT_MAX_DEPTH = 2
+TERMINAL_RUN_STATUSES = {"completed", "failed"}
 
 
 def create_app(store: Store, *, daemon_uds: str | None = None) -> FastAPI:
@@ -127,7 +131,15 @@ def create_app(store: Store, *, daemon_uds: str | None = None) -> FastAPI:
                     await _handle_telemetry(frame=inbound, connection_node_id=parsed.node_id, store=store)
                     continue
                 if isinstance(inbound, ResultReportFrame):
-                    await _handle_result_report(frame=inbound, connection_node_id=parsed.node_id, store=store)
+                    await _handle_result_report(
+                        frame=inbound,
+                        connection_node_id=parsed.node_id,
+                        store=store,
+                        registry=registry,
+                    )
+                    continue
+                if isinstance(inbound, WaitFrame):
+                    await _handle_wait(frame=inbound, websocket=websocket, store=store, registry=registry)
                     continue
 
         except WebSocketDisconnect:
@@ -221,13 +233,15 @@ async def _handle_dispatch(
             stderr=asyncio.subprocess.DEVNULL,
         )
     except (FileNotFoundError, PermissionError, OSError, ValueError):
-        await asyncio.to_thread(
-            store.set_run_result,
+        finalized = await asyncio.to_thread(
+            store.set_run_result_if_unset,
             run_id=frame.run_id,
             status="failed",
             result=None,
             error="spawn_failed",
         )
+        if finalized:
+            await _notify_run_finalized(frame.run_id, registry=registry, store=store)
         await websocket.send_json(
             serialize_frame(
                 DispatchAckFrame(
@@ -264,6 +278,17 @@ async def _handle_dispatch(
 async def _reap_process(run_id: str, process: asyncio.subprocess.Process, registry: Registry, store: Store) -> None:
     exit_code = await process.wait()
     await asyncio.to_thread(store.set_run_exit_code, run_id=run_id, exit_code=exit_code)
+
+    finalized = await asyncio.to_thread(
+        store.set_run_result_if_unset,
+        run_id=run_id,
+        status="failed",
+        result=None,
+        error=f"agent process exited (code {exit_code}) without reporting a result",
+    )
+    if finalized:
+        await _notify_run_finalized(run_id, registry=registry, store=store)
+
     registry.pop_process(run_id)
 
 
@@ -278,17 +303,101 @@ async def _handle_telemetry(*, frame: TelemetryFrame, connection_node_id: str, s
     )
 
 
-async def _handle_result_report(*, frame: ResultReportFrame, connection_node_id: str, store: Store) -> None:
+async def _handle_result_report(
+    *,
+    frame: ResultReportFrame,
+    connection_node_id: str,
+    store: Store,
+    registry: Registry,
+) -> None:
     if frame.agent_id != connection_node_id:
         return
     run_status = "completed" if frame.status == "ok" else "failed"
-    await asyncio.to_thread(
-        store.set_run_result,
+    finalized = await asyncio.to_thread(
+        store.set_run_result_if_unset,
         run_id=frame.run_id,
         status=run_status,
         result=frame.result,
         error=frame.error,
     )
+    if finalized:
+        await _notify_run_finalized(frame.run_id, registry=registry, store=store)
+
+
+async def _is_run_terminal(run_id: str, store: Store) -> bool:
+    run = await asyncio.to_thread(store.get_run, run_id)
+    if not run:
+        return False
+    status = run.get("status")
+    return isinstance(status, str) and status in TERMINAL_RUN_STATUSES
+
+
+async def _build_wait_results(
+    *,
+    run_ids: list[str],
+    store: Store,
+    terminal_only: bool,
+) -> list[WaitResultItem]:
+    rows = await asyncio.to_thread(store.get_run_wait_results, run_ids, terminal_only=terminal_only)
+    by_id = {row["run_id"]: row for row in rows}
+    ordered: list[WaitResultItem] = []
+    for run_id in run_ids:
+        row = by_id.get(run_id)
+        if not row:
+            continue
+        status = row.get("status")
+        if not isinstance(status, str) or status not in TERMINAL_RUN_STATUSES:
+            continue
+        ordered.append(
+            WaitResultItem(
+                run_id=run_id,
+                status=status,
+                result=row.get("result"),
+                error=row.get("error"),
+            )
+        )
+    return ordered
+
+
+async def _notify_run_finalized(run_id: str, *, registry: Registry, store: Store) -> None:
+    for waiter in registry.list_waiters():
+        if waiter.future.done() or run_id not in waiter.run_ids:
+            continue
+        all_terminal = True
+        for waiter_run_id in waiter.run_ids:
+            if not await _is_run_terminal(waiter_run_id, store):
+                all_terminal = False
+                break
+        if all_terminal:
+            waiter.future.set_result(None)
+
+
+async def _handle_wait(*, frame: WaitFrame, websocket: WebSocket, store: Store, registry: Registry) -> None:
+    run_ids = list(dict.fromkeys(frame.run_ids))
+    all_terminal = await asyncio.to_thread(store.are_runs_terminal, run_ids)
+    if all_terminal:
+        results = await _build_wait_results(run_ids=run_ids, store=store, terminal_only=False)
+        await websocket.send_json(
+            serialize_frame(WaitResultFrame(type="wait_result", v=PROTOCOL_VERSION, results=results))
+        )
+        return
+
+    waiter = Waiter(
+        waiter_id=str(uuid.uuid4()),
+        websocket=websocket,
+        run_ids=set(run_ids),
+        future=asyncio.get_running_loop().create_future(),
+    )
+    registry.add_waiter(waiter)
+    try:
+        await asyncio.wait_for(waiter.future, timeout=frame.timeout_s)
+        results = await _build_wait_results(run_ids=run_ids, store=store, terminal_only=False)
+    except TimeoutError:
+        results = await _build_wait_results(run_ids=run_ids, store=store, terminal_only=True)
+    finally:
+        registry.remove_waiter(waiter.waiter_id)
+
+    await websocket.send_json(serialize_frame(WaitResultFrame(type="wait_result", v=PROTOCOL_VERSION, results=results)))
 
 
 async def _send_error_and_close(websocket: WebSocket, *, code: str, message: str) -> None:
