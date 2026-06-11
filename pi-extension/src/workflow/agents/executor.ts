@@ -39,7 +39,6 @@ export type AgentStreamEvent =
 const AGENT_BASE = path.join(os.tmpdir(), "basecamp-agents");
 const TASK_ARG_LIMIT = 8000;
 const VALID_THINKING_LEVELS = new Set(["off", "minimal", "low", "medium", "high", "xhigh"]);
-const INVALID_CONTROL_CHAR_RE = /[\u0000-\u001f\u007f-\u009f]/;
 const RESTRICTED_AGENT_REPORT_ENV_VARS = new Set([
 	"BASECAMP_RUN_ID",
 	"BASECAMP_REPORT_TOKEN",
@@ -74,6 +73,14 @@ function isPathWithin(parent: string, child: string): boolean {
 	return relative === "" || (!!relative && !relative.startsWith("..") && !path.isAbsolute(relative));
 }
 
+function hasControlCharacter(value: string): boolean {
+	for (const char of value) {
+		const code = char.charCodeAt(0);
+		if (code <= 31 || (code >= 127 && code <= 159)) return true;
+	}
+	return false;
+}
+
 function normalizeThinkingLevel(value: string | undefined): string | undefined {
 	if (!value) return undefined;
 	const normalized = value.toLowerCase().trim();
@@ -84,7 +91,7 @@ function validateAgentRunSuffix(suffix: string): void {
 	if (!suffix) {
 		throw new Error("Invalid agent run-name suffix: suffix cannot be empty.");
 	}
-	if (INVALID_CONTROL_CHAR_RE.test(suffix) || suffix.includes("/") || suffix.includes("\\") || suffix.includes("..")) {
+	if (hasControlCharacter(suffix) || suffix.includes("/") || suffix.includes("\\") || suffix.includes("..")) {
 		throw new Error(`Invalid agent run-name suffix: "${suffix}"`);
 	}
 }
