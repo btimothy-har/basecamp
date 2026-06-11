@@ -1,6 +1,6 @@
 {
   "type": "wait_result",
-  "v": 1,
+  "v": 2,
   "results": [
     {
       "run_id": "run-001",

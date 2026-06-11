@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import os
 import time
+from pathlib import Path
 
 from websockets.sync.client import unix_connect
 
@@ -13,8 +14,13 @@ def main() -> int:
     uds_path = os.environ["BASECAMP_DAEMON_UDS"]
     run_id = os.environ["BASECAMP_RUN_ID"]
     agent_id = os.environ["BASECAMP_AGENT_ID"]
+    report_token = os.environ["BASECAMP_REPORT_TOKEN"]
     parent = os.environ.get("BASECAMP_PARENT_SESSION")
     depth = int(os.environ.get("BASECAMP_AGENT_DEPTH", "0"))
+    node_id = os.environ.get("FAKE_DAEMON_AGENT_NODE_ID", agent_id)
+    token_dump_path = os.environ.get("FAKE_DAEMON_AGENT_REPORT_TOKEN_PATH")
+    if token_dump_path:
+        Path(token_dump_path).write_text(report_token, encoding="utf-8")
 
     mode = os.environ.get("FAKE_DAEMON_AGENT_MODE", "ok")
     sleep_ms = int(os.environ.get("FAKE_DAEMON_AGENT_SLEEP_MS", "0"))
@@ -26,13 +32,13 @@ def main() -> int:
             json.dumps(
                 {
                     "type": "register",
-                    "v": 1,
+                    "v": 2,
                     "role": "agent",
-                    "node_id": agent_id,
+                    "node_id": node_id,
                     "parent_id": parent,
                     "sibling_group": None,
                     "depth": depth,
-                    "session_name": agent_id,
+                    "session_name": node_id,
                     "cwd": os.getcwd(),
                 }
             )
@@ -43,9 +49,10 @@ def main() -> int:
             json.dumps(
                 {
                     "type": "telemetry",
-                    "v": 1,
+                    "v": 2,
                     "run_id": run_id,
                     "agent_id": agent_id,
+                    "report_token": report_token,
                     "kind": "turn_end",
                     "payload": {"turnIndex": 1},
                 }
@@ -64,9 +71,10 @@ def main() -> int:
             json.dumps(
                 {
                     "type": "result_report",
-                    "v": 1,
+                    "v": 2,
                     "run_id": run_id,
                     "agent_id": agent_id,
+                    "report_token": report_token,
                     "status": "ok",
                     "result": result_value,
                     "error": None,

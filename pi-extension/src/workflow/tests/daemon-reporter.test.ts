@@ -48,41 +48,52 @@ describe("daemon reporter", () => {
 		};
 
 		const gate = deferred<DaemonConnection>();
-		const pi = new MockPi();
-		registerDaemonReporter(pi as unknown as any, {
-			connectionPromise: gate.promise,
-			runId: "run-1",
-			agentId: "agent-1",
-		});
+		const priorReportToken = process.env.BASECAMP_REPORT_TOKEN;
+		try {
+			process.env.BASECAMP_REPORT_TOKEN = "token-for-tests";
+			const pi = new MockPi();
+			registerDaemonReporter(pi as unknown as any, {
+				connectionPromise: gate.promise,
+				runId: "run-1",
+				agentId: "agent-1",
+			});
 
-		const toolStart = pi.emit("tool_execution_start", { toolCallId: "tc-1", toolName: "read" });
-		const toolEnd = pi.emit("tool_execution_end", { toolCallId: "tc-1", toolName: "read", isError: false });
-		const turnEnd = pi.emit("turn_end", { turnIndex: 2, message: "ignore", toolResults: [] });
-		const agentEnd = pi.emit("agent_end", {
-			type: "agent_end",
-			messages: [
-				{ role: "assistant", content: [{ type: "text", text: "first" }] },
-				{ role: "user", content: [{ type: "text", text: "nope" }] },
-				{ role: "assistant", content: [{ type: "text", text: "final" }] },
-			],
-		});
+			const toolStart = pi.emit("tool_execution_start", { toolCallId: "tc-1", toolName: "read" });
+			const toolEnd = pi.emit("tool_execution_end", { toolCallId: "tc-1", toolName: "read", isError: false });
+			const turnEnd = pi.emit("turn_end", { turnIndex: 2, message: "ignore", toolResults: [] });
+			const agentEnd = pi.emit("agent_end", {
+				type: "agent_end",
+				messages: [
+					{ role: "assistant", content: [{ type: "text", text: "first" }] },
+					{ role: "user", content: [{ type: "text", text: "nope" }] },
+					{ role: "assistant", content: [{ type: "text", text: "final" }] },
+				],
+			});
 
-		gate.resolve(connection);
-		await Promise.all([toolStart, toolEnd, turnEnd, agentEnd]);
+			gate.resolve(connection);
+			await Promise.all([toolStart, toolEnd, turnEnd, agentEnd]);
 
-		const telemetry = sent.filter((frame: any) => frame.type === "telemetry");
-		assert.equal(telemetry.length, 3);
-		assert.deepEqual(
-			telemetry.map((frame: any) => frame.kind),
-			["tool_execution_start", "tool_execution_end", "turn_end"],
-		);
+			const telemetry = sent.filter((frame: any) => frame.type === "telemetry");
+			assert.equal(telemetry.length, 3);
+			assert.deepEqual(
+				telemetry.map((frame: any) => frame.kind),
+				["tool_execution_start", "tool_execution_end", "turn_end"],
+			);
 
-		const resultReport = sent.find((frame: any) => frame.type === "result_report") as any;
-		assert.ok(resultReport);
-		assert.equal(resultReport.run_id, "run-1");
-		assert.equal(resultReport.agent_id, "agent-1");
-		assert.equal(resultReport.status, "ok");
-		assert.equal(resultReport.result, "final");
+			const resultReport = sent.find((frame: any) => frame.type === "result_report") as any;
+			assert.ok(resultReport);
+			assert.equal(resultReport.run_id, "run-1");
+			assert.equal(resultReport.agent_id, "agent-1");
+			assert.equal(resultReport.status, "ok");
+			assert.equal(resultReport.result, "final");
+			assert.equal(resultReport.report_token, "token-for-tests");
+			for (const frame of sent.filter((candidate: any) => candidate.type === "telemetry")) {
+				assert.equal(frame.report_token, "token-for-tests");
+			}
+		} finally {
+			if (priorReportToken === undefined) delete process.env.BASECAMP_REPORT_TOKEN;
+			else process.env.BASECAMP_REPORT_TOKEN = priorReportToken;
+		}
 	});
 
 	it("does nothing for depth>0 synchronous subagents without BASECAMP_RUN_ID", () => {

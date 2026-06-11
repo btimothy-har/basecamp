@@ -49,6 +49,7 @@ export function registerDaemonReporter(
 	},
 ): void {
 	const { connectionPromise, runId, agentId } = options;
+	const reportToken = process.env.BASECAMP_REPORT_TOKEN ?? "";
 
 	const sendTelemetry = async (kind: string, payload: Record<string, unknown>): Promise<void> => {
 		try {
@@ -58,6 +59,7 @@ export function registerDaemonReporter(
 				v: PROTOCOL_VERSION,
 				run_id: runId,
 				agent_id: agentId,
+				report_token: reportToken,
 				kind,
 				payload,
 			});
@@ -100,6 +102,7 @@ export function registerDaemonReporter(
 				v: PROTOCOL_VERSION,
 				run_id: runId,
 				agent_id: agentId,
+				report_token: reportToken,
 				status: "ok",
 				result,
 				error: null,

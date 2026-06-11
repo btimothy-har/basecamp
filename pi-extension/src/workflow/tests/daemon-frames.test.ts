@@ -35,7 +35,7 @@ describe("daemon frame codec", () => {
 	});
 
 	it("rejects unknown frame type", () => {
-		assert.throws(() => decodeFrame('{"type":"nope","v":1}'), /Unknown frame type/);
+		assert.throws(() => decodeFrame('{"type":"nope","v":2}'), /Unknown frame type/);
 	});
 
 	it("rejects unsupported protocol version", () => {

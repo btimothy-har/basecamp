@@ -1,23 +1,23 @@
 # Basecamp Daemon Protocol (Phase 1)
 
-Protocol version: `1`
+Protocol version: `2`
 
 All frames are JSON objects with an envelope:
 
 ```json
-{"type":"<frame_type>","v":1,...}
+{"type":"<frame_type>","v":2,...}
 ```
 
 Version handling:
 - The daemon validates `v` on every inbound frame.
-- If `v != 1`, the daemon sends:
-  `{"type":"error","v":1,"code":"protocol_version","message":"..."}`
+- If `v != 2`, the daemon sends:
+  `{"type":"error","v":2,"code":"protocol_version","message":"..."}`
   and closes the connection.
 
 ## Transport
 
 - HTTP over Unix domain socket (UDS):
-  - `GET /health` → `{"status":"ok","protocol":1}`
+  - `GET /health` → `{"status":"ok","protocol":2}`
 - WebSocket over UDS:
   - `/ws`
   - First inbound frame must be a valid `register` frame.
@@ -57,7 +57,7 @@ Health check:
 
 ```bash
 curl --unix-socket ~/.pi/agent/basecamp/daemon.sock http://localhost/health
-# {"status":"ok","protocol":1}
+# {"status":"ok","protocol":2}
 ```
 
 How it normally runs:
@@ -85,7 +85,7 @@ run_id = f"run-{uuid.uuid4()}"
 with unix_connect(uds, uri="ws://localhost/ws") as ws:
     ws.send(json.dumps({
         "type": "register",
-        "v": 1,
+        "v": 2,
         "role": "session",
         "node_id": "smoke-session",
         "parent_id": None,
@@ -98,7 +98,7 @@ with unix_connect(uds, uri="ws://localhost/ws") as ws:
 
     ws.send(json.dumps({
         "type": "dispatch",
-        "v": 1,
+        "v": 2,
         "run_id": run_id,
         "spec": {
             "argv": ["pi", "--mode", "json", "-p"],

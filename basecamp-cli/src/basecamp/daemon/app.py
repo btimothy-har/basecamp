@@ -3,7 +3,10 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
+import hmac
 import os
+import secrets
 import uuid
 from typing import Any
 
@@ -130,12 +133,11 @@ def create_app(store: Store, *, daemon_uds: str | None = None) -> FastAPI:
                     )
                     continue
                 if isinstance(inbound, TelemetryFrame):
-                    await _handle_telemetry(frame=inbound, connection_node_id=parsed.node_id, store=store)
+                    await _handle_telemetry(frame=inbound, store=store)
                     continue
                 if isinstance(inbound, ResultReportFrame):
                     await _handle_result_report(
                         frame=inbound,
-                        connection_node_id=parsed.node_id,
                         store=store,
                         registry=registry,
                     )
@@ -177,6 +179,18 @@ def _sanitize_dispatch_spec(spec: dict[str, Any]) -> dict[str, Any]:
     return spec
 
 
+def _generate_report_token() -> str:
+    """Create a fresh per-run report token."""
+
+    return secrets.token_urlsafe(32)
+
+
+def _hash_report_token(report_token: str) -> str:
+    """Hash a report token with SHA-256."""
+
+    return hashlib.sha256(report_token.encode("utf-8")).hexdigest()
+
+
 def _resolve_agent_max_depth() -> int:
     raw = os.getenv("BASECAMP_AGENT_MAX_DEPTH")
     try:
@@ -215,6 +229,8 @@ async def _handle_dispatch(
         return
 
     agent_id = frame.agent_id or str(uuid.uuid4())
+    report_token = _generate_report_token()
+    report_token_hash = _hash_report_token(report_token)
     spec_json = _sanitize_dispatch_spec(frame.spec.model_dump(mode="json"))
     await asyncio.to_thread(
         store.upsert_agent,
@@ -231,6 +247,7 @@ async def _handle_dispatch(
         run_id=frame.run_id,
         agent_id=agent_id,
         spec=spec_json,
+        report_token_hash=report_token_hash,
     )
 
     argv = [*frame.spec.argv, frame.spec.task]
@@ -238,6 +255,7 @@ async def _handle_dispatch(
         **frame.spec.env,
         "BASECAMP_DAEMON_UDS": daemon_socket_path,
         "BASECAMP_RUN_ID": frame.run_id,
+        "BASECAMP_REPORT_TOKEN": report_token,
         "BASECAMP_AGENT_ID": agent_id,
         "BASECAMP_PARENT_SESSION": dispatcher_node_id,
         "BASECAMP_AGENT_DEPTH": str(child_depth),
@@ -312,8 +330,20 @@ async def _reap_process(run_id: str, process: asyncio.subprocess.Process, regist
     registry.pop_process(run_id)
 
 
-async def _handle_telemetry(*, frame: TelemetryFrame, connection_node_id: str, store: Store) -> None:
-    if frame.agent_id != connection_node_id:
+def _is_report_frame_authorized(*, frame: TelemetryFrame | ResultReportFrame, run: dict[str, Any] | None) -> bool:
+    if not run:
+        return False
+    if frame.agent_id != run.get("agent_id"):
+        return False
+    report_token_hash = run.get("report_token_hash")
+    if not isinstance(report_token_hash, str):
+        return False
+    return hmac.compare_digest(_hash_report_token(frame.report_token), report_token_hash)
+
+
+async def _handle_telemetry(*, frame: TelemetryFrame, store: Store) -> None:
+    run = await asyncio.to_thread(store.get_run, frame.run_id)
+    if not _is_report_frame_authorized(frame=frame, run=run):
         return
     await asyncio.to_thread(
         store.append_run_event,
@@ -326,11 +356,11 @@ async def _handle_telemetry(*, frame: TelemetryFrame, connection_node_id: str, s
 async def _handle_result_report(
     *,
     frame: ResultReportFrame,
-    connection_node_id: str,
     store: Store,
     registry: Registry,
 ) -> None:
-    if frame.agent_id != connection_node_id:
+    run = await asyncio.to_thread(store.get_run, frame.run_id)
+    if not _is_report_frame_authorized(frame=frame, run=run):
         return
     run_status = "completed" if frame.status == "ok" else "failed"
     finalized = await asyncio.to_thread(

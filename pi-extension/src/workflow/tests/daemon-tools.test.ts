@@ -150,7 +150,7 @@ describe("daemon async tools", () => {
 
 			connection.emit({
 				type: "dispatch_ack",
-				v: 1,
+				v: 2,
 				run_id: outbound.run_id,
 				status: "spawned",
 				reason: null,
@@ -201,7 +201,7 @@ describe("daemon async tools", () => {
 
 		connection.emit({
 			type: "dispatch_ack",
-			v: 1,
+			v: 2,
 			run_id: outbound.run_id,
 			status: "spawned",
 			reason: null,
@@ -271,7 +271,7 @@ describe("daemon async tools", () => {
 
 			connection.emit({
 				type: "dispatch_ack",
-				v: 1,
+				v: 2,
 				run_id: outbound.run_id,
 				status: "spawned",
 				reason: null,
@@ -335,7 +335,7 @@ describe("daemon async tools", () => {
 
 			connection.emit({
 				type: "dispatch_ack",
-				v: 1,
+				v: 2,
 				run_id: outbound.run_id,
 				status: "spawned",
 				reason: null,
@@ -361,7 +361,7 @@ describe("daemon async tools", () => {
 
 		connection.emit({
 			type: "dispatch_ack",
-			v: 1,
+			v: 2,
 			run_id: outbound.run_id,
 			status: "rejected",
 			reason: "depth_cap",
@@ -394,7 +394,7 @@ describe("daemon async tools", () => {
 
 		connection.emit({
 			type: "wait_result",
-			v: 1,
+			v: 2,
 			results: [
 				{ run_id: "run-1", status: "completed", result: "done", error: null },
 				{ run_id: "run-2", status: "failed", result: null, error: "boom" },
