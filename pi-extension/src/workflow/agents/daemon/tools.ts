@@ -5,7 +5,7 @@ import { Text } from "@earendil-works/pi-tui";
 import { Type } from "@sinclair/typebox";
 import { getWorkspaceState } from "../../../platform/workspace.ts";
 import { discoverAgents } from "../discovery.ts";
-import { buildPiArgs } from "../executor.ts";
+import { buildAgentRunName, buildPiArgs } from "../executor.ts";
 import { resolveModel } from "../model-resolution.ts";
 import { buildAgentEnv, getBasecampExtensionToolNames } from "../tool.ts";
 import { getAgentRunKind } from "../types.ts";
@@ -142,7 +142,17 @@ export function registerDaemonTools(pi: ExtensionAPI, getConnection: () => Promi
 			const model = resolveModel(agentConfig?.model ?? "inherit", ctx.model);
 			const localId = randomUUID().slice(0, 6);
 			const prefix = `agent-${localId}`;
-			const name = params.name ? `${prefix}-${params.name}` : prefix;
+			let name: string;
+			try {
+				name = buildAgentRunName(prefix, params.name);
+			} catch (error) {
+				const msg = error instanceof Error ? error.message : String(error);
+				return {
+					content: [{ type: "text", text: msg }],
+					isError: true,
+					details: null,
+				};
+			}
 			const project = process.env.BASECAMP_PROJECT ?? "default";
 			const parentSession =
 				process.env.BASECAMP_SESSION_NAME ?? pi.getSessionName()?.trim() ?? ctx.sessionManager.getSessionId();

@@ -39,11 +39,38 @@ export type AgentStreamEvent =
 const AGENT_BASE = path.join(os.tmpdir(), "basecamp-agents");
 const TASK_ARG_LIMIT = 8000;
 const VALID_THINKING_LEVELS = new Set(["off", "minimal", "low", "medium", "high", "xhigh"]);
+const INVALID_CONTROL_CHAR_RE = /[\u0000-\u001f\u007f-\u009f]/;
+
+function isPathWithin(parent: string, child: string): boolean {
+	const relative = path.relative(parent, child);
+	return relative === "" || (!!relative && !relative.startsWith("..") && !path.isAbsolute(relative));
+}
 
 function normalizeThinkingLevel(value: string | undefined): string | undefined {
 	if (!value) return undefined;
 	const normalized = value.toLowerCase().trim();
 	return VALID_THINKING_LEVELS.has(normalized) ? normalized : undefined;
+}
+
+function validateAgentRunSuffix(suffix: string): void {
+	if (!suffix) {
+		throw new Error("Invalid agent run-name suffix: suffix cannot be empty.");
+	}
+	if (INVALID_CONTROL_CHAR_RE.test(suffix) || suffix.includes("/") || suffix.includes("\\") || suffix.includes("..")) {
+		throw new Error(`Invalid agent run-name suffix: "${suffix}"`);
+	}
+}
+
+export function buildAgentRunName(prefix: string, suffix?: string): string {
+	const normalizedPrefix = prefix.trim();
+	if (!normalizedPrefix) {
+		throw new Error("Invalid agent run-name prefix: missing base name.");
+	}
+
+	if (suffix === undefined) return normalizedPrefix;
+	const normalizedSuffix = suffix.trim();
+	validateAgentRunSuffix(normalizedSuffix);
+	return `${normalizedPrefix}-${normalizedSuffix}`;
 }
 
 // ============================================================================
@@ -77,7 +104,11 @@ export interface PiArgsOpts {
 }
 
 export function ensureAgentDir(name: string): string {
-	const dir = path.join(AGENT_BASE, name);
+	const baseDir = path.resolve(AGENT_BASE);
+	const dir = path.resolve(baseDir, name);
+	if (!isPathWithin(baseDir, dir)) {
+		throw new Error(`Agent directory is outside basecamp-agents directory: ${name}`);
+	}
 	fs.mkdirSync(dir, { recursive: true });
 	return dir;
 }

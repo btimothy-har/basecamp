@@ -169,6 +169,25 @@ describe("daemon async tools", () => {
 		}
 	});
 
+	it("dispatch_agent rejects invalid suffix before dispatching", async () => {
+		const connection = new MockConnection();
+		const { pi, tools } = createMockPi();
+		registerDaemonTools(pi, async () => connection);
+		const dispatchTool = toolByName(tools, "dispatch_agent");
+
+		const result = await dispatchTool.execute(
+			"1",
+			{ task: "hello world", name: "../bad" },
+			new AbortController().signal,
+			() => {},
+			{ model: "claude-sonnet", sessionManager: { getSessionId: () => "session-id" } },
+		);
+
+		assert.equal(result.isError, true);
+		assert.match(result.content[0].text, /Invalid agent run-name suffix/i);
+		assert.equal(connection.sent.length, 0);
+	});
+
 	it("dispatch_agent uses matching agent_id, --session-id, and durable session directory segment", async () => {
 		const connection = new MockConnection();
 		const { pi, tools } = createMockPi();

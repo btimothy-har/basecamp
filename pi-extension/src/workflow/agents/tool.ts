@@ -21,7 +21,7 @@ import { hasInvokedSkill } from "../../platform/skill-tracker.ts";
 import { getWorkspaceState } from "../../platform/workspace.ts";
 import { formatTaskProgressSummary, renderCompactTaskProgressLines } from "../tasks/render.ts";
 import type { AgentStreamEvent } from "./executor.ts";
-import { spawnAgent } from "./executor.ts";
+import { buildAgentRunName, spawnAgent } from "./executor.ts";
 import { resolveModel } from "./model-resolution.ts";
 import type { AgentConfig, AgentDetails, AgentPartialDetails, AgentRunKind, ToolCallRecord } from "./types.ts";
 import { AgentToolParams, DEFAULT_AGENT_MAX_DEPTH, getAgentRunKind } from "./types.ts";
@@ -379,7 +379,17 @@ Available named agents are basecamp builtin definitions. Ad-hoc dispatch must ru
 			const model = resolveModel(agentConfig?.model ?? "inherit", ctx.model);
 			const agentId = randomUUID().slice(0, 6);
 			const prefix = `agent-${agentId}`;
-			const name = params.name ? `${prefix}-${params.name}` : prefix;
+			let name: string;
+			try {
+				name = buildAgentRunName(prefix, params.name);
+			} catch (error) {
+				const msg = error instanceof Error ? error.message : String(error);
+				return {
+					content: [{ type: "text", text: msg }],
+					isError: true,
+					details: null as unknown as AgentDetails,
+				};
+			}
 			const project = process.env.BASECAMP_PROJECT ?? "default";
 			const sessionDir = path.join(os.tmpdir(), "basecamp-agents", name, "session");
 			const parentSession = getSessionName();
