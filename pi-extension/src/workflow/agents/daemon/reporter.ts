@@ -49,7 +49,8 @@ export function registerDaemonReporter(
 	},
 ): void {
 	const { connectionPromise, runId, agentId } = options;
-	const reportToken = process.env.BASECAMP_REPORT_TOKEN ?? "";
+	const reportToken = process.env.BASECAMP_REPORT_TOKEN;
+	if (!reportToken) return;
 
 	const sendTelemetry = async (kind: string, payload: Record<string, unknown>): Promise<void> => {
 		try {

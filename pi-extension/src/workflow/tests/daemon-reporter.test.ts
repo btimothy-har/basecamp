@@ -103,6 +103,23 @@ describe("daemon reporter", () => {
 		}
 	});
 
+	it("does not register hooks when report token is missing", () => {
+		const pi = new MockPi();
+		const priorReportToken = process.env.BASECAMP_REPORT_TOKEN;
+		try {
+			delete process.env.BASECAMP_REPORT_TOKEN;
+			registerDaemonReporter(pi as unknown as any, {
+				connectionPromise: Promise.resolve({} as DaemonConnection),
+				runId: "run-1",
+				agentId: "agent-1",
+			});
+			assert.equal(pi.handlers.size, 0);
+		} finally {
+			if (priorReportToken === undefined) delete process.env.BASECAMP_REPORT_TOKEN;
+			else process.env.BASECAMP_REPORT_TOKEN = priorReportToken;
+		}
+	});
+
 	it("does nothing for depth>0 synchronous subagents without BASECAMP_RUN_ID", () => {
 		const pi = new MockPi();
 		const priorDepth = process.env.BASECAMP_AGENT_DEPTH;

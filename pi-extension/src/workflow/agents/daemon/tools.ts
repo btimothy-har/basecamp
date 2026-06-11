@@ -75,8 +75,9 @@ function preview(text: string | null, limit = 80): string {
 }
 
 function sameAsRequested(resultRunIds: string[], requestedSet: Set<string>): boolean {
-	if (resultRunIds.length !== requestedSet.size) return false;
-	return resultRunIds.every((runId) => requestedSet.has(runId));
+	const resultSet = new Set(resultRunIds);
+	if (resultSet.size !== requestedSet.size) return false;
+	return [...requestedSet].every((runId) => resultSet.has(runId));
 }
 
 function waitForFrame<T extends "dispatch_ack" | "wait_result">(

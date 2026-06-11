@@ -457,6 +457,14 @@ describe("daemon async tools", () => {
 			type: "wait_result",
 			v: 2,
 			results: [
+				{ run_id: "run-1", status: "completed", result: "duplicate", error: null },
+				{ run_id: "run-1", status: "completed", result: "duplicate", error: null },
+			],
+		});
+		connection.emit({
+			type: "wait_result",
+			v: 2,
+			results: [
 				{ run_id: "run-1", status: "completed", result: "done", error: null },
 				{ run_id: "run-2", status: "failed", result: null, error: "boom" },
 			],
