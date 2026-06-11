@@ -55,6 +55,11 @@ def main() -> int:
         if mode == "no_result_exit":
             return int(os.environ.get("FAKE_DAEMON_AGENT_EXIT_CODE", "7"))
 
+        result_value = "fake-agent-result"
+        env_key = os.environ.get("FAKE_DAEMON_AGENT_RESULT_ENV_KEY")
+        if env_key:
+            result_value = f"{result_value}:{env_key}={os.environ.get(env_key, '')}"
+
         websocket.send(
             json.dumps(
                 {
@@ -63,7 +68,7 @@ def main() -> int:
                     "run_id": run_id,
                     "agent_id": agent_id,
                     "status": "ok",
-                    "result": "fake-agent-result",
+                    "result": result_value,
                     "error": None,
                     "usage": None,
                 }

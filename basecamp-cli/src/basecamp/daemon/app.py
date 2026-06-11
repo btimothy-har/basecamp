@@ -27,6 +27,8 @@ from basecamp.daemon.frames import (
 from basecamp.daemon.registry import Registry, Waiter
 from basecamp.daemon.store import Store
 
+_REDACTED_ENV_VALUE = "<redacted>"
+
 DEFAULT_AGENT_MAX_DEPTH = 2
 TERMINAL_RUN_STATUSES = {"completed", "failed"}
 
@@ -159,6 +161,22 @@ def create_app(store: Store, *, daemon_uds: str | None = None) -> FastAPI:
     return app
 
 
+def _sanitize_dispatch_spec(spec: dict[str, Any]) -> dict[str, Any]:
+    """Return a persisted copy of a dispatch spec with secrets removed.
+
+    Keep env names for observability while dropping raw values to avoid persistence
+    of credentials in SQLite.
+    """
+
+    env = spec.get("env")
+    if isinstance(env, dict):
+        env_keys = [str(key) for key in env.keys()]
+        spec = dict(spec)
+        spec["env"] = dict.fromkeys(env_keys, _REDACTED_ENV_VALUE)
+        spec["env_keys"] = env_keys
+    return spec
+
+
 def _resolve_agent_max_depth() -> int:
     raw = os.getenv("BASECAMP_AGENT_MAX_DEPTH")
     try:
@@ -197,7 +215,7 @@ async def _handle_dispatch(
         return
 
     agent_id = frame.agent_id or str(uuid.uuid4())
-    spec_json = frame.spec.model_dump(mode="json")
+    spec_json = _sanitize_dispatch_spec(frame.spec.model_dump(mode="json"))
     await asyncio.to_thread(
         store.upsert_agent,
         agent_id=agent_id,
