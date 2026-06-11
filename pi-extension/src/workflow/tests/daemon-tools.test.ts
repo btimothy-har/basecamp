@@ -8,7 +8,7 @@ import type { DaemonConnection } from "../agents/daemon/client.ts";
 import type { Frame } from "../agents/daemon/frames.ts";
 import { deriveDaemonIdentity } from "../agents/daemon/index.ts";
 import { resolveDaemonPaths } from "../agents/daemon/paths.ts";
-import { buildAgentTitleBase, registerDaemonTools } from "../agents/daemon/tools.ts";
+import { buildAgentTitleBase, processEnvForSpawn, registerDaemonTools } from "../agents/daemon/tools.ts";
 
 interface RegisteredTool {
 	name: string;
@@ -113,6 +113,48 @@ describe("daemon async tools", () => {
 			const truncated = buildAgentTitleBase("worker", longTask);
 			assert.equal(truncated.endsWith("…"), true);
 			assert.ok(truncated.length <= "(worker) ".length + 56);
+		});
+	});
+
+	describe("processEnvForSpawn", () => {
+		it("strips daemon report identity vars while preserving ordinary env", () => {
+			const prior = {
+				runId: process.env.BASECAMP_RUN_ID,
+				reportToken: process.env.BASECAMP_REPORT_TOKEN,
+				agentId: process.env.BASECAMP_AGENT_ID,
+				daemonUds: process.env.BASECAMP_DAEMON_UDS,
+				project: process.env.BASECAMP_PROJECT,
+				apiKey: process.env.DAEMON_TEST_API_KEY,
+			};
+			process.env.BASECAMP_RUN_ID = "run-parent";
+			process.env.BASECAMP_REPORT_TOKEN = "report-parent";
+			process.env.BASECAMP_AGENT_ID = "agent-parent";
+			process.env.BASECAMP_DAEMON_UDS = "/tmp/daemon-parent.sock";
+			process.env.BASECAMP_PROJECT = "proj-parent";
+			process.env.DAEMON_TEST_API_KEY = "parent-api-key";
+
+			try {
+				const env = processEnvForSpawn();
+				assert.equal(env.BASECAMP_RUN_ID, undefined);
+				assert.equal(env.BASECAMP_REPORT_TOKEN, undefined);
+				assert.equal(env.BASECAMP_AGENT_ID, undefined);
+				assert.equal(env.BASECAMP_DAEMON_UDS, undefined);
+				assert.equal(env.BASECAMP_PROJECT, "proj-parent");
+				assert.equal(env.DAEMON_TEST_API_KEY, "parent-api-key");
+			} finally {
+				if (prior.runId === undefined) delete process.env.BASECAMP_RUN_ID;
+				else process.env.BASECAMP_RUN_ID = prior.runId;
+				if (prior.reportToken === undefined) delete process.env.BASECAMP_REPORT_TOKEN;
+				else process.env.BASECAMP_REPORT_TOKEN = prior.reportToken;
+				if (prior.agentId === undefined) delete process.env.BASECAMP_AGENT_ID;
+				else process.env.BASECAMP_AGENT_ID = prior.agentId;
+				if (prior.daemonUds === undefined) delete process.env.BASECAMP_DAEMON_UDS;
+				else process.env.BASECAMP_DAEMON_UDS = prior.daemonUds;
+				if (prior.project === undefined) delete process.env.BASECAMP_PROJECT;
+				else process.env.BASECAMP_PROJECT = prior.project;
+				if (prior.apiKey === undefined) delete process.env.DAEMON_TEST_API_KEY;
+				else process.env.DAEMON_TEST_API_KEY = prior.apiKey;
+			}
 		});
 	});
 

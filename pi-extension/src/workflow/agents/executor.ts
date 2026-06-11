@@ -40,6 +40,34 @@ const AGENT_BASE = path.join(os.tmpdir(), "basecamp-agents");
 const TASK_ARG_LIMIT = 8000;
 const VALID_THINKING_LEVELS = new Set(["off", "minimal", "low", "medium", "high", "xhigh"]);
 const INVALID_CONTROL_CHAR_RE = /[\u0000-\u001f\u007f-\u009f]/;
+const RESTRICTED_AGENT_REPORT_ENV_VARS = new Set([
+	"BASECAMP_RUN_ID",
+	"BASECAMP_REPORT_TOKEN",
+	"BASECAMP_AGENT_ID",
+	"BASECAMP_DAEMON_UDS",
+]);
+
+export function sanitizeAgentSpawnEnv(input: Record<string, string>): Record<string, string> {
+	const output: Record<string, string> = {};
+	for (const [key, value] of Object.entries(input)) {
+		if (RESTRICTED_AGENT_REPORT_ENV_VARS.has(key)) continue;
+		output[key] = value;
+	}
+	return output;
+}
+
+export function buildSpawnEnv(extraEnv: Record<string, string>): Record<string, string> {
+	const baseEnv: Record<string, string> = {};
+	for (const [key, value] of Object.entries(process.env)) {
+		if (typeof value === "string") baseEnv[key] = value;
+	}
+	const sanitized = sanitizeAgentSpawnEnv(baseEnv);
+	for (const [key, value] of Object.entries(extraEnv)) {
+		if (RESTRICTED_AGENT_REPORT_ENV_VARS.has(key)) continue;
+		sanitized[key] = value;
+	}
+	return sanitized;
+}
 
 function isPathWithin(parent: string, child: string): boolean {
 	const relative = path.relative(parent, child);
@@ -547,7 +575,7 @@ export function spawnAgent(
 	return new Promise<SpawnResult>((resolve) => {
 		const proc = spawn(args[0]!, args.slice(1), {
 			cwd: opts.cwd,
-			env: { ...process.env, ...opts.env },
+			env: buildSpawnEnv(opts.env),
 			stdio: ["ignore", "pipe", "pipe"] as const,
 		});
 

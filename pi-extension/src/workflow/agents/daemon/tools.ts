@@ -5,7 +5,7 @@ import { Text } from "@earendil-works/pi-tui";
 import { Type } from "@sinclair/typebox";
 import { getWorkspaceState } from "../../../platform/workspace.ts";
 import { discoverAgents } from "../discovery.ts";
-import { buildAgentRunName, buildPiArgs } from "../executor.ts";
+import { buildAgentRunName, buildPiArgs, sanitizeAgentSpawnEnv } from "../executor.ts";
 import { resolveModel } from "../model-resolution.ts";
 import { buildAgentEnv, getBasecampExtensionToolNames } from "../tool.ts";
 import { getAgentRunKind } from "../types.ts";
@@ -44,12 +44,12 @@ const WaitForAgentParams = Type.Object({
 	timeout_s: Type.Optional(Type.Number({ minimum: 1, default: 600 })),
 });
 
-function processEnvForSpawn(): Record<string, string> {
+export function processEnvForSpawn(): Record<string, string> {
 	const env: Record<string, string> = {};
 	for (const [key, value] of Object.entries(process.env)) {
 		if (typeof value === "string") env[key] = value;
 	}
-	return env;
+	return sanitizeAgentSpawnEnv(env);
 }
 
 function compactAgentTaskLabel(task: string, maxChars = 56): string {
@@ -200,7 +200,7 @@ export function registerDaemonTools(pi: ExtensionAPI, getConnection: () => Promi
 					cwd: spawnCwd,
 					env: {
 						...processEnvForSpawn(),
-						...basecampEnv,
+						...sanitizeAgentSpawnEnv(basecampEnv),
 						BASECAMP_AGENT_TITLE: buildAgentTitleBase(params.agent, params.task),
 					},
 					resume_path: null,

@@ -472,8 +472,7 @@ async def _handle_wait(*, frame: WaitFrame, websocket: WebSocket, store: Store, 
 
     all_known = len(by_id) == len(run_ids)
     all_terminal = all_known and all(
-        isinstance(row.get("status"), str) and row.get("status") in TERMINAL_RUN_STATUSES
-        for row in by_id.values()
+        isinstance(row.get("status"), str) and row.get("status") in TERMINAL_RUN_STATUSES for row in by_id.values()
     )
 
     if all_known and all_terminal:
