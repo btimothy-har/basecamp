@@ -82,7 +82,7 @@ export interface WaitFrame {
 
 export interface WaitResultItem {
 	run_id: string;
-	status: "completed" | "failed";
+	status: "completed" | "failed" | "running" | "unknown";
 	result: string | null;
 	error: string | null;
 }

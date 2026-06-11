@@ -34,6 +34,7 @@ Version handling:
 - `result_report` (agent→daemon)
 - `wait` (client→daemon)
 - `wait_result` (daemon→client)
+  - `results` entries include `status`: `completed`/`failed` (terminal), `running` (known handle still active), or `unknown` (no run row for handle).
 
 Canonical example fixtures live in `protocol/frames/*.json`.
 

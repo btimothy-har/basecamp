@@ -426,6 +426,44 @@ describe("daemon async tools", () => {
 		assert.equal(result.details.items[1].status, "failed");
 	});
 
+	it("wait_for_agent maps running and unknown statuses", async () => {
+		const connection = new MockConnection();
+		const { pi, tools } = createMockPi();
+		registerDaemonTools(pi, async () => connection);
+		const waitTool = toolByName(tools, "wait_for_agent");
+
+		const executePromise = waitTool.execute(
+			"1",
+			{ handles: ["run-1", "run-2", "run-3"], timeout_s: 30 },
+			new AbortController().signal,
+			() => {},
+			{},
+		);
+
+		await new Promise((resolve) => setImmediate(resolve));
+		const outbound = connection.sent[0] as Extract<Frame, { type: "wait" }>;
+		assert.equal(outbound.type, "wait");
+		assert.deepEqual(outbound.run_ids, ["run-1", "run-2", "run-3"]);
+		assert.equal(outbound.timeout_s, 30);
+
+		connection.emit({
+			type: "wait_result",
+			v: 2,
+			results: [
+				{ run_id: "run-1", status: "running", result: null, error: null },
+				{ run_id: "run-2", status: "unknown", result: null, error: null },
+				{ run_id: "run-3", status: "completed", result: "ok", error: null },
+			],
+		});
+
+		const result = await executePromise;
+		assert.equal(result.isError, undefined);
+		assert.equal(result.details.items[0].status, "running");
+		assert.equal(result.details.items[1].status, "unknown");
+		assert.equal(result.details.items[2].status, "completed");
+		assert.match(result.content[0].text, /still running \(timed out\)/);
+		assert.match(result.content[0].text, /\? run-2 unknown handle/);
+	});
 	it("wait_for_agent aborts promptly on AbortSignal", async () => {
 		const connection = new MockConnection();
 		const { pi, tools } = createMockPi();

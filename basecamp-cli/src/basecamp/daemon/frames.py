@@ -111,7 +111,7 @@ class WaitResultItem(BaseModel):
     """Single wait result item."""
 
     run_id: str
-    status: Literal["completed", "failed"]
+    status: Literal["completed", "failed", "running", "unknown"]
     result: str | None
     error: str | None
 

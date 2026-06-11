@@ -382,30 +382,71 @@ async def _is_run_terminal(run_id: str, store: Store) -> bool:
     return isinstance(status, str) and status in TERMINAL_RUN_STATUSES
 
 
+def _normalize_wait_status(status: str) -> str:
+    """Normalize DB status into protocol wait-result status values."""
+
+    if status in TERMINAL_RUN_STATUSES:
+        return status
+    return "running"
+
+
 async def _build_wait_results(
     *,
     run_ids: list[str],
     store: Store,
-    terminal_only: bool,
+    include_unknown: bool,
 ) -> list[WaitResultItem]:
-    rows = await asyncio.to_thread(store.get_run_wait_results, run_ids, terminal_only=terminal_only)
+    rows = await asyncio.to_thread(store.get_run_wait_results, run_ids)
     by_id = {row["run_id"]: row for row in rows}
     ordered: list[WaitResultItem] = []
     for run_id in run_ids:
         row = by_id.get(run_id)
-        if not row:
-            continue
-        status = row.get("status")
-        if not isinstance(status, str) or status not in TERMINAL_RUN_STATUSES:
-            continue
-        ordered.append(
-            WaitResultItem(
-                run_id=run_id,
-                status=status,
-                result=row.get("result"),
-                error=row.get("error"),
+        if row is None:
+            if not include_unknown:
+                continue
+            ordered.append(
+                WaitResultItem(
+                    run_id=run_id,
+                    status="unknown",
+                    result=None,
+                    error=None,
+                )
             )
-        )
+            continue
+
+        status = row.get("status")
+        if isinstance(status, str):
+            wait_status = _normalize_wait_status(status)
+            if wait_status in TERMINAL_RUN_STATUSES:
+                ordered.append(
+                    WaitResultItem(
+                        run_id=run_id,
+                        status=wait_status,
+                        result=row.get("result"),
+                        error=row.get("error"),
+                    )
+                )
+            else:
+                ordered.append(
+                    WaitResultItem(
+                        run_id=run_id,
+                        status="running",
+                        result=None,
+                        error=None,
+                    )
+                )
+            continue
+
+        if include_unknown:
+            ordered.append(
+                WaitResultItem(
+                    run_id=run_id,
+                    status="unknown",
+                    result=None,
+                    error=None,
+                )
+            )
+
     return ordered
 
 
@@ -426,9 +467,24 @@ async def _notify_run_finalized(run_id: str, *, registry: Registry, store: Store
 
 async def _handle_wait(*, frame: WaitFrame, websocket: WebSocket, store: Store, registry: Registry) -> None:
     run_ids = list(dict.fromkeys(frame.run_ids))
-    all_terminal = await asyncio.to_thread(store.are_runs_terminal, run_ids)
-    if all_terminal:
-        results = await _build_wait_results(run_ids=run_ids, store=store, terminal_only=False)
+    rows = await asyncio.to_thread(store.get_run_wait_results, run_ids)
+    by_id = {row["run_id"]: row for row in rows}
+
+    all_known = len(by_id) == len(run_ids)
+    all_terminal = all_known and all(
+        isinstance(row.get("status"), str) and row.get("status") in TERMINAL_RUN_STATUSES
+        for row in by_id.values()
+    )
+
+    if all_known and all_terminal:
+        results = await _build_wait_results(run_ids=run_ids, store=store, include_unknown=False)
+        await websocket.send_json(
+            serialize_frame(WaitResultFrame(type="wait_result", v=PROTOCOL_VERSION, results=results))
+        )
+        return
+
+    if not all_known:
+        results = await _build_wait_results(run_ids=run_ids, store=store, include_unknown=True)
         await websocket.send_json(
             serialize_frame(WaitResultFrame(type="wait_result", v=PROTOCOL_VERSION, results=results))
         )
@@ -443,9 +499,9 @@ async def _handle_wait(*, frame: WaitFrame, websocket: WebSocket, store: Store, 
     registry.add_waiter(waiter)
     try:
         await asyncio.wait_for(waiter.future, timeout=frame.timeout_s)
-        results = await _build_wait_results(run_ids=run_ids, store=store, terminal_only=False)
+        results = await _build_wait_results(run_ids=run_ids, store=store, include_unknown=False)
     except TimeoutError:
-        results = await _build_wait_results(run_ids=run_ids, store=store, terminal_only=True)
+        results = await _build_wait_results(run_ids=run_ids, store=store, include_unknown=False)
     finally:
         registry.remove_waiter(waiter.waiter_id)
 

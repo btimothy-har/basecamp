@@ -362,7 +362,7 @@ def test_wait_all_happy_path_two_runs(tmp_path: Path) -> None:
         _stop_daemon(server, thread, uds_path)
 
 
-def test_wait_timeout_returns_terminal_subset(tmp_path: Path) -> None:
+def test_wait_timeout_returns_running_status(tmp_path: Path) -> None:
     db_path = tmp_path / "daemon.db"
     uds_path = Path("/tmp") / f"basecamp-daemon-wait-timeout-{os.getpid()}-{uuid.uuid4().hex[:8]}.sock"
     store = Store(db_path=db_path)
@@ -397,7 +397,11 @@ def test_wait_timeout_returns_terminal_subset(tmp_path: Path) -> None:
             )
             wait_result = json.loads(websocket.recv())
 
-        assert wait_result == {"type": "wait_result", "v": 2, "results": []}
+        assert len(wait_result["results"]) == 1
+        assert wait_result["results"][0]["run_id"] == run_id
+        assert wait_result["results"][0]["status"] == "running"
+        assert wait_result["results"][0]["result"] is None
+        assert wait_result["results"][0]["error"] is None
     finally:
         _stop_daemon(server, thread, uds_path)
 
@@ -451,6 +455,91 @@ def test_backstop_marks_failed_and_resolves_wait(tmp_path: Path) -> None:
         assert run is not None
         assert run["status"] == "failed"
         assert "code 9" in (run["error"] or "")
+    finally:
+        _stop_daemon(server, thread, uds_path)
+
+
+def test_wait_unknown_handles_return_unknown_immediately(tmp_path: Path) -> None:
+    db_path = tmp_path / "daemon.db"
+    uds_path = Path("/tmp") / f"basecamp-daemon-wait-unknown-{os.getpid()}-{uuid.uuid4().hex[:8]}.sock"
+    store = Store(db_path=db_path)
+    server, thread = _start_daemon(store, uds_path)
+
+    unknown_run_id = "run-missing"
+    start = time.time()
+
+    try:
+        with unix_connect(str(uds_path), uri="ws://localhost/ws") as websocket:
+            _register_session(websocket, node_id="session-node", cwd=str(tmp_path))
+            websocket.send(
+                json.dumps(
+                    {
+                        "type": "wait",
+                        "v": 2,
+                        "run_ids": [unknown_run_id],
+                        "mode": "all",
+                        "timeout_s": 10,
+                    }
+                )
+            )
+            wait_result = json.loads(websocket.recv())
+
+        elapsed = time.time() - start
+        assert elapsed < 2.0
+        assert wait_result["type"] == "wait_result"
+        assert wait_result["results"] == [
+            {"run_id": unknown_run_id, "status": "unknown", "result": None, "error": None}
+        ]
+    finally:
+        _stop_daemon(server, thread, uds_path)
+
+
+def test_wait_mixed_unknown_and_completed_returns_all_handles(tmp_path: Path) -> None:
+    db_path = tmp_path / "daemon.db"
+    uds_path = Path("/tmp") / f"basecamp-daemon-wait-mixed-{os.getpid()}-{uuid.uuid4().hex[:8]}.sock"
+    store = Store(db_path=db_path)
+    server, thread = _start_daemon(store, uds_path)
+
+    run_id = f"run-{uuid.uuid4()}"
+    unknown_run_id = f"run-{uuid.uuid4()}"
+
+    try:
+        with unix_connect(str(uds_path), uri="ws://localhost/ws") as websocket:
+            _register_session(websocket, node_id="session-node", cwd=str(tmp_path))
+
+            ack = _dispatch(
+                websocket,
+                run_id=run_id,
+                spec=_dispatch_spec(
+                    tmp_path,
+                    env={"FAKE_DAEMON_AGENT_SLEEP_MS": "20"},
+                ),
+            )
+            assert ack["status"] == "spawned"
+
+            deadline = time.time() + 10
+            while time.time() < deadline:
+                run = store.get_run(run_id)
+                if run and run["status"] == "completed":
+                    break
+                time.sleep(0.02)
+            assert run is not None and run["status"] == "completed"
+
+            websocket.send(
+                json.dumps(
+                    {
+                        "type": "wait",
+                        "v": 2,
+                        "run_ids": [run_id, unknown_run_id],
+                        "mode": "all",
+                        "timeout_s": 10,
+                    }
+                )
+            )
+            wait_result = json.loads(websocket.recv())
+
+        assert [item["run_id"] for item in wait_result["results"]] == [run_id, unknown_run_id]
+        assert [item["status"] for item in wait_result["results"]] == ["completed", "unknown"]
     finally:
         _stop_daemon(server, thread, uds_path)
 

@@ -20,7 +20,7 @@ interface DispatchDetails {
 
 interface WaitHandleResult {
 	runId: string;
-	status: "completed" | "failed" | "timed_out";
+	status: "completed" | "failed" | "running" | "unknown";
 	result: string | null;
 	error: string | null;
 }
@@ -74,8 +74,8 @@ function preview(text: string | null, limit = 80): string {
 	return compact.length > limit ? `${compact.slice(0, limit)}…` : compact;
 }
 
-function sameOrSubset(resultRunIds: string[], requestedSet: Set<string>): boolean {
-	if (resultRunIds.length > requestedSet.size) return false;
+function sameAsRequested(resultRunIds: string[], requestedSet: Set<string>): boolean {
+	if (resultRunIds.length !== requestedSet.size) return false;
 	return resultRunIds.every((runId) => requestedSet.has(runId));
 }
 
@@ -264,7 +264,7 @@ export function registerDaemonTools(pi: ExtensionAPI, getConnection: () => Promi
 					connection,
 					"wait_result",
 					(candidate) =>
-						sameOrSubset(
+						sameAsRequested(
 							candidate.results.map((item) => item.run_id),
 							requested,
 						),
@@ -284,22 +284,47 @@ export function registerDaemonTools(pi: ExtensionAPI, getConnection: () => Promi
 				if (!hit) {
 					return {
 						runId,
-						status: "timed_out",
+						status: "unknown",
+						result: null,
+						error: null,
+					};
+				}
+				if (hit.status === "failed") {
+					return {
+						runId,
+						status: "failed",
+						result: hit.result,
+						error: hit.error,
+					};
+				}
+				if (hit.status === "completed") {
+					return {
+						runId,
+						status: "completed",
+						result: hit.result,
+						error: hit.error,
+					};
+				}
+				if (hit.status === "running") {
+					return {
+						runId,
+						status: "running",
 						result: null,
 						error: "still running (timed out)",
 					};
 				}
 				return {
 					runId,
-					status: hit.status === "failed" ? "failed" : "completed",
-					result: hit.result,
-					error: hit.error,
+					status: "unknown",
+					result: null,
+					error: null,
 				};
 			});
 
 			const lines = items.map((item) => {
 				if (item.status === "completed") return `✓ ${item.runId} completed`;
 				if (item.status === "failed") return `✗ ${item.runId} failed: ${preview(item.error) || "error"}`;
+				if (item.status === "unknown") return `? ${item.runId} unknown handle`;
 				return `… ${item.runId} still running (timed out)`;
 			});
 			const details: WaitDetails = { items };
@@ -315,6 +340,9 @@ export function registerDaemonTools(pi: ExtensionAPI, getConnection: () => Promi
 				}
 				if (item.status === "failed") {
 					return `${theme.fg("error", "✗")} ${item.runId} ${theme.fg("error", preview(item.error) || "failed")}`;
+				}
+				if (item.status === "unknown") {
+					return `${theme.fg("warning", "?")} ${item.runId} ${theme.fg("muted", "unknown handle")}`;
 				}
 				return `${theme.fg("warning", "…")} ${item.runId} ${theme.fg("muted", "still running (timed out)")}`;
 			});
