@@ -1,6 +1,6 @@
 {
   "type": "wait",
-  "v": 1,
+  "v": 2,
   "run_ids": [
     "run-001",
     "run-002"

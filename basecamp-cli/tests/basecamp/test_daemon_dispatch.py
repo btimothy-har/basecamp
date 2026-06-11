@@ -65,12 +65,32 @@ def _register_session(websocket, *, node_id: str, cwd: str) -> None:
         json.dumps(
             {
                 "type": "register",
-                "v": 1,
+                "v": 2,
                 "role": "session",
                 "node_id": node_id,
                 "parent_id": None,
                 "sibling_group": None,
                 "depth": 0,
+                "session_name": node_id,
+                "cwd": cwd,
+            }
+        )
+    )
+    registered = json.loads(websocket.recv())
+    assert registered["type"] == "registered"
+
+
+def _register_agent(websocket, *, node_id: str, cwd: str) -> None:
+    websocket.send(
+        json.dumps(
+            {
+                "type": "register",
+                "v": 2,
+                "role": "agent",
+                "node_id": node_id,
+                "parent_id": None,
+                "sibling_group": None,
+                "depth": 1,
                 "session_name": node_id,
                 "cwd": cwd,
             }
@@ -89,7 +109,7 @@ def _dispatch(
 ) -> dict[str, object]:
     payload: dict[str, object] = {
         "type": "dispatch",
-        "v": 1,
+        "v": 2,
         "run_id": run_id,
         "spec": spec,
     }
@@ -115,7 +135,7 @@ def test_daemon_dispatch_spawn_and_result_round_trip(tmp_path: Path) -> None:
             ack = _dispatch(websocket, run_id=run_id, spec=_dispatch_spec(tmp_path))
             assert ack == {
                 "type": "dispatch_ack",
-                "v": 1,
+                "v": 2,
                 "run_id": run_id,
                 "status": "spawned",
                 "reason": None,
@@ -132,15 +152,76 @@ def test_daemon_dispatch_spawn_and_result_round_trip(tmp_path: Path) -> None:
         assert run is not None
         assert run["status"] == "completed"
         assert run["result"] == "fake-agent-result"
+        assert isinstance(run.get("report_token_hash"), str)
+        assert run["report_token_hash"] != ""
 
         events = store.get_run_events(run_id)
         assert len(events) >= 1
+
+        spec_json = run["spec_json"]
+        assert isinstance(spec_json, dict)
+        assert run["report_token_hash"] not in json.dumps(spec_json, sort_keys=True)
 
         agent_id = run["agent_id"]
         agent = store.get_agent(agent_id)
         assert agent is not None
         assert agent["depth"] == 1
         assert agent["parent_id"] == session_node
+    finally:
+        _stop_daemon(server, thread, uds_path)
+
+
+def test_dispatch_stores_sanitized_spec_without_secret_values(tmp_path: Path) -> None:
+    db_path = tmp_path / "daemon.db"
+    uds_path = Path("/tmp") / f"basecamp-daemon-dispatch-sanitized-{os.getpid()}-{uuid.uuid4().hex[:8]}.sock"
+    store = Store(db_path=db_path)
+    server, thread = _start_daemon(store, uds_path)
+
+    run_id = f"run-{uuid.uuid4()}"
+    session_node = "session-node"
+    secret_env = {
+        "OPENAI_API_KEY": "sk-openai-secret",
+        "ANTHROPIC_API_KEY": "anthropic-secret",
+        "CUSTOM_TOKEN": "token-secret",
+        "PASSWORD": "db-password",
+    }
+
+    try:
+        with unix_connect(str(uds_path), uri="ws://localhost/ws") as websocket:
+            _register_session(websocket, node_id=session_node, cwd=str(tmp_path))
+            ack = _dispatch(websocket, run_id=run_id, spec=_dispatch_spec(tmp_path, env=secret_env))
+            assert ack == {
+                "type": "dispatch_ack",
+                "v": 2,
+                "run_id": run_id,
+                "status": "spawned",
+                "reason": None,
+            }
+
+        deadline = time.time() + 10
+        run = None
+        while time.time() < deadline:
+            run = store.get_run(run_id)
+            if run and run["status"] == "completed":
+                break
+            time.sleep(0.05)
+
+        assert run is not None
+        spec_json = run["spec_json"]
+        assert isinstance(spec_json, dict)
+        assert spec_json["argv"] == [sys.executable, str(Path(__file__).with_name("fake_daemon_agent.py"))]
+        assert spec_json["cwd"] == str(tmp_path)
+        assert spec_json["resume_path"] is None
+        assert spec_json["task"] == "deterministic fake task"
+        assert set(spec_json["env"]).issuperset(secret_env)
+        assert spec_json.get("env_keys") == list(secret_env)
+        assert all(value == "<redacted>" for value in spec_json["env"].values())
+
+        serialized_spec = json.dumps(spec_json, sort_keys=True)
+        assert "sk-openai-secret" not in serialized_spec
+        assert "anthropic-secret" not in serialized_spec
+        assert "token-secret" not in serialized_spec
+        assert "db-password" not in serialized_spec
     finally:
         _stop_daemon(server, thread, uds_path)
 
@@ -161,7 +242,7 @@ def test_dispatch_uses_provided_agent_id_for_store_and_child_env(tmp_path: Path)
             ack = _dispatch(websocket, run_id=run_id, spec=_dispatch_spec(tmp_path), agent_id=provided_agent_id)
             assert ack == {
                 "type": "dispatch_ack",
-                "v": 1,
+                "v": 2,
                 "run_id": run_id,
                 "status": "spawned",
                 "reason": None,
@@ -183,6 +264,52 @@ def test_dispatch_uses_provided_agent_id_for_store_and_child_env(tmp_path: Path)
         assert agent is not None
         assert agent["id"] == provided_agent_id
         assert agent["parent_id"] == session_node
+    finally:
+        _stop_daemon(server, thread, uds_path)
+
+
+def test_dispatch_passes_full_env_to_spawned_child(tmp_path: Path) -> None:
+    db_path = tmp_path / "daemon.db"
+    uds_path = Path("/tmp") / f"basecamp-daemon-dispatch-env-echo-{os.getpid()}-{uuid.uuid4().hex[:8]}.sock"
+    store = Store(db_path=db_path)
+    server, thread = _start_daemon(store, uds_path)
+
+    run_id = f"run-{uuid.uuid4()}"
+    session_node = "session-node"
+    secret_api_key = "sk-openai-actual-value"
+
+    try:
+        with unix_connect(str(uds_path), uri="ws://localhost/ws") as websocket:
+            _register_session(websocket, node_id=session_node, cwd=str(tmp_path))
+            ack = _dispatch(
+                websocket,
+                run_id=run_id,
+                spec=_dispatch_spec(
+                    tmp_path,
+                    env={
+                        "OPENAI_API_KEY": secret_api_key,
+                        "FAKE_DAEMON_AGENT_RESULT_ENV_KEY": "OPENAI_API_KEY",
+                    },
+                ),
+            )
+            assert ack == {
+                "type": "dispatch_ack",
+                "v": 2,
+                "run_id": run_id,
+                "status": "spawned",
+                "reason": None,
+            }
+
+        deadline = time.time() + 10
+        run = None
+        while time.time() < deadline:
+            run = store.get_run(run_id)
+            if run and run["status"] == "completed":
+                break
+            time.sleep(0.05)
+
+        assert run is not None
+        assert run["result"] == f"fake-agent-result:OPENAI_API_KEY={secret_api_key}"
     finally:
         _stop_daemon(server, thread, uds_path)
 
@@ -217,7 +344,7 @@ def test_wait_all_happy_path_two_runs(tmp_path: Path) -> None:
                 json.dumps(
                     {
                         "type": "wait",
-                        "v": 1,
+                        "v": 2,
                         "run_ids": [run_id_1, run_id_2],
                         "mode": "all",
                         "timeout_s": 5,
@@ -235,7 +362,7 @@ def test_wait_all_happy_path_two_runs(tmp_path: Path) -> None:
         _stop_daemon(server, thread, uds_path)
 
 
-def test_wait_timeout_returns_terminal_subset(tmp_path: Path) -> None:
+def test_wait_timeout_returns_running_status(tmp_path: Path) -> None:
     db_path = tmp_path / "daemon.db"
     uds_path = Path("/tmp") / f"basecamp-daemon-wait-timeout-{os.getpid()}-{uuid.uuid4().hex[:8]}.sock"
     store = Store(db_path=db_path)
@@ -261,7 +388,7 @@ def test_wait_timeout_returns_terminal_subset(tmp_path: Path) -> None:
                 json.dumps(
                     {
                         "type": "wait",
-                        "v": 1,
+                        "v": 2,
                         "run_ids": [run_id],
                         "mode": "all",
                         "timeout_s": 0.1,
@@ -270,7 +397,11 @@ def test_wait_timeout_returns_terminal_subset(tmp_path: Path) -> None:
             )
             wait_result = json.loads(websocket.recv())
 
-        assert wait_result == {"type": "wait_result", "v": 1, "results": []}
+        assert len(wait_result["results"]) == 1
+        assert wait_result["results"][0]["run_id"] == run_id
+        assert wait_result["results"][0]["status"] == "running"
+        assert wait_result["results"][0]["result"] is None
+        assert wait_result["results"][0]["error"] is None
     finally:
         _stop_daemon(server, thread, uds_path)
 
@@ -304,7 +435,7 @@ def test_backstop_marks_failed_and_resolves_wait(tmp_path: Path) -> None:
                 json.dumps(
                     {
                         "type": "wait",
-                        "v": 1,
+                        "v": 2,
                         "run_ids": [run_id],
                         "mode": "all",
                         "timeout_s": 5,
@@ -328,6 +459,91 @@ def test_backstop_marks_failed_and_resolves_wait(tmp_path: Path) -> None:
         _stop_daemon(server, thread, uds_path)
 
 
+def test_wait_unknown_handles_return_unknown_immediately(tmp_path: Path) -> None:
+    db_path = tmp_path / "daemon.db"
+    uds_path = Path("/tmp") / f"basecamp-daemon-wait-unknown-{os.getpid()}-{uuid.uuid4().hex[:8]}.sock"
+    store = Store(db_path=db_path)
+    server, thread = _start_daemon(store, uds_path)
+
+    unknown_run_id = "run-missing"
+    start = time.time()
+
+    try:
+        with unix_connect(str(uds_path), uri="ws://localhost/ws") as websocket:
+            _register_session(websocket, node_id="session-node", cwd=str(tmp_path))
+            websocket.send(
+                json.dumps(
+                    {
+                        "type": "wait",
+                        "v": 2,
+                        "run_ids": [unknown_run_id],
+                        "mode": "all",
+                        "timeout_s": 10,
+                    }
+                )
+            )
+            wait_result = json.loads(websocket.recv())
+
+        elapsed = time.time() - start
+        assert elapsed < 2.0
+        assert wait_result["type"] == "wait_result"
+        assert wait_result["results"] == [
+            {"run_id": unknown_run_id, "status": "unknown", "result": None, "error": None}
+        ]
+    finally:
+        _stop_daemon(server, thread, uds_path)
+
+
+def test_wait_mixed_unknown_and_completed_returns_all_handles(tmp_path: Path) -> None:
+    db_path = tmp_path / "daemon.db"
+    uds_path = Path("/tmp") / f"basecamp-daemon-wait-mixed-{os.getpid()}-{uuid.uuid4().hex[:8]}.sock"
+    store = Store(db_path=db_path)
+    server, thread = _start_daemon(store, uds_path)
+
+    run_id = f"run-{uuid.uuid4()}"
+    unknown_run_id = f"run-{uuid.uuid4()}"
+
+    try:
+        with unix_connect(str(uds_path), uri="ws://localhost/ws") as websocket:
+            _register_session(websocket, node_id="session-node", cwd=str(tmp_path))
+
+            ack = _dispatch(
+                websocket,
+                run_id=run_id,
+                spec=_dispatch_spec(
+                    tmp_path,
+                    env={"FAKE_DAEMON_AGENT_SLEEP_MS": "20"},
+                ),
+            )
+            assert ack["status"] == "spawned"
+
+            deadline = time.time() + 10
+            while time.time() < deadline:
+                run = store.get_run(run_id)
+                if run and run["status"] == "completed":
+                    break
+                time.sleep(0.02)
+            assert run is not None and run["status"] == "completed"
+
+            websocket.send(
+                json.dumps(
+                    {
+                        "type": "wait",
+                        "v": 2,
+                        "run_ids": [run_id, unknown_run_id],
+                        "mode": "all",
+                        "timeout_s": 10,
+                    }
+                )
+            )
+            wait_result = json.loads(websocket.recv())
+
+        assert [item["run_id"] for item in wait_result["results"]] == [run_id, unknown_run_id]
+        assert [item["status"] for item in wait_result["results"]] == ["completed", "unknown"]
+    finally:
+        _stop_daemon(server, thread, uds_path)
+
+
 def test_dispatch_rejected_when_depth_cap_exceeded(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setenv("BASECAMP_AGENT_MAX_DEPTH", "2")
 
@@ -344,7 +560,7 @@ def test_dispatch_rejected_when_depth_cap_exceeded(tmp_path: Path, monkeypatch) 
                 json.dumps(
                     {
                         "type": "register",
-                        "v": 1,
+                        "v": 2,
                         "role": "agent",
                         "node_id": "depth-two-agent",
                         "parent_id": "parent",
@@ -361,11 +577,194 @@ def test_dispatch_rejected_when_depth_cap_exceeded(tmp_path: Path, monkeypatch) 
 
         assert ack == {
             "type": "dispatch_ack",
-            "v": 1,
+            "v": 2,
             "run_id": run_id,
             "status": "rejected",
             "reason": "depth_cap",
         }
         assert store.get_run(run_id) is None
+    finally:
+        _stop_daemon(server, thread, uds_path)
+
+
+def test_dispatch_report_frames_accept_different_reporting_node_id(tmp_path: Path) -> None:
+    db_path = tmp_path / "daemon.db"
+    uds_path = Path("/tmp") / f"basecamp-daemon-report-node-{os.getpid()}-{uuid.uuid4().hex[:8]}.sock"
+    store = Store(db_path=db_path)
+    server, thread = _start_daemon(store, uds_path)
+
+    run_id = f"run-{uuid.uuid4()}"
+    session_node = "session-node"
+    provided_agent_id = f"agent-{uuid.uuid4()}"
+    reporting_node = "report-node"
+
+    try:
+        with unix_connect(str(uds_path), uri="ws://localhost/ws") as websocket:
+            _register_session(websocket, node_id=session_node, cwd=str(tmp_path))
+            ack = _dispatch(
+                websocket,
+                run_id=run_id,
+                spec=_dispatch_spec(
+                    tmp_path,
+                    env={
+                        "FAKE_DAEMON_AGENT_NODE_ID": reporting_node,
+                    },
+                ),
+                agent_id=provided_agent_id,
+            )
+            assert ack == {
+                "type": "dispatch_ack",
+                "v": 2,
+                "run_id": run_id,
+                "status": "spawned",
+                "reason": None,
+            }
+
+        deadline = time.time() + 10
+        run = None
+        while time.time() < deadline:
+            run = store.get_run(run_id)
+            if run and run["status"] == "completed":
+                break
+            time.sleep(0.05)
+
+        assert run is not None
+        assert run["agent_id"] == provided_agent_id
+        assert run["status"] == "completed"
+        assert run["result"] == "fake-agent-result"
+    finally:
+        _stop_daemon(server, thread, uds_path)
+
+
+def test_telemetry_and_invalid_result_reports_do_not_mutate_run(tmp_path: Path) -> None:
+    db_path = tmp_path / "daemon.db"
+    uds_path = Path("/tmp") / f"basecamp-daemon-invalid-reports-{os.getpid()}-{uuid.uuid4().hex[:8]}.sock"
+    store = Store(db_path=db_path)
+    server, thread = _start_daemon(store, uds_path)
+
+    run_id = f"run-{uuid.uuid4()}"
+    token_path = tmp_path / f"{run_id}-token.txt"
+    session_node = "session-node"
+
+    try:
+        with unix_connect(str(uds_path), uri="ws://localhost/ws") as websocket:
+            _register_session(websocket, node_id=session_node, cwd=str(tmp_path))
+            ack = _dispatch(
+                websocket,
+                run_id=run_id,
+                spec=_dispatch_spec(
+                    tmp_path,
+                    env={
+                        "FAKE_DAEMON_AGENT_MODE": "no_result_exit",
+                        "FAKE_DAEMON_AGENT_EXIT_CODE": "9",
+                        "FAKE_DAEMON_AGENT_SLEEP_MS": "1200",
+                        "FAKE_DAEMON_AGENT_REPORT_TOKEN_PATH": str(token_path),
+                    },
+                ),
+            )
+            assert ack == {
+                "type": "dispatch_ack",
+                "v": 2,
+                "run_id": run_id,
+                "status": "spawned",
+                "reason": None,
+            }
+
+        deadline = time.time() + 10
+        run = None
+        while time.time() < deadline:
+            run = store.get_run(run_id)
+            if run and run["status"] == "running":
+                break
+            time.sleep(0.05)
+
+        assert run is not None
+        assert run["status"] == "running"
+
+        token = None
+        while time.time() < deadline and token is None:
+            if token_path.exists():
+                token = token_path.read_text(encoding="utf-8").strip()
+                break
+            time.sleep(0.05)
+
+        assert token
+        run_agent_id = str(run["agent_id"])
+
+        with unix_connect(str(uds_path), uri="ws://localhost/ws") as attacker:
+            _register_agent(attacker, node_id="attacker-node", cwd=str(tmp_path))
+
+            attacker.send(
+                json.dumps(
+                    {
+                        "type": "telemetry",
+                        "v": 2,
+                        "run_id": run_id,
+                        "agent_id": run_agent_id,
+                        "report_token": "bad-token",
+                        "kind": "tool_execution_end",
+                        "payload": {"toolName": "x"},
+                    }
+                )
+            )
+            attacker.send(
+                json.dumps(
+                    {
+                        "type": "telemetry",
+                        "v": 2,
+                        "run_id": run_id,
+                        "agent_id": f"{run_agent_id}-wrong",
+                        "report_token": token,
+                        "kind": "tool_execution_end",
+                        "payload": {"toolName": "y"},
+                    }
+                )
+            )
+            attacker.send(
+                json.dumps(
+                    {
+                        "type": "result_report",
+                        "v": 2,
+                        "run_id": run_id,
+                        "agent_id": f"{run_agent_id}-wrong",
+                        "report_token": token,
+                        "status": "ok",
+                        "result": "attacker-result",
+                        "error": None,
+                        "usage": None,
+                    }
+                )
+            )
+            attacker.send(
+                json.dumps(
+                    {
+                        "type": "result_report",
+                        "v": 2,
+                        "run_id": run_id,
+                        "agent_id": run_agent_id,
+                        "report_token": "bad-token",
+                        "status": "ok",
+                        "result": "attacker-result",
+                        "error": None,
+                        "usage": None,
+                    }
+                )
+            )
+
+        deadline = time.time() + 5
+        while time.time() < deadline:
+            run = store.get_run(run_id)
+            if run and run["status"] == "failed":
+                break
+            time.sleep(0.05)
+
+        assert run is not None
+        assert run["status"] == "failed"
+        assert run["result"] is None
+        assert "agent process exited" in str(run["error"])
+        assert run["result"] != "attacker-result"
+
+        events = store.get_run_events(run_id)
+        assert all(event["kind"] != "tool_execution_end" for event in events)
     finally:
         _stop_daemon(server, thread, uds_path)

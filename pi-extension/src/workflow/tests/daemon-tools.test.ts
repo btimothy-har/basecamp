@@ -8,7 +8,7 @@ import type { DaemonConnection } from "../agents/daemon/client.ts";
 import type { Frame } from "../agents/daemon/frames.ts";
 import { deriveDaemonIdentity } from "../agents/daemon/index.ts";
 import { resolveDaemonPaths } from "../agents/daemon/paths.ts";
-import { buildAgentTitleBase, registerDaemonTools } from "../agents/daemon/tools.ts";
+import { buildAgentTitleBase, processEnvForSpawn, registerDaemonTools } from "../agents/daemon/tools.ts";
 
 interface RegisteredTool {
 	name: string;
@@ -116,6 +116,48 @@ describe("daemon async tools", () => {
 		});
 	});
 
+	describe("processEnvForSpawn", () => {
+		it("strips daemon report identity vars while preserving ordinary env", () => {
+			const prior = {
+				runId: process.env.BASECAMP_RUN_ID,
+				reportToken: process.env.BASECAMP_REPORT_TOKEN,
+				agentId: process.env.BASECAMP_AGENT_ID,
+				daemonUds: process.env.BASECAMP_DAEMON_UDS,
+				project: process.env.BASECAMP_PROJECT,
+				apiKey: process.env.DAEMON_TEST_API_KEY,
+			};
+			process.env.BASECAMP_RUN_ID = "run-parent";
+			process.env.BASECAMP_REPORT_TOKEN = "report-parent";
+			process.env.BASECAMP_AGENT_ID = "agent-parent";
+			process.env.BASECAMP_DAEMON_UDS = "/tmp/daemon-parent.sock";
+			process.env.BASECAMP_PROJECT = "proj-parent";
+			process.env.DAEMON_TEST_API_KEY = "parent-api-key";
+
+			try {
+				const env = processEnvForSpawn();
+				assert.equal(env.BASECAMP_RUN_ID, undefined);
+				assert.equal(env.BASECAMP_REPORT_TOKEN, undefined);
+				assert.equal(env.BASECAMP_AGENT_ID, undefined);
+				assert.equal(env.BASECAMP_DAEMON_UDS, undefined);
+				assert.equal(env.BASECAMP_PROJECT, "proj-parent");
+				assert.equal(env.DAEMON_TEST_API_KEY, "parent-api-key");
+			} finally {
+				if (prior.runId === undefined) delete process.env.BASECAMP_RUN_ID;
+				else process.env.BASECAMP_RUN_ID = prior.runId;
+				if (prior.reportToken === undefined) delete process.env.BASECAMP_REPORT_TOKEN;
+				else process.env.BASECAMP_REPORT_TOKEN = prior.reportToken;
+				if (prior.agentId === undefined) delete process.env.BASECAMP_AGENT_ID;
+				else process.env.BASECAMP_AGENT_ID = prior.agentId;
+				if (prior.daemonUds === undefined) delete process.env.BASECAMP_DAEMON_UDS;
+				else process.env.BASECAMP_DAEMON_UDS = prior.daemonUds;
+				if (prior.project === undefined) delete process.env.BASECAMP_PROJECT;
+				else process.env.BASECAMP_PROJECT = prior.project;
+				if (prior.apiKey === undefined) delete process.env.DAEMON_TEST_API_KEY;
+				else process.env.DAEMON_TEST_API_KEY = prior.apiKey;
+			}
+		});
+	});
+
 	it("dispatch_agent builds spec env/task split and returns handle on spawned ack", async () => {
 		const priorCustom = process.env.TEST_DAEMON_TOOLS;
 		const priorDepth = process.env.BASECAMP_AGENT_DEPTH;
@@ -150,7 +192,7 @@ describe("daemon async tools", () => {
 
 			connection.emit({
 				type: "dispatch_ack",
-				v: 1,
+				v: 2,
 				run_id: outbound.run_id,
 				status: "spawned",
 				reason: null,
@@ -167,6 +209,25 @@ describe("daemon async tools", () => {
 			if (priorProject === undefined) delete process.env.BASECAMP_PROJECT;
 			else process.env.BASECAMP_PROJECT = priorProject;
 		}
+	});
+
+	it("dispatch_agent rejects invalid suffix before dispatching", async () => {
+		const connection = new MockConnection();
+		const { pi, tools } = createMockPi();
+		registerDaemonTools(pi, async () => connection);
+		const dispatchTool = toolByName(tools, "dispatch_agent");
+
+		const result = await dispatchTool.execute(
+			"1",
+			{ task: "hello world", name: "../bad" },
+			new AbortController().signal,
+			() => {},
+			{ model: "claude-sonnet", sessionManager: { getSessionId: () => "session-id" } },
+		);
+
+		assert.equal(result.isError, true);
+		assert.match(result.content[0].text, /Invalid agent run-name suffix/i);
+		assert.equal(connection.sent.length, 0);
 	});
 
 	it("dispatch_agent uses matching agent_id, --session-id, and durable session directory segment", async () => {
@@ -201,7 +262,7 @@ describe("daemon async tools", () => {
 
 		connection.emit({
 			type: "dispatch_ack",
-			v: 1,
+			v: 2,
 			run_id: outbound.run_id,
 			status: "spawned",
 			reason: null,
@@ -271,7 +332,7 @@ describe("daemon async tools", () => {
 
 			connection.emit({
 				type: "dispatch_ack",
-				v: 1,
+				v: 2,
 				run_id: outbound.run_id,
 				status: "spawned",
 				reason: null,
@@ -335,7 +396,7 @@ describe("daemon async tools", () => {
 
 			connection.emit({
 				type: "dispatch_ack",
-				v: 1,
+				v: 2,
 				run_id: outbound.run_id,
 				status: "spawned",
 				reason: null,
@@ -361,7 +422,7 @@ describe("daemon async tools", () => {
 
 		connection.emit({
 			type: "dispatch_ack",
-			v: 1,
+			v: 2,
 			run_id: outbound.run_id,
 			status: "rejected",
 			reason: "depth_cap",
@@ -394,7 +455,15 @@ describe("daemon async tools", () => {
 
 		connection.emit({
 			type: "wait_result",
-			v: 1,
+			v: 2,
+			results: [
+				{ run_id: "run-1", status: "completed", result: "duplicate", error: null },
+				{ run_id: "run-1", status: "completed", result: "duplicate", error: null },
+			],
+		});
+		connection.emit({
+			type: "wait_result",
+			v: 2,
 			results: [
 				{ run_id: "run-1", status: "completed", result: "done", error: null },
 				{ run_id: "run-2", status: "failed", result: null, error: "boom" },
@@ -407,6 +476,44 @@ describe("daemon async tools", () => {
 		assert.equal(result.details.items[1].status, "failed");
 	});
 
+	it("wait_for_agent maps running and unknown statuses", async () => {
+		const connection = new MockConnection();
+		const { pi, tools } = createMockPi();
+		registerDaemonTools(pi, async () => connection);
+		const waitTool = toolByName(tools, "wait_for_agent");
+
+		const executePromise = waitTool.execute(
+			"1",
+			{ handles: ["run-1", "run-2", "run-3"], timeout_s: 30 },
+			new AbortController().signal,
+			() => {},
+			{},
+		);
+
+		await new Promise((resolve) => setImmediate(resolve));
+		const outbound = connection.sent[0] as Extract<Frame, { type: "wait" }>;
+		assert.equal(outbound.type, "wait");
+		assert.deepEqual(outbound.run_ids, ["run-1", "run-2", "run-3"]);
+		assert.equal(outbound.timeout_s, 30);
+
+		connection.emit({
+			type: "wait_result",
+			v: 2,
+			results: [
+				{ run_id: "run-1", status: "running", result: null, error: null },
+				{ run_id: "run-2", status: "unknown", result: null, error: null },
+				{ run_id: "run-3", status: "completed", result: "ok", error: null },
+			],
+		});
+
+		const result = await executePromise;
+		assert.equal(result.isError, undefined);
+		assert.equal(result.details.items[0].status, "running");
+		assert.equal(result.details.items[1].status, "unknown");
+		assert.equal(result.details.items[2].status, "completed");
+		assert.match(result.content[0].text, /still running \(timed out\)/);
+		assert.match(result.content[0].text, /\? run-2 unknown handle/);
+	});
 	it("wait_for_agent aborts promptly on AbortSignal", async () => {
 		const connection = new MockConnection();
 		const { pi, tools } = createMockPi();

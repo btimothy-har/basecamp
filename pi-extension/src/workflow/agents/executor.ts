@@ -39,11 +39,73 @@ export type AgentStreamEvent =
 const AGENT_BASE = path.join(os.tmpdir(), "basecamp-agents");
 const TASK_ARG_LIMIT = 8000;
 const VALID_THINKING_LEVELS = new Set(["off", "minimal", "low", "medium", "high", "xhigh"]);
+const RESTRICTED_AGENT_REPORT_ENV_VARS = new Set([
+	"BASECAMP_RUN_ID",
+	"BASECAMP_REPORT_TOKEN",
+	"BASECAMP_AGENT_ID",
+	"BASECAMP_DAEMON_UDS",
+]);
+
+export function sanitizeAgentSpawnEnv(input: Record<string, string>): Record<string, string> {
+	const output: Record<string, string> = {};
+	for (const [key, value] of Object.entries(input)) {
+		if (RESTRICTED_AGENT_REPORT_ENV_VARS.has(key)) continue;
+		output[key] = value;
+	}
+	return output;
+}
+
+export function buildSpawnEnv(extraEnv: Record<string, string>): Record<string, string> {
+	const baseEnv: Record<string, string> = {};
+	for (const [key, value] of Object.entries(process.env)) {
+		if (typeof value === "string") baseEnv[key] = value;
+	}
+	const sanitized = sanitizeAgentSpawnEnv(baseEnv);
+	for (const [key, value] of Object.entries(extraEnv)) {
+		if (RESTRICTED_AGENT_REPORT_ENV_VARS.has(key)) continue;
+		sanitized[key] = value;
+	}
+	return sanitized;
+}
+
+function isPathWithin(parent: string, child: string): boolean {
+	const relative = path.relative(parent, child);
+	return relative === "" || (!!relative && !relative.startsWith("..") && !path.isAbsolute(relative));
+}
+
+function hasControlCharacter(value: string): boolean {
+	for (const char of value) {
+		const code = char.charCodeAt(0);
+		if (code <= 31 || (code >= 127 && code <= 159)) return true;
+	}
+	return false;
+}
 
 function normalizeThinkingLevel(value: string | undefined): string | undefined {
 	if (!value) return undefined;
 	const normalized = value.toLowerCase().trim();
 	return VALID_THINKING_LEVELS.has(normalized) ? normalized : undefined;
+}
+
+function validateAgentRunSuffix(suffix: string): void {
+	if (!suffix) {
+		throw new Error("Invalid agent run-name suffix: suffix cannot be empty.");
+	}
+	if (hasControlCharacter(suffix) || suffix.includes("/") || suffix.includes("\\") || suffix.includes("..")) {
+		throw new Error(`Invalid agent run-name suffix: "${suffix}"`);
+	}
+}
+
+export function buildAgentRunName(prefix: string, suffix?: string): string {
+	const normalizedPrefix = prefix.trim();
+	if (!normalizedPrefix) {
+		throw new Error("Invalid agent run-name prefix: missing base name.");
+	}
+
+	if (suffix === undefined) return normalizedPrefix;
+	const normalizedSuffix = suffix.trim();
+	validateAgentRunSuffix(normalizedSuffix);
+	return `${normalizedPrefix}-${normalizedSuffix}`;
 }
 
 // ============================================================================
@@ -77,7 +139,11 @@ export interface PiArgsOpts {
 }
 
 export function ensureAgentDir(name: string): string {
-	const dir = path.join(AGENT_BASE, name);
+	const baseDir = path.resolve(AGENT_BASE);
+	const dir = path.resolve(baseDir, name);
+	if (!isPathWithin(baseDir, dir)) {
+		throw new Error(`Agent directory is outside basecamp-agents directory: ${name}`);
+	}
 	fs.mkdirSync(dir, { recursive: true });
 	return dir;
 }
@@ -516,7 +582,7 @@ export function spawnAgent(
 	return new Promise<SpawnResult>((resolve) => {
 		const proc = spawn(args[0]!, args.slice(1), {
 			cwd: opts.cwd,
-			env: { ...process.env, ...opts.env },
+			env: buildSpawnEnv(opts.env),
 			stdio: ["ignore", "pipe", "pipe"] as const,
 		});
 

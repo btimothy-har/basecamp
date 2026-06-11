@@ -3,7 +3,10 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
+import hmac
 import os
+import secrets
 import uuid
 from typing import Any
 
@@ -26,6 +29,8 @@ from basecamp.daemon.frames import (
 )
 from basecamp.daemon.registry import Registry, Waiter
 from basecamp.daemon.store import Store
+
+_REDACTED_ENV_VALUE = "<redacted>"
 
 DEFAULT_AGENT_MAX_DEPTH = 2
 TERMINAL_RUN_STATUSES = {"completed", "failed"}
@@ -128,12 +133,11 @@ def create_app(store: Store, *, daemon_uds: str | None = None) -> FastAPI:
                     )
                     continue
                 if isinstance(inbound, TelemetryFrame):
-                    await _handle_telemetry(frame=inbound, connection_node_id=parsed.node_id, store=store)
+                    await _handle_telemetry(frame=inbound, store=store)
                     continue
                 if isinstance(inbound, ResultReportFrame):
                     await _handle_result_report(
                         frame=inbound,
-                        connection_node_id=parsed.node_id,
                         store=store,
                         registry=registry,
                     )
@@ -157,6 +161,34 @@ def create_app(store: Store, *, daemon_uds: str | None = None) -> FastAPI:
                 registry.remove_connection(node_id)
 
     return app
+
+
+def _sanitize_dispatch_spec(spec: dict[str, Any]) -> dict[str, Any]:
+    """Return a persisted copy of a dispatch spec with secrets removed.
+
+    Keep env names for observability while dropping raw values to avoid persistence
+    of credentials in SQLite.
+    """
+
+    env = spec.get("env")
+    if isinstance(env, dict):
+        env_keys = [str(key) for key in env.keys()]
+        spec = dict(spec)
+        spec["env"] = dict.fromkeys(env_keys, _REDACTED_ENV_VALUE)
+        spec["env_keys"] = env_keys
+    return spec
+
+
+def _generate_report_token() -> str:
+    """Create a fresh per-run report token."""
+
+    return secrets.token_urlsafe(32)
+
+
+def _hash_report_token(report_token: str) -> str:
+    """Hash a report token with SHA-256."""
+
+    return hashlib.sha256(report_token.encode("utf-8")).hexdigest()
 
 
 def _resolve_agent_max_depth() -> int:
@@ -197,7 +229,9 @@ async def _handle_dispatch(
         return
 
     agent_id = frame.agent_id or str(uuid.uuid4())
-    spec_json = frame.spec.model_dump(mode="json")
+    report_token = _generate_report_token()
+    report_token_hash = _hash_report_token(report_token)
+    spec_json = _sanitize_dispatch_spec(frame.spec.model_dump(mode="json"))
     await asyncio.to_thread(
         store.upsert_agent,
         agent_id=agent_id,
@@ -213,6 +247,7 @@ async def _handle_dispatch(
         run_id=frame.run_id,
         agent_id=agent_id,
         spec=spec_json,
+        report_token_hash=report_token_hash,
     )
 
     argv = [*frame.spec.argv, frame.spec.task]
@@ -220,6 +255,7 @@ async def _handle_dispatch(
         **frame.spec.env,
         "BASECAMP_DAEMON_UDS": daemon_socket_path,
         "BASECAMP_RUN_ID": frame.run_id,
+        "BASECAMP_REPORT_TOKEN": report_token,
         "BASECAMP_AGENT_ID": agent_id,
         "BASECAMP_PARENT_SESSION": dispatcher_node_id,
         "BASECAMP_AGENT_DEPTH": str(child_depth),
@@ -294,8 +330,20 @@ async def _reap_process(run_id: str, process: asyncio.subprocess.Process, regist
     registry.pop_process(run_id)
 
 
-async def _handle_telemetry(*, frame: TelemetryFrame, connection_node_id: str, store: Store) -> None:
-    if frame.agent_id != connection_node_id:
+def _is_report_frame_authorized(*, frame: TelemetryFrame | ResultReportFrame, run: dict[str, Any] | None) -> bool:
+    if not run:
+        return False
+    if frame.agent_id != run.get("agent_id"):
+        return False
+    report_token_hash = run.get("report_token_hash")
+    if not isinstance(report_token_hash, str):
+        return False
+    return hmac.compare_digest(_hash_report_token(frame.report_token), report_token_hash)
+
+
+async def _handle_telemetry(*, frame: TelemetryFrame, store: Store) -> None:
+    run = await asyncio.to_thread(store.get_run, frame.run_id)
+    if not _is_report_frame_authorized(frame=frame, run=run):
         return
     await asyncio.to_thread(
         store.append_run_event,
@@ -308,11 +356,11 @@ async def _handle_telemetry(*, frame: TelemetryFrame, connection_node_id: str, s
 async def _handle_result_report(
     *,
     frame: ResultReportFrame,
-    connection_node_id: str,
     store: Store,
     registry: Registry,
 ) -> None:
-    if frame.agent_id != connection_node_id:
+    run = await asyncio.to_thread(store.get_run, frame.run_id)
+    if not _is_report_frame_authorized(frame=frame, run=run):
         return
     run_status = "completed" if frame.status == "ok" else "failed"
     finalized = await asyncio.to_thread(
@@ -334,30 +382,71 @@ async def _is_run_terminal(run_id: str, store: Store) -> bool:
     return isinstance(status, str) and status in TERMINAL_RUN_STATUSES
 
 
+def _normalize_wait_status(status: str) -> str:
+    """Normalize DB status into protocol wait-result status values."""
+
+    if status in TERMINAL_RUN_STATUSES:
+        return status
+    return "running"
+
+
 async def _build_wait_results(
     *,
     run_ids: list[str],
     store: Store,
-    terminal_only: bool,
+    include_unknown: bool,
 ) -> list[WaitResultItem]:
-    rows = await asyncio.to_thread(store.get_run_wait_results, run_ids, terminal_only=terminal_only)
+    rows = await asyncio.to_thread(store.get_run_wait_results, run_ids)
     by_id = {row["run_id"]: row for row in rows}
     ordered: list[WaitResultItem] = []
     for run_id in run_ids:
         row = by_id.get(run_id)
-        if not row:
-            continue
-        status = row.get("status")
-        if not isinstance(status, str) or status not in TERMINAL_RUN_STATUSES:
-            continue
-        ordered.append(
-            WaitResultItem(
-                run_id=run_id,
-                status=status,
-                result=row.get("result"),
-                error=row.get("error"),
+        if row is None:
+            if not include_unknown:
+                continue
+            ordered.append(
+                WaitResultItem(
+                    run_id=run_id,
+                    status="unknown",
+                    result=None,
+                    error=None,
+                )
             )
-        )
+            continue
+
+        status = row.get("status")
+        if isinstance(status, str):
+            wait_status = _normalize_wait_status(status)
+            if wait_status in TERMINAL_RUN_STATUSES:
+                ordered.append(
+                    WaitResultItem(
+                        run_id=run_id,
+                        status=wait_status,
+                        result=row.get("result"),
+                        error=row.get("error"),
+                    )
+                )
+            else:
+                ordered.append(
+                    WaitResultItem(
+                        run_id=run_id,
+                        status="running",
+                        result=None,
+                        error=None,
+                    )
+                )
+            continue
+
+        if include_unknown:
+            ordered.append(
+                WaitResultItem(
+                    run_id=run_id,
+                    status="unknown",
+                    result=None,
+                    error=None,
+                )
+            )
+
     return ordered
 
 
@@ -378,9 +467,23 @@ async def _notify_run_finalized(run_id: str, *, registry: Registry, store: Store
 
 async def _handle_wait(*, frame: WaitFrame, websocket: WebSocket, store: Store, registry: Registry) -> None:
     run_ids = list(dict.fromkeys(frame.run_ids))
-    all_terminal = await asyncio.to_thread(store.are_runs_terminal, run_ids)
-    if all_terminal:
-        results = await _build_wait_results(run_ids=run_ids, store=store, terminal_only=False)
+    rows = await asyncio.to_thread(store.get_run_wait_results, run_ids)
+    by_id = {row["run_id"]: row for row in rows}
+
+    all_known = len(by_id) == len(run_ids)
+    all_terminal = all_known and all(
+        isinstance(row.get("status"), str) and row.get("status") in TERMINAL_RUN_STATUSES for row in by_id.values()
+    )
+
+    if all_known and all_terminal:
+        results = await _build_wait_results(run_ids=run_ids, store=store, include_unknown=False)
+        await websocket.send_json(
+            serialize_frame(WaitResultFrame(type="wait_result", v=PROTOCOL_VERSION, results=results))
+        )
+        return
+
+    if not all_known:
+        results = await _build_wait_results(run_ids=run_ids, store=store, include_unknown=True)
         await websocket.send_json(
             serialize_frame(WaitResultFrame(type="wait_result", v=PROTOCOL_VERSION, results=results))
         )
@@ -395,9 +498,9 @@ async def _handle_wait(*, frame: WaitFrame, websocket: WebSocket, store: Store, 
     registry.add_waiter(waiter)
     try:
         await asyncio.wait_for(waiter.future, timeout=frame.timeout_s)
-        results = await _build_wait_results(run_ids=run_ids, store=store, terminal_only=False)
+        results = await _build_wait_results(run_ids=run_ids, store=store, include_unknown=False)
     except TimeoutError:
-        results = await _build_wait_results(run_ids=run_ids, store=store, terminal_only=True)
+        results = await _build_wait_results(run_ids=run_ids, store=store, include_unknown=False)
     finally:
         registry.remove_waiter(waiter.waiter_id)
 

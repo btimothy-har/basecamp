@@ -52,6 +52,7 @@ class Store:
                     agent_id TEXT,
                     status TEXT CHECK(status IN ('pending','running','completed','failed')),
                     spec_json TEXT,
+                    report_token_hash TEXT,
                     result TEXT,
                     error TEXT,
                     exit_code INTEGER,
@@ -74,12 +75,19 @@ class Store:
                 """
             )
             self._ensure_runs_exit_code_column(connection)
+            self._ensure_runs_report_token_hash_column(connection)
 
     def _ensure_runs_exit_code_column(self, connection: sqlite3.Connection) -> None:
         columns = connection.execute("PRAGMA table_info(runs)").fetchall()
         names = {column[1] for column in columns}
         if "exit_code" not in names:
             connection.execute("ALTER TABLE runs ADD COLUMN exit_code INTEGER")
+
+    def _ensure_runs_report_token_hash_column(self, connection: sqlite3.Connection) -> None:
+        columns = connection.execute("PRAGMA table_info(runs)").fetchall()
+        names = {column[1] for column in columns}
+        if "report_token_hash" not in names:
+            connection.execute("ALTER TABLE runs ADD COLUMN report_token_hash TEXT")
 
     def upsert_agent(
         self,
@@ -131,17 +139,24 @@ class Store:
             row = connection.execute("SELECT * FROM agents WHERE id = ?", (agent_id,)).fetchone()
             return dict(row) if row is not None else None
 
-    def create_run(self, *, run_id: str, agent_id: str, spec: dict[str, Any]) -> None:
+    def create_run(
+        self,
+        *,
+        run_id: str,
+        agent_id: str,
+        spec: dict[str, Any],
+        report_token_hash: str | None = None,
+    ) -> None:
         """Create a running run row."""
 
         now = self._now()
         with self._connect() as connection:
             connection.execute(
                 """
-                INSERT INTO runs (id, agent_id, status, spec_json, created_at, started_at)
-                VALUES (?, ?, 'running', ?, ?, ?)
+                INSERT INTO runs (id, agent_id, status, spec_json, report_token_hash, created_at, started_at)
+                VALUES (?, ?, 'running', ?, ?, ?, ?)
                 """,
-                (run_id, agent_id, json.dumps(spec), now, now),
+                (run_id, agent_id, json.dumps(spec), report_token_hash, now, now),
             )
 
     def set_run_exit_code(self, *, run_id: str, exit_code: int | None) -> None:

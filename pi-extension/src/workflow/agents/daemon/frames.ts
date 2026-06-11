@@ -1,6 +1,6 @@
 import { Buffer } from "node:buffer";
 
-export const PROTOCOL_VERSION = 1;
+export const PROTOCOL_VERSION = 2;
 
 export interface RegisterFrame {
 	type: "register";
@@ -55,6 +55,7 @@ export interface TelemetryFrame {
 	v: typeof PROTOCOL_VERSION;
 	run_id: string;
 	agent_id: string;
+	report_token: string;
 	kind: string;
 	payload: Record<string, unknown>;
 }
@@ -64,6 +65,7 @@ export interface ResultReportFrame {
 	v: typeof PROTOCOL_VERSION;
 	run_id: string;
 	agent_id: string;
+	report_token: string;
 	status: "ok" | "error";
 	result: string | null;
 	error: string | null;
@@ -80,7 +82,7 @@ export interface WaitFrame {
 
 export interface WaitResultItem {
 	run_id: string;
-	status: "completed" | "failed";
+	status: "completed" | "failed" | "running" | "unknown";
 	result: string | null;
 	error: string | null;
 }

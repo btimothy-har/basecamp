@@ -5,7 +5,7 @@ import { Text } from "@earendil-works/pi-tui";
 import { Type } from "@sinclair/typebox";
 import { getWorkspaceState } from "../../../platform/workspace.ts";
 import { discoverAgents } from "../discovery.ts";
-import { buildPiArgs } from "../executor.ts";
+import { buildAgentRunName, buildPiArgs, sanitizeAgentSpawnEnv } from "../executor.ts";
 import { resolveModel } from "../model-resolution.ts";
 import { buildAgentEnv, getBasecampExtensionToolNames } from "../tool.ts";
 import { getAgentRunKind } from "../types.ts";
@@ -20,7 +20,7 @@ interface DispatchDetails {
 
 interface WaitHandleResult {
 	runId: string;
-	status: "completed" | "failed" | "timed_out";
+	status: "completed" | "failed" | "running" | "unknown";
 	result: string | null;
 	error: string | null;
 }
@@ -44,12 +44,12 @@ const WaitForAgentParams = Type.Object({
 	timeout_s: Type.Optional(Type.Number({ minimum: 1, default: 600 })),
 });
 
-function processEnvForSpawn(): Record<string, string> {
+export function processEnvForSpawn(): Record<string, string> {
 	const env: Record<string, string> = {};
 	for (const [key, value] of Object.entries(process.env)) {
 		if (typeof value === "string") env[key] = value;
 	}
-	return env;
+	return sanitizeAgentSpawnEnv(env);
 }
 
 function compactAgentTaskLabel(task: string, maxChars = 56): string {
@@ -74,9 +74,10 @@ function preview(text: string | null, limit = 80): string {
 	return compact.length > limit ? `${compact.slice(0, limit)}…` : compact;
 }
 
-function sameOrSubset(resultRunIds: string[], requestedSet: Set<string>): boolean {
-	if (resultRunIds.length > requestedSet.size) return false;
-	return resultRunIds.every((runId) => requestedSet.has(runId));
+function sameAsRequested(resultRunIds: string[], requestedSet: Set<string>): boolean {
+	const resultSet = new Set(resultRunIds);
+	if (resultSet.size !== requestedSet.size) return false;
+	return [...requestedSet].every((runId) => resultSet.has(runId));
 }
 
 function waitForFrame<T extends "dispatch_ack" | "wait_result">(
@@ -142,7 +143,17 @@ export function registerDaemonTools(pi: ExtensionAPI, getConnection: () => Promi
 			const model = resolveModel(agentConfig?.model ?? "inherit", ctx.model);
 			const localId = randomUUID().slice(0, 6);
 			const prefix = `agent-${localId}`;
-			const name = params.name ? `${prefix}-${params.name}` : prefix;
+			let name: string;
+			try {
+				name = buildAgentRunName(prefix, params.name);
+			} catch (error) {
+				const msg = error instanceof Error ? error.message : String(error);
+				return {
+					content: [{ type: "text", text: msg }],
+					isError: true,
+					details: null,
+				};
+			}
 			const project = process.env.BASECAMP_PROJECT ?? "default";
 			const parentSession =
 				process.env.BASECAMP_SESSION_NAME ?? pi.getSessionName()?.trim() ?? ctx.sessionManager.getSessionId();
@@ -190,7 +201,7 @@ export function registerDaemonTools(pi: ExtensionAPI, getConnection: () => Promi
 					cwd: spawnCwd,
 					env: {
 						...processEnvForSpawn(),
-						...basecampEnv,
+						...sanitizeAgentSpawnEnv(basecampEnv),
 						BASECAMP_AGENT_TITLE: buildAgentTitleBase(params.agent, params.task),
 					},
 					resume_path: null,
@@ -254,7 +265,7 @@ export function registerDaemonTools(pi: ExtensionAPI, getConnection: () => Promi
 					connection,
 					"wait_result",
 					(candidate) =>
-						sameOrSubset(
+						sameAsRequested(
 							candidate.results.map((item) => item.run_id),
 							requested,
 						),
@@ -274,22 +285,47 @@ export function registerDaemonTools(pi: ExtensionAPI, getConnection: () => Promi
 				if (!hit) {
 					return {
 						runId,
-						status: "timed_out",
+						status: "unknown",
+						result: null,
+						error: null,
+					};
+				}
+				if (hit.status === "failed") {
+					return {
+						runId,
+						status: "failed",
+						result: hit.result,
+						error: hit.error,
+					};
+				}
+				if (hit.status === "completed") {
+					return {
+						runId,
+						status: "completed",
+						result: hit.result,
+						error: hit.error,
+					};
+				}
+				if (hit.status === "running") {
+					return {
+						runId,
+						status: "running",
 						result: null,
 						error: "still running (timed out)",
 					};
 				}
 				return {
 					runId,
-					status: hit.status === "failed" ? "failed" : "completed",
-					result: hit.result,
-					error: hit.error,
+					status: "unknown",
+					result: null,
+					error: null,
 				};
 			});
 
 			const lines = items.map((item) => {
 				if (item.status === "completed") return `✓ ${item.runId} completed`;
 				if (item.status === "failed") return `✗ ${item.runId} failed: ${preview(item.error) || "error"}`;
+				if (item.status === "unknown") return `? ${item.runId} unknown handle`;
 				return `… ${item.runId} still running (timed out)`;
 			});
 			const details: WaitDetails = { items };
@@ -305,6 +341,9 @@ export function registerDaemonTools(pi: ExtensionAPI, getConnection: () => Promi
 				}
 				if (item.status === "failed") {
 					return `${theme.fg("error", "✗")} ${item.runId} ${theme.fg("error", preview(item.error) || "failed")}`;
+				}
+				if (item.status === "unknown") {
+					return `${theme.fg("warning", "?")} ${item.runId} ${theme.fg("muted", "unknown handle")}`;
 				}
 				return `${theme.fg("warning", "…")} ${item.runId} ${theme.fg("muted", "still running (timed out)")}`;
 			});

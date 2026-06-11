@@ -6,7 +6,7 @@ from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, Field, TypeAdapter
 
-PROTOCOL_VERSION = 1
+PROTOCOL_VERSION = 2
 
 
 class RegisterFrame(BaseModel):
@@ -78,6 +78,7 @@ class TelemetryFrame(BaseModel):
     v: Literal[PROTOCOL_VERSION]
     run_id: str
     agent_id: str
+    report_token: str
     kind: str
     payload: dict[str, Any]
 
@@ -89,6 +90,7 @@ class ResultReportFrame(BaseModel):
     v: Literal[PROTOCOL_VERSION]
     run_id: str
     agent_id: str
+    report_token: str
     status: Literal["ok", "error"]
     result: str | None
     error: str | None
@@ -109,7 +111,7 @@ class WaitResultItem(BaseModel):
     """Single wait result item."""
 
     run_id: str
-    status: Literal["completed", "failed"]
+    status: Literal["completed", "failed", "running", "unknown"]
     result: str | None
     error: str | None
 

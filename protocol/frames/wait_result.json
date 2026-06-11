@@ -1,6 +1,6 @@
 {
   "type": "wait_result",
-  "v": 1,
+  "v": 2,
   "results": [
     {
       "run_id": "run-001",
@@ -13,6 +13,18 @@
       "status": "failed",
       "result": null,
       "error": "Process exited with code 1"
+    },
+    {
+      "run_id": "run-003",
+      "status": "running",
+      "result": null,
+      "error": null
+    },
+    {
+      "run_id": "run-004",
+      "status": "unknown",
+      "result": null,
+      "error": null
     }
   ]
 }
