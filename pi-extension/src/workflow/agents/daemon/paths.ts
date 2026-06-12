@@ -6,6 +6,7 @@ export interface DaemonPaths {
 	runtimeDir: string;
 	socketPath: string;
 	spawnLockPath: string;
+	pidPath: string;
 }
 
 export function resolveDaemonPaths(homeDir = os.homedir()): DaemonPaths {
@@ -14,6 +15,7 @@ export function resolveDaemonPaths(homeDir = os.homedir()): DaemonPaths {
 		runtimeDir,
 		socketPath: path.join(runtimeDir, "daemon.sock"),
 		spawnLockPath: path.join(runtimeDir, "daemon.spawn.lock"),
+		pidPath: path.join(runtimeDir, "daemon.pid"),
 	};
 }
 

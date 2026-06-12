@@ -1,4 +1,4 @@
-"""UDS integration test for daemon health route."""
+"""UDS and daemon server runner tests."""
 
 from __future__ import annotations
 
@@ -7,18 +7,62 @@ import stat
 import threading
 import time
 import uuid
+from collections.abc import Callable
 from pathlib import Path
 
 import httpx
 import uvicorn
+from basecamp.daemon import server as daemon_server
 from basecamp.daemon.app import create_app
 from basecamp.daemon.server import UdsServer
 from basecamp.daemon.store import Store
+from pytest import MonkeyPatch
 
 
 class _ThreadedServer(UdsServer):
     def install_signal_handlers(self) -> None:  # noqa: D401
         """Disable signal handlers when running under a background thread."""
+
+
+class _FakeServer:
+    def __init__(self, on_run: Callable[[], None]) -> None:
+        self._on_run = on_run
+
+    def run(self) -> None:
+        self._on_run()
+
+
+def test_run_daemon_writes_and_removes_pid_file(tmp_path: Path, monkeypatch: MonkeyPatch) -> None:
+    pid_path = tmp_path / "daemon.pid"
+    uds_path = tmp_path / "daemon.sock"
+    observed_pid_files: list[str] = []
+
+    def create_server(uds_path_arg: str, store: Store) -> _FakeServer:
+        assert uds_path_arg == str(uds_path)
+        assert isinstance(store, Store)
+        return _FakeServer(lambda: observed_pid_files.append(pid_path.read_text(encoding="utf-8")))
+
+    monkeypatch.setattr(daemon_server, "create_server", create_server)
+
+    daemon_server.run_daemon(str(uds_path), pid_path=str(pid_path))
+
+    assert observed_pid_files == [f"{os.getpid()}\n"]
+    assert not pid_path.exists()
+
+
+def test_run_daemon_does_not_remove_replaced_pid_file(tmp_path: Path, monkeypatch: MonkeyPatch) -> None:
+    pid_path = tmp_path / "daemon.pid"
+    uds_path = tmp_path / "daemon.sock"
+    replacement = "999999\n"
+
+    def create_server(_uds_path_arg: str, _store: Store) -> _FakeServer:
+        return _FakeServer(lambda: pid_path.write_text(replacement, encoding="utf-8"))
+
+    monkeypatch.setattr(daemon_server, "create_server", create_server)
+
+    daemon_server.run_daemon(str(uds_path), pid_path=str(pid_path))
+
+    assert pid_path.read_text(encoding="utf-8") == replacement
 
 
 def test_health_over_real_uds(tmp_path: Path) -> None:

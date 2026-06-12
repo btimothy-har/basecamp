@@ -1,4 +1,4 @@
-import { type ChildProcess, type SpawnOptions, spawn } from "node:child_process";
+import { type ChildProcess, execFile, type SpawnOptions, spawn } from "node:child_process";
 import * as fs from "node:fs";
 import * as http from "node:http";
 import WebSocket, { type RawData } from "ws";
@@ -25,6 +25,8 @@ export interface HealthPingFail {
 export type HealthPingResult = HealthPingOk | HealthPingFail;
 
 type SpawnLike = (command: string, args: readonly string[], options: SpawnOptions) => ChildProcess;
+type FindDaemonPidFn = (socketPath: string) => Promise<number | null>;
+type KillPidFn = (pid: number, signal: NodeJS.Signals) => void;
 
 export interface EnsureDaemonOptions {
 	healthPingFn?: (socketPath: string, timeoutMs: number) => Promise<HealthPingResult>;
@@ -33,6 +35,8 @@ export interface EnsureDaemonOptions {
 	nowFn?: () => number;
 	sleepFn?: (ms: number) => Promise<void>;
 	pidExistsFn?: (pid: number) => boolean;
+	findDaemonPidFn?: FindDaemonPidFn;
+	killPidFn?: KillPidFn;
 	startupTimeoutMs?: number;
 	healthTimeoutMs?: number;
 	lockStaleAfterMs?: number;
@@ -71,6 +75,7 @@ const DEFAULT_STARTUP_TIMEOUT_MS = 5_000;
 const DEFAULT_HEALTH_TIMEOUT_MS = 400;
 const DEFAULT_LOCK_STALE_AFTER_MS = 30_000;
 const DEFAULT_LOCK_RETRY_MS = 100;
+const DEFAULT_DAEMON_STOP_TIMEOUT_MS = 2_000;
 
 function defaultSleep(ms: number): Promise<void> {
 	return new Promise((resolve) => setTimeout(resolve, ms));
@@ -84,6 +89,137 @@ function defaultPidExists(pid: number): boolean {
 	} catch {
 		return false;
 	}
+}
+
+function defaultKillPid(pid: number, signal: NodeJS.Signals): void {
+	process.kill(pid, signal);
+}
+
+function parseDaemonPid(raw: string): number | null {
+	const value = raw.trim();
+	if (!/^\d+$/.test(value)) return null;
+	const pid = Number(value);
+	return Number.isSafeInteger(pid) && pid > 0 ? pid : null;
+}
+
+async function readDaemonPidFile(pidPath: string): Promise<number | null> {
+	try {
+		return parseDaemonPid(await fs.promises.readFile(pidPath, "utf8"));
+	} catch {
+		return null;
+	}
+}
+
+function parsePsLine(line: string): { pid: number; args: string } | null {
+	const match = line.match(/^\s*(\d+)\s+(.+)\s*$/);
+	if (!match) return null;
+	const [, pidText, args] = match;
+	if (!pidText || !args) return null;
+	const pid = Number(pidText);
+	if (!Number.isSafeInteger(pid) || pid <= 0) return null;
+	return { pid, args };
+}
+
+function isDaemonCommandForSocket(args: string, socketPath: string): boolean {
+	const hasBasecampDaemon = /(?:^|\s)(?:\S*\/)?basecamp\s+daemon(?:\s|$)/.test(args);
+	const hasSocketArg = args.includes(`--uds ${socketPath}`) || args.includes(`--uds=${socketPath}`);
+	return hasBasecampDaemon && hasSocketArg;
+}
+
+async function execFileText(command: string, args: readonly string[]): Promise<string> {
+	return await new Promise((resolve, reject) => {
+		execFile(command, args, { encoding: "utf8", maxBuffer: 10 * 1024 * 1024 }, (error, stdout) => {
+			if (error) {
+				reject(error);
+				return;
+			}
+			resolve(String(stdout));
+		});
+	});
+}
+
+async function findDaemonPidByCommand(socketPath: string): Promise<number | null> {
+	let stdout: string;
+	try {
+		stdout = await execFileText("ps", ["-A", "-o", "pid=,args="]);
+	} catch {
+		return null;
+	}
+
+	for (const line of stdout.split("\n")) {
+		const processInfo = parsePsLine(line);
+		if (!processInfo || processInfo.pid === process.pid) continue;
+		if (isDaemonCommandForSocket(processInfo.args, socketPath)) return processInfo.pid;
+	}
+	return null;
+}
+
+async function isDaemonPidForSocket(pid: number, socketPath: string): Promise<boolean> {
+	let stdout: string;
+	try {
+		stdout = await execFileText("ps", ["-p", String(pid), "-o", "args="]);
+	} catch {
+		return false;
+	}
+	return stdout.split("\n").some((line) => isDaemonCommandForSocket(line, socketPath));
+}
+
+async function resolveDaemonPid(paths: DaemonPaths, findDaemonPidFn: FindDaemonPidFn): Promise<number | null> {
+	const pid = await readDaemonPidFile(paths.pidPath);
+	if (pid !== null && pid !== process.pid && (await isDaemonPidForSocket(pid, paths.socketPath))) return pid;
+	const discoveredPid = await findDaemonPidFn(paths.socketPath);
+	return discoveredPid !== process.pid ? discoveredPid : null;
+}
+
+async function unlinkIfExists(path: string): Promise<void> {
+	try {
+		await fs.promises.unlink(path);
+	} catch {}
+}
+
+function signalDaemon(pid: number, signal: NodeJS.Signals, killPidFn: KillPidFn): void {
+	try {
+		killPidFn(pid, signal);
+	} catch (error) {
+		if ((error as NodeJS.ErrnoException | undefined)?.code !== "ESRCH") throw error;
+	}
+}
+
+async function waitForPidExit(
+	pid: number,
+	pidExistsFn: (pid: number) => boolean,
+	sleepFn: (ms: number) => Promise<void>,
+	pollMs: number,
+): Promise<boolean> {
+	const delayMs = Math.max(1, pollMs);
+	const attempts = Math.max(1, Math.ceil(DEFAULT_DAEMON_STOP_TIMEOUT_MS / delayMs));
+	for (let attempt = 0; attempt < attempts; attempt += 1) {
+		if (!pidExistsFn(pid)) return true;
+		await sleepFn(delayMs);
+	}
+	return !pidExistsFn(pid);
+}
+
+async function terminateDaemon(
+	paths: DaemonPaths,
+	findDaemonPidFn: FindDaemonPidFn,
+	killPidFn: KillPidFn,
+	pidExistsFn: (pid: number) => boolean,
+	sleepFn: (ms: number) => Promise<void>,
+	pollMs: number,
+): Promise<void> {
+	const pid = await resolveDaemonPid(paths, findDaemonPidFn);
+	if (pid !== null && pidExistsFn(pid)) {
+		signalDaemon(pid, "SIGTERM", killPidFn);
+		const exited = await waitForPidExit(pid, pidExistsFn, sleepFn, pollMs);
+		if (!exited) {
+			signalDaemon(pid, "SIGKILL", killPidFn);
+			await waitForPidExit(pid, pidExistsFn, sleepFn, pollMs);
+		}
+	}
+
+	await unlinkIfExists(paths.socketPath);
+	await unlinkIfExists(paths.pidPath);
 }
 
 function parseSpawnLock(raw: string): SpawnLockContents | null {
@@ -152,8 +288,8 @@ async function pollHealthy(
 	return { ok: false };
 }
 
-export function spawnDaemonProcess(socketPath: string, spawnFn: SpawnLike = spawn): void {
-	const child = spawnFn("basecamp", ["daemon", "--uds", socketPath], {
+export function spawnDaemonProcess(socketPath: string, pidPath: string, spawnFn: SpawnLike = spawn): void {
+	const child = spawnFn("basecamp", ["daemon", "--uds", socketPath, "--pidfile", pidPath], {
 		detached: true,
 		stdio: "ignore",
 	});
@@ -216,6 +352,8 @@ export async function ensureDaemon(options: EnsureDaemonOptions = {}): Promise<{
 	const nowFn = options.nowFn ?? Date.now;
 	const sleepFn = options.sleepFn ?? defaultSleep;
 	const pidExistsFn = options.pidExistsFn ?? defaultPidExists;
+	const findDaemonPidFn = options.findDaemonPidFn ?? findDaemonPidByCommand;
+	const killPidFn = options.killPidFn ?? defaultKillPid;
 	const startupTimeoutMs = options.startupTimeoutMs ?? DEFAULT_STARTUP_TIMEOUT_MS;
 	const healthTimeoutMs = options.healthTimeoutMs ?? DEFAULT_HEALTH_TIMEOUT_MS;
 	const lockStaleAfterMs = options.lockStaleAfterMs ?? DEFAULT_LOCK_STALE_AFTER_MS;
@@ -225,12 +363,7 @@ export async function ensureDaemon(options: EnsureDaemonOptions = {}): Promise<{
 	await ensureDaemonRuntimeDir(paths.runtimeDir);
 
 	const firstPing = await healthPingFn(paths.socketPath, healthTimeoutMs);
-	if (firstPing.ok) {
-		if (firstPing.protocol !== PROTOCOL_VERSION) {
-			throw new Error(
-				`basecamp daemon protocol mismatch at ${paths.socketPath}: daemon=${firstPing.protocol}, client=${PROTOCOL_VERSION}.`,
-			);
-		}
+	if (firstPing.ok && firstPing.protocol === PROTOCOL_VERSION) {
 		return { socketPath: paths.socketPath };
 	}
 
@@ -241,7 +374,12 @@ export async function ensureDaemon(options: EnsureDaemonOptions = {}): Promise<{
 		while (nowFn() <= deadline) {
 			try {
 				lockFile = await writeSpawnLock(paths.spawnLockPath, nowFn());
-				spawnDaemonProcess(paths.socketPath, spawnFn);
+				const lockedPing = await healthPingFn(paths.socketPath, healthTimeoutMs);
+				if (lockedPing.ok) {
+					if (lockedPing.protocol === PROTOCOL_VERSION) return { socketPath: paths.socketPath };
+					await terminateDaemon(paths, findDaemonPidFn, killPidFn, pidExistsFn, sleepFn, lockRetryMs);
+				}
+				spawnDaemonProcess(paths.socketPath, paths.pidPath, spawnFn);
 				break;
 			} catch (error) {
 				const code = (error as NodeJS.ErrnoException | undefined)?.code;
@@ -258,12 +396,7 @@ export async function ensureDaemon(options: EnsureDaemonOptions = {}): Promise<{
 				}
 
 				const contenderPing = await healthPingFn(paths.socketPath, healthTimeoutMs);
-				if (contenderPing.ok) {
-					if (contenderPing.protocol !== PROTOCOL_VERSION) {
-						throw new Error(
-							`basecamp daemon protocol mismatch at ${paths.socketPath}: daemon=${contenderPing.protocol}, client=${PROTOCOL_VERSION}.`,
-						);
-					}
+				if (contenderPing.ok && contenderPing.protocol === PROTOCOL_VERSION) {
 					return { socketPath: paths.socketPath };
 				}
 				await sleepFn(lockRetryMs);
