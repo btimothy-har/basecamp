@@ -131,10 +131,20 @@ def companion_analyze(session_id: str, base_dir: Path | None) -> None:
     default=None,
     help="Optional SQLite database path.",
 )
-def daemon(uds: Path, db: Path | None) -> None:
+@click.option(
+    "--pidfile",
+    type=click.Path(path_type=Path),
+    default=None,
+    help="Optional path to write the daemon PID file.",
+)
+def daemon(uds: Path, db: Path | None, pidfile: Path | None) -> None:
     """Run the basecamp async-agent daemon."""
     run_daemon = importlib.import_module("basecamp.daemon.server").run_daemon
-    run_daemon(str(uds), str(db) if db is not None else None)
+    run_daemon(
+        str(uds),
+        str(db) if db is not None else None,
+        str(pidfile) if pidfile is not None else None,
+    )
 
 
 if __name__ == "__main__":

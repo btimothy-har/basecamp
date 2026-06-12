@@ -10,5 +10,6 @@ describe("daemon paths", () => {
 		assert.equal(paths.runtimeDir, path.join(fakeHome, ".pi", "agent", "basecamp"));
 		assert.equal(paths.socketPath, path.join(fakeHome, ".pi", "agent", "basecamp", "daemon.sock"));
 		assert.equal(paths.spawnLockPath, path.join(fakeHome, ".pi", "agent", "basecamp", "daemon.spawn.lock"));
+		assert.equal(paths.pidPath, path.join(fakeHome, ".pi", "agent", "basecamp", "daemon.pid"));
 	});
 });

@@ -160,10 +160,9 @@ At `session_start`, the extension runs an ensure-daemon flow off the critical pa
 2. Send a health ping with a short timeout.
 3. If the daemon is up, read its advertised protocol version and run handshake.
    - Compatible: proceed.
-   - Incompatible: surface a clear error.
-   - Do not restart the daemon automatically in this case.
+   - Incompatible: acquire the spawn lock, terminate only the daemon bound to this socket (PID file first, exact `basecamp daemon --uds <socket>` command match as legacy fallback), remove stale socket/PID artifacts, restart via the current basecamp Python package entrypoint, and wait-for-healthy.
 
-   The daemon is host-global and may be serving other live sessions/repos (potentially on different basecamp versions); restarting it unilaterally would break unrelated active work.
+   A protocol mismatch means the host-global daemon is running a version this client cannot safely speak. Basecamp prefers converging the host to one current daemon over leaving new sessions wedged behind a manual cleanup step. Existing live clients may be disconnected and reconnect behavior remains client-owned.
 
 4. If the daemon is not running, acquire a spawn lock (PID + timestamp) so concurrent session starts do not race and launch duplicates; start via the basecamp Python package entrypoint; wait-for-healthy with bounded retries; release lock.
 5. Open this process WebSocket and register identity (env contract in §5.4).
@@ -417,7 +416,7 @@ Both limits are configurable tunables. They are complementary: depth cap bounds 
 | Context flooding: many or large results can overrun dispatcher context. | Notify-then-fetch (§7.2b): result pings are tiny; full payloads are persisted (§6.3) and fetched on demand. | Dispatcher behavior must continue to avoid eager bulk fetch by default. |
 | Interactive wake disruption: waking an idle dispatcher can interrupt active typing. | Accepted trade-off (§7.2) for immediacy of result ping and peer message delivery. | Revisit with an editor-empty guard if user friction is high. |
 | TS↔Python protocol drift: two language runtimes implement one frame protocol. | Keep a single schema source for frames; add a contract test that boots the real daemon and exercises protocol frames end-to-end; enforce protocol-version handshake (§5.3); pin the pi version for spawn flags. | Compatibility work is continuous as frames evolve. |
-| Daemon version skew across repos: one host-global daemon can serve sessions from different basecamp versions. | Version handshake on connect; incompatible clients error loudly; never auto-restart a shared daemon (§5.3). | Mixed-version hosts require explicit operator coordination. |
+| Daemon version skew across repos: one host-global daemon can serve sessions from different basecamp versions. | Version handshake on connect; startup-time protocol mismatch terminates the socket-owning daemon precisely and restarts it with the current package (§5.3). | Existing live clients may be disconnected; mixed-version hosts converge to the latest starter rather than requiring manual cleanup. |
 | Local-user trust boundary: UDS is reachable by same-user processes even when ACL blocks visibility. | UDS file permissions `0600`; daemon-side default-deny ACL (§7.1). | Same-user processes are trusted by threat model (local dev tool). |
 | Cold-start / replay latency: each run pays extension load, prompt assembly, and thread file replay (§6.3). | Accepted in v1; warm pool deferred to decisions/roadmap (§9, §10). | Throughput tuning focuses on caps/queueing first, not residency. |
 | Unbounded accumulation: no pruning in v1 means agents and thread file artifacts grow over time. | Keep v1 manual cleanup; artifacts are expected to be small; evaluate TTL sweep later (§10). | Long-lived environments may require periodic operator hygiene. |

@@ -6,6 +6,7 @@ import * as path from "node:path";
 import { describe, it } from "node:test";
 import { ensureDaemon } from "../agents/daemon/client.ts";
 import { PROTOCOL_VERSION } from "../agents/daemon/frames.ts";
+import type { DaemonPaths } from "../agents/daemon/paths.ts";
 
 function fakeSpawn(): ChildProcess {
 	return {
@@ -15,16 +16,21 @@ function fakeSpawn(): ChildProcess {
 	} as unknown as ChildProcess;
 }
 
+function daemonPaths(root: string, spawnLockPath = path.join(root, "daemon.spawn.lock")): DaemonPaths {
+	return {
+		runtimeDir: root,
+		socketPath: path.join(root, "daemon.sock"),
+		spawnLockPath,
+		pidPath: path.join(root, "daemon.pid"),
+	};
+}
+
 describe("ensureDaemon", () => {
 	it("does not spawn when daemon is healthy with matching protocol", async () => {
 		const root = fs.mkdtempSync(path.join(os.tmpdir(), "daemon-ensure-"));
 		const calls: string[] = [];
 		await ensureDaemon({
-			resolvePathsFn: () => ({
-				runtimeDir: root,
-				socketPath: path.join(root, "daemon.sock"),
-				spawnLockPath: path.join(root, "daemon.spawn.lock"),
-			}),
+			resolvePathsFn: () => daemonPaths(root),
 			healthPingFn: async () => ({ ok: true, protocol: PROTOCOL_VERSION }),
 			spawnFn: () => {
 				calls.push("spawn");
@@ -34,25 +40,63 @@ describe("ensureDaemon", () => {
 		assert.equal(calls.length, 0);
 	});
 
-	it("throws on healthy protocol mismatch without spawning", async () => {
+	it("terminates and restarts a healthy daemon with mismatched protocol", async () => {
 		const root = fs.mkdtempSync(path.join(os.tmpdir(), "daemon-ensure-"));
+		const paths = daemonPaths(root);
+		const spawnArgs: string[][] = [];
+		const killedSignals: NodeJS.Signals[] = [];
+		const daemonPid = 4242;
+		let daemonAlive = true;
+		let healthCount = 0;
+
+		await ensureDaemon({
+			resolvePathsFn: () => paths,
+			healthPingFn: async () => {
+				healthCount += 1;
+				if (healthCount < 3) return { ok: true, protocol: 999 };
+				return { ok: true, protocol: PROTOCOL_VERSION };
+			},
+			findDaemonPidFn: async (socketPath) => {
+				assert.equal(socketPath, paths.socketPath);
+				return daemonPid;
+			},
+			pidExistsFn: (pid) => pid === daemonPid && daemonAlive,
+			killPidFn: (pid, signal) => {
+				assert.equal(pid, daemonPid);
+				killedSignals.push(signal);
+				daemonAlive = false;
+			},
+			spawnFn: (command, args) => {
+				assert.equal(command, "basecamp");
+				spawnArgs.push([...args]);
+				return fakeSpawn();
+			},
+			sleepFn: async () => {},
+		});
+
+		assert.deepEqual(killedSignals, ["SIGTERM"]);
+		assert.deepEqual(spawnArgs, [["daemon", "--uds", paths.socketPath, "--pidfile", paths.pidPath]]);
+	});
+
+	it("throws if the restarted daemon is still protocol-incompatible", async () => {
+		const root = fs.mkdtempSync(path.join(os.tmpdir(), "daemon-ensure-"));
+		const paths = daemonPaths(root);
 		const calls: string[] = [];
+
 		await assert.rejects(
 			ensureDaemon({
-				resolvePathsFn: () => ({
-					runtimeDir: root,
-					socketPath: path.join(root, "daemon.sock"),
-					spawnLockPath: path.join(root, "daemon.spawn.lock"),
-				}),
+				resolvePathsFn: () => paths,
 				healthPingFn: async () => ({ ok: true, protocol: 999 }),
+				findDaemonPidFn: async () => null,
 				spawnFn: () => {
 					calls.push("spawn");
 					return fakeSpawn();
 				},
+				sleepFn: async () => {},
 			}),
 			/protocol mismatch/,
 		);
-		assert.equal(calls.length, 0);
+		assert.equal(calls.length, 1);
 	});
 
 	it("spawns once and polls until healthy", async () => {
@@ -60,11 +104,7 @@ describe("ensureDaemon", () => {
 		let healthCount = 0;
 		const calls: string[] = [];
 		await ensureDaemon({
-			resolvePathsFn: () => ({
-				runtimeDir: root,
-				socketPath: path.join(root, "daemon.sock"),
-				spawnLockPath: path.join(root, "daemon.spawn.lock"),
-			}),
+			resolvePathsFn: () => daemonPaths(root),
 			healthPingFn: async () => {
 				healthCount += 1;
 				if (healthCount < 3) return { ok: false };
@@ -89,14 +129,10 @@ describe("ensureDaemon", () => {
 		let healthCount = 0;
 		const calls: string[] = [];
 		await ensureDaemon({
-			resolvePathsFn: () => ({
-				runtimeDir: root,
-				socketPath: path.join(root, "daemon.sock"),
-				spawnLockPath: lockPath,
-			}),
+			resolvePathsFn: () => daemonPaths(root, lockPath),
 			healthPingFn: async () => {
 				healthCount += 1;
-				if (healthCount < 2) return { ok: false };
+				if (healthCount < 3) return { ok: false };
 				return { ok: true, protocol: PROTOCOL_VERSION };
 			},
 			spawnFn: () => {

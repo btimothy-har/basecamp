@@ -43,7 +43,32 @@ def create_server(uds_path: str, store: Store, *, log_level: str = "info") -> Ud
     return UdsServer(config)
 
 
-def run_daemon(uds_path: str, db_path: str | None = None) -> None:
+def _write_pid_file(pid_path: Path, pid: int) -> None:
+    pid_path.parent.mkdir(parents=True, exist_ok=True)
+    pid_path.write_text(f"{pid}\n", encoding="utf-8")
+    os.chmod(pid_path, 0o600)
+
+
+def _remove_pid_file(pid_path: Path, pid: int) -> None:
+    try:
+        recorded_pid = pid_path.read_text(encoding="utf-8").strip()
+    except FileNotFoundError:
+        return
+
+    if recorded_pid != str(pid):
+        return
+
+    try:
+        pid_path.unlink()
+    except FileNotFoundError:
+        return
+
+
+def run_daemon(
+    uds_path: str,
+    db_path: str | None = None,
+    pid_path: str | None = None,
+) -> None:
     """Run the daemon bound to a Unix domain socket."""
 
     socket_path = Path(uds_path).expanduser()
@@ -51,4 +76,13 @@ def run_daemon(uds_path: str, db_path: str | None = None) -> None:
     if socket_path.exists():
         socket_path.unlink()
 
-    create_server(str(socket_path), Store(db_path=db_path)).run()
+    daemon_pid = os.getpid()
+    daemon_pid_path = Path(pid_path).expanduser() if pid_path is not None else None
+    if daemon_pid_path is not None:
+        _write_pid_file(daemon_pid_path, daemon_pid)
+
+    try:
+        create_server(str(socket_path), Store(db_path=db_path)).run()
+    finally:
+        if daemon_pid_path is not None:
+            _remove_pid_file(daemon_pid_path, daemon_pid)
