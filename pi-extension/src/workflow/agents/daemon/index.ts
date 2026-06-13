@@ -1,4 +1,5 @@
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
+import { setDaemonStatus } from "../../../platform/daemon-status.ts";
 import { formatTitle, shortSessionId } from "../../../session/ui/title.ts";
 import { DEFAULT_AGENT_MAX_DEPTH } from "../types.ts";
 import { connect, type DaemonConnection, type DaemonIdentity, ensureDaemon } from "./client.ts";
@@ -86,6 +87,18 @@ function resolveDaemonAgentTitle(ctx: ExtensionContext): string | null {
 	return formatTitle(base, shortSessionId(ctx.sessionManager.getSessionId()));
 }
 
+function trackDaemonConnection(state: DaemonClientState, connection: DaemonConnection): DaemonConnection {
+	connection.onClose(() => {
+		if (state.connection === connection) {
+			state.connection = null;
+			setDaemonStatus({ kind: "disconnected" });
+		}
+	});
+	state.connection = connection;
+	setDaemonStatus({ kind: "connected" });
+	return connection;
+}
+
 async function ensureAndConnectTopLevel(ctx: ExtensionContext): Promise<DaemonConnection> {
 	const state = getDaemonClientState();
 	if (state.connection) return state.connection;
@@ -93,13 +106,7 @@ async function ensureAndConnectTopLevel(ctx: ExtensionContext): Promise<DaemonCo
 	const identity = deriveDaemonIdentity(ctx);
 	const { socketPath } = await ensureDaemon();
 	const connection = await connect(identity, { socketPath });
-	connection.onClose(() => {
-		if (state.connection === connection) {
-			state.connection = null;
-		}
-	});
-	state.connection = connection;
-	return connection;
+	return trackDaemonConnection(state, connection);
 }
 
 async function connectSpawnedAgent(ctx: ExtensionContext): Promise<DaemonConnection> {
@@ -109,13 +116,7 @@ async function connectSpawnedAgent(ctx: ExtensionContext): Promise<DaemonConnect
 	const identity = deriveDaemonIdentity(ctx);
 	const socketPath = process.env.BASECAMP_DAEMON_UDS ?? resolveDaemonPaths().socketPath;
 	const connection = await connect(identity, { socketPath });
-	connection.onClose(() => {
-		if (state.connection === connection) {
-			state.connection = null;
-		}
-	});
-	state.connection = connection;
-	return connection;
+	return trackDaemonConnection(state, connection);
 }
 
 export function registerDaemonClient(pi: ExtensionAPI): void {
@@ -156,12 +157,14 @@ export function registerDaemonClient(pi: ExtensionAPI): void {
 
 		state.connecting = (async () => {
 			try {
+				setDaemonStatus({ kind: "starting" });
 				const connection = isTopLevel ? await ensureAndConnectTopLevel(ctx) : await connectSpawnedAgent(ctx);
 				reporterConnection?.resolve(connection);
 			} catch (error) {
+				const message = error instanceof Error ? error.message : String(error);
+				setDaemonStatus({ kind: "unavailable", message });
 				reporterConnection?.reject(error);
 				if (isTopLevel) {
-					const message = error instanceof Error ? error.message : String(error);
 					ctx.ui.notify(`basecamp daemon unavailable: ${message}`, "warning");
 				}
 			} finally {
@@ -171,12 +174,14 @@ export function registerDaemonClient(pi: ExtensionAPI): void {
 	});
 
 	pi.on("session_shutdown", () => {
+		const connection = state.connection;
+		state.connection = null;
+		state.connecting = null;
+		setDaemonStatus({ kind: "idle" });
 		try {
-			state.connection?.close();
+			connection?.close();
 		} catch {
 			// best effort
 		}
-		state.connection = null;
-		state.connecting = null;
 	});
 }

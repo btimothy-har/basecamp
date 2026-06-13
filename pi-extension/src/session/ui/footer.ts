@@ -4,7 +4,7 @@
  * Three-line layout:
  *   Line 1: cwd | worktree | branch ... model
  *   Line 2: invoked skills ... context bar
- *   Line 3: agent statuses (only when active)
+ *   Line 3: daemon status + extension statuses
  *
  * Skills are tracked by the skill tool itself (skill.ts). The footer
  * re-renders on `tool_result` events to pick up newly loaded skills.
@@ -16,10 +16,11 @@ import { dirname, join, resolve } from "node:path";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 import { isCompanionActive } from "../../panes/state.ts";
-import { getInvokedSkills } from "../../platform/skill-tracker";
-import { getWorkspaceService, getWorkspaceState, type WorkspaceState } from "../../platform/workspace";
+import { type DaemonStatus, getDaemonStatus, onDaemonStatusChange } from "../../platform/daemon-status.ts";
+import { getInvokedSkills } from "../../platform/skill-tracker.ts";
+import { getWorkspaceService, getWorkspaceState, type WorkspaceState } from "../../platform/workspace.ts";
 import { type AgentMode, getAgentMode, onAgentModeChange } from "../agent-mode.ts";
-import { getModeLabel } from "./mode-style";
+import { getModeLabel } from "./mode-style.ts";
 
 type ThemeFg = (color: Parameters<import("@earendil-works/pi-coding-agent").Theme["fg"]>[0], text: string) => string;
 let requestRender: (() => void) | null = null;
@@ -168,6 +169,7 @@ export function registerFooter(pi: ExtensionAPI): void {
 			requestRender = () => tui.requestRender();
 			const unsubBranch = footerData.onBranchChange(() => tui.requestRender());
 			const unsubMode = onAgentModeChange(() => tui.requestRender());
+			const unsubDaemonStatus = onDaemonStatusChange(() => tui.requestRender());
 
 			return {
 				invalidate() {},
@@ -207,14 +209,16 @@ export function registerFooter(pi: ExtensionAPI): void {
 					const line2 = layoutLine(l2Left, l2Right, width, fg);
 					const lines = [line1, line2];
 
-					// ── Line 3: agent statuses (conditional) ──
+					const line3Parts = [renderDaemonStatus(fg, getDaemonStatus())];
 					const statuses = footerData.getExtensionStatuses();
 					if (statuses.size > 0) {
-						const sorted = Array.from(statuses.entries())
-							.sort(([a], [b]) => a.localeCompare(b))
-							.map(([, text]) => text.replace(/[\r\n\t]/g, " ").trim());
-						lines.push(truncateToWidth(sorted.join(fg("dim", "  ")), width, fg("dim", "…")));
+						line3Parts.push(
+							...Array.from(statuses.entries())
+								.sort(([a], [b]) => a.localeCompare(b))
+								.map(([, text]) => text.replace(/[\r\n\t]/g, " ").trim()),
+						);
 					}
+					lines.push(truncateToWidth(line3Parts.join(fg("dim", "  ")), width, fg("dim", "…")));
 
 					return lines;
 				},
@@ -222,6 +226,7 @@ export function registerFooter(pi: ExtensionAPI): void {
 				dispose() {
 					unsubBranch();
 					unsubMode();
+					unsubDaemonStatus();
 					disposeWorktreeWatcher();
 					requestRender = null;
 				},
@@ -234,6 +239,22 @@ export function registerFooter(pi: ExtensionAPI): void {
 			requestRender?.();
 		}
 	});
+}
+
+function previewDaemonMessage(message: string | undefined): string | null {
+	const sanitized = message?.replace(/[\r\n\t]/g, " ").trim();
+	return sanitized ? truncateToWidth(sanitized, 80, "…") : null;
+}
+
+export function renderDaemonStatus(fg: ThemeFg, status: DaemonStatus): string {
+	if (status.kind === "connected") return `${fg("success", "daemon ✓")} ${fg("dim", "connected")}`;
+	if (status.kind === "starting") return `${fg("warning", "daemon …")} ${fg("dim", "starting")}`;
+	if (status.kind === "disconnected") return `${fg("warning", "daemon ⚠")} ${fg("dim", "disconnected")}`;
+	if (status.kind === "unavailable") {
+		const message = previewDaemonMessage(status.message);
+		return message ? `${fg("error", "daemon ✗")} ${fg("error", message)}` : fg("error", "daemon ✗ unavailable");
+	}
+	return fg("muted", "daemon idle");
 }
 
 function buildLocationSegment(
