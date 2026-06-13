@@ -49,7 +49,7 @@ describe("footer daemon status", () => {
 	it("renders compact lifecycle labels", () => {
 		assert.equal(renderDaemonStatus(fg, { kind: "idle" }), "daemon idle");
 		assert.equal(renderDaemonStatus(fg, { kind: "starting" }), "daemon … starting");
-		assert.equal(renderDaemonStatus(fg, { kind: "connected" }), "daemon ✓ connected");
+		assert.equal(renderDaemonStatus(fg, { kind: "connected" }), "daemon ✓");
 		assert.equal(renderDaemonStatus(fg, { kind: "disconnected" }), "daemon ⚠ disconnected");
 	});
 
@@ -99,7 +99,7 @@ describe("footer daemon status", () => {
 
 		assert.equal(renderRequests, 1);
 		assert.equal(lines.length, 3);
-		assert.equal(lines[2], "daemon ✓ connected  agent a  agent b");
+		assert.equal(lines[2], "daemon ✓  agent a  agent b");
 		footer.dispose();
 	});
 });

@@ -247,7 +247,7 @@ function previewDaemonMessage(message: string | undefined): string | null {
 }
 
 export function renderDaemonStatus(fg: ThemeFg, status: DaemonStatus): string {
-	if (status.kind === "connected") return `${fg("success", "daemon ✓")} ${fg("dim", "connected")}`;
+	if (status.kind === "connected") return fg("success", "daemon ✓");
 	if (status.kind === "starting") return `${fg("warning", "daemon …")} ${fg("dim", "starting")}`;
 	if (status.kind === "disconnected") return `${fg("warning", "daemon ⚠")} ${fg("dim", "disconnected")}`;
 	if (status.kind === "unavailable") {
