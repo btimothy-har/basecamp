@@ -27,7 +27,7 @@ from textual.widgets.tree import TreeNode
 
 from basecamp.companion.analysis import CompanionAnalysis
 from basecamp.companion.cycles import companion_tasks_path
-from basecamp.companion.daemon import DaemonSummary, DaemonSummaryRun, DaemonSummarySource
+from basecamp.companion.daemon import DaemonSummary, DaemonSummaryError, DaemonSummaryRun, DaemonSummarySource
 from basecamp.companion.diff import (
     DIFF_MODES,
     DiffLine,
@@ -1165,7 +1165,7 @@ class CompanionApp(App[None]):
             if model is not None:
                 dashboard_body.update(model)
 
-            dashboard_body.update_daemon(self._daemon_source.poll(self._snapshot.session_id))
+            dashboard_body.update_daemon(self._poll_daemon_summary(self._snapshot.session_id))
         else:
             dashboard_body.update_daemon(None)
 
@@ -1186,6 +1186,12 @@ class CompanionApp(App[None]):
         self.query_one("#workspace-panel", WorkspacePanel).update_workspace(self._snapshot, status)
 
         self._update_selected_file_diff()
+
+    def _poll_daemon_summary(self, root_id: str) -> DaemonSummary:
+        try:
+            return self._daemon_source.poll(root_id)
+        except Exception as error:  # noqa: BLE001
+            return DaemonSummaryError(error=str(error))
 
 
 def run_companion(snapshot_path: Path, cwd: Path, scratch_dir: Path | None = None) -> None:

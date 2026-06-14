@@ -10,10 +10,12 @@ from pathlib import Path
 from basecamp.companion.app import (
     CompanionApp,
     DashboardBody,
+    _format_duration,
     _goal_panel,
     _render_bullets,
     _render_daemon_summary,
     _render_task_detail,
+    _truncate_preview,
     next_body_mode,
 )
 from basecamp.companion.daemon import (
@@ -63,6 +65,16 @@ class _FakeDaemonSource:
         return self.summary
 
 
+class _DaemonPollError(Exception):
+    def __init__(self, root_id: str) -> None:
+        super().__init__(f"daemon failed for {root_id}")
+
+
+class _FailingDaemonSource:
+    def poll(self, root_id: str) -> DaemonSummary:
+        raise _DaemonPollError(root_id)
+
+
 def _goal(name: str, tasks: list[CompanionTask], *, active: bool, completed: int, total: int) -> CompanionGoal:
     return CompanionGoal(
         goal=name,
@@ -92,6 +104,21 @@ def test_render_bullets_populated() -> None:
     assert "• second" in plain
 
 
+def test_truncate_preview_collapses_newlines_and_respects_limit() -> None:
+    assert _truncate_preview("one\ntwo", max_length=20) == "one two"
+    assert _truncate_preview("abcdef", max_length=4) == "abc…"
+
+
+def test_format_duration_boundaries() -> None:
+    assert _format_duration(59) == "59s"
+    assert _format_duration(60) == "1m"
+    assert _format_duration(3661) == "1h 1m"
+
+
+def test_render_daemon_summary_none_is_empty() -> None:
+    assert _render_daemon_summary(None).plain == ""
+
+
 def test_render_daemon_summary_empty_ok_shows_no_async_agents() -> None:
     summary = _daemon_summary_ok(total=0, runs=[])
     assert "No async agents yet" in _to_text(_render_daemon_summary(summary))
@@ -109,6 +136,31 @@ def test_render_daemon_summary_error() -> None:
     text = _to_text(_render_daemon_summary(summary))
     assert "Daemon error" in text
     assert "bad daemon payload" in text
+
+
+def test_render_daemon_summary_running_uses_hourglass() -> None:
+    summary = _daemon_summary_ok(
+        total=1,
+        runs=[
+            DaemonSummaryRun(
+                run_id="r1",
+                agent_id="agent-1",
+                parent_id=None,
+                role="agent",
+                session_name="worker",
+                status="running",
+                result_preview=None,
+                error_preview=None,
+                exit_code=None,
+                created_at="2099-01-01T00:00:00Z",
+                started_at="2099-01-01T00:00:00Z",
+                ended_at=None,
+            )
+        ],
+    )
+    text = _to_text(_render_daemon_summary(summary))
+    assert "⏳" in text
+    assert "running" in text
 
 
 def test_render_daemon_summary_populated() -> None:
@@ -239,6 +291,19 @@ def test_pinned_task_index_falls_back_to_last_when_all_completed() -> None:
 
 def test_pinned_task_index_empty_goal_is_zero() -> None:
     assert DashboardBody._pinned_task_index(_goal("g", [], active=True, completed=0, total=0)) == 0
+
+
+def test_poll_daemon_summary_converts_unexpected_source_errors(tmp_path: Path) -> None:
+    app = CompanionApp(
+        snapshot_path=tmp_path / "snapshot.json",
+        cwd=tmp_path,
+        daemon_source=_FailingDaemonSource(),
+    )
+
+    result = app._poll_daemon_summary("session-123")
+
+    assert isinstance(result, DaemonSummaryError)
+    assert "session-123" in result.error
 
 
 def test_dashboard_autopin_navigation_and_repin(tmp_path: Path) -> None:
