@@ -96,7 +96,7 @@ def test_health_over_real_uds(tmp_path: Path) -> None:
 
         assert response is not None
         assert response.status_code == 200
-        assert response.json() == {"status": "ok", "protocol": 2}
+        assert response.json() == {"status": "ok", "protocol": 3}
 
         socket_mode = stat.S_IMODE(uds_path.stat().st_mode)
         assert socket_mode == 0o600, f"socket perms {socket_mode:o} should be 0600 (local-user only)"

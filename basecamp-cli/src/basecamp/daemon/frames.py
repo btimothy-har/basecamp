@@ -6,7 +6,9 @@ from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, Field, TypeAdapter
 
-PROTOCOL_VERSION = 2
+# Gates every client-visible daemon capability, not just WebSocket frame shapes.
+# This includes HTTP endpoints like /runs/summary, so stale daemons restart.
+PROTOCOL_VERSION = 3
 
 
 class RegisterFrame(BaseModel):

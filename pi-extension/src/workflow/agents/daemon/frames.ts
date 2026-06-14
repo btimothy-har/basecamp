@@ -1,6 +1,8 @@
 import { Buffer } from "node:buffer";
 
-export const PROTOCOL_VERSION = 2;
+// Gates every client-visible daemon capability, not just WebSocket frame shapes.
+// This includes HTTP endpoints like /runs/summary, so stale daemons restart.
+export const PROTOCOL_VERSION = 3;
 
 export interface RegisterFrame {
 	type: "register";
