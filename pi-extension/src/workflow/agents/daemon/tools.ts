@@ -3,6 +3,7 @@ import * as path from "node:path";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Text } from "@earendil-works/pi-tui";
 import { Type } from "@sinclair/typebox";
+import { hasInvokedSkill } from "../../../platform/skill-tracker.ts";
 import { getWorkspaceState } from "../../../platform/workspace.ts";
 import { discoverAgents } from "../discovery.ts";
 import { buildAgentRunName, buildPiArgs, sanitizeAgentSpawnEnv } from "../executor.ts";
@@ -80,6 +81,23 @@ function sameAsRequested(resultRunIds: string[], requestedSet: Set<string>): boo
 	return [...requestedSet].every((runId) => resultSet.has(runId));
 }
 
+function hasText(value: string | null): value is string {
+	return value !== null && value.trim() !== "";
+}
+
+function formatWaitItemText(item: WaitHandleResult): string {
+	if (item.status === "completed") {
+		return `✓ ${item.runId} completed\n${hasText(item.result) ? item.result : "(no output)"}`;
+	}
+	if (item.status === "failed") {
+		const parts = [`✗ ${item.runId} failed`, `error:\n${hasText(item.error) ? item.error : "unknown error"}`];
+		if (hasText(item.result)) parts.push(`result:\n${item.result}`);
+		return parts.join("\n");
+	}
+	if (item.status === "unknown") return `? ${item.runId} unknown handle`;
+	return `… ${item.runId} still running (timed out)`;
+}
+
 function waitForFrame<T extends "dispatch_ack" | "wait_result">(
 	connection: DaemonConnection,
 	type: T,
@@ -115,6 +133,15 @@ export function registerDaemonTools(pi: ExtensionAPI, getConnection: () => Promi
 		description: "Dispatch an agent asynchronously and return a run handle.",
 		parameters: DispatchAgentParams,
 		async execute(_id, params, _signal, _onUpdate, ctx) {
+			if (!hasInvokedSkill("agents")) {
+				return {
+					content: [
+						{ type: "text", text: 'Load the agents skill first: call skill({ name: "agents" }) before dispatching.' },
+					],
+					isError: true,
+					details: null,
+				};
+			}
 			const connection = await getConnection();
 			if (!connection) {
 				return {
@@ -235,6 +262,15 @@ export function registerDaemonTools(pi: ExtensionAPI, getConnection: () => Promi
 		description: "Wait for one or more async agent handles to complete.",
 		parameters: WaitForAgentParams,
 		async execute(_id, params, signal) {
+			if (!hasInvokedSkill("agents")) {
+				return {
+					content: [
+						{ type: "text", text: 'Load the agents skill first: call skill({ name: "agents" }) before dispatching.' },
+					],
+					isError: true,
+					details: null,
+				};
+			}
 			const connection = await getConnection();
 			if (!connection) {
 				return {
@@ -322,14 +358,9 @@ export function registerDaemonTools(pi: ExtensionAPI, getConnection: () => Promi
 				};
 			});
 
-			const lines = items.map((item) => {
-				if (item.status === "completed") return `✓ ${item.runId} completed`;
-				if (item.status === "failed") return `✗ ${item.runId} failed: ${preview(item.error) || "error"}`;
-				if (item.status === "unknown") return `? ${item.runId} unknown handle`;
-				return `… ${item.runId} still running (timed out)`;
-			});
+			const lines = items.map(formatWaitItemText);
 			const details: WaitDetails = { items };
-			return { content: [{ type: "text", text: lines.join("\n") }], details };
+			return { content: [{ type: "text", text: lines.join("\n\n") }], details };
 		},
 		renderResult(result, _opts, theme) {
 			const details = result.details as WaitDetails | null;
