@@ -48,6 +48,14 @@ def create_app(store: Store, *, daemon_uds: str | None = None) -> FastAPI:
     async def health() -> dict[str, Any]:
         return {"status": "ok", "protocol": PROTOCOL_VERSION}
 
+    @app.get("/runs/summary")
+    async def runs_summary(root_id: str, limit: int = 5) -> dict[str, Any]:
+        return await asyncio.to_thread(
+            store.get_run_summary,
+            root_id,
+            limit=limit,
+        )
+
     @app.websocket("/ws")
     async def websocket_endpoint(websocket: WebSocket) -> None:
         await websocket.accept()

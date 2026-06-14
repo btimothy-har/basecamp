@@ -12,6 +12,19 @@ DEFAULT_DB_PATH = Path("~/.pi/agent/basecamp/daemon.db").expanduser()
 
 
 TERMINAL_STATUSES = ("completed", "failed")
+RUN_SUMMARY_DEFAULT_LIMIT = 5
+RUN_SUMMARY_MAX_LIMIT = 100
+RUN_SUMMARY_PREVIEW_CHARS = 160
+
+
+def _preview_text(value: str | None, *, limit: int = RUN_SUMMARY_PREVIEW_CHARS) -> str | None:
+    if value is None:
+        return None
+
+    text = " ".join(value.split())
+    if len(text) <= limit:
+        return text
+    return f"{text[: limit - 1]}…"
 
 
 class Store:
@@ -252,6 +265,94 @@ class Store:
             }
             for row in rows
         ]
+
+    def get_run_summary(self, root_id: str, *, limit: int = RUN_SUMMARY_DEFAULT_LIMIT) -> dict[str, Any]:
+        """Return a safe run summary for a root agent subtree."""
+
+        safe_limit = max(0, min(limit, RUN_SUMMARY_MAX_LIMIT))
+
+        recursive_scope = """
+            WITH RECURSIVE scoped_agents(id) AS (
+                SELECT id FROM agents WHERE id = ?
+                UNION
+                SELECT child.id
+                FROM agents AS child
+                INNER JOIN scoped_agents AS parent ON child.parent_id = parent.id
+            )
+        """
+
+        with self._connect() as connection:
+            connection.row_factory = sqlite3.Row
+
+            counts_row = connection.execute(
+                f"""
+                {recursive_scope}
+                SELECT
+                    COALESCE(SUM(CASE WHEN r.status = 'pending' THEN 1 ELSE 0 END), 0) AS pending_count,
+                    COALESCE(SUM(CASE WHEN r.status = 'running' THEN 1 ELSE 0 END), 0) AS running_count,
+                    COALESCE(SUM(CASE WHEN r.status = 'completed' THEN 1 ELSE 0 END), 0) AS completed_count,
+                    COALESCE(SUM(CASE WHEN r.status = 'failed' THEN 1 ELSE 0 END), 0) AS failed_count,
+                    COUNT(r.id) AS total_count
+                FROM runs AS r
+                WHERE r.agent_id IN (SELECT id FROM scoped_agents)
+                """,
+                (root_id,),
+            ).fetchone()
+
+            run_rows = connection.execute(
+                f"""
+                {recursive_scope}
+                SELECT
+                    r.id AS run_id,
+                    r.agent_id,
+                    a.parent_id,
+                    a.role,
+                    a.session_name,
+                    r.status,
+                    r.result,
+                    r.error,
+                    r.exit_code,
+                    r.created_at,
+                    r.started_at,
+                    r.ended_at
+                FROM runs AS r
+                INNER JOIN agents AS a ON a.id = r.agent_id
+                WHERE r.agent_id IN (SELECT id FROM scoped_agents)
+                ORDER BY r.created_at DESC, r.id DESC
+                LIMIT ?
+                """,
+                (root_id, safe_limit),
+            ).fetchall()
+
+        runs = [
+            {
+                "run_id": row["run_id"],
+                "agent_id": row["agent_id"],
+                "parent_id": row["parent_id"],
+                "role": row["role"],
+                "session_name": row["session_name"],
+                "status": row["status"],
+                "result_preview": _preview_text(row["result"]),
+                "error_preview": _preview_text(row["error"]),
+                "exit_code": row["exit_code"],
+                "created_at": row["created_at"],
+                "started_at": row["started_at"],
+                "ended_at": row["ended_at"],
+            }
+            for row in run_rows
+        ]
+
+        return {
+            "root_id": root_id,
+            "counts": {
+                "pending": counts_row["pending_count"],
+                "running": counts_row["running_count"],
+                "completed": counts_row["completed_count"],
+                "failed": counts_row["failed_count"],
+                "total": counts_row["total_count"],
+            },
+            "runs": runs,
+        }
 
     def are_runs_terminal(self, run_ids: list[str]) -> bool:
         """Return True when all requested run ids exist and are terminal."""
