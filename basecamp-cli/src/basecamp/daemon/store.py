@@ -274,7 +274,7 @@ class Store:
         recursive_scope = """
             WITH RECURSIVE scoped_agents(id) AS (
                 SELECT id FROM agents WHERE id = ?
-                UNION ALL
+                UNION
                 SELECT child.id
                 FROM agents AS child
                 INNER JOIN scoped_agents AS parent ON child.parent_id = parent.id

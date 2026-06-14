@@ -220,6 +220,65 @@ def test_get_run_summary_scope_and_counts_include_descendants(tmp_path: Path) ->
     }
 
 
+def test_get_run_summary_handles_cyclic_agent_relationships(tmp_path: Path) -> None:
+    db_path = tmp_path / "daemon.db"
+    store = Store(db_path=db_path)
+
+    store.upsert_agent(
+        agent_id="root",
+        parent_id=None,
+        sibling_group="sg-root",
+        depth=0,
+        role="session",
+        session_name="root-session",
+        cwd="/tmp/root",
+    )
+    store.upsert_agent(
+        agent_id="child",
+        parent_id="root",
+        sibling_group="sg-child",
+        depth=1,
+        role="agent",
+        session_name="child-agent",
+        cwd="/tmp/child",
+    )
+    store.upsert_agent(
+        agent_id="root",
+        parent_id="child",
+        sibling_group="sg-root",
+        depth=0,
+        role="session",
+        session_name="root-session",
+        cwd="/tmp/root",
+    )
+
+    _insert_run(
+        db_path=db_path,
+        run_id="run-root",
+        agent_id="root",
+        status="running",
+        created_at="2026-01-01T00:00:00Z",
+    )
+    _insert_run(
+        db_path=db_path,
+        run_id="run-child",
+        agent_id="child",
+        status="completed",
+        created_at="2026-01-01T00:00:01Z",
+    )
+
+    result = store.get_run_summary("root")
+
+    assert result["counts"] == {
+        "pending": 0,
+        "running": 1,
+        "completed": 1,
+        "failed": 0,
+        "total": 2,
+    }
+    assert [run["run_id"] for run in result["runs"]] == ["run-child", "run-root"]
+
+
 def test_get_run_summary_orders_runs_descending_and_respects_limit(tmp_path: Path) -> None:
     db_path = tmp_path / "daemon.db"
     store = Store(db_path=db_path)
