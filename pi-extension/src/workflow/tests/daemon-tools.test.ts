@@ -3,6 +3,7 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { afterEach, beforeEach, describe, it } from "node:test";
+import { resetInvokedSkills, trackSkillInvocation } from "../../platform/skill-tracker.ts";
 import { getWorkspaceService, registerWorkspaceService, type WorkspaceService } from "../../platform/workspace.ts";
 import type { DaemonConnection } from "../agents/daemon/client.ts";
 import type { Frame } from "../agents/daemon/frames.ts";
@@ -95,12 +96,14 @@ describe("daemon async tools", () => {
 		priorHome = process.env.HOME;
 		tmpHome = fs.mkdtempSync(path.join(os.tmpdir(), "bc-test-home-"));
 		process.env.HOME = tmpHome;
+		resetInvokedSkills();
 	});
 
 	afterEach(() => {
 		if (priorHome === undefined) delete process.env.HOME;
 		else process.env.HOME = priorHome;
 		fs.rmSync(tmpHome, { recursive: true, force: true });
+		resetInvokedSkills();
 	});
 
 	describe("buildAgentTitleBase", () => {
@@ -159,6 +162,7 @@ describe("daemon async tools", () => {
 	});
 
 	it("dispatch_agent builds spec env/task split and returns handle on spawned ack", async () => {
+		trackSkillInvocation("agents");
 		const priorCustom = process.env.TEST_DAEMON_TOOLS;
 		const priorDepth = process.env.BASECAMP_AGENT_DEPTH;
 		const priorProject = process.env.BASECAMP_PROJECT;
@@ -211,7 +215,28 @@ describe("daemon async tools", () => {
 		}
 	});
 
+	it("dispatch_agent fails before daemon connection/send when agents skill has not been invoked", async () => {
+		let connected = false;
+		const { pi, tools } = createMockPi();
+		registerDaemonTools(pi, async () => {
+			connected = true;
+			return new MockConnection();
+		});
+		const dispatchTool = toolByName(tools, "dispatch_agent");
+
+		const result = await dispatchTool.execute("1", { task: "hello world" }, new AbortController().signal, () => {}, {
+			model: "claude-sonnet",
+			sessionManager: { getSessionId: () => "session-id" },
+		});
+
+		assert.equal(result.isError, true);
+		assert.match(result.content[0].text, /Load the agents skill first/);
+		assert.equal(connected, false);
+		assert.equal(result.details, null);
+	});
+
 	it("dispatch_agent rejects invalid suffix before dispatching", async () => {
+		trackSkillInvocation("agents");
 		const connection = new MockConnection();
 		const { pi, tools } = createMockPi();
 		registerDaemonTools(pi, async () => connection);
@@ -231,6 +256,7 @@ describe("daemon async tools", () => {
 	});
 
 	it("dispatch_agent uses matching agent_id, --session-id, and durable session directory segment", async () => {
+		trackSkillInvocation("agents");
 		const connection = new MockConnection();
 		const { pi, tools } = createMockPi();
 		registerDaemonTools(pi, async () => connection);
@@ -271,6 +297,7 @@ describe("daemon async tools", () => {
 	});
 
 	it("dispatch_agent prefers protected root cwd and still passes --worktree-dir", async () => {
+		trackSkillInvocation("agents");
 		const priorWorkspaceService = getWorkspaceService();
 		registerWorkspaceService({
 			initialize: async () => {
@@ -344,6 +371,7 @@ describe("daemon async tools", () => {
 	});
 
 	it("dispatch_agent falls back to repo root cwd when protected root is unavailable", async () => {
+		trackSkillInvocation("agents");
 		const priorWorkspaceService = getWorkspaceService();
 		registerWorkspaceService({
 			initialize: async () => {
@@ -408,6 +436,7 @@ describe("daemon async tools", () => {
 	});
 
 	it("dispatch_agent surfaces rejected ack reason as tool error", async () => {
+		trackSkillInvocation("agents");
 		const connection = new MockConnection();
 		const { pi, tools } = createMockPi();
 		registerDaemonTools(pi, async () => connection);
@@ -434,6 +463,7 @@ describe("daemon async tools", () => {
 	});
 
 	it("wait_for_agent sends wait and returns per-handle results", async () => {
+		trackSkillInvocation("agents");
 		const connection = new MockConnection();
 		const { pi, tools } = createMockPi();
 		registerDaemonTools(pi, async () => connection);
@@ -466,7 +496,7 @@ describe("daemon async tools", () => {
 			v: 2,
 			results: [
 				{ run_id: "run-1", status: "completed", result: "done", error: null },
-				{ run_id: "run-2", status: "failed", result: null, error: "boom" },
+				{ run_id: "run-2", status: "failed", result: "compensation skipped", error: "boom" },
 			],
 		});
 
@@ -474,9 +504,13 @@ describe("daemon async tools", () => {
 		assert.equal(result.isError, undefined);
 		assert.equal(result.details.items[0].status, "completed");
 		assert.equal(result.details.items[1].status, "failed");
+		assert.match(result.content[0].text, /done/);
+		assert.match(result.content[0].text, /boom/);
+		assert.match(result.content[0].text, /compensation skipped/);
 	});
 
 	it("wait_for_agent maps running and unknown statuses", async () => {
+		trackSkillInvocation("agents");
 		const connection = new MockConnection();
 		const { pi, tools } = createMockPi();
 		registerDaemonTools(pi, async () => connection);
@@ -514,7 +548,32 @@ describe("daemon async tools", () => {
 		assert.match(result.content[0].text, /still running \(timed out\)/);
 		assert.match(result.content[0].text, /\? run-2 unknown handle/);
 	});
+
+	it("wait_for_agent fails before daemon connection/send when agents skill has not been invoked", async () => {
+		let connected = false;
+		const { pi, tools } = createMockPi();
+		registerDaemonTools(pi, async () => {
+			connected = true;
+			return new MockConnection();
+		});
+		const waitTool = toolByName(tools, "wait_for_agent");
+
+		const result = await waitTool.execute(
+			"1",
+			{ handles: ["run-1"], timeout_s: 30 },
+			new AbortController().signal,
+			() => {},
+			{},
+		);
+
+		assert.equal(result.isError, true);
+		assert.match(result.content[0].text, /Load the agents skill first/);
+		assert.equal(connected, false);
+		assert.equal(result.details, null);
+	});
+
 	it("wait_for_agent aborts promptly on AbortSignal", async () => {
+		trackSkillInvocation("agents");
 		const connection = new MockConnection();
 		const { pi, tools } = createMockPi();
 		registerDaemonTools(pi, async () => connection);
