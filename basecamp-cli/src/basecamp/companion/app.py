@@ -5,6 +5,7 @@ from __future__ import annotations
 import shutil
 import subprocess
 from collections.abc import Iterable
+from datetime import datetime
 from pathlib import Path
 
 from pygments.lexer import Lexer
@@ -26,6 +27,7 @@ from textual.widgets.tree import TreeNode
 
 from basecamp.companion.analysis import CompanionAnalysis
 from basecamp.companion.cycles import companion_tasks_path
+from basecamp.companion.daemon import DaemonSummary, DaemonSummaryRun, DaemonSummarySource
 from basecamp.companion.diff import (
     DIFF_MODES,
     DiffLine,
@@ -87,6 +89,14 @@ def _render_bullets(items: list[str]) -> Text:
 
 
 _STATUS_GLYPH = {"completed": "✓", "active": "▶", "pending": "○", "deleted": "✕"}
+_DAEMON_STATUS_GLYPH = {
+    "completed": "✓",
+    "active": "▶",
+    "running": "⏳",
+    "pending": "○",
+    "failed": "✕",
+    "error": "✕",
+}
 
 
 def _goal_panel(goal: CompanionGoal, is_selected: bool, is_active: bool) -> Panel:  # noqa: FBT001
@@ -131,6 +141,127 @@ def _render_task_detail(goal: CompanionGoal | None, task_index: int) -> Renderab
         padding=(0, 1),
     )
     return Group(header, annotation)
+
+
+def _truncate_preview(text: str, *, max_length: int) -> str:
+    cleaned = text.replace("\n", " ").strip()
+    if len(cleaned) <= max_length:
+        return cleaned
+
+    suffix = "…"
+    available = max_length - len(suffix)
+    if available <= 0:
+        return suffix
+
+    return f"{cleaned[:available].rstrip()}{suffix}" if cleaned[:available].strip() else suffix
+
+
+def _parse_iso_timestamp(value: str | None) -> datetime | None:
+    if not value:
+        return None
+
+    cleaned = value.strip()
+    if cleaned.endswith("Z"):
+        cleaned = f"{cleaned[:-1]}+00:00"
+
+    try:
+        return datetime.fromisoformat(cleaned)
+    except ValueError:
+        return None
+
+
+def _format_duration(seconds: int) -> str:
+    if seconds < 60:
+        return f"{seconds}s"
+
+    if seconds < 3600:
+        mins, secs = divmod(seconds, 60)
+        return f"{mins}m{'' if secs == 0 else f' {secs}s'}"
+
+    if seconds < 86400:
+        hours, remainder = divmod(seconds, 3600)
+        mins, _ = divmod(remainder, 60)
+        return f"{hours}h {mins}m"
+
+    days, remainder = divmod(seconds, 86400)
+    hours, _ = divmod(remainder, 3600)
+    return f"{days}d {hours}h"
+
+
+def _daemon_run_timing(run: DaemonSummaryRun) -> str | None:
+    start = _parse_iso_timestamp(run.started_at or run.created_at)
+    end = _parse_iso_timestamp(run.ended_at)
+
+    if start is None:
+        return None
+
+    now = datetime.now(start.tzinfo)
+
+    if end is not None:
+        label = "elapsed"
+        end_time = end
+    else:
+        label = "running"
+        end_time = now
+
+    if end_time is None:
+        return None
+
+    try:
+        duration = end_time - start
+    except (TypeError, OverflowError):
+        return None
+
+    total_seconds = max(0, int(duration.total_seconds()))
+    return f"{label} {_format_duration(total_seconds)}"
+
+
+def _render_daemon_summary(summary: DaemonSummary | None) -> Text:
+    if summary is None:
+        return Text()
+
+    if summary.state == "unavailable":
+        text = Text("Daemon unavailable")
+        if summary.error:
+            text.append(" · ")
+            text.append(_truncate_preview(summary.error, max_length=80), style="dim")
+        return text
+
+    if summary.state == "error":
+        text = Text("Daemon error")
+        if summary.error:
+            text.append(" · ")
+            text.append(_truncate_preview(summary.error, max_length=80), style="dim")
+        return text
+
+    if summary.counts.total == 0:
+        return Text("No async agents yet")
+
+    rows = Text()
+    for index, run in enumerate(summary.runs):
+        if index:
+            rows.append("\n")
+
+        status = run.status.lower()
+        glyph = _DAEMON_STATUS_GLYPH.get(status, "•")
+
+        row = Text()
+        row.append(glyph)
+        row.append(" ")
+        row.append(run.session_name or run.agent_id[-8:], style="bold")
+        row.append(f" · {run.status}")
+        timing = _daemon_run_timing(run)
+        if timing:
+            row.append(f" · {timing}", style="dim")
+
+        preview = run.error_preview if status in {"failed", "error"} else run.result_preview
+        preview = preview or run.result_preview or run.error_preview
+        if preview:
+            row.append(" · ")
+            row.append(_truncate_preview(preview, max_length=120), style="dim")
+        rows.append_text(row)
+
+    return rows
 
 
 class WorkspacePanel(Static):
@@ -528,6 +659,7 @@ class DashboardBody(Widget):
         super().__init__(*args, **kwargs)
         self._goals: list[CompanionGoal] = []
         self._analysis: CompanionAnalysis | None = None
+        self._daemon_summary: DaemonSummary | None = None
         self._selected_goal = 0
         self._selected_task = 0
         self._following = True
@@ -542,6 +674,7 @@ class DashboardBody(Widget):
             with Horizontal(id="dashboard-bottom"):
                 yield Static(id="dashboard-open", classes="dashboard-box")
                 yield Static(id="dashboard-warnings", classes="dashboard-box")
+            yield Static(id="dashboard-daemon", classes="dashboard-box")
 
     def render(self) -> Text:
         return Text()
@@ -554,6 +687,7 @@ class DashboardBody(Widget):
         self.query_one("#dashboard-decisions", Static).border_title = "Decisions"
         self.query_one("#dashboard-open", Static).border_title = "Open items"
         self.query_one("#dashboard-warnings", Static).border_title = "Warnings"
+        self.query_one("#dashboard-daemon", Static).border_title = "Daemon agents"
         self._render_dashboard()
 
     @staticmethod
@@ -590,6 +724,10 @@ class DashboardBody(Widget):
         self._analysis = model.analysis
         self._clamp()
         self._render_dashboard()
+
+    def update_daemon(self, summary: DaemonSummary | None) -> None:
+        self._daemon_summary = summary
+        self.query_one("#dashboard-daemon", Static).update(_render_daemon_summary(summary))
 
     def _clamp(self) -> None:
         if not self._goals:
@@ -672,6 +810,7 @@ class DashboardBody(Widget):
         self.query_one("#dashboard-warnings", Static).update(
             _render_bullets(analysis.warnings) if analysis else Text("—", style="dim")
         )
+        self.query_one("#dashboard-daemon", Static).update(_render_daemon_summary(self._daemon_summary))
 
 
 class _MenuOrderedScreen(Screen):
@@ -777,20 +916,21 @@ class CompanionApp(App[None]):
     }
 
     #dashboard-task {
-        height: auto;
+        height: 3fr;
         min-height: 4;
         width: 100%;
         margin-bottom: 1;
     }
 
     #dashboard-decisions {
-        height: 1fr;
+        height: 2fr;
         width: 100%;
         margin-bottom: 1;
     }
 
     #dashboard-bottom {
-        height: 1fr;
+        height: 2fr;
+        margin-bottom: 1;
     }
 
     #dashboard-open {
@@ -802,6 +942,11 @@ class CompanionApp(App[None]):
     #dashboard-warnings {
         width: 1fr;
         height: 1fr;
+    }
+
+    #dashboard-daemon {
+        height: 2fr;
+        width: 100%;
     }
 
     #file-tree {
@@ -838,6 +983,7 @@ class CompanionApp(App[None]):
         cwd: Path,
         scratch_dir: Path | None = None,
         tasks_dir: Path | None = None,
+        daemon_source: DaemonSummarySource | None = None,
     ) -> None:
         super().__init__()
         self.snapshot_path = snapshot_path
@@ -845,6 +991,7 @@ class CompanionApp(App[None]):
         self.cwd = cwd
         self.scratch_dir = scratch_dir
         self._tasks_dir = tasks_dir
+        self._daemon_source = daemon_source or DaemonSummarySource()
         self._git = make_git_runner(cwd)
         self._snapshot_mtime_ns: int | None = None
         self._snapshot_exists: bool | None = None
@@ -1005,16 +1152,22 @@ class CompanionApp(App[None]):
             self._snapshot = load_snapshot(self.snapshot_path) if file_exists else None
             self._update_session_bar()
 
-        if self._dashboard_source is None and self._snapshot is not None:
-            self._dashboard_source = DashboardSource(
-                companion_tasks_path(self._snapshot.session_id, self._tasks_dir),
-                self.analysis_path,
-            )
+        dashboard_body = self.query_one("#dashboard-body", DashboardBody)
 
-        if self._dashboard_source is not None:
-            model = self._dashboard_source.poll()
+        if self._snapshot is not None:
+            if self._dashboard_source is None:
+                self._dashboard_source = DashboardSource(
+                    companion_tasks_path(self._snapshot.session_id, self._tasks_dir),
+                    self.analysis_path,
+                )
+
+            model = self._dashboard_source.poll() if self._dashboard_source is not None else None
             if model is not None:
-                self.query_one("#dashboard-body", DashboardBody).update(model)
+                dashboard_body.update(model)
+
+            dashboard_body.update_daemon(self._daemon_source.poll(self._snapshot.session_id))
+        else:
+            dashboard_body.update_daemon(None)
 
         try:
             base_commit, files = collect_changes(self._git, self._diff_mode)

@@ -12,8 +12,17 @@ from basecamp.companion.app import (
     DashboardBody,
     _goal_panel,
     _render_bullets,
+    _render_daemon_summary,
     _render_task_detail,
     next_body_mode,
+)
+from basecamp.companion.daemon import (
+    DaemonSummary,
+    DaemonSummaryCounts,
+    DaemonSummaryError,
+    DaemonSummaryOk,
+    DaemonSummaryRun,
+    DaemonSummaryUnavailable,
 )
 from basecamp.companion.snapshot import CompanionGoal, CompanionProgress, CompanionTask
 from basecamp.companion.source import DashboardModel
@@ -43,6 +52,17 @@ def _build_repo(repo: Path) -> None:
     _run_git(repo, "commit", "-m", "base commit")
 
 
+class _FakeDaemonSource:
+    def __init__(self, summary: DaemonSummary | None) -> None:
+        self.summary = summary
+        self.poll_calls: list[str] = []
+
+    def poll(self, root_id: str, limit: int | None = None) -> DaemonSummary | None:
+        self.poll_calls.append(root_id)
+        assert limit is None or isinstance(limit, int)
+        return self.summary
+
+
 def _goal(name: str, tasks: list[CompanionTask], *, active: bool, completed: int, total: int) -> CompanionGoal:
     return CompanionGoal(
         goal=name,
@@ -54,6 +74,14 @@ def _goal(name: str, tasks: list[CompanionTask], *, active: bool, completed: int
     )
 
 
+def _daemon_summary_ok(*, total: int, runs: list[DaemonSummaryRun]) -> DaemonSummaryOk:
+    return DaemonSummaryOk(
+        root_id="root",
+        counts=DaemonSummaryCounts(pending=0, running=0, completed=total, failed=0, total=total),
+        runs=runs,
+    )
+
+
 def test_render_bullets_empty_shows_dash() -> None:
     assert _render_bullets([]).plain == "—"
 
@@ -62,6 +90,78 @@ def test_render_bullets_populated() -> None:
     plain = _render_bullets(["first", "second"]).plain
     assert "• first" in plain
     assert "• second" in plain
+
+
+def test_render_daemon_summary_empty_ok_shows_no_async_agents() -> None:
+    summary = _daemon_summary_ok(total=0, runs=[])
+    assert "No async agents yet" in _to_text(_render_daemon_summary(summary))
+
+
+def test_render_daemon_summary_unavailable() -> None:
+    summary = DaemonSummaryUnavailable(error="daemon socket missing")
+    text = _to_text(_render_daemon_summary(summary))
+    assert "Daemon unavailable" in text
+    assert "daemon socket missing" in text
+
+
+def test_render_daemon_summary_error() -> None:
+    summary = DaemonSummaryError(error="bad daemon payload")
+    text = _to_text(_render_daemon_summary(summary))
+    assert "Daemon error" in text
+    assert "bad daemon payload" in text
+
+
+def test_render_daemon_summary_populated() -> None:
+    summary = _daemon_summary_ok(
+        total=2,
+        runs=[
+            DaemonSummaryRun(
+                run_id="r1",
+                agent_id="agent-1",
+                parent_id=None,
+                role="session",
+                session_name="root",
+                status="completed",
+                result_preview="all good",
+                error_preview=None,
+                exit_code=0,
+                created_at="2026-01-01T00:00:00Z",
+                started_at="2026-01-01T00:00:01Z",
+                ended_at="2026-01-01T00:00:03Z",
+            ),
+            DaemonSummaryRun(
+                run_id="r2",
+                agent_id="agent-2",
+                parent_id=None,
+                role="agent",
+                session_name="child",
+                status="failed",
+                result_preview=None,
+                error_preview="boom",
+                exit_code=1,
+                created_at="2026-01-01T00:00:00Z",
+                started_at="2026-01-01T00:00:04Z",
+                ended_at="2026-01-01T00:00:04Z",
+            ),
+        ],
+    )
+    text = _to_text(_render_daemon_summary(summary))
+    assert "root" in text
+    assert "child" in text
+    assert "agent-1" not in text
+    assert "agent-2" not in text
+    assert "completed" in text
+    assert "failed" in text
+    assert "all good" in text
+    assert "boom" in text
+
+
+def test_dashboard_css_uses_requested_row_ratios() -> None:
+    css = CompanionApp.CSS
+    assert "#dashboard-task {\n        height: 3fr;" in css
+    assert "#dashboard-decisions {\n        height: 2fr;" in css
+    assert "#dashboard-bottom {\n        height: 2fr;" in css
+    assert "#dashboard-daemon {\n        height: 2fr;" in css
 
 
 def test_render_bullets_preserves_literal_markup_text() -> None:
@@ -194,7 +294,13 @@ def test_dashboard_autopin_navigation_and_repin(tmp_path: Path) -> None:
         encoding="utf-8",
     )
 
-    app = CompanionApp(snapshot_path=snapshot_path, cwd=repo, tasks_dir=tasks_dir)
+    daemon_source = _FakeDaemonSource(DaemonSummaryUnavailable(error="unavailable in test"))
+    app = CompanionApp(
+        snapshot_path=snapshot_path,
+        cwd=repo,
+        tasks_dir=tasks_dir,
+        daemon_source=daemon_source,
+    )
 
     async def run() -> None:
         async with app.run_test() as pilot:
@@ -211,9 +317,17 @@ def test_dashboard_autopin_navigation_and_repin(tmp_path: Path) -> None:
             assert switcher.current == "dashboard-body"
             assert dash.has_focus
             app.query_one("#dashboard-goals", VerticalScroll)
-            for box_id in ("#dashboard-task", "#dashboard-decisions", "#dashboard-open", "#dashboard-warnings"):
+            for box_id in (
+                "#dashboard-task",
+                "#dashboard-decisions",
+                "#dashboard-open",
+                "#dashboard-warnings",
+                "#dashboard-daemon",
+            ):
                 app.query_one(box_id, Static)
             app.query_one("#goal-1", Static)
+
+            assert daemon_source.poll_calls[-1] == session_id
 
             assert dash._active_index == 1
             assert dash._following is True
