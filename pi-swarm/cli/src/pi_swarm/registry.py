@@ -6,15 +6,12 @@ import asyncio
 from collections.abc import MutableMapping
 from dataclasses import dataclass
 
-from fastapi import WebSocket
-
 
 @dataclass
 class Waiter:
-    """In-memory wait registration for a connection and a run-id set."""
+    """In-memory wait registration for a run-id set."""
 
     waiter_id: str
-    websocket: WebSocket
     run_ids: set[str]
     future: asyncio.Future[None]
 
@@ -23,12 +20,12 @@ class Registry:
     """Tracks runtime connections, run ownership/processes, and waiters."""
 
     def __init__(self) -> None:
-        self._connections: MutableMapping[str, WebSocket] = {}
+        self._connections: MutableMapping[str, object] = {}
         self._runs: MutableMapping[str, str] = {}
         self._processes: MutableMapping[str, asyncio.subprocess.Process] = {}
         self._waiters: MutableMapping[str, Waiter] = {}
 
-    def set_connection(self, node_id: str, websocket: WebSocket) -> None:
+    def set_connection(self, node_id: str, websocket: object) -> None:
         """Register or replace an active node connection."""
 
         self._connections[node_id] = websocket
@@ -38,7 +35,7 @@ class Registry:
 
         self._connections.pop(node_id, None)
 
-    def get_connection(self, node_id: str) -> WebSocket | None:
+    def get_connection(self, node_id: str) -> object | None:
         """Look up an active connection by node id."""
 
         return self._connections.get(node_id)
