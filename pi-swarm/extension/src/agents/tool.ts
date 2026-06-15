@@ -13,13 +13,10 @@ import { randomUUID } from "node:crypto";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import { fileURLToPath } from "node:url";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { getMarkdownTheme } from "@earendil-works/pi-coding-agent";
 import { type Component, Container, Markdown, Spacer, Text } from "@earendil-works/pi-tui";
-import { hasInvokedSkill } from "../../platform/skill-tracker.ts";
-import { getWorkspaceState } from "../../platform/workspace.ts";
-import { formatTaskProgressSummary, renderCompactTaskProgressLines } from "../tasks/render.ts";
+import type { PiSwarmDependencies } from "../dependencies.ts";
 import type { AgentStreamEvent } from "./executor.ts";
 import { buildAgentRunName, spawnAgent } from "./executor.ts";
 import { resolveModel } from "./model-resolution.ts";
@@ -190,6 +187,7 @@ function renderPartialView(
 	partial: AgentPartialDetails,
 	fg: (color: ThemeColor, text: string) => string,
 	theme: import("@earendil-works/pi-coding-agent").Theme,
+	deps: Pick<PiSwarmDependencies, "renderCompactTaskProgressLines">,
 ): Component {
 	const sourceLabel = partial.agentSource !== "ad-hoc" ? fg("muted", ` (${partial.agentSource})`) : "";
 	const modelLabel = partial.model ? fg("muted", ` (${partial.model})`) : "";
@@ -203,7 +201,7 @@ function renderPartialView(
 	let text = `${fg("accent", "\u23f3")} ${fg("toolTitle", theme.bold(partial.agent))}${sourceLabel}${modelLabel}${stats}`;
 
 	if (partial.taskProgress) {
-		const taskLines = renderCompactTaskProgressLines(partial.taskProgress, { fg });
+		const taskLines = deps.renderCompactTaskProgressLines(partial.taskProgress, { fg });
 		if (taskLines.length > 0) {
 			text += `\n\n${taskLines.map((line) => `  ${line}`).join("\n")}`;
 		}
@@ -236,9 +234,6 @@ function renderPartialView(
 // Tool Registration
 // ============================================================================
 
-const BASECAMP_EXTENSION_ROOT = fs.realpathSync(
-	path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..", ".."),
-);
 const SUBAGENT_EXCLUDED_EXTENSION_TOOLS = new Set(["agent", "escalate", "publish_pr", "publish_issue"]);
 
 type ToolInfo = ReturnType<ExtensionAPI["getAllTools"]>[number];
@@ -252,22 +247,28 @@ function resolveToolSourcePath(value: string | undefined): string | null {
 	}
 }
 
-function isWithinBasecampExtensionRoot(value: string | undefined): boolean {
+function isWithinBasecampExtensionRoot(value: string | undefined, basecampExtensionRoot: string): boolean {
 	const sourcePath = resolveToolSourcePath(value);
 	if (!sourcePath) return false;
-	const relative = path.relative(BASECAMP_EXTENSION_ROOT, sourcePath);
+	const relative = path.relative(basecampExtensionRoot, sourcePath);
 	return relative === "" || (relative !== "" && !relative.startsWith("..") && !path.isAbsolute(relative));
 }
 
-function isBasecampExtensionTool(tool: ToolInfo): boolean {
+function isBasecampExtensionTool(tool: ToolInfo, basecampExtensionRoot: string): boolean {
 	if (tool.sourceInfo.source === "builtin" || tool.sourceInfo.source === "sdk") return false;
-	return isWithinBasecampExtensionRoot(tool.sourceInfo.baseDir) || isWithinBasecampExtensionRoot(tool.sourceInfo.path);
+	return (
+		isWithinBasecampExtensionRoot(tool.sourceInfo.baseDir, basecampExtensionRoot) ||
+		isWithinBasecampExtensionRoot(tool.sourceInfo.path, basecampExtensionRoot)
+	);
 }
 
-export function getBasecampExtensionToolNames(pi: ExtensionAPI): string[] {
+export function getBasecampExtensionToolNames(pi: ExtensionAPI, basecampExtensionRoot: string): string[] {
 	return pi
 		.getAllTools()
-		.filter((tool) => isBasecampExtensionTool(tool) && !SUBAGENT_EXCLUDED_EXTENSION_TOOLS.has(tool.name))
+		.filter(
+			(tool) =>
+				isBasecampExtensionTool(tool, basecampExtensionRoot) && !SUBAGENT_EXCLUDED_EXTENSION_TOOLS.has(tool.name),
+		)
 		.map((tool) => tool.name);
 }
 
@@ -327,6 +328,7 @@ export function registerAgentTool(
 	pi: ExtensionAPI,
 	getAgents: () => AgentConfig[],
 	getSessionName: () => string,
+	deps: PiSwarmDependencies,
 ): void {
 	const runGuardState: AgentRunGuardState = { namedReadOnly: 0, exclusiveLabel: null };
 
@@ -352,7 +354,7 @@ Available named agents are basecamp builtin definitions. Ad-hoc dispatch must ru
 		async execute(_id, params, signal, onUpdate, ctx) {
 			try {
 				checkDepth();
-				if (!hasInvokedSkill("agents")) {
+				if (!deps.hasInvokedSkill("agents")) {
 					throw new Error('Load the agents skill first: call skill({ name: "agents" }) before dispatching.');
 				}
 			} catch (error) {
@@ -376,7 +378,9 @@ Available named agents are basecamp builtin definitions. Ad-hoc dispatch must ru
 			}
 
 			// Resolve common parameters
-			const model = resolveModel(agentConfig?.model ?? "inherit", ctx.model);
+			const model = resolveModel(agentConfig?.model ?? "inherit", ctx.model, {
+				resolveModelAlias: deps.resolveModelAlias,
+			});
 			const agentId = randomUUID().slice(0, 6);
 			const prefix = `agent-${agentId}`;
 			let name: string;
@@ -395,9 +399,9 @@ Available named agents are basecamp builtin definitions. Ad-hoc dispatch must ru
 			const parentSession = getSessionName();
 			const env = buildAgentEnv({ name, parentSession, project });
 			const agentLabel = params.agent ?? "ad-hoc";
-			const extensionTools = getBasecampExtensionToolNames(pi);
+			const extensionTools = getBasecampExtensionToolNames(pi, deps.basecampExtensionRoot);
 			const runKind = getAgentRunKind(agentConfig);
-			const workspace = getWorkspaceState();
+			const workspace = deps.getWorkspaceState();
 			const worktreeDir = workspace?.activeWorktree?.path ?? null;
 			const spawnCwd = workspace?.launchCwd ?? process.cwd();
 
@@ -472,6 +476,10 @@ Available named agents are basecamp builtin definitions. Ad-hoc dispatch must ru
 					agentConfig,
 					params.task,
 					{ name, model, cwd: spawnCwd, worktreeDir, env, sessionDir, extensionTools, onEvent },
+					{
+						readSkillContent: deps.readSkillContent,
+						buildSkillBlock: deps.buildSkillBlock,
+					},
 					signal,
 				);
 
@@ -498,6 +506,10 @@ Available named agents are basecamp builtin definitions. Ad-hoc dispatch must ru
 							sessionDir: retrySessionDir,
 							extensionTools,
 							onEvent,
+						},
+						{
+							readSkillContent: deps.readSkillContent,
+							buildSkillBlock: deps.buildSkillBlock,
 						},
 						signal,
 					);
@@ -583,7 +595,9 @@ Available named agents are basecamp builtin definitions. Ad-hoc dispatch must ru
 
 			// --- In-progress view (streaming) ---
 			if (isPartial) {
-				return renderPartialView(details as AgentPartialDetails, fg, theme);
+				return renderPartialView(details as AgentPartialDetails, fg, theme, {
+					renderCompactTaskProgressLines: deps.renderCompactTaskProgressLines,
+				});
 			}
 
 			const isError = details.exitCode !== 0;
@@ -611,7 +625,7 @@ Available named agents are basecamp builtin definitions. Ad-hoc dispatch must ru
 				container.addChild(new Text(fg("dim", details.task), 0, 0));
 
 				if (details.taskProgress) {
-					const taskLines = renderCompactTaskProgressLines(details.taskProgress, { fg });
+					const taskLines = deps.renderCompactTaskProgressLines(details.taskProgress, { fg });
 					if (taskLines.length > 0) {
 						container.addChild(new Spacer(1));
 						container.addChild(new Text(fg("muted", "─── Progress ───"), 0, 0));
@@ -656,7 +670,7 @@ Available named agents are basecamp builtin definitions. Ad-hoc dispatch must ru
 				text += `\n${fg("error", `Error: ${details.error}`)}`;
 			}
 
-			const taskSummary = details.taskProgress ? formatTaskProgressSummary(details.taskProgress) : null;
+			const taskSummary = details.taskProgress ? deps.formatTaskProgressSummary(details.taskProgress) : null;
 			if (taskSummary) {
 				text += `\n${fg("dim", `Tasks: ${taskSummary}`)}`;
 			}

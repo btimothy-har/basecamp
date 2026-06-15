@@ -10,7 +10,7 @@
  */
 
 import { getAgentDir, loadSkills, type Skill } from "@earendil-works/pi-coding-agent";
-import { buildSkillBlock, readSkillContent } from "../../capabilities/skill-content.ts";
+import type { PiSwarmDependencies } from "../dependencies.ts";
 
 // ============================================================================
 // Types
@@ -35,7 +35,11 @@ export interface SkillResolution {
  * Resolve skill names to file paths using pi's skill discovery.
  * Returns resolved skills (with content) and any names that weren't found.
  */
-export function resolveSkills(skillNames: string[], cwd: string): SkillResolution {
+export function resolveSkills(
+	skillNames: string[],
+	cwd: string,
+	deps: Pick<PiSwarmDependencies, "readSkillContent" | "buildSkillBlock">,
+): SkillResolution {
 	if (skillNames.length === 0) return { resolved: [], missing: [] };
 
 	const { skills } = loadSkills({ cwd, agentDir: getAgentDir(), skillPaths: [], includeDefaults: true });
@@ -57,7 +61,7 @@ export function resolveSkills(skillNames: string[], cwd: string): SkillResolutio
 			continue;
 		}
 
-		const content = readSkillContent(skill.filePath);
+		const content = deps.readSkillContent(skill.filePath);
 		if (content !== null) {
 			resolved.push({ name: trimmed, path: skill.filePath, content });
 		} else {
@@ -75,8 +79,11 @@ export function resolveSkills(skillNames: string[], cwd: string): SkillResolutio
 /**
  * Build XML skill injection block for appending to a system prompt.
  */
-export function buildSkillInjection(skills: ResolvedSkill[]): string {
+export function buildSkillInjection(
+	skills: ResolvedSkill[],
+	deps: Pick<PiSwarmDependencies, "buildSkillBlock">,
+): string {
 	if (skills.length === 0) return "";
 
-	return skills.map((s) => buildSkillBlock(s.name, s.content)).join("\n\n");
+	return skills.map((s) => deps.buildSkillBlock(s.name, s.content)).join("\n\n");
 }

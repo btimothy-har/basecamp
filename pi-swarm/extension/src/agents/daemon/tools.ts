@@ -3,8 +3,7 @@ import * as path from "node:path";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Text } from "@earendil-works/pi-tui";
 import { Type } from "@sinclair/typebox";
-import { hasInvokedSkill } from "../../../platform/skill-tracker.ts";
-import { getWorkspaceState } from "../../../platform/workspace.ts";
+import type { PiSwarmDependencies } from "../../dependencies.ts";
 import { discoverAgents } from "../discovery.ts";
 import { buildAgentRunName, buildPiArgs, sanitizeAgentSpawnEnv } from "../executor.ts";
 import { resolveModel } from "../model-resolution.ts";
@@ -155,14 +154,26 @@ function waitForFrame<T extends "dispatch_ack" | "wait_result" | "list_agents_re
 	});
 }
 
-export function registerDaemonTools(pi: ExtensionAPI, getConnection: () => Promise<DaemonConnection | null>): void {
+export function registerDaemonTools(
+	pi: ExtensionAPI,
+	getConnection: () => Promise<DaemonConnection | null>,
+	deps: Pick<
+		PiSwarmDependencies,
+		| "hasInvokedSkill"
+		| "getWorkspaceState"
+		| "basecampExtensionRoot"
+		| "resolveModelAlias"
+		| "readSkillContent"
+		| "buildSkillBlock"
+	>,
+): void {
 	pi.registerTool({
 		name: "dispatch_agent",
 		label: "Dispatch Agent",
 		description: "Dispatch an agent asynchronously and return an agent handle.",
 		parameters: DispatchAgentParams,
 		async execute(_id, params, _signal, _onUpdate, ctx) {
-			if (!hasInvokedSkill("agents")) {
+			if (!deps.hasInvokedSkill("agents")) {
 				return {
 					content: [
 						{ type: "text", text: 'Load the agents skill first: call skill({ name: "agents" }) before dispatching.' },
@@ -196,7 +207,9 @@ export function registerDaemonTools(pi: ExtensionAPI, getConnection: () => Promi
 				};
 			}
 
-			const model = resolveModel(agentConfig?.model ?? "inherit", ctx.model);
+			const model = resolveModel(agentConfig?.model ?? "inherit", ctx.model, {
+				resolveModelAlias: deps.resolveModelAlias,
+			});
 			const localId = randomUUID().slice(0, 6);
 			const prefix = `agent-${localId}`;
 			let name: string;
@@ -214,8 +227,8 @@ export function registerDaemonTools(pi: ExtensionAPI, getConnection: () => Promi
 			const parentSession =
 				process.env.BASECAMP_SESSION_NAME ?? pi.getSessionName()?.trim() ?? ctx.sessionManager.getSessionId();
 			const basecampEnv = buildAgentEnv({ name, parentSession, project });
-			const extensionTools = getBasecampExtensionToolNames(pi);
-			const workspace = getWorkspaceState();
+			const extensionTools = getBasecampExtensionToolNames(pi, deps.basecampExtensionRoot);
+			const workspace = deps.getWorkspaceState();
 			const worktreeDir = workspace?.activeWorktree?.path ?? null;
 			const spawnCwd = workspace?.protectedRoot ?? workspace?.repo?.root ?? workspace?.launchCwd ?? process.cwd();
 
@@ -234,16 +247,24 @@ export function registerDaemonTools(pi: ExtensionAPI, getConnection: () => Promi
 
 			const agentId = randomUUID();
 			const sessionDir = path.join(resolveDaemonPaths().runtimeDir, "agents", agentId, "session");
-			const { args } = buildPiArgs(agentConfig, params.task, {
-				name,
-				model,
-				cwd: spawnCwd,
-				worktreeDir,
-				env: basecampEnv,
-				sessionDir,
-				sessionId: agentId,
-				extensionTools,
-			});
+			const { args } = buildPiArgs(
+				agentConfig,
+				params.task,
+				{
+					name,
+					model,
+					cwd: spawnCwd,
+					worktreeDir,
+					env: basecampEnv,
+					sessionDir,
+					sessionId: agentId,
+					extensionTools,
+				},
+				{
+					readSkillContent: deps.readSkillContent,
+					buildSkillBlock: deps.buildSkillBlock,
+				},
+			);
 
 			const runId = randomUUID();
 			connection.send({
@@ -291,7 +312,7 @@ export function registerDaemonTools(pi: ExtensionAPI, getConnection: () => Promi
 		description: "List visible async agents under the caller's daemon root.",
 		parameters: ListAgentsParams,
 		async execute(_id, params, _signal) {
-			if (!hasInvokedSkill("agents")) {
+			if (!deps.hasInvokedSkill("agents")) {
 				return {
 					content: [
 						{
@@ -353,7 +374,7 @@ export function registerDaemonTools(pi: ExtensionAPI, getConnection: () => Promi
 		description: "Wait for one or more async agent handles to complete.",
 		parameters: WaitForAgentParams,
 		async execute(_id, params, signal) {
-			if (!hasInvokedSkill("agents")) {
+			if (!deps.hasInvokedSkill("agents")) {
 				return {
 					content: [
 						{ type: "text", text: 'Load the agents skill first: call skill({ name: "agents" }) before dispatching.' },

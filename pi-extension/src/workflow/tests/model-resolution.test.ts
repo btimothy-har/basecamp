@@ -1,7 +1,11 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { clearModelAliasProvidersForTesting, registerModelAliasProvider } from "../../platform/model-aliases.ts";
-import { resolveModel } from "../agents/model-resolution.ts";
+import { resolveModel } from "../../../../pi-swarm/extension/src/agents/model-resolution.ts";
+import {
+	clearModelAliasProvidersForTesting,
+	registerModelAliasProvider,
+	resolveModelAlias,
+} from "../../platform/model-aliases.ts";
 
 describe("resolveModel", () => {
 	it("passes through reserved model strategies", (t) => {
@@ -17,9 +21,15 @@ describe("resolveModel", () => {
 			},
 		});
 
-		assert.equal(resolveModel("default", { provider: "anthropic", id: "claude-sonnet" }), undefined);
-		assert.equal(resolveModel("inherit", undefined), undefined);
-		assert.equal(resolveModel("inherit", { provider: "anthropic", id: "claude-sonnet" }), "anthropic/claude-sonnet");
+		assert.equal(
+			resolveModel("default", { provider: "anthropic", id: "claude-sonnet" }, { resolveModelAlias }),
+			undefined,
+		);
+		assert.equal(resolveModel("inherit", undefined, { resolveModelAlias }), undefined);
+		assert.equal(
+			resolveModel("inherit", { provider: "anthropic", id: "claude-sonnet" }, { resolveModelAlias }),
+			"anthropic/claude-sonnet",
+		);
 	});
 
 	it("resolves configured aliases and falls back to explicit model strings", (t) => {
@@ -35,7 +45,7 @@ describe("resolveModel", () => {
 			},
 		});
 
-		assert.equal(resolveModel("fast", undefined), "anthropic/claude-3-5-haiku-latest");
-		assert.equal(resolveModel("openai/gpt-4.1", undefined), "openai/gpt-4.1");
+		assert.equal(resolveModel("fast", undefined, { resolveModelAlias }), "anthropic/claude-3-5-haiku-latest");
+		assert.equal(resolveModel("openai/gpt-4.1", undefined, { resolveModelAlias }), "openai/gpt-4.1");
 	});
 });

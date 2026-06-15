@@ -1,6 +1,5 @@
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { setDaemonStatus } from "../../../platform/daemon-status.ts";
-import { formatTitle, shortSessionId } from "../../../session/ui/title.ts";
+import type { PiSwarmDependencies } from "../../dependencies.ts";
 import { DEFAULT_AGENT_MAX_DEPTH } from "../types.ts";
 import { connect, type DaemonConnection, type DaemonIdentity, ensureDaemon } from "./client.ts";
 import { resolveDaemonPaths } from "./paths.ts";
@@ -66,7 +65,10 @@ async function awaitDaemonConnection(): Promise<DaemonConnection | null> {
  * - session_name = BASECAMP_AGENT_TITLE (+ session-id suffix) ?? BASECAMP_SESSION_NAME ?? node_id
  * - cwd = process.cwd()
  */
-export function deriveDaemonIdentity(ctx: ExtensionContext): DaemonIdentity {
+export function deriveDaemonIdentity(
+	ctx: ExtensionContext,
+	deps?: Pick<PiSwarmDependencies, "formatTitle" | "shortSessionId">,
+): DaemonIdentity {
 	const depth = Number(process.env.BASECAMP_AGENT_DEPTH ?? 0);
 	const safeDepth = Number.isFinite(depth) && depth >= 0 ? depth : 0;
 	const nodeId = process.env.BASECAMP_AGENT_ID ?? ctx.sessionManager.getSessionId();
@@ -76,50 +78,69 @@ export function deriveDaemonIdentity(ctx: ExtensionContext): DaemonIdentity {
 		parent_id: process.env.BASECAMP_PARENT_SESSION ?? null,
 		sibling_group: process.env.BASECAMP_SIBLING_GROUP ?? null,
 		depth: safeDepth,
-		session_name: resolveDaemonAgentTitle(ctx) ?? process.env.BASECAMP_SESSION_NAME ?? nodeId,
+		session_name:
+			resolveDaemonAgentTitle(ctx, {
+				formatTitle: deps?.formatTitle ?? ((title, suffix) => `${title} [${suffix}]`),
+				shortSessionId: deps?.shortSessionId ?? ((sessionId) => sessionId.replace(/-/g, "").slice(-4)),
+			}) ??
+			process.env.BASECAMP_SESSION_NAME ??
+			nodeId,
 		cwd: process.cwd(),
 	};
 }
 
-function resolveDaemonAgentTitle(ctx: ExtensionContext): string | null {
+function resolveDaemonAgentTitle(
+	ctx: ExtensionContext,
+	deps: Pick<PiSwarmDependencies, "formatTitle" | "shortSessionId">,
+): string | null {
 	const base = process.env.BASECAMP_AGENT_TITLE?.trim();
 	if (!base) return null;
-	return formatTitle(base, shortSessionId(ctx.sessionManager.getSessionId()));
+	return deps.formatTitle(base, deps.shortSessionId(ctx.sessionManager.getSessionId()));
 }
 
-function trackDaemonConnection(state: DaemonClientState, connection: DaemonConnection): DaemonConnection {
+function trackDaemonConnection(
+	state: DaemonClientState,
+	connection: DaemonConnection,
+	deps: Pick<PiSwarmDependencies, "setDaemonStatus">,
+): DaemonConnection {
 	connection.onClose(() => {
 		if (state.connection === connection) {
 			state.connection = null;
-			setDaemonStatus({ kind: "disconnected" });
+			deps.setDaemonStatus({ kind: "disconnected" });
 		}
 	});
 	state.connection = connection;
-	setDaemonStatus({ kind: "connected" });
+	deps.setDaemonStatus({ kind: "connected" });
 	return connection;
 }
 
-async function ensureAndConnectTopLevel(ctx: ExtensionContext): Promise<DaemonConnection> {
+async function ensureAndConnectTopLevel(
+	ctx: ExtensionContext,
+	deps: Pick<PiSwarmDependencies, "setDaemonStatus" | "formatTitle" | "shortSessionId">,
+): Promise<DaemonConnection> {
 	const state = getDaemonClientState();
 	if (state.connection) return state.connection;
 
-	const identity = deriveDaemonIdentity(ctx);
+	const identity = deriveDaemonIdentity(ctx, deps);
 	const { socketPath } = await ensureDaemon();
 	const connection = await connect(identity, { socketPath });
-	return trackDaemonConnection(state, connection);
+	return trackDaemonConnection(state, connection, deps);
 }
 
-async function connectSpawnedAgent(ctx: ExtensionContext): Promise<DaemonConnection> {
+async function connectSpawnedAgent(
+	ctx: ExtensionContext,
+	deps: Pick<PiSwarmDependencies, "setDaemonStatus" | "formatTitle" | "shortSessionId">,
+): Promise<DaemonConnection> {
 	const state = getDaemonClientState();
 	if (state.connection) return state.connection;
 
-	const identity = deriveDaemonIdentity(ctx);
+	const identity = deriveDaemonIdentity(ctx, deps);
 	const socketPath = process.env.BASECAMP_DAEMON_UDS ?? resolveDaemonPaths().socketPath;
 	const connection = await connect(identity, { socketPath });
-	return trackDaemonConnection(state, connection);
+	return trackDaemonConnection(state, connection, deps);
 }
 
-export function registerDaemonClient(pi: ExtensionAPI): void {
+export function registerDaemonClient(pi: ExtensionAPI, deps: PiSwarmDependencies): void {
 	const depth = Number(process.env.BASECAMP_AGENT_DEPTH ?? "0");
 	const runId = process.env.BASECAMP_RUN_ID;
 	const isTopLevel = Number.isFinite(depth) ? depth <= 0 : true;
@@ -132,7 +153,14 @@ export function registerDaemonClient(pi: ExtensionAPI): void {
 	}
 
 	if (isTopLevel && !atMaxDepth) {
-		registerDaemonTools(pi, awaitDaemonConnection);
+		registerDaemonTools(pi, awaitDaemonConnection, {
+			hasInvokedSkill: deps.hasInvokedSkill,
+			getWorkspaceState: deps.getWorkspaceState,
+			basecampExtensionRoot: deps.basecampExtensionRoot,
+			resolveModelAlias: deps.resolveModelAlias,
+			readSkillContent: deps.readSkillContent,
+			buildSkillBlock: deps.buildSkillBlock,
+		});
 	}
 
 	const state = getDaemonClientState();
@@ -148,7 +176,10 @@ export function registerDaemonClient(pi: ExtensionAPI): void {
 
 	pi.on("session_start", (_event, ctx) => {
 		if (isDaemonSpawnedAgent) {
-			const agentTitle = resolveDaemonAgentTitle(ctx);
+			const agentTitle = resolveDaemonAgentTitle(ctx, {
+				formatTitle: deps.formatTitle,
+				shortSessionId: deps.shortSessionId,
+			});
 			if (agentTitle) {
 				pi.setSessionName(agentTitle);
 				process.env.BASECAMP_SESSION_NAME = agentTitle;
@@ -157,12 +188,22 @@ export function registerDaemonClient(pi: ExtensionAPI): void {
 
 		state.connecting = (async () => {
 			try {
-				setDaemonStatus({ kind: "starting" });
-				const connection = isTopLevel ? await ensureAndConnectTopLevel(ctx) : await connectSpawnedAgent(ctx);
+				deps.setDaemonStatus({ kind: "starting" });
+				const connection = isTopLevel
+					? await ensureAndConnectTopLevel(ctx, {
+							setDaemonStatus: deps.setDaemonStatus,
+							formatTitle: deps.formatTitle,
+							shortSessionId: deps.shortSessionId,
+						})
+					: await connectSpawnedAgent(ctx, {
+							setDaemonStatus: deps.setDaemonStatus,
+							formatTitle: deps.formatTitle,
+							shortSessionId: deps.shortSessionId,
+						});
 				reporterConnection?.resolve(connection);
 			} catch (error) {
 				const message = error instanceof Error ? error.message : String(error);
-				setDaemonStatus({ kind: "unavailable", message });
+				deps.setDaemonStatus({ kind: "unavailable", message });
 				reporterConnection?.reject(error);
 				if (isTopLevel) {
 					ctx.ui.notify(`basecamp daemon unavailable: ${message}`, "warning");
@@ -177,7 +218,7 @@ export function registerDaemonClient(pi: ExtensionAPI): void {
 		const connection = state.connection;
 		state.connection = null;
 		state.connecting = null;
-		setDaemonStatus({ kind: "idle" });
+		deps.setDaemonStatus({ kind: "idle" });
 		try {
 			connection?.close();
 		} catch {

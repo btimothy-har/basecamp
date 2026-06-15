@@ -1,8 +1,8 @@
 /**
  * Agent discovery — basecamp-owned builtin definitions.
  *
- * Owned by workflow because agents are workflow-domain capabilities. Core only
- * sees generic catalog metadata exposed by the workflow agent catalog provider.
+ * Owned by pi-swarm because agent definitions are part of the async-agent domain.
+ * The host extension sees generic catalog metadata through the injected catalog provider.
  */
 
 import * as fs from "node:fs";

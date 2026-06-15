@@ -3,14 +3,15 @@
  */
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import type { PiSwarmDependencies } from "../dependencies.ts";
+import { registerAgentCatalogProvider } from "./catalog.ts";
+import { registerAgentCommands } from "./commands.ts";
+import { discoverAgents } from "./discovery.ts";
+import { registerAgentTool } from "./tool.ts";
+import type { AgentConfig } from "./types.ts";
+import { DEFAULT_AGENT_MAX_DEPTH } from "./types.ts";
 
-import { registerAgentCatalogProvider } from "./catalog";
-import { registerAgentCommands } from "./commands";
-import { discoverAgents } from "./discovery";
-import { registerAgentTool } from "./tool";
-import { type AgentConfig, DEFAULT_AGENT_MAX_DEPTH } from "./types";
-
-export function registerAgents(pi: ExtensionAPI) {
+export function registerAgents(pi: ExtensionAPI, deps: PiSwarmDependencies): void {
 	let agents: AgentConfig[] = [];
 	let sessionName = "";
 
@@ -21,7 +22,7 @@ export function registerAgents(pi: ExtensionAPI) {
 	// --- Agent discovery and session naming ---
 	pi.on("session_start", async (_event, ctx) => {
 		agents = discoverAgents();
-		registerAgentCatalogProvider(agents);
+		registerAgentCatalogProvider(agents, { registerCatalogProvider: deps.registerCatalogProvider });
 
 		sessionName = pi.getSessionName()?.trim() || "";
 		if (!sessionName) {
@@ -41,6 +42,7 @@ export function registerAgents(pi: ExtensionAPI) {
 			pi,
 			() => agents,
 			() => sessionName,
+			deps,
 		);
 		registerAgentCommands(pi, () => agents);
 	}

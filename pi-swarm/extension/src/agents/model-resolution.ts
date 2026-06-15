@@ -1,4 +1,4 @@
-import { resolveModelAlias } from "../../platform/model-aliases.ts";
+import type { PiSwarmDependencies } from "../dependencies.ts";
 import type { ModelStrategy } from "./types.ts";
 
 interface ParentModel {
@@ -6,7 +6,11 @@ interface ParentModel {
 	provider: string;
 }
 
-export function resolveModel(strategy: ModelStrategy, parentModel: ParentModel | undefined): string | undefined {
+export function resolveModel(
+	strategy: ModelStrategy,
+	parentModel: ParentModel | undefined,
+	deps: Pick<PiSwarmDependencies, "resolveModelAlias">,
+): string | undefined {
 	switch (strategy) {
 		case "default":
 			return undefined;
@@ -15,6 +19,6 @@ export function resolveModel(strategy: ModelStrategy, parentModel: ParentModel |
 			// Provider-qualify to avoid ambiguous resolution across providers
 			return `${parentModel.provider}/${parentModel.id}`;
 		default:
-			return resolveModelAlias(strategy) ?? strategy;
+			return deps.resolveModelAlias(strategy) ?? strategy;
 	}
 }

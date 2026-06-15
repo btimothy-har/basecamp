@@ -3,7 +3,7 @@
  */
 
 import { type Static, Type } from "@sinclair/typebox";
-import type { TaskProgressSnapshot } from "../tasks/render";
+import type { TaskProgressSnapshot } from "../dependencies.ts";
 import type { AgentConfig } from "./discovery.ts";
 
 // Re-export agent discovery types so runtime modules have one import surface.

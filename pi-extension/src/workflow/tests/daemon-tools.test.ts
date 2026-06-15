@@ -3,13 +3,22 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { afterEach, beforeEach, describe, it } from "node:test";
-import { resetInvokedSkills, trackSkillInvocation } from "../../platform/skill-tracker.ts";
-import { getWorkspaceService, registerWorkspaceService, type WorkspaceService } from "../../platform/workspace.ts";
-import type { DaemonConnection } from "../agents/daemon/client.ts";
-import type { Frame, ListAgentItem } from "../agents/daemon/frames.ts";
-import { deriveDaemonIdentity } from "../agents/daemon/index.ts";
-import { resolveDaemonPaths } from "../agents/daemon/paths.ts";
-import { buildAgentTitleBase, processEnvForSpawn, registerDaemonTools } from "../agents/daemon/tools.ts";
+import type { DaemonConnection } from "../../../../pi-swarm/extension/src/agents/daemon/client.ts";
+import type { Frame, ListAgentItem } from "../../../../pi-swarm/extension/src/agents/daemon/frames.ts";
+import { deriveDaemonIdentity } from "../../../../pi-swarm/extension/src/agents/daemon/index.ts";
+import { resolveDaemonPaths } from "../../../../pi-swarm/extension/src/agents/daemon/paths.ts";
+import {
+	buildAgentTitleBase,
+	processEnvForSpawn,
+	registerDaemonTools,
+} from "../../../../pi-swarm/extension/src/agents/daemon/tools.ts";
+import { hasInvokedSkill, resetInvokedSkills, trackSkillInvocation } from "../../platform/skill-tracker.ts";
+import {
+	getWorkspaceService,
+	getWorkspaceState,
+	registerWorkspaceService,
+	type WorkspaceService,
+} from "../../platform/workspace.ts";
 
 interface RegisteredTool {
 	name: string;
@@ -87,6 +96,15 @@ function createNullWorkspaceService(): WorkspaceService {
 		},
 	};
 }
+
+const daemonToolDeps = {
+	hasInvokedSkill,
+	getWorkspaceState,
+	basecampExtensionRoot: process.cwd(),
+	resolveModelAlias: (model: string) => model,
+	readSkillContent: (_path: string) => null,
+	buildSkillBlock: (_name: string, content: string) => content,
+};
 
 describe("daemon async tools", () => {
 	let priorHome: string | undefined;
@@ -173,7 +191,7 @@ describe("daemon async tools", () => {
 		try {
 			const connection = new MockConnection();
 			const { pi, tools } = createMockPi();
-			registerDaemonTools(pi, async () => connection);
+			registerDaemonTools(pi, async () => connection, daemonToolDeps);
 			const dispatchTool = toolByName(tools, "dispatch_agent");
 
 			const executePromise = dispatchTool.execute(
@@ -221,10 +239,14 @@ describe("daemon async tools", () => {
 	it("dispatch_agent fails before daemon connection/send when agents skill has not been invoked", async () => {
 		let connected = false;
 		const { pi, tools } = createMockPi();
-		registerDaemonTools(pi, async () => {
-			connected = true;
-			return new MockConnection();
-		});
+		registerDaemonTools(
+			pi,
+			async () => {
+				connected = true;
+				return new MockConnection();
+			},
+			daemonToolDeps,
+		);
 		const dispatchTool = toolByName(tools, "dispatch_agent");
 
 		const result = await dispatchTool.execute("1", { task: "hello world" }, new AbortController().signal, () => {}, {
@@ -242,7 +264,7 @@ describe("daemon async tools", () => {
 		trackSkillInvocation("agents");
 		const connection = new MockConnection();
 		const { pi, tools } = createMockPi();
-		registerDaemonTools(pi, async () => connection);
+		registerDaemonTools(pi, async () => connection, daemonToolDeps);
 		const dispatchTool = toolByName(tools, "dispatch_agent");
 
 		const result = await dispatchTool.execute(
@@ -262,7 +284,7 @@ describe("daemon async tools", () => {
 		trackSkillInvocation("agents");
 		const connection = new MockConnection();
 		const { pi, tools } = createMockPi();
-		registerDaemonTools(pi, async () => connection);
+		registerDaemonTools(pi, async () => connection, daemonToolDeps);
 		const dispatchTool = toolByName(tools, "dispatch_agent");
 
 		const executePromise = dispatchTool.execute("1", { task: "hello world" }, new AbortController().signal, () => {}, {
@@ -342,7 +364,7 @@ describe("daemon async tools", () => {
 		try {
 			const connection = new MockConnection();
 			const { pi, tools } = createMockPi();
-			registerDaemonTools(pi, async () => connection);
+			registerDaemonTools(pi, async () => connection, daemonToolDeps);
 			const dispatchTool = toolByName(tools, "dispatch_agent");
 
 			const executePromise = dispatchTool.execute(
@@ -410,7 +432,7 @@ describe("daemon async tools", () => {
 		try {
 			const connection = new MockConnection();
 			const { pi, tools } = createMockPi();
-			registerDaemonTools(pi, async () => connection);
+			registerDaemonTools(pi, async () => connection, daemonToolDeps);
 			const dispatchTool = toolByName(tools, "dispatch_agent");
 
 			const executePromise = dispatchTool.execute(
@@ -442,7 +464,7 @@ describe("daemon async tools", () => {
 		trackSkillInvocation("agents");
 		const connection = new MockConnection();
 		const { pi, tools } = createMockPi();
-		registerDaemonTools(pi, async () => connection);
+		registerDaemonTools(pi, async () => connection, daemonToolDeps);
 		const dispatchTool = toolByName(tools, "dispatch_agent");
 
 		const executePromise = dispatchTool.execute("1", { task: "hello world" }, new AbortController().signal, () => {}, {
@@ -469,7 +491,7 @@ describe("daemon async tools", () => {
 		trackSkillInvocation("agents");
 		const connection = new MockConnection();
 		const { pi, tools } = createMockPi();
-		registerDaemonTools(pi, async () => connection);
+		registerDaemonTools(pi, async () => connection, daemonToolDeps);
 		const waitTool = toolByName(tools, "wait_for_agent");
 
 		const executePromise = waitTool.execute(
@@ -516,7 +538,7 @@ describe("daemon async tools", () => {
 		trackSkillInvocation("agents");
 		const connection = new MockConnection();
 		const { pi, tools } = createMockPi();
-		registerDaemonTools(pi, async () => connection);
+		registerDaemonTools(pi, async () => connection, daemonToolDeps);
 		const waitTool = toolByName(tools, "wait_for_agent");
 
 		const executePromise = waitTool.execute(
@@ -555,10 +577,14 @@ describe("daemon async tools", () => {
 	it("wait_for_agent fails before daemon connection/send when agents skill has not been invoked", async () => {
 		let connected = false;
 		const { pi, tools } = createMockPi();
-		registerDaemonTools(pi, async () => {
-			connected = true;
-			return new MockConnection();
-		});
+		registerDaemonTools(
+			pi,
+			async () => {
+				connected = true;
+				return new MockConnection();
+			},
+			daemonToolDeps,
+		);
 		const waitTool = toolByName(tools, "wait_for_agent");
 
 		const result = await waitTool.execute(
@@ -579,7 +605,7 @@ describe("daemon async tools", () => {
 		trackSkillInvocation("agents");
 		const connection = new MockConnection();
 		const { pi, tools } = createMockPi();
-		registerDaemonTools(pi, async () => connection);
+		registerDaemonTools(pi, async () => connection, daemonToolDeps);
 		const listTool = toolByName(tools, "list_agents");
 
 		const executePromise = listTool.execute("1", { awaitable: true }, new AbortController().signal, () => {}, {});
@@ -632,7 +658,7 @@ describe("daemon async tools", () => {
 		trackSkillInvocation("agents");
 		const connection = new MockConnection();
 		const { pi, tools } = createMockPi();
-		registerDaemonTools(pi, async () => connection);
+		registerDaemonTools(pi, async () => connection, daemonToolDeps);
 		const waitTool = toolByName(tools, "wait_for_agent");
 
 		const controller = new AbortController();
@@ -653,10 +679,14 @@ describe("daemon async tools", () => {
 	it("list_agents requires agents skill invocation", async () => {
 		let connected = false;
 		const { pi, tools } = createMockPi();
-		registerDaemonTools(pi, async () => {
-			connected = true;
-			return new MockConnection();
-		});
+		registerDaemonTools(
+			pi,
+			async () => {
+				connected = true;
+				return new MockConnection();
+			},
+			daemonToolDeps,
+		);
 		const listTool = toolByName(tools, "list_agents");
 
 		const result = await listTool.execute("1", {}, new AbortController().signal, () => {}, {});

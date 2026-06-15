@@ -16,7 +16,12 @@ import { spawn } from "node:child_process";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import type { TaskProgressSnapshot, TaskProgressStatus, TaskProgressTask } from "../tasks/render";
+import type {
+	PiSwarmDependencies,
+	TaskProgressSnapshot,
+	TaskProgressStatus,
+	TaskProgressTask,
+} from "../dependencies.ts";
 import { buildSkillInjection, resolveSkills } from "./skills.ts";
 import {
 	type AgentConfig,
@@ -148,10 +153,16 @@ export function ensureAgentDir(name: string): string {
 	return dir;
 }
 
+export interface PiAgentSkillDeps {
+	readSkillContent: PiSwarmDependencies["readSkillContent"];
+	buildSkillBlock: PiSwarmDependencies["buildSkillBlock"];
+}
+
 export function buildPiArgs(
 	agent: AgentConfig | null,
 	task: string,
 	opts: PiArgsOpts,
+	deps: PiAgentSkillDeps,
 ): { args: string[]; agentDir: string } {
 	const agentDir = ensureAgentDir(opts.name);
 	const args = ["pi", "--mode", "json", "-p"];
@@ -179,9 +190,9 @@ export function buildPiArgs(
 	// If no skills declared, subagents discover skills normally like the parent.
 	let skillInjection = "";
 	if (agent?.skills?.length) {
-		const { resolved } = resolveSkills(agent.skills, opts.cwd);
+		const { resolved } = resolveSkills(agent.skills, opts.cwd, deps);
 		if (resolved.length > 0) {
-			skillInjection = buildSkillInjection(resolved);
+			skillInjection = buildSkillInjection(resolved, deps);
 		}
 		// Suppress pi's own discovery — skills are baked into the prompt
 		args.push("--no-skills");
@@ -574,9 +585,10 @@ export function spawnAgent(
 		worktreeDir?: string | null;
 		onEvent?: (event: AgentStreamEvent) => void;
 	},
+	deps: PiAgentSkillDeps,
 	signal?: AbortSignal,
 ): Promise<SpawnResult> {
-	const { args } = buildPiArgs(agent, task, opts);
+	const { args } = buildPiArgs(agent, task, opts, deps);
 	const startTime = Date.now();
 
 	return new Promise<SpawnResult>((resolve) => {

@@ -1,9 +1,10 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import type { DaemonConnection } from "../agents/daemon/client.ts";
-import type { Frame } from "../agents/daemon/frames.ts";
-import { registerDaemonClient } from "../agents/daemon/index.ts";
-import { registerDaemonReporter } from "../agents/daemon/reporter.ts";
+import type { DaemonConnection } from "../../../../pi-swarm/extension/src/agents/daemon/client.ts";
+import type { Frame } from "../../../../pi-swarm/extension/src/agents/daemon/frames.ts";
+import { registerDaemonClient } from "../../../../pi-swarm/extension/src/agents/daemon/index.ts";
+import { registerDaemonReporter } from "../../../../pi-swarm/extension/src/agents/daemon/reporter.ts";
+import type { PiSwarmDependencies } from "../../../../pi-swarm/extension/src/dependencies.ts";
 
 class MockPi {
 	handlers = new Map<string, Array<(event: unknown, ctx?: unknown) => unknown>>();
@@ -31,6 +32,22 @@ function deferred<T>(): { promise: Promise<T>; resolve: (value: T) => void } {
 }
 
 describe("daemon reporter", () => {
+	const deps = {
+		hasInvokedSkill: () => true,
+		getWorkspaceState: () => null,
+		basecampExtensionRoot: process.cwd(),
+		resolveModelAlias: (model: string) => model,
+		readSkillContent: () => null,
+		buildSkillBlock: () => "",
+		setDaemonStatus: () => {},
+		formatTaskProgressSummary: () => null,
+		renderCompactTaskProgressLines: () => [],
+		formatTitle: () => "basecamp",
+		shortSessionId: (value: string) => value.slice(-8),
+		registerCatalogProvider: () => {
+			/* no-op */
+		},
+	} as unknown as PiSwarmDependencies;
 	it("sends telemetry and final result report", async () => {
 		const sent: Frame[] = [];
 		const connection: DaemonConnection = {
@@ -127,7 +144,7 @@ describe("daemon reporter", () => {
 		try {
 			process.env.BASECAMP_AGENT_DEPTH = "1";
 			delete process.env.BASECAMP_RUN_ID;
-			registerDaemonClient(pi as unknown as any);
+			registerDaemonClient(pi as unknown as any, deps);
 			assert.equal(pi.handlers.size, 0);
 		} finally {
 			if (priorDepth === undefined) delete process.env.BASECAMP_AGENT_DEPTH;

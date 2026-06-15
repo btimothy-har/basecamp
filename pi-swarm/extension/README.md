@@ -1,5 +1,6 @@
 # pi-swarm extension package
 
-This package owns the TypeScript side of async agents: public agent tools, launch policy, daemon client code, and spawned-agent reporting.
+This package owns the TypeScript runtime for Basecamp async-agent features: public agent tools, launch policy, daemon client/reporting code, and dependency-injected registration helpers.
 
-`registerPiSwarm(pi, deps)` will be introduced here when protocol/runtime code moves into this package in a follow-up task. No placeholder API surface is implemented yet.
+`registerPiSwarm(pi, deps)` is the integration entrypoint used by `pi-extension` to host this domain.
+

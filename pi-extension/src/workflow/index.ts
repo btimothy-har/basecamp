@@ -7,9 +7,9 @@
  */
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { registerDaemonClient } from "./agents/daemon/index.ts";
-import { registerAgents } from "./agents/index";
+import { registerPiSwarm } from "../../../pi-swarm/extension/src/index.ts";
 import { registerEscalate } from "./escalate/index.js";
+import { createPiSwarmDependencies } from "./pi-swarm-adapter.ts";
 import { registerPlan, registerPlanCommands } from "./planning/plan";
 import { registerPlanSkillGuard } from "./planning/plan-skill-guard";
 import { registerTasks } from "./tasks/tasks";
@@ -21,8 +21,7 @@ export default function (pi: ExtensionAPI) {
 	registerPlanSkillGuard(pi);
 	const plan = registerPlan(pi, tasks);
 	registerPlanCommands(pi, tasks, plan);
-	registerAgents(pi);
-	registerDaemonClient(pi);
+	registerPiSwarm(pi, createPiSwarmDependencies());
 
 	// Primary-only interactions should not be available to subagents.
 	if (!isSubagent) {

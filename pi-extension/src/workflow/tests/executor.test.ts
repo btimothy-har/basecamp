@@ -4,7 +4,11 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { describe, it } from "node:test";
-import { buildAgentRunName, buildSpawnEnv, ensureAgentDir } from "../agents/executor.ts";
+import {
+	buildAgentRunName,
+	buildSpawnEnv,
+	ensureAgentDir,
+} from "../../../../pi-swarm/extension/src/agents/executor.ts";
 
 describe("buildAgentRunName", () => {
 	it("accepts readable suffixes and trims outer whitespace", () => {
