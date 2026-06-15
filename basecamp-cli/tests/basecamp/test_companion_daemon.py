@@ -1,4 +1,4 @@
-"""Tests for the companion daemon summary client."""
+"""Tests for the daemon summary client."""
 
 from __future__ import annotations
 

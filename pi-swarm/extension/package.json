@@ -1,0 +1,37 @@
+{
+	"name": "pi-swarm-extension",
+	"private": true,
+	"type": "module",
+	"version": "0.1.0",
+	"engines": {
+		"node": ">=24"
+	},
+	"description": "Top-level async-agent extension surface for the daemon protocol stack.",
+	"scripts": {
+		"check": "tsc && biome check .",
+		"typecheck": "tsc",
+		"test": "node --experimental-strip-types --test",
+		"lint": "biome check .",
+		"lint:fix": "biome check --fix .",
+		"format": "biome format --fix ."
+	},
+	"peerDependencies": {
+		"@earendil-works/pi-ai": "*",
+		"@earendil-works/pi-coding-agent": "*",
+		"@sinclair/typebox": "*"
+	},
+	"dependencies": {
+		"ws": "^8"
+	},
+	"devDependencies": {
+		"@biomejs/biome": "^2.0.0",
+		"@earendil-works/pi-agent-core": "0.78.0",
+		"@earendil-works/pi-ai": "0.78.0",
+		"@earendil-works/pi-coding-agent": "0.78.0",
+		"@earendil-works/pi-tui": "0.78.0",
+		"@sinclair/typebox": "^0.34.0",
+		"@types/node": "^22.0.0",
+		"@types/ws": "^8.18.1",
+		"typescript": "^5.8.0"
+	}
+}

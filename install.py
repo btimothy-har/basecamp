@@ -181,7 +181,12 @@ def install_memory_stack() -> None:
     install_pi_npm_package(PI_TOTAL_RECALL_SPEC, "pi-total-recall (memory stack)")
 
 
-def install_python_tool(package_dir: Path, command_name: str, *, editable: bool) -> None:
+def install_python_tool(
+    package_dir: Path,
+    command_name: str,
+    *,
+    editable: bool,
+) -> None:
     args = ["uv", "tool", "install", "--force", "--reinstall"]
     if editable:
         args.append("-e")
@@ -219,7 +224,11 @@ def main() -> None:
 
     console.print("[bold]Python tool[/bold]")
     console.print()
-    install_python_tool(CLI_DIR, "basecamp", editable=editable)
+    install_python_tool(
+        CLI_DIR,
+        "basecamp",
+        editable=editable,
+    )
 
     console.print()
     console.print("[bold]Pi package[/bold]")

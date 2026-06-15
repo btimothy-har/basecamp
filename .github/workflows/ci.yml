@@ -27,24 +27,28 @@ jobs:
     - name: Setup Node
       uses: actions/setup-node@v4
       with:
-        node-version: 22
+        node-version: 24
 
     - name: Install Extension Dependencies
-      working-directory: pi-extension
-      run: npm ci
+      run: |
+        npm --prefix pi-extension ci
+        npm --prefix pi-swarm/extension ci
 
     - name: Typecheck (Extension)
-      working-directory: pi-extension
-      run: npx tsc
+      run: |
+        npm --prefix pi-extension run typecheck
+        npm --prefix pi-swarm/extension run typecheck
 
     - name: Lint (Extension)
-      working-directory: pi-extension
-      run: npx biome check .
+      run: |
+        npm --prefix pi-extension run lint
+        npm --prefix pi-swarm/extension run lint
 
     - name: Run Python Tests
       run: |
         uv run pytest
 
     - name: Run Extension Tests
-      working-directory: pi-extension
-      run: npm test
+      run: |
+        npm --prefix pi-extension test
+        npm --prefix pi-swarm/extension test

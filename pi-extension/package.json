@@ -16,7 +16,8 @@
 		"skills": [
 			"./src/workflow/skills",
 			"./src/git/skills",
-			"./src/engineering/skills"
+			"./src/engineering/skills",
+			"../pi-swarm/extension/skills"
 		],
 		"prompts": [
 			"./src/engineering/prompts"
@@ -29,7 +30,7 @@
 		"test:state": "node --experimental-strip-types --test src/state/tests/*.test.ts",
 		"test:platform": "node --experimental-strip-types --test src/platform/tests/*.test.ts",
 		"test:session": "node --experimental-strip-types --test src/session/tests/*.test.ts",
-		"test:model-aliases": "node --experimental-strip-types --test src/model-aliases/tests/*.test.ts src/workflow/tests/model-resolution.test.ts src/session/tests/title-model.test.ts",
+		"test:model-aliases": "node --experimental-strip-types --test src/model-aliases/tests/*.test.ts src/session/tests/title-model.test.ts",
 		"test:projects": "node --experimental-strip-types --test src/projects/tests/*.test.ts",
 		"test:workspace": "node --experimental-strip-types --test src/workspace/tests/*.test.ts",
 		"test:panes": "node --experimental-strip-types --test src/panes/tests/*.test.ts",
@@ -45,9 +46,6 @@
 		"@earendil-works/pi-coding-agent": "*",
 		"@sinclair/typebox": "*"
 	},
-	"dependencies": {
-		"ws": "^8"
-	},
 	"devDependencies": {
 		"@biomejs/biome": "^2.0.0",
 		"@earendil-works/pi-agent-core": "^0.78.0",
@@ -56,7 +54,6 @@
 		"@earendil-works/pi-tui": "^0.78.0",
 		"@sinclair/typebox": "^0.34.0",
 		"@types/node": "^22.0.0",
-		"@types/ws": "^8.18.1",
 		"typescript": "^5.8.0"
 	}
 }

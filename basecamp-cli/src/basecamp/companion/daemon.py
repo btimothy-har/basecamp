@@ -1,8 +1,4 @@
-"""Unix-socket HTTP client for companion polling of daemon summaries.
-
-This module intentionally lives separate from the mtime-watched dashboard source
-so companion UI data sources stay focused and easy to test.
-"""
+"""Unix-socket HTTP client for polling daemon run summaries."""
 
 from __future__ import annotations
 
@@ -98,7 +94,7 @@ class UnixHTTPConnection(HTTPConnection):
 
 
 class DaemonSummarySource:
-    """Polls the daemon `/runs/summary` endpoint from companion code."""
+    """Polls the daemon `/runs/summary` endpoint."""
 
     def __init__(
         self,

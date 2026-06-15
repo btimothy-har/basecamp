@@ -1,1 +1,0 @@
-"""Basecamp daemon package."""
