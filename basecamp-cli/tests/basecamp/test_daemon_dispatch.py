@@ -579,9 +579,7 @@ def test_wait_by_non_dispatcher_returns_unknown_immediately(tmp_path: Path) -> N
 
         elapsed = time.time() - start
         assert elapsed < 2.0
-        assert wait_result["results"] == [
-            {"agent_id": agent_id, "status": "unknown", "result": None, "error": None}
-        ]
+        assert wait_result["results"] == [{"agent_id": agent_id, "status": "unknown", "result": None, "error": None}]
     finally:
         _stop_daemon(server, thread, uds_path)
 

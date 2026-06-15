@@ -24,7 +24,6 @@ class ActiveRunExistsError(Exception):
         super().__init__(f"agent {agent_id} already has an active primary run")
 
 
-
 def _preview_text(value: str | None, *, limit: int = RUN_SUMMARY_PREVIEW_CHARS) -> str | None:
     if value is None:
         return None
@@ -223,7 +222,6 @@ class Store:
                 (run_id, agent_id),
             )
 
-
     def set_run_exit_code(self, *, run_id: str, exit_code: int | None) -> None:
         """Persist subprocess exit code for a run."""
 
@@ -329,7 +327,7 @@ class Store:
         if root_id is None:
             return []
 
-        awaitable_filter = "" if not awaitable else " AND r.id IS NOT NULL AND r.dispatcher_id = ? """
+        awaitable_filter = "" if not awaitable else " AND r.id IS NOT NULL AND r.dispatcher_id = ? "
         query = f"""
             WITH RECURSIVE scoped_agents(id, parent_id, path) AS (
                 SELECT id, parent_id, ',' || id || ','

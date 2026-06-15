@@ -434,12 +434,15 @@ def test_set_run_result_if_unset_preserves_agent_current_run_id(tmp_path: Path) 
         report_token_hash="0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
     )
 
-    assert store.set_run_result_if_unset(
-        run_id="run-failed",
-        status="failed",
-        result="oops",
-        error="agent failed",
-    ) is True
+    assert (
+        store.set_run_result_if_unset(
+            run_id="run-failed",
+            status="failed",
+            result="oops",
+            error="agent failed",
+        )
+        is True
+    )
 
     agent = store.get_agent("agent-1")
     assert agent is not None
