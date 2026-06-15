@@ -18,7 +18,9 @@ from basecamp.companion.app import (
     _truncate_preview,
     next_body_mode,
 )
-from basecamp.companion.daemon import (
+from basecamp.companion.snapshot import CompanionGoal, CompanionProgress, CompanionTask
+from basecamp.companion.source import DashboardModel
+from pi_swarm.daemon import (
     DaemonSummary,
     DaemonSummaryCounts,
     DaemonSummaryError,
@@ -26,8 +28,6 @@ from basecamp.companion.daemon import (
     DaemonSummaryRun,
     DaemonSummaryUnavailable,
 )
-from basecamp.companion.snapshot import CompanionGoal, CompanionProgress, CompanionTask
-from basecamp.companion.source import DashboardModel
 from rich.console import Console
 from textual.containers import VerticalScroll
 from textual.widgets import ContentSwitcher, Static

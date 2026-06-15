@@ -1,4 +1,4 @@
-"""Tests for the companion daemon summary client."""
+"""Tests for the daemon summary client."""
 
 from __future__ import annotations
 
@@ -7,7 +7,7 @@ from dataclasses import asdict
 from pathlib import Path
 from urllib.parse import parse_qs, urlsplit
 
-from basecamp.companion.daemon import (
+from pi_swarm.daemon import (
     DaemonSummaryError,
     DaemonSummaryOk,
     DaemonSummaryRun,

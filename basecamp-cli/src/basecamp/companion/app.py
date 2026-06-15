@@ -8,6 +8,7 @@ from collections.abc import Iterable
 from datetime import datetime
 from pathlib import Path
 
+from pi_swarm.daemon import DaemonSummary, DaemonSummaryError, DaemonSummaryRun, DaemonSummarySource
 from pygments.lexer import Lexer
 from pygments.lexers import TextLexer, get_lexer_for_filename
 from pygments.util import ClassNotFound
@@ -27,7 +28,6 @@ from textual.widgets.tree import TreeNode
 
 from basecamp.companion.analysis import CompanionAnalysis
 from basecamp.companion.cycles import companion_tasks_path
-from basecamp.companion.daemon import DaemonSummary, DaemonSummaryError, DaemonSummaryRun, DaemonSummarySource
 from basecamp.companion.diff import (
     DIFF_MODES,
     DiffLine,
