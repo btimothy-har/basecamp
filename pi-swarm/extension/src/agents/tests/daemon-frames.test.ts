@@ -3,16 +3,11 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import { describe, it } from "node:test";
 import { fileURLToPath } from "node:url";
-import {
-	decodeFrame,
-	encodeFrame,
-	FRAME_TYPES,
-	PROTOCOL_VERSION,
-} from "../../../../pi-swarm/extension/src/agents/daemon/frames.ts";
+import { decodeFrame, encodeFrame, FRAME_TYPES, PROTOCOL_VERSION } from "../daemon/frames.ts";
 
 function fixturesDir(): string {
 	const here = path.dirname(fileURLToPath(import.meta.url));
-	return path.resolve(here, "../../../../pi-swarm/protocol/frames");
+	return path.resolve(here, "../../../../protocol/frames");
 }
 
 describe("daemon frame codec", () => {

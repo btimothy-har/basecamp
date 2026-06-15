@@ -39,7 +39,7 @@ We want agents that can run **concurrently**, **persist their conversational thr
 
 ## 3. Current synchronous model
 
-Grounded in the current code (`pi-extension/src/workflow/agents/`):
+Grounded in the current code (`pi-swarm/extension/src/agents/`):
 
 - **Dispatch and execution (`executor.ts`).** `spawnAgent()` builds a `pi --mode json -p` argv via `buildPiArgs()` and spawns it as a child process. Notable flags: `--model`, `--worktree-dir`, `--thinking`, `--session-dir` (the subagent's own session), `--no-prompt-templates`, `--read-only` (whenever the agent's run kind is not `mutative`), `--agent-prompt` (the persona, written to a file), `--tools` (a resolved allowlist), and `--no-skills` + an injected skill block when the agent declares specific skills. The parent reads the child's stdout, parses newline-delimited JSON events (`tool_execution_start`, `tool_execution_end`, `message_end`), and renders progress. The agent's **result is the last assistant message** ("last assistant message wins"); usage and tool calls are aggregated for display.
 - **The `agent` tool (`tool.ts`).** Registered as a pi tool the LLM calls. It blocks on `spawnAgent()` and returns the child's final output as the tool result for immediate reasoning. Before running, it first requires that the `agents` skill has been invoked (`hasInvokedSkill("agents")`), then enforces two guards:

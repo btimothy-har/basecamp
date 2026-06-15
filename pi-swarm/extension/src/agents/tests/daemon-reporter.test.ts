@@ -1,10 +1,10 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import type { DaemonConnection } from "../../../../pi-swarm/extension/src/agents/daemon/client.ts";
-import type { Frame } from "../../../../pi-swarm/extension/src/agents/daemon/frames.ts";
-import { registerDaemonClient } from "../../../../pi-swarm/extension/src/agents/daemon/index.ts";
-import { registerDaemonReporter } from "../../../../pi-swarm/extension/src/agents/daemon/reporter.ts";
-import type { PiSwarmDependencies } from "../../../../pi-swarm/extension/src/dependencies.ts";
+import type { PiSwarmDependencies } from "../../dependencies.ts";
+import type { DaemonConnection } from "../daemon/client.ts";
+import type { Frame } from "../daemon/frames.ts";
+import { registerDaemonClient } from "../daemon/index.ts";
+import { registerDaemonReporter } from "../daemon/reporter.ts";
 
 class MockPi {
 	handlers = new Map<string, Array<(event: unknown, ctx?: unknown) => unknown>>();

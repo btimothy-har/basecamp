@@ -4,9 +4,9 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { describe, it } from "node:test";
-import { ensureDaemon } from "../../../../pi-swarm/extension/src/agents/daemon/client.ts";
-import { PROTOCOL_VERSION } from "../../../../pi-swarm/extension/src/agents/daemon/frames.ts";
-import type { DaemonPaths } from "../../../../pi-swarm/extension/src/agents/daemon/paths.ts";
+import { ensureDaemon } from "../daemon/client.ts";
+import { PROTOCOL_VERSION } from "../daemon/frames.ts";
+import type { DaemonPaths } from "../daemon/paths.ts";
 
 function fakeSpawn(): ChildProcess {
 	return {

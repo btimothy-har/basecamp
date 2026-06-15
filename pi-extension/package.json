@@ -30,7 +30,7 @@
 		"test:state": "node --experimental-strip-types --test src/state/tests/*.test.ts",
 		"test:platform": "node --experimental-strip-types --test src/platform/tests/*.test.ts",
 		"test:session": "node --experimental-strip-types --test src/session/tests/*.test.ts",
-		"test:model-aliases": "node --experimental-strip-types --test src/model-aliases/tests/*.test.ts src/workflow/tests/model-resolution.test.ts src/session/tests/title-model.test.ts",
+		"test:model-aliases": "node --experimental-strip-types --test src/model-aliases/tests/*.test.ts src/session/tests/title-model.test.ts",
 		"test:projects": "node --experimental-strip-types --test src/projects/tests/*.test.ts",
 		"test:workspace": "node --experimental-strip-types --test src/workspace/tests/*.test.ts",
 		"test:panes": "node --experimental-strip-types --test src/panes/tests/*.test.ts",

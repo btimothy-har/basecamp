@@ -3,19 +3,13 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { afterEach, beforeEach, describe, it } from "node:test";
-import type { DaemonConnection } from "../../../../pi-swarm/extension/src/agents/daemon/client.ts";
-import type { Frame, ListAgentItem } from "../../../../pi-swarm/extension/src/agents/daemon/frames.ts";
-import { deriveDaemonIdentity } from "../../../../pi-swarm/extension/src/agents/daemon/index.ts";
-import { resolveDaemonPaths } from "../../../../pi-swarm/extension/src/agents/daemon/paths.ts";
-import { registerDaemonTools } from "../../../../pi-swarm/extension/src/agents/daemon/tools.ts";
-import { buildAgentTitleBase, processEnvForSpawn } from "../../../../pi-swarm/extension/src/agents/launch.ts";
-import { hasInvokedSkill, resetInvokedSkills, trackSkillInvocation } from "../../platform/skill-tracker.ts";
-import {
-	getWorkspaceService,
-	getWorkspaceState,
-	registerWorkspaceService,
-	type WorkspaceService,
-} from "../../platform/workspace.ts";
+import type { WorkspaceState } from "../../dependencies.ts";
+import type { DaemonConnection } from "../daemon/client.ts";
+import type { Frame, ListAgentItem } from "../daemon/frames.ts";
+import { deriveDaemonIdentity } from "../daemon/index.ts";
+import { resolveDaemonPaths } from "../daemon/paths.ts";
+import { registerDaemonTools } from "../daemon/tools.ts";
+import { buildAgentTitleBase, processEnvForSpawn } from "../launch.ts";
 
 interface RegisteredTool {
 	name: string;
@@ -74,29 +68,20 @@ function toolByName(tools: RegisteredTool[], name: string): RegisteredTool {
 	return tool;
 }
 
-function createNullWorkspaceService(): WorkspaceService {
-	return {
-		initialize: async () => {
-			throw new Error("workspace is unavailable");
-		},
-		current: () => null,
-		require: () => {
-			throw new Error("workspace is unavailable");
-		},
-		getEffectiveCwd: () => process.cwd(),
-		listWorktrees: async () => [],
-		activateWorktree: async () => {
-			throw new Error("workspace is unavailable");
-		},
-		attachWorktreePath: async () => {
-			throw new Error("workspace is unavailable");
-		},
-	};
+const invokedSkills = new Set<string>();
+let currentWorkspaceState: WorkspaceState | null = null;
+
+function trackSkillInvocation(name: string): void {
+	invokedSkills.add(name);
+}
+
+function resetInvokedSkills(): void {
+	invokedSkills.clear();
 }
 
 const daemonToolDeps = {
-	hasInvokedSkill,
-	getWorkspaceState,
+	hasInvokedSkill: (name: string) => invokedSkills.has(name),
+	getWorkspaceState: () => currentWorkspaceState,
 	basecampExtensionRoot: process.cwd(),
 	resolveModelAlias: (model: string) => model,
 	readSkillContent: (_path: string) => null,
@@ -118,6 +103,7 @@ describe("daemon async tools", () => {
 		if (priorHome === undefined) delete process.env.HOME;
 		else process.env.HOME = priorHome;
 		fs.rmSync(tmpHome, { recursive: true, force: true });
+		currentWorkspaceState = null;
 		resetInvokedSkills();
 	});
 
@@ -320,43 +306,16 @@ describe("daemon async tools", () => {
 
 	it("dispatch_agent prefers protected root cwd and still passes --worktree-dir", async () => {
 		trackSkillInvocation("agents");
-		const priorWorkspaceService = getWorkspaceService();
-		registerWorkspaceService({
-			initialize: async () => {
-				throw new Error("not used in this test");
+		currentWorkspaceState = {
+			launchCwd: "/wt",
+			repo: {
+				root: "/repo-root",
 			},
-			current: () => ({
-				launchCwd: "/wt",
-				effectiveCwd: "/wt",
-				scratchDir: "/tmp/pi/basecamp",
-				repo: {
-					isRepo: true,
-					name: "basecamp",
-					root: "/repo-root",
-					remoteUrl: "git@github.com:btimothy-har/basecamp.git",
-				},
-				protectedRoot: "/repo-root",
-				activeWorktree: {
-					kind: "git-worktree",
-					label: "wt",
-					path: "/wt",
-					branch: "b",
-					created: false,
-				},
-				unsafeEdit: false,
-			}),
-			require: () => {
-				throw new Error("not used in this test");
+			protectedRoot: "/repo-root",
+			activeWorktree: {
+				path: "/wt",
 			},
-			getEffectiveCwd: () => "/wt",
-			listWorktrees: async () => [],
-			activateWorktree: async () => {
-				throw new Error("not used in this test");
-			},
-			attachWorktreePath: async () => {
-				throw new Error("not used in this test");
-			},
-		});
+		};
 
 		try {
 			const connection = new MockConnection();
@@ -388,43 +347,20 @@ describe("daemon async tools", () => {
 			});
 			await executePromise;
 		} finally {
-			registerWorkspaceService(priorWorkspaceService ?? createNullWorkspaceService());
+			currentWorkspaceState = null;
 		}
 	});
 
 	it("dispatch_agent falls back to repo root cwd when protected root is unavailable", async () => {
 		trackSkillInvocation("agents");
-		const priorWorkspaceService = getWorkspaceService();
-		registerWorkspaceService({
-			initialize: async () => {
-				throw new Error("not used in this test");
+		currentWorkspaceState = {
+			launchCwd: "/launch",
+			repo: {
+				root: "/repo-root",
 			},
-			current: () => ({
-				launchCwd: "/launch",
-				effectiveCwd: "/launch",
-				scratchDir: "/tmp/pi/basecamp",
-				repo: {
-					isRepo: true,
-					name: "basecamp",
-					root: "/repo-root",
-					remoteUrl: "git@github.com:btimothy-har/basecamp.git",
-				},
-				protectedRoot: null,
-				activeWorktree: null,
-				unsafeEdit: false,
-			}),
-			require: () => {
-				throw new Error("not used in this test");
-			},
-			getEffectiveCwd: () => "/launch",
-			listWorktrees: async () => [],
-			activateWorktree: async () => {
-				throw new Error("not used in this test");
-			},
-			attachWorktreePath: async () => {
-				throw new Error("not used in this test");
-			},
-		});
+			protectedRoot: null,
+			activeWorktree: null,
+		};
 
 		try {
 			const connection = new MockConnection();
@@ -453,7 +389,7 @@ describe("daemon async tools", () => {
 			});
 			await executePromise;
 		} finally {
-			registerWorkspaceService(priorWorkspaceService ?? createNullWorkspaceService());
+			currentWorkspaceState = null;
 		}
 	});
 
