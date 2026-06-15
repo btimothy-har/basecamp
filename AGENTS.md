@@ -9,6 +9,7 @@ Root-level products:
 | Product | Directory | Purpose |
 |---------|-----------|---------|
 | `basecamp` | `basecamp-cli/` | Python CLI for setup/config and project configuration |
+| `pi-swarm` | `pi-swarm/` | Async-agent bounded context for protocol docs, Pi-side agent behavior, and daemon CLI/runtime |
 | Basecamp Pi extension | `pi-extension/` | Pi package for project context, session UI, worktrees, workflow, git, and engineering skills |
 
 Package-specific architecture lives in the repo map below.
@@ -32,7 +33,12 @@ basecamp-cli/
 │   └── utils.py                # Shared utilities
 └── tests/basecamp/             # pytest suite for Basecamp settings/config
 
-pi-extension/                   # Core Pi package
+pi-swarm/                      # Async-agent bounded context
+├── protocol/                   # Protocol docs and frame fixtures (in transition from root `protocol/`)
+├── extension/                  # TypeScript Pi-side agent tools, launch policy, daemon client, reporter
+└── cli/                        # Python daemon CLI/runtime package
+
+pi-extension/                   # Public extension package (current session runtime and adapters)
 ├── package.json                # Extension manifest (extensions, skills, prompts)
 ├── index.ts                    # Registers the composed extension modules
 └── src/
@@ -42,7 +48,7 @@ pi-extension/                   # Core Pi package
     ├── model-aliases/          # Native model alias config reader/provider registration
     ├── projects/               # Project config/state, prompt assembly, context injection, header
     ├── workspace/              # Repo/worktree service, guards, affinity, commands, unsafe-edit
-    ├── workflow/               # Agents, planning, tasks, escalation, workflow skills
+    ├── workflow/               # Planning, tasks, escalation, workflow skills
     ├── git/                    # Git guards, PR/issue workflow commands, publish tools
     ├── state/                  # Session state persistence
     └── engineering/            # Engineering runtime tools, prompts, and engineering/Pi skills
@@ -58,7 +64,7 @@ Prompts are layered (environment → working style → project context → tools
 
 ### Pi Packages
 
-Core session, project, workspace, workflow, git, model-alias, capability, and engineering functionality is bundled in `pi-extension/`.
+Core public session/project/workspace/workflow/git/model-alias/capability/engineering behavior is currently bundled in `pi-extension/`. Async-agent protocol, Pi-side launch/tool behavior, and daemon runtime ownership live in the top-level `pi-swarm/` context.
 
 ### Model Aliases
 
@@ -79,12 +85,12 @@ Worktrees live in `~/.worktrees/<repo>/<label>/` rather than inside the repo to 
 - **Python**: 3.12+, managed with `uv`
 - **Install (dev)**: `uv run install.py -e` (editable mode; installs `basecamp`, then registers the Basecamp Pi package)
 - **Python lint**: `uv run ruff check .` / `uv run ruff format --check .`
-- **TypeScript check**: `npm --prefix pi-extension run check`
-- **Fix**: `make fix` runs Python fixes and the pi-extension fix/format commands
+- **TypeScript check**: `npm --prefix pi-extension run check` and `npm --prefix pi-swarm/extension run check`
+- **Fix**: `make fix` runs Python fixes, `pi-extension` fixes, and `pi-swarm/extension` fixes/format commands
 
 ### Testing
 
-- **Run all**: `make test` from repo root runs Python pytest plus the pi-extension TypeScript unit suites.
-- **Python**: `uv run pytest` uses root `pyproject.toml` — `testpaths = ["basecamp-cli/tests"]`, `pythonpath = ["basecamp-cli/src"]`.
-- **TypeScript**: `npm --prefix pi-extension test` runs the session/state/project/workspace/git/workflow unit suites.
+- **Run all**: `make test` from repo root runs Python pytest plus the pi-extension and pi-swarm extension TypeScript checks/tests.
+- **Python**: `uv run pytest` uses root `pyproject.toml` — `testpaths = ["basecamp-cli/tests"]`, `pythonpath = ["basecamp-cli/src", "pi-swarm/cli/src"]`.
+- **TypeScript**: `npm --prefix pi-extension test` runs the session/state/project/workspace/git/workflow unit suites; `npm --prefix pi-swarm/extension test` currently validates the extension package skeleton.
 - **Basecamp tests** live under `basecamp-cli/tests/` and cover settings/config.
