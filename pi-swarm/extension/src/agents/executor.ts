@@ -572,23 +572,26 @@ function parseJsonEvents(lines: string[]): ParsedEvents {
  * Spawn a subagent synchronously. Blocks until it completes and
  * returns its output for the parent LLM to consume.
  */
+export interface SpawnAgentOpts {
+	name: string;
+	model: string | undefined;
+	cwd: string;
+	env: Record<string, string>;
+	sessionDir: string;
+	extensionTools: string[];
+	worktreeDir?: string | null;
+	onEvent?: (event: AgentStreamEvent) => void;
+	piArgs?: string[];
+}
+
 export function spawnAgent(
 	agent: AgentConfig | null,
 	task: string,
-	opts: {
-		name: string;
-		model: string | undefined;
-		cwd: string;
-		env: Record<string, string>;
-		sessionDir: string;
-		extensionTools: string[];
-		worktreeDir?: string | null;
-		onEvent?: (event: AgentStreamEvent) => void;
-	},
+	opts: SpawnAgentOpts,
 	deps: PiAgentSkillDeps,
 	signal?: AbortSignal,
 ): Promise<SpawnResult> {
-	const { args } = buildPiArgs(agent, task, opts, deps);
+	const { args } = opts.piArgs ? { args: opts.piArgs } : buildPiArgs(agent, task, opts, deps);
 	const startTime = Date.now();
 
 	return new Promise<SpawnResult>((resolve) => {

@@ -1,23 +1,13 @@
 import { randomUUID } from "node:crypto";
-import * as path from "node:path";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Text } from "@earendil-works/pi-tui";
 import { Type } from "@sinclair/typebox";
 import type { PiSwarmDependencies } from "../../dependencies.ts";
 import { discoverAgents } from "../discovery.ts";
-import { buildAgentRunName, buildPiArgs, sanitizeAgentSpawnEnv } from "../executor.ts";
-import { resolveModel } from "../model-resolution.ts";
-import { buildAgentEnv, getBasecampExtensionToolNames } from "../tool.ts";
-import { getAgentRunKind } from "../types.ts";
+import { buildAgentLaunchSpec, buildAgentTitleBase, processEnvForSpawn } from "../launch.ts";
 import type { DaemonConnection } from "./client.ts";
-import {
-	type DispatchAckFrame,
-	type ListAgentItem,
-	type ListAgentsResultFrame,
-	PROTOCOL_VERSION,
-	type WaitResultFrame,
-} from "./frames.ts";
-import { resolveDaemonPaths } from "./paths.ts";
+import { createDaemonClient } from "./client.ts";
+import { type ListAgentItem, type WaitResultFrame } from "./frames.ts";
 
 interface DispatchDetails {
 	agentId: string;
@@ -62,25 +52,6 @@ const ListAgentsParams = Type.Object({
 	),
 });
 
-export function processEnvForSpawn(): Record<string, string> {
-	const env: Record<string, string> = {};
-	for (const [key, value] of Object.entries(process.env)) {
-		if (typeof value === "string") env[key] = value;
-	}
-	return sanitizeAgentSpawnEnv(env);
-}
-
-function compactAgentTaskLabel(task: string, maxChars = 56): string {
-	const oneLine = task.replace(/\s+/g, " ").trim();
-	if (oneLine.length <= maxChars) return oneLine;
-	return `${oneLine.slice(0, maxChars - 1).trimEnd()}…`;
-}
-
-export function buildAgentTitleBase(agentName: string | null | undefined, task: string): string {
-	const prefix = agentName?.trim() ? agentName.trim() : "Agent";
-	return `(${prefix}) ${compactAgentTaskLabel(task)}`;
-}
-
 function normalizeHandles(input: string | string[]): string[] {
 	const values = Array.isArray(input) ? input : [input];
 	return [...new Set(values.map((value) => value.trim()).filter(Boolean))];
@@ -90,12 +61,6 @@ function preview(text: string | null, limit = 80): string {
 	if (!text) return "";
 	const compact = text.replace(/\s+/g, " ").trim();
 	return compact.length > limit ? `${compact.slice(0, limit)}…` : compact;
-}
-
-function sameAsRequested(resultAgentIds: string[], requestedSet: Set<string>): boolean {
-	const resultSet = new Set(resultAgentIds);
-	if (resultSet.size !== requestedSet.size) return false;
-	return [...requestedSet].every((agentId) => resultSet.has(agentId));
 }
 
 function hasText(value: string | null): value is string {
@@ -124,34 +89,6 @@ function buildListAgentLine(agent: ListAgentItem): string {
 function shortListAgentsSummary(agents: ListAgentItem[]): string {
 	if (agents.length === 0) return "No agents found in this scope.";
 	return agents.map((agent) => buildListAgentLine(agent)).join("\n\n");
-}
-
-function waitForFrame<T extends "dispatch_ack" | "wait_result" | "list_agents_result">(
-	connection: DaemonConnection,
-	type: T,
-	predicate: (frame: Extract<DispatchAckFrame | WaitResultFrame | ListAgentsResultFrame, { type: T }>) => boolean,
-	signal?: AbortSignal,
-): Promise<Extract<DispatchAckFrame | WaitResultFrame | ListAgentsResultFrame, { type: T }>> {
-	return new Promise((resolve, reject) => {
-		if (signal?.aborted) {
-			reject(new Error("aborted"));
-			return;
-		}
-
-		const off = connection.on(type, (frame) => {
-			const typed = frame as Extract<DispatchAckFrame | WaitResultFrame | ListAgentsResultFrame, { type: T }>;
-			if (!predicate(typed)) return;
-			off();
-			signal?.removeEventListener("abort", onAbort);
-			resolve(typed);
-		});
-
-		const onAbort = () => {
-			off();
-			reject(new Error("aborted"));
-		};
-		signal?.addEventListener("abort", onAbort, { once: true });
-	});
 }
 
 export function registerDaemonTools(
@@ -196,107 +133,65 @@ export function registerDaemonTools(
 				};
 			}
 
-			const agents = discoverAgents();
-			const agentConfig = params.agent ? (agents.find((agent) => agent.name === params.agent) ?? null) : null;
-			if (params.agent && !agentConfig) {
-				const available = agents.map((agent) => agent.name).join(", ") || "none";
-				return {
-					content: [{ type: "text", text: `Unknown agent: ${params.agent}. Available: ${available}` }],
-					isError: true,
-					details: null,
-				};
-			}
-
-			const model = resolveModel(agentConfig?.model ?? "inherit", ctx.model, {
-				resolveModelAlias: deps.resolveModelAlias,
-			});
 			const localId = randomUUID().slice(0, 6);
-			const prefix = `agent-${localId}`;
-			let name: string;
+			const agentId = randomUUID();
+			const namePrefix = `agent-${localId}`;
+			let agentLaunch: ReturnType<typeof buildAgentLaunchSpec>;
 			try {
-				name = buildAgentRunName(prefix, params.name);
+				agentLaunch = buildAgentLaunchSpec({
+					pi,
+					getAgents: discoverAgents,
+					basecampExtensionRoot: deps.basecampExtensionRoot,
+					agentId,
+					requestedAgent: params.agent,
+					namePrefix,
+					nameSuffix: params.name,
+					task: params.task,
+					modelContext: ctx.model,
+					resolveModelAlias: deps.resolveModelAlias,
+					workspace: deps.getWorkspaceState(),
+					mode: "daemon",
+					parentSession:
+						process.env.BASECAMP_SESSION_NAME ?? pi.getSessionName()?.trim() ?? ctx.sessionManager.getSessionId(),
+					project: process.env.BASECAMP_PROJECT ?? "default",
+					piArgsDeps: {
+						readSkillContent: deps.readSkillContent,
+						buildSkillBlock: deps.buildSkillBlock,
+					},
+				});
 			} catch (error) {
 				const msg = error instanceof Error ? error.message : String(error);
-				return {
-					content: [{ type: "text", text: msg }],
-					isError: true,
-					details: null,
-				};
+				return { content: [{ type: "text", text: msg }], isError: true, details: null };
 			}
-			const project = process.env.BASECAMP_PROJECT ?? "default";
-			const parentSession =
-				process.env.BASECAMP_SESSION_NAME ?? pi.getSessionName()?.trim() ?? ctx.sessionManager.getSessionId();
-			const basecampEnv = buildAgentEnv({ name, parentSession, project });
-			const extensionTools = getBasecampExtensionToolNames(pi, deps.basecampExtensionRoot);
-			const workspace = deps.getWorkspaceState();
-			const worktreeDir = workspace?.activeWorktree?.path ?? null;
-			const spawnCwd = workspace?.protectedRoot ?? workspace?.repo?.root ?? workspace?.launchCwd ?? process.cwd();
-
-			if (getAgentRunKind(agentConfig) === "mutative" && !worktreeDir) {
-				return {
-					content: [
-						{
-							type: "text",
-							text: "Mutative worker agents require an active execution worktree. Approve an implementation plan and activate a worktree first.",
-						},
-					],
-					isError: true,
-					details: null,
-				};
+			if (!agentLaunch.ok) {
+				const msg = agentLaunch.message;
+				return { content: [{ type: "text", text: msg }], isError: true, details: null };
 			}
 
-			const agentId = randomUUID();
-			const sessionDir = path.join(resolveDaemonPaths().runtimeDir, "agents", agentId, "session");
-			const { args } = buildPiArgs(
-				agentConfig,
-				params.task,
-				{
-					name,
-					model,
-					cwd: spawnCwd,
-					worktreeDir,
-					env: basecampEnv,
-					sessionDir,
-					sessionId: agentId,
-					extensionTools,
-				},
-				{
-					readSkillContent: deps.readSkillContent,
-					buildSkillBlock: deps.buildSkillBlock,
-				},
-			);
-
-			const runId = randomUUID();
-			connection.send({
-				type: "dispatch",
-				v: PROTOCOL_VERSION,
-				run_id: runId,
-				agent_id: agentId,
-				spec: {
-					argv: args.slice(0, -1),
-					task: `Task: ${params.task}`,
-					cwd: spawnCwd,
-					env: {
-						...processEnvForSpawn(),
-						...sanitizeAgentSpawnEnv(basecampEnv),
-						BASECAMP_AGENT_TITLE: buildAgentTitleBase(params.agent, params.task),
-					},
-					resume_path: null,
+			const daemonClient = createDaemonClient(connection);
+			const { plan } = agentLaunch;
+			const result = await daemonClient.dispatchAgent({
+				agentId,
+				argv: plan.args.slice(0, -1),
+				task: `Task: ${params.task}`,
+				cwd: plan.spawnCwd,
+				env: {
+					...processEnvForSpawn(),
+					...plan.environment,
+					BASECAMP_AGENT_TITLE: buildAgentTitleBase(params.agent, params.task),
 				},
 			});
-
-			const ack = await waitForFrame(connection, "dispatch_ack", (frame) => frame.run_id === runId);
-			if (ack.status === "rejected") {
+			if (result.status === "rejected") {
 				return {
-					content: [{ type: "text", text: `dispatch rejected: ${ack.reason ?? "unknown"}` }],
+					content: [{ type: "text", text: `dispatch rejected: ${result.reason ?? "unknown"}` }],
 					isError: true,
-					details: { agentId, agent: params.agent ?? "ad-hoc" } satisfies DispatchDetails,
+					details: { agentId, agent: plan.agentLabel ?? "ad-hoc" } satisfies DispatchDetails,
 				};
 			}
 
 			return {
-				content: [{ type: "text", text: `⏳ dispatched ${params.agent ?? "ad-hoc"} — handle ${agentId}` }],
-				details: { agentId, agent: params.agent ?? "ad-hoc" } satisfies DispatchDetails,
+				content: [{ type: "text", text: `⏳ dispatched ${plan.agentLabel ?? "ad-hoc"} — handle ${agentId}` }],
+				details: { agentId, agent: plan.agentLabel ?? "ad-hoc" } satisfies DispatchDetails,
 			};
 		},
 		renderResult(result, _opts, theme) {
@@ -333,23 +228,12 @@ export function registerDaemonTools(
 				};
 			}
 
-			const requestId = randomUUID();
-			connection.send({
-				type: "list_agents",
-				v: PROTOCOL_VERSION,
-				request_id: requestId,
-				awaitable: Boolean(params.awaitable),
-			});
-
-			const frame = await waitForFrame(
-				connection,
-				"list_agents_result",
-				(candidate) => candidate.request_id === requestId,
-			);
+			const daemonClient = createDaemonClient(connection);
+			const agents = await daemonClient.listAgents({ awaitable: Boolean(params.awaitable) });
 
 			return {
-				content: [{ type: "text", text: shortListAgentsSummary(frame.agents) }],
-				details: { agents: frame.agents } as ListAgentsDetails,
+				content: [{ type: "text", text: shortListAgentsSummary(agents) }],
+				details: { agents } as ListAgentsDetails,
 			};
 		},
 		renderResult(result, _opts, theme) {
@@ -398,27 +282,14 @@ export function registerDaemonTools(
 			}
 
 			const timeoutS = Math.max(1, Math.floor(params.timeout_s ?? 600));
-			const requested = new Set(agentIds);
-			connection.send({
-				type: "wait",
-				v: PROTOCOL_VERSION,
-				agent_ids: agentIds,
-				mode: "all",
-				timeout_s: timeoutS,
-			});
-
-			let frame: WaitResultFrame;
+			const daemonClient = createDaemonClient(connection);
+			let results: WaitResultFrame["results"];
 			try {
-				frame = await waitForFrame(
-					connection,
-					"wait_result",
-					(candidate) =>
-						sameAsRequested(
-							candidate.results.map((item) => item.agent_id),
-							requested,
-						),
+				results = await daemonClient.waitForAgents({
+					agentIds,
+					timeoutS,
 					signal,
-				);
+				});
 			} catch (error) {
 				if (signal?.aborted || (error instanceof Error && error.message === "aborted")) {
 					const details: WaitDetails = { items: [], aborted: true };
@@ -427,7 +298,7 @@ export function registerDaemonTools(
 				throw error;
 			}
 
-			const byId = new Map(frame.results.map((item) => [item.agent_id, item]));
+			const byId = new Map(results.map((item) => [item.agent_id, item]));
 			const items: WaitHandleResult[] = agentIds.map((agentId) => {
 				const hit = byId.get(agentId);
 				if (!hit) {

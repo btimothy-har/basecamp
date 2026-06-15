@@ -1,4 +1,5 @@
 import { type ChildProcess, execFile, type SpawnOptions, spawn } from "node:child_process";
+import { randomUUID } from "node:crypto";
 import * as fs from "node:fs";
 import * as http from "node:http";
 import WebSocket, { type RawData } from "ws";
@@ -7,9 +8,11 @@ import {
 	type ErrorFrame,
 	encodeFrame,
 	type Frame,
+	type ListAgentItem,
 	PROTOCOL_VERSION,
 	type RegisteredFrame,
 	type RegisterFrame,
+	type WaitResultFrame,
 } from "./frames.ts";
 import { type DaemonPaths, ensureDaemonRuntimeDir, resolveDaemonPaths } from "./paths.ts";
 
@@ -542,4 +545,139 @@ export async function connect(identity: DaemonIdentity, options: ConnectOptions 
 		ws.on("error", onError);
 		ws.on("close", onClose);
 	});
+}
+
+interface DaemonDispatchFrameOptions {
+	agentId: string;
+	argv: string[];
+	task: string;
+	cwd: string;
+	env: Record<string, string>;
+	resumePath?: string | null;
+}
+
+export interface DaemonDispatchResult {
+	status: "spawned" | "rejected";
+	reason?: string | null;
+}
+
+export interface DaemonClient {
+	dispatchAgent(options: DaemonDispatchFrameOptions): Promise<DaemonDispatchResult>;
+	listAgents(input: { awaitable?: boolean }): Promise<ListAgentItem[]>;
+	waitForAgents(input: {
+		agentIds: string[];
+		timeoutS: number;
+		signal?: AbortSignal;
+	}): Promise<WaitResultFrame["results"]>;
+}
+
+function waitForFrame<T extends Frame["type"]>(
+	connection: DaemonConnection,
+	type: T,
+	predicate: (frame: Extract<Frame, { type: T }>) => boolean,
+	signal?: AbortSignal,
+): Promise<Extract<Frame, { type: T }>> {
+	return new Promise((resolve, reject) => {
+		if (signal?.aborted) {
+			reject(new Error("aborted"));
+			return;
+		}
+
+		const off = connection.on(type, (frame) => {
+			const typed = frame as Extract<Frame, { type: T }>;
+			if (!predicate(typed)) return;
+			off();
+			signal?.removeEventListener("abort", onAbort);
+			resolve(typed);
+		});
+
+		const onAbort = () => {
+			off();
+			reject(new Error("aborted"));
+		};
+		signal?.addEventListener("abort", onAbort, { once: true });
+	});
+}
+
+function sameAsRequested(resultAgentIds: string[], requestedSet: Set<string>): boolean {
+	const resultSet = new Set(resultAgentIds);
+	if (resultSet.size !== requestedSet.size) return false;
+	return [...requestedSet].every((agentId) => resultSet.has(agentId));
+}
+
+function dedupeRequestedResults(
+	results: WaitResultFrame["results"],
+	requested: Set<string>,
+): WaitResultFrame["results"] {
+	const requestedMap = new Map(
+		results.filter((result) => requested.has(result.agent_id)).map((result) => [result.agent_id, result]),
+	);
+	const deduped: WaitResultFrame["results"] = [];
+	for (const agentId of requested) {
+		deduped.push(requestedMap.get(agentId) ?? { agent_id: agentId, status: "unknown", result: null, error: null });
+	}
+	return deduped;
+}
+
+export function createDaemonClient(connection: DaemonConnection): DaemonClient {
+	return {
+		dispatchAgent: async (input) => {
+			const runId = randomUUID();
+			connection.send({
+				type: "dispatch",
+				v: PROTOCOL_VERSION,
+				run_id: runId,
+				agent_id: input.agentId,
+				spec: {
+					argv: input.argv,
+					task: input.task,
+					cwd: input.cwd,
+					env: input.env,
+					resume_path: input.resumePath ?? null,
+				},
+			});
+
+			const ack = await waitForFrame(connection, "dispatch_ack", (frame) => frame.run_id === runId);
+			return {
+				status: ack.status,
+				reason: ack.reason,
+			};
+		},
+		listAgents: async (input) => {
+			const requestId = randomUUID();
+			connection.send({
+				type: "list_agents",
+				v: PROTOCOL_VERSION,
+				request_id: requestId,
+				awaitable: Boolean(input.awaitable),
+			});
+			const frame = await waitForFrame(
+				connection,
+				"list_agents_result",
+				(response) => response.request_id === requestId,
+			);
+			return frame.agents;
+		},
+		waitForAgents: async (input) => {
+			const requested = new Set(input.agentIds);
+			connection.send({
+				type: "wait",
+				v: PROTOCOL_VERSION,
+				agent_ids: input.agentIds,
+				mode: "all",
+				timeout_s: input.timeoutS,
+			});
+			const frame = await waitForFrame(
+				connection,
+				"wait_result",
+				(candidate) =>
+					sameAsRequested(
+						candidate.results.map((result) => result.agent_id),
+						requested,
+					),
+				input.signal,
+			);
+			return dedupeRequestedResults(frame.results, requested);
+		},
+	};
 }

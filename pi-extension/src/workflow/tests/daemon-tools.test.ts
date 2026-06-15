@@ -7,11 +7,8 @@ import type { DaemonConnection } from "../../../../pi-swarm/extension/src/agents
 import type { Frame, ListAgentItem } from "../../../../pi-swarm/extension/src/agents/daemon/frames.ts";
 import { deriveDaemonIdentity } from "../../../../pi-swarm/extension/src/agents/daemon/index.ts";
 import { resolveDaemonPaths } from "../../../../pi-swarm/extension/src/agents/daemon/paths.ts";
-import {
-	buildAgentTitleBase,
-	processEnvForSpawn,
-	registerDaemonTools,
-} from "../../../../pi-swarm/extension/src/agents/daemon/tools.ts";
+import { registerDaemonTools } from "../../../../pi-swarm/extension/src/agents/daemon/tools.ts";
+import { buildAgentTitleBase, processEnvForSpawn } from "../../../../pi-swarm/extension/src/agents/launch.ts";
 import { hasInvokedSkill, resetInvokedSkills, trackSkillInvocation } from "../../platform/skill-tracker.ts";
 import {
 	getWorkspaceService,

@@ -12,16 +12,15 @@
 import { randomUUID } from "node:crypto";
 import * as fs from "node:fs";
 import * as os from "node:os";
-import * as path from "node:path";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { getMarkdownTheme } from "@earendil-works/pi-coding-agent";
 import { type Component, Container, Markdown, Spacer, Text } from "@earendil-works/pi-tui";
 import type { PiSwarmDependencies } from "../dependencies.ts";
 import type { AgentStreamEvent } from "./executor.ts";
-import { buildAgentRunName, spawnAgent } from "./executor.ts";
-import { resolveModel } from "./model-resolution.ts";
+import { spawnAgent } from "./executor.ts";
+import { buildAgentLaunchSpec } from "./launch.ts";
 import type { AgentConfig, AgentDetails, AgentPartialDetails, AgentRunKind, ToolCallRecord } from "./types.ts";
-import { AgentToolParams, DEFAULT_AGENT_MAX_DEPTH, getAgentRunKind } from "./types.ts";
+import { AgentToolParams, DEFAULT_AGENT_MAX_DEPTH } from "./types.ts";
 
 // ============================================================================
 // Depth Guard
@@ -36,25 +35,6 @@ function checkDepth(): void {
 				"Complete your task directly without spawning further agents.",
 		);
 	}
-}
-
-// ============================================================================
-// Agent Environment
-// ============================================================================
-
-export function buildAgentEnv(opts: { name: string; parentSession: string; project: string }): Record<string, string> {
-	const depth = Number(process.env.BASECAMP_AGENT_DEPTH ?? "0");
-	const env: Record<string, string> = {};
-	for (const [k, v] of Object.entries(process.env)) {
-		if (k.startsWith("BASECAMP_") && v !== undefined) {
-			env[k] = v;
-		}
-	}
-	env.BASECAMP_PROJECT = opts.project;
-	env.BASECAMP_PARENT_SESSION = opts.parentSession;
-	env.BASECAMP_AGENT_DEPTH = String(depth + 1);
-	env.BASECAMP_AGENT_MAX_DEPTH = process.env.BASECAMP_AGENT_MAX_DEPTH ?? String(DEFAULT_AGENT_MAX_DEPTH);
-	return env;
 }
 
 // ============================================================================
@@ -234,44 +214,6 @@ function renderPartialView(
 // Tool Registration
 // ============================================================================
 
-const SUBAGENT_EXCLUDED_EXTENSION_TOOLS = new Set(["agent", "escalate", "publish_pr", "publish_issue"]);
-
-type ToolInfo = ReturnType<ExtensionAPI["getAllTools"]>[number];
-
-function resolveToolSourcePath(value: string | undefined): string | null {
-	if (!value || value.startsWith("<")) return null;
-	try {
-		return fs.realpathSync(value);
-	} catch {
-		return path.resolve(value);
-	}
-}
-
-function isWithinBasecampExtensionRoot(value: string | undefined, basecampExtensionRoot: string): boolean {
-	const sourcePath = resolveToolSourcePath(value);
-	if (!sourcePath) return false;
-	const relative = path.relative(basecampExtensionRoot, sourcePath);
-	return relative === "" || (relative !== "" && !relative.startsWith("..") && !path.isAbsolute(relative));
-}
-
-function isBasecampExtensionTool(tool: ToolInfo, basecampExtensionRoot: string): boolean {
-	if (tool.sourceInfo.source === "builtin" || tool.sourceInfo.source === "sdk") return false;
-	return (
-		isWithinBasecampExtensionRoot(tool.sourceInfo.baseDir, basecampExtensionRoot) ||
-		isWithinBasecampExtensionRoot(tool.sourceInfo.path, basecampExtensionRoot)
-	);
-}
-
-export function getBasecampExtensionToolNames(pi: ExtensionAPI, basecampExtensionRoot: string): string[] {
-	return pi
-		.getAllTools()
-		.filter(
-			(tool) =>
-				isBasecampExtensionTool(tool, basecampExtensionRoot) && !SUBAGENT_EXCLUDED_EXTENSION_TOOLS.has(tool.name),
-		)
-		.map((tool) => tool.name);
-}
-
 interface AgentRunGuardState {
 	namedReadOnly: number;
 	exclusiveLabel: string | null;
@@ -362,61 +304,51 @@ Available named agents are basecamp builtin definitions. Ad-hoc dispatch must ru
 				return { content: [{ type: "text", text: msg }], isError: true, details: null as unknown as AgentDetails };
 			}
 
-			// Resolve agent config
-			const agents = getAgents();
-			let agentConfig: AgentConfig | null = null;
-			if (params.agent) {
-				agentConfig = agents.find((a) => a.name === params.agent) ?? null;
-				if (!agentConfig) {
-					const available = agents.map((a) => a.name).join(", ") || "none";
-					return {
-						content: [{ type: "text", text: `Unknown agent: ${params.agent}. Available: ${available}` }],
-						isError: true,
-						details: null as unknown as AgentDetails,
-					};
-				}
-			}
-
-			// Resolve common parameters
-			const model = resolveModel(agentConfig?.model ?? "inherit", ctx.model, {
-				resolveModelAlias: deps.resolveModelAlias,
-			});
 			const agentId = randomUUID().slice(0, 6);
-			const prefix = `agent-${agentId}`;
-			let name: string;
+			const namePrefix = `agent-${agentId}`;
+			let agentLaunch: ReturnType<typeof buildAgentLaunchSpec>;
 			try {
-				name = buildAgentRunName(prefix, params.name);
+				agentLaunch = buildAgentLaunchSpec({
+					pi,
+					getAgents,
+					basecampExtensionRoot: deps.basecampExtensionRoot,
+					requestedAgent: params.agent,
+					namePrefix,
+					nameSuffix: params.name,
+					task: params.task,
+					modelContext: ctx.model,
+					resolveModelAlias: deps.resolveModelAlias,
+					workspace: deps.getWorkspaceState(),
+					mode: "sync",
+					parentSession: getSessionName(),
+					project: process.env.BASECAMP_PROJECT ?? "default",
+					piArgsDeps: {
+						readSkillContent: deps.readSkillContent,
+						buildSkillBlock: deps.buildSkillBlock,
+					},
+				});
 			} catch (error) {
 				const msg = error instanceof Error ? error.message : String(error);
-				return {
-					content: [{ type: "text", text: msg }],
-					isError: true,
-					details: null as unknown as AgentDetails,
-				};
+				return { content: [{ type: "text", text: msg }], isError: true, details: null as unknown as AgentDetails };
 			}
-			const project = process.env.BASECAMP_PROJECT ?? "default";
-			const sessionDir = path.join(os.tmpdir(), "basecamp-agents", name, "session");
-			const parentSession = getSessionName();
-			const env = buildAgentEnv({ name, parentSession, project });
-			const agentLabel = params.agent ?? "ad-hoc";
-			const extensionTools = getBasecampExtensionToolNames(pi, deps.basecampExtensionRoot);
-			const runKind = getAgentRunKind(agentConfig);
-			const workspace = deps.getWorkspaceState();
-			const worktreeDir = workspace?.activeWorktree?.path ?? null;
-			const spawnCwd = workspace?.launchCwd ?? process.cwd();
+			if (!agentLaunch.ok) {
+				const msg = agentLaunch.message;
+				return { content: [{ type: "text", text: msg }], isError: true, details: null as unknown as AgentDetails };
+			}
 
-			if (runKind === "mutative" && !worktreeDir) {
-				return {
-					content: [
-						{
-							type: "text",
-							text: "Mutative worker agents require an active execution worktree. Approve an implementation plan and activate a worktree first.",
-						},
-					],
-					isError: true,
-					details: null as unknown as AgentDetails,
-				};
-			}
+			const {
+				agent,
+				agentLabel,
+				model,
+				name,
+				runKind,
+				spawnCwd,
+				worktreeDir,
+				sessionDir,
+				extensionTools,
+				environment: env,
+				args,
+			} = agentLaunch.plan;
 
 			const runGuard = beginAgentRun(runGuardState, runKind, agentLabel);
 			if (!runGuard.ok) {
@@ -435,7 +367,7 @@ Available named agents are basecamp builtin definitions. Ad-hoc dispatch must ru
 			// Progressive rendering state
 			const partial: AgentPartialDetails = {
 				agent: agentLabel,
-				agentSource: agentConfig?.source ?? "ad-hoc",
+				agentSource: agent?.source ?? "ad-hoc",
 				model: model ?? undefined,
 				toolCalls: [],
 				turnCount: 0,
@@ -468,14 +400,38 @@ Available named agents are basecamp builtin definitions. Ad-hoc dispatch must ru
 				emitUpdate();
 			};
 
+			const buildRetryArgs = (retrySessionDir: string) => {
+				const copied = [...args];
+				const modelArgIndex = copied.indexOf("--model");
+				if (modelArgIndex !== -1) {
+					copied.splice(modelArgIndex, 2);
+				}
+
+				const sessionDirIndex = copied.indexOf("--session-dir");
+				if (sessionDirIndex !== -1 && copied[sessionDirIndex + 1]) {
+					copied[sessionDirIndex + 1] = retrySessionDir;
+				}
+				return copied;
+			};
+
 			// Initial status
 			setStatusRunning(ctx, agentId, agentLabel, 0, 0);
 
 			try {
 				let result = await spawnAgent(
-					agentConfig,
+					agent,
 					params.task,
-					{ name, model, cwd: spawnCwd, worktreeDir, env, sessionDir, extensionTools, onEvent },
+					{
+						name,
+						model,
+						cwd: spawnCwd,
+						env,
+						sessionDir,
+						extensionTools,
+						worktreeDir,
+						piArgs: args,
+						onEvent,
+					},
 					{
 						readSkillContent: deps.readSkillContent,
 						buildSkillBlock: deps.buildSkillBlock,
@@ -495,7 +451,7 @@ Available named agents are basecamp builtin definitions. Ad-hoc dispatch must ru
 					partial.taskProgress = undefined;
 					partial.latestMessage = undefined;
 					result = await spawnAgent(
-						agentConfig,
+						agent,
 						params.task,
 						{
 							name,
@@ -505,6 +461,7 @@ Available named agents are basecamp builtin definitions. Ad-hoc dispatch must ru
 							env,
 							sessionDir: retrySessionDir,
 							extensionTools,
+							piArgs: buildRetryArgs(retrySessionDir),
 							onEvent,
 						},
 						{
@@ -523,7 +480,7 @@ Available named agents are basecamp builtin definitions. Ad-hoc dispatch must ru
 				// Build structured details for renderResult
 				const details: AgentDetails = {
 					agent: agentLabel,
-					agentSource: agentConfig?.source ?? "ad-hoc",
+					agentSource: agent?.source ?? "ad-hoc",
 					task: params.task,
 					exitCode: result.exitCode,
 					output: result.output,
