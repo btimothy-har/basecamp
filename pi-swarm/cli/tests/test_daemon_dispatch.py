@@ -11,9 +11,9 @@ import uuid
 from pathlib import Path
 
 import uvicorn
-from basecamp.daemon.app import create_app
-from basecamp.daemon.server import UdsServer
-from basecamp.daemon.store import Store
+from pi_swarm.app import create_app
+from pi_swarm.server import UdsServer
+from pi_swarm.store import Store
 from websockets.sync.client import unix_connect
 
 

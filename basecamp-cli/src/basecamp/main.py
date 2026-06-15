@@ -139,7 +139,7 @@ def companion_analyze(session_id: str, base_dir: Path | None) -> None:
 )
 def daemon(uds: Path, db: Path | None, pidfile: Path | None) -> None:
     """Run the basecamp async-agent daemon."""
-    run_daemon = importlib.import_module("basecamp.daemon.server").run_daemon
+    run_daemon = importlib.import_module("pi_swarm.server").run_daemon
     run_daemon(
         str(uds),
         str(db) if db is not None else None,

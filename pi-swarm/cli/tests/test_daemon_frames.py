@@ -6,7 +6,7 @@ import json
 from pathlib import Path
 from typing import Literal, get_args, get_origin
 
-from basecamp.daemon.frames import Frame, parse_frame, serialize_frame
+from pi_swarm.frames import Frame, parse_frame, serialize_frame
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 FIXTURE_DIR = REPO_ROOT / "pi-swarm" / "protocol" / "frames"

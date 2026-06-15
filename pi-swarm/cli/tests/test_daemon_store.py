@@ -6,7 +6,7 @@ import sqlite3
 from pathlib import Path
 
 import pytest
-from basecamp.daemon.store import ActiveRunExistsError, Store
+from pi_swarm.store import ActiveRunExistsError, Store
 
 
 def test_store_initializes_required_tables(tmp_path: Path) -> None:

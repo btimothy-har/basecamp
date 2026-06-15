@@ -5,9 +5,9 @@ from __future__ import annotations
 import sqlite3
 from pathlib import Path
 
-from basecamp.daemon.app import create_app
-from basecamp.daemon.store import Store
 from fastapi.testclient import TestClient
+from pi_swarm.app import create_app
+from pi_swarm.store import Store
 
 
 def _build_app(tmp_path: Path):

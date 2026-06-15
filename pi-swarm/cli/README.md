@@ -1,9 +1,5 @@
 # pi-swarm CLI
 
-This directory is the skeleton for the async-agent daemon runtime and CLI package.
+This package owns the Python async-agent daemon runtime.
 
-The package is intentionally minimal during Task 0:
-
-- It is a standalone Python package under `pi-swarm/cli`.
-- It provides the package entrypoints and module location for the daemon runtime.
-- It currently contains no runtime implementation and remains behaviorally inert until later migration tasks.
+It contains the FastAPI application, Unix-domain-socket server runner, protocol frame models, in-memory runtime registry, and SQLite persistence used by `basecamp daemon`.

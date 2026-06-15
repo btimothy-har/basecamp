@@ -1,4 +1,4 @@
-"""Protocol frame models for the basecamp daemon."""
+"""Protocol frame models for the pi-swarm daemon."""
 
 from __future__ import annotations
 

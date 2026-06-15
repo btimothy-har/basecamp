@@ -12,10 +12,10 @@ from pathlib import Path
 
 import httpx
 import uvicorn
-from basecamp.daemon import server as daemon_server
-from basecamp.daemon.app import create_app
-from basecamp.daemon.server import UdsServer
-from basecamp.daemon.store import Store
+from pi_swarm import server as daemon_server
+from pi_swarm.app import create_app
+from pi_swarm.server import UdsServer
+from pi_swarm.store import Store
 from pytest import MonkeyPatch
 
 

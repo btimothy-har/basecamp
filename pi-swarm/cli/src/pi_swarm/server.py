@@ -8,8 +8,8 @@ from pathlib import Path
 
 import uvicorn
 
-from basecamp.daemon.app import create_app
-from basecamp.daemon.store import Store
+from .app import create_app
+from .store import Store
 
 _SOCKET_MODE = 0o600
 

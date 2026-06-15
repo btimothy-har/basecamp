@@ -1,4 +1,4 @@
-"""FastAPI application for the basecamp daemon skeleton."""
+"""FastAPI application for the pi-swarm daemon."""
 
 from __future__ import annotations
 
@@ -12,7 +12,7 @@ from typing import Any
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 
-from basecamp.daemon.frames import (
+from .frames import (
     PROTOCOL_VERSION,
     DispatchAckFrame,
     DispatchFrame,
@@ -30,8 +30,8 @@ from basecamp.daemon.frames import (
     parse_frame,
     serialize_frame,
 )
-from basecamp.daemon.registry import Registry, Waiter
-from basecamp.daemon.store import ActiveRunExistsError, Store
+from .registry import Registry, Waiter
+from .store import ActiveRunExistsError, Store
 
 _REDACTED_ENV_VALUE = "<redacted>"
 
