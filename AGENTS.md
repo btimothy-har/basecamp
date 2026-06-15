@@ -34,7 +34,7 @@ basecamp-cli/
 └── tests/basecamp/             # pytest suite for Basecamp settings/config
 
 pi-swarm/                      # Async-agent bounded context
-├── protocol/                   # Protocol docs and frame fixtures (in transition from root `protocol/`)
+├── protocol/                   # Protocol docs and frame fixtures
 ├── extension/                  # TypeScript Pi-side agent tools, launch policy, daemon client, reporter
 └── cli/                        # Python daemon CLI/runtime package
 

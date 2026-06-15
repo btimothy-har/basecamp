@@ -1,4 +1,4 @@
-# Basecamp Daemon Protocol
+# Pi Swarm Daemon Protocol
 
 Protocol version: `4`
 
@@ -40,7 +40,7 @@ The daemon enforces one primary active run per agent. `agents.current_run_id` po
 
 ## Frame types
 
-Canonical example fixtures live in `protocol/frames/*.json`.
+Canonical example fixtures live in `pi-swarm/protocol/frames/*.json`.
 
 ### `register` client → daemon
 

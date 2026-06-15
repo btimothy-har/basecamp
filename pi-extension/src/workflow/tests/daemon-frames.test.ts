@@ -7,7 +7,7 @@ import { decodeFrame, encodeFrame, FRAME_TYPES, PROTOCOL_VERSION } from "../agen
 
 function fixturesDir(): string {
 	const here = path.dirname(fileURLToPath(import.meta.url));
-	return path.resolve(here, "../../../../protocol/frames");
+	return path.resolve(here, "../../../../pi-swarm/protocol/frames");
 }
 
 describe("daemon frame codec", () => {

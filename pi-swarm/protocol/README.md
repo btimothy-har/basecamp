@@ -1,5 +1,6 @@
-# Protocol assets (skeleton)
+# Protocol assets
 
-This directory is the ownership boundary for async-agent protocol documentation and protocol frame fixtures used by the daemon protocol work.
+This directory owns the async-agent daemon protocol documentation and canonical frame fixtures used by TypeScript and Python contract tests.
 
-Protocol docs and fixture files will be moved here from the repository root `protocol/` directory in a subsequent task. For now this file serves as the placeholder ownership note and the move target boundary.
+- `PROTOCOL.md` documents the current wire protocol.
+- `frames/*.json` contains canonical example frames for cross-language round-trip tests.

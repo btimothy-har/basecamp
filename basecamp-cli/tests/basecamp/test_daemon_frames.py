@@ -9,7 +9,7 @@ from typing import Literal, get_args, get_origin
 from basecamp.daemon.frames import Frame, parse_frame, serialize_frame
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
-FIXTURE_DIR = REPO_ROOT / "protocol" / "frames"
+FIXTURE_DIR = REPO_ROOT / "pi-swarm" / "protocol" / "frames"
 
 
 def _fixture_type_set() -> set[str]:
