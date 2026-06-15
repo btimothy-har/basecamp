@@ -268,6 +268,45 @@ def test_dispatch_uses_provided_agent_id_for_store_and_child_env(tmp_path: Path)
         _stop_daemon(server, thread, uds_path)
 
 
+def test_dispatch_rejects_second_active_primary_run_for_agent(tmp_path: Path) -> None:
+    db_path = tmp_path / "daemon.db"
+    uds_path = Path("/tmp") / f"basecamp-daemon-dispatch-active-run-{os.getpid()}-{uuid.uuid4().hex[:8]}.sock"
+    store = Store(db_path=db_path)
+    server, thread = _start_daemon(store, uds_path)
+
+    agent_id = f"agent-{uuid.uuid4()}"
+    first_run_id = f"run-{uuid.uuid4()}"
+    second_run_id = f"run-{uuid.uuid4()}"
+
+    try:
+        with unix_connect(str(uds_path), uri="ws://localhost/ws") as websocket:
+            _register_session(websocket, node_id="session-node", cwd=str(tmp_path))
+            first_ack = _dispatch(
+                websocket,
+                run_id=first_run_id,
+                agent_id=agent_id,
+                spec=_dispatch_spec(tmp_path, env={"FAKE_DAEMON_AGENT_SLEEP_MS": "1200"}),
+            )
+            second_ack = _dispatch(
+                websocket,
+                run_id=second_run_id,
+                agent_id=agent_id,
+                spec=_dispatch_spec(tmp_path),
+            )
+
+        assert first_ack["status"] == "spawned"
+        assert second_ack == {
+            "type": "dispatch_ack",
+            "v": 3,
+            "run_id": second_run_id,
+            "status": "rejected",
+            "reason": "active_run_exists",
+        }
+        assert store.get_run(second_run_id) is None
+    finally:
+        _stop_daemon(server, thread, uds_path)
+
+
 def test_dispatch_passes_full_env_to_spawned_child(tmp_path: Path) -> None:
     db_path = tmp_path / "daemon.db"
     uds_path = Path("/tmp") / f"basecamp-daemon-dispatch-env-echo-{os.getpid()}-{uuid.uuid4().hex[:8]}.sock"

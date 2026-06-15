@@ -28,7 +28,7 @@ from basecamp.daemon.frames import (
     serialize_frame,
 )
 from basecamp.daemon.registry import Registry, Waiter
-from basecamp.daemon.store import Store
+from basecamp.daemon.store import ActiveRunExistsError, Store
 
 _REDACTED_ENV_VALUE = "<redacted>"
 
@@ -250,13 +250,28 @@ async def _handle_dispatch(
         session_name=agent_id,
         cwd=frame.spec.cwd,
     )
-    await asyncio.to_thread(
-        store.create_run,
-        run_id=frame.run_id,
-        agent_id=agent_id,
-        spec=spec_json,
-        report_token_hash=report_token_hash,
-    )
+    try:
+        await asyncio.to_thread(
+            store.create_run,
+            run_id=frame.run_id,
+            agent_id=agent_id,
+            dispatcher_id=dispatcher_node_id,
+            spec=spec_json,
+            report_token_hash=report_token_hash,
+        )
+    except ActiveRunExistsError:
+        await websocket.send_json(
+            serialize_frame(
+                DispatchAckFrame(
+                    type="dispatch_ack",
+                    v=PROTOCOL_VERSION,
+                    run_id=frame.run_id,
+                    status="rejected",
+                    reason="active_run_exists",
+                )
+            )
+        )
+        return
 
     argv = [*frame.spec.argv, frame.spec.task]
     child_env = {

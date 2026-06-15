@@ -17,6 +17,14 @@ RUN_SUMMARY_MAX_LIMIT = 100
 RUN_SUMMARY_PREVIEW_CHARS = 160
 
 
+class ActiveRunExistsError(Exception):
+    """Raised when an agent already has an active primary run."""
+
+    def __init__(self, agent_id: str) -> None:
+        super().__init__(f"agent {agent_id} already has an active primary run")
+
+
+
 def _preview_text(value: str | None, *, limit: int = RUN_SUMMARY_PREVIEW_CHARS) -> str | None:
     if value is None:
         return None
@@ -54,7 +62,8 @@ class Store:
                     session_name TEXT,
                     cwd TEXT,
                     created_at TEXT,
-                    last_seen_at TEXT
+                    last_seen_at TEXT,
+                    current_run_id TEXT
                 )
                 """
             )
@@ -64,6 +73,7 @@ class Store:
                     id TEXT PRIMARY KEY,
                     agent_id TEXT,
                     status TEXT CHECK(status IN ('pending','running','completed','failed')),
+                    dispatcher_id TEXT,
                     spec_json TEXT,
                     report_token_hash TEXT,
                     result TEXT,
@@ -87,8 +97,22 @@ class Store:
                 )
                 """
             )
+            self._ensure_agents_current_run_id_column(connection)
+            self._ensure_runs_dispatcher_id_column(connection)
             self._ensure_runs_exit_code_column(connection)
             self._ensure_runs_report_token_hash_column(connection)
+
+    def _ensure_agents_current_run_id_column(self, connection: sqlite3.Connection) -> None:
+        columns = connection.execute("PRAGMA table_info(agents)").fetchall()
+        names = {column[1] for column in columns}
+        if "current_run_id" not in names:
+            connection.execute("ALTER TABLE agents ADD COLUMN current_run_id TEXT")
+
+    def _ensure_runs_dispatcher_id_column(self, connection: sqlite3.Connection) -> None:
+        columns = connection.execute("PRAGMA table_info(runs)").fetchall()
+        names = {column[1] for column in columns}
+        if "dispatcher_id" not in names:
+            connection.execute("ALTER TABLE runs ADD COLUMN dispatcher_id TEXT")
 
     def _ensure_runs_exit_code_column(self, connection: sqlite3.Connection) -> None:
         columns = connection.execute("PRAGMA table_info(runs)").fetchall()
@@ -157,6 +181,7 @@ class Store:
         *,
         run_id: str,
         agent_id: str,
+        dispatcher_id: str,
         spec: dict[str, Any],
         report_token_hash: str | None = None,
     ) -> None:
@@ -164,13 +189,54 @@ class Store:
 
         now = self._now()
         with self._connect() as connection:
+            existing_active = connection.execute(
+                """
+                SELECT id
+                FROM runs
+                WHERE agent_id = ?
+                  AND status NOT IN (?, ?)
+                LIMIT 1
+                """,
+                (agent_id, *TERMINAL_STATUSES),
+            ).fetchone()
+            if existing_active is not None:
+                raise ActiveRunExistsError(agent_id)
+
             connection.execute(
                 """
-                INSERT INTO runs (id, agent_id, status, spec_json, report_token_hash, created_at, started_at)
-                VALUES (?, ?, 'running', ?, ?, ?, ?)
+                INSERT INTO runs (
+                    id,
+                    agent_id,
+                    status,
+                    dispatcher_id,
+                    spec_json,
+                    report_token_hash,
+                    created_at,
+                    started_at
+                )
+                VALUES (?, ?, 'running', ?, ?, ?, ?, ?)
                 """,
-                (run_id, agent_id, json.dumps(spec), report_token_hash, now, now),
+                (run_id, agent_id, dispatcher_id, json.dumps(spec), report_token_hash, now, now),
             )
+            connection.execute(
+                "UPDATE agents SET current_run_id = ? WHERE id = ?",
+                (run_id, agent_id),
+            )
+
+    def _get_run_agent_id(self, *, connection: sqlite3.Connection, run_id: str) -> str | None:
+        run = connection.execute(
+            "SELECT agent_id FROM runs WHERE id = ?",
+            (run_id,),
+        ).fetchone()
+        return run[0] if run is not None else None
+
+    def _clear_agent_current_run_if_matches(
+        self, *, connection: sqlite3.Connection, run_id: str, agent_id: str
+    ) -> None:
+        connection.execute(
+            "UPDATE agents SET current_run_id = NULL WHERE id = ? AND current_run_id = ?",
+            (agent_id, run_id),
+        )
 
     def set_run_exit_code(self, *, run_id: str, exit_code: int | None) -> None:
         """Persist subprocess exit code for a run."""
@@ -193,7 +259,7 @@ class Store:
 
         ended_at = self._now()
         with self._connect() as connection:
-            connection.execute(
+            cursor = connection.execute(
                 """
                 UPDATE runs
                 SET status = ?, result = ?, error = ?, ended_at = ?
@@ -201,6 +267,17 @@ class Store:
                 """,
                 (status, result, error, ended_at, run_id),
             )
+            if cursor.rowcount == 0:
+                return
+
+            if status in TERMINAL_STATUSES:
+                run_agent_id = self._get_run_agent_id(connection=connection, run_id=run_id)
+                if run_agent_id is not None:
+                    self._clear_agent_current_run_if_matches(
+                        connection=connection,
+                        run_id=run_id,
+                        agent_id=run_agent_id,
+                    )
 
     def set_run_result_if_unset(
         self,
@@ -223,7 +300,19 @@ class Store:
                 """,
                 (status, result, error, ended_at, run_id),
             )
-            return cursor.rowcount > 0
+            if cursor.rowcount == 0:
+                return False
+
+            if status in TERMINAL_STATUSES:
+                run_agent_id = self._get_run_agent_id(connection=connection, run_id=run_id)
+                if run_agent_id is not None:
+                    self._clear_agent_current_run_if_matches(
+                        connection=connection,
+                        run_id=run_id,
+                        agent_id=run_agent_id,
+                    )
+
+            return True
 
     def get_run(self, run_id: str) -> dict[str, Any] | None:
         """Fetch a run by id as a dict, or None when absent."""
