@@ -1,9 +1,9 @@
 {
   "type": "wait",
-  "v": 3,
-  "run_ids": [
-    "run-001",
-    "run-002"
+  "v": 4,
+  "agent_ids": [
+    "agent-001",
+    "agent-002"
   ],
   "mode": "all",
   "timeout_s": 30.0

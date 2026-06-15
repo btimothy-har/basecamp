@@ -1,6 +1,6 @@
 # Asynchronous Multi-Agent System — Design
 
-**Status:** Phase 1 IMPLEMENTED (walking skeleton) · **Scope:** Design + status tracking for later phases · **Roadmap:** Phases 2–5 remain design targets
+**Status:** Phase 1 IMPLEMENTED (walking skeleton); Phase 2a ACL foundation implemented · **Scope:** Design + status tracking for later phases · **Roadmap:** Remaining Phase 2 collaboration work and Phases 3–5 remain design targets
 
 This document describes the target architecture for basecamp's asynchronous, collaborating subagents, coordinated by a global, single-host daemon. It captures the converged design, the decisions and rejected alternatives behind it, the risk register, and a phased roadmap whose first phase is a deliberately minimal walking skeleton.
 
@@ -21,7 +21,7 @@ We want agents that can run **concurrently**, **persist their conversational thr
 
 ### Goals
 
-- **Asynchronous dispatch.** Dispatching an agent returns immediately with a handle; the caller continues working and rejoins results when it chooses.
+- **Asynchronous dispatch.** Dispatching an agent returns immediately with an agent handle; the caller continues working and rejoins results when it chooses.
 - **Persistent agent identity.** An agent is a durable entity (a thread) that survives between tasks and can be re-tasked, not a one-shot process.
 - **Collaboration.** Agents can exchange messages with permitted peers and escalate to a supervisor; results flow back to the dispatcher.
 - **Central coordination.** A single coordinator owns the relationship graph, concurrency limits, mutation leases, and deadlock detection — things no per-session, in-process guard can enforce across the whole host.
@@ -350,23 +350,28 @@ Trade-off: waking an idle dispatcher on every result ping can interrupt active t
 
 ### 7.3 `wait_for_agent` — the composable join
 
-`wait_for_agent` is the explicit join primitive in an async-always model. Dispatch never blocks by itself; a caller that wants synchronous behavior opts in by waiting on one or more handles.
+`wait_for_agent` is the explicit join primitive in an async-always model. Dispatch never blocks by itself; a caller that wants synchronous behavior opts in by waiting on one or more agent handles.
 
-Supported join modes:
+The public handle is the durable `agent_id`. Private run/execution ids remain daemon correlation details for process tracking, telemetry, result reporting, and history; they are not the user-facing wait target.
 
-- **wait-ALL**: resume once after every listed handle has completed,
-- **wait-FIRST**: resume when the first listed handle completes.
-
-wait-ALL over multiple handles is the ergonomic fan-out/join shape: the caller blocks once and resumes once with a complete set, instead of being reawakened per child completion.
+Phase 2a implements **wait-ALL** over agent handles. The daemon resolves each agent to its latest primary run and enforces strict dispatcher ownership: only the node that dispatched that agent's current primary run may wait on it. Unauthorized, missing, or no-current-run agents return `unknown` and do not block, matching the missing-handle behavior without leaking existence.
 
 Execution semantics:
 
-- the tool call blocks internally until the daemon signals completion according to the selected mode,
-- timeout is supported,
+- the tool call blocks internally until every authorized non-terminal target completes or the timeout expires,
+- timeout is supported and returns `running` for authorized still-running agents,
 - user abort (Ctrl+C) is honored,
 - the §6.3 crash backstop guarantees no indefinite wait when a transient agent process exits without a terminal result frame.
 
 Relationship to result ping (§7.2): result ping is unsolicited immediate awareness; `wait_for_agent` is explicit synchronization. They are complementary, not competing. A caller may ignore result pings and join solely via `wait_for_agent`.
+
+#### 7.3.1 `list_agents` — root-scoped directory
+
+`list_agents` is a read-only directory for the caller's root session. It lists same-root non-session agents and returns safe metadata only: `agent_id`, parent id, role, session name, depth, current primary-run status, and an `awaitable` boolean.
+
+The directory is intentionally not an inspection backdoor. It does not expose private run ids, task prompts, full results, errors, spawn specs, env, or cwd. `awaitable: true` filters to agents whose current primary run the caller may wait on under the dispatcher-owned wait ACL.
+
+This directory is the first root-scoped visibility primitive for later collaboration. Peer message delivery remains future Phase 2 work; `list_agents` only answers "who is in my root scope?" and "which current primary runs may I wait on?".
 
 ### 7.4 Mutation lease & deadlock detection
 
@@ -455,15 +460,12 @@ Both limits are configurable tunables. They are complementary: depth cap bounds 
 - **Phase 1 — IMPLEMENTED walking skeleton.** Delivered components: daemon (`basecamp daemon`), extension daemon client + `dispatch_agent` / `wait_for_agent`, and shared frame protocol fixtures under `protocol/`. Goal was to prove the end-to-end spine with one persistent agent identity and asynchronous run completion.
   - In scope: a single frame-schema source of truth + a daemon contract test (the protocol exists from Phase 1); `session_start` ensure-daemon + WebSocket handshake (§5.3); daemon spawns one transient agent process from a TypeScript-authored spawn spec (§6.2); async dispatch returns a handle immediately; telemetry + result reporting over WebSocket (§6.3); `wait_for_agent` for a single handle and wait-ALL over multiple handles (§7.3); process-exit crash backstop; SQLite persistence for agents/runs; async-agent identity refinements — repo-root spawn cwd, deterministic titles, and a durable/distinct session store (§6.6); depth cap retained. The existing in-process run guard (§3) also stays in place (see the sequencing note), so breadth remains bounded even though the global concurrency cap is not yet built.
   - Explicitly out of scope: peer message, ACL enforcement, mutation lease/deadlock detection, host-global concurrency cap, HTTP observability polish, re-task-on-message behavior, wait-FIRST joins, and the unsolicited result-ping push (in Phase 1 the dispatcher observes completion by calling `wait_for_agent`).
-  - Acceptance criteria:
-    - `session_start` produces a healthy daemon connection (spawn if absent, reuse if present, complete version handshake) without blocking first prompt availability.
-    - The `agent` tool dispatches asynchronously and returns a run handle immediately.
-    - A transient agent process executes, streams telemetry, and reports a result that the daemon persists.
-    - `wait_for_agent` blocks and returns results for both a single handle and wait-ALL across two handles.
-    - A deliberately crashed transient agent process resolves its waiter through the backstop (no indefinite wait).
-    - The existing depth cap still rejects over-depth spawn attempts.
 
-- **Phase 2 — Collaboration.** Goal: establish relationship graph + default-deny ACL (§7.1), peer message routing across all three recipient states including re-task-on-message for idle recipients (§7.2a, §6.4), and result ping notify-then-fetch wake behavior (§7.2b).
+- **Phase 2a — IMPLEMENTED agent-first ACL foundation.** Goal: fix the public run-handle deviation and establish the first daemon-enforced ACL slice without adding peer messaging yet.
+  - In scope: `dispatch_agent` returns the public `agent_id`; `wait_for_agent` accepts agent handles and resolves to private current primary runs; only the immediate dispatcher can wait; unauthorized/missing targets return `unknown`; one active primary run per agent is enforced; `list_agents` provides a root-scoped read-only directory with `awaitable`; protocol v4 fixtures and docs describe the agent-first surface.
+  - Explicitly out of scope: `message_agent`, peer-message delivery, result pings, idle re-task-on-message, root-scoped message ACL beyond `list_agents`, and removal/deprecation of the synchronous `agent` path.
+
+- **Phase 2b — Collaboration.** Goal: establish full peer message routing across all three recipient states including re-task-on-message for idle recipients (§7.2a, §6.4), and result ping notify-then-fetch wake behavior (§7.2b).
 
 - **Phase 3 — Mutation safety.** Goal: ship per-worktree whole-task mutation lease with stale reclaim and daemon-side deadlock cycle rejection using the global wait-for graph (§7.4).
 

@@ -6,7 +6,7 @@ import { afterEach, beforeEach, describe, it } from "node:test";
 import { resetInvokedSkills, trackSkillInvocation } from "../../platform/skill-tracker.ts";
 import { getWorkspaceService, registerWorkspaceService, type WorkspaceService } from "../../platform/workspace.ts";
 import type { DaemonConnection } from "../agents/daemon/client.ts";
-import type { Frame } from "../agents/daemon/frames.ts";
+import type { Frame, ListAgentItem } from "../agents/daemon/frames.ts";
 import { deriveDaemonIdentity } from "../agents/daemon/index.ts";
 import { resolveDaemonPaths } from "../agents/daemon/paths.ts";
 import { buildAgentTitleBase, processEnvForSpawn, registerDaemonTools } from "../agents/daemon/tools.ts";
@@ -196,7 +196,7 @@ describe("daemon async tools", () => {
 
 			connection.emit({
 				type: "dispatch_ack",
-				v: 3,
+				v: 4,
 				run_id: outbound.run_id,
 				status: "spawned",
 				reason: null,
@@ -291,7 +291,7 @@ describe("daemon async tools", () => {
 
 		connection.emit({
 			type: "dispatch_ack",
-			v: 3,
+			v: 4,
 			run_id: outbound.run_id,
 			status: "spawned",
 			reason: null,
@@ -362,7 +362,7 @@ describe("daemon async tools", () => {
 
 			connection.emit({
 				type: "dispatch_ack",
-				v: 3,
+				v: 4,
 				run_id: outbound.run_id,
 				status: "spawned",
 				reason: null,
@@ -427,7 +427,7 @@ describe("daemon async tools", () => {
 
 			connection.emit({
 				type: "dispatch_ack",
-				v: 3,
+				v: 4,
 				run_id: outbound.run_id,
 				status: "spawned",
 				reason: null,
@@ -454,7 +454,7 @@ describe("daemon async tools", () => {
 
 		connection.emit({
 			type: "dispatch_ack",
-			v: 3,
+			v: 4,
 			run_id: outbound.run_id,
 			status: "rejected",
 			reason: "depth_cap",
@@ -488,7 +488,7 @@ describe("daemon async tools", () => {
 
 		connection.emit({
 			type: "wait_result",
-			v: 3,
+			v: 4,
 			results: [
 				{ agent_id: "agent-1", status: "completed", result: "duplicate", error: null },
 				{ agent_id: "agent-1", status: "completed", result: "duplicate", error: null },
@@ -496,7 +496,7 @@ describe("daemon async tools", () => {
 		});
 		connection.emit({
 			type: "wait_result",
-			v: 3,
+			v: 4,
 			results: [
 				{ agent_id: "agent-1", status: "completed", result: "done", error: null },
 				{ agent_id: "agent-2", status: "failed", result: "compensation skipped", error: "boom" },
@@ -535,7 +535,7 @@ describe("daemon async tools", () => {
 
 		connection.emit({
 			type: "wait_result",
-			v: 3,
+			v: 4,
 			results: [
 				{ agent_id: "agent-1", status: "running", result: null, error: null },
 				{ agent_id: "agent-2", status: "unknown", result: null, error: null },
@@ -575,6 +575,59 @@ describe("daemon async tools", () => {
 		assert.equal(result.details, null);
 	});
 
+	it("list_agents sends request, waits on request id, and formats response rows", async () => {
+		trackSkillInvocation("agents");
+		const connection = new MockConnection();
+		const { pi, tools } = createMockPi();
+		registerDaemonTools(pi, async () => connection);
+		const listTool = toolByName(tools, "list_agents");
+
+		const executePromise = listTool.execute("1", { awaitable: true }, new AbortController().signal, () => {}, {});
+		await new Promise((resolve) => setImmediate(resolve));
+		const outbound = connection.sent[0] as Extract<Frame, { type: "list_agents" }>;
+		assert.equal(outbound.type, "list_agents");
+		assert.equal(outbound.awaitable, true);
+		assert.equal(typeof outbound.request_id, "string");
+
+		const response = {
+			type: "list_agents_result" as const,
+			v: 4 as 4,
+			request_id: outbound.request_id,
+			agents: [
+				{
+					agent_id: "agent-1",
+					parent_id: "session-1",
+					role: "agent",
+					session_name: "agent-one",
+					depth: 1,
+					status: "running",
+					awaitable: true,
+				},
+				{
+					agent_id: "agent-2",
+					parent_id: "agent-1",
+					role: "agent",
+					session_name: "agent-two",
+					depth: 2,
+					status: "completed",
+					awaitable: false,
+				},
+			] as ListAgentItem[],
+		} as Extract<Frame, { type: "list_agents_result" }>;
+		connection.emit(response);
+
+		const result = await executePromise;
+		assert.equal(result.isError, undefined);
+		assert.equal(result.details.agents.length, 2);
+		assert.equal(result.details.agents[0].agent_id, "agent-1");
+		assert.equal(result.details.agents[1].status, "completed");
+		assert.match(result.content[0].text, /agent-1/);
+		assert.match(result.content[0].text, /agent-one/);
+		assert.match(result.content[0].text, /agent-two/);
+		assert.match(result.content[0].text, /running/);
+		assert.match(result.content[0].text, /completed/);
+	});
+
 	it("wait_for_agent aborts promptly on AbortSignal", async () => {
 		trackSkillInvocation("agents");
 		const connection = new MockConnection();
@@ -595,6 +648,23 @@ describe("daemon async tools", () => {
 		const result = await executePromise;
 		assert.equal(result.details.aborted, true);
 		assert.match(result.content[0].text, /wait aborted/i);
+	});
+
+	it("list_agents requires agents skill invocation", async () => {
+		let connected = false;
+		const { pi, tools } = createMockPi();
+		registerDaemonTools(pi, async () => {
+			connected = true;
+			return new MockConnection();
+		});
+		const listTool = toolByName(tools, "list_agents");
+
+		const result = await listTool.execute("1", {}, new AbortController().signal, () => {}, {});
+
+		assert.equal(result.isError, true);
+		assert.match(result.content[0].text, /Load the agents skill first/);
+		assert.equal(connected, false);
+		assert.equal(result.details, null);
 	});
 
 	it("deriveDaemonIdentity prefers BASECAMP_AGENT_TITLE with short session-id suffix", () => {

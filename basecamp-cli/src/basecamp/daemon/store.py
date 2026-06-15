@@ -296,6 +296,96 @@ class Store:
                 result["spec_json"] = json.loads(spec_json)
             return result
 
+    def _resolve_requester_root(self, requester_node_id: str) -> str | None:
+        """Resolve the root id for a node by following parent links defensively."""
+
+        visited: set[str] = set()
+        current = requester_node_id
+
+        while isinstance(current, str) and current not in visited:
+            visited.add(current)
+            row = self.get_agent(current)
+            if row is None:
+                return None
+
+            parent_id = row.get("parent_id")
+            if not isinstance(parent_id, str) or not parent_id.strip():
+                return current
+            if self.get_agent(parent_id) is None:
+                return current
+            current = parent_id
+
+        return current if isinstance(current, str) else None
+
+    def get_root_agent_directory(
+        self,
+        *,
+        requester_node_id: str,
+        awaitable: bool = False,
+    ) -> list[dict[str, Any]]:
+        """List non-session agents under the caller's root with safe status metadata."""
+
+        root_id = self._resolve_requester_root(requester_node_id)
+        if root_id is None:
+            return []
+
+        awaitable_filter = "" if not awaitable else " AND r.id IS NOT NULL AND r.dispatcher_id = ? """
+        query = f"""
+            WITH RECURSIVE scoped_agents(id, parent_id, path) AS (
+                SELECT id, parent_id, ',' || id || ','
+                FROM agents
+                WHERE id = ?
+                UNION
+                SELECT child.id,
+                       child.parent_id,
+                       path || child.id || ','
+                FROM agents AS child
+                INNER JOIN scoped_agents AS s ON child.parent_id = s.id
+                WHERE instr(s.path, ',' || child.id || ',') = 0
+            )
+            SELECT
+                a.id AS agent_id,
+                a.parent_id,
+                a.role,
+                a.session_name,
+                a.depth,
+                CASE
+                    WHEN r.status IN ('pending', 'running', 'completed', 'failed') THEN r.status
+                    ELSE 'idle'
+                END AS status,
+                CASE
+                    WHEN r.id IS NOT NULL AND r.dispatcher_id = ? THEN 1
+                    ELSE 0
+                END AS awaitable
+            FROM scoped_agents AS s
+            INNER JOIN agents AS a ON a.id = s.id
+            LEFT JOIN runs AS r ON r.id = a.current_run_id
+            WHERE a.role != 'session'
+            {awaitable_filter}
+            ORDER BY a.depth ASC, a.id ASC
+            """
+
+        params: tuple[Any, ...] = (root_id, requester_node_id)
+        if awaitable:
+            params = (root_id, requester_node_id, requester_node_id)
+
+        with self._connect() as connection:
+            connection.row_factory = sqlite3.Row
+            rows = connection.execute(query, params).fetchall()
+
+        return [
+            {
+                "agent_id": row["agent_id"],
+                "parent_id": row["parent_id"],
+                "role": row["role"],
+                "session_name": row["session_name"],
+                "depth": row["depth"],
+                "status": row["status"],
+                "awaitable": bool(row["awaitable"]),
+            }
+            for row in rows
+        ]
+
     def get_agents_current_runs(
         self,
         agent_ids: list[str],

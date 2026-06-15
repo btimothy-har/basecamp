@@ -11,12 +11,22 @@ import { resolveModel } from "../model-resolution.ts";
 import { buildAgentEnv, getBasecampExtensionToolNames } from "../tool.ts";
 import { getAgentRunKind } from "../types.ts";
 import type { DaemonConnection } from "./client.ts";
-import { type DispatchAckFrame, PROTOCOL_VERSION, type WaitResultFrame } from "./frames.ts";
+import {
+	type DispatchAckFrame,
+	type ListAgentItem,
+	type ListAgentsResultFrame,
+	PROTOCOL_VERSION,
+	type WaitResultFrame,
+} from "./frames.ts";
 import { resolveDaemonPaths } from "./paths.ts";
 
 interface DispatchDetails {
 	agentId: string;
 	agent: string;
+}
+
+interface ListAgentsDetails {
+	agents: ListAgentItem[];
 }
 
 interface WaitHandleResult {
@@ -43,6 +53,14 @@ const WaitForAgentParams = Type.Object({
 		Type.Array(Type.String({ description: "Agent handle returned by dispatch_agent" })),
 	]),
 	timeout_s: Type.Optional(Type.Number({ minimum: 1, default: 600 })),
+});
+
+const ListAgentsParams = Type.Object({
+	awaitable: Type.Optional(
+		Type.Boolean({
+			description: "Filter to agents currently awaitable by this caller",
+		}),
+	),
 });
 
 export function processEnvForSpawn(): Record<string, string> {
@@ -98,12 +116,23 @@ function formatWaitItemText(item: WaitHandleResult): string {
 	return `… ${item.agentId} still running (timed out)`;
 }
 
-function waitForFrame<T extends "dispatch_ack" | "wait_result">(
+function buildListAgentLine(agent: ListAgentItem): string {
+	const awaitableText = agent.awaitable ? "awaitable" : "not awaitable";
+	const parent = agent.parent_id ? `parent ${agent.parent_id}` : "root";
+	return `${agent.agent_id} — ${agent.session_name}\n${agent.status} • ${awaitableText} • ${parent} • depth ${agent.depth}`;
+}
+
+function shortListAgentsSummary(agents: ListAgentItem[]): string {
+	if (agents.length === 0) return "No agents found in this scope.";
+	return agents.map((agent) => buildListAgentLine(agent)).join("\n\n");
+}
+
+function waitForFrame<T extends "dispatch_ack" | "wait_result" | "list_agents_result">(
 	connection: DaemonConnection,
 	type: T,
-	predicate: (frame: Extract<DispatchAckFrame | WaitResultFrame, { type: T }>) => boolean,
+	predicate: (frame: Extract<DispatchAckFrame | WaitResultFrame | ListAgentsResultFrame, { type: T }>) => boolean,
 	signal?: AbortSignal,
-): Promise<Extract<DispatchAckFrame | WaitResultFrame, { type: T }>> {
+): Promise<Extract<DispatchAckFrame | WaitResultFrame | ListAgentsResultFrame, { type: T }>> {
 	return new Promise((resolve, reject) => {
 		if (signal?.aborted) {
 			reject(new Error("aborted"));
@@ -111,7 +140,7 @@ function waitForFrame<T extends "dispatch_ack" | "wait_result">(
 		}
 
 		const off = connection.on(type, (frame) => {
-			const typed = frame as Extract<DispatchAckFrame | WaitResultFrame, { type: T }>;
+			const typed = frame as Extract<DispatchAckFrame | WaitResultFrame | ListAgentsResultFrame, { type: T }>;
 			if (!predicate(typed)) return;
 			off();
 			signal?.removeEventListener("abort", onAbort);
@@ -253,6 +282,68 @@ export function registerDaemonTools(pi: ExtensionAPI, getConnection: () => Promi
 			const details = result.details as DispatchDetails | null;
 			if (!details) return new Text(result.content[0]?.type === "text" ? result.content[0].text : "", 0, 0);
 			return new Text(theme.fg("accent", `⏳ dispatched ${details.agent} — handle ${details.agentId}`), 0, 0);
+		},
+	});
+
+	pi.registerTool({
+		name: "list_agents",
+		label: "List Agents",
+		description: "List visible async agents under the caller's daemon root.",
+		parameters: ListAgentsParams,
+		async execute(_id, params, _signal) {
+			if (!hasInvokedSkill("agents")) {
+				return {
+					content: [
+						{
+							type: "text",
+							text: 'Load the agents skill first: call skill({ name: "agents" }) before listing agents.',
+						},
+					],
+					isError: true,
+					details: null,
+				};
+			}
+			const connection = await getConnection();
+			if (!connection) {
+				return {
+					content: [{ type: "text", text: "basecamp daemon is not connected; cannot list async agents." }],
+					isError: true,
+					details: null,
+				};
+			}
+
+			const requestId = randomUUID();
+			connection.send({
+				type: "list_agents",
+				v: PROTOCOL_VERSION,
+				request_id: requestId,
+				awaitable: Boolean(params.awaitable),
+			});
+
+			const frame = await waitForFrame(
+				connection,
+				"list_agents_result",
+				(candidate) => candidate.request_id === requestId,
+			);
+
+			return {
+				content: [{ type: "text", text: shortListAgentsSummary(frame.agents) }],
+				details: { agents: frame.agents } as ListAgentsDetails,
+			};
+		},
+		renderResult(result, _opts, theme) {
+			const details = result.details as ListAgentsDetails | null;
+			if (!details) return new Text(result.content[0]?.type === "text" ? result.content[0].text : "", 0, 0);
+			if (details.agents.length === 0) return new Text(theme.fg("muted", "No agents visible."), 0, 0);
+			const lines = details.agents.map((agent) => {
+				const status = `${theme.fg(agent.status === "running" || agent.status === "failed" ? "warning" : "muted", agent.status)}`;
+				const awaitable = theme.fg(
+					agent.awaitable ? "success" : "muted",
+					agent.awaitable ? "awaitable" : "not awaitable",
+				);
+				return `${agent.agent_id} ${theme.fg("muted", agent.session_name)} ${status} ${awaitable}`;
+			});
+			return new Text(lines.join("\n"), 0, 0);
 		},
 	});
 

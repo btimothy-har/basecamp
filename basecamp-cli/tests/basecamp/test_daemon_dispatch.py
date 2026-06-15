@@ -65,7 +65,7 @@ def _register_session(websocket, *, node_id: str, cwd: str) -> None:
         json.dumps(
             {
                 "type": "register",
-                "v": 3,
+                "v": 4,
                 "role": "session",
                 "node_id": node_id,
                 "parent_id": None,
@@ -85,7 +85,7 @@ def _register_agent(websocket, *, node_id: str, cwd: str) -> None:
         json.dumps(
             {
                 "type": "register",
-                "v": 3,
+                "v": 4,
                 "role": "agent",
                 "node_id": node_id,
                 "parent_id": None,
@@ -109,7 +109,7 @@ def _dispatch(
 ) -> dict[str, object]:
     payload: dict[str, object] = {
         "type": "dispatch",
-        "v": 3,
+        "v": 4,
         "run_id": run_id,
         "spec": spec,
     }
@@ -135,7 +135,7 @@ def test_daemon_dispatch_spawn_and_result_round_trip(tmp_path: Path) -> None:
             ack = _dispatch(websocket, run_id=run_id, spec=_dispatch_spec(tmp_path))
             assert ack == {
                 "type": "dispatch_ack",
-                "v": 3,
+                "v": 4,
                 "run_id": run_id,
                 "status": "spawned",
                 "reason": None,
@@ -192,7 +192,7 @@ def test_dispatch_stores_sanitized_spec_without_secret_values(tmp_path: Path) ->
             ack = _dispatch(websocket, run_id=run_id, spec=_dispatch_spec(tmp_path, env=secret_env))
             assert ack == {
                 "type": "dispatch_ack",
-                "v": 3,
+                "v": 4,
                 "run_id": run_id,
                 "status": "spawned",
                 "reason": None,
@@ -242,7 +242,7 @@ def test_dispatch_uses_provided_agent_id_for_store_and_child_env(tmp_path: Path)
             ack = _dispatch(websocket, run_id=run_id, spec=_dispatch_spec(tmp_path), agent_id=provided_agent_id)
             assert ack == {
                 "type": "dispatch_ack",
-                "v": 3,
+                "v": 4,
                 "run_id": run_id,
                 "status": "spawned",
                 "reason": None,
@@ -297,7 +297,7 @@ def test_dispatch_rejects_second_active_primary_run_for_agent(tmp_path: Path) ->
         assert first_ack["status"] == "spawned"
         assert second_ack == {
             "type": "dispatch_ack",
-            "v": 3,
+            "v": 4,
             "run_id": second_run_id,
             "status": "rejected",
             "reason": "active_run_exists",
@@ -333,7 +333,7 @@ def test_dispatch_passes_full_env_to_spawned_child(tmp_path: Path) -> None:
             )
             assert ack == {
                 "type": "dispatch_ack",
-                "v": 3,
+                "v": 4,
                 "run_id": run_id,
                 "status": "spawned",
                 "reason": None,
@@ -387,7 +387,7 @@ def test_wait_all_happy_path_two_runs(tmp_path: Path) -> None:
                 json.dumps(
                     {
                         "type": "wait",
-                        "v": 3,
+                        "v": 4,
                         "agent_ids": [agent_id_1, agent_id_2],
                         "mode": "all",
                         "timeout_s": 5,
@@ -433,7 +433,7 @@ def test_wait_timeout_returns_running_status(tmp_path: Path) -> None:
                 json.dumps(
                     {
                         "type": "wait",
-                        "v": 3,
+                        "v": 4,
                         "agent_ids": [agent_id],
                         "mode": "all",
                         "timeout_s": 0.1,
@@ -482,7 +482,7 @@ def test_backstop_marks_failed_and_resolves_wait(tmp_path: Path) -> None:
                 json.dumps(
                     {
                         "type": "wait",
-                        "v": 3,
+                        "v": 4,
                         "agent_ids": [agent_id],
                         "mode": "all",
                         "timeout_s": 5,
@@ -522,7 +522,7 @@ def test_wait_unknown_handles_return_unknown_immediately(tmp_path: Path) -> None
                 json.dumps(
                     {
                         "type": "wait",
-                        "v": 3,
+                        "v": 4,
                         "agent_ids": [unknown_agent_id],
                         "mode": "all",
                         "timeout_s": 10,
@@ -568,7 +568,7 @@ def test_wait_by_non_dispatcher_returns_unknown_immediately(tmp_path: Path) -> N
                 json.dumps(
                     {
                         "type": "wait",
-                        "v": 3,
+                        "v": 4,
                         "agent_ids": [agent_id],
                         "mode": "all",
                         "timeout_s": 10,
@@ -623,7 +623,7 @@ def test_wait_mixed_unknown_and_completed_returns_all_handles(tmp_path: Path) ->
                 json.dumps(
                     {
                         "type": "wait",
-                        "v": 3,
+                        "v": 4,
                         "agent_ids": [agent_id, unknown_agent_id],
                         "mode": "all",
                         "timeout_s": 10,
@@ -654,7 +654,7 @@ def test_dispatch_rejected_when_depth_cap_exceeded(tmp_path: Path, monkeypatch) 
                 json.dumps(
                     {
                         "type": "register",
-                        "v": 3,
+                        "v": 4,
                         "role": "agent",
                         "node_id": "depth-two-agent",
                         "parent_id": "parent",
@@ -671,7 +671,7 @@ def test_dispatch_rejected_when_depth_cap_exceeded(tmp_path: Path, monkeypatch) 
 
         assert ack == {
             "type": "dispatch_ack",
-            "v": 3,
+            "v": 4,
             "run_id": run_id,
             "status": "rejected",
             "reason": "depth_cap",
@@ -708,7 +708,7 @@ def test_dispatch_report_frames_accept_different_reporting_node_id(tmp_path: Pat
             )
             assert ack == {
                 "type": "dispatch_ack",
-                "v": 3,
+                "v": 4,
                 "run_id": run_id,
                 "status": "spawned",
                 "reason": None,
@@ -758,7 +758,7 @@ def test_telemetry_and_invalid_result_reports_do_not_mutate_run(tmp_path: Path) 
             )
             assert ack == {
                 "type": "dispatch_ack",
-                "v": 3,
+                "v": 4,
                 "run_id": run_id,
                 "status": "spawned",
                 "reason": None,
@@ -792,7 +792,7 @@ def test_telemetry_and_invalid_result_reports_do_not_mutate_run(tmp_path: Path) 
                 json.dumps(
                     {
                         "type": "telemetry",
-                        "v": 3,
+                        "v": 4,
                         "run_id": run_id,
                         "agent_id": run_agent_id,
                         "report_token": "bad-token",
@@ -805,7 +805,7 @@ def test_telemetry_and_invalid_result_reports_do_not_mutate_run(tmp_path: Path) 
                 json.dumps(
                     {
                         "type": "telemetry",
-                        "v": 3,
+                        "v": 4,
                         "run_id": run_id,
                         "agent_id": f"{run_agent_id}-wrong",
                         "report_token": token,
@@ -818,7 +818,7 @@ def test_telemetry_and_invalid_result_reports_do_not_mutate_run(tmp_path: Path) 
                 json.dumps(
                     {
                         "type": "result_report",
-                        "v": 3,
+                        "v": 4,
                         "run_id": run_id,
                         "agent_id": f"{run_agent_id}-wrong",
                         "report_token": token,
@@ -833,7 +833,7 @@ def test_telemetry_and_invalid_result_reports_do_not_mutate_run(tmp_path: Path) 
                 json.dumps(
                     {
                         "type": "result_report",
-                        "v": 3,
+                        "v": 4,
                         "run_id": run_id,
                         "agent_id": run_agent_id,
                         "report_token": "bad-token",

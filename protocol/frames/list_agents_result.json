@@ -1,0 +1,25 @@
+{
+  "type": "list_agents_result",
+  "v": 4,
+  "request_id": "list-001",
+  "agents": [
+    {
+      "agent_id": "agent-42",
+      "parent_id": "session-123",
+      "role": "agent",
+      "session_name": "(scout) inspect auth [a1b2]",
+      "depth": 1,
+      "status": "running",
+      "awaitable": true
+    },
+    {
+      "agent_id": "agent-43",
+      "parent_id": "agent-42",
+      "role": "agent",
+      "session_name": "(testing-specialist) auth tests [c3d4]",
+      "depth": 2,
+      "status": "completed",
+      "awaitable": false
+    }
+  ]
+}

@@ -17,6 +17,9 @@ from basecamp.daemon.frames import (
     DispatchAckFrame,
     DispatchFrame,
     ErrorFrame,
+    ListAgentItem,
+    ListAgentsFrame,
+    ListAgentsResultFrame,
     RegisteredFrame,
     RegisterFrame,
     ResultReportFrame,
@@ -156,6 +159,14 @@ def create_app(store: Store, *, daemon_uds: str | None = None) -> FastAPI:
                         websocket=websocket,
                         store=store,
                         registry=registry,
+                        requester_node_id=parsed.node_id,
+                    )
+                    continue
+                if isinstance(inbound, ListAgentsFrame):
+                    await _handle_list_agents(
+                        frame=inbound,
+                        websocket=websocket,
+                        store=store,
                         requester_node_id=parsed.node_id,
                     )
                     continue
@@ -556,6 +567,40 @@ async def _handle_wait(
         ),
     )
     await websocket.send_json(serialize_frame(WaitResultFrame(type="wait_result", v=PROTOCOL_VERSION, results=results)))
+
+
+async def _handle_list_agents(
+    *,
+    frame: ListAgentsFrame,
+    websocket: WebSocket,
+    store: Store,
+    requester_node_id: str,
+) -> None:
+    rows = await asyncio.to_thread(
+        store.get_root_agent_directory,
+        requester_node_id=requester_node_id,
+        awaitable=frame.awaitable,
+    )
+    agents = [
+        ListAgentItem(
+            agent_id=row["agent_id"],
+            parent_id=row["parent_id"],
+            role=row["role"],
+            session_name=row["session_name"],
+            depth=row["depth"],
+            status=row["status"],
+            awaitable=row["awaitable"],
+        )
+        for row in rows
+    ]
+
+    result = ListAgentsResultFrame(
+        type="list_agents_result",
+        v=PROTOCOL_VERSION,
+        request_id=frame.request_id,
+        agents=agents,
+    )
+    await websocket.send_json(serialize_frame(result))
 
 
 async def _send_error_and_close(websocket: WebSocket, *, code: str, message: str) -> None:

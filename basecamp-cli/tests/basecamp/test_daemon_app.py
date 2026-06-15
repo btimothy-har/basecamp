@@ -27,7 +27,172 @@ def test_health_endpoint(tmp_path: Path) -> None:
         response = client.get("/health")
 
     assert response.status_code == 200
-    assert response.json() == {"status": "ok", "protocol": 3}
+    assert response.json() == {"status": "ok", "protocol": 4}
+
+
+def test_ws_list_agents_returns_same_root_non_session_rows_and_awaitable_filters(tmp_path: Path) -> None:
+    app, store = _build_app_with_store(tmp_path)
+
+    store.upsert_agent(
+        agent_id="root",
+        parent_id=None,
+        sibling_group="sg-root",
+        depth=0,
+        role="session",
+        session_name="root-session",
+        cwd="/tmp/root",
+    )
+    store.upsert_agent(
+        agent_id="agent-1",
+        parent_id="root",
+        sibling_group="sg-a1",
+        depth=1,
+        role="agent",
+        session_name="agent-one",
+        cwd="/tmp/a1",
+    )
+    store.upsert_agent(
+        agent_id="agent-2",
+        parent_id="agent-1",
+        sibling_group="sg-a2",
+        depth=2,
+        role="agent",
+        session_name="agent-two",
+        cwd="/tmp/a2",
+    )
+    store.upsert_agent(
+        agent_id="outside-root",
+        parent_id=None,
+        sibling_group="sg-out",
+        depth=0,
+        role="session",
+        session_name="outside-session",
+        cwd="/tmp/out",
+    )
+    store.upsert_agent(
+        agent_id="outside-agent",
+        parent_id="outside-root",
+        sibling_group="sg-out-a",
+        depth=1,
+        role="agent",
+        session_name="outside-agent",
+        cwd="/tmp/out-a",
+    )
+
+    store.create_run(
+        run_id="run-1",
+        agent_id="agent-1",
+        dispatcher_id="root",
+        spec={"task": "a1"},
+        report_token_hash="hash",
+    )
+    store.create_run(
+        run_id="run-2",
+        agent_id="agent-2",
+        dispatcher_id="agent-1",
+        spec={"task": "a2"},
+        report_token_hash="hash",
+    )
+    store.set_run_result(
+        run_id="run-2",
+        status="completed",
+        result="done",
+        error=None,
+    )
+
+    with TestClient(app) as client:
+        with client.websocket_connect("/ws") as session_ws:
+            session_ws.send_json(
+                {
+                    "type": "register",
+                    "v": 4,
+                    "role": "session",
+                    "node_id": "root",
+                    "parent_id": None,
+                    "sibling_group": "sg-root",
+                    "depth": 0,
+                    "session_name": "root-session",
+                    "cwd": "/tmp/root",
+                }
+            )
+            session_ws.receive_json()
+
+            with client.websocket_connect("/ws") as agent_ws:
+                agent_ws.send_json(
+                    {
+                        "type": "register",
+                        "v": 4,
+                        "role": "agent",
+                        "node_id": "agent-1",
+                        "parent_id": "root",
+                        "sibling_group": "sg-a1",
+                        "depth": 1,
+                        "session_name": "agent-one",
+                        "cwd": "/tmp/a1",
+                    }
+                )
+                agent_ws.receive_json()
+
+                agent_ws.send_json(
+                    {
+                        "type": "list_agents",
+                        "v": 4,
+                        "request_id": "list-all",
+                        "awaitable": False,
+                    }
+                )
+                list_all = agent_ws.receive_json()
+                assert list_all == {
+                    "type": "list_agents_result",
+                    "v": 4,
+                    "request_id": "list-all",
+                    "agents": [
+                        {
+                            "agent_id": "agent-1",
+                            "parent_id": "root",
+                            "role": "agent",
+                            "session_name": "agent-one",
+                            "depth": 1,
+                            "status": "running",
+                            "awaitable": False,
+                        },
+                        {
+                            "agent_id": "agent-2",
+                            "parent_id": "agent-1",
+                            "role": "agent",
+                            "session_name": "agent-two",
+                            "depth": 2,
+                            "status": "completed",
+                            "awaitable": True,
+                        },
+                    ],
+                }
+
+                agent_ws.send_json(
+                    {
+                        "type": "list_agents",
+                        "v": 4,
+                        "request_id": "list-awaitable",
+                        "awaitable": True,
+                    }
+                )
+                list_awaitable = agent_ws.receive_json()
+                assert list_awaitable == {
+                    "type": "list_agents_result",
+                    "v": 4,
+                    "request_id": "list-awaitable",
+                    "agents": [
+                        {
+                            "agent_id": "agent-2",
+                            "parent_id": "agent-1",
+                            "role": "agent",
+                            "session_name": "agent-two",
+                            "depth": 2,
+                            "status": "completed",
+                            "awaitable": True,
+                        }
+                    ],
+                }
 
 
 def test_ws_register_returns_registered(tmp_path: Path) -> None:
@@ -38,7 +203,7 @@ def test_ws_register_returns_registered(tmp_path: Path) -> None:
             websocket.send_json(
                 {
                     "type": "register",
-                    "v": 3,
+                    "v": 4,
                     "role": "session",
                     "node_id": "node-1",
                     "parent_id": None,
@@ -52,9 +217,9 @@ def test_ws_register_returns_registered(tmp_path: Path) -> None:
 
     assert reply == {
         "type": "registered",
-        "v": 3,
+        "v": 4,
         "node_id": "node-1",
-        "protocol": 3,
+        "protocol": 4,
     }
 
 
@@ -79,7 +244,7 @@ def test_ws_version_mismatch_returns_protocol_error(tmp_path: Path) -> None:
             reply = websocket.receive_json()
 
     assert reply["type"] == "error"
-    assert reply["v"] == 3
+    assert reply["v"] == 4
     assert reply["code"] == "protocol_version"
 
 
