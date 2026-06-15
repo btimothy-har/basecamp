@@ -19,7 +19,8 @@ describe("daemon frame codec", () => {
 				.filter((file) => file.endsWith(".json"))
 				.map((file) => file.replace(/\.json$/, "")),
 		);
-		assert.deepEqual(new Set(FRAME_TYPES), fixtureTypes);
+		const frameTypes = new Set(FRAME_TYPES);
+		assert.deepEqual(frameTypes, fixtureTypes);
 	});
 
 	it("decodes and re-encodes all protocol frame fixtures", () => {

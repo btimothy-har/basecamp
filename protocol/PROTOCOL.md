@@ -1,114 +1,154 @@
-# Basecamp Daemon Protocol (Phase 1)
+# Basecamp Daemon Protocol
 
-Protocol version: `2`
+Protocol version: `4`
 
 All frames are JSON objects with an envelope:
 
 ```json
-{"type":"<frame_type>","v":2,...}
+{"type":"<frame_type>","v":4,...}
 ```
 
 Version handling:
 - The daemon validates `v` on every inbound frame.
-- If `v != 2`, the daemon sends:
-  `{"type":"error","v":2,"code":"protocol_version","message":"..."}`
-  and closes the connection.
+- If `v != 4`, the daemon sends an `error` frame with `code: "protocol_version"` and closes the connection.
+- The extension treats the protocol as a client-visible capability gate, not only a frame-shape version. A version mismatch restarts the host daemon during ensure-daemon.
 
 ## Transport
 
 - HTTP over Unix domain socket (UDS):
-  - `GET /health` → `{"status":"ok","protocol":2}`
+  - `GET /health` → `{"status":"ok","protocol":4}`
+  - `GET /runs/summary?root_id=<id>` returns safe run-summary observability.
 - WebSocket over UDS:
   - `/ws`
-  - First inbound frame must be a valid `register` frame.
+  - First inbound frame must be `register`.
   - On success daemon replies with `registered`.
+
+The socket lives under `~/.pi/agent/basecamp/daemon.sock` and is restricted to the local user.
+
+## Public identity model
+
+The public async-agent handle is `agent_id`.
+
+`run_id` is a private execution correlation id used only by daemon internals and reporting frames:
+- `dispatch` / `dispatch_ack` correlate a spawn request.
+- `telemetry` and `result_report` authenticate/report the active execution.
+- process reaping and run history use the private id.
+
+LLM-facing tools should not present `run_id` as the handle. `dispatch_agent` returns an agent handle, `wait_for_agent` accepts agent handles, and `list_agents` returns an agent directory.
+
+The daemon enforces one primary active run per agent. `agents.current_run_id` points at the latest primary run, including terminal runs, so `wait_for_agent(agent_id)` can retrieve final results until a later primary run replaces it.
 
 ## Frame types
 
-- `register` (client→daemon)
-- `registered` (daemon→client)
-- `error` (daemon→client)
-- `dispatch` (client→daemon)
-- `dispatch_ack` (daemon→client)
-- `telemetry` (agent→daemon)
-- `result_report` (agent→daemon)
-- `wait` (client→daemon)
-- `wait_result` (daemon→client)
-  - `results` entries include `status`: `completed`/`failed` (terminal), `running` (known handle still active), or `unknown` (no run row for handle).
-
 Canonical example fixtures live in `protocol/frames/*.json`.
 
-## UDS permissions note
+### `register` client → daemon
 
-`basecamp daemon` sets `umask(0o177)` before binding UDS so the socket is created with restrictive user-only permissions (effectively `0600` under standard Unix socket mode masking).
+Registers the current top-level session or transient agent process.
 
-## Running the daemon (Phase 1)
+Important fields:
+- `node_id`: caller identity. For async agents this is the `agent_id`.
+- `parent_id`: parent node, or `null` for a root session.
+- `role`: `session` or `agent`.
+- `session_name`, `depth`, `cwd`: safe directory/observability metadata.
 
-Default socket path:
+### `dispatch` client → daemon
 
-- `~/.pi/agent/basecamp/daemon.sock`
+Requests a transient process for an agent.
 
-Start daemon manually:
+Important fields:
+- `run_id`: private request/execution correlation id.
+- `agent_id`: stable public agent identity. If omitted, daemon may mint one as a fallback.
+- `spec`: opaque TypeScript-authored spawn spec.
 
-```bash
-basecamp daemon --uds ~/.pi/agent/basecamp/daemon.sock
+New run rows persist `dispatcher_id` as the registered `node_id` that sent `dispatch`.
+
+### `dispatch_ack` daemon → client
+
+Acknowledges a dispatch request by private `run_id`.
+
+Statuses:
+- `spawned`
+- `rejected` with `reason`, including `depth_cap`, `spawn_failed`, or `active_run_exists`.
+
+### `telemetry` agent → daemon
+
+Reports progress events for a private run. Authorized by `run_id`, `agent_id`, and the per-run report token.
+
+### `result_report` agent → daemon
+
+Reports terminal execution result for a private run. Authorized the same way as telemetry.
+
+### `wait` client → daemon
+
+Waits for one or more agent handles:
+
+```json
+{
+  "type": "wait",
+  "v": 4,
+  "agent_ids": ["agent-001"],
+  "mode": "all",
+  "timeout_s": 30
+}
 ```
 
-Health check:
+Authorization is strict and dispatcher-owned: the requester may wait only when its registered `node_id` equals the `dispatcher_id` on the target agent's current primary run.
 
-```bash
-curl --unix-socket ~/.pi/agent/basecamp/daemon.sock http://localhost/health
-# {"status":"ok","protocol":2}
+Unauthorized, missing, or no-current-run agents are returned as `unknown`. They do not block and do not reveal whether the handle exists.
+
+### `wait_result` daemon → client
+
+Returns one result per requested agent id:
+
+- `completed` / `failed`: terminal result/error for an authorized current primary run.
+- `running`: authorized current primary run is still non-terminal after timeout.
+- `unknown`: missing or unauthorized from the caller's perspective.
+
+The result items contain `agent_id`; they do not expose private `run_id`.
+
+### `list_agents` client → daemon
+
+Requests a safe directory of agents visible under the caller's root session:
+
+```json
+{
+  "type": "list_agents",
+  "v": 4,
+  "request_id": "list-001",
+  "awaitable": true
+}
 ```
 
-How it normally runs:
+`request_id` correlates the response. `awaitable: true` filters to agents whose current primary run the caller may wait on. Omitted or `false` returns all same-root non-session agents.
 
-- The extension auto-runs ensure-daemon at session start.
-- `dispatch_agent` drives dispatch/spawn/result flow via daemon `/ws`.
-- `wait_for_agent` waits on run completion.
-- Phase-1 note: `dispatch.spec.resume_path` is accepted but ignored.
+### `list_agents_result` daemon → client
 
-Stop daemon:
+Returns same-root agent directory rows:
 
-- If foreground: `Ctrl+C`.
-- If background: stop the daemon process by PID (for example `pkill -f "basecamp daemon --uds"`).
+- `agent_id`
+- `parent_id`
+- `role`
+- `session_name`
+- `depth`
+- `status`: `idle`, `pending`, `running`, `completed`, or `failed`
+- `awaitable`
 
-Optional manual dispatch smoke:
+The directory excludes private run ids, prompts, full results, errors, spawn specs, env, and cwd.
 
-```bash
-uv run python - <<'PY'
-import json, os, uuid
-from websockets.sync.client import unix_connect
+### `error` daemon → client
 
-uds = os.path.expanduser("~/.pi/agent/basecamp/daemon.sock")
-run_id = f"run-{uuid.uuid4()}"
+Reports protocol/parse errors and closes the WebSocket for fatal frame errors. Current codes include:
 
-with unix_connect(uds, uri="ws://localhost/ws") as ws:
-    ws.send(json.dumps({
-        "type": "register",
-        "v": 2,
-        "role": "session",
-        "node_id": "smoke-session",
-        "parent_id": None,
-        "sibling_group": None,
-        "depth": 0,
-        "session_name": "smoke-session",
-        "cwd": ".",
-    }))
-    print("registered:", ws.recv())
+- `protocol_version`
+- `invalid_frame`
+- `invalid_register`
 
-    ws.send(json.dumps({
-        "type": "dispatch",
-        "v": 2,
-        "run_id": run_id,
-        "spec": {
-            "argv": ["pi", "--mode", "json", "-p"],
-            "env": {},
-            "cwd": ".",
-            "resume_path": None,
-            "task": "reply with exactly: async smoke ok",
-        },
-    }))
-    print("dispatch_ack:", ws.recv())
-PY
-```
+## Manual smoke shape
+
+A minimal client flow is:
+
+1. Connect to `/ws` over the UDS.
+2. Send `register` with `v: 4`.
+3. Send `dispatch` with a private `run_id` and public `agent_id`.
+4. Use the `agent_id` with `wait` or discover agents through `list_agents`.

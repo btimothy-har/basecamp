@@ -11,16 +11,26 @@ import { resolveModel } from "../model-resolution.ts";
 import { buildAgentEnv, getBasecampExtensionToolNames } from "../tool.ts";
 import { getAgentRunKind } from "../types.ts";
 import type { DaemonConnection } from "./client.ts";
-import { type DispatchAckFrame, PROTOCOL_VERSION, type WaitResultFrame } from "./frames.ts";
+import {
+	type DispatchAckFrame,
+	type ListAgentItem,
+	type ListAgentsResultFrame,
+	PROTOCOL_VERSION,
+	type WaitResultFrame,
+} from "./frames.ts";
 import { resolveDaemonPaths } from "./paths.ts";
 
 interface DispatchDetails {
-	runId: string;
+	agentId: string;
 	agent: string;
 }
 
+interface ListAgentsDetails {
+	agents: ListAgentItem[];
+}
+
 interface WaitHandleResult {
-	runId: string;
+	agentId: string;
 	status: "completed" | "failed" | "running" | "unknown";
 	result: string | null;
 	error: string | null;
@@ -39,10 +49,18 @@ const DispatchAgentParams = Type.Object({
 
 const WaitForAgentParams = Type.Object({
 	handles: Type.Union([
-		Type.String({ description: "Run handle returned by dispatch_agent" }),
-		Type.Array(Type.String({ description: "Run handle returned by dispatch_agent" })),
+		Type.String({ description: "Agent handle returned by dispatch_agent" }),
+		Type.Array(Type.String({ description: "Agent handle returned by dispatch_agent" })),
 	]),
 	timeout_s: Type.Optional(Type.Number({ minimum: 1, default: 600 })),
+});
+
+const ListAgentsParams = Type.Object({
+	awaitable: Type.Optional(
+		Type.Boolean({
+			description: "Filter to agents currently awaitable by this caller",
+		}),
+	),
 });
 
 export function processEnvForSpawn(): Record<string, string> {
@@ -75,10 +93,10 @@ function preview(text: string | null, limit = 80): string {
 	return compact.length > limit ? `${compact.slice(0, limit)}…` : compact;
 }
 
-function sameAsRequested(resultRunIds: string[], requestedSet: Set<string>): boolean {
-	const resultSet = new Set(resultRunIds);
+function sameAsRequested(resultAgentIds: string[], requestedSet: Set<string>): boolean {
+	const resultSet = new Set(resultAgentIds);
 	if (resultSet.size !== requestedSet.size) return false;
-	return [...requestedSet].every((runId) => resultSet.has(runId));
+	return [...requestedSet].every((agentId) => resultSet.has(agentId));
 }
 
 function hasText(value: string | null): value is string {
@@ -87,23 +105,34 @@ function hasText(value: string | null): value is string {
 
 function formatWaitItemText(item: WaitHandleResult): string {
 	if (item.status === "completed") {
-		return `✓ ${item.runId} completed\n${hasText(item.result) ? item.result : "(no output)"}`;
+		return `✓ ${item.agentId} completed\n${hasText(item.result) ? item.result : "(no output)"}`;
 	}
 	if (item.status === "failed") {
-		const parts = [`✗ ${item.runId} failed`, `error:\n${hasText(item.error) ? item.error : "unknown error"}`];
+		const parts = [`✗ ${item.agentId} failed`, `error:\n${hasText(item.error) ? item.error : "unknown error"}`];
 		if (hasText(item.result)) parts.push(`result:\n${item.result}`);
 		return parts.join("\n");
 	}
-	if (item.status === "unknown") return `? ${item.runId} unknown handle`;
-	return `… ${item.runId} still running (timed out)`;
+	if (item.status === "unknown") return `? ${item.agentId} unknown agent`;
+	return `… ${item.agentId} still running (timed out)`;
 }
 
-function waitForFrame<T extends "dispatch_ack" | "wait_result">(
+function buildListAgentLine(agent: ListAgentItem): string {
+	const awaitableText = agent.awaitable ? "awaitable" : "not awaitable";
+	const parent = agent.parent_id ? `parent ${agent.parent_id}` : "root";
+	return `${agent.agent_id} — ${agent.session_name}\n${agent.status} • ${awaitableText} • ${parent} • depth ${agent.depth}`;
+}
+
+function shortListAgentsSummary(agents: ListAgentItem[]): string {
+	if (agents.length === 0) return "No agents found in this scope.";
+	return agents.map((agent) => buildListAgentLine(agent)).join("\n\n");
+}
+
+function waitForFrame<T extends "dispatch_ack" | "wait_result" | "list_agents_result">(
 	connection: DaemonConnection,
 	type: T,
-	predicate: (frame: Extract<DispatchAckFrame | WaitResultFrame, { type: T }>) => boolean,
+	predicate: (frame: Extract<DispatchAckFrame | WaitResultFrame | ListAgentsResultFrame, { type: T }>) => boolean,
 	signal?: AbortSignal,
-): Promise<Extract<DispatchAckFrame | WaitResultFrame, { type: T }>> {
+): Promise<Extract<DispatchAckFrame | WaitResultFrame | ListAgentsResultFrame, { type: T }>> {
 	return new Promise((resolve, reject) => {
 		if (signal?.aborted) {
 			reject(new Error("aborted"));
@@ -111,7 +140,7 @@ function waitForFrame<T extends "dispatch_ack" | "wait_result">(
 		}
 
 		const off = connection.on(type, (frame) => {
-			const typed = frame as Extract<DispatchAckFrame | WaitResultFrame, { type: T }>;
+			const typed = frame as Extract<DispatchAckFrame | WaitResultFrame | ListAgentsResultFrame, { type: T }>;
 			if (!predicate(typed)) return;
 			off();
 			signal?.removeEventListener("abort", onAbort);
@@ -130,7 +159,7 @@ export function registerDaemonTools(pi: ExtensionAPI, getConnection: () => Promi
 	pi.registerTool({
 		name: "dispatch_agent",
 		label: "Dispatch Agent",
-		description: "Dispatch an agent asynchronously and return a run handle.",
+		description: "Dispatch an agent asynchronously and return an agent handle.",
 		parameters: DispatchAgentParams,
 		async execute(_id, params, _signal, _onUpdate, ctx) {
 			if (!hasInvokedSkill("agents")) {
@@ -240,19 +269,81 @@ export function registerDaemonTools(pi: ExtensionAPI, getConnection: () => Promi
 				return {
 					content: [{ type: "text", text: `dispatch rejected: ${ack.reason ?? "unknown"}` }],
 					isError: true,
-					details: { runId, agent: params.agent ?? "ad-hoc" } satisfies DispatchDetails,
+					details: { agentId, agent: params.agent ?? "ad-hoc" } satisfies DispatchDetails,
 				};
 			}
 
 			return {
-				content: [{ type: "text", text: `⏳ dispatched ${params.agent ?? "ad-hoc"} — handle ${runId}` }],
-				details: { runId, agent: params.agent ?? "ad-hoc" } satisfies DispatchDetails,
+				content: [{ type: "text", text: `⏳ dispatched ${params.agent ?? "ad-hoc"} — handle ${agentId}` }],
+				details: { agentId, agent: params.agent ?? "ad-hoc" } satisfies DispatchDetails,
 			};
 		},
 		renderResult(result, _opts, theme) {
 			const details = result.details as DispatchDetails | null;
 			if (!details) return new Text(result.content[0]?.type === "text" ? result.content[0].text : "", 0, 0);
-			return new Text(theme.fg("accent", `⏳ dispatched ${details.agent} — handle ${details.runId}`), 0, 0);
+			return new Text(theme.fg("accent", `⏳ dispatched ${details.agent} — handle ${details.agentId}`), 0, 0);
+		},
+	});
+
+	pi.registerTool({
+		name: "list_agents",
+		label: "List Agents",
+		description: "List visible async agents under the caller's daemon root.",
+		parameters: ListAgentsParams,
+		async execute(_id, params, _signal) {
+			if (!hasInvokedSkill("agents")) {
+				return {
+					content: [
+						{
+							type: "text",
+							text: 'Load the agents skill first: call skill({ name: "agents" }) before listing agents.',
+						},
+					],
+					isError: true,
+					details: null,
+				};
+			}
+			const connection = await getConnection();
+			if (!connection) {
+				return {
+					content: [{ type: "text", text: "basecamp daemon is not connected; cannot list async agents." }],
+					isError: true,
+					details: null,
+				};
+			}
+
+			const requestId = randomUUID();
+			connection.send({
+				type: "list_agents",
+				v: PROTOCOL_VERSION,
+				request_id: requestId,
+				awaitable: Boolean(params.awaitable),
+			});
+
+			const frame = await waitForFrame(
+				connection,
+				"list_agents_result",
+				(candidate) => candidate.request_id === requestId,
+			);
+
+			return {
+				content: [{ type: "text", text: shortListAgentsSummary(frame.agents) }],
+				details: { agents: frame.agents } as ListAgentsDetails,
+			};
+		},
+		renderResult(result, _opts, theme) {
+			const details = result.details as ListAgentsDetails | null;
+			if (!details) return new Text(result.content[0]?.type === "text" ? result.content[0].text : "", 0, 0);
+			if (details.agents.length === 0) return new Text(theme.fg("muted", "No agents visible."), 0, 0);
+			const lines = details.agents.map((agent) => {
+				const status = `${theme.fg(agent.status === "running" || agent.status === "failed" ? "warning" : "muted", agent.status)}`;
+				const awaitable = theme.fg(
+					agent.awaitable ? "success" : "muted",
+					agent.awaitable ? "awaitable" : "not awaitable",
+				);
+				return `${agent.agent_id} ${theme.fg("muted", agent.session_name)} ${status} ${awaitable}`;
+			});
+			return new Text(lines.join("\n"), 0, 0);
 		},
 	});
 
@@ -280,17 +371,17 @@ export function registerDaemonTools(pi: ExtensionAPI, getConnection: () => Promi
 				};
 			}
 
-			const runIds = normalizeHandles(params.handles);
-			if (runIds.length === 0) {
+			const agentIds = normalizeHandles(params.handles);
+			if (agentIds.length === 0) {
 				return { content: [{ type: "text", text: "No handles provided." }], isError: true, details: null };
 			}
 
 			const timeoutS = Math.max(1, Math.floor(params.timeout_s ?? 600));
-			const requested = new Set(runIds);
+			const requested = new Set(agentIds);
 			connection.send({
 				type: "wait",
 				v: PROTOCOL_VERSION,
-				run_ids: runIds,
+				agent_ids: agentIds,
 				mode: "all",
 				timeout_s: timeoutS,
 			});
@@ -302,7 +393,7 @@ export function registerDaemonTools(pi: ExtensionAPI, getConnection: () => Promi
 					"wait_result",
 					(candidate) =>
 						sameAsRequested(
-							candidate.results.map((item) => item.run_id),
+							candidate.results.map((item) => item.agent_id),
 							requested,
 						),
 					signal,
@@ -315,12 +406,12 @@ export function registerDaemonTools(pi: ExtensionAPI, getConnection: () => Promi
 				throw error;
 			}
 
-			const byId = new Map(frame.results.map((item) => [item.run_id, item]));
-			const items: WaitHandleResult[] = runIds.map((runId) => {
-				const hit = byId.get(runId);
+			const byId = new Map(frame.results.map((item) => [item.agent_id, item]));
+			const items: WaitHandleResult[] = agentIds.map((agentId) => {
+				const hit = byId.get(agentId);
 				if (!hit) {
 					return {
-						runId,
+						agentId,
 						status: "unknown",
 						result: null,
 						error: null,
@@ -328,7 +419,7 @@ export function registerDaemonTools(pi: ExtensionAPI, getConnection: () => Promi
 				}
 				if (hit.status === "failed") {
 					return {
-						runId,
+						agentId,
 						status: "failed",
 						result: hit.result,
 						error: hit.error,
@@ -336,7 +427,7 @@ export function registerDaemonTools(pi: ExtensionAPI, getConnection: () => Promi
 				}
 				if (hit.status === "completed") {
 					return {
-						runId,
+						agentId,
 						status: "completed",
 						result: hit.result,
 						error: hit.error,
@@ -344,14 +435,14 @@ export function registerDaemonTools(pi: ExtensionAPI, getConnection: () => Promi
 				}
 				if (hit.status === "running") {
 					return {
-						runId,
+						agentId,
 						status: "running",
 						result: null,
 						error: "still running (timed out)",
 					};
 				}
 				return {
-					runId,
+					agentId,
 					status: "unknown",
 					result: null,
 					error: null,
@@ -368,15 +459,15 @@ export function registerDaemonTools(pi: ExtensionAPI, getConnection: () => Promi
 			if (details.aborted) return new Text(theme.fg("warning", "wait aborted"), 0, 0);
 			const lines = details.items.map((item) => {
 				if (item.status === "completed") {
-					return `${theme.fg("success", "✓")} ${item.runId} ${theme.fg("muted", preview(item.result) || "completed")}`;
+					return `${theme.fg("success", "✓")} ${item.agentId} ${theme.fg("muted", preview(item.result) || "completed")}`;
 				}
 				if (item.status === "failed") {
-					return `${theme.fg("error", "✗")} ${item.runId} ${theme.fg("error", preview(item.error) || "failed")}`;
+					return `${theme.fg("error", "✗")} ${item.agentId} ${theme.fg("error", preview(item.error) || "failed")}`;
 				}
 				if (item.status === "unknown") {
-					return `${theme.fg("warning", "?")} ${item.runId} ${theme.fg("muted", "unknown handle")}`;
+					return `${theme.fg("warning", "?")} ${item.agentId} ${theme.fg("muted", "unknown agent")}`;
 				}
-				return `${theme.fg("warning", "…")} ${item.runId} ${theme.fg("muted", "still running (timed out)")}`;
+				return `${theme.fg("warning", "…")} ${item.agentId} ${theme.fg("muted", "still running (timed out)")}`;
 			});
 			return new Text(lines.join("\n"), 0, 0);
 		},

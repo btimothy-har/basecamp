@@ -1,27 +1,27 @@
 {
   "type": "wait_result",
-  "v": 3,
+  "v": 4,
   "results": [
     {
-      "run_id": "run-001",
+      "agent_id": "agent-001",
       "status": "completed",
       "result": "Applied patch and tests now pass.",
       "error": null
     },
     {
-      "run_id": "run-002",
+      "agent_id": "agent-002",
       "status": "failed",
       "result": null,
       "error": "Process exited with code 1"
     },
     {
-      "run_id": "run-003",
+      "agent_id": "agent-003",
       "status": "running",
       "result": null,
       "error": null
     },
     {
-      "run_id": "run-004",
+      "agent_id": "agent-004",
       "status": "unknown",
       "result": null,
       "error": null

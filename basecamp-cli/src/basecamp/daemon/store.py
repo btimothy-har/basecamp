@@ -17,6 +17,13 @@ RUN_SUMMARY_MAX_LIMIT = 100
 RUN_SUMMARY_PREVIEW_CHARS = 160
 
 
+class ActiveRunExistsError(Exception):
+    """Raised when an agent already has an active primary run."""
+
+    def __init__(self, agent_id: str) -> None:
+        super().__init__(f"agent {agent_id} already has an active primary run")
+
+
 def _preview_text(value: str | None, *, limit: int = RUN_SUMMARY_PREVIEW_CHARS) -> str | None:
     if value is None:
         return None
@@ -54,7 +61,8 @@ class Store:
                     session_name TEXT,
                     cwd TEXT,
                     created_at TEXT,
-                    last_seen_at TEXT
+                    last_seen_at TEXT,
+                    current_run_id TEXT
                 )
                 """
             )
@@ -64,6 +72,7 @@ class Store:
                     id TEXT PRIMARY KEY,
                     agent_id TEXT,
                     status TEXT CHECK(status IN ('pending','running','completed','failed')),
+                    dispatcher_id TEXT,
                     spec_json TEXT,
                     report_token_hash TEXT,
                     result TEXT,
@@ -87,8 +96,22 @@ class Store:
                 )
                 """
             )
+            self._ensure_agents_current_run_id_column(connection)
+            self._ensure_runs_dispatcher_id_column(connection)
             self._ensure_runs_exit_code_column(connection)
             self._ensure_runs_report_token_hash_column(connection)
+
+    def _ensure_agents_current_run_id_column(self, connection: sqlite3.Connection) -> None:
+        columns = connection.execute("PRAGMA table_info(agents)").fetchall()
+        names = {column[1] for column in columns}
+        if "current_run_id" not in names:
+            connection.execute("ALTER TABLE agents ADD COLUMN current_run_id TEXT")
+
+    def _ensure_runs_dispatcher_id_column(self, connection: sqlite3.Connection) -> None:
+        columns = connection.execute("PRAGMA table_info(runs)").fetchall()
+        names = {column[1] for column in columns}
+        if "dispatcher_id" not in names:
+            connection.execute("ALTER TABLE runs ADD COLUMN dispatcher_id TEXT")
 
     def _ensure_runs_exit_code_column(self, connection: sqlite3.Connection) -> None:
         columns = connection.execute("PRAGMA table_info(runs)").fetchall()
@@ -157,6 +180,7 @@ class Store:
         *,
         run_id: str,
         agent_id: str,
+        dispatcher_id: str,
         spec: dict[str, Any],
         report_token_hash: str | None = None,
     ) -> None:
@@ -164,12 +188,38 @@ class Store:
 
         now = self._now()
         with self._connect() as connection:
+            existing_active = connection.execute(
+                """
+                SELECT id
+                FROM runs
+                WHERE agent_id = ?
+                  AND status NOT IN (?, ?)
+                LIMIT 1
+                """,
+                (agent_id, *TERMINAL_STATUSES),
+            ).fetchone()
+            if existing_active is not None:
+                raise ActiveRunExistsError(agent_id)
+
             connection.execute(
                 """
-                INSERT INTO runs (id, agent_id, status, spec_json, report_token_hash, created_at, started_at)
-                VALUES (?, ?, 'running', ?, ?, ?, ?)
+                INSERT INTO runs (
+                    id,
+                    agent_id,
+                    status,
+                    dispatcher_id,
+                    spec_json,
+                    report_token_hash,
+                    created_at,
+                    started_at
+                )
+                VALUES (?, ?, 'running', ?, ?, ?, ?, ?)
                 """,
-                (run_id, agent_id, json.dumps(spec), report_token_hash, now, now),
+                (run_id, agent_id, dispatcher_id, json.dumps(spec), report_token_hash, now, now),
+            )
+            connection.execute(
+                "UPDATE agents SET current_run_id = ? WHERE id = ?",
+                (run_id, agent_id),
             )
 
     def set_run_exit_code(self, *, run_id: str, exit_code: int | None) -> None:
@@ -193,7 +243,7 @@ class Store:
 
         ended_at = self._now()
         with self._connect() as connection:
-            connection.execute(
+            cursor = connection.execute(
                 """
                 UPDATE runs
                 SET status = ?, result = ?, error = ?, ended_at = ?
@@ -201,6 +251,8 @@ class Store:
                 """,
                 (status, result, error, ended_at, run_id),
             )
+            if cursor.rowcount == 0:
+                return
 
     def set_run_result_if_unset(
         self,
@@ -223,7 +275,10 @@ class Store:
                 """,
                 (status, result, error, ended_at, run_id),
             )
-            return cursor.rowcount > 0
+            if cursor.rowcount == 0:
+                return False
+
+            return True
 
     def get_run(self, run_id: str) -> dict[str, Any] | None:
         """Fetch a run by id as a dict, or None when absent."""
@@ -238,6 +293,133 @@ class Store:
             if isinstance(spec_json, str):
                 result["spec_json"] = json.loads(spec_json)
             return result
+
+    def _resolve_requester_root(self, requester_node_id: str) -> str | None:
+        """Resolve the root id for a node by following parent links defensively."""
+
+        visited: set[str] = set()
+        current = requester_node_id
+
+        while isinstance(current, str) and current not in visited:
+            visited.add(current)
+            row = self.get_agent(current)
+            if row is None:
+                return None
+
+            parent_id = row.get("parent_id")
+            if not isinstance(parent_id, str) or not parent_id.strip():
+                return current
+            if self.get_agent(parent_id) is None:
+                return current
+            current = parent_id
+
+        return current if isinstance(current, str) else None
+
+    def get_root_agent_directory(
+        self,
+        *,
+        requester_node_id: str,
+        awaitable: bool = False,
+    ) -> list[dict[str, Any]]:
+        """List non-session agents under the caller's root with safe status metadata."""
+
+        root_id = self._resolve_requester_root(requester_node_id)
+        if root_id is None:
+            return []
+
+        awaitable_filter = "" if not awaitable else " AND r.id IS NOT NULL AND r.dispatcher_id = ? "
+        query = f"""
+            WITH RECURSIVE scoped_agents(id, parent_id, path) AS (
+                SELECT id, parent_id, ',' || id || ','
+                FROM agents
+                WHERE id = ?
+                UNION
+                SELECT child.id,
+                       child.parent_id,
+                       path || child.id || ','
+                FROM agents AS child
+                INNER JOIN scoped_agents AS s ON child.parent_id = s.id
+                WHERE instr(s.path, ',' || child.id || ',') = 0
+            )
+            SELECT
+                a.id AS agent_id,
+                a.parent_id,
+                a.role,
+                a.session_name,
+                a.depth,
+                CASE
+                    WHEN r.status IN ('pending', 'running', 'completed', 'failed') THEN r.status
+                    ELSE 'idle'
+                END AS status,
+                CASE
+                    WHEN r.id IS NOT NULL AND r.dispatcher_id = ? THEN 1
+                    ELSE 0
+                END AS awaitable
+            FROM scoped_agents AS s
+            INNER JOIN agents AS a ON a.id = s.id
+            LEFT JOIN runs AS r ON r.id = a.current_run_id
+            WHERE a.role != 'session'
+            {awaitable_filter}
+            ORDER BY a.depth ASC, a.id ASC
+            """
+
+        params: tuple[Any, ...] = (root_id, requester_node_id)
+        if awaitable:
+            params = (root_id, requester_node_id, requester_node_id)
+
+        with self._connect() as connection:
+            connection.row_factory = sqlite3.Row
+            rows = connection.execute(query, params).fetchall()
+
+        return [
+            {
+                "agent_id": row["agent_id"],
+                "parent_id": row["parent_id"],
+                "role": row["role"],
+                "session_name": row["session_name"],
+                "depth": row["depth"],
+                "status": row["status"],
+                "awaitable": bool(row["awaitable"]),
+            }
+            for row in rows
+        ]
+
+    def get_agents_current_runs(
+        self,
+        agent_ids: list[str],
+        *,
+        dispatcher_id: str,
+    ) -> list[dict[str, Any]]:
+        """Return current primary-run projections for requested agents.
+
+        Only runs owned by ``dispatcher_id`` are exposed. Missing agents,
+        missing current runs, and unauthorized agents are returned without any
+        run state in the row.
+        """
+
+        if not agent_ids:
+            return []
+
+        placeholders = ", ".join("?" for _ in agent_ids)
+        query = f"""
+            SELECT
+                a.id AS agent_id,
+                r.id AS run_id,
+                r.status AS status,
+                r.result AS result,
+                r.error AS error
+            FROM agents AS a
+            LEFT JOIN runs AS r
+                ON r.id = a.current_run_id
+               AND r.dispatcher_id = ?
+            WHERE a.id IN ({placeholders})
+            """
+
+        with self._connect() as connection:
+            connection.row_factory = sqlite3.Row
+            rows = connection.execute(query, (dispatcher_id, *agent_ids)).fetchall()
+
+        return [dict(row) for row in rows]
 
     def get_run_wait_results(self, run_ids: list[str], *, terminal_only: bool = False) -> list[dict[str, Any]]:
         """Return wait result projections for requested run ids.

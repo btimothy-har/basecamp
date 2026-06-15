@@ -32,7 +32,7 @@ def main() -> int:
             json.dumps(
                 {
                     "type": "register",
-                    "v": 3,
+                    "v": 4,
                     "role": "agent",
                     "node_id": node_id,
                     "parent_id": parent,
@@ -49,7 +49,7 @@ def main() -> int:
             json.dumps(
                 {
                     "type": "telemetry",
-                    "v": 3,
+                    "v": 4,
                     "run_id": run_id,
                     "agent_id": agent_id,
                     "report_token": report_token,
@@ -71,7 +71,7 @@ def main() -> int:
             json.dumps(
                 {
                     "type": "result_report",
-                    "v": 3,
+                    "v": 4,
                     "run_id": run_id,
                     "agent_id": agent_id,
                     "report_token": report_token,

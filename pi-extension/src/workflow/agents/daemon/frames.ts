@@ -2,7 +2,7 @@ import { Buffer } from "node:buffer";
 
 // Gates every client-visible daemon capability, not just WebSocket frame shapes.
 // This includes HTTP endpoints like /runs/summary, so stale daemons restart.
-export const PROTOCOL_VERSION = 3;
+export const PROTOCOL_VERSION = 4;
 
 export interface RegisterFrame {
 	type: "register";
@@ -77,13 +77,13 @@ export interface ResultReportFrame {
 export interface WaitFrame {
 	type: "wait";
 	v: typeof PROTOCOL_VERSION;
-	run_ids: string[];
+	agent_ids: string[];
 	mode: "all";
 	timeout_s: number;
 }
 
 export interface WaitResultItem {
-	run_id: string;
+	agent_id: string;
 	status: "completed" | "failed" | "running" | "unknown";
 	result: string | null;
 	error: string | null;
@@ -95,6 +95,30 @@ export interface WaitResultFrame {
 	results: WaitResultItem[];
 }
 
+export interface ListAgentsFrame {
+	type: "list_agents";
+	v: typeof PROTOCOL_VERSION;
+	request_id: string;
+	awaitable?: boolean;
+}
+
+export interface ListAgentItem {
+	agent_id: string;
+	parent_id: string | null;
+	role: string;
+	session_name: string;
+	depth: number;
+	status: "pending" | "running" | "completed" | "failed" | "idle";
+	awaitable: boolean;
+}
+
+export interface ListAgentsResultFrame {
+	type: "list_agents_result";
+	v: typeof PROTOCOL_VERSION;
+	request_id: string;
+	agents: ListAgentItem[];
+}
+
 export type Frame =
 	| RegisterFrame
 	| RegisteredFrame
@@ -104,7 +128,9 @@ export type Frame =
 	| TelemetryFrame
 	| ResultReportFrame
 	| WaitFrame
-	| WaitResultFrame;
+	| WaitResultFrame
+	| ListAgentsFrame
+	| ListAgentsResultFrame;
 
 export const FRAME_TYPES = [
 	"register",
@@ -116,6 +142,8 @@ export const FRAME_TYPES = [
 	"result_report",
 	"wait",
 	"wait_result",
+	"list_agents",
+	"list_agents_result",
 ] as const;
 
 const KNOWN_TYPE_SET = new Set<string>(FRAME_TYPES);

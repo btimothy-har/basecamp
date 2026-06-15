@@ -5,7 +5,7 @@ description: "Select a subagent, write a self-contained brief, dispatch it, and 
 
 # Agents
 
-Delegate bounded work through the `agent` tool. Keep user communication, requirement clarification, final integration, and cross-cutting decisions in the parent agent. Subagents run synchronously and return their output as the tool result.
+Delegate bounded work through the `agent` tool or the async daemon tools. Keep user communication, requirement clarification, final integration, and cross-cutting decisions in the parent agent. The synchronous `agent` tool blocks until the subagent returns. The async daemon tools let you dispatch agents, continue working, inspect the same-root agent directory, and join results later by agent handle.
 
 ## Delegation Guidance
 
@@ -25,6 +25,24 @@ Keep these responsibilities in the parent session:
 - Critical review of subagent output; never relay it as authority.
 
 Prefer read-only agents first when the code surface is unclear. Dispatch mutative `worker` agents only after the implementation scope and done criteria are explicit. If you choose not to delegate non-trivial work, state the reason briefly before proceeding.
+
+## Async Daemon Tools
+
+Use async tools when you want fan-out or want to keep reasoning while agents run:
+
+1. `dispatch_agent({ agent?, task, name? })` starts an async agent and returns an **agent handle** (`agent_id`).
+2. `list_agents({ awaitable?: true })` lists same-root agents with safe metadata and an `awaitable` flag.
+3. `wait_for_agent({ handles, timeout_s? })` waits on one or more agent handles.
+
+Important semantics:
+- Public handles are agent ids. Do not treat private run/execution ids as user-facing handles.
+- One agent has one primary active run at a time.
+- `wait_for_agent` is dispatcher-owned: only the node that dispatched an agent's current primary run can wait on it.
+- Missing or unauthorized agents appear as `unknown`; this avoids leaking whether another handle exists.
+- `list_agents` is read-only directory visibility, not messaging. It does not expose prompts, results, errors, env, spawn specs, or private run ids.
+- Async message/reply tools are future work; do not use `wait_for_agent` as a peer-message reply mechanism.
+
+The synchronous `agent` path remains valid. Prefer it for small one-off tasks where blocking is simpler.
 
 ## Process
 

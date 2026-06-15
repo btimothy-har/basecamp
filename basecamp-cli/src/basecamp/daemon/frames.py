@@ -8,7 +8,7 @@ from pydantic import BaseModel, Field, TypeAdapter
 
 # Gates every client-visible daemon capability, not just WebSocket frame shapes.
 # This includes HTTP endpoints like /runs/summary, so stale daemons restart.
-PROTOCOL_VERSION = 3
+PROTOCOL_VERSION = 4
 
 
 class RegisterFrame(BaseModel):
@@ -104,7 +104,7 @@ class WaitFrame(BaseModel):
 
     type: Literal["wait"]
     v: Literal[PROTOCOL_VERSION]
-    run_ids: list[str]
+    agent_ids: list[str]
     mode: Literal["all"]
     timeout_s: float
 
@@ -112,7 +112,7 @@ class WaitFrame(BaseModel):
 class WaitResultItem(BaseModel):
     """Single wait result item."""
 
-    run_id: str
+    agent_id: str
     status: Literal["completed", "failed", "running", "unknown"]
     result: str | None
     error: str | None
@@ -126,6 +126,36 @@ class WaitResultFrame(BaseModel):
     results: list[WaitResultItem]
 
 
+class ListAgentsFrame(BaseModel):
+    """Request list of agents in requester root scope."""
+
+    type: Literal["list_agents"]
+    v: Literal[PROTOCOL_VERSION]
+    request_id: str
+    awaitable: bool = False
+
+
+class ListAgentItem(BaseModel):
+    """Single list-agents row."""
+
+    agent_id: str
+    parent_id: str | None
+    role: str
+    session_name: str
+    depth: int
+    status: Literal["pending", "running", "completed", "failed", "idle"]
+    awaitable: bool
+
+
+class ListAgentsResultFrame(BaseModel):
+    """List-agents response frame."""
+
+    type: Literal["list_agents_result"]
+    v: Literal[PROTOCOL_VERSION]
+    request_id: str
+    agents: list[ListAgentItem]
+
+
 Frame = Annotated[
     RegisterFrame
     | RegisteredFrame
@@ -135,7 +165,9 @@ Frame = Annotated[
     | TelemetryFrame
     | ResultReportFrame
     | WaitFrame
-    | WaitResultFrame,
+    | WaitResultFrame
+    | ListAgentsFrame
+    | ListAgentsResultFrame,
     Field(discriminator="type"),
 ]
 

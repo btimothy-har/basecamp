@@ -5,7 +5,8 @@ from __future__ import annotations
 import sqlite3
 from pathlib import Path
 
-from basecamp.daemon.store import Store
+import pytest
+from basecamp.daemon.store import ActiveRunExistsError, Store
 
 
 def test_store_initializes_required_tables(tmp_path: Path) -> None:
@@ -64,6 +65,7 @@ def test_run_event_round_trip(tmp_path: Path) -> None:
     store.create_run(
         run_id="run-1",
         agent_id="agent-1",
+        dispatcher_id="dispatcher-1",
         spec={"task": "x"},
         report_token_hash="0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
     )
@@ -80,6 +82,373 @@ def test_run_event_round_trip(tmp_path: Path) -> None:
     assert events[0]["payload_json"] == {"turnIndex": 1}
 
 
+def test_create_run_stores_dispatcher_and_updates_current_run(tmp_path: Path) -> None:
+    db_path = tmp_path / "daemon.db"
+    store = Store(db_path=db_path)
+
+    store.upsert_agent(
+        agent_id="agent-1",
+        parent_id=None,
+        sibling_group="sg",
+        depth=1,
+        role="agent",
+        session_name="session-a",
+        cwd="/tmp/a",
+    )
+    store.create_run(
+        run_id="run-dispatch",
+        agent_id="agent-1",
+        dispatcher_id="dispatcher-1",
+        spec={"task": "x"},
+        report_token_hash="0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+    )
+
+    run = store.get_run("run-dispatch")
+    assert run is not None
+    assert run["dispatcher_id"] == "dispatcher-1"
+
+    agent = store.get_agent("agent-1")
+    assert agent is not None
+    assert agent["current_run_id"] == "run-dispatch"
+
+
+def test_get_agents_current_runs_filters_by_dispatcher(tmp_path: Path) -> None:
+    db_path = tmp_path / "daemon.db"
+    store = Store(db_path=db_path)
+
+    store.upsert_agent(
+        agent_id="agent-1",
+        parent_id=None,
+        sibling_group="sg",
+        depth=1,
+        role="agent",
+        session_name="session-a",
+        cwd="/tmp/a",
+    )
+    store.create_run(
+        run_id="run-owned",
+        agent_id="agent-1",
+        dispatcher_id="dispatcher-1",
+        spec={"task": "x"},
+        report_token_hash="0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+    )
+
+    owned = store.get_agents_current_runs(["agent-1"], dispatcher_id="dispatcher-1")
+    assert owned == [
+        {
+            "agent_id": "agent-1",
+            "run_id": "run-owned",
+            "status": "running",
+            "result": None,
+            "error": None,
+        }
+    ]
+
+    unauthorized = store.get_agents_current_runs(["agent-1"], dispatcher_id="dispatcher-2")
+    assert unauthorized == [
+        {
+            "agent_id": "agent-1",
+            "run_id": None,
+            "status": None,
+            "result": None,
+            "error": None,
+        }
+    ]
+
+    missing = store.get_agents_current_runs(["agent-missing"], dispatcher_id="dispatcher-1")
+    assert missing == []
+
+
+def test_get_root_agent_directory_scopes_to_root_and_excludes_sessions(tmp_path: Path) -> None:
+    db_path = tmp_path / "daemon.db"
+    store = Store(db_path=db_path)
+
+    store.upsert_agent(
+        agent_id="root",
+        parent_id=None,
+        sibling_group="sg-root",
+        depth=0,
+        role="session",
+        session_name="root-session",
+        cwd="/tmp/root",
+    )
+    store.upsert_agent(
+        agent_id="agent-1",
+        parent_id="root",
+        sibling_group="sg-a1",
+        depth=1,
+        role="agent",
+        session_name="agent-a1",
+        cwd="/tmp/a1",
+    )
+    store.upsert_agent(
+        agent_id="agent-2",
+        parent_id="agent-1",
+        sibling_group="sg-a2",
+        depth=2,
+        role="worker",
+        session_name="worker-a2",
+        cwd="/tmp/a2",
+    )
+    store.upsert_agent(
+        agent_id="outside-root",
+        parent_id=None,
+        sibling_group="sg-out",
+        depth=0,
+        role="session",
+        session_name="outside-session",
+        cwd="/tmp/out",
+    )
+    store.upsert_agent(
+        agent_id="outside-agent",
+        parent_id="outside-root",
+        sibling_group="sg-oa",
+        depth=1,
+        role="agent",
+        session_name="outside-agent",
+        cwd="/tmp/out-agent",
+    )
+
+    store.create_run(
+        run_id="run-a1",
+        agent_id="agent-1",
+        dispatcher_id="dispatcher-1",
+        spec={"task": "x"},
+        report_token_hash="hash",
+    )
+    store.create_run(
+        run_id="run-a2",
+        agent_id="agent-2",
+        dispatcher_id="dispatcher-2",
+        spec={"task": "x"},
+        report_token_hash="hash",
+    )
+    store.set_run_result(
+        run_id="run-a2",
+        status="completed",
+        result="done",
+        error=None,
+    )
+
+    rows = store.get_root_agent_directory(requester_node_id="agent-2", awaitable=False)
+    assert [row["agent_id"] for row in rows] == ["agent-1", "agent-2"]
+    assert rows[0]["parent_id"] == "root"
+    assert rows[1]["parent_id"] == "agent-1"
+    assert rows[0]["status"] == "running"
+    assert rows[1]["status"] == "completed"
+    assert rows[0]["role"] == "agent"
+    assert rows[1]["role"] == "worker"
+    assert rows[0]["awaitable"] is False
+    assert rows[1]["awaitable"] is False
+    assert all(row["agent_id"] != "outside-agent" for row in rows)
+
+
+def test_get_root_agent_directory_filters_awaitable_agents_only(tmp_path: Path) -> None:
+    db_path = tmp_path / "daemon.db"
+    store = Store(db_path=db_path)
+
+    store.upsert_agent(
+        agent_id="root",
+        parent_id=None,
+        sibling_group="sg-root",
+        depth=0,
+        role="session",
+        session_name="root-session",
+        cwd="/tmp/root",
+    )
+    store.upsert_agent(
+        agent_id="agent-1",
+        parent_id="root",
+        sibling_group="sg-a1",
+        depth=1,
+        role="agent",
+        session_name="agent-a1",
+        cwd="/tmp/a1",
+    )
+    store.upsert_agent(
+        agent_id="agent-2",
+        parent_id="agent-1",
+        sibling_group="sg-a2",
+        depth=2,
+        role="worker",
+        session_name="worker-a2",
+        cwd="/tmp/a2",
+    )
+
+    store.create_run(
+        run_id="run-a1",
+        agent_id="agent-1",
+        dispatcher_id="root",
+        spec={"task": "x"},
+        report_token_hash="hash",
+    )
+    store.create_run(
+        run_id="run-a2",
+        agent_id="agent-2",
+        dispatcher_id="agent-1",
+        spec={"task": "x"},
+        report_token_hash="hash",
+    )
+    store.set_run_result(
+        run_id="run-a2",
+        status="completed",
+        result="done",
+        error=None,
+    )
+
+    rows = store.get_root_agent_directory(requester_node_id="agent-1", awaitable=True)
+    assert [row["agent_id"] for row in rows] == ["agent-2"]
+    assert rows[0]["status"] == "completed"
+    assert rows[0]["awaitable"] is True
+
+
+def test_get_root_agent_directory_handles_cycle_and_missing_parent_defensively(tmp_path: Path) -> None:
+    db_path = tmp_path / "daemon.db"
+    store = Store(db_path=db_path)
+
+    store.upsert_agent(
+        agent_id="cycle-a",
+        parent_id="cycle-b",
+        sibling_group="sg-a",
+        depth=1,
+        role="agent",
+        session_name="cycle-a",
+        cwd="/tmp/a",
+    )
+    store.upsert_agent(
+        agent_id="cycle-b",
+        parent_id="cycle-a",
+        sibling_group="sg-b",
+        depth=2,
+        role="agent",
+        session_name="cycle-b",
+        cwd="/tmp/b",
+    )
+    rows = store.get_root_agent_directory(requester_node_id="cycle-a", awaitable=False)
+    assert {row["agent_id"] for row in rows} == {"cycle-a", "cycle-b"}
+    assert all(row["role"] != "session" for row in rows)
+
+    store.upsert_agent(
+        agent_id="lost",
+        parent_id="missing-parent",
+        sibling_group="sg-lost",
+        depth=3,
+        role="agent",
+        session_name="lost",
+        cwd="/tmp/c",
+    )
+
+    rows = store.get_root_agent_directory(requester_node_id="lost", awaitable=False)
+    assert [row["agent_id"] for row in rows] == ["lost"]
+
+
+def test_create_run_rejects_non_terminal_duplicate_for_agent(tmp_path: Path) -> None:
+    db_path = tmp_path / "daemon.db"
+    store = Store(db_path=db_path)
+
+    store.upsert_agent(
+        agent_id="agent-1",
+        parent_id=None,
+        sibling_group="sg",
+        depth=1,
+        role="agent",
+        session_name="session-a",
+        cwd="/tmp/a",
+    )
+    store.create_run(
+        run_id="run-first",
+        agent_id="agent-1",
+        dispatcher_id="dispatcher-1",
+        spec={"task": "x"},
+        report_token_hash="0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+    )
+
+    with pytest.raises(ActiveRunExistsError):
+        store.create_run(
+            run_id="run-second",
+            agent_id="agent-1",
+            dispatcher_id="dispatcher-1",
+            spec={"task": "x"},
+            report_token_hash="0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+        )
+
+    with sqlite3.connect(db_path) as connection:
+        rows = connection.execute(
+            "SELECT COUNT(*) AS total FROM runs WHERE agent_id = ?",
+            ("agent-1",),
+        ).fetchone()
+    assert rows is not None
+    assert rows[0] == 1
+
+
+def test_set_run_result_preserves_agent_current_run_id(tmp_path: Path) -> None:
+    db_path = tmp_path / "daemon.db"
+    store = Store(db_path=db_path)
+
+    store.upsert_agent(
+        agent_id="agent-1",
+        parent_id=None,
+        sibling_group="sg",
+        depth=1,
+        role="agent",
+        session_name="session-a",
+        cwd="/tmp/a",
+    )
+    store.create_run(
+        run_id="run-complete",
+        agent_id="agent-1",
+        dispatcher_id="dispatcher-1",
+        spec={"task": "x"},
+        report_token_hash="0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+    )
+    store.set_run_result(
+        run_id="run-complete",
+        status="completed",
+        result="done",
+        error=None,
+    )
+
+    agent = store.get_agent("agent-1")
+    assert agent is not None
+    assert agent["current_run_id"] == "run-complete"
+
+
+def test_set_run_result_if_unset_preserves_agent_current_run_id(tmp_path: Path) -> None:
+    db_path = tmp_path / "daemon.db"
+    store = Store(db_path=db_path)
+
+    store.upsert_agent(
+        agent_id="agent-1",
+        parent_id=None,
+        sibling_group="sg",
+        depth=1,
+        role="agent",
+        session_name="session-a",
+        cwd="/tmp/a",
+    )
+    store.create_run(
+        run_id="run-failed",
+        agent_id="agent-1",
+        dispatcher_id="dispatcher-1",
+        spec={"task": "x"},
+        report_token_hash="0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+    )
+
+    assert (
+        store.set_run_result_if_unset(
+            run_id="run-failed",
+            status="failed",
+            result="oops",
+            error="agent failed",
+        )
+        is True
+    )
+
+    agent = store.get_agent("agent-1")
+    assert agent is not None
+    assert agent["current_run_id"] == "run-failed"
+
+
 def test_get_run_wait_results_includes_nonterminal_and_omits_unknown(tmp_path: Path) -> None:
     db_path = tmp_path / "daemon.db"
     store = Store(db_path=db_path)
@@ -87,6 +456,7 @@ def test_get_run_wait_results_includes_nonterminal_and_omits_unknown(tmp_path: P
     store.create_run(
         run_id="run-running",
         agent_id="agent-1",
+        dispatcher_id="dispatcher-1",
         spec={"task": "x"},
         report_token_hash="0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
     )
