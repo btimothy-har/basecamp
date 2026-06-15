@@ -67,7 +67,7 @@ describe("ensureDaemon", () => {
 				daemonAlive = false;
 			},
 			spawnFn: (command, args) => {
-				assert.equal(command, "basecamp");
+				assert.equal(command, "bc-swarm");
 				spawnArgs.push([...args]);
 				return fakeSpawn();
 			},

@@ -124,9 +124,9 @@ function parsePsLine(line: string): { pid: number; args: string } | null {
 }
 
 function isDaemonCommandForSocket(args: string, socketPath: string): boolean {
-	const hasBasecampDaemon = /(?:^|\s)(?:\S*\/)?basecamp\s+daemon(?:\s|$)/.test(args);
+	const hasBcSwarmDaemon = /(?:^|\s)(?:\S*\/)?bc-swarm\s+daemon(?:\s|$)/.test(args);
 	const hasSocketArg = args.includes(`--uds ${socketPath}`) || args.includes(`--uds=${socketPath}`);
-	return hasBasecampDaemon && hasSocketArg;
+	return hasBcSwarmDaemon && hasSocketArg;
 }
 
 async function execFileText(command: string, args: readonly string[]): Promise<string> {
@@ -292,7 +292,7 @@ async function pollHealthy(
 }
 
 export function spawnDaemonProcess(socketPath: string, pidPath: string, spawnFn: SpawnLike = spawn): void {
-	const child = spawnFn("basecamp", ["daemon", "--uds", socketPath, "--pidfile", pidPath], {
+	const child = spawnFn("bc-swarm", ["daemon", "--uds", socketPath, "--pidfile", pidPath], {
 		detached: true,
 		stdio: "ignore",
 	});
@@ -408,11 +408,11 @@ export async function ensureDaemon(options: EnsureDaemonOptions = {}): Promise<{
 
 		const ping = await pollHealthy(paths.socketPath, deadline, healthTimeoutMs, healthPingFn, sleepFn, lockRetryMs);
 		if (!ping.ok) {
-			throw new Error(`Timed out waiting for basecamp daemon at ${paths.socketPath}.`);
+			throw new Error(`Timed out waiting for bc-swarm daemon at ${paths.socketPath}.`);
 		}
 		if (ping.protocol !== PROTOCOL_VERSION) {
 			throw new Error(
-				`basecamp daemon protocol mismatch at ${paths.socketPath}: daemon=${ping.protocol}, client=${PROTOCOL_VERSION}.`,
+				`bc-swarm daemon protocol mismatch at ${paths.socketPath}: daemon=${ping.protocol}, client=${PROTOCOL_VERSION}.`,
 			);
 		}
 

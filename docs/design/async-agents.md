@@ -61,7 +61,7 @@ Two ideas anchor the whole design:
 ### 4.1 Components
 
 - **Top-level pi sessions** — the interactive sessions a user runs. Each loads the basecamp extension, which opens a WebSocket to the daemon at session start.
-- **basecamp daemon** — a single, host-global Python process (FastAPI served by uvicorn over a Unix domain socket). It is coordinator (spawns agents), supervisor (owns the relationship/ACL graph), router (messages and result notifications), mutation-lease manager, and limit enforcer (depth + global concurrency). It exposes HTTP routes for read-only observability.
+- **bc-swarm daemon** — a single, host-global Python process (FastAPI served by uvicorn over a Unix domain socket). It is coordinator (spawns agents), supervisor (owns the relationship/ACL graph), router (messages and result notifications), mutation-lease manager, and limit enforcer (depth + global concurrency). It exposes HTTP routes for read-only observability.
 - **SQLite store** — the daemon's source of truth: agents, runs, relationships, leases, queued messages/results. Survives daemon restarts.
 - **Transient agent processes** — `pi --mode json -p` children the daemon spawns per task. Each loads the basecamp extension and connects its own WebSocket back to the daemon.
 - **`.jsonl` thread files** — each agent's pi session transcript. Async agents are spawned with `--session-dir` pointing at a **basecamp-managed durable location keyed by the agent id** (`~/.pi/agent/basecamp/agents/<agent-id>/session/`), kept deliberately distinct from pi's default session store so an agent reads as a *distinct entity* rather than an ordinary, user-continuable session (§6.6). Persisted indefinitely (no TTL); resumed on re-task to continue the thread.
@@ -83,7 +83,7 @@ Two ideas anchor the whole design:
             └──────────────────┬──────────────────┘
                                ▼
             ┌───────────────────────────────────────┐      HTTP over UDS
-            │           basecamp daemon              │   GET /runs, /agents
+            │           bc-swarm daemon              │   GET /runs, /agents
             │        (FastAPI / uvicorn, UDS)        │◄──────────────────────
             │                                         │   (observability)
             │   coordinator · supervisor (ACL)        │
@@ -160,11 +160,11 @@ At `session_start`, the extension runs an ensure-daemon flow off the critical pa
 2. Send a health ping with a short timeout.
 3. If the daemon is up, read its advertised protocol version and run handshake.
    - Compatible: proceed.
-   - Incompatible: acquire the spawn lock, terminate only the daemon bound to this socket (PID file first, exact `basecamp daemon --uds <socket>` command match as legacy fallback), remove stale socket/PID artifacts, restart via the current basecamp Python package entrypoint, and wait-for-healthy.
+   - Incompatible: acquire the spawn lock, terminate only the daemon bound to this socket (PID file first, exact `bc-swarm daemon --uds <socket>` command match as fallback), remove stale socket/PID artifacts, restart via the `bc-swarm` CLI, and wait-for-healthy.
 
    A protocol mismatch means the host-global daemon is running a version this client cannot safely speak. Basecamp prefers converging the host to one current daemon over leaving new sessions wedged behind a manual cleanup step. Existing live clients may be disconnected and reconnect behavior remains client-owned.
 
-4. If the daemon is not running, acquire a spawn lock (PID + timestamp) so concurrent session starts do not race and launch duplicates; start via the basecamp Python package entrypoint; wait-for-healthy with bounded retries; release lock.
+4. If the daemon is not running, acquire a spawn lock (PID + timestamp) so concurrent session starts do not race and launch duplicates; start via the `bc-swarm` CLI; wait-for-healthy with bounded retries; release lock.
 5. Open this process WebSocket and register identity (env contract in §5.4).
 
 ```text
@@ -457,7 +457,7 @@ Both limits are configurable tunables. They are complementary: depth cap bounds 
 
 ## 10. Phased roadmap
 
-- **Phase 1 — IMPLEMENTED walking skeleton.** Delivered components: daemon (`basecamp daemon`), extension daemon client + `dispatch_agent` / `wait_for_agent`, and shared frame protocol fixtures under `pi-swarm/protocol/`. Goal was to prove the end-to-end spine with one persistent agent identity and asynchronous run completion.
+- **Phase 1 — IMPLEMENTED walking skeleton.** Delivered components: daemon (`bc-swarm daemon`), extension daemon client + `dispatch_agent` / `wait_for_agent`, and shared frame protocol fixtures under `pi-swarm/protocol/`. Goal was to prove the end-to-end spine with one persistent agent identity and asynchronous run completion.
   - In scope: a single frame-schema source of truth + a daemon contract test (the protocol exists from Phase 1); `session_start` ensure-daemon + WebSocket handshake (§5.3); daemon spawns one transient agent process from a TypeScript-authored spawn spec (§6.2); async dispatch returns a handle immediately; telemetry + result reporting over WebSocket (§6.3); `wait_for_agent` for a single handle and wait-ALL over multiple handles (§7.3); process-exit crash backstop; SQLite persistence for agents/runs; async-agent identity refinements — repo-root spawn cwd, deterministic titles, and a durable/distinct session store (§6.6); depth cap retained. The existing in-process run guard (§3) also stays in place (see the sequencing note), so breadth remains bounded even though the global concurrency cap is not yet built.
   - Explicitly out of scope: peer message, ACL enforcement, mutation lease/deadlock detection, host-global concurrency cap, HTTP observability polish, re-task-on-message behavior, wait-FIRST joins, and the unsolicited result-ping push (in Phase 1 the dispatcher observes completion by calling `wait_for_agent`).
 

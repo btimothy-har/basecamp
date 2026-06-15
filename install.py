@@ -26,7 +26,6 @@ console = Console()
 REPO_DIR: Final = Path(__file__).parent
 
 CLI_DIR: Final = REPO_DIR / "basecamp-cli"
-PI_SWARM_CLI_DIR: Final = REPO_DIR / "pi-swarm" / "cli"
 EXTENSION_DIR: Final = REPO_DIR / "pi-extension"
 
 # Bundled memory stack. pi-session-search/pi-knowledge-search require Node >= 24
@@ -187,13 +186,10 @@ def install_python_tool(
     command_name: str,
     *,
     editable: bool,
-    editable_dependencies: list[Path] | None = None,
 ) -> None:
     args = ["uv", "tool", "install", "--force", "--reinstall"]
     if editable:
         args.append("-e")
-        for dependency in editable_dependencies or []:
-            args.extend(["--with-editable", str(dependency)])
     args.append(str(package_dir))
 
     console.print(f"  Installing [bold]{command_name}[/bold] Python tool...")
@@ -232,7 +228,6 @@ def main() -> None:
         CLI_DIR,
         "basecamp",
         editable=editable,
-        editable_dependencies=[PI_SWARM_CLI_DIR],
     )
 
     console.print()

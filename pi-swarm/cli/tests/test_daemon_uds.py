@@ -12,6 +12,7 @@ from pathlib import Path
 
 import httpx
 import uvicorn
+from pi_swarm import main as swarm_cli
 from pi_swarm import server as daemon_server
 from pi_swarm.app import create_app
 from pi_swarm.server import UdsServer
@@ -30,6 +31,32 @@ class _FakeServer:
 
     def run(self) -> None:
         self._on_run()
+
+
+def test_bc_swarm_daemon_cli_invokes_run_daemon(tmp_path: Path, monkeypatch: MonkeyPatch) -> None:
+    uds_path = tmp_path / "daemon.sock"
+    db_path = tmp_path / "daemon.db"
+    pid_path = tmp_path / "daemon.pid"
+    observed: dict[str, tuple[str, str | None, str | None]] = {}
+
+    def run_daemon(uds_path_arg: str, db_path_arg: str | None = None, pid_path_arg: str | None = None) -> None:
+        observed["args"] = (uds_path_arg, db_path_arg, pid_path_arg)
+
+    monkeypatch.setattr(swarm_cli, "run_daemon", run_daemon)
+
+    swarm_cli.main(
+        [
+            "daemon",
+            "--uds",
+            str(uds_path),
+            "--db",
+            str(db_path),
+            "--pidfile",
+            str(pid_path),
+        ]
+    )
+
+    assert observed["args"] == (str(uds_path), str(db_path), str(pid_path))
 
 
 def test_run_daemon_writes_and_removes_pid_file(tmp_path: Path, monkeypatch: MonkeyPatch) -> None:

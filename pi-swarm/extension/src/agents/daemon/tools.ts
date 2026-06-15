@@ -125,7 +125,7 @@ export function registerDaemonTools(
 					content: [
 						{
 							type: "text",
-							text: "basecamp daemon is not connected. Use the synchronous agent tool as fallback.",
+							text: "bc-swarm daemon is not connected. Use the synchronous agent tool as fallback.",
 						},
 					],
 					isError: true,
@@ -222,7 +222,7 @@ export function registerDaemonTools(
 			const connection = await getConnection();
 			if (!connection) {
 				return {
-					content: [{ type: "text", text: "basecamp daemon is not connected; cannot list async agents." }],
+					content: [{ type: "text", text: "bc-swarm daemon is not connected; cannot list async agents." }],
 					isError: true,
 					details: null,
 				};
@@ -270,7 +270,7 @@ export function registerDaemonTools(
 			const connection = await getConnection();
 			if (!connection) {
 				return {
-					content: [{ type: "text", text: "basecamp daemon is not connected; cannot wait for async agent handles." }],
+					content: [{ type: "text", text: "bc-swarm daemon is not connected; cannot wait for async agent handles." }],
 					isError: true,
 					details: null,
 				};

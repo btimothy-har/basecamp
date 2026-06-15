@@ -7,7 +7,7 @@ from dataclasses import asdict
 from pathlib import Path
 from urllib.parse import parse_qs, urlsplit
 
-from pi_swarm.daemon import (
+from basecamp.companion.daemon import (
     DaemonSummaryError,
     DaemonSummaryOk,
     DaemonSummaryRun,
