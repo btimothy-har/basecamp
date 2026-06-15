@@ -204,7 +204,10 @@ describe("daemon async tools", () => {
 
 			const result = await executePromise;
 			assert.equal(result.isError, undefined);
-			assert.equal(result.details.runId, outbound.run_id);
+			assert.equal(result.details.agentId, outbound.agent_id);
+			assert.equal("runId" in result.details, false);
+			assert.match(result.content[0].text, new RegExp(String(outbound.agent_id)));
+			assert.doesNotMatch(result.content[0].text, new RegExp(String(outbound.run_id)));
 		} finally {
 			if (priorCustom === undefined) delete process.env.TEST_DAEMON_TOOLS;
 			else process.env.TEST_DAEMON_TOOLS = priorCustom;
@@ -471,7 +474,7 @@ describe("daemon async tools", () => {
 
 		const executePromise = waitTool.execute(
 			"1",
-			{ handles: ["run-1", "run-2"], timeout_s: 30 },
+			{ handles: ["agent-1", "agent-2"], timeout_s: 30 },
 			new AbortController().signal,
 			() => {},
 			{},
@@ -480,23 +483,23 @@ describe("daemon async tools", () => {
 		await new Promise((resolve) => setImmediate(resolve));
 		const outbound = connection.sent[0] as Extract<Frame, { type: "wait" }>;
 		assert.equal(outbound.type, "wait");
-		assert.deepEqual(outbound.run_ids, ["run-1", "run-2"]);
+		assert.deepEqual(outbound.agent_ids, ["agent-1", "agent-2"]);
 		assert.equal(outbound.timeout_s, 30);
 
 		connection.emit({
 			type: "wait_result",
 			v: 3,
 			results: [
-				{ run_id: "run-1", status: "completed", result: "duplicate", error: null },
-				{ run_id: "run-1", status: "completed", result: "duplicate", error: null },
+				{ agent_id: "agent-1", status: "completed", result: "duplicate", error: null },
+				{ agent_id: "agent-1", status: "completed", result: "duplicate", error: null },
 			],
 		});
 		connection.emit({
 			type: "wait_result",
 			v: 3,
 			results: [
-				{ run_id: "run-1", status: "completed", result: "done", error: null },
-				{ run_id: "run-2", status: "failed", result: "compensation skipped", error: "boom" },
+				{ agent_id: "agent-1", status: "completed", result: "done", error: null },
+				{ agent_id: "agent-2", status: "failed", result: "compensation skipped", error: "boom" },
 			],
 		});
 
@@ -518,7 +521,7 @@ describe("daemon async tools", () => {
 
 		const executePromise = waitTool.execute(
 			"1",
-			{ handles: ["run-1", "run-2", "run-3"], timeout_s: 30 },
+			{ handles: ["agent-1", "agent-2", "agent-3"], timeout_s: 30 },
 			new AbortController().signal,
 			() => {},
 			{},
@@ -527,16 +530,16 @@ describe("daemon async tools", () => {
 		await new Promise((resolve) => setImmediate(resolve));
 		const outbound = connection.sent[0] as Extract<Frame, { type: "wait" }>;
 		assert.equal(outbound.type, "wait");
-		assert.deepEqual(outbound.run_ids, ["run-1", "run-2", "run-3"]);
+		assert.deepEqual(outbound.agent_ids, ["agent-1", "agent-2", "agent-3"]);
 		assert.equal(outbound.timeout_s, 30);
 
 		connection.emit({
 			type: "wait_result",
 			v: 3,
 			results: [
-				{ run_id: "run-1", status: "running", result: null, error: null },
-				{ run_id: "run-2", status: "unknown", result: null, error: null },
-				{ run_id: "run-3", status: "completed", result: "ok", error: null },
+				{ agent_id: "agent-1", status: "running", result: null, error: null },
+				{ agent_id: "agent-2", status: "unknown", result: null, error: null },
+				{ agent_id: "agent-3", status: "completed", result: "ok", error: null },
 			],
 		});
 
@@ -546,7 +549,7 @@ describe("daemon async tools", () => {
 		assert.equal(result.details.items[1].status, "unknown");
 		assert.equal(result.details.items[2].status, "completed");
 		assert.match(result.content[0].text, /still running \(timed out\)/);
-		assert.match(result.content[0].text, /\? run-2 unknown handle/);
+		assert.match(result.content[0].text, /\? agent-2 unknown agent/);
 	});
 
 	it("wait_for_agent fails before daemon connection/send when agents skill has not been invoked", async () => {
@@ -560,7 +563,7 @@ describe("daemon async tools", () => {
 
 		const result = await waitTool.execute(
 			"1",
-			{ handles: ["run-1"], timeout_s: 30 },
+			{ handles: ["agent-1"], timeout_s: 30 },
 			new AbortController().signal,
 			() => {},
 			{},
@@ -580,7 +583,13 @@ describe("daemon async tools", () => {
 		const waitTool = toolByName(tools, "wait_for_agent");
 
 		const controller = new AbortController();
-		const executePromise = waitTool.execute("1", { handles: "run-1", timeout_s: 30 }, controller.signal, () => {}, {});
+		const executePromise = waitTool.execute(
+			"1",
+			{ handles: "agent-1", timeout_s: 30 },
+			controller.signal,
+			() => {},
+			{},
+		);
 		controller.abort();
 
 		const result = await executePromise;

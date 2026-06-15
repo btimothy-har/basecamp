@@ -104,7 +104,7 @@ class WaitFrame(BaseModel):
 
     type: Literal["wait"]
     v: Literal[PROTOCOL_VERSION]
-    run_ids: list[str]
+    agent_ids: list[str]
     mode: Literal["all"]
     timeout_s: float
 
@@ -112,7 +112,7 @@ class WaitFrame(BaseModel):
 class WaitResultItem(BaseModel):
     """Single wait result item."""
 
-    run_id: str
+    agent_id: str
     status: Literal["completed", "failed", "running", "unknown"]
     result: str | None
     error: str | None

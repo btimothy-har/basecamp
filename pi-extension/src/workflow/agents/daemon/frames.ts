@@ -77,13 +77,13 @@ export interface ResultReportFrame {
 export interface WaitFrame {
 	type: "wait";
 	v: typeof PROTOCOL_VERSION;
-	run_ids: string[];
+	agent_ids: string[];
 	mode: "all";
 	timeout_s: number;
 }
 
 export interface WaitResultItem {
-	run_id: string;
+	agent_id: string;
 	status: "completed" | "failed" | "running" | "unknown";
 	result: string | null;
 	error: string | null;

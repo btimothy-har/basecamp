@@ -112,6 +112,53 @@ def test_create_run_stores_dispatcher_and_updates_current_run(tmp_path: Path) ->
     assert agent["current_run_id"] == "run-dispatch"
 
 
+def test_get_agents_current_runs_filters_by_dispatcher(tmp_path: Path) -> None:
+    db_path = tmp_path / "daemon.db"
+    store = Store(db_path=db_path)
+
+    store.upsert_agent(
+        agent_id="agent-1",
+        parent_id=None,
+        sibling_group="sg",
+        depth=1,
+        role="agent",
+        session_name="session-a",
+        cwd="/tmp/a",
+    )
+    store.create_run(
+        run_id="run-owned",
+        agent_id="agent-1",
+        dispatcher_id="dispatcher-1",
+        spec={"task": "x"},
+        report_token_hash="0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+    )
+
+    owned = store.get_agents_current_runs(["agent-1"], dispatcher_id="dispatcher-1")
+    assert owned == [
+        {
+            "agent_id": "agent-1",
+            "run_id": "run-owned",
+            "status": "running",
+            "result": None,
+            "error": None,
+        }
+    ]
+
+    unauthorized = store.get_agents_current_runs(["agent-1"], dispatcher_id="dispatcher-2")
+    assert unauthorized == [
+        {
+            "agent_id": "agent-1",
+            "run_id": None,
+            "status": None,
+            "result": None,
+            "error": None,
+        }
+    ]
+
+    missing = store.get_agents_current_runs(["agent-missing"], dispatcher_id="dispatcher-1")
+    assert missing == []
+
+
 def test_create_run_rejects_non_terminal_duplicate_for_agent(tmp_path: Path) -> None:
     db_path = tmp_path / "daemon.db"
     store = Store(db_path=db_path)
@@ -151,7 +198,7 @@ def test_create_run_rejects_non_terminal_duplicate_for_agent(tmp_path: Path) -> 
     assert rows[0] == 1
 
 
-def test_set_run_result_clears_agent_current_run_id(tmp_path: Path) -> None:
+def test_set_run_result_preserves_agent_current_run_id(tmp_path: Path) -> None:
     db_path = tmp_path / "daemon.db"
     store = Store(db_path=db_path)
 
@@ -180,10 +227,10 @@ def test_set_run_result_clears_agent_current_run_id(tmp_path: Path) -> None:
 
     agent = store.get_agent("agent-1")
     assert agent is not None
-    assert agent["current_run_id"] is None
+    assert agent["current_run_id"] == "run-complete"
 
 
-def test_set_run_result_if_unset_clears_agent_current_run_id(tmp_path: Path) -> None:
+def test_set_run_result_if_unset_preserves_agent_current_run_id(tmp_path: Path) -> None:
     db_path = tmp_path / "daemon.db"
     store = Store(db_path=db_path)
 
@@ -213,7 +260,7 @@ def test_set_run_result_if_unset_clears_agent_current_run_id(tmp_path: Path) -> 
 
     agent = store.get_agent("agent-1")
     assert agent is not None
-    assert agent["current_run_id"] is None
+    assert agent["current_run_id"] == "run-failed"
 
 
 def test_get_run_wait_results_includes_nonterminal_and_omits_unknown(tmp_path: Path) -> None:

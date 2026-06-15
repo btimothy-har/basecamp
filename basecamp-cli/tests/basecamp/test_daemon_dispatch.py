@@ -361,6 +361,8 @@ def test_wait_all_happy_path_two_runs(tmp_path: Path) -> None:
 
     run_id_1 = f"run-{uuid.uuid4()}"
     run_id_2 = f"run-{uuid.uuid4()}"
+    agent_id_1 = f"agent-{uuid.uuid4()}"
+    agent_id_2 = f"agent-{uuid.uuid4()}"
 
     try:
         with unix_connect(str(uds_path), uri="ws://localhost/ws") as websocket:
@@ -369,11 +371,13 @@ def test_wait_all_happy_path_two_runs(tmp_path: Path) -> None:
             ack_1 = _dispatch(
                 websocket,
                 run_id=run_id_1,
+                agent_id=agent_id_1,
                 spec=_dispatch_spec(tmp_path, env={"FAKE_DAEMON_AGENT_SLEEP_MS": "150"}),
             )
             ack_2 = _dispatch(
                 websocket,
                 run_id=run_id_2,
+                agent_id=agent_id_2,
                 spec=_dispatch_spec(tmp_path, env={"FAKE_DAEMON_AGENT_SLEEP_MS": "50"}),
             )
             assert ack_1["status"] == "spawned"
@@ -384,7 +388,7 @@ def test_wait_all_happy_path_two_runs(tmp_path: Path) -> None:
                     {
                         "type": "wait",
                         "v": 3,
-                        "run_ids": [run_id_1, run_id_2],
+                        "agent_ids": [agent_id_1, agent_id_2],
                         "mode": "all",
                         "timeout_s": 5,
                     }
@@ -393,10 +397,10 @@ def test_wait_all_happy_path_two_runs(tmp_path: Path) -> None:
             wait_result = json.loads(websocket.recv())
 
         assert wait_result["type"] == "wait_result"
-        results = {item["run_id"]: item for item in wait_result["results"]}
-        assert set(results) == {run_id_1, run_id_2}
-        assert results[run_id_1]["status"] == "completed"
-        assert results[run_id_2]["status"] == "completed"
+        results = {item["agent_id"]: item for item in wait_result["results"]}
+        assert set(results) == {agent_id_1, agent_id_2}
+        assert results[agent_id_1]["status"] == "completed"
+        assert results[agent_id_2]["status"] == "completed"
     finally:
         _stop_daemon(server, thread, uds_path)
 
@@ -408,6 +412,7 @@ def test_wait_timeout_returns_running_status(tmp_path: Path) -> None:
     server, thread = _start_daemon(store, uds_path)
 
     run_id = f"run-{uuid.uuid4()}"
+    agent_id = f"agent-{uuid.uuid4()}"
 
     try:
         with unix_connect(str(uds_path), uri="ws://localhost/ws") as websocket:
@@ -416,6 +421,7 @@ def test_wait_timeout_returns_running_status(tmp_path: Path) -> None:
             ack = _dispatch(
                 websocket,
                 run_id=run_id,
+                agent_id=agent_id,
                 spec=_dispatch_spec(
                     tmp_path,
                     argv=[sys.executable, "-c", "import time; time.sleep(2)"],
@@ -428,7 +434,7 @@ def test_wait_timeout_returns_running_status(tmp_path: Path) -> None:
                     {
                         "type": "wait",
                         "v": 3,
-                        "run_ids": [run_id],
+                        "agent_ids": [agent_id],
                         "mode": "all",
                         "timeout_s": 0.1,
                     }
@@ -437,7 +443,7 @@ def test_wait_timeout_returns_running_status(tmp_path: Path) -> None:
             wait_result = json.loads(websocket.recv())
 
         assert len(wait_result["results"]) == 1
-        assert wait_result["results"][0]["run_id"] == run_id
+        assert wait_result["results"][0]["agent_id"] == agent_id
         assert wait_result["results"][0]["status"] == "running"
         assert wait_result["results"][0]["result"] is None
         assert wait_result["results"][0]["error"] is None
@@ -452,6 +458,7 @@ def test_backstop_marks_failed_and_resolves_wait(tmp_path: Path) -> None:
     server, thread = _start_daemon(store, uds_path)
 
     run_id = f"run-{uuid.uuid4()}"
+    agent_id = f"agent-{uuid.uuid4()}"
 
     try:
         with unix_connect(str(uds_path), uri="ws://localhost/ws") as websocket:
@@ -460,6 +467,7 @@ def test_backstop_marks_failed_and_resolves_wait(tmp_path: Path) -> None:
             ack = _dispatch(
                 websocket,
                 run_id=run_id,
+                agent_id=agent_id,
                 spec=_dispatch_spec(
                     tmp_path,
                     env={
@@ -475,7 +483,7 @@ def test_backstop_marks_failed_and_resolves_wait(tmp_path: Path) -> None:
                     {
                         "type": "wait",
                         "v": 3,
-                        "run_ids": [run_id],
+                        "agent_ids": [agent_id],
                         "mode": "all",
                         "timeout_s": 5,
                     }
@@ -486,7 +494,7 @@ def test_backstop_marks_failed_and_resolves_wait(tmp_path: Path) -> None:
         assert wait_result["type"] == "wait_result"
         assert len(wait_result["results"]) == 1
         item = wait_result["results"][0]
-        assert item["run_id"] == run_id
+        assert item["agent_id"] == agent_id
         assert item["status"] == "failed"
         assert "code 9" in (item["error"] or "")
 
@@ -504,7 +512,7 @@ def test_wait_unknown_handles_return_unknown_immediately(tmp_path: Path) -> None
     store = Store(db_path=db_path)
     server, thread = _start_daemon(store, uds_path)
 
-    unknown_run_id = "run-missing"
+    unknown_agent_id = "agent-missing"
     start = time.time()
 
     try:
@@ -515,7 +523,7 @@ def test_wait_unknown_handles_return_unknown_immediately(tmp_path: Path) -> None
                     {
                         "type": "wait",
                         "v": 3,
-                        "run_ids": [unknown_run_id],
+                        "agent_ids": [unknown_agent_id],
                         "mode": "all",
                         "timeout_s": 10,
                     }
@@ -527,7 +535,52 @@ def test_wait_unknown_handles_return_unknown_immediately(tmp_path: Path) -> None
         assert elapsed < 2.0
         assert wait_result["type"] == "wait_result"
         assert wait_result["results"] == [
-            {"run_id": unknown_run_id, "status": "unknown", "result": None, "error": None}
+            {"agent_id": unknown_agent_id, "status": "unknown", "result": None, "error": None}
+        ]
+    finally:
+        _stop_daemon(server, thread, uds_path)
+
+
+def test_wait_by_non_dispatcher_returns_unknown_immediately(tmp_path: Path) -> None:
+    db_path = tmp_path / "daemon.db"
+    uds_path = Path("/tmp") / f"basecamp-daemon-wait-acl-{os.getpid()}-{uuid.uuid4().hex[:8]}.sock"
+    store = Store(db_path=db_path)
+    server, thread = _start_daemon(store, uds_path)
+
+    run_id = f"run-{uuid.uuid4()}"
+    agent_id = f"agent-{uuid.uuid4()}"
+
+    try:
+        with unix_connect(str(uds_path), uri="ws://localhost/ws") as dispatcher:
+            _register_session(dispatcher, node_id="dispatcher-node", cwd=str(tmp_path))
+            ack = _dispatch(
+                dispatcher,
+                run_id=run_id,
+                agent_id=agent_id,
+                spec=_dispatch_spec(tmp_path, env={"FAKE_DAEMON_AGENT_SLEEP_MS": "1200"}),
+            )
+            assert ack["status"] == "spawned"
+
+        start = time.time()
+        with unix_connect(str(uds_path), uri="ws://localhost/ws") as requester:
+            _register_session(requester, node_id="other-node", cwd=str(tmp_path))
+            requester.send(
+                json.dumps(
+                    {
+                        "type": "wait",
+                        "v": 3,
+                        "agent_ids": [agent_id],
+                        "mode": "all",
+                        "timeout_s": 10,
+                    }
+                )
+            )
+            wait_result = json.loads(requester.recv())
+
+        elapsed = time.time() - start
+        assert elapsed < 2.0
+        assert wait_result["results"] == [
+            {"agent_id": agent_id, "status": "unknown", "result": None, "error": None}
         ]
     finally:
         _stop_daemon(server, thread, uds_path)
@@ -540,7 +593,8 @@ def test_wait_mixed_unknown_and_completed_returns_all_handles(tmp_path: Path) ->
     server, thread = _start_daemon(store, uds_path)
 
     run_id = f"run-{uuid.uuid4()}"
-    unknown_run_id = f"run-{uuid.uuid4()}"
+    agent_id = f"agent-{uuid.uuid4()}"
+    unknown_agent_id = f"agent-{uuid.uuid4()}"
 
     try:
         with unix_connect(str(uds_path), uri="ws://localhost/ws") as websocket:
@@ -549,6 +603,7 @@ def test_wait_mixed_unknown_and_completed_returns_all_handles(tmp_path: Path) ->
             ack = _dispatch(
                 websocket,
                 run_id=run_id,
+                agent_id=agent_id,
                 spec=_dispatch_spec(
                     tmp_path,
                     env={"FAKE_DAEMON_AGENT_SLEEP_MS": "20"},
@@ -569,7 +624,7 @@ def test_wait_mixed_unknown_and_completed_returns_all_handles(tmp_path: Path) ->
                     {
                         "type": "wait",
                         "v": 3,
-                        "run_ids": [run_id, unknown_run_id],
+                        "agent_ids": [agent_id, unknown_agent_id],
                         "mode": "all",
                         "timeout_s": 10,
                     }
@@ -577,7 +632,7 @@ def test_wait_mixed_unknown_and_completed_returns_all_handles(tmp_path: Path) ->
             )
             wait_result = json.loads(websocket.recv())
 
-        assert [item["run_id"] for item in wait_result["results"]] == [run_id, unknown_run_id]
+        assert [item["agent_id"] for item in wait_result["results"]] == [agent_id, unknown_agent_id]
         assert [item["status"] for item in wait_result["results"]] == ["completed", "unknown"]
     finally:
         _stop_daemon(server, thread, uds_path)

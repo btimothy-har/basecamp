@@ -151,7 +151,13 @@ def create_app(store: Store, *, daemon_uds: str | None = None) -> FastAPI:
                     )
                     continue
                 if isinstance(inbound, WaitFrame):
-                    await _handle_wait(frame=inbound, websocket=websocket, store=store, registry=registry)
+                    await _handle_wait(
+                        frame=inbound,
+                        websocket=websocket,
+                        store=store,
+                        registry=registry,
+                        requester_node_id=parsed.node_id,
+                    )
                     continue
 
         except WebSocketDisconnect:
@@ -413,64 +419,86 @@ def _normalize_wait_status(status: str) -> str:
     return "running"
 
 
+def _row_unknown_result(agent_id: str) -> WaitResultItem:
+    return WaitResultItem(agent_id=agent_id, status="unknown", result=None, error=None)
+
+
 async def _build_wait_results(
     *,
-    run_ids: list[str],
-    store: Store,
-    include_unknown: bool,
+    agent_ids: list[str],
+    rows: list[dict[str, Any]],
 ) -> list[WaitResultItem]:
-    rows = await asyncio.to_thread(store.get_run_wait_results, run_ids)
-    by_id = {row["run_id"]: row for row in rows}
+    by_id = {row["agent_id"]: row for row in rows if isinstance(row.get("agent_id"), str)}
     ordered: list[WaitResultItem] = []
-    for run_id in run_ids:
-        row = by_id.get(run_id)
+
+    for agent_id in agent_ids:
+        row = by_id.get(agent_id)
         if row is None:
-            if not include_unknown:
-                continue
-            ordered.append(
-                WaitResultItem(
-                    run_id=run_id,
-                    status="unknown",
-                    result=None,
-                    error=None,
-                )
-            )
+            ordered.append(_row_unknown_result(agent_id))
             continue
 
         status = row.get("status")
-        if isinstance(status, str):
-            wait_status = _normalize_wait_status(status)
-            if wait_status in TERMINAL_RUN_STATUSES:
-                ordered.append(
-                    WaitResultItem(
-                        run_id=run_id,
-                        status=wait_status,
-                        result=row.get("result"),
-                        error=row.get("error"),
-                    )
-                )
-            else:
-                ordered.append(
-                    WaitResultItem(
-                        run_id=run_id,
-                        status="running",
-                        result=None,
-                        error=None,
-                    )
-                )
+        if not isinstance(status, str):
+            ordered.append(_row_unknown_result(agent_id))
             continue
 
-        if include_unknown:
+        wait_status = _normalize_wait_status(status)
+        if wait_status in TERMINAL_RUN_STATUSES:
             ordered.append(
                 WaitResultItem(
-                    run_id=run_id,
-                    status="unknown",
-                    result=None,
-                    error=None,
+                    agent_id=agent_id,
+                    status=wait_status,
+                    result=row.get("result"),
+                    error=row.get("error"),
                 )
             )
+            continue
+
+        ordered.append(
+            WaitResultItem(
+                agent_id=agent_id,
+                status="running",
+                result=None,
+                error=None,
+            )
+        )
 
     return ordered
+
+
+async def _build_wait_projection(
+    *,
+    agent_ids: list[str],
+    store: Store,
+    requester_node_id: str,
+) -> list[dict[str, Any]]:
+    return await asyncio.to_thread(
+        store.get_agents_current_runs,
+        agent_ids,
+        dispatcher_id=requester_node_id,
+    )
+
+
+def _wait_target_run_ids(
+    *,
+    rows: list[dict[str, Any]],
+    agent_ids: list[str],
+) -> set[str]:
+    by_agent_id = {row["agent_id"]: row for row in rows if isinstance(row.get("agent_id"), str)}
+    targets: set[str] = set()
+    for agent_id in agent_ids:
+        row = by_agent_id.get(agent_id)
+        if row is None:
+            continue
+        status = row.get("status")
+        if not isinstance(status, str):
+            continue
+        run_id = row.get("run_id")
+        if not isinstance(run_id, str):
+            continue
+        if _normalize_wait_status(status) not in TERMINAL_RUN_STATUSES:
+            targets.add(run_id)
+    return targets
 
 
 async def _notify_run_finalized(run_id: str, *, registry: Registry, store: Store) -> None:
@@ -488,45 +516,45 @@ async def _notify_run_finalized(run_id: str, *, registry: Registry, store: Store
             waiter.future.set_result(None)
 
 
-async def _handle_wait(*, frame: WaitFrame, websocket: WebSocket, store: Store, registry: Registry) -> None:
-    run_ids = list(dict.fromkeys(frame.run_ids))
-    rows = await asyncio.to_thread(store.get_run_wait_results, run_ids)
-    by_id = {row["run_id"]: row for row in rows}
-
-    all_known = len(by_id) == len(run_ids)
-    all_terminal = all_known and all(
-        isinstance(row.get("status"), str) and row.get("status") in TERMINAL_RUN_STATUSES for row in by_id.values()
+async def _handle_wait(
+    *,
+    frame: WaitFrame,
+    websocket: WebSocket,
+    store: Store,
+    registry: Registry,
+    requester_node_id: str,
+) -> None:
+    agent_ids = list(dict.fromkeys(frame.agent_ids))
+    rows = await _build_wait_projection(
+        agent_ids=agent_ids,
+        store=store,
+        requester_node_id=requester_node_id,
     )
+    run_ids_to_wait = _wait_target_run_ids(rows=rows, agent_ids=agent_ids)
 
-    if all_known and all_terminal:
-        results = await _build_wait_results(run_ids=run_ids, store=store, include_unknown=False)
-        await websocket.send_json(
-            serialize_frame(WaitResultFrame(type="wait_result", v=PROTOCOL_VERSION, results=results))
+    if run_ids_to_wait:
+        waiter = Waiter(
+            waiter_id=str(uuid.uuid4()),
+            websocket=websocket,
+            run_ids=run_ids_to_wait,
+            future=asyncio.get_running_loop().create_future(),
         )
-        return
+        registry.add_waiter(waiter)
+        try:
+            await asyncio.wait_for(waiter.future, timeout=frame.timeout_s)
+        except TimeoutError:
+            pass
+        finally:
+            registry.remove_waiter(waiter.waiter_id)
 
-    if not all_known:
-        results = await _build_wait_results(run_ids=run_ids, store=store, include_unknown=True)
-        await websocket.send_json(
-            serialize_frame(WaitResultFrame(type="wait_result", v=PROTOCOL_VERSION, results=results))
-        )
-        return
-
-    waiter = Waiter(
-        waiter_id=str(uuid.uuid4()),
-        websocket=websocket,
-        run_ids=set(run_ids),
-        future=asyncio.get_running_loop().create_future(),
+    results = await _build_wait_results(
+        agent_ids=agent_ids,
+        rows=await _build_wait_projection(
+            agent_ids=agent_ids,
+            store=store,
+            requester_node_id=requester_node_id,
+        ),
     )
-    registry.add_waiter(waiter)
-    try:
-        await asyncio.wait_for(waiter.future, timeout=frame.timeout_s)
-        results = await _build_wait_results(run_ids=run_ids, store=store, include_unknown=False)
-    except TimeoutError:
-        results = await _build_wait_results(run_ids=run_ids, store=store, include_unknown=False)
-    finally:
-        registry.remove_waiter(waiter.waiter_id)
-
     await websocket.send_json(serialize_frame(WaitResultFrame(type="wait_result", v=PROTOCOL_VERSION, results=results)))
 
 

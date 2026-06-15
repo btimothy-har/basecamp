@@ -223,20 +223,6 @@ class Store:
                 (run_id, agent_id),
             )
 
-    def _get_run_agent_id(self, *, connection: sqlite3.Connection, run_id: str) -> str | None:
-        run = connection.execute(
-            "SELECT agent_id FROM runs WHERE id = ?",
-            (run_id,),
-        ).fetchone()
-        return run[0] if run is not None else None
-
-    def _clear_agent_current_run_if_matches(
-        self, *, connection: sqlite3.Connection, run_id: str, agent_id: str
-    ) -> None:
-        connection.execute(
-            "UPDATE agents SET current_run_id = NULL WHERE id = ? AND current_run_id = ?",
-            (agent_id, run_id),
-        )
 
     def set_run_exit_code(self, *, run_id: str, exit_code: int | None) -> None:
         """Persist subprocess exit code for a run."""
@@ -270,15 +256,6 @@ class Store:
             if cursor.rowcount == 0:
                 return
 
-            if status in TERMINAL_STATUSES:
-                run_agent_id = self._get_run_agent_id(connection=connection, run_id=run_id)
-                if run_agent_id is not None:
-                    self._clear_agent_current_run_if_matches(
-                        connection=connection,
-                        run_id=run_id,
-                        agent_id=run_agent_id,
-                    )
-
     def set_run_result_if_unset(
         self,
         *,
@@ -303,15 +280,6 @@ class Store:
             if cursor.rowcount == 0:
                 return False
 
-            if status in TERMINAL_STATUSES:
-                run_agent_id = self._get_run_agent_id(connection=connection, run_id=run_id)
-                if run_agent_id is not None:
-                    self._clear_agent_current_run_if_matches(
-                        connection=connection,
-                        run_id=run_id,
-                        agent_id=run_agent_id,
-                    )
-
             return True
 
     def get_run(self, run_id: str) -> dict[str, Any] | None:
@@ -327,6 +295,43 @@ class Store:
             if isinstance(spec_json, str):
                 result["spec_json"] = json.loads(spec_json)
             return result
+
+    def get_agents_current_runs(
+        self,
+        agent_ids: list[str],
+        *,
+        dispatcher_id: str,
+    ) -> list[dict[str, Any]]:
+        """Return current primary-run projections for requested agents.
+
+        Only runs owned by ``dispatcher_id`` are exposed. Missing agents,
+        missing current runs, and unauthorized agents are returned without any
+        run state in the row.
+        """
+
+        if not agent_ids:
+            return []
+
+        placeholders = ", ".join("?" for _ in agent_ids)
+        query = f"""
+            SELECT
+                a.id AS agent_id,
+                r.id AS run_id,
+                r.status AS status,
+                r.result AS result,
+                r.error AS error
+            FROM agents AS a
+            LEFT JOIN runs AS r
+                ON r.id = a.current_run_id
+               AND r.dispatcher_id = ?
+            WHERE a.id IN ({placeholders})
+            """
+
+        with self._connect() as connection:
+            connection.row_factory = sqlite3.Row
+            rows = connection.execute(query, (dispatcher_id, *agent_ids)).fetchall()
+
+        return [dict(row) for row in rows]
 
     def get_run_wait_results(self, run_ids: list[str], *, terminal_only: bool = False) -> list[dict[str, Any]]:
         """Return wait result projections for requested run ids.
