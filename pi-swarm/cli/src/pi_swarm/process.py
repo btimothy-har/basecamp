@@ -52,16 +52,17 @@ async def reap_agent_process(
     on_finalize: ProcessExitHook,
 ) -> None:
     exit_code = await process.wait()
-    await asyncio.to_thread(store.set_run_exit_code, run_id=run_id, exit_code=exit_code)
+    try:
+        await asyncio.to_thread(store.set_run_exit_code, run_id=run_id, exit_code=exit_code)
 
-    finalized = await asyncio.to_thread(
-        store.set_run_result_if_unset,
-        run_id=run_id,
-        status="failed",
-        result=None,
-        error=f"agent process exited (code {exit_code}) without reporting a result",
-    )
-    if finalized:
-        await on_finalize(run_id)
-
-    registry.pop_process(run_id)
+        finalized = await asyncio.to_thread(
+            store.set_run_result_if_unset,
+            run_id=run_id,
+            status="failed",
+            result=None,
+            error=f"agent process exited (code {exit_code}) without reporting a result",
+        )
+        if finalized:
+            await on_finalize(run_id)
+    finally:
+        registry.pop_process(run_id)

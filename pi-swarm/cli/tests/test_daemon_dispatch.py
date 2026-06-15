@@ -10,8 +10,11 @@ import time
 import uuid
 from pathlib import Path
 
+import pytest
 import uvicorn
 from pi_swarm.app import create_app
+from pi_swarm.process import reap_agent_process
+from pi_swarm.registry import Registry
 from pi_swarm.server import UdsServer
 from pi_swarm.store import Store
 from websockets.sync.client import unix_connect
@@ -20,6 +23,25 @@ from websockets.sync.client import unix_connect
 class _ThreadedServer(UdsServer):
     def install_signal_handlers(self) -> None:  # noqa: D401
         """Disable signal handlers when running under a background thread."""
+
+
+class _FakeProcess:
+    async def wait(self) -> int:
+        return 7
+
+
+class _StoreFailureError(Exception):
+    pass
+
+
+class _FailingStore:
+    def set_run_exit_code(self, *, run_id: str, exit_code: int) -> None:
+        assert run_id == "run-failing-store"
+        assert exit_code == 7
+        raise _StoreFailureError
+
+    def set_run_result_if_unset(self, **_kwargs: object) -> bool:
+        raise AssertionError
 
 
 def _start_daemon(store: Store, uds_path: Path) -> tuple[UdsServer, threading.Thread]:
@@ -118,6 +140,28 @@ def _dispatch(
 
     websocket.send(json.dumps(payload))
     return json.loads(websocket.recv())
+
+
+@pytest.mark.asyncio
+async def test_reap_agent_process_removes_registry_process_when_store_update_fails() -> None:
+    run_id = "run-failing-store"
+    registry = Registry()
+    process = _FakeProcess()
+    registry.set_process(run_id, process)
+
+    async def on_finalize(_run_id: str) -> None:
+        raise AssertionError
+
+    with pytest.raises(_StoreFailureError):
+        await reap_agent_process(
+            run_id=run_id,
+            process=process,
+            registry=registry,
+            store=_FailingStore(),
+            on_finalize=on_finalize,
+        )
+
+    assert registry.pop_process(run_id) is None
 
 
 def test_daemon_dispatch_spawn_and_result_round_trip(tmp_path: Path) -> None:

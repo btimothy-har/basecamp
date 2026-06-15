@@ -248,6 +248,42 @@ def test_ws_version_mismatch_returns_protocol_error(tmp_path: Path) -> None:
     assert reply["code"] == "protocol_version"
 
 
+def test_ws_unsupported_inbound_frame_returns_error(tmp_path: Path) -> None:
+    app = _build_app(tmp_path)
+
+    with TestClient(app) as client:
+        with client.websocket_connect("/ws") as websocket:
+            websocket.send_json(
+                {
+                    "type": "register",
+                    "v": 4,
+                    "role": "session",
+                    "node_id": "node-1",
+                    "parent_id": None,
+                    "sibling_group": None,
+                    "depth": 0,
+                    "session_name": "test-session",
+                    "cwd": "/tmp/project",
+                }
+            )
+            websocket.receive_json()
+
+            websocket.send_json(
+                {
+                    "type": "registered",
+                    "v": 4,
+                    "node_id": "node-1",
+                    "protocol": 4,
+                }
+            )
+            reply = websocket.receive_json()
+
+    assert reply["type"] == "error"
+    assert reply["v"] == 4
+    assert reply["code"] == "unsupported_frame"
+    assert "registered" in reply["message"]
+
+
 def test_runs_summary_endpoint_returns_root_and_child_runs(tmp_path: Path) -> None:
     app, store = _build_app_with_store(tmp_path)
 

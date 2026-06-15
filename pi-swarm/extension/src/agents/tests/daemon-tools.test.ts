@@ -4,7 +4,7 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { afterEach, beforeEach, describe, it } from "node:test";
 import type { WorkspaceState } from "../../dependencies.ts";
-import type { DaemonConnection } from "../daemon/client.ts";
+import { createDaemonClient, type DaemonConnection } from "../daemon/client.ts";
 import type { Frame, ListAgentItem } from "../daemon/frames.ts";
 import { deriveDaemonIdentity } from "../daemon/index.ts";
 import { resolveDaemonPaths } from "../daemon/paths.ts";
@@ -19,6 +19,7 @@ interface RegisteredTool {
 class MockConnection implements DaemonConnection {
 	sent: Frame[] = [];
 	handlers = new Map<Frame["type"], Set<(frame: any) => void>>();
+	closeHandlers = new Set<(code: number, reason: string) => void>();
 
 	send(frame: Frame): void {
 		this.sent.push(frame);
@@ -31,18 +32,23 @@ class MockConnection implements DaemonConnection {
 		return () => set.delete(handler as any);
 	}
 
-	onClose(): () => void {
-		return () => {};
+	onClose(handler: (code: number, reason: string) => void): () => void {
+		this.closeHandlers.add(handler);
+		return () => this.closeHandlers.delete(handler);
 	}
 
 	close(): void {
-		// no-op
+		this.emitClose(1000, "client closed");
 	}
 
 	emit(frame: Frame): void {
 		const set = this.handlers.get(frame.type);
 		if (!set) return;
 		for (const handler of set) handler(frame as any);
+	}
+
+	emitClose(code: number, reason: string): void {
+		for (const handler of this.closeHandlers) handler(code, reason);
 	}
 }
 
@@ -585,6 +591,23 @@ describe("daemon async tools", () => {
 		assert.match(result.content[0].text, /agent-two/);
 		assert.match(result.content[0].text, /running/);
 		assert.match(result.content[0].text, /completed/);
+	});
+
+	it("list_agents rejects when the daemon connection closes before a response", async () => {
+		const connection = new MockConnection();
+		const daemonClient = createDaemonClient(connection);
+		const resultPromise = daemonClient.listAgents({ awaitable: true });
+		const rejection = assert.rejects(
+			resultPromise,
+			/daemon connection closed before list_agents_result frame \(1006: gone\)/,
+		);
+
+		assert.equal(connection.sent[0]?.type, "list_agents");
+		connection.emitClose(1006, "gone");
+
+		await rejection;
+		assert.equal(connection.handlers.get("list_agents_result")?.size ?? 0, 0);
+		assert.equal(connection.closeHandlers.size, 0);
 	});
 
 	it("wait_for_agent aborts promptly on AbortSignal", async () => {

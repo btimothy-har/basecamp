@@ -160,6 +160,13 @@ def create_app(store: Store, *, daemon_uds: str | None = None) -> FastAPI:
                     )
                     continue
 
+                await _send_error_and_close(
+                    websocket,
+                    code="unsupported_frame",
+                    message=f"Unsupported inbound frame type {inbound.type!r}.",
+                )
+                return
+
         except WebSocketDisconnect:
             return
         except Exception as exc:  # noqa: BLE001

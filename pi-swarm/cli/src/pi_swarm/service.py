@@ -229,14 +229,6 @@ async def handle_result_report(
         await notify_run_finalized(frame.run_id, registry=registry, store=store)
 
 
-async def _is_run_terminal(run_id: str, store: Store) -> bool:
-    run = await asyncio.to_thread(store.get_run, run_id)
-    if not run:
-        return False
-    status = run.get("status")
-    return isinstance(status, str) and status in TERMINAL_RUN_STATUSES
-
-
 def _normalize_wait_status(status: str) -> str:
     if status in TERMINAL_RUN_STATUSES:
         return status
@@ -247,7 +239,7 @@ def _row_unknown_result(agent_id: str) -> WaitResultItem:
     return WaitResultItem(agent_id=agent_id, status="unknown", result=None, error=None)
 
 
-async def build_wait_results(
+def build_wait_results(
     *,
     agent_ids: list[str],
     rows: list[dict[str, Any]],
@@ -354,7 +346,7 @@ async def wait_for_agents(
         finally:
             registry.remove_waiter(waiter.waiter_id)
 
-    return await build_wait_results(
+    return build_wait_results(
         agent_ids=agent_ids,
         rows=await build_wait_projection(
             agent_ids=agent_ids,
@@ -365,15 +357,16 @@ async def wait_for_agents(
 
 
 async def notify_run_finalized(run_id: str, *, registry: Registry, store: Store) -> None:
-    for waiter in registry.list_waiters():
-        if waiter.future.done() or run_id not in waiter.run_ids:
-            continue
-        all_terminal = True
-        for waiter_run_id in waiter.run_ids:
-            if not await _is_run_terminal(waiter_run_id, store):
-                all_terminal = False
-                break
-        if all_terminal and not waiter.future.done():
+    waiters = [waiter for waiter in registry.list_waiters() if not waiter.future.done() and run_id in waiter.run_ids]
+    if not waiters:
+        return
+
+    run_ids = list({waiter_run_id for waiter in waiters for waiter_run_id in waiter.run_ids})
+    terminal_rows = await asyncio.to_thread(store.get_run_wait_results, run_ids, terminal_only=True)
+    terminal_run_ids = {row["run_id"] for row in terminal_rows if isinstance(row.get("run_id"), str)}
+
+    for waiter in waiters:
+        if waiter.run_ids.issubset(terminal_run_ids) and not waiter.future.done():
             waiter.future.set_result(None)
 
 

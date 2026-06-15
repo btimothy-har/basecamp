@@ -38,7 +38,7 @@ export interface SkillResolution {
 export function resolveSkills(
 	skillNames: string[],
 	cwd: string,
-	deps: Pick<PiSwarmDependencies, "readSkillContent" | "buildSkillBlock">,
+	deps: Pick<PiSwarmDependencies, "readSkillContent">,
 ): SkillResolution {
 	if (skillNames.length === 0) return { resolved: [], missing: [] };
 

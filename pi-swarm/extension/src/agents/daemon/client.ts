@@ -583,18 +583,30 @@ function waitForFrame<T extends Frame["type"]>(
 			return;
 		}
 
-		const off = connection.on(type, (frame) => {
+		let offFrame = () => {};
+		let offClose = () => {};
+		const cleanup = () => {
+			offFrame();
+			offClose();
+			signal?.removeEventListener("abort", onAbort);
+		};
+		const rejectWith = (error: Error) => {
+			cleanup();
+			reject(error);
+		};
+		const onAbort = () => rejectWith(new Error("aborted"));
+		const onClose = (code: number, reason: string) => {
+			const detail = reason ? `${code}: ${reason}` : String(code);
+			rejectWith(new Error(`daemon connection closed before ${type} frame (${detail})`));
+		};
+
+		offFrame = connection.on(type, (frame) => {
 			const typed = frame as Extract<Frame, { type: T }>;
 			if (!predicate(typed)) return;
-			off();
-			signal?.removeEventListener("abort", onAbort);
+			cleanup();
 			resolve(typed);
 		});
-
-		const onAbort = () => {
-			off();
-			reject(new Error("aborted"));
-		};
+		offClose = connection.onClose(onClose);
 		signal?.addEventListener("abort", onAbort, { once: true });
 	});
 }
