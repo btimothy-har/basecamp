@@ -111,8 +111,8 @@ describe("attachPiSwarmSkillTracking", () => {
 		const toolCall = pi.onEvents.find(({ event }) => event === "tool_call");
 		assert.ok(toolCall);
 
-		toolCall.handler({ toolName: "skill", input: { name: "  agents  " } });
-		assert.equal(deps.hasInvokedSkill("agents"), true);
+		toolCall.handler({ toolName: "skill", input: { name: "  swarm-agents  " } });
+		assert.equal(deps.hasInvokedSkill("swarm-agents"), true);
 	});
 
 	it("does not duplicate tool_call handlers across duplicate attachment", () => {
