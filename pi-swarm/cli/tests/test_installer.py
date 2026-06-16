@@ -31,13 +31,22 @@ def _fake_run_factory(calls: list[tuple[tuple[str, ...], dict[str, object] | Non
 def test_install_python_tool_constructs_editable_command(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     install = _load_installer_module()
     calls: list[tuple[tuple[str, ...], dict[str, object] | None]] = []
+    monkeypatch.setattr(install.shutil, "which", lambda command: "/usr/bin/uv" if command == "uv" else None)
     monkeypatch.setattr(install.subprocess, "run", _fake_run_factory(calls))
 
     install.install_python_tool(tmp_path / "daemon-cli", "bc-swarm", editable=True)
 
     assert len(calls) == 1
     captured_args, captured_kwargs = calls[0]
-    assert captured_args == ("uv", "tool", "install", "--force", "--reinstall", "-e", str(tmp_path / "daemon-cli"))
+    assert captured_args == (
+        "/usr/bin/uv",
+        "tool",
+        "install",
+        "--force",
+        "--reinstall",
+        "-e",
+        str(tmp_path / "daemon-cli"),
+    )
     assert captured_kwargs is not None
     assert captured_kwargs.get("check") is False
     assert captured_kwargs.get("capture_output") is True
@@ -47,12 +56,33 @@ def test_install_python_tool_constructs_editable_command(monkeypatch: pytest.Mon
 def test_install_python_tool_constructs_non_editable_command(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     install = _load_installer_module()
     calls: list[tuple[tuple[str, ...], dict[str, object] | None]] = []
+    monkeypatch.setattr(install.shutil, "which", lambda command: "/usr/bin/uv" if command == "uv" else None)
     monkeypatch.setattr(install.subprocess, "run", _fake_run_factory(calls))
 
     install.install_python_tool(tmp_path / "daemon-cli", "bc-swarm", editable=False)
 
     assert len(calls) == 1
-    assert calls[0][0] == ("uv", "tool", "install", "--force", "--reinstall", str(tmp_path / "daemon-cli"))
+    assert calls[0][0] == ("/usr/bin/uv", "tool", "install", "--force", "--reinstall", str(tmp_path / "daemon-cli"))
+
+
+def test_install_python_tool_exits_when_uv_is_missing(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    install = _load_installer_module()
+    calls: list[tuple[tuple[str, ...], dict[str, object] | None]] = []
+    monkeypatch.setattr(install.shutil, "which", lambda _command: None)
+    monkeypatch.setattr(install.subprocess, "run", _fake_run_factory(calls))
+
+    with pytest.raises(SystemExit) as exc:
+        install.install_python_tool(tmp_path / "daemon-cli", "bc-swarm", editable=False)
+
+    assert exc.value.code == 1
+    assert calls == []
+
+
+def test_parse_editable_defaults_to_non_editable_without_interactive_input(monkeypatch: pytest.MonkeyPatch) -> None:
+    install = _load_installer_module()
+    monkeypatch.setattr("builtins.input", lambda _prompt: (_ for _ in ()).throw(EOFError))
+
+    assert install.parse_editable() is False
 
 
 def test_install_pi_package_installs_npm_dependencies_and_registers_with_pi(

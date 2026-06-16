@@ -149,6 +149,6 @@ Reports protocol/parse errors and closes the WebSocket for fatal frame errors. C
 A minimal client flow is:
 
 1. Connect to `/ws` over the UDS.
-2. Send `register` with `v: 4`.
+2. Send `register` with `v: 5`.
 3. Send `dispatch` with a private `run_id` and public `agent_id`.
 4. Use the `agent_id` with `wait` or discover agents through `list_agents`.

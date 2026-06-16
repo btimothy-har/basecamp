@@ -16,7 +16,12 @@ EXTENSION_DIR: Final = REPO_DIR / "extension"
 
 
 def install_python_tool(package_dir: Path, command_name: str, *, editable: bool) -> None:
-    args = ["uv", "tool", "install", "--force", "--reinstall"]
+    uv = shutil.which("uv")
+    if not uv:
+        print("uv not found — install uv before installing pi-swarm", file=sys.stderr)
+        sys.exit(1)
+
+    args = [uv, "tool", "install", "--force", "--reinstall"]
     if editable:
         args.append("-e")
     args.append(str(package_dir))
@@ -68,7 +73,11 @@ def install_pi_package(package_dir: Path, label: str) -> None:
 
 def parse_editable() -> bool:
     while True:
-        response = input("Install in editable mode? [Y/n]: ").strip().lower()
+        try:
+            response = input("Install in editable mode? [Y/n]: ").strip().lower()
+        except EOFError:
+            print("No interactive input available; installing in non-editable mode.")
+            return False
         if response == "" or response.startswith("y"):
             return True
         if response.startswith("n"):

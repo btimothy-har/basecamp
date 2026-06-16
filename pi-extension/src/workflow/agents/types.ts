@@ -51,7 +51,7 @@ export interface AgentPartialDetails {
 export const DEFAULT_AGENT_MAX_DEPTH = 2;
 
 export const MUTATIVE_AGENT_NAME = "worker";
-export const READ_ONLY_AGENT_TOOLS = ["read", "bash", "grep", "find", "ls"] as const;
+export const READ_ONLY_AGENT_TOOLS = ["read", "grep", "find", "ls"] as const;
 export const MUTATIVE_AGENT_TOOLS = ["read", "write", "edit", "bash", "grep", "find", "ls"] as const;
 
 export type AgentRunKind = "named-read-only" | "mutative" | "ad-hoc";

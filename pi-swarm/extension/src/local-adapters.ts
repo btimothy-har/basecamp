@@ -97,19 +97,11 @@ function trackInvokedSkill(name: string): void {
  * Tracks local skill invocations and mirrors them into the shared tracker key
  * used by the main Basecamp extension when present.
  */
-const SKILL_TRACKING_INSTALL_KEY = Symbol.for("basecamp.swarmSkillTrackingInstalled");
-
-function isSkillTrackingInstalled(): boolean {
-	return Boolean((globalThis as { [SKILL_TRACKING_INSTALL_KEY]?: true })[SKILL_TRACKING_INSTALL_KEY]);
-}
-
-function markSkillTrackingInstalled(): void {
-	(globalThis as { [SKILL_TRACKING_INSTALL_KEY]?: true })[SKILL_TRACKING_INSTALL_KEY] = true;
-}
+const skillTrackingInstallations = new WeakSet<ExtensionAPI>();
 
 export function attachPiSwarmSkillTracking(pi: ExtensionAPI): void {
-	if (isSkillTrackingInstalled()) return;
-	markSkillTrackingInstalled();
+	if (skillTrackingInstallations.has(pi)) return;
+	skillTrackingInstallations.add(pi);
 
 	pi.on("tool_call", (event) => {
 		if (event?.toolName !== "skill") return;

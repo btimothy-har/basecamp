@@ -155,8 +155,7 @@ async function ensureAndConnectTopLevel(ctx: ExtensionContext): Promise<DaemonCo
 
 	const identity = deriveDaemonIdentity(ctx);
 	const { socketPath } = await ensureDaemon();
-	const connection = await connect(identity, { socketPath });
-	return trackDaemonConnection(state, connection, ctx);
+	return connect(identity, { socketPath });
 }
 
 async function connectSpawnedAgent(ctx: ExtensionContext): Promise<DaemonConnection> {
@@ -165,8 +164,7 @@ async function connectSpawnedAgent(ctx: ExtensionContext): Promise<DaemonConnect
 
 	const identity = deriveDaemonIdentity(ctx);
 	const socketPath = process.env.BASECAMP_DAEMON_UDS ?? resolveDaemonPaths().socketPath;
-	const connection = await connect(identity, { socketPath });
-	return trackDaemonConnection(state, connection, ctx);
+	return connect(identity, { socketPath });
 }
 
 export function registerDaemonClient(pi: ExtensionAPI, deps: PiSwarmDependencies): void {
@@ -195,6 +193,7 @@ export function registerDaemonClient(pi: ExtensionAPI, deps: PiSwarmDependencies
 	const state = getDaemonClientState();
 	const reporterConnection = isDaemonSpawnedAgent ? deferred<DaemonConnection>() : null;
 	let sessionCtx: ExtensionContext | null = null;
+	let connectionGeneration = 0;
 
 	if (reporterConnection && runId && process.env.BASECAMP_AGENT_ID) {
 		registerDaemonReporter(pi, {
@@ -218,12 +217,20 @@ export function registerDaemonClient(pi: ExtensionAPI, deps: PiSwarmDependencies
 			}
 		}
 
+		const generation = ++connectionGeneration;
 		state.connecting = (async () => {
 			try {
 				publishDaemonStatus(ctx, { kind: "starting" });
 				const connection = isTopLevel ? await ensureAndConnectTopLevel(ctx) : await connectSpawnedAgent(ctx);
-				reporterConnection?.resolve(connection);
+				if (generation !== connectionGeneration) {
+					connection.close();
+					return;
+				}
+				const activeConnection =
+					state.connection === connection ? connection : trackDaemonConnection(state, connection, ctx);
+				reporterConnection?.resolve(activeConnection);
 			} catch (error) {
+				if (generation !== connectionGeneration) return;
 				const message = error instanceof Error ? error.message : String(error);
 				publishDaemonStatus(ctx, { kind: "unavailable", message });
 				reporterConnection?.reject(error);
@@ -231,13 +238,15 @@ export function registerDaemonClient(pi: ExtensionAPI, deps: PiSwarmDependencies
 					ctx.ui.notify(`bc-swarm daemon unavailable: ${message}`, "warning");
 				}
 			} finally {
-				state.connecting = null;
+				if (generation === connectionGeneration) state.connecting = null;
 			}
 		})();
 	});
 
-	pi.on("session_shutdown", () => {
+	pi.on("session_shutdown", async () => {
+		connectionGeneration++;
 		const connection = state.connection;
+		const connecting = state.connecting;
 		const ctx = sessionCtx;
 		state.connection = null;
 		state.connecting = null;
@@ -248,6 +257,22 @@ export function registerDaemonClient(pi: ExtensionAPI, deps: PiSwarmDependencies
 			connection?.close();
 		} catch {
 			// best effort
+		}
+		if (connecting) {
+			try {
+				await connecting;
+			} catch {
+				// best effort
+			}
+			const lateConnection = state.connection as DaemonConnection | null;
+			if (lateConnection) {
+				state.connection = null;
+				try {
+					lateConnection.close();
+				} catch {
+					// best effort
+				}
+			}
 		}
 	});
 }

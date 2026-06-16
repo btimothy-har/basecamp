@@ -662,7 +662,7 @@ export function spawnAgent(
 				if (settled) return;
 				proc.kill("SIGTERM");
 				setTimeout(() => {
-					if (!proc.killed) proc.kill("SIGKILL");
+					if (proc.exitCode === null) proc.kill("SIGKILL");
 				}, 3000);
 			};
 			if (signal.aborted) kill();

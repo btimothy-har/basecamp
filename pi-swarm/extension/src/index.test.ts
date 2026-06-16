@@ -46,7 +46,6 @@ function createMockPi(): MockPi {
 
 function clearPiSwarmTrackingState(): void {
 	delete (globalThis as Record<symbol, unknown>)[Symbol.for("basecamp.skillTracker")];
-	delete (globalThis as Record<symbol, unknown>)[Symbol.for("basecamp.swarmSkillTrackingInstalled")];
 }
 
 describe("pi-swarm extension entrypoint", () => {
@@ -121,5 +120,16 @@ describe("attachPiSwarmSkillTracking", () => {
 		attachPiSwarmSkillTracking(pi as unknown as ExtensionAPI);
 
 		assert.equal(pi.onEvents.filter((entry) => entry.event === "tool_call").length, 1);
+	});
+
+	it("registers tool_call handlers for separate ExtensionAPI instances", () => {
+		const first = createMockPi();
+		const second = createMockPi();
+
+		attachPiSwarmSkillTracking(first as unknown as ExtensionAPI);
+		attachPiSwarmSkillTracking(second as unknown as ExtensionAPI);
+
+		assert.equal(first.onEvents.filter((entry) => entry.event === "tool_call").length, 1);
+		assert.equal(second.onEvents.filter((entry) => entry.event === "tool_call").length, 1);
 	});
 });

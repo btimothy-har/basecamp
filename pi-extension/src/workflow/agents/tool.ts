@@ -30,9 +30,17 @@ import { buildSkillInjection, resolveSkills } from "./skills.ts";
 import type { AgentConfig, AgentDetails, AgentPartialDetails, AgentRunKind, ToolCallRecord } from "./types.ts";
 import { DEFAULT_AGENT_MAX_DEPTH } from "./types.ts";
 
+function parseAgentDepthEnv(name: string, fallback: string): number {
+	const value = Number(process.env[name] ?? fallback);
+	if (!Number.isFinite(value)) {
+		throw new Error(`Invalid ${name}: expected a finite number.`);
+	}
+	return value;
+}
+
 function checkDepth(): void {
-	const depth = Number(process.env.BASECAMP_AGENT_DEPTH ?? "0");
-	const max = Number(process.env.BASECAMP_AGENT_MAX_DEPTH ?? DEFAULT_AGENT_MAX_DEPTH);
+	const depth = parseAgentDepthEnv("BASECAMP_AGENT_DEPTH", "0");
+	const max = parseAgentDepthEnv("BASECAMP_AGENT_MAX_DEPTH", String(DEFAULT_AGENT_MAX_DEPTH));
 	if (depth >= max) {
 		throw new Error(
 			`Agent nesting blocked (depth=${depth}, max=${max}). ` +
@@ -60,47 +68,58 @@ function shortenPath(p: string): string {
 	return p.startsWith(home) ? `~${p.slice(home.length)}` : p;
 }
 
+function toolArgText(value: unknown, fallback: string): string {
+	if (value === undefined || value === null || value === "") return fallback;
+	return String(value);
+}
+
+function formatReadLineRange(offsetValue: unknown, limitValue: unknown): string {
+	const startValue = offsetValue ?? 1;
+	const start = Number(startValue);
+	const limit = Number(limitValue);
+	const startText = Number.isFinite(start) ? String(start) : String(startValue);
+	if (limitValue === undefined) return `:${startText}`;
+	if (Number.isFinite(start) && Number.isFinite(limit)) return `:${startText}-${start + limit - 1}`;
+	return `:${startText}-${String(limitValue)}`;
+}
+
 type ThemeColor = Parameters<import("@earendil-works/pi-coding-agent").Theme["fg"]>[0];
 
 function formatToolCallLine(tc: ToolCallRecord, fg: (color: ThemeColor, text: string) => string): string {
 	switch (tc.name) {
 		case "bash": {
-			const cmd = (tc.args.command as string) || "...";
+			const cmd = toolArgText(tc.args.command, "...");
 			const preview = cmd.length > 60 ? `${cmd.slice(0, 60)}...` : cmd;
 			return fg("muted", "$ ") + fg("toolOutput", preview);
 		}
 		case "read": {
-			const raw = (tc.args.file_path || tc.args.path || "...") as string;
-			const offset = tc.args.offset as number | undefined;
-			const limit = tc.args.limit as number | undefined;
+			const raw = toolArgText(tc.args.file_path || tc.args.path, "...");
 			let text = fg("accent", shortenPath(raw));
-			if (offset !== undefined || limit !== undefined) {
-				const start = offset ?? 1;
-				const end = limit !== undefined ? start + limit - 1 : "";
-				text += fg("warning", `:${start}${end ? `-${end}` : ""}`);
+			if (tc.args.offset !== undefined || tc.args.limit !== undefined) {
+				text += fg("warning", formatReadLineRange(tc.args.offset, tc.args.limit));
 			}
 			return fg("muted", "read ") + text;
 		}
 		case "write": {
-			const raw = (tc.args.file_path || tc.args.path || "...") as string;
+			const raw = toolArgText(tc.args.file_path || tc.args.path, "...");
 			return fg("muted", "write ") + fg("accent", shortenPath(raw));
 		}
 		case "edit": {
-			const raw = (tc.args.file_path || tc.args.path || "...") as string;
+			const raw = toolArgText(tc.args.file_path || tc.args.path, "...");
 			return fg("muted", "edit ") + fg("accent", shortenPath(raw));
 		}
 		case "grep": {
-			const pattern = (tc.args.pattern || "") as string;
-			const raw = (tc.args.path || ".") as string;
+			const pattern = toolArgText(tc.args.pattern, "");
+			const raw = toolArgText(tc.args.path, ".");
 			return fg("muted", "grep ") + fg("accent", `/${pattern}/`) + fg("dim", ` in ${shortenPath(raw)}`);
 		}
 		case "find": {
-			const pattern = (tc.args.pattern || "*") as string;
-			const raw = (tc.args.path || ".") as string;
+			const pattern = toolArgText(tc.args.pattern, "*");
+			const raw = toolArgText(tc.args.path, ".");
 			return fg("muted", "find ") + fg("accent", pattern) + fg("dim", ` in ${shortenPath(raw)}`);
 		}
 		case "ls": {
-			const raw = (tc.args.path || ".") as string;
+			const raw = toolArgText(tc.args.path, ".");
 			return fg("muted", "ls ") + fg("accent", shortenPath(raw));
 		}
 		default: {
