@@ -15,6 +15,7 @@ import uvicorn
 from pi_swarm import main as swarm_cli
 from pi_swarm import server as daemon_server
 from pi_swarm.app import create_app
+from pi_swarm.frames import PROTOCOL_VERSION
 from pi_swarm.server import UdsServer
 from pi_swarm.store import Store
 from pytest import MonkeyPatch
@@ -123,7 +124,7 @@ def test_health_over_real_uds(tmp_path: Path) -> None:
 
         assert response is not None
         assert response.status_code == 200
-        assert response.json() == {"status": "ok", "protocol": 4}
+        assert response.json() == {"status": "ok", "protocol": PROTOCOL_VERSION}
 
         socket_mode = stat.S_IMODE(uds_path.stat().st_mode)
         assert socket_mode == 0o600, f"socket perms {socket_mode:o} should be 0600 (local-user only)"

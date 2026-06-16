@@ -727,7 +727,17 @@ class DashboardBody(Widget):
 
     def update_daemon(self, summary: DaemonSummary | None) -> None:
         self._daemon_summary = summary
-        self.query_one("#dashboard-daemon", Static).update(_render_daemon_summary(summary))
+        daemon_panel = self.query_one("#dashboard-daemon", Static)
+        if self._is_daemon_panel_visible(summary):
+            daemon_panel.display = True
+            daemon_panel.update(_render_daemon_summary(summary))
+        else:
+            daemon_panel.display = False
+            daemon_panel.update("")
+
+    @staticmethod
+    def _is_daemon_panel_visible(summary: DaemonSummary | None) -> bool:
+        return summary is not None and summary.state == "ok" and summary.session_active
 
     def _clamp(self) -> None:
         if not self._goals:
@@ -810,7 +820,14 @@ class DashboardBody(Widget):
         self.query_one("#dashboard-warnings", Static).update(
             _render_bullets(analysis.warnings) if analysis else Text("—", style="dim")
         )
-        self.query_one("#dashboard-daemon", Static).update(_render_daemon_summary(self._daemon_summary))
+
+        daemon_panel = self.query_one("#dashboard-daemon", Static)
+        if self._is_daemon_panel_visible(self._daemon_summary):
+            daemon_panel.display = True
+            daemon_panel.update(_render_daemon_summary(self._daemon_summary))
+        else:
+            daemon_panel.display = False
+            daemon_panel.update("")
 
 
 class _MenuOrderedScreen(Screen):

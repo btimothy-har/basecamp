@@ -50,6 +50,7 @@ def _build_fake_connection(payload: str, status: int = 200):
 
 def test_poll_parses_summary_and_encodes_root_id_and_limit() -> None:
     payload = {
+        "session_active": True,
         "root_id": "root",
         "counts": {
             "pending": 0,
@@ -88,6 +89,7 @@ def test_poll_parses_summary_and_encodes_root_id_and_limit() -> None:
     assert result.state == "ok"
     assert result.root_id == "root"
     assert result.counts.total == 6
+    assert result.session_active is True
     assert len(result.runs) == 1
     assert result.runs[0] == DaemonSummaryRun(
         run_id="run-1",
@@ -148,6 +150,7 @@ def test_poll_returns_error_for_malformed_json() -> None:
 
 def test_poll_returns_error_for_invalid_response_shape() -> None:
     payload = {
+        "session_active": True,
         "root_id": "root",
         "counts": {
             "pending": 0,
@@ -165,6 +168,28 @@ def test_poll_returns_error_for_invalid_response_shape() -> None:
 
     assert isinstance(result, DaemonSummaryError)
     assert result.state == "error"
+
+
+def test_poll_parses_inactive_session() -> None:
+    payload = {
+        "session_active": False,
+        "root_id": "root",
+        "counts": {
+            "pending": 0,
+            "running": 0,
+            "completed": 0,
+            "failed": 0,
+            "total": 0,
+        },
+        "runs": [],
+    }
+    fake_connection, _ = _build_fake_connection(json.dumps(payload))
+    source = DaemonSummarySource("/tmp/daemon.sock", connection_factory=fake_connection)
+
+    result = source.poll("root")
+
+    assert isinstance(result, DaemonSummaryOk)
+    assert result.session_active is False
 
 
 def test_poll_returns_error_for_http_error_status() -> None:

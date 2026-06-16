@@ -40,6 +40,11 @@ class Registry:
 
         return self._connections.get(node_id)
 
+    def has_connection(self, node_id: str) -> bool:
+        """Return whether a node id has an active websocket connection."""
+
+        return node_id in self._connections
+
     def set_run_owner(self, run_id: str, node_id: str) -> None:
         """Associate a run id with a node id."""
 

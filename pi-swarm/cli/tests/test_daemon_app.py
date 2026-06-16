@@ -7,6 +7,7 @@ from pathlib import Path
 
 from fastapi.testclient import TestClient
 from pi_swarm.app import create_app
+from pi_swarm.frames import PROTOCOL_VERSION
 from pi_swarm.store import Store
 
 
@@ -27,7 +28,7 @@ def test_health_endpoint(tmp_path: Path) -> None:
         response = client.get("/health")
 
     assert response.status_code == 200
-    assert response.json() == {"status": "ok", "protocol": 4}
+    assert response.json() == {"status": "ok", "protocol": PROTOCOL_VERSION}
 
 
 def test_ws_list_agents_returns_same_root_non_session_rows_and_awaitable_filters(tmp_path: Path) -> None:
@@ -105,7 +106,7 @@ def test_ws_list_agents_returns_same_root_non_session_rows_and_awaitable_filters
             session_ws.send_json(
                 {
                     "type": "register",
-                    "v": 4,
+                    "v": PROTOCOL_VERSION,
                     "role": "session",
                     "node_id": "root",
                     "parent_id": None,
@@ -121,7 +122,7 @@ def test_ws_list_agents_returns_same_root_non_session_rows_and_awaitable_filters
                 agent_ws.send_json(
                     {
                         "type": "register",
-                        "v": 4,
+                        "v": PROTOCOL_VERSION,
                         "role": "agent",
                         "node_id": "agent-1",
                         "parent_id": "root",
@@ -136,7 +137,7 @@ def test_ws_list_agents_returns_same_root_non_session_rows_and_awaitable_filters
                 agent_ws.send_json(
                     {
                         "type": "list_agents",
-                        "v": 4,
+                        "v": PROTOCOL_VERSION,
                         "request_id": "list-all",
                         "awaitable": False,
                     }
@@ -144,7 +145,7 @@ def test_ws_list_agents_returns_same_root_non_session_rows_and_awaitable_filters
                 list_all = agent_ws.receive_json()
                 assert list_all == {
                     "type": "list_agents_result",
-                    "v": 4,
+                    "v": PROTOCOL_VERSION,
                     "request_id": "list-all",
                     "agents": [
                         {
@@ -171,7 +172,7 @@ def test_ws_list_agents_returns_same_root_non_session_rows_and_awaitable_filters
                 agent_ws.send_json(
                     {
                         "type": "list_agents",
-                        "v": 4,
+                        "v": PROTOCOL_VERSION,
                         "request_id": "list-awaitable",
                         "awaitable": True,
                     }
@@ -179,7 +180,7 @@ def test_ws_list_agents_returns_same_root_non_session_rows_and_awaitable_filters
                 list_awaitable = agent_ws.receive_json()
                 assert list_awaitable == {
                     "type": "list_agents_result",
-                    "v": 4,
+                    "v": PROTOCOL_VERSION,
                     "request_id": "list-awaitable",
                     "agents": [
                         {
@@ -203,7 +204,7 @@ def test_ws_register_returns_registered(tmp_path: Path) -> None:
             websocket.send_json(
                 {
                     "type": "register",
-                    "v": 4,
+                    "v": PROTOCOL_VERSION,
                     "role": "session",
                     "node_id": "node-1",
                     "parent_id": None,
@@ -217,9 +218,9 @@ def test_ws_register_returns_registered(tmp_path: Path) -> None:
 
     assert reply == {
         "type": "registered",
-        "v": 4,
+        "v": PROTOCOL_VERSION,
         "node_id": "node-1",
-        "protocol": 4,
+        "protocol": PROTOCOL_VERSION,
     }
 
 
@@ -244,7 +245,7 @@ def test_ws_version_mismatch_returns_protocol_error(tmp_path: Path) -> None:
             reply = websocket.receive_json()
 
     assert reply["type"] == "error"
-    assert reply["v"] == 4
+    assert reply["v"] == PROTOCOL_VERSION
     assert reply["code"] == "protocol_version"
 
 
@@ -256,7 +257,7 @@ def test_ws_unsupported_inbound_frame_returns_error(tmp_path: Path) -> None:
             websocket.send_json(
                 {
                     "type": "register",
-                    "v": 4,
+                    "v": PROTOCOL_VERSION,
                     "role": "session",
                     "node_id": "node-1",
                     "parent_id": None,
@@ -271,15 +272,15 @@ def test_ws_unsupported_inbound_frame_returns_error(tmp_path: Path) -> None:
             websocket.send_json(
                 {
                     "type": "registered",
-                    "v": 4,
+                    "v": PROTOCOL_VERSION,
                     "node_id": "node-1",
-                    "protocol": 4,
+                    "protocol": PROTOCOL_VERSION,
                 }
             )
             reply = websocket.receive_json()
 
     assert reply["type"] == "error"
-    assert reply["v"] == 4
+    assert reply["v"] == PROTOCOL_VERSION
     assert reply["code"] == "unsupported_frame"
     assert "registered" in reply["message"]
 
@@ -336,6 +337,43 @@ def test_runs_summary_endpoint_returns_root_and_child_runs(tmp_path: Path) -> No
     }
     assert [run["run_id"] for run in payload["runs"]] == ["run-child", "run-root"]
     assert payload["runs"][0]["agent_id"] == "child"
+    assert payload["session_active"] is False
+
+
+def test_runs_summary_endpoint_marks_session_active_for_registered_root(tmp_path: Path) -> None:
+    app, store = _build_app_with_store(tmp_path)
+
+    store.upsert_agent(
+        agent_id="root",
+        parent_id=None,
+        sibling_group="sg-root",
+        depth=0,
+        role="session",
+        session_name="root-session",
+        cwd="/tmp/root",
+    )
+
+    with TestClient(app) as client:
+        with client.websocket_connect("/ws") as websocket:
+            websocket.send_json(
+                {
+                    "type": "register",
+                    "v": PROTOCOL_VERSION,
+                    "role": "session",
+                    "node_id": "root",
+                    "parent_id": None,
+                    "sibling_group": "sg-root",
+                    "depth": 0,
+                    "session_name": "root-session",
+                    "cwd": "/tmp/root",
+                }
+            )
+            websocket.receive_json()
+
+            response = client.get("/runs/summary", params={"root_id": "root"})
+
+    assert response.status_code == 200
+    assert response.json()["session_active"] is True
 
 
 def test_runs_summary_endpoint_unknown_root_returns_empty_payload(tmp_path: Path) -> None:
@@ -347,6 +385,7 @@ def test_runs_summary_endpoint_unknown_root_returns_empty_payload(tmp_path: Path
     assert response.status_code == 200
     assert response.json() == {
         "root_id": "missing-root",
+        "session_active": False,
         "counts": {
             "pending": 0,
             "running": 0,
@@ -397,6 +436,7 @@ def test_runs_summary_endpoint_respects_limit(tmp_path: Path) -> None:
 
     assert response.status_code == 200
     payload = response.json()
+    assert payload["session_active"] is False
     assert [run["run_id"] for run in payload["runs"]] == ["run-new", "run-mid"]
 
     with TestClient(app) as client:
@@ -405,6 +445,7 @@ def test_runs_summary_endpoint_respects_limit(tmp_path: Path) -> None:
     assert negative_limit.status_code == 200
     payload_negative = negative_limit.json()
     assert payload_negative["runs"] == []
+    assert payload_negative["session_active"] is False
     assert payload_negative["counts"]["total"] == 3
 
 
@@ -437,6 +478,7 @@ def test_runs_summary_endpoint_omits_sensitive_and_full_fields(tmp_path: Path) -
 
     payload = response.json()
     assert response.status_code == 200
+    assert payload["session_active"] is False
     assert len(payload["runs"]) == 1
 
     summary_run = payload["runs"][0]

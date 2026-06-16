@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, it } from "node:test";
 import type { WorkspaceState } from "../../dependencies.ts";
 import { createDaemonClient, type DaemonConnection } from "../daemon/client.ts";
 import type { Frame, ListAgentItem } from "../daemon/frames.ts";
+import { PROTOCOL_VERSION } from "../daemon/frames.ts";
 import { deriveDaemonIdentity } from "../daemon/index.ts";
 import { resolveDaemonPaths } from "../daemon/paths.ts";
 import { registerDaemonTools } from "../daemon/tools.ts";
@@ -203,7 +204,7 @@ describe("daemon async tools", () => {
 
 			connection.emit({
 				type: "dispatch_ack",
-				v: 4,
+				v: PROTOCOL_VERSION,
 				run_id: outbound.run_id,
 				status: "spawned",
 				reason: null,
@@ -302,7 +303,7 @@ describe("daemon async tools", () => {
 
 		connection.emit({
 			type: "dispatch_ack",
-			v: 4,
+			v: PROTOCOL_VERSION,
 			run_id: outbound.run_id,
 			status: "spawned",
 			reason: null,
@@ -346,7 +347,7 @@ describe("daemon async tools", () => {
 
 			connection.emit({
 				type: "dispatch_ack",
-				v: 4,
+				v: PROTOCOL_VERSION,
 				run_id: outbound.run_id,
 				status: "spawned",
 				reason: null,
@@ -388,7 +389,7 @@ describe("daemon async tools", () => {
 
 			connection.emit({
 				type: "dispatch_ack",
-				v: 4,
+				v: PROTOCOL_VERSION,
 				run_id: outbound.run_id,
 				status: "spawned",
 				reason: null,
@@ -415,7 +416,7 @@ describe("daemon async tools", () => {
 
 		connection.emit({
 			type: "dispatch_ack",
-			v: 4,
+			v: PROTOCOL_VERSION,
 			run_id: outbound.run_id,
 			status: "rejected",
 			reason: "depth_cap",
@@ -449,7 +450,7 @@ describe("daemon async tools", () => {
 
 		connection.emit({
 			type: "wait_result",
-			v: 4,
+			v: PROTOCOL_VERSION,
 			results: [
 				{ agent_id: "agent-1", status: "completed", result: "duplicate", error: null },
 				{ agent_id: "agent-1", status: "completed", result: "duplicate", error: null },
@@ -457,7 +458,7 @@ describe("daemon async tools", () => {
 		});
 		connection.emit({
 			type: "wait_result",
-			v: 4,
+			v: PROTOCOL_VERSION,
 			results: [
 				{ agent_id: "agent-1", status: "completed", result: "done", error: null },
 				{ agent_id: "agent-2", status: "failed", result: "compensation skipped", error: "boom" },
@@ -496,7 +497,7 @@ describe("daemon async tools", () => {
 
 		connection.emit({
 			type: "wait_result",
-			v: 4,
+			v: PROTOCOL_VERSION,
 			results: [
 				{ agent_id: "agent-1", status: "running", result: null, error: null },
 				{ agent_id: "agent-2", status: "unknown", result: null, error: null },
@@ -556,7 +557,7 @@ describe("daemon async tools", () => {
 
 		const response = {
 			type: "list_agents_result" as const,
-			v: 4 as 4,
+			v: PROTOCOL_VERSION,
 			request_id: outbound.request_id,
 			agents: [
 				{
