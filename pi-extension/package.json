@@ -16,8 +16,7 @@
 		"skills": [
 			"./src/workflow/skills",
 			"./src/git/skills",
-			"./src/engineering/skills",
-			"../pi-swarm/extension/skills"
+			"./src/engineering/skills"
 		],
 		"prompts": [
 			"./src/engineering/prompts"
