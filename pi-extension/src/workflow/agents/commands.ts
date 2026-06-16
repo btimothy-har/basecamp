@@ -9,7 +9,6 @@ import { DynamicBorder, getMarkdownTheme } from "@earendil-works/pi-coding-agent
 import { Container, Markdown, matchesKey, Spacer, Text } from "@earendil-works/pi-tui";
 import { type AgentConfig, getAgentToolAllowlist } from "./types.ts";
 
-
 function renderAgentList(agents: AgentConfig[], selectedIdx: number, width: number, theme: Theme): string[] {
 	const lines: string[] = [];
 	const innerWidth = width - 4; // 2 for marker + 2 padding
@@ -89,7 +88,6 @@ async function showAgentList(agents: AgentConfig[], ctx: ExtensionCommandContext
 	});
 }
 
-
 function buildDetailMarkdown(agent: AgentConfig): string {
 	const meta: string[] = [];
 	meta.push("| Field | Value |");
@@ -138,7 +136,6 @@ async function showAgentDetail(agent: AgentConfig, ctx: ExtensionCommandContext)
 		};
 	});
 }
-
 
 export function registerAgentCommands(pi: ExtensionAPI, getAgents: () => AgentConfig[]): void {
 	pi.registerCommand("agents", {

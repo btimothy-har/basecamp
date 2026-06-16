@@ -25,7 +25,6 @@ import {
 	type UsageStats,
 } from "./types.ts";
 
-
 export type AgentStreamEvent =
 	| { kind: "tool_start"; toolCall: ToolCallRecord }
 	| { kind: "task_progress"; taskProgress: TaskProgressSnapshot }
@@ -104,7 +103,6 @@ export function buildAgentRunName(prefix: string, suffix?: string): string {
 	return `${normalizedPrefix}-${normalizedSuffix}`;
 }
 
-
 export interface SpawnResult {
 	exitCode: number;
 	output: string;
@@ -115,7 +113,6 @@ export interface SpawnResult {
 	durationMs: number;
 	taskProgress?: TaskProgressSnapshot;
 }
-
 
 export interface PiArgsOpts {
 	name: string;
@@ -232,7 +229,6 @@ export function buildPiArgs(
 
 	return { args, agentDir };
 }
-
 
 function extractTextFromContent(content: unknown): string {
 	if (!Array.isArray(content)) return typeof content === "string" ? content : "";

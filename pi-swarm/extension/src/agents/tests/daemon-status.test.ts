@@ -1,6 +1,11 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { previewDaemonMessage, publishDaemonStatus, renderDaemonStatus, type DaemonStatusInfo } from "../daemon/index.ts";
+import {
+	type DaemonStatusInfo,
+	previewDaemonMessage,
+	publishDaemonStatus,
+	renderDaemonStatus,
+} from "../daemon/index.ts";
 
 type Theme = (color: string, text: string) => string;
 
@@ -15,7 +20,7 @@ describe("daemon status formatting", () => {
 		assert.equal(previewDaemonMessage("   \n\t   "), null);
 		assert.equal(previewDaemonMessage("  hello\nworld\t!  "), "hello world !");
 
-		const long = "x".repeat(80);
+		const long = "x".repeat(81);
 		assert.equal(previewDaemonMessage(long), `${"x".repeat(79)}…`);
 	});
 
@@ -30,10 +35,7 @@ describe("daemon status formatting", () => {
 			renderDaemonStatus(fg, { kind: "unavailable", message: " failed \n with  spaces " }),
 			"error:daemon ✗ error:failed   with  spaces",
 		);
-		assert.equal(
-			renderDaemonStatus(fg, { kind: "unavailable", message: "  " }),
-			"error:daemon ✗ unavailable",
-		);
+		assert.equal(renderDaemonStatus(fg, { kind: "unavailable", message: "  " }), "error:daemon ✗ unavailable");
 	});
 });
 

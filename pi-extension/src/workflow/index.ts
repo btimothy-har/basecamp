@@ -7,8 +7,8 @@
  */
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { registerEscalate } from "./escalate/index.js";
 import { registerAgents } from "./agents/index.ts";
+import { registerEscalate } from "./escalate/index.js";
 import { registerPlan, registerPlanCommands } from "./planning/plan";
 import { registerPlanSkillGuard } from "./planning/plan-skill-guard";
 import { registerTasks } from "./tasks/tasks";

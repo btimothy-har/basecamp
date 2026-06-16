@@ -8,7 +8,6 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import { fileURLToPath } from "node:url";
 
-
 /**
  * Model resolution strategy for an agent.
  *
@@ -29,9 +28,7 @@ export interface AgentConfig {
 	filePath: string;
 }
 
-
 const BUILTIN_AGENTS_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "builtin");
-
 
 interface ParsedFile {
 	frontmatter: Record<string, string>;
@@ -61,7 +58,6 @@ function parseCsv(value: string | undefined): string[] | undefined {
 		.filter(Boolean);
 	return items.length > 0 ? items : undefined;
 }
-
 
 function loadAgentsFromDir(dir: string): AgentConfig[] {
 	if (!fs.existsSync(dir)) return [];
@@ -107,7 +103,6 @@ function loadAgentsFromDir(dir: string): AgentConfig[] {
 
 	return agents;
 }
-
 
 /** Discover all basecamp-owned agent definitions. */
 export function discoverAgents(): AgentConfig[] {

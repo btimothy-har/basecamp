@@ -3,10 +3,7 @@ import { describe, it } from "node:test";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { registerFooter } from "../ui/footer.ts";
 
-type ThemeFg = (
-	color: Parameters<import("@earendil-works/pi-coding-agent").Theme["fg"]>[0],
-	text: string,
-) => string;
+type ThemeFg = (color: Parameters<import("@earendil-works/pi-coding-agent").Theme["fg"]>[0], text: string) => string;
 
 type FooterFactory = (
 	tui: { requestRender(): void },

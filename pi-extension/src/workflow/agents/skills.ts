@@ -16,7 +16,6 @@ interface AgentSkillDeps {
 	buildSkillBlock: (name: string, content: string) => string;
 }
 
-
 export interface ResolvedSkill {
 	name: string;
 	path: string;
@@ -28,16 +27,11 @@ export interface SkillResolution {
 	missing: string[];
 }
 
-
 /**
  * Resolve skill names to file paths using pi's skill discovery.
  * Returns resolved skills (with content) and any names that weren't found.
  */
-export function resolveSkills(
-	skillNames: string[],
-	cwd: string,
-	deps: AgentSkillDeps,
-): SkillResolution {
+export function resolveSkills(skillNames: string[], cwd: string, deps: AgentSkillDeps): SkillResolution {
 	if (skillNames.length === 0) return { resolved: [], missing: [] };
 
 	const { skills } = loadSkills({ cwd, agentDir: getAgentDir(), skillPaths: [], includeDefaults: true });
@@ -70,14 +64,10 @@ export function resolveSkills(
 	return { resolved, missing };
 }
 
-
 /**
  * Build XML skill injection block for appending to a system prompt.
  */
-export function buildSkillInjection(
-	skills: ResolvedSkill[],
-	deps: AgentSkillDeps,
-): string {
+export function buildSkillInjection(skills: ResolvedSkill[], deps: AgentSkillDeps): string {
 	if (skills.length === 0) return "";
 
 	return skills.map((s) => deps.buildSkillBlock(s.name, s.content)).join("\n\n");

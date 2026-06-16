@@ -6,7 +6,7 @@ import { resolveDaemonPaths } from "./paths.ts";
 import { registerDaemonReporter } from "./reporter.ts";
 import { registerDaemonTools } from "./tools.ts";
 
-type ThemeFg = Parameters<import("@earendil-works/pi-coding-agent").Theme["fg"]>[0];
+type ThemeFg = (color: Parameters<import("@earendil-works/pi-coding-agent").Theme["fg"]>[0], text: string) => string;
 
 interface DaemonClientState {
 	connection: DaemonConnection | null;
@@ -221,9 +221,7 @@ export function registerDaemonClient(pi: ExtensionAPI, deps: PiSwarmDependencies
 		state.connecting = (async () => {
 			try {
 				publishDaemonStatus(ctx, { kind: "starting" });
-				const connection = isTopLevel
-					? await ensureAndConnectTopLevel(ctx)
-					: await connectSpawnedAgent(ctx);
+				const connection = isTopLevel ? await ensureAndConnectTopLevel(ctx) : await connectSpawnedAgent(ctx);
 				reporterConnection?.resolve(connection);
 			} catch (error) {
 				const message = error instanceof Error ? error.message : String(error);

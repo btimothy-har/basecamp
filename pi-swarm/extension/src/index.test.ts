@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { afterEach, beforeEach, describe, it } from "node:test";
+import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import defaultPiSwarm, { registerPiSwarm } from "./index.ts";
 import { attachPiSwarmSkillTracking, createLocalPiSwarmDependencies } from "./local-adapters.ts";
 
@@ -64,7 +65,7 @@ describe("pi-swarm extension entrypoint", () => {
 
 	it("default export registers only async daemon tools", () => {
 		const pi = createMockPi();
-		defaultPiSwarm(pi);
+		defaultPiSwarm(pi as unknown as ExtensionAPI);
 
 		const toolNames = new Set(pi.tools.map((tool) => tool.name));
 		assert.equal(pi.commands.length, 0);
@@ -76,7 +77,7 @@ describe("pi-swarm extension entrypoint", () => {
 
 	it("registerPiSwarm registers sync and async tools", () => {
 		const pi = createMockPi();
-		registerPiSwarm(pi, createLocalPiSwarmDependencies());
+		registerPiSwarm(pi as unknown as ExtensionAPI, createLocalPiSwarmDependencies());
 
 		const toolNames = new Set(pi.tools.map((tool) => tool.name));
 		assert.equal(toolNames.has("agent"), true);
@@ -106,7 +107,7 @@ describe("attachPiSwarmSkillTracking", () => {
 		const pi = createMockPi();
 		const deps = createLocalPiSwarmDependencies();
 
-		attachPiSwarmSkillTracking(pi);
+		attachPiSwarmSkillTracking(pi as unknown as ExtensionAPI);
 		const toolCall = pi.onEvents.find(({ event }) => event === "tool_call");
 		assert.ok(toolCall);
 
@@ -116,8 +117,8 @@ describe("attachPiSwarmSkillTracking", () => {
 
 	it("does not duplicate tool_call handlers across duplicate attachment", () => {
 		const pi = createMockPi();
-		attachPiSwarmSkillTracking(pi);
-		attachPiSwarmSkillTracking(pi);
+		attachPiSwarmSkillTracking(pi as unknown as ExtensionAPI);
+		attachPiSwarmSkillTracking(pi as unknown as ExtensionAPI);
 
 		assert.equal(pi.onEvents.filter((entry) => entry.event === "tool_call").length, 1);
 	});

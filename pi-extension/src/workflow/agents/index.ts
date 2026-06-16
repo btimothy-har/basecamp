@@ -3,11 +3,11 @@
  */
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { discoverAgents } from "./discovery.ts";
 import { registerAgentCatalogProvider } from "./catalog.ts";
 import { registerAgentCommands } from "./commands.ts";
-import type { AgentConfig } from "./types.ts";
+import { discoverAgents } from "./discovery.ts";
 import { registerAgentTool } from "./tool.ts";
+import type { AgentConfig } from "./types.ts";
 import { DEFAULT_AGENT_MAX_DEPTH } from "./types.ts";
 
 export function registerAgents(pi: ExtensionAPI): void {
@@ -35,7 +35,11 @@ export function registerAgents(pi: ExtensionAPI): void {
 	});
 
 	if (!atMaxDepth) {
-		registerAgentTool(pi, () => agents, () => sessionName);
+		registerAgentTool(
+			pi,
+			() => agents,
+			() => sessionName,
+		);
 		registerAgentCommands(pi, () => agents);
 	}
 }

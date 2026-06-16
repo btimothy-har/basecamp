@@ -1,10 +1,10 @@
-import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import * as path from "node:path";
 import { fileURLToPath } from "node:url";
+import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { stripFrontmatter } from "@earendil-works/pi-coding-agent";
-import type { PiSwarmDependencies, TaskProgressSnapshot, WorkspaceState } from "./dependencies.ts";
+import type { PiSwarmDependencies, TaskProgressSnapshot, TaskProgressTheme, WorkspaceState } from "./dependencies.ts";
 
 const SKILL_TRACKER_KEY = Symbol.for("basecamp.skillTracker");
 
@@ -137,7 +137,7 @@ function buildSkillBlock(name: string, content: string): string {
 			.replace(/&/g, "&amp;")
 			.replace(/</g, "&lt;")
 			.replace(/>/g, "&gt;")
-			.replace(/\"/g, "&quot;")
+			.replace(/"/g, "&quot;")
 			.replace(/'/g, "&apos;");
 	return `<skill name="${escapeXml(name)}">\n${content}\n</skill>`;
 }
@@ -150,10 +150,7 @@ function formatTaskProgressSummary(snapshot: TaskProgressSnapshot): string | nul
 	return `${completed}/${total} tasks completed`;
 }
 
-function renderCompactTaskProgressLines(
-	snapshot: TaskProgressSnapshot,
-	theme: { fg: (color: string, text: string) => string },
-): string[] {
+function renderCompactTaskProgressLines(snapshot: TaskProgressSnapshot, theme: TaskProgressTheme): string[] {
 	if (snapshot.tasks.length === 0 && !snapshot.goal) return [];
 	const lines: string[] = [];
 	if (snapshot.goal) {
@@ -224,7 +221,9 @@ function buildBasecampExtensionRoot(): string {
 	return path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 }
 
-export function createLocalPiSwarmDependencies(basecampExtensionRoot = buildBasecampExtensionRoot()): PiSwarmDependencies {
+export function createLocalPiSwarmDependencies(
+	basecampExtensionRoot = buildBasecampExtensionRoot(),
+): PiSwarmDependencies {
 	return {
 		basecampExtensionRoot,
 		registerCatalogProvider,

@@ -12,24 +12,23 @@
 import { randomUUID } from "node:crypto";
 import * as fs from "node:fs";
 import * as os from "node:os";
-import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { getMarkdownTheme } from "@earendil-works/pi-coding-agent";
-import { Type } from "@sinclair/typebox";
-import { type Component, Container, Markdown, Spacer, Text } from "@earendil-works/pi-tui";
 import * as path from "node:path";
 import { fileURLToPath } from "node:url";
-import { hasInvokedSkill } from "../../platform/skill-tracker.ts";
+import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
+import { getMarkdownTheme } from "@earendil-works/pi-coding-agent";
+import { type Component, Container, Markdown, Spacer, Text } from "@earendil-works/pi-tui";
+import { Type } from "@sinclair/typebox";
 import { buildSkillBlock, readSkillContent } from "../../capabilities/skill-content.ts";
 import { resolveModelAlias } from "../../platform/model-aliases.ts";
+import { hasInvokedSkill } from "../../platform/skill-tracker.ts";
 import { getWorkspaceState } from "../../platform/workspace.ts";
-import { formatCompactTaskProgressLines, formatTaskProgressSummary } from "../tasks/render.ts";
+import { formatTaskProgressSummary, renderCompactTaskProgressLines } from "../tasks/render.ts";
 import type { AgentStreamEvent } from "./executor.ts";
 import { spawnAgent } from "./executor.ts";
 import { buildAgentLaunchSpec } from "./launch.ts";
 import { buildSkillInjection, resolveSkills } from "./skills.ts";
 import type { AgentConfig, AgentDetails, AgentPartialDetails, AgentRunKind, ToolCallRecord } from "./types.ts";
 import { DEFAULT_AGENT_MAX_DEPTH } from "./types.ts";
-
 
 function checkDepth(): void {
 	const depth = Number(process.env.BASECAMP_AGENT_DEPTH ?? "0");
@@ -41,7 +40,6 @@ function checkDepth(): void {
 		);
 	}
 }
-
 
 function formatDuration(ms: number): string {
 	if (ms < 1000) return `${ms}ms`;
@@ -128,7 +126,6 @@ function formatUsageLine(
 	return parts.join(" ");
 }
 
-
 const AgentToolParams = Type.Object({
 	agent: Type.Optional(Type.String({ description: "Agent definition name" })),
 	task: Type.String({ description: "Task description" }),
@@ -164,7 +161,6 @@ function clearStatus(ctx: ExtensionContext, id: string): void {
 	ctx.ui.setStatus(statusKey(id), undefined);
 }
 
-
 function renderPartialView(
 	partial: AgentPartialDetails,
 	fg: (color: ThemeColor, text: string) => string,
@@ -182,7 +178,7 @@ function renderPartialView(
 	let text = `${fg("accent", "\u23f3")} ${fg("toolTitle", theme.bold(partial.agent))}${sourceLabel}${modelLabel}${stats}`;
 
 	if (partial.taskProgress) {
-		const taskLines = formatCompactTaskProgressLines(partial.taskProgress, { fg });
+		const taskLines = renderCompactTaskProgressLines(partial.taskProgress, { fg });
 		if (taskLines.length > 0) {
 			text += `\n\n${taskLines.map((line) => `  ${line}`).join("\n")}`;
 		}
@@ -210,7 +206,6 @@ function renderPartialView(
 
 	return new Text(text, 0, 0);
 }
-
 
 interface AgentRunGuardState {
 	namedReadOnly: number;
@@ -433,6 +428,8 @@ Available named agents are basecamp builtin definitions. Ad-hoc dispatch must ru
 					{
 						readSkillContent,
 						buildSkillBlock,
+						resolveSkills,
+						buildSkillInjection,
 					},
 					signal,
 				);
@@ -465,6 +462,8 @@ Available named agents are basecamp builtin definitions. Ad-hoc dispatch must ru
 						{
 							readSkillContent,
 							buildSkillBlock,
+							resolveSkills,
+							buildSkillInjection,
 						},
 						signal,
 					);
@@ -521,7 +520,6 @@ Available named agents are basecamp builtin definitions. Ad-hoc dispatch must ru
 			}
 		},
 
-
 		renderCall(args, theme, _context) {
 			const agentName = args.agent || "ad-hoc";
 			const task = args.task || "...";
@@ -530,7 +528,6 @@ Available named agents are basecamp builtin definitions. Ad-hoc dispatch must ru
 			text += `\n  ${theme.fg("dim", preview)}`;
 			return new Text(text, 0, 0);
 		},
-
 
 		renderResult(result, { expanded, isPartial }, theme, _context) {
 			const details = result.details as (AgentDetails & Partial<AgentPartialDetails>) | undefined;
@@ -567,7 +564,7 @@ Available named agents are basecamp builtin definitions. Ad-hoc dispatch must ru
 				container.addChild(new Text(fg("dim", details.task), 0, 0));
 
 				if (details.taskProgress) {
-					const taskLines = formatCompactTaskProgressLines(details.taskProgress, { fg });
+					const taskLines = renderCompactTaskProgressLines(details.taskProgress, { fg });
 					if (taskLines.length > 0) {
 						container.addChild(new Spacer(1));
 						container.addChild(new Text(fg("muted", "─── Progress ───"), 0, 0));
