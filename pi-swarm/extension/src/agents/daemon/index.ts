@@ -15,7 +15,7 @@ interface DaemonClientState {
 
 type DaemonStatusKind = "idle" | "starting" | "connected" | "unavailable" | "disconnected";
 
-interface DaemonStatus {
+export interface DaemonStatusInfo {
 	kind: DaemonStatusKind;
 	message?: string;
 }
@@ -51,14 +51,14 @@ function getDaemonClientState(): DaemonClientState {
 	return globalObject[daemonClientKey];
 }
 
-function previewDaemonMessage(message: string | undefined): string | null {
+export function previewDaemonMessage(message: string | undefined): string | null {
 	const sanitized = message?.replace(/[\r\n\t]/g, " ").trim();
 	if (!sanitized) return null;
 	if (sanitized.length <= DAEMON_MESSAGE_TRUNCATE_LENGTH) return sanitized;
 	return `${sanitized.slice(0, DAEMON_MESSAGE_TRUNCATE_LENGTH - 1)}…`;
 }
 
-function renderDaemonStatus(fg: ThemeFg, status: DaemonStatus): string {
+export function renderDaemonStatus(fg: ThemeFg, status: DaemonStatusInfo): string {
 	if (status.kind === "connected") return fg("success", "daemon ✓");
 	if (status.kind === "starting") return `${fg("warning", "daemon …")} ${fg("dim", "starting")}`;
 	if (status.kind === "disconnected") return `${fg("warning", "daemon ⚠")} ${fg("dim", "disconnected")}`;
@@ -69,7 +69,7 @@ function renderDaemonStatus(fg: ThemeFg, status: DaemonStatus): string {
 	return fg("muted", "daemon idle");
 }
 
-function publishDaemonStatus(ctx: ExtensionContext, status: DaemonStatus): void {
+export function publishDaemonStatus(ctx: ExtensionContext, status: DaemonStatusInfo): void {
 	if (!ctx.hasUI) return;
 	ctx.ui.setStatus(DAEMON_STATUS_ID, renderDaemonStatus(ctx.ui.theme.fg, status));
 }

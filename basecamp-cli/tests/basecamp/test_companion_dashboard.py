@@ -7,6 +7,7 @@ import json
 import subprocess
 from pathlib import Path
 
+import pytest
 from basecamp.companion.app import (
     CompanionApp,
     DashboardBody,
@@ -144,9 +145,27 @@ def test_render_daemon_summary_error() -> None:
     assert "bad daemon payload" in text
 
 
-def test_inactive_daemon_summary_is_not_visible_in_dashboard() -> None:
-    summary = _daemon_summary_ok(total=0, runs=[], session_active=False)
-    assert DashboardBody._is_daemon_panel_visible(summary) is False
+@pytest.mark.parametrize(
+    (
+        "summary",
+        "visible",
+    ),
+    [
+        (None, False),
+        (
+            DaemonSummaryUnavailable(error="daemon socket missing"),
+            False,
+        ),
+        (
+            DaemonSummaryError(error="daemon payload malformed"),
+            False,
+        ),
+        (_daemon_summary_ok(total=0, runs=[], session_active=False), False),
+        (_daemon_summary_ok(total=0, runs=[], session_active=True), True),
+    ],
+)
+def test_is_daemon_panel_visible_for_summary_state(summary: DaemonSummary | None, visible) -> None:
+    assert DashboardBody._is_daemon_panel_visible(summary) is visible
 
 
 def test_render_daemon_summary_running_uses_hourglass() -> None:
