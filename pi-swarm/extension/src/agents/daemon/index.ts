@@ -6,10 +6,22 @@ import { resolveDaemonPaths } from "./paths.ts";
 import { registerDaemonReporter } from "./reporter.ts";
 import { registerDaemonTools } from "./tools.ts";
 
+type ThemeFg = Parameters<import("@earendil-works/pi-coding-agent").Theme["fg"]>[0];
+
 interface DaemonClientState {
 	connection: DaemonConnection | null;
 	connecting: Promise<void> | null;
 }
+
+type DaemonStatusKind = "idle" | "starting" | "connected" | "unavailable" | "disconnected";
+
+interface DaemonStatus {
+	kind: DaemonStatusKind;
+	message?: string;
+}
+
+const DAEMON_STATUS_ID = "basecamp.daemon";
+const DAEMON_MESSAGE_TRUNCATE_LENGTH = 80;
 
 const daemonClientKey = Symbol.for("basecamp.daemonClient");
 
@@ -37,6 +49,29 @@ function getDaemonClientState(): DaemonClientState {
 	const globalObject = globalThis as GlobalWithDaemonClient;
 	globalObject[daemonClientKey] ??= { connection: null, connecting: null };
 	return globalObject[daemonClientKey];
+}
+
+function previewDaemonMessage(message: string | undefined): string | null {
+	const sanitized = message?.replace(/[\r\n\t]/g, " ").trim();
+	if (!sanitized) return null;
+	if (sanitized.length <= DAEMON_MESSAGE_TRUNCATE_LENGTH) return sanitized;
+	return `${sanitized.slice(0, DAEMON_MESSAGE_TRUNCATE_LENGTH - 1)}…`;
+}
+
+function renderDaemonStatus(fg: ThemeFg, status: DaemonStatus): string {
+	if (status.kind === "connected") return fg("success", "daemon ✓");
+	if (status.kind === "starting") return `${fg("warning", "daemon …")} ${fg("dim", "starting")}`;
+	if (status.kind === "disconnected") return `${fg("warning", "daemon ⚠")} ${fg("dim", "disconnected")}`;
+	if (status.kind === "unavailable") {
+		const message = previewDaemonMessage(status.message);
+		return message ? `${fg("error", "daemon ✗")} ${fg("error", message)}` : fg("error", "daemon ✗ unavailable");
+	}
+	return fg("muted", "daemon idle");
+}
+
+function publishDaemonStatus(ctx: ExtensionContext, status: DaemonStatus): void {
+	if (!ctx.hasUI) return;
+	ctx.ui.setStatus(DAEMON_STATUS_ID, renderDaemonStatus(ctx.ui.theme.fg, status));
 }
 
 export function getActiveDaemonConnection(): DaemonConnection | null {
@@ -101,43 +136,37 @@ function resolveDaemonAgentTitle(
 function trackDaemonConnection(
 	state: DaemonClientState,
 	connection: DaemonConnection,
-	deps: Pick<PiSwarmDependencies, "setDaemonStatus">,
+	ctx: ExtensionContext,
 ): DaemonConnection {
 	connection.onClose(() => {
 		if (state.connection === connection) {
 			state.connection = null;
-			deps.setDaemonStatus({ kind: "disconnected" });
+			publishDaemonStatus(ctx, { kind: "disconnected" });
 		}
 	});
 	state.connection = connection;
-	deps.setDaemonStatus({ kind: "connected" });
+	publishDaemonStatus(ctx, { kind: "connected" });
 	return connection;
 }
 
-async function ensureAndConnectTopLevel(
-	ctx: ExtensionContext,
-	deps: Pick<PiSwarmDependencies, "setDaemonStatus" | "formatTitle" | "shortSessionId">,
-): Promise<DaemonConnection> {
+async function ensureAndConnectTopLevel(ctx: ExtensionContext): Promise<DaemonConnection> {
 	const state = getDaemonClientState();
 	if (state.connection) return state.connection;
 
-	const identity = deriveDaemonIdentity(ctx, deps);
+	const identity = deriveDaemonIdentity(ctx);
 	const { socketPath } = await ensureDaemon();
 	const connection = await connect(identity, { socketPath });
-	return trackDaemonConnection(state, connection, deps);
+	return trackDaemonConnection(state, connection, ctx);
 }
 
-async function connectSpawnedAgent(
-	ctx: ExtensionContext,
-	deps: Pick<PiSwarmDependencies, "setDaemonStatus" | "formatTitle" | "shortSessionId">,
-): Promise<DaemonConnection> {
+async function connectSpawnedAgent(ctx: ExtensionContext): Promise<DaemonConnection> {
 	const state = getDaemonClientState();
 	if (state.connection) return state.connection;
 
-	const identity = deriveDaemonIdentity(ctx, deps);
+	const identity = deriveDaemonIdentity(ctx);
 	const socketPath = process.env.BASECAMP_DAEMON_UDS ?? resolveDaemonPaths().socketPath;
 	const connection = await connect(identity, { socketPath });
-	return trackDaemonConnection(state, connection, deps);
+	return trackDaemonConnection(state, connection, ctx);
 }
 
 export function registerDaemonClient(pi: ExtensionAPI, deps: PiSwarmDependencies): void {
@@ -165,6 +194,7 @@ export function registerDaemonClient(pi: ExtensionAPI, deps: PiSwarmDependencies
 
 	const state = getDaemonClientState();
 	const reporterConnection = isDaemonSpawnedAgent ? deferred<DaemonConnection>() : null;
+	let sessionCtx: ExtensionContext | null = null;
 
 	if (reporterConnection && runId && process.env.BASECAMP_AGENT_ID) {
 		registerDaemonReporter(pi, {
@@ -175,6 +205,8 @@ export function registerDaemonClient(pi: ExtensionAPI, deps: PiSwarmDependencies
 	}
 
 	pi.on("session_start", (_event, ctx) => {
+		sessionCtx = ctx;
+
 		if (isDaemonSpawnedAgent) {
 			const agentTitle = resolveDaemonAgentTitle(ctx, {
 				formatTitle: deps.formatTitle,
@@ -188,22 +220,14 @@ export function registerDaemonClient(pi: ExtensionAPI, deps: PiSwarmDependencies
 
 		state.connecting = (async () => {
 			try {
-				deps.setDaemonStatus({ kind: "starting" });
+				publishDaemonStatus(ctx, { kind: "starting" });
 				const connection = isTopLevel
-					? await ensureAndConnectTopLevel(ctx, {
-							setDaemonStatus: deps.setDaemonStatus,
-							formatTitle: deps.formatTitle,
-							shortSessionId: deps.shortSessionId,
-						})
-					: await connectSpawnedAgent(ctx, {
-							setDaemonStatus: deps.setDaemonStatus,
-							formatTitle: deps.formatTitle,
-							shortSessionId: deps.shortSessionId,
-						});
+					? await ensureAndConnectTopLevel(ctx)
+					: await connectSpawnedAgent(ctx);
 				reporterConnection?.resolve(connection);
 			} catch (error) {
 				const message = error instanceof Error ? error.message : String(error);
-				deps.setDaemonStatus({ kind: "unavailable", message });
+				publishDaemonStatus(ctx, { kind: "unavailable", message });
 				reporterConnection?.reject(error);
 				if (isTopLevel) {
 					ctx.ui.notify(`bc-swarm daemon unavailable: ${message}`, "warning");
@@ -216,9 +240,12 @@ export function registerDaemonClient(pi: ExtensionAPI, deps: PiSwarmDependencies
 
 	pi.on("session_shutdown", () => {
 		const connection = state.connection;
+		const ctx = sessionCtx;
 		state.connection = null;
 		state.connecting = null;
-		deps.setDaemonStatus({ kind: "idle" });
+		if (ctx) {
+			publishDaemonStatus(ctx, { kind: "idle" });
+		}
 		try {
 			connection?.close();
 		} catch {

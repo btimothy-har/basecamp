@@ -1,15 +1,16 @@
 import assert from "node:assert/strict";
-import { beforeEach, describe, it } from "node:test";
+import { describe, it } from "node:test";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { visibleWidth } from "@earendil-works/pi-tui";
-import { resetDaemonStatusForTesting, setDaemonStatus } from "../../platform/daemon-status.ts";
-import { registerFooter, renderDaemonStatus } from "../ui/footer.ts";
+import { registerFooter } from "../ui/footer.ts";
 
-const fg: Parameters<typeof renderDaemonStatus>[0] = (_color, text) => text;
+type ThemeFg = (
+	color: Parameters<import("@earendil-works/pi-coding-agent").Theme["fg"]>[0],
+	text: string,
+) => string;
 
 type FooterFactory = (
 	tui: { requestRender(): void },
-	theme: { fg: Parameters<typeof renderDaemonStatus>[0] },
+	theme: { fg: ThemeFg },
 	footerData: {
 		onBranchChange(listener: () => void): () => void;
 		getGitBranch(): string | null;
@@ -43,31 +44,10 @@ function createContext(onFooter: (factory: FooterFactory) => void): ExtensionCon
 	} as unknown as ExtensionContext;
 }
 
-describe("footer daemon status", () => {
-	beforeEach(() => resetDaemonStatusForTesting());
+const fg: ThemeFg = (_color, text) => text;
 
-	it("renders compact lifecycle labels", () => {
-		assert.equal(renderDaemonStatus(fg, { kind: "idle" }), "daemon idle");
-		assert.equal(renderDaemonStatus(fg, { kind: "starting" }), "daemon … starting");
-		assert.equal(renderDaemonStatus(fg, { kind: "connected" }), "daemon ✓");
-		assert.equal(renderDaemonStatus(fg, { kind: "disconnected" }), "daemon ⚠ disconnected");
-	});
-
-	it("renders unavailable reason safely", () => {
-		assert.equal(
-			renderDaemonStatus(fg, { kind: "unavailable", message: "first\nsecond\tthird" }),
-			"daemon ✗ first second third",
-		);
-	});
-
-	it("truncates long unavailable reasons", () => {
-		const rendered = renderDaemonStatus(fg, { kind: "unavailable", message: "x".repeat(120) });
-
-		assert.ok(rendered.includes("…"));
-		assert.equal(visibleWidth(rendered), "daemon ✗ ".length + 80);
-	});
-
-	it("renders daemon status before extension statuses on line 3", async () => {
+describe("footer extension statuses", () => {
+	it("renders extension statuses on line 3", async () => {
 		const footerFactoryRef: { current: FooterFactory | null } = { current: null };
 		const { pi, handlers } = createPi();
 		const ctx = createContext((factory) => {
@@ -79,9 +59,8 @@ describe("footer daemon status", () => {
 		const footerFactory = footerFactoryRef.current;
 		assert.ok(footerFactory);
 
-		let renderRequests = 0;
 		const footer = footerFactory(
-			{ requestRender: () => renderRequests++ },
+			{ requestRender: () => {} },
 			{ fg },
 			{
 				onBranchChange: () => () => {},
@@ -94,12 +73,35 @@ describe("footer daemon status", () => {
 			},
 		);
 
-		setDaemonStatus({ kind: "connected" });
 		const lines = footer.render(160);
+		assert.equal(lines[2], "agent a  agent b");
+		footer.dispose();
+	});
 
-		assert.equal(renderRequests, 1);
-		assert.equal(lines.length, 3);
-		assert.equal(lines[2], "daemon ✓  agent a  agent b");
+	it("renders empty line 3 when no extension statuses are present", async () => {
+		const footerFactoryRef: { current: FooterFactory | null } = { current: null };
+		const { pi, handlers } = createPi();
+		const ctx = createContext((factory) => {
+			footerFactoryRef.current = factory;
+		});
+		registerFooter(pi);
+
+		await handlers.get("session_start")?.({}, ctx);
+		const footerFactory = footerFactoryRef.current;
+		assert.ok(footerFactory);
+
+		const footer = footerFactory(
+			{ requestRender: () => {} },
+			{ fg },
+			{
+				onBranchChange: () => () => {},
+				getGitBranch: () => "main",
+				getExtensionStatuses: () => new Map(),
+			},
+		);
+
+		const lines = footer.render(120);
+		assert.equal(lines[2], "");
 		footer.dispose();
 	});
 });
