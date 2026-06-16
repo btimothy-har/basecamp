@@ -98,7 +98,7 @@ def main() -> None:
     install_pi_package(EXTENSION_DIR, "pi-swarm extension")
 
     print("\nDone.")
-    print('If bc-swarm or pi is not found, add ~/.local/bin to PATH:')
+    print("If bc-swarm or pi is not found, add ~/.local/bin to PATH:")
     print('  export PATH="$HOME/.local/bin:$PATH"')
 
 
