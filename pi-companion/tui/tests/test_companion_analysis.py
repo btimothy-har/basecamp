@@ -125,7 +125,7 @@ class TestCompanionAnalysisPath:
         assert path == tmp_path / "a_b_c.analysis.json"
 
     def test_uses_default_companion_base_dir(self, tmp_path: Path, monkeypatch) -> None:
-        monkeypatch.setattr("basecamp.companion.analysis.Path.home", lambda: tmp_path)
+        monkeypatch.setattr("companion_tui.analysis.Path.home", lambda: tmp_path)
 
         path = companion_analysis_path("session-123")
 
