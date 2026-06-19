@@ -9,22 +9,22 @@ compile:
 
 test:
 	uv run pytest core/config/tests workspace/projects/tests pi-companion/tui/tests
-	@for pkg in $(TS_PACKAGES); do \
+	@set -e; for pkg in $(TS_PACKAGES); do \
 		echo "--- $$pkg ---"; \
-		npm --prefix $$pkg test 2>&1 | tail -3; \
+		npm --prefix $$pkg test; \
 	done
 
 lint:
 	uv run ruff check . && uv run ruff format --check .
-	@for pkg in $(TS_PACKAGES); do \
+	@set -e; for pkg in $(TS_PACKAGES); do \
 		echo "--- $$pkg ---"; \
-		npm --prefix $$pkg run check 2>&1 | tail -3; \
+		npm --prefix $$pkg run check; \
 	done
 
 fix:
 	uv run ruff check --fix . && uv run ruff format .
-	@for pkg in $(TS_PACKAGES); do \
+	@set -e; for pkg in $(TS_PACKAGES); do \
 		echo "--- $$pkg ---"; \
-		npm --prefix $$pkg run lint:fix 2>&1 | tail -1; \
-		npm --prefix $$pkg run format 2>&1 | tail -1; \
+		npm --prefix $$pkg run lint:fix; \
+		npm --prefix $$pkg run format; \
 	done
