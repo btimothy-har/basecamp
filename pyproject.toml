@@ -44,7 +44,7 @@ basecamp-workspace = { workspace = true }
 companion-tui = { workspace = true }
 
 [tool.pytest.ini_options]
-testpaths = ["core/config/tests", "workspace/projects/tests", "pi-companion/tui/tests"]
+testpaths = ["tests", "core/config/tests", "workspace/projects/tests", "pi-companion/tui/tests"]
 pythonpath = ["src", "core/config/src", "workspace/projects/src", "pi-swarm/cli/src", "pi-companion/tui/src"]
 env = ["TESTING=1"]
 

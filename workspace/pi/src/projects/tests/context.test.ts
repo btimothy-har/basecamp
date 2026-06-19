@@ -1,12 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import type { CatalogItem } from "pi-core/platform/catalog.ts";
 import type { WorkspaceState } from "pi-core/platform/workspace.ts";
-import { buildMemoryGuidance, buildUnsafeEditGuidance, buildWorktreeWarning } from "../context.ts";
-
-function tool(name: string): CatalogItem {
-	return { type: "tools", name, description: "" };
-}
+import { buildUnsafeEditGuidance, buildWorktreeWarning } from "../context.ts";
 
 function workspace(overrides: Partial<WorkspaceState>): WorkspaceState {
 	return {
@@ -31,26 +26,6 @@ function workspace(overrides: Partial<WorkspaceState>): WorkspaceState {
 		...overrides,
 	};
 }
-
-describe("buildMemoryGuidance", () => {
-	it("returns null when no memory tools are present", () => {
-		assert.equal(buildMemoryGuidance([tool("read"), tool("bash")]), null);
-	});
-
-	it("emits the instruction block when memory tools are present", () => {
-		const block = buildMemoryGuidance([tool("memory_search"), tool("session_search"), tool("memory_remember")]);
-		assert.ok(block);
-		assert.match(block, /^# Memory/);
-		assert.match(block, /memory_search/);
-		assert.match(block, /session_search/);
-		assert.match(block, /memory_remember/);
-	});
-
-	it("emits when only one of the memory tools is present", () => {
-		assert.ok(buildMemoryGuidance([tool("session_search")]));
-		assert.ok(buildMemoryGuidance([tool("memory_search")]));
-	});
-});
 
 describe("unsafe-edit context", () => {
 	it("keeps the default active-worktree warning when unsafe-edit is off", () => {

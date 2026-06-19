@@ -125,22 +125,6 @@ export function discoverContextFiles(cwd: string): ContextFile[] {
 	return files;
 }
 
-/**
- * Instruction block for the bundled memory tools. Presence-gated so it is
- * omitted when the memory stack isn't installed (e.g. the Node < 24 fallback).
- */
-export function buildMemoryGuidance(toolItems: CatalogItem[]): string | null {
-	const names = new Set(toolItems.map((item) => item.name));
-	if (!names.has("memory_search") && !names.has("session_search")) return null;
-
-	return [
-		"# Memory",
-		"",
-		"- Before re-asking the user or re-investigating prior work, search memory and past sessions (`memory_search`, `session_search`).",
-		"- Persist durable decisions, preferences, and corrections (`memory_remember`).",
-	].join("\n");
-}
-
 function normalizeCapabilityDescription(description: string): string {
 	return description.trim().replace(/\s+/g, " ");
 }

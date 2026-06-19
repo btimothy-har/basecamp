@@ -8,6 +8,7 @@ from __future__ import annotations
 import shutil
 import subprocess
 import sys
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Final
 
@@ -20,11 +21,21 @@ console = Console()
 
 REPO_DIR: Final = Path(__file__).resolve().parents[2]
 
-MIN_NODE_MAJOR: Final = 24
-PI_TOTAL_RECALL_SPEC: Final = "pi-total-recall@1.8.0"
+COMPONENT_STANDARD: Final = "standard"
+COMPONENT_ENGINEERING: Final = "engineering"
+COMPONENT_COMPANION: Final = "companion"
+COMPONENT_SWARM: Final = "swarm"
 
-_TS_PACKAGES: Final = [
-    ("core/pi", "pi-core"),
+_DEFAULT_COMPONENTS: Final = [
+    COMPONENT_STANDARD,
+    COMPONENT_ENGINEERING,
+    COMPONENT_COMPANION,
+    COMPONENT_SWARM,
+]
+
+_MANDATORY_TS_PACKAGE: Final = ("core/pi", "pi-core")
+_TS_PACKAGE_ORDER: Final = [
+    _MANDATORY_TS_PACKAGE,
     ("pi-ui", "pi-ui"),
     ("workspace/pi", "pi-workspace"),
     ("pi-tasks", "pi-tasks"),
@@ -33,6 +44,43 @@ _TS_PACKAGES: Final = [
     ("pi-companion/pi", "pi-companion"),
     ("pi-swarm/extension", "pi-swarm extension"),
 ]
+
+_COMPONENT_TS_PACKAGES: Final = {
+    COMPONENT_STANDARD: ["pi-ui", "workspace/pi", "pi-tasks", "pi-git"],
+    COMPONENT_ENGINEERING: ["pi-engineering"],
+    COMPONENT_COMPANION: ["pi-companion/pi"],
+    COMPONENT_SWARM: ["pi-swarm/extension"],
+}
+
+_COMPONENT_DEPENDENCIES: Final = {
+    COMPONENT_SWARM: ["pi-ui", "pi-tasks"],
+}
+
+
+@dataclass(frozen=True)
+class InstallSelection:
+    """Resolved Python extras and TypeScript packages for an install."""
+
+    python_extra: str
+    ts_packages: tuple[tuple[str, str], ...]
+
+
+def resolve_install_selection(component_ids: list[str] | tuple[str, ...] | set[str]) -> InstallSelection:
+    """Resolve selected optional components into installable artifacts.
+
+    The core foundation is always included. Optional groups can add packages,
+    and component dependencies are expanded without duplicating packages.
+    """
+    selected = set(component_ids)
+    package_subpaths = {_MANDATORY_TS_PACKAGE[0]}
+
+    for component_id in selected:
+        package_subpaths.update(_COMPONENT_TS_PACKAGES.get(component_id, []))
+        package_subpaths.update(_COMPONENT_DEPENDENCIES.get(component_id, []))
+
+    ts_packages = tuple(package for package in _TS_PACKAGE_ORDER if package[0] in package_subpaths)
+    python_extra = "[companion]" if COMPONENT_COMPANION in selected else ""
+    return InstallSelection(python_extra=python_extra, ts_packages=ts_packages)
 
 
 def _save_install_dir(repo_dir: Path) -> None:
@@ -62,48 +110,30 @@ def _install_pi_package(package_dir: Path, label: str) -> None:
         sys.exit(1)
 
 
-def _node_major_version() -> int | None:
-    node = shutil.which("node")
-    if not node:
-        return None
-    result = subprocess.run([node, "--version"], check=False, capture_output=True, text=True)
-    if result.returncode != 0:
-        return None
-    try:
-        return int(result.stdout.strip().lstrip("v").split(".")[0])
-    except (ValueError, IndexError):
-        return None
-
-
-def _install_pi_npm_package(spec: str, label: str) -> None:
-    pi = shutil.which("pi")
-    if not pi:
-        console.print(f"  [yellow]⚠[/yellow] pi not found — skipping {label} registration")
-        return
-    console.print(f"  Registering [bold]{label}[/bold] with pi...")
-    result = subprocess.run([pi, "install", f"npm:{spec}"], check=False, capture_output=True, text=True)
-    if result.returncode != 0:
-        console.print(f"  [yellow]⚠[/yellow] pi install failed for {label} — basecamp core is unaffected.")
-        console.print(f"    [dim]{result.stderr.strip()}[/dim]")
-        console.print(f"    [dim]Retry later with: pi install npm:{spec}[/dim]")
-
-
-def _install_memory_stack() -> None:
-    major = _node_major_version()
-    if major is None:
-        console.print(
-            "  [yellow]⚠[/yellow] Could not determine Node version — skipping memory stack "
-            f"({PI_TOTAL_RECALL_SPEC}). It requires Node >= {MIN_NODE_MAJOR}."
-        )
-        return
-    if major < MIN_NODE_MAJOR:
-        console.print(
-            f"  [yellow]⚠[/yellow] Node {major} detected; memory stack ({PI_TOTAL_RECALL_SPEC}) "
-            f"requires Node >= {MIN_NODE_MAJOR} — skipping."
-        )
-        console.print("    [dim]Upgrade Node and re-run basecamp install to add memory.[/dim]")
-        return
-    _install_pi_npm_package(PI_TOTAL_RECALL_SPEC, "pi-total-recall (memory stack)")
+def _prompt_components() -> list[str]:
+    console.print()
+    console.print("[bold]Core foundation[/bold] (always installed): basecamp Python tool + pi-core")
+    answer = questionary.checkbox(
+        "Select optional components to install:",
+        choices=[
+            questionary.Choice(
+                "Standard session capabilities (pi-ui, pi-workspace, pi-tasks, pi-git)",
+                value=COMPONENT_STANDARD,
+                checked=True,
+            ),
+            questionary.Choice("Engineering tools (pi-engineering)", value=COMPONENT_ENGINEERING, checked=True),
+            questionary.Choice("Companion (Python extra + pi-companion)", value=COMPONENT_COMPANION, checked=True),
+            questionary.Choice(
+                "Swarm / async agents (pi-swarm; auto-includes pi-ui and pi-tasks)",
+                value=COMPONENT_SWARM,
+                checked=True,
+            ),
+        ],
+        default=_DEFAULT_COMPONENTS,
+    ).ask()
+    if answer is None:
+        sys.exit(0)
+    return answer
 
 
 def run_interactive_install(*, editable: bool | None = None) -> None:
@@ -117,7 +147,8 @@ def run_interactive_install(*, editable: bool | None = None) -> None:
             sys.exit(0)
         editable = answer
 
-    want_companion = questionary.confirm("Install companion (TUI + analyzer)?", default=True).ask()
+    component_ids = _prompt_components()
+    selection = resolve_install_selection(component_ids)
 
     console.print()
     console.print(Panel.fit("basecamp setup", style="bold blue"))
@@ -125,8 +156,7 @@ def run_interactive_install(*, editable: bool | None = None) -> None:
 
     console.print("[bold]Python tool[/bold]")
     console.print()
-    extra = "[companion]" if want_companion else ""
-    pkg_spec = f"{REPO_DIR}{extra}"
+    pkg_spec = f"{REPO_DIR}{selection.python_extra}"
     args = ["uv", "tool", "install", "--force", "--reinstall"]
     if editable:
         args.append("-e")
@@ -141,10 +171,8 @@ def run_interactive_install(*, editable: bool | None = None) -> None:
     console.print()
     console.print("[bold]Pi packages[/bold]")
     console.print()
-    for subpath, label in _TS_PACKAGES:
+    for subpath, label in selection.ts_packages:
         _install_pi_package(REPO_DIR / subpath, label)
-
-    _install_memory_stack()
 
     _save_install_dir(REPO_DIR)
 

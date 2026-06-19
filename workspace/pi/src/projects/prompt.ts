@@ -8,7 +8,6 @@ import { getWorkspaceService, getWorkspaceState, type WorkspaceState } from "pi-
 import { getAgentMode } from "pi-core/session/agent-mode.ts";
 import {
 	buildCapabilitiesIndex,
-	buildMemoryGuidance,
 	buildProjectContext,
 	buildUnsafeEditGuidance,
 	buildWorktreeWarning,
@@ -164,9 +163,6 @@ export function assemblePrompt(opts: AssembleOptions): string {
 			includeAgents: !opts.agentPrompt,
 		}),
 	);
-
-	const memoryGuidance = buildMemoryGuidance(toolItems);
-	if (memoryGuidance) parts.push(memoryGuidance);
 
 	const projectContext = buildProjectContext(project, contextFiles);
 	if (projectContext) parts.push(projectContext);

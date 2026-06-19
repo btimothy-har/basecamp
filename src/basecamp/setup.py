@@ -1,7 +1,6 @@
 """Setup command for basecamp — one-time environment bootstrap."""
 
 import shutil
-import subprocess
 from pathlib import Path
 
 from basecamp_core.paths import USER_CONTEXT_DIR, USER_STYLES_DIR
@@ -9,9 +8,6 @@ from basecamp_core.settings import settings
 from basecamp_workspace import ProjectConfig, load_projects, save_projects
 from basecamp_workspace.directories import to_home_relative
 from basecamp_workspace.ui import console
-
-# The bundled memory stack (pi-total-recall) needs Node >= 24 (node:sqlite FTS5).
-MIN_NODE_MAJOR = 24
 
 
 def _check_prerequisite(name: str, command: str) -> bool:
@@ -22,36 +18,6 @@ def _check_prerequisite(name: str, command: str) -> bool:
     else:
         console.print(f"  [red]✗[/red] {name} [dim]({command} not found on PATH)[/dim]")
     return found
-
-
-def _node_major_version() -> int | None:
-    """Best-effort Node major version on PATH; None if undetectable."""
-    node = shutil.which("node")
-    if not node:
-        return None
-    try:
-        result = subprocess.run([node, "--version"], check=False, capture_output=True, text=True)
-    except OSError:
-        return None
-    if result.returncode != 0:
-        return None
-    try:
-        return int(result.stdout.strip().lstrip("v").split(".")[0])
-    except (ValueError, IndexError):
-        return None
-
-
-def _check_node_for_memory() -> None:
-    """Soft check: the bundled memory stack needs Node >= 24. Never fails setup."""
-    major = _node_major_version()
-    if major is not None and major >= MIN_NODE_MAJOR:
-        console.print(f"  [green]✓[/green] node >= {MIN_NODE_MAJOR} [dim](memory stack)[/dim]")
-        return
-    detected = "not found" if major is None else str(major)
-    console.print(
-        f"  [yellow]⚠[/yellow] node {detected} "
-        f"[dim](memory stack pi-total-recall needs Node >= {MIN_NODE_MAJOR}; basecamp core works without it)[/dim]"
-    )
 
 
 def _scaffold_dirs() -> None:
@@ -96,7 +62,6 @@ def execute_setup() -> None:
     ok = True
     ok = _check_prerequisite("pi", "pi") and ok
     ok = _check_prerequisite("git", "git") and ok
-    _check_node_for_memory()
     if not ok:
         console.print()
         console.print("[red]Missing prerequisites. Install them and try again.[/red]")
@@ -122,5 +87,4 @@ def execute_setup() -> None:
 
     console.print("[green]✓[/green] Done. Review configuration with: [bold]basecamp config[/bold]")
     console.print("[dim]  Add your own projects from the Projects menu.[/dim]")
-    console.print("[dim]  Memory (pi-total-recall) is bundled — see README → Memory for optional config.[/dim]")
     console.print()
