@@ -37,20 +37,15 @@ pi-swarm/                      # Async-agent bounded context
 ├── extension/                  # TypeScript Pi-side agent tools, launch policy, daemon client, reporter
 └── cli/                        # Python daemon CLI/runtime package
 
-pi-extension/                   # Public extension package (current session runtime and adapters)
-├── package.json                # Extension manifest (extensions, skills, prompts)
-├── index.ts                    # Registers the composed extension modules
-└── src/
-    ├── platform/               # Shared extension platform modules
-    ├── session/                # Session lifecycle hooks, UI, mode commands
-    ├── capabilities/           # Skill tool, skill lifecycle tracking, catalog providers
-    ├── model-aliases/          # Native model alias config reader/provider registration
-    ├── projects/               # Project config/state, prompt assembly, context injection, header
-    ├── workspace/              # Repo/worktree service, guards, affinity, commands, unsafe-edit
-    ├── workflow/               # Planning, tasks, escalation, workflow skills
-    ├── git/                    # Git guards, PR/issue workflow commands, publish tools
-    ├── state/                  # Session state persistence
-    └── engineering/            # Engineering runtime tools, prompts, and engineering/Pi skills
+core/pi/                       # pi-core TypeScript package: registries, session, state, model aliases, workspace primitives
+pi-ui/                         # Session UI package: footer, title, mode editor
+workspace/pi/                  # pi-workspace TypeScript package: project context + workspace service
+pi-tasks/                      # Tasks, planning, workflow skills
+pi-git/                        # Git guards, PR/issue/review workflows
+pi-engineering/                # Engineering tools and skills
+pi-companion/                  # Companion bounded context
+├── pi/                        # TypeScript session hooks, tmux panes, analysis registration
+└── tui/                       # Python companion TUI/analyzer package
 ```
 
 ## Architecture Decisions
@@ -63,11 +58,11 @@ Prompts are layered (environment → working style → project context → tools
 
 ### Pi Packages
 
-Core public session/project/workspace/workflow/git/model-alias/capability/engineering behavior is currently bundled in `pi-extension/`. Async-agent protocol, Pi-side launch/tool behavior, and daemon runtime ownership live in the top-level `pi-swarm/` context.
+Core public session/project/workspace/workflow/git/model-alias/capability/engineering behavior is split across pluggable Pi packages (`core/pi`, `workspace/pi`, `pi-ui`, `pi-tasks`, `pi-git`, `pi-engineering`, `pi-companion/pi`). Async-agent protocol, Pi-side launch/tool behavior, and daemon runtime ownership live in the top-level `pi-swarm/` context.
 
 ### Model Aliases
 
-Model alias resolution is owned by `pi-extension/src/model-aliases`, backed by `~/.pi/model-aliases/config.json` with schema `{ "version": 1, "aliases": { "fast": "claude-haiku-4-5" } }`. `pi-extension/src/platform/model-aliases.ts` is only the provider seam; it must not read config, define aliases, or own model-selection policy.
+Model alias resolution is owned by `core/pi/src/model-aliases`, backed by `~/.pi/model-aliases/config.json` with schema `{ "version": 1, "aliases": { "fast": "claude-haiku-4-5" } }`. `core/pi/src/platform/model-aliases.ts` is only the provider seam; it must not read config, define aliases, or own model-selection policy.
 
 ### Environment Variable Chain
 
@@ -84,12 +79,12 @@ Worktrees live in `~/.worktrees/<repo>/<label>/` rather than inside the repo to 
 - **Python**: 3.12+, managed with `uv`
 - **Install (dev)**: `uv run install.py -e` (editable mode; installs `basecamp`, then registers the Basecamp Pi package)
 - **Python lint**: `uv run ruff check .` / `uv run ruff format --check .`
-- **TypeScript check**: `npm --prefix pi-extension run check` and `npm --prefix pi-swarm/extension run check`
-- **Fix**: `make fix` runs Python fixes, `pi-extension` fixes, and `pi-swarm/extension` fixes/format commands
+- **TypeScript check**: `make lint` runs checks for all Pi packages after Python lint/format checks
+- **Fix**: `make fix` runs Python fixes plus lint/format fixes for all Pi packages
 
 ### Testing
 
-- **Run all**: `make test` from repo root runs Python pytest plus the pi-extension and pi-swarm extension TypeScript checks/tests.
+- **Run all**: `make test` from repo root runs Python pytest plus all Pi package TypeScript tests.
 - **Python**: `uv run pytest` uses root `pyproject.toml` — `testpaths = ["core/config/tests", "workspace/projects/tests", "pi-companion/tui/tests"]`, `pythonpath` includes `src`, `core/config/src`, `workspace/projects/src`, `pi-swarm/cli/src`, and `pi-companion/tui/src`.
-- **TypeScript**: `npm --prefix pi-extension test` runs the session/state/project/workspace/git/workflow unit suites; `npm --prefix pi-swarm/extension test` currently validates the extension package skeleton.
+- **TypeScript**: `make test` covers `core/pi`, `pi-ui`, `workspace/pi`, `pi-tasks`, `pi-git`, `pi-engineering`, `pi-companion/pi`, and `pi-swarm/extension`.
 - **Basecamp Python tests** live under `core/config/tests/`, `workspace/projects/tests/`, and `pi-companion/tui/tests/`.

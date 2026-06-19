@@ -109,7 +109,7 @@ describe("buildReviewDiffArgs", () => {
 	it("builds fixed git diff argv with explicit context, revision range, and diff path", () => {
 		const args = buildReviewDiffArgs(
 			reference({
-				diff: { base: "origin/main", head: "abc123", path: "pi-extension/src/git/review-packet.ts", contextLines: 8 },
+				diff: { base: "origin/main", head: "abc123", path: "pi-git/src/git/review-packet.ts", contextLines: 8 },
 			}),
 		);
 
@@ -120,7 +120,7 @@ describe("buildReviewDiffArgs", () => {
 			"--unified=8",
 			"origin/main...abc123",
 			"--",
-			"pi-extension/src/git/review-packet.ts",
+			"pi-git/src/git/review-packet.ts",
 		]);
 	});
 

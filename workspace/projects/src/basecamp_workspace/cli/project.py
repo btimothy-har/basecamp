@@ -25,13 +25,9 @@ def _available_styles() -> list[str]:
     install_dir = settings.install_dir
     if install_dir:
         script_dir = Path(install_dir)
-        style_dirs = [
-            script_dir / "workspace" / "pi" / "src" / "system-prompts" / "styles",
-            script_dir / "pi-extension" / "projects" / "src" / "system-prompts" / "styles",
-        ]
-        for style_dir in style_dirs:
-            if style_dir.exists():
-                styles.update(path.stem for path in style_dir.glob("*.md"))
+        style_dir = script_dir / "workspace" / "pi" / "src" / "system-prompts" / "styles"
+        if style_dir.exists():
+            styles.update(path.stem for path in style_dir.glob("*.md"))
     if USER_STYLES_DIR.exists():
         styles.update(path.stem for path in USER_STYLES_DIR.glob("*.md"))
     return sorted(styles)

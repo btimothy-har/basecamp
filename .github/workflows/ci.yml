@@ -3,7 +3,7 @@ name: CI
 on:
   push:
   pull_request:
-  
+
 jobs:
   ci:
     name: CI
@@ -29,26 +29,30 @@ jobs:
       with:
         node-version: 24
 
-    - name: Install Extension Dependencies
+    - name: Install Pi Package Dependencies
       run: |
-        npm --prefix pi-extension ci
-        npm --prefix pi-swarm/extension ci
+        for pkg in core/pi pi-ui workspace/pi pi-tasks pi-git pi-engineering pi-companion/pi pi-swarm/extension; do
+          npm --prefix "$pkg" ci
+        done
 
-    - name: Typecheck (Extension)
+    - name: Typecheck Pi Packages
       run: |
-        npm --prefix pi-extension run typecheck
-        npm --prefix pi-swarm/extension run typecheck
+        for pkg in core/pi pi-ui workspace/pi pi-tasks pi-git pi-engineering pi-companion/pi pi-swarm/extension; do
+          npm --prefix "$pkg" run typecheck
+        done
 
-    - name: Lint (Extension)
+    - name: Lint Pi Packages
       run: |
-        npm --prefix pi-extension run lint
-        npm --prefix pi-swarm/extension run lint
+        for pkg in core/pi pi-ui workspace/pi pi-tasks pi-git pi-engineering pi-companion/pi pi-swarm/extension; do
+          npm --prefix "$pkg" run lint
+        done
 
     - name: Run Python Tests
       run: |
         uv run pytest
 
-    - name: Run Extension Tests
+    - name: Run Pi Package Tests
       run: |
-        npm --prefix pi-extension test
-        npm --prefix pi-swarm/extension test
+        for pkg in core/pi pi-ui workspace/pi pi-tasks pi-git pi-engineering pi-companion/pi pi-swarm/extension; do
+          npm --prefix "$pkg" test
+        done

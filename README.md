@@ -36,7 +36,7 @@ uv run install.py -e        # editable (recommended for development)
 uv run install.py --no-editable
 ```
 
-This installs the Python tool `basecamp`, registers the Pi package in `pi-extension/`, installs the bundled [memory stack](#memory) (when Node 24+ is available), and saves the Basecamp install directory to `~/.pi/basecamp/config.json`.
+This installs the Python tool `basecamp`, registers the Basecamp Pi packages, installs the bundled [memory stack](#memory) (when Node 24+ is available), and saves the Basecamp install directory to `~/.pi/basecamp/config.json`.
 
 Then initialize the environment:
 

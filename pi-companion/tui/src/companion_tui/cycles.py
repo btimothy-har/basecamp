@@ -1,8 +1,8 @@
 """Direct read of basecamp's goal-cycle store (~/.pi/tasks/<session-id>.json).
 
 The companion dashboard reads goal/task state straight from this file — the
-single source of truth written by pi-extension/src/workflow/tasks/tasks.ts as a
-JSON array of GoalCycle objects. This module mirrors that on-disk shape and is
+single source of truth written by pi-tasks/src/tasks/tasks.ts as a JSON array
+of GoalCycle objects. This module mirrors that on-disk shape and is
 deliberately tolerant (extra keys ignored, best-effort load) because tasks.ts
 owns the schema.
 """

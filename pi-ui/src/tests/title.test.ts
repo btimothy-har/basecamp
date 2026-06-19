@@ -248,8 +248,8 @@ describe("buildTitleContext", () => {
 						type: "toolCall",
 						name: "bash",
 						arguments: {
-							command: "npm --prefix pi-extension run test:session",
-							nested: { path: "pi-extension/src/session/tests/title.test.ts", extra: "x".repeat(200) },
+							command: "npm --prefix core/pi run test:session",
+							nested: { path: "core/pi/src/session/tests/title.test.ts", extra: "x".repeat(200) },
 						},
 					},
 				],
@@ -257,8 +257,8 @@ describe("buildTitleContext", () => {
 		]);
 
 		assert.match(context, /\[Tool:bash\] call args=/);
-		assert.match(context, /"command":"npm --prefix pi-extension run test:session"/);
-		assert.match(context, /"nested":\{"path":"pi-extension\/src\/session\/tests\/title\.test\.ts"/);
+		assert.match(context, /"command":"npm --prefix core\/pi run test:session"/);
+		assert.match(context, /"nested":\{"path":"core\/pi\/src\/session\/tests\/title\.test\.ts"/);
 	});
 
 	it("omits raw tool result body text and includes result metadata with error status", () => {

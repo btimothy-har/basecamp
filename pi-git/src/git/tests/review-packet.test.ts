@@ -84,7 +84,7 @@ describe("normalizeReviewCards", () => {
 						diff: {
 							base: " origin/main ",
 							head: " feature/review-packet ",
-							path: " pi-extension/src/git/review-packet.ts ",
+							path: " pi-git/src/git/review-packet.ts ",
 							lineStart: 20,
 							lineEnd: 40,
 							contextLines: 50,
@@ -97,7 +97,7 @@ describe("normalizeReviewCards", () => {
 		assert.deepEqual(cards[0]?.references?.[0]?.diff, {
 			base: "origin/main",
 			head: "feature/review-packet",
-			path: "pi-extension/src/git/review-packet.ts",
+			path: "pi-git/src/git/review-packet.ts",
 			lineStart: 20,
 			lineEnd: 40,
 			contextLines: 50,
