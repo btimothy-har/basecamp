@@ -14,6 +14,10 @@
 			"./index.ts"
 		]
 	},
+	"exports": {
+		".": "./index.ts",
+		"./*": "./src/*"
+	},
 	"scripts": {
 		"check": "tsc && biome check .",
 		"typecheck": "tsc",

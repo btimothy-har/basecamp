@@ -235,6 +235,7 @@ def main() -> None:
     console.print("[bold]Pi package[/bold]")
     console.print()
     install_pi_package(CORE_DIR, "pi-core")
+    install_pi_package(REPO_DIR / "pi-ui", "pi-ui")
     install_pi_package(EXTENSION_DIR, "basecamp Pi extension")
     install_memory_stack()
 
