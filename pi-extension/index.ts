@@ -1,10 +1,9 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import registerCompanionAnalysis from "./src/companion/analysis.ts";
-import registerCompanion from "./src/companion/index.ts";
-import registerPanes from "./src/panes/index.ts";
 
-// engineering moved to pi-engineering.
+// companion + panes moved to pi-companion.
+// All other modules have been extracted to their own packages.
 
-export default function (pi: ExtensionAPI): void {
-	registerCompanion(pi);
+export default function (_pi: ExtensionAPI): void {
+	// pi-extension is now empty — all modules extracted to pi-core + pluggable packages.
+	// This file will be deleted in the next task.
 }
