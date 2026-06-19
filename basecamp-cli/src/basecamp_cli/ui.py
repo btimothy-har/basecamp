@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from rich.console import Console
 from rich.table import Table
@@ -21,8 +21,8 @@ def format_age(created_at: str) -> str:
     except ValueError:
         return ""
     if created.tzinfo is None:
-        created = created.replace(tzinfo=timezone.utc)
-    days = (datetime.now(tz=timezone.utc) - created).days
+        created = created.replace(tzinfo=UTC)
+    days = (datetime.now(tz=UTC) - created).days
     if days == 0:
         return "today"
     if days == 1:

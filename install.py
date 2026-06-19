@@ -13,7 +13,6 @@ Subsequent reconfiguration: `basecamp install`.
 """
 
 import argparse
-import sys
 
 from basecamp_cli.installer import run_interactive_install
 

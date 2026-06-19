@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+from click.testing import CliRunner
 from companion_tui.analysis import (
     COMPANION_ANALYSIS_VERSION,
     CompanionAnalysis,
@@ -12,8 +13,8 @@ from companion_tui.analysis import (
     load_analysis,
     write_analysis,
 )
-from click import Command
-from click.testing import CliRunner
+
+from cli import basecamp
 
 
 def test_companion_analyze_writes_sidecar(monkeypatch, tmp_path: Path) -> None:
@@ -27,7 +28,7 @@ def test_companion_analyze_writes_sidecar(monkeypatch, tmp_path: Path) -> None:
     def fake_generate_analysis(**_: object) -> CompanionAnalysis:
         return expected
 
-    monkeypatch.setattr("companion_tui.analyzer.generate_analysis", fake_generate_analysis)
+    monkeypatch.setattr("cli.generate_analysis", fake_generate_analysis)
 
     runner = CliRunner()
     result = runner.invoke(
@@ -63,7 +64,7 @@ def test_companion_analyze_failure_keeps_last_good(monkeypatch, tmp_path: Path) 
     def fake_generate_analysis(**_: object) -> CompanionAnalysis:
         raise RuntimeError("boom")
 
-    monkeypatch.setattr("companion_tui.analyzer.generate_analysis", fake_generate_analysis)
+    monkeypatch.setattr("cli.generate_analysis", fake_generate_analysis)
 
     runner = CliRunner()
     result = runner.invoke(

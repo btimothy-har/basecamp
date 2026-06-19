@@ -7,10 +7,10 @@ import sys
 from pathlib import Path
 
 import rich_click as click
-
 from basecamp_cli.cli.config import run_config_menu
 from basecamp_cli.cli.setup import execute_setup
 from basecamp_cli.exceptions import LauncherError
+from basecamp_cli.installer import run_interactive_install
 from basecamp_cli.ui import err_console
 
 # Companion is an optional component — lazy import
@@ -134,8 +134,6 @@ def companion_analyze(session_id: str, base_dir: Path | None) -> None:
 @basecamp.command()
 def install() -> None:
     """Install or reconfigure basecamp components."""
-    from basecamp_cli.installer import run_interactive_install
-
     run_interactive_install()
 
 

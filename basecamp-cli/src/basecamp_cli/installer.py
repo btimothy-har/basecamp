@@ -153,7 +153,7 @@ def _install_memory_stack() -> None:
             f"  [yellow]⚠[/yellow] Node {major} detected; memory stack ({PI_TOTAL_RECALL_SPEC}) "
             f"requires Node >= {MIN_NODE_MAJOR} — skipping."
         )
-        console.print("    [dim]basecamp core is installed. Upgrade Node and re-run basecamp install to add memory.[/dim]")
+        console.print("    [dim]Upgrade Node and re-run basecamp install to add memory.[/dim]")
         return
     _install_pi_npm_package(PI_TOTAL_RECALL_SPEC, "pi-total-recall (memory stack)")
 
