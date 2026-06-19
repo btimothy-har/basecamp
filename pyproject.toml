@@ -37,16 +37,17 @@ dev = [
 ]
 
 [tool.uv.workspace]
-members = ["basecamp-cli", "core/config", "pi-swarm/cli", "pi-companion/tui"]
+members = ["basecamp-cli", "core/config", "workspace/projects", "pi-swarm/cli", "pi-companion/tui"]
 
 [tool.uv.sources]
 basecamp-cli = { workspace = true }
 basecamp-core = { workspace = true }
+basecamp-workspace = { workspace = true }
 companion-tui = { workspace = true }
 
 [tool.pytest.ini_options]
-testpaths = ["basecamp-cli/tests", "core/config/tests", "pi-companion/tui/tests"]
-pythonpath = ["basecamp-cli/src", "core/config/src", "pi-swarm/cli/src", "pi-companion/tui/src"]
+testpaths = ["basecamp-cli/tests", "core/config/tests", "workspace/projects/tests", "pi-companion/tui/tests"]
+pythonpath = ["basecamp-cli/src", "core/config/src", "workspace/projects/src", "pi-swarm/cli/src", "pi-companion/tui/src"]
 env = ["TESTING=1"]
 
 [tool.ruff]

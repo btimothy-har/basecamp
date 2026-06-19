@@ -1,7 +1,4 @@
-"""Compatibility exports for project configuration.
-
-Project configuration is owned by :mod:`basecamp_workspace.projects`.
-"""
+"""Basecamp workspace project configuration."""
 
 from basecamp_workspace.projects import ProjectConfig, load_projects, save_projects
 

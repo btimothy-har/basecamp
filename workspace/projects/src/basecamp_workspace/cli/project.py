@@ -1,0 +1,303 @@
+"""Interactive project management commands for basecamp-workspace."""
+
+from __future__ import annotations
+
+from pathlib import Path
+
+import questionary
+from basecamp_core.paths import USER_CONTEXT_DIR, USER_STYLES_DIR
+from basecamp_core.settings import settings
+
+from basecamp_workspace import ProjectConfig, load_projects, save_projects
+from basecamp_workspace.directories import to_home_relative
+from basecamp_workspace.ui import console, display_projects
+
+
+def _to_relative(path_str: str) -> str:
+    """Convert an absolute path to home-relative for storage."""
+    expanded = Path(path_str).expanduser().resolve()
+    return to_home_relative(expanded)
+
+
+def _available_styles() -> list[str]:
+    """Scan extension + user dirs for available working styles."""
+    styles: set[str] = set()
+    install_dir = settings.install_dir
+    if install_dir:
+        script_dir = Path(install_dir)
+        style_dirs = [
+            script_dir / "workspace" / "pi" / "src" / "system-prompts" / "styles",
+            script_dir / "pi-extension" / "projects" / "src" / "system-prompts" / "styles",
+        ]
+        for style_dir in style_dirs:
+            if style_dir.exists():
+                styles.update(path.stem for path in style_dir.glob("*.md"))
+    if USER_STYLES_DIR.exists():
+        styles.update(path.stem for path in USER_STYLES_DIR.glob("*.md"))
+    return sorted(styles)
+
+
+def _available_contexts() -> list[str]:
+    """Scan user dir for available context files."""
+    if not USER_CONTEXT_DIR.exists():
+        return []
+    return sorted(path.stem for path in USER_CONTEXT_DIR.glob("*.md"))
+
+
+def _prompt_directory(message: str, default: str = "~/") -> str | None:
+    """Prompt for a directory path with validation."""
+    result = questionary.path(
+        message,
+        default=default,
+        only_directories=True,
+    ).ask()
+    if result is None:
+        return None
+
+    expanded = Path(result).expanduser().resolve()
+    if not expanded.is_dir():
+        console.print(f"  [red]Directory does not exist:[/red] {expanded}")
+        return None
+    return result
+
+
+def _prompt_project_fields(
+    existing_names: set[str],
+) -> tuple[str, ProjectConfig] | None:
+    """Walk through the interactive project creation flow.
+
+    Returns (name, ProjectConfig) or None if the user cancelled.
+    """
+    name = questionary.text(
+        "Project name:",
+        validate=lambda val: (
+            True if val.strip() and val.strip() not in existing_names else "Name is required and must be unique"
+        ),
+    ).ask()
+    if name is None:
+        return None
+    name = name.strip()
+
+    repo_root_input = _prompt_directory("Repository root:")
+    if repo_root_input is None:
+        return None
+    repo_root = _to_relative(repo_root_input)
+
+    additional_dirs: list[str] = []
+    while True:
+        add_more = questionary.confirm(
+            "Add another directory?",
+            default=False,
+        ).ask()
+        if add_more is None:
+            return None
+        if not add_more:
+            break
+        extra = _prompt_directory("Additional directory:")
+        if extra is None:
+            return None
+        additional_dirs.append(_to_relative(extra))
+
+    style_choices = ["none", *_available_styles()]
+    working_style = questionary.select(
+        "Working style:",
+        choices=style_choices,
+        default="none",
+    ).ask()
+    if working_style is None:
+        return None
+    if working_style == "none":
+        working_style = None
+
+    description = questionary.text(
+        "Description (optional):",
+    ).ask()
+    if description is None:
+        return None
+
+    context_files = _available_contexts()
+    context: str | None = None
+    if context_files:
+        context_choices = ["none", *context_files]
+        context = questionary.select(
+            "Context file:",
+            choices=context_choices,
+            default="none",
+        ).ask()
+        if context is None:
+            return None
+        if context == "none":
+            context = None
+    else:
+        console.print(f"  [dim]No context files found in {USER_CONTEXT_DIR}/[/dim]")
+
+    project = ProjectConfig(
+        repo_root=repo_root,
+        additional_dirs=additional_dirs,
+        description=description.strip(),
+        working_style=working_style,
+        context=context,
+    )
+    return name, project
+
+
+def execute_project_list() -> None:
+    """List all available projects."""
+    projects = load_projects()
+    display_projects(projects)
+
+
+def execute_project_add() -> None:
+    """Interactively add a new project."""
+    projects = load_projects()
+    existing_names = set(projects.keys())
+
+    console.print()
+    console.print("[bold blue]Add a new project[/bold blue]")
+    console.print()
+
+    result = _prompt_project_fields(existing_names=existing_names)
+    if result is None:
+        console.print("\n[yellow]Cancelled.[/yellow]")
+        return
+
+    name, project = result
+    projects[name] = project
+    save_projects(projects)
+
+    console.print(f"\n[green]✓[/green] Added project [bold]{name}[/bold]")
+
+
+def _prompt_edit_fields(existing: ProjectConfig) -> ProjectConfig | None:
+    """Walk through the interactive project editing flow.
+
+    Returns updated ProjectConfig or None if the user cancelled.
+    """
+    root_default = f"~/{existing.repo_root}" if existing.repo_root else "~/"
+    repo_root_input = _prompt_directory("Repository root:", default=root_default)
+    if repo_root_input is None:
+        return None
+    repo_root = _to_relative(repo_root_input)
+
+    additional_dirs: list[str] = []
+    for directory in existing.additional_dirs:
+        keep = questionary.confirm(
+            f"Keep additional directory ~/{directory}?",
+            default=True,
+        ).ask()
+        if keep is None:
+            return None
+        if keep:
+            additional_dirs.append(directory)
+
+    while True:
+        add_more = questionary.confirm(
+            "Add another directory?",
+            default=False,
+        ).ask()
+        if add_more is None:
+            return None
+        if not add_more:
+            break
+        extra = _prompt_directory("Additional directory:")
+        if extra is None:
+            return None
+        additional_dirs.append(_to_relative(extra))
+
+    style_choices = ["none", *_available_styles()]
+    style_default = existing.working_style if existing.working_style else "none"
+    working_style = questionary.select(
+        "Working style:",
+        choices=style_choices,
+        default=style_default,
+    ).ask()
+    if working_style is None:
+        return None
+    if working_style == "none":
+        working_style = None
+
+    description = questionary.text(
+        "Description (optional):",
+        default=existing.description,
+    ).ask()
+    if description is None:
+        return None
+
+    context_files = _available_contexts()
+    context: str | None = None
+    if context_files:
+        context_choices = ["none", *context_files]
+        context_default = existing.context if existing.context else "none"
+        context = questionary.select(
+            "Context file:",
+            choices=context_choices,
+            default=context_default,
+        ).ask()
+        if context is None:
+            return None
+        if context == "none":
+            context = None
+    else:
+        console.print(f"  [dim]No context files found in {USER_CONTEXT_DIR}/[/dim]")
+
+    return ProjectConfig(
+        repo_root=repo_root,
+        additional_dirs=additional_dirs,
+        description=description.strip(),
+        working_style=working_style,
+        context=context,
+    )
+
+
+_PROTECTED_PROJECT = "basecamp"
+
+
+def execute_project_edit(name: str) -> None:
+    """Interactively edit an existing project."""
+    if name == _PROTECTED_PROJECT:
+        console.print(f"[red]Error:[/red] The '{_PROTECTED_PROJECT}' project cannot be edited via CLI")
+        raise SystemExit(1)
+
+    projects = load_projects()
+    if name not in projects:
+        console.print(f"[red]Error:[/red] Project '{name}' not found")
+        raise SystemExit(1)
+
+    console.print()
+    console.print(f"[bold blue]Edit project: {name}[/bold blue]")
+    console.print()
+
+    updated = _prompt_edit_fields(projects[name])
+    if updated is None:
+        console.print("\n[yellow]Cancelled.[/yellow]")
+        return
+
+    projects[name] = updated
+    save_projects(projects)
+
+    console.print(f"\n[green]✓[/green] Updated project [bold]{name}[/bold]")
+
+
+def execute_project_remove(name: str) -> None:
+    """Remove a project after confirmation."""
+    if name == _PROTECTED_PROJECT:
+        console.print(f"[red]Error:[/red] The '{_PROTECTED_PROJECT}' project cannot be removed via CLI")
+        raise SystemExit(1)
+
+    projects = load_projects()
+    if name not in projects:
+        console.print(f"[red]Error:[/red] Project '{name}' not found")
+        raise SystemExit(1)
+
+    confirmed = questionary.confirm(
+        f"Remove project '{name}'?",
+        default=False,
+    ).ask()
+    if not confirmed:
+        console.print("[yellow]Cancelled.[/yellow]")
+        return
+
+    del projects[name]
+    save_projects(projects)
+
+    console.print(f"[green]✓[/green] Removed project [bold]{name}[/bold]")

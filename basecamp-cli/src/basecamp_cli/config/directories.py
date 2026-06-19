@@ -1,21 +1,8 @@
-"""Directory helpers for basecamp config."""
+"""Compatibility exports for directory helpers.
 
-from pathlib import Path
+Directory helpers are owned by :mod:`basecamp_workspace.directories`.
+"""
 
-from basecamp_cli.exceptions import LauncherError
+from basecamp_workspace.directories import to_home_relative
 
-
-def to_home_relative(path: Path) -> str:
-    """Convert an absolute path to a home-relative string for config storage.
-
-    All project directories are stored relative to $HOME.
-
-    Raises:
-        LauncherError: If the path is not under the home directory.
-    """
-    home = Path.home()
-    try:
-        return str(path.relative_to(home))
-    except ValueError:
-        msg = f"Path must be under $HOME ({home}): {path}"
-        raise LauncherError(msg) from None
+__all__ = ["to_home_relative"]

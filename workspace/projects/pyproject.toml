@@ -1,14 +1,13 @@
 [project]
-name = "basecamp-cli"
+name = "basecamp-workspace"
 version = "0.8.0"
-description = "Basecamp setup and config — project configuration and workspace management"
+description = "Basecamp workspace — project configuration and interactive workspace config"
 requires-python = ">=3.12"
 dependencies = [
     "basecamp-core",
-    "basecamp-workspace",
     "pydantic>=2.0",
     "questionary>=2.1.1",
-    "rich-click>=1.8",
+    "rich",
 ]
 
 [dependency-groups]
@@ -18,8 +17,6 @@ dev = [
     "pytest-asyncio>=0.23.0",
     "pytest-mock>=3.14.0",
     "pytest-env>=1.2.0",
-    "factory-boy>=3.3.0",
-    "freezegun>=1.5.2",
 ]
 
 [build-system]
@@ -27,4 +24,4 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/basecamp_cli"]
+packages = ["src/basecamp_workspace"]
