@@ -239,7 +239,7 @@ def main() -> None:
     install_pi_package(REPO_DIR / "pi-tasks", "pi-tasks")
     install_pi_package(REPO_DIR / "pi-git", "pi-git")
     install_pi_package(REPO_DIR / "pi-engineering", "pi-engineering")
-    install_pi_package(REPO_DIR / "pi-companion", "pi-companion")
+    install_pi_package(REPO_DIR / "pi-companion" / "pi", "pi-companion")
     install_pi_package(REPO_DIR / "pi-swarm" / "extension", "pi-swarm extension")
     install_memory_stack()
 

@@ -28,8 +28,8 @@
 		"@earendil-works/pi-tui": "*"
 	},
 	"devDependencies": {
-		"pi-core": "file:../pi-core",
-		"pi-ui": "file:../pi-ui",
+		"pi-core": "file:../../pi-core",
+		"pi-ui": "file:../../pi-ui",
 		"@biomejs/biome": "^2.0.0",
 		"@earendil-works/pi-agent-core": "^0.78.0",
 		"@earendil-works/pi-coding-agent": "^0.78.0",
