@@ -1,0 +1,43 @@
+{
+	"name": "pi-engineering",
+	"type": "module",
+	"version": "1.0.0",
+	"engines": {
+		"node": ">=24"
+	},
+	"description": "Basecamp engineering tools and skills — BigQuery, Python, SQL, dbt, marimo, code review.",
+	"keywords": [
+		"pi-package"
+	],
+	"pi": {
+		"extensions": [
+			"./index.ts"
+		],
+		"skills": [
+			"./skills"
+		],
+		"prompts": [
+			"./prompts"
+		]
+	},
+	"scripts": {
+		"check": "tsc && biome check .",
+		"typecheck": "tsc",
+		"lint": "biome check .",
+		"lint:fix": "biome check --fix .",
+		"format": "biome format --fix ."
+	},
+	"peerDependencies": {
+		"pi-core": "*",
+		"@earendil-works/pi-coding-agent": "*"
+	},
+	"devDependencies": {
+		"pi-core": "file:../pi-core",
+		"@biomejs/biome": "^2.0.0",
+		"@earendil-works/pi-agent-core": "^0.78.0",
+		"@earendil-works/pi-coding-agent": "^0.78.0",
+		"@sinclair/typebox": "^0.34.0",
+		"@types/node": "^22.0.0",
+		"typescript": "^5.8.0"
+	}
+}

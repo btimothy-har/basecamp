@@ -239,6 +239,7 @@ def main() -> None:
     install_pi_package(REPO_DIR / "pi-workspace", "pi-workspace")
     install_pi_package(REPO_DIR / "pi-tasks", "pi-tasks")
     install_pi_package(REPO_DIR / "pi-git", "pi-git")
+    install_pi_package(REPO_DIR / "pi-engineering", "pi-engineering")
     install_pi_package(EXTENSION_DIR, "basecamp Pi extension")
     install_memory_stack()
 
