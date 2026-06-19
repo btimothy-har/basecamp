@@ -6,14 +6,14 @@ from pathlib import Path
 
 import questionary
 
-from basecamp.config import (
+from basecamp_cli.config import (
     ProjectConfig,
     load_projects,
     save_projects,
 )
-from basecamp.config.directories import to_home_relative
-from basecamp.constants import SCRIPT_DIR, USER_CONTEXT_DIR, USER_STYLES_DIR
-from basecamp.ui import console, display_projects
+from basecamp_cli.config.directories import to_home_relative
+from basecamp_cli.constants import SCRIPT_DIR, USER_CONTEXT_DIR, USER_STYLES_DIR
+from basecamp_cli.ui import console, display_projects
 
 
 def _to_relative(path_str: str) -> str:

@@ -2,7 +2,7 @@
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from basecamp.settings import settings
+from basecamp_cli.settings import settings
 
 
 class ProjectConfig(BaseModel):

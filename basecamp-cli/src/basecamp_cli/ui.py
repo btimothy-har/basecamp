@@ -7,7 +7,7 @@ from datetime import datetime, timezone
 from rich.console import Console
 from rich.table import Table
 
-from basecamp.config.project import ProjectConfig
+from basecamp_cli.config.project import ProjectConfig
 
 # Console instances for output
 console = Console()

@@ -15,7 +15,7 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
 
-from basecamp.utils import atomic_write_json
+from basecamp_cli.utils import atomic_write_json
 
 _DEFAULT_PATH = Path.home() / ".pi" / "basecamp" / "config.json"
 

@@ -5,9 +5,9 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-import basecamp.config.project as project_config
+import basecamp_cli.config.project as project_config
 import pytest
-from basecamp.settings import Settings
+from basecamp_cli.settings import Settings
 from pydantic import ValidationError
 
 

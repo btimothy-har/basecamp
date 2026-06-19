@@ -3,15 +3,15 @@
 import shutil
 import subprocess
 
-from basecamp.config import ProjectConfig, save_projects
-from basecamp.config.directories import to_home_relative
-from basecamp.constants import (
+from basecamp_cli.config import ProjectConfig, save_projects
+from basecamp_cli.config.directories import to_home_relative
+from basecamp_cli.constants import (
     SCRIPT_DIR,
     USER_CONTEXT_DIR,
     USER_STYLES_DIR,
 )
-from basecamp.settings import settings
-from basecamp.ui import console
+from basecamp_cli.settings import settings
+from basecamp_cli.ui import console
 
 # The bundled memory stack (pi-total-recall) needs Node >= 24 (node:sqlite FTS5).
 MIN_NODE_MAJOR = 24

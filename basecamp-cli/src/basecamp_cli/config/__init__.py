@@ -1,6 +1,6 @@
 """Configuration management for basecamp."""
 
-from basecamp.config.project import (
+from basecamp_cli.config.project import (
     ProjectConfig,
     load_projects,
     save_projects,

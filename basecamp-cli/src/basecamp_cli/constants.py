@@ -4,7 +4,7 @@ import os
 import tempfile
 from pathlib import Path
 
-from basecamp.settings import settings
+from basecamp_cli.settings import settings
 
 # Install root — written to config.json by install.py during installation.
 # In test environments (TESTING=1), fall back to a placeholder so the module
