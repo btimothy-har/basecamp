@@ -31,7 +31,7 @@ Pi-core provides working defaults (git detection from cwd, `process.cwd()` as cw
 ## Installation
 
 ```bash
-pi install /path/to/pi-core
+pi install /path/to/core/pi
 ```
 
 Installed automatically by `install.py`. Must be installed before any other basecamp package.

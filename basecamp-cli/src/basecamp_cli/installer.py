@@ -26,9 +26,9 @@ MIN_NODE_MAJOR: Final = 24
 PI_TOTAL_RECALL_SPEC: Final = "pi-total-recall@1.8.0"
 
 _TS_PACKAGES: Final = [
-    ("pi-core", "pi-core"),
+    ("core/pi", "pi-core"),
     ("pi-ui", "pi-ui"),
-    ("pi-workspace", "pi-workspace"),
+    ("workspace/pi", "pi-workspace"),
     ("pi-tasks", "pi-tasks"),
     ("pi-git", "pi-git"),
     ("pi-engineering", "pi-engineering"),

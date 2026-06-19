@@ -33,7 +33,7 @@
 		"ws": "^8"
 	},
 	"devDependencies": {
-		"pi-core": "file:../../pi-core",
+		"pi-core": "file:../../core/pi",
 		"pi-ui": "file:../../pi-ui",
 		"pi-tasks": "file:../../pi-tasks",
 		"@biomejs/biome": "^2.0.0",

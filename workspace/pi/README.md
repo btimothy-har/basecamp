@@ -17,7 +17,7 @@ Basecamp workspace config + project context layer. Overrides pi-core's git-detec
 ## Installation
 
 ```bash
-pi install /path/to/pi-workspace
+pi install /path/to/workspace/pi
 ```
 
 Installed automatically by `install.py`.
