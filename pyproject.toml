@@ -1,9 +1,9 @@
 [tool.uv.workspace]
-members = ["basecamp-cli", "pi-swarm/cli"]
+members = ["basecamp-cli", "pi-swarm/cli", "pi-companion/tui"]
 
 [tool.pytest.ini_options]
-testpaths = ["basecamp-cli/tests", "pi-swarm/cli/tests"]
-pythonpath = ["basecamp-cli/src", "pi-swarm/cli/src"]
+testpaths = ["basecamp-cli/tests", "pi-swarm/cli/tests", "pi-companion/tui/tests"]
+pythonpath = ["basecamp-cli/src", "pi-swarm/cli/src", "pi-companion/tui/src"]
 env = ["TESTING=1"]
 
 [tool.ruff]
