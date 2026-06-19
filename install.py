@@ -26,6 +26,7 @@ console = Console()
 REPO_DIR: Final = Path(__file__).parent
 
 CLI_DIR: Final = REPO_DIR / "basecamp-cli"
+CORE_DIR: Final = REPO_DIR / "pi-core"
 EXTENSION_DIR: Final = REPO_DIR / "pi-extension"
 
 # Bundled memory stack. pi-session-search/pi-knowledge-search require Node >= 24
@@ -233,6 +234,7 @@ def main() -> None:
     console.print()
     console.print("[bold]Pi package[/bold]")
     console.print()
+    install_pi_package(CORE_DIR, "pi-core")
     install_pi_package(EXTENSION_DIR, "basecamp Pi extension")
     install_memory_stack()
 

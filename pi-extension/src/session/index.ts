@@ -1,26 +1,15 @@
 /**
- * Session extension — mode lifecycle, shell UI, and session title behavior.
+ * Session UI — footer, title, mode-editor. Lifecycle/compaction/mode-command
+ * have moved to pi-core; this module now only registers the UI layer.
  */
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { registerModeShortcut } from "./commands/mode";
-import { registerCompactionModel } from "./runtime/compaction.ts";
-import { registerSession } from "./runtime/session";
 import { registerFooter } from "./ui/footer";
 import { registerModeEditor } from "./ui/mode-editor";
 import { registerTitle } from "./ui/title";
 
 export default function (pi: ExtensionAPI) {
-	const isSubagent = Number(process.env.BASECAMP_AGENT_DEPTH ?? "0") > 0;
-
-	registerSession(pi);
-	registerCompactionModel(pi);
 	registerFooter(pi);
 	registerModeEditor(pi);
 	registerTitle(pi);
-
-	// Primary-only interactions should not be available to subagents.
-	if (!isSubagent) {
-		registerModeShortcut(pi);
-	}
 }
