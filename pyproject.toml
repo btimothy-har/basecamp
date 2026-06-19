@@ -1,5 +1,36 @@
+[project]
+name = "basecamp"
+version = "0.8.0"
+description = "Basecamp — project configuration and workspace management for AI coding agents"
+requires-python = ">=3.12"
+dependencies = [
+    "basecamp-cli",
+    "rich-click>=1.8",
+]
+
+[project.optional-dependencies]
+companion = ["companion-tui"]
+
+[project.scripts]
+basecamp = "cli:main"
+
+[dependency-groups]
+dev = [
+    "ruff~=0.13.1",
+    "pytest>=8.0.0",
+    "pytest-asyncio>=0.23.0",
+    "pytest-mock>=3.14.0",
+    "pytest-env>=1.2.0",
+    "factory-boy>=3.3.0",
+    "freezegun>=1.5.2",
+]
+
 [tool.uv.workspace]
 members = ["basecamp-cli", "pi-swarm/cli", "pi-companion/tui"]
+
+[tool.uv.sources]
+basecamp-cli = { workspace = true }
+companion-tui = { workspace = true }
 
 [tool.pytest.ini_options]
 testpaths = ["basecamp-cli/tests", "pi-swarm/cli/tests", "pi-companion/tui/tests"]
