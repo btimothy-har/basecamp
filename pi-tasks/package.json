@@ -5,7 +5,7 @@
 	"engines": {
 		"node": ">=24"
 	},
-	"description": "Basecamp task lifecycle + planning — goal tracking, task state machine, /plan command, workflow skills.",
+	"description": "Basecamp task lifecycle + planning — goal tracking, task state machine, /plan command.",
 	"keywords": [
 		"pi-package"
 	],
@@ -20,9 +20,7 @@
 	"scripts": {
 		"check": "tsc && biome check .",
 		"typecheck": "tsc",
-		"test": "npm run test:planning && npm run test:agents",
-		"test:planning": "node --experimental-strip-types --test src/tests/*.test.ts",
-		"test:agents": "node --experimental-strip-types --test src/agents/tests/*.test.ts",
+		"test": "node --experimental-strip-types --test src/tests/*.test.ts",
 		"lint": "biome check .",
 		"lint:fix": "biome check --fix .",
 		"format": "biome format --fix ."

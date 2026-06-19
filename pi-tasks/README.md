@@ -6,8 +6,9 @@ Basecamp task lifecycle + planning — goal tracking, task state machine, `/plan
 
 - **Task tools**: `update_goal`, `create_tasks`, `start_task`, `complete_task`, `get_task`, `annotate_task`, `delete_task` — persistent goal/task tracking with a below-editor widget
 - **Planning**: `/plan` command with structured plan review, draft logic, plan skill guard, worktree choices for implementation handoff
-- **Workflow skills**: `agents`, `gather`, `planning` SKILL.md content
-- **Agents** (transitional): sync in-process agent dispatch. Ships dormant during the move phase; will be deleted in the cutover phase when pi-swarm becomes the sole agent tool provider.
+- **Workflow skills**: `gather`, `planning` SKILL.md content (`agents` skill moved to pi-swarm)
+
+The sync in-process agent tool has been removed in the cutover. pi-swarm/extension now provides the sole agent tool (daemon-backed `dispatch_agent`/`wait_for_agent`/`list_agents`).
 
 ## Dependencies
 

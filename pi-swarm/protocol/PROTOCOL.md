@@ -10,7 +10,7 @@ All frames are JSON objects with an envelope:
 
 Version handling:
 - The daemon validates `v` on every inbound frame.
-- If `v != 5`, the daemon sends an `error` frame with `code: "protocol_version"` and closes the connection.
+- If `v != 6`, the daemon sends an `error` frame with `code: "protocol_version"` and closes the connection.
 - The extension treats the protocol as a client-visible capability gate, not only a frame-shape version. A version mismatch restarts the host daemon during ensure-daemon.
 
 ## Transport

@@ -1,6 +1,6 @@
 {
   "type": "telemetry",
-  "v": 5,
+  "v": 6,
   "run_id": "run-001",
   "agent_id": "agent-42",
   "report_token": "report-token-raw-32bytes",
