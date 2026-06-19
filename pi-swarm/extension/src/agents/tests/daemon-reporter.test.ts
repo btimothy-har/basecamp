@@ -39,7 +39,6 @@ describe("daemon reporter", () => {
 		resolveModelAlias: (model: string) => model,
 		readSkillContent: () => null,
 		buildSkillBlock: () => "",
-		setDaemonStatus: () => {},
 		formatTaskProgressSummary: () => null,
 		renderCompactTaskProgressLines: () => [],
 		formatTitle: () => "basecamp",

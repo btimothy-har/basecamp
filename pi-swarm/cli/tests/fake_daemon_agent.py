@@ -7,6 +7,7 @@ import os
 import time
 from pathlib import Path
 
+from pi_swarm.frames import PROTOCOL_VERSION
 from websockets.sync.client import unix_connect
 
 
@@ -32,7 +33,7 @@ def main() -> int:
             json.dumps(
                 {
                     "type": "register",
-                    "v": 4,
+                    "v": PROTOCOL_VERSION,
                     "role": "agent",
                     "node_id": node_id,
                     "parent_id": parent,
@@ -49,7 +50,7 @@ def main() -> int:
             json.dumps(
                 {
                     "type": "telemetry",
-                    "v": 4,
+                    "v": PROTOCOL_VERSION,
                     "run_id": run_id,
                     "agent_id": agent_id,
                     "report_token": report_token,
@@ -71,7 +72,7 @@ def main() -> int:
             json.dumps(
                 {
                     "type": "result_report",
-                    "v": 4,
+                    "v": PROTOCOL_VERSION,
                     "run_id": run_id,
                     "agent_id": agent_id,
                     "report_token": report_token,

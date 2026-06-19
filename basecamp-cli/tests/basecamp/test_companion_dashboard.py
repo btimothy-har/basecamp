@@ -7,6 +7,7 @@ import json
 import subprocess
 from pathlib import Path
 
+import pytest
 from basecamp.companion.app import (
     CompanionApp,
     DashboardBody,
@@ -86,11 +87,17 @@ def _goal(name: str, tasks: list[CompanionTask], *, active: bool, completed: int
     )
 
 
-def _daemon_summary_ok(*, total: int, runs: list[DaemonSummaryRun]) -> DaemonSummaryOk:
+def _daemon_summary_ok(
+    *,
+    total: int,
+    runs: list[DaemonSummaryRun],
+    session_active: bool = True,
+) -> DaemonSummaryOk:
     return DaemonSummaryOk(
         root_id="root",
         counts=DaemonSummaryCounts(pending=0, running=0, completed=total, failed=0, total=total),
         runs=runs,
+        session_active=session_active,
     )
 
 
@@ -136,6 +143,29 @@ def test_render_daemon_summary_error() -> None:
     text = _to_text(_render_daemon_summary(summary))
     assert "Daemon error" in text
     assert "bad daemon payload" in text
+
+
+@pytest.mark.parametrize(
+    (
+        "summary",
+        "visible",
+    ),
+    [
+        (None, False),
+        (
+            DaemonSummaryUnavailable(error="daemon socket missing"),
+            False,
+        ),
+        (
+            DaemonSummaryError(error="daemon payload malformed"),
+            False,
+        ),
+        (_daemon_summary_ok(total=0, runs=[], session_active=False), False),
+        (_daemon_summary_ok(total=0, runs=[], session_active=True), True),
+    ],
+)
+def test_is_daemon_panel_visible_for_summary_state(summary: DaemonSummary | None, visible) -> None:
+    assert DashboardBody._is_daemon_panel_visible(summary) is visible
 
 
 def test_render_daemon_summary_running_uses_hourglass() -> None:
@@ -306,6 +336,82 @@ def test_poll_daemon_summary_converts_unexpected_source_errors(tmp_path: Path) -
     assert "session-123" in result.error
 
 
+def test_dashboard_shows_daemon_panel_when_session_active(tmp_path: Path) -> None:
+    repo = tmp_path / "repo"
+    tasks_dir = tmp_path / "tasks"
+    tasks_dir.mkdir()
+    snapshot_path = tmp_path / "snapshot.json"
+    _build_repo(repo)
+    session_id = "dead-beef-cafe-babe"
+    snapshot_path.write_text(
+        json.dumps({"version": 1, "sessionId": session_id, "updatedAt": "t", "effectiveCwd": str(repo)}),
+        encoding="utf-8",
+    )
+    (tasks_dir / f"{session_id}.json").write_text(
+        json.dumps(
+            [
+                {
+                    "goal": "Dashboard goal",
+                    "tasks": [
+                        {"label": "T1", "description": "d1", "criteria": "c1", "status": "active", "notes": None}
+                    ],
+                    "agentMode": None,
+                    "active": True,
+                    "archivedAt": None,
+                }
+            ]
+        ),
+        encoding="utf-8",
+    )
+    analysis_path = snapshot_path.parent / f"{snapshot_path.stem}.analysis.json"
+    analysis_path.write_text(
+        json.dumps(
+            {
+                "version": 1,
+                "sessionId": session_id,
+                "updatedAt": "t",
+                "decisions": [],
+                "openItems": [],
+                "warnings": [],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    daemon_source = _FakeDaemonSource(
+        _daemon_summary_ok(
+            total=0,
+            runs=[],
+            session_active=True,
+        )
+    )
+    app = CompanionApp(
+        snapshot_path=snapshot_path,
+        cwd=repo,
+        tasks_dir=tasks_dir,
+        daemon_source=daemon_source,
+    )
+
+    async def run() -> None:
+        async with app.run_test() as pilot:
+            await pilot.pause()
+            dash = app.query_one("#dashboard-body", DashboardBody)
+            for _ in range(100):
+                if dash._active_index is not None and app.query("#goal-0"):
+                    break
+                await pilot.pause(0.02)
+            else:
+                raise AssertionError
+
+            daemon_panel = app.query_one("#dashboard-daemon", Static)
+            assert daemon_panel.display is True
+            assert dash._is_daemon_panel_visible(dash._daemon_summary) is True
+            assert dash._daemon_summary is not None
+            assert daemon_source.poll_calls[-1] == session_id
+
+    asyncio.run(run())
+
+
 def test_dashboard_autopin_navigation_and_repin(tmp_path: Path) -> None:
     repo = tmp_path / "repo"
     tasks_dir = tmp_path / "tasks"
@@ -391,6 +497,9 @@ def test_dashboard_autopin_navigation_and_repin(tmp_path: Path) -> None:
             ):
                 app.query_one(box_id, Static)
             app.query_one("#goal-1", Static)
+
+            daemon_panel = app.query_one("#dashboard-daemon", Static)
+            assert daemon_panel.display is False
 
             assert daemon_source.poll_calls[-1] == session_id
 

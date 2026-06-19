@@ -110,10 +110,13 @@ export function registerDaemonTools(
 		description: "Dispatch an agent asynchronously and return an agent handle.",
 		parameters: DispatchAgentParams,
 		async execute(_id, params, _signal, _onUpdate, ctx) {
-			if (!deps.hasInvokedSkill("agents")) {
+			if (!deps.hasInvokedSkill("swarm-agents")) {
 				return {
 					content: [
-						{ type: "text", text: 'Load the agents skill first: call skill({ name: "agents" }) before dispatching.' },
+						{
+							type: "text",
+							text: 'Load the swarm-agents skill first: call skill({ name: "swarm-agents" }) before dispatching.',
+						},
 					],
 					isError: true,
 					details: null,
@@ -170,10 +173,19 @@ export function registerDaemonTools(
 
 			const daemonClient = createDaemonClient(connection);
 			const { plan } = agentLaunch;
+			const taskSpec = plan.args.at(-1);
+			if (!taskSpec) {
+				return {
+					content: [{ type: "text", text: "Unable to build async task argument." }],
+					isError: true,
+					details: null,
+				};
+			}
+
 			const result = await daemonClient.dispatchAgent({
 				agentId,
 				argv: plan.args.slice(0, -1),
-				task: `Task: ${params.task}`,
+				task: taskSpec,
 				cwd: plan.spawnCwd,
 				env: {
 					...processEnvForSpawn(),
@@ -207,12 +219,12 @@ export function registerDaemonTools(
 		description: "List visible async agents under the caller's daemon root.",
 		parameters: ListAgentsParams,
 		async execute(_id, params, _signal) {
-			if (!deps.hasInvokedSkill("agents")) {
+			if (!deps.hasInvokedSkill("swarm-agents")) {
 				return {
 					content: [
 						{
 							type: "text",
-							text: 'Load the agents skill first: call skill({ name: "agents" }) before listing agents.',
+							text: 'Load the swarm-agents skill first: call skill({ name: "swarm-agents" }) before listing agents.',
 						},
 					],
 					isError: true,
@@ -258,10 +270,13 @@ export function registerDaemonTools(
 		description: "Wait for one or more async agent handles to complete.",
 		parameters: WaitForAgentParams,
 		async execute(_id, params, signal) {
-			if (!deps.hasInvokedSkill("agents")) {
+			if (!deps.hasInvokedSkill("swarm-agents")) {
 				return {
 					content: [
-						{ type: "text", text: 'Load the agents skill first: call skill({ name: "agents" }) before dispatching.' },
+						{
+							type: "text",
+							text: 'Load the swarm-agents skill first: call skill({ name: "swarm-agents" }) before dispatching.',
+						},
 					],
 					isError: true,
 					details: null,

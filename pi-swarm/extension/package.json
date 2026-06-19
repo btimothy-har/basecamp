@@ -15,6 +15,14 @@
 		"lint:fix": "biome check --fix .",
 		"format": "biome format --fix ."
 	},
+	"pi": {
+		"extensions": [
+			"./src/index.ts"
+		],
+		"skills": [
+			"./skills"
+		]
+	},
 	"peerDependencies": {
 		"@earendil-works/pi-ai": "*",
 		"@earendil-works/pi-coding-agent": "*",

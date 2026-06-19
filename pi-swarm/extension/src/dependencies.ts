@@ -36,13 +36,6 @@ export interface WorkspaceState {
 	protectedRoot: string | null;
 }
 
-export type DaemonStatusKind = "idle" | "starting" | "connected" | "unavailable" | "disconnected";
-
-export interface DaemonStatus {
-	kind: DaemonStatusKind;
-	message?: string;
-}
-
 export type TaskProgressStatus = "pending" | "active" | "completed" | "deleted";
 
 export interface TaskProgressTask {
@@ -72,7 +65,6 @@ export interface PiSwarmDependencies {
 	buildSkillBlock: (name: string, content: string) => string;
 	formatTaskProgressSummary: (snapshot: TaskProgressSnapshot) => string | null;
 	renderCompactTaskProgressLines: (snapshot: TaskProgressSnapshot, theme: TaskProgressTheme) => string[];
-	setDaemonStatus: (status: DaemonStatus) => void;
 	formatTitle: (title: string, tag: string) => string;
 	shortSessionId: (sessionId: string) => string;
 }

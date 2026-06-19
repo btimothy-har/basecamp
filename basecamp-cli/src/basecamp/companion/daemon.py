@@ -69,6 +69,7 @@ class DaemonSummaryOk:
     root_id: str
     counts: DaemonSummaryCounts
     runs: list[DaemonSummaryRun]
+    session_active: bool
     state: Literal["ok"] = "ok"
 
 
@@ -176,6 +177,13 @@ def _expect_optional_int(payload: dict[str, Any], key: str) -> int | None:
     return value
 
 
+def _expect_bool(payload: dict[str, Any], key: str) -> bool:
+    value = payload.get(key)
+    if not isinstance(value, bool):
+        raise TypeError
+    return value
+
+
 def _expect_optional_str(payload: dict[str, Any], key: str) -> str | None:
     value = payload.get(key)
     if value is None:
@@ -231,6 +239,7 @@ def _parse_payload(payload: object) -> DaemonSummaryOk:
         root_id=_expect_str(payload, "root_id"),
         counts=counts,
         runs=runs,
+        session_active=_expect_bool(payload, "session_active"),
     )
 
 

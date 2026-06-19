@@ -1,22 +1,22 @@
 # Pi Swarm Daemon Protocol
 
-Protocol version: `4`
+Protocol version: `5`
 
 All frames are JSON objects with an envelope:
 
 ```json
-{"type":"<frame_type>","v":4,...}
+{"type":"<frame_type>","v":5,...}
 ```
 
 Version handling:
 - The daemon validates `v` on every inbound frame.
-- If `v != 4`, the daemon sends an `error` frame with `code: "protocol_version"` and closes the connection.
+- If `v != 5`, the daemon sends an `error` frame with `code: "protocol_version"` and closes the connection.
 - The extension treats the protocol as a client-visible capability gate, not only a frame-shape version. A version mismatch restarts the host daemon during ensure-daemon.
 
 ## Transport
 
 - HTTP over Unix domain socket (UDS):
-  - `GET /health` → `{"status":"ok","protocol":4}`
+  - `GET /health` → `{"status":"ok","protocol":5}`
   - `GET /runs/summary?root_id=<id>` returns safe run-summary observability.
 - WebSocket over UDS:
   - `/ws`
@@ -86,7 +86,7 @@ Waits for one or more agent handles:
 ```json
 {
   "type": "wait",
-  "v": 4,
+  "v": 5,
   "agent_ids": ["agent-001"],
   "mode": "all",
   "timeout_s": 30
@@ -114,7 +114,7 @@ Requests a safe directory of agents visible under the caller's root session:
 ```json
 {
   "type": "list_agents",
-  "v": 4,
+  "v": 5,
   "request_id": "list-001",
   "awaitable": true
 }
@@ -149,6 +149,6 @@ Reports protocol/parse errors and closes the WebSocket for fatal frame errors. C
 A minimal client flow is:
 
 1. Connect to `/ws` over the UDS.
-2. Send `register` with `v: 4`.
+2. Send `register` with `v: 5`.
 3. Send `dispatch` with a private `run_id` and public `agent_id`.
 4. Use the `agent_id` with `wait` or discover agents through `list_agents`.
