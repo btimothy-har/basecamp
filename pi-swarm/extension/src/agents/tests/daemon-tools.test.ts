@@ -350,12 +350,22 @@ describe("daemon async tools", () => {
 		trackSkillInvocation("swarm-agents");
 		currentWorkspaceState = {
 			launchCwd: "/wt",
+			effectiveCwd: "/wt",
+			scratchDir: "/tmp/pi/repo",
+			unsafeEdit: false,
 			repo: {
 				root: "/repo-root",
+				isRepo: true,
+				name: "repo",
+				remoteUrl: null,
 			},
 			protectedRoot: "/repo-root",
 			activeWorktree: {
 				path: "/wt",
+				kind: "git-worktree",
+				label: "wt",
+				branch: null,
+				created: false,
 			},
 		};
 
@@ -397,8 +407,14 @@ describe("daemon async tools", () => {
 		trackSkillInvocation("swarm-agents");
 		currentWorkspaceState = {
 			launchCwd: "/launch",
+			effectiveCwd: "/launch",
+			scratchDir: "/tmp/pi/repo",
+			unsafeEdit: false,
 			repo: {
 				root: "/repo-root",
+				isRepo: true,
+				name: "repo",
+				remoteUrl: null,
 			},
 			protectedRoot: null,
 			activeWorktree: null,

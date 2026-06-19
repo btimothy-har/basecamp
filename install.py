@@ -27,7 +27,6 @@ REPO_DIR: Final = Path(__file__).parent
 
 CLI_DIR: Final = REPO_DIR / "basecamp-cli"
 CORE_DIR: Final = REPO_DIR / "pi-core"
-EXTENSION_DIR: Final = REPO_DIR / "pi-extension"
 
 # Bundled memory stack. pi-session-search/pi-knowledge-search require Node >= 24
 # (node:sqlite FTS5), so the install is gated on the Node major version.
@@ -241,7 +240,7 @@ def main() -> None:
     install_pi_package(REPO_DIR / "pi-git", "pi-git")
     install_pi_package(REPO_DIR / "pi-engineering", "pi-engineering")
     install_pi_package(REPO_DIR / "pi-companion", "pi-companion")
-    install_pi_package(EXTENSION_DIR, "basecamp Pi extension")
+    install_pi_package(REPO_DIR / "pi-swarm" / "extension", "pi-swarm extension")
     install_memory_stack()
 
     save_install_dir(REPO_DIR)
