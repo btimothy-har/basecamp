@@ -5,7 +5,7 @@
 	"engines": {
 		"node": ">=24"
 	},
-	"description": "Basecamp companion — session snapshot hooks, tmux panes, and analysis registration. The Python TUI/analyzer lives in basecamp-cli.",
+	"description": "Basecamp companion — session snapshot hooks, tmux panes, and analysis registration. The Python TUI/analyzer lives in pi-companion/tui.",
 	"keywords": [
 		"pi-package"
 	],

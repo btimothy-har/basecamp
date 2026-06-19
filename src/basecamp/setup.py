@@ -2,16 +2,13 @@
 
 import shutil
 import subprocess
+from pathlib import Path
 
-from basecamp_cli.config import ProjectConfig, save_projects
-from basecamp_cli.config.directories import to_home_relative
-from basecamp_cli.constants import (
-    SCRIPT_DIR,
-    USER_CONTEXT_DIR,
-    USER_STYLES_DIR,
-)
-from basecamp_cli.settings import settings
-from basecamp_cli.ui import console
+from basecamp_core.paths import USER_CONTEXT_DIR, USER_STYLES_DIR
+from basecamp_core.settings import settings
+from basecamp_workspace import ProjectConfig, load_projects, save_projects
+from basecamp_workspace.directories import to_home_relative
+from basecamp_workspace.ui import console
 
 # The bundled memory stack (pi-total-recall) needs Node >= 24 (node:sqlite FTS5).
 MIN_NODE_MAJOR = 24
@@ -67,9 +64,17 @@ def _scaffold_dirs() -> None:
         path.mkdir(parents=True, exist_ok=True)
 
 
+def _source_dir() -> Path:
+    """Return the configured basecamp source directory, falling back to this checkout."""
+    install_dir = settings.install_dir
+    if install_dir:
+        return Path(install_dir)
+    return Path(__file__).resolve().parents[2]
+
+
 def _create_default_config() -> None:
     """Create config.json with the basecamp project as a starting point."""
-    relative_path = to_home_relative(SCRIPT_DIR)
+    relative_path = to_home_relative(_source_dir())
     save_projects(
         {
             "basecamp": ProjectConfig(
@@ -106,7 +111,7 @@ def execute_setup() -> None:
 
     config_path = settings.path
     console.print("[bold]Project configuration...[/bold]")
-    existing = settings.projects
+    existing = load_projects()
     if existing:
         count = len(existing)
         console.print(f"  [green]✓[/green] {config_path} [dim]({count} project{'s' if count != 1 else ''})[/dim]")

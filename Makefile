@@ -8,7 +8,7 @@ compile:
 	make sync
 
 test:
-	uv run pytest basecamp-cli/tests pi-companion/tui/tests
+	uv run pytest core/config/tests workspace/projects/tests pi-companion/tui/tests
 	@for pkg in $(TS_PACKAGES); do \
 		echo "--- $$pkg ---"; \
 		npm --prefix $$pkg test 2>&1 | tail -3; \

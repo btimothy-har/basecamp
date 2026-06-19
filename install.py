@@ -13,8 +13,18 @@ Subsequent reconfiguration: `basecamp install`.
 """
 
 import argparse
+import sys
+from pathlib import Path
 
-from basecamp_cli.installer import run_interactive_install
+REPO_DIR = Path(__file__).resolve().parent
+for path in [
+    REPO_DIR / "src",
+    REPO_DIR / "core" / "config" / "src",
+    REPO_DIR / "workspace" / "projects" / "src",
+]:
+    sys.path.insert(0, str(path))
+
+from basecamp.installer import run_interactive_install  # noqa: E402
 
 
 def main() -> None:

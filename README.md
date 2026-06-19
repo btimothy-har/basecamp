@@ -270,8 +270,10 @@ The workspace service owns the `~/.worktrees/<repo>/<label>/` storage convention
 
 basecamp is split into root-level products:
 
-- `basecamp-cli/` — Python package for the `basecamp` setup/config CLI
-- `pi-extension/` — Pi package for project context, session UI, worktrees, workflow, git, and engineering skills
+- `src/basecamp/` — Python composition package for the `basecamp` setup/config/install CLI
+- `core/config/` — Python package for generic Basecamp settings, files, paths, and exceptions
+- `workspace/projects/` — Python package for project config and the interactive config menu
+- `pi-*` / `core/pi` / `workspace/pi` — Pi packages for project context, session UI, worktrees, workflow, git, engineering, and companion features
 
 ## License
 

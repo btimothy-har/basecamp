@@ -14,7 +14,7 @@ from companion_tui.analysis import (
     write_analysis,
 )
 
-from cli import basecamp
+from basecamp.cli import basecamp
 
 
 def test_companion_analyze_writes_sidecar(monkeypatch, tmp_path: Path) -> None:
@@ -28,7 +28,7 @@ def test_companion_analyze_writes_sidecar(monkeypatch, tmp_path: Path) -> None:
     def fake_generate_analysis(**_: object) -> CompanionAnalysis:
         return expected
 
-    monkeypatch.setattr("cli.generate_analysis", fake_generate_analysis)
+    monkeypatch.setattr("basecamp.cli.generate_analysis", fake_generate_analysis)
 
     runner = CliRunner()
     result = runner.invoke(
@@ -64,7 +64,7 @@ def test_companion_analyze_failure_keeps_last_good(monkeypatch, tmp_path: Path) 
     def fake_generate_analysis(**_: object) -> CompanionAnalysis:
         raise RuntimeError("boom")
 
-    monkeypatch.setattr("cli.generate_analysis", fake_generate_analysis)
+    monkeypatch.setattr("basecamp.cli.generate_analysis", fake_generate_analysis)
 
     runner = CliRunner()
     result = runner.invoke(

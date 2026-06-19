@@ -8,30 +8,29 @@ Root-level products:
 
 | Product | Directory | Purpose |
 |---------|-----------|---------|
-| `basecamp` | `basecamp-cli/` | Python CLI for setup/config and project configuration |
+| `basecamp` | `src/basecamp/` | Python composition CLI for setup/config/install |
+| `basecamp-core` | `core/config/` | Generic settings/files/paths/exceptions |
+| `basecamp-workspace` | `workspace/projects/` | Project config and interactive config menu |
 | `pi-swarm` | `pi-swarm/` | Async-agent bounded context for protocol docs, Pi-side agent behavior, and daemon CLI/runtime |
-| Basecamp Pi extension | `pi-extension/` | Pi package for project context, session UI, worktrees, workflow, git, and engineering skills |
+| Basecamp Pi packages | `core/pi`, `workspace/pi`, `pi-*` | Pi packages for project context, session UI, worktrees, workflow, git, and engineering skills |
 
 Package-specific architecture lives in the repo map below.
 
 ## Repo Map
 
 ```
-basecamp-cli/
-├── pyproject.toml              # Python package exposing the `basecamp` CLI
-├── src/basecamp/
-│   ├── main.py                 # Click entry point (setup, config)
-│   ├── cli/
-│   │   ├── config.py           # Interactive configuration menu
-│   │   ├── project.py          # Interactive project CRUD used by config menu
-│   │   └── setup.py            # Environment setup (prerequisites, scaffolding)
-│   ├── config/                 # ProjectConfig model and directory helpers
-│   ├── settings.py             # File-backed config with locking + migrations
-│   ├── constants.py            # Path constants
-│   ├── exceptions.py           # Exception hierarchy
-│   ├── ui.py                   # Console output helpers
-│   └── utils.py                # Shared utilities
-└── tests/basecamp/             # pytest suite for Basecamp settings/config
+src/basecamp/                  # Root Python composition package
+├── cli.py                      # Click entry point (setup, config, install, companion)
+├── setup.py                    # Environment setup (prerequisites, scaffolding)
+└── installer.py                # Bootstrap/reconfiguration install orchestration
+
+core/config/                    # basecamp-core Python package
+├── src/basecamp_core/          # Generic settings/files/paths/exceptions
+└── tests/                      # basecamp-core pytest suite
+
+workspace/projects/             # basecamp-workspace Python package
+├── src/basecamp_workspace/     # Project config and interactive config menu
+└── tests/                      # workspace pytest suite
 
 pi-swarm/                      # Async-agent bounded context
 ├── protocol/                   # Protocol docs and frame fixtures
@@ -91,6 +90,6 @@ Worktrees live in `~/.worktrees/<repo>/<label>/` rather than inside the repo to 
 ### Testing
 
 - **Run all**: `make test` from repo root runs Python pytest plus the pi-extension and pi-swarm extension TypeScript checks/tests.
-- **Python**: `uv run pytest` uses root `pyproject.toml` — `testpaths = ["basecamp-cli/tests"]`, `pythonpath = ["basecamp-cli/src", "pi-swarm/cli/src"]`.
+- **Python**: `uv run pytest` uses root `pyproject.toml` — `testpaths = ["core/config/tests", "workspace/projects/tests", "pi-companion/tui/tests"]`, `pythonpath` includes `src`, `core/config/src`, `workspace/projects/src`, `pi-swarm/cli/src`, and `pi-companion/tui/src`.
 - **TypeScript**: `npm --prefix pi-extension test` runs the session/state/project/workspace/git/workflow unit suites; `npm --prefix pi-swarm/extension test` currently validates the extension package skeleton.
-- **Basecamp tests** live under `basecamp-cli/tests/` and cover settings/config.
+- **Basecamp Python tests** live under `core/config/tests/`, `workspace/projects/tests/`, and `pi-companion/tui/tests/`.
