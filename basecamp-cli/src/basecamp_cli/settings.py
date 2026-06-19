@@ -1,23 +1,23 @@
 """Persistent configuration for basecamp.
 
-Stores settings in ~/.pi/basecamp/config.json so they survive across
+Stores settings in ``~/.pi/basecamp/config.json`` so they survive across
 installations and invocation paths without relying on environment variables.
+
+Generic, schema-agnostic behaviour (locked JSON read/write, ``install_dir``,
+sections) is inherited from :class:`basecamp_core.settings.Settings`. This
+module layers the project/workspace-specific concerns (the ``projects``
+section and the legacy ``dirs`` migration) on top, so project schema stays
+out of ``basecamp_core``.
 """
 
 from __future__ import annotations
 
 import copy
 import fcntl
-import json
 import os
-from collections.abc import Generator
-from contextlib import contextmanager
-from pathlib import Path
 from typing import Any
 
-from basecamp_cli.utils import atomic_write_json
-
-_DEFAULT_PATH = Path.home() / ".pi" / "basecamp" / "config.json"
+from basecamp_core.settings import Settings as _CoreSettings
 
 
 def _migrate_project_dirs(data: dict[str, Any]) -> bool:
@@ -58,33 +58,13 @@ def _migrate_project_dirs(data: dict[str, Any]) -> bool:
     return changed
 
 
-class Settings:
-    """File-backed configuration with locked read-modify-write operations.
+class Settings(_CoreSettings):
+    """Basecamp settings with the project section and legacy ``dirs`` migration.
 
-    Every property read goes to disk. Every property write acquires an
-    exclusive lock, reads the current state, applies the mutation, and
-    writes back atomically — preventing lost updates from concurrent access.
+    Inherits generic locked JSON read/write from
+    :class:`basecamp_core.settings.Settings` and adds project-schema-specific
+    behaviour that must remain outside ``basecamp_core``.
     """
-
-    def __init__(self, path: Path | None = None) -> None:
-        self._path = path or _DEFAULT_PATH
-        self._lock_path = self._path.with_suffix(".lock")
-
-    @property
-    def path(self) -> Path:
-        return self._path
-
-    def _read(self) -> dict[str, Any]:
-        if not self._path.exists():
-            return {}
-        try:
-            parsed = json.loads(self._path.read_text())
-            return parsed if isinstance(parsed, dict) else {}
-        except (json.JSONDecodeError, OSError):
-            return {}
-
-    def _write(self, data: dict[str, Any]) -> None:
-        atomic_write_json(self._path, data, mode=0o600, dir_mode=0o700)
 
     def migrate_project_dirs(self) -> bool:
         """Migrate legacy project directory config in this settings file.
@@ -103,33 +83,6 @@ class Settings:
             return changed
         finally:
             os.close(lock_fd)
-
-    @contextmanager
-    def _locked_update(self) -> Generator[dict[str, Any], None, None]:
-        """Read config under an exclusive lock, yield for mutation, then write back.
-
-        Uses a sibling .lock file so the lock doesn't interfere with
-        atomic_write_json's rename-into-place strategy.
-        """
-        self._lock_path.parent.mkdir(parents=True, mode=0o700, exist_ok=True)
-        lock_fd = os.open(str(self._lock_path), os.O_CREAT | os.O_RDWR, 0o600)
-        try:
-            fcntl.flock(lock_fd, fcntl.LOCK_EX)
-            data = self._read()
-            yield data
-            self._write(data)
-        finally:
-            os.close(lock_fd)
-
-    @property
-    def install_dir(self) -> str | None:
-        val = self._read().get("install_dir")
-        return val if isinstance(val, str) and val.strip() else None
-
-    @install_dir.setter
-    def install_dir(self, value: str) -> None:
-        with self._locked_update() as data:
-            data["install_dir"] = value
 
     @property
     def projects(self) -> dict[str, Any]:
