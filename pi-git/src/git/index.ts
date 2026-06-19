@@ -1,0 +1,24 @@
+/**
+ * Git — guards against destructive operations + PR workflow commands.
+ */
+
+import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { registerCommands } from "./commands";
+import { registerGuards } from "./guards";
+import { registerIssueTool } from "./issue-tool";
+import { registerPublishSkillGuard } from "./publish-skill-guard";
+import { registerReviewPacketTool } from "./review-packet-tool";
+import { registerSafeGitTool } from "./safe-git-tool";
+import { registerStatusTool } from "./status";
+import { registerTool } from "./tool";
+
+export default function (pi: ExtensionAPI) {
+	registerGuards(pi);
+	registerPublishSkillGuard(pi);
+	registerCommands(pi);
+	registerStatusTool(pi);
+	registerSafeGitTool(pi);
+	registerTool(pi);
+	registerIssueTool(pi);
+	registerReviewPacketTool(pi);
+}
