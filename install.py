@@ -243,6 +243,10 @@ def main() -> None:
     install_pi_package(REPO_DIR / "pi-swarm" / "extension", "pi-swarm extension")
     install_memory_stack()
 
+    # pi-swarm daemon CLI (bc-swarm) — optional async-agent runtime
+    # TODO: uncomment when pi-swarm/cli is ready for standalone install
+    # install_python_tool(REPO_DIR / "pi-swarm" / "cli", "bc-swarm", editable=editable)
+
     save_install_dir(REPO_DIR)
 
     console.print()
