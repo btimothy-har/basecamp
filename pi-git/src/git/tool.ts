@@ -10,7 +10,7 @@ import * as path from "node:path";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "@sinclair/typebox";
 import { exec } from "pi-core/platform/exec.ts";
-import { activePR } from "./guards";
+import { activePR, clearActivePR } from "./guards";
 import { showPrReview } from "./review";
 import { getScratchDir } from "./utils";
 
@@ -72,6 +72,7 @@ export function registerTool(pi: ExtensionAPI): void {
 
 			const urlResult = await exec(pi, "gh", ["pr", "view", prNumber, "--json", "url", "-q", ".url"]);
 			const url = urlResult.stdout.trim();
+			clearActivePR(ctx);
 
 			return {
 				content: [

@@ -183,7 +183,7 @@ export function registerCommands(pi: ExtensionAPI): void {
 				ctx.ui.notify(`Created draft PR #${prNumber}`, "info");
 			}
 
-			setActivePR({ number: prNumber, base });
+			setActivePR({ number: prNumber, base }, ctx);
 			const reviewContextBlock = reviewContext ? `\n\nAdditional context:\n${reviewContext}` : "";
 			pi.sendUserMessage(`Please prepare this pull request for my review.
 
