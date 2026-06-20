@@ -67,6 +67,10 @@ def test_core_pi_is_always_first_and_not_duplicated() -> None:
     assert paths.count("pi-tasks") == 1
 
 
+def test_component_choices_are_unselected_by_default() -> None:
+    assert all(not choice.checked for choice in _component_choices())
+
+
 def test_component_checkbox_prompt_constructs_without_default_value_error() -> None:
     prompt = questionary.checkbox(
         "Select optional components to install:",

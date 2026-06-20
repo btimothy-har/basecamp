@@ -109,14 +109,12 @@ def _component_choices() -> list[questionary.Choice]:
         questionary.Choice(
             "Standard session capabilities (pi-ui, pi-workspace, pi-tasks, pi-git)",
             value=COMPONENT_STANDARD,
-            checked=True,
         ),
-        questionary.Choice("Engineering tools (pi-engineering)", value=COMPONENT_ENGINEERING, checked=True),
-        questionary.Choice("Companion (Python extra + pi-companion)", value=COMPONENT_COMPANION, checked=True),
+        questionary.Choice("Engineering tools (pi-engineering)", value=COMPONENT_ENGINEERING),
+        questionary.Choice("Companion (Python extra + pi-companion)", value=COMPONENT_COMPANION),
         questionary.Choice(
             "Swarm / async agents (pi-swarm; auto-includes pi-ui and pi-tasks)",
             value=COMPONENT_SWARM,
-            checked=True,
         ),
     ]
 
