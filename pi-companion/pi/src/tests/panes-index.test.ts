@@ -103,7 +103,7 @@ describe("panes/registerPanes", () => {
 		assert.equal(isCompanionActive(), false);
 	});
 
-	it("sets companion active true and publishes pane status after creating and storing a pane id", async () => {
+	it("sets companion active true and publishes companion status after creating and storing a pane id", async () => {
 		withTmuxEnv();
 		const { pi, emit } = createMockPi((command) => {
 			if (command === "basecamp") return { code: 0, stdout: "", stderr: "" };
@@ -115,7 +115,7 @@ describe("panes/registerPanes", () => {
 
 		assert.equal(getPaneState().paneId, "%42");
 		assert.equal(isCompanionActive(), true);
-		assert.deepEqual(ctx.ui.statusCalls.at(-1), { key: "basecamp.daemon.pane", value: "success:pane ✓" });
+		assert.deepEqual(ctx.ui.statusCalls.at(-1), { key: "basecamp.daemon.pane", value: "success:companion ✓" });
 	});
 
 	it("keeps companion active false, clears stale pane state, and does not publish pane status when ui is unavailable", async () => {
@@ -136,7 +136,7 @@ describe("panes/registerPanes", () => {
 		assert.deepEqual(ctx.ui.statusCalls, []);
 	});
 
-	it("clears stale pane state and publishes pane off when pane guards skip in a ui session", async () => {
+	it("clears stale pane state and publishes companion off when pane guards skip in a ui session", async () => {
 		setCompanionActive(true);
 		const state = getPaneState();
 		state.paneId = "%8";
@@ -152,10 +152,10 @@ describe("panes/registerPanes", () => {
 		assert.equal(getPaneState().currentCwd, null);
 		assert.equal(getPaneState().currentSnapshot, null);
 		assert.equal(isCompanionActive(), false);
-		assert.deepEqual(ctx.ui.statusCalls.at(-1), { key: "basecamp.daemon.pane", value: "muted:pane off" });
+		assert.deepEqual(ctx.ui.statusCalls.at(-1), { key: "basecamp.daemon.pane", value: "muted:companion off" });
 	});
 
-	it("clears stale pane state and publishes pane off when companion dashboard is unavailable", async () => {
+	it("clears stale pane state and publishes companion off when companion dashboard is unavailable", async () => {
 		withTmuxEnv();
 		setCompanionActive(true);
 		const state = getPaneState();
@@ -173,7 +173,7 @@ describe("panes/registerPanes", () => {
 		assert.equal(getPaneState().currentCwd, null);
 		assert.equal(getPaneState().currentSnapshot, null);
 		assert.equal(isCompanionActive(), false);
-		assert.deepEqual(ctx.ui.statusCalls.at(-1), { key: "basecamp.daemon.pane", value: "muted:pane off" });
+		assert.deepEqual(ctx.ui.statusCalls.at(-1), { key: "basecamp.daemon.pane", value: "muted:companion off" });
 	});
 
 	it("clears companion active when split fails", async () => {
