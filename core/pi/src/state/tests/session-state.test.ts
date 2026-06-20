@@ -9,6 +9,7 @@ import {
 	buildSessionStatePath,
 	createDefaultSessionState,
 	getCurrentSessionState,
+	getCurrentSessionStateIfInitialized,
 	initializeCurrentSessionState,
 	initializeCurrentSessionStateForEvent,
 	loadSessionState,
@@ -277,6 +278,12 @@ describe("fork session state", () => {
 });
 
 describe("current session state", () => {
+	it("returns null from the non-throwing getter before initialization", () => {
+		resetCurrentSessionState();
+
+		assert.equal(getCurrentSessionStateIfInitialized(), null);
+	});
+
 	it("initializes from context, updates with a patch, and persists", async (t) => {
 		const dir = await createTempDir(t);
 		t.after(() => {

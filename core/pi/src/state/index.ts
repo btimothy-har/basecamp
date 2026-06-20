@@ -257,6 +257,10 @@ export function getCurrentSessionState(): Readonly<BasecampSessionState> {
 	return currentState;
 }
 
+export function getCurrentSessionStateIfInitialized(): Readonly<BasecampSessionState> | null {
+	return currentState;
+}
+
 export function updateCurrentSessionState(updater: SessionStateUpdater): BasecampSessionState {
 	const existing = getCurrentSessionState();
 	const patch = typeof updater === "function" ? updater(existing) : updater;

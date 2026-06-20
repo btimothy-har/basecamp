@@ -73,6 +73,29 @@ describe("publishDaemonStatus", () => {
 		assert.match(calls.at(-2)?.value ?? "", /^error:daemon ✗ error:daemon error missing$/);
 	});
 
+	it("keeps theme fg bound to the theme object", () => {
+		const calls: StatusSetCall[] = [];
+		const theme = {
+			prefix: "theme",
+			fg(this: { prefix: string }, color: string, text: string): string {
+				return `${this.prefix}:${color}:${text}`;
+			},
+		};
+		const ctx: any = {
+			hasUI: true,
+			ui: {
+				theme,
+				setStatus: (key: string, value: string | undefined) => {
+					calls.push({ key, value });
+				},
+			},
+		};
+
+		publishDaemonStatus(ctx, { kind: "connected" });
+
+		assert.deepEqual(calls, [{ key: "basecamp.daemon", value: "theme:success:daemon ✓" }]);
+	});
+
 	it("no-ops when ui is unavailable", () => {
 		const ctx: any = {
 			hasUI: false,

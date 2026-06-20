@@ -81,6 +81,14 @@ afterEach(() => {
 });
 
 describe("title session state", () => {
+	it("does not throw when core session state has not initialized yet", async () => {
+		const { pi, handlers } = createPi();
+		const ctx = createContext({ sessionId: "018f0000-0000-7000-8000-00000000abcd" });
+		registerTitle(pi);
+
+		await handlers.get("session_start")?.({ reason: "new" } as SessionStartEvent, ctx);
+	});
+
 	it("loads the startup title from current session state", async (t) => {
 		const dir = await createTempDir(t);
 		const sessionId = "018f0000-0000-7000-8000-00000000abcd";

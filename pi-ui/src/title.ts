@@ -16,7 +16,7 @@ import {
 } from "@earendil-works/pi-ai";
 import type { ExtensionAPI, ExtensionContext, SessionEntry, Theme } from "@earendil-works/pi-coding-agent";
 import { visibleWidth } from "@earendil-works/pi-tui";
-import { getCurrentSessionState, updateCurrentSessionStateIfInitialized } from "pi-core/state/index.ts";
+import { getCurrentSessionStateIfInitialized, updateCurrentSessionStateIfInitialized } from "pi-core/state/index.ts";
 import { resolveTitleModelForContext } from "./title-model.ts";
 
 const TITLE_SYSTEM_PROMPT =
@@ -429,7 +429,7 @@ export function registerTitle(pi: ExtensionAPI, options: RegisterTitleOptions = 
 		title = null;
 		sessionTag = shortSessionId(sessionCtx.sessionManager.getSessionId());
 
-		const storedTitle = getCurrentSessionState().title;
+		const storedTitle = getCurrentSessionStateIfInitialized()?.title ?? null;
 		title = storedTitle?.trim() ? storedTitle : null;
 		if (storedTitle !== title) persistState();
 

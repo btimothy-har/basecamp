@@ -71,7 +71,8 @@ export function renderDaemonStatus(fg: ThemeFg, status: DaemonStatusInfo): strin
 
 export function publishDaemonStatus(ctx: ExtensionContext, status: DaemonStatusInfo): void {
 	if (!ctx.hasUI) return;
-	ctx.ui.setStatus(DAEMON_STATUS_ID, renderDaemonStatus(ctx.ui.theme.fg, status));
+	const fg: ThemeFg = (color, text) => ctx.ui.theme.fg(color, text);
+	ctx.ui.setStatus(DAEMON_STATUS_ID, renderDaemonStatus(fg, status));
 }
 
 export function getActiveDaemonConnection(): DaemonConnection | null {
