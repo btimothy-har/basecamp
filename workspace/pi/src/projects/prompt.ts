@@ -18,13 +18,21 @@ import { getProjectState, type ProjectState } from "./project.ts";
 
 const MODULE_DIR = path.dirname(fileURLToPath(import.meta.url));
 const PACKAGE_DIR = path.resolve(MODULE_DIR, "system-prompts");
-const BASECAMP_WORKSPACE_DIR = path.join(os.homedir(), ".pi", "basecamp", "workspace");
-const USER_PROMPTS_DIR = path.join(BASECAMP_WORKSPACE_DIR, "prompts");
-const USER_STYLES_DIR = path.join(BASECAMP_WORKSPACE_DIR, "styles");
+function getBasecampWorkspaceDir(): string {
+	return path.join(os.homedir(), ".pi", "basecamp", "workspace");
+}
+
+function getUserPromptsDir(): string {
+	return path.join(getBasecampWorkspaceDir(), "prompts");
+}
+
+function getUserStylesDir(): string {
+	return path.join(getBasecampWorkspaceDir(), "styles");
+}
 
 export function loadPromptFile(filename: string): string {
 	try {
-		return fs.readFileSync(path.join(USER_PROMPTS_DIR, filename), "utf8");
+		return fs.readFileSync(path.join(getUserPromptsDir(), filename), "utf8");
 	} catch {}
 
 	try {
@@ -36,7 +44,7 @@ export function loadPromptFile(filename: string): string {
 
 function loadWorkingStyle(name: string): string {
 	try {
-		return fs.readFileSync(path.join(USER_STYLES_DIR, `${name}.md`), "utf8");
+		return fs.readFileSync(path.join(getUserStylesDir(), `${name}.md`), "utf8");
 	} catch {}
 
 	try {

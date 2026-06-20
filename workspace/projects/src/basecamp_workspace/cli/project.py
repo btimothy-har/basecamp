@@ -25,7 +25,7 @@ def _available_styles() -> list[str]:
     install_dir = settings.install_dir
     if install_dir:
         script_dir = Path(install_dir)
-        style_dir = script_dir / "workspace" / "pi" / "src" / "system-prompts" / "styles"
+        style_dir = script_dir / "workspace" / "pi" / "src" / "projects" / "system-prompts" / "styles"
         if style_dir.exists():
             styles.update(path.stem for path in style_dir.glob("*.md"))
     if USER_STYLES_DIR.exists():
