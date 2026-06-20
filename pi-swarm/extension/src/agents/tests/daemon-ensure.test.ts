@@ -67,7 +67,7 @@ describe("ensureDaemon", () => {
 				daemonAlive = false;
 			},
 			spawnFn: (command, args) => {
-				assert.equal(command, "bc-swarm");
+				assert.equal(command, "basecamp");
 				spawnArgs.push([...args]);
 				return fakeSpawn();
 			},
@@ -75,7 +75,7 @@ describe("ensureDaemon", () => {
 		});
 
 		assert.deepEqual(killedSignals, ["SIGTERM"]);
-		assert.deepEqual(spawnArgs, [["daemon", "--uds", paths.socketPath, "--pidfile", paths.pidPath]]);
+		assert.deepEqual(spawnArgs, [["swarm", "daemon", "--uds", paths.socketPath, "--pidfile", paths.pidPath]]);
 	});
 
 	it("throws if the restarted daemon is still protocol-incompatible", async () => {

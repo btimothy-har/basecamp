@@ -28,12 +28,21 @@ try:
 except ImportError:
     HAS_COMPANION = False
 
+try:
+    from pi_swarm.server import run_daemon as run_swarm_daemon
+
+    HAS_SWARM = True
+except ImportError:
+    run_swarm_daemon = None
+    HAS_SWARM = False
+
 click.rich_click.USE_RICH_MARKUP = True
 click.rich_click.SHOW_ARGUMENTS = True
 
 CONTEXT_SETTINGS = {"help_option_names": ["-h", "--help"]}
 
 _COMPANION_NOT_INSTALLED = "companion is not installed. Run: basecamp install"
+_SWARM_NOT_INSTALLED = "swarm is not installed. Run: basecamp install"
 
 
 def _handle_error(e: LauncherError) -> None:
@@ -130,6 +139,44 @@ def companion_analyze(session_id: str, base_dir: Path | None) -> None:
         write_analysis(path, result)
     except Exception:
         click.echo("companion-analyze failed; keeping existing analysis", err=True)
+
+
+@basecamp.group(hidden=not HAS_SWARM)
+def swarm() -> None:
+    """Async-agent swarm daemon commands."""
+
+
+@swarm.command()
+@click.option(
+    "--uds",
+    "uds_path",
+    required=True,
+    type=click.Path(path_type=Path),
+    help="Unix domain socket path for the daemon listener.",
+)
+@click.option(
+    "--db",
+    "db_path",
+    required=False,
+    default=None,
+    type=click.Path(path_type=Path),
+    help="Optional SQLite database path.",
+)
+@click.option(
+    "--pidfile",
+    "pidfile_path",
+    required=False,
+    default=None,
+    type=click.Path(path_type=Path),
+    help="Optional path to write the daemon PID file.",
+)
+def daemon(uds_path: Path, db_path: Path | None, pidfile_path: Path | None) -> None:
+    """Run the async-agent daemon."""
+    if not HAS_SWARM or run_swarm_daemon is None:
+        click.echo(_SWARM_NOT_INSTALLED, err=True)
+        raise SystemExit(1)
+
+    run_swarm_daemon(str(uds_path), str(db_path) if db_path else None, str(pidfile_path) if pidfile_path else None)
 
 
 @basecamp.command()

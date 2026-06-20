@@ -55,8 +55,13 @@ _COMPONENT_DEPENDENCIES: Final = {
 class InstallSelection:
     """Resolved Python extras and TypeScript packages for an install."""
 
-    python_extra: str
+    python_extras: tuple[str, ...]
     ts_packages: tuple[tuple[str, str], ...]
+
+    @property
+    def python_extra(self) -> str:
+        """PEP 508 extras suffix for the root package path."""
+        return f"[{','.join(self.python_extras)}]" if self.python_extras else ""
 
 
 def resolve_install_selection(component_ids: list[str] | tuple[str, ...] | set[str]) -> InstallSelection:
@@ -73,8 +78,15 @@ def resolve_install_selection(component_ids: list[str] | tuple[str, ...] | set[s
         package_subpaths.update(_COMPONENT_DEPENDENCIES.get(component_id, []))
 
     ts_packages = tuple(package for package in _TS_PACKAGE_ORDER if package[0] in package_subpaths)
-    python_extra = "[companion]" if COMPONENT_COMPANION in selected else ""
-    return InstallSelection(python_extra=python_extra, ts_packages=ts_packages)
+    python_extras = tuple(
+        extra
+        for component_id, extra in (
+            (COMPONENT_COMPANION, "companion"),
+            (COMPONENT_SWARM, "swarm"),
+        )
+        if component_id in selected
+    )
+    return InstallSelection(python_extras=python_extras, ts_packages=ts_packages)
 
 
 def _save_install_dir(repo_dir: Path) -> None:

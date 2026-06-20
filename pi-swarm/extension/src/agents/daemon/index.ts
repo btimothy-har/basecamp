@@ -236,7 +236,7 @@ export function registerDaemonClient(pi: ExtensionAPI, deps: PiSwarmDependencies
 				publishDaemonStatus(ctx, { kind: "unavailable", message });
 				reporterConnection?.reject(error);
 				if (isTopLevel) {
-					ctx.ui.notify(`bc-swarm daemon unavailable: ${message}`, "warning");
+					ctx.ui.notify(`basecamp swarm daemon unavailable: ${message}`, "warning");
 				}
 			} finally {
 				if (generation === connectionGeneration) state.connecting = null;

@@ -14,12 +14,13 @@ def package_paths(component_ids: list[str]) -> list[str]:
     return [path for path, _label in resolve_install_selection(component_ids).ts_packages]
 
 
-def test_all_groups_selected_includes_non_memory_packages_and_companion_extra() -> None:
+def test_all_groups_selected_includes_non_memory_packages_and_python_extras() -> None:
     selection = resolve_install_selection(
         [COMPONENT_STANDARD, COMPONENT_ENGINEERING, COMPONENT_COMPANION, COMPONENT_SWARM]
     )
 
-    assert selection.python_extra == "[companion]"
+    assert selection.python_extra == "[companion,swarm]"
+    assert selection.python_extras == ("companion", "swarm")
     assert package_paths([COMPONENT_STANDARD, COMPONENT_ENGINEERING, COMPONENT_COMPANION, COMPONENT_SWARM]) == [
         "core/pi",
         "pi-ui",
@@ -35,7 +36,7 @@ def test_all_groups_selected_includes_non_memory_packages_and_companion_extra() 
 def test_companion_unchecked_omits_companion_extra_and_ts_package() -> None:
     selection = resolve_install_selection([COMPONENT_STANDARD, COMPONENT_ENGINEERING, COMPONENT_SWARM])
 
-    assert selection.python_extra == ""
+    assert selection.python_extra == "[swarm]"
     paths = [path for path, _label in selection.ts_packages]
     assert "pi-companion/pi" not in paths
     assert paths == [
@@ -49,7 +50,10 @@ def test_companion_unchecked_omits_companion_extra_and_ts_package() -> None:
     ]
 
 
-def test_swarm_auto_includes_required_standard_packages() -> None:
+def test_swarm_auto_includes_required_standard_packages_and_python_extra() -> None:
+    selection = resolve_install_selection([COMPONENT_SWARM])
+
+    assert selection.python_extra == "[swarm]"
     assert package_paths([COMPONENT_SWARM]) == [
         "core/pi",
         "pi-ui",

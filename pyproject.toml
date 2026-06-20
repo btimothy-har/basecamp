@@ -13,6 +13,7 @@ dependencies = [
 
 [project.optional-dependencies]
 companion = ["companion-tui"]
+swarm = ["pi-swarm"]
 
 [project.scripts]
 basecamp = "basecamp.cli:main"
@@ -42,6 +43,7 @@ members = ["core/config", "workspace/projects", "pi-swarm/cli", "pi-companion/tu
 basecamp-core = { workspace = true }
 basecamp-workspace = { workspace = true }
 companion-tui = { workspace = true }
+pi-swarm = { workspace = true }
 
 [tool.pytest.ini_options]
 testpaths = ["tests", "core/config/tests", "workspace/projects/tests", "pi-companion/tui/tests"]
