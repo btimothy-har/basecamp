@@ -124,6 +124,7 @@ class TestProjectConfigSchema:
         )
 
         data = json.loads(cfg.path.read_text())
+        assert data["version"] == project_config.PROJECTS_CONFIG_VERSION
         assert "dirs" not in data["projects"]["demo"]
         assert data["projects"]["demo"]["repo_root"] == "src/demo"
         assert data["projects"]["demo"]["additional_dirs"] == ["src/shared"]
@@ -158,6 +159,7 @@ class TestProjectConfigSchema:
         )
 
         data = json.loads(cfg.path.read_text())
+        assert data["version"] == project_config.PROJECTS_CONFIG_VERSION
         assert data["projects"]["myproj"]["repo_root"] == "myproj"
         assert data["projects"]["myproj"]["additional_dirs"] == []
         assert data["stale_setting"] == {"preserve": True}

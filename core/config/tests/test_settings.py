@@ -6,7 +6,7 @@ import json
 from pathlib import Path
 
 from basecamp_core.paths import DEFAULT_CONFIG_PATH
-from basecamp_core.settings import Settings
+from basecamp_core.settings import CONFIG_VERSION, Settings
 
 
 def _cfg(tmp_path: Path) -> Settings:
@@ -60,8 +60,39 @@ class TestInstallDir:
         cfg.install_dir = "/tmp/ws"
 
         data = json.loads(cfg.path.read_text())
+        assert data["version"] == CONFIG_VERSION
         assert data["install_dir"] == "/tmp/ws"
         assert data["stale_setting"] == {"preserve": True}
+
+
+class TestInstalledModules:
+    def test_installed_modules_empty(self, tmp_path: Path) -> None:
+        cfg = _cfg(tmp_path)
+        assert cfg.installed_modules == ()
+
+    def test_installed_modules_normalizes_and_deduplicates(self, tmp_path: Path) -> None:
+        cfg = _cfg(tmp_path)
+        cfg._write({"installed_modules": ["core", "", "tasks", "core", 42]})
+
+        assert cfg.installed_modules == ("core", "tasks")
+
+    def test_installed_modules_setter_persists_version_and_values(self, tmp_path: Path) -> None:
+        cfg = _cfg(tmp_path)
+
+        cfg.installed_modules = ["core", "workspace", "core"]
+
+        data = json.loads(cfg.path.read_text())
+        assert data["version"] == CONFIG_VERSION
+        assert data["installed_modules"] == ["core", "workspace"]
+
+    def test_set_install_metadata_writes_only_installer_metadata(self, tmp_path: Path) -> None:
+        cfg = _cfg(tmp_path)
+        cfg._write({"projects": {"stale": {}}, "models": {"fast": "old"}})
+
+        cfg.set_install_metadata(install_dir="/tmp/ws", installed_modules=["core", "swarm"])
+
+        data = json.loads(cfg.path.read_text())
+        assert data == {"version": CONFIG_VERSION, "install_dir": "/tmp/ws", "installed_modules": ["core", "swarm"]}
 
 
 class TestSections:

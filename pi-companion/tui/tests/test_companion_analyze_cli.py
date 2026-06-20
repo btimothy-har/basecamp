@@ -1,4 +1,4 @@
-"""Tests for the companion-analyze CLI command."""
+"""Tests for the companion analyze CLI command."""
 
 from __future__ import annotations
 
@@ -34,7 +34,8 @@ def test_companion_analyze_writes_sidecar(monkeypatch, tmp_path: Path) -> None:
     result = runner.invoke(
         basecamp,
         [
-            "companion-analyze",
+            "companion",
+            "analyze",
             "--session-id",
             "s",
             "--base-dir",
@@ -48,6 +49,30 @@ def test_companion_analyze_writes_sidecar(monkeypatch, tmp_path: Path) -> None:
     path = companion_analysis_path("s", tmp_path)
     loaded = load_analysis(path)
     assert loaded == expected
+
+
+def test_deprecated_companion_analyze_alias_writes_sidecar(monkeypatch, tmp_path: Path) -> None:
+    expected = CompanionAnalysis(
+        version=COMPANION_ANALYSIS_VERSION,
+        session_id="s",
+        updated_at="2026-06-04T12:34:56+00:00",
+        model="anthropic:claude-haiku-4-5",
+    )
+
+    def fake_generate_analysis(**_: object) -> CompanionAnalysis:
+        return expected
+
+    monkeypatch.setattr("basecamp.cli.generate_analysis", fake_generate_analysis)
+
+    result = CliRunner().invoke(
+        basecamp,
+        ["companion-analyze", "--session-id", "s", "--base-dir", str(tmp_path)],
+        input=json.dumps({"context": "ctx", "alreadyTracked": "goal"}),
+    )
+
+    assert result.exit_code == 0
+    assert "deprecated" in result.output
+    assert load_analysis(companion_analysis_path("s", tmp_path)) == expected
 
 
 def test_companion_analyze_failure_keeps_last_good(monkeypatch, tmp_path: Path) -> None:
@@ -70,7 +95,8 @@ def test_companion_analyze_failure_keeps_last_good(monkeypatch, tmp_path: Path) 
     result = runner.invoke(
         basecamp,
         [
-            "companion-analyze",
+            "companion",
+            "analyze",
             "--session-id",
             "s",
             "--base-dir",

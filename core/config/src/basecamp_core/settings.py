@@ -1,10 +1,8 @@
 """Generic file-backed JSON settings with locked read-modify-write.
 
-This module owns only generic, schema-agnostic config primitives: a JSON
-document stored on disk, read/written atomically under an exclusive lock,
-with helpers for top-level keys and sections. It deliberately knows nothing
-about project or workspace schema — that concern belongs to higher-level
-packages built on top of :class:`Settings`.
+This module owns a locked JSON settings primitive plus root installer metadata
+helpers. It deliberately knows nothing about project or workspace schema — that
+concern belongs to higher-level packages built on top of :class:`Settings`.
 """
 
 from __future__ import annotations
@@ -12,13 +10,15 @@ from __future__ import annotations
 import fcntl
 import json
 import os
-from collections.abc import Callable, Generator
+from collections.abc import Callable, Generator, Iterable
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
 
 from basecamp_core.files import atomic_write_json
 from basecamp_core.paths import DEFAULT_CONFIG_PATH
+
+CONFIG_VERSION = 1
 
 
 class Settings:
@@ -96,7 +96,49 @@ class Settings:
     @install_dir.setter
     def install_dir(self, value: str) -> None:
         with self._locked_update() as data:
+            data["version"] = CONFIG_VERSION
             data["install_dir"] = value
+
+    @staticmethod
+    def _normalize_modules(values: Iterable[object]) -> list[str]:
+        """Strip, drop blanks/non-strings, and deduplicate module ids."""
+        modules: list[str] = []
+        seen: set[str] = set()
+        for value in values:
+            if not isinstance(value, str):
+                continue
+            module = value.strip()
+            if not module or module in seen:
+                continue
+            modules.append(module)
+            seen.add(module)
+        return modules
+
+    @property
+    def installed_modules(self) -> tuple[str, ...]:
+        """Installed Basecamp module ids from the root config."""
+        val = self._read().get("installed_modules")
+        if not isinstance(val, list):
+            return ()
+        return tuple(self._normalize_modules(val))
+
+    @installed_modules.setter
+    def installed_modules(self, values: Iterable[str]) -> None:
+        modules = self._normalize_modules(values)
+
+        with self._locked_update() as data:
+            data["version"] = CONFIG_VERSION
+            data["installed_modules"] = modules
+
+    def set_install_metadata(self, *, install_dir: str, installed_modules: Iterable[str]) -> None:
+        """Persist installer-owned root metadata in one locked write."""
+        modules = self._normalize_modules(installed_modules)
+
+        with self._locked_update() as data:
+            data.clear()
+            data["version"] = CONFIG_VERSION
+            data["install_dir"] = install_dir
+            data["installed_modules"] = modules
 
     def get_section(self, name: str) -> Any:
         """Return a top-level config section, or ``{}`` if missing/non-dict.

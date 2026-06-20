@@ -1,1 +1,1 @@
-"""Interactive configuration commands for basecamp-workspace."""
+"""Interactive project commands for basecamp-workspace."""

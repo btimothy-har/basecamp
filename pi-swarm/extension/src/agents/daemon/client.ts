@@ -291,8 +291,13 @@ async function pollHealthy(
 	return { ok: false };
 }
 
-export function spawnDaemonProcess(socketPath: string, pidPath: string, spawnFn: SpawnLike = spawn): void {
-	const child = spawnFn("basecamp", ["swarm", "daemon", "--uds", socketPath, "--pidfile", pidPath], {
+export function spawnDaemonProcess(
+	socketPath: string,
+	pidPath: string,
+	dbPath: string,
+	spawnFn: SpawnLike = spawn,
+): void {
+	const child = spawnFn("basecamp", ["swarm", "daemon", "--uds", socketPath, "--pidfile", pidPath, "--db", dbPath], {
 		detached: true,
 		stdio: "ignore",
 	});
@@ -382,7 +387,7 @@ export async function ensureDaemon(options: EnsureDaemonOptions = {}): Promise<{
 					if (lockedPing.protocol === PROTOCOL_VERSION) return { socketPath: paths.socketPath };
 					await terminateDaemon(paths, findDaemonPidFn, killPidFn, pidExistsFn, sleepFn, lockRetryMs);
 				}
-				spawnDaemonProcess(paths.socketPath, paths.pidPath, spawnFn);
+				spawnDaemonProcess(paths.socketPath, paths.pidPath, paths.dbPath, spawnFn);
 				break;
 			} catch (error) {
 				const code = (error as NodeJS.ErrnoException | undefined)?.code;

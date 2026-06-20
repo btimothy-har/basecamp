@@ -12,10 +12,10 @@
     ],
     "env": {
       "BASECAMP_AGENT_ID": "agent-42",
-      "BASECAMP_DAEMON_UDS": "/Users/example/.pi/agent/basecamp/daemon.sock"
+      "BASECAMP_DAEMON_UDS": "/Users/example/.pi/basecamp/swarm/daemon.sock"
     },
     "cwd": "/Users/example/repo",
-    "resume_path": "/Users/example/.pi/agent/basecamp/agents/agent-42/session/agent-42.jsonl",
+    "resume_path": "/Users/example/.pi/basecamp/swarm/agents/agent-42/session/agent-42.jsonl",
     "task": "Summarize test failures and propose a fix."
   }
 }

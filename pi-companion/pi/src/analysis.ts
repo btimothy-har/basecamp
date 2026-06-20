@@ -86,7 +86,7 @@ export function startAnalysis(state: AnalysisState, options: StartAnalysisOption
 	let watchdog: ReturnType<typeof setTimeout> | null = null;
 
 	try {
-		const args = ["companion-analyze", "--session-id", options.sessionId];
+		const args = ["companion", "analyze", "--session-id", options.sessionId];
 
 		const child = options.spawnFn("basecamp", args, {
 			cwd: options.cwd,

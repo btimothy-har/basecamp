@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Any, Literal
 from urllib.parse import urlencode
 
-DEFAULT_DAEMON_SOCKET_PATH = Path("~/.pi/agent/basecamp/daemon.sock").expanduser()
+DEFAULT_DAEMON_SOCKET_PATH = Path("~/.pi/basecamp/swarm/daemon.sock").expanduser()
 DEFAULT_DAEMON_SUMMARY_LIMIT = 5
 DEFAULT_DAEMON_TIMEOUT_SECONDS = 0.5
 

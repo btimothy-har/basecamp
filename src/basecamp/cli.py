@@ -8,7 +8,13 @@ from pathlib import Path
 
 import rich_click as click
 from basecamp_core.exceptions import LauncherError
-from basecamp_workspace.cli.config import run_config_menu
+from basecamp_workspace.cli.config import run_project_menu
+from basecamp_workspace.cli.project import (
+    execute_project_add,
+    execute_project_edit,
+    execute_project_list,
+    execute_project_remove,
+)
 from basecamp_workspace.ui import err_console
 
 from basecamp.installer import run_interactive_install
@@ -64,13 +70,46 @@ def setup() -> None:
         _handle_error(e)
 
 
-@basecamp.command()
-def config() -> None:
-    """Interactive configuration menu."""
-    run_config_menu()
+@basecamp.group(invoke_without_command=True)
+@click.pass_context
+def projects(ctx: click.Context) -> None:
+    """Manage configured projects."""
+    if ctx.invoked_subcommand is None:
+        run_project_menu()
 
 
-@basecamp.command(hidden=not HAS_COMPANION)
+@projects.command("list")
+def projects_list() -> None:
+    """List configured projects."""
+    execute_project_list()
+
+
+@projects.command("add")
+def projects_add() -> None:
+    """Interactively add a project."""
+    execute_project_add()
+
+
+@projects.command("edit")
+@click.argument("name")
+def projects_edit(name: str) -> None:
+    """Interactively edit a project."""
+    execute_project_edit(name)
+
+
+@projects.command("remove")
+@click.argument("name")
+def projects_remove(name: str) -> None:
+    """Remove a project."""
+    execute_project_remove(name)
+
+
+@basecamp.group(hidden=not HAS_COMPANION)
+def companion() -> None:
+    """Live session companion commands."""
+
+
+@companion.command(hidden=not HAS_COMPANION)
 @click.option(
     "--snapshot",
     "snapshot_path",
@@ -93,7 +132,7 @@ def config() -> None:
     type=click.Path(path_type=Path),
     help="Path to the basecamp scratch directory.",
 )
-def companion(snapshot_path: Path, cwd: Path, scratch_dir: Path | None) -> None:
+def dashboard(snapshot_path: Path, cwd: Path, scratch_dir: Path | None) -> None:
     """Live session companion dashboard (runs in a tmux pane)."""
     if not HAS_COMPANION:
         click.echo(_COMPANION_NOT_INSTALLED, err=True)
@@ -101,7 +140,7 @@ def companion(snapshot_path: Path, cwd: Path, scratch_dir: Path | None) -> None:
     run_companion(snapshot_path, cwd, scratch_dir)
 
 
-@basecamp.command("companion-analyze", hidden=not HAS_COMPANION)
+@companion.command(hidden=not HAS_COMPANION)
 @click.option("--session-id", required=True, type=str)
 @click.option(
     "--base-dir",
@@ -109,7 +148,7 @@ def companion(snapshot_path: Path, cwd: Path, scratch_dir: Path | None) -> None:
     default=None,
     type=click.Path(path_type=Path),
 )
-def companion_analyze(session_id: str, base_dir: Path | None) -> None:
+def analyze(session_id: str, base_dir: Path | None) -> None:
     """Best-effort companion analysis writer for a session."""
     if not HAS_COMPANION:
         click.echo(_COMPANION_NOT_INSTALLED, err=True)
@@ -138,7 +177,29 @@ def companion_analyze(session_id: str, base_dir: Path | None) -> None:
         )
         write_analysis(path, result)
     except Exception:
-        click.echo("companion-analyze failed; keeping existing analysis", err=True)
+        click.echo("companion analyze failed; keeping existing analysis", err=True)
+
+
+@basecamp.command("companion-analyze", hidden=not HAS_COMPANION)
+@click.option("--session-id", required=True, type=str)
+@click.option(
+    "--base-dir",
+    required=False,
+    default=None,
+    type=click.Path(path_type=Path),
+)
+@click.pass_context
+def companion_analyze(ctx: click.Context, session_id: str, base_dir: Path | None) -> None:
+    """Deprecated compatibility alias for `basecamp companion analyze`."""
+    if not HAS_COMPANION:
+        click.echo(_COMPANION_NOT_INSTALLED, err=True)
+        raise SystemExit(1)
+
+    click.echo(
+        "Warning: `basecamp companion-analyze` is deprecated; use `basecamp companion analyze`.",
+        err=True,
+    )
+    ctx.invoke(analyze, session_id=session_id, base_dir=base_dir)
 
 
 @basecamp.group(hidden=not HAS_SWARM)

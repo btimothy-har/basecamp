@@ -15,7 +15,7 @@ function shellQuote(s: string): string {
 }
 
 export function buildCompanionCommand(snapshotPath: string, cwd: string, scratchDir?: string): string {
-	const base = `basecamp companion --snapshot ${shellQuote(snapshotPath)} --cwd ${shellQuote(cwd)}`;
+	const base = `basecamp companion dashboard --snapshot ${shellQuote(snapshotPath)} --cwd ${shellQuote(cwd)}`;
 	return scratchDir ? `${base} --scratch ${shellQuote(scratchDir)}` : base;
 }
 

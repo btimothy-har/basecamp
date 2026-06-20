@@ -1,11 +1,18 @@
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
+import { basecampRoot } from "pi-core/platform/paths.ts";
 import type { TaskStatus } from "pi-core/platform/tasks-access.ts";
 import type { AgentMode } from "pi-core/session/agent-mode.ts";
 
 export const COMPANION_SNAPSHOT_VERSION = 1;
-export const DEFAULT_COMPANION_DIR = path.join(os.homedir(), ".pi", "companion");
+
+export function defaultCompanionSnapshotDir(homeDir = os.homedir()): string {
+	return path.join(basecampRoot(homeDir), "companion", "snapshots");
+}
+
+export const DEFAULT_COMPANION_SNAPSHOT_DIR = defaultCompanionSnapshotDir();
+export const DEFAULT_COMPANION_DIR = DEFAULT_COMPANION_SNAPSHOT_DIR;
 
 export interface CompanionSnapshotTask {
 	label: string;
@@ -53,7 +60,7 @@ function snapshotFileName(sessionId: string): string {
 	return `${sessionId.replace(/[^A-Za-z0-9_-]/g, "_")}.json`;
 }
 
-export function companionSnapshotPath(sessionId: string, dir = DEFAULT_COMPANION_DIR): string {
+export function companionSnapshotPath(sessionId: string, dir = defaultCompanionSnapshotDir()): string {
 	return path.join(dir, snapshotFileName(sessionId));
 }
 

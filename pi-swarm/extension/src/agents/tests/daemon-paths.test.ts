@@ -4,12 +4,15 @@ import { describe, it } from "node:test";
 import { resolveDaemonPaths } from "../daemon/paths.ts";
 
 describe("daemon paths", () => {
-	it("resolves runtime dir, socket, and lock paths under ~/.pi/agent/basecamp", () => {
+	it("resolves runtime, socket, lock, database, and agent paths under ~/.pi/basecamp/swarm", () => {
 		const fakeHome = path.join(path.sep, "tmp", "fake-home");
+		const runtimeDir = path.join(fakeHome, ".pi", "basecamp", "swarm");
 		const paths = resolveDaemonPaths(fakeHome);
-		assert.equal(paths.runtimeDir, path.join(fakeHome, ".pi", "agent", "basecamp"));
-		assert.equal(paths.socketPath, path.join(fakeHome, ".pi", "agent", "basecamp", "daemon.sock"));
-		assert.equal(paths.spawnLockPath, path.join(fakeHome, ".pi", "agent", "basecamp", "daemon.spawn.lock"));
-		assert.equal(paths.pidPath, path.join(fakeHome, ".pi", "agent", "basecamp", "daemon.pid"));
+		assert.equal(paths.runtimeDir, runtimeDir);
+		assert.equal(paths.socketPath, path.join(runtimeDir, "daemon.sock"));
+		assert.equal(paths.spawnLockPath, path.join(runtimeDir, "daemon.spawn.lock"));
+		assert.equal(paths.pidPath, path.join(runtimeDir, "daemon.pid"));
+		assert.equal(paths.dbPath, path.join(runtimeDir, "daemon.db"));
+		assert.equal(paths.agentsDir, path.join(runtimeDir, "agents"));
 	});
 });

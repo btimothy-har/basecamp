@@ -23,7 +23,7 @@ Version handling:
   - First inbound frame must be `register`.
   - On success daemon replies with `registered`.
 
-The socket lives under `~/.pi/agent/basecamp/daemon.sock` and is restricted to the local user.
+The socket lives under `~/.pi/basecamp/swarm/daemon.sock` and is restricted to the local user.
 
 ## Public identity model
 

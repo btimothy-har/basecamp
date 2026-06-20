@@ -8,7 +8,11 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-DEFAULT_DB_PATH = Path("~/.pi/agent/basecamp/daemon.db").expanduser()
+
+def default_db_path() -> Path:
+    """Return the default Basecamp swarm daemon database path."""
+
+    return Path.home() / ".pi" / "basecamp" / "swarm" / "daemon.db"
 
 
 TERMINAL_STATUSES = ("completed", "failed")
@@ -38,7 +42,7 @@ class Store:
     """Daemon persistence layer backed by SQLite."""
 
     def __init__(self, db_path: str | Path | None = None) -> None:
-        self.db_path = Path(db_path).expanduser() if db_path is not None else DEFAULT_DB_PATH
+        self.db_path = Path(db_path).expanduser() if db_path is not None else default_db_path()
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         self._init_db()
 

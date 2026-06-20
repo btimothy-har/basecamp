@@ -1,7 +1,7 @@
 [project]
 name = "basecamp-workspace"
 version = "0.8.0"
-description = "Basecamp workspace — project configuration and interactive workspace config"
+description = "Basecamp workspace — project configuration and interactive project management"
 requires-python = ">=3.12"
 dependencies = [
     "basecamp-core",

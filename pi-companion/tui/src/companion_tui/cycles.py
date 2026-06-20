@@ -1,4 +1,4 @@
-"""Direct read of basecamp's goal-cycle store (~/.pi/tasks/<session-id>.json).
+"""Direct read of basecamp's goal-cycle store (~/.pi/basecamp/tasks/<session-id>.json).
 
 The companion dashboard reads goal/task state straight from this file — the
 single source of truth written by pi-tasks/src/tasks/tasks.ts as a JSON array
@@ -32,10 +32,16 @@ class TaskCycle(CompanionBaseModel):
     archived_at: str | None = None
 
 
+def default_companion_tasks_dir() -> Path:
+    """Return the default Basecamp task-cycle directory."""
+
+    return Path.home() / ".pi" / "basecamp" / "tasks"
+
+
 def companion_tasks_path(session_id: str, base_dir: Path | None = None) -> Path:
     """Path to the goal-cycle store for a session (raw session id, matching tasks.ts)."""
 
-    resolved_base_dir = base_dir or (Path.home() / ".pi" / "tasks")
+    resolved_base_dir = base_dir or default_companion_tasks_dir()
     return resolved_base_dir / f"{session_id}.json"
 
 

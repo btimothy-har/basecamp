@@ -1,6 +1,7 @@
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
+import { basecampCorePaths } from "../platform/paths.ts";
 
 export type ConfiguredModelAliases = Record<string, string>;
 
@@ -12,7 +13,7 @@ interface RawModelAliasConfig {
 export type ModelAliasConfigLoadResult = { ok: true; aliases: ConfiguredModelAliases } | { ok: false; error: string };
 
 export function defaultModelAliasConfigPath(homeDir = os.homedir()): string {
-	return path.join(homeDir, ".pi", "model-aliases", "config.json");
+	return basecampCorePaths(homeDir).modelAliasesPath;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

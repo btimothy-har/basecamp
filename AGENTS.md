@@ -8,9 +8,9 @@ Root-level products:
 
 | Product | Directory | Purpose |
 |---------|-----------|---------|
-| `basecamp` | `src/basecamp/` | Python composition CLI for setup/config/install |
+| `basecamp` | `src/basecamp/` | Python composition CLI for setup/projects/install |
 | `basecamp-core` | `core/config/` | Generic settings/files/paths/exceptions |
-| `basecamp-workspace` | `workspace/projects/` | Project config and interactive config menu |
+| `basecamp-workspace` | `workspace/projects/` | Project config and interactive projects menu |
 | `pi-swarm` | `pi-swarm/` | Async-agent bounded context for protocol docs, Pi-side agent behavior, and daemon CLI/runtime |
 | Basecamp Pi packages | `core/pi`, `workspace/pi`, `pi-*` | Pi packages for project context, session UI, worktrees, workflow, git, and engineering skills |
 
@@ -20,7 +20,7 @@ Package-specific architecture lives in the repo map below.
 
 ```
 src/basecamp/                  # Root Python composition package
-├── cli.py                      # Click entry point (setup, config, install, companion)
+├── cli.py                      # Click entry point (setup, projects, install, companion)
 ├── setup.py                    # Environment setup (prerequisites, scaffolding)
 └── installer.py                # Bootstrap/reconfiguration install orchestration
 
@@ -29,7 +29,7 @@ core/config/                    # basecamp-core Python package
 └── tests/                      # basecamp-core pytest suite
 
 workspace/projects/             # basecamp-workspace Python package
-├── src/basecamp_workspace/     # Project config and interactive config menu
+├── src/basecamp_workspace/     # Project config and interactive projects menu
 └── tests/                      # workspace pytest suite
 
 pi-swarm/                      # Async-agent bounded context
@@ -62,7 +62,7 @@ Core public session/project/workspace/workflow/git/model-alias/capability/engine
 
 ### Model Aliases
 
-Model alias resolution is owned by `core/pi/src/model-aliases`, backed by `~/.pi/model-aliases/config.json` with schema `{ "version": 1, "aliases": { "fast": "claude-haiku-4-5" } }`. `core/pi/src/platform/model-aliases.ts` is only the provider seam; it must not read config, define aliases, or own model-selection policy.
+Model alias resolution is owned by `core/pi/src/model-aliases`, backed by `~/.pi/basecamp/core/model-aliases.json` with schema `{ "version": 1, "aliases": { "fast": "claude-haiku-4-5" } }`. `core/pi/src/platform/model-aliases.ts` is only the provider seam; it must not read config, define aliases, or own model-selection policy.
 
 ### Environment Variable Chain
 

@@ -12,6 +12,7 @@ from pydantic import Field, ValidationError, field_validator
 from companion_tui.snapshot import CompanionBaseModel
 
 COMPANION_ANALYSIS_VERSION = 1
+COMPANION_ANALYSIS_DIR_NAME = "analysis"
 MAX_SECTION_ITEMS = 5
 
 
@@ -38,10 +39,16 @@ class CompanionAnalysis(AnalysisSections):
     model: str | None = None
 
 
+def default_companion_analysis_dir() -> Path:
+    """Return the default Basecamp companion analysis directory."""
+
+    return Path.home() / ".pi" / "basecamp" / "companion" / COMPANION_ANALYSIS_DIR_NAME
+
+
 def companion_analysis_path(session_id: str, base_dir: Path | None = None) -> Path:
     """Return an analysis path for a session id."""
 
-    resolved_base_dir = base_dir or (Path.home() / ".pi" / "companion")
+    resolved_base_dir = base_dir or default_companion_analysis_dir()
     sanitized_session_id = re.sub(r"[^A-Za-z0-9_-]", "_", session_id)
     return resolved_base_dir / f"{sanitized_session_id}.analysis.json"
 

@@ -17,7 +17,7 @@ let didNotifyMissingBasecamp = false;
 
 async function companionAvailable(pi: ExtensionAPI): Promise<boolean> {
 	try {
-		const result = await exec(pi, "basecamp", ["companion", "--help"]);
+		const result = await exec(pi, "basecamp", ["companion", "dashboard", "--help"]);
 		return result.code === 0;
 	} catch {
 		return false;

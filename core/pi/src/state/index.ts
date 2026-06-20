@@ -2,9 +2,15 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import type { ExtensionAPI, ExtensionContext, SessionStartEvent } from "@earendil-works/pi-coding-agent";
+import { basecampCorePaths } from "../platform/paths.ts";
 
 export const SESSION_STATE_VERSION = 1;
-export const DEFAULT_SESSION_STATE_DIR = path.join(os.homedir(), ".pi", "session-state");
+
+export function defaultSessionStateDir(homeDir = os.homedir()): string {
+	return basecampCorePaths(homeDir).sessionStateDir;
+}
+
+export const DEFAULT_SESSION_STATE_DIR = defaultSessionStateDir();
 export const SESSION_STATE_AGENT_MODES = ["analysis", "planning", "supervisor", "executor"] as const;
 
 export type SessionStateAgentMode = (typeof SESSION_STATE_AGENT_MODES)[number];
@@ -54,7 +60,7 @@ function sessionStateFileName(sessionId: string): string {
 	return `${sessionId.replace(/[^A-Za-z0-9_-]/g, "_")}.json`;
 }
 
-export function buildSessionStatePath(sessionId: string, stateDir = DEFAULT_SESSION_STATE_DIR): string {
+export function buildSessionStatePath(sessionId: string, stateDir = defaultSessionStateDir()): string {
 	return path.join(stateDir, sessionStateFileName(sessionId));
 }
 

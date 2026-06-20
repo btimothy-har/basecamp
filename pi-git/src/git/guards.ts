@@ -6,7 +6,7 @@
  * Raw BigQuery query execution is blocked so agents use the file-based tool.
  */
 
-import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { isToolCallEventType } from "@earendil-works/pi-coding-agent";
 
 // ---------------------------------------------------------------------------
@@ -31,15 +31,40 @@ const GH_ALLOW: RegExp[] = [
 // Workflow state
 // ---------------------------------------------------------------------------
 
-/** Active PR workflow — set by /create-pr, read by publish_pr tool. */
-export let activePR: { number: string; base: string } | null = null;
+type ThemeFg = (color: Parameters<import("@earendil-works/pi-coding-agent").Theme["fg"]>[0], text: string) => string;
 
-export function setActivePR(pr: { number: string; base: string }): void {
-	activePR = pr;
+const PR_WORKFLOW_STATUS_ID = "basecamp.prWorkflow";
+
+export interface ActivePRWorkflow {
+	number: string;
+	base: string;
 }
 
-export function clearActivePR(): void {
+/** Active PR workflow — set by /create-pr, read by publish_pr tool. */
+export let activePR: ActivePRWorkflow | null = null;
+
+export function renderActivePRStatus(fg: ThemeFg, pr: ActivePRWorkflow): string {
+	return `${fg("accent", "PR")} ${fg("success", `#${pr.number}`)} ${fg("dim", `→ ${pr.base}`)}`;
+}
+
+export function publishActivePRStatus(ctx: ExtensionContext | undefined, pr: ActivePRWorkflow | null): void {
+	if (!ctx?.hasUI) return;
+	if (!pr) {
+		ctx.ui.setStatus(PR_WORKFLOW_STATUS_ID, undefined);
+		return;
+	}
+	const fg: ThemeFg = (color, text) => ctx.ui.theme.fg(color, text);
+	ctx.ui.setStatus(PR_WORKFLOW_STATUS_ID, renderActivePRStatus(fg, pr));
+}
+
+export function setActivePR(pr: ActivePRWorkflow, ctx?: ExtensionContext): void {
+	activePR = pr;
+	publishActivePRStatus(ctx, pr);
+}
+
+export function clearActivePR(ctx?: ExtensionContext): void {
 	activePR = null;
+	publishActivePRStatus(ctx, null);
 }
 
 /** Active issue draft workflow — set by /create-issue, read by issue workflow tools. */
@@ -57,8 +82,8 @@ export const unlocked = {
 	prComment: false,
 };
 
-export function lockAll(): void {
-	activePR = null;
+export function lockAll(ctx?: ExtensionContext): void {
+	clearActivePR(ctx);
 	activeIssueDraft = null;
 	unlocked.prComment = false;
 }
@@ -522,6 +547,6 @@ export function registerGuards(pi: ExtensionAPI): void {
 		}
 	});
 
-	pi.on("session_shutdown", async () => lockAll());
-	pi.on("session_before_compact", async () => lockAll());
+	pi.on("session_shutdown", async (_event, ctx) => lockAll(ctx));
+	pi.on("session_before_compact", async (_event, ctx) => lockAll(ctx));
 }

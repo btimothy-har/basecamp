@@ -129,4 +129,4 @@ class TestCompanionAnalysisPath:
 
         path = companion_analysis_path("session-123")
 
-        assert path == tmp_path / ".pi" / "companion" / "session-123.analysis.json"
+        assert path == tmp_path / ".pi" / "basecamp" / "companion" / "analysis" / "session-123.analysis.json"
