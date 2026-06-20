@@ -1,4 +1,4 @@
-# pi-swarm CLI
+# pi-swarm daemon runtime
 
 This package owns the Python async-agent daemon runtime.
 

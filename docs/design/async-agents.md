@@ -160,7 +160,7 @@ At `session_start`, the extension runs an ensure-daemon flow off the critical pa
 2. Send a health ping with a short timeout.
 3. If the daemon is up, read its advertised protocol version and run handshake.
    - Compatible: proceed.
-   - Incompatible: acquire the spawn lock, terminate only the daemon bound to this socket (PID file first, exact `basecamp swarm daemon --uds <socket>` command match as fallback, with legacy `bc-swarm daemon` detection retained), remove stale socket/PID artifacts, restart via the `basecamp swarm daemon` CLI, and wait-for-healthy.
+   - Incompatible: acquire the spawn lock, terminate only the daemon bound to this socket (PID file first, exact `basecamp swarm daemon --uds <socket>` command match as fallback), remove stale socket/PID artifacts, restart via the `basecamp swarm daemon` CLI, and wait-for-healthy.
 
    A protocol mismatch means the host-global daemon is running a version this client cannot safely speak. Basecamp prefers converging the host to one current daemon over leaving new sessions wedged behind a manual cleanup step. Existing live clients may be disconnected and reconnect behavior remains client-owned.
 

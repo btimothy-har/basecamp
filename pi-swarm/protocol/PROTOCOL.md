@@ -1,11 +1,11 @@
 # Pi Swarm Daemon Protocol
 
-Protocol version: `5`
+Protocol version: `6`
 
 All frames are JSON objects with an envelope:
 
 ```json
-{"type":"<frame_type>","v":5,...}
+{"type":"<frame_type>","v":6,...}
 ```
 
 Version handling:
@@ -16,7 +16,7 @@ Version handling:
 ## Transport
 
 - HTTP over Unix domain socket (UDS):
-  - `GET /health` → `{"status":"ok","protocol":5}`
+  - `GET /health` → `{"status":"ok","protocol":6}`
   - `GET /runs/summary?root_id=<id>` returns safe run-summary observability.
 - WebSocket over UDS:
   - `/ws`
@@ -86,7 +86,7 @@ Waits for one or more agent handles:
 ```json
 {
   "type": "wait",
-  "v": 5,
+  "v": 6,
   "agent_ids": ["agent-001"],
   "mode": "all",
   "timeout_s": 30
@@ -114,7 +114,7 @@ Requests a safe directory of agents visible under the caller's root session:
 ```json
 {
   "type": "list_agents",
-  "v": 5,
+  "v": 6,
   "request_id": "list-001",
   "awaitable": true
 }
@@ -149,6 +149,6 @@ Reports protocol/parse errors and closes the WebSocket for fatal frame errors. C
 A minimal client flow is:
 
 1. Connect to `/ws` over the UDS.
-2. Send `register` with `v: 5`.
+2. Send `register` with `v: 6`.
 3. Send `dispatch` with a private `run_id` and public `agent_id`.
 4. Use the `agent_id` with `wait` or discover agents through `list_agents`.

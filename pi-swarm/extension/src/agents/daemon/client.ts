@@ -124,9 +124,7 @@ function parsePsLine(line: string): { pid: number; args: string } | null {
 }
 
 function isDaemonCommandForSocket(args: string, socketPath: string): boolean {
-	const hasDaemonCommand =
-		/(?:^|\s)(?:\S*\/)?basecamp\s+swarm\s+daemon(?:\s|$)/.test(args) ||
-		/(?:^|\s)(?:\S*\/)?bc-swarm\s+daemon(?:\s|$)/.test(args);
+	const hasDaemonCommand = /(?:^|\s)(?:\S*\/)?basecamp\s+swarm\s+daemon(?:\s|$)/.test(args);
 	const hasSocketArg = args.includes(`--uds ${socketPath}`) || args.includes(`--uds=${socketPath}`);
 	return hasDaemonCommand && hasSocketArg;
 }
