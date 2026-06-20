@@ -36,7 +36,7 @@ function resolveScratchDir(): string | undefined {
 }
 
 function renderPaneStatus(fg: ThemeFg, active: boolean): string {
-	return fg(active ? "success" : "muted", active ? "pane ✓" : "pane off");
+	return fg(active ? "success" : "muted", active ? "companion ✓" : "companion off");
 }
 
 function publishPaneStatus(ctx: ExtensionContext | null, active: boolean): void {
