@@ -74,21 +74,21 @@ describe("panes/tmux", () => {
 		it("quotes snapshot path and cwd", () => {
 			assert.equal(
 				buildCompanionCommand("/tmp/with space/snapshot.json", "/tmp/worktree cwd"),
-				"basecamp companion --snapshot '/tmp/with space/snapshot.json' --cwd '/tmp/worktree cwd'",
+				"basecamp companion dashboard --snapshot '/tmp/with space/snapshot.json' --cwd '/tmp/worktree cwd'",
 			);
 		});
 
 		it("escapes single quotes", () => {
 			assert.equal(
 				buildCompanionCommand("/tmp/it's-snapshot.json", "/tmp/it's-cwd"),
-				"basecamp companion --snapshot '/tmp/it'\\''s-snapshot.json' --cwd '/tmp/it'\\''s-cwd'",
+				"basecamp companion dashboard --snapshot '/tmp/it'\\''s-snapshot.json' --cwd '/tmp/it'\\''s-cwd'",
 			);
 		});
 
 		it("appends quoted scratch dir when provided", () => {
 			assert.equal(
 				buildCompanionCommand("/tmp/snap.json", "/tmp/cwd", "/tmp/pi/basecamp"),
-				"basecamp companion --snapshot '/tmp/snap.json' --cwd '/tmp/cwd' --scratch '/tmp/pi/basecamp'",
+				"basecamp companion dashboard --snapshot '/tmp/snap.json' --cwd '/tmp/cwd' --scratch '/tmp/pi/basecamp'",
 			);
 		});
 	});

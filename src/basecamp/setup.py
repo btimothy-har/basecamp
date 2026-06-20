@@ -85,6 +85,6 @@ def execute_setup() -> None:
         console.print(f"  [green]✓[/green] Created {config_path} [dim](basecamp project)[/dim]")
     console.print()
 
-    console.print("[green]✓[/green] Done. Review configuration with: [bold]basecamp config[/bold]")
-    console.print("[dim]  Add your own projects from the Projects menu.[/dim]")
+    console.print("[green]✓[/green] Done. Review projects with: [bold]basecamp projects[/bold]")
+    console.print("[dim]  Add your own projects from the project menu.[/dim]")
     console.print()

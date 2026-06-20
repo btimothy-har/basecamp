@@ -1,4 +1,4 @@
-"""Tests for the companion-analyze CLI command."""
+"""Tests for the companion analyze CLI command."""
 
 from __future__ import annotations
 
@@ -34,7 +34,8 @@ def test_companion_analyze_writes_sidecar(monkeypatch, tmp_path: Path) -> None:
     result = runner.invoke(
         basecamp,
         [
-            "companion-analyze",
+            "companion",
+            "analyze",
             "--session-id",
             "s",
             "--base-dir",
@@ -70,7 +71,8 @@ def test_companion_analyze_failure_keeps_last_good(monkeypatch, tmp_path: Path) 
     result = runner.invoke(
         basecamp,
         [
-            "companion-analyze",
+            "companion",
+            "analyze",
             "--session-id",
             "s",
             "--base-dir",

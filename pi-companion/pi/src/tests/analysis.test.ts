@@ -161,7 +161,7 @@ describe("maybeRunAnalysis", () => {
 
 		assert.equal(calls.length, 1);
 		assert.equal(calls[0]?.command, "basecamp");
-		assert.deepEqual(calls[0]?.args, ["companion-analyze", "--session-id", "session-123"]);
+		assert.deepEqual(calls[0]?.args, ["companion", "analyze", "--session-id", "session-123"]);
 		assert.equal(calls[0]?.cwd, "/tmp/worktree");
 
 		const expectedEnvelope = buildEnvelope(

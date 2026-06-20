@@ -1,4 +1,4 @@
-"""Interactive configuration menu for basecamp-workspace."""
+"""Interactive project menu for basecamp-workspace."""
 
 from __future__ import annotations
 
@@ -15,7 +15,7 @@ from basecamp_workspace.ui import console
 
 
 def run_config_menu() -> None:
-    """Top-level interactive config menu."""
+    """Legacy internal wrapper for the project menu."""
     while True:
         console.print()
         section = questionary.select(
@@ -31,11 +31,11 @@ def run_config_menu() -> None:
             return
 
         if section == "Projects":
-            _project_menu()
+            run_project_menu(exit_label="← Back")
 
 
-def _project_menu() -> None:
-    """Project configuration sub-menu."""
+def run_project_menu(exit_label: str = "Done") -> None:
+    """Project configuration menu."""
     while True:
         execute_project_list()
 
@@ -49,11 +49,11 @@ def _project_menu() -> None:
                 "Edit",
                 "Remove",
                 questionary.Separator(),
-                "← Back",
+                exit_label,
             ],
         ).ask()
 
-        if action is None or action == "← Back":
+        if action is None or action == exit_label:
             return
 
         if action == "Add":

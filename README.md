@@ -82,13 +82,13 @@ If the launch cwd's git root does not match a configured `repo_root`, Basecamp s
 
 ### Managing Projects
 
-Project configuration is managed through the interactive menu:
+Project configuration is managed through the projects menu:
 
 ```bash
-basecamp config
+basecamp projects
 ```
 
-Use the **Projects** section to list, add, edit, or remove configured projects.
+Use it to list, add, edit, or remove configured projects.
 
 ### Slash Commands (in-session)
 
@@ -144,11 +144,11 @@ Projects are defined in `~/.pi/basecamp/config.json`:
 |-------|----------|-------------|
 | `repo_root` | Yes | Path relative to `$HOME` for the git repository root used to detect the project |
 | `additional_dirs` | No | Extra project directories included in prompt context and allowed file roots |
-| `description` | No | Shown in `basecamp config` project listings |
+| `description` | No | Shown in `basecamp projects` listings |
 | `working_style` | No | Loads matching working style prompt (see below) |
 | `context` | No | Stem only (no `.md`); loads `~/.pi/context/{name}.md` for project context |
 
-Existing local config files with the older project directory schema are migrated to `repo_root` and `additional_dirs` by setup/config flows.
+Existing local config files with the older project directory schema are migrated to `repo_root` and `additional_dirs` by setup/projects flows.
 
 ## Prompt System
 
@@ -217,9 +217,9 @@ The workspace service owns the `~/.worktrees/<repo>/<label>/` storage convention
 
 basecamp is split into root-level products:
 
-- `src/basecamp/` — Python composition package for the `basecamp` setup/config/install CLI
+- `src/basecamp/` — Python composition package for the `basecamp` setup/projects/install CLI
 - `core/config/` — Python package for generic Basecamp settings, files, paths, and exceptions
-- `workspace/projects/` — Python package for project config and the interactive config menu
+- `workspace/projects/` — Python package for project config and the interactive projects menu
 - `pi-*` / `core/pi` / `workspace/pi` — Pi packages for project context, session UI, worktrees, workflow, git, engineering, and companion features
 
 ## License
