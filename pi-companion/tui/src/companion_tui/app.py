@@ -25,7 +25,7 @@ from textual.widget import Widget
 from textual.widgets import ContentSwitcher, DirectoryTree, Footer, Label, ListItem, ListView, Static
 from textual.widgets.tree import TreeNode
 
-from companion_tui.analysis import CompanionAnalysis, companion_analysis_path
+from companion_tui.analysis import COMPANION_ANALYSIS_DIR_NAME, CompanionAnalysis, companion_analysis_path
 from companion_tui.cycles import companion_tasks_path
 from companion_tui.daemon import DaemonSummary, DaemonSummaryError, DaemonSummaryRun, DaemonSummarySource
 from companion_tui.diff import (
@@ -43,6 +43,7 @@ from companion_tui.diff import (
     resolve_browse_roots,
 )
 from companion_tui.snapshot import (
+    COMPANION_SNAPSHOT_DIR_NAME,
     CompanionGoal,
     CompanionSnapshot,
     collapse_home,
@@ -1175,11 +1176,11 @@ class CompanionApp(App[None]):
             if self._dashboard_source is None:
                 tasks_path = companion_tasks_path(self._snapshot.session_id, self._tasks_dir)
 
-                if self.snapshot_path.parent.name == "snapshots":
-                    analysis_dir = self.snapshot_path.parent.parent / "analysis"
-                    self.analysis_path = companion_analysis_path(self._snapshot.session_id, analysis_dir)
+                if self.snapshot_path.parent.name == COMPANION_SNAPSHOT_DIR_NAME:
+                    analysis_dir = self.snapshot_path.parent.parent / COMPANION_ANALYSIS_DIR_NAME
                 else:
-                    self.analysis_path = self.snapshot_path.parent / f"{self.snapshot_path.stem}.analysis.json"
+                    analysis_dir = self.snapshot_path.parent
+                self.analysis_path = companion_analysis_path(self._snapshot.session_id, analysis_dir)
 
                 self._dashboard_source = DashboardSource(tasks_path, self.analysis_path)
 

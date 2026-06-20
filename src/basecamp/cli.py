@@ -180,6 +180,28 @@ def analyze(session_id: str, base_dir: Path | None) -> None:
         click.echo("companion analyze failed; keeping existing analysis", err=True)
 
 
+@basecamp.command("companion-analyze", hidden=not HAS_COMPANION)
+@click.option("--session-id", required=True, type=str)
+@click.option(
+    "--base-dir",
+    required=False,
+    default=None,
+    type=click.Path(path_type=Path),
+)
+@click.pass_context
+def companion_analyze(ctx: click.Context, session_id: str, base_dir: Path | None) -> None:
+    """Deprecated compatibility alias for `basecamp companion analyze`."""
+    if not HAS_COMPANION:
+        click.echo(_COMPANION_NOT_INSTALLED, err=True)
+        raise SystemExit(1)
+
+    click.echo(
+        "Warning: `basecamp companion-analyze` is deprecated; use `basecamp companion analyze`.",
+        err=True,
+    )
+    ctx.invoke(analyze, session_id=session_id, base_dir=base_dir)
+
+
 @basecamp.group(hidden=not HAS_SWARM)
 def swarm() -> None:
     """Async-agent swarm daemon commands."""

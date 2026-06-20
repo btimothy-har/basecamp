@@ -41,22 +41,24 @@ def test_apply_copies_legacy_state_to_bounded_contexts(tmp_path: Path) -> None:
     _write(tmp_path / ".pi" / "styles" / "engineering.md", "style")
     _write(tmp_path / ".pi" / "prompts" / "environment.md", "prompt")
     _write(tmp_path / ".pi" / "session-state" / "session.json", "state")
-    _write(tmp_path / ".pi" / "model-aliases" / "config.json", '{"version":1,"aliases":{}}')
+    _write(tmp_path / ".pi" / "model-aliases" / "config.json", '{"version":0,"aliases":{" fast ":" provider/model "}}')
     _write(tmp_path / ".pi" / "tasks" / "session.json", "[]")
     _write(tmp_path / ".pi" / "companion" / "session.json", '{"snapshot":true}')
     _write(tmp_path / ".pi" / "companion" / "session.analysis.json", '{"analysis":true}')
     _write(tmp_path / ".pi" / "agent" / "basecamp" / "daemon.db", "db")
     _write(tmp_path / ".pi" / "agent" / "basecamp" / "agents" / "agent-1" / "log.json", "agent")
-    _write(tmp_path / ".pi" / "agent" / "basecamp" / "daemon.pid", "123\n")
 
-    actions = migration.run(migration.MigrationOptions(home=tmp_path, apply=True))
+    migration.run(migration.MigrationOptions(home=tmp_path, apply=True))
 
     root = tmp_path / ".pi" / "basecamp"
     assert (root / "workspace" / "context" / "demo.md").read_text(encoding="utf-8") == "context"
     assert (root / "workspace" / "styles" / "engineering.md").read_text(encoding="utf-8") == "style"
     assert (root / "workspace" / "prompts" / "environment.md").read_text(encoding="utf-8") == "prompt"
     assert (root / "core" / "session-state" / "session.json").read_text(encoding="utf-8") == "state"
-    assert (root / "core" / "model-aliases.json").read_text(encoding="utf-8") == '{"version":1,"aliases":{}}'
+    assert json.loads((root / "core" / "model-aliases.json").read_text(encoding="utf-8")) == {
+        "version": 1,
+        "aliases": {"fast": "provider/model"},
+    }
     assert (root / "tasks" / "session.json").read_text(encoding="utf-8") == "[]"
     assert (root / "companion" / "snapshots" / "session.json").read_text(encoding="utf-8") == '{"snapshot":true}'
     analysis_path = root / "companion" / "analysis" / "session.analysis.json"
@@ -64,7 +66,21 @@ def test_apply_copies_legacy_state_to_bounded_contexts(tmp_path: Path) -> None:
     assert (root / "swarm" / "daemon.db").read_text(encoding="utf-8") == "db"
     assert (root / "swarm" / "agents" / "agent-1" / "log.json").read_text(encoding="utf-8") == "agent"
     assert not (root / "swarm" / "daemon.pid").exists()
+
+
+def test_apply_skips_swarm_state_when_runtime_artifacts_exist(tmp_path: Path) -> None:
+    migration = _load_migration()
+    _write(tmp_path / ".pi" / "agent" / "basecamp" / "daemon.db", "db")
+    _write(tmp_path / ".pi" / "agent" / "basecamp" / "agents" / "agent-1" / "log.json", "agent")
+    _write(tmp_path / ".pi" / "agent" / "basecamp" / "daemon.pid", "123\n")
+
+    actions = migration.run(migration.MigrationOptions(home=tmp_path, apply=True))
+
+    root = tmp_path / ".pi" / "basecamp"
+    assert not (root / "swarm" / "daemon.db").exists()
+    assert not (root / "swarm" / "agents" / "agent-1" / "log.json").exists()
     assert any(action.kind == "runtime-skip" and action.source.name == "daemon.pid" for action in actions)
+    assert any(action.kind == "skip" and action.source == tmp_path / ".pi" / "agent" / "basecamp" for action in actions)
 
 
 def test_apply_extracts_projects_and_strips_root_config(tmp_path: Path) -> None:
@@ -88,6 +104,47 @@ def test_apply_extracts_projects_and_strips_root_config(tmp_path: Path) -> None:
         "aliases": {"fast": "provider/model"},
     }
     assert json.loads(root_config.read_text(encoding="utf-8")) == {"install_dir": "/repo", "version": 1}
+
+
+def test_dry_run_does_not_duplicate_planned_model_alias_target(tmp_path: Path) -> None:
+    migration = _load_migration()
+    root_config = tmp_path / ".pi" / "basecamp" / "config.json"
+    aliases = root_config.parent / "core" / "model-aliases.json"
+    _write(root_config, '{"models":{"fast":"provider/model"}}')
+    _write(tmp_path / ".pi" / "model-aliases" / "config.json", '{"aliases":{"slow":"provider/slow"}}')
+
+    actions = migration.run(migration.MigrationOptions(home=tmp_path))
+
+    writes_to_aliases = [action for action in actions if action.kind in {"copy", "update"} and action.target == aliases]
+    assert len(writes_to_aliases) == 1
+    assert any(
+        action.kind == "skip"
+        and action.source == tmp_path / ".pi" / "model-aliases" / "config.json"
+        and action.target == aliases
+        for action in actions
+    )
+
+
+def test_apply_retains_root_projects_and_models_when_targets_exist(tmp_path: Path) -> None:
+    migration = _load_migration()
+    root_config = tmp_path / ".pi" / "basecamp" / "config.json"
+    projects = root_config.parent / "workspace" / "projects.json"
+    aliases = root_config.parent / "core" / "model-aliases.json"
+    _write(
+        root_config,
+        '{"install_dir":"/repo","projects":{"demo":{"repo_root":"repo"}},"models":{"fast":"provider/model"},"observer":{"mode":"off"}}',
+    )
+    _write(projects, '{"version":1,"projects":{"existing":{"repo_root":"existing"}}}')
+    _write(aliases, '{"version":1,"aliases":{"existing":"provider/existing"}}')
+
+    migration.run(migration.MigrationOptions(home=tmp_path, apply=True))
+
+    assert json.loads(root_config.read_text(encoding="utf-8")) == {
+        "install_dir": "/repo",
+        "projects": {"demo": {"repo_root": "repo"}},
+        "models": {"fast": "provider/model"},
+        "version": 1,
+    }
 
 
 def test_apply_does_not_overwrite_existing_targets(tmp_path: Path) -> None:

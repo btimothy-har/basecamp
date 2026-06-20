@@ -15,9 +15,6 @@ def default_db_path() -> Path:
     return Path.home() / ".pi" / "basecamp" / "swarm" / "daemon.db"
 
 
-DEFAULT_DB_PATH = default_db_path()
-
-
 TERMINAL_STATUSES = ("completed", "failed")
 RUN_SUMMARY_DEFAULT_LIMIT = 5
 RUN_SUMMARY_MAX_LIMIT = 100

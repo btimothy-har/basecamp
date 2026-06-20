@@ -99,35 +99,32 @@ class Settings:
             data["version"] = CONFIG_VERSION
             data["install_dir"] = value
 
+    @staticmethod
+    def _normalize_modules(values: Iterable[object]) -> list[str]:
+        """Strip, drop blanks/non-strings, and deduplicate module ids."""
+        modules: list[str] = []
+        seen: set[str] = set()
+        for value in values:
+            if not isinstance(value, str):
+                continue
+            module = value.strip()
+            if not module or module in seen:
+                continue
+            modules.append(module)
+            seen.add(module)
+        return modules
+
     @property
     def installed_modules(self) -> tuple[str, ...]:
         """Installed Basecamp module ids from the root config."""
         val = self._read().get("installed_modules")
         if not isinstance(val, list):
             return ()
-
-        modules: list[str] = []
-        seen: set[str] = set()
-        for item in val:
-            if not isinstance(item, str):
-                continue
-            module = item.strip()
-            if not module or module in seen:
-                continue
-            modules.append(module)
-            seen.add(module)
-        return tuple(modules)
+        return tuple(self._normalize_modules(val))
 
     @installed_modules.setter
     def installed_modules(self, values: Iterable[str]) -> None:
-        modules: list[str] = []
-        seen: set[str] = set()
-        for value in values:
-            module = value.strip()
-            if not module or module in seen:
-                continue
-            modules.append(module)
-            seen.add(module)
+        modules = self._normalize_modules(values)
 
         with self._locked_update() as data:
             data["version"] = CONFIG_VERSION
@@ -135,14 +132,7 @@ class Settings:
 
     def set_install_metadata(self, *, install_dir: str, installed_modules: Iterable[str]) -> None:
         """Persist installer-owned root metadata in one locked write."""
-        modules: list[str] = []
-        seen: set[str] = set()
-        for value in installed_modules:
-            module = value.strip()
-            if not module or module in seen:
-                continue
-            modules.append(module)
-            seen.add(module)
+        modules = self._normalize_modules(installed_modules)
 
         with self._locked_update() as data:
             data.clear()

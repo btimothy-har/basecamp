@@ -8,6 +8,7 @@ import subprocess
 from pathlib import Path
 
 import pytest
+from companion_tui.analysis import companion_analysis_path
 from companion_tui.app import (
     CompanionApp,
     DashboardBody,
@@ -363,7 +364,7 @@ def test_dashboard_shows_daemon_panel_when_session_active(tmp_path: Path) -> Non
         ),
         encoding="utf-8",
     )
-    analysis_path = snapshot_path.parent / f"{snapshot_path.stem}.analysis.json"
+    analysis_path = companion_analysis_path(session_id, snapshot_path.parent)
     analysis_path.write_text(
         json.dumps(
             {
@@ -450,7 +451,7 @@ def test_dashboard_autopin_navigation_and_repin(tmp_path: Path) -> None:
         ),
         encoding="utf-8",
     )
-    analysis_path = snapshot_path.parent / f"{snapshot_path.stem}.analysis.json"
+    analysis_path = companion_analysis_path(session_id, snapshot_path.parent)
     analysis_path.write_text(
         json.dumps(
             {

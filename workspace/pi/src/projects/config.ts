@@ -26,16 +26,22 @@ interface ProjectDetection {
 	warnings: string[];
 }
 
+const BASECAMP_WORKSPACE_RELATIVE_DIR = path.join(".pi", "basecamp", "workspace");
+
 function defaultHomeDir(homeDir?: string): string {
 	return homeDir ?? os.homedir();
 }
 
+function defaultWorkspaceDir(homeDir: string): string {
+	return path.join(homeDir, BASECAMP_WORKSPACE_RELATIVE_DIR);
+}
+
 function defaultConfigPath(homeDir: string, configPath?: string): string {
-	return configPath ?? path.join(homeDir, ".pi", "basecamp", "workspace", "projects.json");
+	return configPath ?? path.join(defaultWorkspaceDir(homeDir), "projects.json");
 }
 
 function defaultContextDir(homeDir: string, contextDir?: string): string {
-	return contextDir ?? path.join(homeDir, ".pi", "basecamp", "workspace", "context");
+	return contextDir ?? path.join(defaultWorkspaceDir(homeDir), "context");
 }
 
 export function resolveConfigDir(dir: string, homeDir = os.homedir()): string {

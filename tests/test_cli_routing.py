@@ -11,8 +11,8 @@ def test_top_level_commands_match_new_shape() -> None:
     assert "setup" in commands
     assert "install" in commands
     assert "swarm" in commands
+    assert "companion-analyze" in commands
     assert "config" not in commands
-    assert "companion-analyze" not in commands
 
 
 def test_companion_subcommands_match_new_shape() -> None:
@@ -82,14 +82,30 @@ def test_companion_dashboard_delegates(monkeypatch) -> None:
     assert calls == [("/tmp/snapshot.json", "/tmp/worktree", "/tmp/scratch")]
 
 
+def test_deprecated_companion_analyze_alias_delegates(monkeypatch, tmp_path) -> None:
+    calls: list[tuple[str, str | None]] = []
+
+    monkeypatch.setattr(cli, "HAS_COMPANION", True)
+    monkeypatch.setattr(
+        cli,
+        "analyze",
+        lambda session_id, base_dir: calls.append((session_id, str(base_dir) if base_dir else None)),
+    )
+
+    result = CliRunner().invoke(
+        cli.basecamp,
+        ["companion-analyze", "--session-id", "s", "--base-dir", str(tmp_path)],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert "deprecated" in result.output
+    assert calls == [("s", str(tmp_path))]
+
+
 def test_old_cli_routes_are_absent() -> None:
     runner = CliRunner()
 
     result = runner.invoke(cli.basecamp, ["config"])
-    assert result.exit_code != 0
-    assert "No such command" in result.output
-
-    result = runner.invoke(cli.basecamp, ["companion-analyze"])
     assert result.exit_code != 0
     assert "No such command" in result.output
 

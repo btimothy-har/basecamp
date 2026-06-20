@@ -3,11 +3,11 @@
 
 Dry-run is the default:
 
-    python migrations/001_consolidate_basecamp_state.py
+    uv run python migrations/001_consolidate_basecamp_state.py
 
 Apply copies with:
 
-    python migrations/001_consolidate_basecamp_state.py --apply
+    uv run python migrations/001_consolidate_basecamp_state.py --apply
 
 The migration copies legacy files into the new bounded-context layout when the
 new target is missing, extracts root config-owned workspace/core data into their
@@ -24,6 +24,7 @@ import os
 import shutil
 import stat
 import sys
+import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
@@ -103,6 +104,14 @@ def _record(
     actions.append(Action(kind=kind, source=source, target=target, detail=detail))
 
 
+def _has_planned_target_write(actions: list[Action], target: Path) -> bool:
+    return any(
+        (action.kind == "copy" and action.target == target)
+        or (action.kind == "update" and (action.target == target or action.source == target))
+        for action in actions
+    )
+
+
 def _ensure_dir(path: Path, options: MigrationOptions, actions: list[Action]) -> None:
     if path.exists() or any(action.kind == "ensure-dir" and action.target == path for action in actions):
         return
@@ -118,8 +127,8 @@ def _copy_regular_file(source: Path, target: Path, options: MigrationOptions, ac
     if not _is_regular_file(source):
         _record(actions, "skip", source, target, "source is not a regular file")
         return
-    if target.exists():
-        _record(actions, "skip", source, target, "target already exists")
+    if target.exists() or _has_planned_target_write(actions, target):
+        _record(actions, "skip", source, target, "target already exists or is already planned")
         return
 
     _record(actions, "copy", source, target, "copy file")
@@ -158,8 +167,26 @@ def _read_json_object(path: Path) -> dict[str, object] | None:
 
 def _write_json_object(path: Path, payload: dict[str, object]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(f"{json.dumps(payload, indent=2)}\n", encoding="utf-8")
-    path.chmod(0o600)
+    temp_path: Path | None = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            "w",
+            encoding="utf-8",
+            dir=path.parent,
+            prefix=f".{path.name}.",
+            suffix=".tmp",
+            delete=False,
+        ) as temp_file:
+            temp_path = Path(temp_file.name)
+            temp_file.write(f"{json.dumps(payload, indent=2)}\n")
+        temp_path.chmod(0o600)
+        temp_path.replace(path)
+    finally:
+        if temp_path is not None and temp_path.exists():
+            try:
+                temp_path.unlink()
+            except OSError:
+                pass
 
 
 def _string_map(value: object) -> dict[str, str] | None:
@@ -186,25 +213,40 @@ def _migrate_root_config(home: Path, options: MigrationOptions, actions: list[Ac
         _record(actions, "missing", root_config_path, None, "root config is absent or not a JSON object")
         return
 
+    cleanup_keys = ["worktree_branch_prefix", "observer"]
+
     projects = data.get("projects")
+    should_migrate_projects = (
+        isinstance(projects, dict)
+        and not projects_path.exists()
+        and not _has_planned_target_write(actions, projects_path)
+    )
     if isinstance(projects, dict):
-        if projects_path.exists():
-            _record(actions, "skip", root_config_path, projects_path, "workspace projects file already exists")
-        else:
+        if should_migrate_projects:
             _record(actions, "copy", root_config_path, projects_path, "extract projects to workspace projects file")
             if options.apply:
                 _write_json_object(projects_path, {"version": 1, "projects": projects})
+            cleanup_keys.append("projects")
+        else:
+            _record(
+                actions, "skip", root_config_path, projects_path, "workspace projects file already exists or is planned"
+            )
 
     models = _string_map(data.get("models"))
+    should_migrate_models = (
+        models is not None and not aliases_path.exists() and not _has_planned_target_write(actions, aliases_path)
+    )
     if models is not None:
-        if aliases_path.exists():
-            _record(actions, "skip", root_config_path, aliases_path, "core model aliases file already exists")
-        else:
+        if should_migrate_models:
             _record(actions, "copy", root_config_path, aliases_path, "extract model aliases to core alias file")
             if options.apply:
                 _write_json_object(aliases_path, {"version": 1, "aliases": models})
+            cleanup_keys.append("models")
+        else:
+            _record(
+                actions, "skip", root_config_path, aliases_path, "core model aliases file already exists or is planned"
+            )
 
-    cleanup_keys = ("projects", "models", "worktree_branch_prefix", "observer")
     cleaned = dict(data)
     for key in cleanup_keys:
         cleaned.pop(key, None)
@@ -212,9 +254,42 @@ def _migrate_root_config(home: Path, options: MigrationOptions, actions: list[Ac
         cleaned.setdefault("version", 1)
 
     if cleaned != data:
-        _record(actions, "update", root_config_path, None, "remove workspace/core/stale keys from root config")
+        _record(actions, "update", root_config_path, None, "remove safely migrated/stale keys from root config")
         if options.apply:
             _write_json_object(root_config_path, cleaned)
+
+
+def _model_alias_payload(source: Path) -> dict[str, object] | None:
+    data = _read_json_object(source)
+    if data is None:
+        return None
+    aliases = _string_map(data.get("aliases")) if "aliases" in data else _string_map(data)
+    if aliases is None:
+        return None
+    return {"version": 1, "aliases": aliases}
+
+
+def _migrate_model_aliases_file(home: Path, options: MigrationOptions, actions: list[Action]) -> None:
+    source = pi_dir(home) / "model-aliases" / "config.json"
+    target = basecamp_dir(home) / "core" / "model-aliases.json"
+    if not source.exists():
+        _record(actions, "missing", source, target, "legacy source is absent")
+        return
+    if not _is_regular_file(source):
+        _record(actions, "skip", source, target, "source is not a regular file")
+        return
+
+    if target.exists() or _has_planned_target_write(actions, target):
+        _record(actions, "skip", source, target, "target already exists or is already planned")
+        return
+    payload = _model_alias_payload(source)
+    if payload is None:
+        _record(actions, "skip", source, target, "legacy model aliases config is not a valid string map")
+        return
+
+    _record(actions, "copy", source, target, "normalize model aliases config")
+    if options.apply:
+        _write_json_object(target, payload)
 
 
 def _migrate_companion(home: Path, options: MigrationOptions, actions: list[Action]) -> None:
@@ -248,13 +323,16 @@ def _migrate_swarm(home: Path, options: MigrationOptions, actions: list[Action])
     swarm_dir = basecamp_dir(home) / "swarm"
 
     _ensure_dir(swarm_dir, options, actions)
+    runtime_paths = [legacy_dir / name for name in ("daemon.sock", "daemon.pid", "daemon.spawn.lock")]
+    active_runtime_paths = [path for path in runtime_paths if path.exists()]
+    for runtime_path in active_runtime_paths:
+        _record(actions, "runtime-skip", runtime_path, swarm_dir / runtime_path.name, "runtime artifact is not copied")
+    if active_runtime_paths:
+        _record(actions, "skip", legacy_dir, swarm_dir, "legacy daemon appears active; swarm state copy skipped")
+        return
+
     _copy_regular_file(legacy_dir / "daemon.db", swarm_dir / "daemon.db", options, actions)
     _copy_directory_tree(legacy_dir / "agents", swarm_dir / "agents", options, actions)
-
-    for name in ("daemon.sock", "daemon.pid", "daemon.spawn.lock"):
-        runtime_path = legacy_dir / name
-        if runtime_path.exists():
-            _record(actions, "runtime-skip", runtime_path, swarm_dir / name, "runtime artifact is not copied")
 
 
 def _prune_empty_legacy_dirs(home: Path, options: MigrationOptions, actions: list[Action]) -> None:
@@ -314,12 +392,7 @@ def run(options: MigrationOptions) -> list[Action]:
     _copy_directory_tree(pi_dir(home) / "styles", target_basecamp / "workspace" / "styles", options, actions)
     _copy_directory_tree(pi_dir(home) / "prompts", target_basecamp / "workspace" / "prompts", options, actions)
     _copy_directory_tree(pi_dir(home) / "session-state", target_basecamp / "core" / "session-state", options, actions)
-    _copy_regular_file(
-        pi_dir(home) / "model-aliases" / "config.json",
-        target_basecamp / "core" / "model-aliases.json",
-        options,
-        actions,
-    )
+    _migrate_model_aliases_file(home, options, actions)
     _copy_directory_tree(pi_dir(home) / "tasks", target_basecamp / "tasks", options, actions)
     _migrate_companion(home, options, actions)
     _migrate_swarm(home, options, actions)
