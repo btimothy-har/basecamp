@@ -31,11 +31,11 @@ function defaultHomeDir(homeDir?: string): string {
 }
 
 function defaultConfigPath(homeDir: string, configPath?: string): string {
-	return configPath ?? path.join(homeDir, ".pi", "basecamp", "config.json");
+	return configPath ?? path.join(homeDir, ".pi", "basecamp", "workspace", "projects.json");
 }
 
 function defaultContextDir(homeDir: string, contextDir?: string): string {
-	return contextDir ?? path.join(homeDir, ".pi", "context");
+	return contextDir ?? path.join(homeDir, ".pi", "basecamp", "workspace", "context");
 }
 
 export function resolveConfigDir(dir: string, homeDir = os.homedir()): string {

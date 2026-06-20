@@ -18,8 +18,9 @@ import { getProjectState, type ProjectState } from "./project.ts";
 
 const MODULE_DIR = path.dirname(fileURLToPath(import.meta.url));
 const PACKAGE_DIR = path.resolve(MODULE_DIR, "system-prompts");
-const USER_PROMPTS_DIR = path.join(os.homedir(), ".pi", "prompts");
-const USER_STYLES_DIR = path.join(os.homedir(), ".pi", "styles");
+const BASECAMP_WORKSPACE_DIR = path.join(os.homedir(), ".pi", "basecamp", "workspace");
+const USER_PROMPTS_DIR = path.join(BASECAMP_WORKSPACE_DIR, "prompts");
+const USER_STYLES_DIR = path.join(BASECAMP_WORKSPACE_DIR, "styles");
 
 export function loadPromptFile(filename: string): string {
 	try {

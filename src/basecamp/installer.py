@@ -28,6 +28,16 @@ COMPONENT_SWARM: Final = "swarm"
 
 
 _MANDATORY_TS_PACKAGE: Final = ("core/pi", "pi-core")
+_PACKAGE_MODULE_IDS: Final = {
+    "core/pi": "core",
+    "pi-ui": "ui",
+    "workspace/pi": "workspace",
+    "pi-tasks": "tasks",
+    "pi-git": "git",
+    "pi-engineering": "engineering",
+    "pi-companion/pi": "companion",
+    "pi-swarm/extension": "swarm",
+}
 _TS_PACKAGE_ORDER: Final = [
     _MANDATORY_TS_PACKAGE,
     ("pi-ui", "pi-ui"),
@@ -57,6 +67,11 @@ class InstallSelection:
 
     python_extras: tuple[str, ...]
     ts_packages: tuple[tuple[str, str], ...]
+
+    @property
+    def installed_modules(self) -> tuple[str, ...]:
+        """Basecamp module ids represented by the selected Pi packages."""
+        return tuple(_PACKAGE_MODULE_IDS[subpath] for subpath, _label in self.ts_packages)
 
     @property
     def python_extra(self) -> str:
@@ -89,8 +104,8 @@ def resolve_install_selection(component_ids: list[str] | tuple[str, ...] | set[s
     return InstallSelection(python_extras=python_extras, ts_packages=ts_packages)
 
 
-def _save_install_dir(repo_dir: Path) -> None:
-    settings.install_dir = str(repo_dir)
+def _save_install_metadata(repo_dir: Path, selection: InstallSelection) -> None:
+    settings.set_install_metadata(install_dir=str(repo_dir), installed_modules=selection.installed_modules)
 
 
 def _install_pi_package(package_dir: Path, label: str) -> None:
@@ -181,7 +196,7 @@ def run_interactive_install(*, editable: bool | None = None) -> None:
     for subpath, label in selection.ts_packages:
         _install_pi_package(REPO_DIR / subpath, label)
 
-    _save_install_dir(REPO_DIR)
+    _save_install_metadata(REPO_DIR, selection)
 
     console.print()
     console.print("[green]✓[/green] Done.")

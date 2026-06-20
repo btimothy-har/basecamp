@@ -36,12 +36,12 @@ uv run install.py -e        # editable (recommended for development)
 uv run install.py --no-editable
 ```
 
-This installs the Python tool `basecamp`, prompts for optional Basecamp Pi package groups, and saves the Basecamp install directory to `~/.pi/basecamp/config.json`.
+This installs the Python tool `basecamp`, prompts for optional Basecamp Pi package groups, and saves installer metadata to `~/.pi/basecamp/config.json`.
 
 Then initialize the environment:
 
 ```bash
-basecamp setup                     # check prerequisites, create styles/context dirs, create default config
+basecamp setup                     # check prerequisites, create workspace dirs, create default project config
 ```
 
 If `basecamp` isn't in your PATH:
@@ -118,10 +118,11 @@ Use ad-hoc dispatch for one-off subagent tasks that do not need a built-in agent
 
 ## Configuration
 
-Projects are defined in `~/.pi/basecamp/config.json`:
+Projects are defined in `~/.pi/basecamp/workspace/projects.json`:
 
 ```json
 {
+  "version": 1,
   "projects": {
     "web-app": {
       "repo_root": "GitHub/web-app",
@@ -140,13 +141,15 @@ Projects are defined in `~/.pi/basecamp/config.json`:
 }
 ```
 
+Root `~/.pi/basecamp/config.json` is installer-owned metadata (`install_dir`, `installed_modules`) and does not contain project definitions.
+
 | Field | Required | Description |
 |-------|----------|-------------|
 | `repo_root` | Yes | Path relative to `$HOME` for the git repository root used to detect the project |
 | `additional_dirs` | No | Extra project directories included in prompt context and allowed file roots |
 | `description` | No | Shown in `basecamp projects` listings |
 | `working_style` | No | Loads matching working style prompt (see below) |
-| `context` | No | Stem only (no `.md`); loads `~/.pi/context/{name}.md` for project context |
+| `context` | No | Stem only (no `.md`); loads `~/.pi/basecamp/workspace/context/{name}.md` for project context |
 
 Existing local config files with the older project directory schema are migrated to `repo_root` and `additional_dirs` by setup/projects flows.
 
@@ -178,7 +181,7 @@ project context (configured context plus AGENTS.md/CLAUDE.md)
 runtime environment (paths, platform, date, git/worktree state)
 ```
 
-Built-in prompt files can be overridden by creating matching files under `~/.pi/prompts/` (for example, `~/.pi/prompts/environment.md` or `~/.pi/prompts/modes/executor.md`).
+Built-in prompt files can be overridden by creating matching files under `~/.pi/basecamp/workspace/prompts/` (for example, `~/.pi/basecamp/workspace/prompts/environment.md` or `~/.pi/basecamp/workspace/prompts/modes/executor.md`).
 
 ### Working Styles
 
@@ -188,11 +191,11 @@ Built-in prompt files can be overridden by creating matching files under `~/.pi/
 | `advisor` | Advisor role, efficient discovery, direct communication, decision support |
 | `logseq` | Knowledge graph curation, structured entries, user-driven content approval |
 
-Create custom working styles as `{name}.md` files in `~/.pi/styles/`.
+Create custom working styles as `{name}.md` files in `~/.pi/basecamp/workspace/styles/`.
 
 ### Project Context
 
-For multi-repo projects, add cross-repo context in `~/.pi/context/`. The `context` field in project config is the file stem only; Basecamp appends `.md` when loading the matching file.
+For multi-repo projects, add cross-repo context in `~/.pi/basecamp/workspace/context/`. The `context` field in project config is the file stem only; Basecamp appends `.md` when loading the matching file.
 
 Single-repo projects typically use `AGENTS.md` in the repo itself.
 

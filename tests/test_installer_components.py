@@ -21,6 +21,16 @@ def test_all_groups_selected_includes_non_memory_packages_and_python_extras() ->
 
     assert selection.python_extra == "[companion,swarm]"
     assert selection.python_extras == ("companion", "swarm")
+    assert selection.installed_modules == (
+        "core",
+        "ui",
+        "workspace",
+        "tasks",
+        "git",
+        "engineering",
+        "companion",
+        "swarm",
+    )
     assert package_paths([COMPONENT_STANDARD, COMPONENT_ENGINEERING, COMPONENT_COMPANION, COMPONENT_SWARM]) == [
         "core/pi",
         "pi-ui",

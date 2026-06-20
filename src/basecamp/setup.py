@@ -3,9 +3,9 @@
 import shutil
 from pathlib import Path
 
-from basecamp_core.paths import USER_CONTEXT_DIR, USER_STYLES_DIR
+from basecamp_core.paths import USER_CONTEXT_DIR, USER_PROMPTS_DIR, USER_STYLES_DIR
 from basecamp_core.settings import settings
-from basecamp_workspace import ProjectConfig, load_projects, save_projects
+from basecamp_workspace import DEFAULT_PROJECTS_PATH, ProjectConfig, load_projects, save_projects
 from basecamp_workspace.directories import to_home_relative
 from basecamp_workspace.ui import console
 
@@ -23,8 +23,9 @@ def _check_prerequisite(name: str, command: str) -> bool:
 def _scaffold_dirs() -> None:
     """Create user customization directories used by project config."""
     dirs = [
-        USER_STYLES_DIR,
         USER_CONTEXT_DIR,
+        USER_STYLES_DIR,
+        USER_PROMPTS_DIR,
     ]
     for path in dirs:
         path.mkdir(parents=True, exist_ok=True)
@@ -39,7 +40,7 @@ def _source_dir() -> Path:
 
 
 def _create_default_config() -> None:
-    """Create config.json with the basecamp project as a starting point."""
+    """Create the workspace projects file with basecamp as a starting point."""
     relative_path = to_home_relative(_source_dir())
     save_projects(
         {
@@ -70,11 +71,12 @@ def execute_setup() -> None:
 
     console.print("[bold]Scaffolding directories...[/bold]")
     _scaffold_dirs()
-    console.print(f"  [green]✓[/green] {USER_STYLES_DIR}")
     console.print(f"  [green]✓[/green] {USER_CONTEXT_DIR}")
+    console.print(f"  [green]✓[/green] {USER_STYLES_DIR}")
+    console.print(f"  [green]✓[/green] {USER_PROMPTS_DIR}")
     console.print()
 
-    config_path = settings.path
+    config_path = DEFAULT_PROJECTS_PATH
     console.print("[bold]Project configuration...[/bold]")
     existing = load_projects()
     if existing:
