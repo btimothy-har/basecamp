@@ -15,37 +15,54 @@ import * as os from "node:os";
 import { dirname, join, resolve } from "node:path";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
-import { isCompanionActive } from "pi-core/platform/env.ts";
 import { getInvokedSkills } from "pi-core/platform/skill-tracker.ts";
 import { getWorkspaceService, getWorkspaceState, type WorkspaceState } from "pi-core/platform/workspace.ts";
 import { type AgentMode, getAgentMode, onAgentModeChange } from "pi-core/session/agent-mode.ts";
 import { getModeLabel } from "./mode-style.ts";
 
 type ThemeFg = (color: Parameters<import("@earendil-works/pi-coding-agent").Theme["fg"]>[0], text: string) => string;
+
+interface LocationLineParts {
+	mode: string | null;
+	cwd: string;
+	metadata: string[];
+}
+
 let requestRender: (() => void) | null = null;
 
 /**
- * Worktree branch watcher — pi's FooterDataProvider watches the main repo's
- * HEAD, not the worktree's. We run our own watcher on the worktree's HEAD
- * so the footer shows the actual branch.
+ * Branch watcher for the exact directory represented in the footer.
+ * Pi's FooterDataProvider is created from Pi's cwd; Basecamp can later override
+ * the effective cwd/worktree, so we resolve and watch HEAD ourselves.
  */
-let worktreeBranchCache: string | null = null;
-let worktreeHeadWatcher: FSWatcher | null = null;
-let worktreeWatcherInitialized = false;
+let branchCache: string | null = null;
+let branchHeadWatcher: FSWatcher | null = null;
+let branchWatcherTarget: string | null = null;
 
-function resolveWorktreeHeadPath(worktreeDir: string): string | null {
-	try {
-		const gitPath = join(worktreeDir, ".git");
-		if (!existsSync(gitPath)) return null;
-		const stat = statSync(gitPath);
-		if (stat.isDirectory()) return join(gitPath, "HEAD");
-		const content = readFileSync(gitPath, "utf8").trim();
-		if (!content.startsWith("gitdir: ")) return null;
-		const gitDir = resolve(worktreeDir, content.slice(8).trim());
-		const headPath = join(gitDir, "HEAD");
-		return existsSync(headPath) ? headPath : null;
-	} catch {
-		return null;
+function resolveGitHeadPath(startDir: string): string | null {
+	let dir = resolve(startDir);
+	while (true) {
+		try {
+			const gitPath = join(dir, ".git");
+			if (existsSync(gitPath)) {
+				const stat = statSync(gitPath);
+				if (stat.isDirectory()) {
+					const headPath = join(gitPath, "HEAD");
+					return existsSync(headPath) ? headPath : null;
+				}
+				const content = readFileSync(gitPath, "utf8").trim();
+				if (!content.startsWith("gitdir: ")) return null;
+				const gitDir = resolve(dir, content.slice(8).trim());
+				const headPath = join(gitDir, "HEAD");
+				return existsSync(headPath) ? headPath : null;
+			}
+		} catch {
+			return null;
+		}
+
+		const parent = dirname(dir);
+		if (parent === dir) return null;
+		dir = parent;
 	}
 }
 
@@ -59,21 +76,24 @@ function readBranchFromHead(headPath: string): string | null {
 	}
 }
 
-function initWorktreeWatcher(worktreeDir: string): void {
-	if (worktreeWatcherInitialized) return;
-	worktreeWatcherInitialized = true;
+function syncBranchWatcher(targetDir: string): void {
+	const normalizedTarget = resolve(targetDir);
+	if (branchWatcherTarget === normalizedTarget) return;
 
-	const headPath = resolveWorktreeHeadPath(worktreeDir);
+	disposeBranchWatcher();
+	branchWatcherTarget = normalizedTarget;
+
+	const headPath = resolveGitHeadPath(normalizedTarget);
 	if (!headPath) return;
 
-	worktreeBranchCache = readBranchFromHead(headPath);
+	branchCache = readBranchFromHead(headPath);
 
 	try {
-		worktreeHeadWatcher = watch(dirname(headPath), (_event, filename) => {
+		branchHeadWatcher = watch(dirname(headPath), (_event, filename) => {
 			if (!filename || filename.toString() === "HEAD") {
 				const next = readBranchFromHead(headPath);
-				if (next !== worktreeBranchCache) {
-					worktreeBranchCache = next;
+				if (next !== branchCache) {
+					branchCache = next;
 					requestRender?.();
 				}
 			}
@@ -83,11 +103,16 @@ function initWorktreeWatcher(worktreeDir: string): void {
 	}
 }
 
-function disposeWorktreeWatcher(): void {
-	worktreeHeadWatcher?.close();
-	worktreeHeadWatcher = null;
-	worktreeWatcherInitialized = false;
-	worktreeBranchCache = null;
+function resolveFooterBranch(targetDir: string, fallbackBranch: string | null): string | null {
+	syncBranchWatcher(targetDir);
+	return branchCache ?? fallbackBranch;
+}
+
+function disposeBranchWatcher(): void {
+	branchHeadWatcher?.close();
+	branchHeadWatcher = null;
+	branchWatcherTarget = null;
+	branchCache = null;
 }
 
 function getFooterEffectiveCwd(workspace: WorkspaceState | null): string {
@@ -155,6 +180,40 @@ function layoutLine(left: string, right: string, width: number, fg: ThemeFg): st
 	return truncateToWidth(`${left}  ${right}`, width, fg("dim", "…"));
 }
 
+function joinSegments(parts: Array<string | null | undefined>, fg: ThemeFg): string {
+	return parts.filter((part): part is string => Boolean(part)).join(fg("dim", "  "));
+}
+
+function layoutLocationLine(location: LocationLineParts, right: string, width: number, fg: ThemeFg): string {
+	const fullLeft = joinSegments([location.mode, location.cwd, ...location.metadata], fg);
+	if (visibleWidth(fullLeft) + 2 + visibleWidth(right) <= width) return layoutLine(fullLeft, right, width, fg);
+
+	const maxRightWidth = visibleWidth(right);
+	const rightCandidates = [
+		right,
+		maxRightWidth > 32 ? truncateToWidth(right, 32, fg("dim", "…")) : right,
+		maxRightWidth > 20 ? truncateToWidth(right, 20, fg("dim", "…")) : right,
+		"",
+	];
+
+	for (const rightCandidate of new Set(rightCandidates)) {
+		for (let cwdWidth = visibleWidth(location.cwd); cwdWidth >= 0; cwdWidth--) {
+			const cwd = cwdWidth > 0 ? truncateToWidth(location.cwd, cwdWidth, fg("dim", "…")) : null;
+			const left = joinSegments([location.mode, cwd, ...location.metadata], fg);
+			if (!left && !rightCandidate) continue;
+			if (visibleWidth(left) + 2 + visibleWidth(rightCandidate) <= width) {
+				return layoutLine(left, rightCandidate, width, fg);
+			}
+		}
+	}
+
+	return truncateToWidth(
+		joinSegments([location.mode, location.cwd, ...location.metadata, right], fg),
+		width,
+		fg("dim", "…"),
+	);
+}
+
 export function registerFooter(pi: ExtensionAPI): void {
 	let ctx: ExtensionContext | null = null;
 
@@ -175,18 +234,12 @@ export function registerFooter(pi: ExtensionAPI): void {
 					const fg = theme.fg.bind(theme);
 					const workspace = getWorkspaceState();
 					const effectiveCwd = getFooterEffectiveCwd(workspace);
-					const activeWorktree = workspace?.activeWorktree ?? null;
-
-					if (activeWorktree) initWorktreeWatcher(activeWorktree.path);
 
 					// ── Line 1: cwd | worktree | branch ... model ──
-					// When the companion pane is active, worktree/branch move into the workspace panel;
-					// the footer keeps a compact mode + cwd + edit-safety segment.
-					const l1Left = isCompanionActive()
-						? buildCompactLocationSegment(fg, workspace, effectiveCwd)
-						: buildLocationSegment(fg, workspace, effectiveCwd, footerData);
+					// Keep mode/worktree/branch visible; truncate cwd/model first.
+					const location = buildLocationParts(fg, workspace, effectiveCwd, footerData);
 					const l1Right = buildModelSegment(fg, ctx, pi);
-					const line1 = layoutLine(l1Left, l1Right, width, fg);
+					const line1 = layoutLocationLine(location, l1Right, width, fg);
 
 					// ── Line 2: skills ... context bar ──
 					let l2Left = "";
@@ -220,7 +273,7 @@ export function registerFooter(pi: ExtensionAPI): void {
 				dispose() {
 					unsubBranch();
 					unsubMode();
-					disposeWorktreeWatcher();
+					disposeBranchWatcher();
 					requestRender = null;
 				},
 			};
@@ -234,48 +287,33 @@ export function registerFooter(pi: ExtensionAPI): void {
 	});
 }
 
-function buildLocationSegment(
+function buildLocationParts(
 	fg: ThemeFg,
 	workspace: WorkspaceState | null,
 	effectiveCwd: string,
 	footerData: { getGitBranch(): string | null },
-): string {
-	const parts: string[] = [];
-	const modeSegment = buildModeSegment(fg, getAgentMode());
+): LocationLineParts {
+	const metadata: string[] = [];
 	const activeWorktree = workspace?.activeWorktree ?? null;
-	if (modeSegment) parts.push(modeSegment);
-	parts.push(fg("dim", shortenPath(effectiveCwd)));
 
 	if (activeWorktree) {
-		parts.push(fg("warning", `⌥ ${activeWorktree.label}`));
-		if (workspace?.unsafeEdit) parts.push(fg("error", "⚠ unsafe-edit"));
+		metadata.push(fg("warning", `⌥ ${activeWorktree.label}`));
+		if (workspace?.unsafeEdit) metadata.push(fg("error", "⚠ unsafe-edit"));
 	} else if (workspace?.unsafeEdit) {
-		parts.push(fg("error", "⌥ unsafe-edit"));
+		metadata.push(fg("error", "⌥ unsafe-edit"));
 	} else {
-		parts.push(fg("muted", "⌥ protected"));
+		metadata.push(fg("muted", "⌥ protected"));
 	}
 
-	const branch = activeWorktree ? (worktreeBranchCache ?? activeWorktree.branch) : footerData.getGitBranch();
-	if (branch) {
-		parts.push(fg("accent", `⎇ ${branch}`));
-	}
+	const branchTarget = activeWorktree?.path ?? effectiveCwd;
+	const branch = resolveFooterBranch(branchTarget, activeWorktree?.branch ?? footerData.getGitBranch());
+	if (branch) metadata.push(fg("accent", `⎇ ${branch}`));
 
-	return parts.join(fg("dim", "  "));
-}
-
-function buildCompactLocationSegment(fg: ThemeFg, workspace: WorkspaceState | null, effectiveCwd: string): string {
-	const parts: string[] = [];
-	const modeSegment = buildModeSegment(fg, getAgentMode());
-	if (modeSegment) parts.push(modeSegment);
-	parts.push(fg("dim", shortenPath(effectiveCwd)));
-
-	if (workspace?.unsafeEdit) {
-		parts.push(fg("error", "⚠ unsafe-edit"));
-	} else if (!workspace?.activeWorktree) {
-		parts.push(fg("muted", "⌥ protected"));
-	}
-
-	return parts.join(fg("dim", "  "));
+	return {
+		mode: buildModeSegment(fg, getAgentMode()),
+		cwd: fg("dim", shortenPath(effectiveCwd)),
+		metadata,
+	};
 }
 
 function buildModeSegment(fg: ThemeFg, mode: AgentMode): string | null {

@@ -13,21 +13,37 @@ const DEFAULT_AGENT_MODE: AgentMode = "executor";
 
 type AgentModeListener = (mode: AgentMode) => void;
 
-let mode: AgentMode = DEFAULT_AGENT_MODE;
-const listeners = new Set<AgentModeListener>();
+interface AgentModeRuntime {
+	mode: AgentMode;
+	listeners: Set<AgentModeListener>;
+}
+
+const agentModeKey = Symbol.for("basecamp.agentMode");
+
+type GlobalWithAgentMode = typeof globalThis & {
+	[agentModeKey]?: AgentModeRuntime;
+};
+
+function getAgentModeRuntime(): AgentModeRuntime {
+	const globalObject = globalThis as GlobalWithAgentMode;
+	globalObject[agentModeKey] ??= { mode: DEFAULT_AGENT_MODE, listeners: new Set() };
+	globalObject[agentModeKey].listeners ??= new Set();
+	return globalObject[agentModeKey];
+}
 
 function updateLiveAgentMode(nextMode: AgentMode): AgentMode {
-	if (mode === nextMode) return mode;
+	const runtime = getAgentModeRuntime();
+	if (runtime.mode === nextMode) return runtime.mode;
 
-	mode = nextMode;
-	for (const listener of listeners) {
-		listener(mode);
+	runtime.mode = nextMode;
+	for (const listener of runtime.listeners) {
+		listener(runtime.mode);
 	}
-	return mode;
+	return runtime.mode;
 }
 
 export function getAgentMode(): AgentMode {
-	return mode;
+	return getAgentModeRuntime().mode;
 }
 
 export function setAgentMode(nextMode: AgentMode): AgentMode {
@@ -49,8 +65,9 @@ export function resetAgentMode(): void {
 }
 
 export function onAgentModeChange(listener: AgentModeListener): () => void {
-	listeners.add(listener);
+	const runtime = getAgentModeRuntime();
+	runtime.listeners.add(listener);
 	return () => {
-		listeners.delete(listener);
+		runtime.listeners.delete(listener);
 	};
 }

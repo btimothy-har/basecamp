@@ -27,15 +27,15 @@ describe("daemon status formatting", () => {
 	it("formats idle/starting/connected/disconnected/unavailable statuses", () => {
 		const fg: Theme = (color, text) => `${color}:${text}`;
 
-		assert.equal(renderDaemonStatus(fg, { kind: "idle" }), "muted:daemon idle");
-		assert.equal(renderDaemonStatus(fg, { kind: "starting" }), "warning:daemon … dim:starting");
-		assert.equal(renderDaemonStatus(fg, { kind: "connected" }), "success:daemon ✓");
-		assert.equal(renderDaemonStatus(fg, { kind: "disconnected" }), "warning:daemon ⚠ dim:disconnected");
+		assert.equal(renderDaemonStatus(fg, { kind: "idle" }), "muted:swarm idle");
+		assert.equal(renderDaemonStatus(fg, { kind: "starting" }), "warning:swarm … dim:starting");
+		assert.equal(renderDaemonStatus(fg, { kind: "connected" }), "success:swarm ✓");
+		assert.equal(renderDaemonStatus(fg, { kind: "disconnected" }), "warning:swarm ⚠ dim:disconnected");
 		assert.equal(
 			renderDaemonStatus(fg, { kind: "unavailable", message: " failed \n with  spaces " }),
-			"error:daemon ✗ error:failed   with  spaces",
+			"error:swarm ✗ error:failed   with  spaces",
 		);
-		assert.equal(renderDaemonStatus(fg, { kind: "unavailable", message: "  " }), "error:daemon ✗ unavailable");
+		assert.equal(renderDaemonStatus(fg, { kind: "unavailable", message: "  " }), "error:swarm ✗ unavailable");
 	});
 });
 
@@ -69,8 +69,8 @@ describe("publishDaemonStatus", () => {
 			assert.equal(call.key, "basecamp.daemon");
 			assert.ok(typeof call.value === "string");
 		}
-		assert.equal(calls.at(-1)?.value, "muted:daemon idle");
-		assert.match(calls.at(-2)?.value ?? "", /^error:daemon ✗ error:daemon error missing$/);
+		assert.equal(calls.at(-1)?.value, "muted:swarm idle");
+		assert.match(calls.at(-2)?.value ?? "", /^error:swarm ✗ error:daemon error missing$/);
 	});
 
 	it("keeps theme fg bound to the theme object", () => {
@@ -93,7 +93,7 @@ describe("publishDaemonStatus", () => {
 
 		publishDaemonStatus(ctx, { kind: "connected" });
 
-		assert.deepEqual(calls, [{ key: "basecamp.daemon", value: "theme:success:daemon ✓" }]);
+		assert.deepEqual(calls, [{ key: "basecamp.daemon", value: "theme:success:swarm ✓" }]);
 	});
 
 	it("no-ops when ui is unavailable", () => {

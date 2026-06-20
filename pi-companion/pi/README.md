@@ -7,7 +7,7 @@ Basecamp companion — session snapshot hooks, tmux panes, and analysis registra
 - **Session snapshots**: writes session state snapshots for the companion dashboard to consume
 - **Tmux panes**: manages the companion tmux pane lifecycle (detect active pane, switch, restore)
 - **Analysis registration**: hooks companion analysis into session lifecycle (writes analysis.json)
-- **Companion-active flag**: sets pi-core's `isCompanionActive` flag on register so the footer (pi-ui) can show companion status
+- **Companion-active flag**: sets pi-core's `isCompanionActive` flag for companion analysis/pane state
 
 The **Python companion TUI** (Textual dashboard, PydanticAI analyzer, daemon client) lives in `pi-companion/tui/`.
 

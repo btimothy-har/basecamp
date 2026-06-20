@@ -19,7 +19,7 @@ export function getPaneState(): PaneState {
 	return globalObject[stateKey];
 }
 
-/** Delegates to pi-core's companion-active flag (read by footer via pi-ui). */
+/** Delegates to pi-core's companion-active flag. */
 export function isCompanionActive(): boolean {
 	return isCompanionActiveCore();
 }
