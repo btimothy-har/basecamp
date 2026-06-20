@@ -11,10 +11,18 @@ type ExecResult = { code: number; stdout: string; stderr: string };
 
 type ExecHandler = (command: string, args: string[]) => Promise<ExecResult> | ExecResult;
 
+type StatusSetCall = { key: string; value: string | undefined };
+
 interface MockContext {
 	hasUI: boolean;
 	sessionManager: { getSessionId(): string };
-	ui: { notifications: Array<{ message: string; level: string }>; notify(message: string, level: string): void };
+	ui: {
+		notifications: Array<{ message: string; level: string }>;
+		statusCalls: StatusSetCall[];
+		theme: { fg(color: string, text: string): string };
+		notify(message: string, level: string): void;
+		setStatus(key: string, value: string | undefined): void;
+	};
 }
 
 function resetPaneState(): void {
@@ -29,13 +37,19 @@ function resetPaneState(): void {
 
 function createContext(overrides: Partial<MockContext> = {}): MockContext {
 	const notifications: Array<{ message: string; level: string }> = [];
+	const statusCalls: StatusSetCall[] = [];
 	return {
 		hasUI: true,
 		sessionManager: { getSessionId: () => "session-1" },
 		ui: {
 			notifications,
+			statusCalls,
+			theme: { fg: (color: string, text: string) => `${color}:${text}` },
 			notify(message: string, level: string) {
 				notifications.push({ message, level });
+			},
+			setStatus(key: string, value: string | undefined) {
+				statusCalls.push({ key, value });
 			},
 		},
 		...overrides,
@@ -89,7 +103,7 @@ describe("panes/registerPanes", () => {
 		assert.equal(isCompanionActive(), false);
 	});
 
-	it("sets companion active true after creating and storing a pane id", async () => {
+	it("sets companion active true and publishes pane status after creating and storing a pane id", async () => {
 		withTmuxEnv();
 		const { pi, emit } = createMockPi((command) => {
 			if (command === "basecamp") return { code: 0, stdout: "", stderr: "" };
@@ -97,23 +111,37 @@ describe("panes/registerPanes", () => {
 		});
 		registerPanes(pi);
 
-		await emit("session_start");
+		const ctx = await emit("session_start");
 
 		assert.equal(getPaneState().paneId, "%42");
 		assert.equal(isCompanionActive(), true);
+		assert.deepEqual(ctx.ui.statusCalls.at(-1), { key: "basecamp.daemon.pane", value: "success:pane ✓" });
 	});
 
-	it("keeps companion active false when pane guards skip", async () => {
+	it("keeps companion active false and does not publish pane status when ui is unavailable", async () => {
 		setCompanionActive(true);
 		const { pi, emit } = createMockPi();
 		registerPanes(pi);
 
-		await emit("session_start", {}, createContext({ hasUI: false }));
+		const ctx = await emit("session_start", {}, createContext({ hasUI: false }));
 
 		assert.equal(isCompanionActive(), false);
+		assert.deepEqual(ctx.ui.statusCalls, []);
 	});
 
-	it("keeps companion active false when companion dashboard is unavailable", async () => {
+	it("publishes pane off when pane guards skip in a ui session", async () => {
+		setCompanionActive(true);
+		delete process.env.TMUX;
+		const { pi, emit } = createMockPi();
+		registerPanes(pi);
+
+		const ctx = await emit("session_start");
+
+		assert.equal(isCompanionActive(), false);
+		assert.deepEqual(ctx.ui.statusCalls.at(-1), { key: "basecamp.daemon.pane", value: "muted:pane off" });
+	});
+
+	it("keeps companion active false and publishes pane off when companion dashboard is unavailable", async () => {
 		withTmuxEnv();
 		setCompanionActive(true);
 		const { pi, emit } = createMockPi((command) => {
@@ -122,10 +150,11 @@ describe("panes/registerPanes", () => {
 		});
 		registerPanes(pi);
 
-		await emit("session_start");
+		const ctx = await emit("session_start");
 
 		assert.equal(getPaneState().paneId, null);
 		assert.equal(isCompanionActive(), false);
+		assert.deepEqual(ctx.ui.statusCalls.at(-1), { key: "basecamp.daemon.pane", value: "muted:pane off" });
 	});
 
 	it("clears companion active when split fails", async () => {
@@ -179,7 +208,7 @@ describe("panes/registerPanes", () => {
 		assert.equal(isCompanionActive(), false);
 	});
 
-	it("quit shutdown clears pane state and companion active", async () => {
+	it("quit shutdown clears pane state, companion active, and pane status", async () => {
 		setCompanionActive(true);
 		const state = getPaneState();
 		state.paneId = "%8";
@@ -188,13 +217,14 @@ describe("panes/registerPanes", () => {
 		const { pi, emit, execCalls } = createMockPi();
 		registerPanes(pi);
 
-		await emit("session_shutdown", { reason: "quit" });
+		const ctx = await emit("session_shutdown", { reason: "quit" });
 
 		assert.deepEqual(execCalls.at(-1), { command: "tmux", args: ["kill-pane", "-t", "%8"] });
 		assert.equal(getPaneState().paneId, null);
 		assert.equal(getPaneState().currentCwd, null);
 		assert.equal(getPaneState().currentSnapshot, null);
 		assert.equal(isCompanionActive(), false);
+		assert.deepEqual(ctx.ui.statusCalls.at(-1), { key: "basecamp.daemon.pane", value: undefined });
 	});
 
 	it("non-quit shutdown preserves pane state and companion active", async () => {
