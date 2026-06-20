@@ -1,8 +1,11 @@
+import questionary
+
 from basecamp.installer import (
     COMPONENT_COMPANION,
     COMPONENT_ENGINEERING,
     COMPONENT_STANDARD,
     COMPONENT_SWARM,
+    _component_choices,
     resolve_install_selection,
 )
 
@@ -62,3 +65,12 @@ def test_core_pi_is_always_first_and_not_duplicated() -> None:
     assert paths.count("core/pi") == 1
     assert paths.count("pi-ui") == 1
     assert paths.count("pi-tasks") == 1
+
+
+def test_component_checkbox_prompt_constructs_without_default_value_error() -> None:
+    prompt = questionary.checkbox(
+        "Select optional components to install:",
+        choices=_component_choices(),
+    )
+
+    assert prompt is not None

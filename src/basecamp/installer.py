@@ -26,12 +26,6 @@ COMPONENT_ENGINEERING: Final = "engineering"
 COMPONENT_COMPANION: Final = "companion"
 COMPONENT_SWARM: Final = "swarm"
 
-_DEFAULT_COMPONENTS: Final = [
-    COMPONENT_STANDARD,
-    COMPONENT_ENGINEERING,
-    COMPONENT_COMPANION,
-    COMPONENT_SWARM,
-]
 
 _MANDATORY_TS_PACKAGE: Final = ("core/pi", "pi-core")
 _TS_PACKAGE_ORDER: Final = [
@@ -110,26 +104,29 @@ def _install_pi_package(package_dir: Path, label: str) -> None:
         sys.exit(1)
 
 
+def _component_choices() -> list[questionary.Choice]:
+    return [
+        questionary.Choice(
+            "Standard session capabilities (pi-ui, pi-workspace, pi-tasks, pi-git)",
+            value=COMPONENT_STANDARD,
+            checked=True,
+        ),
+        questionary.Choice("Engineering tools (pi-engineering)", value=COMPONENT_ENGINEERING, checked=True),
+        questionary.Choice("Companion (Python extra + pi-companion)", value=COMPONENT_COMPANION, checked=True),
+        questionary.Choice(
+            "Swarm / async agents (pi-swarm; auto-includes pi-ui and pi-tasks)",
+            value=COMPONENT_SWARM,
+            checked=True,
+        ),
+    ]
+
+
 def _prompt_components() -> list[str]:
     console.print()
     console.print("[bold]Core foundation[/bold] (always installed): basecamp Python tool + pi-core")
     answer = questionary.checkbox(
         "Select optional components to install:",
-        choices=[
-            questionary.Choice(
-                "Standard session capabilities (pi-ui, pi-workspace, pi-tasks, pi-git)",
-                value=COMPONENT_STANDARD,
-                checked=True,
-            ),
-            questionary.Choice("Engineering tools (pi-engineering)", value=COMPONENT_ENGINEERING, checked=True),
-            questionary.Choice("Companion (Python extra + pi-companion)", value=COMPONENT_COMPANION, checked=True),
-            questionary.Choice(
-                "Swarm / async agents (pi-swarm; auto-includes pi-ui and pi-tasks)",
-                value=COMPONENT_SWARM,
-                checked=True,
-            ),
-        ],
-        default=_DEFAULT_COMPONENTS,
+        choices=_component_choices(),
     ).ask()
     if answer is None:
         sys.exit(0)
