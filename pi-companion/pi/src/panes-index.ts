@@ -106,8 +106,7 @@ export default function registerPanes(pi: ExtensionAPI): void {
 			agentDepth: Number(process.env.BASECAMP_AGENT_DEPTH ?? "0"),
 		});
 		if (!shouldCreate) {
-			setCompanionActive(false);
-			publishPaneStatus(ctx, false);
+			clearPaneState(ctx);
 			return;
 		}
 
@@ -117,8 +116,7 @@ export default function registerPanes(pi: ExtensionAPI): void {
 
 		if (!paneState.paneId) {
 			if (!(await companionAvailable(pi))) {
-				setCompanionActive(false);
-				publishPaneStatus(ctx, false);
+				clearPaneState(ctx);
 				if (!didNotifyMissingBasecamp) {
 					ctx.ui.notify("panes: basecamp companion unavailable — companion pane disabled", "warning");
 					didNotifyMissingBasecamp = true;
