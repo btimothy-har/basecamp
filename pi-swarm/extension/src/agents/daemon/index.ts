@@ -59,19 +59,20 @@ export function previewDaemonMessage(message: string | undefined): string | null
 }
 
 export function renderDaemonStatus(fg: ThemeFg, status: DaemonStatusInfo): string {
-	if (status.kind === "connected") return fg("success", "daemon ✓");
-	if (status.kind === "starting") return `${fg("warning", "daemon …")} ${fg("dim", "starting")}`;
-	if (status.kind === "disconnected") return `${fg("warning", "daemon ⚠")} ${fg("dim", "disconnected")}`;
+	if (status.kind === "connected") return fg("success", "swarm ✓");
+	if (status.kind === "starting") return `${fg("warning", "swarm …")} ${fg("dim", "starting")}`;
+	if (status.kind === "disconnected") return `${fg("warning", "swarm ⚠")} ${fg("dim", "disconnected")}`;
 	if (status.kind === "unavailable") {
 		const message = previewDaemonMessage(status.message);
-		return message ? `${fg("error", "daemon ✗")} ${fg("error", message)}` : fg("error", "daemon ✗ unavailable");
+		return message ? `${fg("error", "swarm ✗")} ${fg("error", message)}` : fg("error", "swarm ✗ unavailable");
 	}
-	return fg("muted", "daemon idle");
+	return fg("muted", "swarm idle");
 }
 
 export function publishDaemonStatus(ctx: ExtensionContext, status: DaemonStatusInfo): void {
 	if (!ctx.hasUI) return;
-	ctx.ui.setStatus(DAEMON_STATUS_ID, renderDaemonStatus(ctx.ui.theme.fg, status));
+	const fg: ThemeFg = (color, text) => ctx.ui.theme.fg(color, text);
+	ctx.ui.setStatus(DAEMON_STATUS_ID, renderDaemonStatus(fg, status));
 }
 
 export function getActiveDaemonConnection(): DaemonConnection | null {
@@ -235,7 +236,7 @@ export function registerDaemonClient(pi: ExtensionAPI, deps: PiSwarmDependencies
 				publishDaemonStatus(ctx, { kind: "unavailable", message });
 				reporterConnection?.reject(error);
 				if (isTopLevel) {
-					ctx.ui.notify(`bc-swarm daemon unavailable: ${message}`, "warning");
+					ctx.ui.notify(`basecamp swarm daemon unavailable: ${message}`, "warning");
 				}
 			} finally {
 				if (generation === connectionGeneration) state.connecting = null;

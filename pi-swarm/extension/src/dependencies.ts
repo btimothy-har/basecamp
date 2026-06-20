@@ -1,60 +1,39 @@
+/**
+ * Re-exports shared type contracts from pi-core and pi-tasks.
+ *
+ * These were previously hand-rolled duplicates. Now that pi-core and pi-tasks
+ * are installable packages, we import directly from them.
+ */
+
+// Catalog types from pi-core
+export type { CatalogContext, CatalogItem, CatalogProvider, CatalogType } from "pi-core/platform/catalog.ts";
+
+import type { CatalogProvider } from "pi-core/platform/catalog.ts";
+
+// Workspace types from pi-core
+export type { RepoContext, WorkspaceState, WorkspaceWorktree } from "pi-core/platform/workspace.ts";
+
+import type { WorkspaceState } from "pi-core/platform/workspace.ts";
+
+// Task progress types from pi-tasks (the canonical source)
+import type { TaskProgressSnapshot, TaskProgressStatus, TaskProgressTask } from "pi-tasks/src/tasks/render.ts";
+
+export type { TaskProgressSnapshot, TaskProgressStatus, TaskProgressTask };
+
+// Theme types (local to pi-swarm — used for rendering)
 import type { Theme } from "@earendil-works/pi-coding-agent";
 
-type ThemeColor = Parameters<Theme["fg"]>[0];
-
-export type CatalogType = "tools" | "skills" | "agents" | (string & {});
-
-export interface CatalogItem {
-	type: CatalogType;
-	name: string;
-	description: string;
-	path?: string;
-	meta?: Record<string, string>;
-}
-
-export interface CatalogContext {
-	cwd: string;
-}
-
-export interface CatalogProvider {
-	id: string;
-	list: (ctx: CatalogContext) => CatalogItem[];
-}
-
-export interface RepoContext {
-	root: string;
-}
-
-export interface WorkspaceWorktree {
-	path: string;
-}
-
-export interface WorkspaceState {
-	launchCwd: string;
-	repo: RepoContext | null;
-	activeWorktree: WorkspaceWorktree | null;
-	protectedRoot: string | null;
-}
-
-export type TaskProgressStatus = "pending" | "active" | "completed" | "deleted";
-
-export interface TaskProgressTask {
-	label: string;
-	status: TaskProgressStatus;
-	index?: number;
-	description?: string;
-	notes?: string | null;
-}
-
-export interface TaskProgressSnapshot {
-	goal: string | null;
-	tasks: TaskProgressTask[];
-}
+export type ThemeColor = Parameters<Theme["fg"]>[0];
 
 export interface TaskProgressTheme {
 	fg(color: ThemeColor, text: string): string;
 }
 
+/**
+ * PiSwarmDependencies provides functions that pi-swarm needs.
+ * In the direct-import model, these are sourced from pi-core/pi-ui.
+ * This interface is retained for backward compat during the transition.
+ */
 export interface PiSwarmDependencies {
 	basecampExtensionRoot: string;
 	registerCatalogProvider: (provider: CatalogProvider) => void;

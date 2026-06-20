@@ -26,17 +26,17 @@ basecamp solves this with a Pi extension that:
 
 ## Installation
 
-Requires [uv](https://docs.astral.sh/uv/) and [pi](https://github.com/earendil-works/pi). The bundled memory stack also needs Node 24+ (see [Memory](#memory)).
+Requires [uv](https://docs.astral.sh/uv/) and [pi](https://github.com/earendil-works/pi).
 
 ```bash
 git clone https://github.com/btimothy-har/basecamp.git
 cd basecamp
-uv run install.py           # interactive (prompts for editable mode)
+uv run install.py           # interactive (prompts for editable mode and optional components)
 uv run install.py -e        # editable (recommended for development)
 uv run install.py --no-editable
 ```
 
-This installs the Python tool `basecamp`, registers the Pi package in `pi-extension/`, installs the bundled [memory stack](#memory) (when Node 24+ is available), and saves the Basecamp install directory to `~/.pi/basecamp/config.json`.
+This installs the Python tool `basecamp`, prompts for optional Basecamp Pi package groups, and saves the Basecamp install directory to `~/.pi/basecamp/config.json`.
 
 Then initialize the environment:
 
@@ -150,59 +150,6 @@ Projects are defined in `~/.pi/basecamp/config.json`:
 
 Existing local config files with the older project directory schema are migrated to `repo_root` and `additional_dirs` by setup/config flows.
 
-## Memory
-
-basecamp bundles [pi-total-recall](https://github.com/samfoy/pi-total-recall) so a single install gives the agent bi-modal memory across sessions:
-
-| Layer | Package | Role |
-|-------|---------|------|
-| Short-term | [pi-session-search](https://github.com/samfoy/pi-session-search) | Bridges context across sessions — auto-primes each new session with recent project sessions and exposes `session_search` / `session_list` / `session_read` |
-| Long-term | [@samfp/pi-memory](https://github.com/samfoy/pi-memory) | Durable preferences, project patterns, and corrections — consolidated at session end, injected once at session start |
-| Knowledge | [pi-knowledge-search](https://github.com/samfoy/pi-knowledge-search) | Optional hybrid search over local notes/docs via `knowledge_search` / `kb_read` |
-
-`install.py` installs the stack automatically — there is no separate `pi install` step. It **requires Node 24+** because `pi-session-search` / `pi-knowledge-search` use `node:sqlite` FTS5, which Node 22 lacks. On older Node, `install.py` installs basecamp core and skips the memory stack with a warning; upgrade Node and re-run `install.py` to add it. The pinned version lives in `install.py` (`PI_TOTAL_RECALL_SPEC`).
-
-> Do not install pi-total-recall separately — it ships with basecamp.
-
-### How it fits basecamp
-
-Memory injects via hidden `session_start` messages and tools, not by rewriting the system prompt, so it coexists with basecamp's full prompt replacement; its tools appear in the capabilities index automatically. Recall is keyed to the directory you launch Pi in, so it stays stable across worktree switches — worktrees redirect tool I/O but never move the session working directory.
-
-### Recommended configuration
-
-Memory works out of the box; the following are optional and basecamp does not write them for you.
-
-**Skip indexing inside subagents.** basecamp dispatches subagents heavily, so disable session-search sync in child processes (`~/.pi/session-search/config.json`):
-
-```json
-{ "sync": { "disableForChild": true } }
-```
-
-**Keep long-term injection one-shot.** Leave `memory.perTurnInjection` off (the default). Per-turn injection appends to the system prompt every turn — it invalidates the provider prompt cache and is the only path sensitive to extension load order. The default one-shot `session_start` injection avoids both.
-
-**Non-Anthropic providers.** Long-term consolidation spawns `pi -p --print` with `claude-sonnet-4-20250514` by default (a no-op off Anthropic). Point it at your model in `~/.pi/agent/settings.json`:
-
-```json
-{ "memory": { "consolidationModel": "openai/gpt-4.1-mini" } }
-```
-
-### Optional features
-
-- **Semantic session search** — run `/session-embeddings-setup` in a session to add hybrid (keyword + vector) search over past sessions; needs an embedding provider.
-- **Local knowledge base** — run `/knowledge-search-setup` to index notes/docs directories; config is saved to `~/.pi/knowledge-search.json`.
-
-### Upgrading and removing
-
-```bash
-# upgrade: bump PI_TOTAL_RECALL_SPEC in install.py and re-run, or directly:
-pi update npm:pi-total-recall
-
-# remove (stored memory/index data under ~/.pi is left intact):
-pi uninstall npm:pi-total-recall
-```
-
-> Known limitation: memory is keyed by the launch directory, not the git root, so launching Pi from different subdirectories of the same repo creates separate memory scopes. Launch from the repo root for a single shared scope.
-
 ## Prompt System
 
 basecamp replaces the default system prompt via a `before_agent_start` hook. This gives you:
@@ -270,8 +217,10 @@ The workspace service owns the `~/.worktrees/<repo>/<label>/` storage convention
 
 basecamp is split into root-level products:
 
-- `basecamp-cli/` — Python package for the `basecamp` setup/config CLI
-- `pi-extension/` — Pi package for project context, session UI, worktrees, workflow, git, and engineering skills
+- `src/basecamp/` — Python composition package for the `basecamp` setup/config/install CLI
+- `core/config/` — Python package for generic Basecamp settings, files, paths, and exceptions
+- `workspace/projects/` — Python package for project config and the interactive config menu
+- `pi-*` / `core/pi` / `workspace/pi` — Pi packages for project context, session UI, worktrees, workflow, git, engineering, and companion features
 
 ## License
 

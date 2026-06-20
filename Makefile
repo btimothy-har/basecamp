@@ -1,21 +1,30 @@
+TS_PACKAGES = core/pi pi-ui workspace/pi pi-tasks pi-git pi-engineering pi-companion/pi pi-swarm/extension
+
 sync:
-	uv sync
+	uv sync --extra companion
 
 compile:
 	uv lock -U
 	make sync
 
 test:
-	uv run pytest
-	npm --prefix pi-extension test
-	npm --prefix pi-swarm/extension test
+	uv run pytest core/config/tests workspace/projects/tests pi-companion/tui/tests
+	@set -e; for pkg in $(TS_PACKAGES); do \
+		echo "--- $$pkg ---"; \
+		npm --prefix $$pkg test; \
+	done
 
 lint:
 	uv run ruff check . && uv run ruff format --check .
-	npm --prefix pi-extension run check
-	npm --prefix pi-swarm/extension run check
+	@set -e; for pkg in $(TS_PACKAGES); do \
+		echo "--- $$pkg ---"; \
+		npm --prefix $$pkg run check; \
+	done
 
 fix:
 	uv run ruff check --fix . && uv run ruff format .
-	npm --prefix pi-extension run lint:fix && npm --prefix pi-extension run format
-	npm --prefix pi-swarm/extension run lint:fix && npm --prefix pi-swarm/extension run format
+	@set -e; for pkg in $(TS_PACKAGES); do \
+		echo "--- $$pkg ---"; \
+		npm --prefix $$pkg run lint:fix; \
+		npm --prefix $$pkg run format; \
+	done

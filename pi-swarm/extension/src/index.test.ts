@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { afterEach, beforeEach, describe, it } from "node:test";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import defaultPiSwarm, { registerPiSwarm } from "./index.ts";
-import { attachPiSwarmSkillTracking, createLocalPiSwarmDependencies } from "./local-adapters.ts";
+import { createLocalPiSwarmDependencies } from "./local-adapters.ts";
 
 type ToolSpec = { name: string };
 
@@ -44,17 +44,12 @@ function createMockPi(): MockPi {
 	};
 }
 
-function clearPiSwarmTrackingState(): void {
-	delete (globalThis as Record<symbol, unknown>)[Symbol.for("basecamp.skillTracker")];
-}
-
 describe("pi-swarm extension entrypoint", () => {
 	let priorDepth: string | undefined;
 
 	beforeEach(() => {
 		priorDepth = process.env.BASECAMP_AGENT_DEPTH;
 		process.env.BASECAMP_AGENT_DEPTH = "0";
-		clearPiSwarmTrackingState();
 	});
 
 	afterEach(() => {
@@ -84,52 +79,5 @@ describe("pi-swarm extension entrypoint", () => {
 		assert.equal(toolNames.has("list_agents"), true);
 		assert.equal(toolNames.has("wait_for_agent"), true);
 		assert.equal(pi.commands.includes("agents"), true);
-	});
-});
-
-describe("attachPiSwarmSkillTracking", () => {
-	let priorDepth: string | undefined;
-
-	beforeEach(() => {
-		priorDepth = process.env.BASECAMP_AGENT_DEPTH;
-		process.env.BASECAMP_AGENT_DEPTH = "0";
-		clearPiSwarmTrackingState();
-	});
-
-	afterEach(() => {
-		if (priorDepth === undefined) delete process.env.BASECAMP_AGENT_DEPTH;
-		else process.env.BASECAMP_AGENT_DEPTH = priorDepth;
-		clearPiSwarmTrackingState();
-	});
-
-	it("tracks skill invocation from tool_call events and trims whitespace", () => {
-		const pi = createMockPi();
-		const deps = createLocalPiSwarmDependencies();
-
-		attachPiSwarmSkillTracking(pi as unknown as ExtensionAPI);
-		const toolCall = pi.onEvents.find(({ event }) => event === "tool_call");
-		assert.ok(toolCall);
-
-		toolCall.handler({ toolName: "skill", input: { name: "  swarm-agents  " } });
-		assert.equal(deps.hasInvokedSkill("swarm-agents"), true);
-	});
-
-	it("does not duplicate tool_call handlers across duplicate attachment", () => {
-		const pi = createMockPi();
-		attachPiSwarmSkillTracking(pi as unknown as ExtensionAPI);
-		attachPiSwarmSkillTracking(pi as unknown as ExtensionAPI);
-
-		assert.equal(pi.onEvents.filter((entry) => entry.event === "tool_call").length, 1);
-	});
-
-	it("registers tool_call handlers for separate ExtensionAPI instances", () => {
-		const first = createMockPi();
-		const second = createMockPi();
-
-		attachPiSwarmSkillTracking(first as unknown as ExtensionAPI);
-		attachPiSwarmSkillTracking(second as unknown as ExtensionAPI);
-
-		assert.equal(first.onEvents.filter((entry) => entry.event === "tool_call").length, 1);
-		assert.equal(second.onEvents.filter((entry) => entry.event === "tool_call").length, 1);
 	});
 });
