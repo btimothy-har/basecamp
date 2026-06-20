@@ -72,10 +72,16 @@ class CompanionSnapshot(CompanionBaseModel):
     effective_cwd: str = ""
 
 
+def default_companion_snapshot_dir() -> Path:
+    """Return the default Basecamp companion snapshot directory."""
+
+    return Path.home() / ".pi" / "basecamp" / "companion" / "snapshots"
+
+
 def companion_snapshot_path(session_id: str, base_dir: Path | None = None) -> Path:
     """Return a snapshot path for a session id."""
 
-    resolved_base_dir = base_dir or (Path.home() / ".pi" / "companion")
+    resolved_base_dir = base_dir or default_companion_snapshot_dir()
     sanitized_session_id = re.sub(r"[^A-Za-z0-9_-]", "_", session_id)
     return resolved_base_dir / f"{sanitized_session_id}.json"
 

@@ -22,6 +22,8 @@ function daemonPaths(root: string, spawnLockPath = path.join(root, "daemon.spawn
 		socketPath: path.join(root, "daemon.sock"),
 		spawnLockPath,
 		pidPath: path.join(root, "daemon.pid"),
+		dbPath: path.join(root, "daemon.db"),
+		agentsDir: path.join(root, "agents"),
 	};
 }
 
@@ -75,7 +77,9 @@ describe("ensureDaemon", () => {
 		});
 
 		assert.deepEqual(killedSignals, ["SIGTERM"]);
-		assert.deepEqual(spawnArgs, [["swarm", "daemon", "--uds", paths.socketPath, "--pidfile", paths.pidPath]]);
+		assert.deepEqual(spawnArgs, [
+			["swarm", "daemon", "--uds", paths.socketPath, "--pidfile", paths.pidPath, "--db", paths.dbPath],
+		]);
 	});
 
 	it("throws if the restarted daemon is still protocol-incompatible", async () => {

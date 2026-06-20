@@ -19,7 +19,7 @@
  * Widget shows a sliding window of 3 open tasks with collapse
  * counters for completed/remaining items.
  *
- * State is persisted to ~/.pi/tasks/<session-id>.json.
+ * State is persisted to ~/.pi/basecamp/tasks/<session-id>.json.
  * Each file contains an array of goal cycles — at most one active.
  * Goal transitions archive the previous cycle and start a new one.
  */
@@ -29,10 +29,11 @@ import * as os from "node:os";
 import * as path from "node:path";
 import type { ExtensionAPI, ExtensionContext, Theme } from "@earendil-works/pi-coding-agent";
 import { Type } from "@sinclair/typebox";
+import { basecampRoot } from "pi-core/platform/paths.ts";
 import { registerTasksAccess } from "pi-core/platform/tasks-access.ts";
 import { type AgentMode, getAgentMode, setAgentMode } from "pi-core/session/agent-mode.ts";
 import { getCurrentSessionState } from "pi-core/state/index.ts";
-import { renderTaskWidgetLines } from "./render";
+import { renderTaskWidgetLines } from "./render.ts";
 
 // Type contracts owned by pi-core — re-exported for backward compat with planning files.
 export type {
@@ -153,10 +154,16 @@ function renderPartial(theme: Theme) {
 }
 
 // ============================================================================
-// File persistence — ~/.pi/tasks/<session-id>.json
+// File persistence — ~/.pi/basecamp/tasks/<session-id>.json
 // ============================================================================
 
-const TASKS_DIR = path.join(os.homedir(), ".pi", "tasks");
+export function defaultTasksDir(homeDir = os.homedir()): string {
+	return path.join(basecampRoot(homeDir), "tasks");
+}
+
+export function tasksFilePath(sessionId: string, dir = defaultTasksDir()): string {
+	return path.join(dir, `${sessionId}.json`);
+}
 
 function loadCycles(filePath: string): GoalCycle[] {
 	try {
@@ -563,7 +570,7 @@ export function registerTasks(pi: ExtensionAPI): TasksAccess {
 
 		// Load from JSON file
 		const sessionId = sessionCtx.sessionManager.getSessionId();
-		taskFilePath = path.join(TASKS_DIR, `${sessionId}.json`);
+		taskFilePath = tasksFilePath(sessionId);
 		cycles = loadCycles(taskFilePath);
 
 		const active = cycles.find((c) => c.active);

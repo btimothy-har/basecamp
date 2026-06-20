@@ -102,7 +102,7 @@ function resolveSessionDir(mode: "sync" | "daemon", name: string, agentId?: stri
 	if (!agentId) {
 		throw new Error("agentId is required for daemon mode");
 	}
-	return path.join(resolveDaemonPaths().runtimeDir, "agents", agentId, "session");
+	return path.join(resolveDaemonPaths().agentsDir, agentId, "session");
 }
 
 function mutativeWorktreeFailure(runKind: AgentRunKind, worktreeDir: string | null): SharedAgentLaunchFailure | null {
