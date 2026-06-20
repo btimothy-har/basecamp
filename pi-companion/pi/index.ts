@@ -4,7 +4,7 @@ import registerCompanion from "./src/companion-index.ts";
 import registerPanes from "./src/panes-index.ts";
 
 export default function (pi: ExtensionAPI): void {
-	setCompanionActive(true);
+	setCompanionActive(false);
 	registerCompanion(pi);
 	registerPanes(pi);
 }

@@ -1,7 +1,7 @@
 import type { ExtensionAPI, SessionShutdownEvent } from "@earendil-works/pi-coding-agent";
 import { exec } from "pi-core/platform/exec.ts";
 import { getWorkspaceService, getWorkspaceState } from "pi-core/platform/workspace.ts";
-import { getPaneState } from "./panes-state.ts";
+import { getPaneState, setCompanionActive } from "./panes-state.ts";
 import { companionSnapshotPath } from "./snapshot.ts";
 import {
 	buildCompanionCommand,
@@ -32,6 +32,14 @@ function resolveScratchDir(): string | undefined {
 	return getWorkspaceState()?.scratchDir || undefined;
 }
 
+function clearPaneState(): void {
+	const state = getPaneState();
+	state.paneId = null;
+	state.currentCwd = null;
+	state.currentSnapshot = null;
+	setCompanionActive(false);
+}
+
 function subscribeWorktree(pi: ExtensionAPI, snapshotPath: string): void {
 	const state = getPaneState();
 	if (state.unsubscribeWorkspace) {
@@ -51,9 +59,12 @@ function subscribeWorktree(pi: ExtensionAPI, snapshotPath: string): void {
 					buildRespawnArgs(state.paneId, newCwd, buildCompanionCommand(snapshotPath, newCwd, resolveScratchDir())),
 				)
 					.then(() => {
-						if (generation === respawnGeneration) state.currentCwd = newCwd;
+						if (generation === respawnGeneration) {
+							state.currentCwd = newCwd;
+							setCompanionActive(true);
+						}
 					})
-					.catch(() => {});
+					.catch(() => clearPaneState());
 			}
 		}) ?? null;
 }
@@ -74,7 +85,10 @@ export default function registerPanes(pi: ExtensionAPI): void {
 			hasUI: ctx.hasUI,
 			agentDepth: Number(process.env.BASECAMP_AGENT_DEPTH ?? "0"),
 		});
-		if (!shouldCreate) return;
+		if (!shouldCreate) {
+			setCompanionActive(false);
+			return;
+		}
 
 		const sessionId = ctx.sessionManager.getSessionId();
 		const snapshotPath = companionSnapshotPath(sessionId);
@@ -82,6 +96,7 @@ export default function registerPanes(pi: ExtensionAPI): void {
 
 		if (!paneState.paneId) {
 			if (!(await companionAvailable(pi))) {
+				setCompanionActive(false);
 				if (!didNotifyMissingBasecamp) {
 					ctx.ui.notify("panes: basecamp companion unavailable — companion pane disabled", "warning");
 					didNotifyMissingBasecamp = true;
@@ -99,10 +114,18 @@ export default function registerPanes(pi: ExtensionAPI): void {
 						buildCompanionCommand(snapshotPath, effectiveCwd, resolveScratchDir()),
 					),
 				);
-				paneState.paneId = parsePaneId(result.stdout);
+				const paneId = parsePaneId(result.stdout);
+				if (!paneId) {
+					clearPaneState();
+					ctx.ui.notify(`${PANES_WARNING_PREFIX} failed to open pane — tmux returned no pane id`, "warning");
+					return;
+				}
+				paneState.paneId = paneId;
 				paneState.currentCwd = effectiveCwd;
 				paneState.currentSnapshot = snapshotPath;
+				setCompanionActive(true);
 			} catch (err) {
+				clearPaneState();
 				const message = err instanceof Error ? err.message : String(err);
 				ctx.ui.notify(`${PANES_WARNING_PREFIX} failed to open pane — ${message}`, "warning");
 				return;
@@ -120,9 +143,13 @@ export default function registerPanes(pi: ExtensionAPI): void {
 				);
 				paneState.currentCwd = effectiveCwd;
 				paneState.currentSnapshot = snapshotPath;
+				setCompanionActive(true);
 			} catch {
-				// best effort
+				clearPaneState();
+				return;
 			}
+		} else {
+			setCompanionActive(true);
 		}
 
 		subscribeWorktree(pi, snapshotPath);
@@ -147,5 +174,6 @@ export default function registerPanes(pi: ExtensionAPI): void {
 		paneState.currentCwd = null;
 		paneState.currentSnapshot = null;
 		paneState.unsubscribeWorkspace = null;
+		setCompanionActive(false);
 	});
 }
