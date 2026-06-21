@@ -1,54 +1,46 @@
 ---
 name: agents
-description: "Use the synchronous `agent` tool to delegate bounded work to subagents and then integrate the returned results in the parent session."
+description: "Use async daemon agents for fan-out and long-running delegation."
 ---
 
 # Agents
 
-Delegate bounded work through the synchronous `agent` tool and keep subagents as support for parent-agent reasoning.
+Use this skill to delegate bounded work to async daemon agents while you keep working.
+
+Available tools:
+- `dispatch_agent` — start an async agent and receive an `agent_id` handle.
+- `list_agents` — read-only visibility into same-root async agents.
+- `wait_for_agent` — wait for one or more dispatched agent ids.
 
 ## Delegation guidance
 
-Use `agent` when a task is better done by a focused helper than by one long direct pass:
-- **scout** for investigation, dependency tracing, codebase reconnaissance, or pattern discovery
-- **devils-advocate** for risk-oriented critique of assumptions and planned approaches
-- **worker** for self-contained implementation with clear scope and acceptance criteria
-- **specialists** for narrow reviews (docs, security, tests, SQL, data, etc.) when available
-- **ad-hoc** when no named specialization fits
+Split work into focused dispatches with clear scope and done criteria.
 
-## Choosing an agent
+Choose the narrowest agent that fits:
+- **Named read-only agents** (`scout`, `devils-advocate`, specialists) may fan out for investigation, search, review, and second opinions.
+- **worker** is mutative. Do not run workers in parallel against the same worktree, or overlap a worker with other agents that may affect the same worktree, until daemon mutation leases exist.
+- **ad-hoc** should be narrow and read-only when no named agent fits.
 
-Default to the narrowest suitable choice:
-1. pick a named **read-only** agent (`scout`, `devils-advocate`, specialists) for discovery and analysis
-2. use **worker** only when mutation is required and boundaries are explicit
-3. use ad-hoc for one-off, one-task questions
-
-## Write a strong brief
+## Write the brief
 
 A subagent receives no conversation history. Include:
 - a concrete objective and expected output
-- precise file/module targets and any constraints
-- required decisions already made
+- relevant file paths or modules
+- constraints and decisions already made
 - explicit acceptance criteria and done definition
 
-## Calling `agent`
+## Async daemon tools
 
-Use one of:
-- `agent({ agent: "scout", task: "..." })`
-- `agent({ task: "..." })` for ad-hoc
+1. `dispatch_agent({ agent?, task, name? })` starts an async agent and returns an **agent id**.
+2. `list_agents({ awaitable?: true })` lists visible same-root agents with safe metadata.
+3. `wait_for_agent({ handles, timeout_s? })` waits on one or more agent ids.
 
-The synchronous call returns the subagent output in the same turn; plan and proceed with that result before continuing.
-
-## Parallel restrictions
-
-Multiple `agent` calls can run in parallel only when they are independent **named read-only** agents. Keep `worker` and ad-hoc runs exclusive and do not overlap with any other active agent run.
+Important semantics:
+- Public handles are agent ids; do not expose private run or execution ids.
+- `wait_for_agent` is dispatcher-owned: only the dispatcher of an agent's current primary run can wait on it.
+- `list_agents` is read-only visibility, not messaging. It does not expose prompts, results, errors, env, spawn specs, or private run ids.
+- Async message/reply tools are future work; do not use `wait_for_agent` as a peer-message mechanism.
 
 ## Integration
 
-After results return, the parent agent remains responsible for:
-- validating evidence and assumptions
-- deciding trade-offs and final direction
-- integrating or applying code changes
-- communicating any follow-up boundaries to the user
-
-Treat delegated output as useful input, not source of authority.
+Review subagent output critically. The parent agent remains responsible for validating evidence, making decisions, applying any changes, and communicating results.

@@ -1,21 +1,21 @@
 # Asynchronous Multi-Agent System — Design
 
-**Status:** Phase 1 IMPLEMENTED (walking skeleton); Phase 2a ACL foundation implemented · **Scope:** Design + status tracking for later phases · **Roadmap:** Remaining Phase 2 collaboration work and Phases 3–5 remain design targets
+**Status:** Phase 1 IMPLEMENTED (walking skeleton); Phase 2a ACL foundation implemented; async-only public surface implemented · **Scope:** Design + status tracking for later phases · **Roadmap:** Remaining Phase 2 collaboration work and Phases 3–5 remain design targets
 
-This document describes the target architecture for basecamp's asynchronous, collaborating subagents, coordinated by a global, single-host daemon. It captures the converged design, the decisions and rejected alternatives behind it, the risk register, and a phased roadmap whose first phase is a deliberately minimal walking skeleton.
+This document describes the target architecture for basecamp's asynchronous, collaborating subagents, coordinated by a global, single-host daemon. It captures the converged design, the decisions and rejected alternatives behind it, the risk register, and the phased roadmap.
 
-It remains primarily a design artifact for later phases: Phase 1 is implemented, while the remaining target architecture in this document is roadmap/design work (§3 documents the existing synchronous behavior that this design replaces).
+It remains primarily a design artifact for later phases: Phase 1 and the async-only public surface are implemented, while the remaining target architecture in this document is roadmap/design work. The current public surface is the `agents` skill plus daemon tools (`dispatch_agent`, `list_agents`, `wait_for_agent`); §3 records the former synchronous behavior this design replaced.
 
 ---
 
 ## 1. Problem statement
 
-basecamp today runs subagents **synchronously**. The `agent` tool spawns a `pi --mode json -p` child process and the calling LLM blocks until that child exits, consuming its final message as the tool result. This is simple and predictable, but it has two structural limits:
+basecamp originally ran subagents **synchronously**. The legacy `agent` tool spawned a `pi --mode json -p` child process and the calling LLM blocked until that child exited, consuming its final message as the tool result. This was simple and predictable, but it had two structural limits:
 
 - **The caller is blocked for the whole task.** A dispatch is a single, opaque, blocking call. The parent cannot dispatch work, keep reasoning, and collect results on its own schedule. Fan-out is bounded by an in-process run guard, and there is no way to start several units of work and rejoin them later.
 - **There is no inter-agent collaboration.** A subagent is a leaf: it receives one task, runs to completion, and returns one string. Agents cannot message a peer, ask their supervisor a question mid-task, or be re-tasked while they retain their prior context. Each dispatch starts from nothing and ends permanently.
 
-We want agents that can run **concurrently**, **persist their conversational thread across tasks**, and **collaborate** — message peers, escalate to a supervisor, and be re-tasked — while preserving the safety properties the synchronous model gives us for free (bounded nesting, serialized mutation of a shared worktree).
+We want agents that can run **concurrently**, **persist their conversational thread across tasks**, and **collaborate** — message peers, escalate to a supervisor, and be re-tasked — while preserving the safety properties the former synchronous model gave us for free (bounded nesting, serialized mutation of a shared worktree).
 
 ## 2. Goals and non-goals
 
@@ -34,12 +34,12 @@ We want agents that can run **concurrently**, **persist their conversational thr
 - **No cross-machine / networked operation.** Single host only; the transport is a Unix domain socket.
 - **No worktree-per-agent + merge.** Agents share one worktree, serialized by a lease — not isolated branches that are later merged.
 - **No per-edit locking.** Mutation coherence is at the task grain, not the individual file-write grain.
-- **No retained synchronous code path in the final architecture.** The system is async-always; synchronous behavior is recovered by an explicit wait primitive, not a parallel code path. (A transitional period where the old and new paths coexist is a roadmap concern — see §10.)
+- **No retained synchronous code path in the final architecture.** The system is async-always; synchronous behavior is recovered by an explicit wait primitive, not a parallel code path.
 - **No automatic pruning** of agent threads or `.jsonl` files in v1. Cleanup is manual.
 
-## 3. Current synchronous model
+## 3. Former synchronous model
 
-Grounded in the current code (`pi-swarm/extension/src/agents/`):
+Before the async-only surface cleanup, the legacy code in `pi-swarm/extension/src/agents/` worked as follows:
 
 - **Dispatch and execution (`executor.ts`).** `spawnAgent()` builds a `pi --mode json -p` argv via `buildPiArgs()` and spawns it as a child process. Notable flags: `--model`, `--worktree-dir`, `--thinking`, `--session-dir` (the subagent's own session), `--no-prompt-templates`, `--read-only` (whenever the agent's run kind is not `mutative`), `--agent-prompt` (the persona, written to a file), `--tools` (a resolved allowlist), and `--no-skills` + an injected skill block when the agent declares specific skills. The parent reads the child's stdout, parses newline-delimited JSON events (`tool_execution_start`, `tool_execution_end`, `message_end`), and renders progress. The agent's **result is the last assistant message** ("last assistant message wins"); usage and tool calls are aggregated for display.
 - **The `agent` tool (`tool.ts`).** Registered as a pi tool the LLM calls. It blocks on `spawnAgent()` and returns the child's final output as the tool result for immediate reasoning. Before running, it first requires that the `agents` skill has been invoked (`hasInvokedSkill("agents")`), then enforces two guards:
@@ -47,7 +47,7 @@ Grounded in the current code (`pi-swarm/extension/src/agents/`):
   - **Run guard (`beginAgentRun`).** An **in-process** state machine per parent session: any number of **named read-only** agents may run in parallel, but a **mutative** or **ad-hoc** agent must run **solo** (no other agent may be live). Mutative agents additionally require an active execution worktree (`workspace.activeWorktree.path`); without one the dispatch is rejected.
 - **Lineage.** Parent/child lineage is carried only by the injected `BASECAMP_PARENT_SESSION` env var and the per-session state JSON; there is no central registry of runs or relationships.
 
-**What this model gives us for free** — and what the async design must therefore preserve — is bounded nesting (the depth guard) and coherent mutation of the shared worktree (the run guard's "mutative runs solo" rule, which implicitly serializes writers). The async design replaces the in-process run guard with a central daemon, so these properties must be re-established explicitly (a concurrency cap and a mutation lease, respectively).
+**What this model gave us for free** — and what the async design must preserve — was bounded nesting (the depth guard) and coherent mutation of the shared worktree (the run guard's "mutative runs solo" rule, which implicitly serialized writers). The async design replaces the in-process run guard with a central daemon, so these properties must be re-established explicitly (a concurrency cap and a mutation lease, respectively).
 
 ## 4. Target architecture
 
@@ -302,13 +302,13 @@ The agent contract provides no reset/compact operation. To obtain a clean slate,
 
 ### 6.6 Agent identity & session storage (Phase 1 refinements)
 
-Making an async agent a *first-class persistent entity* (not a throwaway like a synchronous subagent) required three identity refinements, all on the async path only. The synchronous `agent` tool (§3) is intentionally untouched: its children are ephemeral one-shots that are never browsed or resumed, so worktree-derived identity and a temp session dir are correct for it.
+Making an async agent a *first-class persistent entity* (not a throwaway like the former synchronous subagent) required three identity refinements on the async path.
 
-- **Repo association.** An agent's repo identity is derived by pi from the process's startup cwd (`resolveGitInfo` runs `git rev-parse --show-toplevel` and takes `repoName` from the toplevel's basename). `dispatch_agent` therefore sets the spawn-spec working directory to the **repo root** (`workspace.protectedRoot ?? workspace.repo.root ?? launchCwd ?? cwd`), not the active worktree. The `--worktree-dir` argument still travels in the argv and auto-attaches the worktree at the agent's `session_start`, so `effectiveCwd` becomes the worktree and all file work lands there. Net effect: the agent's pi session is associated with the real repo (e.g. `basecamp`) — mirroring its parent — while still doing work in the shared worktree. (A synchronous subagent launched from inside a worktree resolves its identity to the worktree dir; that is harmless for an ephemeral one-shot and is left as-is.)
+- **Repo association.** An agent's repo identity is derived by pi from the process's startup cwd (`resolveGitInfo` runs `git rev-parse --show-toplevel` and takes `repoName` from the toplevel's basename). `dispatch_agent` therefore sets the spawn-spec working directory to the **repo root** (`workspace.protectedRoot ?? workspace.repo.root ?? launchCwd ?? cwd`), not the active worktree. The `--worktree-dir` argument still travels in the argv and auto-attaches the worktree at the agent's `session_start`, so `effectiveCwd` becomes the worktree and all file work lands there. Net effect: the agent's pi session is associated with the real repo (e.g. `basecamp`) — mirroring its parent — while still doing work in the shared worktree.
 
 - **Deterministic titles.** Async agents run `pi --mode json -p` with no UI, so the interactive title model (gated on `hasUI`) never fires and they would otherwise show only a uuid-ish name. Instead, `dispatch_agent` builds a deterministic title — a `(<agent-name>)` prefix for a named agent, `(Agent)` for ad-hoc, plus a compact task-derived label — and passes it via `BASECAMP_AGENT_TITLE` (§5.4). The spawned agent appends its own session-id suffix `[<4hex>]` (the same format as interactive titles), applies it with `setSessionName` at `session_start` (not UI-gated), and registers it as its `session_name`, so the daemon's `agents.session_name` reflects the title rather than the agent uuid. No title-model call is made (agents are frequent and ephemeral; the task already describes the work), and no frame/protocol change is needed — the title rides existing env plus the register frame's `session_name`. Interactive top-level titling is unchanged.
 
-- **Durable, distinct session store keyed by `agent_id`.** The agent's `.jsonl` thread is the basis of re-tasking (§6.4), so it must both survive and be addressable from the agent's identity. `dispatch_agent` generates the agent id (a UUID) and threads that one value through everything: it passes `--session-id <agent-id>` (so pi's session id *is* the agent id, creating it if missing), `--session-dir ~/.pi/basecamp/swarm/agents/<agent-id>/session/` (durable, basecamp-owned, alongside `daemon.db`/`daemon.sock`), and the same id as `agent_id` in the dispatch frame so the daemon's agent row and the register `node_id` share it (the daemon honours `frame.agent_id`, minting one only as a fallback when absent). Two properties matter: the store is **durable** (unlike `$TMPDIR`, which the OS clears and which would destroy resumability) and **distinct** from pi's default store (`~/.pi/agent/sessions/--<cwd>--/`) — an async agent should read as a separate entity, resumable by the daemon, not an ordinary user-continuable session cluttering the user's session browser. Because `agent_id == pi session id == session-dir key == node_id`, the daemon resolves an agent's thread path deterministically (no filename parsing), the `[<4hex>]` title suffix is stable across re-tasks, and a re-task resumes the same thread via `--session-id`. The synchronous tool keeps its ephemeral `$TMPDIR` session dir.
+- **Durable, distinct session store keyed by `agent_id`.** The agent's `.jsonl` thread is the basis of re-tasking (§6.4), so it must both survive and be addressable from the agent's identity. `dispatch_agent` generates the agent id (a UUID) and threads that one value through everything: it passes `--session-id <agent-id>` (so pi's session id *is* the agent id, creating it if missing), `--session-dir ~/.pi/basecamp/swarm/agents/<agent-id>/session/` (durable, basecamp-owned, alongside `daemon.db`/`daemon.sock`), and the same id as `agent_id` in the dispatch frame so the daemon's agent row and the register `node_id` share it (the daemon honours `frame.agent_id`, minting one only as a fallback when absent). Two properties matter: the store is **durable** (unlike `$TMPDIR`, which the OS clears and which would destroy resumability) and **distinct** from pi's default store (`~/.pi/agent/sessions/--<cwd>--/`) — an async agent should read as a separate entity, resumable by the daemon, not an ordinary user-continuable session cluttering the user's session browser. Because `agent_id == pi session id == session-dir key == node_id`, the daemon resolves an agent's thread path deterministically (no filename parsing), the `[<4hex>]` title suffix is stable across re-tasks, and a re-task resumes the same thread via `--session-id`.
 
 ## 7. Collaboration, safety & limits
 
@@ -426,7 +426,7 @@ Both limits are configurable tunables. They are complementary: depth cap bounds 
 | Cold-start / replay latency: each run pays extension load, prompt assembly, and thread file replay (§6.3). | Accepted in v1; warm pool deferred to decisions/roadmap (§9, §10). | Throughput tuning focuses on caps/queueing first, not residency. |
 | Unbounded accumulation: no pruning in v1 means agents and thread file artifacts grow over time. | Keep v1 manual cleanup; artifacts are expected to be small; evaluate TTL sweep later (§10). | Long-lived environments may require periodic operator hygiene. |
 | Concurrency-cap queueing: bursts above the cap produce queue delay. | Make the concurrency cap tunable; add observability for queue depth and wait time (§10). | Latency under burst is a deliberate trade for host stability. |
-| Migration risk: removing synchronous path touches `executor.ts`, `tool.ts` run guard, partial-render path, and agents skill. | Sequence migration by phase so guarantees are never absent; remove the in-process run guard only after mutation lease + concurrency cap are in place centrally. | Temporary implementation overlap is acceptable during phased rollout. |
+| Migration risk: removing the synchronous path before mutation leases and a global concurrency cap are implemented can leave mutation serialization as policy rather than daemon enforcement. | The async-only cleanup removes the stale public surface now, preserves the depth cap and worker worktree requirement, and documents conservative worker use: do not parallelize `worker` against the same worktree until the daemon lease exists. | Phases 3–4 still need to implement central mutation leases, deadlock detection, queueing, and host-global concurrency caps. |
 
 ## 9. Decisions & rejected alternatives
 
@@ -458,12 +458,12 @@ Both limits are configurable tunables. They are complementary: depth cap bounds 
 ## 10. Phased roadmap
 
 - **Phase 1 — IMPLEMENTED walking skeleton.** Delivered components: daemon (`basecamp swarm daemon`), extension daemon client + `dispatch_agent` / `wait_for_agent`, and shared frame protocol fixtures under `pi-swarm/protocol/`. Goal was to prove the end-to-end spine with one persistent agent identity and asynchronous run completion.
-  - In scope: a single frame-schema source of truth + a daemon contract test (the protocol exists from Phase 1); `session_start` ensure-daemon + WebSocket handshake (§5.3); daemon spawns one transient agent process from a TypeScript-authored spawn spec (§6.2); async dispatch returns a handle immediately; telemetry + result reporting over WebSocket (§6.3); `wait_for_agent` for a single handle and wait-ALL over multiple handles (§7.3); process-exit crash backstop; SQLite persistence for agents/runs; async-agent identity refinements — repo-root spawn cwd, deterministic titles, and a durable/distinct session store (§6.6); depth cap retained. The existing in-process run guard (§3) also stays in place (see the sequencing note), so breadth remains bounded even though the global concurrency cap is not yet built.
+  - In scope: a single frame-schema source of truth + a daemon contract test (the protocol exists from Phase 1); `session_start` ensure-daemon + WebSocket handshake (§5.3); daemon spawns one transient agent process from a TypeScript-authored spawn spec (§6.2); async dispatch returns a handle immediately; telemetry + result reporting over WebSocket (§6.3); `wait_for_agent` for a single handle and wait-ALL over multiple handles (§7.3); process-exit crash backstop; SQLite persistence for agents/runs; async-agent identity refinements — repo-root spawn cwd, deterministic titles, and a durable/distinct session store (§6.6); depth cap retained.
   - Explicitly out of scope: peer message, ACL enforcement, mutation lease/deadlock detection, host-global concurrency cap, HTTP observability polish, re-task-on-message behavior, wait-FIRST joins, and the unsolicited result-ping push (in Phase 1 the dispatcher observes completion by calling `wait_for_agent`).
 
 - **Phase 2a — IMPLEMENTED agent-first ACL foundation.** Goal: fix the public run-handle deviation and establish the first daemon-enforced ACL slice without adding peer messaging yet.
   - In scope: `dispatch_agent` returns the public `agent_id`; `wait_for_agent` accepts agent handles and resolves to private current primary runs; only the immediate dispatcher can wait; unauthorized/missing targets return `unknown`; one active primary run per agent is enforced; `list_agents` provides a root-scoped read-only directory with `awaitable`; protocol v4 fixtures and docs describe the agent-first surface.
-  - Explicitly out of scope: `message_agent`, peer-message delivery, result pings, idle re-task-on-message, root-scoped message ACL beyond `list_agents`, and removal/deprecation of the synchronous `agent` path.
+  - Explicitly out of scope: `message_agent`, peer-message delivery, result pings, idle re-task-on-message, and root-scoped message ACL beyond `list_agents`.
 
 - **Phase 2b — Collaboration.** Goal: establish full peer message routing across all three recipient states including re-task-on-message for idle recipients (§7.2a, §6.4), and result ping notify-then-fetch wake behavior (§7.2b).
 
@@ -471,9 +471,9 @@ Both limits are configurable tunables. They are complementary: depth cap bounds 
 
 - **Phase 4 — Limits & scale.** Goal: add host-global concurrency cap enforcement, spawn queueing, and tunable limit configuration (§7.5).
 
-- **Phase 5 — Observability & migration cleanup.** Goal: complete HTTP `/runs` and `/agents` observability (§5.1), rework partial render flow so telemetry is daemon-sourced (not direct child stdout), remove the synchronous execution path and in-process run guard after central guarantees are in place, rewrite the agents skill, and add TS↔Python frame contract tests.
+- **Phase 5 — Observability & cleanup.** Goal: complete HTTP `/runs` and `/agents` observability (§5.1), rework any remaining partial render flow so telemetry is daemon-sourced, and add TS↔Python frame contract tests.
 
-Phase boundaries are for safe sequencing. The existing in-process run guard (§3) stays active through Phases 1–4, so its breadth/serialization guarantees are never absent; it is removed only in Phase 5, after the mutation lease (Phase 3) and the global concurrency cap (Phase 4) restore those guarantees centrally. Phase 1 is therefore additive — it introduces the async spine alongside the current synchronous path rather than replacing it.
+Phase boundaries are for safe sequencing of the remaining daemon capabilities. The public surface is already async-only, but mutation serialization and host-wide breadth control are not fully daemon-enforced until Phases 3–4. Until then, the `agents` skill and docs intentionally keep `worker` use conservative.
 
 ---
 

@@ -94,7 +94,6 @@ Use it to list, add, edit, or remove configured projects.
 
 | Command | Description |
 |---------|-------------|
-| `/agents` | Browse available agent definitions |
 | `/plan` | Create a reviewed implementation plan and activate an execution worktree when approved |
 | `/show-plan` | Show the current plan and task progress |
 | `/worktree [label]` | Switch to an existing Git-registered worktree |
@@ -105,16 +104,18 @@ Use it to list, add, edit, or remove configured projects.
 
 ### Subagents
 
-Dispatch subagents from within a session using the `agent` tool:
+Use the `agents` skill for agent selection and async daemon dispatch guidance:
 
+```js
+skill({ name: "agents" })
+dispatch_agent({ agent: "scout", task: "Investigate the auth module" }) // returns an agent id
+list_agents({ awaitable: true })
+wait_for_agent({ handles: "<agent-id>" })
 ```
-agent("scout", "Investigate the auth module")
-agent("worker", "Fix the login bug")
-```
 
-Built-in agents: `scout`, `worker`, `security-specialist`, `testing-specialist`, `docs-specialist`, `code-clarity-specialist`.
+Built-in agents: `scout`, `worker`, `devils-advocate`, `security-specialist`, `testing-specialist`, `docs-specialist`, `code-clarity-specialist`.
 
-Use ad-hoc dispatch for one-off subagent tasks that do not need a built-in agent definition.
+Named read-only agents may fan out for parallel investigation and review. Be conservative with `worker`: do not parallelize `worker` against the same worktree until daemon mutation leases exist.
 
 ## Configuration
 

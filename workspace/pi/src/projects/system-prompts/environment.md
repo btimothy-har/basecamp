@@ -58,4 +58,6 @@ You have access to a scratch directory (path shown in session details below). Us
 
 ## Subagents
 
-The `agent` tool is available in this environment for delegating bounded work to subagents. Subagents run synchronously and return their output as the tool result. When delegation is available, available agents and descriptions are listed in the capabilities index. Use the `agents` skill for agent-selection and dispatch details.
+Async daemon subagent tools are available in this environment: `dispatch_agent`, `list_agents`, and `wait_for_agent`. Use the `agents` skill for agent selection, dispatch patterns, and result collection guidance.
+
+Named read-only agents may fan out for parallel investigation and review. Be conservative with `worker`: do not parallelize `worker` against the same worktree until daemon mutation leases exist.

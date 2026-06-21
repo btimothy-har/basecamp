@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { afterEach, beforeEach, describe, it } from "node:test";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { listCatalogItemsByType } from "pi-core/platform/catalog.ts";
 import defaultPiSwarm, { registerPiSwarm } from "./index.ts";
 import { createLocalPiSwarmDependencies } from "./local-adapters.ts";
 
@@ -57,7 +58,7 @@ describe("pi-swarm extension entrypoint", () => {
 		else process.env.BASECAMP_AGENT_DEPTH = priorDepth;
 	});
 
-	it("default export registers only async daemon tools", () => {
+	it("default export registers async daemon tools and the builtin agent catalog", () => {
 		const pi = createMockPi();
 		defaultPiSwarm(pi as unknown as ExtensionAPI);
 
@@ -67,17 +68,35 @@ describe("pi-swarm extension entrypoint", () => {
 		assert.equal(toolNames.has("list_agents"), true);
 		assert.equal(toolNames.has("wait_for_agent"), true);
 		assert.equal(toolNames.has("agent"), false);
+
+		const agentNames = new Set(listCatalogItemsByType("agents", { cwd: process.cwd() }).map((item) => item.name));
+		assert.deepEqual(
+			agentNames,
+			new Set([
+				"code-clarity-specialist",
+				"devils-advocate",
+				"docs-specialist",
+				"scout",
+				"security-specialist",
+				"testing-specialist",
+				"worker",
+			]),
+		);
 	});
 
-	it("registerPiSwarm registers sync and async tools", () => {
+	it("registerPiSwarm registers async daemon tools and no legacy sync entrypoints", () => {
 		const pi = createMockPi();
 		registerPiSwarm(pi as unknown as ExtensionAPI, createLocalPiSwarmDependencies());
 
 		const toolNames = new Set(pi.tools.map((tool) => tool.name));
-		assert.equal(toolNames.has("agent"), true);
 		assert.equal(toolNames.has("dispatch_agent"), true);
 		assert.equal(toolNames.has("list_agents"), true);
 		assert.equal(toolNames.has("wait_for_agent"), true);
-		assert.equal(pi.commands.includes("agents"), true);
+		assert.equal(toolNames.has("agent"), false);
+		assert.equal(pi.commands.includes("agents"), false);
+
+		const agentNames = new Set(listCatalogItemsByType("agents", { cwd: process.cwd() }).map((item) => item.name));
+		assert.equal(agentNames.has("worker"), true);
+		assert.equal(agentNames.has("scout"), true);
 	});
 });
