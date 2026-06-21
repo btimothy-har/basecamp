@@ -75,7 +75,10 @@ export interface SharedAgentLaunchFailure {
 
 export type SharedAgentLaunchResult = { ok: true; plan: SharedAgentLaunchPlan } | SharedAgentLaunchFailure;
 
-function resolveWorkspaceSelection(workspace: LaunchWorkspaceState | null): { cwd: string; worktreeDir: string | null } {
+function resolveWorkspaceSelection(workspace: LaunchWorkspaceState | null): {
+	cwd: string;
+	worktreeDir: string | null;
+} {
 	const fallback = process.cwd();
 	return {
 		cwd: workspace?.protectedRoot ?? workspace?.repo?.root ?? workspace?.launchCwd ?? fallback,
