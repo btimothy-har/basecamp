@@ -221,10 +221,12 @@ def test_dashboard_css_uses_requested_row_ratios() -> None:
     assert "#dashboard-daemon" not in css
 
 
-def test_swarm_css_includes_daemon_panel() -> None:
+def test_swarm_css_includes_two_panel_layout() -> None:
     css = CompanionApp.CSS
     assert "#swarm-body" in css
-    assert "#swarm-daemon" in css
+    assert "#swarm-agents" in css
+    assert "#swarm-detail" in css
+    assert "#swarm-daemon" not in css
 
 
 def test_render_bullets_preserves_literal_markup_text() -> None:
@@ -386,8 +388,8 @@ def test_swarm_receives_daemon_summary_when_session_active(tmp_path: Path) -> No
                 raise AssertionError
 
             app.query_one("#swarm-body", SwarmBody)
-            daemon_panel = app.query_one("#swarm-daemon", Static)
-            assert "No async agents yet" in _to_text(daemon_panel.render())
+            swarm_detail = app.query_one("#swarm-detail-content", Static)
+            assert "No async agents yet" in _to_text(swarm_detail.content)
             assert not app.query("#dashboard-daemon")
             assert daemon_source.poll_calls[-1] == session_id
 
@@ -479,8 +481,8 @@ def test_dashboard_autopin_navigation_and_repin(tmp_path: Path) -> None:
                 app.query_one(box_id, Static)
             app.query_one("#goal-1", Static)
 
-            daemon_panel = app.query_one("#swarm-daemon", Static)
-            assert "Daemon unavailable" in _to_text(daemon_panel.render())
+            swarm_detail = app.query_one("#swarm-detail-content", Static)
+            assert "Daemon unavailable" in _to_text(swarm_detail.content)
             assert not app.query("#dashboard-daemon")
 
             assert daemon_source.poll_calls[-1] == session_id

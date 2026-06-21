@@ -29,6 +29,56 @@ class DaemonSummaryCounts:
 
 
 @dataclass(frozen=True)
+class DaemonTaskProgress:
+    """Task progress counts from a daemon task projection."""
+
+    completed: int
+    deleted: int
+    total: int
+
+
+@dataclass(frozen=True)
+class DaemonTaskPlanItem:
+    """One task-plan item from a daemon task projection."""
+
+    index: int
+    label: str
+    status: str
+
+
+@dataclass(frozen=True)
+class DaemonCurrentTask:
+    """Current task detail from a daemon task projection."""
+
+    index: int
+    label: str
+    status: str
+    description: str | None
+    notes: str | None
+
+
+@dataclass(frozen=True)
+class DaemonTaskProjection:
+    """Safe daemon task projection for companion display."""
+
+    goal: str | None
+    progress: DaemonTaskProgress | None
+    task_plan: list[DaemonTaskPlanItem]
+    current_task: DaemonCurrentTask | None
+
+
+@dataclass(frozen=True)
+class DaemonRecentActivity:
+    """Allowlisted recent activity fields from a daemon projection."""
+
+    kind: str
+    seq: int | None
+    timestamp: str | None
+    tool_name: str | None
+    turn_index: int | None
+
+
+@dataclass(frozen=True)
 class DaemonSummaryAgent:
     """One previewed agent in a daemon summary payload."""
 
@@ -43,6 +93,9 @@ class DaemonSummaryAgent:
     created_at: str | None
     started_at: str | None
     ended_at: str | None
+    task: DaemonTaskProjection | None = None
+    recent_activity: list[DaemonRecentActivity] | None = None
+    latest_message: str | None = None
 
 
 @dataclass(frozen=True)
@@ -192,6 +245,117 @@ def _expect_optional_str(payload: dict[str, Any], key: str) -> str | None:
     return value
 
 
+def _parse_task_progress(payload: object) -> DaemonTaskProgress | None:
+    if not isinstance(payload, dict):
+        return None
+
+    try:
+        return DaemonTaskProgress(
+            completed=_expect_int(payload, "completed"),
+            deleted=_expect_int(payload, "deleted"),
+            total=_expect_int(payload, "total"),
+        )
+    except TypeError:
+        return None
+
+
+def _parse_task_plan_item(payload: object) -> DaemonTaskPlanItem | None:
+    if not isinstance(payload, dict):
+        return None
+
+    try:
+        return DaemonTaskPlanItem(
+            index=_expect_int(payload, "index"),
+            label=_expect_str(payload, "label"),
+            status=_expect_str(payload, "status"),
+        )
+    except TypeError:
+        return None
+
+
+def _parse_task_plan(payload: object) -> list[DaemonTaskPlanItem]:
+    if not isinstance(payload, list):
+        return []
+
+    items: list[DaemonTaskPlanItem] = []
+    for raw_item in payload:
+        item = _parse_task_plan_item(raw_item)
+        if item is not None:
+            items.append(item)
+    return items
+
+
+def _parse_current_task(payload: object) -> DaemonCurrentTask | None:
+    if not isinstance(payload, dict):
+        return None
+
+    try:
+        return DaemonCurrentTask(
+            index=_expect_int(payload, "index"),
+            label=_expect_str(payload, "label"),
+            status=_expect_str(payload, "status"),
+            description=_expect_optional_str(payload, "description"),
+            notes=_expect_optional_str(payload, "notes"),
+        )
+    except TypeError:
+        return None
+
+
+def _parse_task_projection(payload: object) -> DaemonTaskProjection | None:
+    if not isinstance(payload, dict):
+        return None
+
+    task_plan_payload = payload.get("task_plan", payload.get("tasks"))
+    try:
+        goal = _expect_optional_str(payload, "goal")
+    except TypeError:
+        goal = None
+
+    return DaemonTaskProjection(
+        goal=goal,
+        progress=_parse_task_progress(payload.get("progress")),
+        task_plan=_parse_task_plan(task_plan_payload),
+        current_task=_parse_current_task(payload.get("current_task")),
+    )
+
+
+def _parse_recent_activity_item(payload: object) -> DaemonRecentActivity | None:
+    if not isinstance(payload, dict):
+        return None
+
+    try:
+        return DaemonRecentActivity(
+            kind=_expect_str(payload, "kind"),
+            seq=_expect_optional_int(payload, "seq"),
+            timestamp=_expect_optional_str(payload, "timestamp"),
+            tool_name=_expect_optional_str(payload, "toolName"),
+            turn_index=_expect_optional_int(payload, "turnIndex"),
+        )
+    except TypeError:
+        return None
+
+
+def _parse_recent_activity(payload: object) -> list[DaemonRecentActivity] | None:
+    if payload is None:
+        return None
+    if not isinstance(payload, list):
+        return []
+
+    items: list[DaemonRecentActivity] = []
+    for raw_item in payload:
+        item = _parse_recent_activity_item(raw_item)
+        if item is not None:
+            items.append(item)
+    return items
+
+
+def _safe_optional_str(payload: dict[str, Any], key: str) -> str | None:
+    try:
+        return _expect_optional_str(payload, key)
+    except TypeError:
+        return None
+
+
 def _parse_payload(payload: object) -> DaemonSummaryOk:
     if not isinstance(payload, dict):
         raise TypeError
@@ -225,6 +389,9 @@ def _parse_payload(payload: object) -> DaemonSummaryOk:
             created_at=_expect_optional_str(raw_agent, "created_at"),
             started_at=_expect_optional_str(raw_agent, "started_at"),
             ended_at=_expect_optional_str(raw_agent, "ended_at"),
+            task=_parse_task_projection(raw_agent.get("task")),
+            recent_activity=_parse_recent_activity(raw_agent.get("recent_activity")),
+            latest_message=_safe_optional_str(raw_agent, "latest_message"),
         )
         for raw_agent in agents_payload
         if isinstance(raw_agent, dict)
@@ -250,8 +417,13 @@ __all__ = [
     "DaemonSummaryCounts",
     "DaemonSummaryError",
     "DaemonSummaryOk",
+    "DaemonCurrentTask",
+    "DaemonRecentActivity",
     "DaemonSummaryAgent",
     "DaemonSummarySource",
     "DaemonSummaryUnavailable",
+    "DaemonTaskPlanItem",
+    "DaemonTaskProgress",
+    "DaemonTaskProjection",
     "UnixHTTPConnection",
 ]

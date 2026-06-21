@@ -265,6 +265,159 @@ def _render_daemon_summary(summary: DaemonSummary | None) -> Text:
     return rows
 
 
+def _render_swarm_unavailable(summary: DaemonSummary | None) -> Text:
+    if summary is None:
+        return Text("No session snapshot yet", style="dim")
+
+    if summary.state == "unavailable":
+        text = Text("Daemon unavailable")
+        if summary.error:
+            text.append(" · ")
+            text.append(_truncate_preview(summary.error, max_length=120), style="dim")
+        return text
+
+    if summary.state == "error":
+        text = Text("Daemon error")
+        if summary.error:
+            text.append(" · ")
+            text.append(_truncate_preview(summary.error, max_length=120), style="dim")
+        return text
+
+    return Text("No async agents yet", style="dim")
+
+
+def _render_swarm_agents(summary: DaemonSummary | None, selected_index: int) -> Text:
+    if summary is None or summary.state != "ok" or not summary.agents:
+        return _render_swarm_unavailable(summary)
+
+    rows = Text()
+    for index, agent in enumerate(summary.agents):
+        if index:
+            rows.append("\n")
+
+        status = agent.status.lower()
+        glyph = _DAEMON_STATUS_GLYPH.get(status, "•")
+        marker = "▸" if index == selected_index else " "
+        row_style = "reverse" if index == selected_index else ""
+        timing = _daemon_agent_timing(agent)
+        details = " · ".join(part for part in (agent.agent_type, agent.status, timing) if part)
+
+        row = Text(style=row_style)
+        row.append(f"{marker} {glyph} ")
+        row.append(agent.session_name or agent.agent_handle, style=f"bold {row_style}".strip())
+        if details:
+            row.append(f"\n    {details}", style=f"dim {row_style}".strip())
+        rows.append_text(row)
+    return rows
+
+
+def _swarm_section(title: str, body: RenderableType) -> Panel:
+    return Panel(body, title=Text(title, style="bold"), title_align="left", border_style="grey42", padding=(0, 1))
+
+
+def _render_swarm_header(agent: DaemonSummaryAgent) -> Text:
+    text = Text()
+    text.append(agent.session_name or agent.agent_handle, style="bold")
+    if agent.session_name and agent.session_name != agent.agent_handle:
+        text.append(f" · {agent.agent_handle}", style="dim")
+    text.append("\n")
+    text.append(" · ".join(part for part in (agent.agent_type, agent.status, _daemon_agent_timing(agent)) if part))
+
+    if agent.task and agent.task.goal:
+        text.append("\nGoal: ", style="bold")
+        text.append(agent.task.goal)
+    if agent.task and agent.task.progress:
+        progress = agent.task.progress
+        text.append("\nProgress: ", style="bold")
+        text.append(f"{progress.completed}/{progress.total}")
+        if progress.deleted:
+            text.append(f" · {progress.deleted} deleted", style="dim")
+    return text
+
+
+def _render_swarm_task_plan(agent: DaemonSummaryAgent) -> Text:
+    if not agent.task or not agent.task.task_plan:
+        return Text("—", style="dim")
+
+    rows = Text()
+    for index, item in enumerate(agent.task.task_plan):
+        if index:
+            rows.append("\n")
+        glyph = _STATUS_GLYPH.get(item.status, _DAEMON_STATUS_GLYPH.get(item.status.lower(), "•"))
+        rows.append(f"{glyph} [{item.index + 1}] ")
+        rows.append(item.label, style="bold" if item.status == "active" else "")
+        rows.append(f" · {item.status}", style="dim")
+    return rows
+
+
+def _render_swarm_current_task(agent: DaemonSummaryAgent) -> RenderableType:
+    task = agent.task.current_task if agent.task else None
+    if task is None:
+        return Text("—", style="dim")
+
+    header = Text()
+    glyph = _STATUS_GLYPH.get(task.status, _DAEMON_STATUS_GLYPH.get(task.status.lower(), "•"))
+    header.append(f"[{task.index + 1}] {glyph} ")
+    header.append(task.label, style="bold")
+    header.append(f" · {task.status}", style="dim")
+    if task.description:
+        header.append("\n")
+        header.append(task.description)
+    if not task.notes:
+        return header
+
+    annotation = Panel(
+        Text(task.notes, style="dim italic"),
+        title=Text("✎ note", style="dim"),
+        title_align="left",
+        border_style="grey42",
+        padding=(0, 1),
+    )
+    return Group(header, annotation)
+
+
+def _render_swarm_latest_message(agent: DaemonSummaryAgent) -> Text:
+    if not agent.latest_message:
+        return Text("—", style="dim")
+    return Text(_truncate_preview(agent.latest_message, max_length=300))
+
+
+def _render_swarm_recent_activity(agent: DaemonSummaryAgent) -> Text:
+    if not agent.recent_activity:
+        return Text("—", style="dim")
+
+    rows = Text()
+    for index, activity in enumerate(agent.recent_activity[:8]):
+        if index:
+            rows.append("\n")
+        parts = [activity.kind]
+        if activity.turn_index is not None:
+            parts.append(f"turn {activity.turn_index}")
+        if activity.timestamp:
+            parts.append(activity.timestamp)
+        if activity.seq is not None:
+            parts.append(f"#{activity.seq}")
+        if activity.tool_name:
+            parts.append(_truncate_preview(activity.tool_name, max_length=80))
+        rows.append(_truncate_preview(" · ".join(parts), max_length=180))
+    return rows
+
+
+def _render_swarm_detail(summary: DaemonSummary | None, selected_index: int) -> RenderableType:
+    if summary is None or summary.state != "ok" or not summary.agents:
+        return _render_swarm_unavailable(summary)
+
+    index = max(0, min(selected_index, len(summary.agents) - 1))
+    agent = summary.agents[index]
+    return Group(
+        _render_swarm_header(agent),
+        _swarm_section("Task plan", _render_swarm_task_plan(agent)),
+        _swarm_section("Current task", _render_swarm_current_task(agent)),
+        _swarm_section("Latest message", _render_swarm_latest_message(agent)),
+        _swarm_section("Recent activity", _render_swarm_recent_activity(agent)),
+    )
+
+
 class WorkspacePanel(Static):
     """Top panel summarizing the workspace and git status."""
 
@@ -811,20 +964,70 @@ class SwarmBody(Widget):
 
     can_focus = True
 
-    BINDINGS = [Binding("m", "app.toggle_mode", "Mode")]
+    BINDINGS = [
+        Binding("m", "app.toggle_mode", "Mode"),
+        Binding("up", "select_prev", "Prev agent"),
+        Binding("down", "select_next", "Next agent"),
+    ]
+
+    def __init__(self, *args: object, **kwargs: object) -> None:
+        super().__init__(*args, **kwargs)
+        self._summary: DaemonSummary | None = None
+        self._selected_agent = 0
 
     def compose(self) -> ComposeResult:
-        yield Static(id="swarm-daemon", classes="swarm-box")
+        with Horizontal(id="swarm-layout"):
+            yield VerticalScroll(id="swarm-agents", classes="swarm-box")
+            with VerticalScroll(id="swarm-detail", classes="swarm-box"):
+                yield Static(id="swarm-detail-content")
 
     def render(self) -> Text:
         return Text()
 
     def on_mount(self) -> None:
-        self.query_one("#swarm-daemon", Static).border_title = "Daemon agents"
+        self.query_one("#swarm-agents", VerticalScroll).border_title = "Agents"
+        self.query_one("#swarm-detail", VerticalScroll).border_title = "Agent detail"
         self.update_daemon(None)
 
     def update_daemon(self, summary: DaemonSummary | None) -> None:
-        self.query_one("#swarm-daemon", Static).update(_render_daemon_summary(summary))
+        self._summary = summary
+        self._clamp_selection()
+        self._render_swarm()
+
+    def action_select_prev(self) -> None:
+        if self._agent_count() < 2:
+            return
+        self._selected_agent = max(0, self._selected_agent - 1)
+        self._render_swarm()
+
+    def action_select_next(self) -> None:
+        if self._agent_count() < 2:
+            return
+        self._selected_agent = min(self._agent_count() - 1, self._selected_agent + 1)
+        self._render_swarm()
+
+    def _agent_count(self) -> int:
+        if self._summary is None or self._summary.state != "ok":
+            return 0
+        return len(self._summary.agents)
+
+    def _clamp_selection(self) -> None:
+        count = self._agent_count()
+        if count == 0:
+            self._selected_agent = 0
+            return
+        self._selected_agent = max(0, min(self._selected_agent, count - 1))
+
+    def _render_swarm(self) -> None:
+        agents_panel = self.query_one("#swarm-agents", VerticalScroll)
+        agents_panel.remove_children()
+        self.call_next(
+            agents_panel.mount,
+            Static(_render_swarm_agents(self._summary, self._selected_agent)),
+        )
+        self.query_one("#swarm-detail-content", Static).update(
+            _render_swarm_detail(self._summary, self._selected_agent)
+        )
 
 
 class _MenuOrderedScreen(Screen):
@@ -963,14 +1166,25 @@ class CompanionApp(App[None]):
         padding: 0 1;
     }
 
+    #swarm-layout {
+        height: 1fr;
+        layout: horizontal;
+    }
+
     .swarm-box {
         border: round $accent;
         padding: 0 1;
     }
 
-    #swarm-daemon {
+    #swarm-agents {
         height: 1fr;
-        width: 100%;
+        width: 34%;
+        margin-right: 1;
+    }
+
+    #swarm-detail {
+        height: 1fr;
+        width: 1fr;
     }
 
     #file-tree {
