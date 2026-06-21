@@ -1,3 +1,4 @@
+import * as os from "node:os";
 import * as path from "node:path";
 import type { WorkspaceWorktree } from "pi-core/platform/workspace.ts";
 
@@ -6,6 +7,46 @@ export const CUSTOM_WORKTREE_CHOICE = "Enter custom worktree label";
 export interface ExecutionWorktreeChoices {
 	choices: string[];
 	labelsByChoice: Map<string, string>;
+}
+
+const SUGGESTED_WORKTREE_LABEL_MAX_LENGTH = 32;
+const FALLBACK_USER_WORKTREE_PREFIX = "un";
+const FALLBACK_WORKTREE_SLUG = "worktree";
+
+function osUsername(): string {
+	try {
+		return os.userInfo().username;
+	} catch {
+		return "";
+	}
+}
+
+function currentUserId(): string {
+	return process.env.USER || osUsername() || "unknown";
+}
+
+export function userWorktreePrefix(userId: string | null | undefined): string {
+	const prefix = (userId ?? "")
+		.toLowerCase()
+		.replace(/[^a-z0-9]+/g, "")
+		.slice(0, 2);
+	return prefix || FALLBACK_USER_WORKTREE_PREFIX;
+}
+
+function normalizeWorktreeSlug(value: string): string {
+	const slug = value
+		.toLowerCase()
+		.replace(/[^a-z0-9]+/g, "-")
+		.replace(/^-+|-+$/g, "");
+	return slug || FALLBACK_WORKTREE_SLUG;
+}
+
+export function suggestWorktreeLabel(goal: string, worktreeSlug: string | null, userId = currentUserId()): string {
+	const prefix = userWorktreePrefix(userId);
+	const slug = normalizeWorktreeSlug(worktreeSlug ?? goal);
+	const maxSlugLength = Math.max(1, SUGGESTED_WORKTREE_LABEL_MAX_LENGTH - prefix.length - 1);
+	const cappedSlug = slug.slice(0, maxSlugLength).replace(/-+$/g, "");
+	return `${prefix}-${cappedSlug}`;
 }
 
 function normalizeWorktreePath(value: string): string {

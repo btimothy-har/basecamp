@@ -1,7 +1,12 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import type { WorkspaceWorktree } from "pi-core/platform/workspace.ts";
-import { buildExecutionWorktreeChoices, CUSTOM_WORKTREE_CHOICE } from "../planning/worktree-choices.ts";
+import {
+	buildExecutionWorktreeChoices,
+	CUSTOM_WORKTREE_CHOICE,
+	suggestWorktreeLabel,
+	userWorktreePrefix,
+} from "../planning/worktree-choices.ts";
 
 function worktree(label: string, overrides: Partial<WorkspaceWorktree> = {}): WorkspaceWorktree {
 	return {
@@ -13,6 +18,29 @@ function worktree(label: string, overrides: Partial<WorkspaceWorktree> = {}): Wo
 		...overrides,
 	};
 }
+
+describe("suggestWorktreeLabel", () => {
+	it("uses the first two safe characters from the user id", () => {
+		assert.equal(suggestWorktreeLabel("Fallback Goal", "worktree-prefix", "btimothyhar"), "bt-worktree-prefix");
+		assert.equal(userWorktreePrefix("B Timothy"), "bt");
+	});
+
+	it("falls back when the user id has no safe prefix", () => {
+		assert.equal(suggestWorktreeLabel("Fallback Goal", "worktree-prefix", "!!!"), "un-worktree-prefix");
+		assert.equal(userWorktreePrefix(null), "un");
+	});
+
+	it("normalizes the goal when no worktree slug is provided", () => {
+		assert.equal(suggestWorktreeLabel("Add user worktree prefix", null, "btimothyhar"), "bt-add-user-worktree-prefix");
+	});
+
+	it("caps suggested labels at 32 characters", () => {
+		const label = suggestWorktreeLabel("Goal", "abcdefghijklmnopqrstuvwxyz0123456789", "btimothyhar");
+
+		assert.equal(label, "bt-abcdefghijklmnopqrstuvwxyz012");
+		assert.equal(label.length, 32);
+	});
+});
 
 describe("buildExecutionWorktreeChoices", () => {
 	it("preserves suggested-first behavior when there is no active worktree", () => {

@@ -26,7 +26,7 @@ import type { GoalCycle, ReviewState, TaskStatus, TasksAccess } from "../tasks/t
 import { computeGoalContextReview, computeSectionReview, freshReview, tasksMatch } from "./draft-logic";
 import type { PlanDraft } from "./review";
 import { SECTION_NAMES, showPlanReadOnly, showReviewOverlay } from "./review";
-import { buildExecutionWorktreeChoices, CUSTOM_WORKTREE_CHOICE } from "./worktree-choices.ts";
+import { buildExecutionWorktreeChoices, CUSTOM_WORKTREE_CHOICE, suggestWorktreeLabel } from "./worktree-choices.ts";
 
 // ============================================================================
 // Draft diffing — preserve approvals on unchanged content
@@ -191,33 +191,6 @@ async function selectImplementationMode(ctx: ExtensionContext): Promise<Implemen
 	return null;
 }
 
-const SUGGESTED_WORKTREE_LABEL_MAX_LENGTH = 32;
-const FALLBACK_WORKTREE_PREFIX = "sess";
-const FALLBACK_WORKTREE_SLUG = "worktree";
-
-function shortSessionPrefix(ctx: ExtensionContext): string {
-	const sessionId = ctx.sessionManager.getSessionId() ?? "";
-	// Match the visible session tag shown by the title widget.
-	const prefix = sessionId.replace(/-/g, "").slice(-4).toLowerCase();
-	return prefix || FALLBACK_WORKTREE_PREFIX;
-}
-
-function normalizeWorktreeSlug(value: string): string {
-	const slug = value
-		.toLowerCase()
-		.replace(/[^a-z0-9]+/g, "-")
-		.replace(/^-+|-+$/g, "");
-	return slug || FALLBACK_WORKTREE_SLUG;
-}
-
-function suggestWorktreeLabel(ctx: ExtensionContext, goal: string, worktreeSlug: string | null): string {
-	const prefix = shortSessionPrefix(ctx);
-	const slug = normalizeWorktreeSlug(worktreeSlug ?? goal);
-	const maxSlugLength = Math.max(1, SUGGESTED_WORKTREE_LABEL_MAX_LENGTH - prefix.length - 1);
-	const cappedSlug = slug.slice(0, maxSlugLength).replace(/-+$/g, "");
-	return `${prefix}-${cappedSlug}`;
-}
-
 async function selectWorktreeLabel(
 	ctx: ExtensionContext,
 	goal: string,
@@ -231,7 +204,7 @@ async function selectWorktreeLabel(
 		return null;
 	}
 
-	const suggested = suggestWorktreeLabel(ctx, goal, worktreeSlug);
+	const suggested = suggestWorktreeLabel(goal, worktreeSlug);
 	const existing = await listWorkspaceWorktrees();
 	const { choices, labelsByChoice } = buildExecutionWorktreeChoices(suggested, existing, workspace.activeWorktree);
 
