@@ -1003,6 +1003,7 @@ def test_get_run_summary_projects_safe_task_log_and_activity(tmp_path: Path) -> 
                 "active": True,
                 "tasks": [
                     {"label": "Done", "description": "d", "criteria": "c", "notes": None, "status": "completed"},
+                    {"label": 456, "description": "bad", "criteria": "bad", "notes": None, "status": "completed"},
                     {"label": 123, "description": "bad", "criteria": "bad", "notes": None, "status": "pending"},
                     {
                         "label": "Bad status",
@@ -1036,16 +1037,16 @@ def test_get_run_summary_projects_safe_task_log_and_activity(tmp_path: Path) -> 
         "progress": {"completed": 1, "deleted": 1, "total": 3},
         "tasks": [
             {"index": 0, "label": "Done", "status": "completed"},
-            {"index": 4, "label": "Current task", "status": "active"},
-            {"index": 6, "label": "Pending", "status": "pending"},
+            {"index": 5, "label": "Current task", "status": "active"},
+            {"index": 7, "label": "Pending", "status": "pending"},
         ],
         "task_plan": [
             {"index": 0, "label": "Done", "status": "completed"},
-            {"index": 4, "label": "Current task", "status": "active"},
-            {"index": 6, "label": "Pending", "status": "pending"},
+            {"index": 5, "label": "Current task", "status": "active"},
+            {"index": 7, "label": "Pending", "status": "pending"},
         ],
         "current_task": {
-            "index": 4,
+            "index": 5,
             "label": "Current task",
             "status": "active",
             "description": "Desc with controls",
@@ -1063,6 +1064,7 @@ def test_get_run_summary_projects_safe_task_log_and_activity(tmp_path: Path) -> 
     ]
     assert agent["recent_activity"][0]["timestamp"] != "agent-supplied-timestamp"
     assert all(activity["kind"] != "raw_model_delta" for activity in agent["recent_activity"])
+    assert agent["latest_message"] is None
     assert all(
         key not in agent["recent_activity"][0]
         for key in ["args", "output", "toolCallId", "cwd", "env", "error", "payload"]

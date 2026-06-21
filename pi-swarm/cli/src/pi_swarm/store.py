@@ -665,12 +665,12 @@ class Store:
             if status == "deleted":
                 deleted += 1
                 continue
-            if status == "completed":
-                completed += 1
 
             label = _display_text(raw_task.get("label"))
             if label is None:
                 continue
+            if status == "completed":
+                completed += 1
             total += 1
             task_row = {"index": index, "label": label, "status": status}
             if len(tasks) < RUN_SUMMARY_TASK_PLAN_LIMIT:

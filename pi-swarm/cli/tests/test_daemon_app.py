@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import sqlite3
 from pathlib import Path
 
@@ -522,6 +523,114 @@ def test_runs_summary_endpoint_omits_sensitive_and_full_fields(tmp_path: Path) -
     assert summary_agent["task"] is None
     assert summary_agent["recent_activity"] == []
     assert summary_agent["latest_message"] is None
+
+
+def test_runs_summary_endpoint_projects_task_log_and_activity(tmp_path: Path) -> None:
+    app, store = _build_app_with_store(tmp_path)
+
+    store.upsert_agent(
+        agent_id="root",
+        parent_id=None,
+        sibling_group="sg-root",
+        depth=0,
+        role="session",
+        session_name="root-session",
+        cwd="/tmp/root",
+    )
+    store.upsert_agent(
+        agent_id="agent-1",
+        parent_id="root",
+        sibling_group="sg-child",
+        depth=1,
+        role="agent",
+        session_name="child-agent",
+        cwd="/tmp/child",
+    )
+    store.create_run(
+        run_id="run-1",
+        agent_id="agent-1",
+        dispatcher_id="root",
+        spec={"env": {"SECRET": "nope"}},
+        report_token_hash="secret-token-hash",
+    )
+    store.append_run_event(
+        run_id="run-1",
+        kind="tool_execution_end",
+        payload={
+            "toolName": "bash",
+            "turnIndex": 4,
+            "args": {"command": "cat secret"},
+            "output": "private output",
+            "payload": {"raw": "private"},
+            "toolCallId": "call-secret",
+        },
+    )
+    with sqlite3.connect(tmp_path / "daemon.db") as connection:
+        connection.execute(
+            "UPDATE run_events SET ts = ? WHERE run_id = ? AND seq = ?",
+            ("2026-01-01T00:00:00Z", "run-1", 1),
+        )
+    _write_task_log(
+        store.task_dir,
+        "agent-1",
+        [
+            {
+                "goal": "Verify summary",
+                "active": True,
+                "tasks": [
+                    {"label": "Done", "description": "d", "notes": None, "status": "completed"},
+                    {"label": 123, "description": "bad", "notes": None, "status": "completed"},
+                    {"label": "Current", "description": "desc", "notes": "notes", "status": "active"},
+                ],
+            }
+        ],
+    )
+
+    with TestClient(app) as client:
+        response = client.get("/runs/summary", params={"root_id": "root"})
+
+    payload = response.json()
+    assert response.status_code == 200
+    assert len(payload["agents"]) == 1
+    summary_agent = payload["agents"][0]
+    assert "agent_id" not in summary_agent
+    assert "run_id" not in summary_agent
+    assert "spec_json" not in summary_agent
+    assert "report_token_hash" not in summary_agent
+    assert summary_agent["task"] == {
+        "goal": "Verify summary",
+        "progress": {"completed": 1, "deleted": 0, "total": 2},
+        "tasks": [
+            {"index": 0, "label": "Done", "status": "completed"},
+            {"index": 2, "label": "Current", "status": "active"},
+        ],
+        "task_plan": [
+            {"index": 0, "label": "Done", "status": "completed"},
+            {"index": 2, "label": "Current", "status": "active"},
+        ],
+        "current_task": {
+            "index": 2,
+            "label": "Current",
+            "status": "active",
+            "description": "desc",
+            "notes": "notes",
+        },
+    }
+    assert summary_agent["recent_activity"] == [
+        {
+            "kind": "tool_execution_end",
+            "seq": 1,
+            "timestamp": "2026-01-01T00:00:00Z",
+            "toolName": "bash",
+            "turnIndex": 4,
+        }
+    ]
+    assert all(key not in summary_agent["recent_activity"][0] for key in ["args", "output", "payload", "toolCallId"])
+
+
+def _write_task_log(task_dir: Path, agent_id: str, cycles: list[dict[str, object]]) -> None:
+    task_dir.mkdir(parents=True, exist_ok=True)
+    (task_dir / f"{agent_id}.json").write_text(json.dumps(cycles), encoding="utf-8")
 
 
 def _insert_run(
