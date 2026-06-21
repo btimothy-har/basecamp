@@ -314,7 +314,9 @@ export function registerDaemonTools(
 		},
 		renderResult(result, _opts, theme) {
 			const details = result.details as DispatchDetails | null;
-			if (!details) return new Text(result.content[0]?.type === "text" ? result.content[0].text : "", 0, 0);
+			const message = result.content[0]?.type === "text" ? result.content[0].text : "";
+			const isError = (result as { isError?: boolean }).isError === true;
+			if (!details || isError) return new Text(message, 0, 0);
 			return new Text(theme.fg("accent", `⏳ dispatched ${details.agent} — handle ${details.agentHandle}`), 0, 0);
 		},
 	});

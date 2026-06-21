@@ -108,6 +108,10 @@ async def prepare_dispatch(
 
     if existing_agent is not None:
         existing_agent_id = str(existing_agent.get("id"))
+        requester_root = await asyncio.to_thread(store.resolve_agent_root, dispatcher_node_id)
+        existing_agent_root = await asyncio.to_thread(store.resolve_agent_root, existing_agent_id)
+        if requester_root is None or existing_agent_root != requester_root:
+            return DispatchRejection(reason="duplicate_agent_handle")
         if frame.agent_id and frame.agent_id != existing_agent_id:
             return DispatchRejection(reason="duplicate_agent_handle")
         if _metadata_mismatches(existing=existing_agent, frame=frame):

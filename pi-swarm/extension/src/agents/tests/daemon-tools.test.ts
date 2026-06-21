@@ -486,6 +486,13 @@ describe("daemon async tools", () => {
 		assert.equal(result.details.agentHandle, outbound.agent_handle);
 		assert.equal("agentId" in result.details, false);
 		assert.match(result.content[0].text, /depth_cap/);
+
+		const rendered = (dispatchTool as any)
+			.renderResult(result, {}, { fg: (_token: string, text: string) => `styled:${text}` })
+			.render(120)
+			.join("\n");
+		assert.match(rendered, /dispatch rejected: depth_cap/);
+		assert.doesNotMatch(rendered, /⏳ dispatched/);
 	});
 
 	it("dispatch_agent retries generated handle collisions", async () => {

@@ -193,6 +193,7 @@ class Store:
 
         now = self._now()
         with self._connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
             existing = connection.execute(
                 "SELECT agent_handle, agent_type, run_kind FROM agents WHERE id = ?",
                 (agent_id,),
@@ -204,58 +205,56 @@ class Store:
             next_agent_type = agent_type or stored_agent_type
             next_run_kind = run_kind or stored_run_kind
 
-            duplicate = connection.execute(
-                "SELECT id FROM agents WHERE agent_handle = ? AND id != ? LIMIT 1",
-                (next_handle, agent_id),
-            ).fetchone()
-            if duplicate is not None:
-                raise DuplicateAgentHandleError(next_handle)
-
-            connection.execute(
-                """
-                INSERT INTO agents (
-                    id,
-                    parent_id,
-                    sibling_group,
-                    depth,
-                    role,
-                    session_name,
-                    cwd,
-                    created_at,
-                    last_seen_at,
-                    agent_handle,
-                    agent_type,
-                    run_kind
+            try:
+                connection.execute(
+                    """
+                    INSERT INTO agents (
+                        id,
+                        parent_id,
+                        sibling_group,
+                        depth,
+                        role,
+                        session_name,
+                        cwd,
+                        created_at,
+                        last_seen_at,
+                        agent_handle,
+                        agent_type,
+                        run_kind
+                    )
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ON CONFLICT(id)
+                    DO UPDATE SET
+                        parent_id = excluded.parent_id,
+                        sibling_group = excluded.sibling_group,
+                        depth = excluded.depth,
+                        role = excluded.role,
+                        session_name = excluded.session_name,
+                        cwd = excluded.cwd,
+                        last_seen_at = excluded.last_seen_at,
+                        agent_handle = excluded.agent_handle,
+                        agent_type = excluded.agent_type,
+                        run_kind = excluded.run_kind
+                    """,
+                    (
+                        agent_id,
+                        parent_id,
+                        sibling_group,
+                        depth,
+                        role,
+                        session_name,
+                        cwd,
+                        now,
+                        now,
+                        next_handle,
+                        next_agent_type,
+                        next_run_kind,
+                    ),
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                ON CONFLICT(id)
-                DO UPDATE SET
-                    parent_id = excluded.parent_id,
-                    sibling_group = excluded.sibling_group,
-                    depth = excluded.depth,
-                    role = excluded.role,
-                    session_name = excluded.session_name,
-                    cwd = excluded.cwd,
-                    last_seen_at = excluded.last_seen_at,
-                    agent_handle = excluded.agent_handle,
-                    agent_type = excluded.agent_type,
-                    run_kind = excluded.run_kind
-                """,
-                (
-                    agent_id,
-                    parent_id,
-                    sibling_group,
-                    depth,
-                    role,
-                    session_name,
-                    cwd,
-                    now,
-                    now,
-                    next_handle,
-                    next_agent_type,
-                    next_run_kind,
-                ),
-            )
+            except sqlite3.IntegrityError as error:
+                if "agents.agent_handle" in str(error):
+                    raise DuplicateAgentHandleError(next_handle) from error
+                raise
 
     def get_agent(self, agent_id: str) -> dict[str, Any] | None:
         """Fetch an agent by id as a dict, or None when absent."""
@@ -392,11 +391,11 @@ class Store:
                 result["spec_json"] = json.loads(spec_json)
             return result
 
-    def _resolve_requester_root(self, requester_node_id: str) -> str | None:
-        """Resolve the root id for a node by following parent links defensively."""
+    def resolve_agent_root(self, agent_id: str) -> str | None:
+        """Resolve the root id for an agent by following parent links defensively."""
 
         visited: set[str] = set()
-        current = requester_node_id
+        current = agent_id
 
         while isinstance(current, str) and current not in visited:
             visited.add(current)
@@ -421,7 +420,7 @@ class Store:
     ) -> list[dict[str, Any]]:
         """List non-session agents under the caller's root with safe status metadata."""
 
-        root_id = self._resolve_requester_root(requester_node_id)
+        root_id = self.resolve_agent_root(requester_node_id)
         if root_id is None:
             return []
 

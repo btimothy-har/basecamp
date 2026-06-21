@@ -672,6 +672,63 @@ def test_dispatch_retasks_terminal_agent_by_handle(tmp_path: Path) -> None:
         _stop_daemon(server, thread, uds_path)
 
 
+def test_dispatch_rejects_retask_handle_from_other_root(tmp_path: Path) -> None:
+    db_path = tmp_path / "daemon.db"
+    uds_path = Path("/tmp") / f"basecamp-daemon-retask-root-{os.getpid()}-{uuid.uuid4().hex[:8]}.sock"
+    store = Store(db_path=db_path)
+    server, thread = _start_daemon(store, uds_path)
+
+    agent_id = f"agent-{uuid.uuid4()}"
+    handle = "scout-owned-root"
+
+    try:
+        with unix_connect(str(uds_path), uri="ws://localhost/ws") as websocket:
+            _register_session(websocket, node_id="owner-root", cwd=str(tmp_path))
+            first_ack = _dispatch(
+                websocket,
+                run_id="run-retask-root-first",
+                spec=_dispatch_spec(tmp_path, env={"FAKE_DAEMON_AGENT_SLEEP_MS": "20"}),
+                agent_id=agent_id,
+                agent_handle=handle,
+                agent_type="scout",
+                run_kind="named-read-only",
+            )
+            assert first_ack["status"] == "spawned"
+
+        deadline = time.time() + 10
+        while time.time() < deadline:
+            first_run = store.get_run("run-retask-root-first")
+            if first_run and first_run["status"] == "completed":
+                break
+            time.sleep(0.05)
+        assert first_run is not None and first_run["status"] == "completed"
+
+        with unix_connect(str(uds_path), uri="ws://localhost/ws") as websocket:
+            _register_session(websocket, node_id="other-root", cwd=str(tmp_path))
+            second_ack = _dispatch(
+                websocket,
+                run_id="run-retask-root-second",
+                spec=_dispatch_spec(tmp_path),
+                agent_handle=handle,
+                agent_type="scout",
+                run_kind="named-read-only",
+            )
+
+        assert second_ack == {
+            "type": "dispatch_ack",
+            "v": PROTOCOL_VERSION,
+            "run_id": "run-retask-root-second",
+            "status": "rejected",
+            "reason": "duplicate_agent_handle",
+        }
+        assert store.get_run("run-retask-root-second") is None
+        agent = store.get_agent(agent_id)
+        assert agent is not None
+        assert agent["current_run_id"] == "run-retask-root-first"
+    finally:
+        _stop_daemon(server, thread, uds_path)
+
+
 def test_dispatch_rejects_active_retask_by_handle(tmp_path: Path) -> None:
     db_path = tmp_path / "daemon.db"
     uds_path = Path("/tmp") / f"basecamp-daemon-retask-active-{os.getpid()}-{uuid.uuid4().hex[:8]}.sock"
@@ -792,6 +849,7 @@ def test_wait_by_agent_handle_known_unknown_and_unauthorized(tmp_path: Path) -> 
             if run and run["status"] == "completed":
                 break
             time.sleep(0.05)
+        assert run is not None and run["status"] == "completed"
 
         with unix_connect(str(uds_path), uri="ws://localhost/ws") as owner:
             _register_session(owner, node_id="owner", cwd=str(tmp_path))

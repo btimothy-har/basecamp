@@ -289,6 +289,44 @@ def test_get_agents_current_runs_filters_by_dispatcher(tmp_path: Path) -> None:
     assert missing == []
 
 
+def test_resolve_agent_root_follows_parents_defensively(tmp_path: Path) -> None:
+    db_path = tmp_path / "daemon.db"
+    store = Store(db_path=db_path)
+
+    store.upsert_agent(
+        agent_id="root",
+        parent_id=None,
+        sibling_group="sg-root",
+        depth=0,
+        role="session",
+        session_name="root-session",
+        cwd="/tmp/root",
+    )
+    store.upsert_agent(
+        agent_id="agent-1",
+        parent_id="root",
+        sibling_group="sg-a1",
+        depth=1,
+        role="agent",
+        session_name="agent-a1",
+        cwd="/tmp/a1",
+    )
+    store.upsert_agent(
+        agent_id="lost",
+        parent_id="missing-parent",
+        sibling_group="sg-lost",
+        depth=1,
+        role="agent",
+        session_name="lost",
+        cwd="/tmp/lost",
+    )
+
+    assert store.resolve_agent_root("agent-1") == "root"
+    assert store.resolve_agent_root("root") == "root"
+    assert store.resolve_agent_root("lost") == "lost"
+    assert store.resolve_agent_root("missing") is None
+
+
 def test_get_root_agent_directory_scopes_to_root_and_excludes_sessions(tmp_path: Path) -> None:
     db_path = tmp_path / "daemon.db"
     store = Store(db_path=db_path)
