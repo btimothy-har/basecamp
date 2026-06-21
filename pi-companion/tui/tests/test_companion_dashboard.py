@@ -21,6 +21,8 @@ from companion_tui.app import (
     next_body_mode,
 )
 from companion_tui.daemon import (
+    DaemonAgentMessages,
+    DaemonAgentMessagesOk,
     DaemonSummary,
     DaemonSummaryAgent,
     DaemonSummaryCounts,
@@ -57,14 +59,26 @@ def _build_repo(repo: Path) -> None:
 
 
 class _FakeDaemonSource:
-    def __init__(self, summary: DaemonSummary | None) -> None:
+    def __init__(self, summary: DaemonSummary | None, messages: DaemonAgentMessages | None = None) -> None:
         self.summary = summary
+        self.messages = messages
         self.poll_calls: list[str] = []
+        self.message_poll_calls: list[tuple[str, str, int | None]] = []
 
     def poll(self, root_id: str, limit: int | None = None) -> DaemonSummary | None:
         self.poll_calls.append(root_id)
         assert limit is None or isinstance(limit, int)
         return self.summary
+
+    def poll_messages(
+        self,
+        root_id: str,
+        agent_handle: str,
+        limit: int | None = None,
+    ) -> DaemonAgentMessages:
+        self.message_poll_calls.append((root_id, agent_handle, limit))
+        assert limit is None or isinstance(limit, int)
+        return self.messages or DaemonAgentMessagesOk(root_id=root_id, agent_handle=agent_handle, messages=[])
 
 
 class _DaemonPollError(Exception):
@@ -392,6 +406,86 @@ def test_swarm_receives_daemon_summary_when_session_active(tmp_path: Path) -> No
             assert "No async agents yet" in _to_text(swarm_detail.content)
             assert not app.query("#dashboard-daemon")
             assert daemon_source.poll_calls[-1] == session_id
+
+    asyncio.run(run())
+
+
+def test_swarm_polls_messages_for_selected_agent_when_session_active(tmp_path: Path) -> None:
+    repo = tmp_path / "repo"
+    tasks_dir = tmp_path / "tasks"
+    tasks_dir.mkdir()
+    snapshot_path = tmp_path / "snapshot.json"
+    _build_repo(repo)
+    session_id = "feed-beef-cafe-babe"
+    snapshot_path.write_text(
+        json.dumps({"version": 1, "sessionId": session_id, "updatedAt": "t", "effectiveCwd": str(repo)}),
+        encoding="utf-8",
+    )
+    (tasks_dir / f"{session_id}.json").write_text("[]", encoding="utf-8")
+    companion_analysis_path(session_id, snapshot_path.parent).write_text(
+        json.dumps(
+            {
+                "version": 1,
+                "sessionId": session_id,
+                "updatedAt": "t",
+                "decisions": [],
+                "openItems": [],
+                "warnings": [],
+            }
+        ),
+        encoding="utf-8",
+    )
+    daemon_source = _FakeDaemonSource(
+        _daemon_summary_ok(
+            total=2,
+            agents=[
+                DaemonSummaryAgent(
+                    agent_handle="selected-agent",
+                    agent_type="worker",
+                    role="agent",
+                    session_name="selected",
+                    status="running",
+                    result_preview=None,
+                    error_preview=None,
+                    exit_code=None,
+                    created_at="2026-01-01T00:00:00Z",
+                    started_at="2026-01-01T00:00:01Z",
+                    ended_at=None,
+                ),
+                DaemonSummaryAgent(
+                    agent_handle="other-agent",
+                    agent_type="scout",
+                    role="agent",
+                    session_name="other",
+                    status="running",
+                    result_preview=None,
+                    error_preview=None,
+                    exit_code=None,
+                    created_at="2026-01-01T00:00:00Z",
+                    started_at="2026-01-01T00:00:01Z",
+                    ended_at=None,
+                ),
+            ],
+        )
+    )
+    app = CompanionApp(
+        snapshot_path=snapshot_path,
+        cwd=repo,
+        tasks_dir=tasks_dir,
+        daemon_source=daemon_source,
+    )
+
+    async def run() -> None:
+        async with app.run_test() as pilot:
+            for _ in range(100):
+                if daemon_source.message_poll_calls:
+                    break
+                await pilot.pause(0.02)
+            else:
+                raise AssertionError
+
+            assert daemon_source.message_poll_calls[-1] == (session_id, "selected-agent", None)
+            assert all(call[1] != "other-agent" for call in daemon_source.message_poll_calls)
 
     asyncio.run(run())
 

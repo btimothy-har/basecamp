@@ -527,6 +527,69 @@ def test_runs_summary_endpoint_omits_sensitive_and_full_fields(tmp_path: Path) -
     assert summary_agent["recent_activity"] == []
 
 
+def test_runs_messages_endpoint_projects_selected_agent_messages(tmp_path: Path) -> None:
+    app, store = _build_app_with_store(tmp_path)
+    store.upsert_agent(
+        agent_id="root",
+        parent_id=None,
+        sibling_group="sg-root",
+        depth=0,
+        role="session",
+        session_name="root-session",
+        cwd="/tmp/root",
+    )
+    store.upsert_agent(
+        agent_id="agent-1",
+        parent_id="root",
+        sibling_group="sg-child",
+        depth=1,
+        role="agent",
+        session_name="child-agent",
+        cwd="/tmp/child",
+    )
+    store.create_run(
+        run_id="run-1",
+        agent_id="agent-1",
+        dispatcher_id="root",
+        spec={"prompt": "do not expose"},
+        report_token_hash="secret-token-hash",
+    )
+    store.append_run_event(
+        run_id="run-1",
+        kind="assistant_output",
+        payload={
+            "label": "assistant",
+            "snippet": "short",
+            "text": "full\nassistant message",
+            "toolCallId": "private",
+            "raw": {"secret": "ignored"},
+        },
+    )
+
+    with TestClient(app) as client:
+        response = client.get(
+            "/runs/messages",
+            params={"root_id": "root", "agent_handle": "agent-1", "limit": 3},
+        )
+
+    payload = response.json()
+    assert response.status_code == 200
+    assert payload == {
+        "root_id": "root",
+        "agent_handle": "agent-1",
+        "messages": [
+            {
+                "kind": "assistant_output",
+                "seq": 1,
+                "timestamp": payload["messages"][0]["timestamp"],
+                "label": "assistant",
+                "text": "full\nassistant message",
+            }
+        ],
+    }
+    assert set(payload["messages"][0]) == {"kind", "seq", "timestamp", "label", "text"}
+
+
 def test_runs_summary_endpoint_projects_task_log_and_activity(tmp_path: Path) -> None:
     app, store = _build_app_with_store(tmp_path)
 

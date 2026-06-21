@@ -28,6 +28,9 @@ from textual.widgets.tree import TreeNode
 from companion_tui.analysis import COMPANION_ANALYSIS_DIR_NAME, CompanionAnalysis, companion_analysis_path
 from companion_tui.cycles import companion_tasks_path
 from companion_tui.daemon import (
+    DaemonAgentMessage,
+    DaemonAgentMessages,
+    DaemonAgentMessagesError,
     DaemonRecentActivity,
     DaemonSummary,
     DaemonSummaryAgent,
@@ -471,7 +474,54 @@ def _render_swarm_recent_activity(agent: DaemonSummaryAgent) -> Text:
     return rows
 
 
-def _render_swarm_detail(summary: DaemonSummary | None, selected_index: int) -> RenderableType:
+def _agent_message_label(message: DaemonAgentMessage) -> str:
+    if message.label:
+        return message.label
+    if message.kind == "agent_result":
+        return "result"
+    return "assistant"
+
+
+def _render_swarm_agent_messages(
+    agent: DaemonSummaryAgent,
+    messages: DaemonAgentMessages | None,
+) -> Text:
+    if messages is None:
+        return Text("—", style="dim")
+    if messages.state == "unavailable":
+        text = Text("Messages unavailable")
+        if messages.error:
+            text.append(" · ")
+            text.append(_truncate_preview(messages.error, max_length=80), style="dim")
+        return text
+    if messages.state == "error":
+        text = Text("Messages error")
+        if messages.error:
+            text.append(" · ")
+            text.append(_truncate_preview(messages.error, max_length=80), style="dim")
+        return text
+    if messages.agent_handle != agent.agent_handle or not messages.messages:
+        return Text("—", style="dim")
+
+    rows = Text()
+    for index, message in enumerate(messages.messages[-3:]):
+        if index:
+            rows.append("\n---\n", style="dim")
+        label = _truncate_preview(_agent_message_label(message), max_length=32)
+        timestamp = _format_activity_timestamp(message.timestamp)
+        rows.append(label, style="bold")
+        if timestamp:
+            rows.append(f" · {timestamp}", style="dim")
+        rows.append("\n")
+        rows.append(message.text)
+    return rows
+
+
+def _render_swarm_detail(
+    summary: DaemonSummary | None,
+    selected_index: int,
+    messages: DaemonAgentMessages | None = None,
+) -> RenderableType:
     if summary is None or summary.state != "ok" or not summary.agents:
         return _render_swarm_unavailable(summary)
 
@@ -482,6 +532,7 @@ def _render_swarm_detail(summary: DaemonSummary | None, selected_index: int) -> 
         _swarm_section("Task plan", _render_swarm_task_plan(agent)),
         _swarm_section("Current task", _render_swarm_current_task(agent)),
         _swarm_section("Recent activity", _render_swarm_recent_activity(agent)),
+        _swarm_section("Agent Messages", _render_swarm_agent_messages(agent, messages)),
     )
 
 
@@ -1040,6 +1091,7 @@ class SwarmBody(Widget):
     def __init__(self, *args: object, **kwargs: object) -> None:
         super().__init__(*args, **kwargs)
         self._summary: DaemonSummary | None = None
+        self._messages: DaemonAgentMessages | None = None
         self._selected_agent = 0
 
     def compose(self) -> ComposeResult:
@@ -1058,20 +1110,39 @@ class SwarmBody(Widget):
         self.update_daemon(None)
 
     def update_daemon(self, summary: DaemonSummary | None) -> None:
+        previous_handle = self.selected_agent_handle()
         self._summary = summary
         self._clamp_selection()
+        if self.selected_agent_handle() != previous_handle:
+            self._messages = None
         self._render_swarm()
+
+    def update_agent_messages(self, messages: DaemonAgentMessages | None) -> None:
+        self._messages = messages
+        self._render_swarm()
+
+    def selected_agent_handle(self) -> str | None:
+        if self._summary is None or self._summary.state != "ok" or not self._summary.agents:
+            return None
+        index = max(0, min(self._selected_agent, len(self._summary.agents) - 1))
+        return self._summary.agents[index].agent_handle
 
     def action_select_prev(self) -> None:
         if self._agent_count() < 2:
             return
+        previous_handle = self.selected_agent_handle()
         self._selected_agent = max(0, self._selected_agent - 1)
+        if self.selected_agent_handle() != previous_handle:
+            self._messages = None
         self._render_swarm()
 
     def action_select_next(self) -> None:
         if self._agent_count() < 2:
             return
+        previous_handle = self.selected_agent_handle()
         self._selected_agent = min(self._agent_count() - 1, self._selected_agent + 1)
+        if self.selected_agent_handle() != previous_handle:
+            self._messages = None
         self._render_swarm()
 
     def _agent_count(self) -> int:
@@ -1091,7 +1162,7 @@ class SwarmBody(Widget):
             _render_swarm_agents(self._summary, self._selected_agent)
         )
         self.query_one("#swarm-detail-content", Static).update(
-            _render_swarm_detail(self._summary, self._selected_agent)
+            _render_swarm_detail(self._summary, self._selected_agent, self._messages)
         )
 
 
@@ -1479,8 +1550,14 @@ class CompanionApp(App[None]):
                 dashboard_body.update(model)
 
             swarm_body.update_daemon(self._poll_daemon_summary(self._snapshot.session_id))
+            agent_handle = swarm_body.selected_agent_handle()
+            if agent_handle is None:
+                swarm_body.update_agent_messages(None)
+            else:
+                swarm_body.update_agent_messages(self._poll_daemon_messages(self._snapshot.session_id, agent_handle))
         else:
             swarm_body.update_daemon(None)
+            swarm_body.update_agent_messages(None)
 
         try:
             base_commit, files = collect_changes(self._git, self._diff_mode)
@@ -1505,6 +1582,12 @@ class CompanionApp(App[None]):
             return self._daemon_source.poll(root_id)
         except Exception as error:  # noqa: BLE001
             return DaemonSummaryError(error=str(error))
+
+    def _poll_daemon_messages(self, root_id: str, agent_handle: str) -> DaemonAgentMessages:
+        try:
+            return self._daemon_source.poll_messages(root_id, agent_handle)
+        except Exception as error:  # noqa: BLE001
+            return DaemonAgentMessagesError(error=str(error))
 
 
 def run_companion(snapshot_path: Path, cwd: Path, scratch_dir: Path | None = None) -> None:
