@@ -970,7 +970,8 @@ class SwarmBody(Widget):
 
     def compose(self) -> ComposeResult:
         with Horizontal(id="swarm-layout"):
-            yield VerticalScroll(id="swarm-agents", classes="swarm-box")
+            with VerticalScroll(id="swarm-agents", classes="swarm-box"):
+                yield Static(id="swarm-agents-content")
             with VerticalScroll(id="swarm-detail", classes="swarm-box"):
                 yield Static(id="swarm-detail-content")
 
@@ -1012,11 +1013,8 @@ class SwarmBody(Widget):
         self._selected_agent = max(0, min(self._selected_agent, count - 1))
 
     def _render_swarm(self) -> None:
-        agents_panel = self.query_one("#swarm-agents", VerticalScroll)
-        agents_panel.remove_children()
-        self.call_next(
-            agents_panel.mount,
-            Static(_render_swarm_agents(self._summary, self._selected_agent)),
+        self.query_one("#swarm-agents-content", Static).update(
+            _render_swarm_agents(self._summary, self._selected_agent)
         )
         self.query_one("#swarm-detail-content", Static).update(
             _render_swarm_detail(self._summary, self._selected_agent)

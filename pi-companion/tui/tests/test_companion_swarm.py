@@ -239,6 +239,24 @@ def test_swarm_renders_left_list_and_ordered_detail_sections() -> None:
     asyncio.run(run())
 
 
+def test_swarm_repeated_updates_keep_one_agent_list_child() -> None:
+    swarm = SwarmBody()
+    summary = _summary([_agent(session_name="first", status="running")])
+
+    async def run() -> None:
+        async with _SwarmHarness(swarm).run_test() as pilot:
+            swarm.update_daemon(summary)
+            swarm.update_daemon(summary)
+            swarm.update_daemon(summary)
+            await pilot.pause(0.1)
+
+            agents_panel = swarm.query_one("#swarm-agents")
+            assert len(agents_panel.children) == 1
+            assert "first" in _to_text(agents_panel.children[0].render())
+
+    asyncio.run(run())
+
+
 def test_swarm_empty_unavailable_and_selection_clamping() -> None:
     swarm = SwarmBody()
     first = _agent(session_name="first", status="running")
