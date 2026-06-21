@@ -14,12 +14,21 @@ interface DispatchDetails {
 	agent: string;
 }
 
+interface PublicListAgentItem {
+	agentHandle: string;
+	role: string;
+	sessionName: string;
+	depth: number;
+	status: "pending" | "running" | "completed" | "failed" | "idle";
+	awaitable: boolean;
+}
+
 interface ListAgentsDetails {
-	agents: ListAgentItem[];
+	agents: PublicListAgentItem[];
 }
 
 interface WaitHandleResult {
-	agentId: string;
+	agentHandle: string;
 	status: "completed" | "failed" | "running" | "unknown";
 	result: string | null;
 	error: string | null;
@@ -36,11 +45,14 @@ const DispatchAgentParams = Type.Object({
 	name: Type.Optional(Type.String({ description: "Name suffix (auto-generated prefix)" })),
 });
 
+const AgentHandlesParam = Type.Union([
+	Type.String({ description: "Agent handle returned by dispatch_agent" }),
+	Type.Array(Type.String({ description: "Agent handle returned by dispatch_agent" })),
+]);
+
 const WaitForAgentParams = Type.Object({
-	handles: Type.Union([
-		Type.String({ description: "Agent handle returned by dispatch_agent" }),
-		Type.Array(Type.String({ description: "Agent handle returned by dispatch_agent" })),
-	]),
+	agent_handles: Type.Optional(AgentHandlesParam),
+	handles: Type.Optional(AgentHandlesParam),
 	timeout_s: Type.Optional(Type.Number({ minimum: 1, default: 600 })),
 });
 
@@ -81,7 +93,8 @@ function buildAgentHandle(agentLabel: string): string {
 	return `${handlePrefix(agentLabel)}-${adjective}-${noun}-${entropy.slice(4, 10)}`;
 }
 
-function normalizeHandles(input: string | string[]): string[] {
+function normalizeHandles(input: string | string[] | undefined): string[] {
+	if (input === undefined) return [];
 	const values = Array.isArray(input) ? input : [input];
 	return [...new Set(values.map((value) => value.trim()).filter(Boolean))];
 }
@@ -98,24 +111,38 @@ function hasText(value: string | null): value is string {
 
 function formatWaitItemText(item: WaitHandleResult): string {
 	if (item.status === "completed") {
-		return `✓ ${item.agentId} completed\n${hasText(item.result) ? item.result : "(no output)"}`;
+		return `✓ ${item.agentHandle} completed\n${hasText(item.result) ? item.result : "(no output)"}`;
 	}
 	if (item.status === "failed") {
-		const parts = [`✗ ${item.agentId} failed`, `error:\n${hasText(item.error) ? item.error : "unknown error"}`];
+		const parts = [`✗ ${item.agentHandle} failed`, `error:\n${hasText(item.error) ? item.error : "unknown error"}`];
 		if (hasText(item.result)) parts.push(`result:\n${item.result}`);
 		return parts.join("\n");
 	}
-	if (item.status === "unknown") return `? ${item.agentId} unknown agent`;
-	return `… ${item.agentId} still running (timed out)`;
+	if (item.status === "unknown") return `? ${item.agentHandle} unknown agent`;
+	return `… ${item.agentHandle} still running (timed out)`;
 }
 
-function buildListAgentLine(agent: ListAgentItem): string {
+function publicAgentHandle(agent: ListAgentItem): string {
+	return agent.agent_handle?.trim() || agent.agent_id;
+}
+
+function toPublicListAgent(agent: ListAgentItem): PublicListAgentItem {
+	return {
+		agentHandle: publicAgentHandle(agent),
+		role: agent.role,
+		sessionName: agent.session_name,
+		depth: agent.depth,
+		status: agent.status,
+		awaitable: agent.awaitable,
+	};
+}
+
+function buildListAgentLine(agent: PublicListAgentItem): string {
 	const awaitableText = agent.awaitable ? "awaitable" : "not awaitable";
-	const parent = agent.parent_id ? `parent ${agent.parent_id}` : "root";
-	return `${agent.agent_id} — ${agent.session_name}\n${agent.status} • ${awaitableText} • ${parent} • depth ${agent.depth}`;
+	return `${agent.agentHandle} — ${agent.sessionName}\n${agent.status} • ${awaitableText} • ${agent.role} • depth ${agent.depth}`;
 }
 
-function shortListAgentsSummary(agents: ListAgentItem[]): string {
+function shortListAgentsSummary(agents: PublicListAgentItem[]): string {
 	if (agents.length === 0) return "No agents found in this scope.";
 	return agents.map((agent) => buildListAgentLine(agent)).join("\n\n");
 }
@@ -279,7 +306,7 @@ export function registerDaemonTools(
 			}
 
 			const daemonClient = createDaemonClient(connection);
-			const agents = await daemonClient.listAgents({ awaitable: Boolean(params.awaitable) });
+			const agents = (await daemonClient.listAgents({ awaitable: Boolean(params.awaitable) })).map(toPublicListAgent);
 
 			return {
 				content: [{ type: "text", text: shortListAgentsSummary(agents) }],
@@ -296,7 +323,7 @@ export function registerDaemonTools(
 					agent.awaitable ? "success" : "muted",
 					agent.awaitable ? "awaitable" : "not awaitable",
 				);
-				return `${agent.agent_id} ${theme.fg("muted", agent.session_name)} ${status} ${awaitable}`;
+				return `${agent.agentHandle} ${theme.fg("muted", agent.sessionName)} ${status} ${awaitable}`;
 			});
 			return new Text(lines.join("\n"), 0, 0);
 		},
@@ -331,9 +358,9 @@ export function registerDaemonTools(
 				};
 			}
 
-			const agentIds = normalizeHandles(params.handles);
-			if (agentIds.length === 0) {
-				return { content: [{ type: "text", text: "No handles provided." }], isError: true, details: null };
+			const agentHandles = normalizeHandles(params.agent_handles ?? params.handles);
+			if (agentHandles.length === 0) {
+				return { content: [{ type: "text", text: "No agent handles provided." }], isError: true, details: null };
 			}
 
 			const timeoutS = Math.max(1, Math.floor(params.timeout_s ?? 600));
@@ -341,7 +368,7 @@ export function registerDaemonTools(
 			let results: WaitResultFrame["results"];
 			try {
 				results = await daemonClient.waitForAgents({
-					agentIds,
+					agentHandles,
 					timeoutS,
 					signal,
 				});
@@ -353,12 +380,12 @@ export function registerDaemonTools(
 				throw error;
 			}
 
-			const byId = new Map(results.map((item) => [item.agent_id, item]));
-			const items: WaitHandleResult[] = agentIds.map((agentId) => {
-				const hit = byId.get(agentId);
+			const byHandle = new Map(results.map((item) => [item.agent_handle, item]));
+			const items: WaitHandleResult[] = agentHandles.map((agentHandle) => {
+				const hit = byHandle.get(agentHandle);
 				if (!hit) {
 					return {
-						agentId,
+						agentHandle,
 						status: "unknown",
 						result: null,
 						error: null,
@@ -366,7 +393,7 @@ export function registerDaemonTools(
 				}
 				if (hit.status === "failed") {
 					return {
-						agentId,
+						agentHandle,
 						status: "failed",
 						result: hit.result,
 						error: hit.error,
@@ -374,7 +401,7 @@ export function registerDaemonTools(
 				}
 				if (hit.status === "completed") {
 					return {
-						agentId,
+						agentHandle,
 						status: "completed",
 						result: hit.result,
 						error: hit.error,
@@ -382,14 +409,14 @@ export function registerDaemonTools(
 				}
 				if (hit.status === "running") {
 					return {
-						agentId,
+						agentHandle,
 						status: "running",
 						result: null,
 						error: "still running (timed out)",
 					};
 				}
 				return {
-					agentId,
+					agentHandle,
 					status: "unknown",
 					result: null,
 					error: null,
@@ -406,15 +433,15 @@ export function registerDaemonTools(
 			if (details.aborted) return new Text(theme.fg("warning", "wait aborted"), 0, 0);
 			const lines = details.items.map((item) => {
 				if (item.status === "completed") {
-					return `${theme.fg("success", "✓")} ${item.agentId} ${theme.fg("muted", preview(item.result) || "completed")}`;
+					return `${theme.fg("success", "✓")} ${item.agentHandle} ${theme.fg("muted", preview(item.result) || "completed")}`;
 				}
 				if (item.status === "failed") {
-					return `${theme.fg("error", "✗")} ${item.agentId} ${theme.fg("error", preview(item.error) || "failed")}`;
+					return `${theme.fg("error", "✗")} ${item.agentHandle} ${theme.fg("error", preview(item.error) || "failed")}`;
 				}
 				if (item.status === "unknown") {
-					return `${theme.fg("warning", "?")} ${item.agentId} ${theme.fg("muted", "unknown agent")}`;
+					return `${theme.fg("warning", "?")} ${item.agentHandle} ${theme.fg("muted", "unknown agent")}`;
 				}
-				return `${theme.fg("warning", "…")} ${item.agentId} ${theme.fg("muted", "still running (timed out)")}`;
+				return `${theme.fg("warning", "…")} ${item.agentHandle} ${theme.fg("muted", "still running (timed out)")}`;
 			});
 			return new Text(lines.join("\n"), 0, 0);
 		},

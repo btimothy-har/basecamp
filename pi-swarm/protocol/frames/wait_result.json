@@ -1,6 +1,6 @@
 {
   "type": "wait_result",
-  "v": 6,
+  "v": 7,
   "results": [
     {
       "agent_id": "agent-001",

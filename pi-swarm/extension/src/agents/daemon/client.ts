@@ -572,7 +572,7 @@ export interface DaemonClient {
 	dispatchAgent(options: DaemonDispatchFrameOptions): Promise<DaemonDispatchResult>;
 	listAgents(input: { awaitable?: boolean }): Promise<ListAgentItem[]>;
 	waitForAgents(input: {
-		agentIds: string[];
+		agentHandles: string[];
 		timeoutS: number;
 		signal?: AbortSignal;
 	}): Promise<WaitResultFrame["results"]>;
@@ -618,14 +618,14 @@ function waitForFrame<T extends Frame["type"]>(
 	});
 }
 
-function hasAgentId(result: WaitResultItem): result is WaitResultItem & { agent_id: string } {
-	return typeof result.agent_id === "string";
+function hasAgentHandle(result: WaitResultItem): result is WaitResultItem & { agent_handle: string } {
+	return typeof result.agent_handle === "string";
 }
 
-function sameAsRequested(resultAgentIds: string[], requestedSet: Set<string>): boolean {
-	const resultSet = new Set(resultAgentIds);
+function sameAsRequested(resultAgentHandles: string[], requestedSet: Set<string>): boolean {
+	const resultSet = new Set(resultAgentHandles);
 	if (resultSet.size !== requestedSet.size) return false;
-	return [...requestedSet].every((agentId) => resultSet.has(agentId));
+	return [...requestedSet].every((agentHandle) => resultSet.has(agentHandle));
 }
 
 function dedupeRequestedResults(
@@ -634,12 +634,14 @@ function dedupeRequestedResults(
 ): WaitResultFrame["results"] {
 	const requestedMap = new Map(
 		results
-			.filter((result) => hasAgentId(result) && requested.has(result.agent_id))
-			.map((result) => [result.agent_id, result]),
+			.filter((result) => hasAgentHandle(result) && requested.has(result.agent_handle))
+			.map((result) => [result.agent_handle, result]),
 	);
 	const deduped: WaitResultFrame["results"] = [];
-	for (const agentId of requested) {
-		deduped.push(requestedMap.get(agentId) ?? { agent_id: agentId, status: "unknown", result: null, error: null });
+	for (const agentHandle of requested) {
+		deduped.push(
+			requestedMap.get(agentHandle) ?? { agent_handle: agentHandle, status: "unknown", result: null, error: null },
+		);
 	}
 	return deduped;
 }
@@ -685,11 +687,12 @@ export function createDaemonClient(connection: DaemonConnection): DaemonClient {
 			return frame.agents;
 		},
 		waitForAgents: async (input) => {
-			const requested = new Set(input.agentIds);
+			const requested = new Set(input.agentHandles);
 			connection.send({
 				type: "wait",
 				v: PROTOCOL_VERSION,
-				agent_ids: input.agentIds,
+				agent_ids: [],
+				agent_handles: input.agentHandles,
 				mode: "all",
 				timeout_s: input.timeoutS,
 			});
@@ -698,7 +701,7 @@ export function createDaemonClient(connection: DaemonConnection): DaemonClient {
 				"wait_result",
 				(candidate) =>
 					sameAsRequested(
-						candidate.results.filter(hasAgentId).map((result) => result.agent_id),
+						candidate.results.filter(hasAgentHandle).map((result) => result.agent_handle),
 						requested,
 					),
 				input.signal,

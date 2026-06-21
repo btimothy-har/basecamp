@@ -545,7 +545,7 @@ describe("daemon async tools", () => {
 
 		const executePromise = waitTool.execute(
 			"1",
-			{ handles: ["agent-1", "agent-2"], timeout_s: 30 },
+			{ agent_handles: ["scout-amber-fox-a1b2c3", "worker-mossy-lynx-d4e5f6"], timeout_s: 30 },
 			new AbortController().signal,
 			() => {},
 			{},
@@ -554,23 +554,29 @@ describe("daemon async tools", () => {
 		await new Promise((resolve) => setImmediate(resolve));
 		const outbound = connection.sent[0] as Extract<Frame, { type: "wait" }>;
 		assert.equal(outbound.type, "wait");
-		assert.deepEqual(outbound.agent_ids, ["agent-1", "agent-2"]);
+		assert.deepEqual(outbound.agent_ids, []);
+		assert.deepEqual(outbound.agent_handles, ["scout-amber-fox-a1b2c3", "worker-mossy-lynx-d4e5f6"]);
 		assert.equal(outbound.timeout_s, 30);
 
 		connection.emit({
 			type: "wait_result",
 			v: PROTOCOL_VERSION,
 			results: [
-				{ agent_id: "agent-1", status: "completed", result: "duplicate", error: null },
-				{ agent_id: "agent-1", status: "completed", result: "duplicate", error: null },
+				{ agent_handle: "scout-amber-fox-a1b2c3", status: "completed", result: "duplicate", error: null },
+				{ agent_handle: "scout-amber-fox-a1b2c3", status: "completed", result: "duplicate", error: null },
 			],
 		});
 		connection.emit({
 			type: "wait_result",
 			v: PROTOCOL_VERSION,
 			results: [
-				{ agent_id: "agent-1", status: "completed", result: "done", error: null },
-				{ agent_id: "agent-2", status: "failed", result: "compensation skipped", error: "boom" },
+				{ agent_handle: "scout-amber-fox-a1b2c3", status: "completed", result: "done", error: null },
+				{
+					agent_handle: "worker-mossy-lynx-d4e5f6",
+					status: "failed",
+					result: "compensation skipped",
+					error: "boom",
+				},
 			],
 		});
 
@@ -592,7 +598,7 @@ describe("daemon async tools", () => {
 
 		const executePromise = waitTool.execute(
 			"1",
-			{ handles: ["agent-1", "agent-2", "agent-3"], timeout_s: 30 },
+			{ handles: ["scout-running", "scout-missing", "scout-complete"], timeout_s: 30 },
 			new AbortController().signal,
 			() => {},
 			{},
@@ -601,16 +607,17 @@ describe("daemon async tools", () => {
 		await new Promise((resolve) => setImmediate(resolve));
 		const outbound = connection.sent[0] as Extract<Frame, { type: "wait" }>;
 		assert.equal(outbound.type, "wait");
-		assert.deepEqual(outbound.agent_ids, ["agent-1", "agent-2", "agent-3"]);
+		assert.deepEqual(outbound.agent_ids, []);
+		assert.deepEqual(outbound.agent_handles, ["scout-running", "scout-missing", "scout-complete"]);
 		assert.equal(outbound.timeout_s, 30);
 
 		connection.emit({
 			type: "wait_result",
 			v: PROTOCOL_VERSION,
 			results: [
-				{ agent_id: "agent-1", status: "running", result: null, error: null },
-				{ agent_id: "agent-2", status: "unknown", result: null, error: null },
-				{ agent_id: "agent-3", status: "completed", result: "ok", error: null },
+				{ agent_handle: "scout-running", status: "running", result: null, error: null },
+				{ agent_handle: "scout-missing", status: "unknown", result: null, error: null },
+				{ agent_handle: "scout-complete", status: "completed", result: "ok", error: null },
 			],
 		});
 
@@ -620,7 +627,7 @@ describe("daemon async tools", () => {
 		assert.equal(result.details.items[1].status, "unknown");
 		assert.equal(result.details.items[2].status, "completed");
 		assert.match(result.content[0].text, /still running \(timed out\)/);
-		assert.match(result.content[0].text, /\? agent-2 unknown agent/);
+		assert.match(result.content[0].text, /\? scout-missing unknown agent/);
 	});
 
 	it("wait_for_agent fails before daemon connection/send when agents skill has not been invoked", async () => {
@@ -638,7 +645,7 @@ describe("daemon async tools", () => {
 
 		const result = await waitTool.execute(
 			"1",
-			{ handles: ["agent-1"], timeout_s: 30 },
+			{ agent_handles: ["scout-amber-fox-a1b2c3"], timeout_s: 30 },
 			new AbortController().signal,
 			() => {},
 			{},
@@ -670,7 +677,8 @@ describe("daemon async tools", () => {
 			request_id: outbound.request_id,
 			agents: [
 				{
-					agent_id: "agent-1",
+					agent_id: "00000000-0000-4000-8000-000000000001",
+					agent_handle: "scout-amber-fox-a1b2c3",
 					parent_id: "session-1",
 					role: "agent",
 					session_name: "agent-one",
@@ -679,8 +687,9 @@ describe("daemon async tools", () => {
 					awaitable: true,
 				},
 				{
-					agent_id: "agent-2",
-					parent_id: "agent-1",
+					agent_id: "00000000-0000-4000-8000-000000000002",
+					agent_handle: "worker-mossy-lynx-d4e5f6",
+					parent_id: "00000000-0000-4000-8000-000000000001",
 					role: "agent",
 					session_name: "agent-two",
 					depth: 2,
@@ -694,9 +703,12 @@ describe("daemon async tools", () => {
 		const result = await executePromise;
 		assert.equal(result.isError, undefined);
 		assert.equal(result.details.agents.length, 2);
-		assert.equal(result.details.agents[0].agent_id, "agent-1");
+		assert.equal(result.details.agents[0].agentHandle, "scout-amber-fox-a1b2c3");
+		assert.equal("agent_id" in result.details.agents[0], false);
 		assert.equal(result.details.agents[1].status, "completed");
-		assert.match(result.content[0].text, /agent-1/);
+		assert.match(result.content[0].text, /scout-amber-fox-a1b2c3/);
+		assert.match(result.content[0].text, /worker-mossy-lynx-d4e5f6/);
+		assert.doesNotMatch(result.content[0].text, /00000000-0000-4000-8000-000000000001/);
 		assert.match(result.content[0].text, /agent-one/);
 		assert.match(result.content[0].text, /agent-two/);
 		assert.match(result.content[0].text, /running/);
@@ -730,7 +742,7 @@ describe("daemon async tools", () => {
 		const controller = new AbortController();
 		const executePromise = waitTool.execute(
 			"1",
-			{ handles: "agent-1", timeout_s: 30 },
+			{ agent_handles: "scout-amber-fox-a1b2c3", timeout_s: 30 },
 			controller.signal,
 			() => {},
 			{},

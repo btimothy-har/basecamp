@@ -1,6 +1,6 @@
 {
   "type": "dispatch",
-  "v": 6,
+  "v": 7,
   "run_id": "run-001",
   "agent_id": "agent-42",
   "spec": {

@@ -1,6 +1,6 @@
 {
   "type": "list_agents_result",
-  "v": 6,
+  "v": 7,
   "request_id": "list-001",
   "agents": [
     {

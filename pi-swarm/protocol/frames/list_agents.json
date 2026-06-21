@@ -1,6 +1,6 @@
 {
   "type": "list_agents",
-  "v": 6,
+  "v": 7,
   "request_id": "list-001",
   "awaitable": true
 }
