@@ -73,7 +73,7 @@ class _SwarmHarness(App[None]):
         yield self.swarm
 
 
-def test_daemon_parser_reads_task_activity_and_latest_message() -> None:
+def test_daemon_parser_reads_task_and_activity() -> None:
     payload = {
         "session_active": True,
         "root_id": "root",
@@ -116,7 +116,6 @@ def test_daemon_parser_reads_task_activity_and_latest_message() -> None:
                         "hidden": "ignored",
                     }
                 ],
-                "latest_message": "safe visible output",
             }
         ],
     }
@@ -138,7 +137,6 @@ def test_daemon_parser_reads_task_activity_and_latest_message() -> None:
     assert not hasattr(agent.recent_activity[0], "toolName")
     assert not hasattr(agent.recent_activity[0], "turnIndex")
     assert not hasattr(agent.recent_activity[0], "hidden")
-    assert agent.latest_message == "safe visible output"
 
 
 def test_daemon_parser_tolerates_malformed_optional_projection() -> None:
@@ -161,7 +159,6 @@ def test_daemon_parser_tolerates_malformed_optional_projection() -> None:
                 "ended_at": None,
                 "task": {"goal": 123, "progress": {"completed": "bad"}, "tasks": ["bad"]},
                 "recent_activity": {"bad": "shape"},
-                "latest_message": {"not": "a string"},
             }
         ],
     }
@@ -176,18 +173,15 @@ def test_daemon_parser_tolerates_malformed_optional_projection() -> None:
     assert agent.task.task_plan == []
     assert agent.task.current_task is None
     assert agent.recent_activity == []
-    assert agent.latest_message is None
 
 
 def test_swarm_renders_left_list_and_ordered_detail_sections() -> None:
     swarm = SwarmBody()
-    long_message = "latest " + "x" * 400
     long_tool = "tool-" + "y" * 220
     summary = _summary(
         [
             _agent(
                 task=result_task(),
-                latest_message=long_message,
                 recent_activity=[
                     DaemonRecentActivity(
                         kind="tool",
@@ -233,9 +227,10 @@ def test_swarm_renders_left_list_and_ordered_detail_sections() -> None:
             assert "Do current work" in detail_text
             assert "Important note" in detail_text
             assert "✎ note" in detail_text
-            assert detail_text.index("Current task") < detail_text.index("✎ note") < detail_text.index("Latest message")
-            assert "Latest message" in detail_text
-            assert "…" in detail_text
+            assert (
+                detail_text.index("Current task") < detail_text.index("✎ note") < detail_text.index("Recent activity")
+            )
+            assert "Latest message" not in detail_text
             assert "Recent activity" in detail_text
             assert "tool" in detail_text
             assert "turn 3" in detail_text

@@ -509,7 +509,6 @@ def test_runs_summary_endpoint_omits_sensitive_and_full_fields(tmp_path: Path) -
         "ended_at",
         "task",
         "recent_activity",
-        "latest_message",
     }
     assert "run_id" not in summary_agent
     assert "agent_id" not in summary_agent
@@ -522,7 +521,6 @@ def test_runs_summary_endpoint_omits_sensitive_and_full_fields(tmp_path: Path) -
     assert len(summary_agent["error_preview"]) == 160
     assert summary_agent["task"] is None
     assert summary_agent["recent_activity"] == []
-    assert summary_agent["latest_message"] is None
 
 
 def test_runs_summary_endpoint_projects_task_log_and_activity(tmp_path: Path) -> None:
@@ -600,10 +598,6 @@ def test_runs_summary_endpoint_projects_task_log_and_activity(tmp_path: Path) ->
     assert summary_agent["task"] == {
         "goal": "Verify summary",
         "progress": {"completed": 1, "deleted": 0, "total": 2},
-        "tasks": [
-            {"index": 0, "label": "Done", "status": "completed"},
-            {"index": 2, "label": "Current", "status": "active"},
-        ],
         "task_plan": [
             {"index": 0, "label": "Done", "status": "completed"},
             {"index": 2, "label": "Current", "status": "active"},

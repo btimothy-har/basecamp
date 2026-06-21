@@ -95,7 +95,6 @@ class DaemonSummaryAgent:
     ended_at: str | None
     task: DaemonTaskProjection | None = None
     recent_activity: list[DaemonRecentActivity] | None = None
-    latest_message: str | None = None
 
 
 @dataclass(frozen=True)
@@ -349,13 +348,6 @@ def _parse_recent_activity(payload: object) -> list[DaemonRecentActivity] | None
     return items
 
 
-def _safe_optional_str(payload: dict[str, Any], key: str) -> str | None:
-    try:
-        return _expect_optional_str(payload, key)
-    except TypeError:
-        return None
-
-
 def _parse_payload(payload: object) -> DaemonSummaryOk:
     if not isinstance(payload, dict):
         raise TypeError
@@ -391,7 +383,6 @@ def _parse_payload(payload: object) -> DaemonSummaryOk:
             ended_at=_expect_optional_str(raw_agent, "ended_at"),
             task=_parse_task_projection(raw_agent.get("task")),
             recent_activity=_parse_recent_activity(raw_agent.get("recent_activity")),
-            latest_message=_safe_optional_str(raw_agent, "latest_message"),
         )
         for raw_agent in agents_payload
         if isinstance(raw_agent, dict)

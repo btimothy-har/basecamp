@@ -689,7 +689,6 @@ class Store:
                 "deleted": deleted,
                 "total": total,
             },
-            "tasks": tasks,
             "task_plan": tasks,
             "current_task": current_task,
         }
@@ -814,7 +813,6 @@ class Store:
                 "ended_at": _display_text(row["ended_at"]),
                 "task": self._project_task_log(row["agent_id"]),
                 "recent_activity": self._project_recent_activity(row["run_id"]),
-                "latest_message": None,
             }
             for row in agent_rows
         ]

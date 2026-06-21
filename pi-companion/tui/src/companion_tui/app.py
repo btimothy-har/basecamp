@@ -376,12 +376,6 @@ def _render_swarm_current_task(agent: DaemonSummaryAgent) -> RenderableType:
     return Group(header, annotation)
 
 
-def _render_swarm_latest_message(agent: DaemonSummaryAgent) -> Text:
-    if not agent.latest_message:
-        return Text("—", style="dim")
-    return Text(_truncate_preview(agent.latest_message, max_length=300))
-
-
 def _render_swarm_recent_activity(agent: DaemonSummaryAgent) -> Text:
     if not agent.recent_activity:
         return Text("—", style="dim")
@@ -413,7 +407,6 @@ def _render_swarm_detail(summary: DaemonSummary | None, selected_index: int) -> 
         _render_swarm_header(agent),
         _swarm_section("Task plan", _render_swarm_task_plan(agent)),
         _swarm_section("Current task", _render_swarm_current_task(agent)),
-        _swarm_section("Latest message", _render_swarm_latest_message(agent)),
         _swarm_section("Recent activity", _render_swarm_recent_activity(agent)),
     )
 

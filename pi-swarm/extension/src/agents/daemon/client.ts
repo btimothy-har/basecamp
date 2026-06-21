@@ -28,9 +28,17 @@ export interface HealthPingFail {
 
 export type HealthPingResult = HealthPingOk | HealthPingFail;
 
+export interface RunSummaryTaskPlanItem {
+	index?: number | null;
+	label?: string | null;
+	status?: string | null;
+}
+
 export interface RunSummaryTaskInfo {
 	goal?: string | null;
+	task_plan?: RunSummaryTaskPlanItem[];
 	current_task?: {
+		index?: number | null;
 		label?: string | null;
 		status?: string | null;
 	} | null;
@@ -386,15 +394,34 @@ function optionalString(value: unknown): string | null {
 	return typeof value === "string" ? value : null;
 }
 
+function optionalNumber(value: unknown): number | null {
+	return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
+function parseRunSummaryTaskPlanItem(value: unknown): RunSummaryTaskPlanItem | null {
+	if (!value || typeof value !== "object") return null;
+	const record = value as Record<string, unknown>;
+	return {
+		index: optionalNumber(record.index),
+		label: optionalString(record.label),
+		status: optionalString(record.status),
+	};
+}
+
 function parseRunSummaryTask(value: unknown): RunSummaryTaskInfo | null {
 	if (!value || typeof value !== "object") return null;
 	const record = value as Record<string, unknown>;
 	const currentTask = record.current_task;
+	const taskPlan = Array.isArray(record.task_plan)
+		? record.task_plan.map(parseRunSummaryTaskPlanItem).filter((item): item is RunSummaryTaskPlanItem => item !== null)
+		: [];
 	return {
 		goal: optionalString(record.goal),
+		task_plan: taskPlan,
 		current_task:
 			currentTask && typeof currentTask === "object"
 				? {
+						index: optionalNumber((currentTask as Record<string, unknown>).index),
 						label: optionalString((currentTask as Record<string, unknown>).label),
 						status: optionalString((currentTask as Record<string, unknown>).status),
 					}
@@ -405,15 +432,35 @@ function parseRunSummaryTask(value: unknown): RunSummaryTaskInfo | null {
 function parseRunSummaryAgent(value: unknown): RunSummaryAgent | null {
 	if (!value || typeof value !== "object") return null;
 	const record = value as Record<string, unknown>;
+	const agentHandle = optionalString(record.agent_handle);
+	const sessionName = optionalString(record.session_name);
+	const status = optionalString(record.status);
+	if (agentHandle === null || sessionName === null || status === null) return null;
 	return {
-		agent_handle: optionalString(record.agent_handle),
+		agent_handle: agentHandle,
 		agent_type: optionalString(record.agent_type),
-		session_name: optionalString(record.session_name),
-		status: optionalString(record.status),
+		session_name: sessionName,
+		status,
 		created_at: optionalString(record.created_at),
 		started_at: optionalString(record.started_at),
 		ended_at: optionalString(record.ended_at),
 		task: parseRunSummaryTask(record.task),
+	};
+}
+
+export function buildRunSummaryPath(rootId: string, limit: number): string {
+	const safeLimit = Math.max(0, Math.min(50, Math.trunc(limit)));
+	return `/runs/summary?root_id=${encodeURIComponent(rootId)}&limit=${safeLimit}`;
+}
+
+export function parseRunSummaryResponse(parsed: unknown): RunSummaryResult | null {
+	if (!parsed || typeof parsed !== "object") return null;
+	const record = parsed as Record<string, unknown>;
+	const rawAgents = Array.isArray(record.agents) ? record.agents : [];
+	return {
+		root_id: optionalString(record.root_id),
+		session_active: typeof record.session_active === "boolean" ? record.session_active : undefined,
+		agents: rawAgents.map(parseRunSummaryAgent).filter((agent): agent is RunSummaryAgent => agent !== null),
 	};
 }
 
@@ -423,17 +470,8 @@ export async function fetchRunSummary(
 	limit: number,
 	timeoutMs = DEFAULT_HEALTH_TIMEOUT_MS,
 ): Promise<RunSummaryResult | null> {
-	const safeLimit = Math.max(0, Math.min(50, Math.trunc(limit)));
-	const path = `/runs/summary?root_id=${encodeURIComponent(rootId)}&limit=${safeLimit}`;
-	const parsed = await requestJsonOverUds(socketPath, path, timeoutMs);
-	if (!parsed || typeof parsed !== "object") return null;
-	const record = parsed as Record<string, unknown>;
-	const rawAgents = Array.isArray(record.agents) ? record.agents : [];
-	return {
-		root_id: optionalString(record.root_id),
-		session_active: typeof record.session_active === "boolean" ? record.session_active : undefined,
-		agents: rawAgents.map(parseRunSummaryAgent).filter((agent): agent is RunSummaryAgent => agent !== null),
-	};
+	const parsed = await requestJsonOverUds(socketPath, buildRunSummaryPath(rootId, limit), timeoutMs);
+	return parseRunSummaryResponse(parsed);
 }
 
 export async function ensureDaemon(options: EnsureDaemonOptions = {}): Promise<{ socketPath: string }> {

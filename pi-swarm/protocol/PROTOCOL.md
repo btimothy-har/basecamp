@@ -148,18 +148,26 @@ Rows also carry the private `agent_id` for trusted extension retasking plumbing;
 
 ### `GET /runs/summary`
 
-Returns companion-dashboard observability under the requested root session:
+Returns companion Swarm observability under the requested root session.
 
-- `counts`: run status counts for scoped run history.
-- `agents`: one safe row per same-root non-session agent, keyed by `agent_handle` and current-run status/previews.
+Query parameters:
+- `root_id` (required): root session agent id whose subtree is summarized.
+- `limit` (optional, default `5`): maximum number of agent rows to return. The daemon clamps this to `0`–`100`.
+
+Response schema:
+- `root_id`: requested root id.
+- `counts`: run status counts for scoped run history: `pending`, `running`, `completed`, `failed`, `total`.
+- `agents`: one safe row per same-root non-session agent, ordered by current-run/agent recency.
 - `session_active`: whether the root session is currently registered.
 
-Each summary row may include:
-- `task`: safe projection from `~/.pi/basecamp/tasks/<agent-id>.json`, or `null` if absent/invalid. It contains only sanitized `goal`, `progress`, bounded `tasks`/`task_plan` entries (`index`, `label`, `status`), and `current_task` (`index`, `label`, `status`, `description`, `notes`). Deleted tasks are omitted from the plan but counted in progress.
-- `recent_activity`: bounded telemetry projection containing only allowlisted display fields: event `kind`, `seq`, timestamp, `toolName`, and `turnIndex`.
-- `latest_message`: currently `null`; no safe explicit visible-message source is exposed yet.
+Each summary row contains:
+- `agent_handle`, `agent_type`, `role`, `session_name`.
+- `status`: one of `idle`, `pending`, `running`, `completed`, or `failed`.
+- `result_preview`, `error_preview`, `exit_code`, `created_at`, `started_at`, `ended_at`.
+- `task`: safe projection from `~/.pi/basecamp/tasks/<agent-id>.json`, or `null` if absent/invalid. It contains sanitized `goal`, `progress: {completed, deleted, total}`, canonical bounded `task_plan` entries (`index`, `label`, `status`), and `current_task` (`index`, `label`, `status`, `description`, `notes`). Task status values are `pending`, `active`, `completed`, and `deleted`; deleted tasks are omitted from `task_plan` but counted in `progress.deleted`.
+- `recent_activity`: bounded telemetry projection containing only allowlisted display fields: event `kind`, `seq`, daemon `timestamp`, `toolName`, and `turnIndex`. Current event kinds are `tool_execution_start`, `tool_execution_end`, and `turn_end`.
 
-Summary rows do not include private `run_id`, private `agent_id`, report tokens, prompts, full results, errors, spawn specs, env, cwd, raw telemetry payloads/args/outputs, or hidden model thinking. Display strings are control/ANSI stripped and length capped.
+Summary rows do not include private `run_id`, private `agent_id`, report tokens, prompts, full results, errors, spawn specs, env, cwd, raw telemetry payloads/args/outputs, tool call ids, visible/model message text, or hidden model thinking. Display strings are control/ANSI stripped and length capped.
 
 ### `error` daemon → client
 

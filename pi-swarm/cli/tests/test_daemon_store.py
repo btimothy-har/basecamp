@@ -919,7 +919,6 @@ def test_get_run_summary_does_not_expose_spec_or_tokens(tmp_path: Path) -> None:
         "ended_at",
         "task",
         "recent_activity",
-        "latest_message",
     }
     assert "run_id" not in summary_agent
     assert "agent_id" not in summary_agent
@@ -932,7 +931,6 @@ def test_get_run_summary_does_not_expose_spec_or_tokens(tmp_path: Path) -> None:
     assert len(summary_agent["error_preview"]) == 160
     assert summary_agent["task"] is None
     assert summary_agent["recent_activity"] == []
-    assert summary_agent["latest_message"] is None
 
 
 def test_get_run_summary_projects_safe_task_log_and_activity(tmp_path: Path) -> None:
@@ -1035,11 +1033,6 @@ def test_get_run_summary_projects_safe_task_log_and_activity(tmp_path: Path) -> 
     assert agent["task"] == {
         "goal": "Ship observability",
         "progress": {"completed": 1, "deleted": 1, "total": 3},
-        "tasks": [
-            {"index": 0, "label": "Done", "status": "completed"},
-            {"index": 5, "label": "Current task", "status": "active"},
-            {"index": 7, "label": "Pending", "status": "pending"},
-        ],
         "task_plan": [
             {"index": 0, "label": "Done", "status": "completed"},
             {"index": 5, "label": "Current task", "status": "active"},
@@ -1064,7 +1057,6 @@ def test_get_run_summary_projects_safe_task_log_and_activity(tmp_path: Path) -> 
     ]
     assert agent["recent_activity"][0]["timestamp"] != "agent-supplied-timestamp"
     assert all(activity["kind"] != "raw_model_delta" for activity in agent["recent_activity"])
-    assert agent["latest_message"] is None
     assert all(
         key not in agent["recent_activity"][0]
         for key in ["args", "output", "toolCallId", "cwd", "env", "error", "payload"]
