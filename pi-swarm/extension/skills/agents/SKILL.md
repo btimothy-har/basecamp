@@ -1,16 +1,16 @@
 ---
 name: agents
-description: "Use async daemon agents via dispatch_agent, list_agents, and wait_for_agent. There is no synchronous agent tool."
+description: "Delegate bounded work to named or ad-hoc agents, track active work, and collect results."
 ---
 
 # Agents
 
-Use this skill to delegate bounded work to async daemon agents while you keep working.
+Use this skill to delegate bounded work to agents while you keep working.
 
-These tools are gated by this skill and require the basecamp swarm daemon to be connected:
-- `dispatch_agent({ agent?, task, name? })` — start an async agent. The returned handle is the `agentId` in the tool result details.
+Use these tools for agent delegation; if agents are unavailable, they return a tool error:
+- `dispatch_agent({ agent?, task, name? })` — start an agent. The returned handle is the `agentId` in the tool result details.
 - `wait_for_agent({ handles: string | string[], timeout_s? })` — wait for one or more agent ids. `timeout_s` defaults to 600.
-- `list_agents({ awaitable?: true })` — list visible agents in your current daemon root. `awaitable` filters to agents with a current run you dispatched.
+- `list_agents({ awaitable?: true })` — list visible agents in your current scope. `awaitable` filters to agents with a current run you dispatched.
 
 ## Choosing an agent
 
