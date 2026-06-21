@@ -26,7 +26,12 @@ import type { GoalCycle, ReviewState, TaskStatus, TasksAccess } from "../tasks/t
 import { computeGoalContextReview, computeSectionReview, freshReview, tasksMatch } from "./draft-logic";
 import type { PlanDraft } from "./review";
 import { SECTION_NAMES, showPlanReadOnly, showReviewOverlay } from "./review";
-import { buildExecutionWorktreeChoices, suggestWorktreeLabel } from "./worktree-choices.ts";
+import {
+	buildExecutionWorktreeChoices,
+	CUSTOM_WORKTREE_CHOICE,
+	customWorktreeLabel,
+	suggestWorktreeLabel,
+} from "./worktree-choices.ts";
 
 // ============================================================================
 // Draft diffing — preserve approvals on unchanged content
@@ -210,6 +215,10 @@ async function selectWorktreeLabel(
 
 	const choice = await ctx.ui.select("Execution worktree", choices);
 	if (!choice) return null;
+	if (choice === CUSTOM_WORKTREE_CHOICE) {
+		const label = await ctx.ui.input("Custom worktree label", suggested);
+		return label?.trim() ? customWorktreeLabel(label) : null;
+	}
 	return labelsByChoice.get(choice) ?? null;
 }
 

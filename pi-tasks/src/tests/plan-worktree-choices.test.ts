@@ -3,6 +3,8 @@ import { describe, it } from "node:test";
 import type { WorkspaceWorktree } from "pi-core/platform/workspace.ts";
 import {
 	buildExecutionWorktreeChoices,
+	CUSTOM_WORKTREE_CHOICE,
+	customWorktreeLabel,
 	suggestWorktreeLabel,
 	userWorktreePrefix,
 } from "../planning/worktree-choices.ts";
@@ -39,6 +41,11 @@ describe("suggestWorktreeLabel", () => {
 		assert.equal(label, "bt-abcdefghijklmnopqrstuvwxyz012");
 		assert.equal(label.length, 32);
 	});
+
+	it("prefixes custom labels with the user prefix", () => {
+		assert.equal(customWorktreeLabel("custom label", "btimothyhar"), "bt-custom-label");
+		assert.equal(customWorktreeLabel("bt-custom-label", "btimothyhar"), "bt-custom-label");
+	});
 });
 
 describe("buildExecutionWorktreeChoices", () => {
@@ -47,7 +54,12 @@ describe("buildExecutionWorktreeChoices", () => {
 
 		const result = buildExecutionWorktreeChoices("suggested", existing, null);
 
-		assert.deepEqual(result.choices, ["Create: suggested", "Resume: other (wt/other)", "Resume: detached (detached)"]);
+		assert.deepEqual(result.choices, [
+			"Create: suggested",
+			"Resume: other (wt/other)",
+			"Resume: detached (detached)",
+			CUSTOM_WORKTREE_CHOICE,
+		]);
 		assert.equal(result.labelsByChoice.get("Create: suggested"), "suggested");
 		assert.equal(result.labelsByChoice.get("Resume: detached (detached)"), "detached");
 	});
@@ -64,6 +76,7 @@ describe("buildExecutionWorktreeChoices", () => {
 			"Current: current (wt/current)",
 			"Create: suggested",
 			"Resume: other (wt/other)",
+			CUSTOM_WORKTREE_CHOICE,
 		]);
 		assert.equal(result.labelsByChoice.get("Create: suggested"), "suggested");
 		assert.equal(result.labelsByChoice.get("Resume: other (wt/other)"), "other");
@@ -75,7 +88,12 @@ describe("buildExecutionWorktreeChoices", () => {
 
 		const result = buildExecutionWorktreeChoices("suggested", existing, active);
 
-		assert.deepEqual(result.choices, ["Create: suggested", "Resume: current (wt/current)", "Resume: other (wt/other)"]);
+		assert.deepEqual(result.choices, [
+			"Create: suggested",
+			"Resume: current (wt/current)",
+			"Resume: other (wt/other)",
+			CUSTOM_WORKTREE_CHOICE,
+		]);
 	});
 
 	it("suppresses the suggested entry when the active worktree is the suggestion", () => {
@@ -84,7 +102,11 @@ describe("buildExecutionWorktreeChoices", () => {
 
 		const result = buildExecutionWorktreeChoices("suggested", existing, active);
 
-		assert.deepEqual(result.choices, ["Current: suggested (wt/suggested)", "Resume: other (wt/other)"]);
+		assert.deepEqual(result.choices, [
+			"Current: suggested (wt/suggested)",
+			"Resume: other (wt/other)",
+			CUSTOM_WORKTREE_CHOICE,
+		]);
 		assert.equal(result.labelsByChoice.get("Current: suggested (wt/suggested)"), "suggested");
 	});
 
@@ -98,6 +120,7 @@ describe("buildExecutionWorktreeChoices", () => {
 			"Current: current (wt/current)",
 			"Resume: suggested (wt/suggested)",
 			"Resume: other (wt/other)",
+			CUSTOM_WORKTREE_CHOICE,
 		]);
 		assert.deepEqual(Array.from(result.labelsByChoice.entries()), [
 			["Current: current (wt/current)", "current"],
@@ -111,7 +134,7 @@ describe("buildExecutionWorktreeChoices", () => {
 
 		const result = buildExecutionWorktreeChoices("suggested", existing, null);
 
-		assert.deepEqual(result.choices, ["Resume: suggested (wt/suggested)"]);
+		assert.deepEqual(result.choices, ["Resume: suggested (wt/suggested)", CUSTOM_WORKTREE_CHOICE]);
 		assert.equal(result.labelsByChoice.get("Resume: suggested (wt/suggested)"), "suggested");
 	});
 
@@ -121,7 +144,7 @@ describe("buildExecutionWorktreeChoices", () => {
 
 		const result = buildExecutionWorktreeChoices("suggested", existing, active);
 
-		assert.deepEqual(result.choices, ["Current: current (detached)", "Create: suggested"]);
+		assert.deepEqual(result.choices, ["Current: current (detached)", "Create: suggested", CUSTOM_WORKTREE_CHOICE]);
 	});
 
 	it("omits an unregistered active worktree from the selector", () => {
@@ -130,13 +153,13 @@ describe("buildExecutionWorktreeChoices", () => {
 
 		const result = buildExecutionWorktreeChoices("suggested", existing, active);
 
-		assert.deepEqual(result.choices, ["Create: suggested", "Resume: other (wt/other)"]);
+		assert.deepEqual(result.choices, ["Create: suggested", "Resume: other (wt/other)", CUSTOM_WORKTREE_CHOICE]);
 	});
 
-	it("does not include a custom label choice", () => {
+	it("leaves the custom choice unmapped", () => {
 		const result = buildExecutionWorktreeChoices("suggested", [], null);
 
-		assert.deepEqual(result.choices, ["Create: suggested"]);
-		assert.deepEqual(Array.from(result.labelsByChoice.entries()), [["Create: suggested", "suggested"]]);
+		assert.deepEqual(result.choices, ["Create: suggested", CUSTOM_WORKTREE_CHOICE]);
+		assert.equal(result.labelsByChoice.get(CUSTOM_WORKTREE_CHOICE), undefined);
 	});
 });
