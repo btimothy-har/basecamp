@@ -1,4 +1,3 @@
-import * as path from "node:path";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { registerWorkspaceAllowedRootsProvider, requireWorkspaceState } from "pi-core/platform/workspace.ts";
 import { resolveProjectState } from "./config.ts";
@@ -39,13 +38,5 @@ export function registerProjectSession(pi: ExtensionAPI): void {
 		for (const warning of requireProjectState().warnings) {
 			ctx.ui.notify(`projects: ${warning}`, "warning");
 		}
-
-		const latestWorkspaceState = requireWorkspaceState();
-		const latestProjectState = requireProjectState();
-		const repoName = latestWorkspaceState.repo?.name ?? path.basename(latestWorkspaceState.scratchDir);
-		const parts = [`repo=${repoName}`];
-		if (latestProjectState.projectName) parts.push(`project=${latestProjectState.projectName}`);
-		if (latestWorkspaceState.activeWorktree?.label) parts.push(`worktree=${latestWorkspaceState.activeWorktree.label}`);
-		ctx.ui.notify(`projects: ${parts.join(", ")}`, "info");
 	});
 }
