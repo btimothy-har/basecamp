@@ -1,6 +1,6 @@
 {
   "type": "register",
-  "v": 8,
+  "v": 9,
   "role": "session",
   "node_id": "session-123",
   "parent_id": null,

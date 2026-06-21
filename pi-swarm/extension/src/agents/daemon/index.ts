@@ -1,10 +1,11 @@
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import type { PiSwarmDependencies } from "../../dependencies.ts";
 import { DEFAULT_AGENT_MAX_DEPTH } from "../types.ts";
-import { connect, type DaemonConnection, type DaemonIdentity, ensureDaemon } from "./client.ts";
+import { connect, type DaemonConnection, type DaemonIdentity, ensureDaemon, fetchRunSummary } from "./client.ts";
 import { resolveDaemonPaths } from "./paths.ts";
 import { registerDaemonReporter } from "./reporter.ts";
 import { registerDaemonTools } from "./tools.ts";
+import { type ActiveAgentsWidgetController, clearActiveAgentsWidget, startActiveAgentsWidget } from "./widget.ts";
 
 type ThemeFg = (color: Parameters<import("@earendil-works/pi-coding-agent").Theme["fg"]>[0], text: string) => string;
 
@@ -195,6 +196,7 @@ export function registerDaemonClient(pi: ExtensionAPI, deps: PiSwarmDependencies
 	const reporterConnection = isDaemonSpawnedAgent ? deferred<DaemonConnection>() : null;
 	let sessionCtx: ExtensionContext | null = null;
 	let connectionGeneration = 0;
+	let activeAgentsWidget: ActiveAgentsWidgetController | null = null;
 
 	if (reporterConnection && runId && process.env.BASECAMP_AGENT_ID) {
 		registerDaemonReporter(pi, {
@@ -229,11 +231,24 @@ export function registerDaemonClient(pi: ExtensionAPI, deps: PiSwarmDependencies
 				}
 				const activeConnection =
 					state.connection === connection ? connection : trackDaemonConnection(state, connection, ctx);
+				if (isTopLevel && ctx.hasUI) {
+					activeAgentsWidget?.stop();
+					activeAgentsWidget = startActiveAgentsWidget(ctx, {
+						rootId: deriveDaemonIdentity(ctx).node_id,
+						socketPath: process.env.BASECAMP_DAEMON_UDS ?? resolveDaemonPaths().socketPath,
+						fetchSummary: fetchRunSummary,
+					});
+					activeConnection.onClose(() => {
+						activeAgentsWidget?.stop();
+						activeAgentsWidget = null;
+					});
+				}
 				reporterConnection?.resolve(activeConnection);
 			} catch (error) {
 				if (generation !== connectionGeneration) return;
 				const message = error instanceof Error ? error.message : String(error);
 				publishDaemonStatus(ctx, { kind: "unavailable", message });
+				clearActiveAgentsWidget(ctx);
 				reporterConnection?.reject(error);
 				if (isTopLevel) {
 					ctx.ui.notify(`basecamp swarm daemon unavailable: ${message}`, "warning");
@@ -251,8 +266,11 @@ export function registerDaemonClient(pi: ExtensionAPI, deps: PiSwarmDependencies
 		const ctx = sessionCtx;
 		state.connection = null;
 		state.connecting = null;
+		activeAgentsWidget?.stop();
+		activeAgentsWidget = null;
 		if (ctx) {
 			publishDaemonStatus(ctx, { kind: "idle" });
+			clearActiveAgentsWidget(ctx);
 		}
 		try {
 			connection?.close();

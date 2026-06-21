@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import json
+import os
+import re
 import sqlite3
 from datetime import UTC, datetime
 from pathlib import Path
@@ -15,10 +17,25 @@ def default_db_path() -> Path:
     return Path.home() / ".pi" / "basecamp" / "swarm" / "daemon.db"
 
 
+def default_tasks_dir() -> Path:
+    """Return the default Basecamp task-log directory."""
+
+    return Path.home() / ".pi" / "basecamp" / "tasks"
+
+
 TERMINAL_STATUSES = ("completed", "failed")
 RUN_SUMMARY_DEFAULT_LIMIT = 5
 RUN_SUMMARY_MAX_LIMIT = 100
 RUN_SUMMARY_PREVIEW_CHARS = 160
+RUN_SUMMARY_DISPLAY_CHARS = 240
+RUN_SUMMARY_TASK_PLAN_LIMIT = 20
+RUN_SUMMARY_ACTIVITY_LIMIT = 10
+RUN_SUMMARY_TASK_LOG_MAX_BYTES = 256 * 1024
+_AGENT_ID_PATTERN = re.compile(r"^[A-Za-z0-9_.-]{1,128}$")
+_ANSI_PATTERN = re.compile(r"\x1b(?:\[[0-?]*[ -/]*[@-~]|\][^\x07\x1b]*(?:\x07|\x1b\\))")
+_CONTROL_PATTERN = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
+_ACTIVITY_KINDS = {"tool_execution_start", "tool_execution_end", "turn_end"}
+_ACTIVITY_PAYLOAD_KEYS = ("toolName", "turnIndex")
 
 
 class ActiveRunExistsError(Exception):
@@ -39,21 +56,32 @@ def _fallback_agent_handle(agent_id: str) -> str:
     return agent_id
 
 
-def _preview_text(value: str | None, *, limit: int = RUN_SUMMARY_PREVIEW_CHARS) -> str | None:
-    if value is None:
+def _display_text(value: Any, *, limit: int = RUN_SUMMARY_DISPLAY_CHARS) -> str | None:
+    if not isinstance(value, str):
         return None
 
-    text = " ".join(value.split())
+    text = _ANSI_PATTERN.sub("", value)
+    text = _CONTROL_PATTERN.sub("", text)
+    text = " ".join(text.split())
     if len(text) <= limit:
         return text
     return f"{text[: limit - 1]}…"
 
 
+def _preview_text(value: str | None, *, limit: int = RUN_SUMMARY_PREVIEW_CHARS) -> str | None:
+    return _display_text(value, limit=limit)
+
+
+def _is_valid_agent_id(agent_id: str) -> bool:
+    return bool(_AGENT_ID_PATTERN.fullmatch(agent_id))
+
+
 class Store:
     """Daemon persistence layer backed by SQLite."""
 
-    def __init__(self, db_path: str | Path | None = None) -> None:
+    def __init__(self, db_path: str | Path | None = None, task_dir: str | Path | None = None) -> None:
         self.db_path = Path(db_path).expanduser() if db_path is not None else default_db_path()
+        self.task_dir = Path(task_dir).expanduser() if task_dir is not None else default_tasks_dir()
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         self._init_db()
 
@@ -585,6 +613,128 @@ class Store:
             for row in rows
         ]
 
+    def _read_task_cycles(self, agent_id: str) -> list[dict[str, Any]]:
+        """Safely read task cycles for an internal agent id."""
+
+        if not _is_valid_agent_id(agent_id):
+            return []
+
+        task_path = self.task_dir / f"{agent_id}.json"
+        try:
+            root = self.task_dir.resolve(strict=False)
+            candidate = task_path.resolve(strict=False)
+            if root != candidate.parent:
+                return []
+
+            metadata = os.lstat(task_path)
+            if not os.path.isfile(task_path) or os.path.islink(task_path):
+                return []
+            if metadata.st_size > RUN_SUMMARY_TASK_LOG_MAX_BYTES:
+                return []
+
+            with task_path.open("r", encoding="utf-8") as file:
+                parsed = json.load(file)
+        except (OSError, json.JSONDecodeError):
+            return []
+
+        if not isinstance(parsed, list):
+            return []
+        return [cycle for cycle in parsed if isinstance(cycle, dict)]
+
+    def _project_task_log(self, agent_id: str) -> dict[str, Any] | None:
+        cycles = self._read_task_cycles(agent_id)
+        active = next((cycle for cycle in cycles if cycle.get("active") is True), None)
+        if active is None:
+            return None
+
+        raw_tasks = active.get("tasks")
+        if not isinstance(raw_tasks, list):
+            return None
+
+        tasks: list[dict[str, Any]] = []
+        current_task: dict[str, Any] | None = None
+        deleted = 0
+        completed = 0
+        total = 0
+        for index, raw_task in enumerate(raw_tasks):
+            if not isinstance(raw_task, dict):
+                continue
+            status = raw_task.get("status")
+            if status not in {"pending", "active", "completed", "deleted"}:
+                continue
+            if status == "deleted":
+                deleted += 1
+                continue
+
+            label = _display_text(raw_task.get("label"))
+            if label is None:
+                continue
+            if status == "completed":
+                completed += 1
+            total += 1
+            task_row = {"index": index, "label": label, "status": status}
+            if len(tasks) < RUN_SUMMARY_TASK_PLAN_LIMIT:
+                tasks.append(task_row)
+            if status == "active" and current_task is None:
+                current_task = {
+                    **task_row,
+                    "description": _display_text(raw_task.get("description")),
+                    "notes": _display_text(raw_task.get("notes")),
+                }
+
+        return {
+            "goal": _display_text(active.get("goal")),
+            "progress": {
+                "completed": completed,
+                "deleted": deleted,
+                "total": total,
+            },
+            "task_plan": tasks,
+            "current_task": current_task,
+        }
+
+    def _project_recent_activity(self, run_id: str | None) -> list[dict[str, Any]]:
+        if not run_id:
+            return []
+
+        with self._connect() as connection:
+            connection.row_factory = sqlite3.Row
+            rows = connection.execute(
+                """
+                SELECT seq, kind, payload_json, ts
+                FROM run_events
+                WHERE run_id = ?
+                ORDER BY seq DESC
+                LIMIT ?
+                """,
+                (run_id, RUN_SUMMARY_ACTIVITY_LIMIT),
+            ).fetchall()
+
+        activity: list[dict[str, Any]] = []
+        for row in reversed(rows):
+            kind = row["kind"]
+            if kind not in _ACTIVITY_KINDS:
+                continue
+            event: dict[str, Any] = {
+                "kind": kind,
+                "seq": row["seq"],
+                "timestamp": _display_text(row["ts"]),
+            }
+            payload: Any = {}
+            try:
+                payload = json.loads(row["payload_json"]) if isinstance(row["payload_json"], str) else {}
+            except json.JSONDecodeError:
+                payload = {}
+            if isinstance(payload, dict):
+                for key in _ACTIVITY_PAYLOAD_KEYS:
+                    value = payload.get(key)
+                    if isinstance(value, str):
+                        event[key] = _display_text(value)
+                    elif isinstance(value, int | float) and not isinstance(value, bool):
+                        event[key] = value
+            activity.append({key: value for key, value in event.items() if value is not None})
+        return activity
+
     def get_run_summary(self, root_id: str, *, limit: int = RUN_SUMMARY_DEFAULT_LIMIT) -> dict[str, Any]:
         """Return a safe run summary for a root agent subtree."""
 
@@ -622,10 +772,12 @@ class Store:
                 f"""
                 {recursive_scope}
                 SELECT
+                    a.id AS agent_id,
                     a.agent_handle,
                     a.agent_type,
                     a.role,
                     a.session_name,
+                    r.id AS run_id,
                     CASE
                         WHEN r.status IN ('pending', 'running', 'completed', 'failed') THEN r.status
                         ELSE 'idle'
@@ -648,17 +800,19 @@ class Store:
 
         agents = [
             {
-                "agent_handle": row["agent_handle"],
-                "agent_type": row["agent_type"],
-                "role": row["role"],
-                "session_name": row["session_name"],
+                "agent_handle": _display_text(row["agent_handle"]),
+                "agent_type": _display_text(row["agent_type"]),
+                "role": _display_text(row["role"]),
+                "session_name": _display_text(row["session_name"]),
                 "status": row["status"],
                 "result_preview": _preview_text(row["result"]),
                 "error_preview": _preview_text(row["error"]),
                 "exit_code": row["exit_code"],
-                "created_at": row["created_at"],
-                "started_at": row["started_at"],
-                "ended_at": row["ended_at"],
+                "created_at": _display_text(row["created_at"]),
+                "started_at": _display_text(row["started_at"]),
+                "ended_at": _display_text(row["ended_at"]),
+                "task": self._project_task_log(row["agent_id"]),
+                "recent_activity": self._project_recent_activity(row["run_id"]),
             }
             for row in agent_rows
         ]

@@ -1,22 +1,22 @@
 # Pi Swarm Daemon Protocol
 
-Protocol version: `8`
+Protocol version: `9`
 
 All frames are JSON objects with an envelope:
 
 ```json
-{"type":"<frame_type>","v":8,...}
+{"type":"<frame_type>","v":9,...}
 ```
 
 Version handling:
 - The daemon validates `v` on every inbound frame.
-- If `v != 8`, the daemon sends an `error` frame with `code: "protocol_version"` and closes the connection.
+- If `v != 9`, the daemon sends an `error` frame with `code: "protocol_version"` and closes the connection.
 - The extension treats the protocol as a client-visible capability gate, not only a frame-shape version. A version mismatch restarts the host daemon during ensure-daemon.
 
 ## Transport
 
 - HTTP over Unix domain socket (UDS):
-  - `GET /health` → `{"status":"ok","protocol":8}`
+  - `GET /health` → `{"status":"ok","protocol":9}`
   - `GET /runs/summary?root_id=<id>` returns safe agent-level observability for the companion dashboard.
 - WebSocket over UDS:
   - `/ws`
@@ -91,7 +91,7 @@ Waits for one or more public agent handles:
 ```json
 {
   "type": "wait",
-  "v": 8,
+  "v": 9,
   "agent_ids": [],
   "agent_handles": ["scout-mossy-otter-a1b2c3"],
   "mode": "all",
@@ -122,7 +122,7 @@ Requests a safe directory of agents visible under the caller's root session:
 ```json
 {
   "type": "list_agents",
-  "v": 8,
+  "v": 9,
   "request_id": "list-001",
   "awaitable": true
 }
@@ -148,13 +148,26 @@ Rows also carry the private `agent_id` for trusted extension retasking plumbing;
 
 ### `GET /runs/summary`
 
-Returns companion-dashboard observability under the requested root session:
+Returns companion Swarm observability under the requested root session.
 
-- `counts`: run status counts for scoped run history.
-- `agents`: one safe row per same-root non-session agent, keyed by `agent_handle` and current-run status/previews.
+Query parameters:
+- `root_id` (required): root session agent id whose subtree is summarized.
+- `limit` (optional, default `5`): maximum number of agent rows to return. The daemon clamps this to `0`–`100`.
+
+Response schema:
+- `root_id`: requested root id.
+- `counts`: run status counts for scoped run history: `pending`, `running`, `completed`, `failed`, `total`.
+- `agents`: one safe row per same-root non-session agent, ordered by current-run/agent recency.
 - `session_active`: whether the root session is currently registered.
 
-Summary rows do not include private `run_id`, private `agent_id`, prompts, full results, errors, spawn specs, env, or cwd.
+Each summary row contains:
+- `agent_handle`, `agent_type`, `role`, `session_name`.
+- `status`: one of `idle`, `pending`, `running`, `completed`, or `failed`.
+- `result_preview`, `error_preview`, `exit_code`, `created_at`, `started_at`, `ended_at`.
+- `task`: safe projection from `~/.pi/basecamp/tasks/<agent-id>.json`, or `null` if absent/invalid. It contains sanitized `goal`, `progress: {completed, deleted, total}`, canonical bounded `task_plan` entries (`index`, `label`, `status`), and `current_task` (`index`, `label`, `status`, `description`, `notes`). Task status values are `pending`, `active`, `completed`, and `deleted`; deleted tasks are omitted from `task_plan` but counted in `progress.deleted`.
+- `recent_activity`: bounded telemetry projection containing only allowlisted display fields: event `kind`, `seq`, daemon `timestamp`, `toolName`, and `turnIndex`. Current event kinds are `tool_execution_start`, `tool_execution_end`, and `turn_end`.
+
+Summary rows do not include private `run_id`, private `agent_id`, report tokens, prompts, full results, errors, spawn specs, env, cwd, raw telemetry payloads/args/outputs, tool call ids, visible/model message text, or hidden model thinking. Display strings are control/ANSI stripped and length capped.
 
 ### `error` daemon → client
 
@@ -169,6 +182,6 @@ Reports protocol/parse errors and closes the WebSocket for fatal frame errors. C
 A minimal client flow is:
 
 1. Connect to `/ws` over the UDS.
-2. Send `register` with `v: 8`.
+2. Send `register` with `v: 9`.
 3. Send `dispatch` with private `run_id` / `agent_id` and public `agent_handle`.
 4. Use the `agent_handle` with `wait` or discover agents through `list_agents`.

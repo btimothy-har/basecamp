@@ -102,6 +102,8 @@ def test_poll_parses_summary_and_encodes_root_id_and_limit() -> None:
         created_at="2026-01-01T00:00:00Z",
         started_at=None,
         ended_at=None,
+        task=None,
+        recent_activity=None,
     )
     assert set(asdict(result.agents[0]).keys()) == {
         "agent_handle",
@@ -115,6 +117,8 @@ def test_poll_parses_summary_and_encodes_root_id_and_limit() -> None:
         "created_at",
         "started_at",
         "ended_at",
+        "task",
+        "recent_activity",
     }
 
     parsed = parse_qs(urlsplit(captured["path"]).query)
