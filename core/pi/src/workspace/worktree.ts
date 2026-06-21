@@ -58,13 +58,24 @@ export function findWorktreeRecord(records: GitWorktreeRecord[], worktreeDir: st
 	return records.find((record) => path.resolve(record.path) === resolved) ?? null;
 }
 
+function labelFromRelativeWorktreePath(relative: string): string | null {
+	const parts = relative.split(path.sep);
+	if (parts.length === 1) return parts[0] || null;
+	if (parts.length === 2 && isNestedWorktreeNamespace(parts[0])) return parts.join("/");
+	return null;
+}
+
 export function labelFromWorktreePath(repoName: string, worktreeDir: string): string {
 	const resolvedDir = path.resolve(worktreeDir);
 	const root = path.join(WORKTREES_ROOT, repoName);
 	const relative = path.relative(root, resolvedDir);
-	const [label, ...rest] = relative.split(path.sep);
-	if (!label || rest.length > 0 || relative.startsWith("..") || path.isAbsolute(relative)) {
-		throw new Error(`Worktree must be directly under ${root}`);
+	if (!relative || relative.startsWith("..") || path.isAbsolute(relative)) {
+		throw new Error(`Worktree must be a valid workspace worktree path under ${root}`);
+	}
+
+	const label = labelFromRelativeWorktreePath(relative);
+	if (!label) {
+		throw new Error(`Worktree must be a valid workspace worktree path under ${root}`);
 	}
 	ensureWorktreeLabel(label);
 	validateWorktreePath(repoName, label, resolvedDir);
@@ -109,9 +120,16 @@ export function validateNoSymlinkedWorktreePath(worktreeDir: string, root = WORK
 	}
 }
 
+const NESTED_WORKTREE_NAMESPACE_RE = /^wt-[a-z0-9]{2}$/;
+const NESTED_WORKTREE_LABEL_RE = /^wt-[a-z0-9]{2}\/[A-Za-z0-9][A-Za-z0-9._-]*$/;
+
+function isNestedWorktreeNamespace(value: string | undefined): boolean {
+	return typeof value === "string" && NESTED_WORKTREE_NAMESPACE_RE.test(value);
+}
+
 export function ensureWorktreeLabel(label: string): void {
-	if (!WORKTREE_LABEL_RE.test(label)) {
-		throw new Error(`Invalid worktree label "${label}". Use letters, numbers, dots, underscores, or hyphens.`);
+	if (!WORKTREE_LABEL_RE.test(label) && !NESTED_WORKTREE_LABEL_RE.test(label)) {
+		throw new Error(`Invalid worktree label "${label}". Use a direct label or wt-xx/name with safe characters.`);
 	}
 }
 
@@ -174,13 +192,13 @@ export async function getOrCreateWorktree(
 	repoRoot: string,
 	repoName: string,
 	label: string,
-	branchPrefix = WORKTREE_BRANCH_PREFIX,
+	branchOverride?: string | null,
 ): Promise<WorktreeResult> {
 	ensureWorktreeLabel(label);
 	const defaultBranch = await validateProtectedCheckout(pi, repoRoot);
 	const worktreeDir = path.join(WORKTREES_ROOT, repoName, label);
 	validateNoSymlinkedWorktreePath(worktreeDir);
-	const branch = `${branchPrefix}${label}`;
+	const branch = branchOverride?.trim() || `${WORKTREE_BRANCH_PREFIX}${label}`;
 	const records = await gitWorktreeRecords(pi, repoRoot);
 	const existing = findWorktreeRecord(records, worktreeDir);
 	if (existing) {

@@ -150,10 +150,10 @@ export class WorkspaceRuntimeService implements WorkspaceService {
 		}));
 	}
 
-	async activateWorktree(label: string): Promise<WorkspaceWorktree> {
+	async activateWorktree(label: string, branchName?: string | null): Promise<WorkspaceWorktree> {
 		const state = this.require();
 		if (!state.repo) worktreeRequiresRepo();
-		const wt = await getOrCreateWorktree(this.pi, state.repo.root, state.repo.name, label);
+		const wt = await getOrCreateWorktree(this.pi, state.repo.root, state.repo.name, label, branchName);
 		return this.applyWorktree(worktreeResultToWorkspaceWorktree(wt));
 	}
 

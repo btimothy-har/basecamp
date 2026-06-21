@@ -29,8 +29,9 @@ import { SECTION_NAMES, showPlanReadOnly, showReviewOverlay } from "./review";
 import {
 	buildExecutionWorktreeChoices,
 	CUSTOM_WORKTREE_CHOICE,
-	customWorktreeLabel,
-	suggestWorktreeLabel,
+	customWorktreeTarget,
+	type ExecutionWorktreeTarget,
+	suggestWorktreeTarget,
 } from "./worktree-choices.ts";
 
 // ============================================================================
@@ -196,11 +197,11 @@ async function selectImplementationMode(ctx: ExtensionContext): Promise<Implemen
 	return null;
 }
 
-async function selectWorktreeLabel(
+async function selectWorktreeTarget(
 	ctx: ExtensionContext,
 	goal: string,
 	worktreeSlug: string | null,
-): Promise<string | null> {
+): Promise<ExecutionWorktreeTarget | null> {
 	if (!ctx.hasUI) return null;
 
 	const workspace = getWorkspaceState();
@@ -209,17 +210,17 @@ async function selectWorktreeLabel(
 		return null;
 	}
 
-	const suggested = suggestWorktreeLabel(goal, worktreeSlug);
+	const suggested = suggestWorktreeTarget(goal, worktreeSlug);
 	const existing = await listWorkspaceWorktrees();
-	const { choices, labelsByChoice } = buildExecutionWorktreeChoices(suggested, existing, workspace.activeWorktree);
+	const { choices, targetsByChoice } = buildExecutionWorktreeChoices(suggested, existing, workspace.activeWorktree);
 
 	const choice = await ctx.ui.select("Execution worktree", choices);
 	if (!choice) return null;
 	if (choice === CUSTOM_WORKTREE_CHOICE) {
-		const label = await ctx.ui.input("Custom worktree label", suggested);
-		return label?.trim() ? customWorktreeLabel(label) : null;
+		const label = await ctx.ui.input("Custom worktree label", suggested.worktreeLabel);
+		return label?.trim() ? customWorktreeTarget(label) : null;
 	}
-	return labelsByChoice.get(choice) ?? null;
+	return targetsByChoice.get(choice) ?? null;
 }
 
 const HANDOFF_COMPACTION_THRESHOLD_PERCENT = 30;
@@ -560,8 +561,8 @@ export function registerPlan(pi: ExtensionAPI, tasksAccess: TasksAccess): PlanAc
 					};
 				}
 
-				const worktreeLabel = await selectWorktreeLabel(ctx, draft.goal.content, draft.worktreeSlug);
-				if (!worktreeLabel) {
+				const worktreeTarget = await selectWorktreeTarget(ctx, draft.goal.content, draft.worktreeSlug);
+				if (!worktreeTarget) {
 					return {
 						content: [
 							{
@@ -579,10 +580,12 @@ export function registerPlan(pi: ExtensionAPI, tasksAccess: TasksAccess): PlanAc
 
 				let worktree: HandoffWorktreeResult;
 				try {
-					worktree = workspaceWorktreeToHandoffWorktree(await activateWorkspaceWorktree(worktreeLabel));
+					worktree = workspaceWorktreeToHandoffWorktree(
+						await activateWorkspaceWorktree(worktreeTarget.worktreeLabel, worktreeTarget.branchName),
+					);
 				} catch (err) {
 					return {
-						content: [{ type: "text", text: buildWorktreeActivationFailedResult(worktreeLabel, err) }],
+						content: [{ type: "text", text: buildWorktreeActivationFailedResult(worktreeTarget.worktreeLabel, err) }],
 						details: undefined,
 					};
 				}

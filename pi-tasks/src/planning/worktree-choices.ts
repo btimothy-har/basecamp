@@ -4,9 +4,14 @@ import type { WorkspaceWorktree } from "pi-core/platform/workspace.ts";
 
 export const CUSTOM_WORKTREE_CHOICE = "Enter custom worktree label";
 
+export interface ExecutionWorktreeTarget {
+	worktreeLabel: string;
+	branchName: string | null;
+}
+
 export interface ExecutionWorktreeChoices {
 	choices: string[];
-	labelsByChoice: Map<string, string>;
+	targetsByChoice: Map<string, ExecutionWorktreeTarget>;
 }
 
 const SUGGESTED_WORKTREE_LABEL_MAX_LENGTH = 32;
@@ -30,7 +35,7 @@ export function userWorktreePrefix(userId: string | null | undefined): string {
 		.toLowerCase()
 		.replace(/[^a-z0-9]+/g, "")
 		.slice(0, 2);
-	return prefix || FALLBACK_USER_WORKTREE_PREFIX;
+	return prefix.length === 2 ? prefix : FALLBACK_USER_WORKTREE_PREFIX;
 }
 
 function normalizeWorktreeSlug(value: string): string {
@@ -41,24 +46,42 @@ function normalizeWorktreeSlug(value: string): string {
 	return slug || FALLBACK_WORKTREE_SLUG;
 }
 
-function buildPrefixedWorktreeLabel(prefix: string, slug: string): string {
-	const maxSlugLength = Math.max(1, SUGGESTED_WORKTREE_LABEL_MAX_LENGTH - prefix.length - 1);
-	const cappedSlug = slug.slice(0, maxSlugLength).replace(/-+$/g, "");
-	return `${prefix}-${cappedSlug || FALLBACK_WORKTREE_SLUG}`;
+function stripKnownPrefix(value: string, prefix: string): string {
+	const lower = value.trim().toLowerCase();
+	for (const knownPrefix of [`wt-${prefix}/`, `${prefix}/`, `wt-${prefix}-`, `${prefix}-`]) {
+		if (lower.startsWith(knownPrefix)) return lower.slice(knownPrefix.length);
+	}
+	return lower;
 }
 
-export function suggestWorktreeLabel(goal: string, worktreeSlug: string | null, userId = currentUserId()): string {
+function buildExecutionWorktreeTarget(prefix: string, slug: string): ExecutionWorktreeTarget {
+	const worktreePrefix = `wt-${prefix}/`;
+	const maxSlugLength = Math.max(1, SUGGESTED_WORKTREE_LABEL_MAX_LENGTH - worktreePrefix.length);
+	const cappedSlug = slug.slice(0, maxSlugLength).replace(/-+$/g, "") || FALLBACK_WORKTREE_SLUG;
+	return {
+		worktreeLabel: `${worktreePrefix}${cappedSlug}`,
+		branchName: `${prefix}/${cappedSlug}`,
+	};
+}
+
+function existingWorktreeTarget(wt: WorkspaceWorktree): ExecutionWorktreeTarget {
+	return { worktreeLabel: wt.label, branchName: null };
+}
+
+export function suggestWorktreeTarget(
+	goal: string,
+	worktreeSlug: string | null,
+	userId = currentUserId(),
+): ExecutionWorktreeTarget {
 	const prefix = userWorktreePrefix(userId);
 	const slug = normalizeWorktreeSlug(worktreeSlug ?? goal);
-	return buildPrefixedWorktreeLabel(prefix, slug);
+	return buildExecutionWorktreeTarget(prefix, slug);
 }
 
-export function customWorktreeLabel(value: string, userId = currentUserId()): string {
+export function customWorktreeTarget(value: string, userId = currentUserId()): ExecutionWorktreeTarget {
 	const prefix = userWorktreePrefix(userId);
-	const slug = normalizeWorktreeSlug(value);
-	const prefixWithSeparator = `${prefix}-`;
-	const unprefixedSlug = slug.startsWith(prefixWithSeparator) ? slug.slice(prefixWithSeparator.length) : slug;
-	return buildPrefixedWorktreeLabel(prefix, unprefixedSlug);
+	const slug = normalizeWorktreeSlug(stripKnownPrefix(value, prefix));
+	return buildExecutionWorktreeTarget(prefix, slug);
 }
 
 function normalizeWorktreePath(value: string): string {
@@ -77,39 +100,39 @@ function matchingRegisteredActiveWorktree(
 }
 
 export function buildExecutionWorktreeChoices(
-	suggested: string,
+	suggested: ExecutionWorktreeTarget,
 	existing: WorkspaceWorktree[],
 	active: WorkspaceWorktree | null,
 ): ExecutionWorktreeChoices {
 	const choices: string[] = [];
-	const labelsByChoice = new Map<string, string>();
+	const targetsByChoice = new Map<string, ExecutionWorktreeTarget>();
 	const handledLabels = new Set<string>();
 
 	const activeExisting = matchingRegisteredActiveWorktree(existing, active);
 	if (activeExisting) {
 		const choice = `Current: ${activeExisting.label} (${activeExisting.branch ?? "detached"})`;
 		choices.push(choice);
-		labelsByChoice.set(choice, activeExisting.label);
+		targetsByChoice.set(choice, existingWorktreeTarget(activeExisting));
 		handledLabels.add(activeExisting.label);
 	}
 
-	const suggestedExisting = existing.find((wt) => wt.label === suggested);
-	if (!handledLabels.has(suggested)) {
+	const suggestedExisting = existing.find((wt) => wt.label === suggested.worktreeLabel);
+	if (!handledLabels.has(suggested.worktreeLabel)) {
 		const suggestedChoice = suggestedExisting
-			? `Resume: ${suggested} (${suggestedExisting.branch ?? "detached"})`
-			: `Create: ${suggested}`;
+			? `Resume: ${suggested.worktreeLabel} (${suggestedExisting.branch ?? "detached"})`
+			: `Create: ${suggested.worktreeLabel}`;
 		choices.push(suggestedChoice);
-		labelsByChoice.set(suggestedChoice, suggested);
+		targetsByChoice.set(suggestedChoice, suggested);
 	}
-	handledLabels.add(suggested);
+	handledLabels.add(suggested.worktreeLabel);
 
 	for (const wt of existing) {
 		if (handledLabels.has(wt.label)) continue;
 		const choice = `Resume: ${wt.label} (${wt.branch ?? "detached"})`;
 		choices.push(choice);
-		labelsByChoice.set(choice, wt.label);
+		targetsByChoice.set(choice, existingWorktreeTarget(wt));
 		handledLabels.add(wt.label);
 	}
 	choices.push(CUSTOM_WORKTREE_CHOICE);
-	return { choices, labelsByChoice };
+	return { choices, targetsByChoice };
 }
