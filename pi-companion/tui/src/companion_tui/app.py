@@ -27,7 +27,7 @@ from textual.widgets.tree import TreeNode
 
 from companion_tui.analysis import COMPANION_ANALYSIS_DIR_NAME, CompanionAnalysis, companion_analysis_path
 from companion_tui.cycles import companion_tasks_path
-from companion_tui.daemon import DaemonSummary, DaemonSummaryError, DaemonSummaryRun, DaemonSummarySource
+from companion_tui.daemon import DaemonSummary, DaemonSummaryAgent, DaemonSummaryError, DaemonSummarySource
 from companion_tui.diff import (
     DIFF_MODES,
     DiffLine,
@@ -189,9 +189,9 @@ def _format_duration(seconds: int) -> str:
     return f"{days}d {hours}h"
 
 
-def _daemon_run_timing(run: DaemonSummaryRun) -> str | None:
-    start = _parse_iso_timestamp(run.started_at or run.created_at)
-    end = _parse_iso_timestamp(run.ended_at)
+def _daemon_agent_timing(agent: DaemonSummaryAgent) -> str | None:
+    start = _parse_iso_timestamp(agent.started_at or agent.created_at)
+    end = _parse_iso_timestamp(agent.ended_at)
 
     if start is None:
         return None
@@ -235,28 +235,28 @@ def _render_daemon_summary(summary: DaemonSummary | None) -> Text:
             text.append(_truncate_preview(summary.error, max_length=80), style="dim")
         return text
 
-    if summary.counts.total == 0:
+    if not summary.agents:
         return Text("No async agents yet")
 
     rows = Text()
-    for index, run in enumerate(summary.runs):
+    for index, agent in enumerate(summary.agents):
         if index:
             rows.append("\n")
 
-        status = run.status.lower()
+        status = agent.status.lower()
         glyph = _DAEMON_STATUS_GLYPH.get(status, "•")
 
         row = Text()
         row.append(glyph)
         row.append(" ")
-        row.append(run.session_name or run.agent_id[-8:], style="bold")
-        row.append(f" · {run.status}")
-        timing = _daemon_run_timing(run)
+        row.append(agent.session_name or agent.agent_handle, style="bold")
+        row.append(f" · {agent.status}")
+        timing = _daemon_agent_timing(agent)
         if timing:
             row.append(f" · {timing}", style="dim")
 
-        preview = run.error_preview if status in {"failed", "error"} else run.result_preview
-        preview = preview or run.result_preview or run.error_preview
+        preview = agent.error_preview if status in {"failed", "error"} else agent.result_preview
+        preview = preview or agent.result_preview or agent.error_preview
         if preview:
             row.append(" · ")
             row.append(_truncate_preview(preview, max_length=120), style="dim")

@@ -619,38 +619,38 @@ class Store:
                 (root_id,),
             ).fetchone()
 
-            run_rows = connection.execute(
+            agent_rows = connection.execute(
                 f"""
                 {recursive_scope}
                 SELECT
-                    r.id AS run_id,
-                    r.agent_id,
                     a.agent_handle,
-                    a.parent_id,
+                    a.agent_type,
                     a.role,
                     a.session_name,
-                    r.status,
+                    CASE
+                        WHEN r.status IN ('pending', 'running', 'completed', 'failed') THEN r.status
+                        ELSE 'idle'
+                    END AS status,
                     r.result,
                     r.error,
                     r.exit_code,
                     r.created_at,
                     r.started_at,
                     r.ended_at
-                FROM runs AS r
-                INNER JOIN agents AS a ON a.id = r.agent_id
-                WHERE r.agent_id IN (SELECT id FROM scoped_agents)
-                ORDER BY r.created_at DESC, r.id DESC
+                FROM agents AS a
+                INNER JOIN scoped_agents AS s ON s.id = a.id
+                LEFT JOIN runs AS r ON r.id = a.current_run_id
+                WHERE a.role != 'session'
+                ORDER BY COALESCE(r.created_at, a.created_at) DESC, a.agent_handle ASC
                 LIMIT ?
                 """,
                 (root_id, safe_limit),
             ).fetchall()
 
-        runs = [
+        agents = [
             {
-                "run_id": row["run_id"],
-                "agent_id": row["agent_id"],
                 "agent_handle": row["agent_handle"],
-                "parent_id": row["parent_id"],
+                "agent_type": row["agent_type"],
                 "role": row["role"],
                 "session_name": row["session_name"],
                 "status": row["status"],
@@ -661,7 +661,7 @@ class Store:
                 "started_at": row["started_at"],
                 "ended_at": row["ended_at"],
             }
-            for row in run_rows
+            for row in agent_rows
         ]
 
         return {
@@ -673,7 +673,7 @@ class Store:
                 "failed": counts_row["failed_count"],
                 "total": counts_row["total_count"],
             },
-            "runs": runs,
+            "agents": agents,
         }
 
     def are_runs_terminal(self, run_ids: list[str]) -> bool:

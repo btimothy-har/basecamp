@@ -29,12 +29,11 @@ class DaemonSummaryCounts:
 
 
 @dataclass(frozen=True)
-class DaemonSummaryRun:
-    """One previewed run in a daemon summary payload."""
+class DaemonSummaryAgent:
+    """One previewed agent in a daemon summary payload."""
 
-    run_id: str
-    agent_id: str
-    parent_id: str | None
+    agent_handle: str
+    agent_type: str | None
     role: str
     session_name: str
     status: str
@@ -68,7 +67,7 @@ class DaemonSummaryOk:
 
     root_id: str
     counts: DaemonSummaryCounts
-    runs: list[DaemonSummaryRun]
+    agents: list[DaemonSummaryAgent]
     session_active: bool
     state: Literal["ok"] = "ok"
 
@@ -201,8 +200,8 @@ def _parse_payload(payload: object) -> DaemonSummaryOk:
     if not isinstance(counts_payload, dict):
         raise TypeError
 
-    runs_payload = payload.get("runs")
-    if not isinstance(runs_payload, list):
+    agents_payload = payload.get("agents")
+    if not isinstance(agents_payload, list):
         raise TypeError
 
     counts = DaemonSummaryCounts(
@@ -213,32 +212,31 @@ def _parse_payload(payload: object) -> DaemonSummaryOk:
         total=_expect_int(counts_payload, "total"),
     )
 
-    runs = [
-        DaemonSummaryRun(
-            run_id=_expect_str(raw_run, "run_id"),
-            agent_id=_expect_str(raw_run, "agent_id"),
-            parent_id=_expect_optional_str(raw_run, "parent_id"),
-            role=_expect_str(raw_run, "role"),
-            session_name=_expect_str(raw_run, "session_name"),
-            status=_expect_str(raw_run, "status"),
-            result_preview=_expect_optional_str(raw_run, "result_preview"),
-            error_preview=_expect_optional_str(raw_run, "error_preview"),
-            exit_code=_expect_optional_int(raw_run, "exit_code"),
-            created_at=_expect_optional_str(raw_run, "created_at"),
-            started_at=_expect_optional_str(raw_run, "started_at"),
-            ended_at=_expect_optional_str(raw_run, "ended_at"),
+    agents = [
+        DaemonSummaryAgent(
+            agent_handle=_expect_str(raw_agent, "agent_handle"),
+            agent_type=_expect_optional_str(raw_agent, "agent_type"),
+            role=_expect_str(raw_agent, "role"),
+            session_name=_expect_str(raw_agent, "session_name"),
+            status=_expect_str(raw_agent, "status"),
+            result_preview=_expect_optional_str(raw_agent, "result_preview"),
+            error_preview=_expect_optional_str(raw_agent, "error_preview"),
+            exit_code=_expect_optional_int(raw_agent, "exit_code"),
+            created_at=_expect_optional_str(raw_agent, "created_at"),
+            started_at=_expect_optional_str(raw_agent, "started_at"),
+            ended_at=_expect_optional_str(raw_agent, "ended_at"),
         )
-        for raw_run in runs_payload
-        if isinstance(raw_run, dict)
+        for raw_agent in agents_payload
+        if isinstance(raw_agent, dict)
     ]
 
-    if len(runs) != len(runs_payload):
+    if len(agents) != len(agents_payload):
         raise TypeError
 
     return DaemonSummaryOk(
         root_id=_expect_str(payload, "root_id"),
         counts=counts,
-        runs=runs,
+        agents=agents,
         session_active=_expect_bool(payload, "session_active"),
     )
 
@@ -252,7 +250,7 @@ __all__ = [
     "DaemonSummaryCounts",
     "DaemonSummaryError",
     "DaemonSummaryOk",
-    "DaemonSummaryRun",
+    "DaemonSummaryAgent",
     "DaemonSummarySource",
     "DaemonSummaryUnavailable",
     "UnixHTTPConnection",

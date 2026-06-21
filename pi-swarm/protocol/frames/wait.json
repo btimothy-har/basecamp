@@ -1,9 +1,10 @@
 {
   "type": "wait",
   "v": 8,
-  "agent_ids": [
-    "agent-001",
-    "agent-002"
+  "agent_ids": [],
+  "agent_handles": [
+    "scout-mossy-otter-a1b2c3",
+    "worker-brisk-lynx-d4e5f6"
   ],
   "mode": "all",
   "timeout_s": 30.0

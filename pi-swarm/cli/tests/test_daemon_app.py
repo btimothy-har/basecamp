@@ -288,7 +288,7 @@ def test_ws_unsupported_inbound_frame_returns_error(tmp_path: Path) -> None:
     assert "registered" in reply["message"]
 
 
-def test_runs_summary_endpoint_returns_root_and_child_runs(tmp_path: Path) -> None:
+def test_runs_summary_endpoint_returns_child_agents(tmp_path: Path) -> None:
     app, store = _build_app_with_store(tmp_path)
 
     store.upsert_agent(
@@ -338,8 +338,8 @@ def test_runs_summary_endpoint_returns_root_and_child_runs(tmp_path: Path) -> No
         "failed": 0,
         "total": 2,
     }
-    assert [run["run_id"] for run in payload["runs"]] == ["run-child", "run-root"]
-    assert payload["runs"][0]["agent_id"] == "child"
+    assert [agent["agent_handle"] for agent in payload["agents"]] == ["child"]
+    assert payload["agents"][0]["status"] == "completed"
     assert payload["session_active"] is False
 
 
@@ -396,7 +396,7 @@ def test_runs_summary_endpoint_unknown_root_returns_empty_payload(tmp_path: Path
             "failed": 0,
             "total": 0,
         },
-        "runs": [],
+        "agents": [],
     }
 
 
@@ -412,27 +412,27 @@ def test_runs_summary_endpoint_respects_limit(tmp_path: Path) -> None:
         session_name="root-session",
         cwd="/tmp/root",
     )
-    _insert_run(
-        db_path=tmp_path / "daemon.db",
-        run_id="run-old",
-        agent_id="root",
-        status="completed",
-        created_at="2026-01-01T00:00:00Z",
-    )
-    _insert_run(
-        db_path=tmp_path / "daemon.db",
-        run_id="run-mid",
-        agent_id="root",
-        status="completed",
-        created_at="2026-01-02T00:00:00Z",
-    )
-    _insert_run(
-        db_path=tmp_path / "daemon.db",
-        run_id="run-new",
-        agent_id="root",
-        status="completed",
-        created_at="2026-01-03T00:00:00Z",
-    )
+    for agent_id, created_at in [
+        ("agent-old", "2026-01-01T00:00:00Z"),
+        ("agent-mid", "2026-01-02T00:00:00Z"),
+        ("agent-new", "2026-01-03T00:00:00Z"),
+    ]:
+        store.upsert_agent(
+            agent_id=agent_id,
+            parent_id="root",
+            sibling_group=f"sg-{agent_id}",
+            depth=1,
+            role="agent",
+            session_name=agent_id,
+            cwd=f"/tmp/{agent_id}",
+        )
+        _insert_run(
+            db_path=tmp_path / "daemon.db",
+            run_id=f"run-{agent_id}",
+            agent_id=agent_id,
+            status="completed",
+            created_at=created_at,
+        )
 
     with TestClient(app) as client:
         response = client.get("/runs/summary", params={"root_id": "root", "limit": 2})
@@ -440,14 +440,14 @@ def test_runs_summary_endpoint_respects_limit(tmp_path: Path) -> None:
     assert response.status_code == 200
     payload = response.json()
     assert payload["session_active"] is False
-    assert [run["run_id"] for run in payload["runs"]] == ["run-new", "run-mid"]
+    assert [agent["agent_handle"] for agent in payload["agents"]] == ["agent-new", "agent-mid"]
 
     with TestClient(app) as client:
         negative_limit = client.get("/runs/summary", params={"root_id": "root", "limit": -3})
 
     assert negative_limit.status_code == 200
     payload_negative = negative_limit.json()
-    assert payload_negative["runs"] == []
+    assert payload_negative["agents"] == []
     assert payload_negative["session_active"] is False
     assert payload_negative["counts"]["total"] == 3
 
@@ -464,10 +464,19 @@ def test_runs_summary_endpoint_omits_sensitive_and_full_fields(tmp_path: Path) -
         session_name="root-session",
         cwd="/tmp/root",
     )
+    store.upsert_agent(
+        agent_id="child",
+        parent_id="root",
+        sibling_group="sg-child",
+        depth=1,
+        role="agent",
+        session_name="child-agent",
+        cwd="/tmp/child",
+    )
     _insert_run(
         db_path=tmp_path / "daemon.db",
         run_id="run-sensitive",
-        agent_id="root",
+        agent_id="child",
         status="failed",
         created_at="2026-01-01T00:00:00Z",
         spec_json='{"env": {"OPENAI_API_KEY": "secret"}}',
@@ -482,14 +491,12 @@ def test_runs_summary_endpoint_omits_sensitive_and_full_fields(tmp_path: Path) -
     payload = response.json()
     assert response.status_code == 200
     assert payload["session_active"] is False
-    assert len(payload["runs"]) == 1
+    assert len(payload["agents"]) == 1
 
-    summary_run = payload["runs"][0]
-    assert set(summary_run.keys()) == {
-        "run_id",
-        "agent_id",
+    summary_agent = payload["agents"][0]
+    assert set(summary_agent.keys()) == {
         "agent_handle",
-        "parent_id",
+        "agent_type",
         "role",
         "session_name",
         "status",
@@ -500,13 +507,15 @@ def test_runs_summary_endpoint_omits_sensitive_and_full_fields(tmp_path: Path) -
         "started_at",
         "ended_at",
     }
-    assert "spec_json" not in summary_run
-    assert "report_token_hash" not in summary_run
-    assert "result" not in summary_run
-    assert "error" not in summary_run
-    assert summary_run["result_preview"] == "line one line two"
-    assert summary_run["error_preview"].endswith("…")
-    assert len(summary_run["error_preview"]) == 160
+    assert "run_id" not in summary_agent
+    assert "agent_id" not in summary_agent
+    assert "spec_json" not in summary_agent
+    assert "report_token_hash" not in summary_agent
+    assert "result" not in summary_agent
+    assert "error" not in summary_agent
+    assert summary_agent["result_preview"] == "line one line two"
+    assert summary_agent["error_preview"].endswith("…")
+    assert len(summary_agent["error_preview"]) == 160
 
 
 def _insert_run(
@@ -555,4 +564,8 @@ def _insert_run(
                 started_at,
                 ended_at,
             ),
+        )
+        connection.execute(
+            "UPDATE agents SET current_run_id = ? WHERE id = ?",
+            (run_id, agent_id),
         )

@@ -622,7 +622,7 @@ def test_get_run_summary_unknown_root_returns_empty_payload(tmp_path: Path) -> N
             "failed": 0,
             "total": 0,
         },
-        "runs": [],
+        "agents": [],
     }
 
 
@@ -713,12 +713,10 @@ def test_get_run_summary_scope_and_counts_include_descendants(tmp_path: Path) ->
         "failed": 1,
         "total": 4,
     }
-    assert {run["run_id"] for run in result["runs"]} == {
-        "run-root",
-        "run-child",
-        "run-grandchild",
-        "run-child-pending",
-    }
+    agents = {agent["agent_handle"]: agent for agent in result["agents"]}
+    assert set(agents) == {"child", "grandchild"}
+    assert agents["child"]["status"] == "pending"
+    assert agents["grandchild"]["status"] == "failed"
 
 
 def test_get_run_summary_handles_cyclic_agent_relationships(tmp_path: Path) -> None:
@@ -777,10 +775,11 @@ def test_get_run_summary_handles_cyclic_agent_relationships(tmp_path: Path) -> N
         "failed": 0,
         "total": 2,
     }
-    assert [run["run_id"] for run in result["runs"]] == ["run-child", "run-root"]
+    assert [agent["agent_handle"] for agent in result["agents"]] == ["child"]
+    assert result["agents"][0]["status"] == "completed"
 
 
-def test_get_run_summary_orders_runs_descending_and_respects_limit(tmp_path: Path) -> None:
+def test_get_run_summary_orders_agents_descending_and_respects_limit(tmp_path: Path) -> None:
     db_path = tmp_path / "daemon.db"
     store = Store(db_path=db_path)
 
@@ -793,16 +792,33 @@ def test_get_run_summary_orders_runs_descending_and_respects_limit(tmp_path: Pat
         session_name="root-session",
         cwd="/tmp/root",
     )
-
-    _insert_run(db_path=db_path, run_id="run-old", agent_id="root", status="running", created_at="2026-01-01T00:00:00Z")
-    _insert_run(db_path=db_path, run_id="run-mid", agent_id="root", status="running", created_at="2026-01-02T00:00:00Z")
-    _insert_run(db_path=db_path, run_id="run-new", agent_id="root", status="running", created_at="2026-01-03T00:00:00Z")
+    for agent_id, created_at in [
+        ("agent-old", "2026-01-01T00:00:00Z"),
+        ("agent-mid", "2026-01-02T00:00:00Z"),
+        ("agent-new", "2026-01-03T00:00:00Z"),
+    ]:
+        store.upsert_agent(
+            agent_id=agent_id,
+            parent_id="root",
+            sibling_group=f"sg-{agent_id}",
+            depth=1,
+            role="agent",
+            session_name=agent_id,
+            cwd=f"/tmp/{agent_id}",
+        )
+        _insert_run(
+            db_path=db_path,
+            run_id=f"run-{agent_id}",
+            agent_id=agent_id,
+            status="running",
+            created_at=created_at,
+        )
 
     limited = store.get_run_summary("root", limit=2)
-    assert [row["run_id"] for row in limited["runs"]] == ["run-new", "run-mid"]
+    assert [row["agent_handle"] for row in limited["agents"]] == ["agent-new", "agent-mid"]
 
     neg_limit = store.get_run_summary("root", limit=-5)
-    assert neg_limit["runs"] == []
+    assert neg_limit["agents"] == []
     assert neg_limit["counts"] == {
         "pending": 0,
         "running": 3,
@@ -825,10 +841,19 @@ def test_get_run_summary_does_not_expose_spec_or_tokens(tmp_path: Path) -> None:
         session_name="root-session",
         cwd="/tmp/root",
     )
+    store.upsert_agent(
+        agent_id="child",
+        parent_id="root",
+        sibling_group="sg-child",
+        depth=1,
+        role="agent",
+        session_name="child-agent",
+        cwd="/tmp/child",
+    )
     _insert_run(
         db_path=db_path,
         run_id="run-sensitive",
-        agent_id="root",
+        agent_id="child",
         status="completed",
         created_at="2026-01-01T00:00:00Z",
         spec_json='{"env": {"OPENAI_API_KEY": "secret"}}',
@@ -839,13 +864,11 @@ def test_get_run_summary_does_not_expose_spec_or_tokens(tmp_path: Path) -> None:
 
     result = store.get_run_summary("root")
 
-    assert len(result["runs"]) == 1
-    summary_run = result["runs"][0]
-    assert set(summary_run) == {
-        "run_id",
-        "agent_id",
+    assert len(result["agents"]) == 1
+    summary_agent = result["agents"][0]
+    assert set(summary_agent) == {
         "agent_handle",
-        "parent_id",
+        "agent_type",
         "role",
         "session_name",
         "status",
@@ -856,13 +879,15 @@ def test_get_run_summary_does_not_expose_spec_or_tokens(tmp_path: Path) -> None:
         "started_at",
         "ended_at",
     }
-    assert "spec_json" not in summary_run
-    assert "report_token_hash" not in summary_run
-    assert "result" not in summary_run
-    assert "error" not in summary_run
-    assert summary_run["result_preview"] == "line one line two"
-    assert summary_run["error_preview"].endswith("…")
-    assert len(summary_run["error_preview"]) == 160
+    assert "run_id" not in summary_agent
+    assert "agent_id" not in summary_agent
+    assert "spec_json" not in summary_agent
+    assert "report_token_hash" not in summary_agent
+    assert "result" not in summary_agent
+    assert "error" not in summary_agent
+    assert summary_agent["result_preview"] == "line one line two"
+    assert summary_agent["error_preview"].endswith("…")
+    assert len(summary_agent["error_preview"]) == 160
 
 
 def _insert_run(
@@ -911,4 +936,8 @@ def _insert_run(
                 started_at,
                 ended_at,
             ),
+        )
+        connection.execute(
+            "UPDATE agents SET current_run_id = ? WHERE id = ?",
+            (run_id, agent_id),
         )

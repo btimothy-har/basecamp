@@ -22,10 +22,10 @@ from companion_tui.app import (
 )
 from companion_tui.daemon import (
     DaemonSummary,
+    DaemonSummaryAgent,
     DaemonSummaryCounts,
     DaemonSummaryError,
     DaemonSummaryOk,
-    DaemonSummaryRun,
     DaemonSummaryUnavailable,
 )
 from companion_tui.snapshot import CompanionGoal, CompanionProgress, CompanionTask
@@ -91,13 +91,13 @@ def _goal(name: str, tasks: list[CompanionTask], *, active: bool, completed: int
 def _daemon_summary_ok(
     *,
     total: int,
-    runs: list[DaemonSummaryRun],
+    agents: list[DaemonSummaryAgent],
     session_active: bool = True,
 ) -> DaemonSummaryOk:
     return DaemonSummaryOk(
         root_id="root",
         counts=DaemonSummaryCounts(pending=0, running=0, completed=total, failed=0, total=total),
-        runs=runs,
+        agents=agents,
         session_active=session_active,
     )
 
@@ -128,7 +128,7 @@ def test_render_daemon_summary_none_is_empty() -> None:
 
 
 def test_render_daemon_summary_empty_ok_shows_no_async_agents() -> None:
-    summary = _daemon_summary_ok(total=0, runs=[])
+    summary = _daemon_summary_ok(total=0, agents=[])
     assert "No async agents yet" in _to_text(_render_daemon_summary(summary))
 
 
@@ -161,8 +161,8 @@ def test_render_daemon_summary_error() -> None:
             DaemonSummaryError(error="daemon payload malformed"),
             False,
         ),
-        (_daemon_summary_ok(total=0, runs=[], session_active=False), False),
-        (_daemon_summary_ok(total=0, runs=[], session_active=True), True),
+        (_daemon_summary_ok(total=0, agents=[], session_active=False), False),
+        (_daemon_summary_ok(total=0, agents=[], session_active=True), True),
     ],
 )
 def test_is_daemon_panel_visible_for_summary_state(summary: DaemonSummary | None, visible) -> None:
@@ -172,11 +172,10 @@ def test_is_daemon_panel_visible_for_summary_state(summary: DaemonSummary | None
 def test_render_daemon_summary_running_uses_hourglass() -> None:
     summary = _daemon_summary_ok(
         total=1,
-        runs=[
-            DaemonSummaryRun(
-                run_id="r1",
-                agent_id="agent-1",
-                parent_id=None,
+        agents=[
+            DaemonSummaryAgent(
+                agent_handle="worker-mossy-otter",
+                agent_type="worker",
                 role="agent",
                 session_name="worker",
                 status="running",
@@ -197,13 +196,12 @@ def test_render_daemon_summary_running_uses_hourglass() -> None:
 def test_render_daemon_summary_populated() -> None:
     summary = _daemon_summary_ok(
         total=2,
-        runs=[
-            DaemonSummaryRun(
-                run_id="r1",
-                agent_id="agent-1",
-                parent_id=None,
-                role="session",
-                session_name="root",
+        agents=[
+            DaemonSummaryAgent(
+                agent_handle="scout-mossy-otter",
+                agent_type="scout",
+                role="agent",
+                session_name="scout",
                 status="completed",
                 result_preview="all good",
                 error_preview=None,
@@ -212,12 +210,11 @@ def test_render_daemon_summary_populated() -> None:
                 started_at="2026-01-01T00:00:01Z",
                 ended_at="2026-01-01T00:00:03Z",
             ),
-            DaemonSummaryRun(
-                run_id="r2",
-                agent_id="agent-2",
-                parent_id=None,
+            DaemonSummaryAgent(
+                agent_handle="worker-brisk-lynx",
+                agent_type="worker",
                 role="agent",
-                session_name="child",
+                session_name="worker",
                 status="failed",
                 result_preview=None,
                 error_preview="boom",
@@ -229,10 +226,10 @@ def test_render_daemon_summary_populated() -> None:
         ],
     )
     text = _to_text(_render_daemon_summary(summary))
-    assert "root" in text
-    assert "child" in text
-    assert "agent-1" not in text
-    assert "agent-2" not in text
+    assert "scout" in text
+    assert "worker" in text
+    assert "scout-mossy-otter" not in text
+    assert "worker-brisk-lynx" not in text
     assert "completed" in text
     assert "failed" in text
     assert "all good" in text
@@ -382,7 +379,7 @@ def test_dashboard_shows_daemon_panel_when_session_active(tmp_path: Path) -> Non
     daemon_source = _FakeDaemonSource(
         _daemon_summary_ok(
             total=0,
-            runs=[],
+            agents=[],
             session_active=True,
         )
     )

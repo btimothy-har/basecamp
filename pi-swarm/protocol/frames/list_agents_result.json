@@ -4,7 +4,10 @@
   "request_id": "list-001",
   "agents": [
     {
-      "agent_id": "agent-42",
+      "agent_id": "00000000-0000-4000-8000-000000000042",
+      "agent_handle": "scout-mossy-otter-a1b2c3",
+      "agent_type": "scout",
+      "run_kind": "primary",
       "parent_id": "session-123",
       "role": "agent",
       "session_name": "(scout) inspect auth [a1b2]",
@@ -13,8 +16,11 @@
       "awaitable": true
     },
     {
-      "agent_id": "agent-43",
-      "parent_id": "agent-42",
+      "agent_id": "00000000-0000-4000-8000-000000000043",
+      "agent_handle": "testing-crisp-ibis-c3d4e5",
+      "agent_type": "testing-specialist",
+      "run_kind": "primary",
+      "parent_id": "00000000-0000-4000-8000-000000000042",
       "role": "agent",
       "session_name": "(testing-specialist) auth tests [c3d4]",
       "depth": 2,
