@@ -1,25 +1,35 @@
 ---
 name: agents
-description: "Use async daemon agents for fan-out and long-running delegation."
+description: "Use async daemon agents via dispatch_agent, list_agents, and wait_for_agent. There is no synchronous agent tool."
 ---
 
 # Agents
 
 Use this skill to delegate bounded work to async daemon agents while you keep working.
 
-Available tools:
-- `dispatch_agent` — start an async agent and receive an `agent_id` handle.
-- `list_agents` — read-only visibility into same-root async agents.
-- `wait_for_agent` — wait for one or more dispatched agent ids.
+These tools are gated by this skill and require the basecamp swarm daemon to be connected:
+- `dispatch_agent({ agent?, task, name? })` — start an async agent. The returned handle is the `agentId` in the tool result details.
+- `wait_for_agent({ handles: string | string[], timeout_s? })` — wait for one or more agent ids. `timeout_s` defaults to 600.
+- `list_agents({ awaitable?: true })` — list visible agents in your current daemon root. `awaitable` filters to agents with a current run you dispatched.
 
-## Delegation guidance
+## Choosing an agent
 
-Split work into focused dispatches with clear scope and done criteria.
+Default to the narrowest agent that fits:
+- **Named read-only agents** (`scout`, `devils-advocate`, `code-clarity-specialist`, `docs-specialist`, `security-specialist`, `testing-specialist`) may fan out for investigation, search, review, and second opinions.
+- **worker** is the only mutative agent and requires an active execution worktree. Never run more than one `worker` concurrently against the same worktree.
+- **Ad-hoc agents** are read-only by tool allowlist. Use them only for narrow tasks when no named agent fits.
 
-Choose the narrowest agent that fits:
-- **Named read-only agents** (`scout`, `devils-advocate`, specialists) may fan out for investigation, search, review, and second opinions.
-- **worker** is mutative. Do not run workers in parallel against the same worktree, or overlap a worker with other agents that may affect the same worktree, until daemon mutation leases exist.
-- **ad-hoc** should be narrow and read-only when no named agent fits.
+Do not dispatch agents for trivial one-step work you can do directly.
+
+## Handle and wait semantics
+
+- Public handles are agent ids; do not expose private run or execution ids.
+- Pass the `agentId` returned by `dispatch_agent` as `handles` to `wait_for_agent`.
+- Only the session that dispatched an agent's current run can wait on that agent id. Other callers see `unknown`.
+- A timed-out wait reports still-running handles as `running`; it does not cancel the agent.
+- `list_agents` returns safe metadata only, not prompts, results, env, or spawn specs.
+- Agents cannot message each other. `wait_for_agent` is only for returning results to the dispatcher.
+- Delegation depth is capped; if nested dispatch is rejected, continue without spawning another agent.
 
 ## Write the brief
 
@@ -28,18 +38,6 @@ A subagent receives no conversation history. Include:
 - relevant file paths or modules
 - constraints and decisions already made
 - explicit acceptance criteria and done definition
-
-## Async daemon tools
-
-1. `dispatch_agent({ agent?, task, name? })` starts an async agent and returns an **agent id**.
-2. `list_agents({ awaitable?: true })` lists visible same-root agents with safe metadata.
-3. `wait_for_agent({ handles, timeout_s? })` waits on one or more agent ids.
-
-Important semantics:
-- Public handles are agent ids; do not expose private run or execution ids.
-- `wait_for_agent` is dispatcher-owned: only the dispatcher of an agent's current primary run can wait on it.
-- `list_agents` is read-only visibility, not messaging. It does not expose prompts, results, errors, env, spawn specs, or private run ids.
-- Async message/reply tools are future work; do not use `wait_for_agent` as a peer-message mechanism.
 
 ## Integration
 
