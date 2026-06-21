@@ -1,7 +1,13 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import type { WorkspaceWorktree } from "pi-core/platform/workspace.ts";
-import { buildExecutionWorktreeChoices, CUSTOM_WORKTREE_CHOICE } from "../planning/worktree-choices.ts";
+import {
+	buildExecutionWorktreeChoices,
+	CUSTOM_WORKTREE_CHOICE,
+	customWorktreeLabel,
+	suggestWorktreeLabel,
+	userWorktreePrefix,
+} from "../planning/worktree-choices.ts";
 
 function worktree(label: string, overrides: Partial<WorkspaceWorktree> = {}): WorkspaceWorktree {
 	return {
@@ -13,6 +19,34 @@ function worktree(label: string, overrides: Partial<WorkspaceWorktree> = {}): Wo
 		...overrides,
 	};
 }
+
+describe("suggestWorktreeLabel", () => {
+	it("uses the first two safe characters from the user id", () => {
+		assert.equal(suggestWorktreeLabel("Fallback Goal", "worktree-prefix", "btimothyhar"), "bt-worktree-prefix");
+		assert.equal(userWorktreePrefix("B Timothy"), "bt");
+	});
+
+	it("falls back when the user id has no safe prefix", () => {
+		assert.equal(suggestWorktreeLabel("Fallback Goal", "worktree-prefix", "!!!"), "un-worktree-prefix");
+		assert.equal(userWorktreePrefix(null), "un");
+	});
+
+	it("normalizes the goal when no worktree slug is provided", () => {
+		assert.equal(suggestWorktreeLabel("Add user worktree prefix", null, "btimothyhar"), "bt-add-user-worktree-prefix");
+	});
+
+	it("caps suggested labels at 32 characters", () => {
+		const label = suggestWorktreeLabel("Goal", "abcdefghijklmnopqrstuvwxyz0123456789", "btimothyhar");
+
+		assert.equal(label, "bt-abcdefghijklmnopqrstuvwxyz012");
+		assert.equal(label.length, 32);
+	});
+
+	it("prefixes custom labels with the user prefix", () => {
+		assert.equal(customWorktreeLabel("custom label", "btimothyhar"), "bt-custom-label");
+		assert.equal(customWorktreeLabel("bt-custom-label", "btimothyhar"), "bt-custom-label");
+	});
+});
 
 describe("buildExecutionWorktreeChoices", () => {
 	it("preserves suggested-first behavior when there is no active worktree", () => {
@@ -126,6 +160,6 @@ describe("buildExecutionWorktreeChoices", () => {
 		const result = buildExecutionWorktreeChoices("suggested", [], null);
 
 		assert.deepEqual(result.choices, ["Create: suggested", CUSTOM_WORKTREE_CHOICE]);
-		assert.equal(result.labelsByChoice.has(CUSTOM_WORKTREE_CHOICE), false);
+		assert.equal(result.labelsByChoice.get(CUSTOM_WORKTREE_CHOICE), undefined);
 	});
 });
