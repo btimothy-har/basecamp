@@ -31,6 +31,18 @@ function deferred<T>(): { promise: Promise<T>; resolve: (value: T) => void } {
 	return { promise, resolve };
 }
 
+async function waitForFrameCount(sent: Frame[], count: number): Promise<void> {
+	for (let attempt = 0; attempt < 20; attempt++) {
+		if (sent.length >= count) return;
+		await new Promise((resolve) => setTimeout(resolve, 0));
+	}
+	assert.equal(sent.length, count);
+}
+
+function telemetryFrames(sent: Frame[]): Array<Extract<Frame, { type: "telemetry" }>> {
+	return sent.filter((frame): frame is Extract<Frame, { type: "telemetry" }> => frame.type === "telemetry");
+}
+
 describe("daemon reporter", () => {
 	const deps = {
 		hasInvokedSkill: () => true,
@@ -47,6 +59,7 @@ describe("daemon reporter", () => {
 			/* no-op */
 		},
 	} as unknown as PiSwarmDependencies;
+
 	it("sends telemetry and final result report", async () => {
 		const sent: Frame[] = [];
 		const connection: DaemonConnection = {
@@ -75,7 +88,11 @@ describe("daemon reporter", () => {
 				agentId: "agent-1",
 			});
 
-			const toolStart = pi.emit("tool_execution_start", { toolCallId: "tc-1", toolName: "read" });
+			const toolStart = pi.emit("tool_execution_start", {
+				toolCallId: "tc-1",
+				toolName: "read",
+				args: { path: "pi-swarm/extension/src/agents/daemon/reporter.ts" },
+			});
 			const toolEnd = pi.emit("tool_execution_end", { toolCallId: "tc-1", toolName: "read", isError: false });
 			const turnEnd = pi.emit("turn_end", { turnIndex: 2, message: "ignore", toolResults: [] });
 			const agentEnd = pi.emit("agent_end", {
@@ -89,15 +106,20 @@ describe("daemon reporter", () => {
 
 			gate.resolve(connection);
 			await Promise.all([toolStart, toolEnd, turnEnd, agentEnd]);
+			await waitForFrameCount(sent, 7);
 
-			const telemetry = sent.filter(
-				(frame): frame is Extract<Frame, { type: "telemetry" }> => frame.type === "telemetry",
-			);
-			assert.equal(telemetry.length, 3);
+			const telemetry = telemetryFrames(sent);
 			assert.deepEqual(
 				telemetry.map((frame) => frame.kind),
-				["tool_execution_start", "tool_execution_end", "turn_end"],
+				["tool_execution_start", "tool_call", "tool_execution_end", "tool_result", "turn_end", "agent_result"],
 			);
+			assert.deepEqual(telemetry.find((frame) => frame.kind === "tool_call")?.payload, {
+				category: "tool",
+				label: "read",
+				snippet: "read pi-swarm/extension/src/agents/daemon/reporter.ts",
+				toolName: "read",
+			});
+			assert.equal(telemetry.find((frame) => frame.kind === "tool_result")?.payload.snippet, "completed");
 
 			const resultReport = sent.find(
 				(frame): frame is Extract<Frame, { type: "result_report" }> => frame.type === "result_report",
@@ -108,11 +130,86 @@ describe("daemon reporter", () => {
 			assert.equal(resultReport.status, "ok");
 			assert.equal(resultReport.result, "final");
 			assert.equal(resultReport.report_token, "token-for-tests");
-			for (const frame of sent.filter(
-				(candidate): candidate is Extract<Frame, { type: "telemetry" }> => candidate.type === "telemetry",
-			)) {
+			for (const frame of telemetryFrames(sent)) {
 				assert.equal(frame.report_token, "token-for-tests");
 			}
+		} finally {
+			if (priorReportToken === undefined) delete process.env.BASECAMP_REPORT_TOKEN;
+			else process.env.BASECAMP_REPORT_TOKEN = priorReportToken;
+		}
+	});
+
+	it("emits bounded assistant, thinking, and tool display activity", async () => {
+		const sent: Frame[] = [];
+		const connection: DaemonConnection = {
+			send(frame) {
+				sent.push(frame);
+			},
+			on() {
+				return () => {};
+			},
+			onClose() {
+				return () => {};
+			},
+			close() {
+				// no-op
+			},
+		};
+		const priorReportToken = process.env.BASECAMP_REPORT_TOKEN;
+		try {
+			process.env.BASECAMP_REPORT_TOKEN = "token-for-tests";
+			const pi = new MockPi();
+			registerDaemonReporter(pi as unknown as any, {
+				connectionPromise: Promise.resolve(connection),
+				runId: "run-1",
+				agentId: "agent-1",
+			});
+
+			await pi.emit("tool_execution_start", {
+				toolCallId: "raw-tool-call-id",
+				toolName: "bash",
+				args: { command: "printf 'hello'", secret: "do-not-serialize" },
+			});
+			await pi.emit("tool_execution_end", {
+				toolCallId: "raw-tool-call-id",
+				toolName: "bash",
+				isError: true,
+				result: { content: [{ type: "text", text: "failure details\nwith multiple lines" }] },
+			});
+			await pi.emit("message_start", { message: { role: "assistant" } });
+			await pi.emit("message_update", { delta: { type: "thinking_delta", text: "hidden chain of thought" } });
+			await pi.emit("message_update", { delta: { type: "text_delta", text: "Visible " } });
+			await pi.emit("message_end", {
+				message: {
+					role: "assistant",
+					content: [
+						{ type: "thinking", thinking: "hidden chain of thought" },
+						{ type: "text", text: "Visible answer" },
+					],
+				},
+			});
+			await waitForFrameCount(sent, 6);
+
+			const telemetry = telemetryFrames(sent);
+			const toolCall = telemetry.find((frame) => frame.kind === "tool_call");
+			assert.equal(toolCall?.payload.snippet, "bash printf 'hello'");
+			assert.equal("toolCallId" in (toolCall?.payload ?? {}), false);
+			assert.equal(JSON.stringify(toolCall?.payload).includes("do-not-serialize"), false);
+
+			const toolResult = telemetry.find((frame) => frame.kind === "tool_result");
+			assert.equal(toolResult?.payload.snippet, "error: failure details with multiple lines");
+			assert.equal(toolResult?.payload.isError, true);
+
+			const thinking = telemetry.find((frame) => frame.kind === "thinking");
+			assert.deepEqual(thinking?.payload, {
+				category: "assistant",
+				label: "thinking",
+				snippet: "thinking…",
+			});
+			assert.equal(JSON.stringify(telemetry).includes("hidden chain of thought"), false);
+
+			const output = telemetry.find((frame) => frame.kind === "assistant_output");
+			assert.equal(output?.payload.snippet, "Visible answer");
 		} finally {
 			if (priorReportToken === undefined) delete process.env.BASECAMP_REPORT_TOKEN;
 			else process.env.BASECAMP_REPORT_TOKEN = priorReportToken;
