@@ -21,12 +21,30 @@ describe("daemon run summary client", () => {
 				{ agent_handle: 123, session_name: "bad", status: "running" },
 				{
 					agent_handle: "worker-1",
+					agent_id_short: "abc123ef",
 					agent_type: "worker",
+					model: "anthropic/claude-sonnet",
 					session_name: "worker",
 					status: "running",
 					created_at: "2026-01-01T00:00:00Z",
 					started_at: "2026-01-01T00:00:01Z",
 					ended_at: null,
+					recent_activity: [
+						"bad",
+						{ kind: "tool_call", seq: 1, timestamp: "2026-01-01T00:00:02Z", label: "read", snippet: "read file" },
+						{
+							kind: "tool_result",
+							seq: 2,
+							timestamp: "2026-01-01T00:00:03Z",
+							category: "tool",
+							label: "read",
+							snippet: "ok",
+							toolName: "read",
+							isError: false,
+							turnIndex: "bad",
+							toolCallId: "hidden",
+						},
+					],
 					task: {
 						goal: "Build the thing",
 						task_plan: [
@@ -47,6 +65,35 @@ describe("daemon run summary client", () => {
 		assert.equal(result.agents.length, 1);
 		const [agent] = result.agents;
 		assert.equal(agent?.agent_handle, "worker-1");
+		assert.equal(agent?.agent_id_short, "abc123ef");
+		assert.equal(agent?.model, "anthropic/claude-sonnet");
+		assert.deepEqual(agent?.recent_activity, [
+			{
+				kind: "tool_call",
+				seq: 1,
+				timestamp: "2026-01-01T00:00:02Z",
+				category: null,
+				label: "read",
+				snippet: "read file",
+				toolName: null,
+				isError: null,
+				turnIndex: null,
+				toolCount: null,
+			},
+			{
+				kind: "tool_result",
+				seq: 2,
+				timestamp: "2026-01-01T00:00:03Z",
+				category: "tool",
+				label: "read",
+				snippet: "ok",
+				toolName: "read",
+				isError: false,
+				turnIndex: null,
+				toolCount: null,
+			},
+		]);
+		assert.equal(JSON.stringify(agent?.recent_activity).includes("hidden"), false);
 		assert.equal(agent?.task?.goal, "Build the thing");
 		assert.deepEqual(
 			agent?.task?.task_plan?.map((item) => item.label),

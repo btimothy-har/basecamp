@@ -61,6 +61,37 @@ def test_store_migrates_agent_handle_column_and_backfills_existing_rows(tmp_path
     assert any(index[1] == "idx_agents_agent_handle_unique" and index[2] for index in indexes)
 
 
+def test_store_migrates_agent_model_column(tmp_path: Path) -> None:
+    db_path = tmp_path / "daemon.db"
+    with sqlite3.connect(db_path) as connection:
+        connection.execute(
+            """
+            CREATE TABLE agents (
+                id TEXT PRIMARY KEY,
+                parent_id TEXT,
+                sibling_group TEXT,
+                depth INTEGER,
+                role TEXT,
+                session_name TEXT,
+                cwd TEXT,
+                created_at TEXT,
+                last_seen_at TEXT,
+                current_run_id TEXT,
+                agent_handle TEXT,
+                agent_type TEXT,
+                run_kind TEXT
+            )
+            """
+        )
+
+    Store(db_path=db_path)
+
+    with sqlite3.connect(db_path) as connection:
+        columns = {row[1] for row in connection.execute("PRAGMA table_info(agents)").fetchall()}
+
+    assert "model" in columns
+
+
 def test_upsert_agent_persists_and_is_idempotent(tmp_path: Path) -> None:
     db_path = tmp_path / "daemon.db"
     store = Store(db_path=db_path)
@@ -110,6 +141,7 @@ def test_upsert_agent_persists_gets_and_preserves_handle(tmp_path: Path) -> None
         role="agent",
         session_name="session-a",
         cwd="/tmp/a",
+        model="claude-sonnet-4-5",
     )
     store.upsert_agent(
         agent_id="agent-1",
@@ -125,6 +157,7 @@ def test_upsert_agent_persists_gets_and_preserves_handle(tmp_path: Path) -> None
     by_handle = store.get_agent_by_handle("readable")
     assert agent is not None
     assert agent["agent_handle"] == "readable"
+    assert agent["model"] == "claude-sonnet-4-5"
     assert by_handle is not None
     assert by_handle["id"] == "agent-1"
 
@@ -907,7 +940,9 @@ def test_get_run_summary_does_not_expose_spec_or_tokens(tmp_path: Path) -> None:
     summary_agent = result["agents"][0]
     assert set(summary_agent) == {
         "agent_handle",
+        "agent_id_short",
         "agent_type",
+        "model",
         "role",
         "session_name",
         "status",
@@ -920,6 +955,8 @@ def test_get_run_summary_does_not_expose_spec_or_tokens(tmp_path: Path) -> None:
         "task",
         "recent_activity",
     }
+    assert summary_agent["agent_id_short"] == "child"
+    assert summary_agent["model"] == "default"
     assert "run_id" not in summary_agent
     assert "agent_id" not in summary_agent
     assert "spec_json" not in summary_agent
@@ -955,6 +992,7 @@ def test_get_run_summary_projects_safe_task_log_and_activity(tmp_path: Path) -> 
         role="agent",
         session_name="child-agent",
         cwd="/tmp/child",
+        model="claude-haiku-4-5",
     )
     store.create_run(
         run_id="run-1",
@@ -980,18 +1018,60 @@ def test_get_run_summary_projects_safe_task_log_and_activity(tmp_path: Path) -> 
     )
     store.append_run_event(
         run_id="run-1",
+        kind="tool_call",
+        payload={
+            "category": "tool",
+            "label": "Read file",
+            "snippet": "opening /safe/path",
+            "toolName": "read",
+            "toolCallId": "call-secret",
+            "raw": {"args": "private"},
+        },
+    )
+    store.append_run_event(
+        run_id="run-1",
+        kind="tool_result",
+        payload={
+            "category": "tool",
+            "label": "Read file",
+            "snippet": "done",
+            "toolName": "read",
+            "isError": False,
+            "toolCallId": "call-secret",
+            "output": "private output",
+        },
+    )
+    store.append_run_event(
+        run_id="run-1",
+        kind="assistant_output",
+        payload={"category": "assistant", "snippet": "safe answer", "message": "raw message"},
+    )
+    store.append_run_event(
+        run_id="run-1",
+        kind="thinking",
+        payload={"category": "thinking", "snippet": "thinking…", "chainOfThought": "hidden"},
+    )
+    store.append_run_event(
+        run_id="run-1",
+        kind="agent_result",
+        payload={"category": "result", "label": "Completed", "snippet": "summary", "isError": True},
+    )
+    store.append_run_event(
+        run_id="run-1",
+        kind="turn_end",
+        payload={"turnIndex": 3, "toolCount": 2, "raw": "private"},
+    )
+    store.append_run_event(
+        run_id="run-1",
         kind="raw_model_delta",
-        payload={"toolName": "should-not-leak", "turnIndex": 3},
+        payload={"toolName": "should-not-leak", "turnIndex": 4},
     )
     with sqlite3.connect(db_path) as connection:
-        connection.execute(
-            "UPDATE run_events SET ts = ? WHERE run_id = ? AND seq = ?",
-            ("2026-01-01T00:00:00Z", "run-1", 1),
-        )
-        connection.execute(
-            "UPDATE run_events SET ts = ? WHERE run_id = ? AND seq = ?",
-            ("2026-01-01T00:00:01Z", "run-1", 2),
-        )
+        for seq in range(1, 9):
+            connection.execute(
+                "UPDATE run_events SET ts = ? WHERE run_id = ? AND seq = ?",
+                (f"2026-01-01T00:00:0{seq - 1}Z", "run-1", seq),
+            )
     _write_task_log(
         task_dir,
         "agent-1",
@@ -1030,6 +1110,8 @@ def test_get_run_summary_projects_safe_task_log_and_activity(tmp_path: Path) -> 
     agent = result["agents"][0]
     assert "agent_id" not in agent
     assert "run_id" not in agent
+    assert agent["agent_id_short"] == "agent1"
+    assert agent["model"] == "claude-haiku-4-5"
     assert agent["task"] == {
         "goal": "Ship observability",
         "progress": {"completed": 1, "deleted": 1, "total": 3},
@@ -1053,14 +1135,75 @@ def test_get_run_summary_projects_safe_task_log_and_activity(tmp_path: Path) -> 
             "timestamp": "2026-01-01T00:00:00Z",
             "toolName": "read",
             "turnIndex": 2,
-        }
+        },
+        {
+            "kind": "tool_call",
+            "seq": 2,
+            "timestamp": "2026-01-01T00:00:01Z",
+            "category": "tool",
+            "label": "Read file",
+            "snippet": "opening /safe/path",
+            "toolName": "read",
+        },
+        {
+            "kind": "tool_result",
+            "seq": 3,
+            "timestamp": "2026-01-01T00:00:02Z",
+            "category": "tool",
+            "label": "Read file",
+            "snippet": "done",
+            "toolName": "read",
+            "isError": False,
+        },
+        {
+            "kind": "assistant_output",
+            "seq": 4,
+            "timestamp": "2026-01-01T00:00:03Z",
+            "category": "assistant",
+            "snippet": "safe answer",
+        },
+        {
+            "kind": "thinking",
+            "seq": 5,
+            "timestamp": "2026-01-01T00:00:04Z",
+            "category": "thinking",
+            "snippet": "thinking…",
+        },
+        {
+            "kind": "agent_result",
+            "seq": 6,
+            "timestamp": "2026-01-01T00:00:05Z",
+            "category": "result",
+            "label": "Completed",
+            "snippet": "summary",
+            "isError": True,
+        },
+        {
+            "kind": "turn_end",
+            "seq": 7,
+            "timestamp": "2026-01-01T00:00:06Z",
+            "turnIndex": 3,
+            "toolCount": 2,
+        },
     ]
     assert agent["recent_activity"][0]["timestamp"] != "agent-supplied-timestamp"
     assert all(activity["kind"] != "raw_model_delta" for activity in agent["recent_activity"])
-    assert all(
-        key not in agent["recent_activity"][0]
-        for key in ["args", "output", "toolCallId", "cwd", "env", "error", "payload"]
-    )
+    for activity in agent["recent_activity"]:
+        assert all(
+            key not in activity
+            for key in [
+                "args",
+                "output",
+                "toolCallId",
+                "cwd",
+                "env",
+                "error",
+                "payload",
+                "raw",
+                "message",
+                "chainOfThought",
+            ]
+        )
 
 
 def test_get_run_summary_tolerates_malformed_task_logs(tmp_path: Path) -> None:

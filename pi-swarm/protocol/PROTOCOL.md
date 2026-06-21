@@ -1,22 +1,22 @@
 # Pi Swarm Daemon Protocol
 
-Protocol version: `9`
+Protocol version: `10`
 
 All frames are JSON objects with an envelope:
 
 ```json
-{"type":"<frame_type>","v":9,...}
+{"type":"<frame_type>","v":10,...}
 ```
 
 Version handling:
 - The daemon validates `v` on every inbound frame.
-- If `v != 9`, the daemon sends an `error` frame with `code: "protocol_version"` and closes the connection.
+- If `v != 10`, the daemon sends an `error` frame with `code: "protocol_version"` and closes the connection.
 - The extension treats the protocol as a client-visible capability gate, not only a frame-shape version. A version mismatch restarts the host daemon during ensure-daemon.
 
 ## Transport
 
 - HTTP over Unix domain socket (UDS):
-  - `GET /health` → `{"status":"ok","protocol":9}`
+  - `GET /health` → `{"status":"ok","protocol":10}`
   - `GET /runs/summary?root_id=<id>` returns safe agent-level observability for the companion dashboard.
 - WebSocket over UDS:
   - `/ws`
@@ -64,6 +64,7 @@ Important fields:
 - `agent_id`: private durable agent identity. If omitted, daemon may mint one as a fallback.
 - `agent_handle`: public readable handle for dispatch/list/wait UX.
 - `agent_type` and `run_kind`: immutable per handle after the first dispatch.
+- `model`: public display model selected for the agent run. If the extension uses Pi's default model, it sends/stores `default`.
 - `spec`: opaque TypeScript-authored spawn spec.
 
 New run rows persist `dispatcher_id` as the registered `node_id` that sent `dispatch`.
@@ -91,7 +92,7 @@ Waits for one or more public agent handles:
 ```json
 {
   "type": "wait",
-  "v": 9,
+  "v": 10,
   "agent_ids": [],
   "agent_handles": ["scout-mossy-otter-a1b2c3"],
   "mode": "all",
@@ -122,7 +123,7 @@ Requests a safe directory of agents visible under the caller's root session:
 ```json
 {
   "type": "list_agents",
-  "v": 9,
+  "v": 10,
   "request_id": "list-001",
   "awaitable": true
 }
@@ -161,13 +162,15 @@ Response schema:
 - `session_active`: whether the root session is currently registered.
 
 Each summary row contains:
-- `agent_handle`, `agent_type`, `role`, `session_name`.
+- `agent_handle`, `agent_id_short`, `agent_type`, `model`, `role`, `session_name`.
+- `agent_id_short`: deterministic short suffix derived from the private agent id for display disambiguation. The raw private `agent_id` is not included.
+- `model`: public display model stored from dispatch; legacy rows with no stored model project `default`.
 - `status`: one of `idle`, `pending`, `running`, `completed`, or `failed`.
 - `result_preview`, `error_preview`, `exit_code`, `created_at`, `started_at`, `ended_at`.
 - `task`: safe projection from `~/.pi/basecamp/tasks/<agent-id>.json`, or `null` if absent/invalid. It contains sanitized `goal`, `progress: {completed, deleted, total}`, canonical bounded `task_plan` entries (`index`, `label`, `status`), and `current_task` (`index`, `label`, `status`, `description`, `notes`). Task status values are `pending`, `active`, `completed`, and `deleted`; deleted tasks are omitted from `task_plan` but counted in `progress.deleted`.
-- `recent_activity`: bounded telemetry projection containing only allowlisted display fields: event `kind`, `seq`, daemon `timestamp`, `toolName`, and `turnIndex`. Current event kinds are `tool_execution_start`, `tool_execution_end`, and `turn_end`.
+- `recent_activity`: bounded telemetry projection containing only allowlisted display fields: event `kind`, `seq`, daemon `timestamp`, `category`, `label`, `snippet`, `toolName`, `isError`, `turnIndex`, and `toolCount`. Current event kinds are `tool_call`, `tool_result`, `assistant_output`, `thinking`, `agent_result`, plus compatible `tool_execution_start`, `tool_execution_end`, and `turn_end`.
 
-Summary rows do not include private `run_id`, private `agent_id`, report tokens, prompts, full results, errors, spawn specs, env, cwd, raw telemetry payloads/args/outputs, tool call ids, visible/model message text, or hidden model thinking. Display strings are control/ANSI stripped and length capped.
+Summary rows do not include private `run_id`, private `agent_id`, report tokens, prompts, full results, errors, spawn specs, env, cwd, raw telemetry payloads/args/outputs, raw tool call ids, visible/model message text beyond reporter-sanitized snippets, or hidden model thinking. Display strings are control/ANSI stripped and length capped.
 
 ### `error` daemon → client
 
@@ -182,6 +185,6 @@ Reports protocol/parse errors and closes the WebSocket for fatal frame errors. C
 A minimal client flow is:
 
 1. Connect to `/ws` over the UDS.
-2. Send `register` with `v: 9`.
+2. Send `register` with `v: 10`.
 3. Send `dispatch` with private `run_id` / `agent_id` and public `agent_handle`.
 4. Use the `agent_handle` with `wait` or discover agents through `list_agents`.

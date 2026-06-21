@@ -289,6 +289,7 @@ export function registerDaemonTools(
 					agentHandle,
 					agentType: plan.agentLabel ?? "ad-hoc",
 					runKind: plan.runKind,
+					model: plan.model ?? "default",
 					argv: plan.args.slice(0, -1),
 					task: taskSpec,
 					cwd: plan.spawnCwd,
