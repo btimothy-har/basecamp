@@ -192,13 +192,13 @@ export async function getOrCreateWorktree(
 	repoRoot: string,
 	repoName: string,
 	label: string,
-	branchName?: string | null,
+	branchOverride?: string | null,
 ): Promise<WorktreeResult> {
 	ensureWorktreeLabel(label);
 	const defaultBranch = await validateProtectedCheckout(pi, repoRoot);
 	const worktreeDir = path.join(WORKTREES_ROOT, repoName, label);
 	validateNoSymlinkedWorktreePath(worktreeDir);
-	const branch = branchName?.trim() || `${WORKTREE_BRANCH_PREFIX}${label}`;
+	const branch = branchOverride?.trim() || `${WORKTREE_BRANCH_PREFIX}${label}`;
 	const records = await gitWorktreeRecords(pi, repoRoot);
 	const existing = findWorktreeRecord(records, worktreeDir);
 	if (existing) {
