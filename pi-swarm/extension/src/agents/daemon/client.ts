@@ -556,6 +556,8 @@ export async function connect(identity: DaemonIdentity, options: ConnectOptions 
 interface DaemonDispatchFrameOptions {
 	agentId: string;
 	agentHandle: string;
+	agentType: string;
+	runKind: string;
 	argv: string[];
 	task: string;
 	cwd: string;
@@ -656,6 +658,8 @@ export function createDaemonClient(connection: DaemonConnection): DaemonClient {
 				run_id: runId,
 				agent_id: input.agentId,
 				agent_handle: input.agentHandle,
+				agent_type: input.agentType,
+				run_kind: input.runKind,
 				spec: {
 					argv: input.argv,
 					task: input.task,

@@ -1,6 +1,6 @@
 {
   "type": "wait",
-  "v": 7,
+  "v": 8,
   "agent_ids": [
     "agent-001",
     "agent-002"

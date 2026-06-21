@@ -30,8 +30,14 @@ DEFAULT_AGENT_MAX_DEPTH = 2
 TERMINAL_RUN_STATUSES = {"completed", "failed"}
 
 DispatchAckStatus = Literal["spawned", "rejected"]
-DispatchAckReason = Literal["depth_cap", "active_run_exists", "duplicate_agent_handle", "spawn_failed"]
-DispatchRejectionReason = Literal["depth_cap", "active_run_exists", "duplicate_agent_handle"]
+DispatchAckReason = Literal[
+    "depth_cap",
+    "active_run_exists",
+    "duplicate_agent_handle",
+    "agent_type_mismatch",
+    "spawn_failed",
+]
+DispatchRejectionReason = Literal["depth_cap", "active_run_exists", "duplicate_agent_handle", "agent_type_mismatch"]
 
 
 @dataclass(frozen=True)
@@ -70,6 +76,15 @@ def _hash_report_token(report_token: str) -> str:
     return hashlib.sha256(report_token.encode("utf-8")).hexdigest()
 
 
+def _metadata_mismatches(*, existing: dict[str, Any], frame: DispatchFrame) -> bool:
+    existing_agent_type = existing.get("agent_type")
+    if isinstance(existing_agent_type, str) and frame.agent_type and existing_agent_type != frame.agent_type:
+        return True
+
+    existing_run_kind = existing.get("run_kind")
+    return bool(isinstance(existing_run_kind, str) and frame.run_kind and existing_run_kind != frame.run_kind)
+
+
 def _resolve_agent_max_depth() -> int:
     raw = os.getenv("BASECAMP_AGENT_MAX_DEPTH")
     try:
@@ -87,27 +102,58 @@ async def prepare_dispatch(
 ) -> PreparedDispatch | DispatchRejection:
     dispatcher = await asyncio.to_thread(store.get_agent, dispatcher_node_id)
     dispatcher_depth = int(dispatcher.get("depth", 0)) if dispatcher else 0
-    child_depth = dispatcher_depth + 1
+    existing_agent = None
+    if frame.agent_handle:
+        existing_agent = await asyncio.to_thread(store.get_agent_by_handle, frame.agent_handle)
+
+    if existing_agent is not None:
+        existing_agent_id = str(existing_agent.get("id"))
+        if frame.agent_id and frame.agent_id != existing_agent_id:
+            return DispatchRejection(reason="duplicate_agent_handle")
+        if _metadata_mismatches(existing=existing_agent, frame=frame):
+            return DispatchRejection(reason="agent_type_mismatch")
+        agent_id = existing_agent_id
+        child_depth = int(existing_agent.get("depth", dispatcher_depth + 1))
+    else:
+        agent_id = frame.agent_id or str(uuid.uuid4())
+        child_depth = dispatcher_depth + 1
+
     max_depth = _resolve_agent_max_depth()
     if child_depth > max_depth:
         return DispatchRejection(reason="depth_cap")
 
-    agent_id = frame.agent_id or str(uuid.uuid4())
     report_token = _generate_report_token()
     report_token_hash = _hash_report_token(report_token)
     spec_json = _sanitize_dispatch_spec(frame.spec.model_dump(mode="json"))
     try:
-        await asyncio.to_thread(
-            store.upsert_agent,
-            agent_id=agent_id,
-            parent_id=dispatcher_node_id,
-            sibling_group=None,
-            depth=child_depth,
-            role="agent",
-            session_name=frame.agent_handle or agent_id,
-            cwd=frame.spec.cwd,
-            agent_handle=frame.agent_handle,
-        )
+        if existing_agent is None:
+            await asyncio.to_thread(
+                store.upsert_agent,
+                agent_id=agent_id,
+                parent_id=dispatcher_node_id,
+                sibling_group=None,
+                depth=child_depth,
+                role="agent",
+                session_name=frame.agent_handle or agent_id,
+                cwd=frame.spec.cwd,
+                agent_handle=frame.agent_handle,
+                agent_type=frame.agent_type,
+                run_kind=frame.run_kind,
+            )
+        else:
+            await asyncio.to_thread(
+                store.upsert_agent,
+                agent_id=agent_id,
+                parent_id=existing_agent.get("parent_id"),
+                sibling_group=existing_agent.get("sibling_group"),
+                depth=child_depth,
+                role=str(existing_agent.get("role") or "agent"),
+                session_name=str(existing_agent.get("session_name") or frame.agent_handle or agent_id),
+                cwd=frame.spec.cwd,
+                agent_handle=frame.agent_handle,
+                agent_type=frame.agent_type,
+                run_kind=frame.run_kind,
+            )
     except DuplicateAgentHandleError:
         return DispatchRejection(reason="duplicate_agent_handle")
     try:
@@ -416,16 +462,21 @@ async def list_agents(
         requester_node_id=requester_node_id,
         awaitable=frame.awaitable,
     )
-    return [
-        ListAgentItem(
-            agent_id=row["agent_id"],
-            agent_handle=row["agent_handle"],
-            parent_id=row["parent_id"],
-            role=row["role"],
-            session_name=row["session_name"],
-            depth=row["depth"],
-            status=row["status"],
-            awaitable=row["awaitable"],
-        )
-        for row in rows
-    ]
+    items: list[ListAgentItem] = []
+    for row in rows:
+        values: dict[str, Any] = {
+            "agent_id": row["agent_id"],
+            "agent_handle": row["agent_handle"],
+            "parent_id": row["parent_id"],
+            "role": row["role"],
+            "session_name": row["session_name"],
+            "depth": row["depth"],
+            "status": row["status"],
+            "awaitable": row["awaitable"],
+        }
+        if row.get("agent_type") is not None:
+            values["agent_type"] = row["agent_type"]
+        if row.get("run_kind") is not None:
+            values["run_kind"] = row["run_kind"]
+        items.append(ListAgentItem(**values))
+    return items

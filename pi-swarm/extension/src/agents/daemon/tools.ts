@@ -43,6 +43,7 @@ const DispatchAgentParams = Type.Object({
 	agent: Type.Optional(Type.String({ description: "Agent definition name" })),
 	task: Type.String({ description: "Task description" }),
 	name: Type.Optional(Type.String({ description: "Name suffix (auto-generated prefix)" })),
+	agent_handle: Type.Optional(Type.String({ description: "Existing agent handle to retask" })),
 });
 
 const AgentHandlesParam = Type.Union([
@@ -126,6 +127,11 @@ function publicAgentHandle(agent: ListAgentItem): string {
 	return agent.agent_handle?.trim() || agent.agent_id;
 }
 
+function storedAgentType(agent: ListAgentItem): string | null {
+	const value = agent.agent_type?.trim();
+	return value ? value : null;
+}
+
 function toPublicListAgent(agent: ListAgentItem): PublicListAgentItem {
 	return {
 		agentHandle: publicAgentHandle(agent),
@@ -192,8 +198,40 @@ export function registerDaemonTools(
 				};
 			}
 
+			const daemonClient = createDaemonClient(connection);
+			const requestedHandle = params.agent_handle?.trim() || null;
+			let requestedAgent = params.agent;
+			let agentId: string = randomUUID();
+			if (requestedHandle) {
+				const existing = (await daemonClient.listAgents({ awaitable: false })).find(
+					(agent) => publicAgentHandle(agent) === requestedHandle,
+				);
+				if (!existing) {
+					return {
+						content: [{ type: "text", text: `Unknown agent handle: ${requestedHandle}` }],
+						isError: true,
+						details: null,
+					};
+				}
+
+				const existingAgentType = storedAgentType(existing);
+				if (params.agent && existingAgentType && params.agent !== existingAgentType) {
+					return {
+						content: [
+							{
+								type: "text",
+								text: `Agent handle ${requestedHandle} is ${existingAgentType}; use a new handle for ${params.agent}.`,
+							},
+						],
+						isError: true,
+						details: { agentHandle: requestedHandle, agent: existingAgentType } satisfies DispatchDetails,
+					};
+				}
+				if (!requestedAgent && existingAgentType && existingAgentType !== "ad-hoc") requestedAgent = existingAgentType;
+				agentId = existing.agent_id;
+			}
+
 			const localId = randomUUID().slice(0, 6);
-			const agentId = randomUUID();
 			const namePrefix = `agent-${localId}`;
 			let agentLaunch: ReturnType<typeof buildAgentLaunchSpec>;
 			try {
@@ -202,7 +240,7 @@ export function registerDaemonTools(
 					getAgents: discoverAgents,
 					basecampExtensionRoot: deps.basecampExtensionRoot,
 					agentId,
-					requestedAgent: params.agent,
+					requestedAgent,
 					namePrefix,
 					nameSuffix: params.name,
 					task: params.task,
@@ -226,7 +264,6 @@ export function registerDaemonTools(
 				return { content: [{ type: "text", text: msg }], isError: true, details: null };
 			}
 
-			const daemonClient = createDaemonClient(connection);
 			const { plan } = agentLaunch;
 			const taskSpec = plan.args.at(-1);
 			if (!taskSpec) {
@@ -237,24 +274,28 @@ export function registerDaemonTools(
 				};
 			}
 
-			let agentHandle = buildAgentHandle(plan.agentLabel ?? "ad-hoc");
+			let agentHandle = requestedHandle ?? buildAgentHandle(plan.agentLabel ?? "ad-hoc");
 			let result: Awaited<ReturnType<typeof daemonClient.dispatchAgent>> | null = null;
 			const dispatchEnv = {
 				...processEnvForSpawn(),
 				...plan.environment,
-				BASECAMP_AGENT_TITLE: buildAgentTitleBase(params.agent, params.task),
+				BASECAMP_AGENT_TITLE: buildAgentTitleBase(requestedAgent, params.task),
 			};
 
-			for (let attempt = 0; attempt < 3; attempt++) {
+			const attempts = requestedHandle ? 1 : 3;
+			for (let attempt = 0; attempt < attempts; attempt++) {
 				result = await daemonClient.dispatchAgent({
 					agentId,
 					agentHandle,
+					agentType: plan.agentLabel ?? "ad-hoc",
+					runKind: plan.runKind,
 					argv: plan.args.slice(0, -1),
 					task: taskSpec,
 					cwd: plan.spawnCwd,
 					env: dispatchEnv,
 				});
-				if (result.status !== "rejected" || result.reason !== "duplicate_agent_handle" || attempt === 2) break;
+				if (result.status !== "rejected" || result.reason !== "duplicate_agent_handle" || attempt === attempts - 1)
+					break;
 				agentHandle = buildAgentHandle(plan.agentLabel ?? "ad-hoc");
 			}
 

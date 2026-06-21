@@ -78,7 +78,9 @@ class Store:
                     created_at TEXT,
                     last_seen_at TEXT,
                     current_run_id TEXT,
-                    agent_handle TEXT
+                    agent_handle TEXT,
+                    agent_type TEXT,
+                    run_kind TEXT
                 )
                 """
             )
@@ -114,6 +116,7 @@ class Store:
             )
             self._ensure_agents_current_run_id_column(connection)
             self._ensure_agents_agent_handle_column(connection)
+            self._ensure_agents_metadata_columns(connection)
             self._ensure_runs_dispatcher_id_column(connection)
             self._ensure_runs_exit_code_column(connection)
             self._ensure_runs_report_token_hash_column(connection)
@@ -146,6 +149,14 @@ class Store:
             """
         )
 
+    def _ensure_agents_metadata_columns(self, connection: sqlite3.Connection) -> None:
+        columns = connection.execute("PRAGMA table_info(agents)").fetchall()
+        names = {column[1] for column in columns}
+        if "agent_type" not in names:
+            connection.execute("ALTER TABLE agents ADD COLUMN agent_type TEXT")
+        if "run_kind" not in names:
+            connection.execute("ALTER TABLE agents ADD COLUMN run_kind TEXT")
+
     def _ensure_runs_dispatcher_id_column(self, connection: sqlite3.Connection) -> None:
         columns = connection.execute("PRAGMA table_info(runs)").fetchall()
         names = {column[1] for column in columns}
@@ -175,17 +186,23 @@ class Store:
         session_name: str,
         cwd: str,
         agent_handle: str | None = None,
+        agent_type: str | None = None,
+        run_kind: str | None = None,
     ) -> None:
         """Insert/update an agent row and refresh last-seen timestamp."""
 
         now = self._now()
         with self._connect() as connection:
             existing = connection.execute(
-                "SELECT agent_handle FROM agents WHERE id = ?",
+                "SELECT agent_handle, agent_type, run_kind FROM agents WHERE id = ?",
                 (agent_id,),
             ).fetchone()
             stored_handle = existing[0] if existing is not None else None
+            stored_agent_type = existing[1] if existing is not None else None
+            stored_run_kind = existing[2] if existing is not None else None
             next_handle = agent_handle or stored_handle or _fallback_agent_handle(agent_id)
+            next_agent_type = agent_type or stored_agent_type
+            next_run_kind = run_kind or stored_run_kind
 
             duplicate = connection.execute(
                 "SELECT id FROM agents WHERE agent_handle = ? AND id != ? LIMIT 1",
@@ -206,9 +223,11 @@ class Store:
                     cwd,
                     created_at,
                     last_seen_at,
-                    agent_handle
+                    agent_handle,
+                    agent_type,
+                    run_kind
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(id)
                 DO UPDATE SET
                     parent_id = excluded.parent_id,
@@ -218,7 +237,9 @@ class Store:
                     session_name = excluded.session_name,
                     cwd = excluded.cwd,
                     last_seen_at = excluded.last_seen_at,
-                    agent_handle = excluded.agent_handle
+                    agent_handle = excluded.agent_handle,
+                    agent_type = excluded.agent_type,
+                    run_kind = excluded.run_kind
                 """,
                 (
                     agent_id,
@@ -231,6 +252,8 @@ class Store:
                     now,
                     now,
                     next_handle,
+                    next_agent_type,
+                    next_run_kind,
                 ),
             )
 
@@ -419,6 +442,8 @@ class Store:
             SELECT
                 a.id AS agent_id,
                 a.agent_handle,
+                a.agent_type,
+                a.run_kind,
                 a.parent_id,
                 a.role,
                 a.session_name,
@@ -451,6 +476,8 @@ class Store:
             {
                 "agent_id": row["agent_id"],
                 "agent_handle": row["agent_handle"],
+                "agent_type": row["agent_type"],
+                "run_kind": row["run_kind"],
                 "parent_id": row["parent_id"],
                 "role": row["role"],
                 "session_name": row["session_name"],

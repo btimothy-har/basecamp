@@ -203,6 +203,8 @@ describe("daemon async tools", () => {
 			assert.equal(outbound.spec.env.BASECAMP_AGENT_TITLE, "(Agent) hello world");
 			assert.match(outbound.agent_handle ?? "", /^ad-hoc-[a-z]+-[a-z]+-[0-9a-f]{6}$/);
 			assert.notEqual(outbound.agent_handle, outbound.agent_id);
+			assert.equal(outbound.agent_type, "ad-hoc");
+			assert.equal(outbound.run_kind, "ad-hoc");
 
 			connection.emit({
 				type: "dispatch_ack",
@@ -506,6 +508,8 @@ describe("daemon async tools", () => {
 		await new Promise((resolve) => setImmediate(resolve));
 		const first = connection.sent[0] as Extract<Frame, { type: "dispatch" }>;
 		assert.match(first.agent_handle ?? "", /^scout-[a-z]+-[a-z]+-[0-9a-f]{6}$/);
+		assert.equal(first.agent_type, "scout");
+		assert.equal(first.run_kind, "named-read-only");
 
 		connection.emit({
 			type: "dispatch_ack",
@@ -534,6 +538,114 @@ describe("daemon async tools", () => {
 		assert.equal(result.isError, undefined);
 		assert.equal(result.details.agentHandle, second.agent_handle);
 		assert.match(result.content[0].text, new RegExp(String(second.agent_handle)));
+	});
+
+	it("dispatch_agent retasks an existing handle with its internal agent id", async () => {
+		trackSkillInvocation("agents");
+		const connection = new MockConnection();
+		const { pi, tools } = createMockPi();
+		registerDaemonTools(pi, async () => connection, daemonToolDeps);
+		const dispatchTool = toolByName(tools, "dispatch_agent");
+
+		const executePromise = dispatchTool.execute(
+			"1",
+			{ agent_handle: "scout-amber-fox-a1b2c3", task: "follow up" },
+			new AbortController().signal,
+			() => {},
+			{
+				model: "claude-sonnet",
+				sessionManager: { getSessionId: () => "session-id" },
+			},
+		);
+		await new Promise((resolve) => setImmediate(resolve));
+
+		const listRequest = connection.sent[0] as Extract<Frame, { type: "list_agents" }>;
+		assert.equal(listRequest.type, "list_agents");
+		connection.emit({
+			type: "list_agents_result",
+			v: PROTOCOL_VERSION,
+			request_id: listRequest.request_id,
+			agents: [
+				{
+					agent_id: "00000000-0000-4000-8000-000000000001",
+					agent_handle: "scout-amber-fox-a1b2c3",
+					agent_type: "scout",
+					run_kind: "named-read-only",
+					parent_id: "session-id",
+					role: "agent",
+					session_name: "scout-amber-fox-a1b2c3",
+					depth: 1,
+					status: "completed",
+					awaitable: true,
+				},
+			],
+		});
+		await new Promise((resolve) => setImmediate(resolve));
+
+		const dispatch = connection.sent[1] as Extract<Frame, { type: "dispatch" }>;
+		assert.equal(dispatch.agent_id, "00000000-0000-4000-8000-000000000001");
+		assert.equal(dispatch.agent_handle, "scout-amber-fox-a1b2c3");
+		assert.equal(dispatch.agent_type, "scout");
+		assert.equal(dispatch.run_kind, "named-read-only");
+
+		connection.emit({
+			type: "dispatch_ack",
+			v: PROTOCOL_VERSION,
+			run_id: dispatch.run_id,
+			status: "spawned",
+			reason: null,
+		});
+
+		const result = await executePromise;
+		assert.equal(result.isError, undefined);
+		assert.equal(result.details.agentHandle, "scout-amber-fox-a1b2c3");
+		assert.doesNotMatch(result.content[0].text, /00000000-0000-4000-8000-000000000001/);
+	});
+
+	it("dispatch_agent rejects changing an existing handle's agent type", async () => {
+		trackSkillInvocation("agents");
+		const connection = new MockConnection();
+		const { pi, tools } = createMockPi();
+		registerDaemonTools(pi, async () => connection, daemonToolDeps);
+		const dispatchTool = toolByName(tools, "dispatch_agent");
+
+		const resultPromise = dispatchTool.execute(
+			"1",
+			{ agent: "worker", agent_handle: "scout-amber-fox-a1b2c3", task: "follow up" },
+			new AbortController().signal,
+			() => {},
+			{
+				model: "claude-sonnet",
+				sessionManager: { getSessionId: () => "session-id" },
+			},
+		);
+		await new Promise((resolve) => setImmediate(resolve));
+
+		const listRequest = connection.sent[0] as Extract<Frame, { type: "list_agents" }>;
+		connection.emit({
+			type: "list_agents_result",
+			v: PROTOCOL_VERSION,
+			request_id: listRequest.request_id,
+			agents: [
+				{
+					agent_id: "00000000-0000-4000-8000-000000000001",
+					agent_handle: "scout-amber-fox-a1b2c3",
+					agent_type: "scout",
+					run_kind: "named-read-only",
+					parent_id: "session-id",
+					role: "agent",
+					session_name: "scout-amber-fox-a1b2c3",
+					depth: 1,
+					status: "completed",
+					awaitable: true,
+				},
+			],
+		});
+
+		const result = await resultPromise;
+		assert.equal(result.isError, true);
+		assert.equal(connection.sent.length, 1);
+		assert.match(result.content[0].text, /is scout; use a new handle for worker/);
 	});
 
 	it("wait_for_agent sends wait and returns per-handle results", async () => {

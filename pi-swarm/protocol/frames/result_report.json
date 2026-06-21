@@ -1,6 +1,6 @@
 {
   "type": "result_report",
-  "v": 7,
+  "v": 8,
   "run_id": "run-001",
   "agent_id": "agent-42",
   "report_token": "report-token-raw-32bytes",
