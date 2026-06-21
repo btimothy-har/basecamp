@@ -27,7 +27,13 @@ from textual.widgets.tree import TreeNode
 
 from companion_tui.analysis import COMPANION_ANALYSIS_DIR_NAME, CompanionAnalysis, companion_analysis_path
 from companion_tui.cycles import companion_tasks_path
-from companion_tui.daemon import DaemonSummary, DaemonSummaryAgent, DaemonSummaryError, DaemonSummarySource
+from companion_tui.daemon import (
+    DaemonRecentActivity,
+    DaemonSummary,
+    DaemonSummaryAgent,
+    DaemonSummaryError,
+    DaemonSummarySource,
+)
 from companion_tui.diff import (
     DIFF_MODES,
     DiffLine,
@@ -171,6 +177,24 @@ def _parse_iso_timestamp(value: str | None) -> datetime | None:
         return None
 
 
+def _format_activity_timestamp(value: str | None) -> str | None:
+    timestamp = _parse_iso_timestamp(value)
+    if timestamp is not None:
+        return timestamp.strftime("%H:%M:%S")
+
+    if not value:
+        return None
+
+    cleaned = value.strip()
+    if "T" in cleaned:
+        time_part = cleaned.split("T", maxsplit=1)[1]
+        time_part = time_part.removesuffix("Z").split("+", maxsplit=1)[0]
+        if len(time_part) >= 8:
+            return time_part[:8]
+
+    return _truncate_preview(cleaned, max_length=12)
+
+
 def _format_duration(seconds: int) -> str:
     if seconds < 60:
         return f"{seconds}s"
@@ -300,11 +324,16 @@ def _render_swarm_agents(summary: DaemonSummary | None, selected_index: int) -> 
         marker = "▸" if index == selected_index else " "
         row_style = "reverse" if index == selected_index else ""
         timing = _daemon_agent_timing(agent)
-        details = " · ".join(part for part in (agent.agent_type, agent.status, timing) if part)
 
         row = Text(style=row_style)
         row.append(f"{marker} {glyph} ")
-        row.append(agent.session_name or agent.agent_handle, style=f"bold {row_style}".strip())
+        row.append(agent.agent_handle, style=f"bold {row_style}".strip())
+        if agent.agent_type:
+            row.append(f" ({agent.agent_type})")
+        if agent.agent_id_short:
+            row.append(f" [{agent.agent_id_short}]", style=f"dim {row_style}".strip())
+
+        details = " · ".join(part for part in (agent.status, timing) if part)
         if details:
             row.append(f"\n    {details}", style=f"dim {row_style}".strip())
         rows.append_text(row)
@@ -317,21 +346,32 @@ def _swarm_section(title: str, body: RenderableType) -> Panel:
 
 def _render_swarm_header(agent: DaemonSummaryAgent) -> Text:
     text = Text()
-    text.append(agent.session_name or agent.agent_handle, style="bold")
-    if agent.session_name and agent.session_name != agent.agent_handle:
-        text.append(f" · {agent.agent_handle}", style="dim")
-    text.append("\n")
-    text.append(" · ".join(part for part in (agent.agent_type, agent.status, _daemon_agent_timing(agent)) if part))
+    text.append(agent.agent_handle, style="bold")
+    if agent.agent_type:
+        text.append(f" ({agent.agent_type})", style="dim")
 
-    if agent.task and agent.task.goal:
-        text.append("\nGoal: ", style="bold")
-        text.append(agent.task.goal)
+    metadata = [agent.status]
+    timing = _daemon_agent_timing(agent)
+    if timing:
+        metadata.append(timing)
+    if agent.agent_id_short:
+        metadata.append(f"[{agent.agent_id_short}]")
+    metadata.append(f"Model: {agent.model or '—'}")
+    text.append("\n")
+    text.append(" · ".join(metadata), style="dim")
+
+    goal = agent.task.goal if agent.task and agent.task.goal else None
+    text.append("\nGoal: ", style="bold")
+    text.append(goal or "—", style="" if goal else "dim")
+
+    text.append("\nProgress: ", style="bold")
     if agent.task and agent.task.progress:
         progress = agent.task.progress
-        text.append("\nProgress: ", style="bold")
         text.append(f"{progress.completed}/{progress.total}")
         if progress.deleted:
             text.append(f" · {progress.deleted} deleted", style="dim")
+    else:
+        text.append("—", style="dim")
     return text
 
 
@@ -376,24 +416,58 @@ def _render_swarm_current_task(agent: DaemonSummaryAgent) -> RenderableType:
     return Group(header, annotation)
 
 
+def _activity_label(activity: DaemonRecentActivity) -> str:
+    if activity.label:
+        return activity.label
+    if activity.tool_name:
+        return activity.tool_name
+
+    labels = {
+        "assistant_output": "assistant",
+        "agent_result": "result",
+        "thinking": "thinking",
+        "tool_call": "tool",
+        "tool": "tool",
+        "message": "message",
+    }
+    return labels.get(activity.kind, activity.kind)
+
+
+def _activity_snippet(activity: DaemonRecentActivity) -> str | None:
+    if activity.snippet:
+        return activity.snippet
+    if activity.tool_name:
+        return activity.tool_name
+    if activity.turn_index is not None:
+        return f"turn {activity.turn_index}"
+    if activity.tool_count is not None:
+        return f"{activity.tool_count} tools"
+    return None
+
+
 def _render_swarm_recent_activity(agent: DaemonSummaryAgent) -> Text:
     if not agent.recent_activity:
         return Text("—", style="dim")
 
     rows = Text()
-    for index, activity in enumerate(agent.recent_activity[:8]):
+    for index, activity in enumerate(agent.recent_activity[:16]):
         if index:
             rows.append("\n")
-        parts = [activity.kind]
-        if activity.turn_index is not None:
-            parts.append(f"turn {activity.turn_index}")
-        if activity.timestamp:
-            parts.append(activity.timestamp)
-        if activity.seq is not None:
-            parts.append(f"#{activity.seq}")
-        if activity.tool_name:
-            parts.append(_truncate_preview(activity.tool_name, max_length=80))
-        rows.append(_truncate_preview(" · ".join(parts), max_length=180))
+
+        seq = f"#{activity.seq}" if activity.seq is not None else "#—"
+        timestamp = _format_activity_timestamp(activity.timestamp) or "—"
+        label = _truncate_preview(_activity_label(activity), max_length=32)
+        snippet = _activity_snippet(activity)
+        snippet = _truncate_preview(snippet, max_length=120) if snippet else "—"
+
+        row = Text()
+        row.append(f"{seq}  ", style="dim")
+        row.append(f"{timestamp}  ", style="dim")
+        if activity.is_error is True:
+            row.append("error ", style="red bold")
+        row.append(f"{label}  ", style="bold" if activity.is_error is not True else "red bold")
+        row.append(snippet, style="red" if activity.is_error is True else "")
+        rows.append_text(row)
     return rows
 
 

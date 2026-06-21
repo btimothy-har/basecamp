@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import re
 
 from companion_tui.app import SwarmBody
 from companion_tui.daemon import (
@@ -28,7 +29,7 @@ def _to_text(renderable: object) -> str:
     console = Console(width=100, no_color=True)
     with console.capture() as capture:
         console.print(renderable)
-    return capture.get()
+    return re.sub(r"\x1b\[[0-9;]*m", "", capture.get())
 
 
 def _agent(**overrides: object) -> DaemonSummaryAgent:
@@ -81,7 +82,9 @@ def test_daemon_parser_reads_task_and_activity() -> None:
         "agents": [
             {
                 "agent_handle": "worker-brisk-lynx",
+                "agent_id_short": "abc123",
                 "agent_type": "worker",
+                "model": "gpt-5.5",
                 "role": "agent",
                 "session_name": "worker",
                 "status": "running",
@@ -111,8 +114,17 @@ def test_daemon_parser_reads_task_and_activity() -> None:
                         "kind": "tool",
                         "seq": 4,
                         "timestamp": "2026-01-01T00:00:02Z",
+                        "category": "tool",
+                        "label": "Read file",
+                        "snippet": "daemon.py",
                         "toolName": "read",
+                        "isError": False,
                         "turnIndex": 2,
+                        "toolCount": 3,
+                        "toolCallId": "call-123",
+                        "raw": {"secret": "ignored"},
+                        "message": "ignored",
+                        "chainOfThought": "ignored",
                         "hidden": "ignored",
                     }
                 ],
@@ -124,6 +136,8 @@ def test_daemon_parser_reads_task_and_activity() -> None:
 
     assert isinstance(result, DaemonSummaryOk)
     agent = result.agents[0]
+    assert agent.agent_id_short == "abc123"
+    assert agent.model == "gpt-5.5"
     assert agent.task is not None
     assert agent.task.goal == "Build the thing"
     assert agent.task.progress is not None
@@ -132,11 +146,23 @@ def test_daemon_parser_reads_task_and_activity() -> None:
     assert agent.task.current_task is not None
     assert agent.task.current_task.notes == "Important note"
     assert agent.recent_activity is not None
-    assert agent.recent_activity[0].tool_name == "read"
-    assert agent.recent_activity[0].turn_index == 2
-    assert not hasattr(agent.recent_activity[0], "toolName")
-    assert not hasattr(agent.recent_activity[0], "turnIndex")
-    assert not hasattr(agent.recent_activity[0], "hidden")
+    activity = agent.recent_activity[0]
+    assert activity.tool_name == "read"
+    assert activity.turn_index == 2
+    assert activity.category == "tool"
+    assert activity.label == "Read file"
+    assert activity.snippet == "daemon.py"
+    assert activity.is_error is False
+    assert activity.tool_count == 3
+    assert not hasattr(activity, "toolName")
+    assert not hasattr(activity, "isError")
+    assert not hasattr(activity, "turnIndex")
+    assert not hasattr(activity, "toolCount")
+    assert not hasattr(activity, "toolCallId")
+    assert not hasattr(activity, "raw")
+    assert not hasattr(activity, "message")
+    assert not hasattr(activity, "chainOfThought")
+    assert not hasattr(activity, "hidden")
 
 
 def test_daemon_parser_tolerates_malformed_optional_projection() -> None:
@@ -158,7 +184,21 @@ def test_daemon_parser_tolerates_malformed_optional_projection() -> None:
                 "started_at": None,
                 "ended_at": None,
                 "task": {"goal": 123, "progress": {"completed": "bad"}, "tasks": ["bad"]},
-                "recent_activity": {"bad": "shape"},
+                "recent_activity": [
+                    {
+                        "kind": "tool",
+                        "seq": 4,
+                        "timestamp": "2026-01-01T00:00:02Z",
+                        "toolName": 123,
+                        "isError": "bad",
+                        "toolCount": "bad",
+                    },
+                    {
+                        "kind": "message",
+                        "seq": 5,
+                        "timestamp": "2026-01-01T00:00:03Z",
+                    },
+                ],
             }
         ],
     }
@@ -167,41 +207,65 @@ def test_daemon_parser_tolerates_malformed_optional_projection() -> None:
 
     assert isinstance(result, DaemonSummaryOk)
     agent = result.agents[0]
+    assert agent.agent_id_short is None
+    assert agent.model is None
     assert agent.task is not None
     assert agent.task.goal is None
     assert agent.task.progress is None
     assert agent.task.task_plan == []
     assert agent.task.current_task is None
-    assert agent.recent_activity == []
+    assert agent.recent_activity is not None
+    assert len(agent.recent_activity) == 2
+    assert agent.recent_activity[0].kind == "tool"
+    assert agent.recent_activity[0].tool_name is None
+    assert agent.recent_activity[0].is_error is None
+    assert agent.recent_activity[0].tool_count is None
+    assert agent.recent_activity[1].kind == "message"
 
 
 def test_swarm_renders_left_list_and_ordered_detail_sections() -> None:
     swarm = SwarmBody()
-    long_tool = "tool-" + "y" * 220
     summary = _summary(
         [
             _agent(
+                session_name="Build the thing task title",
+                agent_id_short="abc123",
+                model="gpt-5.5",
                 task=result_task(),
                 recent_activity=[
                     DaemonRecentActivity(
-                        kind="tool",
+                        kind="tool_call",
                         seq=8,
                         timestamp="2026-01-01T00:00:05Z",
-                        tool_name=long_tool,
+                        tool_name="read",
                         turn_index=3,
-                    )
+                        category="tool",
+                        label="Read file",
+                        snippet="opening /tmp/example.py",
+                        is_error=False,
+                        tool_count=1,
+                    ),
+                    DaemonRecentActivity(
+                        kind="assistant_output",
+                        seq=9,
+                        timestamp="2026-01-01T00:00:06Z",
+                        tool_name=None,
+                        turn_index=3,
+                        label=None,
+                        snippet="Done with the thing",
+                    ),
                 ],
             ),
             _agent(
                 agent_handle="scout-done",
                 agent_type="scout",
-                session_name="scout",
+                session_name="scout task title",
                 status="completed",
                 ended_at="2026-01-01T00:00:04Z",
             ),
             _agent(
                 agent_handle="worker-failed",
-                session_name="failed worker",
+                session_name="failed worker task title",
                 status="failed",
                 ended_at="2026-01-01T00:00:04Z",
             ),
@@ -217,11 +281,18 @@ def test_swarm_renders_left_list_and_ordered_detail_sections() -> None:
             agents_text = _to_text(agents_panel.children[0].render())
             detail_text = _to_text(swarm.query_one("#swarm-detail-content", Static).content)
 
-            assert "worker" in agents_text
-            assert "scout" in agents_text
-            assert "failed worker" in agents_text
+            assert "▸ ⏳ worker-brisk-lynx (worker) [abc123]" in agents_text
+            assert "scout-done (scout)" in agents_text
+            assert "worker-failed (worker)" in agents_text
+            assert "Build the thing task title" not in agents_text
+            assert "failed worker task title" not in agents_text
             assert "completed" in agents_text
             assert "failed" in agents_text
+            assert "worker-brisk-lynx (worker)" in detail_text
+            assert "Model: gpt-5.5" in detail_text
+            assert "[abc123]" in detail_text
+            assert "Goal: Build the thing" in detail_text
+            assert "Progress: 1/3" in detail_text
             assert detail_text.index("Task plan") < detail_text.index("Current task")
             assert "Now" in detail_text
             assert "Do current work" in detail_text
@@ -232,16 +303,21 @@ def test_swarm_renders_left_list_and_ordered_detail_sections() -> None:
             )
             assert "Latest message" not in detail_text
             assert "Recent activity" in detail_text
-            assert "tool" in detail_text
-            assert "turn 3" in detail_text
-            assert "2026-01-01T00:00:05Z" in detail_text
+            assert "#8" in detail_text
+            assert detail_text.index("#8") < detail_text.index("00:00:05")
+            assert "Read file" in detail_text
+            assert "opening /tmp/example.py" in detail_text
+            assert "#9" in detail_text
+            assert "assistant" in detail_text
+            assert "Done with the thing" in detail_text
+            assert "2026-01-01T00:00:05Z" not in detail_text
 
     asyncio.run(run())
 
 
 def test_swarm_repeated_updates_keep_one_agent_list_child() -> None:
     swarm = SwarmBody()
-    summary = _summary([_agent(session_name="first", status="running")])
+    summary = _summary([_agent(agent_handle="first-agent", session_name="first", status="running")])
 
     async def run() -> None:
         async with _SwarmHarness(swarm).run_test() as pilot:
@@ -252,7 +328,7 @@ def test_swarm_repeated_updates_keep_one_agent_list_child() -> None:
 
             agents_panel = swarm.query_one("#swarm-agents")
             assert len(agents_panel.children) == 1
-            assert "first" in _to_text(agents_panel.children[0].render())
+            assert "first-agent" in _to_text(agents_panel.children[0].render())
 
     asyncio.run(run())
 
@@ -274,7 +350,11 @@ def test_swarm_empty_unavailable_and_selection_clamping() -> None:
 
             swarm.update_daemon(_summary([first, second]))
             await pilot.pause(0.1)
+            detail_text = _to_text(swarm.query_one("#swarm-detail-content", Static).content)
             assert swarm._selected_agent == 0
+            assert "Model: —" in detail_text
+            assert "Goal: —" in detail_text
+            assert "Progress: —" in detail_text
 
             swarm.action_select_next()
             assert swarm._selected_agent == 1

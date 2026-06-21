@@ -143,6 +143,7 @@ async def prepare_dispatch(
                 agent_handle=frame.agent_handle,
                 agent_type=frame.agent_type,
                 run_kind=frame.run_kind,
+                model=frame.model or "default",
             )
         else:
             await asyncio.to_thread(
@@ -157,6 +158,7 @@ async def prepare_dispatch(
                 agent_handle=frame.agent_handle,
                 agent_type=frame.agent_type,
                 run_kind=frame.run_kind,
+                model=frame.model or "default",
             )
     except DuplicateAgentHandleError:
         return DispatchRejection(reason="duplicate_agent_handle")

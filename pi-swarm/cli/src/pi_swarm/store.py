@@ -34,8 +34,17 @@ RUN_SUMMARY_TASK_LOG_MAX_BYTES = 256 * 1024
 _AGENT_ID_PATTERN = re.compile(r"^[A-Za-z0-9_.-]{1,128}$")
 _ANSI_PATTERN = re.compile(r"\x1b(?:\[[0-?]*[ -/]*[@-~]|\][^\x07\x1b]*(?:\x07|\x1b\\))")
 _CONTROL_PATTERN = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
-_ACTIVITY_KINDS = {"tool_execution_start", "tool_execution_end", "turn_end"}
-_ACTIVITY_PAYLOAD_KEYS = ("toolName", "turnIndex")
+_ACTIVITY_KINDS = {
+    "tool_call",
+    "tool_result",
+    "assistant_output",
+    "thinking",
+    "agent_result",
+    "tool_execution_start",
+    "tool_execution_end",
+    "turn_end",
+}
+_ACTIVITY_PAYLOAD_KEYS = ("category", "label", "snippet", "toolName", "isError", "turnIndex", "toolCount")
 
 
 class ActiveRunExistsError(Exception):
@@ -76,6 +85,15 @@ def _is_valid_agent_id(agent_id: str) -> bool:
     return bool(_AGENT_ID_PATTERN.fullmatch(agent_id))
 
 
+def _agent_id_short(agent_id: Any) -> str | None:
+    if not isinstance(agent_id, str):
+        return None
+    normalized = re.sub(r"[^A-Za-z0-9]", "", agent_id)
+    if not normalized:
+        return None
+    return normalized[-8:]
+
+
 class Store:
     """Daemon persistence layer backed by SQLite."""
 
@@ -108,7 +126,8 @@ class Store:
                     current_run_id TEXT,
                     agent_handle TEXT,
                     agent_type TEXT,
-                    run_kind TEXT
+                    run_kind TEXT,
+                    model TEXT
                 )
                 """
             )
@@ -145,6 +164,7 @@ class Store:
             self._ensure_agents_current_run_id_column(connection)
             self._ensure_agents_agent_handle_column(connection)
             self._ensure_agents_metadata_columns(connection)
+            self._ensure_agents_model_column(connection)
             self._ensure_runs_dispatcher_id_column(connection)
             self._ensure_runs_exit_code_column(connection)
             self._ensure_runs_report_token_hash_column(connection)
@@ -185,6 +205,12 @@ class Store:
         if "run_kind" not in names:
             connection.execute("ALTER TABLE agents ADD COLUMN run_kind TEXT")
 
+    def _ensure_agents_model_column(self, connection: sqlite3.Connection) -> None:
+        columns = connection.execute("PRAGMA table_info(agents)").fetchall()
+        names = {column[1] for column in columns}
+        if "model" not in names:
+            connection.execute("ALTER TABLE agents ADD COLUMN model TEXT")
+
     def _ensure_runs_dispatcher_id_column(self, connection: sqlite3.Connection) -> None:
         columns = connection.execute("PRAGMA table_info(runs)").fetchall()
         names = {column[1] for column in columns}
@@ -216,6 +242,7 @@ class Store:
         agent_handle: str | None = None,
         agent_type: str | None = None,
         run_kind: str | None = None,
+        model: str | None = None,
     ) -> None:
         """Insert/update an agent row and refresh last-seen timestamp."""
 
@@ -223,15 +250,17 @@ class Store:
         with self._connect() as connection:
             connection.execute("BEGIN IMMEDIATE")
             existing = connection.execute(
-                "SELECT agent_handle, agent_type, run_kind FROM agents WHERE id = ?",
+                "SELECT agent_handle, agent_type, run_kind, model FROM agents WHERE id = ?",
                 (agent_id,),
             ).fetchone()
             stored_handle = existing[0] if existing is not None else None
             stored_agent_type = existing[1] if existing is not None else None
             stored_run_kind = existing[2] if existing is not None else None
+            stored_model = existing[3] if existing is not None else None
             next_handle = agent_handle or stored_handle or _fallback_agent_handle(agent_id)
             next_agent_type = agent_type or stored_agent_type
             next_run_kind = run_kind or stored_run_kind
+            next_model = model or stored_model
 
             try:
                 connection.execute(
@@ -248,9 +277,10 @@ class Store:
                         last_seen_at,
                         agent_handle,
                         agent_type,
-                        run_kind
+                        run_kind,
+                        model
                     )
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     ON CONFLICT(id)
                     DO UPDATE SET
                         parent_id = excluded.parent_id,
@@ -262,7 +292,8 @@ class Store:
                         last_seen_at = excluded.last_seen_at,
                         agent_handle = excluded.agent_handle,
                         agent_type = excluded.agent_type,
-                        run_kind = excluded.run_kind
+                        run_kind = excluded.run_kind,
+                        model = excluded.model
                     """,
                     (
                         agent_id,
@@ -277,6 +308,7 @@ class Store:
                         next_handle,
                         next_agent_type,
                         next_run_kind,
+                        next_model,
                     ),
                 )
             except sqlite3.IntegrityError as error:
@@ -728,7 +760,10 @@ class Store:
             if isinstance(payload, dict):
                 for key in _ACTIVITY_PAYLOAD_KEYS:
                     value = payload.get(key)
-                    if isinstance(value, str):
+                    if key == "isError":
+                        if isinstance(value, bool):
+                            event[key] = value
+                    elif isinstance(value, str):
                         event[key] = _display_text(value)
                     elif isinstance(value, int | float) and not isinstance(value, bool):
                         event[key] = value
@@ -775,6 +810,7 @@ class Store:
                     a.id AS agent_id,
                     a.agent_handle,
                     a.agent_type,
+                    a.model,
                     a.role,
                     a.session_name,
                     r.id AS run_id,
@@ -801,7 +837,9 @@ class Store:
         agents = [
             {
                 "agent_handle": _display_text(row["agent_handle"]),
+                "agent_id_short": _agent_id_short(row["agent_id"]),
                 "agent_type": _display_text(row["agent_type"]),
+                "model": _display_text(row["model"] or "default"),
                 "role": _display_text(row["role"]),
                 "session_name": _display_text(row["session_name"]),
                 "status": row["status"],

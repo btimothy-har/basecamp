@@ -62,7 +62,9 @@ def test_poll_parses_summary_and_encodes_root_id_and_limit() -> None:
         "agents": [
             {
                 "agent_handle": "scout-mossy-otter",
+                "agent_id_short": "def456",
                 "agent_type": "scout",
+                "model": "claude-sonnet-4-5",
                 "role": "agent",
                 "session_name": "scout",
                 "status": "completed",
@@ -102,6 +104,8 @@ def test_poll_parses_summary_and_encodes_root_id_and_limit() -> None:
         created_at="2026-01-01T00:00:00Z",
         started_at=None,
         ended_at=None,
+        agent_id_short="def456",
+        model="claude-sonnet-4-5",
         task=None,
         recent_activity=None,
     )
@@ -117,6 +121,8 @@ def test_poll_parses_summary_and_encodes_root_id_and_limit() -> None:
         "created_at",
         "started_at",
         "ended_at",
+        "agent_id_short",
+        "model",
         "task",
         "recent_activity",
     }

@@ -497,7 +497,9 @@ def test_runs_summary_endpoint_omits_sensitive_and_full_fields(tmp_path: Path) -
     summary_agent = payload["agents"][0]
     assert set(summary_agent.keys()) == {
         "agent_handle",
+        "agent_id_short",
         "agent_type",
+        "model",
         "role",
         "session_name",
         "status",
@@ -516,6 +518,8 @@ def test_runs_summary_endpoint_omits_sensitive_and_full_fields(tmp_path: Path) -
     assert "report_token_hash" not in summary_agent
     assert "result" not in summary_agent
     assert "error" not in summary_agent
+    assert summary_agent["agent_id_short"] == "child"
+    assert summary_agent["model"] == "default"
     assert summary_agent["result_preview"] == "line one line two"
     assert summary_agent["error_preview"].endswith("…")
     assert len(summary_agent["error_preview"]) == 160
@@ -595,6 +599,8 @@ def test_runs_summary_endpoint_projects_task_log_and_activity(tmp_path: Path) ->
     assert "run_id" not in summary_agent
     assert "spec_json" not in summary_agent
     assert "report_token_hash" not in summary_agent
+    assert summary_agent["agent_id_short"] == "agent1"
+    assert summary_agent["model"] == "default"
     assert summary_agent["task"] == {
         "goal": "Verify summary",
         "progress": {"completed": 1, "deleted": 0, "total": 2},

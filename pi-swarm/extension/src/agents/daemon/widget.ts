@@ -131,12 +131,12 @@ export function renderActiveAgentsWidgetLines(
 	const activeAgents = runningAgents.slice(0, Math.max(0, Math.trunc(options.limit ?? DEFAULT_DISPLAY_LIMIT)));
 	if (runningAgents.length === 0) return [];
 
-	const lines = [`Swarm agents (${runningAgents.length} running)`];
-	for (const agent of activeAgents) {
+	const lines = activeAgents.map((agent) => {
 		const elapsed = formatElapsed(agent.started_at, agent.created_at, nowMs);
-		lines.push(`● ${agentDisplayName(agent)} [${agentType(agent)}] — ${taskLabel(agent)} — running ${elapsed}`);
-	}
-	return lines.map((line) => truncateLine(line, width));
+		return `● ${agentDisplayName(agent)} [${agentType(agent)}] — ${taskLabel(agent)} — running ${elapsed}`;
+	});
+	if (lines.length === 0) return [];
+	return [...lines.map((line) => truncateLine(line, width)), ""];
 }
 
 export function publishActiveAgentsWidget(
@@ -169,7 +169,7 @@ export function publishActiveAgentsWidget(
 						limit: options.limit ?? DEFAULT_DISPLAY_LIMIT,
 						nowMs: options.nowMs,
 					});
-					return cachedLines.map((line, index) => (index === 0 ? fg("dim", line) : line));
+					return cachedLines.map((line) => (line ? fg("dim", line) : line));
 				},
 			};
 		},

@@ -189,7 +189,7 @@ describe("daemon async tools", () => {
 				{ task: "hello world" },
 				new AbortController().signal,
 				() => {},
-				{ model: "claude-sonnet", sessionManager: { getSessionId: () => "session-id" } },
+				{ model: { provider: "anthropic", id: "claude-sonnet" }, sessionManager: { getSessionId: () => "session-id" } },
 			);
 
 			await new Promise((resolve) => setImmediate(resolve));
@@ -205,6 +205,7 @@ describe("daemon async tools", () => {
 			assert.notEqual(outbound.agent_handle, outbound.agent_id);
 			assert.equal(outbound.agent_type, "ad-hoc");
 			assert.equal(outbound.run_kind, "ad-hoc");
+			assert.equal(outbound.model, "anthropic/claude-sonnet");
 
 			connection.emit({
 				type: "dispatch_ack",
