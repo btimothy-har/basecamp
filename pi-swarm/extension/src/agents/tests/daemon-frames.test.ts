@@ -10,6 +10,11 @@ function fixturesDir(): string {
 	return path.resolve(here, "../../../../protocol/frames");
 }
 
+function pythonFramesPath(): string {
+	const here = path.dirname(fileURLToPath(import.meta.url));
+	return path.resolve(here, "../../../../cli/src/pi_swarm/frames.py");
+}
+
 describe("daemon frame codec", () => {
 	it("keeps frame types in parity with protocol fixtures", () => {
 		const dir = fixturesDir();
@@ -21,6 +26,13 @@ describe("daemon frame codec", () => {
 		);
 		const frameTypes = new Set(FRAME_TYPES);
 		assert.deepEqual(frameTypes, fixtureTypes);
+	});
+
+	it("keeps protocol version in parity with the Python daemon", () => {
+		const source = fs.readFileSync(pythonFramesPath(), "utf8");
+		const match = source.match(/^PROTOCOL_VERSION = (\d+)$/m);
+		assert.ok(match);
+		assert.equal(Number(match[1]), PROTOCOL_VERSION);
 	});
 
 	it("decodes and re-encodes all protocol frame fixtures", () => {

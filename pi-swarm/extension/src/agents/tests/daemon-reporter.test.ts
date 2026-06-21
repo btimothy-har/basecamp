@@ -120,6 +120,7 @@ describe("daemon reporter", () => {
 				toolName: "read",
 			});
 			assert.equal(telemetry.find((frame) => frame.kind === "tool_result")?.payload.snippet, "completed");
+			assert.equal(telemetry.find((frame) => frame.kind === "agent_result")?.payload.snippet, "final");
 
 			const resultReport = sent.find(
 				(frame): frame is Extract<Frame, { type: "result_report" }> => frame.type === "result_report",
@@ -133,6 +134,56 @@ describe("daemon reporter", () => {
 			for (const frame of telemetryFrames(sent)) {
 				assert.equal(frame.report_token, "token-for-tests");
 			}
+		} finally {
+			if (priorReportToken === undefined) delete process.env.BASECAMP_REPORT_TOKEN;
+			else process.env.BASECAMP_REPORT_TOKEN = priorReportToken;
+		}
+	});
+
+	it("bounds agent result telemetry snippets", async () => {
+		const sent: Frame[] = [];
+		const connection: DaemonConnection = {
+			send(frame) {
+				sent.push(frame);
+			},
+			on() {
+				return () => {};
+			},
+			onClose() {
+				return () => {};
+			},
+			close() {
+				// no-op
+			},
+		};
+		const priorReportToken = process.env.BASECAMP_REPORT_TOKEN;
+		try {
+			process.env.BASECAMP_REPORT_TOKEN = "token-for-tests";
+			const pi = new MockPi();
+			registerDaemonReporter(pi as unknown as any, {
+				connectionPromise: Promise.resolve(connection),
+				runId: "run-1",
+				agentId: "agent-1",
+			});
+
+			const finalText = "x".repeat(300);
+			await pi.emit("agent_end", {
+				type: "agent_end",
+				messages: [{ role: "assistant", content: [{ type: "text", text: finalText }] }],
+			});
+			await waitForFrameCount(sent, 2);
+
+			const telemetry = telemetryFrames(sent);
+			const snippet = telemetry.find((frame) => frame.kind === "agent_result")?.payload.snippet;
+			assert.equal(typeof snippet, "string");
+			assert.equal((snippet as string).length, 240);
+			assert.equal((snippet as string).endsWith("…"), true);
+			assert.equal((snippet as string).includes(finalText), false);
+
+			const resultReport = sent.find(
+				(frame): frame is Extract<Frame, { type: "result_report" }> => frame.type === "result_report",
+			);
+			assert.equal(resultReport?.result, finalText);
 		} finally {
 			if (priorReportToken === undefined) delete process.env.BASECAMP_REPORT_TOKEN;
 			else process.env.BASECAMP_REPORT_TOKEN = priorReportToken;

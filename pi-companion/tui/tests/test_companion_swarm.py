@@ -190,6 +190,8 @@ def test_daemon_parser_tolerates_malformed_optional_projection() -> None:
                         "seq": 4,
                         "timestamp": "2026-01-01T00:00:02Z",
                         "toolName": 123,
+                        "isError": "bad",
+                        "toolCount": "bad",
                     },
                     {
                         "kind": "message",
@@ -213,10 +215,12 @@ def test_daemon_parser_tolerates_malformed_optional_projection() -> None:
     assert agent.task.task_plan == []
     assert agent.task.current_task is None
     assert agent.recent_activity is not None
-    assert len(agent.recent_activity) == 1
-    assert agent.recent_activity[0].kind == "message"
+    assert len(agent.recent_activity) == 2
+    assert agent.recent_activity[0].kind == "tool"
     assert agent.recent_activity[0].tool_name is None
+    assert agent.recent_activity[0].is_error is None
     assert agent.recent_activity[0].tool_count is None
+    assert agent.recent_activity[1].kind == "message"
 
 
 def test_swarm_renders_left_list_and_ordered_detail_sections() -> None:

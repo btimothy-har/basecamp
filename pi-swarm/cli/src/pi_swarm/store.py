@@ -760,11 +760,12 @@ class Store:
             if isinstance(payload, dict):
                 for key in _ACTIVITY_PAYLOAD_KEYS:
                     value = payload.get(key)
-                    if isinstance(value, str):
+                    if key == "isError":
+                        if isinstance(value, bool):
+                            event[key] = value
+                    elif isinstance(value, str):
                         event[key] = _display_text(value)
-                    elif key == "isError" and isinstance(value, bool):
-                        event[key] = value
-                    elif key != "isError" and isinstance(value, int | float) and not isinstance(value, bool):
+                    elif isinstance(value, int | float) and not isinstance(value, bool):
                         event[key] = value
             activity.append({key: value for key, value in event.items() if value is not None})
         return activity

@@ -242,13 +242,19 @@ def _expect_bool(payload: dict[str, Any], key: str) -> bool:
     return value
 
 
-def _expect_optional_bool(payload: dict[str, Any], key: str) -> bool | None:
+def _activity_optional_bool(payload: dict[str, Any], key: str) -> bool | None:
     value = payload.get(key)
-    if value is None:
-        return None
-    if not isinstance(value, bool):
-        raise TypeError
-    return value
+    return value if isinstance(value, bool) else None
+
+
+def _activity_optional_int(payload: dict[str, Any], key: str) -> int | None:
+    value = payload.get(key)
+    return value if isinstance(value, int) and not isinstance(value, bool) else None
+
+
+def _activity_optional_str(payload: dict[str, Any], key: str) -> str | None:
+    value = payload.get(key)
+    return value if isinstance(value, str) else None
 
 
 def _expect_optional_str(payload: dict[str, Any], key: str) -> str | None:
@@ -341,15 +347,15 @@ def _parse_recent_activity_item(payload: object) -> DaemonRecentActivity | None:
     try:
         return DaemonRecentActivity(
             kind=_expect_str(payload, "kind"),
-            seq=_expect_optional_int(payload, "seq"),
-            timestamp=_expect_optional_str(payload, "timestamp"),
-            tool_name=_expect_optional_str(payload, "toolName"),
-            turn_index=_expect_optional_int(payload, "turnIndex"),
-            category=_expect_optional_str(payload, "category"),
-            label=_expect_optional_str(payload, "label"),
-            snippet=_expect_optional_str(payload, "snippet"),
-            is_error=_expect_optional_bool(payload, "isError"),
-            tool_count=_expect_optional_int(payload, "toolCount"),
+            seq=_activity_optional_int(payload, "seq"),
+            timestamp=_activity_optional_str(payload, "timestamp"),
+            tool_name=_activity_optional_str(payload, "toolName"),
+            turn_index=_activity_optional_int(payload, "turnIndex"),
+            category=_activity_optional_str(payload, "category"),
+            label=_activity_optional_str(payload, "label"),
+            snippet=_activity_optional_str(payload, "snippet"),
+            is_error=_activity_optional_bool(payload, "isError"),
+            tool_count=_activity_optional_int(payload, "toolCount"),
         )
     except TypeError:
         return None

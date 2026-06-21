@@ -1206,6 +1206,52 @@ def test_get_run_summary_projects_safe_task_log_and_activity(tmp_path: Path) -> 
         )
 
 
+def test_get_run_summary_bounds_and_tolerates_malformed_activity(tmp_path: Path) -> None:
+    db_path = tmp_path / "daemon.db"
+    store = Store(db_path=db_path)
+    _summary_agent(store)
+    store.create_run(
+        run_id="run-1",
+        agent_id="agent-1",
+        dispatcher_id="root",
+        spec={},
+        report_token_hash="hash",
+    )
+
+    for index in range(12):
+        store.append_run_event(
+            run_id="run-1",
+            kind="tool_call",
+            payload={"snippet": f"event {index + 1}", "isError": "bad" if index == 4 else False},
+        )
+
+    with sqlite3.connect(db_path) as connection:
+        connection.execute(
+            "UPDATE run_events SET payload_json = ? WHERE run_id = ? AND seq = ?",
+            ("{not-json", "run-1", 4),
+        )
+        for seq in range(1, 13):
+            connection.execute(
+                "UPDATE run_events SET ts = ? WHERE run_id = ? AND seq = ?",
+                (f"2026-01-01T00:00:{seq:02d}Z", "run-1", seq),
+            )
+
+    activity = store.get_run_summary("root")["agents"][0]["recent_activity"]
+
+    assert len(activity) == 10
+    assert [item["seq"] for item in activity] == list(range(3, 13))
+    malformed = activity[1]
+    assert malformed == {
+        "kind": "tool_call",
+        "seq": 4,
+        "timestamp": "2026-01-01T00:00:04Z",
+    }
+    non_bool_error = activity[2]
+    assert non_bool_error["seq"] == 5
+    assert non_bool_error["snippet"] == "event 5"
+    assert "isError" not in non_bool_error
+
+
 def test_get_run_summary_tolerates_malformed_task_logs(tmp_path: Path) -> None:
     db_path = tmp_path / "daemon.db"
     task_dir = tmp_path / "tasks"
