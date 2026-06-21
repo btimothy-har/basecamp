@@ -201,6 +201,8 @@ describe("daemon async tools", () => {
 			assert.equal(outbound.spec.env.BASECAMP_PROJECT, "proj");
 			assert.equal(outbound.spec.env.BASECAMP_PARENT_SESSION, process.env.BASECAMP_SESSION_NAME ?? "session-name");
 			assert.equal(outbound.spec.env.BASECAMP_AGENT_TITLE, "(Agent) hello world");
+			assert.match(outbound.agent_handle ?? "", /^ad-hoc-[a-z]+-[a-z]+-[0-9a-f]{6}$/);
+			assert.notEqual(outbound.agent_handle, outbound.agent_id);
 
 			connection.emit({
 				type: "dispatch_ack",
@@ -212,9 +214,11 @@ describe("daemon async tools", () => {
 
 			const result = await executePromise;
 			assert.equal(result.isError, undefined);
-			assert.equal(result.details.agentId, outbound.agent_id);
+			assert.equal(result.details.agentHandle, outbound.agent_handle);
+			assert.equal("agentId" in result.details, false);
 			assert.equal("runId" in result.details, false);
-			assert.match(result.content[0].text, new RegExp(String(outbound.agent_id)));
+			assert.match(result.content[0].text, new RegExp(String(outbound.agent_handle)));
+			assert.doesNotMatch(result.content[0].text, new RegExp(String(outbound.agent_id)));
 			assert.doesNotMatch(result.content[0].text, new RegExp(String(outbound.run_id)));
 		} finally {
 			if (priorCustom === undefined) delete process.env.TEST_DAEMON_TOOLS;
@@ -335,6 +339,8 @@ describe("daemon async tools", () => {
 		const sessionId = outbound.spec.argv[sessionIdFlagIndex + 1];
 		assert.equal(sessionId, agentSegment);
 		assert.equal(outbound.agent_id, agentSegment);
+		assert.match(outbound.agent_handle ?? "", /^ad-hoc-[a-z]+-[a-z]+-[0-9a-f]{6}$/);
+		assert.notEqual(outbound.agent_handle, agentSegment);
 
 		connection.emit({
 			type: "dispatch_ack",
@@ -475,7 +481,59 @@ describe("daemon async tools", () => {
 
 		const result = await executePromise;
 		assert.equal(result.isError, true);
+		assert.equal(result.details.agentHandle, outbound.agent_handle);
+		assert.equal("agentId" in result.details, false);
 		assert.match(result.content[0].text, /depth_cap/);
+	});
+
+	it("dispatch_agent retries generated handle collisions", async () => {
+		trackSkillInvocation("agents");
+		const connection = new MockConnection();
+		const { pi, tools } = createMockPi();
+		registerDaemonTools(pi, async () => connection, daemonToolDeps);
+		const dispatchTool = toolByName(tools, "dispatch_agent");
+
+		const executePromise = dispatchTool.execute(
+			"1",
+			{ agent: "scout", task: "hello world" },
+			new AbortController().signal,
+			() => {},
+			{
+				model: "claude-sonnet",
+				sessionManager: { getSessionId: () => "session-id" },
+			},
+		);
+		await new Promise((resolve) => setImmediate(resolve));
+		const first = connection.sent[0] as Extract<Frame, { type: "dispatch" }>;
+		assert.match(first.agent_handle ?? "", /^scout-[a-z]+-[a-z]+-[0-9a-f]{6}$/);
+
+		connection.emit({
+			type: "dispatch_ack",
+			v: PROTOCOL_VERSION,
+			run_id: first.run_id,
+			status: "rejected",
+			reason: "duplicate_agent_handle",
+		});
+		await new Promise((resolve) => setImmediate(resolve));
+
+		const second = connection.sent[1] as Extract<Frame, { type: "dispatch" }>;
+		assert.equal(second.agent_id, first.agent_id);
+		assert.notEqual(second.run_id, first.run_id);
+		assert.notEqual(second.agent_handle, first.agent_handle);
+		assert.match(second.agent_handle ?? "", /^scout-[a-z]+-[a-z]+-[0-9a-f]{6}$/);
+
+		connection.emit({
+			type: "dispatch_ack",
+			v: PROTOCOL_VERSION,
+			run_id: second.run_id,
+			status: "spawned",
+			reason: null,
+		});
+
+		const result = await executePromise;
+		assert.equal(result.isError, undefined);
+		assert.equal(result.details.agentHandle, second.agent_handle);
+		assert.match(result.content[0].text, new RegExp(String(second.agent_handle)));
 	});
 
 	it("wait_for_agent sends wait and returns per-handle results", async () => {

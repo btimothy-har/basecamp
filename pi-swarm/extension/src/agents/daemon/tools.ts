@@ -10,7 +10,7 @@ import { createDaemonClient } from "./client.ts";
 import { type ListAgentItem, type WaitResultFrame } from "./frames.ts";
 
 interface DispatchDetails {
-	agentId: string;
+	agentHandle: string;
 	agent: string;
 }
 
@@ -51,6 +51,35 @@ const ListAgentsParams = Type.Object({
 		}),
 	),
 });
+
+const HANDLE_ADJECTIVES = [
+	"amber",
+	"brisk",
+	"calm",
+	"clear",
+	"ember",
+	"mossy",
+	"quiet",
+	"silver",
+	"steady",
+	"swift",
+] as const;
+const HANDLE_NOUNS = ["badger", "falcon", "fox", "heron", "lynx", "otter", "panda", "raven", "tiger", "wren"] as const;
+
+function handlePrefix(agentLabel: string): string {
+	const safe = agentLabel
+		.toLowerCase()
+		.replace(/[^a-z0-9]+/g, "-")
+		.replace(/^-+|-+$/g, "");
+	return safe || "agent";
+}
+
+function buildAgentHandle(agentLabel: string): string {
+	const entropy = randomUUID().replace(/-/g, "");
+	const adjective = HANDLE_ADJECTIVES[Number.parseInt(entropy.slice(0, 2), 16) % HANDLE_ADJECTIVES.length];
+	const noun = HANDLE_NOUNS[Number.parseInt(entropy.slice(2, 4), 16) % HANDLE_NOUNS.length];
+	return `${handlePrefix(agentLabel)}-${adjective}-${noun}-${entropy.slice(4, 10)}`;
+}
 
 function normalizeHandles(input: string | string[]): string[] {
 	const values = Array.isArray(input) ? input : [input];
@@ -181,34 +210,44 @@ export function registerDaemonTools(
 				};
 			}
 
-			const result = await daemonClient.dispatchAgent({
-				agentId,
-				argv: plan.args.slice(0, -1),
-				task: taskSpec,
-				cwd: plan.spawnCwd,
-				env: {
-					...processEnvForSpawn(),
-					...plan.environment,
-					BASECAMP_AGENT_TITLE: buildAgentTitleBase(params.agent, params.task),
-				},
-			});
-			if (result.status === "rejected") {
+			let agentHandle = buildAgentHandle(plan.agentLabel ?? "ad-hoc");
+			let result: Awaited<ReturnType<typeof daemonClient.dispatchAgent>> | null = null;
+			const dispatchEnv = {
+				...processEnvForSpawn(),
+				...plan.environment,
+				BASECAMP_AGENT_TITLE: buildAgentTitleBase(params.agent, params.task),
+			};
+
+			for (let attempt = 0; attempt < 3; attempt++) {
+				result = await daemonClient.dispatchAgent({
+					agentId,
+					agentHandle,
+					argv: plan.args.slice(0, -1),
+					task: taskSpec,
+					cwd: plan.spawnCwd,
+					env: dispatchEnv,
+				});
+				if (result.status !== "rejected" || result.reason !== "duplicate_agent_handle" || attempt === 2) break;
+				agentHandle = buildAgentHandle(plan.agentLabel ?? "ad-hoc");
+			}
+
+			if (!result || result.status === "rejected") {
 				return {
-					content: [{ type: "text", text: `dispatch rejected: ${result.reason ?? "unknown"}` }],
+					content: [{ type: "text", text: `dispatch rejected: ${result?.reason ?? "unknown"}` }],
 					isError: true,
-					details: { agentId, agent: plan.agentLabel ?? "ad-hoc" } satisfies DispatchDetails,
+					details: { agentHandle, agent: plan.agentLabel ?? "ad-hoc" } satisfies DispatchDetails,
 				};
 			}
 
 			return {
-				content: [{ type: "text", text: `⏳ dispatched ${plan.agentLabel ?? "ad-hoc"} — handle ${agentId}` }],
-				details: { agentId, agent: plan.agentLabel ?? "ad-hoc" } satisfies DispatchDetails,
+				content: [{ type: "text", text: `⏳ dispatched ${plan.agentLabel ?? "ad-hoc"} — handle ${agentHandle}` }],
+				details: { agentHandle, agent: plan.agentLabel ?? "ad-hoc" } satisfies DispatchDetails,
 			};
 		},
 		renderResult(result, _opts, theme) {
 			const details = result.details as DispatchDetails | null;
 			if (!details) return new Text(result.content[0]?.type === "text" ? result.content[0].text : "", 0, 0);
-			return new Text(theme.fg("accent", `⏳ dispatched ${details.agent} — handle ${details.agentId}`), 0, 0);
+			return new Text(theme.fg("accent", `⏳ dispatched ${details.agent} — handle ${details.agentHandle}`), 0, 0);
 		},
 	});
 
