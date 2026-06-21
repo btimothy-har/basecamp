@@ -72,9 +72,9 @@ describe("active agents widget rendering", () => {
 		});
 
 		assert.deepEqual(lines, [
-			"Swarm agents (3 running)",
 			"● alpha [planner] — Write tests — running 3m",
 			"● beta [worker] — Fallback goal — running 3m",
+			"",
 		]);
 	});
 
@@ -95,9 +95,10 @@ describe("active agents widget rendering", () => {
 		);
 
 		assert.equal(lines.length, 2);
-		assert.match(lines[1] ?? "", /^● very-long-agent-handle-with-new… \[type with controls\] — x+/);
-		assert.equal((lines[1] ?? "").length, 70);
-		assert.ok((lines[1] ?? "").endsWith("…"));
+		assert.match(lines[0] ?? "", /^● very-long-agent-handle-with-new… \[type with controls\] — x+/);
+		assert.equal((lines[0] ?? "").length, 70);
+		assert.ok((lines[0] ?? "").endsWith("…"));
+		assert.equal(lines[1], "");
 	});
 
 	it("formats elapsed duration from started_at or created_at", () => {
@@ -131,8 +132,8 @@ describe("active agents widget lifecycle", () => {
 		};
 		const rendered = factory(null, { fg: (_color, text) => text }).render(120);
 		assert.equal(rendered.length, 2);
-		assert.equal(rendered[0], "Swarm agents (1 running)");
-		assert.match(rendered[1] ?? "", /^● worker-1 \[worker\] — Write tests — running 1m$/);
+		assert.match(rendered[0] ?? "", /^● worker-1 \[worker\] — Write tests — running 1m$/);
+		assert.equal(rendered[1], "");
 	});
 
 	it("clears widget when no running agents", () => {
@@ -188,7 +189,8 @@ describe("active agents widget lifecycle", () => {
 		) => { render: (width: number) => string[] };
 		const rendered = factory(null, { fg: (_color, text) => text }).render(120);
 		assert.equal(rendered.length, 6);
-		assert.equal(rendered[0], "Swarm agents (6 running)");
+		assert.match(rendered[0] ?? "", /^● live-1 \[worker\] — Write tests — running 1m$/);
+		assert.equal(rendered[5], "");
 
 		summary = null;
 		await controller.refresh();
