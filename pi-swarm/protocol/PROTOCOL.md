@@ -74,7 +74,7 @@ Acknowledges a dispatch request by private `run_id`.
 
 Statuses:
 - `spawned`
-- `rejected` with `reason`, including `depth_cap`, `spawn_failed`, `active_run_exists`, `duplicate_agent_handle`, or `agent_metadata_mismatch`.
+- `rejected` with `reason`, including `depth_cap`, `spawn_failed`, `active_run_exists`, `duplicate_agent_handle`, or `agent_type_mismatch`.
 
 ### `telemetry` agent → daemon
 
