@@ -12,12 +12,12 @@ from pi_swarm.store import Store
 
 
 def _build_app(tmp_path: Path):
-    store = Store(db_path=tmp_path / "daemon.db")
+    store = Store(db_path=tmp_path / "daemon.db", task_dir=tmp_path / "tasks")
     return create_app(store)
 
 
 def _build_app_with_store(tmp_path: Path):
-    store = Store(db_path=tmp_path / "daemon.db")
+    store = Store(db_path=tmp_path / "daemon.db", task_dir=tmp_path / "tasks")
     return create_app(store), store
 
 
@@ -506,6 +506,9 @@ def test_runs_summary_endpoint_omits_sensitive_and_full_fields(tmp_path: Path) -
         "created_at",
         "started_at",
         "ended_at",
+        "task",
+        "recent_activity",
+        "latest_message",
     }
     assert "run_id" not in summary_agent
     assert "agent_id" not in summary_agent
@@ -516,6 +519,9 @@ def test_runs_summary_endpoint_omits_sensitive_and_full_fields(tmp_path: Path) -
     assert summary_agent["result_preview"] == "line one line two"
     assert summary_agent["error_preview"].endswith("…")
     assert len(summary_agent["error_preview"]) == 160
+    assert summary_agent["task"] is None
+    assert summary_agent["recent_activity"] == []
+    assert summary_agent["latest_message"] is None
 
 
 def _insert_run(

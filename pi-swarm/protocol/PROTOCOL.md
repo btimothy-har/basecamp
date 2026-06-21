@@ -1,22 +1,22 @@
 # Pi Swarm Daemon Protocol
 
-Protocol version: `8`
+Protocol version: `9`
 
 All frames are JSON objects with an envelope:
 
 ```json
-{"type":"<frame_type>","v":8,...}
+{"type":"<frame_type>","v":9,...}
 ```
 
 Version handling:
 - The daemon validates `v` on every inbound frame.
-- If `v != 8`, the daemon sends an `error` frame with `code: "protocol_version"` and closes the connection.
+- If `v != 9`, the daemon sends an `error` frame with `code: "protocol_version"` and closes the connection.
 - The extension treats the protocol as a client-visible capability gate, not only a frame-shape version. A version mismatch restarts the host daemon during ensure-daemon.
 
 ## Transport
 
 - HTTP over Unix domain socket (UDS):
-  - `GET /health` → `{"status":"ok","protocol":8}`
+  - `GET /health` → `{"status":"ok","protocol":9}`
   - `GET /runs/summary?root_id=<id>` returns safe agent-level observability for the companion dashboard.
 - WebSocket over UDS:
   - `/ws`
@@ -91,7 +91,7 @@ Waits for one or more public agent handles:
 ```json
 {
   "type": "wait",
-  "v": 8,
+  "v": 9,
   "agent_ids": [],
   "agent_handles": ["scout-mossy-otter-a1b2c3"],
   "mode": "all",
@@ -122,7 +122,7 @@ Requests a safe directory of agents visible under the caller's root session:
 ```json
 {
   "type": "list_agents",
-  "v": 8,
+  "v": 9,
   "request_id": "list-001",
   "awaitable": true
 }
@@ -154,7 +154,12 @@ Returns companion-dashboard observability under the requested root session:
 - `agents`: one safe row per same-root non-session agent, keyed by `agent_handle` and current-run status/previews.
 - `session_active`: whether the root session is currently registered.
 
-Summary rows do not include private `run_id`, private `agent_id`, prompts, full results, errors, spawn specs, env, or cwd.
+Each summary row may include:
+- `task`: safe projection from `~/.pi/basecamp/tasks/<agent-id>.json`, or `null` if absent/invalid. It contains only sanitized `goal`, `progress`, bounded `tasks`/`task_plan` entries (`index`, `label`, `status`), and `current_task` (`index`, `label`, `status`, `description`, `notes`). Deleted tasks are omitted from the plan but counted in progress.
+- `recent_activity`: bounded telemetry projection containing only allowlisted display fields: event `kind`, `seq`, timestamp, `toolName`, and `turnIndex`.
+- `latest_message`: currently `null`; no safe explicit visible-message source is exposed yet.
+
+Summary rows do not include private `run_id`, private `agent_id`, report tokens, prompts, full results, errors, spawn specs, env, cwd, raw telemetry payloads/args/outputs, or hidden model thinking. Display strings are control/ANSI stripped and length capped.
 
 ### `error` daemon → client
 
@@ -169,6 +174,6 @@ Reports protocol/parse errors and closes the WebSocket for fatal frame errors. C
 A minimal client flow is:
 
 1. Connect to `/ws` over the UDS.
-2. Send `register` with `v: 8`.
+2. Send `register` with `v: 9`.
 3. Send `dispatch` with private `run_id` / `agent_id` and public `agent_handle`.
 4. Use the `agent_handle` with `wait` or discover agents through `list_agents`.
