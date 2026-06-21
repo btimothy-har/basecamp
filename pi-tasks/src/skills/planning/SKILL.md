@@ -83,7 +83,7 @@ plan({
 })
 ```
 
-For implementation plans, include `worktreeSlug` as hidden metadata: a short semantic kebab-case slug with no session prefix, e.g. `handoff-labels`. Omit it for analysis-only plans. This is not a user-reviewed plan section; the user sees the worktree selector later and can override the final label there.
+For implementation plans, include `worktreeSlug` as hidden metadata: a short semantic kebab-case slug with no session prefix, e.g. `handoff-labels`. Omit it for analysis-only plans. This is not a user-reviewed plan section; the user sees it only through the suggested execution worktree label.
 
 The user reviews via an interactive overlay. They may:
 - **Approve** sections/tasks

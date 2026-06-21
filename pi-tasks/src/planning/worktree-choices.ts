@@ -2,8 +2,6 @@ import * as os from "node:os";
 import * as path from "node:path";
 import type { WorkspaceWorktree } from "pi-core/platform/workspace.ts";
 
-export const CUSTOM_WORKTREE_CHOICE = "Enter custom worktree label";
-
 export interface ExecutionWorktreeChoices {
 	choices: string[];
 	labelsByChoice: Map<string, string>;
@@ -98,7 +96,5 @@ export function buildExecutionWorktreeChoices(
 		labelsByChoice.set(choice, wt.label);
 		handledLabels.add(wt.label);
 	}
-	choices.push(CUSTOM_WORKTREE_CHOICE);
-
 	return { choices, labelsByChoice };
 }
