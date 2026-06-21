@@ -28,6 +28,31 @@ export interface HealthPingFail {
 
 export type HealthPingResult = HealthPingOk | HealthPingFail;
 
+export interface RunSummaryTaskInfo {
+	goal?: string | null;
+	current_task?: {
+		label?: string | null;
+		status?: string | null;
+	} | null;
+}
+
+export interface RunSummaryAgent {
+	agent_handle?: string | null;
+	agent_type?: string | null;
+	session_name?: string | null;
+	status?: string | null;
+	created_at?: string | null;
+	started_at?: string | null;
+	ended_at?: string | null;
+	task?: RunSummaryTaskInfo | null;
+}
+
+export interface RunSummaryResult {
+	root_id?: string | null;
+	session_active?: boolean;
+	agents: RunSummaryAgent[];
+}
+
 type SpawnLike = (command: string, args: readonly string[], options: SpawnOptions) => ChildProcess;
 type FindDaemonPidFn = (socketPath: string) => Promise<number | null>;
 type KillPidFn = (pid: number, signal: NodeJS.Signals) => void;
@@ -305,12 +330,12 @@ export function spawnDaemonProcess(
 	child.unref();
 }
 
-export async function healthPing(socketPath: string, timeoutMs: number): Promise<HealthPingResult> {
+async function requestJsonOverUds(socketPath: string, path: string, timeoutMs: number): Promise<unknown | null> {
 	return await new Promise((resolve) => {
 		const req = http.request(
 			{
 				socketPath,
-				path: "/health",
+				path,
 				method: "GET",
 				timeout: timeoutMs,
 			},
@@ -322,36 +347,93 @@ export async function healthPing(socketPath: string, timeoutMs: number): Promise
 				});
 				res.on("end", () => {
 					if (res.statusCode !== 200) {
-						resolve({ ok: false });
+						resolve(null);
 						return;
 					}
 					try {
-						const parsed: unknown = JSON.parse(body);
-						if (
-							parsed &&
-							typeof parsed === "object" &&
-							(parsed as { status?: unknown }).status === "ok" &&
-							typeof (parsed as { protocol?: unknown }).protocol === "number"
-						) {
-							resolve({ ok: true, protocol: (parsed as { protocol: number }).protocol });
-							return;
-						}
+						resolve(JSON.parse(body) as unknown);
 					} catch {
-						// no-op
+						resolve(null);
 					}
-					resolve({ ok: false });
 				});
 			},
 		);
 		req.on("timeout", () => {
 			req.destroy();
-			resolve({ ok: false });
+			resolve(null);
 		});
 		req.on("error", () => {
-			resolve({ ok: false });
+			resolve(null);
 		});
 		req.end();
 	});
+}
+
+export async function healthPing(socketPath: string, timeoutMs: number): Promise<HealthPingResult> {
+	const parsed = await requestJsonOverUds(socketPath, "/health", timeoutMs);
+	if (
+		parsed &&
+		typeof parsed === "object" &&
+		(parsed as { status?: unknown }).status === "ok" &&
+		typeof (parsed as { protocol?: unknown }).protocol === "number"
+	) {
+		return { ok: true, protocol: (parsed as { protocol: number }).protocol };
+	}
+	return { ok: false };
+}
+
+function optionalString(value: unknown): string | null {
+	return typeof value === "string" ? value : null;
+}
+
+function parseRunSummaryTask(value: unknown): RunSummaryTaskInfo | null {
+	if (!value || typeof value !== "object") return null;
+	const record = value as Record<string, unknown>;
+	const currentTask = record.current_task;
+	return {
+		goal: optionalString(record.goal),
+		current_task:
+			currentTask && typeof currentTask === "object"
+				? {
+						label: optionalString((currentTask as Record<string, unknown>).label),
+						status: optionalString((currentTask as Record<string, unknown>).status),
+					}
+				: null,
+	};
+}
+
+function parseRunSummaryAgent(value: unknown): RunSummaryAgent | null {
+	if (!value || typeof value !== "object") return null;
+	const record = value as Record<string, unknown>;
+	return {
+		agent_handle: optionalString(record.agent_handle),
+		agent_type: optionalString(record.agent_type),
+		session_name: optionalString(record.session_name),
+		status: optionalString(record.status),
+		created_at: optionalString(record.created_at),
+		started_at: optionalString(record.started_at),
+		ended_at: optionalString(record.ended_at),
+		task: parseRunSummaryTask(record.task),
+	};
+}
+
+export async function fetchRunSummary(
+	socketPath: string,
+	rootId: string,
+	limit: number,
+	timeoutMs = DEFAULT_HEALTH_TIMEOUT_MS,
+): Promise<RunSummaryResult | null> {
+	const safeLimit = Math.max(0, Math.min(50, Math.trunc(limit)));
+	const path = `/runs/summary?root_id=${encodeURIComponent(rootId)}&limit=${safeLimit}`;
+	const parsed = await requestJsonOverUds(socketPath, path, timeoutMs);
+	if (!parsed || typeof parsed !== "object") return null;
+	const record = parsed as Record<string, unknown>;
+	const rawAgents = Array.isArray(record.agents) ? record.agents : [];
+	return {
+		root_id: optionalString(record.root_id),
+		session_active: typeof record.session_active === "boolean" ? record.session_active : undefined,
+		agents: rawAgents.map(parseRunSummaryAgent).filter((agent): agent is RunSummaryAgent => agent !== null),
+	};
 }
 
 export async function ensureDaemon(options: EnsureDaemonOptions = {}): Promise<{ socketPath: string }> {
