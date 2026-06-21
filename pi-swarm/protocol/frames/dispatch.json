@@ -1,8 +1,11 @@
 {
   "type": "dispatch",
-  "v": 6,
+  "v": 8,
   "run_id": "run-001",
-  "agent_id": "agent-42",
+  "agent_id": "00000000-0000-4000-8000-000000000042",
+  "agent_handle": "scout-mossy-otter-a1b2c3",
+  "agent_type": "scout",
+  "run_kind": "primary",
   "spec": {
     "argv": [
       "pi",
@@ -11,11 +14,11 @@
       "-p"
     ],
     "env": {
-      "BASECAMP_AGENT_ID": "agent-42",
+      "BASECAMP_AGENT_ID": "00000000-0000-4000-8000-000000000042",
       "BASECAMP_DAEMON_UDS": "/Users/example/.pi/basecamp/swarm/daemon.sock"
     },
     "cwd": "/Users/example/repo",
-    "resume_path": "/Users/example/.pi/basecamp/swarm/agents/agent-42/session/agent-42.jsonl",
+    "resume_path": "/Users/example/.pi/basecamp/swarm/agents/00000000-0000-4000-8000-000000000042/session/00000000-0000-4000-8000-000000000042.jsonl",
     "task": "Summarize test failures and propose a fix."
   }
 }

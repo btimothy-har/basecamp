@@ -1,27 +1,27 @@
 {
   "type": "wait_result",
-  "v": 6,
+  "v": 8,
   "results": [
     {
-      "agent_id": "agent-001",
+      "agent_handle": "scout-mossy-otter-a1b2c3",
       "status": "completed",
       "result": "Applied patch and tests now pass.",
       "error": null
     },
     {
-      "agent_id": "agent-002",
+      "agent_handle": "worker-brisk-lynx-d4e5f6",
       "status": "failed",
       "result": null,
       "error": "Process exited with code 1"
     },
     {
-      "agent_id": "agent-003",
+      "agent_handle": "security-quiet-heron-123abc",
       "status": "running",
       "result": null,
       "error": null
     },
     {
-      "agent_id": "agent-004",
+      "agent_handle": "scout-missing-handle-456def",
       "status": "unknown",
       "result": null,
       "error": null

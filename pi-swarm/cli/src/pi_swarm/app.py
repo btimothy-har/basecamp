@@ -25,7 +25,7 @@ from .frames import (
 )
 from .registry import Registry
 from .service import dispatch_agent, handle_result_report, handle_telemetry, list_agents, wait_for_agents
-from .store import Store
+from .store import DuplicateAgentHandleError, Store
 
 
 def create_app(store: Store, *, daemon_uds: str | None = None) -> FastAPI:
@@ -83,16 +83,25 @@ def create_app(store: Store, *, daemon_uds: str | None = None) -> FastAPI:
                 )
                 return
 
-            await asyncio.to_thread(
-                store.upsert_agent,
-                agent_id=parsed.node_id,
-                parent_id=parsed.parent_id,
-                sibling_group=parsed.sibling_group,
-                depth=parsed.depth,
-                role=parsed.role,
-                session_name=parsed.session_name,
-                cwd=parsed.cwd,
-            )
+            try:
+                await asyncio.to_thread(
+                    store.upsert_agent,
+                    agent_id=parsed.node_id,
+                    parent_id=parsed.parent_id,
+                    sibling_group=parsed.sibling_group,
+                    depth=parsed.depth,
+                    role=parsed.role,
+                    session_name=parsed.session_name,
+                    cwd=parsed.cwd,
+                    agent_handle=parsed.agent_handle,
+                )
+            except DuplicateAgentHandleError as exc:
+                await _send_error_and_close(
+                    websocket,
+                    code="duplicate_agent_handle",
+                    message=str(exc),
+                )
+                return
             node_id = parsed.node_id
             registry.set_connection(parsed.node_id, websocket)
 

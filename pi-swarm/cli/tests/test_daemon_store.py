@@ -6,7 +6,7 @@ import sqlite3
 from pathlib import Path
 
 import pytest
-from pi_swarm.store import ActiveRunExistsError, Store
+from pi_swarm.store import ActiveRunExistsError, DuplicateAgentHandleError, Store
 
 
 def test_store_initializes_required_tables(tmp_path: Path) -> None:
@@ -20,6 +20,44 @@ def test_store_initializes_required_tables(tmp_path: Path) -> None:
     assert "agents" in table_names
     assert "runs" in table_names
     assert "run_events" in table_names
+
+
+def test_store_migrates_agent_handle_column_and_backfills_existing_rows(tmp_path: Path) -> None:
+    db_path = tmp_path / "daemon.db"
+    with sqlite3.connect(db_path) as connection:
+        connection.execute(
+            """
+            CREATE TABLE agents (
+                id TEXT PRIMARY KEY,
+                parent_id TEXT,
+                sibling_group TEXT,
+                depth INTEGER,
+                role TEXT,
+                session_name TEXT,
+                cwd TEXT,
+                created_at TEXT,
+                last_seen_at TEXT,
+                current_run_id TEXT
+            )
+            """
+        )
+        connection.execute(
+            """
+            INSERT INTO agents (id, parent_id, sibling_group, depth, role, session_name, cwd, created_at, last_seen_at)
+            VALUES ('legacy-id', NULL, NULL, 0, 'session', 'legacy', '/tmp', 'created', 'seen')
+            """
+        )
+
+    Store(db_path=db_path)
+
+    with sqlite3.connect(db_path) as connection:
+        columns = {row[1] for row in connection.execute("PRAGMA table_info(agents)").fetchall()}
+        row = connection.execute("SELECT agent_handle FROM agents WHERE id = 'legacy-id'").fetchone()
+        indexes = connection.execute("PRAGMA index_list(agents)").fetchall()
+
+    assert "agent_handle" in columns
+    assert row == ("legacy-id",)
+    assert any(index[1] == "idx_agents_agent_handle_unique" and index[2] for index in indexes)
 
 
 def test_upsert_agent_persists_and_is_idempotent(tmp_path: Path) -> None:
@@ -56,6 +94,93 @@ def test_upsert_agent_persists_and_is_idempotent(tmp_path: Path) -> None:
 
     assert len(rows) == 1
     assert rows[0] == ("agent-1", "parent-1", 2, "session-b", "/tmp/b")
+
+
+def test_upsert_agent_persists_gets_and_preserves_handle(tmp_path: Path) -> None:
+    db_path = tmp_path / "daemon.db"
+    store = Store(db_path=db_path)
+
+    store.upsert_agent(
+        agent_id="agent-1",
+        agent_handle="readable",
+        parent_id=None,
+        sibling_group="sg",
+        depth=1,
+        role="agent",
+        session_name="session-a",
+        cwd="/tmp/a",
+    )
+    store.upsert_agent(
+        agent_id="agent-1",
+        parent_id=None,
+        sibling_group="sg",
+        depth=1,
+        role="agent",
+        session_name="session-b",
+        cwd="/tmp/b",
+    )
+
+    agent = store.get_agent("agent-1")
+    by_handle = store.get_agent_by_handle("readable")
+    assert agent is not None
+    assert agent["agent_handle"] == "readable"
+    assert by_handle is not None
+    assert by_handle["id"] == "agent-1"
+
+
+def test_upsert_agent_rejects_duplicate_handle(tmp_path: Path) -> None:
+    db_path = tmp_path / "daemon.db"
+    store = Store(db_path=db_path)
+
+    store.upsert_agent(
+        agent_id="agent-1",
+        agent_handle="shared",
+        parent_id=None,
+        sibling_group="sg",
+        depth=1,
+        role="agent",
+        session_name="session-a",
+        cwd="/tmp/a",
+    )
+
+    with pytest.raises(DuplicateAgentHandleError):
+        store.upsert_agent(
+            agent_id="agent-2",
+            agent_handle="shared",
+            parent_id=None,
+            sibling_group="sg",
+            depth=1,
+            role="agent",
+            session_name="session-b",
+            cwd="/tmp/b",
+        )
+
+
+def test_upsert_agent_rejects_fallback_handle_collision(tmp_path: Path) -> None:
+    db_path = tmp_path / "daemon.db"
+    store = Store(db_path=db_path)
+
+    store.upsert_agent(
+        agent_id="agent-1",
+        agent_handle="agent-2",
+        parent_id=None,
+        sibling_group="sg",
+        depth=1,
+        role="agent",
+        session_name="session-a",
+        cwd="/tmp/a",
+    )
+
+    with pytest.raises(DuplicateAgentHandleError):
+        store.upsert_agent(
+            agent_id="agent-2",
+            parent_id=None,
+            sibling_group="sg",
+            depth=1,
+            role="agent",
+            session_name="session-b",
+            cwd="/tmp/b",
+        )
 
 
 def test_run_event_round_trip(tmp_path: Path) -> None:
@@ -137,6 +262,7 @@ def test_get_agents_current_runs_filters_by_dispatcher(tmp_path: Path) -> None:
     assert owned == [
         {
             "agent_id": "agent-1",
+            "agent_handle": "agent-1",
             "run_id": "run-owned",
             "status": "running",
             "result": None,
@@ -144,10 +270,14 @@ def test_get_agents_current_runs_filters_by_dispatcher(tmp_path: Path) -> None:
         }
     ]
 
+    owned_by_handle = store.get_agents_current_runs_by_handles(["agent-1"], dispatcher_id="dispatcher-1")
+    assert owned_by_handle == owned
+
     unauthorized = store.get_agents_current_runs(["agent-1"], dispatcher_id="dispatcher-2")
     assert unauthorized == [
         {
             "agent_id": "agent-1",
+            "agent_handle": "agent-1",
             "run_id": None,
             "status": None,
             "result": None,
@@ -157,6 +287,44 @@ def test_get_agents_current_runs_filters_by_dispatcher(tmp_path: Path) -> None:
 
     missing = store.get_agents_current_runs(["agent-missing"], dispatcher_id="dispatcher-1")
     assert missing == []
+
+
+def test_resolve_agent_root_follows_parents_defensively(tmp_path: Path) -> None:
+    db_path = tmp_path / "daemon.db"
+    store = Store(db_path=db_path)
+
+    store.upsert_agent(
+        agent_id="root",
+        parent_id=None,
+        sibling_group="sg-root",
+        depth=0,
+        role="session",
+        session_name="root-session",
+        cwd="/tmp/root",
+    )
+    store.upsert_agent(
+        agent_id="agent-1",
+        parent_id="root",
+        sibling_group="sg-a1",
+        depth=1,
+        role="agent",
+        session_name="agent-a1",
+        cwd="/tmp/a1",
+    )
+    store.upsert_agent(
+        agent_id="lost",
+        parent_id="missing-parent",
+        sibling_group="sg-lost",
+        depth=1,
+        role="agent",
+        session_name="lost",
+        cwd="/tmp/lost",
+    )
+
+    assert store.resolve_agent_root("agent-1") == "root"
+    assert store.resolve_agent_root("root") == "root"
+    assert store.resolve_agent_root("lost") == "lost"
+    assert store.resolve_agent_root("missing") is None
 
 
 def test_get_root_agent_directory_scopes_to_root_and_excludes_sessions(tmp_path: Path) -> None:
@@ -232,6 +400,7 @@ def test_get_root_agent_directory_scopes_to_root_and_excludes_sessions(tmp_path:
 
     rows = store.get_root_agent_directory(requester_node_id="agent-2", awaitable=False)
     assert [row["agent_id"] for row in rows] == ["agent-1", "agent-2"]
+    assert [row["agent_handle"] for row in rows] == ["agent-1", "agent-2"]
     assert rows[0]["parent_id"] == "root"
     assert rows[1]["parent_id"] == "agent-1"
     assert rows[0]["status"] == "running"
@@ -491,7 +660,7 @@ def test_get_run_summary_unknown_root_returns_empty_payload(tmp_path: Path) -> N
             "failed": 0,
             "total": 0,
         },
-        "runs": [],
+        "agents": [],
     }
 
 
@@ -582,12 +751,10 @@ def test_get_run_summary_scope_and_counts_include_descendants(tmp_path: Path) ->
         "failed": 1,
         "total": 4,
     }
-    assert {run["run_id"] for run in result["runs"]} == {
-        "run-root",
-        "run-child",
-        "run-grandchild",
-        "run-child-pending",
-    }
+    agents = {agent["agent_handle"]: agent for agent in result["agents"]}
+    assert set(agents) == {"child", "grandchild"}
+    assert agents["child"]["status"] == "pending"
+    assert agents["grandchild"]["status"] == "failed"
 
 
 def test_get_run_summary_handles_cyclic_agent_relationships(tmp_path: Path) -> None:
@@ -646,10 +813,11 @@ def test_get_run_summary_handles_cyclic_agent_relationships(tmp_path: Path) -> N
         "failed": 0,
         "total": 2,
     }
-    assert [run["run_id"] for run in result["runs"]] == ["run-child", "run-root"]
+    assert [agent["agent_handle"] for agent in result["agents"]] == ["child"]
+    assert result["agents"][0]["status"] == "completed"
 
 
-def test_get_run_summary_orders_runs_descending_and_respects_limit(tmp_path: Path) -> None:
+def test_get_run_summary_orders_agents_descending_and_respects_limit(tmp_path: Path) -> None:
     db_path = tmp_path / "daemon.db"
     store = Store(db_path=db_path)
 
@@ -662,16 +830,33 @@ def test_get_run_summary_orders_runs_descending_and_respects_limit(tmp_path: Pat
         session_name="root-session",
         cwd="/tmp/root",
     )
-
-    _insert_run(db_path=db_path, run_id="run-old", agent_id="root", status="running", created_at="2026-01-01T00:00:00Z")
-    _insert_run(db_path=db_path, run_id="run-mid", agent_id="root", status="running", created_at="2026-01-02T00:00:00Z")
-    _insert_run(db_path=db_path, run_id="run-new", agent_id="root", status="running", created_at="2026-01-03T00:00:00Z")
+    for agent_id, created_at in [
+        ("agent-old", "2026-01-01T00:00:00Z"),
+        ("agent-mid", "2026-01-02T00:00:00Z"),
+        ("agent-new", "2026-01-03T00:00:00Z"),
+    ]:
+        store.upsert_agent(
+            agent_id=agent_id,
+            parent_id="root",
+            sibling_group=f"sg-{agent_id}",
+            depth=1,
+            role="agent",
+            session_name=agent_id,
+            cwd=f"/tmp/{agent_id}",
+        )
+        _insert_run(
+            db_path=db_path,
+            run_id=f"run-{agent_id}",
+            agent_id=agent_id,
+            status="running",
+            created_at=created_at,
+        )
 
     limited = store.get_run_summary("root", limit=2)
-    assert [row["run_id"] for row in limited["runs"]] == ["run-new", "run-mid"]
+    assert [row["agent_handle"] for row in limited["agents"]] == ["agent-new", "agent-mid"]
 
     neg_limit = store.get_run_summary("root", limit=-5)
-    assert neg_limit["runs"] == []
+    assert neg_limit["agents"] == []
     assert neg_limit["counts"] == {
         "pending": 0,
         "running": 3,
@@ -694,10 +879,19 @@ def test_get_run_summary_does_not_expose_spec_or_tokens(tmp_path: Path) -> None:
         session_name="root-session",
         cwd="/tmp/root",
     )
+    store.upsert_agent(
+        agent_id="child",
+        parent_id="root",
+        sibling_group="sg-child",
+        depth=1,
+        role="agent",
+        session_name="child-agent",
+        cwd="/tmp/child",
+    )
     _insert_run(
         db_path=db_path,
         run_id="run-sensitive",
-        agent_id="root",
+        agent_id="child",
         status="completed",
         created_at="2026-01-01T00:00:00Z",
         spec_json='{"env": {"OPENAI_API_KEY": "secret"}}',
@@ -708,12 +902,11 @@ def test_get_run_summary_does_not_expose_spec_or_tokens(tmp_path: Path) -> None:
 
     result = store.get_run_summary("root")
 
-    assert len(result["runs"]) == 1
-    summary_run = result["runs"][0]
-    assert set(summary_run) == {
-        "run_id",
-        "agent_id",
-        "parent_id",
+    assert len(result["agents"]) == 1
+    summary_agent = result["agents"][0]
+    assert set(summary_agent) == {
+        "agent_handle",
+        "agent_type",
         "role",
         "session_name",
         "status",
@@ -724,13 +917,15 @@ def test_get_run_summary_does_not_expose_spec_or_tokens(tmp_path: Path) -> None:
         "started_at",
         "ended_at",
     }
-    assert "spec_json" not in summary_run
-    assert "report_token_hash" not in summary_run
-    assert "result" not in summary_run
-    assert "error" not in summary_run
-    assert summary_run["result_preview"] == "line one line two"
-    assert summary_run["error_preview"].endswith("…")
-    assert len(summary_run["error_preview"]) == 160
+    assert "run_id" not in summary_agent
+    assert "agent_id" not in summary_agent
+    assert "spec_json" not in summary_agent
+    assert "report_token_hash" not in summary_agent
+    assert "result" not in summary_agent
+    assert "error" not in summary_agent
+    assert summary_agent["result_preview"] == "line one line two"
+    assert summary_agent["error_preview"].endswith("…")
+    assert len(summary_agent["error_preview"]) == 160
 
 
 def _insert_run(
@@ -779,4 +974,8 @@ def _insert_run(
                 started_at,
                 ended_at,
             ),
+        )
+        connection.execute(
+            "UPDATE agents SET current_run_id = ? WHERE id = ?",
+            (run_id, agent_id),
         )

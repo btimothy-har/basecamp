@@ -108,9 +108,9 @@ Use the `agents` skill for agent selection and async daemon dispatch guidance:
 
 ```js
 skill({ name: "agents" })
-dispatch_agent({ agent: "scout", task: "Investigate the auth module" }) // returns an agent id
+dispatch_agent({ agent: "scout", task: "Investigate the auth module" }) // returns an agent handle
 list_agents({ awaitable: true })
-wait_for_agent({ handles: "<agent-id>" })
+wait_for_agent({ handles: "<agent-handle>" })
 ```
 
 Built-in agents: `scout`, `worker`, `devils-advocate`, `security-specialist`, `testing-specialist`, `docs-specialist`, `code-clarity-specialist`.

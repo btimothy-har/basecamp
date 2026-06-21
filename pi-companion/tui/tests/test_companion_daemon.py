@@ -8,9 +8,9 @@ from pathlib import Path
 from urllib.parse import parse_qs, urlsplit
 
 from companion_tui.daemon import (
+    DaemonSummaryAgent,
     DaemonSummaryError,
     DaemonSummaryOk,
-    DaemonSummaryRun,
     DaemonSummarySource,
     DaemonSummaryUnavailable,
 )
@@ -59,13 +59,12 @@ def test_poll_parses_summary_and_encodes_root_id_and_limit() -> None:
             "failed": 3,
             "total": 6,
         },
-        "runs": [
+        "agents": [
             {
-                "run_id": "run-1",
-                "agent_id": "agent-1",
-                "parent_id": None,
-                "role": "session",
-                "session_name": "root",
+                "agent_handle": "scout-mossy-otter",
+                "agent_type": "scout",
+                "role": "agent",
+                "session_name": "scout",
                 "status": "completed",
                 "result_preview": "ok",
                 "error_preview": None,
@@ -90,13 +89,12 @@ def test_poll_parses_summary_and_encodes_root_id_and_limit() -> None:
     assert result.root_id == "root"
     assert result.counts.total == 6
     assert result.session_active is True
-    assert len(result.runs) == 1
-    assert result.runs[0] == DaemonSummaryRun(
-        run_id="run-1",
-        agent_id="agent-1",
-        parent_id=None,
-        role="session",
-        session_name="root",
+    assert len(result.agents) == 1
+    assert result.agents[0] == DaemonSummaryAgent(
+        agent_handle="scout-mossy-otter",
+        agent_type="scout",
+        role="agent",
+        session_name="scout",
         status="completed",
         result_preview="ok",
         error_preview=None,
@@ -105,10 +103,9 @@ def test_poll_parses_summary_and_encodes_root_id_and_limit() -> None:
         started_at=None,
         ended_at=None,
     )
-    assert set(asdict(result.runs[0]).keys()) == {
-        "run_id",
-        "agent_id",
-        "parent_id",
+    assert set(asdict(result.agents[0]).keys()) == {
+        "agent_handle",
+        "agent_type",
         "role",
         "session_name",
         "status",
@@ -159,7 +156,7 @@ def test_poll_returns_error_for_invalid_response_shape() -> None:
             "failed": 3,
             "total": 6,
         },
-        "runs": ["invalid"],
+        "agents": ["invalid"],
     }
     fake_connection, _ = _build_fake_connection(json.dumps(payload))
     source = DaemonSummarySource("/tmp/daemon.sock", connection_factory=fake_connection)
@@ -181,7 +178,7 @@ def test_poll_parses_inactive_session() -> None:
             "failed": 0,
             "total": 0,
         },
-        "runs": [],
+        "agents": [],
     }
     fake_connection, _ = _build_fake_connection(json.dumps(payload))
     source = DaemonSummarySource("/tmp/daemon.sock", connection_factory=fake_connection)

@@ -13,6 +13,7 @@ import {
 	type RegisteredFrame,
 	type RegisterFrame,
 	type WaitResultFrame,
+	type WaitResultItem,
 } from "./frames.ts";
 import { type DaemonPaths, ensureDaemonRuntimeDir, resolveDaemonPaths } from "./paths.ts";
 
@@ -554,6 +555,9 @@ export async function connect(identity: DaemonIdentity, options: ConnectOptions 
 
 interface DaemonDispatchFrameOptions {
 	agentId: string;
+	agentHandle: string;
+	agentType: string;
+	runKind: string;
 	argv: string[];
 	task: string;
 	cwd: string;
@@ -570,7 +574,7 @@ export interface DaemonClient {
 	dispatchAgent(options: DaemonDispatchFrameOptions): Promise<DaemonDispatchResult>;
 	listAgents(input: { awaitable?: boolean }): Promise<ListAgentItem[]>;
 	waitForAgents(input: {
-		agentIds: string[];
+		agentHandles: string[];
 		timeoutS: number;
 		signal?: AbortSignal;
 	}): Promise<WaitResultFrame["results"]>;
@@ -616,10 +620,14 @@ function waitForFrame<T extends Frame["type"]>(
 	});
 }
 
-function sameAsRequested(resultAgentIds: string[], requestedSet: Set<string>): boolean {
-	const resultSet = new Set(resultAgentIds);
+function hasAgentHandle(result: WaitResultItem): result is WaitResultItem & { agent_handle: string } {
+	return typeof result.agent_handle === "string";
+}
+
+function sameAsRequested(resultAgentHandles: string[], requestedSet: Set<string>): boolean {
+	const resultSet = new Set(resultAgentHandles);
 	if (resultSet.size !== requestedSet.size) return false;
-	return [...requestedSet].every((agentId) => resultSet.has(agentId));
+	return [...requestedSet].every((agentHandle) => resultSet.has(agentHandle));
 }
 
 function dedupeRequestedResults(
@@ -627,11 +635,15 @@ function dedupeRequestedResults(
 	requested: Set<string>,
 ): WaitResultFrame["results"] {
 	const requestedMap = new Map(
-		results.filter((result) => requested.has(result.agent_id)).map((result) => [result.agent_id, result]),
+		results
+			.filter((result) => hasAgentHandle(result) && requested.has(result.agent_handle))
+			.map((result) => [result.agent_handle, result]),
 	);
 	const deduped: WaitResultFrame["results"] = [];
-	for (const agentId of requested) {
-		deduped.push(requestedMap.get(agentId) ?? { agent_id: agentId, status: "unknown", result: null, error: null });
+	for (const agentHandle of requested) {
+		deduped.push(
+			requestedMap.get(agentHandle) ?? { agent_handle: agentHandle, status: "unknown", result: null, error: null },
+		);
 	}
 	return deduped;
 }
@@ -645,6 +657,9 @@ export function createDaemonClient(connection: DaemonConnection): DaemonClient {
 				v: PROTOCOL_VERSION,
 				run_id: runId,
 				agent_id: input.agentId,
+				agent_handle: input.agentHandle,
+				agent_type: input.agentType,
+				run_kind: input.runKind,
 				spec: {
 					argv: input.argv,
 					task: input.task,
@@ -676,11 +691,12 @@ export function createDaemonClient(connection: DaemonConnection): DaemonClient {
 			return frame.agents;
 		},
 		waitForAgents: async (input) => {
-			const requested = new Set(input.agentIds);
+			const requested = new Set(input.agentHandles);
 			connection.send({
 				type: "wait",
 				v: PROTOCOL_VERSION,
-				agent_ids: input.agentIds,
+				agent_ids: [],
+				agent_handles: input.agentHandles,
 				mode: "all",
 				timeout_s: input.timeoutS,
 			});
@@ -689,7 +705,7 @@ export function createDaemonClient(connection: DaemonConnection): DaemonClient {
 				"wait_result",
 				(candidate) =>
 					sameAsRequested(
-						candidate.results.map((result) => result.agent_id),
+						candidate.results.filter(hasAgentHandle).map((result) => result.agent_handle),
 						requested,
 					),
 				input.signal,

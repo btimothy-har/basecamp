@@ -8,8 +8,8 @@ description: "Delegate bounded work to named or ad-hoc agents, track active work
 Use this skill to delegate bounded work to agents while you keep working.
 
 Use these tools for agent delegation; if agents are unavailable, they return a tool error:
-- `dispatch_agent({ agent?, task, name? })` — start an agent. The returned handle is the `agentId` in the tool result details.
-- `wait_for_agent({ handles: string | string[], timeout_s? })` — wait for one or more agent ids. `timeout_s` defaults to 600.
+- `dispatch_agent({ agent?, task, name?, agent_handle? })` — start an agent and return a public `agent_handle`.
+- `wait_for_agent({ handles: string | string[], timeout_s? })` — wait for one or more agent handles. `timeout_s` defaults to 600.
 - `list_agents({ awaitable?: true })` — list visible agents in your current scope. `awaitable` filters to agents with a current run you dispatched.
 
 ## Choosing an agent
@@ -23,12 +23,13 @@ Do not dispatch agents for trivial one-step work you can do directly.
 
 ## Handle and wait semantics
 
-- Public handles are agent ids; do not expose private run or execution ids.
-- Pass the `agentId` returned by `dispatch_agent` as `handles` to `wait_for_agent`.
-- Only the session that dispatched an agent's current run can wait on that agent id. Other callers see `unknown`.
+- Public handles are `agent_handle` aliases; do not expose private `agent_id`, `run_id`, or execution ids.
+- Pass the handle returned by `dispatch_agent` as `handles` to `wait_for_agent`.
+- Only the session that dispatched an agent's current run can wait on that handle. Other callers see `unknown`.
 - A timed-out wait reports still-running handles as `running`; it does not cancel the agent.
-- `list_agents` returns safe metadata only, not prompts, results, env, or spawn specs.
+- `list_agents` returns safe metadata only, not prompts, private ids, results, env, or spawn specs.
 - Agents cannot message each other. `wait_for_agent` is only for returning results to the dispatcher.
+- Retask by passing an existing `agent_handle` to `dispatch_agent`; retasks are rejected while that handle's current run is active, and changing the agent type requires a new handle.
 - Delegation depth is capped; if nested dispatch is rejected, continue without spawning another agent.
 
 ## Write the brief

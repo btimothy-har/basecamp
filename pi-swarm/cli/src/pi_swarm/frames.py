@@ -8,7 +8,7 @@ from pydantic import BaseModel, Field, TypeAdapter
 
 # Gates every client-visible daemon capability, not just WebSocket frame shapes.
 # This includes HTTP endpoints like /runs/summary, so stale daemons restart.
-PROTOCOL_VERSION = 6
+PROTOCOL_VERSION = 8
 
 
 class RegisterFrame(BaseModel):
@@ -18,6 +18,7 @@ class RegisterFrame(BaseModel):
     v: Literal[PROTOCOL_VERSION]
     role: Literal["session", "agent"]
     node_id: str
+    agent_handle: str | None = None
     parent_id: str | None
     sibling_group: str | None
     depth: int
@@ -60,6 +61,9 @@ class DispatchFrame(BaseModel):
     v: Literal[PROTOCOL_VERSION]
     run_id: str
     agent_id: str | None = None
+    agent_handle: str | None = None
+    agent_type: str | None = None
+    run_kind: str | None = None
     spec: DispatchSpec
 
 
@@ -70,7 +74,7 @@ class DispatchAckFrame(BaseModel):
     v: Literal[PROTOCOL_VERSION]
     run_id: str
     status: Literal["spawned", "rejected"]
-    reason: str | None
+    reason: str | None = None
 
 
 class TelemetryFrame(BaseModel):
@@ -104,7 +108,8 @@ class WaitFrame(BaseModel):
 
     type: Literal["wait"]
     v: Literal[PROTOCOL_VERSION]
-    agent_ids: list[str]
+    agent_ids: list[str] = Field(default_factory=list)
+    agent_handles: list[str] = Field(default_factory=list)
     mode: Literal["all"]
     timeout_s: float
 
@@ -112,10 +117,11 @@ class WaitFrame(BaseModel):
 class WaitResultItem(BaseModel):
     """Single wait result item."""
 
-    agent_id: str
+    agent_id: str | None = None
+    agent_handle: str | None = None
     status: Literal["completed", "failed", "running", "unknown"]
-    result: str | None
-    error: str | None
+    result: str | None = None
+    error: str | None = None
 
 
 class WaitResultFrame(BaseModel):
@@ -139,6 +145,9 @@ class ListAgentItem(BaseModel):
     """Single list-agents row."""
 
     agent_id: str
+    agent_handle: str | None = None
+    agent_type: str | None = None
+    run_kind: str | None = None
     parent_id: str | None
     role: str
     session_name: str
@@ -184,4 +193,4 @@ def parse_frame(data: dict[str, Any]) -> Frame:
 def serialize_frame(frame: Frame) -> dict[str, Any]:
     """Serialize a frame model into JSON-compatible dict form."""
 
-    return frame.model_dump(mode="json")
+    return frame.model_dump(mode="json", exclude_unset=True)

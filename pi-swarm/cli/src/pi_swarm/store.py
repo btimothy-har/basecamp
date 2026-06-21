@@ -28,6 +28,17 @@ class ActiveRunExistsError(Exception):
         super().__init__(f"agent {agent_id} already has an active primary run")
 
 
+class DuplicateAgentHandleError(Exception):
+    """Raised when an agent handle is already assigned to another agent."""
+
+    def __init__(self, agent_handle: str) -> None:
+        super().__init__(f"agent handle {agent_handle!r} is already in use")
+
+
+def _fallback_agent_handle(agent_id: str) -> str:
+    return agent_id
+
+
 def _preview_text(value: str | None, *, limit: int = RUN_SUMMARY_PREVIEW_CHARS) -> str | None:
     if value is None:
         return None
@@ -66,7 +77,10 @@ class Store:
                     cwd TEXT,
                     created_at TEXT,
                     last_seen_at TEXT,
-                    current_run_id TEXT
+                    current_run_id TEXT,
+                    agent_handle TEXT,
+                    agent_type TEXT,
+                    run_kind TEXT
                 )
                 """
             )
@@ -101,6 +115,8 @@ class Store:
                 """
             )
             self._ensure_agents_current_run_id_column(connection)
+            self._ensure_agents_agent_handle_column(connection)
+            self._ensure_agents_metadata_columns(connection)
             self._ensure_runs_dispatcher_id_column(connection)
             self._ensure_runs_exit_code_column(connection)
             self._ensure_runs_report_token_hash_column(connection)
@@ -110,6 +126,36 @@ class Store:
         names = {column[1] for column in columns}
         if "current_run_id" not in names:
             connection.execute("ALTER TABLE agents ADD COLUMN current_run_id TEXT")
+
+    def _ensure_agents_agent_handle_column(self, connection: sqlite3.Connection) -> None:
+        columns = connection.execute("PRAGMA table_info(agents)").fetchall()
+        names = {column[1] for column in columns}
+        if "agent_handle" not in names:
+            connection.execute("ALTER TABLE agents ADD COLUMN agent_handle TEXT")
+
+        rows = connection.execute("SELECT id FROM agents WHERE agent_handle IS NULL OR agent_handle = ''").fetchall()
+        for row in rows:
+            agent_id = row[0]
+            connection.execute(
+                "UPDATE agents SET agent_handle = ? WHERE id = ?",
+                (_fallback_agent_handle(agent_id), agent_id),
+            )
+
+        connection.execute(
+            """
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_agents_agent_handle_unique
+            ON agents(agent_handle)
+            WHERE agent_handle IS NOT NULL
+            """
+        )
+
+    def _ensure_agents_metadata_columns(self, connection: sqlite3.Connection) -> None:
+        columns = connection.execute("PRAGMA table_info(agents)").fetchall()
+        names = {column[1] for column in columns}
+        if "agent_type" not in names:
+            connection.execute("ALTER TABLE agents ADD COLUMN agent_type TEXT")
+        if "run_kind" not in names:
+            connection.execute("ALTER TABLE agents ADD COLUMN run_kind TEXT")
 
     def _ensure_runs_dispatcher_id_column(self, connection: sqlite3.Connection) -> None:
         columns = connection.execute("PRAGMA table_info(runs)").fetchall()
@@ -139,37 +185,76 @@ class Store:
         role: str,
         session_name: str,
         cwd: str,
+        agent_handle: str | None = None,
+        agent_type: str | None = None,
+        run_kind: str | None = None,
     ) -> None:
         """Insert/update an agent row and refresh last-seen timestamp."""
 
         now = self._now()
         with self._connect() as connection:
-            connection.execute(
-                """
-                INSERT INTO agents (
-                    id,
-                    parent_id,
-                    sibling_group,
-                    depth,
-                    role,
-                    session_name,
-                    cwd,
-                    created_at,
-                    last_seen_at
+            connection.execute("BEGIN IMMEDIATE")
+            existing = connection.execute(
+                "SELECT agent_handle, agent_type, run_kind FROM agents WHERE id = ?",
+                (agent_id,),
+            ).fetchone()
+            stored_handle = existing[0] if existing is not None else None
+            stored_agent_type = existing[1] if existing is not None else None
+            stored_run_kind = existing[2] if existing is not None else None
+            next_handle = agent_handle or stored_handle or _fallback_agent_handle(agent_id)
+            next_agent_type = agent_type or stored_agent_type
+            next_run_kind = run_kind or stored_run_kind
+
+            try:
+                connection.execute(
+                    """
+                    INSERT INTO agents (
+                        id,
+                        parent_id,
+                        sibling_group,
+                        depth,
+                        role,
+                        session_name,
+                        cwd,
+                        created_at,
+                        last_seen_at,
+                        agent_handle,
+                        agent_type,
+                        run_kind
+                    )
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ON CONFLICT(id)
+                    DO UPDATE SET
+                        parent_id = excluded.parent_id,
+                        sibling_group = excluded.sibling_group,
+                        depth = excluded.depth,
+                        role = excluded.role,
+                        session_name = excluded.session_name,
+                        cwd = excluded.cwd,
+                        last_seen_at = excluded.last_seen_at,
+                        agent_handle = excluded.agent_handle,
+                        agent_type = excluded.agent_type,
+                        run_kind = excluded.run_kind
+                    """,
+                    (
+                        agent_id,
+                        parent_id,
+                        sibling_group,
+                        depth,
+                        role,
+                        session_name,
+                        cwd,
+                        now,
+                        now,
+                        next_handle,
+                        next_agent_type,
+                        next_run_kind,
+                    ),
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-                ON CONFLICT(id)
-                DO UPDATE SET
-                    parent_id = excluded.parent_id,
-                    sibling_group = excluded.sibling_group,
-                    depth = excluded.depth,
-                    role = excluded.role,
-                    session_name = excluded.session_name,
-                    cwd = excluded.cwd,
-                    last_seen_at = excluded.last_seen_at
-                """,
-                (agent_id, parent_id, sibling_group, depth, role, session_name, cwd, now, now),
-            )
+            except sqlite3.IntegrityError as error:
+                if "agents.agent_handle" in str(error):
+                    raise DuplicateAgentHandleError(next_handle) from error
+                raise
 
     def get_agent(self, agent_id: str) -> dict[str, Any] | None:
         """Fetch an agent by id as a dict, or None when absent."""
@@ -177,6 +262,14 @@ class Store:
         with self._connect() as connection:
             connection.row_factory = sqlite3.Row
             row = connection.execute("SELECT * FROM agents WHERE id = ?", (agent_id,)).fetchone()
+            return dict(row) if row is not None else None
+
+    def get_agent_by_handle(self, agent_handle: str) -> dict[str, Any] | None:
+        """Fetch an agent by public handle as a dict, or None when absent."""
+
+        with self._connect() as connection:
+            connection.row_factory = sqlite3.Row
+            row = connection.execute("SELECT * FROM agents WHERE agent_handle = ?", (agent_handle,)).fetchone()
             return dict(row) if row is not None else None
 
     def create_run(
@@ -298,11 +391,11 @@ class Store:
                 result["spec_json"] = json.loads(spec_json)
             return result
 
-    def _resolve_requester_root(self, requester_node_id: str) -> str | None:
-        """Resolve the root id for a node by following parent links defensively."""
+    def resolve_agent_root(self, agent_id: str) -> str | None:
+        """Resolve the root id for an agent by following parent links defensively."""
 
         visited: set[str] = set()
-        current = requester_node_id
+        current = agent_id
 
         while isinstance(current, str) and current not in visited:
             visited.add(current)
@@ -327,7 +420,7 @@ class Store:
     ) -> list[dict[str, Any]]:
         """List non-session agents under the caller's root with safe status metadata."""
 
-        root_id = self._resolve_requester_root(requester_node_id)
+        root_id = self.resolve_agent_root(requester_node_id)
         if root_id is None:
             return []
 
@@ -347,6 +440,9 @@ class Store:
             )
             SELECT
                 a.id AS agent_id,
+                a.agent_handle,
+                a.agent_type,
+                a.run_kind,
                 a.parent_id,
                 a.role,
                 a.session_name,
@@ -378,6 +474,9 @@ class Store:
         return [
             {
                 "agent_id": row["agent_id"],
+                "agent_handle": row["agent_handle"],
+                "agent_type": row["agent_type"],
+                "run_kind": row["run_kind"],
                 "parent_id": row["parent_id"],
                 "role": row["role"],
                 "session_name": row["session_name"],
@@ -408,6 +507,7 @@ class Store:
         query = f"""
             SELECT
                 a.id AS agent_id,
+                a.agent_handle,
                 r.id AS run_id,
                 r.status AS status,
                 r.result AS result,
@@ -422,6 +522,39 @@ class Store:
         with self._connect() as connection:
             connection.row_factory = sqlite3.Row
             rows = connection.execute(query, (dispatcher_id, *agent_ids)).fetchall()
+
+        return [dict(row) for row in rows]
+
+    def get_agents_current_runs_by_handles(
+        self,
+        agent_handles: list[str],
+        *,
+        dispatcher_id: str,
+    ) -> list[dict[str, Any]]:
+        """Return current primary-run projections for requested agent handles."""
+
+        if not agent_handles:
+            return []
+
+        placeholders = ", ".join("?" for _ in agent_handles)
+        query = f"""
+            SELECT
+                a.id AS agent_id,
+                a.agent_handle,
+                r.id AS run_id,
+                r.status AS status,
+                r.result AS result,
+                r.error AS error
+            FROM agents AS a
+            LEFT JOIN runs AS r
+                ON r.id = a.current_run_id
+               AND r.dispatcher_id = ?
+            WHERE a.agent_handle IN ({placeholders})
+            """
+
+        with self._connect() as connection:
+            connection.row_factory = sqlite3.Row
+            rows = connection.execute(query, (dispatcher_id, *agent_handles)).fetchall()
 
         return [dict(row) for row in rows]
 
@@ -485,36 +618,38 @@ class Store:
                 (root_id,),
             ).fetchone()
 
-            run_rows = connection.execute(
+            agent_rows = connection.execute(
                 f"""
                 {recursive_scope}
                 SELECT
-                    r.id AS run_id,
-                    r.agent_id,
-                    a.parent_id,
+                    a.agent_handle,
+                    a.agent_type,
                     a.role,
                     a.session_name,
-                    r.status,
+                    CASE
+                        WHEN r.status IN ('pending', 'running', 'completed', 'failed') THEN r.status
+                        ELSE 'idle'
+                    END AS status,
                     r.result,
                     r.error,
                     r.exit_code,
                     r.created_at,
                     r.started_at,
                     r.ended_at
-                FROM runs AS r
-                INNER JOIN agents AS a ON a.id = r.agent_id
-                WHERE r.agent_id IN (SELECT id FROM scoped_agents)
-                ORDER BY r.created_at DESC, r.id DESC
+                FROM agents AS a
+                INNER JOIN scoped_agents AS s ON s.id = a.id
+                LEFT JOIN runs AS r ON r.id = a.current_run_id
+                WHERE a.role != 'session'
+                ORDER BY COALESCE(r.created_at, a.created_at) DESC, a.agent_handle ASC
                 LIMIT ?
                 """,
                 (root_id, safe_limit),
             ).fetchall()
 
-        runs = [
+        agents = [
             {
-                "run_id": row["run_id"],
-                "agent_id": row["agent_id"],
-                "parent_id": row["parent_id"],
+                "agent_handle": row["agent_handle"],
+                "agent_type": row["agent_type"],
                 "role": row["role"],
                 "session_name": row["session_name"],
                 "status": row["status"],
@@ -525,7 +660,7 @@ class Store:
                 "started_at": row["started_at"],
                 "ended_at": row["ended_at"],
             }
-            for row in run_rows
+            for row in agent_rows
         ]
 
         return {
@@ -537,7 +672,7 @@ class Store:
                 "failed": counts_row["failed_count"],
                 "total": counts_row["total_count"],
             },
-            "runs": runs,
+            "agents": agents,
         }
 
     def are_runs_terminal(self, run_ids: list[str]) -> bool:
