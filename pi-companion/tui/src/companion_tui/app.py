@@ -52,7 +52,7 @@ from companion_tui.snapshot import (
 )
 from companion_tui.source import DashboardModel, DashboardSource
 
-BODY_MODES = ("diff-body", "files-body", "dashboard-body")
+BODY_MODES = ("dashboard-body", "diff-body", "files-body", "swarm-body")
 
 
 def lexer_for_filename(file_path: str) -> Lexer:
@@ -660,7 +660,6 @@ class DashboardBody(Widget):
         super().__init__(*args, **kwargs)
         self._goals: list[CompanionGoal] = []
         self._analysis: CompanionAnalysis | None = None
-        self._daemon_summary: DaemonSummary | None = None
         self._selected_goal = 0
         self._selected_task = 0
         self._following = True
@@ -675,7 +674,6 @@ class DashboardBody(Widget):
             with Horizontal(id="dashboard-bottom"):
                 yield Static(id="dashboard-open", classes="dashboard-box")
                 yield Static(id="dashboard-warnings", classes="dashboard-box")
-            yield Static(id="dashboard-daemon", classes="dashboard-box")
 
     def render(self) -> Text:
         return Text()
@@ -688,7 +686,6 @@ class DashboardBody(Widget):
         self.query_one("#dashboard-decisions", Static).border_title = "Decisions"
         self.query_one("#dashboard-open", Static).border_title = "Open items"
         self.query_one("#dashboard-warnings", Static).border_title = "Warnings"
-        self.query_one("#dashboard-daemon", Static).border_title = "Daemon agents"
         self._render_dashboard()
 
     @staticmethod
@@ -725,20 +722,6 @@ class DashboardBody(Widget):
         self._analysis = model.analysis
         self._clamp()
         self._render_dashboard()
-
-    def update_daemon(self, summary: DaemonSummary | None) -> None:
-        self._daemon_summary = summary
-        daemon_panel = self.query_one("#dashboard-daemon", Static)
-        if self._is_daemon_panel_visible(summary):
-            daemon_panel.display = True
-            daemon_panel.update(_render_daemon_summary(summary))
-        else:
-            daemon_panel.display = False
-            daemon_panel.update("")
-
-    @staticmethod
-    def _is_daemon_panel_visible(summary: DaemonSummary | None) -> bool:
-        return summary is not None and summary.state == "ok" and summary.session_active
 
     def _clamp(self) -> None:
         if not self._goals:
@@ -822,13 +805,26 @@ class DashboardBody(Widget):
             _render_bullets(analysis.warnings) if analysis else Text("—", style="dim")
         )
 
-        daemon_panel = self.query_one("#dashboard-daemon", Static)
-        if self._is_daemon_panel_visible(self._daemon_summary):
-            daemon_panel.display = True
-            daemon_panel.update(_render_daemon_summary(self._daemon_summary))
-        else:
-            daemon_panel.display = False
-            daemon_panel.update("")
+
+class SwarmBody(Widget):
+    """Swarm modality body showing daemon-backed async agent observability."""
+
+    can_focus = True
+
+    BINDINGS = [Binding("m", "app.toggle_mode", "Mode")]
+
+    def compose(self) -> ComposeResult:
+        yield Static(id="swarm-daemon", classes="swarm-box")
+
+    def render(self) -> Text:
+        return Text()
+
+    def on_mount(self) -> None:
+        self.query_one("#swarm-daemon", Static).border_title = "Daemon agents"
+        self.update_daemon(None)
+
+    def update_daemon(self, summary: DaemonSummary | None) -> None:
+        self.query_one("#swarm-daemon", Static).update(_render_daemon_summary(summary))
 
 
 class _MenuOrderedScreen(Screen):
@@ -962,8 +958,18 @@ class CompanionApp(App[None]):
         height: 1fr;
     }
 
-    #dashboard-daemon {
-        height: 2fr;
+    #swarm-body {
+        height: 1fr;
+        padding: 0 1;
+    }
+
+    .swarm-box {
+        border: round $accent;
+        padding: 0 1;
+    }
+
+    #swarm-daemon {
+        height: 1fr;
         width: 100%;
     }
 
@@ -1028,6 +1034,7 @@ class CompanionApp(App[None]):
             DiffBody(id="diff-body"),
             FileBrowser(resolve_browse_roots(self._git, self.cwd, self.scratch_dir), id="files-body"),
             DashboardBody(id="dashboard-body"),
+            SwarmBody(id="swarm-body"),
             id="body",
             initial="dashboard-body",
         )
@@ -1061,9 +1068,10 @@ class CompanionApp(App[None]):
     def _update_mode_indicator(self) -> None:
         current = self.query_one("#body", ContentSwitcher).current
         labels = {
+            "dashboard-body": "Dashboard",
             "diff-body": "Diff",
             "files-body": "Files",
-            "dashboard-body": "Dashboard",
+            "swarm-body": "Swarm",
         }
         self.query_one("#session-bar-mode", Static).update(f"[dim]{labels.get(current, 'Diff')}[/dim]")
 
@@ -1102,6 +1110,8 @@ class CompanionApp(App[None]):
             self.query_one("#diff-view", DiffView).focus()
         elif switcher.current == "files-body":
             self.query_one("#file-tree", _CompanionDirectoryTree).focus()
+        elif switcher.current == "swarm-body":
+            self.query_one("#swarm-body", SwarmBody).focus()
         else:
             self.query_one("#dashboard-body", DashboardBody).focus()
 
@@ -1171,6 +1181,7 @@ class CompanionApp(App[None]):
             self._update_session_bar()
 
         dashboard_body = self.query_one("#dashboard-body", DashboardBody)
+        swarm_body = self.query_one("#swarm-body", SwarmBody)
 
         if self._snapshot is not None:
             if self._dashboard_source is None:
@@ -1188,9 +1199,9 @@ class CompanionApp(App[None]):
             if model is not None:
                 dashboard_body.update(model)
 
-            dashboard_body.update_daemon(self._poll_daemon_summary(self._snapshot.session_id))
+            swarm_body.update_daemon(self._poll_daemon_summary(self._snapshot.session_id))
         else:
-            dashboard_body.update_daemon(None)
+            swarm_body.update_daemon(None)
 
         try:
             base_commit, files = collect_changes(self._git, self._diff_mode)

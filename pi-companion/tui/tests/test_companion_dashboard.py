@@ -7,11 +7,11 @@ import json
 import subprocess
 from pathlib import Path
 
-import pytest
 from companion_tui.analysis import companion_analysis_path
 from companion_tui.app import (
     CompanionApp,
     DashboardBody,
+    SwarmBody,
     _format_duration,
     _goal_panel,
     _render_bullets,
@@ -146,29 +146,6 @@ def test_render_daemon_summary_error() -> None:
     assert "bad daemon payload" in text
 
 
-@pytest.mark.parametrize(
-    (
-        "summary",
-        "visible",
-    ),
-    [
-        (None, False),
-        (
-            DaemonSummaryUnavailable(error="daemon socket missing"),
-            False,
-        ),
-        (
-            DaemonSummaryError(error="daemon payload malformed"),
-            False,
-        ),
-        (_daemon_summary_ok(total=0, agents=[], session_active=False), False),
-        (_daemon_summary_ok(total=0, agents=[], session_active=True), True),
-    ],
-)
-def test_is_daemon_panel_visible_for_summary_state(summary: DaemonSummary | None, visible) -> None:
-    assert DashboardBody._is_daemon_panel_visible(summary) is visible
-
-
 def test_render_daemon_summary_running_uses_hourglass() -> None:
     summary = _daemon_summary_ok(
         total=1,
@@ -241,7 +218,13 @@ def test_dashboard_css_uses_requested_row_ratios() -> None:
     assert "#dashboard-task {\n        height: 3fr;" in css
     assert "#dashboard-decisions {\n        height: 2fr;" in css
     assert "#dashboard-bottom {\n        height: 2fr;" in css
-    assert "#dashboard-daemon {\n        height: 2fr;" in css
+    assert "#dashboard-daemon" not in css
+
+
+def test_swarm_css_includes_daemon_panel() -> None:
+    css = CompanionApp.CSS
+    assert "#swarm-body" in css
+    assert "#swarm-daemon" in css
 
 
 def test_render_bullets_preserves_literal_markup_text() -> None:
@@ -285,10 +268,11 @@ def test_render_task_detail_shows_header_and_faded_annotation() -> None:
     assert "note" in text
 
 
-def test_next_body_mode_cycles_three_way() -> None:
-    assert next_body_mode("diff-body") == "files-body"
-    assert next_body_mode("files-body") == "dashboard-body"
+def test_next_body_mode_cycles_through_dashboard_diff_files_swarm() -> None:
     assert next_body_mode("dashboard-body") == "diff-body"
+    assert next_body_mode("diff-body") == "files-body"
+    assert next_body_mode("files-body") == "swarm-body"
+    assert next_body_mode("swarm-body") == "dashboard-body"
 
 
 def test_pinned_task_index_prefers_active() -> None:
@@ -334,7 +318,7 @@ def test_poll_daemon_summary_converts_unexpected_source_errors(tmp_path: Path) -
     assert "session-123" in result.error
 
 
-def test_dashboard_shows_daemon_panel_when_session_active(tmp_path: Path) -> None:
+def test_swarm_receives_daemon_summary_when_session_active(tmp_path: Path) -> None:
     repo = tmp_path / "repo"
     tasks_dir = tmp_path / "tasks"
     tasks_dir.mkdir()
@@ -401,10 +385,10 @@ def test_dashboard_shows_daemon_panel_when_session_active(tmp_path: Path) -> Non
             else:
                 raise AssertionError
 
-            daemon_panel = app.query_one("#dashboard-daemon", Static)
-            assert daemon_panel.display is True
-            assert dash._is_daemon_panel_visible(dash._daemon_summary) is True
-            assert dash._daemon_summary is not None
+            app.query_one("#swarm-body", SwarmBody)
+            daemon_panel = app.query_one("#swarm-daemon", Static)
+            assert "No async agents yet" in _to_text(daemon_panel.render())
+            assert not app.query("#dashboard-daemon")
             assert daemon_source.poll_calls[-1] == session_id
 
     asyncio.run(run())
@@ -491,13 +475,13 @@ def test_dashboard_autopin_navigation_and_repin(tmp_path: Path) -> None:
                 "#dashboard-decisions",
                 "#dashboard-open",
                 "#dashboard-warnings",
-                "#dashboard-daemon",
             ):
                 app.query_one(box_id, Static)
             app.query_one("#goal-1", Static)
 
-            daemon_panel = app.query_one("#dashboard-daemon", Static)
-            assert daemon_panel.display is False
+            daemon_panel = app.query_one("#swarm-daemon", Static)
+            assert "Daemon unavailable" in _to_text(daemon_panel.render())
+            assert not app.query("#dashboard-daemon")
 
             assert daemon_source.poll_calls[-1] == session_id
 

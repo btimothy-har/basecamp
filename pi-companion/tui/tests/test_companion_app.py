@@ -16,6 +16,7 @@ from companion_tui.app import (
     DiffView,
     FileBrowser,
     FileList,
+    SwarmBody,
     WorkspacePanel,
 )
 from companion_tui.snapshot import collapse_home
@@ -292,6 +293,10 @@ def test_mode_indicator_tracks_active_mode(tmp_path: Path) -> None:
 
             await pilot.press("m")
             await pilot.pause(0.05)
+            assert "Swarm" in str(mode_bar.render())
+
+            await pilot.press("m")
+            await pilot.pause(0.05)
             assert "Dashboard" in str(mode_bar.render())
 
     asyncio.run(run_mode_indicator_test())
@@ -313,6 +318,7 @@ def test_mode_toggle_switches_body_and_focus(tmp_path: Path) -> None:
             diff_view = app.query_one("#diff-view", DiffView)
             file_tree = app.query_one("#file-tree", DirectoryTree)
             dashboard = app.query_one("#dashboard-body", DashboardBody)
+            swarm = app.query_one("#swarm-body", SwarmBody)
 
             assert body.current == "dashboard-body"
             assert dashboard.has_focus
@@ -328,6 +334,12 @@ def test_mode_toggle_switches_body_and_focus(tmp_path: Path) -> None:
 
             assert body.current == "files-body"
             assert file_tree.has_focus
+
+            await pilot.press("m")
+            await pilot.pause(0.05)
+
+            assert body.current == "swarm-body"
+            assert swarm.has_focus
 
             await pilot.press("m")
             await pilot.pause(0.05)
