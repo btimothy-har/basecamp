@@ -5,9 +5,9 @@ import {
 	buildExecutionWorktreeChoices,
 	CUSTOM_WORKTREE_CHOICE,
 	customWorktreeTarget,
+	type ExecutionWorktreeTarget,
 	suggestWorktreeTarget,
 	userWorktreePrefix,
-	type ExecutionWorktreeTarget,
 } from "../planning/worktree-choices.ts";
 
 function worktree(label: string, overrides: Partial<WorkspaceWorktree> = {}): WorkspaceWorktree {
@@ -185,7 +185,11 @@ describe("buildExecutionWorktreeChoices", () => {
 
 		const result = buildExecutionWorktreeChoices(target("suggested"), existing, active);
 
-		assert.deepEqual(result.choices, ["Current: current (detached)", "Create: wt-bt/suggested", CUSTOM_WORKTREE_CHOICE]);
+		assert.deepEqual(result.choices, [
+			"Current: current (detached)",
+			"Create: wt-bt/suggested",
+			CUSTOM_WORKTREE_CHOICE,
+		]);
 	});
 
 	it("omits an unregistered active worktree from the selector", () => {

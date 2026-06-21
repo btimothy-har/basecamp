@@ -30,8 +30,8 @@ import {
 	buildExecutionWorktreeChoices,
 	CUSTOM_WORKTREE_CHOICE,
 	customWorktreeTarget,
-	suggestWorktreeTarget,
 	type ExecutionWorktreeTarget,
+	suggestWorktreeTarget,
 } from "./worktree-choices.ts";
 
 // ============================================================================
