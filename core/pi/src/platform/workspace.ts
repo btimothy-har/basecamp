@@ -63,7 +63,7 @@ export interface WorkspaceService {
 	require(): WorkspaceState;
 	getEffectiveCwd(): string;
 	listWorktrees(): Promise<WorkspaceWorktree[]>;
-	activateWorktree(label: string): Promise<WorkspaceWorktree>;
+	activateWorktree(label: string, branchName?: string | null): Promise<WorkspaceWorktree>;
 	attachWorktreePath(path: string): Promise<WorkspaceWorktree>;
 	onChange?(listener: (state: WorkspaceState | null) => void): () => void;
 }
@@ -129,8 +129,8 @@ export function listWorkspaceWorktrees(): Promise<WorkspaceWorktree[]> {
 	return requireWorkspaceService().listWorktrees();
 }
 
-export function activateWorkspaceWorktree(label: string): Promise<WorkspaceWorktree> {
-	return requireWorkspaceService().activateWorktree(label);
+export function activateWorkspaceWorktree(label: string, branchName?: string | null): Promise<WorkspaceWorktree> {
+	return requireWorkspaceService().activateWorktree(label, branchName);
 }
 
 export function attachWorkspaceWorktreePath(path: string): Promise<WorkspaceWorktree> {

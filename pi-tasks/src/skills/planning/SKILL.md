@@ -83,7 +83,7 @@ plan({
 })
 ```
 
-For implementation plans, include `worktreeSlug` as hidden metadata: a short semantic kebab-case slug with no session prefix, e.g. `handoff-labels`. Omit it for analysis-only plans. This is not a user-reviewed plan section; the user sees it through the suggested execution worktree label. If the user enters a custom worktree label, Basecamp still applies the current user prefix.
+For implementation plans, include `worktreeSlug` as hidden metadata: a short semantic kebab-case slug with no session prefix, e.g. `handoff-labels`. Omit it for analysis-only plans. This is not a user-reviewed plan section; Basecamp derives the local execution worktree label as `wt-<user-prefix>/<slug>` and the Git branch as `<user-prefix>/<slug>`. If the user enters a custom worktree name, Basecamp still normalizes it under the current user prefix.
 
 The user reviews via an interactive overlay. They may:
 - **Approve** sections/tasks
