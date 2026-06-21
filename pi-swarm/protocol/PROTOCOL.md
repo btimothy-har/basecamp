@@ -1,23 +1,24 @@
 # Pi Swarm Daemon Protocol
 
-Protocol version: `10`
+Protocol version: `11`
 
 All frames are JSON objects with an envelope:
 
 ```json
-{"type":"<frame_type>","v":10,...}
+{"type":"<frame_type>","v":11,...}
 ```
 
 Version handling:
 - The daemon validates `v` on every inbound frame.
-- If `v != 10`, the daemon sends an `error` frame with `code: "protocol_version"` and closes the connection.
+- If `v != 11`, the daemon sends an `error` frame with `code: "protocol_version"` and closes the connection.
 - The extension treats the protocol as a client-visible capability gate, not only a frame-shape version. A version mismatch restarts the host daemon during ensure-daemon.
 
 ## Transport
 
 - HTTP over Unix domain socket (UDS):
-  - `GET /health` → `{"status":"ok","protocol":10}`
+  - `GET /health` → `{"status":"ok","protocol":11}`
   - `GET /runs/summary?root_id=<id>` returns safe agent-level observability for the companion dashboard.
+  - `GET /runs/messages?root_id=<id>&agent_handle=<handle>` returns selected-agent assistant message detail for the companion dashboard.
 - WebSocket over UDS:
   - `/ws`
   - First inbound frame must be `register`.
@@ -92,7 +93,7 @@ Waits for one or more public agent handles:
 ```json
 {
   "type": "wait",
-  "v": 10,
+  "v": 11,
   "agent_ids": [],
   "agent_handles": ["scout-mossy-otter-a1b2c3"],
   "mode": "all",
@@ -123,7 +124,7 @@ Requests a safe directory of agents visible under the caller's root session:
 ```json
 {
   "type": "list_agents",
-  "v": 10,
+  "v": 11,
   "request_id": "list-001",
   "awaitable": true
 }
@@ -172,6 +173,22 @@ Each summary row contains:
 
 Summary rows do not include private `run_id`, private `agent_id`, report tokens, prompts, full results, errors, spawn specs, env, cwd, raw telemetry payloads/args/outputs, raw tool call ids, visible/model message text beyond reporter-sanitized snippets, or hidden model thinking. Display strings are control/ANSI stripped and length capped.
 
+### `GET /runs/messages`
+
+Returns companion Swarm message detail for one selected async agent under the requested root session. This endpoint is intended for selected-agent detail panes, not routine all-agent summary polling.
+
+Query parameters:
+- `root_id` (required): root session agent id whose subtree scopes the lookup.
+- `agent_handle` (required): public agent handle to display.
+- `limit` (optional, default `3`): maximum number of messages. The daemon clamps this to `0`–`3`.
+
+Response schema:
+- `root_id`: requested root id.
+- `agent_handle`: requested public agent handle.
+- `messages`: latest visible assistant messages for the selected agent's current run, ordered oldest-to-newest within the returned window. Each message contains only `kind`, `seq`, daemon `timestamp`, `label`, and full visible assistant `text`.
+
+Message detail is subtree-validated by `root_id` + `agent_handle`. It excludes private `run_id`, raw private `agent_id`, report tokens, prompts, user/system/developer messages, raw tool args/results, env, cwd, spawn specs, hidden thinking, and chain-of-thought. Message text is visible assistant output only; ANSI/control characters are stripped while newlines are preserved. `/runs/summary` remains snippet-only.
+
 ### `error` daemon → client
 
 Reports protocol/parse errors and closes the WebSocket for fatal frame errors. Current codes include:
@@ -185,6 +202,6 @@ Reports protocol/parse errors and closes the WebSocket for fatal frame errors. C
 A minimal client flow is:
 
 1. Connect to `/ws` over the UDS.
-2. Send `register` with `v: 10`.
+2. Send `register` with `v: 11`.
 3. Send `dispatch` with private `run_id` / `agent_id` and public `agent_handle`.
 4. Use the `agent_handle` with `wait` or discover agents through `list_agents`.

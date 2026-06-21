@@ -4,7 +4,6 @@ import { PROTOCOL_VERSION } from "./frames.ts";
 
 const FLUSH_DELAY_MS = 50;
 const DISPLAY_TEXT_LIMIT = 240;
-const ASSISTANT_BUFFER_LIMIT = 2_000;
 
 const TOOL_SUMMARY_KEYS = ["path", "file", "target", "command", "query", "pattern", "name", "agent"] as const;
 
@@ -33,6 +32,11 @@ function displayText(value: unknown, limit = DISPLAY_TEXT_LIMIT): string | null 
 	const text = collapseWhitespace(String(value));
 	if (!text) return null;
 	return truncateText(text, limit);
+}
+
+function messageText(value: string): string | null {
+	const text = value.trim();
+	return text ? text : null;
 }
 
 function safeString(value: unknown): string | null {
@@ -174,11 +178,8 @@ function extractVisibleTextFromMessageEvent(event: unknown): string {
 	return typeof payload.text === "string" ? payload.text : "";
 }
 
-function appendBounded(current: string, addition: string): string {
-	if (!addition) return current;
-	const next = `${current}${addition}`;
-	if (next.length <= ASSISTANT_BUFFER_LIMIT) return next;
-	return next.slice(next.length - ASSISTANT_BUFFER_LIMIT);
+function appendText(current: string, addition: string): string {
+	return addition ? `${current}${addition}` : current;
 }
 
 function sleep(ms: number): Promise<void> {
@@ -233,13 +234,15 @@ export function registerDaemonReporter(
 	};
 
 	const flushAssistantOutput = (): void => {
-		const snippet = displayText(assistantBuffer);
+		const text = messageText(assistantBuffer);
 		assistantBuffer = "";
-		if (!snippet) return;
+		const snippet = displayText(text);
+		if (!text || !snippet) return;
 		sendDisplayTelemetry("assistant_output", {
 			category: "assistant",
 			label: "assistant",
 			snippet,
+			text,
 		});
 	};
 
@@ -286,7 +289,7 @@ export function registerDaemonReporter(
 	pi.on("message_update", (event) => {
 		if (activeMessageRole && activeMessageRole !== "assistant") return;
 		if (eventHasThinking(event)) sendThinkingMarker();
-		assistantBuffer = appendBounded(assistantBuffer, extractVisibleTextFromMessageEvent(event));
+		assistantBuffer = appendText(assistantBuffer, extractVisibleTextFromMessageEvent(event));
 	});
 
 	pi.on("message_end", (event) => {
@@ -297,7 +300,7 @@ export function registerDaemonReporter(
 		}
 		if (eventHasThinking(event)) sendThinkingMarker();
 		const fullText = extractVisibleTextFromMessageEvent(event);
-		if (fullText) assistantBuffer = appendBounded("", fullText);
+		if (fullText) assistantBuffer = fullText;
 		flushAssistantOutput();
 		activeMessageRole = null;
 	});

@@ -11,9 +11,11 @@ from typing import Any, Literal
 from urllib.parse import urlencode
 
 DEFAULT_DAEMON_SOCKET_PATH = Path("~/.pi/basecamp/swarm/daemon.sock").expanduser()
+DEFAULT_DAEMON_MESSAGES_LIMIT = 3
 DEFAULT_DAEMON_SUMMARY_LIMIT = 5
 DEFAULT_DAEMON_TIMEOUT_SECONDS = 0.5
 
+DaemonAgentMessagesState = Literal["ok", "unavailable", "error"]
 DaemonSummaryState = Literal["ok", "unavailable", "error"]
 
 
@@ -81,6 +83,46 @@ class DaemonRecentActivity:
     snippet: str | None = None
     is_error: bool | None = None
     tool_count: int | None = None
+
+
+@dataclass(frozen=True)
+class DaemonAgentMessage:
+    """One selected-agent assistant message from the daemon."""
+
+    kind: str
+    seq: int | None
+    timestamp: str | None
+    label: str | None
+    text: str
+
+
+@dataclass(frozen=True)
+class DaemonAgentMessagesUnavailable:
+    """Returned when daemon message detail cannot be reached."""
+
+    state: Literal["unavailable"] = "unavailable"
+    error: str = ""
+
+
+@dataclass(frozen=True)
+class DaemonAgentMessagesError:
+    """Returned when daemon message detail is malformed or unsuccessful."""
+
+    state: Literal["error"] = "error"
+    error: str = ""
+
+
+@dataclass(frozen=True)
+class DaemonAgentMessagesOk:
+    """Message detail for one selected agent."""
+
+    root_id: str
+    agent_handle: str
+    messages: list[DaemonAgentMessage]
+    state: Literal["ok"] = "ok"
+
+
+DaemonAgentMessages = DaemonAgentMessagesOk | DaemonAgentMessagesUnavailable | DaemonAgentMessagesError
 
 
 @dataclass(frozen=True)
@@ -153,7 +195,7 @@ class UnixHTTPConnection(HTTPConnection):
 
 
 class DaemonSummarySource:
-    """Polls the daemon `/runs/summary` endpoint."""
+    """Polls daemon Swarm observability endpoints."""
 
     def __init__(
         self,
@@ -170,13 +212,7 @@ class DaemonSummarySource:
         self._timeout = timeout
 
     def poll(self, root_id: str, *, limit: int | None = None) -> DaemonSummary:
-        """Fetch a daemon summary for the given root ID.
-
-        Returns:
-            DaemonSummaryOk: parsed payload.
-            DaemonSummaryUnavailable: socket/connection could not be opened.
-            DaemonSummaryError: non-200 response or malformed payload.
-        """
+        """Fetch a daemon summary for the given root ID."""
 
         if not isinstance(root_id, str):
             return DaemonSummaryError(error="root_id must be a string")
@@ -204,6 +240,51 @@ class DaemonSummarySource:
             return DaemonSummaryError(error="daemon returned an invalid summary response")
         except HTTPException as error:
             return DaemonSummaryError(error=str(error))
+        finally:
+            if connection is not None:
+                try:
+                    connection.close()
+                except OSError:
+                    pass
+
+    def poll_messages(
+        self,
+        root_id: str,
+        agent_handle: str,
+        *,
+        limit: int | None = None,
+    ) -> DaemonAgentMessages:
+        """Fetch message detail for one selected agent."""
+
+        if not isinstance(root_id, str):
+            return DaemonAgentMessagesError(error="root_id must be a string")
+        if not isinstance(agent_handle, str):
+            return DaemonAgentMessagesError(error="agent_handle must be a string")
+
+        poll_limit = DEFAULT_DAEMON_MESSAGES_LIMIT if limit is None else limit
+        if not isinstance(poll_limit, int):
+            return DaemonAgentMessagesError(error="limit must be an int")
+
+        query = urlencode({"root_id": root_id, "agent_handle": agent_handle, "limit": poll_limit})
+        request_path = f"/runs/messages?{query}"
+        connection: HTTPConnection | None = None
+
+        try:
+            connection = self._connection_factory(self._daemon_socket, timeout=self._timeout)
+            connection.request("GET", request_path, headers={"Accept": "application/json"})
+            response = connection.getresponse()
+
+            if response.status != 200:
+                return DaemonAgentMessagesError(error=f"daemon returned status {response.status}")
+
+            payload = json.loads(response.read().decode("utf-8"))
+            return _parse_messages_payload(payload)
+        except OSError as error:
+            return DaemonAgentMessagesUnavailable(error=str(error))
+        except (json.JSONDecodeError, UnicodeDecodeError, TypeError, ValueError):
+            return DaemonAgentMessagesError(error="daemon returned an invalid messages response")
+        except HTTPException as error:
+            return DaemonAgentMessagesError(error=str(error))
         finally:
             if connection is not None:
                 try:
@@ -375,6 +456,41 @@ def _parse_recent_activity(payload: object) -> list[DaemonRecentActivity] | None
     return items
 
 
+def _parse_message_item(payload: object) -> DaemonAgentMessage | None:
+    if not isinstance(payload, dict):
+        return None
+
+    try:
+        return DaemonAgentMessage(
+            kind=_expect_str(payload, "kind"),
+            seq=_expect_optional_int(payload, "seq"),
+            timestamp=_expect_optional_str(payload, "timestamp"),
+            label=_expect_optional_str(payload, "label"),
+            text=_expect_str(payload, "text"),
+        )
+    except TypeError:
+        return None
+
+
+def _parse_messages_payload(payload: object) -> DaemonAgentMessagesOk:
+    if not isinstance(payload, dict):
+        raise TypeError
+
+    messages_payload = payload.get("messages")
+    if not isinstance(messages_payload, list):
+        raise TypeError
+
+    messages = [_parse_message_item(raw_message) for raw_message in messages_payload]
+    if any(message is None for message in messages):
+        raise TypeError
+
+    return DaemonAgentMessagesOk(
+        root_id=_expect_str(payload, "root_id"),
+        agent_handle=_expect_str(payload, "agent_handle"),
+        messages=[message for message in messages if message is not None],
+    )
+
+
 def _parse_payload(payload: object) -> DaemonSummaryOk:
     if not isinstance(payload, dict):
         raise TypeError
@@ -429,9 +545,16 @@ def _parse_payload(payload: object) -> DaemonSummaryOk:
 
 
 __all__ = [
+    "DEFAULT_DAEMON_MESSAGES_LIMIT",
     "DEFAULT_DAEMON_SOCKET_PATH",
     "DEFAULT_DAEMON_SUMMARY_LIMIT",
     "DEFAULT_DAEMON_TIMEOUT_SECONDS",
+    "DaemonAgentMessage",
+    "DaemonAgentMessages",
+    "DaemonAgentMessagesError",
+    "DaemonAgentMessagesOk",
+    "DaemonAgentMessagesState",
+    "DaemonAgentMessagesUnavailable",
     "DaemonSummary",
     "DaemonSummaryState",
     "DaemonSummaryCounts",

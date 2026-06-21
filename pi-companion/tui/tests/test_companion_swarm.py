@@ -8,6 +8,9 @@ import re
 
 from companion_tui.app import SwarmBody
 from companion_tui.daemon import (
+    DaemonAgentMessage,
+    DaemonAgentMessagesError,
+    DaemonAgentMessagesOk,
     DaemonCurrentTask,
     DaemonRecentActivity,
     DaemonSummaryAgent,
@@ -275,6 +278,42 @@ def test_swarm_renders_left_list_and_ordered_detail_sections() -> None:
     async def run() -> None:
         async with _SwarmHarness(swarm).run_test() as pilot:
             swarm.update_daemon(summary)
+            swarm.update_agent_messages(
+                DaemonAgentMessagesOk(
+                    root_id="root",
+                    agent_handle="worker-brisk-lynx",
+                    messages=[
+                        DaemonAgentMessage(
+                            kind="assistant_output",
+                            seq=6,
+                            timestamp="2026-01-01T00:00:03Z",
+                            label="assistant",
+                            text="Older message should be hidden",
+                        ),
+                        DaemonAgentMessage(
+                            kind="assistant_output",
+                            seq=7,
+                            timestamp="2026-01-01T00:00:04Z",
+                            label="assistant",
+                            text="First full message\nwith detail",
+                        ),
+                        DaemonAgentMessage(
+                            kind="assistant_output",
+                            seq=9,
+                            timestamp="2026-01-01T00:00:06Z",
+                            label="assistant",
+                            text="Second full message",
+                        ),
+                        DaemonAgentMessage(
+                            kind="agent_result",
+                            seq=None,
+                            timestamp="2026-01-01T00:00:07Z",
+                            label="result",
+                            text="Final full result",
+                        ),
+                    ],
+                )
+            )
             await pilot.pause(0.1)
 
             agents_panel = swarm.query_one("#swarm-agents")
@@ -303,6 +342,8 @@ def test_swarm_renders_left_list_and_ordered_detail_sections() -> None:
             )
             assert "Latest message" not in detail_text
             assert "Recent activity" in detail_text
+            assert "Agent Messages" in detail_text
+            assert detail_text.index("Recent activity") < detail_text.index("Agent Messages")
             assert "#8" in detail_text
             assert detail_text.index("#8") < detail_text.index("00:00:05")
             assert "Read file" in detail_text
@@ -310,7 +351,52 @@ def test_swarm_renders_left_list_and_ordered_detail_sections() -> None:
             assert "#9" in detail_text
             assert "assistant" in detail_text
             assert "Done with the thing" in detail_text
+            assert "Older message should be hidden" not in detail_text
+            assert "First full message" in detail_text
+            assert "with detail" in detail_text
+            assert "Second full message" in detail_text
+            assert "Final full result" in detail_text
+            assert detail_text.count("---") == 2
             assert "2026-01-01T00:00:05Z" not in detail_text
+
+    asyncio.run(run())
+
+
+def test_swarm_agent_messages_empty_error_and_stale_detail() -> None:
+    swarm = SwarmBody()
+    summary = _summary([_agent()])
+
+    async def run() -> None:
+        async with _SwarmHarness(swarm).run_test() as pilot:
+            swarm.update_daemon(summary)
+            await pilot.pause(0.1)
+            detail_text = _to_text(swarm.query_one("#swarm-detail-content", Static).content)
+            assert "Agent Messages" in detail_text
+
+            swarm.update_agent_messages(DaemonAgentMessagesError(error="bad payload"))
+            await pilot.pause(0.1)
+            detail_text = _to_text(swarm.query_one("#swarm-detail-content", Static).content)
+            assert "Messages error" in detail_text
+            assert "bad payload" in detail_text
+
+            swarm.update_agent_messages(
+                DaemonAgentMessagesOk(
+                    root_id="root",
+                    agent_handle="other-agent",
+                    messages=[
+                        DaemonAgentMessage(
+                            kind="assistant_output",
+                            seq=1,
+                            timestamp=None,
+                            label="assistant",
+                            text="stale message",
+                        )
+                    ],
+                )
+            )
+            await pilot.pause(0.1)
+            detail_text = _to_text(swarm.query_one("#swarm-detail-content", Static).content)
+            assert "stale message" not in detail_text
 
     asyncio.run(run())
 

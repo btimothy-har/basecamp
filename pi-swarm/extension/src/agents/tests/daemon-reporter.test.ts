@@ -190,6 +190,53 @@ describe("daemon reporter", () => {
 		}
 	});
 
+	it("emits full assistant message text with bounded snippets", async () => {
+		const sent: Frame[] = [];
+		const connection: DaemonConnection = {
+			send(frame) {
+				sent.push(frame);
+			},
+			on() {
+				return () => {};
+			},
+			onClose() {
+				return () => {};
+			},
+			close() {
+				// no-op
+			},
+		};
+		const priorReportToken = process.env.BASECAMP_REPORT_TOKEN;
+		try {
+			process.env.BASECAMP_REPORT_TOKEN = "token-for-tests";
+			const pi = new MockPi();
+			registerDaemonReporter(pi as unknown as any, {
+				connectionPromise: Promise.resolve(connection),
+				runId: "run-1",
+				agentId: "agent-1",
+			});
+
+			const text = `First line\n${"x".repeat(300)}`;
+			await pi.emit("message_start", { message: { role: "assistant" } });
+			await pi.emit("message_end", {
+				message: {
+					role: "assistant",
+					content: [{ type: "text", text }],
+				},
+			});
+			await waitForFrameCount(sent, 1);
+
+			const output = telemetryFrames(sent).find((frame) => frame.kind === "assistant_output");
+			assert.equal(output?.payload.text, text);
+			assert.equal(typeof output?.payload.snippet, "string");
+			assert.equal((output?.payload.snippet as string).length, 240);
+			assert.equal((output?.payload.snippet as string).endsWith("…"), true);
+		} finally {
+			if (priorReportToken === undefined) delete process.env.BASECAMP_REPORT_TOKEN;
+			else process.env.BASECAMP_REPORT_TOKEN = priorReportToken;
+		}
+	});
+
 	it("emits bounded assistant, thinking, and tool display activity", async () => {
 		const sent: Frame[] = [];
 		const connection: DaemonConnection = {
@@ -261,6 +308,8 @@ describe("daemon reporter", () => {
 
 			const output = telemetry.find((frame) => frame.kind === "assistant_output");
 			assert.equal(output?.payload.snippet, "Visible answer");
+			assert.equal(output?.payload.text, "Visible answer");
+			assert.equal(JSON.stringify(output?.payload).includes("hidden chain of thought"), false);
 		} finally {
 			if (priorReportToken === undefined) delete process.env.BASECAMP_REPORT_TOKEN;
 			else process.env.BASECAMP_REPORT_TOKEN = priorReportToken;

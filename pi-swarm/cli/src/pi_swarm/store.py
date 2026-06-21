@@ -29,6 +29,8 @@ RUN_SUMMARY_MAX_LIMIT = 100
 RUN_SUMMARY_PREVIEW_CHARS = 160
 RUN_SUMMARY_DISPLAY_CHARS = 240
 RUN_SUMMARY_TASK_PLAN_LIMIT = 20
+RUN_MESSAGES_DEFAULT_LIMIT = 3
+RUN_MESSAGES_MAX_LIMIT = 3
 RUN_SUMMARY_ACTIVITY_LIMIT = 10
 RUN_SUMMARY_TASK_LOG_MAX_BYTES = 256 * 1024
 _AGENT_ID_PATTERN = re.compile(r"^[A-Za-z0-9_.-]{1,128}$")
@@ -79,6 +81,16 @@ def _display_text(value: Any, *, limit: int = RUN_SUMMARY_DISPLAY_CHARS) -> str 
 
 def _preview_text(value: str | None, *, limit: int = RUN_SUMMARY_PREVIEW_CHARS) -> str | None:
     return _display_text(value, limit=limit)
+
+
+def _message_text(value: Any) -> str | None:
+    if not isinstance(value, str):
+        return None
+
+    text = _ANSI_PATTERN.sub("", value)
+    text = _CONTROL_PATTERN.sub("", text)
+    text = text.replace("\r\n", "\n").replace("\r", "\n").strip()
+    return text or None
 
 
 def _is_valid_agent_id(agent_id: str) -> bool:
@@ -769,6 +781,100 @@ class Store:
                         event[key] = value
             activity.append({key: value for key, value in event.items() if value is not None})
         return activity
+
+    def get_run_messages(
+        self,
+        root_id: str,
+        *,
+        agent_handle: str,
+        limit: int = RUN_MESSAGES_DEFAULT_LIMIT,
+    ) -> dict[str, Any]:
+        """Return latest visible assistant messages for one scoped agent."""
+
+        safe_limit = max(0, min(limit, RUN_MESSAGES_MAX_LIMIT))
+        messages: list[dict[str, Any]] = []
+
+        recursive_scope = """
+            WITH RECURSIVE scoped_agents(id) AS (
+                SELECT id FROM agents WHERE id = ?
+                UNION
+                SELECT child.id
+                FROM agents AS child
+                INNER JOIN scoped_agents AS parent ON child.parent_id = parent.id
+            )
+        """
+
+        with self._connect() as connection:
+            connection.row_factory = sqlite3.Row
+            agent_row = connection.execute(
+                f"""
+                {recursive_scope}
+                SELECT
+                    a.agent_handle,
+                    r.id AS run_id,
+                    r.result,
+                    r.ended_at
+                FROM agents AS a
+                INNER JOIN scoped_agents AS s ON s.id = a.id
+                LEFT JOIN runs AS r ON r.id = a.current_run_id
+                WHERE a.agent_handle = ?
+                  AND a.role != 'session'
+                LIMIT 1
+                """,
+                (root_id, agent_handle),
+            ).fetchone()
+
+            if agent_row is not None and agent_row["run_id"] and safe_limit:
+                rows = connection.execute(
+                    """
+                    SELECT seq, payload_json, ts
+                    FROM run_events
+                    WHERE run_id = ?
+                      AND kind = 'assistant_output'
+                    ORDER BY seq DESC
+                    LIMIT ?
+                    """,
+                    (agent_row["run_id"], safe_limit),
+                ).fetchall()
+
+                for row in reversed(rows):
+                    payload: Any = {}
+                    try:
+                        payload = json.loads(row["payload_json"]) if isinstance(row["payload_json"], str) else {}
+                    except json.JSONDecodeError:
+                        payload = {}
+                    if not isinstance(payload, dict):
+                        continue
+                    text = _message_text(payload.get("text"))
+                    if text is None:
+                        continue
+                    messages.append(
+                        {
+                            "kind": "assistant_output",
+                            "seq": row["seq"],
+                            "timestamp": _display_text(row["ts"]),
+                            "label": _display_text(payload.get("label")),
+                            "text": text,
+                        }
+                    )
+
+                result_text = _message_text(agent_row["result"])
+                if result_text is not None and (not messages or messages[-1]["text"] != result_text):
+                    messages.append(
+                        {
+                            "kind": "agent_result",
+                            "seq": None,
+                            "timestamp": _display_text(agent_row["ended_at"]),
+                            "label": "result",
+                            "text": result_text,
+                        }
+                    )
+
+        return {
+            "root_id": root_id,
+            "agent_handle": agent_handle,
+            "messages": messages[-safe_limit:] if safe_limit else [],
+        }
 
     def get_run_summary(self, root_id: str, *, limit: int = RUN_SUMMARY_DEFAULT_LIMIT) -> dict[str, Any]:
         """Return a safe run summary for a root agent subtree."""

@@ -50,6 +50,15 @@ def create_app(store: Store, *, daemon_uds: str | None = None) -> FastAPI:
         summary["session_active"] = registry.has_connection(root_id)
         return summary
 
+    @app.get("/runs/messages")
+    async def runs_messages(root_id: str, agent_handle: str, limit: int = 3) -> dict[str, Any]:
+        return await asyncio.to_thread(
+            store.get_run_messages,
+            root_id,
+            agent_handle=agent_handle,
+            limit=limit,
+        )
+
     @app.websocket("/ws")
     async def websocket_endpoint(websocket: WebSocket) -> None:
         await websocket.accept()

@@ -8,6 +8,10 @@ from pathlib import Path
 from urllib.parse import parse_qs, urlsplit
 
 from companion_tui.daemon import (
+    DaemonAgentMessage,
+    DaemonAgentMessagesError,
+    DaemonAgentMessagesOk,
+    DaemonAgentMessagesUnavailable,
     DaemonSummaryAgent,
     DaemonSummaryError,
     DaemonSummaryOk,
@@ -133,6 +137,71 @@ def test_poll_parses_summary_and_encodes_root_id_and_limit() -> None:
     assert parsed["limit"] == ["7"]
     assert captured["method"] == "GET"
     assert captured["timeout"] == 0.5
+
+
+def test_poll_messages_parses_payload_and_encodes_params() -> None:
+    payload = {
+        "root_id": "root",
+        "agent_handle": "worker-brisk-lynx",
+        "messages": [
+            {
+                "kind": "assistant_output",
+                "seq": 4,
+                "timestamp": "2026-01-01T00:00:03Z",
+                "label": "assistant",
+                "text": "full\nmessage",
+                "raw": "ignored",
+                "toolCallId": "ignored",
+            }
+        ],
+    }
+    fake_connection, captured = _build_fake_connection(json.dumps(payload))
+    source = DaemonSummarySource("/tmp/daemon.sock", connection_factory=fake_connection)
+
+    result = source.poll_messages("root&child", "worker/brisk", limit=3)
+
+    assert isinstance(result, DaemonAgentMessagesOk)
+    assert result.root_id == "root"
+    assert result.agent_handle == "worker-brisk-lynx"
+    assert result.messages == [
+        DaemonAgentMessage(
+            kind="assistant_output",
+            seq=4,
+            timestamp="2026-01-01T00:00:03Z",
+            label="assistant",
+            text="full\nmessage",
+        )
+    ]
+    assert set(asdict(result.messages[0]).keys()) == {"kind", "seq", "timestamp", "label", "text"}
+
+    parsed = parse_qs(urlsplit(captured["path"]).query)
+    assert captured["method"] == "GET"
+    assert urlsplit(captured["path"]).path == "/runs/messages"
+    assert parsed == {
+        "root_id": ["root&child"],
+        "agent_handle": ["worker/brisk"],
+        "limit": ["3"],
+    }
+
+
+def test_poll_messages_returns_error_for_invalid_response_shape() -> None:
+    fake_connection, _ = _build_fake_connection(json.dumps({"root_id": "root", "messages": ["bad"]}))
+    source = DaemonSummarySource("/tmp/daemon.sock", connection_factory=fake_connection)
+
+    result = source.poll_messages("root", "agent")
+
+    assert isinstance(result, DaemonAgentMessagesError)
+    assert result.state == "error"
+
+
+def test_poll_messages_returns_unavailable_when_socket_missing(tmp_path: Path) -> None:
+    missing_path = tmp_path / "daemon.sock"
+    source = DaemonSummarySource(missing_path)
+
+    result = source.poll_messages("root", "agent")
+
+    assert isinstance(result, DaemonAgentMessagesUnavailable)
+    assert result.state == "unavailable"
 
 
 def test_poll_returns_unavailable_when_socket_missing(tmp_path: Path) -> None:
