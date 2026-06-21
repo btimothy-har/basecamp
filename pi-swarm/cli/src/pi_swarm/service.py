@@ -22,7 +22,7 @@ from .frames import (
 )
 from .process import reap_agent_process, spawn_agent_process
 from .registry import Registry, Waiter
-from .store import ActiveRunExistsError, Store
+from .store import ActiveRunExistsError, DuplicateAgentHandleError, Store
 
 _REDACTED_ENV_VALUE = "<redacted>"
 
@@ -30,8 +30,8 @@ DEFAULT_AGENT_MAX_DEPTH = 2
 TERMINAL_RUN_STATUSES = {"completed", "failed"}
 
 DispatchAckStatus = Literal["spawned", "rejected"]
-DispatchAckReason = Literal["depth_cap", "active_run_exists", "spawn_failed"]
-DispatchRejectionReason = Literal["depth_cap", "active_run_exists"]
+DispatchAckReason = Literal["depth_cap", "active_run_exists", "duplicate_agent_handle", "spawn_failed"]
+DispatchRejectionReason = Literal["depth_cap", "active_run_exists", "duplicate_agent_handle"]
 
 
 @dataclass(frozen=True)
@@ -96,16 +96,20 @@ async def prepare_dispatch(
     report_token = _generate_report_token()
     report_token_hash = _hash_report_token(report_token)
     spec_json = _sanitize_dispatch_spec(frame.spec.model_dump(mode="json"))
-    await asyncio.to_thread(
-        store.upsert_agent,
-        agent_id=agent_id,
-        parent_id=dispatcher_node_id,
-        sibling_group=None,
-        depth=child_depth,
-        role="agent",
-        session_name=agent_id,
-        cwd=frame.spec.cwd,
-    )
+    try:
+        await asyncio.to_thread(
+            store.upsert_agent,
+            agent_id=agent_id,
+            parent_id=dispatcher_node_id,
+            sibling_group=None,
+            depth=child_depth,
+            role="agent",
+            session_name=frame.agent_handle or agent_id,
+            cwd=frame.spec.cwd,
+            agent_handle=frame.agent_handle,
+        )
+    except DuplicateAgentHandleError:
+        return DispatchRejection(reason="duplicate_agent_handle")
     try:
         await asyncio.to_thread(
             store.create_run,
@@ -235,49 +239,75 @@ def _normalize_wait_status(status: str) -> str:
     return "running"
 
 
-def _row_unknown_result(agent_id: str) -> WaitResultItem:
-    return WaitResultItem(agent_id=agent_id, status="unknown", result=None, error=None)
+def _wait_result_item(
+    *,
+    status: Literal["completed", "failed", "running", "unknown"],
+    agent_id: str | None = None,
+    agent_handle: str | None = None,
+    result: str | None = None,
+    error: str | None = None,
+) -> WaitResultItem:
+    values: dict[str, Any] = {"status": status, "result": result, "error": error}
+    if agent_id is not None:
+        values["agent_id"] = agent_id
+    if agent_handle is not None:
+        values["agent_handle"] = agent_handle
+    return WaitResultItem(**values)
+
+
+def _row_unknown_result(*, agent_id: str | None = None, agent_handle: str | None = None) -> WaitResultItem:
+    return _wait_result_item(agent_id=agent_id, agent_handle=agent_handle, status="unknown")
+
+
+def _wait_item_for_row(*, row: dict[str, Any], agent_id: str | None, agent_handle: str | None) -> WaitResultItem:
+    status = row.get("status")
+    if not isinstance(status, str):
+        return _row_unknown_result(agent_id=agent_id, agent_handle=agent_handle)
+
+    wait_status = _normalize_wait_status(status)
+    if wait_status in TERMINAL_RUN_STATUSES:
+        return _wait_result_item(
+            agent_id=agent_id,
+            agent_handle=agent_handle,
+            status=wait_status,
+            result=row.get("result"),
+            error=row.get("error"),
+        )
+
+    return _wait_result_item(agent_id=agent_id, agent_handle=agent_handle, status="running")
 
 
 def build_wait_results(
     *,
     agent_ids: list[str],
-    rows: list[dict[str, Any]],
+    agent_handles: list[str],
+    rows_by_id: list[dict[str, Any]],
+    rows_by_handle: list[dict[str, Any]],
 ) -> list[WaitResultItem]:
-    by_id = {row["agent_id"]: row for row in rows if isinstance(row.get("agent_id"), str)}
+    by_id = {row["agent_id"]: row for row in rows_by_id if isinstance(row.get("agent_id"), str)}
+    by_handle = {row["agent_handle"]: row for row in rows_by_handle if isinstance(row.get("agent_handle"), str)}
     ordered: list[WaitResultItem] = []
 
     for agent_id in agent_ids:
         row = by_id.get(agent_id)
         if row is None:
-            ordered.append(_row_unknown_result(agent_id))
+            ordered.append(_row_unknown_result(agent_id=agent_id))
             continue
-
-        status = row.get("status")
-        if not isinstance(status, str):
-            ordered.append(_row_unknown_result(agent_id))
+        if not isinstance(row.get("status"), str):
+            ordered.append(_row_unknown_result(agent_id=agent_id))
             continue
+        ordered.append(_wait_item_for_row(row=row, agent_id=agent_id, agent_handle=None))
 
-        wait_status = _normalize_wait_status(status)
-        if wait_status in TERMINAL_RUN_STATUSES:
-            ordered.append(
-                WaitResultItem(
-                    agent_id=agent_id,
-                    status=wait_status,
-                    result=row.get("result"),
-                    error=row.get("error"),
-                )
-            )
+    for agent_handle in agent_handles:
+        row = by_handle.get(agent_handle)
+        if row is None:
+            ordered.append(_row_unknown_result(agent_handle=agent_handle))
             continue
-
-        ordered.append(
-            WaitResultItem(
-                agent_id=agent_id,
-                status="running",
-                result=None,
-                error=None,
-            )
-        )
+        if not isinstance(row.get("status"), str):
+            ordered.append(_row_unknown_result(agent_handle=agent_handle))
+            continue
+        row_agent_id = row.get("agent_id") if isinstance(row.get("agent_id"), str) else None
+        ordered.append(_wait_item_for_row(row=row, agent_id=row_agent_id, agent_handle=agent_handle))
 
     return ordered
 
@@ -285,27 +315,26 @@ def build_wait_results(
 async def build_wait_projection(
     *,
     agent_ids: list[str],
+    agent_handles: list[str],
     store: Store,
     requester_node_id: str,
-) -> list[dict[str, Any]]:
-    return await asyncio.to_thread(
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    rows_by_id = await asyncio.to_thread(
         store.get_agents_current_runs,
         agent_ids,
         dispatcher_id=requester_node_id,
     )
+    rows_by_handle = await asyncio.to_thread(
+        store.get_agents_current_runs_by_handles,
+        agent_handles,
+        dispatcher_id=requester_node_id,
+    )
+    return rows_by_id, rows_by_handle
 
 
-def wait_target_run_ids(
-    *,
-    rows: list[dict[str, Any]],
-    agent_ids: list[str],
-) -> set[str]:
-    by_agent_id = {row["agent_id"]: row for row in rows if isinstance(row.get("agent_id"), str)}
+def wait_target_run_ids(*, rows: list[dict[str, Any]]) -> set[str]:
     targets: set[str] = set()
-    for agent_id in agent_ids:
-        row = by_agent_id.get(agent_id)
-        if row is None:
-            continue
+    for row in rows:
         status = row.get("status")
         if not isinstance(status, str):
             continue
@@ -325,12 +354,14 @@ async def wait_for_agents(
     requester_node_id: str,
 ) -> list[WaitResultItem]:
     agent_ids = list(dict.fromkeys(frame.agent_ids))
-    rows = await build_wait_projection(
+    agent_handles = list(dict.fromkeys(frame.agent_handles))
+    rows_by_id, rows_by_handle = await build_wait_projection(
         agent_ids=agent_ids,
+        agent_handles=agent_handles,
         store=store,
         requester_node_id=requester_node_id,
     )
-    run_ids_to_wait = wait_target_run_ids(rows=rows, agent_ids=agent_ids)
+    run_ids_to_wait = wait_target_run_ids(rows=[*rows_by_id, *rows_by_handle])
 
     if run_ids_to_wait:
         waiter = Waiter(
@@ -346,13 +377,17 @@ async def wait_for_agents(
         finally:
             registry.remove_waiter(waiter.waiter_id)
 
+    rows_by_id, rows_by_handle = await build_wait_projection(
+        agent_ids=agent_ids,
+        agent_handles=agent_handles,
+        store=store,
+        requester_node_id=requester_node_id,
+    )
     return build_wait_results(
         agent_ids=agent_ids,
-        rows=await build_wait_projection(
-            agent_ids=agent_ids,
-            store=store,
-            requester_node_id=requester_node_id,
-        ),
+        agent_handles=agent_handles,
+        rows_by_id=rows_by_id,
+        rows_by_handle=rows_by_handle,
     )
 
 
@@ -384,6 +419,7 @@ async def list_agents(
     return [
         ListAgentItem(
             agent_id=row["agent_id"],
+            agent_handle=row["agent_handle"],
             parent_id=row["parent_id"],
             role=row["role"],
             session_name=row["session_name"],

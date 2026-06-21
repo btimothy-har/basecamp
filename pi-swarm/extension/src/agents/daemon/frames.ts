@@ -9,6 +9,7 @@ export interface RegisterFrame {
 	v: typeof PROTOCOL_VERSION;
 	role: "session" | "agent";
 	node_id: string;
+	agent_handle?: string | null;
 	parent_id: string | null;
 	sibling_group: string | null;
 	depth: number;
@@ -35,6 +36,7 @@ export interface DispatchFrame {
 	v: typeof PROTOCOL_VERSION;
 	run_id: string;
 	agent_id?: string;
+	agent_handle?: string | null;
 	spec: {
 		argv: string[];
 		env: Record<string, string>;
@@ -78,12 +80,14 @@ export interface WaitFrame {
 	type: "wait";
 	v: typeof PROTOCOL_VERSION;
 	agent_ids: string[];
+	agent_handles?: string[];
 	mode: "all";
 	timeout_s: number;
 }
 
 export interface WaitResultItem {
-	agent_id: string;
+	agent_id?: string | null;
+	agent_handle?: string | null;
 	status: "completed" | "failed" | "running" | "unknown";
 	result: string | null;
 	error: string | null;
@@ -104,6 +108,7 @@ export interface ListAgentsFrame {
 
 export interface ListAgentItem {
 	agent_id: string;
+	agent_handle?: string | null;
 	parent_id: string | null;
 	role: string;
 	session_name: string;

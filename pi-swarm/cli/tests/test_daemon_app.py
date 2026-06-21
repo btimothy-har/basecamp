@@ -150,6 +150,7 @@ def test_ws_list_agents_returns_same_root_non_session_rows_and_awaitable_filters
                     "agents": [
                         {
                             "agent_id": "agent-1",
+                            "agent_handle": "agent-1",
                             "parent_id": "root",
                             "role": "agent",
                             "session_name": "agent-one",
@@ -159,6 +160,7 @@ def test_ws_list_agents_returns_same_root_non_session_rows_and_awaitable_filters
                         },
                         {
                             "agent_id": "agent-2",
+                            "agent_handle": "agent-2",
                             "parent_id": "agent-1",
                             "role": "agent",
                             "session_name": "agent-two",
@@ -185,6 +187,7 @@ def test_ws_list_agents_returns_same_root_non_session_rows_and_awaitable_filters
                     "agents": [
                         {
                             "agent_id": "agent-2",
+                            "agent_handle": "agent-2",
                             "parent_id": "agent-1",
                             "role": "agent",
                             "session_name": "agent-two",
@@ -485,6 +488,7 @@ def test_runs_summary_endpoint_omits_sensitive_and_full_fields(tmp_path: Path) -
     assert set(summary_run.keys()) == {
         "run_id",
         "agent_id",
+        "agent_handle",
         "parent_id",
         "role",
         "session_name",

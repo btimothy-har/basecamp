@@ -6,7 +6,7 @@ import sqlite3
 from pathlib import Path
 
 import pytest
-from pi_swarm.store import ActiveRunExistsError, Store
+from pi_swarm.store import ActiveRunExistsError, DuplicateAgentHandleError, Store
 
 
 def test_store_initializes_required_tables(tmp_path: Path) -> None:
@@ -20,6 +20,44 @@ def test_store_initializes_required_tables(tmp_path: Path) -> None:
     assert "agents" in table_names
     assert "runs" in table_names
     assert "run_events" in table_names
+
+
+def test_store_migrates_agent_handle_column_and_backfills_existing_rows(tmp_path: Path) -> None:
+    db_path = tmp_path / "daemon.db"
+    with sqlite3.connect(db_path) as connection:
+        connection.execute(
+            """
+            CREATE TABLE agents (
+                id TEXT PRIMARY KEY,
+                parent_id TEXT,
+                sibling_group TEXT,
+                depth INTEGER,
+                role TEXT,
+                session_name TEXT,
+                cwd TEXT,
+                created_at TEXT,
+                last_seen_at TEXT,
+                current_run_id TEXT
+            )
+            """
+        )
+        connection.execute(
+            """
+            INSERT INTO agents (id, parent_id, sibling_group, depth, role, session_name, cwd, created_at, last_seen_at)
+            VALUES ('legacy-id', NULL, NULL, 0, 'session', 'legacy', '/tmp', 'created', 'seen')
+            """
+        )
+
+    Store(db_path=db_path)
+
+    with sqlite3.connect(db_path) as connection:
+        columns = {row[1] for row in connection.execute("PRAGMA table_info(agents)").fetchall()}
+        row = connection.execute("SELECT agent_handle FROM agents WHERE id = 'legacy-id'").fetchone()
+        indexes = connection.execute("PRAGMA index_list(agents)").fetchall()
+
+    assert "agent_handle" in columns
+    assert row == ("legacy-id",)
+    assert any(index[1] == "idx_agents_agent_handle_unique" and index[2] for index in indexes)
 
 
 def test_upsert_agent_persists_and_is_idempotent(tmp_path: Path) -> None:
@@ -56,6 +94,93 @@ def test_upsert_agent_persists_and_is_idempotent(tmp_path: Path) -> None:
 
     assert len(rows) == 1
     assert rows[0] == ("agent-1", "parent-1", 2, "session-b", "/tmp/b")
+
+
+def test_upsert_agent_persists_gets_and_preserves_handle(tmp_path: Path) -> None:
+    db_path = tmp_path / "daemon.db"
+    store = Store(db_path=db_path)
+
+    store.upsert_agent(
+        agent_id="agent-1",
+        agent_handle="readable",
+        parent_id=None,
+        sibling_group="sg",
+        depth=1,
+        role="agent",
+        session_name="session-a",
+        cwd="/tmp/a",
+    )
+    store.upsert_agent(
+        agent_id="agent-1",
+        parent_id=None,
+        sibling_group="sg",
+        depth=1,
+        role="agent",
+        session_name="session-b",
+        cwd="/tmp/b",
+    )
+
+    agent = store.get_agent("agent-1")
+    by_handle = store.get_agent_by_handle("readable")
+    assert agent is not None
+    assert agent["agent_handle"] == "readable"
+    assert by_handle is not None
+    assert by_handle["id"] == "agent-1"
+
+
+def test_upsert_agent_rejects_duplicate_handle(tmp_path: Path) -> None:
+    db_path = tmp_path / "daemon.db"
+    store = Store(db_path=db_path)
+
+    store.upsert_agent(
+        agent_id="agent-1",
+        agent_handle="shared",
+        parent_id=None,
+        sibling_group="sg",
+        depth=1,
+        role="agent",
+        session_name="session-a",
+        cwd="/tmp/a",
+    )
+
+    with pytest.raises(DuplicateAgentHandleError):
+        store.upsert_agent(
+            agent_id="agent-2",
+            agent_handle="shared",
+            parent_id=None,
+            sibling_group="sg",
+            depth=1,
+            role="agent",
+            session_name="session-b",
+            cwd="/tmp/b",
+        )
+
+
+def test_upsert_agent_rejects_fallback_handle_collision(tmp_path: Path) -> None:
+    db_path = tmp_path / "daemon.db"
+    store = Store(db_path=db_path)
+
+    store.upsert_agent(
+        agent_id="agent-1",
+        agent_handle="agent-2",
+        parent_id=None,
+        sibling_group="sg",
+        depth=1,
+        role="agent",
+        session_name="session-a",
+        cwd="/tmp/a",
+    )
+
+    with pytest.raises(DuplicateAgentHandleError):
+        store.upsert_agent(
+            agent_id="agent-2",
+            parent_id=None,
+            sibling_group="sg",
+            depth=1,
+            role="agent",
+            session_name="session-b",
+            cwd="/tmp/b",
+        )
 
 
 def test_run_event_round_trip(tmp_path: Path) -> None:
@@ -137,6 +262,7 @@ def test_get_agents_current_runs_filters_by_dispatcher(tmp_path: Path) -> None:
     assert owned == [
         {
             "agent_id": "agent-1",
+            "agent_handle": "agent-1",
             "run_id": "run-owned",
             "status": "running",
             "result": None,
@@ -144,10 +270,14 @@ def test_get_agents_current_runs_filters_by_dispatcher(tmp_path: Path) -> None:
         }
     ]
 
+    owned_by_handle = store.get_agents_current_runs_by_handles(["agent-1"], dispatcher_id="dispatcher-1")
+    assert owned_by_handle == owned
+
     unauthorized = store.get_agents_current_runs(["agent-1"], dispatcher_id="dispatcher-2")
     assert unauthorized == [
         {
             "agent_id": "agent-1",
+            "agent_handle": "agent-1",
             "run_id": None,
             "status": None,
             "result": None,
@@ -232,6 +362,7 @@ def test_get_root_agent_directory_scopes_to_root_and_excludes_sessions(tmp_path:
 
     rows = store.get_root_agent_directory(requester_node_id="agent-2", awaitable=False)
     assert [row["agent_id"] for row in rows] == ["agent-1", "agent-2"]
+    assert [row["agent_handle"] for row in rows] == ["agent-1", "agent-2"]
     assert rows[0]["parent_id"] == "root"
     assert rows[1]["parent_id"] == "agent-1"
     assert rows[0]["status"] == "running"
@@ -713,6 +844,7 @@ def test_get_run_summary_does_not_expose_spec_or_tokens(tmp_path: Path) -> None:
     assert set(summary_run) == {
         "run_id",
         "agent_id",
+        "agent_handle",
         "parent_id",
         "role",
         "session_name",

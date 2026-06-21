@@ -13,6 +13,7 @@ import {
 	type RegisteredFrame,
 	type RegisterFrame,
 	type WaitResultFrame,
+	type WaitResultItem,
 } from "./frames.ts";
 import { type DaemonPaths, ensureDaemonRuntimeDir, resolveDaemonPaths } from "./paths.ts";
 
@@ -616,6 +617,10 @@ function waitForFrame<T extends Frame["type"]>(
 	});
 }
 
+function hasAgentId(result: WaitResultItem): result is WaitResultItem & { agent_id: string } {
+	return typeof result.agent_id === "string";
+}
+
 function sameAsRequested(resultAgentIds: string[], requestedSet: Set<string>): boolean {
 	const resultSet = new Set(resultAgentIds);
 	if (resultSet.size !== requestedSet.size) return false;
@@ -627,7 +632,9 @@ function dedupeRequestedResults(
 	requested: Set<string>,
 ): WaitResultFrame["results"] {
 	const requestedMap = new Map(
-		results.filter((result) => requested.has(result.agent_id)).map((result) => [result.agent_id, result]),
+		results
+			.filter((result) => hasAgentId(result) && requested.has(result.agent_id))
+			.map((result) => [result.agent_id, result]),
 	);
 	const deduped: WaitResultFrame["results"] = [];
 	for (const agentId of requested) {
@@ -689,7 +696,7 @@ export function createDaemonClient(connection: DaemonConnection): DaemonClient {
 				"wait_result",
 				(candidate) =>
 					sameAsRequested(
-						candidate.results.map((result) => result.agent_id),
+						candidate.results.filter(hasAgentId).map((result) => result.agent_id),
 						requested,
 					),
 				input.signal,

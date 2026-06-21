@@ -129,6 +129,7 @@ def _dispatch(
     run_id: str,
     spec: dict[str, object],
     agent_id: str | None = None,
+    agent_handle: str | None = None,
 ) -> dict[str, object]:
     payload: dict[str, object] = {
         "type": "dispatch",
@@ -138,6 +139,8 @@ def _dispatch(
     }
     if agent_id is not None:
         payload["agent_id"] = agent_id
+    if agent_handle is not None:
+        payload["agent_handle"] = agent_handle
 
     websocket.send(json.dumps(payload))
     return json.loads(websocket.recv())
@@ -547,6 +550,135 @@ def test_backstop_marks_failed_and_resolves_wait(tmp_path: Path) -> None:
         assert run is not None
         assert run["status"] == "failed"
         assert "code 9" in (run["error"] or "")
+    finally:
+        _stop_daemon(server, thread, uds_path)
+
+
+def test_dispatch_rejects_duplicate_agent_handle(tmp_path: Path) -> None:
+    db_path = tmp_path / "daemon.db"
+    uds_path = Path("/tmp") / f"basecamp-daemon-duplicate-handle-{os.getpid()}-{uuid.uuid4().hex[:8]}.sock"
+    store = Store(db_path=db_path)
+    server, thread = _start_daemon(store, uds_path)
+
+    store.upsert_agent(
+        agent_id="agent-1",
+        agent_handle="existing-handle",
+        parent_id=None,
+        sibling_group=None,
+        depth=1,
+        role="agent",
+        session_name="agent-1",
+        cwd=str(tmp_path),
+    )
+
+    store.upsert_agent(
+        agent_id="agent-1",
+        agent_handle="existing-handle",
+        parent_id="session-node",
+        sibling_group=None,
+        depth=1,
+        role="agent",
+        session_name="existing",
+        cwd=str(tmp_path),
+    )
+
+    try:
+        with unix_connect(str(uds_path), uri="ws://localhost/ws") as websocket:
+            _register_session(websocket, node_id="session-node", cwd=str(tmp_path))
+            ack = _dispatch(
+                websocket,
+                run_id="run-duplicate-handle",
+                spec=_dispatch_spec(tmp_path),
+                agent_id="agent-2",
+                agent_handle="existing-handle",
+            )
+
+        assert ack == {
+            "type": "dispatch_ack",
+            "v": PROTOCOL_VERSION,
+            "run_id": "run-duplicate-handle",
+            "status": "rejected",
+            "reason": "duplicate_agent_handle",
+        }
+    finally:
+        _stop_daemon(server, thread, uds_path)
+
+
+def test_wait_by_agent_handle_known_unknown_and_unauthorized(tmp_path: Path) -> None:
+    db_path = tmp_path / "daemon.db"
+    uds_path = Path("/tmp") / f"basecamp-daemon-wait-handle-{os.getpid()}-{uuid.uuid4().hex[:8]}.sock"
+    store = Store(db_path=db_path)
+    server, thread = _start_daemon(store, uds_path)
+
+    try:
+        with unix_connect(str(uds_path), uri="ws://localhost/ws") as owner:
+            _register_session(owner, node_id="owner", cwd=str(tmp_path))
+            ack = _dispatch(
+                owner,
+                run_id="run-handle-owned",
+                spec=_dispatch_spec(tmp_path),
+                agent_id="agent-handle-owned",
+                agent_handle="readable-owned",
+            )
+            assert ack["status"] == "spawned"
+
+        deadline = time.time() + 10
+        while time.time() < deadline:
+            run = store.get_run("run-handle-owned")
+            if run and run["status"] == "completed":
+                break
+            time.sleep(0.05)
+
+        with unix_connect(str(uds_path), uri="ws://localhost/ws") as owner:
+            _register_session(owner, node_id="owner", cwd=str(tmp_path))
+            owner.send(
+                json.dumps(
+                    {
+                        "type": "wait",
+                        "v": PROTOCOL_VERSION,
+                        "agent_ids": [],
+                        "agent_handles": ["readable-owned", "missing-handle"],
+                        "mode": "all",
+                        "timeout_s": 0.1,
+                    }
+                )
+            )
+            wait_result = json.loads(owner.recv())
+
+        assert wait_result["results"][0]["agent_id"] == "agent-handle-owned"
+        assert wait_result["results"][0]["agent_handle"] == "readable-owned"
+        assert wait_result["results"][0]["status"] == "completed"
+        assert wait_result["results"][1] == {
+            "agent_handle": "missing-handle",
+            "status": "unknown",
+            "result": None,
+            "error": None,
+        }
+
+        with unix_connect(str(uds_path), uri="ws://localhost/ws") as requester:
+            _register_session(requester, node_id="other", cwd=str(tmp_path))
+            requester.send(
+                json.dumps(
+                    {
+                        "type": "wait",
+                        "v": PROTOCOL_VERSION,
+                        "agent_ids": [],
+                        "agent_handles": ["readable-owned"],
+                        "mode": "all",
+                        "timeout_s": 0.1,
+                    }
+                )
+            )
+            unauthorized = json.loads(requester.recv())
+
+        assert unauthorized["results"] == [
+            {
+                "agent_handle": "readable-owned",
+                "status": "unknown",
+                "result": None,
+                "error": None,
+            }
+        ]
     finally:
         _stop_daemon(server, thread, uds_path)
 
