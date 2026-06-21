@@ -297,7 +297,7 @@ export function registerDaemonReporter(
 		}
 		if (eventHasThinking(event)) sendThinkingMarker();
 		const fullText = extractVisibleTextFromMessageEvent(event);
-		if (fullText) assistantBuffer = fullText;
+		if (fullText) assistantBuffer = appendBounded("", fullText);
 		flushAssistantOutput();
 		activeMessageRole = null;
 	});
