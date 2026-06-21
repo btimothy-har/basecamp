@@ -76,6 +76,11 @@ class DaemonRecentActivity:
     timestamp: str | None
     tool_name: str | None
     turn_index: int | None
+    category: str | None = None
+    label: str | None = None
+    snippet: str | None = None
+    is_error: bool | None = None
+    tool_count: int | None = None
 
 
 @dataclass(frozen=True)
@@ -93,6 +98,8 @@ class DaemonSummaryAgent:
     created_at: str | None
     started_at: str | None
     ended_at: str | None
+    agent_id_short: str | None = None
+    model: str | None = None
     task: DaemonTaskProjection | None = None
     recent_activity: list[DaemonRecentActivity] | None = None
 
@@ -235,6 +242,15 @@ def _expect_bool(payload: dict[str, Any], key: str) -> bool:
     return value
 
 
+def _expect_optional_bool(payload: dict[str, Any], key: str) -> bool | None:
+    value = payload.get(key)
+    if value is None:
+        return None
+    if not isinstance(value, bool):
+        raise TypeError
+    return value
+
+
 def _expect_optional_str(payload: dict[str, Any], key: str) -> str | None:
     value = payload.get(key)
     if value is None:
@@ -329,6 +345,11 @@ def _parse_recent_activity_item(payload: object) -> DaemonRecentActivity | None:
             timestamp=_expect_optional_str(payload, "timestamp"),
             tool_name=_expect_optional_str(payload, "toolName"),
             turn_index=_expect_optional_int(payload, "turnIndex"),
+            category=_expect_optional_str(payload, "category"),
+            label=_expect_optional_str(payload, "label"),
+            snippet=_expect_optional_str(payload, "snippet"),
+            is_error=_expect_optional_bool(payload, "isError"),
+            tool_count=_expect_optional_int(payload, "toolCount"),
         )
     except TypeError:
         return None
@@ -381,6 +402,8 @@ def _parse_payload(payload: object) -> DaemonSummaryOk:
             created_at=_expect_optional_str(raw_agent, "created_at"),
             started_at=_expect_optional_str(raw_agent, "started_at"),
             ended_at=_expect_optional_str(raw_agent, "ended_at"),
+            agent_id_short=_expect_optional_str(raw_agent, "agent_id_short"),
+            model=_expect_optional_str(raw_agent, "model"),
             task=_parse_task_projection(raw_agent.get("task")),
             recent_activity=_parse_recent_activity(raw_agent.get("recent_activity")),
         )
