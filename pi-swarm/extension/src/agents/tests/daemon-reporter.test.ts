@@ -136,7 +136,7 @@ describe("daemon reporter", () => {
 		}
 	});
 
-	it("does nothing for depth>0 synchronous subagents without BASECAMP_RUN_ID", () => {
+	it("does nothing for depth>0 agents without BASECAMP_RUN_ID", () => {
 		const pi = new MockPi();
 		const priorDepth = process.env.BASECAMP_AGENT_DEPTH;
 		const priorRun = process.env.BASECAMP_RUN_ID;

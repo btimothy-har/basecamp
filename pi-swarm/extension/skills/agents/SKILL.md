@@ -1,54 +1,44 @@
 ---
 name: agents
-description: "Use the synchronous `agent` tool to delegate bounded work to subagents and then integrate the returned results in the parent session."
+description: "Delegate bounded work to named or ad-hoc agents, track active work, and collect results."
 ---
 
 # Agents
 
-Delegate bounded work through the synchronous `agent` tool and keep subagents as support for parent-agent reasoning.
+Use this skill to delegate bounded work to agents while you keep working.
 
-## Delegation guidance
-
-Use `agent` when a task is better done by a focused helper than by one long direct pass:
-- **scout** for investigation, dependency tracing, codebase reconnaissance, or pattern discovery
-- **devils-advocate** for risk-oriented critique of assumptions and planned approaches
-- **worker** for self-contained implementation with clear scope and acceptance criteria
-- **specialists** for narrow reviews (docs, security, tests, SQL, data, etc.) when available
-- **ad-hoc** when no named specialization fits
+Use these tools for agent delegation; if agents are unavailable, they return a tool error:
+- `dispatch_agent({ agent?, task, name? })` — start an agent. The returned handle is the `agentId` in the tool result details.
+- `wait_for_agent({ handles: string | string[], timeout_s? })` — wait for one or more agent ids. `timeout_s` defaults to 600.
+- `list_agents({ awaitable?: true })` — list visible agents in your current scope. `awaitable` filters to agents with a current run you dispatched.
 
 ## Choosing an agent
 
-Default to the narrowest suitable choice:
-1. pick a named **read-only** agent (`scout`, `devils-advocate`, specialists) for discovery and analysis
-2. use **worker** only when mutation is required and boundaries are explicit
-3. use ad-hoc for one-off, one-task questions
+Default to the narrowest agent that fits:
+- **Named read-only agents** (`scout`, `devils-advocate`, `code-clarity-specialist`, `docs-specialist`, `security-specialist`, `testing-specialist`) may fan out for investigation, search, review, and second opinions.
+- **worker** is the only mutative agent and requires an active execution worktree. Never run more than one `worker` concurrently against the same worktree.
+- **Ad-hoc agents** are read-only by tool allowlist. Use them only for narrow tasks when no named agent fits.
 
-## Write a strong brief
+Do not dispatch agents for trivial one-step work you can do directly.
+
+## Handle and wait semantics
+
+- Public handles are agent ids; do not expose private run or execution ids.
+- Pass the `agentId` returned by `dispatch_agent` as `handles` to `wait_for_agent`.
+- Only the session that dispatched an agent's current run can wait on that agent id. Other callers see `unknown`.
+- A timed-out wait reports still-running handles as `running`; it does not cancel the agent.
+- `list_agents` returns safe metadata only, not prompts, results, env, or spawn specs.
+- Agents cannot message each other. `wait_for_agent` is only for returning results to the dispatcher.
+- Delegation depth is capped; if nested dispatch is rejected, continue without spawning another agent.
+
+## Write the brief
 
 A subagent receives no conversation history. Include:
 - a concrete objective and expected output
-- precise file/module targets and any constraints
-- required decisions already made
+- relevant file paths or modules
+- constraints and decisions already made
 - explicit acceptance criteria and done definition
-
-## Calling `agent`
-
-Use one of:
-- `agent({ agent: "scout", task: "..." })`
-- `agent({ task: "..." })` for ad-hoc
-
-The synchronous call returns the subagent output in the same turn; plan and proceed with that result before continuing.
-
-## Parallel restrictions
-
-Multiple `agent` calls can run in parallel only when they are independent **named read-only** agents. Keep `worker` and ad-hoc runs exclusive and do not overlap with any other active agent run.
 
 ## Integration
 
-After results return, the parent agent remains responsible for:
-- validating evidence and assumptions
-- deciding trade-offs and final direction
-- integrating or applying code changes
-- communicating any follow-up boundaries to the user
-
-Treat delegated output as useful input, not source of authority.
+Review subagent output critically. The parent agent remains responsible for validating evidence, making decisions, applying any changes, and communicating results.

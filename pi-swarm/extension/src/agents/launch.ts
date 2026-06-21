@@ -1,5 +1,4 @@
 import * as fs from "node:fs";
-import * as os from "node:os";
 import * as path from "node:path";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { resolveDaemonPaths } from "./daemon/paths.ts";
@@ -46,8 +45,7 @@ export interface SharedAgentLaunchInput {
 	modelContext: ParentModelContext | undefined;
 	resolveModelAlias: (model: string) => string | undefined;
 	workspace: LaunchWorkspaceState | null;
-	mode: "sync" | "daemon";
-	agentId?: string;
+	agentId: string;
 	parentSession: string;
 	project: string;
 	piArgsDeps: Pick<PiAgentSkillDeps, "readSkillContent" | "buildSkillBlock">;
@@ -77,31 +75,18 @@ export interface SharedAgentLaunchFailure {
 
 export type SharedAgentLaunchResult = { ok: true; plan: SharedAgentLaunchPlan } | SharedAgentLaunchFailure;
 
-function resolveWorkspaceSelection(
-	workspace: LaunchWorkspaceState | null,
-	mode: "sync" | "daemon",
-): { cwd: string; worktreeDir: string | null } {
+function resolveWorkspaceSelection(workspace: LaunchWorkspaceState | null): {
+	cwd: string;
+	worktreeDir: string | null;
+} {
 	const fallback = process.cwd();
-	if (mode === "sync") {
-		return {
-			cwd: workspace?.launchCwd ?? fallback,
-			worktreeDir: workspace?.activeWorktree?.path ?? null,
-		};
-	}
-
 	return {
 		cwd: workspace?.protectedRoot ?? workspace?.repo?.root ?? workspace?.launchCwd ?? fallback,
 		worktreeDir: workspace?.activeWorktree?.path ?? null,
 	};
 }
 
-function resolveSessionDir(mode: "sync" | "daemon", name: string, agentId?: string): string {
-	if (mode === "sync") {
-		return path.join(os.tmpdir(), "basecamp-agents", name, "session");
-	}
-	if (!agentId) {
-		throw new Error("agentId is required for daemon mode");
-	}
+function resolveSessionDir(agentId: string): string {
 	return path.join(resolveDaemonPaths().agentsDir, agentId, "session");
 }
 
@@ -202,12 +187,12 @@ export function buildAgentLaunchSpec(input: SharedAgentLaunchInput): SharedAgent
 		project: input.project,
 	});
 	const extensionTools = getBasecampExtensionToolNames(input.pi, input.basecampExtensionRoot);
-	const { cwd, worktreeDir } = resolveWorkspaceSelection(input.workspace, input.mode);
+	const { cwd, worktreeDir } = resolveWorkspaceSelection(input.workspace);
 	const runKind = getAgentRunKind(agent);
 	const mutativeFailure = mutativeWorktreeFailure(runKind, worktreeDir);
 	if (mutativeFailure) return mutativeFailure;
 
-	const sessionDir = resolveSessionDir(input.mode, name, input.mode === "daemon" ? input.agentId : undefined);
+	const sessionDir = resolveSessionDir(input.agentId);
 	const { args, agentDir } = buildPiArgs(
 		agent,
 		input.task,
@@ -216,9 +201,8 @@ export function buildAgentLaunchSpec(input: SharedAgentLaunchInput): SharedAgent
 			model,
 			cwd,
 			worktreeDir,
-			env: environment,
 			sessionDir,
-			sessionId: input.mode === "daemon" ? input.agentId : undefined,
+			sessionId: input.agentId,
 			extensionTools,
 		},
 		{
@@ -240,7 +224,7 @@ export function buildAgentLaunchSpec(input: SharedAgentLaunchInput): SharedAgent
 			spawnCwd: cwd,
 			worktreeDir,
 			sessionDir,
-			sessionId: input.mode === "daemon" ? input.agentId : undefined,
+			sessionId: input.agentId,
 			args,
 			agentDir,
 		},

@@ -28,14 +28,14 @@ function toCatalogItem(agent: AgentConfig): CatalogItem {
 }
 
 export function registerAgentCatalogProvider(
-	agents: AgentConfig[],
+	getAgents: () => AgentConfig[],
 	deps: { registerCatalogProvider: (provider: CatalogProvider) => void },
 ): void {
 	deps.registerCatalogProvider({
 		id: "basecamp.agents",
 		list: () => {
 			if (!agentsAvailable()) return [];
-			return agents.map(toCatalogItem);
+			return getAgents().map(toCatalogItem);
 		},
 	});
 }

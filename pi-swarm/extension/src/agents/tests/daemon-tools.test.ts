@@ -170,7 +170,7 @@ describe("daemon async tools", () => {
 	});
 
 	it("dispatch_agent builds spec env/task split and returns handle on spawned ack", async () => {
-		trackSkillInvocation("swarm-agents");
+		trackSkillInvocation("agents");
 		const priorCustom = process.env.TEST_DAEMON_TOOLS;
 		const priorDepth = process.env.BASECAMP_AGENT_DEPTH;
 		const priorProject = process.env.BASECAMP_PROJECT;
@@ -227,7 +227,7 @@ describe("daemon async tools", () => {
 	});
 
 	it("dispatch_agent uses buildPiArgs final task arg for long task text", async () => {
-		trackSkillInvocation("swarm-agents");
+		trackSkillInvocation("agents");
 		const longTask = "x".repeat(9_000);
 		const connection = new MockConnection();
 		const { pi, tools } = createMockPi();
@@ -261,7 +261,7 @@ describe("daemon async tools", () => {
 		await executePromise;
 	});
 
-	it("dispatch_agent fails before daemon connection/send when swarm-agents skill has not been invoked", async () => {
+	it("dispatch_agent fails before daemon connection/send when agents skill has not been invoked", async () => {
 		let connected = false;
 		const { pi, tools } = createMockPi();
 		registerDaemonTools(
@@ -280,13 +280,13 @@ describe("daemon async tools", () => {
 		});
 
 		assert.equal(result.isError, true);
-		assert.match(result.content[0].text, /Load the swarm-agents skill first/);
+		assert.match(result.content[0].text, /Load the agents skill first/);
 		assert.equal(connected, false);
 		assert.equal(result.details, null);
 	});
 
 	it("dispatch_agent rejects invalid suffix before dispatching", async () => {
-		trackSkillInvocation("swarm-agents");
+		trackSkillInvocation("agents");
 		const connection = new MockConnection();
 		const { pi, tools } = createMockPi();
 		registerDaemonTools(pi, async () => connection, daemonToolDeps);
@@ -306,7 +306,7 @@ describe("daemon async tools", () => {
 	});
 
 	it("dispatch_agent uses matching agent_id, --session-id, and durable session directory segment", async () => {
-		trackSkillInvocation("swarm-agents");
+		trackSkillInvocation("agents");
 		const connection = new MockConnection();
 		const { pi, tools } = createMockPi();
 		registerDaemonTools(pi, async () => connection, daemonToolDeps);
@@ -347,7 +347,7 @@ describe("daemon async tools", () => {
 	});
 
 	it("dispatch_agent prefers protected root cwd and still passes --worktree-dir", async () => {
-		trackSkillInvocation("swarm-agents");
+		trackSkillInvocation("agents");
 		currentWorkspaceState = {
 			launchCwd: "/wt",
 			effectiveCwd: "/wt",
@@ -404,7 +404,7 @@ describe("daemon async tools", () => {
 	});
 
 	it("dispatch_agent falls back to repo root cwd when protected root is unavailable", async () => {
-		trackSkillInvocation("swarm-agents");
+		trackSkillInvocation("agents");
 		currentWorkspaceState = {
 			launchCwd: "/launch",
 			effectiveCwd: "/launch",
@@ -452,7 +452,7 @@ describe("daemon async tools", () => {
 	});
 
 	it("dispatch_agent surfaces rejected ack reason as tool error", async () => {
-		trackSkillInvocation("swarm-agents");
+		trackSkillInvocation("agents");
 		const connection = new MockConnection();
 		const { pi, tools } = createMockPi();
 		registerDaemonTools(pi, async () => connection, daemonToolDeps);
@@ -479,7 +479,7 @@ describe("daemon async tools", () => {
 	});
 
 	it("wait_for_agent sends wait and returns per-handle results", async () => {
-		trackSkillInvocation("swarm-agents");
+		trackSkillInvocation("agents");
 		const connection = new MockConnection();
 		const { pi, tools } = createMockPi();
 		registerDaemonTools(pi, async () => connection, daemonToolDeps);
@@ -526,7 +526,7 @@ describe("daemon async tools", () => {
 	});
 
 	it("wait_for_agent maps running and unknown statuses", async () => {
-		trackSkillInvocation("swarm-agents");
+		trackSkillInvocation("agents");
 		const connection = new MockConnection();
 		const { pi, tools } = createMockPi();
 		registerDaemonTools(pi, async () => connection, daemonToolDeps);
@@ -565,7 +565,7 @@ describe("daemon async tools", () => {
 		assert.match(result.content[0].text, /\? agent-2 unknown agent/);
 	});
 
-	it("wait_for_agent fails before daemon connection/send when swarm-agents skill has not been invoked", async () => {
+	it("wait_for_agent fails before daemon connection/send when agents skill has not been invoked", async () => {
 		let connected = false;
 		const { pi, tools } = createMockPi();
 		registerDaemonTools(
@@ -587,13 +587,13 @@ describe("daemon async tools", () => {
 		);
 
 		assert.equal(result.isError, true);
-		assert.match(result.content[0].text, /Load the swarm-agents skill first/);
+		assert.match(result.content[0].text, /Load the agents skill first/);
 		assert.equal(connected, false);
 		assert.equal(result.details, null);
 	});
 
 	it("list_agents sends request, waits on request id, and formats response rows", async () => {
-		trackSkillInvocation("swarm-agents");
+		trackSkillInvocation("agents");
 		const connection = new MockConnection();
 		const { pi, tools } = createMockPi();
 		registerDaemonTools(pi, async () => connection, daemonToolDeps);
@@ -663,7 +663,7 @@ describe("daemon async tools", () => {
 	});
 
 	it("wait_for_agent aborts promptly on AbortSignal", async () => {
-		trackSkillInvocation("swarm-agents");
+		trackSkillInvocation("agents");
 		const connection = new MockConnection();
 		const { pi, tools } = createMockPi();
 		registerDaemonTools(pi, async () => connection, daemonToolDeps);
@@ -684,7 +684,7 @@ describe("daemon async tools", () => {
 		assert.match(result.content[0].text, /wait aborted/i);
 	});
 
-	it("list_agents requires swarm-agents skill invocation", async () => {
+	it("list_agents requires agents skill invocation", async () => {
 		let connected = false;
 		const { pi, tools } = createMockPi();
 		registerDaemonTools(
@@ -700,7 +700,7 @@ describe("daemon async tools", () => {
 		const result = await listTool.execute("1", {}, new AbortController().signal, () => {}, {});
 
 		assert.equal(result.isError, true);
-		assert.match(result.content[0].text, /Load the swarm-agents skill first/);
+		assert.match(result.content[0].text, /Load the agents skill first/);
 		assert.equal(connected, false);
 		assert.equal(result.details, null);
 	});
