@@ -22,7 +22,6 @@ function toCatalogItem(agent: AgentConfig): CatalogItem {
 			source: agent.source,
 			model: agent.model,
 			tools: getAgentToolAllowlist(agent).join(", "),
-			...(agent.skills ? { skills: agent.skills.join(", ") } : {}),
 		},
 	};
 }

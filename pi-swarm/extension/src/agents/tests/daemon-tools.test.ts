@@ -92,8 +92,6 @@ const daemonToolDeps = {
 	getWorkspaceState: () => currentWorkspaceState,
 	basecampExtensionRoot: process.cwd(),
 	resolveModelAlias: (model: string) => model,
-	readSkillContent: (_path: string) => null,
-	buildSkillBlock: (_name: string, content: string) => content,
 };
 
 describe("daemon async tools", () => {

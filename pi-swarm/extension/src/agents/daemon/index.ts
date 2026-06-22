@@ -187,8 +187,6 @@ export function registerDaemonClient(pi: ExtensionAPI, deps: PiSwarmDependencies
 			getWorkspaceState: deps.getWorkspaceState,
 			basecampExtensionRoot: deps.basecampExtensionRoot,
 			resolveModelAlias: deps.resolveModelAlias,
-			readSkillContent: deps.readSkillContent,
-			buildSkillBlock: deps.buildSkillBlock,
 		});
 	}
 

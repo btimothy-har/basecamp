@@ -3,7 +3,7 @@ import * as path from "node:path";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { resolveDaemonPaths } from "./daemon/paths.ts";
 import type { AgentConfig } from "./discovery.ts";
-import { buildAgentRunName, buildPiArgs, type PiAgentSkillDeps, sanitizeAgentSpawnEnv } from "./executor.ts";
+import { buildAgentRunName, buildPiArgs, sanitizeAgentSpawnEnv } from "./executor.ts";
 import { resolveModel } from "./model-resolution.ts";
 import { type AgentRunKind, DEFAULT_AGENT_MAX_DEPTH, getAgentRunKind } from "./types.ts";
 
@@ -55,7 +55,6 @@ export interface SharedAgentLaunchInput {
 	agentId: string;
 	parentSession: string;
 	project: string;
-	piArgsDeps: Pick<PiAgentSkillDeps, "readSkillContent" | "buildSkillBlock">;
 }
 
 export interface SharedAgentLaunchPlan {
@@ -200,23 +199,14 @@ export function buildAgentLaunchSpec(input: SharedAgentLaunchInput): SharedAgent
 	if (mutativeFailure) return mutativeFailure;
 
 	const sessionDir = resolveSessionDir(input.agentId);
-	const { args, agentDir } = buildPiArgs(
-		agent,
-		input.task,
-		{
-			name,
-			model,
-			cwd,
-			worktreeDir,
-			sessionDir,
-			sessionId: input.agentId,
-			extensionTools,
-		},
-		{
-			readSkillContent: input.piArgsDeps.readSkillContent,
-			buildSkillBlock: input.piArgsDeps.buildSkillBlock,
-		},
-	);
+	const { args, agentDir } = buildPiArgs(agent, input.task, {
+		name,
+		model,
+		worktreeDir,
+		sessionDir,
+		sessionId: input.agentId,
+		extensionTools,
+	});
 
 	return {
 		ok: true,

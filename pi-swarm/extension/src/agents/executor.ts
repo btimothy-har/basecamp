@@ -8,8 +8,6 @@
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import type { PiSwarmDependencies } from "../dependencies.ts";
-import { buildSkillInjection, resolveSkills } from "./skills.ts";
 import { type AgentConfig, getAgentRunKind, getAgentToolAllowlist } from "./types.ts";
 
 const AGENT_BASE = path.join(os.tmpdir(), "basecamp-agents");
@@ -74,7 +72,6 @@ export function buildAgentRunName(prefix: string, suffix?: string): string {
 export interface PiArgsOpts {
 	name: string;
 	model: string | undefined;
-	cwd: string;
 	worktreeDir?: string | null;
 	sessionDir: string;
 	sessionId?: string;
@@ -102,16 +99,10 @@ Completion contract:
 - Before ending, ensure the final response is non-empty and directly answers the task.`;
 }
 
-export interface PiAgentSkillDeps {
-	readSkillContent: PiSwarmDependencies["readSkillContent"];
-	buildSkillBlock: PiSwarmDependencies["buildSkillBlock"];
-}
-
 export function buildPiArgs(
 	agent: AgentConfig | null,
 	task: string,
 	opts: PiArgsOpts,
-	deps: PiAgentSkillDeps,
 ): { args: string[]; agentDir: string } {
 	const agentDir = ensureAgentDir(opts.name);
 	const args = ["pi", "--mode", "json", "-p"];
@@ -130,20 +121,7 @@ export function buildPiArgs(
 
 	if (getAgentRunKind(agent) !== "mutative") args.push("--read-only");
 
-	let skillInjection = "";
-	if (agent?.skills?.length) {
-		const { resolved } = resolveSkills(agent.skills, opts.cwd, deps);
-		if (resolved.length > 0) {
-			skillInjection = buildSkillInjection(resolved, deps);
-		}
-		args.push("--no-skills");
-	}
-
-	const effectivePrompt = agent?.systemPrompt
-		? skillInjection
-			? `${agent.systemPrompt}\n\n${skillInjection}`
-			: agent.systemPrompt
-		: skillInjection || null;
+	const effectivePrompt = agent?.systemPrompt ?? null;
 
 	if (effectivePrompt) {
 		const promptFile = path.join(agentDir, "prompt.md");

@@ -53,21 +53,12 @@ describe("ensureAgentDir", () => {
 describe("buildPiArgs task text", () => {
 	it("passes short tasks with the completion contract as the final arg", () => {
 		const sessionDir = fs.mkdtempSync(path.join(os.tmpdir(), "basecamp-agent-session-"));
-		const { args, agentDir } = buildPiArgs(
-			null,
-			"hello world",
-			{
-				name: `agent-task-${randomUUID()}`,
-				model: undefined,
-				cwd: process.cwd(),
-				sessionDir,
-				extensionTools: [],
-			},
-			{
-				readSkillContent: () => null,
-				buildSkillBlock: (name, content) => `<skill name="${name}">${content}</skill>`,
-			},
-		);
+		const { args, agentDir } = buildPiArgs(null, "hello world", {
+			name: `agent-task-${randomUUID()}`,
+			model: undefined,
+			sessionDir,
+			extensionTools: [],
+		});
 
 		try {
 			assert.equal(args.at(-1), buildAgentTaskText("hello world"));
@@ -80,21 +71,12 @@ describe("buildPiArgs task text", () => {
 	it("writes long wrapped task text to task.md", () => {
 		const sessionDir = fs.mkdtempSync(path.join(os.tmpdir(), "basecamp-agent-session-"));
 		const longTask = "x".repeat(9_000);
-		const { args, agentDir } = buildPiArgs(
-			null,
-			longTask,
-			{
-				name: `agent-task-${randomUUID()}`,
-				model: undefined,
-				cwd: process.cwd(),
-				sessionDir,
-				extensionTools: [],
-			},
-			{
-				readSkillContent: () => null,
-				buildSkillBlock: (name, content) => `<skill name="${name}">${content}</skill>`,
-			},
-		);
+		const { args, agentDir } = buildPiArgs(null, longTask, {
+			name: `agent-task-${randomUUID()}`,
+			model: undefined,
+			sessionDir,
+			extensionTools: [],
+		});
 
 		try {
 			const taskArg = args.at(-1);
@@ -117,21 +99,12 @@ function toolNamesFromArgs(args: string[]): string[] {
 
 function buildToolArgs(agent: AgentConfig | null): string[] {
 	const sessionDir = fs.mkdtempSync(path.join(os.tmpdir(), "basecamp-agent-session-"));
-	const { args, agentDir } = buildPiArgs(
-		agent,
-		"inspect tools",
-		{
-			name: `agent-tools-${randomUUID()}`,
-			model: undefined,
-			cwd: process.cwd(),
-			sessionDir,
-			extensionTools: ["dispatch_agent", "list_agents", "wait_for_agent"],
-		},
-		{
-			readSkillContent: () => null,
-			buildSkillBlock: (name, content) => `<skill name="${name}">${content}</skill>`,
-		},
-	);
+	const { args, agentDir } = buildPiArgs(agent, "inspect tools", {
+		name: `agent-tools-${randomUUID()}`,
+		model: undefined,
+		sessionDir,
+		extensionTools: ["dispatch_agent", "list_agents", "wait_for_agent"],
+	});
 	fs.rmSync(sessionDir, { recursive: true, force: true });
 	fs.rmSync(agentDir, { recursive: true, force: true });
 	return args;
@@ -182,6 +155,12 @@ describe("subagent tool allowlist", () => {
 		for (const tool of PARENT_ONLY_TOOLS) {
 			assert.equal(tools.includes(tool), false, `${tool} should not be available`);
 		}
+	});
+});
+
+describe("buildPiArgs skill discovery", () => {
+	it("never disables skill discovery for subagents", () => {
+		assert.equal(buildToolArgs(null).includes("--no-skills"), false);
 	});
 });
 

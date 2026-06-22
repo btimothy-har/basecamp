@@ -40,8 +40,6 @@ export interface PiSwarmDependencies {
 	resolveModelAlias: (alias: string) => string | undefined;
 	hasInvokedSkill: (name: string) => boolean;
 	getWorkspaceState: () => WorkspaceState | null;
-	readSkillContent: (filePath: string) => string | null;
-	buildSkillBlock: (name: string, content: string) => string;
 	formatTaskProgressSummary: (snapshot: TaskProgressSnapshot) => string | null;
 	renderCompactTaskProgressLines: (snapshot: TaskProgressSnapshot, theme: TaskProgressTheme) => string[];
 	formatTitle: (title: string, tag: string) => string;
