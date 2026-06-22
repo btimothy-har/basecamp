@@ -91,6 +91,17 @@ export function ensureAgentDir(name: string): string {
 	return dir;
 }
 
+export function buildAgentTaskText(task: string): string {
+	return `Task: ${task}
+
+Completion contract:
+- Always produce a final assistant response.
+- Do not finish after only tool calls or task updates.
+- If there are no findings, say that explicitly.
+- If blocked, report the blocker explicitly.
+- Before ending, ensure the final response is non-empty and directly answers the task.`;
+}
+
 export interface PiAgentSkillDeps {
 	readSkillContent: PiSwarmDependencies["readSkillContent"];
 	buildSkillBlock: PiSwarmDependencies["buildSkillBlock"];
@@ -143,7 +154,7 @@ export function buildPiArgs(
 	const tools = [...new Set([...getAgentToolAllowlist(agent), ...opts.extensionTools])];
 	args.push("--tools", tools.join(","));
 
-	const taskText = `Task: ${task}`;
+	const taskText = buildAgentTaskText(task);
 	if (taskText.length > TASK_ARG_LIMIT) {
 		const taskFile = path.join(agentDir, "task.md");
 		fs.writeFileSync(taskFile, taskText, { mode: 0o600 });

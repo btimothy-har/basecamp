@@ -1,6 +1,12 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import type { DaemonConnection } from "./client.ts";
 import { PROTOCOL_VERSION } from "./frames.ts";
+import {
+	BASECAMP_RUN_ATTEMPT,
+	BASECAMP_RUN_RESULT_PATH,
+	BASECAMP_RUNNER_MANAGED_RESULT,
+	upsertRunResultAttempt,
+} from "./run-result.ts";
 
 const FLUSH_DELAY_MS = 50;
 const DISPLAY_TEXT_LIMIT = 240;
@@ -186,6 +192,21 @@ function sleep(ms: number): Promise<void> {
 	return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+function runnerManagedResultPath(): string | null {
+	if (process.env[BASECAMP_RUNNER_MANAGED_RESULT] !== "1") return null;
+	const filePath = process.env[BASECAMP_RUN_RESULT_PATH];
+	if (!filePath) throw new Error("missing runner-managed result path");
+	return filePath;
+}
+
+function runnerManagedAttempt(): number {
+	const rawAttempt = process.env[BASECAMP_RUN_ATTEMPT];
+	if (!rawAttempt?.trim()) throw new Error("invalid runner-managed result attempt");
+	const attempt = Number(rawAttempt);
+	if (!Number.isInteger(attempt)) throw new Error("invalid runner-managed result attempt");
+	return attempt;
+}
+
 export function registerDaemonReporter(
 	pi: ExtensionAPI,
 	options: {
@@ -326,6 +347,23 @@ export function registerDaemonReporter(
 					snippet: resultSnippet,
 				});
 			}
+
+			const runResultPath = runnerManagedResultPath();
+			if (runResultPath) {
+				await upsertRunResultAttempt(
+					runResultPath,
+					{ run_id: runId, agent_id: agentId },
+					{
+						attempt: runnerManagedAttempt(),
+						status: "ok",
+						result,
+						error: null,
+					},
+				);
+				await sleep(FLUSH_DELAY_MS);
+				return;
+			}
+
 			const connection = await connectionPromise;
 			connection.send({
 				type: "result_report",

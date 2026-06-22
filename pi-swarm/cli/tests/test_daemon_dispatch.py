@@ -16,6 +16,7 @@ from pi_swarm.app import create_app
 from pi_swarm.frames import PROTOCOL_VERSION
 from pi_swarm.process import reap_agent_process
 from pi_swarm.registry import Registry
+from pi_swarm.run_result import load_run_result, run_result_path
 from pi_swarm.server import UdsServer
 from pi_swarm.store import Store
 from websockets.sync.client import unix_connect
@@ -43,6 +44,11 @@ class _FailingStore:
 
     def set_run_result_if_unset(self, **_kwargs: object) -> bool:
         raise AssertionError
+
+
+@pytest.fixture(autouse=True)
+def _isolate_run_result_home(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
 
 
 def _start_daemon(store: Store, uds_path: Path) -> tuple[UdsServer, threading.Thread]:
@@ -174,6 +180,59 @@ async def test_reap_agent_process_removes_registry_process_when_store_update_fai
     assert registry.pop_process(run_id) is None
 
 
+@pytest.mark.asyncio
+async def test_reap_agent_process_does_not_overwrite_reported_result(tmp_path: Path) -> None:
+    run_id = "run-already-reported"
+    agent_id = "agent-already-reported"
+    registry = Registry()
+    process = _FakeProcess()
+    store = Store(db_path=tmp_path / "daemon.db")
+    finalized: list[str] = []
+
+    store.upsert_agent(
+        agent_id=agent_id,
+        agent_handle=None,
+        parent_id=None,
+        sibling_group=None,
+        depth=1,
+        role="agent",
+        session_name=agent_id,
+        cwd=str(tmp_path),
+    )
+    store.create_run(
+        run_id=run_id,
+        agent_id=agent_id,
+        dispatcher_id="session-node",
+        spec={},
+    )
+    store.set_run_result_if_unset(
+        run_id=run_id,
+        status="completed",
+        result="runner-final-result",
+        error=None,
+    )
+    registry.set_process(run_id, process)
+
+    async def on_finalize(finalized_run_id: str) -> None:
+        finalized.append(finalized_run_id)
+
+    await reap_agent_process(
+        run_id=run_id,
+        process=process,
+        registry=registry,
+        store=store,
+        on_finalize=on_finalize,
+    )
+
+    run = store.get_run(run_id)
+    assert run is not None
+    assert run["status"] == "completed"
+    assert run["result"] == "runner-final-result"
+    assert run["exit_code"] == 7
+    assert finalized == []
+    assert registry.pop_process(run_id) is None
+
+
 def test_daemon_dispatch_spawn_and_result_round_trip(tmp_path: Path) -> None:
     db_path = tmp_path / "daemon.db"
     uds_path = Path("/tmp") / f"basecamp-daemon-dispatch-{os.getpid()}-{uuid.uuid4().hex[:8]}.sock"
@@ -217,6 +276,14 @@ def test_daemon_dispatch_spawn_and_result_round_trip(tmp_path: Path) -> None:
         assert run["report_token_hash"] not in json.dumps(spec_json, sort_keys=True)
 
         agent_id = run["agent_id"]
+        sidecar = load_run_result(run_result_path(agent_id, run_id))
+        assert sidecar is not None
+        assert len(sidecar.attempts) == 1
+        assert sidecar.attempts[0].result == "fake-agent-result"
+        assert sidecar.final is not None
+        assert sidecar.final.result == "fake-agent-result"
+        assert sidecar.final.retry_count == 0
+
         agent = store.get_agent(agent_id)
         assert agent is not None
         assert agent["depth"] == 1
@@ -407,6 +474,176 @@ def test_dispatch_passes_full_env_to_spawned_child(tmp_path: Path) -> None:
         _stop_daemon(server, thread, uds_path)
 
 
+def test_dispatch_runner_managed_env_reaches_fake_child(tmp_path: Path) -> None:
+    db_path = tmp_path / "daemon.db"
+    uds_path = Path("/tmp") / f"basecamp-daemon-dispatch-runner-env-{os.getpid()}-{uuid.uuid4().hex[:8]}.sock"
+    store = Store(db_path=db_path)
+    server, thread = _start_daemon(store, uds_path)
+
+    run_id = f"run-{uuid.uuid4()}"
+
+    try:
+        with unix_connect(str(uds_path), uri="ws://localhost/ws") as websocket:
+            _register_session(websocket, node_id="session-node", cwd=str(tmp_path))
+            ack = _dispatch(
+                websocket,
+                run_id=run_id,
+                spec=_dispatch_spec(
+                    tmp_path,
+                    env={"FAKE_DAEMON_AGENT_RESULT_ENV_KEY": "BASECAMP_RUNNER_MANAGED_RESULT"},
+                ),
+            )
+            assert ack["status"] == "spawned"
+
+        deadline = time.time() + 10
+        run = None
+        while time.time() < deadline:
+            run = store.get_run(run_id)
+            if run and run["status"] == "completed":
+                break
+            time.sleep(0.05)
+
+        assert run is not None
+        assert run["result"] == "fake-agent-result:BASECAMP_RUNNER_MANAGED_RESULT=1"
+    finally:
+        _stop_daemon(server, thread, uds_path)
+
+
+def test_runner_managed_child_direct_result_report_is_suppressed(tmp_path: Path) -> None:
+    db_path = tmp_path / "daemon.db"
+    uds_path = Path("/tmp") / f"basecamp-daemon-malicious-result-{os.getpid()}-{uuid.uuid4().hex[:8]}.sock"
+    store = Store(db_path=db_path)
+    server, thread = _start_daemon(store, uds_path)
+
+    run_id = f"run-{uuid.uuid4()}"
+
+    try:
+        with unix_connect(str(uds_path), uri="ws://localhost/ws") as websocket:
+            _register_session(websocket, node_id="session-node", cwd=str(tmp_path))
+            ack = _dispatch(
+                websocket,
+                run_id=run_id,
+                spec=_dispatch_spec(tmp_path, env={"FAKE_DAEMON_AGENT_MODE": "malicious_direct_result_report"}),
+            )
+            assert ack["status"] == "spawned"
+
+        deadline = time.time() + 10
+        run = None
+        while time.time() < deadline:
+            run = store.get_run(run_id)
+            if run and run["status"] == "completed":
+                break
+            time.sleep(0.05)
+
+        assert run is not None
+        assert run["status"] == "completed"
+        assert run["result"] == "fake-agent-result"
+        assert run["result"] != "malicious-direct-result"
+    finally:
+        _stop_daemon(server, thread, uds_path)
+
+
+def test_dispatch_empty_first_attempt_retries_and_recovers(tmp_path: Path) -> None:
+    db_path = tmp_path / "daemon.db"
+    uds_path = Path("/tmp") / f"basecamp-daemon-dispatch-retry-{os.getpid()}-{uuid.uuid4().hex[:8]}.sock"
+    store = Store(db_path=db_path)
+    server, thread = _start_daemon(store, uds_path)
+
+    run_id = f"run-{uuid.uuid4()}"
+    agent_id = f"agent-{uuid.uuid4()}"
+
+    try:
+        with unix_connect(str(uds_path), uri="ws://localhost/ws") as websocket:
+            _register_session(websocket, node_id="session-node", cwd=str(tmp_path))
+            ack = _dispatch(
+                websocket,
+                run_id=run_id,
+                agent_id=agent_id,
+                spec=_dispatch_spec(tmp_path, env={"FAKE_DAEMON_AGENT_MODE": "empty_first_attempt"}),
+            )
+            assert ack["status"] == "spawned"
+
+        deadline = time.time() + 10
+        run = None
+        while time.time() < deadline:
+            run = store.get_run(run_id)
+            if run and run["status"] == "completed":
+                break
+            time.sleep(0.05)
+
+        assert run is not None
+        assert run["status"] == "completed"
+        assert run["result"] == "fake-agent-result"
+
+        sidecar = load_run_result(run_result_path(agent_id, run_id))
+        assert sidecar is not None
+        assert [attempt.result for attempt in sidecar.attempts] == ["", "fake-agent-result"]
+        assert sidecar.final is not None
+        assert sidecar.final.result == "fake-agent-result"
+        assert sidecar.final.retry_count == 1
+    finally:
+        _stop_daemon(server, thread, uds_path)
+
+
+def test_wait_empty_both_attempts_returns_runner_retry_failure(tmp_path: Path) -> None:
+    db_path = tmp_path / "daemon.db"
+    uds_path = Path("/tmp") / f"basecamp-daemon-wait-empty-retry-{os.getpid()}-{uuid.uuid4().hex[:8]}.sock"
+    store = Store(db_path=db_path)
+    server, thread = _start_daemon(store, uds_path)
+
+    run_id = f"run-{uuid.uuid4()}"
+    agent_id = f"agent-{uuid.uuid4()}"
+
+    try:
+        with unix_connect(str(uds_path), uri="ws://localhost/ws") as websocket:
+            _register_session(websocket, node_id="session-node", cwd=str(tmp_path))
+
+            ack = _dispatch(
+                websocket,
+                run_id=run_id,
+                agent_id=agent_id,
+                spec=_dispatch_spec(tmp_path, env={"FAKE_DAEMON_AGENT_MODE": "empty_both_attempts"}),
+            )
+            assert ack["status"] == "spawned"
+
+            websocket.send(
+                json.dumps(
+                    {
+                        "type": "wait",
+                        "v": PROTOCOL_VERSION,
+                        "agent_ids": [agent_id],
+                        "mode": "all",
+                        "timeout_s": 5,
+                    }
+                )
+            )
+            wait_result = json.loads(websocket.recv())
+
+        assert wait_result["type"] == "wait_result"
+        assert wait_result["results"] == [
+            {
+                "agent_id": agent_id,
+                "status": "failed",
+                "result": None,
+                "error": "empty_agent_result_after_retry",
+            }
+        ]
+
+        run = store.get_run(run_id)
+        assert run is not None
+        assert run["status"] == "failed"
+        assert run["error"] == "empty_agent_result_after_retry"
+
+        sidecar = load_run_result(run_result_path(agent_id, run_id))
+        assert sidecar is not None
+        assert [attempt.result for attempt in sidecar.attempts] == ["", ""]
+        assert sidecar.final is not None
+        assert sidecar.final.error == "empty_agent_result_after_retry"
+        assert sidecar.final.retry_count == 1
+    finally:
+        _stop_daemon(server, thread, uds_path)
+
+
 def test_wait_all_happy_path_two_runs(tmp_path: Path) -> None:
     db_path = tmp_path / "daemon.db"
     uds_path = Path("/tmp") / f"basecamp-daemon-wait-all-{os.getpid()}-{uuid.uuid4().hex[:8]}.sock"
@@ -550,12 +787,12 @@ def test_backstop_marks_failed_and_resolves_wait(tmp_path: Path) -> None:
         item = wait_result["results"][0]
         assert item["agent_id"] == agent_id
         assert item["status"] == "failed"
-        assert "code 9" in (item["error"] or "")
+        assert item["error"] == "agent_process_exited_code_9"
 
         run = store.get_run(run_id)
         assert run is not None
         assert run["status"] == "failed"
-        assert "code 9" in (run["error"] or "")
+        assert run["error"] == "agent_process_exited_code_9"
     finally:
         _stop_daemon(server, thread, uds_path)
 
@@ -1252,7 +1489,7 @@ def test_telemetry_and_invalid_result_reports_do_not_mutate_run(tmp_path: Path) 
         assert run is not None
         assert run["status"] == "failed"
         assert run["result"] is None
-        assert "agent process exited" in str(run["error"])
+        assert run["error"] == "agent_process_exited_code_9"
         assert run["result"] != "attacker-result"
 
         events = store.get_run_events(run_id)
