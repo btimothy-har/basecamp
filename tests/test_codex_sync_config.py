@@ -59,6 +59,17 @@ def test_writable_root_is_added_to_existing_sandbox_table(tmp_path) -> None:
     assert config["sandbox_workspace_write"]["writable_roots"] == [WRITABLE_ROOT]
 
 
+def test_writable_root_is_added_to_inline_sandbox_table(tmp_path) -> None:
+    config_path = tmp_path / "config.toml"
+    config_path.write_text('developer_instructions = ""\nsandbox_workspace_write = { network_access = false }\n')
+
+    merge_config(config_path)
+
+    config = tomlkit.parse(config_path.read_text())
+    assert config["sandbox_workspace_write"]["network_access"] is False
+    assert config["sandbox_workspace_write"]["writable_roots"] == [WRITABLE_ROOT]
+
+
 def test_writable_root_is_added_to_empty_roots_array(tmp_path) -> None:
     config_path = tmp_path / "config.toml"
     config_path.write_text('developer_instructions = ""\n[sandbox_workspace_write]\nwritable_roots = []\n')
@@ -72,7 +83,7 @@ def test_writable_root_is_added_to_empty_roots_array(tmp_path) -> None:
 def test_writable_root_is_merged_without_duplicates(tmp_path) -> None:
     config_path = tmp_path / "config.toml"
     config_path.write_text(
-        'developer_instructions = ""\n[sandbox_workspace_write]\nwritable_roots = ["/existing", "/tmp/codex"]\n'
+        f'developer_instructions = ""\n[sandbox_workspace_write]\nwritable_roots = ["/existing", "{WRITABLE_ROOT}"]\n'
     )
 
     merge_config(config_path)

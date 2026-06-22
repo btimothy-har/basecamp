@@ -3,9 +3,10 @@
 
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass
 
-SCRATCH_ROOT = "/tmp/codex"
+SCRATCH_ROOT = f"/tmp/codex-{os.getuid()}"
 
 WORKING_PREFERENCES = f"""<working_preferences>
 <collaboration>

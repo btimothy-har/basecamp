@@ -37,6 +37,14 @@ class AgentInstallResult:
         return self.installed + self.updated + self.unchanged
 
 
+def preflight_agents(agents_dir: Path) -> None:
+    """Validate existing agent files before mutating Codex config."""
+    for agent in AGENTS:
+        path = agents_dir / agent.filename
+        if path.exists() and not _is_managed_agent(path.read_text()):
+            raise UnmanagedAgentConflictError(path)
+
+
 def install_agents(agents_dir: Path) -> AgentInstallResult:
     """Install managed specialist agent TOML files."""
     installed = 0
@@ -53,7 +61,7 @@ def install_agents(agents_dir: Path) -> AgentInstallResult:
             continue
 
         existing = path.read_text()
-        if MANAGED_MARKER not in existing:
+        if not _is_managed_agent(existing):
             raise UnmanagedAgentConflictError(path)
 
         if existing == content:
@@ -64,6 +72,10 @@ def install_agents(agents_dir: Path) -> AgentInstallResult:
         updated += 1
 
     return AgentInstallResult(installed=installed, updated=updated, unchanged=unchanged)
+
+
+def _is_managed_agent(content: str) -> bool:
+    return next((line for line in content.splitlines() if line.strip()), "") == MANAGED_MARKER
 
 
 def _render_agent(agent: AgentDefinition) -> str:

@@ -8,7 +8,7 @@ from typing import Any
 
 import tomlkit
 from tomlkit.exceptions import TOMLKitError
-from tomlkit.items import Array, Table
+from tomlkit.items import AbstractTable, Array
 
 from basecamp.codex_sync.assets import SCRATCH_ROOT, WORKING_PREFERENCES
 
@@ -112,7 +112,7 @@ def _merge_writable_roots(document: Any, *, writable_root: str) -> None:
     if sandbox is None:
         sandbox = tomlkit.table()
         document["sandbox_workspace_write"] = sandbox
-    elif not isinstance(sandbox, Table):
+    elif not isinstance(sandbox, AbstractTable):
         raise UnsupportedSandboxTableError()
 
     roots = sandbox.get("writable_roots")

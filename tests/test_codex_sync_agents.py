@@ -3,7 +3,7 @@ from __future__ import annotations
 import pytest
 import tomlkit
 
-from basecamp.codex_sync.agents import MANAGED_MARKER, UnmanagedAgentConflictError, install_agents
+from basecamp.codex_sync.agents import MANAGED_MARKER, UnmanagedAgentConflictError, install_agents, preflight_agents
 from basecamp.codex_sync.assets import AGENTS
 
 
@@ -59,3 +59,22 @@ def test_unmanaged_agent_conflict_fails_without_overwrite(tmp_path) -> None:
         install_agents(tmp_path)
 
     assert path.read_text() == original
+
+
+def test_managed_marker_must_be_first_non_empty_line(tmp_path) -> None:
+    path = tmp_path / AGENTS[0].filename
+    original = f'name = "custom"\n{MANAGED_MARKER}\n'
+    path.write_text(original)
+
+    with pytest.raises(UnmanagedAgentConflictError):
+        install_agents(tmp_path)
+
+    assert path.read_text() == original
+
+
+def test_preflight_agents_detects_unmanaged_conflicts(tmp_path) -> None:
+    path = tmp_path / AGENTS[0].filename
+    path.write_text('name = "custom"\n')
+
+    with pytest.raises(UnmanagedAgentConflictError):
+        preflight_agents(tmp_path)
