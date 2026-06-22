@@ -1,9 +1,9 @@
 /**
- * Skill tool — load skill instructions on demand, once per session.
+ * Skill tool — load skill instructions on demand.
  *
  * Reads the named skill file and returns its content wrapped in an XML
- * block. Subsequent calls for the same skill in the same session return
- * a short dedup notice rather than re-loading the file.
+ * block. A skill may be loaded multiple times per session; each call
+ * re-reads the file and records the invocation for tracking.
  *
  * Available skills and descriptions are listed in the capabilities index.
  * Use this tool to load the full instructions.
@@ -11,7 +11,7 @@
 
 import type { ExtensionAPI, Theme } from "@earendil-works/pi-coding-agent";
 import { Type } from "@sinclair/typebox";
-import { hasInvokedSkill, trackSkillInvocation } from "../platform/skill-tracker";
+import { trackSkillInvocation } from "../platform/skill-tracker";
 import { loadSkillBlock } from "./skill-content.ts";
 
 const SkillParams = Type.Object(
@@ -21,7 +21,7 @@ const SkillParams = Type.Object(
 		}),
 	},
 	{
-		description: "Load the instructions for a named skill. Each skill is loaded at most once per session.",
+		description: "Load the instructions for a named skill.",
 	},
 );
 
@@ -52,11 +52,6 @@ function renderResult(
 		return new Text(theme.fg("success", "✓") + theme.fg("dim", ` ${loaded[1]} loaded`), 0, 0);
 	}
 
-	const alreadyLoaded = text.match(/^Skill "([^"]+)" already loaded this session\.$/);
-	if (alreadyLoaded) {
-		return new Text(theme.fg("dim", `${alreadyLoaded[1]} already loaded`), 0, 0);
-	}
-
 	const notFound = text.match(/^No skill found with name "([^"]+)"\./);
 	if (notFound) {
 		return new Text(theme.fg("error", `${notFound[1]} not found`), 0, 0);
@@ -75,21 +70,12 @@ export function registerSkillTool(pi: ExtensionAPI): void {
 		label: "Skill",
 		description:
 			"Load full instructions for a named skill. " +
-			"Each skill is loaded at most once per session — repeat calls return a short notice. " +
 			"Available skills are listed in the system prompt capabilities index.",
 
 		parameters: SkillParams,
 
 		async execute(_id, params, _signal, _onUpdate, _ctx) {
 			const { name } = params;
-
-			// Dedup: already loaded this session.
-			if (hasInvokedSkill(name)) {
-				return {
-					details: null,
-					content: [{ type: "text", text: `Skill "${name}" already loaded this session.` }],
-				};
-			}
 
 			// Resolve skill path from pi commands.
 			const command = pi
