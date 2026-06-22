@@ -1,4 +1,4 @@
-TS_PACKAGES = core/pi pi-ui workspace/pi pi-tasks pi-git pi-engineering pi-companion/pi pi-swarm/extension
+TS_PACKAGES = core/pi pi-ui workspace/pi pi-tasks pi-git pi-engineering pi-browser pi-companion/pi pi-swarm/extension
 
 sync:
 	uv sync --extra companion

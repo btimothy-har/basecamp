@@ -40,7 +40,8 @@ export type BasecampEnvVar =
 	| "BASECAMP_WORKTREE_LABEL"
 	| "BASECAMP_AGENT_DEPTH"
 	| "BASECAMP_AGENT_MAX_DEPTH"
-	| "BASECAMP_SESSION_NAME";
+	| "BASECAMP_SESSION_NAME"
+	| "BASECAMP_BROWSER_PATH";
 
 /** Typed getter for a BASECAMP_* env var. Returns undefined if not set. */
 export function getBasecampEnv(name: BasecampEnvVar): string | undefined {

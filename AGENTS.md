@@ -43,6 +43,7 @@ workspace/pi/                  # pi-workspace TypeScript package: project contex
 pi-tasks/                      # Tasks, planning, workflow skills
 pi-git/                        # Git guards, PR/issue/review workflows
 pi-engineering/                # Engineering tools and skills
+pi-browser/                    # Browser automation tools (puppeteer-core over CDP)
 pi-companion/                  # Companion bounded context
 ├── pi/                        # TypeScript session hooks, tmux panes, analysis registration
 └── tui/                       # Python companion TUI/analyzer package
@@ -86,5 +87,5 @@ Worktrees live in `~/.worktrees/<repo>/<label>/` rather than inside the repo to 
 
 - **Run all**: `make test` from repo root runs Python pytest plus all Pi package TypeScript tests.
 - **Python**: `uv run pytest` uses root `pyproject.toml` — `testpaths = ["core/config/tests", "workspace/projects/tests", "pi-companion/tui/tests"]`, `pythonpath` includes `src`, `core/config/src`, `workspace/projects/src`, `pi-swarm/cli/src`, and `pi-companion/tui/src`.
-- **TypeScript**: `make test` covers `core/pi`, `pi-ui`, `workspace/pi`, `pi-tasks`, `pi-git`, `pi-engineering`, `pi-companion/pi`, and `pi-swarm/extension`.
+- **TypeScript**: `make test` covers `core/pi`, `pi-ui`, `workspace/pi`, `pi-tasks`, `pi-git`, `pi-engineering`, `pi-browser`, `pi-companion/pi`, and `pi-swarm/extension`.
 - **Basecamp Python tests** live under `core/config/tests/`, `workspace/projects/tests/`, and `pi-companion/tui/tests/`.

@@ -1,6 +1,7 @@
 import questionary
 
 from basecamp.installer import (
+    COMPONENT_BROWSER,
     COMPONENT_COMPANION,
     COMPONENT_ENGINEERING,
     COMPONENT_STANDARD,
@@ -16,7 +17,7 @@ def package_paths(component_ids: list[str]) -> list[str]:
 
 def test_all_groups_selected_includes_non_memory_packages_and_python_extras() -> None:
     selection = resolve_install_selection(
-        [COMPONENT_STANDARD, COMPONENT_ENGINEERING, COMPONENT_COMPANION, COMPONENT_SWARM]
+        [COMPONENT_STANDARD, COMPONENT_ENGINEERING, COMPONENT_BROWSER, COMPONENT_COMPANION, COMPONENT_SWARM]
     )
 
     assert selection.python_extra == "[companion,swarm]"
@@ -28,19 +29,31 @@ def test_all_groups_selected_includes_non_memory_packages_and_python_extras() ->
         "tasks",
         "git",
         "engineering",
+        "browser",
         "companion",
         "swarm",
     )
-    assert package_paths([COMPONENT_STANDARD, COMPONENT_ENGINEERING, COMPONENT_COMPANION, COMPONENT_SWARM]) == [
+    assert package_paths(
+        [COMPONENT_STANDARD, COMPONENT_ENGINEERING, COMPONENT_BROWSER, COMPONENT_COMPANION, COMPONENT_SWARM]
+    ) == [
         "core/pi",
         "pi-ui",
         "workspace/pi",
         "pi-tasks",
         "pi-git",
         "pi-engineering",
+        "pi-browser",
         "pi-companion/pi",
         "pi-swarm/extension",
     ]
+
+
+def test_browser_component_installs_pi_browser_package_and_module() -> None:
+    selection = resolve_install_selection([COMPONENT_BROWSER])
+
+    assert selection.python_extra == ""
+    assert selection.installed_modules == ("core", "browser")
+    assert package_paths([COMPONENT_BROWSER]) == ["core/pi", "pi-browser"]
 
 
 def test_companion_unchecked_omits_companion_extra_and_ts_package() -> None:

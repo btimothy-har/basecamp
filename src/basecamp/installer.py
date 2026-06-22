@@ -23,6 +23,7 @@ REPO_DIR: Final = Path(__file__).resolve().parents[2]
 
 COMPONENT_STANDARD: Final = "standard"
 COMPONENT_ENGINEERING: Final = "engineering"
+COMPONENT_BROWSER: Final = "browser"
 COMPONENT_COMPANION: Final = "companion"
 COMPONENT_SWARM: Final = "swarm"
 
@@ -35,6 +36,7 @@ _PACKAGE_MODULE_IDS: Final = {
     "pi-tasks": "tasks",
     "pi-git": "git",
     "pi-engineering": "engineering",
+    "pi-browser": "browser",
     "pi-companion/pi": "companion",
     "pi-swarm/extension": "swarm",
 }
@@ -45,6 +47,7 @@ _TS_PACKAGE_ORDER: Final = [
     ("pi-tasks", "pi-tasks"),
     ("pi-git", "pi-git"),
     ("pi-engineering", "pi-engineering"),
+    ("pi-browser", "pi-browser"),
     ("pi-companion/pi", "pi-companion"),
     ("pi-swarm/extension", "pi-swarm extension"),
 ]
@@ -52,6 +55,7 @@ _TS_PACKAGE_ORDER: Final = [
 _COMPONENT_TS_PACKAGES: Final = {
     COMPONENT_STANDARD: ["pi-ui", "workspace/pi", "pi-tasks", "pi-git"],
     COMPONENT_ENGINEERING: ["pi-engineering"],
+    COMPONENT_BROWSER: ["pi-browser"],
     COMPONENT_COMPANION: ["pi-companion/pi"],
     COMPONENT_SWARM: ["pi-swarm/extension"],
 }
@@ -138,6 +142,7 @@ def _component_choices() -> list[questionary.Choice]:
             value=COMPONENT_STANDARD,
         ),
         questionary.Choice("Engineering tools (pi-engineering)", value=COMPONENT_ENGINEERING),
+        questionary.Choice("Browser automation (pi-browser)", value=COMPONENT_BROWSER),
         questionary.Choice("Companion (Python extra + pi-companion)", value=COMPONENT_COMPANION),
         questionary.Choice(
             "Swarm / async agents (pi-swarm; auto-includes pi-ui and pi-tasks)",
