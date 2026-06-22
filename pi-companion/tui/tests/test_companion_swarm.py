@@ -6,7 +6,6 @@ import asyncio
 import json
 import re
 
-from companion_tui.app import SwarmBody
 from companion_tui.daemon import (
     DaemonAgentMessage,
     DaemonAgentMessagesError,
@@ -15,6 +14,7 @@ from companion_tui.daemon import (
     DaemonRecentActivity,
     DaemonSummaryAgent,
     DaemonSummaryCounts,
+    DaemonSummaryError,
     DaemonSummaryOk,
     DaemonSummarySource,
     DaemonSummaryUnavailable,
@@ -22,6 +22,7 @@ from companion_tui.daemon import (
     DaemonTaskProgress,
     DaemonTaskProjection,
 )
+from companion_tui.ui.swarm import SwarmBody
 from rich.console import Console
 from test_companion_daemon import _build_fake_connection
 from textual.app import App, ComposeResult
@@ -432,7 +433,15 @@ def test_swarm_empty_unavailable_and_selection_clamping() -> None:
 
             swarm.update_daemon(DaemonSummaryUnavailable(error="socket missing"))
             await pilot.pause(0.1)
-            assert "Daemon unavailable" in _to_text(swarm.query_one("#swarm-detail-content", Static).content)
+            unavailable_text = _to_text(swarm.query_one("#swarm-detail-content", Static).content)
+            assert "Daemon unavailable" in unavailable_text
+            assert "socket missing" in unavailable_text
+
+            swarm.update_daemon(DaemonSummaryError(error="bad daemon payload"))
+            await pilot.pause(0.1)
+            error_text = _to_text(swarm.query_one("#swarm-detail-content", Static).content)
+            assert "Daemon error" in error_text
+            assert "bad daemon payload" in error_text
 
             swarm.update_daemon(_summary([first, second]))
             await pilot.pause(0.1)

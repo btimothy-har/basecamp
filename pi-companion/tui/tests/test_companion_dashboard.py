@@ -8,18 +8,7 @@ import subprocess
 from pathlib import Path
 
 from companion_tui.analysis import companion_analysis_path
-from companion_tui.app import (
-    CompanionApp,
-    DashboardBody,
-    SwarmBody,
-    _format_duration,
-    _goal_panel,
-    _render_bullets,
-    _render_daemon_summary,
-    _render_task_detail,
-    _truncate_preview,
-    next_body_mode,
-)
+from companion_tui.app import CompanionApp
 from companion_tui.daemon import (
     DaemonAgentMessages,
     DaemonAgentMessagesOk,
@@ -32,6 +21,10 @@ from companion_tui.daemon import (
 )
 from companion_tui.snapshot import CompanionGoal, CompanionProgress, CompanionTask
 from companion_tui.source import DashboardModel
+from companion_tui.ui.dashboard import DashboardBody, _goal_panel, _render_bullets, _render_task_detail
+from companion_tui.ui.formatting import _format_duration, _truncate_preview
+from companion_tui.ui.modes import next_body_mode
+from companion_tui.ui.swarm import SwarmBody
 from rich.console import Console
 from textual.containers import VerticalScroll
 from textual.widgets import ContentSwitcher, Static
@@ -137,96 +130,6 @@ def test_format_duration_boundaries() -> None:
     assert _format_duration(3661) == "1h 1m"
 
 
-def test_render_daemon_summary_none_is_empty() -> None:
-    assert _render_daemon_summary(None).plain == ""
-
-
-def test_render_daemon_summary_empty_ok_shows_no_async_agents() -> None:
-    summary = _daemon_summary_ok(total=0, agents=[])
-    assert "No async agents yet" in _to_text(_render_daemon_summary(summary))
-
-
-def test_render_daemon_summary_unavailable() -> None:
-    summary = DaemonSummaryUnavailable(error="daemon socket missing")
-    text = _to_text(_render_daemon_summary(summary))
-    assert "Daemon unavailable" in text
-    assert "daemon socket missing" in text
-
-
-def test_render_daemon_summary_error() -> None:
-    summary = DaemonSummaryError(error="bad daemon payload")
-    text = _to_text(_render_daemon_summary(summary))
-    assert "Daemon error" in text
-    assert "bad daemon payload" in text
-
-
-def test_render_daemon_summary_running_uses_hourglass() -> None:
-    summary = _daemon_summary_ok(
-        total=1,
-        agents=[
-            DaemonSummaryAgent(
-                agent_handle="mossy-otter-c3d4e5",
-                agent_type="worker",
-                role="agent",
-                session_name="worker",
-                status="running",
-                result_preview=None,
-                error_preview=None,
-                exit_code=None,
-                created_at="2099-01-01T00:00:00Z",
-                started_at="2099-01-01T00:00:00Z",
-                ended_at=None,
-            )
-        ],
-    )
-    text = _to_text(_render_daemon_summary(summary))
-    assert "⏳" in text
-    assert "running" in text
-
-
-def test_render_daemon_summary_populated() -> None:
-    summary = _daemon_summary_ok(
-        total=2,
-        agents=[
-            DaemonSummaryAgent(
-                agent_handle="mossy-otter-b2c3d4",
-                agent_type="scout",
-                role="agent",
-                session_name="scout",
-                status="completed",
-                result_preview="all good",
-                error_preview=None,
-                exit_code=0,
-                created_at="2026-01-01T00:00:00Z",
-                started_at="2026-01-01T00:00:01Z",
-                ended_at="2026-01-01T00:00:03Z",
-            ),
-            DaemonSummaryAgent(
-                agent_handle="brisk-lynx-a1b2c3",
-                agent_type="worker",
-                role="agent",
-                session_name="worker",
-                status="failed",
-                result_preview=None,
-                error_preview="boom",
-                exit_code=1,
-                created_at="2026-01-01T00:00:00Z",
-                started_at="2026-01-01T00:00:04Z",
-                ended_at="2026-01-01T00:00:04Z",
-            ),
-        ],
-    )
-    text = _to_text(_render_daemon_summary(summary))
-    assert "scout" in text
-    assert "worker" in text
-    assert "mossy-otter-b2c3d4" not in text
-    assert "brisk-lynx-a1b2c3" not in text
-    assert "completed" in text
-    assert "failed" in text
-    assert "all good" in text
-    assert "boom" in text
-
-
 def test_dashboard_css_uses_requested_row_ratios() -> None:
     css = CompanionApp.CSS
     assert "#dashboard-task {\n        height: 3fr;" in css
@@ -319,6 +222,21 @@ def test_pinned_task_index_falls_back_to_last_when_all_completed() -> None:
 
 def test_pinned_task_index_empty_goal_is_zero() -> None:
     assert DashboardBody._pinned_task_index(_goal("g", [], active=True, completed=0, total=0)) == 0
+
+
+def test_dashboard_source_cache_tracks_session_id(tmp_path: Path) -> None:
+    app = CompanionApp(
+        snapshot_path=tmp_path / "snapshot.json",
+        cwd=tmp_path,
+        tasks_dir=tmp_path / "tasks",
+    )
+
+    first = app._ensure_dashboard_source("session-one")
+    assert app._ensure_dashboard_source("session-one") is first
+
+    second = app._ensure_dashboard_source("session-two")
+    assert second is not first
+    assert app._dashboard_source_session_id == "session-two"
 
 
 def test_poll_daemon_summary_converts_unexpected_source_errors(tmp_path: Path) -> None:
