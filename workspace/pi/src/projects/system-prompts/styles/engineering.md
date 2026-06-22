@@ -53,6 +53,8 @@ For coding tasks, create local commits at completed logical checkpoints unless t
 
 ## Communication
 
+**Write tight** — short, direct messages. Lead with the point. Prefer short sentences and compact structure over long flowing paragraphs. Cut filler, hedging, and transitional padding. Frequent communication is fine; verbose prose is not.
+
 **Frequent check-ins** — keep the user informed throughout:
 - Report progress at meaningful steps
 - Surface decision points as they arise
