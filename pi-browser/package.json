@@ -1,23 +1,17 @@
 {
-	"name": "pi-engineering",
+	"name": "pi-browser",
 	"type": "module",
 	"version": "1.0.0",
 	"engines": {
 		"node": ">=24"
 	},
-	"description": "Basecamp engineering tools and skills — BigQuery, Python, SQL, dbt, marimo, code review.",
+	"description": "Basecamp browser automation tools for headed Chrome/Brave over CDP.",
 	"keywords": [
 		"pi-package"
 	],
 	"pi": {
 		"extensions": [
 			"./index.ts"
-		],
-		"skills": [
-			"./skills"
-		],
-		"prompts": [
-			"./prompts"
 		]
 	},
 	"scripts": {
@@ -31,6 +25,10 @@
 	"peerDependencies": {
 		"pi-core": "*",
 		"@earendil-works/pi-coding-agent": "*"
+	},
+	"dependencies": {
+		"puppeteer-core": "^24.0.0",
+		"@sinclair/typebox": "^0.34.0"
 	},
 	"devDependencies": {
 		"pi-core": "file:../core/pi",
