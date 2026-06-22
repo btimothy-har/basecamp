@@ -28,7 +28,7 @@ The socket lives under `~/.pi/basecamp/swarm/daemon.sock` and is restricted to t
 
 ## Identity model
 
-The public async-agent identity is `agent_handle`, a readable path-safe alias such as `scout-mossy-otter-a1b2c3`.
+The public async-agent identity is `agent_handle`, a readable path-safe alias such as `mossy-otter-a1b2c3`. Generated handles are type-free; use the separate `agent_type` field for agent definition metadata.
 
 `agent_id` is a private durable UUID-like daemon identity. It remains the primary key for sessions, report authorization, process bookkeeping, and child `BASECAMP_AGENT_ID` values. It may appear in trusted extension-daemon frames, but LLM-facing tools must not present it as the handle.
 
@@ -95,7 +95,7 @@ Waits for one or more public agent handles:
   "type": "wait",
   "v": 11,
   "agent_ids": [],
-  "agent_handles": ["scout-mossy-otter-a1b2c3"],
+  "agent_handles": ["mossy-otter-a1b2c3"],
   "mode": "all",
   "timeout_s": 30
 }

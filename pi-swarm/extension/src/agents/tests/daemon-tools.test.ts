@@ -202,7 +202,7 @@ describe("daemon async tools", () => {
 			assert.equal(outbound.spec.env.BASECAMP_PROJECT, "proj");
 			assert.equal(outbound.spec.env.BASECAMP_PARENT_SESSION, process.env.BASECAMP_SESSION_NAME ?? "session-name");
 			assert.equal(outbound.spec.env.BASECAMP_AGENT_TITLE, "(Agent) hello world");
-			assert.match(outbound.agent_handle ?? "", /^ad-hoc-[a-z]+-[a-z]+-[0-9a-f]{6}$/);
+			assert.match(outbound.agent_handle ?? "", /^[a-z]+-[a-z]+-[0-9a-f]{6}$/);
 			assert.notEqual(outbound.agent_handle, outbound.agent_id);
 			assert.equal(outbound.agent_type, "ad-hoc");
 			assert.equal(outbound.run_kind, "ad-hoc");
@@ -343,7 +343,7 @@ describe("daemon async tools", () => {
 		const sessionId = outbound.spec.argv[sessionIdFlagIndex + 1];
 		assert.equal(sessionId, agentSegment);
 		assert.equal(outbound.agent_id, agentSegment);
-		assert.match(outbound.agent_handle ?? "", /^ad-hoc-[a-z]+-[a-z]+-[0-9a-f]{6}$/);
+		assert.match(outbound.agent_handle ?? "", /^[a-z]+-[a-z]+-[0-9a-f]{6}$/);
 		assert.notEqual(outbound.agent_handle, agentSegment);
 
 		connection.emit({
@@ -516,7 +516,7 @@ describe("daemon async tools", () => {
 		);
 		await new Promise((resolve) => setImmediate(resolve));
 		const first = connection.sent[0] as Extract<Frame, { type: "dispatch" }>;
-		assert.match(first.agent_handle ?? "", /^scout-[a-z]+-[a-z]+-[0-9a-f]{6}$/);
+		assert.match(first.agent_handle ?? "", /^[a-z]+-[a-z]+-[0-9a-f]{6}$/);
 		assert.equal(first.agent_type, "scout");
 		assert.equal(first.run_kind, "named-read-only");
 
@@ -533,7 +533,7 @@ describe("daemon async tools", () => {
 		assert.equal(second.agent_id, first.agent_id);
 		assert.notEqual(second.run_id, first.run_id);
 		assert.notEqual(second.agent_handle, first.agent_handle);
-		assert.match(second.agent_handle ?? "", /^scout-[a-z]+-[a-z]+-[0-9a-f]{6}$/);
+		assert.match(second.agent_handle ?? "", /^[a-z]+-[a-z]+-[0-9a-f]{6}$/);
 
 		connection.emit({
 			type: "dispatch_ack",
@@ -549,7 +549,7 @@ describe("daemon async tools", () => {
 		assert.match(result.content[0].text, new RegExp(String(second.agent_handle)));
 	});
 
-	it("dispatch_agent retasks an existing handle with its internal agent id", async () => {
+	it("dispatch_agent retasks an existing legacy type-prefixed handle with its internal agent id", async () => {
 		trackSkillInvocation("agents");
 		const connection = new MockConnection();
 		const { pi, tools } = createMockPi();
@@ -611,7 +611,7 @@ describe("daemon async tools", () => {
 		assert.doesNotMatch(result.content[0].text, /00000000-0000-4000-8000-000000000001/);
 	});
 
-	it("dispatch_agent rejects changing an existing handle's agent type", async () => {
+	it("dispatch_agent rejects changing an existing legacy handle's agent type", async () => {
 		trackSkillInvocation("agents");
 		const connection = new MockConnection();
 		const { pi, tools } = createMockPi();
@@ -666,7 +666,7 @@ describe("daemon async tools", () => {
 
 		const executePromise = waitTool.execute(
 			"1",
-			{ agent_handles: ["scout-amber-fox-a1b2c3", "worker-mossy-lynx-d4e5f6"], timeout_s: 30 },
+			{ agent_handles: ["amber-fox-a1b2c3", "mossy-lynx-d4e5f6"], timeout_s: 30 },
 			new AbortController().signal,
 			() => {},
 			{},
@@ -676,24 +676,24 @@ describe("daemon async tools", () => {
 		const outbound = connection.sent[0] as Extract<Frame, { type: "wait" }>;
 		assert.equal(outbound.type, "wait");
 		assert.deepEqual(outbound.agent_ids, []);
-		assert.deepEqual(outbound.agent_handles, ["scout-amber-fox-a1b2c3", "worker-mossy-lynx-d4e5f6"]);
+		assert.deepEqual(outbound.agent_handles, ["amber-fox-a1b2c3", "mossy-lynx-d4e5f6"]);
 		assert.equal(outbound.timeout_s, 30);
 
 		connection.emit({
 			type: "wait_result",
 			v: PROTOCOL_VERSION,
 			results: [
-				{ agent_handle: "scout-amber-fox-a1b2c3", status: "completed", result: "duplicate", error: null },
-				{ agent_handle: "scout-amber-fox-a1b2c3", status: "completed", result: "duplicate", error: null },
+				{ agent_handle: "amber-fox-a1b2c3", status: "completed", result: "duplicate", error: null },
+				{ agent_handle: "amber-fox-a1b2c3", status: "completed", result: "duplicate", error: null },
 			],
 		});
 		connection.emit({
 			type: "wait_result",
 			v: PROTOCOL_VERSION,
 			results: [
-				{ agent_handle: "scout-amber-fox-a1b2c3", status: "completed", result: "done", error: null },
+				{ agent_handle: "amber-fox-a1b2c3", status: "completed", result: "done", error: null },
 				{
-					agent_handle: "worker-mossy-lynx-d4e5f6",
+					agent_handle: "mossy-lynx-d4e5f6",
 					status: "failed",
 					result: "compensation skipped",
 					error: "boom",
@@ -766,7 +766,7 @@ describe("daemon async tools", () => {
 
 		const result = await waitTool.execute(
 			"1",
-			{ agent_handles: ["scout-amber-fox-a1b2c3"], timeout_s: 30 },
+			{ agent_handles: ["amber-fox-a1b2c3"], timeout_s: 30 },
 			new AbortController().signal,
 			() => {},
 			{},
@@ -799,7 +799,7 @@ describe("daemon async tools", () => {
 			agents: [
 				{
 					agent_id: "00000000-0000-4000-8000-000000000001",
-					agent_handle: "scout-amber-fox-a1b2c3",
+					agent_handle: "amber-fox-a1b2c3",
 					parent_id: "session-1",
 					role: "agent",
 					session_name: "agent-one",
@@ -809,7 +809,7 @@ describe("daemon async tools", () => {
 				},
 				{
 					agent_id: "00000000-0000-4000-8000-000000000002",
-					agent_handle: "worker-mossy-lynx-d4e5f6",
+					agent_handle: "mossy-lynx-d4e5f6",
 					parent_id: "00000000-0000-4000-8000-000000000001",
 					role: "agent",
 					session_name: "agent-two",
@@ -824,11 +824,11 @@ describe("daemon async tools", () => {
 		const result = await executePromise;
 		assert.equal(result.isError, undefined);
 		assert.equal(result.details.agents.length, 2);
-		assert.equal(result.details.agents[0].agentHandle, "scout-amber-fox-a1b2c3");
+		assert.equal(result.details.agents[0].agentHandle, "amber-fox-a1b2c3");
 		assert.equal("agent_id" in result.details.agents[0], false);
 		assert.equal(result.details.agents[1].status, "completed");
-		assert.match(result.content[0].text, /scout-amber-fox-a1b2c3/);
-		assert.match(result.content[0].text, /worker-mossy-lynx-d4e5f6/);
+		assert.match(result.content[0].text, /amber-fox-a1b2c3/);
+		assert.match(result.content[0].text, /mossy-lynx-d4e5f6/);
 		assert.doesNotMatch(result.content[0].text, /00000000-0000-4000-8000-000000000001/);
 		assert.match(result.content[0].text, /agent-one/);
 		assert.match(result.content[0].text, /agent-two/);
@@ -863,7 +863,7 @@ describe("daemon async tools", () => {
 		const controller = new AbortController();
 		const executePromise = waitTool.execute(
 			"1",
-			{ agent_handles: "scout-amber-fox-a1b2c3", timeout_s: 30 },
+			{ agent_handles: "amber-fox-a1b2c3", timeout_s: 30 },
 			controller.signal,
 			() => {},
 			{},

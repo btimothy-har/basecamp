@@ -3,8 +3,8 @@
   "v": 11,
   "agent_ids": [],
   "agent_handles": [
-    "scout-mossy-otter-a1b2c3",
-    "worker-brisk-lynx-d4e5f6"
+    "mossy-otter-a1b2c3",
+    "brisk-lynx-d4e5f6"
   ],
   "mode": "all",
   "timeout_s": 30.0

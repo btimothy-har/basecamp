@@ -79,19 +79,11 @@ const HANDLE_ADJECTIVES = [
 ] as const;
 const HANDLE_NOUNS = ["badger", "falcon", "fox", "heron", "lynx", "otter", "panda", "raven", "tiger", "wren"] as const;
 
-function handlePrefix(agentLabel: string): string {
-	const safe = agentLabel
-		.toLowerCase()
-		.replace(/[^a-z0-9]+/g, "-")
-		.replace(/^-+|-+$/g, "");
-	return safe || "agent";
-}
-
-function buildAgentHandle(agentLabel: string): string {
+function buildAgentHandle(): string {
 	const entropy = randomUUID().replace(/-/g, "");
 	const adjective = HANDLE_ADJECTIVES[Number.parseInt(entropy.slice(0, 2), 16) % HANDLE_ADJECTIVES.length];
 	const noun = HANDLE_NOUNS[Number.parseInt(entropy.slice(2, 4), 16) % HANDLE_NOUNS.length];
-	return `${handlePrefix(agentLabel)}-${adjective}-${noun}-${entropy.slice(4, 10)}`;
+	return `${adjective}-${noun}-${entropy.slice(4, 10)}`;
 }
 
 function normalizeHandles(input: string | string[] | undefined): string[] {
@@ -274,7 +266,7 @@ export function registerDaemonTools(
 				};
 			}
 
-			let agentHandle = requestedHandle ?? buildAgentHandle(plan.agentLabel ?? "ad-hoc");
+			let agentHandle = requestedHandle ?? buildAgentHandle();
 			let result: Awaited<ReturnType<typeof daemonClient.dispatchAgent>> | null = null;
 			const dispatchEnv = {
 				...processEnvForSpawn(),
@@ -297,7 +289,7 @@ export function registerDaemonTools(
 				});
 				if (result.status !== "rejected" || result.reason !== "duplicate_agent_handle" || attempt === attempts - 1)
 					break;
-				agentHandle = buildAgentHandle(plan.agentLabel ?? "ad-hoc");
+				agentHandle = buildAgentHandle();
 			}
 
 			if (!result || result.status === "rejected") {
