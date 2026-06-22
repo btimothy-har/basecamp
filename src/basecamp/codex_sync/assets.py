@@ -238,7 +238,9 @@ def _load_skills(projection: Mapping[str, Any]) -> list[SkillDefinition]:
 PROJECTION = _load_projection()
 
 _instructions = _section(PROJECTION, "instructions", _PROJECTION_MANIFEST)
-OPERATING_GUIDELINES = _read_asset_ref(_string(_instructions, "developer_instructions", f"{_PROJECTION_MANIFEST} [instructions]")).strip()
+OPERATING_GUIDELINES = _read_asset_ref(
+    _string(_instructions, "developer_instructions", f"{_PROJECTION_MANIFEST} [instructions]")
+).strip()
 
 AGENTS = _load_agents(PROJECTION)
 SKILLS = _load_skills(PROJECTION)
