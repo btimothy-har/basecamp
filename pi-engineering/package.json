@@ -32,6 +32,9 @@
 		"pi-core": "*",
 		"@earendil-works/pi-coding-agent": "*"
 	},
+	"dependencies": {
+		"puppeteer-core": "^24.0.0"
+	},
 	"devDependencies": {
 		"pi-core": "file:../core/pi",
 		"@biomejs/biome": "^2.0.0",

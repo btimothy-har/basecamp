@@ -4,6 +4,7 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { describe, it } from "node:test";
+import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import {
 	buildAgentRunName,
 	buildAgentTaskText,
@@ -11,6 +12,7 @@ import {
 	ensureAgentDir,
 	sanitizeAgentSpawnEnv,
 } from "../executor.ts";
+import { getBasecampExtensionToolNames } from "../launch.ts";
 import type { AgentConfig } from "../types.ts";
 
 describe("buildAgentRunName", () => {
@@ -179,6 +181,33 @@ describe("subagent tool allowlist", () => {
 		}
 		for (const tool of PARENT_ONLY_TOOLS) {
 			assert.equal(tools.includes(tool), false, `${tool} should not be available`);
+		}
+	});
+});
+
+describe("getBasecampExtensionToolNames", () => {
+	it("excludes parent-only and browser tools from subagent extension tools", () => {
+		const extensionRoot = fs.mkdtempSync(path.join(os.tmpdir(), "basecamp-extension-root-"));
+		try {
+			const sourceInfo = (name: string) => ({
+				source: "package",
+				baseDir: extensionRoot,
+				path: path.join(extensionRoot, `${name}.ts`),
+			});
+			const tools = [
+				"bq_query",
+				"browser_eval",
+				"browser_screenshot",
+				"agent",
+				"escalate",
+				"publish_pr",
+				"publish_issue",
+			].map((name) => ({ name, sourceInfo: sourceInfo(name) }));
+			const pi = { getAllTools: () => tools } as unknown as ExtensionAPI;
+
+			assert.deepEqual(getBasecampExtensionToolNames(pi, extensionRoot), ["bq_query"]);
+		} finally {
+			fs.rmSync(extensionRoot, { recursive: true, force: true });
 		}
 	});
 });

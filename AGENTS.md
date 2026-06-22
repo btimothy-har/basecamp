@@ -42,7 +42,7 @@ pi-ui/                         # Session UI package: footer, title, mode editor
 workspace/pi/                  # pi-workspace TypeScript package: project context + workspace service
 pi-tasks/                      # Tasks, planning, workflow skills
 pi-git/                        # Git guards, PR/issue/review workflows
-pi-engineering/                # Engineering tools and skills
+pi-engineering/                # Engineering tools (BigQuery, browser automation) and skills
 pi-companion/                  # Companion bounded context
 ├── pi/                        # TypeScript session hooks, tmux panes, analysis registration
 └── tui/                       # Python companion TUI/analyzer package
