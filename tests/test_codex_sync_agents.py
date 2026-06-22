@@ -1,10 +1,20 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 import tomlkit
 
 from basecamp.codex_sync.agents import MANAGED_MARKER, UnmanagedAgentConflictError, install_agents, preflight_agents
-from basecamp.codex_sync.assets import AGENTS
+from basecamp.codex_sync.assets import AGENTS, PROJECTION
+
+
+def test_agents_are_declared_by_projection_manifest() -> None:
+    declared_files = list(PROJECTION["agents"]["files"])
+
+    assert declared_files == [f"agents/{agent.filename}" for agent in AGENTS]
+    for ref in declared_files:
+        assert (Path("codex") / ref).exists()
 
 
 def test_agents_are_written_as_brand_neutral_minimal_toml(tmp_path) -> None:

@@ -3,7 +3,7 @@ from __future__ import annotations
 import pytest
 import tomlkit
 
-from basecamp.codex_sync.assets import WORKING_PREFERENCES
+from basecamp.codex_sync.assets import OPERATING_GUIDELINES
 from basecamp.codex_sync.config import (
     InvalidCodexConfigError,
     UnsupportedDeveloperInstructionsError,
@@ -18,32 +18,50 @@ def test_config_creation_adds_instructions_only(tmp_path) -> None:
 
     assert changed is True
     config = tomlkit.parse(config_path.read_text())
-    assert config["developer_instructions"] == WORKING_PREFERENCES
+    assert config["developer_instructions"] == OPERATING_GUIDELINES
     assert "sandbox_workspace_write" not in config
 
 
-def test_existing_instruction_is_preserved_and_working_preferences_appended(tmp_path) -> None:
+def test_existing_instruction_is_preserved_and_operating_guidelines_appended(tmp_path) -> None:
     config_path = tmp_path / "config.toml"
     config_path.write_text('developer_instructions = "Keep this instruction."\n')
 
     merge_config(config_path)
 
     config = tomlkit.parse(config_path.read_text())
-    assert config["developer_instructions"] == f"Keep this instruction.\n\n{WORKING_PREFERENCES}"
+    assert config["developer_instructions"] == f"Keep this instruction.\n\n{OPERATING_GUIDELINES}"
 
 
 def test_existing_managed_block_is_replaced_idempotently(tmp_path) -> None:
     config_path = tmp_path / "config.toml"
-    old_block = "<working_preferences>\nold\n</working_preferences>"
+    old_block = "<operating_guidelines>\nold\n</operating_guidelines>"
     config_path.write_text(f'developer_instructions = """Intro\n\n{old_block}\n\nOutro"""\n')
 
     assert merge_config(config_path) is True
     first = config_path.read_text()
     config = tomlkit.parse(first)
-    assert config["developer_instructions"] == f"Intro\n\n{WORKING_PREFERENCES}\n\nOutro"
+    assert config["developer_instructions"] == f"Intro\n\n{OPERATING_GUIDELINES}\n\nOutro"
 
     assert merge_config(config_path) is False
     assert config_path.read_text() == first
+
+
+def test_legacy_working_preferences_block_is_migrated(tmp_path) -> None:
+    config_path = tmp_path / "config.toml"
+    old_block = "<working_preferences>\nold\n</working_preferences>"
+    config_path.write_text(f'developer_instructions = """Intro\n\n{old_block}\n\nOutro"""\n')
+
+    merge_config(config_path)
+
+    config = tomlkit.parse(config_path.read_text())
+    assert config["developer_instructions"] == f"Intro\n\n{OPERATING_GUIDELINES}\n\nOutro"
+
+
+def test_operating_guidelines_are_brand_neutral() -> None:
+    assert OPERATING_GUIDELINES.startswith("<operating_guidelines>")
+    assert OPERATING_GUIDELINES.rstrip().endswith("</operating_guidelines>")
+    assert "Basecamp" not in OPERATING_GUIDELINES
+    assert "Pi" not in OPERATING_GUIDELINES
 
 
 def test_existing_sandbox_config_is_preserved_without_writable_roots(tmp_path) -> None:
