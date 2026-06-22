@@ -1,10 +1,19 @@
 import assert from "node:assert/strict";
-import { describe, it } from "node:test";
+import * as fs from "node:fs";
+import * as os from "node:os";
+import * as path from "node:path";
+import { afterEach, describe, it } from "node:test";
 import type { PiSwarmDependencies } from "../../dependencies.ts";
 import type { DaemonConnection } from "../daemon/client.ts";
 import type { Frame } from "../daemon/frames.ts";
 import { registerDaemonClient } from "../daemon/index.ts";
 import { registerDaemonReporter } from "../daemon/reporter.ts";
+import {
+	BASECAMP_RUN_ATTEMPT,
+	BASECAMP_RUN_RESULT_PATH,
+	BASECAMP_RUNNER_MANAGED_RESULT,
+	readRunResultSidecar,
+} from "../daemon/run-result.ts";
 
 class MockPi {
 	handlers = new Map<string, Array<(event: unknown, ctx?: unknown) => unknown>>();
@@ -42,6 +51,31 @@ async function waitForFrameCount(sent: Frame[], count: number): Promise<void> {
 function telemetryFrames(sent: Frame[]): Array<Extract<Frame, { type: "telemetry" }>> {
 	return sent.filter((frame): frame is Extract<Frame, { type: "telemetry" }> => frame.type === "telemetry");
 }
+
+const tempDirs: string[] = [];
+const originalRunnerEnv = {
+	[BASECAMP_RUNNER_MANAGED_RESULT]: process.env[BASECAMP_RUNNER_MANAGED_RESULT],
+	[BASECAMP_RUN_RESULT_PATH]: process.env[BASECAMP_RUN_RESULT_PATH],
+	[BASECAMP_RUN_ATTEMPT]: process.env[BASECAMP_RUN_ATTEMPT],
+};
+
+async function tempRunResultPath(): Promise<string> {
+	const directory = await fs.promises.mkdtemp(path.join(os.tmpdir(), "basecamp-reporter-result-"));
+	tempDirs.push(directory);
+	return path.join(directory, "result.json");
+}
+
+function restoreEnv(name: string, value: string | undefined): void {
+	if (value === undefined) delete process.env[name];
+	else process.env[name] = value;
+}
+
+afterEach(async () => {
+	restoreEnv(BASECAMP_RUNNER_MANAGED_RESULT, originalRunnerEnv[BASECAMP_RUNNER_MANAGED_RESULT]);
+	restoreEnv(BASECAMP_RUN_RESULT_PATH, originalRunnerEnv[BASECAMP_RUN_RESULT_PATH]);
+	restoreEnv(BASECAMP_RUN_ATTEMPT, originalRunnerEnv[BASECAMP_RUN_ATTEMPT]);
+	await Promise.all(tempDirs.splice(0).map((directory) => fs.promises.rm(directory, { recursive: true, force: true })));
+});
 
 describe("daemon reporter", () => {
 	const deps = {
@@ -134,6 +168,114 @@ describe("daemon reporter", () => {
 			for (const frame of telemetryFrames(sent)) {
 				assert.equal(frame.report_token, "token-for-tests");
 			}
+		} finally {
+			if (priorReportToken === undefined) delete process.env.BASECAMP_REPORT_TOKEN;
+			else process.env.BASECAMP_REPORT_TOKEN = priorReportToken;
+		}
+	});
+
+	it("writes runner-managed non-empty final result sidecar without result report", async () => {
+		const sent: Frame[] = [];
+		const connection: DaemonConnection = {
+			send(frame) {
+				sent.push(frame);
+			},
+			on() {
+				return () => {};
+			},
+			onClose() {
+				return () => {};
+			},
+			close() {
+				// no-op
+			},
+		};
+
+		const runResultPath = await tempRunResultPath();
+		const priorReportToken = process.env.BASECAMP_REPORT_TOKEN;
+		try {
+			process.env.BASECAMP_REPORT_TOKEN = "token-for-tests";
+			process.env[BASECAMP_RUNNER_MANAGED_RESULT] = "1";
+			process.env[BASECAMP_RUN_RESULT_PATH] = runResultPath;
+			process.env[BASECAMP_RUN_ATTEMPT] = "2";
+			const pi = new MockPi();
+			registerDaemonReporter(pi as unknown as any, {
+				connectionPromise: Promise.resolve(connection),
+				runId: "run-1",
+				agentId: "agent-1",
+			});
+
+			await pi.emit("agent_end", {
+				type: "agent_end",
+				messages: [{ role: "assistant", content: [{ type: "text", text: "final" }] }],
+			});
+			await waitForFrameCount(sent, 1);
+
+			const telemetry = telemetryFrames(sent);
+			assert.deepEqual(
+				telemetry.map((frame) => frame.kind),
+				["agent_result"],
+			);
+			assert.equal(telemetry[0]?.payload.snippet, "final");
+			assert.equal(
+				sent.some((frame) => frame.type === "result_report"),
+				false,
+			);
+			assert.deepEqual(await readRunResultSidecar(runResultPath), {
+				run_id: "run-1",
+				agent_id: "agent-1",
+				attempts: [{ attempt: 2, status: "ok", result: "final", error: null }],
+				final: null,
+			});
+		} finally {
+			if (priorReportToken === undefined) delete process.env.BASECAMP_REPORT_TOKEN;
+			else process.env.BASECAMP_REPORT_TOKEN = priorReportToken;
+		}
+	});
+
+	it("writes runner-managed empty final result sidecar without result report", async () => {
+		const sent: Frame[] = [];
+		const connection: DaemonConnection = {
+			send(frame) {
+				sent.push(frame);
+			},
+			on() {
+				return () => {};
+			},
+			onClose() {
+				return () => {};
+			},
+			close() {
+				// no-op
+			},
+		};
+
+		const runResultPath = await tempRunResultPath();
+		const priorReportToken = process.env.BASECAMP_REPORT_TOKEN;
+		try {
+			process.env.BASECAMP_REPORT_TOKEN = "token-for-tests";
+			process.env[BASECAMP_RUNNER_MANAGED_RESULT] = "1";
+			process.env[BASECAMP_RUN_RESULT_PATH] = runResultPath;
+			process.env[BASECAMP_RUN_ATTEMPT] = "1";
+			const pi = new MockPi();
+			registerDaemonReporter(pi as unknown as any, {
+				connectionPromise: Promise.resolve(connection),
+				runId: "run-1",
+				agentId: "agent-1",
+			});
+
+			await pi.emit("agent_end", {
+				type: "agent_end",
+				messages: [],
+			});
+
+			assert.deepEqual(sent, []);
+			assert.deepEqual(await readRunResultSidecar(runResultPath), {
+				run_id: "run-1",
+				agent_id: "agent-1",
+				attempts: [{ attempt: 1, status: "ok", result: "", error: null }],
+				final: null,
+			});
 		} finally {
 			if (priorReportToken === undefined) delete process.env.BASECAMP_REPORT_TOKEN;
 			else process.env.BASECAMP_REPORT_TOKEN = priorReportToken;
