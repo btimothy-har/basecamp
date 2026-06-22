@@ -221,7 +221,7 @@ def sync_codex() -> None:
         "Codex sync complete: "
         f"config={'updated' if result.config_changed else 'unchanged'}, "
         f"agents={result.agents.installed} installed/{result.agents.updated} updated/"
-        f"{result.agents.unchanged} unchanged, scratch={result.scratch_dir}"
+        f"{result.agents.unchanged} unchanged"
     )
 
 

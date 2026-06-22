@@ -8,11 +8,9 @@ from typing import Any
 
 import tomlkit
 from tomlkit.exceptions import TOMLKitError
-from tomlkit.items import AbstractTable, Array
 
-from basecamp.codex_sync.assets import SCRATCH_ROOT, WORKING_PREFERENCES
+from basecamp.codex_sync.assets import WORKING_PREFERENCES
 
-WRITABLE_ROOT = SCRATCH_ROOT
 _WORKING_PREFERENCES_RE = re.compile(r"<working_preferences>.*?</working_preferences>", re.DOTALL)
 
 
@@ -34,34 +32,7 @@ class UnsupportedDeveloperInstructionsError(CodexConfigError):
         super().__init__("Unsupported developer_instructions value; expected a string.")
 
 
-class UnsupportedSandboxConfigError(CodexConfigError):
-    """Raised when sandbox_workspace_write cannot be safely merged."""
-
-    detail = "unsupported shape"
-
-    def __init__(self) -> None:
-        super().__init__(f"Unsupported sandbox_workspace_write config: {self.detail}.")
-
-
-class UnsupportedSandboxTableError(UnsupportedSandboxConfigError):
-    """Raised when sandbox_workspace_write is not a table."""
-
-    detail = "expected a table"
-
-
-class UnsupportedWritableRootsArrayError(UnsupportedSandboxConfigError):
-    """Raised when writable_roots is not an array."""
-
-    detail = "writable_roots must be an array of strings"
-
-
-class UnsupportedWritableRootsEntriesError(UnsupportedSandboxConfigError):
-    """Raised when writable_roots contains non-string entries."""
-
-    detail = "writable_roots must contain only strings"
-
-
-def merge_config(config_path: Path, *, writable_root: str = WRITABLE_ROOT) -> bool:
+def merge_config(config_path: Path) -> bool:
     """Merge Codex user config, preserving existing TOML comments.
 
     Returns:
@@ -71,7 +42,6 @@ def merge_config(config_path: Path, *, writable_root: str = WRITABLE_ROOT) -> bo
     document = _parse_config(previous, config_path)
 
     _merge_developer_instructions(document)
-    _merge_writable_roots(document, writable_root=writable_root)
 
     rendered = tomlkit.dumps(document)
     if rendered == previous:
@@ -105,25 +75,3 @@ def _merge_developer_instructions(document: Any) -> None:
         return
 
     document["developer_instructions"] = f"{existing}\n\n{WORKING_PREFERENCES}"
-
-
-def _merge_writable_roots(document: Any, *, writable_root: str) -> None:
-    sandbox = document.get("sandbox_workspace_write")
-    if sandbox is None:
-        sandbox = tomlkit.table()
-        document["sandbox_workspace_write"] = sandbox
-    elif not isinstance(sandbox, AbstractTable):
-        raise UnsupportedSandboxTableError()
-
-    roots = sandbox.get("writable_roots")
-    if roots is None:
-        roots = tomlkit.array()
-        sandbox["writable_roots"] = roots
-    elif not isinstance(roots, (list, Array)):
-        raise UnsupportedWritableRootsArrayError()
-
-    if any(not isinstance(root, str) for root in roots):
-        raise UnsupportedWritableRootsEntriesError()
-
-    if writable_root not in roots:
-        roots.append(writable_root)
