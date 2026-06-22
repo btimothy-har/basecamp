@@ -165,7 +165,7 @@ def test_render_daemon_summary_running_uses_hourglass() -> None:
         total=1,
         agents=[
             DaemonSummaryAgent(
-                agent_handle="worker-mossy-otter",
+                agent_handle="mossy-otter-c3d4e5",
                 agent_type="worker",
                 role="agent",
                 session_name="worker",
@@ -189,7 +189,7 @@ def test_render_daemon_summary_populated() -> None:
         total=2,
         agents=[
             DaemonSummaryAgent(
-                agent_handle="scout-mossy-otter",
+                agent_handle="mossy-otter-b2c3d4",
                 agent_type="scout",
                 role="agent",
                 session_name="scout",
@@ -202,7 +202,7 @@ def test_render_daemon_summary_populated() -> None:
                 ended_at="2026-01-01T00:00:03Z",
             ),
             DaemonSummaryAgent(
-                agent_handle="worker-brisk-lynx",
+                agent_handle="brisk-lynx-a1b2c3",
                 agent_type="worker",
                 role="agent",
                 session_name="worker",
@@ -219,8 +219,8 @@ def test_render_daemon_summary_populated() -> None:
     text = _to_text(_render_daemon_summary(summary))
     assert "scout" in text
     assert "worker" in text
-    assert "scout-mossy-otter" not in text
-    assert "worker-brisk-lynx" not in text
+    assert "mossy-otter-b2c3d4" not in text
+    assert "brisk-lynx-a1b2c3" not in text
     assert "completed" in text
     assert "failed" in text
     assert "all good" in text

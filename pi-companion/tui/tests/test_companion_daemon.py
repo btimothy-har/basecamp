@@ -65,7 +65,7 @@ def test_poll_parses_summary_and_encodes_root_id_and_limit() -> None:
         },
         "agents": [
             {
-                "agent_handle": "scout-mossy-otter",
+                "agent_handle": "mossy-otter-b2c3d4",
                 "agent_id_short": "def456",
                 "agent_type": "scout",
                 "model": "claude-sonnet-4-5",
@@ -97,7 +97,7 @@ def test_poll_parses_summary_and_encodes_root_id_and_limit() -> None:
     assert result.session_active is True
     assert len(result.agents) == 1
     assert result.agents[0] == DaemonSummaryAgent(
-        agent_handle="scout-mossy-otter",
+        agent_handle="mossy-otter-b2c3d4",
         agent_type="scout",
         role="agent",
         session_name="scout",
@@ -142,7 +142,7 @@ def test_poll_parses_summary_and_encodes_root_id_and_limit() -> None:
 def test_poll_messages_parses_payload_and_encodes_params() -> None:
     payload = {
         "root_id": "root",
-        "agent_handle": "worker-brisk-lynx",
+        "agent_handle": "brisk-lynx-a1b2c3",
         "messages": [
             {
                 "kind": "assistant_output",
@@ -158,11 +158,11 @@ def test_poll_messages_parses_payload_and_encodes_params() -> None:
     fake_connection, captured = _build_fake_connection(json.dumps(payload))
     source = DaemonSummarySource("/tmp/daemon.sock", connection_factory=fake_connection)
 
-    result = source.poll_messages("root&child", "worker/brisk", limit=3)
+    result = source.poll_messages("root&child", "brisk/lynx", limit=3)
 
     assert isinstance(result, DaemonAgentMessagesOk)
     assert result.root_id == "root"
-    assert result.agent_handle == "worker-brisk-lynx"
+    assert result.agent_handle == "brisk-lynx-a1b2c3"
     assert result.messages == [
         DaemonAgentMessage(
             kind="assistant_output",
@@ -179,7 +179,7 @@ def test_poll_messages_parses_payload_and_encodes_params() -> None:
     assert urlsplit(captured["path"]).path == "/runs/messages"
     assert parsed == {
         "root_id": ["root&child"],
-        "agent_handle": ["worker/brisk"],
+        "agent_handle": ["brisk/lynx"],
         "limit": ["3"],
     }
 

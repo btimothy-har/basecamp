@@ -37,7 +37,7 @@ def _to_text(renderable: object) -> str:
 
 def _agent(**overrides: object) -> DaemonSummaryAgent:
     values = {
-        "agent_handle": "worker-brisk-lynx",
+        "agent_handle": "brisk-lynx-a1b2c3",
         "agent_type": "worker",
         "role": "agent",
         "session_name": "worker",
@@ -84,7 +84,7 @@ def test_daemon_parser_reads_task_and_activity() -> None:
         "counts": {"pending": 0, "running": 1, "completed": 0, "failed": 0, "total": 1},
         "agents": [
             {
-                "agent_handle": "worker-brisk-lynx",
+                "agent_handle": "brisk-lynx-a1b2c3",
                 "agent_id_short": "abc123",
                 "agent_type": "worker",
                 "model": "gpt-5.5",
@@ -175,7 +175,7 @@ def test_daemon_parser_tolerates_malformed_optional_projection() -> None:
         "counts": {"pending": 0, "running": 1, "completed": 0, "failed": 0, "total": 1},
         "agents": [
             {
-                "agent_handle": "worker-brisk-lynx",
+                "agent_handle": "brisk-lynx-a1b2c3",
                 "agent_type": "worker",
                 "role": "agent",
                 "session_name": "worker",
@@ -281,7 +281,7 @@ def test_swarm_renders_left_list_and_ordered_detail_sections() -> None:
             swarm.update_agent_messages(
                 DaemonAgentMessagesOk(
                     root_id="root",
-                    agent_handle="worker-brisk-lynx",
+                    agent_handle="brisk-lynx-a1b2c3",
                     messages=[
                         DaemonAgentMessage(
                             kind="assistant_output",
@@ -320,14 +320,14 @@ def test_swarm_renders_left_list_and_ordered_detail_sections() -> None:
             agents_text = _to_text(agents_panel.children[0].render())
             detail_text = _to_text(swarm.query_one("#swarm-detail-content", Static).content)
 
-            assert "▸ ⏳ worker-brisk-lynx (worker) [abc123]" in agents_text
+            assert "▸ ⏳ brisk-lynx-a1b2c3 (worker) [abc123]" in agents_text
             assert "scout-done (scout)" in agents_text
             assert "worker-failed (worker)" in agents_text
             assert "Build the thing task title" not in agents_text
             assert "failed worker task title" not in agents_text
             assert "completed" in agents_text
             assert "failed" in agents_text
-            assert "worker-brisk-lynx (worker)" in detail_text
+            assert "brisk-lynx-a1b2c3 (worker)" in detail_text
             assert "Model: gpt-5.5" in detail_text
             assert "[abc123]" in detail_text
             assert "Goal: Build the thing" in detail_text
