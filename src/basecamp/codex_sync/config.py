@@ -9,9 +9,12 @@ from typing import Any
 import tomlkit
 from tomlkit.exceptions import TOMLKitError
 
-from basecamp.codex_sync.assets import WORKING_PREFERENCES
+from basecamp.codex_sync.assets import OPERATING_GUIDELINES
 
-_WORKING_PREFERENCES_RE = re.compile(r"<working_preferences>.*?</working_preferences>", re.DOTALL)
+_MANAGED_INSTRUCTIONS_RE = re.compile(
+    r"<(working_preferences|operating_guidelines)>.*?</\1>",
+    re.DOTALL,
+)
 
 
 class CodexConfigError(Exception):
@@ -64,14 +67,14 @@ def _parse_config(content: str, config_path: Path) -> Any:
 def _merge_developer_instructions(document: Any) -> None:
     existing = document.get("developer_instructions")
     if existing is None or (isinstance(existing, str) and not existing.strip()):
-        document["developer_instructions"] = WORKING_PREFERENCES
+        document["developer_instructions"] = OPERATING_GUIDELINES
         return
 
     if not isinstance(existing, str):
         raise UnsupportedDeveloperInstructionsError()
 
-    if _WORKING_PREFERENCES_RE.search(existing):
-        document["developer_instructions"] = _WORKING_PREFERENCES_RE.sub(WORKING_PREFERENCES, existing)
+    if _MANAGED_INSTRUCTIONS_RE.search(existing):
+        document["developer_instructions"] = _MANAGED_INSTRUCTIONS_RE.sub(OPERATING_GUIDELINES, existing)
         return
 
-    document["developer_instructions"] = f"{existing}\n\n{WORKING_PREFERENCES}"
+    document["developer_instructions"] = f"{existing}\n\n{OPERATING_GUIDELINES}"

@@ -36,6 +36,7 @@ def test_sync_codex_delegates(monkeypatch) -> None:
     result = SimpleNamespace(
         config_changed=True,
         agents=SimpleNamespace(installed=5, updated=0, unchanged=0),
+        skills=SimpleNamespace(installed=3, updated=0, unchanged=0),
     )
 
     monkeypatch.setattr(cli, "run_codex_sync", lambda: calls.append("codex") or result)
@@ -45,6 +46,7 @@ def test_sync_codex_delegates(monkeypatch) -> None:
     assert invoke_result.exit_code == 0, invoke_result.output
     assert "Codex sync complete: config=updated" in invoke_result.output
     assert "agents=5 installed/0 updated/0 unchanged" in invoke_result.output
+    assert "skills=3 installed/0 updated/0 unchanged" in invoke_result.output
     assert "scratch=" not in invoke_result.output
     assert calls == ["codex"]
 
