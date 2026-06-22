@@ -8,18 +8,13 @@ import subprocess
 import tempfile
 from pathlib import Path
 
-import companion_tui.app as companion_app
-from companion_tui.app import (
-    CompanionApp,
-    DashboardBody,
-    DiffBody,
-    DiffView,
-    FileBrowser,
-    FileList,
-    SwarmBody,
-    WorkspacePanel,
-)
+from companion_tui.app import CompanionApp, WorkspacePanel
 from companion_tui.snapshot import collapse_home
+from companion_tui.ui import files as files_ui
+from companion_tui.ui.dashboard import DashboardBody
+from companion_tui.ui.diff import DiffBody, DiffView, FileList
+from companion_tui.ui.files import FileBrowser
+from companion_tui.ui.swarm import SwarmBody
 from rich.style import Style
 from rich.syntax import Syntax
 from textual.app import App, ComposeResult
@@ -422,14 +417,14 @@ def test_file_browser_open_in_editor(tmp_path: Path, monkeypatch) -> None:
             )
             tree.move_cursor(node)
 
-            monkeypatch.setattr(companion_app.shutil, "which", lambda _: "/fake/code")
-            monkeypatch.setattr(companion_app.subprocess, "Popen", fake_popen)
+            monkeypatch.setattr(files_ui.shutil, "which", lambda _: "/fake/code")
+            monkeypatch.setattr(files_ui.subprocess, "Popen", fake_popen)
             browser = app.query_one("#files-body", FileBrowser)
             browser.action_open_in_editor()
 
             assert popen_calls == [["/fake/code", str(target)]]
 
-            monkeypatch.setattr(companion_app.shutil, "which", lambda _: None)
+            monkeypatch.setattr(files_ui.shutil, "which", lambda _: None)
             browser.action_open_in_editor()
             assert popen_calls == [["/fake/code", str(target)]]
 
