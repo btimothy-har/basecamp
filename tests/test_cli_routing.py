@@ -1,10 +1,8 @@
-from pathlib import Path
 from types import SimpleNamespace
 
 from click.testing import CliRunner
 
 import basecamp.cli as cli
-from basecamp.codex_sync.assets import SCRATCH_ROOT
 
 
 def test_top_level_commands_match_new_shape() -> None:
@@ -38,7 +36,6 @@ def test_sync_codex_delegates(monkeypatch) -> None:
     result = SimpleNamespace(
         config_changed=True,
         agents=SimpleNamespace(installed=5, updated=0, unchanged=0),
-        scratch_dir=Path(SCRATCH_ROOT),
     )
 
     monkeypatch.setattr(cli, "run_codex_sync", lambda: calls.append("codex") or result)
@@ -48,7 +45,7 @@ def test_sync_codex_delegates(monkeypatch) -> None:
     assert invoke_result.exit_code == 0, invoke_result.output
     assert "Codex sync complete: config=updated" in invoke_result.output
     assert "agents=5 installed/0 updated/0 unchanged" in invoke_result.output
-    assert f"scratch={SCRATCH_ROOT}" in invoke_result.output
+    assert "scratch=" not in invoke_result.output
     assert calls == ["codex"]
 
 

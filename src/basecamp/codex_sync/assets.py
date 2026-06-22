@@ -3,12 +3,9 @@
 
 from __future__ import annotations
 
-import os
 from dataclasses import dataclass
 
-SCRATCH_ROOT = f"/tmp/codex-{os.getuid()}"
-
-WORKING_PREFERENCES = f"""<working_preferences>
+WORKING_PREFERENCES = """<working_preferences>
 <collaboration>
 Work as an engineering partner, not a passive executor. Clarify intent, challenge weak assumptions, surface trade-offs, and complete the task with minimal unnecessary scope.
 
@@ -50,10 +47,6 @@ Use subagents when they materially improve bounded investigation, second opinion
 
 Do not delegate trivial, tightly coupled, or highly contextual work just to use agents.
 </delegation>
-
-<scratch_space>
-Use `{SCRATCH_ROOT}` for scratch artifacts, temporary scripts, query outputs, and intermediate files. Do not commit scratch artifacts.
-</scratch_space>
 </working_preferences>"""
 
 
