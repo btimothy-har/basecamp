@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import asyncio
+import sys
 from collections.abc import Awaitable, Callable
 
 from .frames import DispatchSpec
 from .registry import Registry
+from .run_result import run_result_path
 from .store import Store
 
 ProcessExitHook = Callable[[str], Awaitable[None]]
@@ -22,7 +24,17 @@ async def spawn_agent_process(
     dispatcher_node_id: str,
     child_depth: int,
 ) -> asyncio.subprocess.Process:
-    argv = [*spec.argv, spec.task]
+    result_path = run_result_path(agent_id, run_id, home_dir=spec.env.get("HOME"))
+    argv = [
+        sys.executable,
+        "-m",
+        "pi_swarm.runner",
+        "--result-path",
+        str(result_path),
+        "--",
+        *spec.argv,
+        spec.task,
+    ]
     child_env = {
         **spec.env,
         "BASECAMP_DAEMON_UDS": daemon_socket_path,
