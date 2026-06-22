@@ -509,6 +509,40 @@ def test_dispatch_runner_managed_env_reaches_fake_child(tmp_path: Path) -> None:
         _stop_daemon(server, thread, uds_path)
 
 
+def test_runner_managed_child_direct_result_report_is_suppressed(tmp_path: Path) -> None:
+    db_path = tmp_path / "daemon.db"
+    uds_path = Path("/tmp") / f"basecamp-daemon-malicious-result-{os.getpid()}-{uuid.uuid4().hex[:8]}.sock"
+    store = Store(db_path=db_path)
+    server, thread = _start_daemon(store, uds_path)
+
+    run_id = f"run-{uuid.uuid4()}"
+
+    try:
+        with unix_connect(str(uds_path), uri="ws://localhost/ws") as websocket:
+            _register_session(websocket, node_id="session-node", cwd=str(tmp_path))
+            ack = _dispatch(
+                websocket,
+                run_id=run_id,
+                spec=_dispatch_spec(tmp_path, env={"FAKE_DAEMON_AGENT_MODE": "malicious_direct_result_report"}),
+            )
+            assert ack["status"] == "spawned"
+
+        deadline = time.time() + 10
+        run = None
+        while time.time() < deadline:
+            run = store.get_run(run_id)
+            if run and run["status"] == "completed":
+                break
+            time.sleep(0.05)
+
+        assert run is not None
+        assert run["status"] == "completed"
+        assert run["result"] == "fake-agent-result"
+        assert run["result"] != "malicious-direct-result"
+    finally:
+        _stop_daemon(server, thread, uds_path)
+
+
 def test_dispatch_empty_first_attempt_retries_and_recovers(tmp_path: Path) -> None:
     db_path = tmp_path / "daemon.db"
     uds_path = Path("/tmp") / f"basecamp-daemon-dispatch-retry-{os.getpid()}-{uuid.uuid4().hex[:8]}.sock"
@@ -546,6 +580,65 @@ def test_dispatch_empty_first_attempt_retries_and_recovers(tmp_path: Path) -> No
         assert [attempt.result for attempt in sidecar.attempts] == ["", "fake-agent-result"]
         assert sidecar.final is not None
         assert sidecar.final.result == "fake-agent-result"
+        assert sidecar.final.retry_count == 1
+    finally:
+        _stop_daemon(server, thread, uds_path)
+
+
+def test_wait_empty_both_attempts_returns_runner_retry_failure(tmp_path: Path) -> None:
+    db_path = tmp_path / "daemon.db"
+    uds_path = Path("/tmp") / f"basecamp-daemon-wait-empty-retry-{os.getpid()}-{uuid.uuid4().hex[:8]}.sock"
+    store = Store(db_path=db_path)
+    server, thread = _start_daemon(store, uds_path)
+
+    run_id = f"run-{uuid.uuid4()}"
+    agent_id = f"agent-{uuid.uuid4()}"
+
+    try:
+        with unix_connect(str(uds_path), uri="ws://localhost/ws") as websocket:
+            _register_session(websocket, node_id="session-node", cwd=str(tmp_path))
+
+            ack = _dispatch(
+                websocket,
+                run_id=run_id,
+                agent_id=agent_id,
+                spec=_dispatch_spec(tmp_path, env={"FAKE_DAEMON_AGENT_MODE": "empty_both_attempts"}),
+            )
+            assert ack["status"] == "spawned"
+
+            websocket.send(
+                json.dumps(
+                    {
+                        "type": "wait",
+                        "v": PROTOCOL_VERSION,
+                        "agent_ids": [agent_id],
+                        "mode": "all",
+                        "timeout_s": 5,
+                    }
+                )
+            )
+            wait_result = json.loads(websocket.recv())
+
+        assert wait_result["type"] == "wait_result"
+        assert wait_result["results"] == [
+            {
+                "agent_id": agent_id,
+                "status": "failed",
+                "result": None,
+                "error": "empty_agent_result_after_retry",
+            }
+        ]
+
+        run = store.get_run(run_id)
+        assert run is not None
+        assert run["status"] == "failed"
+        assert run["error"] == "empty_agent_result_after_retry"
+
+        sidecar = load_run_result(run_result_path(agent_id, run_id))
+        assert sidecar is not None
+        assert [attempt.result for attempt in sidecar.attempts] == ["", ""]
+        assert sidecar.final is not None
+        assert sidecar.final.error == "empty_agent_result_after_retry"
         assert sidecar.final.retry_count == 1
     finally:
         _stop_daemon(server, thread, uds_path)

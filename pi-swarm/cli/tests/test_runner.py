@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from collections.abc import Sequence
 from pathlib import Path
 
@@ -17,6 +18,7 @@ from pi_swarm.runner import (
     AttemptProcessResult,
     RunnerContext,
     run,
+    scrub_runner_process_env,
 )
 
 
@@ -57,12 +59,61 @@ def _append_attempt(
     write_run_result(path, sidecar)
 
 
+def test_scrub_runner_process_env_removes_real_daemon_credentials(monkeypatch) -> None:
+    monkeypatch.setenv("BASECAMP_DAEMON_UDS", "/tmp/real-daemon.sock")
+    monkeypatch.setenv("BASECAMP_REPORT_TOKEN", "real-token")
+    monkeypatch.setenv("BASECAMP_RUN_ID", "run-1")
+    monkeypatch.setenv("BASECAMP_AGENT_ID", "agent-1")
+
+    scrub_runner_process_env()
+
+    assert "BASECAMP_DAEMON_UDS" not in os.environ
+    assert "BASECAMP_REPORT_TOKEN" not in os.environ
+    assert os.environ["BASECAMP_RUN_ID"] == "run-1"
+    assert os.environ["BASECAMP_AGENT_ID"] == "agent-1"
+
+
+def test_attempt_child_env_uses_proxy_socket_and_dummy_report_token(tmp_path: Path) -> None:
+    context = _context(tmp_path)
+    observed_envs: list[dict[str, str]] = []
+
+    def launch(
+        _command: Sequence[str],
+        attempt: int,
+        path: Path,
+        env: dict[str, str],
+    ) -> AttemptProcessResult:
+        observed_envs.append(env)
+        assert Path(env["BASECAMP_DAEMON_UDS"]).exists()
+        _append_attempt(path, attempt=attempt, result="done")
+        return AttemptProcessResult(exit_code=0)
+
+    run(
+        context,
+        ["pi", "original task"],
+        attempt_launcher=launch,
+        report_sender=lambda _context, _final: None,
+    )
+
+    assert len(observed_envs) == 1
+    child_env = observed_envs[0]
+    assert child_env["BASECAMP_DAEMON_UDS"] != context.daemon_uds
+    assert child_env["BASECAMP_REPORT_TOKEN"] != context.report_token
+    assert child_env["BASECAMP_RUN_ID"] == context.run_id
+    assert child_env["BASECAMP_AGENT_ID"] == context.agent_id
+
+
 def test_non_empty_first_attempt_sends_one_ok_final_report_no_retry(tmp_path: Path) -> None:
     context = _context(tmp_path)
     reports: list[FinalRunResult] = []
     calls: list[tuple[list[str], int]] = []
 
-    def launch(command: Sequence[str], attempt: int, path: Path) -> AttemptProcessResult:
+    def launch(
+        command: Sequence[str],
+        attempt: int,
+        path: Path,
+        _env: dict[str, str],
+    ) -> AttemptProcessResult:
         calls.append((list(command), attempt))
         _append_attempt(path, attempt=attempt, result="done")
         return AttemptProcessResult(exit_code=0)
@@ -85,7 +136,12 @@ def test_empty_first_attempt_then_non_empty_retry_sends_ok_report(tmp_path: Path
     reports: list[FinalRunResult] = []
     calls: list[tuple[list[str], int]] = []
 
-    def launch(command: Sequence[str], attempt: int, path: Path) -> AttemptProcessResult:
+    def launch(
+        command: Sequence[str],
+        attempt: int,
+        path: Path,
+        _env: dict[str, str],
+    ) -> AttemptProcessResult:
         calls.append((list(command), attempt))
         result = "  " if attempt == 1 else "recovered result"
         _append_attempt(path, attempt=attempt, result=result)
@@ -113,7 +169,12 @@ def test_empty_both_attempts_sends_error_report(tmp_path: Path) -> None:
     context = _context(tmp_path)
     reports: list[FinalRunResult] = []
 
-    def launch(_command: Sequence[str], attempt: int, path: Path) -> AttemptProcessResult:
+    def launch(
+        _command: Sequence[str],
+        attempt: int,
+        path: Path,
+        _env: dict[str, str],
+    ) -> AttemptProcessResult:
         _append_attempt(path, attempt=attempt, result="")
         return AttemptProcessResult(exit_code=0)
 
@@ -141,7 +202,12 @@ def test_nonzero_child_exit_does_not_retry_and_sends_error_report(tmp_path: Path
     reports: list[FinalRunResult] = []
     calls: list[int] = []
 
-    def launch(_command: Sequence[str], attempt: int, path: Path) -> AttemptProcessResult:
+    def launch(
+        _command: Sequence[str],
+        attempt: int,
+        path: Path,
+        _env: dict[str, str],
+    ) -> AttemptProcessResult:
         calls.append(attempt)
         _append_attempt(path, attempt=attempt, result="done")
         return AttemptProcessResult(exit_code=7)
@@ -170,7 +236,12 @@ def test_missing_sidecar_attempt_does_not_retry_and_sends_error_report(tmp_path:
     reports: list[FinalRunResult] = []
     calls: list[int] = []
 
-    def launch(_command: Sequence[str], attempt: int, _path: Path) -> AttemptProcessResult:
+    def launch(
+        _command: Sequence[str],
+        attempt: int,
+        _path: Path,
+        _env: dict[str, str],
+    ) -> AttemptProcessResult:
         calls.append(attempt)
         return AttemptProcessResult(exit_code=0)
 

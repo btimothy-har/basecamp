@@ -6,12 +6,26 @@ import argparse
 import importlib
 import json
 import os
+import secrets
 import subprocess
+import tempfile
+import threading
+import time
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
+from types import TracebackType
 
-from .frames import PROTOCOL_VERSION, RegisterFrame, ResultReportFrame, serialize_frame
+from pydantic import ValidationError
+
+from .frames import (
+    PROTOCOL_VERSION,
+    RegisterFrame,
+    ResultReportFrame,
+    TelemetryFrame,
+    parse_frame,
+    serialize_frame,
+)
 from .run_result import (
     BASECAMP_RUN_ATTEMPT,
     BASECAMP_RUN_RESULT_PATH,
@@ -30,6 +44,13 @@ RECOVERY_PROMPT = (
     "Provide the final answer for the just-completed task. Do not perform extra work "
     "unless necessary to answer accurately."
 )
+
+
+class InvalidProxyFrameError(Exception):
+    """Raised when an attempt proxy receives a malformed frame."""
+
+    def __init__(self) -> None:
+        super().__init__("Attempt proxy expected an object protocol frame.")
 
 
 @dataclass(frozen=True)
@@ -56,7 +77,7 @@ class AttemptResult:
     attempt: RunResultAttempt | None
 
 
-AttemptLauncher = Callable[[Sequence[str], int, Path], AttemptProcessResult]
+AttemptLauncher = Callable[[Sequence[str], int, Path, dict[str, str]], AttemptProcessResult]
 ReportSender = Callable[[RunnerContext, FinalRunResult], None]
 
 
@@ -88,13 +109,17 @@ def context_from_env(env: dict[str, str], result_path: Path) -> RunnerContext | 
     )
 
 
-def launch_attempt(command: Sequence[str], attempt: int, result_path: Path) -> AttemptProcessResult:
-    child_env = {
-        **os.environ,
-        BASECAMP_RUNNER_MANAGED_RESULT: "1",
-        BASECAMP_RUN_RESULT_PATH: str(result_path),
-        BASECAMP_RUN_ATTEMPT: str(attempt),
-    }
+def scrub_runner_process_env() -> None:
+    os.environ.pop("BASECAMP_DAEMON_UDS", None)
+    os.environ.pop("BASECAMP_REPORT_TOKEN", None)
+
+
+def launch_attempt(
+    command: Sequence[str],
+    _attempt: int,
+    _result_path: Path,
+    child_env: dict[str, str],
+) -> AttemptProcessResult:
     try:
         completed = subprocess.run(
             command,
@@ -107,6 +132,125 @@ def launch_attempt(command: Sequence[str], attempt: int, result_path: Path) -> A
     except OSError as error:
         return AttemptProcessResult(exit_code=None, spawn_error=str(error))
     return AttemptProcessResult(exit_code=completed.returncode)
+
+
+class AttemptDaemonProxy:
+    """Attempt-local UDS proxy that forwards telemetry but suppresses results."""
+
+    def __init__(self, context: RunnerContext) -> None:
+        self._context = context
+        self._tempdir: tempfile.TemporaryDirectory[str] | None = None
+        self._server: object | None = None
+        self._thread: threading.Thread | None = None
+        self.uds_path = ""
+
+    def __enter__(self) -> AttemptDaemonProxy:
+        self._tempdir = tempfile.TemporaryDirectory(prefix="basecamp-attempt-proxy-")
+        self.uds_path = str(Path(self._tempdir.name) / "daemon.sock")
+        websockets_server = importlib.import_module("websockets.sync.server")
+        self._server = websockets_server.unix_serve(self._handle_connection, self.uds_path)
+        self._thread = threading.Thread(target=self._server.serve_forever, daemon=True)
+        self._thread.start()
+        self._wait_until_ready()
+        return self
+
+    def __exit__(
+        self,
+        _exc_type: type[BaseException] | None,
+        _exc: BaseException | None,
+        _traceback: TracebackType | None,
+    ) -> None:
+        if self._server is not None:
+            self._server.shutdown()
+        if self._thread is not None:
+            self._thread.join(timeout=2)
+        if self._tempdir is not None:
+            self._tempdir.cleanup()
+
+    def _wait_until_ready(self) -> None:
+        deadline = time.time() + 2
+        while time.time() < deadline:
+            if Path(self.uds_path).exists():
+                return
+            time.sleep(0.01)
+
+    def _handle_connection(self, child_websocket: object) -> None:
+        try:
+            first = self._parse_next_frame(child_websocket)
+            if not isinstance(first, RegisterFrame):
+                return
+
+            websockets_client = importlib.import_module("websockets.sync.client")
+            with websockets_client.unix_connect(
+                self._context.daemon_uds,
+                uri="ws://localhost/ws",
+            ) as daemon_websocket:
+                daemon_websocket.send(json.dumps(serialize_frame(self._register_frame(first))))
+                child_websocket.send(daemon_websocket.recv())
+                self._forward_child_frames(child_websocket, daemon_websocket)
+        except (OSError, EOFError, json.JSONDecodeError, ValidationError, InvalidProxyFrameError):
+            return
+
+    def _parse_next_frame(self, websocket: object) -> object:
+        message = websocket.recv()
+        payload = json.loads(message)
+        if not isinstance(payload, dict):
+            raise InvalidProxyFrameError
+        return parse_frame(payload)
+
+    def _register_frame(self, child_register: RegisterFrame) -> RegisterFrame:
+        return RegisterFrame(
+            type="register",
+            v=PROTOCOL_VERSION,
+            role="agent",
+            node_id=self._context.agent_id,
+            parent_id=self._context.parent_session,
+            sibling_group=child_register.sibling_group,
+            depth=self._context.agent_depth,
+            session_name=self._context.agent_id,
+            cwd=child_register.cwd,
+        )
+
+    def _forward_child_frames(self, child_websocket: object, daemon_websocket: object) -> None:
+        while True:
+            try:
+                frame = self._parse_next_frame(child_websocket)
+            except EOFError:
+                return
+            if isinstance(frame, TelemetryFrame):
+                daemon_websocket.send(json.dumps(serialize_frame(self._telemetry_frame(frame))))
+                continue
+            if isinstance(frame, ResultReportFrame):
+                continue
+            return
+
+    def _telemetry_frame(self, child_telemetry: TelemetryFrame) -> TelemetryFrame:
+        return child_telemetry.model_copy(
+            update={
+                "run_id": self._context.run_id,
+                "agent_id": self._context.agent_id,
+                "report_token": self._context.report_token,
+            }
+        )
+
+
+def attempt_env(
+    context: RunnerContext,
+    *,
+    attempt: int,
+    result_path: Path,
+    proxy_uds: str,
+) -> dict[str, str]:
+    return {
+        **os.environ,
+        "BASECAMP_DAEMON_UDS": proxy_uds,
+        "BASECAMP_REPORT_TOKEN": secrets.token_urlsafe(24),
+        "BASECAMP_RUN_ID": context.run_id,
+        "BASECAMP_AGENT_ID": context.agent_id,
+        BASECAMP_RUNNER_MANAGED_RESULT: "1",
+        BASECAMP_RUN_RESULT_PATH: str(result_path),
+        BASECAMP_RUN_ATTEMPT: str(attempt),
+    }
 
 
 def send_result_report(context: RunnerContext, final: FinalRunResult) -> None:
@@ -196,7 +340,18 @@ def _run_attempt(
     attempt: int,
     attempt_launcher: AttemptLauncher,
 ) -> AttemptResult:
-    process = attempt_launcher(command, attempt, context.result_path)
+    with AttemptDaemonProxy(context) as proxy:
+        process = attempt_launcher(
+            command,
+            attempt,
+            context.result_path,
+            attempt_env(
+                context,
+                attempt=attempt,
+                result_path=context.result_path,
+                proxy_uds=proxy.uds_path,
+            ),
+        )
     sidecar = load_run_result(context.result_path)
     sidecar_attempt = find_run_result_attempt(sidecar, attempt) if sidecar else None
     return AttemptResult(process=process, sidecar=sidecar, attempt=sidecar_attempt)
@@ -231,6 +386,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     context = context_from_env(os.environ, args.result_path)
     if context is None:
         return 1
+    scrub_runner_process_env()
 
     try:
         return run(context, command)

@@ -31,6 +31,8 @@ def _fake_result_value() -> str:
 def _attempt_result_value() -> str:
     mode = os.environ.get("FAKE_DAEMON_AGENT_MODE", "ok")
     attempt = int(os.environ.get(BASECAMP_RUN_ATTEMPT, "1"))
+    if mode == "empty_both_attempts":
+        return ""
     if mode == "empty_first_attempt" and attempt == 1:
         return ""
     return _fake_result_value()
@@ -109,6 +111,22 @@ def main() -> int:
             return int(os.environ.get("FAKE_DAEMON_AGENT_EXIT_CODE", "7"))
 
         if os.environ.get(BASECAMP_RUNNER_MANAGED_RESULT) == "1":
+            if mode == "malicious_direct_result_report":
+                websocket.send(
+                    json.dumps(
+                        {
+                            "type": "result_report",
+                            "v": PROTOCOL_VERSION,
+                            "run_id": run_id,
+                            "agent_id": agent_id,
+                            "report_token": report_token,
+                            "status": "ok",
+                            "result": "malicious-direct-result",
+                            "error": None,
+                            "usage": None,
+                        }
+                    )
+                )
             _write_attempt_result(run_id=run_id, agent_id=agent_id)
             return 0
 
