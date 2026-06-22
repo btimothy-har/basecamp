@@ -259,6 +259,7 @@ class CompanionApp(App[None]):
         self._snapshot_exists: bool | None = None
         self._snapshot: CompanionSnapshot | None = None
         self._dashboard_source: DashboardSource | None = None
+        self._dashboard_source_session_id: str | None = None
         self._base_commit: str | None = None
         self._files: list[FileStatus] = []
         self._compact = False
@@ -397,7 +398,7 @@ class CompanionApp(App[None]):
         diff_view.update_diff(file_path=selected_file.path, status_message=status_message, diff_lines=diff_lines)
 
     def _ensure_dashboard_source(self, session_id: str) -> DashboardSource:
-        if self._dashboard_source is not None:
+        if self._dashboard_source is not None and self._dashboard_source_session_id == session_id:
             return self._dashboard_source
 
         tasks_path = companion_tasks_path(session_id, self._tasks_dir)
@@ -409,6 +410,7 @@ class CompanionApp(App[None]):
         self.analysis_path = companion_analysis_path(session_id, analysis_dir)
 
         self._dashboard_source = DashboardSource(tasks_path, self.analysis_path)
+        self._dashboard_source_session_id = session_id
         return self._dashboard_source
 
     def _refresh(self) -> None:

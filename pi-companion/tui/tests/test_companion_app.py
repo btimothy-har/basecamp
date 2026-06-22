@@ -132,6 +132,10 @@ def test_companion_app_headless_smoke(tmp_path: Path) -> None:
     asyncio.run(run_smoke())
 
 
+def test_diff_view_renders_empty_file() -> None:
+    assert "(empty file)" in DiffView()._render_diff("empty.py", []).plain
+
+
 def test_file_browser_preview_show_path(tmp_path: Path) -> None:
     repo = tmp_path / "repo"
     snapshot_path = tmp_path / "snapshot.json"

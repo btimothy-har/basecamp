@@ -160,7 +160,8 @@ class DiffView(VerticalScroll):
 
     def _render_diff(self, file_path: str, diff_lines: list[DiffLine]) -> Text:
         syntax = Syntax(code="", lexer=lexer_for_filename(file_path), line_numbers=False, word_wrap=False)
-        line_number_width = max(1, len(str(max((line.line_no or 0) for line in diff_lines) or 1)))
+        max_line_number = max(((line.line_no or 0) for line in diff_lines), default=0)
+        line_number_width = max(1, len(str(max_line_number or 1)))
 
         color_map = {"added": "on #12301b", "removed": "on #3a1a1a", "context": "", "gap": ""}
         marker_map = {"added": "+", "removed": "-", "context": " ", "gap": "⋯"}

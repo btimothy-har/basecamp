@@ -224,6 +224,21 @@ def test_pinned_task_index_empty_goal_is_zero() -> None:
     assert DashboardBody._pinned_task_index(_goal("g", [], active=True, completed=0, total=0)) == 0
 
 
+def test_dashboard_source_cache_tracks_session_id(tmp_path: Path) -> None:
+    app = CompanionApp(
+        snapshot_path=tmp_path / "snapshot.json",
+        cwd=tmp_path,
+        tasks_dir=tmp_path / "tasks",
+    )
+
+    first = app._ensure_dashboard_source("session-one")
+    assert app._ensure_dashboard_source("session-one") is first
+
+    second = app._ensure_dashboard_source("session-two")
+    assert second is not first
+    assert app._dashboard_source_session_id == "session-two"
+
+
 def test_poll_daemon_summary_converts_unexpected_source_errors(tmp_path: Path) -> None:
     app = CompanionApp(
         snapshot_path=tmp_path / "snapshot.json",
