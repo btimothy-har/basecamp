@@ -4,7 +4,13 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { describe, it } from "node:test";
-import { buildAgentRunName, buildPiArgs, ensureAgentDir, sanitizeAgentSpawnEnv } from "../executor.ts";
+import {
+	buildAgentRunName,
+	buildAgentTaskText,
+	buildPiArgs,
+	ensureAgentDir,
+	sanitizeAgentSpawnEnv,
+} from "../executor.ts";
 import type { AgentConfig } from "../types.ts";
 
 describe("buildAgentRunName", () => {
@@ -38,6 +44,65 @@ describe("ensureAgentDir", () => {
 			assert.equal(fs.existsSync(dir), true);
 		} finally {
 			fs.rmSync(dir, { recursive: true, force: true });
+		}
+	});
+});
+
+describe("buildPiArgs task text", () => {
+	it("passes short tasks with the completion contract as the final arg", () => {
+		const sessionDir = fs.mkdtempSync(path.join(os.tmpdir(), "basecamp-agent-session-"));
+		const { args, agentDir } = buildPiArgs(
+			null,
+			"hello world",
+			{
+				name: `agent-task-${randomUUID()}`,
+				model: undefined,
+				cwd: process.cwd(),
+				sessionDir,
+				extensionTools: [],
+			},
+			{
+				readSkillContent: () => null,
+				buildSkillBlock: (name, content) => `<skill name="${name}">${content}</skill>`,
+			},
+		);
+
+		try {
+			assert.equal(args.at(-1), buildAgentTaskText("hello world"));
+		} finally {
+			fs.rmSync(sessionDir, { recursive: true, force: true });
+			fs.rmSync(agentDir, { recursive: true, force: true });
+		}
+	});
+
+	it("writes long wrapped task text to task.md", () => {
+		const sessionDir = fs.mkdtempSync(path.join(os.tmpdir(), "basecamp-agent-session-"));
+		const longTask = "x".repeat(9_000);
+		const { args, agentDir } = buildPiArgs(
+			null,
+			longTask,
+			{
+				name: `agent-task-${randomUUID()}`,
+				model: undefined,
+				cwd: process.cwd(),
+				sessionDir,
+				extensionTools: [],
+			},
+			{
+				readSkillContent: () => null,
+				buildSkillBlock: (name, content) => `<skill name="${name}">${content}</skill>`,
+			},
+		);
+
+		try {
+			const taskArg = args.at(-1);
+			assert.match(taskArg ?? "", /^@/);
+			const taskFile = taskArg?.slice(1) ?? "";
+			assert.equal(path.basename(taskFile), "task.md");
+			assert.equal(fs.readFileSync(taskFile, "utf8"), buildAgentTaskText(longTask));
+		} finally {
+			fs.rmSync(sessionDir, { recursive: true, force: true });
+			fs.rmSync(agentDir, { recursive: true, force: true });
 		}
 	});
 });

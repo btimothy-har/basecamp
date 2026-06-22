@@ -10,6 +10,7 @@ import { PROTOCOL_VERSION } from "../daemon/frames.ts";
 import { deriveDaemonIdentity } from "../daemon/index.ts";
 import { resolveDaemonPaths } from "../daemon/paths.ts";
 import { registerDaemonTools } from "../daemon/tools.ts";
+import { buildAgentTaskText } from "../executor.ts";
 import { buildAgentTitleBase, processEnvForSpawn } from "../launch.ts";
 
 interface RegisteredTool {
@@ -195,8 +196,8 @@ describe("daemon async tools", () => {
 			await new Promise((resolve) => setImmediate(resolve));
 			const outbound = connection.sent[0] as Extract<Frame, { type: "dispatch" }>;
 			assert.equal(outbound.type, "dispatch");
-			assert.equal(outbound.spec.task, "Task: hello world");
-			assert.notEqual(outbound.spec.argv.at(-1), "Task: hello world");
+			assert.equal(outbound.spec.task, buildAgentTaskText("hello world"));
+			assert.notEqual(outbound.spec.argv.at(-1), buildAgentTaskText("hello world"));
 			assert.equal(outbound.spec.env.TEST_DAEMON_TOOLS, "1");
 			assert.equal(outbound.spec.env.BASECAMP_PROJECT, "proj");
 			assert.equal(outbound.spec.env.BASECAMP_PARENT_SESSION, process.env.BASECAMP_SESSION_NAME ?? "session-name");
@@ -255,7 +256,7 @@ describe("daemon async tools", () => {
 		assert.equal(outbound.spec.task.endsWith("task.md"), true);
 		const taskFile = outbound.spec.task.startsWith("@") ? outbound.spec.task.slice(1) : outbound.spec.task;
 		assert.match(taskFile, /task\.md$/);
-		assert.equal(fs.readFileSync(taskFile, "utf8"), `Task: ${longTask}`);
+		assert.equal(fs.readFileSync(taskFile, "utf8"), buildAgentTaskText(longTask));
 
 		connection.emit({
 			type: "dispatch_ack",
