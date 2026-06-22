@@ -1,6 +1,10 @@
+from pathlib import Path
+from types import SimpleNamespace
+
 from click.testing import CliRunner
 
 import basecamp.cli as cli
+from basecamp.codex_sync.assets import SCRATCH_ROOT
 
 
 def test_top_level_commands_match_new_shape() -> None:
@@ -10,6 +14,7 @@ def test_top_level_commands_match_new_shape() -> None:
     assert "companion" in commands
     assert "setup" in commands
     assert "install" in commands
+    assert "sync" in commands
     assert "swarm" in commands
     assert "companion-analyze" in commands
     assert "config" not in commands
@@ -20,6 +25,43 @@ def test_companion_subcommands_match_new_shape() -> None:
 
     assert "dashboard" in commands
     assert "analyze" in commands
+
+
+def test_sync_subcommands_match_new_shape() -> None:
+    commands = cli.sync.commands
+
+    assert "codex" in commands
+
+
+def test_sync_codex_delegates(monkeypatch) -> None:
+    calls: list[str] = []
+    result = SimpleNamespace(
+        config_changed=True,
+        agents=SimpleNamespace(installed=5, updated=0, unchanged=0),
+        scratch_dir=Path(SCRATCH_ROOT),
+    )
+
+    monkeypatch.setattr(cli, "run_codex_sync", lambda: calls.append("codex") or result)
+
+    invoke_result = CliRunner().invoke(cli.basecamp, ["sync", "codex"])
+
+    assert invoke_result.exit_code == 0, invoke_result.output
+    assert "Codex sync complete: config=updated" in invoke_result.output
+    assert "agents=5 installed/0 updated/0 unchanged" in invoke_result.output
+    assert f"scratch={SCRATCH_ROOT}" in invoke_result.output
+    assert calls == ["codex"]
+
+
+def test_sync_codex_reports_errors(monkeypatch) -> None:
+    def fail() -> None:
+        raise cli.CodexSyncError("bad config")  # noqa: TRY003
+
+    monkeypatch.setattr(cli, "run_codex_sync", fail)
+
+    result = CliRunner().invoke(cli.basecamp, ["sync", "codex"])
+
+    assert result.exit_code == 1
+    assert "Codex sync failed: bad config" in result.output
 
 
 def test_projects_subcommands_delegate(monkeypatch) -> None:
