@@ -71,6 +71,7 @@ function createMockPi(execHandler: ExecHandler = () => ({ code: 0, stdout: "%9\n
 	return {
 		pi: pi as unknown as ExtensionAPI,
 		execCalls,
+		registeredEvents: () => [...handlers.keys()],
 		async emit(eventName: string, event: unknown = {}, ctx: MockContext = createContext()) {
 			for (const handler of handlers.get(eventName) ?? []) {
 				await handler(event, ctx);
@@ -94,13 +95,14 @@ describe("panes/registerPanes", () => {
 		resetPaneState();
 	});
 
-	it("package registration initializes companion active to false", () => {
+	it("package registration initializes companion active and registers analysis", () => {
 		setCompanionActive(true);
-		const { pi } = createMockPi();
+		const { pi, registeredEvents } = createMockPi();
 
 		registerCompanionPackage(pi);
 
 		assert.equal(isCompanionActive(), false);
+		assert.ok(registeredEvents().includes("agent_end"));
 	});
 
 	it("sets companion active true and publishes companion status after creating and storing a pane id", async () => {

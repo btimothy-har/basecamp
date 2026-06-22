@@ -1,5 +1,6 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { setCompanionActive } from "pi-core/platform/env.ts";
+import registerCompanionAnalysis from "./src/analysis.ts";
 import registerCompanion from "./src/companion-index.ts";
 import registerPanes from "./src/panes-index.ts";
 
@@ -7,4 +8,5 @@ export default function (pi: ExtensionAPI): void {
 	setCompanionActive(false);
 	registerCompanion(pi);
 	registerPanes(pi);
+	registerCompanionAnalysis(pi);
 }
