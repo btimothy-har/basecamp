@@ -67,6 +67,15 @@ If the rebase replayed commits and rewrote history, stop and tell the user to fo
 
 ## Draft the PR Description
 
+The body adds what the diff cannot show — intent, key decisions, validation — and nothing the reviewer can read for themselves. These rules govern what you write into any template, the repo's or the default below. Default to brevity.
+
+1. **Lead with intent.** State what changed and why it matters. The diff shows how.
+2. **Group, don't enumerate.** Describe changes by area or theme; never file-by-file or commit-by-commit.
+3. **Don't narrate the diff.** If it is visible in the code, do not restate it.
+4. **Surface only non-obvious decisions.** Include a trade-off or constraint only when a reviewer could not infer it from the diff; otherwise omit it.
+5. **Link key anchors sparingly.** Link only the few anchors that help a reviewer find the heart of the change. No per-file permalink lists.
+6. **Fit the template, don't pad.** Fill the repo's sections concisely; do not invent sections or add filler.
+
 Check the repo for a PR template. GitHub looks for templates in this order:
 
 ```bash
@@ -78,39 +87,36 @@ find "$REPO_ROOT/docs" -maxdepth 1 -iname "pull_request_template*.md" 2>/dev/nul
 
 If multiple templates exist, prefer `.github/PULL_REQUEST_TEMPLATE.md` over subdirectory variants.
 
-If a template exists, read it using the absolute path returned by `find` with `cat` or the read tool. Otherwise, use this default:
+If a template exists, read it using the absolute path returned by `find` with `cat` or the read tool, then fill it following the rules above. Otherwise, use this default:
 
 ```markdown
 [Scope] Short summary
 
-## What are you trying to accomplish?
+## What & why
 
-What changed and why. Focus on impact, not implementation.
+What changed and the impact. Closes #N.
 
-Closes #N
+## Key decisions
 
-## What approach did you use?
+Non-obvious trade-offs or constraints only. Omit this section if there are none.
 
-### [Area]
-- Change summary ([`path/file.py#L10-L25`](https://github.com/org/repo/blob/{hash}/path/file.py#L10-L25))
-
-## How did you validate the changes?
+## Validation
 
 - [ ] Tests pass
 - [ ] Lint clean
-- [ ] Manual verification: ...
+- [ ] Manual: ...
 ```
 
 **Title format**: `[Scope] Short summary` — scope = module/component/area, imperative mood, <70 chars.
 
-Generate GitHub permalinks using the commit hash so links are stable across future pushes:
+When you link a key anchor, use a commit-hash permalink so it stays stable across pushes:
 
 ```bash
 git rev-parse HEAD
 gh repo view --json url -q .url
 ```
 
-URL form: `{url}/blob/{hash}/{path}#L10-L25`, for example: ``[`path/file.py#L10-L25`](https://github.com/org/repo/blob/abc1234/path/file.py#L10-L25)``.
+Form: `{url}/blob/{hash}/{path}#L10-L25`.
 
 ## Submit for Review
 
