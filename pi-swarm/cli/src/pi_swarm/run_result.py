@@ -53,7 +53,7 @@ def load_run_result(path: str | Path) -> RunResultSidecar | None:
     file_path = Path(path)
     try:
         data = json.loads(file_path.read_text(encoding="utf-8"))
-    except FileNotFoundError:
+    except (FileNotFoundError, json.JSONDecodeError):
         return None
     return RunResultSidecar.model_validate(data)
 

@@ -50,6 +50,13 @@ def test_run_result_models_validate_and_round_trip() -> None:
         RunResultAttempt.model_validate({"attempt": 1, "status": "failed", "result": None, "error": "bad"})
 
 
+def test_load_run_result_returns_none_for_malformed_json(tmp_path: Path) -> None:
+    file_path = tmp_path / "result.json"
+    file_path.write_text("{", encoding="utf-8")
+
+    assert load_run_result(file_path) is None
+
+
 def test_write_and_load_run_result_are_atomic_round_trip(tmp_path: Path) -> None:
     file_path = run_result_path("agent-1", "run-1", tmp_path)
     sidecar = RunResultSidecar(

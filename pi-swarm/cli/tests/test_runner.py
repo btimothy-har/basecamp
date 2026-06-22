@@ -4,6 +4,7 @@ import os
 from collections.abc import Sequence
 from pathlib import Path
 
+import pytest
 from pi_swarm.run_result import (
     FinalRunResult,
     RunResultAttempt,
@@ -15,7 +16,9 @@ from pi_swarm.run_result import (
 from pi_swarm.runner import (
     EMPTY_RESULT_AFTER_RETRY,
     RECOVERY_PROMPT,
+    AttemptDaemonProxy,
     AttemptProcessResult,
+    ProxySocketUnavailableError,
     RunnerContext,
     run,
     scrub_runner_process_env,
@@ -71,6 +74,17 @@ def test_scrub_runner_process_env_removes_real_daemon_credentials(monkeypatch) -
     assert "BASECAMP_REPORT_TOKEN" not in os.environ
     assert os.environ["BASECAMP_RUN_ID"] == "run-1"
     assert os.environ["BASECAMP_AGENT_ID"] == "agent-1"
+
+
+def test_attempt_proxy_wait_until_ready_raises_when_socket_missing(tmp_path: Path, monkeypatch) -> None:
+    proxy = AttemptDaemonProxy(_context(tmp_path))
+    proxy.uds_path = str(tmp_path / "missing.sock")
+    times = iter([0.0, 3.0])
+    monkeypatch.setattr("pi_swarm.runner.time.time", lambda: next(times))
+    monkeypatch.setattr("pi_swarm.runner.time.sleep", lambda _seconds: None)
+
+    with pytest.raises(ProxySocketUnavailableError, match="failed to create socket"):
+        proxy._wait_until_ready()
 
 
 def test_attempt_child_env_uses_proxy_socket_and_dummy_report_token(tmp_path: Path) -> None:

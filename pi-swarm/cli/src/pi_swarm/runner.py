@@ -53,6 +53,11 @@ class InvalidProxyFrameError(Exception):
         super().__init__("Attempt proxy expected an object protocol frame.")
 
 
+class ProxySocketUnavailableError(Exception):
+    def __init__(self, path: str) -> None:
+        super().__init__(f"Attempt proxy failed to create socket within timeout: {path}")
+
+
 @dataclass(frozen=True)
 class RunnerContext:
     daemon_uds: str
@@ -173,6 +178,7 @@ class AttemptDaemonProxy:
             if Path(self.uds_path).exists():
                 return
             time.sleep(0.01)
+        raise ProxySocketUnavailableError(self.uds_path)
 
     def _handle_connection(self, child_websocket: object) -> None:
         try:
