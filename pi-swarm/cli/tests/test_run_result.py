@@ -18,15 +18,7 @@ def test_run_result_path_uses_run_owned_agent_directory() -> None:
     fake_home = Path("/tmp/fake-home")
 
     assert run_result_path("agent-1", "run-1", fake_home) == (
-        fake_home
-        / ".pi"
-        / "basecamp"
-        / "swarm"
-        / "agents"
-        / "agent-1"
-        / "runs"
-        / "run-1"
-        / "result.json"
+        fake_home / ".pi" / "basecamp" / "swarm" / "agents" / "agent-1" / "runs" / "run-1" / "result.json"
     )
 
 

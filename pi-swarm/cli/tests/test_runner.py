@@ -159,9 +159,7 @@ def test_empty_first_attempt_then_non_empty_retry_sends_ok_report(tmp_path: Path
         (["pi", "--model", "fast", "original task"], 1),
         (["pi", "--model", "fast", RECOVERY_PROMPT], 2),
     ]
-    assert reports == [
-        FinalRunResult(status="ok", result="recovered result", error=None, retry_count=1)
-    ]
+    assert reports == [FinalRunResult(status="ok", result="recovered result", error=None, retry_count=1)]
     assert load_run_result(context.result_path).final == reports[0]
 
 
