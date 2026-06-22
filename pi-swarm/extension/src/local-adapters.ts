@@ -7,7 +7,6 @@
 
 import * as path from "node:path";
 import { fileURLToPath } from "node:url";
-import { buildSkillBlock, readSkillContent } from "pi-core/capabilities/skill-content.ts";
 import { registerCatalogProvider } from "pi-core/platform/catalog.ts";
 import { resolveModelAlias } from "pi-core/platform/model-aliases.ts";
 import { hasInvokedSkill } from "pi-core/platform/skill-tracker.ts";
@@ -101,8 +100,6 @@ export function createLocalPiSwarmDependencies(
 		resolveModelAlias,
 		hasInvokedSkill,
 		getWorkspaceState,
-		readSkillContent,
-		buildSkillBlock,
 		formatTaskProgressSummary,
 		renderCompactTaskProgressLines,
 		formatTitle,

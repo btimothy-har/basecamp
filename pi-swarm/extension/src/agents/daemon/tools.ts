@@ -150,12 +150,7 @@ export function registerDaemonTools(
 	getConnection: () => Promise<DaemonConnection | null>,
 	deps: Pick<
 		PiSwarmDependencies,
-		| "hasInvokedSkill"
-		| "getWorkspaceState"
-		| "basecampExtensionRoot"
-		| "resolveModelAlias"
-		| "readSkillContent"
-		| "buildSkillBlock"
+		"hasInvokedSkill" | "getWorkspaceState" | "basecampExtensionRoot" | "resolveModelAlias"
 	>,
 ): void {
 	pi.registerTool({
@@ -242,10 +237,6 @@ export function registerDaemonTools(
 					parentSession:
 						process.env.BASECAMP_SESSION_NAME ?? pi.getSessionName()?.trim() ?? ctx.sessionManager.getSessionId(),
 					project: process.env.BASECAMP_PROJECT ?? "default",
-					piArgsDeps: {
-						readSkillContent: deps.readSkillContent,
-						buildSkillBlock: deps.buildSkillBlock,
-					},
 				});
 			} catch (error) {
 				const msg = error instanceof Error ? error.message : String(error);

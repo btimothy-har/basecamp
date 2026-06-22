@@ -27,7 +27,6 @@ export interface AgentConfig {
 	description: string;
 	model: ModelStrategy;
 	thinking?: string;
-	skills?: string[];
 	systemPrompt: string;
 	source: "builtin";
 	filePath: string;
@@ -61,15 +60,6 @@ function parseFrontmatter(content: string): ParsedFile {
 		if (key) fm[key] = value;
 	}
 	return { frontmatter: fm, body: match[2]!.trim() };
-}
-
-function parseCsv(value: string | undefined): string[] | undefined {
-	if (!value) return undefined;
-	const items = value
-		.split(",")
-		.map((s) => s.trim())
-		.filter(Boolean);
-	return items.length > 0 ? items : undefined;
 }
 
 // ============================================================================
@@ -111,7 +101,6 @@ function loadAgentsFromDir(dir: string): AgentConfig[] {
 			description: fm.description,
 			model,
 			thinking: fm.thinking || undefined,
-			skills: parseCsv(fm.skills),
 			systemPrompt: body,
 			source: "builtin",
 			filePath,

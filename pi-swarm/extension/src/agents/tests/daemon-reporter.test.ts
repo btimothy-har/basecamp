@@ -83,8 +83,6 @@ describe("daemon reporter", () => {
 		getWorkspaceState: () => null,
 		basecampExtensionRoot: process.cwd(),
 		resolveModelAlias: (model: string) => model,
-		readSkillContent: () => null,
-		buildSkillBlock: () => "",
 		formatTaskProgressSummary: () => null,
 		renderCompactTaskProgressLines: () => [],
 		formatTitle: () => "basecamp",
