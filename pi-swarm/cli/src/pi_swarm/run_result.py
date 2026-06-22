@@ -71,3 +71,28 @@ def write_run_result(path: str | Path, sidecar: RunResultSidecar) -> None:
     except OSError:
         temp_path.unlink(missing_ok=True)
         raise
+
+
+def find_run_result_attempt(sidecar: RunResultSidecar, attempt: int) -> RunResultAttempt | None:
+    for item in sidecar.attempts:
+        if item.attempt == attempt:
+            return item
+    return None
+
+
+def set_final_run_result(
+    path: str | Path,
+    *,
+    run_id: str,
+    agent_id: str,
+    final: FinalRunResult,
+) -> RunResultSidecar:
+    sidecar = load_run_result(path) or RunResultSidecar(
+        run_id=run_id,
+        agent_id=agent_id,
+        attempts=[],
+        final=None,
+    )
+    sidecar = sidecar.model_copy(update={"final": final})
+    write_run_result(path, sidecar)
+    return sidecar
