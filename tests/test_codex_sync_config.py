@@ -72,9 +72,7 @@ def test_writable_root_is_added_to_empty_roots_array(tmp_path) -> None:
 def test_writable_root_is_merged_without_duplicates(tmp_path) -> None:
     config_path = tmp_path / "config.toml"
     config_path.write_text(
-        'developer_instructions = ""\n'
-        "[sandbox_workspace_write]\n"
-        'writable_roots = ["/existing", "/tmp/codex"]\n'
+        'developer_instructions = ""\n[sandbox_workspace_write]\nwritable_roots = ["/existing", "/tmp/codex"]\n'
     )
 
     merge_config(config_path)
