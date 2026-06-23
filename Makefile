@@ -8,7 +8,7 @@ compile:
 	make sync
 
 test:
-	uv run pytest core/config/tests workspace/projects/tests pi-companion/tui/tests
+	uv run pytest core/config/tests workspace/projects/tests pi-swarm/cli/tests pi-companion/tui/tests
 	@set -e; for pkg in $(TS_PACKAGES); do \
 		echo "--- $$pkg ---"; \
 		npm --prefix $$pkg test; \
