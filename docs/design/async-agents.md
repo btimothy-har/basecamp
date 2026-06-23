@@ -1,6 +1,6 @@
 # Asynchronous Multi-Agent System — Design
 
-**Status:** Phase 1 IMPLEMENTED (walking skeleton); Phase 2a ACL foundation implemented; async-only public surface implemented · **Scope:** Design + status tracking for later phases · **Roadmap:** Remaining Phase 2 collaboration work and Phases 3–5 remain design targets
+**Status:** Phase 1 IMPLEMENTED (walking skeleton); Phase 2a ACL foundation implemented; async-only public surface implemented (wire protocol v11) · **Scope:** Design + status tracking for later phases · **Roadmap:** Remaining Phase 2 collaboration work and Phases 3–5 remain design targets
 
 This document describes the target architecture for basecamp's asynchronous, collaborating subagents, coordinated by a global, single-host daemon. It captures the converged design, the decisions and rejected alternatives behind it, the risk register, and the phased roadmap.
 
@@ -83,9 +83,9 @@ Two ideas anchor the whole design:
             └──────────────────┬──────────────────┘
                                ▼
             ┌───────────────────────────────────────┐      HTTP over UDS
-            │        basecamp swarm daemon           │   GET /runs, /agents
+            │        basecamp swarm daemon           │   GET /runs/summary,
             │        (FastAPI / uvicorn, UDS)        │◄──────────────────────
-            │                                         │   (observability)
+            │                                         │   /runs/messages (obs)
             │   coordinator · supervisor (ACL)        │
             │   router (messages + result pings)      │
             │   mutation-lease manager                │
@@ -128,10 +128,11 @@ Connection model:
 
 The daemon also exposes read-only HTTP observability routes over the same UDS:
 
-- `GET /runs`
-- `GET /agents`
+- `GET /health` — liveness plus the advertised protocol version.
+- `GET /runs/summary?root_id=<id>` — safe agent-level run summary for the companion dashboard.
+- `GET /runs/messages?root_id=<id>&agent_handle=<handle>` — selected-agent assistant message detail.
 
-These routes are inspection-only (human/tooling visibility), not the control path.
+These routes are inspection-only (human/tooling visibility), not the control path. The agent directory is served over the WebSocket `list_agents` frame (§7.3.1), not an HTTP `/agents` route.
 
 ### 5.2 Protocol — basecamp frames
 
@@ -285,6 +286,15 @@ A run is one transient agent process lifetime.
                             v
                           idle
 ```
+
+### 6.3.1 Runner wrapper, retry, and the result sidecar (implementation refinement)
+
+The implemented spawn path inserts a thin runner process between the daemon and each pi child to make run completion robust against empty final answers. This is an implementation detail layered onto §6.3, not a change to the run state machine.
+
+- **Runner process.** The daemon does not exec `pi` directly; it spawns `python -m pi_swarm.runner -- <pi argv> <task>` (`pi-swarm/cli/src/pi_swarm/runner.py`). The runner owns the attempt loop and reports the single terminal result to the daemon.
+- **Attempt-local proxy.** For each attempt the runner stands up an ephemeral, per-attempt UDS proxy and points the child's `BASECAMP_DAEMON_UDS` at it. The proxy forwards the child's `telemetry` frames up to the real daemon (rewriting run/agent identity) and suppresses the child's own `result_report`. The proxy is currently unidirectional (child→daemon, telemetry only); the daemon has no push path into a live child through it. This constrains Phase 2b live delivery (§10).
+- **Retry on empty result.** Attempt 1 runs the task. If the final answer is empty, the runner runs a second attempt with a recovery prompt; after two empty attempts it reports `empty_agent_result_after_retry`.
+- **Result sidecar.** Each attempt is written to a per-run sidecar at `~/.pi/basecamp/swarm/agents/<agent-id>/runs/<run-id>/result.json` (attempt history plus final). The child writes attempts when `BASECAMP_RUNNER_MANAGED_RESULT=1`, using `BASECAMP_RUN_RESULT_PATH` and `BASECAMP_RUN_ATTEMPT`; the runner then sends the terminal `result_report` to the daemon. SQLite stays the daemon's source of truth for run status; the sidecar records the child-side attempt story.
 
 ### 6.4 Re-tasking and messaging an idle agent
 
@@ -462,7 +472,7 @@ Both limits are configurable tunables. They are complementary: depth cap bounds 
   - Explicitly out of scope: peer message, ACL enforcement, mutation lease/deadlock detection, host-global concurrency cap, HTTP observability polish, re-task-on-message behavior, wait-FIRST joins, and the unsolicited result-ping push (in Phase 1 the dispatcher observes completion by calling `wait_for_agent`).
 
 - **Phase 2a — IMPLEMENTED agent-first ACL foundation.** Goal: fix the public run-handle deviation and establish the first daemon-enforced ACL slice without adding peer messaging yet.
-  - In scope: `dispatch_agent` returns the public `agent_id`; `wait_for_agent` accepts agent handles and resolves to private current primary runs; only the immediate dispatcher can wait; unauthorized/missing targets return `unknown`; one active primary run per agent is enforced; `list_agents` provides a root-scoped read-only directory with `awaitable`; protocol v4 fixtures and docs describe the agent-first surface.
+  - In scope: `dispatch_agent` returns the public `agent_id`; `wait_for_agent` accepts agent handles and resolves to private current primary runs; only the immediate dispatcher can wait; unauthorized/missing targets return `unknown`; one active primary run per agent is enforced; `list_agents` provides a root-scoped read-only directory with `awaitable`. The agent-first surface is reflected in the current protocol fixtures and docs (now at wire protocol v11).
   - Explicitly out of scope: `message_agent`, peer-message delivery, result pings, idle re-task-on-message, and root-scoped message ACL beyond `list_agents`.
 
 - **Phase 2b — Collaboration.** Goal: establish full peer message routing across all three recipient states including re-task-on-message for idle recipients (§7.2a, §6.4), and result ping notify-then-fetch wake behavior (§7.2b).
@@ -471,7 +481,7 @@ Both limits are configurable tunables. They are complementary: depth cap bounds 
 
 - **Phase 4 — Limits & scale.** Goal: add host-global concurrency cap enforcement, spawn queueing, and tunable limit configuration (§7.5).
 
-- **Phase 5 — Observability & cleanup.** Goal: complete HTTP `/runs` and `/agents` observability (§5.1), rework any remaining partial render flow so telemetry is daemon-sourced, and add TS↔Python frame contract tests.
+- **Phase 5 — Observability & cleanup.** Partially delivered ahead of sequence: daemon-sourced observability is already shipped — `GET /runs/summary` and `GET /runs/messages` (§5.1) plus the companion Swarm dashboard that consumes them (safe run summary, task projection, recent-activity, and selected-agent message detail). Remaining: TS↔Python frame contract tests, any partial-render cleanup, and TTL/cleanup of agent thread artifacts (§6.5).
 
 Phase boundaries are for safe sequencing of the remaining daemon capabilities. The public surface is already async-only, but mutation serialization and host-wide breadth control are not fully daemon-enforced until Phases 3–4. Until then, the `agents` skill and docs intentionally keep `worker` use conservative.
 
