@@ -32,6 +32,7 @@ packages = ["src/basecamp"]
 [dependency-groups]
 dev = [
     "companion-tui",
+    "pi-swarm",
     "ruff~=0.13.1",
     "pytest>=8.0.0",
     "pytest-asyncio>=0.23.0",
@@ -51,7 +52,7 @@ companion-tui = { workspace = true }
 pi-swarm = { workspace = true }
 
 [tool.pytest.ini_options]
-testpaths = ["tests", "core/config/tests", "workspace/projects/tests", "pi-companion/tui/tests"]
+testpaths = ["tests", "core/config/tests", "workspace/projects/tests", "pi-swarm/cli/tests", "pi-companion/tui/tests"]
 pythonpath = ["src", "core/config/src", "workspace/projects/src", "pi-swarm/cli/src", "pi-companion/tui/src"]
 env = ["TESTING=1"]
 
