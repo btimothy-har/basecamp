@@ -14,6 +14,14 @@ interface DispatchDetails {
 	agent: string;
 }
 
+interface AskDetails {
+	agentHandle: string;
+	status: "completed" | "failed" | "running" | "unknown";
+	answer?: string | null;
+	error?: string | null;
+	aborted?: boolean;
+}
+
 interface PublicListAgentItem {
 	agentHandle: string;
 	role: string;
@@ -44,6 +52,12 @@ const DispatchAgentParams = Type.Object({
 	task: Type.String({ description: "Task description" }),
 	name: Type.Optional(Type.String({ description: "Name suffix (auto-generated prefix)" })),
 	agent_handle: Type.Optional(Type.String({ description: "Existing agent handle to retask" })),
+});
+
+const AskAgentParams = Type.Object({
+	agent_handle: Type.String({ description: "Target agent handle to ask" }),
+	question: Type.String({ description: "Question to ask the target agent" }),
+	timeout_s: Type.Optional(Type.Number({ minimum: 1, default: 600 })),
 });
 
 const AgentHandlesParam = Type.Union([
@@ -92,10 +106,14 @@ function normalizeHandles(input: string | string[] | undefined): string[] {
 	return [...new Set(values.map((value) => value.trim()).filter(Boolean))];
 }
 
-function preview(text: string | null, limit = 80): string {
+function preview(text: string | null | undefined, limit = 80): string {
 	if (!text) return "";
 	const compact = text.replace(/\s+/g, " ").trim();
 	return compact.length > limit ? `${compact.slice(0, limit)}…` : compact;
+}
+
+function buildAskAgentTitle(agentHandle: string, question: string): string {
+	return `(ask → ${agentHandle}) ${preview(question, 60)}`;
 }
 
 function hasText(value: string | null): value is string {
@@ -302,6 +320,164 @@ export function registerDaemonTools(
 			const isError = (result as { isError?: boolean }).isError === true;
 			if (!details || isError) return new Text(message, 0, 0);
 			return new Text(theme.fg("accent", `⏳ dispatched ${details.agent} — handle ${details.agentHandle}`), 0, 0);
+		},
+	});
+
+	pi.registerTool({
+		name: "ask_agent",
+		label: "Ask Agent",
+		description: "Ask a visible async agent a question and return its answer.",
+		parameters: AskAgentParams,
+		async execute(_id, params, signal, _onUpdate, ctx) {
+			if (!deps.hasInvokedSkill("agents")) {
+				return {
+					content: [
+						{
+							type: "text",
+							text: 'Load the agents skill first: call skill({ name: "agents" }) before dispatching.',
+						},
+					],
+					isError: true,
+					details: null,
+				};
+			}
+			const connection = await getConnection();
+			if (!connection) {
+				return {
+					content: [
+						{
+							type: "text",
+							text: "basecamp swarm daemon is not connected; dispatch cannot proceed.",
+						},
+					],
+					isError: true,
+					details: null,
+				};
+			}
+
+			const daemonClient = createDaemonClient(connection);
+			const targetHandle = params.agent_handle.trim();
+			const agentId = randomUUID();
+			const namePrefix = `ask-${randomUUID().slice(0, 6)}`;
+			let agentLaunch: ReturnType<typeof buildAgentLaunchSpec>;
+			try {
+				agentLaunch = buildAgentLaunchSpec({
+					pi,
+					getAgents: discoverAgents,
+					basecampExtensionRoot: deps.basecampExtensionRoot,
+					requestedAgent: undefined,
+					namePrefix,
+					task: params.question,
+					modelContext: ctx.model,
+					resolveModelAlias: deps.resolveModelAlias,
+					workspace: deps.getWorkspaceState(),
+					agentId,
+					parentSession:
+						process.env.BASECAMP_SESSION_NAME ?? pi.getSessionName()?.trim() ?? ctx.sessionManager.getSessionId(),
+					project: process.env.BASECAMP_PROJECT ?? "default",
+				});
+			} catch (error) {
+				const msg = error instanceof Error ? error.message : String(error);
+				return { content: [{ type: "text", text: msg }], isError: true, details: null };
+			}
+			if (!agentLaunch.ok) {
+				const msg = agentLaunch.message;
+				return { content: [{ type: "text", text: msg }], isError: true, details: null };
+			}
+
+			const { plan } = agentLaunch;
+			const taskSpec = plan.args.at(-1);
+			if (!taskSpec) {
+				return {
+					content: [{ type: "text", text: "Unable to build async task argument." }],
+					isError: true,
+					details: null,
+				};
+			}
+
+			let agentHandle = buildAgentHandle();
+			let result: Awaited<ReturnType<typeof daemonClient.dispatchAgent>> | null = null;
+			const dispatchEnv = {
+				...processEnvForSpawn(),
+				...plan.environment,
+				BASECAMP_AGENT_TITLE: buildAskAgentTitle(targetHandle, params.question),
+			};
+
+			for (let attempt = 0; attempt < 3; attempt++) {
+				result = await daemonClient.dispatchAgent({
+					agentId,
+					agentHandle,
+					agentType: "ask",
+					runKind: plan.runKind,
+					model: plan.model ?? "default",
+					argv: plan.args.slice(0, -1),
+					task: taskSpec,
+					cwd: plan.spawnCwd,
+					env: dispatchEnv,
+					forkFrom: targetHandle,
+				});
+				if (result.status !== "rejected" || result.reason !== "duplicate_agent_handle" || attempt === 2) break;
+				agentHandle = buildAgentHandle();
+			}
+
+			if (!result || result.status === "rejected") {
+				const message =
+					result?.reason === "fork_target_unknown"
+						? `No agent "${targetHandle}" is available to ask.`
+						: `ask rejected: ${result?.reason ?? "unknown"}`;
+				return {
+					content: [{ type: "text", text: message }],
+					isError: true,
+					details: { agentHandle, status: "unknown", error: message } satisfies AskDetails,
+				};
+			}
+
+			const timeoutS = Math.max(1, Math.floor(params.timeout_s ?? 600));
+			let waitResults: WaitResultFrame["results"];
+			try {
+				waitResults = await daemonClient.waitForAgents({
+					agentHandles: [agentHandle],
+					timeoutS,
+					signal,
+				});
+			} catch (error) {
+				if (signal?.aborted || (error instanceof Error && error.message === "aborted")) {
+					const details: AskDetails = { agentHandle, status: "running", aborted: true };
+					return { content: [{ type: "text", text: "ask aborted" }], details };
+				}
+				throw error;
+			}
+
+			const answer = waitResults[0];
+			if (answer?.status === "completed") {
+				const details: AskDetails = { agentHandle, status: "completed", answer: answer.result };
+				return { content: [{ type: "text", text: answer.result ?? "" }], details };
+			}
+			if (answer?.status === "failed") {
+				const message = hasText(answer.error) ? answer.error : "ask failed";
+				const details: AskDetails = { agentHandle, status: "failed", answer: answer.result, error: answer.error };
+				return { content: [{ type: "text", text: message }], isError: true, details };
+			}
+			if (answer?.status === "running") {
+				const message = "timed out waiting for answer";
+				const details: AskDetails = { agentHandle, status: "running", error: message };
+				return { content: [{ type: "text", text: message }], details };
+			}
+
+			const details: AskDetails = { agentHandle, status: "unknown" };
+			return { content: [{ type: "text", text: "No answer available." }], details };
+		},
+		renderResult(result, _opts, theme) {
+			const details = result.details as AskDetails | null;
+			const message = result.content[0]?.type === "text" ? result.content[0].text : "";
+			if (!details) return new Text(message, 0, 0);
+			if (details.aborted) return new Text(theme.fg("warning", "ask aborted"), 0, 0);
+			if (details.status === "completed") return new Text(preview(details.answer) || "(no output)", 0, 0);
+			if (details.status === "failed") return new Text(theme.fg("error", preview(details.error) || "ask failed"), 0, 0);
+			if (details.status === "running") {
+				return new Text(theme.fg("warning", "timed out waiting for answer"), 0, 0);
+			}
+			return new Text(theme.fg("muted", message || "No answer available."), 0, 0);
 		},
 	});
 
