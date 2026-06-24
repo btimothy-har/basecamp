@@ -262,17 +262,19 @@ class Store:
         with self._connect() as connection:
             connection.execute("BEGIN IMMEDIATE")
             existing = connection.execute(
-                "SELECT agent_handle, agent_type, run_kind, model FROM agents WHERE id = ?",
+                "SELECT agent_handle, agent_type, run_kind, model, sibling_group FROM agents WHERE id = ?",
                 (agent_id,),
             ).fetchone()
             stored_handle = existing[0] if existing is not None else None
             stored_agent_type = existing[1] if existing is not None else None
             stored_run_kind = existing[2] if existing is not None else None
             stored_model = existing[3] if existing is not None else None
+            stored_sibling_group = existing[4] if existing is not None else None
             next_handle = agent_handle or stored_handle or _fallback_agent_handle(agent_id)
             next_agent_type = agent_type or stored_agent_type
             next_run_kind = run_kind or stored_run_kind
             next_model = model or stored_model
+            next_sibling_group = sibling_group or stored_sibling_group
 
             try:
                 connection.execute(
@@ -310,7 +312,7 @@ class Store:
                     (
                         agent_id,
                         parent_id,
-                        sibling_group,
+                        next_sibling_group,
                         depth,
                         role,
                         session_name,
@@ -483,6 +485,43 @@ class Store:
             current = parent_id
 
         return current if isinstance(current, str) else None
+
+    def can_ask(self, requester_node_id: str, target_agent_id: str) -> bool:
+        """Return whether requester may fork-ask the target agent."""
+
+        requester = self.get_agent(requester_node_id)
+        target = self.get_agent(target_agent_id)
+        if requester is None or target is None:
+            return False
+        if requester_node_id == target_agent_id:
+            return True
+
+        if self._parent_chain_contains(requester_node_id, target_agent_id):
+            return True
+        if self._parent_chain_contains(target_agent_id, requester_node_id):
+            return True
+
+        requester_sibling_group = requester.get("sibling_group")
+        return requester_sibling_group is not None and requester_sibling_group == target.get("sibling_group")
+
+    def _parent_chain_contains(self, agent_id: str, target_agent_id: str) -> bool:
+        visited: set[str] = set()
+        current = agent_id
+
+        while isinstance(current, str) and current not in visited:
+            visited.add(current)
+            row = self.get_agent(current)
+            if row is None:
+                return False
+
+            parent_id = row.get("parent_id")
+            if not isinstance(parent_id, str) or not parent_id.strip():
+                return False
+            if parent_id == target_agent_id:
+                return True
+            current = parent_id
+
+        return False
 
     def get_root_agent_directory(
         self,

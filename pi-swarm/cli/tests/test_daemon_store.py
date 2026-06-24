@@ -162,6 +162,34 @@ def test_upsert_agent_persists_gets_and_preserves_handle(tmp_path: Path) -> None
     assert by_handle["id"] == "agent-1"
 
 
+def test_upsert_agent_preserves_sibling_group_when_unset(tmp_path: Path) -> None:
+    db_path = tmp_path / "daemon.db"
+    store = Store(db_path=db_path)
+
+    store.upsert_agent(
+        agent_id="agent-1",
+        parent_id="parent-1",
+        sibling_group="parent-1",
+        depth=1,
+        role="agent",
+        session_name="session-a",
+        cwd="/tmp/a",
+    )
+    store.upsert_agent(
+        agent_id="agent-1",
+        parent_id="parent-1",
+        sibling_group=None,
+        depth=1,
+        role="agent",
+        session_name="session-b",
+        cwd="/tmp/b",
+    )
+
+    agent = store.get_agent("agent-1")
+    assert agent is not None
+    assert agent["sibling_group"] == "parent-1"
+
+
 def test_upsert_agent_rejects_duplicate_handle(tmp_path: Path) -> None:
     db_path = tmp_path / "daemon.db"
     store = Store(db_path=db_path)
@@ -359,6 +387,75 @@ def test_resolve_agent_root_follows_parents_defensively(tmp_path: Path) -> None:
     assert store.resolve_agent_root("root") == "root"
     assert store.resolve_agent_root("lost") == "lost"
     assert store.resolve_agent_root("missing") is None
+
+
+def test_can_ask_allows_ancestors_descendants_and_siblings_only(tmp_path: Path) -> None:
+    db_path = tmp_path / "daemon.db"
+    store = Store(db_path=db_path)
+
+    store.upsert_agent(
+        agent_id="root",
+        parent_id=None,
+        sibling_group=None,
+        depth=0,
+        role="session",
+        session_name="root-session",
+        cwd="/tmp/root",
+    )
+    store.upsert_agent(
+        agent_id="agent-a",
+        parent_id="root",
+        sibling_group="root",
+        depth=1,
+        role="agent",
+        session_name="agent-a",
+        cwd="/tmp/a",
+    )
+    store.upsert_agent(
+        agent_id="agent-b",
+        parent_id="root",
+        sibling_group="root",
+        depth=1,
+        role="agent",
+        session_name="agent-b",
+        cwd="/tmp/b",
+    )
+    store.upsert_agent(
+        agent_id="grandchild",
+        parent_id="agent-a",
+        sibling_group="agent-a",
+        depth=2,
+        role="agent",
+        session_name="grandchild",
+        cwd="/tmp/grandchild",
+    )
+    store.upsert_agent(
+        agent_id="outside-root",
+        parent_id=None,
+        sibling_group=None,
+        depth=0,
+        role="session",
+        session_name="outside-root",
+        cwd="/tmp/outside-root",
+    )
+    store.upsert_agent(
+        agent_id="outside-agent",
+        parent_id="outside-root",
+        sibling_group="outside-root",
+        depth=1,
+        role="agent",
+        session_name="outside-agent",
+        cwd="/tmp/outside-agent",
+    )
+
+    assert store.can_ask("grandchild", "agent-a") is True
+    assert store.can_ask("agent-a", "grandchild") is True
+    assert store.can_ask("agent-a", "agent-b") is True
+    assert store.can_ask("agent-a", "agent-a") is True
+    assert store.can_ask("agent-a", "outside-agent") is False
+    assert store.can_ask("root", "outside-root") is False
+    assert store.can_ask("agent-a", "missing") is False
+    assert store.can_ask("missing", "agent-a") is False
 
 
 def test_get_root_agent_directory_scopes_to_root_and_excludes_sessions(tmp_path: Path) -> None:

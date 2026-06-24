@@ -146,6 +146,8 @@ async def prepare_dispatch(
         fork_target_id = fork_target.get("id")
         if not isinstance(fork_target_id, str):
             return DispatchRejection(reason="fork_target_unknown")
+        if not await asyncio.to_thread(store.can_ask, dispatcher_node_id, fork_target_id):
+            return DispatchRejection(reason="fork_target_unknown")
 
         session_file = agent_session_file(fork_target_id, home_dir=frame.spec.env.get("HOME"))
         if session_file is None:
@@ -161,7 +163,7 @@ async def prepare_dispatch(
                 store.upsert_agent,
                 agent_id=agent_id,
                 parent_id=dispatcher_node_id,
-                sibling_group=None,
+                sibling_group=dispatcher_node_id,
                 depth=child_depth,
                 role="agent",
                 session_name=frame.agent_handle or agent_id,

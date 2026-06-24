@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import { afterEach, describe, it } from "node:test";
+import { afterEach, beforeEach, describe, it } from "node:test";
 import type { PiSwarmDependencies } from "../../dependencies.ts";
 import type { DaemonConnection } from "../daemon/client.ts";
 import type { Frame } from "../daemon/frames.ts";
@@ -69,6 +69,12 @@ function restoreEnv(name: string, value: string | undefined): void {
 	if (value === undefined) delete process.env[name];
 	else process.env[name] = value;
 }
+
+beforeEach(() => {
+	delete process.env[BASECAMP_RUNNER_MANAGED_RESULT];
+	delete process.env[BASECAMP_RUN_RESULT_PATH];
+	delete process.env[BASECAMP_RUN_ATTEMPT];
+});
 
 afterEach(async () => {
 	restoreEnv(BASECAMP_RUNNER_MANAGED_RESULT, originalRunnerEnv[BASECAMP_RUNNER_MANAGED_RESULT]);

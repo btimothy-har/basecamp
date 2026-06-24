@@ -116,6 +116,7 @@ export function buildAgentEnv(opts: { name: string; parentSession: string; proje
 	}
 	env.BASECAMP_PROJECT = opts.project;
 	env.BASECAMP_PARENT_SESSION = opts.parentSession;
+	env.BASECAMP_SIBLING_GROUP = opts.parentSession;
 	env.BASECAMP_AGENT_DEPTH = String(depth + 1);
 	env.BASECAMP_AGENT_MAX_DEPTH = process.env.BASECAMP_AGENT_MAX_DEPTH ?? String(DEFAULT_AGENT_MAX_DEPTH);
 	return env;

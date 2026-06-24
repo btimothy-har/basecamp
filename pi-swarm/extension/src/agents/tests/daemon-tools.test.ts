@@ -11,7 +11,7 @@ import { deriveDaemonIdentity } from "../daemon/index.ts";
 import { resolveDaemonPaths } from "../daemon/paths.ts";
 import { registerDaemonTools } from "../daemon/tools.ts";
 import { buildAgentTaskText } from "../executor.ts";
-import { buildAgentTitleBase, processEnvForSpawn } from "../launch.ts";
+import { buildAgentEnv, buildAgentTitleBase, processEnvForSpawn } from "../launch.ts";
 
 interface RegisteredTool {
 	name: string;
@@ -111,6 +111,41 @@ describe("daemon async tools", () => {
 		fs.rmSync(tmpHome, { recursive: true, force: true });
 		currentWorkspaceState = null;
 		resetInvokedSkills();
+	});
+
+	describe("buildAgentEnv", () => {
+		it("sets parent session as sibling group for spawned agents", () => {
+			const priorDepth = process.env.BASECAMP_AGENT_DEPTH;
+			const priorProject = process.env.BASECAMP_PROJECT;
+			const priorParent = process.env.BASECAMP_PARENT_SESSION;
+			const priorSiblingGroup = process.env.BASECAMP_SIBLING_GROUP;
+			process.env.BASECAMP_AGENT_DEPTH = "1";
+			process.env.BASECAMP_PROJECT = "parent-project";
+			process.env.BASECAMP_PARENT_SESSION = "old-parent";
+			process.env.BASECAMP_SIBLING_GROUP = "old-sibling-group";
+
+			try {
+				const env = buildAgentEnv({
+					name: "agent-name",
+					parentSession: "dispatcher-node",
+					project: "child-project",
+				});
+
+				assert.equal(env.BASECAMP_PROJECT, "child-project");
+				assert.equal(env.BASECAMP_PARENT_SESSION, "dispatcher-node");
+				assert.equal(env.BASECAMP_SIBLING_GROUP, "dispatcher-node");
+				assert.equal(env.BASECAMP_AGENT_DEPTH, "2");
+			} finally {
+				if (priorDepth === undefined) delete process.env.BASECAMP_AGENT_DEPTH;
+				else process.env.BASECAMP_AGENT_DEPTH = priorDepth;
+				if (priorProject === undefined) delete process.env.BASECAMP_PROJECT;
+				else process.env.BASECAMP_PROJECT = priorProject;
+				if (priorParent === undefined) delete process.env.BASECAMP_PARENT_SESSION;
+				else process.env.BASECAMP_PARENT_SESSION = priorParent;
+				if (priorSiblingGroup === undefined) delete process.env.BASECAMP_SIBLING_GROUP;
+				else process.env.BASECAMP_SIBLING_GROUP = priorSiblingGroup;
+			}
+		});
 	});
 
 	describe("buildAgentTitleBase", () => {

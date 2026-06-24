@@ -159,6 +159,14 @@ def _dispatch(
     return json.loads(websocket.recv())
 
 
+def _write_agent_session_file(home: Path, agent_id: str) -> Path:
+    session_dir = home / ".pi" / "basecamp" / "swarm" / "agents" / agent_id / "session"
+    session_dir.mkdir(parents=True)
+    session_file = session_dir / f"2026-01-01T00-00-00_{agent_id}.jsonl"
+    session_file.write_text("{}\n", encoding="utf-8")
+    return session_file
+
+
 def test_build_runner_argv_injects_fork_before_task() -> None:
     spec = DispatchSpec(
         argv=["pi", "--mode", "json", "-p"],
@@ -214,10 +222,7 @@ def test_build_runner_argv_omits_fork_when_unset() -> None:
 async def test_prepare_dispatch_resolves_fork_from_target_handle(tmp_path: Path) -> None:
     store = Store(db_path=tmp_path / "daemon.db")
     home = tmp_path / "home"
-    session_dir = home / ".pi" / "basecamp" / "swarm" / "agents" / "target-agent" / "session"
-    session_dir.mkdir(parents=True)
-    session_file = session_dir / "2026-01-01T00-00-00_target-agent.jsonl"
-    session_file.write_text("{}\n", encoding="utf-8")
+    session_file = _write_agent_session_file(home, "target-agent")
     store.upsert_agent(
         agent_id="root",
         parent_id=None,
@@ -260,6 +265,105 @@ async def test_prepare_dispatch_resolves_fork_from_target_handle(tmp_path: Path)
 
     assert isinstance(dispatch, PreparedDispatch)
     assert dispatch.fork_source_path == str(session_file.resolve())
+    agent = store.get_agent("answerer-agent")
+    assert agent is not None
+    assert agent["sibling_group"] == "root"
+
+
+@pytest.mark.asyncio
+async def test_prepare_dispatch_rejects_unauthorized_fork_from_target(tmp_path: Path) -> None:
+    store = Store(db_path=tmp_path / "daemon.db")
+    home = tmp_path / "home"
+    _write_agent_session_file(home, "outside-agent")
+    store.upsert_agent(
+        agent_id="root",
+        parent_id=None,
+        sibling_group=None,
+        depth=0,
+        role="session",
+        session_name="root-session",
+        cwd=str(tmp_path),
+    )
+    store.upsert_agent(
+        agent_id="outside-root",
+        parent_id=None,
+        sibling_group=None,
+        depth=0,
+        role="session",
+        session_name="outside-root-session",
+        cwd=str(tmp_path),
+    )
+    store.upsert_agent(
+        agent_id="outside-agent",
+        agent_handle="outside-handle",
+        parent_id="outside-root",
+        sibling_group="outside-root",
+        depth=1,
+        role="agent",
+        session_name="outside-agent",
+        cwd=str(tmp_path),
+    )
+    frame = DispatchFrame(
+        type="dispatch",
+        v=PROTOCOL_VERSION,
+        run_id="run-answerer",
+        agent_id="answerer-agent",
+        spec=DispatchSpec(
+            argv=["pi", "--mode", "json", "-p"],
+            env={"HOME": str(home)},
+            cwd=str(tmp_path),
+            resume_path=None,
+            fork_from="outside-handle",
+            task="question?",
+        ),
+    )
+
+    dispatch = await prepare_dispatch(
+        frame=frame,
+        dispatcher_node_id="root",
+        store=store,
+    )
+
+    assert dispatch == DispatchRejection(reason="fork_target_unknown")
+    assert store.get_run("run-answerer") is None
+
+
+@pytest.mark.asyncio
+async def test_prepare_dispatch_persists_new_agent_sibling_group(tmp_path: Path) -> None:
+    store = Store(db_path=tmp_path / "daemon.db")
+    store.upsert_agent(
+        agent_id="root",
+        parent_id=None,
+        sibling_group=None,
+        depth=0,
+        role="session",
+        session_name="root-session",
+        cwd=str(tmp_path),
+    )
+    frame = DispatchFrame(
+        type="dispatch",
+        v=PROTOCOL_VERSION,
+        run_id="run-child",
+        agent_id="child-agent",
+        spec=DispatchSpec(
+            argv=["pi", "--mode", "json", "-p"],
+            env={},
+            cwd=str(tmp_path),
+            resume_path=None,
+            task="do work",
+        ),
+    )
+
+    dispatch = await prepare_dispatch(
+        frame=frame,
+        dispatcher_node_id="root",
+        store=store,
+    )
+
+    assert isinstance(dispatch, PreparedDispatch)
+    agent = store.get_agent("child-agent")
+    assert agent is not None
+    assert agent["sibling_group"] == "root"
 
 
 @pytest.mark.asyncio
