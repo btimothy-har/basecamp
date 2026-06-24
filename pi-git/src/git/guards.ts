@@ -8,6 +8,12 @@
 
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { isToolCallEventType } from "@earendil-works/pi-coding-agent";
+import {
+	getCurrentSessionStateIfInitialized,
+	type SessionStateActiveIssueDraft,
+	type SessionStateActivePR,
+	updateCurrentSessionStateIfInitialized,
+} from "pi-core/state/index.ts";
 
 // ---------------------------------------------------------------------------
 // Git block reason
@@ -35,13 +41,7 @@ type ThemeFg = (color: Parameters<import("@earendil-works/pi-coding-agent").Them
 
 const PR_WORKFLOW_STATUS_ID = "basecamp.prWorkflow";
 
-export interface ActivePRWorkflow {
-	number: string;
-	base: string;
-}
-
-/** Active PR workflow — set by /create-pr, read by publish_pr tool. */
-export let activePR: ActivePRWorkflow | null = null;
+export type ActivePRWorkflow = SessionStateActivePR;
 
 export function renderActivePRStatus(fg: ThemeFg, pr: ActivePRWorkflow): string {
 	return `${fg("accent", "PR")} ${fg("success", `#${pr.number}`)} ${fg("dim", `→ ${pr.base}`)}`;
@@ -57,34 +57,37 @@ export function publishActivePRStatus(ctx: ExtensionContext | undefined, pr: Act
 	ctx.ui.setStatus(PR_WORKFLOW_STATUS_ID, renderActivePRStatus(fg, pr));
 }
 
-export function setActivePR(pr: ActivePRWorkflow, ctx?: ExtensionContext): void {
-	activePR = pr;
+export function getActivePR(): SessionStateActivePR | null {
+	return getCurrentSessionStateIfInitialized()?.activePR ?? null;
+}
+
+export function setActivePR(pr: SessionStateActivePR, ctx?: ExtensionContext): void {
+	updateCurrentSessionStateIfInitialized({ activePR: pr });
 	publishActivePRStatus(ctx, pr);
 }
 
 export function clearActivePR(ctx?: ExtensionContext): void {
-	activePR = null;
+	updateCurrentSessionStateIfInitialized({ activePR: null });
 	publishActivePRStatus(ctx, null);
 }
 
-/** Active issue draft workflow — set by /create-issue, read by issue workflow tools. */
-export let activeIssueDraft: { draftPath: string; topic: string } | null = null;
+export function getActiveIssueDraft(): SessionStateActiveIssueDraft | null {
+	return getCurrentSessionStateIfInitialized()?.activeIssueDraft ?? null;
+}
 
-export function setActiveIssueDraft(draft: { draftPath: string; topic: string }): void {
-	activeIssueDraft = draft;
+export function setActiveIssueDraft(draft: SessionStateActiveIssueDraft): void {
+	updateCurrentSessionStateIfInitialized({ activeIssueDraft: draft });
 }
 
 export function clearActiveIssueDraft(): void {
-	activeIssueDraft = null;
+	updateCurrentSessionStateIfInitialized({ activeIssueDraft: null });
 }
 
 export const unlocked = {
 	prComment: false,
 };
 
-export function lockAll(ctx?: ExtensionContext): void {
-	clearActivePR(ctx);
-	activeIssueDraft = null;
+export function lockAll(): void {
 	unlocked.prComment = false;
 }
 
@@ -547,6 +550,9 @@ export function registerGuards(pi: ExtensionAPI): void {
 		}
 	});
 
-	pi.on("session_shutdown", async (_event, ctx) => lockAll(ctx));
-	pi.on("session_before_compact", async (_event, ctx) => lockAll(ctx));
+	pi.on("session_start", async (_event, ctx) => {
+		publishActivePRStatus(ctx, getActivePR());
+	});
+	pi.on("session_shutdown", async () => lockAll());
+	pi.on("session_before_compact", async () => lockAll());
 }

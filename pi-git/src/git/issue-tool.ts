@@ -9,7 +9,7 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "@sinclair/typebox";
 import { exec } from "pi-core/platform/exec.ts";
 import { requireWorkspaceState } from "pi-core/platform/workspace.ts";
-import { activeIssueDraft, clearActiveIssueDraft } from "./guards";
+import { clearActiveIssueDraft, getActiveIssueDraft } from "./guards";
 import { showIssueReview } from "./issue-review";
 import { getIssueDraftDir } from "./utils";
 
@@ -312,7 +312,7 @@ export function registerIssueTool(pi: ExtensionAPI): void {
 			{ additionalProperties: false },
 		),
 		async execute(_id, params, _signal, _onUpdate, ctx) {
-			const draft = activeIssueDraft;
+			const draft = getActiveIssueDraft();
 			if (!draft) {
 				throw new Error("No active issue draft. Run /create-issue first.");
 			}
