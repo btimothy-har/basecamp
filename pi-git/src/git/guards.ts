@@ -550,6 +550,9 @@ export function registerGuards(pi: ExtensionAPI): void {
 		}
 	});
 
+	pi.on("session_start", async (_event, ctx) => {
+		publishActivePRStatus(ctx, getActivePR());
+	});
 	pi.on("session_shutdown", async () => lockAll());
 	pi.on("session_before_compact", async () => lockAll());
 }

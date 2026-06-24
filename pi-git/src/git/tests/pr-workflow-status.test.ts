@@ -3,13 +3,14 @@ import * as fs from "node:fs/promises";
 import * as os from "node:os";
 import * as path from "node:path";
 import { afterEach, beforeEach, describe, it } from "node:test";
-import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
+import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { initializeCurrentSessionState, resetCurrentSessionState } from "pi-core/state/index.ts";
 import {
 	clearActivePR,
 	getActivePR,
 	lockAll,
 	publishActivePRStatus,
+	registerGuards,
 	renderActivePRStatus,
 	setActivePR,
 	unlocked,
@@ -21,6 +22,7 @@ type StatusSetCall = {
 };
 
 type Theme = (color: string, text: string) => string;
+type Handler = (event: unknown, ctx: ExtensionContext) => Promise<unknown>;
 
 const SESSION_ID = "pr-workflow-status-test";
 const SESSION_FILE = "/tmp/pr-workflow-status-test.jsonl";
@@ -49,6 +51,22 @@ function createContext(calls: StatusSetCall[], hasUI = true): ExtensionContext {
 			},
 		},
 	} as unknown as ExtensionContext;
+}
+
+function createFakePi(handlers: Map<string, Handler>): ExtensionAPI {
+	return {
+		on(name: string, handler: Handler) {
+			handlers.set(name, handler);
+		},
+	} as unknown as ExtensionAPI;
+}
+
+function registerAndGetSessionStartHandler(): Handler {
+	const handlers = new Map<string, Handler>();
+	registerGuards(createFakePi(handlers));
+	const handler = handlers.get("session_start");
+	assert.ok(handler);
+	return handler;
 }
 
 describe("PR workflow status", () => {
@@ -94,6 +112,26 @@ describe("PR workflow status", () => {
 		assert.deepEqual(getActivePR(), { number: "167", base: "main" });
 		assert.equal(unlocked.prComment, false);
 		assert.deepEqual(calls.at(-1), { key: "basecamp.prWorkflow", value: "accent:PR success:#167 dim:→ main" });
+	});
+
+	it("republishes active PR workflow status on session start", async () => {
+		const handler = registerAndGetSessionStartHandler();
+		const calls: StatusSetCall[] = [];
+		setActivePR({ number: "187", base: "main" });
+
+		await handler({}, createContext(calls));
+
+		assert.deepEqual(calls, [{ key: "basecamp.prWorkflow", value: "accent:PR success:#187 dim:→ main" }]);
+	});
+
+	it("clears active PR workflow status on session start without active PR", async () => {
+		const handler = registerAndGetSessionStartHandler();
+		const calls: StatusSetCall[] = [];
+		assert.equal(getActivePR(), null);
+
+		await handler({}, createContext(calls));
+
+		assert.deepEqual(calls, [{ key: "basecamp.prWorkflow", value: undefined }]);
 	});
 
 	it("no-ops status publishing without UI", () => {
