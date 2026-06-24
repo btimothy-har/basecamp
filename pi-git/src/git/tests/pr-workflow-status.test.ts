@@ -1,13 +1,18 @@
 import assert from "node:assert/strict";
-import { beforeEach, describe, it } from "node:test";
+import * as fs from "node:fs/promises";
+import * as os from "node:os";
+import * as path from "node:path";
+import { afterEach, beforeEach, describe, it } from "node:test";
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
+import { initializeCurrentSessionState, resetCurrentSessionState } from "pi-core/state/index.ts";
 import {
-	activePR,
 	clearActivePR,
+	getActivePR,
 	lockAll,
 	publishActivePRStatus,
 	renderActivePRStatus,
 	setActivePR,
+	unlocked,
 } from "../guards.ts";
 
 type StatusSetCall = {
@@ -17,10 +22,26 @@ type StatusSetCall = {
 
 type Theme = (color: string, text: string) => string;
 
+const SESSION_ID = "pr-workflow-status-test";
+const SESSION_FILE = "/tmp/pr-workflow-status-test.jsonl";
+
+let tempDir: string;
+
 function createContext(calls: StatusSetCall[], hasUI = true): ExtensionContext {
 	const fg: Theme = (color, text) => `${color}:${text}`;
 	return {
 		hasUI,
+		sessionManager: {
+			getSessionId: () => SESSION_ID,
+			getSessionFile: () => SESSION_FILE,
+			getHeader: () => ({
+				type: "session",
+				version: 3,
+				id: SESSION_ID,
+				timestamp: "2026-01-01T00:00:00.000Z",
+				cwd: "/tmp",
+			}),
+		},
 		ui: {
 			theme: { fg },
 			setStatus: (key: string, value: string | undefined) => {
@@ -31,8 +52,16 @@ function createContext(calls: StatusSetCall[], hasUI = true): ExtensionContext {
 }
 
 describe("PR workflow status", () => {
-	beforeEach(() => {
+	beforeEach(async () => {
+		tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "pi-git-pr-workflow-status-"));
+		initializeCurrentSessionState(createContext([]), tempDir);
+		unlocked.prComment = true;
 		lockAll();
+	});
+
+	afterEach(async () => {
+		resetCurrentSessionState();
+		await fs.rm(tempDir, { recursive: true, force: true });
 	});
 
 	it("formats active PR workflow status", () => {
@@ -46,23 +75,25 @@ describe("PR workflow status", () => {
 		const ctx = createContext(calls);
 
 		setActivePR({ number: "167", base: "main" }, ctx);
-		assert.deepEqual(activePR, { number: "167", base: "main" });
+		assert.deepEqual(getActivePR(), { number: "167", base: "main" });
 		assert.deepEqual(calls, [{ key: "basecamp.prWorkflow", value: "accent:PR success:#167 dim:→ main" }]);
 
 		clearActivePR(ctx);
-		assert.equal(activePR, null);
+		assert.equal(getActivePR(), null);
 		assert.deepEqual(calls.at(-1), { key: "basecamp.prWorkflow", value: undefined });
 	});
 
-	it("clears footer status when workflow locks reset", () => {
+	it("keeps active PR workflow status when workflow locks reset", () => {
 		const calls: StatusSetCall[] = [];
 		const ctx = createContext(calls);
 		setActivePR({ number: "167", base: "main" }, ctx);
+		unlocked.prComment = true;
 
-		lockAll(ctx);
+		lockAll();
 
-		assert.equal(activePR, null);
-		assert.deepEqual(calls.at(-1), { key: "basecamp.prWorkflow", value: undefined });
+		assert.deepEqual(getActivePR(), { number: "167", base: "main" });
+		assert.equal(unlocked.prComment, false);
+		assert.deepEqual(calls.at(-1), { key: "basecamp.prWorkflow", value: "accent:PR success:#167 dim:→ main" });
 	});
 
 	it("no-ops status publishing without UI", () => {

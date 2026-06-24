@@ -11,7 +11,7 @@ import * as crypto from "node:crypto";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { exec } from "pi-core/platform/exec.ts";
 import { activateWorkspaceWorktree, attachWorkspaceWorktreePath } from "pi-core/platform/workspace.ts";
-import { activeIssueDraft, setActiveIssueDraft, setActivePR, unlocked } from "./guards";
+import { getActiveIssueDraft, setActiveIssueDraft, setActivePR, unlocked } from "./guards";
 import { createIssueDraftPath, getScratchDir, loadTemplate, resolvePrNumber } from "./utils";
 
 type PushResult = "pushed" | "up-to-date" | "cancelled" | "diverged" | "failed";
@@ -210,6 +210,7 @@ Start by calling skill({ name: "pull-request" }), then review the changes, draft
 				return;
 			}
 
+			const activeIssueDraft = getActiveIssueDraft();
 			if (activeIssueDraft) {
 				const confirmed = await ctx.ui.confirm(
 					"Replace active issue draft?",

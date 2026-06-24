@@ -10,7 +10,7 @@ import * as path from "node:path";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "@sinclair/typebox";
 import { exec } from "pi-core/platform/exec.ts";
-import { activePR, clearActivePR } from "./guards";
+import { clearActivePR, getActivePR } from "./guards";
 import { showPrReview } from "./review";
 import { getScratchDir } from "./utils";
 
@@ -27,6 +27,7 @@ export function registerTool(pi: ExtensionAPI): void {
 			body: Type.String({ description: "PR description body in markdown." }),
 		}),
 		async execute(_id, params, _signal, _onUpdate, ctx) {
+			const activePR = getActivePR();
 			if (!activePR) {
 				throw new Error("No active PR workflow. Run /create-pr first.");
 			}
