@@ -1,6 +1,6 @@
 {
   "type": "dispatch",
-  "v": 11,
+  "v": 12,
   "run_id": "run-001",
   "agent_id": "00000000-0000-4000-8000-000000000042",
   "agent_handle": "mossy-otter-a1b2c3",
@@ -20,6 +20,7 @@
     },
     "cwd": "/Users/example/repo",
     "resume_path": "/Users/example/.pi/basecamp/swarm/agents/00000000-0000-4000-8000-000000000042/session/00000000-0000-4000-8000-000000000042.jsonl",
+    "fork_from": null,
     "task": "Summarize test failures and propose a fix."
   }
 }
