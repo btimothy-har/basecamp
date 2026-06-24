@@ -1,10 +1,10 @@
 # Asynchronous Multi-Agent System — Design
 
-**Status:** Phase 1 IMPLEMENTED (walking skeleton); Phase 2a ACL foundation implemented; async-only public surface implemented (wire protocol v11) · **Scope:** Design + status tracking for later phases · **Roadmap:** Remaining Phase 2 collaboration work and Phases 3–5 remain design targets
+**Status:** Phase 1 IMPLEMENTED (walking skeleton); Phase 2a ACL foundation implemented; first Phase 2b slice (fork-based `ask_agent`) implemented; async-only public surface implemented (wire protocol v12) · **Scope:** Design + status tracking for later phases · **Roadmap:** Remaining Phase 2 collaboration work (live peer messaging/steering) and Phases 3–5 remain design targets
 
 This document describes the target architecture for basecamp's asynchronous, collaborating subagents, coordinated by a global, single-host daemon. It captures the converged design, the decisions and rejected alternatives behind it, the risk register, and the phased roadmap.
 
-It remains primarily a design artifact for later phases: Phase 1 and the async-only public surface are implemented, while the remaining target architecture in this document is roadmap/design work. The current public surface is the `agents` skill plus daemon tools (`dispatch_agent`, `list_agents`, `wait_for_agent`); §3 records the former synchronous behavior this design replaced.
+It remains primarily a design artifact for later phases: Phase 1 and the async-only public surface are implemented, while the remaining target architecture in this document is roadmap/design work. The current public surface is the `agents` skill plus daemon tools (`dispatch_agent`, `list_agents`, `wait_for_agent`, `ask_agent`); §3 records the former synchronous behavior this design replaced.
 
 ---
 
@@ -358,6 +358,8 @@ Implementation boundary from §5.2 applies: the extension performs these actions
 
 Trade-off: waking an idle dispatcher on every result ping can interrupt active typing. The design chooses immediacy anyway because the result ping is tiny and non-committal, and consumption remains explicitly dispatcher-controlled.
 
+**Status note:** The result-ping discipline above was subsequently dropped — `wait_for_agent` (§7.3) is the sole join. The first implemented Phase 2b collaboration primitive is fork-based `ask` (§7.6), a read-only consultation, not the live peer-message steering described here. Live steer and result ping remain target-design elements that are not yet built (they require the bidirectional daemon→live-agent path the current attempt proxy does not provide, §6.3.1).
+
 ### 7.3 `wait_for_agent` — the composable join
 
 `wait_for_agent` is the explicit join primitive in an async-always model. Dispatch never blocks by itself; a caller that wants synchronous behavior opts in by waiting on one or more agent handles.
@@ -421,6 +423,20 @@ The concurrency cap is new and required by async-always operation. The prior in-
 
 Both limits are configurable tunables. They are complementary: depth cap bounds recursion height in the relationship graph, while concurrency cap bounds aggregate parallel width.
 
+### 7.6 `ask_agent` — fork-based consultation (implemented)
+
+`ask_agent` is the first implemented Phase 2b collaboration primitive. It lets a session or agent ask a *permitted* agent a question and get a context-aware answer, without steering or perturbing the target — deliberately sidestepping the live-delivery problem the runner proxy poses (§6.3.1).
+
+**Mechanism.** `ask_agent({ agent_handle, question, timeout_s? })` reuses dispatch + `wait_for_agent` rather than a new frame: the dispatch spec carries an optional `fork_from` (the target's handle/id), and the daemon resolves it to the target's session file and launches the answerer with `pi --fork <abs path>` into a NEW, separate, read-only session. The target's own thread is only read, never written. The answerer runs the question against the target's forked context, and its terminal result (last assistant message) is returned to the requester as the answer. The protocol carries `fork_from` from v12.
+
+**Visibility ACL.** Fork-ask is **DEFAULT-DENY** along the §7.1 directions: a requester may ask only an ancestor, a descendant, or a same-`sibling_group` target. `sibling_group` is populated at dispatch as the dispatcher/parent node id, so all children of one parent are siblings. Unauthorized — and missing — targets are both rejected with the same `fork_target_unknown` reason, so existence is never leaked.
+
+**Logging.** The answerer is a normal agent + run reusing all run storage/telemetry/observability, but typed distinctly (`agent_type = "ask"`) with an `(ask → <target>) <question>` title. Ask runs appear in `/runs/summary` and the companion dashboard but are excluded from `list_agents` (they are consultations, not work agents to retask or await externally).
+
+**Direction & transport.** Session→agent ask works over the session's direct daemon connection. Agent→agent ask works because the attempt proxy (§6.3.1) relays the asking agent's `dispatch`/`wait` request frames to the daemon inline and returns the single response — safe because the asking agent's turn is paused inside the tool, so no telemetry is concurrent. This is a bounded request/response relay, not the full bidirectional topology that live steering (§7.2) would require.
+
+**Scope.** Ask is read-only consultation only. It does not steer a running target, and ask-forks count against the depth cap like normal children (a leaf agent at max depth cannot ask). Live peer-message steering and idle re-task-on-message remain future work.
+
 ## 8. Risks & mitigations
 
 | Risk | Mitigation | Residual / notes |
@@ -475,7 +491,7 @@ Both limits are configurable tunables. They are complementary: depth cap bounds 
   - In scope: `dispatch_agent` returns the public `agent_id`; `wait_for_agent` accepts agent handles and resolves to private current primary runs; only the immediate dispatcher can wait; unauthorized/missing targets return `unknown`; one active primary run per agent is enforced; `list_agents` provides a root-scoped read-only directory with `awaitable`. The agent-first surface is reflected in the current protocol fixtures and docs (now at wire protocol v11).
   - Explicitly out of scope: `message_agent`, peer-message delivery, result pings, idle re-task-on-message, and root-scoped message ACL beyond `list_agents`.
 
-- **Phase 2b — Collaboration.** Goal: establish full peer message routing across all three recipient states including re-task-on-message for idle recipients (§7.2a, §6.4), and result ping notify-then-fetch wake behavior (§7.2b).
+- **Phase 2b — Collaboration.** Partially delivered: fork-based `ask_agent` consultation is implemented (§7.6) — a read-only `pi --fork` of a permitted target (ancestor/descendant/sibling), reusing dispatch + `fork_from` + `wait_for_agent`, typed as `ask` runs, with an inline attempt-proxy relay for agent→agent asks. Result-ping was dropped (`wait_for_agent` is the sole join). Still future: live peer-message routing/steering across recipient states and re-task-on-message for idle recipients (§7.2, §6.4), which require the bidirectional daemon→live-agent path the current attempt proxy does not provide.
 
 - **Phase 3 — Mutation safety.** Goal: ship per-worktree whole-task mutation lease with stale reclaim and daemon-side deadlock cycle rejection using the global wait-for graph (§7.4).
 

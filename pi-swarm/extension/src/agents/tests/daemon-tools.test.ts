@@ -9,9 +9,9 @@ import type { Frame, ListAgentItem } from "../daemon/frames.ts";
 import { PROTOCOL_VERSION } from "../daemon/frames.ts";
 import { deriveDaemonIdentity } from "../daemon/index.ts";
 import { resolveDaemonPaths } from "../daemon/paths.ts";
-import { registerDaemonTools } from "../daemon/tools.ts";
+import { registerAskAgentTool, registerDaemonTools } from "../daemon/tools.ts";
 import { buildAgentTaskText } from "../executor.ts";
-import { buildAgentTitleBase, processEnvForSpawn } from "../launch.ts";
+import { buildAgentEnv, buildAgentTitleBase, processEnvForSpawn } from "../launch.ts";
 
 interface RegisteredTool {
 	name: string;
@@ -113,6 +113,41 @@ describe("daemon async tools", () => {
 		resetInvokedSkills();
 	});
 
+	describe("buildAgentEnv", () => {
+		it("sets parent session as sibling group for spawned agents", () => {
+			const priorDepth = process.env.BASECAMP_AGENT_DEPTH;
+			const priorProject = process.env.BASECAMP_PROJECT;
+			const priorParent = process.env.BASECAMP_PARENT_SESSION;
+			const priorSiblingGroup = process.env.BASECAMP_SIBLING_GROUP;
+			process.env.BASECAMP_AGENT_DEPTH = "1";
+			process.env.BASECAMP_PROJECT = "parent-project";
+			process.env.BASECAMP_PARENT_SESSION = "old-parent";
+			process.env.BASECAMP_SIBLING_GROUP = "old-sibling-group";
+
+			try {
+				const env = buildAgentEnv({
+					name: "agent-name",
+					parentSession: "dispatcher-node",
+					project: "child-project",
+				});
+
+				assert.equal(env.BASECAMP_PROJECT, "child-project");
+				assert.equal(env.BASECAMP_PARENT_SESSION, "dispatcher-node");
+				assert.equal(env.BASECAMP_SIBLING_GROUP, "dispatcher-node");
+				assert.equal(env.BASECAMP_AGENT_DEPTH, "2");
+			} finally {
+				if (priorDepth === undefined) delete process.env.BASECAMP_AGENT_DEPTH;
+				else process.env.BASECAMP_AGENT_DEPTH = priorDepth;
+				if (priorProject === undefined) delete process.env.BASECAMP_PROJECT;
+				else process.env.BASECAMP_PROJECT = priorProject;
+				if (priorParent === undefined) delete process.env.BASECAMP_PARENT_SESSION;
+				else process.env.BASECAMP_PARENT_SESSION = priorParent;
+				if (priorSiblingGroup === undefined) delete process.env.BASECAMP_SIBLING_GROUP;
+				else process.env.BASECAMP_SIBLING_GROUP = priorSiblingGroup;
+			}
+		});
+	});
+
 	describe("buildAgentTitleBase", () => {
 		it("formats named/ad-hoc titles, compacts whitespace, and truncates long tasks", () => {
 			assert.equal(buildAgentTitleBase("scout", "Investigate the auth flow"), "(scout) Investigate the auth flow");
@@ -166,6 +201,17 @@ describe("daemon async tools", () => {
 				else process.env.DAEMON_TEST_API_KEY = prior.apiKey;
 			}
 		});
+	});
+
+	it("registerAskAgentTool registers only ask_agent", () => {
+		const { pi, tools } = createMockPi();
+
+		registerAskAgentTool(pi, async () => new MockConnection(), daemonToolDeps);
+
+		assert.deepEqual(
+			tools.map((tool) => tool.name),
+			["ask_agent"],
+		);
 	});
 
 	it("dispatch_agent builds spec env/task split and returns handle on spawned ack", async () => {
@@ -653,6 +699,116 @@ describe("daemon async tools", () => {
 		assert.equal(result.isError, true);
 		assert.equal(connection.sent.length, 1);
 		assert.match(result.content[0].text, /is scout; use a new handle for worker/);
+	});
+
+	it("ask_agent dispatches forked ask agent, waits, and returns answer text", async () => {
+		trackSkillInvocation("agents");
+		const connection = new MockConnection();
+		const { pi, tools } = createMockPi();
+		registerDaemonTools(pi, async () => connection, daemonToolDeps);
+		const askTool = toolByName(tools, "ask_agent");
+
+		const executePromise = askTool.execute(
+			"1",
+			{ agent_handle: "amber-fox-a1b2c3", question: "What did you find?", timeout_s: 30 },
+			new AbortController().signal,
+			() => {},
+			{ model: "claude-sonnet", sessionManager: { getSessionId: () => "session-id" } },
+		);
+
+		await new Promise((resolve) => setImmediate(resolve));
+		const dispatch = connection.sent[0] as Extract<Frame, { type: "dispatch" }>;
+		assert.equal(dispatch.type, "dispatch");
+		assert.equal(dispatch.agent_type, "ask");
+		assert.equal(dispatch.spec.fork_from, "amber-fox-a1b2c3");
+		assert.equal(dispatch.spec.task, buildAgentTaskText("What did you find?"));
+		assert.match(dispatch.agent_handle ?? "", /^[a-z]+-[a-z]+-[0-9a-f]{6}$/);
+		const agentTitle = dispatch.spec.env.BASECAMP_AGENT_TITLE ?? "";
+		assert.ok(agentTitle.startsWith("(ask → amber-fox-a1b2c3) "));
+
+		connection.emit({
+			type: "dispatch_ack",
+			v: PROTOCOL_VERSION,
+			run_id: dispatch.run_id,
+			status: "spawned",
+			reason: null,
+		});
+		await new Promise((resolve) => setImmediate(resolve));
+
+		const wait = connection.sent[1] as Extract<Frame, { type: "wait" }>;
+		assert.equal(wait.type, "wait");
+		assert.deepEqual(wait.agent_handles, [dispatch.agent_handle]);
+		assert.equal(wait.timeout_s, 30);
+
+		connection.emit({
+			type: "wait_result",
+			v: PROTOCOL_VERSION,
+			results: [
+				{ agent_handle: dispatch.agent_handle, status: "completed", result: "Here is the answer.", error: null },
+			],
+		});
+
+		const result = await executePromise;
+		assert.equal(result.isError, undefined);
+		assert.equal(result.content[0].text, "Here is the answer.");
+		assert.equal(result.details.agentHandle, dispatch.agent_handle);
+		assert.equal(result.details.status, "completed");
+		assert.equal(result.details.answer, "Here is the answer.");
+	});
+
+	it("ask_agent returns non-leaky error and does not wait when fork target is unknown", async () => {
+		trackSkillInvocation("agents");
+		const connection = new MockConnection();
+		const { pi, tools } = createMockPi();
+		registerDaemonTools(pi, async () => connection, daemonToolDeps);
+		const askTool = toolByName(tools, "ask_agent");
+
+		const executePromise = askTool.execute(
+			"1",
+			{ agent_handle: "missing-agent", question: "Can you answer this?", timeout_s: 30 },
+			new AbortController().signal,
+			() => {},
+			{ model: "claude-sonnet", sessionManager: { getSessionId: () => "session-id" } },
+		);
+
+		await new Promise((resolve) => setImmediate(resolve));
+		const dispatch = connection.sent[0] as Extract<Frame, { type: "dispatch" }>;
+		assert.equal(dispatch.type, "dispatch");
+		assert.equal(dispatch.agent_type, "ask");
+		assert.equal(dispatch.spec.fork_from, "missing-agent");
+
+		connection.emit({
+			type: "dispatch_ack",
+			v: PROTOCOL_VERSION,
+			run_id: dispatch.run_id,
+			status: "rejected",
+			reason: "fork_target_unknown",
+		});
+
+		const result = await executePromise;
+		assert.equal(result.isError, true);
+		assert.equal(result.content[0].text, 'No agent "missing-agent" is available to ask.');
+		assert.equal(connection.sent.length, 1);
+	});
+
+	it("ask_agent rejects a whitespace-only agent_handle without dispatching", async () => {
+		trackSkillInvocation("agents");
+		const connection = new MockConnection();
+		const { pi, tools } = createMockPi();
+		registerDaemonTools(pi, async () => connection, daemonToolDeps);
+		const askTool = toolByName(tools, "ask_agent");
+
+		const result = await askTool.execute(
+			"1",
+			{ agent_handle: "   ", question: "What did you find?", timeout_s: 30 },
+			new AbortController().signal,
+			() => {},
+			{ model: "claude-sonnet", sessionManager: { getSessionId: () => "session-id" } },
+		);
+
+		assert.equal(result.isError, true);
+		assert.match(result.content[0].text, /non-empty agent_handle/);
+		assert.equal(connection.sent.length, 0);
 	});
 
 	it("wait_for_agent sends wait and returns per-handle results", async () => {

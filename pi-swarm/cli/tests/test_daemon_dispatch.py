@@ -13,11 +13,12 @@ from pathlib import Path
 import pytest
 import uvicorn
 from pi_swarm.app import create_app
-from pi_swarm.frames import PROTOCOL_VERSION
-from pi_swarm.process import reap_agent_process
+from pi_swarm.frames import PROTOCOL_VERSION, DispatchFrame, DispatchSpec
+from pi_swarm.process import build_runner_argv, reap_agent_process
 from pi_swarm.registry import Registry
 from pi_swarm.run_result import load_run_result, run_result_path
 from pi_swarm.server import UdsServer
+from pi_swarm.service import DispatchRejection, PreparedDispatch, prepare_dispatch
 from pi_swarm.store import Store
 from websockets.sync.client import unix_connect
 
@@ -156,6 +157,251 @@ def _dispatch(
 
     websocket.send(json.dumps(payload))
     return json.loads(websocket.recv())
+
+
+def _write_agent_session_file(home: Path, agent_id: str) -> Path:
+    session_dir = home / ".pi" / "basecamp" / "swarm" / "agents" / agent_id / "session"
+    session_dir.mkdir(parents=True)
+    session_file = session_dir / f"2026-01-01T00-00-00_{agent_id}.jsonl"
+    session_file.write_text("{}\n", encoding="utf-8")
+    return session_file
+
+
+def test_build_runner_argv_injects_fork_before_task() -> None:
+    spec = DispatchSpec(
+        argv=["pi", "--mode", "json", "-p"],
+        env={},
+        cwd="/tmp/project",
+        resume_path=None,
+        task="answer this question",
+    )
+
+    argv = build_runner_argv(
+        result_path=Path("/tmp/result.json"),
+        spec=spec,
+        fork_source_path="/tmp/source.jsonl",
+    )
+
+    assert argv == [
+        sys.executable,
+        "-m",
+        "pi_swarm.runner",
+        "--result-path",
+        "/tmp/result.json",
+        "--",
+        "pi",
+        "--mode",
+        "json",
+        "-p",
+        "--fork",
+        "/tmp/source.jsonl",
+        "answer this question",
+    ]
+
+
+def test_build_runner_argv_omits_fork_when_unset() -> None:
+    spec = DispatchSpec(
+        argv=["pi", "--mode", "json", "-p"],
+        env={},
+        cwd="/tmp/project",
+        resume_path=None,
+        task="answer this question",
+    )
+
+    argv = build_runner_argv(
+        result_path=Path("/tmp/result.json"),
+        spec=spec,
+        fork_source_path=None,
+    )
+
+    assert "--fork" not in argv
+    assert argv[-1] == "answer this question"
+
+
+@pytest.mark.asyncio
+async def test_prepare_dispatch_resolves_fork_from_target_handle(tmp_path: Path) -> None:
+    store = Store(db_path=tmp_path / "daemon.db")
+    home = tmp_path / "home"
+    session_file = _write_agent_session_file(home, "target-agent")
+    store.upsert_agent(
+        agent_id="root",
+        parent_id=None,
+        sibling_group="sg-root",
+        depth=0,
+        role="session",
+        session_name="root-session",
+        cwd=str(tmp_path),
+    )
+    store.upsert_agent(
+        agent_id="target-agent",
+        agent_handle="target-handle",
+        parent_id="root",
+        sibling_group="sg-target",
+        depth=1,
+        role="agent",
+        session_name="target-agent",
+        cwd=str(tmp_path),
+    )
+    frame = DispatchFrame(
+        type="dispatch",
+        v=PROTOCOL_VERSION,
+        run_id="run-answerer",
+        agent_id="answerer-agent",
+        spec=DispatchSpec(
+            argv=["pi", "--mode", "json", "-p"],
+            env={"HOME": str(home)},
+            cwd=str(tmp_path),
+            resume_path=None,
+            fork_from="target-handle",
+            task="question?",
+        ),
+    )
+
+    dispatch = await prepare_dispatch(
+        frame=frame,
+        dispatcher_node_id="root",
+        store=store,
+    )
+
+    assert isinstance(dispatch, PreparedDispatch)
+    assert dispatch.fork_source_path == str(session_file.resolve())
+    agent = store.get_agent("answerer-agent")
+    assert agent is not None
+    assert agent["sibling_group"] == "root"
+
+
+@pytest.mark.asyncio
+async def test_prepare_dispatch_rejects_unauthorized_fork_from_target(tmp_path: Path) -> None:
+    store = Store(db_path=tmp_path / "daemon.db")
+    home = tmp_path / "home"
+    _write_agent_session_file(home, "outside-agent")
+    store.upsert_agent(
+        agent_id="root",
+        parent_id=None,
+        sibling_group=None,
+        depth=0,
+        role="session",
+        session_name="root-session",
+        cwd=str(tmp_path),
+    )
+    store.upsert_agent(
+        agent_id="outside-root",
+        parent_id=None,
+        sibling_group=None,
+        depth=0,
+        role="session",
+        session_name="outside-root-session",
+        cwd=str(tmp_path),
+    )
+    store.upsert_agent(
+        agent_id="outside-agent",
+        agent_handle="outside-handle",
+        parent_id="outside-root",
+        sibling_group="outside-root",
+        depth=1,
+        role="agent",
+        session_name="outside-agent",
+        cwd=str(tmp_path),
+    )
+    frame = DispatchFrame(
+        type="dispatch",
+        v=PROTOCOL_VERSION,
+        run_id="run-answerer",
+        agent_id="answerer-agent",
+        spec=DispatchSpec(
+            argv=["pi", "--mode", "json", "-p"],
+            env={"HOME": str(home)},
+            cwd=str(tmp_path),
+            resume_path=None,
+            fork_from="outside-handle",
+            task="question?",
+        ),
+    )
+
+    dispatch = await prepare_dispatch(
+        frame=frame,
+        dispatcher_node_id="root",
+        store=store,
+    )
+
+    assert dispatch == DispatchRejection(reason="fork_target_unknown")
+    assert store.get_run("run-answerer") is None
+
+
+@pytest.mark.asyncio
+async def test_prepare_dispatch_persists_new_agent_sibling_group(tmp_path: Path) -> None:
+    store = Store(db_path=tmp_path / "daemon.db")
+    store.upsert_agent(
+        agent_id="root",
+        parent_id=None,
+        sibling_group=None,
+        depth=0,
+        role="session",
+        session_name="root-session",
+        cwd=str(tmp_path),
+    )
+    frame = DispatchFrame(
+        type="dispatch",
+        v=PROTOCOL_VERSION,
+        run_id="run-child",
+        agent_id="child-agent",
+        spec=DispatchSpec(
+            argv=["pi", "--mode", "json", "-p"],
+            env={},
+            cwd=str(tmp_path),
+            resume_path=None,
+            task="do work",
+        ),
+    )
+
+    dispatch = await prepare_dispatch(
+        frame=frame,
+        dispatcher_node_id="root",
+        store=store,
+    )
+
+    assert isinstance(dispatch, PreparedDispatch)
+    agent = store.get_agent("child-agent")
+    assert agent is not None
+    assert agent["sibling_group"] == "root"
+
+
+@pytest.mark.asyncio
+async def test_prepare_dispatch_rejects_unknown_fork_from_target(tmp_path: Path) -> None:
+    store = Store(db_path=tmp_path / "daemon.db")
+    home = tmp_path / "home"
+    store.upsert_agent(
+        agent_id="root",
+        parent_id=None,
+        sibling_group="sg-root",
+        depth=0,
+        role="session",
+        session_name="root-session",
+        cwd=str(tmp_path),
+    )
+    frame = DispatchFrame(
+        type="dispatch",
+        v=PROTOCOL_VERSION,
+        run_id="run-answerer",
+        agent_id="answerer-agent",
+        spec=DispatchSpec(
+            argv=["pi", "--mode", "json", "-p"],
+            env={"HOME": str(home)},
+            cwd=str(tmp_path),
+            resume_path=None,
+            fork_from="missing-target",
+            task="question?",
+        ),
+    )
+
+    dispatch = await prepare_dispatch(
+        frame=frame,
+        dispatcher_node_id="root",
+        store=store,
+    )
+
+    assert dispatch == DispatchRejection(reason="fork_target_unknown")
+    assert store.get_run("run-answerer") is None
 
 
 @pytest.mark.asyncio

@@ -731,6 +731,7 @@ interface DaemonDispatchFrameOptions {
 	cwd: string;
 	env: Record<string, string>;
 	resumePath?: string | null;
+	forkFrom?: string | null;
 }
 
 export interface DaemonDispatchResult {
@@ -835,6 +836,7 @@ export function createDaemonClient(connection: DaemonConnection): DaemonClient {
 					cwd: input.cwd,
 					env: input.env,
 					resume_path: input.resumePath ?? null,
+					fork_from: input.forkFrom ?? null,
 				},
 			});
 

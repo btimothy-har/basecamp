@@ -1,10 +1,23 @@
 from __future__ import annotations
 
+import json
 import os
 from collections.abc import Sequence
 from pathlib import Path
 
 import pytest
+from pi_swarm.frames import (
+    PROTOCOL_VERSION,
+    DispatchAckFrame,
+    DispatchFrame,
+    DispatchSpec,
+    ResultReportFrame,
+    TelemetryFrame,
+    WaitFrame,
+    WaitResultFrame,
+    WaitResultItem,
+    serialize_frame,
+)
 from pi_swarm.run_result import (
     FinalRunResult,
     RunResultAttempt,
@@ -35,6 +48,24 @@ def _context(tmp_path: Path) -> RunnerContext:
         agent_depth=1,
         result_path=tmp_path / "result.json",
     )
+
+
+class FakeWebSocket:
+    def __init__(self, messages: Sequence[str] = ()) -> None:
+        self._messages = list(messages)
+        self.sent: list[str] = []
+
+    def recv(self) -> str:
+        if not self._messages:
+            raise EOFError
+        return self._messages.pop(0)
+
+    def send(self, message: str) -> None:
+        self.sent.append(message)
+
+
+def _message(frame: object) -> str:
+    return json.dumps(serialize_frame(frame))
 
 
 def _append_attempt(
@@ -85,6 +116,132 @@ def test_attempt_proxy_wait_until_ready_raises_when_socket_missing(tmp_path: Pat
 
     with pytest.raises(ProxySocketUnavailableError, match="failed to create socket"):
         proxy._wait_until_ready()
+
+
+def test_attempt_proxy_forwards_rewritten_telemetry(tmp_path: Path) -> None:
+    context = _context(tmp_path)
+    proxy = AttemptDaemonProxy(context)
+    child = FakeWebSocket(
+        [
+            _message(
+                TelemetryFrame(
+                    type="telemetry",
+                    v=PROTOCOL_VERSION,
+                    run_id="child-run",
+                    agent_id="child-agent",
+                    report_token="child-token",
+                    kind="tool_call",
+                    payload={"snippet": "bash echo hi"},
+                )
+            )
+        ]
+    )
+    daemon = FakeWebSocket()
+
+    proxy._forward_child_frames(child, daemon)
+
+    assert len(daemon.sent) == 1
+    forwarded = json.loads(daemon.sent[0])
+    assert forwarded["type"] == "telemetry"
+    assert forwarded["run_id"] == context.run_id
+    assert forwarded["agent_id"] == context.agent_id
+    assert forwarded["report_token"] == context.report_token
+    assert forwarded["kind"] == "tool_call"
+    assert forwarded["payload"] == {"snippet": "bash echo hi"}
+    assert child.sent == []
+
+
+def test_attempt_proxy_suppresses_result_report(tmp_path: Path) -> None:
+    proxy = AttemptDaemonProxy(_context(tmp_path))
+    child = FakeWebSocket(
+        [
+            _message(
+                ResultReportFrame(
+                    type="result_report",
+                    v=PROTOCOL_VERSION,
+                    run_id="run-1",
+                    agent_id="agent-1",
+                    report_token="token-1",
+                    status="ok",
+                    result="done",
+                    error=None,
+                    usage=None,
+                )
+            )
+        ]
+    )
+    daemon = FakeWebSocket()
+
+    proxy._forward_child_frames(child, daemon)
+
+    assert daemon.sent == []
+    assert child.sent == []
+
+
+def test_attempt_proxy_relays_dispatch_ack_inline(tmp_path: Path) -> None:
+    proxy = AttemptDaemonProxy(_context(tmp_path))
+    dispatch = DispatchFrame(
+        type="dispatch",
+        v=PROTOCOL_VERSION,
+        run_id="ask-run-1",
+        agent_id="ask-agent-1",
+        agent_handle="amber-fox-a1b2c3",
+        agent_type="ask",
+        run_kind="ad-hoc",
+        model="default",
+        spec=DispatchSpec(
+            argv=["pi", "answer this"],
+            env={"BASECAMP_PROJECT": "proj"},
+            cwd="/repo",
+            resume_path=None,
+            fork_from="target-agent",
+            task="answer this",
+        ),
+    )
+    dispatch_ack = DispatchAckFrame(
+        type="dispatch_ack",
+        v=PROTOCOL_VERSION,
+        run_id="ask-run-1",
+        status="spawned",
+        reason=None,
+    )
+    child = FakeWebSocket([_message(dispatch)])
+    daemon = FakeWebSocket([_message(dispatch_ack)])
+
+    proxy._forward_child_frames(child, daemon)
+
+    assert daemon.sent == [_message(dispatch)]
+    assert child.sent == [_message(dispatch_ack)]
+
+
+def test_attempt_proxy_relays_wait_result_inline(tmp_path: Path) -> None:
+    proxy = AttemptDaemonProxy(_context(tmp_path))
+    wait = WaitFrame(
+        type="wait",
+        v=PROTOCOL_VERSION,
+        agent_handles=["amber-fox-a1b2c3"],
+        mode="all",
+        timeout_s=30,
+    )
+    wait_result = WaitResultFrame(
+        type="wait_result",
+        v=PROTOCOL_VERSION,
+        results=[
+            WaitResultItem(
+                agent_handle="amber-fox-a1b2c3",
+                status="completed",
+                result="answer",
+                error=None,
+            )
+        ],
+    )
+    child = FakeWebSocket([_message(wait)])
+    daemon = FakeWebSocket([_message(wait_result)])
+
+    proxy._forward_child_frames(child, daemon)
+
+    assert daemon.sent == [_message(wait)]
+    assert child.sent == [_message(wait_result)]
 
 
 def test_attempt_child_env_uses_proxy_socket_and_dummy_report_token(tmp_path: Path) -> None:

@@ -20,9 +20,11 @@ from pydantic import ValidationError
 
 from .frames import (
     PROTOCOL_VERSION,
+    DispatchFrame,
     RegisterFrame,
     ResultReportFrame,
     TelemetryFrame,
+    WaitFrame,
     parse_frame,
     serialize_frame,
 )
@@ -227,6 +229,11 @@ class AttemptDaemonProxy:
                 daemon_websocket.send(json.dumps(serialize_frame(self._telemetry_frame(frame))))
                 continue
             if isinstance(frame, ResultReportFrame):
+                continue
+            if isinstance(frame, (DispatchFrame, WaitFrame)):
+                daemon_websocket.send(json.dumps(serialize_frame(frame)))
+                response = daemon_websocket.recv()
+                child_websocket.send(response)
                 continue
             return
 

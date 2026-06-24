@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import { afterEach, describe, it } from "node:test";
+import { afterEach, beforeEach, describe, it } from "node:test";
 import type { PiSwarmDependencies } from "../../dependencies.ts";
 import type { DaemonConnection } from "../daemon/client.ts";
 import type { Frame } from "../daemon/frames.ts";
@@ -17,6 +17,19 @@ import {
 
 class MockPi {
 	handlers = new Map<string, Array<(event: unknown, ctx?: unknown) => unknown>>();
+	tools: Array<{ name: string }> = [];
+
+	registerTool(tool: { name: string }): void {
+		this.tools.push(tool);
+	}
+
+	getSessionName(): string {
+		return "session-name";
+	}
+
+	setSessionName(_name: string): void {
+		// no-op
+	}
 
 	on(type: string, handler: (event: unknown, ctx?: unknown) => unknown): void {
 		const list = this.handlers.get(type) ?? [];
@@ -69,6 +82,12 @@ function restoreEnv(name: string, value: string | undefined): void {
 	if (value === undefined) delete process.env[name];
 	else process.env[name] = value;
 }
+
+beforeEach(() => {
+	delete process.env[BASECAMP_RUNNER_MANAGED_RESULT];
+	delete process.env[BASECAMP_RUN_RESULT_PATH];
+	delete process.env[BASECAMP_RUN_ATTEMPT];
+});
 
 afterEach(async () => {
 	restoreEnv(BASECAMP_RUNNER_MANAGED_RESULT, originalRunnerEnv[BASECAMP_RUNNER_MANAGED_RESULT]);
@@ -470,6 +489,36 @@ describe("daemon reporter", () => {
 		} finally {
 			if (priorReportToken === undefined) delete process.env.BASECAMP_REPORT_TOKEN;
 			else process.env.BASECAMP_REPORT_TOKEN = priorReportToken;
+		}
+	});
+
+	it("registers only ask_agent for daemon-spawned agents below max depth", () => {
+		const pi = new MockPi();
+		const priorDepth = process.env.BASECAMP_AGENT_DEPTH;
+		const priorMaxDepth = process.env.BASECAMP_AGENT_MAX_DEPTH;
+		const priorRun = process.env.BASECAMP_RUN_ID;
+		const priorAgent = process.env.BASECAMP_AGENT_ID;
+		try {
+			process.env.BASECAMP_AGENT_DEPTH = "1";
+			process.env.BASECAMP_AGENT_MAX_DEPTH = "3";
+			process.env.BASECAMP_RUN_ID = "run-1";
+			process.env.BASECAMP_AGENT_ID = "agent-1";
+
+			registerDaemonClient(pi as unknown as any, deps);
+
+			assert.deepEqual(
+				pi.tools.map((tool) => tool.name),
+				["ask_agent"],
+			);
+		} finally {
+			if (priorDepth === undefined) delete process.env.BASECAMP_AGENT_DEPTH;
+			else process.env.BASECAMP_AGENT_DEPTH = priorDepth;
+			if (priorMaxDepth === undefined) delete process.env.BASECAMP_AGENT_MAX_DEPTH;
+			else process.env.BASECAMP_AGENT_MAX_DEPTH = priorMaxDepth;
+			if (priorRun === undefined) delete process.env.BASECAMP_RUN_ID;
+			else process.env.BASECAMP_RUN_ID = priorRun;
+			if (priorAgent === undefined) delete process.env.BASECAMP_AGENT_ID;
+			else process.env.BASECAMP_AGENT_ID = priorAgent;
 		}
 	});
 

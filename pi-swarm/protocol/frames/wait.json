@@ -1,6 +1,6 @@
 {
   "type": "wait",
-  "v": 11,
+  "v": 12,
   "agent_ids": [],
   "agent_handles": [
     "mossy-otter-a1b2c3",

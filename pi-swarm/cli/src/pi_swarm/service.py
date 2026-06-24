@@ -22,6 +22,7 @@ from .frames import (
 )
 from .process import reap_agent_process, spawn_agent_process
 from .registry import Registry, Waiter
+from .run_result import agent_session_file
 from .store import ActiveRunExistsError, DuplicateAgentHandleError, Store
 
 _REDACTED_ENV_VALUE = "<redacted>"
@@ -35,9 +36,16 @@ DispatchAckReason = Literal[
     "active_run_exists",
     "duplicate_agent_handle",
     "agent_type_mismatch",
+    "fork_target_unknown",
     "spawn_failed",
 ]
-DispatchRejectionReason = Literal["depth_cap", "active_run_exists", "duplicate_agent_handle", "agent_type_mismatch"]
+DispatchRejectionReason = Literal[
+    "depth_cap",
+    "active_run_exists",
+    "duplicate_agent_handle",
+    "agent_type_mismatch",
+    "fork_target_unknown",
+]
 
 
 @dataclass(frozen=True)
@@ -51,6 +59,7 @@ class PreparedDispatch:
     agent_id: str
     report_token: str
     child_depth: int
+    fork_source_path: str | None = None
 
 
 @dataclass(frozen=True)
@@ -126,6 +135,27 @@ async def prepare_dispatch(
     if child_depth > max_depth:
         return DispatchRejection(reason="depth_cap")
 
+    fork_source_path = None
+    if frame.spec.fork_from:
+        fork_target = await asyncio.to_thread(store.get_agent_by_handle, frame.spec.fork_from)
+        if fork_target is None:
+            fork_target = await asyncio.to_thread(store.get_agent, frame.spec.fork_from)
+        if fork_target is None:
+            return DispatchRejection(reason="fork_target_unknown")
+
+        fork_target_id = fork_target.get("id")
+        if not isinstance(fork_target_id, str):
+            return DispatchRejection(reason="fork_target_unknown")
+        if not await asyncio.to_thread(store.can_ask, dispatcher_node_id, fork_target_id):
+            return DispatchRejection(reason="fork_target_unknown")
+
+        # Resolve under the daemon's own home (the owner of all agent session dirs),
+        # never the requester-supplied frame.spec.env, so a fork source cannot be redirected.
+        session_file = agent_session_file(fork_target_id)
+        if session_file is None:
+            return DispatchRejection(reason="fork_target_unknown")
+        fork_source_path = str(session_file)
+
     report_token = _generate_report_token()
     report_token_hash = _hash_report_token(report_token)
     spec_json = _sanitize_dispatch_spec(frame.spec.model_dump(mode="json"))
@@ -135,7 +165,7 @@ async def prepare_dispatch(
                 store.upsert_agent,
                 agent_id=agent_id,
                 parent_id=dispatcher_node_id,
-                sibling_group=None,
+                sibling_group=dispatcher_node_id,
                 depth=child_depth,
                 role="agent",
                 session_name=frame.agent_handle or agent_id,
@@ -174,7 +204,12 @@ async def prepare_dispatch(
     except ActiveRunExistsError:
         return DispatchRejection(reason="active_run_exists")
 
-    return PreparedDispatch(agent_id=agent_id, report_token=report_token, child_depth=child_depth)
+    return PreparedDispatch(
+        agent_id=agent_id,
+        report_token=report_token,
+        child_depth=child_depth,
+        fork_source_path=fork_source_path,
+    )
 
 
 async def _mark_spawn_failed(*, run_id: str, registry: Registry, store: Store) -> None:
@@ -215,6 +250,7 @@ async def dispatch_agent(
             daemon_socket_path=daemon_socket_path,
             dispatcher_node_id=dispatcher_node_id,
             child_depth=dispatch.child_depth,
+            fork_source_path=dispatch.fork_source_path,
         )
     except (FileNotFoundError, PermissionError, OSError, ValueError):
         await _mark_spawn_failed(run_id=frame.run_id, registry=registry, store=store)

@@ -44,9 +44,25 @@ class RunResultSidecar(BaseModel):
     final: FinalRunResult | None
 
 
-def run_result_path(agent_id: str, run_id: str, home_dir: str | Path | None = None) -> Path:
+def _swarm_agents_dir(home_dir: str | Path | None = None) -> Path:
     home = Path(home_dir).expanduser() if home_dir is not None else Path.home()
-    return home / ".pi" / "basecamp" / "swarm" / "agents" / agent_id / "runs" / run_id / "result.json"
+    return home / ".pi" / "basecamp" / "swarm" / "agents"
+
+
+def run_result_path(agent_id: str, run_id: str, home_dir: str | Path | None = None) -> Path:
+    return _swarm_agents_dir(home_dir) / agent_id / "runs" / run_id / "result.json"
+
+
+def agent_session_file(agent_id: str, home_dir: str | Path | None = None) -> Path | None:
+    session_dir = _swarm_agents_dir(home_dir) / agent_id / "session"
+    if not session_dir.is_dir():
+        return None
+
+    candidates = [path for path in session_dir.glob("*.jsonl") if path.is_file() and not path.is_symlink()]
+    if not candidates:
+        return None
+
+    return max(candidates, key=lambda path: path.stat().st_mtime).resolve(strict=False)
 
 
 def load_run_result(path: str | Path) -> RunResultSidecar | None:

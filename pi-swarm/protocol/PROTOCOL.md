@@ -1,22 +1,22 @@
 # Pi Swarm Daemon Protocol
 
-Protocol version: `11`
+Protocol version: `12`
 
 All frames are JSON objects with an envelope:
 
 ```json
-{"type":"<frame_type>","v":11,...}
+{"type":"<frame_type>","v":12,...}
 ```
 
 Version handling:
 - The daemon validates `v` on every inbound frame.
-- If `v != 11`, the daemon sends an `error` frame with `code: "protocol_version"` and closes the connection.
+- If `v != 12`, the daemon sends an `error` frame with `code: "protocol_version"` and closes the connection.
 - The extension treats the protocol as a client-visible capability gate, not only a frame-shape version. A version mismatch restarts the host daemon during ensure-daemon.
 
 ## Transport
 
 - HTTP over Unix domain socket (UDS):
-  - `GET /health` → `{"status":"ok","protocol":11}`
+  - `GET /health` → `{"status":"ok","protocol":12}`
   - `GET /runs/summary?root_id=<id>` returns safe agent-level observability for the companion dashboard.
   - `GET /runs/messages?root_id=<id>&agent_handle=<handle>` returns selected-agent assistant message detail for the companion dashboard.
 - WebSocket over UDS:
@@ -67,6 +67,7 @@ Important fields:
 - `agent_type` and `run_kind`: immutable per handle after the first dispatch.
 - `model`: public display model selected for the agent run. If the extension uses Pi's default model, it sends/stores `default`.
 - `spec`: opaque TypeScript-authored spawn spec.
+- `spec.fork_from`: optional; a target agent handle/id. When present, the daemon resolves it to the target's session file and forks it (pi --fork) into a new read-only answerer session — used by the agent 'ask' capability. Omitted/null for normal dispatch.
 
 New run rows persist `dispatcher_id` as the registered `node_id` that sent `dispatch`.
 
@@ -93,7 +94,7 @@ Waits for one or more public agent handles:
 ```json
 {
   "type": "wait",
-  "v": 11,
+  "v": 12,
   "agent_ids": [],
   "agent_handles": ["mossy-otter-a1b2c3"],
   "mode": "all",
@@ -124,7 +125,7 @@ Requests a safe directory of agents visible under the caller's root session:
 ```json
 {
   "type": "list_agents",
-  "v": 11,
+  "v": 12,
   "request_id": "list-001",
   "awaitable": true
 }
@@ -202,6 +203,6 @@ Reports protocol/parse errors and closes the WebSocket for fatal frame errors. C
 A minimal client flow is:
 
 1. Connect to `/ws` over the UDS.
-2. Send `register` with `v: 11`.
+2. Send `register` with `v: 12`.
 3. Send `dispatch` with private `run_id` / `agent_id` and public `agent_handle`.
 4. Use the `agent_handle` with `wait` or discover agents through `list_agents`.

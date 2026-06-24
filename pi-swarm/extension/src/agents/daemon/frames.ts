@@ -2,7 +2,7 @@ import { Buffer } from "node:buffer";
 
 // Gates every client-visible daemon capability, not just WebSocket frame shapes.
 // This includes HTTP endpoints like /runs/summary, so stale daemons restart.
-export const PROTOCOL_VERSION = 11;
+export const PROTOCOL_VERSION = 12;
 
 export interface RegisterFrame {
 	type: "register";
@@ -45,6 +45,7 @@ export interface DispatchFrame {
 		env: Record<string, string>;
 		cwd: string;
 		resume_path: string | null;
+		fork_from?: string | null;
 		task: string;
 	};
 }
