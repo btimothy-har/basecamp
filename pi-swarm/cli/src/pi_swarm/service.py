@@ -149,7 +149,9 @@ async def prepare_dispatch(
         if not await asyncio.to_thread(store.can_ask, dispatcher_node_id, fork_target_id):
             return DispatchRejection(reason="fork_target_unknown")
 
-        session_file = agent_session_file(fork_target_id, home_dir=frame.spec.env.get("HOME"))
+        # Resolve under the daemon's own home (the owner of all agent session dirs),
+        # never the requester-supplied frame.spec.env, so a fork source cannot be redirected.
+        session_file = agent_session_file(fork_target_id)
         if session_file is None:
             return DispatchRejection(reason="fork_target_unknown")
         fork_source_path = str(session_file)

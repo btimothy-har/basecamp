@@ -58,11 +58,11 @@ def agent_session_file(agent_id: str, home_dir: str | Path | None = None) -> Pat
     if not session_dir.is_dir():
         return None
 
-    matches = list(session_dir.glob("*.jsonl"))
-    if not matches:
+    candidates = [path for path in session_dir.glob("*.jsonl") if path.is_file() and not path.is_symlink()]
+    if not candidates:
         return None
 
-    return max(matches, key=lambda path: path.name).resolve(strict=False)
+    return max(candidates, key=lambda path: path.stat().st_mtime).resolve(strict=False)
 
 
 def load_run_result(path: str | Path) -> RunResultSidecar | None:

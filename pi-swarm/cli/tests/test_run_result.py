@@ -47,6 +47,22 @@ def test_agent_session_file_returns_newest_absolute_session_file(tmp_path: Path)
     assert agent_session_file("missing-agent", tmp_path) is None
 
 
+def test_agent_session_file_ignores_symlinks(tmp_path: Path) -> None:
+    agent_id = "agent-1"
+    session_dir = tmp_path / ".pi" / "basecamp" / "swarm" / "agents" / agent_id / "session"
+    session_dir.mkdir(parents=True)
+    real = session_dir / f"2026-01-01T00-00-00_{agent_id}.jsonl"
+    real.write_text("{}\n", encoding="utf-8")
+
+    outside = tmp_path / "outside.jsonl"
+    outside.write_text("{}\n", encoding="utf-8")
+    # A symlink whose name sorts AFTER the real file must still be ignored.
+    link = session_dir / f"9999-99-99T00-00-00_{agent_id}.jsonl"
+    link.symlink_to(outside)
+
+    assert agent_session_file(agent_id, tmp_path) == real.resolve()
+
+
 def test_run_result_models_validate_and_round_trip() -> None:
     sidecar = RunResultSidecar(
         run_id="run-1",

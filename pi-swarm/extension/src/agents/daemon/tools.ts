@@ -205,6 +205,13 @@ export function registerAskAgentTool(
 
 			const daemonClient = createDaemonClient(connection);
 			const targetHandle = params.agent_handle.trim();
+			if (!targetHandle) {
+				return {
+					content: [{ type: "text", text: "ask_agent requires a non-empty agent_handle." }],
+					isError: true,
+					details: null,
+				};
+			}
 			const agentId = randomUUID();
 			const namePrefix = `ask-${randomUUID().slice(0, 6)}`;
 			let agentLaunch: ReturnType<typeof buildAgentLaunchSpec>;

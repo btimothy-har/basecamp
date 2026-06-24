@@ -791,6 +791,26 @@ describe("daemon async tools", () => {
 		assert.equal(connection.sent.length, 1);
 	});
 
+	it("ask_agent rejects a whitespace-only agent_handle without dispatching", async () => {
+		trackSkillInvocation("agents");
+		const connection = new MockConnection();
+		const { pi, tools } = createMockPi();
+		registerDaemonTools(pi, async () => connection, daemonToolDeps);
+		const askTool = toolByName(tools, "ask_agent");
+
+		const result = await askTool.execute(
+			"1",
+			{ agent_handle: "   ", question: "What did you find?", timeout_s: 30 },
+			new AbortController().signal,
+			() => {},
+			{ model: "claude-sonnet", sessionManager: { getSessionId: () => "session-id" } },
+		);
+
+		assert.equal(result.isError, true);
+		assert.match(result.content[0].text, /non-empty agent_handle/);
+		assert.equal(connection.sent.length, 0);
+	});
+
 	it("wait_for_agent sends wait and returns per-handle results", async () => {
 		trackSkillInvocation("agents");
 		const connection = new MockConnection();
