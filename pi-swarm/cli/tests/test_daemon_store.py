@@ -446,6 +446,61 @@ def test_get_root_agent_directory_scopes_to_root_and_excludes_sessions(tmp_path:
     assert all(row["agent_id"] != "outside-agent" for row in rows)
 
 
+def test_get_root_agent_directory_excludes_ask_agents_but_run_summary_includes_them(tmp_path: Path) -> None:
+    db_path = tmp_path / "daemon.db"
+    store = Store(db_path=db_path)
+
+    store.upsert_agent(
+        agent_id="root",
+        parent_id=None,
+        sibling_group="sg-root",
+        depth=0,
+        role="session",
+        session_name="root-session",
+        cwd="/tmp/root",
+    )
+    store.upsert_agent(
+        agent_id="normal-agent",
+        parent_id="root",
+        sibling_group="sg-normal",
+        depth=1,
+        role="agent",
+        session_name="normal-agent",
+        cwd="/tmp/normal",
+    )
+    store.upsert_agent(
+        agent_id="ask-agent",
+        parent_id="root",
+        sibling_group="sg-ask",
+        depth=1,
+        role="agent",
+        session_name="ask-agent",
+        cwd="/tmp/ask",
+        agent_type="ask",
+    )
+    store.create_run(
+        run_id="run-normal",
+        agent_id="normal-agent",
+        dispatcher_id="root",
+        spec={"task": "normal"},
+        report_token_hash="hash",
+    )
+    store.create_run(
+        run_id="run-ask",
+        agent_id="ask-agent",
+        dispatcher_id="root",
+        spec={"task": "ask"},
+        report_token_hash="hash",
+    )
+
+    directory_rows = store.get_root_agent_directory(requester_node_id="root", awaitable=False)
+    summary = store.get_run_summary("root")
+
+    assert [row["agent_id"] for row in directory_rows] == ["normal-agent"]
+    assert {agent["agent_handle"] for agent in summary["agents"]} == {"normal-agent", "ask-agent"}
+    assert summary["counts"]["total"] == 2
+
+
 def test_get_root_agent_directory_filters_awaitable_agents_only(tmp_path: Path) -> None:
     db_path = tmp_path / "daemon.db"
     store = Store(db_path=db_path)

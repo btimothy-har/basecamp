@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import sys
 from collections.abc import Awaitable, Callable
+from pathlib import Path
 
 from .frames import DispatchSpec
 from .registry import Registry
@@ -12,6 +13,26 @@ from .run_result import run_result_path
 from .store import Store
 
 ProcessExitHook = Callable[[str], Awaitable[None]]
+
+
+def build_runner_argv(
+    *,
+    result_path: str | Path,
+    spec: DispatchSpec,
+    fork_source_path: str | None,
+) -> list[str]:
+    fork_part = ["--fork", fork_source_path] if fork_source_path is not None else []
+    return [
+        sys.executable,
+        "-m",
+        "pi_swarm.runner",
+        "--result-path",
+        str(result_path),
+        "--",
+        *spec.argv,
+        *fork_part,
+        spec.task,
+    ]
 
 
 async def spawn_agent_process(
@@ -23,18 +44,14 @@ async def spawn_agent_process(
     daemon_socket_path: str,
     dispatcher_node_id: str,
     child_depth: int,
+    fork_source_path: str | None = None,
 ) -> asyncio.subprocess.Process:
     result_path = run_result_path(agent_id, run_id, home_dir=spec.env.get("HOME"))
-    argv = [
-        sys.executable,
-        "-m",
-        "pi_swarm.runner",
-        "--result-path",
-        str(result_path),
-        "--",
-        *spec.argv,
-        spec.task,
-    ]
+    argv = build_runner_argv(
+        result_path=result_path,
+        spec=spec,
+        fork_source_path=fork_source_path,
+    )
     child_env = {
         **spec.env,
         "BASECAMP_DAEMON_UDS": daemon_socket_path,

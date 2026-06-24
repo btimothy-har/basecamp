@@ -531,6 +531,7 @@ class Store:
             INNER JOIN agents AS a ON a.id = s.id
             LEFT JOIN runs AS r ON r.id = a.current_run_id
             WHERE a.role != 'session'
+              AND (a.agent_type IS NULL OR a.agent_type != 'ask')
             {awaitable_filter}
             ORDER BY a.depth ASC, a.id ASC
             """
