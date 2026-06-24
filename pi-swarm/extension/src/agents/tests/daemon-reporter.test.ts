@@ -17,6 +17,19 @@ import {
 
 class MockPi {
 	handlers = new Map<string, Array<(event: unknown, ctx?: unknown) => unknown>>();
+	tools: Array<{ name: string }> = [];
+
+	registerTool(tool: { name: string }): void {
+		this.tools.push(tool);
+	}
+
+	getSessionName(): string {
+		return "session-name";
+	}
+
+	setSessionName(_name: string): void {
+		// no-op
+	}
 
 	on(type: string, handler: (event: unknown, ctx?: unknown) => unknown): void {
 		const list = this.handlers.get(type) ?? [];
@@ -476,6 +489,36 @@ describe("daemon reporter", () => {
 		} finally {
 			if (priorReportToken === undefined) delete process.env.BASECAMP_REPORT_TOKEN;
 			else process.env.BASECAMP_REPORT_TOKEN = priorReportToken;
+		}
+	});
+
+	it("registers only ask_agent for daemon-spawned agents below max depth", () => {
+		const pi = new MockPi();
+		const priorDepth = process.env.BASECAMP_AGENT_DEPTH;
+		const priorMaxDepth = process.env.BASECAMP_AGENT_MAX_DEPTH;
+		const priorRun = process.env.BASECAMP_RUN_ID;
+		const priorAgent = process.env.BASECAMP_AGENT_ID;
+		try {
+			process.env.BASECAMP_AGENT_DEPTH = "1";
+			process.env.BASECAMP_AGENT_MAX_DEPTH = "3";
+			process.env.BASECAMP_RUN_ID = "run-1";
+			process.env.BASECAMP_AGENT_ID = "agent-1";
+
+			registerDaemonClient(pi as unknown as any, deps);
+
+			assert.deepEqual(
+				pi.tools.map((tool) => tool.name),
+				["ask_agent"],
+			);
+		} finally {
+			if (priorDepth === undefined) delete process.env.BASECAMP_AGENT_DEPTH;
+			else process.env.BASECAMP_AGENT_DEPTH = priorDepth;
+			if (priorMaxDepth === undefined) delete process.env.BASECAMP_AGENT_MAX_DEPTH;
+			else process.env.BASECAMP_AGENT_MAX_DEPTH = priorMaxDepth;
+			if (priorRun === undefined) delete process.env.BASECAMP_RUN_ID;
+			else process.env.BASECAMP_RUN_ID = priorRun;
+			if (priorAgent === undefined) delete process.env.BASECAMP_AGENT_ID;
+			else process.env.BASECAMP_AGENT_ID = priorAgent;
 		}
 	});
 

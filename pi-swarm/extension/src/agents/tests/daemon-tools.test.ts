@@ -9,7 +9,7 @@ import type { Frame, ListAgentItem } from "../daemon/frames.ts";
 import { PROTOCOL_VERSION } from "../daemon/frames.ts";
 import { deriveDaemonIdentity } from "../daemon/index.ts";
 import { resolveDaemonPaths } from "../daemon/paths.ts";
-import { registerDaemonTools } from "../daemon/tools.ts";
+import { registerAskAgentTool, registerDaemonTools } from "../daemon/tools.ts";
 import { buildAgentTaskText } from "../executor.ts";
 import { buildAgentEnv, buildAgentTitleBase, processEnvForSpawn } from "../launch.ts";
 
@@ -201,6 +201,17 @@ describe("daemon async tools", () => {
 				else process.env.DAEMON_TEST_API_KEY = prior.apiKey;
 			}
 		});
+	});
+
+	it("registerAskAgentTool registers only ask_agent", () => {
+		const { pi, tools } = createMockPi();
+
+		registerAskAgentTool(pi, async () => new MockConnection(), daemonToolDeps);
+
+		assert.deepEqual(
+			tools.map((tool) => tool.name),
+			["ask_agent"],
+		);
 	});
 
 	it("dispatch_agent builds spec env/task split and returns handle on spawned ack", async () => {

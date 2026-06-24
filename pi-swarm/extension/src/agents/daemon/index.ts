@@ -4,7 +4,7 @@ import { DEFAULT_AGENT_MAX_DEPTH } from "../types.ts";
 import { connect, type DaemonConnection, type DaemonIdentity, ensureDaemon, fetchRunSummary } from "./client.ts";
 import { resolveDaemonPaths } from "./paths.ts";
 import { registerDaemonReporter } from "./reporter.ts";
-import { registerDaemonTools } from "./tools.ts";
+import { registerAskAgentTool, registerDaemonTools } from "./tools.ts";
 import { type ActiveAgentsWidgetController, clearActiveAgentsWidget, startActiveAgentsWidget } from "./widget.ts";
 
 type ThemeFg = (color: Parameters<import("@earendil-works/pi-coding-agent").Theme["fg"]>[0], text: string) => string;
@@ -183,6 +183,15 @@ export function registerDaemonClient(pi: ExtensionAPI, deps: PiSwarmDependencies
 
 	if (isTopLevel && !atMaxDepth) {
 		registerDaemonTools(pi, awaitDaemonConnection, {
+			hasInvokedSkill: deps.hasInvokedSkill,
+			getWorkspaceState: deps.getWorkspaceState,
+			basecampExtensionRoot: deps.basecampExtensionRoot,
+			resolveModelAlias: deps.resolveModelAlias,
+		});
+	}
+
+	if (isDaemonSpawnedAgent && !atMaxDepth) {
+		registerAskAgentTool(pi, awaitDaemonConnection, {
 			hasInvokedSkill: deps.hasInvokedSkill,
 			getWorkspaceState: deps.getWorkspaceState,
 			basecampExtensionRoot: deps.basecampExtensionRoot,
