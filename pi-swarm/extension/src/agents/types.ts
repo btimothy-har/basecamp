@@ -19,7 +19,7 @@ export const TASK_TRACKING_TOOLS = [
 	"annotate_task",
 	"delete_task",
 ] as const;
-export const SUBAGENT_SUPPORT_TOOLS = ["skill", ...TASK_TRACKING_TOOLS, "git_status", "safe_git", "bq_query"] as const;
+export const SUBAGENT_SUPPORT_TOOLS = ["skill", ...TASK_TRACKING_TOOLS, "bq_query"] as const;
 export const READ_ONLY_AGENT_TOOLS = ["read", "bash", "grep", "find", "ls"] as const;
 export const MUTATIVE_AGENT_TOOLS = ["read", "write", "edit", "bash", "grep", "find", "ls"] as const;
 

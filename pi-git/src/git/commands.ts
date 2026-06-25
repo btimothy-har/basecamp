@@ -1,9 +1,7 @@
 /**
- * Git commands — PR, issue, and git workflow commands.
+ * Git commands — PR prompt and code walkthrough commands.
  *
- *   /create-pr [context]                      — create/find draft PR, review, describe, publish
- *   /create-issue [topic]                     — draft and publish a GitHub issue through review
- *   /pr-comments [number]                     — synthesize review findings, post as PR comments
+ *   /create-pr [context]                      — prompt the agent to create/update a PR via bash/gh
  *   /code-walkthrough [pr|branch] [base]      — context-first code walkthrough
  */
 
@@ -11,10 +9,7 @@ import * as crypto from "node:crypto";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { exec } from "pi-core/platform/exec.ts";
 import { activateWorkspaceWorktree, attachWorkspaceWorktreePath } from "pi-core/platform/workspace.ts";
-import { getActiveIssueDraft, setActiveIssueDraft, setActivePR, unlocked } from "./guards";
-import { createIssueDraftPath, getScratchDir, loadTemplate, resolvePrNumber } from "./utils";
-
-type PushResult = "pushed" | "up-to-date" | "cancelled" | "diverged" | "failed";
+import { loadTemplate, resolvePrNumber } from "./utils";
 
 type WalkthroughTargetKind = "pr" | "branch";
 
@@ -83,181 +78,38 @@ async function checkoutBranchForReview(pi: ExtensionAPI, branchName: string, ctx
 	return true;
 }
 
-async function ensurePushed(pi: ExtensionAPI, branchName: string, ctx: any): Promise<PushResult> {
-	const upstream = await exec(pi, "git", ["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"]);
+async function resolveDefaultBase(pi: ExtensionAPI): Promise<string> {
+	const head = await exec(pi, "git", ["symbolic-ref", "--quiet", "--short", "refs/remotes/origin/HEAD"]);
+	const ref = head.stdout.trim();
+	return ref.startsWith("origin/") ? ref.slice("origin/".length) : "main";
+}
 
-	if (upstream.code !== 0) {
-		const confirmed = await ctx.ui.confirm("Push to origin?", `Push ${branchName} and set upstream?`);
-		if (!confirmed) return "cancelled";
+function createPrPrompt(base: string, context: string): string {
+	const contextBlock = context ? `\n\nAdditional context from the user:\n${context}` : "";
+	return `Please create or update the pull request directly using bash commands.
 
-		const push = await exec(pi, "git", ["push", "-u", "origin", branchName]);
-		return push.code === 0 ? "pushed" : "failed";
-	}
+Context:
+- Base branch: ${base}${contextBlock}
 
-	const counts = await exec(pi, "git", ["rev-list", "--left-right", "--count", "@{u}...HEAD"]);
-	if (counts.code !== 0) return "failed";
-
-	const parts = counts.stdout.trim().split(/\s+/).map(Number);
-	const behind = parts[0] ?? 0;
-	const ahead = parts[1] ?? 0;
-	if (ahead === 0) return "up-to-date";
-
-	if (behind > 0) {
-		ctx.ui.notify(
-			`Branch has diverged from upstream (${ahead} ahead, ${behind} behind). Resolve manually with rebase or force push.`,
-			"error",
-		);
-		return "diverged";
-	}
-
-	const confirmed = await ctx.ui.confirm("Push to origin?", `Push ${ahead} commit${ahead > 1 ? "s" : ""} to origin?`);
-	if (!confirmed) return "cancelled";
-
-	const push = await exec(pi, "git", ["push"]);
-	return push.code === 0 ? "pushed" : "failed";
+Instructions:
+1. Inspect the current branch and working tree state.
+2. Check whether a PR already exists for the current branch with \`gh pr list --head <branch>\` or \`gh pr view\`.
+3. Push the branch if needed, setting the upstream when necessary.
+4. If a PR already exists, update it with \`gh pr edit\` as needed. Otherwise create a draft PR against ${base} with \`gh pr create --draft --base ${base}\`.
+5. Write a clear PR title and body based on the diff and the context above.
+6. Summarize the result for me, including the PR number/URL and whether the branch was pushed.`;
 }
 
 export function registerCommands(pi: ExtensionAPI): void {
 	// --- /create-pr [context] ---
 	pi.registerCommand("create-pr", {
-		description: "Create, review, and publish a pull request",
+		description: "Prompt the agent to create or update a pull request via bash/gh",
 		handler: async (args, ctx) => {
 			const reviewContext = args?.trim() || "";
-			const baseInput = (await ctx.ui.input("Base branch", "main"))?.trim();
-			const base = baseInput || "main";
-
-			const branch = await exec(pi, "git", ["branch", "--show-current"]);
-			const branchName = branch.stdout.trim();
-			if (!branchName) {
-				ctx.ui.notify("Not on a branch — cannot create PR", "error");
-				return;
-			}
-
-			const existing = await exec(pi, "gh", ["pr", "list", "--head", branchName, "--json", "number,url", "-q", ".[0]"]);
-
-			let prNumber: string;
-
-			if (existing.stdout.trim()) {
-				const pr = JSON.parse(existing.stdout.trim());
-				prNumber = String(pr.number);
-				ctx.ui.notify(`Found existing PR #${prNumber}`, "info");
-
-				const pushResult = await ensurePushed(pi, branchName, ctx);
-				if (pushResult === "cancelled" || pushResult === "diverged" || pushResult === "failed") return;
-			} else {
-				const pushResult = await ensurePushed(pi, branchName, ctx);
-				if (pushResult === "failed") {
-					ctx.ui.notify("Failed to push — cannot create PR", "error");
-					return;
-				}
-				if (pushResult === "cancelled") {
-					ctx.ui.notify("Push cancelled — cannot create PR without upstream", "error");
-					return;
-				}
-				if (pushResult === "diverged") return;
-
-				ctx.ui.notify(`Creating draft PR against ${base}...`, "info");
-				const create = await exec(pi, "gh", [
-					"pr",
-					"create",
-					"--draft",
-					"--title",
-					`WIP: ${branchName}`,
-					"--body",
-					"",
-					"--base",
-					base,
-				]);
-
-				if (create.code !== 0) {
-					ctx.ui.notify(`Failed to create PR: ${create.stderr}`, "error");
-					return;
-				}
-
-				const urlMatch = create.stdout.match(/\/pull\/(\d+)/);
-				if (!urlMatch) {
-					ctx.ui.notify("Created PR but couldn't parse number from output", "error");
-					return;
-				}
-				prNumber = urlMatch[1]!;
-				ctx.ui.notify(`Created draft PR #${prNumber}`, "info");
-			}
-
-			setActivePR({ number: prNumber, base }, ctx);
-			const reviewContextBlock = reviewContext ? `\n\nAdditional context:\n${reviewContext}` : "";
-			pi.sendUserMessage(`Please prepare this pull request for my review.
-
-Context:
-- PR: #${prNumber}
-- Base branch: ${base}
-- Current branch: ${branchName}${reviewContextBlock}
-
-Start by calling skill({ name: "pull-request" }), then review the changes, draft the PR title/body, and submit it with publish_pr.`);
-		},
-	});
-
-	// --- /create-issue [topic] ---
-	pi.registerCommand("create-issue", {
-		description: "Draft and publish a GitHub issue through review",
-		handler: async (args, ctx) => {
-			if (!ctx.hasUI) {
-				ctx.ui.notify("/create-issue requires an interactive UI. Run it from an interactive session.", "error");
-				return;
-			}
-
-			if (pi.getFlag("read-only") === true) {
-				ctx.ui.notify("/create-issue is disabled in read-only mode.", "error");
-				return;
-			}
-
-			const activeIssueDraft = getActiveIssueDraft();
-			if (activeIssueDraft) {
-				const confirmed = await ctx.ui.confirm(
-					"Replace active issue draft?",
-					`An issue draft is already active at ${activeIssueDraft.draftPath}. Replace it?`,
-				);
-				if (!confirmed) return;
-			}
-
-			const topicArg = args?.trim();
-			const topic = topicArg || (await ctx.ui.input("Issue topic", ""))?.trim();
-
-			if (!topic) {
-				ctx.ui.notify("Issue topic required. Usage: /create-issue <topic>", "error");
-				return;
-			}
-
-			let draftPath: string;
-			try {
-				draftPath = createIssueDraftPath(ctx.cwd);
-			} catch (error) {
-				ctx.ui.notify(`Failed to prepare issue draft directory: ${errorMessage(error)}`, "error");
-				return;
-			}
-
-			setActiveIssueDraft({ draftPath, topic });
-			ctx.ui.notify(`Drafting GitHub issue: ${topic}`, "info");
-			pi.sendUserMessage(`Please draft this GitHub issue for my review.
-
-Context:
-- Topic: ${topic}
-- Draft path: ${draftPath}
-
-Start by calling skill({ name: "issue-logging" }), then investigate as needed, write the issue draft to the provided path, and submit it with publish_issue.`);
-		},
-	});
-
-	// --- /pr-comments [number] ---
-	pi.registerCommand("pr-comments", {
-		description: "Synthesize review findings and post as PR comments",
-		handler: async (args, ctx) => {
-			const pr = await resolvePrNumber(pi, args?.trim(), ctx);
-			if (!pr) return;
-
-			unlocked.prComment = true;
-			const scratchDir = getScratchDir(ctx.cwd);
-			ctx.ui.notify(`PR comments workflow for #${pr.number}`, "info");
-			pi.sendUserMessage(loadTemplate("pr-comments", { PR_NUMBER: pr.number, SCRATCH_DIR: scratchDir }));
+			const fallback = await resolveDefaultBase(pi);
+			const baseInput = ctx.hasUI ? (await ctx.ui.input("Base branch", fallback))?.trim() : undefined;
+			const base = baseInput || fallback;
+			pi.sendUserMessage(createPrPrompt(base, reviewContext));
 		},
 	});
 

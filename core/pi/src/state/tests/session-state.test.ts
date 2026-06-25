@@ -75,8 +75,6 @@ describe("session state file helpers", () => {
 		assert.equal(state.sessionId, "s1");
 		assert.equal(state.sessionFile, null);
 		assert.equal(state.activeWorktree, null);
-		assert.equal(state.activePR, null);
-		assert.equal(state.activeIssueDraft, null);
 		assert.equal(state.agentMode, null);
 		assert.equal(state.title, null);
 		assert.match(state.updatedAt, /^\d{4}-\d{2}-\d{2}T/);
@@ -90,8 +88,6 @@ describe("session state file helpers", () => {
 		assert.equal(state.version, 1);
 		assert.equal(state.sessionId, "missing");
 		assert.equal(state.sessionFile, "/tmp/session.json");
-		assert.equal(state.activePR, null);
-		assert.equal(state.activeIssueDraft, null);
 		assert.equal(state.title, null);
 	});
 
@@ -121,6 +117,29 @@ describe("session state file helpers", () => {
 		assert.equal(oldWorktreeShape.activeWorktree, null);
 	});
 
+	it("strips legacy fields when loading valid state", async (t) => {
+		const dir = await createTempDir(t);
+		await writeStateFile(dir, "legacy-fields", {
+			...createDefaultSessionState({ sessionId: "legacy-fields", sessionFile: "/tmp/session.json" }),
+			activePR: { number: 123 },
+			activeIssueDraft: { title: "old draft" },
+		});
+
+		const loaded = loadSessionState({ sessionId: "legacy-fields", sessionFile: "/tmp/session.json" }, dir);
+
+		assert.equal("activePR" in loaded, false);
+		assert.equal("activeIssueDraft" in loaded, false);
+		assert.deepEqual(Object.keys(loaded).sort(), [
+			"activeWorktree",
+			"agentMode",
+			"sessionFile",
+			"sessionId",
+			"title",
+			"updatedAt",
+			"version",
+		]);
+	});
+
 	it("saves atomically with a fresh updatedAt and loads valid state", async (t) => {
 		const dir = await createTempDir(t);
 		const initial: BasecampSessionState = {
@@ -142,8 +161,6 @@ describe("session state file helpers", () => {
 				},
 				updatedAt: "2026-05-03T00:00:00.000Z",
 			},
-			activePR: { number: "187", base: "main" },
-			activeIssueDraft: { draftPath: "/x.md", topic: "t" },
 			agentMode: "supervisor",
 			title: "Saved title",
 		};
@@ -179,27 +196,6 @@ describe("session state file helpers", () => {
 		assert.equal(fileMismatch.title, null);
 		assert.equal(fileMismatch.sessionFile, "/tmp/session.json");
 	});
-
-	it("normalizes missing active PR and issue draft fields to null", async (t) => {
-		const dir = await createTempDir(t);
-		const legacyState: Partial<BasecampSessionState> = {
-			...createDefaultSessionState({ sessionId: "legacy", sessionFile: "/tmp/legacy.json" }),
-			agentMode: "analysis",
-			title: "Legacy title",
-		};
-		delete legacyState.activePR;
-		delete legacyState.activeIssueDraft;
-		await writeStateFile(dir, "legacy", legacyState);
-
-		const loaded = loadSessionState({ sessionId: "legacy", sessionFile: "/tmp/legacy.json" }, dir);
-
-		assert.equal(loaded.sessionId, "legacy");
-		assert.equal(loaded.sessionFile, "/tmp/legacy.json");
-		assert.equal(loaded.activePR, null);
-		assert.equal(loaded.activeIssueDraft, null);
-		assert.equal(loaded.agentMode, "analysis");
-		assert.equal(loaded.title, "Legacy title");
-	});
 });
 
 describe("fork session state", () => {
@@ -228,8 +224,6 @@ describe("fork session state", () => {
 					},
 					updatedAt: "2026-05-03T00:00:00.000Z",
 				},
-				activePR: { number: "187", base: "main" },
-				activeIssueDraft: { draftPath: "/x.md", topic: "t" },
 				agentMode: "executor",
 				title: "Parent title",
 			},
@@ -247,8 +241,6 @@ describe("fork session state", () => {
 		assert.equal(childState.sessionId, "child");
 		assert.equal(childState.sessionFile, childSessionFile);
 		assert.deepEqual(childState.activeWorktree, parentState.activeWorktree);
-		assert.deepEqual(childState.activePR, parentState.activePR);
-		assert.deepEqual(childState.activeIssueDraft, parentState.activeIssueDraft);
 		assert.equal(childState.agentMode, "executor");
 		assert.equal(childState.title, "Parent title");
 		assert.deepEqual(loadedChild, childState);
@@ -276,8 +268,6 @@ describe("fork session state", () => {
 		assert.equal(childState.sessionId, "child-missing-parent");
 		assert.equal(childState.sessionFile, childSessionFile);
 		assert.equal(childState.activeWorktree, null);
-		assert.equal(childState.activePR, null);
-		assert.equal(childState.activeIssueDraft, null);
 		assert.equal(childState.agentMode, null);
 		assert.equal(childState.title, null);
 	});

@@ -39,8 +39,8 @@ describe("assemblePrompt", () => {
 		assert.match(prompt, /# Direct Execution/);
 		assert.match(prompt, /# Your Role as an Engineer/);
 		assert.match(prompt, /You are a \*\*partner\*\*, not a follower\./);
-		assert.match(prompt, /## Git CLI/);
-		assert.match(prompt, /All git commands must go through `safe_git`\./);
+		assert.match(prompt, /## Git & GitHub/);
+		assert.match(prompt, /Use `git` and `gh` directly in bash like a normal developer\./);
 	});
 
 	it("uses user prompt and style overrides before built-ins", async (t) => {
@@ -65,7 +65,7 @@ describe("assemblePrompt", () => {
 		assert.match(prompt, /CUSTOM ENGINEERING STYLE/);
 		assert.match(prompt, /CUSTOM ENVIRONMENT PROMPT/);
 		assert.doesNotMatch(prompt, /# Your Role as an Engineer/);
-		assert.doesNotMatch(prompt, /## Git CLI/);
+		assert.doesNotMatch(prompt, /## Git & GitHub/);
 	});
 
 	it("includes unsafe-edit guidance when unsafe-edit is enabled without an active worktree", () => {
@@ -98,7 +98,7 @@ describe("assemblePrompt", () => {
 
 		assert.match(prompt, /⚠ UNSAFE-EDIT MODE ACTIVE:/);
 		assert.match(prompt, /Parent file `edit`\/`write` calls may modify the protected checkout directly\./);
-		assert.match(prompt, /Commits and mutating `safe_git` commands still require an active execution worktree\./);
+		assert.match(prompt, /Commits and mutating git commands still require an active execution worktree\./);
 		assert.match(prompt, /Subagents do not inherit unsafe-edit authority\./);
 		assert.doesNotMatch(
 			prompt,

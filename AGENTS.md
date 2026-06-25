@@ -41,7 +41,8 @@ core/pi/                       # pi-core TypeScript package: registries, session
 pi-ui/                         # Session UI package: footer, title, mode editor
 workspace/pi/                  # pi-workspace TypeScript package: project context + workspace service
 pi-tasks/                      # Tasks, planning, workflow skills
-pi-git/                        # Git guards, PR/issue/review workflows
+pi-git/                        # Code walkthrough, review packet, and prompt-only PR creation workflows
+pi-bash-reviewer/              # LLM bash reviewer: gates risky git/gh/shell commands
 pi-engineering/                # Engineering tools and skills
 pi-browser/                    # Browser automation tools (puppeteer-core over CDP)
 pi-companion/                  # Companion bounded context
@@ -59,7 +60,7 @@ Prompts are layered (environment → working style → project context → tools
 
 ### Pi Packages
 
-Core public session/project/workspace/workflow/git/model-alias/capability/engineering behavior is split across pluggable Pi packages (`core/pi`, `workspace/pi`, `pi-ui`, `pi-tasks`, `pi-git`, `pi-engineering`, `pi-companion/pi`). Async-agent protocol, Pi-side launch/tool behavior, and daemon runtime ownership live in the top-level `pi-swarm/` context.
+Core public session/project/workspace/workflow/git/model-alias/capability/engineering behavior is split across pluggable Pi packages (`core/pi`, `workspace/pi`, `pi-ui`, `pi-tasks`, `pi-git`, `pi-bash-reviewer`, `pi-engineering`, `pi-companion/pi`). Async-agent protocol, Pi-side launch/tool behavior, and daemon runtime ownership live in the top-level `pi-swarm/` context.
 
 ### Model Aliases
 

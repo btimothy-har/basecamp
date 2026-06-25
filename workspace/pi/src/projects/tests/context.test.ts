@@ -67,7 +67,7 @@ describe("unsafe-edit context", () => {
 				},
 			}),
 		);
-		assert.ok(guidance?.includes("Commits and mutating `safe_git` commands"));
+		assert.ok(guidance?.includes("Commits and mutating git commands"));
 		assert.ok(guidance?.includes("must run from the active execution worktree."));
 		assert.ok(guidance?.includes("Subagents do not inherit unsafe-edit authority."));
 	});

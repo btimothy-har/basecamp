@@ -1,19 +1,17 @@
 # pi-git
 
-Basecamp git workflow — safe-git, status, PR/issue/review-packet commands, publish guard.
+Basecamp git review workflows — code-walkthrough, review_packet, and prompt-only create-pr.
 
 ## What it does
 
-- **Safe-git tool**: guarded git command execution through an approval blocklist
-- **Git commands**: `/create-pr`, `/create-issue`, `/pr-comments`, `/code-walkthrough` — review workflows with automatic worktree switching
-- **Status tool**: `git_status` — current repository state summary
-- **Publish skill guard**: blocks pushes/PRs unless review validation has passed
-- **Review packet**: interactive review packet walkthrough for branches/PRs
-- **Git skills**: `pull-request`, `issue-logging` workflow skills
+- **`/code-walkthrough` command**: starts a context-first code walkthrough for a PR number, branch, or the current branch. PR and branch targets can be opened in dedicated review worktrees before handing the walkthrough prompt to the agent.
+- **`review_packet` tool**: opens an interactive review packet walkthrough for the user and returns consolidated, structured feedback to the agent. Review packet artifacts are written under the session scratch directory.
+- **`/create-pr` command**: sends a prompt instructing the agent to create or update the PR directly with bash/`gh` commands, including pushing the branch if needed and summarizing the result.
+- **Git skill**: `code-walkthrough` workflow guidance.
 
 ## Dependencies
 
-- **pi-core** (hard peer dep): exec wrapper, workspace state, worktree operations, skill-tracker
+- **pi-core** (hard peer dep): exec wrapper, workspace state, worktree operations, and scratch directory context.
 
 ## Installation
 

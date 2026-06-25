@@ -119,12 +119,10 @@ const SUPPORT_TOOLS = [
 	"get_task",
 	"annotate_task",
 	"delete_task",
-	"git_status",
-	"safe_git",
 	"bq_query",
 ];
 
-const PARENT_ONLY_TOOLS = ["plan", "escalate", "publish_pr", "publish_issue", "review_packet"];
+const PARENT_ONLY_TOOLS = ["plan", "escalate", "review_packet"];
 
 describe("subagent tool allowlist", () => {
 	it("adds support tools for read-only agents without parent-only tools", () => {
@@ -173,15 +171,10 @@ describe("getBasecampExtensionToolNames", () => {
 				baseDir: extensionRoot,
 				path: path.join(extensionRoot, `${name}.ts`),
 			});
-			const tools = [
-				"bq_query",
-				"browser_eval",
-				"browser_screenshot",
-				"agent",
-				"escalate",
-				"publish_pr",
-				"publish_issue",
-			].map((name) => ({ name, sourceInfo: sourceInfo(name) }));
+			const tools = ["bq_query", "browser_eval", "browser_screenshot", "agent", "escalate"].map((name) => ({
+				name,
+				sourceInfo: sourceInfo(name),
+			}));
 			const pi = { getAllTools: () => tools } as unknown as ExtensionAPI;
 
 			assert.deepEqual(getBasecampExtensionToolNames(pi, extensionRoot), ["bq_query"]);

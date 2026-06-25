@@ -28,6 +28,7 @@ def test_all_groups_selected_includes_non_memory_packages_and_python_extras() ->
         "workspace",
         "tasks",
         "git",
+        "bash-reviewer",
         "engineering",
         "browser",
         "companion",
@@ -41,6 +42,7 @@ def test_all_groups_selected_includes_non_memory_packages_and_python_extras() ->
         "workspace/pi",
         "pi-tasks",
         "pi-git",
+        "pi-bash-reviewer",
         "pi-engineering",
         "pi-browser",
         "pi-companion/pi",
@@ -68,6 +70,7 @@ def test_companion_unchecked_omits_companion_extra_and_ts_package() -> None:
         "workspace/pi",
         "pi-tasks",
         "pi-git",
+        "pi-bash-reviewer",
         "pi-engineering",
         "pi-swarm/extension",
     ]

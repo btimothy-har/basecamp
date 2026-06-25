@@ -82,7 +82,7 @@ export function registerWorkspaceSession(pi: ExtensionAPI): void {
 		type: "boolean",
 	});
 	pi.registerFlag("unsafe-edit", {
-		description: "Allow edit/write to target protected checkout directly (safe_git protections still apply)",
+		description: "Allow edit/write to target protected checkout directly (bash reviewer protections still apply)",
 		type: "boolean",
 	});
 

@@ -8,21 +8,14 @@ Understand existing code, patterns, and conventions before suggesting modificati
 
 # Environment
 
-## Git CLI
+## Git & GitHub
 
-All git commands must go through `safe_git`. Direct git execution through bash is blocked.
-
-```
-safe_git({ command: "git status", reason: "Check working tree state" })
-safe_git({ command: "git add -A", reason: "Stage all changes for commit" })
-safe_git({ command: "git commit -m 'feat: add feature'", reason: "Commit staged changes" })
-```
-
-Commands outside the approval blocklist execute automatically after safe_git validation. The current approval blocklist is force-push, broad push, remote ref deletion, and forced clean.
-
-When Basecamp reports an active worktree, safe_git runs from that worktree. Do not `cd` or `git -C` into the protected checkout. The protected checkout must stay on the default branch with a clean working tree.
-
-If a GitHub workflow is needed (PR creation, issue management), stop and ask the user to invoke the appropriate workflow command.
+- Use `git` and `gh` directly in bash like a normal developer.
+- Risky commands are reviewed automatically before running. You may be asked to confirm, or a command may be blocked with a reason; adjust and retry, or surface the blocker to the user.
+- Irreversible remote operations require user confirmation, including force-push, remote ref deletion, and `push --mirror` / `push --all`.
+- Opening or modifying PRs and issues (`gh pr create|comment|edit|merge`, `gh issue create|comment|edit`) is routed to the user for review before it runs.
+- The protected checkout must stay clean. Edits land in the active worktree, and when Basecamp reports an active worktree, git runs from that worktree.
+- Raw `bq query` in bash is blocked. Write SQL to a file and use the `bq_query` tool.
 
 ## Python Environment
 

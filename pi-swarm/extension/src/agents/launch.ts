@@ -7,14 +7,7 @@ import { buildAgentRunName, buildPiArgs, sanitizeAgentSpawnEnv } from "./executo
 import { resolveModel } from "./model-resolution.ts";
 import { type AgentRunKind, DEFAULT_AGENT_MAX_DEPTH, getAgentRunKind } from "./types.ts";
 
-const SUBAGENT_EXCLUDED_EXTENSION_TOOLS = new Set([
-	"agent",
-	"escalate",
-	"publish_pr",
-	"publish_issue",
-	"browser_eval",
-	"browser_screenshot",
-]);
+const SUBAGENT_EXCLUDED_EXTENSION_TOOLS = new Set(["agent", "escalate", "browser_eval", "browser_screenshot"]);
 
 interface ToolInfo {
 	name: string;

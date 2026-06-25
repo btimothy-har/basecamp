@@ -35,6 +35,7 @@ _PACKAGE_MODULE_IDS: Final = {
     "workspace/pi": "workspace",
     "pi-tasks": "tasks",
     "pi-git": "git",
+    "pi-bash-reviewer": "bash-reviewer",
     "pi-engineering": "engineering",
     "pi-browser": "browser",
     "pi-companion/pi": "companion",
@@ -46,6 +47,7 @@ _TS_PACKAGE_ORDER: Final = [
     ("workspace/pi", "pi-workspace"),
     ("pi-tasks", "pi-tasks"),
     ("pi-git", "pi-git"),
+    ("pi-bash-reviewer", "pi-bash-reviewer"),
     ("pi-engineering", "pi-engineering"),
     ("pi-browser", "pi-browser"),
     ("pi-companion/pi", "pi-companion"),
@@ -53,7 +55,7 @@ _TS_PACKAGE_ORDER: Final = [
 ]
 
 _COMPONENT_TS_PACKAGES: Final = {
-    COMPONENT_STANDARD: ["pi-ui", "workspace/pi", "pi-tasks", "pi-git"],
+    COMPONENT_STANDARD: ["pi-ui", "workspace/pi", "pi-tasks", "pi-git", "pi-bash-reviewer"],
     COMPONENT_ENGINEERING: ["pi-engineering"],
     COMPONENT_BROWSER: ["pi-browser"],
     COMPONENT_COMPANION: ["pi-companion/pi"],

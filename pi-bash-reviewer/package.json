@@ -1,39 +1,39 @@
 {
-	"name": "pi-git",
+	"name": "pi-bash-reviewer",
 	"type": "module",
 	"version": "1.0.0",
 	"engines": {
 		"node": ">=24"
 	},
-	"description": "Basecamp git review workflows — code-walkthrough, review_packet, and prompt-only create-pr.",
+	"description": "Basecamp bash reviewer — LLM gate for risky git/gh/shell commands.",
 	"keywords": [
 		"pi-package"
 	],
 	"pi": {
 		"extensions": [
 			"./index.ts"
-		],
-		"skills": [
-			"./skills"
 		]
 	},
 	"scripts": {
 		"check": "tsc && biome check .",
 		"typecheck": "tsc",
-		"test": "node --experimental-strip-types --test src/git/tests/*.test.ts",
+		"test": "node --experimental-strip-types --test src/tests/*.test.ts",
 		"lint": "biome check .",
 		"lint:fix": "biome check --fix .",
 		"format": "biome format --fix ."
 	},
 	"peerDependencies": {
 		"pi-core": "*",
+		"@earendil-works/pi-ai": "*",
 		"@earendil-works/pi-coding-agent": "*",
-		"@earendil-works/pi-tui": "*"
+		"@earendil-works/pi-tui": "*",
+		"@sinclair/typebox": "*"
 	},
 	"devDependencies": {
 		"pi-core": "file:../core/pi",
 		"@biomejs/biome": "^2.0.0",
 		"@earendil-works/pi-agent-core": "^0.78.0",
+		"@earendil-works/pi-ai": "^0.78.1",
 		"@earendil-works/pi-coding-agent": "^0.78.0",
 		"@earendil-works/pi-tui": "^0.78.0",
 		"@sinclair/typebox": "^0.34.0",

@@ -38,8 +38,8 @@ export function buildUnsafeEditGuidance(workspace: WorkspaceState | null): strin
 	if (!workspace?.unsafeEdit) return null;
 
 	const gitRestriction = workspace.activeWorktree
-		? "Commits and mutating `safe_git` commands must run from the active execution worktree."
-		: "Commits and mutating `safe_git` commands still require an active execution worktree.";
+		? "Commits and mutating git commands must run from the active execution worktree."
+		: "Commits and mutating git commands still require an active execution worktree.";
 
 	return [
 		"⚠ UNSAFE-EDIT MODE ACTIVE:",
