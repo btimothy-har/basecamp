@@ -11,7 +11,8 @@ import { registerCatalogProvider } from "pi-core/platform/catalog.ts";
 import { resolveModelAlias } from "pi-core/platform/model-aliases.ts";
 import { hasInvokedSkill } from "pi-core/platform/skill-tracker.ts";
 import { getWorkspaceState } from "pi-core/platform/workspace.ts";
-import { formatTitle, shortSessionId } from "pi-ui/src/title.ts";
+import { shortSessionId } from "pi-core/session/session-id.ts";
+import { formatTitle } from "pi-ui/src/title.ts";
 import type { PiSwarmDependencies, TaskProgressSnapshot, TaskProgressTheme } from "./dependencies.ts";
 
 // Task progress renderers — dynamically imported from pi-tasks (optional)

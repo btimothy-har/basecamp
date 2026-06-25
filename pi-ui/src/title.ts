@@ -16,6 +16,7 @@ import {
 } from "@earendil-works/pi-ai";
 import type { ExtensionAPI, ExtensionContext, SessionEntry, Theme } from "@earendil-works/pi-coding-agent";
 import { visibleWidth } from "@earendil-works/pi-tui";
+import { shortSessionId } from "pi-core/session/session-id.ts";
 import { getCurrentSessionStateIfInitialized, updateCurrentSessionStateIfInitialized } from "pi-core/state/index.ts";
 import { resolveTitleModelForContext } from "./title-model.ts";
 
@@ -308,11 +309,6 @@ function renderTitleWidget(
 	const line = `${" ".repeat(pad)}${text} `;
 	const linePad = Math.max(0, width - visibleWidth(line));
 	return [bg("selectedBg", line + " ".repeat(linePad))];
-}
-
-/** Last 4 hex chars of UUIDv7 — random portion, safe for disambiguation. */
-export function shortSessionId(sessionId: string): string {
-	return sessionId.replace(/-/g, "").slice(-4);
 }
 
 export function formatTitle(title: string, tag: string): string {

@@ -22,6 +22,7 @@ import {
 	type WorkspaceWorktree,
 } from "pi-core/platform/workspace.ts";
 import { getAgentMode, setAgentMode } from "pi-core/session/agent-mode.ts";
+import { shortSessionId } from "pi-core/session/session-id.ts";
 import type { GoalCycle, ReviewState, TaskStatus, TasksAccess } from "../tasks/tasks";
 import { computeGoalContextReview, computeSectionReview, freshReview, tasksMatch } from "./draft-logic";
 import type { PlanDraft } from "./review";
@@ -210,7 +211,8 @@ async function selectWorktreeTarget(
 		return null;
 	}
 
-	const suggested = suggestWorktreeTarget(goal, worktreeSlug);
+	const sessionTag = shortSessionId(ctx.sessionManager.getSessionId());
+	const suggested = suggestWorktreeTarget(goal, worktreeSlug, sessionTag);
 	const existing = await listWorkspaceWorktrees();
 	const { choices, targetsByChoice } = buildExecutionWorktreeChoices(suggested, existing, workspace.activeWorktree);
 
@@ -218,7 +220,7 @@ async function selectWorktreeTarget(
 	if (!choice) return null;
 	if (choice === CUSTOM_WORKTREE_CHOICE) {
 		const label = await ctx.ui.input("Custom worktree label", suggested.worktreeLabel);
-		return label?.trim() ? customWorktreeTarget(label) : null;
+		return label?.trim() ? customWorktreeTarget(label, sessionTag) : null;
 	}
 	return targetsByChoice.get(choice) ?? null;
 }
