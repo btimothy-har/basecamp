@@ -502,7 +502,44 @@ function classifyRmTokens(tokens: string[], rmIndex: number): Triage {
 		if (/^-[A-Za-z]*f[A-Za-z]*$/.test(arg)) force = true;
 	}
 
-	return recursive && force ? DANGEROUS_SHELL : ALLOW;
+	return recursive || force ? DANGEROUS_SHELL : ALLOW;
+}
+
+function hasRecursiveFlag(args: string[]): boolean {
+	let afterDoubleDash = false;
+	for (const arg of args) {
+		if (arg === "--") {
+			afterDoubleDash = true;
+			continue;
+		}
+		if (afterDoubleDash || !arg.startsWith("-") || arg === "-") continue;
+		if (arg === "--recursive") return true;
+		if (/^-[A-Za-z]*R[A-Za-z]*$/.test(arg)) return true;
+	}
+	return false;
+}
+
+function classifyChmodChownTokens(tokens: string[], commandIndex: number): Triage {
+	return hasRecursiveFlag(tokens.slice(commandIndex + 1)) ? DANGEROUS_SHELL : ALLOW;
+}
+
+function classifyFindTokens(tokens: string[], commandIndex: number): Triage {
+	return tokens.slice(commandIndex + 1).includes("-delete") ? DANGEROUS_SHELL : ALLOW;
+}
+
+function classifyDangerousShellTokens(tokens: string[], commandIndex: number): Triage {
+	const executable = tokens[commandIndex];
+	if (executable === undefined) return ALLOW;
+
+	const baseName = commandBaseName(executable);
+	if (baseName === "sudo") return DANGEROUS_SHELL;
+	if (baseName === "rm") return classifyRmTokens(tokens, commandIndex);
+	if (baseName === "dd") return DANGEROUS_SHELL;
+	if (baseName.startsWith("mkfs")) return DANGEROUS_SHELL;
+	if (baseName === "chmod" || baseName === "chown") return classifyChmodChownTokens(tokens, commandIndex);
+	if (baseName === "find") return classifyFindTokens(tokens, commandIndex);
+	if (baseName === "shred") return DANGEROUS_SHELL;
+	return ALLOW;
 }
 
 function directExecutableIndex(tokens: string[]): number {
@@ -524,9 +561,9 @@ function classifyDirectSegment(tokens: string[]): Triage {
 	const executable = tokens[commandIndex];
 	if (executable === undefined) return result;
 
+	result = mergeTriage(result, classifyDangerousShellTokens(tokens, commandIndex));
 	if (isGitExecutable(executable)) return mergeTriage(result, classifyGitTokens(tokens, commandIndex));
 	if (isGhExecutable(executable)) return mergeTriage(result, classifyGhTokens(tokens, commandIndex));
-	if (commandBaseName(executable) === "rm") return mergeTriage(result, classifyRmTokens(tokens, commandIndex));
 	return result;
 }
 
@@ -535,6 +572,7 @@ function classifyXargs(tokens: string[], xargsIndex: number, depth: number): Tri
 	for (let index = xargsIndex + 1; index < tokens.length; index += 1) {
 		const token = tokens[index];
 		if (token === undefined) continue;
+		result = mergeTriage(result, classifyDangerousShellTokens(tokens, index));
 		if (isGitExecutable(token)) result = mergeTriage(result, classifyGitTokens(tokens, index));
 		if (isGhExecutable(token)) result = mergeTriage(result, classifyGhTokens(tokens, index));
 		if (isShellExecutable(token)) {

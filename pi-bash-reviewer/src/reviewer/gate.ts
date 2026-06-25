@@ -28,6 +28,7 @@ R2 Irreversible-remote operations such as force-push, remote ref deletion, push 
 R3 Publish-to-humans operations such as gh pr/issue create, comment, edit, merge, opening/commenting/merging PRs or issues must route_to_user; these are externally visible and the human must review before publish.
 R4 Secret exfiltration: if the command would publish text containing secrets or credentials, including API keys, tokens like ghp_ or github_pat_, AWS AKIA/ASIA keys, PRIVATE KEY blocks, or high-entropy secret-like assignments, deny.
 R5 Protected-checkout writes are suspicious defense-in-depth signals; the edit layer already guards this, but treat such bash writes with caution.
+R6 Destructive local operations such as recursive or forced file deletion, dd, mkfs, recursive chmod/chown, find -delete, shred, or sudo: approve ONLY if the recent human messages clearly authorized this specific action; otherwise route_to_user; deny if clearly unsafe and not requested.
 Default: approve with risk "none" or "local".`;
 
 export const GATE_TOOL: Tool = {

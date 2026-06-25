@@ -58,7 +58,7 @@ function makeDeps(
 		},
 		confirm: async (title, body) => {
 			confirmCalls += 1;
-			assert.equal(title, "Approve command?");
+			assert.ok(title === "Approve command?" || title === "Reviewer unavailable — approve command?");
 			confirmBodies.push(body);
 			if (overrides.confirm) return overrides.confirm(title, body);
 			return true;
@@ -118,53 +118,83 @@ describe("reviewBashCommand", () => {
 		});
 	});
 
-	it("fails open when the reviewer model is unavailable for fail-open commands", async () => {
-		const harness = makeDeps({ resolveModel: async () => null });
+	it("escalates model-unavailable failures to the user and allows confirmed commands", async () => {
+		const harness = makeDeps({ resolveModel: async () => null, confirm: async () => true });
 
 		const outcome = await reviewBashCommand("git commit -m 'test'", harness.deps);
 
 		assert.equal(outcome, undefined);
 		assert.equal(harness.resolveModelCalls(), 1);
 		assert.equal(harness.runGateCalls(), 0);
+		assert.equal(harness.confirmCalls(), 1);
+		assert.match(harness.confirmBodies[0] ?? "", /reviewer could not evaluate/);
+		assert.match(harness.confirmBodies[0] ?? "", /reviewer model unavailable/);
+		assert.match(harness.confirmBodies[0] ?? "", /git commit -m 'test'/);
 		assert.equal(harness.auditEntries.length, 1);
 		assert.equal(harness.auditEntries[0]?.phase, "failsafe");
-		assert.equal(harness.auditEntries[0]?.action, "allow");
+		assert.equal(harness.auditEntries[0]?.action, "approve");
 		assert.equal(harness.auditEntries[0]?.category, "git-mutation");
+		assert.equal(harness.auditEntries[0]?.note, "escalated");
 	});
 
-	it("fails closed when the reviewer model is unavailable for irreversible remote commands", async () => {
-		const harness = makeDeps({ resolveModel: async () => null });
+	it("escalates model-unavailable failures to the user and blocks declined commands", async () => {
+		const harness = makeDeps({ resolveModel: async () => null, confirm: async () => false });
 
-		const outcome = await reviewBashCommand("git push --force", harness.deps);
+		const outcome = await reviewBashCommand("git commit -m 'test'", harness.deps);
+
+		assert.equal(outcome?.block, true);
+		assert.match(outcome?.reason ?? "", /reviewer unavailable/);
+		assert.match(outcome?.reason ?? "", /user declined/);
+		assert.equal(harness.confirmCalls(), 1);
+		assert.equal(harness.auditEntries[0]?.phase, "failsafe");
+		assert.equal(harness.auditEntries[0]?.action, "deny");
+		assert.equal(harness.auditEntries[0]?.category, "git-mutation");
+		assert.equal(harness.auditEntries[0]?.note, "escalated");
+	});
+
+	it("blocks gate failures without an interactive UI", async () => {
+		const harness = makeDeps({ resolveModel: async () => null, hasUI: false });
+
+		const outcome = await reviewBashCommand("git commit -m 'test'", harness.deps);
 
 		assert.equal(outcome?.block, true);
 		assert.match(outcome?.reason ?? "", /Reviewer unavailable/);
+		assert.match(outcome?.reason ?? "", /no interactive UI/);
+		assert.equal(harness.confirmCalls(), 0);
 		assert.equal(harness.resolveModelCalls(), 1);
 		assert.equal(harness.runGateCalls(), 0);
-		assert.equal(harness.auditEntries.length, 1);
 		assert.equal(harness.auditEntries[0]?.phase, "failsafe");
-		assert.equal(harness.auditEntries[0]?.action, "block");
-		assert.equal(harness.auditEntries[0]?.category, "irreversible-remote");
+		assert.equal(harness.auditEntries[0]?.action, "deny");
+		assert.equal(harness.auditEntries[0]?.category, "git-mutation");
+		assert.equal(harness.auditEntries[0]?.note, "no-ui");
 	});
 
-	it("applies runGate null fail-safe behavior for fail-open and fail-closed commands", async () => {
-		const failOpen = makeDeps({ runGate: async () => null });
-		const failOpenOutcome = await reviewBashCommand("git commit -m 'test'", failOpen.deps);
+	it("escalates runGate null failures with UI and blocks them without UI", async () => {
+		const withUI = makeDeps({ runGate: async () => null, confirm: async () => true });
+		const withUIOutcome = await reviewBashCommand("git commit -m 'test'", withUI.deps);
 
-		assert.equal(failOpenOutcome, undefined);
-		assert.equal(failOpen.resolveModelCalls(), 1);
-		assert.equal(failOpen.runGateCalls(), 1);
-		assert.equal(failOpen.auditEntries[0]?.phase, "failsafe");
-		assert.equal(failOpen.auditEntries[0]?.action, "allow");
+		assert.equal(withUIOutcome, undefined);
+		assert.equal(withUI.resolveModelCalls(), 1);
+		assert.equal(withUI.runGateCalls(), 1);
+		assert.equal(withUI.confirmCalls(), 1);
+		assert.equal(withUI.auditEntries[0]?.phase, "failsafe");
+		assert.equal(withUI.auditEntries[0]?.action, "approve");
+		assert.equal(withUI.auditEntries[0]?.reason, "reviewer returned no decision");
+		assert.equal(withUI.auditEntries[0]?.note, "escalated");
 
-		const failClosed = makeDeps({ runGate: async () => null });
-		const failClosedOutcome = await reviewBashCommand("git push --force", failClosed.deps);
+		const noUI = makeDeps({ runGate: async () => null, hasUI: false });
+		const noUIOutcome = await reviewBashCommand("git commit -m 'test'", noUI.deps);
 
-		assert.equal(failClosedOutcome?.block, true);
-		assert.equal(failClosed.resolveModelCalls(), 1);
-		assert.equal(failClosed.runGateCalls(), 1);
-		assert.equal(failClosed.auditEntries[0]?.phase, "failsafe");
-		assert.equal(failClosed.auditEntries[0]?.action, "block");
+		assert.equal(noUIOutcome?.block, true);
+		assert.match(noUIOutcome?.reason ?? "", /Reviewer unavailable/);
+		assert.match(noUIOutcome?.reason ?? "", /no interactive UI/);
+		assert.equal(noUI.confirmCalls(), 0);
+		assert.equal(noUI.resolveModelCalls(), 1);
+		assert.equal(noUI.runGateCalls(), 1);
+		assert.equal(noUI.auditEntries[0]?.phase, "failsafe");
+		assert.equal(noUI.auditEntries[0]?.action, "deny");
+		assert.equal(noUI.auditEntries[0]?.reason, "reviewer returned no decision");
+		assert.equal(noUI.auditEntries[0]?.note, "no-ui");
 	});
 
 	it("approves non-failClosed gate decisions without blocking", async () => {
@@ -277,24 +307,34 @@ describe("reviewBashCommand", () => {
 		}
 	});
 
-	it("fails safely instead of throwing on unexpected gate-path errors", async () => {
-		const failOpen = makeDeps({
+	it("escalates unexpected gate-path errors with UI and blocks them without UI", async () => {
+		const withUI = makeDeps({
+			confirm: async () => true,
 			resolveModel: async () => {
 				throw new Error("registry failed");
 			},
 		});
-		assert.equal(await reviewBashCommand("git commit -m 'test'", failOpen.deps), undefined);
-		assert.equal(failOpen.auditEntries[0]?.phase, "failsafe");
-		assert.equal(failOpen.auditEntries[0]?.action, "allow");
+		assert.equal(await reviewBashCommand("git commit -m 'test'", withUI.deps), undefined);
+		assert.equal(withUI.confirmCalls(), 1);
+		assert.equal(withUI.auditEntries[0]?.phase, "failsafe");
+		assert.equal(withUI.auditEntries[0]?.action, "approve");
+		assert.equal(withUI.auditEntries[0]?.reason, "registry failed");
+		assert.equal(withUI.auditEntries[0]?.note, "escalated");
 
-		const failClosed = makeDeps({
+		const noUI = makeDeps({
+			hasUI: false,
 			runGate: async (_args: { model: Model<any>; auth: { apiKey?: string }; context: Context }) => {
 				throw new Error("provider failed");
 			},
 		});
-		const outcome = await reviewBashCommand("git push --force", failClosed.deps);
+		const outcome = await reviewBashCommand("git push --force", noUI.deps);
 		assert.equal(outcome?.block, true);
-		assert.equal(failClosed.auditEntries[0]?.phase, "failsafe");
-		assert.equal(failClosed.auditEntries[0]?.action, "block");
+		assert.match(outcome?.reason ?? "", /Reviewer unavailable/);
+		assert.match(outcome?.reason ?? "", /no interactive UI/);
+		assert.equal(noUI.confirmCalls(), 0);
+		assert.equal(noUI.auditEntries[0]?.phase, "failsafe");
+		assert.equal(noUI.auditEntries[0]?.action, "deny");
+		assert.equal(noUI.auditEntries[0]?.reason, "provider failed");
+		assert.equal(noUI.auditEntries[0]?.note, "no-ui");
 	});
 });

@@ -53,17 +53,42 @@ export async function reviewBashCommand(command: string, deps: ReviewDeps): Prom
 			// Auditing must never make the bash reviewer fail open or fail closed differently.
 		}
 	};
-	const failSafe = (triage: Extract<Triage, { kind: "gate" }>, why: string): ReviewOutcome => {
+	const failSafe = async (triage: Extract<Triage, { kind: "gate" }>, why: string): Promise<ReviewOutcome> => {
+		if (deps.hasUI) {
+			let ok = false;
+			try {
+				ok = await deps.confirm(
+					"Reviewer unavailable — approve command?",
+					`The bash reviewer could not evaluate this command.\n\nReason: ${why}\n\nCommand:\n${command}\n\nApprove and run it anyway?`,
+				);
+			} catch {
+				ok = false;
+			}
+
+			audit({
+				phase: "failsafe",
+				action: ok ? "approve" : "deny",
+				category: triage.category,
+				reason: why,
+				note: "escalated",
+			});
+
+			return ok
+				? undefined
+				: { block: true, reason: `Command blocked: reviewer unavailable (${why}) and user declined.` };
+		}
+
 		audit({
 			phase: "failsafe",
-			action: triage.failClosed ? "block" : "allow",
+			action: "deny",
 			category: triage.category,
 			reason: why,
+			note: "no-ui",
 		});
-
-		return triage.failClosed
-			? { block: true, reason: `Reviewer unavailable (${why}); blocking irreversible/remote command.` }
-			: undefined;
+		return {
+			block: true,
+			reason: `Reviewer unavailable (${why}); blocked because there is no interactive UI to confirm. Run it yourself if intended.`,
+		};
 	};
 
 	if (t.kind === "allow") return undefined;
@@ -75,7 +100,7 @@ export async function reviewBashCommand(command: string, deps: ReviewDeps): Prom
 
 	try {
 		const resolved = await deps.resolveModel();
-		if (resolved === null) return failSafe(t, "reviewer model unavailable");
+		if (resolved === null) return await failSafe(t, "reviewer model unavailable");
 
 		const context = buildGateContext(deps.recentMessages(), command);
 		const decision = await deps.runGate({
@@ -84,7 +109,7 @@ export async function reviewBashCommand(command: string, deps: ReviewDeps): Prom
 			context,
 			signal: deps.signal,
 		});
-		if (decision === null) return failSafe(t, "reviewer returned no decision");
+		if (decision === null) return await failSafe(t, "reviewer returned no decision");
 
 		let effective = decision.decision;
 		if (t.failClosed && effective === "approve") effective = "route_to_user";
@@ -138,6 +163,6 @@ export async function reviewBashCommand(command: string, deps: ReviewDeps): Prom
 		}
 	} catch (error) {
 		const reason = error instanceof Error ? error.message : "unexpected reviewer error";
-		return failSafe(t, reason);
+		return await failSafe(t, reason);
 	}
 }
