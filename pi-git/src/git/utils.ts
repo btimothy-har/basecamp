@@ -1,8 +1,7 @@
 /**
- * Shared helpers for git commands.
+ * Shared helpers for git commands and review packets.
  */
 
-import * as crypto from "node:crypto";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
@@ -39,24 +38,6 @@ export function ensurePrivateDirectory(dir: string): void {
 	if (stat.isSymbolicLink()) throw new Error(`Unsafe scratch directory: ${dir} is a symlink`);
 	if (!stat.isDirectory()) throw new Error(`Unsafe scratch directory: ${dir} is not a directory`);
 	fs.chmodSync(dir, PRIVATE_DIR_MODE);
-}
-
-export function getIssueDraftDir(cwd: string): string {
-	const issueDir = path.join(getScratchDir(cwd), "issues");
-	ensurePrivateDirectory(issueDir);
-	return issueDir;
-}
-
-export function createIssueDraftPath(cwd: string): string {
-	const issueDir = getIssueDraftDir(cwd);
-
-	for (let attempt = 0; attempt < 10; attempt += 1) {
-		const filename = `draft-${Date.now()}-${crypto.randomBytes(8).toString("hex")}.md`;
-		const draftPath = path.join(issueDir, filename);
-		if (!fs.existsSync(draftPath)) return draftPath;
-	}
-
-	throw new Error("Unable to allocate a unique issue draft path");
 }
 
 export async function resolvePrNumber(

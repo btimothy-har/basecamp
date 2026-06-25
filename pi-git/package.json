@@ -5,7 +5,7 @@
 	"engines": {
 		"node": ">=24"
 	},
-	"description": "Basecamp git workflow — safe-git, status, PR/issue/review-packet commands, publish guard.",
+	"description": "Basecamp git review workflows — code-walkthrough, review_packet, and prompt-only create-pr.",
 	"keywords": [
 		"pi-package"
 	],
