@@ -111,6 +111,14 @@ describe("bash triage", () => {
 		assert.equal(blockedWithFlags.kind, "block");
 		assert.match(blockedWithFlags.kind === "block" ? blockedWithFlags.reason : "", /bq_query/);
 
+		const blockedWithEnv = triageCommand("env FOO=1 bq query 'select 1'");
+		assert.equal(blockedWithEnv.kind, "block");
+		assert.match(blockedWithEnv.kind === "block" ? blockedWithEnv.reason : "", /bq_query/);
+
+		const blockedWithNohup = triageCommand("nohup bq query x");
+		assert.equal(blockedWithNohup.kind, "block");
+		assert.match(blockedWithNohup.kind === "block" ? blockedWithNohup.reason : "", /bq_query/);
+
 		assertTriage("bq_query --path query.sql", allow);
 		assertTriage("bq show project:dataset.table", allow);
 	});
@@ -166,6 +174,7 @@ describe("bash triage", () => {
 		assertTriage("env FOO=1 git commit -m fix", gitMutation);
 		assertTriage("command git push -f", irreversibleRemote);
 		assertTriage("sudo -u root git push -f", irreversibleRemote);
+		assertTriage("time -f %e git push --force", irreversibleRemote);
 	});
 
 	it("handles nested shell scripts, xargs, and command substitution", () => {
@@ -177,5 +186,14 @@ describe("bash triage", () => {
 		assertTriage("echo $(git push --force)", irreversibleRemote);
 		assertTriage("echo $(shred secret)", dangerousShell);
 		assertTriage("echo `git push --force`", irreversibleRemote);
+	});
+
+	it("blocks commands nested too deeply to analyze safely", () => {
+		let command = "git status";
+		for (let index = 0; index < 10; index += 1) {
+			command = `bash -c ${JSON.stringify(command)}`;
+		}
+
+		assert.equal(triageCommand(command).kind, "block");
 	});
 });

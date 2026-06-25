@@ -87,6 +87,30 @@ describe("parseGateResponse", () => {
 			null,
 		);
 	});
+
+	it("returns null when there is not exactly one gate_decision tool call", () => {
+		const decision = { decision: "approve", risk: "none", reason: "ok" };
+		assert.equal(
+			parseGateResponse({
+				...assistantWithToolCall("gate_decision", decision),
+				content: [
+					{ type: "toolCall", id: "call-1", name: "gate_decision", arguments: decision },
+					{ type: "toolCall", id: "call-2", name: "gate_decision", arguments: decision },
+				],
+			}),
+			null,
+		);
+		assert.equal(
+			parseGateResponse({
+				...assistantWithToolCall("gate_decision", decision),
+				content: [
+					{ type: "toolCall", id: "call-1", name: "gate_decision", arguments: decision },
+					{ type: "toolCall", id: "call-2", name: "other_tool", arguments: {} },
+				],
+			}),
+			null,
+		);
+	});
 });
 
 describe("runGate", () => {
@@ -122,17 +146,23 @@ describe("runGate", () => {
 });
 
 describe("buildGateContext", () => {
-	it("sets the ruleset, includes the gate tool, and embeds recent messages plus command", () => {
-		const context = buildGateContext(["Check the repo status.", "Now make a commit."], "git commit -m 'test'");
+	it("sets the ruleset, includes the gate tool, and embeds recent messages plus command as JSON", () => {
+		const recentHumanMessages = ["Check the repo status.", "Now make a commit."];
+		const command = "git commit -m 'test'";
+		const context = buildGateContext(recentHumanMessages, command);
 
 		assert.equal(context.systemPrompt, RULESET);
 		assert.deepEqual(context.tools, [GATE_TOOL]);
 		assert.equal(context.messages.length, 1);
 		const message = context.messages[0];
 		assert.equal(message?.role, "user");
-		assert.equal(typeof message?.content, "string");
-		assert.match(String(message?.content), /Check the repo status\./);
-		assert.match(String(message?.content), /Now make a commit\./);
-		assert.match(String(message?.content), /git commit -m 'test'/);
+		const content = message?.content;
+		assert.equal(typeof content, "string");
+		if (typeof content !== "string") throw new Error("expected string content");
+		assert.match(content, /"recent_human_messages"/);
+		assert.match(content, /"command"/);
+		assert.ok(content.includes(JSON.stringify(command)));
+		const payload = JSON.parse(content.replace(/^Evaluate whether the bash command should run\. Input:\n\n/, ""));
+		assert.deepEqual(payload, { recent_human_messages: recentHumanMessages, command });
 	});
 });

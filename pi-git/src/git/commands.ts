@@ -78,6 +78,12 @@ async function checkoutBranchForReview(pi: ExtensionAPI, branchName: string, ctx
 	return true;
 }
 
+async function resolveDefaultBase(pi: ExtensionAPI): Promise<string> {
+	const head = await exec(pi, "git", ["symbolic-ref", "--quiet", "--short", "refs/remotes/origin/HEAD"]);
+	const ref = head.stdout.trim();
+	return ref.startsWith("origin/") ? ref.slice("origin/".length) : "main";
+}
+
 function createPrPrompt(base: string, context: string): string {
 	const contextBlock = context ? `\n\nAdditional context from the user:\n${context}` : "";
 	return `Please create or update the pull request directly using bash commands.
@@ -100,8 +106,9 @@ export function registerCommands(pi: ExtensionAPI): void {
 		description: "Prompt the agent to create or update a pull request via bash/gh",
 		handler: async (args, ctx) => {
 			const reviewContext = args?.trim() || "";
-			const baseInput = ctx.hasUI ? (await ctx.ui.input("Base branch", "main"))?.trim() : undefined;
-			const base = baseInput || "main";
+			const fallback = await resolveDefaultBase(pi);
+			const baseInput = ctx.hasUI ? (await ctx.ui.input("Base branch", fallback))?.trim() : undefined;
+			const base = baseInput || fallback;
 			pi.sendUserMessage(createPrPrompt(base, reviewContext));
 		},
 	});

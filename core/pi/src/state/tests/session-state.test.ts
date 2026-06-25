@@ -117,6 +117,29 @@ describe("session state file helpers", () => {
 		assert.equal(oldWorktreeShape.activeWorktree, null);
 	});
 
+	it("strips legacy fields when loading valid state", async (t) => {
+		const dir = await createTempDir(t);
+		await writeStateFile(dir, "legacy-fields", {
+			...createDefaultSessionState({ sessionId: "legacy-fields", sessionFile: "/tmp/session.json" }),
+			activePR: { number: 123 },
+			activeIssueDraft: { title: "old draft" },
+		});
+
+		const loaded = loadSessionState({ sessionId: "legacy-fields", sessionFile: "/tmp/session.json" }, dir);
+
+		assert.equal("activePR" in loaded, false);
+		assert.equal("activeIssueDraft" in loaded, false);
+		assert.deepEqual(Object.keys(loaded).sort(), [
+			"activeWorktree",
+			"agentMode",
+			"sessionFile",
+			"sessionId",
+			"title",
+			"updatedAt",
+			"version",
+		]);
+	});
+
 	it("saves atomically with a fresh updatedAt and loads valid state", async (t) => {
 		const dir = await createTempDir(t);
 		const initial: BasecampSessionState = {

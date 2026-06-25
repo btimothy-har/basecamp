@@ -148,6 +148,7 @@ const SUDO_FLAGS_WITH_VALUE = new Set([
 ]);
 const NICE_FLAGS_WITH_VALUE = new Set(["-n", "--adjustment"]);
 const IONICE_FLAGS_WITH_VALUE = new Set(["-c", "--class", "-n", "--classdata"]);
+const TIME_FLAGS_WITH_VALUE = new Set(["-f", "--format", "-o", "--output"]);
 const SHELLS = new Set(["bash", "dash", "fish", "ksh", "sh", "zsh"]);
 const NETWORK_PIPE_SHELLS = new Set(["bash", "sh", "zsh"]);
 const NETWORK_FETCHERS = new Set(["curl", "wget"]);
@@ -294,7 +295,7 @@ function skipWrapper(tokens: string[], index: number): number | null {
 	if (WRAPPER_SKIP_ONE.has(executable)) return index + 1;
 	if (executable === "env") return skipEnvArguments(tokens, index + 1);
 	if (executable === "sudo") return skipFlagArguments(tokens, index + 1, SUDO_FLAGS_WITH_VALUE);
-	if (executable === "time") return skipFlagArguments(tokens, index + 1, new Set());
+	if (executable === "time") return skipFlagArguments(tokens, index + 1, TIME_FLAGS_WITH_VALUE);
 	if (executable === "nice") return skipFlagArguments(tokens, index + 1, NICE_FLAGS_WITH_VALUE);
 	if (executable === "ionice") return skipFlagArguments(tokens, index + 1, IONICE_FLAGS_WITH_VALUE);
 
@@ -461,9 +462,11 @@ function isBqQuerySegment(segment: string): boolean {
 	// Match the common agent-generated forms: `bq query` and `bq --global_flag ... query`.
 	// Unknown value-taking flags intentionally stop matching rather than risk blocking unrelated commands.
 	const tokens = tokenizeShellLike(segment);
-	if (tokens[0] !== "bq") return false;
+	const commandIndex = commandIndexAfterPrefixes(tokens);
+	const executable = tokens[commandIndex];
+	if (executable === undefined || commandBaseName(executable) !== "bq") return false;
 
-	for (let index = 1; index < tokens.length; index += 1) {
+	for (let index = commandIndex + 1; index < tokens.length; index += 1) {
 		const token = tokens[index];
 		if (token === undefined) return false;
 		if (token === "query") return true;
@@ -650,7 +653,8 @@ function classifySegment(segment: string, depth: number): Triage {
 }
 
 function triageCommandInternal(command: string, depth: number): Triage {
-	if (depth > 8) return ALLOW;
+	if (depth > 8)
+		return { kind: "block", reason: "Command nesting is too deep to analyze safely; simplify the command." };
 
 	let result: Triage = ALLOW;
 

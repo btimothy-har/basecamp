@@ -148,7 +148,15 @@ export function loadSessionState(identity: SessionStateIdentity, stateDir?: stri
 		if (!isSessionState(parsed)) return defaults;
 		if (parsed.sessionId !== identity.sessionId) return defaults;
 		if (parsed.sessionFile !== expectedSessionFile) return defaults;
-		return parsed;
+		return {
+			version: SESSION_STATE_VERSION,
+			sessionId: parsed.sessionId,
+			sessionFile: parsed.sessionFile,
+			updatedAt: parsed.updatedAt,
+			activeWorktree: parsed.activeWorktree ?? null,
+			agentMode: parsed.agentMode ?? null,
+			title: parsed.title ?? null,
+		};
 	} catch {
 		return defaults;
 	}

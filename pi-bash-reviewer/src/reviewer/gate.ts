@@ -29,6 +29,7 @@ R3 Publish-to-humans operations such as gh pr/issue create, comment, edit, merge
 R4 Secret exfiltration: if the command would publish text containing secrets or credentials, including API keys, tokens like ghp_ or github_pat_, AWS AKIA/ASIA keys, PRIVATE KEY blocks, or high-entropy secret-like assignments, deny.
 R5 Protected-checkout writes are suspicious defense-in-depth signals; the edit layer already guards this, but treat such bash writes with caution.
 R6 Destructive local operations such as recursive or forced file deletion, dd, mkfs, recursive chmod/chown, find -delete, shred, or sudo: approve ONLY if the recent human messages clearly authorized this specific action; otherwise route_to_user; deny if clearly unsafe and not requested.
+Input arrives as JSON with recent_human_messages and command fields.
 Default: approve with risk "none" or "local".`;
 
 export const GATE_TOOL: Tool = {
@@ -37,21 +38,14 @@ export const GATE_TOOL: Tool = {
 	parameters: GateDecision,
 };
 
-function formatRecentHumanMessages(recentHumanMessages: string[]): string {
-	if (recentHumanMessages.length === 0) return "(none)";
-
-	return recentHumanMessages
-		.map((message, index) => `<human_message index="${index + 1}">\n${message}\n</human_message>`)
-		.join("\n\n");
-}
-
 export function buildGateContext(recentHumanMessages: string[], command: string): Context {
+	const payload = JSON.stringify({ recent_human_messages: recentHumanMessages, command }, null, 2);
 	return {
 		systemPrompt: RULESET,
 		messages: [
 			{
 				role: "user",
-				content: `<recent_human_messages most_recent_last="true">\n${formatRecentHumanMessages(recentHumanMessages)}\n</recent_human_messages>\n\n<bash_command>\n${command}\n</bash_command>`,
+				content: `Evaluate whether the bash command should run. Input:\n\n${payload}`,
 				timestamp: Date.now(),
 			},
 		],
@@ -60,13 +54,12 @@ export function buildGateContext(recentHumanMessages: string[], command: string)
 }
 
 export function parseGateResponse(msg: AssistantMessage): GateDecision | null {
-	const toolCall = msg.content.find((content) => {
-		if (content.type !== "toolCall") return false;
-		return content.name === "gate_decision";
-	});
-	if (toolCall?.type !== "toolCall") return null;
+	const toolCalls = msg.content.filter((content) => content.type === "toolCall");
+	if (toolCalls.length !== 1) return null;
+	const call = toolCalls[0];
+	if (call === undefined || call.type !== "toolCall" || call.name !== "gate_decision") return null;
 
-	const args: unknown = toolCall.arguments;
+	const args: unknown = call.arguments;
 	if (!Value.Check(GateDecision, args)) return null;
 
 	return args;
@@ -111,7 +104,7 @@ export async function resolveGateModel(
 
 	try {
 		const auth = await ctx.modelRegistry.getApiKeyAndHeaders(model);
-		if (!auth.ok || !auth.apiKey) return null;
+		if (!auth.ok || (!auth.apiKey && !(auth.headers && Object.keys(auth.headers).length > 0))) return null;
 		return { model, auth: { apiKey: auth.apiKey, headers: auth.headers } };
 	} catch {
 		return null;
