@@ -4,6 +4,8 @@ import { type Triage, triageCommand } from "./triage.ts";
 
 export type ReviewAuth = { apiKey?: string; headers?: Record<string, string> };
 
+const SUBAGENT_APPROVE_CATEGORIES = new Set(["git-mutation"]);
+
 export interface ReviewDeps {
 	resolveModel: () => Promise<{ model: Model<any>; auth: ReviewAuth } | null>;
 	recentMessages: () => string[];
@@ -15,6 +17,7 @@ export interface ReviewDeps {
 	}) => Promise<GateDecision | null>;
 	confirm: (title: string, body: string) => Promise<boolean>;
 	hasUI: boolean;
+	isSubagent: boolean;
 	signal?: AbortSignal;
 	audit: (entry: ReviewAuditEntry) => void;
 	notify: (message: string, type?: "info" | "warning" | "error") => void;
@@ -145,31 +148,49 @@ export async function reviewBashCommand(command: string, deps: ReviewDeps): Prom
 				notify(`🛡 reviewer blocked: ${decision.reason}`, "warning");
 				return { block: true, reason: decision.reason };
 			case "route_to_user": {
-				if (!deps.hasUI) {
+				if (deps.hasUI) {
+					const ok = await deps.confirm("Approve command?", confirmationBody(command, decision));
 					audit({
 						phase: "gate",
-						action: "deny",
+						action: ok ? "approve" : "deny",
 						category: t.category,
 						reason: decision.reason,
 						risk: decision.risk,
-						note: "no-ui",
+						note: "route_to_user",
 					});
-					return {
-						block: true,
-						reason: `Requires user review (${decision.reason}); not available without an interactive UI.`,
-					};
+					return ok ? undefined : { block: true, reason: "User declined the command." };
 				}
 
-				const ok = await deps.confirm("Approve command?", confirmationBody(command, decision));
+				if (deps.isSubagent) {
+					const permit = SUBAGENT_APPROVE_CATEGORIES.has(t.category);
+					audit({
+						phase: "gate",
+						action: permit ? "approve" : "deny",
+						category: t.category,
+						reason: decision.reason,
+						risk: decision.risk,
+						note: "subagent-collapse",
+					});
+					return permit
+						? undefined
+						: {
+								block: true,
+								reason: `Requires human review (${decision.reason}); auto-denied for an autonomous agent. Report this command back to the parent session instead of retrying.`,
+							};
+				}
+
 				audit({
 					phase: "gate",
-					action: ok ? "approve" : "deny",
+					action: "deny",
 					category: t.category,
 					reason: decision.reason,
 					risk: decision.risk,
-					note: "route_to_user",
+					note: "no-ui",
 				});
-				return ok ? undefined : { block: true, reason: "User declined the command." };
+				return {
+					block: true,
+					reason: `Requires user review (${decision.reason}); not available without an interactive UI.`,
+				};
 			}
 		}
 	} catch (error) {

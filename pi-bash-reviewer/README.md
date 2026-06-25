@@ -7,6 +7,10 @@ Basecamp bash reviewer — LLM gate for risky git/gh/shell commands.
 - **Bash reviewer hook**: registers a `tool_call` hook for `bash`
 - **Reviewer runtime**: intended to host the LLM gate for risky git/gh/shell commands
 
+## Autonomous subagents
+
+Subagent context is detected with `BASECAMP_AGENT_DEPTH > 0`. In a subagent, `route_to_user` decisions collapse to approve only for `git-mutation` commands, which are sandbox-local and reversible. Other categories, including gh publish operations, irreversible remote mutations, and dangerous shell commands, are denied. Interactive sessions still prompt the user, and failsafe paths remain fail-closed.
+
 ## Dependencies
 
 - **pi-core** (hard peer dep): shared Basecamp/Pi runtime primitives
