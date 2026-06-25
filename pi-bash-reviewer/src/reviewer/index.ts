@@ -1,8 +1,25 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { isToolCallEventType } from "@earendil-works/pi-coding-agent";
+import { recentHumanMessages, resolveGateModel, runGate } from "./gate.ts";
+import { type ReviewDeps, reviewBashCommand } from "./review.ts";
 
 export function registerBashReviewer(pi: ExtensionAPI): void {
-	pi.on("tool_call", async (event, _ctx) => {
-		if (!isToolCallEventType("bash", event)) return;
+	pi.on("tool_call", async (event, ctx) => {
+		if (!isToolCallEventType("bash", event)) return undefined;
+
+		const command = event.input.command ?? "";
+		if (command === "") return undefined;
+
+		const deps: ReviewDeps = {
+			resolveModel: () => resolveGateModel(ctx),
+			recentMessages: () => recentHumanMessages(ctx.sessionManager),
+			runGate: (args) => runGate(args),
+			confirm: (title, body) => ctx.ui.confirm(title, body, { signal: ctx.signal }),
+			hasUI: ctx.hasUI,
+			signal: ctx.signal,
+			audit: (entry) => pi.appendEntry("bash-reviewer", entry),
+		};
+
+		return await reviewBashCommand(command, deps);
 	});
 }
