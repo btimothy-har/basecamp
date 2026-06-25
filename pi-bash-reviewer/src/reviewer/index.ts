@@ -18,6 +18,9 @@ export function registerBashReviewer(pi: ExtensionAPI): void {
 			hasUI: ctx.hasUI,
 			signal: ctx.signal,
 			audit: (entry) => pi.appendEntry("bash-reviewer", entry),
+			notify: (message, type) => {
+				if (ctx.hasUI) ctx.ui.notify(message, type);
+			},
 		};
 
 		return await reviewBashCommand(command, deps);

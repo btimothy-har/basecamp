@@ -17,10 +17,13 @@ const fakeModel: Model<any> = {
 	maxTokens: 4096,
 };
 
+type FakeNotification = { message: string; type?: "info" | "warning" | "error" };
+
 interface FakeReviewHarness {
 	deps: ReviewDeps;
 	auditEntries: ReviewAuditEntry[];
 	confirmBodies: string[];
+	notifications: FakeNotification[];
 	confirmCalls: () => number;
 	resolveModelCalls: () => number;
 	runGateCalls: () => number;
@@ -40,6 +43,7 @@ function makeDeps(
 ): FakeReviewHarness {
 	const auditEntries: ReviewAuditEntry[] = [];
 	const confirmBodies: string[] = [];
+	const notifications: FakeNotification[] = [];
 	let resolveModelCalls = 0;
 	let runGateCalls = 0;
 	let confirmCalls = 0;
@@ -65,12 +69,14 @@ function makeDeps(
 		},
 		hasUI: overrides.hasUI ?? true,
 		audit: (entry) => auditEntries.push(entry),
+		notify: (message, type) => notifications.push({ message, type }),
 	};
 
 	return {
 		deps,
 		auditEntries,
 		confirmBodies,
+		notifications,
 		confirmCalls: () => confirmCalls,
 		resolveModelCalls: () => resolveModelCalls,
 		runGateCalls: () => runGateCalls,
@@ -96,6 +102,7 @@ describe("reviewBashCommand", () => {
 		assert.equal(harness.resolveModelCalls(), 0);
 		assert.equal(harness.runGateCalls(), 0);
 		assert.equal(harness.auditEntries.length, 0);
+		assert.equal(harness.notifications.length, 0);
 	});
 
 	it("blocks raw bq query commands during triage and audits the block", async () => {
@@ -116,6 +123,10 @@ describe("reviewBashCommand", () => {
 			reason:
 				'Raw `bq query` execution through bash is blocked. Write the SQL to a .sql file and use bq_query({ path: "..." }) instead.',
 		});
+		assert.equal(harness.notifications.length, 1);
+		assert.equal(harness.notifications[0]?.type, "warning");
+		assert.match(harness.notifications[0]?.message ?? "", /reviewer blocked/);
+		assert.match(harness.notifications[0]?.message ?? "", /bq_query/);
 	});
 
 	it("escalates model-unavailable failures to the user and allows confirmed commands", async () => {
@@ -130,6 +141,7 @@ describe("reviewBashCommand", () => {
 		assert.match(harness.confirmBodies[0] ?? "", /reviewer could not evaluate/);
 		assert.match(harness.confirmBodies[0] ?? "", /reviewer model unavailable/);
 		assert.match(harness.confirmBodies[0] ?? "", /git commit -m 'test'/);
+		assert.equal(harness.notifications.length, 0);
 		assert.equal(harness.auditEntries.length, 1);
 		assert.equal(harness.auditEntries[0]?.phase, "failsafe");
 		assert.equal(harness.auditEntries[0]?.action, "approve");
@@ -209,6 +221,11 @@ describe("reviewBashCommand", () => {
 		assert.equal(harness.auditEntries[0]?.phase, "gate");
 		assert.equal(harness.auditEntries[0]?.action, "approve");
 		assert.equal(harness.auditEntries[0]?.risk, "local");
+		assert.equal(harness.notifications.length, 1);
+		assert.equal(harness.notifications[0]?.type, "info");
+		assert.match(harness.notifications[0]?.message ?? "", /reviewer approved/);
+		assert.match(harness.notifications[0]?.message ?? "", /local/);
+		assert.match(harness.notifications[0]?.message ?? "", /The commit is local and requested\./);
 	});
 
 	it("blocks denied gate decisions with the reviewer reason", async () => {
@@ -220,6 +237,10 @@ describe("reviewBashCommand", () => {
 		assert.equal(harness.auditEntries.length, 1);
 		assert.equal(harness.auditEntries[0]?.phase, "gate");
 		assert.equal(harness.auditEntries[0]?.action, "deny");
+		assert.equal(harness.notifications.length, 1);
+		assert.equal(harness.notifications[0]?.type, "warning");
+		assert.match(harness.notifications[0]?.message ?? "", /reviewer blocked/);
+		assert.match(harness.notifications[0]?.message ?? "", /This would publish a secret\./);
 	});
 
 	it("routes to the user when UI is available and allows confirmed commands", async () => {
@@ -236,6 +257,7 @@ describe("reviewBashCommand", () => {
 		assert.match(harness.confirmBodies[0] ?? "", /Publishing externally requires review/);
 		assert.equal(harness.auditEntries[0]?.action, "approve");
 		assert.equal(harness.auditEntries[0]?.note, "route_to_user");
+		assert.equal(harness.notifications.length, 0);
 	});
 
 	it("routes to the user when UI is available and blocks declined commands", async () => {

@@ -17,6 +17,7 @@ export interface ReviewDeps {
 	hasUI: boolean;
 	signal?: AbortSignal;
 	audit: (entry: ReviewAuditEntry) => void;
+	notify: (message: string, type?: "info" | "warning" | "error") => void;
 }
 
 export type ReviewOutcome = { block: true; reason: string } | undefined;
@@ -51,6 +52,13 @@ export async function reviewBashCommand(command: string, deps: ReviewDeps): Prom
 			deps.audit({ ...entry, command: auditCommand });
 		} catch {
 			// Auditing must never make the bash reviewer fail open or fail closed differently.
+		}
+	};
+	const notify = (message: string, type?: "info" | "warning" | "error") => {
+		try {
+			deps.notify(message, type);
+		} catch {
+			// Notifications are best-effort UI feedback and must not change the gate outcome.
 		}
 	};
 	const failSafe = async (triage: Extract<Triage, { kind: "gate" }>, why: string): Promise<ReviewOutcome> => {
@@ -95,6 +103,7 @@ export async function reviewBashCommand(command: string, deps: ReviewDeps): Prom
 
 	if (t.kind === "block") {
 		audit({ phase: "triage", action: "block", category: blockCategory(command), reason: t.reason });
+		notify(`🛡 reviewer blocked: ${t.reason}`, "warning");
 		return { block: true, reason: t.reason };
 	}
 
@@ -123,6 +132,7 @@ export async function reviewBashCommand(command: string, deps: ReviewDeps): Prom
 					reason: decision.reason,
 					risk: decision.risk,
 				});
+				notify(`🛡 reviewer approved · ${decision.risk}: ${decision.reason}`, "info");
 				return undefined;
 			case "deny":
 				audit({
@@ -132,6 +142,7 @@ export async function reviewBashCommand(command: string, deps: ReviewDeps): Prom
 					reason: decision.reason,
 					risk: decision.risk,
 				});
+				notify(`🛡 reviewer blocked: ${decision.reason}`, "warning");
 				return { block: true, reason: decision.reason };
 			case "route_to_user": {
 				if (!deps.hasUI) {
