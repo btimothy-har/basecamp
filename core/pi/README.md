@@ -4,7 +4,7 @@ The always-present foundation for basecamp. A pi-installed extension containing 
 
 ## What it does
 
-- **Platform registries** (process-scoped via `globalThis` + `Symbol.for`): exec/cwd provider, capability catalog, skill invocation tracker, model-alias resolve hooks, workspace state + worktree operations
+- **Platform registries** (process-scoped via `globalThis` + `Symbol.for`): exec/cwd provider, capability catalog, skill invocation tracker, model-alias resolve hooks, workspace state + worktree operations, session state
 - **Environment contract** (`platform/env.ts`): typed `BASECAMP_*` env var getters/setters, companion-active flag, workspace state hooks for pi-workspace override
 - **Session lifecycle**: agent-mode state machine (analysis/planning/supervisor/executor), session start (state load + mode restore), session shutdown, chat compaction
 - **State persistence**: file-backed session state (`~/.pi/basecamp/core/session-state/<session-id>.json`) with fork inheritance
@@ -23,6 +23,12 @@ pi-core ← pi-ui, pi-workspace, pi-tasks, pi-git, pi-engineering, pi-companion,
 ```
 
 No pluggable module imports from another pluggable module at runtime. Cross-module observation of optional state (companion→tasks, swarm→tasks) uses `import type` (erased) + dynamic `import()` guarded by try/catch.
+
+### Process-scoped singleton convention
+
+**Any mutable state that must be shared across modules or survive `/reload` MUST be stored on `globalThis` via a `Symbol.for("basecamp.*")` key — never a module-level `let`.** On `/reload`, pi clears its extension cache and re-imports every extension with fresh `jiti` instances (`moduleCache: false`), so each extension can receive its own instance of a shared module like `state/index.ts`. Module-level variables are therefore not shared across consumers and are reset on reload; only `globalThis`-backed state is process-scoped and reload-stable. Follow the existing pattern (see `platform/catalog.ts`, `platform/workspace.ts`, `session/agent-mode.ts`, `state/index.ts`).
+
+State read during an extension's own `session_start` handler must not assume another extension's `session_start` ran first — cross-extension handler ordering is not guaranteed (and changes on reload). Initialize defensively (e.g. `ensureCurrentSessionStateForEvent`) rather than relying on the owner running first.
 
 ## Workspace override model
 
