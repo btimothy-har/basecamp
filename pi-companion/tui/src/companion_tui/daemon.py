@@ -86,6 +86,16 @@ class DaemonRecentActivity:
 
 
 @dataclass(frozen=True)
+class DaemonSkillInvocation:
+    """One skill invocation aggregate from a daemon projection."""
+
+    name: str
+    count: int
+    last_seq: int | None = None
+    last_timestamp: str | None = None
+
+
+@dataclass(frozen=True)
 class DaemonAgentMessage:
     """One selected-agent assistant message from the daemon."""
 
@@ -144,6 +154,7 @@ class DaemonSummaryAgent:
     model: str | None = None
     task: DaemonTaskProjection | None = None
     recent_activity: list[DaemonRecentActivity] | None = None
+    skills: list[DaemonSkillInvocation] | None = None
 
 
 @dataclass(frozen=True)
@@ -456,6 +467,35 @@ def _parse_recent_activity(payload: object) -> list[DaemonRecentActivity] | None
     return items
 
 
+def _parse_skill_item(payload: object) -> DaemonSkillInvocation | None:
+    if not isinstance(payload, dict):
+        return None
+
+    try:
+        return DaemonSkillInvocation(
+            name=_expect_str(payload, "name"),
+            count=_expect_int(payload, "count"),
+            last_seq=_activity_optional_int(payload, "last_seq"),
+            last_timestamp=_activity_optional_str(payload, "last_timestamp"),
+        )
+    except TypeError:
+        return None
+
+
+def _parse_skills(payload: object) -> list[DaemonSkillInvocation] | None:
+    if payload is None:
+        return None
+    if not isinstance(payload, list):
+        return []
+
+    items: list[DaemonSkillInvocation] = []
+    for raw_item in payload:
+        item = _parse_skill_item(raw_item)
+        if item is not None:
+            items.append(item)
+    return items
+
+
 def _parse_message_item(payload: object) -> DaemonAgentMessage | None:
     if not isinstance(payload, dict):
         return None
@@ -528,6 +568,7 @@ def _parse_payload(payload: object) -> DaemonSummaryOk:
             model=_expect_optional_str(raw_agent, "model"),
             task=_parse_task_projection(raw_agent.get("task")),
             recent_activity=_parse_recent_activity(raw_agent.get("recent_activity")),
+            skills=_parse_skills(raw_agent.get("skills")),
         )
         for raw_agent in agents_payload
         if isinstance(raw_agent, dict)
@@ -556,6 +597,7 @@ __all__ = [
     "DaemonAgentMessagesState",
     "DaemonAgentMessagesUnavailable",
     "DaemonSummary",
+    "DaemonSkillInvocation",
     "DaemonSummaryState",
     "DaemonSummaryCounts",
     "DaemonSummaryError",

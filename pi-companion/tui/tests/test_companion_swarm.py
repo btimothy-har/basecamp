@@ -12,6 +12,7 @@ from companion_tui.daemon import (
     DaemonAgentMessagesOk,
     DaemonCurrentTask,
     DaemonRecentActivity,
+    DaemonSkillInvocation,
     DaemonSummaryAgent,
     DaemonSummaryCounts,
     DaemonSummaryError,
@@ -333,16 +334,18 @@ def test_swarm_renders_left_list_and_ordered_detail_sections() -> None:
             assert "[abc123]" in detail_text
             assert "Goal: Build the thing" in detail_text
             assert "Progress: 1/3" in detail_text
-            assert detail_text.index("Task plan") < detail_text.index("Current task")
+            assert "Task plan" in detail_text
+            assert "Current task" in detail_text
+            assert "Skills" in detail_text
+            assert detail_text.index("Task plan") < detail_text.index("Recent activity")
+            assert detail_text.index("Current task") < detail_text.index("Recent activity")
+            assert detail_text.index("Skills") < detail_text.index("Recent activity")
             assert "Now" in detail_text
             assert "Do current work" in detail_text
             assert "Important note" in detail_text
             assert "✎ note" in detail_text
-            assert (
-                detail_text.index("Current task") < detail_text.index("✎ note") < detail_text.index("Recent activity")
-            )
+            assert detail_text.index("✎ note") < detail_text.index("Recent activity")
             assert "Latest message" not in detail_text
-            assert "Recent activity" in detail_text
             assert "Agent Messages" in detail_text
             assert detail_text.index("Recent activity") < detail_text.index("Agent Messages")
             assert "#8" in detail_text
@@ -359,6 +362,50 @@ def test_swarm_renders_left_list_and_ordered_detail_sections() -> None:
             assert "Final full result" in detail_text
             assert detail_text.count("---") == 2
             assert "2026-01-01T00:00:05Z" not in detail_text
+
+    asyncio.run(run())
+
+
+def test_swarm_renders_skills_section_counts_and_empty_placeholder() -> None:
+    swarm = SwarmBody()
+    skilled = _summary(
+        [
+            _agent(
+                skills=[
+                    DaemonSkillInvocation(
+                        name="python-development",
+                        count=2,
+                        last_seq=12,
+                        last_timestamp="2026-01-01T00:00:04Z",
+                    ),
+                    DaemonSkillInvocation(
+                        name="sql",
+                        count=1,
+                        last_seq=10,
+                        last_timestamp="2026-01-01T00:00:02Z",
+                    ),
+                ]
+            )
+        ]
+    )
+    empty = _summary([_agent(skills=[])])
+
+    async def run() -> None:
+        async with _SwarmHarness(swarm).run_test() as pilot:
+            swarm.update_daemon(skilled)
+            await pilot.pause(0.1)
+            detail_text = _to_text(swarm.query_one("#swarm-detail-content", Static).content)
+            assert "Skills" in detail_text
+            assert "python-development" in detail_text
+            assert "×2" in detail_text
+            assert "sql" in detail_text
+            assert "sql · ×1" not in detail_text
+
+            swarm.update_daemon(empty)
+            await pilot.pause(0.1)
+            detail_text = _to_text(swarm.query_one("#swarm-detail-content", Static).content)
+            assert "Skills" in detail_text
+            assert "│ —" in detail_text
 
     asyncio.run(run())
 

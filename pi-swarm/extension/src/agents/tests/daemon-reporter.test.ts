@@ -191,6 +191,54 @@ describe("daemon reporter", () => {
 		}
 	});
 
+	it("emits skillName in skill tool call telemetry", async () => {
+		const sent: Frame[] = [];
+		const connection: DaemonConnection = {
+			send(frame) {
+				sent.push(frame);
+			},
+			on() {
+				return () => {};
+			},
+			onClose() {
+				return () => {};
+			},
+			close() {
+				// no-op
+			},
+		};
+
+		const priorReportToken = process.env.BASECAMP_REPORT_TOKEN;
+		try {
+			process.env.BASECAMP_REPORT_TOKEN = "token-for-tests";
+			const pi = new MockPi();
+			registerDaemonReporter(pi as unknown as any, {
+				connectionPromise: Promise.resolve(connection),
+				runId: "run-1",
+				agentId: "agent-1",
+			});
+
+			await pi.emit("tool_execution_start", {
+				toolCallId: "tc-1",
+				toolName: "skill",
+				args: { name: "python-development" },
+			});
+			await waitForFrameCount(sent, 2);
+
+			const toolCall = telemetryFrames(sent).find((frame) => frame.kind === "tool_call");
+			assert.deepEqual(toolCall?.payload, {
+				category: "tool",
+				label: "skill",
+				snippet: "skill python-development",
+				toolName: "skill",
+				skillName: "python-development",
+			});
+		} finally {
+			if (priorReportToken === undefined) delete process.env.BASECAMP_REPORT_TOKEN;
+			else process.env.BASECAMP_REPORT_TOKEN = priorReportToken;
+		}
+	});
+
 	it("writes runner-managed non-empty final result sidecar without result report", async () => {
 		const sent: Frame[] = [];
 		const connection: DaemonConnection = {

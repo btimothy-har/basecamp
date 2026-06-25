@@ -6,6 +6,7 @@ from datetime import datetime
 
 from rich.console import Group, RenderableType
 from rich.panel import Panel
+from rich.table import Table
 from rich.text import Text
 from textual.app import ComposeResult
 from textual.binding import Binding
@@ -222,6 +223,20 @@ def _activity_snippet(activity: DaemonRecentActivity) -> str | None:
     return None
 
 
+def _render_swarm_skills(agent: DaemonSummaryAgent) -> Text:
+    if not agent.skills:
+        return Text("—", style="dim")
+
+    rows = Text()
+    for index, skill in enumerate(agent.skills):
+        if index:
+            rows.append("\n")
+        rows.append(skill.name, style="bold")
+        if skill.count > 1:
+            rows.append(f" · ×{skill.count}", style="dim")
+    return rows
+
+
 def _render_swarm_recent_activity(agent: DaemonSummaryAgent) -> Text:
     if not agent.recent_activity:
         return Text("—", style="dim")
@@ -301,13 +316,19 @@ def _render_swarm_detail(
 
     index = max(0, min(selected_index, len(summary.agents) - 1))
     agent = summary.agents[index]
-    return Group(
-        _render_swarm_header(agent),
+    header = _render_swarm_header(agent)
+    left_group = Group(
         _swarm_section("Task plan", _render_swarm_task_plan(agent)),
         _swarm_section("Current task", _render_swarm_current_task(agent)),
-        _swarm_section("Recent activity", _render_swarm_recent_activity(agent)),
-        _swarm_section("Agent Messages", _render_swarm_agent_messages(agent, messages)),
     )
+    right_cell = _swarm_section("Skills", _render_swarm_skills(agent))
+    grid = Table.grid(expand=True, padding=(0, 1))
+    grid.add_column(ratio=1)
+    grid.add_column(ratio=1)
+    grid.add_row(left_group, right_cell)
+    recent_activity_section = _swarm_section("Recent activity", _render_swarm_recent_activity(agent))
+    agent_messages_section = _swarm_section("Agent Messages", _render_swarm_agent_messages(agent, messages))
+    return Group(header, grid, recent_activity_section, agent_messages_section)
 
 
 class SwarmBody(Widget):

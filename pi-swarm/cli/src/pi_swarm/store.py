@@ -32,6 +32,7 @@ RUN_SUMMARY_TASK_PLAN_LIMIT = 20
 RUN_MESSAGES_DEFAULT_LIMIT = 3
 RUN_MESSAGES_MAX_LIMIT = 3
 RUN_SUMMARY_ACTIVITY_LIMIT = 10
+RUN_SUMMARY_SKILLS_LIMIT = 20
 RUN_SUMMARY_TASK_LOG_MAX_BYTES = 256 * 1024
 _AGENT_ID_PATTERN = re.compile(r"^[A-Za-z0-9_.-]{1,128}$")
 _ANSI_PATTERN = re.compile(r"\x1b(?:\[[0-?]*[ -/]*[@-~]|\][^\x07\x1b]*(?:\x07|\x1b\\))")
@@ -822,6 +823,55 @@ class Store:
             activity.append({key: value for key, value in event.items() if value is not None})
         return activity
 
+    def _project_skills(self, run_id: str | None) -> list[dict[str, Any]]:
+        if not run_id:
+            return []
+
+        with self._connect() as connection:
+            connection.row_factory = sqlite3.Row
+            rows = connection.execute(
+                """
+                SELECT seq, payload_json, ts
+                FROM run_events
+                WHERE run_id = ?
+                  AND kind = 'tool_call'
+                ORDER BY seq ASC
+                """,
+                (run_id,),
+            ).fetchall()
+
+        skills: dict[str, dict[str, Any]] = {}
+        for row in rows:
+            payload: Any = {}
+            try:
+                payload = json.loads(row["payload_json"]) if isinstance(row["payload_json"], str) else {}
+            except json.JSONDecodeError:
+                payload = {}
+            if not isinstance(payload, dict) or payload.get("toolName") != "skill":
+                continue
+
+            name = _display_text(payload.get("skillName"))
+            snippet = payload.get("snippet")
+            if not name and isinstance(snippet, str) and snippet.startswith("skill "):
+                name = _display_text(snippet.removeprefix("skill "))
+            if not name:
+                continue
+
+            skill = skills.setdefault(
+                name,
+                {
+                    "name": name,
+                    "count": 0,
+                    "last_seq": row["seq"],
+                    "last_timestamp": _display_text(row["ts"]),
+                },
+            )
+            skill["count"] += 1
+            skill["last_seq"] = row["seq"]
+            skill["last_timestamp"] = _display_text(row["ts"])
+
+        return sorted(skills.values(), key=lambda skill: skill["last_seq"], reverse=True)[:RUN_SUMMARY_SKILLS_LIMIT]
+
     def get_run_messages(
         self,
         root_id: str,
@@ -997,6 +1047,7 @@ class Store:
                 "ended_at": _display_text(row["ended_at"]),
                 "task": self._project_task_log(row["agent_id"]),
                 "recent_activity": self._project_recent_activity(row["run_id"]),
+                "skills": self._project_skills(row["run_id"]),
             }
             for row in agent_rows
         ]

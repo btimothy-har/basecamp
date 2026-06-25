@@ -88,6 +88,12 @@ function extractToolInput(event: unknown): unknown {
 	return payload.args ?? payload.input ?? payload.parameters ?? payload.toolInput ?? null;
 }
 
+function extractSkillName(toolName: string | null, input: unknown): string | null {
+	if (toolName !== "skill") return null;
+	const args = asRecord(input);
+	return safeString(args?.name);
+}
+
 function summarizeNamedValue(name: string, value: unknown): string | null {
 	const text = displayText(value);
 	return text ? `${name} ${text}` : null;
@@ -269,18 +275,22 @@ export function registerDaemonReporter(
 
 	pi.on("tool_execution_start", (event) => {
 		const toolName = extractToolName(event);
+		const input = extractToolInput(event);
 		void sendTelemetry("tool_execution_start", {
 			toolCallId: safeString(asRecord(event)?.toolCallId) ?? null,
 			toolName,
 		});
 
-		const snippet = summarizeToolInput(toolName, extractToolInput(event));
-		sendDisplayTelemetry("tool_call", {
+		const snippet = summarizeToolInput(toolName, input);
+		const payload: Record<string, unknown> = {
 			category: "tool",
 			label: toolName ?? "tool",
 			snippet: snippet ?? (toolName ? `${toolName} called` : "tool called"),
 			toolName,
-		});
+		};
+		const skillName = extractSkillName(toolName, input);
+		if (skillName) payload.skillName = skillName;
+		sendDisplayTelemetry("tool_call", payload);
 	});
 
 	pi.on("tool_execution_end", (event) => {

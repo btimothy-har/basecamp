@@ -12,6 +12,7 @@ from companion_tui.daemon import (
     DaemonAgentMessagesError,
     DaemonAgentMessagesOk,
     DaemonAgentMessagesUnavailable,
+    DaemonSkillInvocation,
     DaemonSummaryAgent,
     DaemonSummaryError,
     DaemonSummaryOk,
@@ -112,6 +113,7 @@ def test_poll_parses_summary_and_encodes_root_id_and_limit() -> None:
         model="claude-sonnet-4-5",
         task=None,
         recent_activity=None,
+        skills=None,
     )
     assert set(asdict(result.agents[0]).keys()) == {
         "agent_handle",
@@ -129,6 +131,7 @@ def test_poll_parses_summary_and_encodes_root_id_and_limit() -> None:
         "model",
         "task",
         "recent_activity",
+        "skills",
     }
 
     parsed = parse_qs(urlsplit(captured["path"]).query)
@@ -137,6 +140,71 @@ def test_poll_parses_summary_and_encodes_root_id_and_limit() -> None:
     assert parsed["limit"] == ["7"]
     assert captured["method"] == "GET"
     assert captured["timeout"] == 0.5
+
+
+def test_daemon_parser_reads_agent_skills() -> None:
+    payload = {
+        "session_active": True,
+        "root_id": "root",
+        "counts": {
+            "pending": 0,
+            "running": 1,
+            "completed": 0,
+            "failed": 0,
+            "total": 1,
+        },
+        "agents": [
+            {
+                "agent_handle": "mossy-otter-b2c3d4",
+                "agent_type": "scout",
+                "role": "agent",
+                "session_name": "scout",
+                "status": "running",
+                "result_preview": None,
+                "error_preview": None,
+                "exit_code": None,
+                "created_at": "2026-01-01T00:00:00Z",
+                "started_at": "2026-01-01T00:00:01Z",
+                "ended_at": None,
+                "skills": [
+                    {
+                        "name": "python-development",
+                        "count": 2,
+                        "last_seq": 12,
+                        "last_timestamp": "2026-01-01T00:00:04Z",
+                    },
+                    {
+                        "name": "sql",
+                        "count": 1,
+                        "last_seq": None,
+                        "last_timestamp": None,
+                    },
+                    {"name": "x"},
+                    "invalid",
+                ],
+            }
+        ],
+    }
+    fake_connection, _ = _build_fake_connection(json.dumps(payload))
+    source = DaemonSummarySource("/tmp/daemon.sock", connection_factory=fake_connection)
+
+    result = source.poll("root")
+
+    assert isinstance(result, DaemonSummaryOk)
+    assert result.agents[0].skills == [
+        DaemonSkillInvocation(
+            name="python-development",
+            count=2,
+            last_seq=12,
+            last_timestamp="2026-01-01T00:00:04Z",
+        ),
+        DaemonSkillInvocation(
+            name="sql",
+            count=1,
+            last_seq=None,
+            last_timestamp=None,
+        ),
+    ]
 
 
 def test_poll_messages_parses_payload_and_encodes_params() -> None:

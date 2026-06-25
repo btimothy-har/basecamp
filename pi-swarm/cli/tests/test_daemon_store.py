@@ -1106,6 +1106,7 @@ def test_get_run_summary_does_not_expose_spec_or_tokens(tmp_path: Path) -> None:
         "ended_at",
         "task",
         "recent_activity",
+        "skills",
     }
     assert summary_agent["agent_id_short"] == "child"
     assert summary_agent["model"] == "default"
@@ -1120,6 +1121,64 @@ def test_get_run_summary_does_not_expose_spec_or_tokens(tmp_path: Path) -> None:
     assert len(summary_agent["error_preview"]) == 160
     assert summary_agent["task"] is None
     assert summary_agent["recent_activity"] == []
+    assert summary_agent["skills"] == []
+
+
+def test_get_run_summary_projects_skills_from_tool_calls(tmp_path: Path) -> None:
+    db_path = tmp_path / "daemon.db"
+    store = Store(db_path=db_path)
+    _summary_agent(store)
+    store.create_run(
+        run_id="run-1",
+        agent_id="agent-1",
+        dispatcher_id="root",
+        spec={},
+        report_token_hash="hash",
+    )
+    store.append_run_event(
+        run_id="run-1",
+        kind="tool_call",
+        payload={"toolName": "skill", "skillName": "python-development", "snippet": "skill python-development"},
+    )
+    store.append_run_event(
+        run_id="run-1",
+        kind="tool_call",
+        payload={"toolName": "read", "snippet": "read pi-swarm/cli/src/pi_swarm/store.py"},
+    )
+    store.append_run_event(
+        run_id="run-1",
+        kind="tool_call",
+        payload={"toolName": "skill", "skillName": "sql", "snippet": "skill sql"},
+    )
+    store.append_run_event(
+        run_id="run-1",
+        kind="tool_call",
+        payload={"toolName": "skill", "skillName": "python-development", "snippet": "skill python-development"},
+    )
+    store.append_run_event(
+        run_id="run-1",
+        kind="tool_call",
+        payload={"toolName": "skill", "snippet": "skill marimo"},
+    )
+    with sqlite3.connect(db_path) as connection:
+        for seq in range(1, 6):
+            connection.execute(
+                "UPDATE run_events SET ts = ? WHERE run_id = ? AND seq = ?",
+                (f"2026-01-01T00:00:0{seq}Z", "run-1", seq),
+            )
+
+    result = store.get_run_summary("root")
+
+    assert result["agents"][0]["skills"] == [
+        {"name": "marimo", "count": 1, "last_seq": 5, "last_timestamp": "2026-01-01T00:00:05Z"},
+        {
+            "name": "python-development",
+            "count": 2,
+            "last_seq": 4,
+            "last_timestamp": "2026-01-01T00:00:04Z",
+        },
+        {"name": "sql", "count": 1, "last_seq": 3, "last_timestamp": "2026-01-01T00:00:03Z"},
+    ]
 
 
 def test_get_run_summary_projects_safe_task_log_and_activity(tmp_path: Path) -> None:
