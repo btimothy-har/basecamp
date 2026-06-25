@@ -221,7 +221,7 @@ The workspace service owns the `~/.worktrees/<repo>/<label>/` storage convention
 - The protected checkout must be on the default branch with a clean working tree before activation
 - Implementation edits happen in the active worktree, not the protected checkout
 - Relative file-tool paths target the active worktree after activation, preserving the launch subdirectory when applicable
-- Mutating `safe_git` commands are blocked unless the effective cwd is inside the active execution worktree
+- Mutating `git`/`gh` commands run through the bash reviewer, and edits or git operations are blocked unless the effective cwd is inside the active execution worktree
 - `--worktree-dir` is an internal attach-only Pi flag for existing Git-registered worktrees; it does not create worktrees
 - Resumed/reloaded/forked sessions restore their last active worktree when still in the same repo
 - `/worktree [label]` switches the active worktree during a resumed session

@@ -38,24 +38,12 @@ export interface SessionStateIdentity {
 	sessionFile?: string | null;
 }
 
-export interface SessionStateActivePR {
-	number: string;
-	base: string;
-}
-
-export interface SessionStateActiveIssueDraft {
-	draftPath: string;
-	topic: string;
-}
-
 export interface BasecampSessionState {
 	version: typeof SESSION_STATE_VERSION;
 	sessionId: string;
 	sessionFile: string | null;
 	updatedAt: string;
 	activeWorktree: SessionStateActiveWorktree | null;
-	activePR: SessionStateActivePR | null;
-	activeIssueDraft: SessionStateActiveIssueDraft | null;
 	agentMode: SessionStateAgentMode | null;
 	title: string | null;
 }
@@ -101,8 +89,6 @@ export function createDefaultSessionState(identity: SessionStateIdentity): Basec
 		sessionFile: identity.sessionFile ?? null,
 		updatedAt: new Date().toISOString(),
 		activeWorktree: null,
-		activePR: null,
-		activeIssueDraft: null,
 		agentMode: null,
 		title: null,
 	};
@@ -139,14 +125,6 @@ function isSessionStateActiveWorktree(value: unknown): value is SessionStateActi
 	);
 }
 
-export function isSessionStateActivePR(value: unknown): value is SessionStateActivePR {
-	return isRecord(value) && typeof value.number === "string" && typeof value.base === "string";
-}
-
-export function isSessionStateActiveIssueDraft(value: unknown): value is SessionStateActiveIssueDraft {
-	return isRecord(value) && typeof value.draftPath === "string" && typeof value.topic === "string";
-}
-
 function isSessionState(value: unknown): value is BasecampSessionState {
 	return (
 		isRecord(value) &&
@@ -155,10 +133,6 @@ function isSessionState(value: unknown): value is BasecampSessionState {
 		(typeof value.sessionFile === "string" || value.sessionFile === null) &&
 		typeof value.updatedAt === "string" &&
 		(value.activeWorktree === null || isSessionStateActiveWorktree(value.activeWorktree)) &&
-		(value.activePR === undefined || value.activePR === null || isSessionStateActivePR(value.activePR)) &&
-		(value.activeIssueDraft === undefined ||
-			value.activeIssueDraft === null ||
-			isSessionStateActiveIssueDraft(value.activeIssueDraft)) &&
 		(value.agentMode === null || isAgentMode(value.agentMode)) &&
 		(typeof value.title === "string" || value.title === null)
 	);
@@ -174,11 +148,7 @@ export function loadSessionState(identity: SessionStateIdentity, stateDir?: stri
 		if (!isSessionState(parsed)) return defaults;
 		if (parsed.sessionId !== identity.sessionId) return defaults;
 		if (parsed.sessionFile !== expectedSessionFile) return defaults;
-		return {
-			...parsed,
-			activePR: parsed.activePR ?? null,
-			activeIssueDraft: parsed.activeIssueDraft ?? null,
-		};
+		return parsed;
 	} catch {
 		return defaults;
 	}
@@ -271,7 +241,7 @@ function resolveParentSessionFile(event: SessionStartEvent, ctx: ExtensionContex
 function loadForkInheritedFields(
 	parentSessionFile: string,
 	stateDir?: string,
-): Pick<BasecampSessionState, "activeWorktree" | "activePR" | "activeIssueDraft" | "agentMode" | "title"> | null {
+): Pick<BasecampSessionState, "activeWorktree" | "agentMode" | "title"> | null {
 	const parentSessionId = readSessionIdFromTranscriptHeader(parentSessionFile);
 	if (!parentSessionId) return null;
 
@@ -280,8 +250,6 @@ function loadForkInheritedFields(
 		activeWorktree: parentState.activeWorktree
 			? { ...parentState.activeWorktree, worktree: { ...parentState.activeWorktree.worktree } }
 			: null,
-		activePR: parentState.activePR ? { ...parentState.activePR } : null,
-		activeIssueDraft: parentState.activeIssueDraft ? { ...parentState.activeIssueDraft } : null,
 		agentMode: parentState.agentMode,
 		title: parentState.title,
 	};
