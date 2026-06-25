@@ -27,44 +27,51 @@ function target(slug: string): ExecutionWorktreeTarget {
 
 describe("suggestWorktreeTarget", () => {
 	it("uses the first two safe characters from the user id", () => {
-		assert.deepEqual(suggestWorktreeTarget("Fallback Goal", "worktree-prefix", "btimothyhar"), {
-			worktreeLabel: "wt-bt/worktree-prefix",
-			branchName: "bt/worktree-prefix",
+		assert.deepEqual(suggestWorktreeTarget("Fallback Goal", "worktree-prefix", "a1b2", "btimothyhar"), {
+			worktreeLabel: "wt-bt/a1b2-worktree-prefix",
+			branchName: "bt/a1b2-worktree-prefix",
 		});
 		assert.equal(userWorktreePrefix("B Timothy"), "bt");
 	});
 
 	it("falls back when the user id does not have two safe prefix characters", () => {
-		assert.deepEqual(suggestWorktreeTarget("Fallback Goal", "worktree-prefix", "!!!"), {
-			worktreeLabel: "wt-un/worktree-prefix",
-			branchName: "un/worktree-prefix",
+		assert.deepEqual(suggestWorktreeTarget("Fallback Goal", "worktree-prefix", "a1b2", "!!!"), {
+			worktreeLabel: "wt-un/a1b2-worktree-prefix",
+			branchName: "un/a1b2-worktree-prefix",
 		});
 		assert.equal(userWorktreePrefix("b"), "un");
 		assert.equal(userWorktreePrefix(null), "un");
 	});
 
 	it("normalizes the goal when no worktree slug is provided", () => {
-		assert.deepEqual(suggestWorktreeTarget("Add user worktree prefix", null, "btimothyhar"), {
-			worktreeLabel: "wt-bt/add-user-worktree-prefix",
-			branchName: "bt/add-user-worktree-prefix",
+		assert.deepEqual(suggestWorktreeTarget("Add user worktree prefix", null, "a1b2", "btimothyhar"), {
+			worktreeLabel: "wt-bt/a1b2-add-user-worktree-pre",
+			branchName: "bt/a1b2-add-user-worktree-pre",
 		});
 	});
 
 	it("caps suggested worktree labels at 32 characters", () => {
-		const suggested = suggestWorktreeTarget("Goal", "abcdefghijklmnopqrstuvwxyz0123456789", "btimothyhar");
+		const suggested = suggestWorktreeTarget("Goal", "abcdefghijklmnopqrstuvwxyz0123456789", "a1b2", "btimothyhar");
 
-		assert.equal(suggested.worktreeLabel, "wt-bt/abcdefghijklmnopqrstuvwxyz");
-		assert.equal(suggested.branchName, "bt/abcdefghijklmnopqrstuvwxyz");
+		assert.equal(suggested.worktreeLabel, "wt-bt/a1b2-abcdefghijklmnopqrstu");
+		assert.equal(suggested.branchName, "bt/a1b2-abcdefghijklmnopqrstu");
 		assert.equal(suggested.worktreeLabel.length, 32);
 	});
 
 	it("normalizes custom labels without double-prefixing", () => {
-		const expected = { worktreeLabel: "wt-bt/custom-label", branchName: "bt/custom-label" };
+		const expected = { worktreeLabel: "wt-bt/a1b2-custom-label", branchName: "bt/a1b2-custom-label" };
 
-		assert.deepEqual(customWorktreeTarget("custom label", "btimothyhar"), expected);
-		assert.deepEqual(customWorktreeTarget("wt-bt/custom-label", "btimothyhar"), expected);
-		assert.deepEqual(customWorktreeTarget("bt/custom-label", "btimothyhar"), expected);
-		assert.deepEqual(customWorktreeTarget("bt-custom-label", "btimothyhar"), expected);
+		assert.deepEqual(customWorktreeTarget("custom label", "a1b2", "btimothyhar"), expected);
+		assert.deepEqual(customWorktreeTarget("wt-bt/a1b2-custom-label", "a1b2", "btimothyhar"), expected);
+		assert.deepEqual(customWorktreeTarget("bt/a1b2-custom-label", "a1b2", "btimothyhar"), expected);
+		assert.deepEqual(customWorktreeTarget("a1b2-custom-label", "a1b2", "btimothyhar"), expected);
+	});
+
+	it("omits the tag segment when the session tag is empty", () => {
+		assert.deepEqual(suggestWorktreeTarget("Goal", "slug", "", "btimothyhar"), {
+			worktreeLabel: "wt-bt/slug",
+			branchName: "bt/slug",
+		});
 	});
 });
 

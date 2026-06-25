@@ -1,4 +1,5 @@
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
+import { shortSessionId as defaultShortSessionId } from "pi-core/session/session-id.ts";
 import type { PiSwarmDependencies } from "../../dependencies.ts";
 import { DEFAULT_AGENT_MAX_DEPTH } from "../types.ts";
 import { connect, type DaemonConnection, type DaemonIdentity, ensureDaemon, fetchRunSummary } from "./client.ts";
@@ -118,7 +119,7 @@ export function deriveDaemonIdentity(
 		session_name:
 			resolveDaemonAgentTitle(ctx, {
 				formatTitle: deps?.formatTitle ?? ((title, suffix) => `${title} [${suffix}]`),
-				shortSessionId: deps?.shortSessionId ?? ((sessionId) => sessionId.replace(/-/g, "").slice(-4)),
+				shortSessionId: deps?.shortSessionId ?? defaultShortSessionId,
 			}) ??
 			process.env.BASECAMP_SESSION_NAME ??
 			nodeId,

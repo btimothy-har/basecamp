@@ -46,6 +46,10 @@ function normalizeWorktreeSlug(value: string): string {
 	return slug || FALLBACK_WORKTREE_SLUG;
 }
 
+function normalizeSessionTag(value: string | null | undefined): string {
+	return (value ?? "").toLowerCase().replace(/[^a-z0-9]+/g, "");
+}
+
 function stripKnownPrefix(value: string, prefix: string): string {
 	const lower = value.trim().toLowerCase();
 	for (const knownPrefix of [`wt-${prefix}/`, `${prefix}/`, `wt-${prefix}-`, `${prefix}-`]) {
@@ -54,13 +58,16 @@ function stripKnownPrefix(value: string, prefix: string): string {
 	return lower;
 }
 
-function buildExecutionWorktreeTarget(prefix: string, slug: string): ExecutionWorktreeTarget {
+function buildExecutionWorktreeTarget(prefix: string, slug: string, sessionTag: string): ExecutionWorktreeTarget {
 	const worktreePrefix = `wt-${prefix}/`;
-	const maxSlugLength = Math.max(1, SUGGESTED_WORKTREE_LABEL_MAX_LENGTH - worktreePrefix.length);
-	const cappedSlug = slug.slice(0, maxSlugLength).replace(/-+$/g, "") || FALLBACK_WORKTREE_SLUG;
+	const tag = normalizeSessionTag(sessionTag);
+	const tagSegment = tag ? `${tag}-` : "";
+	const baseSlug = tagSegment && slug.startsWith(tagSegment) ? slug.slice(tagSegment.length) : slug;
+	const maxSlugLength = Math.max(1, SUGGESTED_WORKTREE_LABEL_MAX_LENGTH - worktreePrefix.length - tagSegment.length);
+	const cappedSlug = baseSlug.slice(0, maxSlugLength).replace(/-+$/g, "") || FALLBACK_WORKTREE_SLUG;
 	return {
-		worktreeLabel: `${worktreePrefix}${cappedSlug}`,
-		branchName: `${prefix}/${cappedSlug}`,
+		worktreeLabel: `${worktreePrefix}${tagSegment}${cappedSlug}`,
+		branchName: `${prefix}/${tagSegment}${cappedSlug}`,
 	};
 }
 
@@ -71,17 +78,22 @@ function existingWorktreeTarget(wt: WorkspaceWorktree): ExecutionWorktreeTarget 
 export function suggestWorktreeTarget(
 	goal: string,
 	worktreeSlug: string | null,
+	sessionTag: string,
 	userId = currentUserId(),
 ): ExecutionWorktreeTarget {
 	const prefix = userWorktreePrefix(userId);
 	const slug = normalizeWorktreeSlug(worktreeSlug ?? goal);
-	return buildExecutionWorktreeTarget(prefix, slug);
+	return buildExecutionWorktreeTarget(prefix, slug, sessionTag);
 }
 
-export function customWorktreeTarget(value: string, userId = currentUserId()): ExecutionWorktreeTarget {
+export function customWorktreeTarget(
+	value: string,
+	sessionTag: string,
+	userId = currentUserId(),
+): ExecutionWorktreeTarget {
 	const prefix = userWorktreePrefix(userId);
 	const slug = normalizeWorktreeSlug(stripKnownPrefix(value, prefix));
-	return buildExecutionWorktreeTarget(prefix, slug);
+	return buildExecutionWorktreeTarget(prefix, slug, sessionTag);
 }
 
 function normalizeWorktreePath(value: string): string {
