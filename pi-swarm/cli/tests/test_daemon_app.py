@@ -511,6 +511,7 @@ def test_runs_summary_endpoint_omits_sensitive_and_full_fields(tmp_path: Path) -
         "ended_at",
         "task",
         "recent_activity",
+        "skills",
     }
     assert "run_id" not in summary_agent
     assert "agent_id" not in summary_agent
@@ -525,6 +526,7 @@ def test_runs_summary_endpoint_omits_sensitive_and_full_fields(tmp_path: Path) -
     assert len(summary_agent["error_preview"]) == 160
     assert summary_agent["task"] is None
     assert summary_agent["recent_activity"] == []
+    assert summary_agent["skills"] == []
 
 
 def test_runs_messages_endpoint_projects_selected_agent_messages(tmp_path: Path) -> None:
