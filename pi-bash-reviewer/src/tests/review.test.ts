@@ -39,6 +39,7 @@ function makeDeps(
 		runGate: ReviewDeps["runGate"];
 		confirm: ReviewDeps["confirm"];
 		hasUI: boolean;
+		isSubagent: boolean;
 	}> = {},
 ): FakeReviewHarness {
 	const auditEntries: ReviewAuditEntry[] = [];
@@ -68,6 +69,7 @@ function makeDeps(
 			return true;
 		},
 		hasUI: overrides.hasUI ?? true,
+		isSubagent: overrides.isSubagent ?? false,
 		audit: (entry) => auditEntries.push(entry),
 		notify: (message, type) => notifications.push({ message, type }),
 	};
@@ -285,6 +287,79 @@ describe("reviewBashCommand", () => {
 		assert.equal(outcome?.block, true);
 		assert.match(outcome?.reason ?? "", /not available without an interactive UI/);
 		assert.equal(harness.confirmCalls(), 0);
+		assert.equal(harness.auditEntries[0]?.action, "deny");
+		assert.equal(harness.auditEntries[0]?.note, "no-ui");
+	});
+
+	it("permits route_to_user git-mutation decisions for subagents", async () => {
+		const harness = makeDeps({
+			runGate: async () => makeDecision("route_to_user", "Ambiguous local change."),
+			hasUI: false,
+			isSubagent: true,
+		});
+
+		const outcome = await reviewBashCommand("git commit -m 'test'", harness.deps);
+
+		assert.equal(outcome, undefined);
+		assert.equal(harness.confirmCalls(), 0);
+		assert.equal(harness.auditEntries[0]?.phase, "gate");
+		assert.equal(harness.auditEntries[0]?.action, "approve");
+		assert.equal(harness.auditEntries[0]?.note, "subagent-collapse");
+	});
+
+	it("blocks route_to_user gh-mutation decisions for subagents", async () => {
+		const harness = makeDeps({
+			runGate: async () => makeDecision("route_to_user", "Publishing externally requires review."),
+			hasUI: false,
+			isSubagent: true,
+		});
+
+		const outcome = await reviewBashCommand("gh pr create --title 'test'", harness.deps);
+
+		assert.equal(outcome?.block, true);
+		assert.match(outcome?.reason ?? "", /autonomous agent/);
+		assert.equal(harness.auditEntries[0]?.action, "deny");
+		assert.equal(harness.auditEntries[0]?.note, "subagent-collapse");
+		assert.equal(harness.confirmCalls(), 0);
+	});
+
+	it("blocks failClosed irreversible-remote decisions for subagents", async () => {
+		const harness = makeDeps({
+			runGate: async () => makeDecision("approve", "Force push matches the explicit request."),
+			hasUI: false,
+			isSubagent: true,
+		});
+
+		const outcome = await reviewBashCommand("git push --force", harness.deps);
+
+		assert.equal(outcome?.block, true);
+		assert.equal(harness.auditEntries[0]?.action, "deny");
+		assert.equal(harness.auditEntries[0]?.note, "subagent-collapse");
+	});
+
+	it("blocks route_to_user dangerous-shell decisions for subagents", async () => {
+		const harness = makeDeps({
+			runGate: async () => makeDecision("route_to_user", "Recursive delete."),
+			hasUI: false,
+			isSubagent: true,
+		});
+
+		const outcome = await reviewBashCommand("rm -rf build", harness.deps);
+
+		assert.equal(outcome?.block, true);
+		assert.equal(harness.auditEntries[0]?.action, "deny");
+		assert.equal(harness.auditEntries[0]?.note, "subagent-collapse");
+	});
+
+	it("fails closed on failsafe for subagents", async () => {
+		const harness = makeDeps({ resolveModel: async () => null, hasUI: false, isSubagent: true });
+
+		const outcome = await reviewBashCommand("git commit -m 'test'", harness.deps);
+
+		assert.equal(outcome?.block, true);
+		assert.match(outcome?.reason ?? "", /Reviewer unavailable/);
+		assert.match(outcome?.reason ?? "", /no interactive UI/);
+		assert.equal(harness.auditEntries[0]?.phase, "failsafe");
 		assert.equal(harness.auditEntries[0]?.action, "deny");
 		assert.equal(harness.auditEntries[0]?.note, "no-ui");
 	});
