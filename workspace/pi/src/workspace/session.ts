@@ -14,7 +14,7 @@ import {
 	type UnsafeEditFlagResult,
 	type WorkspaceWorktree,
 } from "pi-core/platform/workspace.ts";
-import { getCurrentSessionState } from "pi-core/state/index.ts";
+import { ensureCurrentSessionStateForEvent } from "pi-core/state/index.ts";
 import { workspaceMatchesActiveWorktreeState } from "pi-core/workspace/affinity.ts";
 
 async function attachWorktree(worktreeDir: string): Promise<WorkspaceWorktree> {
@@ -23,11 +23,11 @@ async function attachWorktree(worktreeDir: string): Promise<WorkspaceWorktree> {
 
 const WORKTREE_STATE_RESTORE_REASONS = new Set<SessionStartEvent["reason"]>(["resume", "reload", "fork"]);
 
-async function restoreActiveWorktreeState(ctx: ExtensionContext): Promise<void> {
+async function restoreActiveWorktreeState(event: SessionStartEvent, ctx: ExtensionContext): Promise<void> {
 	const workspaceState = requireWorkspaceState();
 	if (!workspaceState.repo) return;
 
-	const activeWorktree = getCurrentSessionState().activeWorktree;
+	const activeWorktree = ensureCurrentSessionStateForEvent(event, ctx).activeWorktree;
 	if (!activeWorktree || !workspaceMatchesActiveWorktreeState(workspaceState, activeWorktree)) return;
 
 	try {
@@ -109,7 +109,7 @@ export function registerWorkspaceSession(pi: ExtensionAPI): void {
 				ctx.ui.notify(`basecamp: worktree attach failed — ${msg}`, "error");
 			}
 		} else if (WORKTREE_STATE_RESTORE_REASONS.has(event.reason)) {
-			await restoreActiveWorktreeState(ctx);
+			await restoreActiveWorktreeState(event, ctx);
 		}
 
 		notifyUnsafeEditResult(ctx, unsafeEditResult);

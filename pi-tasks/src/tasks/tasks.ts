@@ -32,7 +32,7 @@ import { Type } from "@sinclair/typebox";
 import { basecampRoot } from "pi-core/platform/paths.ts";
 import { registerTasksAccess } from "pi-core/platform/tasks-access.ts";
 import { type AgentMode, getAgentMode, setAgentMode } from "pi-core/session/agent-mode.ts";
-import { getCurrentSessionState } from "pi-core/state/index.ts";
+import { ensureCurrentSessionStateForEvent } from "pi-core/state/index.ts";
 import { renderTaskWidgetLines } from "./render.ts";
 
 // Type contracts owned by pi-core — re-exported for backward compat with planning files.
@@ -564,7 +564,7 @@ export function registerTasks(pi: ExtensionAPI): TasksAccess {
 	});
 
 	// --- Restore state on session start ---
-	pi.on("session_start", async (_event, sessionCtx) => {
+	pi.on("session_start", async (event, sessionCtx) => {
 		ctx = sessionCtx;
 		state = { goal: null, tasks: [] };
 
@@ -577,7 +577,8 @@ export function registerTasks(pi: ExtensionAPI): TasksAccess {
 		if (active) {
 			state.goal = active.goal;
 			state.tasks = active.tasks;
-			if (!getCurrentSessionState().agentMode && active.agentMode) setAgentMode(active.agentMode);
+			if (!ensureCurrentSessionStateForEvent(event, sessionCtx).agentMode && active.agentMode)
+				setAgentMode(active.agentMode);
 		}
 
 		updateWidget();

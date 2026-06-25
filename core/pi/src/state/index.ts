@@ -65,8 +65,26 @@ export type SessionStatePatch = Partial<
 >;
 export type SessionStateUpdater = SessionStatePatch | ((state: Readonly<BasecampSessionState>) => SessionStatePatch);
 
-let currentState: BasecampSessionState | null = null;
-let currentStateDir: string | undefined;
+// Process-scoped via globalThis so `/reload` preserves a single shared
+// session-state instance. Extensions are re-imported with fresh module
+// instances on reload (and each extension may receive its own instance of
+// this module), so module-level state would not be shared across consumers.
+const sessionStateKey = Symbol.for("basecamp.sessionState");
+
+interface SessionStateRuntime {
+	current: BasecampSessionState | null;
+	stateDir: string | undefined;
+}
+
+type GlobalWithSessionState = typeof globalThis & {
+	[sessionStateKey]?: SessionStateRuntime;
+};
+
+function getSessionStateRuntime(): SessionStateRuntime {
+	const globalObject = globalThis as GlobalWithSessionState;
+	globalObject[sessionStateKey] ??= { current: null, stateDir: undefined };
+	return globalObject[sessionStateKey];
+}
 
 function sessionStateFileName(sessionId: string): string {
 	return `${sessionId.replace(/[^A-Za-z0-9_-]/g, "_")}.json`;
@@ -270,9 +288,10 @@ function loadForkInheritedFields(
 }
 
 export function initializeCurrentSessionState(ctx: ExtensionContext, stateDir?: string): BasecampSessionState {
-	currentStateDir = stateDir;
-	currentState = loadSessionState(sessionIdentityFromContext(ctx), stateDir);
-	return currentState;
+	const runtime = getSessionStateRuntime();
+	runtime.stateDir = stateDir;
+	runtime.current = loadSessionState(sessionIdentityFromContext(ctx), stateDir);
+	return runtime.current;
 }
 
 export function initializeCurrentSessionStateForEvent(
@@ -282,43 +301,71 @@ export function initializeCurrentSessionStateForEvent(
 ): BasecampSessionState {
 	if (event.reason !== "fork") return initializeCurrentSessionState(ctx, stateDir);
 
-	currentStateDir = stateDir;
+	const runtime = getSessionStateRuntime();
+	runtime.stateDir = stateDir;
 	const childState = createDefaultSessionState(sessionIdentityFromContext(ctx));
 	const parentSessionFile = resolveParentSessionFile(event, ctx);
 	const inheritedFields = parentSessionFile ? loadForkInheritedFields(parentSessionFile, stateDir) : null;
-	currentState = saveSessionState({ ...childState, ...inheritedFields }, stateDir);
-	return currentState;
+	runtime.current = saveSessionState({ ...childState, ...inheritedFields }, stateDir);
+	return runtime.current;
+}
+
+/**
+ * Initialize session state for `event` if it is not already initialized for the
+ * current session, otherwise return the existing state. This makes consumers
+ * that read session state during their own `session_start` handler independent
+ * of cross-extension handler ordering: whichever handler runs first performs
+ * the (identical, event-aware) initialization, and later callers reuse it.
+ */
+export function ensureCurrentSessionStateForEvent(
+	event: SessionStartEvent,
+	ctx: ExtensionContext,
+	stateDir?: string,
+): BasecampSessionState {
+	const { current } = getSessionStateRuntime();
+	const identity = sessionIdentityFromContext(ctx);
+	if (
+		current &&
+		current.sessionId === identity.sessionId &&
+		(current.sessionFile ?? null) === (identity.sessionFile ?? null)
+	) {
+		return current;
+	}
+	return initializeCurrentSessionStateForEvent(event, ctx, stateDir);
 }
 
 export function getCurrentSessionState(): Readonly<BasecampSessionState> {
-	if (!currentState) throw new Error("Basecamp session state is not initialized.");
-	return currentState;
+	const { current } = getSessionStateRuntime();
+	if (!current) throw new Error("Basecamp session state is not initialized.");
+	return current;
 }
 
 export function getCurrentSessionStateIfInitialized(): Readonly<BasecampSessionState> | null {
-	return currentState;
+	return getSessionStateRuntime().current;
 }
 
 export function updateCurrentSessionState(updater: SessionStateUpdater): BasecampSessionState {
+	const runtime = getSessionStateRuntime();
 	const existing = getCurrentSessionState();
 	const patch = typeof updater === "function" ? updater(existing) : updater;
-	currentState = saveSessionState({ ...existing, ...patch }, currentStateDir);
-	return currentState;
+	runtime.current = saveSessionState({ ...existing, ...patch }, runtime.stateDir);
+	return runtime.current;
 }
 
 export function updateCurrentSessionStateIfInitialized(updater: SessionStateUpdater): BasecampSessionState | null {
-	if (!currentState) return null;
+	if (!getSessionStateRuntime().current) return null;
 	return updateCurrentSessionState(updater);
 }
 
 export function resetCurrentSessionState(): void {
-	currentState = null;
-	currentStateDir = undefined;
+	const runtime = getSessionStateRuntime();
+	runtime.current = null;
+	runtime.stateDir = undefined;
 }
 
 export function registerState(pi: ExtensionAPI): void {
 	pi.on("session_start", async (event, ctx) => {
-		initializeCurrentSessionStateForEvent(event, ctx);
+		ensureCurrentSessionStateForEvent(event, ctx);
 	});
 
 	pi.on("session_shutdown", async () => {
