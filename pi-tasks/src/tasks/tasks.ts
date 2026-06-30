@@ -96,7 +96,7 @@ function buildSteerContent(state: TasksState, planRef: GoalCycle["planRef"]): st
 
 	lines.push(
 		"",
-		"Call start_task before beginning work on a task. Call complete_task when done. When work is done, blocked, or ready for handoff, call complete_task with stop_work: true by itself so the agent loop stops cleanly. If the plan changes, call create_tasks with the updated list.",
+		"Call start_task before beginning work on a task. Call complete_task when a task is done. When completing a task at a natural handoff, call complete_task with stop_work: true by itself so the agent loop stops cleanly. If blocked before the task is done, use annotate_task or escalate instead. If the plan changes, call create_tasks with the updated list.",
 	);
 	return lines.join("\n");
 }
@@ -477,7 +477,7 @@ export function registerTasks(pi: ExtensionAPI): TasksAccess {
 		name: "complete_task",
 		label: "Complete Task",
 		description:
-			"Mark a task as completed by index. Set stop_work to true only when this completion should end the agent loop because work is done, blocked, or ready for handoff. If stop_work is true, call complete_task alone in the tool batch.",
+			"Mark a task as completed by index. Set stop_work to true only when this completion should end the agent loop because the task is done and this is a natural handoff. If stop_work is true, call complete_task alone in the tool batch.",
 		promptSnippet: "Mark a task as completed, optionally stopping work",
 		parameters: Type.Object({
 			task: Type.Number({ description: "Task index (0-based)" }),
