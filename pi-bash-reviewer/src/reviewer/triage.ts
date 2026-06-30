@@ -13,6 +13,11 @@ const BQ_QUERY_BLOCK: Triage = {
 	reason:
 		'Raw `bq query` execution through bash is blocked. Write the SQL to a .sql file and use bq_query({ path: "..." }) instead.',
 };
+const WORKTREE_BLOCK: Triage = {
+	kind: "block",
+	reason:
+		"Direct `git worktree` subcommands are blocked. Worktree management is automated through the `plan()` tool's approval flow — submit an implementation plan to activate an execution worktree, or use `/worktree` to switch.",
+};
 
 const READ_ONLY_COMMANDS = new Set([
 	"annotate",
@@ -449,6 +454,7 @@ function classifyGitTokens(tokens: string[], gitIndex: number): Triage {
 	if (subcommand === "push") return classifyPush(args);
 	if (subcommand === "branch") return classifyBranch(args);
 	if (subcommand === "tag") return classifyTag(args);
+	if (subcommand === "worktree") return WORKTREE_BLOCK;
 	if (READ_ONLY_COMMANDS.has(subcommand)) return ALLOW;
 	return GIT_MUTATION;
 }

@@ -15,6 +15,7 @@ Understand existing code, patterns, and conventions before suggesting modificati
 - Irreversible remote operations require user confirmation, including force-push, remote ref deletion, and `push --mirror` / `push --all`.
 - Opening or modifying PRs and issues (`gh pr create|comment|edit|merge`, `gh issue create|comment|edit`) is routed to the user for review before it runs.
 - The protected checkout must stay clean. Edits land in the active worktree, and when Basecamp reports an active worktree, git runs from that worktree.
+- Use `plan()` to move from exploration to implementation when no execution worktree is active. Approving an implementation plan creates and activates the worktree automatically. Do not manage worktrees directly with `git worktree`; those subcommands are blocked.
 - Raw `bq query` in bash is blocked. Write SQL to a file and use the `bq_query` tool.
 
 ## Python Environment
