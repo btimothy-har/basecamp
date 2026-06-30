@@ -76,7 +76,7 @@ describe("validateTitleResponse", () => {
 });
 
 describe("generateTitleCompletion", () => {
-	it("passes the parent model and auth headers to completion options and joins text blocks", async (t) => {
+	it("passes the parent model and auth headers to completion options and parses a set_title tool call", async (t) => {
 		clearModelAliasProvidersForTesting();
 		t.after(() => clearModelAliasProvidersForTesting());
 		const parentModel = model("current", "current-model");
@@ -84,6 +84,7 @@ describe("generateTitleCompletion", () => {
 		let completionModel: Model<Api> | undefined;
 		let completionOptions: Parameters<NonNullable<GenerateTitleCompletionOptions["complete"]>>[2] | undefined;
 		let promptContent = "";
+		let toolNames: string[] = [];
 		const ctx = {
 			model: parentModel,
 			modelRegistry: {
@@ -103,16 +104,21 @@ describe("generateTitleCompletion", () => {
 			completionModel = requestedModel;
 			completionOptions = options;
 			promptContent = String(context.messages.at(0)?.content ?? "");
+			toolNames = context.tools?.map((tool) => tool.name) ?? [];
 			return assistantMessage([
-				{ type: "text", text: "Focused" },
-				{ type: "thinking", thinking: "hidden" },
-				{ type: "text", text: "Title" },
+				{
+					type: "toolCall",
+					id: "1",
+					name: "set_title",
+					arguments: { title: "Hardened Title Generation" },
+				},
 			]);
 		};
 
 		const result = await generateTitleCompletion(ctx, "session context", undefined, { complete });
 
-		assert.equal(result, "Focused\nTitle");
+		assert.equal(result, "Hardened Title Generation");
+		assert.equal(validateTitleResponse(result), "Hardened Title Generation");
 		assert.equal(authModel, parentModel);
 		assert.equal(completionModel, parentModel);
 		assert.equal(completionOptions?.apiKey, "test-key");
@@ -121,6 +127,64 @@ describe("generateTitleCompletion", () => {
 		assert.equal(completionOptions?.maxTokens, 32);
 		assert.ok(completionOptions?.signal instanceof AbortSignal);
 		assert.match(promptContent, /session context/);
+		assert.deepEqual(toolNames, ["set_title"]);
+	});
+
+	it("returns a null-equivalent string when the set_title tool reports null", async (t) => {
+		clearModelAliasProvidersForTesting();
+		t.after(() => clearModelAliasProvidersForTesting());
+		const ctx = {
+			model: model("current", "current-model"),
+			modelRegistry: {
+				getApiKeyAndHeaders: async () => ({ ok: true, apiKey: "test-key", headers: {} }),
+				find: () => undefined,
+				getAll: () => [],
+			},
+		} as unknown as ExtensionContext;
+		const complete: NonNullable<GenerateTitleCompletionOptions["complete"]> = async () =>
+			assistantMessage([{ type: "toolCall", id: "1", name: "set_title", arguments: { title: null } }]);
+
+		const result = await generateTitleCompletion(ctx, "context", undefined, { complete });
+
+		assert.equal(validateTitleResponse(result), null);
+	});
+
+	it("returns a null-equivalent string when the response has no tool call", async (t) => {
+		clearModelAliasProvidersForTesting();
+		t.after(() => clearModelAliasProvidersForTesting());
+		const ctx = {
+			model: model("current", "current-model"),
+			modelRegistry: {
+				getApiKeyAndHeaders: async () => ({ ok: true, apiKey: "test-key", headers: {} }),
+				find: () => undefined,
+				getAll: () => [],
+			},
+		} as unknown as ExtensionContext;
+		const complete: NonNullable<GenerateTitleCompletionOptions["complete"]> = async () =>
+			assistantMessage([{ type: "text", text: "Unexpected Title" }]);
+
+		const result = await generateTitleCompletion(ctx, "context", undefined, { complete });
+
+		assert.equal(validateTitleResponse(result), null);
+	});
+
+	it("returns a null-equivalent string when the tool call has the wrong name", async (t) => {
+		clearModelAliasProvidersForTesting();
+		t.after(() => clearModelAliasProvidersForTesting());
+		const ctx = {
+			model: model("current", "current-model"),
+			modelRegistry: {
+				getApiKeyAndHeaders: async () => ({ ok: true, apiKey: "test-key", headers: {} }),
+				find: () => undefined,
+				getAll: () => [],
+			},
+		} as unknown as ExtensionContext;
+		const complete: NonNullable<GenerateTitleCompletionOptions["complete"]> = async () =>
+			assistantMessage([{ type: "toolCall", id: "1", name: "other_tool", arguments: { title: "Unexpected Title" } }]);
+
+		const result = await generateTitleCompletion(ctx, "context", undefined, { complete });
+
+		assert.equal(validateTitleResponse(result), null);
 	});
 
 	it("rejects auth failures without invoking completion", async (t) => {
