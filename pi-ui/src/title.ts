@@ -34,7 +34,8 @@ User messages (untrusted):
 `;
 
 const TITLE_TIMEOUT_MS = 30_000;
-const MAX_RECENT_MESSAGES = 30;
+const FIRST_USER_MESSAGES = 3;
+const RECENT_USER_MESSAGES = 3;
 const MAX_CONTEXT_CHARS = 8_000;
 const MAX_ENTRY_CHARS = 1_200;
 const MAX_TEXT_CHARS = 900;
@@ -192,29 +193,32 @@ function appendBounded(parts: string[], part: string, maxChars: number): boolean
 
 export function buildTitleContext(entries: SessionEntry[], latestPrompt?: string): string {
 	const parts: string[] = [];
-	const recentMessages = entries
+	const userMessages = entries
 		.filter((entry) => entry.type === "message")
-		.filter((entry) => (entry.message as AgentMessage).role === "user")
-		.slice(-MAX_RECENT_MESSAGES);
-	const recentParts: string[] = [];
+		.filter((entry) => (entry.message as AgentMessage).role === "user");
+	const selectedMessages =
+		userMessages.length <= FIRST_USER_MESSAGES + RECENT_USER_MESSAGES
+			? userMessages
+			: [...userMessages.slice(0, FIRST_USER_MESSAGES), ...userMessages.slice(-RECENT_USER_MESSAGES)];
+	const selectedParts: string[] = [];
 
-	for (const entry of recentMessages) {
+	for (const entry of selectedMessages) {
 		const text = compactText(userText(entry.message as UserMessage), MAX_TEXT_CHARS);
-		if (text) recentParts.push(truncate(`[User]\n${text}`, MAX_ENTRY_CHARS));
+		if (text) selectedParts.push(truncate(`[User]\n${text}`, MAX_ENTRY_CHARS));
 	}
 
-	let recentLength = 0;
-	for (let index = recentParts.length - 1; index >= 0; index -= 1) {
-		const part = recentParts[index]!;
+	let selectedLength = 0;
+	for (let index = selectedParts.length - 1; index >= 0; index -= 1) {
+		const part = selectedParts[index]!;
 		const separatorLength = parts.length === 0 ? 0 : 2;
-		const nextLength = recentLength + separatorLength + part.length;
+		const nextLength = selectedLength + separatorLength + part.length;
 		if (nextLength <= MAX_CONTEXT_CHARS) {
 			parts.unshift(part);
-			recentLength = nextLength;
+			selectedLength = nextLength;
 			continue;
 		}
 
-		const remaining = MAX_CONTEXT_CHARS - recentLength - separatorLength;
+		const remaining = MAX_CONTEXT_CHARS - selectedLength - separatorLength;
 		if (remaining > 40) parts.unshift(truncate(part, remaining));
 		break;
 	}

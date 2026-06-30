@@ -290,40 +290,32 @@ describe("buildTitleContext", () => {
 		assert.doesNotMatch(context, /SECRET raw tool output/);
 	});
 
-	it("uses the 30 most recent user message entries and keeps the pending prompt", () => {
+	it("includes the first 3 and most recent 3 user messages in order with the pending prompt", () => {
 		const entries: SessionEntry[] = [
 			...Array.from({ length: 35 }, (_, index) => entry({ role: "user", content: `message ${index + 1}` })),
-			{ type: "summary", text: "non-message entry after recent messages" } as unknown as SessionEntry,
+			{ type: "summary", text: "non-message entry" } as unknown as SessionEntry,
 			{ type: "checkpoint", text: "another non-message entry" } as unknown as SessionEntry,
 		];
 
 		const context = buildTitleContext(entries, "pending prompt after recent messages");
 
-		assert.doesNotMatch(context, /\bmessage 5\b/);
-		assert.match(context, /\bmessage 6\b/);
+		assert.match(context, /\bmessage 1\b/);
+		assert.match(context, /\bmessage 3\b/);
+		assert.match(context, /\bmessage 33\b/);
 		assert.match(context, /\bmessage 35\b/);
+		assert.doesNotMatch(context, /\bmessage 4\b/);
+		assert.doesNotMatch(context, /\bmessage 32\b/);
+		assert.ok(context.indexOf("message 1") < context.indexOf("message 33"));
 		assert.match(context, /\[Pending User Prompt\]\npending prompt after recent messages/);
 	});
 
-	it("keeps newest recent messages when the context budget is exceeded", () => {
-		const largeMessage = (index: number) =>
-			[
-				`oversized message ${index}`,
-				...Array.from({ length: 80 }, (_, line) => `detail ${line} ${"x".repeat(40)}`),
-			].join("\n");
-		const entries = Array.from({ length: 12 }, (_, index) => entry({ role: "user", content: largeMessage(index + 1) }));
+	it("returns every user message without duplication when 6 or fewer exist", () => {
+		const entries = Array.from({ length: 5 }, (_, index) => entry({ role: "user", content: `message ${index + 1}` }));
 
 		const context = buildTitleContext(entries);
 
-		assert.ok(context.length <= 8_000, `context length ${context.length} exceeded bound`);
-		assert.doesNotMatch(context, /\boversized message 1\b/);
-		assert.doesNotMatch(context, /\boversized message 2\b/);
-		assert.doesNotMatch(context, /\boversized message 3\b/);
-		assert.match(context, /\boversized message 4\b/);
-		assert.match(context, /\boversized message 12\b/);
-		assert.match(context, /…\n\n\[User\]\noversized message 5/);
-		assert.ok(context.indexOf("oversized message 4") < context.indexOf("oversized message 5"));
-		assert.ok(context.indexOf("oversized message 5") < context.indexOf("oversized message 12"));
+		assert.equal((context.match(/\[User\]/g) ?? []).length, 5);
+		for (let n = 1; n <= 5; n += 1) assert.match(context, new RegExp(`\\bmessage ${n}\\b`));
 	});
 
 	it("reduces fenced code and log-like text while keeping overall output bounded", () => {
