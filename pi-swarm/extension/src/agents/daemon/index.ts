@@ -3,6 +3,7 @@ import { shortSessionId as defaultShortSessionId } from "pi-core/session/session
 import type { PiSwarmDependencies } from "../../dependencies.ts";
 import { DEFAULT_AGENT_MAX_DEPTH } from "../types.ts";
 import { connect, type DaemonConnection, type DaemonIdentity, ensureDaemon, fetchRunSummary } from "./client.ts";
+import { type PeerMessageDeliveryFrame, PROTOCOL_VERSION } from "./frames.ts";
 import { resolveDaemonPaths } from "./paths.ts";
 import { registerDaemonReporter } from "./reporter.ts";
 import { registerAskAgentTool, registerDaemonTools } from "./tools.ts";
@@ -13,6 +14,8 @@ type ThemeFg = (color: Parameters<import("@earendil-works/pi-coding-agent").Them
 interface DaemonClientState {
 	connection: DaemonConnection | null;
 	connecting: Promise<void> | null;
+	peerDeliveryConnection?: DaemonConnection | null;
+	peerDeliveryUnsubscribe?: (() => void) | null;
 }
 
 type DaemonStatusKind = "idle" | "starting" | "connected" | "unavailable" | "disconnected";
@@ -81,6 +84,61 @@ export function getActiveDaemonConnection(): DaemonConnection | null {
 	return getDaemonClientState().connection;
 }
 
+function errorMessage(error: unknown): string {
+	return error instanceof Error ? error.message : String(error);
+}
+
+export function formatPeerMessageDeliveryContent(frame: PeerMessageDeliveryFrame): string {
+	const sender = frame.from_handle?.trim() || "a peer";
+	return `Message from ${sender}:\n\n${frame.message}`;
+}
+
+export function handlePeerMessageDelivery(
+	pi: Pick<ExtensionAPI, "sendUserMessage">,
+	connection: Pick<DaemonConnection, "send">,
+	frame: PeerMessageDeliveryFrame,
+): void {
+	const deliverAs = frame.interrupt ? "steer" : "followUp";
+	try {
+		const delivery = pi.sendUserMessage(formatPeerMessageDeliveryContent(frame), { deliverAs });
+		connection.send({
+			type: "peer_message_delivery_ack",
+			v: PROTOCOL_VERSION,
+			message_id: frame.message_id,
+			status: "queued",
+		});
+		void Promise.resolve(delivery).catch(() => {
+			// Delivery has already been accepted by Pi; avoid unhandled rejections without overwriting queued status.
+		});
+	} catch (error) {
+		connection.send({
+			type: "peer_message_delivery_ack",
+			v: PROTOCOL_VERSION,
+			message_id: frame.message_id,
+			status: "failed",
+			error: errorMessage(error),
+		});
+	}
+}
+
+function registerPeerMessageDeliveryHandler(
+	pi: Pick<ExtensionAPI, "sendUserMessage">,
+	state: DaemonClientState,
+	connection: DaemonConnection,
+): void {
+	state.peerDeliveryUnsubscribe?.();
+	state.peerDeliveryUnsubscribe = connection.on("peer_message_delivery", (frame) => {
+		handlePeerMessageDelivery(pi, connection, frame);
+	});
+	state.peerDeliveryConnection = connection;
+	connection.onClose(() => {
+		if (state.peerDeliveryConnection === connection) {
+			state.peerDeliveryUnsubscribe = null;
+			state.peerDeliveryConnection = null;
+		}
+	});
+}
+
 async function awaitDaemonConnection(): Promise<DaemonConnection | null> {
 	const state = getDaemonClientState();
 	if (state.connection) return state.connection;
@@ -144,6 +202,10 @@ function trackDaemonConnection(
 	connection.onClose(() => {
 		if (state.connection === connection) {
 			state.connection = null;
+			if (state.peerDeliveryConnection === connection) {
+				state.peerDeliveryUnsubscribe = null;
+				state.peerDeliveryConnection = null;
+			}
 			publishDaemonStatus(ctx, { kind: "disconnected" });
 		}
 	});
@@ -239,6 +301,7 @@ export function registerDaemonClient(pi: ExtensionAPI, deps: PiSwarmDependencies
 				}
 				const activeConnection =
 					state.connection === connection ? connection : trackDaemonConnection(state, connection, ctx);
+				registerPeerMessageDeliveryHandler(pi, state, activeConnection);
 				if (isTopLevel && ctx.hasUI) {
 					activeAgentsWidget?.stop();
 					activeAgentsWidget = startActiveAgentsWidget(ctx, {
@@ -274,6 +337,9 @@ export function registerDaemonClient(pi: ExtensionAPI, deps: PiSwarmDependencies
 		const ctx = sessionCtx;
 		state.connection = null;
 		state.connecting = null;
+		state.peerDeliveryUnsubscribe?.();
+		state.peerDeliveryUnsubscribe = null;
+		state.peerDeliveryConnection = null;
 		activeAgentsWidget?.stop();
 		activeAgentsWidget = null;
 		if (ctx) {
