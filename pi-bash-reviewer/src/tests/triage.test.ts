@@ -188,6 +188,29 @@ describe("bash triage", () => {
 		assertTriage("echo `git push --force`", irreversibleRemote);
 	});
 
+	it("blocks all git worktree subcommands", () => {
+		const reasonPattern = /git worktree/;
+		for (const command of [
+			"git worktree add /tmp/foo",
+			"git worktree add /tmp/foo -b branch",
+			"git worktree move /tmp/foo /tmp/bar",
+			"git worktree list",
+			"git worktree list --porcelain",
+			"git worktree remove /tmp/foo",
+			"git worktree lock /tmp/foo",
+			"git worktree unlock /tmp/foo",
+			"git worktree prune",
+			"env git worktree add /tmp/foo",
+			"command git worktree list",
+			"bash -c 'git worktree add /tmp/foo'",
+			"git -C /repo worktree add /tmp/foo",
+		]) {
+			const result = triageCommand(command);
+			assert.equal(result.kind, "block", command);
+			if (result.kind === "block") assert.match(result.reason, reasonPattern, command);
+		}
+	});
+
 	it("blocks commands nested too deeply to analyze safely", () => {
 		let command = "git status";
 		for (let index = 0; index < 10; index += 1) {

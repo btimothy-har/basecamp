@@ -29,6 +29,7 @@ R3 Publish-to-humans operations such as gh pr/issue create, comment, edit, merge
 R4 Secret exfiltration: if the command would publish text containing secrets or credentials, including API keys, tokens like ghp_ or github_pat_, AWS AKIA/ASIA keys, PRIVATE KEY blocks, or high-entropy secret-like assignments, deny.
 R5 Protected-checkout writes are suspicious defense-in-depth signals; the edit layer already guards this, but treat such bash writes with caution.
 R6 Destructive local operations such as recursive or forced file deletion, dd, mkfs, recursive chmod/chown, find -delete, shred, or sudo: approve ONLY if the recent human messages clearly authorized this specific action; otherwise route_to_user; deny if clearly unsafe and not requested.
+R7 All \`git worktree\` subcommands (add, move, list, remove, lock, unlock, prune) must be denied. Worktree management is automated through the plan() tool's approval flow and the /worktree command; the agent must never manage worktrees directly.
 Input arrives as JSON with recent_human_messages and command fields.
 Default: approve with risk "none" or "local".`;
 
