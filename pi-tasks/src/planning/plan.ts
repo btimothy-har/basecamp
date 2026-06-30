@@ -607,9 +607,10 @@ export function registerPlan(pi: ExtensionAPI, tasksAccess: TasksAccess): PlanAc
 				pendingImplementationHandoff = buildPendingImplementationHandoff(draft, implementationMode, worktree);
 
 				let setupSummary: WorktreeSetupSummary | undefined;
-				const setupCommand = readWorktreeSetupCommand();
+				const repo = requireWorkspaceState().repo;
+				const setupCommand = repo?.name ? readWorktreeSetupCommand(repo.name) : null;
 				if (shouldRunWorktreeSetup(worktree.created, setupCommand)) {
-					const repoRoot = requireWorkspaceState().repo?.root;
+					const repoRoot = repo?.root;
 					if (repoRoot) {
 						ctx.ui.notify("Provisioning worktree — running setup (up to 3 min)…", "info");
 						try {
