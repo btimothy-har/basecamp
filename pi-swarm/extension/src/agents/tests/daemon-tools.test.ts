@@ -1306,19 +1306,45 @@ describe("daemon async tools", () => {
 					status: "completed",
 					awaitable: false,
 				},
+				{
+					agent_id: "00000000-0000-4000-8000-000000000003",
+					agent_handle: "00000000-0000-4000-8000-000000000003",
+					parent_id: "session-1",
+					role: "agent",
+					session_name: "private-fallback",
+					depth: 1,
+					status: "running",
+					awaitable: true,
+				},
+				{
+					agent_id: "00000000-0000-4000-8000-000000000004",
+					agent_handle: "silver-wren-d4e5f6",
+					parent_id: "session-1",
+					role: "agent",
+					session_name: "00000000-0000-4000-8000-000000000004",
+					depth: 1,
+					status: "idle",
+					awaitable: false,
+				},
 			] as ListAgentItem[],
 		} as Extract<Frame, { type: "list_agents_result" }>;
 		connection.emit(response);
 
 		const result = await executePromise;
 		assert.equal(result.isError, undefined);
-		assert.equal(result.details.agents.length, 2);
+		assert.equal(result.details.agents.length, 3);
 		assert.equal(result.details.agents[0].agentHandle, "amber-fox-a1b2c3");
 		assert.equal("agent_id" in result.details.agents[0], false);
 		assert.equal(result.details.agents[1].status, "completed");
+		assert.equal(result.details.agents[2].agentHandle, "silver-wren-d4e5f6");
+		assert.equal(result.details.agents[2].sessionName, "silver-wren-d4e5f6");
 		assert.match(result.content[0].text, /amber-fox-a1b2c3/);
 		assert.match(result.content[0].text, /mossy-lynx-d4e5f6/);
 		assert.doesNotMatch(result.content[0].text, /00000000-0000-4000-8000-000000000001/);
+		assert.doesNotMatch(result.content[0].text, /00000000-0000-4000-8000-000000000003/);
+		assert.doesNotMatch(result.content[0].text, /00000000-0000-4000-8000-000000000004/);
+		assert.doesNotMatch(result.content[0].text, /private-fallback/);
+		assert.match(result.content[0].text, /silver-wren-d4e5f6/);
 		assert.match(result.content[0].text, /agent-one/);
 		assert.match(result.content[0].text, /agent-two/);
 		assert.match(result.content[0].text, /running/);

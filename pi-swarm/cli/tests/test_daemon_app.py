@@ -230,6 +230,46 @@ def test_ws_register_returns_registered(tmp_path: Path) -> None:
     }
 
 
+def test_ws_duplicate_active_registration_is_rejected(tmp_path: Path) -> None:
+    app = _build_app(tmp_path)
+
+    with TestClient(app) as client:
+        with client.websocket_connect("/ws") as first:
+            first.send_json(
+                {
+                    "type": "register",
+                    "v": PROTOCOL_VERSION,
+                    "role": "session",
+                    "node_id": "node-1",
+                    "parent_id": None,
+                    "sibling_group": None,
+                    "depth": 0,
+                    "session_name": "test-session",
+                    "cwd": "/tmp/project",
+                }
+            )
+            assert first.receive_json()["type"] == "registered"
+
+            with client.websocket_connect("/ws") as second:
+                second.send_json(
+                    {
+                        "type": "register",
+                        "v": PROTOCOL_VERSION,
+                        "role": "session",
+                        "node_id": "node-1",
+                        "parent_id": None,
+                        "sibling_group": None,
+                        "depth": 0,
+                        "session_name": "hijack-attempt",
+                        "cwd": "/tmp/other",
+                    }
+                )
+                reply = second.receive_json()
+
+    assert reply["type"] == "error"
+    assert reply["code"] == "duplicate_node_connection"
+
+
 def test_ws_version_mismatch_returns_protocol_error(tmp_path: Path) -> None:
     app = _build_app(tmp_path)
 

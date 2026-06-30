@@ -89,7 +89,7 @@ const MessageAgentParams = Type.Object({
 const MessageStatusParams = Type.Object({
 	message_id: Type.String({ description: "Message id returned by message_agent" }),
 	wait_until_delivery: Type.Optional(
-		Type.Boolean({ description: "Wait until delivery reaches queued, failed, or unavailable" }),
+		Type.Boolean({ description: "Wait until delivery reaches queued, failed, unavailable, or unknown" }),
 	),
 	timeout_s: Type.Optional(Type.Number({ minimum: 1, default: 30 })),
 });
@@ -186,8 +186,10 @@ function formatWaitItemText(item: WaitHandleResult): string {
 	return `… ${item.agentHandle} still running (timed out)`;
 }
 
-function publicAgentHandle(agent: ListAgentItem): string {
-	return agent.agent_handle?.trim() || agent.agent_id;
+function publicAgentHandle(agent: ListAgentItem): string | null {
+	const handle = agent.agent_handle?.trim();
+	if (!handle || handle === agent.agent_id) return null;
+	return handle;
 }
 
 function storedAgentType(agent: ListAgentItem): string | null {
@@ -195,11 +197,19 @@ function storedAgentType(agent: ListAgentItem): string | null {
 	return value ? value : null;
 }
 
-function toPublicListAgent(agent: ListAgentItem): PublicListAgentItem {
+function publicSessionName(agent: ListAgentItem, agentHandle: string): string {
+	const sessionName = agent.session_name.trim();
+	if (!sessionName || sessionName === agent.agent_id) return agentHandle;
+	return sessionName.replaceAll(agent.agent_id, agentHandle);
+}
+
+function toPublicListAgent(agent: ListAgentItem): PublicListAgentItem | null {
+	const agentHandle = publicAgentHandle(agent);
+	if (!agentHandle) return null;
 	return {
-		agentHandle: publicAgentHandle(agent),
+		agentHandle,
 		role: agent.role,
-		sessionName: agent.session_name,
+		sessionName: publicSessionName(agent, agentHandle),
 		depth: agent.depth,
 		status: agent.status,
 		awaitable: agent.awaitable,
@@ -742,7 +752,9 @@ export function registerDaemonTools(
 			}
 
 			const daemonClient = createDaemonClient(connection);
-			const agents = (await daemonClient.listAgents({ awaitable: Boolean(params.awaitable) })).map(toPublicListAgent);
+			const agents = (await daemonClient.listAgents({ awaitable: Boolean(params.awaitable) }))
+				.map(toPublicListAgent)
+				.filter((agent): agent is PublicListAgentItem => agent !== null);
 
 			return {
 				content: [{ type: "text", text: shortListAgentsSummary(agents) }],

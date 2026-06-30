@@ -17,6 +17,7 @@ from pi_swarm.frames import (
     PeerMessageDeliveryAckFrame,
     PeerMessageDeliveryFrame,
     PeerMessageFrame,
+    RegisterFrame,
     ResultReportFrame,
     TelemetryFrame,
     WaitFrame,
@@ -136,6 +137,29 @@ def test_attempt_proxy_wait_until_ready_raises_when_socket_missing(tmp_path: Pat
 
     with pytest.raises(ProxySocketUnavailableError, match="failed to create socket"):
         proxy._wait_until_ready()
+
+
+def test_attempt_proxy_register_frame_preserves_child_session_name(tmp_path: Path) -> None:
+    context = _context(tmp_path)
+    proxy = AttemptDaemonProxy(context)
+    child_register = RegisterFrame(
+        type="register",
+        v=PROTOCOL_VERSION,
+        role="agent",
+        node_id="child-node",
+        agent_handle="amber-fox-a1b2c3",
+        parent_id="parent-node",
+        sibling_group="parent-node",
+        depth=1,
+        session_name="(scout) inspect auth [1a2b]",
+        cwd="/repo",
+    )
+
+    register = proxy._register_frame(child_register)
+
+    assert register.node_id == context.agent_id
+    assert register.session_name == "(scout) inspect auth [1a2b]"
+    assert register.session_name != context.agent_id
 
 
 def test_attempt_proxy_forwards_rewritten_telemetry(tmp_path: Path) -> None:

@@ -108,6 +108,16 @@ def create_app(store: Store, *, daemon_uds: str | None = None) -> FastAPI:
                 )
                 return
 
+            if registry.has_connection(parsed.node_id):
+                await _send_error_and_close(
+                    websocket,
+                    code="duplicate_node_connection",
+                    message="Node is already connected.",
+                )
+                return
+
+            node_id = parsed.node_id
+            registry.set_connection(parsed.node_id, websocket)
             try:
                 await asyncio.to_thread(
                     store.upsert_agent,
@@ -121,14 +131,14 @@ def create_app(store: Store, *, daemon_uds: str | None = None) -> FastAPI:
                     agent_handle=parsed.agent_handle,
                 )
             except DuplicateAgentHandleError as exc:
+                if registry.get_connection(parsed.node_id) is websocket:
+                    registry.remove_connection(parsed.node_id)
                 await _send_error_and_close(
                     websocket,
                     code="duplicate_agent_handle",
                     message=str(exc),
                 )
                 return
-            node_id = parsed.node_id
-            registry.set_connection(parsed.node_id, websocket)
 
             registered = RegisteredFrame(
                 type="registered",
@@ -242,7 +252,6 @@ def create_app(store: Store, *, daemon_uds: str | None = None) -> FastAPI:
                 message=f"Failed to parse frame: {exc}",
             )
         finally:
-            # A reconnect under the same node_id may have already installed a newer connection.
             if node_id is not None and registry.get_connection(node_id) is websocket:
                 registry.remove_connection(node_id)
 

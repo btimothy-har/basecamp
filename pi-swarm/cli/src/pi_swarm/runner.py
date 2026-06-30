@@ -215,7 +215,7 @@ class AttemptDaemonProxy:
             parent_id=self._context.parent_session,
             sibling_group=child_register.sibling_group,
             depth=self._context.agent_depth,
-            session_name=self._context.agent_id,
+            session_name=child_register.session_name,
             cwd=child_register.cwd,
         )
 
