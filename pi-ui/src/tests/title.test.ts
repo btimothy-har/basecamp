@@ -252,7 +252,7 @@ describe("generateTitleCompletion", () => {
 });
 
 describe("buildTitleContext", () => {
-	it("includes parsed user and assistant text plus the pending prompt", () => {
+	it("includes only user text plus the pending prompt and excludes assistant text", () => {
 		const context = buildTitleContext(
 			[
 				entry({ role: "user", content: "Please harden title generation." }),
@@ -262,81 +262,63 @@ describe("buildTitleContext", () => {
 		);
 
 		assert.match(context, /\[User\]\nPlease harden title generation\./);
-		assert.match(context, /\[Assistant\]\nI will inspect the title module\./);
+		assert.doesNotMatch(context, /\[Assistant\]/);
+		assert.doesNotMatch(context, /I will inspect the title module/);
 		assert.match(context, /\[Pending User Prompt\]\nAdd focused tests next\./);
 	});
 
-	it("uses the 30 most recent message entries and keeps the pending prompt", () => {
+	it("excludes assistant tool calls and tool results entirely", () => {
+		const context = buildTitleContext([
+			entry({ role: "user", content: "Run the title tests." }),
+			entry({
+				role: "assistant",
+				content: [
+					{ type: "text", text: "Running tests." },
+					{ type: "toolCall", name: "bash", arguments: { command: "npm test" } },
+				],
+			}),
+			entry({
+				role: "toolResult",
+				toolName: "bash",
+				isError: true,
+				content: [{ type: "text", text: "SECRET raw tool output" }],
+			}),
+		]);
+
+		assert.equal(context, "[User]\nRun the title tests.");
+		assert.doesNotMatch(context, /\[Tool:bash\]/);
+		assert.doesNotMatch(context, /SECRET raw tool output/);
+	});
+
+	it("includes the first 3 and most recent 3 user messages in order with the pending prompt", () => {
 		const entries: SessionEntry[] = [
 			...Array.from({ length: 35 }, (_, index) => entry({ role: "user", content: `message ${index + 1}` })),
-			{ type: "summary", text: "non-message entry after recent messages" } as unknown as SessionEntry,
+			{ type: "summary", text: "non-message entry" } as unknown as SessionEntry,
 			{ type: "checkpoint", text: "another non-message entry" } as unknown as SessionEntry,
 		];
 
 		const context = buildTitleContext(entries, "pending prompt after recent messages");
 
-		assert.doesNotMatch(context, /\bmessage 5\b/);
-		assert.match(context, /\bmessage 6\b/);
+		assert.match(context, /\bmessage 1\b/);
+		assert.match(context, /\bmessage 3\b/);
+		assert.match(context, /\bmessage 33\b/);
 		assert.match(context, /\bmessage 35\b/);
+		assert.doesNotMatch(context, /\bmessage 4\b/);
+		assert.doesNotMatch(context, /\bmessage 32\b/);
+		assert.ok(context.indexOf("message 1") < context.indexOf("message 33"));
 		assert.match(context, /\[Pending User Prompt\]\npending prompt after recent messages/);
 	});
 
-	it("keeps newest recent messages when the context budget is exceeded", () => {
-		const largeMessage = (index: number) =>
-			[
-				`oversized message ${index}`,
-				...Array.from({ length: 80 }, (_, line) => `detail ${line} ${"x".repeat(40)}`),
-			].join("\n");
-		const entries = Array.from({ length: 12 }, (_, index) => entry({ role: "user", content: largeMessage(index + 1) }));
+	it("never duplicates a user message across the first/recent boundary", () => {
+		for (const count of [4, 5, 6, 7, 8]) {
+			const entries = Array.from({ length: count }, (_, index) => entry({ role: "user", content: `m${index + 1}` }));
 
-		const context = buildTitleContext(entries);
+			const context = buildTitleContext(entries);
+			const selected = [...context.matchAll(/\bm(\d+)\b/g)].map((match) => match[1]);
 
-		assert.ok(context.length <= 8_000, `context length ${context.length} exceeded bound`);
-		assert.doesNotMatch(context, /\boversized message 1\b/);
-		assert.doesNotMatch(context, /\boversized message 2\b/);
-		assert.doesNotMatch(context, /\boversized message 3\b/);
-		assert.match(context, /\boversized message 4\b/);
-		assert.match(context, /\boversized message 12\b/);
-		assert.match(context, /…\n\n\[User\]\noversized message 5/);
-		assert.ok(context.indexOf("oversized message 4") < context.indexOf("oversized message 5"));
-		assert.ok(context.indexOf("oversized message 5") < context.indexOf("oversized message 12"));
-	});
-
-	it("represents tool calls as compact metadata and summarized args", () => {
-		const context = buildTitleContext([
-			entry({
-				role: "assistant",
-				content: [
-					{ type: "text", text: "Running tests." },
-					{
-						type: "toolCall",
-						name: "bash",
-						arguments: {
-							command: "npm --prefix core/pi run test:session",
-							nested: { path: "core/pi/src/session/tests/title.test.ts", extra: "x".repeat(200) },
-						},
-					},
-				],
-			}),
-		]);
-
-		assert.match(context, /\[Tool:bash\] call args=/);
-		assert.match(context, /"command":"npm --prefix core\/pi run test:session"/);
-		assert.match(context, /"nested":\{"path":"core\/pi\/src\/session\/tests\/title\.test\.ts"/);
-	});
-
-	it("omits raw tool result body text and includes result metadata with error status", () => {
-		const context = buildTitleContext([
-			entry({
-				role: "toolResult",
-				toolName: "bash",
-				isError: true,
-				content: [{ type: "text", text: "SECRET raw tool output that must not be included" }],
-			}),
-		]);
-
-		assert.equal(context, "[Tool:bash] result omitted (error)");
-		assert.doesNotMatch(context, /SECRET raw tool output/);
+			assert.equal(selected.length, new Set(selected).size, `duplication at count=${count}`);
+			assert.equal(selected.length, count <= 6 ? count : 6, `unexpected selection size at count=${count}`);
+		}
 	});
 
 	it("reduces fenced code and log-like text while keeping overall output bounded", () => {
