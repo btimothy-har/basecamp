@@ -246,7 +246,7 @@ describe("title session state", () => {
 		const titles: string[] = [];
 		const notifications: Array<{ message: string; level?: string }> = [];
 		const branch = [messageEntry({ role: "user", content: "Make the title safer." })];
-		const titleCompletion: TitleCompletion = async () => "this title has more than five words";
+		const titleCompletion: TitleCompletion = async () => "Fix";
 		const { pi, handlers, commands, sessionNames } = createPi();
 		const ctx = createContext({
 			sessionId,
@@ -322,11 +322,11 @@ describe("title session state", () => {
 		registerTitle(pi);
 		await handlers.get("session_start")?.({ reason: "new" } as SessionStartEvent, ctx);
 
-		await commands.get("title")?.handler(["too many words here in title"], ctx);
+		await commands.get("title")?.handler(["Fix"], ctx);
 
 		assert.ok(
 			notifications.some(
-				(notification) => notification.level === "error" && /Title must be 1–5 words/.test(notification.message),
+				(notification) => notification.level === "error" && /Title needs at least 2 words/.test(notification.message),
 			),
 		);
 		assert.equal(getCurrentSessionState().title, "Existing Title");

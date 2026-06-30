@@ -54,24 +54,26 @@ describe("validateTitleResponse", () => {
 		assert.equal(validateTitleResponse(" NULL "), null);
 	});
 
-	it("returns null for multiline or explanatory output", () => {
-		assert.equal(validateTitleResponse("Title One\nTitle Two"), null);
-		assert.equal(validateTitleResponse("Title: Hardened Title Generation"), null);
-		assert.equal(validateTitleResponse("Title; Hardened Title Generation"), null);
-		assert.equal(validateTitleResponse("Hardened Title Generation."), null);
+	it("returns null for titles below the word-count floor", () => {
+		assert.equal(validateTitleResponse("Fix"), null);
+		assert.equal(validateTitleResponse("Update"), null);
 	});
 
-	it("returns null for quoted, markdown, or wrapped output", () => {
-		assert.equal(validateTitleResponse('"Hardened Title Generation"'), null);
-		assert.equal(validateTitleResponse("**Hardened Title Generation**"), null);
-		assert.equal(validateTitleResponse("(Hardened Title Generation)"), null);
+	it("sanitizes multiline or explanatory output", () => {
+		assert.equal(validateTitleResponse("Title One\nTitle Two"), "Title One");
+		assert.equal(validateTitleResponse("Title: Hardened Title Generation"), "Title Hardened Title Generation");
+		assert.equal(validateTitleResponse("Hardened Title Generation."), "Hardened Title Generation");
 	});
 
-	it("returns null for overlength output without truncating", () => {
-		const overlength = "one two three four five six";
+	it("sanitizes quoted, markdown, or wrapped output", () => {
+		assert.equal(validateTitleResponse('"Hardened Title Generation"'), "Hardened Title Generation");
+		assert.equal(validateTitleResponse("**Hardened Title Generation**"), "Hardened Title Generation");
+		assert.equal(validateTitleResponse("(Hardened Title Generation)"), "Hardened Title Generation");
+	});
 
-		assert.equal(validateTitleResponse(overlength), null);
-		assert.notEqual(validateTitleResponse(overlength), "one two three four five");
+	it("truncates overlength output to six words", () => {
+		assert.equal(validateTitleResponse("one two three four five six seven"), "one two three four five six");
+		assert.equal(validateTitleResponse("one two three four five six"), "one two three four five six");
 	});
 });
 
@@ -123,8 +125,8 @@ describe("generateTitleCompletion", () => {
 		assert.equal(completionModel, parentModel);
 		assert.equal(completionOptions?.apiKey, "test-key");
 		assert.deepEqual(completionOptions?.headers, { "x-test": "header" });
-		assert.equal(completionOptions?.temperature, 0.2);
-		assert.equal(completionOptions?.maxTokens, 32);
+		assert.equal(completionOptions?.temperature, 0);
+		assert.equal(completionOptions?.maxTokens, undefined);
 		assert.ok(completionOptions?.signal instanceof AbortSignal);
 		assert.match(promptContent, /session context/);
 		assert.deepEqual(toolNames, ["set_title"]);
