@@ -5,6 +5,8 @@ import * as path from "node:path";
 import { describe, it } from "node:test";
 import { readWorktreeSetupCommand } from "../config.ts";
 
+const REPO = "basecamp";
+
 function createHome(t: { after(fn: () => void): void }): string {
 	const homeDir = fs.mkdtempSync(path.join(os.tmpdir(), "basecamp-config-home-"));
 	t.after(() => fs.rmSync(homeDir, { recursive: true, force: true }));
@@ -21,14 +23,14 @@ describe("readWorktreeSetupCommand", () => {
 	it("returns null when the config file is missing", (t) => {
 		const homeDir = createHome(t);
 
-		assert.equal(readWorktreeSetupCommand(homeDir), null);
+		assert.equal(readWorktreeSetupCommand(REPO, homeDir), null);
 	});
 
 	it("returns null for corrupt JSON", (t) => {
 		const homeDir = createHome(t);
 		writeConfig(homeDir, "{");
 
-		assert.equal(readWorktreeSetupCommand(homeDir), null);
+		assert.equal(readWorktreeSetupCommand(REPO, homeDir), null);
 	});
 
 	it("returns null for non-object JSON", (t) => {
@@ -36,27 +38,68 @@ describe("readWorktreeSetupCommand", () => {
 
 		for (const contents of ["[]", "42"]) {
 			writeConfig(homeDir, contents);
-			assert.equal(readWorktreeSetupCommand(homeDir), null);
+			assert.equal(readWorktreeSetupCommand(REPO, homeDir), null);
 		}
 	});
 
-	it("returns null for missing, blank, or whitespace worktree_setup", (t) => {
+	it("returns null when environments is missing or not an object", (t) => {
 		const homeDir = createHome(t);
 
 		for (const contents of [
 			JSON.stringify({}),
-			JSON.stringify({ worktree_setup: "" }),
-			JSON.stringify({ worktree_setup: "   " }),
+			JSON.stringify({ environments: null }),
+			JSON.stringify({ environments: [] }),
+			JSON.stringify({ environments: "nope" }),
 		]) {
 			writeConfig(homeDir, contents);
-			assert.equal(readWorktreeSetupCommand(homeDir), null);
+			assert.equal(readWorktreeSetupCommand(REPO, homeDir), null);
 		}
 	});
 
-	it("returns the trimmed worktree_setup command", (t) => {
+	it("returns null when the repo has no entry", (t) => {
 		const homeDir = createHome(t);
-		writeConfig(homeDir, JSON.stringify({ worktree_setup: "  uv sync  " }));
+		writeConfig(homeDir, JSON.stringify({ environments: { other: { setup: "uv sync" } } }));
 
-		assert.equal(readWorktreeSetupCommand(homeDir), "uv sync");
+		assert.equal(readWorktreeSetupCommand(REPO, homeDir), null);
+	});
+
+	it("returns null when the environment entry is not an object", (t) => {
+		const homeDir = createHome(t);
+		writeConfig(homeDir, JSON.stringify({ environments: { basecamp: "uv sync" } }));
+
+		assert.equal(readWorktreeSetupCommand(REPO, homeDir), null);
+	});
+
+	it("returns null for missing, blank, or whitespace setup", (t) => {
+		const homeDir = createHome(t);
+
+		for (const contents of [
+			JSON.stringify({ environments: { basecamp: {} } }),
+			JSON.stringify({ environments: { basecamp: { setup: "" } } }),
+			JSON.stringify({ environments: { basecamp: { setup: "   " } } }),
+		]) {
+			writeConfig(homeDir, contents);
+			assert.equal(readWorktreeSetupCommand(REPO, homeDir), null);
+		}
+	});
+
+	it("returns the trimmed per-repo setup command", (t) => {
+		const homeDir = createHome(t);
+		writeConfig(homeDir, JSON.stringify({ environments: { basecamp: { setup: "  uv sync && npm ci  " } } }));
+
+		assert.equal(readWorktreeSetupCommand(REPO, homeDir), "uv sync && npm ci");
+	});
+
+	it("resolves the command for the requested repo only", (t) => {
+		const homeDir = createHome(t);
+		writeConfig(
+			homeDir,
+			JSON.stringify({
+				environments: { basecamp: { setup: "uv sync" }, other: { setup: "npm ci" } },
+			}),
+		);
+
+		assert.equal(readWorktreeSetupCommand("basecamp", homeDir), "uv sync");
+		assert.equal(readWorktreeSetupCommand("other", homeDir), "npm ci");
 	});
 });

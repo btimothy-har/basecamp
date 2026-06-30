@@ -154,7 +154,7 @@ Projects are defined in `~/.pi/basecamp/workspace/projects.json`:
 }
 ```
 
-Root `~/.pi/basecamp/config.json` holds installer-owned metadata (`install_dir`, `installed_modules`) and the global `worktree_setup` command (see [Worktree setup hook](#worktree-setup-hook)); it does not contain project definitions.
+Root `~/.pi/basecamp/config.json` holds installer-owned metadata (`install_dir`, `installed_modules`) and per-repo worktree `environments` (see [Worktree environments](#worktree-environments)); it does not contain project definitions.
 
 | Field | Required | Description |
 |-------|----------|-------------|
@@ -229,17 +229,24 @@ The workspace service owns the `~/.worktrees/<repo>/<label>/` storage convention
 - Additional directories stay on their configured checkouts throughout the session
 - Only works with git repositories
 
-### Worktree setup hook
+### Worktree environments
 
-A fresh worktree contains tracked files only — gitignored artifacts (`.venv`, `node_modules`, `.env`, build output) are absent. To provision a newly created worktree, set a global setup command:
+A fresh worktree contains tracked files only — gitignored artifacts (`.venv`, `node_modules`, `.env`, build output) are absent. To provision newly created worktrees, configure a per-repo **environment**: a setup command keyed by repo name.
 
 ```bash
-basecamp config worktree-setup set "uv sync && npm ci"
-basecamp config worktree-setup show
-basecamp config worktree-setup clear
+basecamp environments                       # interactive menu (list / add / edit / remove)
+basecamp environments list
+basecamp environments set <repo> "uv sync && npm ci"
+basecamp environments remove <repo>
 ```
 
-The command is stored under `worktree_setup` in `~/.pi/basecamp/config.json` (one global command for all projects; basecamp ships no default — unset means no-op). When an approved implementation plan **creates** a new execution worktree, basecamp runs it before handoff:
+Environments are stored under the `environments` section of `~/.pi/basecamp/config.json`, keyed by repo name (the git basename, i.e. `BASECAMP_REPO`):
+
+```json
+{ "environments": { "basecamp": { "setup": "uv sync && npm ci" } } }
+```
+
+basecamp ships no default — a repo with no environment is a clean no-op. When an approved implementation plan **creates** a new execution worktree, basecamp resolves the current repo's setup command and runs it before handoff:
 
 - Executed as `bash -lc "<command>"` with the working directory set to the new worktree.
 - Inherits the `BASECAMP_*` env vars plus `BASECAMP_REPO_ROOT` (the protected checkout path), so the command can copy or symlink artifacts from the source checkout if it chooses. basecamp does not prescribe what the command does.
@@ -255,7 +262,7 @@ basecamp is split into root-level products:
 
 - `src/basecamp/` — Python composition package for the `basecamp` setup/projects/install CLI
 - `core/config/` — Python package for generic Basecamp settings, files, paths, and exceptions
-- `workspace/projects/` — Python package for project config and the interactive projects menu
+- `workspace/projects/` — Python package for project and environment config and the interactive projects/environments menus
 - `pi-*` / `core/pi` / `workspace/pi` — Pi packages for project context, session UI, worktrees, workflow, git, engineering, and companion features
 
 ## License

@@ -7,6 +7,7 @@ from datetime import UTC, datetime
 from rich.console import Console
 from rich.table import Table
 
+from basecamp_workspace.environments import EnvironmentConfig
 from basecamp_workspace.projects import ProjectConfig
 
 # Console instances for output
@@ -48,6 +49,20 @@ def display_projects(projects: dict[str, ProjectConfig]) -> None:
             additional_dirs,
             project.working_style or "-",
         )
+
+    console.print()
+    console.print(table)
+    console.print()
+
+
+def display_environments(environments: dict[str, EnvironmentConfig]) -> None:
+    """Display configured environments in a rich table."""
+    table = Table(title="Configured Environments", show_header=True, header_style="bold cyan")
+    table.add_column("Repo", style="green")
+    table.add_column("Setup Command")
+
+    for name, env in environments.items():
+        table.add_row(name, env.setup or "-")
 
     console.print()
     console.print(table)

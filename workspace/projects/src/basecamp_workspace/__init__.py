@@ -1,5 +1,13 @@
 """Basecamp workspace project configuration."""
 
+from basecamp_workspace.environments import (
+    ENVIRONMENTS_SECTION,
+    EnvironmentConfig,
+    get_environment,
+    load_environments,
+    remove_environment,
+    set_environment,
+)
 from basecamp_workspace.projects import (
     DEFAULT_PROJECTS_PATH,
     ProjectConfig,
@@ -10,8 +18,14 @@ from basecamp_workspace.projects import (
 
 __all__ = [
     "DEFAULT_PROJECTS_PATH",
+    "ENVIRONMENTS_SECTION",
+    "EnvironmentConfig",
     "ProjectConfig",
+    "get_environment",
+    "load_environments",
     "load_projects",
     "projects_settings",
+    "remove_environment",
     "save_projects",
+    "set_environment",
 ]
