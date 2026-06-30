@@ -15,7 +15,7 @@ def test_top_level_commands_match_new_shape() -> None:
     assert "sync" in commands
     assert "swarm" in commands
     assert "companion-analyze" in commands
-    assert "config" not in commands
+    assert "config" in commands
 
 
 def test_companion_subcommands_match_new_shape() -> None:
@@ -29,6 +29,15 @@ def test_sync_subcommands_match_new_shape() -> None:
     commands = cli.sync.commands
 
     assert "codex" in commands
+
+
+def test_config_subcommands_match_new_shape() -> None:
+    commands = cli.config.commands
+
+    assert "worktree-setup" in commands
+    assert "set" in commands["worktree-setup"].commands
+    assert "show" in commands["worktree-setup"].commands
+    assert "clear" in commands["worktree-setup"].commands
 
 
 def test_sync_codex_delegates(monkeypatch) -> None:
@@ -145,10 +154,6 @@ def test_deprecated_companion_analyze_alias_delegates(monkeypatch, tmp_path) -> 
 
 def test_old_cli_routes_are_absent() -> None:
     runner = CliRunner()
-
-    result = runner.invoke(cli.basecamp, ["config"])
-    assert result.exit_code != 0
-    assert "No such command" in result.output
 
     result = runner.invoke(cli.basecamp, ["companion", "--snapshot", "snapshot.json", "--cwd", "."])
     assert result.exit_code != 0

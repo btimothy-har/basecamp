@@ -8,6 +8,7 @@ from pathlib import Path
 
 import rich_click as click
 from basecamp_core.exceptions import LauncherError
+from basecamp_core.settings import settings
 from basecamp_workspace.cli.config import run_project_menu
 from basecamp_workspace.cli.project import (
     execute_project_add,
@@ -15,7 +16,7 @@ from basecamp_workspace.cli.project import (
     execute_project_list,
     execute_project_remove,
 )
-from basecamp_workspace.ui import err_console
+from basecamp_workspace.ui import console, err_console
 
 from basecamp.codex_sync import CodexSyncError, run_codex_sync
 from basecamp.installer import run_interactive_install
@@ -69,6 +70,37 @@ def setup() -> None:
         execute_setup()
     except LauncherError as e:
         _handle_error(e)
+
+
+@basecamp.group()
+def config() -> None:
+    """Manage basecamp configuration."""
+
+
+@config.group("worktree-setup")
+def worktree_setup() -> None:
+    """Manage the global worktree setup command."""
+
+
+@worktree_setup.command("set")
+@click.argument("command")
+def worktree_setup_set(command: str) -> None:
+    """Set the global worktree setup command."""
+    settings.worktree_setup = command
+    console.print("Worktree setup command set.")
+
+
+@worktree_setup.command("show")
+def worktree_setup_show() -> None:
+    """Show the global worktree setup command."""
+    console.print(settings.worktree_setup or "(not set)")
+
+
+@worktree_setup.command("clear")
+def worktree_setup_clear() -> None:
+    """Clear the global worktree setup command."""
+    settings.worktree_setup = None
+    console.print("Worktree setup command cleared.")
 
 
 @basecamp.group(invoke_without_command=True)

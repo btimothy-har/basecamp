@@ -14,6 +14,7 @@
 
 import type { ExtensionAPI, ExtensionContext, Theme } from "@earendil-works/pi-coding-agent";
 import { Type } from "@sinclair/typebox";
+import { readWorktreeSetupCommand } from "pi-core/platform/config.ts";
 import {
 	activateWorkspaceWorktree,
 	getWorkspaceState,
@@ -23,6 +24,7 @@ import {
 } from "pi-core/platform/workspace.ts";
 import { getAgentMode, setAgentMode } from "pi-core/session/agent-mode.ts";
 import { shortSessionId } from "pi-core/session/session-id.ts";
+import { runWorktreeSetup } from "pi-core/workspace/setup.ts";
 import type { GoalCycle, ReviewState, TaskStatus, TasksAccess } from "../tasks/tasks";
 import { computeGoalContextReview, computeSectionReview, freshReview, tasksMatch } from "./draft-logic";
 import type { PlanDraft } from "./review";
@@ -34,6 +36,7 @@ import {
 	type ExecutionWorktreeTarget,
 	suggestWorktreeTarget,
 } from "./worktree-choices.ts";
+import { shouldRunWorktreeSetup, type WorktreeSetupSummary, worktreeSetupSummary } from "./worktree-setup.ts";
 
 // ============================================================================
 // Draft diffing — preserve approvals on unchanged content
@@ -245,7 +248,12 @@ function buildWorktreeActivationFailedResult(label: string, error: unknown): str
 	});
 }
 
-function buildApprovedResult(draft: PlanDraft, mode: ApprovedPlanMode, worktree?: HandoffWorktreeResult): string {
+function buildApprovedResult(
+	draft: PlanDraft,
+	mode: ApprovedPlanMode,
+	worktree?: HandoffWorktreeResult,
+	setupSummary?: WorktreeSetupSummary,
+): string {
 	const notes = collectApprovedNotes(draft);
 
 	const tasks: Record<number, { label: string; status: string; criteria: string }> = {};
@@ -287,6 +295,8 @@ function buildApprovedResult(draft: PlanDraft, mode: ApprovedPlanMode, worktree?
 			created: worktree.created,
 		};
 	}
+
+	if (worktree && setupSummary) result.worktree_setup = setupSummary;
 
 	// Only include notes if any exist
 	if (Object.keys(notes).length > 0) result.notes = notes;
@@ -596,7 +606,36 @@ export function registerPlan(pi: ExtensionAPI, tasksAccess: TasksAccess): PlanAc
 				tasksAccess.activateGoalCycle(draft.goal.content, approvedTasks, planRef, implementationMode);
 				pendingImplementationHandoff = buildPendingImplementationHandoff(draft, implementationMode, worktree);
 
-				const result = buildApprovedResult(draft, implementationMode, worktree);
+				let setupSummary: WorktreeSetupSummary | undefined;
+				const setupCommand = readWorktreeSetupCommand();
+				if (shouldRunWorktreeSetup(worktree.created, setupCommand)) {
+					const repoRoot = requireWorkspaceState().repo?.root;
+					if (repoRoot) {
+						ctx.ui.notify("Provisioning worktree — running setup (up to 3 min)…", "info");
+						try {
+							const setupResult = await runWorktreeSetup(pi, {
+								command: setupCommand as string,
+								worktreeDir: worktree.worktreeDir,
+								repoRoot,
+							});
+							setupSummary = worktreeSetupSummary(setupResult);
+							if (setupResult.timedOut) {
+								ctx.ui.notify("Worktree setup timed out after 3 min — continuing to handoff.", "warning");
+							} else if (setupResult.exitCode !== 0) {
+								ctx.ui.notify(`Worktree setup exited ${setupResult.exitCode} — continuing to handoff.`, "warning");
+							} else {
+								ctx.ui.notify("Worktree setup complete.", "info");
+							}
+						} catch (err) {
+							ctx.ui.notify(
+								`Worktree setup error — continuing to handoff: ${err instanceof Error ? err.message : String(err)}`,
+								"warning",
+							);
+						}
+					}
+				}
+
+				const result = buildApprovedResult(draft, implementationMode, worktree, setupSummary);
 				draft = null;
 				return {
 					content: [{ type: "text", text: result }],
