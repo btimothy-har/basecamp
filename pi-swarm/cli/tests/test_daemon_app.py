@@ -4,11 +4,14 @@ from __future__ import annotations
 
 import json
 import sqlite3
+import threading
+import time
 from pathlib import Path
 
 from fastapi.testclient import TestClient
 from pi_swarm.app import create_app
 from pi_swarm.frames import PROTOCOL_VERSION
+from pi_swarm.service import MAX_MESSAGE_WAIT_TIMEOUT_SECONDS, _message_wait_timeout
 from pi_swarm.store import Store
 
 
@@ -228,6 +231,46 @@ def test_ws_register_returns_registered(tmp_path: Path) -> None:
     }
 
 
+def test_ws_duplicate_active_registration_is_rejected(tmp_path: Path) -> None:
+    app = _build_app(tmp_path)
+
+    with TestClient(app) as client:
+        with client.websocket_connect("/ws") as first:
+            first.send_json(
+                {
+                    "type": "register",
+                    "v": PROTOCOL_VERSION,
+                    "role": "session",
+                    "node_id": "node-1",
+                    "parent_id": None,
+                    "sibling_group": None,
+                    "depth": 0,
+                    "session_name": "test-session",
+                    "cwd": "/tmp/project",
+                }
+            )
+            assert first.receive_json()["type"] == "registered"
+
+            with client.websocket_connect("/ws") as second:
+                second.send_json(
+                    {
+                        "type": "register",
+                        "v": PROTOCOL_VERSION,
+                        "role": "session",
+                        "node_id": "node-1",
+                        "parent_id": None,
+                        "sibling_group": None,
+                        "depth": 0,
+                        "session_name": "hijack-attempt",
+                        "cwd": "/tmp/other",
+                    }
+                )
+                reply = second.receive_json()
+
+    assert reply["type"] == "error"
+    assert reply["code"] == "duplicate_node_connection"
+
+
 def test_ws_version_mismatch_returns_protocol_error(tmp_path: Path) -> None:
     app = _build_app(tmp_path)
 
@@ -378,6 +421,497 @@ def test_runs_summary_endpoint_marks_session_active_for_registered_root(tmp_path
 
     assert response.status_code == 200
     assert response.json()["session_active"] is True
+
+
+def test_ws_peer_message_ack_is_immediate_and_delivery_is_forwarded(tmp_path: Path) -> None:
+    app, store = _build_app_with_store(tmp_path)
+
+    with TestClient(app) as client:
+        with client.websocket_connect("/ws") as sender_ws:
+            _register_ws(sender_ws, node_id="root", role="session", parent_id=None, sibling_group="sg-root")
+            with client.websocket_connect("/ws") as target_ws:
+                _register_ws(
+                    target_ws,
+                    node_id="agent-1",
+                    role="agent",
+                    parent_id="root",
+                    sibling_group="sg-agent",
+                    agent_handle="target",
+                )
+
+                sender_ws.send_json(_peer_message("request-1", target_handle="target", message="hello", interrupt=True))
+                ack = sender_ws.receive_json()
+
+                assert ack["type"] == "peer_message_ack"
+                assert ack["request_id"] == "request-1"
+                assert ack["status"] == "accepted"
+                assert ack["error"] is None
+                assert isinstance(ack["message_id"], str)
+
+                delivery = target_ws.receive_json()
+                assert delivery == {
+                    "type": "peer_message_delivery",
+                    "v": PROTOCOL_VERSION,
+                    "message_id": ack["message_id"],
+                    "from_handle": None,
+                    "message": "hello",
+                    "interrupt": True,
+                }
+
+    message = _wait_for_store_message_status(store, ack["message_id"], "sent")
+    assert message["status"] == "sent"
+    assert message["sent_at"] is not None
+    assert message["queued_at"] is None
+
+
+def test_ws_peer_message_agent_without_public_handle_delivers_null_from_handle(tmp_path: Path) -> None:
+    app, _store = _build_app_with_store(tmp_path)
+
+    with TestClient(app) as client:
+        with client.websocket_connect("/ws") as root_ws:
+            _register_ws(root_ws, node_id="root", role="session", parent_id=None, sibling_group="sg-root")
+            with client.websocket_connect("/ws") as sender_ws:
+                _register_ws(
+                    sender_ws,
+                    node_id="sender-private-id",
+                    role="agent",
+                    parent_id="root",
+                    sibling_group="root",
+                )
+                with client.websocket_connect("/ws") as target_ws:
+                    _register_ws(
+                        target_ws,
+                        node_id="agent-1",
+                        role="agent",
+                        parent_id="root",
+                        sibling_group="root",
+                        agent_handle="target",
+                    )
+                    sender_ws.send_json(
+                        _peer_message("request-private-sender", target_handle="target", message="hello")
+                    )
+                    message_id = sender_ws.receive_json()["message_id"]
+                    delivery = target_ws.receive_json()
+
+    assert delivery["message_id"] == message_id
+    assert delivery["from_handle"] is None
+
+
+def test_ws_peer_message_delivery_ack_queued_updates_status(tmp_path: Path) -> None:
+    app, store = _build_app_with_store(tmp_path)
+
+    with TestClient(app) as client:
+        with client.websocket_connect("/ws") as sender_ws:
+            _register_ws(sender_ws, node_id="root", role="session", parent_id=None, sibling_group="sg-root")
+            with client.websocket_connect("/ws") as target_ws:
+                _register_ws(
+                    target_ws,
+                    node_id="agent-1",
+                    role="agent",
+                    parent_id="root",
+                    sibling_group="sg-agent",
+                    agent_handle="target",
+                )
+                sender_ws.send_json(_peer_message("request-queued", target_handle="target", message="queue me"))
+                message_id = sender_ws.receive_json()["message_id"]
+                target_ws.receive_json()
+
+                target_ws.send_json(
+                    {
+                        "type": "peer_message_delivery_ack",
+                        "v": PROTOCOL_VERSION,
+                        "message_id": message_id,
+                        "status": "queued",
+                        "error": None,
+                    }
+                )
+                _wait_for_store_message_status(store, message_id, "queued")
+
+                sender_ws.send_json(_message_status(message_id))
+                status = sender_ws.receive_json()
+
+    assert status["type"] == "message_status_result"
+    assert status["message_id"] == message_id
+    assert status["status"] == "queued"
+    assert status["error"] is None
+    assert status["created_at"] is not None
+    assert status["sent_at"] is not None
+    assert status["queued_at"] is not None
+    assert status["failed_at"] is None
+
+
+def test_ws_peer_message_delivery_ack_failed_updates_status_and_error(tmp_path: Path) -> None:
+    app, store = _build_app_with_store(tmp_path)
+
+    with TestClient(app) as client:
+        with client.websocket_connect("/ws") as sender_ws:
+            _register_ws(sender_ws, node_id="root", role="session", parent_id=None, sibling_group="sg-root")
+            with client.websocket_connect("/ws") as target_ws:
+                _register_ws(
+                    target_ws,
+                    node_id="agent-1",
+                    role="agent",
+                    parent_id="root",
+                    sibling_group="sg-agent",
+                    agent_handle="target",
+                )
+                sender_ws.send_json(_peer_message("request-failed", target_handle="target", message="fail me"))
+                message_id = sender_ws.receive_json()["message_id"]
+                target_ws.receive_json()
+
+                target_ws.send_json(
+                    {
+                        "type": "peer_message_delivery_ack",
+                        "v": PROTOCOL_VERSION,
+                        "message_id": message_id,
+                        "status": "failed",
+                        "error": "recipient failed",
+                    }
+                )
+                _wait_for_store_message_status(store, message_id, "failed")
+
+                target_ws.send_json(_message_status(message_id))
+                status = target_ws.receive_json()
+
+    assert status["status"] == "failed"
+    assert status["error"] == "recipient failed"
+    assert status["failed_at"] is not None
+
+
+def test_ws_peer_message_unavailable_without_live_target_and_wait_returns_unavailable(tmp_path: Path) -> None:
+    app, store = _build_app_with_store(tmp_path)
+    store.upsert_agent(
+        agent_id="agent-1",
+        agent_handle="target",
+        parent_id="root",
+        sibling_group="sg-agent",
+        depth=1,
+        role="agent",
+        session_name="target",
+        cwd="/tmp/target",
+    )
+
+    with TestClient(app) as client:
+        with client.websocket_connect("/ws") as sender_ws:
+            _register_ws(sender_ws, node_id="root", role="session", parent_id=None, sibling_group="sg-root")
+
+            sender_ws.send_json(_peer_message("request-unavailable", target_handle="target", message="hello"))
+            ack = sender_ws.receive_json()
+            assert ack["status"] == "accepted"
+
+            sender_ws.send_json(_message_status(ack["message_id"], wait_until_delivery=True, timeout_s=1))
+            status = sender_ws.receive_json()
+
+    assert status["status"] == "unavailable"
+    assert status["failed_at"] is not None
+    assert store.get_message(ack["message_id"])["status"] == "unavailable"
+
+
+def test_ws_peer_message_missing_and_unauthorized_targets_return_unknown_without_leaking(
+    tmp_path: Path,
+) -> None:
+    app, store = _build_app_with_store(tmp_path)
+    store.upsert_agent(
+        agent_id="outside-root",
+        parent_id=None,
+        sibling_group="outside-root",
+        depth=0,
+        role="session",
+        session_name="outside-root",
+        cwd="/tmp/outside-root",
+    )
+    store.upsert_agent(
+        agent_id="outside-agent",
+        agent_handle="outside",
+        parent_id="outside-root",
+        sibling_group="outside-root",
+        depth=1,
+        role="agent",
+        session_name="outside",
+        cwd="/tmp/outside",
+    )
+    store.upsert_agent(
+        agent_id="private-agent-id",
+        parent_id="root",
+        sibling_group="root",
+        depth=1,
+        role="agent",
+        session_name="private-agent",
+        cwd="/tmp/private-agent",
+    )
+
+    before_messages = _message_count(store)
+
+    with TestClient(app) as client:
+        with client.websocket_connect("/ws") as sender_ws:
+            _register_ws(sender_ws, node_id="root", role="session", parent_id=None, sibling_group="sg-root")
+
+            sender_ws.send_json(_peer_message("request-missing", target_handle="missing", message="hello"))
+            missing = sender_ws.receive_json()
+            sender_ws.send_json(_peer_message("request-outside", target_handle="outside", message="hello"))
+            unauthorized = sender_ws.receive_json()
+            sender_ws.send_json(_peer_message("request-private", target_handle="private-agent-id", message="hello"))
+            private_fallback = sender_ws.receive_json()
+
+    after_messages = _message_count(store)
+
+    assert missing == {
+        "type": "peer_message_ack",
+        "v": PROTOCOL_VERSION,
+        "request_id": "request-missing",
+        "message_id": None,
+        "status": "unknown",
+        "error": None,
+    }
+    assert unauthorized == {
+        "type": "peer_message_ack",
+        "v": PROTOCOL_VERSION,
+        "request_id": "request-outside",
+        "message_id": None,
+        "status": "unknown",
+        "error": None,
+    }
+    assert private_fallback == {
+        "type": "peer_message_ack",
+        "v": PROTOCOL_VERSION,
+        "request_id": "request-private",
+        "message_id": None,
+        "status": "unknown",
+        "error": None,
+    }
+    assert after_messages == before_messages
+
+
+def test_ws_message_status_immediate_authorized_and_unknown_for_missing_or_unauthorized(
+    tmp_path: Path,
+) -> None:
+    app, store = _build_app_with_store(tmp_path)
+    store.upsert_agent(
+        agent_id="root",
+        parent_id=None,
+        sibling_group="sg-root",
+        depth=0,
+        role="session",
+        session_name="root",
+        cwd="/tmp/root",
+    )
+    store.upsert_agent(
+        agent_id="target",
+        agent_handle="target",
+        parent_id="root",
+        sibling_group="sg-target",
+        depth=1,
+        role="agent",
+        session_name="target",
+        cwd="/tmp/target",
+    )
+    for message_id in ["accepted-message", "sent-message", "queued-message"]:
+        store.create_message(
+            message_id=message_id,
+            root_id="root",
+            sender_node_id="root",
+            sender_handle=None,
+            target_agent_id="target",
+            target_handle="target",
+            content="hello",
+            interrupt=False,
+        )
+    store.mark_message_sent("sent-message")
+    store.mark_message_queued("queued-message")
+
+    with TestClient(app) as client:
+        with client.websocket_connect("/ws") as sender_ws:
+            _register_ws(sender_ws, node_id="root", role="session", parent_id=None, sibling_group="sg-root")
+            statuses = []
+            for message_id in ["accepted-message", "sent-message", "queued-message", "missing-message"]:
+                sender_ws.send_json(_message_status(message_id))
+                statuses.append(sender_ws.receive_json())
+
+        with client.websocket_connect("/ws") as outsider_ws:
+            _register_ws(
+                outsider_ws,
+                node_id="outside-root",
+                role="session",
+                parent_id=None,
+                sibling_group="outside-root",
+            )
+            outsider_ws.send_json(_message_status("queued-message"))
+            unauthorized = outsider_ws.receive_json()
+
+    assert [status["status"] for status in statuses] == ["accepted", "sent", "queued", "unknown"]
+    assert statuses[0]["created_at"] is not None
+    assert statuses[1]["sent_at"] is not None
+    assert statuses[2]["queued_at"] is not None
+    assert statuses[3] == _unknown_message_status("missing-message")
+    assert unauthorized == _unknown_message_status("queued-message")
+
+
+def test_ws_message_status_wait_until_delivery_wakes_on_queued_failed_and_unavailable(
+    tmp_path: Path,
+) -> None:
+    app, store = _build_app_with_store(tmp_path)
+
+    with TestClient(app) as client:
+        for terminal_status in ["queued", "failed"]:
+            with client.websocket_connect("/ws") as sender_ws:
+                _register_ws(sender_ws, node_id="root", role="session", parent_id=None, sibling_group="sg-root")
+                with client.websocket_connect("/ws") as target_ws:
+                    _register_ws(
+                        target_ws,
+                        node_id="agent-1",
+                        role="agent",
+                        parent_id="root",
+                        sibling_group="sg-agent",
+                        agent_handle="target",
+                    )
+                    sender_ws.send_json(
+                        _peer_message(f"request-{terminal_status}", target_handle="target", message="hello")
+                    )
+                    message_id = sender_ws.receive_json()["message_id"]
+                    target_ws.receive_json()
+
+                    waiter = _start_message_status_wait(sender_ws, message_id, timeout_s=2)
+                    waiter["sent"].wait(timeout=1)
+                    target_ws.send_json(
+                        {
+                            "type": "peer_message_delivery_ack",
+                            "v": PROTOCOL_VERSION,
+                            "message_id": message_id,
+                            "status": terminal_status,
+                            "error": "boom" if terminal_status == "failed" else None,
+                        }
+                    )
+                    waiter["thread"].join(timeout=2)
+                    assert not waiter["thread"].is_alive()
+                    assert waiter["result"]["status"] == terminal_status
+
+        store.upsert_agent(
+            agent_id="offline-agent",
+            agent_handle="offline",
+            parent_id="root",
+            sibling_group="sg-offline",
+            depth=1,
+            role="agent",
+            session_name="offline",
+            cwd="/tmp/offline",
+        )
+        with client.websocket_connect("/ws") as sender_ws:
+            _register_ws(sender_ws, node_id="root", role="session", parent_id=None, sibling_group="sg-root")
+            sender_ws.send_json(_peer_message("request-offline", target_handle="offline", message="hello"))
+            message_id = sender_ws.receive_json()["message_id"]
+            sender_ws.send_json(_message_status(message_id, wait_until_delivery=True, timeout_s=2))
+            unavailable = sender_ws.receive_json()
+
+    assert unavailable["status"] == "unavailable"
+
+
+def test_ws_message_status_wait_until_delivery_timeout_returns_current_nonterminal_status(
+    tmp_path: Path,
+) -> None:
+    app, store = _build_app_with_store(tmp_path)
+    store.upsert_agent(
+        agent_id="root",
+        parent_id=None,
+        sibling_group="sg-root",
+        depth=0,
+        role="session",
+        session_name="root",
+        cwd="/tmp/root",
+    )
+    store.upsert_agent(
+        agent_id="target",
+        agent_handle="target",
+        parent_id="root",
+        sibling_group="sg-target",
+        depth=1,
+        role="agent",
+        session_name="target",
+        cwd="/tmp/target",
+    )
+    store.create_message(
+        message_id="accepted-message",
+        root_id="root",
+        sender_node_id="root",
+        sender_handle=None,
+        target_agent_id="target",
+        target_handle="target",
+        content="hello",
+        interrupt=False,
+    )
+    store.create_message(
+        message_id="sent-message",
+        root_id="root",
+        sender_node_id="root",
+        sender_handle=None,
+        target_agent_id="target",
+        target_handle="target",
+        content="hello",
+        interrupt=False,
+    )
+    store.mark_message_sent("sent-message")
+
+    with TestClient(app) as client:
+        with client.websocket_connect("/ws") as sender_ws:
+            _register_ws(sender_ws, node_id="root", role="session", parent_id=None, sibling_group="sg-root")
+            sender_ws.send_json(_message_status("accepted-message", wait_until_delivery=True, timeout_s=0.01))
+            accepted = sender_ws.receive_json()
+            sender_ws.send_json(_message_status("sent-message", wait_until_delivery=True, timeout_s=-1))
+            sent = sender_ws.receive_json()
+
+    assert accepted["status"] == "accepted"
+    assert sent["status"] == "sent"
+
+
+def test_message_wait_timeout_bounds_caller_input() -> None:
+    assert _message_wait_timeout(None) == 30.0
+    assert _message_wait_timeout(-1) == 0.0
+    assert _message_wait_timeout(float("nan")) == 0.0
+    assert _message_wait_timeout(float("-inf")) == 0.0
+    assert _message_wait_timeout(float("inf")) == MAX_MESSAGE_WAIT_TIMEOUT_SECONDS
+    assert _message_wait_timeout(MAX_MESSAGE_WAIT_TIMEOUT_SECONDS + 1) == MAX_MESSAGE_WAIT_TIMEOUT_SECONDS
+
+
+def test_ws_peer_message_delivery_ack_from_non_target_is_ignored(tmp_path: Path) -> None:
+    app, store = _build_app_with_store(tmp_path)
+
+    with TestClient(app) as client:
+        with client.websocket_connect("/ws") as sender_ws:
+            _register_ws(sender_ws, node_id="root", role="session", parent_id=None, sibling_group="sg-root")
+            with client.websocket_connect("/ws") as target_ws:
+                _register_ws(
+                    target_ws,
+                    node_id="agent-1",
+                    role="agent",
+                    parent_id="root",
+                    sibling_group="sg-agent",
+                    agent_handle="target",
+                )
+                with client.websocket_connect("/ws") as other_ws:
+                    _register_ws(
+                        other_ws,
+                        node_id="other-agent",
+                        role="agent",
+                        parent_id="root",
+                        sibling_group="sg-other",
+                        agent_handle="other",
+                    )
+                    sender_ws.send_json(_peer_message("request-auth", target_handle="target", message="hello"))
+                    message_id = sender_ws.receive_json()["message_id"]
+                    target_ws.receive_json()
+                    _wait_for_store_message_status(store, message_id, "sent")
+
+                    other_ws.send_json(
+                        {
+                            "type": "peer_message_delivery_ack",
+                            "v": PROTOCOL_VERSION,
+                            "message_id": message_id,
+                            "status": "queued",
+                            "error": None,
+                        }
+                    )
+                    time.sleep(0.05)
+
+    assert store.get_message(message_id)["status"] == "sent"
 
 
 def test_runs_summary_endpoint_unknown_root_returns_empty_payload(tmp_path: Path) -> None:
@@ -691,6 +1225,117 @@ def test_runs_summary_endpoint_projects_task_log_and_activity(tmp_path: Path) ->
         }
     ]
     assert all(key not in summary_agent["recent_activity"][0] for key in ["args", "output", "payload", "toolCallId"])
+
+
+def _register_ws(
+    websocket,
+    *,
+    node_id: str,
+    role: str,
+    parent_id: str | None,
+    sibling_group: str | None,
+    agent_handle: str | None = None,
+) -> None:
+    payload = {
+        "type": "register",
+        "v": PROTOCOL_VERSION,
+        "role": role,
+        "node_id": node_id,
+        "parent_id": parent_id,
+        "sibling_group": sibling_group,
+        "depth": 0 if role == "session" else 1,
+        "session_name": node_id,
+        "cwd": f"/tmp/{node_id}",
+    }
+    if agent_handle is not None:
+        payload["agent_handle"] = agent_handle
+    websocket.send_json(payload)
+    assert websocket.receive_json()["type"] == "registered"
+
+
+def _peer_message(
+    request_id: str,
+    *,
+    target_handle: str,
+    message: str,
+    interrupt: bool = False,
+) -> dict[str, object]:
+    return {
+        "type": "peer_message",
+        "v": PROTOCOL_VERSION,
+        "request_id": request_id,
+        "target_handle": target_handle,
+        "message": message,
+        "interrupt": interrupt,
+    }
+
+
+def _message_count(store: Store) -> int:
+    with sqlite3.connect(store.db_path) as connection:
+        row = connection.execute("SELECT COUNT(*) FROM messages").fetchone()
+    assert row is not None
+    return int(row[0])
+
+
+def _message_status(
+    message_id: str,
+    *,
+    request_id: str | None = None,
+    wait_until_delivery: bool = False,
+    timeout_s: float | None = None,
+) -> dict[str, object]:
+    payload: dict[str, object] = {
+        "type": "message_status",
+        "v": PROTOCOL_VERSION,
+        "request_id": request_id or f"request-status-{message_id}",
+        "message_id": message_id,
+        "wait_until_delivery": wait_until_delivery,
+    }
+    if timeout_s is not None:
+        payload["timeout_s"] = timeout_s
+    return payload
+
+
+def _start_message_status_wait(websocket, message_id: str, *, timeout_s: float) -> dict[str, object]:
+    result: dict[str, object] = {}
+    sent = threading.Event()
+
+    def wait_for_status() -> None:
+        websocket.send_json(_message_status(message_id, wait_until_delivery=True, timeout_s=timeout_s))
+        sent.set()
+        result.update(websocket.receive_json())
+
+    thread = threading.Thread(target=wait_for_status)
+    thread.start()
+    return {"thread": thread, "sent": sent, "result": result}
+
+
+def _wait_for_store_message_status(store: Store, message_id: str, status: str) -> dict[str, object]:
+    deadline = time.time() + 2
+    message = None
+    while time.time() < deadline:
+        message = store.get_message(message_id)
+        if message is not None and message["status"] == status:
+            return message
+        time.sleep(0.01)
+    assert message is not None
+    assert message["status"] == status
+    return message
+
+
+def _unknown_message_status(message_id: str, request_id: str | None = None) -> dict[str, object]:
+    return {
+        "type": "message_status_result",
+        "v": PROTOCOL_VERSION,
+        "request_id": request_id or f"request-status-{message_id}",
+        "message_id": message_id,
+        "status": "unknown",
+        "error": None,
+        "created_at": None,
+        "sent_at": None,
+        "queued_at": None,
+        "failed_at": None,
+    }
 
 
 def _write_task_log(task_dir: Path, agent_id: str, cycles: list[dict[str, object]]) -> None:

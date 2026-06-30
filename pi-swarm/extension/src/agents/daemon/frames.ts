@@ -2,7 +2,7 @@ import { Buffer } from "node:buffer";
 
 // Gates every client-visible daemon capability, not just WebSocket frame shapes.
 // This includes HTTP endpoints like /runs/summary, so stale daemons restart.
-export const PROTOCOL_VERSION = 12;
+export const PROTOCOL_VERSION = 13;
 
 export interface RegisterFrame {
 	type: "register";
@@ -130,6 +130,63 @@ export interface ListAgentsResultFrame {
 	agents: ListAgentItem[];
 }
 
+export interface PeerMessageFrame {
+	type: "peer_message";
+	v: typeof PROTOCOL_VERSION;
+	request_id: string;
+	target_handle: string;
+	message: string;
+	interrupt?: boolean;
+}
+
+export interface PeerMessageAckFrame {
+	type: "peer_message_ack";
+	v: typeof PROTOCOL_VERSION;
+	request_id: string;
+	message_id: string | null;
+	status: "accepted" | "unknown";
+	error?: string | null;
+}
+
+export interface PeerMessageDeliveryFrame {
+	type: "peer_message_delivery";
+	v: typeof PROTOCOL_VERSION;
+	message_id: string;
+	from_handle: string | null;
+	message: string;
+	interrupt: boolean;
+}
+
+export interface PeerMessageDeliveryAckFrame {
+	type: "peer_message_delivery_ack";
+	v: typeof PROTOCOL_VERSION;
+	message_id: string;
+	status: "queued" | "failed";
+	error?: string | null;
+}
+
+export interface MessageStatusFrame {
+	type: "message_status";
+	v: typeof PROTOCOL_VERSION;
+	request_id: string;
+	message_id: string;
+	wait_until_delivery?: boolean;
+	timeout_s?: number;
+}
+
+export interface MessageStatusResultFrame {
+	type: "message_status_result";
+	v: typeof PROTOCOL_VERSION;
+	request_id: string;
+	message_id: string;
+	status: "accepted" | "sent" | "queued" | "failed" | "unavailable" | "unknown";
+	error?: string | null;
+	created_at: string | null;
+	sent_at: string | null;
+	queued_at: string | null;
+	failed_at: string | null;
+}
+
 export type Frame =
 	| RegisterFrame
 	| RegisteredFrame
@@ -141,7 +198,13 @@ export type Frame =
 	| WaitFrame
 	| WaitResultFrame
 	| ListAgentsFrame
-	| ListAgentsResultFrame;
+	| ListAgentsResultFrame
+	| PeerMessageFrame
+	| PeerMessageAckFrame
+	| PeerMessageDeliveryFrame
+	| PeerMessageDeliveryAckFrame
+	| MessageStatusFrame
+	| MessageStatusResultFrame;
 
 export const FRAME_TYPES = [
 	"register",
@@ -155,6 +218,12 @@ export const FRAME_TYPES = [
 	"wait_result",
 	"list_agents",
 	"list_agents_result",
+	"peer_message",
+	"peer_message_ack",
+	"peer_message_delivery",
+	"peer_message_delivery_ack",
+	"message_status",
+	"message_status_result",
 ] as const;
 
 const KNOWN_TYPE_SET = new Set<string>(FRAME_TYPES);

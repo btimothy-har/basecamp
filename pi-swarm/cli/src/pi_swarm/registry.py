@@ -16,6 +16,15 @@ class Waiter:
     future: asyncio.Future[None]
 
 
+@dataclass
+class MessageWaiter:
+    """In-memory wait registration for one peer-message id."""
+
+    waiter_id: str
+    message_id: str
+    future: asyncio.Future[None]
+
+
 class Registry:
     """Tracks runtime connections, run ownership/processes, and waiters."""
 
@@ -24,6 +33,7 @@ class Registry:
         self._runs: MutableMapping[str, str] = {}
         self._processes: MutableMapping[str, asyncio.subprocess.Process] = {}
         self._waiters: MutableMapping[str, Waiter] = {}
+        self._message_waiters: MutableMapping[str, MessageWaiter] = {}
 
     def set_connection(self, node_id: str, websocket: object) -> None:
         """Register or replace an active node connection."""
@@ -84,3 +94,18 @@ class Registry:
         """Return a snapshot of active waiters."""
 
         return list(self._waiters.values())
+
+    def add_message_waiter(self, waiter: MessageWaiter) -> None:
+        """Register a peer-message waiter by id."""
+
+        self._message_waiters[waiter.waiter_id] = waiter
+
+    def remove_message_waiter(self, waiter_id: str) -> None:
+        """Remove peer-message waiter registration by id if present."""
+
+        self._message_waiters.pop(waiter_id, None)
+
+    def list_message_waiters(self) -> list[MessageWaiter]:
+        """Return a snapshot of active peer-message waiters."""
+
+        return list(self._message_waiters.values())

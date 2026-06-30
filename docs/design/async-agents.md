@@ -1,10 +1,10 @@
 # Asynchronous Multi-Agent System — Design
 
-**Status:** Phase 1 IMPLEMENTED (walking skeleton); Phase 2a ACL foundation implemented; first Phase 2b slice (fork-based `ask_agent`) implemented; async-only public surface implemented (wire protocol v12) · **Scope:** Design + status tracking for later phases · **Roadmap:** Remaining Phase 2 collaboration work (live peer messaging/steering) and Phases 3–5 remain design targets
+**Status:** Phase 1 IMPLEMENTED (walking skeleton); Phase 2a ACL foundation implemented; Phase 2b live-only collaboration implemented for fork-based `ask_agent` plus store-backed one-way `message_agent` / `message_status`; async-only public surface implemented (wire protocol v13) · **Scope:** Design + status tracking for later phases · **Roadmap:** Offline re-task-on-message and Phases 3–5 remain design targets
 
 This document describes the target architecture for basecamp's asynchronous, collaborating subagents, coordinated by a global, single-host daemon. It captures the converged design, the decisions and rejected alternatives behind it, the risk register, and the phased roadmap.
 
-It remains primarily a design artifact for later phases: Phase 1 and the async-only public surface are implemented, while the remaining target architecture in this document is roadmap/design work. The current public surface is the `agents` skill plus daemon tools (`dispatch_agent`, `list_agents`, `wait_for_agent`, `ask_agent`); §3 records the former synchronous behavior this design replaced.
+It remains partly a design artifact for later phases: Phase 1, Phase 2a, and the live-only Phase 2b collaboration slice are implemented, while offline re-task-on-message, mutation leases, deadlock detection, and host-global concurrency caps remain roadmap/design work. The current public surface is the `agents` skill plus daemon tools (`dispatch_agent`, `list_agents`, `wait_for_agent`, `ask_agent`, `message_agent`, and `message_status`); §3 records the former synchronous behavior this design replaced.
 
 ---
 
@@ -87,7 +87,7 @@ Two ideas anchor the whole design:
             │        (FastAPI / uvicorn, UDS)        │◄──────────────────────
             │                                         │   /runs/messages (obs)
             │   coordinator · supervisor (ACL)        │
-            │   router (messages + result pings)      │
+            │   router (messages + run status)        │
             │   mutation-lease manager                │
             │   depth + global concurrency caps       │
             │              ┌──────────┐               │
@@ -148,10 +148,10 @@ Frame taxonomy (design level):
 | Telemetry | Report tool/turn/run progress for live observability. |
 | Result reporting | Report that a run completed and where the full result is stored. |
 | Peer messages | Carry agent↔agent and top-level session↔agent communications. |
-| Result pings | Lightweight "result ready" notifications (notify-then-fetch). |
+| Result pings | Dropped target-design notification category; run results are joined with `wait_for_agent`. |
 | Control | Spawn requests, mutation lease requests, and `wait_for_agent` registrations. |
 
-Every frame carries a protocol-version tag; compatibility is checked during handshake (§5.3). Detailed semantics for peer message vs result ping behavior, `wait_for_agent`, and mutation lease requests are specified in §7.
+Every frame carries a protocol-version tag; compatibility is checked during handshake (§5.3). Detailed semantics for peer messages, `wait_for_agent`, and mutation lease requests are specified in §7.
 
 ### 5.3 Daemon startup — the `session_start` ensure-daemon sequence
 
@@ -255,7 +255,7 @@ A run is one transient agent process lifetime.
 
 1. **Spawn.** The daemon launches a transient agent process from the stored spawn spec, resuming the agent's thread file. Cold-start overhead (extension load, prompt assembly, thread replay) is paid per run by design; a warm-process pool is rejected (see §9).
 2. **Register + stream.** The child loads the basecamp extension, opens its WebSocket over UDS, registers identity, and streams telemetry frame updates (translated pi lifecycle events) for live observability.
-3. **Completion.** When the extension detects run completion it sends a result-reporting frame. The run result is the last assistant message (same rule as today's executor: "last assistant message wins"). The daemon persists the full result, releases any mutation lease held by the run, and emits a result ping to the dispatcher. Delivery semantics remain notify-then-fetch (§7.2). Phasing note: persisting the result and resolving `wait_for_agent` are Phase 1; the *unsolicited push* of a result ping into an idle or streaming dispatcher is Phase 2 (§10), so in Phase 1 a dispatcher observes completion by joining via `wait_for_agent`.
+3. **Completion.** When the extension detects run completion it sends a result-reporting frame. The run result is the last assistant message (same rule as today's executor: "last assistant message wins"). The daemon persists the full result, releases any mutation lease held by the run, and resolves any `wait_for_agent` waiter. Unsolicited result pings were dropped; callers observe completion by joining via `wait_for_agent`.
 4. **Backstop.** If the process exits without a result-reporting frame (crash, kill, non-zero exit), the daemon detects exit, marks the run failed, and resolves/notifies any `wait_for_agent` waiter. No waiter can block forever on a missing terminal signal.
 
    A symmetric case is the daemon itself restarting while runs are in flight. SQLite is the source of truth: on restart the daemon reconciles runs left in a non-terminal state, accepts reconnect-by-id from agent processes still alive (matched on `BASECAMP_AGENT_ID` + run id), and marks unrecoverable runs failed so their waiters resolve. The full reconciliation rules are a later-phase concern (§8, §10); Phase 1 relies on the process-exit backstop above.
@@ -292,7 +292,7 @@ A run is one transient agent process lifetime.
 The implemented spawn path inserts a thin runner process between the daemon and each pi child to make run completion robust against empty final answers. This is an implementation detail layered onto §6.3, not a change to the run state machine.
 
 - **Runner process.** The daemon does not exec `pi` directly; it spawns `python -m pi_swarm.runner -- <pi argv> <task>` (`pi-swarm/cli/src/pi_swarm/runner.py`). The runner owns the attempt loop and reports the single terminal result to the daemon.
-- **Attempt-local proxy.** For each attempt the runner stands up an ephemeral, per-attempt UDS proxy and points the child's `BASECAMP_DAEMON_UDS` at it. The proxy forwards the child's `telemetry` frames up to the real daemon (rewriting run/agent identity) and suppresses the child's own `result_report`. The proxy is currently unidirectional (child→daemon, telemetry only); the daemon has no push path into a live child through it. This constrains Phase 2b live delivery (§10).
+- **Attempt-local proxy.** For each attempt the runner stands up an ephemeral, per-attempt UDS proxy and points the child's `BASECAMP_DAEMON_UDS` at it. The proxy forwards the child's `telemetry` frames up to the real daemon (rewriting run/agent identity) and suppresses the child's own `result_report`. It is bidirectional after registration: child→daemon frames are forwarded without inline daemon reads, and daemon→child frames are forwarded concurrently so pushed peer-message deliveries can reach daemon-spawned agents.
 - **Retry on empty result.** Attempt 1 runs the task. If the final answer is empty, the runner runs a second attempt with a recovery prompt; after two empty attempts it reports `empty_agent_result_after_retry`.
 - **Result sidecar.** Each attempt is written to a per-run sidecar at `~/.pi/basecamp/swarm/agents/<agent-id>/runs/<run-id>/result.json` (attempt history plus final). The child writes attempts when `BASECAMP_RUNNER_MANAGED_RESULT=1`, using `BASECAMP_RUN_RESULT_PATH` and `BASECAMP_RUN_ATTEMPT`; the runner then sends the terminal `result_report` to the daemon. SQLite stays the daemon's source of truth for run status; the sidecar records the child-side attempt story.
 
@@ -300,7 +300,7 @@ The implemented spawn path inserts a thin runner process between the daemon and 
 
 Re-tasking an existing agent is depth-neutral: it reuses the same node in the relationship graph and does not increase depth. Only creating a new child agent increases depth (subject to the depth cap).
 
-If a peer message targets an agent with no live transient agent process, the daemon re-tasks that idle agent by respawning from its stored spawn spec and delivering the peer message as the task/prompt slot input. Live-agent message delivery and ACL policy are specified in §7.
+Current implementation note: peer messages are live-only. If a peer message targets an allowed agent with no live transient agent process, the daemon stores the message and marks delivery `unavailable`; it does not re-task the idle agent in this phase. Re-task-on-message from a reusable spawn spec remains future work. Live-agent message delivery and ACL policy are specified in §7.
 
 ### 6.5 Persistence and cleanup (v1)
 
@@ -334,31 +334,36 @@ Access control is **DEFAULT-DENY** and enforced daemon-side on every peer messag
 
 Everything else is denied. In particular, unrelated top-level session nodes are never peers: a top-level session has no parent edge, so top-level sessions (including sessions from different repos sharing the same host-global daemon) cannot enumerate, message, spawn against, or wait on each other's agents.
 
-### 7.2 Two delivery disciplines
+### 7.2 Peer messaging — store-backed one-way delivery (implemented live-only slice)
 
-The design intentionally uses two different delivery disciplines:
+`message_agent` is the persistent collaboration primitive. It is intentionally **not RPC** and does not return a recipient answer. The sender calls:
 
-1. **Peer messages are instantaneous and full.** A peer message is conversational traffic and is routed immediately as a full frame (never batched or coalesced). Recipient delivery is state-dependent:
-   - recipient transient agent process mid-turn (streaming): steer into the current turn,
-   - recipient has a live process but is idle/between turns: triggerTurn to wake it,
-   - recipient has no live transient agent process: re-task from its spawn spec, using the message as the prompt input (§6.4).
-2. **Agent results are notify-then-fetch.** On run completion, the daemon emits a lightweight result ping immediately (never batched or coalesced). The ping is awareness only; full run output is persisted per §6.3 and fetched later by the dispatcher on dispatcher-controlled timing.
+```json
+{ "agent_handle": "target-handle", "message": "...", "interrupt": false }
+```
 
-Dispatcher delivery for a result ping follows the same process-state rule: mid-turn is steered, idle is awakened via triggerTurn. This is the mechanical equivalent of immediate delivery in pi's model: steer applies only during a live turn, while idle delivery requires starting a turn.
+The daemon resolves the public target handle, enforces the same default-deny relationship ACL used by `ask_agent` (ancestor, descendant, or same sibling group), persists a `messages` row, and immediately returns a `message_id` plus acceptance status. Missing and unauthorized targets both return `unknown` without a message id, so existence is not leaked. Private `agent_id` and `run_id` values are not exposed through the tool result.
 
-Recipient/dispatcher state maps to a delivery action as follows:
+Delivery is asynchronous after acceptance:
 
-| Target state | Peer message | Result ping |
-| --- | --- | --- |
-| Live process, mid-turn | steer into the current turn | steer the ping into the current turn |
-| Live process, idle between turns | triggerTurn to wake it | triggerTurn to wake it |
-| No live process | re-task from spawn spec, message as prompt (§6.4) | n/a — a result ping always targets a live dispatcher |
+1. The daemon pushes `peer_message_delivery` to the target's live WebSocket connection.
+2. The recipient extension formats the message with sender context and calls `sendUserMessage(...)` into the recipient's real Pi session/thread.
+3. `interrupt: true` maps to `deliverAs: "steer"`; omitted/false maps to `deliverAs: "followUp"`.
+4. The recipient extension sends `peer_message_delivery_ack` with `queued` immediately after `sendUserMessage` is called and scheduling is accepted, or `failed` when `sendUserMessage` throws synchronously. It does not wait for the delivery promise or the recipient assistant turn to complete.
 
-Implementation boundary from §5.2 applies: the extension performs these actions through pi's ExtensionAPI (`sendMessage` / `sendUserMessage` with `deliverAs: steer | followUp | nextTurn`, plus turn-triggering). The daemon routes frame traffic and does not call pi APIs.
+`message_status({ message_id, wait_until_delivery?, timeout_s? })` is the observation primitive. Without `wait_until_delivery`, it returns the current stored lifecycle state immediately. With `wait_until_delivery: true`, the daemon waits only until terminal delivery state or timeout. Terminal delivery states for this live-only phase are `queued`, `failed`, `unavailable`, and `unknown`; `accepted` and `sent` are non-terminal. The result is lifecycle-only: no recipient assistant response is returned.
 
-Trade-off: waking an idle dispatcher on every result ping can interrupt active typing. The design chooses immediacy anyway because the result ping is tiny and non-committal, and consumption remains explicitly dispatcher-controlled.
+Live-only boundary:
 
-**Status note:** The result-ping discipline above was subsequently dropped — `wait_for_agent` (§7.3) is the sole join. The first implemented Phase 2b collaboration primitive is fork-based `ask` (§7.6), a read-only consultation, not the live peer-message steering described here. Live steer and result ping remain target-design elements that are not yet built (they require the bidirectional daemon→live-agent path the current attempt proxy does not provide, §6.3.1).
+| Target state | Current peer-message behavior |
+| --- | --- |
+| Live process, streaming | queue via `sendUserMessage(..., { deliverAs: "steer" })` when `interrupt: true` |
+| Live process, idle or between turns | schedule `sendUserMessage` with `steer` when `interrupt: true`, otherwise `followUp`; Pi starts/queues the normal user-message turn |
+| No live process | mark delivery `unavailable`; no offline retry or re-task in this phase |
+
+If the recipient chooses to respond, it sends its own separate `message_agent` call back. That separate message has its own `message_id` and lifecycle.
+
+Result pings from the older target design are not implemented; `wait_for_agent` remains the sole run-result join primitive.
 
 ### 7.3 `wait_for_agent` — the composable join
 
@@ -375,15 +380,15 @@ Execution semantics:
 - user abort (Ctrl+C) is honored,
 - the §6.3 crash backstop guarantees no indefinite wait when a transient agent process exits without a terminal result frame.
 
-Relationship to result ping (§7.2): result ping is unsolicited immediate awareness; `wait_for_agent` is explicit synchronization. They are complementary, not competing. A caller may ignore result pings and join solely via `wait_for_agent`.
+Result pings from the earlier target design are not implemented. `wait_for_agent` is the sole run-result synchronization primitive.
 
 #### 7.3.1 `list_agents` — root-scoped directory
 
-`list_agents` is a read-only directory for the caller's root session. It lists same-root non-session agents and returns safe metadata only: `agent_id`, parent id, role, session name, depth, current primary-run status, and an `awaitable` boolean.
+`list_agents` is a read-only directory for the caller's root session. The daemon returns same-root non-session rows, and the public tool output filters out rows without public handles. LLM-facing entries expose only `agentHandle`, `sessionName`, `role`, `depth`, current primary-run `status`, and `awaitable`.
 
-The directory is intentionally not an inspection backdoor. It does not expose private run ids, task prompts, full results, errors, spawn specs, env, or cwd. `awaitable: true` filters to agents whose current primary run the caller may wait on under the dispatcher-owned wait ACL.
+The directory is intentionally not an inspection backdoor. It does not expose private agent ids, parent ids, run ids, task prompts, full results, errors, spawn specs, env, or cwd. `awaitable: true` filters to agents whose current primary run the caller may wait on under the dispatcher-owned wait ACL.
 
-This directory is the first root-scoped visibility primitive for later collaboration. Peer message delivery remains future Phase 2 work; `list_agents` only answers "who is in my root scope?" and "which current primary runs may I wait on?".
+This directory is also the discovery surface for peer messaging: use public `agent_handle` / `agentHandle` values from `list_agents` as `message_agent` targets, never private identifiers. It remains intentionally safe metadata only; message payloads, private ids, prompts, env, and spawn specs are not exposed.
 
 ### 7.4 Mutation lease & deadlock detection
 
@@ -427,25 +432,25 @@ Both limits are configurable tunables. They are complementary: depth cap bounds 
 
 `ask_agent` is the first implemented Phase 2b collaboration primitive. It lets a session or agent ask a *permitted* agent a question and get a context-aware answer, without steering or perturbing the target — deliberately sidestepping the live-delivery problem the runner proxy poses (§6.3.1).
 
-**Mechanism.** `ask_agent({ agent_handle, question, timeout_s? })` reuses dispatch + `wait_for_agent` rather than a new frame: the dispatch spec carries an optional `fork_from` (the target's handle/id), and the daemon resolves it to the target's session file and launches the answerer with `pi --fork <abs path>` into a NEW, separate, read-only session. The target's own thread is only read, never written. The answerer runs the question against the target's forked context, and its terminal result (last assistant message) is returned to the requester as the answer. The protocol carries `fork_from` from v12.
+**Mechanism.** `ask_agent({ agent_handle, question, timeout_s? })` reuses dispatch + `wait_for_agent` rather than a new frame: the dispatch spec carries an optional `fork_from` (the target's handle/id), and the daemon resolves it to the target's session file and launches the answerer with `pi --fork <abs path>` into a NEW, separate, read-only session. The target's own thread is only read, never written. The answerer runs the question against the target's forked context, and its terminal result (last assistant message) is returned to the requester as the answer. The protocol has carried `fork_from` since v12; the current protocol is v13.
 
 **Visibility ACL.** Fork-ask is **DEFAULT-DENY** along the §7.1 directions: a requester may ask only an ancestor, a descendant, or a same-`sibling_group` target. `sibling_group` is populated at dispatch as the dispatcher/parent node id, so all children of one parent are siblings. Unauthorized — and missing — targets are both rejected with the same `fork_target_unknown` reason, so existence is never leaked.
 
 **Logging.** The answerer is a normal agent + run reusing all run storage/telemetry/observability, but typed distinctly (`agent_type = "ask"`) with an `(ask → <target>) <question>` title. Ask runs appear in `/runs/summary` and the companion dashboard but are excluded from `list_agents` (they are consultations, not work agents to retask or await externally).
 
-**Direction & transport.** Session→agent ask works over the session's direct daemon connection. Agent→agent ask works because the attempt proxy (§6.3.1) relays the asking agent's `dispatch`/`wait` request frames to the daemon inline and returns the single response — safe because the asking agent's turn is paused inside the tool, so no telemetry is concurrent. This is a bounded request/response relay, not the full bidirectional topology that live steering (§7.2) would require.
+**Direction & transport.** Session→agent ask works over the session's direct daemon connection. Agent→agent ask works through the attempt proxy (§6.3.1), which forwards child→daemon tool frames and daemon→child responses. Ask remains a bounded request/response consultation even though the proxy now also supports unsolicited daemon→child frames for peer messaging.
 
-**Scope.** Ask is read-only consultation only. It does not steer a running target, and ask-forks count against the depth cap like normal children (a leaf agent at max depth cannot ask). Live peer-message steering and idle re-task-on-message remain future work.
+**Scope.** Ask is read-only consultation only. It does not steer a running target, and ask-forks count against the depth cap like normal children (a leaf agent at max depth cannot ask). Persistent one-way messaging is handled by `message_agent` (§7.2); idle re-task-on-message remains future work.
 
 ## 8. Risks & mitigations
 
 | Risk | Mitigation | Residual / notes |
 | --- | --- | --- |
-| Fan-out/join token cost: the dispatcher being woken once per result ping can be expensive at high fan-out. | Prefer `wait_for_agent` wait-ALL (§7.3) so the caller resumes once with a complete set; the agents skill should teach "dispatch → end turn or wait-all." | Result ping remains immediate awareness (§7.2); callers that want low wake churn should join explicitly. |
+| Fan-out/join token cost: joining one agent at a time can be expensive at high fan-out. | Prefer `wait_for_agent` wait-ALL (§7.3) so the caller resumes once with a complete set; the agents skill should teach "dispatch → end turn or wait-all." | Callers that want low wake churn should join explicitly in batches. |
 | Daemon crash mid-run: in-flight runs orphan and waiters could stall. | SQLite is the source of truth; on restart, the daemon reconciles non-terminal runs, accepts reconnect-by-id, and marks unrecoverable runs failed (stale-run reconciliation), combined with the §6.3 process-exit backstop. | Short recovery windows are expected during restart; terminal state remains deterministic. |
 | Silent agent failure / hang: a transient agent process may wedge without producing a result frame. | §6.3 backstop handles process exit failures; `wait_for_agent` timeout (§7.3) bounds caller wait. | A wedged-but-alive process with no exit and no result relies on timeout policy. |
-| Context flooding: many or large results can overrun dispatcher context. | Notify-then-fetch (§7.2b): result pings are tiny; full payloads are persisted (§6.3) and fetched on demand. | Dispatcher behavior must continue to avoid eager bulk fetch by default. |
-| Interactive wake disruption: waking an idle dispatcher can interrupt active typing. | Accepted trade-off (§7.2) for immediacy of result ping and peer message delivery. | Revisit with an editor-empty guard if user friction is high. |
+| Context flooding: many or large results/messages can overrun context. | Run output is persisted (§6.3) and fetched through explicit joins/observability; peer messages are caller-authored and store-backed (§7.2). | Dispatcher behavior must continue to avoid eager bulk fetch by default. |
+| Interactive wake disruption: peer messaging can steer a live recipient when the sender sets `interrupt: true`. | Default `message_agent` delivery is follow-up (`interrupt: false`); interrupt is explicit sender intent (§7.2). | Revisit with recipient-side policy if user friction is high. |
 | TS↔Python protocol drift: two language runtimes implement one frame protocol. | Keep a single schema source for frames; add a contract test that boots the real daemon and exercises protocol frames end-to-end; enforce protocol-version handshake (§5.3); pin the pi version for spawn flags. | Compatibility work is continuous as frames evolve. |
 | Daemon version skew across repos: one host-global daemon can serve sessions from different basecamp versions. | Version handshake on connect; startup-time protocol mismatch terminates the socket-owning daemon precisely and restarts it with the current package (§5.3). | Existing live clients may be disconnected; mixed-version hosts converge to the latest starter rather than requiring manual cleanup. |
 | Local-user trust boundary: UDS is reachable by same-user processes even when ACL blocks visibility. | UDS file permissions `0600`; daemon-side default-deny ACL (§7.1). | Same-user processes are trusted by threat model (local dev tool). |
@@ -463,9 +468,9 @@ Both limits are configurable tunables. They are complementary: depth cap bounds 
 - TypeScript translates pi lifecycle events into basecamp frame traffic; the daemon is protocol-agnostic to pi wire formats.
 - Connectivity model is one WebSocket per top-level session and per transient agent process; HTTP routes are read-only observability.
 - Execution model is async-always; synchronous behavior is expressed via `wait_for_agent`.
-- Delivery uses two disciplines: full peer message delivery and notify-then-fetch result ping.
+- Delivery uses store-backed one-way peer messages for live recipients; run results are joined explicitly with `wait_for_agent`.
 - ACL is daemon-enforced and derived from injected environment + relationship graph (default-deny).
-- Message to an idle agent triggers respawn/re-task from stored spawn spec.
+- Message to an offline/no-live-process agent is marked `unavailable` in the current phase; respawn/re-task from a reusable spawn spec is deferred.
 - Shared-worktree mutation safety uses a whole-task mutation lease plus daemon-side deadlock-cycle rejection.
 - The depth cap is retained; a host-global concurrency cap is added.
 - v1 includes no automatic pruning and no reset/compact operation.
@@ -488,10 +493,10 @@ Both limits are configurable tunables. They are complementary: depth cap bounds 
   - Explicitly out of scope: peer message, ACL enforcement, mutation lease/deadlock detection, host-global concurrency cap, HTTP observability polish, re-task-on-message behavior, wait-FIRST joins, and the unsolicited result-ping push (in Phase 1 the dispatcher observes completion by calling `wait_for_agent`).
 
 - **Phase 2a — IMPLEMENTED agent-first ACL foundation.** Goal: fix the public run-handle deviation and establish the first daemon-enforced ACL slice without adding peer messaging yet.
-  - In scope: `dispatch_agent` returns the public `agent_id`; `wait_for_agent` accepts agent handles and resolves to private current primary runs; only the immediate dispatcher can wait; unauthorized/missing targets return `unknown`; one active primary run per agent is enforced; `list_agents` provides a root-scoped read-only directory with `awaitable`. The agent-first surface is reflected in the current protocol fixtures and docs (now at wire protocol v11).
+  - In scope: `dispatch_agent` returns a public agent handle; `wait_for_agent` accepts agent handles and resolves to private current primary runs; only the immediate dispatcher can wait; unauthorized/missing targets return `unknown`; one active primary run per agent is enforced; `list_agents` provides a root-scoped read-only directory with `awaitable`.
   - Explicitly out of scope: `message_agent`, peer-message delivery, result pings, idle re-task-on-message, and root-scoped message ACL beyond `list_agents`.
 
-- **Phase 2b — Collaboration.** Partially delivered: fork-based `ask_agent` consultation is implemented (§7.6) — a read-only `pi --fork` of a permitted target (ancestor/descendant/sibling), reusing dispatch + `fork_from` + `wait_for_agent`, typed as `ask` runs, with an inline attempt-proxy relay for agent→agent asks. Result-ping was dropped (`wait_for_agent` is the sole join). Still future: live peer-message routing/steering across recipient states and re-task-on-message for idle recipients (§7.2, §6.4), which require the bidirectional daemon→live-agent path the current attempt proxy does not provide.
+- **Phase 2b — Collaboration.** Delivered live-only collaboration primitives: fork-based `ask_agent` consultation (§7.6), store-backed one-way `message_agent`, and `message_status` with optional wait-until-delivery (§7.2). The attempt proxy is bidirectional for daemon-pushed peer deliveries into spawned agents. Result-ping was dropped (`wait_for_agent` is the sole run-result join). Still future: offline/no-live-process re-task-on-message from reusable spawn specs (§6.4).
 
 - **Phase 3 — Mutation safety.** Goal: ship per-worktree whole-task mutation lease with stale reclaim and daemon-side deadlock cycle rejection using the global wait-for graph (§7.4).
 
@@ -514,11 +519,11 @@ Shared vocabulary; used consistently throughout this document.
 - **Transient agent process** — the ephemeral `pi --mode json -p` child that runs a single task for an agent, then exits.
 - **Thread file** — an agent's pi `.jsonl` session transcript, resumed on re-task to continue its conversation.
 - **Spawn spec** — the structured, TypeScript-supplied description the daemon uses to launch a transient agent process (persona, tools, model, worktree, env).
-- **Frame** — a message in basecamp's own WebSocket protocol. The daemon speaks only frames; the extension translates pi events into frames.
+- **Frame** — a message in basecamp's own WebSocket protocol. The daemon speaks only frames; the extension translates pi events and peer-message injections into frames.
 - **Run** — one execution of a task by an agent (one transient process lifetime), tracked in SQLite.
 - **`wait_for_agent`** — the composable blocking tool that lets a caller rejoin one or more agents' results on demand (the async-world replacement for synchronous dispatch).
-- **Peer message** — instantaneous, full-content communication between permitted agents/sessions; delivered into a live recipient (steer/triggerTurn) or by re-tasking an idle recipient (§7.2).
-- **Result ping** — a lightweight "result ready" notification; the dispatcher fetches the full result on its own terms (notify-then-fetch).
+- **Peer message** — store-backed, one-way communication between permitted sessions/agents; delivered into a live recipient's real Pi thread via `sendUserMessage`, with offline/no-live targets marked `unavailable` in this phase (§7.2).
+- **Result ping** — a dropped target-design notification; current run-result synchronization uses `wait_for_agent` instead.
 - **Mutation lease** — the daemon-owned, per-worktree lock a mutative task holds for its full duration to keep the shared worktree coherent.
 - **Relationship graph** — the daemon's parent/child + sibling-group model, derived from injected env, used for ACL and depth.
 - **Depth cap** — the maximum nesting depth of the spawn tree (default 2), enforced by the daemon from the graph.

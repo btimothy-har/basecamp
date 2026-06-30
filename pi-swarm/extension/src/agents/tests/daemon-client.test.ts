@@ -1,8 +1,45 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { buildRunSummaryPath, parseRunSummaryResponse } from "../daemon/client.ts";
+import {
+	buildRunSummaryPath,
+	createDaemonClient,
+	type DaemonConnection,
+	parseRunSummaryResponse,
+} from "../daemon/client.ts";
+import type { Frame } from "../daemon/frames.ts";
+import { PROTOCOL_VERSION } from "../daemon/frames.ts";
 
-describe("daemon run summary client", () => {
+class MockConnection implements DaemonConnection {
+	sent: Frame[] = [];
+	handlers = new Map<Frame["type"], Set<(frame: any) => void>>();
+	closeHandlers = new Set<(code: number, reason: string) => void>();
+
+	send(frame: Frame): void {
+		this.sent.push(frame);
+	}
+
+	on<T extends Frame["type"]>(type: T, handler: (frame: Extract<Frame, { type: T }>) => void): () => void {
+		const set = this.handlers.get(type) ?? new Set();
+		set.add(handler as any);
+		this.handlers.set(type, set);
+		return () => set.delete(handler as any);
+	}
+
+	onClose(handler: (code: number, reason: string) => void): () => void {
+		this.closeHandlers.add(handler);
+		return () => this.closeHandlers.delete(handler);
+	}
+
+	close(): void {}
+
+	emit(frame: Frame): void {
+		const set = this.handlers.get(frame.type);
+		if (!set) return;
+		for (const handler of set) handler(frame as any);
+	}
+}
+
+describe("daemon client", () => {
 	it("encodes root_id and clamps limits in the summary path", () => {
 		assert.equal(
 			buildRunSummaryPath("root id/with?chars", 500),
@@ -106,5 +143,167 @@ describe("daemon run summary client", () => {
 	it("returns null for non-object summary payloads", () => {
 		assert.equal(parseRunSummaryResponse(null), null);
 		assert.equal(parseRunSummaryResponse("bad"), null);
+	});
+
+	it("sendPeerMessage sends peer_message with a request id and waits only for matching ack", async () => {
+		const connection = new MockConnection();
+		const client = createDaemonClient(connection);
+
+		const promise = client.sendPeerMessage({ targetHandle: "target-agent", message: "hello", interrupt: true });
+		await new Promise((resolve) => setImmediate(resolve));
+
+		const outbound = connection.sent[0] as Extract<Frame, { type: "peer_message" }>;
+		assert.equal(outbound.type, "peer_message");
+		assert.equal(outbound.v, PROTOCOL_VERSION);
+		assert.equal(typeof outbound.request_id, "string");
+		assert.equal(outbound.target_handle, "target-agent");
+		assert.equal(outbound.message, "hello");
+		assert.equal(outbound.interrupt, true);
+
+		let resolved = false;
+		promise.then(() => {
+			resolved = true;
+		});
+
+		connection.emit({
+			type: "peer_message_delivery",
+			v: PROTOCOL_VERSION,
+			message_id: "message-1",
+			from_handle: "sender",
+			message: "delivery should not resolve sender",
+			interrupt: false,
+		});
+		connection.emit({
+			type: "peer_message_ack",
+			v: PROTOCOL_VERSION,
+			request_id: "different-request",
+			message_id: "wrong-message",
+			status: "accepted",
+			error: null,
+		});
+		await new Promise((resolve) => setImmediate(resolve));
+		assert.equal(resolved, false);
+
+		connection.emit({
+			type: "peer_message_ack",
+			v: PROTOCOL_VERSION,
+			request_id: outbound.request_id,
+			message_id: "message-accepted",
+			status: "accepted",
+			error: null,
+		});
+
+		assert.deepEqual(await promise, { message_id: "message-accepted", status: "accepted", error: null });
+	});
+
+	it("messageStatus sends message_status with wait and timeout options", async () => {
+		const connection = new MockConnection();
+		const client = createDaemonClient(connection);
+
+		const promise = client.messageStatus({ messageId: "message-1", waitUntilDelivery: true, timeoutS: 7 });
+		await new Promise((resolve) => setImmediate(resolve));
+
+		const outbound = connection.sent[0] as Extract<Frame, { type: "message_status" }>;
+		assert.equal(outbound.type, "message_status");
+		assert.equal(typeof outbound.request_id, "string");
+		assert.equal(outbound.message_id, "message-1");
+		assert.equal(outbound.wait_until_delivery, true);
+		assert.equal(outbound.timeout_s, 7);
+
+		let resolved = false;
+		promise.then(() => {
+			resolved = true;
+		});
+		connection.emit({
+			type: "message_status_result",
+			v: PROTOCOL_VERSION,
+			request_id: "different-request",
+			message_id: "message-1",
+			status: "failed",
+			error: "wrong",
+			created_at: null,
+			sent_at: null,
+			queued_at: null,
+			failed_at: null,
+		});
+		await new Promise((resolve) => setImmediate(resolve));
+		assert.equal(resolved, false);
+
+		connection.emit({
+			type: "message_status_result",
+			v: PROTOCOL_VERSION,
+			request_id: outbound.request_id,
+			message_id: "message-1",
+			status: "queued",
+			error: null,
+			created_at: "2026-01-01T00:00:00Z",
+			sent_at: "2026-01-01T00:00:01Z",
+			queued_at: "2026-01-01T00:00:02Z",
+			failed_at: null,
+		});
+
+		assert.deepEqual(await promise, {
+			message_id: "message-1",
+			status: "queued",
+			error: null,
+			created_at: "2026-01-01T00:00:00Z",
+			sent_at: "2026-01-01T00:00:01Z",
+			queued_at: "2026-01-01T00:00:02Z",
+			failed_at: null,
+		});
+	});
+
+	it("messageStatus correlates concurrent requests by request id", async () => {
+		const connection = new MockConnection();
+		const client = createDaemonClient(connection);
+
+		const first = client.messageStatus({ messageId: "message-1" });
+		const second = client.messageStatus({ messageId: "message-1" });
+		await new Promise((resolve) => setImmediate(resolve));
+
+		const firstOutbound = connection.sent[0] as Extract<Frame, { type: "message_status" }>;
+		const secondOutbound = connection.sent[1] as Extract<Frame, { type: "message_status" }>;
+		assert.notEqual(firstOutbound.request_id, secondOutbound.request_id);
+
+		let firstResolved = false;
+		let secondResolved = false;
+		first.then(() => {
+			firstResolved = true;
+		});
+		second.then(() => {
+			secondResolved = true;
+		});
+
+		connection.emit({
+			type: "message_status_result",
+			v: PROTOCOL_VERSION,
+			request_id: secondOutbound.request_id,
+			message_id: "message-1",
+			status: "queued",
+			error: null,
+			created_at: null,
+			sent_at: null,
+			queued_at: "2026-01-01T00:00:02Z",
+			failed_at: null,
+		});
+		await new Promise((resolve) => setImmediate(resolve));
+		assert.equal(firstResolved, false);
+		assert.equal(secondResolved, true);
+		assert.equal((await second).status, "queued");
+
+		connection.emit({
+			type: "message_status_result",
+			v: PROTOCOL_VERSION,
+			request_id: firstOutbound.request_id,
+			message_id: "message-1",
+			status: "sent",
+			error: null,
+			created_at: null,
+			sent_at: "2026-01-01T00:00:01Z",
+			queued_at: null,
+			failed_at: null,
+		});
+
+		assert.equal((await first).status, "sent");
 	});
 });

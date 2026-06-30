@@ -14,6 +14,10 @@ from .frames import (
     ErrorFrame,
     ListAgentsFrame,
     ListAgentsResultFrame,
+    MessageStatusFrame,
+    PeerMessageDeliveryAckFrame,
+    PeerMessageDeliveryFrame,
+    PeerMessageFrame,
     RegisteredFrame,
     RegisterFrame,
     ResultReportFrame,
@@ -24,7 +28,18 @@ from .frames import (
     serialize_frame,
 )
 from .registry import Registry
-from .service import dispatch_agent, handle_result_report, handle_telemetry, list_agents, wait_for_agents
+from .service import (
+    AcceptedPeerMessage,
+    accept_peer_message,
+    dispatch_agent,
+    handle_peer_message_delivery_ack,
+    handle_result_report,
+    handle_telemetry,
+    list_agents,
+    message_status_result,
+    notify_message_delivery_terminal,
+    wait_for_agents,
+)
 from .store import DuplicateAgentHandleError, Store
 
 
@@ -35,6 +50,7 @@ def create_app(store: Store, *, daemon_uds: str | None = None) -> FastAPI:
     registry = Registry()
     daemon_socket_path = daemon_uds or ""
     reapers: set[asyncio.Task[None]] = set()
+    delivery_tasks: set[asyncio.Task[None]] = set()
 
     @app.get("/health")
     async def health() -> dict[str, Any]:
@@ -92,6 +108,16 @@ def create_app(store: Store, *, daemon_uds: str | None = None) -> FastAPI:
                 )
                 return
 
+            if registry.has_connection(parsed.node_id):
+                await _send_error_and_close(
+                    websocket,
+                    code="duplicate_node_connection",
+                    message="Node is already connected.",
+                )
+                return
+
+            node_id = parsed.node_id
+            registry.set_connection(parsed.node_id, websocket)
             try:
                 await asyncio.to_thread(
                     store.upsert_agent,
@@ -105,14 +131,14 @@ def create_app(store: Store, *, daemon_uds: str | None = None) -> FastAPI:
                     agent_handle=parsed.agent_handle,
                 )
             except DuplicateAgentHandleError as exc:
+                if registry.get_connection(parsed.node_id) is websocket:
+                    registry.remove_connection(parsed.node_id)
                 await _send_error_and_close(
                     websocket,
                     code="duplicate_agent_handle",
                     message=str(exc),
                 )
                 return
-            node_id = parsed.node_id
-            registry.set_connection(parsed.node_id, websocket)
 
             registered = RegisteredFrame(
                 type="registered",
@@ -179,6 +205,36 @@ def create_app(store: Store, *, daemon_uds: str | None = None) -> FastAPI:
                         requester_node_id=parsed.node_id,
                     )
                     continue
+                if isinstance(inbound, PeerMessageFrame):
+                    await _handle_peer_message(
+                        frame=inbound,
+                        websocket=websocket,
+                        store=store,
+                        registry=registry,
+                        requester_node_id=parsed.node_id,
+                        delivery_tasks=delivery_tasks,
+                    )
+                    continue
+                if isinstance(inbound, PeerMessageDeliveryAckFrame):
+                    await handle_peer_message_delivery_ack(
+                        frame=inbound,
+                        acking_node_id=parsed.node_id,
+                        store=store,
+                        registry=registry,
+                    )
+                    continue
+                if isinstance(inbound, MessageStatusFrame):
+                    await websocket.send_json(
+                        serialize_frame(
+                            await message_status_result(
+                                frame=inbound,
+                                requester_node_id=parsed.node_id,
+                                store=store,
+                                registry=registry,
+                            )
+                        )
+                    )
+                    continue
 
                 await _send_error_and_close(
                     websocket,
@@ -196,7 +252,6 @@ def create_app(store: Store, *, daemon_uds: str | None = None) -> FastAPI:
                 message=f"Failed to parse frame: {exc}",
             )
         finally:
-            # A reconnect under the same node_id may have already installed a newer connection.
             if node_id is not None and registry.get_connection(node_id) is websocket:
                 registry.remove_connection(node_id)
 
@@ -255,6 +310,62 @@ async def _handle_list_agents(
         agents=await list_agents(frame=frame, store=store, requester_node_id=requester_node_id),
     )
     await websocket.send_json(serialize_frame(result))
+
+
+async def _handle_peer_message(
+    *,
+    frame: PeerMessageFrame,
+    websocket: WebSocket,
+    store: Store,
+    registry: Registry,
+    requester_node_id: str,
+    delivery_tasks: set[asyncio.Task[None]],
+) -> None:
+    accepted = await accept_peer_message(frame=frame, requester_node_id=requester_node_id, store=store)
+    if not isinstance(accepted, AcceptedPeerMessage):
+        await websocket.send_json(serialize_frame(accepted))
+        return
+
+    task = asyncio.create_task(
+        _push_peer_message_delivery(
+            delivery=accepted.delivery,
+            target_agent_id=accepted.target_agent_id,
+            registry=registry,
+            store=store,
+        )
+    )
+    delivery_tasks.add(task)
+    task.add_done_callback(delivery_tasks.discard)
+    await websocket.send_json(serialize_frame(accepted.ack))
+
+
+async def _push_peer_message_delivery(
+    *,
+    delivery: PeerMessageDeliveryFrame,
+    target_agent_id: str,
+    registry: Registry,
+    store: Store,
+) -> None:
+    target_websocket = registry.get_connection(target_agent_id)
+    if target_websocket is None:
+        updated = await asyncio.to_thread(
+            store.mark_message_unavailable,
+            delivery.message_id,
+            "target_unavailable",
+        )
+        if updated:
+            notify_message_delivery_terminal(delivery.message_id, registry=registry)
+        return
+
+    try:
+        await target_websocket.send_json(serialize_frame(delivery))
+    except Exception as exc:  # noqa: BLE001
+        updated = await asyncio.to_thread(store.mark_message_failed, delivery.message_id, str(exc))
+        if updated:
+            notify_message_delivery_terminal(delivery.message_id, registry=registry)
+        return
+
+    await asyncio.to_thread(store.mark_message_sent, delivery.message_id)
 
 
 async def _send_dispatch_ack(
