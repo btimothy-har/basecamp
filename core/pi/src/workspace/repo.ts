@@ -34,6 +34,33 @@ export async function branchExists(pi: ExtensionAPI, repoRoot: string, branch: s
 	return (await tryGitOutput(pi, repoRoot, ["rev-parse", "--verify", `refs/heads/${branch}`])) !== null;
 }
 
+export function deriveRepoIdentity(remoteUrl: string | null, fallbackBasename: string): string {
+	const trimmedRemoteUrl = remoteUrl?.trim();
+	if (!trimmedRemoteUrl) return fallbackBasename;
+
+	let pathPart: string;
+	const scpLikeMatch = trimmedRemoteUrl.match(/^[^/]+@[^/:]+:(.+)$/);
+	if (scpLikeMatch) {
+		pathPart = scpLikeMatch[1] ?? "";
+	} else {
+		try {
+			pathPart = new URL(trimmedRemoteUrl).pathname;
+		} catch {
+			pathPart = trimmedRemoteUrl;
+		}
+	}
+
+	let normalizedPath = pathPart.replace(/^\/+/, "");
+	normalizedPath = normalizedPath.replace(/\.git$/, "");
+	normalizedPath = normalizedPath.replace(/\/+$/, "");
+	const segments = normalizedPath.split("/").filter(Boolean);
+	if (segments.length >= 2) {
+		return `${segments[segments.length - 2]}/${segments[segments.length - 1]}`;
+	}
+
+	return fallbackBasename;
+}
+
 export async function resolveGitInfo(
 	pi: ExtensionAPI,
 	dir: string,
@@ -49,7 +76,6 @@ export async function resolveGitInfo(
 		}
 
 		const toplevel = path.resolve(result.stdout.trim());
-		const repoName = path.basename(toplevel);
 
 		let remoteUrl: string | null = null;
 		try {
@@ -61,6 +87,7 @@ export async function resolveGitInfo(
 			/* no remote */
 		}
 
+		const repoName = deriveRepoIdentity(remoteUrl, path.basename(toplevel));
 		return { repoName, isRepo: true, remoteUrl, toplevel };
 	} catch {
 		return { repoName: path.basename(cwd), isRepo: false, remoteUrl: null, toplevel: null };

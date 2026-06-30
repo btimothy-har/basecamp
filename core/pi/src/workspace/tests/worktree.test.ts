@@ -17,10 +17,13 @@ import {
 } from "../worktree.ts";
 
 const REPO_NAME = "repo";
+const SLASHED_REPO_NAME = "org/repo";
 const LABEL = "feature-1";
 const NESTED_LABEL = "wt-bt/feature-1";
 const WORKTREE_DIR = path.join(WORKTREES_ROOT, REPO_NAME, LABEL);
 const NESTED_WORKTREE_DIR = path.join(WORKTREES_ROOT, REPO_NAME, "wt-bt", "feature-1");
+const SLASHED_WORKTREE_DIR = path.join(WORKTREES_ROOT, "org", "repo", LABEL);
+const SLASHED_NESTED_WORKTREE_DIR = path.join(WORKTREES_ROOT, "org", "repo", "wt-bt", "feature-1");
 
 type ExecResult = { code: number; stdout: string; stderr: string };
 
@@ -147,6 +150,12 @@ describe("worktree pure utilities", () => {
 		it("returns nested execution worktree labels under WORKTREES_ROOT/repo", () => {
 			assert.equal(labelFromWorktreePath(REPO_NAME, NESTED_WORKTREE_DIR), NESTED_LABEL);
 			assert.equal(labelFromWorktreePath(REPO_NAME, `${NESTED_WORKTREE_DIR}${path.sep}`), NESTED_LABEL);
+		});
+
+		it("round-trips direct and nested labels for slashed repo identities", () => {
+			assert.equal(path.join(WORKTREES_ROOT, SLASHED_REPO_NAME, LABEL), SLASHED_WORKTREE_DIR);
+			assert.equal(labelFromWorktreePath(SLASHED_REPO_NAME, SLASHED_WORKTREE_DIR), LABEL);
+			assert.equal(labelFromWorktreePath(SLASHED_REPO_NAME, SLASHED_NESTED_WORKTREE_DIR), NESTED_LABEL);
 		});
 
 		it("requires worktrees to use valid workspace paths", () => {
