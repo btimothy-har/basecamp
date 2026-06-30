@@ -252,7 +252,7 @@ describe("generateTitleCompletion", () => {
 });
 
 describe("buildTitleContext", () => {
-	it("includes parsed user and assistant text plus the pending prompt", () => {
+	it("includes only user text plus the pending prompt and excludes assistant text", () => {
 		const context = buildTitleContext(
 			[
 				entry({ role: "user", content: "Please harden title generation." }),
@@ -262,11 +262,35 @@ describe("buildTitleContext", () => {
 		);
 
 		assert.match(context, /\[User\]\nPlease harden title generation\./);
-		assert.match(context, /\[Assistant\]\nI will inspect the title module\./);
+		assert.doesNotMatch(context, /\[Assistant\]/);
+		assert.doesNotMatch(context, /I will inspect the title module/);
 		assert.match(context, /\[Pending User Prompt\]\nAdd focused tests next\./);
 	});
 
-	it("uses the 30 most recent message entries and keeps the pending prompt", () => {
+	it("excludes assistant tool calls and tool results entirely", () => {
+		const context = buildTitleContext([
+			entry({ role: "user", content: "Run the title tests." }),
+			entry({
+				role: "assistant",
+				content: [
+					{ type: "text", text: "Running tests." },
+					{ type: "toolCall", name: "bash", arguments: { command: "npm test" } },
+				],
+			}),
+			entry({
+				role: "toolResult",
+				toolName: "bash",
+				isError: true,
+				content: [{ type: "text", text: "SECRET raw tool output" }],
+			}),
+		]);
+
+		assert.equal(context, "[User]\nRun the title tests.");
+		assert.doesNotMatch(context, /\[Tool:bash\]/);
+		assert.doesNotMatch(context, /SECRET raw tool output/);
+	});
+
+	it("uses the 30 most recent user message entries and keeps the pending prompt", () => {
 		const entries: SessionEntry[] = [
 			...Array.from({ length: 35 }, (_, index) => entry({ role: "user", content: `message ${index + 1}` })),
 			{ type: "summary", text: "non-message entry after recent messages" } as unknown as SessionEntry,
@@ -300,43 +324,6 @@ describe("buildTitleContext", () => {
 		assert.match(context, /…\n\n\[User\]\noversized message 5/);
 		assert.ok(context.indexOf("oversized message 4") < context.indexOf("oversized message 5"));
 		assert.ok(context.indexOf("oversized message 5") < context.indexOf("oversized message 12"));
-	});
-
-	it("represents tool calls as compact metadata and summarized args", () => {
-		const context = buildTitleContext([
-			entry({
-				role: "assistant",
-				content: [
-					{ type: "text", text: "Running tests." },
-					{
-						type: "toolCall",
-						name: "bash",
-						arguments: {
-							command: "npm --prefix core/pi run test:session",
-							nested: { path: "core/pi/src/session/tests/title.test.ts", extra: "x".repeat(200) },
-						},
-					},
-				],
-			}),
-		]);
-
-		assert.match(context, /\[Tool:bash\] call args=/);
-		assert.match(context, /"command":"npm --prefix core\/pi run test:session"/);
-		assert.match(context, /"nested":\{"path":"core\/pi\/src\/session\/tests\/title\.test\.ts"/);
-	});
-
-	it("omits raw tool result body text and includes result metadata with error status", () => {
-		const context = buildTitleContext([
-			entry({
-				role: "toolResult",
-				toolName: "bash",
-				isError: true,
-				content: [{ type: "text", text: "SECRET raw tool output that must not be included" }],
-			}),
-		]);
-
-		assert.equal(context, "[Tool:bash] result omitted (error)");
-		assert.doesNotMatch(context, /SECRET raw tool output/);
 	});
 
 	it("reduces fenced code and log-like text while keeping overall output bounded", () => {
