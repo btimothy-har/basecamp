@@ -7,7 +7,7 @@ import { discoverAgents } from "../discovery.ts";
 import { buildAgentLaunchSpec, buildAgentTitleBase, processEnvForSpawn } from "../launch.ts";
 import type { DaemonConnection } from "./client.ts";
 import { createDaemonClient } from "./client.ts";
-import { type ListAgentItem, type WaitResultFrame } from "./frames.ts";
+import { type ListAgentItem, type MessageStatusResultFrame, type WaitResultFrame } from "./frames.ts";
 
 interface DispatchDetails {
 	agentHandle: string;
@@ -19,6 +19,24 @@ interface AskDetails {
 	status: "completed" | "failed" | "running" | "unknown";
 	answer?: string | null;
 	error?: string | null;
+	aborted?: boolean;
+}
+
+interface MessageAgentDetails {
+	agentHandle: string;
+	messageId: string | null;
+	status: "accepted" | "unknown";
+	error?: string | null;
+}
+
+interface MessageStatusDetails {
+	messageId: string;
+	status: MessageStatusResultFrame["status"];
+	error?: string | null;
+	createdAt: string | null;
+	sentAt: string | null;
+	queuedAt: string | null;
+	failedAt: string | null;
 	aborted?: boolean;
 }
 
@@ -58,6 +76,22 @@ const AskAgentParams = Type.Object({
 	agent_handle: Type.String({ description: "Target agent handle to ask" }),
 	question: Type.String({ description: "Question to ask the target agent" }),
 	timeout_s: Type.Optional(Type.Number({ minimum: 1, default: 600 })),
+});
+
+const MessageAgentParams = Type.Object({
+	agent_handle: Type.String({ description: "Target agent handle to message" }),
+	message: Type.String({ description: "One-way message to persistently deliver to the target agent" }),
+	interrupt: Type.Optional(
+		Type.Boolean({ description: "Deliver as an interrupt/steer message instead of a follow-up" }),
+	),
+});
+
+const MessageStatusParams = Type.Object({
+	message_id: Type.String({ description: "Message id returned by message_agent" }),
+	wait_until_delivery: Type.Optional(
+		Type.Boolean({ description: "Wait until delivery reaches queued, failed, or unavailable" }),
+	),
+	timeout_s: Type.Optional(Type.Number({ minimum: 1, default: 30 })),
 });
 
 const AgentHandlesParam = Type.Union([
@@ -116,8 +150,27 @@ function buildAskAgentTitle(agentHandle: string, question: string): string {
 	return `(ask → ${agentHandle}) ${preview(question, 60)}`;
 }
 
-function hasText(value: string | null): value is string {
-	return value !== null && value.trim() !== "";
+function requireAgentsSkillMessage(action: string): string {
+	return `Load the agents skill first: call skill({ name: "agents" }) before ${action}.`;
+}
+
+function hasText(value: string | null | undefined): value is string {
+	return value !== null && value !== undefined && value.trim() !== "";
+}
+
+function formatMessageStatusLine(details: MessageStatusDetails): string {
+	const parts = [`message_id ${details.messageId}`, `status ${details.status}`];
+	if (hasText(details.error)) parts.push(`error ${details.error}`);
+	return parts.join(" • ");
+}
+
+function formatMessageStatusContent(details: MessageStatusDetails): string {
+	const lines = [formatMessageStatusLine(details)];
+	if (details.createdAt) lines.push(`created_at: ${details.createdAt}`);
+	if (details.sentAt) lines.push(`sent_at: ${details.sentAt}`);
+	if (details.queuedAt) lines.push(`queued_at: ${details.queuedAt}`);
+	if (details.failedAt) lines.push(`failed_at: ${details.failedAt}`);
+	return lines.join("\n");
 }
 
 function formatWaitItemText(item: WaitHandleResult): string {
@@ -161,6 +214,167 @@ function buildListAgentLine(agent: PublicListAgentItem): string {
 function shortListAgentsSummary(agents: PublicListAgentItem[]): string {
 	if (agents.length === 0) return "No agents found in this scope.";
 	return agents.map((agent) => buildListAgentLine(agent)).join("\n\n");
+}
+
+export function registerPeerMessageTools(
+	pi: ExtensionAPI,
+	getConnection: () => Promise<DaemonConnection | null>,
+	deps: Pick<PiSwarmDependencies, "hasInvokedSkill">,
+): void {
+	pi.registerTool({
+		name: "message_agent",
+		label: "Message Agent",
+		description:
+			"Send a one-way persistent message to a visible async agent. Returns daemon acceptance only; no recipient response is included.",
+		parameters: MessageAgentParams,
+		async execute(_id, params) {
+			if (!deps.hasInvokedSkill("agents")) {
+				return {
+					content: [{ type: "text", text: requireAgentsSkillMessage("messaging agents") }],
+					isError: true,
+					details: null,
+				};
+			}
+			const targetHandle = params.agent_handle.trim();
+			if (!targetHandle) {
+				return {
+					content: [{ type: "text", text: "message_agent requires a non-empty agent_handle." }],
+					isError: true,
+					details: null,
+				};
+			}
+			const message = params.message;
+			if (!message.trim()) {
+				return {
+					content: [{ type: "text", text: "message_agent requires a non-empty message." }],
+					isError: true,
+					details: null,
+				};
+			}
+			const connection = await getConnection();
+			if (!connection) {
+				return {
+					content: [{ type: "text", text: "basecamp swarm daemon is not connected; cannot message async agents." }],
+					isError: true,
+					details: null,
+				};
+			}
+
+			const daemonClient = createDaemonClient(connection);
+			const ack = await daemonClient.sendPeerMessage({
+				targetHandle,
+				message,
+				interrupt: Boolean(params.interrupt),
+			});
+			const details: MessageAgentDetails = {
+				agentHandle: targetHandle,
+				messageId: ack.message_id,
+				status: ack.status,
+				error: ack.error,
+			};
+			if (ack.status === "unknown") {
+				const text = hasText(ack.error) ? ack.error : `No agent "${targetHandle}" is available to message.`;
+				return { content: [{ type: "text", text }], isError: true, details };
+			}
+			return {
+				content: [
+					{
+						type: "text",
+						text: `message accepted • message_id ${ack.message_id ?? "unknown"} • status ${ack.status}`,
+					},
+				],
+				details,
+			};
+		},
+		renderResult(result, _opts, theme) {
+			const details = result.details as MessageAgentDetails | null;
+			const message = result.content[0]?.type === "text" ? result.content[0].text : "";
+			if (!details) return new Text(message, 0, 0);
+			if (details.status === "unknown") return new Text(theme.fg("warning", message || "message target unknown"), 0, 0);
+			return new Text(
+				theme.fg(
+					"accent",
+					`message accepted • message_id ${details.messageId ?? "unknown"} • status ${details.status}`,
+				),
+				0,
+				0,
+			);
+		},
+	});
+
+	pi.registerTool({
+		name: "message_status",
+		label: "Message Status",
+		description:
+			"Check delivery lifecycle status for a message_agent message. Optionally waits for delivery terminal state; no answer fields are returned.",
+		parameters: MessageStatusParams,
+		async execute(_id, params, signal) {
+			if (!deps.hasInvokedSkill("agents")) {
+				return {
+					content: [{ type: "text", text: requireAgentsSkillMessage("checking message status") }],
+					isError: true,
+					details: null,
+				};
+			}
+			const messageId = params.message_id.trim();
+			if (!messageId) {
+				return {
+					content: [{ type: "text", text: "message_status requires a non-empty message_id." }],
+					isError: true,
+					details: null,
+				};
+			}
+			const connection = await getConnection();
+			if (!connection) {
+				return {
+					content: [{ type: "text", text: "basecamp swarm daemon is not connected; cannot check message status." }],
+					isError: true,
+					details: null,
+				};
+			}
+
+			const daemonClient = createDaemonClient(connection);
+			try {
+				const status = await daemonClient.messageStatus({
+					messageId,
+					waitUntilDelivery: Boolean(params.wait_until_delivery),
+					timeoutS: params.timeout_s === undefined ? undefined : Math.max(1, Math.floor(params.timeout_s)),
+					signal,
+				});
+				const details: MessageStatusDetails = {
+					messageId: status.message_id,
+					status: status.status,
+					error: status.error,
+					createdAt: status.created_at,
+					sentAt: status.sent_at,
+					queuedAt: status.queued_at,
+					failedAt: status.failed_at,
+				};
+				return { content: [{ type: "text", text: formatMessageStatusContent(details) }], details };
+			} catch (error) {
+				if (signal?.aborted || (error instanceof Error && error.message === "aborted")) {
+					const details: MessageStatusDetails = {
+						messageId,
+						status: "unknown",
+						createdAt: null,
+						sentAt: null,
+						queuedAt: null,
+						failedAt: null,
+						aborted: true,
+					};
+					return { content: [{ type: "text", text: "message status wait aborted" }], details };
+				}
+				throw error;
+			}
+		},
+		renderResult(result, _opts, theme) {
+			const details = result.details as MessageStatusDetails | null;
+			if (!details) return new Text(result.content[0]?.type === "text" ? result.content[0].text : "", 0, 0);
+			if (details.aborted) return new Text(theme.fg("warning", "message status wait aborted"), 0, 0);
+			const color = details.status === "failed" ? "error" : details.status === "unknown" ? "warning" : "accent";
+			return new Text(theme.fg(color, formatMessageStatusLine(details)), 0, 0);
+		},
+	});
 }
 
 export function registerAskAgentTool(
@@ -498,6 +712,7 @@ export function registerDaemonTools(
 	});
 
 	registerAskAgentTool(pi, getConnection, deps);
+	registerPeerMessageTools(pi, getConnection, deps);
 
 	pi.registerTool({
 		name: "list_agents",

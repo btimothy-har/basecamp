@@ -9,6 +9,8 @@ import {
 	encodeFrame,
 	type Frame,
 	type ListAgentItem,
+	type MessageStatusResultFrame,
+	type PeerMessageAckFrame,
 	PROTOCOL_VERSION,
 	type RegisteredFrame,
 	type RegisterFrame,
@@ -739,6 +741,26 @@ export interface DaemonDispatchResult {
 	reason?: string | null;
 }
 
+export interface SendPeerMessageOptions {
+	targetHandle: string;
+	message: string;
+	interrupt?: boolean;
+}
+
+export interface MessageStatusOptions {
+	messageId: string;
+	waitUntilDelivery?: boolean;
+	timeoutS?: number;
+	signal?: AbortSignal;
+}
+
+export type SendPeerMessageResult = Pick<PeerMessageAckFrame, "message_id" | "status" | "error">;
+
+export type MessageStatusResult = Pick<
+	MessageStatusResultFrame,
+	"message_id" | "status" | "error" | "created_at" | "sent_at" | "queued_at" | "failed_at"
+>;
+
 export interface DaemonClient {
 	dispatchAgent(options: DaemonDispatchFrameOptions): Promise<DaemonDispatchResult>;
 	listAgents(input: { awaitable?: boolean }): Promise<ListAgentItem[]>;
@@ -747,6 +769,8 @@ export interface DaemonClient {
 		timeoutS: number;
 		signal?: AbortSignal;
 	}): Promise<WaitResultFrame["results"]>;
+	sendPeerMessage(input: SendPeerMessageOptions): Promise<SendPeerMessageResult>;
+	messageStatus(input: MessageStatusOptions): Promise<MessageStatusResult>;
 }
 
 function waitForFrame<T extends Frame["type"]>(
@@ -882,6 +906,47 @@ export function createDaemonClient(connection: DaemonConnection): DaemonClient {
 				input.signal,
 			);
 			return dedupeRequestedResults(frame.results, requested);
+		},
+		sendPeerMessage: async (input) => {
+			const requestId = randomUUID();
+			connection.send({
+				type: "peer_message",
+				v: PROTOCOL_VERSION,
+				request_id: requestId,
+				target_handle: input.targetHandle,
+				message: input.message,
+				interrupt: Boolean(input.interrupt),
+			});
+			const ack = await waitForFrame(connection, "peer_message_ack", (frame) => frame.request_id === requestId);
+			return {
+				message_id: ack.message_id,
+				status: ack.status,
+				error: ack.error,
+			};
+		},
+		messageStatus: async (input) => {
+			connection.send({
+				type: "message_status",
+				v: PROTOCOL_VERSION,
+				message_id: input.messageId,
+				wait_until_delivery: Boolean(input.waitUntilDelivery),
+				timeout_s: input.timeoutS,
+			});
+			const frame = await waitForFrame(
+				connection,
+				"message_status_result",
+				(response) => response.message_id === input.messageId,
+				input.signal,
+			);
+			return {
+				message_id: frame.message_id,
+				status: frame.status,
+				error: frame.error,
+				created_at: frame.created_at,
+				sent_at: frame.sent_at,
+				queued_at: frame.queued_at,
+				failed_at: frame.failed_at,
+			};
 		},
 	};
 }

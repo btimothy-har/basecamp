@@ -9,7 +9,7 @@ import type { Frame, ListAgentItem } from "../daemon/frames.ts";
 import { PROTOCOL_VERSION } from "../daemon/frames.ts";
 import { deriveDaemonIdentity } from "../daemon/index.ts";
 import { resolveDaemonPaths } from "../daemon/paths.ts";
-import { registerAskAgentTool, registerDaemonTools } from "../daemon/tools.ts";
+import { registerAskAgentTool, registerDaemonTools, registerPeerMessageTools } from "../daemon/tools.ts";
 import { buildAgentTaskText } from "../executor.ts";
 import { buildAgentEnv, buildAgentTitleBase, processEnvForSpawn } from "../launch.ts";
 
@@ -212,6 +212,341 @@ describe("daemon async tools", () => {
 			tools.map((tool) => tool.name),
 			["ask_agent"],
 		);
+	});
+
+	it("registerPeerMessageTools registers message_agent and message_status", () => {
+		const { pi, tools } = createMockPi();
+
+		registerPeerMessageTools(pi, async () => new MockConnection(), daemonToolDeps);
+
+		assert.deepEqual(
+			tools.map((tool) => tool.name),
+			["message_agent", "message_status"],
+		);
+	});
+
+	it("registerDaemonTools includes dispatch, ask, peer messaging, list, and wait tools", () => {
+		const { pi, tools } = createMockPi();
+
+		registerDaemonTools(pi, async () => new MockConnection(), daemonToolDeps);
+
+		assert.deepEqual(
+			tools.map((tool) => tool.name),
+			["dispatch_agent", "ask_agent", "message_agent", "message_status", "list_agents", "wait_for_agent"],
+		);
+	});
+
+	it("message_agent sends peer_message and returns accepted message_id without waiting for delivery or answers", async () => {
+		trackSkillInvocation("agents");
+		const connection = new MockConnection();
+		const { pi, tools } = createMockPi();
+		registerPeerMessageTools(pi, async () => connection, daemonToolDeps);
+		const messageTool = toolByName(tools, "message_agent");
+
+		const executePromise = messageTool.execute(
+			"1",
+			{ agent_handle: "amber-fox-a1b2c3", message: "Please consider this update.", interrupt: true },
+			new AbortController().signal,
+			() => {},
+			{},
+		);
+		await new Promise((resolve) => setImmediate(resolve));
+
+		const outbound = connection.sent[0] as Extract<Frame, { type: "peer_message" }>;
+		assert.equal(outbound.type, "peer_message");
+		assert.equal(outbound.target_handle, "amber-fox-a1b2c3");
+		assert.equal(outbound.message, "Please consider this update.");
+		assert.equal(outbound.interrupt, true);
+		assert.equal(typeof outbound.request_id, "string");
+
+		let resolved = false;
+		executePromise.then(() => {
+			resolved = true;
+		});
+		connection.emit({
+			type: "peer_message_delivery",
+			v: PROTOCOL_VERSION,
+			message_id: "message-1",
+			from_handle: "sender",
+			message: "recipient delivery is not a response",
+			interrupt: false,
+		});
+		await new Promise((resolve) => setImmediate(resolve));
+		assert.equal(resolved, false);
+
+		connection.emit({
+			type: "peer_message_ack",
+			v: PROTOCOL_VERSION,
+			request_id: outbound.request_id,
+			message_id: "message-accepted",
+			status: "accepted",
+			error: null,
+		});
+
+		const result = await executePromise;
+		assert.equal(result.isError, undefined);
+		assert.equal(result.details.agentHandle, "amber-fox-a1b2c3");
+		assert.equal(result.details.messageId, "message-accepted");
+		assert.equal(result.details.status, "accepted");
+		assert.equal("agent_id" in result.details, false);
+		assert.equal("run_id" in result.details, false);
+		assert.match(result.content[0].text, /message_id message-accepted/);
+		assert.doesNotMatch(result.content[0].text, /agent_id|run_id/);
+	});
+
+	it("message_agent handles unknown targets without leaking private ids", async () => {
+		trackSkillInvocation("agents");
+		const connection = new MockConnection();
+		const { pi, tools } = createMockPi();
+		registerPeerMessageTools(pi, async () => connection, daemonToolDeps);
+		const messageTool = toolByName(tools, "message_agent");
+
+		const executePromise = messageTool.execute(
+			"1",
+			{ agent_handle: "missing-agent", message: "hello" },
+			new AbortController().signal,
+			() => {},
+			{},
+		);
+		await new Promise((resolve) => setImmediate(resolve));
+		const outbound = connection.sent[0] as Extract<Frame, { type: "peer_message" }>;
+		connection.emit({
+			type: "peer_message_ack",
+			v: PROTOCOL_VERSION,
+			request_id: outbound.request_id,
+			message_id: null,
+			status: "unknown",
+			error: null,
+		});
+
+		const result = await executePromise;
+		assert.equal(result.isError, true);
+		assert.equal(result.details.messageId, null);
+		assert.equal(result.details.status, "unknown");
+		assert.match(result.content[0].text, /No agent "missing-agent" is available to message/);
+		assert.doesNotMatch(JSON.stringify(result), /agent_id|run_id/);
+	});
+
+	it("message_agent validates empty input and requires the agents skill", async () => {
+		let connected = false;
+		const { pi, tools } = createMockPi();
+		registerPeerMessageTools(
+			pi,
+			async () => {
+				connected = true;
+				return new MockConnection();
+			},
+			daemonToolDeps,
+		);
+		const messageTool = toolByName(tools, "message_agent");
+
+		const noSkill = await messageTool.execute(
+			"1",
+			{ agent_handle: "amber-fox-a1b2c3", message: "hello" },
+			new AbortController().signal,
+			() => {},
+			{},
+		);
+		assert.equal(noSkill.isError, true);
+		assert.match(noSkill.content[0].text, /Load the agents skill first/);
+		assert.equal(connected, false);
+
+		trackSkillInvocation("agents");
+		const emptyHandle = await messageTool.execute(
+			"2",
+			{ agent_handle: "   ", message: "hello" },
+			new AbortController().signal,
+			() => {},
+			{},
+		);
+		assert.equal(emptyHandle.isError, true);
+		assert.match(emptyHandle.content[0].text, /non-empty agent_handle/);
+		assert.equal(connected, false);
+
+		const emptyMessage = await messageTool.execute(
+			"3",
+			{ agent_handle: "amber-fox-a1b2c3", message: "   " },
+			new AbortController().signal,
+			() => {},
+			{},
+		);
+		assert.equal(emptyMessage.isError, true);
+		assert.match(emptyMessage.content[0].text, /non-empty message/);
+		assert.equal(connected, false);
+	});
+
+	it("message_status sends status requests and returns lifecycle fields for all statuses", async () => {
+		trackSkillInvocation("agents");
+		const statuses = ["accepted", "sent", "queued", "failed", "unavailable", "unknown"] as const;
+		for (const status of statuses) {
+			const connection = new MockConnection();
+			const { pi, tools } = createMockPi();
+			registerPeerMessageTools(pi, async () => connection, daemonToolDeps);
+			const statusTool = toolByName(tools, "message_status");
+
+			const executePromise = statusTool.execute(
+				"1",
+				{ message_id: `message-${status}` },
+				new AbortController().signal,
+				() => {},
+				{},
+			);
+			await new Promise((resolve) => setImmediate(resolve));
+			const outbound = connection.sent[0] as Extract<Frame, { type: "message_status" }>;
+			assert.equal(outbound.type, "message_status");
+			assert.equal(outbound.message_id, `message-${status}`);
+			assert.equal(outbound.wait_until_delivery, false);
+			assert.equal(outbound.timeout_s, undefined);
+
+			connection.emit({
+				type: "message_status_result",
+				v: PROTOCOL_VERSION,
+				message_id: `message-${status}`,
+				status,
+				error: status === "failed" ? "delivery failed" : null,
+				created_at: "2026-01-01T00:00:00Z",
+				sent_at: status === "sent" || status === "queued" ? "2026-01-01T00:00:01Z" : null,
+				queued_at: status === "queued" ? "2026-01-01T00:00:02Z" : null,
+				failed_at: status === "failed" ? "2026-01-01T00:00:03Z" : null,
+			});
+
+			const result = await executePromise;
+			assert.equal(result.isError, undefined);
+			assert.equal(result.details.messageId, `message-${status}`);
+			assert.equal(result.details.status, status);
+			assert.equal(result.details.createdAt, "2026-01-01T00:00:00Z");
+			assert.match(result.content[0].text, new RegExp(`status ${status}`));
+			assert.doesNotMatch(JSON.stringify(result), /answer|agent_id|run_id/);
+		}
+	});
+
+	it("message_status supports wait flag, timeout, abort, validation, and skill enforcement", async () => {
+		let connected = false;
+		const connection = new MockConnection();
+		const { pi, tools } = createMockPi();
+		registerPeerMessageTools(
+			pi,
+			async () => {
+				connected = true;
+				return connection;
+			},
+			daemonToolDeps,
+		);
+		const statusTool = toolByName(tools, "message_status");
+
+		const noSkill = await statusTool.execute(
+			"1",
+			{ message_id: "message-1" },
+			new AbortController().signal,
+			() => {},
+			{},
+		);
+		assert.equal(noSkill.isError, true);
+		assert.match(noSkill.content[0].text, /Load the agents skill first/);
+		assert.equal(connected, false);
+
+		trackSkillInvocation("agents");
+		const emptyId = await statusTool.execute("2", { message_id: "   " }, new AbortController().signal, () => {}, {});
+		assert.equal(emptyId.isError, true);
+		assert.match(emptyId.content[0].text, /non-empty message_id/);
+		assert.equal(connected, false);
+
+		const executePromise = statusTool.execute(
+			"3",
+			{ message_id: "message-wait", wait_until_delivery: true, timeout_s: 12.8 },
+			new AbortController().signal,
+			() => {},
+			{},
+		);
+		await new Promise((resolve) => setImmediate(resolve));
+		const outbound = connection.sent[0] as Extract<Frame, { type: "message_status" }>;
+		assert.equal(outbound.wait_until_delivery, true);
+		assert.equal(outbound.timeout_s, 12);
+		connection.emit({
+			type: "message_status_result",
+			v: PROTOCOL_VERSION,
+			message_id: "message-wait",
+			status: "unavailable",
+			error: "target offline",
+			created_at: "2026-01-01T00:00:00Z",
+			sent_at: null,
+			queued_at: null,
+			failed_at: "2026-01-01T00:00:04Z",
+		});
+		const waitResult = await executePromise;
+		assert.equal(waitResult.details.status, "unavailable");
+		assert.equal(waitResult.details.error, "target offline");
+
+		const controller = new AbortController();
+		const abortPromise = statusTool.execute(
+			"4",
+			{ message_id: "message-abort", wait_until_delivery: true, timeout_s: 30 },
+			controller.signal,
+			() => {},
+			{},
+		);
+		await new Promise((resolve) => setImmediate(resolve));
+		controller.abort();
+		const abortResult = await abortPromise;
+		assert.equal(abortResult.details.aborted, true);
+		assert.match(abortResult.content[0].text, /aborted/);
+	});
+
+	it("peer message renderers stay compact and do not expose private ids", async () => {
+		trackSkillInvocation("agents");
+		const connection = new MockConnection();
+		const { pi, tools } = createMockPi();
+		registerPeerMessageTools(pi, async () => connection, daemonToolDeps);
+		const messageTool = toolByName(tools, "message_agent");
+		const statusTool = toolByName(tools, "message_status");
+		const theme = { fg: (_token: string, text: string) => `styled:${text}` };
+
+		const messagePromise = messageTool.execute(
+			"1",
+			{ agent_handle: "amber-fox-a1b2c3", message: "hello" },
+			new AbortController().signal,
+			() => {},
+			{},
+		);
+		await new Promise((resolve) => setImmediate(resolve));
+		const peer = connection.sent[0] as Extract<Frame, { type: "peer_message" }>;
+		connection.emit({
+			type: "peer_message_ack",
+			v: PROTOCOL_VERSION,
+			request_id: peer.request_id,
+			message_id: "message-render",
+			status: "accepted",
+			error: null,
+		});
+		const messageResult = await messagePromise;
+		const renderedMessage = (messageTool as any).renderResult(messageResult, {}, theme).render(120).join("\n");
+		assert.match(renderedMessage, /message_id message-render/);
+		assert.doesNotMatch(renderedMessage, /agent_id|run_id|00000000-0000-4000-8000/);
+
+		const statusPromise = statusTool.execute(
+			"2",
+			{ message_id: "message-render" },
+			new AbortController().signal,
+			() => {},
+			{},
+		);
+		await new Promise((resolve) => setImmediate(resolve));
+		connection.emit({
+			type: "message_status_result",
+			v: PROTOCOL_VERSION,
+			message_id: "message-render",
+			status: "queued",
+			error: null,
+			created_at: "2026-01-01T00:00:00Z",
+			sent_at: "2026-01-01T00:00:01Z",
+			queued_at: "2026-01-01T00:00:02Z",
+			failed_at: null,
+		});
+		const statusResult = await statusPromise;
+		const renderedStatus = (statusTool as any).renderResult(statusResult, {}, theme).render(120).join("\n");
+		assert.match(renderedStatus, /message_id message-render/);
+		assert.match(renderedStatus, /status queued/);
+		assert.doesNotMatch(renderedStatus, /answer|agent_id|run_id/);
 	});
 
 	it("dispatch_agent builds spec env/task split and returns handle on spawned ack", async () => {
