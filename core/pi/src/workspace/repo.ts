@@ -38,24 +38,32 @@ export function deriveRepoIdentity(remoteUrl: string | null, fallbackBasename: s
 	const trimmedRemoteUrl = remoteUrl?.trim();
 	if (!trimmedRemoteUrl) return fallbackBasename;
 
-	let pathPart: string;
+	let pathPart: string | null = null;
 	const scpLikeMatch = trimmedRemoteUrl.match(/^[^/]+@[^/:]+:(.+)$/);
 	if (scpLikeMatch) {
-		pathPart = scpLikeMatch[1] ?? "";
+		pathPart = scpLikeMatch[1] ?? null;
 	} else {
 		try {
-			pathPart = new URL(trimmedRemoteUrl).pathname;
+			// Only host-bearing URLs carry an owner/repo; raw local paths (e.g. ../repo.git) do not.
+			const url = new URL(trimmedRemoteUrl);
+			if (url.hostname) pathPart = url.pathname;
 		} catch {
-			pathPart = trimmedRemoteUrl;
+			/* not a parseable remote URL — no identity */
 		}
 	}
+	if (!pathPart) return fallbackBasename;
 
-	let normalizedPath = pathPart.replace(/^\/+/, "");
-	normalizedPath = normalizedPath.replace(/\.git$/, "");
-	normalizedPath = normalizedPath.replace(/\/+$/, "");
+	const normalizedPath = pathPart
+		.replace(/^\/+/, "")
+		.replace(/\/+$/, "")
+		.replace(/\.git$/, "");
 	const segments = normalizedPath.split("/").filter(Boolean);
 	if (segments.length >= 2) {
-		return `${segments[segments.length - 2]}/${segments[segments.length - 1]}`;
+		const owner = segments[segments.length - 2];
+		const repo = segments[segments.length - 1];
+		if (owner !== "." && owner !== ".." && repo !== "." && repo !== "..") {
+			return `${owner}/${repo}`;
+		}
 	}
 
 	return fallbackBasename;

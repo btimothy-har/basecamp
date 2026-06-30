@@ -19,6 +19,15 @@ describe("deriveRepoIdentity", () => {
 		assert.equal(deriveRepoIdentity("https://github.com/org/name.git", "fallback"), "org/name");
 	});
 
+	it("derives identities from remotes ending in .git with a trailing slash", () => {
+		assert.equal(deriveRepoIdentity("https://github.com/org/name.git/", "fallback"), "org/name");
+	});
+
+	it("falls back for hostless/raw paths and dot segments", () => {
+		assert.equal(deriveRepoIdentity("../repo.git", "fallback"), "fallback");
+		assert.equal(deriveRepoIdentity("/local/path/repo.git", "fallback"), "fallback");
+	});
+
 	it("derives identities from non-GitHub hosts", () => {
 		assert.equal(deriveRepoIdentity("git@gitlab.com:group/sub.git", "fallback"), "group/sub");
 	});

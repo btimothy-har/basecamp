@@ -34,16 +34,19 @@ def derive_repo_identity(remote_url: str | None, fallback: str) -> str:
         path_part = scp_match.group(1)
     else:
         parsed = urlparse(url)
-        path_part = parsed.path if parsed.scheme else url
+        if not parsed.scheme or not parsed.netloc:
+            return fallback
+        path_part = parsed.path
 
-    normalized = path_part.lstrip("/")
+    normalized = path_part.lstrip("/").rstrip("/")
     if normalized.endswith(".git"):
         normalized = normalized[:-4]
-    normalized = normalized.rstrip("/")
 
     segments = [segment for segment in normalized.split("/") if segment]
     if len(segments) >= 2:
-        return f"{segments[-2]}/{segments[-1]}"
+        owner, repo = segments[-2], segments[-1]
+        if owner not in {".", ".."} and repo not in {".", ".."}:
+            return f"{owner}/{repo}"
     return fallback
 
 
@@ -81,9 +84,9 @@ def _current_repo_identity() -> str | None:
 def _prompt_repo_name(default: str | None) -> str | None:
     """Prompt for a repo identity, defaulting to the current repo when available."""
     name = questionary.text(
-        "Repo name:",
+        "Repo identity (org/name):",
         default=default or "",
-        validate=lambda val: True if val.strip() else "Repo name is required",
+        validate=lambda val: True if val.strip() else "Repo identity is required",
     ).ask()
     return name.strip() if name else None
 
