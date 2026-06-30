@@ -195,6 +195,7 @@ Fields:
 Requests delivery lifecycle status for a stored peer message.
 
 Fields:
+- `request_id`: caller-generated id used to correlate the status response.
 - `message_id`: stored message id.
 - `wait_until_delivery`: optional boolean; when true, the daemon may wait for a terminal delivery state or timeout.
 - `timeout_s`: optional wait timeout in seconds.
@@ -204,6 +205,7 @@ Fields:
 Returns delivery lifecycle status only; it carries no recipient answer or response fields.
 
 Fields:
+- `request_id`: echoes the `message_status` request id.
 - `message_id`: stored message id.
 - `status`: `accepted`, `sent`, `queued`, `failed`, `unavailable`, or `unknown`.
 - `error`: optional/nullable lifecycle error detail.

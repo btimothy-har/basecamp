@@ -99,26 +99,37 @@ export function handlePeerMessageDelivery(
 	frame: PeerMessageDeliveryFrame,
 ): void {
 	const deliverAs = frame.interrupt ? "steer" : "followUp";
+	let delivery: ReturnType<ExtensionAPI["sendUserMessage"]>;
 	try {
-		const delivery = pi.sendUserMessage(formatPeerMessageDeliveryContent(frame), { deliverAs });
+		delivery = pi.sendUserMessage(formatPeerMessageDeliveryContent(frame), { deliverAs });
+	} catch (error) {
+		try {
+			connection.send({
+				type: "peer_message_delivery_ack",
+				v: PROTOCOL_VERSION,
+				message_id: frame.message_id,
+				status: "failed",
+				error: errorMessage(error),
+			});
+		} catch {
+			// Transport failure prevents reporting the failed scheduling attempt; delivery status should not be inferred here.
+		}
+		return;
+	}
+
+	try {
 		connection.send({
 			type: "peer_message_delivery_ack",
 			v: PROTOCOL_VERSION,
 			message_id: frame.message_id,
 			status: "queued",
 		});
-		void Promise.resolve(delivery).catch(() => {
-			// Delivery has already been accepted by Pi; avoid unhandled rejections without overwriting queued status.
-		});
-	} catch (error) {
-		connection.send({
-			type: "peer_message_delivery_ack",
-			v: PROTOCOL_VERSION,
-			message_id: frame.message_id,
-			status: "failed",
-			error: errorMessage(error),
-		});
+	} catch {
+		// sendUserMessage already accepted the delivery; do not convert an ack transport failure into delivery failure.
 	}
+	void Promise.resolve(delivery).catch(() => {
+		// Delivery has already been accepted by Pi; avoid unhandled rejections without overwriting queued status.
+	});
 }
 
 function registerPeerMessageDeliveryHandler(

@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import hmac
+import math
 import os
 import secrets
 import uuid
@@ -35,6 +36,8 @@ from .store import ActiveRunExistsError, DuplicateAgentHandleError, Store, is_me
 _REDACTED_ENV_VALUE = "<redacted>"
 
 DEFAULT_AGENT_MAX_DEPTH = 2
+DEFAULT_MESSAGE_WAIT_TIMEOUT_SECONDS = 30.0
+MAX_MESSAGE_WAIT_TIMEOUT_SECONDS = 300.0
 TERMINAL_RUN_STATUSES = {"completed", "failed"}
 
 DispatchAckStatus = Literal["spawned", "rejected"]
@@ -445,7 +448,12 @@ async def message_status_result(
             registry.remove_message_waiter(waiter.waiter_id)
         status = await asyncio.to_thread(store.get_message_status, requester_node_id, frame.message_id)
 
-    return MessageStatusResultFrame(type="message_status_result", v=PROTOCOL_VERSION, **status)
+    return MessageStatusResultFrame(
+        type="message_status_result",
+        v=PROTOCOL_VERSION,
+        request_id=frame.request_id,
+        **status,
+    )
 
 
 def notify_message_delivery_terminal(message_id: str, *, registry: Registry) -> None:
@@ -485,8 +493,10 @@ def _public_agent_handle(agent: dict[str, Any] | None) -> str | None:
 
 def _message_wait_timeout(timeout_s: float | None) -> float:
     if timeout_s is None:
-        return 30.0
-    return max(0.0, timeout_s)
+        return DEFAULT_MESSAGE_WAIT_TIMEOUT_SECONDS
+    if not math.isfinite(timeout_s):
+        return MAX_MESSAGE_WAIT_TIMEOUT_SECONDS if timeout_s > 0 else 0.0
+    return min(MAX_MESSAGE_WAIT_TIMEOUT_SECONDS, max(0.0, timeout_s))
 
 
 def _normalize_wait_status(status: str) -> str:

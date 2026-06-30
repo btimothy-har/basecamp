@@ -339,6 +339,7 @@ def test_attempt_proxy_forwards_peer_client_frames_without_inline_daemon_recv(tm
     message_status = MessageStatusFrame(
         type="message_status",
         v=PROTOCOL_VERSION,
+        request_id="status-1",
         message_id="msg-1",
         wait_until_delivery=True,
         timeout_s=5,

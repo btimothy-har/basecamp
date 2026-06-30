@@ -215,6 +215,7 @@ class MessageStatusFrame(BaseModel):
 
     type: Literal["message_status"]
     v: Literal[PROTOCOL_VERSION]
+    request_id: str
     message_id: str
     wait_until_delivery: bool = False
     timeout_s: float | None = None
@@ -225,6 +226,7 @@ class MessageStatusResultFrame(BaseModel):
 
     type: Literal["message_status_result"]
     v: Literal[PROTOCOL_VERSION]
+    request_id: str
     message_id: str
     status: Literal["accepted", "sent", "queued", "failed", "unavailable", "unknown"]
     error: str | None = None

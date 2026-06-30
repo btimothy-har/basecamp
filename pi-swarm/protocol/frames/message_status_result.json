@@ -1,6 +1,7 @@
 {
   "type": "message_status_result",
   "v": 13,
+  "request_id": "req-message-status-001",
   "message_id": "msg-001",
   "status": "queued",
   "error": null,

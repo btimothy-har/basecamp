@@ -394,6 +394,7 @@ describe("daemon async tools", () => {
 			await new Promise((resolve) => setImmediate(resolve));
 			const outbound = connection.sent[0] as Extract<Frame, { type: "message_status" }>;
 			assert.equal(outbound.type, "message_status");
+			assert.equal(typeof outbound.request_id, "string");
 			assert.equal(outbound.message_id, `message-${status}`);
 			assert.equal(outbound.wait_until_delivery, false);
 			assert.equal(outbound.timeout_s, undefined);
@@ -401,6 +402,7 @@ describe("daemon async tools", () => {
 			connection.emit({
 				type: "message_status_result",
 				v: PROTOCOL_VERSION,
+				request_id: outbound.request_id,
 				message_id: `message-${status}`,
 				status,
 				error: status === "failed" ? "delivery failed" : null,
@@ -460,11 +462,13 @@ describe("daemon async tools", () => {
 		);
 		await new Promise((resolve) => setImmediate(resolve));
 		const outbound = connection.sent[0] as Extract<Frame, { type: "message_status" }>;
+		assert.equal(typeof outbound.request_id, "string");
 		assert.equal(outbound.wait_until_delivery, true);
 		assert.equal(outbound.timeout_s, 12);
 		connection.emit({
 			type: "message_status_result",
 			v: PROTOCOL_VERSION,
+			request_id: outbound.request_id,
 			message_id: "message-wait",
 			status: "unavailable",
 			error: "target offline",
@@ -531,9 +535,11 @@ describe("daemon async tools", () => {
 			{},
 		);
 		await new Promise((resolve) => setImmediate(resolve));
+		const status = connection.sent[1] as Extract<Frame, { type: "message_status" }>;
 		connection.emit({
 			type: "message_status_result",
 			v: PROTOCOL_VERSION,
+			request_id: status.request_id,
 			message_id: "message-render",
 			status: "queued",
 			error: null,

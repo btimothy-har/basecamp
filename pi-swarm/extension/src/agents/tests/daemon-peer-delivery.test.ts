@@ -86,6 +86,24 @@ describe("peer message delivery", () => {
 		]);
 	});
 
+	it("does not convert queued ack transport errors into failed delivery", () => {
+		const calls: Array<{ content: string; deliverAs: string }> = [];
+		const pi = {
+			sendUserMessage(content: string, options: { deliverAs: "steer" | "followUp" }): Promise<void> {
+				calls.push({ content, deliverAs: options.deliverAs });
+				return Promise.resolve();
+			},
+		};
+		const connection = {
+			send(_frame: Frame): void {
+				throw new Error("socket closed");
+			},
+		};
+
+		assert.doesNotThrow(() => handlePeerMessageDelivery(pi, connection, deliveryFrame({ message_id: "message-ack" })));
+		assert.equal(calls.length, 1);
+	});
+
 	it("sends failed ack when sendUserMessage throws synchronously", () => {
 		const pi = {
 			sendUserMessage(): Promise<void> {

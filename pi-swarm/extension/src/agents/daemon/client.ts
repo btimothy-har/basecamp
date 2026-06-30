@@ -925,9 +925,11 @@ export function createDaemonClient(connection: DaemonConnection): DaemonClient {
 			};
 		},
 		messageStatus: async (input) => {
+			const requestId = randomUUID();
 			connection.send({
 				type: "message_status",
 				v: PROTOCOL_VERSION,
+				request_id: requestId,
 				message_id: input.messageId,
 				wait_until_delivery: Boolean(input.waitUntilDelivery),
 				timeout_s: input.timeoutS,
@@ -935,7 +937,7 @@ export function createDaemonClient(connection: DaemonConnection): DaemonClient {
 			const frame = await waitForFrame(
 				connection,
 				"message_status_result",
-				(response) => response.message_id === input.messageId,
+				(response) => response.request_id === requestId,
 				input.signal,
 			);
 			return {

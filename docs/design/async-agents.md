@@ -384,11 +384,11 @@ Result pings from the earlier target design are not implemented. `wait_for_agent
 
 #### 7.3.1 `list_agents` — root-scoped directory
 
-`list_agents` is a read-only directory for the caller's root session. It lists same-root non-session agents and returns safe metadata only: `agent_id`, parent id, role, session name, depth, current primary-run status, and an `awaitable` boolean.
+`list_agents` is a read-only directory for the caller's root session. The daemon returns same-root non-session rows, and the public tool output filters out rows without public handles. LLM-facing entries expose only `agentHandle`, `sessionName`, `role`, `depth`, current primary-run `status`, and `awaitable`.
 
-The directory is intentionally not an inspection backdoor. It does not expose private run ids, task prompts, full results, errors, spawn specs, env, or cwd. `awaitable: true` filters to agents whose current primary run the caller may wait on under the dispatcher-owned wait ACL.
+The directory is intentionally not an inspection backdoor. It does not expose private agent ids, parent ids, run ids, task prompts, full results, errors, spawn specs, env, or cwd. `awaitable: true` filters to agents whose current primary run the caller may wait on under the dispatcher-owned wait ACL.
 
-This directory is also the discovery surface for peer messaging: use public `agent_handle` values from `list_agents` as `message_agent` targets. It remains intentionally safe metadata only; message payloads, private ids, prompts, env, and spawn specs are not exposed.
+This directory is also the discovery surface for peer messaging: use public `agent_handle` / `agentHandle` values from `list_agents` as `message_agent` targets, never private identifiers. It remains intentionally safe metadata only; message payloads, private ids, prompts, env, and spawn specs are not exposed.
 
 ### 7.4 Mutation lease & deadlock detection
 

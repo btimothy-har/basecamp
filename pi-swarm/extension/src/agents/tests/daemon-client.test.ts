@@ -205,6 +205,7 @@ describe("daemon client", () => {
 
 		const outbound = connection.sent[0] as Extract<Frame, { type: "message_status" }>;
 		assert.equal(outbound.type, "message_status");
+		assert.equal(typeof outbound.request_id, "string");
 		assert.equal(outbound.message_id, "message-1");
 		assert.equal(outbound.wait_until_delivery, true);
 		assert.equal(outbound.timeout_s, 7);
@@ -216,7 +217,8 @@ describe("daemon client", () => {
 		connection.emit({
 			type: "message_status_result",
 			v: PROTOCOL_VERSION,
-			message_id: "other-message",
+			request_id: "different-request",
+			message_id: "message-1",
 			status: "failed",
 			error: "wrong",
 			created_at: null,
@@ -230,6 +232,7 @@ describe("daemon client", () => {
 		connection.emit({
 			type: "message_status_result",
 			v: PROTOCOL_VERSION,
+			request_id: outbound.request_id,
 			message_id: "message-1",
 			status: "queued",
 			error: null,
@@ -248,5 +251,59 @@ describe("daemon client", () => {
 			queued_at: "2026-01-01T00:00:02Z",
 			failed_at: null,
 		});
+	});
+
+	it("messageStatus correlates concurrent requests by request id", async () => {
+		const connection = new MockConnection();
+		const client = createDaemonClient(connection);
+
+		const first = client.messageStatus({ messageId: "message-1" });
+		const second = client.messageStatus({ messageId: "message-1" });
+		await new Promise((resolve) => setImmediate(resolve));
+
+		const firstOutbound = connection.sent[0] as Extract<Frame, { type: "message_status" }>;
+		const secondOutbound = connection.sent[1] as Extract<Frame, { type: "message_status" }>;
+		assert.notEqual(firstOutbound.request_id, secondOutbound.request_id);
+
+		let firstResolved = false;
+		let secondResolved = false;
+		first.then(() => {
+			firstResolved = true;
+		});
+		second.then(() => {
+			secondResolved = true;
+		});
+
+		connection.emit({
+			type: "message_status_result",
+			v: PROTOCOL_VERSION,
+			request_id: secondOutbound.request_id,
+			message_id: "message-1",
+			status: "queued",
+			error: null,
+			created_at: null,
+			sent_at: null,
+			queued_at: "2026-01-01T00:00:02Z",
+			failed_at: null,
+		});
+		await new Promise((resolve) => setImmediate(resolve));
+		assert.equal(firstResolved, false);
+		assert.equal(secondResolved, true);
+		assert.equal((await second).status, "queued");
+
+		connection.emit({
+			type: "message_status_result",
+			v: PROTOCOL_VERSION,
+			request_id: firstOutbound.request_id,
+			message_id: "message-1",
+			status: "sent",
+			error: null,
+			created_at: null,
+			sent_at: "2026-01-01T00:00:01Z",
+			queued_at: null,
+			failed_at: null,
+		});
+
+		assert.equal((await first).status, "sent");
 	});
 });

@@ -326,7 +326,6 @@ async def _handle_peer_message(
         await websocket.send_json(serialize_frame(accepted))
         return
 
-    await websocket.send_json(serialize_frame(accepted.ack))
     task = asyncio.create_task(
         _push_peer_message_delivery(
             delivery=accepted.delivery,
@@ -337,6 +336,7 @@ async def _handle_peer_message(
     )
     delivery_tasks.add(task)
     task.add_done_callback(delivery_tasks.discard)
+    await websocket.send_json(serialize_frame(accepted.ack))
 
 
 async def _push_peer_message_delivery(

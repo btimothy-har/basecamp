@@ -168,6 +168,7 @@ export interface PeerMessageDeliveryAckFrame {
 export interface MessageStatusFrame {
 	type: "message_status";
 	v: typeof PROTOCOL_VERSION;
+	request_id: string;
 	message_id: string;
 	wait_until_delivery?: boolean;
 	timeout_s?: number;
@@ -176,6 +177,7 @@ export interface MessageStatusFrame {
 export interface MessageStatusResultFrame {
 	type: "message_status_result";
 	v: typeof PROTOCOL_VERSION;
+	request_id: string;
 	message_id: string;
 	status: "accepted" | "sent" | "queued" | "failed" | "unavailable" | "unknown";
 	error?: string | null;

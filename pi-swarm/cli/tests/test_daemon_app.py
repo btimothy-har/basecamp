@@ -11,6 +11,7 @@ from pathlib import Path
 from fastapi.testclient import TestClient
 from pi_swarm.app import create_app
 from pi_swarm.frames import PROTOCOL_VERSION
+from pi_swarm.service import MAX_MESSAGE_WAIT_TIMEOUT_SECONDS, _message_wait_timeout
 from pi_swarm.store import Store
 
 
@@ -639,6 +640,8 @@ def test_ws_peer_message_missing_and_unauthorized_targets_return_unknown_without
         cwd="/tmp/private-agent",
     )
 
+    before_messages = _message_count(store)
+
     with TestClient(app) as client:
         with client.websocket_connect("/ws") as sender_ws:
             _register_ws(sender_ws, node_id="root", role="session", parent_id=None, sibling_group="sg-root")
@@ -649,6 +652,8 @@ def test_ws_peer_message_missing_and_unauthorized_targets_return_unknown_without
             unauthorized = sender_ws.receive_json()
             sender_ws.send_json(_peer_message("request-private", target_handle="private-agent-id", message="hello"))
             private_fallback = sender_ws.receive_json()
+
+    after_messages = _message_count(store)
 
     assert missing == {
         "type": "peer_message_ack",
@@ -674,9 +679,7 @@ def test_ws_peer_message_missing_and_unauthorized_targets_return_unknown_without
         "status": "unknown",
         "error": None,
     }
-    assert store.get_message("request-missing") is None
-    assert store.get_message("request-outside") is None
-    assert store.get_message("request-private") is None
+    assert after_messages == before_messages
 
 
 def test_ws_message_status_immediate_authorized_and_unknown_for_missing_or_unauthorized(
@@ -857,6 +860,15 @@ def test_ws_message_status_wait_until_delivery_timeout_returns_current_nontermin
 
     assert accepted["status"] == "accepted"
     assert sent["status"] == "sent"
+
+
+def test_message_wait_timeout_bounds_caller_input() -> None:
+    assert _message_wait_timeout(None) == 30.0
+    assert _message_wait_timeout(-1) == 0.0
+    assert _message_wait_timeout(float("nan")) == 0.0
+    assert _message_wait_timeout(float("-inf")) == 0.0
+    assert _message_wait_timeout(float("inf")) == MAX_MESSAGE_WAIT_TIMEOUT_SECONDS
+    assert _message_wait_timeout(MAX_MESSAGE_WAIT_TIMEOUT_SECONDS + 1) == MAX_MESSAGE_WAIT_TIMEOUT_SECONDS
 
 
 def test_ws_peer_message_delivery_ack_from_non_target_is_ignored(tmp_path: Path) -> None:
@@ -1258,15 +1270,24 @@ def _peer_message(
     }
 
 
+def _message_count(store: Store) -> int:
+    with sqlite3.connect(store.db_path) as connection:
+        row = connection.execute("SELECT COUNT(*) FROM messages").fetchone()
+    assert row is not None
+    return int(row[0])
+
+
 def _message_status(
     message_id: str,
     *,
+    request_id: str | None = None,
     wait_until_delivery: bool = False,
     timeout_s: float | None = None,
 ) -> dict[str, object]:
     payload: dict[str, object] = {
         "type": "message_status",
         "v": PROTOCOL_VERSION,
+        "request_id": request_id or f"request-status-{message_id}",
         "message_id": message_id,
         "wait_until_delivery": wait_until_delivery,
     }
@@ -1302,10 +1323,11 @@ def _wait_for_store_message_status(store: Store, message_id: str, status: str) -
     return message
 
 
-def _unknown_message_status(message_id: str) -> dict[str, object]:
+def _unknown_message_status(message_id: str, request_id: str | None = None) -> dict[str, object]:
     return {
         "type": "message_status_result",
         "v": PROTOCOL_VERSION,
+        "request_id": request_id or f"request-status-{message_id}",
         "message_id": message_id,
         "status": "unknown",
         "error": None,
