@@ -10,7 +10,7 @@ Root-level products:
 |---------|-----------|---------|
 | `basecamp` | `src/basecamp/` | Python composition CLI for setup/projects/install |
 | `basecamp-core` | `core/config/` | Generic settings/files/paths/exceptions |
-| `basecamp-workspace` | `workspace/projects/` | Project config and interactive projects menu |
+| `basecamp-workspace` | `workspace/projects/` | Project + per-repo environment config and interactive projects/environments menus |
 | `pi-swarm` | `pi-swarm/` | Async-agent bounded context for protocol docs, Pi-side agent behavior, and daemon CLI/runtime |
 | Basecamp Pi packages | `core/pi`, `workspace/pi`, `pi-*` | Pi packages for project context, session UI, worktrees, workflow, git, and engineering skills |
 
@@ -29,7 +29,7 @@ core/config/                    # basecamp-core Python package
 └── tests/                      # basecamp-core pytest suite
 
 workspace/projects/             # basecamp-workspace Python package
-├── src/basecamp_workspace/     # Project config and interactive projects menu
+├── src/basecamp_workspace/     # Project + environment config and interactive projects/environments menus
 └── tests/                      # workspace pytest suite
 
 pi-swarm/                      # Async-agent bounded context
@@ -76,7 +76,7 @@ Session launch sets `BASECAMP_*` env vars on `process.env`. Subagents spawned vi
 
 Relevant vars include `BASECAMP_PROJECT`, `BASECAMP_REPO`, `BASECAMP_SCRATCH_DIR`, `BASECAMP_WORKTREE_DIR`, and `BASECAMP_WORKTREE_LABEL`. `BASECAMP_REPO` is always the git repo name, never a worktree label or directory name. `BASECAMP_WORKTREE_DIR` and `BASECAMP_WORKTREE_LABEL` are set to the active worktree values, or empty strings when no worktree is active.
 
-The worktree setup hook (`worktree_setup` in `~/.pi/basecamp/config.json`, run by `pi-tasks` on creation of a new execution worktree) additionally exposes `BASECAMP_REPO_ROOT` (the protected checkout path) to the setup command for the duration of that exec only; it is not part of the persistent session env chain.
+The worktree setup hook (the per-repo `environments.<repo>.setup` command in `~/.pi/basecamp/config.json`, keyed by repo name and run by `pi-tasks` on creation of a new execution worktree) additionally exposes `BASECAMP_REPO_ROOT` (the protected checkout path) to the setup command for the duration of that exec only; it is not part of the persistent session env chain.
 
 ### Worktree Design
 
