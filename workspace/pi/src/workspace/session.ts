@@ -16,6 +16,7 @@ import {
 } from "pi-core/platform/workspace.ts";
 import { ensureCurrentSessionStateForEvent } from "pi-core/state/index.ts";
 import { workspaceMatchesActiveWorktreeState } from "pi-core/workspace/affinity.ts";
+import { migrateLegacyWorktrees } from "pi-core/workspace/migrate.ts";
 
 async function attachWorktree(worktreeDir: string): Promise<WorkspaceWorktree> {
 	return attachWorkspaceWorktreePath(worktreeDir);
@@ -46,6 +47,37 @@ function notifyUnsafeEditResult(ctx: ExtensionContext, result: UnsafeEditFlagRes
 		ctx.ui.notify("basecamp: --unsafe-edit ignored in subagent sessions", "warning");
 	} else if (result === "ignored-non-interactive") {
 		ctx.ui.notify("basecamp: --unsafe-edit ignored without interactive UI", "warning");
+	}
+}
+
+async function migrateLegacyWorktreesForSession(
+	pi: ExtensionAPI,
+	ctx: ExtensionContext,
+	launchCwd: string,
+	isSubagent: boolean,
+): Promise<void> {
+	if (isSubagent) return;
+
+	try {
+		const state = requireWorkspaceState();
+		if (!state.repo) return;
+
+		const result = await migrateLegacyWorktrees(pi, {
+			repoRoot: state.repo.root,
+			identity: state.repo.name,
+			cwd: launchCwd,
+		});
+		if (result.moved.length > 0) {
+			ctx.ui.notify(`basecamp: migrated ${result.moved.length} legacy worktree(s) → ${state.repo.name}`, "info");
+		}
+		if (result.skipped.length > 0) {
+			ctx.ui.notify(
+				`basecamp: ${result.skipped.length} legacy worktree(s) not migrated (${result.skipped.map((skip) => skip.label).join(", ")})`,
+				"warning",
+			);
+		}
+	} catch {
+		/* migration is best-effort and must not interrupt session start */
 	}
 }
 
@@ -89,6 +121,7 @@ export function registerWorkspaceSession(pi: ExtensionAPI): void {
 	pi.on("session_start", async (event, ctx) => {
 		const worktreeDir = (pi.getFlag("worktree-dir") as string | undefined) ?? null;
 		const launchCwd = path.resolve(ctx.cwd);
+		const isSubagent = Number(process.env.BASECAMP_AGENT_DEPTH ?? "0") > 0;
 
 		const { unsafeEditResult } = await initializeWorkspace({
 			launchCwd,
@@ -96,9 +129,11 @@ export function registerWorkspaceSession(pi: ExtensionAPI): void {
 			unsafeEditConstraints: {
 				readOnly: pi.getFlag("read-only") === true,
 				hasUI: ctx.hasUI,
-				isSubagent: Number(process.env.BASECAMP_AGENT_DEPTH ?? "0") > 0,
+				isSubagent,
 			},
 		});
+
+		await migrateLegacyWorktreesForSession(pi, ctx, launchCwd, isSubagent);
 
 		if (worktreeDir) {
 			try {
