@@ -65,34 +65,6 @@ class TestInstallDir:
         assert data["stale_setting"] == {"preserve": True}
 
 
-class TestWorktreeSetup:
-    def test_worktree_setup_empty(self, tmp_path: Path) -> None:
-        cfg = _cfg(tmp_path)
-        assert cfg.worktree_setup is None
-
-    def test_worktree_setup_set_and_get_stripped(self, tmp_path: Path) -> None:
-        cfg = _cfg(tmp_path)
-        cfg.worktree_setup = "  make setup  "
-        assert cfg.worktree_setup == "make setup"
-
-    def test_worktree_setup_blank_string_clears_key(self, tmp_path: Path) -> None:
-        cfg = _cfg(tmp_path)
-        cfg.worktree_setup = "make setup"
-
-        cfg.worktree_setup = "   "
-
-        assert cfg.worktree_setup is None
-        assert "worktree_setup" not in cfg._read()
-
-    def test_worktree_setup_setter_persists_version(self, tmp_path: Path) -> None:
-        cfg = _cfg(tmp_path)
-
-        cfg.worktree_setup = "make setup"
-
-        data = json.loads(cfg.path.read_text())
-        assert data["version"] == CONFIG_VERSION
-
-
 class TestInstalledModules:
     def test_installed_modules_empty(self, tmp_path: Path) -> None:
         cfg = _cfg(tmp_path)

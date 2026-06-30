@@ -8,8 +8,12 @@ from pathlib import Path
 
 import rich_click as click
 from basecamp_core.exceptions import LauncherError
-from basecamp_core.settings import settings
+from basecamp_workspace import EnvironmentConfig, remove_environment, set_environment
 from basecamp_workspace.cli.config import run_project_menu
+from basecamp_workspace.cli.environment import (
+    execute_environment_list,
+    run_environments_menu,
+)
 from basecamp_workspace.cli.project import (
     execute_project_add,
     execute_project_edit,
@@ -72,35 +76,35 @@ def setup() -> None:
         _handle_error(e)
 
 
-@basecamp.group()
-def config() -> None:
-    """Manage basecamp configuration."""
+@basecamp.group(invoke_without_command=True)
+@click.pass_context
+def environments(ctx: click.Context) -> None:
+    """Manage per-repo worktree setup environments."""
+    if ctx.invoked_subcommand is None:
+        run_environments_menu()
 
 
-@config.group("worktree-setup")
-def worktree_setup() -> None:
-    """Manage the global worktree setup command."""
+@environments.command("list")
+def environments_list() -> None:
+    """List configured environments."""
+    execute_environment_list()
 
 
-@worktree_setup.command("set")
+@environments.command("set")
+@click.argument("repo")
 @click.argument("command")
-def worktree_setup_set(command: str) -> None:
-    """Set the global worktree setup command."""
-    settings.worktree_setup = command
-    console.print("Worktree setup command set.")
+def environments_set(repo: str, command: str) -> None:
+    """Set the setup command for a repo."""
+    set_environment(repo, EnvironmentConfig(setup=command))
+    console.print(f"Environment set for {repo}.")
 
 
-@worktree_setup.command("show")
-def worktree_setup_show() -> None:
-    """Show the global worktree setup command."""
-    console.print(settings.worktree_setup or "(not set)")
-
-
-@worktree_setup.command("clear")
-def worktree_setup_clear() -> None:
-    """Clear the global worktree setup command."""
-    settings.worktree_setup = None
-    console.print("Worktree setup command cleared.")
+@environments.command("remove")
+@click.argument("repo")
+def environments_remove(repo: str) -> None:
+    """Remove the environment for a repo."""
+    remove_environment(repo)
+    console.print(f"Environment removed for {repo}.")
 
 
 @basecamp.group(invoke_without_command=True)

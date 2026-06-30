@@ -15,7 +15,8 @@ def test_top_level_commands_match_new_shape() -> None:
     assert "sync" in commands
     assert "swarm" in commands
     assert "companion-analyze" in commands
-    assert "config" in commands
+    assert "environments" in commands
+    assert "config" not in commands
 
 
 def test_companion_subcommands_match_new_shape() -> None:
@@ -31,13 +32,41 @@ def test_sync_subcommands_match_new_shape() -> None:
     assert "codex" in commands
 
 
-def test_config_subcommands_match_new_shape() -> None:
-    commands = cli.config.commands
+def test_environments_subcommands_match_new_shape() -> None:
+    commands = cli.environments.commands
 
-    assert "worktree-setup" in commands
-    assert "set" in commands["worktree-setup"].commands
-    assert "show" in commands["worktree-setup"].commands
-    assert "clear" in commands["worktree-setup"].commands
+    assert "list" in commands
+    assert "set" in commands
+    assert "remove" in commands
+
+
+def test_environments_subcommands_delegate(monkeypatch) -> None:
+    calls: list[tuple[str, str, str | None]] = []
+
+    monkeypatch.setattr(cli, "execute_environment_list", lambda: calls.append(("list", "", None)))
+    monkeypatch.setattr(cli, "set_environment", lambda repo, env: calls.append(("set", repo, env.setup)))
+    monkeypatch.setattr(cli, "remove_environment", lambda repo: calls.append(("remove", repo, None)))
+
+    runner = CliRunner()
+
+    result = runner.invoke(cli.basecamp, ["environments", "list"])
+    assert result.exit_code == 0, result.output
+    result = runner.invoke(cli.basecamp, ["environments", "set", "basecamp", "uv sync"])
+    assert result.exit_code == 0, result.output
+    result = runner.invoke(cli.basecamp, ["environments", "remove", "basecamp"])
+    assert result.exit_code == 0, result.output
+
+    assert calls == [("list", "", None), ("set", "basecamp", "uv sync"), ("remove", "basecamp", None)]
+
+
+def test_environments_without_subcommand_opens_menu(monkeypatch) -> None:
+    calls: list[str] = []
+    monkeypatch.setattr(cli, "run_environments_menu", lambda: calls.append("menu"))
+
+    result = CliRunner().invoke(cli.basecamp, ["environments"])
+
+    assert result.exit_code == 0, result.output
+    assert calls == ["menu"]
 
 
 def test_sync_codex_delegates(monkeypatch) -> None:
