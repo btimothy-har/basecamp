@@ -309,13 +309,16 @@ describe("buildTitleContext", () => {
 		assert.match(context, /\[Pending User Prompt\]\npending prompt after recent messages/);
 	});
 
-	it("returns every user message without duplication when 6 or fewer exist", () => {
-		const entries = Array.from({ length: 5 }, (_, index) => entry({ role: "user", content: `message ${index + 1}` }));
+	it("never duplicates a user message across the first/recent boundary", () => {
+		for (const count of [4, 5, 6, 7, 8]) {
+			const entries = Array.from({ length: count }, (_, index) => entry({ role: "user", content: `m${index + 1}` }));
 
-		const context = buildTitleContext(entries);
+			const context = buildTitleContext(entries);
+			const selected = [...context.matchAll(/\bm(\d+)\b/g)].map((match) => match[1]);
 
-		assert.equal((context.match(/\[User\]/g) ?? []).length, 5);
-		for (let n = 1; n <= 5; n += 1) assert.match(context, new RegExp(`\\bmessage ${n}\\b`));
+			assert.equal(selected.length, new Set(selected).size, `duplication at count=${count}`);
+			assert.equal(selected.length, count <= 6 ? count : 6, `unexpected selection size at count=${count}`);
+		}
 	});
 
 	it("reduces fenced code and log-like text while keeping overall output bounded", () => {
