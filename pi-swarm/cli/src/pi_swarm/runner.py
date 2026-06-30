@@ -20,11 +20,11 @@ from pydantic import ValidationError
 
 from .frames import (
     PROTOCOL_VERSION,
-    DispatchFrame,
+    ErrorFrame,
+    RegisteredFrame,
     RegisterFrame,
     ResultReportFrame,
     TelemetryFrame,
-    WaitFrame,
     parse_frame,
     serialize_frame,
 )
@@ -195,7 +195,7 @@ class AttemptDaemonProxy:
             ) as daemon_websocket:
                 daemon_websocket.send(json.dumps(serialize_frame(self._register_frame(first))))
                 child_websocket.send(daemon_websocket.recv())
-                self._forward_child_frames(child_websocket, daemon_websocket)
+                self._forward_bidirectional_frames(child_websocket, daemon_websocket)
         except (OSError, EOFError, json.JSONDecodeError, ValidationError, InvalidProxyFrameError):
             return
 
@@ -219,22 +219,79 @@ class AttemptDaemonProxy:
             cwd=child_register.cwd,
         )
 
-    def _forward_child_frames(self, child_websocket: object, daemon_websocket: object) -> None:
-        while True:
-            try:
-                frame = self._parse_next_frame(child_websocket)
-            except EOFError:
-                return
-            if isinstance(frame, TelemetryFrame):
-                daemon_websocket.send(json.dumps(serialize_frame(self._telemetry_frame(frame))))
-                continue
-            if isinstance(frame, ResultReportFrame):
-                continue
-            if isinstance(frame, (DispatchFrame, WaitFrame)):
-                daemon_websocket.send(json.dumps(serialize_frame(frame)))
-                response = daemon_websocket.recv()
-                child_websocket.send(response)
-                continue
+    def _forward_bidirectional_frames(self, child_websocket: object, daemon_websocket: object) -> None:
+        stop_event = threading.Event()
+        daemon_thread = threading.Thread(
+            target=self._forward_daemon_frames,
+            args=(daemon_websocket, child_websocket, stop_event),
+            daemon=True,
+        )
+        daemon_thread.start()
+        try:
+            self._forward_child_frames(child_websocket, daemon_websocket, stop_event=stop_event)
+        finally:
+            stop_event.set()
+            self._close_websocket(daemon_websocket)
+            self._close_websocket(child_websocket)
+            daemon_thread.join(timeout=2)
+
+    def _forward_child_frames(
+        self,
+        child_websocket: object,
+        daemon_websocket: object,
+        *,
+        stop_event: threading.Event | None = None,
+    ) -> None:
+        try:
+            while stop_event is None or not stop_event.is_set():
+                try:
+                    frame = self._parse_next_frame(child_websocket)
+                except (EOFError, json.JSONDecodeError, ValidationError, InvalidProxyFrameError):
+                    return
+                if isinstance(frame, TelemetryFrame):
+                    self._send_frame(daemon_websocket, self._telemetry_frame(frame))
+                    continue
+                if isinstance(frame, ResultReportFrame):
+                    continue
+                if isinstance(frame, (RegisterFrame, RegisteredFrame, ErrorFrame)):
+                    return
+                self._send_frame(daemon_websocket, frame)
+        except Exception:
+            return
+        finally:
+            if stop_event is not None:
+                stop_event.set()
+                self._close_websocket(daemon_websocket)
+
+    def _forward_daemon_frames(
+        self,
+        daemon_websocket: object,
+        child_websocket: object,
+        stop_event: threading.Event,
+    ) -> None:
+        try:
+            while not stop_event.is_set():
+                try:
+                    message = daemon_websocket.recv()
+                except EOFError:
+                    return
+                child_websocket.send(message)
+        except Exception:
+            return
+        finally:
+            stop_event.set()
+            self._close_websocket(child_websocket)
+
+    def _send_frame(self, websocket: object, frame: object) -> None:
+        websocket.send(json.dumps(serialize_frame(frame)))
+
+    def _close_websocket(self, websocket: object) -> None:
+        close = getattr(websocket, "close", None)
+        if not callable(close):
+            return
+        try:
+            close()
+        except Exception:
             return
 
     def _telemetry_frame(self, child_telemetry: TelemetryFrame) -> TelemetryFrame:
