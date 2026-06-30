@@ -74,13 +74,15 @@ Mutable state shared across Pi packages or required to survive `/reload` must li
 
 Session launch sets `BASECAMP_*` env vars on `process.env`. Subagents spawned via the `agent` tool inherit these automatically as child processes.
 
-Relevant vars include `BASECAMP_PROJECT`, `BASECAMP_REPO`, `BASECAMP_SCRATCH_DIR`, `BASECAMP_WORKTREE_DIR`, and `BASECAMP_WORKTREE_LABEL`. `BASECAMP_REPO` is always the git repo name, never a worktree label or directory name. `BASECAMP_WORKTREE_DIR` and `BASECAMP_WORKTREE_LABEL` are set to the active worktree values, or empty strings when no worktree is active.
+Relevant vars include `BASECAMP_PROJECT`, `BASECAMP_REPO`, `BASECAMP_SCRATCH_DIR`, `BASECAMP_WORKTREE_DIR`, and `BASECAMP_WORKTREE_LABEL`. `BASECAMP_REPO` is the canonical `<org>/<name>` repo identity (derived from the origin remote URL, falling back to the bare git basename when there is no parseable origin), never a worktree label or directory name. `BASECAMP_WORKTREE_DIR` and `BASECAMP_WORKTREE_LABEL` are set to the active worktree values, or empty strings when no worktree is active.
 
-The worktree setup hook (the per-repo `environments.<repo>.setup` command in `~/.pi/basecamp/config.json`, keyed by repo name and run by `pi-tasks` on creation of a new execution worktree) additionally exposes `BASECAMP_REPO_ROOT` (the protected checkout path) to the setup command for the duration of that exec only; it is not part of the persistent session env chain.
+The worktree setup hook (the per-repo `environments` `setup` command in `~/.pi/basecamp/config.json`, keyed by the canonical `<org>/<name>` repo identity and run by `pi-tasks` on creation of a new execution worktree) additionally exposes `BASECAMP_REPO_ROOT` (the protected checkout path) to the setup command for the duration of that exec only; it is not part of the persistent session env chain.
 
 ### Worktree Design
 
-Worktrees live in `~/.worktrees/<repo>/<label>/` rather than inside the repo to avoid polluting project directories. Git is the source of truth for worktree registration (`git worktree list --porcelain`); Basecamp does not maintain a parallel metadata registry. Sessions are launched with plain `pi` from a repository or subdirectory; Basecamp detects the configured repo root, approved implementation plans activate a worktree inside the Pi session, resumed/reloaded/forked sessions restore their last active worktree when still in the same repo, and `/worktree [label]` can switch to an existing Git-registered worktree after session resume.
+Worktrees live in `~/.worktrees/<org>/<name>/<label>/` (the per-repo root is the canonical `<org>/<name>` identity) rather than inside the repo to avoid polluting project directories. Git is the source of truth for worktree registration (`git worktree list --porcelain`); Basecamp does not maintain a parallel metadata registry. Sessions are launched with plain `pi` from a repository or subdirectory; Basecamp detects the configured repo root, approved implementation plans activate a worktree inside the Pi session, resumed/reloaded/forked sessions restore their last active worktree when still in the same repo, and `/worktree [label]` can switch to an existing Git-registered worktree after session resume.
+
+The worktree root follows the canonical identity, so worktrees created under the legacy bare-name root (`~/.worktrees/<repo>/`) stay valid Git worktrees but fall outside Basecamp's listing and affinity until recreated under the `<org>/<name>` layout; no automatic migration is performed.
 
 ## Development
 
