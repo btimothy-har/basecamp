@@ -499,9 +499,7 @@ def test_get_message_status_hides_malformed_rows(tmp_path: Path) -> None:
 
     store = Store(db_path=db_path)
 
-    assert store.get_message_status("sender-1", "malformed-message") == _unknown_message_status(
-        "malformed-message"
-    )
+    assert store.get_message_status("sender-1", "malformed-message") == _unknown_message_status("malformed-message")
 
 
 def test_is_message_delivery_terminal() -> None:
