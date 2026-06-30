@@ -1,13 +1,15 @@
 """Interactive environment management commands for basecamp-workspace.
 
-An environment maps a repo name to a setup command run when a new
-implementation worktree is created.
+An environment maps a canonical <org>/<name> repo identity to a setup command
+run when a new implementation worktree is created.
 """
 
 from __future__ import annotations
 
+import re
 import subprocess
 from pathlib import Path
+from urllib.parse import urlparse
 
 import questionary
 
@@ -21,8 +23,32 @@ from basecamp_workspace import (
 from basecamp_workspace.ui import console, display_environments
 
 
-def _current_repo_name() -> str | None:
-    """Best-effort git repo basename for the current directory."""
+def derive_repo_identity(remote_url: str | None, fallback: str) -> str:
+    """Derive the canonical <org>/<name> repo identity from a remote URL."""
+    url = remote_url.strip() if remote_url is not None else ""
+    if not url:
+        return fallback
+
+    scp_match = re.match(r"^[^/]+@[^/:]+:(.+)$", url)
+    if scp_match:
+        path_part = scp_match.group(1)
+    else:
+        parsed = urlparse(url)
+        path_part = parsed.path if parsed.scheme else url
+
+    normalized = path_part.lstrip("/")
+    if normalized.endswith(".git"):
+        normalized = normalized[:-4]
+    normalized = normalized.rstrip("/")
+
+    segments = [segment for segment in normalized.split("/") if segment]
+    if len(segments) >= 2:
+        return f"{segments[-2]}/{segments[-1]}"
+    return fallback
+
+
+def _current_repo_identity() -> str | None:
+    """Best-effort canonical <org>/<name> identity for the current git repo."""
     try:
         result = subprocess.run(
             ["git", "rev-parse", "--show-toplevel"],
@@ -33,11 +59,27 @@ def _current_repo_name() -> str | None:
     except (OSError, subprocess.CalledProcessError):
         return None
     top = result.stdout.strip()
-    return Path(top).name if top else None
+    if not top:
+        return None
+
+    fallback = Path(top).name
+    try:
+        remote_result = subprocess.run(
+            ["git", "remote", "get-url", "origin"],
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+    except (OSError, subprocess.CalledProcessError):
+        remote_url = None
+    else:
+        remote_url = remote_result.stdout.strip() or None
+
+    return derive_repo_identity(remote_url, fallback)
 
 
 def _prompt_repo_name(default: str | None) -> str | None:
-    """Prompt for a repo name, defaulting to the current repo when available."""
+    """Prompt for a repo identity, defaulting to the current repo when available."""
     name = questionary.text(
         "Repo name:",
         default=default or "",
@@ -63,7 +105,7 @@ def execute_environment_add() -> None:
     console.print("[bold blue]Add an environment[/bold blue]")
     console.print()
 
-    repo_name = _prompt_repo_name(_current_repo_name())
+    repo_name = _prompt_repo_name(_current_repo_identity())
     if repo_name is None:
         console.print("\n[yellow]Cancelled.[/yellow]")
         return
