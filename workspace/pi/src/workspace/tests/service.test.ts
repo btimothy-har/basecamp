@@ -17,12 +17,13 @@ import { WorkspaceRuntimeService } from "../service.ts";
 import { registerWorkspaceSession } from "../session.ts";
 
 const REPO_ROOT = "/repo";
-const REPO_NAME = "repo";
+// Derived from REMOTE_URL by resolveGitInfo: <org>/<name>, not the toplevel basename.
+const REPO_IDENTITY = "test/repo";
 const LABEL = "feature";
 const BRANCH = "wt/feature";
 const REMOTE_URL = "git@github.com:test/repo.git";
-const WORKTREE_DIR = path.join(WORKTREES_ROOT, REPO_NAME, LABEL);
-const SCRATCH_DIR = path.join(SCRATCH_ROOT, REPO_NAME);
+const WORKTREE_DIR = path.join(WORKTREES_ROOT, REPO_IDENTITY, LABEL);
+const SCRATCH_DIR = path.join(SCRATCH_ROOT, REPO_IDENTITY);
 
 interface ExecCall {
 	command: string;
@@ -220,7 +221,7 @@ describe("WorkspaceRuntimeService effective cwd", () => {
 		const activeWorktree = getCurrentSessionState().activeWorktree;
 		assert.deepEqual(activeWorktree, {
 			version: 1,
-			repoName: REPO_NAME,
+			repoName: REPO_IDENTITY,
 			repoRoot: REPO_ROOT,
 			remoteUrl: REMOTE_URL,
 			worktree: {
@@ -240,7 +241,7 @@ describe("WorkspaceRuntimeService effective cwd", () => {
 		const stateDir = await fs.mkdtemp(path.join(os.tmpdir(), "basecamp-workspace-restore-"));
 		const label = `restore-${process.pid}-${Date.now()}`;
 		const branch = `wt/${label}`;
-		const worktreeDir = path.join(WORKTREES_ROOT, REPO_NAME, label);
+		const worktreeDir = path.join(WORKTREES_ROOT, REPO_IDENTITY, label);
 		const notifications: string[] = [];
 		t.after(async () => {
 			resetCurrentSessionState();
@@ -257,7 +258,7 @@ describe("WorkspaceRuntimeService effective cwd", () => {
 				...createDefaultSessionState({ sessionId: "workspace-restore-state", sessionFile: null }),
 				activeWorktree: {
 					version: 1,
-					repoName: REPO_NAME,
+					repoName: REPO_IDENTITY,
 					repoRoot: REPO_ROOT,
 					remoteUrl: REMOTE_URL,
 					worktree: {

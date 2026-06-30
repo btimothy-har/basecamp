@@ -108,6 +108,23 @@ describe("workspace state-backed affinity", () => {
 			);
 		});
 
+		it("distinguishes slashed identities with the same basename", () => {
+			assert.equal(
+				workspaceMatchesActiveWorktreeState(
+					workspaceState({ repo: { isRepo: true, name: "orgB/repo", root: REPO_ROOT, remoteUrl: null } }),
+					activeWorktree({ repoName: "orgA/repo", remoteUrl: null }),
+				),
+				false,
+			);
+			assert.equal(
+				workspaceMatchesActiveWorktreeState(
+					workspaceState({ repo: { isRepo: true, name: "orgA/repo", root: REPO_ROOT, remoteUrl: null } }),
+					activeWorktree({ repoName: "orgA/repo", remoteUrl: null }),
+				),
+				true,
+			);
+		});
+
 		it("only fails remote URL mismatches when both remotes are non-null and different", () => {
 			assert.equal(
 				workspaceMatchesActiveWorktreeState(

@@ -216,7 +216,7 @@ Single-repo projects typically use `AGENTS.md` in the repo itself.
 
 Before a worktree is active, the effective working directory is where you launched Pi; the repository root is the protected checkout boundary for workspace guards. When an implementation plan is approved, Basecamp uses the workspace service to prompt for an execution worktree using existing worktrees plus a suggested label derived from the plan goal.
 
-The workspace service owns the `~/.worktrees/<repo>/<label>/` storage convention, `wt/<label>` default branch names, and `/tmp/pi/<repo>` scratch directories. Git is the source of truth for worktree registration; Basecamp consumes workspace state for project context and exposes `BASECAMP_*` env vars to child processes and integrated services.
+The workspace service owns the `~/.worktrees/<org>/<name>/<label>/` storage convention, `wt/<label>` default branch names, and `/tmp/pi/<org>/<name>` scratch directories. Git is the source of truth for worktree registration; Basecamp consumes workspace state for project context and exposes `BASECAMP_*` env vars to child processes and integrated services.
 
 - The protected checkout must be on the default branch with a clean working tree before activation
 - Implementation edits happen in the active worktree, not the protected checkout
@@ -236,14 +236,14 @@ A fresh worktree contains tracked files only — gitignored artifacts (`.venv`, 
 ```bash
 basecamp environments                       # interactive menu (list / add / edit / remove)
 basecamp environments list
-basecamp environments set <repo> "uv sync && npm ci"
-basecamp environments remove <repo>
+basecamp environments set <org>/<name> "uv sync && npm ci"
+basecamp environments remove <org>/<name>
 ```
 
-Environments are stored under the `environments` section of `~/.pi/basecamp/config.json`, keyed by repo name (the git basename, i.e. `BASECAMP_REPO`):
+Environments are stored under the `environments` section of `~/.pi/basecamp/config.json`, keyed by the canonical `<org>/<name>` repo identity (derived from the origin remote URL, falling back to the bare git basename) — i.e. `BASECAMP_REPO`:
 
 ```json
-{ "environments": { "basecamp": { "setup": "uv sync && npm ci" } } }
+{ "environments": { "acme/basecamp": { "setup": "uv sync && npm ci" } } }
 ```
 
 basecamp ships no default — a repo with no environment is a clean no-op. When an approved implementation plan **creates** a new execution worktree, basecamp resolves the current repo's setup command and runs it before handoff:

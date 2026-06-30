@@ -1,8 +1,10 @@
 """Per-repo environment configuration for basecamp-workspace.
 
-Environments are keyed by repo name (``BASECAMP_REPO``) and persisted to the
-root ``config.json`` ``environments`` section. Each environment currently
-holds a ``setup`` command run when a new implementation worktree is created.
+Environments are keyed by the canonical ``<org>/<name>`` repo identity
+(``BASECAMP_REPO``, derived from the origin remote URL and falling back to the
+bare git basename) and persisted to the root ``config.json`` ``environments``
+section. Each environment currently holds a ``setup`` command run when a new
+implementation worktree is created.
 """
 
 from __future__ import annotations
@@ -24,7 +26,7 @@ class EnvironmentConfig(BaseModel):
 
 
 def load_environments(config: Settings | None = None) -> dict[str, EnvironmentConfig]:
-    """Load all configured environments keyed by repo name."""
+    """Load all configured environments keyed by repo identity."""
     active = config or settings
     raw = active.get_section(ENVIRONMENTS_SECTION)
     return {name: EnvironmentConfig.model_validate(data) for name, data in raw.items()}
