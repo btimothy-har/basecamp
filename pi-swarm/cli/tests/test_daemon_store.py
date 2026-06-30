@@ -7,7 +7,12 @@ import sqlite3
 from pathlib import Path
 
 import pytest
-from pi_swarm.store import ActiveRunExistsError, DuplicateAgentHandleError, Store
+from pi_swarm.store import (
+    ActiveRunExistsError,
+    DuplicateAgentHandleError,
+    Store,
+    is_message_delivery_terminal,
+)
 
 
 def test_store_initializes_required_tables(tmp_path: Path) -> None:
@@ -21,6 +26,84 @@ def test_store_initializes_required_tables(tmp_path: Path) -> None:
     assert "agents" in table_names
     assert "runs" in table_names
     assert "run_events" in table_names
+    assert "messages" in table_names
+
+
+def test_store_adds_messages_table_to_existing_database(tmp_path: Path) -> None:
+    db_path = tmp_path / "daemon.db"
+    with sqlite3.connect(db_path) as connection:
+        connection.execute(
+            """
+            CREATE TABLE agents (
+                id TEXT PRIMARY KEY,
+                parent_id TEXT,
+                sibling_group TEXT,
+                depth INTEGER,
+                role TEXT,
+                session_name TEXT,
+                cwd TEXT,
+                created_at TEXT,
+                last_seen_at TEXT,
+                current_run_id TEXT,
+                agent_handle TEXT,
+                agent_type TEXT,
+                run_kind TEXT,
+                model TEXT
+            )
+            """
+        )
+        connection.execute(
+            """
+            CREATE TABLE runs (
+                id TEXT PRIMARY KEY,
+                agent_id TEXT,
+                status TEXT CHECK(status IN ('pending','running','completed','failed')),
+                dispatcher_id TEXT,
+                spec_json TEXT,
+                report_token_hash TEXT,
+                result TEXT,
+                error TEXT,
+                exit_code INTEGER,
+                created_at TEXT,
+                started_at TEXT,
+                ended_at TEXT
+            )
+            """
+        )
+        connection.execute(
+            """
+            CREATE TABLE run_events (
+                run_id TEXT,
+                seq INTEGER,
+                kind TEXT,
+                payload_json TEXT,
+                ts TEXT,
+                PRIMARY KEY (run_id, seq)
+            )
+            """
+        )
+
+    Store(db_path=db_path)
+
+    with sqlite3.connect(db_path) as connection:
+        columns = {row[1] for row in connection.execute("PRAGMA table_info(messages)").fetchall()}
+
+    assert columns == {
+        "id",
+        "root_id",
+        "sender_node_id",
+        "sender_handle",
+        "target_agent_id",
+        "target_handle",
+        "content",
+        "interrupt",
+        "status",
+        "error",
+        "created_at",
+        "sent_at",
+        "queued_at",
+        "failed_at",
+    }
 
 
 def test_store_migrates_agent_handle_column_and_backfills_existing_rows(tmp_path: Path) -> None:
@@ -243,6 +326,191 @@ def test_upsert_agent_rejects_fallback_handle_collision(tmp_path: Path) -> None:
             session_name="session-b",
             cwd="/tmp/b",
         )
+
+
+def test_create_message_persists_accepted_message(tmp_path: Path) -> None:
+    db_path = tmp_path / "daemon.db"
+    store = Store(db_path=db_path)
+
+    store.create_message(
+        message_id="message-1",
+        root_id="root-1",
+        sender_node_id="sender-1",
+        sender_handle=None,
+        target_agent_id="target-1",
+        target_handle="target-handle",
+        content="hello peer",
+        interrupt=True,
+    )
+
+    message = store.get_message("message-1")
+
+    assert message is not None
+    assert message["id"] == "message-1"
+    assert message["root_id"] == "root-1"
+    assert message["sender_node_id"] == "sender-1"
+    assert message["sender_handle"] is None
+    assert message["target_agent_id"] == "target-1"
+    assert message["target_handle"] == "target-handle"
+    assert message["content"] == "hello peer"
+    assert message["interrupt"] == 1
+    assert message["status"] == "accepted"
+    assert message["error"] is None
+    assert message["created_at"] is not None
+    assert message["sent_at"] is None
+    assert message["queued_at"] is None
+    assert message["failed_at"] is None
+
+
+def test_message_lifecycle_transitions_and_missing_rows(tmp_path: Path) -> None:
+    db_path = tmp_path / "daemon.db"
+    store = Store(db_path=db_path)
+
+    _create_message(store, "sent-message")
+    _create_message(store, "queued-message")
+    _create_message(store, "failed-message")
+    _create_message(store, "unavailable-message")
+
+    assert store.mark_message_sent("sent-message") is True
+    assert store.mark_message_queued("queued-message") is True
+    assert store.mark_message_failed("failed-message", "delivery failed") is True
+    assert store.mark_message_unavailable("unavailable-message", "target missing") is True
+    assert store.mark_message_sent("missing-message") is False
+    assert store.mark_message_queued("missing-message") is False
+    assert store.mark_message_failed("missing-message", "missing") is False
+    assert store.mark_message_unavailable("missing-message", "missing") is False
+
+    sent = store.get_message("sent-message")
+    queued = store.get_message("queued-message")
+    failed = store.get_message("failed-message")
+    unavailable = store.get_message("unavailable-message")
+
+    assert sent is not None
+    assert sent["status"] == "sent"
+    assert sent["sent_at"] is not None
+    assert queued is not None
+    assert queued["status"] == "queued"
+    assert queued["queued_at"] is not None
+    assert queued["error"] is None
+    assert failed is not None
+    assert failed["status"] == "failed"
+    assert failed["failed_at"] is not None
+    assert failed["error"] == "delivery failed"
+    assert unavailable is not None
+    assert unavailable["status"] == "unavailable"
+    assert unavailable["failed_at"] is not None
+    assert unavailable["error"] == "target missing"
+
+
+def test_message_terminal_states_do_not_get_overwritten(tmp_path: Path) -> None:
+    db_path = tmp_path / "daemon.db"
+    store = Store(db_path=db_path)
+
+    for message_id in ["queued-message", "failed-message", "unavailable-message"]:
+        _create_message(store, message_id)
+
+    assert store.mark_message_queued("queued-message") is True
+    assert store.mark_message_failed("failed-message", "failed") is True
+    assert store.mark_message_unavailable("unavailable-message", "unavailable") is True
+
+    assert store.mark_message_sent("queued-message") is False
+    assert store.mark_message_failed("queued-message", "late failure") is False
+    assert store.mark_message_unavailable("queued-message", "late unavailable") is False
+    assert store.mark_message_sent("failed-message") is False
+    assert store.mark_message_queued("failed-message") is False
+    assert store.mark_message_unavailable("failed-message", "late unavailable") is False
+    assert store.mark_message_sent("unavailable-message") is False
+    assert store.mark_message_queued("unavailable-message") is False
+    assert store.mark_message_failed("unavailable-message", "late failure") is False
+
+    queued = store.get_message("queued-message")
+    failed = store.get_message("failed-message")
+    unavailable = store.get_message("unavailable-message")
+
+    assert queued is not None
+    assert queued["status"] == "queued"
+    assert queued["sent_at"] is None
+    assert failed is not None
+    assert failed["status"] == "failed"
+    assert failed["sent_at"] is None
+    assert unavailable is not None
+    assert unavailable["status"] == "unavailable"
+    assert unavailable["sent_at"] is None
+
+
+def test_get_message_status_authorizes_participants_only(tmp_path: Path) -> None:
+    db_path = tmp_path / "daemon.db"
+    store = Store(db_path=db_path)
+    _create_message(store, "message-1")
+    assert store.mark_message_failed("message-1", "delivery failed") is True
+
+    sender_status = store.get_message_status("sender-1", "message-1")
+    recipient_status = store.get_message_status("target-1", "message-1")
+    missing_status = store.get_message_status("sender-1", "missing-message")
+    unauthorized_status = store.get_message_status("root-1", "message-1")
+
+    assert sender_status == recipient_status
+    assert sender_status["message_id"] == "message-1"
+    assert sender_status["status"] == "failed"
+    assert sender_status["error"] == "delivery failed"
+    assert sender_status["created_at"] is not None
+    assert sender_status["failed_at"] is not None
+    assert sender_status["sent_at"] is None
+    assert sender_status["queued_at"] is None
+    assert missing_status == _unknown_message_status("missing-message")
+    assert unauthorized_status == _unknown_message_status("message-1")
+
+
+def test_get_message_status_hides_malformed_rows(tmp_path: Path) -> None:
+    db_path = tmp_path / "daemon.db"
+    Store(db_path=db_path)
+    with sqlite3.connect(db_path) as connection:
+        connection.execute("PRAGMA ignore_check_constraints = ON")
+        connection.execute(
+            """
+            INSERT INTO messages (
+                id,
+                root_id,
+                sender_node_id,
+                sender_handle,
+                target_agent_id,
+                target_handle,
+                content,
+                interrupt,
+                status,
+                error,
+                created_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                "malformed-message",
+                "root-1",
+                "sender-1",
+                "sender",
+                "target-1",
+                "target",
+                "secret",
+                0,
+                "bogus",
+                "secret error",
+                "2026-01-01T00:00:00Z",
+            ),
+        )
+
+    store = Store(db_path=db_path)
+
+    assert store.get_message_status("sender-1", "malformed-message") == _unknown_message_status(
+        "malformed-message"
+    )
+
+
+def test_is_message_delivery_terminal() -> None:
+    assert is_message_delivery_terminal("queued") is True
+    assert is_message_delivery_terminal("failed") is True
+    assert is_message_delivery_terminal("unavailable") is True
+    assert is_message_delivery_terminal("unknown") is True
+    assert is_message_delivery_terminal("accepted") is False
+    assert is_message_delivery_terminal("sent") is False
 
 
 def test_run_event_round_trip(tmp_path: Path) -> None:
@@ -1633,6 +1901,31 @@ def test_get_run_summary_rejects_unsafe_task_log_paths_symlinks_and_size(tmp_pat
     (task_dir / "agent-1.json").unlink()
     (task_dir / "agent-1.json").write_text("[" + (" " * (256 * 1024)) + "]", encoding="utf-8")
     assert store.get_run_summary("root")["agents"][0]["task"] is None
+
+
+def _create_message(store: Store, message_id: str) -> None:
+    store.create_message(
+        message_id=message_id,
+        root_id="root-1",
+        sender_node_id="sender-1",
+        sender_handle="sender-handle",
+        target_agent_id="target-1",
+        target_handle="target-handle",
+        content="hello peer",
+        interrupt=False,
+    )
+
+
+def _unknown_message_status(message_id: str) -> dict[str, object]:
+    return {
+        "message_id": message_id,
+        "status": "unknown",
+        "error": None,
+        "created_at": None,
+        "sent_at": None,
+        "queued_at": None,
+        "failed_at": None,
+    }
 
 
 def _summary_agent(store: Store, *, agent_id: str = "agent-1") -> None:
