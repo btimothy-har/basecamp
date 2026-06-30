@@ -99,6 +99,22 @@ class Settings:
             data["version"] = CONFIG_VERSION
             data["install_dir"] = value
 
+    @property
+    def worktree_setup(self) -> str | None:
+        """Configured worktree setup command, or ``None`` if unset/blank."""
+        val = self._read().get("worktree_setup")
+        return val if isinstance(val, str) and val.strip() else None
+
+    @worktree_setup.setter
+    def worktree_setup(self, value: str | None) -> None:
+        with self._locked_update() as data:
+            data["version"] = CONFIG_VERSION
+            command = value.strip() if value is not None else ""
+            if command:
+                data["worktree_setup"] = command
+            else:
+                data.pop("worktree_setup", None)
+
     @staticmethod
     def _normalize_modules(values: Iterable[object]) -> list[str]:
         """Strip, drop blanks/non-strings, and deduplicate module ids."""

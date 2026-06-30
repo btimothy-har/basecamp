@@ -154,7 +154,7 @@ Projects are defined in `~/.pi/basecamp/workspace/projects.json`:
 }
 ```
 
-Root `~/.pi/basecamp/config.json` is installer-owned metadata (`install_dir`, `installed_modules`) and does not contain project definitions.
+Root `~/.pi/basecamp/config.json` holds installer-owned metadata (`install_dir`, `installed_modules`) and the global `worktree_setup` command (see [Worktree setup hook](#worktree-setup-hook)); it does not contain project definitions.
 
 | Field | Required | Description |
 |-------|----------|-------------|
@@ -228,6 +228,26 @@ The workspace service owns the `~/.worktrees/<repo>/<label>/` storage convention
 - Use native Git commands (`git worktree list`, `git worktree remove`) to inspect or clean up worktrees
 - Additional directories stay on their configured checkouts throughout the session
 - Only works with git repositories
+
+### Worktree setup hook
+
+A fresh worktree contains tracked files only — gitignored artifacts (`.venv`, `node_modules`, `.env`, build output) are absent. To provision a newly created worktree, set a global setup command:
+
+```bash
+basecamp config worktree-setup set "uv sync && npm ci"
+basecamp config worktree-setup show
+basecamp config worktree-setup clear
+```
+
+The command is stored under `worktree_setup` in `~/.pi/basecamp/config.json` (one global command for all projects; basecamp ships no default — unset means no-op). When an approved implementation plan **creates** a new execution worktree, basecamp runs it before handoff:
+
+- Executed as `bash -lc "<command>"` with the working directory set to the new worktree.
+- Inherits the `BASECAMP_*` env vars plus `BASECAMP_REPO_ROOT` (the protected checkout path), so the command can copy or symlink artifacts from the source checkout if it chooses. basecamp does not prescribe what the command does.
+- **Blocks** activation with a **180-second timeout**; the fresh session starts only once setup finishes.
+- **Warn-and-proceed**: a non-zero exit or timeout surfaces a warning and is recorded in the handoff result, but activation and handoff still complete.
+- **Creation only**: it does not run when resuming/attaching an existing worktree, switching via `/worktree`, or for read-only review worktrees created by `/code-walkthrough`.
+
+For anything beyond a one-liner, point the command at a script you maintain outside the repo, e.g. `"bash ~/.pi/basecamp/worktree-setup.sh"`.
 
 ## Package Layout
 
