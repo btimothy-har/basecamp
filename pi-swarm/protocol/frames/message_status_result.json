@@ -1,0 +1,11 @@
+{
+  "type": "message_status_result",
+  "v": 13,
+  "message_id": "msg-001",
+  "status": "queued",
+  "error": null,
+  "created_at": "2026-06-30T12:00:00Z",
+  "sent_at": "2026-06-30T12:00:01Z",
+  "queued_at": "2026-06-30T12:00:02Z",
+  "failed_at": null
+}

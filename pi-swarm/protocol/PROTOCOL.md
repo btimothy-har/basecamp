@@ -1,22 +1,22 @@
 # Pi Swarm Daemon Protocol
 
-Protocol version: `12`
+Protocol version: `13`
 
 All frames are JSON objects with an envelope:
 
 ```json
-{"type":"<frame_type>","v":12,...}
+{"type":"<frame_type>","v":13,...}
 ```
 
 Version handling:
 - The daemon validates `v` on every inbound frame.
-- If `v != 12`, the daemon sends an `error` frame with `code: "protocol_version"` and closes the connection.
+- If `v != 13`, the daemon sends an `error` frame with `code: "protocol_version"` and closes the connection.
 - The extension treats the protocol as a client-visible capability gate, not only a frame-shape version. A version mismatch restarts the host daemon during ensure-daemon.
 
 ## Transport
 
 - HTTP over Unix domain socket (UDS):
-  - `GET /health` → `{"status":"ok","protocol":12}`
+  - `GET /health` → `{"status":"ok","protocol":13}`
   - `GET /runs/summary?root_id=<id>` returns safe agent-level observability for the companion dashboard.
   - `GET /runs/messages?root_id=<id>&agent_handle=<handle>` returns selected-agent assistant message detail for the companion dashboard.
 - WebSocket over UDS:
@@ -94,7 +94,7 @@ Waits for one or more public agent handles:
 ```json
 {
   "type": "wait",
-  "v": 12,
+  "v": 13,
   "agent_ids": [],
   "agent_handles": ["mossy-otter-a1b2c3"],
   "mode": "all",
@@ -125,7 +125,7 @@ Requests a safe directory of agents visible under the caller's root session:
 ```json
 {
   "type": "list_agents",
-  "v": 12,
+  "v": 13,
   "request_id": "list-001",
   "awaitable": true
 }
@@ -148,6 +148,68 @@ Returns same-root agent directory rows:
 - `awaitable`
 
 Rows also carry the private `agent_id` for trusted extension retasking plumbing; LLM-facing `list_agents` output strips it. The directory excludes private run ids, prompts, full results, errors, spawn specs, env, and cwd.
+
+### `peer_message` client → daemon
+
+Requests store-backed asynchronous peer message delivery to a public agent handle.
+
+Important fields:
+- `request_id`: public request correlation id for the immediate acknowledgement.
+- `target_handle`: recipient public agent handle.
+- `message`: message text to deliver.
+- `interrupt`: optional boolean, default `false`; when true, delivery may interrupt the recipient if the runtime supports it.
+
+The request does not expose or require private `agent_id` or `run_id` values.
+
+### `peer_message_ack` daemon → client
+
+Acknowledges acceptance of a `peer_message` request. This is acceptance only; it must not wait for recipient delivery or an answer.
+
+Fields:
+- `request_id`: echoes the peer-message request correlation id.
+- `message_id`: stored message id, or `null` when no message was accepted.
+- `status`: `accepted` or `unknown`.
+- `error`: optional/nullable acceptance error detail.
+
+### `peer_message_delivery` daemon → agent
+
+Delivers an accepted peer message to the recipient agent.
+
+Fields:
+- `message_id`: stored message id.
+- `from_handle`: sender public handle, or `null` when unavailable.
+- `message`: message text.
+- `interrupt`: whether this delivery should interrupt the recipient.
+
+### `peer_message_delivery_ack` agent → daemon
+
+Acknowledges recipient-side delivery handling.
+
+Fields:
+- `message_id`: stored message id.
+- `status`: `queued` when the recipient queued the message, or `failed` when it could not.
+- `error`: optional/nullable failure detail.
+
+### `message_status` client → daemon
+
+Requests delivery lifecycle status for a stored peer message.
+
+Fields:
+- `message_id`: stored message id.
+- `wait_until_delivery`: optional boolean; when true, the daemon may wait for a terminal delivery state or timeout.
+- `timeout_s`: optional wait timeout in seconds.
+
+### `message_status_result` daemon → client
+
+Returns delivery lifecycle status only; it carries no recipient answer or response fields.
+
+Fields:
+- `message_id`: stored message id.
+- `status`: `accepted`, `sent`, `queued`, `failed`, `unavailable`, or `unknown`.
+- `error`: optional/nullable lifecycle error detail.
+- `created_at`, `sent_at`, `queued_at`, `failed_at`: nullable timestamp strings when known.
+
+For `wait_until_delivery`, terminal delivery states are `queued`, `failed`, `unavailable`, and `unknown`. `accepted` and `sent` are non-terminal.
 
 ### `GET /runs/summary`
 
@@ -203,6 +265,6 @@ Reports protocol/parse errors and closes the WebSocket for fatal frame errors. C
 A minimal client flow is:
 
 1. Connect to `/ws` over the UDS.
-2. Send `register` with `v: 12`.
+2. Send `register` with `v: 13`.
 3. Send `dispatch` with private `run_id` / `agent_id` and public `agent_handle`.
 4. Use the `agent_handle` with `wait` or discover agents through `list_agents`.

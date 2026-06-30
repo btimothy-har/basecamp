@@ -8,7 +8,7 @@ from pydantic import BaseModel, Field, TypeAdapter
 
 # Gates every client-visible daemon capability, not just WebSocket frame shapes.
 # This includes HTTP endpoints like /runs/summary, so stale daemons restart.
-PROTOCOL_VERSION = 12
+PROTOCOL_VERSION = 13
 
 
 class RegisterFrame(BaseModel):
@@ -167,6 +167,73 @@ class ListAgentsResultFrame(BaseModel):
     agents: list[ListAgentItem]
 
 
+class PeerMessageFrame(BaseModel):
+    """Request asynchronous delivery of a peer message."""
+
+    type: Literal["peer_message"]
+    v: Literal[PROTOCOL_VERSION]
+    request_id: str
+    target_handle: str
+    message: str
+    interrupt: bool = False
+
+
+class PeerMessageAckFrame(BaseModel):
+    """Acceptance acknowledgement for a peer message request."""
+
+    type: Literal["peer_message_ack"]
+    v: Literal[PROTOCOL_VERSION]
+    request_id: str
+    message_id: str | None
+    status: Literal["accepted", "unknown"]
+    error: str | None = None
+
+
+class PeerMessageDeliveryFrame(BaseModel):
+    """Peer message delivery from daemon to recipient agent."""
+
+    type: Literal["peer_message_delivery"]
+    v: Literal[PROTOCOL_VERSION]
+    message_id: str
+    from_handle: str | None
+    message: str
+    interrupt: bool
+
+
+class PeerMessageDeliveryAckFrame(BaseModel):
+    """Recipient acknowledgement that a peer message delivery was queued."""
+
+    type: Literal["peer_message_delivery_ack"]
+    v: Literal[PROTOCOL_VERSION]
+    message_id: str
+    status: Literal["queued", "failed"]
+    error: str | None = None
+
+
+class MessageStatusFrame(BaseModel):
+    """Request delivery lifecycle status for a peer message."""
+
+    type: Literal["message_status"]
+    v: Literal[PROTOCOL_VERSION]
+    message_id: str
+    wait_until_delivery: bool = False
+    timeout_s: float | None = None
+
+
+class MessageStatusResultFrame(BaseModel):
+    """Delivery lifecycle status for a peer message."""
+
+    type: Literal["message_status_result"]
+    v: Literal[PROTOCOL_VERSION]
+    message_id: str
+    status: Literal["accepted", "sent", "queued", "failed", "unavailable", "unknown"]
+    error: str | None = None
+    created_at: str | None
+    sent_at: str | None
+    queued_at: str | None
+    failed_at: str | None
+
+
 Frame = Annotated[
     RegisterFrame
     | RegisteredFrame
@@ -178,7 +245,13 @@ Frame = Annotated[
     | WaitFrame
     | WaitResultFrame
     | ListAgentsFrame
-    | ListAgentsResultFrame,
+    | ListAgentsResultFrame
+    | PeerMessageFrame
+    | PeerMessageAckFrame
+    | PeerMessageDeliveryFrame
+    | PeerMessageDeliveryAckFrame
+    | MessageStatusFrame
+    | MessageStatusResultFrame,
     Field(discriminator="type"),
 ]
 
