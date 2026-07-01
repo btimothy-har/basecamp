@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 import subprocess
 import tempfile
 from pathlib import Path
@@ -26,7 +27,7 @@ def _run_git(repo: Path, *args: str) -> None:
     subprocess.run(["git", *args], cwd=repo, check=True, capture_output=True, text=True)  # noqa: S603
 
 
-def _write_snapshot(path: Path, session_id: str) -> None:
+def _write_snapshot(path: Path, session_id: str, effective_cwd: Path | str = "") -> None:
     path.write_text(
         json.dumps(
             {
@@ -38,7 +39,7 @@ def _write_snapshot(path: Path, session_id: str) -> None:
                 "progress": {"completed": 1, "total": 2},
                 "agentMode": "executor",
                 "skillsUsed": ["python-development"],
-                "effectiveCwd": str(path.parent),
+                "effectiveCwd": str(effective_cwd),
             }
         ),
         encoding="utf-8",
@@ -611,3 +612,67 @@ def test_refresh_is_noop_when_not_running(tmp_path: Path) -> None:
     assert app.is_running is False
 
     app._refresh()  # would raise NoMatches/ScreenStackError without the guard
+
+
+def _bump_mtime(path: Path) -> None:
+    stat = path.stat()
+    bumped = stat.st_mtime_ns + 1_000_000_000
+    os.utime(path, ns=(bumped, bumped))
+
+
+def test_refresh_follows_effective_cwd_change(tmp_path: Path) -> None:
+    repo_a = tmp_path / "repo_a"
+    repo_b = tmp_path / "repo_b"
+    snapshot_path = tmp_path / "snapshot.json"
+    _build_repo(repo_a)
+    _build_repo(repo_b)
+    (repo_b / "unique_b.txt").write_text("only in b\n", encoding="utf-8")
+    _write_snapshot(snapshot_path, session_id="abcd-1234-5678-90ef", effective_cwd=repo_a)
+
+    app = CompanionApp(snapshot_path=snapshot_path, cwd=repo_a)
+
+    async def run_cwd_change_test() -> None:
+        async with app.run_test() as pilot:
+            await pilot.pause(0.2)
+            assert app.cwd == repo_a
+
+            _write_snapshot(snapshot_path, session_id="abcd-1234-5678-90ef", effective_cwd=repo_b)
+            _bump_mtime(snapshot_path)
+            app._refresh()
+            await pilot.pause(0.1)
+
+            assert app.cwd == repo_b
+
+            browser = app.query_one("#files-body", FileBrowser)
+            assert browser.roots[0][1].resolve() == repo_b.resolve()
+
+            tree = app.query_one("#file-tree", DirectoryTree)
+            assert tree.path.resolve() == repo_b.resolve()
+
+            changed_paths = {status.path for status in app._files}
+            assert "unique_b.txt" in changed_paths
+
+    asyncio.run(run_cwd_change_test())
+
+
+def test_refresh_keeps_cwd_when_effective_cwd_empty(tmp_path: Path) -> None:
+    repo = tmp_path / "repo"
+    snapshot_path = tmp_path / "snapshot.json"
+    _build_repo(repo)
+    _write_snapshot(snapshot_path, session_id="abcd-1234-5678-90ef", effective_cwd=repo)
+
+    app = CompanionApp(snapshot_path=snapshot_path, cwd=repo)
+
+    async def run_empty_cwd_test() -> None:
+        async with app.run_test() as pilot:
+            await pilot.pause(0.2)
+            assert app.cwd == repo
+
+            _write_snapshot(snapshot_path, session_id="abcd-1234-5678-90ef", effective_cwd="")
+            _bump_mtime(snapshot_path)
+            app._refresh()
+            await pilot.pause(0.1)
+
+            assert app.cwd == repo
+
+    asyncio.run(run_empty_cwd_test())
