@@ -388,7 +388,7 @@ export async function showReviewPacket(
 					hint.setText(defaultHint);
 					if (matchesSelectCancel(data)) {
 						done("cancel");
-					} else if (data === "s" || data === "S") {
+					} else if (matchesKey(data, "s") || matchesKey(data, "shift+s")) {
 						const unreviewedCards = cards.filter((card) => !isCardReviewed(card, drafts));
 						const firstUnreviewed = unreviewedCards[0];
 						if (firstUnreviewed) {
@@ -414,7 +414,7 @@ export async function showReviewPacket(
 							return;
 						}
 						done("submit");
-					} else if (data === " " || matchesInputSubmit(data)) {
+					} else if (matchesKey(data, "space") || matchesInputSubmit(data)) {
 						done(selected);
 					} else if (matchesMoveUp(data)) {
 						if (selected > 0) {
@@ -730,15 +730,15 @@ async function showCardDrillDown(
 					done(undefined);
 				} else if (matchesInputTab(data)) {
 					focusFeedback();
-				} else if (data === "a" || data === "A") {
+				} else if (matchesKey(data, "a") || matchesKey(data, "shift+a")) {
 					chooseCategory("approved");
-				} else if (data === "e" || data === "E") {
+				} else if (matchesKey(data, "e") || matchesKey(data, "shift+e")) {
 					chooseCategory("needs_explanation");
-				} else if (data === "q" || data === "Q") {
+				} else if (matchesKey(data, "q") || matchesKey(data, "shift+q")) {
 					chooseCategory("question");
-				} else if (data === "c" || data === "C") {
+				} else if (matchesKey(data, "c") || matchesKey(data, "shift+c")) {
 					chooseCategory("needs_code_change");
-				} else if (data === "k" || data === "K") {
+				} else if (matchesKey(data, "k") || matchesKey(data, "shift+k")) {
 					chooseCategory("skip");
 				}
 			},

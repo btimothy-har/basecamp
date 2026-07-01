@@ -84,7 +84,7 @@ async function showAliasList(ctx: ExtensionCommandContext): Promise<ListResult |
 						selected++;
 						container.invalidate();
 					}
-				} else if (data === "a" || data === "A") {
+				} else if (matchesKey(data, "a") || matchesKey(data, "shift+a")) {
 					done({ action: "add" });
 				}
 			},
@@ -129,11 +129,11 @@ async function showAliasDetail(alias: string, ctx: ExtensionCommandContext): Pro
 			handleInput: (data: string) => {
 				if (matchesKey(data, "escape")) {
 					done("back");
-				} else if (data === "e" || data === "E") {
+				} else if (matchesKey(data, "e") || matchesKey(data, "shift+e")) {
 					done("edit");
-				} else if (data === "r" || data === "R") {
+				} else if (matchesKey(data, "r") || matchesKey(data, "shift+r")) {
 					done("rename");
-				} else if (data === "d" || data === "D") {
+				} else if (matchesKey(data, "d") || matchesKey(data, "shift+d")) {
 					done("delete");
 				}
 			},

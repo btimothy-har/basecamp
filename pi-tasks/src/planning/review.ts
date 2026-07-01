@@ -193,7 +193,7 @@ export async function showReviewOverlay(draft: PlanDraft, ctx: ExtensionContext)
 					hint.setText(defaultHint);
 					if (matchesKey(data, "escape")) {
 						done("decline");
-					} else if (data === "s" || data === "S") {
+					} else if (matchesKey(data, "s") || matchesKey(data, "shift+s")) {
 						const pending = countPending(draft);
 						if (pending > 0) {
 							hint.setText(theme.fg("warning", `${pending} item${pending > 1 ? "s" : ""} still pending review`));
@@ -201,7 +201,7 @@ export async function showReviewOverlay(draft: PlanDraft, ctx: ExtensionContext)
 							return;
 						}
 						done("submit");
-					} else if (data === " " || matchesKey(data, "enter")) {
+					} else if (matchesKey(data, "space") || matchesKey(data, "enter")) {
 						done(selected);
 					} else if (matchesKey(data, "up")) {
 						if (selected > 0) {
@@ -322,7 +322,7 @@ async function showDrillDown(draft: PlanDraft, item: ReviewItem, ctx: ExtensionC
 							updateHint();
 						}
 						container.invalidate();
-					} else if ((data === "\x1b[A" || data === "\x7f" || data === "\b") && editor.getText() === "") {
+					} else if ((matchesKey(data, "up") || matchesKey(data, "backspace")) && editor.getText() === "") {
 						// Up or backspace on empty: unfocus
 						editorFocused = false;
 						editor.focused = false;
@@ -337,11 +337,11 @@ async function showDrillDown(draft: PlanDraft, item: ReviewItem, ctx: ExtensionC
 					if (matchesKey(data, "escape")) {
 						// Save any pending feedback before leaving
 						done("back");
-					} else if (data === "a" || data === "A") {
+					} else if (matchesKey(data, "a") || matchesKey(data, "shift+a")) {
 						done("approve");
-					} else if (data === "r" || data === "R") {
+					} else if (matchesKey(data, "r") || matchesKey(data, "shift+r")) {
 						done("revise");
-					} else if (data === "\x1b[B" || matchesKey(data, "tab")) {
+					} else if (matchesKey(data, "down") || matchesKey(data, "tab")) {
 						// Down or Tab: focus editor, pre-populate with existing feedback
 						editorFocused = true;
 						editor.focused = true;
@@ -470,7 +470,7 @@ async function showTaskCards(draft: PlanDraft, ctx: ExtensionContext): Promise<v
 							updateHint();
 						}
 						container.invalidate();
-					} else if ((data === "\x1b[A" || data === "\x7f" || data === "\b") && editor.getText() === "") {
+					} else if ((matchesKey(data, "up") || matchesKey(data, "backspace")) && editor.getText() === "") {
 						editorFocused = false;
 						editor.focused = false;
 						updateHint();
@@ -482,9 +482,9 @@ async function showTaskCards(draft: PlanDraft, ctx: ExtensionContext): Promise<v
 				} else {
 					if (matchesKey(data, "escape")) {
 						done("back");
-					} else if (data === "a" || data === "A") {
+					} else if (matchesKey(data, "a") || matchesKey(data, "shift+a")) {
 						done("approve");
-					} else if (data === "r" || data === "R") {
+					} else if (matchesKey(data, "r") || matchesKey(data, "shift+r")) {
 						done("revise");
 					} else if (matchesKey(data, "left")) {
 						if (currentIdx > 0) {
@@ -496,7 +496,7 @@ async function showTaskCards(draft: PlanDraft, ctx: ExtensionContext): Promise<v
 							currentIdx++;
 							container.invalidate();
 						}
-					} else if (data === "\x1b[B" || matchesKey(data, "tab")) {
+					} else if (matchesKey(data, "down") || matchesKey(data, "tab")) {
 						editorFocused = true;
 						editor.focused = true;
 						const existingFb = draft.tasksReview.feedback ?? "";
