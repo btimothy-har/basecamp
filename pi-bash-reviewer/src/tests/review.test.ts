@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import type { Context, Model } from "@earendil-works/pi-ai";
-import type { GateDecision } from "../reviewer/gate.ts";
+import { type GateDecision, runGate } from "../reviewer/gate.ts";
 import { type ReviewAuditEntry, type ReviewDeps, reviewBashCommand } from "../reviewer/review.ts";
 
 const fakeModel: Model<any> = {
@@ -194,6 +194,7 @@ describe("reviewBashCommand", () => {
 		assert.equal(withUI.auditEntries[0]?.phase, "failsafe");
 		assert.equal(withUI.auditEntries[0]?.action, "approve");
 		assert.equal(withUI.auditEntries[0]?.reason, "reviewer returned no decision");
+		assert.match(withUI.confirmBodies[0] ?? "", /reviewer returned no decision/);
 		assert.equal(withUI.auditEntries[0]?.note, "escalated");
 
 		const noUI = makeDeps({ runGate: async () => null, hasUI: false });
@@ -201,6 +202,7 @@ describe("reviewBashCommand", () => {
 
 		assert.equal(noUIOutcome?.block, true);
 		assert.match(noUIOutcome?.reason ?? "", /Reviewer unavailable/);
+		assert.match(noUIOutcome?.reason ?? "", /reviewer returned no decision/);
 		assert.match(noUIOutcome?.reason ?? "", /no interactive UI/);
 		assert.equal(noUI.confirmCalls(), 0);
 		assert.equal(noUI.resolveModelCalls(), 1);
@@ -209,6 +211,30 @@ describe("reviewBashCommand", () => {
 		assert.equal(noUI.auditEntries[0]?.action, "deny");
 		assert.equal(noUI.auditEntries[0]?.reason, "reviewer returned no decision");
 		assert.equal(noUI.auditEntries[0]?.note, "no-ui");
+	});
+
+	it("surfaces real runGate provider errors through failsafe", async () => {
+		const providerError = "400 Reasoning is mandatory for this endpoint and cannot be disabled.";
+		const harness = makeDeps({
+			runGate: async (args) =>
+				runGate({
+					...args,
+					complete: async () => {
+						throw new Error(providerError);
+					},
+				}),
+			confirm: async () => true,
+		});
+
+		const outcome = await reviewBashCommand("git commit -m 'test'", harness.deps);
+
+		assert.equal(outcome, undefined);
+		assert.equal(harness.confirmCalls(), 1);
+		assert.match(harness.confirmBodies[0] ?? "", /Reasoning is mandatory/);
+		assert.equal(harness.auditEntries[0]?.phase, "failsafe");
+		assert.equal(harness.auditEntries[0]?.action, "approve");
+		assert.equal(harness.auditEntries[0]?.reason, providerError);
+		assert.equal(harness.auditEntries[0]?.note, "escalated");
 	});
 
 	it("approves non-failClosed gate decisions without blocking", async () => {

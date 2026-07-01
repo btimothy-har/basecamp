@@ -1,5 +1,5 @@
-import type { AssistantMessage, Context, Message, Model, Tool } from "@earendil-works/pi-ai";
-import { complete as defaultComplete } from "@earendil-works/pi-ai";
+import type { AssistantMessage, Context, Message, Model, ModelThinkingLevel, Tool } from "@earendil-works/pi-ai";
+import { complete as defaultComplete, getSupportedThinkingLevels } from "@earendil-works/pi-ai";
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { type Static, Type } from "@sinclair/typebox";
 import { Value } from "@sinclair/typebox/value";
@@ -66,6 +66,20 @@ export function parseGateResponse(msg: AssistantMessage): GateDecision | null {
 	return args;
 }
 
+const THINKING_LEVELS: ModelThinkingLevel[] = ["minimal", "low", "medium", "high", "xhigh"];
+
+export function resolveGateReasoningEffort(model: Model<any>): ModelThinkingLevel | undefined {
+	if (!model.reasoning) return undefined;
+
+	const supported = new Set(getSupportedThinkingLevels(model));
+	return THINKING_LEVELS.find((level) => supported.has(level));
+}
+
+export function resolveGateToolChoice(model: Model<any>): unknown {
+	if (model.api === "anthropic-messages") return { type: "tool", name: "gate_decision" };
+	return { type: "function", function: { name: "gate_decision" } };
+}
+
 export async function runGate(opts: {
 	model: Model<any>;
 	auth: { apiKey?: string; headers?: Record<string, string> };
@@ -73,13 +87,16 @@ export async function runGate(opts: {
 	signal?: AbortSignal;
 	complete?: typeof defaultComplete;
 }): Promise<GateDecision | null> {
-	try {
-		const complete = opts.complete ?? defaultComplete;
-		const msg = await complete(opts.model, opts.context, { ...opts.auth, signal: opts.signal });
-		return parseGateResponse(msg);
-	} catch {
-		return null;
-	}
+	const complete = opts.complete ?? defaultComplete;
+	const reasoningEffort = resolveGateReasoningEffort(opts.model);
+	const msg = await complete(opts.model, opts.context, {
+		...opts.auth,
+		signal: opts.signal,
+		toolChoice: resolveGateToolChoice(opts.model),
+		...(reasoningEffort === undefined ? {} : { reasoningEffort }),
+	});
+	if (msg.stopReason === "error") throw new Error(msg.errorMessage ?? "reviewer provider returned an error");
+	return parseGateResponse(msg);
 }
 
 function resolveModelReference(ctx: ExtensionContext, modelReference: string): Model<any> | undefined {
