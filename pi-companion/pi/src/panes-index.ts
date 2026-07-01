@@ -1,16 +1,11 @@
 import type { ExtensionAPI, ExtensionContext, SessionShutdownEvent } from "@earendil-works/pi-coding-agent";
 import { exec } from "pi-core/platform/exec.ts";
 import { getWorkspaceService, getWorkspaceState } from "pi-core/platform/workspace.ts";
+import type { PaneProvider } from "./pane-provider.ts";
 import { getPaneState, setCompanionActive } from "./panes-state.ts";
 import { companionLiveSnapshotPath } from "./snapshot.ts";
-import {
-	buildCompanionCommand,
-	buildKillArgs,
-	buildListPanesArgs,
-	buildSplitArgs,
-	parsePaneId,
-	shouldCreatePane,
-} from "./tmux.ts";
+import { buildCompanionCommand } from "./tmux.ts";
+import { createTmuxPaneCloser, createTmuxPaneProvider } from "./tmux-provider.ts";
 
 type ThemeFg = (color: Parameters<import("@earendil-works/pi-coding-agent").Theme["fg"]>[0], text: string) => string;
 
@@ -27,23 +22,18 @@ async function companionAvailable(pi: ExtensionAPI): Promise<boolean> {
 	}
 }
 
-/**
- * Whether the stored pane still exists. An inconclusive tmux result (non-zero
- * exit or thrown error) is treated as alive so a transient failure never spawns
- * a duplicate pane.
- */
-async function paneStillExists(pi: ExtensionAPI, paneId: string): Promise<boolean> {
-	try {
-		const result = await exec(pi, "tmux", buildListPanesArgs());
-		if (result.code !== 0) return true;
-		const ids = result.stdout
-			.split("\n")
-			.map((line) => line.trim())
-			.filter(Boolean);
-		return ids.includes(paneId);
-	} catch {
-		return true;
-	}
+function resolvePaneProvider(ctx: ExtensionContext): PaneProvider | null {
+	return createTmuxPaneProvider({
+		tmux: process.env.TMUX,
+		tmuxPane: process.env.TMUX_PANE,
+		hasUI: ctx.hasUI,
+		agentDepth: Number(process.env.BASECAMP_AGENT_DEPTH ?? "0"),
+	});
+}
+
+function resolveStoredPaneProvider(providerName: string | null): PaneProvider | null {
+	if (providerName === "tmux") return createTmuxPaneCloser();
+	return null;
 }
 
 function resolveCwd(): string {
@@ -71,34 +61,41 @@ function clearPaneStatus(ctx: ExtensionContext | null): void {
 
 function clearPaneState(ctx: ExtensionContext | null = null): void {
 	const state = getPaneState();
+	state.provider = null;
 	state.paneId = null;
 	setCompanionActive(false);
 	publishPaneStatus(ctx, false);
 }
 
+async function reuseExistingPane(pi: ExtensionAPI, provider: PaneProvider, ctx: ExtensionContext): Promise<boolean> {
+	const paneState = getPaneState();
+	if (!paneState.paneId) return false;
+	if (paneState.provider !== provider.name) {
+		paneState.provider = null;
+		paneState.paneId = null;
+		return false;
+	}
+
+	if (await provider.paneStillExists(pi, paneState.paneId)) {
+		setCompanionActive(true);
+		publishPaneStatus(ctx, true);
+		return true;
+	}
+
+	paneState.provider = null;
+	paneState.paneId = null;
+	return false;
+}
+
 export default function registerPanes(pi: ExtensionAPI): void {
 	pi.on("session_start", async (_event, ctx) => {
-		const paneState = getPaneState();
-		const targetPane = process.env.TMUX_PANE;
-		const shouldCreate = shouldCreatePane({
-			tmux: process.env.TMUX,
-			tmuxPane: targetPane,
-			hasUI: ctx.hasUI,
-			agentDepth: Number(process.env.BASECAMP_AGENT_DEPTH ?? "0"),
-		});
-		if (!shouldCreate) {
+		const provider = resolvePaneProvider(ctx);
+		if (!provider) {
 			clearPaneState(ctx);
 			return;
 		}
 
-		if (paneState.paneId) {
-			if (await paneStillExists(pi, paneState.paneId)) {
-				setCompanionActive(true);
-				publishPaneStatus(ctx, true);
-				return;
-			}
-			paneState.paneId = null;
-		}
+		if (await reuseExistingPane(pi, provider, ctx)) return;
 
 		if (!(await companionAvailable(pi))) {
 			clearPaneState(ctx);
@@ -113,21 +110,17 @@ export default function registerPanes(pi: ExtensionAPI): void {
 		const effectiveCwd = resolveCwd();
 
 		try {
-			const result = await exec(
-				pi,
-				"tmux",
-				buildSplitArgs(
-					targetPane as string,
-					effectiveCwd,
-					buildCompanionCommand(snapshotPath, effectiveCwd, resolveScratchDir()),
-				),
-			);
-			const paneId = parsePaneId(result.stdout);
+			const paneId = await provider.createPane(pi, {
+				cwd: effectiveCwd,
+				command: buildCompanionCommand(snapshotPath, effectiveCwd, resolveScratchDir()),
+			});
 			if (!paneId) {
 				clearPaneState(ctx);
-				ctx.ui.notify(`${PANES_WARNING_PREFIX} failed to open pane — tmux returned no pane id`, "warning");
+				ctx.ui.notify(`${PANES_WARNING_PREFIX} failed to open pane — ${provider.name} returned no pane id`, "warning");
 				return;
 			}
+			const paneState = getPaneState();
+			paneState.provider = provider.name;
 			paneState.paneId = paneId;
 			setCompanionActive(true);
 			publishPaneStatus(ctx, true);
@@ -143,14 +136,16 @@ export default function registerPanes(pi: ExtensionAPI): void {
 		if (event.reason !== "quit") return;
 
 		const paneState = getPaneState();
-		if (paneState.paneId) {
+		const provider = resolveStoredPaneProvider(paneState.provider);
+		if (provider && paneState.paneId) {
 			try {
-				await exec(pi, "tmux", buildKillArgs(paneState.paneId));
+				await provider.closePane(pi, paneState.paneId);
 			} catch {
 				// best effort
 			}
 		}
 
+		paneState.provider = null;
 		paneState.paneId = null;
 		setCompanionActive(false);
 		clearPaneStatus(ctx);
