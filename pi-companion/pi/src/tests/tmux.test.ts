@@ -3,7 +3,7 @@ import { describe, it } from "node:test";
 import {
 	buildCompanionCommand,
 	buildKillArgs,
-	buildRespawnArgs,
+	buildListPanesArgs,
 	buildSplitArgs,
 	parsePaneId,
 	shouldCreatePane,
@@ -113,23 +113,15 @@ describe("panes/tmux", () => {
 		});
 	});
 
-	describe("buildRespawnArgs", () => {
-		it("builds respawn-pane argv", () => {
-			assert.deepEqual(buildRespawnArgs("%3", "/tmp/new-worktree", "echo hi"), [
-				"respawn-pane",
-				"-k",
-				"-t",
-				"%3",
-				"-c",
-				"/tmp/new-worktree",
-				"echo hi",
-			]);
-		});
-	});
-
 	describe("buildKillArgs", () => {
 		it("builds kill-pane argv", () => {
 			assert.deepEqual(buildKillArgs("%3"), ["kill-pane", "-t", "%3"]);
+		});
+	});
+
+	describe("buildListPanesArgs", () => {
+		it("builds list-panes argv listing every pane id", () => {
+			assert.deepEqual(buildListPanesArgs(), ["list-panes", "-a", "-F", "#{pane_id}"]);
 		});
 	});
 

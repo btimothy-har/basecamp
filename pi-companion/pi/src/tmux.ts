@@ -40,12 +40,13 @@ export function buildSplitArgs(targetPane: string, cwd: string, command: string)
 	];
 }
 
-export function buildRespawnArgs(paneId: string, cwd: string, command: string): string[] {
-	return ["respawn-pane", "-k", "-t", paneId, "-c", cwd, command];
-}
-
 export function buildKillArgs(paneId: string): string[] {
 	return ["kill-pane", "-t", paneId];
+}
+
+/** List every pane id across the tmux server, one per line. */
+export function buildListPanesArgs(): string[] {
+	return ["list-panes", "-a", "-F", "#{pane_id}"];
 }
 
 /** tmux pane ids look like "%5"; return the first such token or null. */

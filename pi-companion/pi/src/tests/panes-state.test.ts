@@ -6,8 +6,6 @@ describe("panes/state", () => {
 	afterEach(() => {
 		const state = getPaneState();
 		state.paneId = null;
-		state.currentCwd = null;
-		state.unsubscribeWorkspace = null;
 		setCompanionActive(false);
 	});
 

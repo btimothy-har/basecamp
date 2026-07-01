@@ -413,6 +413,28 @@ class CompanionApp(App[None]):
         self._dashboard_source_session_id = session_id
         return self._dashboard_source
 
+    def _apply_effective_cwd(self, snapshot: CompanionSnapshot) -> bool:
+        """Switch git/file state to the snapshot cwd when it changes."""
+
+        effective_cwd = snapshot.effective_cwd.strip()
+        if not effective_cwd:
+            return False
+
+        new_cwd = Path(effective_cwd).expanduser()
+        if new_cwd == self.cwd:
+            return False
+
+        self.cwd = new_cwd
+        self._git = make_git_runner(new_cwd)
+        self._base_commit = None
+        self._files = []
+
+        self.query_one("#files-body", FileBrowser).replace_roots(
+            resolve_browse_roots(self._git, self.cwd, self.scratch_dir)
+        )
+        self.query_one("#diff-view", DiffView).update_diff(file_path="", status_message="", diff_lines=[])
+        return True
+
     def _refresh(self) -> None:
         """Refresh state panel on snapshot changes and git views every tick."""
 
@@ -434,6 +456,8 @@ class CompanionApp(App[None]):
             self._snapshot_mtime_ns = snapshot_mtime_ns
             self._snapshot = load_snapshot(self.snapshot_path) if file_exists else None
             self._update_session_bar()
+
+        cwd_changed = snapshot_changed and self._snapshot is not None and self._apply_effective_cwd(self._snapshot)
 
         dashboard_body = self.query_one("#dashboard-body", DashboardBody)
         swarm_body = self.query_one("#swarm-body", SwarmBody)
@@ -459,7 +483,7 @@ class CompanionApp(App[None]):
         except Exception:
             base_commit, files = None, []
 
-        if base_commit != self._base_commit or files != self._files:
+        if cwd_changed or base_commit != self._base_commit or files != self._files:
             self._base_commit = base_commit
             self._files = files
             self.query_one("#file-list", FileList).update_changes(base_commit=base_commit, files=files)

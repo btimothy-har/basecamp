@@ -4,6 +4,7 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import registerCompanionPackage from "../../index.ts";
 import registerPanes from "../panes-index.ts";
 import { getPaneState, isCompanionActive, setCompanionActive } from "../panes-state.ts";
+import { companionLiveSnapshotPath } from "../snapshot.ts";
 
 type Handler = (event: unknown, ctx: MockContext) => unknown;
 
@@ -28,10 +29,6 @@ interface MockContext {
 function resetPaneState(): void {
 	const state = getPaneState();
 	state.paneId = null;
-	state.currentCwd = null;
-	state.currentSnapshot = null;
-	state.unsubscribeWorkspace?.();
-	state.unsubscribeWorkspace = null;
 	setCompanionActive(false);
 }
 
@@ -96,6 +93,7 @@ describe("panes/registerPanes", () => {
 	});
 
 	it("package registration initializes companion active and registers analysis", () => {
+		process.env.BASECAMP_AGENT_DEPTH = "0";
 		setCompanionActive(true);
 		const { pi, registeredEvents } = createMockPi();
 
@@ -105,9 +103,9 @@ describe("panes/registerPanes", () => {
 		assert.ok(registeredEvents().includes("agent_end"));
 	});
 
-	it("sets companion active true and publishes companion status after creating and storing a pane id", async () => {
+	it("sets companion active true and launches dashboard with the live snapshot path after creating a pane", async () => {
 		withTmuxEnv();
-		const { pi, emit } = createMockPi((command) => {
+		const { pi, emit, execCalls } = createMockPi((command) => {
 			if (command === "basecamp") return { code: 0, stdout: "", stderr: "" };
 			return { code: 0, stdout: "%42\n", stderr: "" };
 		});
@@ -115,6 +113,10 @@ describe("panes/registerPanes", () => {
 
 		const ctx = await emit("session_start");
 
+		const splitCall = execCalls.find((call) => call.command === "tmux");
+		assert.ok(splitCall);
+		assert.equal(splitCall.args[0], "split-window");
+		assert.ok((splitCall.args.at(-1) ?? "").includes(`--snapshot '${companionLiveSnapshotPath()}'`));
 		assert.equal(getPaneState().paneId, "%42");
 		assert.equal(isCompanionActive(), true);
 		assert.deepEqual(ctx.ui.statusCalls.at(-1), { key: "basecamp.daemon.pane", value: "success:companion ✓" });
@@ -124,16 +126,12 @@ describe("panes/registerPanes", () => {
 		setCompanionActive(true);
 		const state = getPaneState();
 		state.paneId = "%8";
-		state.currentCwd = "/stale-cwd";
-		state.currentSnapshot = "/stale-snapshot.json";
 		const { pi, emit } = createMockPi();
 		registerPanes(pi);
 
 		const ctx = await emit("session_start", {}, createContext({ hasUI: false }));
 
 		assert.equal(getPaneState().paneId, null);
-		assert.equal(getPaneState().currentCwd, null);
-		assert.equal(getPaneState().currentSnapshot, null);
 		assert.equal(isCompanionActive(), false);
 		assert.deepEqual(ctx.ui.statusCalls, []);
 	});
@@ -142,8 +140,6 @@ describe("panes/registerPanes", () => {
 		setCompanionActive(true);
 		const state = getPaneState();
 		state.paneId = "%8";
-		state.currentCwd = "/stale-cwd";
-		state.currentSnapshot = "/stale-snapshot.json";
 		delete process.env.TMUX;
 		const { pi, emit } = createMockPi();
 		registerPanes(pi);
@@ -151,8 +147,6 @@ describe("panes/registerPanes", () => {
 		const ctx = await emit("session_start");
 
 		assert.equal(getPaneState().paneId, null);
-		assert.equal(getPaneState().currentCwd, null);
-		assert.equal(getPaneState().currentSnapshot, null);
 		assert.equal(isCompanionActive(), false);
 		assert.deepEqual(ctx.ui.statusCalls.at(-1), { key: "basecamp.daemon.pane", value: "muted:companion off" });
 	});
@@ -160,9 +154,6 @@ describe("panes/registerPanes", () => {
 	it("clears stale pane state and publishes companion off when companion dashboard is unavailable", async () => {
 		withTmuxEnv();
 		setCompanionActive(true);
-		const state = getPaneState();
-		state.currentCwd = "/stale-cwd";
-		state.currentSnapshot = "/stale-snapshot.json";
 		const { pi, emit } = createMockPi((command) => {
 			assert.equal(command, "basecamp");
 			return { code: 1, stdout: "", stderr: "missing" };
@@ -172,8 +163,6 @@ describe("panes/registerPanes", () => {
 		const ctx = await emit("session_start");
 
 		assert.equal(getPaneState().paneId, null);
-		assert.equal(getPaneState().currentCwd, null);
-		assert.equal(getPaneState().currentSnapshot, null);
 		assert.equal(isCompanionActive(), false);
 		assert.deepEqual(ctx.ui.statusCalls.at(-1), { key: "basecamp.daemon.pane", value: "muted:companion off" });
 	});
@@ -208,33 +197,69 @@ describe("panes/registerPanes", () => {
 		assert.equal(isCompanionActive(), false);
 	});
 
-	it("clears pane state and companion active when respawn of an existing pane fails", async () => {
+	it("reuses a live existing pane after a liveness check without splitting or checking dashboard availability", async () => {
 		withTmuxEnv();
-		setCompanionActive(true);
+		setCompanionActive(false);
 		const state = getPaneState();
 		state.paneId = "%8";
-		state.currentCwd = "/old";
-		state.currentSnapshot = "/old-snapshot.json";
-		const { pi, emit } = createMockPi((command) => {
-			assert.equal(command, "tmux");
-			throw new Error("respawn failed");
+		const { pi, emit, execCalls } = createMockPi((command, args) => {
+			if (command === "tmux" && args[0] === "list-panes") return { code: 0, stdout: "%1\n%8\n", stderr: "" };
+			throw new Error("unexpected exec");
+		});
+		registerPanes(pi);
+
+		const ctx = await emit("session_start");
+
+		assert.deepEqual(execCalls, [{ command: "tmux", args: ["list-panes", "-a", "-F", "#{pane_id}"] }]);
+		assert.equal(getPaneState().paneId, "%8");
+		assert.equal(isCompanionActive(), true);
+		assert.deepEqual(ctx.ui.statusCalls.at(-1), { key: "basecamp.daemon.pane", value: "success:companion ✓" });
+	});
+
+	it("recreates the pane when the stored pane id is no longer alive", async () => {
+		withTmuxEnv();
+		setCompanionActive(false);
+		const state = getPaneState();
+		state.paneId = "%8";
+		const { pi, emit, execCalls } = createMockPi((command, args) => {
+			if (command === "tmux" && args[0] === "list-panes") return { code: 0, stdout: "%1\n%2\n", stderr: "" };
+			if (command === "basecamp") return { code: 0, stdout: "", stderr: "" };
+			return { code: 0, stdout: "%42\n", stderr: "" };
 		});
 		registerPanes(pi);
 
 		await emit("session_start");
 
-		assert.equal(getPaneState().paneId, null);
-		assert.equal(getPaneState().currentCwd, null);
-		assert.equal(getPaneState().currentSnapshot, null);
-		assert.equal(isCompanionActive(), false);
+		assert.equal(getPaneState().paneId, "%42");
+		assert.equal(isCompanionActive(), true);
+		const tmuxCommands = execCalls.filter((call) => call.command === "tmux").map((call) => call.args[0]);
+		assert.deepEqual(tmuxCommands, ["list-panes", "split-window"]);
+		assert.ok(execCalls.some((call) => call.command === "basecamp"));
+	});
+
+	it("keeps the existing pane when the liveness check is inconclusive", async () => {
+		withTmuxEnv();
+		setCompanionActive(false);
+		const state = getPaneState();
+		state.paneId = "%8";
+		const { pi, emit, execCalls } = createMockPi((command, args) => {
+			if (command === "tmux" && args[0] === "list-panes") throw new Error("tmux unavailable");
+			throw new Error("unexpected exec");
+		});
+		registerPanes(pi);
+
+		const ctx = await emit("session_start");
+
+		assert.equal(getPaneState().paneId, "%8");
+		assert.equal(isCompanionActive(), true);
+		assert.ok(execCalls.every((call) => call.args[0] !== "split-window"));
+		assert.deepEqual(ctx.ui.statusCalls.at(-1), { key: "basecamp.daemon.pane", value: "success:companion ✓" });
 	});
 
 	it("quit shutdown clears pane state, companion active, and pane status", async () => {
 		setCompanionActive(true);
 		const state = getPaneState();
 		state.paneId = "%8";
-		state.currentCwd = "/cwd";
-		state.currentSnapshot = "/snapshot.json";
 		const { pi, emit, execCalls } = createMockPi();
 		registerPanes(pi);
 
@@ -242,8 +267,6 @@ describe("panes/registerPanes", () => {
 
 		assert.deepEqual(execCalls.at(-1), { command: "tmux", args: ["kill-pane", "-t", "%8"] });
 		assert.equal(getPaneState().paneId, null);
-		assert.equal(getPaneState().currentCwd, null);
-		assert.equal(getPaneState().currentSnapshot, null);
 		assert.equal(isCompanionActive(), false);
 		assert.deepEqual(ctx.ui.statusCalls.at(-1), { key: "basecamp.daemon.pane", value: undefined });
 	});
@@ -252,8 +275,6 @@ describe("panes/registerPanes", () => {
 		setCompanionActive(true);
 		const state = getPaneState();
 		state.paneId = "%8";
-		state.currentCwd = "/cwd";
-		state.currentSnapshot = "/snapshot.json";
 		const { pi, emit, execCalls } = createMockPi();
 		registerPanes(pi);
 
@@ -261,8 +282,6 @@ describe("panes/registerPanes", () => {
 
 		assert.equal(execCalls.length, 0);
 		assert.equal(getPaneState().paneId, "%8");
-		assert.equal(getPaneState().currentCwd, "/cwd");
-		assert.equal(getPaneState().currentSnapshot, "/snapshot.json");
 		assert.equal(isCompanionActive(), true);
 	});
 });

@@ -81,6 +81,15 @@ class FileBrowser(Horizontal):
         tree.border_title = self._tree_title()
         self._clear_preview()
 
+    def replace_roots(self, roots: list[tuple[str, Path]]) -> None:
+        """Replace browse roots and reset tree/preview state to the primary root."""
+
+        if not roots:
+            return
+
+        self.roots = list(roots)
+        self.set_root(self.roots[0][1])
+
     def action_toggle_root(self) -> None:
         if len(self.roots) < 2:
             return

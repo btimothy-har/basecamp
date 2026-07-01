@@ -7,6 +7,7 @@ import { getCurrentSessionState } from "pi-core/state/index.ts";
 import {
 	buildSnapshot,
 	type CompanionSnapshotWorktree,
+	companionLiveSnapshotPath,
 	companionSnapshotPath,
 	removeSnapshotFile,
 	writeSnapshotFile,
@@ -90,6 +91,7 @@ function writeNow(): void {
 			effectiveCwd: getWorkspaceService()?.getEffectiveCwd?.() ?? process.cwd(),
 		});
 		writeSnapshotFile(companionSnapshotPath(sessionId), snapshot);
+		writeSnapshotFile(companionLiveSnapshotPath(), snapshot);
 	} catch {
 		// best effort
 	}
@@ -118,6 +120,7 @@ export default function registerCompanion(pi: ExtensionAPI): void {
 		if (event.reason === "quit" && state.ctx) {
 			try {
 				removeSnapshotFile(companionSnapshotPath(state.ctx.sessionManager.getSessionId()));
+				removeSnapshotFile(companionLiveSnapshotPath());
 			} catch {
 				// best effort
 			}

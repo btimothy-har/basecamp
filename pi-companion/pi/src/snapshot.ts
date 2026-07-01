@@ -60,8 +60,19 @@ function snapshotFileName(sessionId: string): string {
 	return `${sessionId.replace(/[^A-Za-z0-9_-]/g, "_")}.json`;
 }
 
+function liveSnapshotFileName(processIdentifier: string): string {
+	return `.live-${processIdentifier.replace(/[^A-Za-z0-9_-]/g, "_")}.json`;
+}
+
 export function companionSnapshotPath(sessionId: string, dir = defaultCompanionSnapshotDir()): string {
 	return path.join(dir, snapshotFileName(sessionId));
+}
+
+export function companionLiveSnapshotPath(
+	dir = defaultCompanionSnapshotDir(),
+	processIdentifier = String(process.pid),
+): string {
+	return path.join(dir, liveSnapshotFileName(processIdentifier));
 }
 
 export function buildSnapshot(input: SnapshotInput): CompanionSnapshot {
