@@ -716,6 +716,121 @@ describe("plan execution result shapes", () => {
 		assert.equal(result.workstreams.good.launch_status, "dispatched");
 	});
 
+	it("opens Herdr only for successfully dispatched workstreams", async () => {
+		process.env.USER = "Test User";
+		const herdrOpenCalls: { label: string; path: string }[] = [];
+		const draft = approvedWorkstreamDraft([
+			{
+				id: "bad",
+				label: "Bad Launch",
+				scope: "Scope",
+				outcome: "Outcome",
+				boundaries: "Boundaries",
+			},
+			{
+				id: "good",
+				label: "Good Launch",
+				scope: "Scope",
+				outcome: "Outcome",
+				boundaries: "Boundaries",
+			},
+			{
+				id: "blocked",
+				label: "Blocked",
+				scope: "Scope",
+				outcome: "Outcome",
+				boundaries: "Boundaries",
+				dependsOn: ["good"],
+			},
+		]);
+
+		const result = parseWorkstreamResult(
+			await buildApprovedWorkstreamResult(piStub(), draft, contextWithSession("session-8888"), {
+				getWorkspaceState: () => workspaceState(),
+				getAgentLauncher: () => ({
+					id: "mixed-launcher",
+					async launch(input) {
+						if (input.task.includes("ID: bad")) {
+							return { ok: false, agent: "worker", message: "daemon rejected launch" };
+						}
+						return { ok: true, agentHandle: "good-handle", agent: "worker" };
+					},
+				}),
+				getOrCreateWorktree: async (_pi, _repoRoot, _repoName, label, branchName) => ({
+					worktreeDir: `/worktrees/${label}`,
+					label,
+					branch: branchName ?? "detached",
+					created: true,
+				}),
+				readWorktreeSetupCommand: () => null,
+				runWorktreeSetup: async () => ({ ran: true, exitCode: 0, timedOut: false, stderrTail: "" }),
+				openWorkstreamInHerdr: (_pi, _workspace, worktree) => {
+					herdrOpenCalls.push({ label: worktree.label, path: worktree.path });
+				},
+			}),
+		);
+
+		assert.equal(result.handoff_status, "workstreams_partially_dispatched");
+		assert.equal(result.workstreams.bad.launch_status, "failed");
+		assert.equal(result.workstreams.good.launch_status, "dispatched");
+		assert.equal(result.workstreams.blocked.launch_status, undefined);
+		assert.deepEqual(herdrOpenCalls, [{ label: "wt-te/8888-good", path: "/worktrees/wt-te/8888-good" }]);
+	});
+
+	it("ignores thrown or rejected Herdr opener failures without changing dispatch results", async () => {
+		process.env.USER = "Test User";
+		const herdrOpenCalls: string[] = [];
+		const draft = approvedWorkstreamDraft([
+			{
+				id: "sync",
+				label: "Sync Failure",
+				scope: "Scope",
+				outcome: "Outcome",
+				boundaries: "Boundaries",
+			},
+			{
+				id: "async",
+				label: "Async Failure",
+				scope: "Scope",
+				outcome: "Outcome",
+				boundaries: "Boundaries",
+			},
+		]);
+
+		const result = parseWorkstreamResult(
+			await buildApprovedWorkstreamResult(piStub(), draft, contextWithSession("session-9998"), {
+				getWorkspaceState: () => workspaceState(),
+				getAgentLauncher: () => successfulLauncher(),
+				getOrCreateWorktree: async (_pi, _repoRoot, _repoName, label, branchName) => ({
+					worktreeDir: `/worktrees/${label}`,
+					label,
+					branch: branchName ?? "detached",
+					created: true,
+				}),
+				readWorktreeSetupCommand: () => null,
+				runWorktreeSetup: async () => ({ ran: true, exitCode: 0, timedOut: false, stderrTail: "" }),
+				openWorkstreamInHerdr: (_pi, _workspace, worktree) => {
+					herdrOpenCalls.push(worktree.label);
+					if (worktree.label.includes("-sync")) throw new Error("sync Herdr failure");
+					return Promise.reject(new Error("async Herdr failure"));
+				},
+			}),
+		);
+
+		assert.equal(result.handoff_status, "workstreams_dispatched");
+		assert.deepEqual(result.workstream_progress, {
+			ready: 2,
+			blocked: 0,
+			activated: 2,
+			dispatched: 2,
+			failed: 0,
+			total: 2,
+		});
+		assert.equal(result.workstreams.sync.launch_status, "dispatched");
+		assert.equal(result.workstreams.async.launch_status, "dispatched");
+		assert.deepEqual(herdrOpenCalls, ["wt-te/9998-sync", "wt-te/9998-async"]);
+	});
+
 	it("cancels before provisioning when no launcher is registered", async () => {
 		process.env.USER = "Test User";
 		let createCalls = 0;

@@ -36,6 +36,7 @@ import {
 	tasksMatch,
 	workstreamsMatch,
 } from "./draft-logic.ts";
+import { openWorkstreamInHerdr } from "./herdr-workstreams.ts";
 import { normalizePlanExecutionInput, type PlanTaskInput, type PlanWorkstreamInput } from "./plan-input.ts";
 import type { PlanDraft, TaskPlanDraft, WorkstreamPlanDraft } from "./review.ts";
 import { SECTION_NAMES, showPlanReadOnly, showReviewOverlay } from "./review.ts";
@@ -362,6 +363,11 @@ interface WorkstreamActivationDeps {
 		pi: ExtensionAPI,
 		opts: { command: string; worktreeDir: string; repoRoot: string },
 	): Promise<WorktreeSetupResult>;
+	openWorkstreamInHerdr?(
+		pi: ExtensionAPI,
+		workspace: WorkspaceState,
+		worktree: NonNullable<ApprovedWorkstreamEntry["worktree"]>,
+	): Promise<void> | void;
 }
 
 const DEFAULT_WORKSTREAM_ACTIVATION_DEPS: WorkstreamActivationDeps = {
@@ -370,6 +376,7 @@ const DEFAULT_WORKSTREAM_ACTIVATION_DEPS: WorkstreamActivationDeps = {
 	getOrCreateWorktree,
 	readWorktreeSetupCommand,
 	runWorktreeSetup,
+	openWorkstreamInHerdr,
 };
 
 type WorkstreamProvisionStage = "worktree" | "setup" | "launch";
@@ -728,6 +735,11 @@ export async function buildApprovedWorkstreamResult(
 			if (launch.ok) {
 				entry.launch_status = "dispatched";
 				entry.agent = { handle: launch.agentHandle, type: launch.agent };
+				try {
+					Promise.resolve(deps.openWorkstreamInHerdr?.(pi, workspace, entry.worktree!)).catch(() => {});
+				} catch {
+					/* Herdr sync is best-effort and must not affect dispatch results. */
+				}
 			} else {
 				entry.launch_status = "failed";
 				entry.failure_stage = "launch";
