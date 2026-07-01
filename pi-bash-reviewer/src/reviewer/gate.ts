@@ -66,13 +66,14 @@ export function parseGateResponse(msg: AssistantMessage): GateDecision | null {
 	return args;
 }
 
-const THINKING_LEVELS: ModelThinkingLevel[] = ["minimal", "low", "medium", "high", "xhigh"];
+const PORTABLE_THINKING_LEVELS: ModelThinkingLevel[] = ["low", "medium", "high", "xhigh"];
 
 export function resolveGateReasoningEffort(model: Model<any>): ModelThinkingLevel | undefined {
 	if (!model.reasoning) return undefined;
 
 	const supported = new Set(getSupportedThinkingLevels(model));
-	return THINKING_LEVELS.find((level) => supported.has(level));
+	if (supported.has("minimal") && typeof model.thinkingLevelMap?.minimal === "string") return "minimal";
+	return PORTABLE_THINKING_LEVELS.find((level) => supported.has(level));
 }
 
 export function resolveGateToolChoice(model: Model<any>): unknown {
