@@ -23,7 +23,7 @@ export function shouldCreateHerdrPane(input: HerdrPaneProviderInput): boolean {
 }
 
 export function buildHerdrSplitArgs(targetPaneId: string, cwd: string): string[] {
-	return ["pane", "split", targetPaneId, "--direction", "right", "--cwd", cwd, "--no-focus", "--json"];
+	return ["pane", "split", targetPaneId, "--direction", "right", "--cwd", cwd, "--no-focus"];
 }
 
 export function buildHerdrRunArgs(paneId: string, command: string): string[] {
@@ -31,7 +31,7 @@ export function buildHerdrRunArgs(paneId: string, command: string): string[] {
 }
 
 export function buildHerdrGetArgs(paneId: string): string[] {
-	return ["pane", "get", paneId, "--json"];
+	return ["pane", "get", paneId];
 }
 
 export function buildHerdrCloseArgs(paneId: string): string[] {

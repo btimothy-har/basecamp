@@ -109,7 +109,6 @@ describe("panes/herdr-provider", () => {
 				"--cwd",
 				"/tmp/worktree cwd",
 				"--no-focus",
-				"--json",
 			]);
 		});
 
@@ -123,7 +122,7 @@ describe("panes/herdr-provider", () => {
 		});
 
 		it("builds get and close argv", () => {
-			assert.deepEqual(buildHerdrGetArgs("w8:p2"), ["pane", "get", "w8:p2", "--json"]);
+			assert.deepEqual(buildHerdrGetArgs("w8:p2"), ["pane", "get", "w8:p2"]);
 			assert.deepEqual(buildHerdrCloseArgs("w8:p2"), ["pane", "close", "w8:p2"]);
 		});
 	});
