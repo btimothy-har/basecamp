@@ -1,22 +1,22 @@
 # Pi Swarm Daemon Protocol
 
-Protocol version: `13`
+Protocol version: `14`
 
 All frames are JSON objects with an envelope:
 
 ```json
-{"type":"<frame_type>","v":13,...}
+{"type":"<frame_type>","v":14,...}
 ```
 
 Version handling:
 - The daemon validates `v` on every inbound frame.
-- If `v != 13`, the daemon sends an `error` frame with `code: "protocol_version"` and closes the connection.
+- If `v != 14`, the daemon sends an `error` frame with `code: "protocol_version"` and closes the connection.
 - The extension treats the protocol as a client-visible capability gate, not only a frame-shape version. A version mismatch restarts the host daemon during ensure-daemon.
 
 ## Transport
 
 - HTTP over Unix domain socket (UDS):
-  - `GET /health` → `{"status":"ok","protocol":13}`
+  - `GET /health` → `{"status":"ok","protocol":14}`
   - `GET /runs/summary?root_id=<id>` returns safe agent-level observability for the companion dashboard.
   - `GET /runs/messages?root_id=<id>&agent_handle=<handle>` returns selected-agent assistant message detail for the companion dashboard.
 - WebSocket over UDS:
@@ -28,7 +28,7 @@ The socket lives under `~/.pi/basecamp/swarm/daemon.sock` and is restricted to t
 
 ## Identity model
 
-The public async-agent identity is `agent_handle`, a readable path-safe alias such as `mossy-otter-a1b2c3`. Generated handles are type-free; use the separate `agent_type` field for agent definition metadata.
+The public daemon-agent identity is `agent_handle`, a readable path-safe alias such as `mossy-otter-a1b2c3`. Top-level sessions and dispatched agents use the same handle shape; there is no `session-` prefix and no routable `parent` alias. Relationship words such as `parent`, `child`, and `peer` are display metadata only. Generated handles are type-free; use the separate `agent_type` field for agent definition metadata.
 
 `agent_id` is a private durable UUID-like daemon identity. It remains the primary key for sessions, report authorization, process bookkeeping, and child `BASECAMP_AGENT_ID` values. It may appear in trusted extension-daemon frames, but LLM-facing tools must not present it as the handle.
 
@@ -37,9 +37,9 @@ The public async-agent identity is `agent_handle`, a readable path-safe alias su
 - `telemetry` and `result_report` authenticate/report the active execution.
 - process reaping and run history use the private id.
 
-LLM-facing tools should not present `run_id` or `agent_id` as user handles. `dispatch_agent` returns an `agent_handle`, `wait_for_agent` accepts agent handles, and `list_agents` renders an agent directory by handle.
+LLM-facing tools should not present `run_id` or `agent_id` as user handles. Capability is separate from identity: `message_agent` and `ask_agent` may target visible session or worker handles, while `dispatch_agent`, retask, `wait_for_agent`, and `list_agents` stay task-run oriented.
 
-The daemon enforces one primary active run per agent. `agents.current_run_id` points at the latest primary run, including terminal runs, so `wait_for_agent(agent_handle)` can retrieve final results until a later primary run replaces it. Retasking an existing handle is conservative: the current run must already be terminal, and `agent_type` / `run_kind` for that handle are immutable.
+The daemon enforces one primary active run per dispatchable agent. `agents.current_run_id` points at the latest primary run, including terminal runs, so `wait_for_agent(agent_handle)` can retrieve final results until a later primary run replaces it. Retasking an existing handle is conservative: the current run must already be terminal, `agent_type` / `run_kind` for that handle are immutable, and session/ask handles are rejected as non-dispatchable.
 
 ## Frame types
 
@@ -51,7 +51,7 @@ Registers the current top-level session or transient agent process.
 
 Important fields:
 - `node_id`: internal caller identity. For async agents this is the private `agent_id`.
-- `agent_handle`: optional public alias for async agents.
+- `agent_handle`: public alias for the registered node. Current clients send this for both root sessions and async agents.
 - `parent_id`: parent node, or `null` for a root session.
 - `role`: `session` or `agent`.
 - `session_name`, `depth`, `cwd`: safe directory/observability metadata.
@@ -63,7 +63,7 @@ Requests a transient process for an agent.
 Important fields:
 - `run_id`: private request/execution correlation id.
 - `agent_id`: private durable agent identity. If omitted, daemon may mint one as a fallback.
-- `agent_handle`: public readable handle for dispatch/list/wait UX.
+- `agent_handle`: public readable handle for dispatch/list/wait UX. When it matches an existing session or ask-only row, dispatch is rejected as non-dispatchable.
 - `agent_type` and `run_kind`: immutable per handle after the first dispatch.
 - `model`: public display model selected for the agent run. If the extension uses Pi's default model, it sends/stores `default`.
 - `spec`: opaque TypeScript-authored spawn spec.
@@ -77,7 +77,7 @@ Acknowledges a dispatch request by private `run_id`.
 
 Statuses:
 - `spawned`
-- `rejected` with `reason`, including `depth_cap`, `spawn_failed`, `active_run_exists`, `duplicate_agent_handle`, or `agent_type_mismatch`.
+- `rejected` with `reason`, including `depth_cap`, `spawn_failed`, `active_run_exists`, `duplicate_agent_handle`, `agent_type_mismatch`, or `not_dispatchable`.
 
 ### `telemetry` agent → daemon
 
@@ -94,7 +94,7 @@ Waits for one or more public agent handles:
 ```json
 {
   "type": "wait",
-  "v": 13,
+  "v": 14,
   "agent_ids": [],
   "agent_handles": ["mossy-otter-a1b2c3"],
   "mode": "all",
@@ -104,9 +104,9 @@ Waits for one or more public agent handles:
 
 `agent_ids` remains for internal/backward-compatible callers. New LLM-facing callers should send `agent_handles`.
 
-Authorization is strict and dispatcher-owned: the requester may wait only when its registered `node_id` equals the `dispatcher_id` on the target agent's current primary run.
+Authorization is strict and dispatcher-owned: the requester may wait only when its registered `node_id` equals the `dispatcher_id` on the target agent's current primary run. Session handles are not primary-run targets and return `unknown`.
 
-Unauthorized, missing, or no-current-run agents are returned as `unknown`. They do not block and do not reveal whether the handle exists.
+Unauthorized, missing, no-current-run, or non-awaitable agents are returned as `unknown`. They do not block and do not reveal whether the handle exists.
 
 ### `wait_result` daemon → client
 
@@ -125,13 +125,13 @@ Requests a safe directory of agents visible under the caller's root session:
 ```json
 {
   "type": "list_agents",
-  "v": 13,
+  "v": 14,
   "request_id": "list-001",
   "awaitable": true
 }
 ```
 
-`request_id` correlates the response. `awaitable: true` filters to agents whose current primary run the caller may wait on. Omitted or `false` returns all same-root non-session agents.
+`request_id` correlates the response. `awaitable: true` filters to agents whose current primary run the caller may wait on. Omitted or `false` returns all same-root non-session, non-ask agents. This is not a complete message-target directory; sessions remain excluded even when messageable by canonical handle.
 
 ### `list_agents_result` daemon → client
 
@@ -151,15 +151,15 @@ Rows also carry the private `agent_id` for trusted extension retasking plumbing;
 
 ### `peer_message` client → daemon
 
-Requests store-backed asynchronous peer message delivery to a public agent handle.
+Requests store-backed asynchronous peer message delivery to a public messageable agent handle.
 
 Important fields:
 - `request_id`: public request correlation id for the immediate acknowledgement.
-- `target_handle`: recipient public agent handle.
+- `target_handle`: recipient public handle. It may identify a visible session/root agent or a dispatched agent; it is never a relationship alias such as `parent`.
 - `message`: message text to deliver.
 - `interrupt`: optional boolean, default `false`; when true, delivery may interrupt the recipient if the runtime supports it.
 
-The request does not expose or require private `agent_id` or `run_id` values.
+The request does not expose or require private `agent_id` or `run_id` values. Missing and unauthorized targets both resolve to `unknown` without leaking existence.
 
 ### `peer_message_ack` daemon → client
 
@@ -178,8 +178,11 @@ Delivers an accepted peer message to the recipient agent.
 Fields:
 - `message_id`: stored message id.
 - `from_handle`: sender public handle, or `null` when unavailable.
+- `from_relation`: sender relationship from the recipient's perspective: `self`, `parent`, `ancestor`, `child`, `descendant`, `peer`, or `unknown`.
 - `message`: message text.
 - `interrupt`: whether this delivery should interrupt the recipient.
+
+Recipient clients render injected content as `Message from <handle> (<relation>):`. The handle is the only routable identity; the relation label is display-only.
 
 ### `peer_message_delivery_ack` agent → daemon
 
@@ -267,6 +270,6 @@ Reports protocol/parse errors and closes the WebSocket for fatal frame errors. C
 A minimal client flow is:
 
 1. Connect to `/ws` over the UDS.
-2. Send `register` with `v: 13`.
+2. Send `register` with `v: 14`.
 3. Send `dispatch` with private `run_id` / `agent_id` and public `agent_handle`.
 4. Use the `agent_handle` with `wait` or discover agents through `list_agents`.

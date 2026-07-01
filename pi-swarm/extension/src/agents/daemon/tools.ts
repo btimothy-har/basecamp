@@ -74,13 +74,13 @@ const DispatchAgentParams = Type.Object({
 });
 
 const AskAgentParams = Type.Object({
-	agent_handle: Type.String({ description: "Target agent handle to ask" }),
+	agent_handle: Type.String({ description: "Target messageable/askable agent handle to ask" }),
 	question: Type.String({ description: "Question to ask the target agent" }),
 	timeout_s: Type.Optional(Type.Number({ minimum: 1, default: 600 })),
 });
 
 const MessageAgentParams = Type.Object({
-	agent_handle: Type.String({ description: "Target agent handle to message" }),
+	agent_handle: Type.String({ description: "Target messageable agent handle" }),
 	message: Type.String({ description: "One-way message to persistently deliver to the target agent" }),
 	interrupt: Type.Optional(
 		Type.Boolean({ description: "Deliver as an interrupt/steer message instead of a follow-up" }),
@@ -215,7 +215,7 @@ export function registerPeerMessageTools(
 		name: "message_agent",
 		label: "Message Agent",
 		description:
-			"Send a one-way persistent message to a visible async agent. Returns daemon acceptance only; no recipient response is included.",
+			"Send a one-way persistent message to a visible messageable agent, including a parent/session when addressable by handle. Returns daemon acceptance only; no recipient response is included.",
 		parameters: MessageAgentParams,
 		async execute(_id, params) {
 			if (!deps.hasInvokedSkill("agents")) {
@@ -244,7 +244,7 @@ export function registerPeerMessageTools(
 			const connection = await getConnection();
 			if (!connection) {
 				return {
-					content: [{ type: "text", text: "basecamp swarm daemon is not connected; cannot message async agents." }],
+					content: [{ type: "text", text: "basecamp swarm daemon is not connected; cannot message agents." }],
 					isError: true,
 					details: null,
 				};
@@ -378,7 +378,8 @@ export function registerAskAgentTool(
 	pi.registerTool({
 		name: "ask_agent",
 		label: "Ask Agent",
-		description: "Ask a visible async agent a question and return its answer.",
+		description:
+			"Ask a visible askable agent, including a parent/session when addressable by handle, and return its answer.",
 		parameters: AskAgentParams,
 		async execute(_id, params, signal, _onUpdate, ctx) {
 			if (!deps.hasInvokedSkill("agents")) {
@@ -707,7 +708,7 @@ export function registerDaemonTools(
 	pi.registerTool({
 		name: "list_agents",
 		label: "List Agents",
-		description: "List visible async agents under the caller's daemon root.",
+		description: "List visible dispatchable async agents under the caller's daemon root.",
 		parameters: ListAgentsParams,
 		async execute(_id, params, _signal) {
 			if (!deps.hasInvokedSkill("agents")) {
@@ -725,7 +726,7 @@ export function registerDaemonTools(
 			const connection = await getConnection();
 			if (!connection) {
 				return {
-					content: [{ type: "text", text: "basecamp swarm daemon is not connected; cannot list async agents." }],
+					content: [{ type: "text", text: "basecamp swarm daemon is not connected; cannot list dispatchable agents." }],
 					isError: true,
 					details: null,
 				};
@@ -760,7 +761,7 @@ export function registerDaemonTools(
 	pi.registerTool({
 		name: "wait_for_agent",
 		label: "Wait For Agent",
-		description: "Wait for one or more async agent handles to complete.",
+		description: "Wait for one or more awaitable async agent handles to complete.",
 		parameters: WaitForAgentParams,
 		async execute(_id, params, signal) {
 			if (!deps.hasInvokedSkill("agents")) {
