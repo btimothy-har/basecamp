@@ -10,6 +10,7 @@ function deliveryFrame(overrides: Partial<PeerMessageDeliveryFrame> = {}): PeerM
 		v: PROTOCOL_VERSION,
 		message_id: "message-1",
 		from_handle: "worker-1",
+		from_relation: "peer",
 		message: "Please review the latest patch.",
 		interrupt: false,
 		...overrides,
@@ -41,7 +42,7 @@ describe("peer message delivery", () => {
 
 		assert.deepEqual(calls, [
 			{
-				content: "Message from worker-1:\n\nPlease review the latest patch.",
+				content: "Message from worker-1 (peer):\n\nPlease review the latest patch.",
 				deliverAs: "steer",
 			},
 		]);
@@ -72,7 +73,7 @@ describe("peer message delivery", () => {
 
 		assert.deepEqual(calls, [
 			{
-				content: "Message from worker-1:\n\nPlease review the latest patch.",
+				content: "Message from worker-1 (peer):\n\nPlease review the latest patch.",
 				deliverAs: "followUp",
 			},
 		]);
@@ -84,6 +85,14 @@ describe("peer message delivery", () => {
 				status: "queued",
 			},
 		]);
+	});
+
+	it("formats parent senders with canonical handle and relation", () => {
+		const content = formatPeerMessageDeliveryContent(
+			deliveryFrame({ from_handle: "quiet-badger-3dc450", from_relation: "parent", message: "Can you check this?" }),
+		);
+
+		assert.equal(content, "Message from quiet-badger-3dc450 (parent):\n\nCan you check this?");
 	});
 
 	it("does not convert queued ack transport errors into failed delivery", () => {
@@ -131,9 +140,9 @@ describe("peer message delivery", () => {
 		try {
 			process.env.BASECAMP_AGENT_ID = "agent-private";
 			process.env.BASECAMP_RUN_ID = "run-private";
-			const content = formatPeerMessageDeliveryContent(deliveryFrame({ from_handle: null }));
+			const content = formatPeerMessageDeliveryContent(deliveryFrame({ from_handle: null, from_relation: "unknown" }));
 
-			assert.match(content, /^Message from a peer:/);
+			assert.match(content, /^Message from a peer \(unknown\):/);
 			assert.equal(content.includes("from_handle"), false);
 			assert.equal(content.includes("message_id"), false);
 			assert.equal(content.includes("agent-private"), false);

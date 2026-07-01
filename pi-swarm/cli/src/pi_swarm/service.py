@@ -387,6 +387,7 @@ async def accept_peer_message(
 
     sender = await asyncio.to_thread(store.get_agent, requester_node_id)
     sender_handle = _public_sender_handle(sender)
+    sender_relation = await asyncio.to_thread(store.agent_relation, target_agent_id, requester_node_id)
     message_id = f"msg-{uuid.uuid4()}"
     await asyncio.to_thread(
         store.create_message,
@@ -414,6 +415,7 @@ async def accept_peer_message(
             v=PROTOCOL_VERSION,
             message_id=message_id,
             from_handle=sender_handle,
+            from_relation=sender_relation,
             message=frame.message,
             interrupt=frame.interrupt,
         ),

@@ -222,6 +222,7 @@ describe("daemon client", () => {
 			v: PROTOCOL_VERSION,
 			message_id: "message-1",
 			from_handle: "sender",
+			from_relation: "peer",
 			message: "delivery should not resolve sender",
 			interrupt: false,
 		});

@@ -818,6 +818,15 @@ def test_can_message_allows_visible_sessions_agents_and_siblings_only(tmp_path: 
     assert store.can_message("agent-a", "missing") is False
     assert store.can_message("missing", "agent-a") is False
 
+    assert store.agent_relation("agent-a", "agent-a") == "self"
+    assert store.agent_relation("grandchild", "agent-a") == "parent"
+    assert store.agent_relation("grandchild", "root") == "ancestor"
+    assert store.agent_relation("root", "agent-a") == "child"
+    assert store.agent_relation("root", "grandchild") == "descendant"
+    assert store.agent_relation("agent-a", "agent-b") == "peer"
+    assert store.agent_relation("agent-a", "outside-agent") == "unknown"
+    assert store.agent_relation("agent-a", "missing") == "unknown"
+
 
 def test_get_root_agent_directory_scopes_to_root_and_excludes_sessions(tmp_path: Path) -> None:
     db_path = tmp_path / "daemon.db"

@@ -454,6 +454,7 @@ def test_ws_peer_message_ack_is_immediate_and_delivery_is_forwarded(tmp_path: Pa
                     "v": PROTOCOL_VERSION,
                     "message_id": ack["message_id"],
                     "from_handle": None,
+                    "from_relation": "parent",
                     "message": "hello",
                     "interrupt": True,
                 }
@@ -501,6 +502,7 @@ def test_ws_peer_message_sessions_and_agents_are_messageable_by_public_handle(tm
         "v": PROTOCOL_VERSION,
         "message_id": agent_to_root_ack["message_id"],
         "from_handle": "agent-handle",
+        "from_relation": "child",
         "message": "to root",
         "interrupt": False,
     }
@@ -510,6 +512,7 @@ def test_ws_peer_message_sessions_and_agents_are_messageable_by_public_handle(tm
         "v": PROTOCOL_VERSION,
         "message_id": root_to_agent_ack["message_id"],
         "from_handle": "root-handle",
+        "from_relation": "parent",
         "message": "to agent",
         "interrupt": False,
     }
@@ -550,6 +553,7 @@ def test_ws_peer_message_agent_without_public_handle_delivers_null_from_handle(t
 
     assert delivery["message_id"] == message_id
     assert delivery["from_handle"] is None
+    assert delivery["from_relation"] == "peer"
 
 
 def test_ws_peer_message_delivery_ack_queued_updates_status(tmp_path: Path) -> None:

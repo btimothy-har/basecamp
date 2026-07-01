@@ -278,6 +278,7 @@ describe("daemon async tools", () => {
 			v: PROTOCOL_VERSION,
 			message_id: "message-1",
 			from_handle: "sender",
+			from_relation: "peer",
 			message: "recipient delivery is not a response",
 			interrupt: false,
 		});

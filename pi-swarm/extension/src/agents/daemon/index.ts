@@ -91,7 +91,7 @@ function errorMessage(error: unknown): string {
 
 export function formatPeerMessageDeliveryContent(frame: PeerMessageDeliveryFrame): string {
 	const sender = frame.from_handle?.trim() || "a peer";
-	return `Message from ${sender}:\n\n${frame.message}`;
+	return `Message from ${sender} (${frame.from_relation}):\n\n${frame.message}`;
 }
 
 export function handlePeerMessageDelivery(

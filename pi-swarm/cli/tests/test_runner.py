@@ -317,6 +317,7 @@ def test_attempt_proxy_forwards_unsolicited_peer_message_delivery_from_daemon(tm
         v=PROTOCOL_VERSION,
         message_id="msg-1",
         from_handle="amber-fox-a1b2c3",
+        from_relation="peer",
         message="hello from a peer",
         interrupt=True,
     )
