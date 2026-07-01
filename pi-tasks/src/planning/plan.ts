@@ -2,8 +2,9 @@
  * Plan — structured proposal with user review before execution.
  *
  * The plan() tool submits a structured plan (goal, context, design, success,
- * boundaries, tasks) and blocks until the user reviews it via an auto-pop
- * overlay. On approval, creates a GoalCycle with planRef and populates tasks.
+ * boundaries, and either tasks or workstreams) and opens interactive review when
+ * UI is available. On approval, task plans create a GoalCycle with
+ * planRef and populate tasks; workstream plans provision and dispatch ready lanes.
  * Implementation plans ask for execution posture; analysis plans stay in
  * analysis mode. On feedback, returns structured
  * feedback for the agent to revise.
@@ -14,21 +15,43 @@
 
 import type { ExtensionAPI, ExtensionContext, Theme } from "@earendil-works/pi-coding-agent";
 import { Type } from "@sinclair/typebox";
+import { type AgentLauncher, getAgentLauncher } from "pi-core/platform/agent-launcher.ts";
 import { readWorktreeSetupCommand } from "pi-core/platform/config.ts";
 import {
 	activateWorkspaceWorktree,
 	getWorkspaceState,
 	listWorkspaceWorktrees,
 	requireWorkspaceState,
+	type WorkspaceState,
 	type WorkspaceWorktree,
 } from "pi-core/platform/workspace.ts";
 import { getAgentMode, setAgentMode } from "pi-core/session/agent-mode.ts";
 import { shortSessionId } from "pi-core/session/session-id.ts";
-import { runWorktreeSetup } from "pi-core/workspace/setup.ts";
+import { runWorktreeSetup, type WorktreeSetupResult } from "pi-core/workspace/setup.ts";
+import { getOrCreateWorktree, type WorktreeResult } from "pi-core/workspace/worktree.ts";
 import type { GoalCycle, ReviewState, TaskStatus, TasksAccess } from "../tasks/tasks";
-import { computeGoalContextReview, computeSectionReview, freshReview, tasksMatch } from "./draft-logic";
-import type { PlanDraft } from "./review";
-import { SECTION_NAMES, showPlanReadOnly, showReviewOverlay } from "./review";
+import {
+	computeCollectiveReview,
+	computeGoalContextReview,
+	computeSectionReview,
+	tasksMatch,
+	workstreamsMatch,
+} from "./draft-logic.ts";
+import { openWorkstreamInHerdr } from "./herdr-workstreams.ts";
+import { normalizePlanExecutionInput, type PlanTaskInput, type PlanWorkstreamInput } from "./plan-input.ts";
+import type { PlanDraft, TaskPlanDraft, WorkstreamPlanDraft } from "./review.ts";
+import { SECTION_NAMES, showPlanReadOnly, showReviewOverlay } from "./review.ts";
+import {
+	computeWorkstreamPlanId,
+	emptyWorkstreamLaunchState,
+	findPersistedWorkstreamEntryByWorktreeLabel,
+	loadWorkstreamLaunchState,
+	type PersistedWorkstreamEntry,
+	type PersistedWorkstreamRun,
+	saveWorkstreamLaunchState,
+	type WorkstreamLaunchState,
+	workstreamStateFilePath,
+} from "./workstream-state.ts";
 import {
 	buildExecutionWorktreeChoices,
 	CUSTOM_WORKTREE_CHOICE,
@@ -42,32 +65,20 @@ import { shouldRunWorktreeSetup, type WorktreeSetupSummary, worktreeSetupSummary
 // Draft diffing — preserve approvals on unchanged content
 // ============================================================================
 
-function buildDraft(
-	params: {
-		goal: string;
-		context: string;
-		design: string;
-		success: string;
-		boundaries: string;
-		worktreeSlug?: string;
-	},
-	tasks: { label: string; description: string; criteria: string }[],
-	previous: PlanDraft | null,
-): PlanDraft {
+interface DraftParams {
+	goal: string;
+	context: string;
+	design: string;
+	success: string;
+	boundaries: string;
+}
+
+function buildCommonDraftSections(params: DraftParams, previous: PlanDraft | null) {
 	const goalContextState = computeGoalContextReview(
 		params.goal,
 		params.context,
 		previous ? { goal: previous.goal, context: previous.context } : null,
 	);
-
-	// Tasks are reviewed as a collective unit — preserve approval if list is unchanged
-	function collectiveTasksReview(): ReviewState {
-		if (!previous) return freshReview();
-		if (tasksMatch(tasks, previous.tasks) && previous.tasksReview.approved) {
-			return { approved: true, feedback: null };
-		}
-		return freshReview();
-	}
 
 	return {
 		goal: { content: params.goal, review: goalContextState },
@@ -78,6 +89,19 @@ function buildDraft(
 			content: params.boundaries,
 			review: computeSectionReview(params.boundaries, previous?.boundaries ?? null),
 		},
+	};
+}
+
+function buildTaskDraft(
+	params: DraftParams & { worktreeSlug?: string },
+	tasks: PlanTaskInput[],
+	previous: PlanDraft | null,
+): TaskPlanDraft {
+	const previousTaskDraft = previous?.executionKind === "tasks" ? previous : null;
+
+	return {
+		...buildCommonDraftSections(params, previous),
+		executionKind: "tasks",
 		worktreeSlug: params.worktreeSlug ?? null,
 		tasks: tasks.map((t) => ({
 			label: t.label,
@@ -87,7 +111,31 @@ function buildDraft(
 			status: "pending" as TaskStatus,
 			review: null,
 		})),
-		tasksReview: collectiveTasksReview(),
+		tasksReview: computeCollectiveReview(
+			previousTaskDraft ? tasksMatch(tasks, previousTaskDraft.tasks) : false,
+			previousTaskDraft?.tasksReview ?? null,
+		),
+	};
+}
+
+function buildWorkstreamDraft(
+	params: DraftParams,
+	workstreams: PlanWorkstreamInput[],
+	previous: PlanDraft | null,
+): WorkstreamPlanDraft {
+	const previousWorkstreamDraft = previous?.executionKind === "workstreams" ? previous : null;
+
+	return {
+		...buildCommonDraftSections(params, previous),
+		executionKind: "workstreams",
+		workstreams: workstreams.map((workstream) => ({
+			...workstream,
+			...(workstream.dependsOn !== undefined ? { dependsOn: [...workstream.dependsOn] } : {}),
+		})),
+		workstreamsReview: computeCollectiveReview(
+			previousWorkstreamDraft ? workstreamsMatch(workstreams, previousWorkstreamDraft.workstreams) : false,
+			previousWorkstreamDraft?.workstreamsReview ?? null,
+		),
 	};
 }
 
@@ -95,11 +143,16 @@ function buildDraft(
 // Review result builders
 // ============================================================================
 
+function getCollectiveReview(draft: PlanDraft): { key: "tasks" | "workstreams"; review: ReviewState } {
+	if (draft.executionKind === "tasks") return { key: "tasks", review: draft.tasksReview };
+	return { key: "workstreams", review: draft.workstreamsReview };
+}
+
 function isAllApproved(draft: PlanDraft): boolean {
 	for (const name of SECTION_NAMES) {
 		if (!draft[name].review.approved) return false;
 	}
-	if (!draft.tasksReview.approved) return false;
+	if (!getCollectiveReview(draft).review.approved) return false;
 	return true;
 }
 
@@ -114,17 +167,19 @@ function buildFeedbackResult(draft: PlanDraft): string {
 		if (r.feedback && r.approved) notes[name] = r.feedback;
 	}
 
-	// Tasks are reviewed collectively
-	const tr = draft.tasksReview;
-	approved.tasks = tr.approved;
-	if (tr.feedback && !tr.approved) revisions.tasks = tr.feedback;
-	if (tr.feedback && tr.approved) notes.tasks = tr.feedback;
+	// Tasks/workstreams are reviewed collectively.
+	const collective = getCollectiveReview(draft);
+	approved[collective.key] = collective.review.approved;
+	if (collective.review.feedback && !collective.review.approved) revisions[collective.key] = collective.review.feedback;
+	if (collective.review.feedback && collective.review.approved) notes[collective.key] = collective.review.feedback;
 
 	const result: Record<string, unknown> = {
 		status: "feedback",
 		approved,
 		revisions,
 	};
+
+	if (draft.executionKind === "workstreams") result.plan_kind = "workstreams";
 
 	// Include approved-with-notes so agent sees them alongside revisions
 	if (Object.keys(notes).length > 0) result.notes = notes;
@@ -139,8 +194,9 @@ function collectApprovedNotes(draft: PlanDraft): Record<string, string> {
 		if (r.approved && r.feedback) notes[name] = r.feedback;
 	}
 
-	if (draft.tasksReview.approved && draft.tasksReview.feedback) {
-		notes.tasks = draft.tasksReview.feedback;
+	const collective = getCollectiveReview(draft);
+	if (collective.review.approved && collective.review.feedback) {
+		notes[collective.key] = collective.review.feedback;
 	}
 
 	return notes;
@@ -249,7 +305,7 @@ function buildWorktreeActivationFailedResult(label: string, error: unknown): str
 }
 
 function buildApprovedResult(
-	draft: PlanDraft,
+	draft: TaskPlanDraft,
 	mode: ApprovedPlanMode,
 	worktree?: HandoffWorktreeResult,
 	setupSummary?: WorktreeSetupSummary,
@@ -304,8 +360,673 @@ function buildApprovedResult(
 	return JSON.stringify(result);
 }
 
+interface WorkstreamActivationDeps {
+	getWorkspaceState(): ReturnType<typeof getWorkspaceState>;
+	getAgentLauncher(): AgentLauncher | null;
+	getOrCreateWorktree(
+		pi: ExtensionAPI,
+		repoRoot: string,
+		repoName: string,
+		label: string,
+		branchName?: string | null,
+	): Promise<WorktreeResult>;
+	readWorktreeSetupCommand(repoName: string): string | null;
+	runWorktreeSetup(
+		pi: ExtensionAPI,
+		opts: { command: string; worktreeDir: string; repoRoot: string },
+	): Promise<WorktreeSetupResult>;
+	openWorkstreamInHerdr?(
+		pi: ExtensionAPI,
+		workspace: WorkspaceState,
+		worktree: NonNullable<ApprovedWorkstreamEntry["worktree"]>,
+	): Promise<void> | void;
+	workstreamStateFilePath?(sessionId: string): string;
+	loadWorkstreamLaunchState?(filePath: string): WorkstreamLaunchState;
+	saveWorkstreamLaunchState?(filePath: string, state: WorkstreamLaunchState): void;
+	now?(): string;
+}
+
+const DEFAULT_WORKSTREAM_ACTIVATION_DEPS: WorkstreamActivationDeps = {
+	getWorkspaceState,
+	getAgentLauncher,
+	getOrCreateWorktree,
+	readWorktreeSetupCommand,
+	runWorktreeSetup,
+	openWorkstreamInHerdr,
+	workstreamStateFilePath,
+	loadWorkstreamLaunchState,
+	saveWorkstreamLaunchState,
+};
+
+type WorkstreamProvisionStage = "worktree" | "setup" | "launch" | "cap";
+type WorkstreamProvisionStatus = "activated" | "failed";
+type WorkstreamLaunchStatus = "dispatched" | "failed";
+
+interface ApprovedWorkstreamEntry {
+	id: string;
+	label: string;
+	scope: string;
+	outcome: string;
+	boundaries: string;
+	worktreeSlug?: string;
+	dependsOn: string[];
+	status: "ready" | "blocked";
+	activation_status?: WorkstreamProvisionStatus;
+	failure_stage?: WorkstreamProvisionStage;
+	message?: string;
+	worktree?: {
+		label: string;
+		path: string;
+		branch: string;
+		created: boolean;
+	};
+	worktree_setup?: WorktreeSetupSummary;
+	launch_status?: WorkstreamLaunchStatus;
+	agent?: {
+		handle: string;
+		type: string;
+	};
+	reused_agent?: boolean;
+}
+
+function errorMessage(error: unknown): string {
+	return error instanceof Error ? error.message : String(error);
+}
+
+function setupFailureMessage(summary: WorktreeSetupSummary): string {
+	if (summary.timed_out) return "Worktree setup timed out.";
+	return `Worktree setup exited ${summary.exit_code}.`;
+}
+
+function buildWorkstreamLaunchWorkspace(
+	workspace: WorkspaceState,
+	worktree: ApprovedWorkstreamEntry["worktree"],
+): WorkspaceState {
+	if (!worktree) return workspace;
+	return {
+		...workspace,
+		effectiveCwd: worktree.path,
+		activeWorktree: {
+			kind: "git-worktree",
+			label: worktree.label,
+			path: worktree.path,
+			branch: worktree.branch,
+			created: worktree.created,
+		},
+	};
+}
+
+function buildWorkstreamLaunchEnv(
+	workspace: WorkspaceState,
+	worktree: ApprovedWorkstreamEntry["worktree"],
+): Record<string, string> {
+	return {
+		BASECAMP_REPO: workspace.repo?.name ?? "",
+		BASECAMP_SCRATCH_DIR: workspace.scratchDir,
+		BASECAMP_WORKTREE_DIR: worktree?.path ?? "",
+		BASECAMP_WORKTREE_LABEL: worktree?.label ?? "",
+	};
+}
+
+function buildWorkstreamLaunchBrief(params: {
+	draft: WorkstreamPlanDraft;
+	workstream: PlanWorkstreamInput;
+	entry: ApprovedWorkstreamEntry;
+}): string {
+	const { draft, workstream, entry } = params;
+	const dependsOn = workstream.dependsOn?.length ? workstream.dependsOn.join(", ") : "None";
+	const worktree = entry.worktree;
+	const lines = [
+		"You are a pi-swarm worker agent dispatched for one approved Basecamp workstream.",
+		"",
+		"Parent plan:",
+		`Goal: ${draft.goal.content}`,
+		`Context: ${draft.context.content}`,
+		`Design: ${draft.design.content}`,
+		`Success: ${draft.success.content}`,
+		`Boundaries: ${draft.boundaries.content}`,
+		"",
+		"Assigned workstream:",
+		`ID: ${workstream.id}`,
+		`Label: ${workstream.label}`,
+		`Scope: ${workstream.scope}`,
+		`Outcome: ${workstream.outcome}`,
+		`Boundaries: ${workstream.boundaries}`,
+		`Depends on: ${dependsOn}`,
+		"",
+		"Assigned worktree:",
+		`Label: ${worktree?.label ?? "unknown"}`,
+		`Path: ${worktree?.path ?? "unknown"}`,
+		`Branch: ${worktree?.branch ?? "unknown"}`,
+		"",
+		"Execution instructions:",
+		"- Work only in the assigned worktree path. Do not edit the protected checkout or another workstream's worktree.",
+		"- Create and maintain local tasks for your own work in this session.",
+		"- Keep the scope PR-sized and limited to this workstream's scope, outcome, and boundaries.",
+		"- Do not merge to main or any integration branch.",
+		"- Do not create a GitHub PR unless explicitly asked.",
+		"- If blocked by a dependency or setup issue, report the blocker instead of broadening scope.",
+		"",
+		"Reporting contract:",
+		"- Report files changed, design decisions, validation run, remaining risks/blockers, and whether the workstream outcome is complete.",
+		"- Keep progress updates concise and tied to this workstream.",
+	];
+	return lines.join("\n");
+}
+
+function buildPersistedWorkstreamRun(params: {
+	planId: string;
+	draft: WorkstreamPlanDraft;
+	workstreams: Record<string, ApprovedWorkstreamEntry>;
+	result: Record<string, unknown>;
+	updatedAt: string;
+}): PersistedWorkstreamRun {
+	const persisted: PersistedWorkstreamRun["workstreams"] = {};
+	for (const entry of Object.values(params.workstreams)) {
+		const status =
+			entry.launch_status === "dispatched"
+				? "dispatched"
+				: entry.activation_status === "failed" || entry.launch_status === "failed"
+					? "failed"
+					: entry.status;
+		persisted[entry.id] = {
+			id: entry.id,
+			label: entry.label,
+			dependsOn: [...entry.dependsOn],
+			status,
+			...(entry.agent ? { agent: { ...entry.agent } } : {}),
+			...(entry.worktree ? { worktree: { ...entry.worktree } } : {}),
+			...(entry.failure_stage ? { failure_stage: entry.failure_stage } : {}),
+			...(entry.message ? { message: entry.message } : {}),
+			updatedAt: params.updatedAt,
+		};
+	}
+
+	return {
+		planId: params.planId,
+		plan: {
+			goal: params.draft.goal.content,
+			context: params.draft.context.content,
+			design: params.draft.design.content,
+			success: params.draft.success.content,
+			boundaries: params.draft.boundaries.content,
+		},
+		...(typeof params.result.status === "string" ? { status: params.result.status } : {}),
+		...(typeof params.result.handoff_status === "string" ? { handoff_status: params.result.handoff_status } : {}),
+		...(typeof params.result.message === "string" ? { message: params.result.message } : {}),
+		updatedAt: params.updatedAt,
+		workstreams: persisted,
+	};
+}
+
+function applyPersistedWorkstreamReceipt(
+	entry: ApprovedWorkstreamEntry,
+	persisted: PersistedWorkstreamEntry | null,
+): void {
+	if (!persisted) return;
+
+	if (persisted.status === "dispatched" && persisted.agent && persisted.worktree) {
+		entry.activation_status = "activated";
+		entry.launch_status = "dispatched";
+		entry.agent = { ...persisted.agent };
+		entry.worktree = { ...persisted.worktree };
+		entry.reused_agent = true;
+		return;
+	}
+
+	if (persisted.status === "failed" && persisted.failure_stage === "setup") {
+		entry.failure_stage = "setup";
+		entry.message = persisted.message ?? "Previous worktree setup failed; not retrying automatically.";
+		if (persisted.worktree) entry.worktree = { ...persisted.worktree };
+		entry.activation_status = "failed";
+	}
+}
+
+function workstreamNeedsNewLaunch(entry: ApprovedWorkstreamEntry | undefined): boolean {
+	if (!entry) return false;
+	if (entry.status !== "ready") return false;
+	if (entry.launch_status === "dispatched" || entry.launch_status === "failed") return false;
+	if (entry.activation_status === "failed") return false;
+	return true;
+}
+
+interface WorkstreamStatePersistence {
+	filePath: string;
+	state: WorkstreamLaunchState;
+	save(state: WorkstreamLaunchState): void;
+}
+
+function resolveWorkstreamStatePersistence(
+	deps: WorkstreamActivationDeps,
+	sessionId: string,
+): WorkstreamStatePersistence {
+	const hasAnyInjectedState = Boolean(
+		deps.workstreamStateFilePath || deps.loadWorkstreamLaunchState || deps.saveWorkstreamLaunchState,
+	);
+	const hasAllInjectedState = Boolean(
+		deps.workstreamStateFilePath && deps.loadWorkstreamLaunchState && deps.saveWorkstreamLaunchState,
+	);
+	if (hasAnyInjectedState && !hasAllInjectedState) {
+		throw new Error("Workstream state test dependencies must inject path, load, and save together.");
+	}
+
+	if (hasAllInjectedState) {
+		const filePath = deps.workstreamStateFilePath!(sessionId);
+		return {
+			filePath,
+			state: deps.loadWorkstreamLaunchState!(filePath),
+			save: (state) => deps.saveWorkstreamLaunchState!(filePath, state),
+		};
+	}
+
+	if (deps === DEFAULT_WORKSTREAM_ACTIVATION_DEPS) {
+		const filePath = workstreamStateFilePath(sessionId);
+		return {
+			filePath,
+			state: loadWorkstreamLaunchState(filePath),
+			save: (state) => saveWorkstreamLaunchState(filePath, state),
+		};
+	}
+
+	return {
+		filePath: "memory://workstreams/state.json",
+		state: emptyWorkstreamLaunchState(),
+		save: () => {},
+	};
+}
+
+export async function buildApprovedWorkstreamResult(
+	pi: ExtensionAPI,
+	draft: WorkstreamPlanDraft,
+	ctx: ExtensionContext,
+	deps: WorkstreamActivationDeps = DEFAULT_WORKSTREAM_ACTIVATION_DEPS,
+): Promise<string> {
+	const notes = collectApprovedNotes(draft);
+	const planId = computeWorkstreamPlanId({
+		goal: draft.goal.content,
+		context: draft.context.content,
+		design: draft.design.content,
+		success: draft.success.content,
+		boundaries: draft.boundaries.content,
+		workstreams: draft.workstreams,
+	});
+	const sessionId = ctx.sessionManager.getSessionId();
+	const persistence = resolveWorkstreamStatePersistence(deps, sessionId);
+	const state = persistence.state;
+	const now = deps.now ?? (() => new Date().toISOString());
+	const workstreams: Record<string, ApprovedWorkstreamEntry> = {};
+	const ready: string[] = [];
+	const blocked: Record<string, string[]> = {};
+
+	const persistResult = (result: Record<string, unknown>): string => {
+		result.plan_id = planId;
+		result.workstream_state_file = persistence.filePath;
+		state.runs[planId] = buildPersistedWorkstreamRun({
+			planId,
+			draft,
+			workstreams,
+			result,
+			updatedAt: now(),
+		});
+		persistence.save(state);
+		return JSON.stringify(result);
+	};
+
+	for (const workstream of draft.workstreams) {
+		const dependsOn = workstream.dependsOn ?? [];
+		const status = dependsOn.length === 0 ? "ready" : "blocked";
+		workstreams[workstream.id] = {
+			id: workstream.id,
+			label: workstream.label,
+			scope: workstream.scope,
+			outcome: workstream.outcome,
+			boundaries: workstream.boundaries,
+			...(workstream.worktreeSlug !== undefined ? { worktreeSlug: workstream.worktreeSlug } : {}),
+			dependsOn,
+			status,
+		};
+		if (status === "ready") {
+			ready.push(workstream.id);
+		} else {
+			blocked[workstream.id] = dependsOn;
+		}
+	}
+
+	const sessionTag = shortSessionId(sessionId);
+	const targetsByWorkstream = new Map<string, ExecutionWorktreeTarget>();
+	const workstreamIdsByLabel = new Map<string, string[]>();
+	for (const workstreamId of ready) {
+		const workstream = draft.workstreams.find((candidate) => candidate.id === workstreamId)!;
+		const target = suggestWorktreeTarget(workstream.label, workstream.worktreeSlug ?? workstream.id, sessionTag);
+		targetsByWorkstream.set(workstreamId, target);
+		workstreamIdsByLabel.set(target.worktreeLabel, [
+			...(workstreamIdsByLabel.get(target.worktreeLabel) ?? []),
+			workstreamId,
+		]);
+	}
+
+	for (const [label, workstreamIds] of workstreamIdsByLabel) {
+		if (workstreamIds.length <= 1) continue;
+		for (const workstreamId of workstreamIds) {
+			const entry = workstreams[workstreamId]!;
+			entry.activation_status = "failed";
+			entry.failure_stage = "worktree";
+			entry.message = `Derived worktree label '${label}' is shared by ready workstreams: ${workstreamIds.join(", ")}.`;
+		}
+	}
+
+	for (const workstreamId of ready) {
+		const entry = workstreams[workstreamId]!;
+		if (entry.activation_status === "failed") continue;
+		const target = targetsByWorkstream.get(workstreamId)!;
+		applyPersistedWorkstreamReceipt(entry, findPersistedWorkstreamEntryByWorktreeLabel(state, target.worktreeLabel));
+	}
+
+	let newReadyLaunches = ready.filter((id) => workstreamNeedsNewLaunch(workstreams[id]));
+
+	if (ready.length === 0) {
+		const result: Record<string, unknown> = {
+			status: "approved",
+			plan_kind: "workstreams",
+			goal: draft.goal.content,
+			context: draft.context.content,
+			design: draft.design.content,
+			success: draft.success.content,
+			boundaries: draft.boundaries.content,
+			implementation_mode: "supervisor",
+			handoff_status: "workstreams_blocked",
+			next_step:
+				"Workstream plan approved. No workstreams are ready because each workstream has dependencies; no worktrees were provisioned.",
+			workstream_progress: {
+				ready: 0,
+				blocked: Object.keys(blocked).length,
+				activated: 0,
+				dispatched: 0,
+				failed: 0,
+				total: draft.workstreams.length,
+			},
+			workstream_graph: {
+				ready,
+				blocked,
+			},
+			workstreams,
+		};
+
+		if (Object.keys(notes).length > 0) result.notes = notes;
+		return persistResult(result);
+	}
+
+	if (newReadyLaunches.length > 5) {
+		const message = `Workstream launch cancelled: ${newReadyLaunches.length} new ready workstreams exceed the configured cap of 5.`;
+		for (const workstreamId of newReadyLaunches) {
+			const entry = workstreams[workstreamId]!;
+			entry.launch_status = "failed";
+			entry.failure_stage = "cap";
+			entry.message = message;
+		}
+
+		const result: Record<string, unknown> = {
+			status: "handoff_cancelled",
+			plan_kind: "workstreams",
+			goal: draft.goal.content,
+			context: draft.context.content,
+			design: draft.design.content,
+			success: draft.success.content,
+			boundaries: draft.boundaries.content,
+			implementation_mode: "supervisor",
+			handoff_status: "workstream_launch_cancelled",
+			message,
+			next_step:
+				"Workstream plan approved, but no new ready workstreams were provisioned because the launch request exceeded the cap of 5. Revise the plan to reduce ready/new workstreams or add dependencies.",
+			workstream_progress: {
+				ready: ready.length,
+				blocked: Object.keys(blocked).length,
+				activated: ready.filter((id) => workstreams[id]?.activation_status === "activated").length,
+				dispatched: ready.filter((id) => workstreams[id]?.launch_status === "dispatched").length,
+				failed: ready.filter(
+					(id) => workstreams[id]?.launch_status === "failed" || workstreams[id]?.activation_status === "failed",
+				).length,
+				total: draft.workstreams.length,
+			},
+			workstream_graph: {
+				ready,
+				blocked,
+			},
+			workstreams,
+		};
+
+		if (Object.keys(notes).length > 0) result.notes = notes;
+		return persistResult(result);
+	}
+
+	if (newReadyLaunches.length > 0) {
+		const workspace = deps.getWorkspaceState();
+		const repo = workspace?.repo;
+		if (!repo) {
+			for (const workstreamId of newReadyLaunches) {
+				const entry = workstreams[workstreamId]!;
+				entry.activation_status = "failed";
+				entry.failure_stage = "worktree";
+				entry.message = "Workstream activation requires an initialized git repository workspace.";
+			}
+
+			const result: Record<string, unknown> = {
+				status: "handoff_cancelled",
+				plan_kind: "workstreams",
+				goal: draft.goal.content,
+				context: draft.context.content,
+				design: draft.design.content,
+				success: draft.success.content,
+				boundaries: draft.boundaries.content,
+				implementation_mode: "supervisor",
+				handoff_status: "workstream_activation_cancelled",
+				message: "Workstream activation requires an initialized git repository workspace.",
+				next_step:
+					"Workstream plan approved, but ready workstreams were not activated because no repository workspace is available. Re-run from a repository-backed Basecamp session.",
+				workstream_progress: {
+					ready: ready.length,
+					blocked: Object.keys(blocked).length,
+					activated: ready.filter((id) => workstreams[id]?.activation_status === "activated").length,
+					dispatched: ready.filter((id) => workstreams[id]?.launch_status === "dispatched").length,
+					failed: ready.filter(
+						(id) => workstreams[id]?.activation_status === "failed" || workstreams[id]?.launch_status === "failed",
+					).length,
+					total: draft.workstreams.length,
+				},
+				workstream_graph: {
+					ready,
+					blocked,
+				},
+				workstreams,
+			};
+
+			if (Object.keys(notes).length > 0) result.notes = notes;
+			return persistResult(result);
+		}
+
+		const launcher = deps.getAgentLauncher();
+		if (!launcher) {
+			for (const workstreamId of newReadyLaunches) {
+				const entry = workstreams[workstreamId]!;
+				entry.launch_status = "failed";
+				entry.failure_stage = "launch";
+				entry.message = "No agent launcher is registered.";
+			}
+
+			const result: Record<string, unknown> = {
+				status: "handoff_cancelled",
+				plan_kind: "workstreams",
+				goal: draft.goal.content,
+				context: draft.context.content,
+				design: draft.design.content,
+				success: draft.success.content,
+				boundaries: draft.boundaries.content,
+				implementation_mode: "supervisor",
+				handoff_status: "workstream_launch_cancelled",
+				message: "Workstream launch requires a registered agent launcher.",
+				next_step:
+					"Workstream plan approved, but ready workstreams were not provisioned because no agent launcher is registered. Ensure pi-swarm is loaded in a top-level Basecamp session, then resubmit.",
+				workstream_progress: {
+					ready: ready.length,
+					blocked: Object.keys(blocked).length,
+					activated: ready.filter((id) => workstreams[id]?.activation_status === "activated").length,
+					dispatched: ready.filter((id) => workstreams[id]?.launch_status === "dispatched").length,
+					failed: ready.filter(
+						(id) => workstreams[id]?.activation_status === "failed" || workstreams[id]?.launch_status === "failed",
+					).length,
+					total: draft.workstreams.length,
+				},
+				workstream_graph: {
+					ready,
+					blocked,
+				},
+				workstreams,
+			};
+
+			if (Object.keys(notes).length > 0) result.notes = notes;
+			return persistResult(result);
+		}
+
+		const setupCommand = deps.readWorktreeSetupCommand(repo.name);
+
+		for (const workstreamId of newReadyLaunches) {
+			const entry = workstreams[workstreamId]!;
+			if (entry.activation_status === "failed") continue;
+			const target = targetsByWorkstream.get(workstreamId)!;
+
+			try {
+				const worktree = await deps.getOrCreateWorktree(
+					pi,
+					repo.root,
+					repo.name,
+					target.worktreeLabel,
+					target.branchName,
+				);
+				entry.activation_status = "activated";
+				entry.worktree = {
+					label: worktree.label,
+					path: worktree.worktreeDir,
+					branch: worktree.branch,
+					created: worktree.created,
+				};
+
+				if (shouldRunWorktreeSetup(worktree.created, setupCommand)) {
+					try {
+						const setupResult = await deps.runWorktreeSetup(pi, {
+							command: setupCommand as string,
+							worktreeDir: worktree.worktreeDir,
+							repoRoot: repo.root,
+						});
+						const setupSummary = worktreeSetupSummary(setupResult);
+						if (setupSummary) {
+							entry.worktree_setup = setupSummary;
+							if (!setupSummary.ok) {
+								entry.activation_status = "failed";
+								entry.failure_stage = "setup";
+								entry.message = setupFailureMessage(setupSummary);
+							}
+						}
+					} catch (error) {
+						entry.activation_status = "failed";
+						entry.failure_stage = "setup";
+						entry.message = errorMessage(error);
+					}
+				}
+			} catch (error) {
+				entry.activation_status = "failed";
+				entry.failure_stage = "worktree";
+				entry.message = errorMessage(error);
+			}
+		}
+
+		const launchable = newReadyLaunches.filter((id) => {
+			const entry = workstreams[id];
+			return entry?.activation_status === "activated" && entry.worktree !== undefined;
+		});
+		for (const workstreamId of launchable) {
+			const entry = workstreams[workstreamId]!;
+			const workstream = draft.workstreams.find((candidate) => candidate.id === workstreamId)!;
+			try {
+				const launch = await launcher.launch({
+					pi,
+					ctx,
+					agent: "worker",
+					task: buildWorkstreamLaunchBrief({ draft, workstream, entry }),
+					workspace: buildWorkstreamLaunchWorkspace(workspace, entry.worktree),
+					env: buildWorkstreamLaunchEnv(workspace, entry.worktree),
+					title: `Workstream: ${workstream.label}`,
+				});
+				if (launch.ok) {
+					entry.launch_status = "dispatched";
+					entry.agent = { handle: launch.agentHandle, type: launch.agent };
+					try {
+						Promise.resolve(deps.openWorkstreamInHerdr?.(pi, workspace, entry.worktree!)).catch(() => {});
+					} catch {
+						/* Herdr sync is best-effort and must not affect dispatch results. */
+					}
+				} else {
+					entry.launch_status = "failed";
+					entry.failure_stage = "launch";
+					entry.message = launch.message;
+				}
+			} catch (error) {
+				entry.launch_status = "failed";
+				entry.failure_stage = "launch";
+				entry.message = errorMessage(error);
+			}
+		}
+	}
+
+	newReadyLaunches = ready.filter((id) => workstreamNeedsNewLaunch(workstreams[id]));
+	const activatedCount = ready.filter((id) => workstreams[id]?.activation_status === "activated").length;
+	const dispatchedCount = ready.filter((id) => workstreams[id]?.launch_status === "dispatched").length;
+	const failedCount = ready.filter((id) => {
+		const entry = workstreams[id];
+		return entry?.activation_status === "failed" || entry?.launch_status === "failed";
+	}).length;
+	const handoffStatus =
+		failedCount === 0
+			? "workstreams_dispatched"
+			: dispatchedCount > 0
+				? "workstreams_partially_dispatched"
+				: "workstreams_failed";
+	const result: Record<string, unknown> = {
+		status: "approved",
+		plan_kind: "workstreams",
+		goal: draft.goal.content,
+		context: draft.context.content,
+		design: draft.design.content,
+		success: draft.success.content,
+		boundaries: draft.boundaries.content,
+		implementation_mode: "supervisor",
+		handoff_status: handoffStatus,
+		next_step:
+			newReadyLaunches.length > 0
+				? "Workstream plan approved. Some ready workstreams were not launched; inspect workstream state before continuing."
+				: failedCount > 0
+					? "Workstream plan approved. Ready workstream dispatch was attempted where possible; inspect failed ready streams and launch failures before continuing."
+					: "Workstream plan approved. Ready workstream worktrees are provisioned and worker agent dispatches were accepted by the daemon.",
+		workstream_progress: {
+			ready: ready.length,
+			blocked: Object.keys(blocked).length,
+			activated: activatedCount,
+			dispatched: dispatchedCount,
+			failed: failedCount,
+			total: draft.workstreams.length,
+		},
+		workstream_graph: {
+			ready,
+			blocked,
+		},
+		workstreams,
+	};
+
+	if (Object.keys(notes).length > 0) result.notes = notes;
+
+	return persistResult(result);
+}
 function buildPendingImplementationHandoff(
-	draft: PlanDraft,
+	draft: TaskPlanDraft,
 	mode: ImplementationMode,
 	worktree: HandoffWorktreeResult,
 ): PendingImplementationHandoff {
@@ -436,7 +1157,11 @@ function workspaceWorktreeToHandoffWorktree(target: WorkspaceWorktree): HandoffW
 // Registration
 // ============================================================================
 
-export function registerPlan(pi: ExtensionAPI, tasksAccess: TasksAccess): PlanAccess {
+export function registerPlan(
+	pi: ExtensionAPI,
+	tasksAccess: TasksAccess,
+	workstreamActivationDeps: WorkstreamActivationDeps = DEFAULT_WORKSTREAM_ACTIVATION_DEPS,
+): PlanAccess {
 	let draft: PlanDraft | null = null;
 	let pendingImplementationHandoff: PendingImplementationHandoff | null = null;
 
@@ -478,9 +1203,10 @@ export function registerPlan(pi: ExtensionAPI, tasksAccess: TasksAccess): PlanAc
 		name: "plan",
 		label: "Plan",
 		description:
-			"Submit a structured plan for user review. Blocks until the user approves or provides feedback. " +
-			"On approval, creates the goal and tasks. Analysis plans stay in analysis mode; " +
-			"implementation plans ask for supervisor vs IC/executor posture. " +
+			"Submit a structured plan for user review. Opens an interactive review when UI is available. " +
+			"Accepts either legacy tasks or PR-sized workstreams. On approval, task plans create the goal/tasks; " +
+			"workstream plans persist a launch receipt and dispatch up to 5 new ready lanes. " +
+			"Analysis plans stay in analysis mode; implementation plans ask for supervisor vs IC/executor posture. " +
 			"On feedback, returns structured feedback for revision.",
 		promptSnippet: "Submit a structured plan for review, approval, and work handoff",
 		parameters: Type.Object({
@@ -495,28 +1221,67 @@ export function registerPlan(pi: ExtensionAPI, tasksAccess: TasksAccess): PlanAc
 						"Internal metadata for worktree label suggestion; not shown in plan review. Short kebab-case slug, no session prefix.",
 				}),
 			),
-			tasks: Type.Array(
-				Type.Object({
-					label: Type.String({ description: "Short task name" }),
-					description: Type.String({ description: "What this task involves and why" }),
-					criteria: Type.String({ description: "What done looks like for this task" }),
-				}),
-				{ description: "Ordered list of tasks", minItems: 1 },
+			tasks: Type.Optional(
+				Type.Array(
+					Type.Object({
+						label: Type.String({ description: "Short task name" }),
+						description: Type.String({ description: "What this task involves and why" }),
+						criteria: Type.String({ description: "What done looks like for this task" }),
+					}),
+					{ description: "Ordered list of tasks. Mutually exclusive with workstreams.", minItems: 1 },
+				),
+			),
+			workstreams: Type.Optional(
+				Type.Array(
+					Type.Object({
+						id: Type.String({ description: "Stable workstream id used by dependsOn references" }),
+						label: Type.String({ description: "Short workstream name" }),
+						scope: Type.String({ description: "What this workstream includes" }),
+						outcome: Type.String({ description: "Expected result of this workstream" }),
+						boundaries: Type.String({ description: "What is out of scope for this workstream" }),
+						worktreeSlug: Type.Optional(
+							Type.String({
+								description:
+									"Internal metadata for worktree label suggestion; short kebab-case slug, no session prefix.",
+							}),
+						),
+						dependsOn: Type.Optional(
+							Type.Array(Type.String({ description: "Workstream id this workstream depends on" }), {
+								description: "Workstream ids that must complete first",
+							}),
+						),
+					}),
+					{
+						description:
+							"Ordered list of PR-sized workstreams. Mutually exclusive with tasks. Cycles/self-dependencies are rejected; at most 5 new ready streams dispatch per approval.",
+						minItems: 1,
+					},
+				),
 			),
 		}),
 		async execute(_id, params, _signal, _onUpdate, ctx) {
-			draft = buildDraft(
-				{
-					goal: params.goal,
-					context: params.context,
-					design: params.design,
-					success: params.success,
-					boundaries: params.boundaries,
-					worktreeSlug: params.worktreeSlug ?? draft?.worktreeSlug ?? undefined,
-				},
-				params.tasks,
-				draft,
-			);
+			const executionInput = normalizePlanExecutionInput(params);
+			const draftParams = {
+				goal: params.goal,
+				context: params.context,
+				design: params.design,
+				success: params.success,
+				boundaries: params.boundaries,
+			};
+
+			if (executionInput.kind === "tasks") {
+				draft = buildTaskDraft(
+					{
+						...draftParams,
+						worktreeSlug:
+							params.worktreeSlug ?? (draft?.executionKind === "tasks" ? draft.worktreeSlug : undefined) ?? undefined,
+					},
+					executionInput.tasks,
+					draft,
+				);
+			} else {
+				draft = buildWorkstreamDraft(draftParams, executionInput.workstreams, draft);
+			}
 
 			let reviewResult: "submit" | "decline" = "submit";
 			if (ctx.hasUI) {
@@ -537,6 +1302,19 @@ export function registerPlan(pi: ExtensionAPI, tasksAccess: TasksAccess): PlanAc
 			}
 
 			if (isAllApproved(draft)) {
+				if (draft.executionKind === "workstreams") {
+					const result = await buildApprovedWorkstreamResult(pi, draft, ctx, workstreamActivationDeps);
+					const parsed = JSON.parse(result) as { workstream_progress?: { dispatched?: unknown } };
+					if (typeof parsed.workstream_progress?.dispatched === "number" && parsed.workstream_progress.dispatched > 0) {
+						setAgentMode("supervisor");
+					}
+					draft = null;
+					return {
+						content: [{ type: "text", text: result }],
+						details: undefined,
+					};
+				}
+
 				const approvedTasks = draft.tasks.map((t) => ({ ...t, review: null }));
 				const planRef: GoalCycle["planRef"] = {
 					context: draft.context.content,
@@ -654,8 +1432,10 @@ export function registerPlan(pi: ExtensionAPI, tasksAccess: TasksAccess): PlanAc
 			const goal = (args.goal as string) || "...";
 			const preview = goal.length > 50 ? `${goal.slice(0, 50)}...` : goal;
 			const taskCount = (args.tasks as unknown[])?.length ?? 0;
+			const workstreamCount = (args.workstreams as unknown[])?.length ?? 0;
+			const itemSummary = workstreamCount > 0 ? `${workstreamCount} workstreams` : `${taskCount} tasks`;
 			return new Text(
-				theme.fg("toolTitle", theme.bold("plan ")) + theme.fg("dim", `${preview} (${taskCount} tasks)`),
+				theme.fg("toolTitle", theme.bold("plan ")) + theme.fg("dim", `${preview} (${itemSummary})`),
 				0,
 				0,
 			);

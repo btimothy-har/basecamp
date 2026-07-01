@@ -3,6 +3,9 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { afterEach, beforeEach, describe, it } from "node:test";
+import { clearAgentLauncherForTesting, getAgentLauncher } from "pi-core/platform/agent-launcher.ts";
+import { buildApprovedWorkstreamResult } from "pi-tasks/src/planning/plan.ts";
+import type { WorkstreamPlanDraft } from "pi-tasks/src/planning/review.ts";
 import type { WorkspaceState } from "../../dependencies.ts";
 import { createDaemonClient, type DaemonConnection } from "../daemon/client.ts";
 import type { Frame, ListAgentItem } from "../daemon/frames.ts";
@@ -106,6 +109,7 @@ describe("daemon async tools", () => {
 	});
 
 	afterEach(() => {
+		clearAgentLauncherForTesting();
 		if (priorHome === undefined) delete process.env.HOME;
 		else process.env.HOME = priorHome;
 		fs.rmSync(tmpHome, { recursive: true, force: true });
@@ -807,6 +811,194 @@ describe("daemon async tools", () => {
 			await executePromise;
 		} finally {
 			currentWorkspaceState = null;
+		}
+	});
+
+	it("registered agent launcher dispatches workers with explicit workspace and env without requiring agents skill", async () => {
+		const priorRepo = process.env.BASECAMP_REPO;
+		const priorScratch = process.env.BASECAMP_SCRATCH_DIR;
+		const priorWorktreeDir = process.env.BASECAMP_WORKTREE_DIR;
+		const priorWorktreeLabel = process.env.BASECAMP_WORKTREE_LABEL;
+		process.env.BASECAMP_REPO = "stale/repo";
+		process.env.BASECAMP_SCRATCH_DIR = "/stale/scratch";
+		process.env.BASECAMP_WORKTREE_DIR = "/stale/wt";
+		process.env.BASECAMP_WORKTREE_LABEL = "stale-label";
+
+		try {
+			const connection = new MockConnection();
+			const { pi, tools } = createMockPi();
+			registerDaemonTools(pi, async () => connection, daemonToolDeps);
+			assert.equal(toolByName(tools, "dispatch_agent").name, "dispatch_agent");
+			const launcher = getAgentLauncher();
+			assert.ok(launcher, "agent launcher should be registered");
+			assert.equal(invokedSkills.has("agents"), false);
+
+			const launchPromise = launcher.launch({
+				pi,
+				ctx: { model: "claude-sonnet", sessionManager: { getSessionId: () => "session-id" } } as any,
+				agent: "worker",
+				task: "Implement assigned workstream",
+				workspace: {
+					launchCwd: "/coordinator/wt",
+					effectiveCwd: "/coordinator/wt",
+					scratchDir: "/scratch/workstream",
+					unsafeEdit: false,
+					repo: { root: "/protected/root", isRepo: true, name: "org/repo", remoteUrl: null },
+					protectedRoot: "/protected/root",
+					activeWorktree: {
+						path: "/worktrees/wt-user/stream",
+						kind: "git-worktree",
+						label: "wt-user/stream",
+						branch: "user/stream",
+						created: true,
+					},
+				},
+				env: {
+					BASECAMP_REPO: "org/repo",
+					BASECAMP_SCRATCH_DIR: "/scratch/workstream",
+					BASECAMP_WORKTREE_DIR: "/worktrees/wt-user/stream",
+					BASECAMP_WORKTREE_LABEL: "wt-user/stream",
+				},
+				title: "Workstream: Stream",
+			});
+
+			await new Promise((resolve) => setImmediate(resolve));
+			const outbound = connection.sent[0] as Extract<Frame, { type: "dispatch" }>;
+			assert.equal(outbound.type, "dispatch");
+			assert.equal(outbound.agent_type, "worker");
+			assert.equal(outbound.run_kind, "mutative");
+			assert.equal(outbound.spec.cwd, "/protected/root");
+			const worktreeDirIndex = outbound.spec.argv.indexOf("--worktree-dir");
+			assert.notEqual(worktreeDirIndex, -1);
+			assert.equal(outbound.spec.argv[worktreeDirIndex + 1], "/worktrees/wt-user/stream");
+			assert.equal(outbound.spec.env.BASECAMP_REPO, "org/repo");
+			assert.equal(outbound.spec.env.BASECAMP_SCRATCH_DIR, "/scratch/workstream");
+			assert.equal(outbound.spec.env.BASECAMP_WORKTREE_DIR, "/worktrees/wt-user/stream");
+			assert.equal(outbound.spec.env.BASECAMP_WORKTREE_LABEL, "wt-user/stream");
+			assert.equal(outbound.spec.env.BASECAMP_AGENT_TITLE, "Workstream: Stream");
+			assert.equal(outbound.spec.env.BASECAMP_AGENT_HANDLE, outbound.agent_handle);
+
+			connection.emit({
+				type: "dispatch_ack",
+				v: PROTOCOL_VERSION,
+				run_id: outbound.run_id,
+				status: "spawned",
+				reason: null,
+			});
+
+			const result = await launchPromise;
+			assert.deepEqual(result, { ok: true, agentHandle: outbound.agent_handle, agent: "worker" });
+		} finally {
+			if (priorRepo === undefined) delete process.env.BASECAMP_REPO;
+			else process.env.BASECAMP_REPO = priorRepo;
+			if (priorScratch === undefined) delete process.env.BASECAMP_SCRATCH_DIR;
+			else process.env.BASECAMP_SCRATCH_DIR = priorScratch;
+			if (priorWorktreeDir === undefined) delete process.env.BASECAMP_WORKTREE_DIR;
+			else process.env.BASECAMP_WORKTREE_DIR = priorWorktreeDir;
+			if (priorWorktreeLabel === undefined) delete process.env.BASECAMP_WORKTREE_LABEL;
+			else process.env.BASECAMP_WORKTREE_LABEL = priorWorktreeLabel;
+		}
+	});
+
+	it("approved workstream plans dispatch through the registered launcher with plan-built context", async () => {
+		const priorUser = process.env.USER;
+		process.env.USER = "Test User";
+		const connection = new MockConnection();
+		const { pi, tools } = createMockPi();
+		registerDaemonTools(pi, async () => connection, daemonToolDeps);
+		assert.equal(toolByName(tools, "dispatch_agent").name, "dispatch_agent");
+
+		const draft: WorkstreamPlanDraft = {
+			goal: { content: "Program goal", review: { approved: true, feedback: null } },
+			context: { content: "Program context", review: { approved: true, feedback: null } },
+			design: { content: "Program design", review: { approved: true, feedback: null } },
+			success: { content: "Program success", review: { approved: true, feedback: null } },
+			boundaries: { content: "Program boundaries", review: { approved: true, feedback: null } },
+			executionKind: "workstreams",
+			workstreams: [
+				{
+					id: "core",
+					label: "Core Stream",
+					scope: "Build core behavior",
+					outcome: "Core behavior works",
+					boundaries: "No UI changes",
+					worktreeSlug: "core-stream",
+				},
+			],
+			workstreamsReview: { approved: true, feedback: null },
+		};
+
+		try {
+			const resultPromise = buildApprovedWorkstreamResult(
+				pi as any,
+				draft,
+				{
+					model: { provider: "anthropic", id: "claude-sonnet" },
+					sessionManager: { getSessionId: () => "session-8888" },
+				} as any,
+				{
+					getWorkspaceState: () => ({
+						launchCwd: "/coordinator",
+						effectiveCwd: "/coordinator",
+						scratchDir: "/scratch/repo",
+						unsafeEdit: false,
+						repo: { root: "/protected/root", isRepo: true, name: "org/repo", remoteUrl: null },
+						protectedRoot: "/protected/root",
+						activeWorktree: null,
+					}),
+					getAgentLauncher,
+					getOrCreateWorktree: async (_pi, _repoRoot, _repoName, label, branchName) => ({
+						worktreeDir: `/worktrees/${label}`,
+						label,
+						branch: branchName ?? "detached",
+						created: true,
+					}),
+					readWorktreeSetupCommand: () => null,
+					runWorktreeSetup: async () => ({ ran: true, exitCode: 0, timedOut: false, stderrTail: "" }),
+				},
+			);
+
+			await new Promise((resolve) => setImmediate(resolve));
+			const outbound = connection.sent[0] as Extract<Frame, { type: "dispatch" }>;
+			assert.equal(outbound.type, "dispatch");
+			assert.equal(outbound.agent_type, "worker");
+			assert.equal(outbound.run_kind, "mutative");
+			assert.equal(outbound.spec.cwd, "/protected/root");
+			assert.match(outbound.spec.task, /ID: core/);
+			assert.match(outbound.spec.task, /Scope: Build core behavior/);
+			assert.match(outbound.spec.task, /Work only in the assigned worktree path/);
+			const worktreeDirIndex = outbound.spec.argv.indexOf("--worktree-dir");
+			assert.notEqual(worktreeDirIndex, -1);
+			assert.equal(outbound.spec.argv[worktreeDirIndex + 1], "/worktrees/wt-te/8888-core-stream");
+			assert.equal(outbound.spec.env.BASECAMP_REPO, "org/repo");
+			assert.equal(outbound.spec.env.BASECAMP_SCRATCH_DIR, "/scratch/repo");
+			assert.equal(outbound.spec.env.BASECAMP_WORKTREE_DIR, "/worktrees/wt-te/8888-core-stream");
+			assert.equal(outbound.spec.env.BASECAMP_WORKTREE_LABEL, "wt-te/8888-core-stream");
+			assert.equal(outbound.spec.env.BASECAMP_AGENT_TITLE, "Workstream: Core Stream");
+
+			connection.emit({
+				type: "dispatch_ack",
+				v: PROTOCOL_VERSION,
+				run_id: outbound.run_id,
+				status: "spawned",
+				reason: null,
+			});
+
+			const result = JSON.parse(await resultPromise);
+			assert.equal(result.handoff_status, "workstreams_dispatched");
+			assert.deepEqual(result.workstream_progress, {
+				ready: 1,
+				blocked: 0,
+				activated: 1,
+				dispatched: 1,
+				failed: 0,
+				total: 1,
+			});
+			assert.equal(result.workstreams.core.launch_status, "dispatched");
+			assert.deepEqual(result.workstreams.core.agent, { handle: outbound.agent_handle, type: "worker" });
+		} finally {
+			if (priorUser === undefined) delete process.env.USER;
+			else process.env.USER = priorUser;
 		}
 	});
 
