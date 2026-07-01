@@ -1,4 +1,5 @@
 import type { ReviewState } from "../tasks/tasks";
+import type { PlanWorkstreamInput } from "./plan-input.ts";
 
 export interface PlanSection {
 	content: string;
@@ -10,6 +11,8 @@ export interface TaskInput {
 	description: string;
 	criteria: string;
 }
+
+export type WorkstreamInput = PlanWorkstreamInput;
 
 export interface DraftGoalContext {
 	goal: PlanSection;
@@ -65,6 +68,43 @@ export function tasksMatch(tasks: TaskInput[], previousTasks: TaskInput[]): bool
 		}
 	}
 	return true;
+}
+
+function stringSetsMatch(current: string[] | undefined, previous: string[] | undefined): boolean {
+	const currentValues = new Set(current ?? []);
+	const previousValues = new Set(previous ?? []);
+	if (currentValues.size !== previousValues.size) return false;
+	for (const value of currentValues) {
+		if (!previousValues.has(value)) return false;
+	}
+	return true;
+}
+
+export function workstreamsMatch(workstreams: WorkstreamInput[], previousWorkstreams: WorkstreamInput[]): boolean {
+	if (workstreams.length !== previousWorkstreams.length) return false;
+	for (let i = 0; i < workstreams.length; i++) {
+		const curr = workstreams[i]!;
+		const prev = previousWorkstreams[i]!;
+		if (
+			curr.id !== prev.id ||
+			curr.label !== prev.label ||
+			curr.scope !== prev.scope ||
+			curr.outcome !== prev.outcome ||
+			curr.boundaries !== prev.boundaries ||
+			(curr.worktreeSlug ?? null) !== (prev.worktreeSlug ?? null) ||
+			!stringSetsMatch(curr.dependsOn, prev.dependsOn)
+		) {
+			return false;
+		}
+	}
+	return true;
+}
+
+export function computeCollectiveReview(listUnchanged: boolean, previousReview: ReviewState | null): ReviewState {
+	if (listUnchanged && previousReview?.approved === true) {
+		return { approved: true, feedback: null };
+	}
+	return freshReview();
 }
 
 export function computeSectionReview(content: string, previousSection: PlanSection | null): ReviewState {

@@ -26,10 +26,16 @@ import { getAgentMode, setAgentMode } from "pi-core/session/agent-mode.ts";
 import { shortSessionId } from "pi-core/session/session-id.ts";
 import { runWorktreeSetup } from "pi-core/workspace/setup.ts";
 import type { GoalCycle, ReviewState, TaskStatus, TasksAccess } from "../tasks/tasks";
-import { computeGoalContextReview, computeSectionReview, freshReview, tasksMatch } from "./draft-logic";
-import { normalizePlanExecutionInput } from "./plan-input.ts";
-import type { PlanDraft } from "./review";
-import { SECTION_NAMES, showPlanReadOnly, showReviewOverlay } from "./review";
+import {
+	computeCollectiveReview,
+	computeGoalContextReview,
+	computeSectionReview,
+	tasksMatch,
+	workstreamsMatch,
+} from "./draft-logic.ts";
+import { normalizePlanExecutionInput, type PlanTaskInput, type PlanWorkstreamInput } from "./plan-input.ts";
+import type { PlanDraft, TaskPlanDraft, WorkstreamPlanDraft } from "./review.ts";
+import { SECTION_NAMES, showPlanReadOnly, showReviewOverlay } from "./review.ts";
 import {
 	buildExecutionWorktreeChoices,
 	CUSTOM_WORKTREE_CHOICE,
@@ -43,32 +49,20 @@ import { shouldRunWorktreeSetup, type WorktreeSetupSummary, worktreeSetupSummary
 // Draft diffing — preserve approvals on unchanged content
 // ============================================================================
 
-function buildDraft(
-	params: {
-		goal: string;
-		context: string;
-		design: string;
-		success: string;
-		boundaries: string;
-		worktreeSlug?: string;
-	},
-	tasks: { label: string; description: string; criteria: string }[],
-	previous: PlanDraft | null,
-): PlanDraft {
+interface DraftParams {
+	goal: string;
+	context: string;
+	design: string;
+	success: string;
+	boundaries: string;
+}
+
+function buildCommonDraftSections(params: DraftParams, previous: PlanDraft | null) {
 	const goalContextState = computeGoalContextReview(
 		params.goal,
 		params.context,
 		previous ? { goal: previous.goal, context: previous.context } : null,
 	);
-
-	// Tasks are reviewed as a collective unit — preserve approval if list is unchanged
-	function collectiveTasksReview(): ReviewState {
-		if (!previous) return freshReview();
-		if (tasksMatch(tasks, previous.tasks) && previous.tasksReview.approved) {
-			return { approved: true, feedback: null };
-		}
-		return freshReview();
-	}
 
 	return {
 		goal: { content: params.goal, review: goalContextState },
@@ -79,6 +73,19 @@ function buildDraft(
 			content: params.boundaries,
 			review: computeSectionReview(params.boundaries, previous?.boundaries ?? null),
 		},
+	};
+}
+
+function buildTaskDraft(
+	params: DraftParams & { worktreeSlug?: string },
+	tasks: PlanTaskInput[],
+	previous: PlanDraft | null,
+): TaskPlanDraft {
+	const previousTaskDraft = previous?.executionKind === "tasks" ? previous : null;
+
+	return {
+		...buildCommonDraftSections(params, previous),
+		executionKind: "tasks",
 		worktreeSlug: params.worktreeSlug ?? null,
 		tasks: tasks.map((t) => ({
 			label: t.label,
@@ -88,7 +95,31 @@ function buildDraft(
 			status: "pending" as TaskStatus,
 			review: null,
 		})),
-		tasksReview: collectiveTasksReview(),
+		tasksReview: computeCollectiveReview(
+			previousTaskDraft ? tasksMatch(tasks, previousTaskDraft.tasks) : false,
+			previousTaskDraft?.tasksReview ?? null,
+		),
+	};
+}
+
+function buildWorkstreamDraft(
+	params: DraftParams,
+	workstreams: PlanWorkstreamInput[],
+	previous: PlanDraft | null,
+): WorkstreamPlanDraft {
+	const previousWorkstreamDraft = previous?.executionKind === "workstreams" ? previous : null;
+
+	return {
+		...buildCommonDraftSections(params, previous),
+		executionKind: "workstreams",
+		workstreams: workstreams.map((workstream) => ({
+			...workstream,
+			...(workstream.dependsOn !== undefined ? { dependsOn: [...workstream.dependsOn] } : {}),
+		})),
+		workstreamsReview: computeCollectiveReview(
+			previousWorkstreamDraft ? workstreamsMatch(workstreams, previousWorkstreamDraft.workstreams) : false,
+			previousWorkstreamDraft?.workstreamsReview ?? null,
+		),
 	};
 }
 
@@ -96,11 +127,16 @@ function buildDraft(
 // Review result builders
 // ============================================================================
 
+function getCollectiveReview(draft: PlanDraft): { key: "tasks" | "workstreams"; review: ReviewState } {
+	if (draft.executionKind === "tasks") return { key: "tasks", review: draft.tasksReview };
+	return { key: "workstreams", review: draft.workstreamsReview };
+}
+
 function isAllApproved(draft: PlanDraft): boolean {
 	for (const name of SECTION_NAMES) {
 		if (!draft[name].review.approved) return false;
 	}
-	if (!draft.tasksReview.approved) return false;
+	if (!getCollectiveReview(draft).review.approved) return false;
 	return true;
 }
 
@@ -115,17 +151,19 @@ function buildFeedbackResult(draft: PlanDraft): string {
 		if (r.feedback && r.approved) notes[name] = r.feedback;
 	}
 
-	// Tasks are reviewed collectively
-	const tr = draft.tasksReview;
-	approved.tasks = tr.approved;
-	if (tr.feedback && !tr.approved) revisions.tasks = tr.feedback;
-	if (tr.feedback && tr.approved) notes.tasks = tr.feedback;
+	// Tasks/workstreams are reviewed collectively.
+	const collective = getCollectiveReview(draft);
+	approved[collective.key] = collective.review.approved;
+	if (collective.review.feedback && !collective.review.approved) revisions[collective.key] = collective.review.feedback;
+	if (collective.review.feedback && collective.review.approved) notes[collective.key] = collective.review.feedback;
 
 	const result: Record<string, unknown> = {
 		status: "feedback",
 		approved,
 		revisions,
 	};
+
+	if (draft.executionKind === "workstreams") result.plan_kind = "workstreams";
 
 	// Include approved-with-notes so agent sees them alongside revisions
 	if (Object.keys(notes).length > 0) result.notes = notes;
@@ -140,8 +178,9 @@ function collectApprovedNotes(draft: PlanDraft): Record<string, string> {
 		if (r.approved && r.feedback) notes[name] = r.feedback;
 	}
 
-	if (draft.tasksReview.approved && draft.tasksReview.feedback) {
-		notes.tasks = draft.tasksReview.feedback;
+	const collective = getCollectiveReview(draft);
+	if (collective.review.approved && collective.review.feedback) {
+		notes[collective.key] = collective.review.feedback;
 	}
 
 	return notes;
@@ -250,7 +289,7 @@ function buildWorktreeActivationFailedResult(label: string, error: unknown): str
 }
 
 function buildApprovedResult(
-	draft: PlanDraft,
+	draft: TaskPlanDraft,
 	mode: ApprovedPlanMode,
 	worktree?: HandoffWorktreeResult,
 	setupSummary?: WorktreeSetupSummary,
@@ -305,8 +344,75 @@ function buildApprovedResult(
 	return JSON.stringify(result);
 }
 
+function buildApprovedWorkstreamResult(draft: WorkstreamPlanDraft): string {
+	const notes = collectApprovedNotes(draft);
+	const workstreams: Record<
+		string,
+		{
+			id: string;
+			label: string;
+			scope: string;
+			outcome: string;
+			boundaries: string;
+			worktreeSlug?: string;
+			dependsOn: string[];
+			status: "ready" | "blocked";
+		}
+	> = {};
+	const ready: string[] = [];
+	const blocked: Record<string, string[]> = {};
+
+	for (const workstream of draft.workstreams) {
+		const dependsOn = workstream.dependsOn ?? [];
+		const status = dependsOn.length === 0 ? "ready" : "blocked";
+		workstreams[workstream.id] = {
+			id: workstream.id,
+			label: workstream.label,
+			scope: workstream.scope,
+			outcome: workstream.outcome,
+			boundaries: workstream.boundaries,
+			...(workstream.worktreeSlug !== undefined ? { worktreeSlug: workstream.worktreeSlug } : {}),
+			dependsOn,
+			status,
+		};
+		if (status === "ready") {
+			ready.push(workstream.id);
+		} else {
+			blocked[workstream.id] = dependsOn;
+		}
+	}
+
+	const result: Record<string, unknown> = {
+		status: "approved",
+		plan_kind: "workstreams",
+		goal: draft.goal.content,
+		context: draft.context.content,
+		design: draft.design.content,
+		success: draft.success.content,
+		boundaries: draft.boundaries.content,
+		implementation_mode: "supervisor",
+		handoff_status: "pending_workstream_activation",
+		next_step:
+			"Workstream plan approved. Do not create worktrees or launch workstream agents yet; Task 3 will activate ready workstreams.",
+		workstream_progress: {
+			ready: ready.length,
+			blocked: Object.keys(blocked).length,
+			total: draft.workstreams.length,
+		},
+		workstream_graph: {
+			ready,
+			blocked,
+		},
+		workstreams,
+	};
+
+	if (Object.keys(notes).length > 0) result.notes = notes;
+
+	return JSON.stringify(result);
+}
+
 function buildPendingImplementationHandoff(
-	draft: PlanDraft,
+	draft: TaskPlanDraft,
 	mode: ImplementationMode,
 	worktree: HandoffWorktreeResult,
 ): PendingImplementationHandoff {
@@ -532,34 +638,27 @@ export function registerPlan(pi: ExtensionAPI, tasksAccess: TasksAccess): PlanAc
 		}),
 		async execute(_id, params, _signal, _onUpdate, ctx) {
 			const executionInput = normalizePlanExecutionInput(params);
-			if (executionInput.kind === "workstreams") {
-				return {
-					content: [
-						{
-							type: "text",
-							text: JSON.stringify({
-								status: "workstreams_pending_implementation",
-								workstreams: executionInput.workstreams.length,
-								next_step: "Workstream plan input is valid; review and execution wiring will be added in Task 2.",
-							}),
-						},
-					],
-					details: undefined,
-				};
-			}
+			const draftParams = {
+				goal: params.goal,
+				context: params.context,
+				design: params.design,
+				success: params.success,
+				boundaries: params.boundaries,
+			};
 
-			draft = buildDraft(
-				{
-					goal: params.goal,
-					context: params.context,
-					design: params.design,
-					success: params.success,
-					boundaries: params.boundaries,
-					worktreeSlug: params.worktreeSlug ?? draft?.worktreeSlug ?? undefined,
-				},
-				executionInput.tasks,
-				draft,
-			);
+			if (executionInput.kind === "tasks") {
+				draft = buildTaskDraft(
+					{
+						...draftParams,
+						worktreeSlug:
+							params.worktreeSlug ?? (draft?.executionKind === "tasks" ? draft.worktreeSlug : undefined) ?? undefined,
+					},
+					executionInput.tasks,
+					draft,
+				);
+			} else {
+				draft = buildWorkstreamDraft(draftParams, executionInput.workstreams, draft);
+			}
 
 			let reviewResult: "submit" | "decline" = "submit";
 			if (ctx.hasUI) {
@@ -580,6 +679,15 @@ export function registerPlan(pi: ExtensionAPI, tasksAccess: TasksAccess): PlanAc
 			}
 
 			if (isAllApproved(draft)) {
+				if (draft.executionKind === "workstreams") {
+					const result = buildApprovedWorkstreamResult(draft);
+					draft = null;
+					return {
+						content: [{ type: "text", text: result }],
+						details: undefined,
+					};
+				}
+
 				const approvedTasks = draft.tasks.map((t) => ({ ...t, review: null }));
 				const planRef: GoalCycle["planRef"] = {
 					context: draft.context.content,

@@ -15,7 +15,8 @@ import type { ExtensionContext, Theme } from "@earendil-works/pi-coding-agent";
 import { DynamicBorder, getSelectListTheme } from "@earendil-works/pi-coding-agent";
 import { Container, Editor, type EditorTheme, matchesKey, Spacer, Text } from "@earendil-works/pi-tui";
 import type { GoalCycle, ReviewState, Task } from "../tasks/tasks";
-import { deriveGoalContextReviewState } from "./draft-logic";
+import { deriveGoalContextReviewState } from "./draft-logic.ts";
+import type { PlanWorkstreamInput } from "./plan-input.ts";
 
 // ============================================================================
 // Types
@@ -26,16 +27,28 @@ interface PlanSection {
 	review: ReviewState;
 }
 
-export interface PlanDraft {
+interface BasePlanDraft {
 	goal: PlanSection;
 	context: PlanSection;
 	design: PlanSection;
 	success: PlanSection;
 	boundaries: PlanSection;
+}
+
+export interface TaskPlanDraft extends BasePlanDraft {
+	executionKind: "tasks";
 	worktreeSlug: string | null;
 	tasks: Task[];
 	tasksReview: ReviewState;
 }
+
+export interface WorkstreamPlanDraft extends BasePlanDraft {
+	executionKind: "workstreams";
+	workstreams: PlanWorkstreamInput[];
+	workstreamsReview: ReviewState;
+}
+
+export type PlanDraft = TaskPlanDraft | WorkstreamPlanDraft;
 
 export const SECTION_NAMES = ["goal", "context", "design", "success", "boundaries"] as const;
 export type SectionName = (typeof SECTION_NAMES)[number];
@@ -43,7 +56,11 @@ export type SectionName = (typeof SECTION_NAMES)[number];
 /** Sections that appear as individual review items (not goal/context). */
 const INDIVIDUAL_SECTIONS: SectionName[] = ["design", "success", "boundaries"];
 
-type ReviewItem = { kind: "goalContext" } | { kind: "section"; name: SectionName } | { kind: "tasks" };
+type ReviewItem =
+	| { kind: "goalContext" }
+	| { kind: "section"; name: SectionName }
+	| { kind: "tasks" }
+	| { kind: "workstreams" };
 
 // ============================================================================
 // Helpers
@@ -69,8 +86,12 @@ function countPending(draft: PlanDraft): number {
 	for (const name of INDIVIDUAL_SECTIONS) {
 		if (draft[name].review.approved === null) count++;
 	}
-	// Tasks are a single collective review item
-	if (draft.tasksReview.approved === null) count++;
+	// Tasks/workstreams are a single collective review item.
+	if (draft.executionKind === "tasks") {
+		if (draft.tasksReview.approved === null) count++;
+	} else if (draft.workstreamsReview.approved === null) {
+		count++;
+	}
 	return count;
 }
 
@@ -80,8 +101,10 @@ function getListItems(draft: PlanDraft): ReviewItem[] {
 	for (const name of INDIVIDUAL_SECTIONS) {
 		items.push({ kind: "section", name });
 	}
-	if (draft.tasks.length > 0) {
+	if (draft.executionKind === "tasks" && draft.tasks.length > 0) {
 		items.push({ kind: "tasks" });
+	} else if (draft.executionKind === "workstreams" && draft.workstreams.length > 0) {
+		items.push({ kind: "workstreams" });
 	}
 	return items;
 }
@@ -89,7 +112,9 @@ function getListItems(draft: PlanDraft): ReviewItem[] {
 function getItemReview(draft: PlanDraft, item: ReviewItem): ReviewState {
 	if (item.kind === "goalContext") return deriveGoalContextReviewState(draft);
 	if (item.kind === "section") return draft[item.name].review;
-	return draft.tasksReview;
+	if (item.kind === "tasks" && draft.executionKind === "tasks") return draft.tasksReview;
+	if (item.kind === "workstreams" && draft.executionKind === "workstreams") return draft.workstreamsReview;
+	throw new Error(`Review item '${item.kind}' does not match ${draft.executionKind} plan draft.`);
 }
 
 function setItemReview(draft: PlanDraft, item: ReviewItem, review: ReviewState): void {
@@ -99,8 +124,12 @@ function setItemReview(draft: PlanDraft, item: ReviewItem, review: ReviewState):
 		draft.context.review = review;
 	} else if (item.kind === "section") {
 		draft[item.name].review = review;
-	} else {
+	} else if (item.kind === "tasks" && draft.executionKind === "tasks") {
 		draft.tasksReview = review;
+	} else if (item.kind === "workstreams" && draft.executionKind === "workstreams") {
+		draft.workstreamsReview = review;
+	} else {
+		throw new Error(`Review item '${item.kind}' does not match ${draft.executionKind} plan draft.`);
 	}
 }
 
@@ -124,9 +153,14 @@ function renderListView(items: ReviewItem[], selected: number, draft: PlanDraft,
 			const content = draft[item.name].content;
 			const preview = content.length > 40 ? `${content.slice(0, 40)}…` : content;
 			lines.push(`${cursor} ${marker} ${theme.bold(sectionDisplayName(item.name))}  ${theme.fg("dim", preview)}`);
-		} else {
+		} else if (item.kind === "tasks" && draft.executionKind === "tasks") {
 			const marker = reviewMarker(draft.tasksReview, theme);
 			lines.push(`${cursor} ${marker} ${theme.bold("Tasks")}  ${theme.fg("dim", `${draft.tasks.length} tasks`)}`);
+		} else if (item.kind === "workstreams" && draft.executionKind === "workstreams") {
+			const marker = reviewMarker(draft.workstreamsReview, theme);
+			lines.push(
+				`${cursor} ${marker} ${theme.bold("Workstreams")}  ${theme.fg("dim", `${draft.workstreams.length} workstreams`)}`,
+			);
 		}
 	}
 
@@ -223,8 +257,10 @@ export async function showReviewOverlay(draft: PlanDraft, ctx: ExtensionContext)
 
 		lastSelected = selection;
 		const item = items[selection]!;
-		if (item.kind === "tasks") {
+		if (item.kind === "tasks" && draft.executionKind === "tasks") {
 			await showTaskCards(draft, ctx);
+		} else if (item.kind === "workstreams" && draft.executionKind === "workstreams") {
+			await showWorkstreamCards(draft, ctx);
 		} else {
 			await showDrillDown(draft, item, ctx);
 		}
@@ -364,13 +400,16 @@ async function showDrillDown(draft: PlanDraft, item: ReviewItem, ctx: ExtensionC
 	}
 }
 
-// ============================================================================
-// Task card viewer — browse tasks with prev/next, collective approve/revise
-// ============================================================================
+interface CollectiveCardOptions<T> {
+	title: string;
+	items: T[];
+	getReview(): ReviewState;
+	setReview(review: ReviewState): void;
+	renderCard(item: T, index: number, theme: Theme): string[];
+}
 
-async function showTaskCards(draft: PlanDraft, ctx: ExtensionContext): Promise<void> {
-	const tasks = draft.tasks;
-	if (tasks.length === 0) return;
+async function showCollectiveCards<T>(ctx: ExtensionContext, options: CollectiveCardOptions<T>): Promise<void> {
+	if (options.items.length === 0) return;
 
 	const action = await ctx.ui.custom<"approve" | "revise" | "back">((tui, theme, _kb, done) => {
 		const border = new DynamicBorder((s: string) => theme.fg("border", s));
@@ -384,8 +423,7 @@ async function showTaskCards(draft: PlanDraft, ctx: ExtensionContext): Promise<v
 			selectList: getSelectListTheme(),
 		};
 		const editor = new Editor(tui, editorTheme, { paddingX: 0 });
-		const currentFeedback = draft.tasksReview.feedback ?? "";
-		editor.setText(currentFeedback);
+		editor.setText(options.getReview().feedback ?? "");
 		editor.focused = false;
 
 		let currentIdx = 0;
@@ -393,7 +431,7 @@ async function showTaskCards(draft: PlanDraft, ctx: ExtensionContext): Promise<v
 
 		editor.onSubmit = (value: string) => {
 			const trimmed = value.trim();
-			draft.tasksReview = { approved: draft.tasksReview.approved, feedback: trimmed || null };
+			options.setReview({ approved: options.getReview().approved, feedback: trimmed || null });
 			editorFocused = false;
 			editor.focused = false;
 			updateHint();
@@ -407,25 +445,13 @@ async function showTaskCards(draft: PlanDraft, ctx: ExtensionContext): Promise<v
 			} else {
 				const parts = ["[←→: Navigate]", "[a: Approve all]", "[r: Revise all]", "[↓: Feedback]", "[Esc: Back]"];
 				hint.setText(theme.fg("dim", parts.join("  ")));
-				const fb = draft.tasksReview.feedback;
+				const fb = options.getReview().feedback;
 				if (fb) {
 					feedbackLabel.setText(`${theme.fg("dim", "Feedback")}\n${fb}`);
 				} else {
 					feedbackLabel.setText(`${theme.fg("dim", "Feedback")}  ${theme.fg("dim", "[↓]")}`);
 				}
 			}
-		}
-
-		function renderCard(): string[] {
-			const task = tasks[currentIdx]!;
-			const lines: string[] = [];
-			const idx = theme.fg("dim", `[${currentIdx}]`);
-			lines.push(`${idx} ${theme.fg("accent", theme.bold(task.label))}`);
-			lines.push("");
-			lines.push(`${theme.fg("dim", "Description")}  ${task.description}`);
-			lines.push("");
-			lines.push(`${theme.fg("dim", "Criteria")}  ${task.criteria}`);
-			return lines;
 		}
 
 		updateHint();
@@ -443,11 +469,11 @@ async function showTaskCards(draft: PlanDraft, ctx: ExtensionContext): Promise<v
 
 		return {
 			render: (width: number) => {
-				const marker = reviewMarker(draft.tasksReview, theme);
+				const marker = reviewMarker(options.getReview(), theme);
 				header.setText(
-					`${marker} ${theme.fg("accent", theme.bold("Tasks"))}  ${theme.fg("dim", `${currentIdx + 1} of ${tasks.length}`)}`,
+					`${marker} ${theme.fg("accent", theme.bold(options.title))}  ${theme.fg("dim", `${currentIdx + 1} of ${options.items.length}`)}`,
 				);
-				contentText.setText(renderCard().join("\n"));
+				contentText.setText(options.renderCard(options.items[currentIdx]!, currentIdx, theme).join("\n"));
 				const lines = container.render(width);
 				if (editorFocused) {
 					const editorLines = editor.render(width - 2);
@@ -492,15 +518,14 @@ async function showTaskCards(draft: PlanDraft, ctx: ExtensionContext): Promise<v
 							container.invalidate();
 						}
 					} else if (matchesKey(data, "right")) {
-						if (currentIdx < tasks.length - 1) {
+						if (currentIdx < options.items.length - 1) {
 							currentIdx++;
 							container.invalidate();
 						}
 					} else if (data === "\x1b[B" || matchesKey(data, "tab")) {
 						editorFocused = true;
 						editor.focused = true;
-						const existingFb = draft.tasksReview.feedback ?? "";
-						editor.setText(existingFb);
+						editor.setText(options.getReview().feedback ?? "");
 						updateHint();
 						container.invalidate();
 					}
@@ -509,11 +534,63 @@ async function showTaskCards(draft: PlanDraft, ctx: ExtensionContext): Promise<v
 		};
 	});
 
+	const review = options.getReview();
 	if (action === "approve") {
-		draft.tasksReview = { approved: true, feedback: draft.tasksReview.feedback };
+		options.setReview({ approved: true, feedback: review.feedback });
 	} else if (action === "revise") {
-		draft.tasksReview = { approved: false, feedback: draft.tasksReview.feedback };
+		options.setReview({ approved: false, feedback: review.feedback });
 	}
+}
+
+function showTaskCards(draft: TaskPlanDraft, ctx: ExtensionContext): Promise<void> {
+	return showCollectiveCards(ctx, {
+		title: "Tasks",
+		items: draft.tasks,
+		getReview: () => draft.tasksReview,
+		setReview: (review) => {
+			draft.tasksReview = review;
+		},
+		renderCard: (task, currentIdx, theme) => {
+			const idx = theme.fg("dim", `[${currentIdx}]`);
+			return [
+				`${idx} ${theme.fg("accent", theme.bold(task.label))}`,
+				"",
+				`${theme.fg("dim", "Description")}  ${task.description}`,
+				"",
+				`${theme.fg("dim", "Criteria")}  ${task.criteria}`,
+			];
+		},
+	});
+}
+
+function showWorkstreamCards(draft: WorkstreamPlanDraft, ctx: ExtensionContext): Promise<void> {
+	return showCollectiveCards(ctx, {
+		title: "Workstreams",
+		items: draft.workstreams,
+		getReview: () => draft.workstreamsReview,
+		setReview: (review) => {
+			draft.workstreamsReview = review;
+		},
+		renderCard: (workstream, currentIdx, theme) => {
+			const lines: string[] = [];
+			const idx = theme.fg("dim", `[${currentIdx}]`);
+			lines.push(`${idx} ${theme.fg("accent", theme.bold(workstream.label))}`);
+			lines.push(`${theme.fg("dim", "Id")}  ${workstream.id}`);
+			lines.push("");
+			lines.push(`${theme.fg("dim", "Scope")}  ${workstream.scope}`);
+			lines.push("");
+			lines.push(`${theme.fg("dim", "Outcome")}  ${workstream.outcome}`);
+			lines.push("");
+			lines.push(`${theme.fg("dim", "Boundaries")}  ${workstream.boundaries}`);
+			if (workstream.worktreeSlug !== undefined) {
+				lines.push("");
+				lines.push(`${theme.fg("dim", "Worktree slug")}  ${workstream.worktreeSlug}`);
+			}
+			lines.push("");
+			lines.push(`${theme.fg("dim", "Depends on")}  ${(workstream.dependsOn ?? []).join(", ") || "none"}`);
+			return lines;
+		},
+	});
 }
 
 // ============================================================================

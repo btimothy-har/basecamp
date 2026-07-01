@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
+	computeCollectiveReview,
 	computeGoalContextReview,
 	computeSectionReview,
 	type DraftGoalContext,
@@ -9,6 +10,8 @@ import {
 	type PlanSection,
 	type TaskInput,
 	tasksMatch,
+	type WorkstreamInput,
+	workstreamsMatch,
 } from "../planning/draft-logic.ts";
 
 function approvedSection(content: string): PlanSection {
@@ -271,6 +274,102 @@ describe("tasksMatch", () => {
 
 	it("returns true for empty task lists", () => {
 		assert.equal(tasksMatch([], []), true);
+	});
+});
+
+describe("workstreamsMatch", () => {
+	const baseWorkstreams: WorkstreamInput[] = [
+		{
+			id: "core",
+			label: "Core",
+			scope: "Build the core API",
+			outcome: "Core API works",
+			boundaries: "No UI",
+			worktreeSlug: "core-api",
+		},
+		{
+			id: "ui",
+			label: "UI",
+			scope: "Build the UI",
+			outcome: "UI works",
+			boundaries: "No API changes",
+			dependsOn: ["core"],
+		},
+	];
+
+	it("returns true for identical workstreams", () => {
+		assert.equal(
+			workstreamsMatch(
+				baseWorkstreams,
+				baseWorkstreams.map((workstream) => ({ ...workstream })),
+			),
+			true,
+		);
+	});
+
+	it("returns false when workstream count differs", () => {
+		assert.equal(workstreamsMatch(baseWorkstreams.slice(0, 1), baseWorkstreams), false);
+	});
+
+	it("returns false when a workstream field differs", () => {
+		const changed = baseWorkstreams.map((workstream) => ({ ...workstream }));
+		changed[0] = { ...changed[0]!, outcome: "Different outcome" };
+
+		assert.equal(workstreamsMatch(changed, baseWorkstreams), false);
+	});
+
+	it("treats dependency order as equivalent", () => {
+		const current: WorkstreamInput[] = [{ ...baseWorkstreams[1]!, dependsOn: ["setup", "core"] }];
+		const previous: WorkstreamInput[] = [{ ...baseWorkstreams[1]!, dependsOn: ["core", "setup"] }];
+
+		assert.equal(workstreamsMatch(current, previous), true);
+	});
+
+	it("treats omitted dependencies and empty dependencies as equivalent", () => {
+		const current: WorkstreamInput[] = [{ ...baseWorkstreams[0]!, dependsOn: [] }];
+		const previous: WorkstreamInput[] = [{ ...baseWorkstreams[0]!, dependsOn: undefined }];
+
+		assert.equal(workstreamsMatch(current, previous), true);
+	});
+
+	it("returns false when worktree slug differs", () => {
+		const changed = baseWorkstreams.map((workstream) => ({ ...workstream }));
+		changed[0] = { ...changed[0]!, worktreeSlug: "different" };
+
+		assert.equal(workstreamsMatch(changed, baseWorkstreams), false);
+	});
+});
+
+describe("computeCollectiveReview", () => {
+	it("preserves approved workstream review when the workstream list is unchanged", () => {
+		const current: WorkstreamInput[] = [
+			{ id: "core", label: "Core", scope: "Scope", outcome: "Outcome", boundaries: "Boundaries" },
+		];
+		const previous: WorkstreamInput[] = [
+			{ id: "core", label: "Core", scope: "Scope", outcome: "Outcome", boundaries: "Boundaries" },
+		];
+
+		const review = computeCollectiveReview(workstreamsMatch(current, previous), {
+			approved: true,
+			feedback: "approved note is intentionally cleared on preservation",
+		});
+
+		assert.equal(review.approved, true);
+		assert.equal(review.feedback, null);
+	});
+
+	it("resets workstream review when the workstream list changes", () => {
+		const current: WorkstreamInput[] = [
+			{ id: "core", label: "Core", scope: "Changed", outcome: "Outcome", boundaries: "Boundaries" },
+		];
+		const previous: WorkstreamInput[] = [
+			{ id: "core", label: "Core", scope: "Scope", outcome: "Outcome", boundaries: "Boundaries" },
+		];
+
+		const review = computeCollectiveReview(workstreamsMatch(current, previous), { approved: true, feedback: null });
+
+		assert.equal(review.approved, null);
+		assert.equal(review.feedback, null);
 	});
 });
 
