@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
 	buildRunSummaryPath,
+	connect,
 	createDaemonClient,
 	type DaemonConnection,
 	parseRunSummaryResponse,
@@ -39,7 +40,58 @@ class MockConnection implements DaemonConnection {
 	}
 }
 
+class FakeWebSocket {
+	sent: string[] = [];
+	private handlers = new Map<string, Set<(...args: any[]) => void>>();
+
+	on(event: string, handler: (...args: any[]) => void): void {
+		const set = this.handlers.get(event) ?? new Set();
+		set.add(handler);
+		this.handlers.set(event, set);
+	}
+
+	send(payload: string): void {
+		this.sent.push(payload);
+	}
+
+	close(): void {}
+
+	emit(event: string, ...args: any[]): void {
+		for (const handler of this.handlers.get(event) ?? []) handler(...args);
+	}
+}
+
 describe("daemon client", () => {
+	it("connect includes the canonical agent handle in the register frame", async () => {
+		const socket = new FakeWebSocket();
+		const connectionPromise = connect(
+			{
+				node_id: "node-1",
+				agent_handle: "quiet-badger-3dc450",
+				role: "session",
+				parent_id: null,
+				sibling_group: null,
+				depth: 0,
+				session_name: "Root Session",
+				cwd: "/repo",
+			},
+			{ socketPath: "/tmp/basecamp-test.sock", webSocketFactory: () => socket as any },
+		);
+
+		socket.emit("open");
+		const register = JSON.parse(socket.sent[0] ?? "{}") as Extract<Frame, { type: "register" }>;
+		assert.equal(register.type, "register");
+		assert.equal(register.node_id, "node-1");
+		assert.equal(register.agent_handle, "quiet-badger-3dc450");
+
+		socket.emit(
+			"message",
+			JSON.stringify({ type: "registered", v: PROTOCOL_VERSION, node_id: "node-1", protocol: PROTOCOL_VERSION }),
+		);
+		const connection = await connectionPromise;
+		connection.close();
+	});
+
 	it("encodes root_id and clamps limits in the summary path", () => {
 		assert.equal(
 			buildRunSummaryPath("root id/with?chars", 500),

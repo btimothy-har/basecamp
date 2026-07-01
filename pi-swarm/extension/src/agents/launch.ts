@@ -103,6 +103,7 @@ export function buildAgentEnv(opts: { name: string; parentSession: string; proje
 	const depth = Number(process.env.BASECAMP_AGENT_DEPTH ?? "0");
 	const env: Record<string, string> = {};
 	for (const [k, v] of Object.entries(process.env)) {
+		if (k === "BASECAMP_AGENT_HANDLE") continue;
 		if (k.startsWith("BASECAMP_") && v !== undefined) {
 			env[k] = v;
 		}

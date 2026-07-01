@@ -44,6 +44,7 @@ async def spawn_agent_process(
     daemon_socket_path: str,
     dispatcher_node_id: str,
     child_depth: int,
+    agent_handle: str | None = None,
     fork_source_path: str | None = None,
 ) -> asyncio.subprocess.Process:
     result_path = run_result_path(agent_id, run_id, home_dir=spec.env.get("HOME"))
@@ -61,6 +62,8 @@ async def spawn_agent_process(
         "BASECAMP_PARENT_SESSION": dispatcher_node_id,
         "BASECAMP_AGENT_DEPTH": str(child_depth),
     }
+    if agent_handle is not None:
+        child_env["BASECAMP_AGENT_HANDLE"] = agent_handle
 
     return await asyncio.create_subprocess_exec(
         *argv,

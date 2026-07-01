@@ -8,6 +8,7 @@ import { buildAgentLaunchSpec, buildAgentTitleBase, processEnvForSpawn } from ".
 import type { DaemonConnection } from "./client.ts";
 import { createDaemonClient } from "./client.ts";
 import { type ListAgentItem, type MessageStatusResultFrame, type WaitResultFrame } from "./frames.ts";
+import { buildAgentHandle } from "./handles.ts";
 
 interface DispatchDetails {
 	agentHandle: string;
@@ -112,27 +113,6 @@ const ListAgentsParams = Type.Object({
 		}),
 	),
 });
-
-const HANDLE_ADJECTIVES = [
-	"amber",
-	"brisk",
-	"calm",
-	"clear",
-	"ember",
-	"mossy",
-	"quiet",
-	"silver",
-	"steady",
-	"swift",
-] as const;
-const HANDLE_NOUNS = ["badger", "falcon", "fox", "heron", "lynx", "otter", "panda", "raven", "tiger", "wren"] as const;
-
-function buildAgentHandle(): string {
-	const entropy = randomUUID().replace(/-/g, "");
-	const adjective = HANDLE_ADJECTIVES[Number.parseInt(entropy.slice(0, 2), 16) % HANDLE_ADJECTIVES.length];
-	const noun = HANDLE_NOUNS[Number.parseInt(entropy.slice(2, 4), 16) % HANDLE_NOUNS.length];
-	return `${adjective}-${noun}-${entropy.slice(4, 10)}`;
-}
 
 function normalizeHandles(input: string | string[] | undefined): string[] {
 	if (input === undefined) return [];
@@ -492,7 +472,7 @@ export function registerAskAgentTool(
 					argv: plan.args.slice(0, -1),
 					task: taskSpec,
 					cwd: plan.spawnCwd,
-					env: dispatchEnv,
+					env: { ...dispatchEnv, BASECAMP_AGENT_HANDLE: agentHandle },
 					forkFrom: targetHandle,
 				});
 				if (result.status !== "rejected" || result.reason !== "duplicate_agent_handle" || attempt === 2) break;
@@ -692,7 +672,7 @@ export function registerDaemonTools(
 					argv: plan.args.slice(0, -1),
 					task: taskSpec,
 					cwd: plan.spawnCwd,
-					env: dispatchEnv,
+					env: { ...dispatchEnv, BASECAMP_AGENT_HANDLE: agentHandle },
 				});
 				if (result.status !== "rejected" || result.reason !== "duplicate_agent_handle" || attempt === attempts - 1)
 					break;

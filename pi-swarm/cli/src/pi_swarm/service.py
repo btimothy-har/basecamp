@@ -76,6 +76,7 @@ class PreparedDispatch:
     agent_id: str
     report_token: str
     child_depth: int
+    agent_handle: str | None = None
     fork_source_path: str | None = None
 
 
@@ -225,6 +226,7 @@ async def prepare_dispatch(
         agent_id=agent_id,
         report_token=report_token,
         child_depth=child_depth,
+        agent_handle=frame.agent_handle,
         fork_source_path=fork_source_path,
     )
 
@@ -267,6 +269,7 @@ async def dispatch_agent(
             daemon_socket_path=daemon_socket_path,
             dispatcher_node_id=dispatcher_node_id,
             child_depth=dispatch.child_depth,
+            agent_handle=dispatch.agent_handle,
             fork_source_path=dispatch.fork_source_path,
         )
     except (FileNotFoundError, PermissionError, OSError, ValueError):

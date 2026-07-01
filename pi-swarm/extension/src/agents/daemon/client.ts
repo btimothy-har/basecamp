@@ -100,6 +100,7 @@ export interface EnsureDaemonOptions {
 
 export interface DaemonIdentity {
 	node_id: string;
+	agent_handle: string;
 	role: "session" | "agent";
 	parent_id: string | null;
 	sibling_group: string | null;
@@ -646,6 +647,7 @@ export async function connect(identity: DaemonIdentity, options: ConnectOptions 
 			v: PROTOCOL_VERSION,
 			role: identity.role,
 			node_id: identity.node_id,
+			agent_handle: identity.agent_handle,
 			parent_id: identity.parent_id,
 			sibling_group: identity.sibling_group,
 			depth: identity.depth,

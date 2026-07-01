@@ -4,6 +4,7 @@ import type { PiSwarmDependencies } from "../../dependencies.ts";
 import { DEFAULT_AGENT_MAX_DEPTH } from "../types.ts";
 import { connect, type DaemonConnection, type DaemonIdentity, ensureDaemon, fetchRunSummary } from "./client.ts";
 import { type PeerMessageDeliveryFrame, PROTOCOL_VERSION } from "./frames.ts";
+import { buildDeterministicAgentHandle } from "./handles.ts";
 import { resolveDaemonPaths } from "./paths.ts";
 import { registerDaemonReporter } from "./reporter.ts";
 import { registerAskAgentTool, registerDaemonTools, registerPeerMessageTools } from "./tools.ts";
@@ -169,6 +170,7 @@ async function awaitDaemonConnection(): Promise<DaemonConnection | null> {
  * - role = BASECAMP_AGENT_DEPTH > 0 ? "agent" : "session"
  * - parent_id = BASECAMP_PARENT_SESSION ?? null
  * - sibling_group = BASECAMP_SIBLING_GROUP ?? null
+ * - agent_handle = BASECAMP_AGENT_HANDLE ?? deterministic adjective-noun-hash from node_id
  * - session_name = BASECAMP_AGENT_TITLE (+ session-id suffix) ?? BASECAMP_SESSION_NAME ?? node_id
  * - cwd = process.cwd()
  */
@@ -179,8 +181,10 @@ export function deriveDaemonIdentity(
 	const depth = Number(process.env.BASECAMP_AGENT_DEPTH ?? 0);
 	const safeDepth = Number.isFinite(depth) && depth >= 0 ? depth : 0;
 	const nodeId = process.env.BASECAMP_AGENT_ID ?? ctx.sessionManager.getSessionId();
+	const explicitHandle = process.env.BASECAMP_AGENT_HANDLE?.trim();
 	return {
 		node_id: nodeId,
+		agent_handle: explicitHandle || buildDeterministicAgentHandle(nodeId),
 		role: safeDepth > 0 ? "agent" : "session",
 		parent_id: process.env.BASECAMP_PARENT_SESSION ?? null,
 		sibling_group: process.env.BASECAMP_SIBLING_GROUP ?? null,

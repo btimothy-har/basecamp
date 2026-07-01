@@ -66,6 +66,7 @@ class RunnerContext:
     run_id: str
     report_token: str
     agent_id: str
+    agent_handle: str | None
     parent_session: str | None
     agent_depth: int
     result_path: Path
@@ -110,6 +111,7 @@ def context_from_env(env: dict[str, str], result_path: Path) -> RunnerContext | 
         run_id=run_id,
         report_token=report_token,
         agent_id=agent_id,
+        agent_handle=env.get("BASECAMP_AGENT_HANDLE"),
         parent_session=env.get("BASECAMP_PARENT_SESSION"),
         agent_depth=parse_agent_depth(env.get("BASECAMP_AGENT_DEPTH")),
         result_path=result_path,
@@ -212,6 +214,7 @@ class AttemptDaemonProxy:
             v=PROTOCOL_VERSION,
             role="agent",
             node_id=self._context.agent_id,
+            agent_handle=self._context.agent_handle or child_register.agent_handle,
             parent_id=self._context.parent_session,
             sibling_group=child_register.sibling_group,
             depth=self._context.agent_depth,
@@ -317,6 +320,7 @@ def attempt_env(
         "BASECAMP_REPORT_TOKEN": secrets.token_urlsafe(24),
         "BASECAMP_RUN_ID": context.run_id,
         "BASECAMP_AGENT_ID": context.agent_id,
+        **({"BASECAMP_AGENT_HANDLE": context.agent_handle} if context.agent_handle is not None else {}),
         BASECAMP_RUNNER_MANAGED_RESULT: "1",
         BASECAMP_RUN_RESULT_PATH: str(result_path),
         BASECAMP_RUN_ATTEMPT: str(attempt),
@@ -329,6 +333,7 @@ def send_result_report(context: RunnerContext, final: FinalRunResult) -> None:
         v=PROTOCOL_VERSION,
         role="agent",
         node_id=context.agent_id,
+        agent_handle=context.agent_handle,
         parent_id=context.parent_session,
         sibling_group=None,
         depth=context.agent_depth,

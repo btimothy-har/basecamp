@@ -602,11 +602,18 @@ def test_dispatch_uses_provided_agent_id_for_store_and_child_env(tmp_path: Path)
     run_id = f"run-{uuid.uuid4()}"
     session_node = "session-node"
     provided_agent_id = f"agent-{uuid.uuid4()}"
+    provided_agent_handle = "quiet-badger-3dc450"
 
     try:
         with unix_connect(str(uds_path), uri="ws://localhost/ws") as websocket:
             _register_session(websocket, node_id=session_node, cwd=str(tmp_path))
-            ack = _dispatch(websocket, run_id=run_id, spec=_dispatch_spec(tmp_path), agent_id=provided_agent_id)
+            ack = _dispatch(
+                websocket,
+                run_id=run_id,
+                spec=_dispatch_spec(tmp_path, env={"FAKE_DAEMON_AGENT_RESULT_ENV_KEY": "BASECAMP_AGENT_HANDLE"}),
+                agent_id=provided_agent_id,
+                agent_handle=provided_agent_handle,
+            )
             assert ack == {
                 "type": "dispatch_ack",
                 "v": PROTOCOL_VERSION,
@@ -626,10 +633,12 @@ def test_dispatch_uses_provided_agent_id_for_store_and_child_env(tmp_path: Path)
         assert run is not None
         assert run["status"] == "completed"
         assert run["agent_id"] == provided_agent_id
+        assert run["result"] == f"fake-agent-result:BASECAMP_AGENT_HANDLE={provided_agent_handle}"
 
         agent = store.get_agent(provided_agent_id)
         assert agent is not None
         assert agent["id"] == provided_agent_id
+        assert agent["agent_handle"] == provided_agent_handle
         assert agent["parent_id"] == session_node
     finally:
         _stop_daemon(server, thread, uds_path)
