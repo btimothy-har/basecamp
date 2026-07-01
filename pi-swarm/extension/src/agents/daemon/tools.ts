@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Text } from "@earendil-works/pi-tui";
 import { Type } from "@sinclair/typebox";
+import { type AgentLaunchResult, registerAgentLauncher } from "pi-core/platform/agent-launcher.ts";
 import type { PiSwarmDependencies } from "../../dependencies.ts";
 import { discoverAgents } from "../discovery.ts";
 import { buildAgentLaunchSpec, buildAgentTitleBase, processEnvForSpawn } from "../launch.ts";
@@ -542,6 +543,108 @@ export function registerAskAgentTool(
 	});
 }
 
+function registerDaemonAgentLauncher(
+	getConnection: () => Promise<DaemonConnection | null>,
+	deps: Pick<PiSwarmDependencies, "getWorkspaceState" | "basecampExtensionRoot" | "resolveModelAlias">,
+): void {
+	registerAgentLauncher({
+		id: "pi-swarm",
+		async launch(input): Promise<AgentLaunchResult> {
+			const requestedAgent = input.agent;
+			const fallbackAgent = requestedAgent || "ad-hoc";
+			const connection = await getConnection();
+			if (!connection) {
+				return {
+					ok: false,
+					agent: fallbackAgent,
+					message: "basecamp swarm daemon is not connected; dispatch cannot proceed.",
+				};
+			}
+
+			const daemonClient = createDaemonClient(connection);
+			const agentId = randomUUID();
+			const localId = randomUUID().slice(0, 6);
+			let agentLaunch: ReturnType<typeof buildAgentLaunchSpec>;
+			try {
+				const launchPi = input.pi as ExtensionAPI;
+				agentLaunch = buildAgentLaunchSpec({
+					pi: launchPi,
+					getAgents: discoverAgents,
+					basecampExtensionRoot: deps.basecampExtensionRoot,
+					agentId,
+					requestedAgent,
+					namePrefix: `agent-${localId}`,
+					nameSuffix: input.name,
+					task: input.task,
+					modelContext: input.ctx.model as Parameters<typeof buildAgentLaunchSpec>[0]["modelContext"],
+					resolveModelAlias: deps.resolveModelAlias,
+					workspace: input.workspace ?? deps.getWorkspaceState(),
+					parentSession:
+						process.env.BASECAMP_SESSION_NAME ??
+						launchPi.getSessionName()?.trim() ??
+						input.ctx.sessionManager.getSessionId(),
+					project: process.env.BASECAMP_PROJECT ?? "default",
+				});
+			} catch (error) {
+				return { ok: false, agent: fallbackAgent, message: error instanceof Error ? error.message : String(error) };
+			}
+			if (!agentLaunch.ok) {
+				return { ok: false, agent: agentLaunch.agentLabel, message: agentLaunch.message };
+			}
+
+			const { plan } = agentLaunch;
+			const taskSpec = plan.args.at(-1);
+			if (!taskSpec) {
+				return { ok: false, agent: plan.agentLabel ?? fallbackAgent, message: "Unable to build async task argument." };
+			}
+
+			let agentHandle = buildAgentHandle();
+			let result: Awaited<ReturnType<typeof daemonClient.dispatchAgent>> | null = null;
+			const title = input.title ?? buildAgentTitleBase(requestedAgent, input.task);
+			const dispatchEnv = {
+				...processEnvForSpawn(),
+				...plan.environment,
+				...(input.env ?? {}),
+				BASECAMP_AGENT_TITLE: title,
+			};
+
+			try {
+				for (let attempt = 0; attempt < 3; attempt++) {
+					result = await daemonClient.dispatchAgent({
+						agentId,
+						agentHandle,
+						agentType: plan.agentLabel ?? "ad-hoc",
+						runKind: plan.runKind,
+						model: plan.model ?? "default",
+						argv: plan.args.slice(0, -1),
+						task: taskSpec,
+						cwd: plan.spawnCwd,
+						env: { ...dispatchEnv, BASECAMP_AGENT_HANDLE: agentHandle },
+					});
+					if (result.status !== "rejected" || result.reason !== "duplicate_agent_handle" || attempt === 2) break;
+					agentHandle = buildAgentHandle();
+				}
+			} catch (error) {
+				return {
+					ok: false,
+					agent: plan.agentLabel ?? fallbackAgent,
+					message: error instanceof Error ? error.message : String(error),
+				};
+			}
+
+			if (!result || result.status === "rejected") {
+				return {
+					ok: false,
+					agent: plan.agentLabel ?? fallbackAgent,
+					message: `dispatch rejected: ${result?.reason ?? "unknown"}`,
+				};
+			}
+
+			return { ok: true, agentHandle, agent: plan.agentLabel ?? "ad-hoc" };
+		},
+	});
+}
+
 export function registerDaemonTools(
 	pi: ExtensionAPI,
 	getConnection: () => Promise<DaemonConnection | null>,
@@ -550,6 +653,8 @@ export function registerDaemonTools(
 		"hasInvokedSkill" | "getWorkspaceState" | "basecampExtensionRoot" | "resolveModelAlias"
 	>,
 ): void {
+	registerDaemonAgentLauncher(getConnection, deps);
+
 	pi.registerTool({
 		name: "dispatch_agent",
 		label: "Dispatch Agent",

@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { afterEach, describe, it } from "node:test";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
+import type { AgentLauncher } from "pi-core/platform/agent-launcher.ts";
 import type { WorkspaceState } from "pi-core/platform/workspace.ts";
 import { resetAgentMode, setAgentMode } from "pi-core/session/agent-mode.ts";
 import { buildApprovedWorkstreamResult, registerPlan } from "../planning/plan.ts";
@@ -111,6 +112,16 @@ function workspaceState(activeWorktree: WorkspaceState["activeWorktree"] = null)
 		protectedRoot: "/repo",
 		activeWorktree,
 		unsafeEdit: false,
+	};
+}
+
+function successfulLauncher(calls: Parameters<AgentLauncher["launch"]>[0][] = []): AgentLauncher {
+	return {
+		id: "test-launcher",
+		async launch(input) {
+			calls.push(input);
+			return { ok: true, agentHandle: `worker-${calls.length}`, agent: input.agent ?? "ad-hoc" };
+		},
 	};
 }
 
@@ -232,7 +243,14 @@ describe("plan execution result shapes", () => {
 		assert.equal(approved.implementation_mode, "supervisor");
 		assert.equal(approved.handoff_status, "workstream_activation_cancelled");
 		assert.match(approved.message, /requires an initialized git repository workspace/);
-		assert.deepEqual(approved.workstream_progress, { ready: 1, blocked: 2, activated: 0, failed: 1, total: 3 });
+		assert.deepEqual(approved.workstream_progress, {
+			ready: 1,
+			blocked: 2,
+			activated: 0,
+			dispatched: 0,
+			failed: 1,
+			total: 3,
+		});
 		assert.deepEqual(approved.workstream_graph, { ready: ["core"], blocked: { ui: ["core"], e2e: ["ui"] } });
 		assert.equal(approved.workstreams.core.status, "ready");
 		assert.equal(approved.workstreams.core.activation_status, "failed");
@@ -270,6 +288,9 @@ describe("plan execution result shapes", () => {
 				getWorkspaceState: () => {
 					throw new Error("workspace should not be required when no workstreams are ready");
 				},
+				getAgentLauncher: () => {
+					throw new Error("launcher should not be required when no workstreams are ready");
+				},
 				getOrCreateWorktree: async () => {
 					throw new Error("worktree provisioning should not run when no workstreams are ready");
 				},
@@ -284,7 +305,14 @@ describe("plan execution result shapes", () => {
 
 		assert.equal(result.status, "approved");
 		assert.equal(result.handoff_status, "workstreams_blocked");
-		assert.deepEqual(result.workstream_progress, { ready: 0, blocked: 2, activated: 0, failed: 0, total: 2 });
+		assert.deepEqual(result.workstream_progress, {
+			ready: 0,
+			blocked: 2,
+			activated: 0,
+			dispatched: 0,
+			failed: 0,
+			total: 2,
+		});
 		assert.deepEqual(result.workstream_graph, { ready: [], blocked: { core: ["ui"], ui: ["core"] } });
 		assert.equal(result.workstreams.core.status, "blocked");
 		assert.equal(result.workstreams.core.activation_status, undefined);
@@ -292,9 +320,10 @@ describe("plan execution result shapes", () => {
 		assert.equal(result.workstreams.ui.status, "blocked");
 	});
 
-	it("provisions ready workstreams with derived labels, branches, and worktree details", async () => {
+	it("provisions and launches ready workstreams with derived worktree context", async () => {
 		process.env.USER = "Test User";
 		const createdCalls: { label: string; branchName: string | null | undefined }[] = [];
+		const launchCalls: Parameters<AgentLauncher["launch"]>[0][] = [];
 		const draft = approvedWorkstreamDraft([
 			{
 				id: "core",
@@ -324,6 +353,7 @@ describe("plan execution result shapes", () => {
 		const result = parseWorkstreamResult(
 			await buildApprovedWorkstreamResult(piStub(), draft, contextWithSession("session-1234"), {
 				getWorkspaceState: () => workspaceState(),
+				getAgentLauncher: () => successfulLauncher(launchCalls),
 				getOrCreateWorktree: async (_pi, _repoRoot, _repoName, label, branchName) => {
 					createdCalls.push({ label, branchName });
 					return { worktreeDir: `/worktrees/${label}`, label, branch: branchName ?? "detached", created: true };
@@ -334,9 +364,16 @@ describe("plan execution result shapes", () => {
 		);
 
 		assert.equal(result.status, "approved");
-		assert.equal(result.handoff_status, "workstreams_activated");
+		assert.equal(result.handoff_status, "workstreams_dispatched");
 		assert.deepEqual(result.workstream_graph, { ready: ["core", "api"], blocked: { ui: ["core"] } });
-		assert.deepEqual(result.workstream_progress, { ready: 2, blocked: 1, activated: 2, failed: 0, total: 3 });
+		assert.deepEqual(result.workstream_progress, {
+			ready: 2,
+			blocked: 1,
+			activated: 2,
+			dispatched: 2,
+			failed: 0,
+			total: 3,
+		});
 		assert.deepEqual(createdCalls, [
 			{ label: "wt-te/1234-core-work", branchName: "te/1234-core-work" },
 			{ label: "wt-te/1234-api", branchName: "te/1234-api" },
@@ -348,10 +385,29 @@ describe("plan execution result shapes", () => {
 			created: true,
 		});
 		assert.equal(result.workstreams.core.activation_status, "activated");
+		assert.equal(result.workstreams.core.launch_status, "dispatched");
+		assert.deepEqual(result.workstreams.core.agent, { handle: "worker-1", type: "worker" });
 		assert.equal(result.workstreams.api.activation_status, "activated");
+		assert.equal(result.workstreams.api.launch_status, "dispatched");
 		assert.equal(result.workstreams.ui.status, "blocked");
 		assert.equal(result.workstreams.ui.activation_status, undefined);
+		assert.equal(result.workstreams.ui.launch_status, undefined);
 		assert.equal(result.workstreams.ui.worktree, undefined);
+		assert.equal(launchCalls.length, 2);
+		assert.equal(launchCalls[0]?.agent, "worker");
+		assert.match(launchCalls[0]?.task ?? "", /Goal: Program goal/);
+		assert.match(launchCalls[0]?.task ?? "", /ID: core/);
+		assert.match(launchCalls[0]?.task ?? "", /Work only in the assigned worktree path/);
+		assert.match(launchCalls[0]?.task ?? "", /Do not create a GitHub PR unless explicitly asked/);
+		assert.equal(launchCalls[0]?.workspace?.activeWorktree?.path, "/worktrees/wt-te/1234-core-work");
+		assert.equal(launchCalls[0]?.workspace?.activeWorktree?.label, "wt-te/1234-core-work");
+		assert.deepEqual(launchCalls[0]?.env, {
+			BASECAMP_REPO: "org/repo",
+			BASECAMP_SCRATCH_DIR: "/scratch",
+			BASECAMP_WORKTREE_DIR: "/worktrees/wt-te/1234-core-work",
+			BASECAMP_WORKTREE_LABEL: "wt-te/1234-core-work",
+		});
+		assert.equal(launchCalls[0]?.title, "Workstream: Core");
 		assert.equal(result.tasks, undefined);
 	});
 
@@ -378,6 +434,7 @@ describe("plan execution result shapes", () => {
 		const result = parseWorkstreamResult(
 			await buildApprovedWorkstreamResult(piStub(), draft, contextWithSession("session-abcd"), {
 				getWorkspaceState: () => workspaceState(),
+				getAgentLauncher: () => successfulLauncher(),
 				getOrCreateWorktree: async (_pi, _repoRoot, _repoName, label, branchName) => ({
 					worktreeDir: `/worktrees/${label}`,
 					label,
@@ -428,6 +485,7 @@ describe("plan execution result shapes", () => {
 		const result = parseWorkstreamResult(
 			await buildApprovedWorkstreamResult(piStub(), draft, contextWithSession("session-9999"), {
 				getWorkspaceState: () => workspaceState(),
+				getAgentLauncher: () => successfulLauncher(),
 				getOrCreateWorktree: async (_pi, _repoRoot, _repoName, label, branchName) => ({
 					worktreeDir: `/worktrees/${label}`,
 					label,
@@ -447,8 +505,15 @@ describe("plan execution result shapes", () => {
 			}),
 		);
 
-		assert.equal(result.handoff_status, "workstreams_partially_activated");
-		assert.deepEqual(result.workstream_progress, { ready: 3, blocked: 0, activated: 1, failed: 2, total: 3 });
+		assert.equal(result.handoff_status, "workstreams_partially_dispatched");
+		assert.deepEqual(result.workstream_progress, {
+			ready: 3,
+			blocked: 0,
+			activated: 1,
+			dispatched: 1,
+			failed: 2,
+			total: 3,
+		});
 		assert.equal(result.workstreams.nonzero.activation_status, "failed");
 		assert.equal(result.workstreams.nonzero.failure_stage, "setup");
 		assert.deepEqual(result.workstreams.nonzero.worktree_setup, {
@@ -470,6 +535,7 @@ describe("plan execution result shapes", () => {
 
 	it("isolates worktree creation failures per ready stream", async () => {
 		process.env.USER = "Test User";
+		const launchCalls: Parameters<AgentLauncher["launch"]>[0][] = [];
 		const draft = approvedWorkstreamDraft([
 			{
 				id: "bad",
@@ -490,6 +556,7 @@ describe("plan execution result shapes", () => {
 		const result = parseWorkstreamResult(
 			await buildApprovedWorkstreamResult(piStub(), draft, contextWithSession("session-2222"), {
 				getWorkspaceState: () => workspaceState(),
+				getAgentLauncher: () => successfulLauncher(launchCalls),
 				getOrCreateWorktree: async (_pi, _repoRoot, _repoName, label, branchName) => {
 					if (label.includes("bad")) throw new Error("git worktree failed");
 					return { worktreeDir: `/worktrees/${label}`, label, branch: branchName ?? "detached", created: true };
@@ -499,18 +566,198 @@ describe("plan execution result shapes", () => {
 			}),
 		);
 
-		assert.deepEqual(result.workstream_progress, { ready: 2, blocked: 0, activated: 1, failed: 1, total: 2 });
+		assert.deepEqual(result.workstream_progress, {
+			ready: 2,
+			blocked: 0,
+			activated: 1,
+			dispatched: 1,
+			failed: 1,
+			total: 2,
+		});
 		assert.equal(result.workstreams.bad.activation_status, "failed");
 		assert.equal(result.workstreams.bad.failure_stage, "worktree");
 		assert.equal(result.workstreams.bad.message, "git worktree failed");
 		assert.equal(result.workstreams.bad.worktree, undefined);
 		assert.equal(result.workstreams.good.activation_status, "activated");
+		assert.equal(result.workstreams.good.launch_status, "dispatched");
+		assert.equal(launchCalls.length, 1);
+		assert.match(launchCalls[0]?.task ?? "", /ID: good/);
 		assert.deepEqual(result.workstreams.good.worktree, {
 			label: "wt-te/2222-good",
 			path: "/worktrees/wt-te/2222-good",
 			branch: "te/2222-good",
 			created: true,
 		});
+	});
+
+	it("isolates launch failures without failing unrelated dispatched streams", async () => {
+		process.env.USER = "Test User";
+		const draft = approvedWorkstreamDraft([
+			{
+				id: "bad",
+				label: "Bad Launch",
+				scope: "Scope",
+				outcome: "Outcome",
+				boundaries: "Boundaries",
+			},
+			{
+				id: "good",
+				label: "Good Launch",
+				scope: "Scope",
+				outcome: "Outcome",
+				boundaries: "Boundaries",
+			},
+			{
+				id: "blocked",
+				label: "Blocked",
+				scope: "Scope",
+				outcome: "Outcome",
+				boundaries: "Boundaries",
+				dependsOn: ["good"],
+			},
+		]);
+		const launchCalls: string[] = [];
+
+		const result = parseWorkstreamResult(
+			await buildApprovedWorkstreamResult(piStub(), draft, contextWithSession("session-5555"), {
+				getWorkspaceState: () => workspaceState(),
+				getAgentLauncher: () => ({
+					id: "failing-launcher",
+					async launch(input) {
+						launchCalls.push(input.workspace?.activeWorktree?.label ?? "missing");
+						if (input.task.includes("ID: bad")) {
+							return { ok: false, agent: "worker", message: "daemon rejected launch" };
+						}
+						return { ok: true, agentHandle: "good-handle", agent: "worker" };
+					},
+				}),
+				getOrCreateWorktree: async (_pi, _repoRoot, _repoName, label, branchName) => ({
+					worktreeDir: `/worktrees/${label}`,
+					label,
+					branch: branchName ?? "detached",
+					created: true,
+				}),
+				readWorktreeSetupCommand: () => null,
+				runWorktreeSetup: async () => ({ ran: true, exitCode: 0, timedOut: false, stderrTail: "" }),
+			}),
+		);
+
+		assert.equal(result.handoff_status, "workstreams_partially_dispatched");
+		assert.deepEqual(result.workstream_progress, {
+			ready: 2,
+			blocked: 1,
+			activated: 2,
+			dispatched: 1,
+			failed: 1,
+			total: 3,
+		});
+		assert.deepEqual(launchCalls, ["wt-te/5555-bad", "wt-te/5555-good"]);
+		assert.equal(result.workstreams.bad.activation_status, "activated");
+		assert.equal(result.workstreams.bad.launch_status, "failed");
+		assert.equal(result.workstreams.bad.failure_stage, "launch");
+		assert.equal(result.workstreams.bad.message, "daemon rejected launch");
+		assert.equal(result.workstreams.good.launch_status, "dispatched");
+		assert.deepEqual(result.workstreams.good.agent, { handle: "good-handle", type: "worker" });
+		assert.equal(result.workstreams.blocked.launch_status, undefined);
+	});
+
+	it("isolates thrown launch errors without aborting the approved result", async () => {
+		process.env.USER = "Test User";
+		const draft = approvedWorkstreamDraft([
+			{
+				id: "bad",
+				label: "Bad Launch",
+				scope: "Scope",
+				outcome: "Outcome",
+				boundaries: "Boundaries",
+			},
+			{
+				id: "good",
+				label: "Good Launch",
+				scope: "Scope",
+				outcome: "Outcome",
+				boundaries: "Boundaries",
+			},
+		]);
+
+		const result = parseWorkstreamResult(
+			await buildApprovedWorkstreamResult(piStub(), draft, contextWithSession("session-7777"), {
+				getWorkspaceState: () => workspaceState(),
+				getAgentLauncher: () => ({
+					id: "throwing-launcher",
+					async launch(input) {
+						if (input.task.includes("ID: bad")) throw new Error("daemon unavailable");
+						return { ok: true, agentHandle: "good-handle", agent: "worker" };
+					},
+				}),
+				getOrCreateWorktree: async (_pi, _repoRoot, _repoName, label, branchName) => ({
+					worktreeDir: `/worktrees/${label}`,
+					label,
+					branch: branchName ?? "detached",
+					created: true,
+				}),
+				readWorktreeSetupCommand: () => null,
+				runWorktreeSetup: async () => ({ ran: true, exitCode: 0, timedOut: false, stderrTail: "" }),
+			}),
+		);
+
+		assert.equal(result.handoff_status, "workstreams_partially_dispatched");
+		assert.deepEqual(result.workstream_progress, {
+			ready: 2,
+			blocked: 0,
+			activated: 2,
+			dispatched: 1,
+			failed: 1,
+			total: 2,
+		});
+		assert.equal(result.workstreams.bad.launch_status, "failed");
+		assert.equal(result.workstreams.bad.failure_stage, "launch");
+		assert.equal(result.workstreams.bad.message, "daemon unavailable");
+		assert.equal(result.workstreams.good.launch_status, "dispatched");
+	});
+
+	it("cancels before provisioning when no launcher is registered", async () => {
+		process.env.USER = "Test User";
+		let createCalls = 0;
+		const draft = approvedWorkstreamDraft([
+			{
+				id: "ready",
+				label: "Ready",
+				scope: "Scope",
+				outcome: "Outcome",
+				boundaries: "Boundaries",
+			},
+		]);
+
+		const result = parseWorkstreamResult(
+			await buildApprovedWorkstreamResult(piStub(), draft, contextWithSession("session-6666"), {
+				getWorkspaceState: () => workspaceState(),
+				getAgentLauncher: () => null,
+				getOrCreateWorktree: async () => {
+					createCalls++;
+					throw new Error("worktree provisioning should not run without a launcher");
+				},
+				readWorktreeSetupCommand: () => null,
+				runWorktreeSetup: async () => ({ ran: true, exitCode: 0, timedOut: false, stderrTail: "" }),
+			}),
+		);
+
+		assert.equal(createCalls, 0);
+		assert.equal(result.status, "handoff_cancelled");
+		assert.equal(result.handoff_status, "workstream_launch_cancelled");
+		assert.deepEqual(result.workstream_progress, {
+			ready: 1,
+			blocked: 0,
+			activated: 0,
+			dispatched: 0,
+			failed: 1,
+			total: 1,
+		});
+		assert.equal(result.workstreams.ready.activation_status, undefined);
+		assert.equal(result.workstreams.ready.worktree, undefined);
+		assert.equal(result.workstreams.ready.launch_status, "failed");
+		assert.equal(result.workstreams.ready.failure_stage, "launch");
+		assert.equal(result.workstreams.ready.message, "No agent launcher is registered.");
 	});
 
 	it("fails duplicate ready worktree labels before provisioning", async () => {
@@ -538,6 +785,7 @@ describe("plan execution result shapes", () => {
 		const result = parseWorkstreamResult(
 			await buildApprovedWorkstreamResult(piStub(), draft, contextWithSession("session-4444"), {
 				getWorkspaceState: () => workspaceState(),
+				getAgentLauncher: () => successfulLauncher(),
 				getOrCreateWorktree: async (_pi, _repoRoot, _repoName, label, branchName) => {
 					createCalls++;
 					return { worktreeDir: `/worktrees/${label}`, label, branch: branchName ?? "detached", created: true };
@@ -548,8 +796,15 @@ describe("plan execution result shapes", () => {
 		);
 
 		assert.equal(createCalls, 0);
-		assert.deepEqual(result.workstream_progress, { ready: 2, blocked: 0, activated: 0, failed: 2, total: 2 });
-		assert.equal(result.handoff_status, "workstreams_partially_activated");
+		assert.deepEqual(result.workstream_progress, {
+			ready: 2,
+			blocked: 0,
+			activated: 0,
+			dispatched: 0,
+			failed: 2,
+			total: 2,
+		});
+		assert.equal(result.handoff_status, "workstreams_failed");
 		assert.equal(result.workstreams.first.activation_status, "failed");
 		assert.equal(result.workstreams.first.failure_stage, "worktree");
 		assert.match(result.workstreams.first.message, /shared by ready workstreams: first, second/);
@@ -580,6 +835,7 @@ describe("plan execution result shapes", () => {
 		const result = parseWorkstreamResult(
 			await buildApprovedWorkstreamResult(piStub(), draft, contextWithSession("session-3333"), {
 				getWorkspaceState: () => workspace,
+				getAgentLauncher: () => successfulLauncher(),
 				getOrCreateWorktree: async (_pi, _repoRoot, _repoName, label, branchName) => ({
 					worktreeDir: `/worktrees/${label}`,
 					label,

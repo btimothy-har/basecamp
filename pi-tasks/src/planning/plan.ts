@@ -14,12 +14,14 @@
 
 import type { ExtensionAPI, ExtensionContext, Theme } from "@earendil-works/pi-coding-agent";
 import { Type } from "@sinclair/typebox";
+import { type AgentLauncher, getAgentLauncher } from "pi-core/platform/agent-launcher.ts";
 import { readWorktreeSetupCommand } from "pi-core/platform/config.ts";
 import {
 	activateWorkspaceWorktree,
 	getWorkspaceState,
 	listWorkspaceWorktrees,
 	requireWorkspaceState,
+	type WorkspaceState,
 	type WorkspaceWorktree,
 } from "pi-core/platform/workspace.ts";
 import { getAgentMode, setAgentMode } from "pi-core/session/agent-mode.ts";
@@ -347,6 +349,7 @@ function buildApprovedResult(
 
 interface WorkstreamActivationDeps {
 	getWorkspaceState(): ReturnType<typeof getWorkspaceState>;
+	getAgentLauncher(): AgentLauncher | null;
 	getOrCreateWorktree(
 		pi: ExtensionAPI,
 		repoRoot: string,
@@ -363,13 +366,15 @@ interface WorkstreamActivationDeps {
 
 const DEFAULT_WORKSTREAM_ACTIVATION_DEPS: WorkstreamActivationDeps = {
 	getWorkspaceState,
+	getAgentLauncher,
 	getOrCreateWorktree,
 	readWorktreeSetupCommand,
 	runWorktreeSetup,
 };
 
-type WorkstreamProvisionStage = "worktree" | "setup";
+type WorkstreamProvisionStage = "worktree" | "setup" | "launch";
 type WorkstreamProvisionStatus = "activated" | "failed";
+type WorkstreamLaunchStatus = "dispatched" | "failed";
 
 interface ApprovedWorkstreamEntry {
 	id: string;
@@ -390,6 +395,11 @@ interface ApprovedWorkstreamEntry {
 		created: boolean;
 	};
 	worktree_setup?: WorktreeSetupSummary;
+	launch_status?: WorkstreamLaunchStatus;
+	agent?: {
+		handle: string;
+		type: string;
+	};
 }
 
 function errorMessage(error: unknown): string {
@@ -399,6 +409,82 @@ function errorMessage(error: unknown): string {
 function setupFailureMessage(summary: WorktreeSetupSummary): string {
 	if (summary.timed_out) return "Worktree setup timed out.";
 	return `Worktree setup exited ${summary.exit_code}.`;
+}
+
+function buildWorkstreamLaunchWorkspace(
+	workspace: WorkspaceState,
+	worktree: ApprovedWorkstreamEntry["worktree"],
+): WorkspaceState {
+	if (!worktree) return workspace;
+	return {
+		...workspace,
+		effectiveCwd: worktree.path,
+		activeWorktree: {
+			kind: "git-worktree",
+			label: worktree.label,
+			path: worktree.path,
+			branch: worktree.branch,
+			created: worktree.created,
+		},
+	};
+}
+
+function buildWorkstreamLaunchEnv(
+	workspace: WorkspaceState,
+	worktree: ApprovedWorkstreamEntry["worktree"],
+): Record<string, string> {
+	return {
+		BASECAMP_REPO: workspace.repo?.name ?? "",
+		BASECAMP_SCRATCH_DIR: workspace.scratchDir,
+		BASECAMP_WORKTREE_DIR: worktree?.path ?? "",
+		BASECAMP_WORKTREE_LABEL: worktree?.label ?? "",
+	};
+}
+
+function buildWorkstreamLaunchBrief(params: {
+	draft: WorkstreamPlanDraft;
+	workstream: PlanWorkstreamInput;
+	entry: ApprovedWorkstreamEntry;
+}): string {
+	const { draft, workstream, entry } = params;
+	const dependsOn = workstream.dependsOn?.length ? workstream.dependsOn.join(", ") : "None";
+	const worktree = entry.worktree;
+	const lines = [
+		"You are a pi-swarm worker agent dispatched for one approved Basecamp workstream.",
+		"",
+		"Parent plan:",
+		`Goal: ${draft.goal.content}`,
+		`Context: ${draft.context.content}`,
+		`Design: ${draft.design.content}`,
+		`Success: ${draft.success.content}`,
+		`Boundaries: ${draft.boundaries.content}`,
+		"",
+		"Assigned workstream:",
+		`ID: ${workstream.id}`,
+		`Label: ${workstream.label}`,
+		`Scope: ${workstream.scope}`,
+		`Outcome: ${workstream.outcome}`,
+		`Boundaries: ${workstream.boundaries}`,
+		`Depends on: ${dependsOn}`,
+		"",
+		"Assigned worktree:",
+		`Label: ${worktree?.label ?? "unknown"}`,
+		`Path: ${worktree?.path ?? "unknown"}`,
+		`Branch: ${worktree?.branch ?? "unknown"}`,
+		"",
+		"Execution instructions:",
+		"- Work only in the assigned worktree path. Do not edit the protected checkout or another workstream's worktree.",
+		"- Create and maintain local tasks for your own work in this session.",
+		"- Keep the scope PR-sized and limited to this workstream's scope, outcome, and boundaries.",
+		"- Do not merge to main or any integration branch.",
+		"- Do not create a GitHub PR unless explicitly asked.",
+		"- If blocked by a dependency or setup issue, report the blocker instead of broadening scope.",
+		"",
+		"Reporting contract:",
+		"- Report files changed, design decisions, validation run, remaining risks/blockers, and whether the workstream outcome is complete.",
+		"- Keep progress updates concise and tied to this workstream.",
+	];
+	return lines.join("\n");
 }
 
 export async function buildApprovedWorkstreamResult(
@@ -449,6 +535,7 @@ export async function buildApprovedWorkstreamResult(
 				ready: 0,
 				blocked: Object.keys(blocked).length,
 				activated: 0,
+				dispatched: 0,
 				failed: 0,
 				total: draft.workstreams.length,
 			},
@@ -490,6 +577,48 @@ export async function buildApprovedWorkstreamResult(
 				ready: ready.length,
 				blocked: Object.keys(blocked).length,
 				activated: 0,
+				dispatched: 0,
+				failed: ready.length,
+				total: draft.workstreams.length,
+			},
+			workstream_graph: {
+				ready,
+				blocked,
+			},
+			workstreams,
+		};
+
+		if (Object.keys(notes).length > 0) result.notes = notes;
+		return JSON.stringify(result);
+	}
+
+	const launcher = deps.getAgentLauncher();
+	if (!launcher) {
+		for (const workstreamId of ready) {
+			const entry = workstreams[workstreamId]!;
+			entry.launch_status = "failed";
+			entry.failure_stage = "launch";
+			entry.message = "No agent launcher is registered.";
+		}
+
+		const result: Record<string, unknown> = {
+			status: "handoff_cancelled",
+			plan_kind: "workstreams",
+			goal: draft.goal.content,
+			context: draft.context.content,
+			design: draft.design.content,
+			success: draft.success.content,
+			boundaries: draft.boundaries.content,
+			implementation_mode: "supervisor",
+			handoff_status: "workstream_launch_cancelled",
+			message: "Workstream launch requires a registered agent launcher.",
+			next_step:
+				"Workstream plan approved, but ready workstreams were not provisioned because no agent launcher is registered. Ensure pi-swarm is loaded in a top-level Basecamp session, then resubmit.",
+			workstream_progress: {
+				ready: ready.length,
+				blocked: Object.keys(blocked).length,
+				activated: 0,
+				dispatched: 0,
 				failed: ready.length,
 				total: draft.workstreams.length,
 			},
@@ -579,8 +708,50 @@ export async function buildApprovedWorkstreamResult(
 		}
 	}
 
+	const launchable = ready.filter((id) => {
+		const entry = workstreams[id];
+		return entry?.activation_status === "activated" && entry.worktree !== undefined;
+	});
+	for (const workstreamId of launchable) {
+		const entry = workstreams[workstreamId]!;
+		const workstream = draft.workstreams.find((candidate) => candidate.id === workstreamId)!;
+		try {
+			const launch = await launcher.launch({
+				pi,
+				ctx,
+				agent: "worker",
+				task: buildWorkstreamLaunchBrief({ draft, workstream, entry }),
+				workspace: buildWorkstreamLaunchWorkspace(workspace, entry.worktree),
+				env: buildWorkstreamLaunchEnv(workspace, entry.worktree),
+				title: `Workstream: ${workstream.label}`,
+			});
+			if (launch.ok) {
+				entry.launch_status = "dispatched";
+				entry.agent = { handle: launch.agentHandle, type: launch.agent };
+			} else {
+				entry.launch_status = "failed";
+				entry.failure_stage = "launch";
+				entry.message = launch.message;
+			}
+		} catch (error) {
+			entry.launch_status = "failed";
+			entry.failure_stage = "launch";
+			entry.message = errorMessage(error);
+		}
+	}
+
 	const activatedCount = ready.filter((id) => workstreams[id]?.activation_status === "activated").length;
-	const failedCount = ready.filter((id) => workstreams[id]?.activation_status === "failed").length;
+	const dispatchedCount = ready.filter((id) => workstreams[id]?.launch_status === "dispatched").length;
+	const failedCount = ready.filter((id) => {
+		const entry = workstreams[id];
+		return entry?.activation_status === "failed" || entry?.launch_status === "failed";
+	}).length;
+	const handoffStatus =
+		failedCount === 0
+			? "workstreams_dispatched"
+			: dispatchedCount > 0
+				? "workstreams_partially_dispatched"
+				: "workstreams_failed";
 	const result: Record<string, unknown> = {
 		status: "approved",
 		plan_kind: "workstreams",
@@ -590,15 +761,16 @@ export async function buildApprovedWorkstreamResult(
 		success: draft.success.content,
 		boundaries: draft.boundaries.content,
 		implementation_mode: "supervisor",
-		handoff_status: failedCount > 0 ? "workstreams_partially_activated" : "workstreams_activated",
+		handoff_status: handoffStatus,
 		next_step:
 			failedCount > 0
-				? "Workstream plan approved. Ready workstream activation was attempted; inspect failed ready streams before launching agents. Do not launch agents yet; Task 4 handles launch."
-				: "Workstream plan approved. Ready workstream worktrees are provisioned. Do not launch agents yet; Task 4 handles launch.",
+				? "Workstream plan approved. Ready workstream dispatch was attempted where possible; inspect failed ready streams and launch failures before continuing."
+				: "Workstream plan approved. Ready workstream worktrees are provisioned and worker agent dispatches were accepted by the daemon.",
 		workstream_progress: {
 			ready: ready.length,
 			blocked: Object.keys(blocked).length,
 			activated: activatedCount,
+			dispatched: dispatchedCount,
 			failed: failedCount,
 			total: draft.workstreams.length,
 		},
