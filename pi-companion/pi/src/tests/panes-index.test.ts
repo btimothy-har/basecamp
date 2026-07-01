@@ -163,7 +163,6 @@ describe("panes/registerPanes", () => {
 			"--cwd",
 			process.cwd(),
 			"--no-focus",
-			"--json",
 		]);
 		const runCall = execCalls.find((call) => call.command === "herdr" && call.args[1] === "run");
 		assert.ok(runCall);
@@ -214,7 +213,7 @@ describe("panes/registerPanes", () => {
 
 		const ctx = await emit("session_start");
 
-		assert.deepEqual(execCalls, [{ command: "herdr", args: ["pane", "get", "w8:p2", "--json"] }]);
+		assert.deepEqual(execCalls, [{ command: "herdr", args: ["pane", "get", "w8:p2"] }]);
 		assert.equal(getPaneState().provider, "herdr");
 		assert.equal(getPaneState().paneId, "w8:p2");
 		assert.equal(isCompanionActive(), true);
@@ -262,7 +261,7 @@ describe("panes/registerPanes", () => {
 
 		const ctx = await emit("session_start");
 
-		assert.deepEqual(execCalls, [{ command: "herdr", args: ["pane", "get", "w8:p2", "--json"] }]);
+		assert.deepEqual(execCalls, [{ command: "herdr", args: ["pane", "get", "w8:p2"] }]);
 		assert.equal(getPaneState().provider, "herdr");
 		assert.equal(getPaneState().paneId, "w8:p2");
 		assert.equal(isCompanionActive(), true);
