@@ -114,7 +114,7 @@ Returns one result per requested agent handle:
 
 - `completed` / `failed`: terminal result/error for an authorized current primary run.
 - `running`: authorized current primary run is still non-terminal after timeout.
-- `unknown`: missing or unauthorized from the caller's perspective.
+- `unknown`: missing, unauthorized, no current primary run, or non-awaitable (including session handles) from the caller's perspective.
 
 Result items contain `agent_handle` for handle-based requests and do not expose private `run_id`. `agent_id` may be present for legacy/id-based requests inside trusted extension-daemon plumbing and must not be shown as the public handle.
 

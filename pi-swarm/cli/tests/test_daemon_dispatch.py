@@ -14,7 +14,7 @@ import pytest
 import uvicorn
 from pi_swarm.app import create_app
 from pi_swarm.frames import PROTOCOL_VERSION, DispatchFrame, DispatchSpec
-from pi_swarm.process import build_runner_argv, reap_agent_process
+from pi_swarm.process import build_child_env, build_runner_argv, reap_agent_process
 from pi_swarm.registry import Registry
 from pi_swarm.run_result import load_run_result, run_result_path
 from pi_swarm.server import UdsServer
@@ -199,6 +199,38 @@ def test_build_runner_argv_injects_fork_before_task() -> None:
     ]
 
 
+def test_build_child_env_strips_inherited_handle_and_uses_daemon_supplied() -> None:
+    env = build_child_env(
+        spec_env={"BASECAMP_AGENT_HANDLE": "spoofed-handle", "KEEP": "1"},
+        daemon_socket_path="/tmp/daemon.sock",
+        run_id="run-1",
+        report_token="token",
+        agent_id="agent-1",
+        dispatcher_node_id="root",
+        child_depth=1,
+        agent_handle="canonical-handle",
+    )
+
+    assert env["BASECAMP_AGENT_HANDLE"] == "canonical-handle"
+    assert env["KEEP"] == "1"
+    assert env["BASECAMP_AGENT_ID"] == "agent-1"
+
+
+def test_build_child_env_drops_inherited_handle_when_none_supplied() -> None:
+    env = build_child_env(
+        spec_env={"BASECAMP_AGENT_HANDLE": "spoofed-handle"},
+        daemon_socket_path="/tmp/daemon.sock",
+        run_id="run-1",
+        report_token="token",
+        agent_id="agent-1",
+        dispatcher_node_id="root",
+        child_depth=1,
+        agent_handle=None,
+    )
+
+    assert "BASECAMP_AGENT_HANDLE" not in env
+
+
 def test_build_runner_argv_omits_fork_when_unset() -> None:
     spec = DispatchSpec(
         argv=["pi", "--mode", "json", "-p"],
@@ -319,6 +351,127 @@ async def test_prepare_dispatch_resolves_fork_from_session_handle(tmp_path: Path
     assert isinstance(dispatch, PreparedDispatch)
     assert dispatch.fork_source_path == str(session_file.resolve())
     assert store.get_run("run-answerer") is not None
+
+
+@pytest.mark.asyncio
+async def test_prepare_dispatch_preserves_canonical_handle_on_retask_by_id(tmp_path: Path) -> None:
+    store = Store(db_path=tmp_path / "daemon.db")
+    store.upsert_agent(
+        agent_id="root",
+        parent_id=None,
+        sibling_group=None,
+        depth=0,
+        role="session",
+        session_name="root-session",
+        cwd=str(tmp_path),
+    )
+    store.upsert_agent(
+        agent_id="worker-agent",
+        agent_handle="amber-otter-111aaa",
+        parent_id="root",
+        sibling_group="root",
+        depth=1,
+        role="agent",
+        session_name="worker-agent",
+        cwd=str(tmp_path),
+        agent_type="scout",
+    )
+    store.create_run(
+        run_id="run-first",
+        agent_id="worker-agent",
+        dispatcher_id="root",
+        spec={"task": "x"},
+        report_token_hash="hash",
+    )
+    store.set_run_result(run_id="run-first", status="completed", result="done", error=None)
+
+    frame = DispatchFrame(
+        type="dispatch",
+        v=PROTOCOL_VERSION,
+        run_id="run-retask-by-id",
+        agent_id="worker-agent",
+        agent_type="scout",
+        spec=DispatchSpec(
+            argv=["pi", "--mode", "json", "-p"],
+            env={},
+            cwd=str(tmp_path),
+            resume_path=None,
+            task="redo work",
+        ),
+    )
+
+    dispatch = await prepare_dispatch(
+        frame=frame,
+        dispatcher_node_id="root",
+        store=store,
+    )
+
+    assert isinstance(dispatch, PreparedDispatch)
+    assert dispatch.agent_handle == "amber-otter-111aaa"
+    agent = store.get_agent("worker-agent")
+    assert agent is not None
+    assert agent["agent_handle"] == "amber-otter-111aaa"
+
+
+@pytest.mark.asyncio
+async def test_prepare_dispatch_rejects_conflicting_handle_rename_on_retask(tmp_path: Path) -> None:
+    store = Store(db_path=tmp_path / "daemon.db")
+    store.upsert_agent(
+        agent_id="root",
+        parent_id=None,
+        sibling_group=None,
+        depth=0,
+        role="session",
+        session_name="root-session",
+        cwd=str(tmp_path),
+    )
+    store.upsert_agent(
+        agent_id="worker-agent",
+        agent_handle="amber-otter-111aaa",
+        parent_id="root",
+        sibling_group="root",
+        depth=1,
+        role="agent",
+        session_name="worker-agent",
+        cwd=str(tmp_path),
+        agent_type="scout",
+    )
+    store.create_run(
+        run_id="run-first",
+        agent_id="worker-agent",
+        dispatcher_id="root",
+        spec={"task": "x"},
+        report_token_hash="hash",
+    )
+    store.set_run_result(run_id="run-first", status="completed", result="done", error=None)
+
+    frame = DispatchFrame(
+        type="dispatch",
+        v=PROTOCOL_VERSION,
+        run_id="run-rename",
+        agent_id="worker-agent",
+        agent_handle="mossy-lynx-222bbb",
+        agent_type="scout",
+        spec=DispatchSpec(
+            argv=["pi", "--mode", "json", "-p"],
+            env={},
+            cwd=str(tmp_path),
+            resume_path=None,
+            task="redo work",
+        ),
+    )
+
+    dispatch = await prepare_dispatch(
+        frame=frame,
+        dispatcher_node_id="root",
+        store=store,
+    )
+
+    assert dispatch == DispatchRejection(reason="duplicate_agent_handle")
+    assert store.get_run("run-rename") is None
+    agent = store.get_agent("worker-agent")
+    assert agent is not None
+    assert agent["agent_handle"] == "amber-otter-111aaa"
 
 
 @pytest.mark.asyncio

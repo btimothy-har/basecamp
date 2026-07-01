@@ -1521,6 +1521,33 @@ describe("daemon async tools", () => {
 		}
 	});
 
+	it("deriveDaemonIdentity ignores BASECAMP_AGENT_HANDLE for top-level sessions", () => {
+		const priorDepth = process.env.BASECAMP_AGENT_DEPTH;
+		const priorAgentId = process.env.BASECAMP_AGENT_ID;
+		const priorAgentHandle = process.env.BASECAMP_AGENT_HANDLE;
+
+		delete process.env.BASECAMP_AGENT_DEPTH;
+		delete process.env.BASECAMP_AGENT_ID;
+		process.env.BASECAMP_AGENT_HANDLE = "quiet-badger-3dc450";
+
+		try {
+			const ctx = { sessionManager: { getSessionId: () => "session-stable-123" } } as any;
+			const first = deriveDaemonIdentity(ctx);
+			const second = deriveDaemonIdentity(ctx);
+			assert.equal(first.role, "session");
+			assert.notEqual(first.agent_handle, "quiet-badger-3dc450");
+			assert.equal(first.agent_handle, second.agent_handle);
+			assert.match(first.agent_handle, /^[a-z]+-[a-z]+-[0-9a-f]{6}$/);
+		} finally {
+			if (priorDepth === undefined) delete process.env.BASECAMP_AGENT_DEPTH;
+			else process.env.BASECAMP_AGENT_DEPTH = priorDepth;
+			if (priorAgentId === undefined) delete process.env.BASECAMP_AGENT_ID;
+			else process.env.BASECAMP_AGENT_ID = priorAgentId;
+			if (priorAgentHandle === undefined) delete process.env.BASECAMP_AGENT_HANDLE;
+			else process.env.BASECAMP_AGENT_HANDLE = priorAgentHandle;
+		}
+	});
+
 	it("deriveDaemonIdentity prefers BASECAMP_AGENT_HANDLE for spawned agents", () => {
 		const priorDepth = process.env.BASECAMP_AGENT_DEPTH;
 		const priorAgentId = process.env.BASECAMP_AGENT_ID;

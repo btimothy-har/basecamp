@@ -150,6 +150,7 @@ async def prepare_dispatch(
         return DispatchRejection(reason="duplicate_agent_handle")
 
     existing_agent = existing_by_handle or existing_by_id
+    resolved_handle = frame.agent_handle
     if existing_agent is not None:
         existing_agent_id = str(existing_agent.get("id"))
         requester_root = await asyncio.to_thread(store.resolve_agent_root, dispatcher_node_id)
@@ -162,6 +163,13 @@ async def prepare_dispatch(
             return DispatchRejection(reason="not_dispatchable")
         if _metadata_mismatches(existing=existing_agent, frame=frame):
             return DispatchRejection(reason="agent_type_mismatch")
+        # A reused agent keeps its persisted canonical handle; a caller may not
+        # rename it via a conflicting handle on retask.
+        stored_handle = existing_agent.get("agent_handle")
+        if isinstance(stored_handle, str) and stored_handle:
+            if frame.agent_handle and frame.agent_handle != stored_handle:
+                return DispatchRejection(reason="duplicate_agent_handle")
+            resolved_handle = stored_handle
         agent_id = existing_agent_id
         child_depth = int(existing_agent.get("depth", dispatcher_depth + 1))
     else:
@@ -220,9 +228,9 @@ async def prepare_dispatch(
                 sibling_group=existing_agent.get("sibling_group"),
                 depth=child_depth,
                 role=str(existing_agent.get("role") or "agent"),
-                session_name=str(existing_agent.get("session_name") or frame.agent_handle or agent_id),
+                session_name=str(existing_agent.get("session_name") or resolved_handle or agent_id),
                 cwd=frame.spec.cwd,
-                agent_handle=frame.agent_handle,
+                agent_handle=resolved_handle,
                 agent_type=frame.agent_type,
                 run_kind=frame.run_kind,
                 model=frame.model or "default",
@@ -245,7 +253,7 @@ async def prepare_dispatch(
         agent_id=agent_id,
         report_token=report_token,
         child_depth=child_depth,
-        agent_handle=frame.agent_handle,
+        agent_handle=resolved_handle,
         fork_source_path=fork_source_path,
     )
 
