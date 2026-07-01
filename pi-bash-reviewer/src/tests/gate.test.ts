@@ -7,6 +7,8 @@ import {
 	type GateDecision,
 	parseGateResponse,
 	RULESET,
+	resolveGateReasoningEffort,
+	resolveGateToolChoice,
 	runGate,
 } from "../reviewer/gate.ts";
 
@@ -52,6 +54,10 @@ const fakeModel: Model<any> = {
 	contextWindow: 200_000,
 	maxTokens: 4096,
 };
+
+function model(overrides: Partial<Model<any>>): Model<any> {
+	return { ...fakeModel, ...overrides };
+}
 
 describe("parseGateResponse", () => {
 	it("parses valid approve, route_to_user, and deny gate_decision tool calls", () => {
@@ -113,8 +119,33 @@ describe("parseGateResponse", () => {
 	});
 });
 
+describe("gate completion options", () => {
+	it("uses Anthropic toolChoice for anthropic-messages models", () => {
+		assert.deepEqual(resolveGateToolChoice(model({ api: "anthropic-messages" })), {
+			type: "tool",
+			name: "gate_decision",
+		});
+	});
+
+	it("uses OpenAI/function toolChoice for non-Anthropic APIs", () => {
+		assert.deepEqual(resolveGateToolChoice(model({ api: "openai-completions", provider: "openai" })), {
+			type: "function",
+			function: { name: "gate_decision" },
+		});
+	});
+
+	it("omits reasoning effort for non-reasoning models", () => {
+		assert.equal(resolveGateReasoningEffort(model({ reasoning: false })), undefined);
+	});
+
+	it("uses the lowest supported non-off thinking level for reasoning models", () => {
+		assert.equal(resolveGateReasoningEffort(model({ reasoning: true })), "minimal");
+		assert.equal(resolveGateReasoningEffort(model({ reasoning: true, thinkingLevelMap: { minimal: null } })), "low");
+	});
+});
+
 describe("runGate", () => {
-	it("returns parsed decisions from an injected complete function", async () => {
+	it("returns parsed decisions from an injected complete function and forces the gate_decision tool", async () => {
 		for (const decision of [
 			{ decision: "approve", risk: "none", reason: "The command is safe." },
 			{ decision: "route_to_user", risk: "destructive", reason: "The command publishes externally." },
@@ -124,24 +155,117 @@ describe("runGate", () => {
 				model: fakeModel,
 				auth: { apiKey: "test-key" },
 				context: buildGateContext(["Please inspect status."], "git status"),
-				complete: async () => assistantWithToolCall("gate_decision", decision),
+				complete: async (_model, _context, options) => {
+					assert.equal(options?.apiKey, "test-key");
+					assert.deepEqual(options?.toolChoice, { type: "tool", name: "gate_decision" });
+					assert.equal(Object.hasOwn(options ?? {}, "reasoningEffort"), false);
+					return assistantWithToolCall("gate_decision", decision);
+				},
 			});
 
 			assert.deepEqual(result, decision);
 		}
 	});
 
-	it("returns null when complete throws", async () => {
+	it("passes reasoning effort for reasoning models", async () => {
+		const decision: GateDecision = { decision: "approve", risk: "none", reason: "ok" };
 		const result = await runGate({
-			model: fakeModel,
+			model: model({ api: "openai-completions", provider: "openai", reasoning: true }),
 			auth: { apiKey: "test-key" },
-			context: buildGateContext([], "git push --force"),
-			complete: async () => {
-				throw new Error("provider unavailable");
+			context: buildGateContext([], "git status"),
+			complete: async (_model, _context, options) => {
+				assert.deepEqual(options?.toolChoice, { type: "function", function: { name: "gate_decision" } });
+				assert.equal(options?.reasoningEffort, "minimal");
+				return assistantWithToolCall("gate_decision", decision);
 			},
 		});
 
-		assert.equal(result, null);
+		assert.deepEqual(result, decision);
+	});
+
+	it("omits reasoning effort for non-reasoning models", async () => {
+		const decision: GateDecision = { decision: "approve", risk: "none", reason: "ok" };
+		const result = await runGate({
+			model: model({ api: "openai-completions", provider: "openai", reasoning: false }),
+			auth: { apiKey: "test-key" },
+			context: buildGateContext([], "git status"),
+			complete: async (_model, _context, options) => {
+				assert.equal(Object.hasOwn(options ?? {}, "reasoningEffort"), false);
+				return assistantWithToolCall("gate_decision", decision);
+			},
+		});
+
+		assert.deepEqual(result, decision);
+	});
+
+	it("returns null for missing or invalid tool-call responses", async () => {
+		assert.equal(
+			await runGate({
+				model: fakeModel,
+				auth: { apiKey: "test-key" },
+				context: buildGateContext([], "git status"),
+				complete: async () => ({
+					...assistantWithToolCall("gate_decision", { decision: "approve", risk: "none", reason: "ok" }),
+					content: [{ type: "text", text: "approve" }],
+				}),
+			}),
+			null,
+		);
+		assert.equal(
+			await runGate({
+				model: fakeModel,
+				auth: { apiKey: "test-key" },
+				context: buildGateContext([], "git status"),
+				complete: async () =>
+					assistantWithToolCall("gate_decision", { decision: "allow", risk: "none", reason: "bad" }),
+			}),
+			null,
+		);
+	});
+
+	it("propagates errors thrown by complete", async () => {
+		await assert.rejects(
+			runGate({
+				model: fakeModel,
+				auth: { apiKey: "test-key" },
+				context: buildGateContext([], "git push --force"),
+				complete: async () => {
+					throw new Error("provider unavailable");
+				},
+			}),
+			/provider unavailable/,
+		);
+	});
+
+	it("throws provider error messages from error stop reasons", async () => {
+		await assert.rejects(
+			runGate({
+				model: fakeModel,
+				auth: { apiKey: "test-key" },
+				context: buildGateContext([], "git push --force"),
+				complete: async () => ({
+					...assistantWithToolCall("gate_decision", { decision: "approve", risk: "none", reason: "ok" }),
+					stopReason: "error",
+					errorMessage: "provider rejected tool choice",
+				}),
+			}),
+			/provider rejected tool choice/,
+		);
+	});
+
+	it("throws a clear fallback when error stop reasons omit messages", async () => {
+		await assert.rejects(
+			runGate({
+				model: fakeModel,
+				auth: { apiKey: "test-key" },
+				context: buildGateContext([], "git push --force"),
+				complete: async () => ({
+					...assistantWithToolCall("gate_decision", { decision: "approve", risk: "none", reason: "ok" }),
+					stopReason: "error",
+				}),
+			}),
+			/reviewer provider returned an error/,
+		);
 	});
 });
 
