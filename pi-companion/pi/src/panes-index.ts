@@ -1,6 +1,7 @@
 import type { ExtensionAPI, ExtensionContext, SessionShutdownEvent } from "@earendil-works/pi-coding-agent";
 import { exec } from "pi-core/platform/exec.ts";
 import { getWorkspaceService, getWorkspaceState } from "pi-core/platform/workspace.ts";
+import { createHerdrPaneCloser, createHerdrPaneProvider } from "./herdr-provider.ts";
 import type { PaneProvider } from "./pane-provider.ts";
 import { getPaneState, setCompanionActive } from "./panes-state.ts";
 import { companionLiveSnapshotPath } from "./snapshot.ts";
@@ -22,16 +23,31 @@ async function companionAvailable(pi: ExtensionAPI): Promise<boolean> {
 	}
 }
 
+function resolveAgentDepth(): number {
+	return Number(process.env.BASECAMP_AGENT_DEPTH ?? "0");
+}
+
 function resolvePaneProvider(ctx: ExtensionContext): PaneProvider | null {
-	return createTmuxPaneProvider({
-		tmux: process.env.TMUX,
-		tmuxPane: process.env.TMUX_PANE,
-		hasUI: ctx.hasUI,
-		agentDepth: Number(process.env.BASECAMP_AGENT_DEPTH ?? "0"),
-	});
+	const agentDepth = resolveAgentDepth();
+	return (
+		createHerdrPaneProvider({
+			herdrEnv: process.env.HERDR_ENV,
+			herdrPaneId: process.env.HERDR_PANE_ID,
+			herdrSocketPath: process.env.HERDR_SOCKET_PATH,
+			hasUI: ctx.hasUI,
+			agentDepth,
+		}) ??
+		createTmuxPaneProvider({
+			tmux: process.env.TMUX,
+			tmuxPane: process.env.TMUX_PANE,
+			hasUI: ctx.hasUI,
+			agentDepth,
+		})
+	);
 }
 
 function resolveStoredPaneProvider(providerName: string | null): PaneProvider | null {
+	if (providerName === "herdr") return createHerdrPaneCloser();
 	if (providerName === "tmux") return createTmuxPaneCloser();
 	return null;
 }

@@ -85,10 +85,20 @@ function withTmuxEnv(): void {
 	process.env.BASECAMP_AGENT_DEPTH = "0";
 }
 
+function withHerdrEnv(): void {
+	process.env.HERDR_ENV = "1";
+	process.env.HERDR_PANE_ID = "w8:p1";
+	process.env.HERDR_SOCKET_PATH = "/tmp/herdr.sock";
+	process.env.BASECAMP_AGENT_DEPTH = "0";
+}
+
 describe("panes/registerPanes", () => {
 	afterEach(() => {
 		delete process.env.TMUX;
 		delete process.env.TMUX_PANE;
+		delete process.env.HERDR_ENV;
+		delete process.env.HERDR_PANE_ID;
+		delete process.env.HERDR_SOCKET_PATH;
 		delete process.env.BASECAMP_AGENT_DEPTH;
 		resetPaneState();
 	});
@@ -120,6 +130,47 @@ describe("panes/registerPanes", () => {
 		assert.ok((splitCall.args.at(-1) ?? "").includes(`--snapshot '${companionLiveSnapshotPath()}'`));
 		assert.equal(getPaneState().provider, "tmux");
 		assert.equal(getPaneState().paneId, "%42");
+		assert.equal(isCompanionActive(), true);
+		assert.deepEqual(ctx.ui.statusCalls.at(-1), { key: "basecamp.daemon.pane", value: "success:companion ✓" });
+	});
+
+	it("prefers Herdr over tmux when required Herdr env is available", async () => {
+		withTmuxEnv();
+		withHerdrEnv();
+		const { pi, emit, execCalls } = createMockPi((command, args) => {
+			if (command === "basecamp") return { code: 0, stdout: "", stderr: "" };
+			if (command === "herdr" && args[1] === "split") {
+				return { code: 0, stdout: JSON.stringify({ pane: { id: "w8:p2" } }), stderr: "" };
+			}
+			return { code: 0, stdout: "", stderr: "" };
+		});
+		registerPanes(pi);
+
+		const ctx = await emit("session_start");
+
+		assert.equal(
+			execCalls.some((call) => call.command === "tmux"),
+			false,
+		);
+		const splitCall = execCalls.find((call) => call.command === "herdr" && call.args[1] === "split");
+		assert.ok(splitCall);
+		assert.deepEqual(splitCall.args, [
+			"pane",
+			"split",
+			"w8:p1",
+			"--direction",
+			"right",
+			"--cwd",
+			process.cwd(),
+			"--no-focus",
+			"--json",
+		]);
+		const runCall = execCalls.find((call) => call.command === "herdr" && call.args[1] === "run");
+		assert.ok(runCall);
+		assert.equal(runCall.args[2], "w8:p2");
+		assert.ok((runCall.args[3] ?? "").includes(`--snapshot '${companionLiveSnapshotPath()}'`));
+		assert.equal(getPaneState().provider, "herdr");
+		assert.equal(getPaneState().paneId, "w8:p2");
 		assert.equal(isCompanionActive(), true);
 		assert.deepEqual(ctx.ui.statusCalls.at(-1), { key: "basecamp.daemon.pane", value: "success:companion ✓" });
 	});
@@ -282,6 +333,23 @@ describe("panes/registerPanes", () => {
 		const ctx = await emit("session_shutdown", { reason: "quit" });
 
 		assert.deepEqual(execCalls.at(-1), { command: "tmux", args: ["kill-pane", "-t", "%8"] });
+		assert.equal(getPaneState().provider, null);
+		assert.equal(getPaneState().paneId, null);
+		assert.equal(isCompanionActive(), false);
+		assert.deepEqual(ctx.ui.statusCalls.at(-1), { key: "basecamp.daemon.pane", value: undefined });
+	});
+
+	it("quit shutdown closes a stored Herdr pane", async () => {
+		setCompanionActive(true);
+		const state = getPaneState();
+		state.provider = "herdr";
+		state.paneId = "w8:p2";
+		const { pi, emit, execCalls } = createMockPi();
+		registerPanes(pi);
+
+		const ctx = await emit("session_shutdown", { reason: "quit" });
+
+		assert.deepEqual(execCalls.at(-1), { command: "herdr", args: ["pane", "close", "w8:p2"] });
 		assert.equal(getPaneState().provider, null);
 		assert.equal(getPaneState().paneId, null);
 		assert.equal(isCompanionActive(), false);

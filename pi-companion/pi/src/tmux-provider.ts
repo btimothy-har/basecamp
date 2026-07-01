@@ -1,4 +1,3 @@
-import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { exec } from "pi-core/platform/exec.ts";
 import type { PaneProvider } from "./pane-provider.ts";
 import { buildKillArgs, buildListPanesArgs, buildSplitArgs, parsePaneId, shouldCreatePane } from "./tmux.ts";
