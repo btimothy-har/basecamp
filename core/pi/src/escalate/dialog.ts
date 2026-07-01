@@ -209,7 +209,7 @@ export class EscalateDialog implements Component, Focusable {
 		}
 
 		// Tab — toggle previous section
-		if (data === "\t") {
+		if (matchesKey(data, "tab")) {
 			if (questions.length > 1 && currentIndex > 0) {
 				this.state.expanded = !this.state.expanded;
 				this.state.error = undefined;
@@ -235,7 +235,7 @@ export class EscalateDialog implements Component, Focusable {
 		const isMulti = current.multiSelect ?? false;
 
 		// Up arrow
-		if (data === "\x1b[A") {
+		if (matchesKey(data, "up")) {
 			this.state.selectedIndex = Math.max(0, this.state.selectedIndex - 1);
 			this.state.error = undefined;
 			this.invalidate();
@@ -243,7 +243,7 @@ export class EscalateDialog implements Component, Focusable {
 		}
 
 		// Down arrow — move within options or jump to editor
-		if (data === "\x1b[B") {
+		if (matchesKey(data, "down")) {
 			if (this.state.selectedIndex < options.length - 1) {
 				this.state.selectedIndex = this.state.selectedIndex + 1;
 			} else {
@@ -257,7 +257,7 @@ export class EscalateDialog implements Component, Focusable {
 		}
 
 		// Space — toggle selection (multi) or select (single)
-		if (data === " ") {
+		if (matchesKey(data, "space")) {
 			const option = options[this.state.selectedIndex];
 			if (option) {
 				if (isMulti) {
@@ -282,13 +282,13 @@ export class EscalateDialog implements Component, Focusable {
 		}
 
 		// Enter — submit
-		if (data === "\r" || data === "\n") {
+		if (matchesKey(data, "enter")) {
 			this.submitOptionAnswer(current);
 			return;
 		}
 
 		// Back navigation
-		if ((data === "\x1b[D" || data === "\x7f") && this.state.currentIndex > 0) {
+		if ((matchesKey(data, "left") || matchesKey(data, "backspace")) && this.state.currentIndex > 0) {
 			this.goBack();
 			return;
 		}
@@ -296,7 +296,7 @@ export class EscalateDialog implements Component, Focusable {
 
 	private handleOptionEditorInput(data: string): void {
 		// Up arrow with empty editor — go back to options
-		if (data === "\x1b[A" && this.editor.getText() === "") {
+		if (matchesKey(data, "up") && this.editor.getText() === "") {
 			this.focusArea = "options";
 			this.state.selectedIndex = (this.state.questions[this.state.currentIndex]?.options?.length ?? 1) - 1;
 			this.invalidate();
@@ -304,7 +304,7 @@ export class EscalateDialog implements Component, Focusable {
 		}
 
 		// Backspace on empty — go back to options
-		if ((data === "\x7f" || data === "\b") && this.editor.getText() === "") {
+		if (matchesKey(data, "backspace") && this.editor.getText() === "") {
 			this.focusArea = "options";
 			this.state.selectedIndex = (this.state.questions[this.state.currentIndex]?.options?.length ?? 1) - 1;
 			this.invalidate();
@@ -317,7 +317,7 @@ export class EscalateDialog implements Component, Focusable {
 
 	private handleTextInput(data: string): void {
 		// Backspace on empty — go back
-		if ((data === "\x7f" || data === "\b" || data === "\x1b[D") && this.editor.getText() === "") {
+		if ((matchesKey(data, "backspace") || matchesKey(data, "left")) && this.editor.getText() === "") {
 			if (this.state.currentIndex > 0) {
 				this.goBack();
 			}
