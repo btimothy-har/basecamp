@@ -145,6 +145,7 @@ describe("panes/herdr-provider", () => {
 
 		it("falls back to the first Herdr-shaped id in non-json output", () => {
 			assert.equal(parseHerdrPaneId("created pane w8:p7"), "w8:p7");
+			assert.equal(parseHerdrPaneId("created pane wfoo:pbar"), "wfoo:pbar");
 		});
 
 		it("accepts non-numeric workspace and pane suffixes", () => {
@@ -229,6 +230,24 @@ describe("panes/herdr-provider", () => {
 			});
 			assert.ok(provider);
 			const { pi } = createMockPi(() => ({ code: 1, stdout: "", stderr: "pane not found" }));
+
+			assert.equal(await provider.paneStillExists(pi, "w8:p2"), false);
+		});
+
+		it("returns false when Herdr returns a different pane id", async () => {
+			const provider = createHerdrPaneProvider({
+				herdrEnv: "1",
+				herdrPaneId: "w8:p1",
+				herdrSocketPath: "/tmp/herdr.sock",
+				hasUI: true,
+				agentDepth: 0,
+			});
+			assert.ok(provider);
+			const { pi } = createMockPi(() => ({
+				code: 0,
+				stdout: JSON.stringify({ pane: { id: "w8:p9" } }),
+				stderr: "",
+			}));
 
 			assert.equal(await provider.paneStillExists(pi, "w8:p2"), false);
 		});

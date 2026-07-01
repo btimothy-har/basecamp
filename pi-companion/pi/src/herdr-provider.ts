@@ -70,7 +70,7 @@ export function parseHerdrPaneId(stdout: string): string | null {
 	try {
 		return extractPaneId(JSON.parse(trimmed));
 	} catch {
-		return trimmed.match(/\bw\d+:p\d+\b/)?.[0] ?? null;
+		return trimmed.match(/w[\w-]+:p[\w-]+/)?.[0] ?? null;
 	}
 }
 
