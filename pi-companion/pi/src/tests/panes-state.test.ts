@@ -5,6 +5,7 @@ import { getPaneState, isCompanionActive, setCompanionActive } from "../panes-st
 describe("panes/state", () => {
 	afterEach(() => {
 		const state = getPaneState();
+		state.provider = null;
 		state.paneId = null;
 		setCompanionActive(false);
 	});

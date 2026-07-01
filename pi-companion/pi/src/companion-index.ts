@@ -3,7 +3,8 @@ import { getInvokedSkills } from "pi-core/platform/skill-tracker.ts";
 import { getTasksAccess } from "pi-core/platform/tasks-access.ts";
 import { getWorkspaceService, getWorkspaceState } from "pi-core/platform/workspace.ts";
 import { getAgentMode, onAgentModeChange } from "pi-core/session/agent-mode.ts";
-import { getCurrentSessionState } from "pi-core/state/index.ts";
+import { getCurrentSessionState, onCurrentSessionTitleChange } from "pi-core/state/index.ts";
+import { reportHerdrMetadata } from "./herdr-metadata.ts";
 import {
 	buildSnapshot,
 	type CompanionSnapshotWorktree,
@@ -28,6 +29,7 @@ interface CompanionState {
 	ctx: ExtensionContext | null;
 	unsubscribeWorkspace: (() => void) | null;
 	unsubscribeAgentMode: (() => void) | null;
+	unsubscribeTitle: (() => void) | null;
 }
 
 const companionKey = Symbol.for("basecamp.companion");
@@ -38,7 +40,13 @@ type GlobalWithCompanion = typeof globalThis & {
 
 function getCompanionState(): CompanionState {
 	const globalObject = globalThis as GlobalWithCompanion;
-	globalObject[companionKey] ??= { ctx: null, unsubscribeWorkspace: null, unsubscribeAgentMode: null };
+	globalObject[companionKey] ??= {
+		ctx: null,
+		unsubscribeWorkspace: null,
+		unsubscribeAgentMode: null,
+		unsubscribeTitle: null,
+	};
+	globalObject[companionKey].unsubscribeTitle ??= null;
 	return globalObject[companionKey];
 }
 
@@ -47,6 +55,8 @@ function clearSubscriptions(state: CompanionState): void {
 	state.unsubscribeWorkspace = null;
 	state.unsubscribeAgentMode?.();
 	state.unsubscribeAgentMode = null;
+	state.unsubscribeTitle?.();
+	state.unsubscribeTitle = null;
 }
 
 function getWorktreeSnapshot(): CompanionSnapshotWorktree | null {
@@ -59,7 +69,7 @@ function getWorktreeSnapshot(): CompanionSnapshotWorktree | null {
 	};
 }
 
-function writeNow(): void {
+function writeNow(pi: ExtensionAPI): void {
 	const state = getCompanionState();
 	const ctx = state.ctx;
 	if (!ctx) return;
@@ -92,6 +102,7 @@ function writeNow(): void {
 		});
 		writeSnapshotFile(companionSnapshotPath(sessionId), snapshot);
 		writeSnapshotFile(companionLiveSnapshotPath(), snapshot);
+		void reportHerdrMetadata(pi, snapshot);
 	} catch {
 		// best effort
 	}
@@ -106,14 +117,15 @@ export default function registerCompanion(pi: ExtensionAPI): void {
 	pi.on("session_start", (_event, sessionCtx) => {
 		clearSubscriptions(state);
 		state.ctx = sessionCtx;
-		writeNow();
-		state.unsubscribeWorkspace = getWorkspaceService()?.onChange?.(() => writeNow()) ?? null;
-		state.unsubscribeAgentMode = onAgentModeChange(() => writeNow());
+		writeNow(pi);
+		state.unsubscribeWorkspace = getWorkspaceService()?.onChange?.(() => writeNow(pi)) ?? null;
+		state.unsubscribeAgentMode = onAgentModeChange(() => writeNow(pi));
+		state.unsubscribeTitle = onCurrentSessionTitleChange(() => writeNow(pi));
 	});
 
 	pi.on("tool_result", (event) => {
 		if (event.isError || !TRIGGER_TOOLS.has(event.toolName)) return;
-		writeNow();
+		writeNow(pi);
 	});
 
 	pi.on("session_shutdown", (event) => {

@@ -1,8 +1,10 @@
 import { isCompanionActive as isCompanionActiveCore, setCompanionActive } from "pi-core/platform/env.ts";
+import type { PaneProviderName } from "./pane-provider.ts";
 
 const stateKey = Symbol.for("basecamp.panes");
 
 interface PaneState {
+	provider: PaneProviderName | null;
 	paneId: string | null;
 }
 
@@ -12,7 +14,9 @@ type GlobalWithPanes = typeof globalThis & {
 
 export function getPaneState(): PaneState {
 	const globalObject = globalThis as GlobalWithPanes;
-	globalObject[stateKey] ??= { paneId: null };
+	globalObject[stateKey] ??= { provider: null, paneId: null };
+	globalObject[stateKey].provider ??= null;
+	globalObject[stateKey].paneId ??= null;
 	return globalObject[stateKey];
 }
 

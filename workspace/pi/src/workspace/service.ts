@@ -21,6 +21,7 @@ import {
 	listWorktrees as listGitWorktrees,
 	type WorktreeResult,
 } from "pi-core/workspace/worktree.ts";
+import { openActiveWorktreeInHerdr } from "./herdr-worktree.ts";
 import { applyUnsafeEditFlag } from "./unsafe-edit.ts";
 
 interface WorkspaceRuntimeGlobal {
@@ -177,6 +178,7 @@ export class WorkspaceRuntimeService implements WorkspaceService {
 		if (activeWorktree) updateCurrentSessionStateIfInitialized({ activeWorktree });
 		setWorkspaceEnv(state);
 		this.notify();
+		void openActiveWorktreeInHerdr(this.pi, state, target);
 		return target;
 	}
 

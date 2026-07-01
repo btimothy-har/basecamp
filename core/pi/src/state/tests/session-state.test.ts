@@ -14,6 +14,7 @@ import {
 	initializeCurrentSessionState,
 	initializeCurrentSessionStateForEvent,
 	loadSessionState,
+	onCurrentSessionTitleChange,
 	resetCurrentSessionState,
 	saveSessionState,
 	updateCurrentSessionState,
@@ -335,6 +336,30 @@ describe("current session state", () => {
 
 		assert.equal(updated.sessionFile, null);
 		assert.equal(updated.title, "updater title");
+	});
+
+	it("notifies listeners only when the current title changes", async (t) => {
+		const dir = await createTempDir(t);
+		t.after(() => {
+			resetCurrentSessionState();
+		});
+		const seen: string[] = [];
+		const unsubscribe = onCurrentSessionTitleChange((title, state) => {
+			seen.push(`${state.sessionId}:${title ?? "null"}`);
+		});
+		t.after(() => {
+			unsubscribe();
+		});
+
+		initializeCurrentSessionState(createContext("title-listener"), dir);
+		updateCurrentSessionState({ title: "First title" });
+		updateCurrentSessionState({ agentMode: "planning" });
+		updateCurrentSessionState({ title: "First title" });
+		updateCurrentSessionState({ title: null });
+		unsubscribe();
+		updateCurrentSessionState({ title: "After unsubscribe" });
+
+		assert.deepEqual(seen, ["title-listener:First title", "title-listener:null"]);
 	});
 });
 
