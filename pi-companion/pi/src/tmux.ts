@@ -44,6 +44,11 @@ export function buildKillArgs(paneId: string): string[] {
 	return ["kill-pane", "-t", paneId];
 }
 
+/** List every pane id across the tmux server, one per line. */
+export function buildListPanesArgs(): string[] {
+	return ["list-panes", "-a", "-F", "#{pane_id}"];
+}
+
 /** tmux pane ids look like "%5"; return the first such token or null. */
 export function parsePaneId(stdout: string): string | null {
 	const match = stdout

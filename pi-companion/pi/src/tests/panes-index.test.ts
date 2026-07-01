@@ -197,21 +197,62 @@ describe("panes/registerPanes", () => {
 		assert.equal(isCompanionActive(), false);
 	});
 
-	it("reuses an existing pane on session start without execing tmux or checking dashboard availability", async () => {
+	it("reuses a live existing pane after a liveness check without splitting or checking dashboard availability", async () => {
 		withTmuxEnv();
 		setCompanionActive(false);
 		const state = getPaneState();
 		state.paneId = "%8";
-		const { pi, emit, execCalls } = createMockPi(() => {
+		const { pi, emit, execCalls } = createMockPi((command, args) => {
+			if (command === "tmux" && args[0] === "list-panes") return { code: 0, stdout: "%1\n%8\n", stderr: "" };
 			throw new Error("unexpected exec");
 		});
 		registerPanes(pi);
 
 		const ctx = await emit("session_start");
 
-		assert.equal(execCalls.length, 0);
+		assert.deepEqual(execCalls, [{ command: "tmux", args: ["list-panes", "-a", "-F", "#{pane_id}"] }]);
 		assert.equal(getPaneState().paneId, "%8");
 		assert.equal(isCompanionActive(), true);
+		assert.deepEqual(ctx.ui.statusCalls.at(-1), { key: "basecamp.daemon.pane", value: "success:companion ✓" });
+	});
+
+	it("recreates the pane when the stored pane id is no longer alive", async () => {
+		withTmuxEnv();
+		setCompanionActive(false);
+		const state = getPaneState();
+		state.paneId = "%8";
+		const { pi, emit, execCalls } = createMockPi((command, args) => {
+			if (command === "tmux" && args[0] === "list-panes") return { code: 0, stdout: "%1\n%2\n", stderr: "" };
+			if (command === "basecamp") return { code: 0, stdout: "", stderr: "" };
+			return { code: 0, stdout: "%42\n", stderr: "" };
+		});
+		registerPanes(pi);
+
+		await emit("session_start");
+
+		assert.equal(getPaneState().paneId, "%42");
+		assert.equal(isCompanionActive(), true);
+		const tmuxCommands = execCalls.filter((call) => call.command === "tmux").map((call) => call.args[0]);
+		assert.deepEqual(tmuxCommands, ["list-panes", "split-window"]);
+		assert.ok(execCalls.some((call) => call.command === "basecamp"));
+	});
+
+	it("keeps the existing pane when the liveness check is inconclusive", async () => {
+		withTmuxEnv();
+		setCompanionActive(false);
+		const state = getPaneState();
+		state.paneId = "%8";
+		const { pi, emit, execCalls } = createMockPi((command, args) => {
+			if (command === "tmux" && args[0] === "list-panes") throw new Error("tmux unavailable");
+			throw new Error("unexpected exec");
+		});
+		registerPanes(pi);
+
+		const ctx = await emit("session_start");
+
+		assert.equal(getPaneState().paneId, "%8");
+		assert.equal(isCompanionActive(), true);
+		assert.ok(execCalls.every((call) => call.args[0] !== "split-window"));
 		assert.deepEqual(ctx.ui.statusCalls.at(-1), { key: "basecamp.daemon.pane", value: "success:companion ✓" });
 	});
 

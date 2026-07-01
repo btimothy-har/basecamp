@@ -3,7 +3,14 @@ import { exec } from "pi-core/platform/exec.ts";
 import { getWorkspaceService, getWorkspaceState } from "pi-core/platform/workspace.ts";
 import { getPaneState, setCompanionActive } from "./panes-state.ts";
 import { companionLiveSnapshotPath } from "./snapshot.ts";
-import { buildCompanionCommand, buildKillArgs, buildSplitArgs, parsePaneId, shouldCreatePane } from "./tmux.ts";
+import {
+	buildCompanionCommand,
+	buildKillArgs,
+	buildListPanesArgs,
+	buildSplitArgs,
+	parsePaneId,
+	shouldCreatePane,
+} from "./tmux.ts";
 
 type ThemeFg = (color: Parameters<import("@earendil-works/pi-coding-agent").Theme["fg"]>[0], text: string) => string;
 
@@ -17,6 +24,25 @@ async function companionAvailable(pi: ExtensionAPI): Promise<boolean> {
 		return result.code === 0;
 	} catch {
 		return false;
+	}
+}
+
+/**
+ * Whether the stored pane still exists. An inconclusive tmux result (non-zero
+ * exit or thrown error) is treated as alive so a transient failure never spawns
+ * a duplicate pane.
+ */
+async function paneStillExists(pi: ExtensionAPI, paneId: string): Promise<boolean> {
+	try {
+		const result = await exec(pi, "tmux", buildListPanesArgs());
+		if (result.code !== 0) return true;
+		const ids = result.stdout
+			.split("\n")
+			.map((line) => line.trim())
+			.filter(Boolean);
+		return ids.includes(paneId);
+	} catch {
+		return true;
 	}
 }
 
@@ -66,9 +92,12 @@ export default function registerPanes(pi: ExtensionAPI): void {
 		}
 
 		if (paneState.paneId) {
-			setCompanionActive(true);
-			publishPaneStatus(ctx, true);
-			return;
+			if (await paneStillExists(pi, paneState.paneId)) {
+				setCompanionActive(true);
+				publishPaneStatus(ctx, true);
+				return;
+			}
+			paneState.paneId = null;
 		}
 
 		if (!(await companionAvailable(pi))) {

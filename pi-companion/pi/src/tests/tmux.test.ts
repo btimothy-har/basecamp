@@ -1,6 +1,13 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { buildCompanionCommand, buildKillArgs, buildSplitArgs, parsePaneId, shouldCreatePane } from "../tmux.ts";
+import {
+	buildCompanionCommand,
+	buildKillArgs,
+	buildListPanesArgs,
+	buildSplitArgs,
+	parsePaneId,
+	shouldCreatePane,
+} from "../tmux.ts";
 
 describe("panes/tmux", () => {
 	describe("shouldCreatePane", () => {
@@ -109,6 +116,12 @@ describe("panes/tmux", () => {
 	describe("buildKillArgs", () => {
 		it("builds kill-pane argv", () => {
 			assert.deepEqual(buildKillArgs("%3"), ["kill-pane", "-t", "%3"]);
+		});
+	});
+
+	describe("buildListPanesArgs", () => {
+		it("builds list-panes argv listing every pane id", () => {
+			assert.deepEqual(buildListPanesArgs(), ["list-panes", "-a", "-F", "#{pane_id}"]);
 		});
 	});
 
