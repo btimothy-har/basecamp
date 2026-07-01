@@ -71,6 +71,13 @@ The conversation that produced this plan does not survive it. On approval the pl
 
 Call `plan()` only after discovery and discussion have converged. Convergence requires a final recommendation, not just a list of options: you should be able to state which alternatives were invalidated, which assumptions survived, what uncertainty remains, and why the recommended plan is the best next step. The plan sections should reflect the agreed direction, not introduce new thinking.
 
+`plan()` supports two execution topologies. Use exactly one:
+
+- **Task plan** — one coordinated lane with ordered local tasks. Use this for single-branch implementation, analysis, validation, or sequential work where one agent/session should own the task list.
+- **Workstream plan** — multiple PR-sized lanes. Use this when independent streams can proceed in separate worktrees/branches and each stream should own its own local tasks after launch.
+
+Task-plan shape:
+
 ```
 plan({
   goal:        // one sentence — what are we achieving
@@ -83,7 +90,32 @@ plan({
 })
 ```
 
-For implementation plans, include `worktreeSlug` as hidden metadata: a short semantic kebab-case slug with no session prefix, e.g. `handoff-labels`. Omit it for analysis-only plans. This is not a user-reviewed plan section; Basecamp derives the local execution worktree label as `wt-<user-prefix>/<slug>` and the Git branch as `<user-prefix>/<slug>`. If the user enters a custom worktree name, Basecamp still normalizes it under the current user prefix.
+Workstream-plan shape:
+
+```
+plan({
+  goal:        // program outcome
+  context:     // shared context every stream needs
+  design:      // program-level approach and dependency strategy
+  success:     // program-level success criteria
+  boundaries:  // program-level exclusions
+  workstreams: [
+    {
+      id: "core",              // stable id for dependencies
+      label: "Core API",       // short stream name
+      scope: "...",            // what this lane owns
+      outcome: "...",          // what complete looks like
+      boundaries: "...",       // lane-specific exclusions
+      worktreeSlug: "core-api",// optional; short kebab-case slug, no session prefix
+      dependsOn: ["schema"]    // optional ids that must complete first
+    }
+  ]
+})
+```
+
+Never include both `tasks` and `workstreams`. Workstreams do not contain nested `tasks`; the dispatched workstream agent creates its own local goal/tasks inside its assigned worktree.
+
+For task implementation plans, include top-level `worktreeSlug` as hidden metadata: a short semantic kebab-case slug with no session prefix, e.g. `handoff-labels`. For workstream plans, put `worktreeSlug` on each workstream that needs a custom slug. Basecamp derives labels/branches with the current naming convention (`wt-<user-prefix>/<session>-<slug>` and `<user-prefix>/<session>-<slug>`).
 
 The user reviews via an interactive overlay. They may:
 - **Approve** sections/tasks
@@ -92,7 +124,11 @@ The user reviews via an interactive overlay. They may:
 
 If feedback is returned, address it and re-submit. Unchanged approved sections keep their status.
 
-Once every item is approved and submitted, follow the plan result. Implementation plans ask for supervisor vs IC/executor posture; if the approved result includes a scheduled handoff, do not begin implementation in the current turn. End the turn and let Basecamp start the fresh handoff turn so the selected posture prompt is loaded. Analysis-mode plans stay in analysis mode; begin the approved analysis tasks without supervisor/executor handoff.
+Once every item is approved and submitted, follow the plan result.
+
+For task plans, analysis-mode plans stay in analysis mode and implementation plans ask for supervisor vs IC/executor posture. If the approved task-plan result includes a scheduled handoff, do not begin implementation in the current turn. End the turn and let Basecamp start the fresh handoff turn so the selected posture prompt is loaded.
+
+For workstream plans, Basecamp runs in supervisor mode without an IC/executor posture prompt. It computes the initial ready set from `dependsOn`, provisions one Basecamp-owned worktree per ready stream, runs setup for newly created ready worktrees, dispatches ready streams as worker agents with self-contained briefs, and records blocked streams without provisioning them. Worktree creation, setup, or launch can fail per stream; inspect any failed entries before continuing. Dispatch success means the daemon accepted the worker launch; the stream still reports its own progress separately. Herdr worktree opening is best-effort display only. Workstreams produce PR-sized branch work; they do not merge or apply changes to `main` automatically. After approval, monitor dispatched worker results and keep blocked streams recorded until an explicit later action starts them.
 
 ---
 
@@ -171,3 +207,20 @@ Not "keep it simple" or "no gold-plating."
 ### Tasks
 
 Ordered list. Smallest meaningful units of work — logical chunks, not individual file edits. Each task needs a label, description (what and why), and criteria (what done looks like for this task). Tasks should follow directly from the agreed approach; if a task requires a decision that has not been made, make that decision before formalising.
+
+### Workstreams
+
+Use workstreams only when the plan is naturally parallel or program-shaped. Each workstream is a contract for an independent branch lane, not a nested task list.
+
+Required fields:
+- `id` — stable, unique id used by `dependsOn`
+- `label` — short human-readable name
+- `scope` — what this lane owns
+- `outcome` — what complete looks like for this lane
+- `boundaries` — lane-specific exclusions
+
+Optional fields:
+- `worktreeSlug` — custom short kebab-case slug; Basecamp adds user/session prefix. Keep ready-stream slugs distinct, because derived label collisions fail the colliding streams before provisioning.
+- `dependsOn` — ids that must complete before this lane is ready
+
+Keep workstreams PR-sized. If outputs need combination, add an explicit integration workstream that depends on the others rather than merging work into `main` from the coordinator.

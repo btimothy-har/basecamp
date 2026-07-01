@@ -2,8 +2,9 @@
  * Plan — structured proposal with user review before execution.
  *
  * The plan() tool submits a structured plan (goal, context, design, success,
- * boundaries, tasks) and blocks until the user reviews it via an auto-pop
- * overlay. On approval, creates a GoalCycle with planRef and populates tasks.
+ * boundaries, and either tasks or workstreams) and opens interactive review when
+ * UI is available. On approval, task plans create a GoalCycle with
+ * planRef and populate tasks; workstream plans provision and dispatch ready lanes.
  * Implementation plans ask for execution posture; analysis plans stay in
  * analysis mode. On feedback, returns structured
  * feedback for the agent to revise.
@@ -972,8 +973,9 @@ export function registerPlan(pi: ExtensionAPI, tasksAccess: TasksAccess): PlanAc
 		name: "plan",
 		label: "Plan",
 		description:
-			"Submit a structured plan for user review. Blocks until the user approves or provides feedback. " +
-			"On approval, creates the goal and tasks. Analysis plans stay in analysis mode; " +
+			"Submit a structured plan for user review. Opens an interactive review when UI is available. " +
+			"Accepts either legacy tasks or PR-sized workstreams. On approval, task plans create the goal/tasks; " +
+			"workstream plans provision and dispatch ready lanes. Analysis plans stay in analysis mode; " +
 			"implementation plans ask for supervisor vs IC/executor posture. " +
 			"On feedback, returns structured feedback for revision.",
 		promptSnippet: "Submit a structured plan for review, approval, and work handoff",
