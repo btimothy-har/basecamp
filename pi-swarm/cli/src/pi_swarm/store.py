@@ -731,6 +731,14 @@ class Store:
     def can_ask(self, requester_node_id: str, target_agent_id: str) -> bool:
         """Return whether requester may fork-ask the target agent."""
 
+        return self._can_reach_agent(requester_node_id, target_agent_id)
+
+    def can_message(self, requester_node_id: str, target_agent_id: str) -> bool:
+        """Return whether requester may send a live peer message to the target."""
+
+        return self._can_reach_agent(requester_node_id, target_agent_id)
+
+    def _can_reach_agent(self, requester_node_id: str, target_agent_id: str) -> bool:
         requester = self.get_agent(requester_node_id)
         target = self.get_agent(target_agent_id)
         if requester is None or target is None:
@@ -871,6 +879,7 @@ class Store:
                 ON r.id = a.current_run_id
                AND r.dispatcher_id = ?
             WHERE a.id IN ({placeholders})
+              AND a.role != 'session'
             """
 
         with self._connect() as connection:
@@ -904,6 +913,7 @@ class Store:
                 ON r.id = a.current_run_id
                AND r.dispatcher_id = ?
             WHERE a.agent_handle IN ({placeholders})
+              AND a.role != 'session'
             """
 
         with self._connect() as connection:

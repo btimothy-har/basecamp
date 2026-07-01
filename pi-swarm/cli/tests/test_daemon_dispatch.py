@@ -271,6 +271,150 @@ async def test_prepare_dispatch_resolves_fork_from_target_handle(tmp_path: Path)
 
 
 @pytest.mark.asyncio
+async def test_prepare_dispatch_resolves_fork_from_session_handle(tmp_path: Path) -> None:
+    store = Store(db_path=tmp_path / "daemon.db")
+    home = tmp_path / "home"
+    session_file = _write_agent_session_file(home, "root")
+    store.upsert_agent(
+        agent_id="root",
+        agent_handle="root-handle",
+        parent_id=None,
+        sibling_group=None,
+        depth=0,
+        role="session",
+        session_name="root-session",
+        cwd=str(tmp_path),
+    )
+    store.upsert_agent(
+        agent_id="child-agent",
+        agent_handle="child-handle",
+        parent_id="root",
+        sibling_group="root",
+        depth=1,
+        role="agent",
+        session_name="child-agent",
+        cwd=str(tmp_path),
+    )
+    frame = DispatchFrame(
+        type="dispatch",
+        v=PROTOCOL_VERSION,
+        run_id="run-answerer",
+        agent_id="answerer-agent",
+        spec=DispatchSpec(
+            argv=["pi", "--mode", "json", "-p"],
+            env={"HOME": str(home)},
+            cwd=str(tmp_path),
+            resume_path=None,
+            fork_from="root-handle",
+            task="question?",
+        ),
+    )
+
+    dispatch = await prepare_dispatch(
+        frame=frame,
+        dispatcher_node_id="child-agent",
+        store=store,
+    )
+
+    assert isinstance(dispatch, PreparedDispatch)
+    assert dispatch.fork_source_path == str(session_file.resolve())
+    assert store.get_run("run-answerer") is not None
+
+
+@pytest.mark.asyncio
+async def test_prepare_dispatch_rejects_session_as_dispatch_target_by_handle_or_id(tmp_path: Path) -> None:
+    store = Store(db_path=tmp_path / "daemon.db")
+    store.upsert_agent(
+        agent_id="root",
+        agent_handle="root-handle",
+        parent_id=None,
+        sibling_group=None,
+        depth=0,
+        role="session",
+        session_name="root-session",
+        cwd=str(tmp_path),
+    )
+
+    for run_id, dispatch_target in [
+        ("run-session-handle", {"agent_handle": "root-handle"}),
+        ("run-session-id", {"agent_id": "root"}),
+    ]:
+        frame = DispatchFrame(
+            type="dispatch",
+            v=PROTOCOL_VERSION,
+            run_id=run_id,
+            spec=DispatchSpec(
+                argv=["pi", "--mode", "json", "-p"],
+                env={},
+                cwd=str(tmp_path),
+                resume_path=None,
+                task="do work",
+            ),
+            **dispatch_target,
+        )
+
+        dispatch = await prepare_dispatch(
+            frame=frame,
+            dispatcher_node_id="root",
+            store=store,
+        )
+
+        assert dispatch == DispatchRejection(reason="not_dispatchable")
+        assert store.get_run(run_id) is None
+
+    root = store.get_agent("root")
+    assert root is not None
+    assert root["role"] == "session"
+
+
+@pytest.mark.asyncio
+async def test_prepare_dispatch_rejects_existing_ask_agent_as_dispatch_target(tmp_path: Path) -> None:
+    store = Store(db_path=tmp_path / "daemon.db")
+    store.upsert_agent(
+        agent_id="root",
+        parent_id=None,
+        sibling_group=None,
+        depth=0,
+        role="session",
+        session_name="root-session",
+        cwd=str(tmp_path),
+    )
+    store.upsert_agent(
+        agent_id="ask-agent",
+        agent_handle="ask-handle",
+        parent_id="root",
+        sibling_group="root",
+        depth=1,
+        role="agent",
+        session_name="ask-agent",
+        cwd=str(tmp_path),
+        agent_type="ask",
+    )
+    frame = DispatchFrame(
+        type="dispatch",
+        v=PROTOCOL_VERSION,
+        run_id="run-ask-retask",
+        agent_handle="ask-handle",
+        spec=DispatchSpec(
+            argv=["pi", "--mode", "json", "-p"],
+            env={},
+            cwd=str(tmp_path),
+            resume_path=None,
+            task="do work",
+        ),
+    )
+
+    dispatch = await prepare_dispatch(
+        frame=frame,
+        dispatcher_node_id="root",
+        store=store,
+    )
+
+    assert dispatch == DispatchRejection(reason="not_dispatchable")
+    assert store.get_run("run-ask-retask") is None
+
+
+@pytest.mark.asyncio
 async def test_prepare_dispatch_rejects_unauthorized_fork_from_target(tmp_path: Path) -> None:
     store = Store(db_path=tmp_path / "daemon.db")
     home = tmp_path / "home"

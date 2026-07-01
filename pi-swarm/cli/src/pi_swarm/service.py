@@ -47,6 +47,7 @@ DispatchAckReason = Literal[
     "duplicate_agent_handle",
     "agent_type_mismatch",
     "fork_target_unknown",
+    "not_dispatchable",
     "spawn_failed",
 ]
 DispatchRejectionReason = Literal[
@@ -55,6 +56,7 @@ DispatchRejectionReason = Literal[
     "duplicate_agent_handle",
     "agent_type_mismatch",
     "fork_target_unknown",
+    "not_dispatchable",
 ]
 
 
@@ -112,6 +114,10 @@ def _metadata_mismatches(*, existing: dict[str, Any], frame: DispatchFrame) -> b
     return bool(isinstance(existing_run_kind, str) and frame.run_kind and existing_run_kind != frame.run_kind)
 
 
+def _is_dispatchable_agent(agent: dict[str, Any]) -> bool:
+    return agent.get("role") != "session" and agent.get("agent_type") != "ask"
+
+
 def _resolve_agent_max_depth() -> int:
     raw = os.getenv("BASECAMP_AGENT_MAX_DEPTH")
     try:
@@ -129,10 +135,21 @@ async def prepare_dispatch(
 ) -> PreparedDispatch | DispatchRejection:
     dispatcher = await asyncio.to_thread(store.get_agent, dispatcher_node_id)
     dispatcher_depth = int(dispatcher.get("depth", 0)) if dispatcher else 0
-    existing_agent = None
+    existing_by_handle = None
     if frame.agent_handle:
-        existing_agent = await asyncio.to_thread(store.get_agent_by_handle, frame.agent_handle)
+        existing_by_handle = await asyncio.to_thread(store.get_agent_by_handle, frame.agent_handle)
+    existing_by_id = None
+    if frame.agent_id:
+        existing_by_id = await asyncio.to_thread(store.get_agent, frame.agent_id)
 
+    if (
+        existing_by_handle is not None
+        and existing_by_id is not None
+        and existing_by_handle.get("id") != existing_by_id.get("id")
+    ):
+        return DispatchRejection(reason="duplicate_agent_handle")
+
+    existing_agent = existing_by_handle or existing_by_id
     if existing_agent is not None:
         existing_agent_id = str(existing_agent.get("id"))
         requester_root = await asyncio.to_thread(store.resolve_agent_root, dispatcher_node_id)
@@ -141,6 +158,8 @@ async def prepare_dispatch(
             return DispatchRejection(reason="duplicate_agent_handle")
         if frame.agent_id and frame.agent_id != existing_agent_id:
             return DispatchRejection(reason="duplicate_agent_handle")
+        if not _is_dispatchable_agent(existing_agent):
+            return DispatchRejection(reason="not_dispatchable")
         if _metadata_mismatches(existing=existing_agent, frame=frame):
             return DispatchRejection(reason="agent_type_mismatch")
         agent_id = existing_agent_id
@@ -351,7 +370,7 @@ async def accept_peer_message(
 
     target = await asyncio.to_thread(store.get_agent_by_handle, frame.target_handle)
     target_agent_id = target.get("id") if target is not None else None
-    target_handle = _public_agent_handle(target)
+    target_handle = _public_message_handle(target)
     if (
         not isinstance(target_agent_id, str)
         or not isinstance(target_handle, str)
@@ -359,7 +378,7 @@ async def accept_peer_message(
     ):
         return _unknown_peer_message_ack(frame.request_id)
 
-    if not await asyncio.to_thread(store.can_ask, requester_node_id, target_agent_id):
+    if not await asyncio.to_thread(store.can_message, requester_node_id, target_agent_id):
         return _unknown_peer_message_ack(frame.request_id)
 
     root_id = await asyncio.to_thread(store.resolve_agent_root, requester_node_id)
@@ -479,12 +498,22 @@ def _unknown_peer_message_ack(request_id: str) -> PeerMessageAckFrame:
 
 
 def _public_sender_handle(sender: dict[str, Any] | None) -> str | None:
-    return _public_agent_handle(sender)
+    return _public_message_handle(sender)
+
+
+def _public_message_handle(agent: dict[str, Any] | None) -> str | None:
+    if agent is None or agent.get("role") not in {"agent", "session"}:
+        return None
+    return _public_handle(agent)
 
 
 def _public_agent_handle(agent: dict[str, Any] | None) -> str | None:
     if agent is None or agent.get("role") != "agent":
         return None
+    return _public_handle(agent)
+
+
+def _public_handle(agent: dict[str, Any]) -> str | None:
     handle = agent.get("agent_handle")
     agent_id = agent.get("id")
     if not isinstance(handle, str) or not handle:
