@@ -27,6 +27,7 @@ import { shortSessionId } from "pi-core/session/session-id.ts";
 import { runWorktreeSetup } from "pi-core/workspace/setup.ts";
 import type { GoalCycle, ReviewState, TaskStatus, TasksAccess } from "../tasks/tasks";
 import { computeGoalContextReview, computeSectionReview, freshReview, tasksMatch } from "./draft-logic";
+import { normalizePlanExecutionInput } from "./plan-input.ts";
 import type { PlanDraft } from "./review";
 import { SECTION_NAMES, showPlanReadOnly, showReviewOverlay } from "./review";
 import {
@@ -495,16 +496,58 @@ export function registerPlan(pi: ExtensionAPI, tasksAccess: TasksAccess): PlanAc
 						"Internal metadata for worktree label suggestion; not shown in plan review. Short kebab-case slug, no session prefix.",
 				}),
 			),
-			tasks: Type.Array(
-				Type.Object({
-					label: Type.String({ description: "Short task name" }),
-					description: Type.String({ description: "What this task involves and why" }),
-					criteria: Type.String({ description: "What done looks like for this task" }),
-				}),
-				{ description: "Ordered list of tasks", minItems: 1 },
+			tasks: Type.Optional(
+				Type.Array(
+					Type.Object({
+						label: Type.String({ description: "Short task name" }),
+						description: Type.String({ description: "What this task involves and why" }),
+						criteria: Type.String({ description: "What done looks like for this task" }),
+					}),
+					{ description: "Ordered list of tasks. Mutually exclusive with workstreams.", minItems: 1 },
+				),
+			),
+			workstreams: Type.Optional(
+				Type.Array(
+					Type.Object({
+						id: Type.String({ description: "Stable workstream id used by dependsOn references" }),
+						label: Type.String({ description: "Short workstream name" }),
+						scope: Type.String({ description: "What this workstream includes" }),
+						outcome: Type.String({ description: "Expected result of this workstream" }),
+						boundaries: Type.String({ description: "What is out of scope for this workstream" }),
+						worktreeSlug: Type.Optional(
+							Type.String({
+								description:
+									"Internal metadata for worktree label suggestion; short kebab-case slug, no session prefix.",
+							}),
+						),
+						dependsOn: Type.Optional(
+							Type.Array(Type.String({ description: "Workstream id this workstream depends on" }), {
+								description: "Workstream ids that must complete first",
+							}),
+						),
+					}),
+					{ description: "Ordered list of workstreams. Mutually exclusive with tasks.", minItems: 1 },
+				),
 			),
 		}),
 		async execute(_id, params, _signal, _onUpdate, ctx) {
+			const executionInput = normalizePlanExecutionInput(params);
+			if (executionInput.kind === "workstreams") {
+				return {
+					content: [
+						{
+							type: "text",
+							text: JSON.stringify({
+								status: "workstreams_pending_implementation",
+								workstreams: executionInput.workstreams.length,
+								next_step: "Workstream plan input is valid; review and execution wiring will be added in Task 2.",
+							}),
+						},
+					],
+					details: undefined,
+				};
+			}
+
 			draft = buildDraft(
 				{
 					goal: params.goal,
@@ -514,7 +557,7 @@ export function registerPlan(pi: ExtensionAPI, tasksAccess: TasksAccess): PlanAc
 					boundaries: params.boundaries,
 					worktreeSlug: params.worktreeSlug ?? draft?.worktreeSlug ?? undefined,
 				},
-				params.tasks,
+				executionInput.tasks,
 				draft,
 			);
 
@@ -654,8 +697,10 @@ export function registerPlan(pi: ExtensionAPI, tasksAccess: TasksAccess): PlanAc
 			const goal = (args.goal as string) || "...";
 			const preview = goal.length > 50 ? `${goal.slice(0, 50)}...` : goal;
 			const taskCount = (args.tasks as unknown[])?.length ?? 0;
+			const workstreamCount = (args.workstreams as unknown[])?.length ?? 0;
+			const itemSummary = workstreamCount > 0 ? `${workstreamCount} workstreams` : `${taskCount} tasks`;
 			return new Text(
-				theme.fg("toolTitle", theme.bold("plan ")) + theme.fg("dim", `${preview} (${taskCount} tasks)`),
+				theme.fg("toolTitle", theme.bold("plan ")) + theme.fg("dim", `${preview} (${itemSummary})`),
 				0,
 				0,
 			);
