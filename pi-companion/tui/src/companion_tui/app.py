@@ -432,7 +432,6 @@ class CompanionApp(App[None]):
         self.query_one("#files-body", FileBrowser).replace_roots(
             resolve_browse_roots(self._git, self.cwd, self.scratch_dir)
         )
-        self.query_one("#file-list", FileList).update_changes(base_commit=None, files=[])
         self.query_one("#diff-view", DiffView).update_diff(file_path="", status_message="", diff_lines=[])
         return True
 
@@ -458,7 +457,7 @@ class CompanionApp(App[None]):
             self._snapshot = load_snapshot(self.snapshot_path) if file_exists else None
             self._update_session_bar()
 
-        cwd_changed = self._snapshot is not None and self._apply_effective_cwd(self._snapshot)
+        cwd_changed = snapshot_changed and self._snapshot is not None and self._apply_effective_cwd(self._snapshot)
 
         dashboard_body = self.query_one("#dashboard-body", DashboardBody)
         swarm_body = self.query_one("#swarm-body", SwarmBody)

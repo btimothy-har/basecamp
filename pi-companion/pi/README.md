@@ -4,8 +4,8 @@ Basecamp companion — session snapshot hooks, tmux panes, and analysis registra
 
 ## What it does
 
-- **Session snapshots**: writes session state snapshots for the companion dashboard to consume
-- **Tmux panes**: manages the companion tmux pane lifecycle (detect active pane, switch, restore)
+- **Session snapshots**: writes session state snapshots for the companion dashboard to consume — a per-session file plus a process-scoped live snapshot the dashboard follows across session/cwd changes
+- **Tmux panes**: manages the companion tmux pane lifecycle (create once, verify liveness on session start and recreate if the pane was killed, kill on quit)
 - **Analysis registration**: hooks companion analysis into session lifecycle (writes analysis.json)
 - **Companion-active flag**: sets pi-core's `isCompanionActive` flag for companion analysis/pane state
 

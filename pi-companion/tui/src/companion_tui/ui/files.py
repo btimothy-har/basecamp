@@ -88,13 +88,7 @@ class FileBrowser(Horizontal):
             return
 
         self.roots = list(roots)
-        self._root_index = 0
-        self._label, self._root = self.roots[0]
-
-        tree = self.query_one("#file-tree", _CompanionDirectoryTree)
-        tree.path = self._root
-        tree.border_title = self._tree_title()
-        self._clear_preview()
+        self.set_root(self.roots[0][1])
 
     def action_toggle_root(self) -> None:
         if len(self.roots) < 2:
