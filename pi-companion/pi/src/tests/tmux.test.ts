@@ -1,13 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import {
-	buildCompanionCommand,
-	buildKillArgs,
-	buildRespawnArgs,
-	buildSplitArgs,
-	parsePaneId,
-	shouldCreatePane,
-} from "../tmux.ts";
+import { buildCompanionCommand, buildKillArgs, buildSplitArgs, parsePaneId, shouldCreatePane } from "../tmux.ts";
 
 describe("panes/tmux", () => {
 	describe("shouldCreatePane", () => {
@@ -108,20 +101,6 @@ describe("panes/tmux", () => {
 				"-P",
 				"-F",
 				"#{pane_id}",
-				"echo hi",
-			]);
-		});
-	});
-
-	describe("buildRespawnArgs", () => {
-		it("builds respawn-pane argv", () => {
-			assert.deepEqual(buildRespawnArgs("%3", "/tmp/new-worktree", "echo hi"), [
-				"respawn-pane",
-				"-k",
-				"-t",
-				"%3",
-				"-c",
-				"/tmp/new-worktree",
 				"echo hi",
 			]);
 		});

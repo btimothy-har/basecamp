@@ -40,10 +40,6 @@ export function buildSplitArgs(targetPane: string, cwd: string, command: string)
 	];
 }
 
-export function buildRespawnArgs(paneId: string, cwd: string, command: string): string[] {
-	return ["respawn-pane", "-k", "-t", paneId, "-c", cwd, command];
-}
-
 export function buildKillArgs(paneId: string): string[] {
 	return ["kill-pane", "-t", paneId];
 }
