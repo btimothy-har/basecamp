@@ -8,7 +8,7 @@ from pydantic import BaseModel, Field, TypeAdapter
 
 # Gates every client-visible daemon capability, not just WebSocket frame shapes.
 # This includes HTTP endpoints like /runs/summary, so stale daemons restart.
-PROTOCOL_VERSION = 13
+PROTOCOL_VERSION = 14
 
 
 class RegisterFrame(BaseModel):
@@ -189,6 +189,9 @@ class PeerMessageAckFrame(BaseModel):
     error: str | None = None
 
 
+PeerMessageRelation = Literal["self", "parent", "ancestor", "child", "descendant", "peer", "unknown"]
+
+
 class PeerMessageDeliveryFrame(BaseModel):
     """Peer message delivery from daemon to recipient agent."""
 
@@ -196,6 +199,7 @@ class PeerMessageDeliveryFrame(BaseModel):
     v: Literal[PROTOCOL_VERSION]
     message_id: str
     from_handle: str | None
+    from_relation: PeerMessageRelation
     message: str
     interrupt: bool
 

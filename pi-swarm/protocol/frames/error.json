@@ -1,6 +1,6 @@
 {
 	"type": "error",
-	"v": 13,
+	"v": 14,
 	"code": "protocol_version",
-	"message": "Unsupported protocol version 1; expected 13."
+	"message": "Unsupported protocol version 1; expected 14."
 }

@@ -617,6 +617,32 @@ def test_get_agents_current_runs_filters_by_dispatcher(tmp_path: Path) -> None:
     assert missing == []
 
 
+def test_get_agents_current_runs_excludes_sessions_from_wait_projection(tmp_path: Path) -> None:
+    db_path = tmp_path / "daemon.db"
+    store = Store(db_path=db_path)
+
+    store.upsert_agent(
+        agent_id="root",
+        agent_handle="root-handle",
+        parent_id=None,
+        sibling_group=None,
+        depth=0,
+        role="session",
+        session_name="root-session",
+        cwd="/tmp/root",
+    )
+    store.create_run(
+        run_id="run-session",
+        agent_id="root",
+        dispatcher_id="root",
+        spec={"task": "x"},
+        report_token_hash="0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+    )
+
+    assert store.get_agents_current_runs(["root"], dispatcher_id="root") == []
+    assert store.get_agents_current_runs_by_handles(["root-handle"], dispatcher_id="root") == []
+
+
 def test_resolve_agent_root_follows_parents_defensively(tmp_path: Path) -> None:
     db_path = tmp_path / "daemon.db"
     store = Store(db_path=db_path)
@@ -722,6 +748,84 @@ def test_can_ask_allows_ancestors_descendants_and_siblings_only(tmp_path: Path) 
     assert store.can_ask("root", "outside-root") is False
     assert store.can_ask("agent-a", "missing") is False
     assert store.can_ask("missing", "agent-a") is False
+
+
+def test_can_message_allows_visible_sessions_agents_and_siblings_only(tmp_path: Path) -> None:
+    db_path = tmp_path / "daemon.db"
+    store = Store(db_path=db_path)
+
+    store.upsert_agent(
+        agent_id="root",
+        parent_id=None,
+        sibling_group=None,
+        depth=0,
+        role="session",
+        session_name="root-session",
+        cwd="/tmp/root",
+    )
+    store.upsert_agent(
+        agent_id="agent-a",
+        parent_id="root",
+        sibling_group="root",
+        depth=1,
+        role="agent",
+        session_name="agent-a",
+        cwd="/tmp/a",
+    )
+    store.upsert_agent(
+        agent_id="agent-b",
+        parent_id="root",
+        sibling_group="root",
+        depth=1,
+        role="agent",
+        session_name="agent-b",
+        cwd="/tmp/b",
+    )
+    store.upsert_agent(
+        agent_id="grandchild",
+        parent_id="agent-a",
+        sibling_group="agent-a",
+        depth=2,
+        role="agent",
+        session_name="grandchild",
+        cwd="/tmp/grandchild",
+    )
+    store.upsert_agent(
+        agent_id="outside-root",
+        parent_id=None,
+        sibling_group=None,
+        depth=0,
+        role="session",
+        session_name="outside-root",
+        cwd="/tmp/outside-root",
+    )
+    store.upsert_agent(
+        agent_id="outside-agent",
+        parent_id="outside-root",
+        sibling_group="outside-root",
+        depth=1,
+        role="agent",
+        session_name="outside-agent",
+        cwd="/tmp/outside-agent",
+    )
+
+    assert store.can_message("grandchild", "root") is True
+    assert store.can_message("root", "grandchild") is True
+    assert store.can_message("agent-a", "agent-b") is True
+    assert store.can_message("agent-a", "agent-a") is True
+    assert store.can_message("agent-a", "outside-agent") is False
+    assert store.can_message("root", "outside-root") is False
+    assert store.can_message("agent-a", "missing") is False
+    assert store.can_message("missing", "agent-a") is False
+
+    assert store.agent_relation("agent-a", "agent-a") == "self"
+    assert store.agent_relation("grandchild", "agent-a") == "parent"
+    assert store.agent_relation("grandchild", "root") == "ancestor"
+    assert store.agent_relation("root", "agent-a") == "child"
+    assert store.agent_relation("root", "grandchild") == "descendant"
+    assert store.agent_relation("agent-a", "agent-b") == "peer"
+    assert store.agent_relation("agent-a", "outside-agent") == "unknown"
+    assert store.agent_relation("agent-a", "missing") == "unknown"
 
 
 def test_get_root_agent_directory_scopes_to_root_and_excludes_sessions(tmp_path: Path) -> None:

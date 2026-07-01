@@ -119,10 +119,12 @@ describe("daemon async tools", () => {
 			const priorProject = process.env.BASECAMP_PROJECT;
 			const priorParent = process.env.BASECAMP_PARENT_SESSION;
 			const priorSiblingGroup = process.env.BASECAMP_SIBLING_GROUP;
+			const priorAgentHandle = process.env.BASECAMP_AGENT_HANDLE;
 			process.env.BASECAMP_AGENT_DEPTH = "1";
 			process.env.BASECAMP_PROJECT = "parent-project";
 			process.env.BASECAMP_PARENT_SESSION = "old-parent";
 			process.env.BASECAMP_SIBLING_GROUP = "old-sibling-group";
+			process.env.BASECAMP_AGENT_HANDLE = "parent-handle";
 
 			try {
 				const env = buildAgentEnv({
@@ -135,6 +137,7 @@ describe("daemon async tools", () => {
 				assert.equal(env.BASECAMP_PARENT_SESSION, "dispatcher-node");
 				assert.equal(env.BASECAMP_SIBLING_GROUP, "dispatcher-node");
 				assert.equal(env.BASECAMP_AGENT_DEPTH, "2");
+				assert.equal(env.BASECAMP_AGENT_HANDLE, undefined);
 			} finally {
 				if (priorDepth === undefined) delete process.env.BASECAMP_AGENT_DEPTH;
 				else process.env.BASECAMP_AGENT_DEPTH = priorDepth;
@@ -144,6 +147,8 @@ describe("daemon async tools", () => {
 				else process.env.BASECAMP_PARENT_SESSION = priorParent;
 				if (priorSiblingGroup === undefined) delete process.env.BASECAMP_SIBLING_GROUP;
 				else process.env.BASECAMP_SIBLING_GROUP = priorSiblingGroup;
+				if (priorAgentHandle === undefined) delete process.env.BASECAMP_AGENT_HANDLE;
+				else process.env.BASECAMP_AGENT_HANDLE = priorAgentHandle;
 			}
 		});
 	});
@@ -168,6 +173,7 @@ describe("daemon async tools", () => {
 				reportToken: process.env.BASECAMP_REPORT_TOKEN,
 				agentId: process.env.BASECAMP_AGENT_ID,
 				daemonUds: process.env.BASECAMP_DAEMON_UDS,
+				agentHandle: process.env.BASECAMP_AGENT_HANDLE,
 				project: process.env.BASECAMP_PROJECT,
 				apiKey: process.env.DAEMON_TEST_API_KEY,
 			};
@@ -175,6 +181,7 @@ describe("daemon async tools", () => {
 			process.env.BASECAMP_REPORT_TOKEN = "report-parent";
 			process.env.BASECAMP_AGENT_ID = "agent-parent";
 			process.env.BASECAMP_DAEMON_UDS = "/tmp/daemon-parent.sock";
+			process.env.BASECAMP_AGENT_HANDLE = "parent-handle";
 			process.env.BASECAMP_PROJECT = "proj-parent";
 			process.env.DAEMON_TEST_API_KEY = "parent-api-key";
 
@@ -184,6 +191,7 @@ describe("daemon async tools", () => {
 				assert.equal(env.BASECAMP_REPORT_TOKEN, undefined);
 				assert.equal(env.BASECAMP_AGENT_ID, undefined);
 				assert.equal(env.BASECAMP_DAEMON_UDS, undefined);
+				assert.equal(env.BASECAMP_AGENT_HANDLE, undefined);
 				assert.equal(env.BASECAMP_PROJECT, "proj-parent");
 				assert.equal(env.DAEMON_TEST_API_KEY, "parent-api-key");
 			} finally {
@@ -195,6 +203,8 @@ describe("daemon async tools", () => {
 				else process.env.BASECAMP_AGENT_ID = prior.agentId;
 				if (prior.daemonUds === undefined) delete process.env.BASECAMP_DAEMON_UDS;
 				else process.env.BASECAMP_DAEMON_UDS = prior.daemonUds;
+				if (prior.agentHandle === undefined) delete process.env.BASECAMP_AGENT_HANDLE;
+				else process.env.BASECAMP_AGENT_HANDLE = prior.agentHandle;
 				if (prior.project === undefined) delete process.env.BASECAMP_PROJECT;
 				else process.env.BASECAMP_PROJECT = prior.project;
 				if (prior.apiKey === undefined) delete process.env.DAEMON_TEST_API_KEY;
@@ -268,6 +278,7 @@ describe("daemon async tools", () => {
 			v: PROTOCOL_VERSION,
 			message_id: "message-1",
 			from_handle: "sender",
+			from_relation: "peer",
 			message: "recipient delivery is not a response",
 			interrupt: false,
 		});
@@ -587,6 +598,7 @@ describe("daemon async tools", () => {
 			assert.equal(outbound.spec.env.BASECAMP_PROJECT, "proj");
 			assert.equal(outbound.spec.env.BASECAMP_PARENT_SESSION, process.env.BASECAMP_SESSION_NAME ?? "session-name");
 			assert.equal(outbound.spec.env.BASECAMP_AGENT_TITLE, "(Agent) hello world");
+			assert.equal(outbound.spec.env.BASECAMP_AGENT_HANDLE, outbound.agent_handle);
 			assert.match(outbound.agent_handle ?? "", /^[a-z]+-[a-z]+-[0-9a-f]{6}$/);
 			assert.notEqual(outbound.agent_handle, outbound.agent_id);
 			assert.equal(outbound.agent_type, "ad-hoc");
@@ -902,6 +914,7 @@ describe("daemon async tools", () => {
 		await new Promise((resolve) => setImmediate(resolve));
 		const first = connection.sent[0] as Extract<Frame, { type: "dispatch" }>;
 		assert.match(first.agent_handle ?? "", /^[a-z]+-[a-z]+-[0-9a-f]{6}$/);
+		assert.equal(first.spec.env.BASECAMP_AGENT_HANDLE, first.agent_handle);
 		assert.equal(first.agent_type, "scout");
 		assert.equal(first.run_kind, "named-read-only");
 
@@ -919,6 +932,7 @@ describe("daemon async tools", () => {
 		assert.notEqual(second.run_id, first.run_id);
 		assert.notEqual(second.agent_handle, first.agent_handle);
 		assert.match(second.agent_handle ?? "", /^[a-z]+-[a-z]+-[0-9a-f]{6}$/);
+		assert.equal(second.spec.env.BASECAMP_AGENT_HANDLE, second.agent_handle);
 
 		connection.emit({
 			type: "dispatch_ack",
@@ -1064,6 +1078,7 @@ describe("daemon async tools", () => {
 		assert.equal(dispatch.spec.fork_from, "amber-fox-a1b2c3");
 		assert.equal(dispatch.spec.task, buildAgentTaskText("What did you find?"));
 		assert.match(dispatch.agent_handle ?? "", /^[a-z]+-[a-z]+-[0-9a-f]{6}$/);
+		assert.equal(dispatch.spec.env.BASECAMP_AGENT_HANDLE, dispatch.agent_handle);
 		const agentTitle = dispatch.spec.env.BASECAMP_AGENT_TITLE ?? "";
 		assert.ok(agentTitle.startsWith("(ask → amber-fox-a1b2c3) "));
 
@@ -1421,10 +1436,12 @@ describe("daemon async tools", () => {
 		const priorDepth = process.env.BASECAMP_AGENT_DEPTH;
 		const priorAgentId = process.env.BASECAMP_AGENT_ID;
 		const priorAgentTitle = process.env.BASECAMP_AGENT_TITLE;
+		const priorAgentHandle = process.env.BASECAMP_AGENT_HANDLE;
 
 		process.env.BASECAMP_AGENT_DEPTH = "1";
 		process.env.BASECAMP_AGENT_ID = "agent-xyz";
 		process.env.BASECAMP_AGENT_TITLE = "(scout) do thing";
+		delete process.env.BASECAMP_AGENT_HANDLE;
 
 		try {
 			const identity = deriveDaemonIdentity({
@@ -1432,6 +1449,7 @@ describe("daemon async tools", () => {
 			} as any);
 			assert.equal(identity.session_name, "(scout) do thing [9f3c]");
 			assert.equal(identity.role, "agent");
+			assert.match(identity.agent_handle, /^[a-z]+-[a-z]+-[0-9a-f]{6}$/);
 		} finally {
 			if (priorDepth === undefined) delete process.env.BASECAMP_AGENT_DEPTH;
 			else process.env.BASECAMP_AGENT_DEPTH = priorDepth;
@@ -1439,6 +1457,8 @@ describe("daemon async tools", () => {
 			else process.env.BASECAMP_AGENT_ID = priorAgentId;
 			if (priorAgentTitle === undefined) delete process.env.BASECAMP_AGENT_TITLE;
 			else process.env.BASECAMP_AGENT_TITLE = priorAgentTitle;
+			if (priorAgentHandle === undefined) delete process.env.BASECAMP_AGENT_HANDLE;
+			else process.env.BASECAMP_AGENT_HANDLE = priorAgentHandle;
 		}
 	});
 
@@ -1446,17 +1466,20 @@ describe("daemon async tools", () => {
 		const priorDepth = process.env.BASECAMP_AGENT_DEPTH;
 		const priorAgentId = process.env.BASECAMP_AGENT_ID;
 		const priorAgentTitle = process.env.BASECAMP_AGENT_TITLE;
+		const priorAgentHandle = process.env.BASECAMP_AGENT_HANDLE;
 		const priorSessionName = process.env.BASECAMP_SESSION_NAME;
 
 		process.env.BASECAMP_AGENT_DEPTH = "1";
 		process.env.BASECAMP_AGENT_ID = "agent-fallback";
 		delete process.env.BASECAMP_AGENT_TITLE;
+		delete process.env.BASECAMP_AGENT_HANDLE;
 
 		try {
 			const identity = deriveDaemonIdentity({
 				sessionManager: { getSessionId: () => "session-id" },
 			} as any);
 			assert.equal(identity.session_name, process.env.BASECAMP_SESSION_NAME ?? "agent-fallback");
+			assert.match(identity.agent_handle, /^[a-z]+-[a-z]+-[0-9a-f]{6}$/);
 		} finally {
 			if (priorDepth === undefined) delete process.env.BASECAMP_AGENT_DEPTH;
 			else process.env.BASECAMP_AGENT_DEPTH = priorDepth;
@@ -1464,8 +1487,88 @@ describe("daemon async tools", () => {
 			else process.env.BASECAMP_AGENT_ID = priorAgentId;
 			if (priorAgentTitle === undefined) delete process.env.BASECAMP_AGENT_TITLE;
 			else process.env.BASECAMP_AGENT_TITLE = priorAgentTitle;
+			if (priorAgentHandle === undefined) delete process.env.BASECAMP_AGENT_HANDLE;
+			else process.env.BASECAMP_AGENT_HANDLE = priorAgentHandle;
 			if (priorSessionName === undefined) delete process.env.BASECAMP_SESSION_NAME;
 			else process.env.BASECAMP_SESSION_NAME = priorSessionName;
+		}
+	});
+
+	it("deriveDaemonIdentity builds a stable canonical handle for top-level sessions", () => {
+		const priorDepth = process.env.BASECAMP_AGENT_DEPTH;
+		const priorAgentId = process.env.BASECAMP_AGENT_ID;
+		const priorAgentHandle = process.env.BASECAMP_AGENT_HANDLE;
+
+		delete process.env.BASECAMP_AGENT_DEPTH;
+		delete process.env.BASECAMP_AGENT_ID;
+		delete process.env.BASECAMP_AGENT_HANDLE;
+
+		try {
+			const ctx = { sessionManager: { getSessionId: () => "session-stable-123" } } as any;
+			const first = deriveDaemonIdentity(ctx);
+			const second = deriveDaemonIdentity(ctx);
+			assert.equal(first.role, "session");
+			assert.equal(first.agent_handle, second.agent_handle);
+			assert.match(first.agent_handle, /^[a-z]+-[a-z]+-[0-9a-f]{6}$/);
+			assert.notEqual(first.agent_handle, "session-stable-123");
+		} finally {
+			if (priorDepth === undefined) delete process.env.BASECAMP_AGENT_DEPTH;
+			else process.env.BASECAMP_AGENT_DEPTH = priorDepth;
+			if (priorAgentId === undefined) delete process.env.BASECAMP_AGENT_ID;
+			else process.env.BASECAMP_AGENT_ID = priorAgentId;
+			if (priorAgentHandle === undefined) delete process.env.BASECAMP_AGENT_HANDLE;
+			else process.env.BASECAMP_AGENT_HANDLE = priorAgentHandle;
+		}
+	});
+
+	it("deriveDaemonIdentity ignores BASECAMP_AGENT_HANDLE for top-level sessions", () => {
+		const priorDepth = process.env.BASECAMP_AGENT_DEPTH;
+		const priorAgentId = process.env.BASECAMP_AGENT_ID;
+		const priorAgentHandle = process.env.BASECAMP_AGENT_HANDLE;
+
+		delete process.env.BASECAMP_AGENT_DEPTH;
+		delete process.env.BASECAMP_AGENT_ID;
+		process.env.BASECAMP_AGENT_HANDLE = "quiet-badger-3dc450";
+
+		try {
+			const ctx = { sessionManager: { getSessionId: () => "session-stable-123" } } as any;
+			const first = deriveDaemonIdentity(ctx);
+			const second = deriveDaemonIdentity(ctx);
+			assert.equal(first.role, "session");
+			assert.notEqual(first.agent_handle, "quiet-badger-3dc450");
+			assert.equal(first.agent_handle, second.agent_handle);
+			assert.match(first.agent_handle, /^[a-z]+-[a-z]+-[0-9a-f]{6}$/);
+		} finally {
+			if (priorDepth === undefined) delete process.env.BASECAMP_AGENT_DEPTH;
+			else process.env.BASECAMP_AGENT_DEPTH = priorDepth;
+			if (priorAgentId === undefined) delete process.env.BASECAMP_AGENT_ID;
+			else process.env.BASECAMP_AGENT_ID = priorAgentId;
+			if (priorAgentHandle === undefined) delete process.env.BASECAMP_AGENT_HANDLE;
+			else process.env.BASECAMP_AGENT_HANDLE = priorAgentHandle;
+		}
+	});
+
+	it("deriveDaemonIdentity prefers BASECAMP_AGENT_HANDLE for spawned agents", () => {
+		const priorDepth = process.env.BASECAMP_AGENT_DEPTH;
+		const priorAgentId = process.env.BASECAMP_AGENT_ID;
+		const priorAgentHandle = process.env.BASECAMP_AGENT_HANDLE;
+
+		process.env.BASECAMP_AGENT_DEPTH = "1";
+		process.env.BASECAMP_AGENT_ID = "agent-spawned";
+		process.env.BASECAMP_AGENT_HANDLE = "quiet-badger-3dc450";
+
+		try {
+			const identity = deriveDaemonIdentity({ sessionManager: { getSessionId: () => "child-session" } } as any);
+			assert.equal(identity.role, "agent");
+			assert.equal(identity.node_id, "agent-spawned");
+			assert.equal(identity.agent_handle, "quiet-badger-3dc450");
+		} finally {
+			if (priorDepth === undefined) delete process.env.BASECAMP_AGENT_DEPTH;
+			else process.env.BASECAMP_AGENT_DEPTH = priorDepth;
+			if (priorAgentId === undefined) delete process.env.BASECAMP_AGENT_ID;
+			else process.env.BASECAMP_AGENT_ID = priorAgentId;
+			if (priorAgentHandle === undefined) delete process.env.BASECAMP_AGENT_HANDLE;
+			else process.env.BASECAMP_AGENT_HANDLE = priorAgentHandle;
 		}
 	});
 });

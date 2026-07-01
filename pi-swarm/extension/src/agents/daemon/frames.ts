@@ -2,7 +2,7 @@ import { Buffer } from "node:buffer";
 
 // Gates every client-visible daemon capability, not just WebSocket frame shapes.
 // This includes HTTP endpoints like /runs/summary, so stale daemons restart.
-export const PROTOCOL_VERSION = 13;
+export const PROTOCOL_VERSION = 14;
 
 export interface RegisterFrame {
 	type: "register";
@@ -148,11 +148,14 @@ export interface PeerMessageAckFrame {
 	error?: string | null;
 }
 
+export type PeerMessageRelation = "self" | "parent" | "ancestor" | "child" | "descendant" | "peer" | "unknown";
+
 export interface PeerMessageDeliveryFrame {
 	type: "peer_message_delivery";
 	v: typeof PROTOCOL_VERSION;
 	message_id: string;
 	from_handle: string | null;
+	from_relation: PeerMessageRelation;
 	message: string;
 	interrupt: boolean;
 }

@@ -1,6 +1,6 @@
 # Asynchronous Multi-Agent System — Design
 
-**Status:** Phase 1 IMPLEMENTED (walking skeleton); Phase 2a ACL foundation implemented; Phase 2b live-only collaboration implemented for fork-based `ask_agent` plus store-backed one-way `message_agent` / `message_status`; async-only public surface implemented (wire protocol v13) · **Scope:** Design + status tracking for later phases · **Roadmap:** Offline re-task-on-message and Phases 3–5 remain design targets
+**Status:** Phase 1 IMPLEMENTED (walking skeleton); Phase 2a ACL foundation implemented; Phase 2b live-only collaboration implemented for fork-based `ask_agent` plus store-backed one-way `message_agent` / `message_status`; canonical session/agent handles implemented (wire protocol v14) · **Scope:** Design + status tracking for later phases · **Roadmap:** Offline re-task-on-message and Phases 3–5 remain design targets
 
 This document describes the target architecture for basecamp's asynchronous, collaborating subagents, coordinated by a global, single-host daemon. It captures the converged design, the decisions and rejected alternatives behind it, the risk register, and the phased roadmap.
 
@@ -212,6 +212,7 @@ The spawning extension and daemon rely on injected environment values.
 | `BASECAMP_AGENT_ID` | New | Durable agent identity for runs/thread continuity. |
 | `BASECAMP_SIBLING_GROUP` | New | Sibling-group identifier used by peer ACL checks. |
 | `BASECAMP_AGENT_TITLE` | New | Deterministic, human-readable session title for an async agent — a parenthesized agent name (or `Agent` for ad-hoc) plus a compact task label. The spawned agent appends a `[<4hex>]` session-id suffix and applies it as its session name (§6.6). |
+| `BASECAMP_AGENT_HANDLE` | New | Canonical public handle for a spawned agent. Top-level sessions derive the same handle shape from session identity during registration. |
 
 The daemon derives relationship graph membership and effective depth from these values. ACL and graph-rule details are defined in §7. Worktree identity is not a daemon-owned env value: it travels in the spawn spec (the `--worktree-dir` argument, §6.2) alongside basecamp's existing `BASECAMP_WORKTREE_DIR` / `BASECAMP_WORKTREE_LABEL` session env.
 
@@ -312,7 +313,7 @@ The agent contract provides no reset/compact operation. To obtain a clean slate,
 
 ### 6.6 Agent identity & session storage (Phase 1 refinements)
 
-Making an async agent a *first-class persistent entity* (not a throwaway like the former synchronous subagent) required three identity refinements on the async path.
+Making an async agent a *first-class persistent entity* (not a throwaway like the former synchronous subagent) required identity refinements on the async path. Later collaboration work extended the same public-handle model to top-level sessions.
 
 - **Repo association.** An agent's repo identity is derived by pi from the process's startup cwd (`resolveGitInfo` runs `git rev-parse --show-toplevel` and takes `repoName` from the toplevel's basename). `dispatch_agent` therefore sets the spawn-spec working directory to the **repo root** (`workspace.protectedRoot ?? workspace.repo.root ?? launchCwd ?? cwd`), not the active worktree. The `--worktree-dir` argument still travels in the argv and auto-attaches the worktree at the agent's `session_start`, so `effectiveCwd` becomes the worktree and all file work lands there. Net effect: the agent's pi session is associated with the real repo (e.g. `basecamp`) — mirroring its parent — while still doing work in the shared worktree.
 
@@ -320,19 +321,21 @@ Making an async agent a *first-class persistent entity* (not a throwaway like th
 
 - **Durable, distinct session store keyed by `agent_id`.** The agent's `.jsonl` thread is the basis of re-tasking (§6.4), so it must both survive and be addressable from the agent's identity. `dispatch_agent` generates the agent id (a UUID) and threads that one value through everything: it passes `--session-id <agent-id>` (so pi's session id *is* the agent id, creating it if missing), `--session-dir ~/.pi/basecamp/swarm/agents/<agent-id>/session/` (durable, basecamp-owned, alongside `daemon.db`/`daemon.sock`), and the same id as `agent_id` in the dispatch frame so the daemon's agent row and the register `node_id` share it (the daemon honours `frame.agent_id`, minting one only as a fallback when absent). Two properties matter: the store is **durable** (unlike `$TMPDIR`, which the OS clears and which would destroy resumability) and **distinct** from pi's default store (`~/.pi/agent/sessions/--<cwd>--/`) — an async agent should read as a separate entity, resumable by the daemon, not an ordinary user-continuable session cluttering the user's session browser. Because `agent_id == pi session id == session-dir key == node_id`, the daemon resolves an agent's thread path deterministically (no filename parsing), the `[<4hex>]` title suffix is stable across re-tasks, and a re-task resumes the same thread via `--session-id`.
 
+- **Canonical public handles for all daemon nodes.** Every registered node has one public `agent_handle` with the same adjective-noun-hash shape, whether the node is a top-level/root session or a dispatched worker. Spawned agents receive the handle through `BASECAMP_AGENT_HANDLE`; sessions derive a stable handle from session identity. Relationship labels (`parent`, `child`, `peer`) are rendered separately and are never routable aliases. Capability remains separate from identity: sessions are messageable and askable when visible, but they are not dispatchable, retaskable, or awaitable worker targets.
+
 ## 7. Collaboration, safety & limits
 
 ### 7.1 Relationship graph & ACL
 
 The daemon is the authority for the relationship graph, derived from the injected environment contract in §5.4. Top-level sessions and agents are nodes in a **single id space**: a node's own id is `BASECAMP_AGENT_ID` (for a top-level session, its session id occupies the same field), and `BASECAMP_PARENT_SESSION` carries the parent node's id regardless of whether the parent is a top-level session or another agent. Parent/child edges are formed from those two ids; a sibling cohort is keyed by `BASECAMP_SIBLING_GROUP` for agents spawned together by one parent. The single id space is what lets an agent-parent and a session-parent be represented uniformly.
 
-Access control is **DEFAULT-DENY** and enforced daemon-side on every peer message, spawn, and `wait_for_agent` registration. Visibility is limited to three directions only:
+Access control is **DEFAULT-DENY** and enforced daemon-side on every peer message, ask/fork, dispatch/retask, and `wait_for_agent` request. Visibility is limited to three directions only:
 
 - upward to the caller's parent (escalation),
 - downward to its descendants,
 - lateral to its sibling group.
 
-Everything else is denied. In particular, unrelated top-level session nodes are never peers: a top-level session has no parent edge, so top-level sessions (including sessions from different repos sharing the same host-global daemon) cannot enumerate, message, spawn against, or wait on each other's agents.
+Everything else is denied. In particular, unrelated top-level session nodes are never peers: a top-level session has no parent edge, so top-level sessions (including sessions from different repos sharing the same host-global daemon) cannot enumerate, message, ask, dispatch against, or wait on each other's agents.
 
 ### 7.2 Peer messaging — store-backed one-way delivery (implemented live-only slice)
 
@@ -342,12 +345,12 @@ Everything else is denied. In particular, unrelated top-level session nodes are 
 { "agent_handle": "target-handle", "message": "...", "interrupt": false }
 ```
 
-The daemon resolves the public target handle, enforces the same default-deny relationship ACL used by `ask_agent` (ancestor, descendant, or same sibling group), persists a `messages` row, and immediately returns a `message_id` plus acceptance status. Missing and unauthorized targets both return `unknown` without a message id, so existence is not leaked. Private `agent_id` and `run_id` values are not exposed through the tool result.
+The daemon resolves the public target handle through the messageable-handle path, enforces the default-deny relationship ACL (ancestor, descendant, or same sibling group), persists a `messages` row, and immediately returns a `message_id` plus acceptance status. The target may be a visible dispatched agent or a visible top-level/session agent; there is no routable `parent` alias. Missing and unauthorized targets both return `unknown` without a message id, so existence is not leaked. Private `agent_id` and `run_id` values are not exposed through the tool result.
 
 Delivery is asynchronous after acceptance:
 
 1. The daemon pushes `peer_message_delivery` to the target's live WebSocket connection.
-2. The recipient extension formats the message with sender context and calls `sendUserMessage(...)` into the recipient's real Pi session/thread.
+2. The recipient extension formats the message as `Message from <handle> (<relation>):` using `from_handle` plus `from_relation` (`self`, `parent`, `ancestor`, `child`, `descendant`, `peer`, or `unknown`), then calls `sendUserMessage(...)` into the recipient's real Pi session/thread.
 3. `interrupt: true` maps to `deliverAs: "steer"`; omitted/false maps to `deliverAs: "followUp"`.
 4. The recipient extension sends `peer_message_delivery_ack` with `queued` immediately after `sendUserMessage` is called and scheduling is accepted, or `failed` when `sendUserMessage` throws synchronously. It does not wait for the delivery promise or the recipient assistant turn to complete.
 
@@ -369,9 +372,9 @@ Result pings from the older target design are not implemented; `wait_for_agent` 
 
 `wait_for_agent` is the explicit join primitive in an async-always model. Dispatch never blocks by itself; a caller that wants synchronous behavior opts in by waiting on one or more agent handles.
 
-The public handle is the durable `agent_id`. Private run/execution ids remain daemon correlation details for process tracking, telemetry, result reporting, and history; they are not the user-facing wait target.
+The public wait target is the canonical `agent_handle`. Private agent/run/execution ids remain daemon correlation details for process tracking, telemetry, result reporting, and history; they are not the user-facing wait target.
 
-Phase 2a implements **wait-ALL** over agent handles. The daemon resolves each agent to its latest primary run and enforces strict dispatcher ownership: only the node that dispatched that agent's current primary run may wait on it. Unauthorized, missing, or no-current-run agents return `unknown` and do not block, matching the missing-handle behavior without leaking existence.
+Phase 2a implements **wait-ALL** over agent handles. The daemon resolves each dispatchable agent to its latest primary run and enforces strict dispatcher ownership: only the node that dispatched that agent's current primary run may wait on it. Unauthorized, missing, no-current-run, or session handles return `unknown` and do not block, matching the missing-handle behavior without leaking existence.
 
 Execution semantics:
 
@@ -384,11 +387,11 @@ Result pings from the earlier target design are not implemented. `wait_for_agent
 
 #### 7.3.1 `list_agents` — root-scoped directory
 
-`list_agents` is a read-only directory for the caller's root session. The daemon returns same-root non-session rows, and the public tool output filters out rows without public handles. LLM-facing entries expose only `agentHandle`, `sessionName`, `role`, `depth`, current primary-run `status`, and `awaitable`.
+`list_agents` is a read-only dispatch/wait directory for the caller's root session. The daemon returns same-root non-session, non-ask rows, and the public tool output filters out rows without public handles. LLM-facing entries expose only `agentHandle`, `sessionName`, `role`, `depth`, current primary-run `status`, and `awaitable`.
 
 The directory is intentionally not an inspection backdoor. It does not expose private agent ids, parent ids, run ids, task prompts, full results, errors, spawn specs, env, or cwd. `awaitable: true` filters to agents whose current primary run the caller may wait on under the dispatcher-owned wait ACL.
 
-This directory is also the discovery surface for peer messaging: use public `agent_handle` / `agentHandle` values from `list_agents` as `message_agent` targets, never private identifiers. It remains intentionally safe metadata only; message payloads, private ids, prompts, env, and spawn specs are not exposed.
+This directory is intentionally not a complete message-target directory. Handles returned from `list_agents` can be messaged, but visible parent/root sessions are messageable by canonical handle even though sessions are excluded from `list_agents`. Use public handles only, never private identifiers. Message payloads, private ids, prompts, env, and spawn specs are not exposed.
 
 ### 7.4 Mutation lease & deadlock detection
 
@@ -432,9 +435,9 @@ Both limits are configurable tunables. They are complementary: depth cap bounds 
 
 `ask_agent` is the first implemented Phase 2b collaboration primitive. It lets a session or agent ask a *permitted* agent a question and get a context-aware answer, without steering or perturbing the target — deliberately sidestepping the live-delivery problem the runner proxy poses (§6.3.1).
 
-**Mechanism.** `ask_agent({ agent_handle, question, timeout_s? })` reuses dispatch + `wait_for_agent` rather than a new frame: the dispatch spec carries an optional `fork_from` (the target's handle/id), and the daemon resolves it to the target's session file and launches the answerer with `pi --fork <abs path>` into a NEW, separate, read-only session. The target's own thread is only read, never written. The answerer runs the question against the target's forked context, and its terminal result (last assistant message) is returned to the requester as the answer. The protocol has carried `fork_from` since v12; the current protocol is v13.
+**Mechanism.** `ask_agent({ agent_handle, question, timeout_s? })` reuses dispatch + `wait_for_agent` rather than a new frame: the dispatch spec carries an optional `fork_from` (the target's handle/id), and the daemon resolves it to the target's session file and launches the answerer with `pi --fork <abs path>` into a NEW, separate, read-only session. The target's own thread is only read, never written. The answerer runs the question against the target's forked context, and its terminal result (last assistant message) is returned to the requester as the answer. The protocol has carried `fork_from` since v12; the current protocol is v14.
 
-**Visibility ACL.** Fork-ask is **DEFAULT-DENY** along the §7.1 directions: a requester may ask only an ancestor, a descendant, or a same-`sibling_group` target. `sibling_group` is populated at dispatch as the dispatcher/parent node id, so all children of one parent are siblings. Unauthorized — and missing — targets are both rejected with the same `fork_target_unknown` reason, so existence is never leaked.
+**Visibility ACL.** Fork-ask is **DEFAULT-DENY** along the §7.1 directions: a requester may ask only an ancestor, a descendant, or a same-`sibling_group` target. Visible session/root targets are askable by canonical handle when their session file can be resolved for the read-only fork. `sibling_group` is populated at dispatch as the dispatcher/parent node id, so all children of one parent are siblings. Unauthorized — and missing — targets are both rejected with the same `fork_target_unknown` reason, so existence is never leaked.
 
 **Logging.** The answerer is a normal agent + run reusing all run storage/telemetry/observability, but typed distinctly (`agent_type = "ask"`) with an `(ask → <target>) <question>` title. Ask runs appear in `/runs/summary` and the companion dashboard but are excluded from `list_agents` (they are consultations, not work agents to retask or await externally).
 
@@ -470,6 +473,8 @@ Both limits are configurable tunables. They are complementary: depth cap bounds 
 - Execution model is async-always; synchronous behavior is expressed via `wait_for_agent`.
 - Delivery uses store-backed one-way peer messages for live recipients; run results are joined explicitly with `wait_for_agent`.
 - ACL is daemon-enforced and derived from injected environment + relationship graph (default-deny).
+- Canonical public handles identify all registered daemon nodes, including top-level sessions; relationship labels are display-only, not target aliases.
+- Messaging/asking capability is separate from dispatch/wait capability: sessions are messageable/askable when visible, but not dispatchable, retaskable, or awaitable worker targets.
 - Message to an offline/no-live-process agent is marked `unavailable` in the current phase; respawn/re-task from a reusable spawn spec is deferred.
 - Shared-worktree mutation safety uses a whole-task mutation lease plus daemon-side deadlock-cycle rejection.
 - The depth cap is retained; a host-global concurrency cap is added.
@@ -496,7 +501,7 @@ Both limits are configurable tunables. They are complementary: depth cap bounds 
   - In scope: `dispatch_agent` returns a public agent handle; `wait_for_agent` accepts agent handles and resolves to private current primary runs; only the immediate dispatcher can wait; unauthorized/missing targets return `unknown`; one active primary run per agent is enforced; `list_agents` provides a root-scoped read-only directory with `awaitable`.
   - Explicitly out of scope: `message_agent`, peer-message delivery, result pings, idle re-task-on-message, and root-scoped message ACL beyond `list_agents`.
 
-- **Phase 2b — Collaboration.** Delivered live-only collaboration primitives: fork-based `ask_agent` consultation (§7.6), store-backed one-way `message_agent`, and `message_status` with optional wait-until-delivery (§7.2). The attempt proxy is bidirectional for daemon-pushed peer deliveries into spawned agents. Result-ping was dropped (`wait_for_agent` is the sole run-result join). Still future: offline/no-live-process re-task-on-message from reusable spawn specs (§6.4).
+- **Phase 2b — Collaboration.** Delivered live-only collaboration primitives: fork-based `ask_agent` consultation (§7.6), store-backed one-way `message_agent`, and `message_status` with optional wait-until-delivery (§7.2). Parent/root sessions now register canonical public handles with the same shape as dispatched agents and are messageable/askable when visible, without becoming dispatchable/retaskable/awaitable worker targets. The attempt proxy is bidirectional for daemon-pushed peer deliveries into spawned agents. Result-ping was dropped (`wait_for_agent` is the sole run-result join). Still future: offline/no-live-process re-task-on-message from reusable spawn specs (§6.4).
 
 - **Phase 3 — Mutation safety.** Goal: ship per-worktree whole-task mutation lease with stale reclaim and daemon-side deadlock cycle rejection using the global wait-for graph (§7.4).
 
@@ -514,7 +519,7 @@ Shared vocabulary; used consistently throughout this document.
 
 - **Daemon** — the single host-global basecamp coordination process (FastAPI/uvicorn over a Unix domain socket).
 - **UDS** — Unix domain socket; the only transport. Local-user only (filesystem permissions); no TCP, no network.
-- **Top-level session** — an interactive pi session a user launched directly. Has no parent in the relationship graph.
+- **Top-level session** — an interactive pi session a user launched directly. Has no parent in the relationship graph; has a canonical public handle but is not dispatchable or awaitable.
 - **Agent** — a durable entity: a SQLite row + a `.jsonl` thread. Persists between tasks; not a process.
 - **Transient agent process** — the ephemeral `pi --mode json -p` child that runs a single task for an agent, then exits.
 - **Thread file** — an agent's pi `.jsonl` session transcript, resumed on re-task to continue its conversation.
@@ -522,9 +527,9 @@ Shared vocabulary; used consistently throughout this document.
 - **Frame** — a message in basecamp's own WebSocket protocol. The daemon speaks only frames; the extension translates pi events and peer-message injections into frames.
 - **Run** — one execution of a task by an agent (one transient process lifetime), tracked in SQLite.
 - **`wait_for_agent`** — the composable blocking tool that lets a caller rejoin one or more agents' results on demand (the async-world replacement for synchronous dispatch).
-- **Peer message** — store-backed, one-way communication between permitted sessions/agents; delivered into a live recipient's real Pi thread via `sendUserMessage`, with offline/no-live targets marked `unavailable` in this phase (§7.2).
+- **Peer message** — store-backed, one-way communication between permitted sessions/agents by canonical handle; delivered into a live recipient's real Pi thread via `sendUserMessage`, with offline/no-live targets marked `unavailable` in this phase (§7.2).
 - **Result ping** — a dropped target-design notification; current run-result synchronization uses `wait_for_agent` instead.
 - **Mutation lease** — the daemon-owned, per-worktree lock a mutative task holds for its full duration to keep the shared worktree coherent.
-- **Relationship graph** — the daemon's parent/child + sibling-group model, derived from injected env, used for ACL and depth.
+- **Relationship graph** — the daemon's parent/child + sibling-group model, derived from injected env, used for ACL, display relation labels, and depth.
 - **Depth cap** — the maximum nesting depth of the spawn tree (default 2), enforced by the daemon from the graph.
 - **Concurrency cap** — the global ceiling on simultaneously-live agent processes; excess spawns queue.

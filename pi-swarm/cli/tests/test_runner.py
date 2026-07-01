@@ -51,6 +51,7 @@ def _context(tmp_path: Path) -> RunnerContext:
         run_id="run-1",
         report_token="token-1",
         agent_id="agent-1",
+        agent_handle="amber-fox-a1b2c3",
         parent_session="session-1",
         agent_depth=1,
         result_path=tmp_path / "result.json",
@@ -158,6 +159,7 @@ def test_attempt_proxy_register_frame_preserves_child_session_name(tmp_path: Pat
     register = proxy._register_frame(child_register)
 
     assert register.node_id == context.agent_id
+    assert register.agent_handle == "amber-fox-a1b2c3"
     assert register.session_name == "(scout) inspect auth [1a2b]"
     assert register.session_name != context.agent_id
 
@@ -315,6 +317,7 @@ def test_attempt_proxy_forwards_unsolicited_peer_message_delivery_from_daemon(tm
         v=PROTOCOL_VERSION,
         message_id="msg-1",
         from_handle="amber-fox-a1b2c3",
+        from_relation="peer",
         message="hello from a peer",
         interrupt=True,
     )

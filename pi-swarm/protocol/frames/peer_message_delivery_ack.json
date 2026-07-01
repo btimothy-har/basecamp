@@ -1,6 +1,6 @@
 {
   "type": "peer_message_delivery_ack",
-  "v": 13,
+  "v": 14,
   "message_id": "msg-001",
   "status": "queued",
   "error": null

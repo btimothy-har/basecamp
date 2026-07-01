@@ -8,7 +8,7 @@ import re
 import sqlite3
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 
 def default_db_path() -> Path:
@@ -43,6 +43,7 @@ MESSAGE_TERMINAL_DELIVERY_STATUSES = (
     MESSAGE_STATUS_UNAVAILABLE,
     MESSAGE_STATUS_UNKNOWN,
 )
+AgentRelation = Literal["self", "parent", "ancestor", "child", "descendant", "peer", "unknown"]
 RUN_SUMMARY_DEFAULT_LIMIT = 5
 RUN_SUMMARY_MAX_LIMIT = 100
 RUN_SUMMARY_PREVIEW_CHARS = 160
@@ -731,6 +732,37 @@ class Store:
     def can_ask(self, requester_node_id: str, target_agent_id: str) -> bool:
         """Return whether requester may fork-ask the target agent."""
 
+        return self._can_reach_agent(requester_node_id, target_agent_id)
+
+    def can_message(self, requester_node_id: str, target_agent_id: str) -> bool:
+        """Return whether requester may send a live peer message to the target."""
+
+        return self._can_reach_agent(requester_node_id, target_agent_id)
+
+    def agent_relation(self, viewer_agent_id: str, other_agent_id: str) -> AgentRelation:
+        """Return how the other agent relates to the viewer."""
+
+        viewer = self.get_agent(viewer_agent_id)
+        other = self.get_agent(other_agent_id)
+        if viewer is None or other is None:
+            return "unknown"
+        if viewer_agent_id == other_agent_id:
+            return "self"
+        if viewer.get("parent_id") == other_agent_id:
+            return "parent"
+        if other.get("parent_id") == viewer_agent_id:
+            return "child"
+        if self._parent_chain_contains(viewer_agent_id, other_agent_id):
+            return "ancestor"
+        if self._parent_chain_contains(other_agent_id, viewer_agent_id):
+            return "descendant"
+
+        viewer_sibling_group = viewer.get("sibling_group")
+        if viewer_sibling_group is not None and viewer_sibling_group == other.get("sibling_group"):
+            return "peer"
+        return "unknown"
+
+    def _can_reach_agent(self, requester_node_id: str, target_agent_id: str) -> bool:
         requester = self.get_agent(requester_node_id)
         target = self.get_agent(target_agent_id)
         if requester is None or target is None:
@@ -871,6 +903,7 @@ class Store:
                 ON r.id = a.current_run_id
                AND r.dispatcher_id = ?
             WHERE a.id IN ({placeholders})
+              AND a.role != 'session'
             """
 
         with self._connect() as connection:
@@ -904,6 +937,7 @@ class Store:
                 ON r.id = a.current_run_id
                AND r.dispatcher_id = ?
             WHERE a.agent_handle IN ({placeholders})
+              AND a.role != 'session'
             """
 
         with self._connect() as connection:

@@ -454,6 +454,7 @@ def test_ws_peer_message_ack_is_immediate_and_delivery_is_forwarded(tmp_path: Pa
                     "v": PROTOCOL_VERSION,
                     "message_id": ack["message_id"],
                     "from_handle": None,
+                    "from_relation": "parent",
                     "message": "hello",
                     "interrupt": True,
                 }
@@ -462,6 +463,63 @@ def test_ws_peer_message_ack_is_immediate_and_delivery_is_forwarded(tmp_path: Pa
     assert message["status"] == "sent"
     assert message["sent_at"] is not None
     assert message["queued_at"] is None
+
+
+def test_ws_peer_message_sessions_and_agents_are_messageable_by_public_handle(tmp_path: Path) -> None:
+    app, store = _build_app_with_store(tmp_path)
+
+    with TestClient(app) as client:
+        with client.websocket_connect("/ws") as root_ws:
+            _register_ws(
+                root_ws,
+                node_id="root",
+                role="session",
+                parent_id=None,
+                sibling_group="sg-root",
+                agent_handle="root-handle",
+            )
+            with client.websocket_connect("/ws") as agent_ws:
+                _register_ws(
+                    agent_ws,
+                    node_id="agent-1",
+                    role="agent",
+                    parent_id="root",
+                    sibling_group="root",
+                    agent_handle="agent-handle",
+                )
+
+                agent_ws.send_json(_peer_message("request-agent-root", target_handle="root-handle", message="to root"))
+                agent_to_root_ack = agent_ws.receive_json()
+                root_delivery = root_ws.receive_json()
+
+                root_ws.send_json(_peer_message("request-root-agent", target_handle="agent-handle", message="to agent"))
+                root_to_agent_ack = root_ws.receive_json()
+                agent_delivery = agent_ws.receive_json()
+
+    assert agent_to_root_ack["status"] == "accepted"
+    assert root_delivery == {
+        "type": "peer_message_delivery",
+        "v": PROTOCOL_VERSION,
+        "message_id": agent_to_root_ack["message_id"],
+        "from_handle": "agent-handle",
+        "from_relation": "child",
+        "message": "to root",
+        "interrupt": False,
+    }
+    assert root_to_agent_ack["status"] == "accepted"
+    assert agent_delivery == {
+        "type": "peer_message_delivery",
+        "v": PROTOCOL_VERSION,
+        "message_id": root_to_agent_ack["message_id"],
+        "from_handle": "root-handle",
+        "from_relation": "parent",
+        "message": "to agent",
+        "interrupt": False,
+    }
+    agent_to_root_message = _wait_for_store_message_status(store, agent_to_root_ack["message_id"], "sent")
+    root_to_agent_message = _wait_for_store_message_status(store, root_to_agent_ack["message_id"], "sent")
+    assert agent_to_root_message["target_handle"] == "root-handle"
+    assert root_to_agent_message["sender_handle"] == "root-handle"
 
 
 def test_ws_peer_message_agent_without_public_handle_delivers_null_from_handle(tmp_path: Path) -> None:
@@ -495,6 +553,7 @@ def test_ws_peer_message_agent_without_public_handle_delivers_null_from_handle(t
 
     assert delivery["message_id"] == message_id
     assert delivery["from_handle"] is None
+    assert delivery["from_relation"] == "peer"
 
 
 def test_ws_peer_message_delivery_ack_queued_updates_status(tmp_path: Path) -> None:

@@ -189,6 +189,7 @@ describe("sanitizeAgentSpawnEnv", () => {
 		const env = sanitizeAgentSpawnEnv({
 			BASECAMP_REPORT_TOKEN: "report-token",
 			BASECAMP_AGENT_ID: "agent-id",
+			BASECAMP_AGENT_HANDLE: "parent-handle",
 			BASECAMP_RUN_ID: "run-id",
 			BASECAMP_DAEMON_UDS: "/tmp/daemon.sock",
 			BASECAMP_PROJECT: "proj",
@@ -201,6 +202,7 @@ describe("sanitizeAgentSpawnEnv", () => {
 
 		assert.equal(env.BASECAMP_REPORT_TOKEN, undefined);
 		assert.equal(env.BASECAMP_AGENT_ID, undefined);
+		assert.equal(env.BASECAMP_AGENT_HANDLE, undefined);
 		assert.equal(env.BASECAMP_RUN_ID, undefined);
 		assert.equal(env.BASECAMP_DAEMON_UDS, undefined);
 		assert.equal(env.BASECAMP_PROJECT, "proj");

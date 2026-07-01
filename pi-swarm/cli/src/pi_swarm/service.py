@@ -47,6 +47,7 @@ DispatchAckReason = Literal[
     "duplicate_agent_handle",
     "agent_type_mismatch",
     "fork_target_unknown",
+    "not_dispatchable",
     "spawn_failed",
 ]
 DispatchRejectionReason = Literal[
@@ -55,6 +56,7 @@ DispatchRejectionReason = Literal[
     "duplicate_agent_handle",
     "agent_type_mismatch",
     "fork_target_unknown",
+    "not_dispatchable",
 ]
 
 
@@ -76,6 +78,7 @@ class PreparedDispatch:
     agent_id: str
     report_token: str
     child_depth: int
+    agent_handle: str | None = None
     fork_source_path: str | None = None
 
 
@@ -111,6 +114,10 @@ def _metadata_mismatches(*, existing: dict[str, Any], frame: DispatchFrame) -> b
     return bool(isinstance(existing_run_kind, str) and frame.run_kind and existing_run_kind != frame.run_kind)
 
 
+def _is_dispatchable_agent(agent: dict[str, Any]) -> bool:
+    return agent.get("role") != "session" and agent.get("agent_type") != "ask"
+
+
 def _resolve_agent_max_depth() -> int:
     raw = os.getenv("BASECAMP_AGENT_MAX_DEPTH")
     try:
@@ -128,10 +135,22 @@ async def prepare_dispatch(
 ) -> PreparedDispatch | DispatchRejection:
     dispatcher = await asyncio.to_thread(store.get_agent, dispatcher_node_id)
     dispatcher_depth = int(dispatcher.get("depth", 0)) if dispatcher else 0
-    existing_agent = None
+    existing_by_handle = None
     if frame.agent_handle:
-        existing_agent = await asyncio.to_thread(store.get_agent_by_handle, frame.agent_handle)
+        existing_by_handle = await asyncio.to_thread(store.get_agent_by_handle, frame.agent_handle)
+    existing_by_id = None
+    if frame.agent_id:
+        existing_by_id = await asyncio.to_thread(store.get_agent, frame.agent_id)
 
+    if (
+        existing_by_handle is not None
+        and existing_by_id is not None
+        and existing_by_handle.get("id") != existing_by_id.get("id")
+    ):
+        return DispatchRejection(reason="duplicate_agent_handle")
+
+    existing_agent = existing_by_handle or existing_by_id
+    resolved_handle = frame.agent_handle
     if existing_agent is not None:
         existing_agent_id = str(existing_agent.get("id"))
         requester_root = await asyncio.to_thread(store.resolve_agent_root, dispatcher_node_id)
@@ -140,8 +159,17 @@ async def prepare_dispatch(
             return DispatchRejection(reason="duplicate_agent_handle")
         if frame.agent_id and frame.agent_id != existing_agent_id:
             return DispatchRejection(reason="duplicate_agent_handle")
+        if not _is_dispatchable_agent(existing_agent):
+            return DispatchRejection(reason="not_dispatchable")
         if _metadata_mismatches(existing=existing_agent, frame=frame):
             return DispatchRejection(reason="agent_type_mismatch")
+        # A reused agent keeps its persisted canonical handle; a caller may not
+        # rename it via a conflicting handle on retask.
+        stored_handle = existing_agent.get("agent_handle")
+        if isinstance(stored_handle, str) and stored_handle:
+            if frame.agent_handle and frame.agent_handle != stored_handle:
+                return DispatchRejection(reason="duplicate_agent_handle")
+            resolved_handle = stored_handle
         agent_id = existing_agent_id
         child_depth = int(existing_agent.get("depth", dispatcher_depth + 1))
     else:
@@ -200,9 +228,9 @@ async def prepare_dispatch(
                 sibling_group=existing_agent.get("sibling_group"),
                 depth=child_depth,
                 role=str(existing_agent.get("role") or "agent"),
-                session_name=str(existing_agent.get("session_name") or frame.agent_handle or agent_id),
+                session_name=str(existing_agent.get("session_name") or resolved_handle or agent_id),
                 cwd=frame.spec.cwd,
-                agent_handle=frame.agent_handle,
+                agent_handle=resolved_handle,
                 agent_type=frame.agent_type,
                 run_kind=frame.run_kind,
                 model=frame.model or "default",
@@ -225,6 +253,7 @@ async def prepare_dispatch(
         agent_id=agent_id,
         report_token=report_token,
         child_depth=child_depth,
+        agent_handle=resolved_handle,
         fork_source_path=fork_source_path,
     )
 
@@ -267,6 +296,7 @@ async def dispatch_agent(
             daemon_socket_path=daemon_socket_path,
             dispatcher_node_id=dispatcher_node_id,
             child_depth=dispatch.child_depth,
+            agent_handle=dispatch.agent_handle,
             fork_source_path=dispatch.fork_source_path,
         )
     except (FileNotFoundError, PermissionError, OSError, ValueError):
@@ -348,7 +378,7 @@ async def accept_peer_message(
 
     target = await asyncio.to_thread(store.get_agent_by_handle, frame.target_handle)
     target_agent_id = target.get("id") if target is not None else None
-    target_handle = _public_agent_handle(target)
+    target_handle = _public_message_handle(target)
     if (
         not isinstance(target_agent_id, str)
         or not isinstance(target_handle, str)
@@ -356,7 +386,7 @@ async def accept_peer_message(
     ):
         return _unknown_peer_message_ack(frame.request_id)
 
-    if not await asyncio.to_thread(store.can_ask, requester_node_id, target_agent_id):
+    if not await asyncio.to_thread(store.can_message, requester_node_id, target_agent_id):
         return _unknown_peer_message_ack(frame.request_id)
 
     root_id = await asyncio.to_thread(store.resolve_agent_root, requester_node_id)
@@ -365,6 +395,7 @@ async def accept_peer_message(
 
     sender = await asyncio.to_thread(store.get_agent, requester_node_id)
     sender_handle = _public_sender_handle(sender)
+    sender_relation = await asyncio.to_thread(store.agent_relation, target_agent_id, requester_node_id)
     message_id = f"msg-{uuid.uuid4()}"
     await asyncio.to_thread(
         store.create_message,
@@ -392,6 +423,7 @@ async def accept_peer_message(
             v=PROTOCOL_VERSION,
             message_id=message_id,
             from_handle=sender_handle,
+            from_relation=sender_relation,
             message=frame.message,
             interrupt=frame.interrupt,
         ),
@@ -476,12 +508,22 @@ def _unknown_peer_message_ack(request_id: str) -> PeerMessageAckFrame:
 
 
 def _public_sender_handle(sender: dict[str, Any] | None) -> str | None:
-    return _public_agent_handle(sender)
+    return _public_message_handle(sender)
+
+
+def _public_message_handle(agent: dict[str, Any] | None) -> str | None:
+    if agent is None or agent.get("role") not in {"agent", "session"}:
+        return None
+    return _public_handle(agent)
 
 
 def _public_agent_handle(agent: dict[str, Any] | None) -> str | None:
     if agent is None or agent.get("role") != "agent":
         return None
+    return _public_handle(agent)
+
+
+def _public_handle(agent: dict[str, Any]) -> str | None:
     handle = agent.get("agent_handle")
     agent_id = agent.get("id")
     if not isinstance(handle, str) or not handle:
