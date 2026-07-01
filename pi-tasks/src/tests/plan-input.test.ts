@@ -128,6 +128,41 @@ describe("normalizePlanExecutionInput", () => {
 		);
 	});
 
+	it("rejects workstream self-dependencies", () => {
+		assert.throws(
+			() =>
+				normalizePlanExecutionInput({
+					...basePlan,
+					workstreams: [
+						{
+							id: "a",
+							label: "A",
+							scope: "Scope",
+							outcome: "Outcome",
+							boundaries: "Boundaries",
+							dependsOn: [" a "],
+						},
+					],
+				}),
+			/workstream 'a' must not depend on itself/,
+		);
+	});
+
+	it("rejects workstream dependency cycles", () => {
+		assert.throws(
+			() =>
+				normalizePlanExecutionInput({
+					...basePlan,
+					workstreams: [
+						{ id: "a", label: "A", scope: "Scope", outcome: "Outcome", boundaries: "Boundaries", dependsOn: ["b"] },
+						{ id: "b", label: "B", scope: "Scope", outcome: "Outcome", boundaries: "Boundaries", dependsOn: ["c"] },
+						{ id: "c", label: "C", scope: "Scope", outcome: "Outcome", boundaries: "Boundaries", dependsOn: ["a"] },
+					],
+				}),
+			/dependency cycle detected: a -> b -> c -> a/,
+		);
+	});
+
 	it("rejects nested tasks on a workstream", () => {
 		assert.throws(
 			() =>

@@ -128,7 +128,7 @@ Once every item is approved and submitted, follow the plan result.
 
 For task plans, analysis-mode plans stay in analysis mode and implementation plans ask for supervisor vs IC/executor posture. If the approved task-plan result includes a scheduled handoff, do not begin implementation in the current turn. End the turn and let Basecamp start the fresh handoff turn so the selected posture prompt is loaded.
 
-For workstream plans, Basecamp runs in supervisor mode without an IC/executor posture prompt. It computes the initial ready set from `dependsOn`, provisions one Basecamp-owned worktree per ready stream, runs setup for newly created ready worktrees, dispatches ready streams as worker agents with self-contained briefs, and records blocked streams without provisioning them. Worktree creation, setup, or launch can fail per stream; inspect any failed entries before continuing. Dispatch success means the daemon accepted the worker launch; the stream still reports its own progress separately. Herdr worktree opening is best-effort display only. Workstreams produce PR-sized branch work; they do not merge or apply changes to `main` automatically. After approval, monitor dispatched worker results and keep blocked streams recorded until an explicit later action starts them.
+For workstream plans, Basecamp uses supervisor mode once at least one workstream dispatch is active, without an IC/executor posture prompt. It computes the initial ready set from `dependsOn`, provisions one Basecamp-owned worktree per ready stream, runs setup for newly created ready worktrees, dispatches ready streams as worker agents with self-contained briefs, and records blocked streams without provisioning them. A single approval launches at most 5 new ready workstreams. The launch receipt is persisted under Basecamp workstream state and returned in the result, including each dispatched stream's agent handle and worktree. Resubmitting or revising the same approved plan reuses already-dispatched receipts for the same derived worktree instead of launching duplicate workers. Worktree creation, setup, or launch can fail per stream; inspect any failed entries before continuing. Setup-failed streams are not retried automatically because the existing worktree may be incomplete. Dispatch success means the daemon accepted the worker launch; the stream still reports its own progress separately. Herdr worktree opening is best-effort display only. Workstreams produce PR-sized branch work; they do not merge or apply changes to `main` automatically. This phase launches only the initial ready wave; blocked streams stay recorded for a future explicit workflow rather than being auto-started.
 
 ---
 
@@ -221,6 +221,6 @@ Required fields:
 
 Optional fields:
 - `worktreeSlug` — custom short kebab-case slug; Basecamp adds user/session prefix. Keep ready-stream slugs distinct, because derived label collisions fail the colliding streams before provisioning.
-- `dependsOn` — ids that must complete before this lane is ready
+- `dependsOn` — ids that must complete before this lane is ready. Cycles and self-dependencies are rejected.
 
 Keep workstreams PR-sized. If outputs need combination, add an explicit integration workstream that depends on the others rather than merging work into `main` from the coordinator.

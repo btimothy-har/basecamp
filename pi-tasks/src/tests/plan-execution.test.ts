@@ -3,9 +3,10 @@ import { afterEach, describe, it } from "node:test";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import type { AgentLauncher } from "pi-core/platform/agent-launcher.ts";
 import type { WorkspaceState } from "pi-core/platform/workspace.ts";
-import { resetAgentMode, setAgentMode } from "pi-core/session/agent-mode.ts";
+import { getAgentMode, resetAgentMode, setAgentMode } from "pi-core/session/agent-mode.ts";
 import { buildApprovedWorkstreamResult, registerPlan } from "../planning/plan.ts";
 import { type PlanDraft, SECTION_NAMES, type WorkstreamPlanDraft } from "../planning/review.ts";
+import type { WorkstreamLaunchState } from "../planning/workstream-state.ts";
 import type { GoalCycle, Task, TasksAccess } from "../tasks/tasks.ts";
 
 interface RegisteredTool {
@@ -115,6 +116,23 @@ function workspaceState(activeWorktree: WorkspaceState["activeWorktree"] = null)
 	};
 }
 
+function memoryStateDeps(state: WorkstreamLaunchState = { version: 1, runs: {} }) {
+	return {
+		getWorkspaceState: () => null,
+		getAgentLauncher: () => null,
+		getOrCreateWorktree: async () => {
+			throw new Error("worktree provisioning should not run");
+		},
+		readWorktreeSetupCommand: () => null,
+		runWorktreeSetup: async () => ({ ran: true as const, exitCode: 0, timedOut: false, stderrTail: "" }),
+		workstreamStateFilePath: () => "/memory/workstreams/register-plan.json",
+		loadWorkstreamLaunchState: () => state,
+		saveWorkstreamLaunchState: (_filePath: string, nextState: WorkstreamLaunchState) => {
+			state.runs = nextState.runs;
+		},
+	};
+}
+
 function successfulLauncher(calls: Parameters<AgentLauncher["launch"]>[0][] = []): AgentLauncher {
 	return {
 		id: "test-launcher",
@@ -186,7 +204,7 @@ describe("plan execution result shapes", () => {
 	it("returns a clear cancellation result for approved workstream plans without workspace state", async () => {
 		const pi = new FakePi();
 		const tasksAccess = new FakeTasksAccess();
-		const access = registerPlan(pi as unknown as ExtensionAPI, tasksAccess);
+		const access = registerPlan(pi as unknown as ExtensionAPI, tasksAccess, memoryStateDeps());
 		const tool = planTool(pi);
 		const params = {
 			goal: "Program goal",
@@ -263,7 +281,7 @@ describe("plan execution result shapes", () => {
 		assert.equal(tasksAccess.activated, null);
 	});
 
-	it("records all-blocked workstream plans without provisioning", async () => {
+	it("defensively records all-blocked direct workstream drafts without provisioning", async () => {
 		const draft = approvedWorkstreamDraft([
 			{
 				id: "core",
@@ -318,6 +336,35 @@ describe("plan execution result shapes", () => {
 		assert.equal(result.workstreams.core.activation_status, undefined);
 		assert.equal(result.workstreams.core.worktree, undefined);
 		assert.equal(result.workstreams.ui.status, "blocked");
+	});
+
+	it("rejects partial workstream state dependency injection", async () => {
+		const draft = approvedWorkstreamDraft([
+			{
+				id: "ready",
+				label: "Ready",
+				scope: "Scope",
+				outcome: "Outcome",
+				boundaries: "Boundaries",
+			},
+		]);
+
+		await assert.rejects(
+			buildApprovedWorkstreamResult(piStub(), draft, contextWithSession("session-partial-state"), {
+				getWorkspaceState: () => workspaceState(),
+				getAgentLauncher: () => successfulLauncher(),
+				getOrCreateWorktree: async (_pi, _repoRoot, _repoName, label, branchName) => ({
+					worktreeDir: `/worktrees/${label}`,
+					label,
+					branch: branchName ?? "detached",
+					created: true,
+				}),
+				readWorktreeSetupCommand: () => null,
+				runWorktreeSetup: async () => ({ ran: true, exitCode: 0, timedOut: false, stderrTail: "" }),
+				loadWorkstreamLaunchState: () => ({ version: 1, runs: {} }),
+			}),
+			/state test dependencies must inject path, load, and save together/,
+		);
 	});
 
 	it("provisions and launches ready workstreams with derived worktree context", async () => {
@@ -965,5 +1012,458 @@ describe("plan execution result shapes", () => {
 		assert.equal(result.workstreams.ready.activation_status, "activated");
 		assert.equal(workspace.activeWorktree, activeWorktree);
 		assert.equal(process.env.BASECAMP_REPO_ROOT, "coordinator-root");
+	});
+
+	it("reuses persisted dispatched receipts for the same deterministic workstream plan", async () => {
+		process.env.USER = "Test User";
+		const state: WorkstreamLaunchState = { version: 1, runs: {} };
+		const draft = approvedWorkstreamDraft([
+			{
+				id: "ready",
+				label: "Ready",
+				scope: "Scope",
+				outcome: "Outcome",
+				boundaries: "Boundaries",
+			},
+		]);
+		let createCalls = 0;
+		let launchCalls = 0;
+		const deps = {
+			getWorkspaceState: () => workspaceState(),
+			getAgentLauncher: () => ({
+				id: "test-launcher",
+				async launch(input: Parameters<AgentLauncher["launch"]>[0]) {
+					launchCalls++;
+					return { ok: true as const, agentHandle: `worker-${launchCalls}`, agent: input.agent ?? "worker" };
+				},
+			}),
+			getOrCreateWorktree: async (
+				_pi: ExtensionAPI,
+				_repoRoot: string,
+				_repoName: string,
+				label: string,
+				branchName?: string | null,
+			) => {
+				createCalls++;
+				return { worktreeDir: `/worktrees/${label}`, label, branch: branchName ?? "detached", created: true };
+			},
+			readWorktreeSetupCommand: () => null,
+			runWorktreeSetup: async () => ({ ran: true as const, exitCode: 0, timedOut: false, stderrTail: "" }),
+			workstreamStateFilePath: () => "/memory/workstreams/session-repeat.json",
+			loadWorkstreamLaunchState: () => state,
+			saveWorkstreamLaunchState: (_filePath: string, nextState: WorkstreamLaunchState) => {
+				state.runs = nextState.runs;
+			},
+			now: () => "2026-01-01T00:00:00.000Z",
+		};
+
+		const first = parseWorkstreamResult(
+			await buildApprovedWorkstreamResult(piStub(), draft, contextWithSession("session-repeat"), deps),
+		);
+		const second = parseWorkstreamResult(
+			await buildApprovedWorkstreamResult(piStub(), draft, contextWithSession("session-repeat"), deps),
+		);
+
+		assert.equal(first.plan_id, second.plan_id);
+		assert.equal(createCalls, 1);
+		assert.equal(launchCalls, 1);
+		assert.equal(second.workstreams.ready.reused_agent, true);
+		assert.equal(second.workstreams.ready.launch_status, "dispatched");
+		assert.deepEqual(second.workstreams.ready.agent, { handle: "worker-1", type: "worker" });
+		assert.deepEqual(second.workstreams.ready.worktree, {
+			label: "wt-te/peat-ready",
+			path: "/worktrees/wt-te/peat-ready",
+			branch: "te/peat-ready",
+			created: true,
+		});
+
+		const editedDraft = approvedWorkstreamDraft([
+			{
+				id: "ready",
+				label: "Ready",
+				scope: "Updated scope",
+				outcome: "Outcome",
+				boundaries: "Boundaries",
+			},
+		]);
+		const third = parseWorkstreamResult(
+			await buildApprovedWorkstreamResult(piStub(), editedDraft, contextWithSession("session-repeat"), deps),
+		);
+
+		assert.notEqual(first.plan_id, third.plan_id);
+		assert.equal(createCalls, 1);
+		assert.equal(launchCalls, 1);
+		assert.equal(third.workstreams.ready.reused_agent, true);
+		assert.deepEqual(third.workstreams.ready.agent, { handle: "worker-1", type: "worker" });
+	});
+
+	it("carries forward persisted setup failures without unsafe auto-retry", async () => {
+		process.env.USER = "Test User";
+		const state: WorkstreamLaunchState = { version: 1, runs: {} };
+		const draft = approvedWorkstreamDraft([
+			{
+				id: "ready",
+				label: "Ready",
+				scope: "Scope",
+				outcome: "Outcome",
+				boundaries: "Boundaries",
+			},
+		]);
+		let createCalls = 0;
+		let setupCalls = 0;
+		let launchCalls = 0;
+		const deps = {
+			getWorkspaceState: () => workspaceState(),
+			getAgentLauncher: () => ({
+				id: "test-launcher",
+				async launch() {
+					launchCalls++;
+					return { ok: true as const, agentHandle: "worker", agent: "worker" };
+				},
+			}),
+			getOrCreateWorktree: async (
+				_pi: ExtensionAPI,
+				_repoRoot: string,
+				_repoName: string,
+				label: string,
+				branchName?: string | null,
+			) => {
+				createCalls++;
+				return { worktreeDir: `/worktrees/${label}`, label, branch: branchName ?? "detached", created: true };
+			},
+			readWorktreeSetupCommand: () => "setup",
+			runWorktreeSetup: async () => {
+				setupCalls++;
+				return { ran: true as const, exitCode: 1, timedOut: false, stderrTail: "failed" };
+			},
+			workstreamStateFilePath: () => "/memory/workstreams/session-setup-failed.json",
+			loadWorkstreamLaunchState: () => state,
+			saveWorkstreamLaunchState: (_filePath: string, nextState: WorkstreamLaunchState) => {
+				state.runs = nextState.runs;
+			},
+		};
+
+		const first = parseWorkstreamResult(
+			await buildApprovedWorkstreamResult(piStub(), draft, contextWithSession("session-setup-failed"), deps),
+		);
+		const second = parseWorkstreamResult(
+			await buildApprovedWorkstreamResult(piStub(), draft, contextWithSession("session-setup-failed"), deps),
+		);
+
+		assert.equal(first.workstreams.ready.activation_status, "failed");
+		assert.equal(first.workstreams.ready.failure_stage, "setup");
+		assert.equal(createCalls, 1);
+		assert.equal(setupCalls, 1);
+		assert.equal(launchCalls, 0);
+		assert.equal(second.workstreams.ready.activation_status, "failed");
+		assert.equal(second.workstreams.ready.failure_stage, "setup");
+		assert.equal(second.workstreams.ready.message, "Worktree setup exited 1.");
+	});
+
+	it("retries persisted launch failures because no worker owns the worktree", async () => {
+		process.env.USER = "Test User";
+		const state: WorkstreamLaunchState = { version: 1, runs: {} };
+		const draft = approvedWorkstreamDraft([
+			{
+				id: "ready",
+				label: "Ready",
+				scope: "Scope",
+				outcome: "Outcome",
+				boundaries: "Boundaries",
+			},
+		]);
+		let createCalls = 0;
+		let launchCalls = 0;
+		const deps = {
+			getWorkspaceState: () => workspaceState(),
+			getAgentLauncher: () => ({
+				id: "failing-launcher",
+				async launch() {
+					launchCalls++;
+					return { ok: false as const, agent: "worker", message: "daemon rejected launch" };
+				},
+			}),
+			getOrCreateWorktree: async (
+				_pi: ExtensionAPI,
+				_repoRoot: string,
+				_repoName: string,
+				label: string,
+				branchName?: string | null,
+			) => {
+				createCalls++;
+				return { worktreeDir: `/worktrees/${label}`, label, branch: branchName ?? "detached", created: false };
+			},
+			readWorktreeSetupCommand: () => null,
+			runWorktreeSetup: async () => ({ ran: true as const, exitCode: 0, timedOut: false, stderrTail: "" }),
+			workstreamStateFilePath: () => "/memory/workstreams/session-launch-failed.json",
+			loadWorkstreamLaunchState: () => state,
+			saveWorkstreamLaunchState: (_filePath: string, nextState: WorkstreamLaunchState) => {
+				state.runs = nextState.runs;
+			},
+		};
+
+		await buildApprovedWorkstreamResult(piStub(), draft, contextWithSession("session-launch-failed"), deps);
+		const second = parseWorkstreamResult(
+			await buildApprovedWorkstreamResult(piStub(), draft, contextWithSession("session-launch-failed"), deps),
+		);
+
+		assert.equal(createCalls, 2);
+		assert.equal(launchCalls, 2);
+		assert.equal(second.workstreams.ready.launch_status, "failed");
+		assert.equal(second.workstreams.ready.failure_stage, "launch");
+	});
+
+	it("allows exactly five new ready workstreams to launch", async () => {
+		process.env.USER = "Test User";
+		const state: WorkstreamLaunchState = { version: 1, runs: {} };
+		const draft = approvedWorkstreamDraft(
+			Array.from({ length: 5 }, (_, index) => ({
+				id: `ready-${index}`,
+				label: `Ready ${index}`,
+				scope: "Scope",
+				outcome: "Outcome",
+				boundaries: "Boundaries",
+			})),
+		);
+		let createCalls = 0;
+		let launchCalls = 0;
+
+		const result = parseWorkstreamResult(
+			await buildApprovedWorkstreamResult(piStub(), draft, contextWithSession("session-five"), {
+				getWorkspaceState: () => workspaceState(),
+				getAgentLauncher: () => ({
+					id: "test-launcher",
+					async launch(input: Parameters<AgentLauncher["launch"]>[0]) {
+						launchCalls++;
+						return { ok: true as const, agentHandle: `worker-${launchCalls}`, agent: input.agent ?? "worker" };
+					},
+				}),
+				getOrCreateWorktree: async (_pi, _repoRoot, _repoName, label, branchName) => {
+					createCalls++;
+					return { worktreeDir: `/worktrees/${label}`, label, branch: branchName ?? "detached", created: true };
+				},
+				readWorktreeSetupCommand: () => null,
+				runWorktreeSetup: async () => ({ ran: true, exitCode: 0, timedOut: false, stderrTail: "" }),
+				workstreamStateFilePath: () => "/memory/workstreams/session-five.json",
+				loadWorkstreamLaunchState: () => state,
+				saveWorkstreamLaunchState: (_filePath, nextState) => {
+					state.runs = nextState.runs;
+				},
+			}),
+		);
+
+		assert.equal(createCalls, 5);
+		assert.equal(launchCalls, 5);
+		assert.equal(result.handoff_status, "workstreams_dispatched");
+		assert.deepEqual(result.workstream_progress, {
+			ready: 5,
+			blocked: 0,
+			activated: 5,
+			dispatched: 5,
+			failed: 0,
+			total: 5,
+		});
+	});
+
+	it("caps only new ready launches when persisted receipts already exist", async () => {
+		process.env.USER = "Test User";
+		const state: WorkstreamLaunchState = { version: 1, runs: {} };
+		let createCalls = 0;
+		let launchCalls = 0;
+		const deps = {
+			getWorkspaceState: () => workspaceState(),
+			getAgentLauncher: () => ({
+				id: "test-launcher",
+				async launch(input: Parameters<AgentLauncher["launch"]>[0]) {
+					launchCalls++;
+					return { ok: true as const, agentHandle: `worker-${launchCalls}`, agent: input.agent ?? "worker" };
+				},
+			}),
+			getOrCreateWorktree: async (
+				_pi: ExtensionAPI,
+				_repoRoot: string,
+				_repoName: string,
+				label: string,
+				branchName?: string | null,
+			) => {
+				createCalls++;
+				return { worktreeDir: `/worktrees/${label}`, label, branch: branchName ?? "detached", created: true };
+			},
+			readWorktreeSetupCommand: () => null,
+			runWorktreeSetup: async () => ({ ran: true as const, exitCode: 0, timedOut: false, stderrTail: "" }),
+			workstreamStateFilePath: () => "/memory/workstreams/session-mixed-cap.json",
+			loadWorkstreamLaunchState: () => state,
+			saveWorkstreamLaunchState: (_filePath: string, nextState: WorkstreamLaunchState) => {
+				state.runs = nextState.runs;
+			},
+		};
+		const firstDraft = approvedWorkstreamDraft(
+			Array.from({ length: 3 }, (_, index) => ({
+				id: `existing-${index}`,
+				label: `Existing ${index}`,
+				scope: "Scope",
+				outcome: "Outcome",
+				boundaries: "Boundaries",
+			})),
+		);
+		await buildApprovedWorkstreamResult(piStub(), firstDraft, contextWithSession("session-mixed-cap"), deps);
+
+		const secondDraft = approvedWorkstreamDraft(
+			Array.from({ length: 7 }, (_, index) => ({
+				id: index < 3 ? `existing-${index}` : `new-${index}`,
+				label: index < 3 ? `Existing ${index}` : `New ${index}`,
+				scope: index < 3 ? "Edited scope" : "Scope",
+				outcome: "Outcome",
+				boundaries: "Boundaries",
+			})),
+		);
+		const result = parseWorkstreamResult(
+			await buildApprovedWorkstreamResult(piStub(), secondDraft, contextWithSession("session-mixed-cap"), deps),
+		);
+
+		assert.equal(createCalls, 7);
+		assert.equal(launchCalls, 7);
+		assert.equal(result.handoff_status, "workstreams_dispatched");
+		assert.equal(result.workstreams["existing-0"].reused_agent, true);
+		assert.deepEqual(result.workstream_progress, {
+			ready: 7,
+			blocked: 0,
+			activated: 7,
+			dispatched: 7,
+			failed: 0,
+			total: 7,
+		});
+	});
+
+	it("cancels before provisioning when more than five new ready workstreams would launch", async () => {
+		const state: WorkstreamLaunchState = { version: 1, runs: {} };
+		const draft = approvedWorkstreamDraft(
+			Array.from({ length: 6 }, (_, index) => ({
+				id: `ready-${index}`,
+				label: `Ready ${index}`,
+				scope: "Scope",
+				outcome: "Outcome",
+				boundaries: "Boundaries",
+			})),
+		);
+		let createCalls = 0;
+		let launchCalls = 0;
+
+		const result = parseWorkstreamResult(
+			await buildApprovedWorkstreamResult(piStub(), draft, contextWithSession("session-cap"), {
+				getWorkspaceState: () => workspaceState(),
+				getAgentLauncher: () => ({
+					id: "test-launcher",
+					async launch() {
+						launchCalls++;
+						return { ok: true as const, agentHandle: "worker", agent: "worker" };
+					},
+				}),
+				getOrCreateWorktree: async (_pi, _repoRoot, _repoName, label, branchName) => {
+					createCalls++;
+					return { worktreeDir: `/worktrees/${label}`, label, branch: branchName ?? "detached", created: true };
+				},
+				readWorktreeSetupCommand: () => null,
+				runWorktreeSetup: async () => ({ ran: true, exitCode: 0, timedOut: false, stderrTail: "" }),
+				workstreamStateFilePath: () => "/memory/workstreams/session-cap.json",
+				loadWorkstreamLaunchState: () => state,
+				saveWorkstreamLaunchState: (_filePath, nextState) => {
+					state.runs = nextState.runs;
+				},
+			}),
+		);
+
+		assert.equal(createCalls, 0);
+		assert.equal(launchCalls, 0);
+		assert.equal(result.status, "handoff_cancelled");
+		assert.equal(result.handoff_status, "workstream_launch_cancelled");
+		assert.equal(result.workstreams["ready-0"].failure_stage, "cap");
+		assert.match(result.message, /exceed the configured cap of 5/);
+		assert.deepEqual(result.workstream_progress, {
+			ready: 6,
+			blocked: 0,
+			activated: 0,
+			dispatched: 0,
+			failed: 6,
+			total: 6,
+		});
+		assert.equal(Object.keys(state.runs).length, 1);
+	});
+
+	it("sets supervisor mode after an approved workstream dispatch", async () => {
+		setAgentMode("analysis");
+		const state: WorkstreamLaunchState = { version: 1, runs: {} };
+		const pi = new FakePi();
+		const tasksAccess = new FakeTasksAccess();
+		const access = registerPlan(pi as unknown as ExtensionAPI, tasksAccess, {
+			getWorkspaceState: () => workspaceState(),
+			getAgentLauncher: () => successfulLauncher(),
+			getOrCreateWorktree: async (_pi, _repoRoot, _repoName, label, branchName) => ({
+				worktreeDir: `/worktrees/${label}`,
+				label,
+				branch: branchName ?? "detached",
+				created: true,
+			}),
+			readWorktreeSetupCommand: () => null,
+			runWorktreeSetup: async () => ({ ran: true, exitCode: 0, timedOut: false, stderrTail: "" }),
+			workstreamStateFilePath: () => "/memory/workstreams/register-plan.json",
+			loadWorkstreamLaunchState: () => state,
+			saveWorkstreamLaunchState: (_filePath, nextState) => {
+				state.runs = nextState.runs;
+			},
+		});
+		const tool = planTool(pi);
+		const params = {
+			goal: "Program goal",
+			context: "Context",
+			design: "Design",
+			success: "Success",
+			boundaries: "Boundaries",
+			workstreams: [
+				{
+					id: "ready",
+					label: "Ready",
+					scope: "Scope",
+					outcome: "Outcome",
+					boundaries: "Boundaries",
+				},
+			],
+		};
+
+		await executeText(tool, params);
+		approveDraft(access.getDraft()!);
+		await executeText(tool, params);
+
+		assert.equal(getAgentMode(), "supervisor");
+	});
+
+	it("does not set supervisor mode when workstream approval is fully cancelled", async () => {
+		setAgentMode("analysis");
+		const pi = new FakePi();
+		const tasksAccess = new FakeTasksAccess();
+		const access = registerPlan(pi as unknown as ExtensionAPI, tasksAccess, memoryStateDeps());
+		const tool = planTool(pi);
+		const params = {
+			goal: "Program goal",
+			context: "Context",
+			design: "Design",
+			success: "Success",
+			boundaries: "Boundaries",
+			workstreams: [
+				{
+					id: "ready",
+					label: "Ready",
+					scope: "Scope",
+					outcome: "Outcome",
+					boundaries: "Boundaries",
+				},
+			],
+		};
+
+		await executeText(tool, params);
+		approveDraft(access.getDraft()!);
+		await executeText(tool, params);
+
+		assert.equal(getAgentMode(), "analysis");
 	});
 });

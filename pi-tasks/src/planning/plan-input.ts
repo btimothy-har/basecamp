@@ -123,10 +123,38 @@ export function normalizePlanExecutionInput(input: unknown): NormalizedPlanExecu
 			if (!dependencyId) {
 				throw new Error(`plan() workstream '${workstream.id}' has an empty dependency id.`);
 			}
+			if (dependencyId === workstream.id) {
+				throw new Error(`plan() workstream '${workstream.id}' must not depend on itself.`);
+			}
 			if (!ids.has(dependencyId)) {
 				throw new Error(`plan() workstream '${workstream.id}' depends on unknown workstream '${dependencyId}'.`);
 			}
 		}
+	}
+
+	const visiting = new Set<string>();
+	const visited = new Set<string>();
+	const byId = new Map(workstreams.map((workstream) => [workstream.id, workstream]));
+
+	function visit(id: string, stack: string[]): void {
+		if (visited.has(id)) return;
+		if (visiting.has(id)) {
+			const cycleStart = stack.indexOf(id);
+			const cycle = stack.slice(cycleStart >= 0 ? cycleStart : 0);
+			throw new Error(`plan() workstream dependency cycle detected: ${cycle.join(" -> ")}.`);
+		}
+
+		visiting.add(id);
+		const workstream = byId.get(id);
+		for (const dependencyId of workstream?.dependsOn ?? []) {
+			visit(dependencyId, [...stack, dependencyId]);
+		}
+		visiting.delete(id);
+		visited.add(id);
+	}
+
+	for (const workstream of workstreams) {
+		visit(workstream.id, [workstream.id]);
 	}
 
 	return { kind: "workstreams", workstreams };
