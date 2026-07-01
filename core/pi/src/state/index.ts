@@ -52,6 +52,7 @@ export type SessionStatePatch = Partial<
 	Omit<BasecampSessionState, "version" | "sessionId" | "sessionFile" | "updatedAt">
 >;
 export type SessionStateUpdater = SessionStatePatch | ((state: Readonly<BasecampSessionState>) => SessionStatePatch);
+export type SessionTitleChangeListener = (title: string | null, state: Readonly<BasecampSessionState>) => void;
 
 // Process-scoped via globalThis so `/reload` preserves a single shared
 // session-state instance. Extensions are re-imported with fresh module
@@ -62,6 +63,7 @@ const sessionStateKey = Symbol.for("basecamp.sessionState");
 interface SessionStateRuntime {
 	current: BasecampSessionState | null;
 	stateDir: string | undefined;
+	titleListeners: Set<SessionTitleChangeListener>;
 }
 
 type GlobalWithSessionState = typeof globalThis & {
@@ -70,7 +72,8 @@ type GlobalWithSessionState = typeof globalThis & {
 
 function getSessionStateRuntime(): SessionStateRuntime {
 	const globalObject = globalThis as GlobalWithSessionState;
-	globalObject[sessionStateKey] ??= { current: null, stateDir: undefined };
+	globalObject[sessionStateKey] ??= { current: null, stateDir: undefined, titleListeners: new Set() };
+	globalObject[sessionStateKey].titleListeners ??= new Set();
 	return globalObject[sessionStateKey];
 }
 
@@ -320,11 +323,31 @@ export function getCurrentSessionStateIfInitialized(): Readonly<BasecampSessionS
 	return getSessionStateRuntime().current;
 }
 
+function notifyTitleChange(state: BasecampSessionState): void {
+	for (const listener of getSessionStateRuntime().titleListeners) {
+		try {
+			listener(state.title, state);
+		} catch {
+			// best effort
+		}
+	}
+}
+
+export function onCurrentSessionTitleChange(listener: SessionTitleChangeListener): () => void {
+	const runtime = getSessionStateRuntime();
+	runtime.titleListeners.add(listener);
+	return () => {
+		runtime.titleListeners.delete(listener);
+	};
+}
+
 export function updateCurrentSessionState(updater: SessionStateUpdater): BasecampSessionState {
 	const runtime = getSessionStateRuntime();
 	const existing = getCurrentSessionState();
+	const previousTitle = existing.title;
 	const patch = typeof updater === "function" ? updater(existing) : updater;
 	runtime.current = saveSessionState({ ...existing, ...patch }, runtime.stateDir);
+	if (runtime.current.title !== previousTitle) notifyTitleChange(runtime.current);
 	return runtime.current;
 }
 
