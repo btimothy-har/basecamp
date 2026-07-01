@@ -138,8 +138,21 @@ describe("gate completion options", () => {
 		assert.equal(resolveGateReasoningEffort(model({ reasoning: false })), undefined);
 	});
 
-	it("uses the lowest supported non-off thinking level for reasoning models", () => {
-		assert.equal(resolveGateReasoningEffort(model({ reasoning: true })), "minimal");
+	it("prefers low for reasoning models without an explicit minimal mapping", () => {
+		assert.equal(resolveGateReasoningEffort(model({ reasoning: true })), "low");
+		assert.equal(
+			resolveGateReasoningEffort(
+				model({ reasoning: true, thinkingLevelMap: { off: "none", xhigh: "xhigh" }, id: "gpt-5.4-mini" }),
+			),
+			"low",
+		);
+	});
+
+	it("uses minimal only when the model maps it explicitly", () => {
+		assert.equal(
+			resolveGateReasoningEffort(model({ reasoning: true, thinkingLevelMap: { minimal: "low" } })),
+			"minimal",
+		);
 		assert.equal(resolveGateReasoningEffort(model({ reasoning: true, thinkingLevelMap: { minimal: null } })), "low");
 	});
 });
@@ -167,7 +180,7 @@ describe("runGate", () => {
 		}
 	});
 
-	it("passes reasoning effort for reasoning models", async () => {
+	it("passes portable reasoning effort for reasoning models", async () => {
 		const decision: GateDecision = { decision: "approve", risk: "none", reason: "ok" };
 		const result = await runGate({
 			model: model({ api: "openai-completions", provider: "openai", reasoning: true }),
@@ -175,7 +188,7 @@ describe("runGate", () => {
 			context: buildGateContext([], "git status"),
 			complete: async (_model, _context, options) => {
 				assert.deepEqual(options?.toolChoice, { type: "function", function: { name: "gate_decision" } });
-				assert.equal(options?.reasoningEffort, "minimal");
+				assert.equal(options?.reasoningEffort, "low");
 				return assistantWithToolCall("gate_decision", decision);
 			},
 		});
