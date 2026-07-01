@@ -104,6 +104,22 @@ describe("companion/herdr-metadata", () => {
 		assert.equal(metadata.customStatus, `Active ${"y".repeat(25)}`);
 	});
 
+	it("uses sanitized fallbacks for blank title and status candidates", () => {
+		const metadata = buildHerdrMetadata(
+			snapshot({
+				sessionId: "session-fallback",
+				title: " \n\t ",
+				tasks: [{ label: " \u0000 ", status: "active", notes: null }],
+				worktree: { label: " \t ", branch: null, path: "/tmp/wt" },
+				agentMode: "planning",
+				repoName: "repo-name",
+			}),
+		);
+
+		assert.equal(metadata.title, "repo-name");
+		assert.equal(metadata.customStatus, "planning");
+	});
+
 	it("uses active task, worktree, agent mode, then repo for custom status", () => {
 		assert.equal(
 			buildHerdrMetadata(

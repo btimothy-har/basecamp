@@ -347,6 +347,9 @@ describe("current session state", () => {
 		const unsubscribe = onCurrentSessionTitleChange((title, state) => {
 			seen.push(`${state.sessionId}:${title ?? "null"}`);
 		});
+		t.after(() => {
+			unsubscribe();
+		});
 
 		initializeCurrentSessionState(createContext("title-listener"), dir);
 		updateCurrentSessionState({ title: "First title" });

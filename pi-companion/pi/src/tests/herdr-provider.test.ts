@@ -201,6 +201,50 @@ describe("panes/herdr-provider", () => {
 			assert.deepEqual(execCalls, [{ command: "herdr", args: buildHerdrSplitArgs("w8:p1", "/tmp/worktree") }]);
 		});
 
+		it("throws when split exits non-zero", async () => {
+			const provider = createHerdrPaneProvider({
+				herdrEnv: "1",
+				herdrPaneId: "w8:p1",
+				herdrSocketPath: "/tmp/herdr.sock",
+				hasUI: true,
+				agentDepth: 0,
+			});
+			assert.ok(provider);
+			const { pi, execCalls } = createMockPi(() => ({ code: 1, stdout: "", stderr: "split failed" }));
+
+			await assert.rejects(
+				() => provider.createPane(pi, { cwd: "/tmp/worktree", command: "basecamp companion dashboard" }),
+				/herdr pane split failed with exit code 1/,
+			);
+			assert.deepEqual(execCalls, [{ command: "herdr", args: buildHerdrSplitArgs("w8:p1", "/tmp/worktree") }]);
+		});
+
+		it("closes the split pane when running the dashboard exits non-zero", async () => {
+			const provider = createHerdrPaneProvider({
+				herdrEnv: "1",
+				herdrPaneId: "w8:p1",
+				herdrSocketPath: "/tmp/herdr.sock",
+				hasUI: true,
+				agentDepth: 0,
+			});
+			assert.ok(provider);
+			const { pi, execCalls } = createMockPi((_command, args) => {
+				if (args[1] === "split") return { code: 0, stdout: JSON.stringify({ pane: { id: "w8:p2" } }), stderr: "" };
+				if (args[1] === "run") return { code: 1, stdout: "", stderr: "run failed" };
+				return { code: 0, stdout: "", stderr: "" };
+			});
+
+			await assert.rejects(
+				() => provider.createPane(pi, { cwd: "/tmp/worktree", command: "basecamp companion dashboard" }),
+				/herdr pane run failed with exit code 1/,
+			);
+			assert.deepEqual(execCalls, [
+				{ command: "herdr", args: buildHerdrSplitArgs("w8:p1", "/tmp/worktree") },
+				{ command: "herdr", args: buildHerdrRunArgs("w8:p2", "basecamp companion dashboard") },
+				{ command: "herdr", args: buildHerdrCloseArgs("w8:p2") },
+			]);
+		});
+
 		it("returns true when Herdr confirms the stored pane exists", async () => {
 			const provider = createHerdrPaneProvider({
 				herdrEnv: "1",

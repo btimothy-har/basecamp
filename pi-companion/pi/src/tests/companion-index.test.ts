@@ -15,6 +15,7 @@ import { resetHerdrMetadataSeqForTest } from "../herdr-metadata.ts";
 import { companionLiveSnapshotPath, companionSnapshotPath, defaultCompanionSnapshotDir } from "../snapshot.ts";
 
 type Handler = (event: unknown, ctx: MockContext) => unknown;
+type Emit = (eventName: string, event?: unknown, ctx?: MockContext) => Promise<MockContext>;
 type ExecResult = { code: number; stdout: string; stderr: string };
 type ExecHandler = (command: string, args: string[]) => Promise<ExecResult> | ExecResult;
 
@@ -27,6 +28,7 @@ interface MockContext {
 }
 
 const originalHome = process.env.HOME;
+const activeEmitters = new Set<Emit>();
 let tempHomes: string[] = [];
 
 function createMockPi(execHandler: ExecHandler = () => ({ code: 0, stdout: "", stderr: "" })) {
@@ -41,15 +43,17 @@ function createMockPi(execHandler: ExecHandler = () => ({ code: 0, stdout: "", s
 			return execHandler(command, args);
 		},
 	};
+	const emit: Emit = async (eventName, event = {}, ctx = createContext()) => {
+		for (const handler of handlers.get(eventName) ?? []) {
+			await handler(event, ctx);
+		}
+		return ctx;
+	};
+	activeEmitters.add(emit);
 	return {
 		pi: pi as unknown as ExtensionAPI,
 		execCalls,
-		async emit(eventName: string, event: unknown = {}, ctx: MockContext = createContext()) {
-			for (const handler of handlers.get(eventName) ?? []) {
-				await handler(event, ctx);
-			}
-			return ctx;
-		},
+		emit,
 	};
 }
 
@@ -81,7 +85,12 @@ function registerEmptyTasksAccess(): void {
 }
 
 describe("companion/registerCompanion", () => {
-	afterEach(() => {
+	afterEach(async () => {
+		for (const emit of activeEmitters) {
+			await emit("session_shutdown", { reason: "reload" });
+		}
+		activeEmitters.clear();
+
 		if (originalHome === undefined) {
 			delete process.env.HOME;
 		} else {

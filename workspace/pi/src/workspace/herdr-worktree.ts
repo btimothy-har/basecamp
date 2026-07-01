@@ -1,6 +1,8 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import type { WorkspaceState, WorkspaceWorktree } from "pi-core/platform/workspace.ts";
 
+export const HERDR_WORKTREE_OPEN_TIMEOUT_MS = 5_000;
+
 export interface HerdrWorktreeEnv {
 	BASECAMP_AGENT_DEPTH?: string;
 	HERDR_ENV?: string;
@@ -46,7 +48,7 @@ export async function openActiveWorktreeInHerdr(
 	try {
 		const args = buildHerdrWorktreeOpenArgs(state, activeWorktree, env);
 		if (!args) return;
-		await pi.exec("herdr", args);
+		await pi.exec("herdr", args, { timeout: HERDR_WORKTREE_OPEN_TIMEOUT_MS });
 	} catch {
 		/* Herdr sync is best-effort and must never interrupt Basecamp activation. */
 	}

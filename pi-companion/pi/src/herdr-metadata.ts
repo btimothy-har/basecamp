@@ -56,6 +56,15 @@ export function sanitizeHerdrMetadataField(value: string, limit: number): string
 		.slice(0, limit);
 }
 
+function firstSanitizedMetadataField(candidates: Array<string | null | undefined>, limit: number): string {
+	for (const candidate of candidates) {
+		if (candidate === null || candidate === undefined) continue;
+		const value = sanitizeHerdrMetadataField(candidate, limit);
+		if (value) return value;
+	}
+	return "";
+}
+
 export function buildHerdrMetadata(snapshot: CompanionSnapshot): {
 	title: string;
 	displayAgent: string;
@@ -63,10 +72,10 @@ export function buildHerdrMetadata(snapshot: CompanionSnapshot): {
 } {
 	const activeTaskLabel = snapshot.tasks.find((task) => task.status === "active")?.label;
 	return {
-		title: sanitizeHerdrMetadataField(snapshot.title ?? snapshot.repoName ?? snapshot.sessionId, TITLE_LIMIT),
+		title: firstSanitizedMetadataField([snapshot.title, snapshot.repoName, snapshot.sessionId], TITLE_LIMIT),
 		displayAgent: sanitizeHerdrMetadataField(HERDR_DISPLAY_AGENT, DISPLAY_AGENT_LIMIT),
-		customStatus: sanitizeHerdrMetadataField(
-			activeTaskLabel ?? snapshot.worktree?.label ?? snapshot.agentMode ?? snapshot.repoName ?? "",
+		customStatus: firstSanitizedMetadataField(
+			[activeTaskLabel, snapshot.worktree?.label, snapshot.agentMode, snapshot.repoName],
 			CUSTOM_STATUS_LIMIT,
 		),
 	};

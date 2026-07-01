@@ -13,6 +13,7 @@ import {
 	saveSessionState,
 } from "pi-core/state/index.ts";
 import { SCRATCH_ROOT, WORKTREES_ROOT } from "pi-core/workspace/constants.ts";
+import { HERDR_WORKTREE_OPEN_TIMEOUT_MS } from "../herdr-worktree.ts";
 import { WorkspaceRuntimeService } from "../service.ts";
 import { registerWorkspaceSession } from "../session.ts";
 
@@ -344,6 +345,36 @@ describe("WorkspaceRuntimeService effective cwd", () => {
 			"--no-focus",
 			"--json",
 		]);
+		assert.deepEqual(herdrCall.options, { timeout: HERDR_WORKTREE_OPEN_TIMEOUT_MS });
+		assert.equal(service.current()?.activeWorktree?.path, WORKTREE_DIR);
+	});
+
+	it("opens the active worktree in Herdr with cwd context when no workspace id is set", async (t) => {
+		const envSnapshot = snapshotWorkspaceEnv();
+		clearHerdrEnv();
+		setPrimaryHerdrEnv();
+		t.after(async () => {
+			restoreWorkspaceEnv(envSnapshot);
+			await fs.rm(SCRATCH_DIR, { recursive: true, force: true });
+		});
+
+		const { service, calls } = await initializeAndActivate(REPO_ROOT);
+
+		const herdrCall = calls.find((call) => call.command === "herdr");
+		assert.ok(herdrCall);
+		assert.deepEqual(herdrCall.args, [
+			"worktree",
+			"open",
+			"--cwd",
+			REPO_ROOT,
+			"--path",
+			WORKTREE_DIR,
+			"--label",
+			LABEL,
+			"--no-focus",
+			"--json",
+		]);
+		assert.deepEqual(herdrCall.options, { timeout: HERDR_WORKTREE_OPEN_TIMEOUT_MS });
 		assert.equal(service.current()?.activeWorktree?.path, WORKTREE_DIR);
 	});
 

@@ -1,3 +1,4 @@
+import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { exec } from "pi-core/platform/exec.ts";
 import { canHostCompanionPane, type PaneProvider } from "./pane-provider.ts";
 
@@ -74,16 +75,35 @@ export function parseHerdrPaneId(stdout: string): string | null {
 	}
 }
 
+async function closeHerdrPaneBestEffort(pi: ExtensionAPI, paneId: string): Promise<void> {
+	try {
+		await exec(pi, "herdr", buildHerdrCloseArgs(paneId));
+	} catch {
+		// best effort
+	}
+}
+
+function resultError(action: string, code: number): Error {
+	return new Error(`herdr pane ${action} failed with exit code ${code}`);
+}
+
 function createHerdrProvider(targetPaneId: string | null): PaneProvider {
 	return {
 		name: "herdr",
 		async createPane(pi, input) {
 			if (!targetPaneId) throw new Error("missing Herdr target pane");
 			const splitResult = await exec(pi, "herdr", buildHerdrSplitArgs(targetPaneId, input.cwd));
+			if (splitResult.code !== 0) throw resultError("split", splitResult.code);
 			const paneId = parseHerdrPaneId(splitResult.stdout);
 			if (!paneId) return null;
-			await exec(pi, "herdr", buildHerdrRunArgs(paneId, input.command));
-			return paneId;
+			try {
+				const runResult = await exec(pi, "herdr", buildHerdrRunArgs(paneId, input.command));
+				if (runResult.code !== 0) throw resultError("run", runResult.code);
+				return paneId;
+			} catch (err) {
+				await closeHerdrPaneBestEffort(pi, paneId);
+				throw err;
+			}
 		},
 		async paneStillExists(pi, paneId) {
 			try {
