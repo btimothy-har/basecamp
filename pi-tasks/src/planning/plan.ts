@@ -24,7 +24,8 @@ import {
 } from "pi-core/platform/workspace.ts";
 import { getAgentMode, setAgentMode } from "pi-core/session/agent-mode.ts";
 import { shortSessionId } from "pi-core/session/session-id.ts";
-import { runWorktreeSetup } from "pi-core/workspace/setup.ts";
+import { runWorktreeSetup, type WorktreeSetupResult } from "pi-core/workspace/setup.ts";
+import { getOrCreateWorktree, type WorktreeResult } from "pi-core/workspace/worktree.ts";
 import type { GoalCycle, ReviewState, TaskStatus, TasksAccess } from "../tasks/tasks";
 import {
 	computeCollectiveReview,
@@ -344,21 +345,70 @@ function buildApprovedResult(
 	return JSON.stringify(result);
 }
 
-function buildApprovedWorkstreamResult(draft: WorkstreamPlanDraft): string {
+interface WorkstreamActivationDeps {
+	getWorkspaceState(): ReturnType<typeof getWorkspaceState>;
+	getOrCreateWorktree(
+		pi: ExtensionAPI,
+		repoRoot: string,
+		repoName: string,
+		label: string,
+		branchName?: string | null,
+	): Promise<WorktreeResult>;
+	readWorktreeSetupCommand(repoName: string): string | null;
+	runWorktreeSetup(
+		pi: ExtensionAPI,
+		opts: { command: string; worktreeDir: string; repoRoot: string },
+	): Promise<WorktreeSetupResult>;
+}
+
+const DEFAULT_WORKSTREAM_ACTIVATION_DEPS: WorkstreamActivationDeps = {
+	getWorkspaceState,
+	getOrCreateWorktree,
+	readWorktreeSetupCommand,
+	runWorktreeSetup,
+};
+
+type WorkstreamProvisionStage = "worktree" | "setup";
+type WorkstreamProvisionStatus = "activated" | "failed";
+
+interface ApprovedWorkstreamEntry {
+	id: string;
+	label: string;
+	scope: string;
+	outcome: string;
+	boundaries: string;
+	worktreeSlug?: string;
+	dependsOn: string[];
+	status: "ready" | "blocked";
+	activation_status?: WorkstreamProvisionStatus;
+	failure_stage?: WorkstreamProvisionStage;
+	message?: string;
+	worktree?: {
+		label: string;
+		path: string;
+		branch: string;
+		created: boolean;
+	};
+	worktree_setup?: WorktreeSetupSummary;
+}
+
+function errorMessage(error: unknown): string {
+	return error instanceof Error ? error.message : String(error);
+}
+
+function setupFailureMessage(summary: WorktreeSetupSummary): string {
+	if (summary.timed_out) return "Worktree setup timed out.";
+	return `Worktree setup exited ${summary.exit_code}.`;
+}
+
+export async function buildApprovedWorkstreamResult(
+	pi: ExtensionAPI,
+	draft: WorkstreamPlanDraft,
+	ctx: ExtensionContext,
+	deps: WorkstreamActivationDeps = DEFAULT_WORKSTREAM_ACTIVATION_DEPS,
+): Promise<string> {
 	const notes = collectApprovedNotes(draft);
-	const workstreams: Record<
-		string,
-		{
-			id: string;
-			label: string;
-			scope: string;
-			outcome: string;
-			boundaries: string;
-			worktreeSlug?: string;
-			dependsOn: string[];
-			status: "ready" | "blocked";
-		}
-	> = {};
+	const workstreams: Record<string, ApprovedWorkstreamEntry> = {};
 	const ready: string[] = [];
 	const blocked: Record<string, string[]> = {};
 
@@ -382,6 +432,155 @@ function buildApprovedWorkstreamResult(draft: WorkstreamPlanDraft): string {
 		}
 	}
 
+	if (ready.length === 0) {
+		const result: Record<string, unknown> = {
+			status: "approved",
+			plan_kind: "workstreams",
+			goal: draft.goal.content,
+			context: draft.context.content,
+			design: draft.design.content,
+			success: draft.success.content,
+			boundaries: draft.boundaries.content,
+			implementation_mode: "supervisor",
+			handoff_status: "workstreams_blocked",
+			next_step:
+				"Workstream plan approved. No workstreams are ready because each workstream has dependencies; no worktrees were provisioned.",
+			workstream_progress: {
+				ready: 0,
+				blocked: Object.keys(blocked).length,
+				activated: 0,
+				failed: 0,
+				total: draft.workstreams.length,
+			},
+			workstream_graph: {
+				ready,
+				blocked,
+			},
+			workstreams,
+		};
+
+		if (Object.keys(notes).length > 0) result.notes = notes;
+		return JSON.stringify(result);
+	}
+
+	const workspace = deps.getWorkspaceState();
+	const repo = workspace?.repo;
+	if (!repo) {
+		for (const workstreamId of ready) {
+			const entry = workstreams[workstreamId]!;
+			entry.activation_status = "failed";
+			entry.failure_stage = "worktree";
+			entry.message = "Workstream activation requires an initialized git repository workspace.";
+		}
+
+		const result: Record<string, unknown> = {
+			status: "handoff_cancelled",
+			plan_kind: "workstreams",
+			goal: draft.goal.content,
+			context: draft.context.content,
+			design: draft.design.content,
+			success: draft.success.content,
+			boundaries: draft.boundaries.content,
+			implementation_mode: "supervisor",
+			handoff_status: "workstream_activation_cancelled",
+			message: "Workstream activation requires an initialized git repository workspace.",
+			next_step:
+				"Workstream plan approved, but ready workstreams were not activated because no repository workspace is available. Re-run from a repository-backed Basecamp session.",
+			workstream_progress: {
+				ready: ready.length,
+				blocked: Object.keys(blocked).length,
+				activated: 0,
+				failed: ready.length,
+				total: draft.workstreams.length,
+			},
+			workstream_graph: {
+				ready,
+				blocked,
+			},
+			workstreams,
+		};
+
+		if (Object.keys(notes).length > 0) result.notes = notes;
+		return JSON.stringify(result);
+	}
+
+	const sessionTag = shortSessionId(ctx.sessionManager.getSessionId());
+	const setupCommand = deps.readWorktreeSetupCommand(repo.name);
+	const targetsByWorkstream = new Map<string, ExecutionWorktreeTarget>();
+	const workstreamIdsByLabel = new Map<string, string[]>();
+
+	for (const workstreamId of ready) {
+		const workstream = draft.workstreams.find((candidate) => candidate.id === workstreamId)!;
+		const target = suggestWorktreeTarget(workstream.label, workstream.worktreeSlug ?? workstream.id, sessionTag);
+		targetsByWorkstream.set(workstreamId, target);
+		workstreamIdsByLabel.set(target.worktreeLabel, [
+			...(workstreamIdsByLabel.get(target.worktreeLabel) ?? []),
+			workstreamId,
+		]);
+	}
+
+	for (const [label, workstreamIds] of workstreamIdsByLabel) {
+		if (workstreamIds.length <= 1) continue;
+		for (const workstreamId of workstreamIds) {
+			const entry = workstreams[workstreamId]!;
+			entry.activation_status = "failed";
+			entry.failure_stage = "worktree";
+			entry.message = `Derived worktree label '${label}' is shared by ready workstreams: ${workstreamIds.join(", ")}.`;
+		}
+	}
+
+	for (const workstreamId of ready) {
+		const entry = workstreams[workstreamId]!;
+		if (entry.activation_status === "failed") continue;
+		const target = targetsByWorkstream.get(workstreamId)!;
+
+		try {
+			const worktree = await deps.getOrCreateWorktree(
+				pi,
+				repo.root,
+				repo.name,
+				target.worktreeLabel,
+				target.branchName,
+			);
+			entry.activation_status = "activated";
+			entry.worktree = {
+				label: worktree.label,
+				path: worktree.worktreeDir,
+				branch: worktree.branch,
+				created: worktree.created,
+			};
+
+			if (shouldRunWorktreeSetup(worktree.created, setupCommand)) {
+				try {
+					const setupResult = await deps.runWorktreeSetup(pi, {
+						command: setupCommand as string,
+						worktreeDir: worktree.worktreeDir,
+						repoRoot: repo.root,
+					});
+					const setupSummary = worktreeSetupSummary(setupResult);
+					if (setupSummary) {
+						entry.worktree_setup = setupSummary;
+						if (!setupSummary.ok) {
+							entry.activation_status = "failed";
+							entry.failure_stage = "setup";
+							entry.message = setupFailureMessage(setupSummary);
+						}
+					}
+				} catch (error) {
+					entry.activation_status = "failed";
+					entry.failure_stage = "setup";
+					entry.message = errorMessage(error);
+				}
+			}
+		} catch (error) {
+			entry.activation_status = "failed";
+			entry.failure_stage = "worktree";
+			entry.message = errorMessage(error);
+		}
+	}
+
+	const activatedCount = ready.filter((id) => workstreams[id]?.activation_status === "activated").length;
+	const failedCount = ready.filter((id) => workstreams[id]?.activation_status === "failed").length;
 	const result: Record<string, unknown> = {
 		status: "approved",
 		plan_kind: "workstreams",
@@ -391,12 +590,16 @@ function buildApprovedWorkstreamResult(draft: WorkstreamPlanDraft): string {
 		success: draft.success.content,
 		boundaries: draft.boundaries.content,
 		implementation_mode: "supervisor",
-		handoff_status: "pending_workstream_activation",
+		handoff_status: failedCount > 0 ? "workstreams_partially_activated" : "workstreams_activated",
 		next_step:
-			"Workstream plan approved. Do not create worktrees or launch workstream agents yet; Task 3 will activate ready workstreams.",
+			failedCount > 0
+				? "Workstream plan approved. Ready workstream activation was attempted; inspect failed ready streams before launching agents. Do not launch agents yet; Task 4 handles launch."
+				: "Workstream plan approved. Ready workstream worktrees are provisioned. Do not launch agents yet; Task 4 handles launch.",
 		workstream_progress: {
 			ready: ready.length,
 			blocked: Object.keys(blocked).length,
+			activated: activatedCount,
+			failed: failedCount,
 			total: draft.workstreams.length,
 		},
 		workstream_graph: {
@@ -680,7 +883,7 @@ export function registerPlan(pi: ExtensionAPI, tasksAccess: TasksAccess): PlanAc
 
 			if (isAllApproved(draft)) {
 				if (draft.executionKind === "workstreams") {
-					const result = buildApprovedWorkstreamResult(draft);
+					const result = await buildApprovedWorkstreamResult(pi, draft, ctx);
 					draft = null;
 					return {
 						content: [{ type: "text", text: result }],
