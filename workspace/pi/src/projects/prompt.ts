@@ -15,7 +15,7 @@ import {
 	discoverContextFiles,
 } from "./context.ts";
 import { getProjectState, type ProjectState } from "./project.ts";
-import { buildRepoCopilotContext } from "./repo-copilot-context.ts";
+import { buildRepoLogseqContext } from "./repo-logseq.ts";
 
 const MODULE_DIR = path.dirname(fileURLToPath(import.meta.url));
 const PACKAGE_DIR = path.resolve(MODULE_DIR, "system-prompts");
@@ -179,7 +179,7 @@ export function assemblePrompt(opts: AssembleOptions): string {
 	if (projectContext) parts.push(projectContext);
 
 	if (agentMode === "copilot" && !opts.agentPrompt) {
-		parts.push(buildRepoCopilotContext({ workspace }));
+		parts.push(buildRepoLogseqContext({ workspace }));
 	}
 
 	parts.push(buildEnvBlock(workspace, project, effectiveCwd, modelId));

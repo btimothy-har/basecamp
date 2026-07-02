@@ -122,7 +122,7 @@ describe("assemblePrompt", () => {
 		);
 	});
 
-	it("includes copilot mode and Repo Copilot Context without engineering style", async (t) => {
+	it("includes copilot mode and Repo Logseq without engineering style", async (t) => {
 		useAgentMode(t, "copilot");
 		const homeDir = await useTempHome(t);
 		const workspaceDir = path.join(homeDir, ".pi", "basecamp", "workspace");
@@ -141,12 +141,13 @@ describe("assemblePrompt", () => {
 		});
 
 		assert.match(prompt, /# Repo Copilot/);
-		assert.match(prompt, /# Repo Copilot Context/);
+		assert.match(prompt, /# Repo Logseq/);
+		assert.doesNotMatch(prompt, /# Repo Copilot Context/);
 		assert.doesNotMatch(prompt, /# Your Role as an Engineer/);
 		assert.doesNotMatch(prompt, /CUSTOM ENGINEERING STYLE/);
 	});
 
-	it("places Repo Copilot Context after project context and before the environment block", async (t) => {
+	it("places Repo Logseq after project context and before the environment block", async (t) => {
 		useAgentMode(t, "copilot");
 		await useTempHome(t);
 
@@ -169,17 +170,17 @@ describe("assemblePrompt", () => {
 		});
 
 		const projectContextIndex = prompt.indexOf("# Project Context");
-		const copilotContextIndex = prompt.indexOf("# Repo Copilot Context");
+		const logseqContextIndex = prompt.indexOf("# Repo Logseq");
 		const envBlockIndex = prompt.indexOf("You are an AI assistant. You are operating inside pi-coding-agent");
 
 		assert.notEqual(projectContextIndex, -1);
-		assert.notEqual(copilotContextIndex, -1);
+		assert.notEqual(logseqContextIndex, -1);
 		assert.notEqual(envBlockIndex, -1);
-		assert.ok(projectContextIndex < copilotContextIndex);
-		assert.ok(copilotContextIndex < envBlockIndex);
+		assert.ok(projectContextIndex < logseqContextIndex);
+		assert.ok(logseqContextIndex < envBlockIndex);
 	});
 
-	it("does not include Repo Copilot Context for agent prompts in copilot mode", async (t) => {
+	it("does not include Repo Logseq for agent prompts in copilot mode", async (t) => {
 		useAgentMode(t, "copilot");
 		await useTempHome(t);
 
@@ -197,6 +198,6 @@ describe("assemblePrompt", () => {
 
 		assert.match(prompt, /custom worker prompt/);
 		assert.doesNotMatch(prompt, /# Repo Copilot/);
-		assert.doesNotMatch(prompt, /# Repo Copilot Context/);
+		assert.doesNotMatch(prompt, /# Repo Logseq/);
 	});
 });
