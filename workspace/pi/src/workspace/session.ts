@@ -6,9 +6,11 @@ import * as fsSync from "node:fs";
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
 import type { ExtensionAPI, ExtensionContext, SessionStartEvent } from "@earendil-works/pi-coding-agent";
+import { readLogseqGraphDir } from "pi-core/platform/config.ts";
 import {
 	attachWorkspaceWorktreePath,
 	initializeWorkspace,
+	registerWorkspaceAllowedRootsProvider,
 	requireWorkspaceService,
 	requireWorkspaceState,
 	type UnsafeEditFlagResult,
@@ -102,8 +104,19 @@ function loadDotenv(root: string): void {
 	}
 }
 
+export function registerLogseqAllowedRootProvider(homeDir?: string): void {
+	registerWorkspaceAllowedRootsProvider({
+		id: "logseq",
+		roots: () => {
+			const dir = readLogseqGraphDir(homeDir);
+			return dir ? [dir] : [];
+		},
+	});
+}
+
 export function registerWorkspaceSession(pi: ExtensionAPI): void {
 	requireWorkspaceService();
+	registerLogseqAllowedRootProvider();
 
 	pi.registerFlag("worktree-dir", {
 		description: "Attach to an existing workspace worktree directory",
