@@ -15,6 +15,7 @@ import {
 	updateCurrentSessionState,
 } from "../../state/index.ts";
 import {
+	cycleAgentMode,
 	getAgentMode,
 	onAgentModeChange,
 	resetAgentMode,
@@ -68,6 +69,19 @@ describe("agent mode session state", () => {
 		assert.equal(getCurrentSessionState().agentMode, "executor");
 	});
 
+	it("accepts and persists copilot mode", async (t) => {
+		const dir = await createTempDir(t);
+		initializeCurrentSessionState(createContext("persist-copilot"), dir);
+
+		const mode = setAgentMode("copilot");
+		const loaded = loadSessionState({ sessionId: "persist-copilot", sessionFile: null }, dir);
+
+		assert.equal(mode, "copilot");
+		assert.equal(getAgentMode(), "copilot");
+		assert.equal(getCurrentSessionState().agentMode, "copilot");
+		assert.equal(loaded.agentMode, "copilot");
+	});
+
 	it("restores mode from state without overwriting the state file", async (t) => {
 		const dir = await createTempDir(t);
 		saveSessionState(
@@ -88,6 +102,20 @@ describe("agent mode session state", () => {
 		assert.deepEqual(seen, ["supervisor"]);
 	});
 
+	it("restores copilot mode from state", async (t) => {
+		const dir = await createTempDir(t);
+		saveSessionState(
+			{ ...createDefaultSessionState({ sessionId: "restore-copilot", sessionFile: null }), agentMode: "copilot" },
+			dir,
+		);
+		initializeCurrentSessionState(createContext("restore-copilot"), dir);
+
+		const restored = restoreAgentModeFromSessionState();
+
+		assert.equal(restored, "copilot");
+		assert.equal(getAgentMode(), "copilot");
+	});
+
 	it("restores the default mode for null state without writing it", async (t) => {
 		const dir = await createTempDir(t);
 		initializeCurrentSessionState(createContext("restore-default"), dir);
@@ -101,5 +129,14 @@ describe("agent mode session state", () => {
 		assert.equal(restored, "executor");
 		assert.equal(getAgentMode(), "executor");
 		assert.equal(loaded.agentMode, null);
+	});
+
+	it("cycles through modes with copilot between planning and supervisor", () => {
+		setAgentMode("analysis");
+
+		assert.deepEqual(
+			[cycleAgentMode(), cycleAgentMode(), cycleAgentMode(), cycleAgentMode(), cycleAgentMode()],
+			["planning", "copilot", "supervisor", "executor", "analysis"],
+		);
 	});
 });

@@ -1,4 +1,5 @@
 import * as fs from "node:fs";
+import * as os from "node:os";
 import * as path from "node:path";
 import { basecampRoot } from "./paths.ts";
 
@@ -6,7 +7,7 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
 	return value !== null && typeof value === "object" && !Array.isArray(value);
 }
 
-export function readWorktreeSetupCommand(repoName: string, homeDir?: string): string | null {
+function readRootConfig(homeDir: string): Record<string, unknown> | null {
 	const configPath = path.join(basecampRoot(homeDir), "config.json");
 	let raw: string;
 	try {
@@ -22,9 +23,18 @@ export function readWorktreeSetupCommand(repoName: string, homeDir?: string): st
 		return null;
 	}
 
-	if (!isPlainObject(parsed)) {
-		return null;
-	}
+	return isPlainObject(parsed) ? parsed : null;
+}
+
+function resolveConfiguredPath(value: string, homeDir: string): string {
+	if (value === "~") return homeDir;
+	if (value.startsWith("~/")) return path.resolve(homeDir, value.slice(2));
+	return path.resolve(homeDir, value);
+}
+
+export function readWorktreeSetupCommand(repoName: string, homeDir?: string): string | null {
+	const parsed = readRootConfig(homeDir ?? os.homedir());
+	if (!parsed) return null;
 
 	const environments = parsed.environments;
 	if (!isPlainObject(environments)) {
@@ -43,4 +53,32 @@ export function readWorktreeSetupCommand(repoName: string, homeDir?: string): st
 
 	const trimmed = command.trim();
 	return trimmed ? trimmed : null;
+}
+
+export function readLogseqGraphDir(homeDir?: string): string | null {
+	const effectiveHomeDir = path.resolve(homeDir ?? os.homedir());
+	const parsed = readRootConfig(effectiveHomeDir);
+	if (!parsed) return null;
+
+	const logseq = parsed.logseq;
+	if (!isPlainObject(logseq)) {
+		return null;
+	}
+
+	const graphDir = logseq.graph_dir;
+	if (typeof graphDir !== "string") {
+		return null;
+	}
+
+	const trimmed = graphDir.trim();
+	if (!trimmed) {
+		return null;
+	}
+
+	const resolved = resolveConfiguredPath(trimmed, effectiveHomeDir);
+	try {
+		return fs.statSync(resolved).isDirectory() ? resolved : null;
+	} catch {
+		return null;
+	}
 }

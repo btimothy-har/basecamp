@@ -120,4 +120,16 @@ describe("footer location line", () => {
 			footer.dispose();
 		}
 	});
+
+	it("renders copilot mode label", async (t) => {
+		process.chdir(await createGitCheckout(t, "feature/footer-branch"));
+
+		setAgentMode("copilot");
+		const footer = await renderFooter(120);
+		try {
+			assert.match(footer.lines[0]!, /\[copilot\]/);
+		} finally {
+			footer.dispose();
+		}
+	});
 });
