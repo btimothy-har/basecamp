@@ -149,9 +149,7 @@ class DashboardBody(Widget):
             return [], 0
 
         recent_others = [
-            index
-            for index in range(len(goals) - 1, -1, -1)
-            if active_index is None or index != active_index
+            index for index in range(len(goals) - 1, -1, -1) if active_index is None or index != active_index
         ][:VISIBLE_OTHER_GOAL_LIMIT]
         visible = set(recent_others)
         if active_index is not None:
