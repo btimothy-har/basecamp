@@ -4,6 +4,7 @@ import { type AgentMode, cycleAgentMode } from "../agent-mode.ts";
 const MODE_LABELS: Record<AgentMode, string> = {
 	analysis: "Analysis/research",
 	planning: "Explore",
+	copilot: "Repo copilot",
 	supervisor: "Supervisor",
 	executor: "IC/executor",
 };

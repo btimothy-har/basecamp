@@ -14,6 +14,7 @@ type ModeLabelStyle = {
 const MODE_STYLES: Record<AgentMode, ModeStyle> = {
 	analysis: { label: "[analysis]", color: "syntaxType" },
 	planning: { label: "[explore]", color: "warning" },
+	copilot: { label: "[copilot]", color: "syntaxType" },
 	supervisor: { label: "[supervisor]", color: "error" },
 	executor: { label: null, color: "text" },
 };
