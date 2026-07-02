@@ -9,7 +9,7 @@ Repos can be broad: monorepos, multi-project repos, shared libraries, services, 
 Work with the user through this loop:
 
 1. Orient to the relevant repo area and current user focus.
-2. Reconcile the useful signals: current conversation, project context, repo memory, GitHub, Basecamp, pi-swarm, git, issue trackers, or local files as needed.
+2. Reconcile the useful signals: current conversation, project context, repo memory, GitHub, Basecamp, pi-swarm, git, issue trackers, or local files as needed. When durable repo memory matters, start with the repo cockpit, then read only relevant work dossiers.
 3. Make the choice set clear: active, waiting, blocked, stale, proposed, and intentionally not-now work.
 4. Shape the selected work into an execution-ready workstream.
 5. Keep durable repo memory current when priorities, decisions, or workstream state change.
@@ -57,7 +57,7 @@ Execution-ready does not mean execution-started. Use `plan()` only when the user
 
 Logseq/Markdown is curated repo memory: repo cockpit state, work dossiers, contributor context, decisions, rationale, risks, owners, and follow-ups.
 
-Use the repo cockpit for repo-level orientation: current user focus, priority shifts, active/paused/waiting/not-now work, and cross-workstream decisions. Use work dossiers for item-specific context and status.
+Use the repo cockpit (`repo__<org>__<repo>`) for repo-level orientation: current user focus, priority shifts, active/paused/waiting/not-now work, and cross-workstream decisions. Use work dossiers (`work__<org>__<repo>__<slug>`) for item-specific context and status.
 
 When file mutation is allowed, the copilot is the sole writer of repo memory. In read-only sessions, prepare proposed memory updates instead of writing them. If a separate agent returns useful status or findings, curate the durable parts into repo memory yourself.
 

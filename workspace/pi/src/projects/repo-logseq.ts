@@ -71,8 +71,8 @@ export function buildRepoLogseqContext(options: BuildRepoLogseqContextOptions): 
 		"",
 		`Durable repo memory is available for ${repoIdentity} in the configured Logseq graph at \`${graphDir}\`.`,
 		"Use this memory when repo history, prior decisions, durable project facts, or active-work continuity would help answer the user well.",
-		`Read the repo page first if you need durable context: \`[[${paths.repoPageName}]]\` at \`${paths.repoPagePath}\`.`,
-		`Task-specific work pages use names beginning with \`[[${paths.workPagePrefix}...]]\` and files matching \`${paths.workPageGlob}\`.`,
-		"Do not scan the whole graph. Do not read unrelated Logseq pages. Open only the exact repo page or a specifically relevant work page when the task calls for durable memory.",
+		`The repo cockpit is \`[[${paths.repoPageName}]]\` at \`${paths.repoPagePath}\`; read it first when durable repo context matters.`,
+		`Work dossiers are task-specific pages named like \`[[${paths.workPagePrefix}<slug>]]\` with files matching \`${paths.workPageGlob}\`.`,
+		"Do not scan the whole graph. Do not read unrelated Logseq pages. Open only the repo cockpit or a specifically relevant work dossier when the task calls for durable memory.",
 	].join("\n");
 }

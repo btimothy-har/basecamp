@@ -63,12 +63,12 @@ describe("buildRepoLogseqContext", () => {
 		assert.ok(context.includes("Use this memory when repo history, prior decisions, durable project facts"));
 		assert.ok(
 			context.includes(
-				`Read the repo page first if you need durable context: \`[[repo__org__repo]]\` at \`${repoPagePath}\`.`,
+				`The repo cockpit is \`[[repo__org__repo]]\` at \`${repoPagePath}\`; read it first when durable repo context matters.`,
 			),
 		);
 		assert.ok(
 			context.includes(
-				`Task-specific work pages use names beginning with \`[[work__org__repo__...]]\` and files matching \`${workPageGlob}\`.`,
+				`Work dossiers are task-specific pages named like \`[[work__org__repo__<slug>]]\` with files matching \`${workPageGlob}\`.`,
 			),
 		);
 		assert.ok(context.includes("Do not scan the whole graph. Do not read unrelated Logseq pages."));
