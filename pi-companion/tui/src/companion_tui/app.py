@@ -163,7 +163,7 @@ class CompanionApp(App[None]):
         margin-bottom: 1;
     }
 
-    #dashboard-decisions {
+    #dashboard-monitor {
         height: 2fr;
         width: 100%;
         margin-bottom: 1;
@@ -174,13 +174,13 @@ class CompanionApp(App[None]):
         margin-bottom: 1;
     }
 
-    #dashboard-open {
+    #dashboard-capture {
         width: 1fr;
         height: 1fr;
         margin-right: 1;
     }
 
-    #dashboard-warnings {
+    #dashboard-checkpoints {
         width: 1fr;
         height: 1fr;
     }
