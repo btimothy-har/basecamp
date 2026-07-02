@@ -96,7 +96,7 @@ function buildSteerContent(state: TasksState, planRef: GoalCycle["planRef"]): st
 
 	lines.push(
 		"",
-		"Call start_task before beginning work on a task. Call complete_task when a task is done. When completing a task at a natural handoff, call complete_task with stop_work: true by itself so the agent loop stops cleanly. If blocked before the task is done, use annotate_task or escalate instead. If the plan changes, call create_tasks with the updated list.",
+		"Call start_task before beginning work on a task. Call complete_task when a task is done. When completing a task at a natural handoff, call complete_task with stop_work: true as the only tool call in that assistant response so the agent loop stops cleanly. Do not batch it with any other tool call. If blocked before the task is done, use annotate_task or escalate instead. If the plan changes, call create_tasks with the updated list.",
 	);
 	return lines.join("\n");
 }
@@ -147,14 +147,6 @@ interface CompleteTaskResultDetails {
 	progress: ReturnType<typeof buildProgress>;
 }
 
-interface ToolResultPatchWithoutContent {
-	details?: unknown;
-	isError?: boolean;
-}
-
-// Pi forwards patch.terminate at runtime, but the public hook result type does not expose it yet.
-type RuntimeTerminatingToolResultPatch = ToolResultPatchWithoutContent & { terminate: true };
-
 function buildCompleteTaskStopMessage(index: number, task: Task): string {
 	return `Task ${index} completed: ${task.label}. Stopping work now.`;
 }
@@ -176,11 +168,6 @@ function buildCompleteTaskResultText(state: TasksState, index: number, task: Tas
 
 function isCompleteTaskStopWorkDetails(details: unknown): details is CompleteTaskResultDetails {
 	return typeof details === "object" && details !== null && (details as { stop_work?: unknown }).stop_work === true;
-}
-
-function buildTerminateToolResultPatch(): ToolResultPatchWithoutContent {
-	const patch: RuntimeTerminatingToolResultPatch = { terminate: true };
-	return patch;
 }
 
 // ============================================================================
@@ -329,8 +316,6 @@ export function registerTasks(pi: ExtensionAPI): TasksAccess {
 		if (eventCtx.hasUI) {
 			eventCtx.ui.notify(event.details.stop_message ?? "Stopping work now.", "info");
 		}
-
-		return buildTerminateToolResultPatch();
 	});
 
 	// --- Tool: update_goal ---
@@ -477,14 +462,14 @@ export function registerTasks(pi: ExtensionAPI): TasksAccess {
 		name: "complete_task",
 		label: "Complete Task",
 		description:
-			"Mark a task as completed by index. Set stop_work to true only when this completion should end the agent loop because the task is done and this is a natural handoff. If stop_work is true, call complete_task alone in the tool batch.",
+			"Mark a task as completed by index. Set stop_work to true only when this completion should end the agent loop because the task is done and this is a natural handoff. If stop_work is true, call complete_task as the only tool call in that assistant response; do not batch it with any other tool call.",
 		promptSnippet: "Mark a task as completed, optionally stopping work",
 		parameters: Type.Object({
 			task: Type.Number({ description: "Task index (0-based)" }),
 			stop_work: Type.Optional(
 				Type.Boolean({
 					description:
-						"Set true when completing this task should stop the agent loop at a natural handoff. Call complete_task by itself when true.",
+						"Set true when completing this task should stop the agent loop at a natural handoff. When true, complete_task must be the only tool call in that assistant response.",
 				}),
 			),
 		}),
@@ -509,6 +494,7 @@ export function registerTasks(pi: ExtensionAPI): TasksAccess {
 					stop_message: stopMessage,
 					progress: buildProgress(state),
 				} satisfies CompleteTaskResultDetails,
+				terminate: stopWork,
 			};
 		},
 		renderCall(args, theme) {
