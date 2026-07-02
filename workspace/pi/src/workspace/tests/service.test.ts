@@ -13,7 +13,6 @@ import {
 	saveSessionState,
 } from "pi-core/state/index.ts";
 import { SCRATCH_ROOT, WORKTREES_ROOT } from "pi-core/workspace/constants.ts";
-import { HERDR_WORKTREE_OPEN_TIMEOUT_MS } from "../herdr-worktree.ts";
 import { WorkspaceRuntimeService } from "../service.ts";
 import { registerWorkspaceSession } from "../session.ts";
 
@@ -35,7 +34,7 @@ interface ExecCall {
 type ExecResult = { code: number; stdout: string; stderr: string };
 
 function isWorkspaceEnvKey(key: string): boolean {
-	return key.startsWith("BASECAMP_") || key.startsWith("HERDR_");
+	return key.startsWith("BASECAMP_");
 }
 
 function restoreWorkspaceEnv(snapshot: Record<string, string | undefined>): void {
@@ -56,20 +55,8 @@ function snapshotWorkspaceEnv(): Record<string, string | undefined> {
 	);
 }
 
-function clearHerdrEnv(): void {
-	for (const key of Object.keys(process.env)) {
-		if (key.startsWith("HERDR_")) delete process.env[key];
-	}
+function clearAgentDepthEnv(): void {
 	delete process.env.BASECAMP_AGENT_DEPTH;
-}
-
-function setPrimaryHerdrEnv(workspaceId?: string): void {
-	process.env.BASECAMP_AGENT_DEPTH = "0";
-	process.env.HERDR_ENV = "1";
-	process.env.HERDR_SOCKET_PATH = "/tmp/herdr.sock";
-	process.env.HERDR_PANE_ID = "w8:p1";
-	if (workspaceId) process.env.HERDR_WORKSPACE_ID = workspaceId;
-	else delete process.env.HERDR_WORKSPACE_ID;
 }
 
 function gitWorktreeListOutput(worktreeDir = WORKTREE_DIR, branch = BRANCH): string {
@@ -116,7 +103,7 @@ function createWorkspaceSessionContext(sessionId: string, notifications: string[
 	} as unknown as ExtensionContext;
 }
 
-function createPi(piOptions: { worktreeDir?: string; branch?: string; herdrFails?: boolean } = {}): {
+function createPi(piOptions: { worktreeDir?: string; branch?: string } = {}): {
 	pi: ExtensionAPI;
 	calls: ExecCall[];
 } {
@@ -126,10 +113,6 @@ function createPi(piOptions: { worktreeDir?: string; branch?: string; herdrFails
 			const call = { command, args, options };
 			calls.push(call);
 
-			if (command === "herdr") {
-				if (piOptions.herdrFails) throw new Error("herdr unavailable");
-				return { code: 0, stdout: "{}\n", stderr: "" };
-			}
 			if (command !== "git") throw unexpectedExecCall(call);
 			if (argsEqual(args, ["rev-parse", "--show-toplevel"])) {
 				return { code: 0, stdout: `${REPO_ROOT}\n`, stderr: "" };
@@ -200,7 +183,7 @@ async function initializeAndActivate(
 describe("WorkspaceRuntimeService effective cwd", () => {
 	it("preserves protected repo subdirectory when activating an existing worktree", async (t) => {
 		const envSnapshot = snapshotWorkspaceEnv();
-		clearHerdrEnv();
+		clearAgentDepthEnv();
 		t.after(async () => {
 			restoreWorkspaceEnv(envSnapshot);
 			await fs.rm(SCRATCH_DIR, { recursive: true, force: true });
@@ -220,7 +203,7 @@ describe("WorkspaceRuntimeService effective cwd", () => {
 
 	it("uses worktree root when launch cwd is outside protected root", async (t) => {
 		const envSnapshot = snapshotWorkspaceEnv();
-		clearHerdrEnv();
+		clearAgentDepthEnv();
 		t.after(async () => {
 			restoreWorkspaceEnv(envSnapshot);
 			await fs.rm(SCRATCH_DIR, { recursive: true, force: true });
@@ -237,7 +220,7 @@ describe("WorkspaceRuntimeService effective cwd", () => {
 
 	it("writes active worktree metadata when current session state is initialized", async (t) => {
 		const envSnapshot = snapshotWorkspaceEnv();
-		clearHerdrEnv();
+		clearAgentDepthEnv();
 		const stateDir = await fs.mkdtemp(path.join(os.tmpdir(), "basecamp-workspace-state-"));
 		t.after(async () => {
 			resetCurrentSessionState();
@@ -269,7 +252,7 @@ describe("WorkspaceRuntimeService effective cwd", () => {
 
 	it("restores active worktree metadata from session state on resume", async (t) => {
 		const envSnapshot = snapshotWorkspaceEnv();
-		clearHerdrEnv();
+		clearAgentDepthEnv();
 		const stateDir = await fs.mkdtemp(path.join(os.tmpdir(), "basecamp-workspace-restore-"));
 		const label = `restore-${process.pid}-${Date.now()}`;
 		const branch = `wt/${label}`;
@@ -318,112 +301,5 @@ describe("WorkspaceRuntimeService effective cwd", () => {
 		assert.equal(service.current()?.activeWorktree?.path, worktreeDir);
 		assert.equal(getCurrentSessionState().activeWorktree?.worktree.path, worktreeDir);
 		assert.ok(notifications.includes(`basecamp: restored worktree → ${label}`));
-	});
-
-	it("opens the active worktree in Herdr with workspace context", async (t) => {
-		const envSnapshot = snapshotWorkspaceEnv();
-		clearHerdrEnv();
-		setPrimaryHerdrEnv("herdr-workspace-123");
-		t.after(async () => {
-			restoreWorkspaceEnv(envSnapshot);
-			await fs.rm(SCRATCH_DIR, { recursive: true, force: true });
-		});
-
-		const { service, calls } = await initializeAndActivate(REPO_ROOT);
-
-		const herdrCall = calls.find((call) => call.command === "herdr");
-		assert.ok(herdrCall);
-		assert.deepEqual(herdrCall.args, [
-			"worktree",
-			"open",
-			"--workspace",
-			"herdr-workspace-123",
-			"--path",
-			WORKTREE_DIR,
-			"--label",
-			LABEL,
-			"--no-focus",
-			"--json",
-		]);
-		assert.deepEqual(herdrCall.options, { timeout: HERDR_WORKTREE_OPEN_TIMEOUT_MS });
-		assert.equal(service.current()?.activeWorktree?.path, WORKTREE_DIR);
-	});
-
-	it("opens the active worktree in Herdr with cwd context when no workspace id is set", async (t) => {
-		const envSnapshot = snapshotWorkspaceEnv();
-		clearHerdrEnv();
-		setPrimaryHerdrEnv();
-		t.after(async () => {
-			restoreWorkspaceEnv(envSnapshot);
-			await fs.rm(SCRATCH_DIR, { recursive: true, force: true });
-		});
-
-		const { service, calls } = await initializeAndActivate(REPO_ROOT);
-
-		const herdrCall = calls.find((call) => call.command === "herdr");
-		assert.ok(herdrCall);
-		assert.deepEqual(herdrCall.args, [
-			"worktree",
-			"open",
-			"--cwd",
-			REPO_ROOT,
-			"--path",
-			WORKTREE_DIR,
-			"--label",
-			LABEL,
-			"--no-focus",
-			"--json",
-		]);
-		assert.deepEqual(herdrCall.options, { timeout: HERDR_WORKTREE_OPEN_TIMEOUT_MS });
-		assert.equal(service.current()?.activeWorktree?.path, WORKTREE_DIR);
-	});
-
-	it("does not open Herdr worktrees outside Herdr or in subagents", async (t) => {
-		const envSnapshot = snapshotWorkspaceEnv();
-		clearHerdrEnv();
-		t.after(async () => {
-			restoreWorkspaceEnv(envSnapshot);
-			await fs.rm(SCRATCH_DIR, { recursive: true, force: true });
-		});
-
-		const outsideHerdr = await initializeAndActivate(REPO_ROOT);
-		assert.equal(
-			outsideHerdr.calls.some((call) => call.command === "herdr"),
-			false,
-		);
-
-		setPrimaryHerdrEnv("herdr-workspace-123");
-		process.env.BASECAMP_AGENT_DEPTH = "1";
-		const subagent = await initializeAndActivate(REPO_ROOT);
-		assert.equal(
-			subagent.calls.some((call) => call.command === "herdr"),
-			false,
-		);
-	});
-
-	it("swallows Herdr failures and still activates the worktree", async (t) => {
-		const envSnapshot = snapshotWorkspaceEnv();
-		clearHerdrEnv();
-		setPrimaryHerdrEnv("herdr-workspace-123");
-		t.after(async () => {
-			restoreWorkspaceEnv(envSnapshot);
-			await fs.rm(SCRATCH_DIR, { recursive: true, force: true });
-		});
-
-		const { pi, calls } = createPi({ herdrFails: true });
-		const service = new WorkspaceRuntimeService(pi);
-		await service.initialize({
-			launchCwd: REPO_ROOT,
-			unsafeEditFlag: false,
-			unsafeEditConstraints: { readOnly: false, hasUI: true, isSubagent: false },
-		});
-
-		const target = await service.activateWorktree(LABEL);
-
-		assert.equal(target.path, WORKTREE_DIR);
-		assert.equal(service.current()?.activeWorktree?.path, WORKTREE_DIR);
-		assert.equal(process.env.BASECAMP_WORKTREE_DIR, WORKTREE_DIR);
-		assert.equal(process.env.BASECAMP_WORKTREE_LABEL, LABEL);
-		assert.ok(calls.some((call) => call.command === "herdr"));
 	});
 });
