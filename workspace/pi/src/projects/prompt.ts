@@ -15,6 +15,7 @@ import {
 	discoverContextFiles,
 } from "./context.ts";
 import { getProjectState, type ProjectState } from "./project.ts";
+import { buildRepoCopilotContext } from "./repo-copilot-context.ts";
 
 const MODULE_DIR = path.dirname(fileURLToPath(import.meta.url));
 const PACKAGE_DIR = path.resolve(MODULE_DIR, "system-prompts");
@@ -141,6 +142,7 @@ export interface AssembleOptions {
 
 export function assemblePrompt(opts: AssembleOptions): string {
 	const { workspace, project, effectiveCwd, toolItems, skillItems, agentItems, contextFiles, modelId } = opts;
+	const agentMode = getAgentMode();
 	const workingStyle = project?.workingStyle ?? "engineering";
 	const parts: string[] = [];
 
@@ -150,13 +152,13 @@ export function assemblePrompt(opts: AssembleOptions): string {
 	}
 
 	if (!opts.agentPrompt) {
-		const posture = loadPromptFile(`modes/${getAgentMode()}.md`).trim();
+		const posture = loadPromptFile(`modes/${agentMode}.md`).trim();
 		if (posture) parts.push(posture);
 	}
 
 	if (opts.agentPrompt) {
 		parts.push(opts.agentPrompt);
-	} else {
+	} else if (agentMode !== "copilot") {
 		const style = loadWorkingStyle(workingStyle).trim();
 		if (style) parts.push(style);
 	}
@@ -175,6 +177,10 @@ export function assemblePrompt(opts: AssembleOptions): string {
 
 	const projectContext = buildProjectContext(project, contextFiles);
 	if (projectContext) parts.push(projectContext);
+
+	if (agentMode === "copilot" && !opts.agentPrompt) {
+		parts.push(buildRepoCopilotContext({ workspace }));
+	}
 
 	parts.push(buildEnvBlock(workspace, project, effectiveCwd, modelId));
 	return parts.join("\n\n");
