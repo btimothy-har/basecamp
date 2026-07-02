@@ -24,9 +24,9 @@ class TestSectionCap:
             version=COMPANION_ANALYSIS_VERSION,
             session_id="s",
             updated_at="2026-06-04T12:34:56Z",
-            warnings=over_cap,
+            checkpoints=over_cap,
         )
-        assert analysis.warnings == over_cap[:MAX_SECTION_ITEMS]
+        assert analysis.checkpoints == over_cap[:MAX_SECTION_ITEMS]
 
     def test_load_truncates_over_cap(self, tmp_path: Path) -> None:
         path = tmp_path / "capped.analysis.json"
@@ -36,14 +36,14 @@ class TestSectionCap:
                     "version": COMPANION_ANALYSIS_VERSION,
                     "sessionId": "s",
                     "updatedAt": "2026-06-04T12:34:56Z",
-                    "warnings": [f"line {index}" for index in range(MAX_SECTION_ITEMS + 2)],
+                    "checkpoints": [f"line {index}" for index in range(MAX_SECTION_ITEMS + 2)],
                 }
             ),
             encoding="utf-8",
         )
         loaded = load_analysis(path)
         assert loaded is not None
-        assert len(loaded.warnings) == MAX_SECTION_ITEMS
+        assert len(loaded.checkpoints) == MAX_SECTION_ITEMS
 
 
 class TestWriteAndLoadAnalysis:
@@ -56,9 +56,9 @@ class TestWriteAndLoadAnalysis:
             session_id="session-123",
             updated_at="2026-06-04T12:34:56Z",
             model="gpt-5.3",
-            decisions=["Decision line"],
-            open_items=["Open item line"],
-            warnings=["Warning line"],
+            monitor=["Monitor line"],
+            needs_capture=["Needs capture line"],
+            checkpoints=["Checkpoint line"],
         )
 
         write_analysis(path, analysis)
@@ -66,6 +66,7 @@ class TestWriteAndLoadAnalysis:
 
         assert loaded is not None
         assert loaded == analysis
+        assert loaded.version == COMPANION_ANALYSIS_VERSION
 
     def test_written_json_uses_camel_case_and_load_accepts_it(self, tmp_path: Path) -> None:
         path = tmp_path / "analysis.json"
@@ -80,13 +81,45 @@ class TestWriteAndLoadAnalysis:
         payload = json.loads(path.read_text(encoding="utf-8"))
         assert "sessionId" in payload
         assert "updatedAt" in payload
+        assert "needsCapture" in payload
         assert "session_id" not in payload
         assert "updated_at" not in payload
+        assert "needs_capture" not in payload
+        assert "decisions" not in payload
+        assert "openItems" not in payload
+        assert "warnings" not in payload
 
         loaded = load_analysis(path)
         assert loaded is not None
         assert loaded.session_id == "session-456"
         assert loaded.updated_at == "2026-06-04T12:34:56Z"
+
+    def test_load_maps_v1_camel_case_sections(self, tmp_path: Path) -> None:
+        path = tmp_path / "v1.analysis.json"
+        path.write_text(
+            json.dumps(
+                {
+                    "version": 1,
+                    "sessionId": "session-v1",
+                    "updatedAt": "2026-06-04T12:34:56Z",
+                    "model": "gpt-5.2",
+                    "decisions": ["Decision line"],
+                    "openItems": ["Open item line"],
+                    "warnings": ["Warning line"],
+                }
+            ),
+            encoding="utf-8",
+        )
+
+        loaded = load_analysis(path)
+
+        assert loaded is not None
+        assert loaded.version == 1
+        assert loaded.session_id == "session-v1"
+        assert loaded.model == "gpt-5.2"
+        assert loaded.monitor == ["Decision line"]
+        assert loaded.needs_capture == ["Open item line"]
+        assert loaded.checkpoints == ["Warning line"]
 
 
 class TestLoadAnalysis:

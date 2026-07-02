@@ -16,6 +16,8 @@ from companion_tui.snapshot import CompanionGoal
 from companion_tui.source import DashboardModel
 from companion_tui.ui.formatting import _STATUS_GLYPH
 
+VISIBLE_OTHER_GOAL_LIMIT = 5
+
 
 def _render_bullets(items: list[str]) -> Text:
     """Render items as markup-safe bullet lines, or an em dash when empty."""
@@ -45,6 +47,13 @@ def _goal_panel(goal: CompanionGoal, is_selected: bool, is_active: bool) -> Pane
         border_style=border_style,
         padding=(0, 1),
     )
+
+
+def _collapsed_goals_row(count: int) -> Text:
+    """Render the compact hidden-goals placeholder row."""
+
+    label = "goal" if count == 1 else "goals"
+    return Text(f"+ {count} hidden {label}", style="dim")
 
 
 def _render_task_detail(goal: CompanionGoal | None, task_index: int) -> RenderableType:
@@ -97,16 +106,18 @@ class DashboardBody(Widget):
         self._selected_task = 0
         self._following = True
         self._active_index: int | None = None
-        self._goal_widgets: list[Static] = []
+        self._goal_widgets: dict[int, Static] = {}
+        self._rendered_goal_indices: list[int] = []
+        self._collapsed_goal_count = 0
 
     def compose(self) -> ComposeResult:
         yield VerticalScroll(id="dashboard-goals")
         with Vertical(id="dashboard-main"):
             yield Static(id="dashboard-task", classes="dashboard-box")
-            yield Static(id="dashboard-decisions", classes="dashboard-box")
+            yield Static(id="dashboard-monitor", classes="dashboard-box")
             with Horizontal(id="dashboard-bottom"):
-                yield Static(id="dashboard-open", classes="dashboard-box")
-                yield Static(id="dashboard-warnings", classes="dashboard-box")
+                yield Static(id="dashboard-capture", classes="dashboard-box")
+                yield Static(id="dashboard-checkpoints", classes="dashboard-box")
 
     def render(self) -> Text:
         return Text()
@@ -116,9 +127,9 @@ class DashboardBody(Widget):
         goals_panel.border_title = "Goals"
         goals_panel.can_focus = False
         self.query_one("#dashboard-task", Static).border_title = "Task"
-        self.query_one("#dashboard-decisions", Static).border_title = "Decisions"
-        self.query_one("#dashboard-open", Static).border_title = "Open items"
-        self.query_one("#dashboard-warnings", Static).border_title = "Warnings"
+        self.query_one("#dashboard-monitor", Static).border_title = "Monitor"
+        self.query_one("#dashboard-capture", Static).border_title = "Needs capture"
+        self.query_one("#dashboard-checkpoints", Static).border_title = "Checkpoints"
         self._render_dashboard()
 
     @staticmethod
@@ -127,6 +138,28 @@ class DashboardBody(Widget):
             if goal.active:
                 return index
         return len(goals) - 1 if goals else None
+
+    @staticmethod
+    def _visible_goal_indices(
+        goals: list[CompanionGoal], active_index: int | None, selected_goal: int
+    ) -> tuple[list[int], int]:
+        """Return chronological visible goal indices plus hidden count."""
+
+        if not goals:
+            return [], 0
+
+        recent_others = [
+            index
+            for index in range(len(goals) - 1, -1, -1)
+            if active_index is None or index != active_index
+        ][:VISIBLE_OTHER_GOAL_LIMIT]
+        visible = set(recent_others)
+        if active_index is not None:
+            visible.add(active_index)
+        if 0 <= selected_goal < len(goals):
+            visible.add(selected_goal)
+        visible_indices = sorted(visible)
+        return visible_indices, len(goals) - len(visible_indices)
 
     @staticmethod
     def _pinned_task_index(goal: CompanionGoal) -> int:
@@ -205,35 +238,43 @@ class DashboardBody(Widget):
         container = self.query_one("#dashboard-goals", VerticalScroll)
         if not self._goals:
             if self._goal_widgets or not container.children:
-                self._goal_widgets = []
+                self._goal_widgets = {}
+                self._rendered_goal_indices = []
+                self._collapsed_goal_count = 0
                 container.remove_children()
                 self.call_next(container.mount, Static(Text("No goals yet", style="dim")))
             return
-        if len(self._goal_widgets) != len(self._goals):
-            self._goal_widgets = [Static(id=f"goal-{index}", classes="goal-box") for index in range(len(self._goals))]
+
+        visible_indices, collapsed_count = self._visible_goal_indices(
+            self._goals, self._active_index, self._selected_goal
+        )
+        if visible_indices != self._rendered_goal_indices or collapsed_count != self._collapsed_goal_count:
+            self._goal_widgets = {index: Static(id=f"goal-{index}", classes="goal-box") for index in visible_indices}
+            self._rendered_goal_indices = visible_indices
+            self._collapsed_goal_count = collapsed_count
+            children: list[Static] = [self._goal_widgets[index] for index in reversed(visible_indices)]
+            if collapsed_count:
+                children.append(Static(_collapsed_goals_row(collapsed_count), id="goal-history-collapsed"))
             container.remove_children()
-            self.call_next(container.mount, *reversed(self._goal_widgets))
+            self.call_next(container.mount, *children)
             self.call_next(self._paint_goals)
         else:
             self._paint_goals()
 
     def _paint_goals(self) -> None:
-        for index, goal in enumerate(self._goals):
-            if index < len(self._goal_widgets):
-                self._goal_widgets[index].update(
-                    _goal_panel(goal, index == self._selected_goal, index == self._active_index)
-                )
-        if 0 <= self._selected_goal < len(self._goal_widgets):
+        for index, widget in self._goal_widgets.items():
+            widget.update(_goal_panel(self._goals[index], index == self._selected_goal, index == self._active_index))
+        if self._selected_goal in self._goal_widgets:
             self._goal_widgets[self._selected_goal].scroll_visible(animate=False)
 
     def _render_sections(self) -> None:
         analysis = self._analysis
-        self.query_one("#dashboard-decisions", Static).update(
-            _render_bullets(analysis.decisions) if analysis else Text("—", style="dim")
+        self.query_one("#dashboard-monitor", Static).update(
+            _render_bullets(analysis.monitor) if analysis else Text("—", style="dim")
         )
-        self.query_one("#dashboard-open", Static).update(
-            _render_bullets(analysis.open_items) if analysis else Text("—", style="dim")
+        self.query_one("#dashboard-capture", Static).update(
+            _render_bullets(analysis.needs_capture) if analysis else Text("—", style="dim")
         )
-        self.query_one("#dashboard-warnings", Static).update(
-            _render_bullets(analysis.warnings) if analysis else Text("—", style="dim")
+        self.query_one("#dashboard-checkpoints", Static).update(
+            _render_bullets(analysis.checkpoints) if analysis else Text("—", style="dim")
         )

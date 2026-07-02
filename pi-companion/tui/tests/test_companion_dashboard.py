@@ -21,7 +21,13 @@ from companion_tui.daemon import (
 )
 from companion_tui.snapshot import CompanionGoal, CompanionProgress, CompanionTask
 from companion_tui.source import DashboardModel
-from companion_tui.ui.dashboard import DashboardBody, _goal_panel, _render_bullets, _render_task_detail
+from companion_tui.ui.dashboard import (
+    DashboardBody,
+    _collapsed_goals_row,
+    _goal_panel,
+    _render_bullets,
+    _render_task_detail,
+)
 from companion_tui.ui.formatting import _format_duration, _truncate_preview
 from companion_tui.ui.modes import next_body_mode
 from companion_tui.ui.swarm import SwarmBody
@@ -133,7 +139,7 @@ def test_format_duration_boundaries() -> None:
 def test_dashboard_css_uses_requested_row_ratios() -> None:
     css = CompanionApp.CSS
     assert "#dashboard-task {\n        height: 3fr;" in css
-    assert "#dashboard-decisions {\n        height: 2fr;" in css
+    assert "#dashboard-monitor {\n        height: 2fr;" in css
     assert "#dashboard-bottom {\n        height: 2fr;" in css
     assert "#dashboard-daemon" not in css
 
@@ -161,6 +167,43 @@ def test_goal_panel_marks_active_and_shows_progress() -> None:
 def test_goal_panel_preserves_literal_markup() -> None:
     goal = _goal("[bold]x[/]", [], active=False, completed=0, total=0)
     assert "[bold]x[/]" in _to_text(_goal_panel(goal, is_selected=False, is_active=False))
+
+
+def test_goal_history_under_limit_has_no_collapse_row() -> None:
+    goals = [_goal(f"Goal {index}", [], active=index == 5, completed=0, total=0) for index in range(6)]
+
+    visible, collapsed = DashboardBody._visible_goal_indices(goals, active_index=5, selected_goal=5)
+
+    assert visible == [0, 1, 2, 3, 4, 5]
+    assert collapsed == 0
+
+
+def test_goal_history_over_limit_shows_collapsed_count() -> None:
+    goals = [_goal(f"Goal {index}", [], active=index == 7, completed=0, total=0) for index in range(8)]
+
+    visible, collapsed = DashboardBody._visible_goal_indices(goals, active_index=7, selected_goal=7)
+
+    assert visible == [2, 3, 4, 5, 6, 7]
+    assert _collapsed_goals_row(collapsed).plain == "+ 2 hidden goals"
+
+
+def test_goal_history_active_old_goal_remains_visible() -> None:
+    goals = [_goal(f"Goal {index}", [], active=index == 0, completed=0, total=0) for index in range(8)]
+
+    visible, collapsed = DashboardBody._visible_goal_indices(goals, active_index=0, selected_goal=0)
+
+    assert visible == [0, 3, 4, 5, 6, 7]
+    assert collapsed == 2
+
+
+def test_goal_history_selected_hidden_goal_becomes_visible() -> None:
+    goals = [_goal(f"Goal {index}", [], active=index == 7, completed=0, total=0) for index in range(8)]
+
+    visible, collapsed = DashboardBody._visible_goal_indices(goals, active_index=7, selected_goal=0)
+
+    assert visible == [0, 2, 3, 4, 5, 6, 7]
+    assert collapsed == 1
+    assert _collapsed_goals_row(collapsed).plain == "+ 1 hidden goal"
 
 
 def test_render_task_detail_empty() -> None:
@@ -283,12 +326,12 @@ def test_swarm_receives_daemon_summary_when_session_active(tmp_path: Path) -> No
     analysis_path.write_text(
         json.dumps(
             {
-                "version": 1,
+                "version": 2,
                 "sessionId": session_id,
                 "updatedAt": "t",
-                "decisions": [],
-                "openItems": [],
-                "warnings": [],
+                "monitor": [],
+                "needsCapture": [],
+                "checkpoints": [],
             }
         ),
         encoding="utf-8",
@@ -343,12 +386,12 @@ def test_swarm_polls_messages_for_selected_agent_when_session_active(tmp_path: P
     companion_analysis_path(session_id, snapshot_path.parent).write_text(
         json.dumps(
             {
-                "version": 1,
+                "version": 2,
                 "sessionId": session_id,
                 "updatedAt": "t",
-                "decisions": [],
-                "openItems": [],
-                "warnings": [],
+                "monitor": [],
+                "needsCapture": [],
+                "checkpoints": [],
             }
         ),
         encoding="utf-8",
@@ -450,12 +493,12 @@ def test_dashboard_autopin_navigation_and_repin(tmp_path: Path) -> None:
     analysis_path.write_text(
         json.dumps(
             {
-                "version": 1,
+                "version": 2,
                 "sessionId": session_id,
                 "updatedAt": "t",
-                "decisions": ["dec1"],
-                "openItems": ["open1"],
-                "warnings": ["warn1"],
+                "monitor": ["monitor1"],
+                "needsCapture": ["capture1"],
+                "checkpoints": ["checkpoint1"],
             }
         ),
         encoding="utf-8",
@@ -486,11 +529,14 @@ def test_dashboard_autopin_navigation_and_repin(tmp_path: Path) -> None:
             app.query_one("#dashboard-goals", VerticalScroll)
             for box_id in (
                 "#dashboard-task",
-                "#dashboard-decisions",
-                "#dashboard-open",
-                "#dashboard-warnings",
+                "#dashboard-monitor",
+                "#dashboard-capture",
+                "#dashboard-checkpoints",
             ):
                 app.query_one(box_id, Static)
+            assert app.query_one("#dashboard-monitor", Static).border_title == "Monitor"
+            assert app.query_one("#dashboard-capture", Static).border_title == "Needs capture"
+            assert app.query_one("#dashboard-checkpoints", Static).border_title == "Checkpoints"
             app.query_one("#goal-1", Static)
 
             swarm_detail = app.query_one("#swarm-detail-content", Static)

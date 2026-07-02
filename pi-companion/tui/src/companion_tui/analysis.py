@@ -11,7 +11,7 @@ from pydantic import Field, ValidationError, field_validator
 
 from companion_tui.snapshot import CompanionBaseModel
 
-COMPANION_ANALYSIS_VERSION = 1
+COMPANION_ANALYSIS_VERSION = 2
 COMPANION_ANALYSIS_DIR_NAME = "analysis"
 MAX_SECTION_ITEMS = 5
 
@@ -19,11 +19,11 @@ MAX_SECTION_ITEMS = 5
 class AnalysisSections(CompanionBaseModel):
     """Shared dashboard section fields."""
 
-    decisions: list[str] = Field(default_factory=list, max_length=MAX_SECTION_ITEMS)
-    open_items: list[str] = Field(default_factory=list, max_length=MAX_SECTION_ITEMS)
-    warnings: list[str] = Field(default_factory=list, max_length=MAX_SECTION_ITEMS)
+    monitor: list[str] = Field(default_factory=list, max_length=MAX_SECTION_ITEMS)
+    needs_capture: list[str] = Field(default_factory=list, max_length=MAX_SECTION_ITEMS)
+    checkpoints: list[str] = Field(default_factory=list, max_length=MAX_SECTION_ITEMS)
 
-    @field_validator("decisions", "open_items", "warnings", mode="before")
+    @field_validator("monitor", "needs_capture", "checkpoints", mode="before")
     @classmethod
     def _cap_items(cls, value: object) -> object:
         """Truncate over-long sections so the cap never hard-fails validation."""
@@ -53,12 +53,28 @@ def companion_analysis_path(session_id: str, base_dir: Path | None = None) -> Pa
     return resolved_base_dir / f"{sanitized_session_id}.analysis.json"
 
 
+def _map_v1_sections(parsed_payload: object) -> object:
+    """Map v1 analysis section keys to the v2 schema."""
+
+    if not isinstance(parsed_payload, dict):
+        return parsed_payload
+
+    mapped_payload = parsed_payload.copy()
+    if "monitor" not in mapped_payload and "decisions" in mapped_payload:
+        mapped_payload["monitor"] = mapped_payload["decisions"]
+    if "needs_capture" not in mapped_payload and "openItems" in mapped_payload:
+        mapped_payload["needs_capture"] = mapped_payload["openItems"]
+    if "checkpoints" not in mapped_payload and "warnings" in mapped_payload:
+        mapped_payload["checkpoints"] = mapped_payload["warnings"]
+    return mapped_payload
+
+
 def load_analysis(path: Path) -> CompanionAnalysis | None:
     """Load an analysis file into a model, returning None on any failure."""
 
     try:
         raw_payload = path.read_text(encoding="utf-8")
-        parsed_payload = json.loads(raw_payload)
+        parsed_payload = _map_v1_sections(json.loads(raw_payload))
         return CompanionAnalysis.model_validate(parsed_payload)
     except (OSError, json.JSONDecodeError, ValidationError):
         return None
