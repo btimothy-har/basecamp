@@ -4,12 +4,15 @@ import { describe, it } from "node:test";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { defaultTasksDir, registerTasks, type Task, tasksFilePath } from "../tasks/tasks.ts";
 
+interface RegisteredToolResult {
+	content: { type: "text"; text: string }[];
+	details?: unknown;
+	terminate?: boolean;
+}
+
 interface RegisteredTool {
 	name: string;
-	execute(
-		toolCallId: string,
-		params: Record<string, unknown>,
-	): Promise<{ content: { type: "text"; text: string }[]; details?: unknown }>;
+	execute(toolCallId: string, params: Record<string, unknown>): Promise<RegisteredToolResult>;
 }
 
 type RegisteredHandler = (event: Record<string, unknown>, ctx: ExtensionContext) => unknown | Promise<unknown>;
@@ -103,11 +106,38 @@ describe("complete_task stop_work", () => {
 
 		assert.match(result.content[0]!.text, /Task 0 completed: first\./);
 		assert.equal((result.details as { stop_work?: boolean }).stop_work, false);
+		assert.equal(result.terminate, false);
 		assert.deepEqual(patches, [undefined]);
 		assert.deepEqual(notifications, []);
 	});
 
-	it("terminates and notifies when stop_work is true", async () => {
+	it("continues normally when stop_work is false", async () => {
+		const { pi, completeTask } = setupTasks();
+		const notifications: string[] = [];
+		const result = await completeTask.execute("call-1", { task: 0, stop_work: false });
+
+		const patches = await pi.emit(
+			"tool_result",
+			{
+				type: "tool_result",
+				toolCallId: "call-1",
+				toolName: "complete_task",
+				input: { task: 0, stop_work: false },
+				content: result.content,
+				details: result.details,
+				isError: false,
+			},
+			makeContext(notifications),
+		);
+
+		assert.match(result.content[0]!.text, /Task 0 completed: first\./);
+		assert.equal((result.details as { stop_work?: boolean }).stop_work, false);
+		assert.equal(result.terminate, false);
+		assert.deepEqual(patches, [undefined]);
+		assert.deepEqual(notifications, []);
+	});
+
+	it("returns a termination signal and notifies when stop_work is true", async () => {
 		const { pi, completeTask } = setupTasks();
 		const notifications: string[] = [];
 		const result = await completeTask.execute("call-1", { task: 0, stop_work: true });
@@ -128,7 +158,8 @@ describe("complete_task stop_work", () => {
 
 		assert.match(result.content[0]!.text, /stop_work requested/);
 		assert.equal((result.details as { stop_work?: boolean }).stop_work, true);
-		assert.equal((patches[0] as { terminate?: boolean }).terminate, true);
+		assert.equal(result.terminate, true);
+		assert.deepEqual(patches, [undefined]);
 		assert.deepEqual(notifications, ["Task 0 completed: first. Stopping work now."]);
 	});
 });

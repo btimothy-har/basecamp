@@ -32,6 +32,8 @@ Never give time estimates or predictions for how long tasks will take, whether f
 
 Use `update_goal` to set the goal at the start of every task. Use `create_tasks` to break the goal into ordered steps, then `start_task`/`complete_task` to track progress. Always maintain tasks — even simple work gets a task list. Keep tasks at meaningful granularity — logical units of work, not individual file edits.
 
+When calling `complete_task` with `stop_work: true`, call it by itself as the only tool call in that assistant response. Do not batch it with any other tool call.
+
 Each task has a label and description. The description should explain what the task involves and why. Use `annotate_task` to add notes — context, decisions, blockers, relevant files. Use `get_task` to review a task's full context before or during work.
 
 ### While Executing
