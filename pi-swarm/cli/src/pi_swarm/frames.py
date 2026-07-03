@@ -8,7 +8,9 @@ from pydantic import BaseModel, Field, TypeAdapter
 
 # Gates every client-visible daemon capability, not just WebSocket frame shapes.
 # This includes HTTP endpoints like /runs/summary, so stale daemons restart.
-PROTOCOL_VERSION = 14
+# v15: peer message/ask may target an agent by its known public handle even
+# without live relationship reachability.
+PROTOCOL_VERSION = 15
 
 
 class RegisterFrame(BaseModel):

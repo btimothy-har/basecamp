@@ -828,6 +828,66 @@ def test_can_message_allows_visible_sessions_agents_and_siblings_only(tmp_path: 
     assert store.agent_relation("agent-a", "missing") == "unknown"
 
 
+def test_known_public_handle_contact_is_allowed_across_unrelated_roots(tmp_path: Path) -> None:
+    db_path = tmp_path / "daemon.db"
+    store = Store(db_path=db_path)
+
+    store.upsert_agent(
+        agent_id="root",
+        parent_id=None,
+        sibling_group="sg-root",
+        depth=0,
+        role="session",
+        session_name="root-session",
+        cwd="/tmp/root",
+    )
+    store.upsert_agent(
+        agent_id="outside-root",
+        parent_id=None,
+        sibling_group="outside-root",
+        depth=0,
+        role="session",
+        session_name="outside-root",
+        cwd="/tmp/outside-root",
+    )
+    store.upsert_agent(
+        agent_id="outside-agent",
+        agent_handle="outside-handle",
+        parent_id="outside-root",
+        sibling_group="outside-root",
+        depth=1,
+        role="agent",
+        session_name="outside-agent",
+        cwd="/tmp/outside-agent",
+    )
+    store.upsert_agent(
+        agent_id="private-agent-id",
+        parent_id="outside-root",
+        sibling_group="outside-root",
+        depth=1,
+        role="agent",
+        session_name="private-agent",
+        cwd="/tmp/private-agent",
+    )
+
+    # Without known-handle addressing, an unrelated target stays denied.
+    assert store.can_message("root", "outside-agent") is False
+    assert store.can_ask("root", "outside-agent") is False
+
+    # A known public handle is a routable contact address across unrelated roots.
+    assert store.can_message("root", "outside-agent", addressed_by_public_handle=True) is True
+    assert store.can_ask("root", "outside-agent", addressed_by_public_handle=True) is True
+
+    # An agent whose handle falls back to its private id exposes no public handle,
+    # so known-handle addressing does not relax private-id routing.
+    assert store.can_message("root", "private-agent-id", addressed_by_public_handle=True) is False
+    assert store.can_ask("root", "private-agent-id", addressed_by_public_handle=True) is False
+
+    # A missing requester or target is never reachable, even by known handle.
+    assert store.can_message("missing", "outside-agent", addressed_by_public_handle=True) is False
+    assert store.can_message("root", "missing", addressed_by_public_handle=True) is False
+
+
 def test_get_root_agent_directory_scopes_to_root_and_excludes_sessions(tmp_path: Path) -> None:
     db_path = tmp_path / "daemon.db"
     store = Store(db_path=db_path)

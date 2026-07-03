@@ -183,6 +183,11 @@ async def prepare_dispatch(
     fork_source_path = None
     if frame.spec.fork_from:
         fork_target = await asyncio.to_thread(store.get_agent_by_handle, frame.spec.fork_from)
+        # Only a match by public handle earns known-handle contact; the private-id
+        # fallback below stays gated on relationship reachability.
+        addressed_by_public_handle = (
+            fork_target is not None and _public_message_handle(fork_target) == frame.spec.fork_from
+        )
         if fork_target is None:
             fork_target = await asyncio.to_thread(store.get_agent, frame.spec.fork_from)
         if fork_target is None:
@@ -191,7 +196,12 @@ async def prepare_dispatch(
         fork_target_id = fork_target.get("id")
         if not isinstance(fork_target_id, str):
             return DispatchRejection(reason="fork_target_unknown")
-        if not await asyncio.to_thread(store.can_ask, dispatcher_node_id, fork_target_id):
+        if not await asyncio.to_thread(
+            store.can_ask,
+            dispatcher_node_id,
+            fork_target_id,
+            addressed_by_public_handle=addressed_by_public_handle,
+        ):
             return DispatchRejection(reason="fork_target_unknown")
 
         # Resolve under the daemon's own home (the owner of all agent session dirs),
@@ -386,7 +396,14 @@ async def accept_peer_message(
     ):
         return _unknown_peer_message_ack(frame.request_id)
 
-    if not await asyncio.to_thread(store.can_message, requester_node_id, target_agent_id):
+    # The target was resolved and round-trip validated by its public handle above,
+    # so this contact is authorized as known-handle addressing.
+    if not await asyncio.to_thread(
+        store.can_message,
+        requester_node_id,
+        target_agent_id,
+        addressed_by_public_handle=True,
+    ):
         return _unknown_peer_message_ack(frame.request_id)
 
     root_id = await asyncio.to_thread(store.resolve_agent_root, requester_node_id)

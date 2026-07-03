@@ -1,22 +1,23 @@
 # Pi Swarm Daemon Protocol
 
-Protocol version: `14`
+Protocol version: `15`
 
 All frames are JSON objects with an envelope:
 
 ```json
-{"type":"<frame_type>","v":14,...}
+{"type":"<frame_type>","v":15,...}
 ```
 
 Version handling:
 - The daemon validates `v` on every inbound frame.
-- If `v != 14`, the daemon sends an `error` frame with `code: "protocol_version"` and closes the connection.
+- If `v != 15`, the daemon sends an `error` frame with `code: "protocol_version"` and closes the connection.
 - The extension treats the protocol as a client-visible capability gate, not only a frame-shape version. A version mismatch restarts the host daemon during ensure-daemon.
+- v15 adds known-public-handle contact for `peer_message` and fork-`ask`: contact is authorized without a live relationship when the target is addressed by its known public handle (see below).
 
 ## Transport
 
 - HTTP over Unix domain socket (UDS):
-  - `GET /health` → `{"status":"ok","protocol":14}`
+  - `GET /health` → `{"status":"ok","protocol":15}`
   - `GET /runs/summary?root_id=<id>` returns safe agent-level observability for the companion dashboard.
   - `GET /runs/messages?root_id=<id>&agent_handle=<handle>` returns selected-agent assistant message detail for the companion dashboard.
 - WebSocket over UDS:
@@ -67,7 +68,7 @@ Important fields:
 - `agent_type` and `run_kind`: immutable per handle after the first dispatch.
 - `model`: public display model selected for the agent run. If the extension uses Pi's default model, it sends/stores `default`.
 - `spec`: opaque TypeScript-authored spawn spec.
-- `spec.fork_from`: optional; a target agent handle/id. When present, the daemon resolves it to the target's session file and forks it (pi --fork) into a new read-only answerer session — used by the agent 'ask' capability. Omitted/null for normal dispatch.
+- `spec.fork_from`: optional; a target agent handle/id. When present, the daemon resolves it to the target's session file and forks it (pi --fork) into a new read-only answerer session — used by the agent 'ask' capability. Omitted/null for normal dispatch. Resolution by known public handle authorizes the fork-ask across relationships (as with `peer_message`); the private-`agent_id` fallback stays relationship-gated.
 
 New run rows persist `dispatcher_id` as the registered `node_id` that sent `dispatch`.
 
@@ -94,7 +95,7 @@ Waits for one or more public agent handles:
 ```json
 {
   "type": "wait",
-  "v": 14,
+  "v": 15,
   "agent_ids": [],
   "agent_handles": ["mossy-otter-a1b2c3"],
   "mode": "all",
@@ -125,7 +126,7 @@ Requests a safe directory of agents visible under the caller's root session:
 ```json
 {
   "type": "list_agents",
-  "v": 14,
+  "v": 15,
   "request_id": "list-001",
   "awaitable": true
 }
@@ -160,6 +161,8 @@ Important fields:
 - `interrupt`: optional boolean, default `false`; when true, delivery may interrupt the recipient if the runtime supports it.
 
 The request does not expose or require private `agent_id` or `run_id` values. Missing and unauthorized targets both resolve to `unknown` without leaking existence.
+
+Contact authorization is satisfied by either relationship reachability (self, ancestor/descendant, or same sibling group) or by addressing the target's known public handle. A known public handle is a routable contact address, not authorization for introspection: it never widens the agent directory (`list_agents`), transcript/run-message access, `wait_for_agent` result ownership, or private `agent_id` routing (which stays relationship-gated). This keeps persisted launch records useful for contact after resume or across user-facing surfaces without leaking hidden agents.
 
 ### `peer_message_ack` daemon → client
 
@@ -270,6 +273,6 @@ Reports protocol/parse errors and closes the WebSocket for fatal frame errors. C
 A minimal client flow is:
 
 1. Connect to `/ws` over the UDS.
-2. Send `register` with `v: 14`.
+2. Send `register` with `v: 15`.
 3. Send `dispatch` with private `run_id` / `agent_id` and public `agent_handle`.
 4. Use the `agent_handle` with `wait` or discover agents through `list_agents`.

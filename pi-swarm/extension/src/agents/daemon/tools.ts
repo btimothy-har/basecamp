@@ -215,7 +215,7 @@ export function registerPeerMessageTools(
 		name: "message_agent",
 		label: "Message Agent",
 		description:
-			"Send a one-way persistent message to a visible messageable agent, including a parent/session when addressable by handle. Returns daemon acceptance only; no recipient response is included.",
+			"Send a one-way persistent message to an agent by its known public handle. A known public handle is a routable contact address, so this can reach an agent across sessions even without a live parent/child/sibling relationship. Returns daemon acceptance only; no recipient response is included.",
 		parameters: MessageAgentParams,
 		async execute(_id, params) {
 			if (!deps.hasInvokedSkill("agents")) {
@@ -379,7 +379,7 @@ export function registerAskAgentTool(
 		name: "ask_agent",
 		label: "Ask Agent",
 		description:
-			"Ask a visible askable agent, including a parent/session when addressable by handle, and return its answer.",
+			"Ask an agent by its known public handle and return its answer. A known public handle is a routable contact address, so this can reach an agent across sessions even without a live parent/child/sibling relationship.",
 		parameters: AskAgentParams,
 		async execute(_id, params, signal, _onUpdate, ctx) {
 			if (!deps.hasInvokedSkill("agents")) {
