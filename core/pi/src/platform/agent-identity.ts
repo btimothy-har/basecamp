@@ -40,6 +40,10 @@ export function getAgentIdentityProvider(): AgentIdentityProvider | null {
 	return getAgentIdentityState().provider;
 }
 
+export function resetAgentIdentityForTesting(): void {
+	getAgentIdentityState().provider = null;
+}
+
 export function deriveCurrentAgentHandle(ctx: ExtensionContext): string | null {
 	try {
 		return getAgentIdentityProvider()?.deriveHandle(ctx) ?? null;

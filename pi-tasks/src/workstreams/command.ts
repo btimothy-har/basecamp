@@ -45,7 +45,7 @@ export function buildWorkstreamStartMessage(
 		},
 		worktree: {
 			label: record.worktree.label,
-			path: record.worktree.path ?? "",
+			path: record.worktree.path ?? "not recorded in launch record; use this session's current worktree",
 			branch: record.worktree.branch ?? null,
 		},
 	});
@@ -69,7 +69,15 @@ export function registerWorkstreamCommand(pi: ExtensionAPI, deps = defaultWorkst
 			}
 
 			const workspace = deps.getWorkspaceState();
-			const repo = workspace?.repo?.isRepo ? workspace.repo.name : undefined;
+			if (!workspace?.repo?.isRepo) {
+				ctx.ui.notify(
+					`Cannot start staged workstream "${id}" because this session is not in a repository workspace.`,
+					"error",
+				);
+				return;
+			}
+
+			const repo = workspace.repo.name;
 			const statePath = deps.launchStatePath();
 			const record = deps.findById(statePath, id, repo);
 			if (!record) {

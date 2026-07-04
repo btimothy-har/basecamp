@@ -253,6 +253,48 @@ describe("workstream launch persistence", () => {
 		);
 	});
 
+	it("rejects duplicate launch ids in the same repo at the write boundary", () => {
+		const filePath = path.join(makeTmpDir(), "launch-index.json");
+		const first = makeRecord({ id: "launch-workstream-too", repo: "org/repo" });
+		const sameRepoDuplicateId = makeRecord({
+			id: "launch-workstream-too",
+			fingerprint: "fingerprint-2",
+			repo: "org/repo",
+			worktree: { label: "bt/second" },
+		});
+		const otherRepoSameId = makeRecord({
+			id: "launch-workstream-too",
+			fingerprint: "fingerprint-3",
+			repo: "org/other",
+			worktree: { label: "bt/other" },
+		});
+
+		const appended = appendWorkstreamLaunchRecordIfAbsent(filePath, first, {
+			repo: first.repo,
+			fingerprint: first.fingerprint,
+			worktreeLabel: first.worktree.label,
+		});
+		const skipped = appendWorkstreamLaunchRecordIfAbsent(filePath, sameRepoDuplicateId, {
+			repo: sameRepoDuplicateId.repo,
+			fingerprint: sameRepoDuplicateId.fingerprint,
+			worktreeLabel: sameRepoDuplicateId.worktree.label,
+		});
+		const otherRepoAppended = appendWorkstreamLaunchRecordIfAbsent(filePath, otherRepoSameId, {
+			repo: otherRepoSameId.repo,
+			fingerprint: otherRepoSameId.fingerprint,
+			worktreeLabel: otherRepoSameId.worktree.label,
+		});
+
+		assert.equal(appended.appended, true);
+		assert.equal(skipped.appended, false);
+		assert.equal(skipped.record.fingerprint, "fingerprint-1");
+		assert.equal(otherRepoAppended.appended, true);
+		assert.deepEqual(
+			loadWorkstreamLaunchState(filePath).records.map((record) => `${record.repo}:${record.id}`),
+			["org/repo:launch-workstream-too", "org/other:launch-workstream-too"],
+		);
+	});
+
 	it("returns null when updating an unknown record", () => {
 		const filePath = path.join(makeTmpDir(), "launch-index.json");
 		appendWorkstreamLaunchRecord(filePath, makeRecord());

@@ -376,6 +376,10 @@ export function appendWorkstreamLaunchRecordIfAbsent(
 	if (!normalized) throw new Error("Invalid workstream launch record.");
 	return withLaunchStateLock(filePath, () => {
 		const state = loadWorkstreamLaunchState(filePath);
+		const idDuplicate = state.records.find(
+			(existing) => existing.repo === normalized.repo && existing.id === normalized.id,
+		);
+		if (idDuplicate) return { appended: false, record: idDuplicate, state };
 		const duplicate = findDuplicateRecord(state.records, lookup, normalized.repo);
 		if (duplicate) return { appended: false, record: duplicate, state };
 		state.records.push(normalized);

@@ -5,21 +5,16 @@ import {
 	deriveCurrentAgentHandle,
 	getAgentIdentityProvider,
 	registerAgentIdentityProvider,
+	resetAgentIdentityForTesting,
 } from "../agent-identity.ts";
-
-const identityKey = Symbol.for("basecamp.agentIdentity");
-
-function clearProvider(): void {
-	(globalThis as Record<symbol, unknown>)[identityKey] = { provider: null };
-}
 
 const ctx = { sessionManager: { getSessionId: () => "session-1" } } as unknown as ExtensionContext;
 
 describe("agent identity seam", () => {
-	afterEach(clearProvider);
+	afterEach(resetAgentIdentityForTesting);
 
 	it("returns null when no provider is registered", () => {
-		clearProvider();
+		resetAgentIdentityForTesting();
 		assert.equal(getAgentIdentityProvider(), null);
 		assert.equal(deriveCurrentAgentHandle(ctx), null);
 	});

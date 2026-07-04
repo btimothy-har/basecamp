@@ -138,6 +138,28 @@ describe("/workstream command", () => {
 		assert.equal(notices[0]?.level, "error");
 	});
 
+	it("fails closed when the repository workspace cannot be determined", async () => {
+		const pi = new FakePi();
+		let findCalled = false;
+		const harness = makeDeps({
+			getWorkspaceState: () => null,
+			findById: () => {
+				findCalled = true;
+				return makeRecord();
+			},
+		});
+		registerWorkstreamCommand(pi as unknown as ExtensionAPI, harness.deps);
+		const { ctx, notices } = makeCtx();
+
+		await run(pi, "launch-workstream-too", ctx);
+
+		assert.equal(pi.userMessages.length, 0);
+		assert.equal(harness.stampCalls.length, 0);
+		assert.equal(findCalled, false);
+		assert.match(notices[0]?.message ?? "", /not in a repository workspace/);
+		assert.equal(notices[0]?.level, "error");
+	});
+
 	it("degrades gracefully when the handle cannot be derived", async () => {
 		const pi = new FakePi();
 		const harness = makeDeps();
@@ -173,6 +195,39 @@ describe("/workstream command", () => {
 		assert.match(notices[0]?.message ?? "", /could not persist it to the workstream record/);
 		assert.equal(notices[0]?.level, "error");
 		assert.equal(harness.stampCalls.length, 0);
+	});
+
+	it("warns when handle stamping returns null without throwing", async () => {
+		const pi = new FakePi();
+		const harness = makeDeps({
+			stampHandle: () => null,
+		});
+		registerWorkstreamCommand(pi as unknown as ExtensionAPI, harness.deps);
+		const { ctx, notices } = makeCtx();
+
+		await run(pi, "launch-workstream-too", ctx);
+
+		assert.equal(pi.userMessages.length, 1);
+		assert.match(pi.userMessages[0]!, /agent handle was derived as `swift-otter-1a2b3c`/);
+		assert.match(pi.userMessages[0]!, /could not be persisted/);
+		assert.doesNotMatch(pi.userMessages[0]!, /registered as `swift-otter-1a2b3c`/);
+		assert.match(notices[0]?.message ?? "", /could not persist it to the workstream record/);
+		assert.equal(notices[0]?.level, "error");
+		assert.equal(harness.stampCalls.length, 0);
+	});
+
+	it("uses an explicit worktree path fallback when the launch record has no path", async () => {
+		const pi = new FakePi();
+		const harness = makeDeps();
+		harness.setRecord(makeRecord({ worktree: { label: "wt-bt/no-path", branch: "bt/no-path" } }));
+		registerWorkstreamCommand(pi as unknown as ExtensionAPI, harness.deps);
+		const { ctx } = makeCtx();
+
+		await run(pi, "launch-workstream-too", ctx);
+
+		assert.equal(pi.userMessages.length, 1);
+		assert.match(pi.userMessages[0]!, /Worktree path: not recorded in launch record/);
+		assert.doesNotMatch(pi.userMessages[0]!, /Worktree path:\s*\n/);
 	});
 
 	it("is wired from pi-tasks/index.ts", () => {
