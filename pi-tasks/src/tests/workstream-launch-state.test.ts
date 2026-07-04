@@ -6,6 +6,7 @@ import { afterEach, describe, it } from "node:test";
 import {
 	appendWorkstreamLaunchRecord,
 	appendWorkstreamLaunchRecordIfAbsent,
+	appendWorkstreamLaunchRecordWithAvailableId,
 	buildWorkstreamLaunchFingerprint,
 	defaultWorkstreamLaunchesDir,
 	emptyWorkstreamLaunchState,
@@ -17,8 +18,10 @@ import {
 	saveWorkstreamLaunchState,
 	slugifyWorkstreamLaunchId,
 	stampWorkstreamLaunchAgentHandle,
+	updateFailedWorkstreamLaunchRecord,
 	updateWorkstreamLaunchRecord,
 	type WorkstreamLaunchRecord,
+	type WorkstreamLaunchRecordDraft,
 	workstreamLaunchStatePath,
 } from "../workstreams/launch-state.ts";
 
@@ -80,6 +83,23 @@ function makeRecord(overrides: Partial<WorkstreamLaunchRecord> = {}): Workstream
 		createdAt: "2026-07-03T00:00:00.000Z",
 		updatedAt: "2026-07-03T00:00:00.000Z",
 		...overrides,
+	};
+}
+
+function makeRecordDraft(overrides: Partial<WorkstreamLaunchRecord> = {}): WorkstreamLaunchRecordDraft {
+	const record = makeRecord(overrides);
+	return {
+		fingerprint: record.fingerprint,
+		repo: record.repo,
+		source: record.source,
+		workstream: record.workstream,
+		worktree: record.worktree,
+		agent: record.agent,
+		setup: record.setup,
+		herdr: record.herdr,
+		launch: record.launch,
+		createdAt: record.createdAt,
+		updatedAt: record.updatedAt,
 	};
 }
 
@@ -293,6 +313,67 @@ describe("workstream launch persistence", () => {
 			loadWorkstreamLaunchState(filePath).records.map((record) => `${record.repo}:${record.id}`),
 			["org/repo:launch-workstream-too", "org/other:launch-workstream-too"],
 		);
+	});
+
+	it("allocates the readable id while appending under the write lock", () => {
+		const filePath = path.join(makeTmpDir(), "launch-index.json");
+		const firstStaleId = nextAvailableWorkstreamLaunchId(filePath, "org/repo", "Launch Workstream Too");
+		const secondStaleId = nextAvailableWorkstreamLaunchId(filePath, "org/repo", "Launch Workstream Too");
+
+		const first = appendWorkstreamLaunchRecordWithAvailableId(
+			filePath,
+			makeRecordDraft({
+				id: "ignored",
+				fingerprint: "fingerprint-1",
+				repo: "org/repo",
+				worktree: { label: "bt/first" },
+			}),
+			{ repo: "org/repo", fingerprint: "fingerprint-1", worktreeLabel: "bt/first" },
+			"Launch Workstream Too",
+		);
+		const second = appendWorkstreamLaunchRecordWithAvailableId(
+			filePath,
+			makeRecordDraft({
+				id: "ignored",
+				fingerprint: "fingerprint-2",
+				repo: "org/repo",
+				worktree: { label: "bt/second" },
+			}),
+			{ repo: "org/repo", fingerprint: "fingerprint-2", worktreeLabel: "bt/second" },
+			"Launch Workstream Too",
+		);
+
+		assert.equal(firstStaleId, "launch-workstream-too");
+		assert.equal(secondStaleId, "launch-workstream-too");
+		assert.equal(first.record.id, "launch-workstream-too");
+		assert.equal(second.record.id, "launch-workstream-too-2");
+		assert.deepEqual(
+			loadWorkstreamLaunchState(filePath).records.map((record) => record.id),
+			["launch-workstream-too", "launch-workstream-too-2"],
+		);
+	});
+
+	it("only updates failed launch records when reclaiming a tombstone", () => {
+		const filePath = path.join(makeTmpDir(), "launch-index.json");
+		appendWorkstreamLaunchRecord(filePath, makeRecord({ launch: { status: "failed", error: "old failure" } }));
+
+		const reclaimed = updateFailedWorkstreamLaunchRecord(
+			filePath,
+			"launch-1",
+			{ launch: { status: "running", message: "retrying" } },
+			"2026-07-03T01:00:00.000Z",
+		);
+		const skipped = updateFailedWorkstreamLaunchRecord(
+			filePath,
+			"launch-1",
+			{ launch: { status: "running", message: "retrying again" } },
+			"2026-07-03T02:00:00.000Z",
+		);
+
+		assert.equal(reclaimed?.launch.status, "running");
+		assert.equal(reclaimed?.updatedAt, "2026-07-03T01:00:00.000Z");
+		assert.equal(skipped, null);
+		assert.equal(loadWorkstreamLaunchState(filePath).records[0]?.updatedAt, "2026-07-03T01:00:00.000Z");
 	});
 
 	it("returns null when updating an unknown record", () => {

@@ -14,14 +14,15 @@ import { suggestWorktreeTarget } from "../planning/worktree-choices.ts";
 import { shouldRunWorktreeSetup } from "../planning/worktree-setup.ts";
 import { type HerdrWorkstreamOpenResult, openWorkstreamInHerdr } from "./herdr.ts";
 import {
-	appendWorkstreamLaunchRecordIfAbsent,
+	appendWorkstreamLaunchRecordWithAvailableId,
 	buildWorkstreamLaunchFingerprint,
 	findDuplicateWorkstreamLaunch,
 	listWorkstreamLaunchRecords,
-	nextAvailableWorkstreamLaunchId,
+	updateFailedWorkstreamLaunchRecord,
 	updateWorkstreamLaunchRecord,
 	type WorkstreamLaunchAppendResult,
 	type WorkstreamLaunchRecord,
+	type WorkstreamLaunchRecordDraft,
 	type WorkstreamLaunchRecordUpdate,
 	workstreamLaunchStatePath,
 } from "./launch-state.ts";
@@ -107,12 +108,19 @@ type ListWorkstreamLaunchesToolResult = {
 
 interface PersistedLaunchStoreDeps {
 	launchStatePath(): string;
-	appendRecordIfAbsent(
+	appendRecordWithAvailableId(
 		filePath: string,
-		record: WorkstreamLaunchRecord,
+		record: WorkstreamLaunchRecordDraft,
 		lookup: { repo?: string; fingerprint?: string; worktreeLabel?: string },
+		baseLabel: string,
 	): WorkstreamLaunchAppendResult;
 	updateRecord(
+		filePath: string,
+		id: string,
+		updates: WorkstreamLaunchRecordUpdate,
+		now?: string,
+	): WorkstreamLaunchRecord | null;
+	updateFailedRecord(
 		filePath: string,
 		id: string,
 		updates: WorkstreamLaunchRecordUpdate,
@@ -122,7 +130,6 @@ interface PersistedLaunchStoreDeps {
 		filePath: string,
 		lookup: { repo?: string; fingerprint?: string; worktreeLabel?: string },
 	): WorkstreamLaunchRecord | null;
-	nextAvailableId(filePath: string, repo: string, label: string): string;
 }
 
 interface ListWorkstreamLaunchesStoreDeps {
@@ -165,10 +172,10 @@ export function defaultLaunchWorkstreamDeps(): LaunchWorkstreamDeps {
 		openWorkstreamInHerdr,
 		store: {
 			launchStatePath: workstreamLaunchStatePath,
-			appendRecordIfAbsent: appendWorkstreamLaunchRecordIfAbsent,
+			appendRecordWithAvailableId: appendWorkstreamLaunchRecordWithAvailableId,
 			updateRecord: updateWorkstreamLaunchRecord,
+			updateFailedRecord: updateFailedWorkstreamLaunchRecord,
 			findDuplicate: findDuplicateWorkstreamLaunch,
-			nextAvailableId: nextAvailableWorkstreamLaunchId,
 		},
 		now: () => new Date().toISOString(),
 	};
@@ -392,6 +399,15 @@ async function updateRecord(
 	return updated ?? current;
 }
 
+function reclaimFailedRecord(
+	deps: LaunchWorkstreamDeps,
+	filePath: string,
+	current: WorkstreamLaunchRecord,
+	updates: WorkstreamLaunchRecordUpdate,
+): WorkstreamLaunchRecord | null {
+	return deps.store.updateFailedRecord(filePath, current.id, updates, deps.now());
+}
+
 function failedDetails(
 	message: string,
 	nextStep: string,
@@ -507,25 +523,52 @@ export async function executeLaunchWorkstream(
 		label: parsed.value.workstream.label,
 	});
 	const statePath = deps.store.launchStatePath();
-
-	// Reuse a non-failed matching launch; a failed record is a reclaimable tombstone we re-stage in place.
-	const duplicate = deps.store.findDuplicate(statePath, {
+	const duplicateLookup = {
 		repo,
 		fingerprint,
 		worktreeLabel: target.worktreeLabel,
-	});
+	};
+
+	// Reuse a non-failed matching launch; a failed record is a reclaimable tombstone we re-stage in place.
+	const duplicate = deps.store.findDuplicate(statePath, duplicateLookup);
 	if (duplicate && duplicate.launch.status !== "failed") {
 		return textResult(existingLaunchResult(duplicate, duplicate.fingerprint === fingerprint));
 	}
 
 	let record: WorkstreamLaunchRecord;
 	if (duplicate) {
-		record = await updateRecord(
-			deps,
-			statePath,
-			duplicate,
-			stagingReset("Re-staging workstream after a previous failure.", repo, fingerprint, parsed.value),
-		);
+		try {
+			const reclaimed = reclaimFailedRecord(
+				deps,
+				statePath,
+				duplicate,
+				stagingReset("Re-staging workstream after a previous failure.", repo, fingerprint, parsed.value),
+			);
+			if (!reclaimed) {
+				const current = deps.store.findDuplicate(statePath, duplicateLookup);
+				if (current && current.launch.status !== "failed") {
+					return textResult(existingLaunchResult(current, current.fingerprint === fingerprint));
+				}
+				return textResult(
+					failedDetails(
+						`Could not reclaim failed workstream launch ${duplicate.id} because it changed while retrying.`,
+						"Refresh the workstream launch list, then continue the existing launch or retry.",
+						current ?? duplicate,
+					),
+					true,
+				);
+			}
+			record = reclaimed;
+		} catch (err) {
+			return textResult(
+				failedDetails(
+					`Could not reclaim failed workstream launch ${duplicate.id}: ${errorMessage(err)}`,
+					"Fix workstream launch state persistence, then call launch_workstream again.",
+					duplicate,
+				),
+				true,
+			);
+		}
 	} else {
 		// Refuse to silently adopt an existing worktree that has no launch record.
 		let existingWorktrees: WorkspaceWorktree[];
@@ -551,8 +594,7 @@ export async function executeLaunchWorkstream(
 		}
 
 		const now = deps.now();
-		const initial: WorkstreamLaunchRecord = {
-			id: deps.store.nextAvailableId(statePath, repo, parsed.value.workstream.label),
+		const initial: WorkstreamLaunchRecordDraft = {
 			fingerprint,
 			repo,
 			source: parsed.value.source,
@@ -574,20 +616,36 @@ export async function executeLaunchWorkstream(
 		};
 
 		try {
-			const appended = deps.store.appendRecordIfAbsent(statePath, initial, {
-				repo,
-				fingerprint,
-				worktreeLabel: target.worktreeLabel,
-			});
+			const appended = deps.store.appendRecordWithAvailableId(
+				statePath,
+				initial,
+				duplicateLookup,
+				parsed.value.workstream.label,
+			);
 			if (appended.appended) {
 				record = appended.record;
 			} else if (appended.record.launch.status === "failed") {
-				record = await updateRecord(
+				const reclaimed = reclaimFailedRecord(
 					deps,
 					statePath,
 					appended.record,
 					stagingReset("Re-staging workstream after a previous failure.", repo, fingerprint, parsed.value),
 				);
+				if (!reclaimed) {
+					const current = deps.store.findDuplicate(statePath, duplicateLookup);
+					if (current && current.launch.status !== "failed") {
+						return textResult(existingLaunchResult(current, current.fingerprint === fingerprint));
+					}
+					return textResult(
+						failedDetails(
+							`Could not reclaim failed workstream launch ${appended.record.id} because it changed while retrying.`,
+							"Refresh the workstream launch list, then continue the existing launch or retry.",
+							current ?? appended.record,
+						),
+						true,
+					);
+				}
+				record = reclaimed;
 			} else {
 				return textResult(existingLaunchResult(appended.record, appended.record.fingerprint === fingerprint));
 			}

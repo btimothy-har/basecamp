@@ -27,6 +27,10 @@ export function defaultWorkstreamCommandDeps(): WorkstreamCommandDeps {
 	};
 }
 
+function errorMessage(err: unknown): string {
+	return err instanceof Error ? err.message : String(err);
+}
+
 type WorkstreamHandleRegistration =
 	| { status: "registered"; handle: string }
 	| { status: "not_persisted"; handle: string }
@@ -68,18 +72,26 @@ export function registerWorkstreamCommand(pi: ExtensionAPI, deps = defaultWorkst
 				return;
 			}
 
-			const workspace = deps.getWorkspaceState();
-			if (!workspace?.repo?.isRepo) {
-				ctx.ui.notify(
-					`Cannot start staged workstream "${id}" because this session is not in a repository workspace.`,
-					"error",
-				);
+			let repo: string;
+			let statePath: string;
+			let record: WorkstreamLaunchRecord | null;
+			try {
+				const workspace = deps.getWorkspaceState();
+				if (!workspace?.repo?.isRepo) {
+					ctx.ui.notify(
+						`Cannot start staged workstream "${id}" because this session is not in a repository workspace.`,
+						"error",
+					);
+					return;
+				}
+
+				repo = workspace.repo.name;
+				statePath = deps.launchStatePath();
+				record = deps.findById(statePath, id, repo);
+			} catch (err) {
+				ctx.ui.notify(`Could not load staged workstream "${id}" for this repository: ${errorMessage(err)}`, "error");
 				return;
 			}
-
-			const repo = workspace.repo.name;
-			const statePath = deps.launchStatePath();
-			const record = deps.findById(statePath, id, repo);
 			if (!record) {
 				ctx.ui.notify(
 					`No staged workstream "${id}" found for this repository. Confirm the id with copilot (list_workstream_launches).`,

@@ -58,6 +58,7 @@ export interface WorkstreamLaunchState {
 }
 
 export type WorkstreamLaunchRecordInput = WorkstreamLaunchRecord;
+export type WorkstreamLaunchRecordDraft = Omit<WorkstreamLaunchRecord, "id">;
 
 export type WorkstreamLaunchOperationUpdate = Partial<WorkstreamLaunchOperationState> & {
 	status: WorkstreamLaunchOperationStatus;
@@ -128,18 +129,22 @@ export function slugifyWorkstreamLaunchId(label: string): string {
 	return slug || "workstream";
 }
 
-export function nextAvailableWorkstreamLaunchId(filePath: string, repo: string, baseLabel: string): string {
+function nextAvailableWorkstreamLaunchIdFromRecords(
+	records: WorkstreamLaunchRecord[],
+	repo: string,
+	baseLabel: string,
+): string {
 	const base = slugifyWorkstreamLaunchId(baseLabel);
-	const taken = new Set(
-		loadWorkstreamLaunchState(filePath)
-			.records.filter((record) => record.repo === repo)
-			.map((record) => record.id),
-	);
+	const taken = new Set(records.filter((record) => record.repo === repo).map((record) => record.id));
 	if (!taken.has(base)) return base;
 	for (let suffix = 2; ; suffix += 1) {
 		const candidate = `${base}-${suffix}`;
 		if (!taken.has(candidate)) return candidate;
 	}
+}
+
+export function nextAvailableWorkstreamLaunchId(filePath: string, repo: string, baseLabel: string): string {
+	return nextAvailableWorkstreamLaunchIdFromRecords(loadWorkstreamLaunchState(filePath).records, repo, baseLabel);
 }
 
 export function buildWorkstreamLaunchFingerprint(input: WorkstreamLaunchFingerprintInput): string {
@@ -253,6 +258,11 @@ function normalizeRecord(value: unknown): WorkstreamLaunchRecord | null {
 		createdAt: value.createdAt,
 		updatedAt: value.updatedAt,
 	};
+}
+
+function normalizeRecordDraft(value: unknown, id: string): WorkstreamLaunchRecord | null {
+	if (!isRecord(value)) return null;
+	return normalizeRecord({ ...value, id });
 }
 
 function normalizeState(value: unknown): WorkstreamLaunchState {
@@ -388,6 +398,52 @@ export function appendWorkstreamLaunchRecordIfAbsent(
 	});
 }
 
+export function appendWorkstreamLaunchRecordWithAvailableId(
+	filePath: string,
+	record: WorkstreamLaunchRecordDraft,
+	lookup: WorkstreamLaunchDuplicateLookup,
+	baseLabel: string,
+): WorkstreamLaunchAppendResult {
+	return withLaunchStateLock(filePath, () => {
+		const state = loadWorkstreamLaunchState(filePath);
+		const draft = normalizeRecordDraft(record, slugifyWorkstreamLaunchId(baseLabel));
+		if (!draft) throw new Error("Invalid workstream launch record.");
+
+		const duplicate = findDuplicateRecord(state.records, lookup, draft.repo);
+		if (duplicate) return { appended: false, record: duplicate, state };
+
+		const id = nextAvailableWorkstreamLaunchIdFromRecords(state.records, draft.repo, baseLabel);
+		const normalized = normalizeRecord({ ...draft, id });
+		if (!normalized) throw new Error("Invalid workstream launch record.");
+		state.records.push(normalized);
+		saveWorkstreamLaunchState(filePath, state);
+		return { appended: true, record: normalized, state };
+	});
+}
+
+function mergeRecordUpdate(
+	current: WorkstreamLaunchRecord,
+	updates: WorkstreamLaunchRecordUpdate,
+	now: string,
+): WorkstreamLaunchRecord {
+	const normalized = normalizeRecord({
+		...current,
+		...updates,
+		source: updates.source ? { ...current.source, ...updates.source } : current.source,
+		workstream: updates.workstream ? { ...current.workstream, ...updates.workstream } : current.workstream,
+		worktree: updates.worktree ? { ...current.worktree, ...updates.worktree } : current.worktree,
+		agent: updates.agent ? { ...current.agent, ...updates.agent } : current.agent,
+		setup: updates.setup ?? current.setup,
+		herdr: updates.herdr ?? current.herdr,
+		launch: updates.launch ?? current.launch,
+		id: current.id,
+		createdAt: current.createdAt,
+		updatedAt: updates.updatedAt ?? now,
+	});
+	if (!normalized) throw new Error("Invalid workstream launch record update.");
+	return normalized;
+}
+
 export function updateWorkstreamLaunchRecord(
 	filePath: string,
 	id: string,
@@ -400,21 +456,28 @@ export function updateWorkstreamLaunchRecord(
 		if (index === -1) return null;
 
 		const current = state.records[index]!;
-		const normalized = normalizeRecord({
-			...current,
-			...updates,
-			source: updates.source ? { ...current.source, ...updates.source } : current.source,
-			workstream: updates.workstream ? { ...current.workstream, ...updates.workstream } : current.workstream,
-			worktree: updates.worktree ? { ...current.worktree, ...updates.worktree } : current.worktree,
-			agent: updates.agent ? { ...current.agent, ...updates.agent } : current.agent,
-			setup: updates.setup ?? current.setup,
-			herdr: updates.herdr ?? current.herdr,
-			launch: updates.launch ?? current.launch,
-			id: current.id,
-			createdAt: current.createdAt,
-			updatedAt: updates.updatedAt ?? now,
-		});
-		if (!normalized) throw new Error("Invalid workstream launch record update.");
+		const normalized = mergeRecordUpdate(current, updates, now);
+
+		state.records[index] = normalized;
+		saveWorkstreamLaunchState(filePath, state);
+		return normalized;
+	});
+}
+
+export function updateFailedWorkstreamLaunchRecord(
+	filePath: string,
+	id: string,
+	updates: WorkstreamLaunchRecordUpdate,
+	now = new Date().toISOString(),
+): WorkstreamLaunchRecord | null {
+	return withLaunchStateLock(filePath, () => {
+		const state = loadWorkstreamLaunchState(filePath);
+		const index = state.records.findIndex((record) => record.id === id);
+		if (index === -1) return null;
+
+		const current = state.records[index]!;
+		if (current.launch.status !== "failed") return null;
+		const normalized = mergeRecordUpdate(current, updates, now);
 
 		state.records[index] = normalized;
 		saveWorkstreamLaunchState(filePath, state);

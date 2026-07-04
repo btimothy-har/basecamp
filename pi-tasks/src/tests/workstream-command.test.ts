@@ -160,6 +160,44 @@ describe("/workstream command", () => {
 		assert.equal(notices[0]?.level, "error");
 	});
 
+	it("reports workspace lookup errors without injecting or stamping", async () => {
+		const pi = new FakePi();
+		const harness = makeDeps({
+			getWorkspaceState: () => {
+				throw new Error("workspace state unavailable");
+			},
+		});
+		registerWorkstreamCommand(pi as unknown as ExtensionAPI, harness.deps);
+		const { ctx, notices } = makeCtx();
+
+		await run(pi, "launch-workstream-too", ctx);
+
+		assert.equal(pi.userMessages.length, 0);
+		assert.equal(harness.stampCalls.length, 0);
+		assert.match(notices[0]?.message ?? "", /Could not load staged workstream "launch-workstream-too"/);
+		assert.match(notices[0]?.message ?? "", /workspace state unavailable/);
+		assert.equal(notices[0]?.level, "error");
+	});
+
+	it("reports launch-state lookup errors without injecting or stamping", async () => {
+		const pi = new FakePi();
+		const harness = makeDeps({
+			findById: () => {
+				throw new Error("launch index corrupt");
+			},
+		});
+		registerWorkstreamCommand(pi as unknown as ExtensionAPI, harness.deps);
+		const { ctx, notices } = makeCtx();
+
+		await run(pi, "launch-workstream-too", ctx);
+
+		assert.equal(pi.userMessages.length, 0);
+		assert.equal(harness.stampCalls.length, 0);
+		assert.match(notices[0]?.message ?? "", /Could not load staged workstream "launch-workstream-too"/);
+		assert.match(notices[0]?.message ?? "", /launch index corrupt/);
+		assert.equal(notices[0]?.level, "error");
+	});
+
 	it("degrades gracefully when the handle cannot be derived", async () => {
 		const pi = new FakePi();
 		const harness = makeDeps();

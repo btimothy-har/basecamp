@@ -4,7 +4,11 @@ import { afterEach, beforeEach, describe, it } from "node:test";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import type { WorkspaceState, WorkspaceWorktree } from "pi-core/platform/workspace.ts";
 import type { WorktreeResult } from "pi-core/workspace/worktree.ts";
-import type { WorkstreamLaunchRecord, WorkstreamLaunchRecordUpdate } from "../workstreams/launch-state.ts";
+import type {
+	WorkstreamLaunchRecord,
+	WorkstreamLaunchRecordDraft,
+	WorkstreamLaunchRecordUpdate,
+} from "../workstreams/launch-state.ts";
 import {
 	executeLaunchWorkstream,
 	type LaunchWorkstreamDeps,
@@ -86,17 +90,19 @@ class FakeStore {
 		}
 	}
 
-	appendRecordIfAbsent(
+	appendRecordWithAvailableId(
 		_filePath: string,
-		record: WorkstreamLaunchRecord,
+		record: WorkstreamLaunchRecordDraft,
 		lookup: { repo?: string; fingerprint?: string; worktreeLabel?: string },
+		baseLabel: string,
 	) {
 		const duplicate = this.matchDuplicate(lookup);
 		if (duplicate)
 			return { appended: false, record: duplicate, state: { version: 1 as const, records: clone(this.records) } };
-		this.appendCalls.push(clone(record));
-		this.records.push(clone(record));
-		return { appended: true, record: clone(record), state: { version: 1 as const, records: clone(this.records) } };
+		const appended = { ...record, id: this.nextAvailableId(_filePath, record.repo, baseLabel) };
+		this.appendCalls.push(clone(appended));
+		this.records.push(clone(appended));
+		return { appended: true, record: clone(appended), state: { version: 1 as const, records: clone(this.records) } };
 	}
 
 	updateRecord(
@@ -124,6 +130,17 @@ class FakeStore {
 		};
 		this.records[index] = clone(updated);
 		return clone(updated);
+	}
+
+	updateFailedRecord(
+		filePath: string,
+		id: string,
+		updates: WorkstreamLaunchRecordUpdate,
+		now = "2026-07-03T00:00:01.000Z",
+	): WorkstreamLaunchRecord | null {
+		const current = this.records.find((record) => record.id === id);
+		if (current?.launch.status !== "failed") return null;
+		return this.updateRecord(filePath, id, updates, now);
 	}
 
 	private matchDuplicate(lookup: {
@@ -592,6 +609,38 @@ describe("launch_workstream Herdr and staging behavior", () => {
 			brief: "Updated retry brief.",
 			constraints: "Updated retry constraints.",
 		});
+	});
+
+	it("does not provision when a concurrent retry claims a failed tombstone first", async () => {
+		const harness = makeDeps();
+		harness.store.records.push({
+			id: "launch-workstream-too",
+			fingerprint: "different-fingerprint",
+			repo: "org/repo",
+			source: { dossierPath: "/graph/pages/Dossier.md" },
+			workstream: { label: "Launch Workstream Too", brief: "b" },
+			worktree: { label: "wt-bt/8e95-launch-workstream-too", path: "/w", branch: "bt/x" },
+			agent: {},
+			setup: { status: "pending" },
+			herdr: { status: "pending" },
+			launch: { status: "failed", error: "old failure" },
+			createdAt: "2026-07-03T00:00:00.000Z",
+			updatedAt: "2026-07-03T00:00:00.000Z",
+		});
+		const updateFailedRecord = harness.store.updateFailedRecord.bind(harness.store);
+		harness.store.updateFailedRecord = (filePath, id, updates, now) => {
+			const current = harness.store.records.find((record) => record.id === id);
+			if (current) {
+				current.launch = { status: "running", message: "claimed by another retry" };
+			}
+			return updateFailedRecord(filePath, id, updates, now);
+		};
+
+		const { details } = await runLaunch(baseParams(), harness.deps);
+
+		assert.equal(details.status, "existing_launch");
+		assert.equal(details.launch_record?.launch.status, "running");
+		assert.equal(harness.provisionCalls.length, 0);
 	});
 
 	it("returns existing_launch when a concurrent attempt wins the append race with a live record", async () => {
