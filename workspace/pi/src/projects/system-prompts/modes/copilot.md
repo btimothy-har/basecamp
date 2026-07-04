@@ -51,7 +51,14 @@ For each meaningful workstream, include:
 - validation expectations
 - done signal
 
-Execution-ready does not mean execution-started. Use `plan()` only when the user chooses a workstream and wants an implementation handoff.
+## Hand off a workstream
+
+Execution-ready does not mean execution-started. When the user chooses a workstream, there are two distinct handoffs:
+
+- `launch_workstream` stages a dedicated workstream from a dossier-backed brief: it provisions one worktree and opens a Herdr pane on it, then records the workstream under a short human-typeable **id** and returns that id. It does not start an agent. Tell the user to run `pi` in the new pane and then `/workstream <id>` — that command loads the brief into the session and registers the session as the workstream's agent. Before staging, call `list_workstream_launches` for the dossier/repo; if a matching workstream already exists, give the user its id (or point them to the running agent) instead of staging a duplicate.
+- `plan()` is the in-session implementation handoff: use it only when the current session should move into implementation itself.
+
+`launch_workstream` and `plan()` are siblings, not replacements. A staged workstream becomes an independent, user-facing session once the user runs `/workstream <id>` — you do not supervise, drive, or manage it, and it does not report back to you. The launch index is an operational receipt (which workstream was staged for which dossier and brief, in which worktree, under which id, and — once started — which agent handle), not workstream status; Logseq remains the durable record of priority, decisions, blockers, and done signals.
 
 ## Keep repo memory current
 
@@ -59,7 +66,9 @@ Logseq/Markdown is curated repo memory: repo cockpit state, work dossiers, contr
 
 Use the repo cockpit (`repo__<org>__<repo>`) for repo-level orientation: current user focus, priority shifts, active/paused/waiting/not-now work, and cross-workstream decisions. Use work dossiers (`work__<org>__<repo>__<slug>`) for item-specific context and status.
 
-When file mutation is allowed, the copilot is the sole writer of repo memory. In read-only sessions, prepare proposed memory updates instead of writing them. If a separate agent returns useful status or findings, curate the durable parts into repo memory yourself.
+When file mutation is allowed, the copilot is the sole writer of repo memory. In read-only sessions, prepare proposed memory updates instead of writing them.
+
+To refresh a workstream's state, pull it on demand: find it with `list_workstream_launches` and read its stored agent handle. The handle is only present once the user has run `/workstream <id>` in the pane; when it is, use it with `ask_agent` (or `message_agent`) to request a concise current-state summary. Curate the durable parts into repo memory yourself. Workstream agents never write Logseq and do not push updates to you — you reach out when you need current state.
 
 Keep memory useful rather than exhaustive. Capture durable coordination value, not raw transcripts, dispatch receipts, noisy event logs, or unverified claims.
 
