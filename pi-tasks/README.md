@@ -6,9 +6,26 @@ Basecamp task lifecycle + planning — goal tracking, task state machine, `/plan
 
 - **Task tools**: `update_goal`, `create_tasks`, `start_task`, `complete_task`, `get_task`, `annotate_task`, `delete_task` — persistent goal/task tracking with a below-editor widget
 - **Planning**: `/plan` command with structured plan review, draft logic, plan skill guard, worktree choices for implementation handoff
+- **Workstream launch**: `launch_workstream` and `list_workstream_launches` (see below)
 - **Workflow skills**: `gather`, `planning` SKILL.md content (`agents` skill moved to pi-swarm)
 
 The sync in-process agent tool has been removed in the cutover. pi-swarm/extension now provides the sole agent tool (daemon-backed `dispatch_agent`/`wait_for_agent`/`list_agents`).
+
+## Workstream launch
+
+The handoff is manual by design, so a workstream runs as a normal user-facing pi session tied to the repo rather than a headless worker.
+
+`launch_workstream` stages exactly one workstream from a dossier-backed brief: it provisions a single execution worktree via `getOrCreateWorktree` (without touching or activating the copilot session's own worktree/cwd/env), runs configured setup for a newly created worktree, opens a Herdr pane on the worktree (best-effort), and records the workstream under a short human-typeable **id**. It does not dispatch an agent. Herdr opening is explicit to this tool — ordinary worktree activation never mutates Herdr.
+
+Schema is brief-centered and minimal: required `source.dossierPath`, `workstream.label`, `workstream.brief`; optional `source.repoPagePath`, `workstream.constraints`, `workstream.worktreeSlug`. The brief is intentionally stretchable — it can describe a broad workstream to decompose or a specific agreed slice to execute.
+
+The user then runs `pi` in the new pane and `/workstream <id>`. That command loads the workstream record by id, injects the built brief as the opening prompt, and stamps the running session's public daemon handle onto the record so copilot can reach it. The brief tells the agent it owns its worktree, may coordinate sub-agents, may implement within the worktree when the brief calls for it, must not write Logseq, and must not push, open PRs, or merge unless asked.
+
+`list_workstream_launches` is the read companion: it lists workstream records for the current repo (optionally filtered by `dossierPath` or label substring) so a caller can route to an existing workstream's id/handle instead of staging a duplicate.
+
+The launch index (`~/.pi/basecamp/workstream-launches/launch-index.json`) is an operational receipt only — which workstream was staged for which dossier and brief, in which worktree, under which id, and (once `/workstream` runs) which agent handle, plus setup/Herdr/launch status. It is not durable workstream state: priority, decisions, blockers, and done signals live in Logseq. No transcripts or dispatch logs are stored. Duplicates are refused: a matching non-failed record is reused, a failed record is superseded on retry, and an existing worktree without a matching record fails rather than being silently reused.
+
+`launch_workstream` and `plan()` are siblings. `plan()` remains the in-session implementation handoff for the current (parent) session; `launch_workstream` stages a separate user-facing workstream the user starts with `/workstream <id>`. Copilot pulls current state from a started workstream on demand via the pi-swarm known-handle `ask_agent`/`message_agent` path and curates the durable parts into Logseq itself.
 
 ## Dependencies
 
