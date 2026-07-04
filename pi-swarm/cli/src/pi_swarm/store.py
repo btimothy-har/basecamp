@@ -729,15 +729,45 @@ class Store:
 
         return current if isinstance(current, str) else None
 
-    def can_ask(self, requester_node_id: str, target_agent_id: str) -> bool:
-        """Return whether requester may fork-ask the target agent."""
+    def can_ask(
+        self,
+        requester_node_id: str,
+        target_agent_id: str,
+        *,
+        addressed_by_public_handle: bool = False,
+    ) -> bool:
+        """Return whether requester may fork-ask the target agent.
 
-        return self._can_reach_agent(requester_node_id, target_agent_id)
+        Relationship reachability (self/ancestor/descendant/sibling) always
+        authorizes. When the caller addressed the target by its known public
+        handle, contact is also allowed without a live relationship: the handle
+        is a routable contact address, not authorization for introspection.
+        """
 
-    def can_message(self, requester_node_id: str, target_agent_id: str) -> bool:
-        """Return whether requester may send a live peer message to the target."""
+        if self._can_reach_agent(requester_node_id, target_agent_id):
+            return True
+        if addressed_by_public_handle:
+            return self._can_contact_by_public_handle(requester_node_id, target_agent_id)
+        return False
 
-        return self._can_reach_agent(requester_node_id, target_agent_id)
+    def can_message(
+        self,
+        requester_node_id: str,
+        target_agent_id: str,
+        *,
+        addressed_by_public_handle: bool = False,
+    ) -> bool:
+        """Return whether requester may send a live peer message to the target.
+
+        See :meth:`can_ask` for how known-public-handle contact relates to
+        relationship reachability.
+        """
+
+        if self._can_reach_agent(requester_node_id, target_agent_id):
+            return True
+        if addressed_by_public_handle:
+            return self._can_contact_by_public_handle(requester_node_id, target_agent_id)
+        return False
 
     def agent_relation(self, viewer_agent_id: str, other_agent_id: str) -> AgentRelation:
         """Return how the other agent relates to the viewer."""
@@ -777,6 +807,27 @@ class Store:
 
         requester_sibling_group = requester.get("sibling_group")
         return requester_sibling_group is not None and requester_sibling_group == target.get("sibling_group")
+
+    def _can_contact_by_public_handle(self, requester_node_id: str, target_agent_id: str) -> bool:
+        """Allow contact when the requester is a registered node and the target
+        exposes a public handle. This is a routable contact path only; it never
+        grants directory listing, transcript access, or wait-result ownership."""
+
+        requester = self.get_agent(requester_node_id)
+        target = self.get_agent(target_agent_id)
+        if requester is None or target is None:
+            return False
+        if requester_node_id == target_agent_id:
+            return True
+        return self._agent_has_public_handle(target)
+
+    @staticmethod
+    def _agent_has_public_handle(agent: dict[str, Any]) -> bool:
+        if agent.get("role") not in {"agent", "session"}:
+            return False
+        handle = agent.get("agent_handle")
+        agent_id = agent.get("id")
+        return isinstance(handle, str) and bool(handle) and handle != agent_id
 
     def _parent_chain_contains(self, agent_id: str, target_agent_id: str) -> bool:
         visited: set[str] = set()

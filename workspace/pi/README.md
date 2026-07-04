@@ -38,6 +38,8 @@ The repo cockpit captures repo-level coordination state: current user focus, pri
 
 Basecamp registers the configured graph as an allowed root so normal file tools can read and update these Markdown files from repo sessions. There are no custom Logseq tools, no background sync, and no automatic graph scan.
 
+Logseq is the durable memory; workstreams are the user-facing execution surfaces. When copilot stages a workstream (via `launch_workstream` in pi-tasks) it provisions a worktree + Herdr pane and returns a human-typeable id; the user runs `pi` in that pane and `/workstream <id>` to start the session, which stamps its handle onto the launch record. The launch index records only an operational receipt — not workstream status. Copilot refreshes a workstream's state on demand by finding it with `list_workstream_launches` and pulling a summary from its stored handle via pi-swarm `ask_agent`/`message_agent`, then curates the durable parts into Logseq itself. Workstream agents never write Logseq and do not push updates to copilot.
+
 ## Dependencies
 
 - **pi-core** (hard peer dep): workspace registry, exec, env contract, state persistence, worktree git primitives

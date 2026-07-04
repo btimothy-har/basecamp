@@ -568,7 +568,69 @@ async def test_prepare_dispatch_rejects_existing_ask_agent_as_dispatch_target(tm
 
 
 @pytest.mark.asyncio
-async def test_prepare_dispatch_rejects_unauthorized_fork_from_target(tmp_path: Path) -> None:
+async def test_prepare_dispatch_allows_fork_from_known_public_handle_across_unrelated_roots(
+    tmp_path: Path,
+) -> None:
+    store = Store(db_path=tmp_path / "daemon.db")
+    home = tmp_path / "home"
+    session_file = _write_agent_session_file(home, "outside-agent")
+    store.upsert_agent(
+        agent_id="root",
+        parent_id=None,
+        sibling_group=None,
+        depth=0,
+        role="session",
+        session_name="root-session",
+        cwd=str(tmp_path),
+    )
+    store.upsert_agent(
+        agent_id="outside-root",
+        parent_id=None,
+        sibling_group=None,
+        depth=0,
+        role="session",
+        session_name="outside-root-session",
+        cwd=str(tmp_path),
+    )
+    store.upsert_agent(
+        agent_id="outside-agent",
+        agent_handle="outside-handle",
+        parent_id="outside-root",
+        sibling_group="outside-root",
+        depth=1,
+        role="agent",
+        session_name="outside-agent",
+        cwd=str(tmp_path),
+    )
+    frame = DispatchFrame(
+        type="dispatch",
+        v=PROTOCOL_VERSION,
+        run_id="run-answerer",
+        agent_id="answerer-agent",
+        spec=DispatchSpec(
+            argv=["pi", "--mode", "json", "-p"],
+            env={"HOME": str(home)},
+            cwd=str(tmp_path),
+            resume_path=None,
+            fork_from="outside-handle",
+            task="question?",
+        ),
+    )
+
+    dispatch = await prepare_dispatch(
+        frame=frame,
+        dispatcher_node_id="root",
+        store=store,
+    )
+
+    assert isinstance(dispatch, PreparedDispatch)
+    assert dispatch.fork_source_path == str(session_file.resolve())
+
+
+@pytest.mark.asyncio
+async def test_prepare_dispatch_rejects_fork_from_private_id_across_unrelated_roots(
+    tmp_path: Path,
+) -> None:
     store = Store(db_path=tmp_path / "daemon.db")
     home = tmp_path / "home"
     _write_agent_session_file(home, "outside-agent")
@@ -610,7 +672,7 @@ async def test_prepare_dispatch_rejects_unauthorized_fork_from_target(tmp_path: 
             env={"HOME": str(home)},
             cwd=str(tmp_path),
             resume_path=None,
-            fork_from="outside-handle",
+            fork_from="outside-agent",
             task="question?",
         ),
     )

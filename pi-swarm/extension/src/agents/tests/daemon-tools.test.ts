@@ -15,6 +15,7 @@ import { buildAgentEnv, buildAgentTitleBase, processEnvForSpawn } from "../launc
 
 interface RegisteredTool {
 	name: string;
+	description?: string;
 	execute: (id: string, params: any, signal: AbortSignal, onUpdate: () => void, ctx: any) => Promise<any>;
 }
 
@@ -56,9 +57,13 @@ class MockConnection implements DaemonConnection {
 
 function createMockPi() {
 	const tools: RegisteredTool[] = [];
+	const handlers = new Map<string, ((event: any, ctx: any) => void)[]>();
 	const pi = {
 		registerTool(tool: RegisteredTool) {
 			tools.push(tool);
+		},
+		on(event: string, handler: (event: any, ctx: any) => void) {
+			handlers.set(event, [...(handlers.get(event) ?? []), handler]);
 		},
 		getSessionName() {
 			return "session-name";
@@ -66,8 +71,10 @@ function createMockPi() {
 		getAllTools() {
 			return [];
 		},
+		sendUserMessage() {},
+		setSessionName() {},
 	};
-	return { pi: pi as any, tools };
+	return { pi: pi as any, tools, handlers };
 }
 
 function toolByName(tools: RegisteredTool[], name: string): RegisteredTool {
@@ -244,6 +251,20 @@ describe("daemon async tools", () => {
 			tools.map((tool) => tool.name),
 			["dispatch_agent", "ask_agent", "message_agent", "message_status", "list_agents", "wait_for_agent"],
 		);
+	});
+
+	it("message_agent and ask_agent describe known-public-handle contact across sessions", () => {
+		const { pi, tools } = createMockPi();
+		registerPeerMessageTools(pi, async () => new MockConnection(), daemonToolDeps);
+		registerAskAgentTool(pi, async () => new MockConnection(), daemonToolDeps);
+
+		const messageDescription = toolByName(tools, "message_agent").description ?? "";
+		const askDescription = toolByName(tools, "ask_agent").description ?? "";
+
+		assert.match(messageDescription, /known public handle/i);
+		assert.match(messageDescription, /without a live parent\/child\/sibling relationship/i);
+		assert.match(askDescription, /known public handle/i);
+		assert.match(askDescription, /without a live parent\/child\/sibling relationship/i);
 	});
 
 	it("message_agent sends peer_message and returns accepted message_id without waiting for delivery or answers", async () => {

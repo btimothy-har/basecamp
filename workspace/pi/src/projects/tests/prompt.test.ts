@@ -147,6 +147,38 @@ describe("assemblePrompt", () => {
 		assert.doesNotMatch(prompt, /CUSTOM ENGINEERING STYLE/);
 	});
 
+	it("copilot mode documents workstream launch, dedupe, pull-based curation, and the plan() sibling", async (t) => {
+		useAgentMode(t, "copilot");
+		await useTempHome(t);
+
+		const prompt = assemblePrompt({
+			workspace: null,
+			project: null,
+			effectiveCwd: "/repo",
+			toolItems: [],
+			skillItems: [],
+			agentItems: [],
+			contextFiles: [],
+			readOnly: false,
+		});
+
+		// staged handoff: launch_workstream stages a pane + id; user runs pi then /workstream <id>
+		assert.match(prompt, /launch_workstream/);
+		assert.match(prompt, /list_workstream_launches/);
+		assert.match(prompt, /`\/workstream <id>`/);
+		assert.match(prompt, /run `pi` in the new pane/);
+		// launch_workstream and plan() are siblings, plan() stays the in-session handoff
+		assert.match(prompt, /siblings, not replacements/);
+		assert.match(prompt, /in-session implementation handoff/);
+		// non-management framing: copilot does not drive the workstream session
+		assert.match(prompt, /do not supervise, drive, or manage it/);
+		// pull-based curation (handle only after /workstream) and no-Logseq-write rule preserved
+		assert.match(prompt, /ask_agent/);
+		assert.match(prompt, /Workstream agents never write Logseq/);
+		// launch index is an operational receipt, not durable workstream status
+		assert.match(prompt, /operational receipt[\s\S]*not workstream status/);
+	});
+
 	it("places Repo Logseq after project context and before the environment block", async (t) => {
 		useAgentMode(t, "copilot");
 		await useTempHome(t);

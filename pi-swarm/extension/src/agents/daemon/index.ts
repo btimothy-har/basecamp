@@ -1,4 +1,5 @@
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
+import { registerAgentIdentityProvider } from "pi-core/platform/agent-identity.ts";
 import { shortSessionId as defaultShortSessionId } from "pi-core/session/session-id.ts";
 import type { PiSwarmDependencies } from "../../dependencies.ts";
 import { DEFAULT_AGENT_MAX_DEPTH } from "../types.ts";
@@ -255,6 +256,14 @@ export function registerDaemonClient(pi: ExtensionAPI, deps: PiSwarmDependencies
 	const isDaemonSpawnedAgent = !isTopLevel && Boolean(runId);
 	const maxDepth = Number(process.env.BASECAMP_AGENT_MAX_DEPTH ?? DEFAULT_AGENT_MAX_DEPTH);
 	const atMaxDepth = depth >= maxDepth;
+
+	// Expose this session's public daemon handle so consumers (e.g. pi-tasks' /workstream)
+	// can bind the running session to a launch record. Pure derivation from ctx; safe for any session.
+	registerAgentIdentityProvider({
+		// The seam's ExtensionContext originates from pi-core's bundled types; only sessionManager/env
+		// are read for handle derivation, so bridging the structurally-compatible context is safe.
+		deriveHandle: (identityCtx) => deriveDaemonIdentity(identityCtx as unknown as ExtensionContext, deps).agent_handle,
+	});
 
 	if (!isTopLevel && !isDaemonSpawnedAgent) {
 		return;

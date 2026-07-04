@@ -666,7 +666,7 @@ def test_ws_peer_message_unavailable_without_live_target_and_wait_returns_unavai
     assert store.get_message(ack["message_id"])["status"] == "unavailable"
 
 
-def test_ws_peer_message_missing_and_unauthorized_targets_return_unknown_without_leaking(
+def test_ws_peer_message_known_handle_is_contactable_while_missing_and_private_id_stay_unknown(
     tmp_path: Path,
 ) -> None:
     app, store = _build_app_with_store(tmp_path)
@@ -707,8 +707,12 @@ def test_ws_peer_message_missing_and_unauthorized_targets_return_unknown_without
 
             sender_ws.send_json(_peer_message("request-missing", target_handle="missing", message="hello"))
             missing = sender_ws.receive_json()
+            # A valid public handle on an otherwise-unrelated root is a routable
+            # contact address, so this is accepted even without reachability.
             sender_ws.send_json(_peer_message("request-outside", target_handle="outside", message="hello"))
-            unauthorized = sender_ws.receive_json()
+            known_handle = sender_ws.receive_json()
+            # Addressing by private agent id (handle == id) is not a public handle
+            # and stays non-leaky.
             sender_ws.send_json(_peer_message("request-private", target_handle="private-agent-id", message="hello"))
             private_fallback = sender_ws.receive_json()
 
@@ -722,14 +726,10 @@ def test_ws_peer_message_missing_and_unauthorized_targets_return_unknown_without
         "status": "unknown",
         "error": None,
     }
-    assert unauthorized == {
-        "type": "peer_message_ack",
-        "v": PROTOCOL_VERSION,
-        "request_id": "request-outside",
-        "message_id": None,
-        "status": "unknown",
-        "error": None,
-    }
+    assert known_handle["type"] == "peer_message_ack"
+    assert known_handle["request_id"] == "request-outside"
+    assert known_handle["status"] == "accepted"
+    assert known_handle["message_id"] is not None
     assert private_fallback == {
         "type": "peer_message_ack",
         "v": PROTOCOL_VERSION,
@@ -738,7 +738,7 @@ def test_ws_peer_message_missing_and_unauthorized_targets_return_unknown_without
         "status": "unknown",
         "error": None,
     }
-    assert after_messages == before_messages
+    assert after_messages == before_messages + 1
 
 
 def test_ws_message_status_immediate_authorized_and_unknown_for_missing_or_unauthorized(
