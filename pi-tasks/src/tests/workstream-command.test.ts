@@ -153,6 +153,28 @@ describe("/workstream command", () => {
 		assert.equal(harness.stampCalls.length, 0);
 	});
 
+	it("warns when the handle is derived but cannot be persisted", async () => {
+		const pi = new FakePi();
+		const harness = makeDeps({
+			stampHandle: () => {
+				throw new Error("disk full");
+			},
+		});
+		registerWorkstreamCommand(pi as unknown as ExtensionAPI, harness.deps);
+		const { ctx, notices } = makeCtx();
+
+		await run(pi, "launch-workstream-too", ctx);
+
+		assert.equal(pi.userMessages.length, 1);
+		assert.match(pi.userMessages[0]!, /agent handle was derived as `swift-otter-1a2b3c`/);
+		assert.match(pi.userMessages[0]!, /could not be persisted/);
+		assert.doesNotMatch(pi.userMessages[0]!, /registered as `swift-otter-1a2b3c`/);
+		assert.doesNotMatch(pi.userMessages[0]!, /agent handle could not be determined/);
+		assert.match(notices[0]?.message ?? "", /could not persist it to the workstream record/);
+		assert.equal(notices[0]?.level, "error");
+		assert.equal(harness.stampCalls.length, 0);
+	});
+
 	it("is wired from pi-tasks/index.ts", () => {
 		const indexSource = fs.readFileSync(new URL("../../index.ts", import.meta.url), "utf8");
 		assert.match(indexSource, /import \{ registerWorkstreamCommand \} from "\.\/src\/workstreams\/command\.ts";/);

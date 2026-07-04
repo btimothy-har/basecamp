@@ -27,7 +27,15 @@ export function defaultWorkstreamCommandDeps(): WorkstreamCommandDeps {
 	};
 }
 
-export function buildWorkstreamStartMessage(record: WorkstreamLaunchRecord, handle: string | null): string {
+type WorkstreamHandleRegistration =
+	| { status: "registered"; handle: string }
+	| { status: "not_persisted"; handle: string }
+	| { status: "unavailable" };
+
+export function buildWorkstreamStartMessage(
+	record: WorkstreamLaunchRecord,
+	handleRegistration: WorkstreamHandleRegistration,
+): string {
 	const brief = buildWorkstreamLaunchBrief({
 		source: record.source,
 		workstream: {
@@ -41,9 +49,12 @@ export function buildWorkstreamStartMessage(record: WorkstreamLaunchRecord, hand
 			branch: record.worktree.branch ?? null,
 		},
 	});
-	const handleNote = handle
-		? `\n\nThis workstream session is registered as \`${handle}\`; copilot reaches it by that handle.`
-		: "\n\nNote: this session's agent handle could not be determined, so copilot may not be able to reach this workstream automatically.";
+	const handleNote =
+		handleRegistration.status === "registered"
+			? `\n\nThis workstream session is registered as \`${handleRegistration.handle}\`; copilot reaches it by that handle.`
+			: handleRegistration.status === "not_persisted"
+				? `\n\nNote: this session's agent handle was derived as \`${handleRegistration.handle}\`, but it could not be persisted to the launch record, so copilot may not be able to reach this workstream automatically.`
+				: "\n\nNote: this session's agent handle could not be determined, so copilot may not be able to reach this workstream automatically.";
 	return `${brief}${handleNote}`;
 }
 
@@ -75,15 +86,27 @@ export function registerWorkstreamCommand(pi: ExtensionAPI, deps = defaultWorkst
 			} catch {
 				handle = null;
 			}
+			let handleRegistration: WorkstreamHandleRegistration = { status: "unavailable" };
 			if (handle) {
 				try {
-					deps.stampHandle(statePath, record.id, handle);
+					const stamped = deps.stampHandle(statePath, record.id, handle);
+					if (stamped) {
+						handleRegistration = { status: "registered", handle };
+					} else {
+						handleRegistration = { status: "not_persisted", handle };
+					}
 				} catch {
-					// Handle was derived but could not be persisted; still surface it to the user.
+					handleRegistration = { status: "not_persisted", handle };
 				}
 			}
 
-			pi.sendUserMessage(buildWorkstreamStartMessage(record, handle));
+			if (handleRegistration.status === "not_persisted") {
+				ctx.ui.notify(
+					`Derived agent handle "${handleRegistration.handle}" but could not persist it to the workstream record; copilot may not be able to reach this session automatically.`,
+					"error",
+				);
+			}
+			pi.sendUserMessage(buildWorkstreamStartMessage(record, handleRegistration));
 		},
 	});
 }

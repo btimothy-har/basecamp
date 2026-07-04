@@ -433,8 +433,34 @@ function existingLaunchResult(
 	};
 }
 
-function stagingReset(message: string): WorkstreamLaunchRecordUpdate {
+function workstreamUpdate(
+	workstream: LaunchWorkstreamParams["workstream"],
+): WorkstreamLaunchRecordUpdate["workstream"] {
 	return {
+		label: workstream.label,
+		brief: workstream.brief,
+		constraints: workstream.constraints,
+	};
+}
+
+function sourceUpdate(source: LaunchWorkstreamParams["source"]): WorkstreamLaunchRecordUpdate["source"] {
+	return {
+		dossierPath: source.dossierPath,
+		repoPagePath: source.repoPagePath,
+	};
+}
+
+function stagingReset(
+	message: string,
+	repo: string,
+	fingerprint: string,
+	params: LaunchWorkstreamParams,
+): WorkstreamLaunchRecordUpdate {
+	return {
+		repo,
+		fingerprint,
+		source: sourceUpdate(params.source),
+		workstream: workstreamUpdate(params.workstream),
 		setup: { status: "pending", message: "Re-staging after a previous failed launch." },
 		herdr: { status: "pending", message: "Herdr pane open is pending." },
 		launch: { status: "running", message },
@@ -498,7 +524,7 @@ export async function executeLaunchWorkstream(
 			deps,
 			statePath,
 			duplicate,
-			stagingReset("Re-staging workstream after a previous failure."),
+			stagingReset("Re-staging workstream after a previous failure.", repo, fingerprint, parsed.value),
 		);
 	} else {
 		// Refuse to silently adopt an existing worktree that has no launch record.
@@ -560,7 +586,7 @@ export async function executeLaunchWorkstream(
 					deps,
 					statePath,
 					appended.record,
-					stagingReset("Re-staging workstream after a previous failure."),
+					stagingReset("Re-staging workstream after a previous failure.", repo, fingerprint, parsed.value),
 				);
 			} else {
 				return textResult(existingLaunchResult(appended.record, appended.record.fingerprint === fingerprint));

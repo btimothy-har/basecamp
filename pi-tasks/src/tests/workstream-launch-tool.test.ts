@@ -558,6 +558,42 @@ describe("launch_workstream Herdr and staging behavior", () => {
 		assert.equal(harness.store.records[0]?.launch.status, "succeeded");
 	});
 
+	it("refreshes launch identity when retrying a failed tombstone", async () => {
+		const harness = makeDeps();
+		let attempt = 0;
+		harness.setProvision(async (_pi, _repoRoot, _repoName, label, branchName) => {
+			attempt += 1;
+			if (attempt === 1) throw new Error("transient failure");
+			return { worktreeDir: `/worktrees/org/repo/${label}`, label, branch: branchName ?? label, created: true };
+		});
+
+		const first = await runLaunch(baseParams(), harness.deps);
+		assert.equal(first.result.isError, true);
+		const staleFingerprint = harness.store.records[0]?.fingerprint;
+
+		const second = await runLaunch(
+			baseParams({
+				source: { dossierPath: "/graph/pages/Updated.md" },
+				workstream: {
+					label: "Launch Workstream Too",
+					brief: "Updated retry brief.",
+					constraints: "Updated retry constraints.",
+				},
+			}),
+			harness.deps,
+		);
+
+		assert.equal(second.details.status, "launched");
+		assert.equal(harness.store.records.length, 1);
+		assert.notEqual(harness.store.records[0]?.fingerprint, staleFingerprint);
+		assert.deepEqual(harness.store.records[0]?.source, { dossierPath: "/graph/pages/Updated.md" });
+		assert.deepEqual(harness.store.records[0]?.workstream, {
+			label: "Launch Workstream Too",
+			brief: "Updated retry brief.",
+			constraints: "Updated retry constraints.",
+		});
+	});
+
 	it("returns existing_launch when a concurrent attempt wins the append race with a live record", async () => {
 		const harness = makeDeps();
 		const live: WorkstreamLaunchRecord = {
