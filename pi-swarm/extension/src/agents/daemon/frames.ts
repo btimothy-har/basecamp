@@ -2,9 +2,9 @@ import { Buffer } from "node:buffer";
 
 // Gates every client-visible daemon capability, not just WebSocket frame shapes.
 // This includes HTTP endpoints like /runs/summary, so stale daemons restart.
-// v15: peer message/ask may target an agent by its known public handle even
-// without live relationship reachability.
-export const PROTOCOL_VERSION = 15;
+// v16: registered external sessions may provide their Pi transcript path as an
+// ask fork source.
+export const PROTOCOL_VERSION = 16;
 
 export interface RegisterFrame {
 	type: "register";
@@ -17,6 +17,7 @@ export interface RegisterFrame {
 	depth: number;
 	session_name: string;
 	cwd: string;
+	session_file?: string | null;
 }
 
 export interface RegisteredFrame {

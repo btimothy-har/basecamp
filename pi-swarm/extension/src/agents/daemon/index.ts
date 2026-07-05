@@ -175,6 +175,7 @@ async function awaitDaemonConnection(): Promise<DaemonConnection | null> {
  *   deterministic adjective-noun-hash from node_id so the session handle is stable across reload/resume
  * - session_name = BASECAMP_AGENT_TITLE (+ session-id suffix) ?? BASECAMP_SESSION_NAME ?? node_id
  * - cwd = process.cwd()
+ * - session_file = ctx.sessionManager.getSessionFile() when available
  */
 export function deriveDaemonIdentity(
 	ctx: ExtensionContext,
@@ -199,7 +200,20 @@ export function deriveDaemonIdentity(
 			process.env.BASECAMP_SESSION_NAME ??
 			nodeId,
 		cwd: process.cwd(),
+		session_file: resolveSessionFile(ctx),
 	};
+}
+
+function resolveSessionFile(ctx: ExtensionContext): string | null {
+	try {
+		const sessionManager = ctx.sessionManager as ExtensionContext["sessionManager"] & {
+			getSessionFile?: () => string | null | undefined;
+		};
+		const sessionFile = sessionManager.getSessionFile?.();
+		return typeof sessionFile === "string" && sessionFile.trim() ? sessionFile : null;
+	} catch {
+		return null;
+	}
 }
 
 function resolveDaemonAgentTitle(

@@ -166,7 +166,8 @@ class Store:
                     agent_handle TEXT,
                     agent_type TEXT,
                     run_kind TEXT,
-                    model TEXT
+                    model TEXT,
+                    session_file TEXT
                 )
                 """
             )
@@ -224,6 +225,7 @@ class Store:
             self._ensure_agents_agent_handle_column(connection)
             self._ensure_agents_metadata_columns(connection)
             self._ensure_agents_model_column(connection)
+            self._ensure_agents_session_file_column(connection)
             self._ensure_runs_dispatcher_id_column(connection)
             self._ensure_runs_exit_code_column(connection)
             self._ensure_runs_report_token_hash_column(connection)
@@ -270,6 +272,12 @@ class Store:
         if "model" not in names:
             connection.execute("ALTER TABLE agents ADD COLUMN model TEXT")
 
+    def _ensure_agents_session_file_column(self, connection: sqlite3.Connection) -> None:
+        columns = connection.execute("PRAGMA table_info(agents)").fetchall()
+        names = {column[1] for column in columns}
+        if "session_file" not in names:
+            connection.execute("ALTER TABLE agents ADD COLUMN session_file TEXT")
+
     def _ensure_runs_dispatcher_id_column(self, connection: sqlite3.Connection) -> None:
         columns = connection.execute("PRAGMA table_info(runs)").fetchall()
         names = {column[1] for column in columns}
@@ -302,6 +310,7 @@ class Store:
         agent_type: str | None = None,
         run_kind: str | None = None,
         model: str | None = None,
+        session_file: str | None = None,
     ) -> None:
         """Insert/update an agent row and refresh last-seen timestamp."""
 
@@ -309,7 +318,11 @@ class Store:
         with self._connect() as connection:
             connection.execute("BEGIN IMMEDIATE")
             existing = connection.execute(
-                "SELECT agent_handle, agent_type, run_kind, model, sibling_group FROM agents WHERE id = ?",
+                """
+                SELECT agent_handle, agent_type, run_kind, model, sibling_group, session_file
+                FROM agents
+                WHERE id = ?
+                """,
                 (agent_id,),
             ).fetchone()
             stored_handle = existing[0] if existing is not None else None
@@ -317,11 +330,13 @@ class Store:
             stored_run_kind = existing[2] if existing is not None else None
             stored_model = existing[3] if existing is not None else None
             stored_sibling_group = existing[4] if existing is not None else None
+            stored_session_file = existing[5] if existing is not None else None
             next_handle = agent_handle or stored_handle or _fallback_agent_handle(agent_id)
             next_agent_type = agent_type or stored_agent_type
             next_run_kind = run_kind or stored_run_kind
             next_model = model or stored_model
             next_sibling_group = sibling_group or stored_sibling_group
+            next_session_file = session_file or stored_session_file
 
             try:
                 connection.execute(
@@ -339,9 +354,10 @@ class Store:
                         agent_handle,
                         agent_type,
                         run_kind,
-                        model
+                        model,
+                        session_file
                     )
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     ON CONFLICT(id)
                     DO UPDATE SET
                         parent_id = excluded.parent_id,
@@ -354,7 +370,8 @@ class Store:
                         agent_handle = excluded.agent_handle,
                         agent_type = excluded.agent_type,
                         run_kind = excluded.run_kind,
-                        model = excluded.model
+                        model = excluded.model,
+                        session_file = excluded.session_file
                     """,
                     (
                         agent_id,
@@ -370,6 +387,7 @@ class Store:
                         next_agent_type,
                         next_run_kind,
                         next_model,
+                        next_session_file,
                     ),
                 )
             except sqlite3.IntegrityError as error:

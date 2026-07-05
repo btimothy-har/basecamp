@@ -1569,6 +1569,19 @@ describe("daemon async tools", () => {
 		}
 	});
 
+	it("deriveDaemonIdentity includes session file when available", () => {
+		const ctx = {
+			sessionManager: {
+				getSessionId: () => "session-with-file",
+				getSessionFile: () => "/tmp/pi-session.jsonl",
+			},
+		} as any;
+
+		const identity = deriveDaemonIdentity(ctx);
+
+		assert.equal(identity.session_file, "/tmp/pi-session.jsonl");
+	});
+
 	it("deriveDaemonIdentity prefers BASECAMP_AGENT_HANDLE for spawned agents", () => {
 		const priorDepth = process.env.BASECAMP_AGENT_DEPTH;
 		const priorAgentId = process.env.BASECAMP_AGENT_ID;

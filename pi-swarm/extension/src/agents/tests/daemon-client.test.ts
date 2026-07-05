@@ -83,6 +83,37 @@ describe("daemon client", () => {
 		assert.equal(register.type, "register");
 		assert.equal(register.node_id, "node-1");
 		assert.equal(register.agent_handle, "quiet-badger-3dc450");
+		assert.equal(register.session_file, null);
+
+		socket.emit(
+			"message",
+			JSON.stringify({ type: "registered", v: PROTOCOL_VERSION, node_id: "node-1", protocol: PROTOCOL_VERSION }),
+		);
+		const connection = await connectionPromise;
+		connection.close();
+	});
+
+	it("connect includes an available session file in the register frame", async () => {
+		const socket = new FakeWebSocket();
+		const connectionPromise = connect(
+			{
+				node_id: "node-1",
+				agent_handle: "quiet-badger-3dc450",
+				role: "session",
+				parent_id: null,
+				sibling_group: null,
+				depth: 0,
+				session_name: "Root Session",
+				cwd: "/repo",
+				session_file: "/tmp/pi-session.jsonl",
+			},
+			{ socketPath: "/tmp/basecamp-test.sock", webSocketFactory: () => socket as any },
+		);
+
+		socket.emit("open");
+		const register = JSON.parse(socket.sent[0] ?? "{}") as Extract<Frame, { type: "register" }>;
+		assert.equal(register.type, "register");
+		assert.equal(register.session_file, "/tmp/pi-session.jsonl");
 
 		socket.emit(
 			"message",

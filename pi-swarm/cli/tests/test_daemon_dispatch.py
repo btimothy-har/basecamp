@@ -354,6 +354,122 @@ async def test_prepare_dispatch_resolves_fork_from_session_handle(tmp_path: Path
 
 
 @pytest.mark.asyncio
+async def test_prepare_dispatch_resolves_fork_from_registered_external_session_file(tmp_path: Path) -> None:
+    store = Store(db_path=tmp_path / "daemon.db")
+    session_file = tmp_path / "external-session.jsonl"
+    session_file.write_text("{}\n", encoding="utf-8")
+    store.upsert_agent(
+        agent_id="root",
+        parent_id=None,
+        sibling_group=None,
+        depth=0,
+        role="session",
+        session_name="root-session",
+        cwd=str(tmp_path),
+    )
+    store.upsert_agent(
+        agent_id="external-session",
+        agent_handle="external-handle",
+        parent_id=None,
+        sibling_group=None,
+        depth=0,
+        role="session",
+        session_name="external-session",
+        cwd=str(tmp_path),
+        session_file=str(session_file),
+    )
+    stored = store.get_agent("external-session")
+    assert stored is not None
+    assert stored["session_file"] == str(session_file)
+    frame = DispatchFrame(
+        type="dispatch",
+        v=PROTOCOL_VERSION,
+        run_id="run-answerer",
+        agent_id="answerer-agent",
+        spec=DispatchSpec(
+            argv=["pi", "--mode", "json", "-p"],
+            env={"HOME": str(tmp_path / "spoofed-home")},
+            cwd=str(tmp_path),
+            resume_path=None,
+            fork_from="external-handle",
+            task="question?",
+        ),
+    )
+
+    dispatch = await prepare_dispatch(
+        frame=frame,
+        dispatcher_node_id="root",
+        store=store,
+    )
+
+    assert isinstance(dispatch, PreparedDispatch)
+    assert dispatch.fork_source_path == str(session_file.resolve())
+    assert store.get_run("run-answerer") is not None
+
+
+@pytest.mark.parametrize(
+    "session_file",
+    [
+        "relative-session.jsonl",
+        "external-session-link.jsonl",
+    ],
+)
+@pytest.mark.asyncio
+async def test_prepare_dispatch_rejects_unusable_registered_external_session_file(
+    tmp_path: Path,
+    session_file: str,
+) -> None:
+    store = Store(db_path=tmp_path / "daemon.db")
+    target = tmp_path / "external-session.jsonl"
+    target.write_text("{}\n", encoding="utf-8")
+    symlink = tmp_path / "external-session-link.jsonl"
+    symlink.symlink_to(target)
+    store.upsert_agent(
+        agent_id="root",
+        parent_id=None,
+        sibling_group=None,
+        depth=0,
+        role="session",
+        session_name="root-session",
+        cwd=str(tmp_path),
+    )
+    store.upsert_agent(
+        agent_id="external-session",
+        agent_handle="external-handle",
+        parent_id=None,
+        sibling_group=None,
+        depth=0,
+        role="session",
+        session_name="external-session",
+        cwd=str(tmp_path),
+        session_file=str(tmp_path / session_file) if session_file == symlink.name else session_file,
+    )
+    frame = DispatchFrame(
+        type="dispatch",
+        v=PROTOCOL_VERSION,
+        run_id="run-answerer",
+        agent_id="answerer-agent",
+        spec=DispatchSpec(
+            argv=["pi", "--mode", "json", "-p"],
+            env={"HOME": str(tmp_path / "spoofed-home")},
+            cwd=str(tmp_path),
+            resume_path=None,
+            fork_from="external-handle",
+            task="question?",
+        ),
+    )
+
+    dispatch = await prepare_dispatch(
+        frame=frame,
+        dispatcher_node_id="root",
+        store=store,
+    )
+
+    assert dispatch == DispatchRejection(reason="fork_target_unknown")
+    assert store.get_run("run-answerer") is None
+
+
+@pytest.mark.asyncio
 async def test_prepare_dispatch_preserves_canonical_handle_on_retask_by_id(tmp_path: Path) -> None:
     store = Store(db_path=tmp_path / "daemon.db")
     store.upsert_agent(

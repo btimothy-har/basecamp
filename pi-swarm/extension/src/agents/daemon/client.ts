@@ -107,6 +107,7 @@ export interface DaemonIdentity {
 	depth: number;
 	session_name: string;
 	cwd: string;
+	session_file?: string | null;
 }
 
 export interface ConnectOptions {
@@ -653,6 +654,7 @@ export async function connect(identity: DaemonIdentity, options: ConnectOptions 
 			depth: identity.depth,
 			session_name: identity.session_name,
 			cwd: identity.cwd,
+			session_file: identity.session_file ?? null,
 		};
 
 		ws.on("open", () => {

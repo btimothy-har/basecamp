@@ -10,6 +10,7 @@ import os
 import secrets
 import uuid
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any, Literal
 
 from .frames import (
@@ -118,6 +119,38 @@ def _is_dispatchable_agent(agent: dict[str, Any]) -> bool:
     return agent.get("role") != "session" and agent.get("agent_type") != "ask"
 
 
+def _registered_session_file(agent: dict[str, Any]) -> Path | None:
+    raw = agent.get("session_file")
+    if not isinstance(raw, str) or not raw.strip():
+        return None
+
+    path = Path(raw).expanduser()
+    if not path.is_absolute():
+        return None
+    try:
+        path.lstat()
+    except OSError:
+        return None
+    if path.is_symlink() or not path.is_file():
+        return None
+    return path.resolve()
+
+
+def _resolve_fork_source_path(agent: dict[str, Any]) -> str | None:
+    session_file = _registered_session_file(agent)
+    if session_file is not None:
+        return str(session_file)
+
+    agent_id = agent.get("id")
+    if not isinstance(agent_id, str):
+        return None
+
+    # Resolve daemon-spawned agent sidecars under the daemon's own home, never
+    # requester-supplied env, so a fork source cannot be redirected.
+    sidecar = agent_session_file(agent_id)
+    return str(sidecar) if sidecar is not None else None
+
+
 def _resolve_agent_max_depth() -> int:
     raw = os.getenv("BASECAMP_AGENT_MAX_DEPTH")
     try:
@@ -204,12 +237,9 @@ async def prepare_dispatch(
         ):
             return DispatchRejection(reason="fork_target_unknown")
 
-        # Resolve under the daemon's own home (the owner of all agent session dirs),
-        # never the requester-supplied frame.spec.env, so a fork source cannot be redirected.
-        session_file = agent_session_file(fork_target_id)
-        if session_file is None:
+        fork_source_path = _resolve_fork_source_path(fork_target)
+        if fork_source_path is None:
             return DispatchRejection(reason="fork_target_unknown")
-        fork_source_path = str(session_file)
 
     report_token = _generate_report_token()
     report_token_hash = _hash_report_token(report_token)
