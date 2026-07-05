@@ -3,6 +3,7 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { afterEach, beforeEach, describe, it } from "node:test";
+import { getAgentMode, setAgentMode } from "pi-core/session/agent-mode.ts";
 import type { WorkspaceState } from "../../dependencies.ts";
 import { createDaemonClient, type DaemonConnection } from "../daemon/client.ts";
 import type { Frame, ListAgentItem } from "../daemon/frames.ts";
@@ -1569,6 +1570,49 @@ describe("daemon async tools", () => {
 		}
 	});
 
+	it("deriveDaemonIdentity includes current session mode as product_role for top-level sessions", () => {
+		const priorDepth = process.env.BASECAMP_AGENT_DEPTH;
+		const priorProductRole = process.env.BASECAMP_AGENT_PRODUCT_ROLE;
+		const priorMode = getAgentMode();
+
+		delete process.env.BASECAMP_AGENT_DEPTH;
+		delete process.env.BASECAMP_AGENT_PRODUCT_ROLE;
+		setAgentMode("copilot");
+
+		try {
+			const identity = deriveDaemonIdentity({ sessionManager: { getSessionId: () => "session-mode" } } as any);
+			assert.equal(identity.role, "session");
+			assert.equal(identity.product_role, "copilot");
+		} finally {
+			setAgentMode(priorMode);
+			if (priorDepth === undefined) delete process.env.BASECAMP_AGENT_DEPTH;
+			else process.env.BASECAMP_AGENT_DEPTH = priorDepth;
+			if (priorProductRole === undefined) delete process.env.BASECAMP_AGENT_PRODUCT_ROLE;
+			else process.env.BASECAMP_AGENT_PRODUCT_ROLE = priorProductRole;
+		}
+	});
+
+	it("deriveDaemonIdentity honors sanitized explicit product-role override", () => {
+		const priorDepth = process.env.BASECAMP_AGENT_DEPTH;
+		const priorProductRole = process.env.BASECAMP_AGENT_PRODUCT_ROLE;
+		const priorMode = getAgentMode();
+
+		delete process.env.BASECAMP_AGENT_DEPTH;
+		process.env.BASECAMP_AGENT_PRODUCT_ROLE = "  supervisor\nmode  ";
+		setAgentMode("copilot");
+
+		try {
+			const identity = deriveDaemonIdentity({ sessionManager: { getSessionId: () => "session-override" } } as any);
+			assert.equal(identity.product_role, "supervisor mode");
+		} finally {
+			setAgentMode(priorMode);
+			if (priorDepth === undefined) delete process.env.BASECAMP_AGENT_DEPTH;
+			else process.env.BASECAMP_AGENT_DEPTH = priorDepth;
+			if (priorProductRole === undefined) delete process.env.BASECAMP_AGENT_PRODUCT_ROLE;
+			else process.env.BASECAMP_AGENT_PRODUCT_ROLE = priorProductRole;
+		}
+	});
+
 	it("deriveDaemonIdentity includes session file when available", () => {
 		const ctx = {
 			sessionManager: {
@@ -1586,16 +1630,19 @@ describe("daemon async tools", () => {
 		const priorDepth = process.env.BASECAMP_AGENT_DEPTH;
 		const priorAgentId = process.env.BASECAMP_AGENT_ID;
 		const priorAgentHandle = process.env.BASECAMP_AGENT_HANDLE;
+		const priorProductRole = process.env.BASECAMP_AGENT_PRODUCT_ROLE;
 
 		process.env.BASECAMP_AGENT_DEPTH = "1";
 		process.env.BASECAMP_AGENT_ID = "agent-spawned";
 		process.env.BASECAMP_AGENT_HANDLE = "quiet-badger-3dc450";
+		process.env.BASECAMP_AGENT_PRODUCT_ROLE = "copilot";
 
 		try {
 			const identity = deriveDaemonIdentity({ sessionManager: { getSessionId: () => "child-session" } } as any);
 			assert.equal(identity.role, "agent");
 			assert.equal(identity.node_id, "agent-spawned");
 			assert.equal(identity.agent_handle, "quiet-badger-3dc450");
+			assert.equal(identity.product_role, null);
 		} finally {
 			if (priorDepth === undefined) delete process.env.BASECAMP_AGENT_DEPTH;
 			else process.env.BASECAMP_AGENT_DEPTH = priorDepth;
@@ -1603,6 +1650,8 @@ describe("daemon async tools", () => {
 			else process.env.BASECAMP_AGENT_ID = priorAgentId;
 			if (priorAgentHandle === undefined) delete process.env.BASECAMP_AGENT_HANDLE;
 			else process.env.BASECAMP_AGENT_HANDLE = priorAgentHandle;
+			if (priorProductRole === undefined) delete process.env.BASECAMP_AGENT_PRODUCT_ROLE;
+			else process.env.BASECAMP_AGENT_PRODUCT_ROLE = priorProductRole;
 		}
 	});
 });

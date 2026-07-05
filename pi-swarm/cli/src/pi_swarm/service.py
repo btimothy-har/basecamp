@@ -7,6 +7,7 @@ import hashlib
 import hmac
 import math
 import os
+import re
 import secrets
 import uuid
 from dataclasses import dataclass
@@ -40,6 +41,7 @@ DEFAULT_AGENT_MAX_DEPTH = 2
 DEFAULT_MESSAGE_WAIT_TIMEOUT_SECONDS = 30.0
 MAX_MESSAGE_WAIT_TIMEOUT_SECONDS = 300.0
 TERMINAL_RUN_STATUSES = {"completed", "failed"}
+_CONTROL_PATTERN = re.compile(r"[\x00-\x1f\x7f]")
 
 DispatchAckStatus = Literal["spawned", "rejected"]
 DispatchAckReason = Literal[
@@ -100,6 +102,24 @@ def _sanitize_dispatch_spec(spec: dict[str, Any]) -> dict[str, Any]:
 
 def _generate_report_token() -> str:
     return secrets.token_urlsafe(32)
+
+
+def _safe_product_role(value: Any) -> str | None:
+    if not isinstance(value, str):
+        return None
+    sanitized = _CONTROL_PATTERN.sub(" ", value)
+    sanitized = " ".join(sanitized.split())
+    if not sanitized:
+        return None
+    return sanitized[:64]
+
+
+def _sender_product_role(sender: dict[str, Any] | None) -> str | None:
+    if sender is None:
+        return None
+    if sender.get("role") == "agent":
+        return _safe_product_role(sender.get("agent_type")) or "subagent"
+    return _safe_product_role(sender.get("product_role"))
 
 
 def _hash_report_token(report_token: str) -> str:
@@ -442,6 +462,7 @@ async def accept_peer_message(
 
     sender = await asyncio.to_thread(store.get_agent, requester_node_id)
     sender_handle = _public_sender_handle(sender)
+    sender_product_role = _sender_product_role(sender)
     sender_relation = await asyncio.to_thread(store.agent_relation, target_agent_id, requester_node_id)
     message_id = f"msg-{uuid.uuid4()}"
     await asyncio.to_thread(
@@ -456,6 +477,18 @@ async def accept_peer_message(
         interrupt=frame.interrupt,
     )
 
+    delivery_values: dict[str, Any] = {
+        "type": "peer_message_delivery",
+        "v": PROTOCOL_VERSION,
+        "message_id": message_id,
+        "from_handle": sender_handle,
+        "from_relation": sender_relation,
+        "message": frame.message,
+        "interrupt": frame.interrupt,
+    }
+    if sender_product_role is not None:
+        delivery_values["from_product_role"] = sender_product_role
+
     return AcceptedPeerMessage(
         ack=PeerMessageAckFrame(
             type="peer_message_ack",
@@ -465,15 +498,7 @@ async def accept_peer_message(
             status="accepted",
             error=None,
         ),
-        delivery=PeerMessageDeliveryFrame(
-            type="peer_message_delivery",
-            v=PROTOCOL_VERSION,
-            message_id=message_id,
-            from_handle=sender_handle,
-            from_relation=sender_relation,
-            message=frame.message,
-            interrupt=frame.interrupt,
-        ),
+        delivery=PeerMessageDeliveryFrame(**delivery_values),
         target_agent_id=target_agent_id,
     )
 

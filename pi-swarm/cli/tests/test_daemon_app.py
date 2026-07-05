@@ -503,6 +503,7 @@ def test_ws_peer_message_sessions_and_agents_are_messageable_by_public_handle(tm
         "message_id": agent_to_root_ack["message_id"],
         "from_handle": "agent-handle",
         "from_relation": "child",
+        "from_product_role": "subagent",
         "message": "to root",
         "interrupt": False,
     }

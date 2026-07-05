@@ -87,7 +87,20 @@ describe("peer message delivery", () => {
 		]);
 	});
 
-	it("formats parent senders with canonical handle and relation", () => {
+	it("formats product role ahead of structural relation", () => {
+		const content = formatPeerMessageDeliveryContent(
+			deliveryFrame({
+				from_handle: "clear-falcon-80cda5",
+				from_relation: "unknown",
+				from_product_role: "copilot",
+				message: "Can you check this?",
+			}),
+		);
+
+		assert.equal(content, "Message from clear-falcon-80cda5 (copilot):\n\nCan you check this?");
+	});
+
+	it("formats parent senders with canonical handle and relation when product role is absent", () => {
 		const content = formatPeerMessageDeliveryContent(
 			deliveryFrame({ from_handle: "quiet-badger-3dc450", from_relation: "parent", message: "Can you check this?" }),
 		);
@@ -142,7 +155,8 @@ describe("peer message delivery", () => {
 			process.env.BASECAMP_RUN_ID = "run-private";
 			const content = formatPeerMessageDeliveryContent(deliveryFrame({ from_handle: null, from_relation: "unknown" }));
 
-			assert.match(content, /^Message from a peer \(unknown\):/);
+			assert.match(content, /^Message from a peer:/);
+			assert.equal(content.includes("(unknown)"), false);
 			assert.equal(content.includes("from_handle"), false);
 			assert.equal(content.includes("message_id"), false);
 			assert.equal(content.includes("agent-private"), false);

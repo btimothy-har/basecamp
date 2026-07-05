@@ -1,5 +1,6 @@
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { registerAgentIdentityProvider } from "pi-core/platform/agent-identity.ts";
+import { getAgentMode } from "pi-core/session/agent-mode.ts";
 import { shortSessionId as defaultShortSessionId } from "pi-core/session/session-id.ts";
 import type { PiSwarmDependencies } from "../../dependencies.ts";
 import { DEFAULT_AGENT_MAX_DEPTH } from "../types.ts";
@@ -91,8 +92,24 @@ function errorMessage(error: unknown): string {
 }
 
 export function formatPeerMessageDeliveryContent(frame: PeerMessageDeliveryFrame): string {
-	const sender = frame.from_handle?.trim() || "a peer";
-	return `Message from ${sender} (${frame.from_relation}):\n\n${frame.message}`;
+	const sender = sanitizeDisplayLabel(frame.from_handle, 80) ?? "a peer";
+	const label = sanitizeDisplayLabel(frame.from_product_role, 48) ?? relationDisplayLabel(frame.from_relation);
+	const suffix = label ? ` (${label})` : "";
+	return `Message from ${sender}${suffix}:\n\n${frame.message}`;
+}
+
+function sanitizeDisplayLabel(value: string | null | undefined, maxLength: number): string | null {
+	const withoutControls = Array.from(value ?? "", (char) => {
+		const code = char.charCodeAt(0);
+		return code <= 31 || code === 127 ? " " : char;
+	}).join("");
+	const sanitized = withoutControls.replace(/\s+/g, " ").trim();
+	if (!sanitized) return null;
+	return sanitized.length <= maxLength ? sanitized : `${sanitized.slice(0, maxLength - 1).trimEnd()}…`;
+}
+
+function relationDisplayLabel(relation: PeerMessageDeliveryFrame["from_relation"]): string | null {
+	return relation === "unknown" ? null : relation;
 }
 
 export function handlePeerMessageDelivery(
@@ -185,10 +202,11 @@ export function deriveDaemonIdentity(
 	const safeDepth = Number.isFinite(depth) && depth >= 0 ? depth : 0;
 	const nodeId = process.env.BASECAMP_AGENT_ID ?? ctx.sessionManager.getSessionId();
 	const explicitHandle = safeDepth > 0 ? process.env.BASECAMP_AGENT_HANDLE?.trim() : undefined;
+	const role = safeDepth > 0 ? "agent" : "session";
 	return {
 		node_id: nodeId,
 		agent_handle: explicitHandle || buildDeterministicAgentHandle(nodeId),
-		role: safeDepth > 0 ? "agent" : "session",
+		role,
 		parent_id: process.env.BASECAMP_PARENT_SESSION ?? null,
 		sibling_group: process.env.BASECAMP_SIBLING_GROUP ?? null,
 		depth: safeDepth,
@@ -201,7 +219,15 @@ export function deriveDaemonIdentity(
 			nodeId,
 		cwd: process.cwd(),
 		session_file: resolveSessionFile(ctx),
+		product_role: resolveProductRole(role),
 	};
+}
+
+function resolveProductRole(role: "session" | "agent"): string | null {
+	if (role !== "session") return null;
+	const explicit = sanitizeDisplayLabel(process.env.BASECAMP_AGENT_PRODUCT_ROLE, 64);
+	if (explicit) return explicit;
+	return sanitizeDisplayLabel(getAgentMode(), 64);
 }
 
 function resolveSessionFile(ctx: ExtensionContext): string | null {

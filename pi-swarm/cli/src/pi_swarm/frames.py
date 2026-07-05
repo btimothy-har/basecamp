@@ -9,7 +9,7 @@ from pydantic import BaseModel, Field, TypeAdapter
 # Gates every client-visible daemon capability, not just WebSocket frame shapes.
 # This includes HTTP endpoints like /runs/summary, so stale daemons restart.
 # v16: registered external sessions may provide their Pi transcript path as an
-# ask fork source.
+# ask fork source, plus product-role metadata for peer-message display.
 PROTOCOL_VERSION = 16
 
 
@@ -27,6 +27,7 @@ class RegisterFrame(BaseModel):
     session_name: str
     cwd: str
     session_file: str | None = None
+    product_role: str | None = None
 
 
 class RegisteredFrame(BaseModel):
@@ -203,6 +204,7 @@ class PeerMessageDeliveryFrame(BaseModel):
     message_id: str
     from_handle: str | None
     from_relation: PeerMessageRelation
+    from_product_role: str | None = None
     message: str
     interrupt: bool
 
