@@ -140,8 +140,12 @@ function hasText(value: string | null | undefined): value is string {
 	return value !== null && value !== undefined && value.trim() !== "";
 }
 
+function messageStatusDisplay(status: MessageStatusDetails["status"]): string {
+	return status === "queued" ? "queued in recipient session" : status;
+}
+
 function formatMessageStatusLine(details: MessageStatusDetails): string {
-	const parts = [`message_id ${details.messageId}`, `status ${details.status}`];
+	const parts = [`message_id ${details.messageId}`, `status ${messageStatusDisplay(details.status)}`];
 	if (hasText(details.error)) parts.push(`error ${details.error}`);
 	return parts.join(" • ");
 }
@@ -164,7 +168,7 @@ function formatWaitItemText(item: WaitHandleResult): string {
 		if (hasText(item.result)) parts.push(`result:\n${item.result}`);
 		return parts.join("\n");
 	}
-	if (item.status === "unknown") return `? ${item.agentHandle} unknown agent`;
+	if (item.status === "unknown") return `? ${item.agentHandle} not awaitable or unavailable`;
 	return `… ${item.agentHandle} still running (timed out)`;
 }
 
@@ -281,7 +285,7 @@ export function registerPeerMessageTools(
 				error: ack.error,
 			};
 			if (ack.status === "unknown") {
-				const text = hasText(ack.error) ? ack.error : `No agent "${targetHandle}" is available to message.`;
+				const text = hasText(ack.error) ? ack.error : "No available agent for that handle.";
 				return { content: [{ type: "text", text }], isError: true, details };
 			}
 			return {
@@ -501,7 +505,7 @@ export function registerAskAgentTool(
 			if (!result || result.status === "rejected") {
 				const message =
 					result?.reason === "fork_target_unknown"
-						? `No agent "${targetHandle}" is available to ask.`
+						? "No available agent for that handle."
 						: `ask rejected: ${result?.reason ?? "unknown"}`;
 				return {
 					content: [{ type: "text", text: message }],
@@ -886,7 +890,7 @@ export function registerDaemonTools(
 					return `${theme.fg("error", "✗")} ${item.agentHandle} ${theme.fg("error", preview(item.error) || "failed")}`;
 				}
 				if (item.status === "unknown") {
-					return `${theme.fg("warning", "?")} ${item.agentHandle} ${theme.fg("muted", "unknown agent")}`;
+					return `${theme.fg("warning", "?")} ${item.agentHandle} ${theme.fg("muted", "not awaitable or unavailable")}`;
 				}
 				return `${theme.fg("warning", "…")} ${item.agentHandle} ${theme.fg("muted", "still running (timed out)")}`;
 			});

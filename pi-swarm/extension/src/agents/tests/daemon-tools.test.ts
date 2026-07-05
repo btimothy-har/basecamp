@@ -356,7 +356,8 @@ describe("daemon async tools", () => {
 		assert.equal(result.isError, true);
 		assert.equal(result.details.messageId, null);
 		assert.equal(result.details.status, "unknown");
-		assert.match(result.content[0].text, /No agent "missing-agent" is available to message/);
+		assert.equal(result.content[0].text, "No available agent for that handle.");
+		assert.doesNotMatch(result.content[0].text, /missing-agent/);
 		assert.doesNotMatch(JSON.stringify(result), /agent_id|run_id/);
 	});
 
@@ -450,7 +451,8 @@ describe("daemon async tools", () => {
 			assert.equal(result.details.messageId, `message-${status}`);
 			assert.equal(result.details.status, status);
 			assert.equal(result.details.createdAt, "2026-01-01T00:00:00Z");
-			assert.match(result.content[0].text, new RegExp(`status ${status}`));
+			const expectedStatusText = status === "queued" ? "queued in recipient session" : status;
+			assert.match(result.content[0].text, new RegExp(`status ${expectedStatusText}`));
 			assert.doesNotMatch(JSON.stringify(result), /answer|agent_id|run_id/);
 		}
 	});
@@ -584,7 +586,7 @@ describe("daemon async tools", () => {
 		const statusResult = await statusPromise;
 		const renderedStatus = (statusTool as any).renderResult(statusResult, {}, theme).render(120).join("\n");
 		assert.match(renderedStatus, /message_id message-render/);
-		assert.match(renderedStatus, /status queued/);
+		assert.match(renderedStatus, /status queued in recipient session/);
 		assert.doesNotMatch(renderedStatus, /answer|agent_id|run_id/);
 	});
 
@@ -1165,7 +1167,8 @@ describe("daemon async tools", () => {
 
 		const result = await executePromise;
 		assert.equal(result.isError, true);
-		assert.equal(result.content[0].text, 'No agent "missing-agent" is available to ask.');
+		assert.equal(result.content[0].text, "No available agent for that handle.");
+		assert.doesNotMatch(result.content[0].text, /missing-agent/);
 		assert.equal(connection.sent.length, 1);
 	});
 
@@ -1280,7 +1283,7 @@ describe("daemon async tools", () => {
 		assert.equal(result.details.items[1].status, "unknown");
 		assert.equal(result.details.items[2].status, "completed");
 		assert.match(result.content[0].text, /still running \(timed out\)/);
-		assert.match(result.content[0].text, /\? scout-missing unknown agent/);
+		assert.match(result.content[0].text, /\? scout-missing not awaitable or unavailable/);
 	});
 
 	it("wait_for_agent fails before daemon connection/send when agents skill has not been invoked", async () => {
