@@ -1,6 +1,6 @@
 {
   "type": "peer_message",
-  "v": 16,
+  "v": 17,
   "request_id": "msg-req-001",
   "target_handle": "mossy-otter-a1b2c3",
   "message": "Please review the failing auth test when you have a chance.",

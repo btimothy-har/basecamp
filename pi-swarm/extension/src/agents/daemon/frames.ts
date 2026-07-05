@@ -2,9 +2,8 @@ import { Buffer } from "node:buffer";
 
 // Gates every client-visible daemon capability, not just WebSocket frame shapes.
 // This includes HTTP endpoints like /runs/summary, so stale daemons restart.
-// v16: registered external sessions may provide their Pi transcript path as an
-// ask fork source, plus product-role metadata for peer-message display.
-export const PROTOCOL_VERSION = 16;
+// v17: list-agents rows expose safe current-task previews for display.
+export const PROTOCOL_VERSION = 17;
 
 export interface RegisterFrame {
 	type: "register";
@@ -125,6 +124,7 @@ export interface ListAgentItem {
 	depth: number;
 	status: "pending" | "running" | "completed" | "failed" | "idle";
 	awaitable: boolean;
+	task?: string | null;
 }
 
 export interface ListAgentsResultFrame {

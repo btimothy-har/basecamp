@@ -926,7 +926,8 @@ class Store:
                 CASE
                     WHEN r.id IS NOT NULL AND r.dispatcher_id = ? THEN 1
                     ELSE 0
-                END AS awaitable
+                END AS awaitable,
+                r.spec_json AS spec_json
             FROM scoped_agents AS s
             INNER JOIN agents AS a ON a.id = s.id
             LEFT JOIN runs AS r ON r.id = a.current_run_id
@@ -944,21 +945,34 @@ class Store:
             connection.row_factory = sqlite3.Row
             rows = connection.execute(query, params).fetchall()
 
-        return [
-            {
-                "agent_id": row["agent_id"],
-                "agent_handle": row["agent_handle"],
-                "agent_type": row["agent_type"],
-                "run_kind": row["run_kind"],
-                "parent_id": row["parent_id"],
-                "role": row["role"],
-                "session_name": row["session_name"],
-                "depth": row["depth"],
-                "status": row["status"],
-                "awaitable": bool(row["awaitable"]),
-            }
-            for row in rows
-        ]
+        directory: list[dict[str, Any]] = []
+        for row in rows:
+            task: str | None = None
+            spec_json = row["spec_json"]
+            if isinstance(spec_json, str):
+                try:
+                    spec = json.loads(spec_json)
+                except json.JSONDecodeError:
+                    spec = None
+                if isinstance(spec, dict):
+                    task = _preview_text(spec.get("task"))
+
+            directory.append(
+                {
+                    "agent_id": row["agent_id"],
+                    "agent_handle": row["agent_handle"],
+                    "agent_type": row["agent_type"],
+                    "run_kind": row["run_kind"],
+                    "parent_id": row["parent_id"],
+                    "role": row["role"],
+                    "session_name": row["session_name"],
+                    "depth": row["depth"],
+                    "status": row["status"],
+                    "awaitable": bool(row["awaitable"]),
+                    "task": task,
+                }
+            )
+        return directory
 
     def get_agents_current_runs(
         self,

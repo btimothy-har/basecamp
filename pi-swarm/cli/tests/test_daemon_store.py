@@ -973,6 +973,70 @@ def test_get_root_agent_directory_scopes_to_root_and_excludes_sessions(tmp_path:
     assert all(row["agent_id"] != "outside-agent" for row in rows)
 
 
+def test_get_root_agent_directory_includes_sanitized_current_task_and_stable_agent_type(tmp_path: Path) -> None:
+    db_path = tmp_path / "daemon.db"
+    store = Store(db_path=db_path)
+
+    store.upsert_agent(
+        agent_id="root",
+        parent_id=None,
+        sibling_group="sg-root",
+        depth=0,
+        role="session",
+        session_name="root-session",
+        cwd="/tmp/root",
+    )
+    store.upsert_agent(
+        agent_id="agent-1",
+        parent_id="root",
+        sibling_group="sg-a1",
+        depth=1,
+        role="agent",
+        session_name="swift-panda-5604f5",
+        cwd="/tmp/a1",
+        agent_handle="swift-panda-5604f5",
+        agent_type="scout",
+    )
+    store.create_run(
+        run_id="run-old",
+        agent_id="agent-1",
+        dispatcher_id="root",
+        spec={"task": "Initial task", "env": {"SECRET": "do-not-leak"}},
+        report_token_hash="hash",
+    )
+    store.set_run_result(
+        run_id="run-old",
+        status="completed",
+        result="done",
+        error=None,
+    )
+    store.upsert_agent(
+        agent_id="agent-1",
+        parent_id="root",
+        sibling_group="sg-a1",
+        depth=1,
+        role="agent",
+        session_name="swift-panda-5604f5",
+        cwd="/tmp/a1-retask",
+    )
+    store.create_run(
+        run_id="run-current",
+        agent_id="agent-1",
+        dispatcher_id="root",
+        spec={"task": "Retask \x1b[31mfunctional\x1b[0m\ncheck\x00", "env": {"SECRET": "do-not-leak"}},
+        report_token_hash="hash",
+    )
+
+    rows = store.get_root_agent_directory(requester_node_id="root", awaitable=False)
+
+    assert len(rows) == 1
+    assert rows[0]["agent_handle"] == "swift-panda-5604f5"
+    assert rows[0]["agent_type"] == "scout"
+    assert rows[0]["task"] == "Retask functional check"
+    assert "SECRET" not in rows[0]
+    assert "spec_json" not in rows[0]
+
+
 def test_get_root_agent_directory_excludes_ask_agents_but_run_summary_includes_them(tmp_path: Path) -> None:
     db_path = tmp_path / "daemon.db"
     store = Store(db_path=db_path)

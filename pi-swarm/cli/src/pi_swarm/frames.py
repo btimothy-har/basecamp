@@ -8,9 +8,8 @@ from pydantic import BaseModel, Field, TypeAdapter
 
 # Gates every client-visible daemon capability, not just WebSocket frame shapes.
 # This includes HTTP endpoints like /runs/summary, so stale daemons restart.
-# v16: registered external sessions may provide their Pi transcript path as an
-# ask fork source, plus product-role metadata for peer-message display.
-PROTOCOL_VERSION = 16
+# v17: list-agents rows expose safe current-task previews for display.
+PROTOCOL_VERSION = 17
 
 
 class RegisterFrame(BaseModel):
@@ -160,6 +159,7 @@ class ListAgentItem(BaseModel):
     depth: int
     status: Literal["pending", "running", "completed", "failed", "idle"]
     awaitable: bool
+    task: str | None = None
 
 
 class ListAgentsResultFrame(BaseModel):

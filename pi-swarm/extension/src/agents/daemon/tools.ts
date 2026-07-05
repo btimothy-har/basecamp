@@ -43,8 +43,10 @@ interface MessageStatusDetails {
 
 interface PublicListAgentItem {
 	agentHandle: string;
+	agentType: string | null;
 	role: string;
-	sessionName: string;
+	sessionName: string | null;
+	task: string | null;
 	depth: number;
 	status: "pending" | "running" | "completed" | "failed" | "idle";
 	awaitable: boolean;
@@ -177,10 +179,20 @@ function storedAgentType(agent: ListAgentItem): string | null {
 	return value ? value : null;
 }
 
-function publicSessionName(agent: ListAgentItem, agentHandle: string): string {
+function publicSessionName(agent: ListAgentItem, agentHandle: string): string | null {
 	const sessionName = agent.session_name.trim();
-	if (!sessionName || sessionName === agent.agent_id) return agentHandle;
-	return sessionName.replaceAll(agent.agent_id, agentHandle);
+	if (!sessionName || sessionName === agent.agent_id || sessionName === agentHandle) return null;
+	const publicName = sessionName.replaceAll(agent.agent_id, agentHandle).trim();
+	return publicName && publicName !== agentHandle ? publicName : null;
+}
+
+function publicAgentTask(agent: ListAgentItem): string | null {
+	const value = agent.task?.trim();
+	return value ? value : null;
+}
+
+function agentIdentity(agent: PublicListAgentItem): string {
+	return agent.agentType ? `${agent.agentHandle} (${agent.agentType})` : agent.agentHandle;
 }
 
 function toPublicListAgent(agent: ListAgentItem): PublicListAgentItem | null {
@@ -188,8 +200,10 @@ function toPublicListAgent(agent: ListAgentItem): PublicListAgentItem | null {
 	if (!agentHandle) return null;
 	return {
 		agentHandle,
+		agentType: storedAgentType(agent),
 		role: agent.role,
 		sessionName: publicSessionName(agent, agentHandle),
+		task: publicAgentTask(agent),
 		depth: agent.depth,
 		status: agent.status,
 		awaitable: agent.awaitable,
@@ -198,7 +212,11 @@ function toPublicListAgent(agent: ListAgentItem): PublicListAgentItem | null {
 
 function buildListAgentLine(agent: PublicListAgentItem): string {
 	const awaitableText = agent.awaitable ? "awaitable" : "not awaitable";
-	return `${agent.agentHandle} — ${agent.sessionName}\n${agent.status} • ${awaitableText} • ${agent.role} • depth ${agent.depth}`;
+	const lines = [agentIdentity(agent), `${agent.status} • ${awaitableText} • ${agent.role} • depth ${agent.depth}`];
+	if (hasText(agent.task)) lines.push(`task: ${agent.task}`);
+	if (hasText(agent.sessionName) && agent.sessionName !== agentIdentity(agent))
+		lines.push(`title: ${agent.sessionName}`);
+	return lines.join("\n");
 }
 
 function shortListAgentsSummary(agents: PublicListAgentItem[]): string {
@@ -752,7 +770,7 @@ export function registerDaemonTools(
 					agent.awaitable ? "success" : "muted",
 					agent.awaitable ? "awaitable" : "not awaitable",
 				);
-				return `${agent.agentHandle} ${theme.fg("muted", agent.sessionName)} ${status} ${awaitable}`;
+				return `${agentIdentity(agent)} ${status} ${awaitable}`;
 			});
 			return new Text(lines.join("\n"), 0, 0);
 		},

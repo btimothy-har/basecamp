@@ -1332,16 +1332,19 @@ describe("daemon async tools", () => {
 				{
 					agent_id: "00000000-0000-4000-8000-000000000001",
 					agent_handle: "amber-fox-a1b2c3",
+					agent_type: "scout",
 					parent_id: "session-1",
 					role: "agent",
 					session_name: "agent-one",
 					depth: 1,
 					status: "running",
 					awaitable: true,
+					task: "Retask functional check",
 				},
 				{
 					agent_id: "00000000-0000-4000-8000-000000000002",
 					agent_handle: "mossy-lynx-d4e5f6",
+					agent_type: "testing-specialist",
 					parent_id: "00000000-0000-4000-8000-000000000001",
 					role: "agent",
 					session_name: "agent-two",
@@ -1362,9 +1365,10 @@ describe("daemon async tools", () => {
 				{
 					agent_id: "00000000-0000-4000-8000-000000000004",
 					agent_handle: "silver-wren-d4e5f6",
+					agent_type: "scout",
 					parent_id: "session-1",
 					role: "agent",
-					session_name: "00000000-0000-4000-8000-000000000004",
+					session_name: "silver-wren-d4e5f6",
 					depth: 1,
 					status: "idle",
 					awaitable: false,
@@ -1377,21 +1381,34 @@ describe("daemon async tools", () => {
 		assert.equal(result.isError, undefined);
 		assert.equal(result.details.agents.length, 3);
 		assert.equal(result.details.agents[0].agentHandle, "amber-fox-a1b2c3");
+		assert.equal(result.details.agents[0].agentType, "scout");
+		assert.equal(result.details.agents[0].task, "Retask functional check");
 		assert.equal("agent_id" in result.details.agents[0], false);
 		assert.equal(result.details.agents[1].status, "completed");
 		assert.equal(result.details.agents[2].agentHandle, "silver-wren-d4e5f6");
-		assert.equal(result.details.agents[2].sessionName, "silver-wren-d4e5f6");
-		assert.match(result.content[0].text, /amber-fox-a1b2c3/);
-		assert.match(result.content[0].text, /mossy-lynx-d4e5f6/);
+		assert.equal(result.details.agents[2].agentType, "scout");
+		assert.equal(result.details.agents[2].sessionName, null);
+		assert.match(result.content[0].text, /amber-fox-a1b2c3 \(scout\)/);
+		assert.match(result.content[0].text, /task: Retask functional check/);
+		assert.match(result.content[0].text, /mossy-lynx-d4e5f6 \(testing-specialist\)/);
+		assert.doesNotMatch(result.content[0].text, /agent_id|run_id|spec_json|env_keys|SECRET/);
 		assert.doesNotMatch(result.content[0].text, /00000000-0000-4000-8000-000000000001/);
 		assert.doesNotMatch(result.content[0].text, /00000000-0000-4000-8000-000000000003/);
 		assert.doesNotMatch(result.content[0].text, /00000000-0000-4000-8000-000000000004/);
 		assert.doesNotMatch(result.content[0].text, /private-fallback/);
-		assert.match(result.content[0].text, /silver-wren-d4e5f6/);
-		assert.match(result.content[0].text, /agent-one/);
-		assert.match(result.content[0].text, /agent-two/);
+		assert.match(result.content[0].text, /silver-wren-d4e5f6 \(scout\)/);
+		assert.doesNotMatch(result.content[0].text, /title: silver-wren-d4e5f6/);
+		assert.match(result.content[0].text, /title: agent-one/);
+		assert.match(result.content[0].text, /title: agent-two/);
 		assert.match(result.content[0].text, /running/);
 		assert.match(result.content[0].text, /completed/);
+
+		const rendered = (listTool as any)
+			.renderResult(result, {}, { fg: (_token: string, text: string) => `styled:${text}` })
+			.render(120)
+			.join("\n");
+		assert.match(rendered, /amber-fox-a1b2c3 \(scout\)/);
+		assert.doesNotMatch(rendered, /amber-fox-a1b2c3 styled:amber-fox-a1b2c3/);
 	});
 
 	it("list_agents rejects when the daemon connection closes before a response", async () => {

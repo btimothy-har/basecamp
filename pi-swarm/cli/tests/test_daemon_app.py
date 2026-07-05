@@ -161,6 +161,7 @@ def test_ws_list_agents_returns_same_root_non_session_rows_and_awaitable_filters
                             "depth": 1,
                             "status": "running",
                             "awaitable": False,
+                            "task": "a1",
                         },
                         {
                             "agent_id": "agent-2",
@@ -171,6 +172,7 @@ def test_ws_list_agents_returns_same_root_non_session_rows_and_awaitable_filters
                             "depth": 2,
                             "status": "completed",
                             "awaitable": True,
+                            "task": "a2",
                         },
                     ],
                 }
@@ -198,6 +200,7 @@ def test_ws_list_agents_returns_same_root_non_session_rows_and_awaitable_filters
                             "depth": 2,
                             "status": "completed",
                             "awaitable": True,
+                            "task": "a2",
                         }
                     ],
                 }

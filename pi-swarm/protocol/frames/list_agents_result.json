@@ -1,6 +1,6 @@
 {
   "type": "list_agents_result",
-  "v": 16,
+  "v": 17,
   "request_id": "list-001",
   "agents": [
     {
@@ -13,7 +13,8 @@
       "session_name": "(scout) inspect auth [a1b2]",
       "depth": 1,
       "status": "running",
-      "awaitable": true
+      "awaitable": true,
+      "task": "Inspect auth flow"
     },
     {
       "agent_id": "00000000-0000-4000-8000-000000000043",
@@ -25,7 +26,8 @@
       "session_name": "(testing-specialist) auth tests [c3d4]",
       "depth": 2,
       "status": "completed",
-      "awaitable": false
+      "awaitable": false,
+      "task": "Run auth tests"
     }
   ]
 }
