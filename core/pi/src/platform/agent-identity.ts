@@ -3,8 +3,8 @@
  *
  * Pi-core owns the provider contract and the registry cell. pi-swarm registers a
  * provider that derives the running session's public daemon handle from its
- * ExtensionContext; consumers (e.g. pi-tasks' /workstream) read it to stamp the
- * session handle onto a launch record. Absent pi-swarm, callers degrade to null.
+ * ExtensionContext; consumers (e.g. pi-tasks workstream startup) read it to stamp
+ * the session handle onto a launch record. Absent pi-swarm, callers degrade to null.
  *
  * Process-scoped via globalThis so `/reload` preserves the registered provider.
  */

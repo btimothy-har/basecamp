@@ -162,17 +162,18 @@ describe("assemblePrompt", () => {
 			readOnly: false,
 		});
 
-		// staged handoff: launch_workstream stages a pane + id; user runs pi then /workstream <id>
+		// staged handoff: launch_workstream stages a pane + id; user starts pi with --workstream
 		assert.match(prompt, /launch_workstream/);
 		assert.match(prompt, /list_workstream_launches/);
-		assert.match(prompt, /`\/workstream <id>`/);
-		assert.match(prompt, /run `pi` in the new pane/);
+		assert.match(prompt, /It does not start an agent/);
+		assert.match(prompt, /Tell the user to run `pi --workstream <id>`/);
+		assert.match(prompt, /`cd <worktree-path> && pi --workstream <id>`/);
 		// launch_workstream and plan() are siblings, plan() stays the in-session handoff
 		assert.match(prompt, /siblings, not replacements/);
 		assert.match(prompt, /in-session implementation handoff/);
 		// non-management framing: copilot does not drive the workstream session
 		assert.match(prompt, /do not supervise, drive, or manage it/);
-		// pull-based curation (handle only after /workstream) and no-Logseq-write rule preserved
+		// pull-based curation (handle only after pi --workstream) and no-Logseq-write rule preserved
 		assert.match(prompt, /ask_agent/);
 		assert.match(prompt, /Workstream agents never write Logseq/);
 		// launch index is an operational receipt, not durable workstream status

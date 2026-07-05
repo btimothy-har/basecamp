@@ -1,5 +1,6 @@
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { registerAgentIdentityProvider } from "pi-core/platform/agent-identity.ts";
+import { resolveSessionProductRoleOverride } from "pi-core/platform/product-role.ts";
 import { getAgentMode } from "pi-core/session/agent-mode.ts";
 import { shortSessionId as defaultShortSessionId } from "pi-core/session/session-id.ts";
 import type { PiSwarmDependencies } from "../../dependencies.ts";
@@ -225,6 +226,8 @@ export function deriveDaemonIdentity(
 
 function resolveProductRole(role: "session" | "agent"): string | null {
 	if (role !== "session") return null;
+	const providerOverride = sanitizeDisplayLabel(resolveSessionProductRoleOverride(), 64);
+	if (providerOverride) return providerOverride;
 	const explicit = sanitizeDisplayLabel(process.env.BASECAMP_AGENT_PRODUCT_ROLE, 64);
 	if (explicit) return explicit;
 	return sanitizeDisplayLabel(getAgentMode(), 64);
@@ -297,7 +300,7 @@ export function registerDaemonClient(pi: ExtensionAPI, deps: PiSwarmDependencies
 	const maxDepth = Number(process.env.BASECAMP_AGENT_MAX_DEPTH ?? DEFAULT_AGENT_MAX_DEPTH);
 	const atMaxDepth = depth >= maxDepth;
 
-	// Expose this session's public daemon handle so consumers (e.g. pi-tasks' /workstream)
+	// Expose this session's public daemon handle so consumers (e.g. pi-tasks workstream startup)
 	// can bind the running session to a launch record. Pure derivation from ctx; safe for any session.
 	registerAgentIdentityProvider({
 		// The seam's ExtensionContext originates from pi-core's bundled types; only sessionManager/env

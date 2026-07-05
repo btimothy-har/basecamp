@@ -3,6 +3,10 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { afterEach, beforeEach, describe, it } from "node:test";
+import {
+	registerSessionProductRoleProvider,
+	resetSessionProductRoleForTesting,
+} from "pi-core/platform/product-role.ts";
 import { getAgentMode, setAgentMode } from "pi-core/session/agent-mode.ts";
 import type { WorkspaceState } from "../../dependencies.ts";
 import { createDaemonClient, type DaemonConnection } from "../daemon/client.ts";
@@ -119,6 +123,7 @@ describe("daemon async tools", () => {
 		fs.rmSync(tmpHome, { recursive: true, force: true });
 		currentWorkspaceState = null;
 		resetInvokedSkills();
+		resetSessionProductRoleForTesting();
 	});
 
 	describe("buildAgentEnv", () => {
@@ -1626,6 +1631,66 @@ describe("daemon async tools", () => {
 			assert.equal(identity.product_role, "supervisor mode");
 		} finally {
 			setAgentMode(priorMode);
+			if (priorDepth === undefined) delete process.env.BASECAMP_AGENT_DEPTH;
+			else process.env.BASECAMP_AGENT_DEPTH = priorDepth;
+			if (priorProductRole === undefined) delete process.env.BASECAMP_AGENT_PRODUCT_ROLE;
+			else process.env.BASECAMP_AGENT_PRODUCT_ROLE = priorProductRole;
+		}
+	});
+
+	it("deriveDaemonIdentity prefers session product-role provider before env and mode", () => {
+		const priorDepth = process.env.BASECAMP_AGENT_DEPTH;
+		const priorProductRole = process.env.BASECAMP_AGENT_PRODUCT_ROLE;
+		const priorMode = getAgentMode();
+
+		delete process.env.BASECAMP_AGENT_DEPTH;
+		process.env.BASECAMP_AGENT_PRODUCT_ROLE = "copilot_env";
+		setAgentMode("executor");
+		registerSessionProductRoleProvider({ resolveProductRole: () => "  workstream_agent\n " });
+
+		try {
+			const identity = deriveDaemonIdentity({ sessionManager: { getSessionId: () => "session-provider" } } as any);
+			assert.equal(identity.role, "session");
+			assert.equal(identity.product_role, "workstream_agent");
+		} finally {
+			setAgentMode(priorMode);
+			resetSessionProductRoleForTesting();
+			if (priorDepth === undefined) delete process.env.BASECAMP_AGENT_DEPTH;
+			else process.env.BASECAMP_AGENT_DEPTH = priorDepth;
+			if (priorProductRole === undefined) delete process.env.BASECAMP_AGENT_PRODUCT_ROLE;
+			else process.env.BASECAMP_AGENT_PRODUCT_ROLE = priorProductRole;
+		}
+	});
+
+	it("deriveDaemonIdentity falls back when session product-role provider is empty or throws", () => {
+		const priorDepth = process.env.BASECAMP_AGENT_DEPTH;
+		const priorProductRole = process.env.BASECAMP_AGENT_PRODUCT_ROLE;
+		const priorMode = getAgentMode();
+
+		delete process.env.BASECAMP_AGENT_DEPTH;
+		delete process.env.BASECAMP_AGENT_PRODUCT_ROLE;
+		setAgentMode("copilot");
+
+		try {
+			registerSessionProductRoleProvider({ resolveProductRole: () => "   " });
+			assert.equal(
+				deriveDaemonIdentity({ sessionManager: { getSessionId: () => "session-empty-provider" } } as any).product_role,
+				"copilot",
+			);
+
+			registerSessionProductRoleProvider({
+				resolveProductRole: () => {
+					throw new Error("boom");
+				},
+			});
+			assert.equal(
+				deriveDaemonIdentity({ sessionManager: { getSessionId: () => "session-throwing-provider" } } as any)
+					.product_role,
+				"copilot",
+			);
+		} finally {
+			setAgentMode(priorMode);
+			resetSessionProductRoleForTesting();
 			if (priorDepth === undefined) delete process.env.BASECAMP_AGENT_DEPTH;
 			else process.env.BASECAMP_AGENT_DEPTH = priorDepth;
 			if (priorProductRole === undefined) delete process.env.BASECAMP_AGENT_PRODUCT_ROLE;
