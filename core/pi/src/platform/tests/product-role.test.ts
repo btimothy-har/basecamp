@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { afterEach, describe, it } from "node:test";
+import { afterEach, describe, it, mock } from "node:test";
 import {
 	getSessionProductRoleProvider,
 	registerSessionProductRoleProvider,
@@ -8,7 +8,10 @@ import {
 } from "../product-role.ts";
 
 describe("session product-role seam", () => {
-	afterEach(resetSessionProductRoleForTesting);
+	afterEach(() => {
+		mock.restoreAll();
+		resetSessionProductRoleForTesting();
+	});
 
 	it("returns null when no provider is registered", () => {
 		resetSessionProductRoleForTesting();
@@ -28,5 +31,19 @@ describe("session product-role seam", () => {
 			},
 		});
 		assert.equal(resolveSessionProductRoleOverride(), null);
+	});
+
+	it("warns when replacing an existing provider", () => {
+		const warn = mock.method(console, "warn", () => {});
+		const first = { resolveProductRole: () => "copilot" };
+		const second = { resolveProductRole: () => "workstream_agent" };
+
+		registerSessionProductRoleProvider(first);
+		registerSessionProductRoleProvider(first);
+		registerSessionProductRoleProvider(second);
+
+		assert.equal(resolveSessionProductRoleOverride(), "workstream_agent");
+		assert.equal(warn.mock.callCount(), 1);
+		assert.deepEqual(warn.mock.calls[0]?.arguments, ["basecamp: replacing an existing session product-role provider"]);
 	});
 });

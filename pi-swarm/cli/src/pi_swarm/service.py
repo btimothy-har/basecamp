@@ -7,7 +7,6 @@ import hashlib
 import hmac
 import math
 import os
-import re
 import secrets
 import uuid
 from dataclasses import dataclass
@@ -33,7 +32,13 @@ from .frames import (
 from .process import reap_agent_process, spawn_agent_process
 from .registry import MessageWaiter, Registry, Waiter
 from .run_result import agent_session_file
-from .store import ActiveRunExistsError, DuplicateAgentHandleError, Store, is_message_delivery_terminal
+from .store import (
+    ActiveRunExistsError,
+    DuplicateAgentHandleError,
+    Store,
+    _safe_product_role,
+    is_message_delivery_terminal,
+)
 
 _REDACTED_ENV_VALUE = "<redacted>"
 
@@ -41,7 +46,6 @@ DEFAULT_AGENT_MAX_DEPTH = 2
 DEFAULT_MESSAGE_WAIT_TIMEOUT_SECONDS = 30.0
 MAX_MESSAGE_WAIT_TIMEOUT_SECONDS = 300.0
 TERMINAL_RUN_STATUSES = {"completed", "failed"}
-_CONTROL_PATTERN = re.compile(r"[\x00-\x1f\x7f]")
 
 DispatchAckStatus = Literal["spawned", "rejected"]
 DispatchAckReason = Literal[
@@ -104,22 +108,12 @@ def _generate_report_token() -> str:
     return secrets.token_urlsafe(32)
 
 
-def _safe_product_role(value: Any) -> str | None:
-    if not isinstance(value, str):
-        return None
-    sanitized = _CONTROL_PATTERN.sub(" ", value)
-    sanitized = " ".join(sanitized.split())
-    if not sanitized:
-        return None
-    return sanitized[:64]
-
-
 def _sender_product_role(sender: dict[str, Any] | None) -> str | None:
     if sender is None:
         return None
     if sender.get("role") == "agent":
         return _safe_product_role(sender.get("agent_type")) or "subagent"
-    return _safe_product_role(sender.get("product_role"))
+    return _safe_product_role(sender.get("product_role")) or None
 
 
 def _hash_report_token(report_token: str) -> str:

@@ -47,6 +47,64 @@ def test_accept_peer_message_includes_stored_sender_product_role_for_unknown_rel
     assert accepted.delivery.from_product_role == "copilot"
 
 
+def test_accept_peer_message_sanitizes_sender_product_role_and_agent_type(tmp_path: Path) -> None:
+    store = Store(db_path=tmp_path / "daemon.db")
+    dirty_role = f"\x1b[31m{'x' * 70}\x1b[0m"
+    expected_role = f"{'x' * 63}…"
+    store.upsert_agent(
+        agent_id="sender-session",
+        parent_id=None,
+        sibling_group="root",
+        depth=0,
+        role="session",
+        session_name="Sender Session",
+        cwd=str(tmp_path),
+        agent_handle="sender-session-handle",
+        product_role=dirty_role,
+    )
+    store.upsert_agent(
+        agent_id="sender-agent",
+        parent_id="sender-session",
+        sibling_group="root",
+        depth=1,
+        role="agent",
+        session_name="Sender Agent",
+        cwd=str(tmp_path),
+        agent_handle="sender-agent-handle",
+        agent_type=dirty_role,
+    )
+    store.upsert_agent(
+        agent_id="target-agent",
+        parent_id="sender-session",
+        sibling_group="root",
+        depth=1,
+        role="agent",
+        session_name="Target Agent",
+        cwd=str(tmp_path),
+        agent_handle="target-agent-handle",
+    )
+
+    session_sender = asyncio.run(
+        accept_peer_message(
+            frame=_peer_message(request_id="request-session", target_handle="target-agent-handle"),
+            requester_node_id="sender-session",
+            store=store,
+        )
+    )
+    agent_sender = asyncio.run(
+        accept_peer_message(
+            frame=_peer_message(request_id="request-agent", target_handle="target-agent-handle"),
+            requester_node_id="sender-agent",
+            store=store,
+        )
+    )
+
+    assert isinstance(session_sender, AcceptedPeerMessage)
+    assert session_sender.delivery.from_product_role == expected_role
+    assert isinstance(agent_sender, AcceptedPeerMessage)
+    assert agent_sender.delivery.from_product_role == expected_role
+
+
 def test_accept_peer_message_agent_sender_falls_back_to_agent_type_or_subagent(tmp_path: Path) -> None:
     store = Store(db_path=tmp_path / "daemon.db")
     store.upsert_agent(

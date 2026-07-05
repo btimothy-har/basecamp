@@ -32,7 +32,11 @@ function getSessionProductRoleState(): SessionProductRoleState {
 }
 
 export function registerSessionProductRoleProvider(provider: SessionProductRoleProvider): void {
-	getSessionProductRoleState().provider = provider;
+	const state = getSessionProductRoleState();
+	if (state.provider && state.provider !== provider) {
+		console.warn("basecamp: replacing an existing session product-role provider");
+	}
+	state.provider = provider;
 }
 
 export function getSessionProductRoleProvider(): SessionProductRoleProvider | null {
