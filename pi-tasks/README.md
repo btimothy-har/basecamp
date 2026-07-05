@@ -27,6 +27,18 @@ The launch index (`~/.pi/basecamp/workstream-launches/launch-index.json`) is an 
 
 `launch_workstream` and `plan()` are siblings. `plan()` remains the in-session implementation handoff for the current (parent) session; `launch_workstream` stages a separate user-facing workstream the user starts with `/workstream <id>`. Copilot pulls current state from a started workstream on demand via the pi-swarm known-handle `ask_agent`/`message_agent` path and curates the durable parts into Logseq itself. The stamped handle is a contact address only: it does not make the workstream listable, awaitable, retaskable, or dispatchable from copilot.
 
+## Functional smoke cleanup
+
+For manual workstream smoke tests, use an obviously disposable label such as `functional-known-handle-smoke` and verify only the behavior under test: staging, `/workstream <id>` handle stamping, known-handle `message_agent`, and known-handle `ask_agent` when the session is forkable.
+
+Cleanup is manual by design:
+
+1. Close the Herdr pane opened for the smoke workstream.
+2. Remove the smoke worktree and branch using the normal reviewed git/worktree workflow for this repo.
+3. If the smoke launch receipt is clearly identified, remove only that record from `~/.pi/basecamp/workstream-launches/launch-index.json`.
+
+Do not add cleanup automation casually. Worktree deletion, branch deletion, and launch-index mutation are destructive enough to need separate design.
+
 ## Dependencies
 
 - **pi-core** (hard peer dep): TasksAccess type contract + registry, agent-mode, session state, workspace state + worktree operations, skill-tracker, catalog, model-aliases
