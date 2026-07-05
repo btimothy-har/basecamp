@@ -8,5 +8,6 @@
   "depth": 0,
   "session_name": "async-design",
   "cwd": "/Users/example/repo",
-  "session_file": "/Users/example/.pi/sessions/session-123.jsonl"
+  "session_file": "/Users/example/.pi/sessions/session-123.jsonl",
+  "product_role": "copilot"
 }

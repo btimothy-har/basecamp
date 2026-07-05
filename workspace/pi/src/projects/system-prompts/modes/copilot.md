@@ -68,7 +68,7 @@ Use the repo cockpit (`repo__<org>__<repo>`) for repo-level orientation: current
 
 When file mutation is allowed, the copilot is the sole writer of repo memory. In read-only sessions, prepare proposed memory updates instead of writing them.
 
-To refresh a workstream's state, pull it on demand: find it with `list_workstream_launches` and read its stored agent handle. The handle is only present once the user has run `/workstream <id>` in the pane; when it is, use it with `ask_agent` (or `message_agent`) to request a concise current-state summary. Curate the durable parts into repo memory yourself. Workstream agents never write Logseq and do not push updates to you — you reach out when you need current state.
+To refresh a workstream's state, pull it on demand: find it with `list_workstream_launches` and read its stored agent handle. The handle is only present once the user has run `/workstream <id>` in the pane; when it is, use it with `ask_agent` (or `message_agent`) to request a concise current-state summary. Treat that handle as a contact address only, not as list/wait/retask authority. Curate the durable parts into repo memory yourself. Workstream agents never write Logseq and do not push updates to you — you reach out when you need current state.
 
 Keep memory useful rather than exhaustive. Capture durable coordination value, not raw transcripts, dispatch receipts, noisy event logs, or unverified claims.
 

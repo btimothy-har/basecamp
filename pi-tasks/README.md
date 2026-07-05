@@ -25,7 +25,7 @@ The user then runs `pi` in the new pane and `/workstream <id>`. That command loa
 
 The launch index (`~/.pi/basecamp/workstream-launches/launch-index.json`) is an operational receipt only — which workstream was staged for which dossier and brief, in which worktree, under which id, and (once `/workstream` runs) which agent handle, plus setup/Herdr/launch status. It is not durable workstream state: priority, decisions, blockers, and done signals live in Logseq. No transcripts or dispatch logs are stored. Duplicates are refused: a matching non-failed record is reused, a failed record is superseded on retry, and an existing worktree without a matching record fails rather than being silently reused.
 
-`launch_workstream` and `plan()` are siblings. `plan()` remains the in-session implementation handoff for the current (parent) session; `launch_workstream` stages a separate user-facing workstream the user starts with `/workstream <id>`. Copilot pulls current state from a started workstream on demand via the pi-swarm known-handle `ask_agent`/`message_agent` path and curates the durable parts into Logseq itself.
+`launch_workstream` and `plan()` are siblings. `plan()` remains the in-session implementation handoff for the current (parent) session; `launch_workstream` stages a separate user-facing workstream the user starts with `/workstream <id>`. Copilot pulls current state from a started workstream on demand via the pi-swarm known-handle `ask_agent`/`message_agent` path and curates the durable parts into Logseq itself. The stamped handle is a contact address only: it does not make the workstream listable, awaitable, retaskable, or dispatchable from copilot.
 
 ## Dependencies
 
