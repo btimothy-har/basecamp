@@ -117,18 +117,6 @@ Built-in agents: `scout`, `worker`, `devils-advocate`, `security-specialist`, `t
 
 Named read-only agents may fan out for parallel investigation and review. Be conservative with `worker`: do not parallelize `worker` against the same worktree until daemon mutation leases exist.
 
-### Codex Projection
-
-Basecamp can install a Codex-native projection without porting the Pi runtime:
-
-```bash
-basecamp sync codex
-```
-
-This installs portable operating guidance, custom specialist agents, and Codex
-skills from `codex/projection.toml`. Codex still owns its app UI, Plan mode,
-worktrees, approvals, and subagents.
-
 ## Configuration
 
 Projects are defined in `~/.pi/basecamp/workspace/projects.json`:
