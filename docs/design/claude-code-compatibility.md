@@ -1,6 +1,6 @@
 # Claude Code Compatibility — Design
 
-**Status:** DESIGN · **Scope:** How basecamp behavior projects onto Claude Code · **Decisions locked:** full system-prompt replacement via a launcher; launcher-injection over sync · **Prior art:** a working Claude Code launcher exists in deleted history (see §12) · **Related:** [Codex projection](../../codex/README.md), [async-agents](./async-agents.md)
+**Status:** DESIGN · **Scope:** How basecamp behavior projects onto Claude Code · **Decisions locked:** full system-prompt replacement via a launcher; launcher-injection at launch · **Prior art:** a working Claude Code launcher exists in deleted history (see §12) · **Related:** [async-agents](./async-agents.md)
 
 This document describes how basecamp — a full-system-prompt Pi extension — becomes compatible with Claude Code (the CLI). It captures the chosen strategy, the launcher/hooks split it forces, the per-feature mapping, and a phased roadmap. Model-facing guidance projected into Claude Code must read as native Claude Code guidance and must not reference basecamp, Pi, or Pi-only runtime behavior.
 
@@ -11,8 +11,6 @@ This document describes how basecamp — a full-system-prompt Pi extension — b
 basecamp fully replaces Pi's system prompt. [`before_agent_start`](../../workspace/pi/src/projects/prompt.ts) reassembles a layered prompt (mode → working style → environment → capabilities index → project context → runtime env) **every agent turn**, so worktree state, agent mode, and task progress are always current. On top of that, ~15 distinct Pi lifecycle handlers enforce guards, gate risky bash, provision worktrees, and refresh context.
 
 Claude Code is a different runtime. It cannot return a fresh system prompt each turn, its toolset differs from Pi's, and it owns its own UI, worktrees, Plan mode, and subagents. The goal is to reproduce basecamp's *behavior* — full prompt control, project awareness, worktree discipline, bash review — on Claude Code without porting the Pi runtime.
-
-The [Codex projection](../../codex/README.md) is the existing template for "project behavior into a foreign runtime," but it is a deliberately thin adapter (`skills = true`, `hooks/swarm/git_tools = false`). Claude Code supports full prompt replacement, native worktrees, and blocking hooks, so it can carry basecamp at substantially higher fidelity than Codex.
 
 ## 2. Goals and non-goals
 
@@ -150,9 +148,9 @@ SessionEnd             → basecamp claude session-end        # cleanup
 
 **Launcher.** `basecamp claude` (candidate alias `bcc`) detects the project, assembles the prompt, writes the per-session settings, and execs `claude` with the flags in §4. It is a CLI the user runs, not a hook, so it lives in the Python package.
 
-## 9. Packaging: launcher-injection, not sync
+## 9. Packaging: launcher-injection at launch
 
-Unlike the [Codex projection](../../codex/README.md), basecamp does **not** pre-install anything into `~/.claude`. The Codex `sync` exists only because basecamp cannot wrap the Codex process, so its only lever is to mutate Codex's global config defensively (managed markers, conflict guards, merge logic). A launcher removes that constraint: it owns the invocation and injects everything at launch. This is also the faithful analog of how basecamp already works in Pi — a **session-scoped extension loaded at launch**, not a global install.
+basecamp does **not** pre-install anything into `~/.claude`. The launcher owns the invocation and injects everything at launch, so there is no global config to mutate defensively (no managed markers, conflict guards, or merge logic). This is also the faithful analog of how basecamp already works in Pi — a **session-scoped extension loaded at launch**, not a global install.
 
 Confirmed launch-flag surface (all ephemeral, per-invocation, merged with any existing hierarchy): `--system-prompt-file`, `--plugin-dir` (loads a local plugin's skills + commands + agents + `hooks/hooks.json` + `.mcp.json` in a normal session, no marketplace), `--settings` (JSON or file: permissions/env/model/statusLine), `--agents` (inline JSON), `--mcp-config`, `--add-dir`. There is **no `--skills-dir`** — skills come only from disk or a plugin, so the bundle is a plugin loaded via `--plugin-dir`.
 
@@ -172,12 +170,12 @@ The extension bundle lives **inside the installed Python package** and is refere
 ```
 
 - **No install step.** The launcher passes `--plugin-dir <pkg>/claude/plugin`; the prompt and per-session `--settings` are written to ephemeral temp files each run. Uninstalling basecamp removes everything; the bundle is versioned with the package.
-- **`src/basecamp/claude/`** (launcher module) replaces the `codex_sync`-style installer. It reuses the prompt-assembly content and the reviewer/workspace Python, not the sync machinery.
+- **`src/basecamp/claude/`** (launcher module) owns launch and prompt assembly. It reuses the prompt-assembly content and the reviewer/workspace Python; there is no global install step.
 - **Hooks live in the bundle** (`hooks/hooks.json`), loaded by `--plugin-dir` — versioned and portable, never scattered in user `settings.json`.
 
-**Plain-`claude` tradeoff.** Because nothing is installed globally, a bare `claude` (not `basecamp claude`) is vanilla Claude Code. In Pi this never arises — once registered, every `pi` is basecamp. To get "always on," alias `claude="basecamp claude"` rather than reaching for a global install; a global install refragments ownership and reintroduces exactly the conflict-guard problems sync has to defend against.
+**Plain-`claude` tradeoff.** Because nothing is installed globally, a bare `claude` (not `basecamp claude`) is vanilla Claude Code. In Pi this never arises — once registered, every `pi` is basecamp. To get "always on," alias `claude="basecamp claude"` rather than reaching for a global install; a global install refragments ownership and reintroduces exactly the conflict-guard problems a launcher avoids.
 
-**Optional distribution (later, orthogonal).** A standalone marketplace plugin — installable with `/plugin` and usable in plain `claude` without the launcher — is the one thing a sync-style install still offers. It is a distribution choice for non-launcher users, not a requirement for the launcher, and is out of scope for the core path.
+**Optional distribution (later, orthogonal).** A standalone marketplace plugin — installable with `/plugin` and usable in plain `claude` without the launcher — is a distribution choice for non-launcher users, not a requirement for the launcher, and is out of scope for the core path.
 
 ## 10. Feature fidelity map
 

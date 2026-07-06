@@ -22,7 +22,6 @@ from basecamp_workspace.cli.project import (
 )
 from basecamp_workspace.ui import console, err_console
 
-from basecamp.codex_sync import CodexSyncError, run_codex_sync
 from basecamp.installer import run_interactive_install
 from basecamp.setup import execute_setup
 
@@ -237,30 +236,6 @@ def companion_analyze(ctx: click.Context, session_id: str, base_dir: Path | None
         err=True,
     )
     ctx.invoke(analyze, session_id=session_id, base_dir=base_dir)
-
-
-@basecamp.group()
-def sync() -> None:
-    """Sync external tool configuration."""
-
-
-@sync.command("codex")
-def sync_codex() -> None:
-    """Install user-level Codex defaults and specialist agents."""
-    try:
-        result = run_codex_sync()
-    except CodexSyncError as error:
-        click.echo(f"Codex sync failed: {error}", err=True)
-        raise SystemExit(1) from error
-
-    click.echo(
-        "Codex sync complete: "
-        f"config={'updated' if result.config_changed else 'unchanged'}, "
-        f"agents={result.agents.installed} installed/{result.agents.updated} updated/"
-        f"{result.agents.unchanged} unchanged, "
-        f"skills={result.skills.installed} installed/{result.skills.updated} updated/"
-        f"{result.skills.unchanged} unchanged"
-    )
 
 
 @basecamp.group(hidden=not HAS_SWARM)

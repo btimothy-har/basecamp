@@ -7,10 +7,10 @@ Standalone Claude Code launcher for basecamp.
 
 ## Intent
 
-The counterpart to the [Codex projection](../codex/README.md), but for Claude
-Code. Where the Codex projection must pre-install assets into `~/.codex` (Codex
-cannot be wrapped), this package will own the launch and inject basecamp's
-context at launch time — nothing installed into `~/.claude`.
+A Claude Code launcher for basecamp. This package will own the launch and
+inject basecamp's context at launch time — nothing installed into `~/.claude`.
+Claude Code can be wrapped, so the launcher owns the invocation rather than
+pre-installing assets into a global config.
 
 Planned approach:
 

@@ -26,9 +26,6 @@ build-backend = "hatchling.build"
 [tool.hatch.build.targets.wheel]
 packages = ["src/basecamp"]
 
-[tool.hatch.build.targets.wheel.force-include]
-"codex" = "basecamp/codex"
-
 [dependency-groups]
 dev = [
     "companion-tui",
