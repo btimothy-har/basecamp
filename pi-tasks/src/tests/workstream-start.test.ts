@@ -1,26 +1,43 @@
 import assert from "node:assert/strict";
 import * as fs from "node:fs";
-import { describe, it } from "node:test";
-import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
+import { afterEach, describe, it } from "node:test";
+import type { ExtensionAPI, ExtensionContext, SessionStartEvent } from "@earendil-works/pi-coding-agent";
+import { resetSessionProductRoleForTesting, resolveSessionProductRoleOverride } from "pi-core/platform/product-role.ts";
 import type { WorkspaceState } from "pi-core/platform/workspace.ts";
-import { registerWorkstreamCommand, type WorkstreamCommandDeps } from "../workstreams/command.ts";
 import type { WorkstreamLaunchRecord } from "../workstreams/launch-state.ts";
+import { registerWorkstreamStartup, startWorkstream, type WorkstreamStartDeps } from "../workstreams/start.ts";
 
-interface RegisteredCommand {
-	description: string;
-	handler(args: string | undefined, ctx: ExtensionContext): Promise<void>;
-}
+type SessionStartHandler = (event: SessionStartEvent, ctx: ExtensionContext) => Promise<void>;
 
 class FakePi {
-	readonly commands = new Map<string, RegisteredCommand>();
+	readonly flags = new Map<string, { description: string; type: string }>();
 	readonly userMessages: string[] = [];
+	private readonly flagValues = new Map<string, unknown>();
+	private sessionStart: SessionStartHandler | null = null;
 
-	registerCommand(name: string, command: RegisteredCommand): void {
-		this.commands.set(name, command);
+	registerFlag(name: string, flag: { description: string; type: string }): void {
+		this.flags.set(name, flag);
+	}
+
+	getFlag(name: string): unknown {
+		return this.flagValues.get(name);
+	}
+
+	setFlag(name: string, value: unknown): void {
+		this.flagValues.set(name, value);
+	}
+
+	on(event: string, handler: SessionStartHandler): void {
+		if (event === "session_start") this.sessionStart = handler;
 	}
 
 	sendUserMessage(text: string): void {
 		this.userMessages.push(text);
+	}
+
+	async emitSessionStart(ctx: ExtensionContext): Promise<void> {
+		assert.ok(this.sessionStart, "session_start handler should be registered");
+		await this.sessionStart({ type: "session_start", reason: "new" } as SessionStartEvent, ctx);
 	}
 }
 
@@ -28,6 +45,7 @@ function makeCtx(): { ctx: ExtensionContext; notices: { message: string; level: 
 	const notices: { message: string; level: string }[] = [];
 	const ctx = {
 		hasUI: true,
+		cwd: "/repo",
 		ui: {
 			notify(message: string, level: string) {
 				notices.push({ message, level });
@@ -60,14 +78,21 @@ function makeRecord(overrides: Partial<WorkstreamLaunchRecord> = {}): Workstream
 	};
 }
 
-function makeDeps(overrides: Partial<WorkstreamCommandDeps> = {}) {
+function makeDeps(overrides: Partial<WorkstreamStartDeps> = {}) {
 	const stampCalls: { id: string; handle: string }[] = [];
+	const findCalls: { filePath: string; id: string; repo?: string }[] = [];
+	let workspace: WorkspaceState | null = { repo: { isRepo: true, name: "org/repo" } } as unknown as WorkspaceState;
+	let waitedWorkspace: WorkspaceState | null = workspace;
 	let record: WorkstreamLaunchRecord | null = makeRecord();
 	let handle: string | null = "swift-otter-1a2b3c";
-	const deps: WorkstreamCommandDeps = {
-		getWorkspaceState: () => ({ repo: { isRepo: true, name: "org/repo" } }) as unknown as WorkspaceState,
+	const deps: WorkstreamStartDeps = {
+		getWorkspaceState: () => workspace,
+		waitForWorkspaceState: async () => waitedWorkspace,
 		launchStatePath: () => "/tmp/launch-index.json",
-		findById: (_filePath, _id, _repo) => record,
+		findById: (filePath, id, repo) => {
+			findCalls.push({ filePath, id, repo });
+			return record;
+		},
 		stampHandle: (_filePath, id, h) => {
 			stampCalls.push({ id, handle: h });
 			return record;
@@ -77,6 +102,7 @@ function makeDeps(overrides: Partial<WorkstreamCommandDeps> = {}) {
 	};
 	return {
 		deps,
+		findCalls,
 		stampCalls,
 		setRecord(value: WorkstreamLaunchRecord | null) {
 			record = value;
@@ -84,42 +110,59 @@ function makeDeps(overrides: Partial<WorkstreamCommandDeps> = {}) {
 		setHandle(value: string | null) {
 			handle = value;
 		},
+		setWorkspace(value: WorkspaceState | null) {
+			workspace = value;
+		},
+		setWaitedWorkspace(value: WorkspaceState | null) {
+			waitedWorkspace = value;
+		},
 	};
 }
 
-async function run(pi: FakePi, args: string | undefined, ctx: ExtensionContext) {
-	const command = pi.commands.get("workstream");
-	assert.ok(command, "workstream command should be registered");
-	await command.handler(args, ctx);
+async function runStart(pi: FakePi, args: string | undefined, ctx: ExtensionContext, deps: WorkstreamStartDeps) {
+	await startWorkstream(args, pi as unknown as ExtensionAPI, ctx, deps);
 }
 
-describe("/workstream command", () => {
+describe("workstream startup", () => {
+	afterEach(resetSessionProductRoleForTesting);
+
 	it("loads the brief, injects it, and stamps this session's handle", async () => {
 		const pi = new FakePi();
 		const harness = makeDeps();
-		registerWorkstreamCommand(pi as unknown as ExtensionAPI, harness.deps);
 		const { ctx } = makeCtx();
 
-		await run(pi, "launch-workstream-too", ctx);
+		await runStart(pi, "launch-workstream-too", ctx, harness.deps);
 
 		assert.equal(pi.userMessages.length, 1);
 		assert.match(pi.userMessages[0]!, /# Herdr workstream launch brief/);
 		assert.match(pi.userMessages[0]!, /Launch Workstream Too/);
 		assert.match(pi.userMessages[0]!, /registered as `swift-otter-1a2b3c`/);
+		assert.deepEqual(harness.findCalls, [
+			{ filePath: "/tmp/launch-index.json", id: "launch-workstream-too", repo: "org/repo" },
+		]);
 		assert.deepEqual(harness.stampCalls, [{ id: "launch-workstream-too", handle: "swift-otter-1a2b3c" }]);
+	});
+
+	it("trims ids before lookup", async () => {
+		const pi = new FakePi();
+		const harness = makeDeps();
+		const { ctx } = makeCtx();
+
+		await runStart(pi, "  launch-workstream-too  ", ctx, harness.deps);
+
+		assert.equal(harness.findCalls[0]?.id, "launch-workstream-too");
 	});
 
 	it("returns a usage error when no id is given", async () => {
 		const pi = new FakePi();
 		const harness = makeDeps();
-		registerWorkstreamCommand(pi as unknown as ExtensionAPI, harness.deps);
 		const { ctx, notices } = makeCtx();
 
-		await run(pi, "  ", ctx);
+		await runStart(pi, "  ", ctx, harness.deps);
 
 		assert.equal(pi.userMessages.length, 0);
 		assert.equal(harness.stampCalls.length, 0);
-		assert.match(notices[0]?.message ?? "", /Usage: \/workstream <id>/);
+		assert.match(notices[0]?.message ?? "", /Usage: pi --workstream <id>/);
 		assert.equal(notices[0]?.level, "error");
 	});
 
@@ -127,10 +170,9 @@ describe("/workstream command", () => {
 		const pi = new FakePi();
 		const harness = makeDeps();
 		harness.setRecord(null);
-		registerWorkstreamCommand(pi as unknown as ExtensionAPI, harness.deps);
 		const { ctx, notices } = makeCtx();
 
-		await run(pi, "missing-id", ctx);
+		await runStart(pi, "missing-id", ctx, harness.deps);
 
 		assert.equal(pi.userMessages.length, 0);
 		assert.equal(harness.stampCalls.length, 0);
@@ -143,21 +185,34 @@ describe("/workstream command", () => {
 		let findCalled = false;
 		const harness = makeDeps({
 			getWorkspaceState: () => null,
+			waitForWorkspaceState: async () => null,
 			findById: () => {
 				findCalled = true;
 				return makeRecord();
 			},
 		});
-		registerWorkstreamCommand(pi as unknown as ExtensionAPI, harness.deps);
 		const { ctx, notices } = makeCtx();
 
-		await run(pi, "launch-workstream-too", ctx);
+		await runStart(pi, "launch-workstream-too", ctx, harness.deps);
 
 		assert.equal(pi.userMessages.length, 0);
 		assert.equal(harness.stampCalls.length, 0);
 		assert.equal(findCalled, false);
 		assert.match(notices[0]?.message ?? "", /not in a repository workspace/);
 		assert.equal(notices[0]?.level, "error");
+	});
+
+	it("waits for workspace state during startup before lookup", async () => {
+		const pi = new FakePi();
+		const harness = makeDeps();
+		harness.setWorkspace(null);
+		harness.setWaitedWorkspace({ repo: { isRepo: true, name: "org/repo" } } as unknown as WorkspaceState);
+		const { ctx } = makeCtx();
+
+		await runStart(pi, "launch-workstream-too", ctx, harness.deps);
+
+		assert.equal(pi.userMessages.length, 1);
+		assert.equal(harness.findCalls[0]?.repo, "org/repo");
 	});
 
 	it("reports workspace lookup errors without injecting or stamping", async () => {
@@ -167,10 +222,9 @@ describe("/workstream command", () => {
 				throw new Error("workspace state unavailable");
 			},
 		});
-		registerWorkstreamCommand(pi as unknown as ExtensionAPI, harness.deps);
 		const { ctx, notices } = makeCtx();
 
-		await run(pi, "launch-workstream-too", ctx);
+		await runStart(pi, "launch-workstream-too", ctx, harness.deps);
 
 		assert.equal(pi.userMessages.length, 0);
 		assert.equal(harness.stampCalls.length, 0);
@@ -186,10 +240,9 @@ describe("/workstream command", () => {
 				throw new Error("launch index corrupt");
 			},
 		});
-		registerWorkstreamCommand(pi as unknown as ExtensionAPI, harness.deps);
 		const { ctx, notices } = makeCtx();
 
-		await run(pi, "launch-workstream-too", ctx);
+		await runStart(pi, "launch-workstream-too", ctx, harness.deps);
 
 		assert.equal(pi.userMessages.length, 0);
 		assert.equal(harness.stampCalls.length, 0);
@@ -202,10 +255,9 @@ describe("/workstream command", () => {
 		const pi = new FakePi();
 		const harness = makeDeps();
 		harness.setHandle(null);
-		registerWorkstreamCommand(pi as unknown as ExtensionAPI, harness.deps);
 		const { ctx } = makeCtx();
 
-		await run(pi, "launch-workstream-too", ctx);
+		await runStart(pi, "launch-workstream-too", ctx, harness.deps);
 
 		assert.equal(pi.userMessages.length, 1);
 		assert.match(pi.userMessages[0]!, /# Herdr workstream launch brief/);
@@ -220,10 +272,9 @@ describe("/workstream command", () => {
 				throw new Error("disk full");
 			},
 		});
-		registerWorkstreamCommand(pi as unknown as ExtensionAPI, harness.deps);
 		const { ctx, notices } = makeCtx();
 
-		await run(pi, "launch-workstream-too", ctx);
+		await runStart(pi, "launch-workstream-too", ctx, harness.deps);
 
 		assert.equal(pi.userMessages.length, 1);
 		assert.match(pi.userMessages[0]!, /agent handle was derived as `swift-otter-1a2b3c`/);
@@ -240,10 +291,9 @@ describe("/workstream command", () => {
 		const harness = makeDeps({
 			stampHandle: () => null,
 		});
-		registerWorkstreamCommand(pi as unknown as ExtensionAPI, harness.deps);
 		const { ctx, notices } = makeCtx();
 
-		await run(pi, "launch-workstream-too", ctx);
+		await runStart(pi, "launch-workstream-too", ctx, harness.deps);
 
 		assert.equal(pi.userMessages.length, 1);
 		assert.match(pi.userMessages[0]!, /agent handle was derived as `swift-otter-1a2b3c`/);
@@ -258,19 +308,62 @@ describe("/workstream command", () => {
 		const pi = new FakePi();
 		const harness = makeDeps();
 		harness.setRecord(makeRecord({ worktree: { label: "wt-bt/no-path", branch: "bt/no-path" } }));
-		registerWorkstreamCommand(pi as unknown as ExtensionAPI, harness.deps);
 		const { ctx } = makeCtx();
 
-		await run(pi, "launch-workstream-too", ctx);
+		await runStart(pi, "launch-workstream-too", ctx, harness.deps);
 
 		assert.equal(pi.userMessages.length, 1);
 		assert.match(pi.userMessages[0]!, /Worktree path: not recorded in launch record/);
 		assert.doesNotMatch(pi.userMessages[0]!, /Worktree path:\s*\n/);
 	});
 
+	it("registers a string startup flag and starts the workstream on session_start", async () => {
+		const pi = new FakePi();
+		const harness = makeDeps();
+		const { ctx } = makeCtx();
+
+		registerWorkstreamStartup(pi as unknown as ExtensionAPI, harness.deps);
+		pi.setFlag("workstream", "launch-workstream-too");
+		await pi.emitSessionStart(ctx);
+
+		assert.deepEqual(pi.flags.get("workstream"), {
+			description: "Start a staged workstream by id on session startup",
+			type: "string",
+		});
+		assert.equal(pi.userMessages.length, 1);
+		assert.deepEqual(harness.stampCalls, [{ id: "launch-workstream-too", handle: "swift-otter-1a2b3c" }]);
+	});
+
+	it("registers a product-role provider for non-empty --workstream sessions", () => {
+		const pi = new FakePi();
+		const harness = makeDeps();
+
+		registerWorkstreamStartup(pi as unknown as ExtensionAPI, harness.deps);
+		assert.equal(resolveSessionProductRoleOverride(), null);
+
+		pi.setFlag("workstream", "   ");
+		assert.equal(resolveSessionProductRoleOverride(), null);
+
+		pi.setFlag("workstream", "launch-workstream-too");
+		assert.equal(resolveSessionProductRoleOverride(), "workstream_agent");
+	});
+
+	it("does nothing on session_start when --workstream is absent", async () => {
+		const pi = new FakePi();
+		const harness = makeDeps();
+		const { ctx } = makeCtx();
+
+		registerWorkstreamStartup(pi as unknown as ExtensionAPI, harness.deps);
+		await pi.emitSessionStart(ctx);
+
+		assert.equal(pi.userMessages.length, 0);
+		assert.equal(harness.findCalls.length, 0);
+		assert.equal(harness.stampCalls.length, 0);
+	});
+
 	it("is wired from pi-tasks/index.ts", () => {
 		const indexSource = fs.readFileSync(new URL("../../index.ts", import.meta.url), "utf8");
-		assert.match(indexSource, /import \{ registerWorkstreamCommand \} from "\.\/src\/workstreams\/command\.ts";/);
-		assert.match(indexSource, /registerWorkstreamCommand\(pi\);/);
+		assert.match(indexSource, /import \{ registerWorkstreamStartup \} from "\.\/src\/workstreams\/start\.ts";/);
+		assert.match(indexSource, /registerWorkstreamStartup\(pi\);/);
 	});
 });

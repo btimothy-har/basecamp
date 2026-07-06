@@ -1,23 +1,25 @@
 # Pi Swarm Daemon Protocol
 
-Protocol version: `15`
+Protocol version: `17`
 
 All frames are JSON objects with an envelope:
 
 ```json
-{"type":"<frame_type>","v":15,...}
+{"type":"<frame_type>","v":17,...}
 ```
 
 Version handling:
 - The daemon validates `v` on every inbound frame.
-- If `v != 15`, the daemon sends an `error` frame with `code: "protocol_version"` and closes the connection.
+- If `v != 17`, the daemon sends an `error` frame with `code: "protocol_version"` and closes the connection.
 - The extension treats the protocol as a client-visible capability gate, not only a frame-shape version. A version mismatch restarts the host daemon during ensure-daemon.
 - v15 adds known-public-handle contact for `peer_message` and fork-`ask`: contact is authorized without a live relationship when the target is addressed by its known public handle (see below).
+- v16 adds registered session transcript paths for fork-ask and product-role metadata for peer-message display.
+- v17 adds safe current-task previews to `list_agents_result` rows.
 
 ## Transport
 
 - HTTP over Unix domain socket (UDS):
-  - `GET /health` → `{"status":"ok","protocol":15}`
+  - `GET /health` → `{"status":"ok","protocol":17}`
   - `GET /runs/summary?root_id=<id>` returns safe agent-level observability for the companion dashboard.
   - `GET /runs/messages?root_id=<id>&agent_handle=<handle>` returns selected-agent assistant message detail for the companion dashboard.
 - WebSocket over UDS:
@@ -38,7 +40,7 @@ The public daemon-agent identity is `agent_handle`, a readable path-safe alias s
 - `telemetry` and `result_report` authenticate/report the active execution.
 - process reaping and run history use the private id.
 
-LLM-facing tools should not present `run_id` or `agent_id` as user handles. Capability is separate from identity: `message_agent` and `ask_agent` may target visible session or worker handles, while `dispatch_agent`, retask, `wait_for_agent`, and `list_agents` stay task-run oriented.
+LLM-facing tools should not present `run_id` or `agent_id` as user handles. Capability is separate from identity. Top-level/copilot sessions and started workstream sessions are contactable but not taskable: they may receive `message_agent` and may be asked by canonical handle when the daemon has a forkable session file, but they are not dispatchable, retaskable, awaitable, or listed by `list_agents`. Dispatched worker agents are taskable under the existing dispatcher/retask constraints. Ask answerers are transient and hidden from task directories.
 
 The daemon enforces one primary active run per dispatchable agent. `agents.current_run_id` points at the latest primary run, including terminal runs, so `wait_for_agent(agent_handle)` can retrieve final results until a later primary run replaces it. Retasking an existing handle is conservative: the current run must already be terminal, `agent_type` / `run_kind` for that handle are immutable, and session/ask handles are rejected as non-dispatchable.
 
@@ -56,6 +58,8 @@ Important fields:
 - `parent_id`: parent node, or `null` for a root session.
 - `role`: `session` or `agent`.
 - `session_name`, `depth`, `cwd`: safe directory/observability metadata.
+- `session_file`: optional registered transcript file path used only as an ask fork source after authorization succeeds. It is not exposed in LLM-facing tools.
+- `product_role`: optional safe display role such as `copilot` or a session mode. Peer-message recipients may see it as display metadata; it is not a routable identity.
 
 ### `dispatch` client → daemon
 
@@ -68,7 +72,7 @@ Important fields:
 - `agent_type` and `run_kind`: immutable per handle after the first dispatch.
 - `model`: public display model selected for the agent run. If the extension uses Pi's default model, it sends/stores `default`.
 - `spec`: opaque TypeScript-authored spawn spec.
-- `spec.fork_from`: optional; a target agent handle/id. When present, the daemon resolves it to the target's session file and forks it (pi --fork) into a new read-only answerer session — used by the agent 'ask' capability. Omitted/null for normal dispatch. Resolution by known public handle authorizes the fork-ask across relationships (as with `peer_message`); the private-`agent_id` fallback stays relationship-gated.
+- `spec.fork_from`: optional; a target agent handle/id. When present, the daemon resolves it to the target's registered session file or daemon-managed agent session sidecar and forks it (`pi --fork`) into a new read-only answerer session — used by the agent ask capability. Omitted/null for normal dispatch. Resolution by known public handle authorizes the fork-ask across relationships (as with `peer_message`); the private-`agent_id` fallback stays relationship-gated. If no safe fork source exists, the target is reported as unavailable without distinguishing missing, unauthorized, or non-forkable targets.
 
 New run rows persist `dispatcher_id` as the registered `node_id` that sent `dispatch`.
 
@@ -95,7 +99,7 @@ Waits for one or more public agent handles:
 ```json
 {
   "type": "wait",
-  "v": 15,
+  "v": 17,
   "agent_ids": [],
   "agent_handles": ["mossy-otter-a1b2c3"],
   "mode": "all",
@@ -107,7 +111,7 @@ Waits for one or more public agent handles:
 
 Authorization is strict and dispatcher-owned: the requester may wait only when its registered `node_id` equals the `dispatcher_id` on the target agent's current primary run. Session handles are not primary-run targets and return `unknown`.
 
-Unauthorized, missing, no-current-run, or non-awaitable agents are returned as `unknown`. They do not block and do not reveal whether the handle exists.
+Unauthorized, missing, no-current-run, or non-awaitable agents are returned as `unknown`. They do not block and do not reveal whether the handle exists. LLM-facing tools render this as not awaitable or unavailable.
 
 ### `wait_result` daemon → client
 
@@ -126,7 +130,7 @@ Requests a safe directory of agents visible under the caller's root session:
 ```json
 {
   "type": "list_agents",
-  "v": 15,
+  "v": 17,
   "request_id": "list-001",
   "awaitable": true
 }
@@ -147,8 +151,9 @@ Returns same-root agent directory rows:
 - `depth`
 - `status`: `idle`, `pending`, `running`, `completed`, or `failed`
 - `awaitable`
+- `task`: optional safe preview of the current primary run task, sanitized and truncated for display.
 
-Rows also carry the private `agent_id` for trusted extension retasking plumbing; LLM-facing `list_agents` output strips it. The directory excludes private run ids, prompts, full results, errors, spawn specs, env, and cwd.
+Rows also carry the private `agent_id` for trusted extension retasking plumbing; LLM-facing `list_agents` output strips it. LLM-facing display treats handle plus `agent_type` as stable identity and shows task/title metadata separately. The directory excludes private run ids, prompts, full results, errors, spawn specs, env, and cwd.
 
 ### `peer_message` client → daemon
 
@@ -182,10 +187,11 @@ Fields:
 - `message_id`: stored message id.
 - `from_handle`: sender public handle, or `null` when unavailable.
 - `from_relation`: sender relationship from the recipient's perspective: `self`, `parent`, `ancestor`, `child`, `descendant`, `peer`, or `unknown`.
+- `from_product_role`: optional safe product role display label, such as `copilot` or an agent type.
 - `message`: message text.
 - `interrupt`: whether this delivery should interrupt the recipient.
 
-Recipient clients render injected content as `Message from <handle> (<relation>):`. The handle is the only routable identity; the relation label is display-only.
+Recipient clients render injected content by preferring product role, then structural relation, then a neutral sender label with no `(unknown)` suffix. Example: `Message from <handle> (copilot):` or `Message from <handle> (parent):`. The handle is the only routable identity; product-role and relation labels are display-only.
 
 ### `peer_message_delivery_ack` agent → daemon
 
@@ -217,7 +223,7 @@ Fields:
 - `error`: optional/nullable lifecycle error detail.
 - `created_at`, `sent_at`, `queued_at`, `failed_at`: nullable timestamp strings when known.
 
-For `wait_until_delivery`, terminal delivery states are `queued`, `failed`, `unavailable`, and `unknown`. `accepted` and `sent` are non-terminal.
+For `wait_until_delivery`, terminal delivery states are `queued`, `failed`, `unavailable`, and `unknown`. `accepted` and `sent` are non-terminal. LLM-facing tools may render `queued` as `queued in recipient session` while preserving the protocol status value.
 
 ### `GET /runs/summary`
 
@@ -273,6 +279,6 @@ Reports protocol/parse errors and closes the WebSocket for fatal frame errors. C
 A minimal client flow is:
 
 1. Connect to `/ws` over the UDS.
-2. Send `register` with `v: 15`.
+2. Send `register` with `v: 17`.
 3. Send `dispatch` with private `run_id` / `agent_id` and public `agent_handle`.
 4. Use the `agent_handle` with `wait` or discover agents through `list_agents`.

@@ -43,8 +43,10 @@ interface MessageStatusDetails {
 
 interface PublicListAgentItem {
 	agentHandle: string;
+	agentType: string | null;
 	role: string;
-	sessionName: string;
+	sessionName: string | null;
+	task: string | null;
 	depth: number;
 	status: "pending" | "running" | "completed" | "failed" | "idle";
 	awaitable: boolean;
@@ -138,8 +140,12 @@ function hasText(value: string | null | undefined): value is string {
 	return value !== null && value !== undefined && value.trim() !== "";
 }
 
+function messageStatusDisplay(status: MessageStatusDetails["status"]): string {
+	return status === "queued" ? "queued in recipient session" : status;
+}
+
 function formatMessageStatusLine(details: MessageStatusDetails): string {
-	const parts = [`message_id ${details.messageId}`, `status ${details.status}`];
+	const parts = [`message_id ${details.messageId}`, `status ${messageStatusDisplay(details.status)}`];
 	if (hasText(details.error)) parts.push(`error ${details.error}`);
 	return parts.join(" • ");
 }
@@ -162,7 +168,7 @@ function formatWaitItemText(item: WaitHandleResult): string {
 		if (hasText(item.result)) parts.push(`result:\n${item.result}`);
 		return parts.join("\n");
 	}
-	if (item.status === "unknown") return `? ${item.agentHandle} unknown agent`;
+	if (item.status === "unknown") return `? ${item.agentHandle} not awaitable or unavailable`;
 	return `… ${item.agentHandle} still running (timed out)`;
 }
 
@@ -177,10 +183,20 @@ function storedAgentType(agent: ListAgentItem): string | null {
 	return value ? value : null;
 }
 
-function publicSessionName(agent: ListAgentItem, agentHandle: string): string {
+function publicSessionName(agent: ListAgentItem, agentHandle: string): string | null {
 	const sessionName = agent.session_name.trim();
-	if (!sessionName || sessionName === agent.agent_id) return agentHandle;
-	return sessionName.replaceAll(agent.agent_id, agentHandle);
+	if (!sessionName || sessionName === agent.agent_id || sessionName === agentHandle) return null;
+	const publicName = sessionName.replaceAll(agent.agent_id, agentHandle).trim();
+	return publicName && publicName !== agentHandle ? publicName : null;
+}
+
+function publicAgentTask(agent: ListAgentItem): string | null {
+	const value = agent.task?.trim();
+	return value ? value : null;
+}
+
+function agentIdentity(agent: PublicListAgentItem): string {
+	return agent.agentType ? `${agent.agentHandle} (${agent.agentType})` : agent.agentHandle;
 }
 
 function toPublicListAgent(agent: ListAgentItem): PublicListAgentItem | null {
@@ -188,8 +204,10 @@ function toPublicListAgent(agent: ListAgentItem): PublicListAgentItem | null {
 	if (!agentHandle) return null;
 	return {
 		agentHandle,
+		agentType: storedAgentType(agent),
 		role: agent.role,
 		sessionName: publicSessionName(agent, agentHandle),
+		task: publicAgentTask(agent),
 		depth: agent.depth,
 		status: agent.status,
 		awaitable: agent.awaitable,
@@ -198,7 +216,11 @@ function toPublicListAgent(agent: ListAgentItem): PublicListAgentItem | null {
 
 function buildListAgentLine(agent: PublicListAgentItem): string {
 	const awaitableText = agent.awaitable ? "awaitable" : "not awaitable";
-	return `${agent.agentHandle} — ${agent.sessionName}\n${agent.status} • ${awaitableText} • ${agent.role} • depth ${agent.depth}`;
+	const lines = [agentIdentity(agent), `${agent.status} • ${awaitableText} • ${agent.role} • depth ${agent.depth}`];
+	if (hasText(agent.task)) lines.push(`task: ${agent.task}`);
+	if (hasText(agent.sessionName) && agent.sessionName !== agentIdentity(agent))
+		lines.push(`title: ${agent.sessionName}`);
+	return lines.join("\n");
 }
 
 function shortListAgentsSummary(agents: PublicListAgentItem[]): string {
@@ -263,7 +285,7 @@ export function registerPeerMessageTools(
 				error: ack.error,
 			};
 			if (ack.status === "unknown") {
-				const text = hasText(ack.error) ? ack.error : `No agent "${targetHandle}" is available to message.`;
+				const text = hasText(ack.error) ? ack.error : "No available agent for that handle.";
 				return { content: [{ type: "text", text }], isError: true, details };
 			}
 			return {
@@ -483,7 +505,7 @@ export function registerAskAgentTool(
 			if (!result || result.status === "rejected") {
 				const message =
 					result?.reason === "fork_target_unknown"
-						? `No agent "${targetHandle}" is available to ask.`
+						? "No available agent for that handle."
 						: `ask rejected: ${result?.reason ?? "unknown"}`;
 				return {
 					content: [{ type: "text", text: message }],
@@ -752,7 +774,7 @@ export function registerDaemonTools(
 					agent.awaitable ? "success" : "muted",
 					agent.awaitable ? "awaitable" : "not awaitable",
 				);
-				return `${agent.agentHandle} ${theme.fg("muted", agent.sessionName)} ${status} ${awaitable}`;
+				return `${agentIdentity(agent)} ${status} ${awaitable}`;
 			});
 			return new Text(lines.join("\n"), 0, 0);
 		},
@@ -868,7 +890,7 @@ export function registerDaemonTools(
 					return `${theme.fg("error", "✗")} ${item.agentHandle} ${theme.fg("error", preview(item.error) || "failed")}`;
 				}
 				if (item.status === "unknown") {
-					return `${theme.fg("warning", "?")} ${item.agentHandle} ${theme.fg("muted", "unknown agent")}`;
+					return `${theme.fg("warning", "?")} ${item.agentHandle} ${theme.fg("muted", "not awaitable or unavailable")}`;
 				}
 				return `${theme.fg("warning", "…")} ${item.agentHandle} ${theme.fg("muted", "still running (timed out)")}`;
 			});

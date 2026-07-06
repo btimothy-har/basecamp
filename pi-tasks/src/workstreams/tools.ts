@@ -219,6 +219,18 @@ function errorMessage(err: unknown): string {
 	return err instanceof Error ? err.message : String(err);
 }
 
+function shellQuote(s: string): string {
+	return `'${s.replace(/'/g, "'\\''")}'`;
+}
+
+function workstreamLaunchCommand(id: string): string {
+	return `pi --workstream ${id}`;
+}
+
+function workstreamLaunchCommandFromPath(path: string, id: string): string {
+	return `cd ${shellQuote(path)} && ${workstreamLaunchCommand(id)}`;
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
 	return typeof value === "object" && value !== null && !Array.isArray(value);
 }
@@ -433,7 +445,9 @@ function existingLaunchResult(
 	const nextStep = matchedByFingerprint
 		? record.agent.handle
 			? `Continue with the existing workstream agent (handle ${record.agent.handle}).`
-			: `Open worktree ${record.worktree.label}, run \`pi\`, then \`/workstream ${record.id}\` (no agent has attached yet).`
+			: record.worktree.path
+				? `Open worktree ${record.worktree.label} and run \`${workstreamLaunchCommandFromPath(record.worktree.path, record.id)}\` (no agent has attached yet).`
+				: `Open worktree ${record.worktree.label} and run \`${workstreamLaunchCommand(record.id)}\` from that worktree (no agent has attached yet).`
 		: `Choose a different workstream.worktreeSlug to stage a separate worktree, or continue the existing workstream ${record.id}.`;
 	return {
 		status: "existing_launch",
@@ -722,7 +736,7 @@ export async function executeLaunchWorkstream(
 		});
 	}
 
-	// Open a Herdr pane on the worktree (best-effort). No pi is launched; the user runs pi + /workstream <id>.
+	// Open a Herdr pane on the worktree (best-effort). No pi is launched; the user starts it manually.
 	const herdrResult = await deps.openWorkstreamInHerdr(
 		pi,
 		workspaceForHerdr(workspace, ctx.hasUI),
@@ -749,16 +763,17 @@ export async function executeLaunchWorkstream(
 	}
 
 	record = await updateRecord(deps, statePath, record, {
-		launch: { status: "succeeded", message: "Workstream staged; awaiting /workstream in the pane." },
+		launch: { status: "succeeded", message: "Workstream staged; awaiting pi --workstream launch." },
 	});
 
-	const startHint = `run \`pi\` in the new worktree pane, then \`/workstream ${record.id}\``;
+	const paneCommand = workstreamLaunchCommand(record.id);
+	const pathCommand = workstreamLaunchCommandFromPath(worktree.worktreeDir, record.id);
 	const nextStep =
 		herdrResult.status === "opened"
-			? `Herdr opened a pane for worktree ${record.worktree.label}. In that pane, ${startHint}.`
+			? `Herdr opened a pane for worktree ${record.worktree.label}. In that pane, run \`${paneCommand}\`.`
 			: herdrResult.status === "skipped"
-				? `Worktree ${record.worktree.label} is ready, but no Herdr pane was opened (${herdrResult.message}). Open the worktree, then ${startHint}.`
-				: `Worktree ${record.worktree.label} is ready, but the Herdr pane failed to open (${herdrResult.message}). Open the worktree, then ${startHint}.`;
+				? `Worktree ${record.worktree.label} is ready, but no Herdr pane was opened (${herdrResult.message}). Run \`${pathCommand}\`.`
+				: `Worktree ${record.worktree.label} is ready, but the Herdr pane failed to open (${herdrResult.message}). Run \`${pathCommand}\`.`;
 
 	return textResult({
 		status: "launched",
@@ -782,8 +797,8 @@ export function registerWorkstreamTools(
 		name: "launch_workstream",
 		label: "Launch Workstream",
 		description:
-			"Stage a workstream from a dossier brief: provision one dedicated worktree, open a Herdr pane on it, and record the workstream under a human-typeable id. The user then runs pi in that pane and /workstream <id> to start the agent. Does not dispatch an agent itself.",
-		promptSnippet: "Stage a Herdr workstream worktree + pane under an id for /workstream",
+			"Stage a workstream from a dossier brief: provision one dedicated worktree, open a Herdr pane on it, and record the workstream under a human-typeable id. The user then runs pi --workstream <id> in that pane to start the agent. Does not dispatch an agent itself.",
+		promptSnippet: "Stage a Herdr workstream worktree + pane under an id for pi --workstream",
 		parameters: Type.Object(
 			{
 				source: Type.Object(
@@ -798,9 +813,11 @@ export function registerWorkstreamTools(
 				workstream: Type.Object(
 					{
 						label: Type.String({
-							description: "Human-readable workstream label; also the basis for the /workstream id.",
+							description: "Human-readable workstream label; also the basis for the pi --workstream id.",
 						}),
-						brief: Type.String({ description: "Workstream brief the launched agent will receive via /workstream." }),
+						brief: Type.String({
+							description: "Workstream brief the launched agent will receive via pi --workstream.",
+						}),
 						constraints: Type.Optional(Type.String({ description: "Optional constraints for the workstream." })),
 						worktreeSlug: Type.Optional(
 							Type.String({ description: "Optional slug used to derive the dedicated worktree label." }),

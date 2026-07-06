@@ -129,6 +129,8 @@ def create_app(store: Store, *, daemon_uds: str | None = None) -> FastAPI:
                     session_name=parsed.session_name,
                     cwd=parsed.cwd,
                     agent_handle=parsed.agent_handle,
+                    session_file=parsed.session_file,
+                    product_role=parsed.product_role,
                 )
             except DuplicateAgentHandleError as exc:
                 if registry.get_connection(parsed.node_id) is websocket:

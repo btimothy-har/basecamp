@@ -10,6 +10,7 @@ import os
 import secrets
 import uuid
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any, Literal
 
 from .frames import (
@@ -31,7 +32,13 @@ from .frames import (
 from .process import reap_agent_process, spawn_agent_process
 from .registry import MessageWaiter, Registry, Waiter
 from .run_result import agent_session_file
-from .store import ActiveRunExistsError, DuplicateAgentHandleError, Store, is_message_delivery_terminal
+from .store import (
+    ActiveRunExistsError,
+    DuplicateAgentHandleError,
+    Store,
+    _safe_product_role,
+    is_message_delivery_terminal,
+)
 
 _REDACTED_ENV_VALUE = "<redacted>"
 
@@ -101,6 +108,14 @@ def _generate_report_token() -> str:
     return secrets.token_urlsafe(32)
 
 
+def _sender_product_role(sender: dict[str, Any] | None) -> str | None:
+    if sender is None:
+        return None
+    if sender.get("role") == "agent":
+        return _safe_product_role(sender.get("agent_type")) or "subagent"
+    return _safe_product_role(sender.get("product_role")) or None
+
+
 def _hash_report_token(report_token: str) -> str:
     return hashlib.sha256(report_token.encode("utf-8")).hexdigest()
 
@@ -116,6 +131,38 @@ def _metadata_mismatches(*, existing: dict[str, Any], frame: DispatchFrame) -> b
 
 def _is_dispatchable_agent(agent: dict[str, Any]) -> bool:
     return agent.get("role") != "session" and agent.get("agent_type") != "ask"
+
+
+def _registered_session_file(agent: dict[str, Any]) -> Path | None:
+    raw = agent.get("session_file")
+    if not isinstance(raw, str) or not raw.strip():
+        return None
+
+    path = Path(raw).expanduser()
+    if not path.is_absolute():
+        return None
+    try:
+        path.lstat()
+    except OSError:
+        return None
+    if path.is_symlink() or not path.is_file():
+        return None
+    return path.resolve()
+
+
+def _resolve_fork_source_path(agent: dict[str, Any]) -> str | None:
+    session_file = _registered_session_file(agent)
+    if session_file is not None:
+        return str(session_file)
+
+    agent_id = agent.get("id")
+    if not isinstance(agent_id, str):
+        return None
+
+    # Resolve daemon-spawned agent sidecars under the daemon's own home, never
+    # requester-supplied env, so a fork source cannot be redirected.
+    sidecar = agent_session_file(agent_id)
+    return str(sidecar) if sidecar is not None else None
 
 
 def _resolve_agent_max_depth() -> int:
@@ -204,12 +251,9 @@ async def prepare_dispatch(
         ):
             return DispatchRejection(reason="fork_target_unknown")
 
-        # Resolve under the daemon's own home (the owner of all agent session dirs),
-        # never the requester-supplied frame.spec.env, so a fork source cannot be redirected.
-        session_file = agent_session_file(fork_target_id)
-        if session_file is None:
+        fork_source_path = _resolve_fork_source_path(fork_target)
+        if fork_source_path is None:
             return DispatchRejection(reason="fork_target_unknown")
-        fork_source_path = str(session_file)
 
     report_token = _generate_report_token()
     report_token_hash = _hash_report_token(report_token)
@@ -412,6 +456,7 @@ async def accept_peer_message(
 
     sender = await asyncio.to_thread(store.get_agent, requester_node_id)
     sender_handle = _public_sender_handle(sender)
+    sender_product_role = _sender_product_role(sender)
     sender_relation = await asyncio.to_thread(store.agent_relation, target_agent_id, requester_node_id)
     message_id = f"msg-{uuid.uuid4()}"
     await asyncio.to_thread(
@@ -426,6 +471,18 @@ async def accept_peer_message(
         interrupt=frame.interrupt,
     )
 
+    delivery_values: dict[str, Any] = {
+        "type": "peer_message_delivery",
+        "v": PROTOCOL_VERSION,
+        "message_id": message_id,
+        "from_handle": sender_handle,
+        "from_relation": sender_relation,
+        "message": frame.message,
+        "interrupt": frame.interrupt,
+    }
+    if sender_product_role is not None:
+        delivery_values["from_product_role"] = sender_product_role
+
     return AcceptedPeerMessage(
         ack=PeerMessageAckFrame(
             type="peer_message_ack",
@@ -435,15 +492,7 @@ async def accept_peer_message(
             status="accepted",
             error=None,
         ),
-        delivery=PeerMessageDeliveryFrame(
-            type="peer_message_delivery",
-            v=PROTOCOL_VERSION,
-            message_id=message_id,
-            from_handle=sender_handle,
-            from_relation=sender_relation,
-            message=frame.message,
-            interrupt=frame.interrupt,
-        ),
+        delivery=PeerMessageDeliveryFrame(**delivery_values),
         target_agent_id=target_agent_id,
     )
 
@@ -753,6 +802,8 @@ async def list_agents(
             "status": row["status"],
             "awaitable": row["awaitable"],
         }
+        if row.get("task") is not None:
+            values["task"] = row["task"]
         if row.get("agent_type") is not None:
             values["agent_type"] = row["agent_type"]
         if row.get("run_kind") is not None:

@@ -1,11 +1,13 @@
 {
   "type": "register",
-  "v": 15,
+  "v": 17,
   "role": "session",
   "node_id": "session-123",
   "parent_id": null,
   "sibling_group": null,
   "depth": 0,
   "session_name": "async-design",
-  "cwd": "/Users/example/repo"
+  "cwd": "/Users/example/repo",
+  "session_file": "/Users/example/.pi/sessions/session-123.jsonl",
+  "product_role": "copilot"
 }

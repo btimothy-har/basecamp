@@ -15,17 +15,29 @@ The sync in-process agent tool has been removed in the cutover. pi-swarm/extensi
 
 The handoff is manual by design, so a workstream runs as a normal user-facing pi session tied to the repo rather than a headless worker.
 
-`launch_workstream` stages exactly one workstream from a dossier-backed brief: it provisions a single execution worktree via `getOrCreateWorktree` (without touching or activating the copilot session's own worktree/cwd/env), runs configured setup for a newly created worktree, opens a Herdr pane on the worktree (best-effort), and records the workstream under a short human-typeable **id**. It does not dispatch an agent. Herdr opening is explicit to this tool — ordinary worktree activation never mutates Herdr.
+`launch_workstream` stages exactly one workstream from a dossier-backed brief: it provisions a single execution worktree via `getOrCreateWorktree` (without touching or activating the copilot session's own worktree/cwd/env), runs configured setup for a newly created worktree, opens a Herdr pane on the worktree (best-effort), and records the workstream under a short human-typeable **id**. It does not dispatch an agent. Herdr opening is explicit to this tool — ordinary worktree activation never mutates Herdr. The pane is opened first; the user runs `pi --workstream <id>` once the pane is ready.
 
 Schema is brief-centered and minimal: required `source.dossierPath`, `workstream.label`, `workstream.brief`; optional `source.repoPagePath`, `workstream.constraints`, `workstream.worktreeSlug`. The brief is intentionally stretchable — it can describe a broad workstream to decompose or a specific agreed slice to execute.
 
-The user then runs `pi` in the new pane and `/workstream <id>`. That command loads the workstream record by id, injects the built brief as the opening prompt, and stamps the running session's public daemon handle onto the record so copilot can reach it. The brief tells the agent it owns its worktree, may coordinate sub-agents, may implement within the worktree when the brief calls for it, must not write Logseq, and must not push, open PRs, or merge unless asked.
+The user then runs `pi --workstream <id>` in the new pane. If they open the worktree manually instead, use `cd <worktree-path> && pi --workstream <id>`. That launch command loads the workstream record by id, injects the built brief as the opening prompt, and stamps the running session's public daemon handle onto the record so copilot can reach it. The brief tells the agent it owns its worktree, may coordinate sub-agents, may implement within the worktree when the brief calls for it, must not write Logseq, and must not push, open PRs, or merge unless asked.
 
 `list_workstream_launches` is the read companion: it lists workstream records for the current repo (optionally filtered by `dossierPath` or label substring) so a caller can route to an existing workstream's id/handle instead of staging a duplicate.
 
-The launch index (`~/.pi/basecamp/workstream-launches/launch-index.json`) is an operational receipt only — which workstream was staged for which dossier and brief, in which worktree, under which id, and (once `/workstream` runs) which agent handle, plus setup/Herdr/launch status. It is not durable workstream state: priority, decisions, blockers, and done signals live in Logseq. No transcripts or dispatch logs are stored. Duplicates are refused: a matching non-failed record is reused, a failed record is superseded on retry, and an existing worktree without a matching record fails rather than being silently reused.
+The launch index (`~/.pi/basecamp/workstream-launches/launch-index.json`) is an operational receipt only — which workstream was staged for which dossier and brief, in which worktree, under which id, and (once `pi --workstream <id>` launches) which agent handle, plus setup/Herdr/launch status. It is not durable workstream state: priority, decisions, blockers, and done signals live in Logseq. No transcripts or dispatch logs are stored. Duplicates are refused: a matching non-failed record is reused, a failed record is superseded on retry, and an existing worktree without a matching record fails rather than being silently reused.
 
-`launch_workstream` and `plan()` are siblings. `plan()` remains the in-session implementation handoff for the current (parent) session; `launch_workstream` stages a separate user-facing workstream the user starts with `/workstream <id>`. Copilot pulls current state from a started workstream on demand via the pi-swarm known-handle `ask_agent`/`message_agent` path and curates the durable parts into Logseq itself.
+`launch_workstream` and `plan()` are siblings. `plan()` remains the in-session implementation handoff for the current (parent) session; `launch_workstream` stages a separate user-facing workstream the user starts with `pi --workstream <id>`. Copilot pulls current state from a started workstream on demand via the pi-swarm known-handle `ask_agent`/`message_agent` path and curates the durable parts into Logseq itself. The stamped handle is a contact address only: it does not make the workstream listable, awaitable, retaskable, or dispatchable from copilot.
+
+## Functional smoke cleanup
+
+For manual workstream smoke tests, use an obviously disposable label such as `functional-known-handle-smoke` and verify only the behavior under test: staging, `pi --workstream <id>` handle stamping, known-handle `message_agent`, and known-handle `ask_agent` when the session is forkable.
+
+Cleanup is manual by design:
+
+1. Close the Herdr pane opened for the smoke workstream.
+2. Remove the smoke worktree and branch using the normal reviewed git/worktree workflow for this repo.
+3. If the smoke launch receipt is clearly identified, remove only that record from `~/.pi/basecamp/workstream-launches/launch-index.json`.
+
+Do not add cleanup automation casually. Worktree deletion, branch deletion, and launch-index mutation are destructive enough to need separate design.
 
 ## Dependencies
 

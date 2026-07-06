@@ -8,9 +8,8 @@ from pydantic import BaseModel, Field, TypeAdapter
 
 # Gates every client-visible daemon capability, not just WebSocket frame shapes.
 # This includes HTTP endpoints like /runs/summary, so stale daemons restart.
-# v15: peer message/ask may target an agent by its known public handle even
-# without live relationship reachability.
-PROTOCOL_VERSION = 15
+# v17: list-agents rows expose safe current-task previews for display.
+PROTOCOL_VERSION = 17
 
 
 class RegisterFrame(BaseModel):
@@ -26,6 +25,8 @@ class RegisterFrame(BaseModel):
     depth: int
     session_name: str
     cwd: str
+    session_file: str | None = None
+    product_role: str | None = None
 
 
 class RegisteredFrame(BaseModel):
@@ -158,6 +159,7 @@ class ListAgentItem(BaseModel):
     depth: int
     status: Literal["pending", "running", "completed", "failed", "idle"]
     awaitable: bool
+    task: str | None = None
 
 
 class ListAgentsResultFrame(BaseModel):
@@ -202,6 +204,7 @@ class PeerMessageDeliveryFrame(BaseModel):
     message_id: str
     from_handle: str | None
     from_relation: PeerMessageRelation
+    from_product_role: str | None = None
     message: str
     interrupt: bool
 

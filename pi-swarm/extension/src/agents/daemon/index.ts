@@ -1,5 +1,7 @@
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { registerAgentIdentityProvider } from "pi-core/platform/agent-identity.ts";
+import { resolveSessionProductRoleOverride } from "pi-core/platform/product-role.ts";
+import { getAgentMode } from "pi-core/session/agent-mode.ts";
 import { shortSessionId as defaultShortSessionId } from "pi-core/session/session-id.ts";
 import type { PiSwarmDependencies } from "../../dependencies.ts";
 import { DEFAULT_AGENT_MAX_DEPTH } from "../types.ts";
@@ -91,8 +93,24 @@ function errorMessage(error: unknown): string {
 }
 
 export function formatPeerMessageDeliveryContent(frame: PeerMessageDeliveryFrame): string {
-	const sender = frame.from_handle?.trim() || "a peer";
-	return `Message from ${sender} (${frame.from_relation}):\n\n${frame.message}`;
+	const sender = sanitizeDisplayLabel(frame.from_handle, 80) ?? "a peer";
+	const label = sanitizeDisplayLabel(frame.from_product_role, 48) ?? relationDisplayLabel(frame.from_relation);
+	const suffix = label ? ` (${label})` : "";
+	return `Message from ${sender}${suffix}:\n\n${frame.message}`;
+}
+
+function sanitizeDisplayLabel(value: string | null | undefined, maxLength: number): string | null {
+	const withoutControls = Array.from(value ?? "", (char) => {
+		const code = char.charCodeAt(0);
+		return code <= 31 || code === 127 ? " " : char;
+	}).join("");
+	const sanitized = withoutControls.replace(/\s+/g, " ").trim();
+	if (!sanitized) return null;
+	return sanitized.length <= maxLength ? sanitized : `${sanitized.slice(0, maxLength - 1).trimEnd()}…`;
+}
+
+function relationDisplayLabel(relation: PeerMessageDeliveryFrame["from_relation"]): string | null {
+	return relation === "unknown" ? null : relation;
 }
 
 export function handlePeerMessageDelivery(
@@ -175,6 +193,7 @@ async function awaitDaemonConnection(): Promise<DaemonConnection | null> {
  *   deterministic adjective-noun-hash from node_id so the session handle is stable across reload/resume
  * - session_name = BASECAMP_AGENT_TITLE (+ session-id suffix) ?? BASECAMP_SESSION_NAME ?? node_id
  * - cwd = process.cwd()
+ * - session_file = ctx.sessionManager.getSessionFile() when available
  */
 export function deriveDaemonIdentity(
 	ctx: ExtensionContext,
@@ -184,10 +203,11 @@ export function deriveDaemonIdentity(
 	const safeDepth = Number.isFinite(depth) && depth >= 0 ? depth : 0;
 	const nodeId = process.env.BASECAMP_AGENT_ID ?? ctx.sessionManager.getSessionId();
 	const explicitHandle = safeDepth > 0 ? process.env.BASECAMP_AGENT_HANDLE?.trim() : undefined;
+	const role = safeDepth > 0 ? "agent" : "session";
 	return {
 		node_id: nodeId,
 		agent_handle: explicitHandle || buildDeterministicAgentHandle(nodeId),
-		role: safeDepth > 0 ? "agent" : "session",
+		role,
 		parent_id: process.env.BASECAMP_PARENT_SESSION ?? null,
 		sibling_group: process.env.BASECAMP_SIBLING_GROUP ?? null,
 		depth: safeDepth,
@@ -199,7 +219,30 @@ export function deriveDaemonIdentity(
 			process.env.BASECAMP_SESSION_NAME ??
 			nodeId,
 		cwd: process.cwd(),
+		session_file: resolveSessionFile(ctx),
+		product_role: resolveProductRole(role),
 	};
+}
+
+function resolveProductRole(role: "session" | "agent"): string | null {
+	if (role !== "session") return null;
+	const providerOverride = sanitizeDisplayLabel(resolveSessionProductRoleOverride(), 64);
+	if (providerOverride) return providerOverride;
+	const explicit = sanitizeDisplayLabel(process.env.BASECAMP_AGENT_PRODUCT_ROLE, 64);
+	if (explicit) return explicit;
+	return sanitizeDisplayLabel(getAgentMode(), 64);
+}
+
+function resolveSessionFile(ctx: ExtensionContext): string | null {
+	try {
+		const sessionManager = ctx.sessionManager as ExtensionContext["sessionManager"] & {
+			getSessionFile?: () => string | null | undefined;
+		};
+		const sessionFile = sessionManager.getSessionFile?.();
+		return typeof sessionFile === "string" && sessionFile.trim() ? sessionFile : null;
+	} catch {
+		return null;
+	}
 }
 
 function resolveDaemonAgentTitle(
@@ -257,7 +300,7 @@ export function registerDaemonClient(pi: ExtensionAPI, deps: PiSwarmDependencies
 	const maxDepth = Number(process.env.BASECAMP_AGENT_MAX_DEPTH ?? DEFAULT_AGENT_MAX_DEPTH);
 	const atMaxDepth = depth >= maxDepth;
 
-	// Expose this session's public daemon handle so consumers (e.g. pi-tasks' /workstream)
+	// Expose this session's public daemon handle so consumers (e.g. pi-tasks workstream startup)
 	// can bind the running session to a launch record. Pure derivation from ctx; safe for any session.
 	registerAgentIdentityProvider({
 		// The seam's ExtensionContext originates from pi-core's bundled types; only sessionManager/env

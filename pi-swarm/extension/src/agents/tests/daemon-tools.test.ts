@@ -3,6 +3,11 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { afterEach, beforeEach, describe, it } from "node:test";
+import {
+	registerSessionProductRoleProvider,
+	resetSessionProductRoleForTesting,
+} from "pi-core/platform/product-role.ts";
+import { getAgentMode, setAgentMode } from "pi-core/session/agent-mode.ts";
 import type { WorkspaceState } from "../../dependencies.ts";
 import { createDaemonClient, type DaemonConnection } from "../daemon/client.ts";
 import type { Frame, ListAgentItem } from "../daemon/frames.ts";
@@ -118,6 +123,7 @@ describe("daemon async tools", () => {
 		fs.rmSync(tmpHome, { recursive: true, force: true });
 		currentWorkspaceState = null;
 		resetInvokedSkills();
+		resetSessionProductRoleForTesting();
 	});
 
 	describe("buildAgentEnv", () => {
@@ -355,7 +361,8 @@ describe("daemon async tools", () => {
 		assert.equal(result.isError, true);
 		assert.equal(result.details.messageId, null);
 		assert.equal(result.details.status, "unknown");
-		assert.match(result.content[0].text, /No agent "missing-agent" is available to message/);
+		assert.equal(result.content[0].text, "No available agent for that handle.");
+		assert.doesNotMatch(result.content[0].text, /missing-agent/);
 		assert.doesNotMatch(JSON.stringify(result), /agent_id|run_id/);
 	});
 
@@ -449,7 +456,8 @@ describe("daemon async tools", () => {
 			assert.equal(result.details.messageId, `message-${status}`);
 			assert.equal(result.details.status, status);
 			assert.equal(result.details.createdAt, "2026-01-01T00:00:00Z");
-			assert.match(result.content[0].text, new RegExp(`status ${status}`));
+			const expectedStatusText = status === "queued" ? "queued in recipient session" : status;
+			assert.match(result.content[0].text, new RegExp(`status ${expectedStatusText}`));
 			assert.doesNotMatch(JSON.stringify(result), /answer|agent_id|run_id/);
 		}
 	});
@@ -583,7 +591,7 @@ describe("daemon async tools", () => {
 		const statusResult = await statusPromise;
 		const renderedStatus = (statusTool as any).renderResult(statusResult, {}, theme).render(120).join("\n");
 		assert.match(renderedStatus, /message_id message-render/);
-		assert.match(renderedStatus, /status queued/);
+		assert.match(renderedStatus, /status queued in recipient session/);
 		assert.doesNotMatch(renderedStatus, /answer|agent_id|run_id/);
 	});
 
@@ -1164,7 +1172,8 @@ describe("daemon async tools", () => {
 
 		const result = await executePromise;
 		assert.equal(result.isError, true);
-		assert.equal(result.content[0].text, 'No agent "missing-agent" is available to ask.');
+		assert.equal(result.content[0].text, "No available agent for that handle.");
+		assert.doesNotMatch(result.content[0].text, /missing-agent/);
 		assert.equal(connection.sent.length, 1);
 	});
 
@@ -1279,7 +1288,7 @@ describe("daemon async tools", () => {
 		assert.equal(result.details.items[1].status, "unknown");
 		assert.equal(result.details.items[2].status, "completed");
 		assert.match(result.content[0].text, /still running \(timed out\)/);
-		assert.match(result.content[0].text, /\? scout-missing unknown agent/);
+		assert.match(result.content[0].text, /\? scout-missing not awaitable or unavailable/);
 	});
 
 	it("wait_for_agent fails before daemon connection/send when agents skill has not been invoked", async () => {
@@ -1331,16 +1340,19 @@ describe("daemon async tools", () => {
 				{
 					agent_id: "00000000-0000-4000-8000-000000000001",
 					agent_handle: "amber-fox-a1b2c3",
+					agent_type: "scout",
 					parent_id: "session-1",
 					role: "agent",
 					session_name: "agent-one",
 					depth: 1,
 					status: "running",
 					awaitable: true,
+					task: "Retask functional check",
 				},
 				{
 					agent_id: "00000000-0000-4000-8000-000000000002",
 					agent_handle: "mossy-lynx-d4e5f6",
+					agent_type: "testing-specialist",
 					parent_id: "00000000-0000-4000-8000-000000000001",
 					role: "agent",
 					session_name: "agent-two",
@@ -1361,9 +1373,10 @@ describe("daemon async tools", () => {
 				{
 					agent_id: "00000000-0000-4000-8000-000000000004",
 					agent_handle: "silver-wren-d4e5f6",
+					agent_type: "scout",
 					parent_id: "session-1",
 					role: "agent",
-					session_name: "00000000-0000-4000-8000-000000000004",
+					session_name: "silver-wren-d4e5f6",
 					depth: 1,
 					status: "idle",
 					awaitable: false,
@@ -1376,21 +1389,34 @@ describe("daemon async tools", () => {
 		assert.equal(result.isError, undefined);
 		assert.equal(result.details.agents.length, 3);
 		assert.equal(result.details.agents[0].agentHandle, "amber-fox-a1b2c3");
+		assert.equal(result.details.agents[0].agentType, "scout");
+		assert.equal(result.details.agents[0].task, "Retask functional check");
 		assert.equal("agent_id" in result.details.agents[0], false);
 		assert.equal(result.details.agents[1].status, "completed");
 		assert.equal(result.details.agents[2].agentHandle, "silver-wren-d4e5f6");
-		assert.equal(result.details.agents[2].sessionName, "silver-wren-d4e5f6");
-		assert.match(result.content[0].text, /amber-fox-a1b2c3/);
-		assert.match(result.content[0].text, /mossy-lynx-d4e5f6/);
+		assert.equal(result.details.agents[2].agentType, "scout");
+		assert.equal(result.details.agents[2].sessionName, null);
+		assert.match(result.content[0].text, /amber-fox-a1b2c3 \(scout\)/);
+		assert.match(result.content[0].text, /task: Retask functional check/);
+		assert.match(result.content[0].text, /mossy-lynx-d4e5f6 \(testing-specialist\)/);
+		assert.doesNotMatch(result.content[0].text, /agent_id|run_id|spec_json|env_keys|SECRET/);
 		assert.doesNotMatch(result.content[0].text, /00000000-0000-4000-8000-000000000001/);
 		assert.doesNotMatch(result.content[0].text, /00000000-0000-4000-8000-000000000003/);
 		assert.doesNotMatch(result.content[0].text, /00000000-0000-4000-8000-000000000004/);
 		assert.doesNotMatch(result.content[0].text, /private-fallback/);
-		assert.match(result.content[0].text, /silver-wren-d4e5f6/);
-		assert.match(result.content[0].text, /agent-one/);
-		assert.match(result.content[0].text, /agent-two/);
+		assert.match(result.content[0].text, /silver-wren-d4e5f6 \(scout\)/);
+		assert.doesNotMatch(result.content[0].text, /title: silver-wren-d4e5f6/);
+		assert.match(result.content[0].text, /title: agent-one/);
+		assert.match(result.content[0].text, /title: agent-two/);
 		assert.match(result.content[0].text, /running/);
 		assert.match(result.content[0].text, /completed/);
+
+		const rendered = (listTool as any)
+			.renderResult(result, {}, { fg: (_token: string, text: string) => `styled:${text}` })
+			.render(120)
+			.join("\n");
+		assert.match(rendered, /amber-fox-a1b2c3 \(scout\)/);
+		assert.doesNotMatch(rendered, /amber-fox-a1b2c3 styled:amber-fox-a1b2c3/);
 	});
 
 	it("list_agents rejects when the daemon connection closes before a response", async () => {
@@ -1569,20 +1595,139 @@ describe("daemon async tools", () => {
 		}
 	});
 
+	it("deriveDaemonIdentity includes current session mode as product_role for top-level sessions", () => {
+		const priorDepth = process.env.BASECAMP_AGENT_DEPTH;
+		const priorProductRole = process.env.BASECAMP_AGENT_PRODUCT_ROLE;
+		const priorMode = getAgentMode();
+
+		delete process.env.BASECAMP_AGENT_DEPTH;
+		delete process.env.BASECAMP_AGENT_PRODUCT_ROLE;
+		setAgentMode("copilot");
+
+		try {
+			const identity = deriveDaemonIdentity({ sessionManager: { getSessionId: () => "session-mode" } } as any);
+			assert.equal(identity.role, "session");
+			assert.equal(identity.product_role, "copilot");
+		} finally {
+			setAgentMode(priorMode);
+			if (priorDepth === undefined) delete process.env.BASECAMP_AGENT_DEPTH;
+			else process.env.BASECAMP_AGENT_DEPTH = priorDepth;
+			if (priorProductRole === undefined) delete process.env.BASECAMP_AGENT_PRODUCT_ROLE;
+			else process.env.BASECAMP_AGENT_PRODUCT_ROLE = priorProductRole;
+		}
+	});
+
+	it("deriveDaemonIdentity honors sanitized explicit product-role override", () => {
+		const priorDepth = process.env.BASECAMP_AGENT_DEPTH;
+		const priorProductRole = process.env.BASECAMP_AGENT_PRODUCT_ROLE;
+		const priorMode = getAgentMode();
+
+		delete process.env.BASECAMP_AGENT_DEPTH;
+		process.env.BASECAMP_AGENT_PRODUCT_ROLE = "  supervisor\nmode  ";
+		setAgentMode("copilot");
+
+		try {
+			const identity = deriveDaemonIdentity({ sessionManager: { getSessionId: () => "session-override" } } as any);
+			assert.equal(identity.product_role, "supervisor mode");
+		} finally {
+			setAgentMode(priorMode);
+			if (priorDepth === undefined) delete process.env.BASECAMP_AGENT_DEPTH;
+			else process.env.BASECAMP_AGENT_DEPTH = priorDepth;
+			if (priorProductRole === undefined) delete process.env.BASECAMP_AGENT_PRODUCT_ROLE;
+			else process.env.BASECAMP_AGENT_PRODUCT_ROLE = priorProductRole;
+		}
+	});
+
+	it("deriveDaemonIdentity prefers session product-role provider before env and mode", () => {
+		const priorDepth = process.env.BASECAMP_AGENT_DEPTH;
+		const priorProductRole = process.env.BASECAMP_AGENT_PRODUCT_ROLE;
+		const priorMode = getAgentMode();
+
+		delete process.env.BASECAMP_AGENT_DEPTH;
+		process.env.BASECAMP_AGENT_PRODUCT_ROLE = "copilot_env";
+		setAgentMode("executor");
+		registerSessionProductRoleProvider({ resolveProductRole: () => "  workstream_agent\n " });
+
+		try {
+			const identity = deriveDaemonIdentity({ sessionManager: { getSessionId: () => "session-provider" } } as any);
+			assert.equal(identity.role, "session");
+			assert.equal(identity.product_role, "workstream_agent");
+		} finally {
+			setAgentMode(priorMode);
+			resetSessionProductRoleForTesting();
+			if (priorDepth === undefined) delete process.env.BASECAMP_AGENT_DEPTH;
+			else process.env.BASECAMP_AGENT_DEPTH = priorDepth;
+			if (priorProductRole === undefined) delete process.env.BASECAMP_AGENT_PRODUCT_ROLE;
+			else process.env.BASECAMP_AGENT_PRODUCT_ROLE = priorProductRole;
+		}
+	});
+
+	it("deriveDaemonIdentity falls back when session product-role provider is empty or throws", () => {
+		const priorDepth = process.env.BASECAMP_AGENT_DEPTH;
+		const priorProductRole = process.env.BASECAMP_AGENT_PRODUCT_ROLE;
+		const priorMode = getAgentMode();
+
+		delete process.env.BASECAMP_AGENT_DEPTH;
+		delete process.env.BASECAMP_AGENT_PRODUCT_ROLE;
+		setAgentMode("copilot");
+
+		try {
+			registerSessionProductRoleProvider({ resolveProductRole: () => "   " });
+			assert.equal(
+				deriveDaemonIdentity({ sessionManager: { getSessionId: () => "session-empty-provider" } } as any).product_role,
+				"copilot",
+			);
+
+			registerSessionProductRoleProvider({
+				resolveProductRole: () => {
+					throw new Error("boom");
+				},
+			});
+			assert.equal(
+				deriveDaemonIdentity({ sessionManager: { getSessionId: () => "session-throwing-provider" } } as any)
+					.product_role,
+				"copilot",
+			);
+		} finally {
+			setAgentMode(priorMode);
+			resetSessionProductRoleForTesting();
+			if (priorDepth === undefined) delete process.env.BASECAMP_AGENT_DEPTH;
+			else process.env.BASECAMP_AGENT_DEPTH = priorDepth;
+			if (priorProductRole === undefined) delete process.env.BASECAMP_AGENT_PRODUCT_ROLE;
+			else process.env.BASECAMP_AGENT_PRODUCT_ROLE = priorProductRole;
+		}
+	});
+
+	it("deriveDaemonIdentity includes session file when available", () => {
+		const ctx = {
+			sessionManager: {
+				getSessionId: () => "session-with-file",
+				getSessionFile: () => "/tmp/pi-session.jsonl",
+			},
+		} as any;
+
+		const identity = deriveDaemonIdentity(ctx);
+
+		assert.equal(identity.session_file, "/tmp/pi-session.jsonl");
+	});
+
 	it("deriveDaemonIdentity prefers BASECAMP_AGENT_HANDLE for spawned agents", () => {
 		const priorDepth = process.env.BASECAMP_AGENT_DEPTH;
 		const priorAgentId = process.env.BASECAMP_AGENT_ID;
 		const priorAgentHandle = process.env.BASECAMP_AGENT_HANDLE;
+		const priorProductRole = process.env.BASECAMP_AGENT_PRODUCT_ROLE;
 
 		process.env.BASECAMP_AGENT_DEPTH = "1";
 		process.env.BASECAMP_AGENT_ID = "agent-spawned";
 		process.env.BASECAMP_AGENT_HANDLE = "quiet-badger-3dc450";
+		process.env.BASECAMP_AGENT_PRODUCT_ROLE = "copilot";
 
 		try {
 			const identity = deriveDaemonIdentity({ sessionManager: { getSessionId: () => "child-session" } } as any);
 			assert.equal(identity.role, "agent");
 			assert.equal(identity.node_id, "agent-spawned");
 			assert.equal(identity.agent_handle, "quiet-badger-3dc450");
+			assert.equal(identity.product_role, null);
 		} finally {
 			if (priorDepth === undefined) delete process.env.BASECAMP_AGENT_DEPTH;
 			else process.env.BASECAMP_AGENT_DEPTH = priorDepth;
@@ -1590,6 +1735,8 @@ describe("daemon async tools", () => {
 			else process.env.BASECAMP_AGENT_ID = priorAgentId;
 			if (priorAgentHandle === undefined) delete process.env.BASECAMP_AGENT_HANDLE;
 			else process.env.BASECAMP_AGENT_HANDLE = priorAgentHandle;
+			if (priorProductRole === undefined) delete process.env.BASECAMP_AGENT_PRODUCT_ROLE;
+			else process.env.BASECAMP_AGENT_PRODUCT_ROLE = priorProductRole;
 		}
 	});
 });

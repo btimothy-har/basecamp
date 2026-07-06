@@ -2,9 +2,8 @@ import { Buffer } from "node:buffer";
 
 // Gates every client-visible daemon capability, not just WebSocket frame shapes.
 // This includes HTTP endpoints like /runs/summary, so stale daemons restart.
-// v15: peer message/ask may target an agent by its known public handle even
-// without live relationship reachability.
-export const PROTOCOL_VERSION = 15;
+// v17: list-agents rows expose safe current-task previews for display.
+export const PROTOCOL_VERSION = 17;
 
 export interface RegisterFrame {
 	type: "register";
@@ -17,6 +16,8 @@ export interface RegisterFrame {
 	depth: number;
 	session_name: string;
 	cwd: string;
+	session_file?: string | null;
+	product_role?: string | null;
 }
 
 export interface RegisteredFrame {
@@ -123,6 +124,7 @@ export interface ListAgentItem {
 	depth: number;
 	status: "pending" | "running" | "completed" | "failed" | "idle";
 	awaitable: boolean;
+	task?: string | null;
 }
 
 export interface ListAgentsResultFrame {
@@ -158,6 +160,7 @@ export interface PeerMessageDeliveryFrame {
 	message_id: string;
 	from_handle: string | null;
 	from_relation: PeerMessageRelation;
+	from_product_role?: string | null;
 	message: string;
 	interrupt: boolean;
 }

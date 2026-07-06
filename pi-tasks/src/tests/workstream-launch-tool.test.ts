@@ -4,10 +4,11 @@ import { afterEach, beforeEach, describe, it } from "node:test";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import type { WorkspaceState, WorkspaceWorktree } from "pi-core/platform/workspace.ts";
 import type { WorktreeResult } from "pi-core/workspace/worktree.ts";
-import type {
-	WorkstreamLaunchRecord,
-	WorkstreamLaunchRecordDraft,
-	WorkstreamLaunchRecordUpdate,
+import {
+	buildWorkstreamLaunchFingerprint,
+	type WorkstreamLaunchRecord,
+	type WorkstreamLaunchRecordDraft,
+	type WorkstreamLaunchRecordUpdate,
 } from "../workstreams/launch-state.ts";
 import {
 	executeLaunchWorkstream,
@@ -345,10 +346,10 @@ describe("launch_workstream provisioning and id", () => {
 			assert.equal(harness.provisionCalls[0]?.label, "wt-bt/8e95-feature-launch");
 			assert.equal(harness.provisionCalls[0]?.repoRoot, "/repo");
 			assert.equal(details.worktree?.label, "wt-bt/8e95-feature-launch");
-			// No agent is dispatched; the handle is stamped later by /workstream.
+			// No agent is dispatched; the handle is stamped later by pi --workstream.
 			assert.equal(details.agentHandle, undefined);
 			assert.equal(harness.store.records[0]?.agent.handle, undefined);
-			assert.match(details.next_step, /run `pi`.*\/workstream ignored-label/s);
+			assert.match(details.next_step, /run `pi --workstream ignored-label`/);
 		} finally {
 			if (previousUser === undefined) delete process.env.USER;
 			else process.env.USER = previousUser;
@@ -389,6 +390,63 @@ describe("launch_workstream provisioning and id", () => {
 		assert.equal(details.status, "existing_launch");
 		assert.equal(details.id, "launch-workstream-too");
 		assert.equal(details.agentHandle, "swift-otter-9z9z9z");
+		assert.equal(harness.provisionCalls.length, 0);
+	});
+
+	it("returns a pi --workstream command for a matching existing launch without a handle", async () => {
+		const harness = makeDeps();
+		harness.store.records.push({
+			id: "launch-workstream-too",
+			fingerprint: buildWorkstreamLaunchFingerprint({
+				repo: "org/repo",
+				dossierPath: "/graph/pages/Dossier.md",
+				label: "Launch Workstream Too",
+			}),
+			repo: "org/repo",
+			source: { dossierPath: "/graph/pages/Dossier.md" },
+			workstream: { label: "Launch Workstream Too", brief: "Existing." },
+			worktree: { label: "wt-bt/8e95-launch-workstream-too", path: "/worktrees/existing", branch: "bt/existing" },
+			agent: {},
+			setup: { status: "succeeded" },
+			herdr: { status: "succeeded" },
+			launch: { status: "succeeded" },
+			createdAt: "2026-07-03T00:00:00.000Z",
+			updatedAt: "2026-07-03T00:00:00.000Z",
+		});
+
+		const { details } = await runLaunch(baseParams(), harness.deps);
+
+		assert.equal(details.status, "existing_launch");
+		assert.equal(details.agentHandle, undefined);
+		assert.match(details.next_step, /cd '\/worktrees\/existing' && pi --workstream launch-workstream-too/);
+		assert.equal(harness.provisionCalls.length, 0);
+	});
+
+	it("returns a from-worktree pi --workstream command when an existing launch lacks a path", async () => {
+		const harness = makeDeps();
+		harness.store.records.push({
+			id: "launch-workstream-too",
+			fingerprint: buildWorkstreamLaunchFingerprint({
+				repo: "org/repo",
+				dossierPath: "/graph/pages/Dossier.md",
+				label: "Launch Workstream Too",
+			}),
+			repo: "org/repo",
+			source: { dossierPath: "/graph/pages/Dossier.md" },
+			workstream: { label: "Launch Workstream Too", brief: "Existing." },
+			worktree: { label: "wt-bt/8e95-launch-workstream-too", branch: "bt/existing" },
+			agent: {},
+			setup: { status: "succeeded" },
+			herdr: { status: "succeeded" },
+			launch: { status: "succeeded" },
+			createdAt: "2026-07-03T00:00:00.000Z",
+			updatedAt: "2026-07-03T00:00:00.000Z",
+		});
+
+		const { details } = await runLaunch(baseParams(), harness.deps);
+
+		assert.equal(details.status, "existing_launch");
+		assert.match(details.next_step, /pi --workstream launch-workstream-too` from that worktree/);
 		assert.equal(harness.provisionCalls.length, 0);
 	});
 
@@ -502,6 +560,7 @@ describe("launch_workstream Herdr and staging behavior", () => {
 			label: "wt-bt/8e95-launch-workstream-too",
 		});
 		assert.match(details.next_step, /Herdr opened a pane/);
+		assert.match(details.next_step, /run `pi --workstream launch-workstream-too`/);
 	});
 
 	it("records Herdr failure without failing the staging, and does not leak stderr", async () => {
@@ -519,6 +578,10 @@ describe("launch_workstream Herdr and staging behavior", () => {
 		assert.equal(harness.store.records[0]?.launch.status, "succeeded");
 		assert.equal(harness.store.records[0]?.herdr.status, "failed");
 		assert.match(details.next_step, /Herdr pane failed to open/);
+		assert.match(
+			details.next_step,
+			/Run `cd '\/worktrees\/org\/repo\/wt-bt\/8e95-launch-workstream-too' && pi --workstream launch-workstream-too`/,
+		);
 		assert.doesNotMatch(JSON.stringify(details), /secret-herdr-stderr/);
 		assert.doesNotMatch(JSON.stringify(harness.store.records[0]), /secret-herdr-stderr/);
 	});
@@ -533,6 +596,10 @@ describe("launch_workstream Herdr and staging behavior", () => {
 		assert.equal(harness.store.records[0]?.launch.status, "succeeded");
 		assert.equal(harness.store.records[0]?.herdr.status, "skipped");
 		assert.match(details.next_step, /no Herdr pane was opened/);
+		assert.match(
+			details.next_step,
+			/Run `cd '\/worktrees\/org\/repo\/wt-bt\/8e95-launch-workstream-too' && pi --workstream launch-workstream-too`/,
+		);
 	});
 
 	it("persists the record before side effects and reuses it on retry after a failure", async () => {
