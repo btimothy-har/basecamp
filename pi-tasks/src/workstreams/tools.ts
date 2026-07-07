@@ -7,14 +7,13 @@ import {
 	type WorkspaceState,
 	type WorkspaceWorktree,
 } from "pi-core/platform/workspace.ts";
-import { shortSessionId } from "pi-core/session/session-id.ts";
 import { runWorktreeSetup, type WorktreeSetupResult } from "pi-core/workspace/setup.ts";
 import { getOrCreateWorktree, type WorktreeResult } from "pi-core/workspace/worktree.ts";
-import { suggestWorktreeTarget } from "../planning/worktree-choices.ts";
+import { copilotWorktreeTarget } from "../planning/worktree-choices.ts";
 import { shouldRunWorktreeSetup } from "../planning/worktree-setup.ts";
 import { type HerdrWorkstreamOpenResult, openWorkstreamInHerdr } from "./herdr.ts";
 import {
-	appendWorkstreamLaunchRecordWithAvailableId,
+	appendWorkstreamLaunchRecordIfAbsent,
 	buildWorkstreamLaunchFingerprint,
 	findDuplicateWorkstreamLaunch,
 	listWorkstreamLaunchRecords,
@@ -22,10 +21,10 @@ import {
 	updateWorkstreamLaunchRecord,
 	type WorkstreamLaunchAppendResult,
 	type WorkstreamLaunchRecord,
-	type WorkstreamLaunchRecordDraft,
 	type WorkstreamLaunchRecordUpdate,
 	workstreamLaunchStatePath,
 } from "./launch-state.ts";
+import { generateWorkstreamName as generateGenericWorkstreamName } from "./name.ts";
 
 export interface LaunchWorkstreamParams {
 	source: {
@@ -108,12 +107,12 @@ type ListWorkstreamLaunchesToolResult = {
 
 interface PersistedLaunchStoreDeps {
 	launchStatePath(): string;
-	appendRecordWithAvailableId(
+	appendIfAbsent(
 		filePath: string,
-		record: WorkstreamLaunchRecordDraft,
+		record: WorkstreamLaunchRecord,
 		lookup: { repo?: string; fingerprint?: string; worktreeLabel?: string },
-		baseLabel: string,
 	): WorkstreamLaunchAppendResult;
+	listRecords(filePath: string, filter: { repo?: string }): WorkstreamLaunchRecord[];
 	updateRecord(
 		filePath: string,
 		id: string,
@@ -158,6 +157,7 @@ export interface LaunchWorkstreamDeps {
 		worktree: { path: string; label: string },
 		env: NodeJS.ProcessEnv,
 	): Promise<HerdrWorkstreamOpenResult>;
+	generateWorkstreamName(isTaken: (name: string) => boolean): string;
 	store: PersistedLaunchStoreDeps;
 	now(): string;
 }
@@ -170,9 +170,11 @@ export function defaultLaunchWorkstreamDeps(): LaunchWorkstreamDeps {
 		readWorktreeSetupCommand,
 		runWorktreeSetup,
 		openWorkstreamInHerdr,
+		generateWorkstreamName: (isTaken) => generateGenericWorkstreamName({ isTaken }),
 		store: {
 			launchStatePath: workstreamLaunchStatePath,
-			appendRecordWithAvailableId: appendWorkstreamLaunchRecordWithAvailableId,
+			appendIfAbsent: appendWorkstreamLaunchRecordIfAbsent,
+			listRecords: listWorkstreamLaunchRecords,
 			updateRecord: updateWorkstreamLaunchRecord,
 			updateFailedRecord: updateFailedWorkstreamLaunchRecord,
 			findDuplicate: findDuplicateWorkstreamLaunch,
@@ -223,12 +225,13 @@ function shellQuote(s: string): string {
 	return `'${s.replace(/'/g, "'\\''")}'`;
 }
 
-function workstreamLaunchCommand(id: string): string {
-	return `pi --workstream ${id}`;
+// The id is inferred from the current worktree, so the launch command is always bare `pi --workstream`.
+function workstreamLaunchCommand(): string {
+	return "pi --workstream";
 }
 
-function workstreamLaunchCommandFromPath(path: string, id: string): string {
-	return `cd ${shellQuote(path)} && ${workstreamLaunchCommand(id)}`;
+function workstreamLaunchCommandFromPath(path: string): string {
+	return `cd ${shellQuote(path)} && ${workstreamLaunchCommand()}`;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -435,20 +438,13 @@ function failedDetails(
 	};
 }
 
-function existingLaunchResult(
-	record: WorkstreamLaunchRecord,
-	matchedByFingerprint: boolean,
-): LaunchWorkstreamResultDetails {
-	const message = matchedByFingerprint
-		? `A workstream launch already exists for this dossier and label (${record.id}).`
-		: `Worktree ${record.worktree.label} is already staged under a different workstream (${record.id}).`;
-	const nextStep = matchedByFingerprint
-		? record.agent.handle
-			? `Continue with the existing workstream agent (handle ${record.agent.handle}).`
-			: record.worktree.path
-				? `Open worktree ${record.worktree.label} and run \`${workstreamLaunchCommandFromPath(record.worktree.path, record.id)}\` (no agent has attached yet).`
-				: `Open worktree ${record.worktree.label} and run \`${workstreamLaunchCommand(record.id)}\` from that worktree (no agent has attached yet).`
-		: `Choose a different workstream.worktreeSlug to stage a separate worktree, or continue the existing workstream ${record.id}.`;
+function existingLaunchResult(record: WorkstreamLaunchRecord): LaunchWorkstreamResultDetails {
+	const message = `A workstream launch already exists for this dossier and label (${record.id}).`;
+	const nextStep = record.agent.handle
+		? `Continue with the existing workstream agent (handle ${record.agent.handle}).`
+		: record.worktree.path
+			? `Open worktree ${record.worktree.label} and run \`${workstreamLaunchCommandFromPath(record.worktree.path)}\` (no agent has attached yet).`
+			: `Open worktree ${record.worktree.label} and run \`${workstreamLaunchCommand()}\` from that worktree (no agent has attached yet).`;
 	return {
 		status: "existing_launch",
 		message,
@@ -525,31 +521,21 @@ export async function executeLaunchWorkstream(
 
 	const repo = workspace.repo.name;
 	const repoRoot = workspace.repo.root;
-	const sessionTag = shortSessionId(ctx.sessionManager.getSessionId());
-	const target = suggestWorktreeTarget(
-		parsed.value.workstream.label,
-		parsed.value.workstream.worktreeSlug ?? null,
-		sessionTag,
-	);
 	const fingerprint = buildWorkstreamLaunchFingerprint({
 		repo,
 		dossierPath: parsed.value.source.dossierPath,
 		label: parsed.value.workstream.label,
 	});
 	const statePath = deps.store.launchStatePath();
-	const duplicateLookup = {
-		repo,
-		fingerprint,
-		worktreeLabel: target.worktreeLabel,
-	};
+	const duplicateLookup = { repo, fingerprint };
 
 	// Reuse a non-failed matching launch; a failed record is a reclaimable tombstone we re-stage in place.
 	const duplicate = deps.store.findDuplicate(statePath, duplicateLookup);
 	if (duplicate && duplicate.launch.status !== "failed") {
-		return textResult(existingLaunchResult(duplicate, duplicate.fingerprint === fingerprint));
+		return textResult(existingLaunchResult(duplicate));
 	}
 
-	let record: WorkstreamLaunchRecord;
+	let record: WorkstreamLaunchRecord | null = null;
 	if (duplicate) {
 		try {
 			const reclaimed = reclaimFailedRecord(
@@ -561,7 +547,7 @@ export async function executeLaunchWorkstream(
 			if (!reclaimed) {
 				const current = deps.store.findDuplicate(statePath, duplicateLookup);
 				if (current && current.launch.status !== "failed") {
-					return textResult(existingLaunchResult(current, current.fingerprint === fingerprint));
+					return textResult(existingLaunchResult(current));
 				}
 				return textResult(
 					failedDetails(
@@ -584,7 +570,6 @@ export async function executeLaunchWorkstream(
 			);
 		}
 	} else {
-		// Refuse to silently adopt an existing worktree that has no launch record.
 		let existingWorktrees: WorkspaceWorktree[];
 		try {
 			existingWorktrees = await deps.listWorkspaceWorktrees();
@@ -597,87 +582,124 @@ export async function executeLaunchWorkstream(
 				true,
 			);
 		}
-		if (existingWorktrees.some((worktree) => worktree.label === target.worktreeLabel)) {
+
+		const stagedRecords = deps.store.listRecords(statePath, { repo });
+		const existingIds = new Set(stagedRecords.map((existing) => existing.id));
+		const existingLabels = new Set(existingWorktrees.map((worktree) => worktree.label));
+		// Reserve against both live git worktree branches and branches recorded by staged launches (whose worktree may
+		// not be provisioned yet), so a duplicate bt/<slug> is caught here rather than failing later in git.
+		const existingBranches = new Set<string>();
+		for (const worktree of existingWorktrees) {
+			if (worktree.branch) existingBranches.add(worktree.branch);
+		}
+		for (const staged of stagedRecords) {
+			if (staged.worktree.branch) existingBranches.add(staged.worktree.branch);
+		}
+		const workName = parsed.value.workstream.worktreeSlug ?? parsed.value.workstream.label;
+		const isNameTaken = (name: string) => existingIds.has(name) || existingLabels.has(`copilot/${name}`);
+		const maxAppendAttempts = 25;
+		try {
+			// Name generation runs before the launch-state lock (acquired inside appendIfAbsent). The window is benign:
+			// a concurrent launch claiming the same id/label just makes appendIfAbsent report a collision, and the loop
+			// below refreshes the known set and regenerates. The copilot flow dispatches launches serially anyway.
+			let generatedName = deps.generateWorkstreamName(isNameTaken);
+			let target = copilotWorktreeTarget(workName, generatedName);
+
+			// The bt/ branch is work-derived and invariant across name regeneration, so check it once up front.
+			if (target.branchName && existingBranches.has(target.branchName)) {
+				return textResult(
+					failedDetails(
+						`The branch ${target.branchName} is already checked out in another worktree for this repo.`,
+						"Call launch_workstream again with a distinct workstream.worktreeSlug so the initial branch name is not already checked out.",
+					),
+					true,
+				);
+			}
+
+			for (let attempt = 0; attempt < maxAppendAttempts; attempt += 1) {
+				const now = deps.now();
+				const initial: WorkstreamLaunchRecord = {
+					id: generatedName,
+					fingerprint,
+					repo,
+					source: parsed.value.source,
+					workstream: {
+						label: parsed.value.workstream.label,
+						brief: parsed.value.workstream.brief,
+						...(parsed.value.workstream.constraints ? { constraints: parsed.value.workstream.constraints } : {}),
+					},
+					worktree: {
+						label: target.worktreeLabel,
+						...(target.branchName ? { branch: target.branchName } : {}),
+					},
+					agent: {},
+					setup: { status: "pending", message: "Worktree setup has not run yet." },
+					herdr: { status: "pending", message: "Herdr pane open is pending worktree provisioning." },
+					launch: { status: "running", message: "Workstream staging started." },
+					createdAt: now,
+					updatedAt: now,
+				};
+
+				const appended = deps.store.appendIfAbsent(statePath, initial, {
+					repo,
+					fingerprint,
+					worktreeLabel: target.worktreeLabel,
+				});
+				if (appended.appended) {
+					record = appended.record;
+					break;
+				}
+				if (appended.record.fingerprint === fingerprint) {
+					return textResult(existingLaunchResult(appended.record));
+				}
+				existingIds.add(generatedName);
+				existingIds.add(appended.record.id);
+				existingLabels.add(target.worktreeLabel);
+				existingLabels.add(appended.record.worktree.label);
+				generatedName = deps.generateWorkstreamName(isNameTaken);
+				target = copilotWorktreeTarget(workName, generatedName);
+			}
+		} catch (err) {
 			return textResult(
 				failedDetails(
-					`Worktree label ${target.worktreeLabel} already exists without a matching launch record; choose a different workstream.worktreeSlug and retry.`,
-					"Call launch_workstream again with a different workstream.worktreeSlug so an existing potentially dirty worktree is not reused silently.",
+					`Could not generate or persist workstream launch record: ${errorMessage(err)}`,
+					"Fix workstream launch state persistence, then call launch_workstream again.",
 				),
 				true,
 			);
 		}
 
-		const now = deps.now();
-		const initial: WorkstreamLaunchRecordDraft = {
-			fingerprint,
-			repo,
-			source: parsed.value.source,
-			workstream: {
-				label: parsed.value.workstream.label,
-				brief: parsed.value.workstream.brief,
-				...(parsed.value.workstream.constraints ? { constraints: parsed.value.workstream.constraints } : {}),
-			},
-			worktree: {
-				label: target.worktreeLabel,
-				...(target.branchName ? { branch: target.branchName } : {}),
-			},
-			agent: {},
-			setup: { status: "pending", message: "Worktree setup has not run yet." },
-			herdr: { status: "pending", message: "Herdr pane open is pending worktree provisioning." },
-			launch: { status: "running", message: "Workstream staging started." },
-			createdAt: now,
-			updatedAt: now,
-		};
-
-		try {
-			const appended = deps.store.appendRecordWithAvailableId(
-				statePath,
-				initial,
-				duplicateLookup,
-				parsed.value.workstream.label,
-			);
-			if (appended.appended) {
-				record = appended.record;
-			} else if (appended.record.launch.status === "failed") {
-				const reclaimed = reclaimFailedRecord(
-					deps,
-					statePath,
-					appended.record,
-					stagingReset("Re-staging workstream after a previous failure.", repo, fingerprint, parsed.value),
-				);
-				if (!reclaimed) {
-					const current = deps.store.findDuplicate(statePath, duplicateLookup);
-					if (current && current.launch.status !== "failed") {
-						return textResult(existingLaunchResult(current, current.fingerprint === fingerprint));
-					}
-					return textResult(
-						failedDetails(
-							`Could not reclaim failed workstream launch ${appended.record.id} because it changed while retrying.`,
-							"Refresh the workstream launch list, then continue the existing launch or retry.",
-							current ?? appended.record,
-						),
-						true,
-					);
-				}
-				record = reclaimed;
-			} else {
-				return textResult(existingLaunchResult(appended.record, appended.record.fingerprint === fingerprint));
-			}
-		} catch (err) {
+		if (!record) {
 			return textResult(
 				failedDetails(
-					`Could not persist workstream launch record: ${errorMessage(err)}`,
-					"Fix workstream launch state persistence, then call launch_workstream again.",
+					`Could not stage workstream launch after ${maxAppendAttempts} generated name collisions.`,
+					"Call launch_workstream again; if collisions continue, inspect existing copilot worktree labels and workstream launch ids.",
 				),
 				true,
 			);
 		}
 	}
 
+	if (!record) {
+		return textResult(
+			failedDetails(
+				"Could not stage workstream launch record.",
+				"Refresh the workstream launch list, then call launch_workstream again.",
+			),
+			true,
+		);
+	}
+
 	// Provision the worktree on disk WITHOUT activating it in this (copilot) session or mutating process.env.
 	let worktree: WorktreeResult;
 	try {
-		worktree = await deps.getOrCreateWorktree(pi, repoRoot, repo, target.worktreeLabel, target.branchName);
+		worktree = await deps.getOrCreateWorktree(
+			pi,
+			repoRoot,
+			repo,
+			record.worktree.label,
+			record.worktree.branch ?? null,
+		);
 		record = await updateRecord(deps, statePath, record, { worktree: recordWorktree(worktree) });
 	} catch (err) {
 		record = await updateRecord(deps, statePath, record, {
@@ -687,7 +709,7 @@ export async function executeLaunchWorkstream(
 		});
 		return textResult(
 			failedDetails(
-				`Failed to provision worktree ${target.worktreeLabel}: ${errorMessage(err)}`,
+				`Failed to provision worktree ${record.worktree.label}: ${errorMessage(err)}`,
 				"Fix worktree provisioning or choose a different workstream.worktreeSlug, then retry.",
 				record,
 			),
@@ -766,8 +788,8 @@ export async function executeLaunchWorkstream(
 		launch: { status: "succeeded", message: "Workstream staged; awaiting pi --workstream launch." },
 	});
 
-	const paneCommand = workstreamLaunchCommand(record.id);
-	const pathCommand = workstreamLaunchCommandFromPath(worktree.worktreeDir, record.id);
+	const paneCommand = workstreamLaunchCommand();
+	const pathCommand = workstreamLaunchCommandFromPath(worktree.worktreeDir);
 	const nextStep =
 		herdrResult.status === "opened"
 			? `Herdr opened a pane for worktree ${record.worktree.label}. In that pane, run \`${paneCommand}\`.`
@@ -797,8 +819,8 @@ export function registerWorkstreamTools(
 		name: "launch_workstream",
 		label: "Launch Workstream",
 		description:
-			"Stage a workstream from a dossier brief: provision one dedicated worktree, open a Herdr pane on it, and record the workstream under a human-typeable id. The user then runs pi --workstream <id> in that pane to start the agent. Does not dispatch an agent itself.",
-		promptSnippet: "Stage a Herdr workstream worktree + pane under an id for pi --workstream",
+			"Stage a workstream from a dossier brief: provision one generically-named worktree (copilot/<three-words>), open a Herdr pane on it, and record the workstream under that same three-word id. The user runs bare `pi --workstream` in that pane (the id is inferred from the worktree) to start the agent. Does not dispatch an agent itself.",
+		promptSnippet: "Stage a Herdr workstream worktree + pane for bare pi --workstream",
 		parameters: Type.Object(
 			{
 				source: Type.Object(
@@ -813,14 +835,18 @@ export function registerWorkstreamTools(
 				workstream: Type.Object(
 					{
 						label: Type.String({
-							description: "Human-readable workstream label; also the basis for the pi --workstream id.",
+							description:
+								"Human-readable workstream label (used in the brief and launch index). The pi --workstream id is a generated three-word name, not derived from this label.",
 						}),
 						brief: Type.String({
 							description: "Workstream brief the launched agent will receive via pi --workstream.",
 						}),
 						constraints: Type.Optional(Type.String({ description: "Optional constraints for the workstream." })),
 						worktreeSlug: Type.Optional(
-							Type.String({ description: "Optional slug used to derive the dedicated worktree label." }),
+							Type.String({
+								description:
+									"Optional slug used to derive the initial bt/ branch name (the worktree itself gets a generic name).",
+							}),
 						),
 					},
 					{ additionalProperties: false },

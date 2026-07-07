@@ -166,8 +166,9 @@ describe("assemblePrompt", () => {
 		assert.match(prompt, /launch_workstream/);
 		assert.match(prompt, /list_workstream_launches/);
 		assert.match(prompt, /It does not start an agent/);
-		assert.match(prompt, /Tell the user to run `pi --workstream <id>`/);
-		assert.match(prompt, /`cd <worktree-path> && pi --workstream <id>`/);
+		assert.match(prompt, /Tell the user to run `pi --workstream` in the opened pane/);
+		assert.match(prompt, /infers the id from the worktree/);
+		assert.match(prompt, /`cd <worktree-path> && pi --workstream`/);
 		// launch_workstream and plan() are siblings, plan() stays the in-session handoff
 		assert.match(prompt, /siblings, not replacements/);
 		assert.match(prompt, /in-session implementation handoff/);

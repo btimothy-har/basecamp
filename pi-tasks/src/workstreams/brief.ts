@@ -49,6 +49,7 @@ export function buildWorkstreamLaunchBrief(input: WorkstreamLaunchBriefInput): s
 			`- Branch: ${input.worktree.branch ?? "detached"}`,
 			"",
 			"Work only in the assigned worktree. Do not edit the protected checkout or any other worktree.",
+			"The worktree has a generic name and is a reusable container, not tied to one branch. Your starting branch reflects the current work; for distinct pieces of work, create additional branches off it using the same prefix as your current branch.",
 		].join("\n"),
 		[
 			"## Source context",

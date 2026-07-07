@@ -118,7 +118,16 @@ describe("worktree pure utilities", () => {
 
 	describe("ensureWorktreeLabel", () => {
 		it("accepts valid labels", () => {
-			for (const label of ["feature", "Feature.1", "bug_fix-2", "a", "wt-bt/feature", "wt-b1/Feature.1"]) {
+			for (const label of [
+				"feature",
+				"Feature.1",
+				"bug_fix-2",
+				"a",
+				"wt-bt/feature",
+				"wt-b1/Feature.1",
+				"copilot/steady-amber-otter",
+				"copilot/feature",
+			]) {
 				assert.doesNotThrow(() => ensureWorktreeLabel(label));
 			}
 		});
@@ -135,6 +144,11 @@ describe("worktree pure utilities", () => {
 				"wt-bt/-feature",
 				"wt-bt/feature name",
 				"wt-bt/feature/nested",
+				"copilot/",
+				"copilot/-feature",
+				"copilot/feature name",
+				"copilot/feature/nested",
+				"Copilot/feature",
 			]) {
 				assert.throws(() => ensureWorktreeLabel(label), /Invalid worktree label/);
 			}

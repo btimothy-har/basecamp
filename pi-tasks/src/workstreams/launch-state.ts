@@ -58,7 +58,6 @@ export interface WorkstreamLaunchState {
 }
 
 export type WorkstreamLaunchRecordInput = WorkstreamLaunchRecord;
-export type WorkstreamLaunchRecordDraft = Omit<WorkstreamLaunchRecord, "id">;
 
 export type WorkstreamLaunchOperationUpdate = Partial<WorkstreamLaunchOperationState> & {
 	status: WorkstreamLaunchOperationStatus;
@@ -114,37 +113,6 @@ export function emptyWorkstreamLaunchState(): WorkstreamLaunchState {
 
 function normalizeFingerprintLabel(value: string): string {
 	return value.trim().toLowerCase().replace(/\s+/g, " ");
-}
-
-const WORKSTREAM_LAUNCH_ID_MAX_LENGTH = 40;
-
-export function slugifyWorkstreamLaunchId(label: string): string {
-	const slug = label
-		.trim()
-		.toLowerCase()
-		.replace(/[^a-z0-9]+/g, "-")
-		.replace(/^-+|-+$/g, "")
-		.slice(0, WORKSTREAM_LAUNCH_ID_MAX_LENGTH)
-		.replace(/-+$/g, "");
-	return slug || "workstream";
-}
-
-function nextAvailableWorkstreamLaunchIdFromRecords(
-	records: WorkstreamLaunchRecord[],
-	repo: string,
-	baseLabel: string,
-): string {
-	const base = slugifyWorkstreamLaunchId(baseLabel);
-	const taken = new Set(records.filter((record) => record.repo === repo).map((record) => record.id));
-	if (!taken.has(base)) return base;
-	for (let suffix = 2; ; suffix += 1) {
-		const candidate = `${base}-${suffix}`;
-		if (!taken.has(candidate)) return candidate;
-	}
-}
-
-export function nextAvailableWorkstreamLaunchId(filePath: string, repo: string, baseLabel: string): string {
-	return nextAvailableWorkstreamLaunchIdFromRecords(loadWorkstreamLaunchState(filePath).records, repo, baseLabel);
 }
 
 export function buildWorkstreamLaunchFingerprint(input: WorkstreamLaunchFingerprintInput): string {
@@ -258,11 +226,6 @@ function normalizeRecord(value: unknown): WorkstreamLaunchRecord | null {
 		createdAt: value.createdAt,
 		updatedAt: value.updatedAt,
 	};
-}
-
-function normalizeRecordDraft(value: unknown, id: string): WorkstreamLaunchRecord | null {
-	if (!isRecord(value)) return null;
-	return normalizeRecord({ ...value, id });
 }
 
 function normalizeState(value: unknown): WorkstreamLaunchState {
@@ -398,29 +361,6 @@ export function appendWorkstreamLaunchRecordIfAbsent(
 	});
 }
 
-export function appendWorkstreamLaunchRecordWithAvailableId(
-	filePath: string,
-	record: WorkstreamLaunchRecordDraft,
-	lookup: WorkstreamLaunchDuplicateLookup,
-	baseLabel: string,
-): WorkstreamLaunchAppendResult {
-	return withLaunchStateLock(filePath, () => {
-		const state = loadWorkstreamLaunchState(filePath);
-		const draft = normalizeRecordDraft(record, slugifyWorkstreamLaunchId(baseLabel));
-		if (!draft) throw new Error("Invalid workstream launch record.");
-
-		const duplicate = findDuplicateRecord(state.records, lookup, draft.repo);
-		if (duplicate) return { appended: false, record: duplicate, state };
-
-		const id = nextAvailableWorkstreamLaunchIdFromRecords(state.records, draft.repo, baseLabel);
-		const normalized = normalizeRecord({ ...draft, id });
-		if (!normalized) throw new Error("Invalid workstream launch record.");
-		state.records.push(normalized);
-		saveWorkstreamLaunchState(filePath, state);
-		return { appended: true, record: normalized, state };
-	});
-}
-
 function mergeRecordUpdate(
 	current: WorkstreamLaunchRecord,
 	updates: WorkstreamLaunchRecordUpdate,
@@ -507,6 +447,18 @@ export function findWorkstreamLaunchById(filePath: string, id: string, repo?: st
 	return (
 		loadWorkstreamLaunchState(filePath).records.find(
 			(record) => record.id === id && (repo === undefined || record.repo === repo),
+		) ?? null
+	);
+}
+
+export function findWorkstreamLaunchByWorktreeLabel(
+	filePath: string,
+	worktreeLabel: string,
+	repo?: string,
+): WorkstreamLaunchRecord | null {
+	return (
+		loadWorkstreamLaunchState(filePath).records.find(
+			(record) => record.worktree.label === worktreeLabel && (repo === undefined || record.repo === repo),
 		) ?? null
 	);
 }
