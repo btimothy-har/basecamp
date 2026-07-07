@@ -414,7 +414,7 @@ export function registerCancelAgentTool(
 		name: "cancel_agent",
 		label: "Cancel Agent",
 		description:
-			"Cancel a running agent you dispatched, terminating its process. You can only cancel agents in your own dispatch subtree.",
+			"Cancel a running agent you dispatched, stopping it and its entire dispatched subtree. You can only cancel agents in your own dispatch subtree.",
 		parameters: CancelAgentParams,
 		async execute(_id, params) {
 			if (!deps.hasInvokedSkill("agents")) {

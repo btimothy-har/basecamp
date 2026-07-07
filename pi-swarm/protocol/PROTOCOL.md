@@ -52,7 +52,7 @@ Dispatched agents run as full `pi` processes spawned by the daemon in their own 
 Dispatched-run processes are freed three ways so they cannot leak as long-running memory:
 
 - Dispatcher disconnect: when a dispatcher's connection drops, the daemon schedules a grace-period reaper for that `node_id`. If the same node does not re-register within the window, its still-live dispatched runs are terminated, marked `failed` with `error: "dispatcher_disconnected"`, and their waiters are woken. A reconnecting session (reload/resume) cancels the pending reaper and reclaims its in-flight agents. The grace period is `BASECAMP_AGENT_DISCONNECT_GRACE_S` (default `3600`; invalid or negative values fall back to the default). There is no wall-clock cap on run duration — only the disconnect grace.
-- Explicit cancellation: the `cancel` / `cancel_ack` frames (below).
+- Explicit cancellation: the `cancel` / `cancel_ack` frames (below), which cancel the target and its whole dispatch subtree.
 - Startup reconciliation: on daemon start every non-terminal run is marked `failed` with `error: "daemon_restart_reconciled"`, and orphaned process groups left by a prior daemon are best-effort killed, gated by an identity check (the group leader's command must match the runner) so a reused process-group id is never signalled.
 
 The daemon is a long-lived shared singleton and does not idle-shut-down by design.
@@ -246,7 +246,7 @@ Fields:
 - `request_id`: caller-generated id used to correlate the ack.
 - `target_handle`: public handle of the agent to cancel.
 
-Authorization is subtree-only: the requester may cancel a target only when it dispatched that target directly or transitively (it is an ancestor of the target, or the dispatcher of the target's current run). Unlike `peer_message` / fork-`ask`, a known public handle does NOT authorize cancellation. A successful cancel marks the target's current run `failed` with `error: "cancelled"`, terminates its process group, and wakes waiters.
+Authorization is subtree-only: the requester may cancel a target only when it dispatched that target directly or transitively (it is an ancestor of the target, or the dispatcher of the target's current run). Unlike `peer_message` / fork-`ask`, a known public handle does NOT authorize cancellation. A successful cancel recurses through the target's dispatch subtree: it marks the current run of the target and each descendant `failed` with `error: "cancelled"`, terminates each tracked process group, and wakes waiters. This stops a cancelled agent's descendants immediately instead of leaving them until their own dispatcher-disconnect grace expires.
 
 ### `cancel_ack` daemon → client
 
@@ -254,7 +254,7 @@ Acknowledges a `cancel` request.
 
 Fields:
 - `request_id`: echoes the cancel request id.
-- `status`: `cancelled`; `not_found` when the handle does not resolve; `not_authorized` when the target is outside the requester's dispatch subtree; or `already_terminal` when there is no active run to cancel.
+- `status`: `cancelled` when at least one run in the target's subtree was cancelled by this request; `not_found` when the handle does not resolve; `not_authorized` when the target is outside the requester's dispatch subtree; or `already_terminal` when nothing in the subtree was still running.
 - `error`: optional/nullable detail.
 
 ### `GET /runs/summary`
