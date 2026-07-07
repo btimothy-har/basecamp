@@ -1,25 +1,26 @@
 # Pi Swarm Daemon Protocol
 
-Protocol version: `17`
+Protocol version: `18`
 
 All frames are JSON objects with an envelope:
 
 ```json
-{"type":"<frame_type>","v":17,...}
+{"type":"<frame_type>","v":18,...}
 ```
 
 Version handling:
 - The daemon validates `v` on every inbound frame.
-- If `v != 17`, the daemon sends an `error` frame with `code: "protocol_version"` and closes the connection.
+- If `v != 18`, the daemon sends an `error` frame with `code: "protocol_version"` and closes the connection.
 - The extension treats the protocol as a client-visible capability gate, not only a frame-shape version. A version mismatch restarts the host daemon during ensure-daemon.
 - v15 adds known-public-handle contact for `peer_message` and fork-`ask`: contact is authorized without a live relationship when the target is addressed by its known public handle (see below).
 - v16 adds registered session transcript paths for fork-ask and product-role metadata for peer-message display.
 - v17 adds safe current-task previews to `list_agents_result` rows.
+- v18 adds cancel-agent request/ack frames and dispatched-run lifecycle hardening: process-group spawn, dispatcher-disconnect grace reaping, and startup reconciliation of orphaned runs.
 
 ## Transport
 
 - HTTP over Unix domain socket (UDS):
-  - `GET /health` → `{"status":"ok","protocol":17}`
+  - `GET /health` → `{"status":"ok","protocol":18}`
   - `GET /runs/summary?root_id=<id>` returns safe agent-level observability for the companion dashboard.
   - `GET /runs/messages?root_id=<id>&agent_handle=<handle>` returns selected-agent assistant message detail for the companion dashboard.
 - WebSocket over UDS:
@@ -43,6 +44,18 @@ The public daemon-agent identity is `agent_handle`, a readable path-safe alias s
 LLM-facing tools should not present `run_id` or `agent_id` as user handles. Capability is separate from identity. Top-level/copilot sessions and started workstream sessions are contactable but not taskable: they may receive `message_agent` and may be asked by canonical handle when the daemon has a forkable session file, but they are not dispatchable, retaskable, awaitable, or listed by `list_agents`. Dispatched worker agents are taskable under the existing dispatcher/retask constraints. Ask answerers are transient and hidden from task directories.
 
 The daemon enforces one primary active run per dispatchable agent. `agents.current_run_id` points at the latest primary run, including terminal runs, so `wait_for_agent(agent_handle)` can retrieve final results until a later primary run replaces it. Retasking an existing handle is conservative: the current run must already be terminal, `agent_type` / `run_kind` for that handle are immutable, and session/ask handles are rejected as non-dispatchable.
+
+## Run lifecycle and cleanup
+
+Dispatched agents run as full `pi` processes spawned by the daemon in their own process group (the runner is the group leader), so the daemon can terminate a run's entire process tree with a single group signal (SIGTERM, then SIGKILL after a short escalation window).
+
+Dispatched-run processes are freed three ways so they cannot leak as long-running memory:
+
+- Dispatcher disconnect: when a dispatcher's connection drops, the daemon schedules a grace-period reaper for that `node_id`. If the same node does not re-register within the window, its still-live dispatched runs are terminated, marked `failed` with `error: "dispatcher_disconnected"`, and their waiters are woken. A reconnecting session (reload/resume) cancels the pending reaper and reclaims its in-flight agents. The grace period is `BASECAMP_AGENT_DISCONNECT_GRACE_S` (default `3600`; invalid or negative values fall back to the default). There is no wall-clock cap on run duration — only the disconnect grace.
+- Explicit cancellation: the `cancel` / `cancel_ack` frames (below).
+- Startup reconciliation: on daemon start every non-terminal run is marked `failed` with `error: "daemon_restart_reconciled"`, and orphaned process groups left by a prior daemon are best-effort killed, gated by an identity check (the group leader's command must match the runner) so a reused process-group id is never signalled.
+
+The daemon is a long-lived shared singleton and does not idle-shut-down by design.
 
 ## Frame types
 
@@ -99,7 +112,7 @@ Waits for one or more public agent handles:
 ```json
 {
   "type": "wait",
-  "v": 17,
+  "v": 18,
   "agent_ids": [],
   "agent_handles": ["mossy-otter-a1b2c3"],
   "mode": "all",
@@ -130,7 +143,7 @@ Requests a safe directory of agents visible under the caller's root session:
 ```json
 {
   "type": "list_agents",
-  "v": 17,
+  "v": 18,
   "request_id": "list-001",
   "awaitable": true
 }
@@ -225,6 +238,25 @@ Fields:
 
 For `wait_until_delivery`, terminal delivery states are `queued`, `failed`, `unavailable`, and `unknown`. `accepted` and `sent` are non-terminal. LLM-facing tools may render `queued` as `queued in recipient session` while preserving the protocol status value.
 
+### `cancel` client → daemon
+
+Requests cancellation of an agent's current run.
+
+Fields:
+- `request_id`: caller-generated id used to correlate the ack.
+- `target_handle`: public handle of the agent to cancel.
+
+Authorization is subtree-only: the requester may cancel a target only when it dispatched that target directly or transitively (it is an ancestor of the target, or the dispatcher of the target's current run). Unlike `peer_message` / fork-`ask`, a known public handle does NOT authorize cancellation. A successful cancel marks the target's current run `failed` with `error: "cancelled"`, terminates its process group, and wakes waiters.
+
+### `cancel_ack` daemon → client
+
+Acknowledges a `cancel` request.
+
+Fields:
+- `request_id`: echoes the cancel request id.
+- `status`: `cancelled`; `not_found` when the handle does not resolve; `not_authorized` when the target is outside the requester's dispatch subtree; or `already_terminal` when there is no active run to cancel.
+- `error`: optional/nullable detail.
+
 ### `GET /runs/summary`
 
 Returns companion Swarm observability under the requested root session.
@@ -279,6 +311,6 @@ Reports protocol/parse errors and closes the WebSocket for fatal frame errors. C
 A minimal client flow is:
 
 1. Connect to `/ws` over the UDS.
-2. Send `register` with `v: 17`.
+2. Send `register` with `v: 18`.
 3. Send `dispatch` with private `run_id` / `agent_id` and public `agent_handle`.
 4. Use the `agent_handle` with `wait` or discover agents through `list_agents`.
