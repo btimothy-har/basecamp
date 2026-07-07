@@ -22,18 +22,17 @@ export type Severity = Static<typeof Severity>;
 const NullableString = Type.Union([Type.String(), Type.Null()]);
 const NullableInteger = Type.Union([Type.Integer(), Type.Null()]);
 
-export const ExtractedFinding = Type.Object(
-	{
-		severity: Severity,
-		file: NullableString,
-		lineStart: NullableInteger,
-		lineEnd: NullableInteger,
-		title: Type.String(),
-		detail: Type.String(),
-		remediation: NullableString,
-	},
-	{ additionalProperties: false },
-);
+const ExtractedFindingProperties = {
+	severity: Severity,
+	file: NullableString,
+	lineStart: NullableInteger,
+	lineEnd: NullableInteger,
+	title: Type.String(),
+	detail: Type.String(),
+	remediation: NullableString,
+};
+
+export const ExtractedFinding = Type.Object(ExtractedFindingProperties, { additionalProperties: false });
 export type ExtractedFinding = Static<typeof ExtractedFinding>;
 
 export const ReportFindingsArgs = Type.Object(
@@ -44,9 +43,10 @@ export const ReportFindingsArgs = Type.Object(
 );
 export type ReportFindingsArgs = Static<typeof ReportFindingsArgs>;
 
-export const Finding = Type.Composite([ExtractedFinding, Type.Object({ dimension: Dimension })], {
-	additionalProperties: false,
-});
+export const Finding = Type.Object(
+	{ ...ExtractedFindingProperties, dimension: Dimension },
+	{ additionalProperties: false },
+);
 export type Finding = Static<typeof Finding>;
 
 export const report_findings: Tool<typeof ReportFindingsArgs> = {
