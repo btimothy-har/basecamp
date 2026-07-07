@@ -41,7 +41,7 @@ core/pi/                       # pi-core TypeScript package: registries, session
 pi-ui/                         # Session UI package: footer, title, mode editor
 workspace/pi/                  # pi-workspace TypeScript package: project context + workspace service
 pi-tasks/                      # Tasks, planning, workflow skills
-pi-git/                        # Code walkthrough, review packet, and prompt-only PR creation workflows
+pi-git/                        # Prompt-only PR creation workflow (/create-pr)
 pi-bash-reviewer/              # LLM bash reviewer: gates risky git/gh/shell commands
 pi-engineering/                # Engineering tools and skills
 pi-browser/                    # Browser automation tools (puppeteer-core over CDP)

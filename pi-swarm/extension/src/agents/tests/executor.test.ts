@@ -122,7 +122,7 @@ const SUPPORT_TOOLS = [
 	"bq_query",
 ];
 
-const PARENT_ONLY_TOOLS = ["plan", "escalate", "review_packet"];
+const PARENT_ONLY_TOOLS = ["plan", "escalate"];
 
 describe("subagent tool allowlist", () => {
 	it("adds support tools for read-only agents without parent-only tools", () => {

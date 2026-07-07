@@ -100,7 +100,6 @@ Use it to list, add, edit, or remove configured projects.
 | `/create-pr` | Create or update a pull request |
 | `/create-issue` | Draft and publish a GitHub issue through review |
 | `/pr-comments` | Address PR review comments |
-| `/pr-walkthrough` | Generate PR walkthrough |
 
 ### Subagents
 
@@ -240,7 +239,7 @@ basecamp ships no default — a repo with no environment is a clean no-op. When 
 - Inherits the `BASECAMP_*` env vars plus `BASECAMP_REPO_ROOT` (the protected checkout path), so the command can copy or symlink artifacts from the source checkout if it chooses. basecamp does not prescribe what the command does.
 - **Blocks** activation with a **180-second timeout**; the fresh session starts only once setup finishes.
 - **Warn-and-proceed**: a non-zero exit or timeout surfaces a warning and is recorded in the handoff result, but activation and handoff still complete.
-- **Creation only**: it does not run when resuming/attaching an existing worktree, switching via `/worktree`, or for read-only review worktrees created by `/code-walkthrough`.
+- **Creation only**: it does not run when resuming/attaching an existing worktree or switching via `/worktree`.
 
 For anything beyond a one-liner, point the command at a script you maintain outside the repo, e.g. `"bash ~/.pi/basecamp/worktree-setup.sh"`.
 

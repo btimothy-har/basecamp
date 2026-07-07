@@ -62,7 +62,7 @@ Use **relative paths** from the skill directory for all references.
 - No leading/trailing hyphens, no consecutive hyphens
 - Must match parent directory name
 
-Valid: `pdf-processing`, `data-analysis`, `code-review`
+Valid: `pdf-processing`, `data-analysis`, `sql`
 Invalid: `PDF-Processing`, `-pdf`, `pdf--processing`
 
 ### Description Best Practices

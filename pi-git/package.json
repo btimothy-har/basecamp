@@ -5,16 +5,13 @@
 	"engines": {
 		"node": ">=24"
 	},
-	"description": "Basecamp git review workflows — code-walkthrough, review_packet, and prompt-only create-pr.",
+	"description": "Basecamp git workflow — prompt-only create-pr command.",
 	"keywords": [
 		"pi-package"
 	],
 	"pi": {
 		"extensions": [
 			"./index.ts"
-		],
-		"skills": [
-			"./skills"
 		]
 	},
 	"scripts": {

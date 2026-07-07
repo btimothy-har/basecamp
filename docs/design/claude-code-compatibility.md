@@ -164,7 +164,7 @@ The extension bundle lives **inside the installed Python package** and is refere
 │   ├── hooks/hooks.json             # the §8 hook wiring
 │   ├── agents/*.md                  # specialist personas (native subagents)
 │   ├── skills/                      # bundled from pi-*/skills
-│   ├── commands/*.md                # prompt-driven commands (/create-pr, /pr-walkthrough, …)
+│   ├── commands/*.md                # prompt-driven commands (/create-pr, …)
 │   └── bin/                         # shim resolving `basecamp` for hooks
 └── system-prompts/                  # Claude Code rewrite of modes/styles/environment/capabilities
 ```
