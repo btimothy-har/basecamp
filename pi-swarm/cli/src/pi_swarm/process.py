@@ -151,7 +151,7 @@ def _process_group_is_runner(pgid: int) -> bool:
 
     try:
         result = subprocess.run(
-            ["ps", "-p", str(pgid), "-o", "args="],
+            ["ps", "-A", "-o", "pgid=,args="],
             capture_output=True,
             text=True,
             check=False,
@@ -159,7 +159,16 @@ def _process_group_is_runner(pgid: int) -> bool:
     except OSError:
         return False
 
-    return f"-m {RUNNER_MODULE}" in result.stdout
+    # Inspect the whole group, not just the leader PID: the leader can exit while
+    # orphaned descendants live on. The group is ours only when a live member
+    # still carries the runner marker, which keeps the PID/PGID reuse guard.
+    marker = f"-m {RUNNER_MODULE}"
+    target = str(pgid)
+    for line in result.stdout.splitlines():
+        parts = line.split(maxsplit=1)
+        if len(parts) == 2 and parts[0] == target and marker in parts[1]:
+            return True
+    return False
 
 
 def terminate_process_group_if_runner(
