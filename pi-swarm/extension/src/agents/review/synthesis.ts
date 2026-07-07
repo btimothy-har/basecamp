@@ -13,7 +13,8 @@ function compareNullableStrings(left: string | null, right: string | null): numb
 	if (left === null && right === null) return 0;
 	if (left === null) return 1;
 	if (right === null) return -1;
-	return left.localeCompare(right);
+	// Ordinal (not locale) comparison keeps merge ordering deterministic across Node/ICU environments.
+	return left < right ? -1 : left > right ? 1 : 0;
 }
 
 function compareNullableNumbers(left: number | null, right: number | null): number {

@@ -44,19 +44,9 @@ export const ReportFindingsArgs = Type.Object(
 );
 export type ReportFindingsArgs = Static<typeof ReportFindingsArgs>;
 
-export const Finding = Type.Object(
-	{
-		dimension: Dimension,
-		severity: Severity,
-		file: NullableString,
-		lineStart: NullableInteger,
-		lineEnd: NullableInteger,
-		title: Type.String(),
-		detail: Type.String(),
-		remediation: NullableString,
-	},
-	{ additionalProperties: false },
-);
+export const Finding = Type.Composite([ExtractedFinding, Type.Object({ dimension: Dimension })], {
+	additionalProperties: false,
+});
 export type Finding = Static<typeof Finding>;
 
 export const report_findings: Tool<typeof ReportFindingsArgs> = {

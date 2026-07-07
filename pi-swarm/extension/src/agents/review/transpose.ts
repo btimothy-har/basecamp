@@ -1,4 +1,4 @@
-import type { Api, AssistantMessage, Context, Model } from "@earendil-works/pi-ai";
+import type { Api, AssistantMessage, Context, Model, ToolCall } from "@earendil-works/pi-ai";
 import { complete as defaultComplete } from "@earendil-works/pi-ai";
 import { Value } from "@sinclair/typebox/value";
 import { resolveForcedToolChoice, resolvePortableReasoningEffort } from "pi-core/platform/model-resolution.ts";
@@ -28,11 +28,11 @@ function buildTransposeContext(prose: string): Context {
 }
 
 function parseTransposeResponse(msg: AssistantMessage): ReportFindingsArgs | null {
-	const toolCalls = msg.content.filter((content) => content.type === "toolCall");
+	const toolCalls = msg.content.filter((content): content is ToolCall => content.type === "toolCall");
 	if (toolCalls.length !== 1) return null;
 
 	const call = toolCalls[0];
-	if (call === undefined || call.type !== "toolCall" || call.name !== "report_findings") return null;
+	if (call === undefined || call.name !== "report_findings") return null;
 
 	const args: unknown = call.arguments;
 	if (!Value.Check(ReportFindingsArgs, args)) return null;

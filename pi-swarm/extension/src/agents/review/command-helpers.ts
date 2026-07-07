@@ -5,6 +5,7 @@ import * as path from "node:path";
 import type { ReviewResult } from "./orchestrate.ts";
 
 export const PRIVATE_FILE_MODE = 0o600;
+export const PRIVATE_DIR_MODE = 0o700;
 
 export function isSubagent(): boolean {
 	const depth = Number(process.env.BASECAMP_AGENT_DEPTH ?? "0");
@@ -13,7 +14,9 @@ export function isSubagent(): boolean {
 
 export function persistReviewArtifact(result: ReviewResult): string {
 	const dir = path.join(process.env.BASECAMP_SCRATCH_DIR || os.tmpdir(), "code-review");
-	fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
+	fs.mkdirSync(dir, { recursive: true, mode: PRIVATE_DIR_MODE });
+	// mkdirSync only applies mode on creation; re-enforce it so a reused dir can't keep looser perms.
+	fs.chmodSync(dir, PRIVATE_DIR_MODE);
 	const filename = `review-${Date.now()}-${randomBytes(4).toString("hex")}.json`;
 	const artifactPath = path.join(dir, filename);
 	const fd = fs.openSync(

@@ -93,7 +93,7 @@ export function registerReviewCommand(pi: ExtensionAPI, deps: PiSwarmDependencie
 						workspace: deps.getWorkspaceState(),
 						agentId,
 						parentSession:
-							process.env.BASECAMP_SESSION_NAME ?? pi.getSessionName()?.trim() ?? ctx.sessionManager.getSessionId(),
+							process.env.BASECAMP_SESSION_NAME ?? (pi.getSessionName()?.trim() || ctx.sessionManager.getSessionId()),
 						project: process.env.BASECAMP_PROJECT ?? "default",
 					});
 					if (!launch.ok) throw new Error(launch.message);
