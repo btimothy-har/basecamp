@@ -540,7 +540,7 @@ describe("daemon reporter", () => {
 		}
 	});
 
-	it("registers ask_agent and peer message tools for daemon-spawned agents below max depth", () => {
+	it("registers ask_agent, peer message tools, and cancel_agent for daemon-spawned agents below max depth", () => {
 		const pi = new MockPi();
 		const priorDepth = process.env.BASECAMP_AGENT_DEPTH;
 		const priorMaxDepth = process.env.BASECAMP_AGENT_MAX_DEPTH;
@@ -556,7 +556,7 @@ describe("daemon reporter", () => {
 
 			assert.deepEqual(
 				pi.tools.map((tool) => tool.name),
-				["ask_agent", "message_agent", "message_status"],
+				["ask_agent", "message_agent", "message_status", "cancel_agent"],
 			);
 		} finally {
 			if (priorDepth === undefined) delete process.env.BASECAMP_AGENT_DEPTH;

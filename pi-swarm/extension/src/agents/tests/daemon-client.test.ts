@@ -282,6 +282,45 @@ describe("daemon client", () => {
 		assert.deepEqual(await promise, { message_id: "message-accepted", status: "accepted", error: null });
 	});
 
+	it("cancelAgent sends cancel with a request id and waits only for matching ack", async () => {
+		const connection = new MockConnection();
+		const client = createDaemonClient(connection);
+
+		const promise = client.cancelAgent({ targetHandle: "target-agent" });
+		await new Promise((resolve) => setImmediate(resolve));
+
+		const outbound = connection.sent[0] as Extract<Frame, { type: "cancel" }>;
+		assert.equal(outbound.type, "cancel");
+		assert.equal(outbound.v, PROTOCOL_VERSION);
+		assert.equal(typeof outbound.request_id, "string");
+		assert.equal(outbound.target_handle, "target-agent");
+
+		let resolved = false;
+		promise.then(() => {
+			resolved = true;
+		});
+
+		connection.emit({
+			type: "cancel_ack",
+			v: PROTOCOL_VERSION,
+			request_id: "different-request",
+			status: "not_found",
+			error: "wrong target",
+		});
+		await new Promise((resolve) => setImmediate(resolve));
+		assert.equal(resolved, false);
+
+		connection.emit({
+			type: "cancel_ack",
+			v: PROTOCOL_VERSION,
+			request_id: outbound.request_id,
+			status: "cancelled",
+			error: null,
+		});
+
+		assert.deepEqual(await promise, { status: "cancelled", error: null });
+	});
+
 	it("messageStatus sends message_status with wait and timeout options", async () => {
 		const connection = new MockConnection();
 		const client = createDaemonClient(connection);

@@ -2,8 +2,8 @@ import { Buffer } from "node:buffer";
 
 // Gates every client-visible daemon capability, not just WebSocket frame shapes.
 // This includes HTTP endpoints like /runs/summary, so stale daemons restart.
-// v17: list-agents rows expose safe current-task previews for display.
-export const PROTOCOL_VERSION = 17;
+// v18: cancel-agent request/ack frames.
+export const PROTOCOL_VERSION = 18;
 
 export interface RegisterFrame {
 	type: "register";
@@ -195,6 +195,21 @@ export interface MessageStatusResultFrame {
 	failed_at: string | null;
 }
 
+export interface CancelFrame {
+	type: "cancel";
+	v: typeof PROTOCOL_VERSION;
+	request_id: string;
+	target_handle: string;
+}
+
+export interface CancelAckFrame {
+	type: "cancel_ack";
+	v: typeof PROTOCOL_VERSION;
+	request_id: string;
+	status: "cancelled" | "not_found" | "not_authorized" | "already_terminal";
+	error?: string | null;
+}
+
 export type Frame =
 	| RegisterFrame
 	| RegisteredFrame
@@ -212,7 +227,9 @@ export type Frame =
 	| PeerMessageDeliveryFrame
 	| PeerMessageDeliveryAckFrame
 	| MessageStatusFrame
-	| MessageStatusResultFrame;
+	| MessageStatusResultFrame
+	| CancelFrame
+	| CancelAckFrame;
 
 export const FRAME_TYPES = [
 	"register",
@@ -232,6 +249,8 @@ export const FRAME_TYPES = [
 	"peer_message_delivery_ack",
 	"message_status",
 	"message_status_result",
+	"cancel",
+	"cancel_ack",
 ] as const;
 
 const KNOWN_TYPE_SET = new Set<string>(FRAME_TYPES);
