@@ -39,8 +39,12 @@ function truncateCommand(command: string): string {
 	return command.length <= 500 ? command : `${command.slice(0, 497)}...`;
 }
 
+const SEARCH_TOOL_PATTERN = /(?:^|[\s;&|(])(?:grep|egrep|fgrep|rg|ag|ack|find|fd|fdfind)\b/;
+
 function blockCategory(command: string): string {
-	return /^\s*bq\b/.test(command) ? "bq-query" : "triage-block";
+	if (/^\s*bq\b/.test(command)) return "bq-query";
+	if (SEARCH_TOOL_PATTERN.test(command)) return "wide-search";
+	return "triage-block";
 }
 
 function confirmationBody(command: string, decision: GateDecision): string {

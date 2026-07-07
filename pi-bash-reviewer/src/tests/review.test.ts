@@ -131,6 +131,24 @@ describe("reviewBashCommand", () => {
 		assert.match(harness.notifications[0]?.message ?? "", /bq_query/);
 	});
 
+	it("blocks wide-ranging searches during triage and audits them as wide-search", async () => {
+		const harness = makeDeps();
+
+		const outcome = await reviewBashCommand("grep -r foo /", harness.deps);
+
+		assert.equal(outcome?.block, true);
+		assert.match(outcome?.reason ?? "", /Wide-ranging filesystem search blocked/);
+		assert.equal(harness.resolveModelCalls(), 0);
+		assert.equal(harness.runGateCalls(), 0);
+		assert.equal(harness.auditEntries.length, 1);
+		assert.equal(harness.auditEntries[0]?.phase, "triage");
+		assert.equal(harness.auditEntries[0]?.action, "block");
+		assert.equal(harness.auditEntries[0]?.category, "wide-search");
+		assert.equal(harness.notifications.length, 1);
+		assert.equal(harness.notifications[0]?.type, "warning");
+		assert.match(harness.notifications[0]?.message ?? "", /reviewer blocked/);
+	});
+
 	it("escalates model-unavailable failures to the user and allows confirmed commands", async () => {
 		const harness = makeDeps({ resolveModel: async () => null, confirm: async () => true });
 

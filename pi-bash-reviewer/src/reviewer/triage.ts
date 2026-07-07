@@ -158,6 +158,33 @@ const SHELLS = new Set(["bash", "dash", "fish", "ksh", "sh", "zsh"]);
 const NETWORK_PIPE_SHELLS = new Set(["bash", "sh", "zsh"]);
 const NETWORK_FETCHERS = new Set(["curl", "wget"]);
 
+const GREP_SEARCH_TOOLS = new Set(["grep", "egrep", "fgrep"]);
+const RECURSIVE_SEARCH_TOOLS = new Set(["rg", "ag", "ack", "fd", "fdfind"]);
+const WIDE_ROOTS = new Set([
+	"/",
+	"~",
+	"$HOME",
+	// biome-ignore lint/suspicious/noTemplateCurlyInString: literal shell token, not a JS template placeholder
+	"${HOME}",
+	"/etc",
+	"/usr",
+	"/var",
+	"/opt",
+	"/bin",
+	"/sbin",
+	"/dev",
+	"/proc",
+	"/sys",
+	"/System",
+	"/Library",
+	"/Applications",
+	"/private",
+	"/Volumes",
+	"/Users",
+	"/home",
+	"/root",
+]);
+
 /** Split a command on shell separators so each segment is checked independently. */
 function splitSegments(cmd: string): string[] {
 	return cmd
@@ -536,6 +563,89 @@ function classifyFindTokens(tokens: string[], commandIndex: number): Triage {
 	return tokens.slice(commandIndex + 1).includes("-delete") ? DANGEROUS_SHELL : ALLOW;
 }
 
+function wideSearchBlock(root: string): Triage {
+	return {
+		kind: "block",
+		reason: `Wide-ranging filesystem search blocked for performance: "${root}" is a system or home root, and searching it can take many minutes. Scope the search to the project directory (e.g. "." or a subpath). Run it yourself if a full-system scan is truly required.`,
+	};
+}
+
+function normalizeSearchRoot(path: string): string {
+	const stripped = path.replace(/\/+$/, "");
+	return stripped === "" ? "/" : stripped;
+}
+
+function firstWideSearchRoot(paths: string[]): string | null {
+	for (const path of paths) {
+		if (WIDE_ROOTS.has(normalizeSearchRoot(path))) return path;
+	}
+	return null;
+}
+
+/** Paths for pattern-first tools (grep/rg/fd): the first positional is the search pattern, the rest are roots. */
+function patternFirstSearchPaths(args: string[]): string[] {
+	return positionalArgs(args).slice(1);
+}
+
+/** Paths for find: search roots precede the expression, after any leading global options. */
+function findSearchPaths(args: string[]): string[] {
+	let index = 0;
+	while (index < args.length) {
+		const arg = args[index];
+		if (arg === undefined) break;
+		if (arg === "-H" || arg === "-L" || arg === "-P") {
+			index += 1;
+			continue;
+		}
+		if (arg === "-D") {
+			index += 2;
+			continue;
+		}
+		if (arg.startsWith("-O")) {
+			index += 1;
+			continue;
+		}
+		break;
+	}
+
+	const paths: string[] = [];
+	for (; index < args.length; index += 1) {
+		const arg = args[index];
+		if (arg === undefined) break;
+		if (arg.startsWith("-") || arg === "(" || arg === "!") break;
+		paths.push(arg);
+	}
+	return paths;
+}
+
+function classifySearchScopeTokens(tokens: string[], commandIndex: number): Triage {
+	const executable = tokens[commandIndex];
+	if (executable === undefined) return ALLOW;
+
+	const baseName = commandBaseName(executable);
+	const args = tokens.slice(commandIndex + 1);
+
+	if (baseName === "find") {
+		const root = firstWideSearchRoot(findSearchPaths(args));
+		return root === null ? ALLOW : wideSearchBlock(root);
+	}
+
+	if (GREP_SEARCH_TOOLS.has(baseName)) {
+		const recursive =
+			hasShortFlag(args, "r") || hasShortFlag(args, "R") || hasFlag(args, ["--recursive", "--dereference-recursive"]);
+		if (!recursive) return ALLOW;
+		const root = firstWideSearchRoot(patternFirstSearchPaths(args));
+		return root === null ? ALLOW : wideSearchBlock(root);
+	}
+
+	if (RECURSIVE_SEARCH_TOOLS.has(baseName)) {
+		const root = firstWideSearchRoot(patternFirstSearchPaths(args));
+		return root === null ? ALLOW : wideSearchBlock(root);
+	}
+
+	return ALLOW;
+}
+
 function classifyDangerousShellTokens(tokens: string[], commandIndex: number): Triage {
 	const executable = tokens[commandIndex];
 	if (executable === undefined) return ALLOW;
@@ -571,6 +681,7 @@ function classifyDirectSegment(tokens: string[]): Triage {
 	if (executable === undefined) return result;
 
 	result = mergeTriage(result, classifyDangerousShellTokens(tokens, commandIndex));
+	result = mergeTriage(result, classifySearchScopeTokens(tokens, commandIndex));
 	if (isGitExecutable(executable)) return mergeTriage(result, classifyGitTokens(tokens, commandIndex));
 	if (isGhExecutable(executable)) return mergeTriage(result, classifyGhTokens(tokens, commandIndex));
 	return result;
@@ -582,6 +693,7 @@ function classifyXargs(tokens: string[], xargsIndex: number, depth: number): Tri
 		const token = tokens[index];
 		if (token === undefined) continue;
 		result = mergeTriage(result, classifyDangerousShellTokens(tokens, index));
+		result = mergeTriage(result, classifySearchScopeTokens(tokens, index));
 		if (isGitExecutable(token)) result = mergeTriage(result, classifyGitTokens(tokens, index));
 		if (isGhExecutable(token)) result = mergeTriage(result, classifyGhTokens(tokens, index));
 		if (isShellExecutable(token)) {

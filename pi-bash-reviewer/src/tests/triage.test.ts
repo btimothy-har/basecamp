@@ -211,6 +211,54 @@ describe("bash triage", () => {
 		}
 	});
 
+	it("blocks recursive searches rooted at a system or home root", () => {
+		const reasonPattern = /Wide-ranging filesystem search blocked/;
+		for (const command of [
+			"grep -r foo /",
+			"grep -R foo /usr",
+			"grep -Rn foo ~",
+			'grep -rn foo "$HOME"',
+			// biome-ignore lint/suspicious/noTemplateCurlyInString: literal shell token under test, not a JS template
+			"grep -r foo ${HOME}",
+			"grep -r -e foo /etc",
+			"find / -name x",
+			"find ~ -type f",
+			"find -L / -name x",
+			"rg foo /usr",
+			"rg foo /",
+			"ag foo /Users",
+			"ack foo /var",
+			"fd x ~",
+			"fdfind x /home",
+			"env FOO=1 grep -r foo /",
+			"echo x | xargs grep -r foo /",
+		]) {
+			const result = triageCommand(command);
+			assert.equal(result.kind, "block", command);
+			if (result.kind === "block") assert.match(result.reason, reasonPattern, command);
+		}
+	});
+
+	it("allows targeted searches and unrelated search forms", () => {
+		for (const command of [
+			"grep -rn foo .",
+			"grep -rn foo src/",
+			"grep foo /etc/hosts",
+			"grep -r foo /usr/local/src/app",
+			'grep -r foo "$HOME/project"',
+			"grep -r -e /usr .",
+			"find src -type f",
+			"find /usr/local/share -name x",
+			"rg foo",
+			"rg foo src/",
+			"rg /usr",
+			"fd x",
+			"git grep pattern",
+		]) {
+			assertTriage(command, allow);
+		}
+	});
+
 	it("blocks commands nested too deeply to analyze safely", () => {
 		let command = "git status";
 		for (let index = 0; index < 10; index += 1) {
