@@ -148,6 +148,46 @@ function createPi(piOptions: { worktreeDir?: string; branch?: string; linkedWork
 	return { pi, calls };
 }
 
+function createLinkedWorktreePi(options: { toplevel: string; branch: string | null }): {
+	pi: ExtensionAPI;
+	calls: ExecCall[];
+} {
+	const { toplevel, branch } = options;
+	const calls: ExecCall[] = [];
+	const worktreeBranchLine = branch === null ? "detached" : `branch refs/heads/${branch}`;
+	const listOutput = [
+		`worktree ${REPO_ROOT}`,
+		"branch refs/heads/main",
+		"",
+		`worktree ${toplevel}`,
+		worktreeBranchLine,
+		"",
+	].join("\n");
+	const pi = {
+		async exec(command: string, args: string[], options?: { cwd?: string; timeout?: number }): Promise<ExecResult> {
+			const call = { command, args, options };
+			calls.push(call);
+			if (command !== "git") throw unexpectedExecCall(call);
+			if (argsEqual(args, ["rev-parse", "--show-toplevel"])) return { code: 0, stdout: `${toplevel}\n`, stderr: "" };
+			if (argsEqual(args, ["rev-parse", "--git-dir", "--git-common-dir"])) {
+				return {
+					code: 0,
+					stdout: `${path.join(REPO_ROOT, ".git", "worktrees", "wt")}\n${path.join(REPO_ROOT, ".git")}\n`,
+					stderr: "",
+				};
+			}
+			if (argsEqual(args, ["-C", toplevel, "remote", "get-url", "origin"])) {
+				return { code: 0, stdout: `${REMOTE_URL}\n`, stderr: "" };
+			}
+			if (argsEqual(args, ["-C", REPO_ROOT, "worktree", "list", "--porcelain"])) {
+				return { code: 0, stdout: listOutput, stderr: "" };
+			}
+			throw unexpectedExecCall(call);
+		},
+	} as ExtensionAPI;
+	return { pi, calls };
+}
+
 function createSessionPi(options: { worktreeDir: string; branch: string; linkedWorktree?: boolean }): {
 	pi: ExtensionAPI;
 	calls: ExecCall[];
@@ -265,6 +305,63 @@ describe("WorkspaceRuntimeService effective cwd", () => {
 			calls.some((call) => call.command === "git" && argsEqual(call.args, ["-C", REPO_ROOT, "status", "--porcelain"])),
 			false,
 		);
+	});
+
+	it("falls back to the directory basename for a linked worktree outside the worktrees root", async (t) => {
+		const envSnapshot = snapshotWorkspaceEnv();
+		clearAgentDepthEnv();
+		t.after(async () => {
+			restoreWorkspaceEnv(envSnapshot);
+			await fs.rm(SCRATCH_DIR, { recursive: true, force: true });
+		});
+
+		const externalWorktree = path.resolve("/external/my-feature");
+		const { pi } = createLinkedWorktreePi({ toplevel: externalWorktree, branch: "feature-x" });
+		const service = new WorkspaceRuntimeService(pi);
+		const result = await service.initialize({
+			launchCwd: externalWorktree,
+			unsafeEditFlag: false,
+			unsafeEditConstraints: { readOnly: false, hasUI: true, isSubagent: false },
+		});
+
+		assert.equal(result.state.protectedRoot, REPO_ROOT);
+		assert.deepEqual(result.state.activeWorktree, {
+			kind: "git-worktree",
+			label: "my-feature",
+			path: externalWorktree,
+			branch: "feature-x",
+			created: false,
+		});
+		assert.equal(service.getEffectiveCwd(), externalWorktree);
+		assert.equal(process.env.BASECAMP_WORKTREE_DIR, externalWorktree);
+		assert.equal(process.env.BASECAMP_WORKTREE_LABEL, "my-feature");
+	});
+
+	it("recognizes a detached-HEAD linked worktree with a detached branch", async (t) => {
+		const envSnapshot = snapshotWorkspaceEnv();
+		clearAgentDepthEnv();
+		t.after(async () => {
+			restoreWorkspaceEnv(envSnapshot);
+			await fs.rm(SCRATCH_DIR, { recursive: true, force: true });
+		});
+
+		const { pi } = createLinkedWorktreePi({ toplevel: WORKTREE_DIR, branch: null });
+		const service = new WorkspaceRuntimeService(pi);
+		const result = await service.initialize({
+			launchCwd: WORKTREE_DIR,
+			unsafeEditFlag: false,
+			unsafeEditConstraints: { readOnly: false, hasUI: true, isSubagent: false },
+		});
+
+		assert.equal(result.state.protectedRoot, REPO_ROOT);
+		assert.deepEqual(result.state.activeWorktree, {
+			kind: "git-worktree",
+			label: LABEL,
+			path: WORKTREE_DIR,
+			branch: "detached",
+			created: false,
+		});
+		assert.equal(process.env.BASECAMP_WORKTREE_LABEL, LABEL);
 	});
 
 	it("writes active worktree metadata when current session state is initialized", async (t) => {
