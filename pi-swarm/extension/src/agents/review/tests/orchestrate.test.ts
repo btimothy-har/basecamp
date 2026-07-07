@@ -278,4 +278,60 @@ describe("runReview", () => {
 		assert.equal(result.reason.startsWith("dispatch failed:"), true);
 		assert.equal(waitCalled, false);
 	});
+
+	it("reports the first transpose-phase failure by reviewer order", async () => {
+		const waitResults = completedWaitResults();
+		waitResults.set(handleFor(REVIEWERS[0]!), { status: "failed", result: "security output", error: null });
+		waitResults.set(handleFor(REVIEWERS[2]!), { status: "failed", result: "docs output", error: null });
+		const deps: OrchestrateDeps = {
+			dispatchReviewer: async (spec) => handleFor(spec),
+			waitForReviewers: async () => waitResults,
+			transpose: async (_output, dimension) => [finding({ dimension, title: `${dimension} finding` })],
+			now: () => new Date("2026-07-07T12:00:00.000Z"),
+		};
+
+		const result = await runReview(scope, deps);
+
+		assert.equal(result.ok, false);
+		if (result.ok) assert.fail("expected review to fail");
+		assert.equal(result.failedReviewer, "security-specialist");
+		assert.equal(result.reason, "reviewer failed");
+	});
+
+	it("fails the whole review when a reviewer wait status is unknown", async () => {
+		const waitResults = completedWaitResults();
+		const unknownSpec = REVIEWERS[1]!;
+		waitResults.set(handleFor(unknownSpec), { status: "unknown", result: null, error: null });
+		const deps: OrchestrateDeps = {
+			dispatchReviewer: async (spec) => handleFor(spec),
+			waitForReviewers: async () => waitResults,
+			transpose: async (_output, dimension) => [finding({ dimension, title: `${dimension} finding` })],
+			now: () => new Date("2026-07-07T12:00:00.000Z"),
+		};
+
+		const result = await runReview(scope, deps);
+
+		assert.equal(result.ok, false);
+		if (result.ok) assert.fail("expected review to fail");
+		assert.equal(result.failedReviewer, unknownSpec.agent);
+		assert.equal(result.reason, "reviewer unknown");
+	});
+
+	it("fails the whole review when a reviewer handle is missing from the wait results", async () => {
+		const waitResults = completedWaitResults();
+		waitResults.delete(handleFor(REVIEWERS[0]!));
+		const deps: OrchestrateDeps = {
+			dispatchReviewer: async (spec) => handleFor(spec),
+			waitForReviewers: async () => waitResults,
+			transpose: async (_output, dimension) => [finding({ dimension, title: `${dimension} finding` })],
+			now: () => new Date("2026-07-07T12:00:00.000Z"),
+		};
+
+		const result = await runReview(scope, deps);
+
+		assert.equal(result.ok, false);
+		if (result.ok) assert.fail("expected review to fail");
+		assert.equal(result.failedReviewer, "security-specialist");
+		assert.equal(result.reason, "reviewer unknown");
+	});
 });

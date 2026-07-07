@@ -113,7 +113,7 @@ list_agents({ awaitable: true })
 wait_for_agent({ handles: "<agent-handle>" })
 ```
 
-Built-in agents: `scout`, `worker`, `devils-advocate`, `security-specialist`, `testing-specialist`, `docs-specialist`, `code-clarity-specialist`.
+Built-in agents: `scout`, `worker`, `devils-advocate`, `security-specialist`, `testing-specialist`, `docs-specialist`, `code-clarity-specialist`, `conventions-specialist`, `general-reviewer`.
 
 Named read-only agents may fan out for parallel investigation and review. Be conservative with `worker`: do not parallelize `worker` against the same worktree until daemon mutation leases exist.
 
