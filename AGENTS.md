@@ -34,7 +34,7 @@ workspace/projects/             # basecamp-workspace Python package
 
 pi-swarm/                      # Async-agent bounded context
 ├── protocol/                   # Protocol docs and frame fixtures
-├── extension/                  # TypeScript Pi-side agent tools, launch policy, daemon client, reporter
+├── extension/                  # TypeScript Pi-side agent tools, launch policy, daemon client, reporter, /code-review
 └── cli/                        # Python daemon CLI/runtime package
 
 core/pi/                       # pi-core TypeScript package: registries, session, state, model aliases, workspace primitives
@@ -61,6 +61,10 @@ Prompts are layered (environment → working style → project context → tools
 ### Pi Packages
 
 Core public session/project/workspace/workflow/git/model-alias/capability/engineering behavior is split across pluggable Pi packages (`core/pi`, `workspace/pi`, `pi-ui`, `pi-tasks`, `pi-git`, `pi-bash-reviewer`, `pi-engineering`, `pi-companion/pi`). Async-agent protocol, Pi-side launch/tool behavior, and daemon runtime ownership live in the top-level `pi-swarm/` context.
+
+### Code Review
+
+`/code-review` (owned by `pi-swarm/extension`, in `src/agents/review/`) runs an independent third-party review of the current branch. The command dispatches six read-only reviewer agents (security, testing, docs, clarity, conventions, general) with a fixed scope-only brief, transposes each prose report into a canonical `Finding` schema via a per-report `fast`-model pass (forced `report_findings` tool, faithful extraction only), then merges findings and computes a verdict deterministically (no LLM synthesis). The primary agent triggers the command and receives the findings as the reviewee — it never authors or synthesizes the review. It is manual only. This replaces the removed `review_packet` / `code-walkthrough` surfaces and the old primary-agent `code-review` skill.
 
 ### Model Aliases
 
