@@ -592,6 +592,22 @@ def test_set_run_pgid_persists_and_get_run_returns_value(tmp_path: Path) -> None
     assert run["pgid"] is None
 
 
+def test_get_nonterminal_runs_returns_pending_and_running_only(tmp_path: Path) -> None:
+    db_path = tmp_path / "daemon.db"
+    store = Store(db_path=db_path)
+
+    store.create_run(run_id="run-completed", agent_id="agent-completed", dispatcher_id="root", spec={})
+    store.set_run_result(run_id="run-completed", status="completed", result="done", error=None)
+    store.create_run(run_id="run-failed", agent_id="agent-failed", dispatcher_id="root", spec={})
+    store.set_run_result(run_id="run-failed", status="failed", result=None, error="failed")
+    store.create_run(run_id="run-running", agent_id="agent-running", dispatcher_id="root", spec={})
+    store.set_run_pgid(run_id="run-running", pgid=4321)
+
+    rows = store.get_nonterminal_runs()
+
+    assert rows == [{"id": "run-running", "agent_id": "agent-running", "pgid": 4321, "status": "running"}]
+
+
 def test_get_agents_current_runs_filters_by_dispatcher(tmp_path: Path) -> None:
     db_path = tmp_path / "daemon.db"
     store = Store(db_path=db_path)

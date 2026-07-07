@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import os
 import signal
+import sqlite3
 import sys
 import threading
 import time
@@ -19,6 +20,7 @@ from pi_swarm.process import (
     build_child_env,
     build_runner_argv,
     reap_agent_process,
+    reconcile_orphaned_runs,
     spawn_agent_process,
     terminate_process_group,
 )
@@ -323,6 +325,77 @@ def test_terminate_process_group_returns_when_initial_sigterm_finds_no_group(
     terminate_process_group(123, escalation_s=0.02, poll_s=0.005)
 
     assert calls == [(123, signal.SIGTERM)]
+
+
+def test_reconcile_orphaned_runs_marks_nonterminal_failed(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    store = Store(db_path=tmp_path / "daemon.db")
+    store.create_run(run_id="run-running", agent_id="agent-running", dispatcher_id="root", spec={})
+    store.create_run(run_id="run-pending", agent_id="agent-pending", dispatcher_id="root", spec={})
+    with sqlite3.connect(tmp_path / "daemon.db") as connection:
+        connection.execute("UPDATE runs SET status = 'pending' WHERE id = ?", ("run-pending",))
+    store.set_run_pgid(run_id="run-running", pgid=321)
+    store.set_run_pgid(run_id="run-pending", pgid=654)
+    monkeypatch.setattr("pi_swarm.process._process_group_is_runner", lambda _pgid: False)
+
+    reconcile_orphaned_runs(store)
+
+    for run_id in ["run-running", "run-pending"]:
+        run = store.get_run(run_id)
+        assert run is not None
+        assert run["status"] == "failed"
+        assert run["result"] is None
+        assert run["error"] == "daemon_restart_reconciled"
+
+
+def test_reconcile_orphaned_runs_kills_verified_runner_group(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    store = Store(db_path=tmp_path / "daemon.db")
+    store.create_run(run_id="run-orphan", agent_id="agent-orphan", dispatcher_id="root", spec={})
+    store.set_run_pgid(run_id="run-orphan", pgid=4321)
+    calls: list[tuple[int, float, float]] = []
+
+    def record_terminate(pgid: int | None, *, escalation_s: float = 5.0, poll_s: float = 0.1) -> None:
+        calls.append((pgid or 0, escalation_s, poll_s))
+
+    monkeypatch.setattr("pi_swarm.process._process_group_is_runner", lambda _pgid: True)
+    monkeypatch.setattr("pi_swarm.process.terminate_process_group", record_terminate)
+
+    reconcile_orphaned_runs(store)
+
+    assert calls == [(4321, 2.0, 0.1)]
+    run = store.get_run("run-orphan")
+    assert run is not None
+    assert run["status"] == "failed"
+    assert run["error"] == "daemon_restart_reconciled"
+
+
+def test_reconcile_orphaned_runs_skips_unverified_group_but_marks_failed(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    store = Store(db_path=tmp_path / "daemon.db")
+    store.create_run(run_id="run-mismatch", agent_id="agent-mismatch", dispatcher_id="root", spec={})
+    store.set_run_pgid(run_id="run-mismatch", pgid=4321)
+    calls: list[int | None] = []
+
+    def record_terminate(pgid: int | None, **_kwargs: object) -> None:
+        calls.append(pgid)
+
+    monkeypatch.setattr("pi_swarm.process._process_group_is_runner", lambda _pgid: False)
+    monkeypatch.setattr("pi_swarm.process.terminate_process_group", record_terminate)
+
+    reconcile_orphaned_runs(store)
+
+    assert calls == []
+    run = store.get_run("run-mismatch")
+    assert run is not None
+    assert run["status"] == "failed"
+    assert run["error"] == "daemon_restart_reconciled"
 
 
 @pytest.mark.asyncio

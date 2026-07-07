@@ -698,6 +698,22 @@ class Store:
                 (pgid, run_id),
             )
 
+    def get_nonterminal_runs(self) -> list[dict[str, Any]]:
+        """Return runs that are not in a terminal status."""
+
+        with self._connect() as connection:
+            connection.row_factory = sqlite3.Row
+            rows = connection.execute(
+                """
+                SELECT id, agent_id, pgid, status
+                FROM runs
+                WHERE status NOT IN (?, ?)
+                """,
+                TERMINAL_STATUSES,
+            ).fetchall()
+
+        return [dict(row) for row in rows]
+
     def set_run_result(
         self,
         *,

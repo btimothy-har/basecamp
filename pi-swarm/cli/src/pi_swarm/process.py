@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import os
 import signal
+import subprocess
 import sys
 import time
 from collections.abc import Awaitable, Callable
@@ -141,6 +142,40 @@ def terminate_process_group(
         os.killpg(pgid, signal.SIGKILL)
     except ProcessLookupError:
         return
+
+
+def _process_group_is_runner(pgid: int) -> bool:
+    if pgid <= 1:
+        return False
+
+    try:
+        result = subprocess.run(
+            ["ps", "-p", str(pgid), "-o", "args="],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+    except OSError:
+        return False
+
+    return "pi_swarm.runner" in result.stdout
+
+
+def reconcile_orphaned_runs(store: Store) -> None:
+    for row in store.get_nonterminal_runs():
+        pgid = row.get("pgid")
+        if isinstance(pgid, int) and _process_group_is_runner(pgid):
+            try:
+                terminate_process_group(pgid, escalation_s=2.0)
+            except OSError:
+                pass
+
+        store.set_run_result_if_unset(
+            run_id=row["id"],
+            status="failed",
+            result=None,
+            error="daemon_restart_reconciled",
+        )
 
 
 async def reap_agent_process(
