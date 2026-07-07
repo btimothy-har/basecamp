@@ -5,7 +5,7 @@
 	"engines": {
 		"node": ">=24"
 	},
-	"description": "Basecamp engineering tools and skills — BigQuery, Python, SQL, dbt, marimo, code review.",
+	"description": "Basecamp engineering tools and skills — BigQuery, Python, SQL, dbt, marimo.",
 	"keywords": [
 		"pi-package"
 	],

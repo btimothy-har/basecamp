@@ -63,7 +63,7 @@ describe("pi-swarm extension entrypoint", () => {
 		defaultPiSwarm(pi as unknown as ExtensionAPI);
 
 		const toolNames = new Set(pi.tools.map((tool) => tool.name));
-		assert.equal(pi.commands.length, 0);
+		assert.deepEqual(pi.commands, ["code-review"]);
 		assert.equal(toolNames.has("dispatch_agent"), true);
 		assert.equal(toolNames.has("list_agents"), true);
 		assert.equal(toolNames.has("wait_for_agent"), true);
@@ -74,8 +74,10 @@ describe("pi-swarm extension entrypoint", () => {
 			agentNames,
 			new Set([
 				"code-clarity-specialist",
+				"conventions-specialist",
 				"devils-advocate",
 				"docs-specialist",
+				"general-reviewer",
 				"scout",
 				"security-specialist",
 				"testing-specialist",
@@ -93,6 +95,7 @@ describe("pi-swarm extension entrypoint", () => {
 		assert.equal(toolNames.has("list_agents"), true);
 		assert.equal(toolNames.has("wait_for_agent"), true);
 		assert.equal(toolNames.has("agent"), false);
+		assert.equal(pi.commands.includes("code-review"), true);
 		assert.equal(pi.commands.includes("agents"), false);
 
 		const agentNames = new Set(listCatalogItemsByType("agents", { cwd: process.cwd() }).map((item) => item.name));

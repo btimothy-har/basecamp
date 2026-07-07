@@ -1,17 +1,14 @@
 # pi-git
 
-Basecamp git review workflows — code-walkthrough, review_packet, and prompt-only create-pr.
+Basecamp git workflow package for prompt-only pull request creation.
 
 ## What it does
 
-- **`/code-walkthrough` command**: starts a context-first code walkthrough for a PR number, branch, or the current branch. PR and branch targets can be opened in dedicated review worktrees before handing the walkthrough prompt to the agent.
-- **`review_packet` tool**: opens an interactive review packet walkthrough for the user and returns consolidated, structured feedback to the agent. Review packet artifacts are written under the session scratch directory.
-- **`/create-pr` command**: sends a prompt instructing the agent to create or update the PR directly with bash/`gh` commands, including pushing the branch if needed and summarizing the result.
-- **Git skill**: `code-walkthrough` workflow guidance.
+- **`/create-pr` command**: sends a prompt instructing the agent to create or update a pull request directly with bash/`gh` commands, including checking for an existing PR, pushing the branch if needed, and summarizing the result.
 
 ## Dependencies
 
-- **pi-core** (hard peer dep): exec wrapper, workspace state, worktree operations, and scratch directory context.
+- **pi-core** (hard peer dep): exec wrapper used to resolve the default base branch for the PR prompt.
 
 ## Installation
 

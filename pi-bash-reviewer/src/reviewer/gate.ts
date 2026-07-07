@@ -1,9 +1,13 @@
-import type { AssistantMessage, Context, Message, Model, ModelThinkingLevel, Tool } from "@earendil-works/pi-ai";
-import { complete as defaultComplete, getSupportedThinkingLevels } from "@earendil-works/pi-ai";
+import type { Api, AssistantMessage, Context, Message, Model, ModelThinkingLevel, Tool } from "@earendil-works/pi-ai";
+import { complete as defaultComplete } from "@earendil-works/pi-ai";
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { type Static, Type } from "@sinclair/typebox";
 import { Value } from "@sinclair/typebox/value";
-import { resolveModelAlias } from "pi-core/platform/model-aliases.ts";
+import {
+	resolveAliasedModel,
+	resolveForcedToolChoice,
+	resolvePortableReasoningEffort,
+} from "pi-core/platform/model-resolution.ts";
 
 const Decision = Type.Union([Type.Literal("approve"), Type.Literal("route_to_user"), Type.Literal("deny")]);
 const Risk = Type.Union([Type.Literal("none"), Type.Literal("local"), Type.Literal("destructive")]);
@@ -66,23 +70,16 @@ export function parseGateResponse(msg: AssistantMessage): GateDecision | null {
 	return args;
 }
 
-const PORTABLE_THINKING_LEVELS: ModelThinkingLevel[] = ["low", "medium", "high", "xhigh"];
-
-export function resolveGateReasoningEffort(model: Model<any>): ModelThinkingLevel | undefined {
-	if (!model.reasoning) return undefined;
-
-	const supported = new Set(getSupportedThinkingLevels(model));
-	if (supported.has("minimal") && typeof model.thinkingLevelMap?.minimal === "string") return "minimal";
-	return PORTABLE_THINKING_LEVELS.find((level) => supported.has(level));
+export function resolveGateReasoningEffort(model: Model<Api>): ModelThinkingLevel | undefined {
+	return resolvePortableReasoningEffort(model);
 }
 
-export function resolveGateToolChoice(model: Model<any>): unknown {
-	if (model.api === "anthropic-messages") return { type: "tool", name: "gate_decision" };
-	return { type: "function", function: { name: "gate_decision" } };
+export function resolveGateToolChoice(model: Model<Api>): unknown {
+	return resolveForcedToolChoice(model, "gate_decision");
 }
 
 export async function runGate(opts: {
-	model: Model<any>;
+	model: Model<Api>;
 	auth: { apiKey?: string; headers?: Record<string, string> };
 	context: Context;
 	signal?: AbortSignal;
@@ -100,34 +97,10 @@ export async function runGate(opts: {
 	return parseGateResponse(msg);
 }
 
-function resolveModelReference(ctx: ExtensionContext, modelReference: string): Model<any> | undefined {
-	const separator = modelReference.indexOf("/");
-	if (separator > 0 && separator < modelReference.length - 1) {
-		const provider = modelReference.slice(0, separator);
-		const modelId = modelReference.slice(separator + 1);
-		return ctx.modelRegistry.find(provider, modelId);
-	}
-
-	const matches = ctx.modelRegistry.getAll().filter((model) => model.id === modelReference);
-	return matches.length === 1 ? matches[0] : undefined;
-}
-
 export async function resolveGateModel(
 	ctx: ExtensionContext,
-): Promise<{ model: Model<any>; auth: { apiKey?: string; headers?: Record<string, string> } } | null> {
-	const modelReference = resolveModelAlias("fast");
-	if (!modelReference) return null;
-
-	const model = resolveModelReference(ctx, modelReference);
-	if (!model) return null;
-
-	try {
-		const auth = await ctx.modelRegistry.getApiKeyAndHeaders(model);
-		if (!auth.ok || (!auth.apiKey && !(auth.headers && Object.keys(auth.headers).length > 0))) return null;
-		return { model, auth: { apiKey: auth.apiKey, headers: auth.headers } };
-	} catch {
-		return null;
-	}
+): Promise<{ model: Model<Api>; auth: { apiKey?: string; headers?: Record<string, string> } } | null> {
+	return resolveAliasedModel(ctx, "fast");
 }
 
 function textFromContent(content: Message["content"]): string {

@@ -728,7 +728,7 @@ export async function connect(identity: DaemonIdentity, options: ConnectOptions 
 	});
 }
 
-interface DaemonDispatchFrameOptions {
+export interface DaemonDispatchFrameOptions {
 	agentId: string;
 	agentHandle: string;
 	agentType: string;

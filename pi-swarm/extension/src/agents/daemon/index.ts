@@ -4,6 +4,7 @@ import { resolveSessionProductRoleOverride } from "pi-core/platform/product-role
 import { getAgentMode } from "pi-core/session/agent-mode.ts";
 import { shortSessionId as defaultShortSessionId } from "pi-core/session/session-id.ts";
 import type { PiSwarmDependencies } from "../../dependencies.ts";
+import { errorMessage } from "../errors.ts";
 import { DEFAULT_AGENT_MAX_DEPTH } from "../types.ts";
 import { connect, type DaemonConnection, type DaemonIdentity, ensureDaemon, fetchRunSummary } from "./client.ts";
 import { type PeerMessageDeliveryFrame, PROTOCOL_VERSION } from "./frames.ts";
@@ -86,10 +87,6 @@ export function publishDaemonStatus(ctx: ExtensionContext, status: DaemonStatusI
 
 export function getActiveDaemonConnection(): DaemonConnection | null {
 	return getDaemonClientState().connection;
-}
-
-function errorMessage(error: unknown): string {
-	return error instanceof Error ? error.message : String(error);
 }
 
 export function formatPeerMessageDeliveryContent(frame: PeerMessageDeliveryFrame): string {
@@ -388,7 +385,7 @@ export function registerDaemonClient(pi: ExtensionAPI, deps: PiSwarmDependencies
 				reporterConnection?.resolve(activeConnection);
 			} catch (error) {
 				if (generation !== connectionGeneration) return;
-				const message = error instanceof Error ? error.message : String(error);
+				const message = errorMessage(error);
 				publishDaemonStatus(ctx, { kind: "unavailable", message });
 				clearActiveAgentsWidget(ctx);
 				reporterConnection?.reject(error);

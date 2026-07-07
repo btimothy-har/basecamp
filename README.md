@@ -98,9 +98,9 @@ Use it to list, add, edit, or remove configured projects.
 | `/show-plan` | Show the current plan and task progress |
 | `/worktree [label]` | Switch to an existing Git-registered worktree |
 | `/create-pr` | Create or update a pull request |
+| `/code-review` | Run an independent multi-agent review of the current branch |
 | `/create-issue` | Draft and publish a GitHub issue through review |
 | `/pr-comments` | Address PR review comments |
-| `/pr-walkthrough` | Generate PR walkthrough |
 
 ### Subagents
 
@@ -113,7 +113,7 @@ list_agents({ awaitable: true })
 wait_for_agent({ handles: "<agent-handle>" })
 ```
 
-Built-in agents: `scout`, `worker`, `devils-advocate`, `security-specialist`, `testing-specialist`, `docs-specialist`, `code-clarity-specialist`.
+Built-in agents: `scout`, `worker`, `devils-advocate`, `security-specialist`, `testing-specialist`, `docs-specialist`, `code-clarity-specialist`, `conventions-specialist`, `general-reviewer`.
 
 Named read-only agents may fan out for parallel investigation and review. Be conservative with `worker`: do not parallelize `worker` against the same worktree until daemon mutation leases exist.
 
@@ -240,7 +240,7 @@ basecamp ships no default — a repo with no environment is a clean no-op. When 
 - Inherits the `BASECAMP_*` env vars plus `BASECAMP_REPO_ROOT` (the protected checkout path), so the command can copy or symlink artifacts from the source checkout if it chooses. basecamp does not prescribe what the command does.
 - **Blocks** activation with a **180-second timeout**; the fresh session starts only once setup finishes.
 - **Warn-and-proceed**: a non-zero exit or timeout surfaces a warning and is recorded in the handoff result, but activation and handoff still complete.
-- **Creation only**: it does not run when resuming/attaching an existing worktree, switching via `/worktree`, or for read-only review worktrees created by `/code-walkthrough`.
+- **Creation only**: it does not run when resuming/attaching an existing worktree or switching via `/worktree`.
 
 For anything beyond a one-liner, point the command at a script you maintain outside the repo, e.g. `"bash ~/.pi/basecamp/worktree-setup.sh"`.
 

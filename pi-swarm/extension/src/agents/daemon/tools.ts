@@ -7,6 +7,7 @@ import { discoverAgents } from "../discovery.ts";
 import { buildAgentLaunchSpec, buildAgentTitleBase, processEnvForSpawn } from "../launch.ts";
 import type { DaemonConnection } from "./client.ts";
 import { createDaemonClient } from "./client.ts";
+import { dispatchWithHandleRetry } from "./dispatch-retry.ts";
 import { type ListAgentItem, type MessageStatusResultFrame, type WaitResultFrame } from "./frames.ts";
 import { buildAgentHandle } from "./handles.ts";
 
@@ -477,16 +478,14 @@ export function registerAskAgentTool(
 				};
 			}
 
-			let agentHandle = buildAgentHandle();
-			let result: Awaited<ReturnType<typeof daemonClient.dispatchAgent>> | null = null;
 			const dispatchEnv = {
 				...processEnvForSpawn(),
 				...plan.environment,
 				BASECAMP_AGENT_TITLE: buildAskAgentTitle(targetHandle, params.question),
 			};
-
-			for (let attempt = 0; attempt < 3; attempt++) {
-				result = await daemonClient.dispatchAgent({
+			const { agentHandle, result } = await dispatchWithHandleRetry(
+				daemonClient,
+				(agentHandle) => ({
 					agentId,
 					agentHandle,
 					agentType: "ask",
@@ -497,10 +496,9 @@ export function registerAskAgentTool(
 					cwd: plan.spawnCwd,
 					env: { ...dispatchEnv, BASECAMP_AGENT_HANDLE: agentHandle },
 					forkFrom: targetHandle,
-				});
-				if (result.status !== "rejected" || result.reason !== "duplicate_agent_handle" || attempt === 2) break;
-				agentHandle = buildAgentHandle();
-			}
+				}),
+				{ initialHandle: buildAgentHandle(), attempts: 3 },
+			);
 
 			if (!result || result.status === "rejected") {
 				const message =
@@ -676,8 +674,6 @@ export function registerDaemonTools(
 				};
 			}
 
-			let agentHandle = requestedHandle ?? buildAgentHandle();
-			let result: Awaited<ReturnType<typeof daemonClient.dispatchAgent>> | null = null;
 			const dispatchEnv = {
 				...processEnvForSpawn(),
 				...plan.environment,
@@ -685,8 +681,9 @@ export function registerDaemonTools(
 			};
 
 			const attempts = requestedHandle ? 1 : 3;
-			for (let attempt = 0; attempt < attempts; attempt++) {
-				result = await daemonClient.dispatchAgent({
+			const { agentHandle, result } = await dispatchWithHandleRetry(
+				daemonClient,
+				(agentHandle) => ({
 					agentId,
 					agentHandle,
 					agentType: plan.agentLabel ?? "ad-hoc",
@@ -696,11 +693,9 @@ export function registerDaemonTools(
 					task: taskSpec,
 					cwd: plan.spawnCwd,
 					env: { ...dispatchEnv, BASECAMP_AGENT_HANDLE: agentHandle },
-				});
-				if (result.status !== "rejected" || result.reason !== "duplicate_agent_handle" || attempt === attempts - 1)
-					break;
-				agentHandle = buildAgentHandle();
-			}
+				}),
+				{ initialHandle: requestedHandle ?? buildAgentHandle(), attempts },
+			);
 
 			if (!result || result.status === "rejected") {
 				return {
