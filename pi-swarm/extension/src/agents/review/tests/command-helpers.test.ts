@@ -20,10 +20,10 @@ interface PersistedArtifact {
 
 const result: ReviewResult = {
 	scope: {
-		base: "main",
-		head: "HEAD",
+		base: "origin/main",
+		mergeBase: "abc1234",
 		cwd: "/repo",
-		label: "branch feature → main",
+		label: "branch feature → origin/main",
 	},
 	verdict: {
 		decision: "approve",

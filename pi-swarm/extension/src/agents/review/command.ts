@@ -18,13 +18,28 @@ import { transposeReport } from "./transpose.ts";
 
 async function resolveDefaultBase(pi: ExtensionAPI, cwd: string): Promise<string> {
 	const head = await exec(pi, "git", ["symbolic-ref", "--quiet", "--short", "refs/remotes/origin/HEAD"], { cwd });
-	const ref = head.stdout.trim();
-	return ref.startsWith("origin/") ? ref.slice("origin/".length) : "main";
+	return head.stdout.trim() || "main";
 }
 
 async function resolveCurrentBranch(pi: ExtensionAPI, cwd: string): Promise<string> {
 	const branch = await exec(pi, "git", ["branch", "--show-current"], { cwd });
 	return branch.stdout.trim() || "HEAD";
+}
+
+async function resolveMergeBase(pi: ExtensionAPI, cwd: string, base: string): Promise<string> {
+	const result = await exec(pi, "git", ["merge-base", base, "HEAD"], { cwd });
+	const sha = result.stdout.trim();
+	return result.code === 0 && sha ? sha : base;
+}
+
+async function hasReviewableChanges(pi: ExtensionAPI, cwd: string, mergeBase: string): Promise<boolean> {
+	const tracked = await exec(pi, "git", ["diff", "--quiet", mergeBase, "--"], { cwd });
+	if (tracked.code === 1) return true;
+	if (tracked.code !== 0) {
+		throw new Error(tracked.stderr.trim() || `git diff failed with exit code ${tracked.code}`);
+	}
+	const untracked = await exec(pi, "git", ["ls-files", "--others", "--exclude-standard"], { cwd });
+	return untracked.stdout.trim() !== "";
 }
 
 export function registerReviewCommand(pi: ExtensionAPI, deps: PiSwarmDependencies): void {
@@ -55,13 +70,10 @@ export function registerReviewCommand(pi: ExtensionAPI, deps: PiSwarmDependencie
 					return;
 				}
 				const currentBranch = await resolveCurrentBranch(pi, cwd);
-				const diff = await exec(pi, "git", ["diff", "--quiet", `${base}...HEAD`], { cwd });
-				if (diff.code === 0) {
-					ctx.ui.notify(`No changes to review between ${base} and HEAD.`, "info");
+				const mergeBase = await resolveMergeBase(pi, cwd, base);
+				if (!(await hasReviewableChanges(pi, cwd, mergeBase))) {
+					ctx.ui.notify(`No changes to review on ${currentBranch} (vs ${base}).`, "info");
 					return;
-				}
-				if (diff.code !== 1) {
-					throw new Error(diff.stderr.trim() || `git diff failed with exit code ${diff.code}`);
 				}
 
 				const transposer = await resolveAliasedModel(ctx, "fast");
@@ -72,7 +84,7 @@ export function registerReviewCommand(pi: ExtensionAPI, deps: PiSwarmDependencie
 
 				const scope: ReviewScope = {
 					base,
-					head: "HEAD",
+					mergeBase,
 					cwd,
 					label: `branch ${currentBranch} → ${base}`,
 				};

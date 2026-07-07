@@ -5,8 +5,8 @@ import type { ReviewResult } from "../orchestrate.ts";
 
 const result: ReviewResult = {
 	scope: {
-		base: "main",
-		head: "feature",
+		base: "origin/main",
+		mergeBase: "abc1234",
 		cwd: "/repo",
 		label: "feature review",
 	},

@@ -4,7 +4,7 @@ import { computeVerdict, mergeFindings, type Verdict } from "./synthesis.ts";
 
 export interface ReviewScope {
 	base: string;
-	head: string;
+	mergeBase: string;
 	cwd: string;
 	label: string;
 }
@@ -66,7 +66,7 @@ class ReviewerFailure extends Error {
 }
 
 export function buildReviewerBrief(scope: ReviewScope): string {
-	return `Review the code changes in the diff between ${scope.base} and ${scope.head} in the working directory ${scope.cwd}. Run git yourself to inspect the changes (e.g. git diff ${scope.base}...${scope.head}, git diff --stat, and read the changed files directly). Assess only what your specialist role covers. Report findings only — do not modify files or write fixes.`;
+	return `Review the code changes on this branch (base ${scope.base}) in the working directory ${scope.cwd}, including any uncommitted work. Run git yourself: \`git diff ${scope.mergeBase}\` shows every committed and uncommitted change since the branch diverged; also run \`git status --short\` for untracked files and read the changed and added files directly. Assess only what your specialist role covers. Report findings only — do not modify files or write fixes.`;
 }
 
 export async function runReview(scope: ReviewScope, deps: OrchestrateDeps): Promise<RunReviewResult> {
