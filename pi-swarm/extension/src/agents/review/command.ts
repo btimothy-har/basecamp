@@ -26,10 +26,18 @@ async function resolveCurrentBranch(pi: ExtensionAPI, cwd: string): Promise<stri
 	return branch.stdout.trim() || "HEAD";
 }
 
-async function resolveMergeBase(pi: ExtensionAPI, cwd: string, base: string): Promise<string> {
-	const result = await exec(pi, "git", ["merge-base", base, "HEAD"], { cwd });
+async function tryMergeBase(pi: ExtensionAPI, cwd: string, ref: string): Promise<string | null> {
+	const result = await exec(pi, "git", ["merge-base", ref, "HEAD"], { cwd });
 	const sha = result.stdout.trim();
-	return result.code === 0 && sha ? sha : base;
+	return result.code === 0 && sha ? sha : null;
+}
+
+async function resolveMergeBase(pi: ExtensionAPI, cwd: string, base: string): Promise<string> {
+	const fromBase = await tryMergeBase(pi, cwd, base);
+	if (fromBase) return fromBase;
+	const fromMain = base === "main" ? null : await tryMergeBase(pi, cwd, "main");
+	if (fromMain) return fromMain;
+	throw new Error(`No merge base between '${base}' (or 'main') and HEAD; cannot determine the review scope.`);
 }
 
 async function hasReviewableChanges(pi: ExtensionAPI, cwd: string, mergeBase: string): Promise<boolean> {
