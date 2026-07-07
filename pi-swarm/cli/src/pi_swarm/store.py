@@ -437,6 +437,23 @@ class Store:
             row = connection.execute("SELECT * FROM agents WHERE agent_handle = ?", (agent_handle,)).fetchone()
             return dict(row) if row is not None else None
 
+    def get_subtree_agent_ids(self, root_agent_id: str) -> list[str]:
+        """Return root agent id and all transitive descendant agent ids."""
+
+        with self._connect() as connection:
+            rows = connection.execute(
+                """
+                WITH RECURSIVE subtree(id) AS (
+                    SELECT id FROM agents WHERE id = ?
+                    UNION
+                    SELECT a.id FROM agents a JOIN subtree s ON a.parent_id = s.id
+                )
+                SELECT id FROM subtree
+                """,
+                (root_agent_id,),
+            ).fetchall()
+            return [row[0] for row in rows]
+
     def create_message(
         self,
         *,

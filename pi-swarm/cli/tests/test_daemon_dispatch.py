@@ -73,6 +73,46 @@ class _FailingStore:
         raise AssertionError
 
 
+def _upsert_test_agent(
+    store: Store,
+    *,
+    agent_id: str,
+    parent_id: str | None,
+    depth: int,
+    agent_handle: str | None = None,
+    role: str = "agent",
+) -> None:
+    store.upsert_agent(
+        agent_id=agent_id,
+        agent_handle=agent_handle,
+        parent_id=parent_id,
+        sibling_group=parent_id,
+        depth=depth,
+        role=role,
+        session_name=agent_id,
+        cwd=f"/tmp/{agent_id}",
+    )
+
+
+def _create_live_run(
+    store: Store,
+    registry: Registry,
+    *,
+    agent_id: str,
+    run_id: str,
+    dispatcher_id: str,
+    pid: int,
+) -> None:
+    store.create_run(
+        run_id=run_id,
+        agent_id=agent_id,
+        dispatcher_id=dispatcher_id,
+        spec={"task": run_id},
+        report_token_hash="hash",
+    )
+    registry.set_process(run_id, _FakePidProcess(pid))
+
+
 @pytest.fixture(autouse=True)
 def _isolate_run_result_home(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("HOME", str(tmp_path / "home"))
@@ -272,7 +312,7 @@ async def test_disconnect_reaper_marks_live_run_failed_terminates_process_and_wa
     def record_terminate(pgid: int | None, **_kwargs: object) -> None:
         terminated.append(pgid)
 
-    monkeypatch.setattr("pi_swarm.service.terminate_process_group", record_terminate)
+    monkeypatch.setattr("pi_swarm.service.terminate_process_group_if_runner", record_terminate)
     store.create_run(run_id=run_id, agent_id="agent-disconnected", dispatcher_id="node-1", spec={})
     store.set_run_pgid(run_id=run_id, pgid=4321)
     registry.set_run_owner(run_id, "node-1")
@@ -428,7 +468,7 @@ async def test_cancel_agent_authorized_live_run_fails_run_terminates_process_and
     def record_terminate(pgid: int | None, **_kwargs: object) -> None:
         terminated.append(pgid)
 
-    monkeypatch.setattr("pi_swarm.service.terminate_process_group", record_terminate)
+    monkeypatch.setattr("pi_swarm.service.terminate_process_group_if_runner", record_terminate)
     store.upsert_agent(
         agent_id="root",
         parent_id=None,
@@ -487,6 +527,117 @@ async def test_cancel_agent_authorized_live_run_fails_run_terminates_process_and
 
 
 @pytest.mark.asyncio
+async def test_cancel_agent_recursively_cancels_live_subtree_runs_and_wakes_waiters(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    store = Store(db_path=tmp_path / "daemon.db")
+    registry = Registry()
+    terminated: list[int | None] = []
+
+    def record_terminate(pgid: int | None, **_kwargs: object) -> None:
+        terminated.append(pgid)
+
+    monkeypatch.setattr("pi_swarm.service.terminate_process_group_if_runner", record_terminate)
+    _upsert_test_agent(store, agent_id="root", parent_id=None, depth=0, role="session")
+    _upsert_test_agent(store, agent_id="target", agent_handle="target-handle", parent_id="root", depth=1)
+    _upsert_test_agent(store, agent_id="child", parent_id="target", depth=2)
+    _upsert_test_agent(store, agent_id="grandchild", parent_id="child", depth=3)
+    _create_live_run(store, registry, agent_id="target", run_id="run-target", dispatcher_id="root", pid=1001)
+    _create_live_run(store, registry, agent_id="child", run_id="run-child", dispatcher_id="target", pid=1002)
+    _create_live_run(
+        store,
+        registry,
+        agent_id="grandchild",
+        run_id="run-grandchild",
+        dispatcher_id="child",
+        pid=1003,
+    )
+    waiters = [
+        Waiter(
+            waiter_id=f"waiter-{run_id}",
+            run_ids={run_id},
+            future=asyncio.get_running_loop().create_future(),
+        )
+        for run_id in ["run-target", "run-child", "run-grandchild"]
+    ]
+    for waiter in waiters:
+        registry.add_waiter(waiter)
+
+    ack = await cancel_agent(
+        frame=CancelFrame(
+            type="cancel",
+            v=PROTOCOL_VERSION,
+            request_id="cancel-subtree",
+            target_handle="target-handle",
+        ),
+        requester_node_id="root",
+        store=store,
+        registry=registry,
+    )
+
+    assert ack.status == "cancelled"
+    assert ack.error is None
+    for run_id in ["run-target", "run-child", "run-grandchild"]:
+        run = store.get_run(run_id)
+        assert run is not None
+        assert run["status"] == "failed"
+        assert run["result"] is None
+        assert run["error"] == "cancelled"
+    assert terminated == [1001, 1002, 1003]
+    assert all(waiter.future.done() for waiter in waiters)
+
+
+@pytest.mark.asyncio
+async def test_cancel_agent_terminal_target_with_live_descendant_returns_cancelled(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    store = Store(db_path=tmp_path / "daemon.db")
+    registry = Registry()
+    terminated: list[int | None] = []
+
+    def record_terminate(pgid: int | None, **_kwargs: object) -> None:
+        terminated.append(pgid)
+
+    monkeypatch.setattr("pi_swarm.service.terminate_process_group_if_runner", record_terminate)
+    _upsert_test_agent(store, agent_id="root", parent_id=None, depth=0, role="session")
+    _upsert_test_agent(store, agent_id="target", agent_handle="target-handle", parent_id="root", depth=1)
+    _upsert_test_agent(store, agent_id="child", parent_id="target", depth=2)
+    store.create_run(
+        run_id="run-target-terminal",
+        agent_id="target",
+        dispatcher_id="root",
+        spec={"task": "done"},
+        report_token_hash="hash",
+    )
+    store.set_run_result(run_id="run-target-terminal", status="completed", result="done", error=None)
+    _create_live_run(store, registry, agent_id="child", run_id="run-child-live", dispatcher_id="target", pid=2002)
+
+    ack = await cancel_agent(
+        frame=CancelFrame(
+            type="cancel",
+            v=PROTOCOL_VERSION,
+            request_id="cancel-descendant",
+            target_handle="target-handle",
+        ),
+        requester_node_id="root",
+        store=store,
+        registry=registry,
+    )
+
+    child_run = store.get_run("run-child-live")
+    target_run = store.get_run("run-target-terminal")
+    assert ack.status == "cancelled"
+    assert child_run is not None
+    assert child_run["status"] == "failed"
+    assert child_run["error"] == "cancelled"
+    assert target_run is not None
+    assert target_run["status"] == "completed"
+    assert terminated == [2002]
+
+
+@pytest.mark.asyncio
 async def test_disconnect_reaper_cancel_prevents_reap(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -494,7 +645,10 @@ async def test_disconnect_reaper_cancel_prevents_reap(
     store = Store(db_path=tmp_path / "daemon.db")
     registry = Registry()
     terminated: list[int | None] = []
-    monkeypatch.setattr("pi_swarm.service.terminate_process_group", lambda pgid, **_kwargs: terminated.append(pgid))
+    monkeypatch.setattr(
+        "pi_swarm.service.terminate_process_group_if_runner",
+        lambda pgid, **_kwargs: terminated.append(pgid),
+    )
     store.create_run(run_id="run-still-live", agent_id="agent-still-live", dispatcher_id="node-1", spec={})
     registry.set_run_owner("run-still-live", "node-1")
     registry.set_process("run-still-live", _FakePidProcess(4321))
@@ -517,7 +671,10 @@ async def test_disconnect_reaper_no_live_runs_noop(
     store = Store(db_path=tmp_path / "daemon.db")
     registry = Registry()
     terminated: list[int | None] = []
-    monkeypatch.setattr("pi_swarm.service.terminate_process_group", lambda pgid, **_kwargs: terminated.append(pgid))
+    monkeypatch.setattr(
+        "pi_swarm.service.terminate_process_group_if_runner",
+        lambda pgid, **_kwargs: terminated.append(pgid),
+    )
     store.create_run(run_id="run-no-process", agent_id="agent-no-process", dispatcher_id="node-1", spec={})
     registry.set_run_owner("run-no-process", "node-1")
 
@@ -527,6 +684,63 @@ async def test_disconnect_reaper_no_live_runs_noop(
     assert run is not None
     assert run["status"] == "running"
     assert terminated == []
+
+
+@pytest.mark.asyncio
+async def test_disconnect_reaper_skips_termination_when_run_already_finalized(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    store = Store(db_path=tmp_path / "daemon.db")
+    registry = Registry()
+    terminated: list[int | None] = []
+    monkeypatch.setattr(
+        "pi_swarm.service.terminate_process_group_if_runner",
+        lambda pgid, **_kwargs: terminated.append(pgid),
+    )
+    store.create_run(run_id="run-terminal", agent_id="agent-terminal", dispatcher_id="node-1", spec={})
+    store.set_run_result(run_id="run-terminal", status="completed", result="done", error=None)
+    registry.set_run_owner("run-terminal", "node-1")
+    registry.set_process("run-terminal", _FakePidProcess(4321))
+
+    await _run_disconnect_reaper(node_id="node-1", registry=registry, store=store, grace_s=0)
+
+    assert store.get_run("run-terminal")["status"] == "completed"
+    assert terminated == []
+
+
+@pytest.mark.asyncio
+async def test_disconnect_reaper_mid_loop_reconnect_stops_reaping_remaining_runs(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    store = Store(db_path=tmp_path / "daemon.db")
+    registry = Registry()
+    terminated: list[int | None] = []
+    original_set_run_result_if_unset = store.set_run_result_if_unset
+
+    def record_terminate(pgid: int | None, **_kwargs: object) -> None:
+        terminated.append(pgid)
+
+    def reconnect_after_first_finalize(**kwargs: object) -> bool:
+        finalized = original_set_run_result_if_unset(**kwargs)
+        registry.set_connection("node-1", object())
+        return finalized
+
+    monkeypatch.setattr("pi_swarm.service.terminate_process_group_if_runner", record_terminate)
+    monkeypatch.setattr(store, "set_run_result_if_unset", reconnect_after_first_finalize)
+    store.create_run(run_id="run-first", agent_id="agent-first", dispatcher_id="node-1", spec={})
+    store.create_run(run_id="run-second", agent_id="agent-second", dispatcher_id="node-1", spec={})
+    registry.set_run_owner("run-first", "node-1")
+    registry.set_run_owner("run-second", "node-1")
+    registry.set_process("run-first", _FakePidProcess(1111))
+    registry.set_process("run-second", _FakePidProcess(2222))
+
+    await _run_disconnect_reaper(node_id="node-1", registry=registry, store=store, grace_s=0)
+
+    assert store.get_run("run-first")["status"] == "failed"
+    assert store.get_run("run-second")["status"] == "running"
+    assert terminated == [1111]
 
 
 def test_build_runner_argv_injects_fork_before_task() -> None:
