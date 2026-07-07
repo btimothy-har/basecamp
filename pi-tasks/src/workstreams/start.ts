@@ -61,8 +61,14 @@ export function defaultWorkstreamStartDeps(): WorkstreamStartDeps {
 		stampHandle: stampWorkstreamLaunchAgentHandle,
 		deriveHandle: deriveCurrentAgentHandle,
 		enterExploreMode: (event, ctx) => {
-			ensureCurrentSessionStateForEvent(event, ctx);
-			setAgentMode("planning");
+			// Best-effort: mode setup must never block workstream startup (brief injection) when cross-extension
+			// session state is not ready.
+			try {
+				ensureCurrentSessionStateForEvent(event, ctx);
+				setAgentMode("planning");
+			} catch (err) {
+				ctx.ui.notify(`basecamp: could not enter Explore mode for workstream — ${errorMessage(err)}`, "warning");
+			}
 		},
 	};
 }

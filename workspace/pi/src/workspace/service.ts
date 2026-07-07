@@ -136,7 +136,12 @@ export class WorkspaceRuntimeService implements WorkspaceService {
 				label = path.basename(gitInfo.toplevel);
 			}
 
-			const record = findWorktreeRecord(await gitWorktreeRecords(this.pi, repo.root), gitInfo.toplevel);
+			let record: ReturnType<typeof findWorktreeRecord> = null;
+			try {
+				record = findWorktreeRecord(await gitWorktreeRecords(this.pi, repo.root), gitInfo.toplevel);
+			} catch {
+				// `git worktree list` can fail (e.g. locked/corrupt); still recognize the worktree, without branch info.
+			}
 			this.applyWorktree({
 				kind: "git-worktree",
 				label,
