@@ -10,6 +10,7 @@ import { getActiveDaemonConnection } from "../daemon/index.ts";
 import { discoverAgents } from "../discovery.ts";
 import { errorMessage } from "../errors.ts";
 import { buildAgentLaunchSpec, processEnvForSpawn } from "../launch.ts";
+import { annotateFindings } from "./annotate-overlay.ts";
 import { isSubagent, persistReviewArtifact } from "./command-helpers.ts";
 import { formatReviewPrompt } from "./format.ts";
 import { type OrchestrateDeps, REVIEWERS, type ReviewerSpec, type ReviewScope, runReview } from "./orchestrate.ts";
@@ -154,10 +155,32 @@ export function registerReviewCommand(pi: ExtensionAPI, deps: PiSwarmDependencie
 					},
 				};
 
-				const result = await runReview(scope, orchestrateDeps);
-				const artifactPath = persistReviewArtifact(result);
-				pi.sendUserMessage(formatReviewPrompt(result, artifactPath));
-				ctx.ui.notify(`Code review complete: ${result.verdict.decision} (${result.findings.length} findings)`, "info");
+				const outcome = await runReview(scope, orchestrateDeps);
+				if (!outcome.ok) {
+					ctx.ui.notify(
+						`Code review failed: reviewer '${outcome.failedReviewer}' did not produce findings — ${outcome.reason}. No verdict was produced; re-run /code-review.`,
+						"error",
+					);
+					return;
+				}
+				const result = outcome.result;
+
+				let reactions: (string | null)[] | null = null;
+				let annotated = false;
+				if (ctx.hasUI) {
+					const annotation = await annotateFindings(ctx.ui, result.findings);
+					if (!annotation.cancelled) {
+						reactions = annotation.reactions;
+						annotated = true;
+					}
+				}
+
+				const artifactPath = persistReviewArtifact(result, reactions);
+				pi.sendUserMessage(formatReviewPrompt(result, artifactPath, annotated));
+				ctx.ui.notify(
+					`Code review complete: ${result.verdict.decision} (${result.findings.length} findings, ${annotated ? "annotated" : "not annotated"})`,
+					"info",
+				);
 			} catch (error) {
 				ctx.ui.notify(`Code review failed: ${errorMessage(error)}`, "error");
 			}

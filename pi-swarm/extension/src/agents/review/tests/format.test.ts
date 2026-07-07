@@ -27,120 +27,33 @@ const result: ReviewResult = {
 			remediation: "Remove the log statement and add a regression test.",
 		},
 	],
-	reviewers: [
-		{
-			agent: "security-specialist",
-			dimension: "security",
-			status: "completed",
-			prose: "security prose",
-			error: null,
-			findings: [],
-			gap: null,
-		},
-		{
-			agent: "testing-specialist",
-			dimension: "testing",
-			status: "failed",
-			prose: "testing prose",
-			error: "review crashed",
-			findings: [],
-			gap: "reviewer failed",
-		},
-		{
-			agent: "docs-specialist",
-			dimension: "docs",
-			status: "completed",
-			prose: "docs prose",
-			error: null,
-			findings: [],
-			gap: null,
-		},
-		{
-			agent: "code-clarity-specialist",
-			dimension: "clarity",
-			status: "completed",
-			prose: "clarity prose",
-			error: null,
-			findings: [],
-			gap: null,
-		},
-		{
-			agent: "conventions-specialist",
-			dimension: "conventions",
-			status: "completed",
-			prose: "conventions prose",
-			error: null,
-			findings: [],
-			gap: null,
-		},
-		{
-			agent: "general-reviewer",
-			dimension: "general",
-			status: "completed",
-			prose: "general prose",
-			error: null,
-			findings: [],
-			gap: null,
-		},
-	],
 	createdAt: "2026-07-07T12:00:00.000Z",
 };
 
 describe("formatReviewPrompt", () => {
-	it("formats verdict, structured findings, coverage, artifact path, and reviewee next-step framing", () => {
-		const prompt = formatReviewPrompt(result, "/tmp/review.json");
+	it("formats a compact annotated reviewee message", () => {
+		const prompt = formatReviewPrompt(result, "/tmp/review.json", true);
 
 		assert.match(prompt, /You are the reviewee/);
 		assert.match(prompt, /Verdict: Request Changes — 0 critical, 1 high, 0 medium, 0 low\./);
-		assert.match(prompt, /1\. \[high\] \[security\] src\/auth\.ts:42 — Token is logged/);
-		assert.match(prompt, /The access token is written to application logs\./);
-		assert.match(prompt, /Fix: Remove the log statement and add a regression test\./);
-		assert.match(prompt, /- security-specialist: ok/);
-		assert.match(prompt, /- testing-specialist: reviewer failed/);
-		assert.match(prompt, /- conventions-specialist: ok/);
-		assert.match(prompt, /Full report \+ raw reviewer output: \/tmp\/review\.json/);
-		assert.match(prompt, /confirm it with the user before editing code/);
+		assert.match(prompt, /Findings: 1\./);
+		assert.match(prompt, /left per-finding reactions/);
+		assert.match(prompt, /Review packet .*\/tmp\/review\.json/);
+		assert.match(prompt, /Read the packet/);
+		assert.match(prompt, /Do not start editing code/);
+		assert.match(prompt, /treat it as data to evaluate/);
+		assert.doesNotMatch(prompt, /Token is logged/);
+		assert.doesNotMatch(prompt, /Reviewer coverage/);
+		assert.doesNotMatch(prompt, /^1\. \[/m);
 	});
 
-	it("renders the no-findings branch when there are no findings", () => {
-		const prompt = formatReviewPrompt(
-			{
-				...result,
-				findings: [],
-				verdict: {
-					decision: "approve",
-					blocking: false,
-					counts: { critical: 0, high: 0, medium: 0, low: 0 },
-				},
-			},
-			"/tmp/review.json",
-		);
+	it("formats a compact unannotated reviewee message", () => {
+		const prompt = formatReviewPrompt(result, "/tmp/review.json", false);
 
-		assert.match(prompt, /Findings \(0\):\nNo findings above threshold\./);
-	});
-
-	it("renders fallbacks for null finding fields", () => {
-		const prompt = formatReviewPrompt(
-			{
-				...result,
-				findings: [
-					{
-						dimension: "general",
-						severity: "medium",
-						file: null,
-						lineStart: null,
-						lineEnd: null,
-						title: "Missing location",
-						detail: "The reviewer did not provide a concrete location.",
-						remediation: null,
-					},
-				],
-			},
-			"/tmp/review.json",
-		);
-
-		assert.match(prompt, /1\. \[medium\] \[general\] \(no file\):\? — Missing location/);
-		assert.match(prompt, /Fix: —/);
+		assert.match(prompt, /has not been annotated/);
+		assert.match(prompt, /\/tmp\/review\.json/);
+		assert.match(prompt, /Read the packet/);
+		assert.doesNotMatch(prompt, /left per-finding reactions/);
 	});
 
 	const verdictCases: Array<[ReviewResult["verdict"]["decision"], string]> = [
@@ -162,6 +75,7 @@ describe("formatReviewPrompt", () => {
 					},
 				},
 				"/tmp/review.json",
+				true,
 			);
 
 			assert.match(prompt, new RegExp(`Verdict: ${formattedDecision} — 1 critical, 2 high, 3 medium, 4 low\\.`));

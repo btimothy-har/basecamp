@@ -31,28 +31,21 @@ export interface ReviewerWaitResult {
 	error: string | null;
 }
 
-export interface ReviewerOutcome {
-	agent: string;
-	dimension: Dimension;
-	status: ReviewerStatus;
-	prose: string | null;
-	error: string | null;
-	findings: Finding[];
-	gap: string | null;
-}
-
 export interface ReviewResult {
 	scope: ReviewScope;
 	verdict: Verdict;
 	findings: Finding[];
-	reviewers: ReviewerOutcome[];
 	createdAt: string;
 }
+
+export type RunReviewResult =
+	| { ok: true; result: ReviewResult }
+	| { ok: false; failedReviewer: string; reason: string };
 
 export interface OrchestrateDeps {
 	dispatchReviewer: (spec: ReviewerSpec, brief: string) => Promise<string>;
 	waitForReviewers: (handles: string[]) => Promise<Map<string, ReviewerWaitResult>>;
-	transpose: (prose: string, dimension: Dimension) => Promise<Finding[]>;
+	transpose: (output: string, dimension: Dimension) => Promise<Finding[]>;
 	now?: () => Date;
 }
 
@@ -61,157 +54,102 @@ interface DispatchedReviewer {
 	handle: string;
 }
 
-function reviewerGap(status: ReviewerStatus): string {
-	if (status === "running") return "reviewer running (timed out)";
-	return `reviewer ${status}`;
+class ReviewerFailure extends Error {
+	readonly agent: string;
+	readonly reason: string;
+
+	constructor(agent: string, reason: string) {
+		super(reason);
+		this.agent = agent;
+		this.reason = reason;
+	}
 }
 
 export function buildReviewerBrief(scope: ReviewScope): string {
 	return `Review the code changes in the diff between ${scope.base} and ${scope.head} in the working directory ${scope.cwd}. Run git yourself to inspect the changes (e.g. git diff ${scope.base}...${scope.head}, git diff --stat, and read the changed files directly). Assess only what your specialist role covers. Report findings only — do not modify files or write fixes.`;
 }
 
-export async function runReview(scope: ReviewScope, deps: OrchestrateDeps): Promise<ReviewResult> {
+export async function runReview(scope: ReviewScope, deps: OrchestrateDeps): Promise<RunReviewResult> {
 	const brief = buildReviewerBrief(scope);
 	const dispatchResults = await Promise.allSettled(
-		REVIEWERS.map(async (spec) => ({ spec, handle: await deps.dispatchReviewer(spec, brief) })),
+		REVIEWERS.map((spec) => deps.dispatchReviewer(spec, brief).then((handle) => ({ spec, handle }))),
 	);
 
-	const dispatchedByAgent = new Map<string, DispatchedReviewer>();
-	const outcomesByAgent = new Map<string, ReviewerOutcome>();
-
-	for (const [index, dispatchResult] of dispatchResults.entries()) {
+	const dispatched: DispatchedReviewer[] = [];
+	for (const [index, result] of dispatchResults.entries()) {
 		const spec = REVIEWERS[index];
 		if (!spec) continue;
 
-		if (dispatchResult.status === "fulfilled") {
-			dispatchedByAgent.set(spec.agent, dispatchResult.value);
-			continue;
+		if (result.status === "rejected") {
+			return {
+				ok: false,
+				failedReviewer: spec.agent,
+				reason: `dispatch failed: ${errorMessage(result.reason)}`,
+			};
 		}
 
-		const message = errorMessage(dispatchResult.reason);
-		outcomesByAgent.set(spec.agent, {
-			agent: spec.agent,
-			dimension: spec.dimension,
-			status: "failed",
-			prose: null,
-			error: message,
-			findings: [],
-			gap: `dispatch failed: ${message}`,
-		});
+		dispatched.push(result.value);
 	}
 
-	const dispatched = REVIEWERS.map((spec) => dispatchedByAgent.get(spec.agent)).filter(
-		(reviewer): reviewer is DispatchedReviewer => reviewer !== undefined,
-	);
 	const handles = dispatched.map((reviewer) => reviewer.handle);
 
-	let waitResults: Map<string, ReviewerWaitResult> | null = null;
-	let waitError: string | null = null;
-	if (handles.length > 0) {
-		try {
-			waitResults = await deps.waitForReviewers(handles);
-		} catch (error) {
-			waitError = errorMessage(error);
-		}
+	let waitResults: Map<string, ReviewerWaitResult>;
+	try {
+		waitResults = await deps.waitForReviewers(handles);
+	} catch (error) {
+		return {
+			ok: false,
+			failedReviewer: dispatched[0]!.spec.agent,
+			reason: `wait failed: ${errorMessage(error)}`,
+		};
 	}
 
 	const transposeResults = await Promise.allSettled(
-		dispatched.map(async ({ spec, handle }): Promise<ReviewerOutcome> => {
-			if (waitError !== null) {
-				return {
-					agent: spec.agent,
-					dimension: spec.dimension,
-					status: "unknown",
-					prose: null,
-					error: waitError,
-					findings: [],
-					gap: `wait failed: ${waitError}`,
-				};
+		dispatched.map(async ({ spec, handle }) => {
+			const wait = waitResults.get(handle) ?? { status: "unknown", result: null, error: null };
+			if (wait.status !== "completed") {
+				throw new ReviewerFailure(
+					spec.agent,
+					wait.status === "running" ? "reviewer running (timed out)" : `reviewer ${wait.status}`,
+				);
 			}
 
-			const waitResult = waitResults?.get(handle) ?? { status: "unknown", result: null, error: null };
-			if (waitResult.status !== "completed") {
-				return {
-					agent: spec.agent,
-					dimension: spec.dimension,
-					status: waitResult.status,
-					prose: waitResult.result,
-					error: waitResult.error,
-					findings: [],
-					gap: reviewerGap(waitResult.status),
-				};
+			const output = wait.result;
+			if (output === null || output.trim() === "") {
+				throw new ReviewerFailure(spec.agent, "reviewer returned no output");
 			}
 
-			const prose = waitResult.result;
-			if (prose === null || prose.trim() === "") {
-				return {
-					agent: spec.agent,
-					dimension: spec.dimension,
-					status: "completed",
-					prose,
-					error: waitResult.error,
-					findings: [],
-					gap: "reviewer returned no output",
-				};
-			}
-
-			try {
-				return {
-					agent: spec.agent,
-					dimension: spec.dimension,
-					status: "completed",
-					prose,
-					error: waitResult.error,
-					findings: await deps.transpose(prose, spec.dimension),
-					gap: null,
-				};
-			} catch (error) {
-				const message = errorMessage(error);
-				return {
-					agent: spec.agent,
-					dimension: spec.dimension,
-					status: "completed",
-					prose,
-					error: message,
-					findings: [],
-					gap: `transpose failed: ${message}`,
-				};
-			}
+			const findings = await deps.transpose(output, spec.dimension);
+			return { spec, findings };
 		}),
 	);
 
-	for (const [index, transposeResult] of transposeResults.entries()) {
+	const outcomes: { spec: ReviewerSpec; findings: Finding[] }[] = [];
+	for (const [index, result] of transposeResults.entries()) {
 		const dispatchedReviewer = dispatched[index];
 		if (!dispatchedReviewer) continue;
 
-		if (transposeResult.status === "fulfilled") {
-			outcomesByAgent.set(transposeResult.value.agent, transposeResult.value);
+		if (result.status === "fulfilled") {
+			outcomes.push(result.value);
 			continue;
 		}
 
-		const message = errorMessage(transposeResult.reason);
-		outcomesByAgent.set(dispatchedReviewer.spec.agent, {
-			agent: dispatchedReviewer.spec.agent,
-			dimension: dispatchedReviewer.spec.dimension,
-			status: "unknown",
-			prose: null,
-			error: message,
-			findings: [],
-			gap: `transpose failed: ${message}`,
-		});
+		const reason =
+			result.reason instanceof ReviewerFailure
+				? result.reason.reason
+				: `transpose failed: ${errorMessage(result.reason)}`;
+		return { ok: false, failedReviewer: dispatchedReviewer.spec.agent, reason };
 	}
 
-	const reviewers = REVIEWERS.map((spec) => outcomesByAgent.get(spec.agent)).filter(
-		(outcome): outcome is ReviewerOutcome => outcome !== undefined,
-	);
-	const findings = mergeFindings(reviewers.map((outcome) => outcome.findings));
+	const findings = mergeFindings(outcomes.map((outcome) => outcome.findings));
 	const verdict = computeVerdict(findings);
-
 	return {
-		scope,
-		verdict,
-		findings,
-		reviewers,
-		createdAt: (deps.now?.() ?? new Date()).toISOString(),
+		ok: true,
+		result: {
+			scope,
+			verdict,
+			findings,
+			createdAt: (deps.now?.() ?? new Date()).toISOString(),
+		},
 	};
 }

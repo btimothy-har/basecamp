@@ -36,6 +36,12 @@ function handleFor(spec: ReviewerSpec): string {
 	return `handle:${spec.agent}`;
 }
 
+function completedWaitResults(): Map<string, ReviewerWaitResult> {
+	return new Map<string, ReviewerWaitResult>(
+		REVIEWERS.map((spec) => [handleFor(spec), { status: "completed", result: `${spec.dimension} prose`, error: null }]),
+	);
+}
+
 describe("buildReviewerBrief", () => {
 	it("builds a fixed scope-only brief", () => {
 		assert.equal(
@@ -46,16 +52,11 @@ describe("buildReviewerBrief", () => {
 });
 
 describe("runReview", () => {
-	it("dispatches every reviewer, transposes completed prose, and returns merged ordered findings", async () => {
+	it("dispatches every reviewer, transposes completed output, and returns merged ordered findings", async () => {
 		const dispatched: { spec: ReviewerSpec; brief: string }[] = [];
 		const waitedHandles: string[][] = [];
-		const transposed: { prose: string; dimension: Dimension }[] = [];
-		const waitResults = new Map<string, ReviewerWaitResult>(
-			REVIEWERS.map((spec) => [
-				handleFor(spec),
-				{ status: "completed", result: `${spec.dimension} prose`, error: null },
-			]),
-		);
+		const transposed: { output: string; dimension: Dimension }[] = [];
+		const waitResults = completedWaitResults();
 		const findingsByDimension = new Map<Dimension, Finding[]>([
 			[
 				"security",
@@ -97,8 +98,8 @@ describe("runReview", () => {
 				waitedHandles.push(handles);
 				return waitResults;
 			},
-			transpose: async (prose, dimension) => {
-				transposed.push({ prose, dimension });
+			transpose: async (output, dimension) => {
+				transposed.push({ output, dimension });
 				return findingsByDimension.get(dimension) ?? [];
 			},
 			now: () => new Date("2026-07-07T12:00:00.000Z"),
@@ -106,6 +107,8 @@ describe("runReview", () => {
 
 		const result = await runReview(scope, deps);
 
+		assert.equal(result.ok, true);
+		if (!result.ok) assert.fail("expected review to succeed");
 		assert.deepEqual(
 			dispatched.map((item) => item.spec.agent),
 			REVIEWERS.map((spec) => spec.agent),
@@ -117,101 +120,44 @@ describe("runReview", () => {
 			REVIEWERS.map((spec) => spec.dimension),
 		);
 		assert.deepEqual(
-			result.findings.map((item) => item.title),
+			result.result.findings.map((item) => item.title),
 			["Token is logged", "Name hides intent"],
 		);
-		assert.deepEqual(result.verdict, {
+		assert.deepEqual(result.result.verdict, {
 			decision: "comment",
 			blocking: false,
 			counts: { critical: 0, high: 1, medium: 1, low: 0 },
 		});
-		assert.deepEqual(
-			result.reviewers.map((reviewer) => reviewer.agent),
-			REVIEWERS.map((spec) => spec.agent),
-		);
-		assert.deepEqual(
-			result.reviewers.map((reviewer) => reviewer.gap),
-			[null, null, null, null, null, null],
-		);
-		assert.equal(result.createdAt, "2026-07-07T12:00:00.000Z");
+		assert.equal(result.result.createdAt, "2026-07-07T12:00:00.000Z");
 	});
 
-	it("degrades gracefully for dispatch, wait-result, transpose, and empty-output failures", async () => {
-		const waitResults = new Map<string, ReviewerWaitResult>([
-			["handle:testing-specialist", { status: "failed", result: "testing prose", error: "review crashed" }],
-			["handle:docs-specialist", { status: "completed", result: "docs prose", error: null }],
-			["handle:code-clarity-specialist", { status: "completed", result: "   ", error: null }],
-			["handle:conventions-specialist", { status: "completed", result: "conventions prose", error: null }],
-			["handle:general-reviewer", { status: "completed", result: "general prose", error: null }],
-		]);
+	it("fails the whole review when dispatch fails", async () => {
+		let waitCalled = false;
 		const deps: OrchestrateDeps = {
 			dispatchReviewer: async (spec) => {
 				if (spec.dimension === "security") throw new Error("daemon unavailable");
 				return handleFor(spec);
 			},
-			waitForReviewers: async () => waitResults,
-			transpose: async (_prose, dimension) => {
-				if (dimension === "docs") throw new Error("invalid tool payload");
-				if (dimension === "general") {
-					return [
-						finding({
-							dimension: "general",
-							severity: "critical",
-							file: "src/payments.ts",
-							lineStart: 99,
-							lineEnd: 99,
-							title: "Payments can be double charged",
-						}),
-					];
-				}
-				return [];
+			waitForReviewers: async () => {
+				waitCalled = true;
+				return completedWaitResults();
 			},
+			transpose: async (_output, dimension) => [finding({ dimension, title: `${dimension} finding` })],
 			now: () => new Date("2026-07-07T12:00:00.000Z"),
 		};
 
 		const result = await runReview(scope, deps);
 
-		assert.deepEqual(result.verdict, {
-			decision: "request-changes",
-			blocking: true,
-			counts: { critical: 1, high: 0, medium: 0, low: 0 },
-		});
-		assert.deepEqual(
-			result.findings.map((item) => item.title),
-			["Payments can be double charged"],
-		);
-		assert.deepEqual(
-			result.reviewers.map((reviewer) => reviewer.agent),
-			REVIEWERS.map((spec) => spec.agent),
-		);
-		assert.deepEqual(
-			result.reviewers.map((reviewer) => reviewer.gap),
-			[
-				"dispatch failed: daemon unavailable",
-				"reviewer failed",
-				"transpose failed: invalid tool payload",
-				"reviewer returned no output",
-				null,
-				null,
-			],
-		);
-
-		const testingOutcome = result.reviewers.find((reviewer) => reviewer.agent === "testing-specialist");
-		assert.equal(testingOutcome?.prose, "testing prose");
-		assert.equal(testingOutcome?.error, "review crashed");
-
-		const docsOutcome = result.reviewers.find((reviewer) => reviewer.agent === "docs-specialist");
-		assert.equal(docsOutcome?.prose, "docs prose");
-		assert.equal(docsOutcome?.error, "invalid tool payload");
+		assert.equal(result.ok, false);
+		if (result.ok) assert.fail("expected review to fail");
+		assert.equal(result.failedReviewer, "security-specialist");
+		assert.equal(result.reason.startsWith("dispatch failed:"), true);
+		assert.equal(waitCalled, false);
 	});
 
-	it("marks dispatched reviewers unknown when waitForReviewers throws", async () => {
-		const dispatched: ReviewerSpec[] = [];
+	it("fails the whole review when waiting fails", async () => {
 		const deps: OrchestrateDeps = {
-			dispatchReviewer: async (spec) => {
-				dispatched.push(spec);
-				return handleFor(spec);
-			},
+			dispatchReviewer: async (spec) => handleFor(spec),
 			waitForReviewers: async () => {
 				throw new Error("daemon wait exploded");
 			},
@@ -223,86 +169,113 @@ describe("runReview", () => {
 
 		const result = await runReview(scope, deps);
 
-		assert.deepEqual(
-			dispatched.map((spec) => spec.agent),
-			REVIEWERS.map((spec) => spec.agent),
-		);
-		assert.deepEqual(result.verdict, {
-			decision: "approve",
-			blocking: false,
-			counts: { critical: 0, high: 0, medium: 0, low: 0 },
-		});
-		assert.deepEqual(result.findings, []);
-		assert.deepEqual(
-			result.reviewers.map((reviewer) => reviewer.status),
-			["unknown", "unknown", "unknown", "unknown", "unknown", "unknown"],
-		);
-		assert.equal(
-			result.reviewers.every((reviewer) => reviewer.gap?.startsWith("wait failed:")),
-			true,
-		);
+		assert.equal(result.ok, false);
+		if (result.ok) assert.fail("expected review to fail");
+		assert.equal(result.failedReviewer, "security-specialist");
+		assert.equal(result.reason.startsWith("wait failed:"), true);
 	});
 
-	it("records running wait results as timed-out coverage gaps with no findings", async () => {
-		const waitResults = new Map<string, ReviewerWaitResult>(
-			REVIEWERS.map((spec) => [
-				handleFor(spec),
-				{ status: "completed", result: `${spec.dimension} prose`, error: null },
-			]),
-		);
-		waitResults.set(handleFor(REVIEWERS[0]!), { status: "running", result: "partial security prose", error: null });
+	it("fails the whole review when a reviewer is not completed", async () => {
+		const waitResults = completedWaitResults();
+		const failedSpec = REVIEWERS[2]!;
+		waitResults.set(handleFor(failedSpec), { status: "failed", result: "docs output", error: "review crashed" });
 		const deps: OrchestrateDeps = {
 			dispatchReviewer: async (spec) => handleFor(spec),
 			waitForReviewers: async () => waitResults,
-			transpose: async (_prose, dimension) => [finding({ dimension, severity: "low", title: `${dimension} finding` })],
+			transpose: async (_output, dimension) => [finding({ dimension, title: `${dimension} finding` })],
 			now: () => new Date("2026-07-07T12:00:00.000Z"),
 		};
 
 		const result = await runReview(scope, deps);
-		const runningOutcome = result.reviewers.find((reviewer) => reviewer.agent === REVIEWERS[0]?.agent);
 
-		assert.equal(runningOutcome?.status, "running");
-		assert.equal(runningOutcome?.gap, "reviewer running (timed out)");
-		assert.deepEqual(runningOutcome?.findings, []);
-		assert.equal(runningOutcome?.prose, "partial security prose");
-		assert.deepEqual(
-			result.findings.map((item) => item.title),
-			["testing finding", "docs finding", "clarity finding", "conventions finding", "general finding"],
-		);
+		assert.equal(result.ok, false);
+		if (result.ok) assert.fail("expected review to fail");
+		assert.equal(result.failedReviewer, failedSpec.agent);
+		assert.equal(result.reason, "reviewer failed");
 	});
 
-	it("does not wait when every dispatch fails and approves with no findings", async () => {
+	it("fails the whole review when a reviewer is still running", async () => {
+		const waitResults = completedWaitResults();
+		const runningSpec = REVIEWERS[3]!;
+		waitResults.set(handleFor(runningSpec), { status: "running", result: "partial clarity output", error: null });
+		const deps: OrchestrateDeps = {
+			dispatchReviewer: async (spec) => handleFor(spec),
+			waitForReviewers: async () => waitResults,
+			transpose: async (_output, dimension) => [finding({ dimension, title: `${dimension} finding` })],
+			now: () => new Date("2026-07-07T12:00:00.000Z"),
+		};
+
+		const result = await runReview(scope, deps);
+
+		assert.equal(result.ok, false);
+		if (result.ok) assert.fail("expected review to fail");
+		assert.equal(result.failedReviewer, runningSpec.agent);
+		assert.equal(result.reason, "reviewer running (timed out)");
+	});
+
+	it("fails the whole review when a reviewer returns empty output", async () => {
+		const waitResults = completedWaitResults();
+		const emptySpec = REVIEWERS[4]!;
+		waitResults.set(handleFor(emptySpec), { status: "completed", result: "   ", error: null });
+		const deps: OrchestrateDeps = {
+			dispatchReviewer: async (spec) => handleFor(spec),
+			waitForReviewers: async () => waitResults,
+			transpose: async (_output, dimension) => [finding({ dimension, title: `${dimension} finding` })],
+			now: () => new Date("2026-07-07T12:00:00.000Z"),
+		};
+
+		const result = await runReview(scope, deps);
+
+		assert.equal(result.ok, false);
+		if (result.ok) assert.fail("expected review to fail");
+		assert.equal(result.failedReviewer, emptySpec.agent);
+		assert.equal(result.reason, "reviewer returned no output");
+	});
+
+	it("fails the whole review when transpose throws", async () => {
+		const throwingSpec = REVIEWERS[5]!;
+		const deps: OrchestrateDeps = {
+			dispatchReviewer: async (spec) => handleFor(spec),
+			waitForReviewers: async () => completedWaitResults(),
+			transpose: async (_output, dimension) => {
+				if (dimension === throwingSpec.dimension) throw new Error("invalid tool payload");
+				return [finding({ dimension, title: `${dimension} finding` })];
+			},
+			now: () => new Date("2026-07-07T12:00:00.000Z"),
+		};
+
+		const result = await runReview(scope, deps);
+
+		assert.equal(result.ok, false);
+		if (result.ok) assert.fail("expected review to fail");
+		assert.equal(result.failedReviewer, throwingSpec.agent);
+		assert.equal(result.reason.startsWith("transpose failed:"), true);
+	});
+
+	it("reports the first failure by order", async () => {
 		let waitCalled = false;
 		const deps: OrchestrateDeps = {
 			dispatchReviewer: async (spec) => {
-				throw new Error(`dispatch unavailable for ${spec.agent}`);
+				if (spec.dimension === "security") throw new Error("daemon unavailable");
+				return handleFor(spec);
 			},
 			waitForReviewers: async () => {
 				waitCalled = true;
-				throw new Error("wait should not run");
+				return completedWaitResults();
 			},
-			transpose: async () => {
-				throw new Error("transpose should not run");
+			transpose: async (_output, dimension) => {
+				if (dimension === "docs") throw new Error("invalid tool payload");
+				return [finding({ dimension, title: `${dimension} finding` })];
 			},
 			now: () => new Date("2026-07-07T12:00:00.000Z"),
 		};
 
 		const result = await runReview(scope, deps);
 
+		assert.equal(result.ok, false);
+		if (result.ok) assert.fail("expected review to fail");
+		assert.equal(result.failedReviewer, "security-specialist");
+		assert.equal(result.reason.startsWith("dispatch failed:"), true);
 		assert.equal(waitCalled, false);
-		assert.deepEqual(result.verdict, {
-			decision: "approve",
-			blocking: false,
-			counts: { critical: 0, high: 0, medium: 0, low: 0 },
-		});
-		assert.deepEqual(result.findings, []);
-		assert.deepEqual(
-			result.reviewers.map((reviewer) => reviewer.status),
-			["failed", "failed", "failed", "failed", "failed", "failed"],
-		);
-		assert.equal(
-			result.reviewers.every((reviewer) => reviewer.gap?.startsWith("dispatch failed:")),
-			true,
-		);
 	});
 });
