@@ -125,6 +125,9 @@ export class WorkspaceRuntimeService implements WorkspaceService {
 		setWorkspaceEnv(state);
 		this.notify();
 
+		// Adopt the worktree the session launched inside. This deliberately skips validateProtectedCheckout
+		// (unlike activate/attach): we are recognizing an existing worktree, not creating one, so the main
+		// checkout being dirty or off its default branch must not block startup.
 		if (gitInfo.isLinkedWorktree && repo && gitInfo.toplevel) {
 			let label: string;
 			try {

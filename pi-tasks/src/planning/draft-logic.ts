@@ -1,4 +1,4 @@
-import type { ReviewState } from "../tasks/tasks";
+import type { ReviewState } from "../tasks/tasks.ts";
 
 export interface PlanSection {
 	content: string;

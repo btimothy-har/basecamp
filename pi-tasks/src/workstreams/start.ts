@@ -198,6 +198,8 @@ export function registerWorkstreamStartup(pi: ExtensionAPI, deps = defaultWorkst
 	pi.on("session_start", async (event, ctx) => {
 		const id = pi.getFlag("workstream") as string | undefined;
 		if (id === undefined) return;
+		// Force Explore on every workstream session_start (including reload) so the session always begins from a
+		// planning posture; the executor/supervisor mode set at plan approval only persists within a single process.
 		if (id.trim()) deps.enterExploreMode(event, ctx);
 		await startWorkstream(id, pi, ctx, deps);
 	});
