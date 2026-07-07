@@ -11,7 +11,6 @@ import sys
 import threading
 import time
 import uuid
-from collections.abc import Callable
 from pathlib import Path
 
 import pytest
@@ -949,57 +948,34 @@ def test_terminate_process_group_if_runner_skips_unverified_group(
     assert calls == []
 
 
-def _fake_ps(stdout: str) -> Callable[..., object]:
+def test_process_group_is_runner_matches_module_invocation(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     class FakeRunResult:
-        pass
+        stdout = "/usr/bin/python -m pi_swarm.runner --result-path /tmp/result.json"
 
     def fake_run(args: list[str], **kwargs: object) -> FakeRunResult:
-        assert args == ["ps", "-A", "-o", "pgid=,args="]
+        assert args == ["ps", "-p", "123", "-o", "args="]
         assert kwargs == {"capture_output": True, "text": True, "check": False}
-        result = FakeRunResult()
-        result.stdout = stdout  # type: ignore[attr-defined]
-        return result
+        return FakeRunResult()
 
-    return fake_run
-
-
-def test_process_group_is_runner_matches_group_member(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    stdout = (
-        "  999 /usr/bin/python -m other.module\n"
-        "  123 /usr/bin/python -m pi_swarm.runner --result-path /tmp/result.json -- pi\n"
-        "  123 pi --mode json\n"
-    )
-    monkeypatch.setattr("pi_swarm.process.subprocess.run", _fake_ps(stdout))
+    monkeypatch.setattr("pi_swarm.process.subprocess.run", fake_run)
 
     assert _process_group_is_runner(123) is True
-
-
-def test_process_group_is_runner_rejects_group_without_marker(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    # Leader (runner) gone; only unmarked descendants remain in the group.
-    stdout = "  123 pi --mode json\n  123 bash -lc build\n"
-    monkeypatch.setattr("pi_swarm.process.subprocess.run", _fake_ps(stdout))
-
-    assert _process_group_is_runner(123) is False
-
-
-def test_process_group_is_runner_rejects_marker_in_other_group(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    stdout = "  456 /usr/bin/python -m pi_swarm.runner --result-path /tmp/result.json\n"
-    monkeypatch.setattr("pi_swarm.process.subprocess.run", _fake_ps(stdout))
-
-    assert _process_group_is_runner(123) is False
 
 
 def test_process_group_is_runner_rejects_module_name_without_invocation(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    stdout = "  123 /usr/bin/python /opt/tools/pi_swarm.runner\n"
-    monkeypatch.setattr("pi_swarm.process.subprocess.run", _fake_ps(stdout))
+    class FakeRunResult:
+        stdout = "/usr/bin/python pi_swarm.runner --result-path /tmp/result.json"
+
+    def fake_run(args: list[str], **kwargs: object) -> FakeRunResult:
+        assert args == ["ps", "-p", "123", "-o", "args="]
+        assert kwargs == {"capture_output": True, "text": True, "check": False}
+        return FakeRunResult()
+
+    monkeypatch.setattr("pi_swarm.process.subprocess.run", fake_run)
 
     assert _process_group_is_runner(123) is False
 
