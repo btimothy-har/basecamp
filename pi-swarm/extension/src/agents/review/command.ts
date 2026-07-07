@@ -10,7 +10,7 @@ import { getActiveDaemonConnection } from "../daemon/index.ts";
 import { discoverAgents } from "../discovery.ts";
 import { errorMessage } from "../errors.ts";
 import { buildAgentLaunchSpec, processEnvForSpawn } from "../launch.ts";
-import { annotateFindings } from "./annotate-overlay.ts";
+import { annotateFindings } from "./annotate-pane.ts";
 import { isSubagent, persistReviewArtifact } from "./command-helpers.ts";
 import { formatReviewPrompt } from "./format.ts";
 import { type OrchestrateDeps, REVIEWERS, type ReviewerSpec, type ReviewScope, runReview } from "./orchestrate.ts";
