@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { buildReactions, findingSummaryLines } from "../annotate-overlay.ts";
+import { buildReactions, findingSummaryLines } from "../annotate-pane.ts";
 import type { Finding } from "../findings.ts";
 
 function finding(overrides: Partial<Finding>): Finding {

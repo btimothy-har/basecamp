@@ -12,8 +12,8 @@ import {
 } from "../orchestrate.ts";
 
 const scope: ReviewScope = {
-	base: "main",
-	head: "feature",
+	base: "origin/main",
+	mergeBase: "abc1234",
 	cwd: "/repo",
 	label: "feature review",
 };
@@ -46,7 +46,7 @@ describe("buildReviewerBrief", () => {
 	it("builds a fixed scope-only brief", () => {
 		assert.equal(
 			buildReviewerBrief(scope),
-			"Review the code changes in the diff between main and feature in the working directory /repo. Run git yourself to inspect the changes (e.g. git diff main...feature, git diff --stat, and read the changed files directly). Assess only what your specialist role covers. Report findings only — do not modify files or write fixes.",
+			"Review the code changes on this branch (base origin/main) in the working directory /repo, including any uncommitted work. Run git yourself: `git diff abc1234` shows every committed and uncommitted change since the branch diverged; also run `git status --short` for untracked files and read the changed and added files directly. Assess only what your specialist role covers. Report findings only — do not modify files or write fixes.",
 		);
 	});
 });
