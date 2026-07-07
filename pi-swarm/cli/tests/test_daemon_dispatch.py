@@ -18,12 +18,14 @@ import uvicorn
 from pi_swarm.app import create_app
 from pi_swarm.frames import PROTOCOL_VERSION, CancelFrame, DispatchFrame, DispatchSpec
 from pi_swarm.process import (
+    _process_group_is_runner,
     build_child_env,
     build_runner_argv,
     reap_agent_process,
     reconcile_orphaned_runs,
     spawn_agent_process,
     terminate_process_group,
+    terminate_process_group_if_runner,
 )
 from pi_swarm.registry import Registry, Waiter
 from pi_swarm.run_result import load_run_result, run_result_path
@@ -678,6 +680,92 @@ def test_terminate_process_group_returns_when_initial_sigterm_finds_no_group(
     assert calls == [(123, signal.SIGTERM)]
 
 
+def test_terminate_process_group_tolerates_sigkill_permission_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[tuple[int, int]] = []
+    times = iter([0.0, 0.0, 0.03])
+
+    def fake_killpg(pgid: int, sig: int) -> None:
+        calls.append((pgid, sig))
+        if sig == 0 or sig == signal.SIGKILL:
+            raise PermissionError
+
+    monkeypatch.setattr("pi_swarm.process.os.killpg", fake_killpg)
+    monkeypatch.setattr("pi_swarm.process.time.monotonic", lambda: next(times))
+    monkeypatch.setattr("pi_swarm.process.time.sleep", lambda _seconds: None)
+
+    terminate_process_group(123, escalation_s=0.02, poll_s=0.005)
+
+    assert calls == [(123, signal.SIGTERM), (123, 0), (123, signal.SIGKILL)]
+
+
+def test_terminate_process_group_if_runner_terminates_verified_runner(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[tuple[int, int]] = []
+
+    def fake_killpg(pgid: int, sig: int) -> None:
+        calls.append((pgid, sig))
+
+    monkeypatch.setattr("pi_swarm.process._process_group_is_runner", lambda _pgid: True)
+    monkeypatch.setattr("pi_swarm.process._process_group_alive", lambda _pgid: False)
+    monkeypatch.setattr("pi_swarm.process.os.killpg", fake_killpg)
+    monkeypatch.setattr("pi_swarm.process.time.monotonic", lambda: 0.0)
+
+    terminate_process_group_if_runner(123, escalation_s=0.02)
+
+    assert calls == [(123, signal.SIGTERM)]
+
+
+def test_terminate_process_group_if_runner_skips_unverified_group(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[tuple[int, int]] = []
+
+    def fake_killpg(pgid: int, sig: int) -> None:
+        calls.append((pgid, sig))
+
+    monkeypatch.setattr("pi_swarm.process._process_group_is_runner", lambda _pgid: False)
+    monkeypatch.setattr("pi_swarm.process.os.killpg", fake_killpg)
+
+    terminate_process_group_if_runner(123, escalation_s=0)
+
+    assert calls == []
+
+
+def test_process_group_is_runner_matches_module_invocation(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class FakeRunResult:
+        stdout = "/usr/bin/python -m pi_swarm.runner --result-path /tmp/result.json"
+
+    def fake_run(args: list[str], **kwargs: object) -> FakeRunResult:
+        assert args == ["ps", "-p", "123", "-o", "args="]
+        assert kwargs == {"capture_output": True, "text": True, "check": False}
+        return FakeRunResult()
+
+    monkeypatch.setattr("pi_swarm.process.subprocess.run", fake_run)
+
+    assert _process_group_is_runner(123) is True
+
+
+def test_process_group_is_runner_rejects_module_name_without_invocation(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class FakeRunResult:
+        stdout = "/usr/bin/python pi_swarm.runner --result-path /tmp/result.json"
+
+    def fake_run(args: list[str], **kwargs: object) -> FakeRunResult:
+        assert args == ["ps", "-p", "123", "-o", "args="]
+        assert kwargs == {"capture_output": True, "text": True, "check": False}
+        return FakeRunResult()
+
+    monkeypatch.setattr("pi_swarm.process.subprocess.run", fake_run)
+
+    assert _process_group_is_runner(123) is False
+
+
 def test_reconcile_orphaned_runs_marks_nonterminal_failed(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -713,8 +801,7 @@ def test_reconcile_orphaned_runs_kills_verified_runner_group(
     def record_terminate(pgid: int | None, *, escalation_s: float = 5.0, poll_s: float = 0.1) -> None:
         calls.append((pgid or 0, escalation_s, poll_s))
 
-    monkeypatch.setattr("pi_swarm.process._process_group_is_runner", lambda _pgid: True)
-    monkeypatch.setattr("pi_swarm.process.terminate_process_group", record_terminate)
+    monkeypatch.setattr("pi_swarm.process.terminate_process_group_if_runner", record_terminate)
 
     reconcile_orphaned_runs(store)
 

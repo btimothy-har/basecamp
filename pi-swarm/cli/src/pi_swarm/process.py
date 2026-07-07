@@ -17,6 +17,7 @@ from .run_result import run_result_path
 from .store import Store
 
 ProcessExitHook = Callable[[str], Awaitable[None]]
+RUNNER_MODULE = "pi_swarm.runner"
 
 
 def build_runner_argv(
@@ -29,7 +30,7 @@ def build_runner_argv(
     return [
         sys.executable,
         "-m",
-        "pi_swarm.runner",
+        RUNNER_MODULE,
         "--result-path",
         str(result_path),
         "--",
@@ -129,7 +130,7 @@ def terminate_process_group(
 
     try:
         os.killpg(pgid, signal.SIGTERM)
-    except ProcessLookupError:
+    except OSError:
         return
 
     deadline = time.monotonic() + escalation_s
@@ -140,7 +141,7 @@ def terminate_process_group(
 
     try:
         os.killpg(pgid, signal.SIGKILL)
-    except ProcessLookupError:
+    except OSError:
         return
 
 
@@ -158,15 +159,28 @@ def _process_group_is_runner(pgid: int) -> bool:
     except OSError:
         return False
 
-    return "pi_swarm.runner" in result.stdout
+    return f"-m {RUNNER_MODULE}" in result.stdout
+
+
+def terminate_process_group_if_runner(
+    pgid: int | None,
+    *,
+    escalation_s: float = 5.0,
+    poll_s: float = 0.1,
+) -> None:
+    # Guard against PID/PGID reuse before signalling.
+    if pgid is None or not _process_group_is_runner(pgid):
+        return
+
+    terminate_process_group(pgid, escalation_s=escalation_s, poll_s=poll_s)
 
 
 def reconcile_orphaned_runs(store: Store) -> None:
     for row in store.get_nonterminal_runs():
         pgid = row.get("pgid")
-        if isinstance(pgid, int) and _process_group_is_runner(pgid):
+        if isinstance(pgid, int):
             try:
-                terminate_process_group(pgid, escalation_s=2.0)
+                terminate_process_group_if_runner(pgid, escalation_s=2.0)
             except OSError:
                 pass
 
