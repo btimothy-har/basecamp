@@ -32,6 +32,12 @@ async function restoreActiveWorktreeState(event: SessionStartEvent, ctx: Extensi
 
 	const activeWorktree = ensureCurrentSessionStateForEvent(event, ctx).activeWorktree;
 	if (!activeWorktree || !workspaceMatchesActiveWorktreeState(workspaceState, activeWorktree)) return;
+	if (
+		workspaceState.activeWorktree &&
+		path.resolve(workspaceState.activeWorktree.path) === path.resolve(activeWorktree.worktree.path)
+	) {
+		return;
+	}
 
 	try {
 		const wt = await attachWorktree(activeWorktree.worktree.path);

@@ -87,9 +87,9 @@ function createContext(sessionId: string): ExtensionContext {
 	} as unknown as ExtensionContext;
 }
 
-function createWorkspaceSessionContext(sessionId: string, notifications: string[]): ExtensionContext {
+function createWorkspaceSessionContext(sessionId: string, notifications: string[], cwd = REPO_ROOT): ExtensionContext {
 	return {
-		cwd: REPO_ROOT,
+		cwd,
 		hasUI: true,
 		ui: {
 			notify(message: string) {
@@ -103,7 +103,7 @@ function createWorkspaceSessionContext(sessionId: string, notifications: string[
 	} as unknown as ExtensionContext;
 }
 
-function createPi(piOptions: { worktreeDir?: string; branch?: string } = {}): {
+function createPi(piOptions: { worktreeDir?: string; branch?: string; linkedWorktree?: boolean } = {}): {
 	pi: ExtensionAPI;
 	calls: ExecCall[];
 } {
@@ -115,9 +115,18 @@ function createPi(piOptions: { worktreeDir?: string; branch?: string } = {}): {
 
 			if (command !== "git") throw unexpectedExecCall(call);
 			if (argsEqual(args, ["rev-parse", "--show-toplevel"])) {
-				return { code: 0, stdout: `${REPO_ROOT}\n`, stderr: "" };
+				return { code: 0, stdout: `${piOptions.linkedWorktree ? WORKTREE_DIR : REPO_ROOT}\n`, stderr: "" };
 			}
-			if (argsEqual(args, ["-C", REPO_ROOT, "remote", "get-url", "origin"])) {
+			if (argsEqual(args, ["rev-parse", "--git-dir", "--git-common-dir"])) {
+				return piOptions.linkedWorktree
+					? {
+							code: 0,
+							stdout: `${path.join(REPO_ROOT, ".git", "worktrees", LABEL)}\n${path.join(REPO_ROOT, ".git")}\n`,
+							stderr: "",
+						}
+					: { code: 0, stdout: `${path.join(REPO_ROOT, ".git")}\n${path.join(REPO_ROOT, ".git")}\n`, stderr: "" };
+			}
+			if (argsEqual(args, ["-C", piOptions.linkedWorktree ? WORKTREE_DIR : REPO_ROOT, "remote", "get-url", "origin"])) {
 				return { code: 0, stdout: `${REMOTE_URL}\n`, stderr: "" };
 			}
 			if (argsEqual(args, ["-C", REPO_ROOT, "symbolic-ref", "--quiet", "--short", "refs/remotes/origin/HEAD"])) {
@@ -139,7 +148,7 @@ function createPi(piOptions: { worktreeDir?: string; branch?: string } = {}): {
 	return { pi, calls };
 }
 
-function createSessionPi(options: { worktreeDir: string; branch: string }): {
+function createSessionPi(options: { worktreeDir: string; branch: string; linkedWorktree?: boolean }): {
 	pi: ExtensionAPI;
 	calls: ExecCall[];
 	sessionStart: (event: SessionStartEvent, ctx: ExtensionContext) => Promise<void>;
@@ -218,6 +227,46 @@ describe("WorkspaceRuntimeService effective cwd", () => {
 		assert.equal(process.env.BASECAMP_WORKTREE_LABEL, LABEL);
 	});
 
+	it("recognizes a linked worktree launch as the active worktree", async (t) => {
+		const envSnapshot = snapshotWorkspaceEnv();
+		clearAgentDepthEnv();
+		t.after(async () => {
+			restoreWorkspaceEnv(envSnapshot);
+			await fs.rm(SCRATCH_DIR, { recursive: true, force: true });
+		});
+
+		const { pi, calls } = createPi({ linkedWorktree: true });
+		const service = new WorkspaceRuntimeService(pi);
+		const result = await service.initialize({
+			launchCwd: path.join(WORKTREE_DIR, "packages", "app"),
+			unsafeEditFlag: false,
+			unsafeEditConstraints: { readOnly: false, hasUI: true, isSubagent: false },
+		});
+
+		assert.equal(result.state.protectedRoot, REPO_ROOT);
+		assert.equal(result.state.repo?.root, REPO_ROOT);
+		assert.deepEqual(result.state.activeWorktree, {
+			kind: "git-worktree",
+			label: LABEL,
+			path: WORKTREE_DIR,
+			branch: BRANCH,
+			created: false,
+		});
+		assert.equal(service.current()?.activeWorktree?.path, WORKTREE_DIR);
+		assert.equal(service.getEffectiveCwd(), WORKTREE_DIR);
+		assert.equal(process.env.BASECAMP_WORKTREE_DIR, WORKTREE_DIR);
+		assert.equal(process.env.BASECAMP_WORKTREE_LABEL, LABEL);
+		assert.ok(
+			calls.some(
+				(call) => call.command === "git" && argsEqual(call.args, ["-C", REPO_ROOT, "worktree", "list", "--porcelain"]),
+			),
+		);
+		assert.equal(
+			calls.some((call) => call.command === "git" && argsEqual(call.args, ["-C", REPO_ROOT, "status", "--porcelain"])),
+			false,
+		);
+	});
+
 	it("writes active worktree metadata when current session state is initialized", async (t) => {
 		const envSnapshot = snapshotWorkspaceEnv();
 		clearAgentDepthEnv();
@@ -248,6 +297,66 @@ describe("WorkspaceRuntimeService effective cwd", () => {
 			updatedAt: activeWorktree?.updatedAt,
 		});
 		assert.match(activeWorktree?.updatedAt ?? "", /^\d{4}-\d{2}-\d{2}T/);
+	});
+
+	it("skips resume restore when init already recognized the active worktree", async (t) => {
+		const envSnapshot = snapshotWorkspaceEnv();
+		clearAgentDepthEnv();
+		const stateDir = await fs.mkdtemp(path.join(os.tmpdir(), "basecamp-workspace-recognized-restore-"));
+		const notifications: string[] = [];
+		t.after(async () => {
+			resetCurrentSessionState();
+			restoreWorkspaceEnv(envSnapshot);
+			await fs.rm(SCRATCH_DIR, { recursive: true, force: true });
+			await fs.rm(stateDir, { recursive: true, force: true });
+		});
+
+		const ctx = createWorkspaceSessionContext(
+			"workspace-recognized-restore-state",
+			notifications,
+			path.join(WORKTREE_DIR, "packages", "app"),
+		);
+		saveSessionState(
+			{
+				...createDefaultSessionState({ sessionId: "workspace-recognized-restore-state", sessionFile: null }),
+				activeWorktree: {
+					version: 1,
+					repoName: REPO_IDENTITY,
+					repoRoot: REPO_ROOT,
+					remoteUrl: REMOTE_URL,
+					worktree: {
+						kind: "git-worktree",
+						label: LABEL,
+						path: WORKTREE_DIR,
+						branch: BRANCH,
+						created: false,
+					},
+					updatedAt: "2026-05-04T00:00:00.000Z",
+				},
+			},
+			stateDir,
+		);
+		initializeCurrentSessionState(ctx, stateDir);
+
+		const { pi, calls, sessionStart } = createSessionPi({
+			worktreeDir: WORKTREE_DIR,
+			branch: BRANCH,
+			linkedWorktree: true,
+		});
+		const service = new WorkspaceRuntimeService(pi);
+		registerWorkspaceService(service);
+		registerWorkspaceSession(pi);
+
+		await sessionStart({ type: "session_start", reason: "resume" }, ctx);
+
+		assert.equal(service.current()?.protectedRoot, REPO_ROOT);
+		assert.equal(service.current()?.activeWorktree?.path, WORKTREE_DIR);
+		assert.equal(getCurrentSessionState().activeWorktree?.worktree.path, WORKTREE_DIR);
+		assert.deepEqual(notifications, []);
+		assert.equal(
+			calls.some((call) => call.command === "git" && argsEqual(call.args, ["-C", REPO_ROOT, "status", "--porcelain"])),
+			false,
+		);
 	});
 
 	it("restores active worktree metadata from session state on resume", async (t) => {

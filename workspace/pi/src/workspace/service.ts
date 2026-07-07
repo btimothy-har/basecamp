@@ -17,7 +17,11 @@ import { SCRATCH_ROOT } from "pi-core/workspace/constants.ts";
 import { resolveGitInfo } from "pi-core/workspace/repo.ts";
 import {
 	attachWorktreeDir,
+	branchName,
+	findWorktreeRecord,
 	getOrCreateWorktree,
+	gitWorktreeRecords,
+	labelFromWorktreePath,
 	listWorktrees as listGitWorktrees,
 	type WorktreeResult,
 } from "pi-core/workspace/worktree.ts";
@@ -93,7 +97,7 @@ export class WorkspaceRuntimeService implements WorkspaceService {
 	async initialize(opts: WorkspaceInitializeOptions): Promise<WorkspaceInitializeResult> {
 		const launchCwd = path.resolve(opts.launchCwd);
 		const gitInfo = await resolveGitInfo(this.pi, launchCwd);
-		const repoRootOrLaunchCwd = gitInfo.toplevel ?? launchCwd;
+		const repoRootOrLaunchCwd = gitInfo.mainRoot ?? launchCwd;
 		const repo: RepoContext | null = gitInfo.isRepo
 			? {
 					isRepo: true,
@@ -121,7 +125,25 @@ export class WorkspaceRuntimeService implements WorkspaceService {
 		setWorkspaceEnv(state);
 		this.notify();
 
-		return { state, unsafeEditResult };
+		if (gitInfo.isLinkedWorktree && repo && gitInfo.toplevel) {
+			let label: string;
+			try {
+				label = labelFromWorktreePath(repo.name, gitInfo.toplevel);
+			} catch {
+				label = path.basename(gitInfo.toplevel);
+			}
+
+			const record = findWorktreeRecord(await gitWorktreeRecords(this.pi, repo.root), gitInfo.toplevel);
+			this.applyWorktree({
+				kind: "git-worktree",
+				label,
+				path: gitInfo.toplevel,
+				branch: record ? branchName(record) : null,
+				created: false,
+			});
+		}
+
+		return { state: this.require(), unsafeEditResult };
 	}
 
 	current(): WorkspaceState | null {

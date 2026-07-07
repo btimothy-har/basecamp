@@ -69,10 +69,16 @@ export function deriveRepoIdentity(remoteUrl: string | null, fallbackBasename: s
 	return fallbackBasename;
 }
 
-export async function resolveGitInfo(
-	pi: ExtensionAPI,
-	dir: string,
-): Promise<{ repoName: string; isRepo: boolean; remoteUrl: string | null; toplevel: string | null }> {
+export interface GitInfo {
+	repoName: string;
+	isRepo: boolean;
+	remoteUrl: string | null;
+	toplevel: string | null;
+	mainRoot: string | null;
+	isLinkedWorktree: boolean;
+}
+
+export async function resolveGitInfo(pi: ExtensionAPI, dir: string): Promise<GitInfo> {
 	const cwd = path.resolve(dir);
 	try {
 		const result = await pi.exec("git", ["rev-parse", "--show-toplevel"], {
@@ -80,10 +86,39 @@ export async function resolveGitInfo(
 			timeout: 10_000,
 		});
 		if (result.code !== 0 || !result.stdout.trim()) {
-			return { repoName: path.basename(cwd), isRepo: false, remoteUrl: null, toplevel: null };
+			return {
+				repoName: path.basename(cwd),
+				isRepo: false,
+				remoteUrl: null,
+				toplevel: null,
+				mainRoot: null,
+				isLinkedWorktree: false,
+			};
 		}
 
 		const toplevel = path.resolve(result.stdout.trim());
+		let mainRoot = toplevel;
+		let isLinkedWorktree = false;
+		try {
+			const gitDirs = await pi.exec("git", ["rev-parse", "--git-dir", "--git-common-dir"], {
+				cwd,
+				timeout: 10_000,
+			});
+			const lines = gitDirs.stdout
+				.split("\n")
+				.map((line) => line.trim())
+				.filter(Boolean);
+			const [gitDirLine, commonDirLine] = lines;
+			if (gitDirs.code === 0 && gitDirLine && commonDirLine) {
+				const gitDir = path.resolve(cwd, gitDirLine);
+				const commonDir = path.resolve(cwd, commonDirLine);
+				isLinkedWorktree = gitDir !== commonDir;
+				mainRoot = isLinkedWorktree ? path.dirname(commonDir) : toplevel;
+			}
+		} catch {
+			mainRoot = toplevel;
+			isLinkedWorktree = false;
+		}
 
 		let remoteUrl: string | null = null;
 		try {
@@ -96,8 +131,15 @@ export async function resolveGitInfo(
 		}
 
 		const repoName = deriveRepoIdentity(remoteUrl, path.basename(toplevel));
-		return { repoName, isRepo: true, remoteUrl, toplevel };
+		return { repoName, isRepo: true, remoteUrl, toplevel, mainRoot, isLinkedWorktree };
 	} catch {
-		return { repoName: path.basename(cwd), isRepo: false, remoteUrl: null, toplevel: null };
+		return {
+			repoName: path.basename(cwd),
+			isRepo: false,
+			remoteUrl: null,
+			toplevel: null,
+			mainRoot: null,
+			isLinkedWorktree: false,
+		};
 	}
 }
