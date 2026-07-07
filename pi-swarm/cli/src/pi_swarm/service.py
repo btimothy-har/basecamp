@@ -359,6 +359,7 @@ async def dispatch_agent(
 
     registry.set_run_owner(frame.run_id, dispatcher_node_id)
     registry.set_process(frame.run_id, process)
+    await asyncio.to_thread(store.set_run_pgid, run_id=frame.run_id, pgid=process.pid)
 
     async def on_finalize(run_id: str) -> None:
         await notify_run_finalized(run_id, registry=registry, store=store)

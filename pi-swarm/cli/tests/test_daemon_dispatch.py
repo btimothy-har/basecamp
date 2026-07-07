@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import signal
 import sys
 import threading
 import time
@@ -14,7 +15,13 @@ import pytest
 import uvicorn
 from pi_swarm.app import create_app
 from pi_swarm.frames import PROTOCOL_VERSION, DispatchFrame, DispatchSpec
-from pi_swarm.process import build_child_env, build_runner_argv, reap_agent_process
+from pi_swarm.process import (
+    build_child_env,
+    build_runner_argv,
+    reap_agent_process,
+    spawn_agent_process,
+    terminate_process_group,
+)
 from pi_swarm.registry import Registry
 from pi_swarm.run_result import load_run_result, run_result_path
 from pi_swarm.server import UdsServer
@@ -248,6 +255,112 @@ def test_build_runner_argv_omits_fork_when_unset() -> None:
 
     assert "--fork" not in argv
     assert argv[-1] == "answer this question"
+
+
+@pytest.mark.parametrize("pgid", [0, 1, -1])
+def test_terminate_process_group_ignores_unsafe_pgids(
+    pgid: int,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[tuple[int, int]] = []
+
+    def fake_killpg(target_pgid: int, sig: int) -> None:
+        calls.append((target_pgid, sig))
+
+    monkeypatch.setattr("pi_swarm.process.os.killpg", fake_killpg)
+
+    terminate_process_group(pgid)
+
+    assert calls == []
+
+
+def test_terminate_process_group_skips_sigkill_when_group_dies(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[tuple[int, int]] = []
+
+    def fake_killpg(pgid: int, sig: int) -> None:
+        calls.append((pgid, sig))
+        if sig == 0:
+            raise ProcessLookupError
+
+    monkeypatch.setattr("pi_swarm.process.os.killpg", fake_killpg)
+
+    terminate_process_group(123, escalation_s=0.02, poll_s=0.005)
+
+    assert calls == [(123, signal.SIGTERM), (123, 0)]
+
+
+def test_terminate_process_group_escalates_when_group_survives(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[tuple[int, int]] = []
+    times = iter([0.0, 0.0, 0.03])
+
+    def fake_killpg(pgid: int, sig: int) -> None:
+        calls.append((pgid, sig))
+
+    monkeypatch.setattr("pi_swarm.process.os.killpg", fake_killpg)
+    monkeypatch.setattr("pi_swarm.process.time.monotonic", lambda: next(times))
+    monkeypatch.setattr("pi_swarm.process.time.sleep", lambda _seconds: None)
+
+    terminate_process_group(123, escalation_s=0.02, poll_s=0.005)
+
+    assert calls == [(123, signal.SIGTERM), (123, 0), (123, signal.SIGKILL)]
+
+
+def test_terminate_process_group_returns_when_initial_sigterm_finds_no_group(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[tuple[int, int]] = []
+
+    def fake_killpg(pgid: int, sig: int) -> None:
+        calls.append((pgid, sig))
+        raise ProcessLookupError
+
+    monkeypatch.setattr("pi_swarm.process.os.killpg", fake_killpg)
+
+    terminate_process_group(123, escalation_s=0.02, poll_s=0.005)
+
+    assert calls == [(123, signal.SIGTERM)]
+
+
+@pytest.mark.asyncio
+async def test_spawn_agent_process_starts_new_session(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    process = _FakeProcess()
+    captured_kwargs: dict[str, object] = {}
+
+    async def fake_create_subprocess_exec(*_argv: str, **kwargs: object) -> _FakeProcess:
+        captured_kwargs.update(kwargs)
+        return process
+
+    monkeypatch.setattr(
+        "pi_swarm.process.asyncio.create_subprocess_exec",
+        fake_create_subprocess_exec,
+    )
+    spec = DispatchSpec(
+        argv=["pi", "--mode", "json", "-p"],
+        env={"HOME": str(tmp_path)},
+        cwd=str(tmp_path),
+        resume_path=None,
+        task="answer this question",
+    )
+
+    spawned = await spawn_agent_process(
+        run_id="run-1",
+        spec=spec,
+        agent_id="agent-1",
+        report_token="token-1",
+        daemon_socket_path="/tmp/daemon.sock",
+        dispatcher_node_id="root",
+        child_depth=1,
+    )
+
+    assert spawned is process
+    assert captured_kwargs["start_new_session"] is True
 
 
 @pytest.mark.asyncio

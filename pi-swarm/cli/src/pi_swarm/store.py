@@ -188,6 +188,7 @@ class Store:
                     result TEXT,
                     error TEXT,
                     exit_code INTEGER,
+                    pgid INTEGER,
                     created_at TEXT,
                     started_at TEXT,
                     ended_at TEXT
@@ -234,6 +235,7 @@ class Store:
             self._ensure_agents_product_role_column(connection)
             self._ensure_runs_dispatcher_id_column(connection)
             self._ensure_runs_exit_code_column(connection)
+            self._ensure_runs_pgid_column(connection)
             self._ensure_runs_report_token_hash_column(connection)
 
     def _ensure_agents_current_run_id_column(self, connection: sqlite3.Connection) -> None:
@@ -301,6 +303,12 @@ class Store:
         names = {column[1] for column in columns}
         if "exit_code" not in names:
             connection.execute("ALTER TABLE runs ADD COLUMN exit_code INTEGER")
+
+    def _ensure_runs_pgid_column(self, connection: sqlite3.Connection) -> None:
+        columns = connection.execute("PRAGMA table_info(runs)").fetchall()
+        names = {column[1] for column in columns}
+        if "pgid" not in names:
+            connection.execute("ALTER TABLE runs ADD COLUMN pgid INTEGER")
 
     def _ensure_runs_report_token_hash_column(self, connection: sqlite3.Connection) -> None:
         columns = connection.execute("PRAGMA table_info(runs)").fetchall()
@@ -679,6 +687,15 @@ class Store:
             connection.execute(
                 "UPDATE runs SET exit_code = ? WHERE id = ?",
                 (exit_code, run_id),
+            )
+
+    def set_run_pgid(self, *, run_id: str, pgid: int | None) -> None:
+        """Persist subprocess process-group id for a run."""
+
+        with self._connect() as connection:
+            connection.execute(
+                "UPDATE runs SET pgid = ? WHERE id = ?",
+                (pgid, run_id),
             )
 
     def set_run_result(

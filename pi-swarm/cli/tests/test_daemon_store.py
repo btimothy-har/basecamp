@@ -565,6 +565,33 @@ def test_create_run_stores_dispatcher_and_updates_current_run(tmp_path: Path) ->
     assert agent["current_run_id"] == "run-dispatch"
 
 
+def test_set_run_pgid_persists_and_get_run_returns_value(tmp_path: Path) -> None:
+    db_path = tmp_path / "daemon.db"
+    store = Store(db_path=db_path)
+
+    store.create_run(
+        run_id="run-pgid",
+        agent_id="agent-1",
+        dispatcher_id="dispatcher-1",
+        spec={"task": "x"},
+        report_token_hash="0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+    )
+
+    run = store.get_run("run-pgid")
+    assert run is not None
+    assert run["pgid"] is None
+
+    store.set_run_pgid(run_id="run-pgid", pgid=4321)
+    run = store.get_run("run-pgid")
+    assert run is not None
+    assert run["pgid"] == 4321
+
+    store.set_run_pgid(run_id="run-pgid", pgid=None)
+    run = store.get_run("run-pgid")
+    assert run is not None
+    assert run["pgid"] is None
+
+
 def test_get_agents_current_runs_filters_by_dispatcher(tmp_path: Path) -> None:
     db_path = tmp_path / "daemon.db"
     store = Store(db_path=db_path)

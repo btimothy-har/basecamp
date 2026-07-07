@@ -3,7 +3,10 @@
 from __future__ import annotations
 
 import asyncio
+import os
+import signal
 import sys
+import time
 from collections.abc import Awaitable, Callable
 from pathlib import Path
 
@@ -99,7 +102,45 @@ async def spawn_agent_process(
         stdin=asyncio.subprocess.DEVNULL,
         stdout=asyncio.subprocess.DEVNULL,
         stderr=asyncio.subprocess.DEVNULL,
+        start_new_session=True,
     )
+
+
+def _process_group_alive(pgid: int) -> bool:
+    try:
+        os.killpg(pgid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    return True
+
+
+def terminate_process_group(
+    pgid: int | None,
+    *,
+    escalation_s: float = 5.0,
+    poll_s: float = 0.1,
+) -> None:
+    # Never signal pgid 0 or 1: they may target the caller or system processes.
+    if pgid is None or pgid <= 1:
+        return
+
+    try:
+        os.killpg(pgid, signal.SIGTERM)
+    except ProcessLookupError:
+        return
+
+    deadline = time.monotonic() + escalation_s
+    while time.monotonic() < deadline:
+        if not _process_group_alive(pgid):
+            return
+        time.sleep(poll_s)
+
+    try:
+        os.killpg(pgid, signal.SIGKILL)
+    except ProcessLookupError:
+        return
 
 
 async def reap_agent_process(
