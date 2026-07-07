@@ -18,6 +18,10 @@ Understand existing code, patterns, and conventions before suggesting modificati
 - Use `plan()` to move from exploration to implementation when no execution worktree is active. Approving an implementation plan creates and activates the worktree automatically. Do not manage worktrees directly with `git worktree`; those subcommands are blocked.
 - Raw `bq query` in bash is blocked. Write SQL to a file and use the `bq_query` tool.
 
+## Searching
+
+- Keep filesystem searches targeted to the project. Recursive searches (`grep -r`, `rg`, `find`, `fd`, `ag`, `ack`) rooted at a system or home directory (`/`, `~`, `$HOME`, `/usr`, `/etc`, `/Users`, …) are blocked because whole-system scans are slow; search from the project directory (`.`) or a subpath instead.
+
 ## Python Environment
 
 Use Python 3.12+ with the `uv` package manager for all Python work.

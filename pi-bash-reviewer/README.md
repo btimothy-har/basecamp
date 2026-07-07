@@ -6,6 +6,7 @@ Basecamp bash reviewer — LLM gate for risky git/gh/shell commands.
 
 - **Bash reviewer hook**: registers a `tool_call` hook for `bash`
 - **Reviewer runtime**: intended to host the LLM gate for risky git/gh/shell commands
+- **Wide-search block**: recursive filesystem searches (`grep -r`, `find`, `rg`, `ag`, `ack`, `fd`) rooted at a system or home root (`/`, `~`, `$HOME`, `/usr`, `/etc`, `/Users`, …) are blocked deterministically during triage, before the LLM gate — whole-system scans are slow. Targeted searches (relative roots, subpaths, non-recursive single-file grep) are unaffected.
 
 ## Autonomous subagents
 
