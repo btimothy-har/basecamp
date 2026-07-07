@@ -29,7 +29,7 @@ from .frames import (
     WaitFrame,
     WaitResultItem,
 )
-from .process import reap_agent_process, spawn_agent_process
+from .process import reap_agent_process, spawn_agent_process, terminate_process_group
 from .registry import MessageWaiter, Registry, Waiter
 from .run_result import agent_session_file
 from .store import (
@@ -43,6 +43,7 @@ from .store import (
 _REDACTED_ENV_VALUE = "<redacted>"
 
 DEFAULT_AGENT_MAX_DEPTH = 2
+DEFAULT_DISCONNECT_GRACE_SECONDS = 3600.0
 DEFAULT_MESSAGE_WAIT_TIMEOUT_SECONDS = 30.0
 MAX_MESSAGE_WAIT_TIMEOUT_SECONDS = 300.0
 TERMINAL_RUN_STATUSES = {"completed", "failed"}
@@ -172,6 +173,61 @@ def _resolve_agent_max_depth() -> int:
     except ValueError:
         return DEFAULT_AGENT_MAX_DEPTH
     return value if value >= 0 else DEFAULT_AGENT_MAX_DEPTH
+
+
+def _resolve_disconnect_grace_s() -> float:
+    raw = os.getenv("BASECAMP_AGENT_DISCONNECT_GRACE_S")
+    try:
+        value = float(raw) if raw is not None else DEFAULT_DISCONNECT_GRACE_SECONDS
+    except ValueError:
+        return DEFAULT_DISCONNECT_GRACE_SECONDS
+    return value if value >= 0 else DEFAULT_DISCONNECT_GRACE_SECONDS
+
+
+async def _run_disconnect_reaper(
+    *,
+    node_id: str,
+    registry: Registry,
+    store: Store,
+    grace_s: float,
+) -> None:
+    await asyncio.sleep(grace_s)
+    if registry.has_connection(node_id):
+        return
+
+    for run_id in registry.live_run_ids_for_owner(node_id):
+        finalized = await asyncio.to_thread(
+            store.set_run_result_if_unset,
+            run_id=run_id,
+            status="failed",
+            result=None,
+            error="dispatcher_disconnected",
+        )
+        process = registry.get_process(run_id)
+        if process is not None:
+            await asyncio.to_thread(terminate_process_group, process.pid)
+        if finalized:
+            await notify_run_finalized(run_id, registry=registry, store=store)
+
+
+def schedule_disconnect_reaper(
+    *,
+    node_id: str,
+    registry: Registry,
+    store: Store,
+    grace_s: float | None = None,
+) -> None:
+    resolved_grace_s = _resolve_disconnect_grace_s() if grace_s is None else grace_s
+    task = asyncio.create_task(
+        _run_disconnect_reaper(
+            node_id=node_id,
+            registry=registry,
+            store=store,
+            grace_s=resolved_grace_s,
+        )
+    )
+    registry.set_disconnect_reaper(node_id, task)
+    task.add_done_callback(lambda done_task: registry.discard_disconnect_reaper(node_id, done_task))
 
 
 async def prepare_dispatch(

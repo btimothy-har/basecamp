@@ -38,6 +38,7 @@ from .service import (
     list_agents,
     message_status_result,
     notify_message_delivery_terminal,
+    schedule_disconnect_reaper,
     wait_for_agents,
 )
 from .store import DuplicateAgentHandleError, Store
@@ -149,6 +150,7 @@ def create_app(store: Store, *, daemon_uds: str | None = None) -> FastAPI:
                 protocol=PROTOCOL_VERSION,
             )
             await websocket.send_json(serialize_frame(registered))
+            registry.cancel_disconnect_reaper(parsed.node_id)
 
             while True:
                 payload = await websocket.receive_json()
@@ -256,6 +258,7 @@ def create_app(store: Store, *, daemon_uds: str | None = None) -> FastAPI:
         finally:
             if node_id is not None and registry.get_connection(node_id) is websocket:
                 registry.remove_connection(node_id)
+                schedule_disconnect_reaper(node_id=node_id, registry=registry, store=store)
 
     return app
 

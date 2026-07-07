@@ -8,6 +8,7 @@ import threading
 import time
 from pathlib import Path
 
+import pytest
 from fastapi.testclient import TestClient
 from pi_swarm.app import create_app
 from pi_swarm.frames import PROTOCOL_VERSION
@@ -232,6 +233,44 @@ def test_ws_register_returns_registered(tmp_path: Path) -> None:
         "node_id": "node-1",
         "protocol": PROTOCOL_VERSION,
     }
+
+
+def test_ws_disconnect_schedules_disconnect_reaper(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    calls: list[str] = []
+
+    def record_schedule(**kwargs: object) -> None:
+        calls.append(str(kwargs["node_id"]))
+
+    monkeypatch.setattr("pi_swarm.app.schedule_disconnect_reaper", record_schedule)
+    app = _build_app(tmp_path)
+
+    with TestClient(app) as client:
+        with client.websocket_connect("/ws") as websocket:
+            _register_ws(websocket, node_id="node-1", role="session", parent_id=None, sibling_group="sg-main")
+
+    assert calls == ["node-1"]
+
+
+def test_ws_reregister_cancels_disconnect_reaper(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    cancelled: list[str] = []
+
+    def record_schedule(**_kwargs: object) -> None:
+        return
+
+    def record_cancel(_registry: object, node_id: str) -> None:
+        cancelled.append(node_id)
+
+    monkeypatch.setattr("pi_swarm.app.schedule_disconnect_reaper", record_schedule)
+    monkeypatch.setattr("pi_swarm.registry.Registry.cancel_disconnect_reaper", record_cancel)
+    app = _build_app(tmp_path)
+
+    with TestClient(app) as client:
+        with client.websocket_connect("/ws") as first:
+            _register_ws(first, node_id="node-1", role="session", parent_id=None, sibling_group="sg-main")
+        with client.websocket_connect("/ws") as second:
+            _register_ws(second, node_id="node-1", role="session", parent_id=None, sibling_group="sg-main")
+
+    assert cancelled == ["node-1", "node-1"]
 
 
 def test_ws_duplicate_active_registration_is_rejected(tmp_path: Path) -> None:

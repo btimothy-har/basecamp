@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import os
 import signal
@@ -24,10 +25,18 @@ from pi_swarm.process import (
     spawn_agent_process,
     terminate_process_group,
 )
-from pi_swarm.registry import Registry
+from pi_swarm.registry import Registry, Waiter
 from pi_swarm.run_result import load_run_result, run_result_path
 from pi_swarm.server import UdsServer
-from pi_swarm.service import DispatchRejection, PreparedDispatch, prepare_dispatch
+from pi_swarm.service import (
+    DEFAULT_DISCONNECT_GRACE_SECONDS,
+    DispatchRejection,
+    PreparedDispatch,
+    _resolve_disconnect_grace_s,
+    _run_disconnect_reaper,
+    prepare_dispatch,
+    schedule_disconnect_reaper,
+)
 from pi_swarm.store import Store
 from websockets.sync.client import unix_connect
 
@@ -40,6 +49,11 @@ class _ThreadedServer(UdsServer):
 class _FakeProcess:
     async def wait(self) -> int:
         return 7
+
+
+class _FakePidProcess:
+    def __init__(self, pid: int) -> None:
+        self.pid = pid
 
 
 class _StoreFailureError(Exception):
@@ -174,6 +188,151 @@ def _write_agent_session_file(home: Path, agent_id: str) -> Path:
     session_file = session_dir / f"2026-01-01T00-00-00_{agent_id}.jsonl"
     session_file.write_text("{}\n", encoding="utf-8")
     return session_file
+
+
+def test_registry_live_run_ids_for_owner_returns_only_owned_runs_with_processes() -> None:
+    registry = Registry()
+    registry.set_run_owner("owned-live", "node-1")
+    registry.set_run_owner("owned-no-process", "node-1")
+    registry.set_run_owner("other-live", "node-2")
+    registry.set_process("owned-live", _FakePidProcess(123))
+    registry.set_process("other-live", _FakePidProcess(456))
+
+    assert registry.live_run_ids_for_owner("node-1") == ["owned-live"]
+
+
+@pytest.mark.asyncio
+async def test_registry_set_disconnect_reaper_cancels_prior_reaper() -> None:
+    registry = Registry()
+    first = asyncio.create_task(asyncio.sleep(1000))
+    second = asyncio.create_task(asyncio.sleep(1000))
+
+    registry.set_disconnect_reaper("node-1", first)
+    registry.set_disconnect_reaper("node-1", second)
+    await asyncio.sleep(0)
+
+    assert first.cancelled()
+    assert not second.cancelled()
+    registry.cancel_disconnect_reaper("node-1")
+    await asyncio.sleep(0)
+
+
+@pytest.mark.asyncio
+async def test_registry_discard_disconnect_reaper_only_removes_matching_task() -> None:
+    registry = Registry()
+    stored = asyncio.create_task(asyncio.sleep(1000))
+    other = asyncio.create_task(asyncio.sleep(1000))
+    registry.set_disconnect_reaper("node-1", stored)
+
+    registry.discard_disconnect_reaper("node-1", other)
+    registry.cancel_disconnect_reaper("node-1")
+    await asyncio.sleep(0)
+
+    assert stored.cancelled()
+    assert not other.cancelled()
+    other.cancel()
+    await asyncio.sleep(0)
+
+
+@pytest.mark.parametrize(
+    ("env_value", "expected"),
+    [
+        (None, DEFAULT_DISCONNECT_GRACE_SECONDS),
+        ("12.5", 12.5),
+        ("not-a-number", DEFAULT_DISCONNECT_GRACE_SECONDS),
+        ("-1", DEFAULT_DISCONNECT_GRACE_SECONDS),
+    ],
+)
+def test_resolve_disconnect_grace_s(
+    env_value: str | None,
+    expected: float,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    if env_value is None:
+        monkeypatch.delenv("BASECAMP_AGENT_DISCONNECT_GRACE_S", raising=False)
+    else:
+        monkeypatch.setenv("BASECAMP_AGENT_DISCONNECT_GRACE_S", env_value)
+
+    assert _resolve_disconnect_grace_s() == expected
+
+
+@pytest.mark.asyncio
+async def test_disconnect_reaper_marks_live_run_failed_terminates_process_and_wakes_waiter(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    store = Store(db_path=tmp_path / "daemon.db")
+    registry = Registry()
+    run_id = "run-disconnected"
+    terminated: list[int | None] = []
+
+    def record_terminate(pgid: int | None, **_kwargs: object) -> None:
+        terminated.append(pgid)
+
+    monkeypatch.setattr("pi_swarm.service.terminate_process_group", record_terminate)
+    store.create_run(run_id=run_id, agent_id="agent-disconnected", dispatcher_id="node-1", spec={})
+    store.set_run_pgid(run_id=run_id, pgid=4321)
+    registry.set_run_owner(run_id, "node-1")
+    registry.set_process(run_id, _FakePidProcess(4321))
+    waiter = Waiter(
+        waiter_id="waiter-1",
+        run_ids={run_id},
+        future=asyncio.get_running_loop().create_future(),
+    )
+    registry.add_waiter(waiter)
+
+    await _run_disconnect_reaper(node_id="node-1", registry=registry, store=store, grace_s=0)
+
+    run = store.get_run(run_id)
+    assert run is not None
+    assert run["status"] == "failed"
+    assert run["result"] is None
+    assert run["error"] == "dispatcher_disconnected"
+    assert terminated == [4321]
+    assert waiter.future.done()
+
+
+@pytest.mark.asyncio
+async def test_disconnect_reaper_cancel_prevents_reap(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    store = Store(db_path=tmp_path / "daemon.db")
+    registry = Registry()
+    terminated: list[int | None] = []
+    monkeypatch.setattr("pi_swarm.service.terminate_process_group", lambda pgid, **_kwargs: terminated.append(pgid))
+    store.create_run(run_id="run-still-live", agent_id="agent-still-live", dispatcher_id="node-1", spec={})
+    registry.set_run_owner("run-still-live", "node-1")
+    registry.set_process("run-still-live", _FakePidProcess(4321))
+
+    schedule_disconnect_reaper(node_id="node-1", registry=registry, store=store, grace_s=1000)
+    task = registry._disconnect_reapers["node-1"]
+    registry.cancel_disconnect_reaper("node-1")
+    await asyncio.sleep(0)
+
+    assert task.cancelled()
+    assert store.get_run("run-still-live")["status"] == "running"
+    assert terminated == []
+
+
+@pytest.mark.asyncio
+async def test_disconnect_reaper_no_live_runs_noop(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    store = Store(db_path=tmp_path / "daemon.db")
+    registry = Registry()
+    terminated: list[int | None] = []
+    monkeypatch.setattr("pi_swarm.service.terminate_process_group", lambda pgid, **_kwargs: terminated.append(pgid))
+    store.create_run(run_id="run-no-process", agent_id="agent-no-process", dispatcher_id="node-1", spec={})
+    registry.set_run_owner("run-no-process", "node-1")
+
+    await _run_disconnect_reaper(node_id="node-1", registry=registry, store=store, grace_s=0)
+
+    run = store.get_run("run-no-process")
+    assert run is not None
+    assert run["status"] == "running"
+    assert terminated == []
 
 
 def test_build_runner_argv_injects_fork_before_task() -> None:
