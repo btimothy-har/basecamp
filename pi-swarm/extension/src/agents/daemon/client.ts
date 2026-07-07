@@ -4,6 +4,7 @@ import * as fs from "node:fs";
 import * as http from "node:http";
 import WebSocket, { type RawData } from "ws";
 import {
+	type CancelAckFrame,
 	decodeFrame,
 	type ErrorFrame,
 	encodeFrame,
@@ -762,6 +763,8 @@ export interface MessageStatusOptions {
 
 export type SendPeerMessageResult = Pick<PeerMessageAckFrame, "message_id" | "status" | "error">;
 
+export type CancelAgentResult = Pick<CancelAckFrame, "status" | "error">;
+
 export type MessageStatusResult = Pick<
 	MessageStatusResultFrame,
 	"message_id" | "status" | "error" | "created_at" | "sent_at" | "queued_at" | "failed_at"
@@ -776,6 +779,7 @@ export interface DaemonClient {
 		signal?: AbortSignal;
 	}): Promise<WaitResultFrame["results"]>;
 	sendPeerMessage(input: SendPeerMessageOptions): Promise<SendPeerMessageResult>;
+	cancelAgent(input: { targetHandle: string }): Promise<CancelAgentResult>;
 	messageStatus(input: MessageStatusOptions): Promise<MessageStatusResult>;
 }
 
@@ -926,6 +930,20 @@ export function createDaemonClient(connection: DaemonConnection): DaemonClient {
 			const ack = await waitForFrame(connection, "peer_message_ack", (frame) => frame.request_id === requestId);
 			return {
 				message_id: ack.message_id,
+				status: ack.status,
+				error: ack.error,
+			};
+		},
+		cancelAgent: async (input) => {
+			const requestId = randomUUID();
+			connection.send({
+				type: "cancel",
+				v: PROTOCOL_VERSION,
+				request_id: requestId,
+				target_handle: input.targetHandle,
+			});
+			const ack = await waitForFrame(connection, "cancel_ack", (frame) => frame.request_id === requestId);
+			return {
 				status: ack.status,
 				error: ack.error,
 			};

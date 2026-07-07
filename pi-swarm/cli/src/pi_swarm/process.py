@@ -3,7 +3,11 @@
 from __future__ import annotations
 
 import asyncio
+import os
+import signal
+import subprocess
 import sys
+import time
 from collections.abc import Awaitable, Callable
 from pathlib import Path
 
@@ -13,6 +17,7 @@ from .run_result import run_result_path
 from .store import Store
 
 ProcessExitHook = Callable[[str], Awaitable[None]]
+RUNNER_MODULE = "pi_swarm.runner"
 
 
 def build_runner_argv(
@@ -25,7 +30,7 @@ def build_runner_argv(
     return [
         sys.executable,
         "-m",
-        "pi_swarm.runner",
+        RUNNER_MODULE,
         "--result-path",
         str(result_path),
         "--",
@@ -99,7 +104,92 @@ async def spawn_agent_process(
         stdin=asyncio.subprocess.DEVNULL,
         stdout=asyncio.subprocess.DEVNULL,
         stderr=asyncio.subprocess.DEVNULL,
+        start_new_session=True,
     )
+
+
+def _process_group_alive(pgid: int) -> bool:
+    try:
+        os.killpg(pgid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    return True
+
+
+def terminate_process_group(
+    pgid: int | None,
+    *,
+    escalation_s: float = 5.0,
+    poll_s: float = 0.1,
+) -> None:
+    # Never signal pgid 0 or 1: they may target the caller or system processes.
+    if pgid is None or pgid <= 1:
+        return
+
+    try:
+        os.killpg(pgid, signal.SIGTERM)
+    except OSError:
+        return
+
+    deadline = time.monotonic() + escalation_s
+    while time.monotonic() < deadline:
+        if not _process_group_alive(pgid):
+            return
+        time.sleep(poll_s)
+
+    try:
+        os.killpg(pgid, signal.SIGKILL)
+    except OSError:
+        return
+
+
+def _process_group_is_runner(pgid: int) -> bool:
+    if pgid <= 1:
+        return False
+
+    try:
+        result = subprocess.run(
+            ["ps", "-p", str(pgid), "-o", "args="],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+    except OSError:
+        return False
+
+    return f"-m {RUNNER_MODULE}" in result.stdout
+
+
+def terminate_process_group_if_runner(
+    pgid: int | None,
+    *,
+    escalation_s: float = 5.0,
+    poll_s: float = 0.1,
+) -> None:
+    # Guard against PID/PGID reuse before signalling.
+    if pgid is None or not _process_group_is_runner(pgid):
+        return
+
+    terminate_process_group(pgid, escalation_s=escalation_s, poll_s=poll_s)
+
+
+def reconcile_orphaned_runs(store: Store) -> None:
+    for row in store.get_nonterminal_runs():
+        pgid = row.get("pgid")
+        if isinstance(pgid, int):
+            try:
+                terminate_process_group_if_runner(pgid, escalation_s=2.0)
+            except OSError:
+                pass
+
+        store.set_run_result_if_unset(
+            run_id=row["id"],
+            status="failed",
+            result=None,
+            error="daemon_restart_reconciled",
+        )
 
 
 async def reap_agent_process(

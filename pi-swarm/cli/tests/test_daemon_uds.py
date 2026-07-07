@@ -36,6 +36,7 @@ class _FakeServer:
 def test_run_daemon_writes_and_removes_pid_file(tmp_path: Path, monkeypatch: MonkeyPatch) -> None:
     pid_path = tmp_path / "daemon.pid"
     uds_path = tmp_path / "daemon.sock"
+    db_path = tmp_path / "daemon.db"
     observed_pid_files: list[str] = []
 
     def create_server(uds_path_arg: str, store: Store) -> _FakeServer:
@@ -45,7 +46,7 @@ def test_run_daemon_writes_and_removes_pid_file(tmp_path: Path, monkeypatch: Mon
 
     monkeypatch.setattr(daemon_server, "create_server", create_server)
 
-    daemon_server.run_daemon(str(uds_path), pid_path=str(pid_path))
+    daemon_server.run_daemon(str(uds_path), db_path=str(db_path), pid_path=str(pid_path))
 
     assert observed_pid_files == [f"{os.getpid()}\n"]
     assert not pid_path.exists()
@@ -54,6 +55,7 @@ def test_run_daemon_writes_and_removes_pid_file(tmp_path: Path, monkeypatch: Mon
 def test_run_daemon_does_not_remove_replaced_pid_file(tmp_path: Path, monkeypatch: MonkeyPatch) -> None:
     pid_path = tmp_path / "daemon.pid"
     uds_path = tmp_path / "daemon.sock"
+    db_path = tmp_path / "daemon.db"
     replacement = "999999\n"
 
     def create_server(_uds_path_arg: str, _store: Store) -> _FakeServer:
@@ -61,9 +63,34 @@ def test_run_daemon_does_not_remove_replaced_pid_file(tmp_path: Path, monkeypatc
 
     monkeypatch.setattr(daemon_server, "create_server", create_server)
 
-    daemon_server.run_daemon(str(uds_path), pid_path=str(pid_path))
+    daemon_server.run_daemon(str(uds_path), db_path=str(db_path), pid_path=str(pid_path))
 
     assert pid_path.read_text(encoding="utf-8") == replacement
+
+
+def test_run_daemon_reconciles_before_serving(tmp_path: Path, monkeypatch: MonkeyPatch) -> None:
+    pid_path = tmp_path / "daemon.pid"
+    uds_path = tmp_path / "daemon.sock"
+    db_path = tmp_path / "daemon.db"
+    events: list[str] = []
+
+    def reconcile_orphaned_runs(store: Store) -> None:
+        assert isinstance(store, Store)
+        events.append("reconcile")
+
+    def create_server(uds_path_arg: str, store: Store) -> _FakeServer:
+        assert uds_path_arg == str(uds_path)
+        assert isinstance(store, Store)
+        events.append("create_server")
+        return _FakeServer(lambda: events.append("run"))
+
+    monkeypatch.setattr(daemon_server, "reconcile_orphaned_runs", reconcile_orphaned_runs)
+    monkeypatch.setattr(daemon_server, "create_server", create_server)
+
+    daemon_server.run_daemon(str(uds_path), db_path=str(db_path), pid_path=str(pid_path))
+
+    assert events == ["reconcile", "create_server", "run"]
+    assert not pid_path.exists()
 
 
 def test_health_over_real_uds(tmp_path: Path) -> None:

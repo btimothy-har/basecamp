@@ -11,7 +11,12 @@ import { type PeerMessageDeliveryFrame, PROTOCOL_VERSION } from "./frames.ts";
 import { buildDeterministicAgentHandle } from "./handles.ts";
 import { resolveDaemonPaths } from "./paths.ts";
 import { registerDaemonReporter } from "./reporter.ts";
-import { registerAskAgentTool, registerDaemonTools, registerPeerMessageTools } from "./tools.ts";
+import {
+	registerAskAgentTool,
+	registerCancelAgentTool,
+	registerDaemonTools,
+	registerPeerMessageTools,
+} from "./tools.ts";
 import { type ActiveAgentsWidgetController, clearActiveAgentsWidget, startActiveAgentsWidget } from "./widget.ts";
 
 type ThemeFg = (color: Parameters<import("@earendil-works/pi-coding-agent").Theme["fg"]>[0], text: string) => string;
@@ -326,6 +331,9 @@ export function registerDaemonClient(pi: ExtensionAPI, deps: PiSwarmDependencies
 			resolveModelAlias: deps.resolveModelAlias,
 		});
 		registerPeerMessageTools(pi, awaitDaemonConnection, {
+			hasInvokedSkill: deps.hasInvokedSkill,
+		});
+		registerCancelAgentTool(pi, awaitDaemonConnection, {
 			hasInvokedSkill: deps.hasInvokedSkill,
 		});
 	}

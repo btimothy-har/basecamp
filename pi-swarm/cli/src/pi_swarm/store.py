@@ -188,6 +188,7 @@ class Store:
                     result TEXT,
                     error TEXT,
                     exit_code INTEGER,
+                    pgid INTEGER,
                     created_at TEXT,
                     started_at TEXT,
                     ended_at TEXT
@@ -234,6 +235,7 @@ class Store:
             self._ensure_agents_product_role_column(connection)
             self._ensure_runs_dispatcher_id_column(connection)
             self._ensure_runs_exit_code_column(connection)
+            self._ensure_runs_pgid_column(connection)
             self._ensure_runs_report_token_hash_column(connection)
 
     def _ensure_agents_current_run_id_column(self, connection: sqlite3.Connection) -> None:
@@ -301,6 +303,12 @@ class Store:
         names = {column[1] for column in columns}
         if "exit_code" not in names:
             connection.execute("ALTER TABLE runs ADD COLUMN exit_code INTEGER")
+
+    def _ensure_runs_pgid_column(self, connection: sqlite3.Connection) -> None:
+        columns = connection.execute("PRAGMA table_info(runs)").fetchall()
+        names = {column[1] for column in columns}
+        if "pgid" not in names:
+            connection.execute("ALTER TABLE runs ADD COLUMN pgid INTEGER")
 
     def _ensure_runs_report_token_hash_column(self, connection: sqlite3.Connection) -> None:
         columns = connection.execute("PRAGMA table_info(runs)").fetchall()
@@ -428,6 +436,23 @@ class Store:
             connection.row_factory = sqlite3.Row
             row = connection.execute("SELECT * FROM agents WHERE agent_handle = ?", (agent_handle,)).fetchone()
             return dict(row) if row is not None else None
+
+    def get_subtree_agent_ids(self, root_agent_id: str) -> list[str]:
+        """Return root agent id and all transitive descendant agent ids."""
+
+        with self._connect() as connection:
+            rows = connection.execute(
+                """
+                WITH RECURSIVE subtree(id) AS (
+                    SELECT id FROM agents WHERE id = ?
+                    UNION
+                    SELECT a.id FROM agents a JOIN subtree s ON a.parent_id = s.id
+                )
+                SELECT id FROM subtree
+                """,
+                (root_agent_id,),
+            ).fetchall()
+            return [row[0] for row in rows]
 
     def create_message(
         self,
@@ -681,6 +706,31 @@ class Store:
                 (exit_code, run_id),
             )
 
+    def set_run_pgid(self, *, run_id: str, pgid: int | None) -> None:
+        """Persist subprocess process-group id for a run."""
+
+        with self._connect() as connection:
+            connection.execute(
+                "UPDATE runs SET pgid = ? WHERE id = ?",
+                (pgid, run_id),
+            )
+
+    def get_nonterminal_runs(self) -> list[dict[str, Any]]:
+        """Return runs that are not in a terminal status."""
+
+        with self._connect() as connection:
+            connection.row_factory = sqlite3.Row
+            rows = connection.execute(
+                """
+                SELECT id, agent_id, pgid, status
+                FROM runs
+                WHERE status NOT IN (?, ?)
+                """,
+                TERMINAL_STATUSES,
+            ).fetchall()
+
+        return [dict(row) for row in rows]
+
     def set_run_result(
         self,
         *,
@@ -804,6 +854,28 @@ class Store:
         if addressed_by_public_handle:
             return self._can_contact_by_public_handle(requester_node_id, target_agent_id)
         return False
+
+    def can_cancel(self, requester_node_id: str, target_agent_id: str) -> bool:
+        """Return whether requester may cancel target's current run.
+
+        Cancellation uses subtree authority only: the requester must have
+        dispatched the target directly or transitively. A known public handle is
+        a routable contact address only and does NOT authorize cancellation.
+        """
+
+        if requester_node_id == target_agent_id:
+            return False
+        if self._parent_chain_contains(target_agent_id, requester_node_id):
+            return True
+
+        target = self.get_agent(target_agent_id)
+        if target is None:
+            return False
+        run_id = target.get("current_run_id")
+        if not isinstance(run_id, str):
+            return False
+        run = self.get_run(run_id)
+        return run is not None and run.get("dispatcher_id") == requester_node_id
 
     def agent_relation(self, viewer_agent_id: str, other_agent_id: str) -> AgentRelation:
         """Return how the other agent relates to the viewer."""

@@ -9,6 +9,7 @@ from pathlib import Path
 import uvicorn
 
 from .app import create_app
+from .process import reconcile_orphaned_runs
 from .store import Store
 
 _SOCKET_MODE = 0o600
@@ -82,7 +83,9 @@ def run_daemon(
         _write_pid_file(daemon_pid_path, daemon_pid)
 
     try:
-        create_server(str(socket_path), Store(db_path=db_path)).run()
+        store = Store(db_path=db_path)
+        reconcile_orphaned_runs(store)
+        create_server(str(socket_path), store).run()
     finally:
         if daemon_pid_path is not None:
             _remove_pid_file(daemon_pid_path, daemon_pid)

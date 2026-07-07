@@ -19,3 +19,7 @@ Flow:
 
 The review module lives in `src/agents/review/` (`findings`, `transpose`, `synthesis`, `orchestrate`, `format`, `command`, `annotate-pane`, `command-helpers`). It is manual only — there is no automatic or backgrounded firing. v1 reviews the current branch; PR and arbitrary-branch targets are a planned follow-up.
 
+## Agent lifecycle
+
+Dispatched agents can be stopped with the `cancel_agent` tool, which cancels an agent you dispatched and terminates its process (subtree-only: you cannot cancel agents outside your dispatch tree). Agents are also reaped automatically when their dispatcher session ends and does not reconnect within `BASECAMP_AGENT_DISCONNECT_GRACE_S` (default 3600s). See `pi-swarm/protocol/PROTOCOL.md`.
+

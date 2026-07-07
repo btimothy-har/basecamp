@@ -8,8 +8,8 @@ from pydantic import BaseModel, Field, TypeAdapter
 
 # Gates every client-visible daemon capability, not just WebSocket frame shapes.
 # This includes HTTP endpoints like /runs/summary, so stale daemons restart.
-# v17: list-agents rows expose safe current-task previews for display.
-PROTOCOL_VERSION = 17
+# v18: cancel-agent request/ack frames.
+PROTOCOL_VERSION = 18
 
 
 class RegisterFrame(BaseModel):
@@ -245,6 +245,25 @@ class MessageStatusResultFrame(BaseModel):
     failed_at: str | None
 
 
+class CancelFrame(BaseModel):
+    """Request cancellation of an agent's current run."""
+
+    type: Literal["cancel"]
+    v: Literal[PROTOCOL_VERSION]
+    request_id: str
+    target_handle: str
+
+
+class CancelAckFrame(BaseModel):
+    """Acknowledgement for a cancel request."""
+
+    type: Literal["cancel_ack"]
+    v: Literal[PROTOCOL_VERSION]
+    request_id: str
+    status: Literal["cancelled", "not_found", "not_authorized", "already_terminal"]
+    error: str | None = None
+
+
 Frame = Annotated[
     RegisterFrame
     | RegisteredFrame
@@ -262,7 +281,9 @@ Frame = Annotated[
     | PeerMessageDeliveryFrame
     | PeerMessageDeliveryAckFrame
     | MessageStatusFrame
-    | MessageStatusResultFrame,
+    | MessageStatusResultFrame
+    | CancelFrame
+    | CancelAckFrame,
     Field(discriminator="type"),
 ]
 

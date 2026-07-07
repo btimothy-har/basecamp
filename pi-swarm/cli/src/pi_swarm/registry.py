@@ -32,6 +32,7 @@ class Registry:
         self._connections: MutableMapping[str, object] = {}
         self._runs: MutableMapping[str, str] = {}
         self._processes: MutableMapping[str, asyncio.subprocess.Process] = {}
+        self._disconnect_reapers: MutableMapping[str, asyncio.Task[None]] = {}
         self._waiters: MutableMapping[str, Waiter] = {}
         self._message_waiters: MutableMapping[str, MessageWaiter] = {}
 
@@ -75,10 +76,41 @@ class Registry:
 
         self._processes[run_id] = process
 
+    def get_process(self, run_id: str) -> asyncio.subprocess.Process | None:
+        """Look up a tracked subprocess handle without removing it."""
+
+        return self._processes.get(run_id)
+
     def pop_process(self, run_id: str) -> asyncio.subprocess.Process | None:
         """Drop and return the tracked process for a run."""
 
         return self._processes.pop(run_id, None)
+
+    def live_run_ids_for_owner(self, node_id: str) -> list[str]:
+        """Return owned run ids that still have tracked live subprocess handles."""
+
+        return [run_id for run_id, owner in self._runs.items() if owner == node_id and run_id in self._processes]
+
+    def set_disconnect_reaper(self, node_id: str, task: asyncio.Task[None]) -> None:
+        """Register a disconnect reaper task, cancelling any previous one."""
+
+        existing = self._disconnect_reapers.get(node_id)
+        if existing is not None:
+            existing.cancel()
+        self._disconnect_reapers[node_id] = task
+
+    def cancel_disconnect_reaper(self, node_id: str) -> None:
+        """Cancel and remove a disconnect reaper task if present."""
+
+        task = self._disconnect_reapers.pop(node_id, None)
+        if task is not None:
+            task.cancel()
+
+    def discard_disconnect_reaper(self, node_id: str, task: asyncio.Task[None]) -> None:
+        """Remove a disconnect reaper only if it is still the registered task."""
+
+        if self._disconnect_reapers.get(node_id) is task:
+            self._disconnect_reapers.pop(node_id, None)
 
     def add_waiter(self, waiter: Waiter) -> None:
         """Register a waiter by id."""

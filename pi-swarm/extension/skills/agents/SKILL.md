@@ -10,6 +10,7 @@ Use this skill to delegate bounded work to agents while you keep working.
 Use these tools for agent delegation and collaboration; if agents are unavailable, they return a tool error:
 - `dispatch_agent({ agent?, task, name?, agent_handle? })` — start or retask a dispatchable async worker and return a public `agent_handle`.
 - `wait_for_agent({ handles: string | string[], timeout_s? })` — wait for one or more awaitable dispatch handles. `timeout_s` defaults to 600.
+- `cancel_agent({ agent_handle })` — cancel a running agent you dispatched, stopping it and its entire dispatched subtree. Subtree-only: you can only cancel agents within your own dispatch tree.
 - `list_agents({ awaitable?: true })` — list visible dispatchable agents in your current scope. `awaitable` filters to agents with a current run you dispatched. Sessions are intentionally excluded.
 - `ask_agent({ agent_handle, question, timeout_s? })` — ask an agent or session by its known public handle and get an answer back when the target is forkable. Forks the target read-only; never interrupts or steers it.
 - `message_agent({ agent_handle, message, interrupt? })` — send a one-way persistent message to an agent by its known public handle across sessions. Returns daemon acceptance (`message_id`/status) only; no recipient answer is included.
@@ -37,7 +38,7 @@ Do not dispatch agents for trivial one-step work you can do directly.
 - `list_agents` is a dispatch/wait directory, not a message-target directory. It intentionally excludes sessions, even though sessions can be messageable/askable when their handle is known.
 - Pass the handle returned by `dispatch_agent` as `handles` to `wait_for_agent`.
 - Only the session that dispatched an agent's current run can wait on that handle. Other callers see `unknown`.
-- A timed-out wait reports still-running handles as `running`; it does not cancel the agent.
+- A timed-out wait reports still-running handles as `running`; it does not cancel the agent (use `cancel_agent` to stop it).
 - `list_agents` returns safe metadata only, not prompts, private ids, results, env, or spawn specs. It displays stable identity as handle plus agent type, with current task/title metadata separate.
 - Retask by passing an existing dispatchable `agent_handle` to `dispatch_agent`; retasks are rejected while that handle's current run is active, and changing the agent type requires a new handle.
 - Delegation depth is capped; if nested dispatch is rejected, continue without spawning another agent.
