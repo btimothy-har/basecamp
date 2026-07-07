@@ -115,6 +115,48 @@ describe("transposeReport", () => {
 		assert.deepEqual(await transposeReport("No findings.", "testing", { model: fakeModel, auth: {}, complete }), []);
 	});
 
+	it("propagates a resolved reasoning effort for reasoning models", async () => {
+		const reasoningModel: Model<any> = {
+			...fakeModel,
+			reasoning: true,
+			thinkingLevelMap: { minimal: "low" },
+		};
+		let reasoningEffort: unknown;
+		const complete: NonNullable<TransposeDeps["complete"]> = async (_model, _context, options) => {
+			reasoningEffort = options?.reasoningEffort;
+			return assistantMessage([toolCall({ findings: [] })]);
+		};
+
+		assert.deepEqual(
+			await transposeReport("No findings.", "testing", { model: reasoningModel, auth: {}, complete }),
+			[],
+		);
+		assert.notEqual(reasoningEffort, undefined);
+	});
+
+	it("uses the anthropic forced tool choice shape for anthropic messages models", async () => {
+		const anthropicModel: Model<any> = {
+			...fakeModel,
+			api: "anthropic-messages",
+		};
+		const complete: NonNullable<TransposeDeps["complete"]> = async (_model, _context, options) => {
+			assert.deepEqual(options?.toolChoice, { type: "tool", name: "report_findings" });
+			return assistantMessage([toolCall({ findings: [] })]);
+		};
+
+		assert.deepEqual(await transposeReport("No findings.", "docs", { model: anthropicModel, auth: {}, complete }), []);
+	});
+
+	it("throws when the model returns multiple report_findings tool calls", async () => {
+		const complete: NonNullable<TransposeDeps["complete"]> = async () =>
+			assistantMessage([toolCall({ findings: [] }), toolCall({ findings: [] })]);
+
+		await assert.rejects(
+			() => transposeReport("report", "general", { model: fakeModel, auth: {}, complete }),
+			/valid report_findings tool call/,
+		);
+	});
+
 	it("throws when the model returns an error stop reason", async () => {
 		const complete: NonNullable<TransposeDeps["complete"]> = async () => ({
 			...assistantMessage([], "error"),

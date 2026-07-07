@@ -204,4 +204,105 @@ describe("runReview", () => {
 		assert.equal(docsOutcome?.prose, "docs prose");
 		assert.equal(docsOutcome?.error, "invalid tool payload");
 	});
+
+	it("marks dispatched reviewers unknown when waitForReviewers throws", async () => {
+		const dispatched: ReviewerSpec[] = [];
+		const deps: OrchestrateDeps = {
+			dispatchReviewer: async (spec) => {
+				dispatched.push(spec);
+				return handleFor(spec);
+			},
+			waitForReviewers: async () => {
+				throw new Error("daemon wait exploded");
+			},
+			transpose: async () => {
+				throw new Error("transpose should not run");
+			},
+			now: () => new Date("2026-07-07T12:00:00.000Z"),
+		};
+
+		const result = await runReview(scope, deps);
+
+		assert.deepEqual(
+			dispatched.map((spec) => spec.agent),
+			REVIEWERS.map((spec) => spec.agent),
+		);
+		assert.deepEqual(result.verdict, {
+			decision: "approve",
+			blocking: false,
+			counts: { critical: 0, high: 0, medium: 0, low: 0 },
+		});
+		assert.deepEqual(result.findings, []);
+		assert.deepEqual(
+			result.reviewers.map((reviewer) => reviewer.status),
+			["unknown", "unknown", "unknown", "unknown", "unknown", "unknown"],
+		);
+		assert.equal(
+			result.reviewers.every((reviewer) => reviewer.gap?.startsWith("wait failed:")),
+			true,
+		);
+	});
+
+	it("records running wait results as timed-out coverage gaps with no findings", async () => {
+		const waitResults = new Map<string, ReviewerWaitResult>(
+			REVIEWERS.map((spec) => [
+				handleFor(spec),
+				{ status: "completed", result: `${spec.dimension} prose`, error: null },
+			]),
+		);
+		waitResults.set(handleFor(REVIEWERS[0]!), { status: "running", result: "partial security prose", error: null });
+		const deps: OrchestrateDeps = {
+			dispatchReviewer: async (spec) => handleFor(spec),
+			waitForReviewers: async () => waitResults,
+			transpose: async (_prose, dimension) => [finding({ dimension, severity: "low", title: `${dimension} finding` })],
+			now: () => new Date("2026-07-07T12:00:00.000Z"),
+		};
+
+		const result = await runReview(scope, deps);
+		const runningOutcome = result.reviewers.find((reviewer) => reviewer.agent === REVIEWERS[0]?.agent);
+
+		assert.equal(runningOutcome?.status, "running");
+		assert.equal(runningOutcome?.gap, "reviewer running (timed out)");
+		assert.deepEqual(runningOutcome?.findings, []);
+		assert.equal(runningOutcome?.prose, "partial security prose");
+		assert.deepEqual(
+			result.findings.map((item) => item.title),
+			["testing finding", "docs finding", "clarity finding", "conventions finding", "general finding"],
+		);
+	});
+
+	it("does not wait when every dispatch fails and approves with no findings", async () => {
+		let waitCalled = false;
+		const deps: OrchestrateDeps = {
+			dispatchReviewer: async (spec) => {
+				throw new Error(`dispatch unavailable for ${spec.agent}`);
+			},
+			waitForReviewers: async () => {
+				waitCalled = true;
+				throw new Error("wait should not run");
+			},
+			transpose: async () => {
+				throw new Error("transpose should not run");
+			},
+			now: () => new Date("2026-07-07T12:00:00.000Z"),
+		};
+
+		const result = await runReview(scope, deps);
+
+		assert.equal(waitCalled, false);
+		assert.deepEqual(result.verdict, {
+			decision: "approve",
+			blocking: false,
+			counts: { critical: 0, high: 0, medium: 0, low: 0 },
+		});
+		assert.deepEqual(result.findings, []);
+		assert.deepEqual(
+			result.reviewers.map((reviewer) => reviewer.status),
+			["failed", "failed", "failed", "failed", "failed", "failed"],
+		);
+		assert.equal(
+			result.reviewers.every((reviewer) => reviewer.gap?.startsWith("dispatch failed:")),
+			true,
+		);
+	});
 });

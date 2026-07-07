@@ -101,4 +101,70 @@ describe("formatReviewPrompt", () => {
 		assert.match(prompt, /Full report \+ raw reviewer output: \/tmp\/review\.json/);
 		assert.match(prompt, /confirm it with the user before editing code/);
 	});
+
+	it("renders the no-findings branch when there are no findings", () => {
+		const prompt = formatReviewPrompt(
+			{
+				...result,
+				findings: [],
+				verdict: {
+					decision: "approve",
+					blocking: false,
+					counts: { critical: 0, high: 0, medium: 0, low: 0 },
+				},
+			},
+			"/tmp/review.json",
+		);
+
+		assert.match(prompt, /Findings \(0\):\nNo findings above threshold\./);
+	});
+
+	it("renders fallbacks for null finding fields", () => {
+		const prompt = formatReviewPrompt(
+			{
+				...result,
+				findings: [
+					{
+						dimension: "general",
+						severity: "medium",
+						file: null,
+						lineStart: null,
+						lineEnd: null,
+						title: "Missing location",
+						detail: "The reviewer did not provide a concrete location.",
+						remediation: null,
+					},
+				],
+			},
+			"/tmp/review.json",
+		);
+
+		assert.match(prompt, /1\. \[medium\] \[general\] \(no file\):\? — Missing location/);
+		assert.match(prompt, /Fix: —/);
+	});
+
+	const verdictCases: Array<[ReviewResult["verdict"]["decision"], string]> = [
+		["request-changes", "Request Changes"],
+		["comment", "Comment"],
+		["approve-with-notes", "Approve With Notes"],
+		["approve", "Approve"],
+	];
+
+	for (const [decision, formattedDecision] of verdictCases) {
+		it(`renders the ${decision} verdict line`, () => {
+			const prompt = formatReviewPrompt(
+				{
+					...result,
+					verdict: {
+						decision,
+						blocking: decision === "request-changes",
+						counts: { critical: 1, high: 2, medium: 3, low: 4 },
+					},
+				},
+				"/tmp/review.json",
+			);
+
+			assert.match(prompt, new RegExp(`Verdict: ${formattedDecision} — 1 critical, 2 high, 3 medium, 4 low\\.`));
+		});
+	}
 });

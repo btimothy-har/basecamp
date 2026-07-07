@@ -1,3 +1,4 @@
+import { errorMessage } from "../errors.ts";
 import type { Dimension, Finding } from "./findings.ts";
 import { computeVerdict, mergeFindings, type Verdict } from "./synthesis.ts";
 
@@ -58,10 +59,6 @@ export interface OrchestrateDeps {
 interface DispatchedReviewer {
 	spec: ReviewerSpec;
 	handle: string;
-}
-
-function errorMessage(error: unknown): string {
-	return error instanceof Error ? error.message : String(error);
 }
 
 function reviewerGap(status: ReviewerStatus): string {

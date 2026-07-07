@@ -18,6 +18,11 @@ function finding(overrides: Partial<Finding>): Finding {
 }
 
 describe("mergeFindings", () => {
+	it("returns an empty array for empty report inputs", () => {
+		assert.deepEqual(mergeFindings([]), []);
+		assert.deepEqual(mergeFindings([[], []]), []);
+	});
+
 	it("orders by severity, file, and line with nulls last while preserving duplicates", () => {
 		const duplicate = finding({ severity: "high", file: "a.ts", lineStart: 2, title: "duplicate" });
 		const duplicateCopy = finding({ severity: "high", file: "a.ts", lineStart: 2, title: "duplicate" });
@@ -84,6 +89,14 @@ describe("computeVerdict", () => {
 			decision: "comment",
 			blocking: false,
 			counts: { critical: 0, high: 1, medium: 1, low: 0 },
+		});
+	});
+
+	it("comments without blocking for exactly two high findings", () => {
+		assert.deepEqual(computeVerdict([finding({ severity: "high" }), finding({ severity: "high" })]), {
+			decision: "comment",
+			blocking: false,
+			counts: { critical: 0, high: 2, medium: 0, low: 0 },
 		});
 	});
 
