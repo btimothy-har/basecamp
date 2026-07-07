@@ -47,7 +47,7 @@ export function registerReviewCommand(pi: ExtensionAPI, deps: PiSwarmDependencie
 				}
 				const daemonClient = createDaemonClient(connection);
 
-				const cwd = ctx.cwd;
+				const cwd = deps.getWorkspaceState()?.effectiveCwd ?? ctx.cwd;
 				const trimmedArgs = args.trim();
 				const base = trimmedArgs || (await resolveDefaultBase(pi, cwd));
 				if (base.startsWith("-")) {
