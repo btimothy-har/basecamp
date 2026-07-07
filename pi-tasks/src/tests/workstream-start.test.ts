@@ -81,6 +81,7 @@ function makeRecord(overrides: Partial<WorkstreamLaunchRecord> = {}): Workstream
 function makeDeps(overrides: Partial<WorkstreamStartDeps> = {}) {
 	const stampCalls: { id: string; handle: string }[] = [];
 	const findCalls: { filePath: string; id: string; repo?: string }[] = [];
+	const enterExploreModeCalls: { event: SessionStartEvent; ctx: ExtensionContext }[] = [];
 	let workspace: WorkspaceState | null = { repo: { isRepo: true, name: "org/repo" } } as unknown as WorkspaceState;
 	let waitedWorkspace: WorkspaceState | null = workspace;
 	let record: WorkstreamLaunchRecord | null = makeRecord();
@@ -98,12 +99,16 @@ function makeDeps(overrides: Partial<WorkstreamStartDeps> = {}) {
 			return record;
 		},
 		deriveHandle: () => handle,
+		enterExploreMode: (event, ctx) => {
+			enterExploreModeCalls.push({ event, ctx });
+		},
 		...overrides,
 	};
 	return {
 		deps,
 		findCalls,
 		stampCalls,
+		enterExploreModeCalls,
 		setRecord(value: WorkstreamLaunchRecord | null) {
 			record = value;
 		},
@@ -332,6 +337,9 @@ describe("workstream startup", () => {
 		});
 		assert.equal(pi.userMessages.length, 1);
 		assert.deepEqual(harness.stampCalls, [{ id: "launch-workstream-too", handle: "swift-otter-1a2b3c" }]);
+		assert.equal(harness.enterExploreModeCalls.length, 1);
+		assert.equal(harness.enterExploreModeCalls[0]?.event.reason, "new");
+		assert.equal(harness.enterExploreModeCalls[0]?.ctx, ctx);
 	});
 
 	it("registers a product-role provider for non-empty --workstream sessions", () => {
@@ -359,6 +367,23 @@ describe("workstream startup", () => {
 		assert.equal(pi.userMessages.length, 0);
 		assert.equal(harness.findCalls.length, 0);
 		assert.equal(harness.stampCalls.length, 0);
+		assert.equal(harness.enterExploreModeCalls.length, 0);
+	});
+
+	it("does not enter Explore mode for whitespace-only --workstream ids", async () => {
+		const pi = new FakePi();
+		const harness = makeDeps();
+		const { ctx, notices } = makeCtx();
+
+		registerWorkstreamStartup(pi as unknown as ExtensionAPI, harness.deps);
+		pi.setFlag("workstream", "   ");
+		await pi.emitSessionStart(ctx);
+
+		assert.equal(pi.userMessages.length, 0);
+		assert.equal(harness.findCalls.length, 0);
+		assert.equal(harness.stampCalls.length, 0);
+		assert.equal(harness.enterExploreModeCalls.length, 0);
+		assert.match(notices[0]?.message ?? "", /Usage: pi --workstream <id>/);
 	});
 
 	it("is wired from pi-tasks/index.ts", () => {
