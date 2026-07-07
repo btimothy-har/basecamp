@@ -17,7 +17,11 @@ import { SCRATCH_ROOT } from "pi-core/workspace/constants.ts";
 import { resolveGitInfo } from "pi-core/workspace/repo.ts";
 import {
 	attachWorktreeDir,
+	branchName,
+	findWorktreeRecord,
 	getOrCreateWorktree,
+	gitWorktreeRecords,
+	labelFromWorktreePath,
 	listWorktrees as listGitWorktrees,
 	type WorktreeResult,
 } from "pi-core/workspace/worktree.ts";
@@ -93,7 +97,7 @@ export class WorkspaceRuntimeService implements WorkspaceService {
 	async initialize(opts: WorkspaceInitializeOptions): Promise<WorkspaceInitializeResult> {
 		const launchCwd = path.resolve(opts.launchCwd);
 		const gitInfo = await resolveGitInfo(this.pi, launchCwd);
-		const repoRootOrLaunchCwd = gitInfo.toplevel ?? launchCwd;
+		const repoRootOrLaunchCwd = gitInfo.mainRoot ?? launchCwd;
 		const repo: RepoContext | null = gitInfo.isRepo
 			? {
 					isRepo: true,
@@ -121,7 +125,33 @@ export class WorkspaceRuntimeService implements WorkspaceService {
 		setWorkspaceEnv(state);
 		this.notify();
 
-		return { state, unsafeEditResult };
+		// Adopt the worktree the session launched inside. This deliberately skips validateProtectedCheckout
+		// (unlike activate/attach): we are recognizing an existing worktree, not creating one, so the main
+		// checkout being dirty or off its default branch must not block startup.
+		if (gitInfo.isLinkedWorktree && repo && gitInfo.toplevel) {
+			let label: string;
+			try {
+				label = labelFromWorktreePath(repo.name, gitInfo.toplevel);
+			} catch {
+				label = path.basename(gitInfo.toplevel);
+			}
+
+			let record: ReturnType<typeof findWorktreeRecord> = null;
+			try {
+				record = findWorktreeRecord(await gitWorktreeRecords(this.pi, repo.root), gitInfo.toplevel);
+			} catch {
+				// `git worktree list` can fail (e.g. locked/corrupt); still recognize the worktree, without branch info.
+			}
+			this.applyWorktree({
+				kind: "git-worktree",
+				label,
+				path: gitInfo.toplevel,
+				branch: record ? branchName(record) : null,
+				created: false,
+			});
+		}
+
+		return { state: this.require(), unsafeEditResult };
 	}
 
 	current(): WorkspaceState | null {

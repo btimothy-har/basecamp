@@ -1,4 +1,4 @@
-import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
+import type { ExtensionAPI, ExtensionContext, SessionStartEvent } from "@earendil-works/pi-coding-agent";
 import { deriveCurrentAgentHandle } from "pi-core/platform/agent-identity.ts";
 import { registerSessionProductRoleProvider } from "pi-core/platform/product-role.ts";
 import {
@@ -7,6 +7,8 @@ import {
 	type RepoContext,
 	type WorkspaceState,
 } from "pi-core/platform/workspace.ts";
+import { setAgentMode } from "pi-core/session/agent-mode.ts";
+import { ensureCurrentSessionStateForEvent } from "pi-core/state/index.ts";
 import { buildWorkstreamLaunchBrief } from "./brief.ts";
 import {
 	findWorkstreamLaunchById,
@@ -24,6 +26,7 @@ export interface WorkstreamStartDeps {
 	findById(filePath: string, id: string, repo?: string): WorkstreamLaunchRecord | null;
 	stampHandle(filePath: string, id: string, handle: string): WorkstreamLaunchRecord | null;
 	deriveHandle(ctx: ExtensionContext): string | null;
+	enterExploreMode(event: SessionStartEvent, ctx: ExtensionContext): void;
 }
 
 function waitForWorkspaceState(timeoutMs = WORKSPACE_START_WAIT_MS): Promise<WorkspaceState | null> {
@@ -57,6 +60,16 @@ export function defaultWorkstreamStartDeps(): WorkstreamStartDeps {
 		findById: findWorkstreamLaunchById,
 		stampHandle: stampWorkstreamLaunchAgentHandle,
 		deriveHandle: deriveCurrentAgentHandle,
+		enterExploreMode: (event, ctx) => {
+			// Best-effort: mode setup must never block workstream startup (brief injection) when cross-extension
+			// session state is not ready.
+			try {
+				ensureCurrentSessionStateForEvent(event, ctx);
+				setAgentMode("planning");
+			} catch (err) {
+				ctx.ui.notify(`basecamp: could not enter Explore mode for workstream — ${errorMessage(err)}`, "warning");
+			}
+		},
 	};
 }
 
@@ -188,9 +201,12 @@ export function registerWorkstreamStartup(pi: ExtensionAPI, deps = defaultWorkst
 		},
 	});
 
-	pi.on("session_start", async (_event, ctx) => {
+	pi.on("session_start", async (event, ctx) => {
 		const id = pi.getFlag("workstream") as string | undefined;
 		if (id === undefined) return;
+		// Force Explore on every workstream session_start (including reload) so the session always begins from a
+		// planning posture; the executor/supervisor mode set at plan approval only persists within a single process.
+		if (id.trim()) deps.enterExploreMode(event, ctx);
 		await startWorkstream(id, pi, ctx, deps);
 	});
 }

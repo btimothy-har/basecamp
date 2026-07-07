@@ -1,11 +1,24 @@
 import assert from "node:assert/strict";
 import * as fs from "node:fs";
+import * as os from "node:os";
+import * as path from "node:path";
 import { afterEach, describe, it } from "node:test";
 import type { ExtensionAPI, ExtensionContext, SessionStartEvent } from "@earendil-works/pi-coding-agent";
 import { resetSessionProductRoleForTesting, resolveSessionProductRoleOverride } from "pi-core/platform/product-role.ts";
 import type { WorkspaceState } from "pi-core/platform/workspace.ts";
+import { getAgentMode, resetAgentMode } from "pi-core/session/agent-mode.ts";
+import {
+	getCurrentSessionState,
+	initializeCurrentSessionState,
+	resetCurrentSessionState,
+} from "pi-core/state/index.ts";
 import type { WorkstreamLaunchRecord } from "../workstreams/launch-state.ts";
-import { registerWorkstreamStartup, startWorkstream, type WorkstreamStartDeps } from "../workstreams/start.ts";
+import {
+	defaultWorkstreamStartDeps,
+	registerWorkstreamStartup,
+	startWorkstream,
+	type WorkstreamStartDeps,
+} from "../workstreams/start.ts";
 
 type SessionStartHandler = (event: SessionStartEvent, ctx: ExtensionContext) => Promise<void>;
 
@@ -81,6 +94,7 @@ function makeRecord(overrides: Partial<WorkstreamLaunchRecord> = {}): Workstream
 function makeDeps(overrides: Partial<WorkstreamStartDeps> = {}) {
 	const stampCalls: { id: string; handle: string }[] = [];
 	const findCalls: { filePath: string; id: string; repo?: string }[] = [];
+	const enterExploreModeCalls: { event: SessionStartEvent; ctx: ExtensionContext }[] = [];
 	let workspace: WorkspaceState | null = { repo: { isRepo: true, name: "org/repo" } } as unknown as WorkspaceState;
 	let waitedWorkspace: WorkspaceState | null = workspace;
 	let record: WorkstreamLaunchRecord | null = makeRecord();
@@ -98,12 +112,16 @@ function makeDeps(overrides: Partial<WorkstreamStartDeps> = {}) {
 			return record;
 		},
 		deriveHandle: () => handle,
+		enterExploreMode: (event, ctx) => {
+			enterExploreModeCalls.push({ event, ctx });
+		},
 		...overrides,
 	};
 	return {
 		deps,
 		findCalls,
 		stampCalls,
+		enterExploreModeCalls,
 		setRecord(value: WorkstreamLaunchRecord | null) {
 			record = value;
 		},
@@ -332,6 +350,9 @@ describe("workstream startup", () => {
 		});
 		assert.equal(pi.userMessages.length, 1);
 		assert.deepEqual(harness.stampCalls, [{ id: "launch-workstream-too", handle: "swift-otter-1a2b3c" }]);
+		assert.equal(harness.enterExploreModeCalls.length, 1);
+		assert.equal(harness.enterExploreModeCalls[0]?.event.reason, "new");
+		assert.equal(harness.enterExploreModeCalls[0]?.ctx, ctx);
 	});
 
 	it("registers a product-role provider for non-empty --workstream sessions", () => {
@@ -359,11 +380,53 @@ describe("workstream startup", () => {
 		assert.equal(pi.userMessages.length, 0);
 		assert.equal(harness.findCalls.length, 0);
 		assert.equal(harness.stampCalls.length, 0);
+		assert.equal(harness.enterExploreModeCalls.length, 0);
+	});
+
+	it("does not enter Explore mode for whitespace-only --workstream ids", async () => {
+		const pi = new FakePi();
+		const harness = makeDeps();
+		const { ctx, notices } = makeCtx();
+
+		registerWorkstreamStartup(pi as unknown as ExtensionAPI, harness.deps);
+		pi.setFlag("workstream", "   ");
+		await pi.emitSessionStart(ctx);
+
+		assert.equal(pi.userMessages.length, 0);
+		assert.equal(harness.findCalls.length, 0);
+		assert.equal(harness.stampCalls.length, 0);
+		assert.equal(harness.enterExploreModeCalls.length, 0);
+		assert.match(notices[0]?.message ?? "", /Usage: pi --workstream <id>/);
 	});
 
 	it("is wired from pi-tasks/index.ts", () => {
 		const indexSource = fs.readFileSync(new URL("../../index.ts", import.meta.url), "utf8");
 		assert.match(indexSource, /import \{ registerWorkstreamStartup \} from "\.\/src\/workstreams\/start\.ts";/);
 		assert.match(indexSource, /registerWorkstreamStartup\(pi\);/);
+	});
+});
+
+describe("defaultWorkstreamStartDeps enterExploreMode", () => {
+	it("initializes session state and forces planning (Explore) mode", (t) => {
+		const stateDir = fs.mkdtempSync(path.join(os.tmpdir(), "basecamp-workstream-mode-"));
+		t.after(() => {
+			resetCurrentSessionState();
+			resetAgentMode();
+			fs.rmSync(stateDir, { recursive: true, force: true });
+		});
+
+		const ctx = {
+			hasUI: true,
+			ui: { notify() {} },
+			sessionManager: { getSessionId: () => "ws-mode-session", getSessionFile: () => null },
+		} as unknown as ExtensionContext;
+		// Pre-initialize with a temp state dir so the real enterExploreMode reuses it (matching session identity)
+		// instead of writing to the default state dir.
+		initializeCurrentSessionState(ctx, stateDir);
+
+		defaultWorkstreamStartDeps().enterExploreMode({ type: "session_start", reason: "new" } as SessionStartEvent, ctx);
+
+		assert.equal(getAgentMode(), "planning");
+		assert.equal(getCurrentSessionState().agentMode, "planning");
 	});
 });

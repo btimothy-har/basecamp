@@ -15,6 +15,7 @@
 import type { ExtensionAPI, ExtensionContext, Theme } from "@earendil-works/pi-coding-agent";
 import { Type } from "@sinclair/typebox";
 import { readWorktreeSetupCommand } from "pi-core/platform/config.ts";
+import { resolveSessionProductRoleOverride } from "pi-core/platform/product-role.ts";
 import {
 	activateWorkspaceWorktree,
 	getWorkspaceState,
@@ -25,10 +26,10 @@ import {
 import { getAgentMode, setAgentMode } from "pi-core/session/agent-mode.ts";
 import { shortSessionId } from "pi-core/session/session-id.ts";
 import { runWorktreeSetup } from "pi-core/workspace/setup.ts";
-import type { GoalCycle, ReviewState, TaskStatus, TasksAccess } from "../tasks/tasks";
-import { computeGoalContextReview, computeSectionReview, freshReview, tasksMatch } from "./draft-logic";
-import type { PlanDraft } from "./review";
-import { SECTION_NAMES, showPlanReadOnly, showReviewOverlay } from "./review";
+import type { GoalCycle, ReviewState, TaskStatus, TasksAccess } from "../tasks/tasks.ts";
+import { computeGoalContextReview, computeSectionReview, freshReview, tasksMatch } from "./draft-logic.ts";
+import type { PlanDraft } from "./review.ts";
+import { SECTION_NAMES, showPlanReadOnly, showReviewOverlay } from "./review.ts";
 import {
 	buildExecutionWorktreeChoices,
 	CUSTOM_WORKTREE_CHOICE,
@@ -423,13 +424,20 @@ export interface PlanAccess {
 	getDraft(): PlanDraft | null;
 }
 
-function workspaceWorktreeToHandoffWorktree(target: WorkspaceWorktree): HandoffWorktreeResult {
+export function workspaceWorktreeToHandoffWorktree(target: WorkspaceWorktree): HandoffWorktreeResult {
 	return {
 		worktreeDir: target.path,
 		label: target.label,
 		branch: target.branch ?? "detached",
 		created: target.created,
 	};
+}
+
+export function shouldReuseActiveWorktreeForHandoff(
+	productRole: string | null,
+	activeWorktree: WorkspaceWorktree | null,
+): boolean {
+	return productRole === "workstream_agent" && activeWorktree !== null;
 }
 
 // ============================================================================
@@ -573,33 +581,42 @@ export function registerPlan(pi: ExtensionAPI, tasksAccess: TasksAccess): PlanAc
 					};
 				}
 
-				const worktreeTarget = await selectWorktreeTarget(ctx, draft.goal.content, draft.worktreeSlug);
-				if (!worktreeTarget) {
-					return {
-						content: [
-							{
-								type: "text",
-								text: JSON.stringify({
-									status: "handoff_cancelled",
-									next_step:
-										"Plan approved, but an execution worktree was not selected. Seek user confirmation before implementation.",
-								}),
-							},
-						],
-						details: undefined,
-					};
-				}
-
+				const workspace = getWorkspaceState();
+				const activeWorktree = workspace?.activeWorktree ?? null;
 				let worktree: HandoffWorktreeResult;
-				try {
-					worktree = workspaceWorktreeToHandoffWorktree(
-						await activateWorkspaceWorktree(worktreeTarget.worktreeLabel, worktreeTarget.branchName),
-					);
-				} catch (err) {
-					return {
-						content: [{ type: "text", text: buildWorktreeActivationFailedResult(worktreeTarget.worktreeLabel, err) }],
-						details: undefined,
-					};
+				if (
+					activeWorktree &&
+					shouldReuseActiveWorktreeForHandoff(resolveSessionProductRoleOverride(), activeWorktree)
+				) {
+					worktree = workspaceWorktreeToHandoffWorktree(activeWorktree);
+				} else {
+					const worktreeTarget = await selectWorktreeTarget(ctx, draft.goal.content, draft.worktreeSlug);
+					if (!worktreeTarget) {
+						return {
+							content: [
+								{
+									type: "text",
+									text: JSON.stringify({
+										status: "handoff_cancelled",
+										next_step:
+											"Plan approved, but an execution worktree was not selected. Seek user confirmation before implementation.",
+									}),
+								},
+							],
+							details: undefined,
+						};
+					}
+
+					try {
+						worktree = workspaceWorktreeToHandoffWorktree(
+							await activateWorkspaceWorktree(worktreeTarget.worktreeLabel, worktreeTarget.branchName),
+						);
+					} catch (err) {
+						return {
+							content: [{ type: "text", text: buildWorktreeActivationFailedResult(worktreeTarget.worktreeLabel, err) }],
+							details: undefined,
+						};
+					}
 				}
 
 				setAgentMode(implementationMode);
