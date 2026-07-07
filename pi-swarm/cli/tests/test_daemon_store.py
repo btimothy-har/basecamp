@@ -871,6 +871,82 @@ def test_can_message_allows_visible_sessions_agents_and_siblings_only(tmp_path: 
     assert store.agent_relation("agent-a", "missing") == "unknown"
 
 
+def test_can_cancel_allows_dispatcher_ancestors_only_and_rejects_public_handle_authority(
+    tmp_path: Path,
+) -> None:
+    db_path = tmp_path / "daemon.db"
+    store = Store(db_path=db_path)
+
+    store.upsert_agent(
+        agent_id="root",
+        parent_id=None,
+        sibling_group=None,
+        depth=0,
+        role="session",
+        session_name="root",
+        cwd="/tmp/root",
+    )
+    store.upsert_agent(
+        agent_id="parent",
+        parent_id="root",
+        sibling_group="root",
+        depth=1,
+        role="agent",
+        session_name="parent",
+        cwd="/tmp/parent",
+    )
+    store.upsert_agent(
+        agent_id="grandchild",
+        agent_handle="grandchild-public",
+        parent_id="parent",
+        sibling_group="parent",
+        depth=2,
+        role="agent",
+        session_name="grandchild",
+        cwd="/tmp/grandchild",
+    )
+    store.create_run(
+        run_id="run-grandchild",
+        agent_id="grandchild",
+        dispatcher_id="parent",
+        spec={"task": "work"},
+        report_token_hash="hash",
+    )
+    store.upsert_agent(
+        agent_id="unrelated",
+        parent_id=None,
+        sibling_group=None,
+        depth=0,
+        role="session",
+        session_name="unrelated",
+        cwd="/tmp/unrelated",
+    )
+    store.upsert_agent(
+        agent_id="retasked",
+        agent_handle="retasked-public",
+        parent_id="unrelated",
+        sibling_group="unrelated",
+        depth=1,
+        role="agent",
+        session_name="retasked",
+        cwd="/tmp/retasked",
+    )
+    store.create_run(
+        run_id="run-retasked",
+        agent_id="retasked",
+        dispatcher_id="root",
+        spec={"task": "retasked work"},
+        report_token_hash="hash",
+    )
+
+    assert store.can_cancel("parent", "grandchild") is True
+    assert store.can_cancel("root", "grandchild") is True
+    assert store.can_cancel("root", "retasked") is True
+    assert store.can_cancel("unrelated", "grandchild") is False
+    assert store.can_cancel("grandchild", "grandchild") is False
+    assert store.can_cancel("grandchild", "root") is False
+
+
 def test_known_public_handle_contact_is_allowed_across_unrelated_roots(tmp_path: Path) -> None:
     db_path = tmp_path / "daemon.db"
     store = Store(db_path=db_path)

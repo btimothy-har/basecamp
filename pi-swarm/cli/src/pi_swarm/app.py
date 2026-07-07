@@ -9,6 +9,7 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 
 from .frames import (
     PROTOCOL_VERSION,
+    CancelFrame,
     DispatchAckFrame,
     DispatchFrame,
     ErrorFrame,
@@ -31,6 +32,7 @@ from .registry import Registry
 from .service import (
     AcceptedPeerMessage,
     accept_peer_message,
+    cancel_agent,
     dispatch_agent,
     handle_peer_message_delivery_ack,
     handle_result_report,
@@ -231,6 +233,18 @@ def create_app(store: Store, *, daemon_uds: str | None = None) -> FastAPI:
                     await websocket.send_json(
                         serialize_frame(
                             await message_status_result(
+                                frame=inbound,
+                                requester_node_id=parsed.node_id,
+                                store=store,
+                                registry=registry,
+                            )
+                        )
+                    )
+                    continue
+                if isinstance(inbound, CancelFrame):
+                    await websocket.send_json(
+                        serialize_frame(
+                            await cancel_agent(
                                 frame=inbound,
                                 requester_node_id=parsed.node_id,
                                 store=store,

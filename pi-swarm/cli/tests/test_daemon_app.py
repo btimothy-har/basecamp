@@ -338,6 +338,31 @@ def test_ws_version_mismatch_returns_protocol_error(tmp_path: Path) -> None:
     assert reply["code"] == "protocol_version"
 
 
+def test_ws_cancel_unknown_handle_returns_not_found_ack(tmp_path: Path) -> None:
+    app = _build_app(tmp_path)
+
+    with TestClient(app) as client:
+        with client.websocket_connect("/ws") as websocket:
+            _register_ws(websocket, node_id="root", role="session", parent_id=None, sibling_group="sg-root")
+            websocket.send_json(
+                {
+                    "type": "cancel",
+                    "v": PROTOCOL_VERSION,
+                    "request_id": "cancel-missing",
+                    "target_handle": "missing-handle",
+                }
+            )
+            reply = websocket.receive_json()
+
+    assert reply == {
+        "type": "cancel_ack",
+        "v": PROTOCOL_VERSION,
+        "request_id": "cancel-missing",
+        "status": "not_found",
+        "error": None,
+    }
+
+
 def test_ws_unsupported_inbound_frame_returns_error(tmp_path: Path) -> None:
     app = _build_app(tmp_path)
 

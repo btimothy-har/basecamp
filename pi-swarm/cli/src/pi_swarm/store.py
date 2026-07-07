@@ -838,6 +838,28 @@ class Store:
             return self._can_contact_by_public_handle(requester_node_id, target_agent_id)
         return False
 
+    def can_cancel(self, requester_node_id: str, target_agent_id: str) -> bool:
+        """Return whether requester may cancel target's current run.
+
+        Cancellation uses subtree authority only: the requester must have
+        dispatched the target directly or transitively. A known public handle is
+        a routable contact address only and does NOT authorize cancellation.
+        """
+
+        if requester_node_id == target_agent_id:
+            return False
+        if self._parent_chain_contains(target_agent_id, requester_node_id):
+            return True
+
+        target = self.get_agent(target_agent_id)
+        if target is None:
+            return False
+        run_id = target.get("current_run_id")
+        if not isinstance(run_id, str):
+            return False
+        run = self.get_run(run_id)
+        return run is not None and run.get("dispatcher_id") == requester_node_id
+
     def agent_relation(self, viewer_agent_id: str, other_agent_id: str) -> AgentRelation:
         """Return how the other agent relates to the viewer."""
 

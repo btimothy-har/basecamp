@@ -16,7 +16,7 @@ from pathlib import Path
 import pytest
 import uvicorn
 from pi_swarm.app import create_app
-from pi_swarm.frames import PROTOCOL_VERSION, DispatchFrame, DispatchSpec
+from pi_swarm.frames import PROTOCOL_VERSION, CancelFrame, DispatchFrame, DispatchSpec
 from pi_swarm.process import (
     build_child_env,
     build_runner_argv,
@@ -34,6 +34,7 @@ from pi_swarm.service import (
     PreparedDispatch,
     _resolve_disconnect_grace_s,
     _run_disconnect_reaper,
+    cancel_agent,
     prepare_dispatch,
     schedule_disconnect_reaper,
 )
@@ -288,6 +289,197 @@ async def test_disconnect_reaper_marks_live_run_failed_terminates_process_and_wa
     assert run["status"] == "failed"
     assert run["result"] is None
     assert run["error"] == "dispatcher_disconnected"
+    assert terminated == [4321]
+    assert waiter.future.done()
+
+
+@pytest.mark.asyncio
+async def test_cancel_agent_unknown_handle_returns_not_found(tmp_path: Path) -> None:
+    store = Store(db_path=tmp_path / "daemon.db")
+    registry = Registry()
+
+    ack = await cancel_agent(
+        frame=CancelFrame(
+            type="cancel",
+            v=PROTOCOL_VERSION,
+            request_id="cancel-missing",
+            target_handle="missing-handle",
+        ),
+        requester_node_id="root",
+        store=store,
+        registry=registry,
+    )
+
+    assert ack.type == "cancel_ack"
+    assert ack.request_id == "cancel-missing"
+    assert ack.status == "not_found"
+    assert ack.error is None
+
+
+@pytest.mark.asyncio
+async def test_cancel_agent_known_but_unauthorized_returns_not_authorized(tmp_path: Path) -> None:
+    store = Store(db_path=tmp_path / "daemon.db")
+    registry = Registry()
+    store.upsert_agent(
+        agent_id="root",
+        parent_id=None,
+        sibling_group=None,
+        depth=0,
+        role="session",
+        session_name="root",
+        cwd="/tmp/root",
+    )
+    store.upsert_agent(
+        agent_id="outside-agent",
+        agent_handle="outside-handle",
+        parent_id=None,
+        sibling_group=None,
+        depth=1,
+        role="agent",
+        session_name="outside-agent",
+        cwd="/tmp/outside",
+    )
+
+    ack = await cancel_agent(
+        frame=CancelFrame(
+            type="cancel",
+            v=PROTOCOL_VERSION,
+            request_id="cancel-unauthorized",
+            target_handle="outside-handle",
+        ),
+        requester_node_id="root",
+        store=store,
+        registry=registry,
+    )
+
+    assert ack.status == "not_authorized"
+    assert ack.error is None
+
+
+@pytest.mark.parametrize("run_state", ["none", "terminal"])
+@pytest.mark.asyncio
+async def test_cancel_agent_authorized_without_live_run_returns_already_terminal(
+    tmp_path: Path,
+    run_state: str,
+) -> None:
+    store = Store(db_path=tmp_path / "daemon.db")
+    registry = Registry()
+    store.upsert_agent(
+        agent_id="root",
+        parent_id=None,
+        sibling_group=None,
+        depth=0,
+        role="session",
+        session_name="root",
+        cwd="/tmp/root",
+    )
+    store.upsert_agent(
+        agent_id="child-agent",
+        agent_handle="child-handle",
+        parent_id="root",
+        sibling_group="root",
+        depth=1,
+        role="agent",
+        session_name="child-agent",
+        cwd="/tmp/child",
+    )
+    if run_state == "terminal":
+        store.create_run(
+            run_id="run-terminal",
+            agent_id="child-agent",
+            dispatcher_id="root",
+            spec={"task": "done"},
+            report_token_hash="hash",
+        )
+        store.set_run_result(
+            run_id="run-terminal",
+            status="completed",
+            result="done",
+            error=None,
+        )
+
+    ack = await cancel_agent(
+        frame=CancelFrame(
+            type="cancel",
+            v=PROTOCOL_VERSION,
+            request_id="cancel-terminal",
+            target_handle="child-handle",
+        ),
+        requester_node_id="root",
+        store=store,
+        registry=registry,
+    )
+
+    assert ack.status == "already_terminal"
+    assert ack.error is None
+
+
+@pytest.mark.asyncio
+async def test_cancel_agent_authorized_live_run_fails_run_terminates_process_and_wakes_waiter(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    store = Store(db_path=tmp_path / "daemon.db")
+    registry = Registry()
+    terminated: list[int | None] = []
+
+    def record_terminate(pgid: int | None, **_kwargs: object) -> None:
+        terminated.append(pgid)
+
+    monkeypatch.setattr("pi_swarm.service.terminate_process_group", record_terminate)
+    store.upsert_agent(
+        agent_id="root",
+        parent_id=None,
+        sibling_group=None,
+        depth=0,
+        role="session",
+        session_name="root",
+        cwd="/tmp/root",
+    )
+    store.upsert_agent(
+        agent_id="child-agent",
+        agent_handle="child-handle",
+        parent_id="root",
+        sibling_group="root",
+        depth=1,
+        role="agent",
+        session_name="child-agent",
+        cwd="/tmp/child",
+    )
+    store.create_run(
+        run_id="run-live",
+        agent_id="child-agent",
+        dispatcher_id="root",
+        spec={"task": "running"},
+        report_token_hash="hash",
+    )
+    registry.set_process("run-live", _FakePidProcess(4321))
+    waiter = Waiter(
+        waiter_id="waiter-cancel",
+        run_ids={"run-live"},
+        future=asyncio.get_running_loop().create_future(),
+    )
+    registry.add_waiter(waiter)
+
+    ack = await cancel_agent(
+        frame=CancelFrame(
+            type="cancel",
+            v=PROTOCOL_VERSION,
+            request_id="cancel-live",
+            target_handle="child-handle",
+        ),
+        requester_node_id="root",
+        store=store,
+        registry=registry,
+    )
+
+    run = store.get_run("run-live")
+    assert ack.status == "cancelled"
+    assert ack.error is None
+    assert run is not None
+    assert run["status"] == "failed"
+    assert run["result"] is None
+    assert run["error"] == "cancelled"
     assert terminated == [4321]
     assert waiter.future.done()
 

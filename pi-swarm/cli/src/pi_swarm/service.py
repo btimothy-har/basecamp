@@ -15,6 +15,8 @@ from typing import Any, Literal
 
 from .frames import (
     PROTOCOL_VERSION,
+    CancelAckFrame,
+    CancelFrame,
     DispatchFrame,
     ListAgentItem,
     ListAgentsFrame,
@@ -628,6 +630,60 @@ def _unknown_peer_message_ack(request_id: str) -> PeerMessageAckFrame:
         status="unknown",
         error=None,
     )
+
+
+def _cancel_ack(
+    request_id: str,
+    status: Literal["cancelled", "not_found", "not_authorized", "already_terminal"],
+    error: str | None = None,
+) -> CancelAckFrame:
+    return CancelAckFrame(
+        type="cancel_ack",
+        v=PROTOCOL_VERSION,
+        request_id=request_id,
+        status=status,
+        error=error,
+    )
+
+
+async def cancel_agent(
+    *,
+    frame: CancelFrame,
+    requester_node_id: str,
+    store: Store,
+    registry: Registry,
+) -> CancelAckFrame:
+    """Authorize and cancel an agent's current run."""
+
+    target = await asyncio.to_thread(store.get_agent_by_handle, frame.target_handle)
+    target_agent_id = target.get("id") if target else None
+    if not isinstance(target_agent_id, str):
+        return _cancel_ack(frame.request_id, "not_found")
+
+    if not await asyncio.to_thread(store.can_cancel, requester_node_id, target_agent_id):
+        return _cancel_ack(frame.request_id, "not_authorized")
+
+    agent = await asyncio.to_thread(store.get_agent, target_agent_id)
+    run_id = agent.get("current_run_id") if agent else None
+    if not isinstance(run_id, str):
+        return _cancel_ack(frame.request_id, "already_terminal")
+
+    finalized = await asyncio.to_thread(
+        store.set_run_result_if_unset,
+        run_id=run_id,
+        status="failed",
+        result=None,
+        error="cancelled",
+    )
+    if not finalized:
+        return _cancel_ack(frame.request_id, "already_terminal")
+
+    process = registry.get_process(run_id)
+    if process is not None:
+        await asyncio.to_thread(terminate_process_group, process.pid)
+
+    await notify_run_finalized(run_id, registry=registry, store=store)
+    return _cancel_ack(frame.request_id, "cancelled")
 
 
 def _public_sender_handle(sender: dict[str, Any] | None) -> str | None:
