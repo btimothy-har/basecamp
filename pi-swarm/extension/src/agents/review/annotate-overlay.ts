@@ -57,121 +57,118 @@ export async function annotateFindings(
 
 	const drafts = new Map<number, string>();
 
-	return ui.custom<AnnotateResult>(
-		(tui, theme, _keybindings, done) => {
-			let current = 0;
-			let editing = false;
+	return ui.custom<AnnotateResult>((tui, theme, _keybindings, done) => {
+		let current = 0;
+		let editing = false;
 
-			const border = new DynamicBorder((s: string) => theme.fg("border", s));
-			const title = new Text(theme.fg("accent", theme.bold("Code Review Reactions")), 1, 0);
-			const summary = new Text("", 1, 0);
-			const reactionLabel = new Text("", 1, 0);
-			const hint = new Text("", 1, 0);
+		const border = new DynamicBorder((s: string) => theme.fg("border", s));
+		const title = new Text(theme.fg("accent", theme.bold("Code Review Reactions")), 1, 0);
+		const summary = new Text("", 1, 0);
+		const reactionLabel = new Text("", 1, 0);
+		const hint = new Text("", 1, 0);
 
-			const editorTheme: EditorTheme = {
-				borderColor: (s: string) => theme.fg("dim", s),
-				selectList: getSelectListTheme(),
-			};
-			const reactionEditor = new Editor(tui, editorTheme, { paddingX: 0 });
-			reactionEditor.disableSubmit = false;
-			reactionEditor.focused = false;
+		const editorTheme: EditorTheme = {
+			borderColor: (s: string) => theme.fg("dim", s),
+			selectList: getSelectListTheme(),
+		};
+		const reactionEditor = new Editor(tui, editorTheme, { paddingX: 0 });
+		reactionEditor.disableSubmit = false;
+		reactionEditor.focused = false;
 
-			const container = new Container();
-			container.addChild(border);
-			container.addChild(title);
-			container.addChild(new Spacer(1));
-			container.addChild(summary);
-			container.addChild(new Spacer(1));
-			container.addChild(reactionLabel);
-			container.addChild(reactionEditor);
-			container.addChild(new Spacer(1));
-			container.addChild(hint);
-			container.addChild(border);
+		const container = new Container();
+		container.addChild(border);
+		container.addChild(title);
+		container.addChild(new Spacer(1));
+		container.addChild(summary);
+		container.addChild(new Spacer(1));
+		container.addChild(reactionLabel);
+		container.addChild(reactionEditor);
+		container.addChild(new Spacer(1));
+		container.addChild(hint);
+		container.addChild(border);
 
-			function commitCurrentDraft(): void {
-				drafts.set(current, reactionEditor.getText());
+		function commitCurrentDraft(): void {
+			drafts.set(current, reactionEditor.getText());
+		}
+
+		function result(cancelled: boolean): AnnotateResult {
+			commitCurrentDraft();
+			return { cancelled, reactions: buildReactions(findings, drafts) };
+		}
+
+		function updateView(): void {
+			const finding = findings[current]!;
+			summary.setText(colorSummaryLines(findingSummaryLines(finding, current, findings.length), theme).join("\n"));
+			reactionLabel.setText(theme.fg("accent", "Your reaction (optional):"));
+			if (reactionEditor.getText() !== (drafts.get(current) ?? "")) {
+				reactionEditor.setText(drafts.get(current) ?? "");
 			}
+			reactionEditor.focused = editing;
+			const editHint = "[Enter: Save reaction]  [Esc: Back to list]";
+			const navHint = "[←/→ or p/n: Prev/Next]  [Tab or Enter: Edit reaction]  [s: Submit]  [Esc: Cancel]";
+			hint.setText(theme.fg("dim", editing ? editHint : navHint));
+		}
 
-			function result(cancelled: boolean): AnnotateResult {
-				commitCurrentDraft();
-				return { cancelled, reactions: buildReactions(findings, drafts) };
-			}
-
-			function updateView(): void {
-				const finding = findings[current]!;
-				summary.setText(colorSummaryLines(findingSummaryLines(finding, current, findings.length), theme).join("\n"));
-				reactionLabel.setText(theme.fg("accent", "Your reaction (optional):"));
-				if (reactionEditor.getText() !== (drafts.get(current) ?? "")) {
-					reactionEditor.setText(drafts.get(current) ?? "");
-				}
-				reactionEditor.focused = editing;
-				const editHint = "[Enter: Save reaction]  [Esc: Back to list]";
-				const navHint = "[←/→ or p/n: Prev/Next]  [Tab or Enter: Edit reaction]  [s: Submit]  [Esc: Cancel]";
-				hint.setText(theme.fg("dim", editing ? editHint : navHint));
-			}
-
-			function setEditing(nextEditing: boolean): void {
-				if (!nextEditing) commitCurrentDraft();
-				editing = nextEditing;
-				reactionEditor.focused = editing;
-				updateView();
-				container.invalidate();
-			}
-
-			function navigate(delta: number): void {
-				const next = current + delta;
-				if (next < 0 || next >= findings.length) return;
-				commitCurrentDraft();
-				current = next;
-				editing = false;
-				updateView();
-				container.invalidate();
-			}
-
-			reactionEditor.onSubmit = (value: string) => {
-				drafts.set(current, value);
-				setEditing(false);
-			};
-
+		function setEditing(nextEditing: boolean): void {
+			if (!nextEditing) commitCurrentDraft();
+			editing = nextEditing;
+			reactionEditor.focused = editing;
 			updateView();
+			container.invalidate();
+		}
 
-			return {
-				render: (width: number) => container.render(width),
-				invalidate: () => container.invalidate(),
-				handleInput: (data: string) => {
-					if (editing) {
-						if (matchesSelectCancel(data)) {
-							setEditing(false);
-							return;
-						}
-						reactionEditor.handleInput(data);
-						container.invalidate();
-						return;
-					}
+		function navigate(delta: number): void {
+			const next = current + delta;
+			if (next < 0 || next >= findings.length) return;
+			commitCurrentDraft();
+			current = next;
+			editing = false;
+			updateView();
+			container.invalidate();
+		}
 
+		reactionEditor.onSubmit = (value: string) => {
+			drafts.set(current, value);
+			setEditing(false);
+		};
+
+		updateView();
+
+		return {
+			render: (width: number) => container.render(width),
+			invalidate: () => container.invalidate(),
+			handleInput: (data: string) => {
+				if (editing) {
 					if (matchesSelectCancel(data)) {
-						done(result(true));
+						setEditing(false);
 						return;
 					}
+					reactionEditor.handleInput(data);
+					container.invalidate();
+					return;
+				}
 
-					if (matchesKey(data, "left") || matchesKey(data, "p") || matchesKey(data, "shift+p")) {
-						navigate(-1);
-						return;
-					}
-					if (matchesKey(data, "right") || matchesKey(data, "n") || matchesKey(data, "shift+n")) {
-						navigate(1);
-						return;
-					}
-					if (matchesInputTab(data) || matchesInputSubmit(data)) {
-						setEditing(true);
-						return;
-					}
-					if (matchesKey(data, "s") || matchesKey(data, "shift+s")) {
-						done(result(false));
-					}
-				},
-			};
-		},
-		{ overlay: true },
-	);
+				if (matchesSelectCancel(data)) {
+					done(result(true));
+					return;
+				}
+
+				if (matchesKey(data, "left") || matchesKey(data, "p") || matchesKey(data, "shift+p")) {
+					navigate(-1);
+					return;
+				}
+				if (matchesKey(data, "right") || matchesKey(data, "n") || matchesKey(data, "shift+n")) {
+					navigate(1);
+					return;
+				}
+				if (matchesInputTab(data) || matchesInputSubmit(data)) {
+					setEditing(true);
+					return;
+				}
+				if (matchesKey(data, "s") || matchesKey(data, "shift+s")) {
+					done(result(false));
+				}
+			},
+		};
+	});
 }
