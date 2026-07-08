@@ -5,8 +5,8 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
-from basecamp_core.settings import Settings
-from basecamp_workspace.cli import project as project_cli
+from basecamp.core.settings import Settings
+from basecamp.workspace.cli import project as project_cli
 
 
 def _write(path: Path, content: str = "") -> None:

@@ -9,13 +9,13 @@ import subprocess
 import tempfile
 from pathlib import Path
 
-from companion_tui.app import CompanionApp, WorkspacePanel
-from companion_tui.snapshot import collapse_home
-from companion_tui.ui import files as files_ui
-from companion_tui.ui.dashboard import DashboardBody
-from companion_tui.ui.diff import DiffBody, DiffView, FileList
-from companion_tui.ui.files import FileBrowser
-from companion_tui.ui.swarm import SwarmBody
+from basecamp.companion.app import CompanionApp, WorkspacePanel
+from basecamp.companion.snapshot import collapse_home
+from basecamp.companion.ui import files as files_ui
+from basecamp.companion.ui.dashboard import DashboardBody
+from basecamp.companion.ui.diff import DiffBody, DiffView, FileList
+from basecamp.companion.ui.files import FileBrowser
+from basecamp.companion.ui.swarm import SwarmBody
 from rich.style import Style
 from rich.syntax import Syntax
 from textual.app import App, ComposeResult

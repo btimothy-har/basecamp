@@ -95,7 +95,6 @@ def test_projects_without_subcommand_opens_project_menu(monkeypatch) -> None:
 def test_companion_dashboard_delegates(monkeypatch) -> None:
     calls: list[tuple[str, str, str | None]] = []
 
-    monkeypatch.setattr(cli, "HAS_COMPANION", True)
     monkeypatch.setattr(
         cli,
         "run_companion",
@@ -123,7 +122,6 @@ def test_companion_dashboard_delegates(monkeypatch) -> None:
 def test_deprecated_companion_analyze_alias_delegates(monkeypatch, tmp_path) -> None:
     calls: list[tuple[str, str | None]] = []
 
-    monkeypatch.setattr(cli, "HAS_COMPANION", True)
     monkeypatch.setattr(
         cli,
         "analyze",

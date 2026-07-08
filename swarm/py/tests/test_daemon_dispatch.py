@@ -15,9 +15,9 @@ from pathlib import Path
 
 import pytest
 import uvicorn
-from pi_swarm.app import create_app
-from pi_swarm.frames import PROTOCOL_VERSION, CancelFrame, DispatchFrame, DispatchSpec
-from pi_swarm.process import (
+from basecamp.swarm.app import create_app
+from basecamp.swarm.frames import PROTOCOL_VERSION, CancelFrame, DispatchFrame, DispatchSpec
+from basecamp.swarm.process import (
     _process_group_is_runner,
     build_child_env,
     build_runner_argv,
@@ -27,10 +27,10 @@ from pi_swarm.process import (
     terminate_process_group,
     terminate_process_group_if_runner,
 )
-from pi_swarm.registry import Registry, Waiter
-from pi_swarm.run_result import load_run_result, run_result_path
-from pi_swarm.server import UdsServer
-from pi_swarm.service import (
+from basecamp.swarm.registry import Registry, Waiter
+from basecamp.swarm.run_result import load_run_result, run_result_path
+from basecamp.swarm.server import UdsServer
+from basecamp.swarm.service import (
     DEFAULT_DISCONNECT_GRACE_SECONDS,
     DispatchRejection,
     PreparedDispatch,
@@ -40,7 +40,7 @@ from pi_swarm.service import (
     prepare_dispatch,
     schedule_disconnect_reaper,
 )
-from pi_swarm.store import Store
+from basecamp.swarm.store import Store
 from websockets.sync.client import unix_connect
 
 
@@ -312,7 +312,7 @@ async def test_disconnect_reaper_marks_live_run_failed_terminates_process_and_wa
     def record_terminate(pgid: int | None, **_kwargs: object) -> None:
         terminated.append(pgid)
 
-    monkeypatch.setattr("pi_swarm.service.terminate_process_group_if_runner", record_terminate)
+    monkeypatch.setattr("basecamp.swarm.service.terminate_process_group_if_runner", record_terminate)
     store.create_run(run_id=run_id, agent_id="agent-disconnected", dispatcher_id="node-1", spec={})
     store.set_run_pgid(run_id=run_id, pgid=4321)
     registry.set_run_owner(run_id, "node-1")
@@ -468,7 +468,7 @@ async def test_cancel_agent_authorized_live_run_fails_run_terminates_process_and
     def record_terminate(pgid: int | None, **_kwargs: object) -> None:
         terminated.append(pgid)
 
-    monkeypatch.setattr("pi_swarm.service.terminate_process_group_if_runner", record_terminate)
+    monkeypatch.setattr("basecamp.swarm.service.terminate_process_group_if_runner", record_terminate)
     store.upsert_agent(
         agent_id="root",
         parent_id=None,
@@ -538,7 +538,7 @@ async def test_cancel_agent_recursively_cancels_live_subtree_runs_and_wakes_wait
     def record_terminate(pgid: int | None, **_kwargs: object) -> None:
         terminated.append(pgid)
 
-    monkeypatch.setattr("pi_swarm.service.terminate_process_group_if_runner", record_terminate)
+    monkeypatch.setattr("basecamp.swarm.service.terminate_process_group_if_runner", record_terminate)
     _upsert_test_agent(store, agent_id="root", parent_id=None, depth=0, role="session")
     _upsert_test_agent(store, agent_id="target", agent_handle="target-handle", parent_id="root", depth=1)
     _upsert_test_agent(store, agent_id="child", parent_id="target", depth=2)
@@ -600,7 +600,7 @@ async def test_cancel_agent_terminal_target_with_live_descendant_returns_cancell
     def record_terminate(pgid: int | None, **_kwargs: object) -> None:
         terminated.append(pgid)
 
-    monkeypatch.setattr("pi_swarm.service.terminate_process_group_if_runner", record_terminate)
+    monkeypatch.setattr("basecamp.swarm.service.terminate_process_group_if_runner", record_terminate)
     _upsert_test_agent(store, agent_id="root", parent_id=None, depth=0, role="session")
     _upsert_test_agent(store, agent_id="target", agent_handle="target-handle", parent_id="root", depth=1)
     _upsert_test_agent(store, agent_id="child", parent_id="target", depth=2)
@@ -646,7 +646,7 @@ async def test_disconnect_reaper_cancel_prevents_reap(
     registry = Registry()
     terminated: list[int | None] = []
     monkeypatch.setattr(
-        "pi_swarm.service.terminate_process_group_if_runner",
+        "basecamp.swarm.service.terminate_process_group_if_runner",
         lambda pgid, **_kwargs: terminated.append(pgid),
     )
     store.create_run(run_id="run-still-live", agent_id="agent-still-live", dispatcher_id="node-1", spec={})
@@ -672,7 +672,7 @@ async def test_disconnect_reaper_no_live_runs_noop(
     registry = Registry()
     terminated: list[int | None] = []
     monkeypatch.setattr(
-        "pi_swarm.service.terminate_process_group_if_runner",
+        "basecamp.swarm.service.terminate_process_group_if_runner",
         lambda pgid, **_kwargs: terminated.append(pgid),
     )
     store.create_run(run_id="run-no-process", agent_id="agent-no-process", dispatcher_id="node-1", spec={})
@@ -695,7 +695,7 @@ async def test_disconnect_reaper_skips_termination_when_run_already_finalized(
     registry = Registry()
     terminated: list[int | None] = []
     monkeypatch.setattr(
-        "pi_swarm.service.terminate_process_group_if_runner",
+        "basecamp.swarm.service.terminate_process_group_if_runner",
         lambda pgid, **_kwargs: terminated.append(pgid),
     )
     store.create_run(run_id="run-terminal", agent_id="agent-terminal", dispatcher_id="node-1", spec={})
@@ -727,7 +727,7 @@ async def test_disconnect_reaper_mid_loop_reconnect_stops_reaping_remaining_runs
         registry.set_connection("node-1", object())
         return finalized
 
-    monkeypatch.setattr("pi_swarm.service.terminate_process_group_if_runner", record_terminate)
+    monkeypatch.setattr("basecamp.swarm.service.terminate_process_group_if_runner", record_terminate)
     monkeypatch.setattr(store, "set_run_result_if_unset", reconnect_after_first_finalize)
     store.create_run(run_id="run-first", agent_id="agent-first", dispatcher_id="node-1", spec={})
     store.create_run(run_id="run-second", agent_id="agent-second", dispatcher_id="node-1", spec={})
@@ -761,7 +761,7 @@ def test_build_runner_argv_injects_fork_before_task() -> None:
     assert argv == [
         sys.executable,
         "-m",
-        "pi_swarm.runner",
+        "basecamp.swarm.runner",
         "--result-path",
         "/tmp/result.json",
         "--",
@@ -836,7 +836,7 @@ def test_terminate_process_group_ignores_unsafe_pgids(
     def fake_killpg(target_pgid: int, sig: int) -> None:
         calls.append((target_pgid, sig))
 
-    monkeypatch.setattr("pi_swarm.process.os.killpg", fake_killpg)
+    monkeypatch.setattr("basecamp.swarm.process.os.killpg", fake_killpg)
 
     terminate_process_group(pgid)
 
@@ -853,7 +853,7 @@ def test_terminate_process_group_skips_sigkill_when_group_dies(
         if sig == 0:
             raise ProcessLookupError
 
-    monkeypatch.setattr("pi_swarm.process.os.killpg", fake_killpg)
+    monkeypatch.setattr("basecamp.swarm.process.os.killpg", fake_killpg)
 
     terminate_process_group(123, escalation_s=0.02, poll_s=0.005)
 
@@ -869,9 +869,9 @@ def test_terminate_process_group_escalates_when_group_survives(
     def fake_killpg(pgid: int, sig: int) -> None:
         calls.append((pgid, sig))
 
-    monkeypatch.setattr("pi_swarm.process.os.killpg", fake_killpg)
-    monkeypatch.setattr("pi_swarm.process.time.monotonic", lambda: next(times))
-    monkeypatch.setattr("pi_swarm.process.time.sleep", lambda _seconds: None)
+    monkeypatch.setattr("basecamp.swarm.process.os.killpg", fake_killpg)
+    monkeypatch.setattr("basecamp.swarm.process.time.monotonic", lambda: next(times))
+    monkeypatch.setattr("basecamp.swarm.process.time.sleep", lambda _seconds: None)
 
     terminate_process_group(123, escalation_s=0.02, poll_s=0.005)
 
@@ -887,7 +887,7 @@ def test_terminate_process_group_returns_when_initial_sigterm_finds_no_group(
         calls.append((pgid, sig))
         raise ProcessLookupError
 
-    monkeypatch.setattr("pi_swarm.process.os.killpg", fake_killpg)
+    monkeypatch.setattr("basecamp.swarm.process.os.killpg", fake_killpg)
 
     terminate_process_group(123, escalation_s=0.02, poll_s=0.005)
 
@@ -905,9 +905,9 @@ def test_terminate_process_group_tolerates_sigkill_permission_error(
         if sig == 0 or sig == signal.SIGKILL:
             raise PermissionError
 
-    monkeypatch.setattr("pi_swarm.process.os.killpg", fake_killpg)
-    monkeypatch.setattr("pi_swarm.process.time.monotonic", lambda: next(times))
-    monkeypatch.setattr("pi_swarm.process.time.sleep", lambda _seconds: None)
+    monkeypatch.setattr("basecamp.swarm.process.os.killpg", fake_killpg)
+    monkeypatch.setattr("basecamp.swarm.process.time.monotonic", lambda: next(times))
+    monkeypatch.setattr("basecamp.swarm.process.time.sleep", lambda _seconds: None)
 
     terminate_process_group(123, escalation_s=0.02, poll_s=0.005)
 
@@ -922,10 +922,10 @@ def test_terminate_process_group_if_runner_terminates_verified_runner(
     def fake_killpg(pgid: int, sig: int) -> None:
         calls.append((pgid, sig))
 
-    monkeypatch.setattr("pi_swarm.process._process_group_is_runner", lambda _pgid: True)
-    monkeypatch.setattr("pi_swarm.process._process_group_alive", lambda _pgid: False)
-    monkeypatch.setattr("pi_swarm.process.os.killpg", fake_killpg)
-    monkeypatch.setattr("pi_swarm.process.time.monotonic", lambda: 0.0)
+    monkeypatch.setattr("basecamp.swarm.process._process_group_is_runner", lambda _pgid: True)
+    monkeypatch.setattr("basecamp.swarm.process._process_group_alive", lambda _pgid: False)
+    monkeypatch.setattr("basecamp.swarm.process.os.killpg", fake_killpg)
+    monkeypatch.setattr("basecamp.swarm.process.time.monotonic", lambda: 0.0)
 
     terminate_process_group_if_runner(123, escalation_s=0.02)
 
@@ -940,8 +940,8 @@ def test_terminate_process_group_if_runner_skips_unverified_group(
     def fake_killpg(pgid: int, sig: int) -> None:
         calls.append((pgid, sig))
 
-    monkeypatch.setattr("pi_swarm.process._process_group_is_runner", lambda _pgid: False)
-    monkeypatch.setattr("pi_swarm.process.os.killpg", fake_killpg)
+    monkeypatch.setattr("basecamp.swarm.process._process_group_is_runner", lambda _pgid: False)
+    monkeypatch.setattr("basecamp.swarm.process.os.killpg", fake_killpg)
 
     terminate_process_group_if_runner(123, escalation_s=0)
 
@@ -952,14 +952,14 @@ def test_process_group_is_runner_matches_module_invocation(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     class FakeRunResult:
-        stdout = "/usr/bin/python -m pi_swarm.runner --result-path /tmp/result.json"
+        stdout = "/usr/bin/python -m basecamp.swarm.runner --result-path /tmp/result.json"
 
     def fake_run(args: list[str], **kwargs: object) -> FakeRunResult:
         assert args == ["ps", "-p", "123", "-o", "args="]
         assert kwargs == {"capture_output": True, "text": True, "check": False}
         return FakeRunResult()
 
-    monkeypatch.setattr("pi_swarm.process.subprocess.run", fake_run)
+    monkeypatch.setattr("basecamp.swarm.process.subprocess.run", fake_run)
 
     assert _process_group_is_runner(123) is True
 
@@ -968,14 +968,14 @@ def test_process_group_is_runner_rejects_module_name_without_invocation(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     class FakeRunResult:
-        stdout = "/usr/bin/python pi_swarm.runner --result-path /tmp/result.json"
+        stdout = "/usr/bin/python basecamp.swarm.runner --result-path /tmp/result.json"
 
     def fake_run(args: list[str], **kwargs: object) -> FakeRunResult:
         assert args == ["ps", "-p", "123", "-o", "args="]
         assert kwargs == {"capture_output": True, "text": True, "check": False}
         return FakeRunResult()
 
-    monkeypatch.setattr("pi_swarm.process.subprocess.run", fake_run)
+    monkeypatch.setattr("basecamp.swarm.process.subprocess.run", fake_run)
 
     assert _process_group_is_runner(123) is False
 
@@ -991,7 +991,7 @@ def test_reconcile_orphaned_runs_marks_nonterminal_failed(
         connection.execute("UPDATE runs SET status = 'pending' WHERE id = ?", ("run-pending",))
     store.set_run_pgid(run_id="run-running", pgid=321)
     store.set_run_pgid(run_id="run-pending", pgid=654)
-    monkeypatch.setattr("pi_swarm.process._process_group_is_runner", lambda _pgid: False)
+    monkeypatch.setattr("basecamp.swarm.process._process_group_is_runner", lambda _pgid: False)
 
     reconcile_orphaned_runs(store)
 
@@ -1015,7 +1015,7 @@ def test_reconcile_orphaned_runs_kills_verified_runner_group(
     def record_terminate(pgid: int | None, *, escalation_s: float = 5.0, poll_s: float = 0.1) -> None:
         calls.append((pgid or 0, escalation_s, poll_s))
 
-    monkeypatch.setattr("pi_swarm.process.terminate_process_group_if_runner", record_terminate)
+    monkeypatch.setattr("basecamp.swarm.process.terminate_process_group_if_runner", record_terminate)
 
     reconcile_orphaned_runs(store)
 
@@ -1038,8 +1038,8 @@ def test_reconcile_orphaned_runs_skips_unverified_group_but_marks_failed(
     def record_terminate(pgid: int | None, **_kwargs: object) -> None:
         calls.append(pgid)
 
-    monkeypatch.setattr("pi_swarm.process._process_group_is_runner", lambda _pgid: False)
-    monkeypatch.setattr("pi_swarm.process.terminate_process_group", record_terminate)
+    monkeypatch.setattr("basecamp.swarm.process._process_group_is_runner", lambda _pgid: False)
+    monkeypatch.setattr("basecamp.swarm.process.terminate_process_group", record_terminate)
 
     reconcile_orphaned_runs(store)
 
@@ -1063,7 +1063,7 @@ async def test_spawn_agent_process_starts_new_session(
         return process
 
     monkeypatch.setattr(
-        "pi_swarm.process.asyncio.create_subprocess_exec",
+        "basecamp.swarm.process.asyncio.create_subprocess_exec",
         fake_create_subprocess_exec,
     )
     spec = DispatchSpec(

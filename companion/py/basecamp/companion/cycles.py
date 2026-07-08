@@ -12,14 +12,13 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from pydantic import Field, ValidationError
-
-from companion_tui.snapshot import (
+from basecamp.companion.snapshot import (
     CompanionBaseModel,
     CompanionGoal,
     CompanionProgress,
     CompanionTask,
 )
+from pydantic import Field, ValidationError
 
 
 class TaskCycle(CompanionBaseModel):

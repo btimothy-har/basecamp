@@ -6,10 +6,9 @@ import json
 import re
 from pathlib import Path
 
+from basecamp.companion.diff import WorkspaceStatus
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 from pydantic.alias_generators import to_camel
-
-from companion_tui.diff import WorkspaceStatus
 
 COMPANION_SNAPSHOT_DIR_NAME = "snapshots"
 

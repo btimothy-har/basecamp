@@ -5,14 +5,14 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from click.testing import CliRunner
-from companion_tui.analysis import (
+from basecamp.companion.analysis import (
     COMPANION_ANALYSIS_VERSION,
     CompanionAnalysis,
     companion_analysis_path,
     load_analysis,
     write_analysis,
 )
+from click.testing import CliRunner
 
 from basecamp.cli import basecamp
 

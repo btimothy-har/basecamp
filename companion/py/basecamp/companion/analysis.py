@@ -7,9 +7,8 @@ import os
 import re
 from pathlib import Path
 
+from basecamp.companion.snapshot import CompanionBaseModel
 from pydantic import Field, ValidationError, field_validator
-
-from companion_tui.snapshot import CompanionBaseModel
 
 COMPANION_ANALYSIS_VERSION = 2
 COMPANION_ANALYSIS_DIR_NAME = "analysis"

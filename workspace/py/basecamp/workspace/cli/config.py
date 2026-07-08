@@ -3,15 +3,14 @@
 from __future__ import annotations
 
 import questionary
-
-from basecamp_workspace import load_projects
-from basecamp_workspace.cli.project import (
+from basecamp.workspace import load_projects
+from basecamp.workspace.cli.project import (
     execute_project_add,
     execute_project_edit,
     execute_project_list,
     execute_project_remove,
 )
-from basecamp_workspace.ui import console
+from basecamp.workspace.ui import console
 
 
 def run_config_menu() -> None:

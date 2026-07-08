@@ -1,6 +1,6 @@
 """Basecamp workspace project configuration."""
 
-from basecamp_workspace.environments import (
+from basecamp.workspace.environments import (
     ENVIRONMENTS_SECTION,
     EnvironmentConfig,
     get_environment,
@@ -8,7 +8,7 @@ from basecamp_workspace.environments import (
     remove_environment,
     set_environment,
 )
-from basecamp_workspace.projects import (
+from basecamp.workspace.projects import (
     DEFAULT_PROJECTS_PATH,
     ProjectConfig,
     load_projects,

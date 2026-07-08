@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from companion_tui.cycles import (
+from basecamp.companion.cycles import (
     TaskCycle,
     companion_tasks_path,
     load_goal_cycles,

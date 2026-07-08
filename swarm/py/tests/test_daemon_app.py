@@ -9,11 +9,11 @@ import time
 from pathlib import Path
 
 import pytest
+from basecamp.swarm.app import create_app
+from basecamp.swarm.frames import PROTOCOL_VERSION
+from basecamp.swarm.service import MAX_MESSAGE_WAIT_TIMEOUT_SECONDS, _message_wait_timeout
+from basecamp.swarm.store import Store
 from fastapi.testclient import TestClient
-from pi_swarm.app import create_app
-from pi_swarm.frames import PROTOCOL_VERSION
-from pi_swarm.service import MAX_MESSAGE_WAIT_TIMEOUT_SECONDS, _message_wait_timeout
-from pi_swarm.store import Store
 
 
 def _build_app(tmp_path: Path):
@@ -241,7 +241,7 @@ def test_ws_disconnect_schedules_disconnect_reaper(tmp_path: Path, monkeypatch: 
     def record_schedule(**kwargs: object) -> None:
         calls.append(str(kwargs["node_id"]))
 
-    monkeypatch.setattr("pi_swarm.app.schedule_disconnect_reaper", record_schedule)
+    monkeypatch.setattr("basecamp.swarm.app.schedule_disconnect_reaper", record_schedule)
     app = _build_app(tmp_path)
 
     with TestClient(app) as client:
@@ -260,8 +260,8 @@ def test_ws_reregister_cancels_disconnect_reaper(tmp_path: Path, monkeypatch: py
     def record_cancel(_registry: object, node_id: str) -> None:
         cancelled.append(node_id)
 
-    monkeypatch.setattr("pi_swarm.app.schedule_disconnect_reaper", record_schedule)
-    monkeypatch.setattr("pi_swarm.registry.Registry.cancel_disconnect_reaper", record_cancel)
+    monkeypatch.setattr("basecamp.swarm.app.schedule_disconnect_reaper", record_schedule)
+    monkeypatch.setattr("basecamp.swarm.registry.Registry.cancel_disconnect_reaper", record_cancel)
     app = _build_app(tmp_path)
 
     with TestClient(app) as client:

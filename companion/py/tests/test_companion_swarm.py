@@ -6,7 +6,7 @@ import asyncio
 import json
 import re
 
-from companion_tui.daemon import (
+from basecamp.companion.daemon import (
     DaemonAgentMessage,
     DaemonAgentMessagesError,
     DaemonAgentMessagesOk,
@@ -23,7 +23,7 @@ from companion_tui.daemon import (
     DaemonTaskProgress,
     DaemonTaskProjection,
 )
-from companion_tui.ui.swarm import SwarmBody
+from basecamp.companion.ui.swarm import SwarmBody
 from rich.console import Console
 from test_companion_daemon import _build_fake_connection
 from textual.app import App, ComposeResult

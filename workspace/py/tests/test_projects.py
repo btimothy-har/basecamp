@@ -5,10 +5,10 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-import basecamp_workspace.projects as project_config
+import basecamp.workspace.projects as project_config
 import pytest
-from basecamp_core.settings import Settings
-from basecamp_workspace.migrations import migrate_project_dirs
+from basecamp.core.settings import Settings
+from basecamp.workspace.migrations import migrate_project_dirs
 from pydantic import ValidationError
 
 

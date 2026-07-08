@@ -5,9 +5,9 @@ from __future__ import annotations
 import asyncio
 from pathlib import Path
 
-from pi_swarm.frames import PROTOCOL_VERSION, PeerMessageFrame
-from pi_swarm.service import AcceptedPeerMessage, accept_peer_message
-from pi_swarm.store import Store
+from basecamp.swarm.frames import PROTOCOL_VERSION, PeerMessageFrame
+from basecamp.swarm.service import AcceptedPeerMessage, accept_peer_message
+from basecamp.swarm.store import Store
 
 
 def test_accept_peer_message_includes_stored_sender_product_role_for_unknown_relation(tmp_path: Path) -> None:

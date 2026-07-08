@@ -12,15 +12,14 @@ from pathlib import Path
 from urllib.parse import urlparse
 
 import questionary
-
-from basecamp_workspace import (
+from basecamp.workspace import (
     EnvironmentConfig,
     get_environment,
     load_environments,
     remove_environment,
     set_environment,
 )
-from basecamp_workspace.ui import console, display_environments
+from basecamp.workspace.ui import console, display_environments
 
 
 def derive_repo_identity(remote_url: str | None, fallback: str) -> str:

@@ -4,9 +4,9 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-import companion_tui.llm as llm_module
+import basecamp.companion.llm as llm_module
 import pytest
-from companion_tui.llm import (
+from basecamp.companion.llm import (
     ModelReference,
     create_pydantic_ai_agent,
     parse_model_reference,

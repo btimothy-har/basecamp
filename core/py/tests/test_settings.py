@@ -1,12 +1,12 @@
-"""Tests for basecamp_core.settings — generic locked JSON Settings."""
+"""Tests for basecamp.core.settings — generic locked JSON Settings."""
 
 from __future__ import annotations
 
 import json
 from pathlib import Path
 
-from basecamp_core.paths import DEFAULT_CONFIG_PATH
-from basecamp_core.settings import CONFIG_VERSION, Settings
+from basecamp.core.paths import DEFAULT_CONFIG_PATH
+from basecamp.core.settings import CONFIG_VERSION, Settings
 
 
 def _cfg(tmp_path: Path) -> Settings:
@@ -65,27 +65,8 @@ class TestInstallDir:
         assert data["stale_setting"] == {"preserve": True}
 
 
-class TestInstalledModules:
-    def test_installed_modules_empty(self, tmp_path: Path) -> None:
-        cfg = _cfg(tmp_path)
-        assert cfg.installed_modules == ()
-
-    def test_installed_modules_normalizes_and_deduplicates(self, tmp_path: Path) -> None:
-        cfg = _cfg(tmp_path)
-        cfg._write({"installed_modules": ["core", "", "tasks", "core", 42]})
-
-        assert cfg.installed_modules == ("core", "tasks")
-
-    def test_installed_modules_setter_persists_version_and_values(self, tmp_path: Path) -> None:
-        cfg = _cfg(tmp_path)
-
-        cfg.installed_modules = ["core", "workspace", "core"]
-
-        data = json.loads(cfg.path.read_text())
-        assert data["version"] == CONFIG_VERSION
-        assert data["installed_modules"] == ["core", "workspace"]
-
-    def test_set_install_metadata_preserves_other_sections(self, tmp_path: Path) -> None:
+class TestInstallMetadata:
+    def test_set_install_metadata_preserves_other_sections_and_drops_stale_modules(self, tmp_path: Path) -> None:
         cfg = _cfg(tmp_path)
         cfg._write(
             {
@@ -96,13 +77,12 @@ class TestInstalledModules:
             }
         )
 
-        cfg.set_install_metadata(install_dir="/tmp/ws", installed_modules=["core", "swarm"])
+        cfg.set_install_metadata(install_dir="/tmp/ws")
 
         data = json.loads(cfg.path.read_text())
         assert data == {
             "version": CONFIG_VERSION,
             "install_dir": "/tmp/ws",
-            "installed_modules": ["core", "swarm"],
             "logseq": {"graph_dir": "~/logseq"},
             "environments": {"acme/app": {"setup": "uv sync"}},
         }

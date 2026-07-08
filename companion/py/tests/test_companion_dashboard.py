@@ -7,9 +7,9 @@ import json
 import subprocess
 from pathlib import Path
 
-from companion_tui.analysis import companion_analysis_path
-from companion_tui.app import CompanionApp
-from companion_tui.daemon import (
+from basecamp.companion.analysis import companion_analysis_path
+from basecamp.companion.app import CompanionApp
+from basecamp.companion.daemon import (
     DaemonAgentMessages,
     DaemonAgentMessagesOk,
     DaemonSummary,
@@ -19,18 +19,18 @@ from companion_tui.daemon import (
     DaemonSummaryOk,
     DaemonSummaryUnavailable,
 )
-from companion_tui.snapshot import CompanionGoal, CompanionProgress, CompanionTask
-from companion_tui.source import DashboardModel
-from companion_tui.ui.dashboard import (
+from basecamp.companion.snapshot import CompanionGoal, CompanionProgress, CompanionTask
+from basecamp.companion.source import DashboardModel
+from basecamp.companion.ui.dashboard import (
     DashboardBody,
     _collapsed_goals_row,
     _goal_panel,
     _render_bullets,
     _render_task_detail,
 )
-from companion_tui.ui.formatting import _format_duration, _truncate_preview
-from companion_tui.ui.modes import next_body_mode
-from companion_tui.ui.swarm import SwarmBody
+from basecamp.companion.ui.formatting import _format_duration, _truncate_preview
+from basecamp.companion.ui.modes import next_body_mode
+from basecamp.companion.ui.swarm import SwarmBody
 from rich.console import Console
 from textual.containers import VerticalScroll
 from textual.widgets import ContentSwitcher, Static

@@ -2,7 +2,7 @@
 
 from pathlib import Path
 
-from basecamp_core.exceptions import LauncherError
+from basecamp.core.exceptions import LauncherError
 
 
 def to_home_relative(path: Path) -> str:

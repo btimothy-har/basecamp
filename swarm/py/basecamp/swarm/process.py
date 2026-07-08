@@ -17,7 +17,7 @@ from .run_result import run_result_path
 from .store import Store
 
 ProcessExitHook = Callable[[str], Awaitable[None]]
-RUNNER_MODULE = "pi_swarm.runner"
+RUNNER_MODULE = "basecamp.swarm.runner"
 
 
 def build_runner_argv(

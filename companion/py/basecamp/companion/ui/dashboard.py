@@ -2,6 +2,10 @@
 
 from __future__ import annotations
 
+from basecamp.companion.analysis import CompanionAnalysis
+from basecamp.companion.snapshot import CompanionGoal
+from basecamp.companion.source import DashboardModel
+from basecamp.companion.ui.formatting import _STATUS_GLYPH
 from rich.console import Group, RenderableType
 from rich.panel import Panel
 from rich.text import Text
@@ -10,11 +14,6 @@ from textual.binding import Binding
 from textual.containers import Horizontal, Vertical, VerticalScroll
 from textual.widget import Widget
 from textual.widgets import Static
-
-from companion_tui.analysis import CompanionAnalysis
-from companion_tui.snapshot import CompanionGoal
-from companion_tui.source import DashboardModel
-from companion_tui.ui.formatting import _STATUS_GLYPH
 
 VISIBLE_OTHER_GOAL_LIMIT = 5
 

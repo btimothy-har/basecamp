@@ -11,9 +11,9 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from companion_tui.analysis import CompanionAnalysis, load_analysis
-from companion_tui.cycles import load_goal_cycles, to_display_goals
-from companion_tui.snapshot import CompanionGoal
+from basecamp.companion.analysis import CompanionAnalysis, load_analysis
+from basecamp.companion.cycles import load_goal_cycles, to_display_goals
+from basecamp.companion.snapshot import CompanionGoal
 
 
 @dataclass

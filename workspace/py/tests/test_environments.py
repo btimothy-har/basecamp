@@ -5,10 +5,10 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-import basecamp_workspace.environments as environments
+import basecamp.workspace.environments as environments
 import pytest
-from basecamp_core.settings import CONFIG_VERSION, Settings
-from basecamp_workspace.environments import EnvironmentConfig
+from basecamp.core.settings import CONFIG_VERSION, Settings
+from basecamp.workspace.environments import EnvironmentConfig
 from pydantic import ValidationError
 
 

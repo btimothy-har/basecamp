@@ -7,7 +7,7 @@ import sqlite3
 from pathlib import Path
 
 import pytest
-from pi_swarm.store import (
+from basecamp.swarm.store import (
     ActiveRunExistsError,
     DuplicateAgentHandleError,
     DuplicateWorkstreamSlugError,
@@ -1804,7 +1804,7 @@ def test_get_run_summary_projects_skills_from_tool_calls(tmp_path: Path) -> None
     store.append_run_event(
         run_id="run-1",
         kind="tool_call",
-        payload={"toolName": "read", "snippet": "read pi-swarm/cli/src/pi_swarm/store.py"},
+        payload={"toolName": "read", "snippet": "read pi-swarm/cli/src/basecamp.swarm/store.py"},
     )
     store.append_run_event(
         run_id="run-1",

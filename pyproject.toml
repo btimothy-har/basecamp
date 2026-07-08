@@ -4,17 +4,17 @@ version = "0.8.0"
 description = "Basecamp — project configuration and workspace management for AI coding agents"
 requires-python = ">=3.12"
 dependencies = [
-    "basecamp-core",
-    "basecamp-workspace",
+    "fastapi>=0.100.0",
+    "pydantic>=2.0",
+    "pydantic-ai-slim[anthropic,openai]",
+    "pygments>=2.0",
     "questionary>=2.1.1",
-    "rich",
+    "rich>=13.0",
     "rich-click>=1.8",
+    "textual>=0.80",
     "tomlkit",
+    "uvicorn[standard]>=0.20.0",
 ]
-
-[project.optional-dependencies]
-companion = ["companion-tui"]
-swarm = ["pi-swarm"]
 
 [project.scripts]
 basecamp = "basecamp.cli:main"
@@ -23,13 +23,23 @@ basecamp = "basecamp.cli:main"
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
+# `basecamp` is a PEP 420 namespace package assembled from per-context portions
+# (docs/design/repo-consolidation.md §6). No portion may contain a
+# basecamp/__init__.py — that silently shadows every sibling portion.
 [tool.hatch.build.targets.wheel]
-packages = ["src/basecamp"]
+packages = [
+  "src/basecamp",
+  "core/py/basecamp",
+  "workspace/py/basecamp",
+  "swarm/py/basecamp",
+  "companion/py/basecamp",
+]
+# REQUIRED for editable installs: hatchling's default editable strategy maps by
+# package name, so same-named namespace portions collapse to the last root.
+dev-mode-dirs = ["src", "core/py", "workspace/py", "swarm/py", "companion/py"]
 
 [dependency-groups]
 dev = [
-    "companion-tui",
-    "pi-swarm",
     "ruff~=0.13.1",
     "pytest>=8.0.0",
     "pytest-asyncio>=0.23.0",
@@ -39,18 +49,8 @@ dev = [
     "freezegun>=1.5.2",
 ]
 
-[tool.uv.workspace]
-members = ["core/config", "workspace/projects", "pi-swarm/cli", "pi-companion/tui"]
-
-[tool.uv.sources]
-basecamp-core = { workspace = true }
-basecamp-workspace = { workspace = true }
-companion-tui = { workspace = true }
-pi-swarm = { workspace = true }
-
 [tool.pytest.ini_options]
-testpaths = ["tests", "core/config/tests", "workspace/projects/tests", "pi-swarm/cli/tests", "pi-companion/tui/tests"]
-pythonpath = ["src", "core/config/src", "workspace/projects/src", "pi-swarm/cli/src", "pi-companion/tui/src"]
+testpaths = ["tests", "core/py/tests", "workspace/py/tests", "swarm/py/tests", "companion/py/tests"]
 env = ["TESTING=1"]
 
 [tool.ruff]

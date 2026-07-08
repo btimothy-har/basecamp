@@ -7,8 +7,8 @@ import os
 import time
 from pathlib import Path
 
-from pi_swarm.frames import PROTOCOL_VERSION
-from pi_swarm.run_result import (
+from basecamp.swarm.frames import PROTOCOL_VERSION
+from basecamp.swarm.run_result import (
     BASECAMP_RUN_ATTEMPT,
     BASECAMP_RUN_RESULT_PATH,
     BASECAMP_RUNNER_MANAGED_RESULT,

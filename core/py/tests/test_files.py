@@ -1,4 +1,4 @@
-"""Tests for basecamp_core.files — atomic_write_json."""
+"""Tests for basecamp.core.files — atomic_write_json."""
 
 from __future__ import annotations
 
@@ -6,7 +6,7 @@ import json
 import os
 from pathlib import Path
 
-from basecamp_core.files import atomic_write_json
+from basecamp.core.files import atomic_write_json
 
 
 class TestAtomicWriteJson:

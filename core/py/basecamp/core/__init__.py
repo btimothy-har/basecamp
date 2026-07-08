@@ -5,9 +5,9 @@ helpers, path constants, root install metadata, and a locked JSON settings
 store. It deliberately knows nothing about project or workspace schema.
 """
 
-from basecamp_core.exceptions import LauncherError
-from basecamp_core.files import atomic_write_json
-from basecamp_core.paths import (
+from basecamp.core.exceptions import LauncherError
+from basecamp.core.files import atomic_write_json
+from basecamp.core.paths import (
     BASECAMP_CONFIG_DIR,
     BASECAMP_WORKSPACE_DIR,
     DEFAULT_CONFIG_PATH,
@@ -16,7 +16,7 @@ from basecamp_core.paths import (
     USER_PROMPTS_DIR,
     USER_STYLES_DIR,
 )
-from basecamp_core.settings import Settings, settings
+from basecamp.core.settings import Settings, settings
 
 __all__ = [
     "BASECAMP_CONFIG_DIR",

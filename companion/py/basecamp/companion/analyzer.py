@@ -9,12 +9,12 @@ from collections.abc import Callable
 from datetime import UTC, datetime
 from typing import Any
 
-from companion_tui.analysis import (
+from basecamp.companion.analysis import (
     COMPANION_ANALYSIS_VERSION,
     AnalysisSections,
     CompanionAnalysis,
 )
-from companion_tui.llm import create_pydantic_ai_agent, run_pydantic_ai_agent_sync
+from basecamp.companion.llm import create_pydantic_ai_agent, run_pydantic_ai_agent_sync
 
 try:
     from pydantic_ai import Agent as PydanticAIAgent

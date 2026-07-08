@@ -6,7 +6,7 @@ import json
 from pathlib import Path
 from typing import Literal, get_args, get_origin
 
-from pi_swarm.frames import (
+from basecamp.swarm.frames import (
     PROTOCOL_VERSION,
     AttachWorkstreamAgentAckFrame,
     AttachWorkstreamAgentFrame,

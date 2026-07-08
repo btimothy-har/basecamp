@@ -12,7 +12,7 @@ function fixturesDir(): string {
 
 function pythonFramesPath(): string {
 	const here = path.dirname(fileURLToPath(import.meta.url));
-	return path.resolve(here, "../../../../pi-swarm/cli/src/pi_swarm/frames.py");
+	return path.resolve(here, "../../../py/basecamp/swarm/frames.py");
 }
 
 describe("daemon frame codec", () => {

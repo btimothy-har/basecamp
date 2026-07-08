@@ -4,22 +4,16 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from textual.app import App, ComposeResult
-from textual.binding import ActiveBinding, Binding
-from textual.containers import Horizontal
-from textual.screen import Screen
-from textual.widgets import ContentSwitcher, Footer, Static
-
-from companion_tui.analysis import COMPANION_ANALYSIS_DIR_NAME, companion_analysis_path
-from companion_tui.cycles import companion_tasks_path
-from companion_tui.daemon import (
+from basecamp.companion.analysis import COMPANION_ANALYSIS_DIR_NAME, companion_analysis_path
+from basecamp.companion.cycles import companion_tasks_path
+from basecamp.companion.daemon import (
     DaemonAgentMessages,
     DaemonAgentMessagesError,
     DaemonSummary,
     DaemonSummaryError,
     DaemonSummarySource,
 )
-from companion_tui.diff import (
+from basecamp.companion.diff import (
     DIFF_MODES,
     DiffMode,
     FileStatus,
@@ -31,18 +25,23 @@ from companion_tui.diff import (
     make_git_runner,
     resolve_browse_roots,
 )
-from companion_tui.snapshot import (
+from basecamp.companion.snapshot import (
     COMPANION_SNAPSHOT_DIR_NAME,
     CompanionSnapshot,
     load_snapshot,
     render_workspace_lines,
 )
-from companion_tui.source import DashboardSource
-from companion_tui.ui.dashboard import DashboardBody
-from companion_tui.ui.diff import DiffBody, DiffView, FileList
-from companion_tui.ui.files import FileBrowser
-from companion_tui.ui.modes import next_body_mode
-from companion_tui.ui.swarm import SwarmBody
+from basecamp.companion.source import DashboardSource
+from basecamp.companion.ui.dashboard import DashboardBody
+from basecamp.companion.ui.diff import DiffBody, DiffView, FileList
+from basecamp.companion.ui.files import FileBrowser
+from basecamp.companion.ui.modes import next_body_mode
+from basecamp.companion.ui.swarm import SwarmBody
+from textual.app import App, ComposeResult
+from textual.binding import ActiveBinding, Binding
+from textual.containers import Horizontal
+from textual.screen import Screen
+from textual.widgets import ContentSwitcher, Footer, Static
 
 
 class WorkspacePanel(Static):

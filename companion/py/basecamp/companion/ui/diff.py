@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from basecamp.companion.diff import DiffLine, FileStatus
+from basecamp.companion.ui.syntax import lexer_for_filename
 from rich.syntax import Syntax
 from rich.text import Text
 from textual.app import ComposeResult
@@ -9,9 +11,6 @@ from textual.binding import Binding
 from textual.containers import Vertical, VerticalScroll
 from textual.message import Message
 from textual.widgets import Label, ListItem, ListView, Static
-
-from companion_tui.diff import DiffLine, FileStatus
-from companion_tui.ui.syntax import lexer_for_filename
 
 
 class FileList(Vertical):

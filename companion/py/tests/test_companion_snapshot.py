@@ -5,8 +5,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from companion_tui.diff import WorkspaceStatus
-from companion_tui.snapshot import (
+from basecamp.companion.diff import WorkspaceStatus
+from basecamp.companion.snapshot import (
     CompanionSnapshot,
     collapse_home,
     companion_snapshot_path,

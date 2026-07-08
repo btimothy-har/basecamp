@@ -6,7 +6,7 @@ import fcntl
 import os
 from typing import Any
 
-from basecamp_core.settings import Settings
+from basecamp.core.settings import Settings
 
 
 def migrate_project_dirs_data(data: dict[str, Any]) -> bool:

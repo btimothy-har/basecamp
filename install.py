@@ -17,10 +17,12 @@ import sys
 from pathlib import Path
 
 REPO_DIR = Path(__file__).resolve().parent
+# basecamp is a namespace package assembled from portions; each portion root
+# on sys.path contributes its basecamp.* subpackages (PEP 420).
 for path in [
     REPO_DIR / "src",
-    REPO_DIR / "core" / "config" / "src",
-    REPO_DIR / "workspace" / "projects" / "src",
+    REPO_DIR / "core" / "py",
+    REPO_DIR / "workspace" / "py",
 ]:
     sys.path.insert(0, str(path))
 

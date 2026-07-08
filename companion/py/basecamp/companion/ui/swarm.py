@@ -4,6 +4,20 @@ from __future__ import annotations
 
 from datetime import datetime
 
+from basecamp.companion.daemon import (
+    DaemonAgentMessage,
+    DaemonAgentMessages,
+    DaemonRecentActivity,
+    DaemonSummary,
+    DaemonSummaryAgent,
+)
+from basecamp.companion.ui.formatting import (
+    _STATUS_GLYPH,
+    _format_activity_timestamp,
+    _format_duration,
+    _parse_iso_timestamp,
+    _truncate_preview,
+)
 from rich.console import Group, RenderableType
 from rich.panel import Panel
 from rich.table import Table
@@ -13,21 +27,6 @@ from textual.binding import Binding
 from textual.containers import Horizontal, VerticalScroll
 from textual.widget import Widget
 from textual.widgets import Static
-
-from companion_tui.daemon import (
-    DaemonAgentMessage,
-    DaemonAgentMessages,
-    DaemonRecentActivity,
-    DaemonSummary,
-    DaemonSummaryAgent,
-)
-from companion_tui.ui.formatting import (
-    _STATUS_GLYPH,
-    _format_activity_timestamp,
-    _format_duration,
-    _parse_iso_timestamp,
-    _truncate_preview,
-)
 
 _DAEMON_STATUS_GLYPH = {
     "completed": "✓",

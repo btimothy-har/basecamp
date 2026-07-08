@@ -1,11 +1,11 @@
-"""Tests for basecamp_core.paths and public API surface."""
+"""Tests for basecamp.core.paths and public API surface."""
 
 from __future__ import annotations
 
 from pathlib import Path
 
-import basecamp_core
-from basecamp_core import paths
+import basecamp.core
+from basecamp.core import paths
 
 
 class TestPaths:
@@ -42,9 +42,9 @@ class TestPublicApi:
             "atomic_write_json",
             "settings",
         }
-        assert expected <= set(basecamp_core.__all__)
+        assert expected <= set(basecamp.core.__all__)
         for name in expected:
-            assert hasattr(basecamp_core, name)
+            assert hasattr(basecamp.core, name)
 
     def test_launcher_error_is_exception(self) -> None:
-        assert issubclass(basecamp_core.LauncherError, Exception)
+        assert issubclass(basecamp.core.LauncherError, Exception)

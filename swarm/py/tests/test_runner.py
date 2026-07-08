@@ -7,7 +7,7 @@ from collections.abc import Sequence
 from pathlib import Path
 
 import pytest
-from pi_swarm.frames import (
+from basecamp.swarm.frames import (
     PROTOCOL_VERSION,
     DispatchAckFrame,
     DispatchFrame,
@@ -25,7 +25,7 @@ from pi_swarm.frames import (
     WaitResultItem,
     serialize_frame,
 )
-from pi_swarm.run_result import (
+from basecamp.swarm.run_result import (
     FinalRunResult,
     RunResultAttempt,
     RunResultSidecar,
@@ -33,7 +33,7 @@ from pi_swarm.run_result import (
     load_run_result,
     write_run_result,
 )
-from pi_swarm.runner import (
+from basecamp.swarm.runner import (
     EMPTY_RESULT_AFTER_RETRY,
     RECOVERY_PROMPT,
     AttemptDaemonProxy,
@@ -133,8 +133,8 @@ def test_attempt_proxy_wait_until_ready_raises_when_socket_missing(tmp_path: Pat
     proxy = AttemptDaemonProxy(_context(tmp_path))
     proxy.uds_path = str(tmp_path / "missing.sock")
     times = iter([0.0, 3.0])
-    monkeypatch.setattr("pi_swarm.runner.time.time", lambda: next(times))
-    monkeypatch.setattr("pi_swarm.runner.time.sleep", lambda _seconds: None)
+    monkeypatch.setattr("basecamp.swarm.runner.time.time", lambda: next(times))
+    monkeypatch.setattr("basecamp.swarm.runner.time.sleep", lambda _seconds: None)
 
     with pytest.raises(ProxySocketUnavailableError, match="failed to create socket"):
         proxy._wait_until_ready()

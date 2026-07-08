@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from companion_tui.source import DashboardModel, DashboardSource
+from basecamp.companion.source import DashboardModel, DashboardSource
 
 
 def _write_tasks(path: Path, goals: list[dict]) -> None:

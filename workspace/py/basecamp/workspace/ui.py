@@ -4,11 +4,10 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 
+from basecamp.workspace.environments import EnvironmentConfig
+from basecamp.workspace.projects import ProjectConfig
 from rich.console import Console
 from rich.table import Table
-
-from basecamp_workspace.environments import EnvironmentConfig
-from basecamp_workspace.projects import ProjectConfig
 
 # Console instances for output
 console = Console()

@@ -7,7 +7,7 @@ from dataclasses import asdict
 from pathlib import Path
 from urllib.parse import parse_qs, urlsplit
 
-from companion_tui.daemon import (
+from basecamp.companion.daemon import (
     DaemonAgentMessage,
     DaemonAgentMessagesError,
     DaemonAgentMessagesOk,

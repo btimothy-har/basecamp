@@ -10,13 +10,13 @@ from __future__ import annotations
 import fcntl
 import json
 import os
-from collections.abc import Callable, Generator, Iterable
+from collections.abc import Callable, Generator
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
 
-from basecamp_core.files import atomic_write_json
-from basecamp_core.paths import DEFAULT_CONFIG_PATH
+from basecamp.core.files import atomic_write_json
+from basecamp.core.paths import DEFAULT_CONFIG_PATH
 
 CONFIG_VERSION = 1
 
@@ -65,7 +65,7 @@ class Settings:
         """Read config under an exclusive lock, yield for mutation, then write back.
 
         Uses a sibling ``.lock`` file so the lock doesn't interfere with
-        :func:`basecamp_core.files.atomic_write_json`'s rename-into-place
+        :func:`basecamp.core.files.atomic_write_json`'s rename-into-place
         strategy.
         """
         self._lock_path.parent.mkdir(parents=True, mode=0o700, exist_ok=True)
@@ -99,49 +99,17 @@ class Settings:
             data["version"] = CONFIG_VERSION
             data["install_dir"] = value
 
-    @staticmethod
-    def _normalize_modules(values: Iterable[object]) -> list[str]:
-        """Strip, drop blanks/non-strings, and deduplicate module ids."""
-        modules: list[str] = []
-        seen: set[str] = set()
-        for value in values:
-            if not isinstance(value, str):
-                continue
-            module = value.strip()
-            if not module or module in seen:
-                continue
-            modules.append(module)
-            seen.add(module)
-        return modules
-
-    @property
-    def installed_modules(self) -> tuple[str, ...]:
-        """Installed Basecamp module ids from the root config."""
-        val = self._read().get("installed_modules")
-        if not isinstance(val, list):
-            return ()
-        return tuple(self._normalize_modules(val))
-
-    @installed_modules.setter
-    def installed_modules(self, values: Iterable[str]) -> None:
-        modules = self._normalize_modules(values)
-
-        with self._locked_update() as data:
-            data["version"] = CONFIG_VERSION
-            data["installed_modules"] = modules
-
-    def set_install_metadata(self, *, install_dir: str, installed_modules: Iterable[str]) -> None:
+    def set_install_metadata(self, *, install_dir: str) -> None:
         """Persist installer-owned root metadata in one locked write.
 
         Only the installer-owned keys are written; other sections (e.g.
-        ``logseq``, ``environments``) are preserved.
+        ``logseq``, ``environments``) are preserved. Stale pre-consolidation
+        keys (``installed_modules``) are dropped when present.
         """
-        modules = self._normalize_modules(installed_modules)
-
         with self._locked_update() as data:
             data["version"] = CONFIG_VERSION
             data["install_dir"] = install_dir
-            data["installed_modules"] = modules
+            data.pop("installed_modules", None)
 
     def get_section(self, name: str) -> Any:
         """Return a top-level config section, or ``{}`` if missing/non-dict.

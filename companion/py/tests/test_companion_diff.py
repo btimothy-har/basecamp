@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from companion_tui.diff import (
+from basecamp.companion.diff import (
     MAX_DIFF_BYTES,
     MAX_DIFF_LINES,
     DiffLine,

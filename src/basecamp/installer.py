@@ -2,9 +2,9 @@
 
 Called by both install.py (bootstrap) and `basecamp install` (reconfiguration).
 
-Every install gets everything: the Python tool (with all extras) and the
-single Pi extension registered from the repo root. The pre-consolidation
-component picker is gone by design (docs/design/repo-consolidation.md §3).
+Every install gets everything: the Python tool and the single Pi extension
+registered from the repo root. The pre-consolidation component picker and
+extras are gone by design (docs/design/repo-consolidation.md §3).
 """
 
 from __future__ import annotations
@@ -16,30 +16,13 @@ from pathlib import Path
 from typing import Final
 
 import questionary
-from basecamp_core.settings import settings
+from basecamp.core.settings import settings
 from rich.console import Console
 from rich.panel import Panel
 
 console = Console()
 
 REPO_DIR: Final = Path(__file__).resolve().parents[2]
-
-_PYTHON_EXTRAS: Final = "[companion,swarm]"
-
-# Recorded in config.json for informational purposes until the metadata field
-# is retired in phase 3 of the consolidation.
-_MODULE_IDS: Final = (
-    "core",
-    "ui",
-    "workspace",
-    "tasks",
-    "git",
-    "bash-reviewer",
-    "engineering",
-    "browser",
-    "companion",
-    "swarm",
-)
 
 # Pre-consolidation Pi package registrations to clean up — each was its own
 # `pi install` target before the single-extension layout.
@@ -118,7 +101,7 @@ def run_interactive_install(*, editable: bool | None = None) -> None:
 
     console.print("[bold]Python tool[/bold]")
     console.print()
-    pkg_spec = f"{REPO_DIR}{_PYTHON_EXTRAS}"
+    pkg_spec = str(REPO_DIR)
     args = ["uv", "tool", "install", "--force", "--reinstall"]
     if editable:
         args.append("-e")
@@ -135,7 +118,7 @@ def run_interactive_install(*, editable: bool | None = None) -> None:
     console.print()
     _install_pi_extension()
 
-    settings.set_install_metadata(install_dir=str(REPO_DIR), installed_modules=_MODULE_IDS)
+    settings.set_install_metadata(install_dir=str(REPO_DIR))
 
     console.print()
     console.print("[green]✓[/green] Done.")
