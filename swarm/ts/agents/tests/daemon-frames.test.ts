@@ -3,7 +3,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import { describe, it } from "node:test";
 import { fileURLToPath } from "node:url";
-import { decodeFrame, encodeFrame, FRAME_TYPES, PROTOCOL_VERSION } from "../daemon/frames.ts";
+import { decodeFrame, encodeFrame, FRAME_TYPES, PROTOCOL_VERSION } from "../daemon/frames/index.ts";
 
 function fixturesDir(): string {
 	const here = path.dirname(fileURLToPath(import.meta.url));

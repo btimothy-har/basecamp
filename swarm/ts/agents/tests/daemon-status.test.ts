@@ -5,7 +5,7 @@ import {
 	previewDaemonMessage,
 	publishDaemonStatus,
 	renderDaemonStatus,
-} from "../daemon/index.ts";
+} from "../daemon/status.ts";
 
 type Theme = (color: string, text: string) => string;
 

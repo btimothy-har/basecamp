@@ -12,10 +12,11 @@ import { errorMessage } from "../errors.ts";
 import { basecampExtensionRoot } from "../extension-root.ts";
 import { resolveAgentDepthState } from "../types.ts";
 import { connect, type DaemonConnection, type DaemonIdentity, ensureDaemon, fetchRunSummary } from "./client.ts";
-import { type PeerMessageDeliveryFrame, PROTOCOL_VERSION } from "./frames.ts";
+import { type PeerDeliveryState, registerPeerMessageDeliveryHandler, sanitizeDisplayLabel } from "./delivery.ts";
 import { buildDeterministicAgentHandle } from "./handles.ts";
 import { resolveDaemonPaths } from "./paths.ts";
 import { registerDaemonReporter } from "./reporter.ts";
+import { publishDaemonStatus } from "./status.ts";
 import type { DaemonToolDeps } from "./tools.ts";
 import {
 	registerAskAgentTool,
@@ -25,24 +26,10 @@ import {
 } from "./tools.ts";
 import { type ActiveAgentsWidgetController, clearActiveAgentsWidget, startActiveAgentsWidget } from "./widget.ts";
 
-type ThemeFg = (color: Parameters<import("@earendil-works/pi-coding-agent").Theme["fg"]>[0], text: string) => string;
-
-interface DaemonClientState {
+interface DaemonClientState extends PeerDeliveryState {
 	connection: DaemonConnection | null;
 	connecting: Promise<void> | null;
-	peerDeliveryConnection?: DaemonConnection | null;
-	peerDeliveryUnsubscribe?: (() => void) | null;
 }
-
-type DaemonStatusKind = "idle" | "starting" | "connected" | "unavailable" | "disconnected";
-
-export interface DaemonStatusInfo {
-	kind: DaemonStatusKind;
-	message?: string;
-}
-
-const DAEMON_STATUS_ID = "basecamp.daemon";
-const DAEMON_MESSAGE_TRUNCATE_LENGTH = 80;
 
 interface Deferred<T> {
 	promise: Promise<T>;
@@ -66,110 +53,8 @@ const getDaemonClientState = processScoped<DaemonClientState>("basecamp.daemonCl
 	connecting: null,
 }));
 
-export function previewDaemonMessage(message: string | undefined): string | null {
-	const sanitized = message?.replace(/[\r\n\t]/g, " ").trim();
-	if (!sanitized) return null;
-	if (sanitized.length <= DAEMON_MESSAGE_TRUNCATE_LENGTH) return sanitized;
-	return `${sanitized.slice(0, DAEMON_MESSAGE_TRUNCATE_LENGTH - 1)}…`;
-}
-
-export function renderDaemonStatus(fg: ThemeFg, status: DaemonStatusInfo): string {
-	if (status.kind === "connected") return fg("success", "swarm ✓");
-	if (status.kind === "starting") return `${fg("warning", "swarm …")} ${fg("dim", "starting")}`;
-	if (status.kind === "disconnected") return `${fg("warning", "swarm ⚠")} ${fg("dim", "disconnected")}`;
-	if (status.kind === "unavailable") {
-		const message = previewDaemonMessage(status.message);
-		return message ? `${fg("error", "swarm ✗")} ${fg("error", message)}` : fg("error", "swarm ✗ unavailable");
-	}
-	return fg("muted", "swarm idle");
-}
-
-export function publishDaemonStatus(ctx: ExtensionContext, status: DaemonStatusInfo): void {
-	if (!ctx.hasUI) return;
-	const fg: ThemeFg = (color, text) => ctx.ui.theme.fg(color, text);
-	ctx.ui.setStatus(DAEMON_STATUS_ID, renderDaemonStatus(fg, status));
-}
-
 export function getActiveDaemonConnection(): DaemonConnection | null {
 	return getDaemonClientState().connection;
-}
-
-export function formatPeerMessageDeliveryContent(frame: PeerMessageDeliveryFrame): string {
-	const sender = sanitizeDisplayLabel(frame.from_handle, 80) ?? "a peer";
-	const label = sanitizeDisplayLabel(frame.from_product_role, 48) ?? relationDisplayLabel(frame.from_relation);
-	const suffix = label ? ` (${label})` : "";
-	return `Message from ${sender}${suffix}:\n\n${frame.message}`;
-}
-
-function sanitizeDisplayLabel(value: string | null | undefined, maxLength: number): string | null {
-	const withoutControls = Array.from(value ?? "", (char) => {
-		const code = char.charCodeAt(0);
-		return code <= 31 || code === 127 ? " " : char;
-	}).join("");
-	const sanitized = withoutControls.replace(/\s+/g, " ").trim();
-	if (!sanitized) return null;
-	return sanitized.length <= maxLength ? sanitized : `${sanitized.slice(0, maxLength - 1).trimEnd()}…`;
-}
-
-function relationDisplayLabel(relation: PeerMessageDeliveryFrame["from_relation"]): string | null {
-	return relation === "unknown" ? null : relation;
-}
-
-export function handlePeerMessageDelivery(
-	pi: Pick<ExtensionAPI, "sendUserMessage">,
-	connection: Pick<DaemonConnection, "send">,
-	frame: PeerMessageDeliveryFrame,
-): void {
-	const deliverAs = frame.interrupt ? "steer" : "followUp";
-	let delivery: ReturnType<ExtensionAPI["sendUserMessage"]>;
-	try {
-		delivery = pi.sendUserMessage(formatPeerMessageDeliveryContent(frame), { deliverAs });
-	} catch (error) {
-		try {
-			connection.send({
-				type: "peer_message_delivery_ack",
-				v: PROTOCOL_VERSION,
-				message_id: frame.message_id,
-				status: "failed",
-				error: errorMessage(error),
-			});
-		} catch {
-			// Transport failure prevents reporting the failed scheduling attempt; delivery status should not be inferred here.
-		}
-		return;
-	}
-
-	try {
-		connection.send({
-			type: "peer_message_delivery_ack",
-			v: PROTOCOL_VERSION,
-			message_id: frame.message_id,
-			status: "queued",
-		});
-	} catch {
-		// sendUserMessage already accepted the delivery; do not convert an ack transport failure into delivery failure.
-	}
-	void Promise.resolve(delivery).catch(() => {
-		// Delivery has already been accepted by Pi; avoid unhandled rejections without overwriting queued status.
-	});
-}
-
-function registerPeerMessageDeliveryHandler(
-	pi: Pick<ExtensionAPI, "sendUserMessage">,
-	state: DaemonClientState,
-	connection: DaemonConnection,
-): void {
-	state.peerDeliveryUnsubscribe?.();
-	state.peerDeliveryUnsubscribe = connection.on("peer_message_delivery", (frame) => {
-		handlePeerMessageDelivery(pi, connection, frame);
-	});
-	state.peerDeliveryConnection = connection;
-	connection.onClose(() => {
-		if (state.peerDeliveryConnection === connection) {
-			state.peerDeliveryUnsubscribe = null;
-			state.peerDeliveryConnection = null;
-		}
-	});
 }
 
 export async function awaitDaemonConnection(): Promise<DaemonConnection | null> {
