@@ -7,6 +7,7 @@ import type { ExtensionAPI, ExtensionContext, SessionStartEvent } from "@earendi
 import { resetSessionProductRoleForTesting, resolveSessionProductRoleOverride } from "pi-core/platform/product-role.ts";
 import type { WorkspaceState } from "pi-core/platform/workspace.ts";
 import { getAgentMode, resetAgentMode } from "pi-core/session/agent-mode.ts";
+import { resetCopilotLaunchForTesting, setCopilotLaunchReader } from "pi-core/session/copilot-launch.ts";
 import {
 	getCurrentSessionState,
 	initializeCurrentSessionState,
@@ -155,7 +156,10 @@ async function runStart(pi: FakePi, ctx: ExtensionContext, deps: WorkstreamStart
 }
 
 describe("workstream startup", () => {
-	afterEach(resetSessionProductRoleForTesting);
+	afterEach(() => {
+		resetSessionProductRoleForTesting();
+		resetCopilotLaunchForTesting();
+	});
 
 	it("loads the brief, injects it, and stamps this session's handle", async () => {
 		const pi = new FakePi();
@@ -388,7 +392,24 @@ describe("workstream startup", () => {
 		assert.equal(harness.enterExploreModeCalls[0]?.ctx, ctx);
 	});
 
-	it("registers a product-role provider for any present --workstream flag", () => {
+	it("copilot takes precedence over --workstream on session_start", async () => {
+		const pi = new FakePi();
+		const harness = makeDeps();
+		const { ctx, notices } = makeCtx();
+
+		registerWorkstreamStartup(pi as unknown as ExtensionAPI, harness.deps);
+		pi.setFlag("workstream", true);
+		setCopilotLaunchReader(() => true);
+		await pi.emitSessionStart(ctx);
+
+		assert.equal(harness.enterExploreModeCalls.length, 0);
+		assert.equal(pi.userMessages.length, 0);
+		assert.equal(notices.length, 1);
+		assert.equal(notices[0]?.level, "warning");
+		assert.match(notices[0]?.message ?? "", /copilot takes precedence/);
+	});
+
+	it("registers a product-role provider for any present --workstream flag unless copilot is present", () => {
 		const pi = new FakePi();
 		const harness = makeDeps();
 
@@ -396,6 +417,13 @@ describe("workstream startup", () => {
 		assert.equal(resolveSessionProductRoleOverride(), null);
 
 		pi.setFlag("workstream", true);
+		assert.equal(resolveSessionProductRoleOverride(), "workstream_agent");
+
+		setCopilotLaunchReader(() => true);
+		assert.equal(resolveSessionProductRoleOverride(), null);
+
+		// copilot cleared while --workstream is still set: role resolves back to workstream_agent
+		setCopilotLaunchReader(() => false);
 		assert.equal(resolveSessionProductRoleOverride(), "workstream_agent");
 
 		pi.setFlag("workstream", undefined);

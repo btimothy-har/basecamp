@@ -166,9 +166,12 @@ export function assemblePrompt(opts: AssembleOptions): string {
 	const environment = loadPromptFile("environment.md").trim();
 	if (environment) parts.push(environment);
 
+	// Copilot is a locked, launch-only mode that stages work via launch_workstream and never implements in-session,
+	// so plan() is hidden from its capabilities index (it is also hard-blocked at call time by pi-tasks).
+	const capabilityToolItems = agentMode === "copilot" ? toolItems.filter((item) => item.name !== "plan") : toolItems;
 	parts.push(
 		buildCapabilitiesIndex({
-			toolItems,
+			toolItems: capabilityToolItems,
 			skillItems,
 			agentItems,
 			includeAgents: !opts.agentPrompt,

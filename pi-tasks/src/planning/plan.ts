@@ -727,20 +727,6 @@ export function registerPlan(pi: ExtensionAPI, tasksAccess: TasksAccess): PlanAc
 // ============================================================================
 
 export function registerPlanCommands(pi: ExtensionAPI, tasksAccess: TasksAccess, plan: PlanAccess): void {
-	pi.registerCommand("plan", {
-		description: "Explore a topic and formalise an execution plan",
-		handler: async (args, ctx) => {
-			const topic = args?.trim() || (ctx.hasUI ? await ctx.ui.input("What do you want to explore?") : undefined);
-			if (!topic) {
-				ctx.ui.notify("Usage: /plan <topic>", "error");
-				return;
-			}
-			pi.sendUserMessage(
-				`I want to explore and plan: ${topic}\n\nInvoke the \`planning\` skill. Do not jump straight to \`plan()\` — explore the problem space first, discuss the approach with me, then formalise the agreed execution plan. Do not prototype or edit code before the plan is approved.`,
-			);
-		},
-	});
-
 	pi.registerCommand("show-plan", {
 		description: "View current plan draft or approved plan",
 		handler: async (_args, ctx) => {
@@ -763,7 +749,7 @@ export function registerPlanCommands(pi: ExtensionAPI, tasksAccess: TasksAccess,
 			}
 
 			if (ctx.hasUI) {
-				ctx.ui.notify("No plan to show. Use /plan <topic> to start planning.", "info");
+				ctx.ui.notify("No plan yet — ask the agent to plan a piece of work to create one.", "info");
 			}
 		},
 	});

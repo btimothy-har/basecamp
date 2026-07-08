@@ -58,6 +58,10 @@ The system prompt is fully replaced, not appended. This gives complete control o
 
 Prompts are layered (environment → working style → project context → tools/skills) so that each concern is independently overridable. Project context is assembled directly into the system prompt alongside all other layers.
 
+### Session Modes
+
+Agent modes (`core/pi`, in `SESSION_STATE_AGENT_MODES`) are `analysis`, `planning`, `copilot`, `supervisor`, and `executor`. shift+tab (`cycleAgentMode`) rotates only the cyclable modes — copilot is excluded from the cycle. `copilot` is a locked, launch-only mode: it is entered solely via `pi --copilot` (registered in `registerSession`, which forces copilot at `session_start` when the flag is present, else restores the stored mode) and is immutable — `cycleAgentMode` is a no-op in copilot, so shift+tab can neither enter nor leave it. `pi --copilot` takes precedence over `pi --workstream` (the workstream startup defers with a warning). Because Pi cannot unregister or per-session-gate a tool, `plan()` is removed from copilot by two layers keyed on `getAgentMode() === "copilot"`: a `tool_call` block in `pi-tasks` (the hard guarantee) and filtering the `plan` catalog item out of the copilot capabilities index in `workspace/pi` (with copilot.md carrying no plan() guidance). The `/plan` slash command is deprecated repo-wide; the `plan()` tool and `/show-plan` remain for non-copilot sessions.
+
 ### Pi Packages
 
 Core public session/project/workspace/workflow/git/model-alias/capability/engineering behavior is split across pluggable Pi packages (`core/pi`, `workspace/pi`, `pi-ui`, `pi-tasks`, `pi-git`, `pi-bash-reviewer`, `pi-engineering`, `pi-companion/pi`). Async-agent protocol, Pi-side launch/tool behavior, and daemon runtime ownership live in the top-level `pi-swarm/` context.

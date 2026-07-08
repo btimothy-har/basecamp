@@ -3,6 +3,7 @@ import * as fs from "node:fs/promises";
 import * as os from "node:os";
 import * as path from "node:path";
 import { describe, it, type TestContext } from "node:test";
+import type { CatalogItem } from "pi-core/platform/catalog.ts";
 import type { WorkspaceState } from "pi-core/platform/workspace.ts";
 import { resetAgentMode, setAgentMode } from "pi-core/session/agent-mode.ts";
 import { assemblePrompt } from "../prompt.ts";
@@ -147,7 +148,7 @@ describe("assemblePrompt", () => {
 		assert.doesNotMatch(prompt, /CUSTOM ENGINEERING STYLE/);
 	});
 
-	it("copilot mode documents workstream launch, dedupe, pull-based curation, and the plan() sibling", async (t) => {
+	it("copilot mode documents workstream launch, dedupe, and pull-based curation", async (t) => {
 		useAgentMode(t, "copilot");
 		await useTempHome(t);
 
@@ -169,9 +170,9 @@ describe("assemblePrompt", () => {
 		assert.match(prompt, /Tell the user to run `pi --workstream` in the opened pane/);
 		assert.match(prompt, /infers the id from the worktree/);
 		assert.match(prompt, /`cd <worktree-path> && pi --workstream`/);
-		// launch_workstream and plan() are siblings, plan() stays the in-session handoff
-		assert.match(prompt, /siblings, not replacements/);
-		assert.match(prompt, /in-session implementation handoff/);
+		assert.doesNotMatch(prompt, /plan\(\)/);
+		assert.doesNotMatch(prompt, /siblings, not replacements/);
+		assert.match(prompt, /Copilot stages work; it does not implement in-session/);
 		// non-management framing: copilot does not drive the workstream session
 		assert.match(prompt, /do not supervise, drive, or manage it/);
 		// pull-based curation (handle only after pi --workstream) and no-Logseq-write rule preserved
@@ -179,6 +180,45 @@ describe("assemblePrompt", () => {
 		assert.match(prompt, /Workstream agents never write Logseq/);
 		// launch index is an operational receipt, not durable workstream status
 		assert.match(prompt, /operational receipt[\s\S]*not workstream status/);
+	});
+
+	it("hides the plan tool from the copilot capabilities index but keeps it in other modes", async (t) => {
+		const toolItems: CatalogItem[] = [
+			{ type: "tools", name: "plan", description: "Submit a plan" },
+			{ type: "tools", name: "bash", description: "Run a command" },
+		];
+		await useTempHome(t);
+
+		useAgentMode(t, "copilot");
+		const copilotPrompt = assemblePrompt({
+			workspace: null,
+			project: null,
+			effectiveCwd: "/repo",
+			toolItems,
+			skillItems: [],
+			agentItems: [],
+			contextFiles: [],
+			readOnly: false,
+		});
+
+		assert.match(copilotPrompt, /Tools \(1\):/);
+		assert.match(copilotPrompt, /^- bash — Run a command$/m);
+		assert.doesNotMatch(copilotPrompt, /^- plan —/m);
+
+		useAgentMode(t, "executor");
+		const executorPrompt = assemblePrompt({
+			workspace: null,
+			project: null,
+			effectiveCwd: "/repo",
+			toolItems,
+			skillItems: [],
+			agentItems: [],
+			contextFiles: [],
+			readOnly: false,
+		});
+
+		assert.match(executorPrompt, /Tools \(2\):/);
+		assert.match(executorPrompt, /^- plan — Submit a plan$/m);
 	});
 
 	it("places Repo Logseq after project context and before the environment block", async (t) => {

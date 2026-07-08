@@ -1,11 +1,11 @@
 # pi-tasks
 
-Basecamp task lifecycle + planning — goal tracking, task state machine, `/plan` command, and workflow skills.
+Basecamp task lifecycle + planning — goal tracking, task state machine, the `plan()` handoff, and workflow skills.
 
 ## What it does
 
 - **Task tools**: `update_goal`, `create_tasks`, `start_task`, `complete_task`, `get_task`, `annotate_task`, `delete_task` — persistent goal/task tracking with a below-editor widget
-- **Planning**: `/plan` command with structured plan review, draft logic, plan skill guard, worktree choices for implementation handoff
+- **Planning**: `plan()` tool with structured plan review, draft logic, plan skill guard, worktree choices for implementation handoff, and `/show-plan` to view the current plan (the `plan()` tool is hard-blocked in copilot sessions)
 - **Workstream launch**: `launch_workstream` and `list_workstream_launches` (see below)
 - **Workflow skills**: `gather`, `planning` SKILL.md content (`agents` skill moved to pi-swarm)
 
@@ -25,7 +25,7 @@ The user then runs `pi --workstream` in the new pane, which infers the id from t
 
 The launch index (`~/.pi/basecamp/workstream-launches/launch-index.json`) is an operational receipt only — which workstream was staged for which dossier and brief, in which worktree, under which id, and (once `pi --workstream` launches) which agent handle, plus setup/Herdr/launch status. It is not durable workstream state: priority, decisions, blockers, and done signals live in Logseq. No transcripts or dispatch logs are stored. Duplicates are refused: a matching non-failed record (same repo + dossier + label) is reused, and a failed record is superseded on retry. Generic worktree names are generated to avoid collisions with existing launch ids and worktree labels (regenerating on the rare clash); if the work-derived `bt/` branch is already checked out in another worktree, staging fails and asks for a distinct `worktreeSlug`.
 
-`launch_workstream` and `plan()` are siblings. `plan()` remains the in-session implementation handoff for the current (parent) session; `launch_workstream` stages a separate user-facing workstream the user starts with `pi --workstream` from inside the worktree. Copilot pulls current state from a started workstream on demand via the pi-swarm known-handle `ask_agent`/`message_agent` path and curates the durable parts into Logseq itself. The stamped handle is a contact address only: it does not make the workstream listable, awaitable, retaskable, or dispatchable from copilot.
+`launch_workstream` and `plan()` are siblings for a normal session: `plan()` is the in-session implementation handoff for the current (parent) session, while `launch_workstream` stages a separate user-facing workstream the user starts with `pi --workstream` from inside the worktree. In a copilot session `plan()` is hard-blocked and hidden — copilot only stages workstreams, it does not implement in-session. Copilot pulls current state from a started workstream on demand via the pi-swarm known-handle `ask_agent`/`message_agent` path and curates the durable parts into Logseq itself. The stamped handle is a contact address only: it does not make the workstream listable, awaitable, retaskable, or dispatchable from copilot.
 
 ## Functional smoke cleanup
 

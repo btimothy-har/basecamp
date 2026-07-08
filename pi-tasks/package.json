@@ -5,7 +5,7 @@
 	"engines": {
 		"node": ">=24"
 	},
-	"description": "Basecamp task lifecycle + planning — goal tracking, task state machine, /plan command.",
+	"description": "Basecamp task lifecycle + planning — goal tracking, task state machine, the plan() handoff, and /show-plan.",
 	"keywords": [
 		"pi-package"
 	],

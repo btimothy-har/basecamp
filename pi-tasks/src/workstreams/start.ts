@@ -8,6 +8,7 @@ import {
 	type WorkspaceState,
 } from "pi-core/platform/workspace.ts";
 import { setAgentMode } from "pi-core/session/agent-mode.ts";
+import { isCopilotLaunch } from "pi-core/session/copilot-launch.ts";
 import { ensureCurrentSessionStateForEvent } from "pi-core/state/index.ts";
 import { buildWorkstreamLaunchBrief } from "./brief.ts";
 import {
@@ -195,16 +196,20 @@ export function registerWorkstreamStartup(pi: ExtensionAPI, deps = defaultWorkst
 		description: "Start the staged workstream for the current worktree (run bare inside the worktree Herdr set up).",
 		type: "boolean",
 	});
-
 	// Flag presence marks this as a workstream session, so the product role and Explore posture are set on presence
 	// alone — before the record lookup. This is intentional: a --workstream invocation is a workstream attempt, and a
 	// failed lookup only notifies an error (the posture is benign and the user re-runs from the correct worktree).
+	// --copilot is owned by core/pi; read its launch value via isCopilotLaunch() rather than re-registering the flag.
 	registerSessionProductRoleProvider({
-		resolveProductRole: () => (pi.getFlag("workstream") === undefined ? null : "workstream_agent"),
+		resolveProductRole: () => (isCopilotLaunch() || pi.getFlag("workstream") === undefined ? null : "workstream_agent"),
 	});
 
 	pi.on("session_start", async (event, ctx) => {
 		if (pi.getFlag("workstream") === undefined) return;
+		if (isCopilotLaunch()) {
+			ctx.ui.notify("copilot takes precedence; --workstream is ignored for this session.", "warning");
+			return;
+		}
 		// Force Explore on every workstream session_start (including reload) so the session always begins from a
 		// planning posture; the executor/supervisor mode set at plan approval only persists within a single process.
 		deps.enterExploreMode(event, ctx);

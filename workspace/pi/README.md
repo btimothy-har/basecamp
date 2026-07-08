@@ -12,7 +12,7 @@ Basecamp workspace config + project context layer. Overrides pi-core's git-detec
 
 ## Repo copilot Logseq memory
 
-Copilot mode can use a configured Logseq graph as durable repo memory. Configure the graph manually in `~/.pi/basecamp/config.json`:
+Copilot is a locked, launch-only mode entered with `pi --copilot`: it is immutable (shift+tab can neither enter nor leave it) and the `plan()` handoff is disabled in it. Copilot mode can use a configured Logseq graph as durable repo memory. Configure the graph manually in `~/.pi/basecamp/config.json`:
 
 ```json
 {

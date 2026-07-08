@@ -94,7 +94,6 @@ Use it to list, add, edit, or remove configured projects.
 
 | Command | Description |
 |---------|-------------|
-| `/plan` | Create a reviewed implementation plan and activate an execution worktree when approved |
 | `/show-plan` | Show the current plan and task progress |
 | `/worktree [label]` | Switch to an existing Git-registered worktree |
 | `/create-pr` | Create or update a pull request |
@@ -183,6 +182,12 @@ runtime environment (paths, platform, date, git/worktree state)
 ```
 
 Built-in prompt files can be overridden by creating matching files under `~/.pi/basecamp/workspace/prompts/` (for example, `~/.pi/basecamp/workspace/prompts/environment.md` or `~/.pi/basecamp/workspace/prompts/modes/executor.md`).
+
+### Session Modes
+
+The session mode sets the agent's posture and is shown in the footer. Cycle between `analysis`, `explore` (planning), `supervisor`, and `executor` with shift+tab.
+
+`copilot` is a locked, launch-only mode: start it with `pi --copilot`. It is immutable — shift+tab can neither enter nor leave it — and the `plan()` handoff is disabled in it (a copilot session stages execution-ready workstreams with `launch_workstream` instead of implementing in-session). `pi --copilot` takes precedence over `pi --workstream` if both are passed.
 
 ### Working Styles
 
