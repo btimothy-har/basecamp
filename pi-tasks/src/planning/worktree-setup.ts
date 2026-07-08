@@ -1,14 +1,12 @@
-import type { WorktreeSetupResult } from "pi-core/workspace/setup.ts";
+import { shouldRunWorktreeSetup, type WorktreeSetupResult } from "pi-core/workspace/setup.ts";
+
+export { shouldRunWorktreeSetup };
 
 export interface WorktreeSetupSummary {
 	ok: boolean;
 	exit_code: number;
 	timed_out: boolean;
 	stderr_tail?: string;
-}
-
-export function shouldRunWorktreeSetup(created: boolean, command: string | null): boolean {
-	return created && command !== null;
 }
 
 export function worktreeSetupSummary(setup: WorktreeSetupResult | null): WorktreeSetupSummary | undefined {

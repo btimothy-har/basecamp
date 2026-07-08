@@ -7,10 +7,9 @@ import {
 	type WorkspaceState,
 	type WorkspaceWorktree,
 } from "pi-core/platform/workspace.ts";
-import { runWorktreeSetup, type WorktreeSetupResult } from "pi-core/workspace/setup.ts";
+import { runWorktreeSetup, shouldRunWorktreeSetup, type WorktreeSetupResult } from "pi-core/workspace/setup.ts";
 import { getOrCreateWorktree, type WorktreeResult } from "pi-core/workspace/worktree.ts";
-import { copilotWorktreeTarget } from "../planning/worktree-choices.ts";
-import { shouldRunWorktreeSetup } from "../planning/worktree-setup.ts";
+import { copilotWorktreeTarget } from "pi-core/workspace/worktree-target.ts";
 import { type HerdrWorkstreamOpenResult, openWorkstreamInHerdr } from "./herdr.ts";
 import {
 	appendWorkstreamLaunchRecordIfAbsent,

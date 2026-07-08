@@ -14,6 +14,10 @@ export interface WorktreeSetupResult {
 	stderrTail: string;
 }
 
+export function shouldRunWorktreeSetup(created: boolean, command: string | null): boolean {
+	return created && command !== null;
+}
+
 function tail(value: string): string {
 	return value.length > 2000 ? value.slice(-2000) : value;
 }
