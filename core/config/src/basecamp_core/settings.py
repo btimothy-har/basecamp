@@ -131,11 +131,14 @@ class Settings:
             data["installed_modules"] = modules
 
     def set_install_metadata(self, *, install_dir: str, installed_modules: Iterable[str]) -> None:
-        """Persist installer-owned root metadata in one locked write."""
+        """Persist installer-owned root metadata in one locked write.
+
+        Only the installer-owned keys are written; other sections (e.g.
+        ``logseq``, ``environments``) are preserved.
+        """
         modules = self._normalize_modules(installed_modules)
 
         with self._locked_update() as data:
-            data.clear()
             data["version"] = CONFIG_VERSION
             data["install_dir"] = install_dir
             data["installed_modules"] = modules
