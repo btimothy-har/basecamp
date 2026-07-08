@@ -1,6 +1,6 @@
 import type { AgentToolResult, Theme, ToolRenderResultOptions } from "@earendil-works/pi-coding-agent";
 import type { Component } from "@earendil-works/pi-tui";
-import type { Question, QuestionAnswer } from "./types.js";
+import type { Question, QuestionAnswer } from "./types.ts";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export function renderCall(args: { questions: Question[] }, theme: Theme, _context: any): Component {

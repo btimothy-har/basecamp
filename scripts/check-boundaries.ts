@@ -86,6 +86,13 @@ for (const context of CONTEXTS) {
 				violations.push(`${relFile}: legacy package specifier "${spec}"`);
 				continue;
 			}
+			if (spec.startsWith("#") || spec.startsWith(".")) {
+				// Pi's loader tolerates extensionless imports; strict Node (our test
+				// runner) does not. Enforce the explicit-.ts convention everywhere.
+				if (!spec.endsWith(".ts")) {
+					violations.push(`${relFile}: import "${spec}" must use an explicit .ts extension`);
+				}
+			}
 			if (spec.startsWith("#")) {
 				const [alias] = spec.slice(1).split("/", 1);
 				const target = alias ?? "";

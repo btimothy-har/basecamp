@@ -1,2 +1,2 @@
-export { registerEscalate } from "./tool.js";
-export type { DialogState, Question, QuestionAnswer } from "./types.js";
+export { registerEscalate } from "./tool.ts";
+export type { DialogState, Question, QuestionAnswer } from "./types.ts";

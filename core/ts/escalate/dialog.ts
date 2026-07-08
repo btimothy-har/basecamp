@@ -5,7 +5,7 @@ import {
 	type ThemeColor,
 } from "@earendil-works/pi-coding-agent";
 import { type Component, Editor, type EditorTheme, type Focusable, matchesKey, type TUI } from "@earendil-works/pi-tui";
-import type { DialogState, Question, QuestionAnswer, SelectAnswer, TextAnswer } from "./types.js";
+import type { DialogState, Question, QuestionAnswer, SelectAnswer, TextAnswer } from "./types.ts";
 
 /** Focus area within an option question. */
 type FocusArea = "options" | "editor";

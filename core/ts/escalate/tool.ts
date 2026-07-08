@@ -1,8 +1,8 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "@sinclair/typebox";
-import { EscalateDialog } from "./dialog.js";
-import { renderCall, renderResult } from "./render.js";
-import type { QuestionAnswer } from "./types.js";
+import { EscalateDialog } from "./dialog.ts";
+import { renderCall, renderResult } from "./render.ts";
+import type { QuestionAnswer } from "./types.ts";
 
 export function registerEscalate(pi: ExtensionAPI): void {
 	pi.registerTool({

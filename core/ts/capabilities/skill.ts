@@ -11,7 +11,7 @@
 
 import type { ExtensionAPI, Theme } from "@earendil-works/pi-coding-agent";
 import { Type } from "@sinclair/typebox";
-import { trackSkillInvocation } from "../platform/skill-tracker";
+import { trackSkillInvocation } from "../platform/skill-tracker.ts";
 import { loadSkillBlock } from "./skill-content.ts";
 
 const SkillParams = Type.Object(
