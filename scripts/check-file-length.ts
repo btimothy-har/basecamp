@@ -43,7 +43,6 @@ const GRANDFATHERED: Readonly<Record<string, number>> = {
 	"core/ts/model-aliases/commands.ts": 364,
 	"core/ts/state/index.ts": 371,
 	"core/ts/state/tests/session-state.test.ts": 425,
-	"engineering/ts/tools/bq-query.ts": 1284,
 	"swarm/py/basecamp/swarm/service.py": 1094,
 	"swarm/py/tests/test_daemon_app.py": 1691,
 	"swarm/py/tests/test_daemon_dispatch.py": 3066,
