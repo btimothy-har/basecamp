@@ -22,6 +22,7 @@ export default function (pi: ExtensionAPI) {
 	// pi-swarm/extension/src/workstreams/ with daemon-backed persistence.
 }
 
-export type { GoalCycle, ReviewState, Task, TaskStatus, TasksAccess, TasksState } from "./tasks/access.ts";
 // Public surface for other contexts (imported via #tasks/index.ts only).
+export { isPlanDisabledFor, PLAN_TOOL_NAME } from "./planning/plan-copilot-guard.ts";
+export type { GoalCycle, ReviewState, Task, TaskStatus, TasksAccess, TasksState } from "./tasks/access.ts";
 export { getTasksAccess, registerTasksAccess } from "./tasks/access.ts";

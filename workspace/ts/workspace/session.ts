@@ -16,7 +16,7 @@ import {
 	type UnsafeEditFlagResult,
 	type WorkspaceWorktree,
 } from "#core/platform/workspace.ts";
-import { ensureCurrentSessionStateForEvent } from "#core/state/index.ts";
+import { getCurrentSessionState } from "#core/state/index.ts";
 import { workspaceMatchesActiveWorktreeState } from "#core/workspace/affinity.ts";
 import { migrateLegacyWorktrees } from "#core/workspace/migrate.ts";
 
@@ -30,7 +30,9 @@ async function restoreActiveWorktreeState(event: SessionStartEvent, ctx: Extensi
 	const workspaceState = requireWorkspaceState();
 	if (!workspaceState.repo) return;
 
-	const activeWorktree = ensureCurrentSessionStateForEvent(event, ctx).activeWorktree;
+	// Core registers first in extension.ts, so its session_start already
+	// initialized state for this event.
+	const activeWorktree = getCurrentSessionState().activeWorktree;
 	if (!activeWorktree || !workspaceMatchesActiveWorktreeState(workspaceState, activeWorktree)) return;
 	// Init already recognized this linked worktree; re-attaching would re-run validateProtectedCheckout and
 	// fail on a dirty or off-branch main checkout.

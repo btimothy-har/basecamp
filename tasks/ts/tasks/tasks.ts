@@ -31,7 +31,7 @@ import type { ExtensionAPI, ExtensionContext, Theme } from "@earendil-works/pi-c
 import { Type } from "@sinclair/typebox";
 import { basecampRoot } from "#core/platform/paths.ts";
 import { type AgentMode, getAgentMode, setAgentMode } from "#core/session/agent-mode.ts";
-import { ensureCurrentSessionStateForEvent } from "#core/state/index.ts";
+import { getCurrentSessionState } from "#core/state/index.ts";
 import { registerTasksAccess } from "./access.ts";
 import { renderTaskWidgetLines } from "./render.ts";
 
@@ -634,8 +634,8 @@ export function registerTasks(pi: ExtensionAPI): TasksAccess {
 		if (active) {
 			state.goal = active.goal;
 			state.tasks = active.tasks;
-			if (!ensureCurrentSessionStateForEvent(event, sessionCtx).agentMode && active.agentMode)
-				setAgentMode(active.agentMode);
+			// Core's session_start (registered first) already initialized state.
+			if (!getCurrentSessionState().agentMode && active.agentMode) setAgentMode(active.agentMode);
 		}
 
 		updateWidget();

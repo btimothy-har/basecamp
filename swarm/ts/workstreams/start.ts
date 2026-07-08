@@ -8,7 +8,6 @@ import {
 } from "#core/platform/workspace.ts";
 import { setAgentMode } from "#core/session/agent-mode.ts";
 import { isCopilotLaunch } from "#core/session/copilot-launch.ts";
-import { ensureCurrentSessionStateForEvent } from "#core/state/index.ts";
 import type { DaemonClient, WorkstreamDetail } from "../agents/daemon/client.ts";
 import { resolveDaemonPaths } from "../agents/daemon/paths.ts";
 import { buildWorkstreamLaunchBrief } from "./brief.ts";
@@ -55,9 +54,9 @@ function errorMessage(err: unknown): string {
 	return err instanceof Error ? err.message : String(err);
 }
 
-function defaultEnterExploreMode(event: SessionStartEvent, ctx: ExtensionContext): void {
+function defaultEnterExploreMode(_event: SessionStartEvent, ctx: ExtensionContext): void {
 	try {
-		ensureCurrentSessionStateForEvent(event, ctx);
+		// Core's session_start (registered first) already initialized state.
 		setAgentMode("planning");
 	} catch (err) {
 		ctx.ui.notify(`basecamp: could not enter Explore mode for workstream — ${errorMessage(err)}`, "warning");

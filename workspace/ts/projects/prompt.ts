@@ -6,6 +6,7 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { type CatalogItem, listCatalogItemsByType } from "#core/platform/catalog.ts";
 import { getWorkspaceService, getWorkspaceState, type WorkspaceState } from "#core/platform/workspace.ts";
 import { getAgentMode } from "#core/session/agent-mode.ts";
+import { isPlanDisabledFor, PLAN_TOOL_NAME } from "#tasks/index.ts";
 import {
 	buildCapabilitiesIndex,
 	buildProjectContext,
@@ -168,7 +169,9 @@ export function assemblePrompt(opts: AssembleOptions): string {
 
 	// Copilot is a locked, launch-only mode that stages work via launch_workstream and never implements in-session,
 	// so plan() is hidden from its capabilities index (it is also hard-blocked at call time by pi-tasks).
-	const capabilityToolItems = agentMode === "copilot" ? toolItems.filter((item) => item.name !== "plan") : toolItems;
+	const capabilityToolItems = isPlanDisabledFor(agentMode)
+		? toolItems.filter((item) => item.name !== PLAN_TOOL_NAME)
+		: toolItems;
 	parts.push(
 		buildCapabilitiesIndex({
 			toolItems: capabilityToolItems,
