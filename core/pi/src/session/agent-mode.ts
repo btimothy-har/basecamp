@@ -8,6 +8,7 @@ import {
 export type AgentMode = SessionStateAgentMode;
 
 export const AGENT_MODES: readonly AgentMode[] = SESSION_STATE_AGENT_MODES;
+export const CYCLEABLE_AGENT_MODES: readonly AgentMode[] = AGENT_MODES.filter((mode) => mode !== "copilot");
 
 const DEFAULT_AGENT_MODE: AgentMode = "executor";
 
@@ -56,8 +57,11 @@ export function restoreAgentModeFromSessionState(): AgentMode {
 }
 
 export function cycleAgentMode(): AgentMode {
-	const index = AGENT_MODES.indexOf(getAgentMode());
-	return setAgentMode(AGENT_MODES[(index + 1) % AGENT_MODES.length]!);
+	const currentMode = getAgentMode();
+	if (currentMode === "copilot") return currentMode;
+
+	const index = CYCLEABLE_AGENT_MODES.indexOf(currentMode);
+	return setAgentMode(CYCLEABLE_AGENT_MODES[(index + 1) % CYCLEABLE_AGENT_MODES.length]!);
 }
 
 export function resetAgentMode(): void {

@@ -15,6 +15,7 @@ import {
 	updateCurrentSessionState,
 } from "../../state/index.ts";
 import {
+	CYCLEABLE_AGENT_MODES,
 	cycleAgentMode,
 	getAgentMode,
 	onAgentModeChange,
@@ -131,12 +132,26 @@ describe("agent mode session state", () => {
 		assert.equal(loaded.agentMode, null);
 	});
 
-	it("cycles through modes with copilot between planning and supervisor", () => {
+	it("cycles through modes excluding copilot", () => {
 		setAgentMode("analysis");
 
 		assert.deepEqual(
 			[cycleAgentMode(), cycleAgentMode(), cycleAgentMode(), cycleAgentMode(), cycleAgentMode()],
-			["planning", "copilot", "supervisor", "executor", "analysis"],
+			["planning", "supervisor", "executor", "analysis", "planning"],
 		);
+	});
+
+	it("locks copilot mode — cycleAgentMode is a no-op in copilot", () => {
+		setAgentMode("copilot");
+
+		assert.equal(cycleAgentMode(), "copilot");
+		assert.equal(cycleAgentMode(), "copilot");
+		assert.equal(cycleAgentMode(), "copilot");
+		assert.equal(getAgentMode(), "copilot");
+	});
+
+	it("defines cycleable modes without copilot", () => {
+		assert.deepEqual(CYCLEABLE_AGENT_MODES, ["analysis", "planning", "supervisor", "executor"]);
+		assert.equal(CYCLEABLE_AGENT_MODES.includes("copilot"), false);
 	});
 });

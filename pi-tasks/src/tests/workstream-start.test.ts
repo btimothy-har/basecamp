@@ -388,7 +388,24 @@ describe("workstream startup", () => {
 		assert.equal(harness.enterExploreModeCalls[0]?.ctx, ctx);
 	});
 
-	it("registers a product-role provider for any present --workstream flag", () => {
+	it("copilot takes precedence over --workstream on session_start", async () => {
+		const pi = new FakePi();
+		const harness = makeDeps();
+		const { ctx, notices } = makeCtx();
+
+		registerWorkstreamStartup(pi as unknown as ExtensionAPI, harness.deps);
+		pi.setFlag("workstream", true);
+		pi.setFlag("copilot", true);
+		await pi.emitSessionStart(ctx);
+
+		assert.equal(harness.enterExploreModeCalls.length, 0);
+		assert.equal(pi.userMessages.length, 0);
+		assert.equal(notices.length, 1);
+		assert.equal(notices[0]?.level, "warning");
+		assert.match(notices[0]?.message ?? "", /copilot takes precedence/);
+	});
+
+	it("registers a product-role provider for any present --workstream flag unless copilot is present", () => {
 		const pi = new FakePi();
 		const harness = makeDeps();
 
@@ -398,6 +415,10 @@ describe("workstream startup", () => {
 		pi.setFlag("workstream", true);
 		assert.equal(resolveSessionProductRoleOverride(), "workstream_agent");
 
+		pi.setFlag("copilot", true);
+		assert.equal(resolveSessionProductRoleOverride(), null);
+
+		pi.setFlag("copilot", undefined);
 		pi.setFlag("workstream", undefined);
 		assert.equal(resolveSessionProductRoleOverride(), null);
 	});
