@@ -6,21 +6,11 @@
  * preserves one shared tracker.
  */
 
-type SkillTrackerState = {
-	invokedSkills: Set<string>;
-};
+import { processScoped } from "./global-registry.ts";
 
-const trackerKey = Symbol.for("basecamp.skillTracker");
-
-type GlobalWithSkillTracker = typeof globalThis & {
-	[trackerKey]?: SkillTrackerState;
-};
-
-function getTrackerState(): SkillTrackerState {
-	const globalObject = globalThis as GlobalWithSkillTracker;
-	globalObject[trackerKey] ??= { invokedSkills: new Set<string>() };
-	return globalObject[trackerKey];
-}
+const getTrackerState = processScoped("basecamp.skillTracker", () => ({
+	invokedSkills: new Set<string>(),
+}));
 
 export function resetInvokedSkills(): void {
 	getTrackerState().invokedSkills.clear();

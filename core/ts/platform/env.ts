@@ -3,29 +3,27 @@
  *
  * Owns the BASECAMP_* env var schema, typed getters/setters, and the
  * companion-active flag. The workspace state hooks (registerWorkspaceStateProvider,
- * onWorkspaceStateChange) let pi-workspace override pi-core's git-detected defaults.
- *
- * Process-scoped via globalThis so `/reload` preserves state.
+ * onWorkspaceStateChange) let the workspace module override core's git-detected
+ * defaults.
  */
+
+import { processScoped } from "./global-registry.ts";
 
 // ---------------------------------------------------------------------------
 // Companion active flag
 // ---------------------------------------------------------------------------
 
-const companionKey = Symbol.for("basecamp.companionActive");
-
-type GlobalWithCompanion = typeof globalThis & {
-	[companionKey]?: boolean;
-};
+// Runtime session state (set as panes open/close) — must survive /reload.
+const getCompanionActiveState = processScoped("basecamp.companionActive", () => ({ active: false }));
 
 /** Returns true if the companion dashboard is active in this session. */
 export function isCompanionActive(): boolean {
-	return (globalThis as GlobalWithCompanion)[companionKey] ?? false;
+	return getCompanionActiveState().active;
 }
 
-/** Set the companion-active flag. Called by pi-companion on register. */
+/** Set the companion-active flag. Called by the companion module. */
 export function setCompanionActive(active: boolean): void {
-	(globalThis as GlobalWithCompanion)[companionKey] = active;
+	getCompanionActiveState().active = active;
 }
 
 // ---------------------------------------------------------------------------
@@ -78,16 +76,12 @@ interface WorkspaceHooksState {
 	listeners: Set<WorkspaceStateChangeListener>;
 }
 
-const hooksKey = Symbol.for("basecamp.workspaceHooks");
-
-type GlobalWithHooks = typeof globalThis & {
-	[hooksKey]?: WorkspaceHooksState;
-};
+// Wiring, not surviving state: the provider and all listeners re-register on
+// every load, which also stops stale pre-reload closures from firing.
+const hooksState: WorkspaceHooksState = { stateProvider: null, listeners: new Set() };
 
 function getHooksState(): WorkspaceHooksState {
-	const globalObject = globalThis as GlobalWithHooks;
-	globalObject[hooksKey] ??= { stateProvider: null, listeners: new Set() };
-	return globalObject[hooksKey];
+	return hooksState;
 }
 
 /**

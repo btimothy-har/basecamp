@@ -1,43 +1,32 @@
-# pi-core
+# core
 
-The always-present foundation for basecamp. A pi-installed extension containing the primitive registries, session lifecycle, workspace state, and shared type contracts that every other basecamp module depends on.
+The always-present foundation context for basecamp. `core/ts` is the first module the composition root (`extension.ts`) registers; every other context may import it freely (`#core/*`). `core/config` is the Python side (settings/paths/files) until it folds into `core/py` in phase 3 of the consolidation.
 
 ## What it does
 
-- **Platform registries** (process-scoped via `globalThis` + `Symbol.for`): exec/cwd provider, capability catalog, skill invocation tracker, model-alias resolve hooks, workspace state + worktree operations, session state
-- **Environment contract** (`platform/env.ts`): typed `BASECAMP_*` env var getters/setters, companion-active flag, workspace state hooks for pi-workspace override
-- **Session lifecycle**: agent-mode state machine (analysis/planning/supervisor/executor), session start (state load + mode restore), session shutdown, chat compaction
+- **Platform registries**: exec/cwd provider, capability catalog, model-alias resolve hooks, workspace service seam, product-role and agent-identity providers
+- **Environment contract** (`platform/env.ts`): typed `BASECAMP_*` env var getters/setters, companion-active flag, workspace state hooks for the workspace module's override
+- **Session lifecycle**: agent-mode state machine (analysis/planning/supervisor/executor/copilot), session start (state load + mode restore), session shutdown, chat compaction
 - **State persistence**: file-backed session state (`~/.pi/basecamp/core/session-state/<session-id>.json`) with fork inheritance
-- **Capabilities**: the `skill()` tool, SKILL.md content parsing, catalog providers
+- **Capabilities**: the `skill()` tool, SKILL.md content parsing, catalog providers, skill invocation tracker
 - **Model aliases**: native config provider (`~/.pi/basecamp/core/model-aliases.json`) + `/model-alias` commands
 - **Escalate**: the `escalate` tool — pause and ask the user for a decision (primary sessions only)
-- **Workspace defaults**: git detection at session_start (repo, remote, branch from `process.cwd()`); worktree operations (list/activate/attach) as thin git wrappers. Pi-workspace overrides these defaults with basecamp-config-aware values via the hook registry.
-- **Shared type contracts**: `TasksAccess`, `Task`, `TaskStatus`, `ReviewState`, `GoalCycle` — owned here so pi-tasks implements, and pi-companion/pi-swarm observe without a runtime dep on pi-tasks
+- **Workspace defaults**: git detection at session_start (repo, remote, branch from `process.cwd()`); worktree operations (list/activate/attach) as thin git wrappers. The workspace module overrides these defaults with basecamp-config-aware values during registration.
 
 ## Architecture
 
-Pi-core is the only hard dependency of every pluggable module. The dependency graph is strictly one-directional:
+Core is the foundation of the boundary rules (`scripts/check-boundaries.ts`): every context may import `#core/*`; core imports no other context. Cross-context observation of feature state (e.g. companion → tasks) goes through the owning context's public index (`#tasks/index.ts`), never through core bridges.
 
-```
-pi-core ← pi-ui, pi-workspace, pi-tasks, pi-git, pi-engineering, pi-companion, pi-swarm
-```
+### State convention: wiring vs. surviving
 
-No pluggable module imports from another pluggable module at runtime. Cross-module observation of optional state (companion→tasks, swarm→tasks) uses `import type` (erased) + dynamic `import()` guarded by try/catch.
+There are two kinds of module state, with different rules:
 
-### Process-scoped singleton convention
+- **Wiring** — providers and registries that the composition root re-establishes on every load (including `/reload`): cwd provider, catalog providers, model-alias providers, workspace service registration, copilot-launch reader, product-role/agent-identity providers, workspace hooks. These are **plain module state** (`let`/`const` at module scope). Re-registration on reload is guaranteed because `extension.ts` runs every module's `register*` in a fixed order; converting these to module state also stops stale pre-reload listener closures from firing.
 
-**Any mutable state that must be shared across modules or survive `/reload` MUST be stored on `globalThis` via a `Symbol.for("basecamp.*")` key — never a module-level `let`.** On `/reload`, pi clears its extension cache and re-imports every extension with fresh `jiti` instances (`moduleCache: false`), so each extension can receive its own instance of a shared module like `state/index.ts`. Module-level variables are therefore not shared across consumers and are reset on reload; only `globalThis`-backed state is process-scoped and reload-stable. Follow the existing pattern (see `platform/catalog.ts`, `platform/workspace.ts`, `session/agent-mode.ts`, `state/index.ts`).
+- **Surviving state** — live session data that must outlive `/reload` (pi re-imports the extension with fresh module instances, `moduleCache: false`): session state, agent mode, invoked skills, the workspace runtime service, project runtime, companion pane/analysis state, the daemon WebSocket client. These use `processScoped(key, init)` from [`platform/global-registry.ts`](ts/platform/global-registry.ts), which stores the value on `globalThis` behind a `Symbol.for` key. Key strings are stable across releases — renaming one silently drops state at the next `/reload`.
 
-State read during an extension's own `session_start` handler must not assume another extension's `session_start` ran first — cross-extension handler ordering is not guaranteed (and changes on reload). Initialize defensively (e.g. `ensureCurrentSessionStateForEvent`) rather than relying on the owner running first.
+When adding state, default to plain module state; reach for `processScoped` only when losing the value on `/reload` would break the live session.
 
-## Workspace override model
+### Init ordering
 
-Pi-core provides working defaults (git detection from cwd, `process.cwd()` as cwd provider). Pi-workspace, when installed, overrides these via the hook registry — registering a config-aware `WorkspaceService` and cwd provider. Last-writer-wins via the `Symbol.for("basecamp.*")` globalThis pattern. Without pi-workspace, sessions run with git defaults and no project context.
-
-## Installation
-
-```bash
-pi install /path/to/core/pi
-```
-
-Installed automatically by `install.py`. Must be installed before any other basecamp package.
+`extension.ts` registers modules in a fixed order with core first, so core's `session_start` handlers run before any other module's. Later modules may assume core-owned state (session state, agent mode) is initialized for every lifecycle event.

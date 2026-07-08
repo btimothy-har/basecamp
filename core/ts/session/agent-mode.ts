@@ -1,3 +1,4 @@
+import { processScoped } from "../platform/global-registry.ts";
 import {
 	getCurrentSessionState,
 	SESSION_STATE_AGENT_MODES,
@@ -19,18 +20,10 @@ interface AgentModeRuntime {
 	listeners: Set<AgentModeListener>;
 }
 
-const agentModeKey = Symbol.for("basecamp.agentMode");
-
-type GlobalWithAgentMode = typeof globalThis & {
-	[agentModeKey]?: AgentModeRuntime;
-};
-
-function getAgentModeRuntime(): AgentModeRuntime {
-	const globalObject = globalThis as GlobalWithAgentMode;
-	globalObject[agentModeKey] ??= { mode: DEFAULT_AGENT_MODE, listeners: new Set() };
-	globalObject[agentModeKey].listeners ??= new Set();
-	return globalObject[agentModeKey];
-}
+const getAgentModeRuntime = processScoped<AgentModeRuntime>("basecamp.agentMode", () => ({
+	mode: DEFAULT_AGENT_MODE,
+	listeners: new Set(),
+}));
 
 function updateLiveAgentMode(nextMode: AgentMode): AgentMode {
 	const runtime = getAgentModeRuntime();

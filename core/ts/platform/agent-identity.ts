@@ -16,32 +16,19 @@ export interface AgentIdentityProvider {
 	deriveHandle(ctx: ExtensionContext): string | null;
 }
 
-interface AgentIdentityState {
-	provider: AgentIdentityProvider | null;
-}
-
-const agentIdentityKey = Symbol.for("basecamp.agentIdentity");
-
-type GlobalWithAgentIdentity = typeof globalThis & {
-	[agentIdentityKey]?: AgentIdentityState;
-};
-
-function getAgentIdentityState(): AgentIdentityState {
-	const globalObject = globalThis as GlobalWithAgentIdentity;
-	globalObject[agentIdentityKey] ??= { provider: null };
-	return globalObject[agentIdentityKey];
-}
+// Wiring, not surviving state: the provider re-registers on every load.
+let agentIdentityProvider: AgentIdentityProvider | null = null;
 
 export function registerAgentIdentityProvider(provider: AgentIdentityProvider): void {
-	getAgentIdentityState().provider = provider;
+	agentIdentityProvider = provider;
 }
 
 export function getAgentIdentityProvider(): AgentIdentityProvider | null {
-	return getAgentIdentityState().provider;
+	return agentIdentityProvider;
 }
 
 export function resetAgentIdentityForTesting(): void {
-	getAgentIdentityState().provider = null;
+	agentIdentityProvider = null;
 }
 
 export function deriveCurrentAgentHandle(ctx: ExtensionContext): string | null {

@@ -2,6 +2,7 @@ import * as fs from "node:fs/promises";
 import * as path from "node:path";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { registerCwdProvider } from "#core/platform/exec.ts";
+import { processScoped } from "#core/platform/global-registry.ts";
 import {
 	type RepoContext,
 	registerWorkspaceService,
@@ -31,17 +32,10 @@ interface WorkspaceRuntimeGlobal {
 	service: WorkspaceRuntimeService | null;
 }
 
-const workspaceRuntimeKey = Symbol.for("basecamp.workspace.runtime");
-
-type GlobalWithWorkspaceRuntime = typeof globalThis & {
-	[workspaceRuntimeKey]?: WorkspaceRuntimeGlobal;
-};
-
-function getWorkspaceRuntimeGlobal(): WorkspaceRuntimeGlobal {
-	const globalObject = globalThis as GlobalWithWorkspaceRuntime;
-	globalObject[workspaceRuntimeKey] ??= { service: null };
-	return globalObject[workspaceRuntimeKey];
-}
+// Surviving state: the live service (active worktree, repo context) outlives /reload.
+const getWorkspaceRuntimeGlobal = processScoped<WorkspaceRuntimeGlobal>("basecamp.workspace.runtime", () => ({
+	service: null,
+}));
 
 function worktreeRequiresRepo(): never {
 	throw new Error("Workspace worktrees require a git repository");

@@ -81,9 +81,9 @@ All TypeScript behavior ships as one Pi extension registered from the repo root.
 
 Model alias resolution is owned by `core/ts/model-aliases`, backed by `~/.pi/basecamp/core/model-aliases.json` with schema `{ "version": 1, "aliases": { "fast": "claude-haiku-4-5" } }`. `core/ts/platform/model-aliases.ts` is only the provider seam; it must not read config, define aliases, or own model-selection policy.
 
-### Process-Scoped Singletons
+### State: wiring vs. surviving
 
-Mutable state shared across Pi packages or required to survive `/reload` must live on `globalThis` behind a `Symbol.for("basecamp.*")` key, never a module-level `let`. On `/reload`, Pi re-imports every extension with fresh module instances (`moduleCache: false`), so each extension can hold its own copy of a shared module; only `globalThis`-backed state stays process-scoped and reload-stable. State read inside a `session_start` handler must initialize defensively (e.g. `ensureCurrentSessionStateForEvent`) rather than assuming another extension's `session_start` ran first — cross-extension handler ordering is not guaranteed and changes on reload. See `core/README.md` for the canonical pattern.
+Two kinds of module state, two rules. **Wiring** (providers/registries the composition root re-establishes on every load — cwd provider, catalog, model aliases, workspace service seam) is plain module state. **Surviving state** (live session data that must outlive `/reload`, which re-imports the extension with fresh module instances — session state, agent mode, invoked skills, workspace runtime, daemon WebSocket) uses `processScoped(key, init)` from `core/ts/platform/global-registry.ts`; key strings are stable across releases. Default to plain module state; reach for `processScoped` only when losing the value on `/reload` would break the live session. Init order is deterministic (core registers first in `extension.ts`), so later modules may assume core-owned state is initialized. See `core/README.md` for the canonical pattern.
 
 ### Environment Variable Chain
 

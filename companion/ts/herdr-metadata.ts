@@ -1,5 +1,6 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { exec } from "#core/platform/exec.ts";
+import { processScoped } from "#core/platform/global-registry.ts";
 import type { CompanionSnapshot } from "./snapshot.ts";
 
 export const HERDR_METADATA_SOURCE = "basecamp.pi";
@@ -13,12 +14,6 @@ interface HerdrMetadataState {
 	seq: number;
 }
 
-const herdrMetadataKey = Symbol.for("basecamp.herdr.metadata");
-
-type GlobalWithHerdrMetadata = typeof globalThis & {
-	[herdrMetadataKey]?: HerdrMetadataState;
-};
-
 export interface HerdrMetadataEnv {
 	herdrEnv?: string;
 	herdrPaneId?: string;
@@ -26,11 +21,8 @@ export interface HerdrMetadataEnv {
 	agentDepth: number;
 }
 
-function getHerdrMetadataState(): HerdrMetadataState {
-	const globalObject = globalThis as GlobalWithHerdrMetadata;
-	globalObject[herdrMetadataKey] ??= { seq: 0 };
-	return globalObject[herdrMetadataKey];
-}
+// Surviving state: the metadata sequence outlives /reload.
+const getHerdrMetadataState = processScoped<HerdrMetadataState>("basecamp.herdr.metadata", () => ({ seq: 0 }));
 
 export function resetHerdrMetadataSeqForTest(seq = 0): void {
 	getHerdrMetadataState().seq = seq;

@@ -1,3 +1,4 @@
+import { processScoped } from "#core/platform/global-registry.ts";
 export interface ProjectConfig {
 	repoRoot: string;
 	additionalDirs: string[];
@@ -18,17 +19,8 @@ interface ProjectRuntime {
 	state: ProjectState | null;
 }
 
-const projectRuntimeKey = Symbol.for("pi.projects.runtime");
-
-type GlobalWithProjectRuntime = typeof globalThis & {
-	[projectRuntimeKey]?: ProjectRuntime;
-};
-
-function getProjectRuntime(): ProjectRuntime {
-	const globalObject = globalThis as GlobalWithProjectRuntime;
-	globalObject[projectRuntimeKey] ??= { state: null };
-	return globalObject[projectRuntimeKey];
-}
+// Surviving state (legacy key name kept so /reload across the rename keeps state).
+const getProjectRuntime = processScoped<ProjectRuntime>("pi.projects.runtime", () => ({ state: null }));
 
 export function resetProjectRuntime(): void {
 	getProjectRuntime().state = null;

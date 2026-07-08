@@ -17,29 +17,15 @@ export interface ModelAliasProvider {
 	list(): ModelAlias[];
 }
 
-interface ModelAliasRuntime {
-	providers: Map<string, ModelAliasProvider>;
-}
-
-const modelAliasesKey = Symbol.for("basecamp.model-aliases");
-
-type GlobalWithModelAliases = typeof globalThis & {
-	[modelAliasesKey]?: ModelAliasRuntime;
-};
-
-function getModelAliasRuntime(): ModelAliasRuntime {
-	const globalObject = globalThis as GlobalWithModelAliases;
-	globalObject[modelAliasesKey] ??= { providers: new Map() };
-	return globalObject[modelAliasesKey];
-}
+// Wiring, not surviving state: providers re-register on every load.
+const providers = new Map<string, ModelAliasProvider>();
 
 export function registerModelAliasProvider(provider: ModelAliasProvider): void {
-	getModelAliasRuntime().providers.set(provider.id, provider);
+	providers.set(provider.id, provider);
 }
 
 export function resolveModelAlias(alias: string): string | undefined {
-	const providers = Array.from(getModelAliasRuntime().providers.values()).reverse();
-	for (const provider of providers) {
+	for (const provider of Array.from(providers.values()).reverse()) {
 		const model = provider.resolve(alias);
 		if (model) return model;
 	}
@@ -47,9 +33,9 @@ export function resolveModelAlias(alias: string): string | undefined {
 }
 
 export function listModelAliases(): ModelAlias[] {
-	return Array.from(getModelAliasRuntime().providers.values()).flatMap((provider) => provider.list());
+	return Array.from(providers.values()).flatMap((provider) => provider.list());
 }
 
 export function clearModelAliasProvidersForTesting(): void {
-	getModelAliasRuntime().providers.clear();
+	providers.clear();
 }

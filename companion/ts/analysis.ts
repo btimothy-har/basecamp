@@ -1,8 +1,9 @@
 import { type ChildProcess, spawn } from "node:child_process";
 import type { ExtensionAPI, SessionEntry } from "@earendil-works/pi-coding-agent";
 import { isCompanionActive } from "#core/platform/env.ts";
-import { getTasksAccess } from "#tasks/index.ts";
+import { processScoped } from "#core/platform/global-registry.ts";
 import { getWorkspaceService } from "#core/platform/workspace.ts";
+import { getTasksAccess } from "#tasks/index.ts";
 import { buildTitleContext } from "#ui/index.ts";
 
 export const MIN_USER_TURNS = 2;
@@ -32,17 +33,11 @@ export interface AnalysisDeps {
 	spawnFn: typeof spawn;
 }
 
-const analysisKey = Symbol.for("basecamp.companionAnalysis");
-
-type GlobalWithAnalysis = typeof globalThis & {
-	[analysisKey]?: AnalysisState;
-};
-
-function getAnalysisState(): AnalysisState {
-	const globalObject = globalThis as GlobalWithAnalysis;
-	globalObject[analysisKey] ??= { inFlight: false, child: null };
-	return globalObject[analysisKey];
-}
+// Surviving state: an in-flight analyze child outlives /reload.
+const getAnalysisState = processScoped<AnalysisState>("basecamp.companionAnalysis", () => ({
+	inFlight: false,
+	child: null,
+}));
 
 export function countUserTurns(branch: SessionEntry[]): number {
 	return branch.filter((entry) => entry.type === "message" && entry.message.role === "user").length;

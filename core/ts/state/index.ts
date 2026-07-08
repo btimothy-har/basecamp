@@ -2,6 +2,7 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import type { ExtensionAPI, ExtensionContext, SessionStartEvent } from "@earendil-works/pi-coding-agent";
+import { processScoped } from "../platform/global-registry.ts";
 import { basecampCorePaths } from "../platform/paths.ts";
 
 export const SESSION_STATE_VERSION = 1;
@@ -54,27 +55,22 @@ export type SessionStatePatch = Partial<
 export type SessionStateUpdater = SessionStatePatch | ((state: Readonly<BasecampSessionState>) => SessionStatePatch);
 export type SessionTitleChangeListener = (title: string | null, state: Readonly<BasecampSessionState>) => void;
 
-// Process-scoped via globalThis so `/reload` preserves a single shared
-// session-state instance. Extensions are re-imported with fresh module
-// instances on reload (and each extension may receive its own instance of
-// this module), so module-level state would not be shared across consumers.
-const sessionStateKey = Symbol.for("basecamp.sessionState");
-
+// Surviving session state: /reload re-imports the extension with fresh module
+// instances, so the live session snapshot lives behind a process-scoped key.
 interface SessionStateRuntime {
 	current: BasecampSessionState | null;
 	stateDir: string | undefined;
 	titleListeners: Set<SessionTitleChangeListener>;
 }
 
-type GlobalWithSessionState = typeof globalThis & {
-	[sessionStateKey]?: SessionStateRuntime;
-};
+const getSessionStateRuntimeScoped = processScoped<SessionStateRuntime>("basecamp.sessionState", () => ({
+	current: null,
+	stateDir: undefined,
+	titleListeners: new Set(),
+}));
 
 function getSessionStateRuntime(): SessionStateRuntime {
-	const globalObject = globalThis as GlobalWithSessionState;
-	globalObject[sessionStateKey] ??= { current: null, stateDir: undefined, titleListeners: new Set() };
-	globalObject[sessionStateKey].titleListeners ??= new Set();
-	return globalObject[sessionStateKey];
+	return getSessionStateRuntimeScoped();
 }
 
 function sessionStateFileName(sessionId: string): string {

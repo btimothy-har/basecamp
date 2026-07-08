@@ -78,17 +78,13 @@ interface WorkspaceRuntime {
 	allowedRootProviders: Map<string, WorkspaceAllowedRootsProvider>;
 }
 
-const workspaceKey = Symbol.for("basecamp.workspace");
-
-type GlobalWithWorkspace = typeof globalThis & {
-	[workspaceKey]?: WorkspaceRuntime;
-};
+// Wiring, not surviving state: the workspace module re-registers its service
+// and providers on every load. (The service instance itself survives /reload
+// via the workspace module's own process-scoped runtime.)
+const workspaceRuntime: WorkspaceRuntime = { service: null, allowedRootProviders: new Map() };
 
 function getWorkspaceRuntime(): WorkspaceRuntime {
-	const globalObject = globalThis as GlobalWithWorkspace;
-	globalObject[workspaceKey] ??= { service: null, allowedRootProviders: new Map() };
-	globalObject[workspaceKey].allowedRootProviders ??= new Map();
-	return globalObject[workspaceKey];
+	return workspaceRuntime;
 }
 
 export function registerWorkspaceService(service: WorkspaceService): void {

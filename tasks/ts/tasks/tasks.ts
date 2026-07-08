@@ -30,9 +30,9 @@ import * as path from "node:path";
 import type { ExtensionAPI, ExtensionContext, Theme } from "@earendil-works/pi-coding-agent";
 import { Type } from "@sinclair/typebox";
 import { basecampRoot } from "#core/platform/paths.ts";
-import { registerTasksAccess } from "./access.ts";
 import { type AgentMode, getAgentMode, setAgentMode } from "#core/session/agent-mode.ts";
 import { ensureCurrentSessionStateForEvent } from "#core/state/index.ts";
+import { registerTasksAccess } from "./access.ts";
 import { renderTaskWidgetLines } from "./render.ts";
 
 // Type contracts owned by the tasks context — re-exported for the planning files.

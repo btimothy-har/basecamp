@@ -4,12 +4,12 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { afterEach, describe, it } from "node:test";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { registerTasksAccess, type TasksState } from "#tasks/index.ts";
 import {
 	initializeCurrentSessionState,
 	resetCurrentSessionState,
 	updateCurrentSessionState,
 } from "#core/state/index.ts";
+import { registerTasksAccess, type TasksState } from "#tasks/index.ts";
 import registerCompanion from "../companion-index.ts";
 import { resetHerdrMetadataSeqForTest } from "../herdr-metadata.ts";
 import { companionLiveSnapshotPath, companionSnapshotPath, defaultCompanionSnapshotDir } from "../snapshot.ts";

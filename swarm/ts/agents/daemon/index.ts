@@ -1,5 +1,6 @@
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { registerAgentIdentityProvider } from "#core/platform/agent-identity.ts";
+import { processScoped } from "#core/platform/global-registry.ts";
 import { resolveModelAlias } from "#core/platform/model-aliases.ts";
 import { resolveSessionProductRoleOverride } from "#core/platform/product-role.ts";
 import { hasInvokedSkill } from "#core/platform/skill-tracker.ts";
@@ -43,12 +44,6 @@ export interface DaemonStatusInfo {
 const DAEMON_STATUS_ID = "basecamp.daemon";
 const DAEMON_MESSAGE_TRUNCATE_LENGTH = 80;
 
-const daemonClientKey = Symbol.for("basecamp.daemonClient");
-
-type GlobalWithDaemonClient = typeof globalThis & {
-	[daemonClientKey]?: DaemonClientState;
-};
-
 interface Deferred<T> {
 	promise: Promise<T>;
 	resolve: (value: T) => void;
@@ -65,11 +60,11 @@ function deferred<T>(): Deferred<T> {
 	return { promise, resolve, reject };
 }
 
-function getDaemonClientState(): DaemonClientState {
-	const globalObject = globalThis as GlobalWithDaemonClient;
-	globalObject[daemonClientKey] ??= { connection: null, connecting: null };
-	return globalObject[daemonClientKey];
-}
+// Surviving state: the live daemon WebSocket outlives /reload.
+const getDaemonClientState = processScoped<DaemonClientState>("basecamp.daemonClient", () => ({
+	connection: null,
+	connecting: null,
+}));
 
 export function previewDaemonMessage(message: string | undefined): string | null {
 	const sanitized = message?.replace(/[\r\n\t]/g, " ").trim();

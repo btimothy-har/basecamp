@@ -15,36 +15,22 @@ export interface SessionProductRoleProvider {
 	resolveProductRole(): string | null;
 }
 
-interface SessionProductRoleState {
-	provider: SessionProductRoleProvider | null;
-}
-
-const sessionProductRoleKey = Symbol.for("basecamp.sessionProductRole");
-
-type GlobalWithSessionProductRole = typeof globalThis & {
-	[sessionProductRoleKey]?: SessionProductRoleState;
-};
-
-function getSessionProductRoleState(): SessionProductRoleState {
-	const globalObject = globalThis as GlobalWithSessionProductRole;
-	globalObject[sessionProductRoleKey] ??= { provider: null };
-	return globalObject[sessionProductRoleKey];
-}
+// Wiring, not surviving state: the provider re-registers on every load.
+let sessionProductRoleProvider: SessionProductRoleProvider | null = null;
 
 export function registerSessionProductRoleProvider(provider: SessionProductRoleProvider): void {
-	const state = getSessionProductRoleState();
-	if (state.provider && state.provider !== provider) {
+	if (sessionProductRoleProvider && sessionProductRoleProvider !== provider) {
 		console.warn("basecamp: replacing an existing session product-role provider");
 	}
-	state.provider = provider;
+	sessionProductRoleProvider = provider;
 }
 
 export function getSessionProductRoleProvider(): SessionProductRoleProvider | null {
-	return getSessionProductRoleState().provider;
+	return sessionProductRoleProvider;
 }
 
 export function resetSessionProductRoleForTesting(): void {
-	getSessionProductRoleState().provider = null;
+	sessionProductRoleProvider = null;
 }
 
 export function resolveSessionProductRoleOverride(): string | null {

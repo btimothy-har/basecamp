@@ -1,9 +1,10 @@
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
+import { processScoped } from "#core/platform/global-registry.ts";
 import { getInvokedSkills } from "#core/platform/skill-tracker.ts";
-import { getTasksAccess } from "#tasks/index.ts";
 import { getWorkspaceService, getWorkspaceState } from "#core/platform/workspace.ts";
 import { getAgentMode, onAgentModeChange } from "#core/session/agent-mode.ts";
 import { getCurrentSessionState, onCurrentSessionTitleChange } from "#core/state/index.ts";
+import { getTasksAccess } from "#tasks/index.ts";
 import { reportHerdrMetadata } from "./herdr-metadata.ts";
 import {
 	buildSnapshot,
@@ -32,23 +33,13 @@ interface CompanionState {
 	unsubscribeTitle: (() => void) | null;
 }
 
-const companionKey = Symbol.for("basecamp.companion");
-
-type GlobalWithCompanion = typeof globalThis & {
-	[companionKey]?: CompanionState;
-};
-
-function getCompanionState(): CompanionState {
-	const globalObject = globalThis as GlobalWithCompanion;
-	globalObject[companionKey] ??= {
-		ctx: null,
-		unsubscribeWorkspace: null,
-		unsubscribeAgentMode: null,
-		unsubscribeTitle: null,
-	};
-	globalObject[companionKey].unsubscribeTitle ??= null;
-	return globalObject[companionKey];
-}
+// Surviving state: the live companion wiring outlives /reload.
+const getCompanionState = processScoped<CompanionState>("basecamp.companion", () => ({
+	ctx: null,
+	unsubscribeWorkspace: null,
+	unsubscribeAgentMode: null,
+	unsubscribeTitle: null,
+}));
 
 function clearSubscriptions(state: CompanionState): void {
 	state.unsubscribeWorkspace?.();
