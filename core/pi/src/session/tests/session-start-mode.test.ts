@@ -11,6 +11,7 @@ import {
 	saveSessionState,
 } from "../../state/index.ts";
 import { getAgentMode, resetAgentMode } from "../agent-mode.ts";
+import { resetCopilotLaunchForTesting } from "../copilot-launch.ts";
 import { registerSession } from "../runtime/session.ts";
 
 async function createTempDir(t: { after(fn: () => Promise<void> | void): void }): Promise<string> {
@@ -62,6 +63,7 @@ class FakePi {
 afterEach(() => {
 	resetCurrentSessionState();
 	resetAgentMode();
+	resetCopilotLaunchForTesting();
 });
 
 describe("registerSession copilot mode startup", () => {

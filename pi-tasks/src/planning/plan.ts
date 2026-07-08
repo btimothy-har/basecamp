@@ -482,15 +482,6 @@ export function registerPlan(pi: ExtensionAPI, tasksAccess: TasksAccess): PlanAc
 		}, 0);
 	});
 
-	pi.on("tool_call", async (event) => {
-		if (event.toolName !== "plan") return;
-		if (getAgentMode() !== "copilot") return;
-		return {
-			block: true,
-			reason: "plan() is disabled in copilot sessions — stage work with launch_workstream instead.",
-		};
-	});
-
 	pi.registerTool({
 		name: "plan",
 		label: "Plan",
@@ -758,7 +749,7 @@ export function registerPlanCommands(pi: ExtensionAPI, tasksAccess: TasksAccess,
 			}
 
 			if (ctx.hasUI) {
-				ctx.ui.notify("No plan to show yet.", "info");
+				ctx.ui.notify("No plan yet — ask the agent to plan a piece of work to create one.", "info");
 			}
 		},
 	});

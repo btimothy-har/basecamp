@@ -5,7 +5,7 @@
  *   - List: browse review items, drill into any
  *   - Drill-down: view content + feedback, approve/revise/edit
  *   - Edit: write or modify feedback text
- *   - Read-only: shows approved plan (for /plan after approval)
+ *   - Read-only: shows approved plan (for /show-plan after approval)
  *
  * Goal + Context are merged into a single review item.
  * Design, Success, Boundaries are individual items.
