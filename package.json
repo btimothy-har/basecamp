@@ -36,9 +36,9 @@
 		"#swarm/*": "./swarm/ts/*"
 	},
 	"scripts": {
-		"check": "tsc && biome check . && node scripts/check-boundaries.ts",
+		"check": "tsc && biome check . && node scripts/check-boundaries.ts && node scripts/check-file-length.ts",
 		"typecheck": "tsc",
-		"lint": "biome check . && node scripts/check-boundaries.ts",
+		"lint": "biome check . && node scripts/check-boundaries.ts && node scripts/check-file-length.ts",
 		"lint:fix": "biome check --fix .",
 		"format": "biome format --fix .",
 		"test": "node --experimental-strip-types --test extension.test.ts \"core/ts/**/*.test.ts\" \"ui/ts/**/*.test.ts\" \"workspace/ts/**/*.test.ts\" \"tasks/ts/**/*.test.ts\" \"git/ts/**/*.test.ts\" \"bash-reviewer/ts/**/*.test.ts\" \"companion/ts/**/*.test.ts\" \"swarm/ts/**/*.test.ts\""

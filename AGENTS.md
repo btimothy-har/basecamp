@@ -17,6 +17,7 @@ The repo ships exactly two artifacts, assembled from paired bilingual contexts (
 package.json  tsconfig.json  biome.json   # THE TypeScript toolchain — repo root is the Pi package
 extension.ts                               # Composition root: registers all context modules in fixed order
 scripts/check-boundaries.ts                # Import-boundary lint (cross-context via #<context>/index.ts only)
+scripts/check-file-length.ts               # Hard file-length caps: .ts ≤ 350, .py ≤ 500 (shrink-only ratchet for pre-rule files)
 
 core/                          # Bilingual context: foundation
 ├── ts/                         # registries, session lifecycle, state, model aliases, platform seams
@@ -112,8 +113,16 @@ The `pi --workstream` flag is boolean: bare `--workstream` infers the workstream
 - **Python**: 3.12+, managed with `uv`
 - **Install (dev)**: `uv run install.py -e` (editable mode; installs the `basecamp` tool, then registers the repo root as the single Pi extension, cleaning up legacy per-package registrations)
 - **Python lint**: `uv run ruff check .` / `uv run ruff format --check .`
-- **TypeScript check**: `npm run check` at the repo root (tsc whole-graph + biome + import-boundary check); `make lint` runs it after the Python checks
+- **TypeScript check**: `npm run check` at the repo root (tsc whole-graph + biome + import-boundary + file-length checks); `make lint` runs it after the Python checks
 - **Fix**: `make fix` runs Python fixes plus `npm run lint:fix` / `npm run format`
+
+### File Length Limits
+
+Hard caps on every file, tests included: **TypeScript ≤ 350 lines, Python ≤ 500 lines**, enforced by `scripts/check-file-length.ts` in `npm run check` (and therefore `make lint` and CI).
+
+The cap is a module-design forcing function. When a file approaches it, split along responsibility seams — named modules with one job each. Never satisfy the cap by compressing style (collapsing blank lines, one-lining logic), and never with `-part2`-style continuation files: if no seam is apparent, the file owns more than one responsibility and the design needs rethinking, not the formatting.
+
+Files that predate the rule are pinned in the script's `GRANDFATHERED` ratchet at their then-current size and may only shrink. When one drops to or under its cap, its entry must be removed (the check fails on stale entries). Never add a new entry.
 
 ### Testing
 
