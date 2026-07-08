@@ -1,9 +1,9 @@
 import { type ChildProcess, spawn } from "node:child_process";
 import type { ExtensionAPI, SessionEntry } from "@earendil-works/pi-coding-agent";
-import { isCompanionActive } from "pi-core/platform/env.ts";
-import { getTasksAccess } from "pi-core/platform/tasks-access.ts";
-import { getWorkspaceService } from "pi-core/platform/workspace.ts";
-import { buildTitleContext } from "pi-ui/src/title.ts";
+import { isCompanionActive } from "#core/platform/env.ts";
+import { getTasksAccess } from "#core/platform/tasks-access.ts";
+import { getWorkspaceService } from "#core/platform/workspace.ts";
+import { buildTitleContext } from "#ui/title.ts";
 
 export const MIN_USER_TURNS = 2;
 export const ANALYSIS_TIMEOUT_MS = 60_000;

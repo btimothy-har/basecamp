@@ -1,6 +1,6 @@
 import { CustomEditor, type ExtensionAPI, type KeybindingsManager, type Theme } from "@earendil-works/pi-coding-agent";
 import type { EditorTheme, TUI } from "@earendil-works/pi-tui";
-import { getAgentMode } from "pi-core/session/agent-mode.ts";
+import { getAgentMode } from "#core/session/agent-mode.ts";
 import { getModeColor } from "./mode-style";
 
 type BorderColor = (text: string) => string;

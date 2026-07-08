@@ -11,8 +11,8 @@ import type { ExtensionAPI, ExtensionContext, SessionEntry, Theme } from "@earen
 import { visibleWidth } from "@earendil-works/pi-tui";
 import { type Static, Type } from "@sinclair/typebox";
 import { Value } from "@sinclair/typebox/value";
-import { shortSessionId } from "pi-core/session/session-id.ts";
-import { getCurrentSessionStateIfInitialized, updateCurrentSessionStateIfInitialized } from "pi-core/state/index.ts";
+import { shortSessionId } from "#core/session/session-id.ts";
+import { getCurrentSessionStateIfInitialized, updateCurrentSessionStateIfInitialized } from "#core/state/index.ts";
 import { resolveTitleModelForContext } from "./title-model.ts";
 
 const TitleResult = Type.Object({ title: Type.Union([Type.String(), Type.Null()]) }, { additionalProperties: false });

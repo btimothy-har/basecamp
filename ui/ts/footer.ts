@@ -15,9 +15,9 @@ import * as os from "node:os";
 import { dirname, join, resolve } from "node:path";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
-import { getInvokedSkills } from "pi-core/platform/skill-tracker.ts";
-import { getWorkspaceService, getWorkspaceState, type WorkspaceState } from "pi-core/platform/workspace.ts";
-import { type AgentMode, getAgentMode, onAgentModeChange } from "pi-core/session/agent-mode.ts";
+import { getInvokedSkills } from "#core/platform/skill-tracker.ts";
+import { getWorkspaceService, getWorkspaceState, type WorkspaceState } from "#core/platform/workspace.ts";
+import { type AgentMode, getAgentMode, onAgentModeChange } from "#core/session/agent-mode.ts";
 import { getModeLabel } from "./mode-style.ts";
 
 type ThemeFg = (color: Parameters<import("@earendil-works/pi-coding-agent").Theme["fg"]>[0], text: string) => string;

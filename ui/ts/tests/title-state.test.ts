@@ -10,7 +10,7 @@ import {
 	initializeCurrentSessionState,
 	resetCurrentSessionState,
 	saveSessionState,
-} from "pi-core/state/index.ts";
+} from "#core/state/index.ts";
 import { registerTitle, type TitleCompletion } from "../title.ts";
 
 async function createTempDir(t: { after(fn: () => Promise<void> | void): void }): Promise<string> {

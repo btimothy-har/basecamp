@@ -3,8 +3,8 @@ import * as os from "node:os";
 import * as path from "node:path";
 import type { AgentToolResult, ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { type Static, Type } from "@sinclair/typebox";
-import { getBasecampEnv, isSubagent } from "pi-core/platform/env.ts";
 import type { Page } from "puppeteer-core";
+import { getBasecampEnv, isSubagent } from "#core/platform/env.ts";
 import { ensurePage } from "../browser/connection.ts";
 
 const BrowserScreenshotParams = Type.Object({

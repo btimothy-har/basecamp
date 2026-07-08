@@ -1,6 +1,6 @@
 import * as path from "node:path";
-import { readLogseqGraphDir } from "pi-core/platform/config.ts";
-import type { WorkspaceState } from "pi-core/platform/workspace.ts";
+import { readLogseqGraphDir } from "#core/platform/config.ts";
+import type { WorkspaceState } from "#core/platform/workspace.ts";
 
 export interface BuildRepoLogseqContextOptions {
 	workspace: WorkspaceState | null;

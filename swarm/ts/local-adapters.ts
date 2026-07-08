@@ -7,12 +7,12 @@
 
 import * as path from "node:path";
 import { fileURLToPath } from "node:url";
-import { registerCatalogProvider } from "pi-core/platform/catalog.ts";
-import { resolveModelAlias } from "pi-core/platform/model-aliases.ts";
-import { hasInvokedSkill } from "pi-core/platform/skill-tracker.ts";
-import { getWorkspaceState } from "pi-core/platform/workspace.ts";
-import { shortSessionId } from "pi-core/session/session-id.ts";
-import { formatTitle } from "pi-ui/src/title.ts";
+import { registerCatalogProvider } from "#core/platform/catalog.ts";
+import { resolveModelAlias } from "#core/platform/model-aliases.ts";
+import { hasInvokedSkill } from "#core/platform/skill-tracker.ts";
+import { getWorkspaceState } from "#core/platform/workspace.ts";
+import { shortSessionId } from "#core/session/session-id.ts";
+import { formatTitle } from "#ui/title.ts";
 import type { PiSwarmDependencies, TaskProgressSnapshot, TaskProgressTheme } from "./dependencies.ts";
 
 // Task progress renderers — dynamically imported from pi-tasks (optional)
@@ -27,7 +27,7 @@ let taskRenderers:
 async function getTaskRenderers() {
 	if (taskRenderers !== undefined) return taskRenderers;
 	try {
-		const mod = await import("pi-tasks/src/tasks/render.ts");
+		const mod = await import("#tasks/tasks/render.ts");
 		taskRenderers = {
 			formatTaskProgressSummary: mod.formatTaskProgressSummary,
 			renderCompactTaskProgressLines: mod.renderCompactTaskProgressLines,
@@ -89,7 +89,8 @@ function renderCompactTaskProgressLines(snapshot: TaskProgressSnapshot, theme: T
 }
 
 function buildBasecampExtensionRoot(): string {
-	return path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+	// swarm/ts/ -> repo root, which is the (single) basecamp extension package root.
+	return path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 }
 
 export function createLocalPiSwarmDependencies(

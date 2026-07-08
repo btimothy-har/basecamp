@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import { afterEach, beforeEach, describe, it } from "node:test";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
-import type { WorkspaceState, WorkspaceWorktree } from "pi-core/platform/workspace.ts";
-import type { WorktreeResult } from "pi-core/workspace/worktree.ts";
+import type { WorkspaceState, WorkspaceWorktree } from "#core/platform/workspace.ts";
+import type { WorktreeResult } from "#core/workspace/worktree.ts";
 import type { DaemonClient, WorkstreamDetail, WorkstreamSummary } from "../../agents/daemon/client.ts";
 import type { HerdrWorkstreamOpenResult } from "../herdr.ts";
 import {

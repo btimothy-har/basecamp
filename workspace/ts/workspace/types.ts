@@ -4,4 +4,4 @@ export type {
 	WorkspaceState,
 	WorkspaceWorktree,
 	WorkspaceWorktreeKind,
-} from "pi-core/platform/workspace.ts";
+} from "#core/platform/workspace.ts";

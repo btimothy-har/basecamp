@@ -8,9 +8,9 @@ import { registerWorkspaceGuards } from "./guards.ts";
 import { registerWorkspaceRuntime } from "./service.ts";
 import { registerWorkspaceSession } from "./session.ts";
 
-export * from "pi-core/workspace/constants.ts";
-export * from "pi-core/workspace/repo.ts";
-export * from "pi-core/workspace/worktree.ts";
+export * from "#core/workspace/constants.ts";
+export * from "#core/workspace/repo.ts";
+export * from "#core/workspace/worktree.ts";
 export * from "./commands.ts";
 export * from "./guards.ts";
 export * from "./service.ts";

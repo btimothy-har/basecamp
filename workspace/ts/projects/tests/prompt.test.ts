@@ -3,9 +3,9 @@ import * as fs from "node:fs/promises";
 import * as os from "node:os";
 import * as path from "node:path";
 import { describe, it, type TestContext } from "node:test";
-import type { CatalogItem } from "pi-core/platform/catalog.ts";
-import type { WorkspaceState } from "pi-core/platform/workspace.ts";
-import { resetAgentMode, setAgentMode } from "pi-core/session/agent-mode.ts";
+import type { CatalogItem } from "#core/platform/catalog.ts";
+import type { WorkspaceState } from "#core/platform/workspace.ts";
+import { resetAgentMode, setAgentMode } from "#core/session/agent-mode.ts";
 import { assemblePrompt } from "../prompt.ts";
 
 async function useTempHome(t: TestContext): Promise<string> {

@@ -1,15 +1,15 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 
-import registerCapabilities from "./src/capabilities/index.ts";
-import { registerEscalate } from "./src/escalate/tool.ts";
-import registerModelAliases from "./src/model-aliases/index.ts";
-import { isSubagent, setBasecampEnv } from "./src/platform/env.ts";
-import { registerCwdProvider } from "./src/platform/exec.ts";
-import { registerModeShortcut } from "./src/session/commands/mode.ts";
-import { registerCompactionModel } from "./src/session/runtime/compaction.ts";
-import { registerSession } from "./src/session/runtime/session.ts";
-import { registerState } from "./src/state/index.ts";
-import { resolveGitInfo } from "./src/workspace/repo.ts";
+import registerCapabilities from "./capabilities/index.ts";
+import { registerEscalate } from "./escalate/tool.ts";
+import registerModelAliases from "./model-aliases/index.ts";
+import { isSubagent, setBasecampEnv } from "./platform/env.ts";
+import { registerCwdProvider } from "./platform/exec.ts";
+import { registerModeShortcut } from "./session/commands/mode.ts";
+import { registerCompactionModel } from "./session/runtime/compaction.ts";
+import { registerSession } from "./session/runtime/session.ts";
+import { registerState } from "./state/index.ts";
+import { resolveGitInfo } from "./workspace/repo.ts";
 
 export default function (pi: ExtensionAPI): void {
 	// Default cwd provider — pi-workspace overrides this when installed.

@@ -1,6 +1,6 @@
 import type { ExtensionAPI, ExtensionContext, SessionShutdownEvent } from "@earendil-works/pi-coding-agent";
-import { exec } from "pi-core/platform/exec.ts";
-import { getWorkspaceService, getWorkspaceState } from "pi-core/platform/workspace.ts";
+import { exec } from "#core/platform/exec.ts";
+import { getWorkspaceService, getWorkspaceState } from "#core/platform/workspace.ts";
 import { createHerdrPaneCloser, createHerdrPaneProvider } from "./herdr-provider.ts";
 import type { PaneProvider } from "./pane-provider.ts";
 import { getPaneState, setCompanionActive } from "./panes-state.ts";

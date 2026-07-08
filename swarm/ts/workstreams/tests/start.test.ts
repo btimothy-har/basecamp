@@ -4,15 +4,11 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { afterEach, describe, it } from "node:test";
 import type { ExtensionAPI, ExtensionContext, SessionStartEvent } from "@earendil-works/pi-coding-agent";
-import { resetSessionProductRoleForTesting, resolveSessionProductRoleOverride } from "pi-core/platform/product-role.ts";
-import type { WorkspaceState, WorkspaceWorktree } from "pi-core/platform/workspace.ts";
-import { getAgentMode, resetAgentMode } from "pi-core/session/agent-mode.ts";
-import { resetCopilotLaunchForTesting, setCopilotLaunchReader } from "pi-core/session/copilot-launch.ts";
-import {
-	getCurrentSessionState,
-	initializeCurrentSessionState,
-	resetCurrentSessionState,
-} from "pi-core/state/index.ts";
+import { resetSessionProductRoleForTesting, resolveSessionProductRoleOverride } from "#core/platform/product-role.ts";
+import type { WorkspaceState, WorkspaceWorktree } from "#core/platform/workspace.ts";
+import { getAgentMode, resetAgentMode } from "#core/session/agent-mode.ts";
+import { resetCopilotLaunchForTesting, setCopilotLaunchReader } from "#core/session/copilot-launch.ts";
+import { getCurrentSessionState, initializeCurrentSessionState, resetCurrentSessionState } from "#core/state/index.ts";
 import type { DaemonClient, WorkstreamDetail } from "../../agents/daemon/client.ts";
 import {
 	defaultWorkstreamStartDeps,

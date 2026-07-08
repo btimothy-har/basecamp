@@ -3,7 +3,7 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { describe, it } from "node:test";
-import { listWorkspaceAllowedRoots } from "pi-core/platform/workspace.ts";
+import { listWorkspaceAllowedRoots } from "#core/platform/workspace.ts";
 import { registerLogseqAllowedRootProvider } from "../session.ts";
 
 function createHome(t: { after(fn: () => void): void }): string {

@@ -1,5 +1,5 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { registerWorkspaceAllowedRootsProvider, requireWorkspaceState } from "pi-core/platform/workspace.ts";
+import { registerWorkspaceAllowedRootsProvider, requireWorkspaceState } from "#core/platform/workspace.ts";
 import { resolveProjectState } from "./config.ts";
 import { getProjectState, requireProjectState, resetProjectRuntime, setProjectState } from "./project.ts";
 

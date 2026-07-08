@@ -1,16 +1,16 @@
 import { randomUUID } from "node:crypto";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { Type } from "@sinclair/typebox";
-import { readWorktreeSetupCommand } from "pi-core/platform/config.ts";
+import { readWorktreeSetupCommand } from "#core/platform/config.ts";
 import {
 	getWorkspaceState,
 	listWorkspaceWorktrees,
 	type WorkspaceState,
 	type WorkspaceWorktree,
-} from "pi-core/platform/workspace.ts";
-import { runWorktreeSetup, shouldRunWorktreeSetup, type WorktreeSetupResult } from "pi-core/workspace/setup.ts";
-import { getOrCreateWorktree, type WorktreeResult } from "pi-core/workspace/worktree.ts";
-import { copilotWorktreeTarget } from "pi-core/workspace/worktree-target.ts";
+} from "#core/platform/workspace.ts";
+import { runWorktreeSetup, shouldRunWorktreeSetup, type WorktreeSetupResult } from "#core/workspace/setup.ts";
+import { getOrCreateWorktree, type WorktreeResult } from "#core/workspace/worktree.ts";
+import { copilotWorktreeTarget } from "#core/workspace/worktree-target.ts";
 import type { DaemonClient } from "../agents/daemon/client.ts";
 import {
 	getWorkstream,

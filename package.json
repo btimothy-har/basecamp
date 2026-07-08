@@ -1,0 +1,66 @@
+{
+	"name": "basecamp",
+	"private": true,
+	"type": "module",
+	"version": "0.8.0",
+	"engines": {
+		"node": ">=24"
+	},
+	"description": "Basecamp — a project-aware Pi extension suite, assembled from paired bilingual contexts.",
+	"keywords": [
+		"pi-package"
+	],
+	"pi": {
+		"extensions": [
+			"./extension.ts"
+		],
+		"skills": [
+			"./tasks/skills",
+			"./engineering/skills",
+			"./swarm/skills"
+		],
+		"prompts": [
+			"./engineering/prompts"
+		]
+	},
+	"imports": {
+		"#core/*": "./core/ts/*",
+		"#ui/*": "./ui/ts/*",
+		"#workspace/*": "./workspace/ts/*",
+		"#tasks/*": "./tasks/ts/*",
+		"#git/*": "./git/ts/*",
+		"#bash-reviewer/*": "./bash-reviewer/ts/*",
+		"#engineering/*": "./engineering/ts/*",
+		"#browser/*": "./browser/ts/*",
+		"#companion/*": "./companion/ts/*",
+		"#swarm/*": "./swarm/ts/*"
+	},
+	"scripts": {
+		"check": "tsc && biome check . && node scripts/check-boundaries.ts",
+		"typecheck": "tsc",
+		"lint": "biome check . && node scripts/check-boundaries.ts",
+		"lint:fix": "biome check --fix .",
+		"format": "biome format --fix .",
+		"test": "node --experimental-strip-types --test \"core/ts/**/*.test.ts\" \"ui/ts/**/*.test.ts\" \"workspace/ts/**/*.test.ts\" \"tasks/ts/**/*.test.ts\" \"git/ts/**/*.test.ts\" \"bash-reviewer/ts/**/*.test.ts\" \"companion/ts/**/*.test.ts\" \"swarm/ts/**/*.test.ts\""
+	},
+	"dependencies": {
+		"@sinclair/typebox": "^0.34.0",
+		"puppeteer-core": "^24.0.0",
+		"ws": "^8"
+	},
+	"peerDependencies": {
+		"@earendil-works/pi-ai": "*",
+		"@earendil-works/pi-coding-agent": "*",
+		"@earendil-works/pi-tui": "*"
+	},
+	"devDependencies": {
+		"@biomejs/biome": "2.5.0",
+		"@earendil-works/pi-agent-core": "^0.78.1",
+		"@earendil-works/pi-ai": "^0.78.1",
+		"@earendil-works/pi-coding-agent": "^0.78.1",
+		"@earendil-works/pi-tui": "^0.78.1",
+		"@types/node": "^22.0.0",
+		"@types/ws": "^8.18.1",
+		"typescript": "^5.8.0"
+	}
+}

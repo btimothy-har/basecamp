@@ -3,7 +3,7 @@ import * as fs from "node:fs/promises";
 import * as os from "node:os";
 import * as path from "node:path";
 import { describe, it, type TestContext } from "node:test";
-import type { WorkspaceState } from "pi-core/platform/workspace.ts";
+import type { WorkspaceState } from "#core/platform/workspace.ts";
 import { buildRepoLogseqContext } from "../repo-logseq.ts";
 
 async function createTempHome(t: TestContext): Promise<string> {

@@ -1,7 +1,7 @@
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { registerCwdProvider } from "pi-core/platform/exec.ts";
+import { registerCwdProvider } from "#core/platform/exec.ts";
 import {
 	type RepoContext,
 	registerWorkspaceService,
@@ -10,11 +10,11 @@ import {
 	type WorkspaceService,
 	type WorkspaceState,
 	type WorkspaceWorktree,
-} from "pi-core/platform/workspace.ts";
-import { updateCurrentSessionStateIfInitialized } from "pi-core/state/index.ts";
-import { buildActiveWorktreeState } from "pi-core/workspace/affinity.ts";
-import { SCRATCH_ROOT } from "pi-core/workspace/constants.ts";
-import { resolveGitInfo } from "pi-core/workspace/repo.ts";
+} from "#core/platform/workspace.ts";
+import { updateCurrentSessionStateIfInitialized } from "#core/state/index.ts";
+import { buildActiveWorktreeState } from "#core/workspace/affinity.ts";
+import { SCRATCH_ROOT } from "#core/workspace/constants.ts";
+import { resolveGitInfo } from "#core/workspace/repo.ts";
 import {
 	attachWorktreeDir,
 	branchName,
@@ -24,7 +24,7 @@ import {
 	labelFromWorktreePath,
 	listWorktrees as listGitWorktrees,
 	type WorktreeResult,
-} from "pi-core/workspace/worktree.ts";
+} from "#core/workspace/worktree.ts";
 import { applyUnsafeEditFlag } from "./unsafe-edit.ts";
 
 interface WorkspaceRuntimeGlobal {

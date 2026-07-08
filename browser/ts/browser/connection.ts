@@ -2,9 +2,9 @@ import { spawn } from "node:child_process";
 import * as fsSync from "node:fs";
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
-import { getBasecampEnv } from "pi-core/platform/env.ts";
-import { basecampRoot } from "pi-core/platform/paths.ts";
 import puppeteer, { type Browser, type Page } from "puppeteer-core";
+import { getBasecampEnv } from "#core/platform/env.ts";
+import { basecampRoot } from "#core/platform/paths.ts";
 
 const CHROME_PATH = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
 const BRAVE_PATH = "/Applications/Brave Browser.app/Contents/MacOS/Brave Browser";

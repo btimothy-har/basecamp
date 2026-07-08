@@ -1,8 +1,8 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { registerPlan, registerPlanCommands } from "./src/planning/plan";
-import { registerPlanCopilotGuard } from "./src/planning/plan-copilot-guard";
-import { registerPlanSkillGuard } from "./src/planning/plan-skill-guard";
-import { registerTasks } from "./src/tasks/tasks";
+import { registerPlan, registerPlanCommands } from "./planning/plan";
+import { registerPlanCopilotGuard } from "./planning/plan-copilot-guard";
+import { registerPlanSkillGuard } from "./planning/plan-skill-guard";
+import { registerTasks } from "./tasks/tasks";
 
 export default function (pi: ExtensionAPI) {
 	const tasks = registerTasks(pi);

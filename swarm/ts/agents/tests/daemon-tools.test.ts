@@ -3,11 +3,8 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { afterEach, beforeEach, describe, it } from "node:test";
-import {
-	registerSessionProductRoleProvider,
-	resetSessionProductRoleForTesting,
-} from "pi-core/platform/product-role.ts";
-import { getAgentMode, setAgentMode } from "pi-core/session/agent-mode.ts";
+import { registerSessionProductRoleProvider, resetSessionProductRoleForTesting } from "#core/platform/product-role.ts";
+import { getAgentMode, setAgentMode } from "#core/session/agent-mode.ts";
 import type { WorkspaceState } from "../../dependencies.ts";
 import { createDaemonClient, type DaemonConnection } from "../daemon/client.ts";
 import type { Frame, ListAgentItem } from "../daemon/frames.ts";

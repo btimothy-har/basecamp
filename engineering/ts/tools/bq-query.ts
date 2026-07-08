@@ -12,7 +12,7 @@ import * as fs from "node:fs/promises";
 import * as path from "node:path";
 import type { AgentToolResult, ExtensionAPI, ExtensionContext, Theme } from "@earendil-works/pi-coding-agent";
 import { type Static, Type } from "@sinclair/typebox";
-import { getWorkspaceEffectiveCwd, requireWorkspaceState } from "pi-core/platform/workspace.ts";
+import { getWorkspaceEffectiveCwd, requireWorkspaceState } from "#core/platform/workspace.ts";
 
 type BigQueryOutputFormat = "csv" | "json";
 

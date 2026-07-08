@@ -1,9 +1,9 @@
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import { basecampRoot } from "pi-core/platform/paths.ts";
-import type { TaskStatus } from "pi-core/platform/tasks-access.ts";
-import type { AgentMode } from "pi-core/session/agent-mode.ts";
+import { basecampRoot } from "#core/platform/paths.ts";
+import type { TaskStatus } from "#core/platform/tasks-access.ts";
+import type { AgentMode } from "#core/session/agent-mode.ts";
 
 export const COMPANION_SNAPSHOT_VERSION = 1;
 

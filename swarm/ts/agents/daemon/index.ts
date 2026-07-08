@@ -1,8 +1,8 @@
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { registerAgentIdentityProvider } from "pi-core/platform/agent-identity.ts";
-import { resolveSessionProductRoleOverride } from "pi-core/platform/product-role.ts";
-import { getAgentMode } from "pi-core/session/agent-mode.ts";
-import { shortSessionId as defaultShortSessionId } from "pi-core/session/session-id.ts";
+import { registerAgentIdentityProvider } from "#core/platform/agent-identity.ts";
+import { resolveSessionProductRoleOverride } from "#core/platform/product-role.ts";
+import { getAgentMode } from "#core/session/agent-mode.ts";
+import { shortSessionId as defaultShortSessionId } from "#core/session/session-id.ts";
 import type { PiSwarmDependencies } from "../../dependencies.ts";
 import { errorMessage } from "../errors.ts";
 import { resolveAgentDepthState } from "../types.ts";

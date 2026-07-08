@@ -1,4 +1,4 @@
-import { exec } from "pi-core/platform/exec.ts";
+import { exec } from "#core/platform/exec.ts";
 import type { PaneProvider } from "./pane-provider.ts";
 import { buildKillArgs, buildListPanesArgs, buildSplitArgs, parsePaneId, shouldCreatePane } from "./tmux.ts";
 

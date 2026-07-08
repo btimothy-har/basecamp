@@ -7,12 +7,12 @@ import { decodeFrame, encodeFrame, FRAME_TYPES, PROTOCOL_VERSION } from "../daem
 
 function fixturesDir(): string {
 	const here = path.dirname(fileURLToPath(import.meta.url));
-	return path.resolve(here, "../../../../protocol/frames");
+	return path.resolve(here, "../../../protocol/frames");
 }
 
 function pythonFramesPath(): string {
 	const here = path.dirname(fileURLToPath(import.meta.url));
-	return path.resolve(here, "../../../../cli/src/pi_swarm/frames.py");
+	return path.resolve(here, "../../../../pi-swarm/cli/src/pi_swarm/frames.py");
 }
 
 describe("daemon frame codec", () => {

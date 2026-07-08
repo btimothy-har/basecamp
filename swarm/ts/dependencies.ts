@@ -6,17 +6,17 @@
  */
 
 // Catalog types from pi-core
-export type { CatalogContext, CatalogItem, CatalogProvider, CatalogType } from "pi-core/platform/catalog.ts";
+export type { CatalogContext, CatalogItem, CatalogProvider, CatalogType } from "#core/platform/catalog.ts";
 
-import type { CatalogProvider } from "pi-core/platform/catalog.ts";
+import type { CatalogProvider } from "#core/platform/catalog.ts";
 
 // Workspace types from pi-core
-export type { RepoContext, WorkspaceState, WorkspaceWorktree } from "pi-core/platform/workspace.ts";
+export type { RepoContext, WorkspaceState, WorkspaceWorktree } from "#core/platform/workspace.ts";
 
-import type { WorkspaceState } from "pi-core/platform/workspace.ts";
+import type { WorkspaceState } from "#core/platform/workspace.ts";
 
 // Task progress types from pi-tasks (the canonical source)
-import type { TaskProgressSnapshot, TaskProgressStatus, TaskProgressTask } from "pi-tasks/src/tasks/render.ts";
+import type { TaskProgressSnapshot, TaskProgressStatus, TaskProgressTask } from "#tasks/tasks/render.ts";
 
 export type { TaskProgressSnapshot, TaskProgressStatus, TaskProgressTask };
 

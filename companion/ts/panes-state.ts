@@ -1,4 +1,4 @@
-import { isCompanionActive as isCompanionActiveCore, setCompanionActive } from "pi-core/platform/env.ts";
+import { isCompanionActive as isCompanionActiveCore, setCompanionActive } from "#core/platform/env.ts";
 import type { PaneProviderName } from "./pane-provider.ts";
 
 const stateKey = Symbol.for("basecamp.panes");

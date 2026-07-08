@@ -1,5 +1,5 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { exec } from "pi-core/platform/exec.ts";
+import { exec } from "#core/platform/exec.ts";
 import type { CompanionSnapshot } from "./snapshot.ts";
 
 export const HERDR_METADATA_SOURCE = "basecamp.pi";

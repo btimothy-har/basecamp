@@ -10,7 +10,7 @@ import {
 	truncateHead,
 } from "@earendil-works/pi-coding-agent";
 import { type Static, Type } from "@sinclair/typebox";
-import { getBasecampEnv, isSubagent } from "pi-core/platform/env.ts";
+import { getBasecampEnv, isSubagent } from "#core/platform/env.ts";
 import { ensurePage } from "../browser/connection.ts";
 
 const BrowserEvalParams = Type.Object({

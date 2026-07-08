@@ -3,9 +3,9 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { fileURLToPath } from "node:url";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { type CatalogItem, listCatalogItemsByType } from "pi-core/platform/catalog.ts";
-import { getWorkspaceService, getWorkspaceState, type WorkspaceState } from "pi-core/platform/workspace.ts";
-import { getAgentMode } from "pi-core/session/agent-mode.ts";
+import { type CatalogItem, listCatalogItemsByType } from "#core/platform/catalog.ts";
+import { getWorkspaceService, getWorkspaceState, type WorkspaceState } from "#core/platform/workspace.ts";
+import { getAgentMode } from "#core/session/agent-mode.ts";
 import {
 	buildCapabilitiesIndex,
 	buildProjectContext,

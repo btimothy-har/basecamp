@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import type { WorkspaceWorktree } from "pi-core/platform/workspace.ts";
+import type { WorkspaceWorktree } from "#core/platform/workspace.ts";
 import { shouldReuseActiveWorktreeForHandoff, workspaceWorktreeToHandoffWorktree } from "../planning/plan.ts";
 
 function worktree(overrides: Partial<WorkspaceWorktree> = {}): WorkspaceWorktree {

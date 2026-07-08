@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
-import { exec } from "pi-core/platform/exec.ts";
-import { resolveAliasedModel } from "pi-core/platform/model-resolution.ts";
+import { exec } from "#core/platform/exec.ts";
+import { resolveAliasedModel } from "#core/platform/model-resolution.ts";
 import type { PiSwarmDependencies } from "../../dependencies.ts";
 import { createDaemonClient } from "../daemon/client.ts";
 import { dispatchWithHandleRetry } from "../daemon/dispatch-retry.ts";

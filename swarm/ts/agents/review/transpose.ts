@@ -1,7 +1,7 @@
 import type { Api, AssistantMessage, Context, Model, ToolCall } from "@earendil-works/pi-ai";
 import { complete as defaultComplete } from "@earendil-works/pi-ai";
 import { Value } from "@sinclair/typebox/value";
-import { resolveForcedToolChoice, resolvePortableReasoningEffort } from "pi-core/platform/model-resolution.ts";
+import { resolveForcedToolChoice, resolvePortableReasoningEffort } from "#core/platform/model-resolution.ts";
 import { type Dimension, type Finding, ReportFindingsArgs, report_findings } from "./findings.ts";
 
 export interface TransposeDeps {

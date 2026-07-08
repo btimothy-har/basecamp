@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { afterEach, describe, it } from "node:test";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { resetAgentMode, setAgentMode } from "pi-core/session/agent-mode.ts";
+import { resetAgentMode, setAgentMode } from "#core/session/agent-mode.ts";
 import { registerPlanCopilotGuard } from "../planning/plan-copilot-guard.ts";
 
 type ToolCallEvent = { type: string; toolName: string; toolCallId: string; input: Record<string, unknown> };

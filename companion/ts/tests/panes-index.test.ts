@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { afterEach, describe, it } from "node:test";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import registerCompanionPackage from "../../index.ts";
+import registerCompanionPackage from "../index.ts";
 import registerPanes from "../panes-index.ts";
 import { getPaneState, isCompanionActive, setCompanionActive } from "../panes-state.ts";
 import { companionLiveSnapshotPath } from "../snapshot.ts";

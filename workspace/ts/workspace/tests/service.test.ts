@@ -4,15 +4,15 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { describe, it } from "node:test";
 import type { ExtensionAPI, ExtensionContext, SessionStartEvent } from "@earendil-works/pi-coding-agent";
-import { registerWorkspaceService } from "pi-core/platform/workspace.ts";
+import { registerWorkspaceService } from "#core/platform/workspace.ts";
 import {
 	createDefaultSessionState,
 	getCurrentSessionState,
 	initializeCurrentSessionState,
 	resetCurrentSessionState,
 	saveSessionState,
-} from "pi-core/state/index.ts";
-import { SCRATCH_ROOT, WORKTREES_ROOT } from "pi-core/workspace/constants.ts";
+} from "#core/state/index.ts";
+import { SCRATCH_ROOT, WORKTREES_ROOT } from "#core/workspace/constants.ts";
 import { WorkspaceRuntimeService } from "../service.ts";
 import { registerWorkspaceSession } from "../session.ts";
 

@@ -1,12 +1,12 @@
 import * as path from "node:path";
-import type { WorkspaceWorktree } from "pi-core/platform/workspace.ts";
+import type { WorkspaceWorktree } from "#core/platform/workspace.ts";
 import {
 	copilotWorktreeTarget,
 	currentUserId,
 	type ExecutionWorktreeTarget,
 	normalizeWorktreeSlug,
 	userWorktreePrefix,
-} from "pi-core/workspace/worktree-target.ts";
+} from "#core/workspace/worktree-target.ts";
 
 export { copilotWorktreeTarget, type ExecutionWorktreeTarget, userWorktreePrefix };
 

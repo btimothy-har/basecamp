@@ -1,9 +1,9 @@
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { getInvokedSkills } from "pi-core/platform/skill-tracker.ts";
-import { getTasksAccess } from "pi-core/platform/tasks-access.ts";
-import { getWorkspaceService, getWorkspaceState } from "pi-core/platform/workspace.ts";
-import { getAgentMode, onAgentModeChange } from "pi-core/session/agent-mode.ts";
-import { getCurrentSessionState, onCurrentSessionTitleChange } from "pi-core/state/index.ts";
+import { getInvokedSkills } from "#core/platform/skill-tracker.ts";
+import { getTasksAccess } from "#core/platform/tasks-access.ts";
+import { getWorkspaceService, getWorkspaceState } from "#core/platform/workspace.ts";
+import { getAgentMode, onAgentModeChange } from "#core/session/agent-mode.ts";
+import { getCurrentSessionState, onCurrentSessionTitleChange } from "#core/state/index.ts";
 import { reportHerdrMetadata } from "./herdr-metadata.ts";
 import {
 	buildSnapshot,

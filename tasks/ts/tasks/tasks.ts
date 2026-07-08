@@ -29,10 +29,10 @@ import * as os from "node:os";
 import * as path from "node:path";
 import type { ExtensionAPI, ExtensionContext, Theme } from "@earendil-works/pi-coding-agent";
 import { Type } from "@sinclair/typebox";
-import { basecampRoot } from "pi-core/platform/paths.ts";
-import { registerTasksAccess } from "pi-core/platform/tasks-access.ts";
-import { type AgentMode, getAgentMode, setAgentMode } from "pi-core/session/agent-mode.ts";
-import { ensureCurrentSessionStateForEvent } from "pi-core/state/index.ts";
+import { basecampRoot } from "#core/platform/paths.ts";
+import { registerTasksAccess } from "#core/platform/tasks-access.ts";
+import { type AgentMode, getAgentMode, setAgentMode } from "#core/session/agent-mode.ts";
+import { ensureCurrentSessionStateForEvent } from "#core/state/index.ts";
 import { renderTaskWidgetLines } from "./render.ts";
 
 // Type contracts owned by pi-core — re-exported for backward compat with planning files.
@@ -43,10 +43,10 @@ export type {
 	TaskStatus,
 	TasksAccess,
 	TasksState,
-} from "pi-core/platform/tasks-access.ts";
+} from "#core/platform/tasks-access.ts";
 
 // Import the types we use locally.
-import type { GoalCycle, Task, TaskStatus, TasksAccess, TasksState } from "pi-core/platform/tasks-access.ts";
+import type { GoalCycle, Task, TaskStatus, TasksAccess, TasksState } from "#core/platform/tasks-access.ts";
 
 // ============================================================================
 // State helpers

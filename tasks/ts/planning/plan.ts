@@ -14,18 +14,18 @@
 
 import type { ExtensionAPI, ExtensionContext, Theme } from "@earendil-works/pi-coding-agent";
 import { Type } from "@sinclair/typebox";
-import { readWorktreeSetupCommand } from "pi-core/platform/config.ts";
-import { resolveSessionProductRoleOverride } from "pi-core/platform/product-role.ts";
+import { readWorktreeSetupCommand } from "#core/platform/config.ts";
+import { resolveSessionProductRoleOverride } from "#core/platform/product-role.ts";
 import {
 	activateWorkspaceWorktree,
 	getWorkspaceState,
 	listWorkspaceWorktrees,
 	requireWorkspaceState,
 	type WorkspaceWorktree,
-} from "pi-core/platform/workspace.ts";
-import { getAgentMode, setAgentMode } from "pi-core/session/agent-mode.ts";
-import { shortSessionId } from "pi-core/session/session-id.ts";
-import { runWorktreeSetup } from "pi-core/workspace/setup.ts";
+} from "#core/platform/workspace.ts";
+import { getAgentMode, setAgentMode } from "#core/session/agent-mode.ts";
+import { shortSessionId } from "#core/session/session-id.ts";
+import { runWorktreeSetup } from "#core/workspace/setup.ts";
 import type { GoalCycle, ReviewState, TaskStatus, TasksAccess } from "../tasks/tasks.ts";
 import { computeGoalContextReview, computeSectionReview, freshReview, tasksMatch } from "./draft-logic.ts";
 import type { PlanDraft } from "./review.ts";

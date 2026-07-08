@@ -3,7 +3,7 @@
  */
 
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { listWorktrees, type WorktreeSummary } from "pi-core/workspace/worktree.ts";
+import { listWorktrees, type WorktreeSummary } from "#core/workspace/worktree.ts";
 import { requireWorkspaceRuntime } from "./service.ts";
 
 function formatWorktreeChoice(wt: WorktreeSummary, activeLabel: string | null): string {

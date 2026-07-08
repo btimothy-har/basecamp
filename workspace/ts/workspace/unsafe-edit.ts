@@ -1,4 +1,4 @@
-import type { UnsafeEditConstraints, UnsafeEditFlagResult, WorkspaceState } from "pi-core/platform/workspace.ts";
+import type { UnsafeEditConstraints, UnsafeEditFlagResult, WorkspaceState } from "#core/platform/workspace.ts";
 
 export function applyUnsafeEditFlag(
 	state: WorkspaceState,

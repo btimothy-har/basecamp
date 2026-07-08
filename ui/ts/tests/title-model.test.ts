@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import type { Api, Model } from "@earendil-works/pi-ai";
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { clearModelAliasProvidersForTesting, registerModelAliasProvider } from "pi-core/platform/model-aliases.ts";
+import { clearModelAliasProvidersForTesting, registerModelAliasProvider } from "#core/platform/model-aliases.ts";
 import { resolveTitleModel, resolveTitleModelForContext } from "../title-model.ts";
 
 function model(provider: string, id: string): Model<Api> {

@@ -11,8 +11,8 @@
 
 import * as fs from "node:fs";
 import * as path from "node:path";
-import type { CatalogItem } from "pi-core/platform/catalog.ts";
-import type { WorkspaceState } from "pi-core/platform/workspace.ts";
+import type { CatalogItem } from "#core/platform/catalog.ts";
+import type { WorkspaceState } from "#core/platform/workspace.ts";
 
 /**
  * Build the worktree warning block.

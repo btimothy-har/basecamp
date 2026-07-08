@@ -1,4 +1,4 @@
-import { shouldRunWorktreeSetup, type WorktreeSetupResult } from "pi-core/workspace/setup.ts";
+import { shouldRunWorktreeSetup, type WorktreeSetupResult } from "#core/workspace/setup.ts";
 
 export { shouldRunWorktreeSetup };
 
