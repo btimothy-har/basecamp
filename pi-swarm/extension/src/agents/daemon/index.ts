@@ -302,8 +302,8 @@ export function registerDaemonClient(pi: ExtensionAPI, deps: PiSwarmDependencies
 	const maxDepth = Number(process.env.BASECAMP_AGENT_MAX_DEPTH ?? DEFAULT_AGENT_MAX_DEPTH);
 	const atMaxDepth = depth >= maxDepth;
 
-	// Expose this session's public daemon handle so consumers (e.g. pi-tasks workstream startup)
-	// can bind the running session to a launch record. Pure derivation from ctx; safe for any session.
+	// Expose this session's public daemon handle so consumers (e.g. the workstream startup flow)
+	// can attach the running session as a workstream agent. Pure derivation from ctx; safe for any session.
 	registerAgentIdentityProvider({
 		// The seam's ExtensionContext originates from pi-core's bundled types; only sessionManager/env
 		// are read for handle derivation, so bridging the structurally-compatible context is safe.
