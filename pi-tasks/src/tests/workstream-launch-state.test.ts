@@ -6,7 +6,6 @@ import { afterEach, describe, it } from "node:test";
 import {
 	appendWorkstreamLaunchRecord,
 	appendWorkstreamLaunchRecordIfAbsent,
-	appendWorkstreamLaunchRecordWithAvailableId,
 	buildWorkstreamLaunchFingerprint,
 	defaultWorkstreamLaunchesDir,
 	emptyWorkstreamLaunchState,
@@ -14,14 +13,11 @@ import {
 	findWorkstreamLaunchById,
 	listWorkstreamLaunchRecords,
 	loadWorkstreamLaunchState,
-	nextAvailableWorkstreamLaunchId,
 	saveWorkstreamLaunchState,
-	slugifyWorkstreamLaunchId,
 	stampWorkstreamLaunchAgentHandle,
 	updateFailedWorkstreamLaunchRecord,
 	updateWorkstreamLaunchRecord,
 	type WorkstreamLaunchRecord,
-	type WorkstreamLaunchRecordDraft,
 	workstreamLaunchStatePath,
 } from "../workstreams/launch-state.ts";
 
@@ -83,23 +79,6 @@ function makeRecord(overrides: Partial<WorkstreamLaunchRecord> = {}): Workstream
 		createdAt: "2026-07-03T00:00:00.000Z",
 		updatedAt: "2026-07-03T00:00:00.000Z",
 		...overrides,
-	};
-}
-
-function makeRecordDraft(overrides: Partial<WorkstreamLaunchRecord> = {}): WorkstreamLaunchRecordDraft {
-	const record = makeRecord(overrides);
-	return {
-		fingerprint: record.fingerprint,
-		repo: record.repo,
-		source: record.source,
-		workstream: record.workstream,
-		worktree: record.worktree,
-		agent: record.agent,
-		setup: record.setup,
-		herdr: record.herdr,
-		launch: record.launch,
-		createdAt: record.createdAt,
-		updatedAt: record.updatedAt,
 	};
 }
 
@@ -315,44 +294,6 @@ describe("workstream launch persistence", () => {
 		);
 	});
 
-	it("allocates the readable id while appending under the write lock", () => {
-		const filePath = path.join(makeTmpDir(), "launch-index.json");
-		const firstStaleId = nextAvailableWorkstreamLaunchId(filePath, "org/repo", "Launch Workstream Too");
-		const secondStaleId = nextAvailableWorkstreamLaunchId(filePath, "org/repo", "Launch Workstream Too");
-
-		const first = appendWorkstreamLaunchRecordWithAvailableId(
-			filePath,
-			makeRecordDraft({
-				id: "ignored",
-				fingerprint: "fingerprint-1",
-				repo: "org/repo",
-				worktree: { label: "bt/first" },
-			}),
-			{ repo: "org/repo", fingerprint: "fingerprint-1", worktreeLabel: "bt/first" },
-			"Launch Workstream Too",
-		);
-		const second = appendWorkstreamLaunchRecordWithAvailableId(
-			filePath,
-			makeRecordDraft({
-				id: "ignored",
-				fingerprint: "fingerprint-2",
-				repo: "org/repo",
-				worktree: { label: "bt/second" },
-			}),
-			{ repo: "org/repo", fingerprint: "fingerprint-2", worktreeLabel: "bt/second" },
-			"Launch Workstream Too",
-		);
-
-		assert.equal(firstStaleId, "launch-workstream-too");
-		assert.equal(secondStaleId, "launch-workstream-too");
-		assert.equal(first.record.id, "launch-workstream-too");
-		assert.equal(second.record.id, "launch-workstream-too-2");
-		assert.deepEqual(
-			loadWorkstreamLaunchState(filePath).records.map((record) => record.id),
-			["launch-workstream-too", "launch-workstream-too-2"],
-		);
-	});
-
 	it("only updates failed launch records when reclaiming a tombstone", () => {
 		const filePath = path.join(makeTmpDir(), "launch-index.json");
 		appendWorkstreamLaunchRecord(filePath, makeRecord({ launch: { status: "failed", error: "old failure" } }));
@@ -385,38 +326,6 @@ describe("workstream launch persistence", () => {
 });
 
 describe("workstream launch id model", () => {
-	it("builds a human-typeable kebab slug id from the label", () => {
-		assert.equal(slugifyWorkstreamLaunchId("Launch Workstream Too"), "launch-workstream-too");
-		assert.equal(slugifyWorkstreamLaunchId("  Fix: the (auth) bug!! "), "fix-the-auth-bug");
-		assert.equal(slugifyWorkstreamLaunchId("———"), "workstream");
-	});
-
-	it("caps id length without a trailing separator", () => {
-		const id = slugifyWorkstreamLaunchId("a".repeat(80));
-		assert.ok(id.length <= 40);
-		assert.doesNotMatch(id, /-$/);
-	});
-
-	it("suffixes the id to stay unique within a repo", () => {
-		const filePath = path.join(makeTmpDir(), "launch-index.json");
-		assert.equal(
-			nextAvailableWorkstreamLaunchId(filePath, "org/repo", "Launch Workstream Too"),
-			"launch-workstream-too",
-		);
-
-		appendWorkstreamLaunchRecord(filePath, makeRecord({ id: "launch-workstream-too", repo: "org/repo" }));
-		assert.equal(
-			nextAvailableWorkstreamLaunchId(filePath, "org/repo", "Launch Workstream Too"),
-			"launch-workstream-too-2",
-		);
-
-		// A different repo reuses the base id.
-		assert.equal(
-			nextAvailableWorkstreamLaunchId(filePath, "org/other", "Launch Workstream Too"),
-			"launch-workstream-too",
-		);
-	});
-
 	it("finds a record by id scoped to the repo", () => {
 		const filePath = path.join(makeTmpDir(), "launch-index.json");
 		appendWorkstreamLaunchRecord(filePath, makeRecord({ id: "launch-workstream-too", repo: "org/repo" }));

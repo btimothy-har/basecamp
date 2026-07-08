@@ -7,7 +7,6 @@ import type { WorktreeResult } from "pi-core/workspace/worktree.ts";
 import {
 	buildWorkstreamLaunchFingerprint,
 	type WorkstreamLaunchRecord,
-	type WorkstreamLaunchRecordDraft,
 	type WorkstreamLaunchRecordUpdate,
 } from "../workstreams/launch-state.ts";
 import {
@@ -76,34 +75,32 @@ class FakeStore {
 		return this.path;
 	}
 
-	nextAvailableId(_filePath: string, repo: string, label: string): string {
-		const base =
-			label
-				.trim()
-				.toLowerCase()
-				.replace(/[^a-z0-9]+/g, "-")
-				.replace(/^-+|-+$/g, "") || "workstream";
-		const taken = new Set(this.records.filter((record) => record.repo === repo).map((record) => record.id));
-		if (!taken.has(base)) return base;
-		for (let suffix = 2; ; suffix += 1) {
-			const candidate = `${base}-${suffix}`;
-			if (!taken.has(candidate)) return candidate;
-		}
-	}
-
-	appendRecordWithAvailableId(
+	appendIfAbsent(
 		_filePath: string,
-		record: WorkstreamLaunchRecordDraft,
+		record: WorkstreamLaunchRecord,
 		lookup: { repo?: string; fingerprint?: string; worktreeLabel?: string },
-		baseLabel: string,
 	) {
 		const duplicate = this.matchDuplicate(lookup);
 		if (duplicate)
-			return { appended: false, record: duplicate, state: { version: 1 as const, records: clone(this.records) } };
-		const appended = { ...record, id: this.nextAvailableId(_filePath, record.repo, baseLabel) };
-		this.appendCalls.push(clone(appended));
-		this.records.push(clone(appended));
-		return { appended: true, record: clone(appended), state: { version: 1 as const, records: clone(this.records) } };
+			return {
+				appended: false,
+				record: clone(duplicate),
+				state: { version: 1 as const, records: clone(this.records) },
+			};
+		const idDuplicate = this.records.find((existing) => existing.repo === record.repo && existing.id === record.id);
+		if (idDuplicate)
+			return {
+				appended: false,
+				record: clone(idDuplicate),
+				state: { version: 1 as const, records: clone(this.records) },
+			};
+		this.appendCalls.push(clone(record));
+		this.records.push(clone(record));
+		return { appended: true, record: clone(record), state: { version: 1 as const, records: clone(this.records) } };
+	}
+
+	listRecords(_filePath: string, filter: { repo?: string }): WorkstreamLaunchRecord[] {
+		return this.records.filter((record) => !filter.repo || record.repo === filter.repo).map((record) => clone(record));
 	}
 
 	updateRecord(
@@ -237,6 +234,12 @@ function makeDeps(overrides: Partial<LaunchWorkstreamDeps> = {}) {
 		args: [],
 	};
 	let nowCounter = 0;
+	const generateWorkstreamName: LaunchWorkstreamDeps["generateWorkstreamName"] = (isTaken) => {
+		for (const candidate of ["steady-amber-otter", "calm-cedar-heron", "bright-maple-fox"]) {
+			if (!isTaken(candidate)) return candidate;
+		}
+		return "fresh-river-lark";
+	};
 
 	const deps: LaunchWorkstreamDeps = {
 		getWorkspaceState: () => workspace,
@@ -252,6 +255,7 @@ function makeDeps(overrides: Partial<LaunchWorkstreamDeps> = {}) {
 			herdrCalls.push({ workspace: herdrWorkspace, worktree });
 			return herdrResult;
 		},
+		generateWorkstreamName,
 		store,
 		now: () => `2026-07-03T00:00:0${nowCounter++}.000Z`,
 		...overrides,
@@ -293,8 +297,8 @@ async function runLaunch(params: unknown, deps: LaunchWorkstreamDeps) {
 	return { result, details: result.details as LaunchWorkstreamResultDetails };
 }
 
-// The derived worktree label prefix comes from process.env.USER; pin it so the
-// expected `wt-bt/...` labels are deterministic regardless of the host/CI user.
+// The derived branch prefix comes from process.env.USER; pin it so the
+// expected `bt/...` branches are deterministic regardless of the host/CI user.
 let savedUser: string | undefined;
 beforeEach(() => {
 	savedUser = process.env.USER;
@@ -341,19 +345,36 @@ describe("launch_workstream provisioning and id", () => {
 			);
 
 			assert.equal(details.status, "launched");
-			assert.equal(details.id, "ignored-label");
+			assert.equal(details.id, "steady-amber-otter");
 			assert.equal(harness.provisionCalls.length, 1);
-			assert.equal(harness.provisionCalls[0]?.label, "wt-bt/8e95-feature-launch");
+			assert.equal(harness.provisionCalls[0]?.label, "copilot/steady-amber-otter");
+			assert.equal(harness.provisionCalls[0]?.branchName, "bt/feature-launch");
 			assert.equal(harness.provisionCalls[0]?.repoRoot, "/repo");
-			assert.equal(details.worktree?.label, "wt-bt/8e95-feature-launch");
+			assert.equal(details.worktree?.label, "copilot/steady-amber-otter");
+			assert.equal(details.worktree?.branch, "bt/feature-launch");
 			// No agent is dispatched; the handle is stamped later by pi --workstream.
 			assert.equal(details.agentHandle, undefined);
 			assert.equal(harness.store.records[0]?.agent.handle, undefined);
-			assert.match(details.next_step, /run `pi --workstream ignored-label`/);
+			assert.match(details.next_step, /run `pi --workstream`/);
 		} finally {
 			if (previousUser === undefined) delete process.env.USER;
 			else process.env.USER = previousUser;
 		}
+	});
+
+	it("returns the existing record on a second identical launch", async () => {
+		const harness = makeDeps();
+
+		const first = await runLaunch(baseParams(), harness.deps);
+		const second = await runLaunch(baseParams(), harness.deps);
+
+		assert.equal(first.details.status, "launched");
+		assert.equal(second.details.status, "existing_launch");
+		assert.equal(second.details.id, "steady-amber-otter");
+		assert.equal(second.details.worktree?.label, "copilot/steady-amber-otter");
+		assert.equal(second.details.worktree?.branch, "bt/launch-workstream-too");
+		assert.equal(harness.store.records.length, 1);
+		assert.equal(harness.provisionCalls.length, 1);
 	});
 
 	it("returns a structured error when no repo workspace is available", async () => {
@@ -371,12 +392,16 @@ describe("launch_workstream provisioning and id", () => {
 	it("reuses a non-failed matching launch without provisioning", async () => {
 		const harness = makeDeps();
 		harness.store.records.push({
-			id: "launch-workstream-too",
-			fingerprint: "different-fingerprint",
+			id: "steady-amber-otter",
+			fingerprint: buildWorkstreamLaunchFingerprint({
+				repo: "org/repo",
+				dossierPath: "/graph/pages/Dossier.md",
+				label: "Launch Workstream Too",
+			}),
 			repo: "org/repo",
 			source: { dossierPath: "/graph/pages/Dossier.md" },
-			workstream: { label: "Other", brief: "Existing." },
-			worktree: { label: "wt-bt/8e95-launch-workstream-too", path: "/worktrees/existing", branch: "bt/existing" },
+			workstream: { label: "Launch Workstream Too", brief: "Existing." },
+			worktree: { label: "copilot/steady-amber-otter", path: "/worktrees/existing", branch: "bt/existing" },
 			agent: { handle: "swift-otter-9z9z9z", type: "worker" },
 			setup: { status: "succeeded" },
 			herdr: { status: "succeeded" },
@@ -388,7 +413,7 @@ describe("launch_workstream provisioning and id", () => {
 		const { details } = await runLaunch(baseParams(), harness.deps);
 
 		assert.equal(details.status, "existing_launch");
-		assert.equal(details.id, "launch-workstream-too");
+		assert.equal(details.id, "steady-amber-otter");
 		assert.equal(details.agentHandle, "swift-otter-9z9z9z");
 		assert.equal(harness.provisionCalls.length, 0);
 	});
@@ -396,7 +421,7 @@ describe("launch_workstream provisioning and id", () => {
 	it("returns a pi --workstream command for a matching existing launch without a handle", async () => {
 		const harness = makeDeps();
 		harness.store.records.push({
-			id: "launch-workstream-too",
+			id: "steady-amber-otter",
 			fingerprint: buildWorkstreamLaunchFingerprint({
 				repo: "org/repo",
 				dossierPath: "/graph/pages/Dossier.md",
@@ -405,7 +430,7 @@ describe("launch_workstream provisioning and id", () => {
 			repo: "org/repo",
 			source: { dossierPath: "/graph/pages/Dossier.md" },
 			workstream: { label: "Launch Workstream Too", brief: "Existing." },
-			worktree: { label: "wt-bt/8e95-launch-workstream-too", path: "/worktrees/existing", branch: "bt/existing" },
+			worktree: { label: "copilot/steady-amber-otter", path: "/worktrees/existing", branch: "bt/existing" },
 			agent: {},
 			setup: { status: "succeeded" },
 			herdr: { status: "succeeded" },
@@ -418,14 +443,14 @@ describe("launch_workstream provisioning and id", () => {
 
 		assert.equal(details.status, "existing_launch");
 		assert.equal(details.agentHandle, undefined);
-		assert.match(details.next_step, /cd '\/worktrees\/existing' && pi --workstream launch-workstream-too/);
+		assert.match(details.next_step, /cd '\/worktrees\/existing' && pi --workstream/);
 		assert.equal(harness.provisionCalls.length, 0);
 	});
 
 	it("returns a from-worktree pi --workstream command when an existing launch lacks a path", async () => {
 		const harness = makeDeps();
 		harness.store.records.push({
-			id: "launch-workstream-too",
+			id: "steady-amber-otter",
 			fingerprint: buildWorkstreamLaunchFingerprint({
 				repo: "org/repo",
 				dossierPath: "/graph/pages/Dossier.md",
@@ -434,7 +459,7 @@ describe("launch_workstream provisioning and id", () => {
 			repo: "org/repo",
 			source: { dossierPath: "/graph/pages/Dossier.md" },
 			workstream: { label: "Launch Workstream Too", brief: "Existing." },
-			worktree: { label: "wt-bt/8e95-launch-workstream-too", branch: "bt/existing" },
+			worktree: { label: "copilot/steady-amber-otter", branch: "bt/existing" },
 			agent: {},
 			setup: { status: "succeeded" },
 			herdr: { status: "succeeded" },
@@ -446,18 +471,55 @@ describe("launch_workstream provisioning and id", () => {
 		const { details } = await runLaunch(baseParams(), harness.deps);
 
 		assert.equal(details.status, "existing_launch");
-		assert.match(details.next_step, /pi --workstream launch-workstream-too` from that worktree/);
+		assert.match(details.next_step, /pi --workstream` from that worktree/);
 		assert.equal(harness.provisionCalls.length, 0);
 	});
 
-	it("fails when the target worktree already exists without a launch record", async () => {
+	it("regenerates when the first generated name collides with an existing launch id or copilot worktree label", async () => {
+		const harness = makeDeps();
+		harness.store.records.push({
+			id: "steady-amber-otter",
+			fingerprint: "different-fingerprint",
+			repo: "org/repo",
+			source: { dossierPath: "/graph/pages/Other.md" },
+			workstream: { label: "Other", brief: "Existing." },
+			worktree: { label: "copilot/existing-record", path: "/worktrees/existing-record", branch: "bt/existing" },
+			agent: {},
+			setup: { status: "succeeded" },
+			herdr: { status: "succeeded" },
+			launch: { status: "succeeded" },
+			createdAt: "2026-07-03T00:00:00.000Z",
+			updatedAt: "2026-07-03T00:00:00.000Z",
+		});
+		harness.setListedWorktrees([
+			{
+				kind: "git-worktree",
+				label: "copilot/steady-amber-otter",
+				path: "/worktrees/existing",
+				branch: "bt/existing",
+				created: false,
+			},
+		]);
+
+		const { details } = await runLaunch(baseParams(), harness.deps);
+
+		assert.equal(details.status, "launched");
+		assert.equal(details.id, "calm-cedar-heron");
+		assert.equal(details.worktree?.label, "copilot/calm-cedar-heron");
+		assert.equal(details.worktree?.branch, "bt/launch-workstream-too");
+		assert.equal(harness.provisionCalls.length, 1);
+		assert.equal(harness.provisionCalls[0]?.label, "copilot/calm-cedar-heron");
+		assert.equal(harness.provisionCalls[0]?.branchName, "bt/launch-workstream-too");
+	});
+
+	it("fails actionably without provisioning when the derived branch is already checked out", async () => {
 		const harness = makeDeps();
 		harness.setListedWorktrees([
 			{
 				kind: "git-worktree",
-				label: "wt-bt/8e95-launch-workstream-too",
+				label: "other-worktree",
 				path: "/worktrees/existing",
-				branch: "bt/existing",
+				branch: "bt/launch-workstream-too",
 				created: false,
 			},
 		]);
@@ -466,7 +528,8 @@ describe("launch_workstream provisioning and id", () => {
 
 		assert.equal(result.isError, true);
 		assert.equal(details.status, "failed");
-		assert.match(details.message, /different workstream\.worktreeSlug/);
+		assert.match(details.message, /branch bt\/launch-workstream-too is already checked out/);
+		assert.match(details.next_step, /distinct workstream\.worktreeSlug/);
 		assert.equal(harness.store.records.length, 0);
 		assert.equal(harness.provisionCalls.length, 0);
 	});
@@ -499,7 +562,7 @@ describe("launch_workstream setup behavior", () => {
 		assert.equal(harness.setupCalls.length, 1);
 		assert.deepEqual(harness.setupCalls[0], {
 			command: "make setup",
-			worktreeDir: "/worktrees/org/repo/wt-bt/8e95-launch-workstream-too",
+			worktreeDir: "/worktrees/org/repo/copilot/steady-amber-otter",
 			repoRoot: "/repo",
 		});
 		assert.equal(harness.store.records[0]?.setup.status, "succeeded");
@@ -556,11 +619,11 @@ describe("launch_workstream Herdr and staging behavior", () => {
 		assert.equal(harness.store.records[0]?.launch.status, "succeeded");
 		assert.equal(harness.herdrCalls.length, 1);
 		assert.deepEqual(harness.herdrCalls[0]?.worktree, {
-			path: "/worktrees/org/repo/wt-bt/8e95-launch-workstream-too",
-			label: "wt-bt/8e95-launch-workstream-too",
+			path: "/worktrees/org/repo/copilot/steady-amber-otter",
+			label: "copilot/steady-amber-otter",
 		});
 		assert.match(details.next_step, /Herdr opened a pane/);
-		assert.match(details.next_step, /run `pi --workstream launch-workstream-too`/);
+		assert.match(details.next_step, /run `pi --workstream`/);
 	});
 
 	it("records Herdr failure without failing the staging, and does not leak stderr", async () => {
@@ -580,7 +643,7 @@ describe("launch_workstream Herdr and staging behavior", () => {
 		assert.match(details.next_step, /Herdr pane failed to open/);
 		assert.match(
 			details.next_step,
-			/Run `cd '\/worktrees\/org\/repo\/wt-bt\/8e95-launch-workstream-too' && pi --workstream launch-workstream-too`/,
+			/Run `cd '\/worktrees\/org\/repo\/copilot\/steady-amber-otter' && pi --workstream`/,
 		);
 		assert.doesNotMatch(JSON.stringify(details), /secret-herdr-stderr/);
 		assert.doesNotMatch(JSON.stringify(harness.store.records[0]), /secret-herdr-stderr/);
@@ -598,7 +661,7 @@ describe("launch_workstream Herdr and staging behavior", () => {
 		assert.match(details.next_step, /no Herdr pane was opened/);
 		assert.match(
 			details.next_step,
-			/Run `cd '\/worktrees\/org\/repo\/wt-bt\/8e95-launch-workstream-too' && pi --workstream launch-workstream-too`/,
+			/Run `cd '\/worktrees\/org\/repo\/copilot\/steady-amber-otter' && pi --workstream`/,
 		);
 	});
 
@@ -642,7 +705,7 @@ describe("launch_workstream Herdr and staging behavior", () => {
 		assert.equal(harness.store.records[0]?.launch.status, "succeeded");
 	});
 
-	it("refreshes launch identity when retrying a failed tombstone", async () => {
+	it("refreshes mutable fields without changing launch identity when retrying a failed tombstone", async () => {
 		const harness = makeDeps();
 		let attempt = 0;
 		harness.setProvision(async (_pi, _repoRoot, _repoName, label, branchName) => {
@@ -654,10 +717,11 @@ describe("launch_workstream Herdr and staging behavior", () => {
 		const first = await runLaunch(baseParams(), harness.deps);
 		assert.equal(first.result.isError, true);
 		const staleFingerprint = harness.store.records[0]?.fingerprint;
+		const staleId = harness.store.records[0]?.id;
+		const staleWorktree = clone(harness.store.records[0]?.worktree);
 
 		const second = await runLaunch(
 			baseParams({
-				source: { dossierPath: "/graph/pages/Updated.md" },
 				workstream: {
 					label: "Launch Workstream Too",
 					brief: "Updated retry brief.",
@@ -669,8 +733,14 @@ describe("launch_workstream Herdr and staging behavior", () => {
 
 		assert.equal(second.details.status, "launched");
 		assert.equal(harness.store.records.length, 1);
-		assert.notEqual(harness.store.records[0]?.fingerprint, staleFingerprint);
-		assert.deepEqual(harness.store.records[0]?.source, { dossierPath: "/graph/pages/Updated.md" });
+		assert.equal(harness.store.records[0]?.fingerprint, staleFingerprint);
+		assert.equal(harness.store.records[0]?.id, staleId);
+		assert.equal(harness.store.records[0]?.worktree.label, staleWorktree?.label);
+		assert.equal(harness.store.records[0]?.worktree.branch, staleWorktree?.branch);
+		assert.deepEqual(harness.store.records[0]?.source, {
+			dossierPath: "/graph/pages/Dossier.md",
+			repoPagePath: "/graph/pages/Repo.md",
+		});
 		assert.deepEqual(harness.store.records[0]?.workstream, {
 			label: "Launch Workstream Too",
 			brief: "Updated retry brief.",
@@ -681,12 +751,16 @@ describe("launch_workstream Herdr and staging behavior", () => {
 	it("does not provision when a concurrent retry claims a failed tombstone first", async () => {
 		const harness = makeDeps();
 		harness.store.records.push({
-			id: "launch-workstream-too",
-			fingerprint: "different-fingerprint",
+			id: "steady-amber-otter",
+			fingerprint: buildWorkstreamLaunchFingerprint({
+				repo: "org/repo",
+				dossierPath: "/graph/pages/Dossier.md",
+				label: "Launch Workstream Too",
+			}),
 			repo: "org/repo",
 			source: { dossierPath: "/graph/pages/Dossier.md" },
 			workstream: { label: "Launch Workstream Too", brief: "b" },
-			worktree: { label: "wt-bt/8e95-launch-workstream-too", path: "/w", branch: "bt/x" },
+			worktree: { label: "copilot/steady-amber-otter", path: "/w", branch: "bt/x" },
 			agent: {},
 			setup: { status: "pending" },
 			herdr: { status: "pending" },
@@ -713,12 +787,16 @@ describe("launch_workstream Herdr and staging behavior", () => {
 	it("returns existing_launch when a concurrent attempt wins the append race with a live record", async () => {
 		const harness = makeDeps();
 		const live: WorkstreamLaunchRecord = {
-			id: "launch-workstream-too",
-			fingerprint: "fp",
+			id: "steady-amber-otter",
+			fingerprint: buildWorkstreamLaunchFingerprint({
+				repo: "org/repo",
+				dossierPath: "/graph/pages/Dossier.md",
+				label: "Launch Workstream Too",
+			}),
 			repo: "org/repo",
 			source: { dossierPath: "/graph/pages/Dossier.md" },
 			workstream: { label: "Launch Workstream Too", brief: "b" },
-			worktree: { label: "wt-bt/8e95-launch-workstream-too", path: "/w", branch: "bt/x" },
+			worktree: { label: "copilot/steady-amber-otter", path: "/w", branch: "bt/x" },
 			agent: { handle: "swift-otter-abc123", type: "worker" },
 			setup: { status: "succeeded" },
 			herdr: { status: "succeeded" },

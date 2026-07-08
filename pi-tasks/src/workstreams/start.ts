@@ -11,7 +11,7 @@ import { setAgentMode } from "pi-core/session/agent-mode.ts";
 import { ensureCurrentSessionStateForEvent } from "pi-core/state/index.ts";
 import { buildWorkstreamLaunchBrief } from "./brief.ts";
 import {
-	findWorkstreamLaunchById,
+	findWorkstreamLaunchByWorktreeLabel,
 	stampWorkstreamLaunchAgentHandle,
 	type WorkstreamLaunchRecord,
 	workstreamLaunchStatePath,
@@ -23,7 +23,7 @@ export interface WorkstreamStartDeps {
 	getWorkspaceState(): WorkspaceState | null;
 	waitForWorkspaceState(): Promise<WorkspaceState | null>;
 	launchStatePath(): string;
-	findById(filePath: string, id: string, repo?: string): WorkstreamLaunchRecord | null;
+	findByWorktreeLabel(filePath: string, worktreeLabel: string, repo?: string): WorkstreamLaunchRecord | null;
 	stampHandle(filePath: string, id: string, handle: string): WorkstreamLaunchRecord | null;
 	deriveHandle(ctx: ExtensionContext): string | null;
 	enterExploreMode(event: SessionStartEvent, ctx: ExtensionContext): void;
@@ -57,7 +57,7 @@ export function defaultWorkstreamStartDeps(): WorkstreamStartDeps {
 		getWorkspaceState,
 		waitForWorkspaceState,
 		launchStatePath: workstreamLaunchStatePath,
-		findById: findWorkstreamLaunchById,
+		findByWorktreeLabel: findWorkstreamLaunchByWorktreeLabel,
 		stampHandle: stampWorkstreamLaunchAgentHandle,
 		deriveHandle: deriveCurrentAgentHandle,
 		enterExploreMode: (event, ctx) => {
@@ -111,53 +111,54 @@ export function buildWorkstreamStartMessage(
 type RepoWorkspaceState = WorkspaceState & { repo: RepoContext };
 
 async function resolveWorkspaceForWorkstreamStart(
-	id: string,
 	ctx: ExtensionContext,
 	deps: WorkstreamStartDeps,
 ): Promise<RepoWorkspaceState | null> {
 	let workspace = deps.getWorkspaceState();
 	if (!workspace) workspace = await deps.waitForWorkspaceState();
 	if (!workspace?.repo?.isRepo) {
-		ctx.ui.notify(
-			`Cannot start staged workstream "${id}" because this session is not in a repository workspace.`,
-			"error",
-		);
+		ctx.ui.notify("Cannot start a workstream because this session is not in a repository workspace.", "error");
 		return null;
 	}
 	return workspace as RepoWorkspaceState;
 }
 
+// The workstream id is inferred from the current worktree: `pi --workstream` is a bare boolean flag, and the
+// pane Herdr opens (or a manual `cd <worktree-path>`) always runs inside the staged copilot/<name> worktree.
 export async function startWorkstream(
-	idInput: string | undefined,
 	pi: ExtensionAPI,
 	ctx: ExtensionContext,
 	deps = defaultWorkstreamStartDeps(),
 ): Promise<void> {
-	const id = idInput?.trim();
-	if (!id) {
-		ctx.ui.notify("Usage: pi --workstream <id> (get the id from copilot or list_workstream_launches).", "error");
-		return;
-	}
-
 	let statePath: string;
 	let record: WorkstreamLaunchRecord | null;
 	try {
-		const workspace = await resolveWorkspaceForWorkstreamStart(id, ctx, deps);
+		const workspace = await resolveWorkspaceForWorkstreamStart(ctx, deps);
 		if (!workspace) return;
 
+		const worktreeLabel = workspace.activeWorktree?.label;
+		if (!worktreeLabel) {
+			ctx.ui.notify(
+				"Run `pi --workstream` from inside the workstream worktree Herdr set up; this session is not in a worktree.",
+				"error",
+			);
+			return;
+		}
+
 		statePath = deps.launchStatePath();
-		record = deps.findById(statePath, id, workspace.repo.name);
+		record = deps.findByWorktreeLabel(statePath, worktreeLabel, workspace.repo.name);
+		if (!record) {
+			ctx.ui.notify(
+				`No staged workstream found for worktree "${worktreeLabel}". Confirm it with copilot (list_workstream_launches).`,
+				"error",
+			);
+			return;
+		}
 	} catch (err) {
-		ctx.ui.notify(`Could not load staged workstream "${id}" for this repository: ${errorMessage(err)}`, "error");
+		ctx.ui.notify(`Could not load the staged workstream for this worktree: ${errorMessage(err)}`, "error");
 		return;
 	}
-	if (!record) {
-		ctx.ui.notify(
-			`No staged workstream "${id}" found for this repository. Confirm the id with copilot (list_workstream_launches).`,
-			"error",
-		);
-		return;
-	}
+	if (!record) return;
 
 	let handle: string | null = null;
 	try {
@@ -189,24 +190,24 @@ export async function startWorkstream(
 }
 
 export function registerWorkstreamStartup(pi: ExtensionAPI, deps = defaultWorkstreamStartDeps()): void {
+	// Boolean flag: `pi --workstream` is bare (a string flag would reject the bare form with "requires a value").
 	pi.registerFlag("workstream", {
-		description: "Start a staged workstream by id on session startup",
-		type: "string",
+		description: "Start the staged workstream for the current worktree (run bare inside the worktree Herdr set up).",
+		type: "boolean",
 	});
 
+	// Flag presence marks this as a workstream session, so the product role and Explore posture are set on presence
+	// alone — before the record lookup. This is intentional: a --workstream invocation is a workstream attempt, and a
+	// failed lookup only notifies an error (the posture is benign and the user re-runs from the correct worktree).
 	registerSessionProductRoleProvider({
-		resolveProductRole: () => {
-			const id = pi.getFlag("workstream");
-			return typeof id === "string" && id.trim() ? "workstream_agent" : null;
-		},
+		resolveProductRole: () => (pi.getFlag("workstream") === undefined ? null : "workstream_agent"),
 	});
 
 	pi.on("session_start", async (event, ctx) => {
-		const id = pi.getFlag("workstream") as string | undefined;
-		if (id === undefined) return;
+		if (pi.getFlag("workstream") === undefined) return;
 		// Force Explore on every workstream session_start (including reload) so the session always begins from a
 		// planning posture; the executor/supervisor mode set at plan approval only persists within a single process.
-		if (id.trim()) deps.enterExploreMode(event, ctx);
-		await startWorkstream(id, pi, ctx, deps);
+		deps.enterExploreMode(event, ctx);
+		await startWorkstream(pi, ctx, deps);
 	});
 }

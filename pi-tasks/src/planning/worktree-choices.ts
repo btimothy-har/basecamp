@@ -71,6 +71,22 @@ function buildExecutionWorktreeTarget(prefix: string, slug: string, sessionTag: 
 	};
 }
 
+export function copilotWorktreeTarget(
+	workName: string,
+	generatedName: string,
+	userId = currentUserId(),
+): ExecutionWorktreeTarget {
+	const prefix = userWorktreePrefix(userId);
+	const slug = normalizeWorktreeSlug(workName);
+	const branchPrefix = `${prefix}/`;
+	const maxSlugLength = Math.max(1, SUGGESTED_WORKTREE_LABEL_MAX_LENGTH - branchPrefix.length);
+	const cappedWorkSlug = slug.slice(0, maxSlugLength).replace(/-+$/g, "") || FALLBACK_WORKTREE_SLUG;
+	return {
+		worktreeLabel: `copilot/${generatedName}`,
+		branchName: `${branchPrefix}${cappedWorkSlug}`,
+	};
+}
+
 function existingWorktreeTarget(wt: WorkspaceWorktree): ExecutionWorktreeTarget {
 	return { worktreeLabel: wt.label, branchName: null };
 }

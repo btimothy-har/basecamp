@@ -80,7 +80,7 @@ function makeRecord(overrides: Partial<WorkstreamLaunchRecord> = {}): Workstream
 			brief: "Implement the launch workstream tool.",
 			constraints: "Stay in scope.",
 		},
-		worktree: { label: "wt-bt/8e95-launch-workstream-too", path: "/worktrees/x", branch: "bt/x" },
+		worktree: { label: "copilot/steady-amber-otter", path: "/worktrees/x", branch: "bt/x" },
 		agent: {},
 		setup: { status: "succeeded" },
 		herdr: { status: "succeeded" },
@@ -91,11 +91,24 @@ function makeRecord(overrides: Partial<WorkstreamLaunchRecord> = {}): Workstream
 	};
 }
 
+function makeWorkspace(overrides: Partial<WorkspaceState> = {}): WorkspaceState {
+	return {
+		repo: { isRepo: true, name: "org/repo" },
+		activeWorktree: {
+			label: "copilot/steady-amber-otter",
+			path: "/worktrees/org/repo/copilot/steady-amber-otter",
+			branch: "bt/x",
+			created: false,
+		},
+		...overrides,
+	} as unknown as WorkspaceState;
+}
+
 function makeDeps(overrides: Partial<WorkstreamStartDeps> = {}) {
 	const stampCalls: { id: string; handle: string }[] = [];
-	const findCalls: { filePath: string; id: string; repo?: string }[] = [];
+	const findByWorktreeLabelCalls: { filePath: string; worktreeLabel: string; repo?: string }[] = [];
 	const enterExploreModeCalls: { event: SessionStartEvent; ctx: ExtensionContext }[] = [];
-	let workspace: WorkspaceState | null = { repo: { isRepo: true, name: "org/repo" } } as unknown as WorkspaceState;
+	let workspace: WorkspaceState | null = makeWorkspace();
 	let waitedWorkspace: WorkspaceState | null = workspace;
 	let record: WorkstreamLaunchRecord | null = makeRecord();
 	let handle: string | null = "swift-otter-1a2b3c";
@@ -103,9 +116,9 @@ function makeDeps(overrides: Partial<WorkstreamStartDeps> = {}) {
 		getWorkspaceState: () => workspace,
 		waitForWorkspaceState: async () => waitedWorkspace,
 		launchStatePath: () => "/tmp/launch-index.json",
-		findById: (filePath, id, repo) => {
-			findCalls.push({ filePath, id, repo });
-			return record;
+		findByWorktreeLabel: (filePath, worktreeLabel, repo) => {
+			findByWorktreeLabelCalls.push({ filePath, worktreeLabel, repo });
+			return record?.worktree.label === worktreeLabel && (!repo || record.repo === repo) ? record : null;
 		},
 		stampHandle: (_filePath, id, h) => {
 			stampCalls.push({ id, handle: h });
@@ -119,7 +132,7 @@ function makeDeps(overrides: Partial<WorkstreamStartDeps> = {}) {
 	};
 	return {
 		deps,
-		findCalls,
+		findByWorktreeLabelCalls,
 		stampCalls,
 		enterExploreModeCalls,
 		setRecord(value: WorkstreamLaunchRecord | null) {
@@ -137,8 +150,8 @@ function makeDeps(overrides: Partial<WorkstreamStartDeps> = {}) {
 	};
 }
 
-async function runStart(pi: FakePi, args: string | undefined, ctx: ExtensionContext, deps: WorkstreamStartDeps) {
-	await startWorkstream(args, pi as unknown as ExtensionAPI, ctx, deps);
+async function runStart(pi: FakePi, ctx: ExtensionContext, deps: WorkstreamStartDeps) {
+	await startWorkstream(pi as unknown as ExtensionAPI, ctx, deps);
 }
 
 describe("workstream startup", () => {
@@ -149,73 +162,93 @@ describe("workstream startup", () => {
 		const harness = makeDeps();
 		const { ctx } = makeCtx();
 
-		await runStart(pi, "launch-workstream-too", ctx, harness.deps);
+		await runStart(pi, ctx, harness.deps);
 
 		assert.equal(pi.userMessages.length, 1);
 		assert.match(pi.userMessages[0]!, /# Herdr workstream launch brief/);
 		assert.match(pi.userMessages[0]!, /Launch Workstream Too/);
 		assert.match(pi.userMessages[0]!, /registered as `swift-otter-1a2b3c`/);
-		assert.deepEqual(harness.findCalls, [
-			{ filePath: "/tmp/launch-index.json", id: "launch-workstream-too", repo: "org/repo" },
+		assert.deepEqual(harness.findByWorktreeLabelCalls, [
+			{ filePath: "/tmp/launch-index.json", worktreeLabel: "copilot/steady-amber-otter", repo: "org/repo" },
 		]);
 		assert.deepEqual(harness.stampCalls, [{ id: "launch-workstream-too", handle: "swift-otter-1a2b3c" }]);
 	});
 
-	it("trims ids before lookup", async () => {
+	it("infers a bare --workstream launch from the active worktree label", async () => {
 		const pi = new FakePi();
 		const harness = makeDeps();
 		const { ctx } = makeCtx();
 
-		await runStart(pi, "  launch-workstream-too  ", ctx, harness.deps);
+		await runStart(pi, ctx, harness.deps);
 
-		assert.equal(harness.findCalls[0]?.id, "launch-workstream-too");
+		assert.equal(pi.userMessages.length, 1);
+		assert.match(pi.userMessages[0]!, /copilot\/steady-amber-otter/);
+		assert.deepEqual(harness.findByWorktreeLabelCalls, [
+			{ filePath: "/tmp/launch-index.json", worktreeLabel: "copilot/steady-amber-otter", repo: "org/repo" },
+		]);
 	});
 
-	it("returns a usage error when no id is given", async () => {
+	it("reports an error for a bare --workstream launch without an active worktree", async () => {
 		const pi = new FakePi();
 		const harness = makeDeps();
+		harness.setWorkspace(makeWorkspace({ activeWorktree: null }));
 		const { ctx, notices } = makeCtx();
 
-		await runStart(pi, "  ", ctx, harness.deps);
+		await runStart(pi, ctx, harness.deps);
 
 		assert.equal(pi.userMessages.length, 0);
+		assert.equal(harness.findByWorktreeLabelCalls.length, 0);
 		assert.equal(harness.stampCalls.length, 0);
-		assert.match(notices[0]?.message ?? "", /Usage: pi --workstream <id>/);
+		assert.equal(
+			notices[0]?.message,
+			"Run `pi --workstream` from inside the workstream worktree Herdr set up; this session is not in a worktree.",
+		);
 		assert.equal(notices[0]?.level, "error");
 	});
 
-	it("reports a clear error for an unknown id without injecting or stamping", async () => {
+	it("reports an error when bare --workstream does not match a staged workstream", async () => {
 		const pi = new FakePi();
 		const harness = makeDeps();
 		harness.setRecord(null);
 		const { ctx, notices } = makeCtx();
 
-		await runStart(pi, "missing-id", ctx, harness.deps);
+		await runStart(pi, ctx, harness.deps);
 
 		assert.equal(pi.userMessages.length, 0);
 		assert.equal(harness.stampCalls.length, 0);
-		assert.match(notices[0]?.message ?? "", /No staged workstream "missing-id"/);
+		assert.deepEqual(harness.findByWorktreeLabelCalls, [
+			{ filePath: "/tmp/launch-index.json", worktreeLabel: "copilot/steady-amber-otter", repo: "org/repo" },
+		]);
+		assert.match(notices[0]?.message ?? "", /No staged workstream found for worktree "copilot\/steady-amber-otter"/);
+		assert.equal(notices[0]?.level, "error");
+	});
+
+	it("reports a clear error when the worktree has no staged record without injecting or stamping", async () => {
+		const pi = new FakePi();
+		const harness = makeDeps();
+		harness.setRecord(null);
+		const { ctx, notices } = makeCtx();
+
+		await runStart(pi, ctx, harness.deps);
+
+		assert.equal(pi.userMessages.length, 0);
+		assert.equal(harness.stampCalls.length, 0);
+		assert.match(notices[0]?.message ?? "", /No staged workstream found for worktree "copilot\/steady-amber-otter"/);
 		assert.equal(notices[0]?.level, "error");
 	});
 
 	it("fails closed when the repository workspace cannot be determined", async () => {
 		const pi = new FakePi();
-		let findCalled = false;
-		const harness = makeDeps({
-			getWorkspaceState: () => null,
-			waitForWorkspaceState: async () => null,
-			findById: () => {
-				findCalled = true;
-				return makeRecord();
-			},
-		});
+		const harness = makeDeps();
+		harness.setWorkspace(null);
+		harness.setWaitedWorkspace(null);
 		const { ctx, notices } = makeCtx();
 
-		await runStart(pi, "launch-workstream-too", ctx, harness.deps);
+		await runStart(pi, ctx, harness.deps);
 
 		assert.equal(pi.userMessages.length, 0);
 		assert.equal(harness.stampCalls.length, 0);
-		assert.equal(findCalled, false);
+		assert.equal(harness.findByWorktreeLabelCalls.length, 0);
 		assert.match(notices[0]?.message ?? "", /not in a repository workspace/);
 		assert.equal(notices[0]?.level, "error");
 	});
@@ -224,13 +257,13 @@ describe("workstream startup", () => {
 		const pi = new FakePi();
 		const harness = makeDeps();
 		harness.setWorkspace(null);
-		harness.setWaitedWorkspace({ repo: { isRepo: true, name: "org/repo" } } as unknown as WorkspaceState);
+		harness.setWaitedWorkspace(makeWorkspace());
 		const { ctx } = makeCtx();
 
-		await runStart(pi, "launch-workstream-too", ctx, harness.deps);
+		await runStart(pi, ctx, harness.deps);
 
 		assert.equal(pi.userMessages.length, 1);
-		assert.equal(harness.findCalls[0]?.repo, "org/repo");
+		assert.equal(harness.findByWorktreeLabelCalls[0]?.repo, "org/repo");
 	});
 
 	it("reports workspace lookup errors without injecting or stamping", async () => {
@@ -242,11 +275,11 @@ describe("workstream startup", () => {
 		});
 		const { ctx, notices } = makeCtx();
 
-		await runStart(pi, "launch-workstream-too", ctx, harness.deps);
+		await runStart(pi, ctx, harness.deps);
 
 		assert.equal(pi.userMessages.length, 0);
 		assert.equal(harness.stampCalls.length, 0);
-		assert.match(notices[0]?.message ?? "", /Could not load staged workstream "launch-workstream-too"/);
+		assert.match(notices[0]?.message ?? "", /Could not load the staged workstream for this worktree:/);
 		assert.match(notices[0]?.message ?? "", /workspace state unavailable/);
 		assert.equal(notices[0]?.level, "error");
 	});
@@ -254,17 +287,17 @@ describe("workstream startup", () => {
 	it("reports launch-state lookup errors without injecting or stamping", async () => {
 		const pi = new FakePi();
 		const harness = makeDeps({
-			findById: () => {
+			findByWorktreeLabel: () => {
 				throw new Error("launch index corrupt");
 			},
 		});
 		const { ctx, notices } = makeCtx();
 
-		await runStart(pi, "launch-workstream-too", ctx, harness.deps);
+		await runStart(pi, ctx, harness.deps);
 
 		assert.equal(pi.userMessages.length, 0);
 		assert.equal(harness.stampCalls.length, 0);
-		assert.match(notices[0]?.message ?? "", /Could not load staged workstream "launch-workstream-too"/);
+		assert.match(notices[0]?.message ?? "", /Could not load the staged workstream for this worktree:/);
 		assert.match(notices[0]?.message ?? "", /launch index corrupt/);
 		assert.equal(notices[0]?.level, "error");
 	});
@@ -275,7 +308,7 @@ describe("workstream startup", () => {
 		harness.setHandle(null);
 		const { ctx } = makeCtx();
 
-		await runStart(pi, "launch-workstream-too", ctx, harness.deps);
+		await runStart(pi, ctx, harness.deps);
 
 		assert.equal(pi.userMessages.length, 1);
 		assert.match(pi.userMessages[0]!, /# Herdr workstream launch brief/);
@@ -292,7 +325,7 @@ describe("workstream startup", () => {
 		});
 		const { ctx, notices } = makeCtx();
 
-		await runStart(pi, "launch-workstream-too", ctx, harness.deps);
+		await runStart(pi, ctx, harness.deps);
 
 		assert.equal(pi.userMessages.length, 1);
 		assert.match(pi.userMessages[0]!, /agent handle was derived as `swift-otter-1a2b3c`/);
@@ -311,7 +344,7 @@ describe("workstream startup", () => {
 		});
 		const { ctx, notices } = makeCtx();
 
-		await runStart(pi, "launch-workstream-too", ctx, harness.deps);
+		await runStart(pi, ctx, harness.deps);
 
 		assert.equal(pi.userMessages.length, 1);
 		assert.match(pi.userMessages[0]!, /agent handle was derived as `swift-otter-1a2b3c`/);
@@ -325,28 +358,28 @@ describe("workstream startup", () => {
 	it("uses an explicit worktree path fallback when the launch record has no path", async () => {
 		const pi = new FakePi();
 		const harness = makeDeps();
-		harness.setRecord(makeRecord({ worktree: { label: "wt-bt/no-path", branch: "bt/no-path" } }));
+		harness.setRecord(makeRecord({ worktree: { label: "copilot/steady-amber-otter", branch: "bt/no-path" } }));
 		const { ctx } = makeCtx();
 
-		await runStart(pi, "launch-workstream-too", ctx, harness.deps);
+		await runStart(pi, ctx, harness.deps);
 
 		assert.equal(pi.userMessages.length, 1);
 		assert.match(pi.userMessages[0]!, /Worktree path: not recorded in launch record/);
 		assert.doesNotMatch(pi.userMessages[0]!, /Worktree path:\s*\n/);
 	});
 
-	it("registers a string startup flag and starts the workstream on session_start", async () => {
+	it("registers a boolean startup flag and starts the workstream on session_start", async () => {
 		const pi = new FakePi();
 		const harness = makeDeps();
 		const { ctx } = makeCtx();
 
 		registerWorkstreamStartup(pi as unknown as ExtensionAPI, harness.deps);
-		pi.setFlag("workstream", "launch-workstream-too");
+		pi.setFlag("workstream", true);
 		await pi.emitSessionStart(ctx);
 
 		assert.deepEqual(pi.flags.get("workstream"), {
-			description: "Start a staged workstream by id on session startup",
-			type: "string",
+			description: "Start the staged workstream for the current worktree (run bare inside the worktree Herdr set up).",
+			type: "boolean",
 		});
 		assert.equal(pi.userMessages.length, 1);
 		assert.deepEqual(harness.stampCalls, [{ id: "launch-workstream-too", handle: "swift-otter-1a2b3c" }]);
@@ -355,18 +388,18 @@ describe("workstream startup", () => {
 		assert.equal(harness.enterExploreModeCalls[0]?.ctx, ctx);
 	});
 
-	it("registers a product-role provider for non-empty --workstream sessions", () => {
+	it("registers a product-role provider for any present --workstream flag", () => {
 		const pi = new FakePi();
 		const harness = makeDeps();
 
 		registerWorkstreamStartup(pi as unknown as ExtensionAPI, harness.deps);
 		assert.equal(resolveSessionProductRoleOverride(), null);
 
-		pi.setFlag("workstream", "   ");
-		assert.equal(resolveSessionProductRoleOverride(), null);
-
-		pi.setFlag("workstream", "launch-workstream-too");
+		pi.setFlag("workstream", true);
 		assert.equal(resolveSessionProductRoleOverride(), "workstream_agent");
+
+		pi.setFlag("workstream", undefined);
+		assert.equal(resolveSessionProductRoleOverride(), null);
 	});
 
 	it("does nothing on session_start when --workstream is absent", async () => {
@@ -378,25 +411,24 @@ describe("workstream startup", () => {
 		await pi.emitSessionStart(ctx);
 
 		assert.equal(pi.userMessages.length, 0);
-		assert.equal(harness.findCalls.length, 0);
+		assert.equal(harness.findByWorktreeLabelCalls.length, 0);
 		assert.equal(harness.stampCalls.length, 0);
 		assert.equal(harness.enterExploreModeCalls.length, 0);
 	});
 
-	it("does not enter Explore mode for whitespace-only --workstream ids", async () => {
+	it("enters Explore mode for a present --workstream flag and then infers the workstream", async () => {
 		const pi = new FakePi();
 		const harness = makeDeps();
-		const { ctx, notices } = makeCtx();
+		const { ctx } = makeCtx();
 
 		registerWorkstreamStartup(pi as unknown as ExtensionAPI, harness.deps);
-		pi.setFlag("workstream", "   ");
+		pi.setFlag("workstream", true);
 		await pi.emitSessionStart(ctx);
 
-		assert.equal(pi.userMessages.length, 0);
-		assert.equal(harness.findCalls.length, 0);
-		assert.equal(harness.stampCalls.length, 0);
-		assert.equal(harness.enterExploreModeCalls.length, 0);
-		assert.match(notices[0]?.message ?? "", /Usage: pi --workstream <id>/);
+		assert.equal(pi.userMessages.length, 1);
+		assert.equal(harness.findByWorktreeLabelCalls.length, 1);
+		assert.equal(harness.stampCalls.length, 1);
+		assert.equal(harness.enterExploreModeCalls.length, 1);
 	});
 
 	it("is wired from pi-tasks/index.ts", () => {

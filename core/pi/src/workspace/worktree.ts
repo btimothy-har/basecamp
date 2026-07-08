@@ -120,8 +120,8 @@ export function validateNoSymlinkedWorktreePath(worktreeDir: string, root = WORK
 	}
 }
 
-const NESTED_WORKTREE_NAMESPACE_RE = /^wt-[a-z0-9]{2}$/;
-const NESTED_WORKTREE_LABEL_RE = /^wt-[a-z0-9]{2}\/[A-Za-z0-9][A-Za-z0-9._-]*$/;
+const NESTED_WORKTREE_NAMESPACE_RE = /^(?:wt-[a-z0-9]{2}|copilot)$/;
+const NESTED_WORKTREE_LABEL_RE = /^(?:wt-[a-z0-9]{2}|copilot)\/[A-Za-z0-9][A-Za-z0-9._-]*$/;
 
 function isNestedWorktreeNamespace(value: string | undefined): boolean {
 	return typeof value === "string" && NESTED_WORKTREE_NAMESPACE_RE.test(value);
@@ -129,7 +129,9 @@ function isNestedWorktreeNamespace(value: string | undefined): boolean {
 
 export function ensureWorktreeLabel(label: string): void {
 	if (!WORKTREE_LABEL_RE.test(label) && !NESTED_WORKTREE_LABEL_RE.test(label)) {
-		throw new Error(`Invalid worktree label "${label}". Use a direct label or wt-xx/name with safe characters.`);
+		throw new Error(
+			`Invalid worktree label "${label}". Use a direct label, wt-xx/name, or copilot/name with safe characters.`,
+		);
 	}
 }
 
