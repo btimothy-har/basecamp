@@ -21,3 +21,7 @@ export default function (pi: ExtensionAPI) {
 	// set_workstream_status, pi --workstream startup) has moved to
 	// pi-swarm/extension/src/workstreams/ with daemon-backed persistence.
 }
+
+// Public surface for other contexts (imported via #tasks/index.ts only).
+export { getTasksAccess, registerTasksAccess } from "./tasks/access.ts";
+export type { GoalCycle, ReviewState, Task, TasksAccess, TasksState, TaskStatus } from "./tasks/access.ts";

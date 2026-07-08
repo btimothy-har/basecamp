@@ -2,7 +2,7 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { basecampRoot } from "#core/platform/paths.ts";
-import type { TaskStatus } from "#core/platform/tasks-access.ts";
+import type { TaskStatus } from "#tasks/index.ts";
 import type { AgentMode } from "#core/session/agent-mode.ts";
 
 export const COMPANION_SNAPSHOT_VERSION = 1;

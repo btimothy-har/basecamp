@@ -30,12 +30,12 @@ import * as path from "node:path";
 import type { ExtensionAPI, ExtensionContext, Theme } from "@earendil-works/pi-coding-agent";
 import { Type } from "@sinclair/typebox";
 import { basecampRoot } from "#core/platform/paths.ts";
-import { registerTasksAccess } from "#core/platform/tasks-access.ts";
+import { registerTasksAccess } from "./access.ts";
 import { type AgentMode, getAgentMode, setAgentMode } from "#core/session/agent-mode.ts";
 import { ensureCurrentSessionStateForEvent } from "#core/state/index.ts";
 import { renderTaskWidgetLines } from "./render.ts";
 
-// Type contracts owned by pi-core — re-exported for backward compat with planning files.
+// Type contracts owned by the tasks context — re-exported for the planning files.
 export type {
 	GoalCycle,
 	ReviewState,
@@ -43,10 +43,10 @@ export type {
 	TaskStatus,
 	TasksAccess,
 	TasksState,
-} from "#core/platform/tasks-access.ts";
+} from "./access.ts";
 
 // Import the types we use locally.
-import type { GoalCycle, Task, TaskStatus, TasksAccess, TasksState } from "#core/platform/tasks-access.ts";
+import type { GoalCycle, Task, TaskStatus, TasksAccess, TasksState } from "./access.ts";
 
 // ============================================================================
 // State helpers

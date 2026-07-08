@@ -4,7 +4,7 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { afterEach, describe, it } from "node:test";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { registerTasksAccess, type TasksState } from "#core/platform/tasks-access.ts";
+import { registerTasksAccess, type TasksState } from "#tasks/index.ts";
 import {
 	initializeCurrentSessionState,
 	resetCurrentSessionState,
