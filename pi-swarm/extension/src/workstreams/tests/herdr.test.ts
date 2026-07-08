@@ -8,7 +8,7 @@ import {
 	type HerdrWorkstreamWorktreeInput,
 	openWorkstreamInHerdr,
 	shouldOpenWorkstreamInHerdr,
-} from "../workstreams/herdr.ts";
+} from "../herdr.ts";
 
 interface ExecResult {
 	code: number;

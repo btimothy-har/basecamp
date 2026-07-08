@@ -9,6 +9,22 @@ export type { AgentConfig, ModelStrategy } from "./discovery.ts";
 
 export const DEFAULT_AGENT_MAX_DEPTH = 2;
 
+export interface AgentDepthState {
+	depth: number;
+	isTopLevel: boolean;
+	maxDepth: number;
+	atMaxDepth: boolean;
+}
+
+/** Resolve this process's agent-depth gating from BASECAMP_AGENT_DEPTH / BASECAMP_AGENT_MAX_DEPTH. */
+export function resolveAgentDepthState(): AgentDepthState {
+	const depth = Number(process.env.BASECAMP_AGENT_DEPTH ?? "0");
+	const isTopLevel = Number.isFinite(depth) ? depth <= 0 : true;
+	const maxDepth = Number(process.env.BASECAMP_AGENT_MAX_DEPTH ?? DEFAULT_AGENT_MAX_DEPTH);
+	const atMaxDepth = depth >= maxDepth;
+	return { depth, isTopLevel, maxDepth, atMaxDepth };
+}
+
 export const MUTATIVE_AGENT_NAME = "worker";
 export const TASK_TRACKING_TOOLS = [
 	"update_goal",

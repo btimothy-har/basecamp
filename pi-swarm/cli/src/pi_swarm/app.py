@@ -5,11 +5,13 @@ from __future__ import annotations
 import asyncio
 from typing import Any, Literal
 
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 
 from .frames import (
     PROTOCOL_VERSION,
+    AttachWorkstreamAgentFrame,
     CancelFrame,
+    CreateWorkstreamFrame,
     DispatchAckFrame,
     DispatchFrame,
     ErrorFrame,
@@ -23,6 +25,7 @@ from .frames import (
     RegisterFrame,
     ResultReportFrame,
     TelemetryFrame,
+    UpdateWorkstreamFrame,
     WaitFrame,
     WaitResultFrame,
     parse_frame,
@@ -32,7 +35,9 @@ from .registry import Registry
 from .service import (
     AcceptedPeerMessage,
     accept_peer_message,
+    attach_workstream_agent,
     cancel_agent,
+    create_workstream,
     dispatch_agent,
     handle_peer_message_delivery_ack,
     handle_result_report,
@@ -41,6 +46,7 @@ from .service import (
     message_status_result,
     notify_message_delivery_terminal,
     schedule_disconnect_reaper,
+    update_workstream,
     wait_for_agents,
 )
 from .store import DuplicateAgentHandleError, Store
@@ -77,6 +83,30 @@ def create_app(store: Store, *, daemon_uds: str | None = None) -> FastAPI:
             agent_handle=agent_handle,
             limit=limit,
         )
+
+    @app.get("/workstreams")
+    async def list_workstreams(
+        status: str | None = None,
+        repo: str | None = None,
+        dossier_path: str | None = None,
+        query: str | None = None,
+    ) -> dict[str, Any]:
+        return {
+            "workstreams": await asyncio.to_thread(
+                store.list_workstreams,
+                status=status,
+                repo=repo,
+                dossier_path=dossier_path,
+                query=query,
+            )
+        }
+
+    @app.get("/workstreams/{identifier}")
+    async def get_workstream(identifier: str) -> dict[str, Any]:
+        ws = await asyncio.to_thread(store.get_workstream_with_agents, identifier)
+        if ws is None:
+            raise HTTPException(status_code=404)
+        return ws
 
     @app.websocket("/ws")
     async def websocket_endpoint(websocket: WebSocket) -> None:
@@ -249,6 +279,37 @@ def create_app(store: Store, *, daemon_uds: str | None = None) -> FastAPI:
                                 requester_node_id=parsed.node_id,
                                 store=store,
                                 registry=registry,
+                            )
+                        )
+                    )
+                    continue
+                if isinstance(inbound, CreateWorkstreamFrame):
+                    await websocket.send_json(
+                        serialize_frame(
+                            await create_workstream(
+                                frame=inbound,
+                                store=store,
+                            )
+                        )
+                    )
+                    continue
+                if isinstance(inbound, AttachWorkstreamAgentFrame):
+                    await websocket.send_json(
+                        serialize_frame(
+                            await attach_workstream_agent(
+                                frame=inbound,
+                                requester_node_id=parsed.node_id,
+                                store=store,
+                            )
+                        )
+                    )
+                    continue
+                if isinstance(inbound, UpdateWorkstreamFrame):
+                    await websocket.send_json(
+                        serialize_frame(
+                            await update_workstream(
+                                frame=inbound,
+                                store=store,
                             )
                         )
                     )

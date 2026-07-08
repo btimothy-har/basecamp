@@ -1,0 +1,9 @@
+{
+  "type": "create_workstream_ack",
+  "v": 19,
+  "request_id": "req-create-001",
+  "status": "created",
+  "workstream_id": "ws-001",
+  "slug": "feature-auth",
+  "error": null
+}

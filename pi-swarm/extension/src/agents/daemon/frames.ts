@@ -3,7 +3,8 @@ import { Buffer } from "node:buffer";
 // Gates every client-visible daemon capability, not just WebSocket frame shapes.
 // This includes HTTP endpoints like /runs/summary, so stale daemons restart.
 // v18: cancel-agent request/ack frames.
-export const PROTOCOL_VERSION = 18;
+// v19: workstream create/attach/update frames + /workstreams HTTP reads.
+export const PROTOCOL_VERSION = 19;
 
 export interface RegisterFrame {
 	type: "register";
@@ -210,6 +211,66 @@ export interface CancelAckFrame {
 	error?: string | null;
 }
 
+export interface CreateWorkstreamFrame {
+	type: "create_workstream";
+	v: typeof PROTOCOL_VERSION;
+	request_id: string;
+	workstream_id: string;
+	slug: string;
+	label: string;
+	brief: string;
+	source_dossier_path: string;
+	constraints?: string | null;
+	source_repo_page_path?: string | null;
+}
+
+export interface CreateWorkstreamAckFrame {
+	type: "create_workstream_ack";
+	v: typeof PROTOCOL_VERSION;
+	request_id: string;
+	status: "created" | "slug_conflict" | "error";
+	workstream_id?: string | null;
+	slug?: string | null;
+	error?: string | null;
+}
+
+export type WorkstreamAgentStatus = "attached" | "failed";
+
+export interface AttachWorkstreamAgentFrame {
+	type: "attach_workstream_agent";
+	v: typeof PROTOCOL_VERSION;
+	request_id: string;
+	workstream: string;
+	repo?: string | null;
+	worktree_label?: string | null;
+	status?: WorkstreamAgentStatus;
+	error?: string | null;
+}
+
+export interface AttachWorkstreamAgentAckFrame {
+	type: "attach_workstream_agent_ack";
+	v: typeof PROTOCOL_VERSION;
+	request_id: string;
+	status: "attached" | "not_found" | "error";
+	error?: string | null;
+}
+
+export interface UpdateWorkstreamFrame {
+	type: "update_workstream";
+	v: typeof PROTOCOL_VERSION;
+	request_id: string;
+	workstream: string;
+	status: "open" | "closed";
+}
+
+export interface UpdateWorkstreamAckFrame {
+	type: "update_workstream_ack";
+	v: typeof PROTOCOL_VERSION;
+	request_id: string;
+	status: "updated" | "not_found" | "invalid_status" | "error";
+	error?: string | null;
+}
+
 export type Frame =
 	| RegisterFrame
 	| RegisteredFrame
@@ -229,7 +290,13 @@ export type Frame =
 	| MessageStatusFrame
 	| MessageStatusResultFrame
 	| CancelFrame
-	| CancelAckFrame;
+	| CancelAckFrame
+	| CreateWorkstreamFrame
+	| CreateWorkstreamAckFrame
+	| AttachWorkstreamAgentFrame
+	| AttachWorkstreamAgentAckFrame
+	| UpdateWorkstreamFrame
+	| UpdateWorkstreamAckFrame;
 
 export const FRAME_TYPES = [
 	"register",
@@ -251,6 +318,12 @@ export const FRAME_TYPES = [
 	"message_status_result",
 	"cancel",
 	"cancel_ack",
+	"create_workstream",
+	"create_workstream_ack",
+	"attach_workstream_agent",
+	"attach_workstream_agent_ack",
+	"update_workstream",
+	"update_workstream_ack",
 ] as const;
 
 const KNOWN_TYPE_SET = new Set<string>(FRAME_TYPES);

@@ -1,0 +1,7 @@
+{
+  "type": "update_workstream_ack",
+  "v": 19,
+  "request_id": "req-update-001",
+  "status": "updated",
+  "error": null
+}

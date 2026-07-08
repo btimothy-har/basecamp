@@ -4,7 +4,9 @@ import * as fs from "node:fs";
 import * as http from "node:http";
 import WebSocket, { type RawData } from "ws";
 import {
+	type AttachWorkstreamAgentAckFrame,
 	type CancelAckFrame,
+	type CreateWorkstreamAckFrame,
 	decodeFrame,
 	type ErrorFrame,
 	encodeFrame,
@@ -15,8 +17,10 @@ import {
 	PROTOCOL_VERSION,
 	type RegisteredFrame,
 	type RegisterFrame,
+	type UpdateWorkstreamAckFrame,
 	type WaitResultFrame,
 	type WaitResultItem,
+	type WorkstreamAgentStatus,
 } from "./frames.ts";
 import { type DaemonPaths, ensureDaemonRuntimeDir, resolveDaemonPaths } from "./paths.ts";
 
@@ -527,6 +531,115 @@ export async function fetchRunSummary(
 	return parseRunSummaryResponse(parsed);
 }
 
+export interface WorkstreamAgentView {
+	agent_id: string | null;
+	agent_handle: string | null;
+	repo: string | null;
+	worktree_label: string | null;
+	status: string | null;
+	error: string | null;
+	joined_at: string | null;
+	run_status: string | null;
+}
+
+export interface WorkstreamSummary {
+	id: string | null;
+	slug: string | null;
+	label: string | null;
+	brief: string | null;
+	constraints: string | null;
+	source_dossier_path: string | null;
+	source_repo_page_path: string | null;
+	status: string | null;
+	created_at: string | null;
+	updated_at: string | null;
+	agent_count: number | null;
+}
+
+export type WorkstreamDetail = WorkstreamSummary & { agents: WorkstreamAgentView[] };
+
+function parseWorkstreamAgent(value: unknown): WorkstreamAgentView | null {
+	if (!value || typeof value !== "object") return null;
+	const record = value as Record<string, unknown>;
+	return {
+		agent_id: optionalString(record.agent_id),
+		agent_handle: optionalString(record.agent_handle),
+		repo: optionalString(record.repo),
+		worktree_label: optionalString(record.worktree_label),
+		status: optionalString(record.status),
+		error: optionalString(record.error),
+		joined_at: optionalString(record.joined_at),
+		run_status: optionalString(record.run_status),
+	};
+}
+
+function parseWorkstreamSummary(value: unknown): WorkstreamSummary | null {
+	if (!value || typeof value !== "object") return null;
+	const record = value as Record<string, unknown>;
+	return {
+		id: optionalString(record.id),
+		slug: optionalString(record.slug),
+		label: optionalString(record.label),
+		brief: optionalString(record.brief),
+		constraints: optionalString(record.constraints),
+		source_dossier_path: optionalString(record.source_dossier_path),
+		source_repo_page_path: optionalString(record.source_repo_page_path),
+		status: optionalString(record.status),
+		created_at: optionalString(record.created_at),
+		updated_at: optionalString(record.updated_at),
+		agent_count: optionalNumber(record.agent_count),
+	};
+}
+
+export function buildWorkstreamsPath(filter: {
+	status?: string;
+	repo?: string;
+	dossierPath?: string;
+	query?: string;
+}): string {
+	const params = new URLSearchParams();
+	if (filter.status !== undefined) params.set("status", filter.status);
+	if (filter.repo !== undefined) params.set("repo", filter.repo);
+	if (filter.dossierPath !== undefined) params.set("dossier_path", filter.dossierPath);
+	if (filter.query !== undefined) params.set("query", filter.query);
+	const query = params.toString();
+	return query ? `/workstreams?${query}` : "/workstreams";
+}
+
+export function parseWorkstreamsResponse(parsed: unknown): WorkstreamSummary[] | null {
+	if (!parsed || typeof parsed !== "object") return null;
+	const record = parsed as Record<string, unknown>;
+	const rawWorkstreams = Array.isArray(record.workstreams) ? record.workstreams : [];
+	return rawWorkstreams.map(parseWorkstreamSummary).filter((item): item is WorkstreamSummary => item !== null);
+}
+
+export function parseWorkstreamDetailResponse(parsed: unknown): WorkstreamDetail | null {
+	const summary = parseWorkstreamSummary(parsed);
+	if (!summary) return null;
+	const record = (parsed as Record<string, unknown>) ?? {};
+	const rawAgents = Array.isArray(record.agents) ? record.agents : [];
+	const agents = rawAgents.map(parseWorkstreamAgent).filter((agent): agent is WorkstreamAgentView => agent !== null);
+	return { ...summary, agents };
+}
+
+export async function listWorkstreams(
+	socketPath: string,
+	filter: { status?: string; repo?: string; dossierPath?: string; query?: string },
+	timeoutMs = DEFAULT_HEALTH_TIMEOUT_MS,
+): Promise<WorkstreamSummary[] | null> {
+	const parsed = await requestJsonOverUds(socketPath, buildWorkstreamsPath(filter), timeoutMs);
+	return parseWorkstreamsResponse(parsed);
+}
+
+export async function getWorkstream(
+	socketPath: string,
+	identifier: string,
+	timeoutMs = DEFAULT_HEALTH_TIMEOUT_MS,
+): Promise<WorkstreamDetail | null> {
+	const parsed = await requestJsonOverUds(socketPath, `/workstreams/${encodeURIComponent(identifier)}`, timeoutMs);
+	return parseWorkstreamDetailResponse(parsed);
+}
+
 export async function ensureDaemon(options: EnsureDaemonOptions = {}): Promise<{ socketPath: string }> {
 	const resolvePathsFn = options.resolvePathsFn ?? resolveDaemonPaths;
 	const healthPingFn = options.healthPingFn ?? healthPing;
@@ -765,6 +878,12 @@ export type SendPeerMessageResult = Pick<PeerMessageAckFrame, "message_id" | "st
 
 export type CancelAgentResult = Pick<CancelAckFrame, "status" | "error">;
 
+export type CreateWorkstreamResult = Pick<CreateWorkstreamAckFrame, "status" | "workstream_id" | "slug" | "error">;
+
+export type AttachWorkstreamAgentResult = Pick<AttachWorkstreamAgentAckFrame, "status" | "error">;
+
+export type UpdateWorkstreamResult = Pick<UpdateWorkstreamAckFrame, "status" | "error">;
+
 export type MessageStatusResult = Pick<
 	MessageStatusResultFrame,
 	"message_id" | "status" | "error" | "created_at" | "sent_at" | "queued_at" | "failed_at"
@@ -781,6 +900,23 @@ export interface DaemonClient {
 	sendPeerMessage(input: SendPeerMessageOptions): Promise<SendPeerMessageResult>;
 	cancelAgent(input: { targetHandle: string }): Promise<CancelAgentResult>;
 	messageStatus(input: MessageStatusOptions): Promise<MessageStatusResult>;
+	createWorkstream(input: {
+		workstreamId: string;
+		slug: string;
+		label: string;
+		brief: string;
+		sourceDossierPath: string;
+		constraints?: string | null;
+		sourceRepoPagePath?: string | null;
+	}): Promise<CreateWorkstreamResult>;
+	attachWorkstreamAgent(input: {
+		workstream: string;
+		repo?: string | null;
+		worktreeLabel?: string | null;
+		status?: WorkstreamAgentStatus;
+		error?: string | null;
+	}): Promise<AttachWorkstreamAgentResult>;
+	updateWorkstream(input: { workstream: string; status: "open" | "closed" }): Promise<UpdateWorkstreamResult>;
 }
 
 function waitForFrame<T extends Frame["type"]>(
@@ -972,6 +1108,65 @@ export function createDaemonClient(connection: DaemonConnection): DaemonClient {
 				sent_at: frame.sent_at,
 				queued_at: frame.queued_at,
 				failed_at: frame.failed_at,
+			};
+		},
+		createWorkstream: async (input) => {
+			const requestId = randomUUID();
+			connection.send({
+				type: "create_workstream",
+				v: PROTOCOL_VERSION,
+				request_id: requestId,
+				workstream_id: input.workstreamId,
+				slug: input.slug,
+				label: input.label,
+				brief: input.brief,
+				source_dossier_path: input.sourceDossierPath,
+				constraints: input.constraints ?? null,
+				source_repo_page_path: input.sourceRepoPagePath ?? null,
+			});
+			const ack = await waitForFrame(connection, "create_workstream_ack", (frame) => frame.request_id === requestId);
+			return {
+				status: ack.status,
+				workstream_id: ack.workstream_id,
+				slug: ack.slug,
+				error: ack.error,
+			};
+		},
+		attachWorkstreamAgent: async (input) => {
+			const requestId = randomUUID();
+			connection.send({
+				type: "attach_workstream_agent",
+				v: PROTOCOL_VERSION,
+				request_id: requestId,
+				workstream: input.workstream,
+				repo: input.repo ?? null,
+				worktree_label: input.worktreeLabel ?? null,
+				status: input.status,
+				error: input.error ?? null,
+			});
+			const ack = await waitForFrame(
+				connection,
+				"attach_workstream_agent_ack",
+				(frame) => frame.request_id === requestId,
+			);
+			return {
+				status: ack.status,
+				error: ack.error,
+			};
+		},
+		updateWorkstream: async (input) => {
+			const requestId = randomUUID();
+			connection.send({
+				type: "update_workstream",
+				v: PROTOCOL_VERSION,
+				request_id: requestId,
+				workstream: input.workstream,
+				status: input.status,
+			});
+			const ack = await waitForFrame(connection, "update_workstream_ack", (frame) => frame.request_id === requestId);
+			return {
+				status: ack.status,
+				error: ack.error,
 			};
 		},
 	};

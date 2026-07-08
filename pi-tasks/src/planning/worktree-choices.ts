@@ -1,49 +1,23 @@
-import * as os from "node:os";
 import * as path from "node:path";
 import type { WorkspaceWorktree } from "pi-core/platform/workspace.ts";
+import {
+	copilotWorktreeTarget,
+	currentUserId,
+	type ExecutionWorktreeTarget,
+	normalizeWorktreeSlug,
+	userWorktreePrefix,
+} from "pi-core/workspace/worktree-target.ts";
+
+export { copilotWorktreeTarget, type ExecutionWorktreeTarget, userWorktreePrefix };
 
 export const CUSTOM_WORKTREE_CHOICE = "Enter custom worktree label";
 
-export interface ExecutionWorktreeTarget {
-	worktreeLabel: string;
-	branchName: string | null;
-}
+const SUGGESTED_WORKTREE_LABEL_MAX_LENGTH = 32;
+const FALLBACK_WORKTREE_SLUG = "worktree";
 
 export interface ExecutionWorktreeChoices {
 	choices: string[];
 	targetsByChoice: Map<string, ExecutionWorktreeTarget>;
-}
-
-const SUGGESTED_WORKTREE_LABEL_MAX_LENGTH = 32;
-const FALLBACK_USER_WORKTREE_PREFIX = "un";
-const FALLBACK_WORKTREE_SLUG = "worktree";
-
-function osUsername(): string {
-	try {
-		return os.userInfo().username;
-	} catch {
-		return "";
-	}
-}
-
-function currentUserId(): string {
-	return process.env.USER || osUsername() || "unknown";
-}
-
-export function userWorktreePrefix(userId: string | null | undefined): string {
-	const prefix = (userId ?? "")
-		.toLowerCase()
-		.replace(/[^a-z0-9]+/g, "")
-		.slice(0, 2);
-	return prefix.length === 2 ? prefix : FALLBACK_USER_WORKTREE_PREFIX;
-}
-
-function normalizeWorktreeSlug(value: string): string {
-	const slug = value
-		.toLowerCase()
-		.replace(/[^a-z0-9]+/g, "-")
-		.replace(/^-+|-+$/g, "");
-	return slug || FALLBACK_WORKTREE_SLUG;
 }
 
 function normalizeSessionTag(value: string | null | undefined): string {
@@ -68,22 +42,6 @@ function buildExecutionWorktreeTarget(prefix: string, slug: string, sessionTag: 
 	return {
 		worktreeLabel: `${worktreePrefix}${tagSegment}${cappedSlug}`,
 		branchName: `${prefix}/${tagSegment}${cappedSlug}`,
-	};
-}
-
-export function copilotWorktreeTarget(
-	workName: string,
-	generatedName: string,
-	userId = currentUserId(),
-): ExecutionWorktreeTarget {
-	const prefix = userWorktreePrefix(userId);
-	const slug = normalizeWorktreeSlug(workName);
-	const branchPrefix = `${prefix}/`;
-	const maxSlugLength = Math.max(1, SUGGESTED_WORKTREE_LABEL_MAX_LENGTH - branchPrefix.length);
-	const cappedWorkSlug = slug.slice(0, maxSlugLength).replace(/-+$/g, "") || FALLBACK_WORKTREE_SLUG;
-	return {
-		worktreeLabel: `copilot/${generatedName}`,
-		branchName: `${branchPrefix}${cappedWorkSlug}`,
 	};
 }
 

@@ -1,28 +1,31 @@
 # Pi Swarm Daemon Protocol
 
-Protocol version: `18`
+Protocol version: `19`
 
 All frames are JSON objects with an envelope:
 
 ```json
-{"type":"<frame_type>","v":18,...}
+{"type":"<frame_type>","v":19,...}
 ```
 
 Version handling:
 - The daemon validates `v` on every inbound frame.
-- If `v != 18`, the daemon sends an `error` frame with `code: "protocol_version"` and closes the connection.
+- If `v != 19`, the daemon sends an `error` frame with `code: "protocol_version"` and closes the connection.
 - The extension treats the protocol as a client-visible capability gate, not only a frame-shape version. A version mismatch restarts the host daemon during ensure-daemon.
 - v15 adds known-public-handle contact for `peer_message` and fork-`ask`: contact is authorized without a live relationship when the target is addressed by its known public handle (see below).
 - v16 adds registered session transcript paths for fork-ask and product-role metadata for peer-message display.
 - v17 adds safe current-task previews to `list_agents_result` rows.
 - v18 adds cancel-agent request/ack frames and dispatched-run lifecycle hardening: process-group spawn, dispatcher-disconnect grace reaping, and startup reconciliation of orphaned runs.
+- v19 adds workstream management frames (`create_workstream`/`attach_workstream_agent`/`update_workstream` + acks) and HTTP GET `/workstreams` read endpoints.
 
 ## Transport
 
 - HTTP over Unix domain socket (UDS):
-  - `GET /health` → `{"status":"ok","protocol":18}`
+  - `GET /health` → `{"status":"ok","protocol":19}`
   - `GET /runs/summary?root_id=<id>` returns safe agent-level observability for the companion dashboard.
   - `GET /runs/messages?root_id=<id>&agent_handle=<handle>` returns selected-agent assistant message detail for the companion dashboard.
+  - `GET /workstreams` returns a filtered list of workstreams (query params: `status`, `repo`, `dossier_path`, `query`).
+  - `GET /workstreams/{id_or_slug}` returns a single workstream with its joined agent rows.
 - WebSocket over UDS:
   - `/ws`
   - First inbound frame must be `register`.
@@ -112,7 +115,7 @@ Waits for one or more public agent handles:
 ```json
 {
   "type": "wait",
-  "v": 18,
+  "v": 19,
   "agent_ids": [],
   "agent_handles": ["mossy-otter-a1b2c3"],
   "mode": "all",
@@ -143,7 +146,7 @@ Requests a safe directory of agents visible under the caller's root session:
 ```json
 {
   "type": "list_agents",
-  "v": 18,
+  "v": 19,
   "request_id": "list-001",
   "awaitable": true
 }
@@ -180,7 +183,7 @@ Important fields:
 
 The request does not expose or require private `agent_id` or `run_id` values. Missing and unauthorized targets both resolve to `unknown` without leaking existence.
 
-Contact authorization is satisfied by either relationship reachability (self, ancestor/descendant, or same sibling group) or by addressing the target's known public handle. A known public handle is a routable contact address, not authorization for introspection: it never widens the agent directory (`list_agents`), transcript/run-message access, `wait_for_agent` result ownership, or private `agent_id` routing (which stays relationship-gated). This keeps persisted launch records useful for contact after resume or across user-facing surfaces without leaking hidden agents.
+Contact authorization is satisfied by either relationship reachability (self, ancestor/descendant, or same sibling group) or by addressing the target's known public handle. A known public handle is a routable contact address, not authorization for introspection: it never widens the agent directory (`list_agents`), transcript/run-message access, `wait_for_agent` result ownership, or private `agent_id` routing (which stays relationship-gated). This keeps persisted agent records useful for contact after resume or across user-facing surfaces without leaking hidden agents.
 
 ### `peer_message_ack` daemon → client
 
@@ -298,6 +301,70 @@ Response schema:
 
 Message detail is subtree-validated by `root_id` + `agent_handle`. It excludes private `run_id`, raw private `agent_id`, report tokens, prompts, user/system/developer messages, raw tool args/results, env, cwd, spawn specs, hidden thinking, and chain-of-thought. Message text is visible assistant output only; ANSI/control characters are stripped while newlines are preserved. `/runs/summary` remains snippet-only.
 
+### `create_workstream` client → daemon
+
+Requests creation of a new workstream in the daemon's SQLite store. The workstream is durable, repo-neutral internal coordination state; worktrees are not persisted (git remains the source of truth, the `copilot/<slug>` worktree name encodes the slug).
+
+Important fields:
+- `request_id`: public request correlation id for the immediate acknowledgement.
+- `workstream_id`: internal `ws_<uuid>` identity minted by the extension.
+- `slug`: globally-unique three-word readable id (the extension generates a collision-free slug; the daemon enforces uniqueness).
+- `label`: human-readable workstream label.
+- `brief`: workstream brief injected into `pi --workstream` sessions.
+- `source_dossier_path`: path to the Logseq dossier work page the workstream points to (one dossier may have many workstreams).
+- `constraints`: optional workstream constraints.
+- `source_repo_page_path`: optional path to the repository cockpit/page.
+
+### `create_workstream_ack` daemon → client
+
+Acknowledges a `create_workstream` request.
+
+Fields:
+- `request_id`: echoes the create-workstream request id.
+- `status`: `created` or `slug_conflict`.
+- `workstream_id`: the daemon-confirmed workstream id, or `null` on conflict.
+- `slug`: the daemon-confirmed slug, or `null` on conflict.
+- `error`: optional/nullable error detail.
+
+### `attach_workstream_agent` client → daemon
+
+Attaches the requester's own session as a workstream agent. Every `pi --workstream` session appends a row — additive, concurrent, never overwriting.
+
+Important fields:
+- `request_id`: public request correlation id.
+- `workstream`: the workstream slug or id to attach to.
+- `repo`: the current repo identity (`<org>/<name>`). "Which repos touched" derives from agent rows.
+- `worktree_label`: the active worktree label (e.g. `copilot/<slug>`).
+- `status`: optional membership status, default `attached` (`attached` | `failed`).
+- `error`: optional/nullable error detail for a failed attach.
+
+### `attach_workstream_agent_ack` daemon → client
+
+Acknowledges an `attach_workstream_agent` request.
+
+Fields:
+- `request_id`: echoes the attach request id.
+- `status`: `attached` or `not_found`.
+- `error`: optional/nullable error detail.
+
+### `update_workstream` client → daemon
+
+Requests a workstream status update (open ↔ closed).
+
+Fields:
+- `request_id`: public request correlation id.
+- `workstream`: the workstream slug or id.
+- `status`: `open` or `closed`.
+
+### `update_workstream_ack` daemon → client
+
+Acknowledges an `update_workstream` request.
+
+Fields:
+- `request_id`: echoes the update request id.
+- `status`: `updated`, `not_found`, or `invalid_status`.
+- `error`: optional/nullable error detail.
+
 ### `error` daemon → client
 
 Reports protocol/parse errors and closes the WebSocket for fatal frame errors. Current codes include:
@@ -311,6 +378,6 @@ Reports protocol/parse errors and closes the WebSocket for fatal frame errors. C
 A minimal client flow is:
 
 1. Connect to `/ws` over the UDS.
-2. Send `register` with `v: 18`.
+2. Send `register` with `v: 19`.
 3. Send `dispatch` with private `run_id` / `agent_id` and public `agent_handle`.
 4. Use the `agent_handle` with `wait` or discover agents through `list_agents`.
