@@ -172,7 +172,7 @@ function registerPeerMessageDeliveryHandler(
 	});
 }
 
-async function awaitDaemonConnection(): Promise<DaemonConnection | null> {
+export async function awaitDaemonConnection(): Promise<DaemonConnection | null> {
 	const state = getDaemonClientState();
 	if (state.connection) return state.connection;
 	if (state.connecting) {

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { generateWorkstreamName } from "../workstreams/name.ts";
+import { generateWorkstreamName } from "../name.ts";
 
 function sequenceRng(values: number[]): () => number {
 	let index = 0;

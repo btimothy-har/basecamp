@@ -11,8 +11,11 @@ type MockPi = {
 	tools: ToolSpec[];
 	commands: string[];
 	onEvents: Array<{ event: string; handler: (event: unknown) => void }>;
+	flags: Map<string, unknown>;
 	registerTool: (tool: ToolSpec) => void;
 	registerCommand: (name: string, _spec: unknown) => void;
+	registerFlag: (name: string, _spec: unknown) => void;
+	getFlag: (_name: string) => unknown;
 	getAllTools: () => unknown[];
 	getSessionName: () => string;
 	setSessionName: (_name: string) => void;
@@ -20,15 +23,23 @@ type MockPi = {
 };
 
 function createMockPi(): MockPi {
+	const flags = new Map<string, unknown>();
 	return {
 		tools: [],
 		commands: [],
 		onEvents: [],
+		flags,
 		registerTool(tool) {
 			this.tools.push(tool);
 		},
 		registerCommand(name) {
 			this.commands.push(name);
+		},
+		registerFlag(name, _spec) {
+			this.flags.set(name, undefined);
+		},
+		getFlag(_name) {
+			return undefined;
 		},
 		getAllTools() {
 			return [];
@@ -67,6 +78,9 @@ describe("pi-swarm extension entrypoint", () => {
 		assert.equal(toolNames.has("dispatch_agent"), true);
 		assert.equal(toolNames.has("list_agents"), true);
 		assert.equal(toolNames.has("wait_for_agent"), true);
+		assert.equal(toolNames.has("launch_workstream"), true);
+		assert.equal(toolNames.has("list_workstreams"), true);
+		assert.equal(toolNames.has("set_workstream_status"), true);
 		assert.equal(toolNames.has("agent"), false);
 
 		const agentNames = new Set(listCatalogItemsByType("agents", { cwd: process.cwd() }).map((item) => item.name));
@@ -94,6 +108,9 @@ describe("pi-swarm extension entrypoint", () => {
 		assert.equal(toolNames.has("dispatch_agent"), true);
 		assert.equal(toolNames.has("list_agents"), true);
 		assert.equal(toolNames.has("wait_for_agent"), true);
+		assert.equal(toolNames.has("launch_workstream"), true);
+		assert.equal(toolNames.has("list_workstreams"), true);
+		assert.equal(toolNames.has("set_workstream_status"), true);
 		assert.equal(toolNames.has("agent"), false);
 		assert.equal(pi.commands.includes("code-review"), true);
 		assert.equal(pi.commands.includes("agents"), false);

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { buildWorkstreamLaunchBrief, type WorkstreamLaunchBriefInput } from "../workstreams/brief.ts";
+import { buildWorkstreamLaunchBrief, type WorkstreamLaunchBriefInput } from "../brief.ts";
 
 interface WorkstreamLaunchBriefInputOverrides {
 	source?: Partial<WorkstreamLaunchBriefInput["source"]>;
