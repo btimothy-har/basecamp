@@ -167,6 +167,8 @@ describe("assemblePrompt", () => {
 		assert.match(prompt, /launch_workstream/);
 		assert.match(prompt, /list_workstreams/);
 		assert.match(prompt, /set_workstream_status/);
+		// the migrated tool name replaces the deprecated launch-index name
+		assert.doesNotMatch(prompt, /list_workstream_launches/);
 		assert.match(prompt, /It does not start an agent/);
 		assert.match(prompt, /Tell the user to run `pi --workstream` in the opened pane/);
 		assert.match(prompt, /infers the slug from the worktree label/);

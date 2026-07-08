@@ -335,6 +335,8 @@ Important fields:
 - `workstream`: the workstream slug or id to attach to.
 - `repo`: the current repo identity (`<org>/<name>`). "Which repos touched" derives from agent rows.
 - `worktree_label`: the active worktree label (e.g. `copilot/<slug>`).
+- `status`: optional membership status, default `attached` (`attached` | `failed`).
+- `error`: optional/nullable error detail for a failed attach.
 
 ### `attach_workstream_agent_ack` daemon → client
 

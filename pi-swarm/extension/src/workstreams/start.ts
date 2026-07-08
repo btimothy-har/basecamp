@@ -13,7 +13,9 @@ import type { DaemonClient, WorkstreamDetail } from "../agents/daemon/client.ts"
 import { resolveDaemonPaths } from "../agents/daemon/paths.ts";
 import { buildWorkstreamLaunchBrief } from "./brief.ts";
 
-const WORKSPACE_START_WAIT_MS = 1000;
+// Cap only; waitForWorkspaceState resolves early via the workspace onChange event, so a generous
+// cap costs nothing on the fast path and gives slow repo/worktree initialization time to complete.
+const WORKSPACE_START_WAIT_MS = 5000;
 
 const COPILOT_WORKTREE_PREFIX = "copilot/";
 
@@ -175,16 +177,9 @@ export async function startWorkstream(
 	const socketPath = deps.resolveSocketPath();
 
 	let identifier: string;
-	let detail: WorkstreamDetail | null;
-
+	let inferredFromWorktree = false;
 	if (flagValue?.trim()) {
 		identifier = flagValue.trim();
-		try {
-			detail = await deps.getWorkstreamDetail(socketPath, identifier);
-		} catch (err) {
-			ctx.ui.notify(`Could not resolve workstream "${identifier}": ${errorMessage(err)}`, "error");
-			return;
-		}
 	} else {
 		const inferredSlug = inferSlugFromWorktreeLabel(worktreeLabel);
 		if (!inferredSlug) {
@@ -195,12 +190,16 @@ export async function startWorkstream(
 			return;
 		}
 		identifier = inferredSlug;
-		try {
-			detail = await deps.getWorkstreamDetail(socketPath, identifier);
-		} catch (err) {
-			ctx.ui.notify(`Could not resolve workstream "${identifier}" from worktree label: ${errorMessage(err)}`, "error");
-			return;
-		}
+		inferredFromWorktree = true;
+	}
+
+	let detail: WorkstreamDetail | null;
+	try {
+		detail = await deps.getWorkstreamDetail(socketPath, identifier);
+	} catch (err) {
+		const context = inferredFromWorktree ? " from worktree label" : "";
+		ctx.ui.notify(`Could not resolve workstream "${identifier}"${context}: ${errorMessage(err)}`, "error");
+		return;
 	}
 
 	if (!detail) {

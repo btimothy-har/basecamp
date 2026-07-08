@@ -234,6 +234,8 @@ export interface CreateWorkstreamAckFrame {
 	error?: string | null;
 }
 
+export type WorkstreamAgentStatus = "attached" | "failed";
+
 export interface AttachWorkstreamAgentFrame {
 	type: "attach_workstream_agent";
 	v: typeof PROTOCOL_VERSION;
@@ -241,7 +243,7 @@ export interface AttachWorkstreamAgentFrame {
 	workstream: string;
 	repo?: string | null;
 	worktree_label?: string | null;
-	status?: string;
+	status?: WorkstreamAgentStatus;
 	error?: string | null;
 }
 

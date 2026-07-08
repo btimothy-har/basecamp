@@ -5,7 +5,7 @@ import { getAgentMode } from "pi-core/session/agent-mode.ts";
 import { shortSessionId as defaultShortSessionId } from "pi-core/session/session-id.ts";
 import type { PiSwarmDependencies } from "../../dependencies.ts";
 import { errorMessage } from "../errors.ts";
-import { DEFAULT_AGENT_MAX_DEPTH } from "../types.ts";
+import { resolveAgentDepthState } from "../types.ts";
 import { connect, type DaemonConnection, type DaemonIdentity, ensureDaemon, fetchRunSummary } from "./client.ts";
 import { type PeerMessageDeliveryFrame, PROTOCOL_VERSION } from "./frames.ts";
 import { buildDeterministicAgentHandle } from "./handles.ts";
@@ -295,12 +295,9 @@ async function connectSpawnedAgent(ctx: ExtensionContext): Promise<DaemonConnect
 }
 
 export function registerDaemonClient(pi: ExtensionAPI, deps: PiSwarmDependencies): void {
-	const depth = Number(process.env.BASECAMP_AGENT_DEPTH ?? "0");
+	const { isTopLevel, atMaxDepth } = resolveAgentDepthState();
 	const runId = process.env.BASECAMP_RUN_ID;
-	const isTopLevel = Number.isFinite(depth) ? depth <= 0 : true;
 	const isDaemonSpawnedAgent = !isTopLevel && Boolean(runId);
-	const maxDepth = Number(process.env.BASECAMP_AGENT_MAX_DEPTH ?? DEFAULT_AGENT_MAX_DEPTH);
-	const atMaxDepth = depth >= maxDepth;
 
 	// Expose this session's public daemon handle so consumers (e.g. the workstream startup flow)
 	// can attach the running session as a workstream agent. Pure derivation from ctx; safe for any session.

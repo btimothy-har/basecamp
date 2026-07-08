@@ -2,7 +2,7 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { awaitDaemonConnection, registerDaemonClient } from "./agents/daemon/index.ts";
 import { registerAgentCatalog } from "./agents/index.ts";
 import { registerReviewCommand } from "./agents/review/command.ts";
-import { DEFAULT_AGENT_MAX_DEPTH } from "./agents/types.ts";
+import { resolveAgentDepthState } from "./agents/types.ts";
 import type { PiSwarmDependencies } from "./dependencies.ts";
 import { createLocalPiSwarmDependencies } from "./local-adapters.ts";
 import { registerWorkstreamStartup } from "./workstreams/start.ts";
@@ -11,10 +11,7 @@ import { registerWorkstreamTools } from "./workstreams/tools.ts";
 const defaultPiSwarmDependencies = createLocalPiSwarmDependencies();
 
 function registerWorkstreams(pi: ExtensionAPI): void {
-	const depth = Number(process.env.BASECAMP_AGENT_DEPTH ?? "0");
-	const isTopLevel = Number.isFinite(depth) ? depth <= 0 : true;
-	const maxDepth = Number(process.env.BASECAMP_AGENT_MAX_DEPTH ?? DEFAULT_AGENT_MAX_DEPTH);
-	const atMaxDepth = depth >= maxDepth;
+	const { isTopLevel, atMaxDepth } = resolveAgentDepthState();
 
 	if (isTopLevel && !atMaxDepth) {
 		registerWorkstreamTools(pi, awaitDaemonConnection);

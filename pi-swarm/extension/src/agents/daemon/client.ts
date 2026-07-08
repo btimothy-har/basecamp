@@ -20,6 +20,7 @@ import {
 	type UpdateWorkstreamAckFrame,
 	type WaitResultFrame,
 	type WaitResultItem,
+	type WorkstreamAgentStatus,
 } from "./frames.ts";
 import { type DaemonPaths, ensureDaemonRuntimeDir, resolveDaemonPaths } from "./paths.ts";
 
@@ -912,7 +913,7 @@ export interface DaemonClient {
 		workstream: string;
 		repo?: string | null;
 		worktreeLabel?: string | null;
-		status?: string;
+		status?: WorkstreamAgentStatus;
 		error?: string | null;
 	}): Promise<AttachWorkstreamAgentResult>;
 	updateWorkstream(input: { workstream: string; status: "open" | "closed" }): Promise<UpdateWorkstreamResult>;
