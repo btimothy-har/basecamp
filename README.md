@@ -251,12 +251,10 @@ For anything beyond a one-liner, point the command at a script you maintain outs
 
 ## Package Layout
 
-basecamp is split into root-level products:
+basecamp ships two artifacts, assembled from paired bilingual contexts (`<context>/{ts,py}`):
 
-- `src/basecamp/` — Python composition package for the `basecamp` setup/projects/install CLI
-- `core/config/` — Python package for generic Basecamp settings, files, paths, and exceptions
-- `workspace/projects/` — Python package for project and environment config and the interactive projects/environments menus
-- `extension.ts` + `<context>/ts/` — the single Pi extension: project context, session UI, worktrees, workflow, git, engineering, and companion features
+- `extension.ts` + `<context>/ts/` — the single Pi extension: project context, session UI, worktrees, workflow, git, engineering, agents, and companion features
+- `src/basecamp/` + `<context>/py/basecamp/<context>/` — the single `basecamp` Python distribution (PEP 420 namespace package): setup/projects/install CLI plus the `core`, `workspace`, `swarm` (daemon), and `companion` (TUI) portions
 
 ## License
 

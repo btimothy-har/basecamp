@@ -4,18 +4,12 @@
 
 A project-aware Pi extension suite for AI coding agents. Configures project context, manages isolated git worktrees, and provides workflow tooling for coding sessions.
 
-> **Repo consolidation in progress** (docs/design/repo-consolidation.md): phase 1 (TypeScript) has landed — the repo root is now a single Pi extension assembled from paired contexts. Python packages consolidate in phase 3; this file gets its full rewrite in phase 4.
-
-Root-level products:
+The repo ships exactly two artifacts, assembled from paired bilingual contexts (design record: docs/design/repo-consolidation.md):
 
 | Product | Directory | Purpose |
 |---------|-----------|---------|
 | Basecamp Pi extension | repo root (`extension.ts` + `<context>/ts/`) | The single Pi package: all session, workspace, workflow, and agent behavior, assembled from context modules |
-| `basecamp` | `src/basecamp/` | Python composition CLI for setup/projects/install |
-| `basecamp-core` | `core/config/` | Generic settings/files/paths/exceptions (folds into `core/py` in phase 3) |
-| `basecamp-workspace` | `workspace/projects/` | Project + per-repo environment config and menus (folds into `workspace/py` in phase 3) |
-| `pi-swarm` daemon | `pi-swarm/cli/` | Python daemon CLI/runtime (folds into `swarm/py` in phase 3) |
-| `companion-tui` | `pi-companion/tui/` | Python companion TUI/analyzer (folds into `companion/py` in phase 3) |
+| `basecamp` Python distribution | `src/basecamp/` + `<context>/py/basecamp/<context>/` | One PEP 420 namespace package: CLI/installer shell plus `basecamp.core`, `basecamp.workspace`, `basecamp.swarm` (daemon), `basecamp.companion` (TUI) portions |
 
 ## Repo Map
 
@@ -26,21 +20,25 @@ scripts/check-boundaries.ts                # Import-boundary lint (cross-context
 
 core/                          # Bilingual context: foundation
 ├── ts/                         # registries, session lifecycle, state, model aliases, platform seams
-└── config/                     # basecamp-core Python package (→ core/py in phase 3)
+├── py/basecamp/core/           # settings, paths, files, exceptions
+└── py/tests/
 
 workspace/                     # Bilingual context: projects + worktrees
 ├── ts/                         # project context, prompt assembly, worktree service, guards
-└── projects/                   # basecamp-workspace Python package (→ workspace/py in phase 3)
+├── py/basecamp/workspace/      # project/env config, interactive menus
+└── py/tests/
 
 swarm/                         # Bilingual context: async agents
 ├── ts/                         # agent tools, launch policy, daemon client, /code-review, workstreams
+├── py/basecamp/swarm/          # the daemon: FastAPI over UDS, SQLite store, runner
+├── py/tests/
 ├── protocol/                   # wire-protocol docs and frame fixtures (TS↔Python contract)
 └── skills/                     # agents skill
 
 companion/                     # Bilingual context: companion
-└── ts/                         # session hooks, tmux panes, analysis registration
-pi-companion/tui/               # Python companion TUI/analyzer (→ companion/py in phase 3)
-pi-swarm/cli/                   # Python swarm daemon (→ swarm/py in phase 3)
+├── ts/                         # session hooks, tmux panes, analysis registration
+├── py/basecamp/companion/      # Textual TUI, LLM analyzer
+└── py/tests/
 
 ui/ts/                         # Session UI: footer, title, mode editor
 tasks/                         # Tasks + planning: ts/ + skills/
@@ -49,11 +47,13 @@ bash-reviewer/ts/              # LLM bash reviewer: gates risky git/gh/shell com
 engineering/                   # Engineering: ts/ + skills/ + prompts/
 browser/ts/                    # Browser automation tools (puppeteer-core over CDP)
 
-src/basecamp/                  # Root Python composition package
-├── cli.py                      # Click entry point (setup, projects, install, companion)
+src/basecamp/                  # Python shell portion (no __init__.py — namespace package)
+├── cli.py                      # Click entry point (setup, projects, install, companion, swarm)
 ├── setup.py                    # Environment setup (prerequisites, scaffolding)
 └── installer.py                # Install orchestration: uv tool + npm install + single `pi install`
 ```
+
+`basecamp` is a PEP 420 namespace package assembled from the portion roots (`src`, `core/py`, `workspace/py`, `swarm/py`, `companion/py`). No portion may contain a `basecamp/__init__.py` — that silently shadows every sibling portion (`make lint` guards this).
 
 Cross-context TypeScript imports use Node subpath imports (`#core/*` freely; other contexts only via `#<context>/index.ts`), enforced by `scripts/check-boundaries.ts` in `npm run check`.
 
@@ -67,11 +67,11 @@ Prompts are layered (environment → working style → project context → tools
 
 ### Session Modes
 
-Agent modes (`core/ts`, in `SESSION_STATE_AGENT_MODES`) are `analysis`, `planning`, `copilot`, `supervisor`, and `executor`. shift+tab (`cycleAgentMode`) rotates only the cyclable modes — copilot is excluded from the cycle. `copilot` is a locked, launch-only mode: it is entered solely via `pi --copilot` (registered in `registerSession`, which forces copilot at `session_start` when the flag is present, else restores the stored mode) and is immutable — `cycleAgentMode` is a no-op in copilot, so shift+tab can neither enter nor leave it. `pi --copilot` takes precedence over `pi --workstream` (the workstream startup defers with a warning). Because Pi cannot unregister or per-session-gate a tool, `plan()` is removed from copilot by two layers keyed on `getAgentMode() === "copilot"`: a `tool_call` block in `pi-tasks` (the hard guarantee) and filtering the `plan` catalog item out of the copilot capabilities index in `workspace/pi` (with copilot.md carrying no plan() guidance). The `/plan` slash command is deprecated repo-wide; the `plan()` tool and `/show-plan` remain for non-copilot sessions.
+Agent modes (`core/ts`, in `SESSION_STATE_AGENT_MODES`) are `analysis`, `planning`, `copilot`, `supervisor`, and `executor`. shift+tab (`cycleAgentMode`) rotates only the cyclable modes — copilot is excluded from the cycle. `copilot` is a locked, launch-only mode: it is entered solely via `pi --copilot` (registered in `registerSession`, which forces copilot at `session_start` when the flag is present, else restores the stored mode) and is immutable — `cycleAgentMode` is a no-op in copilot, so shift+tab can neither enter nor leave it. `pi --copilot` takes precedence over `pi --workstream` (the workstream startup defers with a warning). Because Pi cannot unregister or per-session-gate a tool, `plan()` is removed from copilot by two layers sharing one predicate (`isPlanDisabledFor` in `tasks/ts/planning/plan-copilot-guard.ts`): the tasks module's `tool_call` block (the hard guarantee) and the workspace module's copilot capabilities-index filter (with copilot.md carrying no plan() guidance). The `/plan` slash command is deprecated repo-wide; the `plan()` tool and `/show-plan` remain for non-copilot sessions.
 
 ### Extension Modules
 
-All TypeScript behavior ships as one Pi extension registered from the repo root. `extension.ts` composes the context modules (`core`, `ui`, `workspace`, `tasks`, `git`, `bash-reviewer`, `engineering`, `browser`, `companion`, `swarm`) in a fixed order — core first — so in-extension init is deterministic and identical on `/reload`. Each context's TS lives in `<context>/ts/` with a `register*` default export in its `index.ts`; cross-context imports go through `#`-subpath aliases and are boundary-checked. Async-agent protocol and daemon runtime live in the `swarm/` context (daemon Python still at `pi-swarm/cli/` until phase 3).
+All TypeScript behavior ships as one Pi extension registered from the repo root. `extension.ts` composes the context modules (`core`, `ui`, `workspace`, `tasks`, `git`, `bash-reviewer`, `engineering`, `browser`, `companion`, `swarm`) in a fixed order — core first — so in-extension init is deterministic and identical on `/reload`. Each context's TS lives in `<context>/ts/` with a `register*` default export in its `index.ts`; cross-context imports go through `#`-subpath aliases and are boundary-checked. Async-agent protocol, daemon client, and the Python daemon all live in the `swarm/` context.
 
 ### Code Review
 
@@ -110,7 +110,7 @@ The `pi --workstream` flag is boolean: bare `--workstream` infers the workstream
 ## Development
 
 - **Python**: 3.12+, managed with `uv`
-- **Install (dev)**: `uv run install.py -e` (editable mode; installs `basecamp` with all extras, then registers the repo root as the single Pi extension, cleaning up legacy per-package registrations)
+- **Install (dev)**: `uv run install.py -e` (editable mode; installs the `basecamp` tool, then registers the repo root as the single Pi extension, cleaning up legacy per-package registrations)
 - **Python lint**: `uv run ruff check .` / `uv run ruff format --check .`
 - **TypeScript check**: `npm run check` at the repo root (tsc whole-graph + biome + import-boundary check); `make lint` runs it after the Python checks
 - **Fix**: `make fix` runs Python fixes plus `npm run lint:fix` / `npm run format`
@@ -118,6 +118,6 @@ The `pi --workstream` flag is boolean: bare `--workstream` infers the workstream
 ### Testing
 
 - **Run all**: `make test` from repo root runs `uv run pytest` plus `npm test`.
-- **Python**: `uv run pytest` uses root `pyproject.toml` — `testpaths` covers root `tests/` plus the Python package test dirs; `pythonpath` includes `src`, `core/config/src`, `workspace/projects/src`, `pi-swarm/cli/src`, and `pi-companion/tui/src` (retired in phase 3).
-- **TypeScript**: `npm test` runs the Node test runner over every context's `ts/**/*.test.ts` in one process.
-- **TS tests live beside their code** in `<context>/ts/**/tests/`; Python package tests remain under `core/config/tests/`, `workspace/projects/tests/`, `pi-swarm/cli/tests/`, and `pi-companion/tui/tests/`.
+- **Python**: `uv run pytest` uses root `pyproject.toml` — `testpaths` covers root `tests/` plus each context's `py/tests/`; imports resolve via the editable install (`uv sync`), no `pythonpath` stitching.
+- **TypeScript**: `npm test` runs the Node test runner over every context's `ts/**/*.test.ts` in one process, plus `extension.test.ts` (whole-graph load + registration under strict Node).
+- **Tests live beside their code**: `<context>/ts/**/tests/` and `<context>/py/tests/`.

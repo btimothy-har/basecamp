@@ -39,7 +39,7 @@ We want agents that can run **concurrently**, **persist their conversational thr
 
 ## 3. Former synchronous model
 
-Before the async-only surface cleanup, the legacy code in `pi-swarm/extension/src/agents/` worked as follows:
+Before the async-only surface cleanup, the legacy code in `pi-swarm/extension/src/agents/` (now `swarm/ts/agents/`) worked as follows:
 
 - **Dispatch and execution (`executor.ts`).** `spawnAgent()` builds a `pi --mode json -p` argv via `buildPiArgs()` and spawns it as a child process. Notable flags: `--model`, `--worktree-dir`, `--thinking`, `--session-dir` (the subagent's own session), `--no-prompt-templates`, `--read-only` (whenever the agent's run kind is not `mutative`), `--agent-prompt` (the persona, written to a file), and `--tools` (a resolved allowlist). Skill discovery is left enabled for every subagent, which loads any installed skill on demand via the `skill` tool or by reading the skill file. The parent reads the child's stdout, parses newline-delimited JSON events (`tool_execution_start`, `tool_execution_end`, `message_end`), and renders progress. The agent's **result is the last assistant message** ("last assistant message wins"); usage and tool calls are aggregated for display.
 - **The `agent` tool (`tool.ts`).** Registered as a pi tool the LLM calls. It blocks on `spawnAgent()` and returns the child's final output as the tool result for immediate reasoning. Before running, it first requires that the `agents` skill has been invoked (`hasInvokedSkill("agents")`), then enforces two guards:
