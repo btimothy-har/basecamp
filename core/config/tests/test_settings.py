@@ -85,14 +85,27 @@ class TestInstalledModules:
         assert data["version"] == CONFIG_VERSION
         assert data["installed_modules"] == ["core", "workspace"]
 
-    def test_set_install_metadata_writes_only_installer_metadata(self, tmp_path: Path) -> None:
+    def test_set_install_metadata_preserves_other_sections(self, tmp_path: Path) -> None:
         cfg = _cfg(tmp_path)
-        cfg._write({"projects": {"stale": {}}, "models": {"fast": "old"}})
+        cfg._write(
+            {
+                "install_dir": "/tmp/old",
+                "installed_modules": ["core"],
+                "logseq": {"graph_dir": "~/logseq"},
+                "environments": {"acme/app": {"setup": "uv sync"}},
+            }
+        )
 
         cfg.set_install_metadata(install_dir="/tmp/ws", installed_modules=["core", "swarm"])
 
         data = json.loads(cfg.path.read_text())
-        assert data == {"version": CONFIG_VERSION, "install_dir": "/tmp/ws", "installed_modules": ["core", "swarm"]}
+        assert data == {
+            "version": CONFIG_VERSION,
+            "install_dir": "/tmp/ws",
+            "installed_modules": ["core", "swarm"],
+            "logseq": {"graph_dir": "~/logseq"},
+            "environments": {"acme/app": {"setup": "uv sync"}},
+        }
 
 
 class TestSections:
