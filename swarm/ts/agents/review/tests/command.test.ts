@@ -1,8 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
-import type { PiSwarmDependencies } from "../../../dependencies.ts";
-import { registerReviewCommand } from "../command.ts";
+import { type ReviewCommandDeps, registerReviewCommand } from "../command.ts";
 
 type CommandOptions = Parameters<ExtensionAPI["registerCommand"]>[1];
 
@@ -21,32 +20,14 @@ function createFakePi(): ExtensionAPI {
 	} as unknown as ExtensionAPI;
 }
 
-function createFakeDeps(): PiSwarmDependencies {
+function createFakeDeps(): ReviewCommandDeps {
 	return {
 		basecampExtensionRoot: "/basecamp",
-		registerCatalogProvider() {
-			/* no-op */
-		},
 		resolveModelAlias() {
 			return undefined;
 		},
-		hasInvokedSkill() {
-			return false;
-		},
 		getWorkspaceState() {
 			return null;
-		},
-		formatTaskProgressSummary() {
-			return null;
-		},
-		renderCompactTaskProgressLines() {
-			return [];
-		},
-		formatTitle(title: string, tag: string) {
-			return `${title} [${tag}]`;
-		},
-		shortSessionId(sessionId: string) {
-			return sessionId.slice(0, 8);
 		},
 	};
 }

@@ -3,7 +3,7 @@ import type { ExtensionAPI, SessionEntry } from "@earendil-works/pi-coding-agent
 import { isCompanionActive } from "#core/platform/env.ts";
 import { getTasksAccess } from "#core/platform/tasks-access.ts";
 import { getWorkspaceService } from "#core/platform/workspace.ts";
-import { buildTitleContext } from "#ui/title.ts";
+import { buildTitleContext } from "#ui/index.ts";
 
 export const MIN_USER_TURNS = 2;
 export const ANALYSIS_TIMEOUT_MS = 60_000;

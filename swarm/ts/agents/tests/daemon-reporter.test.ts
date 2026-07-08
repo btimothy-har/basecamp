@@ -3,10 +3,9 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { afterEach, beforeEach, describe, it } from "node:test";
-import type { PiSwarmDependencies } from "../../dependencies.ts";
 import type { DaemonConnection } from "../daemon/client.ts";
 import type { Frame } from "../daemon/frames.ts";
-import { registerDaemonClient } from "../daemon/index.ts";
+import { type DaemonClientDeps, registerDaemonClient } from "../daemon/index.ts";
 import { registerDaemonReporter } from "../daemon/reporter.ts";
 import {
 	BASECAMP_RUN_ATTEMPT,
@@ -97,19 +96,14 @@ afterEach(async () => {
 });
 
 describe("daemon reporter", () => {
-	const deps = {
+	const deps: DaemonClientDeps = {
 		hasInvokedSkill: () => true,
 		getWorkspaceState: () => null,
 		basecampExtensionRoot: process.cwd(),
 		resolveModelAlias: (model: string) => model,
-		formatTaskProgressSummary: () => null,
-		renderCompactTaskProgressLines: () => [],
 		formatTitle: () => "basecamp",
 		shortSessionId: (value: string) => value.slice(-8),
-		registerCatalogProvider: () => {
-			/* no-op */
-		},
-	} as unknown as PiSwarmDependencies;
+	};
 
 	it("sends telemetry and final result report", async () => {
 		const sent: Frame[] = [];

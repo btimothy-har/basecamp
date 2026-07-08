@@ -2,8 +2,7 @@ import assert from "node:assert/strict";
 import { afterEach, beforeEach, describe, it } from "node:test";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { listCatalogItemsByType } from "#core/platform/catalog.ts";
-import defaultPiSwarm, { registerPiSwarm } from "./index.ts";
-import { createLocalPiSwarmDependencies } from "./local-adapters.ts";
+import defaultPiSwarm from "./index.ts";
 
 type ToolSpec = { name: string };
 
@@ -75,6 +74,7 @@ describe("pi-swarm extension entrypoint", () => {
 
 		const toolNames = new Set(pi.tools.map((tool) => tool.name));
 		assert.deepEqual(pi.commands, ["code-review"]);
+		assert.equal(pi.commands.includes("agents"), false);
 		assert.equal(toolNames.has("dispatch_agent"), true);
 		assert.equal(toolNames.has("list_agents"), true);
 		assert.equal(toolNames.has("wait_for_agent"), true);
@@ -98,25 +98,5 @@ describe("pi-swarm extension entrypoint", () => {
 				"worker",
 			]),
 		);
-	});
-
-	it("registerPiSwarm registers async daemon tools and no legacy sync entrypoints", () => {
-		const pi = createMockPi();
-		registerPiSwarm(pi as unknown as ExtensionAPI, createLocalPiSwarmDependencies());
-
-		const toolNames = new Set(pi.tools.map((tool) => tool.name));
-		assert.equal(toolNames.has("dispatch_agent"), true);
-		assert.equal(toolNames.has("list_agents"), true);
-		assert.equal(toolNames.has("wait_for_agent"), true);
-		assert.equal(toolNames.has("launch_workstream"), true);
-		assert.equal(toolNames.has("list_workstreams"), true);
-		assert.equal(toolNames.has("set_workstream_status"), true);
-		assert.equal(toolNames.has("agent"), false);
-		assert.equal(pi.commands.includes("code-review"), true);
-		assert.equal(pi.commands.includes("agents"), false);
-
-		const agentNames = new Set(listCatalogItemsByType("agents", { cwd: process.cwd() }).map((item) => item.name));
-		assert.equal(agentNames.has("worker"), true);
-		assert.equal(agentNames.has("scout"), true);
 	});
 });

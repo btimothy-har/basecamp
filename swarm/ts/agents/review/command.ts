@@ -1,14 +1,16 @@
 import { randomUUID } from "node:crypto";
 import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
 import { exec } from "#core/platform/exec.ts";
+import { resolveModelAlias } from "#core/platform/model-aliases.ts";
 import { resolveAliasedModel } from "#core/platform/model-resolution.ts";
-import type { PiSwarmDependencies } from "../../dependencies.ts";
+import { getWorkspaceState, type WorkspaceState } from "#core/platform/workspace.ts";
 import { createDaemonClient } from "../daemon/client.ts";
 import { dispatchWithHandleRetry } from "../daemon/dispatch-retry.ts";
 import { buildAgentHandle } from "../daemon/handles.ts";
 import { getActiveDaemonConnection } from "../daemon/index.ts";
 import { discoverAgents } from "../discovery.ts";
 import { errorMessage } from "../errors.ts";
+import { basecampExtensionRoot } from "../extension-root.ts";
 import { buildAgentLaunchSpec, processEnvForSpawn } from "../launch.ts";
 import { annotateFindings } from "./annotate-pane.ts";
 import { isSubagent, persistReviewArtifact } from "./command-helpers.ts";
@@ -50,7 +52,18 @@ async function hasReviewableChanges(pi: ExtensionAPI, cwd: string, mergeBase: st
 	return untracked.stdout.trim() !== "";
 }
 
-export function registerReviewCommand(pi: ExtensionAPI, deps: PiSwarmDependencies): void {
+/** Host-session capabilities the review command uses (injectable for tests). */
+export interface ReviewCommandDeps {
+	getWorkspaceState: () => WorkspaceState | null;
+	basecampExtensionRoot: string;
+	resolveModelAlias: (alias: string) => string | undefined;
+}
+
+function defaultReviewCommandDeps(): ReviewCommandDeps {
+	return { getWorkspaceState, basecampExtensionRoot: basecampExtensionRoot(), resolveModelAlias };
+}
+
+export function registerReviewCommand(pi: ExtensionAPI, deps: ReviewCommandDeps = defaultReviewCommandDeps()): void {
 	pi.registerCommand("code-review", {
 		description: "Run an independent multi-agent code review of the current branch",
 		handler: async (args: string, ctx: ExtensionCommandContext) => {

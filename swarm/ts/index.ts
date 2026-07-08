@@ -3,12 +3,8 @@ import { awaitDaemonConnection, registerDaemonClient } from "./agents/daemon/ind
 import { registerAgentCatalog } from "./agents/index.ts";
 import { registerReviewCommand } from "./agents/review/command.ts";
 import { resolveAgentDepthState } from "./agents/types.ts";
-import type { PiSwarmDependencies } from "./dependencies.ts";
-import { createLocalPiSwarmDependencies } from "./local-adapters.ts";
 import { registerWorkstreamStartup } from "./workstreams/start.ts";
 import { registerWorkstreamTools } from "./workstreams/tools.ts";
-
-const defaultPiSwarmDependencies = createLocalPiSwarmDependencies();
 
 function registerWorkstreams(pi: ExtensionAPI): void {
 	const { isTopLevel, atMaxDepth } = resolveAgentDepthState();
@@ -22,17 +18,8 @@ function registerWorkstreams(pi: ExtensionAPI): void {
 }
 
 export default function (pi: ExtensionAPI): void {
-	registerAgentCatalog(defaultPiSwarmDependencies);
-	registerDaemonClient(pi, defaultPiSwarmDependencies);
-	registerReviewCommand(pi, defaultPiSwarmDependencies);
+	registerAgentCatalog();
+	registerDaemonClient(pi);
+	registerReviewCommand(pi);
 	registerWorkstreams(pi);
 }
-
-export function registerPiSwarm(pi: ExtensionAPI, deps: PiSwarmDependencies = defaultPiSwarmDependencies): void {
-	registerAgentCatalog(deps);
-	registerDaemonClient(pi, deps);
-	registerReviewCommand(pi, deps);
-	registerWorkstreams(pi);
-}
-
-export type { PiSwarmDependencies } from "./dependencies.ts";

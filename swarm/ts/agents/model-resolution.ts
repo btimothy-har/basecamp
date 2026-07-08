@@ -1,4 +1,3 @@
-import type { PiSwarmDependencies } from "../dependencies.ts";
 import type { ModelStrategy } from "./types.ts";
 
 interface ParentModel {
@@ -9,7 +8,7 @@ interface ParentModel {
 export function resolveModel(
 	strategy: ModelStrategy,
 	parentModel: ParentModel | undefined,
-	deps: Pick<PiSwarmDependencies, "resolveModelAlias">,
+	deps: { resolveModelAlias: (alias: string) => string | undefined },
 ): string | undefined {
 	switch (strategy) {
 		case "default":

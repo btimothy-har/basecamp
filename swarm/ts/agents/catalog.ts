@@ -2,7 +2,7 @@
  * Catalog provider for workflow-owned agents.
  */
 
-import type { CatalogItem, CatalogProvider } from "../dependencies.ts";
+import { type CatalogItem, registerCatalogProvider } from "#core/platform/catalog.ts";
 import type { AgentConfig } from "./discovery.ts";
 import { DEFAULT_AGENT_MAX_DEPTH, getAgentToolAllowlist } from "./types.ts";
 
@@ -26,11 +26,8 @@ function toCatalogItem(agent: AgentConfig): CatalogItem {
 	};
 }
 
-export function registerAgentCatalogProvider(
-	getAgents: () => AgentConfig[],
-	deps: { registerCatalogProvider: (provider: CatalogProvider) => void },
-): void {
-	deps.registerCatalogProvider({
+export function registerAgentCatalogProvider(getAgents: () => AgentConfig[]): void {
+	registerCatalogProvider({
 		id: "basecamp.agents",
 		list: () => {
 			if (!agentsAvailable()) return [];

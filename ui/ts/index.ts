@@ -8,3 +8,6 @@ export default function (pi: ExtensionAPI): void {
 	registerModeEditor(pi);
 	registerTitle(pi);
 }
+
+// Public surface for other contexts (imported via #ui/index.ts only).
+export { buildTitleContext, formatTitle } from "./title.ts";

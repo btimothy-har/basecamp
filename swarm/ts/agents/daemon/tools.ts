@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Text } from "@earendil-works/pi-tui";
 import { Type } from "@sinclair/typebox";
-import type { PiSwarmDependencies } from "../../dependencies.ts";
+import type { WorkspaceState } from "#core/platform/workspace.ts";
 import { discoverAgents } from "../discovery.ts";
 import { buildAgentLaunchSpec, buildAgentTitleBase, processEnvForSpawn } from "../launch.ts";
 import type { DaemonConnection } from "./client.ts";
@@ -15,6 +15,14 @@ import {
 	type WaitResultFrame,
 } from "./frames.ts";
 import { buildAgentHandle } from "./handles.ts";
+
+/** Capabilities daemon tools need from the host session (injectable for tests). */
+export interface DaemonToolDeps {
+	hasInvokedSkill: (name: string) => boolean;
+	getWorkspaceState: () => WorkspaceState | null;
+	basecampExtensionRoot: string;
+	resolveModelAlias: (alias: string) => string | undefined;
+}
 
 interface DispatchDetails {
 	agentHandle: string;
@@ -247,7 +255,7 @@ function shortListAgentsSummary(agents: PublicListAgentItem[]): string {
 export function registerPeerMessageTools(
 	pi: ExtensionAPI,
 	getConnection: () => Promise<DaemonConnection | null>,
-	deps: Pick<PiSwarmDependencies, "hasInvokedSkill">,
+	deps: Pick<DaemonToolDeps, "hasInvokedSkill">,
 ): void {
 	pi.registerTool({
 		name: "message_agent",
@@ -408,7 +416,7 @@ export function registerPeerMessageTools(
 export function registerCancelAgentTool(
 	pi: ExtensionAPI,
 	getConnection: () => Promise<DaemonConnection | null>,
-	deps: Pick<PiSwarmDependencies, "hasInvokedSkill">,
+	deps: Pick<DaemonToolDeps, "hasInvokedSkill">,
 ): void {
 	pi.registerTool({
 		name: "cancel_agent",
@@ -485,10 +493,7 @@ export function registerCancelAgentTool(
 export function registerAskAgentTool(
 	pi: ExtensionAPI,
 	getConnection: () => Promise<DaemonConnection | null>,
-	deps: Pick<
-		PiSwarmDependencies,
-		"hasInvokedSkill" | "getWorkspaceState" | "basecampExtensionRoot" | "resolveModelAlias"
-	>,
+	deps: DaemonToolDeps,
 ): void {
 	pi.registerTool({
 		name: "ask_agent",
@@ -657,10 +662,7 @@ export function registerAskAgentTool(
 export function registerDaemonTools(
 	pi: ExtensionAPI,
 	getConnection: () => Promise<DaemonConnection | null>,
-	deps: Pick<
-		PiSwarmDependencies,
-		"hasInvokedSkill" | "getWorkspaceState" | "basecampExtensionRoot" | "resolveModelAlias"
-	>,
+	deps: DaemonToolDeps,
 ): void {
 	pi.registerTool({
 		name: "dispatch_agent",

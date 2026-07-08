@@ -33,13 +33,10 @@ const CONTEXTS = [
 const LEGACY_SPECIFIERS = ["pi-core", "pi-ui", "pi-tasks", "pi-workspace", "pi-git", "pi-bash-reviewer"];
 
 /**
- * Temporary deep-import exceptions, burned down in phase 2 of the
- * consolidation (seam collapse). Keyed by importing context.
+ * Deep-import exceptions. Empty since the phase-2 seam collapse — kept so a
+ * deliberate, documented exception has somewhere to live if one is ever needed.
  */
-const DEEP_IMPORT_ALLOWLIST: Record<string, readonly string[]> = {
-	swarm: ["#ui/title.ts", "#tasks/tasks/render.ts"],
-	companion: ["#ui/title.ts"],
-};
+const DEEP_IMPORT_ALLOWLIST: Record<string, readonly string[]> = {};
 
 function walk(dir: string, out: string[] = []): string[] {
 	for (const entry of readdirSync(dir)) {

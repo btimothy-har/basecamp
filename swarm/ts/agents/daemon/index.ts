@@ -1,16 +1,21 @@
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { registerAgentIdentityProvider } from "#core/platform/agent-identity.ts";
+import { resolveModelAlias } from "#core/platform/model-aliases.ts";
 import { resolveSessionProductRoleOverride } from "#core/platform/product-role.ts";
+import { hasInvokedSkill } from "#core/platform/skill-tracker.ts";
+import { getWorkspaceState } from "#core/platform/workspace.ts";
 import { getAgentMode } from "#core/session/agent-mode.ts";
 import { shortSessionId as defaultShortSessionId } from "#core/session/session-id.ts";
-import type { PiSwarmDependencies } from "../../dependencies.ts";
+import { formatTitle } from "#ui/index.ts";
 import { errorMessage } from "../errors.ts";
+import { basecampExtensionRoot } from "../extension-root.ts";
 import { resolveAgentDepthState } from "../types.ts";
 import { connect, type DaemonConnection, type DaemonIdentity, ensureDaemon, fetchRunSummary } from "./client.ts";
 import { type PeerMessageDeliveryFrame, PROTOCOL_VERSION } from "./frames.ts";
 import { buildDeterministicAgentHandle } from "./handles.ts";
 import { resolveDaemonPaths } from "./paths.ts";
 import { registerDaemonReporter } from "./reporter.ts";
+import type { DaemonToolDeps } from "./tools.ts";
 import {
 	registerAskAgentTool,
 	registerCancelAgentTool,
@@ -197,9 +202,26 @@ export async function awaitDaemonConnection(): Promise<DaemonConnection | null> 
  * - cwd = process.cwd()
  * - session_file = ctx.sessionManager.getSessionFile() when available
  */
+/** Host-session capabilities the daemon client wires into tools/identity (injectable for tests). */
+export interface DaemonClientDeps extends DaemonToolDeps {
+	formatTitle: (title: string, tag: string) => string;
+	shortSessionId: (sessionId: string) => string;
+}
+
+function defaultDaemonClientDeps(): DaemonClientDeps {
+	return {
+		hasInvokedSkill,
+		getWorkspaceState,
+		basecampExtensionRoot: basecampExtensionRoot(),
+		resolveModelAlias,
+		formatTitle,
+		shortSessionId: defaultShortSessionId,
+	};
+}
+
 export function deriveDaemonIdentity(
 	ctx: ExtensionContext,
-	deps?: Pick<PiSwarmDependencies, "formatTitle" | "shortSessionId">,
+	deps?: Pick<DaemonClientDeps, "formatTitle" | "shortSessionId">,
 ): DaemonIdentity {
 	const depth = Number(process.env.BASECAMP_AGENT_DEPTH ?? 0);
 	const safeDepth = Number.isFinite(depth) && depth >= 0 ? depth : 0;
@@ -249,7 +271,7 @@ function resolveSessionFile(ctx: ExtensionContext): string | null {
 
 function resolveDaemonAgentTitle(
 	ctx: ExtensionContext,
-	deps: Pick<PiSwarmDependencies, "formatTitle" | "shortSessionId">,
+	deps: Pick<DaemonClientDeps, "formatTitle" | "shortSessionId">,
 ): string | null {
 	const base = process.env.BASECAMP_AGENT_TITLE?.trim();
 	if (!base) return null;
@@ -294,7 +316,7 @@ async function connectSpawnedAgent(ctx: ExtensionContext): Promise<DaemonConnect
 	return connect(identity, { socketPath });
 }
 
-export function registerDaemonClient(pi: ExtensionAPI, deps: PiSwarmDependencies): void {
+export function registerDaemonClient(pi: ExtensionAPI, deps: DaemonClientDeps = defaultDaemonClientDeps()): void {
 	const { isTopLevel, atMaxDepth } = resolveAgentDepthState();
 	const runId = process.env.BASECAMP_RUN_ID;
 	const isDaemonSpawnedAgent = !isTopLevel && Boolean(runId);
