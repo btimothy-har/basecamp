@@ -1,42 +1,18 @@
-import questionary
+from pathlib import Path
+from unittest.mock import MagicMock
 
-from basecamp.installer import (
-    COMPONENT_BROWSER,
-    COMPONENT_COMPANION,
-    COMPONENT_ENGINEERING,
-    COMPONENT_STANDARD,
-    COMPONENT_SWARM,
-    _component_choices,
-    resolve_install_selection,
-)
+import basecamp.installer as installer
 
 
-def package_paths(component_ids: list[str]) -> list[str]:
-    return [path for path, _label in resolve_install_selection(component_ids).ts_packages]
+def _completed(returncode: int = 0) -> MagicMock:
+    result = MagicMock()
+    result.returncode = returncode
+    result.stderr = ""
+    return result
 
 
-def test_all_groups_selected_includes_non_memory_packages_and_python_extras() -> None:
-    selection = resolve_install_selection(
-        [COMPONENT_STANDARD, COMPONENT_ENGINEERING, COMPONENT_BROWSER, COMPONENT_COMPANION, COMPONENT_SWARM]
-    )
-
-    assert selection.python_extra == "[companion,swarm]"
-    assert selection.python_extras == ("companion", "swarm")
-    assert selection.installed_modules == (
-        "core",
-        "ui",
-        "workspace",
-        "tasks",
-        "git",
-        "bash-reviewer",
-        "engineering",
-        "browser",
-        "companion",
-        "swarm",
-    )
-    assert package_paths(
-        [COMPONENT_STANDARD, COMPONENT_ENGINEERING, COMPONENT_BROWSER, COMPONENT_COMPANION, COMPONENT_SWARM]
-    ) == [
+def test_legacy_subpaths_cover_all_pre_consolidation_packages() -> None:
+    assert installer._LEGACY_PACKAGE_SUBPATHS == (
         "core/pi",
         "pi-ui",
         "workspace/pi",
@@ -47,64 +23,36 @@ def test_all_groups_selected_includes_non_memory_packages_and_python_extras() ->
         "pi-browser",
         "pi-companion/pi",
         "pi-swarm/extension",
-    ]
-
-
-def test_browser_component_installs_pi_browser_package_and_module() -> None:
-    selection = resolve_install_selection([COMPONENT_BROWSER])
-
-    assert selection.python_extra == ""
-    assert selection.installed_modules == ("core", "browser")
-    assert package_paths([COMPONENT_BROWSER]) == ["core/pi", "pi-browser"]
-
-
-def test_companion_unchecked_omits_companion_extra_and_ts_package() -> None:
-    selection = resolve_install_selection([COMPONENT_STANDARD, COMPONENT_ENGINEERING, COMPONENT_SWARM])
-
-    assert selection.python_extra == "[swarm]"
-    paths = [path for path, _label in selection.ts_packages]
-    assert "pi-companion/pi" not in paths
-    assert paths == [
-        "core/pi",
-        "pi-ui",
-        "workspace/pi",
-        "pi-tasks",
-        "pi-git",
-        "pi-bash-reviewer",
-        "pi-engineering",
-        "pi-swarm/extension",
-    ]
-
-
-def test_swarm_auto_includes_required_standard_packages_and_python_extra() -> None:
-    selection = resolve_install_selection([COMPONENT_SWARM])
-
-    assert selection.python_extra == "[swarm]"
-    assert package_paths([COMPONENT_SWARM]) == [
-        "core/pi",
-        "pi-ui",
-        "pi-tasks",
-        "pi-swarm/extension",
-    ]
-
-
-def test_core_pi_is_always_first_and_not_duplicated() -> None:
-    paths = package_paths([COMPONENT_STANDARD, COMPONENT_SWARM])
-
-    assert paths[0] == "core/pi"
-    assert paths.count("core/pi") == 1
-    assert paths.count("pi-ui") == 1
-    assert paths.count("pi-tasks") == 1
-
-
-def test_component_choices_are_unselected_by_default() -> None:
-    assert all(not choice.checked for choice in _component_choices())
-
-
-def test_component_checkbox_prompt_constructs_without_default_value_error() -> None:
-    prompt = questionary.checkbox(
-        "Select optional components to install:",
-        choices=_component_choices(),
     )
 
-    assert prompt is not None
+
+def test_install_pi_extension_installs_root_and_cleans_legacy(mocker) -> None:
+    mocker.patch.object(installer.shutil, "which", side_effect=lambda name: f"/usr/bin/{name}")
+    run = mocker.patch.object(installer.subprocess, "run", return_value=_completed())
+
+    installer._install_pi_extension()
+
+    calls = run.call_args_list
+    # npm install at the repo root
+    assert calls[0].args[0] == ["/usr/bin/npm", "install"]
+    assert calls[0].kwargs["cwd"] == installer.REPO_DIR
+    # legacy per-package registrations removed before registering the repo root
+    uninstall_targets = [call.args[0][2] for call in calls[1:-1]]
+    assert uninstall_targets == [str(installer.REPO_DIR / subpath) for subpath in installer._LEGACY_PACKAGE_SUBPATHS]
+    assert all(call.args[0][:2] == ["/usr/bin/pi", "uninstall"] for call in calls[1:-1])
+    # single registration of the repo root as the extension
+    assert calls[-1].args[0] == ["/usr/bin/pi", "install", str(installer.REPO_DIR)]
+
+
+def test_legacy_uninstall_failures_are_nonfatal(mocker) -> None:
+    run = mocker.patch.object(installer.subprocess, "run", return_value=_completed(returncode=1))
+
+    installer._uninstall_legacy_pi_packages("/usr/bin/pi")
+
+    assert run.call_count == len(installer._LEGACY_PACKAGE_SUBPATHS)
+
+
+def test_repo_dir_is_the_pi_extension_root() -> None:
+    # The repo root carries the single extension manifest the installer registers.
+    assert (Path(installer.REPO_DIR) / "extension.ts").exists()
+    assert (Path(installer.REPO_DIR) / "package.json").exists()

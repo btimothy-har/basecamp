@@ -31,7 +31,7 @@ Requires [uv](https://docs.astral.sh/uv/) and [pi](https://github.com/earendil-w
 ```bash
 git clone https://github.com/btimothy-har/basecamp.git
 cd basecamp
-uv run install.py           # interactive (prompts for editable mode and optional components)
+uv run install.py           # interactive (prompts for editable mode)
 uv run install.py -e        # editable (recommended for development)
 uv run install.py --no-editable
 ```
@@ -256,7 +256,7 @@ basecamp is split into root-level products:
 - `src/basecamp/` — Python composition package for the `basecamp` setup/projects/install CLI
 - `core/config/` — Python package for generic Basecamp settings, files, paths, and exceptions
 - `workspace/projects/` — Python package for project and environment config and the interactive projects/environments menus
-- `pi-*` / `core/pi` / `workspace/pi` — Pi packages for project context, session UI, worktrees, workflow, git, engineering, and companion features
+- `extension.ts` + `<context>/ts/` — the single Pi extension: project context, session UI, worktrees, workflow, git, engineering, and companion features
 
 ## License
 

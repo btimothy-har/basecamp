@@ -28,31 +28,24 @@ jobs:
       uses: actions/setup-node@v4
       with:
         node-version: 24
+        cache: npm
 
-    - name: Install Pi Package Dependencies
+    - name: Install Extension Dependencies
       run: |
-        for pkg in core/pi pi-ui workspace/pi pi-tasks pi-git pi-engineering pi-companion/pi pi-swarm/extension; do
-          npm --prefix "$pkg" ci
-        done
+        npm ci
 
-    - name: Typecheck Pi Packages
+    - name: Typecheck Extension
       run: |
-        for pkg in core/pi pi-ui workspace/pi pi-tasks pi-git pi-engineering pi-companion/pi pi-swarm/extension; do
-          npm --prefix "$pkg" run typecheck
-        done
+        npm run typecheck
 
-    - name: Lint Pi Packages
+    - name: Lint Extension
       run: |
-        for pkg in core/pi pi-ui workspace/pi pi-tasks pi-git pi-engineering pi-companion/pi pi-swarm/extension; do
-          npm --prefix "$pkg" run lint
-        done
+        npm run lint
 
     - name: Run Python Tests
       run: |
         uv run pytest
 
-    - name: Run Pi Package Tests
+    - name: Run Extension Tests
       run: |
-        for pkg in core/pi pi-ui workspace/pi pi-tasks pi-git pi-engineering pi-companion/pi pi-swarm/extension; do
-          npm --prefix "$pkg" test
-        done
+        npm test

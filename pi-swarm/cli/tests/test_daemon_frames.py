@@ -20,7 +20,7 @@ from pi_swarm.frames import (
 )
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
-FIXTURE_DIR = REPO_ROOT / "pi-swarm" / "protocol" / "frames"
+FIXTURE_DIR = REPO_ROOT / "swarm" / "protocol" / "frames"
 
 
 def _fixture_type_set() -> set[str]:
