@@ -34,13 +34,13 @@ workspace/projects/             # basecamp-workspace Python package
 
 pi-swarm/                      # Async-agent bounded context
 ├── protocol/                   # Protocol docs and frame fixtures
-├── extension/                  # TypeScript Pi-side agent tools, launch policy, daemon client, reporter, /code-review
+├── extension/                  # TypeScript Pi-side agent tools, launch policy, daemon client, reporter, /code-review, workstreams
 └── cli/                        # Python daemon CLI/runtime package
 
 core/pi/                       # pi-core TypeScript package: registries, session, state, model aliases, workspace primitives
 pi-ui/                         # Session UI package: footer, title, mode editor
 workspace/pi/                  # pi-workspace TypeScript package: project context + workspace service
-pi-tasks/                      # Tasks, planning, workflow skills
+pi-tasks/                      # Tasks, planning, workflow skills (workstream domain moved to pi-swarm/extension)
 pi-git/                        # Prompt-only PR creation workflow (/create-pr)
 pi-bash-reviewer/              # LLM bash reviewer: gates risky git/gh/shell commands
 pi-engineering/                # Engineering tools and skills
@@ -88,9 +88,17 @@ The worktree setup hook (the per-repo `environments` `setup` command in `~/.pi/b
 
 ### Worktree Design
 
-Worktrees live in `~/.worktrees/<org>/<name>/<label>/` (the per-repo root is the canonical `<org>/<name>` identity) rather than inside the repo to avoid polluting project directories. Git is the source of truth for worktree registration (`git worktree list --porcelain`); Basecamp does not maintain a parallel metadata registry. Sessions are launched with plain `pi` from a repository or subdirectory; Basecamp detects the configured repo root, recognizes a session launched inside a linked worktree as its active worktree (setting the protected root to the main checkout and populating `BASECAMP_WORKTREE_DIR`/`LABEL`, without requiring a clean/default-branch main checkout), approved implementation plans activate a worktree inside the Pi session (workstream sessions reuse the already-active worktree instead of prompting), resumed/reloaded/forked sessions restore their last active worktree when still in the same repo, and `/worktree [label]` can switch to an existing Git-registered worktree after session resume. Worktree labels are either a direct label or a two-level `namespace/name`: plan-approved worktrees use `wt-<user-prefix>/<slug>`, while copilot-dispatched workstreams (`launch_workstream`) use a generic `copilot/<three-words>` label whose three words are also the launch id, paired with a work-derived `<user-prefix>/<slug>` (e.g. `bt/…`) branch.
+Worktrees live in `~/.worktrees/<org>/<name>/<label>/` (the per-repo root is the canonical `<org>/<name>` identity) rather than inside the repo to avoid polluting project directories. Git is the source of truth for worktree registration (`git worktree list --porcelain`); Basecamp does not maintain a parallel metadata registry. Sessions are launched with plain `pi` from a repository or subdirectory; Basecamp detects the configured repo root, recognizes a session launched inside a linked worktree as its active worktree (setting the protected root to the main checkout and populating `BASECAMP_WORKTREE_DIR`/`LABEL`, without requiring a clean/default-branch main checkout), approved implementation plans activate a worktree inside the Pi session (workstream sessions reuse the already-active worktree instead of prompting), resumed/reloaded/forked sessions restore their last active worktree when still in the same repo, and `/worktree [label]` can switch to an existing Git-registered worktree after session resume. Worktree labels are either a direct label or a two-level `namespace/name`: plan-approved worktrees use `wt-<user-prefix>/<slug>`, while copilot-dispatched workstreams (`launch_workstream`) use a generic `copilot/<slug>` label whose three-word slug is the workstream's readable id, paired with a work-derived `<user-prefix>/<slug>` (e.g. `bt/…`) branch.
 
 The worktree root follows the canonical identity. Worktrees created under the legacy bare-name root (`~/.worktrees/<repo>/`) are migrated automatically: on primary (non-subagent) session start, Basecamp relocates the current repo's legacy worktrees to the `<org>/<name>` root via `git worktree move` (retrying dirty trees with `--force`, skipping locked ones). The main checkout, the session's own active worktree, and already-migrated trees are left untouched. Migration is best-effort — any per-worktree failure is skipped and never blocks session start, with a quiet notification only when something is moved or skipped. A resumed session whose previously active worktree was legacy reconnects after one `/worktree <label>`, since saved affinity still references the pre-migration identity.
+
+### Workstreams
+
+Workstreams are durable, repo-neutral internal coordination state owned by `pi-swarm/extension` (`src/workstreams/`). Persistence is the daemon's SQLite store (`~/.pi/basecamp/swarm/daemon.db`, tables `workstreams` and `workstream_agents`, beside `agents`/`runs`) — the former JSON launch-index is gone (clean break, no migration). Identity is an internal `ws_<uuid>` id plus a globally-unique three-word readable `slug`. Worktrees are NOT persisted — git remains the source of truth; the `copilot/<slug>` worktree name encodes the slug.
+
+The model is multi-agent and repo-neutral: every `pi --workstream` session appends a `workstream_agents` row (additive, concurrent, never overwrites), and "which repos touched" derives from agent rows. A workstream can be carried into a different repo by passing its id/slug to `launch_workstream`, enabling cross-repo coordination without a duplicate workstream. The dossier (Logseq work page, `work__<org>__<repo>__<slug>`) stays the user-facing durable record of priority, decisions, blockers, and done signals; the workstream points to it via `source_dossier_path`. One dossier may have many workstreams.
+
+The `pi --workstream` flag is boolean: bare `--workstream` infers the workstream from the current `copilot/<slug>` worktree label; `--workstream=<slug|id>` resolves explicitly (the value is recovered from argv). On start it attaches the session as an additive workstream agent and injects the brief. Tools are `launch_workstream` (create + worktree + Herdr, or carry existing), `list_workstreams` (repo-neutral filtered listing; single-identifier lookup returns the joined agents view), and `set_workstream_status` (open ↔ closed). Transport: protocol v19 WS frames (`create_workstream`/`attach_workstream_agent`/`update_workstream` + acks) and HTTP GET `/workstreams` (filtered list) and `/workstreams/{id_or_slug}` (workstream + joined agents).
 
 ## Development
 

@@ -23,3 +23,27 @@ The review module lives in `src/agents/review/` (`findings`, `transpose`, `synth
 
 Dispatched agents can be stopped with the `cancel_agent` tool, which cancels an agent you dispatched and terminates its process (subtree-only: you cannot cancel agents outside your dispatch tree). Agents are also reaped automatically when their dispatcher session ends and does not reconnect within `BASECAMP_AGENT_DISCONNECT_GRACE_S` (default 3600s). See `pi-swarm/protocol/PROTOCOL.md`.
 
+## Workstreams
+
+The workstream domain lives in `src/workstreams/` and provides durable, repo-neutral internal coordination state for copilot-staged work. A workstream is persisted in the daemon's SQLite store (`~/.pi/basecamp/swarm/daemon.db`, tables `workstreams` and `workstream_agents`, beside `agents`/`runs`) — the former JSON launch-index is gone (clean break, no migration).
+
+Identity: each workstream has an internal `ws_<uuid>` id and a globally-unique three-word readable `slug`. Worktrees are NOT persisted — git remains the source of truth; the `copilot/<slug>` worktree name encodes the slug. The dossier (Logseq work page, `work__<org>__<repo>__<slug>`) stays the user-facing durable record; the workstream points to it via `source_dossier_path`. One dossier may have many workstreams.
+
+### Tools
+
+- **`launch_workstream`** — creates a new workstream + `copilot/<slug>` worktree + Herdr pane from a dossier-backed brief, OR carries an existing workstream into the current repo when given `workstream_id` (an existing id/slug; reuses the worktree idempotently; no dedup). Returns id/slug + transient setup/herdr status. Does not start an agent.
+- **`list_workstreams`** — repo-neutral listing from the daemon. Filters by `repo`, `dossierPath`, `query` (slug/label substring), and `status` (`open`/`closed`). A single-identifier lookup (query only) returns the workstream detail with its joined agent rows.
+- **`set_workstream_status`** — sets a workstream's status to `open` or `closed`.
+
+### `pi --workstream` startup flag
+
+`pi --workstream` is a boolean flag. Bare `--workstream` infers the workstream from the current `copilot/<slug>` worktree label; `--workstream=<slug|id>` resolves explicitly (the value is recovered from argv). On start it attaches the session as an additive workstream agent (appends a `workstream_agents` row — concurrent, never overwrites) and injects the brief. "Which repos touched" derives from agent rows.
+
+### Multi-agent and cross-repo carry
+
+A workstream can have several agent sessions over time or concurrently — every `pi --workstream` session appends an agent row. A workstream can be carried into a different repo by passing its id/slug to `launch_workstream`, enabling cross-repo coordination without a duplicate workstream.
+
+### Protocol
+
+Workstream management uses three WS frame pairs (`create_workstream`/`attach_workstream_agent`/`update_workstream` + acks, protocol v19) and two HTTP GET endpoints (`/workstreams` filtered list, `/workstreams/{id_or_slug}` workstream + joined agents). See `pi-swarm/protocol/PROTOCOL.md`.
+
