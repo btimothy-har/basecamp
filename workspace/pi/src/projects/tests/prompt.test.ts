@@ -163,13 +163,17 @@ describe("assemblePrompt", () => {
 			readOnly: false,
 		});
 
-		// staged handoff: launch_workstream stages a pane + id; user starts pi with --workstream
+		// staged handoff: launch_workstream stages a pane + slug; user starts pi with --workstream
 		assert.match(prompt, /launch_workstream/);
-		assert.match(prompt, /list_workstream_launches/);
+		assert.match(prompt, /list_workstreams/);
+		assert.match(prompt, /set_workstream_status/);
 		assert.match(prompt, /It does not start an agent/);
 		assert.match(prompt, /Tell the user to run `pi --workstream` in the opened pane/);
-		assert.match(prompt, /infers the id from the worktree/);
-		assert.match(prompt, /`cd <worktree-path> && pi --workstream`/);
+		assert.match(prompt, /infers the slug from the worktree label/);
+		assert.match(prompt, /`cd <worktree-path> && pi --workstream=<slug>`/);
+		// carry an existing workstream across repos via workstream_id
+		assert.match(prompt, /carry an existing workstream into the current repo by passing its `workstream_id`/);
+		// --copilot dropped the plan() sibling framing; copilot stages but does not implement in-session
 		assert.doesNotMatch(prompt, /plan\(\)/);
 		assert.doesNotMatch(prompt, /siblings, not replacements/);
 		assert.match(prompt, /Copilot stages work; it does not implement in-session/);
@@ -178,8 +182,11 @@ describe("assemblePrompt", () => {
 		// pull-based curation (handle only after pi --workstream) and no-Logseq-write rule preserved
 		assert.match(prompt, /ask_agent/);
 		assert.match(prompt, /Workstream agents never write Logseq/);
-		// launch index is an operational receipt, not durable workstream status
-		assert.match(prompt, /operational receipt[\s\S]*not workstream status/);
+		// durable internal coordination state in the daemon; dossier stays the user-facing record
+		assert.match(prompt, /durable internal coordination state in the daemon/);
+		assert.match(prompt, /remains the user-facing durable record/);
+		// multi-agent additive model
+		assert.match(prompt, /appends an agent row — additive, never overwriting/);
 	});
 
 	it("hides the plan tool from the copilot capabilities index but keeps it in other modes", async (t) => {
