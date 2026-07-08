@@ -399,6 +399,174 @@ def test_ws_unsupported_inbound_frame_returns_error(tmp_path: Path) -> None:
     assert "registered" in reply["message"]
 
 
+def test_health_returns_protocol_19(tmp_path: Path) -> None:
+    app = _build_app(tmp_path)
+
+    with TestClient(app) as client:
+        response = client.get("/health")
+
+    assert response.status_code == 200
+    assert response.json()["protocol"] == 19
+
+
+def test_ws_workstream_create_attach_update_flow(tmp_path: Path) -> None:
+    app, store = _build_app_with_store(tmp_path)
+
+    with TestClient(app) as client:
+        with client.websocket_connect("/ws") as ws:
+            _register_ws(ws, node_id="root", role="session", parent_id=None, sibling_group="sg-root")
+
+            ws.send_json(
+                {
+                    "type": "create_workstream",
+                    "v": PROTOCOL_VERSION,
+                    "request_id": "create-1",
+                    "workstream_id": "ws-1",
+                    "slug": "feature-auth",
+                    "label": "Feature Auth",
+                    "brief": "Implement auth",
+                    "source_dossier_path": "/dossiers/auth.md",
+                }
+            )
+            created = ws.receive_json()
+            assert created == {
+                "type": "create_workstream_ack",
+                "v": PROTOCOL_VERSION,
+                "request_id": "create-1",
+                "status": "created",
+                "workstream_id": "ws-1",
+                "slug": "feature-auth",
+                "error": None,
+            }
+
+            ws.send_json(
+                {
+                    "type": "create_workstream",
+                    "v": PROTOCOL_VERSION,
+                    "request_id": "create-2",
+                    "workstream_id": "ws-2",
+                    "slug": "feature-auth",
+                    "label": "Feature Auth 2",
+                    "brief": "Implement auth again",
+                    "source_dossier_path": "/dossiers/auth2.md",
+                }
+            )
+            conflict = ws.receive_json()
+            assert conflict["type"] == "create_workstream_ack"
+            assert conflict["request_id"] == "create-2"
+            assert conflict["status"] == "slug_conflict"
+
+            ws.send_json(
+                {
+                    "type": "attach_workstream_agent",
+                    "v": PROTOCOL_VERSION,
+                    "request_id": "attach-1",
+                    "workstream": "feature-auth",
+                }
+            )
+            attached = ws.receive_json()
+            assert attached == {
+                "type": "attach_workstream_agent_ack",
+                "v": PROTOCOL_VERSION,
+                "request_id": "attach-1",
+                "status": "attached",
+                "error": None,
+            }
+
+            ws.send_json(
+                {
+                    "type": "update_workstream",
+                    "v": PROTOCOL_VERSION,
+                    "request_id": "update-1",
+                    "workstream": "feature-auth",
+                    "status": "closed",
+                }
+            )
+            updated = ws.receive_json()
+            assert updated == {
+                "type": "update_workstream_ack",
+                "v": PROTOCOL_VERSION,
+                "request_id": "update-1",
+                "status": "updated",
+                "error": None,
+            }
+
+            ws.send_json(
+                {
+                    "type": "update_workstream",
+                    "v": PROTOCOL_VERSION,
+                    "request_id": "update-2",
+                    "workstream": "unknown-slug",
+                    "status": "closed",
+                }
+            )
+            update_not_found = ws.receive_json()
+            assert update_not_found["type"] == "update_workstream_ack"
+            assert update_not_found["status"] == "not_found"
+
+            ws.send_json(
+                {
+                    "type": "attach_workstream_agent",
+                    "v": PROTOCOL_VERSION,
+                    "request_id": "attach-2",
+                    "workstream": "unknown-slug",
+                }
+            )
+            attach_not_found = ws.receive_json()
+            assert attach_not_found["type"] == "attach_workstream_agent_ack"
+            assert attach_not_found["status"] == "not_found"
+
+        ws_row = store.get_workstream_with_agents("feature-auth")
+        assert ws_row is not None
+        assert ws_row["status"] == "closed"
+        agent_ids = [agent["agent_id"] for agent in ws_row["agents"]]
+        assert "root" in agent_ids
+
+
+def test_http_workstreams_list_and_detail(tmp_path: Path) -> None:
+    app, store = _build_app_with_store(tmp_path)
+
+    store.create_workstream(
+        workstream_id="ws-1",
+        slug="feature-auth",
+        label="Feature Auth",
+        brief="Implement auth",
+        source_dossier_path="/dossiers/auth.md",
+    )
+    store.upsert_agent(
+        agent_id="root",
+        parent_id=None,
+        sibling_group="sg-root",
+        depth=0,
+        role="session",
+        session_name="root-session",
+        cwd="/tmp/root",
+    )
+    store.attach_workstream_agent(
+        workstream_id="ws-1",
+        agent_id="root",
+        repo="org/repo",
+        worktree_label="wt-bt/auth",
+    )
+
+    with TestClient(app) as client:
+        list_response = client.get("/workstreams")
+        assert list_response.status_code == 200
+        payload = list_response.json()
+        assert len(payload["workstreams"]) == 1
+        assert payload["workstreams"][0]["slug"] == "feature-auth"
+
+        detail_response = client.get("/workstreams/feature-auth")
+        assert detail_response.status_code == 200
+        detail = detail_response.json()
+        assert detail["slug"] == "feature-auth"
+        assert isinstance(detail["agents"], list)
+        assert any(agent["agent_id"] == "root" for agent in detail["agents"])
+
+        not_found_response = client.get("/workstreams/unknown-slug")
+        assert not_found_response.status_code == 404
+
+
 def test_runs_summary_endpoint_returns_child_agents(tmp_path: Path) -> None:
     app, store = _build_app_with_store(tmp_path)
 
