@@ -27,6 +27,6 @@
 		}
 	},
 	"files": {
-		"includes": ["**", "!**/node_modules", "!swarm/protocol"]
+		"includes": ["**", "!**/node_modules", "!**/.venv", "!**/__pycache__", "!**/dist", "!swarm/protocol"]
 	}
 }
