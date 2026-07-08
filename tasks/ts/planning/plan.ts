@@ -8,403 +8,43 @@
  * analysis mode. On feedback, returns structured
  * feedback for the agent to revise.
  *
- * Re-submissions diff against the previous draft — unchanged approved sections
- * keep their ✓ status, changed sections reset to ★ (needs re-review).
+ * Draft building/diffing lives in draft.ts; execution handoff in handoff.ts;
+ * the /show-plan command in commands.ts.
  */
 
-import type { ExtensionAPI, ExtensionContext, Theme } from "@earendil-works/pi-coding-agent";
+import type { ExtensionAPI, Theme } from "@earendil-works/pi-coding-agent";
 import { Type } from "@sinclair/typebox";
 import { readWorktreeSetupCommand } from "#core/platform/config.ts";
 import { resolveSessionProductRoleOverride } from "#core/platform/product-role.ts";
-import {
-	activateWorkspaceWorktree,
-	getWorkspaceState,
-	listWorkspaceWorktrees,
-	requireWorkspaceState,
-	type WorkspaceWorktree,
-} from "#core/platform/workspace.ts";
+import { activateWorkspaceWorktree, getWorkspaceState, requireWorkspaceState } from "#core/platform/workspace.ts";
 import { getAgentMode, setAgentMode } from "#core/session/agent-mode.ts";
-import { shortSessionId } from "#core/session/session-id.ts";
 import { runWorktreeSetup } from "#core/workspace/setup.ts";
-import type { GoalCycle, ReviewState, TaskStatus, TasksAccess } from "../tasks/tasks.ts";
-import { computeGoalContextReview, computeSectionReview, freshReview, tasksMatch } from "./draft-logic.ts";
-import type { PlanDraft } from "./review.ts";
-import { SECTION_NAMES, showPlanReadOnly, showReviewOverlay } from "./review.ts";
+import type { GoalCycle, TasksAccess } from "../tasks/tasks.ts";
+import { buildApprovedResult, buildDraft, buildFeedbackResult, isAllApproved } from "./draft.ts";
 import {
-	buildExecutionWorktreeChoices,
-	CUSTOM_WORKTREE_CHOICE,
-	customWorktreeTarget,
-	type ExecutionWorktreeTarget,
-	suggestWorktreeTarget,
-} from "./worktree-choices.ts";
+	buildHandoffCompactionInstructions,
+	buildHandoffMessage,
+	buildPendingImplementationHandoff,
+	buildWorktreeActivationFailedResult,
+	HANDOFF_COMPACTION_THRESHOLD_PERCENT,
+	type HandoffWorktreeResult,
+	type PendingImplementationHandoff,
+	selectImplementationMode,
+	selectWorktreeTarget,
+	shouldReuseActiveWorktreeForHandoff,
+	workspaceWorktreeToHandoffWorktree,
+} from "./handoff.ts";
+import type { PlanDraft } from "./review.ts";
+import { showReviewOverlay } from "./review.ts";
 import { shouldRunWorktreeSetup, type WorktreeSetupSummary, worktreeSetupSummary } from "./worktree-setup.ts";
 
-// ============================================================================
-// Draft diffing — preserve approvals on unchanged content
-// ============================================================================
-
-function buildDraft(
-	params: {
-		goal: string;
-		context: string;
-		design: string;
-		success: string;
-		boundaries: string;
-		worktreeSlug?: string;
-	},
-	tasks: { label: string; description: string; criteria: string }[],
-	previous: PlanDraft | null,
-): PlanDraft {
-	const goalContextState = computeGoalContextReview(
-		params.goal,
-		params.context,
-		previous ? { goal: previous.goal, context: previous.context } : null,
-	);
-
-	// Tasks are reviewed as a collective unit — preserve approval if list is unchanged
-	function collectiveTasksReview(): ReviewState {
-		if (!previous) return freshReview();
-		if (tasksMatch(tasks, previous.tasks) && previous.tasksReview.approved) {
-			return { approved: true, feedback: null };
-		}
-		return freshReview();
-	}
-
-	return {
-		goal: { content: params.goal, review: goalContextState },
-		context: { content: params.context, review: goalContextState },
-		design: { content: params.design, review: computeSectionReview(params.design, previous?.design ?? null) },
-		success: { content: params.success, review: computeSectionReview(params.success, previous?.success ?? null) },
-		boundaries: {
-			content: params.boundaries,
-			review: computeSectionReview(params.boundaries, previous?.boundaries ?? null),
-		},
-		worktreeSlug: params.worktreeSlug ?? null,
-		tasks: tasks.map((t) => ({
-			label: t.label,
-			description: t.description,
-			criteria: t.criteria,
-			notes: null,
-			status: "pending" as TaskStatus,
-			review: null,
-		})),
-		tasksReview: collectiveTasksReview(),
-	};
-}
-
-// ============================================================================
-// Review result builders
-// ============================================================================
-
-function isAllApproved(draft: PlanDraft): boolean {
-	for (const name of SECTION_NAMES) {
-		if (!draft[name].review.approved) return false;
-	}
-	if (!draft.tasksReview.approved) return false;
-	return true;
-}
-
-function buildFeedbackResult(draft: PlanDraft): string {
-	const approved: Record<string, boolean | null> = {};
-	const revisions: Record<string, string> = {};
-	const notes: Record<string, string> = {};
-	for (const name of SECTION_NAMES) {
-		const r = draft[name].review;
-		approved[name] = r.approved;
-		if (r.feedback && !r.approved) revisions[name] = r.feedback;
-		if (r.feedback && r.approved) notes[name] = r.feedback;
-	}
-
-	// Tasks are reviewed collectively
-	const tr = draft.tasksReview;
-	approved.tasks = tr.approved;
-	if (tr.feedback && !tr.approved) revisions.tasks = tr.feedback;
-	if (tr.feedback && tr.approved) notes.tasks = tr.feedback;
-
-	const result: Record<string, unknown> = {
-		status: "feedback",
-		approved,
-		revisions,
-	};
-
-	// Include approved-with-notes so agent sees them alongside revisions
-	if (Object.keys(notes).length > 0) result.notes = notes;
-
-	return JSON.stringify(result);
-}
-
-function collectApprovedNotes(draft: PlanDraft): Record<string, string> {
-	const notes: Record<string, string> = {};
-	for (const name of SECTION_NAMES) {
-		const r = draft[name].review;
-		if (r.approved && r.feedback) notes[name] = r.feedback;
-	}
-
-	if (draft.tasksReview.approved && draft.tasksReview.feedback) {
-		notes.tasks = draft.tasksReview.feedback;
-	}
-
-	return notes;
-}
-
-export type ImplementationMode = "supervisor" | "executor";
-type ApprovedPlanMode = "analysis" | ImplementationMode;
-
-interface HandoffTaskContext {
-	index: number;
-	label: string;
-	description: string;
-	criteria: string;
-	notes: string | null;
-	status: TaskStatus;
-}
-
-interface HandoffPlanContext {
-	goal: string;
-	context: string;
-	design: string;
-	success: string;
-	boundaries: string;
-	notes: Record<string, string>;
-	tasks: HandoffTaskContext[];
-}
-
-interface HandoffWorktreeContext {
-	label: string;
-	path: string;
-	branch: string;
-	created: boolean;
-	repoName: string;
-	repoRoot: string;
-}
-
-type HandoffWorktreeResult = {
-	worktreeDir: string;
-	label: string;
-	branch: string;
-	created: boolean;
-};
-
-interface PendingImplementationHandoff {
-	mode: ImplementationMode;
-	worktree: HandoffWorktreeContext;
-	plan: HandoffPlanContext;
-}
-
-const IMPLEMENTATION_MODE_CHOICES = ["Execute as Supervisor", "Execute as IC/executor"] as const;
-
-async function selectImplementationMode(ctx: ExtensionContext): Promise<ImplementationMode | null> {
-	if (!ctx.hasUI) return null;
-
-	const choice = await ctx.ui.select("Execute approved plan as", [...IMPLEMENTATION_MODE_CHOICES]);
-	if (choice === "Execute as Supervisor") return "supervisor";
-	if (choice === "Execute as IC/executor") return "executor";
-	return null;
-}
-
-async function selectWorktreeTarget(
-	ctx: ExtensionContext,
-	goal: string,
-	worktreeSlug: string | null,
-): Promise<ExecutionWorktreeTarget | null> {
-	if (!ctx.hasUI) return null;
-
-	const workspace = getWorkspaceState();
-	if (!workspace?.repo) {
-		ctx.ui.notify("Execution worktrees require a git repository.", "error");
-		return null;
-	}
-
-	const sessionTag = shortSessionId(ctx.sessionManager.getSessionId());
-	const suggested = suggestWorktreeTarget(goal, worktreeSlug, sessionTag);
-	const existing = await listWorkspaceWorktrees();
-	const { choices, targetsByChoice } = buildExecutionWorktreeChoices(suggested, existing, workspace.activeWorktree);
-
-	const choice = await ctx.ui.select("Execution worktree", choices);
-	if (!choice) return null;
-	if (choice === CUSTOM_WORKTREE_CHOICE) {
-		const label = await ctx.ui.input("Custom worktree label", suggested.worktreeLabel);
-		return label?.trim() ? customWorktreeTarget(label, sessionTag) : null;
-	}
-	return targetsByChoice.get(choice) ?? null;
-}
-
-const HANDOFF_COMPACTION_THRESHOLD_PERCENT = 30;
-
-export function buildHandoffMessage(mode: ImplementationMode): string {
-	if (mode === "supervisor") {
-		return "Plan looks good — proceed as supervisor. Delegate bounded investigation and implementation to subagents; keep synthesis, decisions, and integration here.";
-	}
-
-	return "Plan looks good — proceed with direct implementation.";
-}
-
-function buildWorktreeActivationFailedResult(label: string, error: unknown): string {
-	const message = error instanceof Error ? error.message : String(error);
-	return JSON.stringify({
-		status: "worktree_activation_failed",
-		worktree_label: label,
-		message,
-		next_step: "Fix the protected checkout or choose another worktree, then resubmit the approved plan.",
-	});
-}
-
-function buildApprovedResult(
-	draft: PlanDraft,
-	mode: ApprovedPlanMode,
-	worktree?: HandoffWorktreeResult,
-	setupSummary?: WorktreeSetupSummary,
-): string {
-	const notes = collectApprovedNotes(draft);
-
-	const tasks: Record<number, { label: string; status: string; criteria: string }> = {};
-	for (let i = 0; i < draft.tasks.length; i++) {
-		const t = draft.tasks[i]!;
-		tasks[i] = { label: t.label, status: t.status, criteria: t.criteria };
-	}
-
-	const result: Record<string, unknown> = {
-		status: "approved",
-		goal: draft.goal.content,
-		context: draft.context.content,
-		design: draft.design.content,
-		success: draft.success.content,
-		boundaries: draft.boundaries.content,
-		progress: {
-			completed: 0,
-			deleted: 0,
-			total: draft.tasks.length,
-		},
-		tasks,
-	};
-
-	if (mode === "analysis") {
-		result.plan_mode = "analysis";
-		result.next_step = "Analysis plan approved, you may begin executing the analysis tasks.";
-	} else {
-		result.implementation_mode = mode;
-		result.handoff_status = "scheduled";
-		result.next_step =
-			"Plan has been approved. Do not start implementation; wait for the user's confirmation to start work. Acknowledge and end the turn.";
-	}
-
-	if (worktree) {
-		result.worktree = {
-			label: worktree.label,
-			path: worktree.worktreeDir,
-			branch: worktree.branch,
-			created: worktree.created,
-		};
-	}
-
-	if (worktree && setupSummary) result.worktree_setup = setupSummary;
-
-	// Only include notes if any exist
-	if (Object.keys(notes).length > 0) result.notes = notes;
-
-	return JSON.stringify(result);
-}
-
-function buildPendingImplementationHandoff(
-	draft: PlanDraft,
-	mode: ImplementationMode,
-	worktree: HandoffWorktreeResult,
-): PendingImplementationHandoff {
-	const repo = requireWorkspaceState().repo;
-	if (!repo) throw new Error("Implementation handoff requires a git repository");
-	return {
-		mode,
-		worktree: {
-			label: worktree.label,
-			path: worktree.worktreeDir,
-			branch: worktree.branch,
-			created: worktree.created,
-			repoName: repo.name,
-			repoRoot: repo.root,
-		},
-		plan: {
-			goal: draft.goal.content,
-			context: draft.context.content,
-			design: draft.design.content,
-			success: draft.success.content,
-			boundaries: draft.boundaries.content,
-			notes: collectApprovedNotes(draft),
-			tasks: draft.tasks.map((task, index) => ({
-				index,
-				label: task.label,
-				description: task.description,
-				criteria: task.criteria,
-				notes: task.notes,
-				status: task.status,
-			})),
-		},
-	};
-}
-
-function buildHandoffCompactionInstructions(handoff: PendingImplementationHandoff): string {
-	const lines: string[] = [
-		"This compaction runs immediately before executing an approved Basecamp implementation plan.",
-		"Focus the summary on execution-ready context; omit planning chatter that is not needed for implementation.",
-		"",
-		"Approved plan:",
-		`Goal: ${handoff.plan.goal}`,
-		`Context: ${handoff.plan.context}`,
-		`Design: ${handoff.plan.design}`,
-		`Success: ${handoff.plan.success}`,
-		`Boundaries: ${handoff.plan.boundaries}`,
-		"",
-		"Execution handoff:",
-		`Mode: ${handoff.mode}`,
-		`Selected worktree: ${handoff.worktree.label} (${handoff.worktree.branch})`,
-		`Worktree path: ${handoff.worktree.path}`,
-		`Worktree status: ${handoff.worktree.created ? "created" : "resumed"}`,
-		`Repository: ${handoff.worktree.repoName}`,
-		`Protected checkout: ${handoff.worktree.repoRoot}`,
-		"",
-		"User feedback/notes from approval:",
-	];
-
-	const notes = Object.entries(handoff.plan.notes);
-	if (notes.length === 0) {
-		lines.push("- None recorded.");
-	} else {
-		for (const [section, note] of notes) {
-			lines.push(`- ${section}: ${note}`);
-		}
-	}
-
-	lines.push("", "Tasks:");
-	for (const task of handoff.plan.tasks) {
-		lines.push(`- [${task.index}] ${task.label} (${task.status})`);
-		lines.push(`  Description: ${task.description}`);
-		lines.push(`  Criteria: ${task.criteria}`);
-		if (task.notes) lines.push(`  Notes: ${task.notes}`);
-	}
-
-	const nextTask =
-		handoff.plan.tasks.find((task) => task.status === "active") ??
-		handoff.plan.tasks.find((task) => task.status === "pending");
-	lines.push("", "Next execution task:");
-	if (nextTask) {
-		lines.push(`- [${nextTask.index}] ${nextTask.label}`);
-		lines.push(`  Description: ${nextTask.description}`);
-		lines.push(`  Criteria: ${nextTask.criteria}`);
-	} else {
-		lines.push("- No open task was recorded; inspect the task list before editing.");
-	}
-
-	lines.push(
-		"",
-		"Preserve any relevant files, functions, commands, constraints, and risks mentioned in the conversation, plan sections, task descriptions, or user notes.",
-		"Make the resulting summary sufficient for the next agent turn to start execution without reopening the full planning transcript.",
-	);
-
-	return lines.join("\n");
-}
-
-// ============================================================================
-// Tool render helpers
-// ============================================================================
+export { registerPlanCommands } from "./commands.ts";
+export type { ImplementationMode } from "./handoff.ts";
+export {
+	buildHandoffMessage,
+	shouldReuseActiveWorktreeForHandoff,
+	workspaceWorktreeToHandoffWorktree,
+} from "./handoff.ts";
 
 function renderSuccess(message: string, theme: Theme) {
 	const { Text } = require("@earendil-works/pi-tui");
@@ -416,33 +56,9 @@ function renderPartial(theme: Theme) {
 	return new Text(theme.fg("dim", "..."), 0, 0);
 }
 
-// ============================================================================
-// Types (exported)
-// ============================================================================
-
 export interface PlanAccess {
 	getDraft(): PlanDraft | null;
 }
-
-export function workspaceWorktreeToHandoffWorktree(target: WorkspaceWorktree): HandoffWorktreeResult {
-	return {
-		worktreeDir: target.path,
-		label: target.label,
-		branch: target.branch ?? "detached",
-		created: target.created,
-	};
-}
-
-export function shouldReuseActiveWorktreeForHandoff(
-	productRole: string | null,
-	activeWorktree: WorkspaceWorktree | null,
-): boolean {
-	return productRole === "workstream_agent" && activeWorktree !== null;
-}
-
-// ============================================================================
-// Registration
-// ============================================================================
 
 export function registerPlan(pi: ExtensionAPI, tasksAccess: TasksAccess): PlanAccess {
 	let draft: PlanDraft | null = null;
@@ -720,37 +336,4 @@ export function registerPlan(pi: ExtensionAPI, tasksAccess: TasksAccess): PlanAc
 	return {
 		getDraft: () => draft,
 	};
-}
-
-// ============================================================================
-// /show-plan command — view or re-review plan
-// ============================================================================
-
-export function registerPlanCommands(pi: ExtensionAPI, tasksAccess: TasksAccess, plan: PlanAccess): void {
-	pi.registerCommand("show-plan", {
-		description: "View current plan draft or approved plan",
-		handler: async (_args, ctx) => {
-			const draft = plan.getDraft();
-
-			if (draft) {
-				if (ctx.hasUI) {
-					await showReviewOverlay(draft, ctx);
-					ctx.ui.notify("Review updated. Agent will see feedback on next turn.", "info");
-				}
-				return;
-			}
-
-			const planRef = tasksAccess.getPlanRef();
-			if (planRef) {
-				if (ctx.hasUI) {
-					await showPlanReadOnly(planRef, ctx);
-				}
-				return;
-			}
-
-			if (ctx.hasUI) {
-				ctx.ui.notify("No plan yet — ask the agent to plan a piece of work to create one.", "info");
-			}
-		},
-	});
 }
