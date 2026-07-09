@@ -4,20 +4,15 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from basecamp.companion.analysis import COMPANION_ANALYSIS_DIR_NAME, companion_analysis_path
-from basecamp.companion.cycles import companion_tasks_path
 from basecamp.companion.daemon import (
     DaemonAgentMessages,
-    DaemonAgentMessagesError,
     DaemonSummary,
-    DaemonSummaryError,
     DaemonSummarySource,
 )
 from basecamp.companion.diff import (
     DIFF_MODES,
     DiffMode,
     FileStatus,
-    WorkspaceStatus,
     collapse_unchanged,
     collect_changes,
     file_diff_lines,
@@ -25,49 +20,25 @@ from basecamp.companion.diff import (
     make_git_runner,
     resolve_browse_roots,
 )
-from basecamp.companion.snapshot import (
-    COMPANION_SNAPSHOT_DIR_NAME,
-    CompanionSnapshot,
-    load_snapshot,
-    render_workspace_lines,
-)
+from basecamp.companion.snapshot import CompanionSnapshot, load_snapshot
 from basecamp.companion.source import DashboardSource
+from basecamp.companion.sources import (
+    apply_effective_cwd,
+    ensure_dashboard_source,
+    poll_daemon_messages,
+    poll_daemon_summary,
+)
 from basecamp.companion.ui.dashboard import DashboardBody
 from basecamp.companion.ui.diff import DiffBody, DiffView, FileList
 from basecamp.companion.ui.files import FileBrowser
 from basecamp.companion.ui.modes import next_body_mode
 from basecamp.companion.ui.swarm import SwarmBody
+from basecamp.companion.ui.workspace import WorkspacePanel, _MenuOrderedScreen
 from textual.app import App, ComposeResult
-from textual.binding import ActiveBinding, Binding
+from textual.binding import Binding
 from textual.containers import Horizontal
 from textual.screen import Screen
 from textual.widgets import ContentSwitcher, Footer, Static
-
-
-class WorkspacePanel(Static):
-    """Top panel summarizing the workspace and git status."""
-
-    def update_workspace(self, snapshot: CompanionSnapshot | None, status: WorkspaceStatus | None) -> None:
-        """Update rendered workspace content."""
-
-        self.update("\n".join(render_workspace_lines(snapshot, status)))
-
-
-class _MenuOrderedScreen(Screen):
-    """Default screen that orders footer bindings as [global mode][local][quit]."""
-
-    @property
-    def active_bindings(self) -> dict[str, ActiveBinding]:
-        def rank(active: ActiveBinding) -> int:
-            action = active.binding.action
-            if action.endswith("toggle_mode"):
-                return 0
-            if action == "quit":
-                return 2
-            return 1
-
-        bindings = super().active_bindings
-        return dict(sorted(bindings.items(), key=lambda item: rank(item[1])))
 
 
 class CompanionApp(App[None]):
@@ -397,42 +368,12 @@ class CompanionApp(App[None]):
         diff_view.update_diff(file_path=selected_file.path, status_message=status_message, diff_lines=diff_lines)
 
     def _ensure_dashboard_source(self, session_id: str) -> DashboardSource:
-        if self._dashboard_source is not None and self._dashboard_source_session_id == session_id:
-            return self._dashboard_source
-
-        tasks_path = companion_tasks_path(session_id, self._tasks_dir)
-
-        if self.snapshot_path.parent.name == COMPANION_SNAPSHOT_DIR_NAME:
-            analysis_dir = self.snapshot_path.parent.parent / COMPANION_ANALYSIS_DIR_NAME
-        else:
-            analysis_dir = self.snapshot_path.parent
-        self.analysis_path = companion_analysis_path(session_id, analysis_dir)
-
-        self._dashboard_source = DashboardSource(tasks_path, self.analysis_path)
-        self._dashboard_source_session_id = session_id
-        return self._dashboard_source
+        return ensure_dashboard_source(self, session_id)
 
     def _apply_effective_cwd(self, snapshot: CompanionSnapshot) -> bool:
         """Switch git/file state to the snapshot cwd when it changes."""
 
-        effective_cwd = snapshot.effective_cwd.strip()
-        if not effective_cwd:
-            return False
-
-        new_cwd = Path(effective_cwd).expanduser()
-        if new_cwd == self.cwd:
-            return False
-
-        self.cwd = new_cwd
-        self._git = make_git_runner(new_cwd)
-        self._base_commit = None
-        self._files = []
-
-        self.query_one("#files-body", FileBrowser).replace_roots(
-            resolve_browse_roots(self._git, self.cwd, self.scratch_dir)
-        )
-        self.query_one("#diff-view", DiffView).update_diff(file_path="", status_message="", diff_lines=[])
-        return True
+        return apply_effective_cwd(self, snapshot)
 
     def _refresh(self) -> None:
         """Refresh state panel on snapshot changes and git views every tick."""
@@ -496,16 +437,10 @@ class CompanionApp(App[None]):
         self._update_selected_file_diff()
 
     def _poll_daemon_summary(self, root_id: str) -> DaemonSummary:
-        try:
-            return self._daemon_source.poll(root_id)
-        except Exception as error:  # noqa: BLE001
-            return DaemonSummaryError(error=str(error))
+        return poll_daemon_summary(self, root_id)
 
     def _poll_daemon_messages(self, root_id: str, agent_handle: str) -> DaemonAgentMessages:
-        try:
-            return self._daemon_source.poll_messages(root_id, agent_handle)
-        except Exception as error:  # noqa: BLE001
-            return DaemonAgentMessagesError(error=str(error))
+        return poll_daemon_messages(self, root_id, agent_handle)
 
 
 def run_companion(snapshot_path: Path, cwd: Path, scratch_dir: Path | None = None) -> None:

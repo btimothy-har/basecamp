@@ -31,11 +31,6 @@ const SKIP_DIRS = new Set([".git", ".claude", ".venv", ".pytest_cache", "__pycac
  * once the file is back under its cap).
  */
 const GRANDFATHERED: Readonly<Record<string, number>> = {
-	"companion/py/basecamp/companion/app.py": 515,
-	"companion/py/basecamp/companion/daemon.py": 614,
-	"companion/py/tests/test_companion_app.py": 678,
-	"companion/py/tests/test_companion_dashboard.py": 577,
-	"companion/py/tests/test_companion_swarm.py": 533,
 	"companion/ts/tests/panes-index.test.ts": 509,
 	"core/ts/escalate/dialog.ts": 486,
 	"core/ts/model-aliases/commands.ts": 364,
