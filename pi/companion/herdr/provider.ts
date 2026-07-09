@@ -1,6 +1,6 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { exec } from "#core/platform/exec.ts";
-import { canHostCompanionPane, type PaneProvider } from "./pane-provider.ts";
+import { canHostCompanionPane, type PaneProvider } from "../panes/provider.ts";
 
 export interface HerdrPaneProviderInput {
 	herdrEnv?: string;

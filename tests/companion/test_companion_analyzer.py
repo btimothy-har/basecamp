@@ -5,8 +5,14 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import UTC, datetime
 
-from basecamp.companion.analysis import COMPANION_ANALYSIS_VERSION, AnalysisSections, CompanionAnalysis
-from basecamp.companion.analyzer import SYSTEM_PROMPT, build_prompt, generate_analysis
+from basecamp.companion.analysis import (
+    COMPANION_ANALYSIS_VERSION,
+    SYSTEM_PROMPT,
+    AnalysisSections,
+    CompanionAnalysis,
+    build_prompt,
+    generate_analysis,
+)
 
 
 def test_system_prompt_describes_v2_advisory_sections() -> None:

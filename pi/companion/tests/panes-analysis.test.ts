@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { afterEach, describe, it } from "node:test";
 import registerCompanionPackage from "../index.ts";
-import { isCompanionActive, setCompanionActive } from "../panes-state.ts";
+import { isCompanionActive, setCompanionActive } from "../panes/state.ts";
 import { createMockPi, resetPaneState } from "./panes-harness.ts";
 
 describe("panes/registerPanes", () => {

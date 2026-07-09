@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { afterEach, describe, it } from "node:test";
-import registerPanes from "../panes-index.ts";
-import { getPaneState, isCompanionActive, setCompanionActive } from "../panes-state.ts";
+import registerPanes from "../panes/index.ts";
+import { getPaneState, isCompanionActive, setCompanionActive } from "../panes/state.ts";
 import { createMockPi, resetPaneState, withHerdrEnv, withTmuxEnv } from "./panes-harness.ts";
 
 describe("panes/registerPanes", () => {

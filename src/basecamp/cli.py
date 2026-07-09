@@ -10,10 +10,11 @@ import rich_click as click
 
 from basecamp.companion.analysis import (
     companion_analysis_path,
+    generate_analysis,
     load_analysis,
+    resolve_companion_model,
     write_analysis,
 )
-from basecamp.companion.analyzer import generate_analysis, resolve_companion_model
 from basecamp.companion.app import run_companion
 from basecamp.core.exceptions import LauncherError
 from basecamp.installer import run_interactive_install

@@ -8,7 +8,7 @@ from http.client import HTTPConnection, HTTPException
 from pathlib import Path
 from urllib.parse import urlencode
 
-from basecamp.companion.daemon_models import (
+from basecamp.companion.daemon.models import (
     DaemonAgentMessage,
     DaemonAgentMessages,
     DaemonAgentMessagesError,
@@ -29,7 +29,7 @@ from basecamp.companion.daemon_models import (
     DaemonTaskProgress,
     DaemonTaskProjection,
 )
-from basecamp.companion.daemon_parse import _parse_messages_payload, _parse_payload
+from basecamp.companion.daemon.parse import _parse_messages_payload, _parse_payload
 
 DEFAULT_DAEMON_SOCKET_PATH = Path("~/.pi/basecamp/swarm/daemon.sock").expanduser()
 DEFAULT_DAEMON_MESSAGES_LIMIT = 3

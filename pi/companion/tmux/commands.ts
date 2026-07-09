@@ -10,15 +10,6 @@ export function shouldCreatePane(input: PaneGuardInput): boolean {
 	return Boolean(input.tmux) && Boolean(input.tmuxPane) && input.hasUI && input.agentDepth === 0;
 }
 
-function shellQuote(s: string): string {
-	return `'${s.replace(/'/g, "'\\''")}'`;
-}
-
-export function buildCompanionCommand(snapshotPath: string, cwd: string, scratchDir?: string): string {
-	const base = `basecamp companion dashboard --snapshot ${shellQuote(snapshotPath)} --cwd ${shellQuote(cwd)}`;
-	return scratchDir ? `${base} --scratch ${shellQuote(scratchDir)}` : base;
-}
-
 /** Companion pane takes 65% of the width, leaving the pi pane at 35%. */
 export const COMPANION_SPLIT_PERCENT = "65%";
 

@@ -9,7 +9,7 @@ import {
 	companionSnapshotPath,
 	removeSnapshotFile,
 	writeSnapshotFile,
-} from "../snapshot.ts";
+} from "../snapshot/model.ts";
 
 describe("companion/snapshot", () => {
 	describe("buildSnapshot", () => {

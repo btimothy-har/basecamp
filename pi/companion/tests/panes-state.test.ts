@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { afterEach, describe, it } from "node:test";
-import { getPaneState, isCompanionActive, setCompanionActive } from "../panes-state.ts";
+import { getPaneState, isCompanionActive, setCompanionActive } from "../panes/state.ts";
 
 describe("panes/state", () => {
 	afterEach(() => {

@@ -5,7 +5,7 @@ import { getWorkspaceService, getWorkspaceState } from "#core/platform/workspace
 import { getAgentMode, onAgentModeChange } from "#core/session/agent-mode.ts";
 import { getCurrentSessionState, onCurrentSessionTitleChange } from "#core/state/index.ts";
 import { getTasksAccess } from "#tasks/index.ts";
-import { reportHerdrMetadata } from "./herdr-metadata.ts";
+import { reportHerdrMetadata } from "../herdr/metadata.ts";
 import {
 	buildSnapshot,
 	type CompanionSnapshotWorktree,
@@ -13,7 +13,7 @@ import {
 	companionSnapshotPath,
 	removeSnapshotFile,
 	writeSnapshotFile,
-} from "./snapshot.ts";
+} from "./model.ts";
 
 const TRIGGER_TOOLS = new Set([
 	"update_goal",

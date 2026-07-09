@@ -1,12 +1,12 @@
 import type { ExtensionAPI, ExtensionContext, SessionShutdownEvent } from "@earendil-works/pi-coding-agent";
 import { exec } from "#core/platform/exec.ts";
 import { getWorkspaceService, getWorkspaceState } from "#core/platform/workspace.ts";
-import { createHerdrPaneCloser, createHerdrPaneProvider } from "./herdr-provider.ts";
-import type { PaneProvider } from "./pane-provider.ts";
-import { getPaneState, setCompanionActive } from "./panes-state.ts";
-import { companionLiveSnapshotPath } from "./snapshot.ts";
-import { buildCompanionCommand } from "./tmux.ts";
-import { createTmuxPaneCloser, createTmuxPaneProvider } from "./tmux-provider.ts";
+import { createHerdrPaneCloser, createHerdrPaneProvider } from "../herdr/provider.ts";
+import { companionLiveSnapshotPath } from "../snapshot/model.ts";
+import { createTmuxPaneCloser, createTmuxPaneProvider } from "../tmux/provider.ts";
+import { buildCompanionCommand } from "./command.ts";
+import type { PaneProvider } from "./provider.ts";
+import { getPaneState, setCompanionActive } from "./state.ts";
 
 type ThemeFg = (color: Parameters<import("@earendil-works/pi-coding-agent").Theme["fg"]>[0], text: string) => string;
 

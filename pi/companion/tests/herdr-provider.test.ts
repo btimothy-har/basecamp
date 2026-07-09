@@ -9,7 +9,7 @@ import {
 	createHerdrPaneProvider,
 	parseHerdrPaneId,
 	shouldCreateHerdrPane,
-} from "../herdr-provider.ts";
+} from "../herdr/provider.ts";
 
 type ExecResult = { code: number; stdout: string; stderr: string };
 type ExecHandler = (command: string, args: string[]) => Promise<ExecResult> | ExecResult;

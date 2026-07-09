@@ -9,8 +9,8 @@ import {
 	resetHerdrMetadataSeqForTest,
 	sanitizeHerdrMetadataField,
 	shouldReportHerdrMetadata,
-} from "../herdr-metadata.ts";
-import type { CompanionSnapshot } from "../snapshot.ts";
+} from "../herdr/metadata.ts";
+import type { CompanionSnapshot } from "../snapshot/model.ts";
 
 function snapshot(overrides: Partial<CompanionSnapshot> = {}): CompanionSnapshot {
 	return {

@@ -1,5 +1,5 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { getPaneState, setCompanionActive } from "../panes-state.ts";
+import { getPaneState, setCompanionActive } from "../panes/state.ts";
 
 type Handler = (event: unknown, ctx: MockContext) => unknown;
 

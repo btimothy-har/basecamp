@@ -1,13 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import {
-	buildCompanionCommand,
-	buildKillArgs,
-	buildListPanesArgs,
-	buildSplitArgs,
-	parsePaneId,
-	shouldCreatePane,
-} from "../tmux.ts";
+import { buildCompanionCommand } from "../panes/command.ts";
+import { buildKillArgs, buildListPanesArgs, buildSplitArgs, parsePaneId, shouldCreatePane } from "../tmux/commands.ts";
 
 describe("panes/tmux", () => {
 	describe("shouldCreatePane", () => {

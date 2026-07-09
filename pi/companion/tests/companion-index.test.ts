@@ -10,9 +10,9 @@ import {
 	updateCurrentSessionState,
 } from "#core/state/index.ts";
 import { registerTasksAccess, type TasksState } from "#tasks/index.ts";
-import registerCompanion from "../companion-index.ts";
-import { resetHerdrMetadataSeqForTest } from "../herdr-metadata.ts";
-import { companionLiveSnapshotPath, companionSnapshotPath, defaultCompanionSnapshotDir } from "../snapshot.ts";
+import { resetHerdrMetadataSeqForTest } from "../herdr/metadata.ts";
+import registerCompanion from "../snapshot/index.ts";
+import { companionLiveSnapshotPath, companionSnapshotPath, defaultCompanionSnapshotDir } from "../snapshot/model.ts";
 
 type Handler = (event: unknown, ctx: MockContext) => unknown;
 type Emit = (eventName: string, event?: unknown, ctx?: MockContext) => Promise<MockContext>;

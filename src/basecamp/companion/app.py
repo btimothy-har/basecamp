@@ -26,14 +26,14 @@ from basecamp.companion.diff import (
     make_git_runner,
     resolve_browse_roots,
 )
-from basecamp.companion.snapshot import CompanionSnapshot, load_snapshot
-from basecamp.companion.source import DashboardSource
-from basecamp.companion.sources import (
+from basecamp.companion.poll import (
     apply_effective_cwd,
     ensure_dashboard_source,
     poll_daemon_messages,
     poll_daemon_summary,
 )
+from basecamp.companion.snapshot import CompanionSnapshot, load_snapshot
+from basecamp.companion.source import DashboardSource
 from basecamp.companion.ui.dashboard import DashboardBody
 from basecamp.companion.ui.diff import DiffBody, DiffView, FileList
 from basecamp.companion.ui.files import FileBrowser

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from basecamp.companion.daemon_models import (
+from basecamp.companion.daemon.models import (
     DaemonAgentMessage,
     DaemonAgentMessagesOk,
     DaemonCurrentTask,

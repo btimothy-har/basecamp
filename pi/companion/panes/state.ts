@@ -1,5 +1,5 @@
 import { processScoped } from "#core/platform/global-registry.ts";
-import type { PaneProviderName } from "./pane-provider.ts";
+import type { PaneProviderName } from "./provider.ts";
 
 export { isCompanionActive, setCompanionActive } from "#core/platform/env.ts";
 

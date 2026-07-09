@@ -9,7 +9,7 @@ from collections.abc import Callable
 from datetime import UTC, datetime
 from typing import Any
 
-from basecamp.companion.analysis import (
+from basecamp.companion.analysis.model import (
     COMPANION_ANALYSIS_VERSION,
     AnalysisSections,
     CompanionAnalysis,
