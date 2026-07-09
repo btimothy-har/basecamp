@@ -1,7 +1,7 @@
 /** Session-state document model: schema types, agent modes, state-dir defaults. */
 
 import * as os from "node:os";
-import { basecampCorePaths } from "../platform/paths.ts";
+import { basecampCorePaths } from "../../platform/paths.ts";
 
 export const SESSION_STATE_VERSION = 1;
 

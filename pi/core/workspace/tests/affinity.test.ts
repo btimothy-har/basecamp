@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import * as path from "node:path";
 import { describe, it } from "node:test";
 import type { WorkspaceState, WorkspaceWorktree } from "../../platform/workspace.ts";
-import type { SessionStateActiveWorktree } from "../../state/index.ts";
+import type { SessionStateActiveWorktree } from "../../session/state/index.ts";
 import { buildActiveWorktreeState, workspaceMatchesActiveWorktreeState } from "../affinity.ts";
 
 const REPO_ROOT = "/repo";

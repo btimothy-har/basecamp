@@ -1,6 +1,10 @@
 import assert from "node:assert/strict";
 import { afterEach, describe, it } from "node:test";
-import { isCopilotLaunch, resetCopilotLaunchForTesting, setCopilotLaunchReader } from "../copilot-launch.ts";
+import {
+	isCopilotLaunch,
+	resetCopilotLaunchForTesting,
+	setCopilotLaunchReader,
+} from "../../agent-mode/copilot-launch.ts";
 
 afterEach(resetCopilotLaunchForTesting);
 

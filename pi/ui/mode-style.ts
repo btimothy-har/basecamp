@@ -1,5 +1,5 @@
 import type { ThemeColor } from "@earendil-works/pi-coding-agent";
-import type { AgentMode } from "#core/session/agent-mode.ts";
+import type { AgentMode } from "#core/agent-mode/index.ts";
 
 type ModeStyle = {
 	label: string | null;

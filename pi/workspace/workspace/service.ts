@@ -12,7 +12,7 @@ import {
 	type WorkspaceState,
 	type WorkspaceWorktree,
 } from "#core/platform/workspace.ts";
-import { updateCurrentSessionStateIfInitialized } from "#core/state/index.ts";
+import { updateCurrentSessionStateIfInitialized } from "#core/session/state/index.ts";
 import { buildActiveWorktreeState } from "#core/workspace/affinity.ts";
 import { SCRATCH_ROOT } from "#core/workspace/constants.ts";
 import { resolveGitInfo } from "#core/workspace/repo.ts";

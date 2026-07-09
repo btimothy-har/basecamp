@@ -4,10 +4,14 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { afterEach, describe, it } from "node:test";
 import type { ExtensionAPI, ExtensionContext, SessionStartEvent } from "@earendil-works/pi-coding-agent";
+import { resetCopilotLaunchForTesting, setCopilotLaunchReader } from "#core/agent-mode/copilot-launch.ts";
+import { getAgentMode, resetAgentMode } from "#core/agent-mode/index.ts";
 import { resetSessionProductRoleForTesting, resolveSessionProductRoleOverride } from "#core/platform/product-role.ts";
-import { getAgentMode, resetAgentMode } from "#core/session/agent-mode.ts";
-import { resetCopilotLaunchForTesting, setCopilotLaunchReader } from "#core/session/copilot-launch.ts";
-import { getCurrentSessionState, initializeCurrentSessionState, resetCurrentSessionState } from "#core/state/index.ts";
+import {
+	getCurrentSessionState,
+	initializeCurrentSessionState,
+	resetCurrentSessionState,
+} from "#core/session/state/index.ts";
 import { defaultWorkstreamStartDeps, parseWorkstreamFlagValue, registerWorkstreamStartup } from "../start.ts";
 import { FakeDaemonClient, makeCtx, makeDeps } from "./start-harness.ts";
 

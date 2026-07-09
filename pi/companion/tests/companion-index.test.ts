@@ -8,7 +8,7 @@ import {
 	initializeCurrentSessionState,
 	resetCurrentSessionState,
 	updateCurrentSessionState,
-} from "#core/state/index.ts";
+} from "#core/session/state/index.ts";
 import { registerTasksAccess, type TasksState } from "#tasks/index.ts";
 import { resetHerdrMetadataSeqForTest } from "../herdr/metadata.ts";
 import registerCompanion from "../snapshot/index.ts";

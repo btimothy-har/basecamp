@@ -9,7 +9,10 @@
 import type { ExtensionAPI, ExtensionContext, Theme } from "@earendil-works/pi-coding-agent";
 import { visibleWidth } from "@earendil-works/pi-tui";
 import { shortSessionId } from "#core/session/session-id.ts";
-import { getCurrentSessionStateIfInitialized, updateCurrentSessionStateIfInitialized } from "#core/state/index.ts";
+import {
+	getCurrentSessionStateIfInitialized,
+	updateCurrentSessionStateIfInitialized,
+} from "#core/session/state/index.ts";
 import { buildTitleContext } from "./title-context.ts";
 import {
 	extractTitle,

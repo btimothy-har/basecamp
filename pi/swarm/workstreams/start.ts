@@ -1,4 +1,6 @@
 import type { ExtensionAPI, ExtensionContext, SessionStartEvent } from "@earendil-works/pi-coding-agent";
+import { isCopilotLaunch } from "#core/agent-mode/copilot-launch.ts";
+import { setAgentMode } from "#core/agent-mode/index.ts";
 import { registerSessionProductRoleProvider } from "#core/platform/product-role.ts";
 import {
 	getWorkspaceService,
@@ -6,8 +8,6 @@ import {
 	type RepoContext,
 	type WorkspaceState,
 } from "#core/platform/workspace.ts";
-import { setAgentMode } from "#core/session/agent-mode.ts";
-import { isCopilotLaunch } from "#core/session/copilot-launch.ts";
 import type { DaemonClient, WorkstreamDetail } from "../agents/daemon/client.ts";
 import { resolveDaemonPaths } from "../agents/daemon/paths.ts";
 import { errorMessage } from "../agents/errors.ts";

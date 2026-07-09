@@ -8,7 +8,7 @@
  */
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { type AgentMode, getAgentMode } from "#core/session/agent-mode.ts";
+import { type AgentMode, getAgentMode } from "#core/agent-mode/index.ts";
 
 export const PLAN_TOOL_NAME = "plan";
 

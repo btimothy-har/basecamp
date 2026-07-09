@@ -1,5 +1,5 @@
 /**
- * Session state — the stable import surface (`#core/state/index.ts`).
+ * Session state — the stable import surface (`#core/session/state/index.ts`).
  * Model/schema in model.ts, file persistence in persistence.ts, fork
  * inheritance in fork.ts, the live process-scoped cell in current.ts.
  */

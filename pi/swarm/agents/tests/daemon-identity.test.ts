@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
+import { getAgentMode, setAgentMode } from "#core/agent-mode/index.ts";
 import { registerSessionProductRoleProvider, resetSessionProductRoleForTesting } from "#core/platform/product-role.ts";
-import { getAgentMode, setAgentMode } from "#core/session/agent-mode.ts";
 import { deriveDaemonIdentity } from "../daemon/index.ts";
 import { installDaemonToolTestHooks } from "./harness.ts";
 

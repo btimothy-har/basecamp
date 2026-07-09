@@ -10,7 +10,7 @@ import {
 	initializeCurrentSessionState,
 	resetCurrentSessionState,
 	saveSessionState,
-} from "#core/state/index.ts";
+} from "#core/session/state/index.ts";
 import { WORKTREES_ROOT } from "#core/workspace/constants.ts";
 import { WorkspaceRuntimeService } from "../service.ts";
 import { registerWorkspaceSession } from "../session.ts";

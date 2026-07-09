@@ -4,7 +4,7 @@ import {
 	SESSION_STATE_AGENT_MODES,
 	type SessionStateAgentMode,
 	updateCurrentSessionStateIfInitialized,
-} from "../state/index.ts";
+} from "../session/state/index.ts";
 
 export type AgentMode = SessionStateAgentMode;
 

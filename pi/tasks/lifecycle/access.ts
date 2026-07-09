@@ -8,7 +8,7 @@
  */
 
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
-import type { AgentMode } from "#core/session/agent-mode.ts";
+import type { AgentMode } from "#core/agent-mode/index.ts";
 
 export type TaskStatus = "pending" | "active" | "completed" | "deleted";
 

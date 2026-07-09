@@ -21,8 +21,8 @@
  */
 
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { type AgentMode, setAgentMode } from "#core/session/agent-mode.ts";
-import { getCurrentSessionState } from "#core/state/index.ts";
+import { type AgentMode, setAgentMode } from "#core/agent-mode/index.ts";
+import { getCurrentSessionState } from "#core/session/state/index.ts";
 import { registerTasksAccess } from "./access.ts";
 import { buildSteerContent, requireTasks } from "./context.ts";
 import { registerTaskGuards } from "./gate.ts";

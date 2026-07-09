@@ -1,5 +1,5 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { type AgentMode, cycleAgentMode, getAgentMode } from "../agent-mode.ts";
+import { type AgentMode, cycleAgentMode, getAgentMode } from "./index.ts";
 
 const MODE_LABELS: Record<AgentMode, string> = {
 	analysis: "Analysis/research",

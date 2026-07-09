@@ -1,7 +1,7 @@
 /** The live per-process session-state cell and its accessors. */
 
 import type { ExtensionContext, SessionStartEvent } from "@earendil-works/pi-coding-agent";
-import { processScoped } from "../platform/global-registry.ts";
+import { processScoped } from "../../platform/global-registry.ts";
 import { loadForkInheritedFields, resolveParentSessionFile } from "./fork.ts";
 import type {
 	BasecampSessionState,

@@ -1,10 +1,10 @@
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
+import { getAgentMode } from "#core/agent-mode/index.ts";
 import { processScoped } from "#core/platform/global-registry.ts";
 import { resolveModelAlias } from "#core/platform/model-aliases.ts";
 import { resolveSessionProductRoleOverride } from "#core/platform/product-role.ts";
 import { hasInvokedSkill } from "#core/platform/skill-tracker.ts";
 import { getWorkspaceState } from "#core/platform/workspace.ts";
-import { getAgentMode } from "#core/session/agent-mode.ts";
 import { shortSessionId as defaultShortSessionId } from "#core/session/session-id.ts";
 import { formatTitle } from "#ui/index.ts";
 import { errorMessage } from "../errors.ts";

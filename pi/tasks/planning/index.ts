@@ -14,10 +14,10 @@
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "@sinclair/typebox";
+import { getAgentMode, setAgentMode } from "#core/agent-mode/index.ts";
 import { readWorktreeSetupCommand } from "#core/platform/config.ts";
 import { resolveSessionProductRoleOverride } from "#core/platform/product-role.ts";
 import { activateWorkspaceWorktree, getWorkspaceState, requireWorkspaceState } from "#core/platform/workspace.ts";
-import { getAgentMode, setAgentMode } from "#core/session/agent-mode.ts";
 import { runWorktreeSetup } from "#core/workspace/setup.ts";
 import type { GoalCycle, TasksAccess } from "../lifecycle/index.ts";
 import { renderPartial, renderSuccess } from "../render.ts";

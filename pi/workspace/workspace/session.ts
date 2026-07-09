@@ -16,7 +16,7 @@ import {
 	type UnsafeEditFlagResult,
 	type WorkspaceWorktree,
 } from "#core/platform/workspace.ts";
-import { getCurrentSessionState } from "#core/state/index.ts";
+import { getCurrentSessionState } from "#core/session/state/index.ts";
 import { workspaceMatchesActiveWorktreeState } from "#core/workspace/affinity.ts";
 import { migrateLegacyWorktrees } from "#core/workspace/migrate.ts";
 

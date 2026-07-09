@@ -5,6 +5,15 @@ import * as path from "node:path";
 import { afterEach, describe, it } from "node:test";
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import {
+	CYCLEABLE_AGENT_MODES,
+	cycleAgentMode,
+	getAgentMode,
+	onAgentModeChange,
+	resetAgentMode,
+	restoreAgentModeFromSessionState,
+	setAgentMode,
+} from "../../agent-mode/index.ts";
+import {
 	buildSessionStatePath,
 	createDefaultSessionState,
 	getCurrentSessionState,
@@ -13,16 +22,7 @@ import {
 	resetCurrentSessionState,
 	saveSessionState,
 	updateCurrentSessionState,
-} from "../../state/index.ts";
-import {
-	CYCLEABLE_AGENT_MODES,
-	cycleAgentMode,
-	getAgentMode,
-	onAgentModeChange,
-	resetAgentMode,
-	restoreAgentModeFromSessionState,
-	setAgentMode,
-} from "../agent-mode.ts";
+} from "../state/index.ts";
 
 async function createTempDir(t: { after(fn: () => Promise<void> | void): void }): Promise<string> {
 	const dir = await fs.mkdtemp(path.join(os.tmpdir(), "basecamp-agent-mode-state-"));
