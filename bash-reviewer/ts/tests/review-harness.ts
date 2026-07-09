@@ -3,7 +3,7 @@ import type { Model } from "@earendil-works/pi-ai";
 import type { GateDecision } from "../reviewer/gate.ts";
 import { type ReviewAuditEntry, type ReviewDeps, reviewBashCommand } from "../reviewer/review.ts";
 
-const fakeModel: Model<any> = {
+export const fakeModel: Model<any> = {
 	id: "claude-haiku",
 	name: "Claude Haiku",
 	api: "anthropic-messages",

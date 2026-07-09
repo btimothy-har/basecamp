@@ -9,10 +9,10 @@ import {
 	BASECAMP_RUNNER_MANAGED_RESULT,
 	readRunResultSidecar,
 } from "../daemon/run-result.ts";
+import { MockPi } from "./harness.ts";
 import {
 	deferred,
 	installReporterEnvHooks,
-	MockPi,
 	telemetryFrames,
 	tempRunResultPath,
 	waitForFrameCount,

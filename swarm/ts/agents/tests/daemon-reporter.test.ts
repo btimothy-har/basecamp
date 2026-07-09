@@ -4,7 +4,8 @@ import type { DaemonConnection } from "../daemon/client.ts";
 import type { Frame } from "../daemon/frames/index.ts";
 import { type DaemonClientDeps, registerDaemonClient } from "../daemon/index.ts";
 import { registerDaemonReporter } from "../daemon/reporter.ts";
-import { installReporterEnvHooks, MockPi, telemetryFrames, waitForFrameCount } from "./reporter-harness.ts";
+import { MockPi } from "./harness.ts";
+import { installReporterEnvHooks, telemetryFrames, waitForFrameCount } from "./reporter-harness.ts";
 
 describe("daemon reporter", () => {
 	installReporterEnvHooks();

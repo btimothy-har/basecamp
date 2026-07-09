@@ -71,9 +71,7 @@ export function defaultWorkstreamToolsDeps(getConnection: () => Promise<unknown>
 	};
 }
 
-export function errorMessage(err: unknown): string {
-	return err instanceof Error ? err.message : String(err);
-}
+export { errorMessage } from "../agents/errors.ts";
 
 function shellQuote(s: string): string {
 	return `'${s.replace(/'/g, "'\\''")}'`;

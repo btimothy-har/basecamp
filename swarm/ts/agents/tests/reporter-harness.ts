@@ -10,36 +10,6 @@ import {
 	BASECAMP_RUNNER_MANAGED_RESULT,
 } from "../daemon/run-result.ts";
 
-export class MockPi {
-	handlers = new Map<string, Array<(event: unknown, ctx?: unknown) => unknown>>();
-	tools: Array<{ name: string }> = [];
-
-	registerTool(tool: { name: string }): void {
-		this.tools.push(tool);
-	}
-
-	getSessionName(): string {
-		return "session-name";
-	}
-
-	setSessionName(_name: string): void {
-		// no-op
-	}
-
-	on(type: string, handler: (event: unknown, ctx?: unknown) => unknown): void {
-		const list = this.handlers.get(type) ?? [];
-		list.push(handler);
-		this.handlers.set(type, list);
-	}
-
-	async emit(type: string, event: unknown): Promise<void> {
-		const handlers = this.handlers.get(type) ?? [];
-		for (const handler of handlers) {
-			await handler(event);
-		}
-	}
-}
-
 export function deferred<T>(): { promise: Promise<T>; resolve: (value: T) => void } {
 	let resolve!: (value: T) => void;
 	const promise = new Promise<T>((res) => {

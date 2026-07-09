@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 import sqlite3
 import threading
 import time
@@ -132,61 +131,3 @@ def _unknown_message_status(message_id: str, request_id: str | None = None) -> d
         "queued_at": None,
         "failed_at": None,
     }
-
-
-def _write_task_log(task_dir: Path, agent_id: str, cycles: list[dict[str, object]]) -> None:
-    task_dir.mkdir(parents=True, exist_ok=True)
-    (task_dir / f"{agent_id}.json").write_text(json.dumps(cycles), encoding="utf-8")
-
-
-def _insert_run(
-    *,
-    db_path: Path,
-    run_id: str,
-    agent_id: str,
-    status: str,
-    created_at: str,
-    spec_json: str = "{}",
-    report_token_hash: str | None = None,
-    result: str | None = None,
-    error: str | None = None,
-    exit_code: int | None = None,
-) -> None:
-    started_at = created_at
-    ended_at = created_at if status in {"completed", "failed"} else None
-
-    with sqlite3.connect(db_path) as connection:
-        connection.execute(
-            """
-            INSERT INTO runs (
-                id,
-                agent_id,
-                status,
-                spec_json,
-                report_token_hash,
-                result,
-                error,
-                exit_code,
-                created_at,
-                started_at,
-                ended_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """,
-            (
-                run_id,
-                agent_id,
-                status,
-                spec_json,
-                report_token_hash,
-                result,
-                error,
-                exit_code,
-                created_at,
-                started_at,
-                ended_at,
-            ),
-        )
-        connection.execute(
-            "UPDATE agents SET current_run_id = ? WHERE id = ?",
-            (run_id, agent_id),
-        )

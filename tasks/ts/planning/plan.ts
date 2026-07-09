@@ -12,13 +12,14 @@
  * the /show-plan command in commands.ts.
  */
 
-import type { ExtensionAPI, Theme } from "@earendil-works/pi-coding-agent";
+import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "@sinclair/typebox";
 import { readWorktreeSetupCommand } from "#core/platform/config.ts";
 import { resolveSessionProductRoleOverride } from "#core/platform/product-role.ts";
 import { activateWorkspaceWorktree, getWorkspaceState, requireWorkspaceState } from "#core/platform/workspace.ts";
 import { getAgentMode, setAgentMode } from "#core/session/agent-mode.ts";
 import { runWorktreeSetup } from "#core/workspace/setup.ts";
+import { renderPartial, renderSuccess } from "../render.ts";
 import type { GoalCycle, TasksAccess } from "../tasks/tasks.ts";
 import { buildApprovedResult, buildDraft, buildFeedbackResult, isAllApproved } from "./draft.ts";
 import {
@@ -45,16 +46,6 @@ export {
 	shouldReuseActiveWorktreeForHandoff,
 	workspaceWorktreeToHandoffWorktree,
 } from "./handoff.ts";
-
-function renderSuccess(message: string, theme: Theme) {
-	const { Text } = require("@earendil-works/pi-tui");
-	return new Text(theme.fg("success", "✓") + theme.fg("dim", ` ${message}`), 0, 0);
-}
-
-function renderPartial(theme: Theme) {
-	const { Text } = require("@earendil-works/pi-tui");
-	return new Text(theme.fg("dim", "..."), 0, 0);
-}
 
 export interface PlanAccess {
 	getDraft(): PlanDraft | null;

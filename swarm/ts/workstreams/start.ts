@@ -10,6 +10,7 @@ import { setAgentMode } from "#core/session/agent-mode.ts";
 import { isCopilotLaunch } from "#core/session/copilot-launch.ts";
 import type { DaemonClient, WorkstreamDetail } from "../agents/daemon/client.ts";
 import { resolveDaemonPaths } from "../agents/daemon/paths.ts";
+import { errorMessage } from "../agents/errors.ts";
 import { buildWorkstreamLaunchBrief } from "./brief.ts";
 
 // Cap only; waitForWorkspaceState resolves early via the workspace onChange event, so a generous
@@ -48,10 +49,6 @@ function waitForWorkspaceState(timeoutMs = WORKSPACE_START_WAIT_MS): Promise<Wor
 			if (state) finish(state);
 		});
 	});
-}
-
-function errorMessage(err: unknown): string {
-	return err instanceof Error ? err.message : String(err);
 }
 
 function defaultEnterExploreMode(_event: SessionStartEvent, ctx: ExtensionContext): void {

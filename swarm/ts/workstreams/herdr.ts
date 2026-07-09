@@ -1,4 +1,5 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { errorMessage } from "../agents/errors.ts";
 
 export const HERDR_WORKSTREAM_OPEN_TIMEOUT_MS = 5000;
 
@@ -126,10 +127,6 @@ export function buildHerdrWorkstreamOpenArgs(
 	}
 	args.push("--path", worktree.path, "--label", worktree.label, "--no-focus", "--json");
 	return { args };
-}
-
-function errorMessage(err: unknown): string {
-	return err instanceof Error ? err.message : String(err);
 }
 
 export async function openWorkstreamInHerdr(

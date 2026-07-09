@@ -50,26 +50,40 @@ export class MockConnection implements DaemonConnection {
 	}
 }
 
+export class MockPi {
+	tools: RegisteredTool[] = [];
+	handlers = new Map<string, ((event: any, ctx: any) => unknown)[]>();
+
+	registerTool(tool: RegisteredTool): void {
+		this.tools.push(tool);
+	}
+
+	on(event: string, handler: (event: any, ctx: any) => unknown): void {
+		this.handlers.set(event, [...(this.handlers.get(event) ?? []), handler]);
+	}
+
+	getSessionName(): string {
+		return "session-name";
+	}
+
+	getAllTools(): unknown[] {
+		return [];
+	}
+
+	sendUserMessage(): void {}
+
+	setSessionName(_name: string): void {}
+
+	async emit(type: string, event: unknown): Promise<void> {
+		for (const handler of this.handlers.get(type) ?? []) {
+			await handler(event, undefined);
+		}
+	}
+}
+
 export function createMockPi() {
-	const tools: RegisteredTool[] = [];
-	const handlers = new Map<string, ((event: any, ctx: any) => void)[]>();
-	const pi = {
-		registerTool(tool: RegisteredTool) {
-			tools.push(tool);
-		},
-		on(event: string, handler: (event: any, ctx: any) => void) {
-			handlers.set(event, [...(handlers.get(event) ?? []), handler]);
-		},
-		getSessionName() {
-			return "session-name";
-		},
-		getAllTools() {
-			return [];
-		},
-		sendUserMessage() {},
-		setSessionName() {},
-	};
-	return { pi: pi as any, tools, handlers };
+	const pi = new MockPi();
+	return { pi: pi as any, tools: pi.tools, handlers: pi.handlers };
 }
 
 export function toolByName(tools: RegisteredTool[], name: string): RegisteredTool {

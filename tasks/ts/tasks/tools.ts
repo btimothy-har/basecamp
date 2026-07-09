@@ -1,8 +1,9 @@
 /** The seven task tools: update_goal, create_tasks, start_task, complete_task, get_task, annotate_task, delete_task. */
 
-import type { ExtensionAPI, Theme } from "@earendil-works/pi-coding-agent";
+import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "@sinclair/typebox";
 import { getAgentMode } from "#core/session/agent-mode.ts";
+import { renderPartial, renderSuccess } from "../render.ts";
 import type { TaskStatus } from "./access.ts";
 import {
 	buildCompleteTaskResultText,
@@ -15,16 +16,6 @@ import {
 	requireTasks,
 } from "./context.ts";
 import type { TasksRuntime } from "./tasks.ts";
-
-function renderSuccess(message: string, theme: Theme) {
-	const { Text } = require("@earendil-works/pi-tui");
-	return new Text(theme.fg("success", "✓") + theme.fg("dim", ` ${message}`), 0, 0);
-}
-
-function renderPartial(theme: Theme) {
-	const { Text } = require("@earendil-works/pi-tui");
-	return new Text(theme.fg("dim", "..."), 0, 0);
-}
 
 export function registerTaskTools(pi: ExtensionAPI, runtime: TasksRuntime): void {
 	// --- Tool: update_goal ---

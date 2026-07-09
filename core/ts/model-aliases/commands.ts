@@ -2,13 +2,9 @@
 
 import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
 import { promptWithInitialValue, showAliasDetail, showAliasList } from "./alias-forms.ts";
-import { type ConfiguredModelAliases, loadModelAliasConfig, writeModelAliasConfig } from "./config.ts";
+import { type ConfiguredModelAliases, errorMessage, loadModelAliasConfig, writeModelAliasConfig } from "./config.ts";
 
 type DeleteResult = "back" | "stay";
-
-function errorMessage(error: unknown): string {
-	return error instanceof Error ? error.message : String(error);
-}
 
 function readLatestAliasesForMutation(ctx: ExtensionCommandContext): ConfiguredModelAliases | null {
 	const result = loadModelAliasConfig();

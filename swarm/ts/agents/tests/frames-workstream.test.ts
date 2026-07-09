@@ -1,37 +1,8 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { createDaemonClient, type DaemonConnection } from "../daemon/client.ts";
+import { createDaemonClient } from "../daemon/client.ts";
 import { decodeFrame, FRAME_TYPES, type Frame, PROTOCOL_VERSION } from "../daemon/frames/index.ts";
-
-class MockConnection implements DaemonConnection {
-	sent: Frame[] = [];
-	handlers = new Map<Frame["type"], Set<(frame: any) => void>>();
-	closeHandlers = new Set<(code: number, reason: string) => void>();
-
-	send(frame: Frame): void {
-		this.sent.push(frame);
-	}
-
-	on<T extends Frame["type"]>(type: T, handler: (frame: Extract<Frame, { type: T }>) => void): () => void {
-		const set = this.handlers.get(type) ?? new Set();
-		set.add(handler as any);
-		this.handlers.set(type, set);
-		return () => set.delete(handler as any);
-	}
-
-	onClose(handler: (code: number, reason: string) => void): () => void {
-		this.closeHandlers.add(handler);
-		return () => this.closeHandlers.delete(handler);
-	}
-
-	close(): void {}
-
-	emit(frame: Frame): void {
-		const set = this.handlers.get(frame.type);
-		if (!set) return;
-		for (const handler of set) handler(frame as any);
-	}
-}
+import { MockConnection } from "./harness.ts";
 
 const NEW_FRAME_TYPES = [
 	"create_workstream",

@@ -11,6 +11,7 @@ import {
 	resolveGateToolChoice,
 	runGate,
 } from "../reviewer/gate.ts";
+import { fakeModel } from "./review-harness.ts";
 
 function assistantWithToolCall(name: string, args: Record<string, unknown>): AssistantMessage {
 	return {
@@ -41,19 +42,6 @@ function assistantWithToolCall(name: string, args: Record<string, unknown>): Ass
 function assertParsesDecision(decision: GateDecision): void {
 	assert.deepEqual(parseGateResponse(assistantWithToolCall("gate_decision", decision)), decision);
 }
-
-const fakeModel: Model<any> = {
-	id: "claude-haiku",
-	name: "Claude Haiku",
-	api: "anthropic-messages",
-	provider: "anthropic",
-	baseUrl: "https://example.test",
-	reasoning: false,
-	input: ["text"],
-	cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-	contextWindow: 200_000,
-	maxTokens: 4096,
-};
 
 function model(overrides: Partial<Model<any>>): Model<any> {
 	return { ...fakeModel, ...overrides };
