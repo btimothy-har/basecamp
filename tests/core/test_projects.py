@@ -8,9 +8,9 @@ from pathlib import Path
 import pytest
 from pydantic import ValidationError
 
-import basecamp.workspace.projects as project_config
+import basecamp.core.projects as project_config
+from basecamp.core.migrations import migrate_project_dirs
 from basecamp.core.settings import Settings
-from basecamp.workspace.migrations import migrate_project_dirs
 
 
 @pytest.fixture

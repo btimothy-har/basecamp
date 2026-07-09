@@ -1,18 +1,15 @@
 /**
- * Shared context builders — reusable prompt fragments.
+ * Shared prompt-fragment builders — reusable prompt text blocks.
  *
- * Pure functions that format state into text blocks for prompt injection.
- * Used by the parent session prompt and other
- * runtime components that need consistent prompt context.
- *
- * Each function returns null when the context is not applicable,
- * so callers can filter with a simple truthiness check.
+ * Pure functions that format workspace/project state into text blocks for
+ * prompt injection. Each returns null when the context is not applicable, so
+ * callers can filter with a simple truthiness check. The context-file loader
+ * they pair with lives in #core/project/context.ts.
  */
 
-import * as fs from "node:fs";
-import * as path from "node:path";
 import type { CatalogItem } from "#core/platform/catalog.ts";
 import type { WorkspaceState } from "#core/platform/workspace.ts";
+import type { ContextFile } from "#core/project/context.ts";
 
 /**
  * Build the worktree warning block.
@@ -77,52 +74,6 @@ export function buildProjectContext(
 
 	if (parts.length === 0) return null;
 	return `# Project Context\n\n${parts.join("\n\n")}`;
-}
-
-export interface ContextFile {
-	path: string;
-	content: string;
-}
-
-const CONTEXT_FILE_NAMES = ["AGENTS.md", "CLAUDE.md"];
-
-export function loadContextFileFromDir(dir: string): ContextFile | null {
-	for (const filename of CONTEXT_FILE_NAMES) {
-		const filePath = path.join(dir, filename);
-		try {
-			const content = fs.readFileSync(filePath, "utf-8");
-			return { path: filePath, content };
-		} catch {
-			// Not found, try next candidate
-		}
-	}
-	return null;
-}
-
-/**
- * Discover AGENTS.md / CLAUDE.md files by walking up from cwd.
- *
- * Matches pi's native discovery: checks each directory from cwd
- * to filesystem root, returns files in root-first order.
- * Deduplicates by path.
- */
-export function discoverContextFiles(cwd: string): ContextFile[] {
-	const files: ContextFile[] = [];
-	const seen = new Set<string>();
-
-	let dir = cwd;
-	while (true) {
-		const file = loadContextFileFromDir(dir);
-		if (file && !seen.has(file.path)) {
-			files.unshift(file);
-			seen.add(file.path);
-		}
-		const parent = path.dirname(dir);
-		if (parent === dir) break;
-		dir = parent;
-	}
-
-	return files;
 }
 
 function normalizeCapabilityDescription(description: string): string {

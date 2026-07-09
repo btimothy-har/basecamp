@@ -2,7 +2,9 @@
 
 This package owns low-level Python primitives: exception types, atomic file
 helpers, path constants, root install metadata, and a locked JSON settings
-store. It deliberately knows nothing about project or workspace schema.
+store. It also owns the project-configuration schema and its management CLI
+(basecamp.core.projects / .migrations / .directories / .cli), which the
+workspace and CLI shells build on.
 """
 
 from basecamp.core.exceptions import LauncherError

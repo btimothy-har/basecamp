@@ -6,8 +6,8 @@ from pathlib import Path
 
 import pytest
 
+from basecamp.core.cli import project as project_cli
 from basecamp.core.settings import Settings
-from basecamp.workspace.cli import project as project_cli
 
 
 def _write(path: Path, content: str = "") -> None:
@@ -20,8 +20,8 @@ def test_available_styles_uses_runtime_prompt_style_path(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     install_dir = tmp_path / "install"
-    builtin_styles = install_dir / "workspace" / "pi" / "src" / "projects" / "system-prompts" / "styles"
-    stale_styles = install_dir / "workspace" / "pi" / "src" / "system-prompts" / "styles"
+    builtin_styles = install_dir / "pi" / "workspace" / "prompt" / "system-prompts" / "styles"
+    stale_styles = install_dir / "pi" / "workspace" / "system-prompts" / "styles"
     user_styles = tmp_path / "user-styles"
     _write(builtin_styles / "engineering.md")
     _write(stale_styles / "stale.md")

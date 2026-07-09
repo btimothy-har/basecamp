@@ -8,9 +8,9 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from basecamp.core.migrations import migrate_project_dirs, migrate_project_dirs_data
 from basecamp.core.paths import BASECAMP_WORKSPACE_DIR
 from basecamp.core.settings import Settings
-from basecamp.workspace.migrations import migrate_project_dirs, migrate_project_dirs_data
 
 PROJECTS_CONFIG_VERSION = 1
 DEFAULT_PROJECTS_PATH: Path = BASECAMP_WORKSPACE_DIR / "projects.json"

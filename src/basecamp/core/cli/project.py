@@ -6,10 +6,10 @@ from pathlib import Path
 
 import questionary
 
+from basecamp.core.directories import to_home_relative
 from basecamp.core.paths import USER_CONTEXT_DIR, USER_STYLES_DIR
+from basecamp.core.projects import ProjectConfig, load_projects, save_projects
 from basecamp.core.settings import settings
-from basecamp.workspace import ProjectConfig, load_projects, save_projects
-from basecamp.workspace.directories import to_home_relative
 from basecamp.workspace.ui import console, display_projects
 
 
@@ -25,7 +25,7 @@ def _available_styles() -> list[str]:
     install_dir = settings.install_dir
     if install_dir:
         script_dir = Path(install_dir)
-        style_dir = script_dir / "workspace" / "pi" / "src" / "projects" / "system-prompts" / "styles"
+        style_dir = script_dir / "pi" / "workspace" / "prompt" / "system-prompts" / "styles"
         if style_dir.exists():
             styles.update(path.stem for path in style_dir.glob("*.md"))
     if USER_STYLES_DIR.exists():

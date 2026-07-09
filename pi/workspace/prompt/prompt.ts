@@ -6,17 +6,16 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { getAgentMode } from "#core/agent-mode/index.ts";
 import { type CatalogItem, listCatalogItemsByType } from "#core/platform/catalog.ts";
 import { getWorkspaceService, getWorkspaceState, type WorkspaceState } from "#core/platform/workspace.ts";
+import { type ContextFile, discoverContextFiles } from "#core/project/context.ts";
+import { getProjectState, type ProjectState } from "#core/project/project.ts";
+import { buildRepoLogseqContext } from "#core/project/repo-logseq.ts";
 import { isPlanDisabledFor, PLAN_TOOL_NAME } from "#tasks/index.ts";
 import {
 	buildCapabilitiesIndex,
 	buildProjectContext,
 	buildUnsafeEditGuidance,
 	buildWorktreeWarning,
-	type ContextFile,
-	discoverContextFiles,
-} from "./context.ts";
-import { getProjectState, type ProjectState } from "./project.ts";
-import { buildRepoLogseqContext } from "./repo-logseq.ts";
+} from "./context-builders.ts";
 
 const MODULE_DIR = path.dirname(fileURLToPath(import.meta.url));
 const PACKAGE_DIR = path.resolve(MODULE_DIR, "system-prompts");

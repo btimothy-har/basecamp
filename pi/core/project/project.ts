@@ -1,4 +1,4 @@
-import { processScoped } from "#core/platform/global-registry.ts";
+import { processScoped } from "../platform/global-registry.ts";
 export interface ProjectConfig {
 	repoRoot: string;
 	additionalDirs: string[];

@@ -5,8 +5,8 @@ from __future__ import annotations
 from rich.console import Console
 from rich.table import Table
 
+from basecamp.core.projects import ProjectConfig
 from basecamp.workspace.environments import EnvironmentConfig
-from basecamp.workspace.projects import ProjectConfig
 
 # Console instances for output
 console = Console()
