@@ -5,6 +5,10 @@ from __future__ import annotations
 import asyncio
 import json
 
+from swarm_harness import _agent, _summary, _SwarmHarness, _to_text
+from test_companion_daemon import _build_fake_connection
+from textual.widgets import Static
+
 from basecamp.companion.daemon import (
     DaemonSkillInvocation,
     DaemonSummaryError,
@@ -13,9 +17,6 @@ from basecamp.companion.daemon import (
     DaemonSummaryUnavailable,
 )
 from basecamp.companion.ui.swarm import SwarmBody
-from swarm_harness import _agent, _summary, _SwarmHarness, _to_text
-from test_companion_daemon import _build_fake_connection
-from textual.widgets import Static
 
 
 def test_daemon_parser_reads_task_and_activity() -> None:

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from test_companion_dashboard import _goal, _to_text
+
 from basecamp.companion.app import CompanionApp
 from basecamp.companion.snapshot import CompanionTask
 from basecamp.companion.ui.dashboard import (
@@ -13,7 +15,6 @@ from basecamp.companion.ui.dashboard import (
 )
 from basecamp.companion.ui.formatting import _format_duration, _truncate_preview
 from basecamp.companion.ui.modes import next_body_mode
-from test_companion_dashboard import _goal, _to_text
 
 
 def test_render_bullets_empty_shows_dash() -> None:

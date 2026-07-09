@@ -5,6 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
+
 from basecamp.swarm.frames import PROTOCOL_VERSION, DispatchFrame, DispatchSpec
 from basecamp.swarm.service.dispatch import DispatchRejection, PreparedDispatch, prepare_dispatch
 from basecamp.swarm.store import Store

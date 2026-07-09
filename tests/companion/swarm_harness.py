@@ -4,10 +4,11 @@ from __future__ import annotations
 
 import re
 
-from basecamp.companion.daemon import DaemonSummaryAgent, DaemonSummaryCounts, DaemonSummaryOk
-from basecamp.companion.ui.swarm import SwarmBody
 from rich.console import Console
 from textual.app import App, ComposeResult
+
+from basecamp.companion.daemon import DaemonSummaryAgent, DaemonSummaryCounts, DaemonSummaryOk
+from basecamp.companion.ui.swarm import SwarmBody
 
 
 def _to_text(renderable: object) -> str:

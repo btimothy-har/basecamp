@@ -9,6 +9,8 @@ from collections.abc import Sequence
 from pathlib import Path
 
 import pytest
+from runner_helpers import _context
+
 from basecamp.swarm.frames import (
     PROTOCOL_VERSION,
     DispatchAckFrame,
@@ -32,7 +34,6 @@ from basecamp.swarm.runner import (
     ProxySocketUnavailableError,
     scrub_runner_process_env,
 )
-from runner_helpers import _context
 
 
 class FakeWebSocket:

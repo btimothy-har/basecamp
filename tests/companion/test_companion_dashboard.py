@@ -7,6 +7,10 @@ import json
 import subprocess
 from pathlib import Path
 
+from rich.console import Console
+from textual.containers import VerticalScroll
+from textual.widgets import ContentSwitcher, Static
+
 from basecamp.companion.analysis import companion_analysis_path
 from basecamp.companion.app import CompanionApp
 from basecamp.companion.daemon import (
@@ -23,9 +27,6 @@ from basecamp.companion.snapshot import CompanionGoal, CompanionProgress, Compan
 from basecamp.companion.source import DashboardModel
 from basecamp.companion.ui.dashboard import DashboardBody
 from basecamp.companion.ui.swarm import SwarmBody
-from rich.console import Console
-from textual.containers import VerticalScroll
-from textual.widgets import ContentSwitcher, Static
 
 
 def _to_text(renderable: object) -> str:

@@ -7,6 +7,6 @@ import { fileURLToPath } from "node:url";
  * itself when building subagent tool allowlists.
  */
 export function basecampExtensionRoot(): string {
-	// swarm/ts/agents/ -> repo root
-	return path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../..");
+	// pi/swarm/agents/ -> repo root
+	return path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../../..");
 }

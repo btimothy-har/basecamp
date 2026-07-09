@@ -13,8 +13,9 @@ from app_helpers import (
     _register_ws,
     _wait_for_store_message_status,
 )
-from basecamp.swarm.frames import PROTOCOL_VERSION
 from fastapi.testclient import TestClient
+
+from basecamp.swarm.frames import PROTOCOL_VERSION
 
 
 def test_ws_peer_message_ack_is_immediate_and_delivery_is_forwarded(tmp_path: Path) -> None:

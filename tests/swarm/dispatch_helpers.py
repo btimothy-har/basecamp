@@ -9,6 +9,7 @@ import time
 from pathlib import Path
 
 import uvicorn
+
 from basecamp.swarm.app import create_app
 from basecamp.swarm.frames import PROTOCOL_VERSION
 from basecamp.swarm.registry import Registry

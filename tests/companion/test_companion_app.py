@@ -7,12 +7,13 @@ import json
 import subprocess
 from pathlib import Path
 
+from textual.widgets import ContentSwitcher, DirectoryTree, Footer, ListView, Static
+
 from basecamp.companion.app import CompanionApp
 from basecamp.companion.ui.dashboard import DashboardBody
 from basecamp.companion.ui.diff import DiffBody, DiffView, FileList
 from basecamp.companion.ui.swarm import SwarmBody
 from basecamp.companion.ui.workspace import WorkspacePanel
-from textual.widgets import ContentSwitcher, DirectoryTree, Footer, ListView, Static
 
 
 def _run_git(repo: Path, *args: str) -> None:

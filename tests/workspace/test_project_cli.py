@@ -5,6 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
+
 from basecamp.core.settings import Settings
 from basecamp.workspace.cli import project as project_cli
 

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import questionary
+
 from basecamp.workspace import load_projects
 from basecamp.workspace.cli.project import (
     execute_project_add,

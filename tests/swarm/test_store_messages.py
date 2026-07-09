@@ -5,8 +5,9 @@ from __future__ import annotations
 import sqlite3
 from pathlib import Path
 
-from basecamp.swarm.store import Store, is_message_delivery_terminal
 from store_helpers import _create_message, _unknown_message_status
+
+from basecamp.swarm.store import Store, is_message_delivery_terminal
 
 
 def test_create_message_persists_accepted_message(tmp_path: Path) -> None:

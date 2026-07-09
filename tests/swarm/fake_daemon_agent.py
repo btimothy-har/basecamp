@@ -7,6 +7,8 @@ import os
 import time
 from pathlib import Path
 
+from websockets.sync.client import unix_connect
+
 from basecamp.swarm.frames import PROTOCOL_VERSION
 from basecamp.swarm.run_result import (
     BASECAMP_RUN_ATTEMPT,
@@ -17,7 +19,6 @@ from basecamp.swarm.run_result import (
     load_run_result,
     write_run_result,
 )
-from websockets.sync.client import unix_connect
 
 
 def _fake_result_value() -> str:

@@ -4,6 +4,9 @@ from __future__ import annotations
 
 import asyncio
 
+from swarm_harness import _agent, _summary, _SwarmHarness, _to_text
+from textual.widgets import Static
+
 from basecamp.companion.daemon import (
     DaemonAgentMessage,
     DaemonAgentMessagesError,
@@ -15,8 +18,6 @@ from basecamp.companion.daemon import (
     DaemonTaskProjection,
 )
 from basecamp.companion.ui.swarm import SwarmBody
-from swarm_harness import _agent, _summary, _SwarmHarness, _to_text
-from textual.widgets import Static
 
 
 def test_swarm_renders_left_list_and_ordered_detail_sections() -> None:

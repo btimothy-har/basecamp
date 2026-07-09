@@ -5,6 +5,9 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+from click.testing import CliRunner
+
+from basecamp.cli import basecamp
 from basecamp.companion.analysis import (
     COMPANION_ANALYSIS_VERSION,
     CompanionAnalysis,
@@ -12,9 +15,6 @@ from basecamp.companion.analysis import (
     load_analysis,
     write_analysis,
 )
-from click.testing import CliRunner
-
-from basecamp.cli import basecamp
 
 
 def test_companion_analyze_writes_sidecar(monkeypatch, tmp_path: Path) -> None:

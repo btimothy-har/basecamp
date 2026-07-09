@@ -7,9 +7,6 @@ import subprocess
 from collections.abc import Iterable
 from pathlib import Path
 
-from basecamp.companion.diff import read_text_for_preview
-from basecamp.companion.snapshot import collapse_home
-from basecamp.companion.ui.syntax import lexer_for_filename
 from rich.style import Style
 from rich.syntax import Syntax
 from rich.text import Text
@@ -18,6 +15,10 @@ from textual.binding import Binding
 from textual.containers import Horizontal, VerticalScroll
 from textual.widgets import DirectoryTree, Static
 from textual.widgets.tree import TreeNode
+
+from basecamp.companion.diff import read_text_for_preview
+from basecamp.companion.snapshot import collapse_home
+from basecamp.companion.ui.syntax import lexer_for_filename
 
 
 class _CompanionDirectoryTree(DirectoryTree):

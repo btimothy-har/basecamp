@@ -5,6 +5,8 @@ from __future__ import annotations
 from collections.abc import Sequence
 from pathlib import Path
 
+from runner_helpers import _append_attempt, _context
+
 from basecamp.swarm.run_result import FinalRunResult, load_run_result
 from basecamp.swarm.runner import (
     EMPTY_RESULT_AFTER_RETRY,
@@ -12,7 +14,6 @@ from basecamp.swarm.runner import (
     AttemptProcessResult,
     run,
 )
-from runner_helpers import _append_attempt, _context
 
 
 def test_attempt_child_env_uses_proxy_socket_and_dummy_report_token(tmp_path: Path) -> None:

@@ -6,8 +6,9 @@ from pathlib import Path
 
 import pytest
 from app_helpers import _build_app, _register_ws
-from basecamp.swarm.frames import PROTOCOL_VERSION
 from fastapi.testclient import TestClient
+
+from basecamp.swarm.frames import PROTOCOL_VERSION
 
 
 def test_health_endpoint(tmp_path: Path) -> None:

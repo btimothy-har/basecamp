@@ -5,8 +5,9 @@ from __future__ import annotations
 from pathlib import Path
 
 from app_helpers import _build_app, _build_app_with_store, _register_ws
-from basecamp.swarm.frames import PROTOCOL_VERSION
 from fastapi.testclient import TestClient
+
+from basecamp.swarm.frames import PROTOCOL_VERSION
 
 
 def test_ws_list_agents_returns_same_root_non_session_rows_and_awaitable_filters(tmp_path: Path) -> None:

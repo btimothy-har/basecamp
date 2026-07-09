@@ -53,6 +53,7 @@ def test_legacy_uninstall_failures_are_nonfatal(mocker) -> None:
 
 
 def test_repo_dir_is_the_pi_extension_root() -> None:
-    # The repo root carries the single extension manifest the installer registers.
-    assert (Path(installer.REPO_DIR) / "extension.ts").exists()
+    # The repo root carries the package manifest the installer registers; the
+    # extension entry point itself lives under pi/.
+    assert (Path(installer.REPO_DIR) / "pi" / "extension.ts").exists()
     assert (Path(installer.REPO_DIR) / "package.json").exists()

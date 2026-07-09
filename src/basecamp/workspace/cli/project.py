@@ -5,6 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import questionary
+
 from basecamp.core.paths import USER_CONTEXT_DIR, USER_STYLES_DIR
 from basecamp.core.settings import settings
 from basecamp.workspace import ProjectConfig, load_projects, save_projects

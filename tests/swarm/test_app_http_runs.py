@@ -6,9 +6,10 @@ import sqlite3
 from pathlib import Path
 
 from app_helpers import _build_app, _build_app_with_store
-from basecamp.swarm.frames import PROTOCOL_VERSION
 from fastapi.testclient import TestClient
 from store_helpers import _insert_run, _write_task_log
+
+from basecamp.swarm.frames import PROTOCOL_VERSION
 
 
 def test_runs_summary_endpoint_returns_child_agents(tmp_path: Path) -> None:

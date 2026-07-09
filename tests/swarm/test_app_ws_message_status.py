@@ -12,9 +12,10 @@ from app_helpers import (
     _start_message_status_wait,
     _unknown_message_status,
 )
+from fastapi.testclient import TestClient
+
 from basecamp.swarm.frames import PROTOCOL_VERSION
 from basecamp.swarm.service.messaging import MAX_MESSAGE_WAIT_TIMEOUT_SECONDS, _message_wait_timeout
-from fastapi.testclient import TestClient
 
 
 def test_ws_message_status_immediate_authorized_and_unknown_for_missing_or_unauthorized(

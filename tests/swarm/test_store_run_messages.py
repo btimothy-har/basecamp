@@ -5,8 +5,9 @@ from __future__ import annotations
 import sqlite3
 from pathlib import Path
 
-from basecamp.swarm.store import Store
 from store_helpers import _summary_agent
+
+from basecamp.swarm.store import Store
 
 
 def test_get_run_messages_projects_selected_agent_latest_three_messages(tmp_path: Path) -> None:

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import pytest
+
 from basecamp.workspace.cli.environment import derive_repo_identity
 
 

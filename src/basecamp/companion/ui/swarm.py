@@ -4,6 +4,16 @@ from __future__ import annotations
 
 from datetime import datetime
 
+from rich.console import Group, RenderableType
+from rich.panel import Panel
+from rich.table import Table
+from rich.text import Text
+from textual.app import ComposeResult
+from textual.binding import Binding
+from textual.containers import Horizontal, VerticalScroll
+from textual.widget import Widget
+from textual.widgets import Static
+
 from basecamp.companion.daemon import (
     DaemonAgentMessage,
     DaemonAgentMessages,
@@ -18,15 +28,6 @@ from basecamp.companion.ui.formatting import (
     _parse_iso_timestamp,
     _truncate_preview,
 )
-from rich.console import Group, RenderableType
-from rich.panel import Panel
-from rich.table import Table
-from rich.text import Text
-from textual.app import ComposeResult
-from textual.binding import Binding
-from textual.containers import Horizontal, VerticalScroll
-from textual.widget import Widget
-from textual.widgets import Static
 
 _DAEMON_STATUS_GLYPH = {
     "completed": "✓",

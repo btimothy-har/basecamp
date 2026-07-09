@@ -17,16 +17,9 @@ import sys
 from pathlib import Path
 
 REPO_DIR = Path(__file__).resolve().parent
-# basecamp is a namespace package assembled from portions; each portion root
-# on sys.path contributes its basecamp.* subpackages (PEP 420).
-for path in [
-    REPO_DIR / "src",
-    REPO_DIR / "core" / "py",
-    REPO_DIR / "workspace" / "py",
-    REPO_DIR / "swarm" / "py",
-    REPO_DIR / "companion" / "py",
-]:
-    sys.path.insert(0, str(path))
+# basecamp is one ordinary package under src/; add it to sys.path so this
+# bootstrap can import basecamp.installer before the tool is installed.
+sys.path.insert(0, str(REPO_DIR / "src"))
 
 from basecamp.installer import run_interactive_install  # noqa: E402
 

@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
-from basecamp.companion.diff import WorkspaceStatus
-from basecamp.companion.snapshot import CompanionSnapshot, render_workspace_lines
 from textual.binding import ActiveBinding
 from textual.screen import Screen
 from textual.widgets import Static
+
+from basecamp.companion.diff import WorkspaceStatus
+from basecamp.companion.snapshot import CompanionSnapshot, render_workspace_lines
 
 
 class WorkspacePanel(Static):

@@ -9,10 +9,11 @@ import uuid
 from pathlib import Path
 
 import pytest
-from basecamp.swarm.frames import PROTOCOL_VERSION
-from basecamp.swarm.store import Store
 from dispatch_helpers import _dispatch, _dispatch_spec, _register_session, _start_daemon, _stop_daemon
 from websockets.sync.client import unix_connect
+
+from basecamp.swarm.frames import PROTOCOL_VERSION
+from basecamp.swarm.store import Store
 
 pytestmark = pytest.mark.usefixtures("_isolate_run_result_home")
 

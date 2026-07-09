@@ -3,6 +3,8 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
+from pydantic import ValidationError
+
 from basecamp.swarm.run_result import (
     FinalRunResult,
     RunResultAttempt,
@@ -12,7 +14,6 @@ from basecamp.swarm.run_result import (
     run_result_path,
     write_run_result,
 )
-from pydantic import ValidationError
 
 
 def test_run_result_path_uses_run_owned_agent_directory() -> None:

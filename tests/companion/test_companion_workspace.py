@@ -7,16 +7,17 @@ import os
 import tempfile
 from pathlib import Path
 
-from basecamp.companion.app import CompanionApp
-from basecamp.companion.snapshot import collapse_home
-from basecamp.companion.ui import files as files_ui
-from basecamp.companion.ui.files import FileBrowser
 from rich.style import Style
 from rich.syntax import Syntax
 from test_companion_app import _build_repo, _write_snapshot
 from textual.app import App, ComposeResult
 from textual.containers import VerticalScroll
 from textual.widgets import ContentSwitcher, DirectoryTree, Static
+
+from basecamp.companion.app import CompanionApp
+from basecamp.companion.snapshot import collapse_home
+from basecamp.companion.ui import files as files_ui
+from basecamp.companion.ui.files import FileBrowser
 
 
 def test_file_browser_preview_show_path(tmp_path: Path) -> None:

@@ -5,12 +5,13 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
+from store_helpers import _create_workstream
+
 from basecamp.swarm.store import (
     DuplicateWorkstreamSlugError,
     Store,
     WorkstreamNotFoundError,
 )
-from store_helpers import _create_workstream
 
 
 def test_create_workstream_then_get_resolves_by_id_and_slug(tmp_path: Path) -> None:

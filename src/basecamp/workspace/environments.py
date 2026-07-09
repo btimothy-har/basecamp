@@ -11,8 +11,9 @@ from __future__ import annotations
 
 from typing import Any
 
-from basecamp.core.settings import CONFIG_VERSION, Settings, settings
 from pydantic import BaseModel, ConfigDict
+
+from basecamp.core.settings import CONFIG_VERSION, Settings, settings
 
 ENVIRONMENTS_SECTION = "environments"
 

@@ -4,6 +4,12 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from textual.app import App, ComposeResult
+from textual.binding import Binding
+from textual.containers import Horizontal
+from textual.screen import Screen
+from textual.widgets import ContentSwitcher, Footer, Static
+
 from basecamp.companion.daemon import (
     DaemonAgentMessages,
     DaemonSummary,
@@ -34,11 +40,6 @@ from basecamp.companion.ui.files import FileBrowser
 from basecamp.companion.ui.modes import next_body_mode
 from basecamp.companion.ui.swarm import SwarmBody
 from basecamp.companion.ui.workspace import WorkspacePanel, _MenuOrderedScreen
-from textual.app import App, ComposeResult
-from textual.binding import Binding
-from textual.containers import Horizontal
-from textual.screen import Screen
-from textual.widgets import ContentSwitcher, Footer, Static
 
 
 class CompanionApp(App[None]):

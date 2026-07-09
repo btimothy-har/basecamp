@@ -12,12 +12,13 @@ from pathlib import Path
 
 import httpx
 import uvicorn
+from pytest import MonkeyPatch
+
 from basecamp.swarm import server as daemon_server
 from basecamp.swarm.app import create_app
 from basecamp.swarm.frames import PROTOCOL_VERSION
 from basecamp.swarm.server import UdsServer
 from basecamp.swarm.store import Store
-from pytest import MonkeyPatch
 
 
 class _ThreadedServer(UdsServer):

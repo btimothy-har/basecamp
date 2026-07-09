@@ -7,6 +7,8 @@ import sqlite3
 from pathlib import Path
 
 import pytest
+from dispatch_helpers import _FakePidProcess
+
 from basecamp.swarm.process import reconcile_orphaned_runs
 from basecamp.swarm.registry import Registry, Waiter
 from basecamp.swarm.service.reaper import (
@@ -16,7 +18,6 @@ from basecamp.swarm.service.reaper import (
     schedule_disconnect_reaper,
 )
 from basecamp.swarm.store import Store
-from dispatch_helpers import _FakePidProcess
 
 pytestmark = pytest.mark.usefixtures("_isolate_run_result_home")
 

@@ -4,8 +4,9 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from basecamp.swarm.store import Store
 from store_helpers import _insert_run
+
+from basecamp.swarm.store import Store
 
 
 def test_get_run_summary_unknown_root_returns_empty_payload(tmp_path: Path) -> None:

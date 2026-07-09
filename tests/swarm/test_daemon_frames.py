@@ -19,8 +19,8 @@ from basecamp.swarm.frames import (
     serialize_frame,
 )
 
-REPO_ROOT = Path(__file__).resolve().parents[3]
-FIXTURE_DIR = REPO_ROOT / "swarm" / "protocol" / "frames"
+REPO_ROOT = Path(__file__).resolve().parents[2]
+FIXTURE_DIR = REPO_ROOT / "pi" / "swarm" / "protocol" / "frames"
 
 
 def _fixture_type_set() -> set[str]:

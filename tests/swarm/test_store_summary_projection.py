@@ -6,8 +6,9 @@ import json
 import sqlite3
 from pathlib import Path
 
-from basecamp.swarm.store import Store
 from store_helpers import _summary_agent, _write_task_log
+
+from basecamp.swarm.store import Store
 
 
 def test_get_run_summary_projects_skills_from_tool_calls(tmp_path: Path) -> None:
