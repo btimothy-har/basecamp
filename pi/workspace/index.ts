@@ -1,11 +1,11 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { isSubagent } from "#core/platform/env.ts";
 import registerProject from "#core/project/index.ts";
+import { registerWorkspaceGuards } from "./guards/index.ts";
 import { registerPrompt } from "./prompt/prompt.ts";
-import { registerWorktreeCommand } from "./workspace/commands.ts";
-import { registerWorkspaceGuards } from "./workspace/guards.ts";
-import { registerWorkspaceRuntime } from "./workspace/service.ts";
-import { registerWorkspaceSession } from "./workspace/session.ts";
+import { registerWorktreeCommand } from "./worktree/command.ts";
+import { registerWorkspaceRuntime } from "./worktree/service.ts";
+import { registerWorkspaceSession } from "./worktree/session.ts";
 
 export default function (pi: ExtensionAPI): void {
 	registerWorkspaceRuntime(pi);

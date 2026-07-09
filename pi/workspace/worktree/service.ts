@@ -26,7 +26,7 @@ import {
 	listWorktrees as listGitWorktrees,
 	type WorktreeResult,
 } from "#core/workspace/worktree.ts";
-import { applyUnsafeEditFlag } from "./unsafe-edit.ts";
+import { applyUnsafeEditFlag } from "../guards/unsafe-edit.ts";
 
 interface WorkspaceRuntimeGlobal {
 	service: WorkspaceRuntimeService | null;
