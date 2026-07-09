@@ -1,6 +1,10 @@
 """Shared install logic for basecamp.
 
 Called by both install.py (bootstrap) and `basecamp install` (reconfiguration).
+
+Every install gets everything: the Python tool and the single Pi extension
+registered from the repo root. The pre-consolidation component picker and
+extras are gone by design (docs/design/repo-consolidation.md §3).
 """
 
 from __future__ import annotations
@@ -8,12 +12,11 @@ from __future__ import annotations
 import shutil
 import subprocess
 import sys
-from dataclasses import dataclass
 from pathlib import Path
 from typing import Final
 
 import questionary
-from basecamp_core.settings import settings
+from basecamp.core.settings import settings
 from rich.console import Console
 from rich.panel import Panel
 
@@ -21,152 +24,68 @@ console = Console()
 
 REPO_DIR: Final = Path(__file__).resolve().parents[2]
 
-COMPONENT_STANDARD: Final = "standard"
-COMPONENT_ENGINEERING: Final = "engineering"
-COMPONENT_BROWSER: Final = "browser"
-COMPONENT_COMPANION: Final = "companion"
-COMPONENT_SWARM: Final = "swarm"
+# Pre-consolidation Pi package registrations to clean up — each was its own
+# `pi install` target before the single-extension layout.
+_LEGACY_PACKAGE_SUBPATHS: Final = (
+    "core/pi",
+    "pi-ui",
+    "workspace/pi",
+    "pi-tasks",
+    "pi-git",
+    "pi-bash-reviewer",
+    "pi-engineering",
+    "pi-browser",
+    "pi-companion/pi",
+    "pi-swarm/extension",
+)
 
 
-_MANDATORY_TS_PACKAGE: Final = ("core/pi", "pi-core")
-_PACKAGE_MODULE_IDS: Final = {
-    "core/pi": "core",
-    "pi-ui": "ui",
-    "workspace/pi": "workspace",
-    "pi-tasks": "tasks",
-    "pi-git": "git",
-    "pi-bash-reviewer": "bash-reviewer",
-    "pi-engineering": "engineering",
-    "pi-browser": "browser",
-    "pi-companion/pi": "companion",
-    "pi-swarm/extension": "swarm",
-}
-_TS_PACKAGE_ORDER: Final = [
-    _MANDATORY_TS_PACKAGE,
-    ("pi-ui", "pi-ui"),
-    ("workspace/pi", "pi-workspace"),
-    ("pi-tasks", "pi-tasks"),
-    ("pi-git", "pi-git"),
-    ("pi-bash-reviewer", "pi-bash-reviewer"),
-    ("pi-engineering", "pi-engineering"),
-    ("pi-browser", "pi-browser"),
-    ("pi-companion/pi", "pi-companion"),
-    ("pi-swarm/extension", "pi-swarm extension"),
-]
+def _uninstall_legacy_pi_packages(pi: str) -> None:
+    """Remove stale per-package registrations from the pre-consolidation layout.
 
-_COMPONENT_TS_PACKAGES: Final = {
-    COMPONENT_STANDARD: ["pi-ui", "workspace/pi", "pi-tasks", "pi-git", "pi-bash-reviewer"],
-    COMPONENT_ENGINEERING: ["pi-engineering"],
-    COMPONENT_BROWSER: ["pi-browser"],
-    COMPONENT_COMPANION: ["pi-companion/pi"],
-    COMPONENT_SWARM: ["pi-swarm/extension"],
-}
-
-_COMPONENT_DEPENDENCIES: Final = {
-    COMPONENT_SWARM: ["pi-ui", "pi-tasks"],
-}
-
-
-@dataclass(frozen=True)
-class InstallSelection:
-    """Resolved Python extras and TypeScript packages for an install."""
-
-    python_extras: tuple[str, ...]
-    ts_packages: tuple[tuple[str, str], ...]
-
-    @property
-    def installed_modules(self) -> tuple[str, ...]:
-        """Basecamp module ids represented by the selected Pi packages."""
-        return tuple(_PACKAGE_MODULE_IDS[subpath] for subpath, _label in self.ts_packages)
-
-    @property
-    def python_extra(self) -> str:
-        """PEP 508 extras suffix for the root package path."""
-        return f"[{','.join(self.python_extras)}]" if self.python_extras else ""
-
-
-def resolve_install_selection(component_ids: list[str] | tuple[str, ...] | set[str]) -> InstallSelection:
-    """Resolve selected optional components into installable artifacts.
-
-    The core foundation is always included. Optional groups can add packages,
-    and component dependencies are expanded without duplicating packages.
+    Best-effort: entries that were never registered (or were already removed)
+    are skipped silently.
     """
-    selected = set(component_ids)
-    package_subpaths = {_MANDATORY_TS_PACKAGE[0]}
-
-    for component_id in selected:
-        package_subpaths.update(_COMPONENT_TS_PACKAGES.get(component_id, []))
-        package_subpaths.update(_COMPONENT_DEPENDENCIES.get(component_id, []))
-
-    ts_packages = tuple(package for package in _TS_PACKAGE_ORDER if package[0] in package_subpaths)
-    python_extras = tuple(
-        extra
-        for component_id, extra in (
-            (COMPONENT_COMPANION, "companion"),
-            (COMPONENT_SWARM, "swarm"),
+    removed = []
+    for subpath in _LEGACY_PACKAGE_SUBPATHS:
+        result = subprocess.run(
+            [pi, "uninstall", str(REPO_DIR / subpath)],
+            check=False,
+            capture_output=True,
+            text=True,
         )
-        if component_id in selected
-    )
-    return InstallSelection(python_extras=python_extras, ts_packages=ts_packages)
+        if result.returncode == 0:
+            removed.append(subpath)
+    if removed:
+        console.print(f"  Unregistered {len(removed)} legacy Pi package registration(s).")
 
 
-def _save_install_metadata(repo_dir: Path, selection: InstallSelection) -> None:
-    settings.set_install_metadata(install_dir=str(repo_dir), installed_modules=selection.installed_modules)
-
-
-def _install_pi_package(package_dir: Path, label: str) -> None:
+def _install_pi_extension() -> None:
     npm = shutil.which("npm")
     if not npm:
-        console.print(f"  [yellow]⚠[/yellow] npm not found — skipping {label} install")
+        console.print("  [yellow]⚠[/yellow] npm not found — skipping extension install")
         return
-    console.print(f"  Installing [bold]{label}[/bold] npm dependencies...")
-    result = subprocess.run([npm, "install"], cwd=package_dir, check=False, capture_output=True, text=True)
+    console.print("  Installing extension npm dependencies...")
+    result = subprocess.run([npm, "install"], cwd=REPO_DIR, check=False, capture_output=True, text=True)
     if result.returncode != 0:
-        console.print(f"\n[red]npm install failed for {label}:[/red]")
+        console.print("\n[red]npm install failed:[/red]")
         console.print(result.stderr.strip())
         sys.exit(1)
     pi = shutil.which("pi")
     if not pi:
-        console.print(f"  [yellow]⚠[/yellow] pi not found — skipping {label} registration")
+        console.print("  [yellow]⚠[/yellow] pi not found — skipping registration")
         return
-    console.print(f"  Registering [bold]{label}[/bold] with pi...")
-    result = subprocess.run([pi, "install", str(package_dir)], check=False, capture_output=True, text=True)
+    _uninstall_legacy_pi_packages(pi)
+    console.print("  Registering [bold]basecamp[/bold] with pi...")
+    result = subprocess.run([pi, "install", str(REPO_DIR)], check=False, capture_output=True, text=True)
     if result.returncode != 0:
-        console.print(f"\n[red]pi install failed for {label}:[/red]")
+        console.print("\n[red]pi install failed:[/red]")
         console.print(result.stderr.strip())
         sys.exit(1)
 
 
-def _component_choices() -> list[questionary.Choice]:
-    return [
-        questionary.Choice(
-            "Standard session capabilities (pi-ui, pi-workspace, pi-tasks, pi-git)",
-            value=COMPONENT_STANDARD,
-        ),
-        questionary.Choice("Engineering tools (pi-engineering)", value=COMPONENT_ENGINEERING),
-        questionary.Choice("Browser automation (pi-browser)", value=COMPONENT_BROWSER),
-        questionary.Choice("Companion (Python extra + pi-companion)", value=COMPONENT_COMPANION),
-        questionary.Choice(
-            "Swarm / async agents (pi-swarm; auto-includes pi-ui and pi-tasks)",
-            value=COMPONENT_SWARM,
-        ),
-    ]
-
-
-def _prompt_components() -> list[str]:
-    console.print()
-    console.print("[bold]Core foundation[/bold] (always installed): basecamp Python tool + pi-core")
-    answer = questionary.checkbox(
-        "Select optional components to install:",
-        choices=_component_choices(),
-    ).ask()
-    if answer is None:
-        sys.exit(0)
-    return answer
-
-
 def run_interactive_install(*, editable: bool | None = None) -> None:
-    """Run the interactive basecamp install.
+    """Run the basecamp install.
 
     Called by install.py (bootstrap) and `basecamp install` (reconfiguration).
     """
@@ -176,16 +95,13 @@ def run_interactive_install(*, editable: bool | None = None) -> None:
             sys.exit(0)
         editable = answer
 
-    component_ids = _prompt_components()
-    selection = resolve_install_selection(component_ids)
-
     console.print()
     console.print(Panel.fit("basecamp setup", style="bold blue"))
     console.print()
 
     console.print("[bold]Python tool[/bold]")
     console.print()
-    pkg_spec = f"{REPO_DIR}{selection.python_extra}"
+    pkg_spec = str(REPO_DIR)
     args = ["uv", "tool", "install", "--force", "--reinstall"]
     if editable:
         args.append("-e")
@@ -198,12 +114,11 @@ def run_interactive_install(*, editable: bool | None = None) -> None:
         sys.exit(1)
 
     console.print()
-    console.print("[bold]Pi packages[/bold]")
+    console.print("[bold]Pi extension[/bold]")
     console.print()
-    for subpath, label in selection.ts_packages:
-        _install_pi_package(REPO_DIR / subpath, label)
+    _install_pi_extension()
 
-    _save_install_metadata(REPO_DIR, selection)
+    settings.set_install_metadata(install_dir=str(REPO_DIR))
 
     console.print()
     console.print("[green]✓[/green] Done.")

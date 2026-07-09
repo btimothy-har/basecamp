@@ -7,53 +7,36 @@ import sys
 from pathlib import Path
 
 import rich_click as click
-from basecamp_core.exceptions import LauncherError
-from basecamp_workspace import EnvironmentConfig, remove_environment, set_environment
-from basecamp_workspace.cli.config import run_project_menu
-from basecamp_workspace.cli.environment import (
+from basecamp.companion.analysis import (
+    companion_analysis_path,
+    load_analysis,
+    write_analysis,
+)
+from basecamp.companion.analyzer import generate_analysis, resolve_companion_model
+from basecamp.companion.app import run_companion
+from basecamp.core.exceptions import LauncherError
+from basecamp.swarm.server import run_daemon as run_swarm_daemon
+from basecamp.workspace import EnvironmentConfig, remove_environment, set_environment
+from basecamp.workspace.cli.config import run_project_menu
+from basecamp.workspace.cli.environment import (
     execute_environment_list,
     run_environments_menu,
 )
-from basecamp_workspace.cli.project import (
+from basecamp.workspace.cli.project import (
     execute_project_add,
     execute_project_edit,
     execute_project_list,
     execute_project_remove,
 )
-from basecamp_workspace.ui import console, err_console
+from basecamp.workspace.ui import console, err_console
 
 from basecamp.installer import run_interactive_install
 from basecamp.setup import execute_setup
-
-# Companion is an optional component — lazy import
-try:
-    from companion_tui.analysis import (
-        companion_analysis_path,
-        load_analysis,
-        write_analysis,
-    )
-    from companion_tui.analyzer import generate_analysis, resolve_companion_model
-    from companion_tui.app import run_companion
-
-    HAS_COMPANION = True
-except ImportError:
-    HAS_COMPANION = False
-
-try:
-    from pi_swarm.server import run_daemon as run_swarm_daemon
-
-    HAS_SWARM = True
-except ImportError:
-    run_swarm_daemon = None
-    HAS_SWARM = False
 
 click.rich_click.USE_RICH_MARKUP = True
 click.rich_click.SHOW_ARGUMENTS = True
 
 CONTEXT_SETTINGS = {"help_option_names": ["-h", "--help"]}
-
-_COMPANION_NOT_INSTALLED = "companion is not installed. Run: basecamp install"
-_SWARM_NOT_INSTALLED = "swarm is not installed. Run: basecamp install"
 
 
 def _handle_error(e: LauncherError) -> None:
@@ -140,12 +123,12 @@ def projects_remove(name: str) -> None:
     execute_project_remove(name)
 
 
-@basecamp.group(hidden=not HAS_COMPANION)
+@basecamp.group()
 def companion() -> None:
     """Live session companion commands."""
 
 
-@companion.command(hidden=not HAS_COMPANION)
+@companion.command()
 @click.option(
     "--snapshot",
     "snapshot_path",
@@ -170,13 +153,10 @@ def companion() -> None:
 )
 def dashboard(snapshot_path: Path, cwd: Path, scratch_dir: Path | None) -> None:
     """Live session companion dashboard (runs in a tmux pane)."""
-    if not HAS_COMPANION:
-        click.echo(_COMPANION_NOT_INSTALLED, err=True)
-        raise SystemExit(1)
     run_companion(snapshot_path, cwd, scratch_dir)
 
 
-@companion.command(hidden=not HAS_COMPANION)
+@companion.command()
 @click.option("--session-id", required=True, type=str)
 @click.option(
     "--base-dir",
@@ -186,10 +166,6 @@ def dashboard(snapshot_path: Path, cwd: Path, scratch_dir: Path | None) -> None:
 )
 def analyze(session_id: str, base_dir: Path | None) -> None:
     """Best-effort companion analysis writer for a session."""
-    if not HAS_COMPANION:
-        click.echo(_COMPANION_NOT_INSTALLED, err=True)
-        raise SystemExit(1)
-
     model = resolve_companion_model()
 
     try:
@@ -216,7 +192,7 @@ def analyze(session_id: str, base_dir: Path | None) -> None:
         click.echo("companion analyze failed; keeping existing analysis", err=True)
 
 
-@basecamp.command("companion-analyze", hidden=not HAS_COMPANION)
+@basecamp.command("companion-analyze")
 @click.option("--session-id", required=True, type=str)
 @click.option(
     "--base-dir",
@@ -227,10 +203,6 @@ def analyze(session_id: str, base_dir: Path | None) -> None:
 @click.pass_context
 def companion_analyze(ctx: click.Context, session_id: str, base_dir: Path | None) -> None:
     """Deprecated compatibility alias for `basecamp companion analyze`."""
-    if not HAS_COMPANION:
-        click.echo(_COMPANION_NOT_INSTALLED, err=True)
-        raise SystemExit(1)
-
     click.echo(
         "Warning: `basecamp companion-analyze` is deprecated; use `basecamp companion analyze`.",
         err=True,
@@ -238,7 +210,7 @@ def companion_analyze(ctx: click.Context, session_id: str, base_dir: Path | None
     ctx.invoke(analyze, session_id=session_id, base_dir=base_dir)
 
 
-@basecamp.group(hidden=not HAS_SWARM)
+@basecamp.group()
 def swarm() -> None:
     """Async-agent swarm daemon commands."""
 
@@ -269,10 +241,6 @@ def swarm() -> None:
 )
 def daemon(uds_path: Path, db_path: Path | None, pidfile_path: Path | None) -> None:
     """Run the async-agent daemon."""
-    if not HAS_SWARM or run_swarm_daemon is None:
-        click.echo(_SWARM_NOT_INSTALLED, err=True)
-        raise SystemExit(1)
-
     run_swarm_daemon(str(uds_path), str(db_path) if db_path else None, str(pidfile_path) if pidfile_path else None)
 
 

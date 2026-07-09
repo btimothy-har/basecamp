@@ -3,11 +3,11 @@
 import shutil
 from pathlib import Path
 
-from basecamp_core.paths import USER_CONTEXT_DIR, USER_PROMPTS_DIR, USER_STYLES_DIR
-from basecamp_core.settings import settings
-from basecamp_workspace import DEFAULT_PROJECTS_PATH, ProjectConfig, load_projects, save_projects
-from basecamp_workspace.directories import to_home_relative
-from basecamp_workspace.ui import console
+from basecamp.core.paths import USER_CONTEXT_DIR, USER_PROMPTS_DIR, USER_STYLES_DIR
+from basecamp.core.settings import settings
+from basecamp.workspace import DEFAULT_PROJECTS_PATH, ProjectConfig, load_projects, save_projects
+from basecamp.workspace.directories import to_home_relative
+from basecamp.workspace.ui import console
 
 
 def _check_prerequisite(name: str, command: str) -> bool:

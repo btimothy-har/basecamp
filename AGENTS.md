@@ -4,51 +4,59 @@
 
 A project-aware Pi extension suite for AI coding agents. Configures project context, manages isolated git worktrees, and provides workflow tooling for coding sessions.
 
-Root-level products:
+The repo ships exactly two artifacts, assembled from paired bilingual contexts (design record: docs/design/repo-consolidation.md):
 
 | Product | Directory | Purpose |
 |---------|-----------|---------|
-| `basecamp` | `src/basecamp/` | Python composition CLI for setup/projects/install |
-| `basecamp-core` | `core/config/` | Generic settings/files/paths/exceptions |
-| `basecamp-workspace` | `workspace/projects/` | Project + per-repo environment config and interactive projects/environments menus |
-| `pi-swarm` | `pi-swarm/` | Async-agent bounded context for protocol docs, Pi-side agent behavior, and daemon CLI/runtime |
-| Basecamp Pi packages | `core/pi`, `workspace/pi`, `pi-*` | Pi packages for project context, session UI, worktrees, workflow, git, and engineering skills |
-
-Package-specific architecture lives in the repo map below.
+| Basecamp Pi extension | repo root (`extension.ts` + `<context>/ts/`) | The single Pi package: all session, workspace, workflow, and agent behavior, assembled from context modules |
+| `basecamp` Python distribution | `src/basecamp/` + `<context>/py/basecamp/<context>/` | One PEP 420 namespace package: CLI/installer shell plus `basecamp.core`, `basecamp.workspace`, `basecamp.swarm` (daemon), `basecamp.companion` (TUI) portions |
 
 ## Repo Map
 
 ```
-src/basecamp/                  # Root Python composition package
-├── cli.py                      # Click entry point (setup, projects, install, companion)
+package.json  tsconfig.json  biome.json   # THE TypeScript toolchain — repo root is the Pi package
+extension.ts                               # Composition root: registers all context modules in fixed order
+scripts/check-boundaries.ts                # Import-boundary lint (cross-context via #<context>/index.ts only)
+scripts/check-file-length.ts               # Hard file-length caps: .ts ≤ 350, .py ≤ 500 (no exceptions)
+
+core/                          # Bilingual context: foundation
+├── ts/                         # registries, session lifecycle, state, model aliases, platform seams
+├── py/basecamp/core/           # settings, paths, files, exceptions
+└── py/tests/
+
+workspace/                     # Bilingual context: projects + worktrees
+├── ts/                         # project context, prompt assembly, worktree service, guards
+├── py/basecamp/workspace/      # project/env config, interactive menus
+└── py/tests/
+
+swarm/                         # Bilingual context: async agents
+├── ts/                         # agent tools, launch policy, daemon client, /code-review, workstreams
+├── py/basecamp/swarm/          # the daemon: FastAPI over UDS, SQLite store, runner
+├── py/tests/
+├── protocol/                   # wire-protocol docs and frame fixtures (TS↔Python contract)
+└── skills/                     # agents skill
+
+companion/                     # Bilingual context: companion
+├── ts/                         # session hooks, tmux panes, analysis registration
+├── py/basecamp/companion/      # Textual TUI, LLM analyzer
+└── py/tests/
+
+ui/ts/                         # Session UI: footer, title, mode editor
+tasks/                         # Tasks + planning: ts/ + skills/
+git/ts/                        # Prompt-only PR creation workflow (/create-pr)
+bash-reviewer/ts/              # LLM bash reviewer: gates risky git/gh/shell commands
+engineering/                   # Engineering: ts/ + skills/ + prompts/
+browser/ts/                    # Browser automation tools (puppeteer-core over CDP)
+
+src/basecamp/                  # Python shell portion (no __init__.py — namespace package)
+├── cli.py                      # Click entry point (setup, projects, install, companion, swarm)
 ├── setup.py                    # Environment setup (prerequisites, scaffolding)
-└── installer.py                # Bootstrap/reconfiguration install orchestration
-
-core/config/                    # basecamp-core Python package
-├── src/basecamp_core/          # Generic settings/files/paths/exceptions
-└── tests/                      # basecamp-core pytest suite
-
-workspace/projects/             # basecamp-workspace Python package
-├── src/basecamp_workspace/     # Project + environment config and interactive projects/environments menus
-└── tests/                      # workspace pytest suite
-
-pi-swarm/                      # Async-agent bounded context
-├── protocol/                   # Protocol docs and frame fixtures
-├── extension/                  # TypeScript Pi-side agent tools, launch policy, daemon client, reporter, /code-review, workstreams
-└── cli/                        # Python daemon CLI/runtime package
-
-core/pi/                       # pi-core TypeScript package: registries, session, state, model aliases, workspace primitives
-pi-ui/                         # Session UI package: footer, title, mode editor
-workspace/pi/                  # pi-workspace TypeScript package: project context + workspace service
-pi-tasks/                      # Tasks, planning, workflow skills (workstream domain moved to pi-swarm/extension)
-pi-git/                        # Prompt-only PR creation workflow (/create-pr)
-pi-bash-reviewer/              # LLM bash reviewer: gates risky git/gh/shell commands
-pi-engineering/                # Engineering tools and skills
-pi-browser/                    # Browser automation tools (puppeteer-core over CDP)
-pi-companion/                  # Companion bounded context
-├── pi/                        # TypeScript session hooks, tmux panes, analysis registration
-└── tui/                       # Python companion TUI/analyzer package
+└── installer.py                # Install orchestration: uv tool + npm install + single `pi install`
 ```
+
+`basecamp` is a PEP 420 namespace package assembled from the portion roots (`src`, `core/py`, `workspace/py`, `swarm/py`, `companion/py`). No portion may contain a `basecamp/__init__.py` — that silently shadows every sibling portion (`make lint` guards this).
+
+Cross-context TypeScript imports use Node subpath imports (`#core/*` freely; other contexts only via `#<context>/index.ts`), enforced by `scripts/check-boundaries.ts` in `npm run check`.
 
 ## Architecture Decisions
 
@@ -60,23 +68,23 @@ Prompts are layered (environment → working style → project context → tools
 
 ### Session Modes
 
-Agent modes (`core/pi`, in `SESSION_STATE_AGENT_MODES`) are `analysis`, `planning`, `copilot`, `supervisor`, and `executor`. shift+tab (`cycleAgentMode`) rotates only the cyclable modes — copilot is excluded from the cycle. `copilot` is a locked, launch-only mode: it is entered solely via `pi --copilot` (registered in `registerSession`, which forces copilot at `session_start` when the flag is present, else restores the stored mode) and is immutable — `cycleAgentMode` is a no-op in copilot, so shift+tab can neither enter nor leave it. `pi --copilot` takes precedence over `pi --workstream` (the workstream startup defers with a warning). Because Pi cannot unregister or per-session-gate a tool, `plan()` is removed from copilot by two layers keyed on `getAgentMode() === "copilot"`: a `tool_call` block in `pi-tasks` (the hard guarantee) and filtering the `plan` catalog item out of the copilot capabilities index in `workspace/pi` (with copilot.md carrying no plan() guidance). The `/plan` slash command is deprecated repo-wide; the `plan()` tool and `/show-plan` remain for non-copilot sessions.
+Agent modes (`core/ts`, in `SESSION_STATE_AGENT_MODES`) are `analysis`, `planning`, `copilot`, `supervisor`, and `executor`. shift+tab (`cycleAgentMode`) rotates only the cyclable modes — copilot is excluded from the cycle. `copilot` is a locked, launch-only mode: it is entered solely via `pi --copilot` (registered in `registerSession`, which forces copilot at `session_start` when the flag is present, else restores the stored mode) and is immutable — `cycleAgentMode` is a no-op in copilot, so shift+tab can neither enter nor leave it. `pi --copilot` takes precedence over `pi --workstream` (the workstream startup defers with a warning). Because Pi cannot unregister or per-session-gate a tool, `plan()` is removed from copilot by two layers sharing one predicate (`isPlanDisabledFor` in `tasks/ts/planning/plan-copilot-guard.ts`): the tasks module's `tool_call` block (the hard guarantee) and the workspace module's copilot capabilities-index filter (with copilot.md carrying no plan() guidance). The `/plan` slash command is deprecated repo-wide; the `plan()` tool and `/show-plan` remain for non-copilot sessions.
 
-### Pi Packages
+### Extension Modules
 
-Core public session/project/workspace/workflow/git/model-alias/capability/engineering behavior is split across pluggable Pi packages (`core/pi`, `workspace/pi`, `pi-ui`, `pi-tasks`, `pi-git`, `pi-bash-reviewer`, `pi-engineering`, `pi-companion/pi`). Async-agent protocol, Pi-side launch/tool behavior, and daemon runtime ownership live in the top-level `pi-swarm/` context.
+All TypeScript behavior ships as one Pi extension registered from the repo root. `extension.ts` composes the context modules (`core`, `ui`, `workspace`, `tasks`, `git`, `bash-reviewer`, `engineering`, `browser`, `companion`, `swarm`) in a fixed order — core first — so in-extension init is deterministic and identical on `/reload`. Each context's TS lives in `<context>/ts/` with a `register*` default export in its `index.ts`; cross-context imports go through `#`-subpath aliases and are boundary-checked. Async-agent protocol, daemon client, and the Python daemon all live in the `swarm/` context.
 
 ### Code Review
 
-`/code-review` (owned by `pi-swarm/extension`, in `src/agents/review/`) runs an independent third-party review of the current branch. The command dispatches six read-only reviewer agents (security, testing, docs, clarity, conventions, general) with a fixed scope-only brief, transposes each prose report into a canonical `Finding` schema via a per-report `fast`-model pass (forced `report_findings` tool, faithful extraction only), then merges findings and computes a verdict deterministically (no LLM synthesis). The primary agent triggers the command and receives the findings as the reviewee — it never authors or synthesizes the review. It is manual only. This replaces the removed `review_packet` / `code-walkthrough` surfaces and the old primary-agent `code-review` skill.
+`/code-review` (owned by the `swarm` context, in `swarm/ts/agents/review/`) runs an independent third-party review of the current branch. The command dispatches six read-only reviewer agents (security, testing, docs, clarity, conventions, general) with a fixed scope-only brief, transposes each prose report into a canonical `Finding` schema via a per-report `fast`-model pass (forced `report_findings` tool, faithful extraction only), then merges findings and computes a verdict deterministically (no LLM synthesis). The primary agent triggers the command and receives the findings as the reviewee — it never authors or synthesizes the review. It is manual only. This replaces the removed `review_packet` / `code-walkthrough` surfaces and the old primary-agent `code-review` skill.
 
 ### Model Aliases
 
-Model alias resolution is owned by `core/pi/src/model-aliases`, backed by `~/.pi/basecamp/core/model-aliases.json` with schema `{ "version": 1, "aliases": { "fast": "claude-haiku-4-5" } }`. `core/pi/src/platform/model-aliases.ts` is only the provider seam; it must not read config, define aliases, or own model-selection policy.
+Model alias resolution is owned by `core/ts/model-aliases`, backed by `~/.pi/basecamp/core/model-aliases.json` with schema `{ "version": 1, "aliases": { "fast": "claude-haiku-4-5" } }`. `core/ts/platform/model-aliases.ts` is only the provider seam; it must not read config, define aliases, or own model-selection policy.
 
-### Process-Scoped Singletons
+### State: wiring vs. surviving
 
-Mutable state shared across Pi packages or required to survive `/reload` must live on `globalThis` behind a `Symbol.for("basecamp.*")` key, never a module-level `let`. On `/reload`, Pi re-imports every extension with fresh module instances (`moduleCache: false`), so each extension can hold its own copy of a shared module; only `globalThis`-backed state stays process-scoped and reload-stable. State read inside a `session_start` handler must initialize defensively (e.g. `ensureCurrentSessionStateForEvent`) rather than assuming another extension's `session_start` ran first — cross-extension handler ordering is not guaranteed and changes on reload. See `core/pi/README.md` for the canonical pattern.
+Two kinds of module state, two rules. **Wiring** (providers/registries the composition root re-establishes on every load — cwd provider, catalog, model aliases, workspace service seam) is plain module state. **Surviving state** (live session data that must outlive `/reload`, which re-imports the extension with fresh module instances — session state, agent mode, invoked skills, workspace runtime, daemon WebSocket) uses `processScoped(key, init)` from `core/ts/platform/global-registry.ts`; key strings are stable across releases. Default to plain module state; reach for `processScoped` only when losing the value on `/reload` would break the live session. Init order is deterministic (core registers first in `extension.ts`), so later modules may assume core-owned state is initialized. See `core/README.md` for the canonical pattern.
 
 ### Environment Variable Chain
 
@@ -84,7 +92,7 @@ Session launch sets `BASECAMP_*` env vars on `process.env`. Subagents spawned vi
 
 Relevant vars include `BASECAMP_PROJECT`, `BASECAMP_REPO`, `BASECAMP_SCRATCH_DIR`, `BASECAMP_WORKTREE_DIR`, and `BASECAMP_WORKTREE_LABEL`. For repo-backed sessions, `BASECAMP_REPO` is the canonical `<org>/<name>` repo identity (derived from the origin remote URL, falling back to the bare git basename when there is no parseable origin); for non-repo launches it falls back to the scratch-directory basename. It is never a worktree label. `BASECAMP_WORKTREE_DIR` and `BASECAMP_WORKTREE_LABEL` are the active worktree's absolute path and label, or empty strings when no worktree is active.
 
-The worktree setup hook (the per-repo `environments` `setup` command in `~/.pi/basecamp/config.json`, keyed by the canonical `<org>/<name>` repo identity and run by `pi-tasks` on creation of a new execution worktree) additionally exposes `BASECAMP_REPO_ROOT` (the protected checkout path) to the setup command for the duration of that exec only; it is not part of the persistent session env chain.
+The worktree setup hook (the per-repo `environments` `setup` command in `~/.pi/basecamp/config.json`, keyed by the canonical `<org>/<name>` repo identity and run by the `tasks` module on creation of a new execution worktree) additionally exposes `BASECAMP_REPO_ROOT` (the protected checkout path) to the setup command for the duration of that exec only; it is not part of the persistent session env chain.
 
 ### Worktree Design
 
@@ -94,7 +102,7 @@ The worktree root follows the canonical identity. Worktrees created under the le
 
 ### Workstreams
 
-Workstreams are durable, repo-neutral internal coordination state owned by `pi-swarm/extension` (`src/workstreams/`). Persistence is the daemon's SQLite store (`~/.pi/basecamp/swarm/daemon.db`, tables `workstreams` and `workstream_agents`, beside `agents`/`runs`) — the former JSON launch-index is gone (clean break, no migration). Identity is an internal `ws_<uuid>` id plus a globally-unique three-word readable `slug`. Worktrees are NOT persisted — git remains the source of truth; the `copilot/<slug>` worktree name encodes the slug.
+Workstreams are durable, repo-neutral internal coordination state owned by the `swarm` context (`swarm/ts/workstreams/`). Persistence is the daemon's SQLite store (`~/.pi/basecamp/swarm/daemon.db`, tables `workstreams` and `workstream_agents`, beside `agents`/`runs`) — the former JSON launch-index is gone (clean break, no migration). Identity is an internal `ws_<uuid>` id plus a globally-unique three-word readable `slug`. Worktrees are NOT persisted — git remains the source of truth; the `copilot/<slug>` worktree name encodes the slug.
 
 The model is multi-agent and repo-neutral: every `pi --workstream` session appends a `workstream_agents` row (additive, concurrent, never overwrites), and "which repos touched" derives from agent rows. A workstream can be carried into a different repo by passing its id/slug to `launch_workstream`, enabling cross-repo coordination without a duplicate workstream. The dossier (Logseq work page, `work__<org>__<repo>__<slug>`) stays the user-facing durable record of priority, decisions, blockers, and done signals; the workstream points to it via `source_dossier_path`. One dossier may have many workstreams.
 
@@ -103,14 +111,22 @@ The `pi --workstream` flag is boolean: bare `--workstream` infers the workstream
 ## Development
 
 - **Python**: 3.12+, managed with `uv`
-- **Install (dev)**: `uv run install.py -e` (editable mode; installs `basecamp`, then registers the Basecamp Pi package)
+- **Install (dev)**: `uv run install.py -e` (editable mode; installs the `basecamp` tool, then registers the repo root as the single Pi extension, cleaning up legacy per-package registrations)
 - **Python lint**: `uv run ruff check .` / `uv run ruff format --check .`
-- **TypeScript check**: `make lint` runs checks for all Pi packages after Python lint/format checks
-- **Fix**: `make fix` runs Python fixes plus lint/format fixes for all Pi packages
+- **TypeScript check**: `npm run check` at the repo root (tsc whole-graph + biome + import-boundary + file-length checks); `make lint` runs it after the Python checks
+- **Fix**: `make fix` runs Python fixes plus `npm run lint:fix` / `npm run format`
+
+### File Length Limits
+
+Hard caps on every file, tests included: **TypeScript ≤ 350 lines, Python ≤ 500 lines**, enforced by `scripts/check-file-length.ts` in `npm run check` (and therefore `make lint` and CI).
+
+The cap is a module-design forcing function. When a file approaches it, split along responsibility seams — named modules with one job each. Never satisfy the cap by compressing style (collapsing blank lines, one-lining logic), and never with `-part2`-style continuation files: if no seam is apparent, the file owns more than one responsibility and the design needs rethinking, not the formatting.
+
+There are no per-file exceptions and no suppression mechanism. (Files that predated the rule were migrated through a shrink-only `GRANDFATHERED` ratchet, burned to zero in July 2026 and removed from the script — never reintroduce per-file exceptions.)
 
 ### Testing
 
-- **Run all**: `make test` from repo root runs Python pytest plus all Pi package TypeScript tests.
-- **Python**: `uv run pytest` uses root `pyproject.toml` — `testpaths = ["core/config/tests", "workspace/projects/tests", "pi-companion/tui/tests"]`, `pythonpath` includes `src`, `core/config/src`, `workspace/projects/src`, `pi-swarm/cli/src`, and `pi-companion/tui/src`.
-- **TypeScript**: `make test` covers `core/pi`, `pi-ui`, `workspace/pi`, `pi-tasks`, `pi-git`, `pi-engineering`, `pi-browser`, `pi-companion/pi`, and `pi-swarm/extension`.
-- **Basecamp Python tests** live under `core/config/tests/`, `workspace/projects/tests/`, and `pi-companion/tui/tests/`.
+- **Run all**: `make test` from repo root runs `uv run pytest` plus `npm test`.
+- **Python**: `uv run pytest` uses root `pyproject.toml` — `testpaths` covers root `tests/` plus each context's `py/tests/`; imports resolve via the editable install (`uv sync`), no `pythonpath` stitching.
+- **TypeScript**: `npm test` runs the Node test runner over every context's `ts/**/*.test.ts` (one child process per test file), plus `extension.test.ts` (whole-graph load + registration under strict Node). A new context's tests must be added to the `test` glob list in `package.json`.
+- **Tests live beside their code**: `<context>/ts/**/tests/` and `<context>/py/tests/`.

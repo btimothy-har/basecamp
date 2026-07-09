@@ -1,6 +1,6 @@
 # Asynchronous Multi-Agent System — Design
 
-**Status:** Phase 1 IMPLEMENTED (walking skeleton); Phase 2a ACL foundation implemented; Phase 2b live-only collaboration implemented for fork-based `ask_agent` plus store-backed one-way `message_agent` / `message_status`; canonical session/agent handles implemented (wire protocol v14) · **Scope:** Design + status tracking for later phases · **Roadmap:** Offline re-task-on-message and Phases 3–5 remain design targets
+**Status:** Phase 1 IMPLEMENTED (walking skeleton); Phase 2a ACL foundation implemented; Phase 2b live-only collaboration implemented for fork-based `ask_agent` plus store-backed one-way `message_agent` / `message_status`; canonical session/agent handles implemented (landed in wire protocol v14; see `swarm/protocol/PROTOCOL.md` for the current version) · **Scope:** Design + status tracking for later phases · **Roadmap:** Offline re-task-on-message and Phases 3–5 remain design targets
 
 This document describes the target architecture for basecamp's asynchronous, collaborating subagents, coordinated by a global, single-host daemon. It captures the converged design, the decisions and rejected alternatives behind it, the risk register, and the phased roadmap.
 
@@ -39,7 +39,7 @@ We want agents that can run **concurrently**, **persist their conversational thr
 
 ## 3. Former synchronous model
 
-Before the async-only surface cleanup, the legacy code in `pi-swarm/extension/src/agents/` worked as follows:
+Before the async-only surface cleanup, the legacy code in `pi-swarm/extension/src/agents/` (now `swarm/ts/agents/`) worked as follows:
 
 - **Dispatch and execution (`executor.ts`).** `spawnAgent()` builds a `pi --mode json -p` argv via `buildPiArgs()` and spawns it as a child process. Notable flags: `--model`, `--worktree-dir`, `--thinking`, `--session-dir` (the subagent's own session), `--no-prompt-templates`, `--read-only` (whenever the agent's run kind is not `mutative`), `--agent-prompt` (the persona, written to a file), and `--tools` (a resolved allowlist). Skill discovery is left enabled for every subagent, which loads any installed skill on demand via the `skill` tool or by reading the skill file. The parent reads the child's stdout, parses newline-delimited JSON events (`tool_execution_start`, `tool_execution_end`, `message_end`), and renders progress. The agent's **result is the last assistant message** ("last assistant message wins"); usage and tool calls are aggregated for display.
 - **The `agent` tool (`tool.ts`).** Registered as a pi tool the LLM calls. It blocks on `spawnAgent()` and returns the child's final output as the tool result for immediate reasoning. Before running, it first requires that the `agents` skill has been invoked (`hasInvokedSkill("agents")`), then enforces two guards:
@@ -435,7 +435,7 @@ Both limits are configurable tunables. They are complementary: depth cap bounds 
 
 `ask_agent` is the first implemented Phase 2b collaboration primitive. It lets a session or agent ask a *permitted* agent a question and get a context-aware answer, without steering or perturbing the target — deliberately sidestepping the live-delivery problem the runner proxy poses (§6.3.1).
 
-**Mechanism.** `ask_agent({ agent_handle, question, timeout_s? })` reuses dispatch + `wait_for_agent` rather than a new frame: the dispatch spec carries an optional `fork_from` (the target's handle/id), and the daemon resolves it to the target's session file and launches the answerer with `pi --fork <abs path>` into a NEW, separate, read-only session. The target's own thread is only read, never written. The answerer runs the question against the target's forked context, and its terminal result (last assistant message) is returned to the requester as the answer. The protocol has carried `fork_from` since v12; the current protocol is v14.
+**Mechanism.** `ask_agent({ agent_handle, question, timeout_s? })` reuses dispatch + `wait_for_agent` rather than a new frame: the dispatch spec carries an optional `fork_from` (the target's handle/id), and the daemon resolves it to the target's session file and launches the answerer with `pi --fork <abs path>` into a NEW, separate, read-only session. The target's own thread is only read, never written. The answerer runs the question against the target's forked context, and its terminal result (last assistant message) is returned to the requester as the answer. The protocol has carried `fork_from` since v12 (see `swarm/protocol/PROTOCOL.md` for the current version).
 
 **Visibility ACL.** Fork-ask is **DEFAULT-DENY** along the §7.1 directions: a requester may ask only an ancestor, a descendant, or a same-`sibling_group` target. Visible session/root targets are askable by canonical handle when their session file can be resolved for the read-only fork. `sibling_group` is populated at dispatch as the dispatcher/parent node id, so all children of one parent are siblings. Unauthorized — and missing — targets are both rejected with the same `fork_target_unknown` reason, so existence is never leaked.
 

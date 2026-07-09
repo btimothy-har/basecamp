@@ -8,7 +8,7 @@ This document describes how basecamp — a full-system-prompt Pi extension — b
 
 ## 1. Problem statement
 
-basecamp fully replaces Pi's system prompt. [`before_agent_start`](../../workspace/pi/src/projects/prompt.ts) reassembles a layered prompt (mode → working style → environment → capabilities index → project context → runtime env) **every agent turn**, so worktree state, agent mode, and task progress are always current. On top of that, ~15 distinct Pi lifecycle handlers enforce guards, gate risky bash, provision worktrees, and refresh context.
+basecamp fully replaces Pi's system prompt. [`before_agent_start`](../../workspace/ts/projects/prompt.ts) reassembles a layered prompt (mode → working style → environment → capabilities index → project context → runtime env) **every agent turn**, so worktree state, agent mode, and task progress are always current. On top of that, ~15 distinct Pi lifecycle handlers enforce guards, gate risky bash, provision worktrees, and refresh context.
 
 Claude Code is a different runtime. It cannot return a fresh system prompt each turn, its toolset differs from Pi's, and it owns its own UI, worktrees, Plan mode, and subagents. The goal is to reproduce basecamp's *behavior* — full prompt control, project awareness, worktree discipline, bash review — on Claude Code without porting the Pi runtime.
 
@@ -80,7 +80,7 @@ Pi reassembles the prompt every turn, so it always reflects current worktree/mod
 
 The resolution is a deliberate division of responsibility:
 
-- **Enforcement lives in hooks, not the prompt.** The `PreToolUse` path guard blocks protected-checkout edits and redirects to the worktree *regardless of what the prompt says*. Correctness does not depend on prompt freshness. This mirrors [`guards.ts`](../../workspace/pi/src/workspace/guards.ts), which already treats guards as defense independent of the prompt.
+- **Enforcement lives in hooks, not the prompt.** The `PreToolUse` path guard blocks protected-checkout edits and redirects to the worktree *regardless of what the prompt says*. Correctness does not depend on prompt freshness. This mirrors [`guards.ts`](../../workspace/ts/workspace/guards.ts), which already treats guards as defense independent of the prompt.
 - **Live state is injected as context, not prompt.** A `SessionStart`/`UserPromptSubmit` hook emits current worktree, mode, and task state as `additionalContext` each turn. The frozen prompt carries only the durable behavioral layers.
 - **Worktree activation is a relaunch, not a mutation.** basecamp's plan→execute handoff becomes: plan in the protected checkout, then relaunch via `claude --worktree <label>` (fresh prompt, native worktree) or `EnterWorktree` + the orient hook. Relaunch is preferred — it rides Claude Code's native worktree machinery and produces a correctly-scoped fresh prompt.
 
@@ -88,7 +88,7 @@ The resolution is a deliberate division of responsibility:
 
 ## 6. Prompt assembly for Claude Code
 
-The launcher reuses basecamp's layered assembly ([`assemblePrompt`](../../workspace/pi/src/projects/prompt.ts)) with two changes.
+The launcher reuses basecamp's layered assembly ([`assemblePrompt`](../../workspace/ts/projects/prompt.ts)) with two changes.
 
 **Layers carried (full replacement):**
 
@@ -100,7 +100,7 @@ project context (configured context + AGENTS.md/CLAUDE.md)
 runtime env block (paths, platform, date, git/worktree state)
 ```
 
-**The capabilities layer is the real porting cost.** [`buildCapabilitiesIndex`](../../workspace/pi/src/projects/context.ts) and [`environment.md`](../../workspace/pi/src/projects/system-prompts/environment.md) currently describe *Pi's* toolset — `plan()`, the `bq_query` tool, Pi's worktree model, reviewer routing. Full replacement deletes Claude Code's own tool/safety/output guidance, so this layer must be **rewritten for Claude Code's toolset** (Read/Edit/Bash/Task/Skill/…) and re-verified as that toolset evolves.
+**The capabilities layer is the real porting cost.** [`buildCapabilitiesIndex`](../../workspace/ts/projects/context.ts) and [`environment.md`](../../workspace/ts/projects/system-prompts/environment.md) currently describe *Pi's* toolset — `plan()`, the `bq_query` tool, Pi's worktree model, reviewer routing. Full replacement deletes Claude Code's own tool/safety/output guidance, so this layer must be **rewritten for Claude Code's toolset** (Read/Edit/Bash/Task/Skill/…) and re-verified as that toolset evolves.
 
 Sub-decision on the tools/environment layer only:
 
@@ -115,11 +115,11 @@ Every basecamp Pi lifecycle handler and its Claude Code destination:
 
 | basecamp Pi handler | Behavior | Claude Code mechanism |
 |---|---|---|
-| `before_agent_start` ([prompt.ts](../../workspace/pi/src/projects/prompt.ts)) | Replace full system prompt | **Launcher** `--system-prompt-file` + **UserPromptSubmit** for volatile deltas |
+| `before_agent_start` ([prompt.ts](../../workspace/ts/projects/prompt.ts)) | Replace full system prompt | **Launcher** `--system-prompt-file` + **UserPromptSubmit** for volatile deltas |
 | `before_agent_start` (tasks) | Inject task/progress reminder | **UserPromptSubmit** `additionalContext` |
 | `session_start` (state, mode restore, project detect, workspace init) | Init/restore session | **Launcher** (detect + worktree) + **SessionStart** `additionalContext` |
-| `tool_call` guard ([guards.ts](../../workspace/pi/src/workspace/guards.ts)) | Block protected-checkout edits; retarget relative paths; `cd` bash into worktree | **PreToolUse**(Edit/Write/Bash) → `deny` + `updatedInput` |
-| `tool_call` reviewer ([gate.ts](../../pi-bash-reviewer/src/reviewer/gate.ts)) | LLM approve/route/deny risky bash | **PreToolUse**(Bash) → `permissionDecision: allow\|ask\|deny` |
+| `tool_call` guard ([guards.ts](../../workspace/ts/workspace/guards.ts)) | Block protected-checkout edits; retarget relative paths; `cd` bash into worktree | **PreToolUse**(Edit/Write/Bash) → `deny` + `updatedInput` |
+| `tool_call` reviewer ([gate.ts](../../bash-reviewer/ts/reviewer/gate.ts)) | LLM approve/route/deny risky bash | **PreToolUse**(Bash) → `permissionDecision: allow\|ask\|deny` |
 | `user_bash` | Redirect user `!cmd` to worktree cwd | *Minor gap* — no clean equivalent; launcher cwd covers most cases |
 | `tool_result` (context-injection, footer) | Re-inject context after tools | **PostToolUse** `additionalContext` |
 | `session_before_compact` / `session_compact` | Preserve + re-inject state across compaction | **PreCompact** / **PostCompact** |
@@ -144,7 +144,7 @@ WorktreeCreate         → basecamp claude provision        # run per-repo envir
 SessionEnd             → basecamp claude session-end        # cleanup
 ```
 
-**Reviewer context.** The reviewer needs recent human messages ([`buildGateContext`](../../pi-bash-reviewer/src/reviewer/gate.ts) takes `recent_human_messages`). The `PreToolUse` payload provides `transcript_path`; `basecamp claude bash-review` reads that JSONL to reconstruct recent turns. No new plumbing.
+**Reviewer context.** The reviewer needs recent human messages ([`buildGateContext`](../../bash-reviewer/ts/reviewer/gate.ts) takes `recent_human_messages`). The `PreToolUse` payload provides `transcript_path`; `basecamp claude bash-review` reads that JSONL to reconstruct recent turns. No new plumbing.
 
 **Launcher.** `basecamp claude` (candidate alias `bcc`) detects the project, assembles the prompt, writes the per-session settings, and execs `claude` with the flags in §4. It is a CLI the user runs, not a hook, so it lives in the Python package.
 
@@ -163,7 +163,7 @@ The extension bundle lives **inside the installed Python package** and is refere
 │   ├── .claude-plugin/plugin.json
 │   ├── hooks/hooks.json             # the §8 hook wiring
 │   ├── agents/*.md                  # specialist personas (native subagents)
-│   ├── skills/                      # bundled from pi-*/skills
+│   ├── skills/                      # bundled from <context>/skills
 │   ├── commands/*.md                # prompt-driven commands (/create-pr, …)
 │   └── bin/                         # shim resolving `basecamp` for hooks
 └── system-prompts/                  # Claude Code rewrite of modes/styles/environment/capabilities
@@ -214,7 +214,7 @@ Reusable pieces at `6674cc4^`:
 - `core/src/core/config/claude_settings.py` — `build_session_settings()`: strips `apiKeyHelper`, merges project `.env` into `settings.env`, pre-authorizes scratch dirs, injects `BASECAMP_*`. Directly portable (`atomic_write_json` still exists in `basecamp_core.files`).
 - `.claude-plugin/marketplace.json` + `plugins/*/.claude-plugin/plugin.json` — the bundled plugins (bc-collab, bc-cursor, bc-eng, bc-git-protect, bc-gpg-check, bc-private, companion). `bc-git-protect` is the prior bash-reviewer analog.
 
-**The gap vs. then:** the current Python packages (`basecamp_core`, `basecamp_workspace`) expose project config but **not** git-root detection, prompt assembly, or worktree helpers — those moved to TypeScript (`workspace/pi`). So the recovered launcher must re-establish Python-side project detection and a Claude-Code-specific prompt assembly (§6). Everything else ports almost verbatim.
+**The gap vs. then:** the current Python packages (`basecamp.core`, `basecamp.workspace`) expose project config but **not** git-root detection, prompt assembly, or worktree helpers — those moved to TypeScript (`workspace/ts`). So the recovered launcher must re-establish Python-side project detection and a Claude-Code-specific prompt assembly (§6). Everything else ports almost verbatim.
 
 ## 13. Phased roadmap
 
