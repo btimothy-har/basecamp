@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import type { Model } from "@earendil-works/pi-ai";
-import type { GateDecision } from "../reviewer/gate.ts";
-import { type ReviewAuditEntry, type ReviewDeps, reviewBashCommand } from "../reviewer/review.ts";
+import type { GateDecision } from "../llm.ts";
+import { type ReviewAuditEntry, type ReviewDeps, reviewBashCommand } from "../review.ts";
 
 export const fakeModel: Model<any> = {
 	id: "claude-haiku",

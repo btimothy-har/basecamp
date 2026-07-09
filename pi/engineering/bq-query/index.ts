@@ -9,17 +9,17 @@ import * as fs from "node:fs/promises";
 import * as path from "node:path";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { getWorkspaceEffectiveCwd, requireWorkspaceState } from "#core/platform/workspace.ts";
-import { buildScanApprovalMetadata, evaluateScanApproval, scanApprovalModeForContext } from "./bq/approval.ts";
-import { buildQueryArgs, buildShowArgs, runBqCapture, runBqToFile } from "./bq/cli.ts";
-import { sanitizeQueryDescription, trimOrNull } from "./bq/format.ts";
-import { emptyDryRun, emptyJob, summarizeDryRun, summarizeJob } from "./bq/job-summary.ts";
+import { buildQueryArgs, buildShowArgs, runBqCapture, runBqToFile } from "../bigquery/cli.ts";
+import { emptyDryRun, emptyJob, summarizeDryRun, summarizeJob } from "../bigquery/job-summary.ts";
+import { buildScanApprovalMetadata, evaluateScanApproval, scanApprovalModeForContext } from "./approval.ts";
+import { sanitizeQueryDescription, trimOrNull } from "./format.ts";
 import {
 	type BqQueryDetails,
 	BqQueryParams,
 	type BqToolResult,
 	DEFAULT_MAX_ROWS,
 	DEFAULT_OUTPUT_FORMAT,
-} from "./bq/params.ts";
+} from "./params.ts";
 import {
 	buildDryRunText,
 	buildSuccessText,
@@ -27,7 +27,7 @@ import {
 	formatProcessFailure,
 	renderCall,
 	renderResult,
-} from "./bq/render.ts";
+} from "./render.ts";
 import {
 	ensurePrivateDir,
 	queryHash,
@@ -37,7 +37,7 @@ import {
 	timestampForJob,
 	validateMaxRows,
 	writeDiagnostic,
-} from "./bq/sql-files.ts";
+} from "./sql-files.ts";
 
 export function registerBqQueryTool(pi: ExtensionAPI): void {
 	pi.registerTool({

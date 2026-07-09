@@ -1,6 +1,6 @@
 import type { Context, Model } from "@earendil-works/pi-ai";
-import { buildGateContext, type GateDecision } from "./gate.ts";
-import { type Triage, triageCommand } from "./triage.ts";
+import { buildGateContext, type GateDecision } from "./llm.ts";
+import { type Triage, triageCommand } from "./triage/index.ts";
 
 export type ReviewAuth = { apiKey?: string; headers?: Record<string, string> };
 

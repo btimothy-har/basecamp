@@ -10,7 +10,7 @@ import {
 	resolveGateReasoningEffort,
 	resolveGateToolChoice,
 	runGate,
-} from "../reviewer/gate.ts";
+} from "../llm.ts";
 import { fakeModel } from "./review-harness.ts";
 
 function assistantWithToolCall(name: string, args: Record<string, unknown>): AssistantMessage {

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import type { Context, Model } from "@earendil-works/pi-ai";
-import { reviewBashCommand } from "../reviewer/review.ts";
+import { reviewBashCommand } from "../review.ts";
 import { assertAuditedNonAllow, makeDecision, makeDeps } from "./review-harness.ts";
 
 describe("reviewBashCommand", () => {

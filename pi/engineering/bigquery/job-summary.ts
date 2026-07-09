@@ -2,7 +2,7 @@
  * Dry-run and job-metadata parsing and summarization for the bq_query tool.
  */
 
-import type { DryRunSummary, JobSummary, SchemaFieldSummary } from "./params.ts";
+import type { DryRunSummary, JobSummary, SchemaFieldSummary } from "../bq-query/params.ts";
 
 export function emptyDryRun(): DryRunSummary {
 	return {

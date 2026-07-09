@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { runGate } from "../reviewer/gate.ts";
-import { reviewBashCommand } from "../reviewer/review.ts";
+import { runGate } from "../llm.ts";
+import { reviewBashCommand } from "../review.ts";
 import { makeDecision, makeDeps } from "./review-harness.ts";
 
 describe("reviewBashCommand", () => {

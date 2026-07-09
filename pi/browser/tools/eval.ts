@@ -11,7 +11,7 @@ import {
 } from "@earendil-works/pi-coding-agent";
 import { type Static, Type } from "@sinclair/typebox";
 import { getBasecampEnv, isSubagent } from "#core/platform/env.ts";
-import { ensurePage } from "../browser/connection.ts";
+import { ensurePage } from "../chrome.ts";
 
 const BrowserEvalParams = Type.Object({
 	code: Type.String({

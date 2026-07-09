@@ -5,7 +5,7 @@ import type { AgentToolResult, ExtensionAPI } from "@earendil-works/pi-coding-ag
 import { type Static, Type } from "@sinclair/typebox";
 import type { Page } from "puppeteer-core";
 import { getBasecampEnv, isSubagent } from "#core/platform/env.ts";
-import { ensurePage } from "../browser/connection.ts";
+import { ensurePage } from "../chrome.ts";
 
 const BrowserScreenshotParams = Type.Object({
 	fullPage: Type.Optional(Type.Boolean({ description: "Capture the full scrollable page. Defaults to false." })),

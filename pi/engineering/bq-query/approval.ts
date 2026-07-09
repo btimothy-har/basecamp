@@ -3,8 +3,8 @@
  */
 
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
+import { isNonAuthoritativeDryRunStatementType, parseDryRunEstimatedBytes } from "../bigquery/job-summary.ts";
 import { formatScanBytes, safeApprovalPromptValue } from "./format.ts";
-import { isNonAuthoritativeDryRunStatementType, parseDryRunEstimatedBytes } from "./job-summary.ts";
 import {
 	BQ_INTERACTIVE_APPROVAL_THRESHOLD_BYTES,
 	BQ_NO_UI_SOFT_LOCK_THRESHOLD_BYTES,

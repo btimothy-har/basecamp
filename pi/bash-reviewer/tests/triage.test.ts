@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { type Triage, triageCommand } from "../reviewer/triage.ts";
+import { type Triage, triageCommand } from "../triage/index.ts";
 
 const allow: Triage = { kind: "allow" };
 const gitMutation: Triage = { kind: "gate", failClosed: false, category: "git-mutation" };
