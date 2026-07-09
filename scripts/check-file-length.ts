@@ -5,10 +5,9 @@
  *   TypeScript (.ts) ≤ 350 lines · Python (.py) ≤ 500 lines
  *
  * The cap is a module-design forcing function: a file that outgrows it gets
- * split along responsibility seams, never compressed to sneak under. Files
- * that predate the rule are pinned in GRANDFATHERED at their then-current
- * size and may only shrink; once one drops to or under its cap, its entry
- * must be removed. Never add an entry.
+ * split along responsibility seams, never compressed to sneak under. There
+ * are no per-file exceptions; the shrink-only GRANDFATHERED ratchet that
+ * migrated pre-rule files reached zero and was removed (see git history).
  *
  * Run: node scripts/check-file-length.ts (wired into npm run check / lint).
  */
@@ -24,13 +23,6 @@ const LIMITS: Readonly<Record<string, number>> = {
 };
 
 const SKIP_DIRS = new Set([".git", ".claude", ".venv", ".pytest_cache", "__pycache__", "dist", "node_modules"]);
-
-/**
- * Shrink-only ratchet: files that predate the rule, pinned at their size when
- * it landed. Entries may never be added or raised — only removed (mandatory
- * once the file is back under its cap).
- */
-const GRANDFATHERED: Readonly<Record<string, number>> = {};
 
 function walk(dir: string, out: string[] = []): string[] {
 	for (const entry of readdirSync(dir)) {
@@ -52,7 +44,6 @@ function lineCount(file: string): number {
 }
 
 const violations: string[] = [];
-const unseen = new Set(Object.keys(GRANDFATHERED));
 let checked = 0;
 
 for (const file of walk(REPO_ROOT).sort()) {
@@ -61,27 +52,11 @@ for (const file of walk(REPO_ROOT).sort()) {
 	if (limit === undefined) continue;
 	checked += 1;
 	const lines = lineCount(file);
-	const pinned = GRANDFATHERED[rel];
-	if (pinned !== undefined) {
-		unseen.delete(rel);
-		if (lines <= limit) {
-			violations.push(`${rel}: ${lines} lines is within the ${limit}-line cap — remove its GRANDFATHERED entry`);
-		} else if (lines > pinned) {
-			violations.push(
-				`${rel}: grew ${pinned} → ${lines} lines — grandfathered files may only shrink (split along responsibility seams; cap ${limit})`,
-			);
-		}
-		continue;
-	}
 	if (lines > limit) {
 		violations.push(
 			`${rel}: ${lines} lines exceeds the ${limit}-line cap — split along responsibility seams (AGENTS.md → File Length Limits)`,
 		);
 	}
-}
-
-for (const rel of [...unseen].sort()) {
-	violations.push(`GRANDFATHERED entry "${rel}" matches no file — remove it`);
 }
 
 if (violations.length > 0) {

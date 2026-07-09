@@ -1,4 +1,10 @@
-"""SQLite-backed persistence for daemon agents and runs."""
+"""SQLite-backed persistence for daemon agents and runs.
+
+The package's consumed surface is deliberately small: ``Store``, the four
+error classes, and the two helpers service code shares. Submodule constants
+(message statuses, summary limits, ...) are imported directly from their
+defining module by in-package code.
+"""
 
 from __future__ import annotations
 
@@ -14,72 +20,27 @@ from .errors import (
     DuplicateWorkstreamSlugError,
     WorkstreamNotFoundError,
 )
-from .messages import (
-    MESSAGE_STATUS_ACCEPTED,
-    MESSAGE_STATUS_FAILED,
-    MESSAGE_STATUS_QUEUED,
-    MESSAGE_STATUS_SENT,
-    MESSAGE_STATUS_UNAVAILABLE,
-    MESSAGE_STATUS_UNKNOWN,
-    MESSAGE_STATUSES,
-    MESSAGE_TERMINAL_DELIVERY_STATUSES,
-    MessagesMixin,
-)
-from .policy import AgentRelation, PolicyMixin
-from .runs import TERMINAL_STATUSES, RunsMixin
+from .messages import MessagesMixin
+from .policy import PolicyMixin
+from .runs import RunsMixin
 from .schema import SchemaMixin
-from .summary import (
-    RUN_MESSAGES_DEFAULT_LIMIT,
-    RUN_MESSAGES_MAX_LIMIT,
-    RUN_SUMMARY_ACTIVITY_LIMIT,
-    RUN_SUMMARY_DEFAULT_LIMIT,
-    RUN_SUMMARY_MAX_LIMIT,
-    RUN_SUMMARY_SKILLS_LIMIT,
-    RUN_SUMMARY_TASK_LOG_MAX_BYTES,
-    RUN_SUMMARY_TASK_PLAN_LIMIT,
-    SummaryMixin,
-)
+from .summary import SummaryMixin
 from .text import (
-    RUN_SUMMARY_DISPLAY_CHARS,
-    RUN_SUMMARY_PREVIEW_CHARS,
-    _safe_product_role,
     default_db_path,
     default_tasks_dir,
     is_message_delivery_terminal,
+    safe_product_role,
 )
-from .workstreams import WORKSTREAM_STATUSES, WorkstreamsMixin
+from .workstreams import WorkstreamsMixin
 
 __all__ = [
-    "MESSAGE_STATUS_ACCEPTED",
-    "MESSAGE_STATUS_FAILED",
-    "MESSAGE_STATUS_QUEUED",
-    "MESSAGE_STATUS_SENT",
-    "MESSAGE_STATUS_UNAVAILABLE",
-    "MESSAGE_STATUS_UNKNOWN",
-    "MESSAGE_STATUSES",
-    "MESSAGE_TERMINAL_DELIVERY_STATUSES",
-    "RUN_MESSAGES_DEFAULT_LIMIT",
-    "RUN_MESSAGES_MAX_LIMIT",
-    "RUN_SUMMARY_ACTIVITY_LIMIT",
-    "RUN_SUMMARY_DEFAULT_LIMIT",
-    "RUN_SUMMARY_DISPLAY_CHARS",
-    "RUN_SUMMARY_MAX_LIMIT",
-    "RUN_SUMMARY_PREVIEW_CHARS",
-    "RUN_SUMMARY_SKILLS_LIMIT",
-    "RUN_SUMMARY_TASK_LOG_MAX_BYTES",
-    "RUN_SUMMARY_TASK_PLAN_LIMIT",
-    "TERMINAL_STATUSES",
-    "WORKSTREAM_STATUSES",
     "ActiveRunExistsError",
-    "AgentRelation",
     "DuplicateAgentHandleError",
     "DuplicateWorkstreamSlugError",
     "Store",
     "WorkstreamNotFoundError",
-    "_safe_product_role",
-    "default_db_path",
-    "default_tasks_dir",
     "is_message_delivery_terminal",
+    "safe_product_role",
 ]
 
 

@@ -18,7 +18,6 @@ export {
 	updateCurrentSessionState,
 	updateCurrentSessionStateIfInitialized,
 } from "./current.ts";
-export { readSessionIdFromTranscriptHeader } from "./fork.ts";
 export type {
 	BasecampSessionState,
 	SessionStateActiveWorktree,
@@ -29,12 +28,7 @@ export type {
 	SessionStateWorktree,
 	SessionTitleChangeListener,
 } from "./model.ts";
-export {
-	DEFAULT_SESSION_STATE_DIR,
-	defaultSessionStateDir,
-	SESSION_STATE_AGENT_MODES,
-	SESSION_STATE_VERSION,
-} from "./model.ts";
+export { SESSION_STATE_AGENT_MODES } from "./model.ts";
 export { buildSessionStatePath, createDefaultSessionState, loadSessionState, saveSessionState } from "./persistence.ts";
 
 export function registerState(pi: ExtensionAPI): void {

@@ -9,7 +9,6 @@ export function defaultSessionStateDir(homeDir = os.homedir()): string {
 	return basecampCorePaths(homeDir).sessionStateDir;
 }
 
-export const DEFAULT_SESSION_STATE_DIR = defaultSessionStateDir();
 export const SESSION_STATE_AGENT_MODES = ["analysis", "planning", "copilot", "supervisor", "executor"] as const;
 
 export type SessionStateAgentMode = (typeof SESSION_STATE_AGENT_MODES)[number];

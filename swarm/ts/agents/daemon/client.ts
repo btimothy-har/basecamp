@@ -5,39 +5,18 @@
  * through this barrel.
  */
 
-export { type ConnectOptions, connect, type DaemonConnection, type DaemonIdentity } from "./connection.ts";
-export { type HealthPingFail, type HealthPingOk, type HealthPingResult, healthPing } from "./http.ts";
+export { connect, type DaemonConnection, type DaemonIdentity } from "./connection.ts";
 export {
-	type AttachWorkstreamAgentResult,
-	type CancelAgentResult,
-	type CreateWorkstreamResult,
 	createDaemonClient,
 	type DaemonClient,
 	type DaemonDispatchFrameOptions,
 	type DaemonDispatchResult,
-	type MessageStatusOptions,
-	type MessageStatusResult,
-	type SendPeerMessageOptions,
-	type SendPeerMessageResult,
-	type UpdateWorkstreamResult,
 } from "./rpc.ts";
-export { type EnsureDaemonOptions, ensureDaemon, spawnDaemonProcess } from "./spawn.ts";
+export { ensureDaemon } from "./spawn.ts";
+export { fetchRunSummary, type RunSummaryAgent, type RunSummaryResult } from "./view/summary.ts";
 export {
-	buildRunSummaryPath,
-	fetchRunSummary,
-	parseRunSummaryResponse,
-	type RunSummaryActivity,
-	type RunSummaryAgent,
-	type RunSummaryResult,
-	type RunSummaryTaskInfo,
-	type RunSummaryTaskPlanItem,
-} from "./view/summary.ts";
-export {
-	buildWorkstreamsPath,
 	getWorkstream,
 	listWorkstreams,
-	parseWorkstreamDetailResponse,
-	parseWorkstreamsResponse,
 	type WorkstreamAgentView,
 	type WorkstreamDetail,
 	type WorkstreamSummary,

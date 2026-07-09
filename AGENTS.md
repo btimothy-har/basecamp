@@ -17,7 +17,7 @@ The repo ships exactly two artifacts, assembled from paired bilingual contexts (
 package.json  tsconfig.json  biome.json   # THE TypeScript toolchain — repo root is the Pi package
 extension.ts                               # Composition root: registers all context modules in fixed order
 scripts/check-boundaries.ts                # Import-boundary lint (cross-context via #<context>/index.ts only)
-scripts/check-file-length.ts               # Hard file-length caps: .ts ≤ 350, .py ≤ 500 (shrink-only ratchet for pre-rule files)
+scripts/check-file-length.ts               # Hard file-length caps: .ts ≤ 350, .py ≤ 500 (no exceptions)
 
 core/                          # Bilingual context: foundation
 ├── ts/                         # registries, session lifecycle, state, model aliases, platform seams
@@ -122,11 +122,11 @@ Hard caps on every file, tests included: **TypeScript ≤ 350 lines, Python ≤ 
 
 The cap is a module-design forcing function. When a file approaches it, split along responsibility seams — named modules with one job each. Never satisfy the cap by compressing style (collapsing blank lines, one-lining logic), and never with `-part2`-style continuation files: if no seam is apparent, the file owns more than one responsibility and the design needs rethinking, not the formatting.
 
-Files that predate the rule are pinned in the script's `GRANDFATHERED` ratchet at their then-current size and may only shrink. When one drops to or under its cap, its entry must be removed (the check fails on stale entries). Never add a new entry.
+There are no per-file exceptions and no suppression mechanism. (Files that predated the rule were migrated through a shrink-only `GRANDFATHERED` ratchet, burned to zero in July 2026 and removed from the script — never reintroduce per-file exceptions.)
 
 ### Testing
 
 - **Run all**: `make test` from repo root runs `uv run pytest` plus `npm test`.
 - **Python**: `uv run pytest` uses root `pyproject.toml` — `testpaths` covers root `tests/` plus each context's `py/tests/`; imports resolve via the editable install (`uv sync`), no `pythonpath` stitching.
-- **TypeScript**: `npm test` runs the Node test runner over every context's `ts/**/*.test.ts` in one process, plus `extension.test.ts` (whole-graph load + registration under strict Node).
+- **TypeScript**: `npm test` runs the Node test runner over every context's `ts/**/*.test.ts` (one child process per test file), plus `extension.test.ts` (whole-graph load + registration under strict Node). A new context's tests must be added to the `test` glob list in `package.json`.
 - **Tests live beside their code**: `<context>/ts/**/tests/` and `<context>/py/tests/`.

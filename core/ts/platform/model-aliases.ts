@@ -1,5 +1,5 @@
 /**
- * Process-scoped model alias provider registry.
+ * Model alias provider registry — a wiring seam held in plain module state.
  *
  * The owning model-aliases extension provides configuration-backed aliases;
  * consumers depend only on this seam.

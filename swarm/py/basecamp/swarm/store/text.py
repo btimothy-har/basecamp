@@ -32,7 +32,9 @@ def _fallback_agent_handle(agent_id: str) -> str:
     return agent_id
 
 
-def _safe_product_role(value: str | None) -> str | None:
+def safe_product_role(value: str | None) -> str | None:
+    """Sanitized product role — shared across the store and service packages."""
+
     return _display_text(value, limit=64)
 
 

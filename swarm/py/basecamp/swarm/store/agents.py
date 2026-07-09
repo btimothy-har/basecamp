@@ -6,7 +6,7 @@ import sqlite3
 from typing import Any
 
 from .errors import DuplicateAgentHandleError
-from .text import _fallback_agent_handle, _safe_product_role
+from .text import _fallback_agent_handle, safe_product_role
 
 
 class AgentsMixin:
@@ -55,7 +55,7 @@ class AgentsMixin:
             next_model = model or stored_model
             next_sibling_group = sibling_group or stored_sibling_group
             next_session_file = session_file or stored_session_file
-            next_product_role = _safe_product_role(product_role) or stored_product_role
+            next_product_role = safe_product_role(product_role) or stored_product_role
 
             try:
                 connection.execute(

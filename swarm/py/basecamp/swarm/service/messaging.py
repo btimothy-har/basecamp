@@ -18,7 +18,7 @@ from ..frames import (
     PeerMessageFrame,
 )
 from ..registry import MessageWaiter, Registry
-from ..store import Store, _safe_product_role, is_message_delivery_terminal
+from ..store import Store, is_message_delivery_terminal, safe_product_role
 
 DEFAULT_MESSAGE_WAIT_TIMEOUT_SECONDS = 30.0
 MAX_MESSAGE_WAIT_TIMEOUT_SECONDS = 300.0
@@ -35,8 +35,8 @@ def _sender_product_role(sender: dict[str, Any] | None) -> str | None:
     if sender is None:
         return None
     if sender.get("role") == "agent":
-        return _safe_product_role(sender.get("agent_type")) or "subagent"
-    return _safe_product_role(sender.get("product_role")) or None
+        return safe_product_role(sender.get("agent_type")) or "subagent"
+    return safe_product_role(sender.get("product_role")) or None
 
 
 async def accept_peer_message(
@@ -196,12 +196,6 @@ def _public_sender_handle(sender: dict[str, Any] | None) -> str | None:
 
 def _public_message_handle(agent: dict[str, Any] | None) -> str | None:
     if agent is None or agent.get("role") not in {"agent", "session"}:
-        return None
-    return _public_handle(agent)
-
-
-def _public_agent_handle(agent: dict[str, Any] | None) -> str | None:
-    if agent is None or agent.get("role") != "agent":
         return None
     return _public_handle(agent)
 
