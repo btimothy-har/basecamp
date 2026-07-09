@@ -1,11 +1,5 @@
-# pi-swarm
+# swarm (Python portion)
 
-`pi-swarm` is the top-level bounded context for async-agent behavior.
+`basecamp.swarm` — the async-agent daemon. A FastAPI app served over a Unix domain socket (`app.py`, run via `server.py`), a SQLite store (`store/`, at `~/.pi/basecamp/swarm/daemon.db`), the agent runner (`runner.py`, `process.py`, `run_result.py`), the service layer (`service/`), and the WS frame contract (`frames.py`), kept in lockstep with the TypeScript client in `swarm/ts` — see `swarm/protocol/PROTOCOL.md`.
 
-It owns:
-
-- `protocol/` — protocol docs and frame fixture assets for the daemon protocol surface.
-- `extension/` — TypeScript package for Pi-side agent tools, launch policy, daemon client code, and reporter code.
-- `cli/` — Python package for daemon runtime and CLI components.
-
-The root `basecamp` Python composition package and Pi packages remain the public package and adapter entry points in this phase.
+Started with `basecamp swarm` (entry point in `src/basecamp/cli.py`). Tests live in `swarm/py/tests/`.

@@ -1,8 +1,8 @@
-# pi-swarm extension package
+# swarm
 
-This package owns the TypeScript runtime for Basecamp async-agent features: public daemon tools, launch policy, daemon client/reporting code, and dependency-injected registration helpers.
+This context owns Basecamp's async-agent domain: the TypeScript runtime (`swarm/ts`: public daemon tools, launch policy, daemon client/reporting code, `/code-review`, workstreams), the Python daemon (`swarm/py` → `basecamp.swarm`), the wire-protocol contract (`swarm/protocol/`), and the `agents` skill (`swarm/skills/`).
 
-`registerPiSwarm(pi, deps)` hosts the async-only surface for this domain: the agent catalog provider plus daemon client, tools, and reporting.
+The context's default register (composed by `extension.ts`) wires the agent catalog provider, the daemon client, the `/code-review` command, and the workstream tools/startup.
 
 ## Code review
 
@@ -17,15 +17,15 @@ Flow:
 5. When a UI is available, present an interactive per-finding reaction pane so the user can page through the findings and leave an optional free-text reaction on each before the agent engages (reactions seed the follow-up discussion; they are not accept/reject decisions).
 6. Persist a JSON artifact to scratch — the structured findings plus the user's per-finding reactions; raw reviewer prose is not retained. Then inject a compact framing prompt carrying the verdict, counts, and a link to the artifact (the findings themselves are not dumped inline) so the primary agent reads the packet and triages as the reviewee.
 
-The review module lives in `src/agents/review/` (`findings`, `transpose`, `synthesis`, `orchestrate`, `format`, `command`, `annotate-pane`, `command-helpers`). It is manual only — there is no automatic or backgrounded firing. v1 reviews the current branch; PR and arbitrary-branch targets are a planned follow-up.
+The review module lives in `swarm/ts/agents/review/` (`findings`, `transpose`, `synthesis`, `orchestrate`, `format`, `command`, `annotate-pane`, `command-helpers`). It is manual only — there is no automatic or backgrounded firing. v1 reviews the current branch; PR and arbitrary-branch targets are a planned follow-up.
 
 ## Agent lifecycle
 
-Dispatched agents can be stopped with the `cancel_agent` tool, which cancels an agent you dispatched and terminates its process (subtree-only: you cannot cancel agents outside your dispatch tree). Agents are also reaped automatically when their dispatcher session ends and does not reconnect within `BASECAMP_AGENT_DISCONNECT_GRACE_S` (default 3600s). See `pi-swarm/protocol/PROTOCOL.md`.
+Dispatched agents can be stopped with the `cancel_agent` tool, which cancels an agent you dispatched and terminates its process (subtree-only: you cannot cancel agents outside your dispatch tree). Agents are also reaped automatically when their dispatcher session ends and does not reconnect within `BASECAMP_AGENT_DISCONNECT_GRACE_S` (default 3600s). See `swarm/protocol/PROTOCOL.md`.
 
 ## Workstreams
 
-The workstream domain lives in `src/workstreams/` and provides durable, repo-neutral internal coordination state for copilot-staged work. A workstream is persisted in the daemon's SQLite store (`~/.pi/basecamp/swarm/daemon.db`, tables `workstreams` and `workstream_agents`, beside `agents`/`runs`) — the former JSON launch-index is gone (clean break, no migration).
+The workstream domain lives in `swarm/ts/workstreams/` and provides durable, repo-neutral internal coordination state for copilot-staged work. A workstream is persisted in the daemon's SQLite store (`~/.pi/basecamp/swarm/daemon.db`, tables `workstreams` and `workstream_agents`, beside `agents`/`runs`) — the former JSON launch-index is gone (clean break, no migration).
 
 Identity: each workstream has an internal `ws_<uuid>` id and a globally-unique three-word readable `slug`. Worktrees are NOT persisted — git remains the source of truth; the `copilot/<slug>` worktree name encodes the slug. The dossier (Logseq work page, `work__<org>__<repo>__<slug>`) stays the user-facing durable record; the workstream points to it via `source_dossier_path`. One dossier may have many workstreams.
 
@@ -45,5 +45,5 @@ A workstream can have several agent sessions over time or concurrently — every
 
 ### Protocol
 
-Workstream management uses three WS frame pairs (`create_workstream`/`attach_workstream_agent`/`update_workstream` + acks, protocol v19) and two HTTP GET endpoints (`/workstreams` filtered list, `/workstreams/{id_or_slug}` workstream + joined agents). See `pi-swarm/protocol/PROTOCOL.md`.
+Workstream management uses three WS frame pairs (`create_workstream`/`attach_workstream_agent`/`update_workstream` + acks, protocol v19) and two HTTP GET endpoints (`/workstreams` filtered list, `/workstreams/{id_or_slug}` workstream + joined agents). See `swarm/protocol/PROTOCOL.md`.
 

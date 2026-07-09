@@ -206,24 +206,6 @@ class RunsMixin:
             for row in rows
         ]
 
-    def are_runs_terminal(self, run_ids: list[str]) -> bool:
-        """Return True when all requested run ids exist and are terminal."""
-
-        if not run_ids:
-            return True
-
-        placeholders = ", ".join("?" for _ in run_ids)
-        with self._connect() as connection:
-            rows = connection.execute(
-                f"SELECT id, status FROM runs WHERE id IN ({placeholders})",
-                tuple(run_ids),
-            ).fetchall()
-
-        by_id = {row[0]: row[1] for row in rows}
-        if len(by_id) != len(run_ids):
-            return False
-        return all(by_id[run_id] in TERMINAL_STATUSES for run_id in run_ids)
-
     def append_run_event(self, *, run_id: str, kind: str, payload: dict[str, Any]) -> int:
         """Append an ordered event row for a run and return its sequence number."""
 

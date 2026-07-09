@@ -1,4 +1,4 @@
-# pi-browser
+# browser
 
 Basecamp browser automation tools for a real headed Chrome/Brave browser over the Chrome DevTools Protocol.
 
@@ -13,11 +13,3 @@ Basecamp browser automation tools for a real headed Chrome/Brave browser over th
 - **Browser resolution**: `BASECAMP_BROWSER_PATH` (explicit executable) → Google Chrome → Brave. Set `BASECAMP_BROWSER_PATH` to target a different Chromium build or platform.
 - **Profile**: persistent at `~/.pi/basecamp/browser/profile`, so logins and cookies survive across sessions.
 - **Scope**: main session only. Both tools are excluded from subagents and refuse to run when `isSubagent()` is true.
-
-## Installation
-
-```bash
-pi install /path/to/pi-browser
-```
-
-Installed automatically by `install.py` when the browser component is selected.

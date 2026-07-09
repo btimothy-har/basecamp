@@ -26,7 +26,7 @@ async function attachWorktree(worktreeDir: string): Promise<WorkspaceWorktree> {
 
 const WORKTREE_STATE_RESTORE_REASONS = new Set<SessionStartEvent["reason"]>(["resume", "reload", "fork"]);
 
-async function restoreActiveWorktreeState(event: SessionStartEvent, ctx: ExtensionContext): Promise<void> {
+async function restoreActiveWorktreeState(ctx: ExtensionContext): Promise<void> {
 	const workspaceState = requireWorkspaceState();
 	if (!workspaceState.repo) return;
 
@@ -167,7 +167,7 @@ export function registerWorkspaceSession(pi: ExtensionAPI): void {
 				ctx.ui.notify(`basecamp: worktree attach failed — ${msg}`, "error");
 			}
 		} else if (WORKTREE_STATE_RESTORE_REASONS.has(event.reason)) {
-			await restoreActiveWorktreeState(event, ctx);
+			await restoreActiveWorktreeState(ctx);
 		}
 
 		notifyUnsafeEditResult(ctx, unsafeEditResult);

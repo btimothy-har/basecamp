@@ -1,4 +1,4 @@
-# pi-ui
+# ui
 
 Basecamp session UI — status footer, title auto-naming, and interactive mode editor.
 
@@ -11,12 +11,4 @@ Basecamp session UI — status footer, title auto-naming, and interactive mode e
 
 ## Dependencies
 
-- **pi-core** (hard peer dep): agent-mode state, workspace state, skill-tracker, and model-alias resolution
-
-## Installation
-
-```bash
-pi install /path/to/pi-ui
-```
-
-Installed automatically by `install.py`.
+- **core** (`#core/*`): agent-mode state, workspace state, skill-tracker, and model-alias resolution

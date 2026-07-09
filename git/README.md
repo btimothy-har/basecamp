@@ -1,6 +1,6 @@
-# pi-git
+# git
 
-Basecamp git workflow package for prompt-only pull request creation.
+Basecamp git workflow context for prompt-only pull request creation.
 
 ## What it does
 
@@ -8,12 +8,4 @@ Basecamp git workflow package for prompt-only pull request creation.
 
 ## Dependencies
 
-- **pi-core** (hard peer dep): exec wrapper used to resolve the default base branch for the PR prompt.
-
-## Installation
-
-```bash
-pi install /path/to/pi-git
-```
-
-Installed automatically by `install.py`.
+- **core** (`#core/*`): exec wrapper used to resolve the default base branch for the PR prompt.

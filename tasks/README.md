@@ -1,4 +1,4 @@
-# pi-tasks
+# tasks
 
 Basecamp task lifecycle + planning — goal tracking, task state machine, the `plan()` handoff, and workflow skills.
 
@@ -6,11 +6,9 @@ Basecamp task lifecycle + planning — goal tracking, task state machine, the `p
 
 - **Task tools**: `update_goal`, `create_tasks`, `start_task`, `complete_task`, `get_task`, `annotate_task`, `delete_task` — persistent goal/task tracking with a below-editor widget
 - **Planning**: `plan()` tool with structured plan review, draft logic, plan skill guard, worktree choices for implementation handoff, and `/show-plan` to view the current plan (the `plan()` tool is hard-blocked in copilot sessions)
-- **Workflow skills**: `gather`, `planning` SKILL.md content (`agents` skill moved to pi-swarm)
+- **Workflow skills**: `gather`, `planning` SKILL.md content (the `agents` skill lives in the swarm context)
 
-> **Note**: The workstream domain (`launch_workstream`, `list_workstreams`, `set_workstream_status`, and the `pi --workstream` startup flag) has moved to `pi-swarm/extension` (in `src/workstreams/`). Workstreams are now persisted in the daemon's SQLite store (`~/.pi/basecamp/swarm/daemon.db`, tables `workstreams` and `workstream_agents`), replacing the former JSON launch-index. pi-tasks no longer owns this domain.
-
-The sync in-process agent tool has been removed in the cutover. pi-swarm/extension now provides the sole agent tool (daemon-backed `dispatch_agent`/`wait_for_agent`/`list_agents`).
+> **Note**: The workstream domain (`launch_workstream`, `list_workstreams`, `set_workstream_status`, and the `pi --workstream` startup flag) is owned by the swarm context (`swarm/ts/workstreams/`), persisted in the daemon's SQLite store. The agent tools (`dispatch_agent`/`wait_for_agent`/`list_agents`) are likewise swarm's.
 
 ## Functional smoke cleanup
 
@@ -26,16 +24,8 @@ Do not add cleanup automation casually. Worktree deletion, branch deletion, and 
 
 ## Dependencies
 
-- **pi-core** (hard peer dep): TasksAccess type contract + registry, agent-mode, session state, workspace state + worktree operations, skill-tracker, catalog, model-aliases
+- **core** (`#core/*`): agent-mode, session state, workspace state + worktree operations, skill-tracker, catalog, model-aliases
 
 ## Type contracts
 
-`TasksAccess`, `TaskStatus`, `Task`, `ReviewState`, `GoalCycle` are owned by pi-core (`pi-core/platform/tasks-access.ts`). Pi-tasks implements `TasksAccess` and registers it into pi-core's registry. Companion and swarm observe via `getTasksAccess()` (returns null if pi-tasks not installed).
-
-## Installation
-
-```bash
-pi install /path/to/pi-tasks
-```
-
-Installed automatically by `install.py`.
+`TasksAccess`, `TaskStatus`, `Task`, `ReviewState`, `GoalCycle` are owned by this context (`tasks/ts/tasks/access.ts`) and exported through `#tasks/index.ts`. The tasks module implements `TasksAccess` and registers it at load; companion observes via `getTasksAccess()` (returns null until tasks registers it).

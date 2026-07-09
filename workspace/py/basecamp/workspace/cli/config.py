@@ -13,26 +13,6 @@ from basecamp.workspace.cli.project import (
 from basecamp.workspace.ui import console
 
 
-def run_config_menu() -> None:
-    """Legacy internal wrapper for the project menu."""
-    while True:
-        console.print()
-        section = questionary.select(
-            "Configure:",
-            choices=[
-                "Projects",
-                questionary.Separator(),
-                "Done",
-            ],
-        ).ask()
-
-        if section is None or section == "Done":
-            return
-
-        if section == "Projects":
-            run_project_menu(exit_label="← Back")
-
-
 def run_project_menu(exit_label: str = "Done") -> None:
     """Project configuration menu."""
     while True:

@@ -1,5 +1,4 @@
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { registerAgentIdentityProvider } from "#core/platform/agent-identity.ts";
 import { processScoped } from "#core/platform/global-registry.ts";
 import { resolveModelAlias } from "#core/platform/model-aliases.ts";
 import { resolveSessionProductRoleOverride } from "#core/platform/product-role.ts";
@@ -200,14 +199,6 @@ export function registerDaemonClient(pi: ExtensionAPI, deps: DaemonClientDeps = 
 	const { isTopLevel, atMaxDepth } = resolveAgentDepthState();
 	const runId = process.env.BASECAMP_RUN_ID;
 	const isDaemonSpawnedAgent = !isTopLevel && Boolean(runId);
-
-	// Expose this session's public daemon handle so consumers (e.g. the workstream startup flow)
-	// can attach the running session as a workstream agent. Pure derivation from ctx; safe for any session.
-	registerAgentIdentityProvider({
-		// The seam's ExtensionContext originates from pi-core's bundled types; only sessionManager/env
-		// are read for handle derivation, so bridging the structurally-compatible context is safe.
-		deriveHandle: (identityCtx) => deriveDaemonIdentity(identityCtx as unknown as ExtensionContext, deps).agent_handle,
-	});
 
 	if (!isTopLevel && !isDaemonSpawnedAgent) {
 		return;

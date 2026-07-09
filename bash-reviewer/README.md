@@ -1,11 +1,11 @@
-# pi-bash-reviewer
+# bash-reviewer
 
 Basecamp bash reviewer — LLM gate for risky git/gh/shell commands.
 
 ## What it does
 
 - **Bash reviewer hook**: registers a `tool_call` hook for `bash`
-- **Reviewer runtime**: intended to host the LLM gate for risky git/gh/shell commands
+- **Reviewer runtime**: hosts the LLM gate for risky git/gh/shell commands
 - **Wide-search block**: recursive filesystem searches (`grep -r`, `find`, `rg`, `ag`, `ack`, `fd`) rooted at a system or home root (`/`, `~`, `$HOME`, `/usr`, `/etc`, `/Users`, …) are blocked deterministically during triage, before the LLM gate — whole-system scans are slow. Targeted searches (relative roots, subpaths, non-recursive single-file grep) are unaffected.
 
 ## Autonomous subagents
@@ -14,13 +14,5 @@ Subagent context is detected with `BASECAMP_AGENT_DEPTH > 0`. In a subagent, `ro
 
 ## Dependencies
 
-- **pi-core** (hard peer dep): shared Basecamp/Pi runtime primitives
+- **core** (`#core/*`): shared Basecamp/Pi runtime primitives
 - **@earendil-works/pi-ai**: model API used by the reviewer
-
-## Installation
-
-```bash
-pi install /path/to/pi-bash-reviewer
-```
-
-Installed automatically by `install.py`.

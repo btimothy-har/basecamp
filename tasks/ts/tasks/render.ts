@@ -6,7 +6,6 @@ export type TaskProgressStatus = "pending" | "active" | "completed" | "deleted";
 export interface TaskProgressTask {
 	label: string;
 	status: TaskProgressStatus;
-	index?: number;
 	description?: string;
 	notes?: string | null;
 }
@@ -14,12 +13,6 @@ export interface TaskProgressTask {
 export interface TaskProgressSnapshot {
 	goal: string | null;
 	tasks: TaskProgressTask[];
-}
-
-export interface TaskProgressCounts {
-	completed: number;
-	deleted: number;
-	total: number;
 }
 
 type ThemeColor = Parameters<Theme["fg"]>[0];
@@ -36,19 +29,6 @@ const MARKERS: Record<TaskProgressStatus, string> = {
 	deleted: "✕",
 };
 
-export function countTaskProgress(snapshot: TaskProgressSnapshot): TaskProgressCounts {
-	const deleted = snapshot.tasks.filter((t) => t.status === "deleted").length;
-	const total = snapshot.tasks.length - deleted;
-	const completed = snapshot.tasks.filter((t) => t.status === "completed").length;
-	return { completed, deleted, total };
-}
-
-export function formatTaskProgressSummary(snapshot: TaskProgressSnapshot): string | null {
-	const counts = countTaskProgress(snapshot);
-	if (counts.total === 0) return null;
-	return `${counts.completed}/${counts.total} tasks completed`;
-}
-
 export function renderTaskWidgetLines(
 	snapshot: TaskProgressSnapshot,
 	theme: TaskProgressRenderTheme,
@@ -61,10 +41,7 @@ export function renderTaskWidgetLines(
 		inner.push(`${theme.fg("dim", "Goal")}  ${snapshot.goal}`);
 	}
 
-	const taskLines = renderTaskProgressBody(snapshot, theme, {
-		includeIndices: false,
-		includeNotes: true,
-	});
+	const taskLines = renderTaskProgressBody(snapshot, theme);
 	if (taskLines.length > 0) {
 		if (snapshot.goal) inner.push("");
 		inner.push(...taskLines);
@@ -73,37 +50,7 @@ export function renderTaskWidgetLines(
 	return wrapInTaskBox(inner, theme, width);
 }
 
-export function renderCompactTaskProgressLines(
-	snapshot: TaskProgressSnapshot,
-	theme: TaskProgressRenderTheme,
-): string[] {
-	if (!snapshot.goal && snapshot.tasks.length === 0) return [];
-
-	const lines: string[] = [];
-	if (snapshot.goal) {
-		lines.push(`${theme.fg("dim", "Goal")}  ${snapshot.goal}`);
-	}
-
-	const taskLines = renderTaskProgressBody(snapshot, theme, {
-		includeIndices: true,
-		includeNotes: false,
-	});
-	if (taskLines.length > 0) {
-		if (snapshot.goal) lines.push("");
-		lines.push(...taskLines);
-	}
-
-	return lines;
-}
-
-function renderTaskProgressBody(
-	snapshot: TaskProgressSnapshot,
-	theme: TaskProgressRenderTheme,
-	opts: {
-		includeIndices: boolean;
-		includeNotes: boolean;
-	},
-): string[] {
+function renderTaskProgressBody(snapshot: TaskProgressSnapshot, theme: TaskProgressRenderTheme): string[] {
 	if (snapshot.tasks.length === 0) return [];
 
 	const completedCount = snapshot.tasks.filter((t) => t.status === "completed").length;
@@ -111,16 +58,16 @@ function renderTaskProgressBody(
 	const activeIdx = snapshot.tasks.findIndex((t) => t.status === "active");
 	const firstPendingIdx = snapshot.tasks.findIndex((t) => t.status === "pending");
 	const windowStart = activeIdx >= 0 ? activeIdx : firstPendingIdx >= 0 ? firstPendingIdx : snapshot.tasks.length;
-	const windowTasks: Array<{ index: number; task: TaskProgressTask }> = [];
+	const windowTasks: TaskProgressTask[] = [];
 
 	for (let i = windowStart; i < snapshot.tasks.length && windowTasks.length < WINDOW_SIZE; i++) {
 		const task = snapshot.tasks[i];
 		if (task && task.status !== "completed") {
-			windowTasks.push({ index: i, task });
+			windowTasks.push(task);
 		}
 	}
 
-	const pendingInWindow = windowTasks.filter(({ task }) => task.status === "pending").length;
+	const pendingInWindow = windowTasks.filter((task) => task.status === "pending").length;
 	const totalPending = snapshot.tasks.filter((t) => t.status === "pending").length;
 	const remainingCount = totalPending - pendingInWindow;
 	const lines: string[] = [];
@@ -132,17 +79,15 @@ function renderTaskProgressBody(
 		lines.push(theme.fg("muted", `(${counts.join(", ")})`));
 	}
 
-	for (const { index, task } of windowTasks) {
-		const notesMark = opts.includeNotes && task.notes ? theme.fg("dim", " 📝") : "";
+	for (const task of windowTasks) {
+		const notesMark = task.notes ? theme.fg("dim", " 📝") : "";
 		const marker = MARKERS[task.status];
-		const displayIndex = task.index ?? index;
-		const label = opts.includeIndices ? `[${displayIndex}] ${task.label}` : task.label;
 		if (task.status === "deleted") {
-			lines.push(`${theme.fg("dim", marker)} ${theme.fg("dim", label)}`);
+			lines.push(`${theme.fg("dim", marker)} ${theme.fg("dim", task.label)}`);
 		} else if (task.status === "active") {
-			lines.push(`${theme.fg("accent", marker)} ${theme.fg("accent", label)}${notesMark}`);
+			lines.push(`${theme.fg("accent", marker)} ${theme.fg("accent", task.label)}${notesMark}`);
 		} else {
-			lines.push(`${theme.fg("muted", marker)} ${label}${notesMark}`);
+			lines.push(`${theme.fg("muted", marker)} ${task.label}${notesMark}`);
 		}
 	}
 

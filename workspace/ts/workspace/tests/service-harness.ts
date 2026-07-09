@@ -4,11 +4,16 @@ import { SCRATCH_ROOT, WORKTREES_ROOT } from "#core/workspace/constants.ts";
 import { WorkspaceRuntimeService } from "../service.ts";
 
 export const REPO_ROOT = "/repo";
+// Unique per test-file process. Each *.test.ts runs in its own child process, and
+// files sharing this harness would otherwise collide on the fixed /tmp/pi scratch
+// base — one process's cleanup rm racing another's recursive mkdir on the same
+// path surfaces as an intermittent ENOENT.
+const REPO_NAME = `repo-${process.pid}`;
 // Derived from REMOTE_URL by resolveGitInfo: <org>/<name>, not the toplevel basename.
-export const REPO_IDENTITY = "test/repo";
+export const REPO_IDENTITY = `test/${REPO_NAME}`;
 export const LABEL = "feature";
 export const BRANCH = "wt/feature";
-export const REMOTE_URL = "git@github.com:test/repo.git";
+export const REMOTE_URL = `git@github.com:test/${REPO_NAME}.git`;
 export const WORKTREE_DIR = path.join(WORKTREES_ROOT, REPO_IDENTITY, LABEL);
 export const SCRATCH_DIR = path.join(SCRATCH_ROOT, REPO_IDENTITY);
 

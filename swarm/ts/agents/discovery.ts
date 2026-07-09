@@ -1,7 +1,7 @@
 /**
  * Agent discovery — basecamp-owned builtin definitions.
  *
- * Owned by pi-swarm because agent definitions are part of the async-agent domain.
+ * Owned by the swarm context because agent definitions are part of the async-agent domain.
  * The host extension sees generic catalog metadata through the injected catalog provider.
  */
 

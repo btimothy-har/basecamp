@@ -1,6 +1,6 @@
 # core
 
-The always-present foundation context for basecamp. `core/ts` is the first module the composition root (`extension.ts`) registers; every other context may import it freely (`#core/*`). `core/config` is the Python side (settings/paths/files) until it folds into `core/py` in phase 3 of the consolidation.
+The always-present foundation context for basecamp. `core/ts` is the first module the composition root (`extension.ts`) registers; every other context may import it freely (`#core/*`). `core/py` is the Python side (`basecamp.core`: settings, paths, files, exceptions).
 
 ## What it does
 
@@ -9,7 +9,7 @@ The always-present foundation context for basecamp. `core/ts` is the first modul
 - **Session lifecycle**: agent-mode state machine (analysis/planning/supervisor/executor/copilot), session start (state load + mode restore), session shutdown, chat compaction
 - **State persistence**: file-backed session state (`~/.pi/basecamp/core/session-state/<session-id>.json`) with fork inheritance
 - **Capabilities**: the `skill()` tool, SKILL.md content parsing, catalog providers, skill invocation tracker
-- **Model aliases**: native config provider (`~/.pi/basecamp/core/model-aliases.json`) + `/model-alias` commands
+- **Model aliases**: native config provider (`~/.pi/basecamp/core/model-aliases.json`) + the `/model-aliases` command
 - **Escalate**: the `escalate` tool — pause and ask the user for a decision (primary sessions only)
 - **Workspace defaults**: git detection at session_start (repo, remote, branch from `process.cwd()`); worktree operations (list/activate/attach) as thin git wrappers. The workspace module overrides these defaults with basecamp-config-aware values during registration.
 

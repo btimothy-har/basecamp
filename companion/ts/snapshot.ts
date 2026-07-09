@@ -11,9 +11,6 @@ export function defaultCompanionSnapshotDir(homeDir = os.homedir()): string {
 	return path.join(basecampRoot(homeDir), "companion", "snapshots");
 }
 
-export const DEFAULT_COMPANION_SNAPSHOT_DIR = defaultCompanionSnapshotDir();
-export const DEFAULT_COMPANION_DIR = DEFAULT_COMPANION_SNAPSHOT_DIR;
-
 export interface CompanionSnapshotTask {
 	label: string;
 	status: TaskStatus;

@@ -23,6 +23,8 @@ for path in [
     REPO_DIR / "src",
     REPO_DIR / "core" / "py",
     REPO_DIR / "workspace" / "py",
+    REPO_DIR / "swarm" / "py",
+    REPO_DIR / "companion" / "py",
 ]:
     sys.path.insert(0, str(path))
 

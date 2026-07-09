@@ -61,16 +61,6 @@ class Registry:
 
         self._runs[run_id] = node_id
 
-    def remove_run_owner(self, run_id: str) -> None:
-        """Remove run ownership mapping if present."""
-
-        self._runs.pop(run_id, None)
-
-    def get_run_owner(self, run_id: str) -> str | None:
-        """Look up run owner by run id."""
-
-        return self._runs.get(run_id)
-
     def set_process(self, run_id: str, process: asyncio.subprocess.Process) -> None:
         """Track a subprocess handle for a run."""
 

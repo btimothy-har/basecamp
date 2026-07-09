@@ -12,7 +12,7 @@ import { registerState } from "./state/index.ts";
 import { resolveGitInfo } from "./workspace/repo.ts";
 
 export default function (pi: ExtensionAPI): void {
-	// Default cwd provider — pi-workspace overrides this when installed.
+	// Default cwd provider — the workspace module overrides this during registration.
 	registerCwdProvider(() => process.cwd());
 
 	// Core registries + lifecycle
@@ -22,7 +22,7 @@ export default function (pi: ExtensionAPI): void {
 	registerCapabilities(pi);
 	registerModelAliases(pi);
 
-	// Default git detection at session_start — pi-workspace overrides with full config.
+	// Default git detection at session_start — the workspace module overrides with full config.
 	pi.on("session_start", async () => {
 		const gitInfo = await resolveGitInfo(pi, process.cwd());
 		setBasecampEnv("BASECAMP_REPO", gitInfo.repoName);

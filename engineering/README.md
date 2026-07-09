@@ -1,4 +1,4 @@
-# pi-engineering
+# engineering
 
 Basecamp engineering tools and skills — BigQuery, Python, SQL, dbt, marimo.
 
@@ -10,12 +10,4 @@ Basecamp engineering tools and skills — BigQuery, Python, SQL, dbt, marimo.
 
 ## Dependencies
 
-- **pi-core** (hard peer dep): workspace effective cwd, workspace state (scratch dir)
-
-## Installation
-
-```bash
-pi install /path/to/pi-engineering
-```
-
-Installed automatically by `install.py`.
+- **core** (`#core/*`): workspace effective cwd, workspace state (scratch dir)

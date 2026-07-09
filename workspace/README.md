@@ -1,12 +1,12 @@
-# pi-workspace
+# workspace
 
-Basecamp workspace config + project context layer. Overrides pi-core's git-detected workspace defaults with basecamp.yaml-aware values.
+Basecamp workspace config + project context layer. Overrides core's git-detected workspace defaults with project-config-aware values. `workspace/py` is the Python side (`basecamp.workspace`: project/env config, interactive CLI menus).
 
 ## What it does
 
-- **Workspace config**: loads `basecamp.yaml`, manages allowed-roots providers, unsafe-edit flag handling
+- **Workspace config**: loads project config (`~/.pi/basecamp/workspace/projects.json`), manages allowed-roots providers, unsafe-edit flag handling
 - **Projects**: assembles the layered system prompt (environment → working style → project context → tools/skills), context injection on every prompt cycle, header rendering
-- **WorkspaceService override**: registers a config-aware WorkspaceService into pi-core's workspace registry, replacing pi-core's default. Sets `BASECAMP_*` env vars via pi-core's env contract. Registers cwd provider via pi-core's exec seam.
+- **WorkspaceService override**: registers a config-aware WorkspaceService into core's workspace registry, replacing core's default. Sets `BASECAMP_*` env vars via core's env contract. Registers cwd provider via core's exec seam.
 - **Workspace guards**: blocks writes to critical root-branch paths, warns of unsaved session states
 - **Worktree command**: `/worktree` command for switching between git worktrees (primary sessions only)
 
@@ -38,16 +38,8 @@ The repo cockpit captures repo-level coordination state: current user focus, pri
 
 Basecamp registers the configured graph as an allowed root so normal file tools can read and update these Markdown files from repo sessions. There are no custom Logseq tools, no background sync, and no automatic graph scan.
 
-Logseq is the durable memory; workstreams are the user-facing execution surfaces. When copilot stages a workstream (via `launch_workstream` in pi-swarm/extension) it provisions a generically-named worktree (`copilot/<slug>`) + Herdr pane and creates the workstream in the daemon, returning its internal `ws_<uuid>` id and three-word `slug`; the user runs `pi --workstream` in that pane to start the session (bare form infers the slug from the worktree), which attaches the session as a workstream agent in the daemon. If no pane opens, the user can run `cd <worktree-path> && pi --workstream=<slug>` manually. The workstream is durable internal coordination state in the daemon (not an operational receipt); the dossier remains the durable record of priority, decisions, blockers, and done signals. Copilot refreshes a workstream's state on demand by finding it with `list_workstreams` (a single-identifier lookup returns the joined agent rows) and pulling a summary from the relevant session's attached handle via pi-swarm `ask_agent`/`message_agent` — a workstream may have several attached sessions, so copilot picks the one it needs — then curates the durable parts into Logseq itself. A workstream can have several agent sessions over time or concurrently. Workstream agents never write Logseq and do not push updates to copilot.
+Logseq is the durable memory; workstreams are the user-facing execution surfaces. When copilot stages a workstream (via `launch_workstream`, owned by the swarm context) it provisions a generically-named worktree (`copilot/<slug>`) + Herdr pane and creates the workstream in the daemon, returning its internal `ws_<uuid>` id and three-word `slug`; the user runs `pi --workstream` in that pane to start the session (bare form infers the slug from the worktree), which attaches the session as a workstream agent in the daemon. If no pane opens, the user can run `cd <worktree-path> && pi --workstream=<slug>` manually. The workstream is durable internal coordination state in the daemon (not an operational receipt); the dossier remains the durable record of priority, decisions, blockers, and done signals. Copilot refreshes a workstream's state on demand by finding it with `list_workstreams` (a single-identifier lookup returns the joined agent rows) and pulling a summary from the relevant session's attached handle via the swarm `ask_agent`/`message_agent` tools — a workstream may have several attached sessions, so copilot picks the one it needs — then curates the durable parts into Logseq itself. A workstream can have several agent sessions over time or concurrently. Workstream agents never write Logseq and do not push updates to copilot.
 
 ## Dependencies
 
-- **pi-core** (hard peer dep): workspace registry, exec, env contract, state persistence, worktree git primitives
-
-## Installation
-
-```bash
-pi install /path/to/workspace/pi
-```
-
-Installed automatically by `install.py`.
+- **core** (`#core/*`): workspace registry, exec, env contract, state persistence, worktree git primitives

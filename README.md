@@ -98,8 +98,8 @@ Use it to list, add, edit, or remove configured projects.
 | `/worktree [label]` | Switch to an existing Git-registered worktree |
 | `/create-pr` | Create or update a pull request |
 | `/code-review` | Run an independent multi-agent review of the current branch |
-| `/create-issue` | Draft and publish a GitHub issue through review |
-| `/pr-comments` | Address PR review comments |
+| `/title [text]` | Generate a session title from the conversation, or set one manually |
+| `/model-aliases` | Manage model aliases (list, add, edit, remove) |
 
 ### Subagents
 

@@ -1,11 +1,11 @@
 /**
  * Session product-role override seam.
  *
- * Pi-core owns the provider contract and the registry cell. Feature packages can
+ * Core owns the provider contract and the registry cell. Other contexts can
  * register a narrow provider for session product-role overrides that must be
  * available before session_start handler ordering is known. Consumers (e.g.
- * pi-swarm's daemon identity derivation) read it before falling back to env or
- * agent-mode. Absent a provider, callers degrade to null.
+ * the swarm context's daemon identity derivation) read it before falling back to
+ * env or agent-mode. Absent a provider, callers degrade to null.
  *
  * Process-scoped via globalThis so `/reload` preserves the registered provider.
  */

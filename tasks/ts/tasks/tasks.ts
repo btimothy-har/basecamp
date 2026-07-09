@@ -109,7 +109,7 @@ export function registerTasks(pi: ExtensionAPI): TasksAccess {
 	registerTaskTools(pi, runtime);
 
 	// --- Restore state on session start ---
-	pi.on("session_start", async (event, sessionCtx) => {
+	pi.on("session_start", async (_event, sessionCtx) => {
 		ctx = sessionCtx;
 		runtime.state = { goal: null, tasks: [] };
 
