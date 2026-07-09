@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { shouldRunWorktreeSetup, worktreeSetupSummary } from "../planning/worktree-setup.ts";
+import { shouldRunWorktreeSetup, worktreeSetupSummary } from "../planning/handoff/worktree-setup.ts";
 
 describe("shouldRunWorktreeSetup", () => {
 	it("runs only for newly-created worktrees with a configured command", () => {

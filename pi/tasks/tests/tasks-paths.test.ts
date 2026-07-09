@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import * as path from "node:path";
 import { describe, it } from "node:test";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { defaultTasksDir, registerTasks, type Task, tasksFilePath } from "../tasks/tasks.ts";
+import { defaultTasksDir, registerTasks, type Task, tasksFilePath } from "../lifecycle/index.ts";
 
 interface RegisteredToolResult {
 	content: { type: "text"; text: string }[];

@@ -7,8 +7,8 @@
  */
 
 import type { Theme } from "@earendil-works/pi-coding-agent";
-import type { ReviewState, Task } from "../tasks/tasks.ts";
-import { deriveGoalContextReviewState } from "./draft-logic.ts";
+import type { ReviewState, Task } from "../../lifecycle/index.ts";
+import { deriveGoalContextReviewState } from "../draft/draft-logic.ts";
 
 interface PlanSection {
 	content: string;

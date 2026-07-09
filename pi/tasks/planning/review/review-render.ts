@@ -1,7 +1,7 @@
 /** Text rendering for the plan-review list and drill-down views. */
 
 import type { Theme } from "@earendil-works/pi-coding-agent";
-import { deriveGoalContextReviewState } from "./draft-logic.ts";
+import { deriveGoalContextReviewState } from "../draft/draft-logic.ts";
 import { type PlanDraft, type ReviewItem, reviewMarker, sectionDisplayName } from "./review-model.ts";
 
 export function renderListView(items: ReviewItem[], selected: number, draft: PlanDraft, theme: Theme): string[] {

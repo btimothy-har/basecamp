@@ -14,7 +14,7 @@
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { DynamicBorder, getSelectListTheme } from "@earendil-works/pi-coding-agent";
 import { Container, Editor, type EditorTheme, matchesKey, Spacer, Text } from "@earendil-works/pi-tui";
-import type { GoalCycle } from "../tasks/tasks.ts";
+import type { GoalCycle } from "../../lifecycle/index.ts";
 import {
 	countPending,
 	getItemReview,

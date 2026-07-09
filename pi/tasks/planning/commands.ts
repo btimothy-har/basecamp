@@ -1,9 +1,9 @@
 /** /show-plan command — view or re-review the current plan. */
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import type { TasksAccess } from "../tasks/tasks.ts";
-import type { PlanAccess } from "./plan.ts";
-import { showPlanReadOnly, showReviewOverlay } from "./review.ts";
+import type { TasksAccess } from "../lifecycle/index.ts";
+import type { PlanAccess } from "./index.ts";
+import { showPlanReadOnly, showReviewOverlay } from "./review/index.ts";
 
 export function registerPlanCommands(pi: ExtensionAPI, tasksAccess: TasksAccess, plan: PlanAccess): void {
 	pi.registerCommand("show-plan", {

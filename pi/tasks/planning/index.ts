@@ -19,9 +19,9 @@ import { resolveSessionProductRoleOverride } from "#core/platform/product-role.t
 import { activateWorkspaceWorktree, getWorkspaceState, requireWorkspaceState } from "#core/platform/workspace.ts";
 import { getAgentMode, setAgentMode } from "#core/session/agent-mode.ts";
 import { runWorktreeSetup } from "#core/workspace/setup.ts";
+import type { GoalCycle, TasksAccess } from "../lifecycle/index.ts";
 import { renderPartial, renderSuccess } from "../render.ts";
-import type { GoalCycle, TasksAccess } from "../tasks/tasks.ts";
-import { buildApprovedResult, buildDraft, buildFeedbackResult, isAllApproved } from "./draft.ts";
+import { buildApprovedResult, buildDraft, buildFeedbackResult, isAllApproved } from "./draft/index.ts";
 import {
 	buildHandoffCompactionInstructions,
 	buildHandoffMessage,
@@ -34,18 +34,18 @@ import {
 	selectWorktreeTarget,
 	shouldReuseActiveWorktreeForHandoff,
 	workspaceWorktreeToHandoffWorktree,
-} from "./handoff.ts";
-import type { PlanDraft } from "./review.ts";
-import { showReviewOverlay } from "./review.ts";
-import { shouldRunWorktreeSetup, type WorktreeSetupSummary, worktreeSetupSummary } from "./worktree-setup.ts";
+} from "./handoff/index.ts";
+import { shouldRunWorktreeSetup, type WorktreeSetupSummary, worktreeSetupSummary } from "./handoff/worktree-setup.ts";
+import type { PlanDraft } from "./review/index.ts";
+import { showReviewOverlay } from "./review/index.ts";
 
 export { registerPlanCommands } from "./commands.ts";
-export type { ImplementationMode } from "./handoff.ts";
+export type { ImplementationMode } from "./handoff/index.ts";
 export {
 	buildHandoffMessage,
 	shouldReuseActiveWorktreeForHandoff,
 	workspaceWorktreeToHandoffWorktree,
-} from "./handoff.ts";
+} from "./handoff/index.ts";
 
 export interface PlanAccess {
 	getDraft(): PlanDraft | null;

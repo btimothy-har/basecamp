@@ -15,7 +15,7 @@ import {
 	isCompleteTaskStopWorkDetails,
 	requireTasks,
 } from "./context.ts";
-import type { TasksRuntime } from "./tasks.ts";
+import type { TasksRuntime } from "./index.ts";
 
 export function registerTaskTools(pi: ExtensionAPI, runtime: TasksRuntime): void {
 	// --- Tool: update_goal ---

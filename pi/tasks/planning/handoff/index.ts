@@ -11,9 +11,9 @@ import {
 	type WorkspaceWorktree,
 } from "#core/platform/workspace.ts";
 import { shortSessionId } from "#core/session/session-id.ts";
-import type { TaskStatus } from "../tasks/tasks.ts";
-import { collectApprovedNotes } from "./draft.ts";
-import type { PlanDraft } from "./review.ts";
+import type { TaskStatus } from "../../lifecycle/index.ts";
+import { collectApprovedNotes } from "../draft/index.ts";
+import type { PlanDraft } from "../review/index.ts";
 import {
 	buildExecutionWorktreeChoices,
 	CUSTOM_WORKTREE_CHOICE,

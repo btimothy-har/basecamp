@@ -9,7 +9,7 @@ import {
 	type PlanSection,
 	type TaskInput,
 	tasksMatch,
-} from "../planning/draft-logic.ts";
+} from "../planning/draft/draft-logic.ts";
 
 function approvedSection(content: string): PlanSection {
 	return { content, review: { approved: true, feedback: null } };

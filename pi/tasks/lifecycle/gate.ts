@@ -5,7 +5,7 @@
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { isCompleteTaskStopWorkDetails } from "./context.ts";
-import type { TasksRuntime } from "./tasks.ts";
+import type { TasksRuntime } from "./index.ts";
 
 const TASK_TOOLS = new Set([
 	"update_goal",

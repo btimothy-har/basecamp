@@ -1,8 +1,8 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { registerPlan, registerPlanCommands } from "./planning/plan.ts";
-import { registerPlanCopilotGuard } from "./planning/plan-copilot-guard.ts";
-import { registerPlanSkillGuard } from "./planning/plan-skill-guard.ts";
-import { registerTasks } from "./tasks/tasks.ts";
+import { registerTasks } from "./lifecycle/index.ts";
+import { registerPlanCopilotGuard } from "./planning/guards/plan-copilot.ts";
+import { registerPlanSkillGuard } from "./planning/guards/plan-skill.ts";
+import { registerPlan, registerPlanCommands } from "./planning/index.ts";
 
 export default function (pi: ExtensionAPI) {
 	const tasks = registerTasks(pi);
@@ -13,7 +13,7 @@ export default function (pi: ExtensionAPI) {
 	registerPlanCommands(pi, tasks, plan);
 }
 
+export type { GoalCycle, ReviewState, Task, TaskStatus, TasksAccess, TasksState } from "./lifecycle/access.ts";
+export { getTasksAccess, registerTasksAccess } from "./lifecycle/access.ts";
 // Public surface for other contexts (imported via #tasks/index.ts only).
-export { isPlanDisabledFor, PLAN_TOOL_NAME } from "./planning/plan-copilot-guard.ts";
-export type { GoalCycle, ReviewState, Task, TaskStatus, TasksAccess, TasksState } from "./tasks/access.ts";
-export { getTasksAccess, registerTasksAccess } from "./tasks/access.ts";
+export { isPlanDisabledFor, PLAN_TOOL_NAME } from "./planning/guards/plan-copilot.ts";

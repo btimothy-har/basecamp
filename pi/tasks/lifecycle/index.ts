@@ -26,9 +26,9 @@ import { getCurrentSessionState } from "#core/state/index.ts";
 import { registerTasksAccess } from "./access.ts";
 import { buildSteerContent, requireTasks } from "./context.ts";
 import { registerTaskGuards } from "./gate.ts";
-import { renderTaskWidgetLines } from "./render.ts";
 import { loadCycles, saveCycles, tasksFilePath } from "./store.ts";
 import { registerTaskTools } from "./tools.ts";
+import { renderTaskWidgetLines } from "./widget.ts";
 
 // Type contracts owned by the tasks context — re-exported for the planning files.
 export type {

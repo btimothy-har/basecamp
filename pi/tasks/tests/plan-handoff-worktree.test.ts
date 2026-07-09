@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import type { WorkspaceWorktree } from "#core/platform/workspace.ts";
-import { shouldReuseActiveWorktreeForHandoff, workspaceWorktreeToHandoffWorktree } from "../planning/handoff.ts";
+import { shouldReuseActiveWorktreeForHandoff, workspaceWorktreeToHandoffWorktree } from "../planning/handoff/index.ts";
 
 function worktree(overrides: Partial<WorkspaceWorktree> = {}): WorkspaceWorktree {
 	return {

@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { afterEach, describe, it } from "node:test";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { resetAgentMode, setAgentMode } from "#core/session/agent-mode.ts";
-import { registerPlanCopilotGuard } from "../planning/plan-copilot-guard.ts";
+import { registerPlanCopilotGuard } from "../planning/guards/plan-copilot.ts";
 
 type ToolCallEvent = { type: string; toolName: string; toolCallId: string; input: Record<string, unknown> };
 type Handler = (event: ToolCallEvent) => unknown;

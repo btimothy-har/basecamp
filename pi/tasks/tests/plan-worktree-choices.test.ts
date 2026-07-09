@@ -8,7 +8,7 @@ import {
 	type ExecutionWorktreeTarget,
 	suggestWorktreeTarget,
 	userWorktreePrefix,
-} from "../planning/worktree-choices.ts";
+} from "../planning/handoff/worktree-choices.ts";
 
 function worktree(label: string, overrides: Partial<WorkspaceWorktree> = {}): WorkspaceWorktree {
 	return {
