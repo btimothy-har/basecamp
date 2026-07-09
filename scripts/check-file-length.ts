@@ -30,16 +30,7 @@ const SKIP_DIRS = new Set([".git", ".claude", ".venv", ".pytest_cache", "__pycac
  * it landed. Entries may never be added or raised — only removed (mandatory
  * once the file is back under its cap).
  */
-const GRANDFATHERED: Readonly<Record<string, number>> = {
-	"companion/ts/tests/panes-index.test.ts": 509,
-	"core/ts/escalate/dialog.ts": 486,
-	"core/ts/model-aliases/commands.ts": 364,
-	"core/ts/state/index.ts": 371,
-	"core/ts/state/tests/session-state.test.ts": 425,
-	"ui/ts/tests/title-state.test.ts": 359,
-	"ui/ts/title.ts": 450,
-	"workspace/ts/workspace/tests/service.test.ts": 511,
-};
+const GRANDFATHERED: Readonly<Record<string, number>> = {};
 
 function walk(dir: string, out: string[] = []): string[] {
 	for (const entry of readdirSync(dir)) {
