@@ -372,8 +372,27 @@ Docs are rewritten in lockstep with the move, never ahead of it — AGENTS.md is
 
 ## 9. Sequencing & status
 
-- **Top level:** LOCKED.
+- **Top level:** LOCKED · **DONE.**
 - **Innards principle (§5.3–5.4):** LOCKED.
-- **Per-domain innards:** all 10 LOCKED (§6) — core · ui · workspace · tasks · git · bash-reviewer · engineering · browser · companion · swarm.
-- **Deferred follow-ups** (post-layout, behavior-adjacent — *not* this pass): carve `prompt/` into its own domain; consolidate the three `daemon` implementations (swarm server + swarm client + companion client) onto a shared wire contract; tease git verbs out of core `worktree.ts`; dedupe workspace `cli/environment.py` repo-identity against core; `browser/tools/output.ts` dedupe; split `tasks/lifecycle/tools.ts` only if it grows; settle the projects Python CLI/display split when detailing Python.
-- **Execution:** not started. One mechanical pass (relocation + regroupings together, files move once) gated on `make lint` + `make test` + a `pi` smoke; the sharp edges are the linter-blind path hazards in §7. Relocation-first is the fallback if the single pass reviews poorly.
+- **Per-domain innards:** designed and LOCKED for all 10 (§6).
+
+### Execution — done (relocation-first, green at every step)
+
+Shipped as a sequence of `make lint` + `make test`-green commits:
+
+1. **Relocation** — every TS domain re-anchored to `pi/<domain>/`, Python centralized to `src/basecamp/` (portion machinery deleted), manifests + the three linter-blind path hazards (§7) fixed.
+2. **Leaf domains** — git, browser, engineering, bash-reviewer (§6.7–6.10).
+3. **tasks** — `lifecycle/` + `planning/` sub-clusters (§6.6).
+4. **companion** — TS `panes/`·`herdr/`·`tmux/`·`snapshot/`; Python `daemon/` & `analysis/` groupings, `sources.py → poll.py` (§6.4).
+5. **core** — `agent-mode/` standalone + `state/` nested under `session/` (§6.1).
+6. **ui** — flatten + `buildUserContext → core/session` (§6.5).
+7. **project → core** + `workspace/prompt/` + `header → ui` (§6.1, §6.3, §6.5) — the central boundary move.
+8. **workspace** — `worktree/` + `guards/` (§6.3).
+9. **Doc truing** (§8) — AGENTS.md, README.md, this doc.
+
+### Deferred (consciously, doc-sanctioned) — follow-ups, not shipped this pass
+
+- **swarm internals (§6.2)** — the daemon hoist + consumer split (TS) and the `transport/`·`runner/` grouping (Python), per §6.12 ⟐3's cohesive-subsystem fallback and §6.2's defer note. The TS `agents/daemon/` is a 37-file dense subtree; the Python side would break ~30 monkeypatch string-paths *and* the runtime `-m basecamp.swarm.runner` invocation. Swarm keeps its already-best-structured layout, relocated to `pi/swarm/` + `src/basecamp/swarm/`.
+- **core minimal-churn (§6.12 ⟐2)** — the `git/`+`worktree/` split of `core/ts/workspace/` and `platform/skill-tracker.ts → capabilities/` were left in place; the `SESSION_STATE_AGENT_MODES` enum stays in `session/state` (agent-mode imports it) rather than reversing ownership.
+- **companion `diff.py → git/ + diff/` carve (§6.12 ⟐6)** — behavior-adjacent; `diff.py` is under the 500-cap.
+- The earlier behavior-adjacent list: carve `prompt/` to its own domain; consolidate the three `daemon` impls onto a shared wire contract; tease git verbs out of core `worktree.ts`; dedupe workspace `cli/environment.py` repo-identity against core; `browser/tools/output.ts` dedupe; split `tasks/lifecycle/tools.ts` only if it grows.

@@ -10,7 +10,7 @@ Basecamp companion — session snapshot hooks, companion panes, Herdr metadata, 
 - **Analysis registration**: hooks companion analysis into session lifecycle (writes analysis.json)
 - **Companion-active flag**: sets core's `isCompanionActive` flag for companion analysis/pane state
 
-The **Python companion TUI** (Textual dashboard, PydanticAI analyzer, daemon client) lives in `companion/py/basecamp/companion/`.
+The **Python companion TUI** (Textual dashboard, PydanticAI analyzer, daemon client) lives in `src/basecamp/companion/`.
 
 ## Dependencies
 

@@ -17,7 +17,7 @@ Flow:
 5. When a UI is available, present an interactive per-finding reaction pane so the user can page through the findings and leave an optional free-text reaction on each before the agent engages (reactions seed the follow-up discussion; they are not accept/reject decisions).
 6. Persist a JSON artifact to scratch — the structured findings plus the user's per-finding reactions; raw reviewer prose is not retained. Then inject a compact framing prompt carrying the verdict, counts, and a link to the artifact (the findings themselves are not dumped inline) so the primary agent reads the packet and triages as the reviewee.
 
-The review module lives in `swarm/ts/agents/review/` (`findings`, `transpose`, `synthesis`, `orchestrate`, `format`, `command`, `annotate-pane`, `command-helpers`). It is manual only — there is no automatic or backgrounded firing. v1 reviews the current branch; PR and arbitrary-branch targets are a planned follow-up.
+The review module lives in `pi/swarm/agents/review/` (`findings`, `transpose`, `synthesis`, `orchestrate`, `format`, `command`, `annotate-pane`, `command-helpers`). It is manual only — there is no automatic or backgrounded firing. v1 reviews the current branch; PR and arbitrary-branch targets are a planned follow-up.
 
 ## Agent lifecycle
 
@@ -25,7 +25,7 @@ Dispatched agents can be stopped with the `cancel_agent` tool, which cancels an 
 
 ## Workstreams
 
-The workstream domain lives in `swarm/ts/workstreams/` and provides durable, repo-neutral internal coordination state for copilot-staged work. A workstream is persisted in the daemon's SQLite store (`~/.pi/basecamp/swarm/daemon.db`, tables `workstreams` and `workstream_agents`, beside `agents`/`runs`) — the former JSON launch-index is gone (clean break, no migration).
+The workstream domain lives in `pi/swarm/workstreams/` and provides durable, repo-neutral internal coordination state for copilot-staged work. A workstream is persisted in the daemon's SQLite store (`~/.pi/basecamp/swarm/daemon.db`, tables `workstreams` and `workstream_agents`, beside `agents`/`runs`) — the former JSON launch-index is gone (clean break, no migration).
 
 Identity: each workstream has an internal `ws_<uuid>` id and a globally-unique three-word readable `slug`. Worktrees are NOT persisted — git remains the source of truth; the `copilot/<slug>` worktree name encodes the slug. The dossier (Logseq work page, `work__<org>__<repo>__<slug>`) stays the user-facing durable record; the workstream points to it via `source_dossier_path`. One dossier may have many workstreams.
 

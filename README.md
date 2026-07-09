@@ -251,10 +251,11 @@ For anything beyond a one-liner, point the command at a script you maintain outs
 
 ## Package Layout
 
-basecamp ships two artifacts, assembled from paired bilingual contexts (`<context>/{ts,py}`):
+basecamp is organized by the artifacts it ships (design record: `docs/design/repo-rearchitecture.md`):
 
-- `extension.ts` + `<context>/ts/` — the single Pi extension: project context, session UI, worktrees, workflow, git, engineering, agents, and companion features
-- `src/basecamp/` + `<context>/py/basecamp/<context>/` — the single `basecamp` Python distribution (PEP 420 namespace package): setup/projects/install CLI plus the `core`, `workspace`, `swarm` (daemon), and `companion` (TUI) portions
+- `pi/` — the single Pi extension (`pi/extension.ts` + `pi/<domain>/`), registered from the repo root: project context, session UI, worktrees, workflow, git, engineering, agents, and companion features
+- `src/basecamp/` — the single `basecamp` Python distribution (one ordinary src-layout package): setup/projects/install CLI plus the `core`, `workspace`, `swarm` (daemon), and `companion` (TUI) subpackages
+- `claude/` — reserved for a future Claude Code launcher
 
 ## License
 
