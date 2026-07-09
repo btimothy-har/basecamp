@@ -18,7 +18,7 @@ import { truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 import { type AgentMode, getAgentMode, onAgentModeChange } from "#core/agent-mode/index.ts";
 import { getInvokedSkills } from "#core/platform/skill-tracker.ts";
 import { getWorkspaceService, getWorkspaceState, type WorkspaceState } from "#core/platform/workspace.ts";
-import { getModeLabel } from "./mode-style.ts";
+import { getModeLabel } from "./mode.ts";
 
 type ThemeFg = (color: Parameters<import("@earendil-works/pi-coding-agent").Theme["fg"]>[0], text: string) => string;
 

@@ -1,4 +1,4 @@
-/** Title context assembly — compacts the user's own messages into a bounded prompt context. */
+/** User-message context assembly — compacts the user's own messages into a bounded prompt context. */
 
 import type { AgentMessage } from "@earendil-works/pi-agent-core";
 import type { TextContent, UserMessage } from "@earendil-works/pi-ai";
@@ -75,7 +75,7 @@ function appendBounded(parts: string[], part: string, maxChars: number): boolean
 	return false;
 }
 
-export function buildTitleContext(entries: SessionEntry[], latestPrompt?: string): string {
+export function buildUserContext(entries: SessionEntry[], latestPrompt?: string): string {
 	const parts: string[] = [];
 	const userMessages = entries
 		.filter((entry) => entry.type === "message")

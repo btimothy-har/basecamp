@@ -3,7 +3,7 @@ import { describe, it } from "node:test";
 import type { Api, Model } from "@earendil-works/pi-ai";
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { clearModelAliasProvidersForTesting, registerModelAliasProvider } from "#core/platform/model-aliases.ts";
-import { resolveTitleModel, resolveTitleModelForContext } from "../title-model.ts";
+import { resolveTitleModel, resolveTitleModelForContext } from "../llm/model.ts";
 
 function model(provider: string, id: string): Model<Api> {
 	return { provider, id } as unknown as Model<Api>;

@@ -4,7 +4,7 @@ import { complete, type Tool, type ToolCall } from "@earendil-works/pi-ai";
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { type Static, Type } from "@sinclair/typebox";
 import { Value } from "@sinclair/typebox/value";
-import { resolveTitleModelForContext } from "./title-model.ts";
+import { resolveTitleModelForContext } from "./model.ts";
 
 const TitleResult = Type.Object({ title: Type.Union([Type.String(), Type.Null()]) }, { additionalProperties: false });
 type TitleResult = Static<typeof TitleResult>;

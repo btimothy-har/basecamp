@@ -1,6 +1,6 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { registerModeEditor } from "./editor.ts";
 import { registerFooter } from "./footer.ts";
-import { registerModeEditor } from "./mode-editor.ts";
 import { registerTitle } from "./title.ts";
 
 export default function (pi: ExtensionAPI): void {
@@ -10,4 +10,4 @@ export default function (pi: ExtensionAPI): void {
 }
 
 // Public surface for other contexts (imported via #ui/index.ts only).
-export { buildTitleContext, formatTitle } from "./title.ts";
+export { formatTitle } from "./title.ts";

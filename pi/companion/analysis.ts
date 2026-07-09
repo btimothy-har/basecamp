@@ -3,8 +3,8 @@ import type { ExtensionAPI, SessionEntry } from "@earendil-works/pi-coding-agent
 import { isCompanionActive } from "#core/platform/env.ts";
 import { processScoped } from "#core/platform/global-registry.ts";
 import { getWorkspaceService } from "#core/platform/workspace.ts";
+import { buildUserContext } from "#core/session/user-context.ts";
 import { getTasksAccess } from "#tasks/index.ts";
-import { buildTitleContext } from "#ui/index.ts";
 
 export const MIN_USER_TURNS = 2;
 export const ANALYSIS_TIMEOUT_MS = 60_000;
@@ -130,7 +130,7 @@ export function maybeRunAnalysis(state: AnalysisState, deps: AnalysisDeps): void
 	if (!deps.isActive()) return;
 	if (countUserTurns(deps.branch) < MIN_USER_TURNS) return;
 
-	const context = buildTitleContext(deps.branch);
+	const context = buildUserContext(deps.branch);
 	if (!context.trim()) return;
 
 	startAnalysis(state, {

@@ -3,7 +3,7 @@
  *
  * Right-aligned, compact, dimmed. Extracted in the background while no title
  * exists, or manually via `/title`. Context assembly lives in
- * title-context.ts; the LLM call and validation in title-generate.ts.
+ * user-context.ts (in #core); the LLM call and validation in llm/generate.ts.
  */
 
 import type { ExtensionAPI, ExtensionContext, Theme } from "@earendil-works/pi-coding-agent";
@@ -13,21 +13,15 @@ import {
 	getCurrentSessionStateIfInitialized,
 	updateCurrentSessionStateIfInitialized,
 } from "#core/session/state/index.ts";
-import { buildTitleContext } from "./title-context.ts";
-import {
-	extractTitle,
-	generateTitleCompletion,
-	type TitleCompletion,
-	validateTitleResponse,
-} from "./title-generate.ts";
+import { buildUserContext } from "#core/session/user-context.ts";
+import { extractTitle, generateTitleCompletion, type TitleCompletion, validateTitleResponse } from "./llm/generate.ts";
 
-export { buildTitleContext } from "./title-context.ts";
 export {
 	type GenerateTitleCompletionOptions,
 	generateTitleCompletion,
 	type TitleCompletion,
 	validateTitleResponse,
-} from "./title-generate.ts";
+} from "./llm/generate.ts";
 
 export interface RegisterTitleOptions {
 	titleCompletion?: TitleCompletion;
@@ -137,7 +131,7 @@ export function registerTitle(pi: ExtensionAPI, options: RegisterTitleOptions = 
 			}
 
 			const branch = cmdCtx.sessionManager.getBranch();
-			const conversation = buildTitleContext(branch);
+			const conversation = buildUserContext(branch);
 			if (!conversation.trim()) {
 				cmdCtx.ui.notify("No conversation to extract title from", "warning");
 				return;
@@ -181,7 +175,7 @@ export function registerTitle(pi: ExtensionAPI, options: RegisterTitleOptions = 
 		if (!shouldRun) return;
 
 		const isFirst = !title;
-		const conversation = buildTitleContext(agentCtx.sessionManager.getBranch());
+		const conversation = buildUserContext(agentCtx.sessionManager.getBranch());
 		if (!conversation.trim()) {
 			pendingTitle?.abort();
 			pendingTitle = null;
