@@ -1,8 +1,8 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { WORKTREE_BRANCH_PREFIX, WORKTREE_LABEL_RE, WORKTREES_ROOT } from "./constants.ts";
-import { branchExists, detectDefaultBranch, gitOutput } from "./repo.ts";
+import { WORKTREE_BRANCH_PREFIX, WORKTREE_LABEL_RE, WORKTREES_ROOT } from "../constants.ts";
+import { branchExists, detectDefaultBranch, gitOutput } from "../repo.ts";
 
 export interface WorktreeResult {
 	worktreeDir: string;

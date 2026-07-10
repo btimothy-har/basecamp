@@ -1,12 +1,12 @@
 import * as path from "node:path";
-import type { WorkspaceWorktree } from "#core/workspace/service.ts";
 import {
 	copilotWorktreeTarget,
 	currentUserId,
 	type ExecutionWorktreeTarget,
 	normalizeWorktreeSlug,
 	userWorktreePrefix,
-} from "#core/workspace/worktree-target.ts";
+} from "#core/git/worktrees/target.ts";
+import type { WorkspaceWorktree } from "#core/workspace/service.ts";
 
 export { copilotWorktreeTarget, type ExecutionWorktreeTarget, userWorktreePrefix };
 

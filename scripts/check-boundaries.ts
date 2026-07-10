@@ -21,7 +21,6 @@ const CONTEXTS = [
 	"core",
 	"system-prompt",
 	"tasks",
-	"git",
 	"bash-reviewer",
 	"engineering",
 	"browser",

@@ -14,7 +14,6 @@ import registerBrowser from "#browser/index.ts";
 import registerCompanion from "#companion/index.ts";
 import registerCore from "#core/index.ts";
 import registerEngineering from "#engineering/index.ts";
-import registerGit from "#git/index.ts";
 import registerSwarm from "#swarm/index.ts";
 import registerSystemPrompt from "#system-prompt/index.ts";
 import registerTasks from "#tasks/index.ts";
@@ -23,7 +22,6 @@ const MODULES: ReadonlyArray<readonly [string, (pi: ExtensionAPI) => void]> = [
 	["core", registerCore],
 	["system-prompt", registerSystemPrompt],
 	["tasks", registerTasks],
-	["git", registerGit],
 	["bash-reviewer", registerBashReviewer],
 	["engineering", registerEngineering],
 	["browser", registerBrowser],

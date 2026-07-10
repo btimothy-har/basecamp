@@ -1,14 +1,14 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { WORKTREES_ROOT } from "./constants.ts";
-import { gitOutput } from "./repo.ts";
+import { WORKTREES_ROOT } from "../constants.ts";
+import { gitOutput } from "../repo.ts";
 import {
 	labelFromWorktreePath,
 	parseWorktreeList,
 	validateNoSymlinkedWorktreePath,
 	validateWorktreePath,
-} from "./worktree.ts";
+} from "./crud.ts";
 
 export interface PlannedWorktreeMove {
 	src: string;

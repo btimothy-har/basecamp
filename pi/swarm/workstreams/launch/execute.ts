@@ -1,5 +1,5 @@
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { copilotWorktreeTarget } from "#core/workspace/worktree-target.ts";
+import { copilotWorktreeTarget } from "#core/git/worktrees/target.ts";
 import type { WorkstreamDetail } from "../../agents/daemon/client.ts";
 import { defaultWorkstreamToolsDeps, errorMessage, type WorkstreamToolsDeps } from "../deps.ts";
 import { type LaunchWorkstreamParams, parseLaunchWorkstreamParams } from "../params.ts";

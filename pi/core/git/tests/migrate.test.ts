@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import * as path from "node:path";
 import { describe, it } from "node:test";
 import { WORKTREES_ROOT } from "../constants.ts";
-import { planLegacyWorktreeMigration, shouldRetryMoveWithForce } from "../migrate.ts";
+import { planLegacyWorktreeMigration, shouldRetryMoveWithForce } from "../worktrees/migrate.ts";
 
 const REPO_NAME = "repo";
 const IDENTITY = "org/repo";

@@ -2,6 +2,7 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { registerModeShortcut } from "./agent-mode/toggle.ts";
 import { registerCatalogProviders } from "./catalog/providers.ts";
 import { registerEscalate } from "./escalate/tool.ts";
+import { registerGit } from "./git/index.ts";
 import { isSubagent } from "./host/env.ts";
 import registerModelAliases from "./model/index.ts";
 import registerProject from "./project/index.ts";
@@ -25,6 +26,7 @@ export default function (pi: ExtensionAPI): void {
 	// then project resolution — project's session_start reads workspace state, so it comes after.
 	registerWorkspace(pi);
 	registerProject(pi);
+	registerGit(pi);
 
 	// Primary-only interactions
 	if (!isSubagent()) {

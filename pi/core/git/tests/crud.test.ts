@@ -14,7 +14,7 @@ import {
 	parseWorktreeList,
 	validateNoSymlinkedWorktreePath,
 	validateWorktreePath,
-} from "../worktree.ts";
+} from "../worktrees/crud.ts";
 
 const REPO_NAME = "repo";
 const SLASHED_REPO_NAME = "org/repo";

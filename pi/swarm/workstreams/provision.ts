@@ -1,7 +1,7 @@
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
+import type { WorktreeResult } from "#core/git/worktrees/crud.ts";
 import type { WorkspaceState } from "#core/workspace/service.ts";
 import { shouldRunWorktreeSetup, type WorktreeSetupResult } from "#core/workspace/setup.ts";
-import type { WorktreeResult } from "#core/workspace/worktree.ts";
 import {
 	errorMessage,
 	type WorkstreamToolsDeps,

@@ -1,4 +1,5 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { getOrCreateWorktree, type WorktreeResult } from "#core/git/worktrees/crud.ts";
 import { readWorktreeSetupCommand } from "#core/host/config.ts";
 import {
 	getWorkspaceState,
@@ -7,7 +8,6 @@ import {
 	type WorkspaceWorktree,
 } from "#core/workspace/service.ts";
 import { runWorktreeSetup, type WorktreeSetupResult } from "#core/workspace/setup.ts";
-import { getOrCreateWorktree, type WorktreeResult } from "#core/workspace/worktree.ts";
 import type { DaemonClient } from "../agents/daemon/client.ts";
 import {
 	getWorkstream,

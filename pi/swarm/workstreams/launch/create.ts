@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
+import { copilotWorktreeTarget } from "#core/git/worktrees/target.ts";
 import type { WorkspaceWorktree } from "#core/workspace/service.ts";
-import { copilotWorktreeTarget } from "#core/workspace/worktree-target.ts";
 import type { DaemonClient } from "../../agents/daemon/client.ts";
 import { errorMessage, type WorkstreamToolsDeps } from "../deps.ts";
 import type { LaunchWorkstreamParams } from "../params.ts";
