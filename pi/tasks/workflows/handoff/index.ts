@@ -13,7 +13,7 @@ import {
 } from "#core/workspace/service.ts";
 import type { ImplementationMode, PlanDraft } from "../../schemas/plan.ts";
 import type { TaskStatus } from "../../schemas/task.ts";
-import { collectApprovedNotes } from "../draft/index.ts";
+import { collectApprovedNotes } from "../draft.ts";
 import {
 	buildExecutionWorktreeChoices,
 	CUSTOM_WORKTREE_CHOICE,

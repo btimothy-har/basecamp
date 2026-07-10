@@ -10,7 +10,7 @@
 import type { Theme } from "@earendil-works/pi-coding-agent";
 import type { PlanDraft, SectionName } from "../../schemas/plan.ts";
 import type { ReviewState } from "../../schemas/task.ts";
-import { deriveGoalContextReviewState } from "../draft/draft-logic.ts";
+import { deriveGoalContextReviewState } from "../draft.ts";
 
 /** Sections that appear as individual review items (not goal/context). */
 export const INDIVIDUAL_SECTIONS: SectionName[] = ["design", "success", "boundaries"];

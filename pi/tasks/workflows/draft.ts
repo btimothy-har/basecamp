@@ -1,18 +1,87 @@
 /**
- * Plan draft building and review-result serialization.
+ * Plan draft building, diffing, and review-result serialization.
  *
  * Re-submissions diff against the previous draft — unchanged approved sections
  * keep their ✓ status, changed sections reset to ★ (needs re-review).
  */
 
-import type { ImplementationMode, PlanDraft } from "../../schemas/plan.ts";
-import { SECTION_NAMES } from "../../schemas/plan.ts";
-import type { ReviewState, TaskStatus } from "../../schemas/task.ts";
-import type { HandoffWorktreeResult } from "../handoff/index.ts";
-import type { WorktreeSetupSummary } from "../handoff/worktree-setup.ts";
-import { computeGoalContextReview, computeSectionReview, freshReview, tasksMatch } from "./draft-logic.ts";
+import type { ImplementationMode, PlanDraft, PlanSection } from "../schemas/plan.ts";
+import { SECTION_NAMES } from "../schemas/plan.ts";
+import type { ReviewState, TaskStatus } from "../schemas/task.ts";
+import type { HandoffWorktreeResult } from "./handoff/index.ts";
+import type { WorktreeSetupSummary } from "./handoff/worktree-setup.ts";
 
 export type ApprovedPlanMode = "analysis" | ImplementationMode;
+
+export interface TaskInput {
+	label: string;
+	description: string;
+	criteria: string;
+}
+
+export interface DraftGoalContext {
+	goal: PlanSection;
+	context: PlanSection;
+}
+
+export function freshReview(): ReviewState {
+	return { approved: null, feedback: null };
+}
+
+export function computeGoalContextReview(
+	goalContent: string,
+	contextContent: string,
+	previous: DraftGoalContext | null,
+): ReviewState {
+	if (!previous) return freshReview();
+
+	const goalUnchanged = previous.goal.content === goalContent;
+	const contextUnchanged = previous.context.content === contextContent;
+	const goalApproved = previous.goal.review.approved === true;
+	const contextApproved = previous.context.review.approved === true;
+
+	if (goalUnchanged && contextUnchanged && goalApproved && contextApproved) {
+		return { approved: true, feedback: null };
+	}
+
+	return freshReview();
+}
+
+export function deriveGoalContextReviewState(draft: DraftGoalContext): ReviewState {
+	const goalReview = draft.goal.review;
+	const contextReview = draft.context.review;
+	const feedback = goalReview.feedback ?? contextReview.feedback;
+
+	if (goalReview.approved === null || contextReview.approved === null) {
+		return { approved: null, feedback };
+	}
+
+	if (goalReview.approved === false || contextReview.approved === false) {
+		return { approved: false, feedback };
+	}
+
+	return { approved: true, feedback };
+}
+
+export function tasksMatch(tasks: TaskInput[], previousTasks: TaskInput[]): boolean {
+	if (tasks.length !== previousTasks.length) return false;
+	for (let i = 0; i < tasks.length; i++) {
+		const curr = tasks[i]!;
+		const prev = previousTasks[i]!;
+		if (curr.label !== prev.label || curr.description !== prev.description || curr.criteria !== prev.criteria) {
+			return false;
+		}
+	}
+	return true;
+}
+
+export function computeSectionReview(content: string, previousSection: PlanSection | null): ReviewState {
+	if (!previousSection) return freshReview();
+	if (previousSection.content === content && previousSection.review.approved === true) {
+		return { approved: true, feedback: null };
+	}
+	return freshReview();
+}
 
 export function buildDraft(
 	params: {

@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
+import type { PlanSection } from "../schemas/plan.ts";
 import {
 	computeGoalContextReview,
 	computeSectionReview,
@@ -8,8 +9,7 @@ import {
 	freshReview,
 	type TaskInput,
 	tasksMatch,
-} from "../planning/draft/draft-logic.ts";
-import type { PlanSection } from "../schemas/plan.ts";
+} from "../workflows/draft.ts";
 
 function approvedSection(content: string): PlanSection {
 	return { content, review: { approved: true, feedback: null } };

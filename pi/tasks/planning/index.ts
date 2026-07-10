@@ -24,7 +24,7 @@ import type { TasksRuntime } from "../lifecycle/index.ts";
 import { renderPartial, renderSuccess } from "../render.ts";
 import type { PlanDraft } from "../schemas/plan.ts";
 import type { GoalCycle } from "../schemas/task.ts";
-import { buildApprovedResult, buildDraft, buildFeedbackResult, isAllApproved } from "./draft/index.ts";
+import { buildApprovedResult, buildDraft, buildFeedbackResult, isAllApproved } from "../workflows/draft.ts";
 import {
 	buildHandoffCompactionInstructions,
 	buildHandoffMessage,
@@ -37,17 +37,21 @@ import {
 	selectWorktreeTarget,
 	shouldReuseActiveWorktreeForHandoff,
 	workspaceWorktreeToHandoffWorktree,
-} from "./handoff/index.ts";
-import { shouldRunWorktreeSetup, type WorktreeSetupSummary, worktreeSetupSummary } from "./handoff/worktree-setup.ts";
-import { showReviewOverlay } from "./review/index.ts";
+} from "../workflows/handoff/index.ts";
+import {
+	shouldRunWorktreeSetup,
+	type WorktreeSetupSummary,
+	worktreeSetupSummary,
+} from "../workflows/handoff/worktree-setup.ts";
+import { showReviewOverlay } from "../workflows/review/index.ts";
 
 export type { ImplementationMode } from "../schemas/plan.ts";
-export { registerPlanCommands } from "./commands.ts";
 export {
 	buildHandoffMessage,
 	shouldReuseActiveWorktreeForHandoff,
 	workspaceWorktreeToHandoffWorktree,
-} from "./handoff/index.ts";
+} from "../workflows/handoff/index.ts";
+export { registerPlanCommands } from "./commands.ts";
 
 export interface PlanAccess {
 	getDraft(): PlanDraft | null;

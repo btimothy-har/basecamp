@@ -2,7 +2,7 @@
 
 import type { Theme } from "@earendil-works/pi-coding-agent";
 import type { PlanDraft } from "../../schemas/plan.ts";
-import { deriveGoalContextReviewState } from "../draft/draft-logic.ts";
+import { deriveGoalContextReviewState } from "../draft.ts";
 import { type ReviewItem, reviewMarker, sectionDisplayName } from "./review-model.ts";
 
 export function renderListView(items: ReviewItem[], selected: number, draft: PlanDraft, theme: Theme): string[] {
