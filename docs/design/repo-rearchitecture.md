@@ -192,7 +192,7 @@ src/basecamp/swarm/
 - Python adapters grouped (`transport/`, `runner/`) to match `store/`; `service/`+`registry` are the features.
 - Hazard (§7): TS `daemon-frames.test.ts` reads the Python `frames.py` source across `pi/`↔`src/` — hardcoded path, linter-blind, hand-fix + green `make test`.
 
-### 6.3 workspace — TS + Python  ✅ LOCKED  *(superseded 2026-07-10: `prompt/` carved out to its own `system-prompt` domain — see §9)*
+### 6.3 workspace — TS + Python  ✅ LOCKED  *(superseded 2026-07-10: `prompt/` carved to `system-prompt`, then the whole domain folded into `core/workspace/` — see §9)*
 
 Reduced to its true scope — **worktrees + edit guards** — after `projects`/`context-injection` moved to core and the banner to ui. No git adapter here; worktree ops delegate to `#core`'s git port.
 
@@ -442,3 +442,9 @@ The composition root wires the task tools + guards, so the `tools → lifecycle`
 `pi/workspace/prompt/` → new top-level **`pi/system-prompt/`** domain: `prompt.ts`, `context-builders.ts`, `defaults/` (was `system-prompts/`), and the two prompt tests. Registered in `extension.ts` right after `workspace`; it binds at `before_agent_start`, so registration order isn't load-bearing. A near-pure move — the only content edit inside a moved file is `prompt.ts`'s `PACKAGE_DIR` (`system-prompts` → `defaults`).
 
 **project stays wholly in core** — deliberately *not* split into a state-cell-vs-resolver, because `core/ui/header.ts` reads project state and core may not import a domain. It is still registered from `workspace/index.ts` for `session_start` ordering; that module's docstring, which had falsely claimed core registers it, is corrected. Wiring: `package.json` `#system-prompt/*` + test glob, boundary `CONTEXTS` → **10**, and the Python style-scanner path (`cli/project.py`) + its test re-trued to `pi/system-prompt/defaults/styles`. Supersedes §6.3's `prompt/`-in-workspace layout.
+
+### workspace folded into core/workspace (2026-07-10, same branch) — the domain was an adapter for a core-owned port
+
+After `prompt/` left, `pi/workspace/` was just the runtime that *implemented* a port core already owned (`core/workspace/service.ts`) plus the git primitives — it imported only `#core/*`, was the sole implementation with one registrant, and was even consumed by core's own ui. So it wasn't really a domain. Folded whole into `core/workspace/`: `worktree/service.ts → runtime.ts`, `session.ts`, `command.ts`, `guards.ts`, `unsafe-edit.ts`, tests; the `#core/*` imports in the moved files became relative. `registerCore` now registers `registerWorkspace(pi)` then `registerProject(pi)` in sequence — dissolving the ordering hack where the workspace domain reached into core to register project. Domain gone: the `#workspace/*` alias, the `extension.ts` MODULES entry, the workspace test glob; boundary check → **9 contexts**.
+
+Then the `WorkspaceService` port seam was **collapsed** (per the user: no internal seams) — the interface + `registerWorkspaceService`/`getWorkspaceService`/`requireWorkspaceService` registry are deleted; `service.ts`'s accessors read the runtime directly; `getWorkspaceEffectiveCwd()` is null-safe and `onWorkspaceChange()` added; the 7 `getWorkspaceService()` consumers move to those accessors. The allowed-roots registry stays (a real multi-registrant seam); `runtime.ts` imports its types from `service.ts` type-only to keep the value edge one-way. Finally the two now-dead `registerCore` shims (default cwd provider, stub git-detection) were removed. Three green commits (fold · collapse · shim-drop). Supersedes §6.3 entirely — workspace is a core subsystem, not a domain. `project` stays in core, unchanged.

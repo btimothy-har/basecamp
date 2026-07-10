@@ -1,16 +1,19 @@
-# workspace
+# workspace (core subsystem)
 
-Basecamp workspace runtime — worktree management, edit guards, and the config-aware `WorkspaceService` that overrides core's git-detected defaults. The Python side (`basecamp.workspace` in `src/basecamp/workspace/`) provides per-repo worktree-setup environments + interactive CLI menus.
+The workspace runtime — everything about *where the agent works and what it may edit*. A `pi/core/workspace/` subsystem registered by `registerCore` (via `registerWorkspace`), not a standalone domain. `basecamp.workspace` (`src/basecamp/workspace/`) is the Python side: per-repo worktree-setup environments + interactive CLI menus.
 
 ## What it does
 
-- **WorkspaceService (worktree runtime)**: active-worktree state machine, effective-cwd resolution, `BASECAMP_*` env vars, and the cwd provider — registered into core's workspace registry, replacing core's default
-- **Session bootstrap**: `session_start` init, legacy-worktree migration, worktree restore on resume/reload, `.env` load, and the `--worktree-dir` / `--read-only` / `--unsafe-edit` flags
-- **Edit guards**: block writes to the protected checkout and retarget relative file-tool paths + `!bash` into the active worktree
-- **Allowed roots**: registers the configured Logseq graph as an allowed root (copilot repo memory)
-- **Worktree command**: `/worktree` for switching between git worktrees (primary sessions only)
+- **Runtime** (`runtime.ts`) — `WorkspaceRuntimeService`: the active-worktree state machine, effective-cwd resolution, `BASECAMP_*` env vars, and the cwd provider. Survives `/reload` (process-scoped).
+- **Session bootstrap** (`session.ts`) — `session_start`: init, legacy-worktree migration, worktree restore on resume/reload, `.env` load, the `--worktree-dir` / `--read-only` / `--unsafe-edit` flags, and the Logseq allowed-root.
+- **Edit guards** (`guards.ts` + `unsafe-edit.ts`) — `tool_call`/`user_bash`: block writes to the protected checkout, retarget relative file-tool paths + `!bash` into the active worktree.
+- **Command** (`command.ts`) — `/worktree` to switch worktrees (primary sessions only).
+- **State + accessors** (`service.ts`) — the shared `WorkspaceState` / `WorkspaceWorktree` types, the state accessors (`getWorkspaceState`, `requireWorkspaceState`, `getWorkspaceEffectiveCwd`, `onWorkspaceChange`, `activate`/`attachWorkspaceWorktree`, …), and the allowed-roots registry. The accessors are thin reads over the runtime — there is no pluggable `WorkspaceService` seam.
+- **Git primitives** — `worktree.ts` · `repo.ts` · `migrate.ts` · `affinity.ts` · `worktree-target.ts` · `setup.ts` · `constants.ts`: stateless git-worktree mechanics, also imported directly by swarm (workstream provisioning).
 
-> System-prompt assembly (environment → working style → project context → capabilities) now lives in the **`system-prompt`** domain (`pi/system-prompt/`), not here. Project resolution + context injection are `#core/project`; the banner is `#core/ui`.
+`registerWorkspace` wires runtime → session → guards → command; `registerCore` calls it just before `registerProject` (project's `session_start` reads workspace state). State is read across the extension through `#core/workspace/service.ts`.
+
+> System-prompt assembly (environment → working style → project context → capabilities) lives in the **`system-prompt`** domain; project resolution + context injection are `#core/project`; the banner is `#core/ui`.
 
 ## Repo copilot Logseq memory
 
@@ -44,4 +47,4 @@ Logseq is the durable memory; workstreams are the user-facing execution surfaces
 
 ## Dependencies
 
-- **core** (`#core/*`): workspace registry, exec, env contract, state persistence, worktree git primitives
+- Everything here imports only sibling `#core/*` modules (host exec/env/config, session state, global-registry). The git primitives are the low-level worktree mechanics the rest of the subsystem — and swarm — build on.
