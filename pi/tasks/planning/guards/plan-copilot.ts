@@ -8,7 +8,8 @@
  */
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { getAgentMode, isCopilotMode, PLAN_TOOL_NAME } from "#core/agent-mode/index.ts";
+import { isCopilotMode, PLAN_TOOL_NAME } from "#core/agent-mode/copilot.ts";
+import { getAgentMode } from "#core/agent-mode/index.ts";
 
 export function registerPlanCopilotGuard(pi: ExtensionAPI): void {
 	pi.on("tool_call", async (event) => {

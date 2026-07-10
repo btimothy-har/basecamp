@@ -1,5 +1,5 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { registerModeShortcut } from "./agent-mode/command.ts";
+import { registerModeShortcut } from "./agent-mode/toggle.ts";
 import registerCapabilities from "./capabilities/index.ts";
 import { registerEscalate } from "./escalate/tool.ts";
 import registerModelAliases from "./model-aliases/index.ts";

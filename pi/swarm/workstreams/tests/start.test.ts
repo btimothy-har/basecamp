@@ -4,7 +4,7 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { afterEach, describe, it } from "node:test";
 import type { ExtensionAPI, ExtensionContext, SessionStartEvent } from "@earendil-works/pi-coding-agent";
-import { resetCopilotLaunchForTesting, setCopilotLaunchReader } from "#core/agent-mode/copilot-launch.ts";
+import { resetCopilotLaunchForTesting, setCopilotLaunchReader } from "#core/agent-mode/copilot.ts";
 import { getAgentMode, resetAgentMode } from "#core/agent-mode/index.ts";
 import { resetSessionProductRoleForTesting, resolveSessionProductRoleOverride } from "#core/platform/product-role.ts";
 import {

@@ -1,5 +1,5 @@
 import type { ExtensionAPI, ExtensionContext, SessionStartEvent } from "@earendil-works/pi-coding-agent";
-import { isCopilotLaunch } from "#core/agent-mode/copilot-launch.ts";
+import { isCopilotLaunch } from "#core/agent-mode/copilot.ts";
 import { setAgentMode } from "#core/agent-mode/index.ts";
 import { registerSessionProductRoleProvider } from "#core/platform/product-role.ts";
 import {
