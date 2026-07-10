@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { getAgentMode, setAgentMode } from "#core/agent-mode/index.ts";
-import { registerSessionProductRoleProvider, resetSessionProductRoleForTesting } from "#core/platform/product-role.ts";
+import { registerAgentRoleProvider, resetAgentRoleForTesting } from "#core/agent-role.ts";
 import { deriveDaemonIdentity } from "../daemon/index.ts";
 import { installDaemonToolTestHooks } from "./harness.ts";
 
@@ -175,7 +175,7 @@ describe("deriveDaemonIdentity", () => {
 		delete process.env.BASECAMP_AGENT_DEPTH;
 		process.env.BASECAMP_AGENT_PRODUCT_ROLE = "copilot_env";
 		setAgentMode("executor");
-		registerSessionProductRoleProvider({ resolveProductRole: () => "  workstream_agent\n " });
+		registerAgentRoleProvider({ resolveAgentRole: () => "  workstream_agent\n " });
 
 		try {
 			const identity = deriveDaemonIdentity({ sessionManager: { getSessionId: () => "session-provider" } } as any);
@@ -183,7 +183,7 @@ describe("deriveDaemonIdentity", () => {
 			assert.equal(identity.product_role, "workstream_agent");
 		} finally {
 			setAgentMode(priorMode);
-			resetSessionProductRoleForTesting();
+			resetAgentRoleForTesting();
 			if (priorDepth === undefined) delete process.env.BASECAMP_AGENT_DEPTH;
 			else process.env.BASECAMP_AGENT_DEPTH = priorDepth;
 			if (priorProductRole === undefined) delete process.env.BASECAMP_AGENT_PRODUCT_ROLE;
@@ -201,14 +201,14 @@ describe("deriveDaemonIdentity", () => {
 		setAgentMode("copilot");
 
 		try {
-			registerSessionProductRoleProvider({ resolveProductRole: () => "   " });
+			registerAgentRoleProvider({ resolveAgentRole: () => "   " });
 			assert.equal(
 				deriveDaemonIdentity({ sessionManager: { getSessionId: () => "session-empty-provider" } } as any).product_role,
 				"copilot",
 			);
 
-			registerSessionProductRoleProvider({
-				resolveProductRole: () => {
+			registerAgentRoleProvider({
+				resolveAgentRole: () => {
 					throw new Error("boom");
 				},
 			});
@@ -219,7 +219,7 @@ describe("deriveDaemonIdentity", () => {
 			);
 		} finally {
 			setAgentMode(priorMode);
-			resetSessionProductRoleForTesting();
+			resetAgentRoleForTesting();
 			if (priorDepth === undefined) delete process.env.BASECAMP_AGENT_DEPTH;
 			else process.env.BASECAMP_AGENT_DEPTH = priorDepth;
 			if (priorProductRole === undefined) delete process.env.BASECAMP_AGENT_PRODUCT_ROLE;

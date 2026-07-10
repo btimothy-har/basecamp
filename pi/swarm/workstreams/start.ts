@@ -1,7 +1,7 @@
 import type { ExtensionAPI, ExtensionContext, SessionStartEvent } from "@earendil-works/pi-coding-agent";
 import { isCopilotLaunch } from "#core/agent-mode/copilot.ts";
 import { setAgentMode } from "#core/agent-mode/index.ts";
-import { registerSessionProductRoleProvider } from "#core/platform/product-role.ts";
+import { registerAgentRoleProvider } from "#core/agent-role.ts";
 import {
 	getWorkspaceService,
 	getWorkspaceState,
@@ -255,8 +255,8 @@ export function registerWorkstreamStartup(
 	});
 
 	// --copilot is owned by core/pi and takes precedence; read it via isCopilotLaunch() rather than re-registering.
-	registerSessionProductRoleProvider({
-		resolveProductRole: () => (isCopilotLaunch() || pi.getFlag("workstream") === undefined ? null : "workstream_agent"),
+	registerAgentRoleProvider({
+		resolveAgentRole: () => (isCopilotLaunch() || pi.getFlag("workstream") === undefined ? null : "workstream_agent"),
 	});
 
 	pi.on("session_start", async (event, ctx) => {

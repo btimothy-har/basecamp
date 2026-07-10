@@ -6,7 +6,7 @@ import { afterEach, describe, it } from "node:test";
 import type { ExtensionAPI, ExtensionContext, SessionStartEvent } from "@earendil-works/pi-coding-agent";
 import { resetCopilotLaunchForTesting, setCopilotLaunchReader } from "#core/agent-mode/copilot.ts";
 import { getAgentMode, resetAgentMode } from "#core/agent-mode/index.ts";
-import { resetSessionProductRoleForTesting, resolveSessionProductRoleOverride } from "#core/platform/product-role.ts";
+import { resetAgentRoleForTesting, resolveAgentRoleOverride } from "#core/agent-role.ts";
 import {
 	getCurrentSessionState,
 	initializeCurrentSessionState,
@@ -49,7 +49,7 @@ class FakePi {
 
 describe("registerWorkstreamStartup", () => {
 	afterEach(() => {
-		resetSessionProductRoleForTesting();
+		resetAgentRoleForTesting();
 		resetCopilotLaunchForTesting();
 	});
 
@@ -66,24 +66,24 @@ describe("registerWorkstreamStartup", () => {
 		});
 	});
 
-	it("registers a product-role provider for any present --workstream flag", () => {
+	it("registers a agent-role provider for any present --workstream flag", () => {
 		const pi = new FakePi();
 		const harness = makeDeps(new FakeDaemonClient());
 
 		registerWorkstreamStartup(pi as unknown as ExtensionAPI, async () => null, harness.deps);
-		assert.equal(resolveSessionProductRoleOverride(), null);
+		assert.equal(resolveAgentRoleOverride(), null);
 
 		pi.setFlag("workstream", true);
-		assert.equal(resolveSessionProductRoleOverride(), "workstream_agent");
+		assert.equal(resolveAgentRoleOverride(), "workstream_agent");
 
 		// --copilot takes precedence: role resolves to null while copilot is launched
 		setCopilotLaunchReader(() => true);
-		assert.equal(resolveSessionProductRoleOverride(), null);
+		assert.equal(resolveAgentRoleOverride(), null);
 		setCopilotLaunchReader(() => false);
-		assert.equal(resolveSessionProductRoleOverride(), "workstream_agent");
+		assert.equal(resolveAgentRoleOverride(), "workstream_agent");
 
 		pi.setFlag("workstream", undefined);
-		assert.equal(resolveSessionProductRoleOverride(), null);
+		assert.equal(resolveAgentRoleOverride(), null);
 	});
 
 	it("copilot takes precedence over --workstream on session_start", async () => {

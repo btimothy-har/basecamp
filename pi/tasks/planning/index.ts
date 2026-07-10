@@ -15,8 +15,8 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "@sinclair/typebox";
 import { getAgentMode, setAgentMode } from "#core/agent-mode/index.ts";
+import { resolveAgentRoleOverride } from "#core/agent-role.ts";
 import { readWorktreeSetupCommand } from "#core/platform/config.ts";
-import { resolveSessionProductRoleOverride } from "#core/platform/product-role.ts";
 import { activateWorkspaceWorktree, getWorkspaceState, requireWorkspaceState } from "#core/platform/workspace.ts";
 import { runWorktreeSetup } from "#core/workspace/setup.ts";
 import type { GoalCycle, TasksAccess } from "../lifecycle/index.ts";
@@ -191,10 +191,7 @@ export function registerPlan(pi: ExtensionAPI, tasksAccess: TasksAccess): PlanAc
 				const workspace = getWorkspaceState();
 				const activeWorktree = workspace?.activeWorktree ?? null;
 				let worktree: HandoffWorktreeResult;
-				if (
-					activeWorktree &&
-					shouldReuseActiveWorktreeForHandoff(resolveSessionProductRoleOverride(), activeWorktree)
-				) {
+				if (activeWorktree && shouldReuseActiveWorktreeForHandoff(resolveAgentRoleOverride(), activeWorktree)) {
 					worktree = workspaceWorktreeToHandoffWorktree(activeWorktree);
 				} else {
 					const worktreeTarget = await selectWorktreeTarget(ctx, draft.goal.content, draft.worktreeSlug);

@@ -1,8 +1,8 @@
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { getAgentMode } from "#core/agent-mode/index.ts";
+import { resolveAgentRoleOverride } from "#core/agent-role.ts";
 import { processScoped } from "#core/platform/global-registry.ts";
 import { resolveModelAlias } from "#core/platform/model-aliases.ts";
-import { resolveSessionProductRoleOverride } from "#core/platform/product-role.ts";
 import { hasInvokedSkill } from "#core/platform/skill-tracker.ts";
 import { getWorkspaceState } from "#core/platform/workspace.ts";
 import { shortSessionId as defaultShortSessionId } from "#core/session/session-id.ts";
@@ -123,13 +123,13 @@ export function deriveDaemonIdentity(
 			nodeId,
 		cwd: process.cwd(),
 		session_file: resolveSessionFile(ctx),
-		product_role: resolveProductRole(role),
+		product_role: resolveAgentRole(role),
 	};
 }
 
-function resolveProductRole(role: "session" | "agent"): string | null {
+function resolveAgentRole(role: "session" | "agent"): string | null {
 	if (role !== "session") return null;
-	const providerOverride = sanitizeDisplayLabel(resolveSessionProductRoleOverride(), 64);
+	const providerOverride = sanitizeDisplayLabel(resolveAgentRoleOverride(), 64);
 	if (providerOverride) return providerOverride;
 	const explicit = sanitizeDisplayLabel(process.env.BASECAMP_AGENT_PRODUCT_ROLE, 64);
 	if (explicit) return explicit;

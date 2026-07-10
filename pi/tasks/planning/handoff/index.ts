@@ -230,8 +230,8 @@ export function workspaceWorktreeToHandoffWorktree(target: WorkspaceWorktree): H
 }
 
 export function shouldReuseActiveWorktreeForHandoff(
-	productRole: string | null,
+	agentRole: string | null,
 	activeWorktree: WorkspaceWorktree | null,
 ): boolean {
-	return productRole === "workstream_agent" && activeWorktree !== null;
+	return agentRole === "workstream_agent" && activeWorktree !== null;
 }

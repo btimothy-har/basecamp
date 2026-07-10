@@ -3,7 +3,7 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { afterEach, beforeEach } from "node:test";
-import { resetSessionProductRoleForTesting } from "#core/platform/product-role.ts";
+import { resetAgentRoleForTesting } from "#core/agent-role.ts";
 import type { WorkspaceState } from "#core/platform/workspace.ts";
 import type { DaemonConnection } from "../daemon/client.ts";
 import type { Frame } from "../daemon/frames/index.ts";
@@ -116,7 +116,7 @@ export const daemonToolDeps = {
 
 /**
  * Reproduces the shared per-test setup of the original daemon-tools suite:
- * tmp HOME dir, invoked-skill reset, workspace-state reset, product-role reset.
+ * tmp HOME dir, invoked-skill reset, workspace-state reset, agent-role reset.
  * Call inside a describe block so the hooks scope to that suite.
  */
 export function installDaemonToolTestHooks(): void {
@@ -136,6 +136,6 @@ export function installDaemonToolTestHooks(): void {
 		fs.rmSync(tmpHome, { recursive: true, force: true });
 		currentWorkspaceState = null;
 		resetInvokedSkills();
-		resetSessionProductRoleForTesting();
+		resetAgentRoleForTesting();
 	});
 }
