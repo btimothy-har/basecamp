@@ -24,7 +24,8 @@ pi/                            # ① the Pi extension (TypeScript)
 ├── extension.ts                # Composition root: registers all domain modules in fixed order (core first)
 ├── core/                       # agent-mode/ (+copilot·toggle) · agent-role.ts · session/ (+state) · project/ · skills/ · catalog/ · model/ ·
 │                               #   ui/ (framework chrome) · escalate/ (+dialog/) · workspace/ (+service port) · host/ (env·exec·paths·config) · global-registry.ts
-├── workspace/                  # prompt/ assembly, worktree/ service, guards/ (edit guards)
+├── workspace/                  # worktree/ service, guards/ (edit guards)
+├── system-prompt/              # before_agent_start prompt assembly: prompt.ts · context-builders.ts · defaults/ (modes·styles·environment)
 ├── swarm/                      # agents/ (tools, catalog, launch, daemon client, review), workstreams/,
 │                               #   protocol/ (TS↔Python contract), skills/
 ├── companion/                  # session hooks: analysis, snapshot/, panes/, herdr/ + tmux/ adapters
@@ -64,7 +65,7 @@ Agent modes (`pi/core/agent-mode`, in `SESSION_STATE_AGENT_MODES`) are `analysis
 
 ### Extension Modules
 
-All TypeScript behavior ships as one Pi extension; its entry point is `pi/extension.ts` and its package manifest is the repo-root `package.json`. `pi/extension.ts` composes the domain modules (`core`, `workspace`, `tasks`, `git`, `bash-reviewer`, `engineering`, `browser`, `companion`, `swarm`) in a fixed order — core first — so in-extension init is deterministic and identical on `/reload`. Each domain's TS lives in `pi/<domain>/` with a `register*` default export in its `index.ts`; cross-domain imports go through `#`-subpath aliases and are boundary-checked. Framework UI (footer/header/title/mode) is not a separate domain — it lives in `pi/core/ui/` and `registerCore` registers it, alongside core's other in-session surfaces (`escalate`, `skills`). The async-agent wire protocol and daemon client live in `pi/swarm/`; the Python daemon in `src/basecamp/swarm/`.
+All TypeScript behavior ships as one Pi extension; its entry point is `pi/extension.ts` and its package manifest is the repo-root `package.json`. `pi/extension.ts` composes the domain modules (`core`, `workspace`, `system-prompt`, `tasks`, `git`, `bash-reviewer`, `engineering`, `browser`, `companion`, `swarm`) in a fixed order — core first — so in-extension init is deterministic and identical on `/reload`. Each domain's TS lives in `pi/<domain>/` with a `register*` default export in its `index.ts`; cross-domain imports go through `#`-subpath aliases and are boundary-checked. Framework UI (footer/header/title/mode) is not a separate domain — it lives in `pi/core/ui/` and `registerCore` registers it, alongside core's other in-session surfaces (`escalate`, `skills`). The async-agent wire protocol and daemon client live in `pi/swarm/`; the Python daemon in `src/basecamp/swarm/`.
 
 ### Code Review
 

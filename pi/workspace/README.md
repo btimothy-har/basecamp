@@ -1,14 +1,16 @@
 # workspace
 
-Basecamp workspace config + project context layer. Overrides core's git-detected workspace defaults with project-config-aware values. `workspace/py` is the Python side (`basecamp.workspace`: project/env config, interactive CLI menus).
+Basecamp workspace runtime — worktree management, edit guards, and the config-aware `WorkspaceService` that overrides core's git-detected defaults. The Python side (`basecamp.workspace` in `src/basecamp/workspace/`) provides per-repo worktree-setup environments + interactive CLI menus.
 
 ## What it does
 
-- **Workspace config**: loads project config (`~/.pi/basecamp/workspace/projects.json`), manages allowed-roots providers, unsafe-edit flag handling
-- **Projects**: assembles the layered system prompt (environment → working style → project context → tools/skills), context injection on every prompt cycle, header rendering
-- **WorkspaceService override**: registers a config-aware WorkspaceService into core's workspace registry, replacing core's default. Sets `BASECAMP_*` env vars via core's env contract. Registers cwd provider via core's exec seam.
-- **Workspace guards**: blocks writes to critical root-branch paths, warns of unsaved session states
-- **Worktree command**: `/worktree` command for switching between git worktrees (primary sessions only)
+- **WorkspaceService (worktree runtime)**: active-worktree state machine, effective-cwd resolution, `BASECAMP_*` env vars, and the cwd provider — registered into core's workspace registry, replacing core's default
+- **Session bootstrap**: `session_start` init, legacy-worktree migration, worktree restore on resume/reload, `.env` load, and the `--worktree-dir` / `--read-only` / `--unsafe-edit` flags
+- **Edit guards**: block writes to the protected checkout and retarget relative file-tool paths + `!bash` into the active worktree
+- **Allowed roots**: registers the configured Logseq graph as an allowed root (copilot repo memory)
+- **Worktree command**: `/worktree` for switching between git worktrees (primary sessions only)
+
+> System-prompt assembly (environment → working style → project context → capabilities) now lives in the **`system-prompt`** domain (`pi/system-prompt/`), not here. Project resolution + context injection are `#core/project`; the banner is `#core/ui`.
 
 ## Repo copilot Logseq memory
 

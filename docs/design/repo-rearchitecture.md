@@ -192,7 +192,7 @@ src/basecamp/swarm/
 - Python adapters grouped (`transport/`, `runner/`) to match `store/`; `service/`+`registry` are the features.
 - Hazard (§7): TS `daemon-frames.test.ts` reads the Python `frames.py` source across `pi/`↔`src/` — hardcoded path, linter-blind, hand-fix + green `make test`.
 
-### 6.3 workspace — TS + Python  ✅ LOCKED
+### 6.3 workspace — TS + Python  ✅ LOCKED  *(superseded 2026-07-10: `prompt/` carved out to its own `system-prompt` domain — see §9)*
 
 Reduced to its true scope — **worktrees + edit guards** — after `projects`/`context-injection` moved to core and the banner to ui. No git adapter here; worktree ops delegate to `#core`'s git port.
 
@@ -202,7 +202,7 @@ pi/workspace/
   worktree/       [command] /worktree · [hook] session_start bootstrap/restore/migrate · [provider] WorkspaceService + cwd
                   (index ← service · session · command) — consumes #core git + core/worktree policy
   guards/         [guard] tool_call/user_bash: protect the checkout · retarget edits into the worktree  (index ← guards · unsafe-edit)
-  prompt/         [hook] before_agent_start: assemble the replacement system prompt   (carve out to its own domain later)
+  prompt/         [hook] before_agent_start: assemble the replacement system prompt   (carved out 2026-07-10 → the `system-prompt` domain; see §9)
                   (fragment-builders + system-prompts/ assets; context-file loader pulled from #core)
 
 src/basecamp/workspace/
@@ -357,7 +357,7 @@ Manifests to update: `package.json` (`imports`, `pi.extensions`/`skills`/`prompt
 
 **Linter-blind hazards (hand-fix + green `make test`).** The boundary checker sees only *import specifiers*; hardcoded **filesystem paths** are invisible to it, and several cross the trees the split creates:
 - **swarm (sharpest).** `swarm/ts/agents/tests/daemon-frames.test.ts` reads the *Python* `frames.py` source to assert `PROTOCOL_VERSION` parity — after the split that read crosses `pi/swarm/…` → `src/basecamp/swarm/frames.py`. Its Python sibling `test_daemon_frames.py` resolves the fixture dir by relative depth. Both re-point, and the fixtures move to `pi/swarm/protocol/frames/`.
-- **workspace.** `…/cli/project.py` builds a `system-prompts/styles` path that *already* doesn't match today's layout — re-true it to `pi/workspace/prompt/system-prompts/`, or prompt-loading silently returns empty.
+- **workspace.** `…/cli/project.py` builds a `system-prompts/styles` path that *already* doesn't match today's layout — re-true it to `pi/workspace/prompt/system-prompts/` *(later moved again to `pi/system-prompt/defaults/styles` — §9)*, or prompt-loading silently returns empty.
 - **companion-py.** Folding `analyzer.py` breaks the sibling module path `basecamp.companion.analyzer` — fix `cli.py` + its test, or leave a shim (§6.4).
 
 ## 8. Doc truing (at execution)
@@ -434,3 +434,11 @@ Every directory now names a concept; `#core/*` deep paths retarget accordingly (
 4. **`tools/`** — the thin agent-facing surface (task-tools, plan-tool, commands, guards, render). Renders dissolve into the layer they render — no `ui/` bucket. `plan()` sheds its ~85-line worktree choreography into `workflows/handoff`'s `runHandoff()` (a discriminated outcome the tool maps to its result), dropping 327→252 lines and every `#core/workspace` import; the `agent-role` seam moves with the reuse logic into handoff.
 
 The composition root wires the task tools + guards, so the `tools → lifecycle` dependency points downward (lifecycle registers neither). Both former near-cap files (plan 327, task-tools 322) come down. Purely internal to `pi/tasks/` plus a 3-line `companion` ripple (`getTasksAccess` → `getTasksReader`); no manifest or boundary-config change. This supersedes §6.6's `lifecycle/`+`planning/` layout and the `TasksAccess` framing.
+
+### system-prompt carved out of workspace (2026-07-10, same branch) — the deferred prompt-domain split
+
+§6.3 parked `prompt/` inside `workspace/` with a "carve out to its own domain later" note, because it was a composition root that imported `#tasks` (to gate `plan()`) and so couldn't be core. The post-execution refinement had already killed that edge by hoisting `isCopilotMode` + `PLAN_TOOL_NAME` into `core/agent-mode`, leaving `prompt/` importing only `#core/*` — so the carve is now free.
+
+`pi/workspace/prompt/` → new top-level **`pi/system-prompt/`** domain: `prompt.ts`, `context-builders.ts`, `defaults/` (was `system-prompts/`), and the two prompt tests. Registered in `extension.ts` right after `workspace`; it binds at `before_agent_start`, so registration order isn't load-bearing. A near-pure move — the only content edit inside a moved file is `prompt.ts`'s `PACKAGE_DIR` (`system-prompts` → `defaults`).
+
+**project stays wholly in core** — deliberately *not* split into a state-cell-vs-resolver, because `core/ui/header.ts` reads project state and core may not import a domain. It is still registered from `workspace/index.ts` for `session_start` ordering; that module's docstring, which had falsely claimed core registers it, is corrected. Wiring: `package.json` `#system-prompt/*` + test glob, boundary `CONTEXTS` → **10**, and the Python style-scanner path (`cli/project.py`) + its test re-trued to `pi/system-prompt/defaults/styles`. Supersedes §6.3's `prompt/`-in-workspace layout.
