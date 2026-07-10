@@ -1,6 +1,6 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { registerProjectSession } from "./config.ts";
 import { registerContextInjection } from "./injection.ts";
-import { registerProjectSession } from "./session.ts";
 import { registerWorkspace } from "./workspace/index.ts";
 
 /**

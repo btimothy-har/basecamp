@@ -1,7 +1,54 @@
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import type { ProjectConfig, ProjectState } from "./project.ts";
+import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { processScoped } from "../global-registry.ts";
+import { registerWorkspaceAllowedRootsProvider, requireWorkspaceState } from "./workspace/state.ts";
+
+// --- Project config + resolved state cell ---
+
+export interface ProjectConfig {
+	repoRoot: string;
+	additionalDirs: string[];
+	workingStyle?: string | null;
+	context?: string | null;
+}
+
+export interface ProjectState {
+	projectName: string | null;
+	project: ProjectConfig | null;
+	additionalDirs: string[];
+	workingStyle: string;
+	contextContent: string | null;
+	warnings: string[];
+}
+
+interface ProjectRuntime {
+	state: ProjectState | null;
+}
+
+// Surviving state (legacy key name kept so /reload across the rename keeps state).
+const getProjectRuntime = processScoped<ProjectRuntime>("pi.projects.runtime", () => ({ state: null }));
+
+export function resetProjectRuntime(): void {
+	getProjectRuntime().state = null;
+}
+
+export function getProjectState(): ProjectState | null {
+	return getProjectRuntime().state;
+}
+
+export function requireProjectState(): ProjectState {
+	const state = getProjectState();
+	if (!state) throw new Error("Project state is not initialized");
+	return state;
+}
+
+export function setProjectState(state: ProjectState): void {
+	getProjectRuntime().state = state;
+}
+
+// --- Resolution from workspace/projects.json ---
 
 interface RawProjectConfig {
 	repo_root?: unknown;
@@ -177,4 +224,44 @@ export function resolveProjectState(options: ResolveProjectOptions): ProjectStat
 		contextContent,
 		warnings: detection.warnings,
 	};
+}
+
+// --- Session wiring: resolve the project at session_start (after workspace init) ---
+
+function setProjectEnv(): void {
+	process.env.BASECAMP_PROJECT = getProjectState()?.projectName ?? "";
+}
+
+export function registerProjectSession(pi: ExtensionAPI): void {
+	pi.registerFlag("style", {
+		description: "Override working style (e.g. engineering, advisor)",
+		type: "string",
+	});
+	pi.registerFlag("agent-prompt", {
+		description: "Agent prompt file — replaces working style + system.md (used by worker spawner)",
+		type: "string",
+	});
+
+	registerWorkspaceAllowedRootsProvider({
+		id: "projects",
+		roots: () => getProjectState()?.additionalDirs ?? [],
+	});
+
+	pi.on("session_start", async (_event, ctx) => {
+		resetProjectRuntime();
+
+		const workspaceState = requireWorkspaceState();
+		const styleOverride = (pi.getFlag("style") as string | undefined) ?? undefined;
+		const projectState = resolveProjectState({
+			repoRoot: workspaceState.repo?.root ?? workspaceState.launchCwd,
+			isRepo: workspaceState.repo !== null,
+			styleOverride,
+		});
+		setProjectState(projectState);
+		setProjectEnv();
+
+		for (const warning of requireProjectState().warnings) {
+			ctx.ui.notify(`projects: ${warning}`, "warning");
+		}
+	});
 }
