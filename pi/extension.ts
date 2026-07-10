@@ -17,12 +17,10 @@ import registerEngineering from "#engineering/index.ts";
 import registerGit from "#git/index.ts";
 import registerSwarm from "#swarm/index.ts";
 import registerTasks from "#tasks/index.ts";
-import registerUi from "#ui/index.ts";
 import registerWorkspace from "#workspace/index.ts";
 
 const MODULES: ReadonlyArray<readonly [string, (pi: ExtensionAPI) => void]> = [
 	["core", registerCore],
-	["ui", registerUi],
 	["workspace", registerWorkspace],
 	["tasks", registerTasks],
 	["git", registerGit],

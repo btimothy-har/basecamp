@@ -11,5 +11,5 @@ export default function (pi: ExtensionAPI): void {
 	registerTitle(pi);
 }
 
-// Public surface for other contexts (imported via #ui/index.ts only).
+// Public surface for other contexts (imported via #core/ui/index.ts only).
 export { formatTitle } from "./title.ts";

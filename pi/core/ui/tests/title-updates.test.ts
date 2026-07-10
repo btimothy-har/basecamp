@@ -7,7 +7,7 @@ import {
 	initializeCurrentSessionState,
 	resetCurrentSessionState,
 	saveSessionState,
-} from "#core/session/state/index.ts";
+} from "../../session/state/index.ts";
 import { registerTitle, type TitleCompletion } from "../title.ts";
 import { createContext, createPi, createTempDir, flushBackgroundTitle, messageEntry } from "./title-state-harness.ts";
 

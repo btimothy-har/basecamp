@@ -8,6 +8,7 @@ import { registerCwdProvider } from "./platform/exec.ts";
 import { registerCompactionModel } from "./session/runtime/compaction.ts";
 import { registerSession } from "./session/runtime/session.ts";
 import { registerState } from "./session/state/index.ts";
+import registerUi from "./ui/index.ts";
 import { resolveGitInfo } from "./workspace/repo.ts";
 
 export default function (pi: ExtensionAPI): void {
@@ -32,4 +33,9 @@ export default function (pi: ExtensionAPI): void {
 		registerModeShortcut(pi);
 		registerEscalate(pi);
 	}
+
+	// Framework UI (footer/header/title/mode) — a core submodule like capabilities
+	// and escalate. Registered last so its render + session_start hooks observe
+	// the state core's own registries have already wired.
+	registerUi(pi);
 }

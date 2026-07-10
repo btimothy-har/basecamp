@@ -6,7 +6,7 @@ import { resolveSessionProductRoleOverride } from "#core/platform/product-role.t
 import { hasInvokedSkill } from "#core/platform/skill-tracker.ts";
 import { getWorkspaceState } from "#core/platform/workspace.ts";
 import { shortSessionId as defaultShortSessionId } from "#core/session/session-id.ts";
-import { formatTitle } from "#ui/index.ts";
+import { formatTitle } from "#core/ui/index.ts";
 import { errorMessage } from "../errors.ts";
 import { basecampExtensionRoot } from "../extension-root.ts";
 import { resolveAgentDepthState } from "../types.ts";

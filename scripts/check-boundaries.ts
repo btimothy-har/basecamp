@@ -19,7 +19,6 @@ const REPO_ROOT = path.resolve(import.meta.dirname, "..");
 
 const CONTEXTS = [
 	"core",
-	"ui",
 	"workspace",
 	"tasks",
 	"git",
