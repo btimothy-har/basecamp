@@ -9,10 +9,10 @@ import * as fs from "node:fs/promises";
 import * as path from "node:path";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { getWorkspaceEffectiveCwd, requireWorkspaceState } from "#core/workspace/service.ts";
-import { buildQueryArgs, buildShowArgs, runBqCapture, runBqToFile } from "../bigquery/cli.ts";
-import { emptyDryRun, emptyJob, summarizeDryRun, summarizeJob } from "../bigquery/job-summary.ts";
 import { buildScanApprovalMetadata, evaluateScanApproval, scanApprovalModeForContext } from "./approval.ts";
+import { buildQueryArgs, buildShowArgs, runBqCapture, runBqToFile } from "./cli.ts";
 import { sanitizeQueryDescription, trimOrNull } from "./format.ts";
+import { emptyDryRun, emptyJob, summarizeDryRun, summarizeJob } from "./job-summary.ts";
 import {
 	type BqQueryDetails,
 	BqQueryParams,

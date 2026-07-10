@@ -31,7 +31,7 @@ pi/                            # ① the Pi extension (TypeScript)
 ├── tasks/                      # lifecycle/ + planning/ (draft/handoff/review/guards); skills/
 ├── git/                        # /create-pr prompt workflow
 ├── bash-reviewer/              # LLM bash reviewer: index (guard), review, triage/, llm adapter
-├── engineering/                # bq-query/ tool + bigquery/ adapter; skills/ + prompts/
+├── engineering/                # bigquery/ (bq_query tool + bq-CLI adapter, one module), skills/ + prompts/
 └── browser/                    # browser automation (puppeteer-core over CDP): tools/ + chrome adapter
 
 src/basecamp/                  # ② the basecamp Python package (one ordinary src-layout package)

@@ -10,7 +10,7 @@ import {
 	type BqCaptureResult,
 	type BqFileResult,
 	MAX_ERROR_CHARS,
-} from "../bq-query/params.ts";
+} from "./params.ts";
 
 function buildGlobalArgs(format: BigQueryOutputFormat, projectId: string | null, location: string | null): string[] {
 	const args = [`--format=${format}`, "--quiet", "--headless=true"];

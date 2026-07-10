@@ -283,7 +283,7 @@ pi/tasks/
 - `plan-copilot-guard` — *superseded 2026-07-10:* the shared predicate moved to `core/agent-mode` as `isCopilotMode` (+ `PLAN_TOOL_NAME`), killing the `workspace/prompt → #tasks` edge (see §9 post-execution refinement). The guard itself stays here.
 - `lifecycle/tools.ts` (322 lines, near the cap) kept as one `[tool]` file; split to `tools/` only if it grows.
 
-### 6.7 engineering — TS  ✅ LOCKED
+### 6.7 engineering — TS  ✅ LOCKED  *(superseded 2026-07-10: `bq-query/` + `bigquery/` merged into one `bigquery/` module — see §9)*
 
 The whole code side is one tool (`bq_query`):
 
@@ -419,3 +419,7 @@ A pass to make every core sub-directory name a *concept* rather than a role. The
 7. **host + root primitive** — `env`·`exec`·`paths`·`config` → `host/` (the runtime boundary); `global-registry.ts` (the reload-survival primitive, not a host concern) sits at the core root. `platform/` deleted.
 
 Every directory now names a concept; `#core/*` deep paths retarget accordingly (the `platform` dissolution alone rewrote ~106 specifiers across 75 files — the largest sweep, uniform because the transform was just "drop `platform/`"). The ports did not leave core — they moved next to the concept they serve.
+
+### engineering flattened to one `bigquery/` module (2026-07-10, same branch) — a boundary the code didn't honor
+
+§6.7 split engineering's one tool into `bq-query/` (feature) and `bigquery/` (bq-CLI adapter). The adapter/feature convention earns its keep when *several* features share an adapter (`herdr/`, `tmux/`) — engineering has exactly one feature, so nothing was being kept from scattering. Worse, the "layer" wasn't one: the two directories imported *each other*. `bigquery/cli.ts` and `job-summary.ts` reached back *up* into `bq-query/params.ts` for their own I/O types (`BqCaptureResult`, `BqFileResult`, `BQ_TIMEOUT_MS`, `MAX_ERROR_CHARS`, the summary shapes), while `bq-query/` pulled the run/summarize fns down — a bidirectional edge, so the directory boundary announced a layering the code never respected, under two near-homonym names. Merged all eight files into one `bigquery/` module (named for the system — leaves room for a future `postgres/` sibling); the cross-directory imports collapse to same-directory `./`. Purely internal to `pi/engineering/` — no manifest, test, or boundary-config change. This supersedes §6.7's "doesn't flatten" and its separate-`bigquery/`-adapter framing.
