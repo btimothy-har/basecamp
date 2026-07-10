@@ -18,7 +18,7 @@ import {
 } from "./context-builders.ts";
 
 const MODULE_DIR = path.dirname(fileURLToPath(import.meta.url));
-const PACKAGE_DIR = path.resolve(MODULE_DIR, "system-prompts");
+const PACKAGE_DIR = path.resolve(MODULE_DIR, "defaults");
 function getBasecampWorkspaceDir(): string {
 	return path.join(os.homedir(), ".pi", "basecamp", "workspace");
 }
