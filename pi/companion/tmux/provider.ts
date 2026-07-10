@@ -1,4 +1,4 @@
-import { exec } from "#core/platform/exec.ts";
+import { exec } from "#core/host/exec.ts";
 import type { PaneProvider } from "../panes/provider.ts";
 import { buildKillArgs, buildListPanesArgs, buildSplitArgs, parsePaneId, shouldCreatePane } from "./commands.ts";
 

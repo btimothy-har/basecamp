@@ -1,6 +1,6 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { exec } from "#core/platform/exec.ts";
-import { processScoped } from "#core/platform/global-registry.ts";
+import { processScoped } from "#core/global-registry.ts";
+import { exec } from "#core/host/exec.ts";
 import type { CompanionSnapshot } from "../snapshot/model.ts";
 
 export const HERDR_METADATA_SOURCE = "basecamp.pi";

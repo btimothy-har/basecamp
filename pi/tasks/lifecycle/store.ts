@@ -3,7 +3,7 @@
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import { basecampRoot } from "#core/platform/paths.ts";
+import { basecampRoot } from "#core/host/paths.ts";
 import type { GoalCycle } from "./access.ts";
 
 export function defaultTasksDir(homeDir = os.homedir()): string {

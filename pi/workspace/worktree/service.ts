@@ -1,8 +1,8 @@
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { registerCwdProvider } from "#core/platform/exec.ts";
-import { processScoped } from "#core/platform/global-registry.ts";
+import { processScoped } from "#core/global-registry.ts";
+import { registerCwdProvider } from "#core/host/exec.ts";
 import { updateCurrentSessionStateIfInitialized } from "#core/session/state/index.ts";
 import { buildActiveWorktreeState } from "#core/workspace/affinity.ts";
 import { SCRATCH_ROOT } from "#core/workspace/constants.ts";

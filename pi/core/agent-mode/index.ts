@@ -1,4 +1,4 @@
-import { processScoped } from "../platform/global-registry.ts";
+import { processScoped } from "../global-registry.ts";
 import {
 	getCurrentSessionState,
 	SESSION_STATE_AGENT_MODES,

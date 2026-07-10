@@ -16,7 +16,7 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "@sinclair/typebox";
 import { getAgentMode, setAgentMode } from "#core/agent-mode/index.ts";
 import { resolveAgentRoleOverride } from "#core/agent-role.ts";
-import { readWorktreeSetupCommand } from "#core/platform/config.ts";
+import { readWorktreeSetupCommand } from "#core/host/config.ts";
 import { activateWorkspaceWorktree, getWorkspaceState, requireWorkspaceState } from "#core/workspace/service.ts";
 import { runWorktreeSetup } from "#core/workspace/setup.ts";
 import type { GoalCycle, TasksAccess } from "../lifecycle/index.ts";

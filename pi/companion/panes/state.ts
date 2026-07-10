@@ -1,7 +1,7 @@
-import { processScoped } from "#core/platform/global-registry.ts";
+import { processScoped } from "#core/global-registry.ts";
 import type { PaneProviderName } from "./provider.ts";
 
-export { isCompanionActive, setCompanionActive } from "#core/platform/env.ts";
+export { isCompanionActive, setCompanionActive } from "#core/host/env.ts";
 
 interface PaneState {
 	provider: PaneProviderName | null;

@@ -1,7 +1,7 @@
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import { basecampCorePaths } from "../platform/paths.ts";
+import { basecampCorePaths } from "../host/paths.ts";
 
 export type ConfiguredModelAliases = Record<string, string>;
 

@@ -5,7 +5,7 @@
  * companion-active flag.
  */
 
-import { processScoped } from "./global-registry.ts";
+import { processScoped } from "../global-registry.ts";
 
 // ---------------------------------------------------------------------------
 // Companion active flag

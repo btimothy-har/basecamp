@@ -1,5 +1,5 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { isSubagent } from "#core/platform/env.ts";
+import { isSubagent } from "#core/host/env.ts";
 import registerProject from "#core/project/index.ts";
 import { registerWorkspaceGuards } from "./guards/index.ts";
 import { registerPrompt } from "./prompt/prompt.ts";

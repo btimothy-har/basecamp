@@ -1,6 +1,6 @@
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { getAgentMode, onAgentModeChange } from "#core/agent-mode/index.ts";
-import { processScoped } from "#core/platform/global-registry.ts";
+import { processScoped } from "#core/global-registry.ts";
 import { getCurrentSessionState, onCurrentSessionTitleChange } from "#core/session/state/index.ts";
 import { getInvokedSkills } from "#core/skills/tracker.ts";
 import { getWorkspaceService, getWorkspaceState } from "#core/workspace/service.ts";

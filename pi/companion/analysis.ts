@@ -1,7 +1,7 @@
 import { type ChildProcess, spawn } from "node:child_process";
 import type { ExtensionAPI, SessionEntry } from "@earendil-works/pi-coding-agent";
-import { isCompanionActive } from "#core/platform/env.ts";
-import { processScoped } from "#core/platform/global-registry.ts";
+import { processScoped } from "#core/global-registry.ts";
+import { isCompanionActive } from "#core/host/env.ts";
 import { buildUserContext } from "#core/session/user-context.ts";
 import { getWorkspaceService } from "#core/workspace/service.ts";
 import { getTasksAccess } from "#tasks/index.ts";

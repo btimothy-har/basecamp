@@ -4,7 +4,7 @@ import * as path from "node:path";
 import type { AgentToolResult, ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { type Static, Type } from "@sinclair/typebox";
 import type { Page } from "puppeteer-core";
-import { getBasecampEnv, isSubagent } from "#core/platform/env.ts";
+import { getBasecampEnv, isSubagent } from "#core/host/env.ts";
 import { ensurePage } from "../chrome.ts";
 
 const BrowserScreenshotParams = Type.Object({

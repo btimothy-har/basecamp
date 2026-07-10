@@ -6,7 +6,7 @@ import * as fsSync from "node:fs";
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
 import type { ExtensionAPI, ExtensionContext, SessionStartEvent } from "@earendil-works/pi-coding-agent";
-import { readLogseqGraphDir } from "#core/platform/config.ts";
+import { readLogseqGraphDir } from "#core/host/config.ts";
 import { getCurrentSessionState } from "#core/session/state/index.ts";
 import { workspaceMatchesActiveWorktreeState } from "#core/workspace/affinity.ts";
 import { migrateLegacyWorktrees } from "#core/workspace/migrate.ts";

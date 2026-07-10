@@ -5,7 +5,7 @@
  */
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { exec } from "#core/platform/exec.ts";
+import { exec } from "#core/host/exec.ts";
 
 async function resolveDefaultBase(pi: ExtensionAPI): Promise<string> {
 	const head = await exec(pi, "git", ["symbolic-ref", "--quiet", "--short", "refs/remotes/origin/HEAD"]);

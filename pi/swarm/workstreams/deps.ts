@@ -1,5 +1,5 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { readWorktreeSetupCommand } from "#core/platform/config.ts";
+import { readWorktreeSetupCommand } from "#core/host/config.ts";
 import {
 	getWorkspaceState,
 	listWorkspaceWorktrees,
