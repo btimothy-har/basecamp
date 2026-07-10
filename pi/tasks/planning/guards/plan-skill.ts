@@ -5,7 +5,7 @@
  */
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { hasInvokedSkill } from "#core/platform/skill-tracker.ts";
+import { hasInvokedSkill } from "#core/skills/tracker.ts";
 
 const PLANNING_SKILL = "planning";
 

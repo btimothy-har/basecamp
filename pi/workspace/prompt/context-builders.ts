@@ -7,7 +7,7 @@
  * they pair with lives in #core/project/context.ts.
  */
 
-import type { CatalogItem } from "#core/platform/catalog.ts";
+import type { CatalogItem } from "#core/catalog/index.ts";
 import type { WorkspaceState } from "#core/platform/workspace.ts";
 import type { ContextFile } from "#core/project/context.ts";
 

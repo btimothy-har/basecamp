@@ -4,7 +4,7 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { describe, it, type TestContext } from "node:test";
 import { resetAgentMode, setAgentMode } from "#core/agent-mode/index.ts";
-import type { CatalogItem } from "#core/platform/catalog.ts";
+import type { CatalogItem } from "#core/catalog/index.ts";
 import type { WorkspaceState } from "#core/platform/workspace.ts";
 import { assemblePrompt } from "../prompt.ts";
 

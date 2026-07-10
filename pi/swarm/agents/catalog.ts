@@ -2,7 +2,7 @@
  * Catalog provider for workflow-owned agents.
  */
 
-import { type CatalogItem, registerCatalogProvider } from "#core/platform/catalog.ts";
+import { type CatalogItem, registerCatalogProvider } from "#core/catalog/index.ts";
 import type { AgentConfig } from "./discovery.ts";
 import { DEFAULT_AGENT_MAX_DEPTH, getAgentToolAllowlist } from "./types.ts";
 

@@ -1,6 +1,6 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { registerModeShortcut } from "./agent-mode/toggle.ts";
-import registerCapabilities from "./capabilities/index.ts";
+import { registerCatalogProviders } from "./catalog/providers.ts";
 import { registerEscalate } from "./escalate/tool.ts";
 import registerModelAliases from "./model-aliases/index.ts";
 import { isSubagent, setBasecampEnv } from "./platform/env.ts";
@@ -8,6 +8,7 @@ import { registerCwdProvider } from "./platform/exec.ts";
 import { registerCompactionModel } from "./session/runtime/compaction.ts";
 import { registerSession } from "./session/runtime/session.ts";
 import { registerState } from "./session/state/index.ts";
+import registerSkills from "./skills/index.ts";
 import registerUi from "./ui/index.ts";
 import { resolveGitInfo } from "./workspace/repo.ts";
 
@@ -19,7 +20,8 @@ export default function (pi: ExtensionAPI): void {
 	registerState(pi);
 	registerSession(pi);
 	registerCompactionModel(pi);
-	registerCapabilities(pi);
+	registerSkills(pi);
+	registerCatalogProviders(pi);
 	registerModelAliases(pi);
 
 	// Default git detection at session_start — the workspace module overrides with full config.

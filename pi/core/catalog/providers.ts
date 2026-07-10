@@ -3,9 +3,9 @@
  */
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { registerCatalogProvider } from "../platform/catalog.ts";
+import { registerCatalogProvider } from "./index.ts";
 
-export function registerCapabilityCatalogProviders(pi: ExtensionAPI): void {
+export function registerCatalogProviders(pi: ExtensionAPI): void {
 	registerCatalogProvider({
 		id: "tools",
 		list: () => {
