@@ -5,7 +5,7 @@ import {
 	listModelAliases,
 	registerModelAliasProvider,
 	resolveModelAlias,
-} from "../model-aliases.ts";
+} from "../index.ts";
 
 describe("model alias provider registry", () => {
 	it("resolves aliases from the most recently registered matching provider", (t) => {

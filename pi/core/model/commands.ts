@@ -2,7 +2,7 @@
 
 import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
 import { promptWithInitialValue, showAliasDetail, showAliasList } from "./alias-forms.ts";
-import { type ConfiguredModelAliases, errorMessage, loadModelAliasConfig, writeModelAliasConfig } from "./config.ts";
+import { type ConfiguredModelAliases, errorMessage, loadModelAliasConfig, writeModelAliasConfig } from "./aliases.ts";
 
 type DeleteResult = "back" | "stay";
 

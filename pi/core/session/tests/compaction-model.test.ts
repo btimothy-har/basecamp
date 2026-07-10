@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import type { Api, Model } from "@earendil-works/pi-ai";
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { clearModelAliasProvidersForTesting, registerModelAliasProvider } from "../../platform/model-aliases.ts";
+import { clearModelAliasProvidersForTesting, registerModelAliasProvider } from "../../model/index.ts";
 import {
 	type CompactFunction,
 	generateCompactionWithModel,

@@ -2,14 +2,14 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import type { Api, Model } from "@earendil-works/pi-ai";
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { clearModelAliasProvidersForTesting, registerModelAliasProvider } from "../model-aliases.ts";
+import { clearModelAliasProvidersForTesting, registerModelAliasProvider } from "../index.ts";
 import {
 	resolveAliasedModel,
 	resolveForcedToolChoice,
 	resolveModelFromString,
 	resolveModelReference,
 	resolvePortableReasoningEffort,
-} from "../model-resolution.ts";
+} from "../resolution.ts";
 
 function model(provider: string, id: string): Model<Api> {
 	return { provider, id } as unknown as Model<Api>;

@@ -3,7 +3,7 @@ import * as fs from "node:fs/promises";
 import * as os from "node:os";
 import * as path from "node:path";
 import { describe, it, type TestContext } from "node:test";
-import { writeModelAliasConfig } from "../config.ts";
+import { writeModelAliasConfig } from "../aliases.ts";
 import { createNativeConfigModelAliasProvider } from "../index.ts";
 
 async function createTempDir(t: TestContext): Promise<string> {

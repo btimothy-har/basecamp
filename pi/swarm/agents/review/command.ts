@@ -1,8 +1,8 @@
 import { randomUUID } from "node:crypto";
 import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
+import { resolveModelAlias } from "#core/model/index.ts";
+import { resolveAliasedModel } from "#core/model/resolution.ts";
 import { exec } from "#core/platform/exec.ts";
-import { resolveModelAlias } from "#core/platform/model-aliases.ts";
-import { resolveAliasedModel } from "#core/platform/model-resolution.ts";
 import { getWorkspaceState, type WorkspaceState } from "#core/platform/workspace.ts";
 import { createDaemonClient } from "../daemon/client.ts";
 import { dispatchWithHandleRetry } from "../daemon/dispatch-retry.ts";

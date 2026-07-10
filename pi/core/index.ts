@@ -2,7 +2,7 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { registerModeShortcut } from "./agent-mode/toggle.ts";
 import { registerCatalogProviders } from "./catalog/providers.ts";
 import { registerEscalate } from "./escalate/tool.ts";
-import registerModelAliases from "./model-aliases/index.ts";
+import registerModelAliases from "./model/index.ts";
 import { isSubagent, setBasecampEnv } from "./platform/env.ts";
 import { registerCwdProvider } from "./platform/exec.ts";
 import { registerCompactionModel } from "./session/runtime/compaction.ts";

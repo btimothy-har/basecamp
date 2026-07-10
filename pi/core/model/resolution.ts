@@ -1,7 +1,7 @@
 import type { Api, Model, ModelThinkingLevel } from "@earendil-works/pi-ai";
 import { getSupportedThinkingLevels } from "@earendil-works/pi-ai";
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { resolveModelAlias } from "./model-aliases.ts";
+import { resolveModelAlias } from "./index.ts";
 
 export function resolveModelFromString(ctx: ExtensionContext, modelName?: string): Model<Api> | undefined {
 	if (!modelName) return ctx.model;

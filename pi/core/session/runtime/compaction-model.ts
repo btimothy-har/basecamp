@@ -1,7 +1,7 @@
 import type { Api, Model } from "@earendil-works/pi-ai";
 import type { CompactionResult, ExtensionContext, SessionBeforeCompactEvent } from "@earendil-works/pi-coding-agent";
-import { resolveModelAlias } from "../../platform/model-aliases.ts";
-import { resolveModelFromString } from "../../platform/model-resolution.ts";
+import { resolveModelAlias } from "../../model/index.ts";
+import { resolveModelFromString } from "../../model/resolution.ts";
 
 export type CompactFunction = (
 	preparation: SessionBeforeCompactEvent["preparation"],

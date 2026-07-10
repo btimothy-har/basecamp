@@ -7,7 +7,7 @@ import {
 	resolveAliasedModel,
 	resolveForcedToolChoice,
 	resolvePortableReasoningEffort,
-} from "#core/platform/model-resolution.ts";
+} from "#core/model/resolution.ts";
 
 const Decision = Type.Union([Type.Literal("approve"), Type.Literal("route_to_user"), Type.Literal("deny")]);
 const Risk = Type.Union([Type.Literal("none"), Type.Literal("local"), Type.Literal("destructive")]);

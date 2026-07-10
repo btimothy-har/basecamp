@@ -3,7 +3,7 @@
 import type { ExtensionCommandContext, Theme } from "@earendil-works/pi-coding-agent";
 import { DynamicBorder, getSelectListTheme } from "@earendil-works/pi-coding-agent";
 import { Container, Editor, type EditorTheme, matchesKey, Spacer, Text } from "@earendil-works/pi-tui";
-import { defaultModelAliasConfigPath, readModelAliasConfig } from "./config.ts";
+import { defaultModelAliasConfigPath, readModelAliasConfig } from "./aliases.ts";
 
 type AliasEntry = { alias: string; model: string };
 export type ListResult = { action: "add" } | { action: "detail"; alias: string };
