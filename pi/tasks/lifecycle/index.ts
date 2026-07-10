@@ -8,11 +8,11 @@
  * Description is set by the agent at creation. Notes are set by the
  * agent via annotate_task.
  *
- * The seven task tools live in tools.ts, the tool_call guardrails in gate.ts,
- * goal-cycle operations in goal-cycle.ts, task-state text builders in text.ts,
- * and file persistence in store.ts. This module owns the shared TasksRuntime,
- * composes them, and publishes a read-only TasksReader (reader.ts) for
- * cross-domain observers.
+ * Goal-cycle operations live in goal-cycle.ts, task-state text builders in
+ * text.ts, file persistence in store.ts, and the widget in widget.ts. This
+ * module owns the shared TasksRuntime and publishes a read-only TasksReader
+ * (reader.ts) for cross-domain observers; the task tools and tool_call guards
+ * are the tools/ layer, wired by the composition root.
  *
  * Widget shows a sliding window of 3 open tasks with collapse
  * counters for completed/remaining items.
@@ -26,11 +26,9 @@ import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-a
 import { setAgentMode } from "#core/agent-mode/index.ts";
 import { getCurrentSessionState } from "#core/session/state/index.ts";
 import type { GoalCycle, TasksState } from "../schemas/task.ts";
-import { registerTaskGuards } from "./gate.ts";
 import { registerTasksReader } from "./reader.ts";
 import { loadCycles, saveCycles, tasksFilePath } from "./store.ts";
 import { buildSteerContent } from "./text.ts";
-import { registerTaskTools } from "./tools.ts";
 import { renderTaskWidgetLines } from "./widget.ts";
 
 export { defaultTasksDir, tasksFilePath } from "./store.ts";
@@ -95,9 +93,6 @@ export function registerTasks(pi: ExtensionAPI): TasksRuntime {
 			}
 		},
 	};
-
-	registerTaskGuards(pi, runtime);
-	registerTaskTools(pi, runtime);
 
 	// --- Restore state on session start ---
 	pi.on("session_start", async (_event, sessionCtx) => {

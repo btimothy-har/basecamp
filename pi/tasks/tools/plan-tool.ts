@@ -3,25 +3,19 @@
  *
  * The plan() tool submits a structured plan (goal, context, design, success,
  * boundaries, tasks) and blocks until the user reviews it via an auto-pop
- * overlay. On approval, creates a GoalCycle with planRef and populates tasks.
- * Implementation plans ask for execution posture; analysis plans stay in
- * analysis mode. On feedback, returns structured
- * feedback for the agent to revise.
+ * overlay. On approval it seeds the goal cycle; implementation plans then hand
+ * off to an execution worktree, analysis plans stay in analysis mode. On
+ * feedback, returns structured feedback for revision.
  *
- * Draft building/diffing lives in draft.ts; execution handoff in handoff.ts;
- * the /show-plan command in commands.ts.
+ * The tool is thin: it drives draft → review → approve, delegates the worktree
+ * choreography to runHandoff, and maps the outcome to its result.
  */
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "@sinclair/typebox";
 import { getAgentMode, setAgentMode } from "#core/agent-mode/index.ts";
-import { resolveAgentRoleOverride } from "#core/agent-role.ts";
-import { readWorktreeSetupCommand } from "#core/host/config.ts";
-import { activateWorkspaceWorktree, getWorkspaceState, requireWorkspaceState } from "#core/workspace/service.ts";
-import { runWorktreeSetup } from "#core/workspace/setup.ts";
 import { startGoalCycle } from "../lifecycle/goal-cycle.ts";
 import type { TasksRuntime } from "../lifecycle/index.ts";
-import { renderPartial, renderSuccess } from "../render.ts";
 import type { PlanDraft } from "../schemas/plan.ts";
 import type { GoalCycle } from "../schemas/task.ts";
 import { buildApprovedResult, buildDraft, buildFeedbackResult, isAllApproved } from "../workflows/draft.ts";
@@ -31,30 +25,22 @@ import {
 	buildPendingImplementationHandoff,
 	buildWorktreeActivationFailedResult,
 	HANDOFF_COMPACTION_THRESHOLD_PERCENT,
-	type HandoffWorktreeResult,
 	type PendingImplementationHandoff,
+	runHandoff,
 	selectImplementationMode,
-	selectWorktreeTarget,
-	shouldReuseActiveWorktreeForHandoff,
-	workspaceWorktreeToHandoffWorktree,
 } from "../workflows/handoff/index.ts";
-import {
-	shouldRunWorktreeSetup,
-	type WorktreeSetupSummary,
-	worktreeSetupSummary,
-} from "../workflows/handoff/worktree-setup.ts";
 import { showReviewOverlay } from "../workflows/review/index.ts";
-
-export type { ImplementationMode } from "../schemas/plan.ts";
-export {
-	buildHandoffMessage,
-	shouldReuseActiveWorktreeForHandoff,
-	workspaceWorktreeToHandoffWorktree,
-} from "../workflows/handoff/index.ts";
-export { registerPlanCommands } from "./commands.ts";
+import { renderPartial, renderSuccess } from "./render.ts";
 
 export interface PlanAccess {
 	getDraft(): PlanDraft | null;
+}
+
+function cancelledResult(next_step: string) {
+	return {
+		content: [{ type: "text" as const, text: JSON.stringify({ status: "handoff_cancelled", next_step }) }],
+		details: undefined,
+	};
 }
 
 export function registerPlan(pi: ExtensionAPI, runtime: TasksRuntime): PlanAccess {
@@ -157,129 +143,57 @@ export function registerPlan(pi: ExtensionAPI, runtime: TasksRuntime): PlanAcces
 				};
 			}
 
-			if (isAllApproved(draft)) {
-				const approvedTasks = draft.tasks.map((t) => ({ ...t, review: null }));
-				const planRef: GoalCycle["planRef"] = {
-					context: draft.context.content,
-					design: draft.design.content,
-					success: draft.success.content,
-					boundaries: draft.boundaries.content,
-				};
+			if (!isAllApproved(draft)) {
+				return { content: [{ type: "text", text: buildFeedbackResult(draft) }], details: undefined };
+			}
 
-				if (getAgentMode() === "analysis") {
-					startGoalCycle(runtime, { goal: draft.goal.content, tasks: approvedTasks, planRef, agentMode: "analysis" });
+			const approvedTasks = draft.tasks.map((t) => ({ ...t, review: null }));
+			const planRef: GoalCycle["planRef"] = {
+				context: draft.context.content,
+				design: draft.design.content,
+				success: draft.success.content,
+				boundaries: draft.boundaries.content,
+			};
 
-					const result = buildApprovedResult(draft, "analysis");
-					draft = null;
-					return {
-						content: [{ type: "text", text: result }],
-						details: undefined,
-					};
-				}
-
-				const implementationMode = await selectImplementationMode(ctx);
-				if (!implementationMode) {
-					return {
-						content: [
-							{
-								type: "text",
-								text: JSON.stringify({
-									status: "handoff_cancelled",
-									next_step:
-										"Plan approved, but an execution pathway was not selected. Seek user confirmation to begin implementation.",
-								}),
-							},
-						],
-						details: undefined,
-					};
-				}
-
-				const workspace = getWorkspaceState();
-				const activeWorktree = workspace?.activeWorktree ?? null;
-				let worktree: HandoffWorktreeResult;
-				if (activeWorktree && shouldReuseActiveWorktreeForHandoff(resolveAgentRoleOverride(), activeWorktree)) {
-					worktree = workspaceWorktreeToHandoffWorktree(activeWorktree);
-				} else {
-					const worktreeTarget = await selectWorktreeTarget(ctx, draft.goal.content, draft.worktreeSlug);
-					if (!worktreeTarget) {
-						return {
-							content: [
-								{
-									type: "text",
-									text: JSON.stringify({
-										status: "handoff_cancelled",
-										next_step:
-											"Plan approved, but an execution worktree was not selected. Seek user confirmation before implementation.",
-									}),
-								},
-							],
-							details: undefined,
-						};
-					}
-
-					try {
-						worktree = workspaceWorktreeToHandoffWorktree(
-							await activateWorkspaceWorktree(worktreeTarget.worktreeLabel, worktreeTarget.branchName),
-						);
-					} catch (err) {
-						return {
-							content: [{ type: "text", text: buildWorktreeActivationFailedResult(worktreeTarget.worktreeLabel, err) }],
-							details: undefined,
-						};
-					}
-				}
-
-				setAgentMode(implementationMode);
-				startGoalCycle(runtime, {
-					goal: draft.goal.content,
-					tasks: approvedTasks,
-					planRef,
-					agentMode: implementationMode,
-				});
-				pendingImplementationHandoff = buildPendingImplementationHandoff(draft, implementationMode, worktree);
-
-				let setupSummary: WorktreeSetupSummary | undefined;
-				const repo = requireWorkspaceState().repo;
-				const setupCommand = repo?.name ? readWorktreeSetupCommand(repo.name) : null;
-				if (shouldRunWorktreeSetup(worktree.created, setupCommand)) {
-					const repoRoot = repo?.root;
-					if (repoRoot) {
-						ctx.ui.notify("Provisioning worktree — running setup (up to 3 min)…", "info");
-						try {
-							const setupResult = await runWorktreeSetup(pi, {
-								command: setupCommand as string,
-								worktreeDir: worktree.worktreeDir,
-								repoRoot,
-							});
-							setupSummary = worktreeSetupSummary(setupResult);
-							if (setupResult.timedOut) {
-								ctx.ui.notify("Worktree setup timed out after 3 min — continuing to handoff.", "warning");
-							} else if (setupResult.exitCode !== 0) {
-								ctx.ui.notify(`Worktree setup exited ${setupResult.exitCode} — continuing to handoff.`, "warning");
-							} else {
-								ctx.ui.notify("Worktree setup complete.", "info");
-							}
-						} catch (err) {
-							ctx.ui.notify(
-								`Worktree setup error — continuing to handoff: ${err instanceof Error ? err.message : String(err)}`,
-								"warning",
-							);
-						}
-					}
-				}
-
-				const result = buildApprovedResult(draft, implementationMode, worktree, setupSummary);
+			if (getAgentMode() === "analysis") {
+				startGoalCycle(runtime, { goal: draft.goal.content, tasks: approvedTasks, planRef, agentMode: "analysis" });
+				const result = buildApprovedResult(draft, "analysis");
 				draft = null;
+				return { content: [{ type: "text", text: result }], details: undefined };
+			}
+
+			const implementationMode = await selectImplementationMode(ctx);
+			if (!implementationMode) {
+				return cancelledResult(
+					"Plan approved, but an execution pathway was not selected. Seek user confirmation to begin implementation.",
+				);
+			}
+
+			const outcome = await runHandoff(pi, ctx, { goal: draft.goal.content, worktreeSlug: draft.worktreeSlug });
+			if (outcome.status === "cancelled") {
+				return cancelledResult(
+					"Plan approved, but an execution worktree was not selected. Seek user confirmation before implementation.",
+				);
+			}
+			if (outcome.status === "activation_failed") {
 				return {
-					content: [{ type: "text", text: result }],
+					content: [{ type: "text", text: buildWorktreeActivationFailedResult(outcome.label, outcome.error) }],
 					details: undefined,
 				};
 			}
 
-			return {
-				content: [{ type: "text", text: buildFeedbackResult(draft) }],
-				details: undefined,
-			};
+			setAgentMode(implementationMode);
+			startGoalCycle(runtime, {
+				goal: draft.goal.content,
+				tasks: approvedTasks,
+				planRef,
+				agentMode: implementationMode,
+			});
+			pendingImplementationHandoff = buildPendingImplementationHandoff(draft, implementationMode, outcome.worktree);
+
+			const result = buildApprovedResult(draft, implementationMode, outcome.worktree, outcome.setupSummary);
+			draft = null;
+			return { content: [{ type: "text", text: result }], details: undefined };
 		},
 		renderCall(args, theme) {
 			const { Text } = require("@earendil-works/pi-tui");

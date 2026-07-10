@@ -3,10 +3,8 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "@sinclair/typebox";
 import { getAgentMode } from "#core/agent-mode/index.ts";
-import { renderPartial, renderSuccess } from "../render.ts";
-import type { TaskStatus } from "../schemas/task.ts";
-import { startGoalCycle } from "./goal-cycle.ts";
-import type { TasksRuntime } from "./index.ts";
+import { startGoalCycle } from "../lifecycle/goal-cycle.ts";
+import type { TasksRuntime } from "../lifecycle/index.ts";
 import {
 	buildCompleteTaskResultText,
 	buildCompleteTaskStopMessage,
@@ -16,7 +14,9 @@ import {
 	type CompleteTaskResultDetails,
 	isCompleteTaskStopWorkDetails,
 	requireTasks,
-} from "./text.ts";
+} from "../lifecycle/text.ts";
+import type { TaskStatus } from "../schemas/task.ts";
+import { renderPartial, renderSuccess } from "./render.ts";
 
 export function registerTaskTools(pi: ExtensionAPI, runtime: TasksRuntime): void {
 	// --- Tool: update_goal ---

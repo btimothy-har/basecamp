@@ -5,6 +5,8 @@ import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-a
 import { startGoalCycle } from "../lifecycle/goal-cycle.ts";
 import { defaultTasksDir, registerTasks, tasksFilePath } from "../lifecycle/index.ts";
 import type { Task } from "../schemas/task.ts";
+import { registerTaskGuards } from "../tools/guards.ts";
+import { registerTaskTools } from "../tools/task-tools.ts";
 
 interface RegisteredToolResult {
 	content: { type: "text"; text: string }[];
@@ -72,6 +74,8 @@ function makeContext(notifications: string[]): ExtensionContext {
 function setupTasks() {
 	const pi = new FakePi();
 	const runtime = registerTasks(pi as unknown as ExtensionAPI);
+	registerTaskTools(pi as unknown as ExtensionAPI, runtime);
+	registerTaskGuards(pi as unknown as ExtensionAPI, runtime);
 	startGoalCycle(runtime, {
 		goal: "Goal",
 		tasks: [makeTask("first", "active"), makeTask("second")],

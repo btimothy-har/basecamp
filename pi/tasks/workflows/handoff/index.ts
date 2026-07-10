@@ -3,14 +3,18 @@
  * and the deferred handoff message (with optional pre-handoff compaction).
  */
 
-import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
+import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
+import { resolveAgentRoleOverride } from "#core/agent-role.ts";
+import { readWorktreeSetupCommand } from "#core/host/config.ts";
 import { shortSessionId } from "#core/session/session-id.ts";
 import {
+	activateWorkspaceWorktree,
 	getWorkspaceState,
 	listWorkspaceWorktrees,
 	requireWorkspaceState,
 	type WorkspaceWorktree,
 } from "#core/workspace/service.ts";
+import { runWorktreeSetup } from "#core/workspace/setup.ts";
 import type { ImplementationMode, PlanDraft } from "../../schemas/plan.ts";
 import type { TaskStatus } from "../../schemas/task.ts";
 import { collectApprovedNotes } from "../draft.ts";
@@ -21,6 +25,7 @@ import {
 	type ExecutionWorktreeTarget,
 	suggestWorktreeTarget,
 } from "./worktree-choices.ts";
+import { shouldRunWorktreeSetup, type WorktreeSetupSummary, worktreeSetupSummary } from "./worktree-setup.ts";
 
 interface HandoffTaskContext {
 	index: number;
@@ -232,4 +237,75 @@ export function shouldReuseActiveWorktreeForHandoff(
 	activeWorktree: WorkspaceWorktree | null,
 ): boolean {
 	return agentRole === "workstream_agent" && activeWorktree !== null;
+}
+
+export type HandoffOutcome =
+	| { status: "ready"; worktree: HandoffWorktreeResult; setupSummary: WorktreeSetupSummary | undefined }
+	| { status: "cancelled" }
+	| { status: "activation_failed"; label: string; error: unknown };
+
+/**
+ * Resolve an execution worktree for the approved plan: reuse the active one
+ * when appropriate, else prompt for a target and activate it, then run the
+ * per-repo worktree setup. Returns a discriminated outcome the plan tool maps
+ * to its result — the tool owns none of this choreography.
+ */
+export async function runHandoff(
+	pi: ExtensionAPI,
+	ctx: ExtensionContext,
+	plan: { goal: string; worktreeSlug: string | null },
+): Promise<HandoffOutcome> {
+	const activeWorktree = getWorkspaceState()?.activeWorktree ?? null;
+
+	let worktree: HandoffWorktreeResult;
+	if (activeWorktree && shouldReuseActiveWorktreeForHandoff(resolveAgentRoleOverride(), activeWorktree)) {
+		worktree = workspaceWorktreeToHandoffWorktree(activeWorktree);
+	} else {
+		const target = await selectWorktreeTarget(ctx, plan.goal, plan.worktreeSlug);
+		if (!target) return { status: "cancelled" };
+		try {
+			worktree = workspaceWorktreeToHandoffWorktree(
+				await activateWorkspaceWorktree(target.worktreeLabel, target.branchName),
+			);
+		} catch (error) {
+			return { status: "activation_failed", label: target.worktreeLabel, error };
+		}
+	}
+
+	return { status: "ready", worktree, setupSummary: await provisionWorktree(pi, ctx, worktree) };
+}
+
+/** Run the per-repo worktree setup command for a freshly created worktree. */
+async function provisionWorktree(
+	pi: ExtensionAPI,
+	ctx: ExtensionContext,
+	worktree: HandoffWorktreeResult,
+): Promise<WorktreeSetupSummary | undefined> {
+	const repo = requireWorkspaceState().repo;
+	const repoRoot = repo?.root;
+	const setupCommand = repo?.name ? readWorktreeSetupCommand(repo.name) : null;
+	if (!repoRoot || !shouldRunWorktreeSetup(worktree.created, setupCommand)) return undefined;
+
+	ctx.ui.notify("Provisioning worktree — running setup (up to 3 min)…", "info");
+	try {
+		const setupResult = await runWorktreeSetup(pi, {
+			command: setupCommand as string,
+			worktreeDir: worktree.worktreeDir,
+			repoRoot,
+		});
+		if (setupResult.timedOut) {
+			ctx.ui.notify("Worktree setup timed out after 3 min — continuing to handoff.", "warning");
+		} else if (setupResult.exitCode !== 0) {
+			ctx.ui.notify(`Worktree setup exited ${setupResult.exitCode} — continuing to handoff.`, "warning");
+		} else {
+			ctx.ui.notify("Worktree setup complete.", "info");
+		}
+		return worktreeSetupSummary(setupResult);
+	} catch (err) {
+		ctx.ui.notify(
+			`Worktree setup error — continuing to handoff: ${err instanceof Error ? err.message : String(err)}`,
+			"warning",
+		);
+		return undefined;
+	}
 }

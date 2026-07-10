@@ -4,7 +4,7 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { getActivePlanRef } from "../lifecycle/goal-cycle.ts";
 import type { TasksRuntime } from "../lifecycle/index.ts";
 import { showPlanReadOnly, showReviewOverlay } from "../workflows/review/index.ts";
-import type { PlanAccess } from "./index.ts";
+import type { PlanAccess } from "./plan-tool.ts";
 
 export function registerPlanCommands(pi: ExtensionAPI, runtime: TasksRuntime, plan: PlanAccess): void {
 	pi.registerCommand("show-plan", {
