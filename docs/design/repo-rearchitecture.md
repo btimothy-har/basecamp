@@ -247,7 +247,7 @@ src/basecamp/companion/
 - API byte-identical via `__init__.py` re-exports; the one edit is `analyzer.py`'s sibling path (`cli.py` + its test, or a shim).
 - **Follow-up (deferred, behavior-adjacent):** companion's `daemon/` models+parse *overlap* swarm's daemon protocol — three "daemon" implementations (swarm/py server, swarm/ts client, companion/py client) reimplement the wire shape. Consolidating to a shared daemon-client/models is a later split, not this pass.
 
-### 6.5 ui — TS  ✅ LOCKED
+### 6.5 ui — TS  ✅ LOCKED  *(superseded 2026-07-10: folded into `core/ui` as a core submodule — see §9 post-execution refinement)*
 
 ```
 pi/ui/
@@ -280,7 +280,7 @@ pi/tasks/
 ```
 
 - `planning/` sub-grouped (not 13 flat files) — each sub-dir is a real ≥2-file cluster, killing the `review-*`/`worktree-*`/`plan-*-guard` prefix families.
-- `plan-copilot-guard` keeps `isPlanDisabledFor` (imported by `workspace/prompt` via `#tasks`) — stays here since prompt stays in workspace.
+- `plan-copilot-guard` — *superseded 2026-07-10:* the shared predicate moved to `core/agent-mode` as `isCopilotMode` (+ `PLAN_TOOL_NAME`), killing the `workspace/prompt → #tasks` edge (see §9 post-execution refinement). The guard itself stays here.
 - `lifecycle/tools.ts` (322 lines, near the cap) kept as one `[tool]` file; split to `tools/` only if it grows.
 
 ### 6.7 engineering — TS  ✅ LOCKED
@@ -396,3 +396,12 @@ Shipped as a sequence of `make lint` + `make test`-green commits:
 - **core minimal-churn (§6.12 ⟐2)** — the `git/`+`worktree/` split of `core/ts/workspace/` and `platform/skill-tracker.ts → capabilities/` were left in place; the `SESSION_STATE_AGENT_MODES` enum stays in `session/state` (agent-mode imports it) rather than reversing ownership.
 - **companion `diff.py → git/ + diff/` carve (§6.12 ⟐6)** — behavior-adjacent; `diff.py` is under the 500-cap.
 - The earlier behavior-adjacent list: carve `prompt/` to its own domain; consolidate the three `daemon` impls onto a shared wire contract; tease git verbs out of core `worktree.ts`; dedupe workspace `cli/environment.py` repo-identity against core; `browser/tools/output.ts` dedupe; split `tasks/lifecycle/tools.ts` only if it grows.
+
+### Post-execution refinement (2026-07-10, same branch) — dependency-graph tidy
+
+After the layout landed, a cross-domain import-graph audit motivated two small green follow-ups. The audit found the coupling is a near-perfect star — every domain imports `core`, max out-degree 2, and only three non-core edges existed (`companion→tasks`, `workspace→tasks`, `swarm→ui`). These follow-ups are symbol/submodule relocations, **not** domain moves:
+
+1. **`ui` → `core/ui` (core submodule).** `ui` was framework chrome (footer/header/title/mode/llm) sitting as a peer domain, yet `core` already owned sibling framework UI (`escalate`'s dialogs). Folded `pi/ui/` into `pi/core/ui/` with `registerCore` registering it last, alongside `escalate`/`capabilities`. Principle: *framework UI lives with the framework; feature-specific widgets (task cards, agent rows, panes) stay with their feature.* Dropped the `#ui/*` alias and the `ui` entries in `CONTEXTS`/`extension.ts`; the one external consumer (`swarm`'s daemon widget → `formatTitle`) now imports `#core/ui/index.ts`. `ui` in-degree → 0; boundary check reports **9 contexts**.
+2. **plan-gate predicate → `core/agent-mode`, renamed `isCopilotMode`.** `isPlanDisabledFor(mode)` was a one-line predicate over `AgentMode` in `tasks/planning/guards/plan-copilot.ts`; `plan()` is a Pi built-in that basecamp only *gates*, so `PLAN_TOOL_NAME` was never tasks-owned. Moved both to `core/agent-mode` (the predicate renamed `isCopilotMode` — the pure mode fact). Killed the `workspace→tasks` edge; the tasks guard and workspace's capabilities filter both consult `core`.
+
+Net graph after both: a single hub (`core`) whose only remaining inter-feature edge is `companion→tasks` (live task-state observation through the public index — the boundary system working as intended, kept). This supersedes the `isPlanDisabledFor` note in §6.6 and the peer-domain framing of §6.5.

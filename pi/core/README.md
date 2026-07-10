@@ -11,6 +11,7 @@ The always-present foundation domain for basecamp. `pi/core` is the first module
 - **Capabilities**: the `skill()` tool, SKILL.md content parsing, catalog providers, skill invocation tracker
 - **Model aliases**: native config provider (`~/.pi/basecamp/core/model-aliases.json`) + the `/model-aliases` command
 - **Escalate**: the `escalate` tool — pause and ask the user for a decision (primary sessions only)
+- **Framework UI** (`ui/`): the session's status footer, title auto-naming, and interactive mode editor — framework chrome, registered last by `registerCore`. Feature-specific widgets live with their own domains; only `formatTitle` is consumed externally (via `#core/ui/index.ts`).
 - **Project config** (`project/`): resolve repo → project → `BASECAMP_PROJECT`, the project-config schema, and nested-doc context injection. Core-owned but registered by the workspace module (its session_start hook needs workspace runtime state); prompt assembly lives in the workspace domain.
 - **Workspace defaults**: git detection at session_start (repo, remote, branch from `process.cwd()`); worktree operations (list/activate/attach) as thin git wrappers. The workspace module overrides these defaults with basecamp-config-aware values during registration.
 

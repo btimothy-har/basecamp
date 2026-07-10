@@ -22,13 +22,12 @@ scripts/check-file-length.ts               # Hard file-length caps: .ts ≤ 350,
 
 pi/                            # ① the Pi extension (TypeScript)
 ├── extension.ts                # Composition root: registers all domain modules in fixed order (core first)
-├── core/                       # agent-mode/, session/ (+ state/), project/ config, capabilities/,
-│                               #   escalate/, model-aliases/, worktree policy, git/ adapter, platform/ seams+ports
+├── core/                       # agent-mode/, session/ (+ state/), project/ config, capabilities/, ui/ (footer·header·
+│                               #   title·mode·llm — framework chrome), escalate/, model-aliases/, worktree policy, git/ adapter, platform/ seams+ports
 ├── workspace/                  # prompt/ assembly, worktree/ service, guards/ (edit guards)
 ├── swarm/                      # agents/ (tools, catalog, launch, daemon client, review), workstreams/,
 │                               #   protocol/ (TS↔Python contract), skills/
 ├── companion/                  # session hooks: analysis, snapshot/, panes/, herdr/ + tmux/ adapters
-├── ui/                         # footer, header, title (+ llm/), editor, mode
 ├── tasks/                      # lifecycle/ + planning/ (draft/handoff/review/guards); skills/
 ├── git/                        # /create-pr prompt workflow
 ├── bash-reviewer/              # LLM bash reviewer: index (guard), review, triage/, llm adapter
@@ -61,11 +60,11 @@ Prompts are layered (environment → working style → project context → tools
 
 ### Session Modes
 
-Agent modes (`pi/core/agent-mode`, in `SESSION_STATE_AGENT_MODES`) are `analysis`, `planning`, `copilot`, `supervisor`, and `executor`. shift+tab (`cycleAgentMode`) rotates only the cyclable modes — copilot is excluded from the cycle. `copilot` is a locked, launch-only mode: it is entered solely via `pi --copilot` (registered in `registerSession`, which forces copilot at `session_start` when the flag is present, else restores the stored mode) and is immutable — `cycleAgentMode` is a no-op in copilot, so shift+tab can neither enter nor leave it. `pi --copilot` takes precedence over `pi --workstream` (the workstream startup defers with a warning). Because Pi cannot unregister or per-session-gate a tool, `plan()` is removed from copilot by two layers sharing one predicate (`isPlanDisabledFor` in `pi/tasks/planning/guards/plan-copilot.ts`): the tasks module's `tool_call` block (the hard guarantee) and the workspace module's copilot capabilities-index filter (with copilot.md carrying no plan() guidance). The `/plan` slash command is deprecated repo-wide; the `plan()` tool and `/show-plan` remain for non-copilot sessions.
+Agent modes (`pi/core/agent-mode`, in `SESSION_STATE_AGENT_MODES`) are `analysis`, `planning`, `copilot`, `supervisor`, and `executor`. shift+tab (`cycleAgentMode`) rotates only the cyclable modes — copilot is excluded from the cycle. `copilot` is a locked, launch-only mode: it is entered solely via `pi --copilot` (registered in `registerSession`, which forces copilot at `session_start` when the flag is present, else restores the stored mode) and is immutable — `cycleAgentMode` is a no-op in copilot, so shift+tab can neither enter nor leave it. `pi --copilot` takes precedence over `pi --workstream` (the workstream startup defers with a warning). Because Pi cannot unregister or per-session-gate a tool, `plan()` is removed from copilot by two layers sharing one predicate (`isCopilotMode` in `pi/core/agent-mode`, paired with `PLAN_TOOL_NAME` — `plan()` is a Pi built-in, so its name is a core-owned constant beside the mode policy, not a tasks export): the tasks module's `tool_call` block (the hard guarantee) and the workspace module's copilot capabilities-index filter (with copilot.md carrying no plan() guidance). The `/plan` slash command is deprecated repo-wide; the `plan()` tool and `/show-plan` remain for non-copilot sessions.
 
 ### Extension Modules
 
-All TypeScript behavior ships as one Pi extension; its entry point is `pi/extension.ts` and its package manifest is the repo-root `package.json`. `pi/extension.ts` composes the domain modules (`core`, `ui`, `workspace`, `tasks`, `git`, `bash-reviewer`, `engineering`, `browser`, `companion`, `swarm`) in a fixed order — core first — so in-extension init is deterministic and identical on `/reload`. Each domain's TS lives in `pi/<domain>/` with a `register*` default export in its `index.ts`; cross-domain imports go through `#`-subpath aliases and are boundary-checked. The async-agent wire protocol and daemon client live in `pi/swarm/`; the Python daemon in `src/basecamp/swarm/`.
+All TypeScript behavior ships as one Pi extension; its entry point is `pi/extension.ts` and its package manifest is the repo-root `package.json`. `pi/extension.ts` composes the domain modules (`core`, `workspace`, `tasks`, `git`, `bash-reviewer`, `engineering`, `browser`, `companion`, `swarm`) in a fixed order — core first — so in-extension init is deterministic and identical on `/reload`. Each domain's TS lives in `pi/<domain>/` with a `register*` default export in its `index.ts`; cross-domain imports go through `#`-subpath aliases and are boundary-checked. Framework UI (footer/header/title/mode) is not a separate domain — it lives in `pi/core/ui/` and `registerCore` registers it, alongside core's other in-session surfaces (`escalate`, `capabilities`). The async-agent wire protocol and daemon client live in `pi/swarm/`; the Python daemon in `src/basecamp/swarm/`.
 
 ### Code Review
 

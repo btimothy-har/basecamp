@@ -14,8 +14,8 @@ The **Python companion TUI** (Textual dashboard, PydanticAI analyzer, daemon cli
 
 ## Dependencies
 
-- **core** (`#core/*`): workspace state, agent-mode, skill-tracker, session state, companion-active flag
-- **ui** (`#ui/index.ts`): `buildTitleContext` utility for analysis context
+- **core** (`#core/*`): workspace state, agent-mode, skill-tracker, session state, companion-active flag, and `buildUserContext` (`#core/session/user-context.ts`) for analysis context
+- **tasks** (`#tasks/index.ts`): `getTasksAccess` + `TaskStatus` — live task-state observation for the snapshot/analysis
 
 ## Observation pattern
 
