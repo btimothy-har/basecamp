@@ -1,5 +1,5 @@
 import * as path from "node:path";
-import type { WorkspaceWorktree } from "#core/platform/workspace.ts";
+import type { WorkspaceWorktree } from "#core/workspace/service.ts";
 import {
 	copilotWorktreeTarget,
 	currentUserId,

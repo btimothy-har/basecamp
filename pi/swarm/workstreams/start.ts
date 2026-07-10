@@ -7,7 +7,7 @@ import {
 	getWorkspaceState,
 	type RepoContext,
 	type WorkspaceState,
-} from "#core/platform/workspace.ts";
+} from "#core/workspace/service.ts";
 import type { DaemonClient, WorkstreamDetail } from "../agents/daemon/client.ts";
 import { resolveDaemonPaths } from "../agents/daemon/paths.ts";
 import { errorMessage } from "../agents/errors.ts";

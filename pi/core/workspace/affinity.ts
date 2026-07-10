@@ -1,6 +1,6 @@
 import * as path from "node:path";
-import type { WorkspaceState, WorkspaceWorktree } from "../platform/workspace.ts";
 import type { SessionStateActiveWorktree } from "../session/state/index.ts";
+import type { WorkspaceState, WorkspaceWorktree } from "./service.ts";
 
 export function buildActiveWorktreeState(
 	state: WorkspaceState,

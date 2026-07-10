@@ -5,7 +5,7 @@ import {
 	listWorkspaceWorktrees,
 	type WorkspaceState,
 	type WorkspaceWorktree,
-} from "#core/platform/workspace.ts";
+} from "#core/workspace/service.ts";
 import { runWorktreeSetup, type WorktreeSetupResult } from "#core/workspace/setup.ts";
 import { getOrCreateWorktree, type WorktreeResult } from "#core/workspace/worktree.ts";
 import type { DaemonClient } from "../agents/daemon/client.ts";

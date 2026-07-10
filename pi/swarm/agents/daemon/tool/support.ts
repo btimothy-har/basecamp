@@ -1,5 +1,5 @@
 import { Type } from "@sinclair/typebox";
-import type { WorkspaceState } from "#core/platform/workspace.ts";
+import type { WorkspaceState } from "#core/workspace/service.ts";
 import type { CancelAckFrame, ListAgentItem, MessageStatusResultFrame } from "../frames/index.ts";
 
 /** Capabilities daemon tools need from the host session (injectable for tests). */

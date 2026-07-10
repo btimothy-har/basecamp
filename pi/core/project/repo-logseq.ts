@@ -1,6 +1,6 @@
 import * as path from "node:path";
 import { readLogseqGraphDir } from "../platform/config.ts";
-import type { WorkspaceState } from "../platform/workspace.ts";
+import type { WorkspaceState } from "../workspace/service.ts";
 
 export interface BuildRepoLogseqContextOptions {
 	workspace: WorkspaceState | null;

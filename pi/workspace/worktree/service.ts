@@ -3,6 +3,10 @@ import * as path from "node:path";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { registerCwdProvider } from "#core/platform/exec.ts";
 import { processScoped } from "#core/platform/global-registry.ts";
+import { updateCurrentSessionStateIfInitialized } from "#core/session/state/index.ts";
+import { buildActiveWorktreeState } from "#core/workspace/affinity.ts";
+import { SCRATCH_ROOT } from "#core/workspace/constants.ts";
+import { resolveGitInfo } from "#core/workspace/repo.ts";
 import {
 	type RepoContext,
 	registerWorkspaceService,
@@ -11,11 +15,7 @@ import {
 	type WorkspaceService,
 	type WorkspaceState,
 	type WorkspaceWorktree,
-} from "#core/platform/workspace.ts";
-import { updateCurrentSessionStateIfInitialized } from "#core/session/state/index.ts";
-import { buildActiveWorktreeState } from "#core/workspace/affinity.ts";
-import { SCRATCH_ROOT } from "#core/workspace/constants.ts";
-import { resolveGitInfo } from "#core/workspace/repo.ts";
+} from "#core/workspace/service.ts";
 import {
 	attachWorktreeDir,
 	branchName,

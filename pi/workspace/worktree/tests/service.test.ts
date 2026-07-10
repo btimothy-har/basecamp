@@ -3,7 +3,6 @@ import * as fs from "node:fs/promises";
 import * as os from "node:os";
 import * as path from "node:path";
 import { describe, it } from "node:test";
-import { registerWorkspaceService } from "#core/platform/workspace.ts";
 import {
 	createDefaultSessionState,
 	getCurrentSessionState,
@@ -12,6 +11,7 @@ import {
 	saveSessionState,
 } from "#core/session/state/index.ts";
 import { WORKTREES_ROOT } from "#core/workspace/constants.ts";
+import { registerWorkspaceService } from "#core/workspace/service.ts";
 import { WorkspaceRuntimeService } from "../service.ts";
 import { registerWorkspaceSession } from "../session.ts";
 import {

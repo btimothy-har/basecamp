@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import type { WorkspaceState } from "#core/platform/workspace.ts";
+import type { WorkspaceState } from "#core/workspace/service.ts";
 import { applyUnsafeEditFlag } from "../unsafe-edit.ts";
 
 function baseWorkspaceState(overrides: Partial<WorkspaceState> = {}): WorkspaceState {

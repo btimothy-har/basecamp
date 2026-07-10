@@ -1,7 +1,7 @@
 /** Shared scaffolding for the workstream-startup test suites (start.test.ts, start-daemon.test.ts). */
 
 import type { ExtensionContext, SessionStartEvent } from "@earendil-works/pi-coding-agent";
-import type { WorkspaceState } from "#core/platform/workspace.ts";
+import type { WorkspaceState } from "#core/workspace/service.ts";
 import type { DaemonClient, WorkstreamDetail } from "../../agents/daemon/client.ts";
 import type { WorkstreamStartDeps } from "../start.ts";
 

@@ -8,8 +8,8 @@
  */
 
 import type { CatalogItem } from "#core/catalog/index.ts";
-import type { WorkspaceState } from "#core/platform/workspace.ts";
 import type { ContextFile } from "#core/project/context.ts";
+import type { WorkspaceState } from "#core/workspace/service.ts";
 
 /**
  * Build the worktree warning block.

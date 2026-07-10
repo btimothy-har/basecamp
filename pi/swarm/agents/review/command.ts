@@ -3,7 +3,7 @@ import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-c
 import { resolveModelAlias } from "#core/model/index.ts";
 import { resolveAliasedModel } from "#core/model/resolution.ts";
 import { exec } from "#core/platform/exec.ts";
-import { getWorkspaceState, type WorkspaceState } from "#core/platform/workspace.ts";
+import { getWorkspaceState, type WorkspaceState } from "#core/workspace/service.ts";
 import { createDaemonClient } from "../daemon/client.ts";
 import { dispatchWithHandleRetry } from "../daemon/dispatch-retry.ts";
 import { buildAgentHandle } from "../daemon/handles.ts";

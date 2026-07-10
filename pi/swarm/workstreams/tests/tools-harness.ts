@@ -1,6 +1,6 @@
 import { afterEach, beforeEach } from "node:test";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
-import type { WorkspaceState, WorkspaceWorktree } from "#core/platform/workspace.ts";
+import type { WorkspaceState, WorkspaceWorktree } from "#core/workspace/service.ts";
 import type { WorktreeResult } from "#core/workspace/worktree.ts";
 import type { DaemonClient, WorkstreamDetail, WorkstreamSummary } from "../../agents/daemon/client.ts";
 import type { HerdrWorkstreamOpenResult } from "../herdr.ts";

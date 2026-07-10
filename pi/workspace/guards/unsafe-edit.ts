@@ -1,4 +1,4 @@
-import type { UnsafeEditConstraints, UnsafeEditFlagResult, WorkspaceState } from "#core/platform/workspace.ts";
+import type { UnsafeEditConstraints, UnsafeEditFlagResult, WorkspaceState } from "#core/workspace/service.ts";
 
 export function applyUnsafeEditFlag(
 	state: WorkspaceState,

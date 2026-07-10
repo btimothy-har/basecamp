@@ -4,13 +4,13 @@
  */
 
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
+import { shortSessionId } from "#core/session/session-id.ts";
 import {
 	getWorkspaceState,
 	listWorkspaceWorktrees,
 	requireWorkspaceState,
 	type WorkspaceWorktree,
-} from "#core/platform/workspace.ts";
-import { shortSessionId } from "#core/session/session-id.ts";
+} from "#core/workspace/service.ts";
 import type { TaskStatus } from "../../lifecycle/index.ts";
 import { collectApprovedNotes } from "../draft/index.ts";
 import type { PlanDraft } from "../review/index.ts";

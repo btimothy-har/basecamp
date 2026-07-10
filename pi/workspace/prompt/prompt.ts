@@ -6,10 +6,10 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { isCopilotMode, PLAN_TOOL_NAME } from "#core/agent-mode/copilot.ts";
 import { getAgentMode } from "#core/agent-mode/index.ts";
 import { type CatalogItem, listCatalogItemsByType } from "#core/catalog/index.ts";
-import { getWorkspaceService, getWorkspaceState, type WorkspaceState } from "#core/platform/workspace.ts";
 import { type ContextFile, discoverContextFiles } from "#core/project/context.ts";
 import { getProjectState, type ProjectState } from "#core/project/project.ts";
 import { buildRepoLogseqContext } from "#core/project/repo-logseq.ts";
+import { getWorkspaceService, getWorkspaceState, type WorkspaceState } from "#core/workspace/service.ts";
 import {
 	buildCapabilitiesIndex,
 	buildProjectContext,
