@@ -9,7 +9,7 @@ import { type CatalogItem, listCatalogItemsByType } from "#core/catalog/index.ts
 import { type ContextFile, discoverContextFiles } from "#core/project/context.ts";
 import { getProjectState, type ProjectState } from "#core/project/project.ts";
 import { buildRepoLogseqContext } from "#core/project/repo-logseq.ts";
-import { getWorkspaceService, getWorkspaceState, type WorkspaceState } from "#core/workspace/service.ts";
+import { getWorkspaceEffectiveCwd, getWorkspaceState, type WorkspaceState } from "#core/workspace/service.ts";
 import {
 	buildCapabilitiesIndex,
 	buildProjectContext,
@@ -53,16 +53,6 @@ function loadWorkingStyle(name: string): string {
 	} catch {
 		return "";
 	}
-}
-
-function getPromptEffectiveCwd(workspace: WorkspaceState | null = getWorkspaceState()): string {
-	const service = getWorkspaceService();
-	if (service && workspace) {
-		try {
-			return service.getEffectiveCwd();
-		} catch {}
-	}
-	return workspace?.effectiveCwd ?? process.cwd();
 }
 
 function formatToday(): string {
@@ -199,7 +189,7 @@ export function registerPrompt(pi: ExtensionAPI): void {
 
 		const workspace = getWorkspaceState();
 		const project = getProjectState();
-		const effectiveCwd = getPromptEffectiveCwd(workspace);
+		const effectiveCwd = getWorkspaceEffectiveCwd();
 		const catalogContext = { cwd: effectiveCwd };
 		const toolItems = listCatalogItemsByType("tools", catalogContext);
 		const skillItems = listCatalogItemsByType("skills", catalogContext);

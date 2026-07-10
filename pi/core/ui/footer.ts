@@ -17,7 +17,7 @@ import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-a
 import { truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 import { type AgentMode, getAgentMode, onAgentModeChange } from "../agent-mode/index.ts";
 import { getInvokedSkills } from "../skills/tracker.ts";
-import { getWorkspaceService, getWorkspaceState, type WorkspaceState } from "../workspace/service.ts";
+import { getWorkspaceEffectiveCwd, getWorkspaceState, type WorkspaceState } from "../workspace/service.ts";
 import { getModeLabel } from "./mode.ts";
 
 type ThemeFg = (color: Parameters<import("@earendil-works/pi-coding-agent").Theme["fg"]>[0], text: string) => string;
@@ -113,18 +113,6 @@ function disposeBranchWatcher(): void {
 	branchHeadWatcher = null;
 	branchWatcherTarget = null;
 	branchCache = null;
-}
-
-function getFooterEffectiveCwd(workspace: WorkspaceState | null): string {
-	const service = getWorkspaceService();
-	if (service && workspace) {
-		try {
-			return service.getEffectiveCwd();
-		} catch {
-			// Fall through to workspace/process fallback
-		}
-	}
-	return workspace?.effectiveCwd ?? process.cwd();
 }
 
 function shortenPath(p: string): string {
@@ -233,7 +221,7 @@ export function registerFooter(pi: ExtensionAPI): void {
 				render(width: number): string[] {
 					const fg = theme.fg.bind(theme);
 					const workspace = getWorkspaceState();
-					const effectiveCwd = getFooterEffectiveCwd(workspace);
+					const effectiveCwd = getWorkspaceEffectiveCwd();
 
 					// ── Line 1: cwd | worktree | branch ... model ──
 					// Keep mode/worktree/branch visible; truncate cwd/model first.

@@ -1,10 +1,9 @@
 /**
- * Process-scoped workspace provider registry.
- *
- * Workspace state is shared through globalThis so `/reload` preserves the
- * current service and registered providers instead of resetting module-local
- * variables.
+ * Workspace state — the shared types, the state accessors (thin reads over the
+ * core workspace runtime in ./runtime.ts), and the allowed-roots registry.
  */
+
+import { getWorkspaceRuntime, requireWorkspaceRuntime } from "./runtime.ts";
 
 export interface RepoContext {
 	isRepo: boolean;
@@ -57,82 +56,54 @@ export interface WorkspaceInitializeResult {
 	unsafeEditResult: UnsafeEditFlagResult;
 }
 
-export interface WorkspaceService {
-	initialize(opts: WorkspaceInitializeOptions): Promise<WorkspaceInitializeResult>;
-	current(): WorkspaceState | null;
-	require(): WorkspaceState;
-	getEffectiveCwd(): string;
-	listWorktrees(): Promise<WorkspaceWorktree[]>;
-	activateWorktree(label: string, branchName?: string | null): Promise<WorkspaceWorktree>;
-	attachWorktreePath(path: string): Promise<WorkspaceWorktree>;
-	onChange?(listener: (state: WorkspaceState | null) => void): () => void;
-}
+// --- Allowed-roots registry: a genuine multi-registrant seam (`project`
+// registers "projects", the workspace session registers "logseq"). ---
 
 export interface WorkspaceAllowedRootsProvider {
 	id: string;
 	roots(): string[];
 }
 
-interface WorkspaceRuntime {
-	service: WorkspaceService | null;
-	allowedRootProviders: Map<string, WorkspaceAllowedRootsProvider>;
-}
-
-// Wiring, not surviving state: the workspace module re-registers its service
-// and providers on every load. (The service instance itself survives /reload
-// via the workspace module's own process-scoped runtime.)
-const workspaceRuntime: WorkspaceRuntime = { service: null, allowedRootProviders: new Map() };
-
-function getWorkspaceRuntime(): WorkspaceRuntime {
-	return workspaceRuntime;
-}
-
-export function registerWorkspaceService(service: WorkspaceService): void {
-	getWorkspaceRuntime().service = service;
-}
-
-export function getWorkspaceService(): WorkspaceService | null {
-	return getWorkspaceRuntime().service;
-}
+const allowedRootProviders = new Map<string, WorkspaceAllowedRootsProvider>();
 
 export function registerWorkspaceAllowedRootsProvider(provider: WorkspaceAllowedRootsProvider): void {
-	getWorkspaceRuntime().allowedRootProviders.set(provider.id, provider);
+	allowedRootProviders.set(provider.id, provider);
 }
 
 export function listWorkspaceAllowedRoots(): string[] {
-	return Array.from(getWorkspaceRuntime().allowedRootProviders.values()).flatMap((provider) => provider.roots());
+	return Array.from(allowedRootProviders.values()).flatMap((provider) => provider.roots());
 }
 
-export function requireWorkspaceService(): WorkspaceService {
-	const service = getWorkspaceService();
-	if (!service) throw new Error("Workspace service is not initialized");
-	return service;
-}
+// --- State accessors — thin reads over the core workspace runtime. ---
 
 export function getWorkspaceState(): WorkspaceState | null {
-	return getWorkspaceService()?.current() ?? null;
+	return getWorkspaceRuntime()?.current() ?? null;
 }
 
 export function requireWorkspaceState(): WorkspaceState {
-	return requireWorkspaceService().require();
+	return requireWorkspaceRuntime().require();
 }
 
 export function getWorkspaceEffectiveCwd(): string {
-	return requireWorkspaceService().getEffectiveCwd();
+	return getWorkspaceRuntime()?.getEffectiveCwd() ?? process.cwd();
+}
+
+export function onWorkspaceChange(listener: (state: WorkspaceState | null) => void): (() => void) | null {
+	return getWorkspaceRuntime()?.onChange(listener) ?? null;
 }
 
 export function listWorkspaceWorktrees(): Promise<WorkspaceWorktree[]> {
-	return requireWorkspaceService().listWorktrees();
+	return requireWorkspaceRuntime().listWorktrees();
 }
 
 export function activateWorkspaceWorktree(label: string, branchName?: string | null): Promise<WorkspaceWorktree> {
-	return requireWorkspaceService().activateWorktree(label, branchName);
+	return requireWorkspaceRuntime().activateWorktree(label, branchName);
 }
 
 export function attachWorkspaceWorktreePath(path: string): Promise<WorkspaceWorktree> {
-	return requireWorkspaceService().attachWorktreePath(path);
+	return requireWorkspaceRuntime().attachWorktreePath(path);
 }
 
 export function initializeWorkspace(opts: WorkspaceInitializeOptions): Promise<WorkspaceInitializeResult> {
-	return requireWorkspaceService().initialize(opts);
+	return requireWorkspaceRuntime().initialize(opts);
 }

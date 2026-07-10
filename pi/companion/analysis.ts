@@ -3,7 +3,7 @@ import type { ExtensionAPI, SessionEntry } from "@earendil-works/pi-coding-agent
 import { processScoped } from "#core/global-registry.ts";
 import { isCompanionActive } from "#core/host/env.ts";
 import { buildUserContext } from "#core/session/user-context.ts";
-import { getWorkspaceService } from "#core/workspace/service.ts";
+import { getWorkspaceEffectiveCwd } from "#core/workspace/service.ts";
 import { getTasksReader } from "#tasks/index.ts";
 
 export const MIN_USER_TURNS = 2;
@@ -154,7 +154,7 @@ export default function registerCompanionAnalysis(pi: ExtensionAPI): void {
 				branch: ctx.sessionManager.getBranch(),
 				sessionId: ctx.sessionManager.getSessionId(),
 				tasksState: getTasksReader()?.getState() ?? null,
-				cwd: getWorkspaceService()?.getEffectiveCwd?.() ?? process.cwd(),
+				cwd: getWorkspaceEffectiveCwd(),
 				spawnFn: spawn,
 			});
 		} catch {

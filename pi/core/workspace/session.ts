@@ -10,11 +10,11 @@ import { readLogseqGraphDir } from "../host/config.ts";
 import { getCurrentSessionState } from "../session/state/index.ts";
 import { workspaceMatchesActiveWorktreeState } from "./affinity.ts";
 import { migrateLegacyWorktrees } from "./migrate.ts";
+import { requireWorkspaceRuntime } from "./runtime.ts";
 import {
 	attachWorkspaceWorktreePath,
 	initializeWorkspace,
 	registerWorkspaceAllowedRootsProvider,
-	requireWorkspaceService,
 	requireWorkspaceState,
 	type UnsafeEditFlagResult,
 	type WorkspaceWorktree,
@@ -125,7 +125,7 @@ export function registerLogseqAllowedRootProvider(homeDir?: string): void {
 }
 
 export function registerWorkspaceSession(pi: ExtensionAPI): void {
-	requireWorkspaceService();
+	requireWorkspaceRuntime();
 	registerLogseqAllowedRootProvider();
 
 	pi.registerFlag("worktree-dir", {

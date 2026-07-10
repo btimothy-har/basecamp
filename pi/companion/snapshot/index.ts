@@ -3,7 +3,7 @@ import { getAgentMode, onAgentModeChange } from "#core/agent-mode/index.ts";
 import { processScoped } from "#core/global-registry.ts";
 import { getCurrentSessionState, onCurrentSessionTitleChange } from "#core/session/state/index.ts";
 import { getInvokedSkills } from "#core/skills/tracker.ts";
-import { getWorkspaceService, getWorkspaceState } from "#core/workspace/service.ts";
+import { getWorkspaceEffectiveCwd, getWorkspaceState, onWorkspaceChange } from "#core/workspace/service.ts";
 import { getTasksReader } from "#tasks/index.ts";
 import { reportHerdrMetadata } from "../herdr/metadata.ts";
 import {
@@ -89,7 +89,7 @@ function writeNow(pi: ExtensionAPI): void {
 			repoName: getWorkspaceState()?.repo?.name ?? null,
 			model: ctx.model?.id ?? null,
 			skillsUsed: [...getInvokedSkills()],
-			effectiveCwd: getWorkspaceService()?.getEffectiveCwd?.() ?? process.cwd(),
+			effectiveCwd: getWorkspaceEffectiveCwd(),
 		});
 		writeSnapshotFile(companionSnapshotPath(sessionId), snapshot);
 		writeSnapshotFile(companionLiveSnapshotPath(), snapshot);
@@ -109,7 +109,7 @@ export default function registerCompanion(pi: ExtensionAPI): void {
 		clearSubscriptions(state);
 		state.ctx = sessionCtx;
 		writeNow(pi);
-		state.unsubscribeWorkspace = getWorkspaceService()?.onChange?.(() => writeNow(pi)) ?? null;
+		state.unsubscribeWorkspace = onWorkspaceChange(() => writeNow(pi));
 		state.unsubscribeAgentMode = onAgentModeChange(() => writeNow(pi));
 		state.unsubscribeTitle = onCurrentSessionTitleChange(() => writeNow(pi));
 	});

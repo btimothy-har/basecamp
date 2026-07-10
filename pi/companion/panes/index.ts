@@ -1,6 +1,6 @@
 import type { ExtensionAPI, ExtensionContext, SessionShutdownEvent } from "@earendil-works/pi-coding-agent";
 import { exec } from "#core/host/exec.ts";
-import { getWorkspaceService, getWorkspaceState } from "#core/workspace/service.ts";
+import { getWorkspaceEffectiveCwd, getWorkspaceState } from "#core/workspace/service.ts";
 import { createHerdrPaneCloser, createHerdrPaneProvider } from "../herdr/provider.ts";
 import { companionLiveSnapshotPath } from "../snapshot/model.ts";
 import { createTmuxPaneCloser, createTmuxPaneProvider } from "../tmux/provider.ts";
@@ -53,7 +53,7 @@ function resolveStoredPaneProvider(providerName: string | null): PaneProvider | 
 }
 
 function resolveCwd(): string {
-	return getWorkspaceService()?.getEffectiveCwd?.() ?? process.cwd();
+	return getWorkspaceEffectiveCwd();
 }
 
 function resolveScratchDir(): string | undefined {

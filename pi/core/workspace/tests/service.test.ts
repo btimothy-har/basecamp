@@ -11,8 +11,7 @@ import {
 	saveSessionState,
 } from "../../session/state/index.ts";
 import { WORKTREES_ROOT } from "../constants.ts";
-import { WorkspaceRuntimeService } from "../runtime.ts";
-import { registerWorkspaceService } from "../service.ts";
+import { registerWorkspaceRuntime, resetWorkspaceRuntimeForTesting } from "../runtime.ts";
 import { registerWorkspaceSession } from "../session.ts";
 import {
 	argsEqual,
@@ -109,8 +108,8 @@ describe("WorkspaceRuntimeService effective cwd", () => {
 			branch: BRANCH,
 			linkedWorktree: true,
 		});
-		const service = new WorkspaceRuntimeService(pi);
-		registerWorkspaceService(service);
+		resetWorkspaceRuntimeForTesting();
+		const service = registerWorkspaceRuntime(pi);
 		registerWorkspaceSession(pi);
 
 		await sessionStart({ type: "session_start", reason: "resume" }, ctx);
@@ -166,8 +165,8 @@ describe("WorkspaceRuntimeService effective cwd", () => {
 		initializeCurrentSessionState(ctx, stateDir);
 
 		const { pi, sessionStart } = createSessionPi({ worktreeDir, branch });
-		const service = new WorkspaceRuntimeService(pi);
-		registerWorkspaceService(service);
+		resetWorkspaceRuntimeForTesting();
+		const service = registerWorkspaceRuntime(pi);
 		registerWorkspaceSession(pi);
 
 		await sessionStart({ type: "session_start", reason: "resume" }, ctx);

@@ -7,14 +7,12 @@ import { updateCurrentSessionStateIfInitialized } from "../session/state/index.t
 import { buildActiveWorktreeState } from "./affinity.ts";
 import { SCRATCH_ROOT } from "./constants.ts";
 import { resolveGitInfo } from "./repo.ts";
-import {
-	type RepoContext,
-	registerWorkspaceService,
-	type WorkspaceInitializeOptions,
-	type WorkspaceInitializeResult,
-	type WorkspaceService,
-	type WorkspaceState,
-	type WorkspaceWorktree,
+import type {
+	RepoContext,
+	WorkspaceInitializeOptions,
+	WorkspaceInitializeResult,
+	WorkspaceState,
+	WorkspaceWorktree,
 } from "./service.ts";
 import { applyUnsafeEditFlag } from "./unsafe-edit.ts";
 import {
@@ -75,7 +73,7 @@ function setWorkspaceEnv(state: WorkspaceState): void {
 	process.env.BASECAMP_WORKTREE_LABEL = state.activeWorktree?.label ?? "";
 }
 
-export class WorkspaceRuntimeService implements WorkspaceService {
+export class WorkspaceRuntimeService {
 	private pi: ExtensionAPI;
 	private state: WorkspaceState | null = null;
 	private readonly listeners = new Set<(state: WorkspaceState | null) => void>();
@@ -217,13 +215,21 @@ export function registerWorkspaceRuntime(pi: ExtensionAPI): WorkspaceRuntimeServ
 		runtime.service = new WorkspaceRuntimeService(pi);
 	}
 
-	registerWorkspaceService(runtime.service);
 	registerCwdProvider(() => runtime.service?.getEffectiveCwd() ?? process.cwd());
 	return runtime.service;
+}
+
+export function getWorkspaceRuntime(): WorkspaceRuntimeService | null {
+	return getWorkspaceRuntimeGlobal().service;
 }
 
 export function requireWorkspaceRuntime(): WorkspaceRuntimeService {
 	const service = getWorkspaceRuntimeGlobal().service;
 	if (!service) throw new Error("Workspace runtime is not initialized");
 	return service;
+}
+
+/** Test-only: drop the process-scoped runtime so the next register creates a fresh service. */
+export function resetWorkspaceRuntimeForTesting(): void {
+	getWorkspaceRuntimeGlobal().service = null;
 }

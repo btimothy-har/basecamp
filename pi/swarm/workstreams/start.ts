@@ -3,8 +3,8 @@ import { isCopilotLaunch } from "#core/agent-mode/copilot.ts";
 import { setAgentMode } from "#core/agent-mode/index.ts";
 import { registerAgentRoleProvider } from "#core/agent-role.ts";
 import {
-	getWorkspaceService,
 	getWorkspaceState,
+	onWorkspaceChange,
 	type RepoContext,
 	type WorkspaceState,
 } from "#core/workspace/service.ts";
@@ -32,10 +32,6 @@ function waitForWorkspaceState(timeoutMs = WORKSPACE_START_WAIT_MS): Promise<Wor
 	const current = getWorkspaceState();
 	if (current) return Promise.resolve(current);
 
-	const service = getWorkspaceService();
-	const onChange = service?.onChange?.bind(service);
-	if (!onChange) return Promise.resolve(null);
-
 	return new Promise((resolve) => {
 		let unsubscribe: (() => void) | null = null;
 		let timer: ReturnType<typeof setTimeout> | null = null;
@@ -44,10 +40,11 @@ function waitForWorkspaceState(timeoutMs = WORKSPACE_START_WAIT_MS): Promise<Wor
 			if (timer) clearTimeout(timer);
 			resolve(state);
 		};
-		timer = setTimeout(() => finish(getWorkspaceState()), timeoutMs);
-		unsubscribe = onChange((state) => {
+		unsubscribe = onWorkspaceChange((state) => {
 			if (state) finish(state);
 		});
+		if (!unsubscribe) return finish(null);
+		timer = setTimeout(() => finish(getWorkspaceState()), timeoutMs);
 	});
 }
 
