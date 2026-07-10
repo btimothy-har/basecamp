@@ -3,8 +3,8 @@
  */
 
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { listWorktrees, type WorktreeSummary } from "#core/workspace/worktree.ts";
-import { requireWorkspaceRuntime } from "./service.ts";
+import { requireWorkspaceRuntime } from "./runtime.ts";
+import { listWorktrees, type WorktreeSummary } from "./worktree.ts";
 
 function formatWorktreeChoice(wt: WorktreeSummary, activeLabel: string | null): string {
 	const marker = wt.label === activeLabel ? " (active)" : "";

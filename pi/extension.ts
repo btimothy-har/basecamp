@@ -18,11 +18,9 @@ import registerGit from "#git/index.ts";
 import registerSwarm from "#swarm/index.ts";
 import registerSystemPrompt from "#system-prompt/index.ts";
 import registerTasks from "#tasks/index.ts";
-import registerWorkspace from "#workspace/index.ts";
 
 const MODULES: ReadonlyArray<readonly [string, (pi: ExtensionAPI) => void]> = [
 	["core", registerCore],
-	["workspace", registerWorkspace],
 	["system-prompt", registerSystemPrompt],
 	["tasks", registerTasks],
 	["git", registerGit],

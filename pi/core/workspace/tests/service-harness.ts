@@ -1,7 +1,7 @@
 import * as path from "node:path";
 import type { ExtensionAPI, ExtensionContext, SessionStartEvent } from "@earendil-works/pi-coding-agent";
-import { SCRATCH_ROOT, WORKTREES_ROOT } from "#core/workspace/constants.ts";
-import { WorkspaceRuntimeService } from "../service.ts";
+import { SCRATCH_ROOT, WORKTREES_ROOT } from "../constants.ts";
+import { WorkspaceRuntimeService } from "../runtime.ts";
 
 export const REPO_ROOT = "/repo";
 // Unique per test-file process. Each *.test.ts runs in its own child process, and

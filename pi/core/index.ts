@@ -5,11 +5,13 @@ import { registerEscalate } from "./escalate/tool.ts";
 import { isSubagent, setBasecampEnv } from "./host/env.ts";
 import { registerCwdProvider } from "./host/exec.ts";
 import registerModelAliases from "./model/index.ts";
+import registerProject from "./project/index.ts";
 import { registerCompactionModel } from "./session/runtime/compaction.ts";
 import { registerSession } from "./session/runtime/session.ts";
 import { registerState } from "./session/state/index.ts";
 import registerSkills from "./skills/index.ts";
 import registerUi from "./ui/index.ts";
+import { registerWorkspace } from "./workspace/index.ts";
 import { resolveGitInfo } from "./workspace/repo.ts";
 
 export default function (pi: ExtensionAPI): void {
@@ -29,6 +31,11 @@ export default function (pi: ExtensionAPI): void {
 		const gitInfo = await resolveGitInfo(pi, process.cwd());
 		setBasecampEnv("BASECAMP_REPO", gitInfo.repoName);
 	});
+
+	// Workspace runtime + project resolution — project's session_start reads workspace
+	// state, so it registers right after workspace (both core-owned, ordered here).
+	registerWorkspace(pi);
+	registerProject(pi);
 
 	// Primary-only interactions
 	if (!isSubagent()) {
