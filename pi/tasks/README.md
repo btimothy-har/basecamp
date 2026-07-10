@@ -22,10 +22,19 @@ Cleanup is manual by design:
 
 Do not add cleanup automation casually. Worktree deletion, branch deletion, and workstream-record mutation are destructive enough to need separate design.
 
+## Structure
+
+One feature, organized by function (not sub-features):
+
+- **`schemas/`** — the shared data models (`task.ts`, `plan.ts`); the import-nothing leaf.
+- **`lifecycle/`** — the durable goal/task state machine: runtime, goal-cycle ops, persistence, widget, and the read-only `TasksReader` (`reader.ts`).
+- **`workflows/`** — the stateless `plan()` procedures: `draft.ts`, `review/`, `handoff/` (incl. `runHandoff`).
+- **`tools/`** — the thin agent-facing surface: `task-tools.ts`, `plan-tool.ts`, `commands.ts`, `guards.ts`, `render.ts`. Wired by the composition root; depends downward on the layers below.
+
 ## Dependencies
 
-- **core** (`#core/*`): agent-mode, session state, workspace state + worktree operations, skill-tracker, catalog, model-aliases
+- **core** (`#core/*`): agent-mode (+ copilot, agent-role), session state, workspace service + worktree setup, skill-tracker, host paths/config
 
 ## Type contracts
 
-`TasksAccess`, `TaskStatus`, `Task`, `ReviewState`, `GoalCycle` are owned by this context (`pi/tasks/lifecycle/access.ts`) and exported through `#tasks/index.ts`. The tasks module implements `TasksAccess` and registers it at load; companion observes via `getTasksAccess()` (returns null until tasks registers it).
+`TaskStatus`, `Task`, `ReviewState`, `TasksState`, `GoalCycle`, and the plan models (`PlanDraft`, `ImplementationMode`, …) live in `pi/tasks/schemas/` and are exported through `#tasks/index.ts`. For cross-domain observation, `lifecycle/` publishes a read-only `TasksReader` (`getState()` only — no mutators) via `registerTasksReader`; companion reads it through `getTasksReader()` (returns null until tasks registers it). Read-only by construction: the reader cannot mutate task state.

@@ -28,7 +28,7 @@ pi/                            # ① the Pi extension (TypeScript)
 ├── swarm/                      # agents/ (tools, catalog, launch, daemon client, review), workstreams/,
 │                               #   protocol/ (TS↔Python contract), skills/
 ├── companion/                  # session hooks: analysis, snapshot/, panes/, herdr/ + tmux/ adapters
-├── tasks/                      # lifecycle/ + planning/ (draft/handoff/review/guards); skills/
+├── tasks/                      # layered: schemas/ · lifecycle/ (state) · workflows/ (draft·review·handoff) · tools/ (task-tools·plan·guards·commands); skills/
 ├── git/                        # /create-pr prompt workflow
 ├── bash-reviewer/              # LLM bash reviewer: index (guard), review, triage/, llm adapter
 ├── engineering/                # bigquery/ (bq_query tool + bq-CLI adapter, one module), skills/ + prompts/

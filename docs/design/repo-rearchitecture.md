@@ -263,7 +263,7 @@ pi/ui/
 - `buildTitleContext` was a shared conversation compactor (title-gen *and* companion analysis), not a title concern — it moves to `core/session/` as `buildUserContext`, killing the companion→ui edge.
 - Everything is a flat single-file feature; only the 2-file `llm/` adapter keeps a folder. **A folder that drops to one file collapses** — this also corrects the mapper's `bash-reviewer/llm/` and `browser/chrome/` (each one file → `bash-reviewer/llm.ts`, `browser/chrome.ts`).
 
-### 6.6 tasks — TS · no adapters  ✅ LOCKED
+### 6.6 tasks — TS · no adapters  ✅ LOCKED  *(superseded 2026-07-10: re-layered into schemas/·lifecycle/·workflows/·tools/ — see §9)*
 
 ```
 pi/tasks/
@@ -423,3 +423,14 @@ Every directory now names a concept; `#core/*` deep paths retarget accordingly (
 ### engineering flattened to one `bigquery/` module (2026-07-10, same branch) — a boundary the code didn't honor
 
 §6.7 split engineering's one tool into `bq-query/` (feature) and `bigquery/` (bq-CLI adapter). The adapter/feature convention earns its keep when *several* features share an adapter (`herdr/`, `tmux/`) — engineering has exactly one feature, so nothing was being kept from scattering. Worse, the "layer" wasn't one: the two directories imported *each other*. `bigquery/cli.ts` and `job-summary.ts` reached back *up* into `bq-query/params.ts` for their own I/O types (`BqCaptureResult`, `BqFileResult`, `BQ_TIMEOUT_MS`, `MAX_ERROR_CHARS`, the summary shapes), while `bq-query/` pulled the run/summarize fns down — a bidirectional edge, so the directory boundary announced a layering the code never respected, under two near-homonym names. Merged all eight files into one `bigquery/` module (named for the system — leaves room for a future `postgres/` sibling); the cross-directory imports collapse to same-directory `./`. Purely internal to `pi/engineering/` — no manifest, test, or boundary-config change. This supersedes §6.7's "doesn't flatten" and its separate-`bigquery/`-adapter framing.
+
+### tasks re-layered by function (2026-07-10, same branch) — layers, not sibling features
+
+§6.6 split tasks into `lifecycle/` + `planning/` as if they were two features, but `planning/` only ever depended *downward* on `lifecycle/` (one-way `activateGoalCycle`) — they were layers wearing a sibling costume. tasks is *one* feature (managed work: propose it, track it), so within it the honest cut is by function, per the rule **feature is top-level organization; within a feature, organize by function.** Re-cut into four layers, one green commit each:
+
+1. **`schemas/`** — the shared data models (task family + plan family), the import-nothing leaf. Membership rule: a type lands here only when more than one layer (or an outside domain) needs it; single-layer working types (handoff mechanics, review-view helpers) stay next to their use.
+2. **`lifecycle/`** — the durable state machine only (runtime, `goal-cycle.ts` ops, `store.ts`, `widget.ts`, session handlers). The 5-method `TasksAccess` port — which served exactly one external call (companion's `getState`), with two dead methods (`setNotes`, `getContext`) — collapses to a read-only `TasksReader` (`reader.ts`); read-only is now a compile guarantee, not a hope. Intra-domain mutations become direct `goal-cycle.ts` calls, deduping the archive+start logic `update_goal` and `plan()` each copied.
+3. **`workflows/`** — the stateless plan procedures: `draft.ts` (merged from draft-logic + draft/index), `review/`, `handoff/`.
+4. **`tools/`** — the thin agent-facing surface (task-tools, plan-tool, commands, guards, render). Renders dissolve into the layer they render — no `ui/` bucket. `plan()` sheds its ~85-line worktree choreography into `workflows/handoff`'s `runHandoff()` (a discriminated outcome the tool maps to its result), dropping 327→252 lines and every `#core/workspace` import; the `agent-role` seam moves with the reuse logic into handoff.
+
+The composition root wires the task tools + guards, so the `tools → lifecycle` dependency points downward (lifecycle registers neither). Both former near-cap files (plan 327, task-tools 322) come down. Purely internal to `pi/tasks/` plus a 3-line `companion` ripple (`getTasksAccess` → `getTasksReader`); no manifest or boundary-config change. This supersedes §6.6's `lifecycle/`+`planning/` layout and the `TasksAccess` framing.
