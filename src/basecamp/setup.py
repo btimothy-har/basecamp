@@ -3,10 +3,10 @@
 import shutil
 from pathlib import Path
 
+from basecamp.core.directories import to_home_relative
 from basecamp.core.paths import USER_CONTEXT_DIR, USER_PROMPTS_DIR, USER_STYLES_DIR
+from basecamp.core.projects import DEFAULT_PROJECTS_PATH, ProjectConfig, load_projects, save_projects
 from basecamp.core.settings import settings
-from basecamp.workspace import DEFAULT_PROJECTS_PATH, ProjectConfig, load_projects, save_projects
-from basecamp.workspace.directories import to_home_relative
 from basecamp.workspace.ui import console
 
 

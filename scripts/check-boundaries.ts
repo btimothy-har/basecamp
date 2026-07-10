@@ -5,7 +5,7 @@
  *   1. A context may import #core/* freely.
  *   2. A context may import another context only via its public entry
  *      (#<context>/index.ts). Same-context imports must be relative.
- *   3. Relative imports may not escape the context's ts/ directory.
+ *   3. Relative imports may not escape the context's pi/<context> directory.
  *   4. core imports no other context.
  *   5. Legacy package specifiers (pi-core/…, pi-ui/…, pi-tasks/…) are gone.
  *
@@ -19,10 +19,8 @@ const REPO_ROOT = path.resolve(import.meta.dirname, "..");
 
 const CONTEXTS = [
 	"core",
-	"ui",
-	"workspace",
+	"system-prompt",
 	"tasks",
-	"git",
 	"bash-reviewer",
 	"engineering",
 	"browser",
@@ -65,12 +63,12 @@ function specifiersOf(source: string): string[] {
 const violations: string[] = [];
 
 for (const context of CONTEXTS) {
-	const tsRoot = path.join(REPO_ROOT, context, "ts");
+	const tsRoot = path.join(REPO_ROOT, "pi", context);
 	let files: string[];
 	try {
 		files = walk(tsRoot);
 	} catch {
-		violations.push(`${context}: missing ts/ directory at ${tsRoot}`);
+		violations.push(`${context}: missing pi/${context} directory at ${tsRoot}`);
 		continue;
 	}
 

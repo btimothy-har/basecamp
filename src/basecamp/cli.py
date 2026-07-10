@@ -7,31 +7,32 @@ import sys
 from pathlib import Path
 
 import rich_click as click
+
 from basecamp.companion.analysis import (
     companion_analysis_path,
+    generate_analysis,
     load_analysis,
+    resolve_companion_model,
     write_analysis,
 )
-from basecamp.companion.analyzer import generate_analysis, resolve_companion_model
 from basecamp.companion.app import run_companion
-from basecamp.core.exceptions import LauncherError
-from basecamp.swarm.server import run_daemon as run_swarm_daemon
-from basecamp.workspace import EnvironmentConfig, remove_environment, set_environment
-from basecamp.workspace.cli.config import run_project_menu
-from basecamp.workspace.cli.environment import (
-    execute_environment_list,
-    run_environments_menu,
-)
-from basecamp.workspace.cli.project import (
+from basecamp.core.cli.config import run_project_menu
+from basecamp.core.cli.project import (
     execute_project_add,
     execute_project_edit,
     execute_project_list,
     execute_project_remove,
 )
-from basecamp.workspace.ui import console, err_console
-
+from basecamp.core.exceptions import LauncherError
 from basecamp.installer import run_interactive_install
 from basecamp.setup import execute_setup
+from basecamp.swarm.server import run_daemon as run_swarm_daemon
+from basecamp.workspace import EnvironmentConfig, remove_environment, set_environment
+from basecamp.workspace.cli.environment import (
+    execute_environment_list,
+    run_environments_menu,
+)
+from basecamp.workspace.ui import console, err_console
 
 click.rich_click.USE_RICH_MARKUP = True
 click.rich_click.SHOW_ARGUMENTS = True

@@ -16,9 +16,10 @@ from pathlib import Path
 from typing import Final
 
 import questionary
-from basecamp.core.settings import settings
 from rich.console import Console
 from rich.panel import Panel
+
+from basecamp.core.settings import settings
 
 console = Console()
 

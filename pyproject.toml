@@ -22,20 +22,11 @@ basecamp = "basecamp.cli:main"
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
-# `basecamp` is a PEP 420 namespace package assembled from per-context portions
-# (docs/design/repo-consolidation.md §6). No portion may contain a
-# basecamp/__init__.py — that silently shadows every sibling portion.
+# `basecamp` is one ordinary src-layout package (docs/design/repo-rearchitecture.md);
+# the per-context py/ portion roots were centralized under src/basecamp/.
 [tool.hatch.build.targets.wheel]
-packages = [
-  "src/basecamp",
-  "core/py/basecamp",
-  "workspace/py/basecamp",
-  "swarm/py/basecamp",
-  "companion/py/basecamp",
-]
-# REQUIRED for editable installs: hatchling's default editable strategy maps by
-# package name, so same-named namespace portions collapse to the last root.
-dev-mode-dirs = ["src", "core/py", "workspace/py", "swarm/py", "companion/py"]
+packages = ["src/basecamp"]
+dev-mode-dirs = ["src"]
 
 [dependency-groups]
 dev = [
@@ -47,7 +38,7 @@ dev = [
 ]
 
 [tool.pytest.ini_options]
-testpaths = ["tests", "core/py/tests", "workspace/py/tests", "swarm/py/tests", "companion/py/tests"]
+testpaths = ["tests"]
 env = ["TESTING=1"]
 
 [tool.ruff]
