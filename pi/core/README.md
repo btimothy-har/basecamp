@@ -4,12 +4,14 @@ The always-present foundation domain for basecamp. `pi/core` is the first module
 
 ## What it does
 
-- **Platform registries**: exec/cwd provider, capability catalog, model-alias resolve hooks, workspace service seam, product-role and agent-identity providers
-- **Environment contract** (`platform/env.ts`): typed `BASECAMP_*` env var getters/setters, companion-active flag, workspace state hooks for the workspace module's override
+- **Host primitives** (`host/`): the boundary to the runtime we're hosted in — process exec + cwd provider (`host/exec.ts`), config-file IO (`host/config.ts`), and paths (`host/paths.ts`)
+- **Environment contract** (`host/env.ts`): typed `BASECAMP_*` env var getters/setters, companion-active flag, workspace state hooks for the workspace module's override
+- **Ports** (seams core declares, other domains implement — each co-located with its concept, not bucketed): the tool/skill catalog (`catalog/`), model-alias resolution (`model/`), the workspace service (`workspace/service.ts`), and the agent-role override (`agent-role.ts`)
+- **Reload-survival** (`global-registry.ts`): `processScoped` — the one place live state is pinned across `/reload`
 - **Session lifecycle**: agent-mode state machine (analysis/planning/supervisor/executor/copilot), session start (state load + mode restore), session shutdown, chat compaction
 - **State persistence**: file-backed session state (`~/.pi/basecamp/core/session-state/<session-id>.json`) with fork inheritance
-- **Capabilities**: the `skill()` tool, SKILL.md content parsing, catalog providers, skill invocation tracker
-- **Model aliases**: native config provider (`~/.pi/basecamp/core/model-aliases.json`) + the `/model-aliases` command
+- **Skills** (`skills/`): the `skill()` tool, SKILL.md content parsing, and the invocation tracker (store + lifecycle in `tracker.ts`); the tool/skill catalog registry is its sibling `catalog/`
+- **Model** (`model/`): the alias provider seam + native config provider (`~/.pi/basecamp/core/model-aliases.json`) + the `/model-aliases` command, plus `model/resolution.ts` (string→Model, reasoning-effort, tool-choice)
 - **Escalate**: the `escalate` tool — pause and ask the user for a decision (primary sessions only)
 - **Framework UI** (`ui/`): the session's status footer, title auto-naming, and interactive mode editor — framework chrome, registered last by `registerCore`. Feature-specific widgets live with their own domains; only `formatTitle` is consumed externally (via `#core/ui/index.ts`).
 - **Project config** (`project/`): resolve repo → project → `BASECAMP_PROJECT`, the project-config schema, and nested-doc context injection. Core-owned but registered by the workspace module (its session_start hook needs workspace runtime state); prompt assembly lives in the workspace domain.
@@ -23,9 +25,9 @@ Core is the foundation of the boundary rules (`scripts/check-boundaries.ts`): ev
 
 There are two kinds of module state, with different rules:
 
-- **Wiring** — providers and registries that the composition root re-establishes on every load (including `/reload`): cwd provider, catalog providers, model-alias providers, workspace service registration, copilot-launch reader, product-role/agent-identity providers, workspace hooks. These are **plain module state** (`let`/`const` at module scope). Re-registration on reload is guaranteed because `extension.ts` runs every module's `register*` in a fixed order; converting these to module state also stops stale pre-reload listener closures from firing.
+- **Wiring** — providers and registries that the composition root re-establishes on every load (including `/reload`): cwd provider, catalog providers, model-alias providers, workspace service registration, copilot-launch reader, agent-role provider, workspace hooks. These are **plain module state** (`let`/`const` at module scope). Re-registration on reload is guaranteed because `extension.ts` runs every module's `register*` in a fixed order; converting these to module state also stops stale pre-reload listener closures from firing.
 
-- **Surviving state** — live session data that must outlive `/reload` (pi re-imports the extension with fresh module instances, `moduleCache: false`): session state, agent mode, invoked skills, the workspace runtime service, project runtime, companion pane/analysis state, the daemon WebSocket client. These use `processScoped(key, init)` from [`platform/global-registry.ts`](platform/global-registry.ts), which stores the value on `globalThis` behind a `Symbol.for` key. Key strings are stable across releases — renaming one silently drops state at the next `/reload`.
+- **Surviving state** — live session data that must outlive `/reload` (pi re-imports the extension with fresh module instances, `moduleCache: false`): session state, agent mode, invoked skills, the workspace runtime service, project runtime, companion pane/analysis state, the daemon WebSocket client. These use `processScoped(key, init)` from [`global-registry.ts`](global-registry.ts), which stores the value on `globalThis` behind a `Symbol.for` key. Key strings are stable across releases — renaming one silently drops state at the next `/reload`.
 
 When adding state, default to plain module state; reach for `processScoped` only when losing the value on `/reload` would break the live session.
 

@@ -22,8 +22,8 @@ scripts/check-file-length.ts               # Hard file-length caps: .ts ≤ 350,
 
 pi/                            # ① the Pi extension (TypeScript)
 ├── extension.ts                # Composition root: registers all domain modules in fixed order (core first)
-├── core/                       # agent-mode/, session/ (+ state/), project/ config, capabilities/, ui/ (footer·header·
-│                               #   title·mode·llm — framework chrome), escalate/, model-aliases/, worktree policy, git/ adapter, platform/ seams+ports
+├── core/                       # agent-mode/ (+copilot·toggle) · agent-role.ts · session/ (+state) · project/ · skills/ · catalog/ · model/ ·
+│                               #   ui/ (framework chrome) · escalate/ (+dialog/) · workspace/ (+service port) · host/ (env·exec·paths·config) · global-registry.ts
 ├── workspace/                  # prompt/ assembly, worktree/ service, guards/ (edit guards)
 ├── swarm/                      # agents/ (tools, catalog, launch, daemon client, review), workstreams/,
 │                               #   protocol/ (TS↔Python contract), skills/
@@ -64,7 +64,7 @@ Agent modes (`pi/core/agent-mode`, in `SESSION_STATE_AGENT_MODES`) are `analysis
 
 ### Extension Modules
 
-All TypeScript behavior ships as one Pi extension; its entry point is `pi/extension.ts` and its package manifest is the repo-root `package.json`. `pi/extension.ts` composes the domain modules (`core`, `workspace`, `tasks`, `git`, `bash-reviewer`, `engineering`, `browser`, `companion`, `swarm`) in a fixed order — core first — so in-extension init is deterministic and identical on `/reload`. Each domain's TS lives in `pi/<domain>/` with a `register*` default export in its `index.ts`; cross-domain imports go through `#`-subpath aliases and are boundary-checked. Framework UI (footer/header/title/mode) is not a separate domain — it lives in `pi/core/ui/` and `registerCore` registers it, alongside core's other in-session surfaces (`escalate`, `capabilities`). The async-agent wire protocol and daemon client live in `pi/swarm/`; the Python daemon in `src/basecamp/swarm/`.
+All TypeScript behavior ships as one Pi extension; its entry point is `pi/extension.ts` and its package manifest is the repo-root `package.json`. `pi/extension.ts` composes the domain modules (`core`, `workspace`, `tasks`, `git`, `bash-reviewer`, `engineering`, `browser`, `companion`, `swarm`) in a fixed order — core first — so in-extension init is deterministic and identical on `/reload`. Each domain's TS lives in `pi/<domain>/` with a `register*` default export in its `index.ts`; cross-domain imports go through `#`-subpath aliases and are boundary-checked. Framework UI (footer/header/title/mode) is not a separate domain — it lives in `pi/core/ui/` and `registerCore` registers it, alongside core's other in-session surfaces (`escalate`, `skills`). The async-agent wire protocol and daemon client live in `pi/swarm/`; the Python daemon in `src/basecamp/swarm/`.
 
 ### Code Review
 
@@ -72,11 +72,11 @@ All TypeScript behavior ships as one Pi extension; its entry point is `pi/extens
 
 ### Model Aliases
 
-Model alias resolution is owned by `pi/core/model-aliases`, backed by `~/.pi/basecamp/core/model-aliases.json` with schema `{ "version": 1, "aliases": { "fast": "claude-haiku-4-5" } }`. `pi/core/platform/model-aliases.ts` is only the provider seam; it must not read config, define aliases, or own model-selection policy.
+Model alias resolution is owned by `pi/core/model` — `model/index.ts` is the provider seam plus the native config-backed provider, `model/aliases.ts` is the config-file IO, and `model/resolution.ts` is the string→Model plumbing (reasoning-effort, tool-choice) — backed by `~/.pi/basecamp/core/model-aliases.json` with schema `{ "version": 1, "aliases": { "fast": "claude-haiku-4-5" } }`. The seam itself owns no config or policy; the native provider reads `model/aliases.ts`.
 
 ### State: wiring vs. surviving
 
-Two kinds of module state, two rules. **Wiring** (providers/registries the composition root re-establishes on every load — cwd provider, catalog, model aliases, workspace service seam) is plain module state. **Surviving state** (live session data that must outlive `/reload`, which re-imports the extension with fresh module instances — session state, agent mode, invoked skills, workspace runtime, daemon WebSocket) uses `processScoped(key, init)` from `pi/core/platform/global-registry.ts`; key strings are stable across releases. Default to plain module state; reach for `processScoped` only when losing the value on `/reload` would break the live session. Init order is deterministic (core registers first in `extension.ts`), so later modules may assume core-owned state is initialized. See `pi/core/README.md` for the canonical pattern.
+Two kinds of module state, two rules. **Wiring** (providers/registries the composition root re-establishes on every load — cwd provider, catalog, model aliases, workspace service seam) is plain module state. **Surviving state** (live session data that must outlive `/reload`, which re-imports the extension with fresh module instances — session state, agent mode, invoked skills, workspace runtime, daemon WebSocket) uses `processScoped(key, init)` from `pi/core/global-registry.ts`; key strings are stable across releases. Default to plain module state; reach for `processScoped` only when losing the value on `/reload` would break the live session. Init order is deterministic (core registers first in `extension.ts`), so later modules may assume core-owned state is initialized. See `pi/core/README.md` for the canonical pattern.
 
 ### Environment Variable Chain
 

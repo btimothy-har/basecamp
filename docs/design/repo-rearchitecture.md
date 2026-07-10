@@ -405,3 +405,17 @@ After the layout landed, a cross-domain import-graph audit motivated two small g
 2. **plan-gate predicate → `core/agent-mode`, renamed `isCopilotMode`.** `isPlanDisabledFor(mode)` was a one-line predicate over `AgentMode` in `tasks/planning/guards/plan-copilot.ts`; `plan()` is a Pi built-in that basecamp only *gates*, so `PLAN_TOOL_NAME` was never tasks-owned. Moved both to `core/agent-mode` (the predicate renamed `isCopilotMode` — the pure mode fact). Killed the `workspace→tasks` edge; the tasks guard and workspace's capabilities filter both consult `core`.
 
 Net graph after both: a single hub (`core`) whose only remaining inter-feature edge is `companion→tasks` (live task-state observation through the public index — the boundary system working as intended, kept). This supersedes the `isPlanDisabledFor` note in §6.6 and the peer-domain framing of §6.5.
+
+### Core internals restructured (2026-07-10, same branch) — concept-homes, no `platform` bucket
+
+A pass to make every core sub-directory name a *concept* rather than a role. The trigger was `platform/`: a bucket named for its mechanism ("where things go to dodge the dependency rule") that mixed genuine primitives with cross-domain ports. The pattern (ports in core) is load-bearing and stays; the *bucket* was the smell, so it was dissolved and every file re-homed to the concept it serves. Shipped as seven `make lint` + `make test`-green commits:
+
+1. **escalate** — the 3 interactive-dialog files clustered under `escalate/dialog/` (index/flow/view); tool/render/types stay at the root.
+2. **agent-mode** — `command.ts` (a keyboard shortcut, not a command) → `toggle.ts`; the copilot specifics (launch reader, `isCopilotMode`, `PLAN_TOOL_NAME`) gathered into `copilot.ts`, leaving `index.ts` the generic state machine.
+3. **agent-role** — `platform/product-role.ts` → `core/agent-role.ts` (renamed, sibling to agent-mode). Stays in core: swarm registers it and both the swarm daemon and `tasks/planning` read it, so it can't move to swarm without a `tasks→swarm` edge.
+4. **skills + catalog** — `capabilities/` (a vague umbrella) split into `skills/` (the `skill()` tool + `tracker.ts`, store+lifecycle merged) and `catalog/` (the tool/skill registry port + providers).
+5. **model** — `model-aliases/` → `model/`, absorbing the two platform model seams: the alias registry merges into `model/index.ts`, `model-resolution.ts` → `model/resolution.ts`, `config.ts` → `aliases.ts`.
+6. **workspace service** — `platform/workspace.ts` (the fan-in-26 port) → `core/workspace/service.ts`, beside core's own workspace defaults.
+7. **host + root primitive** — `env`·`exec`·`paths`·`config` → `host/` (the runtime boundary); `global-registry.ts` (the reload-survival primitive, not a host concern) sits at the core root. `platform/` deleted.
+
+Every directory now names a concept; `#core/*` deep paths retarget accordingly (the `platform` dissolution alone rewrote ~106 specifiers across 75 files — the largest sweep, uniform because the transform was just "drop `platform/`"). The ports did not leave core — they moved next to the concept they serve.
