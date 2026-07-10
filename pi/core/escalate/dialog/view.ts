@@ -2,7 +2,7 @@
 
 import type { Theme, ThemeColor } from "@earendil-works/pi-coding-agent";
 import type { Editor } from "@earendil-works/pi-tui";
-import type { DialogState, Question, QuestionAnswer } from "./types.ts";
+import type { DialogState, Question, QuestionAnswer } from "../types.ts";
 
 /** Focus area within an option question. */
 export type FocusArea = "options" | "editor";

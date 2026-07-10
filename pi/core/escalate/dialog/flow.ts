@@ -1,8 +1,8 @@
 /** Escalate dialog answer flow — submission, back navigation, advance/complete. */
 
 import type { Editor } from "@earendil-works/pi-tui";
-import type { FocusArea } from "./dialog-render.ts";
-import type { DialogState, Question, QuestionAnswer, SelectAnswer, TextAnswer } from "./types.ts";
+import type { DialogState, Question, QuestionAnswer, SelectAnswer, TextAnswer } from "../types.ts";
+import type { FocusArea } from "./view.ts";
 
 /** The slice of EscalateDialog the flow functions read and mutate. */
 export interface DialogFlowHost {

@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { KeybindingsManager, Theme } from "@earendil-works/pi-coding-agent";
 import type { TUI } from "@earendil-works/pi-tui";
-import { EscalateDialog } from "../dialog.ts";
+import { EscalateDialog } from "../dialog/index.ts";
 import type { DialogState, Question, QuestionAnswer } from "../types.ts";
 
 type FocusArea = "options" | "editor";
