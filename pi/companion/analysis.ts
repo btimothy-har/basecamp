@@ -4,7 +4,7 @@ import { processScoped } from "#core/global-registry.ts";
 import { isCompanionActive } from "#core/host/env.ts";
 import { buildUserContext } from "#core/session/user-context.ts";
 import { getWorkspaceService } from "#core/workspace/service.ts";
-import { getTasksAccess } from "#tasks/index.ts";
+import { getTasksReader } from "#tasks/index.ts";
 
 export const MIN_USER_TURNS = 2;
 export const ANALYSIS_TIMEOUT_MS = 60_000;
@@ -153,7 +153,7 @@ export default function registerCompanionAnalysis(pi: ExtensionAPI): void {
 				isActive: isCompanionActive,
 				branch: ctx.sessionManager.getBranch(),
 				sessionId: ctx.sessionManager.getSessionId(),
-				tasksState: getTasksAccess()?.getState() ?? null,
+				tasksState: getTasksReader()?.getState() ?? null,
 				cwd: getWorkspaceService()?.getEffectiveCwd?.() ?? process.cwd(),
 				spawnFn: spawn,
 			});

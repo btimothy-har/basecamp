@@ -5,15 +5,14 @@ import { registerPlanSkillGuard } from "./planning/guards/plan-skill.ts";
 import { registerPlan, registerPlanCommands } from "./planning/index.ts";
 
 export default function (pi: ExtensionAPI) {
-	const tasks = registerTasks(pi);
+	const runtime = registerTasks(pi);
 	// Copilot guard first so its message wins over the plan-skill guard for a blocked plan() in copilot.
 	registerPlanCopilotGuard(pi);
 	registerPlanSkillGuard(pi);
-	const plan = registerPlan(pi, tasks);
-	registerPlanCommands(pi, tasks, plan);
+	const plan = registerPlan(pi, runtime);
+	registerPlanCommands(pi, runtime, plan);
 }
 
-export type { TasksAccess } from "./lifecycle/access.ts";
 // Public surface for other contexts (imported via #tasks/index.ts only).
-export { getTasksAccess, registerTasksAccess } from "./lifecycle/access.ts";
+export { getTasksReader, registerTasksReader } from "./lifecycle/reader.ts";
 export type { GoalCycle, ReviewState, Task, TaskStatus, TasksState } from "./schemas/task.ts";

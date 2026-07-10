@@ -9,7 +9,7 @@ import {
 	resetCurrentSessionState,
 	updateCurrentSessionState,
 } from "#core/session/state/index.ts";
-import { registerTasksAccess, type TasksState } from "#tasks/index.ts";
+import { registerTasksReader, type TasksState } from "#tasks/index.ts";
 import { resetHerdrMetadataSeqForTest } from "../herdr/metadata.ts";
 import registerCompanion from "../snapshot/index.ts";
 import { companionLiveSnapshotPath, companionSnapshotPath, defaultCompanionSnapshotDir } from "../snapshot/model.ts";
@@ -74,13 +74,9 @@ function useTempHome(): string {
 	return home;
 }
 
-function registerEmptyTasksAccess(): void {
-	registerTasksAccess({
+function registerEmptyTasksReader(): void {
+	registerTasksReader({
 		getState: () => ({ goal: null, tasks: [] }),
-		setNotes() {},
-		activateGoalCycle() {},
-		getPlanRef: () => null,
-		getContext: () => null,
 	});
 }
 
@@ -102,7 +98,7 @@ describe("companion/registerCompanion", () => {
 		delete process.env.HERDR_SOCKET_PATH;
 		resetHerdrMetadataSeqForTest();
 		resetCurrentSessionState();
-		registerEmptyTasksAccess();
+		registerEmptyTasksReader();
 		for (const home of tempHomes) {
 			fs.rmSync(home, { recursive: true, force: true });
 		}
@@ -113,12 +109,8 @@ describe("companion/registerCompanion", () => {
 		const home = useTempHome();
 		process.env.BASECAMP_AGENT_DEPTH = "0";
 		let tasksState: TasksState = { goal: "initial goal", tasks: [] };
-		registerTasksAccess({
+		registerTasksReader({
 			getState: () => tasksState,
-			setNotes() {},
-			activateGoalCycle() {},
-			getPlanRef: () => null,
-			getContext: () => null,
 		});
 		const snapshotDir = defaultCompanionSnapshotDir(home);
 		const perSessionPath = companionSnapshotPath("session/writer:1", snapshotDir);
@@ -177,12 +169,8 @@ describe("companion/registerCompanion", () => {
 				},
 			],
 		};
-		registerTasksAccess({
+		registerTasksReader({
 			getState: () => tasksState,
-			setNotes() {},
-			activateGoalCycle() {},
-			getPlanRef: () => null,
-			getContext: () => null,
 		});
 		const { pi, emit, execCalls } = createMockPi();
 
@@ -235,7 +223,7 @@ describe("companion/registerCompanion", () => {
 		process.env.HERDR_ENV = "1";
 		process.env.HERDR_PANE_ID = "w8:p1";
 		process.env.HERDR_SOCKET_PATH = "/tmp/herdr.sock";
-		registerEmptyTasksAccess();
+		registerEmptyTasksReader();
 		const ctx = createContext();
 		initializeCurrentSessionState(ctx as unknown as ExtensionContext);
 		const { pi, emit, execCalls } = createMockPi();
@@ -256,7 +244,7 @@ describe("companion/registerCompanion", () => {
 		process.env.HERDR_ENV = "1";
 		process.env.HERDR_PANE_ID = "w8:p1";
 		process.env.HERDR_SOCKET_PATH = "/tmp/herdr.sock";
-		registerEmptyTasksAccess();
+		registerEmptyTasksReader();
 		const snapshotDir = defaultCompanionSnapshotDir(home);
 		const perSessionPath = companionSnapshotPath("session/writer:1", snapshotDir);
 		const { pi, emit } = createMockPi(() => {

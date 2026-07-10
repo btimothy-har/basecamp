@@ -2,7 +2,9 @@ import assert from "node:assert/strict";
 import * as path from "node:path";
 import { describe, it } from "node:test";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { defaultTasksDir, registerTasks, type Task, tasksFilePath } from "../lifecycle/index.ts";
+import { startGoalCycle } from "../lifecycle/goal-cycle.ts";
+import { defaultTasksDir, registerTasks, tasksFilePath } from "../lifecycle/index.ts";
+import type { Task } from "../schemas/task.ts";
 
 interface RegisteredToolResult {
 	content: { type: "text"; text: string }[];
@@ -69,9 +71,14 @@ function makeContext(notifications: string[]): ExtensionContext {
 
 function setupTasks() {
 	const pi = new FakePi();
-	const access = registerTasks(pi as unknown as ExtensionAPI);
-	access.activateGoalCycle("Goal", [makeTask("first", "active"), makeTask("second")], null, null);
-	return { pi, access, completeTask: pi.getTool("complete_task") };
+	const runtime = registerTasks(pi as unknown as ExtensionAPI);
+	startGoalCycle(runtime, {
+		goal: "Goal",
+		tasks: [makeTask("first", "active"), makeTask("second")],
+		planRef: null,
+		agentMode: null,
+	});
+	return { pi, completeTask: pi.getTool("complete_task") };
 }
 
 describe("tasks path helpers", () => {

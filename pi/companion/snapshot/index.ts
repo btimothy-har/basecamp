@@ -4,7 +4,7 @@ import { processScoped } from "#core/global-registry.ts";
 import { getCurrentSessionState, onCurrentSessionTitleChange } from "#core/session/state/index.ts";
 import { getInvokedSkills } from "#core/skills/tracker.ts";
 import { getWorkspaceService, getWorkspaceState } from "#core/workspace/service.ts";
-import { getTasksAccess } from "#tasks/index.ts";
+import { getTasksReader } from "#tasks/index.ts";
 import { reportHerdrMetadata } from "../herdr/metadata.ts";
 import {
 	buildSnapshot,
@@ -66,7 +66,7 @@ function writeNow(pi: ExtensionAPI): void {
 	if (!ctx) return;
 
 	try {
-		const tasksState = getTasksAccess()?.getState();
+		const tasksState = getTasksReader()?.getState();
 		const sessionId = ctx.sessionManager.getSessionId();
 		let title: string | null = null;
 		try {

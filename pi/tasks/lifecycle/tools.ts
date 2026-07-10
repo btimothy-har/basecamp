@@ -5,6 +5,8 @@ import { Type } from "@sinclair/typebox";
 import { getAgentMode } from "#core/agent-mode/index.ts";
 import { renderPartial, renderSuccess } from "../render.ts";
 import type { TaskStatus } from "../schemas/task.ts";
+import { startGoalCycle } from "./goal-cycle.ts";
+import type { TasksRuntime } from "./index.ts";
 import {
 	buildCompleteTaskResultText,
 	buildCompleteTaskStopMessage,
@@ -14,8 +16,7 @@ import {
 	type CompleteTaskResultDetails,
 	isCompleteTaskStopWorkDetails,
 	requireTasks,
-} from "./context.ts";
-import type { TasksRuntime } from "./index.ts";
+} from "./text.ts";
 
 export function registerTaskTools(pi: ExtensionAPI, runtime: TasksRuntime): void {
 	// --- Tool: update_goal ---
@@ -28,28 +29,7 @@ export function registerTaskTools(pi: ExtensionAPI, runtime: TasksRuntime): void
 			goal: Type.String({ description: "What success looks like — concrete and verifiable (1 sentence)" }),
 		}),
 		async execute(_id, params) {
-			// Archive the current goal cycle if one exists
-			const active = runtime.cycles.find((c) => c.active);
-			if (active) {
-				active.tasks = runtime.state.tasks;
-				active.active = false;
-				active.archivedAt = new Date().toISOString();
-			}
-
-			// Start a new cycle
-			runtime.cycles.push({
-				goal: params.goal,
-				tasks: [],
-				planRef: null,
-				agentMode: getAgentMode(),
-				active: true,
-				archivedAt: null,
-			});
-			runtime.state.goal = params.goal;
-			runtime.state.tasks = [];
-			runtime.guardBlockCount = 0;
-			runtime.updateWidget();
-			runtime.persistState();
+			startGoalCycle(runtime, { goal: params.goal, tasks: [], planRef: null, agentMode: getAgentMode() });
 			return {
 				content: [{ type: "text", text: buildStateSnapshot(runtime.state) }],
 				details: undefined,

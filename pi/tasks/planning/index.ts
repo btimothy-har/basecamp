@@ -19,7 +19,8 @@ import { resolveAgentRoleOverride } from "#core/agent-role.ts";
 import { readWorktreeSetupCommand } from "#core/host/config.ts";
 import { activateWorkspaceWorktree, getWorkspaceState, requireWorkspaceState } from "#core/workspace/service.ts";
 import { runWorktreeSetup } from "#core/workspace/setup.ts";
-import type { TasksAccess } from "../lifecycle/index.ts";
+import { startGoalCycle } from "../lifecycle/goal-cycle.ts";
+import type { TasksRuntime } from "../lifecycle/index.ts";
 import { renderPartial, renderSuccess } from "../render.ts";
 import type { PlanDraft } from "../schemas/plan.ts";
 import type { GoalCycle } from "../schemas/task.ts";
@@ -52,7 +53,7 @@ export interface PlanAccess {
 	getDraft(): PlanDraft | null;
 }
 
-export function registerPlan(pi: ExtensionAPI, tasksAccess: TasksAccess): PlanAccess {
+export function registerPlan(pi: ExtensionAPI, runtime: TasksRuntime): PlanAccess {
 	let draft: PlanDraft | null = null;
 	let pendingImplementationHandoff: PendingImplementationHandoff | null = null;
 
@@ -162,7 +163,7 @@ export function registerPlan(pi: ExtensionAPI, tasksAccess: TasksAccess): PlanAc
 				};
 
 				if (getAgentMode() === "analysis") {
-					tasksAccess.activateGoalCycle(draft.goal.content, approvedTasks, planRef, "analysis");
+					startGoalCycle(runtime, { goal: draft.goal.content, tasks: approvedTasks, planRef, agentMode: "analysis" });
 
 					const result = buildApprovedResult(draft, "analysis");
 					draft = null;
@@ -225,7 +226,12 @@ export function registerPlan(pi: ExtensionAPI, tasksAccess: TasksAccess): PlanAc
 				}
 
 				setAgentMode(implementationMode);
-				tasksAccess.activateGoalCycle(draft.goal.content, approvedTasks, planRef, implementationMode);
+				startGoalCycle(runtime, {
+					goal: draft.goal.content,
+					tasks: approvedTasks,
+					planRef,
+					agentMode: implementationMode,
+				});
 				pendingImplementationHandoff = buildPendingImplementationHandoff(draft, implementationMode, worktree);
 
 				let setupSummary: WorktreeSetupSummary | undefined;
