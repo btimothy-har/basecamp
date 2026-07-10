@@ -8,23 +8,12 @@
  */
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { type AgentMode, getAgentMode } from "#core/agent-mode/index.ts";
-
-export const PLAN_TOOL_NAME = "plan";
-
-/**
- * The single definition of "plan() is unavailable in this mode" — consumed by
- * this guard (the hard block) and by workspace's capabilities index (which
- * filters the catalog entry so copilot prompts never mention plan()).
- */
-export function isPlanDisabledFor(mode: AgentMode): boolean {
-	return mode === "copilot";
-}
+import { getAgentMode, isCopilotMode, PLAN_TOOL_NAME } from "#core/agent-mode/index.ts";
 
 export function registerPlanCopilotGuard(pi: ExtensionAPI): void {
 	pi.on("tool_call", async (event) => {
 		if (event.toolName !== PLAN_TOOL_NAME) return;
-		if (!isPlanDisabledFor(getAgentMode())) return;
+		if (!isCopilotMode(getAgentMode())) return;
 		return {
 			block: true,
 			reason: "plan() is disabled in copilot sessions — stage work with launch_workstream instead.",

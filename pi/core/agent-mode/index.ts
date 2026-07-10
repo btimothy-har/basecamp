@@ -51,7 +51,7 @@ export function restoreAgentModeFromSessionState(): AgentMode {
 
 export function cycleAgentMode(): AgentMode {
 	const currentMode = getAgentMode();
-	if (currentMode === "copilot") return currentMode;
+	if (isCopilotMode(currentMode)) return currentMode;
 
 	const index = CYCLEABLE_AGENT_MODES.indexOf(currentMode);
 	return setAgentMode(CYCLEABLE_AGENT_MODES[(index + 1) % CYCLEABLE_AGENT_MODES.length]!);
@@ -67,4 +67,20 @@ export function onAgentModeChange(listener: AgentModeListener): () => void {
 	return () => {
 		runtime.listeners.delete(listener);
 	};
+}
+
+/**
+ * The Pi built-in plan() tool name. basecamp does not define plan() — it gates
+ * it: copilot sessions hard-block the tool (the tasks guard) and filter it out
+ * of the capabilities index (workspace's prompt assembly). Both consult
+ * isCopilotMode together with this constant.
+ */
+export const PLAN_TOOL_NAME = "plan";
+
+/**
+ * copilot is the locked, launch-only mode (entered via `pi --copilot`). Used to
+ * gate copilot-only behavior — notably that plan() is unavailable in copilot.
+ */
+export function isCopilotMode(mode: AgentMode): boolean {
+	return mode === "copilot";
 }

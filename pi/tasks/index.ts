@@ -14,6 +14,5 @@ export default function (pi: ExtensionAPI) {
 }
 
 export type { GoalCycle, ReviewState, Task, TaskStatus, TasksAccess, TasksState } from "./lifecycle/access.ts";
-export { getTasksAccess, registerTasksAccess } from "./lifecycle/access.ts";
 // Public surface for other contexts (imported via #tasks/index.ts only).
-export { isPlanDisabledFor, PLAN_TOOL_NAME } from "./planning/guards/plan-copilot.ts";
+export { getTasksAccess, registerTasksAccess } from "./lifecycle/access.ts";
