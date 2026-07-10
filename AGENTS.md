@@ -22,14 +22,13 @@ scripts/check-file-length.ts               # Hard file-length caps: .ts ≤ 350,
 
 pi/                            # ① the Pi extension (TypeScript)
 ├── extension.ts                # Composition root: registers all domain modules in fixed order (core first)
-├── core/                       # agent-mode/ (+copilot·toggle) · agent-role.ts · session/ (+state) · project/ · skills/ · catalog/ · model/ ·
-│                               #   ui/ (framework chrome) · escalate/ (+dialog/) · workspace/ (worktree runtime · guards · /worktree · git primitives + state) · host/ (env·exec·paths·config) · global-registry.ts
+├── core/                       # agent-mode/ (+copilot·toggle) · agent-role.ts · session/ (+state) · project/ (config·context·injection·logseq · workspace/ runtime+guards+/worktree) ·
+│                               #   git/ (worktrees/ crud·target·migrate · repo · /create-pr) · skills/ · catalog/ · model/ · ui/ (framework chrome) · escalate/ (+dialog/) · host/ (env·exec·paths·config) · global-registry.ts
 ├── system-prompt/              # before_agent_start prompt assembly: prompt.ts · context-builders.ts · defaults/ (modes·styles·environment)
 ├── swarm/                      # agents/ (tools, catalog, launch, daemon client, review), workstreams/,
 │                               #   protocol/ (TS↔Python contract), skills/
 ├── companion/                  # session hooks: analysis, snapshot/, panes/, herdr/ + tmux/ adapters
 ├── tasks/                      # layered: schemas/ · lifecycle/ (state) · workflows/ (draft·review·handoff) · tools/ (task-tools·plan·guards·commands); skills/
-├── git/                        # /create-pr prompt workflow
 ├── bash-reviewer/              # LLM bash reviewer: index (guard), review, triage/, llm adapter
 ├── engineering/                # bigquery/ (bq_query tool + bq-CLI adapter, one module), skills/ + prompts/
 └── browser/                    # browser automation (puppeteer-core over CDP): tools/ + chrome adapter
@@ -64,7 +63,7 @@ Agent modes (`pi/core/agent-mode`, in `SESSION_STATE_AGENT_MODES`) are `analysis
 
 ### Extension Modules
 
-All TypeScript behavior ships as one Pi extension; its entry point is `pi/extension.ts` and its package manifest is the repo-root `package.json`. `pi/extension.ts` composes the domain modules (`core`, `system-prompt`, `tasks`, `git`, `bash-reviewer`, `engineering`, `browser`, `companion`, `swarm`) in a fixed order — core first — so in-extension init is deterministic and identical on `/reload`. Each domain's TS lives in `pi/<domain>/` with a `register*` default export in its `index.ts`; cross-domain imports go through `#`-subpath aliases and are boundary-checked. Framework UI (footer/header/title/mode) is not a separate domain — it lives in `pi/core/ui/` and `registerCore` registers it, alongside core's other in-session surfaces (`escalate`, `skills`, the `workspace` runtime, and `project` resolution). The async-agent wire protocol and daemon client live in `pi/swarm/`; the Python daemon in `src/basecamp/swarm/`.
+All TypeScript behavior ships as one Pi extension; its entry point is `pi/extension.ts` and its package manifest is the repo-root `package.json`. `pi/extension.ts` composes the domain modules (`core`, `system-prompt`, `tasks`, `bash-reviewer`, `engineering`, `browser`, `companion`, `swarm`) in a fixed order — core first — so in-extension init is deterministic and identical on `/reload`. Each domain's TS lives in `pi/<domain>/` with a `register*` default export in its `index.ts`; cross-domain imports go through `#`-subpath aliases and are boundary-checked. Framework UI (footer/header/title/mode) is not a separate domain — it lives in `pi/core/ui/` and `registerCore` registers it, alongside core's other in-session surfaces (`escalate`, `skills`, the `project` runtime — config + `workspace/` + context — and `git`'s `/create-pr`). Git worktree/repo mechanics live in `pi/core/git/` and are imported directly. The async-agent wire protocol and daemon client live in `pi/swarm/`; the Python daemon in `src/basecamp/swarm/`.
 
 ### Code Review
 
