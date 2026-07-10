@@ -3,7 +3,8 @@
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { DynamicBorder, getSelectListTheme } from "@earendil-works/pi-coding-agent";
 import { Container, Editor, type EditorTheme, matchesKey, Spacer, Text } from "@earendil-works/pi-tui";
-import { type PlanDraft, reviewMarker } from "./review-model.ts";
+import type { PlanDraft } from "../../schemas/plan.ts";
+import { reviewMarker } from "./review-model.ts";
 
 export async function showTaskCards(draft: PlanDraft, ctx: ExtensionContext): Promise<void> {
 	const tasks = draft.tasks;

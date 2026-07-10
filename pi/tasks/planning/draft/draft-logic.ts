@@ -1,9 +1,5 @@
-import type { ReviewState } from "../../lifecycle/index.ts";
-
-export interface PlanSection {
-	content: string;
-	review: ReviewState;
-}
+import type { PlanSection } from "../../schemas/plan.ts";
+import type { ReviewState } from "../../schemas/task.ts";
 
 export interface TaskInput {
 	label: string;

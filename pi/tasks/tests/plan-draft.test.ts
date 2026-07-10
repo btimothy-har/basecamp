@@ -6,10 +6,10 @@ import {
 	type DraftGoalContext,
 	deriveGoalContextReviewState,
 	freshReview,
-	type PlanSection,
 	type TaskInput,
 	tasksMatch,
 } from "../planning/draft/draft-logic.ts";
+import type { PlanSection } from "../schemas/plan.ts";
 
 function approvedSection(content: string): PlanSection {
 	return { content, review: { approved: true, feedback: null } };

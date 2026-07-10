@@ -5,11 +5,11 @@
  * keep their ✓ status, changed sections reset to ★ (needs re-review).
  */
 
-import type { ReviewState, TaskStatus } from "../../lifecycle/index.ts";
-import type { HandoffWorktreeResult, ImplementationMode } from "../handoff/index.ts";
+import type { ImplementationMode, PlanDraft } from "../../schemas/plan.ts";
+import { SECTION_NAMES } from "../../schemas/plan.ts";
+import type { ReviewState, TaskStatus } from "../../schemas/task.ts";
+import type { HandoffWorktreeResult } from "../handoff/index.ts";
 import type { WorktreeSetupSummary } from "../handoff/worktree-setup.ts";
-import type { PlanDraft } from "../review/index.ts";
-import { SECTION_NAMES } from "../review/index.ts";
 import { computeGoalContextReview, computeSectionReview, freshReview, tasksMatch } from "./draft-logic.ts";
 
 export type ApprovedPlanMode = "analysis" | ImplementationMode;

@@ -4,7 +4,7 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "@sinclair/typebox";
 import { getAgentMode } from "#core/agent-mode/index.ts";
 import { renderPartial, renderSuccess } from "../render.ts";
-import type { TaskStatus } from "./access.ts";
+import type { TaskStatus } from "../schemas/task.ts";
 import {
 	buildCompleteTaskResultText,
 	buildCompleteTaskStopMessage,

@@ -19,8 +19,10 @@ import { resolveAgentRoleOverride } from "#core/agent-role.ts";
 import { readWorktreeSetupCommand } from "#core/host/config.ts";
 import { activateWorkspaceWorktree, getWorkspaceState, requireWorkspaceState } from "#core/workspace/service.ts";
 import { runWorktreeSetup } from "#core/workspace/setup.ts";
-import type { GoalCycle, TasksAccess } from "../lifecycle/index.ts";
+import type { TasksAccess } from "../lifecycle/index.ts";
 import { renderPartial, renderSuccess } from "../render.ts";
+import type { PlanDraft } from "../schemas/plan.ts";
+import type { GoalCycle } from "../schemas/task.ts";
 import { buildApprovedResult, buildDraft, buildFeedbackResult, isAllApproved } from "./draft/index.ts";
 import {
 	buildHandoffCompactionInstructions,
@@ -36,11 +38,10 @@ import {
 	workspaceWorktreeToHandoffWorktree,
 } from "./handoff/index.ts";
 import { shouldRunWorktreeSetup, type WorktreeSetupSummary, worktreeSetupSummary } from "./handoff/worktree-setup.ts";
-import type { PlanDraft } from "./review/index.ts";
 import { showReviewOverlay } from "./review/index.ts";
 
+export type { ImplementationMode } from "../schemas/plan.ts";
 export { registerPlanCommands } from "./commands.ts";
-export type { ImplementationMode } from "./handoff/index.ts";
 export {
 	buildHandoffMessage,
 	shouldReuseActiveWorktreeForHandoff,

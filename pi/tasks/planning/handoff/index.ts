@@ -11,9 +11,9 @@ import {
 	requireWorkspaceState,
 	type WorkspaceWorktree,
 } from "#core/workspace/service.ts";
-import type { TaskStatus } from "../../lifecycle/index.ts";
+import type { ImplementationMode, PlanDraft } from "../../schemas/plan.ts";
+import type { TaskStatus } from "../../schemas/task.ts";
 import { collectApprovedNotes } from "../draft/index.ts";
-import type { PlanDraft } from "../review/index.ts";
 import {
 	buildExecutionWorktreeChoices,
 	CUSTOM_WORKTREE_CHOICE,
@@ -21,8 +21,6 @@ import {
 	type ExecutionWorktreeTarget,
 	suggestWorktreeTarget,
 } from "./worktree-choices.ts";
-
-export type ImplementationMode = "supervisor" | "executor";
 
 interface HandoffTaskContext {
 	index: number;

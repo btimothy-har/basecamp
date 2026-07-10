@@ -1,6 +1,6 @@
 /** Pure task-state text builders: steer content, snapshots, task context. */
 
-import type { GoalCycle, Task, TaskStatus, TasksState } from "./access.ts";
+import type { GoalCycle, Task, TaskStatus, TasksState } from "../schemas/task.ts";
 
 export function requireTasks(state: TasksState, index: number): Task {
 	if (state.tasks.length === 0) throw new Error("No tasks exist. Use create_tasks first.");

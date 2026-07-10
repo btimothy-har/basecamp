@@ -14,21 +14,18 @@
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { DynamicBorder, getSelectListTheme } from "@earendil-works/pi-coding-agent";
 import { Container, Editor, type EditorTheme, matchesKey, Spacer, Text } from "@earendil-works/pi-tui";
-import type { GoalCycle } from "../../lifecycle/index.ts";
+import type { PlanDraft } from "../../schemas/plan.ts";
+import type { GoalCycle } from "../../schemas/task.ts";
 import {
 	countPending,
 	getItemReview,
 	getListItems,
-	type PlanDraft,
 	type ReviewItem,
 	sectionDisplayName,
 	setItemReview,
 } from "./review-model.ts";
 import { renderDrillDownContent, renderListView } from "./review-render.ts";
 import { showTaskCards } from "./task-cards.ts";
-
-export type { PlanDraft, SectionName } from "./review-model.ts";
-export { SECTION_NAMES, sectionDisplayName } from "./review-model.ts";
 
 // ============================================================================
 // List view — navigate + select

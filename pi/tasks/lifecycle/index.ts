@@ -31,18 +31,13 @@ import { registerTaskTools } from "./tools.ts";
 import { renderTaskWidgetLines } from "./widget.ts";
 
 // Type contracts owned by the tasks context — re-exported for the planning files.
-export type {
-	GoalCycle,
-	ReviewState,
-	Task,
-	TaskStatus,
-	TasksAccess,
-	TasksState,
-} from "./access.ts";
+export type { GoalCycle, ReviewState, Task, TaskStatus, TasksState } from "../schemas/task.ts";
+export type { TasksAccess } from "./access.ts";
 export { defaultTasksDir, tasksFilePath } from "./store.ts";
 
 // Import the types we use locally.
-import type { GoalCycle, Task, TasksAccess, TasksState } from "./access.ts";
+import type { GoalCycle, Task, TasksState } from "../schemas/task.ts";
+import type { TasksAccess } from "./access.ts";
 
 /** Shared mutable session state threaded through gate.ts and tools.ts. */
 export interface TasksRuntime {

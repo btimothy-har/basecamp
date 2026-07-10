@@ -1,33 +1,16 @@
 /**
- * Plan-review model — the PlanDraft shape, review items, and per-item
- * review-state accessors shared by the review overlays.
+ * Plan-review model — review items and per-item review-state accessors shared
+ * by the review overlays. The PlanDraft shape and section vocabulary live in
+ * schemas/plan.ts.
  *
  * Goal + Context are merged into a single review item.
  * Design, Success, Boundaries are individual items.
  */
 
 import type { Theme } from "@earendil-works/pi-coding-agent";
-import type { ReviewState, Task } from "../../lifecycle/index.ts";
+import type { PlanDraft, SectionName } from "../../schemas/plan.ts";
+import type { ReviewState } from "../../schemas/task.ts";
 import { deriveGoalContextReviewState } from "../draft/draft-logic.ts";
-
-interface PlanSection {
-	content: string;
-	review: ReviewState;
-}
-
-export interface PlanDraft {
-	goal: PlanSection;
-	context: PlanSection;
-	design: PlanSection;
-	success: PlanSection;
-	boundaries: PlanSection;
-	worktreeSlug: string | null;
-	tasks: Task[];
-	tasksReview: ReviewState;
-}
-
-export const SECTION_NAMES = ["goal", "context", "design", "success", "boundaries"] as const;
-export type SectionName = (typeof SECTION_NAMES)[number];
 
 /** Sections that appear as individual review items (not goal/context). */
 export const INDIVIDUAL_SECTIONS: SectionName[] = ["design", "success", "boundaries"];

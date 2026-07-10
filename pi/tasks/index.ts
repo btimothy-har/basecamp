@@ -13,6 +13,7 @@ export default function (pi: ExtensionAPI) {
 	registerPlanCommands(pi, tasks, plan);
 }
 
-export type { GoalCycle, ReviewState, Task, TaskStatus, TasksAccess, TasksState } from "./lifecycle/access.ts";
+export type { TasksAccess } from "./lifecycle/access.ts";
 // Public surface for other contexts (imported via #tasks/index.ts only).
 export { getTasksAccess, registerTasksAccess } from "./lifecycle/access.ts";
+export type { GoalCycle, ReviewState, Task, TaskStatus, TasksState } from "./schemas/task.ts";
