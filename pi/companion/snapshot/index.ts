@@ -1,9 +1,9 @@
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { getAgentMode, onAgentModeChange } from "#core/agent-mode/index.ts";
 import { processScoped } from "#core/global-registry.ts";
+import { getWorkspaceEffectiveCwd, getWorkspaceState, onWorkspaceChange } from "#core/project/workspace/state.ts";
 import { getCurrentSessionState, onCurrentSessionTitleChange } from "#core/session/state/index.ts";
 import { getInvokedSkills } from "#core/skills/tracker.ts";
-import { getWorkspaceEffectiveCwd, getWorkspaceState, onWorkspaceChange } from "#core/workspace/service.ts";
 import { getTasksReader } from "#tasks/index.ts";
 import { reportHerdrMetadata } from "../herdr/metadata.ts";
 import {

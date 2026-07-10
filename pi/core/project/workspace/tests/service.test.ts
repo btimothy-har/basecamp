@@ -3,14 +3,14 @@ import * as fs from "node:fs/promises";
 import * as os from "node:os";
 import * as path from "node:path";
 import { describe, it } from "node:test";
-import { WORKTREES_ROOT } from "../../git/constants.ts";
+import { WORKTREES_ROOT } from "../../../git/constants.ts";
 import {
 	createDefaultSessionState,
 	getCurrentSessionState,
 	initializeCurrentSessionState,
 	resetCurrentSessionState,
 	saveSessionState,
-} from "../../session/state/index.ts";
+} from "../../../session/state/index.ts";
 import { registerWorkspaceRuntime, resetWorkspaceRuntimeForTesting } from "../runtime.ts";
 import { registerWorkspaceSession } from "../session.ts";
 import {

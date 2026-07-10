@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import type { WorkspaceState } from "#core/workspace/service.ts";
+import type { WorkspaceState } from "#core/project/workspace/state.ts";
 import { buildUnsafeEditGuidance, buildWorktreeWarning } from "../context-builders.ts";
 
 function workspace(overrides: Partial<WorkspaceState>): WorkspaceState {

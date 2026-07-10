@@ -3,8 +3,8 @@ import * as fs from "node:fs/promises";
 import * as os from "node:os";
 import * as path from "node:path";
 import { describe, it, type TestContext } from "node:test";
-import type { WorkspaceState } from "../../workspace/service.ts";
-import { buildRepoLogseqContext } from "../repo-logseq.ts";
+import { buildRepoLogseqContext } from "../logseq.ts";
+import type { WorkspaceState } from "../workspace/state.ts";
 
 async function createTempHome(t: TestContext): Promise<string> {
 	const homeDir = await fs.mkdtemp(path.join(os.tmpdir(), "basecamp-repo-logseq-"));

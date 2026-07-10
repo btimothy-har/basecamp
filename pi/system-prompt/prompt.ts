@@ -7,9 +7,9 @@ import { isCopilotMode, PLAN_TOOL_NAME } from "#core/agent-mode/copilot.ts";
 import { getAgentMode } from "#core/agent-mode/index.ts";
 import { type CatalogItem, listCatalogItemsByType } from "#core/catalog/index.ts";
 import { type ContextFile, discoverContextFiles } from "#core/project/context.ts";
+import { buildRepoLogseqContext } from "#core/project/logseq.ts";
 import { getProjectState, type ProjectState } from "#core/project/project.ts";
-import { buildRepoLogseqContext } from "#core/project/repo-logseq.ts";
-import { getWorkspaceEffectiveCwd, getWorkspaceState, type WorkspaceState } from "#core/workspace/service.ts";
+import { getWorkspaceEffectiveCwd, getWorkspaceState, type WorkspaceState } from "#core/project/workspace/state.ts";
 import {
 	buildCapabilitiesIndex,
 	buildProjectContext,

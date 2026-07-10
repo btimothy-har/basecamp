@@ -1,7 +1,7 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { registerWorkspaceAllowedRootsProvider, requireWorkspaceState } from "../workspace/service.ts";
 import { resolveProjectState } from "./config.ts";
 import { getProjectState, requireProjectState, resetProjectRuntime, setProjectState } from "./project.ts";
+import { registerWorkspaceAllowedRootsProvider, requireWorkspaceState } from "./workspace/state.ts";
 
 function setProjectEnv(): void {
 	process.env.BASECAMP_PROJECT = getProjectState()?.projectName ?? "";

@@ -11,7 +11,6 @@ import { registerSession } from "./session/runtime/session.ts";
 import { registerState } from "./session/state/index.ts";
 import registerSkills from "./skills/index.ts";
 import registerUi from "./ui/index.ts";
-import { registerWorkspace } from "./workspace/index.ts";
 
 export default function (pi: ExtensionAPI): void {
 	// Core registries + lifecycle
@@ -22,9 +21,8 @@ export default function (pi: ExtensionAPI): void {
 	registerCatalogProviders(pi);
 	registerModelAliases(pi);
 
-	// Workspace runtime (registers the real cwd provider + BASECAMP_* env at session_start),
-	// then project resolution — project's session_start reads workspace state, so it comes after.
-	registerWorkspace(pi);
+	// The active project: workspace runtime + config resolution + context injection
+	// (registerProject sequences them), then the git command surface.
 	registerProject(pi);
 	registerGit(pi);
 

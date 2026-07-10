@@ -1,6 +1,6 @@
 import * as path from "node:path";
 import type { ExtensionAPI, ExtensionContext, SessionStartEvent } from "@earendil-works/pi-coding-agent";
-import { WORKTREES_ROOT } from "../../git/constants.ts";
+import { WORKTREES_ROOT } from "../../../git/constants.ts";
 import { SCRATCH_ROOT } from "../constants.ts";
 import { WorkspaceRuntimeService } from "../runtime.ts";
 

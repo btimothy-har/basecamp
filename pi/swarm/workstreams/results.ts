@@ -1,4 +1,4 @@
-import type { WorktreeSetupResult } from "#core/workspace/setup.ts";
+import type { WorktreeSetupResult } from "#core/project/workspace/setup.ts";
 import type { WorkstreamDetail, WorkstreamSummary } from "../agents/daemon/client.ts";
 
 export interface LaunchWorkstreamResultDetails {

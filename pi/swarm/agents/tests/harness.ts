@@ -4,7 +4,7 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { afterEach, beforeEach } from "node:test";
 import { resetAgentRoleForTesting } from "#core/agent-role.ts";
-import type { WorkspaceState } from "#core/workspace/service.ts";
+import type { WorkspaceState } from "#core/project/workspace/state.ts";
 import type { DaemonConnection } from "../daemon/client.ts";
 import type { Frame } from "../daemon/frames/index.ts";
 

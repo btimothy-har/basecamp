@@ -3,8 +3,8 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { describe, it } from "node:test";
-import { listWorkspaceAllowedRoots } from "../service.ts";
 import { registerLogseqAllowedRootProvider } from "../session.ts";
+import { listWorkspaceAllowedRoots } from "../state.ts";
 
 function createHome(t: { after(fn: () => void): void }): string {
 	const homeDir = fs.mkdtempSync(path.join(os.tmpdir(), "basecamp-logseq-home-"));

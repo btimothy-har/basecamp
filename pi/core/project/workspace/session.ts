@@ -6,9 +6,9 @@ import * as fsSync from "node:fs";
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
 import type { ExtensionAPI, ExtensionContext, SessionStartEvent } from "@earendil-works/pi-coding-agent";
-import { migrateLegacyWorktrees } from "../git/worktrees/migrate.ts";
-import { readLogseqGraphDir } from "../host/config.ts";
-import { getCurrentSessionState } from "../session/state/index.ts";
+import { migrateLegacyWorktrees } from "../../git/worktrees/migrate.ts";
+import { readLogseqGraphDir } from "../../host/config.ts";
+import { getCurrentSessionState } from "../../session/state/index.ts";
 import { workspaceMatchesActiveWorktreeState } from "./affinity.ts";
 import { requireWorkspaceRuntime } from "./runtime.ts";
 import {
@@ -18,7 +18,7 @@ import {
 	requireWorkspaceState,
 	type UnsafeEditFlagResult,
 	type WorkspaceWorktree,
-} from "./service.ts";
+} from "./state.ts";
 
 async function attachWorktree(worktreeDir: string): Promise<WorkspaceWorktree> {
 	return attachWorkspaceWorktreePath(worktreeDir);

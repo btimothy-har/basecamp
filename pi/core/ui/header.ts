@@ -2,7 +2,7 @@ import * as os from "node:os";
 import type { ExtensionAPI, Theme } from "@earendil-works/pi-coding-agent";
 import { truncateToWidth } from "@earendil-works/pi-tui";
 import { getProjectState } from "../project/project.ts";
-import { getWorkspaceState } from "../workspace/service.ts";
+import { getWorkspaceState } from "../project/workspace/state.ts";
 
 type ThemeFg = (color: Parameters<Theme["fg"]>[0], text: string) => string;
 

@@ -14,8 +14,8 @@
 import * as path from "node:path";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { isEditToolResult, isReadToolResult, isWriteToolResult } from "@earendil-works/pi-coding-agent";
-import { getWorkspaceEffectiveCwd } from "../workspace/service.ts";
 import { type ContextFile, loadContextFileFromDir } from "./context.ts";
+import { getWorkspaceEffectiveCwd } from "./workspace/state.ts";
 
 const injectedPaths = new Set<string>();
 let systemPromptDirs: Set<string> | null = null;

@@ -5,7 +5,7 @@ import * as path from "node:path";
 import { describe, it, type TestContext } from "node:test";
 import { resetAgentMode, setAgentMode } from "#core/agent-mode/index.ts";
 import type { CatalogItem } from "#core/catalog/index.ts";
-import type { WorkspaceState } from "#core/workspace/service.ts";
+import type { WorkspaceState } from "#core/project/workspace/state.ts";
 import { assemblePrompt } from "../prompt.ts";
 
 async function useTempHome(t: TestContext): Promise<string> {

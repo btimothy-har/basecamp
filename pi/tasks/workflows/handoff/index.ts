@@ -6,15 +6,15 @@
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { resolveAgentRoleOverride } from "#core/agent-role.ts";
 import { readWorktreeSetupCommand } from "#core/host/config.ts";
-import { shortSessionId } from "#core/session/session-id.ts";
+import { runWorktreeSetup } from "#core/project/workspace/setup.ts";
 import {
 	activateWorkspaceWorktree,
 	getWorkspaceState,
 	listWorkspaceWorktrees,
 	requireWorkspaceState,
 	type WorkspaceWorktree,
-} from "#core/workspace/service.ts";
-import { runWorktreeSetup } from "#core/workspace/setup.ts";
+} from "#core/project/workspace/state.ts";
+import { shortSessionId } from "#core/session/session-id.ts";
 import type { ImplementationMode, PlanDraft } from "../../schemas/plan.ts";
 import type { TaskStatus } from "../../schemas/task.ts";
 import { collectApprovedNotes } from "../draft.ts";

@@ -2,8 +2,8 @@ import { type ChildProcess, spawn } from "node:child_process";
 import type { ExtensionAPI, SessionEntry } from "@earendil-works/pi-coding-agent";
 import { processScoped } from "#core/global-registry.ts";
 import { isCompanionActive } from "#core/host/env.ts";
+import { getWorkspaceEffectiveCwd } from "#core/project/workspace/state.ts";
 import { buildUserContext } from "#core/session/user-context.ts";
-import { getWorkspaceEffectiveCwd } from "#core/workspace/service.ts";
 import { getTasksReader } from "#tasks/index.ts";
 
 export const MIN_USER_TURNS = 2;

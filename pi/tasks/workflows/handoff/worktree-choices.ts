@@ -6,7 +6,7 @@ import {
 	normalizeWorktreeSlug,
 	userWorktreePrefix,
 } from "#core/git/worktrees/target.ts";
-import type { WorkspaceWorktree } from "#core/workspace/service.ts";
+import type { WorkspaceWorktree } from "#core/project/workspace/state.ts";
 
 export { copilotWorktreeTarget, type ExecutionWorktreeTarget, userWorktreePrefix };
 

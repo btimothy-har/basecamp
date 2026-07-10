@@ -5,7 +5,7 @@ import * as path from "node:path";
 import { describe, it } from "node:test";
 import type { UserBashEvent, UserBashEventResult } from "@earendil-works/pi-coding-agent";
 import { registerWorkspaceGuards } from "../guards.ts";
-import type { WorkspaceState as BasecampWorkspaceState } from "../service.ts";
+import type { WorkspaceState as BasecampWorkspaceState } from "../state.ts";
 
 interface GuardEvent {
 	type: "tool_call";

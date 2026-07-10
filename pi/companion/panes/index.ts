@@ -1,6 +1,6 @@
 import type { ExtensionAPI, ExtensionContext, SessionShutdownEvent } from "@earendil-works/pi-coding-agent";
 import { exec } from "#core/host/exec.ts";
-import { getWorkspaceEffectiveCwd, getWorkspaceState } from "#core/workspace/service.ts";
+import { getWorkspaceEffectiveCwd, getWorkspaceState } from "#core/project/workspace/state.ts";
 import { createHerdrPaneCloser, createHerdrPaneProvider } from "../herdr/provider.ts";
 import { companionLiveSnapshotPath } from "../snapshot/model.ts";
 import { createTmuxPaneCloser, createTmuxPaneProvider } from "../tmux/provider.ts";

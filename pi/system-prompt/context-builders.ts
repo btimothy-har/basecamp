@@ -9,7 +9,7 @@
 
 import type { CatalogItem } from "#core/catalog/index.ts";
 import type { ContextFile } from "#core/project/context.ts";
-import type { WorkspaceState } from "#core/workspace/service.ts";
+import type { WorkspaceState } from "#core/project/workspace/state.ts";
 
 /**
  * Build the worktree warning block.
