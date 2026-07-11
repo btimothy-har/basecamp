@@ -88,6 +88,20 @@ describe("companion thread reporter", () => {
 		assert.equal(reports[0]?.session_id, "pi-sess");
 	});
 
+	it("treats a blank BASECAMP_AGENT_ID as unset (falls back to session id)", async () => {
+		process.env.BASECAMP_AGENT_DEPTH = "0";
+		process.env.BASECAMP_AGENT_ID = "   ";
+		const reports: ThreadReport[] = [];
+		const pi = new MockPi();
+		registerThreadReporter(pi as never, async (build) => {
+			reports.push(build());
+		});
+
+		await fireAgentEnd(pi, mockCtx([], { leafId: null, sessionId: "pi-sess", sessionFile: null }));
+
+		assert.equal(reports[0]?.node_id, "pi-sess");
+	});
+
 	it("does not register for a subagent (agentDepth > 0)", () => {
 		process.env.BASECAMP_AGENT_DEPTH = "1";
 		const pi = new MockPi();

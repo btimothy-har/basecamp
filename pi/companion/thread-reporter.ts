@@ -24,8 +24,10 @@ export function registerThreadReporter(
 		try {
 			const sm = ctx.sessionManager;
 			const withSessionFile = sm as typeof sm & { getSessionFile?: () => string | null | undefined };
+			// Treat a blank/whitespace BASECAMP_AGENT_ID as unset (`??` only guards null/undefined).
+			const agentId = process.env.BASECAMP_AGENT_ID?.trim();
 			await report(() => ({
-				node_id: process.env.BASECAMP_AGENT_ID ?? sm.getSessionId(),
+				node_id: agentId || sm.getSessionId(),
 				session_id: sm.getSessionId(),
 				session_file: withSessionFile.getSessionFile?.() ?? null,
 				leaf_id: sm.getLeafId(),
