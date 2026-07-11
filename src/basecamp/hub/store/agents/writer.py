@@ -1,16 +1,15 @@
-"""Agent registry persistence mixin."""
+"""Writes for the ``agents`` table."""
 
 from __future__ import annotations
 
 import sqlite3
-from typing import Any
 
-from .errors import DuplicateAgentHandleError
-from .text import _fallback_agent_handle, safe_product_role
+from ..errors import DuplicateAgentHandleError
+from ..text import _fallback_agent_handle, safe_product_role
 
 
-class AgentsMixin:
-    """Agent registry operations."""
+class AgentsWriterMixin:
+    """Agent registry mutations."""
 
     def upsert_agent(
         self,
@@ -116,36 +115,3 @@ class AgentsMixin:
                 if "agents.agent_handle" in str(error):
                     raise DuplicateAgentHandleError(next_handle) from error
                 raise
-
-    def get_agent(self, agent_id: str) -> dict[str, Any] | None:
-        """Fetch an agent by id as a dict, or None when absent."""
-
-        with self._connect() as connection:
-            connection.row_factory = sqlite3.Row
-            row = connection.execute("SELECT * FROM agents WHERE id = ?", (agent_id,)).fetchone()
-            return dict(row) if row is not None else None
-
-    def get_agent_by_handle(self, agent_handle: str) -> dict[str, Any] | None:
-        """Fetch an agent by public handle as a dict, or None when absent."""
-
-        with self._connect() as connection:
-            connection.row_factory = sqlite3.Row
-            row = connection.execute("SELECT * FROM agents WHERE agent_handle = ?", (agent_handle,)).fetchone()
-            return dict(row) if row is not None else None
-
-    def get_subtree_agent_ids(self, root_agent_id: str) -> list[str]:
-        """Return root agent id and all transitive descendant agent ids."""
-
-        with self._connect() as connection:
-            rows = connection.execute(
-                """
-                WITH RECURSIVE subtree(id) AS (
-                    SELECT id FROM agents WHERE id = ?
-                    UNION
-                    SELECT a.id FROM agents a JOIN subtree s ON a.parent_id = s.id
-                )
-                SELECT id FROM subtree
-                """,
-                (root_agent_id,),
-            ).fetchall()
-            return [row[0] for row in rows]

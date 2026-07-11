@@ -1,12 +1,4 @@
-"""SQLite persistence for raw pi session threads, stored node by node.
-
-pi already persists the full raw thread in its ``.jsonl`` transcript; this store
-holds each immutable entry once (keyed by ``entry_id``), inserting only new nodes
-each turn, so it can dedup, query, and join across sessions/trees. The per-session
-head row records the current ``leaf_id`` plus pi's ``session_id`` and
-``session_file`` (transcript path). Node ``entry_json`` is opaque — the daemon
-never parses the pi SessionEntry shape (see docs/design/companion-daemon-broker.md).
-"""
+"""Reads for the raw pi thread: reconstruction helpers and the head/branch types."""
 
 from __future__ import annotations
 
@@ -24,15 +16,6 @@ class RawPiThreadRow:
     leaf_id: str | None
     latest_seq: int
     updated_at: str
-
-
-@dataclass(frozen=True)
-class RawPiThreadNode:
-    """One thread entry to persist; ``entry_json`` is stored verbatim."""
-
-    entry_id: str
-    parent_id: str | None
-    entry_json: str
 
 
 @dataclass(frozen=True)
@@ -92,65 +75,8 @@ def _reconstruct_branch(node_map: dict[str, tuple[str | None, str]], leaf_id: st
     return chain
 
 
-class RawPiThreadMixin:
-    """Store mixin for the ``raw_pi_thread`` head + ``raw_pi_thread_node`` tables."""
-
-    def record_raw_pi_thread(
-        self,
-        *,
-        owner_id: str,
-        session_id: str,
-        session_file: str | None,
-        leaf_id: str | None,
-        nodes: list[RawPiThreadNode],
-        now: str | None = None,
-    ) -> int:
-        """Insert only new nodes and advance the head seq only when the branch changed.
-
-        The seq is the analyzer's freshness cursor, so it must advance only on a real
-        change — new nodes inserted or the leaf moved. A duplicate/replayed report that
-        adds nothing keeps the prior seq, so it never triggers a redundant analysis run.
-        """
-
-        timestamp = now or self._now()
-        with self._connect() as connection:
-            connection.execute("BEGIN IMMEDIATE")
-            row = connection.execute(
-                "SELECT latest_seq, leaf_id FROM raw_pi_thread WHERE owner_id = ?",
-                (owner_id,),
-            ).fetchone()
-            prior_seq = row[0] if row is not None else 0
-            prior_leaf = row[1] if row is not None else None
-            new_seq = prior_seq + 1
-
-            changes_before = connection.total_changes
-            connection.executemany(
-                """
-                INSERT INTO raw_pi_thread_node (owner_id, entry_id, parent_id, first_seen_seq, entry_json)
-                VALUES (?, ?, ?, ?, ?)
-                ON CONFLICT(owner_id, entry_id) DO NOTHING
-                """,
-                [(owner_id, node.entry_id, node.parent_id, new_seq, node.entry_json) for node in nodes],
-            )
-            inserted = connection.total_changes - changes_before
-            changed = row is None or inserted > 0 or leaf_id != prior_leaf
-            seq = new_seq if changed else prior_seq
-
-            connection.execute(
-                """
-                INSERT INTO raw_pi_thread (owner_id, session_id, session_file, leaf_id, latest_seq, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?)
-                ON CONFLICT(owner_id)
-                DO UPDATE SET
-                    session_id = excluded.session_id,
-                    session_file = excluded.session_file,
-                    leaf_id = excluded.leaf_id,
-                    latest_seq = excluded.latest_seq,
-                    updated_at = excluded.updated_at
-                """,
-                (owner_id, session_id, session_file, leaf_id, seq, timestamp),
-            )
-        return seq
+class RawPiThreadReaderMixin:
+    """Head lookup and branch reconstruction for a session's raw thread."""
 
     def get_raw_pi_thread(self, owner_id: str) -> RawPiThreadRow | None:
         """Return the per-session head, or ``None`` if the session is unknown."""
