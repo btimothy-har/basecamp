@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import asyncio
+from contextlib import asynccontextmanager
 from typing import Any, Literal
 
-from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 
+from .analysis import AnalysisScheduler
 from .frames import (
     PROTOCOL_VERSION,
     AttachWorkstreamAgentFrame,
@@ -25,12 +27,14 @@ from .frames import (
     RegisterFrame,
     ResultReportFrame,
     TelemetryFrame,
+    ThreadReportFrame,
     UpdateWorkstreamFrame,
     WaitFrame,
     WaitResultFrame,
     parse_frame,
     serialize_frame,
 )
+from .http_routes import register_http_routes
 from .registry import Registry
 from .service import (
     AcceptedPeerMessage,
@@ -42,6 +46,7 @@ from .service import (
     handle_peer_message_delivery_ack,
     handle_result_report,
     handle_telemetry,
+    handle_thread_report,
     list_agents,
     message_status_result,
     notify_message_delivery_terminal,
@@ -52,61 +57,53 @@ from .service import (
 from .store import DuplicateAgentHandleError, Store
 
 
-def create_app(store: Store, *, daemon_uds: str | None = None) -> FastAPI:
-    """Create and configure the daemon FastAPI app."""
+class _NoAnalysisScheduler:
+    """Null scheduler: ``create_app``'s default when none is injected.
 
-    app = FastAPI()
+    A bare ``create_app(store)`` must never silently wire a live, network-backed
+    analyzer — that would let a test (or embedder) fire a real LLM call just by
+    sending a ``thread_report``. Production builds a real ``AnalysisScheduler``
+    explicitly (see ``server.create_server``); everything else gets this no-op.
+    """
+
+    def notify(self, owner_id: str, seq: int) -> None:  # noqa: ARG002
+        return None
+
+    def forget(self, owner_id: str) -> None:  # noqa: ARG002
+        return None
+
+    async def stop(self) -> None:
+        return None
+
+
+def create_app(
+    store: Store,
+    *,
+    daemon_uds: str | None = None,
+    scheduler: AnalysisScheduler | None = None,
+) -> FastAPI:
+    """Create and configure the daemon FastAPI app.
+
+    ``scheduler`` must be supplied for analysis to run; when omitted the app uses a
+    no-op scheduler so it never fires an LLM on its own (see ``_NoAnalysisScheduler``).
+    """
+
+    analysis_scheduler: Any = scheduler if scheduler is not None else _NoAnalysisScheduler()
+
+    @asynccontextmanager
+    async def lifespan(_app: FastAPI) -> Any:
+        try:
+            yield
+        finally:
+            await analysis_scheduler.stop()
+
+    app = FastAPI(lifespan=lifespan)
     registry = Registry()
     daemon_socket_path = daemon_uds or ""
     reapers: set[asyncio.Task[None]] = set()
     delivery_tasks: set[asyncio.Task[None]] = set()
 
-    @app.get("/health")
-    async def health() -> dict[str, Any]:
-        return {"status": "ok", "protocol": PROTOCOL_VERSION}
-
-    @app.get("/runs/summary")
-    async def runs_summary(root_id: str, limit: int = 5) -> dict[str, Any]:
-        summary = await asyncio.to_thread(
-            store.get_run_summary,
-            root_id,
-            limit=limit,
-        )
-        summary["session_active"] = registry.has_connection(root_id)
-        return summary
-
-    @app.get("/runs/messages")
-    async def runs_messages(root_id: str, agent_handle: str, limit: int = 3) -> dict[str, Any]:
-        return await asyncio.to_thread(
-            store.get_run_messages,
-            root_id,
-            agent_handle=agent_handle,
-            limit=limit,
-        )
-
-    @app.get("/workstreams")
-    async def list_workstreams(
-        status: str | None = None,
-        repo: str | None = None,
-        dossier_path: str | None = None,
-        query: str | None = None,
-    ) -> dict[str, Any]:
-        return {
-            "workstreams": await asyncio.to_thread(
-                store.list_workstreams,
-                status=status,
-                repo=repo,
-                dossier_path=dossier_path,
-                query=query,
-            )
-        }
-
-    @app.get("/workstreams/{identifier}")
-    async def get_workstream(identifier: str) -> dict[str, Any]:
-        ws = await asyncio.to_thread(store.get_workstream_with_agents, identifier)
-        if ws is None:
-            raise HTTPException(status_code=404)
-        return ws
+    register_http_routes(app, store=store, registry=registry)
 
     @app.websocket("/ws")
     async def websocket_endpoint(websocket: WebSocket) -> None:
@@ -224,6 +221,10 @@ def create_app(store: Store, *, daemon_uds: str | None = None) -> FastAPI:
                         registry=registry,
                     )
                     continue
+                if isinstance(inbound, ThreadReportFrame):
+                    seq = await handle_thread_report(frame=inbound, node_id=parsed.node_id, store=store)
+                    analysis_scheduler.notify(parsed.node_id, seq)
+                    continue
                 if isinstance(inbound, WaitFrame):
                     await _handle_wait(
                         frame=inbound,
@@ -334,6 +335,7 @@ def create_app(store: Store, *, daemon_uds: str | None = None) -> FastAPI:
             if node_id is not None and registry.get_connection(node_id) is websocket:
                 registry.remove_connection(node_id)
                 schedule_disconnect_reaper(node_id=node_id, registry=registry, store=store)
+                analysis_scheduler.forget(node_id)
 
     return app
 

@@ -12,14 +12,41 @@ from basecamp.swarm.frames import PROTOCOL_VERSION
 from basecamp.swarm.store import Store
 
 
+class _RecordingScheduler:
+    """Test double for the analysis scheduler: records calls, does no analysis.
+
+    Keeps the app's ingest tests hermetic (no LLM, no alias-file read) while letting
+    tests assert the daemon wakes the scheduler with the right node/seq.
+    """
+
+    def __init__(self) -> None:
+        self.notified: list[tuple[str, int]] = []
+        self.forgotten: list[str] = []
+
+    def notify(self, owner_id: str, seq: int) -> None:
+        self.notified.append((owner_id, seq))
+
+    def forget(self, owner_id: str) -> None:
+        self.forgotten.append(owner_id)
+
+    async def stop(self) -> None:
+        return None
+
+
 def _build_app(tmp_path: Path):
     store = Store(db_path=tmp_path / "daemon.db", task_dir=tmp_path / "tasks")
-    return create_app(store)
+    return create_app(store, scheduler=_RecordingScheduler())
 
 
 def _build_app_with_store(tmp_path: Path):
     store = Store(db_path=tmp_path / "daemon.db", task_dir=tmp_path / "tasks")
-    return create_app(store), store
+    return create_app(store, scheduler=_RecordingScheduler()), store
+
+
+def _build_app_with_scheduler(tmp_path: Path):
+    store = Store(db_path=tmp_path / "daemon.db", task_dir=tmp_path / "tasks")
+    scheduler = _RecordingScheduler()
+    return create_app(store, scheduler=scheduler), store, scheduler
 
 
 def _register_ws(

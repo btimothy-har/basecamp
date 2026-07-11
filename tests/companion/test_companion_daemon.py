@@ -344,3 +344,43 @@ def test_poll_returns_error_for_http_error_status() -> None:
 
     assert isinstance(result, DaemonSummaryError)
     assert result.state == "error"
+
+
+def test_poll_analysis_parses_daemon_payload_and_encodes_path() -> None:
+    payload = json.dumps(
+        {
+            "monitor": ["m1"],
+            "needsCapture": ["n1"],
+            "checkpoints": [],
+            "sessionId": "sess",
+            "model": "prov/m",
+            "updatedAt": "t",
+        }
+    )
+    fake_connection, captured = _build_fake_connection(payload)
+    source = DaemonSummarySource("/tmp/daemon.sock", connection_factory=fake_connection)
+
+    result = source.poll_analysis("sess")
+
+    assert result is not None
+    assert result.monitor == ["m1"]
+    assert result.needs_capture == ["n1"]
+    assert result.checkpoints == []
+    assert result.model == "prov/m"
+    assert captured["path"] == "/analysis/sess"
+
+
+def test_poll_analysis_returns_none_when_absent() -> None:
+    fake_connection, _ = _build_fake_connection("", status=404)
+    source = DaemonSummarySource("/tmp/daemon.sock", connection_factory=fake_connection)
+
+    assert source.poll_analysis("sess") is None
+
+
+def test_poll_analysis_returns_none_for_unparseable_200() -> None:
+    # A 200 whose body doesn't match CompanionAnalysis (schema drift) yields None,
+    # not a crash — and is logged rather than swallowed silently.
+    fake_connection, _ = _build_fake_connection("{not valid json", status=200)
+    source = DaemonSummarySource("/tmp/daemon.sock", connection_factory=fake_connection)
+
+    assert source.poll_analysis("sess") is None

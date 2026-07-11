@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import asyncio
 import os
-import tempfile
 from pathlib import Path
 
 from rich.style import Style
@@ -280,30 +279,33 @@ def test_file_browser_three_roots_cycle_and_labels(tmp_path: Path) -> None:
     asyncio.run(run_three_root_cycle_test())
 
 
-def test_file_tree_root_label_collapses_home_path() -> None:
-    with tempfile.TemporaryDirectory(prefix="basecamp-companion-", dir=Path.home()) as home_tmp:
-        repo = Path(home_tmp) / "repo"
-        snapshot_path = Path(home_tmp) / "snapshot.json"
-        _build_repo(repo)
-        _write_snapshot(snapshot_path, session_id="abcd-1234-5678-90ef")
+def test_file_tree_root_label_collapses_home_path(tmp_path: Path, monkeypatch) -> None:
+    # Point HOME at a tmp dir so the home-collapse path is exercised without writing
+    # into the real ~ (collapse_home keys off Path.home(); pytest tears tmp_path down).
+    fake_home = tmp_path.resolve()
+    monkeypatch.setenv("HOME", str(fake_home))
+    repo = fake_home / "repo"
+    snapshot_path = fake_home / "snapshot.json"
+    _build_repo(repo)
+    _write_snapshot(snapshot_path, session_id="abcd-1234-5678-90ef")
 
-        app = CompanionApp(snapshot_path=snapshot_path, cwd=repo)
+    app = CompanionApp(snapshot_path=snapshot_path, cwd=repo)
 
-        async def run_root_label_test() -> None:
-            async with app.run_test() as pilot:
-                await pilot.pause(0.2)
+    async def run_root_label_test() -> None:
+        async with app.run_test() as pilot:
+            await pilot.pause(0.2)
 
-                await pilot.pause(0.1)
+            await pilot.pause(0.1)
 
-                tree = app.query_one("#file-tree", DirectoryTree)
-                tree.render_label(tree.root, Style(), Style())
-                root_label = tree.root._label.plain
+            tree = app.query_one("#file-tree", DirectoryTree)
+            tree.render_label(tree.root, Style(), Style())
+            root_label = tree.root._label.plain
 
-                assert root_label.startswith("~")
-                assert str(Path.home()) not in root_label
-                assert collapse_home(str(tree.root.data.path)) == f"~/{repo.relative_to(Path.home())}"
+            assert root_label.startswith("~")
+            assert str(Path.home()) not in root_label
+            assert collapse_home(str(tree.root.data.path)) == f"~/{repo.relative_to(Path.home())}"
 
-        asyncio.run(run_root_label_test())
+    asyncio.run(run_root_label_test())
 
 
 def _bump_mtime(path: Path) -> None:

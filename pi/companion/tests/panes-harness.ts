@@ -65,6 +65,7 @@ export function createMockPi(execHandler: ExecHandler = () => ({ code: 0, stdout
 		pi: pi as unknown as ExtensionAPI,
 		execCalls,
 		registeredEvents: () => [...handlers.keys()],
+		handlerCount: (eventName: string) => handlers.get(eventName)?.length ?? 0,
 		async emit(eventName: string, event: unknown = {}, ctx: MockContext = createContext()) {
 			for (const handler of handlers.get(eventName) ?? []) {
 				await handler(event, ctx);

@@ -13,6 +13,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from .agents import AgentsMixin
+from .analysis import AnalysisMixin
 from .directory import DirectoryMixin
 from .errors import (
     ActiveRunExistsError,
@@ -22,6 +23,7 @@ from .errors import (
 )
 from .messages import MessagesMixin
 from .policy import PolicyMixin
+from .raw_pi_thread import RawPiThreadMixin
 from .runs import RunsMixin
 from .schema import SchemaMixin
 from .summary import SummaryMixin
@@ -53,6 +55,8 @@ class Store(
     DirectoryMixin,
     SummaryMixin,
     WorkstreamsMixin,
+    RawPiThreadMixin,
+    AnalysisMixin,
 ):
     """Daemon persistence layer backed by SQLite."""
 

@@ -11,7 +11,7 @@ from rich.console import Console
 from textual.containers import VerticalScroll
 from textual.widgets import ContentSwitcher, Static
 
-from basecamp.companion.analysis import companion_analysis_path
+from basecamp.companion.analysis import CompanionAnalysis
 from basecamp.companion.app import CompanionApp
 from basecamp.companion.daemon import (
     DaemonAgentMessages,
@@ -51,9 +51,15 @@ def _build_repo(repo: Path) -> None:
 
 
 class _FakeDaemonSource:
-    def __init__(self, summary: DaemonSummary | None, messages: DaemonAgentMessages | None = None) -> None:
+    def __init__(
+        self,
+        summary: DaemonSummary | None,
+        messages: DaemonAgentMessages | None = None,
+        analysis: CompanionAnalysis | None = None,
+    ) -> None:
         self.summary = summary
         self.messages = messages
+        self.analysis = analysis
         self.poll_calls: list[str] = []
         self.message_poll_calls: list[tuple[str, str, int | None]] = []
 
@@ -61,6 +67,9 @@ class _FakeDaemonSource:
         self.poll_calls.append(root_id)
         assert limit is None or isinstance(limit, int)
         return self.summary
+
+    def poll_analysis(self, session_id: str) -> CompanionAnalysis | None:  # noqa: ARG002
+        return self.analysis
 
     def poll_messages(
         self,
@@ -163,21 +172,6 @@ def test_swarm_receives_daemon_summary_when_session_active(tmp_path: Path) -> No
         ),
         encoding="utf-8",
     )
-    analysis_path = companion_analysis_path(session_id, snapshot_path.parent)
-    analysis_path.write_text(
-        json.dumps(
-            {
-                "version": 2,
-                "sessionId": session_id,
-                "updatedAt": "t",
-                "monitor": [],
-                "needsCapture": [],
-                "checkpoints": [],
-            }
-        ),
-        encoding="utf-8",
-    )
-
     daemon_source = _FakeDaemonSource(
         _daemon_summary_ok(
             total=0,
@@ -224,19 +218,6 @@ def test_swarm_polls_messages_for_selected_agent_when_session_active(tmp_path: P
         encoding="utf-8",
     )
     (tasks_dir / f"{session_id}.json").write_text("[]", encoding="utf-8")
-    companion_analysis_path(session_id, snapshot_path.parent).write_text(
-        json.dumps(
-            {
-                "version": 2,
-                "sessionId": session_id,
-                "updatedAt": "t",
-                "monitor": [],
-                "needsCapture": [],
-                "checkpoints": [],
-            }
-        ),
-        encoding="utf-8",
-    )
     daemon_source = _FakeDaemonSource(
         _daemon_summary_ok(
             total=2,
@@ -330,22 +311,10 @@ def test_dashboard_autopin_navigation_and_repin(tmp_path: Path) -> None:
         ),
         encoding="utf-8",
     )
-    analysis_path = companion_analysis_path(session_id, snapshot_path.parent)
-    analysis_path.write_text(
-        json.dumps(
-            {
-                "version": 2,
-                "sessionId": session_id,
-                "updatedAt": "t",
-                "monitor": ["monitor1"],
-                "needsCapture": ["capture1"],
-                "checkpoints": ["checkpoint1"],
-            }
-        ),
-        encoding="utf-8",
+    daemon_source = _FakeDaemonSource(
+        DaemonSummaryUnavailable(error="unavailable in test"),
+        analysis=CompanionAnalysis(monitor=["monitor1"], needs_capture=["capture1"], checkpoints=["checkpoint1"]),
     )
-
-    daemon_source = _FakeDaemonSource(DaemonSummaryUnavailable(error="unavailable in test"))
     app = CompanionApp(
         snapshot_path=snapshot_path,
         cwd=repo,

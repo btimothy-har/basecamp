@@ -8,6 +8,7 @@ from pathlib import Path
 
 import uvicorn
 
+from .analysis import AnalysisScheduler
 from .app import create_app
 from .process import reconcile_orphaned_runs
 from .store import Store
@@ -39,7 +40,9 @@ class UdsServer(uvicorn.Server):
 def create_server(uds_path: str, store: Store, *, log_level: str = "info") -> UdsServer:
     """Build a UDS-bound daemon server for the given store."""
 
-    app = create_app(store, daemon_uds=uds_path)
+    # The real, network-backed analyzer is wired here — explicitly, so it never leaks
+    # into a bare create_app(store) (see app._NoAnalysisScheduler).
+    app = create_app(store, daemon_uds=uds_path, scheduler=AnalysisScheduler(store))
     config = uvicorn.Config(app, uds=uds_path, log_level=log_level)
     return UdsServer(config)
 

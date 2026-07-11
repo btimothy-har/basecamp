@@ -1,4 +1,3 @@
-"""Companion session analysis — data model + generation."""
+"""Companion session analysis — the dashboard section model (daemon-sourced)."""
 
-from basecamp.companion.analysis.generate import *  # noqa: F401,F403
 from basecamp.companion.analysis.model import *  # noqa: F401,F403

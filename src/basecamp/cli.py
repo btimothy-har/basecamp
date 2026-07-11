@@ -2,19 +2,11 @@
 
 from __future__ import annotations
 
-import json
 import sys
 from pathlib import Path
 
 import rich_click as click
 
-from basecamp.companion.analysis import (
-    companion_analysis_path,
-    generate_analysis,
-    load_analysis,
-    resolve_companion_model,
-    write_analysis,
-)
 from basecamp.companion.app import run_companion
 from basecamp.core.cli.config import run_project_menu
 from basecamp.core.cli.project import (
@@ -155,60 +147,6 @@ def companion() -> None:
 def dashboard(snapshot_path: Path, cwd: Path, scratch_dir: Path | None) -> None:
     """Live session companion dashboard (runs in a tmux pane)."""
     run_companion(snapshot_path, cwd, scratch_dir)
-
-
-@companion.command()
-@click.option("--session-id", required=True, type=str)
-@click.option(
-    "--base-dir",
-    required=False,
-    default=None,
-    type=click.Path(path_type=Path),
-)
-def analyze(session_id: str, base_dir: Path | None) -> None:
-    """Best-effort companion analysis writer for a session."""
-    model = resolve_companion_model()
-
-    try:
-        envelope = json.load(sys.stdin)
-    except Exception:
-        envelope = {}
-
-    context = envelope.get("context", "") if isinstance(envelope, dict) else ""
-    already_tracked = envelope.get("alreadyTracked", "") if isinstance(envelope, dict) else ""
-
-    path = companion_analysis_path(session_id, base_dir)
-    prior = load_analysis(path)
-
-    try:
-        result = generate_analysis(
-            session_id=session_id,
-            model=model,
-            context=context,
-            already_tracked=already_tracked,
-            prior=prior,
-        )
-        write_analysis(path, result)
-    except Exception:
-        click.echo("companion analyze failed; keeping existing analysis", err=True)
-
-
-@basecamp.command("companion-analyze")
-@click.option("--session-id", required=True, type=str)
-@click.option(
-    "--base-dir",
-    required=False,
-    default=None,
-    type=click.Path(path_type=Path),
-)
-@click.pass_context
-def companion_analyze(ctx: click.Context, session_id: str, base_dir: Path | None) -> None:
-    """Deprecated compatibility alias for `basecamp companion analyze`."""
-    click.echo(
-        "Warning: `basecamp companion-analyze` is deprecated; use `basecamp companion analyze`.",
-        err=True,
-    )
-    ctx.invoke(analyze, session_id=session_id, base_dir=base_dir)
 
 
 @basecamp.group()
