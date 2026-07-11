@@ -86,6 +86,23 @@ def test_applies_latest_compaction_marker() -> None:
     assert "the answer" in result
 
 
+def test_compaction_without_a_summary_keeps_context() -> None:
+    live = [
+        _user("e0", None, "ancient prompt"),
+        _user("e1", "e0", "kept question"),
+        _entry("c1", "e1", type="compaction", summary="", firstKeptEntryId="e1", tokensBefore=99),
+        _assistant("e2", "c1", [{"type": "text", "text": "the answer"}]),
+    ]
+
+    result = reduce_thread(live)
+
+    # An empty summary has nothing to substitute, so the prefix must be kept, not dropped.
+    assert "ancient prompt" in result
+    assert "kept question" in result
+    assert "the answer" in result
+    assert "compacted" not in result  # no summary line emitted
+
+
 def test_no_compaction_keeps_everything() -> None:
     live = [_user("e1", None, "q"), _assistant("e2", "e1", [{"type": "text", "text": "a"}])]
 

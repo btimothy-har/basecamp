@@ -63,15 +63,16 @@ def test_poll_detects_analysis_change_keeping_goals(tmp_path: Path) -> None:
     assert len(model.goals) == 1
 
 
-def test_poll_tolerates_daemon_analysis_disappearing(tmp_path: Path) -> None:
+def test_poll_keeps_last_analysis_when_fetch_returns_none(tmp_path: Path) -> None:
     tasks = tmp_path / "tasks.json"
     _write_tasks(tasks, [])
     current: dict[str, CompanionAnalysis | None] = {"analysis": CompanionAnalysis(monitor=["m"])}
     source = DashboardSource(tasks, lambda: current["analysis"])
-    source.poll()
+    source.poll()  # populates analysis = ["m"]
 
-    current["analysis"] = None  # daemon down / no row
-    model = source.poll()
+    current["analysis"] = None  # daemon down / blip — must NOT clear the panel
+    assert source.poll() is None  # None is ignored → no change → no re-render
 
-    assert model is not None
-    assert model.analysis is None
+    # Re-serving the same value proves the None never cleared it: unchanged → still None.
+    current["analysis"] = CompanionAnalysis(monitor=["m"])
+    assert source.poll() is None

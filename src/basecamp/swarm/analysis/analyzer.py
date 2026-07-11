@@ -13,6 +13,7 @@ from __future__ import annotations
 import asyncio
 import json
 from collections.abc import Callable
+from concurrent.futures import ThreadPoolExecutor
 from typing import Any, Protocol
 
 from .sections import AnalysisSections
@@ -23,6 +24,10 @@ except ImportError:
     PydanticAIAgent = None
 
 AgentFactory = Callable[..., Any]
+
+# The blocking provider call runs on this many dedicated threads — kept off the default
+# executor the daemon's store I/O uses, so a slow/hung analysis can't starve coordination.
+DEFAULT_ANALYSIS_WORKERS = 4
 
 SYSTEM_PROMPT = """Analyze the provided context from an AI coding agent's work session and produce a concise situational-awareness dashboard for the human supervisor watching it.
 
@@ -81,10 +86,25 @@ def _default_agent_factory(model: str, *, output_type: type[Any]) -> Any:
 
 
 class PydanticAIAnalyzer:
-    """Provisional analyzer: alias-resolved PydanticAI over the existing sections."""
+    """Provisional analyzer: alias-resolved PydanticAI over the existing sections.
 
-    def __init__(self, agent_factory: AgentFactory | None = None) -> None:
+    The blocking ``run_sync`` call runs on a dedicated, bounded thread pool (lazily
+    created) rather than the default executor the daemon's store I/O shares — so a
+    slow or hung provider call is confined here and can never starve coordination.
+    Pair with the scheduler's per-call timeout (scheduler.py) to bound a single run.
+    """
+
+    def __init__(
+        self, agent_factory: AgentFactory | None = None, *, max_workers: int = DEFAULT_ANALYSIS_WORKERS
+    ) -> None:
         self._agent_factory = agent_factory or _default_agent_factory
+        self._max_workers = max_workers
+        self._executor: ThreadPoolExecutor | None = None
+
+    def _get_executor(self) -> ThreadPoolExecutor:
+        if self._executor is None:
+            self._executor = ThreadPoolExecutor(max_workers=self._max_workers, thread_name_prefix="analysis")
+        return self._executor
 
     async def analyze(
         self,
@@ -96,6 +116,13 @@ class PydanticAIAnalyzer:
     ) -> AnalysisSections:
         prompt = build_prompt(context=context, already_tracked=already_tracked, prior=prior)
         agent = self._agent_factory(model, output_type=AnalysisSections)
-        result = await asyncio.to_thread(agent.run_sync, prompt)
+        loop = asyncio.get_running_loop()
+        result = await loop.run_in_executor(self._get_executor(), agent.run_sync, prompt)
         output = result.output
         return output if isinstance(output, AnalysisSections) else AnalysisSections.model_validate(output)
+
+    def close(self) -> None:
+        """Shut the analysis thread pool down (daemon shutdown). Idempotent."""
+        if self._executor is not None:
+            self._executor.shutdown(wait=False, cancel_futures=True)
+            self._executor = None

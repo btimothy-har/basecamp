@@ -62,14 +62,19 @@ def _apply_latest_compaction(entries: list[dict[str, Any]]) -> tuple[str | None,
         return None, entries
 
     compaction = entries[last_index]
+    summary = compaction.get("summary")
+    if not (isinstance(summary, str) and summary.strip()):
+        # No usable summary to substitute — keep the full path rather than silently
+        # dropping every pre-firstKept turn with nothing in its place.
+        return None, entries
+
     first_kept = compaction.get("firstKeptEntryId")
     cut = None
     if first_kept is not None:
         cut = next((i for i, entry in enumerate(entries) if entry.get("id") == first_kept), None)
     if cut is None:
         cut = last_index + 1
-    summary = compaction.get("summary")
-    return (summary if isinstance(summary, str) else None), entries[cut:]
+    return summary, entries[cut:]
 
 
 def _render_entry(entry: dict[str, Any], budget: int, *, include_thinking: bool) -> str | None:

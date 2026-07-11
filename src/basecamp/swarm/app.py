@@ -57,15 +57,38 @@ from .service import (
 from .store import DuplicateAgentHandleError, Store
 
 
+class _NoAnalysisScheduler:
+    """Null scheduler: ``create_app``'s default when none is injected.
+
+    A bare ``create_app(store)`` must never silently wire a live, network-backed
+    analyzer — that would let a test (or embedder) fire a real LLM call just by
+    sending a ``thread_report``. Production builds a real ``AnalysisScheduler``
+    explicitly (see ``server.create_server``); everything else gets this no-op.
+    """
+
+    def notify(self, owner_id: str, seq: int) -> None:  # noqa: ARG002
+        return None
+
+    def forget(self, owner_id: str) -> None:  # noqa: ARG002
+        return None
+
+    async def stop(self) -> None:
+        return None
+
+
 def create_app(
     store: Store,
     *,
     daemon_uds: str | None = None,
     scheduler: AnalysisScheduler | None = None,
 ) -> FastAPI:
-    """Create and configure the daemon FastAPI app."""
+    """Create and configure the daemon FastAPI app.
 
-    analysis_scheduler = scheduler if scheduler is not None else AnalysisScheduler(store)
+    ``scheduler`` must be supplied for analysis to run; when omitted the app uses a
+    no-op scheduler so it never fires an LLM on its own (see ``_NoAnalysisScheduler``).
+    """
+
+    analysis_scheduler: Any = scheduler if scheduler is not None else _NoAnalysisScheduler()
 
     @asynccontextmanager
     async def lifespan(_app: FastAPI) -> Any:

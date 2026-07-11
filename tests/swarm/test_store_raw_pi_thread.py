@@ -70,6 +70,44 @@ def test_record_inserts_only_new_nodes_and_bumps_seq(tmp_path: Path) -> None:
     assert total == 2
 
 
+def test_resend_without_new_nodes_does_not_bump_seq(tmp_path: Path) -> None:
+    store = Store(db_path=tmp_path / "daemon.db")
+
+    seq1 = store.record_raw_pi_thread(
+        owner_id="s", session_id="pi", session_file=None, leaf_id="e1", nodes=[_node("e1", None, "root")]
+    )
+    # replay the identical report (same leaf, no new nodes) — e.g. a reconnect resend
+    seq2 = store.record_raw_pi_thread(
+        owner_id="s", session_id="pi", session_file=None, leaf_id="e1", nodes=[_node("e1", None, "root")]
+    )
+
+    assert seq1 == 1
+    assert seq2 == 1  # unchanged: no redundant analysis is triggered
+    assert store.get_raw_pi_thread("s").latest_seq == 1
+
+
+def test_rewind_to_an_existing_leaf_bumps_seq(tmp_path: Path) -> None:
+    store = Store(db_path=tmp_path / "daemon.db")
+
+    store.record_raw_pi_thread(
+        owner_id="s",
+        session_id="pi",
+        session_file=None,
+        leaf_id="e2",
+        nodes=[_node("e1", None, "root"), _node("e2", "e1", "leaf")],
+    )
+    # rewind to e1: no new nodes, but the leaf moved, so the branch changed
+    seq = store.record_raw_pi_thread(
+        owner_id="s", session_id="pi", session_file=None, leaf_id="e1", nodes=[_node("e1", None, "root")]
+    )
+
+    assert seq == 2  # leaf moved e2 -> e1 counts as a change even with no new nodes
+    head = store.get_raw_pi_thread("s")
+    assert head is not None
+    assert head.leaf_id == "e1"
+    assert store.get_raw_pi_thread_nodes("s").live == ["root"]
+
+
 def test_live_branch_follows_the_current_leaf_after_a_fork(tmp_path: Path) -> None:
     store = Store(db_path=tmp_path / "daemon.db")
 

@@ -74,3 +74,17 @@ async def test_dict_output_is_validated_into_sections() -> None:
     assert isinstance(result, AnalysisSections)
     assert result.monitor == ["x"]
     assert result.needs_capture == ["y"]
+
+
+@pytest.mark.asyncio
+async def test_close_is_idempotent_and_pool_recreates_on_next_run() -> None:
+    capture: dict[str, Any] = {}
+    analyzer = PydanticAIAnalyzer(agent_factory=_factory(AnalysisSections(monitor=["a"]), capture))
+
+    await analyzer.analyze(context="C", already_tracked="", prior=None, model="m")
+    analyzer.close()
+    analyzer.close()  # idempotent — no error on a second close
+
+    result = await analyzer.analyze(context="C", already_tracked="", prior=None, model="m")
+    assert result.monitor == ["a"]  # executor lazily recreated after close
+    analyzer.close()

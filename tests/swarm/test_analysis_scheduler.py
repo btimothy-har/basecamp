@@ -45,8 +45,11 @@ async def _wait_for_analysis_seq(store: Store, owner_id: str, seq: int, *, max_w
     return None
 
 
-def _scheduler(store: Store, analyzer: _FakeAnalyzer, *, model: str | None = "prov/m") -> AnalysisScheduler:
-    return AnalysisScheduler(store, analyzer=analyzer, model=model, debounce_seconds=0)
+def _scheduler(store: Store, analyzer: Any, *, model: str | None = "prov/m") -> AnalysisScheduler:
+    # Single attempt, no backoff: these tests assert per-turn behavior, not the retry path.
+    return AnalysisScheduler(
+        store, analyzer=analyzer, model=model, debounce_seconds=0, max_attempts=1, retry_backoff_seconds=0.0
+    )
 
 
 @pytest.mark.asyncio
@@ -154,7 +157,9 @@ async def test_analyzer_error_does_not_kill_the_worker(tmp_path: Path) -> None:
             return AnalysisSections(monitor=["recovered"], needs_capture=[], checkpoints=[])
 
     analyzer = _FlakyAnalyzer()
-    scheduler = AnalysisScheduler(store, analyzer=analyzer, model="m", debounce_seconds=0)
+    scheduler = AnalysisScheduler(
+        store, analyzer=analyzer, model="m", debounce_seconds=0, max_attempts=1, retry_backoff_seconds=0.0
+    )
 
     _seed_thread(store, "s", "e1", [_user_node("e1", None, "first")])
     scheduler.notify("s", 1)
@@ -167,4 +172,72 @@ async def test_analyzer_error_does_not_kill_the_worker(tmp_path: Path) -> None:
 
     assert row is not None
     assert analyzer.calls == 2  # worker survived the error and ran again
+    await scheduler.stop()
+
+
+@pytest.mark.asyncio
+async def test_retries_a_transient_failure_within_the_same_turn(tmp_path: Path) -> None:
+    store = Store(db_path=tmp_path / "d.db")
+    seq = _seed_thread(store, "s", "e1", [_user_node("e1", None, "hi")])
+
+    class _FailOnce:
+        def __init__(self) -> None:
+            self.calls = 0
+
+        async def analyze(self, *, context: str, already_tracked: str, prior: Any, model: str) -> AnalysisSections:  # noqa: ARG002
+            self.calls += 1
+            if self.calls == 1:
+                raise RuntimeError("boom")
+            return AnalysisSections(monitor=["ok"], needs_capture=[], checkpoints=[])
+
+    analyzer = _FailOnce()
+    scheduler = AnalysisScheduler(
+        store, analyzer=analyzer, model="m", debounce_seconds=0, max_attempts=3, retry_backoff_seconds=0.0
+    )
+
+    scheduler.notify("s", seq)
+    row = await _wait_for_analysis_seq(store, "s", seq)
+
+    assert row is not None  # recovered via retry, no fresh turn needed
+    assert analyzer.calls == 2
+    await scheduler.stop()
+
+
+@pytest.mark.asyncio
+async def test_times_out_a_hung_analyzer_and_survives(tmp_path: Path) -> None:
+    store = Store(db_path=tmp_path / "d.db")
+    seq = _seed_thread(store, "s", "e1", [_user_node("e1", None, "hi")])
+
+    class _HangsThenOk:
+        def __init__(self) -> None:
+            self.calls = 0
+
+        async def analyze(self, *, context: str, already_tracked: str, prior: Any, model: str) -> AnalysisSections:  # noqa: ARG002
+            self.calls += 1
+            if self.calls == 1:
+                await asyncio.Event().wait()  # never returns → must time out
+            return AnalysisSections(monitor=["ok"], needs_capture=[], checkpoints=[])
+
+    analyzer = _HangsThenOk()
+    scheduler = AnalysisScheduler(
+        store,
+        analyzer=analyzer,
+        model="m",
+        debounce_seconds=0,
+        timeout_seconds=0.02,
+        max_attempts=1,
+        retry_backoff_seconds=0.0,
+    )
+
+    scheduler.notify("s", seq)
+    await asyncio.sleep(0.1)
+    assert store.get_analysis("s") is None  # hung run timed out, nothing recorded
+    assert analyzer.calls == 1
+
+    seq2 = _seed_thread(store, "s", "e2", [_user_node("e2", "e1", "more")])
+    scheduler.notify("s", seq2)
+    row = await _wait_for_analysis_seq(store, "s", seq2)
+
+    assert row is not None  # worker survived the timeout and analyzed the next turn
+    assert analyzer.calls == 2
     await scheduler.stop()

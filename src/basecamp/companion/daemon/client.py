@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import socket
 from http.client import HTTPConnection, HTTPException
 from pathlib import Path
@@ -36,6 +37,8 @@ DEFAULT_DAEMON_SOCKET_PATH = Path("~/.pi/basecamp/swarm/daemon.sock").expanduser
 DEFAULT_DAEMON_MESSAGES_LIMIT = 3
 DEFAULT_DAEMON_SUMMARY_LIMIT = 5
 DEFAULT_DAEMON_TIMEOUT_SECONDS = 0.5
+
+logger = logging.getLogger(__name__)
 
 
 class UnixHTTPConnection(HTTPConnection):
@@ -73,6 +76,25 @@ class DaemonSummarySource:
         self._default_limit = default_limit
         self._timeout = timeout
 
+    def _get(self, request_path: str) -> tuple[int, bytes]:
+        """GET ``request_path`` over the UDS; return ``(status, body)``.
+
+        Owns the connection lifecycle (connect → request → read → close) shared by
+        every poll. Transport failures (``OSError``/``HTTPException``) propagate so
+        each caller maps them to its own result type; only close errors are swallowed.
+        """
+
+        connection = self._connection_factory(self._daemon_socket, timeout=self._timeout)
+        try:
+            connection.request("GET", request_path, headers={"Accept": "application/json"})
+            response = connection.getresponse()
+            return response.status, response.read()
+        finally:
+            try:
+                connection.close()
+            except OSError:
+                pass
+
     def poll(self, root_id: str, *, limit: int | None = None) -> DaemonSummary:
         """Fetch a daemon summary for the given root ID."""
 
@@ -84,30 +106,20 @@ class DaemonSummarySource:
             return DaemonSummaryError(error="limit must be an int")
 
         request_path = f"/runs/summary?{urlencode({'root_id': root_id, 'limit': poll_limit})}"
-        connection: HTTPConnection | None = None
-
         try:
-            connection = self._connection_factory(self._daemon_socket, timeout=self._timeout)
-            connection.request("GET", request_path, headers={"Accept": "application/json"})
-            response = connection.getresponse()
-
-            if response.status != 200:
-                return DaemonSummaryError(error=f"daemon returned status {response.status}")
-
-            payload = json.loads(response.read().decode("utf-8"))
-            return _parse_payload(payload)
+            status, body = self._get(request_path)
         except OSError as error:
             return DaemonSummaryUnavailable(error=str(error))
-        except (json.JSONDecodeError, UnicodeDecodeError, TypeError, ValueError):
-            return DaemonSummaryError(error="daemon returned an invalid summary response")
         except HTTPException as error:
             return DaemonSummaryError(error=str(error))
-        finally:
-            if connection is not None:
-                try:
-                    connection.close()
-                except OSError:
-                    pass
+
+        if status != 200:
+            return DaemonSummaryError(error=f"daemon returned status {status}")
+
+        try:
+            return _parse_payload(json.loads(body.decode("utf-8")))
+        except (json.JSONDecodeError, UnicodeDecodeError, TypeError, ValueError):
+            return DaemonSummaryError(error="daemon returned an invalid summary response")
 
     def poll_analysis(self, session_id: str) -> CompanionAnalysis | None:
         """Fetch the daemon's stored analysis for a session; None if absent/unreachable.
@@ -119,24 +131,21 @@ class DaemonSummarySource:
         if not isinstance(session_id, str):
             return None
 
-        request_path = f"/analysis/{quote(session_id, safe='')}"
-        connection: HTTPConnection | None = None
         try:
-            connection = self._connection_factory(self._daemon_socket, timeout=self._timeout)
-            connection.request("GET", request_path, headers={"Accept": "application/json"})
-            response = connection.getresponse()
-            body = response.read()
-            if response.status != 200:
-                return None
+            status, body = self._get(f"/analysis/{quote(session_id, safe='')}")
+        except (OSError, HTTPException):
+            return None  # daemon down / unreachable — expected, stay quiet
+
+        if status != 200:
+            return None  # e.g. 404 before the first analysis exists
+
+        try:
             return CompanionAnalysis.model_validate(json.loads(body.decode("utf-8")))
-        except (OSError, HTTPException, json.JSONDecodeError, UnicodeDecodeError, TypeError, ValueError):
+        except (json.JSONDecodeError, UnicodeDecodeError, TypeError, ValueError) as error:
+            # A 200 that won't parse means the daemon and companion analysis schemas drifted;
+            # surface it (once, at warning) instead of silently blanking the panel forever.
+            logger.warning("daemon /analysis returned an unparseable payload: %s", error)
             return None
-        finally:
-            if connection is not None:
-                try:
-                    connection.close()
-                except OSError:
-                    pass
 
     def poll_messages(
         self,
@@ -157,31 +166,20 @@ class DaemonSummarySource:
             return DaemonAgentMessagesError(error="limit must be an int")
 
         query = urlencode({"root_id": root_id, "agent_handle": agent_handle, "limit": poll_limit})
-        request_path = f"/runs/messages?{query}"
-        connection: HTTPConnection | None = None
-
         try:
-            connection = self._connection_factory(self._daemon_socket, timeout=self._timeout)
-            connection.request("GET", request_path, headers={"Accept": "application/json"})
-            response = connection.getresponse()
-
-            if response.status != 200:
-                return DaemonAgentMessagesError(error=f"daemon returned status {response.status}")
-
-            payload = json.loads(response.read().decode("utf-8"))
-            return _parse_messages_payload(payload)
+            status, body = self._get(f"/runs/messages?{query}")
         except OSError as error:
             return DaemonAgentMessagesUnavailable(error=str(error))
-        except (json.JSONDecodeError, UnicodeDecodeError, TypeError, ValueError):
-            return DaemonAgentMessagesError(error="daemon returned an invalid messages response")
         except HTTPException as error:
             return DaemonAgentMessagesError(error=str(error))
-        finally:
-            if connection is not None:
-                try:
-                    connection.close()
-                except OSError:
-                    pass
+
+        if status != 200:
+            return DaemonAgentMessagesError(error=f"daemon returned status {status}")
+
+        try:
+            return _parse_messages_payload(json.loads(body.decode("utf-8")))
+        except (json.JSONDecodeError, UnicodeDecodeError, TypeError, ValueError):
+            return DaemonAgentMessagesError(error="daemon returned an invalid messages response")
 
 
 __all__ = [

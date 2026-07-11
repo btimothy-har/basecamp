@@ -2,8 +2,9 @@
 
 Combines the authoritative goal-cycle store (an mtime-watched file, via cycles.py)
 with the daemon-sourced analysis (fetched each poll from ``GET /analysis/{session_id}``)
-into one DashboardModel. Best-effort: a missing file or an unreachable daemon just
-yields empty/partial data.
+into one DashboardModel. Best-effort: a missing goal file yields empty goals, and a
+None analysis fetch (daemon unreachable / not ready) retains the last-shown analysis
+rather than blanking the panel.
 """
 
 from __future__ import annotations
@@ -57,8 +58,11 @@ class DashboardSource:
             self._goals = to_display_goals(load_goal_cycles(self._tasks_path)) if tasks_sig[0] else []
             changed = True
 
+        # A None fetch means the daemon is unreachable or hasn't produced analysis yet —
+        # it is NOT a signal to clear an already-shown dashboard. Only a fresh non-None
+        # result updates the panel, so a transient daemon blip never blanks it.
         analysis = self._analysis_fetcher()
-        if analysis != self._analysis:
+        if analysis is not None and analysis != self._analysis:
             self._analysis = analysis
             changed = True
 

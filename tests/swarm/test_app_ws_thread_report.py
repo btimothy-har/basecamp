@@ -9,6 +9,7 @@ from typing import Any
 from app_helpers import _build_app_with_scheduler, _build_app_with_store, _register_ws
 from fastapi.testclient import TestClient
 
+from basecamp.swarm.app import create_app
 from basecamp.swarm.frames import PROTOCOL_VERSION
 from basecamp.swarm.store import Store
 from basecamp.swarm.store.raw_pi_thread import RawPiThreadRow
@@ -116,3 +117,28 @@ def test_ws_thread_report_wakes_scheduler_with_authenticated_node_and_seq(tmp_pa
 
     assert notified == [("session-1", 1)]
     assert _wait_for_forget(scheduler, "session-1")  # worker cleaned up on disconnect
+
+
+def test_bare_create_app_ingests_but_runs_no_analysis(tmp_path: Path) -> None:
+    # A create_app(store) with no scheduler injected must never fire an LLM: it uses the
+    # no-op default scheduler, so ingest still works but no analysis row is ever produced.
+    store = Store(db_path=tmp_path / "daemon.db", task_dir=tmp_path / "tasks")
+    client = TestClient(create_app(store))
+
+    with client.websocket_connect("/ws") as websocket:
+        _register_ws(websocket, node_id="session-1", role="session", parent_id=None, sibling_group="sg-1")
+        websocket.send_json(
+            {
+                "type": "thread_report",
+                "v": PROTOCOL_VERSION,
+                "node_id": "session-1",
+                "session_id": "pi",
+                "session_file": None,
+                "leaf_id": "e1",
+                "nodes": [{"id": "e1", "parent_id": None, "entry_json": "x"}],
+            }
+        )
+        head = _wait_for_head(store, "session-1")
+
+    assert head is not None  # ingest works
+    assert store.get_analysis("session-1") is None  # no-op scheduler ran no analysis

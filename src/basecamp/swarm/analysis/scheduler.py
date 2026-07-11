@@ -25,6 +25,13 @@ logger = logging.getLogger(__name__)
 
 DEFAULT_DEBOUNCE_SECONDS = 2.0
 
+# Bound a single analyzer run so a slow/hung provider can never wedge a worker (the old
+# cold subprocess had a 60s SIGKILL watchdog; this replaces it). On timeout or error the
+# run is retried a bounded number of times with backoff, then abandoned until a fresh turn.
+DEFAULT_ANALYSIS_TIMEOUT_SECONDS = 60.0
+DEFAULT_MAX_ATTEMPTS = 3
+DEFAULT_RETRY_BACKOFF_SECONDS = 1.0
+
 # Provisional model policy: hardcoded for v2. The analyzer rework will move this to
 # config; until then the model lives here (a broken/unavailable model is caught and
 # skipped, so it never harms ingest).
@@ -41,13 +48,20 @@ class AnalysisScheduler:
         analyzer: Analyzer | None = None,
         model: str | None = DEFAULT_ANALYSIS_MODEL,
         debounce_seconds: float = DEFAULT_DEBOUNCE_SECONDS,
+        timeout_seconds: float = DEFAULT_ANALYSIS_TIMEOUT_SECONDS,
+        max_attempts: int = DEFAULT_MAX_ATTEMPTS,
+        retry_backoff_seconds: float = DEFAULT_RETRY_BACKOFF_SECONDS,
     ) -> None:
         self._store = store
         self._analyzer: Analyzer = analyzer or PydanticAIAnalyzer()
         self._model = model
         self._debounce = debounce_seconds
+        self._timeout = timeout_seconds
+        self._max_attempts = max(1, max_attempts)
+        self._retry_backoff = retry_backoff_seconds
         self._latest: dict[str, int] = {}
         self._analyzed: dict[str, int] = {}
+        self._failures: dict[str, int] = {}
         self._events: dict[str, asyncio.Event] = {}
         self._workers: dict[str, asyncio.Task[None]] = {}
 
@@ -68,20 +82,27 @@ class AnalysisScheduler:
         self._events.pop(owner_id, None)
         self._latest.pop(owner_id, None)
         self._analyzed.pop(owner_id, None)
+        self._failures.pop(owner_id, None)
 
     async def stop(self) -> None:
-        """Cancel every worker (daemon shutdown)."""
+        """Cancel every worker and release the analyzer (daemon shutdown)."""
 
         workers = list(self._workers.values())
         for worker in workers:
             worker.cancel()
         for worker in workers:
-            with contextlib.suppress(asyncio.CancelledError):
+            # Suppress cancellation AND any residual worker error: shutdown must not abort
+            # because a worker died (e.g. a seed-time DB error) and left an exception set.
+            with contextlib.suppress(asyncio.CancelledError, Exception):
                 await worker
         self._workers.clear()
         self._events.clear()
         self._latest.clear()
         self._analyzed.clear()
+        self._failures.clear()
+        close = getattr(self._analyzer, "close", None)
+        if callable(close):
+            close()
 
     def _ensure_worker(self, owner_id: str) -> None:
         if owner_id not in self._events:
@@ -92,7 +113,14 @@ class AnalysisScheduler:
 
     async def _run_worker(self, owner_id: str) -> None:
         # Seed from any persisted analysis so a restart doesn't re-run already-seen turns.
-        self._analyzed.setdefault(owner_id, await self._persisted_seq(owner_id))
+        # Guard it: a seed-time store error must not kill the worker (which would also make
+        # stop() re-raise on shutdown) — fall back to 0 and let the loop below recover.
+        try:
+            seed = await self._persisted_seq(owner_id)
+        except Exception:
+            logger.exception("failed to seed analysis cursor for %s; starting from 0", owner_id)
+            seed = 0
+        self._analyzed.setdefault(owner_id, seed)
         event = self._events[owner_id]
         while True:
             await event.wait()
@@ -118,12 +146,16 @@ class AnalysisScheduler:
                 return False
             context = reduce_thread(thread.live)
             prior = await asyncio.to_thread(self._store.get_analysis, owner_id)
-            sections = await self._analyzer.analyze(
-                context=context,
-                already_tracked="",  # v2: Phase 3's projection feeds tracked goal/task state
-                prior=_parse_sections(prior.sections_json) if prior is not None else None,
-                model=model,
-            )
+            prior_sections = _parse_sections(prior.sections_json) if prior is not None else None
+        except Exception as exc:  # noqa: BLE001 — a store error must never kill the worker or ingest
+            self._note_failure(owner_id, str(exc) or type(exc).__name__)
+            return False
+
+        # v2: Phase 3's projection feeds tracked goal/task state into already_tracked.
+        sections = await self._run_analyzer(owner_id, context=context, prior=prior_sections, model=model)
+        if sections is None:
+            return False
+        try:
             await asyncio.to_thread(
                 self._store.record_analysis,
                 owner_id=owner_id,
@@ -131,10 +163,44 @@ class AnalysisScheduler:
                 model=model,
                 sections_json=sections.model_dump_json(by_alias=True),
             )
-        except Exception:  # noqa: BLE001 — a broken analyzer must never kill the worker or ingest
-            logger.exception("analysis run failed for %s", owner_id)
+        except Exception as exc:  # noqa: BLE001
+            self._note_failure(owner_id, str(exc) or type(exc).__name__)
             return False
+        self._failures.pop(owner_id, None)  # a clean run ends the failure streak
         return True
+
+    async def _run_analyzer(
+        self, owner_id: str, *, context: str, prior: AnalysisSections | None, model: str
+    ) -> AnalysisSections | None:
+        """Run the analyzer with a per-call timeout and bounded retries; None on give-up."""
+
+        for attempt in range(1, self._max_attempts + 1):
+            try:
+                return await asyncio.wait_for(
+                    self._analyzer.analyze(context=context, already_tracked="", prior=prior, model=model),
+                    timeout=self._timeout,
+                )
+            except TimeoutError:
+                reason = f"timed out after {self._timeout:.0f}s"
+            except Exception as exc:  # noqa: BLE001 — retry any analyzer failure, then give up
+                reason = str(exc) or type(exc).__name__
+            if attempt >= self._max_attempts:
+                self._note_failure(owner_id, reason)
+                return None
+            if self._retry_backoff > 0:
+                await asyncio.sleep(self._retry_backoff * attempt)
+        return None
+
+    def _note_failure(self, owner_id: str, reason: str) -> None:
+        """Log a failure once per streak (loud first, quiet after) so a persistently broken
+        analyzer doesn't flood the log with a full traceback on every turn."""
+
+        count = self._failures.get(owner_id, 0) + 1
+        self._failures[owner_id] = count
+        if count == 1:
+            logger.warning("analysis failed for %s: %s", owner_id, reason)
+        else:
+            logger.debug("analysis still failing for %s (%d in a row): %s", owner_id, count, reason)
 
     async def _persisted_seq(self, owner_id: str) -> int:
         prior = await asyncio.to_thread(self._store.get_analysis, owner_id)

@@ -375,3 +375,12 @@ def test_poll_analysis_returns_none_when_absent() -> None:
     source = DaemonSummarySource("/tmp/daemon.sock", connection_factory=fake_connection)
 
     assert source.poll_analysis("sess") is None
+
+
+def test_poll_analysis_returns_none_for_unparseable_200() -> None:
+    # A 200 whose body doesn't match CompanionAnalysis (schema drift) yields None,
+    # not a crash — and is logged rather than swallowed silently.
+    fake_connection, _ = _build_fake_connection("{not valid json", status=200)
+    source = DaemonSummarySource("/tmp/daemon.sock", connection_factory=fake_connection)
+
+    assert source.poll_analysis("sess") is None
