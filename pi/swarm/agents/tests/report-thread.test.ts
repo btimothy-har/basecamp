@@ -33,7 +33,10 @@ const REPORT: ThreadReport = {
 describe("reportThread", () => {
 	it("wraps the report in a thread_report frame and sends it over the connection", async () => {
 		const sent: Frame[] = [];
-		await reportThread(REPORT, async () => mockConnection(sent));
+		await reportThread(
+			() => REPORT,
+			async () => mockConnection(sent),
+		);
 
 		assert.equal(sent.length, 1);
 		const frame = sent[0];
@@ -48,22 +51,31 @@ describe("reportThread", () => {
 		assert.deepEqual(frame.nodes, REPORT.nodes);
 	});
 
-	it("no-ops when the daemon is unconnected", async () => {
-		let resolved = false;
-		await reportThread(REPORT, async () => {
-			resolved = true;
-			return null;
-		});
-		assert.equal(resolved, true);
+	it("no-ops without building the report when the daemon is unconnected", async () => {
+		let built = false;
+		await reportThread(
+			() => {
+				built = true;
+				return REPORT;
+			},
+			async () => null,
+		);
+		assert.equal(built, false);
 	});
 
 	it("resolves the current connection per call (fork → new owner)", async () => {
 		const sentA: Frame[] = [];
 		const sentB: Frame[] = [];
 		let current = mockConnection(sentA);
-		await reportThread({ ...REPORT, session_id: "sess-A", node_id: "sess-A" }, async () => current);
+		await reportThread(
+			() => ({ ...REPORT, session_id: "sess-A", node_id: "sess-A" }),
+			async () => current,
+		);
 		current = mockConnection(sentB);
-		await reportThread({ ...REPORT, session_id: "sess-B", node_id: "sess-B" }, async () => current);
+		await reportThread(
+			() => ({ ...REPORT, session_id: "sess-B", node_id: "sess-B" }),
+			async () => current,
+		);
 
 		assert.equal(sentA.length, 1);
 		assert.equal(sentB.length, 1);

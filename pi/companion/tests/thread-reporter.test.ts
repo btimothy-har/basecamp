@@ -50,8 +50,8 @@ describe("companion thread reporter", () => {
 		delete process.env.BASECAMP_AGENT_ID;
 		const reports: ThreadReport[] = [];
 		const pi = new MockPi();
-		registerThreadReporter(pi as never, async (r) => {
-			reports.push(r);
+		registerThreadReporter(pi as never, async (build) => {
+			reports.push(build());
 		});
 
 		const branch = [
@@ -78,8 +78,8 @@ describe("companion thread reporter", () => {
 		process.env.BASECAMP_AGENT_ID = "agent-xyz";
 		const reports: ThreadReport[] = [];
 		const pi = new MockPi();
-		registerThreadReporter(pi as never, async (r) => {
-			reports.push(r);
+		registerThreadReporter(pi as never, async (build) => {
+			reports.push(build());
 		});
 
 		await fireAgentEnd(pi, mockCtx([], { leafId: null, sessionId: "pi-sess", sessionFile: null }));

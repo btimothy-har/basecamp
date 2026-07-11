@@ -26,17 +26,19 @@ export interface ThreadReport {
  * `thread_report` frame and ship it over the primary session's daemon connection.
  *
  * Resolves the *current* connection on every call (a `/fork` reconnects the daemon
- * client under a new session id, so a per-send lookup keeps reports landing under
- * the live owner), no-ops if unconnected, and yields a short flush window. The frame
- * codec stays daemon-owned here; the companion owns the policy (what/when) — see
+ * client under a new session id, so a per-send lookup keeps reports landing under the
+ * live owner) and no-ops if unconnected. `buildReport` is invoked lazily — only once a
+ * live connection is confirmed — so a disconnected turn skips the (potentially large)
+ * `getBranch()` serialization. Yields a short flush window after send. The frame codec
+ * stays daemon-owned; the companion owns the policy (what/when) — see
  * docs/design/companion-daemon-broker.md.
  */
 export async function reportThread(
-	report: ThreadReport,
+	buildReport: () => ThreadReport,
 	awaitConnection: () => Promise<DaemonConnection | null> = awaitDaemonConnection,
 ): Promise<void> {
 	const connection = await awaitConnection();
 	if (!connection) return;
-	connection.send({ type: "thread_report", v: PROTOCOL_VERSION, ...report });
+	connection.send({ type: "thread_report", v: PROTOCOL_VERSION, ...buildReport() });
 	await sleep(FLUSH_DELAY_MS);
 }

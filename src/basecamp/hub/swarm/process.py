@@ -18,6 +18,10 @@ from .run_result import run_result_path
 
 ProcessExitHook = Callable[[str], Awaitable[None]]
 RUNNER_MODULE = "basecamp.hub.swarm.runner"
+# Also match the pre-rename module so a legacy `basecamp swarm daemon`'s orphaned
+# runners stay reapable across the rename (mirrors the TS reaper's old-or-new
+# command match); drop the legacy entry a release later.
+_RUNNER_MODULE_MATCHES = (RUNNER_MODULE, "basecamp.swarm.runner")
 
 
 def build_runner_argv(
@@ -159,7 +163,7 @@ def _process_group_is_runner(pgid: int) -> bool:
     except OSError:
         return False
 
-    return f"-m {RUNNER_MODULE}" in result.stdout
+    return any(f"-m {module}" in result.stdout for module in _RUNNER_MODULE_MATCHES)
 
 
 def terminate_process_group_if_runner(

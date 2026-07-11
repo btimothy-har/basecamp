@@ -1,10 +1,6 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { isSubagent } from "#core/host/env.ts";
 import { reportThread, type ThreadReport } from "#swarm/index.ts";
-
-function isTopLevelSession(): boolean {
-	const depth = Number(process.env.BASECAMP_AGENT_DEPTH ?? "0");
-	return !Number.isFinite(depth) || depth <= 0;
-}
 
 /**
  * Ships the top-level session's raw thread to the daemon at each `agent_end`, for
@@ -14,31 +10,31 @@ function isTopLevelSession(): boolean {
  * to the session id (unset for a top-level session, so it reports under its own id).
  *
  * Companion owns the policy (what/when); the transport ({@link reportThread}, from
- * `#swarm`) owns the connection + frame. Gated to top-level sessions and
- * fire-and-forget — a reporter hook never throws.
+ * `#swarm`) owns the connection + frame and invokes the builder lazily — only once a
+ * live connection is confirmed — so a disconnected turn skips the `getBranch()` work.
+ * Skipped for subagents; fire-and-forget — a reporter hook never throws.
  */
 export function registerThreadReporter(
 	pi: ExtensionAPI,
-	report: (r: ThreadReport) => Promise<void> = reportThread,
+	report: (build: () => ThreadReport) => Promise<void> = reportThread,
 ): void {
-	if (!isTopLevelSession()) return;
+	if (isSubagent()) return;
 
 	pi.on("agent_end", async (_event, ctx) => {
 		try {
 			const sm = ctx.sessionManager;
 			const withSessionFile = sm as typeof sm & { getSessionFile?: () => string | null | undefined };
-			const nodes = sm.getBranch().map((entry) => ({
-				id: entry.id,
-				parent_id: entry.parentId,
-				entry_json: JSON.stringify(entry),
-			}));
-			await report({
+			await report(() => ({
 				node_id: process.env.BASECAMP_AGENT_ID ?? sm.getSessionId(),
 				session_id: sm.getSessionId(),
 				session_file: withSessionFile.getSessionFile?.() ?? null,
 				leaf_id: sm.getLeafId(),
-				nodes,
-			});
+				nodes: sm.getBranch().map((entry) => ({
+					id: entry.id,
+					parent_id: entry.parentId,
+					entry_json: JSON.stringify(entry),
+				})),
+			}));
 		} catch {
 			// never throw from reporter hooks
 		}
