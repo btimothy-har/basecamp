@@ -25,7 +25,7 @@ export async function executeSetWorkstreamStatus(
 		return statusTextResult(
 			{
 				status: "failed",
-				message: "basecamp swarm daemon is not connected; cannot update workstream status.",
+				message: "basecamp hub is not connected; cannot update workstream status.",
 				workstream: parsed.value.workstream,
 				next_step: "Ensure the daemon is running, then call set_workstream_status again.",
 			},

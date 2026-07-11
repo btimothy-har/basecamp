@@ -16,7 +16,7 @@ from basecamp.core.cli.project import (
     execute_project_remove,
 )
 from basecamp.core.exceptions import LauncherError
-from basecamp.hub.server import run_daemon as run_swarm_daemon
+from basecamp.hub.server import run_hub
 from basecamp.installer import run_interactive_install
 from basecamp.setup import execute_setup
 from basecamp.workspace import EnvironmentConfig, remove_environment, set_environment
@@ -149,12 +149,7 @@ def dashboard(snapshot_path: Path, cwd: Path, scratch_dir: Path | None) -> None:
     run_companion(snapshot_path, cwd, scratch_dir)
 
 
-@basecamp.group()
-def swarm() -> None:
-    """Async-agent swarm daemon commands."""
-
-
-@swarm.command()
+@basecamp.command()
 @click.option(
     "--uds",
     "uds_path",
@@ -178,9 +173,9 @@ def swarm() -> None:
     type=click.Path(path_type=Path),
     help="Optional path to write the daemon PID file.",
 )
-def daemon(uds_path: Path, db_path: Path | None, pidfile_path: Path | None) -> None:
-    """Run the async-agent daemon."""
-    run_swarm_daemon(str(uds_path), str(db_path) if db_path else None, str(pidfile_path) if pidfile_path else None)
+def hub(uds_path: Path, db_path: Path | None, pidfile_path: Path | None) -> None:
+    """Run the basecamp hub daemon."""
+    run_hub(str(uds_path), str(db_path) if db_path else None, str(pidfile_path) if pidfile_path else None)
 
 
 @basecamp.command()

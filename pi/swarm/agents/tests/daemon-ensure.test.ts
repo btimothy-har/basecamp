@@ -77,9 +77,7 @@ describe("ensureDaemon", () => {
 		});
 
 		assert.deepEqual(killedSignals, ["SIGTERM"]);
-		assert.deepEqual(spawnArgs, [
-			["swarm", "daemon", "--uds", paths.socketPath, "--pidfile", paths.pidPath, "--db", paths.dbPath],
-		]);
+		assert.deepEqual(spawnArgs, [["hub", "--uds", paths.socketPath, "--pidfile", paths.pidPath, "--db", paths.dbPath]]);
 	});
 
 	it("throws if the restarted daemon is still protocol-incompatible", async () => {

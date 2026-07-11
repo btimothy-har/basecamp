@@ -128,7 +128,7 @@ async function attachToWorkstream(
 ): Promise<AttachOutcome> {
 	const client = await deps.getClient();
 	if (!client) {
-		return { status: "failed", message: "basecamp swarm daemon is not connected; could not attach." };
+		return { status: "failed", message: "basecamp hub is not connected; could not attach." };
 	}
 	try {
 		const result = await client.attachWorkstreamAgent({

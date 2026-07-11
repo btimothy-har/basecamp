@@ -38,7 +38,7 @@ export function registerListAgentsTool(
 			const connection = await getConnection();
 			if (!connection) {
 				return {
-					content: [{ type: "text", text: "basecamp swarm daemon is not connected; cannot list dispatchable agents." }],
+					content: [{ type: "text", text: "basecamp hub is not connected; cannot list dispatchable agents." }],
 					isError: true,
 					details: null,
 				};

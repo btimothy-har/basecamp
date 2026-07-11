@@ -68,12 +68,12 @@ def _remove_pid_file(pid_path: Path, pid: int) -> None:
         return
 
 
-def run_daemon(
+def run_hub(
     uds_path: str,
     db_path: str | None = None,
     pid_path: str | None = None,
 ) -> None:
-    """Run the daemon bound to a Unix domain socket."""
+    """Run the hub daemon bound to a Unix domain socket."""
 
     socket_path = Path(uds_path).expanduser()
     socket_path.parent.mkdir(parents=True, exist_ok=True)

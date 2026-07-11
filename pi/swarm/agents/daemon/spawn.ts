@@ -111,7 +111,7 @@ export function spawnDaemonProcess(
 	dbPath: string,
 	spawnFn: SpawnLike = spawn,
 ): void {
-	const child = spawnFn("basecamp", ["swarm", "daemon", "--uds", socketPath, "--pidfile", pidPath, "--db", dbPath], {
+	const child = spawnFn("basecamp", ["hub", "--uds", socketPath, "--pidfile", pidPath, "--db", dbPath], {
 		detached: true,
 		stdio: "ignore",
 	});
@@ -178,11 +178,11 @@ export async function ensureDaemon(options: EnsureDaemonOptions = {}): Promise<{
 
 		const ping = await pollHealthy(paths.socketPath, deadline, healthTimeoutMs, healthPingFn, sleepFn, lockRetryMs);
 		if (!ping.ok) {
-			throw new Error(`Timed out waiting for basecamp swarm daemon at ${paths.socketPath}.`);
+			throw new Error(`Timed out waiting for basecamp hub at ${paths.socketPath}.`);
 		}
 		if (ping.protocol !== PROTOCOL_VERSION) {
 			throw new Error(
-				`basecamp swarm daemon protocol mismatch at ${paths.socketPath}: daemon=${ping.protocol}, client=${PROTOCOL_VERSION}.`,
+				`basecamp hub protocol mismatch at ${paths.socketPath}: daemon=${ping.protocol}, client=${PROTOCOL_VERSION}.`,
 			);
 		}
 

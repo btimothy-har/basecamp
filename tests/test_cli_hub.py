@@ -3,20 +3,19 @@ from click.testing import CliRunner
 import basecamp.cli as cli
 
 
-def test_swarm_daemon_runs_basecamp_swarm_daemon(monkeypatch) -> None:
+def test_hub_runs_basecamp_hub(monkeypatch) -> None:
     calls: list[tuple[str, str | None, str | None]] = []
 
     monkeypatch.setattr(
         cli,
-        "run_swarm_daemon",
+        "run_hub",
         lambda uds, db, pidfile: calls.append((uds, db, pidfile)),
     )
 
     result = CliRunner().invoke(
         cli.basecamp,
         [
-            "swarm",
-            "daemon",
+            "hub",
             "--uds",
             "/tmp/basecamp.sock",
             "--db",

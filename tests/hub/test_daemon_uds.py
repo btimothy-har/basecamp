@@ -34,7 +34,7 @@ class _FakeServer:
         self._on_run()
 
 
-def test_run_daemon_writes_and_removes_pid_file(tmp_path: Path, monkeypatch: MonkeyPatch) -> None:
+def test_run_hub_writes_and_removes_pid_file(tmp_path: Path, monkeypatch: MonkeyPatch) -> None:
     pid_path = tmp_path / "daemon.pid"
     uds_path = tmp_path / "daemon.sock"
     db_path = tmp_path / "daemon.db"
@@ -47,13 +47,13 @@ def test_run_daemon_writes_and_removes_pid_file(tmp_path: Path, monkeypatch: Mon
 
     monkeypatch.setattr(daemon_server, "create_server", create_server)
 
-    daemon_server.run_daemon(str(uds_path), db_path=str(db_path), pid_path=str(pid_path))
+    daemon_server.run_hub(str(uds_path), db_path=str(db_path), pid_path=str(pid_path))
 
     assert observed_pid_files == [f"{os.getpid()}\n"]
     assert not pid_path.exists()
 
 
-def test_run_daemon_does_not_remove_replaced_pid_file(tmp_path: Path, monkeypatch: MonkeyPatch) -> None:
+def test_run_hub_does_not_remove_replaced_pid_file(tmp_path: Path, monkeypatch: MonkeyPatch) -> None:
     pid_path = tmp_path / "daemon.pid"
     uds_path = tmp_path / "daemon.sock"
     db_path = tmp_path / "daemon.db"
@@ -64,12 +64,12 @@ def test_run_daemon_does_not_remove_replaced_pid_file(tmp_path: Path, monkeypatc
 
     monkeypatch.setattr(daemon_server, "create_server", create_server)
 
-    daemon_server.run_daemon(str(uds_path), db_path=str(db_path), pid_path=str(pid_path))
+    daemon_server.run_hub(str(uds_path), db_path=str(db_path), pid_path=str(pid_path))
 
     assert pid_path.read_text(encoding="utf-8") == replacement
 
 
-def test_run_daemon_reconciles_before_serving(tmp_path: Path, monkeypatch: MonkeyPatch) -> None:
+def test_run_hub_reconciles_before_serving(tmp_path: Path, monkeypatch: MonkeyPatch) -> None:
     pid_path = tmp_path / "daemon.pid"
     uds_path = tmp_path / "daemon.sock"
     db_path = tmp_path / "daemon.db"
@@ -88,7 +88,7 @@ def test_run_daemon_reconciles_before_serving(tmp_path: Path, monkeypatch: Monke
     monkeypatch.setattr(daemon_server, "reconcile_orphaned_runs", reconcile_orphaned_runs)
     monkeypatch.setattr(daemon_server, "create_server", create_server)
 
-    daemon_server.run_daemon(str(uds_path), db_path=str(db_path), pid_path=str(pid_path))
+    daemon_server.run_hub(str(uds_path), db_path=str(db_path), pid_path=str(pid_path))
 
     assert events == ["reconcile", "create_server", "run"]
     assert not pid_path.exists()

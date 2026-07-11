@@ -293,7 +293,7 @@ export function registerDaemonClient(pi: ExtensionAPI, deps: DaemonClientDeps = 
 				clearActiveAgentsWidget(ctx);
 				reporterConnection?.reject(error);
 				if (isTopLevel) {
-					ctx.ui.notify(`basecamp swarm daemon unavailable: ${message}`, "warning");
+					ctx.ui.notify(`basecamp hub unavailable: ${message}`, "warning");
 				}
 			} finally {
 				if (generation === connectionGeneration) state.connecting = null;
