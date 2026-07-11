@@ -1,0 +1,13 @@
+"""Wire protocol version — the leaf both frame modules import.
+
+Kept in its own module so ``swarm``/``broker`` can reference ``PROTOCOL_VERSION``
+without importing the package ``__init__`` (which imports them).
+"""
+
+from __future__ import annotations
+
+# Gates every client-visible daemon capability, not just WebSocket frame shapes.
+# This includes HTTP endpoints like /runs/summary, so stale daemons restart.
+# v19: workstream create/attach/update request/ack frames.
+# v20: thread_report frame — top-level session ships its raw thread to the daemon.
+PROTOCOL_VERSION = 20

@@ -1,51 +1,16 @@
-"""Protocol frame models for the basecamp hub daemon."""
+"""Agent-swarm protocol frames.
+
+Dispatch, telemetry, results, waits, agent listing, peer messaging, cancellation,
+and workstream lifecycle — the frames that coordinate the agent swarm.
+"""
 
 from __future__ import annotations
 
-from typing import Annotated, Any, Literal
+from typing import Any, Literal
 
-from pydantic import BaseModel, Field, TypeAdapter
+from pydantic import BaseModel, Field
 
-# Gates every client-visible daemon capability, not just WebSocket frame shapes.
-# This includes HTTP endpoints like /runs/summary, so stale daemons restart.
-# v19: workstream create/attach/update request/ack frames.
-# v20: thread_report frame — top-level session ships its raw thread to the daemon.
-PROTOCOL_VERSION = 20
-
-
-class RegisterFrame(BaseModel):
-    """Client registration frame."""
-
-    type: Literal["register"]
-    v: Literal[PROTOCOL_VERSION]
-    role: Literal["session", "agent"]
-    node_id: str
-    agent_handle: str | None = None
-    parent_id: str | None
-    sibling_group: str | None
-    depth: int
-    session_name: str
-    cwd: str
-    session_file: str | None = None
-    product_role: str | None = None
-
-
-class RegisteredFrame(BaseModel):
-    """Daemon registration acknowledgement frame."""
-
-    type: Literal["registered"]
-    v: Literal[PROTOCOL_VERSION]
-    node_id: str
-    protocol: Literal[PROTOCOL_VERSION]
-
-
-class ErrorFrame(BaseModel):
-    """Daemon error frame."""
-
-    type: Literal["error"]
-    v: Literal[PROTOCOL_VERSION]
-    code: str
-    message: str
+from .version import PROTOCOL_VERSION
 
 
 class DispatchSpec(BaseModel):
@@ -93,32 +58,6 @@ class TelemetryFrame(BaseModel):
     report_token: str
     kind: str
     payload: dict[str, Any]
-
-
-class ThreadReportNode(BaseModel):
-    """One pi session entry; ``entry_json`` is opaque and never parsed by the daemon."""
-
-    id: str
-    parent_id: str | None
-    entry_json: str
-
-
-class ThreadReportFrame(BaseModel):
-    """Raw session thread pushed by a top-level session at end of turn.
-
-    The extension splits ``getBranch()`` into per-entry ``nodes`` (envelope
-    extracted extension-side) so the daemon stores immutable nodes without
-    parsing pi content. ``session_id``/``session_file`` are pi's own id and
-    ``.jsonl`` transcript path (see docs/design/companion-daemon-broker.md).
-    """
-
-    type: Literal["thread_report"]
-    v: Literal[PROTOCOL_VERSION]
-    node_id: str
-    session_id: str
-    session_file: str | None
-    leaf_id: str | None
-    nodes: list[ThreadReportNode]
 
 
 class ResultReportFrame(BaseModel):
@@ -359,49 +298,3 @@ class UpdateWorkstreamAckFrame(BaseModel):
     request_id: str
     status: Literal["updated", "not_found", "invalid_status", "error"]
     error: str | None = None
-
-
-Frame = Annotated[
-    RegisterFrame
-    | RegisteredFrame
-    | ErrorFrame
-    | DispatchFrame
-    | DispatchAckFrame
-    | TelemetryFrame
-    | ThreadReportFrame
-    | ResultReportFrame
-    | WaitFrame
-    | WaitResultFrame
-    | ListAgentsFrame
-    | ListAgentsResultFrame
-    | PeerMessageFrame
-    | PeerMessageAckFrame
-    | PeerMessageDeliveryFrame
-    | PeerMessageDeliveryAckFrame
-    | MessageStatusFrame
-    | MessageStatusResultFrame
-    | CancelFrame
-    | CancelAckFrame
-    | CreateWorkstreamFrame
-    | CreateWorkstreamAckFrame
-    | AttachWorkstreamAgentFrame
-    | AttachWorkstreamAgentAckFrame
-    | UpdateWorkstreamFrame
-    | UpdateWorkstreamAckFrame,
-    Field(discriminator="type"),
-]
-
-
-_FRAME_ADAPTER = TypeAdapter(Frame)
-
-
-def parse_frame(data: dict[str, Any]) -> Frame:
-    """Parse an inbound dict into a protocol frame union."""
-
-    return _FRAME_ADAPTER.validate_python(data)
-
-
-def serialize_frame(frame: Frame) -> dict[str, Any]:
-    """Serialize a frame model into JSON-compatible dict form."""
-
-    return frame.model_dump(mode="json", exclude_unset=True)
