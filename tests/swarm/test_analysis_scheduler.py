@@ -241,3 +241,57 @@ async def test_times_out_a_hung_analyzer_and_survives(tmp_path: Path) -> None:
     assert row is not None  # worker survived the timeout and analyzed the next turn
     assert analyzer.calls == 2
     await scheduler.stop()
+
+
+@pytest.mark.asyncio
+async def test_timeout_is_not_retried(tmp_path: Path) -> None:
+    store = Store(db_path=tmp_path / "d.db")
+    seq = _seed_thread(store, "s", "e1", [_user_node("e1", None, "hi")])
+
+    class _AlwaysHangs:
+        def __init__(self) -> None:
+            self.calls = 0
+
+        async def analyze(self, *, context: str, already_tracked: str, prior: Any, model: str) -> AnalysisSections:  # noqa: ARG002
+            self.calls += 1
+            await asyncio.Event().wait()  # never returns
+            raise AssertionError("unreachable")
+
+    analyzer = _AlwaysHangs()
+    scheduler = AnalysisScheduler(
+        store,
+        analyzer=analyzer,
+        model="m",
+        debounce_seconds=0,
+        timeout_seconds=0.02,
+        max_attempts=3,
+        retry_backoff_seconds=0.0,
+    )
+
+    scheduler.notify("s", seq)
+    await asyncio.sleep(0.15)
+
+    assert analyzer.calls == 1  # a hung call is NOT retried, even with max_attempts=3
+    assert store.get_analysis("s") is None
+    await scheduler.stop()
+
+
+@pytest.mark.asyncio
+async def test_forget_drains_pending_analysis_instead_of_cancelling(tmp_path: Path) -> None:
+    store = Store(db_path=tmp_path / "d.db")
+    seq = _seed_thread(store, "s", "e1", [_user_node("e1", None, "hi")])
+    analyzer = _FakeAnalyzer()
+    scheduler = _scheduler(store, analyzer)
+
+    scheduler.notify("s", seq)
+    scheduler.forget("s")  # one-shot client disconnects right after shipping its report
+    row = await _wait_for_analysis_seq(store, "s", seq)
+
+    assert row is not None  # the pending analysis drained + persisted despite the disconnect
+
+    for _ in range(200):  # and the detached worker self-exits (no leak)
+        if "s" not in scheduler._workers:
+            break
+        await asyncio.sleep(0.01)
+    assert "s" not in scheduler._workers
+    await scheduler.stop()

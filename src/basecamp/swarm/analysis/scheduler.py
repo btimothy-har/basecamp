@@ -62,27 +62,43 @@ class AnalysisScheduler:
         self._latest: dict[str, int] = {}
         self._analyzed: dict[str, int] = {}
         self._failures: dict[str, int] = {}
+        self._detached: set[str] = set()
         self._events: dict[str, asyncio.Event] = {}
         self._workers: dict[str, asyncio.Task[None]] = {}
 
     def notify(self, owner_id: str, seq: int) -> None:
         """Record a fresh turn and wake (or start) this owner's worker."""
 
+        self._detached.discard(owner_id)  # a fresh turn re-attaches a draining owner
         if seq > self._latest.get(owner_id, 0):
             self._latest[owner_id] = seq
         self._ensure_worker(owner_id)
         self._events[owner_id].set()
 
     def forget(self, owner_id: str) -> None:
-        """Cancel and drop an owner's worker (e.g. on disconnect)."""
+        """Detach an owner on disconnect — drain, don't cancel.
 
-        worker = self._workers.pop(owner_id, None)
-        if worker is not None:
-            worker.cancel()
+        A one-shot session disconnects right after shipping its final ``thread_report``,
+        so cancelling here would drop the debounced analysis before it persists. Instead
+        mark the owner detached and wake its worker: it finishes the pending run, persists,
+        then self-exits (``_run_worker``). Cancellation is reserved for ``stop()``.
+        """
+
+        if owner_id in self._workers:
+            self._detached.add(owner_id)
+            event = self._events.get(owner_id)
+            if event is not None:
+                event.set()
+        else:
+            self._cleanup(owner_id)
+
+    def _cleanup(self, owner_id: str) -> None:
+        self._workers.pop(owner_id, None)
         self._events.pop(owner_id, None)
         self._latest.pop(owner_id, None)
         self._analyzed.pop(owner_id, None)
         self._failures.pop(owner_id, None)
+        self._detached.discard(owner_id)
 
     async def stop(self) -> None:
         """Cancel every worker and release the analyzer (daemon shutdown)."""
@@ -100,6 +116,7 @@ class AnalysisScheduler:
         self._latest.clear()
         self._analyzed.clear()
         self._failures.clear()
+        self._detached.clear()
         close = getattr(self._analyzer, "close", None)
         if callable(close):
             close()
@@ -128,10 +145,15 @@ class AnalysisScheduler:
                 await asyncio.sleep(self._debounce)  # coalesce a burst into one run
             event.clear()
             target = self._latest.get(owner_id, 0)
-            if target <= self._analyzed.get(owner_id, 0):
-                continue
-            if await self._try_analyze(owner_id, target):
-                self._analyzed[owner_id] = target
+            if target > self._analyzed.get(owner_id, 0):
+                if await self._try_analyze(owner_id, target):
+                    self._analyzed[owner_id] = target
+            # Detached (client disconnected): we made a best-effort drain of the latest
+            # turn above; exit and clean up now. A reconnect clears the flag via notify()
+            # before we get here, so an active session is never dropped.
+            if owner_id in self._detached:
+                self._cleanup(owner_id)
+                return
 
     async def _try_analyze(self, owner_id: str, target: int) -> bool:
         """Run one analysis; return True only if a new analysis was stored."""
@@ -181,8 +203,14 @@ class AnalysisScheduler:
                     timeout=self._timeout,
                 )
             except TimeoutError:
-                reason = f"timed out after {self._timeout:.0f}s"
-            except Exception as exc:  # noqa: BLE001 — retry any analyzer failure, then give up
+                # The wait_for backstop fired: the coroutine is cancelled but a blocking
+                # provider call keeps its executor thread (the analyzer's own provider
+                # deadline should normally fire first and free it). Do NOT retry — a second
+                # attempt would submit another blocking call and pile up on the pool. Give
+                # up until the next fresh turn.
+                self._note_failure(owner_id, f"timed out after {self._timeout:.0f}s")
+                return None
+            except Exception as exc:  # noqa: BLE001 — retry transient (fast) failures, then give up
                 reason = str(exc) or type(exc).__name__
             if attempt >= self._max_attempts:
                 self._note_failure(owner_id, reason)

@@ -69,7 +69,7 @@ on agent_end (top-level session only, agentDepth 0):
 - Sent over the WebSocket the primary session already holds. No new connection.
 - Gated to `agentDepth === 0` and `hasUI` sessions, consistent with the current companion gating.
 
-This deletes the current producer surface: the snapshot writer, the `.live-<pid>.json` mirror, and `analysis.ts`'s subprocess-spawn/watchdog logic all go away. The extension's remaining companion job is pane management (herdr/tmux) and Herdr metadata, which are unchanged.
+This deletes the current *analysis* producer surface: `analysis.ts`'s subprocess-spawn/watchdog logic and its sidecar writes go away. The snapshot writer and the `.live-<pid>.json` mirror are **retained** (§7/§8) — they still back the workspace/session panels. The extension's remaining companion job is pane management (herdr/tmux) and Herdr metadata, which are unchanged.
 
 ### 4.2 What `getBranch()` returns (confirmed from source)
 

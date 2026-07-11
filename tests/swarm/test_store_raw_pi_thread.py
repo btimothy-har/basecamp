@@ -152,6 +152,28 @@ def test_include_abandoned_separates_roads_not_taken_from_the_main_thread(tmp_pa
     assert full.abandoned == [["root", "abandoned"]]
 
 
+def test_reconstruction_terminates_on_a_cyclic_parent(tmp_path: Path) -> None:
+    store = Store(db_path=tmp_path / "daemon.db")
+
+    # Parent links are opaque and unvalidated; a malformed self-cycle must not loop.
+    store.record_raw_pi_thread(
+        owner_id="s", session_id="pi", session_file=None, leaf_id="e1", nodes=[_node("e1", "e1", "loop")]
+    )
+    assert store.get_raw_pi_thread_nodes("s").live == ["loop"]  # visited once, cycle stopped
+
+    # A two-node cycle terminates too (each node visited exactly once).
+    store.record_raw_pi_thread(
+        owner_id="t",
+        session_id="pi",
+        session_file=None,
+        leaf_id="a",
+        nodes=[_node("a", "b", "A"), _node("b", "a", "B")],
+    )
+    live = store.get_raw_pi_thread_nodes("t").live
+    assert sorted(live) == ["A", "B"]
+    assert len(live) == 2
+
+
 def test_missing_session_returns_empty(tmp_path: Path) -> None:
     store = Store(db_path=tmp_path / "daemon.db")
     assert store.get_raw_pi_thread("missing") is None

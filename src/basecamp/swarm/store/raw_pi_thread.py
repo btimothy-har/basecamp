@@ -13,11 +13,6 @@ from __future__ import annotations
 import sqlite3
 from dataclasses import dataclass, field
 
-# Defensive bound on branch reconstruction: real threads are far smaller than this, but a
-# malformed/cyclic parent_id (the daemon never validates opaque parent links) would make the
-# recursive CTE loop forever without it. Caps a cycle to a fast, finite walk.
-MAX_BRANCH_DEPTH = 1_000_000
-
 
 @dataclass(frozen=True)
 class RawPiThreadRow:
@@ -53,26 +48,48 @@ class RawPiThread:
     abandoned: list[list[str]] = field(default_factory=list)
 
 
-def _reconstruct_branch(connection: sqlite3.Connection, owner_id: str, leaf_id: str) -> list[str]:
-    """Walk ``parent_id`` up from ``leaf_id``, returning ``entry_json`` root→leaf."""
+def _fetch_owner_nodes(
+    connection: sqlite3.Connection, owner_id: str
+) -> tuple[dict[str, tuple[str | None, str]], list[str], set[str]]:
+    """Load one owner's nodes once: ``(node_map, entry_ids_in_order, referenced_parents)``.
+
+    ``node_map`` maps ``entry_id -> (parent_id, entry_json)``; ``entry_ids_in_order`` is
+    ``(first_seen_seq, entry_id)`` ordered (for stable abandoned-leaf ordering); and
+    ``referenced_parents`` is the set of ids used as a parent (non-leaf nodes).
+    """
 
     rows = connection.execute(
         """
-        WITH RECURSIVE branch(entry_id, parent_id, entry_json, depth) AS (
-            SELECT entry_id, parent_id, entry_json, 0
-            FROM raw_pi_thread_node
-            WHERE owner_id = ? AND entry_id = ?
-            UNION ALL
-            SELECT n.entry_id, n.parent_id, n.entry_json, b.depth + 1
-            FROM raw_pi_thread_node n
-            JOIN branch b ON n.entry_id = b.parent_id
-            WHERE n.owner_id = ? AND b.depth < ?
-        )
-        SELECT entry_json FROM branch ORDER BY depth DESC
+        SELECT entry_id, parent_id, entry_json, first_seen_seq
+        FROM raw_pi_thread_node WHERE owner_id = ?
+        ORDER BY first_seen_seq, entry_id
         """,
-        (owner_id, leaf_id, owner_id, MAX_BRANCH_DEPTH),
+        (owner_id,),
     ).fetchall()
-    return [row[0] for row in rows]
+    node_map = {row[0]: (row[1], row[2]) for row in rows}
+    ordered = [row[0] for row in rows]
+    referenced_parents = {row[1] for row in rows if row[1] is not None}
+    return node_map, ordered, referenced_parents
+
+
+def _reconstruct_branch(node_map: dict[str, tuple[str | None, str]], leaf_id: str) -> list[str]:
+    """Walk ``parent_id`` up from ``leaf_id``, returning ``entry_json`` root→leaf.
+
+    Cycle-safe: a ``visited`` set stops the walk the moment a parent link revisits an
+    ancestor (a malformed/opaque cycle), so reconstruction is O(branch length) with no
+    depth cap and never re-expands a loop.
+    """
+
+    chain: list[str] = []
+    visited: set[str] = set()
+    current: str | None = leaf_id
+    while current is not None and current in node_map and current not in visited:
+        visited.add(current)
+        parent_id, entry_json = node_map[current]
+        chain.append(entry_json)
+        current = parent_id
+    chain.reverse()
+    return chain
 
 
 class RawPiThreadMixin:
@@ -176,23 +193,15 @@ class RawPiThreadMixin:
                 return RawPiThread(live=[])
 
             live_leaf = head[0]
-            live = _reconstruct_branch(connection, owner_id, live_leaf)
+            node_map, ordered, referenced_parents = _fetch_owner_nodes(connection, owner_id)
+            live = _reconstruct_branch(node_map, live_leaf)
             if not include_abandoned:
                 return RawPiThread(live=live)
 
-            abandoned_leaves = connection.execute(
-                """
-                SELECT entry_id FROM raw_pi_thread_node
-                WHERE owner_id = ?
-                  AND entry_id != ?
-                  AND entry_id NOT IN (
-                      SELECT parent_id FROM raw_pi_thread_node
-                      WHERE owner_id = ? AND parent_id IS NOT NULL
-                  )
-                ORDER BY first_seen_seq, entry_id
-                """,
-                (owner_id, live_leaf, owner_id),
-            ).fetchall()
-            abandoned = [_reconstruct_branch(connection, owner_id, leaf[0]) for leaf in abandoned_leaves]
+            # Abandoned leaves: nodes that are no one's parent, other than the live leaf.
+            abandoned_leaves = [
+                entry_id for entry_id in ordered if entry_id != live_leaf and entry_id not in referenced_parents
+            ]
+            abandoned = [_reconstruct_branch(node_map, leaf) for leaf in abandoned_leaves]
 
         return RawPiThread(live=live, abandoned=abandoned)
