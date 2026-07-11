@@ -29,7 +29,7 @@ Three structural costs follow:
 - **One contract, not five.** The companion reads from a single source — the daemon — over the daemon's existing, versioned, cross-tested frame protocol, retiring the snapshot and analysis files.
 - **A faithful, durable thread record.** The daemon holds the full raw session thread, so analysis is reproducible and re-derivable, and its quality is bounded by the model, not by a lossy digest.
 - **Keep the Textual UI.** The renderer (diff viewer, file tree, syntax, swarm tab) is retained; only its data source changes.
-- **Warm, unified analysis.** Analysis runs in the long-lived daemon (no cold subprocess per turn) and resolves its model through the same alias file as the rest of basecamp.
+- **Warm, unified analysis.** Analysis runs warm in the long-lived daemon, not as a cold subprocess per turn.
 - **Design for control, ship read-only.** The transport is chosen so a control return-path (capture, redirect, message-agent) can land later with no re-architecture; v1 is observation-only.
 
 ### Non-goals
@@ -113,19 +113,20 @@ CREATE TABLE raw_pi_thread_node (
   PRIMARY KEY (owner_id, entry_id)
 );
 
--- versioned analyzer output, with provenance back to the turn it read
-CREATE TABLE analyses (
-  owner_id              TEXT    NOT NULL,
-  seq                   INTEGER NOT NULL,   -- monotonic analysis version per node
-  ts                    TEXT    NOT NULL,
+-- latest analyzer output per session — a persisted cache, not versioned history;
+-- upserted each run, with provenance back to the thread turn it read
+CREATE TABLE analysis (
+  owner_id              TEXT PRIMARY KEY,
   based_on_thread_seq   INTEGER,            -- raw_pi_thread.latest_seq this analysis read
   model                 TEXT,
-  sections_json         TEXT    NOT NULL,   -- monitor / needs_capture / checkpoints
-  PRIMARY KEY (owner_id, seq)
+  sections_json         TEXT NOT NULL,      -- monitor / needs_capture / checkpoints
+  updated_at            TEXT NOT NULL
 );
 ```
 
-Each `thread_report` bumps `latest_seq` on the head and does `INSERT … ON CONFLICT(owner_id, entry_id) DO NOTHING` per node — existing entries are no-ops (pi entries are immutable), new ones stamped `first_seen_seq = this turn`. Storage is O(distinct entries); the wire still re-sends the full branch each turn (a later delta optimization can send only new nodes). `first_seen_seq`/`latest_seq` give the analyzer both a delta ("nodes since seq N") and a freshness cursor (§6.1). Reconstruction (`get_raw_pi_thread_nodes`) returns the live branch (`.live`) by default; a rewind's abandoned branches are retained by the insert-only path and reconstructed *separately* into `.abandoned` only under an opt-in `include_abandoned` flag — the back-pocket "roads not taken", never the mainline analysis input. Retention rides on the async-agents TTL/cleanup item ([async-agents.md:510](async-agents.md)): a rolling window on `raw_pi_thread_node`, longer retention on the small `analyses` rows.
+The analysis is **latest-only** (one row per `owner_id`, upserted), not a versioned series. It is a pure derivative of the raw thread — the durable source of truth — so it is stored as a persisted cache: durable enough that a UI attaching cold (or right after a daemon restart) sees the last computed dashboard without paying to re-analyze, but not treated as precious history. Analysis-*over-time* is deliberately not kept here — how the agent's understanding evolves is already legible from the formal goal/task list, so a version history would be dead weight. (Going versioned later is a purely additive change: add a `seq`, stop upserting.)
+
+Each `thread_report` bumps `latest_seq` on the head and does `INSERT … ON CONFLICT(owner_id, entry_id) DO NOTHING` per node — existing entries are no-ops (pi entries are immutable), new ones stamped `first_seen_seq = this turn`. Storage is O(distinct entries); the wire still re-sends the full branch each turn (a later delta optimization can send only new nodes). `first_seen_seq`/`latest_seq` give the analyzer both a delta ("nodes since seq N") and a freshness cursor (§6.1). Reconstruction (`get_raw_pi_thread_nodes`) returns the live branch (`.live`) by default; a rewind's abandoned branches are retained by the insert-only path and reconstructed *separately* into `.abandoned` only under an opt-in `include_abandoned` flag — the back-pocket "roads not taken", never the mainline analysis input. Retention rides on the async-agents TTL/cleanup item ([async-agents.md:510](async-agents.md)): a rolling window on `raw_pi_thread_node`, and the single `analysis` row falls away with its session.
 
 ## 6. Analysis-time reduction
 
@@ -139,21 +140,23 @@ Reduction is the **only** place pi `SessionEntry` *content* is read, and it happ
 
 The result — the full conversational arc with the agent's reasoning and actions, tool dumps removed — is what the analyzer receives. This lifts the ceiling from "user prompts only" to "what the agent actually did."
 
-The analyzer itself is a **warm service in the daemon** (Python/PydanticAI retained for richer, potentially cross-tree analysis), replacing the cold per-turn subprocess. Model selection resolves through `~/.pi/basecamp/core/model-aliases.json` so policy is unified with the rest of basecamp even though the client library differs.
+The analyzer itself is a **warm service in the daemon** (Python/PydanticAI retained for richer, potentially cross-tree analysis), replacing the cold per-turn subprocess.
+
+The analyzer is a **swappable seam**, not fixed logic. The scheduler, reducer, and store depend only on an `Analyzer` interface (`analyze(context, already_tracked, prior, model) → sections`); the concrete implementation is injected. v2 ships a **provisional** implementation that carries the existing prompt and `monitor`/`needs_capture`/`checkpoints` sections through PydanticAI, purely to make the pipeline run end-to-end. **Model policy is deliberately minimal in v2** — a single hardcoded `DEFAULT_ANALYSIS_MODEL` on the scheduler, not a config or alias-file lookup; choosing/configuring the model is part of the analyzer rework. Prompt, model policy, and output shape are all expected to change behind the seam without touching the reducer, scheduler, or `analysis` store.
 
 ### 6.1 The analyzer feeds off fresh turns
 
-The daemon is a long-lived async process, so the scheduler is event-driven, not timed. The `thread_report` handler upserts `raw_pi_thread`, bumps an in-memory `latest_seq[node_id]`, and signals a per-node analyzer worker (an `asyncio.Event`/queue on the daemon loop). The worker runs only when `latest_seq > last_analyzed_seq` (the `based_on_thread_seq` of the newest `analyses` row) — it never runs on stale data and never polls. `seq` is the freshness cursor, so write-in-place storage is sufficient; "fresh" is a seq advance, not a distinct row. Consistent with "laggy is fine," the worker debounces/coalesces a burst of turns into one run and skips while a run is in flight — reactive to freshness, not obligated to be instant.
+The daemon is a long-lived async process, so the scheduler is event-driven, not timed. The `thread_report` handler upserts `raw_pi_thread`, bumps an in-memory `latest_seq[node_id]`, and signals a per-node analyzer worker (an `asyncio.Event`/queue on the daemon loop). The worker runs only when `latest_seq > last_analyzed_seq` (the persisted `analysis` row's `based_on_thread_seq`, seeded on worker start so a daemon restart does not re-run stale turns) — it never runs on stale data and never polls. `seq` is the freshness cursor, so write-in-place storage is sufficient; "fresh" is a seq advance, not a distinct row. Consistent with "laggy is fine," the worker debounces/coalesces a burst of turns into one run and skips while a run is in flight — reactive to freshness, not obligated to be instant.
 
 Two senses of "fresh" are kept distinct:
 
 - **Trigger** — *run* when new turns land (the mechanism above). This is settled.
-- **Input** — *what the LLM reads*. The input stays the full reduced, compaction-bounded thread plus the prior `analyses` row, because the "evolve the dashboard" model reconsiders the whole bounded thread rather than only appending; incrementality of *understanding* comes from carrying the prior analysis, not from truncating the input. Incremental *input* (only new turns) is a later cost optimization that would inherit re-baseline handling on fork (`leaf_id` change) or a new compaction prefix.
+- **Input** — *what the LLM reads*. The input stays the full reduced, compaction-bounded thread plus the prior `analysis` row, because the "evolve the dashboard" model reconsiders the whole bounded thread rather than only appending; incrementality of *understanding* comes from carrying the prior analysis, not from truncating the input. Incremental *input* (only new turns) is a later cost optimization that would inherit re-baseline handling on fork (`leaf_id` change) or a new compaction prefix.
 
 ## 7. The seam and transport phasing
 
 - **Extension** shrinks to: ship `getBranch()` on `agent_end`; manage the pane; report Herdr metadata. No files, no analyzer trigger.
-- **Daemon** gains: a `thread_report` frame handler; `raw_pi_thread` + `analyses`; the reducer; the warm analyzer; a unified current-state projection (extend the existing `/runs/summary` projection in `store/summary.py`).
+- **Daemon** gains: a `thread_report` frame handler; `raw_pi_thread` + `analysis`; the reducer; the warm analyzer (a swappable seam — see §6); a unified current-state projection (extend the existing `/runs/summary` projection in `store/summary.py`).
 - **Textual UI** reads one source instead of five, and keeps its own git for the diff view (moved off the render thread — git is inherently local and should not be daemon-owned).
 
 Transport phases with the read-only-first goal:
@@ -177,7 +180,7 @@ This is a removal, not old-and-new in parallel: keeping the snapshot/analysis fi
 | `companion analyze` CLI + `companion-analyze` alias | `src/basecamp/cli.py` | daemon service, not a CLI |
 | `--snapshot` launch flag | `pi/companion/panes/command.ts` | `--session-id` (query the daemon) |
 | On-disk `companion/snapshots/` + `companion/analysis/` | `~/.pi/basecamp/…` | dead — no writer or reader |
-| `BASECAMP_COMPANION_MODEL` | env | daemon alias-file resolution |
+| `BASECAMP_COMPANION_MODEL` | env | daemon-side model policy (v2: hardcoded default; config in the analyzer rework) |
 | Corresponding test suites | `tests/companion/test_*`, TS `snapshot`/`analysis` tests | new ingest/analyzer/projection tests |
 
 **Relocated / rewired (not deleted):**

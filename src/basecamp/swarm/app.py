@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import asyncio
+from contextlib import asynccontextmanager
 from typing import Any, Literal
 
 from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 
+from .analysis import AnalysisScheduler
 from .frames import (
     PROTOCOL_VERSION,
     AttachWorkstreamAgentFrame,
@@ -54,10 +56,24 @@ from .service import (
 from .store import DuplicateAgentHandleError, Store
 
 
-def create_app(store: Store, *, daemon_uds: str | None = None) -> FastAPI:
+def create_app(
+    store: Store,
+    *,
+    daemon_uds: str | None = None,
+    scheduler: AnalysisScheduler | None = None,
+) -> FastAPI:
     """Create and configure the daemon FastAPI app."""
 
-    app = FastAPI()
+    analysis_scheduler = scheduler if scheduler is not None else AnalysisScheduler(store)
+
+    @asynccontextmanager
+    async def lifespan(_app: FastAPI) -> Any:
+        try:
+            yield
+        finally:
+            await analysis_scheduler.stop()
+
+    app = FastAPI(lifespan=lifespan)
     registry = Registry()
     daemon_socket_path = daemon_uds or ""
     reapers: set[asyncio.Task[None]] = set()
@@ -227,7 +243,8 @@ def create_app(store: Store, *, daemon_uds: str | None = None) -> FastAPI:
                     )
                     continue
                 if isinstance(inbound, ThreadReportFrame):
-                    await handle_thread_report(frame=inbound, node_id=parsed.node_id, store=store)
+                    seq = await handle_thread_report(frame=inbound, node_id=parsed.node_id, store=store)
+                    analysis_scheduler.notify(parsed.node_id, seq)
                     continue
                 if isinstance(inbound, WaitFrame):
                     await _handle_wait(
@@ -339,6 +356,7 @@ def create_app(store: Store, *, daemon_uds: str | None = None) -> FastAPI:
             if node_id is not None and registry.get_connection(node_id) is websocket:
                 registry.remove_connection(node_id)
                 schedule_disconnect_reaper(node_id=node_id, registry=registry, store=store)
+                analysis_scheduler.forget(node_id)
 
     return app
 

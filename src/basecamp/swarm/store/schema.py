@@ -139,6 +139,17 @@ class SchemaMixin:
                 )
                 """
             )
+            connection.execute(
+                """
+                CREATE TABLE IF NOT EXISTS analysis (
+                    owner_id TEXT PRIMARY KEY,
+                    based_on_thread_seq INTEGER,
+                    model TEXT,
+                    sections_json TEXT NOT NULL,
+                    updated_at TEXT NOT NULL
+                )
+                """
+            )
             self._ensure_agents_current_run_id_column(connection)
             self._ensure_agents_agent_handle_column(connection)
             self._ensure_agents_metadata_columns(connection)
