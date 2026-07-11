@@ -16,9 +16,9 @@ from basecamp.core.cli.project import (
     execute_project_remove,
 )
 from basecamp.core.exceptions import LauncherError
+from basecamp.hub.server import run_daemon as run_swarm_daemon
 from basecamp.installer import run_interactive_install
 from basecamp.setup import execute_setup
-from basecamp.swarm.server import run_daemon as run_swarm_daemon
 from basecamp.workspace import EnvironmentConfig, remove_environment, set_environment
 from basecamp.workspace.cli.environment import (
     execute_environment_list,
