@@ -211,7 +211,7 @@ basecamp **was** a Claude Code launcher-plus-plugins app before it migrated to P
 Reusable pieces at `6674cc4^`:
 
 - `core/src/core/cli/launch.py` — `execute_launch()`: project/path resolution, worktree get-or-create by label, prompt assembly, builds `claude` with `--system-prompt` + `--plugin-dir` + `--add-dir` + `--settings <file> --setting-sources project,local`, chdir, exec via a tmux/direct terminal backend. Also path-based launch and shell completions.
-- `core/src/core/config/claude_settings.py` — `build_session_settings()`: strips `apiKeyHelper`, merges project `.env` into `settings.env`, pre-authorizes scratch dirs, injects `BASECAMP_*`. Directly portable (`atomic_write_json` still exists in `basecamp_core.files`).
+- `core/src/core/config/claude_settings.py` — `build_session_settings()`: strips `apiKeyHelper`, merges project `.env` into `settings.env`, pre-authorizes scratch dirs, injects `BASECAMP_*`. Directly portable (`atomic_write_json` still exists in `basecamp.core.files`).
 - `.claude-plugin/marketplace.json` + `plugins/*/.claude-plugin/plugin.json` — the bundled plugins (bc-collab, bc-cursor, bc-eng, bc-git-protect, bc-gpg-check, bc-private, companion). `bc-git-protect` is the prior bash-reviewer analog.
 
 **The gap vs. then:** the current Python packages (`basecamp.core`, `basecamp.workspace`) expose project config but **not** git-root detection, prompt assembly, or worktree helpers — those moved to TypeScript (`workspace/ts`). So the recovered launcher must re-establish Python-side project detection and a Claude-Code-specific prompt assembly (§6). Everything else ports almost verbatim.

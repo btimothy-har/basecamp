@@ -1,6 +1,6 @@
 # swarm
 
-This context owns Basecamp's async-agent domain: the TypeScript runtime (`swarm/ts`: public daemon tools, launch policy, daemon client/reporting code, `/code-review`, workstreams), the Python daemon (`swarm/py` → `basecamp.swarm`), the wire-protocol contract (`swarm/protocol/`), and the `agents` skill (`swarm/skills/`).
+This context owns Basecamp's async-agent domain: the TypeScript runtime (`swarm/`: public daemon tools, launch policy, daemon client/reporting code, `/code-review`, workstreams), the wire-protocol contract (`swarm/protocol/`), and the `agents` skill (`swarm/skills/`). The Python daemon it talks to is a separate package, `basecamp.hub` (`src/basecamp/hub/`).
 
 The context's default register (composed by `extension.ts`) wires the agent catalog provider, the daemon client, the `/code-review` command, and the workstream tools/startup.
 

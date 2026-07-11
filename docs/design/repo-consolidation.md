@@ -4,6 +4,8 @@
 
 This document is the design record of basecamp's package consolidation, now fully landed. File links in §1 reference pre-consolidation paths deliberately — they document the state the consolidation removed. It captures the evidence that motivated it, the decisions and rejected alternatives, the target repo shape, the assembly mechanics for each language, and a phased migration roadmap. The consolidation changes packaging and layout only — session behavior, the swarm protocol, and the `~/.pi/basecamp` config surface are unchanged.
 
+> **Update (2026-07-11):** the Python daemon package was later renamed `basecamp.swarm` → `basecamp.hub` and re-domained (hub/swarm agents + hub/broker companion analysis); CLI is now `basecamp hub`. The TS `pi/swarm/` domain and the on-disk `~/.pi/basecamp/swarm/` path are unchanged.
+
 ---
 
 ## 1. Problem statement
@@ -229,9 +231,9 @@ Consolidation does not merge the languages; it puts each contract inside the con
 |---|---|---|
 | `config.json` (install metadata, environments) | py `basecamp.core.settings` → ts `#core/platform/config.ts` | `core/` |
 | `workspace/projects.json`, context/styles/prompts | py `basecamp.workspace` ↔ ts `#workspace` | `workspace/` |
-| tasks store (`tasks/<session>.json`) | ts `#tasks` → py `basecamp.companion.cycles`, `basecamp.swarm.store` | `tasks/` (ts writer canonical) |
+| tasks store (`tasks/<session>.json`) | ts `#tasks` → py `basecamp.companion.cycles`, `basecamp.hub.store` | `tasks/` (ts writer canonical) |
 | companion snapshot / analysis files | ts `#companion` ↔ py `basecamp.companion` | `companion/` |
-| daemon socket/db/pid + WS frames + HTTP routes | py `basecamp.swarm` (server) ↔ ts `#swarm/agents/daemon` + py `basecamp.companion.daemon` (clients) | `swarm/protocol/` |
+| daemon socket/db/pid + WS frames + HTTP routes | py `basecamp.hub` (server) ↔ ts `#swarm/agents/daemon` + py `basecamp.companion.daemon` (clients) | `swarm/protocol/` |
 
 The frame definitions remain implemented twice (TS + Python) against the JSON schemas in `swarm/protocol/`; phase 4 adds a sync test asserting both implementations match the schemas and `PROTOCOL_VERSION`, replacing today's three-way hand-sync. Path constants remain implemented once per language (`basecamp.core.paths`, `#core/platform/paths.ts`) — two implementations, each single-sourced within its language.
 

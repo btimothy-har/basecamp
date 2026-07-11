@@ -1,8 +1,8 @@
 # Companion Daemon Broker — Design
 
-**Status:** PROPOSED (clean-sheet redesign of the companion data + analysis path) · **Scope:** Supersedes the file-based producer/consumer seam and per-turn subprocess analyzer of `repo-rearchitecture.md` §6.4; the Textual UI, pane adapters (herdr/tmux), and Herdr metadata are retained · **Depends on:** the swarm daemon (`async-agents.md`)
+**Status:** IMPLEMENTED (the analysis channel is now daemon-brokered); the daemon-side broker was subsequently relocated by the swarm→hub rename to `src/basecamp/hub/broker/`, and the producer moved to `pi/companion/thread-reporter.ts` (with the transport, `reportThread`, exported from `#swarm`) · **Scope:** Supersedes the file-based producer/consumer seam and per-turn subprocess analyzer of `repo-rearchitecture.md` §6.4; the Textual UI, pane adapters (herdr/tmux), and Herdr metadata are retained · **Depends on:** the daemon (`async-agents.md`)
 
-This document describes moving the companion off its file-mirror data plane and onto the swarm daemon as a single broker. The extension becomes a thin producer that ships the raw session thread to the daemon at the end of every turn; the daemon persists it verbatim and derives an analysis view on demand. The Python Textual UI stays; the data plane is designed bidirectional but ships read-only.
+This document describes moving the companion off its file-mirror data plane and onto the daemon as a single broker. The extension becomes a thin producer that ships the raw session thread to the daemon at the end of every turn; the daemon persists it verbatim and derives an analysis view on demand. The Python Textual UI stays; the data plane is designed bidirectional but ships read-only.
 
 ---
 
@@ -65,9 +65,9 @@ on agent_end (top-level session only, agentDepth 0):
   }
 ```
 
-- Ships from `registerRawThreadReporter` ([raw-thread-reporter.ts](../../pi/swarm/agents/daemon/raw-thread-reporter.ts)), a top-level sibling of the sub-agent telemetry reporter, over the WebSocket the primary session already holds (which today registers but does not report).
+- Ships from `registerThreadReporter` ([thread-reporter.ts](../../pi/companion/thread-reporter.ts)) in the companion domain, which owns the *policy* (what/when to report); the *transport* — `reportThread`, exported from `#swarm` ([report-thread.ts](../../pi/swarm/agents/daemon/report-thread.ts)) — owns the daemon connection and the `thread_report` frame.
 - Sent over the WebSocket the primary session already holds. No new connection.
-- Gated to `agentDepth === 0` and `hasUI` sessions, consistent with the current companion gating.
+- Gated to top-level sessions (`agentDepth <= 0`), consistent with the current companion gating.
 
 This deletes the current *analysis* producer surface: `analysis.ts`'s subprocess-spawn/watchdog logic and its sidecar writes go away. The snapshot writer and the `.live-<pid>.json` mirror are **retained** (§7/§8) — they still back the workspace/session panels. The extension's remaining companion job is pane management (herdr/tmux) and Herdr metadata, which are unchanged.
 

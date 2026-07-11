@@ -1,6 +1,6 @@
 # Asynchronous Multi-Agent System — Design
 
-**Status:** Phase 1 IMPLEMENTED (walking skeleton); Phase 2a ACL foundation implemented; Phase 2b live-only collaboration implemented for fork-based `ask_agent` plus store-backed one-way `message_agent` / `message_status`; canonical session/agent handles implemented (landed in wire protocol v14; see `swarm/protocol/PROTOCOL.md` for the current version) · **Scope:** Design + status tracking for later phases · **Roadmap:** Offline re-task-on-message and Phases 3–5 remain design targets
+**Status:** Phase 1 IMPLEMENTED (walking skeleton); Phase 2a ACL foundation implemented; Phase 2b live-only collaboration implemented for fork-based `ask_agent` plus store-backed one-way `message_agent` / `message_status`; canonical session/agent handles implemented (landed in wire protocol v14; see `pi/swarm/protocol/PROTOCOL.md` for the current version) · **Scope:** Design + status tracking for later phases · **Roadmap:** Offline re-task-on-message and Phases 3–5 remain design targets
 
 This document describes the target architecture for basecamp's asynchronous, collaborating subagents, coordinated by a global, single-host daemon. It captures the converged design, the decisions and rejected alternatives behind it, the risk register, and the phased roadmap.
 
@@ -39,7 +39,7 @@ We want agents that can run **concurrently**, **persist their conversational thr
 
 ## 3. Former synchronous model
 
-Before the async-only surface cleanup, the legacy code in `pi-swarm/extension/src/agents/` (now `swarm/ts/agents/`) worked as follows:
+Before the async-only surface cleanup, the legacy code in `pi-swarm/extension/src/agents/` (now `pi/swarm/agents/`) worked as follows:
 
 - **Dispatch and execution (`executor.ts`).** `spawnAgent()` builds a `pi --mode json -p` argv via `buildPiArgs()` and spawns it as a child process. Notable flags: `--model`, `--worktree-dir`, `--thinking`, `--session-dir` (the subagent's own session), `--no-prompt-templates`, `--read-only` (whenever the agent's run kind is not `mutative`), `--agent-prompt` (the persona, written to a file), and `--tools` (a resolved allowlist). Skill discovery is left enabled for every subagent, which loads any installed skill on demand via the `skill` tool or by reading the skill file. The parent reads the child's stdout, parses newline-delimited JSON events (`tool_execution_start`, `tool_execution_end`, `message_end`), and renders progress. The agent's **result is the last assistant message** ("last assistant message wins"); usage and tool calls are aggregated for display.
 - **The `agent` tool (`tool.ts`).** Registered as a pi tool the LLM calls. It blocks on `spawnAgent()` and returns the child's final output as the tool result for immediate reasoning. Before running, it first requires that the `agents` skill has been invoked (`hasInvokedSkill("agents")`), then enforces two guards:
@@ -61,7 +61,7 @@ Two ideas anchor the whole design:
 ### 4.1 Components
 
 - **Top-level pi sessions** — the interactive sessions a user runs. Each loads the basecamp extension, which opens a WebSocket to the daemon at session start.
-- **basecamp swarm daemon** — a single, host-global Python process (FastAPI served by uvicorn over a Unix domain socket). It is coordinator (spawns agents), supervisor (owns the relationship/ACL graph), router (messages and result notifications), mutation-lease manager, and limit enforcer (depth + global concurrency). It exposes HTTP routes for read-only observability.
+- **basecamp hub** — a single, host-global Python process (FastAPI served by uvicorn over a Unix domain socket). It is coordinator (spawns agents), supervisor (owns the relationship/ACL graph), router (messages and result notifications), mutation-lease manager, and limit enforcer (depth + global concurrency). It exposes HTTP routes for read-only observability.
 - **SQLite store** — the daemon's source of truth: agents, runs, relationships, leases, queued messages/results. Survives daemon restarts.
 - **Transient agent processes** — `pi --mode json -p` children the daemon spawns per task. Each loads the basecamp extension and connects its own WebSocket back to the daemon.
 - **`.jsonl` thread files** — each agent's pi session transcript. Async agents are spawned with `--session-dir` pointing at a **basecamp-managed durable location keyed by the agent id** (`~/.pi/basecamp/swarm/agents/<agent-id>/session/`), kept deliberately distinct from pi's default session store so an agent reads as a *distinct entity* rather than an ordinary, user-continuable session (§6.6). Persisted indefinitely (no TTL); resumed on re-task to continue the thread.
@@ -83,7 +83,7 @@ Two ideas anchor the whole design:
             └──────────────────┬──────────────────┘
                                ▼
             ┌───────────────────────────────────────┐      HTTP over UDS
-            │        basecamp swarm daemon           │   GET /runs/summary,
+            │              basecamp hub              │   GET /runs/summary,
             │        (FastAPI / uvicorn, UDS)        │◄──────────────────────
             │                                         │   /runs/messages (obs)
             │   coordinator · supervisor (ACL)        │
@@ -161,11 +161,11 @@ At `session_start`, the extension runs an ensure-daemon flow off the critical pa
 2. Send a health ping with a short timeout.
 3. If the daemon is up, read its advertised protocol version and run handshake.
    - Compatible: proceed.
-   - Incompatible: acquire the spawn lock, terminate only the daemon bound to this socket (PID file first, exact `basecamp swarm daemon --uds <socket>` command match as fallback), remove stale socket/PID artifacts, restart via the `basecamp swarm daemon` CLI, and wait-for-healthy.
+   - Incompatible: acquire the spawn lock, terminate only the daemon bound to this socket (PID file first, exact `basecamp hub --uds <socket>` command match as fallback), remove stale socket/PID artifacts, restart via the `basecamp hub` CLI, and wait-for-healthy.
 
    A protocol mismatch means the host-global daemon is running a version this client cannot safely speak. Basecamp prefers converging the host to one current daemon over leaving new sessions wedged behind a manual cleanup step. Existing live clients may be disconnected and reconnect behavior remains client-owned.
 
-4. If the daemon is not running, acquire a spawn lock (PID + timestamp) so concurrent session starts do not race and launch duplicates; start via the `basecamp swarm daemon` CLI; wait-for-healthy with bounded retries; release lock.
+4. If the daemon is not running, acquire a spawn lock (PID + timestamp) so concurrent session starts do not race and launch duplicates; start via the `basecamp hub` CLI; wait-for-healthy with bounded retries; release lock.
 5. Open this process WebSocket and register identity (env contract in §5.4).
 
 ```text
@@ -292,7 +292,7 @@ A run is one transient agent process lifetime.
 
 The implemented spawn path inserts a thin runner process between the daemon and each pi child to make run completion robust against empty final answers. This is an implementation detail layered onto §6.3, not a change to the run state machine.
 
-- **Runner process.** The daemon does not exec `pi` directly; it spawns `python -m pi_swarm.runner -- <pi argv> <task>` (`pi-swarm/cli/src/pi_swarm/runner.py`). The runner owns the attempt loop and reports the single terminal result to the daemon.
+- **Runner process.** The daemon does not exec `pi` directly; it spawns `python -m basecamp.hub.swarm.runner -- <pi argv> <task>` (`src/basecamp/hub/swarm/runner.py`). The runner owns the attempt loop and reports the single terminal result to the daemon.
 - **Attempt-local proxy.** For each attempt the runner stands up an ephemeral, per-attempt UDS proxy and points the child's `BASECAMP_DAEMON_UDS` at it. The proxy forwards the child's `telemetry` frames up to the real daemon (rewriting run/agent identity) and suppresses the child's own `result_report`. It is bidirectional after registration: child→daemon frames are forwarded without inline daemon reads, and daemon→child frames are forwarded concurrently so pushed peer-message deliveries can reach daemon-spawned agents.
 - **Retry on empty result.** Attempt 1 runs the task. If the final answer is empty, the runner runs a second attempt with a recovery prompt; after two empty attempts it reports `empty_agent_result_after_retry`.
 - **Result sidecar.** Each attempt is written to a per-run sidecar at `~/.pi/basecamp/swarm/agents/<agent-id>/runs/<run-id>/result.json` (attempt history plus final). The child writes attempts when `BASECAMP_RUNNER_MANAGED_RESULT=1`, using `BASECAMP_RUN_RESULT_PATH` and `BASECAMP_RUN_ATTEMPT`; the runner then sends the terminal `result_report` to the daemon. SQLite stays the daemon's source of truth for run status; the sidecar records the child-side attempt story.
@@ -435,7 +435,7 @@ Both limits are configurable tunables. They are complementary: depth cap bounds 
 
 `ask_agent` is the first implemented Phase 2b collaboration primitive. It lets a session or agent ask a *permitted* agent a question and get a context-aware answer, without steering or perturbing the target — deliberately sidestepping the live-delivery problem the runner proxy poses (§6.3.1).
 
-**Mechanism.** `ask_agent({ agent_handle, question, timeout_s? })` reuses dispatch + `wait_for_agent` rather than a new frame: the dispatch spec carries an optional `fork_from` (the target's handle/id), and the daemon resolves it to the target's session file and launches the answerer with `pi --fork <abs path>` into a NEW, separate, read-only session. The target's own thread is only read, never written. The answerer runs the question against the target's forked context, and its terminal result (last assistant message) is returned to the requester as the answer. The protocol has carried `fork_from` since v12 (see `swarm/protocol/PROTOCOL.md` for the current version).
+**Mechanism.** `ask_agent({ agent_handle, question, timeout_s? })` reuses dispatch + `wait_for_agent` rather than a new frame: the dispatch spec carries an optional `fork_from` (the target's handle/id), and the daemon resolves it to the target's session file and launches the answerer with `pi --fork <abs path>` into a NEW, separate, read-only session. The target's own thread is only read, never written. The answerer runs the question against the target's forked context, and its terminal result (last assistant message) is returned to the requester as the answer. The protocol has carried `fork_from` since v12 (see `pi/swarm/protocol/PROTOCOL.md` for the current version).
 
 **Visibility ACL.** Fork-ask is **DEFAULT-DENY** along the §7.1 directions: a requester may ask only an ancestor, a descendant, or a same-`sibling_group` target. Visible session/root targets are askable by canonical handle when their session file can be resolved for the read-only fork. `sibling_group` is populated at dispatch as the dispatcher/parent node id, so all children of one parent are siblings. Unauthorized — and missing — targets are both rejected with the same `fork_target_unknown` reason, so existence is never leaked.
 
@@ -493,7 +493,7 @@ Both limits are configurable tunables. They are complementary: depth cap bounds 
 
 ## 10. Phased roadmap
 
-- **Phase 1 — IMPLEMENTED walking skeleton.** Delivered components: daemon (`basecamp swarm daemon`), extension daemon client + `dispatch_agent` / `wait_for_agent`, and shared frame protocol fixtures under `pi-swarm/protocol/`. Goal was to prove the end-to-end spine with one persistent agent identity and asynchronous run completion.
+- **Phase 1 — IMPLEMENTED walking skeleton.** Delivered components: daemon (`basecamp hub`), extension daemon client + `dispatch_agent` / `wait_for_agent`, and shared frame protocol fixtures under `pi/swarm/protocol/`. Goal was to prove the end-to-end spine with one persistent agent identity and asynchronous run completion.
   - In scope: a single frame-schema source of truth + a daemon contract test (the protocol exists from Phase 1); `session_start` ensure-daemon + WebSocket handshake (§5.3); daemon spawns one transient agent process from a TypeScript-authored spawn spec (§6.2); async dispatch returns a handle immediately; telemetry + result reporting over WebSocket (§6.3); `wait_for_agent` for a single handle and wait-ALL over multiple handles (§7.3); process-exit crash backstop; SQLite persistence for agents/runs; async-agent identity refinements — repo-root spawn cwd, deterministic titles, and a durable/distinct session store (§6.6); depth cap retained.
   - Explicitly out of scope: peer message, ACL enforcement, mutation lease/deadlock detection, host-global concurrency cap, HTTP observability polish, re-task-on-message behavior, wait-FIRST joins, and the unsolicited result-ping push (in Phase 1 the dispatcher observes completion by calling `wait_for_agent`).
 
