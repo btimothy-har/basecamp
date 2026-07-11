@@ -4,7 +4,7 @@ import registerCompanionPackage from "../index.ts";
 import { isCompanionActive, setCompanionActive } from "../panes/state.ts";
 import { createMockPi, resetPaneState } from "./panes-harness.ts";
 
-describe("panes/registerPanes", () => {
+describe("companion/registerCompanionPackage", () => {
 	afterEach(() => {
 		delete process.env.TMUX;
 		delete process.env.TMUX_PANE;
@@ -15,14 +15,13 @@ describe("panes/registerPanes", () => {
 		resetPaneState();
 	});
 
-	it("package registration initializes companion active and registers analysis", () => {
+	it("initializes companion active to false on registration", () => {
 		process.env.BASECAMP_AGENT_DEPTH = "0";
 		setCompanionActive(true);
-		const { pi, registeredEvents } = createMockPi();
+		const { pi } = createMockPi();
 
 		registerCompanionPackage(pi);
 
 		assert.equal(isCompanionActive(), false);
-		assert.ok(registeredEvents().includes("agent_end"));
 	});
 });

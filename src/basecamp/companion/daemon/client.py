@@ -6,8 +6,9 @@ import json
 import socket
 from http.client import HTTPConnection, HTTPException
 from pathlib import Path
-from urllib.parse import urlencode
+from urllib.parse import quote, urlencode
 
+from basecamp.companion.analysis import CompanionAnalysis
 from basecamp.companion.daemon.models import (
     DaemonAgentMessage,
     DaemonAgentMessages,
@@ -101,6 +102,35 @@ class DaemonSummarySource:
             return DaemonSummaryError(error="daemon returned an invalid summary response")
         except HTTPException as error:
             return DaemonSummaryError(error=str(error))
+        finally:
+            if connection is not None:
+                try:
+                    connection.close()
+                except OSError:
+                    pass
+
+    def poll_analysis(self, session_id: str) -> CompanionAnalysis | None:
+        """Fetch the daemon's stored analysis for a session; None if absent/unreachable.
+
+        Best-effort: any non-200 (e.g. 404 when no analysis exists yet), a daemon-down
+        socket error, or an invalid body yields ``None`` and the dashboard shows "—".
+        """
+
+        if not isinstance(session_id, str):
+            return None
+
+        request_path = f"/analysis/{quote(session_id, safe='')}"
+        connection: HTTPConnection | None = None
+        try:
+            connection = self._connection_factory(self._daemon_socket, timeout=self._timeout)
+            connection.request("GET", request_path, headers={"Accept": "application/json"})
+            response = connection.getresponse()
+            body = response.read()
+            if response.status != 200:
+                return None
+            return CompanionAnalysis.model_validate(json.loads(body.decode("utf-8")))
+        except (OSError, HTTPException, json.JSONDecodeError, UnicodeDecodeError, TypeError, ValueError):
+            return None
         finally:
             if connection is not None:
                 try:

@@ -26,7 +26,7 @@ Three structural costs follow:
 
 ### Goals
 
-- **One contract, not five.** The companion reads from a single source — the daemon — over the daemon's existing, versioned, cross-tested frame protocol, retiring the snapshot and analysis files.
+- **Move the analysis channel to the daemon.** The one channel that genuinely needed it — the cold per-turn subprocess with lossy input — becomes a warm daemon service the UI reads over the daemon's existing HTTP surface, retiring the analysis sidecar. The other file channels (snapshot, goal-cycle) are *deliberately left in place* (see §7/§8): they work, the dashboard is best-effort, and re-engineering them into a unified projection is not worth it now. "One contract, not five" was the original ambition; the shipped scope is "one fewer file channel, and it's the one that mattered."
 - **A faithful, durable thread record.** The daemon holds the full raw session thread, so analysis is reproducible and re-derivable, and its quality is bounded by the model, not by a lossy digest.
 - **Keep the Textual UI.** The renderer (diff viewer, file tree, syntax, swarm tab) is retained; only its data source changes.
 - **Warm, unified analysis.** Analysis runs warm in the long-lived daemon, not as a cold subprocess per turn.
@@ -155,46 +155,45 @@ Two senses of "fresh" are kept distinct:
 
 ## 7. The seam and transport phasing
 
-- **Extension** shrinks to: ship `getBranch()` on `agent_end`; manage the pane; report Herdr metadata. No files, no analyzer trigger.
-- **Daemon** gains: a `thread_report` frame handler; `raw_pi_thread` + `analysis`; the reducer; the warm analyzer (a swappable seam — see §6); a unified current-state projection (extend the existing `/runs/summary` projection in `store/summary.py`).
-- **Textual UI** reads one source instead of five, and keeps its own git for the diff view (moved off the render thread — git is inherently local and should not be daemon-owned).
+- **Extension** ships `getBranch()` on `agent_end`; manages the pane; reports Herdr metadata. (The old per-turn analyzer trigger is removed; the snapshot writer stays — see §8.)
+- **Daemon** gains: a `thread_report` frame handler; `raw_pi_thread` + `analysis`; the reducer; the warm analyzer (a swappable seam — see §6); and a thin read endpoint `GET /analysis/{session_id}` that returns the stored `analysis` row verbatim (no projection logic — the analyzer already wrote the final shape).
+- **Textual UI** reads the analysis panel from `GET /analysis/{session_id}` instead of the sidecar file; it keeps its **existing** sources for the other panels (goal-cycle file for tasks, snapshot file for workspace/session state, `/runs/summary` for the swarm view, local git for the diff). A best-effort dashboard doesn't justify re-plumbing the panels that already work.
+
+**Scope note (Phase 3, narrowed).** The original design collapsed all five channels into one unified projection. That is deliberately *not* done: only the analysis channel moves, because it's the only one whose source was a problem (cold subprocess, lossy input). The unified projection remains a possible later consolidation — it buys "one schema," not new capability — but the drift/torn-read problems it targeted are already gone for the analysis panel once it's daemon-owned.
 
 Transport phases with the read-only-first goal:
 
-- **v1 — HTTP poll of the unified projection.** The daemon's `/ws` accepts only agent registrations today; adding a read-only observer is out of scope for v1. The UI keeps polling, but a single unified projection endpoint — five channels collapse to one schema, no drift. Ships read-only.
+- **v1 — HTTP poll of the analysis endpoint.** The daemon's `/ws` accepts only agent registrations today; a read-only observer role is out of scope for v1. The UI keeps polling; the analysis read is now a daemon HTTP call (`GET /analysis/{session_id}`) rather than a file. Ships read-only.
 - **v2 — WS observer + control.** Add an observer role to `/ws` for pushed deltas; this same channel carries control frames (capture item → tracked state, message/redirect agent), reusing the daemon's existing router. This is the "design for control" half.
 
-## 8. Deprecation — the clean break
+## 8. Deprecation — only the analysis subprocess
 
-This is a removal, not old-and-new in parallel: keeping the snapshot/analysis files as a fallback would preserve the drift and redundancy the redesign exists to remove. The daemon becomes the single source; a daemon-down session shows a "starting…" state, not a file fallback. Sequenced in Phase 4, after Phases 1–3 prove the new path — except the pane-launch interface change, forced in Phase 3 when the UI stops reading snapshots.
+Once the UI reads analysis from `GET /analysis/{session_id}`, nothing reads the analysis **sidecar** anymore, so the old cold-subprocess analyzer is dead and is deleted. This is the *only* deprecation in the narrowed scope — the snapshot writer and goal-cycle store are **retained**, because their panels still read them (§7). There is no "clean break" across all five channels; there is one dead producer to remove.
 
-**Removed (deleted):**
+**Removed (deleted) — the dead analysis producer only:**
 
-| Component | Path | Replaced by |
+| Component | Path | Why it's dead |
 |---|---|---|
-| Snapshot writer + `.live` mirror | `pi/companion/snapshot/` | `thread_report` → `raw_pi_thread` (§4–5) |
-| Per-turn analyzer subprocess | `pi/companion/analysis.ts` | daemon analyzer worker (§6) |
-| Dashboard file source (mtime merge) | `src/basecamp/companion/source.py` | daemon projection (§7) |
-| Goal-cycle file read | `src/basecamp/companion/cycles.py` | task state in the projection (daemon already reads the tasks log) |
-| Snapshot file loader + paths | `src/basecamp/companion/snapshot.py` (loader) | projection payload |
-| `companion analyze` CLI + `companion-analyze` alias | `src/basecamp/cli.py` | daemon service, not a CLI |
-| `--snapshot` launch flag | `pi/companion/panes/command.ts` | `--session-id` (query the daemon) |
-| On-disk `companion/snapshots/` + `companion/analysis/` | `~/.pi/basecamp/…` | dead — no writer or reader |
-| `BASECAMP_COMPANION_MODEL` | env | daemon-side model policy (v2: hardcoded default; config in the analyzer rework) |
-| Corresponding test suites | `tests/companion/test_*`, TS `snapshot`/`analysis` tests | new ingest/analyzer/projection tests |
+| Per-turn analyzer subprocess | `pi/companion/analysis.ts` (+ its `index.ts` registration, `tests/analysis.test.ts`) | nothing reads the sidecar it wrote |
+| Analyzer producer + PydanticAI adapter | `src/basecamp/companion/analysis/generate.py`, `llm.py` | superseded by the daemon analyzer (§6) |
+| Analysis sidecar IO | `analysis/model.py` (`load_analysis`/`write_analysis`/`companion_analysis_path`/v1 map) | no sidecar to read/write |
+| `companion analyze` CLI + `companion-analyze` alias | `src/basecamp/cli.py` | analysis is a daemon service, not a CLI |
+| On-disk `companion/analysis/` sidecars | `~/.pi/basecamp/…` | dead — no writer or reader |
+| `BASECAMP_COMPANION_MODEL` | env | daemon-side model policy (v2: hardcoded default in the scheduler; config in the analyzer rework) |
+| Analyzer/CLI/sidecar test suites | `tests/companion/test_companion_{analyzer,analyze_cli,llm}.py` | test deleted code |
 
-**Relocated / rewired (not deleted):**
+**Rewired (not deleted):**
 
-- `analysis/generate.py`, `analysis/model.py`, `llm.py` — the analyzer, sections model, and PydanticAI adapter **move into the daemon** (swarm) as the warm service; the prompt and section logic survive, but IO changes (reads `raw_pi_thread`, writes `analyses`, event-driven; no stdin envelope, no sidecar).
-- `app.py::_refresh` + `poll.py` — rewired to read the single projection; the daemon-client half stays and expands.
-- `herdr/metadata.ts` — **retained but decoupled**: `buildHerdrMetadata` currently reads a `CompanionSnapshot`; it must build its title/status directly from core state (workspace, agent-mode, session title, tasks reader) once the snapshot writer is gone.
-- `snapshot.py::render_workspace_lines` — repurposed to render the workspace panel from the projection.
+- `analysis/model.py` — slimmed to just the `CompanionAnalysis`/`AnalysisSections` **model** the UI parses the daemon response into; the sidecar file IO is dropped.
+- `source.py` + `poll.py` — the analysis half of `DashboardSource` is repointed from an mtime-watched sidecar file to a daemon fetch (`GET /analysis/{session_id}`); the goal-cycle (tasks) half is unchanged.
+- `ui/dashboard.py` — unchanged; still renders `analysis.monitor`/`needs_capture`/`checkpoints`.
 
-**Retained (unchanged):**
+**Retained as-is (the deliberately-unmoved channels):**
 
-- `pi/companion/panes/`, `herdr/provider.ts`, `tmux/` — pane management (only the launch command's data arg changes).
-- The Textual `ui/` widgets, `diff.py` + the local git driver (moved off the render thread).
-- `buildUserContext` — **not** companion-only: `pi/core/ui/title.ts` uses it for session-title generation, so it stays; only the companion's use (in the removed `analysis.ts`) goes.
+- **Snapshot writer** (`pi/companion/snapshot/`) + its Python loader (`snapshot.py`) — still the source for the workspace/session/mode/title panel and for `herdr/metadata.ts`. Kept; `--snapshot` launch flag kept.
+- **Goal-cycle store** (`cycles.py`) — still the authoritative task display source.
+- **Swarm view** — already daemon-sourced (`/runs/summary`); unchanged.
+- The Textual `ui/` widgets, `diff.py` + the local git driver; `buildUserContext` (used by `pi/core/ui/title.ts`, not companion-only).
 
 ## 9. Tradeoffs and risks
 

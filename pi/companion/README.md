@@ -1,21 +1,20 @@
 # companion
 
-Basecamp companion — session snapshot hooks, companion panes, Herdr metadata, and analysis registration.
+Basecamp companion — session snapshot hooks, companion panes, and Herdr metadata.
 
 ## What it does
 
 - **Session snapshots**: writes session state snapshots for the companion dashboard to consume — a per-session file plus a process-scoped live snapshot the dashboard follows across session/cwd changes
 - **Companion panes**: opens the companion dashboard in Herdr when the session has `HERDR_ENV=1`, `HERDR_PANE_ID`, and `HERDR_SOCKET_PATH`; falls back to tmux when Herdr is unavailable; skips subagents and non-UI sessions
 - **Herdr pane metadata**: reports display-only metadata to the current Herdr Pi pane with `herdr pane report-metadata` so Herdr can show the Basecamp title/status without Basecamp taking agent lifecycle authority
-- **Analysis registration**: hooks companion analysis into session lifecycle (writes analysis.json)
-- **Companion-active flag**: sets core's `isCompanionActive` flag for companion analysis/pane state
+- **Companion-active flag**: sets core's `isCompanionActive` flag for companion pane state
 
-The **Python companion TUI** (Textual dashboard, PydanticAI analyzer, daemon client) lives in `src/basecamp/companion/`.
+The **Python companion TUI** (Textual dashboard, daemon client) lives in `src/basecamp/companion/`. Analysis is produced by the daemon (see `docs/design/companion-daemon-broker.md`) and read over `GET /analysis/{session_id}`; the snapshot and goal-cycle panels stay file-sourced.
 
 ## Dependencies
 
-- **core** (`#core/*`): workspace state, agent-mode, skill-tracker, session state, companion-active flag, and `buildUserContext` (`#core/session/user-context.ts`) for analysis context
-- **tasks** (`#tasks/index.ts`): `getTasksAccess` + `TaskStatus` — live task-state observation for the snapshot/analysis
+- **core** (`#core/*`): workspace state, agent-mode, skill-tracker, session state, and the companion-active flag
+- **tasks** (`#tasks/index.ts`): `getTasksAccess` + `TaskStatus` — live task-state observation for the snapshot
 
 ## Observation pattern
 

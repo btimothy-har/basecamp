@@ -5,7 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from basecamp.companion.analysis import COMPANION_ANALYSIS_DIR_NAME, companion_analysis_path
+from basecamp.companion.analysis import CompanionAnalysis
 from basecamp.companion.cycles import companion_tasks_path
 from basecamp.companion.daemon import (
     DaemonAgentMessages,
@@ -14,7 +14,7 @@ from basecamp.companion.daemon import (
     DaemonSummaryError,
 )
 from basecamp.companion.diff import make_git_runner, resolve_browse_roots
-from basecamp.companion.snapshot import COMPANION_SNAPSHOT_DIR_NAME, CompanionSnapshot
+from basecamp.companion.snapshot import CompanionSnapshot
 from basecamp.companion.source import DashboardSource
 from basecamp.companion.ui.diff import DiffView
 from basecamp.companion.ui.files import FileBrowser
@@ -28,14 +28,7 @@ def ensure_dashboard_source(app: CompanionApp, session_id: str) -> DashboardSour
         return app._dashboard_source
 
     tasks_path = companion_tasks_path(session_id, app._tasks_dir)
-
-    if app.snapshot_path.parent.name == COMPANION_SNAPSHOT_DIR_NAME:
-        analysis_dir = app.snapshot_path.parent.parent / COMPANION_ANALYSIS_DIR_NAME
-    else:
-        analysis_dir = app.snapshot_path.parent
-    app.analysis_path = companion_analysis_path(session_id, analysis_dir)
-
-    app._dashboard_source = DashboardSource(tasks_path, app.analysis_path)
+    app._dashboard_source = DashboardSource(tasks_path, lambda: poll_daemon_analysis(app, session_id))
     app._dashboard_source_session_id = session_id
     return app._dashboard_source
 
@@ -59,6 +52,13 @@ def apply_effective_cwd(app: CompanionApp, snapshot: CompanionSnapshot) -> bool:
     app.query_one("#files-body", FileBrowser).replace_roots(resolve_browse_roots(app._git, app.cwd, app.scratch_dir))
     app.query_one("#diff-view", DiffView).update_diff(file_path="", status_message="", diff_lines=[])
     return True
+
+
+def poll_daemon_analysis(app: CompanionApp, session_id: str) -> CompanionAnalysis | None:
+    try:
+        return app._daemon_source.poll_analysis(session_id)
+    except Exception:  # noqa: BLE001
+        return None
 
 
 def poll_daemon_summary(app: CompanionApp, root_id: str) -> DaemonSummary:

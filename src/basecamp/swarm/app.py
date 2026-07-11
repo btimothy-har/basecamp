@@ -6,7 +6,7 @@ import asyncio
 from contextlib import asynccontextmanager
 from typing import Any, Literal
 
-from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 
 from .analysis import AnalysisScheduler
 from .frames import (
@@ -34,6 +34,7 @@ from .frames import (
     parse_frame,
     serialize_frame,
 )
+from .http_routes import register_http_routes
 from .registry import Registry
 from .service import (
     AcceptedPeerMessage,
@@ -79,52 +80,7 @@ def create_app(
     reapers: set[asyncio.Task[None]] = set()
     delivery_tasks: set[asyncio.Task[None]] = set()
 
-    @app.get("/health")
-    async def health() -> dict[str, Any]:
-        return {"status": "ok", "protocol": PROTOCOL_VERSION}
-
-    @app.get("/runs/summary")
-    async def runs_summary(root_id: str, limit: int = 5) -> dict[str, Any]:
-        summary = await asyncio.to_thread(
-            store.get_run_summary,
-            root_id,
-            limit=limit,
-        )
-        summary["session_active"] = registry.has_connection(root_id)
-        return summary
-
-    @app.get("/runs/messages")
-    async def runs_messages(root_id: str, agent_handle: str, limit: int = 3) -> dict[str, Any]:
-        return await asyncio.to_thread(
-            store.get_run_messages,
-            root_id,
-            agent_handle=agent_handle,
-            limit=limit,
-        )
-
-    @app.get("/workstreams")
-    async def list_workstreams(
-        status: str | None = None,
-        repo: str | None = None,
-        dossier_path: str | None = None,
-        query: str | None = None,
-    ) -> dict[str, Any]:
-        return {
-            "workstreams": await asyncio.to_thread(
-                store.list_workstreams,
-                status=status,
-                repo=repo,
-                dossier_path=dossier_path,
-                query=query,
-            )
-        }
-
-    @app.get("/workstreams/{identifier}")
-    async def get_workstream(identifier: str) -> dict[str, Any]:
-        ws = await asyncio.to_thread(store.get_workstream_with_agents, identifier)
-        if ws is None:
-            raise HTTPException(status_code=404)
-        return ws
+    register_http_routes(app, store=store, registry=registry)
 
     @app.websocket("/ws")
     async def websocket_endpoint(websocket: WebSocket) -> None:

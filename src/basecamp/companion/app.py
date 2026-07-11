@@ -220,7 +220,6 @@ class CompanionApp(App[None]):
     ) -> None:
         super().__init__()
         self.snapshot_path = snapshot_path
-        self.analysis_path: Path | None = None
         self.cwd = cwd
         self.scratch_dir = scratch_dir
         self._tasks_dir = tasks_dir
