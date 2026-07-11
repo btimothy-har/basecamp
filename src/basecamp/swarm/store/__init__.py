@@ -22,6 +22,7 @@ from .errors import (
 )
 from .messages import MessagesMixin
 from .policy import PolicyMixin
+from .raw_pi_thread import RawPiThreadMixin
 from .runs import RunsMixin
 from .schema import SchemaMixin
 from .summary import SummaryMixin
@@ -53,6 +54,7 @@ class Store(
     DirectoryMixin,
     SummaryMixin,
     WorkstreamsMixin,
+    RawPiThreadMixin,
 ):
     """Daemon persistence layer backed by SQLite."""
 

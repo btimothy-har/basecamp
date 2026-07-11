@@ -25,6 +25,7 @@ from .frames import (
     RegisterFrame,
     ResultReportFrame,
     TelemetryFrame,
+    ThreadReportFrame,
     UpdateWorkstreamFrame,
     WaitFrame,
     WaitResultFrame,
@@ -42,6 +43,7 @@ from .service import (
     handle_peer_message_delivery_ack,
     handle_result_report,
     handle_telemetry,
+    handle_thread_report,
     list_agents,
     message_status_result,
     notify_message_delivery_terminal,
@@ -223,6 +225,9 @@ def create_app(store: Store, *, daemon_uds: str | None = None) -> FastAPI:
                         store=store,
                         registry=registry,
                     )
+                    continue
+                if isinstance(inbound, ThreadReportFrame):
+                    await handle_thread_report(frame=inbound, node_id=parsed.node_id, store=store)
                     continue
                 if isinstance(inbound, WaitFrame):
                     await _handle_wait(

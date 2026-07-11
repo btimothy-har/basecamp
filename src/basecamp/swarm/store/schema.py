@@ -115,6 +115,30 @@ class SchemaMixin:
                 )
                 """
             )
+            connection.execute(
+                """
+                CREATE TABLE IF NOT EXISTS raw_pi_thread (
+                    owner_id TEXT PRIMARY KEY,
+                    session_id TEXT NOT NULL,
+                    session_file TEXT,
+                    leaf_id TEXT,
+                    latest_seq INTEGER NOT NULL,
+                    updated_at TEXT NOT NULL
+                )
+                """
+            )
+            connection.execute(
+                """
+                CREATE TABLE IF NOT EXISTS raw_pi_thread_node (
+                    owner_id TEXT NOT NULL,
+                    entry_id TEXT NOT NULL,
+                    parent_id TEXT,
+                    first_seen_seq INTEGER NOT NULL,
+                    entry_json TEXT NOT NULL,
+                    PRIMARY KEY (owner_id, entry_id)
+                )
+                """
+            )
             self._ensure_agents_current_run_id_column(connection)
             self._ensure_agents_agent_handle_column(connection)
             self._ensure_agents_metadata_columns(connection)
