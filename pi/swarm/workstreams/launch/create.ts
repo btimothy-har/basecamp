@@ -33,7 +33,7 @@ export async function executeCreateWorkstream(
 	if (!client) {
 		return textResult(
 			failedLaunchDetails(
-				"basecamp swarm daemon is not connected; cannot create a workstream.",
+				"basecamp hub is not connected; cannot create a workstream.",
 				"Ensure the daemon is running (it starts automatically for top-level sessions), then call launch_workstream again.",
 			),
 			true,

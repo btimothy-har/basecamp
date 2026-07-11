@@ -61,7 +61,7 @@ describe("cancel_agent", () => {
 			{},
 		);
 		assert.equal(notConnected.isError, true);
-		assert.equal(notConnected.content[0].text, "basecamp swarm daemon is not connected; cannot cancel agents.");
+		assert.equal(notConnected.content[0].text, "basecamp hub is not connected; cannot cancel agents.");
 		assert.equal(notConnected.details, null);
 		assert.equal(connected, true);
 	});

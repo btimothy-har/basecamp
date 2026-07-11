@@ -2,6 +2,8 @@
 
 **Status:** DESIGN LOCKED (top level + innards principle, 2026-07-09) · execution not started · **Scope:** reorganize the repo top level by *shipped artifact*, centralize the Python into one ordinary package, and regroup each domain's innards under a two-layer rule · **Supersedes:** the *Layout* decision (§3), the Target layout (§4), and the Python assembly (§6) of [repo-consolidation](./repo-consolidation.md) · **Related:** [repo-consolidation](./repo-consolidation.md), [claude-code-compatibility](./claude-code-compatibility.md)
 
+> **Update (2026-07-11):** the Python `swarm` package documented below was later renamed to `basecamp.hub` and re-domained — `hub/swarm/` (agent coordination) + `hub/broker/` (companion analysis), with the store decomposed per data object and the CLI now `basecamp hub`. This record describes the rearchitecture's original output; the TS `pi/swarm/` domain and the on-disk `~/.pi/basecamp/swarm/` runtime path are unchanged.
+
 This is the design record for basecamp's second structural pass. The [consolidation](./repo-consolidation.md) collapsed 15 packages into one Pi extension and one Python distribution — it fixed *packaging*. This pass fixes *navigability*: what the top level says the project is, and how each domain's files are grouped. It is layout-only — session behavior, the swarm protocol (v19), and the `~/.pi/basecamp` config surface are unchanged, and no product source-import statement changes (§7).
 
 ---
@@ -23,7 +25,7 @@ The organizing insight: the repo ships **three artifacts, intertwined over one s
 | `basecamp` Python package | the `basecamp` CLI, daemon, and TUI | `src/basecamp/` (CLI shell) + each domain's Python |
 | Claude extension *(future)* | a Claude Code launcher | `claude/` + reused prompt/skill/Python assets |
 
-The **domains** — `core workspace swarm companion ui tasks git bash-reviewer engineering browser` — are the shared vocabulary. A domain is *bilingual* when it has both a TS and a Python side; 4 of 10 are (core, workspace, swarm, companion). The domain name is the same on both sides (`pi/swarm` ⟷ `src/basecamp/swarm`, `#swarm/*` ⟷ `import basecamp.swarm`), so the two artifacts speak one language.
+The **domains** — `core workspace swarm companion ui tasks git bash-reviewer engineering browser` — are the shared vocabulary. A domain is *bilingual* when it has both a TS and a Python side; 4 of 10 are (core, workspace, swarm, companion). The domain name is the same on both sides (`pi/core` ⟷ `src/basecamp/core`, `#core/*` ⟷ `import basecamp.core`), so the two artifacts speak one language. *(The daemon domain later became the lone exception: after the hub rename its Python side is `basecamp.hub` while its TS side keeps `pi/swarm/` — see the update note above.)*
 
 ## 3. Decisions and rejected alternatives
 

@@ -9,7 +9,7 @@ The repo is organized by the artifacts it ships (design record: docs/design/repo
 | Product | Directory | Purpose |
 |---------|-----------|---------|
 | Basecamp Pi extension | `pi/` (`pi/extension.ts` + `pi/<domain>/`) | The single Pi package, registered from the repo root: all session, workspace, workflow, and agent behavior, assembled from domain modules |
-| `basecamp` Python distribution | `src/basecamp/` | One ordinary src-layout package: CLI/installer shell plus the `basecamp.core`, `basecamp.workspace`, `basecamp.swarm` (daemon), and `basecamp.companion` (TUI) subpackages |
+| `basecamp` Python distribution | `src/basecamp/` | One ordinary src-layout package: CLI/installer shell plus the `basecamp.core`, `basecamp.workspace`, `basecamp.hub` (daemon), and `basecamp.companion` (TUI) subpackages |
 | Claude extension *(reserved)* | `claude/` | A future Claude Code launcher (intent/README only for now) |
 
 ## Repo Map
@@ -34,12 +34,12 @@ pi/                            # ① the Pi extension (TypeScript)
 └── browser/                    # browser automation (puppeteer-core over CDP): tools/ + chrome adapter
 
 src/basecamp/                  # ② the basecamp Python package (one ordinary src-layout package)
-├── cli.py                      # Click entry point (setup, projects, environments, companion, swarm)
+├── cli.py                      # Click entry point (setup, projects, environments, companion, hub)
 ├── setup.py  installer.py      # environment setup + install orchestration (uv tool + npm + single pi install)
 ├── core/                       # settings, paths, files, exceptions + project config schema, migrations & CLI
 ├── workspace/                  # per-repo worktree-setup environments + menus
-├── swarm/                      # the daemon: FastAPI over UDS, SQLite store, runner
-└── companion/                  # Textual TUI (ui/), LLM analyzer, daemon client
+├── hub/                         # the daemon (host-global service): core (app·server·http_routes·registry) + frames/ + store/ (per data object) + swarm/ (agents) + broker/ (companion analysis)
+└── companion/                   # Textual TUI (ui/) + daemon client; analysis is daemon-sourced, thread reporter ships getBranch() at agent_end
 
 claude/                        # ③ reserved for a future Claude Code launcher
 docs/  tests/  migrations/     # design docs; Python tests (tests/<domain>/); one-shot state migration
@@ -63,7 +63,7 @@ Agent modes (`pi/core/agent-mode`, in `SESSION_STATE_AGENT_MODES`) are `analysis
 
 ### Extension Modules
 
-All TypeScript behavior ships as one Pi extension; its entry point is `pi/extension.ts` and its package manifest is the repo-root `package.json`. `pi/extension.ts` composes the domain modules (`core`, `system-prompt`, `tasks`, `bash-reviewer`, `engineering`, `browser`, `companion`, `swarm`) in a fixed order — core first — so in-extension init is deterministic and identical on `/reload`. Each domain's TS lives in `pi/<domain>/` with a `register*` default export in its `index.ts`; cross-domain imports go through `#`-subpath aliases and are boundary-checked. Framework UI (footer/header/title/mode) is not a separate domain — it lives in `pi/core/ui/` and `registerCore` registers it, alongside core's other in-session surfaces (`escalate`, `skills`, the `project` runtime — config + `workspace/` + context — and `git`'s `/create-pr`). Git worktree/repo mechanics live in `pi/core/git/` and are imported directly. The async-agent wire protocol and daemon client live in `pi/swarm/`; the Python daemon in `src/basecamp/swarm/`.
+All TypeScript behavior ships as one Pi extension; its entry point is `pi/extension.ts` and its package manifest is the repo-root `package.json`. `pi/extension.ts` composes the domain modules (`core`, `system-prompt`, `tasks`, `bash-reviewer`, `engineering`, `browser`, `companion`, `swarm`) in a fixed order — core first — so in-extension init is deterministic and identical on `/reload`. Each domain's TS lives in `pi/<domain>/` with a `register*` default export in its `index.ts`; cross-domain imports go through `#`-subpath aliases and are boundary-checked. Framework UI (footer/header/title/mode) is not a separate domain — it lives in `pi/core/ui/` and `registerCore` registers it, alongside core's other in-session surfaces (`escalate`, `skills`, the `project` runtime — config + `workspace/` + context — and `git`'s `/create-pr`). Git worktree/repo mechanics live in `pi/core/git/` and are imported directly. The async-agent wire protocol and daemon client live in `pi/swarm/`; the Python daemon in `src/basecamp/hub/`.
 
 ### Code Review
 

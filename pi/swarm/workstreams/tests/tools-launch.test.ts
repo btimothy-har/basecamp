@@ -28,7 +28,7 @@ describe("launch_workstream validation", () => {
 
 		assert.equal(result.isError, true);
 		assert.equal(details.status, "failed");
-		assert.match(details.message, /daemon is not connected/);
+		assert.match(details.message, /hub is not connected/);
 	});
 
 	it("fails when no repo workspace is available", async () => {

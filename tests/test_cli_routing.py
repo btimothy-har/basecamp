@@ -10,7 +10,7 @@ def test_top_level_commands_match_new_shape() -> None:
     assert "companion" in commands
     assert "setup" in commands
     assert "install" in commands
-    assert "swarm" in commands
+    assert "hub" in commands
     assert "environments" in commands
     assert "config" not in commands
     assert "companion-analyze" not in commands  # analysis moved to the daemon

@@ -74,7 +74,7 @@ describe("list_workstreams", () => {
 
 		assert.equal(result.isError, true);
 		assert.equal(details.status, "failed");
-		assert.match(details.message, /daemon is not connected/);
+		assert.match(details.message, /hub is not connected/);
 	});
 
 	it("passes repo, dossierPath, and status filters through", async () => {

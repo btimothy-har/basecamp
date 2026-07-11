@@ -47,7 +47,7 @@ export function registerAskAgentTool(
 					content: [
 						{
 							type: "text",
-							text: "basecamp swarm daemon is not connected; dispatch cannot proceed.",
+							text: "basecamp hub is not connected; dispatch cannot proceed.",
 						},
 					],
 					isError: true,

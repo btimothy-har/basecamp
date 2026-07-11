@@ -54,7 +54,7 @@ export async function executeListWorkstreams(
 		return listTextResult(
 			{
 				status: "failed",
-				message: "basecamp swarm daemon is not connected; cannot list workstreams.",
+				message: "basecamp hub is not connected; cannot list workstreams.",
 				count: 0,
 				workstreams: [],
 				next_step:

@@ -39,9 +39,7 @@ export function registerWaitForAgentTool(
 			const connection = await getConnection();
 			if (!connection) {
 				return {
-					content: [
-						{ type: "text", text: "basecamp swarm daemon is not connected; cannot wait for async agent handles." },
-					],
+					content: [{ type: "text", text: "basecamp hub is not connected; cannot wait for async agent handles." }],
 					isError: true,
 					details: null,
 				};

@@ -14,7 +14,6 @@ import { connect, type DaemonConnection, type DaemonIdentity, ensureDaemon, fetc
 import { type PeerDeliveryState, registerPeerMessageDeliveryHandler, sanitizeDisplayLabel } from "./delivery.ts";
 import { buildDeterministicAgentHandle } from "./handles.ts";
 import { resolveDaemonPaths } from "./paths.ts";
-import { registerRawThreadReporter } from "./raw-thread-reporter.ts";
 import { registerDaemonReporter } from "./reporter.ts";
 import { publishDaemonStatus } from "./status.ts";
 import type { DaemonToolDeps } from "./tools.ts";
@@ -243,10 +242,6 @@ export function registerDaemonClient(pi: ExtensionAPI, deps: DaemonClientDeps = 
 		});
 	}
 
-	if (isTopLevel) {
-		registerRawThreadReporter(pi, { awaitConnection: awaitDaemonConnection });
-	}
-
 	pi.on("session_start", (_event, ctx) => {
 		sessionCtx = ctx;
 
@@ -293,7 +288,7 @@ export function registerDaemonClient(pi: ExtensionAPI, deps: DaemonClientDeps = 
 				clearActiveAgentsWidget(ctx);
 				reporterConnection?.reject(error);
 				if (isTopLevel) {
-					ctx.ui.notify(`basecamp swarm daemon unavailable: ${message}`, "warning");
+					ctx.ui.notify(`basecamp hub unavailable: ${message}`, "warning");
 				}
 			} finally {
 				if (generation === connectionGeneration) state.connecting = null;

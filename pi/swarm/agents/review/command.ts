@@ -78,7 +78,7 @@ export function registerReviewCommand(pi: ExtensionAPI, deps: ReviewCommandDeps 
 
 				const connection = getActiveDaemonConnection();
 				if (!connection) {
-					ctx.ui.notify("basecamp swarm daemon not connected; cannot run code review.", "error");
+					ctx.ui.notify("basecamp hub not connected; cannot run code review.", "error");
 					return;
 				}
 				const daemonClient = createDaemonClient(connection);

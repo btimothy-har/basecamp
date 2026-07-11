@@ -50,8 +50,10 @@ function parsePsLine(line: string): { pid: number; args: string } | null {
 	return { pid, args };
 }
 
-function isDaemonCommandForSocket(args: string, socketPath: string): boolean {
-	const hasDaemonCommand = /(?:^|\s)(?:\S*\/)?basecamp\s+swarm\s+daemon(?:\s|$)/.test(args);
+export function isDaemonCommandForSocket(args: string, socketPath: string): boolean {
+	// Match both the current `basecamp hub` command and the legacy `basecamp swarm daemon`
+	// form, so a daemon left running under the old command line stays reapable across the rename.
+	const hasDaemonCommand = /(?:^|\s)(?:\S*\/)?basecamp\s+(?:swarm\s+daemon|hub)(?:\s|$)/.test(args);
 	const hasSocketArg = args.includes(`--uds ${socketPath}`) || args.includes(`--uds=${socketPath}`);
 	return hasDaemonCommand && hasSocketArg;
 }

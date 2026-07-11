@@ -52,7 +52,7 @@ export function registerPeerMessageTools(
 			const connection = await getConnection();
 			if (!connection) {
 				return {
-					content: [{ type: "text", text: "basecamp swarm daemon is not connected; cannot message agents." }],
+					content: [{ type: "text", text: "basecamp hub is not connected; cannot message agents." }],
 					isError: true,
 					details: null,
 				};
@@ -125,7 +125,7 @@ export function registerPeerMessageTools(
 			const connection = await getConnection();
 			if (!connection) {
 				return {
-					content: [{ type: "text", text: "basecamp swarm daemon is not connected; cannot check message status." }],
+					content: [{ type: "text", text: "basecamp hub is not connected; cannot check message status." }],
 					isError: true,
 					details: null,
 				};
