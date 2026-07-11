@@ -7,8 +7,8 @@ from pathlib import Path
 import pytest
 
 from basecamp.hub.frames import PROTOCOL_VERSION, DispatchFrame, DispatchSpec
-from basecamp.hub.service.dispatch import DispatchRejection, PreparedDispatch, prepare_dispatch
 from basecamp.hub.store import Store
+from basecamp.hub.swarm.service.dispatch import DispatchRejection, PreparedDispatch, prepare_dispatch
 
 pytestmark = pytest.mark.usefixtures("_isolate_run_result_home")
 

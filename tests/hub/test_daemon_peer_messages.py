@@ -6,8 +6,8 @@ import asyncio
 from pathlib import Path
 
 from basecamp.hub.frames import PROTOCOL_VERSION, PeerMessageFrame
-from basecamp.hub.service import AcceptedPeerMessage, accept_peer_message
 from basecamp.hub.store import Store
+from basecamp.hub.swarm.service import AcceptedPeerMessage, accept_peer_message
 
 
 def test_accept_peer_message_includes_stored_sender_product_role_for_unknown_relation(tmp_path: Path) -> None:

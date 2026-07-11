@@ -8,7 +8,7 @@ from typing import Any, Literal
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 
-from .analysis import AnalysisScheduler
+from .broker import AnalysisScheduler, handle_thread_report
 from .frames import (
     PROTOCOL_VERSION,
     AttachWorkstreamAgentFrame,
@@ -36,7 +36,8 @@ from .frames import (
 )
 from .http_routes import register_http_routes
 from .registry import Registry
-from .service import (
+from .store import DuplicateAgentHandleError, Store
+from .swarm.service import (
     AcceptedPeerMessage,
     accept_peer_message,
     attach_workstream_agent,
@@ -46,7 +47,6 @@ from .service import (
     handle_peer_message_delivery_ack,
     handle_result_report,
     handle_telemetry,
-    handle_thread_report,
     list_agents,
     message_status_result,
     notify_message_delivery_terminal,
@@ -54,7 +54,6 @@ from .service import (
     update_workstream,
     wait_for_agents,
 )
-from .store import DuplicateAgentHandleError, Store
 
 
 class _NoAnalysisScheduler:

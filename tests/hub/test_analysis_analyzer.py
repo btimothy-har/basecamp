@@ -6,8 +6,8 @@ from typing import Any
 
 import pytest
 
-from basecamp.hub.analysis.analyzer import PydanticAIAnalyzer
-from basecamp.hub.analysis.sections import AnalysisSections
+from basecamp.hub.broker.analysis.analyzer import PydanticAIAnalyzer
+from basecamp.hub.broker.analysis.sections import AnalysisSections
 
 
 class _FakeResult:

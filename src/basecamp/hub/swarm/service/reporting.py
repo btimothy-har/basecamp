@@ -6,9 +6,9 @@ import asyncio
 import hmac
 from typing import Any
 
-from ..frames import ResultReportFrame, TelemetryFrame
-from ..registry import Registry
-from ..store import Store
+from ...frames import ResultReportFrame, TelemetryFrame
+from ...registry import Registry
+from ...store import Store
 from .dispatch import _hash_report_token
 from .waiting import notify_run_finalized
 

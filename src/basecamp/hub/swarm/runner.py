@@ -18,7 +18,7 @@ from types import TracebackType
 
 from pydantic import ValidationError
 
-from .frames import (
+from ..frames import (
     PROTOCOL_VERSION,
     ErrorFrame,
     RegisteredFrame,

@@ -8,10 +8,10 @@ from pathlib import Path
 
 import uvicorn
 
-from .analysis import AnalysisScheduler
 from .app import create_app
-from .process import reconcile_orphaned_runs
+from .broker import AnalysisScheduler
 from .store import Store
+from .swarm.process import reconcile_orphaned_runs
 
 _SOCKET_MODE = 0o600
 

@@ -10,7 +10,9 @@ import pytest
 from dispatch_helpers import _FailingStore, _FakeProcess, _StoreFailureError
 
 from basecamp.hub.frames import DispatchSpec
-from basecamp.hub.process import (
+from basecamp.hub.registry import Registry
+from basecamp.hub.store import Store
+from basecamp.hub.swarm.process import (
     _process_group_is_runner,
     build_child_env,
     build_runner_argv,
@@ -19,8 +21,6 @@ from basecamp.hub.process import (
     terminate_process_group,
     terminate_process_group_if_runner,
 )
-from basecamp.hub.registry import Registry
-from basecamp.hub.store import Store
 
 pytestmark = pytest.mark.usefixtures("_isolate_run_result_home")
 
@@ -43,7 +43,7 @@ def test_build_runner_argv_injects_fork_before_task() -> None:
     assert argv == [
         sys.executable,
         "-m",
-        "basecamp.hub.runner",
+        "basecamp.hub.swarm.runner",
         "--result-path",
         "/tmp/result.json",
         "--",
@@ -118,7 +118,7 @@ def test_terminate_process_group_ignores_unsafe_pgids(
     def fake_killpg(target_pgid: int, sig: int) -> None:
         calls.append((target_pgid, sig))
 
-    monkeypatch.setattr("basecamp.hub.process.os.killpg", fake_killpg)
+    monkeypatch.setattr("basecamp.hub.swarm.process.os.killpg", fake_killpg)
 
     terminate_process_group(pgid)
 
@@ -135,7 +135,7 @@ def test_terminate_process_group_skips_sigkill_when_group_dies(
         if sig == 0:
             raise ProcessLookupError
 
-    monkeypatch.setattr("basecamp.hub.process.os.killpg", fake_killpg)
+    monkeypatch.setattr("basecamp.hub.swarm.process.os.killpg", fake_killpg)
 
     terminate_process_group(123, escalation_s=0.02, poll_s=0.005)
 
@@ -151,9 +151,9 @@ def test_terminate_process_group_escalates_when_group_survives(
     def fake_killpg(pgid: int, sig: int) -> None:
         calls.append((pgid, sig))
 
-    monkeypatch.setattr("basecamp.hub.process.os.killpg", fake_killpg)
-    monkeypatch.setattr("basecamp.hub.process.time.monotonic", lambda: next(times))
-    monkeypatch.setattr("basecamp.hub.process.time.sleep", lambda _seconds: None)
+    monkeypatch.setattr("basecamp.hub.swarm.process.os.killpg", fake_killpg)
+    monkeypatch.setattr("basecamp.hub.swarm.process.time.monotonic", lambda: next(times))
+    monkeypatch.setattr("basecamp.hub.swarm.process.time.sleep", lambda _seconds: None)
 
     terminate_process_group(123, escalation_s=0.02, poll_s=0.005)
 
@@ -169,7 +169,7 @@ def test_terminate_process_group_returns_when_initial_sigterm_finds_no_group(
         calls.append((pgid, sig))
         raise ProcessLookupError
 
-    monkeypatch.setattr("basecamp.hub.process.os.killpg", fake_killpg)
+    monkeypatch.setattr("basecamp.hub.swarm.process.os.killpg", fake_killpg)
 
     terminate_process_group(123, escalation_s=0.02, poll_s=0.005)
 
@@ -187,9 +187,9 @@ def test_terminate_process_group_tolerates_sigkill_permission_error(
         if sig == 0 or sig == signal.SIGKILL:
             raise PermissionError
 
-    monkeypatch.setattr("basecamp.hub.process.os.killpg", fake_killpg)
-    monkeypatch.setattr("basecamp.hub.process.time.monotonic", lambda: next(times))
-    monkeypatch.setattr("basecamp.hub.process.time.sleep", lambda _seconds: None)
+    monkeypatch.setattr("basecamp.hub.swarm.process.os.killpg", fake_killpg)
+    monkeypatch.setattr("basecamp.hub.swarm.process.time.monotonic", lambda: next(times))
+    monkeypatch.setattr("basecamp.hub.swarm.process.time.sleep", lambda _seconds: None)
 
     terminate_process_group(123, escalation_s=0.02, poll_s=0.005)
 
@@ -204,10 +204,10 @@ def test_terminate_process_group_if_runner_terminates_verified_runner(
     def fake_killpg(pgid: int, sig: int) -> None:
         calls.append((pgid, sig))
 
-    monkeypatch.setattr("basecamp.hub.process._process_group_is_runner", lambda _pgid: True)
-    monkeypatch.setattr("basecamp.hub.process._process_group_alive", lambda _pgid: False)
-    monkeypatch.setattr("basecamp.hub.process.os.killpg", fake_killpg)
-    monkeypatch.setattr("basecamp.hub.process.time.monotonic", lambda: 0.0)
+    monkeypatch.setattr("basecamp.hub.swarm.process._process_group_is_runner", lambda _pgid: True)
+    monkeypatch.setattr("basecamp.hub.swarm.process._process_group_alive", lambda _pgid: False)
+    monkeypatch.setattr("basecamp.hub.swarm.process.os.killpg", fake_killpg)
+    monkeypatch.setattr("basecamp.hub.swarm.process.time.monotonic", lambda: 0.0)
 
     terminate_process_group_if_runner(123, escalation_s=0.02)
 
@@ -222,8 +222,8 @@ def test_terminate_process_group_if_runner_skips_unverified_group(
     def fake_killpg(pgid: int, sig: int) -> None:
         calls.append((pgid, sig))
 
-    monkeypatch.setattr("basecamp.hub.process._process_group_is_runner", lambda _pgid: False)
-    monkeypatch.setattr("basecamp.hub.process.os.killpg", fake_killpg)
+    monkeypatch.setattr("basecamp.hub.swarm.process._process_group_is_runner", lambda _pgid: False)
+    monkeypatch.setattr("basecamp.hub.swarm.process.os.killpg", fake_killpg)
 
     terminate_process_group_if_runner(123, escalation_s=0)
 
@@ -234,14 +234,14 @@ def test_process_group_is_runner_matches_module_invocation(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     class FakeRunResult:
-        stdout = "/usr/bin/python -m basecamp.hub.runner --result-path /tmp/result.json"
+        stdout = "/usr/bin/python -m basecamp.hub.swarm.runner --result-path /tmp/result.json"
 
     def fake_run(args: list[str], **kwargs: object) -> FakeRunResult:
         assert args == ["ps", "-p", "123", "-o", "args="]
         assert kwargs == {"capture_output": True, "text": True, "check": False}
         return FakeRunResult()
 
-    monkeypatch.setattr("basecamp.hub.process.subprocess.run", fake_run)
+    monkeypatch.setattr("basecamp.hub.swarm.process.subprocess.run", fake_run)
 
     assert _process_group_is_runner(123) is True
 
@@ -250,14 +250,14 @@ def test_process_group_is_runner_rejects_module_name_without_invocation(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     class FakeRunResult:
-        stdout = "/usr/bin/python basecamp.hub.runner --result-path /tmp/result.json"
+        stdout = "/usr/bin/python basecamp.hub.swarm.runner --result-path /tmp/result.json"
 
     def fake_run(args: list[str], **kwargs: object) -> FakeRunResult:
         assert args == ["ps", "-p", "123", "-o", "args="]
         assert kwargs == {"capture_output": True, "text": True, "check": False}
         return FakeRunResult()
 
-    monkeypatch.setattr("basecamp.hub.process.subprocess.run", fake_run)
+    monkeypatch.setattr("basecamp.hub.swarm.process.subprocess.run", fake_run)
 
     assert _process_group_is_runner(123) is False
 
@@ -275,7 +275,7 @@ async def test_spawn_agent_process_starts_new_session(
         return process
 
     monkeypatch.setattr(
-        "basecamp.hub.process.asyncio.create_subprocess_exec",
+        "basecamp.hub.swarm.process.asyncio.create_subprocess_exec",
         fake_create_subprocess_exec,
     )
     spec = DispatchSpec(

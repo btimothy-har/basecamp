@@ -9,8 +9,8 @@ from typing import Any
 
 import pytest
 
-from basecamp.hub.analysis.scheduler import AnalysisScheduler
-from basecamp.hub.analysis.sections import AnalysisSections
+from basecamp.hub.broker.analysis.scheduler import AnalysisScheduler
+from basecamp.hub.broker.analysis.sections import AnalysisSections
 from basecamp.hub.store import Store
 from basecamp.hub.store.raw_pi_thread import RawPiThreadNode
 

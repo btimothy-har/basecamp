@@ -16,7 +16,7 @@ import asyncio
 import contextlib
 import logging
 
-from ..store import Store
+from ...store import Store
 from .analyzer import Analyzer, PydanticAIAnalyzer
 from .reducer import reduce_thread
 from .sections import AnalysisSections

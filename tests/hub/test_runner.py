@@ -29,7 +29,7 @@ from basecamp.hub.frames import (
     WaitResultItem,
     serialize_frame,
 )
-from basecamp.hub.runner import (
+from basecamp.hub.swarm.runner import (
     AttemptDaemonProxy,
     ProxySocketUnavailableError,
     scrub_runner_process_env,
@@ -86,8 +86,8 @@ def test_attempt_proxy_wait_until_ready_raises_when_socket_missing(tmp_path: Pat
     proxy = AttemptDaemonProxy(_context(tmp_path))
     proxy.uds_path = str(tmp_path / "missing.sock")
     times = iter([0.0, 3.0])
-    monkeypatch.setattr("basecamp.hub.runner.time.time", lambda: next(times))
-    monkeypatch.setattr("basecamp.hub.runner.time.sleep", lambda _seconds: None)
+    monkeypatch.setattr("basecamp.hub.swarm.runner.time.time", lambda: next(times))
+    monkeypatch.setattr("basecamp.hub.swarm.runner.time.sleep", lambda _seconds: None)
 
     with pytest.raises(ProxySocketUnavailableError, match="failed to create socket"):
         proxy._wait_until_ready()

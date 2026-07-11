@@ -5,7 +5,7 @@ from pathlib import Path
 import pytest
 from pydantic import ValidationError
 
-from basecamp.hub.run_result import (
+from basecamp.hub.swarm.run_result import (
     FinalRunResult,
     RunResultAttempt,
     RunResultSidecar,

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 
-from basecamp.hub.analysis.reducer import reduce_thread
+from basecamp.hub.broker.analysis.reducer import reduce_thread
 
 
 def _entry(entry_id: str, parent_id: str | None, **extra: object) -> str:

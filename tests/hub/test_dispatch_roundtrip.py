@@ -14,8 +14,8 @@ from dispatch_helpers import _dispatch, _dispatch_spec, _register_session, _star
 from websockets.sync.client import unix_connect
 
 from basecamp.hub.frames import PROTOCOL_VERSION
-from basecamp.hub.run_result import load_run_result, run_result_path
 from basecamp.hub.store import Store
+from basecamp.hub.swarm.run_result import load_run_result, run_result_path
 
 pytestmark = pytest.mark.usefixtures("_isolate_run_result_home")
 

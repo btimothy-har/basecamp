@@ -9,15 +9,15 @@ from pathlib import Path
 import pytest
 from dispatch_helpers import _FakePidProcess
 
-from basecamp.hub.process import reconcile_orphaned_runs
 from basecamp.hub.registry import Registry, Waiter
-from basecamp.hub.service.reaper import (
+from basecamp.hub.store import Store
+from basecamp.hub.swarm.process import reconcile_orphaned_runs
+from basecamp.hub.swarm.service.reaper import (
     DEFAULT_DISCONNECT_GRACE_SECONDS,
     _resolve_disconnect_grace_s,
     _run_disconnect_reaper,
     schedule_disconnect_reaper,
 )
-from basecamp.hub.store import Store
 
 pytestmark = pytest.mark.usefixtures("_isolate_run_result_home")
 
@@ -101,7 +101,7 @@ async def test_disconnect_reaper_marks_live_run_failed_terminates_process_and_wa
     def record_terminate(pgid: int | None, **_kwargs: object) -> None:
         terminated.append(pgid)
 
-    monkeypatch.setattr("basecamp.hub.service.reaper.terminate_process_group_if_runner", record_terminate)
+    monkeypatch.setattr("basecamp.hub.swarm.service.reaper.terminate_process_group_if_runner", record_terminate)
     store.create_run(run_id=run_id, agent_id="agent-disconnected", dispatcher_id="node-1", spec={})
     store.set_run_pgid(run_id=run_id, pgid=4321)
     registry.set_run_owner(run_id, "node-1")
@@ -133,7 +133,7 @@ async def test_disconnect_reaper_cancel_prevents_reap(
     registry = Registry()
     terminated: list[int | None] = []
     monkeypatch.setattr(
-        "basecamp.hub.service.reaper.terminate_process_group_if_runner",
+        "basecamp.hub.swarm.service.reaper.terminate_process_group_if_runner",
         lambda pgid, **_kwargs: terminated.append(pgid),
     )
     store.create_run(run_id="run-still-live", agent_id="agent-still-live", dispatcher_id="node-1", spec={})
@@ -159,7 +159,7 @@ async def test_disconnect_reaper_no_live_runs_noop(
     registry = Registry()
     terminated: list[int | None] = []
     monkeypatch.setattr(
-        "basecamp.hub.service.reaper.terminate_process_group_if_runner",
+        "basecamp.hub.swarm.service.reaper.terminate_process_group_if_runner",
         lambda pgid, **_kwargs: terminated.append(pgid),
     )
     store.create_run(run_id="run-no-process", agent_id="agent-no-process", dispatcher_id="node-1", spec={})
@@ -182,7 +182,7 @@ async def test_disconnect_reaper_skips_termination_when_run_already_finalized(
     registry = Registry()
     terminated: list[int | None] = []
     monkeypatch.setattr(
-        "basecamp.hub.service.reaper.terminate_process_group_if_runner",
+        "basecamp.hub.swarm.service.reaper.terminate_process_group_if_runner",
         lambda pgid, **_kwargs: terminated.append(pgid),
     )
     store.create_run(run_id="run-terminal", agent_id="agent-terminal", dispatcher_id="node-1", spec={})
@@ -214,7 +214,7 @@ async def test_disconnect_reaper_mid_loop_reconnect_stops_reaping_remaining_runs
         registry.set_connection("node-1", object())
         return finalized
 
-    monkeypatch.setattr("basecamp.hub.service.reaper.terminate_process_group_if_runner", record_terminate)
+    monkeypatch.setattr("basecamp.hub.swarm.service.reaper.terminate_process_group_if_runner", record_terminate)
     monkeypatch.setattr(store, "set_run_result_if_unset", reconnect_after_first_finalize)
     store.create_run(run_id="run-first", agent_id="agent-first", dispatcher_id="node-1", spec={})
     store.create_run(run_id="run-second", agent_id="agent-second", dispatcher_id="node-1", spec={})
@@ -241,7 +241,7 @@ def test_reconcile_orphaned_runs_marks_nonterminal_failed(
         connection.execute("UPDATE runs SET status = 'pending' WHERE id = ?", ("run-pending",))
     store.set_run_pgid(run_id="run-running", pgid=321)
     store.set_run_pgid(run_id="run-pending", pgid=654)
-    monkeypatch.setattr("basecamp.hub.process._process_group_is_runner", lambda _pgid: False)
+    monkeypatch.setattr("basecamp.hub.swarm.process._process_group_is_runner", lambda _pgid: False)
 
     reconcile_orphaned_runs(store)
 
@@ -265,7 +265,7 @@ def test_reconcile_orphaned_runs_kills_verified_runner_group(
     def record_terminate(pgid: int | None, *, escalation_s: float = 5.0, poll_s: float = 0.1) -> None:
         calls.append((pgid or 0, escalation_s, poll_s))
 
-    monkeypatch.setattr("basecamp.hub.process.terminate_process_group_if_runner", record_terminate)
+    monkeypatch.setattr("basecamp.hub.swarm.process.terminate_process_group_if_runner", record_terminate)
 
     reconcile_orphaned_runs(store)
 
@@ -288,8 +288,8 @@ def test_reconcile_orphaned_runs_skips_unverified_group_but_marks_failed(
     def record_terminate(pgid: int | None, **_kwargs: object) -> None:
         calls.append(pgid)
 
-    monkeypatch.setattr("basecamp.hub.process._process_group_is_runner", lambda _pgid: False)
-    monkeypatch.setattr("basecamp.hub.process.terminate_process_group", record_terminate)
+    monkeypatch.setattr("basecamp.hub.swarm.process._process_group_is_runner", lambda _pgid: False)
+    monkeypatch.setattr("basecamp.hub.swarm.process.terminate_process_group", record_terminate)
 
     reconcile_orphaned_runs(store)
 

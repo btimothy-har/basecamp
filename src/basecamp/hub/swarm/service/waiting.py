@@ -6,9 +6,9 @@ import asyncio
 import uuid
 from typing import Any, Literal
 
-from ..frames import WaitFrame, WaitResultItem
-from ..registry import Registry, Waiter
-from ..store import Store
+from ...frames import WaitFrame, WaitResultItem
+from ...registry import Registry, Waiter
+from ...store import Store
 
 TERMINAL_RUN_STATUSES = {"completed", "failed"}
 

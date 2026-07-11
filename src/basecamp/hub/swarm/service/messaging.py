@@ -8,7 +8,7 @@ import uuid
 from dataclasses import dataclass
 from typing import Any
 
-from ..frames import (
+from ...frames import (
     PROTOCOL_VERSION,
     MessageStatusFrame,
     MessageStatusResultFrame,
@@ -17,8 +17,8 @@ from ..frames import (
     PeerMessageDeliveryFrame,
     PeerMessageFrame,
 )
-from ..registry import MessageWaiter, Registry
-from ..store import Store, is_message_delivery_terminal, safe_product_role
+from ...registry import MessageWaiter, Registry
+from ...store import Store, is_message_delivery_terminal, safe_product_role
 
 DEFAULT_MESSAGE_WAIT_TIMEOUT_SECONDS = 30.0
 MAX_MESSAGE_WAIT_TIMEOUT_SECONDS = 300.0

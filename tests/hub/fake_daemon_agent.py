@@ -10,7 +10,7 @@ from pathlib import Path
 from websockets.sync.client import unix_connect
 
 from basecamp.hub.frames import PROTOCOL_VERSION
-from basecamp.hub.run_result import (
+from basecamp.hub.swarm.run_result import (
     BASECAMP_RUN_ATTEMPT,
     BASECAMP_RUN_RESULT_PATH,
     BASECAMP_RUNNER_MANAGED_RESULT,

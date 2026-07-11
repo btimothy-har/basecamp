@@ -5,8 +5,8 @@ from __future__ import annotations
 import asyncio
 from typing import Any
 
-from ..frames import ListAgentItem, ListAgentsFrame
-from ..store import Store
+from ...frames import ListAgentItem, ListAgentsFrame
+from ...store import Store
 
 
 async def list_agents(

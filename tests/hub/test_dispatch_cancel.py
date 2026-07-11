@@ -10,8 +10,8 @@ from dispatch_helpers import _create_live_run, _FakePidProcess, _upsert_test_age
 
 from basecamp.hub.frames import PROTOCOL_VERSION, CancelFrame
 from basecamp.hub.registry import Registry, Waiter
-from basecamp.hub.service import cancel_agent
 from basecamp.hub.store import Store
+from basecamp.hub.swarm.service import cancel_agent
 
 pytestmark = pytest.mark.usefixtures("_isolate_run_result_home")
 
@@ -149,7 +149,7 @@ async def test_cancel_agent_authorized_live_run_fails_run_terminates_process_and
     def record_terminate(pgid: int | None, **_kwargs: object) -> None:
         terminated.append(pgid)
 
-    monkeypatch.setattr("basecamp.hub.service.cancel.terminate_process_group_if_runner", record_terminate)
+    monkeypatch.setattr("basecamp.hub.swarm.service.cancel.terminate_process_group_if_runner", record_terminate)
     store.upsert_agent(
         agent_id="root",
         parent_id=None,
@@ -219,7 +219,7 @@ async def test_cancel_agent_recursively_cancels_live_subtree_runs_and_wakes_wait
     def record_terminate(pgid: int | None, **_kwargs: object) -> None:
         terminated.append(pgid)
 
-    monkeypatch.setattr("basecamp.hub.service.cancel.terminate_process_group_if_runner", record_terminate)
+    monkeypatch.setattr("basecamp.hub.swarm.service.cancel.terminate_process_group_if_runner", record_terminate)
     _upsert_test_agent(store, agent_id="root", parent_id=None, depth=0, role="session")
     _upsert_test_agent(store, agent_id="target", agent_handle="target-handle", parent_id="root", depth=1)
     _upsert_test_agent(store, agent_id="child", parent_id="target", depth=2)
@@ -281,7 +281,7 @@ async def test_cancel_agent_terminal_target_with_live_descendant_returns_cancell
     def record_terminate(pgid: int | None, **_kwargs: object) -> None:
         terminated.append(pgid)
 
-    monkeypatch.setattr("basecamp.hub.service.cancel.terminate_process_group_if_runner", record_terminate)
+    monkeypatch.setattr("basecamp.hub.swarm.service.cancel.terminate_process_group_if_runner", record_terminate)
     _upsert_test_agent(store, agent_id="root", parent_id=None, depth=0, role="session")
     _upsert_test_agent(store, agent_id="target", agent_handle="target-handle", parent_id="root", depth=1)
     _upsert_test_agent(store, agent_id="child", parent_id="target", depth=2)

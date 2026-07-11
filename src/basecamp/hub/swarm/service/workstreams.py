@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 
-from ..frames import (
+from ...frames import (
     PROTOCOL_VERSION,
     AttachWorkstreamAgentAckFrame,
     AttachWorkstreamAgentFrame,
@@ -13,7 +13,7 @@ from ..frames import (
     UpdateWorkstreamAckFrame,
     UpdateWorkstreamFrame,
 )
-from ..store import DuplicateWorkstreamSlugError, Store, WorkstreamNotFoundError
+from ...store import DuplicateWorkstreamSlugError, Store, WorkstreamNotFoundError
 
 
 async def create_workstream(

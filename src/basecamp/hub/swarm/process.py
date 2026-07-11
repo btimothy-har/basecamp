@@ -11,13 +11,13 @@ import time
 from collections.abc import Awaitable, Callable
 from pathlib import Path
 
-from .frames import DispatchSpec
-from .registry import Registry
+from ..frames import DispatchSpec
+from ..registry import Registry
+from ..store import Store
 from .run_result import run_result_path
-from .store import Store
 
 ProcessExitHook = Callable[[str], Awaitable[None]]
-RUNNER_MODULE = "basecamp.hub.runner"
+RUNNER_MODULE = "basecamp.hub.swarm.runner"
 
 
 def build_runner_argv(
