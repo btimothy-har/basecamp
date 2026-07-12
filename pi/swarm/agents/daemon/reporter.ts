@@ -1,4 +1,5 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { PROTOCOL_VERSION } from "#core/hub/protocol/index.ts";
 import type { DaemonConnection } from "./client.ts";
 import {
 	appendText,
@@ -16,7 +17,6 @@ import {
 	summarizeToolInput,
 	summarizeToolResult,
 } from "./event-summaries.ts";
-import { PROTOCOL_VERSION } from "./frames/index.ts";
 import {
 	BASECAMP_RUN_ATTEMPT,
 	BASECAMP_RUN_RESULT_PATH,

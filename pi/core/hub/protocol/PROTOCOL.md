@@ -63,7 +63,7 @@ The daemon is a long-lived shared singleton and does not idle-shut-down by desig
 
 ## Frame types
 
-Canonical example fixtures live in `swarm/protocol/frames/*.json`.
+Canonical example fixtures live in `pi/core/hub/protocol/frames/*.json`.
 
 ### `register` client → daemon
 

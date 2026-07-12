@@ -1,6 +1,6 @@
+import { PROTOCOL_VERSION } from "#core/hub/protocol/index.ts";
+import type { ThreadReportNode } from "#core/hub/protocol/thread-report.ts";
 import type { DaemonConnection } from "./client.ts";
-import { PROTOCOL_VERSION } from "./frames/index.ts";
-import type { ThreadReportNode } from "./frames/thread-report.ts";
 import { awaitDaemonConnection } from "./index.ts";
 
 // `connection.send()` only buffers into the ws sender; the frame flushes on the event

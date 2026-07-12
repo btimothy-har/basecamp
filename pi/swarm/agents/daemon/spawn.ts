@@ -1,6 +1,6 @@
 import { type ChildProcess, type SpawnOptions, spawn } from "node:child_process";
 import * as fs from "node:fs";
-import { PROTOCOL_VERSION } from "./frames/index.ts";
+import { PROTOCOL_VERSION } from "#core/hub/protocol/index.ts";
 import { DEFAULT_HEALTH_TIMEOUT_MS, type HealthPingResult, healthPing } from "./http.ts";
 import { type DaemonPaths, ensureDaemonRuntimeDir, resolveDaemonPaths } from "./paths.ts";
 import {

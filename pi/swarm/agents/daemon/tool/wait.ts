@@ -1,7 +1,7 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Text } from "@earendil-works/pi-tui";
+import type { WaitResultFrame } from "#core/hub/protocol/index.ts";
 import type { DaemonConnection } from "../connection.ts";
-import type { WaitResultFrame } from "../frames/index.ts";
 import { createDaemonClient } from "../rpc.ts";
 import {
 	type DaemonToolDeps,

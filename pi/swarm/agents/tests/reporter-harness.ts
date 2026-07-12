@@ -3,7 +3,7 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { afterEach, beforeEach } from "node:test";
-import type { Frame } from "../daemon/frames/index.ts";
+import type { Frame } from "#core/hub/protocol/index.ts";
 import {
 	BASECAMP_RUN_ATTEMPT,
 	BASECAMP_RUN_RESULT_PATH,

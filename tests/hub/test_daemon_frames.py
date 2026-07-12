@@ -20,7 +20,7 @@ from basecamp.hub.frames import (
 )
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-FIXTURE_DIR = REPO_ROOT / "pi" / "swarm" / "protocol" / "frames"
+FIXTURE_DIR = REPO_ROOT / "pi" / "core" / "hub" / "protocol" / "frames"
 
 
 def _fixture_type_set() -> set[str]:

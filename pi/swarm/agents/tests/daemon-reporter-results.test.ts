@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
+import type { Frame } from "#core/hub/protocol/index.ts";
 import type { DaemonConnection } from "../daemon/client.ts";
-import type { Frame } from "../daemon/frames/index.ts";
 import { registerDaemonReporter } from "../daemon/reporter.ts";
 import {
 	BASECAMP_RUN_ATTEMPT,

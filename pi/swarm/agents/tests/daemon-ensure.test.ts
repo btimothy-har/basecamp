@@ -4,8 +4,8 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { describe, it } from "node:test";
+import { PROTOCOL_VERSION } from "#core/hub/protocol/index.ts";
 import { ensureDaemon } from "../daemon/client.ts";
-import { PROTOCOL_VERSION } from "../daemon/frames/index.ts";
 import type { DaemonPaths } from "../daemon/paths.ts";
 
 function fakeSpawn(): ChildProcess {

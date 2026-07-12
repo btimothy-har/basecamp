@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
+import type { Frame, ListAgentItem } from "#core/hub/protocol/index.ts";
+import { PROTOCOL_VERSION } from "#core/hub/protocol/index.ts";
 import { createDaemonClient } from "../daemon/client.ts";
-import type { Frame, ListAgentItem } from "../daemon/frames/index.ts";
-import { PROTOCOL_VERSION } from "../daemon/frames/index.ts";
 import { registerDaemonTools } from "../daemon/tools.ts";
 import {
 	createMockPi,

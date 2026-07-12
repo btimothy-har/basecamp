@@ -8,7 +8,7 @@ import {
 	PROTOCOL_VERSION,
 	type RegisteredFrame,
 	type RegisterFrame,
-} from "./frames/index.ts";
+} from "#core/hub/protocol/index.ts";
 import { type DaemonPaths, resolveDaemonPaths } from "./paths.ts";
 
 export interface DaemonIdentity {
