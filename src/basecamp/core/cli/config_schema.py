@@ -17,7 +17,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from pydantic import ValidationError
+from pydantic import BaseModel, ValidationError
 
 from basecamp.core.exceptions import LauncherError
 from basecamp.core.model_aliases import normalize_aliases
@@ -28,17 +28,30 @@ from basecamp.workspace.environments import EnvironmentConfig
 #: ``install_dir``, future freeform keys) is passed through untouched.
 VALIDATED_SECTIONS = ("projects", "environments", "model_aliases", "logseq")
 
+#: Sections whose value is a ``{name: record}`` map, validated one record at a
+#: time so a malformed sibling never blocks an edit to a different record.
+RECORD_MAP_MODELS: dict[str, type[BaseModel]] = {
+    "projects": ProjectConfig,
+    "environments": EnvironmentConfig,
+}
 
-def _validate_records(name: str, value: Any, model: type) -> dict[str, Any]:
-    """Validate a ``{key: record}`` map against a pydantic model."""
+
+def _validate_one_record(section: str, key: str, record: Any, model: type[BaseModel]) -> dict[str, Any]:
+    """Validate + normalize a single record of a record-map section."""
+    try:
+        return model.model_validate(record).model_dump()
+    except ValidationError as exc:
+        detail = exc.errors()[0]["msg"] if exc.errors() else str(exc)
+        msg = f"Invalid {section}.{key}: {detail}"
+        raise LauncherError(msg) from exc
+
+
+def _validate_records(name: str, value: Any, model: type[BaseModel]) -> dict[str, Any]:
+    """Validate a whole ``{key: record}`` map against a pydantic model."""
     if not isinstance(value, dict):
         msg = f"{name} must be an object mapping names to records."
         raise LauncherError(msg)
-    try:
-        return {key: model.model_validate(record).model_dump() for key, record in value.items()}
-    except ValidationError as exc:
-        msg = f"Invalid {name}: {exc.errors()[0]['msg'] if exc.errors() else exc}"
-        raise LauncherError(msg) from exc
+    return {key: _validate_one_record(name, key, record, model) for key, record in value.items()}
 
 
 def _validate_logseq(value: Any) -> dict[str, Any]:
@@ -58,10 +71,9 @@ def validate_section(name: str, value: Any) -> Any:
 
     Raises :class:`LauncherError` if the section is malformed.
     """
-    if name == "projects":
-        return _validate_records(name, value, ProjectConfig)
-    if name == "environments":
-        return _validate_records(name, value, EnvironmentConfig)
+    model = RECORD_MAP_MODELS.get(name)
+    if model is not None:
+        return _validate_records(name, value, model)
     if name == "model_aliases":
         return normalize_aliases(value)
     if name == "logseq":
@@ -83,3 +95,23 @@ def validate_document(document: Any) -> dict[str, Any]:
         if name in result:
             result[name] = validate_section(name, result[name])
     return result
+
+
+def validate_touched(document: dict[str, Any], segments: list[str]) -> None:
+    """Validate, in place, only the scope a ``set``/``unset`` touched.
+
+    Editing a record inside a record-map section (``projects``/``environments``)
+    validates just that record, so a malformed sibling record can't block an
+    unrelated edit. Scalar-map sections, ``logseq``, and whole-section writes
+    validate the whole section. A removed record is skipped (nothing to check).
+    """
+    section = segments[0]
+    model = RECORD_MAP_MODELS.get(section)
+    if model is not None and len(segments) >= 2:
+        records = document.get(section)
+        key = segments[1]
+        if isinstance(records, dict) and key in records:
+            records[key] = _validate_one_record(section, key, records[key], model)
+        return
+    if section in document:
+        document[section] = validate_section(section, document[section])

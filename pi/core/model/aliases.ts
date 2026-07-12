@@ -19,14 +19,18 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 	return !!value && typeof value === "object" && !Array.isArray(value);
 }
 
+// Lenient by design: skip malformed/empty/duplicate entries rather than
+// discarding the whole section, so one bad hand-edited alias never hides the
+// good ones (matches the Python reader). Returns null only when the section
+// itself isn't an object.
 function normalizeAliases(value: unknown): ConfiguredModelAliases | null {
 	if (!isRecord(value)) return null;
 
 	const normalized: ConfiguredModelAliases = {};
 	for (const [alias, model] of Object.entries(value)) {
 		const trimmedAlias = alias.trim();
-		if (trimmedAlias.length === 0 || typeof model !== "string" || model.trim().length === 0) return null;
-		if (normalized[trimmedAlias] !== undefined) return null;
+		if (trimmedAlias.length === 0 || typeof model !== "string" || model.trim().length === 0) continue;
+		if (normalized[trimmedAlias] !== undefined) continue;
 		normalized[trimmedAlias] = model.trim();
 	}
 	return normalized;
@@ -65,7 +69,7 @@ export function loadModelAliasConfig(configPath = defaultModelAliasConfigPath())
 
 	const aliases = normalizeAliases(section);
 	if (!aliases) {
-		return { ok: false, error: "model_aliases must map non-empty alias strings to non-empty model strings." };
+		return { ok: false, error: "model_aliases must be an object mapping aliases to models." };
 	}
 
 	return { ok: true, aliases };

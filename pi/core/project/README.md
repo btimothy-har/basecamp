@@ -4,7 +4,7 @@ The active project's working environment — *which project the session is in, i
 
 ## What it does
 
-- **`config.ts`** — resolve the project from `~/.pi/basecamp/workspace/projects.json` (by repo root → name, `additionalDirs`, `workingStyle`, context), hold the `ProjectState` cell, and register the `session_start` resolve + `BASECAMP_PROJECT`.
+- **`config.ts`** — resolve the project from the `projects` section of `~/.pi/basecamp/config.json` (by repo root → name, `additionalDirs`, `workingStyle`, context; context overrides live in `~/.pi/basecamp/context/`), hold the `ProjectState` cell, and register the `session_start` resolve + `BASECAMP_PROJECT`.
 - **`context.ts`** — discover ancestor `AGENTS.md`/`CLAUDE.md` context files.
 - **`injection.ts`** — a `tool_result` hook that injects nested `AGENTS.md`/`CLAUDE.md` just-in-time as the agent enters a subtree that has its own.
 - **`logseq.ts`** — the copilot repo-memory (Logseq) context block.

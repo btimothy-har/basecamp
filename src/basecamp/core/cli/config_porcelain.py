@@ -21,7 +21,7 @@ from basecamp.core.cli.project import (
     run_project_menu,
 )
 from basecamp.core.exceptions import LauncherError
-from basecamp.core.model_aliases import load_model_aliases, remove_alias, set_alias
+from basecamp.core.model_aliases import load_model_aliases, remove_alias, rename_alias, set_alias
 from basecamp.workspace import EnvironmentConfig, remove_environment, set_environment
 from basecamp.workspace.cli.environment import execute_environment_list, run_environments_menu
 from basecamp.workspace.ui import console, err_console
@@ -175,3 +175,16 @@ def alias_remove(alias: str) -> None:
         console.print(f"Removed alias [bold]{alias.strip()}[/bold].")
     else:
         console.print(f"[dim]No alias named {alias.strip()}.[/dim]")
+
+
+@alias_group.command("rename")
+@click.argument("old")
+@click.argument("new")
+def alias_rename(old: str, new: str) -> None:
+    """Rename a model alias (atomic)."""
+    try:
+        renamed, model = rename_alias(old, new)
+    except LauncherError as exc:
+        err_console.print(f"[red]Error:[/red] {exc}")
+        sys.exit(1)
+    console.print(f"Renamed alias to [bold]{renamed}[/bold] → {model}.")

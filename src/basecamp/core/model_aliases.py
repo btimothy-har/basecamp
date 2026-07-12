@@ -18,10 +18,22 @@ MODEL_ALIASES_SECTION = "model_aliases"
 
 
 def load_model_aliases(config: Settings | None = None) -> dict[str, str]:
-    """Return configured aliases, skipping any non-string entries."""
+    """Return configured aliases, leniently skipping any malformed entries.
+
+    Non-string or empty-after-trim keys/values are dropped (not fatal), and
+    kept entries are trimmed to match the write path. A single bad entry never
+    hides the good ones — the same lenient contract the Pi reader now honors.
+    """
     active = config or settings
     raw = active.get_section(MODEL_ALIASES_SECTION)
-    return {alias: model for alias, model in raw.items() if isinstance(alias, str) and isinstance(model, str)}
+    aliases: dict[str, str] = {}
+    for alias, model in raw.items():
+        if not isinstance(alias, str) or not isinstance(model, str):
+            continue
+        trimmed_alias, trimmed_model = alias.strip(), model.strip()
+        if trimmed_alias and trimmed_model:
+            aliases[trimmed_alias] = trimmed_model
+    return aliases
 
 
 def _normalize(alias: str, model: str) -> tuple[str, str]:
@@ -95,3 +107,39 @@ def remove_alias(alias: str, config: Settings | None = None) -> bool:
 
     active.update(mutate)
     return removed
+
+
+def rename_alias(old: str, new: str, config: Settings | None = None) -> tuple[str, str]:
+    """Rename an alias in one flock'd write, returning the stored (new, model).
+
+    Atomic: either both the remove-old and add-new land, or nothing does.
+    Raises :class:`LauncherError` if ``old`` is missing, ``new`` is blank, or
+    ``new`` already names a different alias.
+    """
+    active = config or settings
+    trimmed_old = old.strip()
+    trimmed_new = new.strip()
+    if not trimmed_new:
+        msg = "Alias name must be a non-empty string."
+        raise LauncherError(msg)
+
+    result: tuple[str, str] = ("", "")
+
+    def mutate(data: dict[str, Any]) -> None:
+        nonlocal result
+        section = data.get(MODEL_ALIASES_SECTION)
+        section = dict(section) if isinstance(section, dict) else {}
+        if trimmed_old not in section:
+            msg = f"No alias named {trimmed_old}."
+            raise LauncherError(msg)
+        if trimmed_new != trimmed_old and trimmed_new in section:
+            msg = f"Alias {trimmed_new} already exists."
+            raise LauncherError(msg)
+        model = section.pop(trimmed_old)
+        section[trimmed_new] = model
+        data["version"] = CONFIG_VERSION
+        data[MODEL_ALIASES_SECTION] = section
+        result = (trimmed_new, model)
+
+    active.update(mutate)
+    return result

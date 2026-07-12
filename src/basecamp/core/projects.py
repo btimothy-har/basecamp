@@ -12,8 +12,9 @@ from __future__ import annotations
 import copy
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
+from basecamp.core.exceptions import LauncherError
 from basecamp.core.settings import CONFIG_VERSION, Settings, settings
 
 PROJECTS_SECTION = "projects"
@@ -40,7 +41,15 @@ def load_projects(config: Settings | None = None) -> dict[str, ProjectConfig]:
     raw = active.get_section(PROJECTS_SECTION)
     if not raw:
         return {}
-    return {name: ProjectConfig.model_validate(data) for name, data in raw.items()}
+    projects: dict[str, ProjectConfig] = {}
+    for name, data in raw.items():
+        try:
+            projects[name] = ProjectConfig.model_validate(data)
+        except ValidationError as exc:
+            detail = exc.errors()[0]["msg"] if exc.errors() else str(exc)
+            msg = f"Invalid project '{name}' in config.json: {detail}"
+            raise LauncherError(msg) from exc
+    return projects
 
 
 def save_projects(projects: dict[str, ProjectConfig], config: Settings | None = None) -> None:

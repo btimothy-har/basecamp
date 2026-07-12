@@ -9,6 +9,7 @@ import pytest
 from pydantic import ValidationError
 
 import basecamp.core.projects as project_config
+from basecamp.core.exceptions import LauncherError
 from basecamp.core.settings import CONFIG_VERSION, Settings
 
 
@@ -81,3 +82,11 @@ class TestProjectConfigSchema:
         assert data["environments"] == {"acme/widget": {"setup": "uv sync"}}
         assert data["model_aliases"] == {"fast": "claude-haiku-4-5"}
         assert data["stale_setting"] == {"preserve": True}
+
+    def test_load_projects_wraps_bad_record_in_launcher_error(self, cfg: Settings) -> None:
+        # A malformed record yields a clean LauncherError (caught by the CLI),
+        # never a raw pydantic ValidationError traceback.
+        cfg._write({"projects": {"demo": {"repo_root": 123}}})
+
+        with pytest.raises(LauncherError):
+            project_config.load_projects(cfg)

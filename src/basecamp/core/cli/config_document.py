@@ -19,11 +19,20 @@ from typing import Any
 
 import click
 
-from basecamp.core.cli.config_schema import validate_document, validate_section
+from basecamp.core.cli.config_schema import validate_document, validate_touched
 from basecamp.core.exceptions import LauncherError
 from basecamp.core.settings import CONFIG_VERSION, Settings, settings
 
 _MISSING = object()
+
+#: Top-level keys basecamp owns; the generic set/unset plumbing won't touch them.
+_MANAGED_KEYS = frozenset({"version"})
+
+
+def _reject_if_managed(section: str) -> None:
+    if section in _MANAGED_KEYS:
+        msg = f"`{section}` is managed by basecamp and cannot be changed directly."
+        raise LauncherError(msg)
 
 
 def split_key(key: str) -> list[str]:
@@ -55,7 +64,7 @@ def set_value(key: str, raw: str, *, as_json: bool = False, config: Settings | N
     """
     active = config or settings
     segments = split_key(key)
-    section = segments[0]
+    _reject_if_managed(segments[0])
     if as_json:
         try:
             value: Any = json.loads(raw)
@@ -76,7 +85,7 @@ def set_value(key: str, raw: str, *, as_json: bool = False, config: Settings | N
                 raise LauncherError(msg)
             node = node[segment]
         node[segments[-1]] = value
-        document[section] = validate_section(section, document[section])
+        validate_touched(document, segments)
         document["version"] = CONFIG_VERSION
 
     active.update(mutate)
@@ -87,7 +96,7 @@ def unset_value(key: str, config: Settings | None = None) -> bool:
     """Delete a dotted key. Re-validates its section. Returns True if removed."""
     active = config or settings
     segments = split_key(key)
-    section = segments[0]
+    _reject_if_managed(segments[0])
     removed = False
 
     def mutate(document: dict[str, Any]) -> None:
@@ -100,8 +109,7 @@ def unset_value(key: str, config: Settings | None = None) -> bool:
         if isinstance(node, dict) and segments[-1] in node:
             del node[segments[-1]]
             removed = True
-            if isinstance(document.get(section), dict):
-                document[section] = validate_section(section, document[section])
+            validate_touched(document, segments)
             document["version"] = CONFIG_VERSION
 
     active.update(mutate)

@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 # /// script
 # dependencies = [
-#   "questionary>=2.1.1",
 #   "rich>=13.0",
 # ]
 # requires-python = ">=3.12"

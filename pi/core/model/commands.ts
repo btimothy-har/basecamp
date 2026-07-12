@@ -44,11 +44,13 @@ function setAliasViaCli(
 	alias: string,
 	model: string,
 ): Promise<boolean> {
-	return runConfigAlias(ctx, pi, ["set", alias, model], "save");
+	// `--` stops click option parsing so alias/model tokens starting with `-`
+	// are taken as positionals, not flags.
+	return runConfigAlias(ctx, pi, ["set", "--", alias, model], "save");
 }
 
 function removeAliasViaCli(ctx: ExtensionCommandContext, pi: ExtensionAPI, alias: string): Promise<boolean> {
-	return runConfigAlias(ctx, pi, ["remove", alias], "remove");
+	return runConfigAlias(ctx, pi, ["remove", "--", alias], "remove");
 }
 
 async function addAlias(ctx: ExtensionCommandContext, pi: ExtensionAPI): Promise<void> {
@@ -127,9 +129,9 @@ async function renameAlias(alias: string, ctx: ExtensionCommandContext, pi: Exte
 		return undefined;
 	}
 
-	// Rename = create the new alias, then drop the old one.
-	if (!(await setAliasViaCli(ctx, pi, nextAlias, model))) return undefined;
-	if (!(await removeAliasViaCli(ctx, pi, alias))) return nextAlias;
+	// Atomic rename in one flock'd write — Python owns the swap, so a partial
+	// failure can't leave both the old and new alias behind.
+	if (!(await runConfigAlias(ctx, pi, ["rename", "--", alias, nextAlias], "rename"))) return undefined;
 	ctx.ui.notify(`Renamed model alias "${alias}" to "${nextAlias}".`, "info");
 	return nextAlias;
 }

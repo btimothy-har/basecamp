@@ -112,7 +112,13 @@ basecamp.add_command(config)
 
 
 def main() -> None:
-    basecamp()
+    # Safety net: any LauncherError that reaches the top (e.g. a malformed
+    # config record surfaced by a porcelain command) prints cleanly instead of
+    # a traceback. Command-local handlers still catch it first where present.
+    try:
+        basecamp()
+    except LauncherError as e:
+        _handle_error(e)
 
 
 if __name__ == "__main__":

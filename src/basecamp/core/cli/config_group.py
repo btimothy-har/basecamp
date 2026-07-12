@@ -55,7 +55,12 @@ def config_show(section: str | None) -> None:
 @config.command("get")
 @click.argument("key")
 def config_get(key: str) -> None:
-    """Read a value at a dotted key (e.g. logseq.graph_dir)."""
+    """Read a value at a dotted key (e.g. logseq.graph_dir).
+
+    Keys split on '.', so a section/record name that itself contains a dot
+    (e.g. a repo like org/next.js) can't be addressed here — use the porcelain
+    (config project/env/alias) or `config edit`.
+    """
 
     def run() -> None:
         value = get_value(key)
@@ -72,7 +77,11 @@ def config_get(key: str) -> None:
 @click.argument("value")
 @click.option("--json", "as_json", is_flag=True, help="Parse VALUE as JSON (for null/lists/objects).")
 def config_set(key: str, value: str, *, as_json: bool) -> None:
-    """Set a dotted key to a scalar value (or raw JSON with --json)."""
+    """Set a dotted key to a scalar value (or raw JSON with --json).
+
+    Keys split on '.', so for a section/record name containing a dot use the
+    porcelain (config project/env/alias) or `config edit` instead.
+    """
 
     def run() -> None:
         set_value(key, value, as_json=as_json)

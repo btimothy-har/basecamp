@@ -99,3 +99,23 @@ def test_edit_persists_valid_and_rejects_invalid(cfg: Settings, monkeypatch: pyt
     with pytest.raises(LauncherError):
         cd.edit_document(config=cfg)
     assert _doc(cfg)["model_aliases"] == {"x": "y"}
+
+
+def test_set_edits_a_record_despite_a_malformed_sibling(cfg: Settings) -> None:
+    # Granular validation: a bad sibling record must not block an unrelated edit.
+    cfg._write({"projects": {"good": {"repo_root": "/g"}, "broken": {"repo_root": 123}}})
+
+    cd.set_value("projects.good.description", "hi", config=cfg)
+
+    doc = _doc(cfg)
+    assert doc["projects"]["good"]["description"] == "hi"
+    assert doc["projects"]["broken"] == {"repo_root": 123}  # untouched, not re-validated
+
+
+@pytest.mark.parametrize("op", ["set", "unset"])
+def test_version_key_is_reserved(cfg: Settings, op: str) -> None:
+    with pytest.raises(LauncherError):
+        if op == "set":
+            cd.set_value("version", "5", as_json=True, config=cfg)
+        else:
+            cd.unset_value("version", config=cfg)

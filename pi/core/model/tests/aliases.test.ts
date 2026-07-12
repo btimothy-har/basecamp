@@ -67,25 +67,31 @@ describe("loadModelAliasConfig", () => {
 		});
 	});
 
-	it("returns an error result when the section is invalid", async (t) => {
+	it("errors only when the section itself is not an object", async (t) => {
 		const dir = await createTempDir(t);
-		const cases: unknown[] = [
-			{ model_aliases: ["fast"] },
-			{ model_aliases: { "": "provider/model" } },
-			{ model_aliases: { fast: "" } },
-			{ model_aliases: { fast: 42 } },
-			{ model_aliases: { fast: "provider/fast", " fast ": "provider/other" } },
-		];
+		const configPath = path.join(dir, "config.json");
+		await writeConfig(configPath, { model_aliases: ["fast"] });
 
-		for (const [index, config] of cases.entries()) {
-			const configPath = path.join(dir, `config-${index}.json`);
-			await writeConfig(configPath, config);
+		assert.deepEqual(loadModelAliasConfig(configPath), {
+			ok: false,
+			error: "model_aliases must be an object mapping aliases to models.",
+		});
+	});
 
-			assert.deepEqual(loadModelAliasConfig(configPath), {
-				ok: false,
-				error: "model_aliases must map non-empty alias strings to non-empty model strings.",
-			});
-		}
+	it("leniently skips malformed/empty/duplicate entries and keeps the good ones", async (t) => {
+		const dir = await createTempDir(t);
+		const configPath = path.join(dir, "config.json");
+		await writeConfig(configPath, {
+			model_aliases: {
+				good: "provider/good",
+				"": "provider/empty-key",
+				blank: "",
+				num: 42,
+				" good ": "provider/dup",
+			},
+		});
+
+		assert.deepEqual(loadModelAliasConfig(configPath), { ok: true, aliases: { good: "provider/good" } });
 	});
 });
 
@@ -121,20 +127,19 @@ describe("readModelAliasConfig", () => {
 		assert.deepEqual(readModelAliasConfig(configPath), {});
 	});
 
-	it("returns empty aliases when the section is invalid", async (t) => {
+	it("returns empty aliases when the section is not an object", async (t) => {
 		const dir = await createTempDir(t);
-		const cases: unknown[] = [
-			{ model_aliases: ["fast"] },
-			{ model_aliases: { "": "provider/model" } },
-			{ model_aliases: { fast: "" } },
-			{ model_aliases: { fast: 42 } },
-		];
+		const configPath = path.join(dir, "config.json");
+		await writeConfig(configPath, { model_aliases: ["fast"] });
 
-		for (const [index, config] of cases.entries()) {
-			const configPath = path.join(dir, `config-${index}.json`);
-			await writeConfig(configPath, config);
+		assert.deepEqual(readModelAliasConfig(configPath), {});
+	});
 
-			assert.deepEqual(readModelAliasConfig(configPath), {});
-		}
+	it("keeps the good entries and drops the malformed ones", async (t) => {
+		const dir = await createTempDir(t);
+		const configPath = path.join(dir, "config.json");
+		await writeConfig(configPath, { model_aliases: { good: "provider/good", blank: "", num: 42 } });
+
+		assert.deepEqual(readModelAliasConfig(configPath), { good: "provider/good" });
 	});
 });
