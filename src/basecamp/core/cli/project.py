@@ -297,3 +297,42 @@ def execute_project_remove(name: str) -> None:
     save_projects(projects)
 
     console.print(f"[green]✓[/green] Removed project [bold]{name}[/bold]")
+
+
+def run_project_menu(exit_label: str = "Done") -> None:
+    """Interactive project configuration menu."""
+    while True:
+        execute_project_list()
+
+        project_names = list(load_projects().keys())
+
+        action = questionary.select(
+            "Projects:",
+            choices=["Add", "Edit", "Remove", questionary.Separator(), exit_label],
+        ).ask()
+
+        if action is None or action == exit_label:
+            return
+
+        if action == "Add":
+            execute_project_add()
+        elif action == "Edit":
+            if not project_names:
+                console.print("[dim]No projects configured.[/dim]")
+                continue
+            name = questionary.select(
+                "Edit which project?",
+                choices=[*project_names, questionary.Separator(), "← Back"],
+            ).ask()
+            if name and name != "← Back":
+                execute_project_edit(name)
+        elif action == "Remove":
+            if not project_names:
+                console.print("[dim]No projects configured.[/dim]")
+                continue
+            name = questionary.select(
+                "Remove which project?",
+                choices=[*project_names, questionary.Separator(), "← Back"],
+            ).ask()
+            if name and name != "← Back":
+                execute_project_remove(name)

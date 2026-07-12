@@ -5,7 +5,7 @@ from pathlib import Path
 
 from basecamp.core.directories import to_home_relative
 from basecamp.core.paths import USER_CONTEXT_DIR, USER_PROMPTS_DIR, USER_STYLES_DIR
-from basecamp.core.projects import DEFAULT_PROJECTS_PATH, ProjectConfig, load_projects, save_projects
+from basecamp.core.projects import ProjectConfig, load_projects, save_projects
 from basecamp.core.settings import settings
 from basecamp.workspace.ui import console
 
@@ -76,7 +76,7 @@ def execute_setup() -> None:
     console.print(f"  [green]✓[/green] {USER_PROMPTS_DIR}")
     console.print()
 
-    config_path = DEFAULT_PROJECTS_PATH
+    config_path = settings.path
     console.print("[bold]Project configuration...[/bold]")
     existing = load_projects()
     if existing:
@@ -87,6 +87,6 @@ def execute_setup() -> None:
         console.print(f"  [green]✓[/green] Created {config_path} [dim](basecamp project)[/dim]")
     console.print()
 
-    console.print("[green]✓[/green] Done. Review projects with: [bold]basecamp projects[/bold]")
+    console.print("[green]✓[/green] Done. Review projects with: [bold]basecamp config project[/bold]")
     console.print("[dim]  Add your own projects from the project menu.[/dim]")
     console.print()

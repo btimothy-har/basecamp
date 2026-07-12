@@ -38,7 +38,7 @@ pi/                            # ① the Pi extension (TypeScript)
 src/basecamp/                  # ② the basecamp Python package (one ordinary src-layout package)
 ├── cli.py                      # Click entry point (setup, projects, environments, companion, hub)
 ├── setup.py  installer.py      # environment setup + install orchestration (uv tool + npm + single pi install)
-├── core/                       # settings, paths, files, exceptions + project config schema, migrations & CLI
+├── core/                       # settings, paths, files, exceptions + unified config.json: validation registry (config_schema) · generic get/set/edit (config_document) · `basecamp config` CLI (plumbing + project/env/alias porcelain)
 ├── workspace/                  # per-repo worktree-setup environments + menus
 ├── hub/                         # the daemon (host-global service): core (app·server·http_routes·registry) + frames/ + store/ (per data object) + swarm/ (agents) + broker/ (companion analysis)
 └── companion/                   # Textual TUI (ui/) + daemon observability client; analysis is daemon-sourced (raw thread reported by core/hub)
@@ -73,7 +73,7 @@ All TypeScript behavior ships as one Pi extension; its entry point is `pi/extens
 
 ### Model Aliases
 
-Model alias resolution is owned by `pi/core/model` — `model/index.ts` is the provider seam plus the native config-backed provider, `model/aliases.ts` is the config-file IO, and `model/resolution.ts` is the string→Model plumbing (reasoning-effort, tool-choice) — backed by `~/.pi/basecamp/core/model-aliases.json` with schema `{ "version": 1, "aliases": { "fast": "claude-haiku-4-5" } }`. The seam itself owns no config or policy; the native provider reads `model/aliases.ts`.
+Model alias resolution is owned by `pi/core/model` — `model/index.ts` is the provider seam plus the native config-backed provider, `model/aliases.ts` is the read-side config IO, and `model/resolution.ts` is the string→Model plumbing (reasoning-effort, tool-choice) — backed by the `model_aliases` section of the unified `~/.pi/basecamp/config.json` (`{ "fast": "claude-haiku-4-5" }`). Pi reads the section **in-process**; Basecamp (Python) is the **sole config writer**, so the `/model-aliases` TUI persists each change by shelling out to `basecamp config alias set|remove` (the same file the CLI's flock'd `Settings` guards). The seam itself owns no config or policy; the native provider reads `model/aliases.ts`.
 
 ### State: wiring vs. surviving
 
@@ -104,7 +104,7 @@ The `pi --workstream` flag is boolean: bare `--workstream` infers the workstream
 ## Development
 
 - **Python**: 3.12+, managed with `uv`
-- **Install (dev)**: `uv run install.py -e` (editable mode; installs the `basecamp` tool, then registers the repo root as the single Pi extension, cleaning up legacy per-package registrations)
+- **Install (dev)**: `uv run install.py` (installs the `basecamp` tool, then registers the repo root as the single Pi extension, cleaning up legacy per-package registrations)
 - **Python lint**: `uv run ruff check .` / `uv run ruff format --check .`
 - **TypeScript check**: `npm run check` at the repo root (tsc whole-graph + biome + import-boundary + file-length checks); `make lint` runs it after the Python checks
 - **Fix**: `make fix` runs Python fixes plus `npm run lint:fix` / `npm run format`

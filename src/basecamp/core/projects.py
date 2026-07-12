@@ -1,20 +1,22 @@
-"""Project configuration models and loaders for basecamp-workspace."""
+"""Project configuration models and loaders for basecamp.
+
+Projects live in the ``projects`` section of the root
+``~/.pi/basecamp/config.json``. The root :data:`settings` singleton is the sole
+writer (flock'd read-modify-write); the Pi extension reads the section
+in-process. Other top-level sections (``environments``, ``model_aliases``, …)
+are preserved on every write.
+"""
 
 from __future__ import annotations
 
 import copy
-from pathlib import Path
 from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from basecamp.core.migrations import migrate_project_dirs, migrate_project_dirs_data
-from basecamp.core.paths import BASECAMP_WORKSPACE_DIR
-from basecamp.core.settings import Settings
+from basecamp.core.settings import CONFIG_VERSION, Settings, settings
 
-PROJECTS_CONFIG_VERSION = 1
-DEFAULT_PROJECTS_PATH: Path = BASECAMP_WORKSPACE_DIR / "projects.json"
-projects_settings = Settings(DEFAULT_PROJECTS_PATH)
+PROJECTS_SECTION = "projects"
 
 
 class ProjectConfig(BaseModel):
@@ -30,26 +32,24 @@ class ProjectConfig(BaseModel):
 
 
 def load_projects(config: Settings | None = None) -> dict[str, ProjectConfig]:
-    """Load project configurations from the workspace projects file.
+    """Load project configurations from the ``projects`` section.
 
     Returns an empty dict if no projects are configured.
     """
-    active_settings = config or projects_settings
-    migrate_project_dirs(active_settings)
-    raw = active_settings.get_section("projects")
+    active = config or settings
+    raw = active.get_section(PROJECTS_SECTION)
     if not raw:
         return {}
     return {name: ProjectConfig.model_validate(data) for name, data in raw.items()}
 
 
 def save_projects(projects: dict[str, ProjectConfig], config: Settings | None = None) -> None:
-    """Persist project configurations to the workspace projects file."""
-    active_settings = config or projects_settings
+    """Persist project configurations to the ``projects`` section."""
+    active = config or settings
     value = {name: project.model_dump() for name, project in projects.items()}
 
-    def update_projects(data: dict[str, Any]) -> None:
-        data["version"] = PROJECTS_CONFIG_VERSION
-        data["projects"] = copy.deepcopy(value)
-        migrate_project_dirs_data(data)
+    def mutate(data: dict[str, Any]) -> None:
+        data["version"] = CONFIG_VERSION
+        data[PROJECTS_SECTION] = copy.deepcopy(value)
 
-    active_settings.update(update_projects)
+    active.update(mutate)

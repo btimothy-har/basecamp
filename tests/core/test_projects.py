@@ -1,4 +1,4 @@
-"""Tests for basecamp-workspace project configuration."""
+"""Tests for basecamp project configuration."""
 
 from __future__ import annotations
 
@@ -9,8 +9,7 @@ import pytest
 from pydantic import ValidationError
 
 import basecamp.core.projects as project_config
-from basecamp.core.migrations import migrate_project_dirs
-from basecamp.core.settings import Settings
+from basecamp.core.settings import CONFIG_VERSION, Settings
 
 
 @pytest.fixture
@@ -19,98 +18,8 @@ def cfg(tmp_path: Path) -> Settings:
     return Settings(tmp_path / "config.json")
 
 
-class TestProjectDirsMigration:
-    """Legacy dirs-to-repo-root migration."""
-
-    def test_migrate_legacy_project_dirs(self, cfg: Settings) -> None:
-        cfg._write(
-            {
-                "install_dir": "/tmp/ws",
-                "projects": {
-                    "demo": {
-                        "dirs": ["src/demo", "src/shared"],
-                        "description": "Demo",
-                    },
-                },
-            }
-        )
-
-        assert migrate_project_dirs(cfg) is True
-        assert migrate_project_dirs(cfg) is False
-
-        data = json.loads(cfg.path.read_text())
-        assert data["install_dir"] == "/tmp/ws"
-        assert data["projects"]["demo"] == {
-            "repo_root": "src/demo",
-            "additional_dirs": ["src/shared"],
-            "description": "Demo",
-        }
-
-    def test_load_projects_migrates_legacy_project_dirs(self, cfg: Settings) -> None:
-        cfg._write({"projects": {"demo": {"dirs": ["src/demo", "src/shared"]}}})
-
-        projects = project_config.load_projects(cfg)
-
-        assert projects["demo"].repo_root == "src/demo"
-        assert projects["demo"].additional_dirs == ["src/shared"]
-        data = json.loads(cfg.path.read_text())
-        assert "dirs" not in data["projects"]["demo"]
-
-    def test_migrate_noops_for_new_project_schema(self, cfg: Settings) -> None:
-        cfg._write(
-            {
-                "projects": {
-                    "demo": {
-                        "repo_root": "src/demo",
-                        "additional_dirs": ["src/shared"],
-                    },
-                },
-            }
-        )
-        before = cfg.path.read_text()
-
-        assert migrate_project_dirs(cfg) is False
-        assert cfg.path.read_text() == before
-
-    def test_migrate_leaves_empty_legacy_dirs_untouched(self, cfg: Settings) -> None:
-        cfg._write({"projects": {"demo": {"dirs": []}}})
-        before = cfg.path.read_text()
-
-        assert migrate_project_dirs(cfg) is False
-        assert cfg.path.read_text() == before
-
-    def test_save_projects_migrates_legacy_project_dirs(self, cfg: Settings) -> None:
-        cfg.set_section("projects", {"demo": {"dirs": ["src/demo", "src/shared"]}})
-
-        projects = project_config.load_projects(cfg)
-
-        assert projects["demo"].repo_root == "src/demo"
-        assert projects["demo"].additional_dirs == ["src/shared"]
-
-    def test_migrate_preserves_explicit_new_fields(self, cfg: Settings) -> None:
-        cfg._write(
-            {
-                "projects": {
-                    "demo": {
-                        "repo_root": "src/demo",
-                        "additional_dirs": ["src/explicit"],
-                        "dirs": ["src/legacy", "src/legacy-extra"],
-                    },
-                },
-            }
-        )
-
-        assert migrate_project_dirs(cfg) is True
-
-        data = json.loads(cfg.path.read_text())
-        assert data["projects"]["demo"] == {
-            "repo_root": "src/demo",
-            "additional_dirs": ["src/explicit"],
-        }
-
-
 class TestProjectConfigSchema:
-    """Project config schema serialization."""
+    """Project config schema serialization in the unified config.json."""
 
     def test_save_and_load_projects_uses_repo_root_schema(self, cfg: Settings) -> None:
         project_config.save_projects(
@@ -125,8 +34,7 @@ class TestProjectConfigSchema:
         )
 
         data = json.loads(cfg.path.read_text())
-        assert data["version"] == project_config.PROJECTS_CONFIG_VERSION
-        assert "dirs" not in data["projects"]["demo"]
+        assert data["version"] == CONFIG_VERSION
         assert data["projects"]["demo"]["repo_root"] == "src/demo"
         assert data["projects"]["demo"]["additional_dirs"] == ["src/shared"]
 
@@ -151,8 +59,16 @@ class TestProjectConfigSchema:
     def test_load_projects_empty_when_missing(self, cfg: Settings) -> None:
         assert project_config.load_projects(cfg) == {}
 
-    def test_save_projects_preserves_unknown_top_level_keys(self, cfg: Settings) -> None:
-        cfg._write({"stale_setting": {"preserve": True}})
+    def test_save_projects_preserves_other_sections(self, cfg: Settings) -> None:
+        # Projects share config.json with environments/model_aliases; a write must
+        # never clobber a sibling section (the whole point of the consolidation).
+        cfg._write(
+            {
+                "environments": {"acme/widget": {"setup": "uv sync"}},
+                "model_aliases": {"fast": "claude-haiku-4-5"},
+                "stale_setting": {"preserve": True},
+            }
+        )
 
         project_config.save_projects(
             {"myproj": project_config.ProjectConfig(repo_root="myproj")},
@@ -160,7 +76,8 @@ class TestProjectConfigSchema:
         )
 
         data = json.loads(cfg.path.read_text())
-        assert data["version"] == project_config.PROJECTS_CONFIG_VERSION
+        assert data["version"] == CONFIG_VERSION
         assert data["projects"]["myproj"]["repo_root"] == "myproj"
-        assert data["projects"]["myproj"]["additional_dirs"] == []
+        assert data["environments"] == {"acme/widget": {"setup": "uv sync"}}
+        assert data["model_aliases"] == {"fast": "claude-haiku-4-5"}
         assert data["stale_setting"] == {"preserve": True}

@@ -1,14 +1,14 @@
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import { basecampRoot } from "./paths.ts";
+import { basecampConfigPath } from "./paths.ts";
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
 	return value !== null && typeof value === "object" && !Array.isArray(value);
 }
 
 function readRootConfig(homeDir: string): Record<string, unknown> | null {
-	const configPath = path.join(basecampRoot(homeDir), "config.json");
+	const configPath = basecampConfigPath(homeDir);
 	let raw: string;
 	try {
 		raw = fs.readFileSync(configPath, "utf8");

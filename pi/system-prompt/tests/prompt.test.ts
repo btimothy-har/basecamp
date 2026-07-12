@@ -61,11 +61,11 @@ describe("assemblePrompt", () => {
 	it("uses user prompt and style overrides before built-ins", async (t) => {
 		useDefaultAgentMode(t);
 		const homeDir = await useTempHome(t);
-		const workspaceDir = path.join(homeDir, ".pi", "basecamp", "workspace");
-		await fs.mkdir(path.join(workspaceDir, "prompts"), { recursive: true });
-		await fs.mkdir(path.join(workspaceDir, "styles"), { recursive: true });
-		await fs.writeFile(path.join(workspaceDir, "prompts", "environment.md"), "CUSTOM ENVIRONMENT PROMPT\n", "utf8");
-		await fs.writeFile(path.join(workspaceDir, "styles", "engineering.md"), "CUSTOM ENGINEERING STYLE\n", "utf8");
+		const basecampDir = path.join(homeDir, ".pi", "basecamp");
+		await fs.mkdir(path.join(basecampDir, "prompts"), { recursive: true });
+		await fs.mkdir(path.join(basecampDir, "styles"), { recursive: true });
+		await fs.writeFile(path.join(basecampDir, "prompts", "environment.md"), "CUSTOM ENVIRONMENT PROMPT\n", "utf8");
+		await fs.writeFile(path.join(basecampDir, "styles", "engineering.md"), "CUSTOM ENGINEERING STYLE\n", "utf8");
 
 		const prompt = assemblePrompt({
 			workspace: null,
@@ -126,9 +126,9 @@ describe("assemblePrompt", () => {
 	it("includes copilot mode and Repo Logseq without engineering style", async (t) => {
 		useAgentMode(t, "copilot");
 		const homeDir = await useTempHome(t);
-		const workspaceDir = path.join(homeDir, ".pi", "basecamp", "workspace");
-		await fs.mkdir(path.join(workspaceDir, "styles"), { recursive: true });
-		await fs.writeFile(path.join(workspaceDir, "styles", "engineering.md"), "CUSTOM ENGINEERING STYLE\n", "utf8");
+		const basecampDir = path.join(homeDir, ".pi", "basecamp");
+		await fs.mkdir(path.join(basecampDir, "styles"), { recursive: true });
+		await fs.writeFile(path.join(basecampDir, "styles", "engineering.md"), "CUSTOM ENGINEERING STYLE\n", "utf8");
 
 		const prompt = assemblePrompt({
 			workspace: null,

@@ -3,6 +3,7 @@ import * as os from "node:os";
 import * as path from "node:path";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { processScoped } from "../global-registry.ts";
+import { basecampConfigPath, basecampRoot } from "../host/paths.ts";
 import { registerWorkspaceAllowedRootsProvider, requireWorkspaceState } from "./workspace/state.ts";
 
 // --- Project config + resolved state cell ---
@@ -48,7 +49,7 @@ export function setProjectState(state: ProjectState): void {
 	getProjectRuntime().state = state;
 }
 
-// --- Resolution from workspace/projects.json ---
+// --- Resolution from the `projects` section of config.json ---
 
 interface RawProjectConfig {
 	repo_root?: unknown;
@@ -73,22 +74,18 @@ interface ProjectDetection {
 	warnings: string[];
 }
 
-const BASECAMP_WORKSPACE_RELATIVE_DIR = path.join(".pi", "basecamp", "workspace");
-
 function defaultHomeDir(homeDir?: string): string {
 	return homeDir ?? os.homedir();
 }
 
-function defaultWorkspaceDir(homeDir: string): string {
-	return path.join(homeDir, BASECAMP_WORKSPACE_RELATIVE_DIR);
-}
-
 function defaultConfigPath(homeDir: string, configPath?: string): string {
-	return configPath ?? path.join(defaultWorkspaceDir(homeDir), "projects.json");
+	// Projects live in the ``projects`` section of the root config.json; the
+	// context/ override dir sits directly under the basecamp root beside it.
+	return configPath ?? basecampConfigPath(homeDir);
 }
 
 function defaultContextDir(homeDir: string, contextDir?: string): string {
-	return contextDir ?? path.join(defaultWorkspaceDir(homeDir), "context");
+	return contextDir ?? path.join(basecampRoot(homeDir), "context");
 }
 
 export function resolveConfigDir(dir: string, homeDir = os.homedir()): string {

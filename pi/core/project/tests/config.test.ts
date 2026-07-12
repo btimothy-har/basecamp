@@ -14,7 +14,8 @@ async function createTempHome(t: { after(fn: () => Promise<void>): void }): Prom
 }
 
 async function writeConfig(homeDir: string, config: unknown): Promise<void> {
-	const configPath = path.join(homeDir, ".pi", "basecamp", "workspace", "projects.json");
+	// Projects now live in the ``projects`` section of the root config.json.
+	const configPath = path.join(homeDir, ".pi", "basecamp", "config.json");
 	await fs.mkdir(path.dirname(configPath), { recursive: true });
 	await fs.writeFile(configPath, JSON.stringify(config), "utf8");
 }
@@ -82,7 +83,7 @@ describe("resolveProjectState", () => {
 	it("loads context content and applies style override", async (t) => {
 		const homeDir = await createTempHome(t);
 		const repoRoot = path.join(homeDir, "repo");
-		const contextDir = path.join(homeDir, ".pi", "basecamp", "workspace", "context");
+		const contextDir = path.join(homeDir, ".pi", "basecamp", "context");
 		await fs.mkdir(repoRoot, { recursive: true });
 		await fs.mkdir(contextDir, { recursive: true });
 		await fs.writeFile(path.join(contextDir, "demo.md"), "# Demo context\n", "utf8");
