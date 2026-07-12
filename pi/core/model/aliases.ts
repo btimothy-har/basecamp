@@ -19,10 +19,10 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 	return !!value && typeof value === "object" && !Array.isArray(value);
 }
 
-// Lenient by design: skip malformed/empty/duplicate entries rather than
+// Lenient by design: skip malformed/empty entries (and take last-write-wins on
+// trim-duplicates, matching the Python reader's dict assignment) rather than
 // discarding the whole section, so one bad hand-edited alias never hides the
-// good ones (matches the Python reader). Returns null only when the section
-// itself isn't an object.
+// good ones. Returns null only when the section itself isn't an object.
 function normalizeAliases(value: unknown): ConfiguredModelAliases | null {
 	if (!isRecord(value)) return null;
 
@@ -30,7 +30,6 @@ function normalizeAliases(value: unknown): ConfiguredModelAliases | null {
 	for (const [alias, model] of Object.entries(value)) {
 		const trimmedAlias = alias.trim();
 		if (trimmedAlias.length === 0 || typeof model !== "string" || model.trim().length === 0) continue;
-		if (normalized[trimmedAlias] !== undefined) continue;
 		normalized[trimmedAlias] = model.trim();
 	}
 	return normalized;

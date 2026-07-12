@@ -19,6 +19,12 @@ BASECAMP_CONFIG_DIR: Path = PI_DIR / "basecamp"
 #: Default location of the basecamp config file.
 DEFAULT_CONFIG_PATH: Path = BASECAMP_CONFIG_DIR / "config.json"
 
+# These override dirs moved out of the former ``workspace/`` subdir to sit
+# directly under the Basecamp root. There is no automatic migration: on upgrade,
+# users must move any existing files from
+# ``~/.pi/basecamp/workspace/{context,styles,prompts}/`` to
+# ``~/.pi/basecamp/{context,styles,prompts}/`` by hand.
+
 #: User-supplied context overrides directory.
 USER_CONTEXT_DIR: Path = BASECAMP_CONFIG_DIR / "context"
 

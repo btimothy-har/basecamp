@@ -119,3 +119,11 @@ def test_version_key_is_reserved(cfg: Settings, op: str) -> None:
             cd.set_value("version", "5", as_json=True, config=cfg)
         else:
             cd.unset_value("version", config=cfg)
+
+
+def test_logseq_accepts_graph_dir_but_rejects_unknown_keys(cfg: Settings) -> None:
+    cd.set_value("logseq.graph_dir", "~/logseq", config=cfg)
+    assert cd.get_value("logseq.graph_dir", config=cfg) == "~/logseq"
+
+    with pytest.raises(LauncherError):
+        cd.set_value("logseq.graph_dr", "~/typo", config=cfg)  # misspelled field

@@ -304,7 +304,10 @@ def run_project_menu(exit_label: str = "Done") -> None:
     while True:
         execute_project_list()
 
-        project_names = list(load_projects().keys())
+        # The protected project is listed but excluded from the Edit/Remove
+        # pickers so it can't be selected — execute_project_edit/remove reject it
+        # with SystemExit, which would otherwise drop out of the menu entirely.
+        project_names = [name for name in load_projects() if name != _PROTECTED_PROJECT]
 
         action = questionary.select(
             "Projects:",

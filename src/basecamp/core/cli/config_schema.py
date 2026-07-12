@@ -17,7 +17,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from pydantic import BaseModel, ValidationError
+from pydantic import BaseModel, ConfigDict, ValidationError
 
 from basecamp.core.exceptions import LauncherError
 from basecamp.core.model_aliases import normalize_aliases
@@ -54,16 +54,25 @@ def _validate_records(name: str, value: Any, model: type[BaseModel]) -> dict[str
     return {key: _validate_one_record(name, key, record, model) for key, record in value.items()}
 
 
+class _LogseqConfig(BaseModel):
+    """The ``logseq`` section: an optional Logseq graph directory."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    graph_dir: str | None = None
+
+
 def _validate_logseq(value: Any) -> dict[str, Any]:
-    """Validate the ``logseq`` section: an object with an optional string graph_dir."""
+    """Validate the ``logseq`` section, rejecting unknown keys like the record models."""
     if not isinstance(value, dict):
         msg = "logseq must be an object."
         raise LauncherError(msg)
-    graph_dir = value.get("graph_dir")
-    if graph_dir is not None and not isinstance(graph_dir, str):
-        msg = "logseq.graph_dir must be a string."
-        raise LauncherError(msg)
-    return value
+    try:
+        return _LogseqConfig.model_validate(value).model_dump(exclude_none=True)
+    except ValidationError as exc:
+        detail = exc.errors()[0]["msg"] if exc.errors() else str(exc)
+        msg = f"Invalid logseq: {detail}"
+        raise LauncherError(msg) from exc
 
 
 def validate_section(name: str, value: Any) -> Any:

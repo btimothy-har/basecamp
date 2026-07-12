@@ -105,6 +105,7 @@ The `pi --workstream` flag is boolean: bare `--workstream` infers the workstream
 
 - **Python**: 3.12+, managed with `uv`
 - **Install (dev)**: `uv run install.py` (installs the `basecamp` tool, then registers the repo root as the single Pi extension, cleaning up legacy per-package registrations)
+- **Iterate on the CLI**: `uv run install.py` installs a **non-editable** snapshot of `basecamp` on PATH, so for live iteration against your working tree run the CLI via `uv run basecamp <cmd>` (the `uv sync` editable dev venv) rather than re-installing after each change
 - **Python lint**: `uv run ruff check .` / `uv run ruff format --check .`
 - **TypeScript check**: `npm run check` at the repo root (tsc whole-graph + biome + import-boundary + file-length checks); `make lint` runs it after the Python checks
 - **Fix**: `make fix` runs Python fixes plus `npm run lint:fix` / `npm run format`

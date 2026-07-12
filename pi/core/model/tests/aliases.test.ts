@@ -78,7 +78,7 @@ describe("loadModelAliasConfig", () => {
 		});
 	});
 
-	it("leniently skips malformed/empty/duplicate entries and keeps the good ones", async (t) => {
+	it("leniently skips malformed entries and takes last-write-wins on trim-duplicates", async (t) => {
 		const dir = await createTempDir(t);
 		const configPath = path.join(dir, "config.json");
 		await writeConfig(configPath, {
@@ -91,7 +91,8 @@ describe("loadModelAliasConfig", () => {
 			},
 		});
 
-		assert.deepEqual(loadModelAliasConfig(configPath), { ok: true, aliases: { good: "provider/good" } });
+		// ` good ` trims to `good`, overwriting the earlier value (last-write-wins).
+		assert.deepEqual(loadModelAliasConfig(configPath), { ok: true, aliases: { good: "provider/dup" } });
 	});
 });
 
