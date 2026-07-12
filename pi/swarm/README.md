@@ -1,8 +1,8 @@
 # swarm
 
-This context owns Basecamp's async-agent domain: the TypeScript runtime (`swarm/`: public daemon tools, launch policy, daemon client/reporting code, `/code-review`, workstreams), the wire-protocol contract (`swarm/protocol/`), and the `agents` skill (`swarm/skills/`). The Python daemon it talks to is a separate package, `basecamp.hub` (`src/basecamp/hub/`).
+This context owns Basecamp's async-agent domain: the TypeScript runtime (`swarm/`: public agent tools, launch policy, the agent-side hub client + run reporting, `/code-review`, workstreams) and the `agents` skill (`swarm/skills/`). It is a **plugin over the core hub connector** — the WebSocket transport, ensure-daemon, node identity, and the wire-protocol contract (`protocol/`) all live in `#core/hub` (`pi/core/hub/`). The Python daemon it talks to is a separate package, `basecamp.hub` (`src/basecamp/hub/`).
 
-The context's default register (composed by `extension.ts`) wires the agent catalog provider, the daemon client, the `/code-review` command, and the workstream tools/startup.
+The context's default register (composed by `extension.ts`) wires the agent catalog provider, the agent session surfaces (`registerAgentSurfaces` — dispatch/ask/cancel/peer tools, run reporter, active-agents widget, over `#core/hub`), the `/code-review` command, and the workstream tools/startup. The hub connection itself is established by `registerCore` (`#core/hub`), not here.
 
 ## Code review
 
@@ -11,7 +11,7 @@ The context's default register (composed by `extension.ts`) wires the agent cata
 Flow:
 
 1. Resolve scope in the active worktree: the current branch vs its base (`origin/HEAD`, falling back to `main`; an optional argument overrides the base). The review covers every change since the branch's merge-base with the base — committed, staged, unstaged, and untracked — so uncommitted work is included.
-2. Dispatch six independent reviewer agents (`security-specialist`, `testing-specialist`, `docs-specialist`, `code-clarity-specialist`, `conventions-specialist`, `general-reviewer`) via the daemon client with a fixed, scope-only brief — they read the diff directly, with no author narration.
+2. Dispatch six independent reviewer agents (`security-specialist`, `testing-specialist`, `docs-specialist`, `code-clarity-specialist`, `conventions-specialist`, `general-reviewer`) via the hub client with a fixed, scope-only brief — they read the diff directly, with no author narration.
 3. Transpose each reviewer's prose report into a canonical `Finding` schema with a per-report LLM pass (the `fast` model, a forced `report_findings` tool) — faithful extraction only, no cross-report consolidation.
 4. Merge findings and compute a verdict with deterministic code (no LLM synthesis): any critical → Request Changes; ≥3 high → Request Changes; 1–2 high → Comment; only medium/low → Approve with notes; none → Approve. The review is fail-fast and all-or-nothing: if any reviewer fails to dispatch, complete, produce output, or transpose into structured findings, the entire review aborts with a notification naming the failing reviewer — no verdict and no partial result are produced.
 5. When a UI is available, present an interactive per-finding reaction pane so the user can page through the findings and leave an optional free-text reaction on each before the agent engages (reactions seed the follow-up discussion; they are not accept/reject decisions).
@@ -21,7 +21,7 @@ The review module lives in `pi/swarm/agents/review/` (`findings`, `transpose`, `
 
 ## Agent lifecycle
 
-Dispatched agents can be stopped with the `cancel_agent` tool, which cancels an agent you dispatched and terminates its process (subtree-only: you cannot cancel agents outside your dispatch tree). Agents are also reaped automatically when their dispatcher session ends and does not reconnect within `BASECAMP_AGENT_DISCONNECT_GRACE_S` (default 3600s). See `swarm/protocol/PROTOCOL.md`.
+Dispatched agents can be stopped with the `cancel_agent` tool, which cancels an agent you dispatched and terminates its process (subtree-only: you cannot cancel agents outside your dispatch tree). Agents are also reaped automatically when their dispatcher session ends and does not reconnect within `BASECAMP_AGENT_DISCONNECT_GRACE_S` (default 3600s). See `core/hub/protocol/PROTOCOL.md`.
 
 ## Workstreams
 
@@ -45,5 +45,5 @@ A workstream can have several agent sessions over time or concurrently — every
 
 ### Protocol
 
-Workstream management uses three WS frame pairs (`create_workstream`/`attach_workstream_agent`/`update_workstream` + acks, protocol v19) and two HTTP GET endpoints (`/workstreams` filtered list, `/workstreams/{id_or_slug}` workstream + joined agents). See `swarm/protocol/PROTOCOL.md`.
+Workstream management uses three WS frame pairs (`create_workstream`/`attach_workstream_agent`/`update_workstream` + acks, protocol v20) and two HTTP GET endpoints (`/workstreams` filtered list, `/workstreams/{id_or_slug}` workstream + joined agents). See `core/hub/protocol/PROTOCOL.md`.
 
