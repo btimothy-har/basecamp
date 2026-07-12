@@ -24,8 +24,6 @@ import {
 	upsertRunResultAttempt,
 } from "./run-result.ts";
 
-export { extractLastAssistantMessage } from "./event-summaries.ts";
-
 const FLUSH_DELAY_MS = 50;
 
 function sleep(ms: number): Promise<void> {

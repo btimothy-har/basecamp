@@ -1,4 +1,5 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { processScoped } from "#core/global-registry.ts";
 import { awaitDaemonConnection, deriveDaemonIdentity, onDaemonConnect, resolveDaemonPaths } from "#core/hub/index.ts";
 import { resolveModelAlias } from "#core/model/index.ts";
 import { getWorkspaceState } from "#core/project/workspace/state.ts";
@@ -20,6 +21,24 @@ import { type ActiveAgentsWidgetController, startActiveAgentsWidget } from "./wi
 // The agent plugin's session surfaces: dispatch/ask/cancel/peer tools, the run
 // reporter, and the connect-time wiring (peer-message delivery + active-agents
 // widget). The hub connection itself is core-owned (#core/hub); this rides on it.
+
+/**
+ * Connect-time wiring that must survive /reload. The hub WebSocket outlives a
+ * reload (core's processScoped connection), so on reload `onDaemonConnect` re-fires
+ * on the SAME connection. Keeping the delivery-handler unsubscribe + widget handle
+ * in surviving state lets us tear down the prior wiring before re-wiring — otherwise
+ * a reload double-subscribes the peer_message_delivery handler (duplicate delivery +
+ * acks) and leaks the widget's refresh interval.
+ */
+interface AgentConnectState extends PeerDeliveryState {
+	widget: ActiveAgentsWidgetController | null;
+}
+
+const getAgentConnectState = processScoped<AgentConnectState>("basecamp.swarm.agentConnect", () => ({
+	peerDeliveryConnection: null,
+	peerDeliveryUnsubscribe: null,
+	widget: null,
+}));
 
 function defaultAgentToolDeps(): DaemonToolDeps {
 	return {
@@ -58,22 +77,28 @@ export function registerAgentSurfaces(pi: ExtensionAPI, deps: DaemonToolDeps = d
 	}
 
 	// Re-wire the delivery handler + widget whenever the hub connection is (re)established.
-	const peerState: PeerDeliveryState = { peerDeliveryConnection: null, peerDeliveryUnsubscribe: null };
 	onDaemonConnect((connection, ctx) => {
-		registerPeerMessageDeliveryHandler(pi, peerState, connection);
-		let widget: ActiveAgentsWidgetController | null = null;
+		const connectState = getAgentConnectState();
+		// A surviving connection can outlive /reload, so tear down any prior wiring
+		// before re-wiring: registerPeerMessageDeliveryHandler unsubscribes the previous
+		// handler via connectState.peerDeliveryUnsubscribe (keeping exactly one), and we
+		// stop the previous widget so its refresh interval doesn't leak.
+		connectState.widget?.stop();
+		connectState.widget = null;
+		registerPeerMessageDeliveryHandler(pi, connectState, connection);
 		if (isTopLevel && ctx.hasUI) {
-			widget = startActiveAgentsWidget(ctx, {
+			connectState.widget = startActiveAgentsWidget(ctx, {
 				rootId: deriveDaemonIdentity(ctx).node_id,
 				socketPath: process.env.BASECAMP_DAEMON_UDS ?? resolveDaemonPaths().socketPath,
 				fetchSummary: fetchRunSummary,
 			});
 		}
 		return () => {
-			peerState.peerDeliveryUnsubscribe?.();
-			peerState.peerDeliveryUnsubscribe = null;
-			peerState.peerDeliveryConnection = null;
-			widget?.stop();
+			connectState.peerDeliveryUnsubscribe?.();
+			connectState.peerDeliveryUnsubscribe = null;
+			connectState.peerDeliveryConnection = null;
+			connectState.widget?.stop();
+			connectState.widget = null;
 		};
 	});
 }

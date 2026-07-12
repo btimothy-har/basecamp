@@ -1,8 +1,9 @@
 /**
  * Daemon client façade (agent-side). The connection/transport primitives are
- * core-owned (#core/hub); this barrel re-exports the connection types for swarm
- * consumers and composes the agent request client + observability views.
- * Internal modules import each other directly, never through this barrel.
+ * core-owned (#core/hub); this barrel re-exports the connection types plus the
+ * agent request client (`rpc.ts`) and observability views (`view/`) as one
+ * import surface — used by workstreams, review, tests, and intra-domain callers
+ * that want types without reaching into each implementation module.
  */
 
 export type { DaemonConnection, DaemonIdentity } from "#core/hub/index.ts";

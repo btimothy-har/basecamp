@@ -1,5 +1,4 @@
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { processScoped } from "../global-registry.ts";
 import { connect, type DaemonConnection } from "./connection.ts";
 import {
 	type DaemonIdentityDeps,
@@ -9,59 +8,15 @@ import {
 } from "./identity.ts";
 import { resolveDaemonPaths } from "./paths.ts";
 import { ensureDaemon } from "./spawn.ts";
+import { getConnectListeners, getHubConnectionState, type HubConnectionState } from "./state.ts";
 import { publishDaemonStatus } from "./status.ts";
 import { registerThreadReporter } from "./thread-reporter.ts";
 
 // The hub connection is core-owned: core/hub is the adapter for the hub daemon
 // (a peer of core/git, core/host, core/model). Every Pi session plugs into the
-// hub through here; swarm (agent tools/reporting/ui) and companion (thread
-// reporting) are consumers that ride on this connection via #core/hub.
-
-interface HubConnectionState {
-	connection: DaemonConnection | null;
-	connecting: Promise<void> | null;
-}
-
-// Surviving state: the live daemon WebSocket outlives /reload. Key unchanged
-// across the swarm→core relocation (processScoped keys are location-independent).
-const getHubConnectionState = processScoped<HubConnectionState>("basecamp.daemonClient", () => ({
-	connection: null,
-	connecting: null,
-}));
-
-export function getActiveDaemonConnection(): DaemonConnection | null {
-	return getHubConnectionState().connection;
-}
-
-export async function awaitDaemonConnection(): Promise<DaemonConnection | null> {
-	const state = getHubConnectionState();
-	if (state.connection) return state.connection;
-	if (state.connecting) {
-		try {
-			await state.connecting;
-		} catch {
-			// connection failures are surfaced by null result at callsites
-		}
-	}
-	return state.connection;
-}
-
-/**
- * Connect seam: consumers (swarm peer-delivery + active-agents widget) register a
- * listener that runs when the connection is (re)established and returns an optional
- * cleanup run on disconnect/shutdown. Plain module state — wiring re-established by
- * each domain's registration on every load.
- */
-export type DaemonConnectListener = (connection: DaemonConnection, ctx: ExtensionContext) => (() => void) | undefined;
-const connectListeners: DaemonConnectListener[] = [];
-
-export function onDaemonConnect(listener: DaemonConnectListener): () => void {
-	connectListeners.push(listener);
-	return () => {
-		const index = connectListeners.indexOf(listener);
-		if (index >= 0) connectListeners.splice(index, 1);
-	};
-}
+// hub through here; swarm (agent tools/reporting/ui) and companion (analysis
+// consumer) ride on this connection via #core/hub. State + accessors live in
+// state.ts; this file owns the connect/report lifecycle and the public barrel.
 
 function trackDaemonConnection(
 	state: HubConnectionState,
@@ -148,7 +103,7 @@ export function registerHubConnection(pi: ExtensionAPI, deps: DaemonIdentityDeps
 				const activeConnection =
 					state.connection === connection ? connection : trackDaemonConnection(state, connection, ctx);
 				runCleanups();
-				for (const listener of connectListeners) {
+				for (const listener of getConnectListeners()) {
 					const cleanup = listener(activeConnection, ctx);
 					if (cleanup) cleanups.push(cleanup);
 				}
@@ -202,7 +157,6 @@ export function registerHubConnection(pi: ExtensionAPI, deps: DaemonIdentityDeps
 	});
 }
 
-// ── core/hub public surface: connector primitives + wire protocol, for swarm/companion ──
 export { connect, type DaemonConnection, type DaemonIdentity, waitForFrame } from "./connection.ts";
 export { buildAgentHandle, buildDeterministicAgentHandle } from "./handles.ts";
 export {
@@ -217,4 +171,11 @@ export {
 export { deriveDaemonIdentity, sanitizeDisplayLabel } from "./identity.ts";
 export { type DaemonPaths, ensureDaemonRuntimeDir, resolveDaemonPaths } from "./paths.ts";
 export { ensureDaemon } from "./spawn.ts";
+// ── core/hub public surface: connector primitives + wire protocol, for swarm/companion ──
+export {
+	awaitDaemonConnection,
+	type DaemonConnectListener,
+	getActiveDaemonConnection,
+	onDaemonConnect,
+} from "./state.ts";
 export { type DaemonStatusInfo, publishDaemonStatus } from "./status.ts";
