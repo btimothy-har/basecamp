@@ -8,7 +8,7 @@ Basecamp task lifecycle + planning — goal tracking, task state machine, the `p
 - **Planning**: `plan()` tool with structured plan review, draft logic, plan skill guard, worktree choices for implementation handoff, and `/show-plan` to view the current plan (the `plan()` tool is hard-blocked in copilot sessions)
 - **Workflow skills**: `gather`, `planning` SKILL.md content (the `agents` skill lives in the swarm context)
 
-> **Note**: The workstream domain (`launch_workstream`, `list_workstreams`, `set_workstream_status`, and the `pi --workstream` startup flag) is owned by the swarm domain (`pi/swarm/workstreams/`), persisted in the daemon's SQLite store. The agent tools (`dispatch_agent`/`wait_for_agent`/`list_agents`) are likewise swarm's.
+> **Note**: The workstream domain (`launch_workstream`, `list_workstreams`, `set_workstream_status`, and the `pi --workstream` startup flag) is its own domain (`pi/workstreams/`), persisted in the daemon's SQLite store. The agent tools (`dispatch_agent`/`wait_for_agent`/`list_agents`) belong to the `#core/swarm` primitive.
 
 ## Functional smoke cleanup
 

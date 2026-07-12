@@ -11,12 +11,13 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 
 import registerBashReviewer from "#bash-reviewer/index.ts";
 import registerBrowser from "#browser/index.ts";
+import registerCodeReview from "#code-review/index.ts";
 import registerCompanion from "#companion/index.ts";
 import registerCore from "#core/index.ts";
 import registerEngineering from "#engineering/index.ts";
-import registerSwarm from "#swarm/index.ts";
 import registerSystemPrompt from "#system-prompt/index.ts";
 import registerTasks from "#tasks/index.ts";
+import registerWorkstreams from "#workstreams/index.ts";
 
 const MODULES: ReadonlyArray<readonly [string, (pi: ExtensionAPI) => void]> = [
 	["core", registerCore],
@@ -26,7 +27,8 @@ const MODULES: ReadonlyArray<readonly [string, (pi: ExtensionAPI) => void]> = [
 	["engineering", registerEngineering],
 	["browser", registerBrowser],
 	["companion", registerCompanion],
-	["swarm", registerSwarm],
+	["code-review", registerCodeReview],
+	["workstreams", registerWorkstreams],
 ];
 
 export default function (pi: ExtensionAPI): void {

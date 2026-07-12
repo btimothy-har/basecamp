@@ -11,6 +11,7 @@ import { registerCompactionModel } from "./session/runtime/compaction.ts";
 import { registerSession } from "./session/runtime/session.ts";
 import { registerState } from "./session/state/index.ts";
 import registerSkills from "./skills/index.ts";
+import registerSwarm from "./swarm/index.ts";
 import registerUi from "./ui/index.ts";
 
 export default function (pi: ExtensionAPI): void {
@@ -28,8 +29,14 @@ export default function (pi: ExtensionAPI): void {
 	registerGit(pi);
 
 	// The hub-daemon connector (adapter): connects at session_start for top-level
-	// sessions and daemon-spawned agents. Consumers (swarm, companion) ride on it.
+	// sessions and daemon-spawned agents. Consumers ride on it.
 	registerHubConnection(pi);
+
+	// The agent-dispatch primitive (adapter over the hub connection): the agent
+	// catalog + session surfaces (dispatch/ask/cancel/peer tools, reporter,
+	// widget). Runs for top-level sessions and daemon-spawned agents alike; the
+	// code-review and workstream feature domains consume it via #core/swarm.
+	registerSwarm(pi);
 
 	// Primary-only interactions
 	if (!isSubagent()) {

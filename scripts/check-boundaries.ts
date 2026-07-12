@@ -25,7 +25,8 @@ const CONTEXTS = [
 	"engineering",
 	"browser",
 	"companion",
-	"swarm",
+	"code-review",
+	"workstreams",
 ] as const;
 
 const LEGACY_SPECIFIERS = ["pi-core", "pi-ui", "pi-tasks", "pi-workspace", "pi-git", "pi-bash-reviewer"];

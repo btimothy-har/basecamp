@@ -4,6 +4,8 @@
 
 This is the design record for the next structural pass on the async-agent stack. Prior passes fixed *packaging* (consolidation), *navigability* (rearchitecture), and the *analysis data plane* (companion daemon-broker). This pass fixes *ownership*: it makes the TypeScript side reflect what the Python side and the runtime already are — **hub is the central command center; the connection to it is core infrastructure; swarm is one plugin among several that ride on it.**
 
+> **Superseded in part by [swarm-core-primitive.md](./swarm-core-primitive.md):** the "swarm is a plugin" framing below (esp. §6) was later refined — the agent-dispatch *primitive* moved into core as `#core/swarm` (a peer of `#core/hub`), while `/code-review` and workstreams became standalone feature domains (`pi/code-review/`, `pi/workstreams/`). The connector work recorded here is unchanged.
+
 ---
 
 ## 1. Problem statement

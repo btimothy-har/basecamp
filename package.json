@@ -17,7 +17,7 @@
 		"skills": [
 			"./pi/tasks/skills",
 			"./pi/engineering/skills",
-			"./pi/swarm/skills"
+			"./pi/core/swarm/skills"
 		],
 		"prompts": [
 			"./pi/engineering/prompts"
@@ -31,7 +31,8 @@
 		"#engineering/*": "./pi/engineering/*",
 		"#browser/*": "./pi/browser/*",
 		"#companion/*": "./pi/companion/*",
-		"#swarm/*": "./pi/swarm/*"
+		"#code-review/*": "./pi/code-review/*",
+		"#workstreams/*": "./pi/workstreams/*"
 	},
 	"scripts": {
 		"check": "tsc && biome check . && node scripts/check-boundaries.ts && node scripts/check-file-length.ts",
@@ -39,7 +40,7 @@
 		"lint": "biome check . && node scripts/check-boundaries.ts && node scripts/check-file-length.ts",
 		"lint:fix": "biome check --fix .",
 		"format": "biome format --fix .",
-		"test": "node --experimental-strip-types --test pi/extension.test.ts \"pi/core/**/*.test.ts\" \"pi/system-prompt/**/*.test.ts\" \"pi/tasks/**/*.test.ts\" \"pi/bash-reviewer/**/*.test.ts\" \"pi/engineering/**/*.test.ts\" \"pi/browser/**/*.test.ts\" \"pi/companion/**/*.test.ts\" \"pi/swarm/**/*.test.ts\""
+		"test": "node --experimental-strip-types --test pi/extension.test.ts \"pi/core/**/*.test.ts\" \"pi/system-prompt/**/*.test.ts\" \"pi/tasks/**/*.test.ts\" \"pi/bash-reviewer/**/*.test.ts\" \"pi/engineering/**/*.test.ts\" \"pi/browser/**/*.test.ts\" \"pi/companion/**/*.test.ts\" \"pi/code-review/**/*.test.ts\" \"pi/workstreams/**/*.test.ts\""
 	},
 	"dependencies": {
 		"@sinclair/typebox": "^0.34.0",
