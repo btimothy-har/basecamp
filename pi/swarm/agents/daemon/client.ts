@@ -1,18 +1,17 @@
 /**
- * Daemon client façade — the public surface of the daemon-client subsystem.
- * Implementation lives in the sibling modules (process, spawn, http, view/,
- * connection, rpc); internal modules import each other directly, never
- * through this barrel.
+ * Daemon client façade (agent-side). The connection/transport primitives are
+ * core-owned (#core/hub); this barrel re-exports the connection types for swarm
+ * consumers and composes the agent request client + observability views.
+ * Internal modules import each other directly, never through this barrel.
  */
 
-export { connect, type DaemonConnection, type DaemonIdentity } from "./connection.ts";
+export type { DaemonConnection, DaemonIdentity } from "#core/hub/index.ts";
 export {
 	createDaemonClient,
 	type DaemonClient,
 	type DaemonDispatchFrameOptions,
 	type DaemonDispatchResult,
 } from "./rpc.ts";
-export { ensureDaemon } from "./spawn.ts";
 export { fetchRunSummary, type RunSummaryAgent, type RunSummaryResult } from "./view/summary.ts";
 export {
 	getWorkstream,

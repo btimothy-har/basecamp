@@ -1,5 +1,6 @@
 import { Buffer } from "node:buffer";
 import WebSocket, { type RawData } from "ws";
+import { type DaemonPaths, resolveDaemonPaths } from "./paths.ts";
 import {
 	decodeFrame,
 	type ErrorFrame,
@@ -8,8 +9,7 @@ import {
 	PROTOCOL_VERSION,
 	type RegisteredFrame,
 	type RegisterFrame,
-} from "#core/hub/protocol/index.ts";
-import { type DaemonPaths, resolveDaemonPaths } from "./paths.ts";
+} from "./protocol/index.ts";
 
 export interface DaemonIdentity {
 	node_id: string;

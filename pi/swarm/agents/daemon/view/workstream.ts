@@ -1,4 +1,4 @@
-import { DEFAULT_HEALTH_TIMEOUT_MS, optionalNumber, optionalString, requestJsonOverUds } from "../http.ts";
+import { DEFAULT_HEALTH_TIMEOUT_MS, optionalNumber, optionalString, requestJsonOverUds } from "#core/hub/index.ts";
 
 export interface WorkstreamAgentView {
 	agent_id: string | null;

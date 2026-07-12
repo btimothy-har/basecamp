@@ -1,5 +1,6 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { awaitDaemonConnection, registerDaemonClient } from "./agents/daemon/index.ts";
+import { awaitDaemonConnection } from "#core/hub/index.ts";
+import { registerAgentSurfaces } from "./agents/daemon/index.ts";
 import { registerAgentCatalog } from "./agents/index.ts";
 import { registerReviewCommand } from "./agents/review/command.ts";
 import { resolveAgentDepthState } from "./agents/types.ts";
@@ -21,7 +22,7 @@ function registerWorkstreams(pi: ExtensionAPI): void {
 
 export default function (pi: ExtensionAPI): void {
 	registerAgentCatalog();
-	registerDaemonClient(pi);
+	registerAgentSurfaces(pi);
 	registerReviewCommand(pi);
 	registerWorkstreams(pi);
 }

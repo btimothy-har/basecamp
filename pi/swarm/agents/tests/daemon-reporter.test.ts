@@ -2,21 +2,20 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import type { Frame } from "#core/hub/protocol/index.ts";
 import type { DaemonConnection } from "../daemon/client.ts";
-import { type DaemonClientDeps, registerDaemonClient } from "../daemon/index.ts";
+import { registerAgentSurfaces } from "../daemon/index.ts";
 import { registerDaemonReporter } from "../daemon/reporter.ts";
+import type { DaemonToolDeps } from "../daemon/tools.ts";
 import { MockPi } from "./harness.ts";
 import { installReporterEnvHooks, telemetryFrames, waitForFrameCount } from "./reporter-harness.ts";
 
 describe("daemon reporter", () => {
 	installReporterEnvHooks();
 
-	const deps: DaemonClientDeps = {
+	const deps: DaemonToolDeps = {
 		hasInvokedSkill: () => true,
 		getWorkspaceState: () => null,
 		basecampExtensionRoot: process.cwd(),
 		resolveModelAlias: (model: string) => model,
-		formatTitle: () => "basecamp",
-		shortSessionId: (value: string) => value.slice(-8),
 	};
 
 	it("emits skillName in skill tool call telemetry", async () => {
@@ -41,7 +40,7 @@ describe("daemon reporter", () => {
 			process.env.BASECAMP_REPORT_TOKEN = "token-for-tests";
 			const pi = new MockPi();
 			registerDaemonReporter(pi as unknown as any, {
-				connectionPromise: Promise.resolve(connection),
+				awaitConnection: () => Promise.resolve(connection),
 				runId: "run-1",
 				agentId: "agent-1",
 			});
@@ -88,7 +87,7 @@ describe("daemon reporter", () => {
 			process.env.BASECAMP_REPORT_TOKEN = "token-for-tests";
 			const pi = new MockPi();
 			registerDaemonReporter(pi as unknown as any, {
-				connectionPromise: Promise.resolve(connection),
+				awaitConnection: () => Promise.resolve(connection),
 				runId: "run-1",
 				agentId: "agent-1",
 			});
@@ -152,7 +151,7 @@ describe("daemon reporter", () => {
 		try {
 			delete process.env.BASECAMP_REPORT_TOKEN;
 			registerDaemonReporter(pi as unknown as any, {
-				connectionPromise: Promise.resolve({} as DaemonConnection),
+				awaitConnection: () => Promise.resolve({} as DaemonConnection),
 				runId: "run-1",
 				agentId: "agent-1",
 			});
@@ -175,7 +174,7 @@ describe("daemon reporter", () => {
 			process.env.BASECAMP_RUN_ID = "run-1";
 			process.env.BASECAMP_AGENT_ID = "agent-1";
 
-			registerDaemonClient(pi as unknown as any, deps);
+			registerAgentSurfaces(pi as unknown as any, deps);
 
 			assert.deepEqual(
 				pi.tools.map((tool) => tool.name),
@@ -200,7 +199,7 @@ describe("daemon reporter", () => {
 		try {
 			process.env.BASECAMP_AGENT_DEPTH = "1";
 			delete process.env.BASECAMP_RUN_ID;
-			registerDaemonClient(pi as unknown as any, deps);
+			registerAgentSurfaces(pi as unknown as any, deps);
 			assert.equal(pi.handlers.size, 0);
 		} finally {
 			if (priorDepth === undefined) delete process.env.BASECAMP_AGENT_DEPTH;

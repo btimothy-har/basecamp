@@ -4,6 +4,7 @@ import { registerCatalogProviders } from "./catalog/providers.ts";
 import { registerEscalate } from "./escalate/tool.ts";
 import { registerGit } from "./git/index.ts";
 import { isSubagent } from "./host/env.ts";
+import { registerHubConnection } from "./hub/index.ts";
 import registerModelAliases from "./model/index.ts";
 import registerProject from "./project/index.ts";
 import { registerCompactionModel } from "./session/runtime/compaction.ts";
@@ -25,6 +26,10 @@ export default function (pi: ExtensionAPI): void {
 	// (registerProject sequences them), then the git command surface.
 	registerProject(pi);
 	registerGit(pi);
+
+	// The hub-daemon connector (adapter): connects at session_start for top-level
+	// sessions and daemon-spawned agents. Consumers (swarm, companion) ride on it.
+	registerHubConnection(pi);
 
 	// Primary-only interactions
 	if (!isSubagent()) {

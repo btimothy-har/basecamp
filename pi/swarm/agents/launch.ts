@@ -1,7 +1,7 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { resolveDaemonPaths } from "./daemon/paths.ts";
+import { resolveDaemonPaths } from "#core/hub/index.ts";
 import type { AgentConfig } from "./discovery.ts";
 import { buildAgentRunName, buildPiArgs, sanitizeAgentSpawnEnv } from "./executor.ts";
 import { resolveModel } from "./model-resolution.ts";

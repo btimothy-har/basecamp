@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import * as path from "node:path";
 import { describe, it } from "node:test";
-import { resolveDaemonPaths } from "../daemon/paths.ts";
+import { resolveDaemonPaths } from "../paths.ts";
 
 describe("daemon paths", () => {
 	it("resolves runtime, socket, lock, database, and agent paths under ~/.pi/basecamp/swarm", () => {

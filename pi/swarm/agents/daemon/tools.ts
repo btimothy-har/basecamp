@@ -5,7 +5,7 @@
  */
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import type { DaemonConnection } from "./connection.ts";
+import type { DaemonConnection } from "#core/hub/index.ts";
 import { registerAskAgentTool } from "./tool/ask.ts";
 import { registerCancelAgentTool } from "./tool/cancel.ts";
 import { registerDispatchAgentTool } from "./tool/dispatch.ts";

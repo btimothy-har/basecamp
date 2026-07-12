@@ -1,7 +1,7 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { type DaemonConnection, sanitizeDisplayLabel } from "#core/hub/index.ts";
 import { type PeerMessageDeliveryFrame, PROTOCOL_VERSION } from "#core/hub/protocol/index.ts";
 import { errorMessage } from "../errors.ts";
-import type { DaemonConnection } from "./connection.ts";
 
 /** The slice of the daemon-client state that peer-message delivery owns. */
 export interface PeerDeliveryState {
@@ -14,16 +14,6 @@ export function formatPeerMessageDeliveryContent(frame: PeerMessageDeliveryFrame
 	const label = sanitizeDisplayLabel(frame.from_product_role, 48) ?? relationDisplayLabel(frame.from_relation);
 	const suffix = label ? ` (${label})` : "";
 	return `Message from ${sender}${suffix}:\n\n${frame.message}`;
-}
-
-export function sanitizeDisplayLabel(value: string | null | undefined, maxLength: number): string | null {
-	const withoutControls = Array.from(value ?? "", (char) => {
-		const code = char.charCodeAt(0);
-		return code <= 31 || code === 127 ? " " : char;
-	}).join("");
-	const sanitized = withoutControls.replace(/\s+/g, " ").trim();
-	if (!sanitized) return null;
-	return sanitized.length <= maxLength ? sanitized : `${sanitized.slice(0, maxLength - 1).trimEnd()}…`;
 }
 
 function relationDisplayLabel(relation: PeerMessageDeliveryFrame["from_relation"]): string | null {

@@ -1,5 +1,5 @@
+import { buildAgentHandle } from "#core/hub/index.ts";
 import type { DaemonClient, DaemonDispatchFrameOptions, DaemonDispatchResult } from "./client.ts";
-import { buildAgentHandle } from "./handles.ts";
 
 export async function dispatchWithHandleRetry(
 	daemonClient: Pick<DaemonClient, "dispatchAgent">,

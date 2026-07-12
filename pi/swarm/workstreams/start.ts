@@ -2,6 +2,7 @@ import type { ExtensionAPI, ExtensionContext, SessionStartEvent } from "@earendi
 import { isCopilotLaunch } from "#core/agent-mode/copilot.ts";
 import { setAgentMode } from "#core/agent-mode/index.ts";
 import { registerAgentRoleProvider } from "#core/agent-role.ts";
+import { resolveDaemonPaths } from "#core/hub/index.ts";
 import {
 	getWorkspaceState,
 	onWorkspaceChange,
@@ -9,7 +10,6 @@ import {
 	type WorkspaceState,
 } from "#core/project/workspace/state.ts";
 import type { DaemonClient, WorkstreamDetail } from "../agents/daemon/client.ts";
-import { resolveDaemonPaths } from "../agents/daemon/paths.ts";
 import { errorMessage } from "../agents/errors.ts";
 import { buildWorkstreamLaunchBrief } from "./brief.ts";
 

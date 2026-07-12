@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { isDaemonCommandForSocket } from "../daemon/process.ts";
+import { isDaemonCommandForSocket } from "../process.ts";
 
 const SOCKET = "/tmp/fake-home/.pi/basecamp/swarm/daemon.sock";
 

@@ -50,12 +50,12 @@ function runnerManagedAttempt(): number {
 export function registerDaemonReporter(
 	pi: ExtensionAPI,
 	options: {
-		connectionPromise: Promise<DaemonConnection>;
+		awaitConnection: () => Promise<DaemonConnection | null>;
 		runId: string;
 		agentId: string;
 	},
 ): void {
-	const { connectionPromise, runId, agentId } = options;
+	const { awaitConnection, runId, agentId } = options;
 	const reportToken = process.env.BASECAMP_REPORT_TOKEN;
 	if (!reportToken) return;
 
@@ -65,7 +65,8 @@ export function registerDaemonReporter(
 
 	const sendTelemetry = async (kind: string, payload: Record<string, unknown>): Promise<void> => {
 		try {
-			const connection = await connectionPromise;
+			const connection = await awaitConnection();
+			if (!connection) return;
 			connection.send({
 				type: "telemetry",
 				v: PROTOCOL_VERSION,
@@ -208,7 +209,8 @@ export function registerDaemonReporter(
 				return;
 			}
 
-			const connection = await connectionPromise;
+			const connection = await awaitConnection();
+			if (!connection) return;
 			connection.send({
 				type: "result_report",
 				v: PROTOCOL_VERSION,
