@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { formatPeerMessageDeliveryContent, handlePeerMessageDelivery } from "../daemon/delivery.ts";
-import type { Frame, PeerMessageDeliveryFrame } from "../daemon/frames/index.ts";
-import { PROTOCOL_VERSION } from "../daemon/frames/index.ts";
+import type { Frame, PeerMessageDeliveryFrame } from "#core/hub/protocol/index.ts";
+import { PROTOCOL_VERSION } from "#core/hub/protocol/index.ts";
+import { formatPeerMessageDeliveryContent, handlePeerMessageDelivery } from "../delivery.ts";
 
 function deliveryFrame(overrides: Partial<PeerMessageDeliveryFrame> = {}): PeerMessageDeliveryFrame {
 	return {

@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { getAgentMode, setAgentMode } from "#core/agent-mode/index.ts";
 import { registerAgentRoleProvider, resetAgentRoleForTesting } from "#core/agent-role.ts";
-import { deriveDaemonIdentity } from "../daemon/index.ts";
+import { deriveDaemonIdentity } from "#core/hub/identity.ts";
 import { installDaemonToolTestHooks } from "./harness.ts";
 
 describe("deriveDaemonIdentity", () => {

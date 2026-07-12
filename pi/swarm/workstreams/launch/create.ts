@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { copilotWorktreeTarget } from "#core/git/worktrees/target.ts";
 import type { WorkspaceWorktree } from "#core/project/workspace/state.ts";
-import type { DaemonClient } from "../../agents/daemon/client.ts";
+import type { DaemonClient } from "../../agents/client.ts";
 import { errorMessage, type WorkstreamToolsDeps } from "../deps.ts";
 import type { LaunchWorkstreamParams } from "../params.ts";
 import { buildNextStep, herdrToSummary, openHerdr, provisionWorktree, resultWorktree, runSetup } from "../provision.ts";

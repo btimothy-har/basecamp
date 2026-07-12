@@ -1,14 +1,13 @@
 import { randomUUID } from "node:crypto";
 import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
 import { exec } from "#core/host/exec.ts";
+import { buildAgentHandle, getActiveDaemonConnection } from "#core/hub/index.ts";
 import { resolveModelAlias } from "#core/model/index.ts";
 import { resolveAliasedModel } from "#core/model/resolution.ts";
 import { getWorkspaceState, type WorkspaceState } from "#core/project/workspace/state.ts";
-import { createDaemonClient } from "../daemon/client.ts";
-import { dispatchWithHandleRetry } from "../daemon/dispatch-retry.ts";
-import { buildAgentHandle } from "../daemon/handles.ts";
-import { getActiveDaemonConnection } from "../daemon/index.ts";
+import { createDaemonClient } from "../client.ts";
 import { discoverAgents } from "../discovery.ts";
+import { dispatchWithHandleRetry } from "../dispatch-retry.ts";
 import { errorMessage } from "../errors.ts";
 import { basecampExtensionRoot } from "../extension-root.ts";
 import { buildAgentLaunchSpec, processEnvForSpawn } from "../launch.ts";

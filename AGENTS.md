@@ -23,11 +23,12 @@ scripts/check-file-length.ts               # Hard file-length caps: .ts ≤ 350,
 pi/                            # ① the Pi extension (TypeScript)
 ├── extension.ts                # Composition root: registers all domain modules in fixed order (core first)
 ├── core/                       # agent-mode/ (+copilot·toggle) · agent-role.ts · session/ (+state) · project/ (config·context·injection·logseq · workspace/ runtime+guards+/worktree) ·
-│                               #   git/ (worktrees/ crud·target·migrate · repo · /create-pr) · skills/ · catalog/ · model/ · ui/ (framework chrome) · escalate/ (+dialog/) · host/ (env·exec·paths·config) · global-registry.ts
+│                               #   git/ (worktrees/ crud·target·migrate · repo · /create-pr) · skills/ · catalog/ · model/ · ui/ (framework chrome) · escalate/ (+dialog/) · host/ (env·exec·paths·config) ·
+│                               #   hub/ (hub-daemon connector: protocol/ TS↔Python contract · connection · ensure · identity · status · report-thread) · global-registry.ts
 ├── system-prompt/              # before_agent_start prompt assembly: prompt.ts · context-builders.ts · defaults/ (modes·styles·environment)
-├── swarm/                      # agents/ (tools, catalog, launch, daemon client, review), workstreams/,
-│                               #   protocol/ (TS↔Python contract), skills/
-├── companion/                  # session hooks: analysis, snapshot/, panes/, herdr/ + tmux/ adapters
+├── swarm/                      # the agent plugin over #core/hub: agents/ (tools, catalog, launch,
+│                               #   hub client, reporter, widget, review), workstreams/, skills/
+├── companion/                  # dashboard integration (pure consumer): snapshot/, panes/, herdr/ + tmux/ adapters
 ├── tasks/                      # layered: schemas/ · lifecycle/ (state) · workflows/ (draft·review·handoff) · tools/ (task-tools·plan·guards·commands); skills/
 ├── bash-reviewer/              # LLM bash reviewer: index (guard), review, triage/, llm adapter
 ├── engineering/                # bigquery/ (bq_query tool + bq-CLI adapter, one module), skills/ + prompts/
@@ -39,7 +40,7 @@ src/basecamp/                  # ② the basecamp Python package (one ordinary s
 ├── core/                       # settings, paths, files, exceptions + project config schema, migrations & CLI
 ├── workspace/                  # per-repo worktree-setup environments + menus
 ├── hub/                         # the daemon (host-global service): core (app·server·http_routes·registry) + frames/ + store/ (per data object) + swarm/ (agents) + broker/ (companion analysis)
-└── companion/                   # Textual TUI (ui/) + daemon client; analysis is daemon-sourced, thread reporter ships getBranch() at agent_end
+└── companion/                   # Textual TUI (ui/) + daemon observability client; analysis is daemon-sourced (raw thread reported by core/hub)
 
 claude/                        # ③ reserved for a future Claude Code launcher
 docs/  tests/  migrations/     # design docs; Python tests (tests/<domain>/); one-shot state migration
@@ -63,7 +64,7 @@ Agent modes (`pi/core/agent-mode`, in `SESSION_STATE_AGENT_MODES`) are `analysis
 
 ### Extension Modules
 
-All TypeScript behavior ships as one Pi extension; its entry point is `pi/extension.ts` and its package manifest is the repo-root `package.json`. `pi/extension.ts` composes the domain modules (`core`, `system-prompt`, `tasks`, `bash-reviewer`, `engineering`, `browser`, `companion`, `swarm`) in a fixed order — core first — so in-extension init is deterministic and identical on `/reload`. Each domain's TS lives in `pi/<domain>/` with a `register*` default export in its `index.ts`; cross-domain imports go through `#`-subpath aliases and are boundary-checked. Framework UI (footer/header/title/mode) is not a separate domain — it lives in `pi/core/ui/` and `registerCore` registers it, alongside core's other in-session surfaces (`escalate`, `skills`, the `project` runtime — config + `workspace/` + context — and `git`'s `/create-pr`). Git worktree/repo mechanics live in `pi/core/git/` and are imported directly. The async-agent wire protocol and daemon client live in `pi/swarm/`; the Python daemon in `src/basecamp/hub/`.
+All TypeScript behavior ships as one Pi extension; its entry point is `pi/extension.ts` and its package manifest is the repo-root `package.json`. `pi/extension.ts` composes the domain modules (`core`, `system-prompt`, `tasks`, `bash-reviewer`, `engineering`, `browser`, `companion`, `swarm`) in a fixed order — core first — so in-extension init is deterministic and identical on `/reload`. Each domain's TS lives in `pi/<domain>/` with a `register*` default export in its `index.ts`; cross-domain imports go through `#`-subpath aliases and are boundary-checked. Framework UI (footer/header/title/mode) is not a separate domain — it lives in `pi/core/ui/` and `registerCore` registers it, alongside core's other in-session surfaces (`escalate`, `skills`, the `project` runtime — config + `workspace/` + context — and `git`'s `/create-pr`). Git worktree/repo mechanics live in `pi/core/git/` and are imported directly. The hub-daemon connector — the WebSocket transport, the wire protocol (`protocol/`), ensure-daemon, node identity, and the raw-thread reporter — lives in `pi/core/hub/` (core's adapter for the hub daemon, a peer of `git`/`host`/`model`). Every top-level session and daemon-spawned agent connects through it, and `registerCore` also registers the reporter, so "connect + report" is one core responsibility: each session ships its raw thread to the daemon at `agent_end`, and the daemon derives the analysis. `pi/swarm/` is the agent plugin (dispatch/ask/cancel/peer tools, run reporter, active-agents widget, `/code-review`, workstreams) that consumes the connection via `#core/hub`; `pi/companion/` is a pure downstream consumer of the derived analysis (dashboard integration — snapshot/panes/herdr — with no `#core/hub` dependency). The Python daemon is `src/basecamp/hub/`.
 
 ### Code Review
 
@@ -97,7 +98,7 @@ Workstreams are durable, repo-neutral internal coordination state owned by the `
 
 The model is multi-agent and repo-neutral: every `pi --workstream` session appends a `workstream_agents` row (additive, concurrent, never overwrites), and "which repos touched" derives from agent rows. A workstream can be carried into a different repo by passing its id/slug to `launch_workstream`, enabling cross-repo coordination without a duplicate workstream. The dossier (Logseq work page, `work__<org>__<repo>__<slug>`) stays the user-facing durable record of priority, decisions, blockers, and done signals; the workstream points to it via `source_dossier_path`. One dossier may have many workstreams.
 
-The `pi --workstream` flag is boolean: bare `--workstream` infers the workstream from the current `copilot/<slug>` worktree label; `--workstream=<slug|id>` resolves explicitly (the value is recovered from argv). On start it attaches the session as an additive workstream agent and injects the brief. Tools are `launch_workstream` (create + worktree + Herdr, or carry existing), `list_workstreams` (repo-neutral filtered listing; single-identifier lookup returns the joined agents view), and `set_workstream_status` (open ↔ closed). Transport: protocol v19 WS frames (`create_workstream`/`attach_workstream_agent`/`update_workstream` + acks) and HTTP GET `/workstreams` (filtered list) and `/workstreams/{id_or_slug}` (workstream + joined agents).
+The `pi --workstream` flag is boolean: bare `--workstream` infers the workstream from the current `copilot/<slug>` worktree label; `--workstream=<slug|id>` resolves explicitly (the value is recovered from argv). On start it attaches the session as an additive workstream agent and injects the brief. Tools are `launch_workstream` (create + worktree + Herdr, or carry existing), `list_workstreams` (repo-neutral filtered listing; single-identifier lookup returns the joined agents view), and `set_workstream_status` (open ↔ closed). Transport: protocol v20 WS frames (`create_workstream`/`attach_workstream_agent`/`update_workstream` + acks) and HTTP GET `/workstreams` (filtered list) and `/workstreams/{id_or_slug}` (workstream + joined agents).
 
 ## Development
 

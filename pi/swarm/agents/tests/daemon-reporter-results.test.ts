@@ -1,14 +1,14 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import type { DaemonConnection } from "../daemon/client.ts";
-import type { Frame } from "../daemon/frames/index.ts";
-import { registerDaemonReporter } from "../daemon/reporter.ts";
+import type { Frame } from "#core/hub/protocol/index.ts";
+import type { DaemonConnection } from "../client.ts";
+import { registerDaemonReporter } from "../reporter.ts";
 import {
 	BASECAMP_RUN_ATTEMPT,
 	BASECAMP_RUN_RESULT_PATH,
 	BASECAMP_RUNNER_MANAGED_RESULT,
 	readRunResultSidecar,
-} from "../daemon/run-result.ts";
+} from "../run-result.ts";
 import { MockPi } from "./harness.ts";
 import {
 	deferred,
@@ -44,7 +44,7 @@ describe("daemon reporter results", () => {
 			process.env.BASECAMP_REPORT_TOKEN = "token-for-tests";
 			const pi = new MockPi();
 			registerDaemonReporter(pi as unknown as any, {
-				connectionPromise: gate.promise,
+				awaitConnection: () => gate.promise,
 				runId: "run-1",
 				agentId: "agent-1",
 			});
@@ -127,7 +127,7 @@ describe("daemon reporter results", () => {
 			process.env[BASECAMP_RUN_ATTEMPT] = "2";
 			const pi = new MockPi();
 			registerDaemonReporter(pi as unknown as any, {
-				connectionPromise: Promise.resolve(connection),
+				awaitConnection: () => Promise.resolve(connection),
 				runId: "run-1",
 				agentId: "agent-1",
 			});
@@ -186,7 +186,7 @@ describe("daemon reporter results", () => {
 			process.env[BASECAMP_RUN_ATTEMPT] = "1";
 			const pi = new MockPi();
 			registerDaemonReporter(pi as unknown as any, {
-				connectionPromise: Promise.resolve(connection),
+				awaitConnection: () => Promise.resolve(connection),
 				runId: "run-1",
 				agentId: "agent-1",
 			});
@@ -230,7 +230,7 @@ describe("daemon reporter results", () => {
 			process.env.BASECAMP_REPORT_TOKEN = "token-for-tests";
 			const pi = new MockPi();
 			registerDaemonReporter(pi as unknown as any, {
-				connectionPromise: Promise.resolve(connection),
+				awaitConnection: () => Promise.resolve(connection),
 				runId: "run-1",
 				agentId: "agent-1",
 			});
@@ -280,7 +280,7 @@ describe("daemon reporter results", () => {
 			process.env.BASECAMP_REPORT_TOKEN = "token-for-tests";
 			const pi = new MockPi();
 			registerDaemonReporter(pi as unknown as any, {
-				connectionPromise: Promise.resolve(connection),
+				awaitConnection: () => Promise.resolve(connection),
 				runId: "run-1",
 				agentId: "agent-1",
 			});

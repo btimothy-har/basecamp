@@ -3,12 +3,8 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { afterEach, beforeEach } from "node:test";
-import type { Frame } from "../daemon/frames/index.ts";
-import {
-	BASECAMP_RUN_ATTEMPT,
-	BASECAMP_RUN_RESULT_PATH,
-	BASECAMP_RUNNER_MANAGED_RESULT,
-} from "../daemon/run-result.ts";
+import type { Frame } from "#core/hub/protocol/index.ts";
+import { BASECAMP_RUN_ATTEMPT, BASECAMP_RUN_RESULT_PATH, BASECAMP_RUNNER_MANAGED_RESULT } from "../run-result.ts";
 
 export function deferred<T>(): { promise: Promise<T>; resolve: (value: T) => void } {
 	let resolve!: (value: T) => void;

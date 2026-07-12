@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { createDaemonClient } from "../daemon/client.ts";
-import { decodeFrame, FRAME_TYPES, type Frame, PROTOCOL_VERSION } from "../daemon/frames/index.ts";
+import { decodeFrame, FRAME_TYPES, type Frame, PROTOCOL_VERSION } from "#core/hub/protocol/index.ts";
+import { createDaemonClient } from "../client.ts";
 import { MockConnection } from "./harness.ts";
 
 const NEW_FRAME_TYPES = [

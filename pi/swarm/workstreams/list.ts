@@ -1,4 +1,4 @@
-import type { WorkstreamAgentView, WorkstreamSummary } from "../agents/daemon/client.ts";
+import type { WorkstreamAgentView, WorkstreamSummary } from "../agents/client.ts";
 import { defaultWorkstreamToolsDeps, errorMessage, type WorkstreamToolsDeps } from "./deps.ts";
 import { parseListWorkstreamsParams } from "./params.ts";
 import { type ListWorkstreamsToolResult, listTextResult } from "./results.ts";
