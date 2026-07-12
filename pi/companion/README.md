@@ -1,6 +1,6 @@
 # companion
 
-Basecamp companion — session snapshot hooks, the analysis thread reporter, companion panes, and Herdr metadata.
+Basecamp companion — the companion **dashboard integration**: session snapshot hooks, companion panes, and Herdr metadata. It is a pure consumer of hub analysis, not a producer.
 
 ## What it does
 
@@ -8,15 +8,13 @@ Basecamp companion — session snapshot hooks, the analysis thread reporter, com
 - **Companion panes**: opens the companion dashboard in Herdr when the session has `HERDR_ENV=1`, `HERDR_PANE_ID`, and `HERDR_SOCKET_PATH`; falls back to tmux when Herdr is unavailable; skips subagents and non-UI sessions
 - **Herdr pane metadata**: reports display-only metadata to the current Herdr Pi pane with `herdr pane report-metadata` so Herdr can show the Basecamp title/status without Basecamp taking agent lifecycle authority
 - **Companion-active flag**: sets core's `isCompanionActive` flag for companion pane state
-- **Analysis thread reporter**: on each `agent_end` (top-level sessions only), ships the raw session thread (`getBranch()`, split into per-entry nodes) to the daemon for the daemon-side analyzer, via `#core/hub`'s `reportThread` transport (`thread-reporter.ts`)
 
-The **Python companion TUI** (Textual dashboard, daemon client) lives in `src/basecamp/companion/`. Analysis is produced by the daemon (see `docs/design/companion-daemon-broker.md`) and read over `GET /analysis/{session_id}`; the snapshot and goal-cycle panels stay file-sourced.
+Raw-thread reporting for the analyzer is **not** a companion job: it moved to the core hub connector (`pi/core/hub/thread-reporter.ts` — "connect + report"), because every session feeds the daemon regardless of the dashboard. The **Python companion TUI** (Textual dashboard, daemon client) lives in `src/basecamp/companion/`. Analysis is produced by the daemon (see `docs/design/companion-daemon-broker.md`) and read over `GET /analysis/{session_id}`; the snapshot and goal-cycle panels stay file-sourced.
 
 ## Dependencies
 
 - **core** (`#core/*`): workspace state, agent-mode, skill-tracker, session state, and the companion-active flag
 - **tasks** (`#tasks/index.ts`): `getTasksReader` + `TaskStatus` — live task-state observation for the snapshot
-- **hub connector** (`#core/hub`): `reportThread` — ships the raw session thread to the daemon for the analyzer (core-owned transport)
 
 ## Observation pattern
 

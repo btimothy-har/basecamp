@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { afterEach, describe, it } from "node:test";
-import type { ThreadReport } from "#core/hub/report-thread.ts";
+import type { ThreadReport } from "../report-thread.ts";
 import { registerThreadReporter } from "../thread-reporter.ts";
 
 type Handler = (event: unknown, ctx: unknown) => Promise<void> | void;
@@ -44,7 +44,7 @@ afterEach(() => {
 	else process.env.BASECAMP_AGENT_ID = priorAgentId;
 });
 
-describe("companion thread reporter", () => {
+describe("hub thread reporter", () => {
 	it("maps getBranch() to per-entry nodes with session id + transcript path", async () => {
 		process.env.BASECAMP_AGENT_DEPTH = "0";
 		delete process.env.BASECAMP_AGENT_ID;

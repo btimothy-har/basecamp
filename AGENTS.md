@@ -28,7 +28,7 @@ pi/                            # ① the Pi extension (TypeScript)
 ├── system-prompt/              # before_agent_start prompt assembly: prompt.ts · context-builders.ts · defaults/ (modes·styles·environment)
 ├── swarm/                      # the agent plugin over #core/hub: agents/ (tools, catalog, launch,
 │                               #   hub client, reporter, widget, review), workstreams/, skills/
-├── companion/                  # session hooks: analysis, snapshot/, panes/, herdr/ + tmux/ adapters
+├── companion/                  # dashboard integration (pure consumer): snapshot/, panes/, herdr/ + tmux/ adapters
 ├── tasks/                      # layered: schemas/ · lifecycle/ (state) · workflows/ (draft·review·handoff) · tools/ (task-tools·plan·guards·commands); skills/
 ├── bash-reviewer/              # LLM bash reviewer: index (guard), review, triage/, llm adapter
 ├── engineering/                # bigquery/ (bq_query tool + bq-CLI adapter, one module), skills/ + prompts/
@@ -40,7 +40,7 @@ src/basecamp/                  # ② the basecamp Python package (one ordinary s
 ├── core/                       # settings, paths, files, exceptions + project config schema, migrations & CLI
 ├── workspace/                  # per-repo worktree-setup environments + menus
 ├── hub/                         # the daemon (host-global service): core (app·server·http_routes·registry) + frames/ + store/ (per data object) + swarm/ (agents) + broker/ (companion analysis)
-└── companion/                   # Textual TUI (ui/) + daemon client; analysis is daemon-sourced, thread reporter ships getBranch() at agent_end
+└── companion/                   # Textual TUI (ui/) + daemon observability client; analysis is daemon-sourced (raw thread reported by core/hub)
 
 claude/                        # ③ reserved for a future Claude Code launcher
 docs/  tests/  migrations/     # design docs; Python tests (tests/<domain>/); one-shot state migration
@@ -64,7 +64,7 @@ Agent modes (`pi/core/agent-mode`, in `SESSION_STATE_AGENT_MODES`) are `analysis
 
 ### Extension Modules
 
-All TypeScript behavior ships as one Pi extension; its entry point is `pi/extension.ts` and its package manifest is the repo-root `package.json`. `pi/extension.ts` composes the domain modules (`core`, `system-prompt`, `tasks`, `bash-reviewer`, `engineering`, `browser`, `companion`, `swarm`) in a fixed order — core first — so in-extension init is deterministic and identical on `/reload`. Each domain's TS lives in `pi/<domain>/` with a `register*` default export in its `index.ts`; cross-domain imports go through `#`-subpath aliases and are boundary-checked. Framework UI (footer/header/title/mode) is not a separate domain — it lives in `pi/core/ui/` and `registerCore` registers it, alongside core's other in-session surfaces (`escalate`, `skills`, the `project` runtime — config + `workspace/` + context — and `git`'s `/create-pr`). Git worktree/repo mechanics live in `pi/core/git/` and are imported directly. The hub-daemon connector — the WebSocket transport, the wire protocol (`protocol/`), ensure-daemon, and node identity — lives in `pi/core/hub/` (core's adapter for the hub daemon, a peer of `git`/`host`/`model`); every top-level session and daemon-spawned agent connects through it, and `swarm`/`companion` consume it via `#core/hub`. `pi/swarm/` is the agent plugin (dispatch/ask/cancel/peer tools, run reporter, active-agents widget, `/code-review`, workstreams) that rides on that connection; the Python daemon is `src/basecamp/hub/`.
+All TypeScript behavior ships as one Pi extension; its entry point is `pi/extension.ts` and its package manifest is the repo-root `package.json`. `pi/extension.ts` composes the domain modules (`core`, `system-prompt`, `tasks`, `bash-reviewer`, `engineering`, `browser`, `companion`, `swarm`) in a fixed order — core first — so in-extension init is deterministic and identical on `/reload`. Each domain's TS lives in `pi/<domain>/` with a `register*` default export in its `index.ts`; cross-domain imports go through `#`-subpath aliases and are boundary-checked. Framework UI (footer/header/title/mode) is not a separate domain — it lives in `pi/core/ui/` and `registerCore` registers it, alongside core's other in-session surfaces (`escalate`, `skills`, the `project` runtime — config + `workspace/` + context — and `git`'s `/create-pr`). Git worktree/repo mechanics live in `pi/core/git/` and are imported directly. The hub-daemon connector — the WebSocket transport, the wire protocol (`protocol/`), ensure-daemon, node identity, and the raw-thread reporter — lives in `pi/core/hub/` (core's adapter for the hub daemon, a peer of `git`/`host`/`model`). Every top-level session and daemon-spawned agent connects through it, and `registerCore` also registers the reporter, so "connect + report" is one core responsibility: each session ships its raw thread to the daemon at `agent_end`, and the daemon derives the analysis. `pi/swarm/` is the agent plugin (dispatch/ask/cancel/peer tools, run reporter, active-agents widget, `/code-review`, workstreams) that consumes the connection via `#core/hub`; `pi/companion/` is a pure downstream consumer of the derived analysis (dashboard integration — snapshot/panes/herdr — with no `#core/hub` dependency). The Python daemon is `src/basecamp/hub/`.
 
 ### Code Review
 
