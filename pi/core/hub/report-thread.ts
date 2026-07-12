@@ -1,7 +1,7 @@
-import { awaitDaemonConnection } from "#core/hub/index.ts";
-import { PROTOCOL_VERSION } from "#core/hub/protocol/index.ts";
-import type { ThreadReportNode } from "#core/hub/protocol/thread-report.ts";
-import type { DaemonConnection } from "./client.ts";
+import type { DaemonConnection } from "./connection.ts";
+import { awaitDaemonConnection } from "./index.ts";
+import { PROTOCOL_VERSION } from "./protocol/index.ts";
+import type { ThreadReportNode } from "./protocol/thread-report.ts";
 
 // `connection.send()` only buffers into the ws sender; the frame flushes on the event
 // loop. Yield briefly after the final send so a session that exits right after

@@ -7,8 +7,6 @@ import { resolveAgentDepthState } from "./agents/types.ts";
 import { registerWorkstreamStartup } from "./workstreams/start.ts";
 import { registerWorkstreamTools } from "./workstreams/tools.ts";
 
-export { reportThread, type ThreadReport } from "./agents/daemon/report-thread.ts";
-
 function registerWorkstreams(pi: ExtensionAPI): void {
 	const { isTopLevel, atMaxDepth } = resolveAgentDepthState();
 

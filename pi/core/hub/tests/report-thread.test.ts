@@ -1,9 +1,9 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import type { Frame } from "#core/hub/protocol/index.ts";
-import { PROTOCOL_VERSION } from "#core/hub/protocol/index.ts";
-import type { DaemonConnection } from "../daemon/client.ts";
-import { reportThread, type ThreadReport } from "../daemon/report-thread.ts";
+import type { DaemonConnection } from "../connection.ts";
+import type { Frame } from "../protocol/index.ts";
+import { PROTOCOL_VERSION } from "../protocol/index.ts";
+import { reportThread, type ThreadReport } from "../report-thread.ts";
 
 function mockConnection(sent: Frame[]): DaemonConnection {
 	return {

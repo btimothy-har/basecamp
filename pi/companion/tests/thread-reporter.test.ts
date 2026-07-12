@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { afterEach, describe, it } from "node:test";
-import type { ThreadReport } from "#swarm/index.ts";
+import type { ThreadReport } from "#core/hub/report-thread.ts";
 import { registerThreadReporter } from "../thread-reporter.ts";
 
 type Handler = (event: unknown, ctx: unknown) => Promise<void> | void;
