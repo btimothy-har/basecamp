@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { describe, it } from "node:test";
-import { basecampCorePaths, basecampExtensionRoot, basecampRoot, piRoot } from "../paths.ts";
+import { basecampConfigPath, basecampCorePaths, basecampExtensionRoot, basecampRoot, piRoot } from "../paths.ts";
 
 describe("basecamp path contract", () => {
 	it("builds the pi and basecamp roots from a home directory", () => {
@@ -19,8 +19,13 @@ describe("basecamp path contract", () => {
 			rootDir: path.join(homeDir, ".pi", "basecamp"),
 			coreDir: path.join(homeDir, ".pi", "basecamp", "core"),
 			sessionStateDir: path.join(homeDir, ".pi", "basecamp", "core", "session-state"),
-			modelAliasesPath: path.join(homeDir, ".pi", "basecamp", "core", "model-aliases.json"),
 		});
+	});
+
+	it("points the unified config at <basecamp root>/config.json", () => {
+		const homeDir = path.join("tmp", "home");
+
+		assert.equal(basecampConfigPath(homeDir), path.join(homeDir, ".pi", "basecamp", "config.json"));
 	});
 
 	it("resolves the extension root to the repo-root package directory", () => {

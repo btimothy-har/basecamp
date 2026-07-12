@@ -1,9 +1,9 @@
 """Path constants and helpers for basecamp-core.
 
 Basecamp-owned Python state is rooted under ``~/.pi/basecamp``. This
-module owns the root config location plus Python-visible workspace
-customization paths; package-specific runtime state should define its own
-bounded-context subpaths from the Basecamp root.
+module owns the root config location plus the user customization dirs
+(context/styles/prompts) directly under the Basecamp root; package-specific
+runtime state should define its own bounded-context subpaths from that root.
 """
 
 from __future__ import annotations
@@ -19,14 +19,17 @@ BASECAMP_CONFIG_DIR: Path = PI_DIR / "basecamp"
 #: Default location of the basecamp config file.
 DEFAULT_CONFIG_PATH: Path = BASECAMP_CONFIG_DIR / "config.json"
 
-#: Workspace customization directory under the Basecamp root.
-BASECAMP_WORKSPACE_DIR: Path = BASECAMP_CONFIG_DIR / "workspace"
+# These override dirs moved out of the former ``workspace/`` subdir to sit
+# directly under the Basecamp root. There is no automatic migration: on upgrade,
+# users must move any existing files from
+# ``~/.pi/basecamp/workspace/{context,styles,prompts}/`` to
+# ``~/.pi/basecamp/{context,styles,prompts}/`` by hand.
 
 #: User-supplied context overrides directory.
-USER_CONTEXT_DIR: Path = BASECAMP_WORKSPACE_DIR / "context"
+USER_CONTEXT_DIR: Path = BASECAMP_CONFIG_DIR / "context"
 
 #: User-supplied style overrides directory.
-USER_STYLES_DIR: Path = BASECAMP_WORKSPACE_DIR / "styles"
+USER_STYLES_DIR: Path = BASECAMP_CONFIG_DIR / "styles"
 
 #: User-supplied prompt fragment overrides directory.
-USER_PROMPTS_DIR: Path = BASECAMP_WORKSPACE_DIR / "prompts"
+USER_PROMPTS_DIR: Path = BASECAMP_CONFIG_DIR / "prompts"

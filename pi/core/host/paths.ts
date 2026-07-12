@@ -7,7 +7,6 @@ export interface BasecampCorePaths {
 	rootDir: string;
 	coreDir: string;
 	sessionStateDir: string;
-	modelAliasesPath: string;
 }
 
 /**
@@ -35,6 +34,11 @@ export function basecampRoot(homeDir = os.homedir()): string {
 	return path.join(piRoot(homeDir), "basecamp");
 }
 
+/** The unified basecamp config file — Python-owned, read in-process by Pi. */
+export function basecampConfigPath(homeDir = os.homedir()): string {
+	return path.join(basecampRoot(homeDir), "config.json");
+}
+
 export function basecampCorePaths(homeDir = os.homedir()): BasecampCorePaths {
 	const rootDir = basecampRoot(homeDir);
 	const coreDir = path.join(rootDir, "core");
@@ -42,6 +46,5 @@ export function basecampCorePaths(homeDir = os.homedir()): BasecampCorePaths {
 		rootDir,
 		coreDir,
 		sessionStateDir: path.join(coreDir, "session-state"),
-		modelAliasesPath: path.join(coreDir, "model-aliases.json"),
 	};
 }

@@ -11,8 +11,9 @@ from __future__ import annotations
 
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, ValidationError
 
+from basecamp.core.exceptions import LauncherError
 from basecamp.core.settings import CONFIG_VERSION, Settings, settings
 
 ENVIRONMENTS_SECTION = "environments"
@@ -30,7 +31,15 @@ def load_environments(config: Settings | None = None) -> dict[str, EnvironmentCo
     """Load all configured environments keyed by repo identity."""
     active = config or settings
     raw = active.get_section(ENVIRONMENTS_SECTION)
-    return {name: EnvironmentConfig.model_validate(data) for name, data in raw.items()}
+    environments: dict[str, EnvironmentConfig] = {}
+    for name, data in raw.items():
+        try:
+            environments[name] = EnvironmentConfig.model_validate(data)
+        except ValidationError as exc:
+            detail = exc.errors()[0]["msg"] if exc.errors() else str(exc)
+            msg = f"Invalid environment '{name}' in config.json: {detail}"
+            raise LauncherError(msg) from exc
+    return environments
 
 
 def get_environment(repo_name: str, config: Settings | None = None) -> EnvironmentConfig | None:

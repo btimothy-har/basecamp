@@ -8,23 +8,12 @@ from pathlib import Path
 import rich_click as click
 
 from basecamp.companion.app import run_companion
-from basecamp.core.cli.config import run_project_menu
-from basecamp.core.cli.project import (
-    execute_project_add,
-    execute_project_edit,
-    execute_project_list,
-    execute_project_remove,
-)
+from basecamp.core.cli.config_group import config
 from basecamp.core.exceptions import LauncherError
 from basecamp.hub.server import run_hub
 from basecamp.installer import run_interactive_install
 from basecamp.setup import execute_setup
-from basecamp.workspace import EnvironmentConfig, remove_environment, set_environment
-from basecamp.workspace.cli.environment import (
-    execute_environment_list,
-    run_environments_menu,
-)
-from basecamp.workspace.ui import console, err_console
+from basecamp.workspace.ui import err_console
 
 click.rich_click.USE_RICH_MARKUP = True
 click.rich_click.SHOW_ARGUMENTS = True
@@ -49,71 +38,6 @@ def setup() -> None:
         execute_setup()
     except LauncherError as e:
         _handle_error(e)
-
-
-@basecamp.group(invoke_without_command=True)
-@click.pass_context
-def environments(ctx: click.Context) -> None:
-    """Manage per-repo worktree setup environments."""
-    if ctx.invoked_subcommand is None:
-        run_environments_menu()
-
-
-@environments.command("list")
-def environments_list() -> None:
-    """List configured environments."""
-    execute_environment_list()
-
-
-@environments.command("set")
-@click.argument("repo")
-@click.argument("command")
-def environments_set(repo: str, command: str) -> None:
-    """Set the setup command for a repo."""
-    set_environment(repo, EnvironmentConfig(setup=command))
-    console.print(f"Environment set for {repo}.")
-
-
-@environments.command("remove")
-@click.argument("repo")
-def environments_remove(repo: str) -> None:
-    """Remove the environment for a repo."""
-    remove_environment(repo)
-    console.print(f"Environment removed for {repo}.")
-
-
-@basecamp.group(invoke_without_command=True)
-@click.pass_context
-def projects(ctx: click.Context) -> None:
-    """Manage configured projects."""
-    if ctx.invoked_subcommand is None:
-        run_project_menu()
-
-
-@projects.command("list")
-def projects_list() -> None:
-    """List configured projects."""
-    execute_project_list()
-
-
-@projects.command("add")
-def projects_add() -> None:
-    """Interactively add a project."""
-    execute_project_add()
-
-
-@projects.command("edit")
-@click.argument("name")
-def projects_edit(name: str) -> None:
-    """Interactively edit a project."""
-    execute_project_edit(name)
-
-
-@projects.command("remove")
-@click.argument("name")
-def projects_remove(name: str) -> None:
-    """Remove a project."""
-    execute_project_remove(name)
 
 
 @basecamp.group()
@@ -184,8 +108,17 @@ def install() -> None:
     run_interactive_install()
 
 
+basecamp.add_command(config)
+
+
 def main() -> None:
-    basecamp()
+    # Safety net: any LauncherError that reaches the top (e.g. a malformed
+    # config record surfaced by a porcelain command) prints cleanly instead of
+    # a traceback. Command-local handlers still catch it first where present.
+    try:
+        basecamp()
+    except LauncherError as e:
+        _handle_error(e)
 
 
 if __name__ == "__main__":

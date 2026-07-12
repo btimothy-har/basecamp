@@ -6,6 +6,7 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { isCopilotMode, PLAN_TOOL_NAME } from "#core/agent-mode/copilot.ts";
 import { getAgentMode } from "#core/agent-mode/index.ts";
 import { type CatalogItem, listCatalogItemsByType } from "#core/catalog/index.ts";
+import { basecampRoot } from "#core/host/paths.ts";
 import { getProjectState, type ProjectState } from "#core/project/config.ts";
 import { type ContextFile, discoverContextFiles } from "#core/project/context.ts";
 import { buildRepoLogseqContext } from "#core/project/logseq.ts";
@@ -19,16 +20,12 @@ import {
 
 const MODULE_DIR = path.dirname(fileURLToPath(import.meta.url));
 const PACKAGE_DIR = path.resolve(MODULE_DIR, "defaults");
-function getBasecampWorkspaceDir(): string {
-	return path.join(os.homedir(), ".pi", "basecamp", "workspace");
-}
-
 function getUserPromptsDir(): string {
-	return path.join(getBasecampWorkspaceDir(), "prompts");
+	return path.join(basecampRoot(), "prompts");
 }
 
 function getUserStylesDir(): string {
-	return path.join(getBasecampWorkspaceDir(), "styles");
+	return path.join(basecampRoot(), "styles");
 }
 
 export function loadPromptFile(filename: string): string {

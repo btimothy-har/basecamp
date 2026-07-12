@@ -18,20 +18,16 @@ class TestPaths:
     def test_default_config_path_under_basecamp_config_dir(self) -> None:
         assert paths.DEFAULT_CONFIG_PATH == paths.BASECAMP_CONFIG_DIR / "config.json"
 
-    def test_workspace_dir_under_basecamp_config_dir(self) -> None:
-        assert paths.BASECAMP_WORKSPACE_DIR == paths.BASECAMP_CONFIG_DIR / "workspace"
-
-    def test_user_dirs_under_basecamp_workspace_dir(self) -> None:
-        assert paths.USER_CONTEXT_DIR == paths.BASECAMP_WORKSPACE_DIR / "context"
-        assert paths.USER_STYLES_DIR == paths.BASECAMP_WORKSPACE_DIR / "styles"
-        assert paths.USER_PROMPTS_DIR == paths.BASECAMP_WORKSPACE_DIR / "prompts"
+    def test_user_dirs_under_basecamp_config_dir(self) -> None:
+        assert paths.USER_CONTEXT_DIR == paths.BASECAMP_CONFIG_DIR / "context"
+        assert paths.USER_STYLES_DIR == paths.BASECAMP_CONFIG_DIR / "styles"
+        assert paths.USER_PROMPTS_DIR == paths.BASECAMP_CONFIG_DIR / "prompts"
 
 
 class TestPublicApi:
     def test_exports_present(self) -> None:
         expected = {
             "BASECAMP_CONFIG_DIR",
-            "BASECAMP_WORKSPACE_DIR",
             "DEFAULT_CONFIG_PATH",
             "LauncherError",
             "PI_DIR",

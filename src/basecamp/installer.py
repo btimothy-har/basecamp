@@ -15,7 +15,6 @@ import sys
 from pathlib import Path
 from typing import Final
 
-import questionary
 from rich.console import Console
 from rich.panel import Panel
 
@@ -85,28 +84,18 @@ def _install_pi_extension() -> None:
         sys.exit(1)
 
 
-def run_interactive_install(*, editable: bool | None = None) -> None:
+def run_interactive_install() -> None:
     """Run the basecamp install.
 
     Called by install.py (bootstrap) and `basecamp install` (reconfiguration).
     """
-    if editable is None:
-        answer = questionary.confirm("Install in editable mode?", default=True).ask()
-        if answer is None:
-            sys.exit(0)
-        editable = answer
-
     console.print()
-    console.print(Panel.fit("basecamp setup", style="bold blue"))
+    console.print(Panel.fit("basecamp install", style="bold blue"))
     console.print()
 
     console.print("[bold]Python tool[/bold]")
     console.print()
-    pkg_spec = str(REPO_DIR)
-    args = ["uv", "tool", "install", "--force", "--reinstall"]
-    if editable:
-        args.append("-e")
-    args.append(pkg_spec)
+    args = ["uv", "tool", "install", "--force", "--reinstall", str(REPO_DIR)]
     console.print("  Installing [bold]basecamp[/bold] Python tool...")
     result = subprocess.run(args, check=False, capture_output=True, text=True)
     if result.returncode != 0:
@@ -122,7 +111,9 @@ def run_interactive_install(*, editable: bool | None = None) -> None:
     settings.set_install_metadata(install_dir=str(REPO_DIR))
 
     console.print()
-    console.print("[green]✓[/green] Done.")
+    console.print("[green]✓[/green] Installed.")
     console.print()
     console.print("If [bold]basecamp[/bold] isn't found, add uv's tool bin to your PATH:")
     console.print('  [dim]export PATH="$HOME/.local/bin:$PATH"[/dim]')
+    console.print()
+    console.print("Next, run [bold]basecamp setup[/bold] to scaffold your environment.")

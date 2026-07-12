@@ -12,7 +12,7 @@ Basecamp fully *replaces* pi's default system prompt rather than appending to it
 
 ## Defaults ↔ user override
 
-`loadPromptFile` / `loadWorkingStyle` read the user dir first (`~/.pi/basecamp/workspace/prompts` · `.../styles`), then fall back to `defaults/`.
+`loadPromptFile` / `loadWorkingStyle` read the user dir first (`~/.pi/basecamp/prompts` · `.../styles`), then fall back to `defaults/`.
 
 ## Registration
 

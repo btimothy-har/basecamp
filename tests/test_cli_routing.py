@@ -1,100 +1,78 @@
 from click.testing import CliRunner
 
 import basecamp.cli as cli
+import basecamp.core.cli.config_porcelain as porcelain
+from basecamp.core.cli.config_group import config
 
 
 def test_top_level_commands_match_new_shape() -> None:
     commands = cli.basecamp.commands
 
-    assert "projects" in commands
+    assert "config" in commands
     assert "companion" in commands
     assert "setup" in commands
     assert "install" in commands
     assert "hub" in commands
-    assert "environments" in commands
-    assert "config" not in commands
-    assert "companion-analyze" not in commands  # analysis moved to the daemon
+    # projects/environments moved under `config` (hard cut).
+    assert "projects" not in commands
+    assert "environments" not in commands
+
+
+def test_config_subcommands_match_new_shape() -> None:
+    commands = config.commands
+
+    for name in ("project", "env", "alias", "show", "get", "set", "unset", "edit"):
+        assert name in commands, name
 
 
 def test_companion_subcommands_match_new_shape() -> None:
-    commands = cli.companion.commands
-
-    assert "dashboard" in commands
-    assert "analyze" not in commands  # analysis runs in the daemon, not a CLI
+    assert "dashboard" in cli.companion.commands
+    assert "analyze" not in cli.companion.commands  # analysis runs in the daemon
 
 
-def test_environments_subcommands_match_new_shape() -> None:
-    commands = cli.environments.commands
-
-    assert "list" in commands
-    assert "set" in commands
-    assert "remove" in commands
-
-
-def test_environments_subcommands_delegate(monkeypatch) -> None:
-    calls: list[tuple[str, str, str | None]] = []
-
-    monkeypatch.setattr(cli, "execute_environment_list", lambda: calls.append(("list", "", None)))
-    monkeypatch.setattr(cli, "set_environment", lambda repo, env: calls.append(("set", repo, env.setup)))
-    monkeypatch.setattr(cli, "remove_environment", lambda repo: calls.append(("remove", repo, None)))
+def test_config_env_subcommands_delegate(monkeypatch) -> None:
+    calls: list[tuple] = []
+    monkeypatch.setattr(porcelain, "execute_environment_list", lambda: calls.append(("list",)))
+    monkeypatch.setattr(porcelain, "set_environment", lambda repo, env: calls.append(("set", repo, env.setup)))
+    monkeypatch.setattr(porcelain, "remove_environment", lambda repo: calls.append(("remove", repo)))
 
     runner = CliRunner()
+    assert runner.invoke(config, ["env", "list"]).exit_code == 0
+    assert runner.invoke(config, ["env", "set", "org/name", "uv sync"]).exit_code == 0
+    assert runner.invoke(config, ["env", "remove", "org/name"]).exit_code == 0
 
-    result = runner.invoke(cli.basecamp, ["environments", "list"])
-    assert result.exit_code == 0, result.output
-    result = runner.invoke(cli.basecamp, ["environments", "set", "basecamp", "uv sync"])
-    assert result.exit_code == 0, result.output
-    result = runner.invoke(cli.basecamp, ["environments", "remove", "basecamp"])
-    assert result.exit_code == 0, result.output
-
-    assert calls == [("list", "", None), ("set", "basecamp", "uv sync"), ("remove", "basecamp", None)]
+    assert calls == [("list",), ("set", "org/name", "uv sync"), ("remove", "org/name")]
 
 
-def test_environments_without_subcommand_opens_menu(monkeypatch) -> None:
-    calls: list[str] = []
-    monkeypatch.setattr(cli, "run_environments_menu", lambda: calls.append("menu"))
-
-    result = CliRunner().invoke(cli.basecamp, ["environments"])
-
-    assert result.exit_code == 0, result.output
-    assert calls == ["menu"]
-
-
-def test_projects_subcommands_delegate(monkeypatch) -> None:
-    calls: list[tuple[str, str | None]] = []
-
-    monkeypatch.setattr(cli, "execute_project_list", lambda: calls.append(("list", None)))
-    monkeypatch.setattr(cli, "execute_project_add", lambda: calls.append(("add", None)))
-    monkeypatch.setattr(cli, "execute_project_edit", lambda name: calls.append(("edit", name)))
-    monkeypatch.setattr(cli, "execute_project_remove", lambda name: calls.append(("remove", name)))
+def test_config_project_subcommands_delegate(monkeypatch) -> None:
+    calls: list[tuple] = []
+    monkeypatch.setattr(porcelain, "execute_project_list", lambda: calls.append(("list",)))
+    monkeypatch.setattr(porcelain, "execute_project_add", lambda: calls.append(("add",)))
+    monkeypatch.setattr(porcelain, "execute_project_edit", lambda name: calls.append(("edit", name)))
+    monkeypatch.setattr(porcelain, "execute_project_remove", lambda name: calls.append(("remove", name)))
 
     runner = CliRunner()
+    assert runner.invoke(config, ["project", "list"]).exit_code == 0
+    assert runner.invoke(config, ["project", "add"]).exit_code == 0
+    assert runner.invoke(config, ["project", "edit", "demo"]).exit_code == 0
+    assert runner.invoke(config, ["project", "remove", "demo"]).exit_code == 0
 
-    result = runner.invoke(cli.basecamp, ["projects", "list"])
-    assert result.exit_code == 0, result.output
-    result = runner.invoke(cli.basecamp, ["projects", "add"])
-    assert result.exit_code == 0, result.output
-    result = runner.invoke(cli.basecamp, ["projects", "edit", "demo"])
-    assert result.exit_code == 0, result.output
-    result = runner.invoke(cli.basecamp, ["projects", "remove", "demo"])
-    assert result.exit_code == 0, result.output
-
-    assert calls == [("list", None), ("add", None), ("edit", "demo"), ("remove", "demo")]
+    assert calls == [("list",), ("add",), ("edit", "demo"), ("remove", "demo")]
 
 
-def test_projects_without_subcommand_opens_project_menu(monkeypatch) -> None:
+def test_bare_config_sections_open_menus(monkeypatch) -> None:
     calls: list[str] = []
-    monkeypatch.setattr(cli, "run_project_menu", lambda: calls.append("menu"))
+    monkeypatch.setattr(porcelain, "run_project_menu", lambda *_a, **_k: calls.append("project"))
+    monkeypatch.setattr(porcelain, "run_environments_menu", lambda *_a, **_k: calls.append("env"))
 
-    result = CliRunner().invoke(cli.basecamp, ["projects"])
-
-    assert result.exit_code == 0, result.output
-    assert calls == ["menu"]
+    runner = CliRunner()
+    assert runner.invoke(config, ["project"]).exit_code == 0
+    assert runner.invoke(config, ["env"]).exit_code == 0
+    assert calls == ["project", "env"]
 
 
 def test_companion_dashboard_delegates(monkeypatch) -> None:
     calls: list[tuple[str, str, str | None]] = []
-
     monkeypatch.setattr(
         cli,
         "run_companion",
@@ -119,9 +97,9 @@ def test_companion_dashboard_delegates(monkeypatch) -> None:
     assert calls == [("/tmp/snapshot.json", "/tmp/worktree", "/tmp/scratch")]
 
 
-def test_old_cli_routes_are_absent() -> None:
+def test_old_top_level_routes_are_absent() -> None:
     runner = CliRunner()
-
-    result = runner.invoke(cli.basecamp, ["companion", "--snapshot", "snapshot.json", "--cwd", "."])
-    assert result.exit_code != 0
-    assert "No such option" in result.output or "Missing command" in result.output
+    for argv in (["projects"], ["environments"]):
+        result = runner.invoke(cli.basecamp, argv)
+        assert result.exit_code != 0
+        assert "No such command" in result.output

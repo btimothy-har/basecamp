@@ -111,6 +111,10 @@ class Settings:
             data["install_dir"] = install_dir
             data.pop("installed_modules", None)
 
+    def read(self) -> dict[str, Any]:
+        """Return the full config document (``{}`` for missing/corrupt files)."""
+        return self._read()
+
     def get_section(self, name: str) -> Any:
         """Return a top-level config section, or ``{}`` if missing/non-dict.
 
