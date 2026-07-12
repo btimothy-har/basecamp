@@ -36,7 +36,14 @@ export default function (pi: ExtensionAPI): void {
 	// catalog + session surfaces (dispatch/ask/cancel/peer tools, reporter,
 	// widget). Runs for top-level sessions and daemon-spawned agents alike; the
 	// code-review and workstream feature domains consume it via #core/swarm.
-	registerSwarm(pi);
+	// Isolated like a top-level module (extension.ts's degrade-don't-crash rule):
+	// a throw registering the agent surfaces must not skip core's UI/escalate/mode
+	// registered below, so it is contained here rather than failing all of core.
+	try {
+		registerSwarm(pi);
+	} catch (error) {
+		console.error("[basecamp] core swarm primitive failed to register:", error);
+	}
 
 	// Primary-only interactions
 	if (!isSubagent()) {
