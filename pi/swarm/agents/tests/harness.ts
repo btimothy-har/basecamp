@@ -6,7 +6,7 @@ import { afterEach, beforeEach } from "node:test";
 import { resetAgentRoleForTesting } from "#core/agent-role.ts";
 import type { Frame } from "#core/hub/protocol/index.ts";
 import type { WorkspaceState } from "#core/project/workspace/state.ts";
-import type { DaemonConnection } from "../daemon/client.ts";
+import type { DaemonConnection } from "../client.ts";
 
 export interface RegisteredTool {
 	name: string;

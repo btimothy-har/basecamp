@@ -2,8 +2,8 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import type { Frame } from "#core/hub/protocol/index.ts";
 import { PROTOCOL_VERSION } from "#core/hub/protocol/index.ts";
-import { registerAskAgentTool, registerDaemonTools } from "../daemon/tools.ts";
 import { buildAgentTaskText } from "../executor.ts";
+import { registerAskAgentTool, registerDaemonTools } from "../tools.ts";
 import {
 	createMockPi,
 	daemonToolDeps,

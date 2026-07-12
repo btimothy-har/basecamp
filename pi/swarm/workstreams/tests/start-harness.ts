@@ -2,7 +2,7 @@
 
 import type { ExtensionContext, SessionStartEvent } from "@earendil-works/pi-coding-agent";
 import type { WorkspaceState } from "#core/project/workspace/state.ts";
-import type { DaemonClient, WorkstreamDetail } from "../../agents/daemon/client.ts";
+import type { DaemonClient, WorkstreamDetail } from "../../agents/client.ts";
 import type { WorkstreamStartDeps } from "../start.ts";
 
 export function makeWorkstreamDetail(overrides: Partial<WorkstreamDetail> = {}): WorkstreamDetail {

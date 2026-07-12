@@ -3,10 +3,9 @@ import { awaitDaemonConnection, deriveDaemonIdentity, onDaemonConnect, resolveDa
 import { resolveModelAlias } from "#core/model/index.ts";
 import { getWorkspaceState } from "#core/project/workspace/state.ts";
 import { hasInvokedSkill } from "#core/skills/tracker.ts";
-import { basecampExtensionRoot } from "../extension-root.ts";
-import { resolveAgentDepthState } from "../types.ts";
 import { fetchRunSummary } from "./client.ts";
 import { type PeerDeliveryState, registerPeerMessageDeliveryHandler } from "./delivery.ts";
+import { basecampExtensionRoot } from "./extension-root.ts";
 import { registerDaemonReporter } from "./reporter.ts";
 import {
 	type DaemonToolDeps,
@@ -15,6 +14,7 @@ import {
 	registerDaemonTools,
 	registerPeerMessageTools,
 } from "./tools.ts";
+import { resolveAgentDepthState } from "./types.ts";
 import { type ActiveAgentsWidgetController, startActiveAgentsWidget } from "./widget.ts";
 
 // The agent plugin's session surfaces: dispatch/ask/cancel/peer tools, the run

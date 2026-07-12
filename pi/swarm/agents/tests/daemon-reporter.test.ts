@@ -1,10 +1,10 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import type { Frame } from "#core/hub/protocol/index.ts";
-import type { DaemonConnection } from "../daemon/client.ts";
-import { registerAgentSurfaces } from "../daemon/index.ts";
-import { registerDaemonReporter } from "../daemon/reporter.ts";
-import type { DaemonToolDeps } from "../daemon/tools.ts";
+import type { DaemonConnection } from "../client.ts";
+import { registerDaemonReporter } from "../reporter.ts";
+import { registerAgentSurfaces } from "../surfaces.ts";
+import type { DaemonToolDeps } from "../tools.ts";
 import { MockPi } from "./harness.ts";
 import { installReporterEnvHooks, telemetryFrames, waitForFrameCount } from "./reporter-harness.ts";
 

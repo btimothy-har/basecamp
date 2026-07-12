@@ -5,8 +5,8 @@ import { describe, it } from "node:test";
 import { resolveDaemonPaths } from "#core/hub/index.ts";
 import type { Frame } from "#core/hub/protocol/index.ts";
 import { PROTOCOL_VERSION } from "#core/hub/protocol/index.ts";
-import { registerDaemonTools } from "../daemon/tools.ts";
 import { buildAgentTaskText } from "../executor.ts";
+import { registerDaemonTools } from "../tools.ts";
 import {
 	createMockPi,
 	daemonToolDeps,

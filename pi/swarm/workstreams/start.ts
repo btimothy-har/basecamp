@@ -9,7 +9,7 @@ import {
 	type RepoContext,
 	type WorkspaceState,
 } from "#core/project/workspace/state.ts";
-import type { DaemonClient, WorkstreamDetail } from "../agents/daemon/client.ts";
+import type { DaemonClient, WorkstreamDetail } from "../agents/client.ts";
 import { errorMessage } from "../agents/errors.ts";
 import { buildWorkstreamLaunchBrief } from "./brief.ts";
 
@@ -63,13 +63,13 @@ export function defaultWorkstreamStartDeps(getConnection: () => Promise<unknown>
 		waitForWorkspaceState,
 		resolveSocketPath: () => process.env.BASECAMP_DAEMON_UDS ?? resolveDaemonPaths().socketPath,
 		getWorkstreamDetail: async (socketPath, identifier) => {
-			const { getWorkstream } = await import("../agents/daemon/client.ts");
+			const { getWorkstream } = await import("../agents/client.ts");
 			return getWorkstream(socketPath, identifier);
 		},
 		getClient: async () => {
 			const connection = await getConnection();
 			if (!connection) return null;
-			const { createDaemonClient } = await import("../agents/daemon/client.ts");
+			const { createDaemonClient } = await import("../agents/client.ts");
 			return createDaemonClient(connection as Parameters<typeof createDaemonClient>[0]);
 		},
 		enterExploreMode: defaultEnterExploreMode,

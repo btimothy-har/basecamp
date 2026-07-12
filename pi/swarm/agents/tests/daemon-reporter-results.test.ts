@@ -1,14 +1,14 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import type { Frame } from "#core/hub/protocol/index.ts";
-import type { DaemonConnection } from "../daemon/client.ts";
-import { registerDaemonReporter } from "../daemon/reporter.ts";
+import type { DaemonConnection } from "../client.ts";
+import { registerDaemonReporter } from "../reporter.ts";
 import {
 	BASECAMP_RUN_ATTEMPT,
 	BASECAMP_RUN_RESULT_PATH,
 	BASECAMP_RUNNER_MANAGED_RESULT,
 	readRunResultSidecar,
-} from "../daemon/run-result.ts";
+} from "../run-result.ts";
 import { MockPi } from "./harness.ts";
 import {
 	deferred,

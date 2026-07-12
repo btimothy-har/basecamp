@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { buildRunSummaryPath, parseRunSummaryResponse } from "../daemon/view/summary.ts";
+import { buildRunSummaryPath, parseRunSummaryResponse } from "../view/summary.ts";
 
 describe("run summary view", () => {
 	it("encodes root_id and clamps limits in the summary path", () => {

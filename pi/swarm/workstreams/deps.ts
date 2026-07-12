@@ -9,13 +9,8 @@ import {
 	type WorkspaceState,
 	type WorkspaceWorktree,
 } from "#core/project/workspace/state.ts";
-import type { DaemonClient } from "../agents/daemon/client.ts";
-import {
-	getWorkstream,
-	listWorkstreams,
-	type WorkstreamDetail,
-	type WorkstreamSummary,
-} from "../agents/daemon/client.ts";
+import type { DaemonClient } from "../agents/client.ts";
+import { getWorkstream, listWorkstreams, type WorkstreamDetail, type WorkstreamSummary } from "../agents/client.ts";
 import { type HerdrWorkstreamOpenResult, openWorkstreamInHerdr } from "./herdr.ts";
 import { generateWorkstreamName as generateGenericWorkstreamName } from "./name.ts";
 
@@ -62,7 +57,7 @@ export function defaultWorkstreamToolsDeps(getConnection: () => Promise<unknown>
 		getClient: async () => {
 			const connection = await getConnection();
 			if (!connection) return null;
-			const { createDaemonClient } = await import("../agents/daemon/client.ts");
+			const { createDaemonClient } = await import("../agents/client.ts");
 			return createDaemonClient(connection as Parameters<typeof createDaemonClient>[0]);
 		},
 		resolveSocketPath: () => process.env.BASECAMP_DAEMON_UDS ?? resolveDaemonPaths().socketPath,

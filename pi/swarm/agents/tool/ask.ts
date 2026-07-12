@@ -4,9 +4,9 @@ import { Text } from "@earendil-works/pi-tui";
 import type { DaemonConnection } from "#core/hub/index.ts";
 import { buildAgentHandle } from "#core/hub/index.ts";
 import type { WaitResultFrame } from "#core/hub/protocol/index.ts";
-import { discoverAgents } from "../../discovery.ts";
-import { buildAgentLaunchSpec, processEnvForSpawn } from "../../launch.ts";
+import { discoverAgents } from "../discovery.ts";
 import { dispatchWithHandleRetry } from "../dispatch-retry.ts";
+import { buildAgentLaunchSpec, processEnvForSpawn } from "../launch.ts";
 import { createDaemonClient } from "../rpc.ts";
 import {
 	AskAgentParams,

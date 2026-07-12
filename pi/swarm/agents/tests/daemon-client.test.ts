@@ -3,7 +3,7 @@ import { describe, it } from "node:test";
 import { connect } from "#core/hub/index.ts";
 import type { Frame } from "#core/hub/protocol/index.ts";
 import { PROTOCOL_VERSION } from "#core/hub/protocol/index.ts";
-import { createDaemonClient } from "../daemon/client.ts";
+import { createDaemonClient } from "../client.ts";
 import { MockConnection } from "./harness.ts";
 
 class FakeWebSocket {

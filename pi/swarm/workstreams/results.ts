@@ -1,5 +1,5 @@
 import type { WorktreeSetupResult } from "#core/project/workspace/setup.ts";
-import type { WorkstreamDetail, WorkstreamSummary } from "../agents/daemon/client.ts";
+import type { WorkstreamDetail, WorkstreamSummary } from "../agents/client.ts";
 
 export interface LaunchWorkstreamResultDetails {
 	status: "launched" | "carried" | "failed";

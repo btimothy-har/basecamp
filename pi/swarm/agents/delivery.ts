@@ -1,7 +1,7 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { type DaemonConnection, sanitizeDisplayLabel } from "#core/hub/index.ts";
 import { type PeerMessageDeliveryFrame, PROTOCOL_VERSION } from "#core/hub/protocol/index.ts";
-import { errorMessage } from "../errors.ts";
+import { errorMessage } from "./errors.ts";
 
 /** The slice of the daemon-client state that peer-message delivery owns. */
 export interface PeerDeliveryState {

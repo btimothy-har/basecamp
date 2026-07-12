@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import type { RunSummaryAgent, RunSummaryResult } from "../daemon/client.ts";
+import type { RunSummaryAgent, RunSummaryResult } from "../client.ts";
 import {
 	ACTIVE_AGENTS_WIDGET_ID,
 	activeRunningAgents,
@@ -9,7 +9,7 @@ import {
 	renderActiveAgentsWidgetLines,
 	sanitizeWidgetText,
 	startActiveAgentsWidget,
-} from "../daemon/widget.ts";
+} from "../widget.ts";
 
 interface WidgetSetCall {
 	key: string;

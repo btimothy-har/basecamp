@@ -1,4 +1,4 @@
-import type { DaemonClient } from "../agents/daemon/client.ts";
+import type { DaemonClient } from "../agents/client.ts";
 import { defaultWorkstreamToolsDeps, errorMessage, type WorkstreamToolsDeps } from "./deps.ts";
 import { parseSetWorkstreamStatusParams } from "./params.ts";
 import { type SetWorkstreamStatusToolResult, statusTextResult } from "./results.ts";

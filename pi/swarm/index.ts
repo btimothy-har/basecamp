@@ -1,8 +1,8 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { awaitDaemonConnection } from "#core/hub/index.ts";
-import { registerAgentSurfaces } from "./agents/daemon/index.ts";
 import { registerAgentCatalog } from "./agents/index.ts";
 import { registerReviewCommand } from "./agents/review/command.ts";
+import { registerAgentSurfaces } from "./agents/surfaces.ts";
 import { resolveAgentDepthState } from "./agents/types.ts";
 import { registerWorkstreamStartup } from "./workstreams/start.ts";
 import { registerWorkstreamTools } from "./workstreams/tools.ts";

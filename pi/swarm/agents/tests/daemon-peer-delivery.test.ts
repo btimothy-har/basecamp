@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import type { Frame, PeerMessageDeliveryFrame } from "#core/hub/protocol/index.ts";
 import { PROTOCOL_VERSION } from "#core/hub/protocol/index.ts";
-import { formatPeerMessageDeliveryContent, handlePeerMessageDelivery } from "../daemon/delivery.ts";
+import { formatPeerMessageDeliveryContent, handlePeerMessageDelivery } from "../delivery.ts";
 
 function deliveryFrame(overrides: Partial<PeerMessageDeliveryFrame> = {}): PeerMessageDeliveryFrame {
 	return {
