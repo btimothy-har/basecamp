@@ -12,6 +12,12 @@ from dispatch_helpers import _FakePidProcess
 from basecamp.hub.registry import Registry, Waiter
 from basecamp.hub.store import Store
 from basecamp.hub.swarm.process import reconcile_orphaned_runs
+from basecamp.hub.swarm.run_result import (
+    FinalRunResult,
+    RunResultSidecar,
+    run_result_path,
+    write_run_result,
+)
 from basecamp.hub.swarm.service.reaper import (
     DEFAULT_DISCONNECT_GRACE_SECONDS,
     _resolve_disconnect_grace_s,
@@ -251,6 +257,34 @@ def test_reconcile_orphaned_runs_marks_nonterminal_failed(
         assert run["status"] == "failed"
         assert run["result"] is None
         assert run["error"] == "daemon_restart_reconciled"
+
+
+def test_reconcile_orphaned_runs_recovers_completed_from_sidecar_final(tmp_path: Path) -> None:
+    # Regression for #260 review: a runner writes its sidecar `final` before it
+    # exits, so a run left nonterminal by a daemon crash may already hold a
+    # completed result on disk. Restart reconciliation — the only finalizer left
+    # for that run — must honor it rather than clobber it with daemon_restart.
+    store = Store(db_path=tmp_path / "daemon.db")
+    run_id = "run-recovered"
+    agent_id = "agent-recovered"
+    store.create_run(run_id=run_id, agent_id=agent_id, dispatcher_id="root", spec={})
+    write_run_result(
+        run_result_path(agent_id, run_id),
+        RunResultSidecar(
+            run_id=run_id,
+            agent_id=agent_id,
+            attempts=[],
+            final=FinalRunResult(status="ok", result="recovered-result", error=None, retry_count=0),
+        ),
+    )
+
+    reconcile_orphaned_runs(store)
+
+    run = store.get_run(run_id)
+    assert run is not None
+    assert run["status"] == "completed"
+    assert run["result"] == "recovered-result"
+    assert run["error"] is None
 
 
 def test_reconcile_orphaned_runs_kills_verified_runner_group(

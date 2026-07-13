@@ -14,7 +14,7 @@ from pathlib import Path
 from ..frames import DispatchSpec
 from ..registry import Registry
 from ..store import Store
-from .run_result import load_run_result
+from .run_result import load_run_result, run_result_path
 
 ProcessExitHook = Callable[[str], Awaitable[None]]
 RUNNER_MODULE = "basecamp.hub.swarm.runner"
@@ -181,6 +181,44 @@ def terminate_process_group_if_runner(
     terminate_process_group(pgid, escalation_s=escalation_s, poll_s=poll_s)
 
 
+def _sidecar_final_outcome(result_path: str | Path) -> tuple[str, str | None, str | None] | None:
+    """Map a runner's recorded sidecar ``final`` to a terminal outcome, or None.
+
+    Uses the same ok->completed / else->failed mapping as ``handle_result_report``
+    so every finalizer agrees on the terminal state a reported run would reach.
+    Returns None when no ``final`` is recorded.
+    """
+    sidecar = load_run_result(result_path)
+    final = sidecar.final if sidecar else None
+    if final is None:
+        return None
+    status = "completed" if final.status == "ok" else "failed"
+    return status, final.result, final.error
+
+
+def _restart_reconcile_outcome(row: dict[str, object]) -> tuple[str, str | None, str | None]:
+    """Honor a runner's recorded sidecar ``final`` when reconciling at restart.
+
+    A runner writes its final result before it exits, so a run left nonterminal
+    by a daemon crash can already have a completed result on disk that neither
+    the (dead) reaper nor the unprocessed ``result_report`` ever recorded. As the
+    only finalizer left for that run, reconciliation must prefer it — otherwise it
+    reintroduces, via the restart path, the very clobbering the reaper now avoids.
+    Fall back to the generic restart failure only when no ``final`` exists. The
+    original spawn ``HOME`` is not recoverable here (the stored spec env is
+    redacted), so the sidecar is resolved under the daemon's own home: correct
+    when the daemon and dispatcher share a user, and otherwise a safe miss that
+    falls through to the failure below.
+    """
+    agent_id = row.get("agent_id")
+    run_id = row.get("id")
+    if isinstance(agent_id, str) and isinstance(run_id, str):
+        outcome = _sidecar_final_outcome(run_result_path(agent_id, run_id))
+        if outcome is not None:
+            return outcome
+    return "failed", None, "daemon_restart_reconciled"
+
+
 def reconcile_orphaned_runs(store: Store) -> None:
     for row in store.get_nonterminal_runs():
         pgid = row.get("pgid")
@@ -190,11 +228,12 @@ def reconcile_orphaned_runs(store: Store) -> None:
             except OSError:
                 pass
 
+        status, result, error = _restart_reconcile_outcome(row)
         store.set_run_result_if_unset(
             run_id=row["id"],
-            status="failed",
-            result=None,
-            error="daemon_restart_reconciled",
+            status=status,
+            result=result,
+            error=error,
         )
 
 
@@ -211,11 +250,9 @@ def _reap_outcome(exit_code: int, result_path: str | Path) -> tuple[str, str | N
     completed run be recorded as failed. The ``failed`` fallback stays for a
     runner that died before recording any final result.
     """
-    sidecar = load_run_result(result_path)
-    final = sidecar.final if sidecar else None
-    if final is not None:
-        status = "completed" if final.status == "ok" else "failed"
-        return status, final.result, final.error
+    outcome = _sidecar_final_outcome(result_path)
+    if outcome is not None:
+        return outcome
     return (
         "failed",
         None,
