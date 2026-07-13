@@ -89,7 +89,14 @@ class AgentsSchemaMixin:
             connection.execute("ALTER TABLE agents ADD COLUMN session_file TEXT")
 
     def _drop_agents_retired_columns(self, connection: sqlite3.Connection) -> None:
-        """Drop retired columns: product_role (agent-role seam), run_kind (mutative guards)."""
+        """Drop retired columns: product_role (agent-role seam), run_kind (mutative guards).
+
+        ``ALTER TABLE ... DROP COLUMN`` needs SQLite 3.35+. On older engines we skip
+        the drops: both columns are inert (no reader or writer references them), so
+        retaining them is harmless and never worth crash-looping daemon start over.
+        """
+        if sqlite3.sqlite_version_info < (3, 35, 0):
+            return
         columns = connection.execute("PRAGMA table_info(agents)").fetchall()
         names = {column[1] for column in columns}
         if "product_role" in names:

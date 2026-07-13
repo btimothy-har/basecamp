@@ -172,7 +172,6 @@ def _dispatch(
     agent_id: str | None = None,
     agent_handle: str | None = None,
     agent_type: str | None = None,
-    run_kind: str | None = None,
 ) -> dict[str, object]:
     payload: dict[str, object] = {
         "type": "dispatch",
@@ -186,8 +185,6 @@ def _dispatch(
         payload["agent_handle"] = agent_handle
     if agent_type is not None:
         payload["agent_type"] = agent_type
-    if run_kind is not None:
-        payload["run_kind"] = run_kind
 
     websocket.send(json.dumps(payload))
     return json.loads(websocket.recv())

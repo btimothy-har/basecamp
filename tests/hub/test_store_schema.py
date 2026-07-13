@@ -5,6 +5,8 @@ from __future__ import annotations
 import sqlite3
 from pathlib import Path
 
+import pytest
+
 from basecamp.hub.store import Store
 
 
@@ -168,3 +170,81 @@ def test_store_migrates_agent_model_column(tmp_path: Path) -> None:
         columns = {row[1] for row in connection.execute("PRAGMA table_info(agents)").fetchall()}
 
     assert "model" in columns
+
+
+def test_store_remaps_legacy_role_values(tmp_path: Path) -> None:
+    db_path = tmp_path / "daemon.db"
+    with sqlite3.connect(db_path) as connection:
+        connection.execute(
+            """
+            CREATE TABLE agents (
+                id TEXT PRIMARY KEY,
+                parent_id TEXT,
+                sibling_group TEXT,
+                depth INTEGER,
+                role TEXT,
+                session_name TEXT,
+                cwd TEXT,
+                created_at TEXT,
+                last_seen_at TEXT,
+                current_run_id TEXT,
+                agent_handle TEXT
+            )
+            """
+        )
+        connection.executemany(
+            "INSERT INTO agents (id, role, session_name, cwd, agent_handle) VALUES (?, ?, ?, '/tmp', ?)",
+            [
+                ("legacy-session", "session", "s", "handle-session"),
+                ("legacy-agent", "agent", "a", "handle-agent"),
+            ],
+        )
+
+    Store(db_path=db_path)
+
+    with sqlite3.connect(db_path) as connection:
+        roles = dict(connection.execute("SELECT id, role FROM agents").fetchall())
+        user_version = connection.execute("PRAGMA user_version").fetchone()[0]
+
+    # session -> agent (user-facing), agent -> worker (backgrounded). Single-pass:
+    # a former 'session' now reading 'agent' must NOT be re-mapped on to 'worker'.
+    assert roles == {"legacy-session": "agent", "legacy-agent": "worker"}
+    assert user_version == 1
+
+
+def test_store_drops_retired_columns_on_modern_sqlite(tmp_path: Path) -> None:
+    if sqlite3.sqlite_version_info < (3, 35, 0):
+        pytest.skip("ALTER TABLE ... DROP COLUMN requires SQLite 3.35+")
+
+    db_path = tmp_path / "daemon.db"
+    with sqlite3.connect(db_path) as connection:
+        connection.execute(
+            """
+            CREATE TABLE agents (
+                id TEXT PRIMARY KEY,
+                parent_id TEXT,
+                sibling_group TEXT,
+                depth INTEGER,
+                role TEXT,
+                session_name TEXT,
+                cwd TEXT,
+                created_at TEXT,
+                last_seen_at TEXT,
+                current_run_id TEXT,
+                agent_handle TEXT,
+                agent_type TEXT,
+                product_role TEXT,
+                run_kind TEXT,
+                model TEXT
+            )
+            """
+        )
+
+    Store(db_path=db_path)
+
+    with sqlite3.connect(db_path) as connection:
+        columns = {row[1] for row in connection.execute("PRAGMA table_info(agents)").fetchall()}
+
+    assert "product_role" not in columns
+    assert "run_kind" not in columns
+    assert {"repo", "worktree_label"} <= columns

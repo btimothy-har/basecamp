@@ -138,6 +138,7 @@ describe("deriveDaemonIdentity", () => {
 		const priorDepth = process.env.BASECAMP_AGENT_DEPTH;
 		const priorAgentId = process.env.BASECAMP_AGENT_ID;
 		const priorAgentHandle = process.env.BASECAMP_AGENT_HANDLE;
+		const priorUserFacing = process.env.BASECAMP_USER_FACING;
 
 		process.env.BASECAMP_AGENT_DEPTH = "1";
 		process.env.BASECAMP_AGENT_ID = "agent-spawned";
@@ -156,6 +157,8 @@ describe("deriveDaemonIdentity", () => {
 			else process.env.BASECAMP_AGENT_ID = priorAgentId;
 			if (priorAgentHandle === undefined) delete process.env.BASECAMP_AGENT_HANDLE;
 			else process.env.BASECAMP_AGENT_HANDLE = priorAgentHandle;
+			if (priorUserFacing === undefined) delete process.env.BASECAMP_USER_FACING;
+			else process.env.BASECAMP_USER_FACING = priorUserFacing;
 		}
 	});
 });

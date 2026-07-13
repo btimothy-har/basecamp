@@ -205,3 +205,42 @@ def test_upsert_agent_rejects_fallback_handle_collision(tmp_path: Path) -> None:
             session_name="session-b",
             cwd="/tmp/b",
         )
+
+
+def test_upsert_agent_persists_facets_and_preserves_them_on_null(tmp_path: Path) -> None:
+    db_path = tmp_path / "daemon.db"
+    store = Store(db_path=db_path)
+
+    store.upsert_agent(
+        agent_id="agent-1",
+        parent_id=None,
+        sibling_group="sg",
+        depth=0,
+        role="agent",
+        session_name="session-a",
+        cwd="/tmp/a",
+        repo="acme/widgets",
+        worktree_label="copilot/brave-otter-quill",
+    )
+
+    with sqlite3.connect(db_path) as connection:
+        stored = connection.execute("SELECT repo, worktree_label FROM agents WHERE id = 'agent-1'").fetchone()
+    assert stored == ("acme/widgets", "copilot/brave-otter-quill")
+
+    # A lightweight re-register (e.g. a result-report) sends no facets; the stored
+    # values must survive rather than being clobbered to NULL.
+    store.upsert_agent(
+        agent_id="agent-1",
+        parent_id=None,
+        sibling_group="sg",
+        depth=0,
+        role="worker",
+        session_name="session-a",
+        cwd="/tmp/a",
+        repo=None,
+        worktree_label=None,
+    )
+
+    with sqlite3.connect(db_path) as connection:
+        preserved = connection.execute("SELECT repo, worktree_label FROM agents WHERE id = 'agent-1'").fetchone()
+    assert preserved == ("acme/widgets", "copilot/brave-otter-quill")
