@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import sqlite3
 from pathlib import Path
 
 from basecamp.hub.store import Store
@@ -386,3 +387,38 @@ def test_get_root_agent_directory_handles_cycle_and_missing_parent_defensively(t
 
     rows = store.get_root_agent_directory(requester_node_id="lost", awaitable=False)
     assert [row["agent_id"] for row in rows] == ["lost"]
+
+
+def test_get_root_agent_directory_soft_expires_stale_disconnected_agents(tmp_path: Path) -> None:
+    db_path = tmp_path / "daemon.db"
+    store = Store(db_path=db_path)
+
+    for agent_id, parent in (("supervisor", None), ("fresh-child", "supervisor"), ("stale-child", "supervisor")):
+        store.upsert_agent(
+            agent_id=agent_id,
+            parent_id=parent,
+            sibling_group="supervisor",
+            depth=0 if parent is None else 1,
+            role="worker",
+            session_name=agent_id,
+            cwd="/tmp",
+            agent_handle=f"{agent_id}-handle",
+        )
+
+    # Age stale-child's last-seen well beyond the 24h soft-expiry TTL.
+    with sqlite3.connect(db_path) as connection:
+        connection.execute(
+            "UPDATE agents SET last_seen_at = ? WHERE id = ?",
+            ("2000-01-01T00:00:00+00:00", "stale-child"),
+        )
+
+    visible = {row["agent_id"] for row in store.get_root_agent_directory(requester_node_id="supervisor")}
+    assert "fresh-child" in visible
+    assert "stale-child" not in visible
+
+    # A live connection exempts an otherwise-expired row from the roster.
+    with_live = {
+        row["agent_id"]
+        for row in store.get_root_agent_directory(requester_node_id="supervisor", live_node_ids={"stale-child"})
+    }
+    assert "stale-child" in with_live

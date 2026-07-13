@@ -239,6 +239,7 @@ def create_app(
                         frame=inbound,
                         websocket=websocket,
                         store=store,
+                        registry=registry,
                         requester_node_id=parsed.node_id,
                     )
                     continue
@@ -383,13 +384,19 @@ async def _handle_list_agents(
     frame: ListAgentsFrame,
     websocket: WebSocket,
     store: Store,
+    registry: Registry,
     requester_node_id: str,
 ) -> None:
     result = ListAgentsResultFrame(
         type="list_agents_result",
         v=PROTOCOL_VERSION,
         request_id=frame.request_id,
-        agents=await list_agents(frame=frame, store=store, requester_node_id=requester_node_id),
+        agents=await list_agents(
+            frame=frame,
+            store=store,
+            requester_node_id=requester_node_id,
+            live_node_ids=registry.live_node_ids(),
+        ),
     )
     await websocket.send_json(serialize_frame(result))
 
