@@ -83,11 +83,7 @@ def _hash_report_token(report_token: str) -> str:
 
 def _metadata_mismatches(*, existing: dict[str, Any], frame: DispatchFrame) -> bool:
     existing_agent_type = existing.get("agent_type")
-    if isinstance(existing_agent_type, str) and frame.agent_type and existing_agent_type != frame.agent_type:
-        return True
-
-    existing_run_kind = existing.get("run_kind")
-    return bool(isinstance(existing_run_kind, str) and frame.run_kind and existing_run_kind != frame.run_kind)
+    return bool(isinstance(existing_agent_type, str) and frame.agent_type and existing_agent_type != frame.agent_type)
 
 
 def _is_dispatchable_agent(agent: dict[str, Any]) -> bool:
@@ -232,7 +228,6 @@ async def prepare_dispatch(
                 cwd=frame.spec.cwd,
                 agent_handle=frame.agent_handle,
                 agent_type=frame.agent_type,
-                run_kind=frame.run_kind,
                 model=frame.model or "default",
             )
         else:
@@ -247,7 +242,6 @@ async def prepare_dispatch(
                 cwd=frame.spec.cwd,
                 agent_handle=resolved_handle,
                 agent_type=frame.agent_type,
-                run_kind=frame.run_kind,
                 model=frame.model or "default",
             )
     except DuplicateAgentHandleError:

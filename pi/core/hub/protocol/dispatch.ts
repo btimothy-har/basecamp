@@ -7,7 +7,6 @@ export interface DispatchFrame {
 	agent_id?: string;
 	agent_handle?: string | null;
 	agent_type?: string | null;
-	run_kind?: string | null;
 	model?: string | null;
 	spec: {
 		argv: string[];

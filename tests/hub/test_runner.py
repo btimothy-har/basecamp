@@ -186,7 +186,6 @@ def test_attempt_proxy_forwards_dispatch_without_inline_daemon_recv(tmp_path: Pa
         agent_id="ask-agent-1",
         agent_handle="amber-fox-a1b2c3",
         agent_type="ask",
-        run_kind="ad-hoc",
         model="default",
         spec=DispatchSpec(
             argv=["pi", "answer this"],

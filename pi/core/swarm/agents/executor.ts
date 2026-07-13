@@ -8,7 +8,7 @@
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import { type AgentConfig, getAgentRunKind, getAgentToolAllowlist } from "./types.ts";
+import { type AgentConfig, getAgentToolAllowlist } from "./types.ts";
 
 const AGENT_BASE = path.join(os.tmpdir(), "basecamp-agents");
 const TASK_ARG_LIMIT = 8000;
@@ -120,8 +120,6 @@ export function buildPiArgs(
 
 	args.push("--no-prompt-templates");
 
-	if (getAgentRunKind(agent) !== "mutative") args.push("--read-only");
-
 	const effectivePrompt = agent?.systemPrompt ?? null;
 
 	if (effectivePrompt) {
@@ -130,7 +128,7 @@ export function buildPiArgs(
 		args.push("--agent-prompt", promptFile);
 	}
 
-	const tools = [...new Set([...getAgentToolAllowlist(agent), ...opts.extensionTools])];
+	const tools = [...new Set([...getAgentToolAllowlist(), ...opts.extensionTools])];
 	args.push("--tools", tools.join(","));
 
 	const taskText = buildAgentTaskText(task);

@@ -36,7 +36,5 @@ async def list_agents(
             values["task"] = row["task"]
         if row.get("agent_type") is not None:
             values["agent_type"] = row["agent_type"]
-        if row.get("run_kind") is not None:
-            values["run_kind"] = row["run_kind"]
         items.append(ListAgentItem(**values))
     return items

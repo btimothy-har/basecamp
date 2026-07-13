@@ -26,7 +26,6 @@ class AgentsSchemaMixin:
                 current_run_id TEXT,
                 agent_handle TEXT,
                 agent_type TEXT,
-                run_kind TEXT,
                 model TEXT,
                 session_file TEXT,
                 repo TEXT,
@@ -41,7 +40,7 @@ class AgentsSchemaMixin:
         self._ensure_agents_session_file_column(connection)
         self._ensure_agents_facet_columns(connection)
         self._migrate_agents_role_values(connection)
-        self._drop_agents_product_role_column(connection)
+        self._drop_agents_retired_columns(connection)
 
     def _ensure_agents_current_run_id_column(self, connection: sqlite3.Connection) -> None:
         columns = connection.execute("PRAGMA table_info(agents)").fetchall()
@@ -76,8 +75,6 @@ class AgentsSchemaMixin:
         names = {column[1] for column in columns}
         if "agent_type" not in names:
             connection.execute("ALTER TABLE agents ADD COLUMN agent_type TEXT")
-        if "run_kind" not in names:
-            connection.execute("ALTER TABLE agents ADD COLUMN run_kind TEXT")
 
     def _ensure_agents_model_column(self, connection: sqlite3.Connection) -> None:
         columns = connection.execute("PRAGMA table_info(agents)").fetchall()
@@ -91,12 +88,14 @@ class AgentsSchemaMixin:
         if "session_file" not in names:
             connection.execute("ALTER TABLE agents ADD COLUMN session_file TEXT")
 
-    def _drop_agents_product_role_column(self, connection: sqlite3.Connection) -> None:
-        """Drop the retired product_role column (removed with the agent-role seam)."""
+    def _drop_agents_retired_columns(self, connection: sqlite3.Connection) -> None:
+        """Drop retired columns: product_role (agent-role seam), run_kind (mutative guards)."""
         columns = connection.execute("PRAGMA table_info(agents)").fetchall()
         names = {column[1] for column in columns}
         if "product_role" in names:
             connection.execute("ALTER TABLE agents DROP COLUMN product_role")
+        if "run_kind" in names:
+            connection.execute("ALTER TABLE agents DROP COLUMN run_kind")
 
     def _ensure_agents_facet_columns(self, connection: sqlite3.Connection) -> None:
         columns = connection.execute("PRAGMA table_info(agents)").fetchall()

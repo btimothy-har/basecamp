@@ -75,7 +75,6 @@ describe("dispatch_agent", () => {
 			assert.match(outbound.agent_handle ?? "", /^[a-z]+-[a-z]+-[0-9a-f]{6}$/);
 			assert.notEqual(outbound.agent_handle, outbound.agent_id);
 			assert.equal(outbound.agent_type, "ad-hoc");
-			assert.equal(outbound.run_kind, "ad-hoc");
 			assert.equal(outbound.model, "anthropic/claude-sonnet");
 
 			connection.emit({

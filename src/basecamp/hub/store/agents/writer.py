@@ -23,7 +23,6 @@ class AgentsWriterMixin:
         cwd: str,
         agent_handle: str | None = None,
         agent_type: str | None = None,
-        run_kind: str | None = None,
         model: str | None = None,
         session_file: str | None = None,
         repo: str | None = None,
@@ -36,7 +35,7 @@ class AgentsWriterMixin:
             connection.execute("BEGIN IMMEDIATE")
             existing = connection.execute(
                 """
-                SELECT agent_handle, agent_type, run_kind, model, sibling_group, session_file, repo, worktree_label
+                SELECT agent_handle, agent_type, model, sibling_group, session_file, repo, worktree_label
                 FROM agents
                 WHERE id = ?
                 """,
@@ -44,15 +43,13 @@ class AgentsWriterMixin:
             ).fetchone()
             stored_handle = existing[0] if existing is not None else None
             stored_agent_type = existing[1] if existing is not None else None
-            stored_run_kind = existing[2] if existing is not None else None
-            stored_model = existing[3] if existing is not None else None
-            stored_sibling_group = existing[4] if existing is not None else None
-            stored_session_file = existing[5] if existing is not None else None
-            stored_repo = existing[6] if existing is not None else None
-            stored_worktree_label = existing[7] if existing is not None else None
+            stored_model = existing[2] if existing is not None else None
+            stored_sibling_group = existing[3] if existing is not None else None
+            stored_session_file = existing[4] if existing is not None else None
+            stored_repo = existing[5] if existing is not None else None
+            stored_worktree_label = existing[6] if existing is not None else None
             next_handle = agent_handle or stored_handle or _fallback_agent_handle(agent_id)
             next_agent_type = agent_type or stored_agent_type
-            next_run_kind = run_kind or stored_run_kind
             next_model = model or stored_model
             next_sibling_group = sibling_group or stored_sibling_group
             next_session_file = session_file or stored_session_file
@@ -74,13 +71,12 @@ class AgentsWriterMixin:
                         last_seen_at,
                         agent_handle,
                         agent_type,
-                        run_kind,
                         model,
                         session_file,
                         repo,
                         worktree_label
                     )
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     ON CONFLICT(id)
                     DO UPDATE SET
                         parent_id = excluded.parent_id,
@@ -92,7 +88,6 @@ class AgentsWriterMixin:
                         last_seen_at = excluded.last_seen_at,
                         agent_handle = excluded.agent_handle,
                         agent_type = excluded.agent_type,
-                        run_kind = excluded.run_kind,
                         model = excluded.model,
                         session_file = excluded.session_file,
                         repo = excluded.repo,
@@ -110,7 +105,6 @@ class AgentsWriterMixin:
                         now,
                         next_handle,
                         next_agent_type,
-                        next_run_kind,
                         next_model,
                         next_session_file,
                         next_repo,

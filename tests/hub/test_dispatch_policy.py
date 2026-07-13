@@ -126,7 +126,6 @@ def test_dispatch_retasks_terminal_agent_by_handle(tmp_path: Path) -> None:
                 agent_id=agent_id,
                 agent_handle=handle,
                 agent_type="scout",
-                run_kind="named-read-only",
             )
             assert first_ack["status"] == "spawned"
 
@@ -146,7 +145,6 @@ def test_dispatch_retasks_terminal_agent_by_handle(tmp_path: Path) -> None:
                 spec=_dispatch_spec(tmp_path),
                 agent_handle=handle,
                 agent_type="scout",
-                run_kind="named-read-only",
             )
 
         assert second_ack == {
@@ -164,7 +162,6 @@ def test_dispatch_retasks_terminal_agent_by_handle(tmp_path: Path) -> None:
         assert agent is not None
         assert agent["current_run_id"] == "run-retask-second"
         assert agent["agent_type"] == "scout"
-        assert agent["run_kind"] == "named-read-only"
     finally:
         _stop_daemon(server, thread, uds_path)
 
@@ -188,7 +185,6 @@ def test_dispatch_rejects_retask_handle_from_other_root(tmp_path: Path) -> None:
                 agent_id=agent_id,
                 agent_handle=handle,
                 agent_type="scout",
-                run_kind="named-read-only",
             )
             assert first_ack["status"] == "spawned"
 
@@ -208,7 +204,6 @@ def test_dispatch_rejects_retask_handle_from_other_root(tmp_path: Path) -> None:
                 spec=_dispatch_spec(tmp_path),
                 agent_handle=handle,
                 agent_type="scout",
-                run_kind="named-read-only",
             )
 
         assert second_ack == {
@@ -245,7 +240,6 @@ def test_dispatch_rejects_active_retask_by_handle(tmp_path: Path) -> None:
                 agent_id=agent_id,
                 agent_handle=handle,
                 agent_type="scout",
-                run_kind="named-read-only",
             )
             second_ack = _dispatch(
                 websocket,
@@ -253,7 +247,6 @@ def test_dispatch_rejects_active_retask_by_handle(tmp_path: Path) -> None:
                 spec=_dispatch_spec(tmp_path),
                 agent_handle=handle,
                 agent_type="scout",
-                run_kind="named-read-only",
             )
 
         assert first_ack["status"] == "spawned"
@@ -287,7 +280,6 @@ def test_dispatch_rejects_agent_type_change_for_handle(tmp_path: Path) -> None:
                 agent_id=f"agent-{uuid.uuid4()}",
                 agent_handle=handle,
                 agent_type="scout",
-                run_kind="named-read-only",
             )
             assert first_ack["status"] == "spawned"
 
@@ -307,7 +299,6 @@ def test_dispatch_rejects_agent_type_change_for_handle(tmp_path: Path) -> None:
                 spec=_dispatch_spec(tmp_path),
                 agent_handle=handle,
                 agent_type="worker",
-                run_kind="mutative",
             )
 
         assert second_ack == {

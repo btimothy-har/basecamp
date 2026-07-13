@@ -113,7 +113,6 @@ export function registerAskAgentTool(
 					agentId,
 					agentHandle,
 					agentType: "ask",
-					runKind: plan.runKind,
 					model: plan.model ?? "default",
 					argv: plan.args.slice(0, -1),
 					task: taskSpec,

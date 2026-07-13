@@ -146,7 +146,6 @@ export function registerReviewCommand(pi: ExtensionAPI, deps: ReviewCommandDeps 
 							agentId,
 							agentHandle,
 							agentType: "review",
-							runKind: plan.runKind,
 							model: plan.model ?? "default",
 							argv: plan.args.slice(0, -1),
 							task: taskSpec,

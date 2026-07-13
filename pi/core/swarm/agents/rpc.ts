@@ -18,7 +18,6 @@ export interface DaemonDispatchFrameOptions {
 	agentId: string;
 	agentHandle: string;
 	agentType: string;
-	runKind: string;
 	model?: string | null;
 	argv: string[];
 	task: string;
@@ -130,7 +129,6 @@ export function createDaemonClient(connection: DaemonConnection): DaemonClient {
 				agent_id: input.agentId,
 				agent_handle: input.agentHandle,
 				agent_type: input.agentType,
-				run_kind: input.runKind,
 				model: input.model ?? null,
 				spec: {
 					argv: input.argv,
