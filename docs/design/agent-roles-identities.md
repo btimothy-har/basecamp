@@ -88,17 +88,20 @@ The distinction is **user-facing vs. backgrounded**, and it is founded on an **e
 Delete the whole seam: `pi/core/agent-role.ts` (provider registry + `resolveAgentRoleOverride` + `resetAgentRoleForTesting`), the `product_role` column, its tier-1 read in `identity.ts:71`, the sole registrant at `pi/workstreams/start.ts:255`, and the associated tests. #244's two consumers:
 
 1. **Daemon identity display label** → gone. The roster shows `kind` + facets instead; there is no `"workstream_agent"` label.
-2. **Worktree reuse on handoff** — the substantive one #244 parked, now answered by the **assignment model** (§6.1) rather than a role label. `shouldReuseActiveWorktreeForHandoff(agentRole, activeWorktree)` (`pi/tasks/workflows/handoff/index.ts:235`) today returns `agentRole === "workstream_agent" && activeWorktree !== null`, called with `resolveAgentRoleOverride()` (`:261`). Replace the role-label read with the agent's real **assignment state**: an unassigned agent gets its execution worktree on handoff as today; a workstream-assigned agent operates in its assigned worktree. Critically, an **already-assigned agent that a handoff would give a *second* assignment does not silently reuse or re-pick — it warns/fails** (§6.1).
+2. **Worktree reuse on handoff** — the substantive one #244 parked, now answered by the **assignment model** (§6.1) rather than a role label. `shouldReuseActiveWorktreeForHandoff(agentRole, activeWorktree)` (`pi/tasks/workflows/handoff/index.ts:235`) today returns `agentRole === "workstream_agent" && activeWorktree !== null`, called with `resolveAgentRoleOverride()` (`:261`). Replace the role-label read with the agent's real **assignment state**: a workstream-assigned agent reuses its assigned worktree on handoff; a non-assigned agent gets the worktree flow as today. Handoff itself never warns — the launch-time guards (immutable assignment, no double-live-instance) live in §6.1.
 
 This diverges from #244's plain deletion *and* from its "no distinction" thesis: the workstream distinction is real and kept — but it lives in `workstream_agents`, not a free-text label only one launcher ever set.
 
-### 6.1 Assignment model & the registration guard
+### 6.1 Assignment model & the launch guard
 
-`--workstream` is kept **as-is**: it **assigns** an agent to a workstream at launch, and the agent operates in that workstream's worktree. Assignment is the coordination unit that replaces the dropped mutative/solo guard (§7).
+`--workstream` is kept **as-is**: it **assigns** an agent to a workstream at its initial launch, and the agent operates in that workstream's worktree. The assignment is a durable property of the agent — workstreams stay multi-agent/additive (one workstream holds many agents; AGENTS.md), but each *agent* carries one.
 
-The rule: **an agent has at most one active workstream/worktree assignment.** If an already-registered/assigned agent is handed a *new* one — a re-`--workstream` launch into a different workstream, or a plan handoff that would spin up a second worktree while it is already in one — the daemon **warns/fails** rather than silently reusing or creating a second. Re-entering the **same** assignment (reconnect, reload) is idempotent — the daemon already upserts — and is not a conflict.
+Two protections, both at the **pi launch / register handshake** — never in normal operation:
 
-*(Two boundaries pending confirmation, §12: that the guard is strictly agent-side — one assignment per agent, workstreams staying multi-agent/additive per AGENTS.md — and the exact reconnect-vs-new-assignment line.)*
+- **Set-once assignment.** The originally assigned workstream is **immutable**: re-launch and re-registration must **not mutate** it. The register upsert preserves it — the writer already keeps prior `agent_handle`/`agent_type`/`run_kind`/`model` when the incoming value is null, and the assignment joins that preserve-on-conflict set.
+- **No double-live-instance.** Launching an agent whose id **already holds a live connection** in the daemon registry warns/fails at register — you don't run one agent twice. A persisted-but-idle row with no live connection is a normal reconnect / re-task target, not a conflict.
+
+Everything else is silent and normal: a first launch, a brand-new agent's assignment, and a same-session reconnect/reload (which upserts the same row) never warn.
 
 ## 7. Dropping mutative & its guards
 
@@ -129,7 +132,7 @@ The scoping lenses (follow-up) filter overlay-3's roster by the facets from §5 
 | Mesh boundary | **Open mesh + lenses** (view-side scoping) | *Repo/workstream deny-rules on contact* — walls the mesh the product deliberately opened. |
 | `kind` foundation | **Explicit `BASECAMP_USER_FACING` flag** | *json-mode / `hasUI`* — a rendering proxy that misclassifies headless top-level runs. *Pure daemon-spawned inference* — implicit; the launcher already knows and can just say so. |
 | `product_role` | **Delete + reberth** on workstream membership | *Plain-delete (#244 as written)* — loses the "is-ws-agent" signal. *Repurpose as a filter key* — vestigial, session-only, free-text. |
-| Handoff / assignment | **One active assignment per agent; a second warns/fails** (keep `--workstream`) | *Silent reuse* (an earlier collapse here) — hides a real conflict. *Launch-agnostic collapse (#244's thesis)* — drops the workstream assignment the model now depends on. |
+| Workstream assignment | **Set-once / immutable; guarded at pi launch** (keep `--workstream`) | *Mutate-on-re-launch* — silently re-homes an agent. *Launch-agnostic collapse (#244's thesis)* — drops the assignment the model depends on. *One-agent-per-workstream* — workstreams stay multi-agent/additive. |
 | Column name | **`role` → `kind`** (values `agent|worker`) | *Keep `role`* — lower churn, but `role="agent"` reads oddly and the two-role collision only dissolves, it doesn't clarify. |
 | Mutative guards | **Drop entirely** | *Keep* — pre-mesh cruft; blocks the `worker`-name reuse and adds serialization the new model doesn't want. |
 | Expiry | **Soft, single TTL, row retained** | *Per-kind TTLs* — unneeded complexity. *Hard-delete* — loses observability history. |
@@ -150,8 +153,7 @@ The scoping lenses (follow-up) filter overlay-3's roster by the facets from §5 
 - **(b) Keep a distinct `attended` (`hasUI`) boolean** separate from `kind`, or is `kind` enough for the dashboard's "human watching now" lens?
 - **(c) The TTL value** — a concrete default, and a config knob vs. a constant.
 - **(d) Row migration** — remap `role→kind` and drop `product_role`/`run_kind` in one shot at daemon start vs. lazily.
-- **(e) The assignment guard's shape** (§6.1) — strictly agent-side (one active assignment per agent; workstreams stay multi-agent/additive per AGENTS.md)?
-- **(f) The reconnect-vs-new-assignment boundary** (§6.1) — what distinguishes idempotent re-entry into the same assignment from a warn/fail second assignment.
+- **(e) Warn vs. hard-fail** on a double-live-instance launch (§6.1) — surface-and-continue, or block the launch outright.
 
 ## 13. Sequencing (green at every step)
 
