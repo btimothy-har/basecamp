@@ -98,7 +98,7 @@ This diverges from #244's plain deletion *and* from its "no distinction" thesis:
 
 Two protections, both at the **pi launch / register handshake** — never in normal operation:
 
-- **Set-once assignment.** The originally assigned workstream is **immutable**: re-launch and re-registration must **not mutate** it. The register upsert preserves it — the writer already keeps prior `agent_handle`/`agent_type`/`run_kind`/`model` when the incoming value is null, and the assignment joins that preserve-on-conflict set.
+- **Set-once assignment.** An agent's workstream membership (`workstream_agents`, §5) is written once at its first `--workstream` launch and is **immutable** — re-launch/re-registration must **not re-home it** to another workstream. One agent carries one membership; the additive model already "never overwrites" (AGENTS.md), so this is consistent with it. The `agents`-row upsert updates mutable identity columns but never touches the membership.
 - **No double-live-instance.** Launching an agent whose id **already holds a live connection** in the daemon registry warns/fails at register — you don't run one agent twice. A persisted-but-idle row with no live connection is a normal reconnect / re-task target, not a conflict.
 
 Everything else is silent and normal: a first launch, a brand-new agent's assignment, and a same-session reconnect/reload (which upserts the same row) never warn.
