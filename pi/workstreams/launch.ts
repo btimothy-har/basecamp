@@ -1,11 +1,11 @@
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { copilotWorktreeTarget } from "#core/git/worktrees/target.ts";
 import type { WorkspaceWorktree } from "#core/project/workspace/state.ts";
-import type { WorkstreamDetail } from "#core/swarm/agents/client.ts";
 import { defaultWorkstreamToolsDeps, errorMessage, type WorkstreamToolsDeps } from "./deps.ts";
 import { parseLaunchWorkstreamParams } from "./params.ts";
 import { buildNextStep, herdrToSummary, openHerdr, provisionWorktree, resultWorktree, runSetup } from "./provision.ts";
-import { failedLaunchDetails, type LaunchWorkstreamToolResult, launchTextResult } from "./results.ts";
+import { resolveWorkstreamDetail } from "./resolve.ts";
+import { failedDetails, type LaunchWorkstreamToolResult, toolResult } from "./results.ts";
 
 /**
  * launch_workstream — stage execution for an EXISTING workstream: provision the
@@ -22,16 +22,16 @@ export async function executeLaunchWorkstream(
 ): Promise<LaunchWorkstreamToolResult> {
 	const parsed = parseLaunchWorkstreamParams(params);
 	if (!parsed.ok) {
-		return launchTextResult(
-			failedLaunchDetails(parsed.message, "Call launch_workstream again with a workstream id or slug."),
+		return toolResult(
+			failedDetails(parsed.message, "Call launch_workstream again with a workstream id or slug."),
 			true,
 		);
 	}
 
 	const workspace = deps.getWorkspaceState();
 	if (!workspace?.repo?.isRepo || !workspace.repo.root) {
-		return launchTextResult(
-			failedLaunchDetails(
+		return toolResult(
+			failedDetails(
 				"launch_workstream requires a current git repository workspace.",
 				"Open a repository-backed Basecamp workspace, then call launch_workstream again.",
 			),
@@ -41,31 +41,27 @@ export async function executeLaunchWorkstream(
 
 	const repo = workspace.repo.name;
 	const repoRoot = workspace.repo.root;
-	const socketPath = deps.resolveSocketPath();
 	const identifier = parsed.value.workstream;
 
-	let detail: WorkstreamDetail | null;
-	try {
-		detail = await deps.getWorkstreamDetail(socketPath, identifier);
-	} catch (err) {
-		return launchTextResult(
-			failedLaunchDetails(
-				`Could not resolve workstream "${identifier}": ${errorMessage(err)}`,
-				"Check the workstream id or slug with list_workstreams, then call launch_workstream again.",
-			),
-			true,
-		);
+	const resolved = await resolveWorkstreamDetail(deps, identifier);
+	if (!resolved.ok) {
+		return resolved.reason === "error"
+			? toolResult(
+					failedDetails(
+						`Could not resolve workstream "${identifier}": ${resolved.message}`,
+						"Check the workstream id or slug with list_workstreams, then call launch_workstream again.",
+					),
+					true,
+				)
+			: toolResult(
+					failedDetails(
+						resolved.message,
+						"Create it first with create_workstream, then call launch_workstream with its id or slug.",
+					),
+					true,
+				);
 	}
-	if (!detail?.slug) {
-		return launchTextResult(
-			failedLaunchDetails(
-				`No workstream found for "${identifier}".`,
-				"Create it first with create_workstream, then call launch_workstream with its id or slug.",
-			),
-			true,
-		);
-	}
-
+	const detail = resolved.detail;
 	const slug = detail.slug;
 	const worktreeTarget = copilotWorktreeTarget(parsed.value.worktreeSlug ?? detail.label ?? slug, slug);
 
@@ -74,8 +70,8 @@ export async function executeLaunchWorkstream(
 	try {
 		existingWorktrees = await deps.listWorkspaceWorktrees();
 	} catch (err) {
-		return launchTextResult(
-			failedLaunchDetails(
+		return toolResult(
+			failedDetails(
 				`Could not list existing worktrees: ${errorMessage(err)}`,
 				"Fix worktree listing for this repository, then call launch_workstream again.",
 			),
@@ -83,8 +79,8 @@ export async function executeLaunchWorkstream(
 		);
 	}
 	if (worktreeTarget.branchName && existingWorktrees.some((wt) => wt.branch === worktreeTarget.branchName)) {
-		return launchTextResult(
-			failedLaunchDetails(
+		return toolResult(
+			failedDetails(
 				`The branch ${worktreeTarget.branchName} is already checked out in another worktree for this repo.`,
 				"Call launch_workstream again with a distinct worktreeSlug so the initial branch name is not already checked out.",
 			),
@@ -102,8 +98,8 @@ export async function executeLaunchWorkstream(
 		worktreeTarget.branchName,
 	);
 	if (provisionError) {
-		return launchTextResult(
-			failedLaunchDetails(
+		return toolResult(
+			failedDetails(
 				`Failed to provision worktree ${worktreeTarget.worktreeLabel}: ${provisionError}`,
 				"Fix worktree provisioning, then retry launch_workstream with the same workstream identifier.",
 			),
@@ -115,7 +111,7 @@ export async function executeLaunchWorkstream(
 	const herdrResult = await openHerdr(deps, pi, workspace, ctx, worktree);
 	const nextStep = buildNextStep(herdrResult, worktree, slug);
 
-	return launchTextResult({
+	return toolResult({
 		status: "launched",
 		message: `Workstream "${detail.label ?? slug}" launched in ${repo}.`,
 		id: detail.id ?? undefined,

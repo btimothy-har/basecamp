@@ -74,7 +74,7 @@ class WorkstreamsSchemaMixin:
         connection.execute(
             """
             INSERT INTO workstream_versions (workstream_id, version, label, brief, constraints, created_at)
-            SELECT w.id, w.version, w.label, w.brief, w.constraints, w.updated_at
+            SELECT w.id, w.version, w.label, w.brief, w.constraints, w.created_at
             FROM workstreams AS w
             WHERE NOT EXISTS (
                 SELECT 1 FROM workstream_versions AS v

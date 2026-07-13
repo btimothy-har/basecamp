@@ -1,14 +1,15 @@
-import type { DaemonClient, WorkstreamDetail } from "#core/swarm/agents/client.ts";
+import type { DaemonClient } from "#core/swarm/agents/client.ts";
 import { defaultWorkstreamToolsDeps, errorMessage, type WorkstreamToolsDeps } from "./deps.ts";
 import { parseEditWorkstreamParams } from "./params.ts";
-import { type EditWorkstreamToolResult, editTextResult } from "./results.ts";
+import { resolveWorkstreamDetail } from "./resolve.ts";
+import { type EditWorkstreamToolResult, toolResult } from "./results.ts";
 
 function failed(
 	message: string,
 	nextStep: string,
 	status: "not_found" | "failed" = "failed",
 ): EditWorkstreamToolResult {
-	return editTextResult({ status, message, next_step: nextStep }, true);
+	return toolResult({ status, message, next_step: nextStep }, true);
 }
 
 /**
@@ -36,25 +37,21 @@ export async function executeEditWorkstream(
 		);
 	}
 
-	const socketPath = deps.resolveSocketPath();
 	const identifier = parsed.value.workstream;
-
-	let detail: WorkstreamDetail | null;
-	try {
-		detail = await deps.getWorkstreamDetail(socketPath, identifier);
-	} catch (err) {
-		return failed(
-			`Could not resolve workstream "${identifier}": ${errorMessage(err)}`,
-			"Check the id or slug with list_workstreams, then call edit_workstream again.",
-		);
+	const resolved = await resolveWorkstreamDetail(deps, identifier);
+	if (!resolved.ok) {
+		return resolved.reason === "error"
+			? failed(
+					`Could not resolve workstream "${identifier}": ${resolved.message}`,
+					"Check the id or slug with list_workstreams, then call edit_workstream again.",
+				)
+			: failed(
+					resolved.message,
+					"Use list_workstreams to find the correct id or slug, then call edit_workstream again.",
+					"not_found",
+				);
 	}
-	if (!detail?.slug) {
-		return failed(
-			`No workstream found for "${identifier}".`,
-			"Use list_workstreams to find the correct id or slug, then call edit_workstream again.",
-			"not_found",
-		);
-	}
+	const detail = resolved.detail;
 
 	// reviseWorkstream writes a full new version; carry forward any field not being changed.
 	const label = parsed.value.label ?? detail.label ?? detail.slug;
@@ -77,7 +74,7 @@ export async function executeEditWorkstream(
 	}
 
 	if (result.status === "revised") {
-		return editTextResult({
+		return toolResult({
 			status: "edited",
 			message: `Workstream "${detail.label ?? detail.slug}" revised to version ${result.version}. The prior version is retained.`,
 			id: detail.id ?? undefined,

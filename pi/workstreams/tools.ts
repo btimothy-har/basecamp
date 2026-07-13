@@ -91,7 +91,10 @@ export function registerWorkstreamTools(
 				label: Type.Optional(Type.String({ description: "New label. Omit to keep the current label." })),
 				brief: Type.Optional(Type.String({ description: "New brief. Omit to keep the current brief." })),
 				constraints: Type.Optional(
-					Type.String({ description: "New constraints. Omit to keep the current constraints." }),
+					Type.String({
+						description:
+							"New constraints text. Omit to keep the current constraints; constraints cannot be cleared, so to record that they changed pass explicit text (e.g. 'None').",
+					}),
 				),
 			},
 			{ additionalProperties: false },

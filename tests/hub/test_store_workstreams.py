@@ -134,7 +134,7 @@ def test_workstreams_version_backfill_migrates_legacy_rows(tmp_path: Path) -> No
         connection.execute(
             """
             INSERT INTO workstreams (id, slug, label, brief, source_dossier_path, status, created_at, updated_at)
-            VALUES ('ws-legacy', 'legacy', 'Legacy', 'legacy brief', '/tmp/d.md', 'open', 't0', 't0')
+            VALUES ('ws-legacy', 'legacy', 'Legacy', 'legacy brief', '/tmp/d.md', 'open', 't0', 't1')
             """
         )
 
@@ -148,6 +148,8 @@ def test_workstreams_version_backfill_migrates_legacy_rows(tmp_path: Path) -> No
     assert versions is not None
     assert [v["version"] for v in versions] == [1]
     assert versions[0]["brief"] == "legacy brief"
+    # The v1 snapshot's created_at is seeded from the workstream's created_at, not updated_at.
+    assert versions[0]["created_at"] == "t0"
 
     # Re-opening the store does not double-seed the backfill.
     Store(db_path=db_path)

@@ -121,7 +121,7 @@ The extension splits `getBranch()` into per-entry `nodes` — `id`, `parent_id`,
 ```json
 {
   "type": "thread_report",
-  "v": 21,
+  "v": 22,
   "node_id": "00000000-0000-4000-8000-000000000042",
   "session_id": "session-abc",
   "session_file": "/home/u/.pi/sessions/session-abc.jsonl",
@@ -140,7 +140,7 @@ Waits for one or more public agent handles:
 ```json
 {
   "type": "wait",
-  "v": 21,
+  "v": 22,
   "agent_ids": [],
   "agent_handles": ["mossy-otter-a1b2c3"],
   "mode": "all",
@@ -171,7 +171,7 @@ Requests a safe directory of agents visible under the caller's root session:
 ```json
 {
   "type": "list_agents",
-  "v": 21,
+  "v": 22,
   "request_id": "list-001",
   "awaitable": true
 }
@@ -423,6 +423,6 @@ Reports protocol/parse errors and closes the WebSocket for fatal frame errors. C
 A minimal client flow is:
 
 1. Connect to `/ws` over the UDS.
-2. Send `register` with `v: 21`.
+2. Send `register` with `v: 22`.
 3. Send `dispatch` with private `run_id` / `agent_id` and public `agent_handle`.
 4. Use the `agent_handle` with `wait` or discover agents through `list_agents`.

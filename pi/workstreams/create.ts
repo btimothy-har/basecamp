@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import type { DaemonClient } from "#core/swarm/agents/client.ts";
 import { defaultWorkstreamToolsDeps, errorMessage, type WorkstreamToolsDeps } from "./deps.ts";
 import { parseCreateWorkstreamParams } from "./params.ts";
-import { type CreateWorkstreamToolResult, createTextResult, failedCreateDetails } from "./results.ts";
+import { type CreateWorkstreamToolResult, failedDetails, toolResult } from "./results.ts";
 
 const MAX_SLUG_ATTEMPTS = 25;
 
@@ -17,16 +17,16 @@ export async function executeCreateWorkstream(
 ): Promise<CreateWorkstreamToolResult> {
 	const parsed = parseCreateWorkstreamParams(params);
 	if (!parsed.ok) {
-		return createTextResult(
-			failedCreateDetails(parsed.message, "Call create_workstream again with non-empty required fields."),
+		return toolResult(
+			failedDetails(parsed.message, "Call create_workstream again with non-empty required fields."),
 			true,
 		);
 	}
 
 	const client = await deps.getClient();
 	if (!client) {
-		return createTextResult(
-			failedCreateDetails(
+		return toolResult(
+			failedDetails(
 				"basecamp hub is not connected; cannot create a workstream.",
 				"Ensure the daemon is running (it starts automatically for top-level sessions), then call create_workstream again.",
 			),
@@ -51,8 +51,8 @@ export async function executeCreateWorkstream(
 				...(parsed.value.source.repoPagePath ? { sourceRepoPagePath: parsed.value.source.repoPagePath } : {}),
 			});
 		} catch (err) {
-			return createTextResult(
-				failedCreateDetails(
+			return toolResult(
+				failedDetails(
 					`Failed to create workstream in daemon: ${errorMessage(err)}`,
 					"Retry create_workstream; if the error persists, check the daemon.",
 				),
@@ -68,8 +68,8 @@ export async function executeCreateWorkstream(
 	}
 
 	if (!slug || createResult?.status !== "created") {
-		return createTextResult(
-			failedCreateDetails(
+		return toolResult(
+			failedDetails(
 				`Daemon rejected workstream creation: ${createResult?.error ?? createResult?.status ?? "no unique slug"}`,
 				"Inspect the daemon error (or existing workstreams) and retry create_workstream.",
 			),
@@ -77,7 +77,7 @@ export async function executeCreateWorkstream(
 		);
 	}
 
-	return createTextResult({
+	return toolResult({
 		status: "created",
 		message: `Workstream "${parsed.value.workstream.label}" created as ${slug}.`,
 		id: createResult.workstream_id ?? workstreamId,
