@@ -14,7 +14,7 @@ from pathlib import Path
 from ..frames import DispatchSpec
 from ..registry import Registry
 from ..store import Store
-from .run_result import run_result_path
+from .run_result import load_run_result
 
 ProcessExitHook = Callable[[str], Awaitable[None]]
 RUNNER_MODULE = "basecamp.hub.swarm.runner"
@@ -83,10 +83,10 @@ async def spawn_agent_process(
     daemon_socket_path: str,
     dispatcher_node_id: str,
     child_depth: int,
+    result_path: str | Path,
     agent_handle: str | None = None,
     fork_source_path: str | None = None,
 ) -> asyncio.subprocess.Process:
-    result_path = run_result_path(agent_id, run_id, home_dir=spec.env.get("HOME"))
     argv = build_runner_argv(
         result_path=result_path,
         spec=spec,
@@ -198,6 +198,31 @@ def reconcile_orphaned_runs(store: Store) -> None:
         )
 
 
+def _reap_outcome(exit_code: int, result_path: str | Path) -> tuple[str, str | None, str | None]:
+    """Finalization for a reaped runner, preferring its recorded final result.
+
+    The runner writes its final result to the sidecar *before* the process
+    exits, so once we have observed the exit that record is a reliable
+    happens-before signal. Deriving the run outcome from it — with the same
+    ok->completed / else->failed mapping as ``handle_result_report`` — instead
+    of always marking ``failed`` means the exit-code path and the async
+    ``result_report`` frame agree on the terminal state. Whichever finalizes
+    first, the run lands in the right status, closing the race that let a
+    completed run be recorded as failed. The ``failed`` fallback stays for a
+    runner that died before recording any final result.
+    """
+    sidecar = load_run_result(result_path)
+    final = sidecar.final if sidecar else None
+    if final is not None:
+        status = "completed" if final.status == "ok" else "failed"
+        return status, final.result, final.error
+    return (
+        "failed",
+        None,
+        f"agent process exited (code {exit_code}) without reporting a result",
+    )
+
+
 async def reap_agent_process(
     *,
     run_id: str,
@@ -205,17 +230,19 @@ async def reap_agent_process(
     registry: Registry,
     store: Store,
     on_finalize: ProcessExitHook,
+    result_path: str | Path,
 ) -> None:
     exit_code = await process.wait()
     try:
         await asyncio.to_thread(store.set_run_exit_code, run_id=run_id, exit_code=exit_code)
 
+        status, result, error = await asyncio.to_thread(_reap_outcome, exit_code, result_path)
         finalized = await asyncio.to_thread(
             store.set_run_result_if_unset,
             run_id=run_id,
-            status="failed",
-            result=None,
-            error=f"agent process exited (code {exit_code}) without reporting a result",
+            status=status,
+            result=result,
+            error=error,
         )
         if finalized:
             await on_finalize(run_id)
