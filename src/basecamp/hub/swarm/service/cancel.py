@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 from typing import Literal
 
-from ...frames import PROTOCOL_VERSION, CancelAckFrame, CancelFrame
+from ...frames import CancelAckFrame, CancelFrame
 from ...registry import Registry
 from ...store import Store
 from ..process import terminate_process_group_if_runner
@@ -19,7 +19,6 @@ def _cancel_ack(
 ) -> CancelAckFrame:
     return CancelAckFrame(
         type="cancel_ack",
-        v=PROTOCOL_VERSION,
         request_id=request_id,
         status=status,
         error=error,

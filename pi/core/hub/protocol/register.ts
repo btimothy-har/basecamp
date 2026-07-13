@@ -1,8 +1,7 @@
-import type { PROTOCOL_VERSION } from "./version.ts";
+import type { ProtocolEnvelope } from "./version.ts";
 
-export interface RegisterFrame {
+export interface RegisterFrame extends ProtocolEnvelope {
 	type: "register";
-	v: typeof PROTOCOL_VERSION;
 	role: "agent" | "worker";
 	node_id: string;
 	agent_handle?: string | null;
@@ -16,16 +15,14 @@ export interface RegisterFrame {
 	worktree_label?: string | null;
 }
 
-export interface RegisteredFrame {
+export interface RegisteredFrame extends ProtocolEnvelope {
 	type: "registered";
-	v: typeof PROTOCOL_VERSION;
 	node_id: string;
 	protocol: number;
 }
 
-export interface ErrorFrame {
+export interface ErrorFrame extends ProtocolEnvelope {
 	type: "error";
-	v: typeof PROTOCOL_VERSION;
 	code: string;
 	message: string;
 }

@@ -19,7 +19,6 @@ from types import TracebackType
 from pydantic import ValidationError
 
 from ..frames import (
-    PROTOCOL_VERSION,
     ErrorFrame,
     RegisteredFrame,
     RegisterFrame,
@@ -211,7 +210,6 @@ class AttemptDaemonProxy:
     def _register_frame(self, child_register: RegisterFrame) -> RegisterFrame:
         return RegisterFrame(
             type="register",
-            v=PROTOCOL_VERSION,
             role="worker",
             node_id=self._context.agent_id,
             agent_handle=self._context.agent_handle or child_register.agent_handle,
@@ -333,7 +331,6 @@ def attempt_env(
 def send_result_report(context: RunnerContext, final: FinalRunResult) -> None:
     register = RegisterFrame(
         type="register",
-        v=PROTOCOL_VERSION,
         role="worker",
         node_id=context.agent_id,
         agent_handle=context.agent_handle,
@@ -345,7 +342,6 @@ def send_result_report(context: RunnerContext, final: FinalRunResult) -> None:
     )
     report = ResultReportFrame(
         type="result_report",
-        v=PROTOCOL_VERSION,
         run_id=context.run_id,
         agent_id=context.agent_id,
         report_token=context.report_token,

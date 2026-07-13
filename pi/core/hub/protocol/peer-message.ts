@@ -1,17 +1,15 @@
-import type { PROTOCOL_VERSION } from "./version.ts";
+import type { ProtocolEnvelope } from "./version.ts";
 
-export interface PeerMessageFrame {
+export interface PeerMessageFrame extends ProtocolEnvelope {
 	type: "peer_message";
-	v: typeof PROTOCOL_VERSION;
 	request_id: string;
 	target_handle: string;
 	message: string;
 	interrupt?: boolean;
 }
 
-export interface PeerMessageAckFrame {
+export interface PeerMessageAckFrame extends ProtocolEnvelope {
 	type: "peer_message_ack";
-	v: typeof PROTOCOL_VERSION;
 	request_id: string;
 	message_id: string | null;
 	status: "accepted" | "unknown";
@@ -20,9 +18,8 @@ export interface PeerMessageAckFrame {
 
 export type PeerMessageRelation = "self" | "parent" | "ancestor" | "child" | "descendant" | "peer" | "unknown";
 
-export interface PeerMessageDeliveryFrame {
+export interface PeerMessageDeliveryFrame extends ProtocolEnvelope {
 	type: "peer_message_delivery";
-	v: typeof PROTOCOL_VERSION;
 	message_id: string;
 	from_handle: string | null;
 	from_relation: PeerMessageRelation;
@@ -31,9 +28,8 @@ export interface PeerMessageDeliveryFrame {
 	interrupt: boolean;
 }
 
-export interface PeerMessageDeliveryAckFrame {
+export interface PeerMessageDeliveryAckFrame extends ProtocolEnvelope {
 	type: "peer_message_delivery_ack";
-	v: typeof PROTOCOL_VERSION;
 	message_id: string;
 	status: "queued" | "failed";
 	error?: string | null;

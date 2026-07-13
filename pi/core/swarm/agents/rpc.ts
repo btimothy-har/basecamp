@@ -13,7 +13,6 @@ import type {
 	WaitResultItem,
 	WorkstreamAgentStatus,
 } from "../../hub/protocol/index.ts";
-import { PROTOCOL_VERSION } from "../../hub/protocol/index.ts";
 
 export interface DaemonDispatchFrameOptions {
 	agentId: string;
@@ -133,7 +132,6 @@ export function createDaemonClient(connection: DaemonConnection): DaemonClient {
 			const runId = randomUUID();
 			connection.send({
 				type: "dispatch",
-				v: PROTOCOL_VERSION,
 				run_id: runId,
 				agent_id: input.agentId,
 				agent_handle: input.agentHandle,
@@ -159,7 +157,6 @@ export function createDaemonClient(connection: DaemonConnection): DaemonClient {
 			const requestId = randomUUID();
 			connection.send({
 				type: "list_agents",
-				v: PROTOCOL_VERSION,
 				request_id: requestId,
 				awaitable: Boolean(input.awaitable),
 			});
@@ -174,7 +171,6 @@ export function createDaemonClient(connection: DaemonConnection): DaemonClient {
 			const requested = new Set(input.agentHandles);
 			connection.send({
 				type: "wait",
-				v: PROTOCOL_VERSION,
 				agent_ids: [],
 				agent_handles: input.agentHandles,
 				mode: "all",
@@ -196,7 +192,6 @@ export function createDaemonClient(connection: DaemonConnection): DaemonClient {
 			const requestId = randomUUID();
 			connection.send({
 				type: "peer_message",
-				v: PROTOCOL_VERSION,
 				request_id: requestId,
 				target_handle: input.targetHandle,
 				message: input.message,
@@ -213,7 +208,6 @@ export function createDaemonClient(connection: DaemonConnection): DaemonClient {
 			const requestId = randomUUID();
 			connection.send({
 				type: "cancel",
-				v: PROTOCOL_VERSION,
 				request_id: requestId,
 				target_handle: input.targetHandle,
 			});
@@ -227,7 +221,6 @@ export function createDaemonClient(connection: DaemonConnection): DaemonClient {
 			const requestId = randomUUID();
 			connection.send({
 				type: "message_status",
-				v: PROTOCOL_VERSION,
 				request_id: requestId,
 				message_id: input.messageId,
 				wait_until_delivery: Boolean(input.waitUntilDelivery),
@@ -253,7 +246,6 @@ export function createDaemonClient(connection: DaemonConnection): DaemonClient {
 			const requestId = randomUUID();
 			connection.send({
 				type: "create_workstream",
-				v: PROTOCOL_VERSION,
 				request_id: requestId,
 				workstream_id: input.workstreamId,
 				slug: input.slug,
@@ -275,7 +267,6 @@ export function createDaemonClient(connection: DaemonConnection): DaemonClient {
 			const requestId = randomUUID();
 			connection.send({
 				type: "attach_workstream_agent",
-				v: PROTOCOL_VERSION,
 				request_id: requestId,
 				workstream: input.workstream,
 				repo: input.repo ?? null,
@@ -297,7 +288,6 @@ export function createDaemonClient(connection: DaemonConnection): DaemonClient {
 			const requestId = randomUUID();
 			connection.send({
 				type: "update_workstream",
-				v: PROTOCOL_VERSION,
 				request_id: requestId,
 				workstream: input.workstream,
 				status: input.status,
@@ -312,7 +302,6 @@ export function createDaemonClient(connection: DaemonConnection): DaemonClient {
 			const requestId = randomUUID();
 			connection.send({
 				type: "revise_workstream",
-				v: PROTOCOL_VERSION,
 				request_id: requestId,
 				workstream: input.workstream,
 				label: input.label,

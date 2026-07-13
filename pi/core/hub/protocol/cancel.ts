@@ -1,15 +1,13 @@
-import type { PROTOCOL_VERSION } from "./version.ts";
+import type { ProtocolEnvelope } from "./version.ts";
 
-export interface CancelFrame {
+export interface CancelFrame extends ProtocolEnvelope {
 	type: "cancel";
-	v: typeof PROTOCOL_VERSION;
 	request_id: string;
 	target_handle: string;
 }
 
-export interface CancelAckFrame {
+export interface CancelAckFrame extends ProtocolEnvelope {
 	type: "cancel_ack";
-	v: typeof PROTOCOL_VERSION;
 	request_id: string;
 	status: "cancelled" | "not_found" | "not_authorized" | "already_terminal";
 	error?: string | null;

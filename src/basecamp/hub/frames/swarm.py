@@ -10,7 +10,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
-from .version import PROTOCOL_VERSION
+from .version import ProtocolFrame
 
 
 class DispatchSpec(BaseModel):
@@ -24,11 +24,10 @@ class DispatchSpec(BaseModel):
     task: str
 
 
-class DispatchFrame(BaseModel):
+class DispatchFrame(ProtocolFrame):
     """Dispatch request frame."""
 
     type: Literal["dispatch"]
-    v: Literal[PROTOCOL_VERSION]
     run_id: str
     agent_id: str | None = None
     agent_handle: str | None = None
@@ -37,21 +36,19 @@ class DispatchFrame(BaseModel):
     spec: DispatchSpec
 
 
-class DispatchAckFrame(BaseModel):
+class DispatchAckFrame(ProtocolFrame):
     """Dispatch acknowledgement frame."""
 
     type: Literal["dispatch_ack"]
-    v: Literal[PROTOCOL_VERSION]
     run_id: str
     status: Literal["spawned", "rejected"]
     reason: str | None = None
 
 
-class TelemetryFrame(BaseModel):
+class TelemetryFrame(ProtocolFrame):
     """Telemetry frame from an agent."""
 
     type: Literal["telemetry"]
-    v: Literal[PROTOCOL_VERSION]
     run_id: str
     agent_id: str
     report_token: str
@@ -59,11 +56,10 @@ class TelemetryFrame(BaseModel):
     payload: dict[str, Any]
 
 
-class ResultReportFrame(BaseModel):
+class ResultReportFrame(ProtocolFrame):
     """Terminal result-report frame."""
 
     type: Literal["result_report"]
-    v: Literal[PROTOCOL_VERSION]
     run_id: str
     agent_id: str
     report_token: str
@@ -73,11 +69,10 @@ class ResultReportFrame(BaseModel):
     usage: dict[str, Any] | None
 
 
-class WaitFrame(BaseModel):
+class WaitFrame(ProtocolFrame):
     """Wait request frame."""
 
     type: Literal["wait"]
-    v: Literal[PROTOCOL_VERSION]
     agent_ids: list[str] = Field(default_factory=list)
     agent_handles: list[str] = Field(default_factory=list)
     mode: Literal["all"]
@@ -94,19 +89,17 @@ class WaitResultItem(BaseModel):
     error: str | None = None
 
 
-class WaitResultFrame(BaseModel):
+class WaitResultFrame(ProtocolFrame):
     """Wait response frame."""
 
     type: Literal["wait_result"]
-    v: Literal[PROTOCOL_VERSION]
     results: list[WaitResultItem]
 
 
-class ListAgentsFrame(BaseModel):
+class ListAgentsFrame(ProtocolFrame):
     """Request list of agents in requester root scope."""
 
     type: Literal["list_agents"]
-    v: Literal[PROTOCOL_VERSION]
     request_id: str
     awaitable: bool = False
 
@@ -126,31 +119,28 @@ class ListAgentItem(BaseModel):
     task: str | None = None
 
 
-class ListAgentsResultFrame(BaseModel):
+class ListAgentsResultFrame(ProtocolFrame):
     """List-agents response frame."""
 
     type: Literal["list_agents_result"]
-    v: Literal[PROTOCOL_VERSION]
     request_id: str
     agents: list[ListAgentItem]
 
 
-class PeerMessageFrame(BaseModel):
+class PeerMessageFrame(ProtocolFrame):
     """Request asynchronous delivery of a peer message."""
 
     type: Literal["peer_message"]
-    v: Literal[PROTOCOL_VERSION]
     request_id: str
     target_handle: str
     message: str
     interrupt: bool = False
 
 
-class PeerMessageAckFrame(BaseModel):
+class PeerMessageAckFrame(ProtocolFrame):
     """Acceptance acknowledgement for a peer message request."""
 
     type: Literal["peer_message_ack"]
-    v: Literal[PROTOCOL_VERSION]
     request_id: str
     message_id: str | None
     status: Literal["accepted", "unknown"]
@@ -160,11 +150,10 @@ class PeerMessageAckFrame(BaseModel):
 PeerMessageRelation = Literal["self", "parent", "ancestor", "child", "descendant", "peer", "unknown"]
 
 
-class PeerMessageDeliveryFrame(BaseModel):
+class PeerMessageDeliveryFrame(ProtocolFrame):
     """Peer message delivery from daemon to recipient agent."""
 
     type: Literal["peer_message_delivery"]
-    v: Literal[PROTOCOL_VERSION]
     message_id: str
     from_handle: str | None
     from_relation: PeerMessageRelation
@@ -173,32 +162,29 @@ class PeerMessageDeliveryFrame(BaseModel):
     interrupt: bool
 
 
-class PeerMessageDeliveryAckFrame(BaseModel):
+class PeerMessageDeliveryAckFrame(ProtocolFrame):
     """Recipient acknowledgement that a peer message delivery was queued."""
 
     type: Literal["peer_message_delivery_ack"]
-    v: Literal[PROTOCOL_VERSION]
     message_id: str
     status: Literal["queued", "failed"]
     error: str | None = None
 
 
-class MessageStatusFrame(BaseModel):
+class MessageStatusFrame(ProtocolFrame):
     """Request delivery lifecycle status for a peer message."""
 
     type: Literal["message_status"]
-    v: Literal[PROTOCOL_VERSION]
     request_id: str
     message_id: str
     wait_until_delivery: bool = False
     timeout_s: float | None = None
 
 
-class MessageStatusResultFrame(BaseModel):
+class MessageStatusResultFrame(ProtocolFrame):
     """Delivery lifecycle status for a peer message."""
 
     type: Literal["message_status_result"]
-    v: Literal[PROTOCOL_VERSION]
     request_id: str
     message_id: str
     status: Literal["accepted", "sent", "queued", "failed", "unavailable", "unknown"]
@@ -209,30 +195,27 @@ class MessageStatusResultFrame(BaseModel):
     failed_at: str | None
 
 
-class CancelFrame(BaseModel):
+class CancelFrame(ProtocolFrame):
     """Request cancellation of an agent's current run."""
 
     type: Literal["cancel"]
-    v: Literal[PROTOCOL_VERSION]
     request_id: str
     target_handle: str
 
 
-class CancelAckFrame(BaseModel):
+class CancelAckFrame(ProtocolFrame):
     """Acknowledgement for a cancel request."""
 
     type: Literal["cancel_ack"]
-    v: Literal[PROTOCOL_VERSION]
     request_id: str
     status: Literal["cancelled", "not_found", "not_authorized", "already_terminal"]
     error: str | None = None
 
 
-class CreateWorkstreamFrame(BaseModel):
+class CreateWorkstreamFrame(ProtocolFrame):
     """Request to create a workstream."""
 
     type: Literal["create_workstream"]
-    v: Literal[PROTOCOL_VERSION]
     request_id: str
     workstream_id: str
     slug: str
@@ -243,11 +226,10 @@ class CreateWorkstreamFrame(BaseModel):
     source_repo_page_path: str | None = None
 
 
-class CreateWorkstreamAckFrame(BaseModel):
+class CreateWorkstreamAckFrame(ProtocolFrame):
     """Acknowledgement for a create-workstream request."""
 
     type: Literal["create_workstream_ack"]
-    v: Literal[PROTOCOL_VERSION]
     request_id: str
     status: Literal["created", "slug_conflict", "error"]
     workstream_id: str | None = None
@@ -255,11 +237,10 @@ class CreateWorkstreamAckFrame(BaseModel):
     error: str | None = None
 
 
-class AttachWorkstreamAgentFrame(BaseModel):
+class AttachWorkstreamAgentFrame(ProtocolFrame):
     """Request to attach the requester's own node to a workstream."""
 
     type: Literal["attach_workstream_agent"]
-    v: Literal[PROTOCOL_VERSION]
     request_id: str
     workstream: str
     repo: str | None = None
@@ -268,41 +249,37 @@ class AttachWorkstreamAgentFrame(BaseModel):
     error: str | None = None
 
 
-class AttachWorkstreamAgentAckFrame(BaseModel):
+class AttachWorkstreamAgentAckFrame(ProtocolFrame):
     """Acknowledgement for an attach-workstream-agent request."""
 
     type: Literal["attach_workstream_agent_ack"]
-    v: Literal[PROTOCOL_VERSION]
     request_id: str
     status: Literal["attached", "not_found", "error"]
     error: str | None = None
 
 
-class UpdateWorkstreamFrame(BaseModel):
+class UpdateWorkstreamFrame(ProtocolFrame):
     """Request to update a workstream's status."""
 
     type: Literal["update_workstream"]
-    v: Literal[PROTOCOL_VERSION]
     request_id: str
     workstream: str
     status: Literal["open", "closed"]
 
 
-class UpdateWorkstreamAckFrame(BaseModel):
+class UpdateWorkstreamAckFrame(ProtocolFrame):
     """Acknowledgement for an update-workstream request."""
 
     type: Literal["update_workstream_ack"]
-    v: Literal[PROTOCOL_VERSION]
     request_id: str
     status: Literal["updated", "not_found", "invalid_status", "error"]
     error: str | None = None
 
 
-class ReviseWorkstreamFrame(BaseModel):
+class ReviseWorkstreamFrame(ProtocolFrame):
     """Request to revise a workstream's content, retaining the prior version."""
 
     type: Literal["revise_workstream"]
-    v: Literal[PROTOCOL_VERSION]
     request_id: str
     workstream: str
     label: str
@@ -310,11 +287,10 @@ class ReviseWorkstreamFrame(BaseModel):
     constraints: str | None = None
 
 
-class ReviseWorkstreamAckFrame(BaseModel):
+class ReviseWorkstreamAckFrame(ProtocolFrame):
     """Acknowledgement for a revise-workstream request, carrying the new version."""
 
     type: Literal["revise_workstream_ack"]
-    v: Literal[PROTOCOL_VERSION]
     request_id: str
     status: Literal["revised", "not_found", "error"]
     version: int | None = None

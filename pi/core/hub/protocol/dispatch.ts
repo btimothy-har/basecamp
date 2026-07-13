@@ -1,8 +1,7 @@
-import type { PROTOCOL_VERSION } from "./version.ts";
+import type { ProtocolEnvelope } from "./version.ts";
 
-export interface DispatchFrame {
+export interface DispatchFrame extends ProtocolEnvelope {
 	type: "dispatch";
-	v: typeof PROTOCOL_VERSION;
 	run_id: string;
 	agent_id?: string;
 	agent_handle?: string | null;
@@ -18,9 +17,8 @@ export interface DispatchFrame {
 	};
 }
 
-export interface DispatchAckFrame {
+export interface DispatchAckFrame extends ProtocolEnvelope {
 	type: "dispatch_ack";
-	v: typeof PROTOCOL_VERSION;
 	run_id: string;
 	status: "spawned" | "rejected";
 	reason: string | null;

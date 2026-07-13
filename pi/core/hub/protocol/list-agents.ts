@@ -1,8 +1,7 @@
-import type { PROTOCOL_VERSION } from "./version.ts";
+import type { ProtocolEnvelope } from "./version.ts";
 
-export interface ListAgentsFrame {
+export interface ListAgentsFrame extends ProtocolEnvelope {
 	type: "list_agents";
-	v: typeof PROTOCOL_VERSION;
 	request_id: string;
 	awaitable?: boolean;
 }
@@ -20,9 +19,8 @@ export interface ListAgentItem {
 	task?: string | null;
 }
 
-export interface ListAgentsResultFrame {
+export interface ListAgentsResultFrame extends ProtocolEnvelope {
 	type: "list_agents_result";
-	v: typeof PROTOCOL_VERSION;
 	request_id: string;
 	agents: ListAgentItem[];
 }

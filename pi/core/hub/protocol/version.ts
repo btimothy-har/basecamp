@@ -6,3 +6,12 @@
 // v21: register frame gains repo + worktree_label identity facets.
 // v22: revise_workstream content-versioning frames + /workstreams detail carries version history.
 export const PROTOCOL_VERSION = 22;
+
+/**
+ * The version envelope every wire frame carries. Frame interfaces `extends` this
+ * instead of redeclaring `v`; `encodeFrame` stamps the value at serialization so
+ * construction sites never pass it.
+ */
+export interface ProtocolEnvelope {
+	v: typeof PROTOCOL_VERSION;
+}

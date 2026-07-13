@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from typing import Annotated, Any, Literal
 
-from pydantic import BaseModel, Field, TypeAdapter
+from pydantic import Field, TypeAdapter
 
 from .broker import ThreadReportFrame, ThreadReportNode
 from .swarm import (
@@ -43,14 +43,13 @@ from .swarm import (
     WaitResultFrame,
     WaitResultItem,
 )
-from .version import PROTOCOL_VERSION
+from .version import PROTOCOL_VERSION, ProtocolFrame
 
 
-class RegisterFrame(BaseModel):
+class RegisterFrame(ProtocolFrame):
     """Client registration frame."""
 
     type: Literal["register"]
-    v: Literal[PROTOCOL_VERSION]
     role: Literal["agent", "worker"]
     node_id: str
     agent_handle: str | None = None
@@ -64,20 +63,18 @@ class RegisterFrame(BaseModel):
     worktree_label: str | None = None
 
 
-class RegisteredFrame(BaseModel):
+class RegisteredFrame(ProtocolFrame):
     """Daemon registration acknowledgement frame."""
 
     type: Literal["registered"]
-    v: Literal[PROTOCOL_VERSION]
     node_id: str
     protocol: Literal[PROTOCOL_VERSION]
 
 
-class ErrorFrame(BaseModel):
+class ErrorFrame(ProtocolFrame):
     """Daemon error frame."""
 
     type: Literal["error"]
-    v: Literal[PROTOCOL_VERSION]
     code: str
     message: str
 
@@ -125,9 +122,16 @@ def parse_frame(data: dict[str, Any]) -> Frame:
 
 
 def serialize_frame(frame: Frame) -> dict[str, Any]:
-    """Serialize a frame model into JSON-compatible dict form."""
+    """Serialize a frame model into JSON-compatible dict form.
 
-    return frame.model_dump(mode="json", exclude_unset=True)
+    ``v`` is re-stamped here: construction sites rely on the ``ProtocolFrame``
+    default rather than passing ``v``, and ``exclude_unset`` would otherwise
+    drop the defaulted value from the wire.
+    """
+
+    data = frame.model_dump(mode="json", exclude_unset=True)
+    data["v"] = PROTOCOL_VERSION
+    return data
 
 
 __all__ = [

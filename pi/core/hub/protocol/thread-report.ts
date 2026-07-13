@@ -1,4 +1,4 @@
-import type { PROTOCOL_VERSION } from "./version.ts";
+import type { ProtocolEnvelope } from "./version.ts";
 
 /** One pi session entry, envelope extracted extension-side; `entry_json` is opaque to the daemon. */
 export interface ThreadReportNode {
@@ -14,9 +14,8 @@ export interface ThreadReportNode {
  * are pi's own id and `.jsonl` transcript path (see
  * docs/design/companion-daemon-broker.md).
  */
-export interface ThreadReportFrame {
+export interface ThreadReportFrame extends ProtocolEnvelope {
 	type: "thread_report";
-	v: typeof PROTOCOL_VERSION;
 	node_id: string;
 	session_id: string;
 	session_file: string | null;

@@ -5,7 +5,6 @@ from __future__ import annotations
 import asyncio
 
 from ...frames import (
-    PROTOCOL_VERSION,
     AttachWorkstreamAgentAckFrame,
     AttachWorkstreamAgentFrame,
     CreateWorkstreamAckFrame,
@@ -39,7 +38,6 @@ async def create_workstream(
     except DuplicateWorkstreamSlugError:
         return CreateWorkstreamAckFrame(
             type="create_workstream_ack",
-            v=PROTOCOL_VERSION,
             request_id=frame.request_id,
             status="slug_conflict",
             error=None,
@@ -47,14 +45,12 @@ async def create_workstream(
     except Exception as exc:  # noqa: BLE001
         return CreateWorkstreamAckFrame(
             type="create_workstream_ack",
-            v=PROTOCOL_VERSION,
             request_id=frame.request_id,
             status="error",
             error=str(exc),
         )
     return CreateWorkstreamAckFrame(
         type="create_workstream_ack",
-        v=PROTOCOL_VERSION,
         request_id=frame.request_id,
         status="created",
         workstream_id=frame.workstream_id,
@@ -75,7 +71,6 @@ async def attach_workstream_agent(
     if workstream is None:
         return AttachWorkstreamAgentAckFrame(
             type="attach_workstream_agent_ack",
-            v=PROTOCOL_VERSION,
             request_id=frame.request_id,
             status="not_found",
             error=None,
@@ -93,7 +88,6 @@ async def attach_workstream_agent(
     except WorkstreamNotFoundError:
         return AttachWorkstreamAgentAckFrame(
             type="attach_workstream_agent_ack",
-            v=PROTOCOL_VERSION,
             request_id=frame.request_id,
             status="not_found",
             error=None,
@@ -101,14 +95,12 @@ async def attach_workstream_agent(
     except Exception as exc:  # noqa: BLE001
         return AttachWorkstreamAgentAckFrame(
             type="attach_workstream_agent_ack",
-            v=PROTOCOL_VERSION,
             request_id=frame.request_id,
             status="error",
             error=str(exc),
         )
     return AttachWorkstreamAgentAckFrame(
         type="attach_workstream_agent_ack",
-        v=PROTOCOL_VERSION,
         request_id=frame.request_id,
         status="attached",
         error=None,
@@ -131,7 +123,6 @@ async def revise_workstream(
     if workstream is None:
         return ReviseWorkstreamAckFrame(
             type="revise_workstream_ack",
-            v=PROTOCOL_VERSION,
             request_id=frame.request_id,
             status="not_found",
             error=None,
@@ -147,7 +138,6 @@ async def revise_workstream(
     except WorkstreamNotFoundError:
         return ReviseWorkstreamAckFrame(
             type="revise_workstream_ack",
-            v=PROTOCOL_VERSION,
             request_id=frame.request_id,
             status="not_found",
             error=None,
@@ -155,14 +145,12 @@ async def revise_workstream(
     except Exception as exc:  # noqa: BLE001
         return ReviseWorkstreamAckFrame(
             type="revise_workstream_ack",
-            v=PROTOCOL_VERSION,
             request_id=frame.request_id,
             status="error",
             error=str(exc),
         )
     return ReviseWorkstreamAckFrame(
         type="revise_workstream_ack",
-        v=PROTOCOL_VERSION,
         request_id=frame.request_id,
         status="revised",
         version=version,
@@ -181,7 +169,6 @@ async def update_workstream(
     if workstream is None:
         return UpdateWorkstreamAckFrame(
             type="update_workstream_ack",
-            v=PROTOCOL_VERSION,
             request_id=frame.request_id,
             status="not_found",
             error=None,
@@ -195,7 +182,6 @@ async def update_workstream(
     except ValueError:
         return UpdateWorkstreamAckFrame(
             type="update_workstream_ack",
-            v=PROTOCOL_VERSION,
             request_id=frame.request_id,
             status="invalid_status",
             error=None,
@@ -203,7 +189,6 @@ async def update_workstream(
     except Exception as exc:  # noqa: BLE001
         return UpdateWorkstreamAckFrame(
             type="update_workstream_ack",
-            v=PROTOCOL_VERSION,
             request_id=frame.request_id,
             status="error",
             error=str(exc),
@@ -211,14 +196,12 @@ async def update_workstream(
     if not rowcount:
         return UpdateWorkstreamAckFrame(
             type="update_workstream_ack",
-            v=PROTOCOL_VERSION,
             request_id=frame.request_id,
             status="not_found",
             error=None,
         )
     return UpdateWorkstreamAckFrame(
         type="update_workstream_ack",
-        v=PROTOCOL_VERSION,
         request_id=frame.request_id,
         status="updated",
         error=None,

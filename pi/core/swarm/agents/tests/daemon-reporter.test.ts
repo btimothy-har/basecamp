@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import type { Frame } from "../../../hub/protocol/index.ts";
+import { type Frame, PROTOCOL_VERSION } from "../../../hub/protocol/index.ts";
 import type { DaemonConnection } from "../client.ts";
 import { registerDaemonReporter } from "../reporter.ts";
 import { registerAgentSurfaces } from "../surfaces.ts";
@@ -22,7 +22,7 @@ describe("daemon reporter", () => {
 		const sent: Frame[] = [];
 		const connection: DaemonConnection = {
 			send(frame) {
-				sent.push(frame);
+				sent.push({ ...frame, v: PROTOCOL_VERSION } as Frame);
 			},
 			on() {
 				return () => {};
@@ -70,7 +70,7 @@ describe("daemon reporter", () => {
 		const sent: Frame[] = [];
 		const connection: DaemonConnection = {
 			send(frame) {
-				sent.push(frame);
+				sent.push({ ...frame, v: PROTOCOL_VERSION } as Frame);
 			},
 			on() {
 				return () => {};

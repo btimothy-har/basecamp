@@ -3,7 +3,7 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { afterEach, beforeEach } from "node:test";
-import type { Frame } from "../../../hub/protocol/index.ts";
+import { type Frame, type OutboundFrame, PROTOCOL_VERSION } from "../../../hub/protocol/index.ts";
 import type { WorkspaceState } from "../../../project/workspace/state.ts";
 import type { DaemonConnection } from "../client.ts";
 
@@ -18,8 +18,9 @@ export class MockConnection implements DaemonConnection {
 	handlers = new Map<Frame["type"], Set<(frame: any) => void>>();
 	closeHandlers = new Set<(code: number, reason: string) => void>();
 
-	send(frame: Frame): void {
-		this.sent.push(frame);
+	send(frame: OutboundFrame): void {
+		// Mirror the real transport: encodeFrame stamps `v`, so record the stamped frame.
+		this.sent.push({ ...frame, v: PROTOCOL_VERSION } as Frame);
 	}
 
 	on<T extends Frame["type"]>(type: T, handler: (frame: Extract<Frame, { type: T }>) => void): () => void {

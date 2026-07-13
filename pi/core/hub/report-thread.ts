@@ -1,5 +1,4 @@
 import type { DaemonConnection } from "./connection.ts";
-import { PROTOCOL_VERSION } from "./protocol/index.ts";
 import type { ThreadReportNode } from "./protocol/thread-report.ts";
 import { awaitDaemonConnection } from "./state.ts";
 
@@ -39,6 +38,6 @@ export async function reportThread(
 ): Promise<void> {
 	const connection = await awaitConnection();
 	if (!connection) return;
-	connection.send({ type: "thread_report", v: PROTOCOL_VERSION, ...buildReport() });
+	connection.send({ type: "thread_report", ...buildReport() });
 	await sleep(FLUSH_DELAY_MS);
 }

@@ -1,17 +1,15 @@
-import type { PROTOCOL_VERSION } from "./version.ts";
+import type { ProtocolEnvelope } from "./version.ts";
 
-export interface MessageStatusFrame {
+export interface MessageStatusFrame extends ProtocolEnvelope {
 	type: "message_status";
-	v: typeof PROTOCOL_VERSION;
 	request_id: string;
 	message_id: string;
 	wait_until_delivery?: boolean;
 	timeout_s?: number;
 }
 
-export interface MessageStatusResultFrame {
+export interface MessageStatusResultFrame extends ProtocolEnvelope {
 	type: "message_status_result";
-	v: typeof PROTOCOL_VERSION;
 	request_id: string;
 	message_id: string;
 	status: "accepted" | "sent" | "queued" | "failed" | "unavailable" | "unknown";

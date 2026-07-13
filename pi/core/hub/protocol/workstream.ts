@@ -1,8 +1,7 @@
-import type { PROTOCOL_VERSION } from "./version.ts";
+import type { ProtocolEnvelope } from "./version.ts";
 
-export interface CreateWorkstreamFrame {
+export interface CreateWorkstreamFrame extends ProtocolEnvelope {
 	type: "create_workstream";
-	v: typeof PROTOCOL_VERSION;
 	request_id: string;
 	workstream_id: string;
 	slug: string;
@@ -13,9 +12,8 @@ export interface CreateWorkstreamFrame {
 	source_repo_page_path?: string | null;
 }
 
-export interface CreateWorkstreamAckFrame {
+export interface CreateWorkstreamAckFrame extends ProtocolEnvelope {
 	type: "create_workstream_ack";
-	v: typeof PROTOCOL_VERSION;
 	request_id: string;
 	status: "created" | "slug_conflict" | "error";
 	workstream_id?: string | null;
@@ -25,9 +23,8 @@ export interface CreateWorkstreamAckFrame {
 
 export type WorkstreamAgentStatus = "attached" | "failed";
 
-export interface AttachWorkstreamAgentFrame {
+export interface AttachWorkstreamAgentFrame extends ProtocolEnvelope {
 	type: "attach_workstream_agent";
-	v: typeof PROTOCOL_VERSION;
 	request_id: string;
 	workstream: string;
 	repo?: string | null;
@@ -36,33 +33,29 @@ export interface AttachWorkstreamAgentFrame {
 	error?: string | null;
 }
 
-export interface AttachWorkstreamAgentAckFrame {
+export interface AttachWorkstreamAgentAckFrame extends ProtocolEnvelope {
 	type: "attach_workstream_agent_ack";
-	v: typeof PROTOCOL_VERSION;
 	request_id: string;
 	status: "attached" | "not_found" | "error";
 	error?: string | null;
 }
 
-export interface UpdateWorkstreamFrame {
+export interface UpdateWorkstreamFrame extends ProtocolEnvelope {
 	type: "update_workstream";
-	v: typeof PROTOCOL_VERSION;
 	request_id: string;
 	workstream: string;
 	status: "open" | "closed";
 }
 
-export interface UpdateWorkstreamAckFrame {
+export interface UpdateWorkstreamAckFrame extends ProtocolEnvelope {
 	type: "update_workstream_ack";
-	v: typeof PROTOCOL_VERSION;
 	request_id: string;
 	status: "updated" | "not_found" | "invalid_status" | "error";
 	error?: string | null;
 }
 
-export interface ReviseWorkstreamFrame {
+export interface ReviseWorkstreamFrame extends ProtocolEnvelope {
 	type: "revise_workstream";
-	v: typeof PROTOCOL_VERSION;
 	request_id: string;
 	workstream: string;
 	label: string;
@@ -70,9 +63,8 @@ export interface ReviseWorkstreamFrame {
 	constraints?: string | null;
 }
 
-export interface ReviseWorkstreamAckFrame {
+export interface ReviseWorkstreamAckFrame extends ProtocolEnvelope {
 	type: "revise_workstream_ack";
-	v: typeof PROTOCOL_VERSION;
 	request_id: string;
 	status: "revised" | "not_found" | "error";
 	version?: number | null;

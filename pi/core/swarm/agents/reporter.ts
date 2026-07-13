@@ -1,5 +1,4 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { PROTOCOL_VERSION } from "../../hub/protocol/index.ts";
 import type { DaemonConnection } from "./client.ts";
 import {
 	appendText,
@@ -67,7 +66,6 @@ export function registerDaemonReporter(
 			if (!connection) return;
 			connection.send({
 				type: "telemetry",
-				v: PROTOCOL_VERSION,
 				run_id: runId,
 				agent_id: agentId,
 				report_token: reportToken,
@@ -211,7 +209,6 @@ export function registerDaemonReporter(
 			if (!connection) return;
 			connection.send({
 				type: "result_report",
-				v: PROTOCOL_VERSION,
 				run_id: runId,
 				agent_id: agentId,
 				report_token: reportToken,

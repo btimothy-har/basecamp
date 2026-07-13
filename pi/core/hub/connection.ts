@@ -6,6 +6,7 @@ import {
 	type ErrorFrame,
 	encodeFrame,
 	type Frame,
+	type OutboundFrame,
 	PROTOCOL_VERSION,
 	type RegisteredFrame,
 	type RegisterFrame,
@@ -32,7 +33,7 @@ export interface ConnectOptions {
 }
 
 export interface DaemonConnection {
-	send: (frame: Frame) => void;
+	send: (frame: OutboundFrame) => void;
 	on: <T extends Frame["type"]>(type: T, handler: (frame: Extract<Frame, { type: T }>) => void) => () => void;
 	onClose: (handler: (code: number, reason: string) => void) => () => void;
 	close: () => void;
@@ -80,9 +81,8 @@ export async function connect(identity: DaemonIdentity, options: ConnectOptions 
 			}
 		};
 
-		const registerFrame: RegisterFrame = {
+		const registerFrame: Omit<RegisterFrame, "v"> = {
 			type: "register",
-			v: PROTOCOL_VERSION,
 			role: identity.role,
 			node_id: identity.node_id,
 			agent_handle: identity.agent_handle,

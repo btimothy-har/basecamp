@@ -47,6 +47,12 @@ describe("daemon frame codec", () => {
 		}
 	});
 
+	it("stamps the protocol version onto frames built without v", () => {
+		const encoded = encodeFrame({ type: "cancel", request_id: "req-1", target_handle: "agent-7" });
+		assert.equal(JSON.parse(encoded).v, PROTOCOL_VERSION);
+		assert.equal(decodeFrame(encoded).type, "cancel");
+	});
+
 	it("rejects unknown frame type", () => {
 		assert.throws(() => decodeFrame('{"type":"nope","v":2}'), /Unknown frame type/);
 	});
