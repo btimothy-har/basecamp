@@ -15,10 +15,12 @@ export function makeWorkstreamDetail(overrides: Partial<WorkstreamDetail> = {}):
 		source_dossier_path: "/graph/pages/Dossier.md",
 		source_repo_page_path: null,
 		status: "open",
+		version: 1,
 		created_at: "2026-07-03T00:00:00.000Z",
 		updated_at: "2026-07-03T00:00:00.000Z",
 		agent_count: 0,
 		agents: [],
+		versions: [],
 		...overrides,
 	};
 }
@@ -83,6 +85,7 @@ export function makeDeps(client: FakeDaemonClient, overrides: Partial<Workstream
 	let waitedWorkspace: WorkspaceState | null = workspace;
 	const workstreamDetails = new Map<string, WorkstreamDetail | null>();
 	let detail: WorkstreamDetail | null = makeWorkstreamDetail();
+	let priorTurns = false;
 
 	const deps: WorkstreamStartDeps = {
 		getWorkspaceState: () => workspace,
@@ -97,6 +100,7 @@ export function makeDeps(client: FakeDaemonClient, overrides: Partial<Workstream
 		enterExploreMode: (event, ctx) => {
 			enterExploreModeCalls.push({ event, ctx });
 		},
+		hasPriorTurns: () => priorTurns,
 		...overrides,
 	};
 
@@ -115,6 +119,9 @@ export function makeDeps(client: FakeDaemonClient, overrides: Partial<Workstream
 		},
 		setWorkstreamDetail(identifier: string, value: WorkstreamDetail | null) {
 			workstreamDetails.set(identifier, value);
+		},
+		setPriorTurns(value: boolean) {
+			priorTurns = value;
 		},
 	};
 }

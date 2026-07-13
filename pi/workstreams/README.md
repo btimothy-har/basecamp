@@ -8,9 +8,17 @@ The domain (`pi/workstreams/`) consumes the workstream client methods and observ
 
 ## Tools
 
-- **`launch_workstream`** — creates a new workstream + `copilot/<slug>` worktree + Herdr pane from a dossier-backed brief, OR carries an existing workstream into the current repo when given `workstream_id` (an existing id/slug; reuses the worktree idempotently; no dedup). Returns id/slug + transient setup/herdr status. Does not start an agent.
-- **`list_workstreams`** — repo-neutral listing from the daemon. Filters by `repo`, `dossierPath`, `query` (slug/label substring), and `status` (`open`/`closed`). A single-identifier lookup (query only) returns the workstream detail with its joined agent rows.
+The record and its execution staging are decoupled: `create`/`edit` manage the durable daemon record; `launch` provisions the worktree + pane.
+
+- **`create_workstream`** — creates a durable workstream record in the daemon from a dossier-backed brief (label, brief, optional constraints). Returns its internal `ws_<uuid>` id and readable three-word slug. Record-only: no worktree, no Herdr pane, no agent.
+- **`edit_workstream`** — revises an existing workstream's content (any of label, brief, constraints) **in place, bumping its version and keeping the old version**. Identity (id/slug), dossier pointer, worktree, and attached agents are unchanged; unspecified fields carry forward from the current version. Record-only.
+- **`launch_workstream`** — stages execution for an **existing** workstream (resolved by id/slug): provisions its `copilot/<slug>` worktree (idempotent) and best-effort opens a Herdr pane on it. Carries the workstream into whatever repo the session is in. Returns transient setup/herdr status + `next_step`. Does not create a record and does not start an agent.
+- **`list_workstreams`** — repo-neutral listing from the daemon. Filters by `repo`, `dossierPath`, `query` (slug/label substring), and `status` (`open`/`closed`). A single-identifier lookup (query only) returns the workstream detail with its joined agent rows and version history.
 - **`set_workstream_status`** — sets a workstream's status to `open` or `closed`.
+
+## Content versioning
+
+A workstream's content (`label`/`brief`/`constraints`) is versioned. `create_workstream` writes version 1; each `edit_workstream` bumps the version, snapshots the new content into the daemon's `workstream_versions` table, and retains every prior version (surfaced in the `list_workstreams` detail as `versions`). Identity and the dossier pointer stay stable across revisions, so a running agent is never stranded — the revised brief takes effect the next time an agent runs `pi --workstream`.
 
 ## `pi --workstream` startup flag
 
@@ -22,4 +30,4 @@ A workstream can have several agent sessions over time or concurrently — every
 
 ## Protocol
 
-Workstream management uses three WS frame pairs (`create_workstream`/`attach_workstream_agent`/`update_workstream` + acks, protocol v20) and two HTTP GET endpoints (`/workstreams` filtered list, `/workstreams/{id_or_slug}` workstream + joined agents). See [`core/hub/protocol/PROTOCOL.md`](../core/hub/protocol/PROTOCOL.md).
+Workstream management uses four WS frame pairs (`create_workstream`/`attach_workstream_agent`/`update_workstream`/`revise_workstream` + acks, protocol v22) and two HTTP GET endpoints (`/workstreams` filtered list, `/workstreams/{id_or_slug}` workstream + joined agents + version history). See [`core/hub/protocol/PROTOCOL.md`](../core/hub/protocol/PROTOCOL.md).

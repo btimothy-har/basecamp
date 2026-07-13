@@ -11,6 +11,14 @@ export interface WorkstreamAgentView {
 	run_status: string | null;
 }
 
+export interface WorkstreamVersionView {
+	version: number | null;
+	label: string | null;
+	brief: string | null;
+	constraints: string | null;
+	created_at: string | null;
+}
+
 export interface WorkstreamSummary {
 	id: string | null;
 	slug: string | null;
@@ -20,12 +28,16 @@ export interface WorkstreamSummary {
 	source_dossier_path: string | null;
 	source_repo_page_path: string | null;
 	status: string | null;
+	version: number | null;
 	created_at: string | null;
 	updated_at: string | null;
 	agent_count: number | null;
 }
 
-export type WorkstreamDetail = WorkstreamSummary & { agents: WorkstreamAgentView[] };
+export type WorkstreamDetail = WorkstreamSummary & {
+	agents: WorkstreamAgentView[];
+	versions: WorkstreamVersionView[];
+};
 
 function parseWorkstreamAgent(value: unknown): WorkstreamAgentView | null {
 	if (!value || typeof value !== "object") return null;
@@ -54,9 +66,22 @@ function parseWorkstreamSummary(value: unknown): WorkstreamSummary | null {
 		source_dossier_path: optionalString(record.source_dossier_path),
 		source_repo_page_path: optionalString(record.source_repo_page_path),
 		status: optionalString(record.status),
+		version: optionalNumber(record.version),
 		created_at: optionalString(record.created_at),
 		updated_at: optionalString(record.updated_at),
 		agent_count: optionalNumber(record.agent_count),
+	};
+}
+
+function parseWorkstreamVersion(value: unknown): WorkstreamVersionView | null {
+	if (!value || typeof value !== "object") return null;
+	const record = value as Record<string, unknown>;
+	return {
+		version: optionalNumber(record.version),
+		label: optionalString(record.label),
+		brief: optionalString(record.brief),
+		constraints: optionalString(record.constraints),
+		created_at: optionalString(record.created_at),
 	};
 }
 
@@ -88,7 +113,11 @@ export function parseWorkstreamDetailResponse(parsed: unknown): WorkstreamDetail
 	const record = (parsed as Record<string, unknown>) ?? {};
 	const rawAgents = Array.isArray(record.agents) ? record.agents : [];
 	const agents = rawAgents.map(parseWorkstreamAgent).filter((agent): agent is WorkstreamAgentView => agent !== null);
-	return { ...summary, agents };
+	const rawVersions = Array.isArray(record.versions) ? record.versions : [];
+	const versions = rawVersions
+		.map(parseWorkstreamVersion)
+		.filter((version): version is WorkstreamVersionView => version !== null);
+	return { ...summary, agents, versions };
 }
 
 export async function listWorkstreams(

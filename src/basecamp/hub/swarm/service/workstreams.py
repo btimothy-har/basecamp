@@ -10,6 +10,8 @@ from ...frames import (
     AttachWorkstreamAgentFrame,
     CreateWorkstreamAckFrame,
     CreateWorkstreamFrame,
+    ReviseWorkstreamAckFrame,
+    ReviseWorkstreamFrame,
     UpdateWorkstreamAckFrame,
     UpdateWorkstreamFrame,
 )
@@ -109,6 +111,56 @@ async def attach_workstream_agent(
         v=PROTOCOL_VERSION,
         request_id=frame.request_id,
         status="attached",
+        error=None,
+    )
+
+
+async def revise_workstream(
+    *,
+    frame: ReviseWorkstreamFrame,
+    store: Store,
+) -> ReviseWorkstreamAckFrame:
+    """Revise a workstream's content by id or slug, retaining the prior version."""
+
+    workstream = await asyncio.to_thread(store.get_workstream, frame.workstream)
+    if workstream is None:
+        return ReviseWorkstreamAckFrame(
+            type="revise_workstream_ack",
+            v=PROTOCOL_VERSION,
+            request_id=frame.request_id,
+            status="not_found",
+            error=None,
+        )
+    try:
+        version = await asyncio.to_thread(
+            store.revise_workstream,
+            workstream_id=workstream["id"],
+            label=frame.label,
+            brief=frame.brief,
+            constraints=frame.constraints,
+        )
+    except WorkstreamNotFoundError:
+        return ReviseWorkstreamAckFrame(
+            type="revise_workstream_ack",
+            v=PROTOCOL_VERSION,
+            request_id=frame.request_id,
+            status="not_found",
+            error=None,
+        )
+    except Exception as exc:  # noqa: BLE001
+        return ReviseWorkstreamAckFrame(
+            type="revise_workstream_ack",
+            v=PROTOCOL_VERSION,
+            request_id=frame.request_id,
+            status="error",
+            error=str(exc),
+        )
+    return ReviseWorkstreamAckFrame(
+        type="revise_workstream_ack",
+        v=PROTOCOL_VERSION,
+        request_id=frame.request_id,
+        status="revised",
+        version=version,
         error=None,
     )
 

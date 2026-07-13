@@ -23,6 +23,7 @@ def test_store_initializes_required_tables(tmp_path: Path) -> None:
     assert "run_events" in table_names
     assert "messages" in table_names
     assert "workstreams" in table_names
+    assert "workstream_versions" in table_names
     assert "workstream_agents" in table_names
 
 

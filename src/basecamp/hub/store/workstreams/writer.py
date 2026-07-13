@@ -1,4 +1,4 @@
-"""Writes for the ``workstreams`` and ``workstream_agents`` tables."""
+"""Writes for the ``workstreams``, ``workstream_versions`` and ``workstream_agents`` tables."""
 
 from __future__ import annotations
 
@@ -9,7 +9,7 @@ from .schema import WORKSTREAM_STATUSES
 
 
 class WorkstreamsWriterMixin:
-    """Workstream and workstream-agent mutations."""
+    """Workstream, workstream-version, and workstream-agent mutations."""
 
     def create_workstream(
         self,
@@ -23,7 +23,7 @@ class WorkstreamsWriterMixin:
         source_repo_page_path: str | None = None,
         now: str | None = None,
     ) -> None:
-        """Insert a new workstream row."""
+        """Insert a new workstream row and seed its version-1 content snapshot."""
 
         timestamp = now or self._now()
         with self._connect() as connection:
@@ -39,10 +39,11 @@ class WorkstreamsWriterMixin:
                         source_dossier_path,
                         source_repo_page_path,
                         status,
+                        version,
                         created_at,
                         updated_at
                     )
-                    VALUES (?, ?, ?, ?, ?, ?, ?, 'open', ?, ?)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, 'open', 1, ?, ?)
                     """,
                     (
                         workstream_id,
@@ -60,6 +61,56 @@ class WorkstreamsWriterMixin:
                 if "workstreams.slug" in str(error):
                     raise DuplicateWorkstreamSlugError(slug) from error
                 raise
+            connection.execute(
+                """
+                INSERT INTO workstream_versions (workstream_id, version, label, brief, constraints, created_at)
+                VALUES (?, 1, ?, ?, ?, ?)
+                """,
+                (workstream_id, label, brief, constraints, timestamp),
+            )
+
+    def revise_workstream(
+        self,
+        *,
+        workstream_id: str,
+        label: str,
+        brief: str,
+        constraints: str | None = None,
+        now: str | None = None,
+    ) -> int:
+        """Revise a workstream's content in place, retaining the prior version.
+
+        Bumps the version, snapshots the new content into ``workstream_versions``,
+        and returns the new version number. Raises ``WorkstreamNotFoundError`` when
+        the workstream is absent.
+        """
+
+        timestamp = now or self._now()
+        with self._connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            row = connection.execute(
+                "SELECT version FROM workstreams WHERE id = ?",
+                (workstream_id,),
+            ).fetchone()
+            if row is None:
+                raise WorkstreamNotFoundError(workstream_id)
+            new_version = int(row[0]) + 1
+            connection.execute(
+                """
+                INSERT INTO workstream_versions (workstream_id, version, label, brief, constraints, created_at)
+                VALUES (?, ?, ?, ?, ?, ?)
+                """,
+                (workstream_id, new_version, label, brief, constraints, timestamp),
+            )
+            connection.execute(
+                """
+                UPDATE workstreams
+                SET label = ?, brief = ?, constraints = ?, version = ?, updated_at = ?
+                WHERE id = ?
+                """,
+                (label, brief, constraints, new_version, timestamp, workstream_id),
+            )
+            return new_version
 
     def set_workstream_status(self, *, workstream_id: str, status: str, now: str | None = None) -> bool:
         """Update a workstream's status; return whether a row was updated."""

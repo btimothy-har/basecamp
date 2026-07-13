@@ -1,16 +1,16 @@
 # Pi Swarm Daemon Protocol
 
-Protocol version: `21`
+Protocol version: `22`
 
 All frames are JSON objects with an envelope:
 
 ```json
-{"type":"<frame_type>","v":21,...}
+{"type":"<frame_type>","v":22,...}
 ```
 
 Version handling:
 - The daemon validates `v` on every inbound frame.
-- If `v != 21`, the daemon sends an `error` frame with `code: "protocol_version"` and closes the connection.
+- If `v != 22`, the daemon sends an `error` frame with `code: "protocol_version"` and closes the connection.
 - The extension treats the protocol as a client-visible capability gate, not only a frame-shape version. A version mismatch restarts the host daemon during ensure-daemon.
 - v15 adds known-public-handle contact for `peer_message` and fork-`ask`: contact is authorized without a live relationship when the target is addressed by its known public handle (see below).
 - v16 adds registered session transcript paths for fork-ask and product-role metadata for peer-message display.
@@ -19,15 +19,16 @@ Version handling:
 - v19 adds workstream management frames (`create_workstream`/`attach_workstream_agent`/`update_workstream` + acks) and HTTP GET `/workstreams` read endpoints.
 - v20 adds the `thread_report` frame: a top-level session ships its raw `getBranch()` thread to the daemon at end of turn for the companion analyzer (see `docs/design/companion-daemon-broker.md`).
 - v21 adds first-class node-identity facets (`repo`, `worktree_label`) to `register`, renames node roles to `agent` (user-facing) / `worker` (backgrounded) derived from `BASECAMP_USER_FACING`, and removes the retired `product_role` (register display role) and `run_kind` (dispatch/list mutative kind) fields along with the agent-role and mutative seams.
+- v22 adds the `revise_workstream`/`revise_workstream_ack` frames for in-place workstream content versioning: a revision bumps the workstream's `version`, snapshots the new content into a `workstream_versions` history table (the prior version is retained), and leaves identity/dossier/attached agents unchanged. `GET /workstreams/{id_or_slug}` now also returns the workstream's `version` and a `versions` history array.
 
 ## Transport
 
 - HTTP over Unix domain socket (UDS):
-  - `GET /health` → `{"status":"ok","protocol":21}`
+  - `GET /health` → `{"status":"ok","protocol":22}`
   - `GET /runs/summary?root_id=<id>` returns safe agent-level observability for the companion dashboard.
   - `GET /runs/messages?root_id=<id>&agent_handle=<handle>` returns selected-agent assistant message detail for the companion dashboard.
   - `GET /workstreams` returns a filtered list of workstreams (query params: `status`, `repo`, `dossier_path`, `query`).
-  - `GET /workstreams/{id_or_slug}` returns a single workstream with its joined agent rows.
+  - `GET /workstreams/{id_or_slug}` returns a single workstream (including its `version`) with its joined agent rows and `versions` content-history array.
 - WebSocket over UDS:
   - `/ws`
   - First inbound frame must be `register`.
@@ -386,6 +387,27 @@ Acknowledges an `update_workstream` request.
 Fields:
 - `request_id`: echoes the update request id.
 - `status`: `updated`, `not_found`, or `invalid_status`.
+- `error`: optional/nullable error detail.
+
+### `revise_workstream` client → daemon
+
+Requests an in-place content revision of a workstream. The revision bumps the workstream's `version`, snapshots the new content into `workstream_versions`, and retains the prior version. Identity (`id`/`slug`), dossier pointer, worktree, and attached agents are unchanged. Status is not touched (use `update_workstream`). The client sends the full resolved content (unspecified fields carried forward from the current version).
+
+Fields:
+- `request_id`: public request correlation id.
+- `workstream`: the workstream slug or id.
+- `label`: the new label.
+- `brief`: the new brief.
+- `constraints`: optional/nullable new constraints.
+
+### `revise_workstream_ack` daemon → client
+
+Acknowledges a `revise_workstream` request.
+
+Fields:
+- `request_id`: echoes the revise request id.
+- `status`: `revised`, `not_found`, or `error`.
+- `version`: the new (post-revision) version number, or `null` when not revised.
 - `error`: optional/nullable error detail.
 
 ### `error` daemon → client

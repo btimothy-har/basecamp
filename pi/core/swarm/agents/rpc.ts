@@ -7,6 +7,7 @@ import type {
 	ListAgentItem,
 	MessageStatusResultFrame,
 	PeerMessageAckFrame,
+	ReviseWorkstreamAckFrame,
 	UpdateWorkstreamAckFrame,
 	WaitResultFrame,
 	WaitResultItem,
@@ -55,6 +56,8 @@ export type AttachWorkstreamAgentResult = Pick<AttachWorkstreamAgentAckFrame, "s
 
 export type UpdateWorkstreamResult = Pick<UpdateWorkstreamAckFrame, "status" | "error">;
 
+export type ReviseWorkstreamResult = Pick<ReviseWorkstreamAckFrame, "status" | "version" | "error">;
+
 export type MessageStatusResult = Pick<
 	MessageStatusResultFrame,
 	"message_id" | "status" | "error" | "created_at" | "sent_at" | "queued_at" | "failed_at"
@@ -88,6 +91,12 @@ export interface DaemonClient {
 		error?: string | null;
 	}): Promise<AttachWorkstreamAgentResult>;
 	updateWorkstream(input: { workstream: string; status: "open" | "closed" }): Promise<UpdateWorkstreamResult>;
+	reviseWorkstream(input: {
+		workstream: string;
+		label: string;
+		brief: string;
+		constraints?: string | null;
+	}): Promise<ReviseWorkstreamResult>;
 }
 
 function hasAgentHandle(result: WaitResultItem): result is WaitResultItem & { agent_handle: string } {
@@ -296,6 +305,24 @@ export function createDaemonClient(connection: DaemonConnection): DaemonClient {
 			const ack = await waitForFrame(connection, "update_workstream_ack", (frame) => frame.request_id === requestId);
 			return {
 				status: ack.status,
+				error: ack.error,
+			};
+		},
+		reviseWorkstream: async (input) => {
+			const requestId = randomUUID();
+			connection.send({
+				type: "revise_workstream",
+				v: PROTOCOL_VERSION,
+				request_id: requestId,
+				workstream: input.workstream,
+				label: input.label,
+				brief: input.brief,
+				constraints: input.constraints ?? null,
+			});
+			const ack = await waitForFrame(connection, "revise_workstream_ack", (frame) => frame.request_id === requestId);
+			return {
+				status: ack.status,
+				version: ack.version,
 				error: ack.error,
 			};
 		},

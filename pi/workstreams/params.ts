@@ -1,4 +1,4 @@
-export interface LaunchWorkstreamParams {
+export interface CreateWorkstreamParams {
 	source: {
 		dossierPath: string;
 		repoPagePath?: string;
@@ -7,9 +7,19 @@ export interface LaunchWorkstreamParams {
 		label: string;
 		brief: string;
 		constraints?: string;
-		worktreeSlug?: string;
 	};
-	workstreamId?: string;
+}
+
+export interface EditWorkstreamParams {
+	workstream: string;
+	label?: string;
+	brief?: string;
+	constraints?: string;
+}
+
+export interface LaunchWorkstreamParams {
+	workstream: string;
+	worktreeSlug?: string;
 }
 
 export interface ListWorkstreamsParams {
@@ -38,7 +48,7 @@ function optionalTrimmedString(value: unknown): string | undefined {
 function requiredTrimmedString(
 	value: unknown,
 	path: string,
-	tool = "launch_workstream",
+	tool: string,
 ): { ok: true; value: string } | { ok: false; message: string } {
 	if (typeof value !== "string" || !value.trim()) {
 		return { ok: false, message: `${tool} requires a non-empty ${path}.` };
@@ -46,20 +56,19 @@ function requiredTrimmedString(
 	return { ok: true, value: value.trim() };
 }
 
-export function parseLaunchWorkstreamParams(
+export function parseCreateWorkstreamParams(
 	params: unknown,
-): { ok: true; value: LaunchWorkstreamParams } | { ok: false; message: string } {
+): { ok: true; value: CreateWorkstreamParams } | { ok: false; message: string } {
 	if (!isRecord(params) || !isRecord(params.source) || !isRecord(params.workstream)) {
-		return { ok: false, message: "launch_workstream requires source and workstream objects." };
+		return { ok: false, message: "create_workstream requires source and workstream objects." };
 	}
 
-	const dossierPath = requiredTrimmedString(params.source.dossierPath, "source.dossierPath");
+	const dossierPath = requiredTrimmedString(params.source.dossierPath, "source.dossierPath", "create_workstream");
 	if (!dossierPath.ok) return dossierPath;
-	const label = requiredTrimmedString(params.workstream.label, "workstream.label");
+	const label = requiredTrimmedString(params.workstream.label, "workstream.label", "create_workstream");
 	if (!label.ok) return label;
-	const brief = requiredTrimmedString(params.workstream.brief, "workstream.brief");
+	const brief = requiredTrimmedString(params.workstream.brief, "workstream.brief", "create_workstream");
 	if (!brief.ok) return brief;
-	const carryIdentifier = optionalTrimmedString(params.workstream_id);
 
 	return {
 		ok: true,
@@ -76,11 +85,53 @@ export function parseLaunchWorkstreamParams(
 				...(optionalTrimmedString(params.workstream.constraints)
 					? { constraints: optionalTrimmedString(params.workstream.constraints) }
 					: {}),
-				...(optionalTrimmedString(params.workstream.worktreeSlug)
-					? { worktreeSlug: optionalTrimmedString(params.workstream.worktreeSlug) }
-					: {}),
 			},
-			...(carryIdentifier ? { workstreamId: carryIdentifier } : {}),
+		},
+	};
+}
+
+export function parseEditWorkstreamParams(
+	params: unknown,
+): { ok: true; value: EditWorkstreamParams } | { ok: false; message: string } {
+	if (!isRecord(params)) return { ok: false, message: "edit_workstream requires a workstream id or slug." };
+	const workstream = requiredTrimmedString(params.workstream, "workstream", "edit_workstream");
+	if (!workstream.ok) return workstream;
+
+	const label = optionalTrimmedString(params.label);
+	const brief = optionalTrimmedString(params.brief);
+	const constraints = optionalTrimmedString(params.constraints);
+	if (label === undefined && brief === undefined && constraints === undefined) {
+		return {
+			ok: false,
+			message: "edit_workstream requires at least one of label, brief, or constraints to change.",
+		};
+	}
+
+	return {
+		ok: true,
+		value: {
+			workstream: workstream.value,
+			...(label !== undefined ? { label } : {}),
+			...(brief !== undefined ? { brief } : {}),
+			...(constraints !== undefined ? { constraints } : {}),
+		},
+	};
+}
+
+export function parseLaunchWorkstreamParams(
+	params: unknown,
+): { ok: true; value: LaunchWorkstreamParams } | { ok: false; message: string } {
+	if (!isRecord(params)) return { ok: false, message: "launch_workstream requires a workstream id or slug." };
+	const workstream = requiredTrimmedString(params.workstream, "workstream", "launch_workstream");
+	if (!workstream.ok) return workstream;
+
+	return {
+		ok: true,
+		value: {
+			workstream: workstream.value,
+			...(optionalTrimmedString(params.worktreeSlug)
+				? { worktreeSlug: optionalTrimmedString(params.worktreeSlug) }
+				: {}),
 		},
 	};
 }

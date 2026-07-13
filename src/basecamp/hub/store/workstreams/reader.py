@@ -21,7 +21,7 @@ class WorkstreamsReaderMixin:
             return dict(row) if row is not None else None
 
     def get_workstream_with_agents(self, identifier: str) -> dict[str, Any] | None:
-        """Fetch a workstream by id or slug with its attached agents."""
+        """Fetch a workstream by id or slug with its attached agents and version history."""
 
         with self._connect() as connection:
             connection.row_factory = sqlite3.Row
@@ -51,6 +51,7 @@ class WorkstreamsReaderMixin:
                 """,
                 (ws_row["id"],),
             ).fetchall()
+            version_rows = self._read_workstream_versions(connection, ws_row["id"])
 
         result = dict(ws_row)
         result["agents"] = [
@@ -66,7 +67,43 @@ class WorkstreamsReaderMixin:
             }
             for row in agent_rows
         ]
+        result["versions"] = version_rows
         return result
+
+    def list_workstream_versions(self, identifier: str) -> list[dict[str, Any]] | None:
+        """List a workstream's content-version history (newest first), or None when absent."""
+
+        with self._connect() as connection:
+            connection.row_factory = sqlite3.Row
+            ws_row = connection.execute(
+                "SELECT id FROM workstreams WHERE id = ? OR slug = ?",
+                (identifier, identifier),
+            ).fetchone()
+            if ws_row is None:
+                return None
+            return self._read_workstream_versions(connection, ws_row["id"])
+
+    @staticmethod
+    def _read_workstream_versions(connection: sqlite3.Connection, workstream_id: str) -> list[dict[str, Any]]:
+        rows = connection.execute(
+            """
+            SELECT version, label, brief, constraints, created_at
+            FROM workstream_versions
+            WHERE workstream_id = ?
+            ORDER BY version DESC
+            """,
+            (workstream_id,),
+        ).fetchall()
+        return [
+            {
+                "version": row["version"],
+                "label": row["label"],
+                "brief": row["brief"],
+                "constraints": row["constraints"],
+                "created_at": row["created_at"],
+            }
+            for row in rows
+        ]
 
     def list_workstreams(
         self,

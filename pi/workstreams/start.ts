@@ -25,6 +25,26 @@ export interface WorkstreamStartDeps {
 	getWorkstreamDetail(socketPath: string, identifier: string): Promise<WorkstreamDetail | null>;
 	getClient(): Promise<DaemonClient | null>;
 	enterExploreMode(event: SessionStartEvent, ctx: ExtensionContext): void;
+	hasPriorTurns(ctx: ExtensionContext): boolean;
+}
+
+// session_start fires on every start reason (new, resume, reload, fork, compact). The brief
+// must inject exactly once — on a genuinely fresh session — so it is not re-appended on
+// resume/reload and Explore mode is not re-forced over a mode the user has since changed.
+// "Fresh" == the conversation branch holds no user/assistant turn yet.
+export function sessionHasPriorTurns(ctx: ExtensionContext): boolean {
+	const sessionManager = ctx.sessionManager as {
+		getEntries?: () => unknown[];
+		getBranch?: () => unknown[];
+	};
+	const entries = sessionManager.getEntries?.() ?? sessionManager.getBranch?.() ?? [];
+	return entries.some((entry) => {
+		if (!entry || typeof entry !== "object") return false;
+		const candidate = entry as { type?: unknown; message?: { role?: unknown } };
+		if (candidate.type !== "message") return false;
+		const role = candidate.message?.role;
+		return role === "user" || role === "assistant";
+	});
 }
 
 function waitForWorkspaceState(timeoutMs = WORKSPACE_START_WAIT_MS): Promise<WorkspaceState | null> {
@@ -72,6 +92,7 @@ export function defaultWorkstreamStartDeps(getConnection: () => Promise<unknown>
 			return createDaemonClient(connection as Parameters<typeof createDaemonClient>[0]);
 		},
 		enterExploreMode: defaultEnterExploreMode,
+		hasPriorTurns: sessionHasPriorTurns,
 	};
 }
 
@@ -256,6 +277,9 @@ export function registerWorkstreamStartup(
 			ctx.ui.notify("copilot takes precedence; --workstream is ignored for this session.", "warning");
 			return;
 		}
+		// Only run on a genuinely fresh session: on resume/reload/fork/compact the brief is
+		// already in the thread and the mode is restored by core — re-injecting would duplicate it.
+		if (deps.hasPriorTurns(ctx)) return;
 		deps.enterExploreMode(event, ctx);
 		await startWorkstream(pi, ctx, parseWorkstreamFlagValue(process.argv), deps);
 	});

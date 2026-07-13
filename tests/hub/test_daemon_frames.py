@@ -13,6 +13,8 @@ from basecamp.hub.frames import (
     CreateWorkstreamAckFrame,
     CreateWorkstreamFrame,
     Frame,
+    ReviseWorkstreamAckFrame,
+    ReviseWorkstreamFrame,
     UpdateWorkstreamAckFrame,
     UpdateWorkstreamFrame,
     parse_frame,
@@ -41,8 +43,8 @@ def _frame_union_type_set() -> set[str]:
     return frame_types
 
 
-def test_protocol_version_is_21() -> None:
-    assert PROTOCOL_VERSION == 21
+def test_protocol_version_is_22() -> None:
+    assert PROTOCOL_VERSION == 22
 
 
 def test_fixture_file_set_matches_frame_union_discriminator_types() -> None:
@@ -190,4 +192,36 @@ def test_update_workstream_ack_frame_round_trip() -> None:
         assert "error" not in serialized
         reparsed = parse_frame(serialized)
         assert isinstance(reparsed, UpdateWorkstreamAckFrame)
+        assert reparsed == frame
+
+
+def test_revise_workstream_frame_round_trip() -> None:
+    frame = ReviseWorkstreamFrame(
+        type="revise_workstream",
+        v=PROTOCOL_VERSION,
+        request_id="req-revise",
+        workstream="my-slug",
+        label="My Workstream v2",
+        brief="Do the refined thing",
+    )
+    serialized = serialize_frame(frame)
+    assert "constraints" not in serialized
+    reparsed = parse_frame(serialized)
+    assert isinstance(reparsed, ReviseWorkstreamFrame)
+    assert reparsed == frame
+
+
+def test_revise_workstream_ack_frame_round_trip() -> None:
+    for status, version in (("revised", 3), ("not_found", None), ("error", None)):
+        frame = ReviseWorkstreamAckFrame(
+            type="revise_workstream_ack",
+            v=PROTOCOL_VERSION,
+            request_id=f"req-revise-ack-{status}",
+            status=status,
+            version=version,
+        )
+        serialized = serialize_frame(frame)
+        assert "error" not in serialized
+        reparsed = parse_frame(serialized)
+        assert isinstance(reparsed, ReviseWorkstreamAckFrame)
         assert reparsed == frame
