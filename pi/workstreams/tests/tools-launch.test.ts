@@ -105,6 +105,27 @@ describe("launch_workstream provisioning", () => {
 		assert.equal(harness.provisionCalls.length, 0);
 	});
 
+	it("reuses the workstream's own worktree on relaunch instead of tripping the branch guard", async () => {
+		const harness = makeDeps(new FakeDaemonClient());
+		seedWorkstream(harness, "steady-amber-otter", { label: "Alpha" });
+		// The workstream's own copilot/<slug> worktree already holds the derived branch.
+		harness.setListedWorktrees([
+			{
+				kind: "git-worktree",
+				label: "copilot/steady-amber-otter",
+				path: "/worktrees/org/repo/copilot/steady-amber-otter",
+				branch: "bt/alpha",
+				created: false,
+			} as WorkspaceWorktree,
+		]);
+
+		const { result, details } = await runLaunch(launchParams("steady-amber-otter"), harness.deps);
+
+		assert.equal(result.isError ?? false, false);
+		assert.equal(details.status, "launched");
+		assert.equal(harness.provisionCalls.length, 1);
+	});
+
 	it("fails when worktree provisioning throws", async () => {
 		const harness = makeDeps(new FakeDaemonClient());
 		seedWorkstream(harness, "steady-amber-otter");

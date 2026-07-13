@@ -125,13 +125,12 @@ export function parseLaunchWorkstreamParams(
 	const workstream = requiredTrimmedString(params.workstream, "workstream", "launch_workstream");
 	if (!workstream.ok) return workstream;
 
+	const worktreeSlug = optionalTrimmedString(params.worktreeSlug);
 	return {
 		ok: true,
 		value: {
 			workstream: workstream.value,
-			...(optionalTrimmedString(params.worktreeSlug)
-				? { worktreeSlug: optionalTrimmedString(params.worktreeSlug) }
-				: {}),
+			...(worktreeSlug ? { worktreeSlug } : {}),
 		},
 	};
 }

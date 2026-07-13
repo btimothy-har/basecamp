@@ -65,7 +65,9 @@ export async function executeLaunchWorkstream(
 	const slug = detail.slug;
 	const worktreeTarget = copilotWorktreeTarget(parsed.value.worktreeSlug ?? detail.label ?? slug, slug);
 
-	// Guard against a derived branch already checked out in another worktree for this repo.
+	// Guard against a derived branch already checked out in a *different* worktree for this repo.
+	// The workstream's own copilot/<slug> worktree is excluded: getOrCreateWorktree reuses it by
+	// label, so a relaunch must reuse it idempotently rather than trip the collision guard.
 	let existingWorktrees: WorkspaceWorktree[];
 	try {
 		existingWorktrees = await deps.listWorkspaceWorktrees();
@@ -78,7 +80,12 @@ export async function executeLaunchWorkstream(
 			true,
 		);
 	}
-	if (worktreeTarget.branchName && existingWorktrees.some((wt) => wt.branch === worktreeTarget.branchName)) {
+	const branchCollision =
+		worktreeTarget.branchName &&
+		existingWorktrees.some(
+			(wt) => wt.branch === worktreeTarget.branchName && wt.label !== worktreeTarget.worktreeLabel,
+		);
+	if (branchCollision) {
 		return toolResult(
 			failedDetails(
 				`The branch ${worktreeTarget.branchName} is already checked out in another worktree for this repo.`,

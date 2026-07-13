@@ -120,7 +120,12 @@ async def revise_workstream(
     frame: ReviseWorkstreamFrame,
     store: Store,
 ) -> ReviseWorkstreamAckFrame:
-    """Revise a workstream's content by id or slug, retaining the prior version."""
+    """Revise a workstream's content by id or slug, retaining the prior version.
+
+    A revision is a full-content replace: the ``edit_workstream`` tool resolves the
+    new label/brief/constraints (carrying forward any field the caller did not change)
+    and sends the complete content, so the frame always carries the intended values.
+    """
 
     workstream = await asyncio.to_thread(store.get_workstream, frame.workstream)
     if workstream is None:

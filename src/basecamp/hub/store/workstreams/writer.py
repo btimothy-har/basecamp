@@ -11,6 +11,27 @@ from .schema import WORKSTREAM_STATUSES
 class WorkstreamsWriterMixin:
     """Workstream, workstream-version, and workstream-agent mutations."""
 
+    @staticmethod
+    def _insert_workstream_version(
+        connection: sqlite3.Connection,
+        *,
+        workstream_id: str,
+        version: int,
+        label: str,
+        brief: str,
+        constraints: str | None,
+        created_at: str,
+    ) -> None:
+        """Append one content snapshot to ``workstream_versions`` (append-only history)."""
+
+        connection.execute(
+            """
+            INSERT INTO workstream_versions (workstream_id, version, label, brief, constraints, created_at)
+            VALUES (?, ?, ?, ?, ?, ?)
+            """,
+            (workstream_id, version, label, brief, constraints, created_at),
+        )
+
     def create_workstream(
         self,
         *,
@@ -61,12 +82,14 @@ class WorkstreamsWriterMixin:
                 if "workstreams.slug" in str(error):
                     raise DuplicateWorkstreamSlugError(slug) from error
                 raise
-            connection.execute(
-                """
-                INSERT INTO workstream_versions (workstream_id, version, label, brief, constraints, created_at)
-                VALUES (?, 1, ?, ?, ?, ?)
-                """,
-                (workstream_id, label, brief, constraints, timestamp),
+            self._insert_workstream_version(
+                connection,
+                workstream_id=workstream_id,
+                version=1,
+                label=label,
+                brief=brief,
+                constraints=constraints,
+                created_at=timestamp,
             )
 
     def revise_workstream(
@@ -95,12 +118,14 @@ class WorkstreamsWriterMixin:
             if row is None:
                 raise WorkstreamNotFoundError(workstream_id)
             new_version = int(row[0]) + 1
-            connection.execute(
-                """
-                INSERT INTO workstream_versions (workstream_id, version, label, brief, constraints, created_at)
-                VALUES (?, ?, ?, ?, ?, ?)
-                """,
-                (workstream_id, new_version, label, brief, constraints, timestamp),
+            self._insert_workstream_version(
+                connection,
+                workstream_id=workstream_id,
+                version=new_version,
+                label=label,
+                brief=brief,
+                constraints=constraints,
+                created_at=timestamp,
             )
             connection.execute(
                 """
