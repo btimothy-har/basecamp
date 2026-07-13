@@ -27,6 +27,8 @@ class AgentsWriterMixin:
         model: str | None = None,
         session_file: str | None = None,
         product_role: str | None = None,
+        repo: str | None = None,
+        worktree_label: str | None = None,
     ) -> None:
         """Insert/update an agent row and refresh last-seen timestamp."""
 
@@ -74,9 +76,11 @@ class AgentsWriterMixin:
                         run_kind,
                         model,
                         session_file,
-                        product_role
+                        product_role,
+                        repo,
+                        worktree_label
                     )
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     ON CONFLICT(id)
                     DO UPDATE SET
                         parent_id = excluded.parent_id,
@@ -91,7 +95,9 @@ class AgentsWriterMixin:
                         run_kind = excluded.run_kind,
                         model = excluded.model,
                         session_file = excluded.session_file,
-                        product_role = excluded.product_role
+                        product_role = excluded.product_role,
+                        repo = excluded.repo,
+                        worktree_label = excluded.worktree_label
                     """,
                     (
                         agent_id,
@@ -109,6 +115,8 @@ class AgentsWriterMixin:
                         next_model,
                         next_session_file,
                         next_product_role,
+                        repo,
+                        worktree_label,
                     ),
                 )
             except sqlite3.IntegrityError as error:

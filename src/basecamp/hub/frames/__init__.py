@@ -59,6 +59,8 @@ class RegisterFrame(BaseModel):
     cwd: str
     session_file: str | None = None
     product_role: str | None = None
+    repo: str | None = None
+    worktree_label: str | None = None
 
 
 class RegisteredFrame(BaseModel):

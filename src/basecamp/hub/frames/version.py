@@ -10,4 +10,5 @@ from __future__ import annotations
 # This includes HTTP endpoints like /runs/summary, so stale daemons restart.
 # v19: workstream create/attach/update request/ack frames.
 # v20: thread_report frame — top-level session ships its raw thread to the daemon.
-PROTOCOL_VERSION = 20
+# v21: register frame gains repo + worktree_label identity facets.
+PROTOCOL_VERSION = 21

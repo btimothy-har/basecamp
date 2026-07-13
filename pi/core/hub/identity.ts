@@ -63,6 +63,8 @@ export function deriveDaemonIdentity(ctx: ExtensionContext, deps?: Partial<Daemo
 		cwd: process.cwd(),
 		session_file: resolveSessionFile(ctx),
 		product_role: resolveAgentRole(role),
+		repo: process.env.BASECAMP_REPO?.trim() || null,
+		worktree_label: process.env.BASECAMP_WORKTREE_LABEL?.trim() || null,
 	};
 }
 

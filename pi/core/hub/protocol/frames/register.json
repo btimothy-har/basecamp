@@ -1,6 +1,6 @@
 {
   "type": "register",
-  "v": 20,
+  "v": 21,
   "role": "session",
   "node_id": "session-123",
   "parent_id": null,
@@ -9,5 +9,7 @@
   "session_name": "async-design",
   "cwd": "/Users/example/repo",
   "session_file": "/Users/example/.pi/sessions/session-123.jsonl",
-  "product_role": "copilot"
+  "product_role": "copilot",
+  "repo": "example/repo",
+  "worktree_label": "wt-bt/facets"
 }

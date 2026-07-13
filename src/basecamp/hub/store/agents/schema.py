@@ -29,7 +29,9 @@ class AgentsSchemaMixin:
                 run_kind TEXT,
                 model TEXT,
                 session_file TEXT,
-                product_role TEXT
+                product_role TEXT,
+                repo TEXT,
+                worktree_label TEXT
             )
             """
         )
@@ -39,6 +41,7 @@ class AgentsSchemaMixin:
         self._ensure_agents_model_column(connection)
         self._ensure_agents_session_file_column(connection)
         self._ensure_agents_product_role_column(connection)
+        self._ensure_agents_facet_columns(connection)
 
     def _ensure_agents_current_run_id_column(self, connection: sqlite3.Connection) -> None:
         columns = connection.execute("PRAGMA table_info(agents)").fetchall()
@@ -93,3 +96,11 @@ class AgentsSchemaMixin:
         names = {column[1] for column in columns}
         if "product_role" not in names:
             connection.execute("ALTER TABLE agents ADD COLUMN product_role TEXT")
+
+    def _ensure_agents_facet_columns(self, connection: sqlite3.Connection) -> None:
+        columns = connection.execute("PRAGMA table_info(agents)").fetchall()
+        names = {column[1] for column in columns}
+        if "repo" not in names:
+            connection.execute("ALTER TABLE agents ADD COLUMN repo TEXT")
+        if "worktree_label" not in names:
+            connection.execute("ALTER TABLE agents ADD COLUMN worktree_label TEXT")

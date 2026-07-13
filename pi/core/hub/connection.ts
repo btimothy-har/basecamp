@@ -22,6 +22,8 @@ export interface DaemonIdentity {
 	cwd: string;
 	session_file?: string | null;
 	product_role?: string | null;
+	repo?: string | null;
+	worktree_label?: string | null;
 }
 
 export interface ConnectOptions {
@@ -92,6 +94,8 @@ export async function connect(identity: DaemonIdentity, options: ConnectOptions 
 			cwd: identity.cwd,
 			session_file: identity.session_file ?? null,
 			product_role: identity.product_role ?? null,
+			repo: identity.repo ?? null,
+			worktree_label: identity.worktree_label ?? null,
 		};
 
 		ws.on("open", () => {

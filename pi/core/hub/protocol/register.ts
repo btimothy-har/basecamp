@@ -13,6 +13,8 @@ export interface RegisterFrame {
 	cwd: string;
 	session_file?: string | null;
 	product_role?: string | null;
+	repo?: string | null;
+	worktree_label?: string | null;
 }
 
 export interface RegisteredFrame {

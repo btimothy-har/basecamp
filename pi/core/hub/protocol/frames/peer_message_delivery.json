@@ -1,6 +1,6 @@
 {
   "type": "peer_message_delivery",
-  "v": 20,
+  "v": 21,
   "message_id": "msg-001",
   "from_handle": "brisk-lynx-d4e5f6",
   "from_relation": "peer",

@@ -1,6 +1,6 @@
 {
   "type": "thread_report",
-  "v": 20,
+  "v": 21,
   "node_id": "00000000-0000-4000-8000-000000000042",
   "session_id": "session-abc",
   "session_file": "/home/u/.pi/sessions/session-abc.jsonl",
