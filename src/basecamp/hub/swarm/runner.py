@@ -204,14 +204,13 @@ class AttemptDaemonProxy:
     def _parse_next_frame(self, websocket: object) -> object:
         message = websocket.recv()
         payload = json.loads(message)
-        if not isinstance(payload, dict):
+        if not isinstance(payload, dict) or payload.get("v") != PROTOCOL_VERSION:
             raise InvalidProxyFrameError
         return parse_frame(payload)
 
     def _register_frame(self, child_register: RegisterFrame) -> RegisterFrame:
         return RegisterFrame(
             type="register",
-            v=PROTOCOL_VERSION,
             role="worker",
             node_id=self._context.agent_id,
             agent_handle=self._context.agent_handle or child_register.agent_handle,
@@ -333,7 +332,6 @@ def attempt_env(
 def send_result_report(context: RunnerContext, final: FinalRunResult) -> None:
     register = RegisterFrame(
         type="register",
-        v=PROTOCOL_VERSION,
         role="worker",
         node_id=context.agent_id,
         agent_handle=context.agent_handle,
@@ -345,7 +343,6 @@ def send_result_report(context: RunnerContext, final: FinalRunResult) -> None:
     )
     report = ResultReportFrame(
         type="result_report",
-        v=PROTOCOL_VERSION,
         run_id=context.run_id,
         agent_id=context.agent_id,
         report_token=context.report_token,

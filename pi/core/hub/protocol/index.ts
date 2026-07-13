@@ -109,8 +109,13 @@ export const FRAME_TYPES = [
 
 const KNOWN_TYPE_SET = new Set<string>(FRAME_TYPES);
 
-export function encodeFrame(frame: Frame): string {
-	return JSON.stringify(frame);
+type DistributiveOmit<T, K extends PropertyKey> = T extends unknown ? Omit<T, K> : never;
+
+/** A frame as built at a construction site: everything but the `v` envelope, which `encodeFrame` stamps. */
+export type OutboundFrame = DistributiveOmit<Frame, "v">;
+
+export function encodeFrame(frame: OutboundFrame): string {
+	return JSON.stringify({ ...frame, v: PROTOCOL_VERSION });
 }
 
 export function decodeFrame(raw: string | Buffer): Frame {

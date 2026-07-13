@@ -9,7 +9,6 @@ from dataclasses import dataclass
 from typing import Any
 
 from ...frames import (
-    PROTOCOL_VERSION,
     MessageStatusFrame,
     MessageStatusResultFrame,
     PeerMessageAckFrame,
@@ -90,7 +89,6 @@ async def accept_peer_message(
 
     delivery_values: dict[str, Any] = {
         "type": "peer_message_delivery",
-        "v": PROTOCOL_VERSION,
         "message_id": message_id,
         "from_handle": sender_handle,
         "from_relation": sender_relation,
@@ -103,7 +101,6 @@ async def accept_peer_message(
     return AcceptedPeerMessage(
         ack=PeerMessageAckFrame(
             type="peer_message_ack",
-            v=PROTOCOL_VERSION,
             request_id=frame.request_id,
             message_id=message_id,
             status="accepted",
@@ -165,7 +162,6 @@ async def message_status_result(
 
     return MessageStatusResultFrame(
         type="message_status_result",
-        v=PROTOCOL_VERSION,
         request_id=frame.request_id,
         **status,
     )
@@ -182,7 +178,6 @@ def notify_message_delivery_terminal(message_id: str, *, registry: Registry) -> 
 def _unknown_peer_message_ack(request_id: str) -> PeerMessageAckFrame:
     return PeerMessageAckFrame(
         type="peer_message_ack",
-        v=PROTOCOL_VERSION,
         request_id=request_id,
         message_id=None,
         status="unknown",

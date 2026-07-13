@@ -176,7 +176,6 @@ def create_app(
 
             registered = RegisteredFrame(
                 type="registered",
-                v=PROTOCOL_VERSION,
                 node_id=parsed.node_id,
                 protocol=PROTOCOL_VERSION,
             )
@@ -388,7 +387,7 @@ async def _handle_wait(
         registry=registry,
         requester_node_id=requester_node_id,
     )
-    await websocket.send_json(serialize_frame(WaitResultFrame(type="wait_result", v=PROTOCOL_VERSION, results=results)))
+    await websocket.send_json(serialize_frame(WaitResultFrame(type="wait_result", results=results)))
 
 
 async def _handle_list_agents(
@@ -401,7 +400,6 @@ async def _handle_list_agents(
 ) -> None:
     result = ListAgentsResultFrame(
         type="list_agents_result",
-        v=PROTOCOL_VERSION,
         request_id=frame.request_id,
         agents=await list_agents(
             frame=frame,
@@ -480,7 +478,6 @@ async def _send_dispatch_ack(
         serialize_frame(
             DispatchAckFrame(
                 type="dispatch_ack",
-                v=PROTOCOL_VERSION,
                 run_id=run_id,
                 status=status,
                 reason=reason,
@@ -490,6 +487,6 @@ async def _send_dispatch_ack(
 
 
 async def _send_error_and_close(websocket: WebSocket, *, code: str, message: str) -> None:
-    error = ErrorFrame(type="error", v=PROTOCOL_VERSION, code=code, message=message)
+    error = ErrorFrame(type="error", code=code, message=message)
     await websocket.send_json(serialize_frame(error))
     await websocket.close(code=1002)

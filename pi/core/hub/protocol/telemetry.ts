@@ -1,8 +1,7 @@
-import type { PROTOCOL_VERSION } from "./version.ts";
+import type { ProtocolEnvelope } from "./version.ts";
 
-export interface TelemetryFrame {
+export interface TelemetryFrame extends ProtocolEnvelope {
 	type: "telemetry";
-	v: typeof PROTOCOL_VERSION;
 	run_id: string;
 	agent_id: string;
 	report_token: string;
@@ -10,9 +9,8 @@ export interface TelemetryFrame {
 	payload: Record<string, unknown>;
 }
 
-export interface ResultReportFrame {
+export interface ResultReportFrame extends ProtocolEnvelope {
 	type: "result_report";
-	v: typeof PROTOCOL_VERSION;
 	run_id: string;
 	agent_id: string;
 	report_token: string;

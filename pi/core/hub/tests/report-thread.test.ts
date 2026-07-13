@@ -8,7 +8,7 @@ import { reportThread, type ThreadReport } from "../report-thread.ts";
 function mockConnection(sent: Frame[]): DaemonConnection {
 	return {
 		send(frame) {
-			sent.push(frame);
+			sent.push({ ...frame, v: PROTOCOL_VERSION } as Frame);
 		},
 		on() {
 			return () => {};

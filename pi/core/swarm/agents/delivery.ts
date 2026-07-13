@@ -1,6 +1,6 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { type DaemonConnection, sanitizeDisplayLabel } from "../../hub/index.ts";
-import { type PeerMessageDeliveryFrame, PROTOCOL_VERSION } from "../../hub/protocol/index.ts";
+import type { PeerMessageDeliveryFrame } from "../../hub/protocol/index.ts";
 import { errorMessage } from "./errors.ts";
 
 /** The slice of the daemon-client state that peer-message delivery owns. */
@@ -33,7 +33,6 @@ export function handlePeerMessageDelivery(
 		try {
 			connection.send({
 				type: "peer_message_delivery_ack",
-				v: PROTOCOL_VERSION,
 				message_id: frame.message_id,
 				status: "failed",
 				error: errorMessage(error),
@@ -47,7 +46,6 @@ export function handlePeerMessageDelivery(
 	try {
 		connection.send({
 			type: "peer_message_delivery_ack",
-			v: PROTOCOL_VERSION,
 			message_id: frame.message_id,
 			status: "queued",
 		});

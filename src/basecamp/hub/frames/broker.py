@@ -6,7 +6,7 @@ from typing import Literal
 
 from pydantic import BaseModel
 
-from .version import PROTOCOL_VERSION
+from .version import ProtocolFrame
 
 
 class ThreadReportNode(BaseModel):
@@ -17,7 +17,7 @@ class ThreadReportNode(BaseModel):
     entry_json: str
 
 
-class ThreadReportFrame(BaseModel):
+class ThreadReportFrame(ProtocolFrame):
     """Raw session thread pushed by a top-level session at end of turn.
 
     The extension splits ``getBranch()`` into per-entry ``nodes`` (envelope
@@ -27,7 +27,6 @@ class ThreadReportFrame(BaseModel):
     """
 
     type: Literal["thread_report"]
-    v: Literal[PROTOCOL_VERSION]
     node_id: str
     session_id: str
     session_file: str | None

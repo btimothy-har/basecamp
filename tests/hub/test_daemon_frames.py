@@ -64,6 +64,34 @@ def test_all_fixtures_parse_and_round_trip() -> None:
         assert serialized == data
 
 
+def test_protocol_version_defaults_without_explicit_v() -> None:
+    """Frames construct without passing ``v``; the ProtocolFrame default fills it in."""
+
+    frame = UpdateWorkstreamFrame(
+        type="update_workstream",
+        request_id="req-envelope",
+        workstream="my-slug",
+        status="open",
+    )
+    assert frame.v == PROTOCOL_VERSION
+    # The default is "unset", so exclude_unset would drop it without stamping.
+    assert "v" not in frame.model_dump(exclude_unset=True)
+
+
+def test_serialize_frame_stamps_v_on_the_wire() -> None:
+    """serialize_frame re-stamps ``v`` so the wire always carries the version."""
+
+    frame = UpdateWorkstreamFrame(
+        type="update_workstream",
+        request_id="req-envelope",
+        workstream="my-slug",
+        status="open",
+    )
+    serialized = serialize_frame(frame)
+    assert serialized["v"] == PROTOCOL_VERSION
+    assert parse_frame(serialized) == frame
+
+
 def test_create_workstream_frame_round_trip() -> None:
     frame = CreateWorkstreamFrame(
         type="create_workstream",

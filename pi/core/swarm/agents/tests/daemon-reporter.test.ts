@@ -1,11 +1,10 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import type { Frame } from "../../../hub/protocol/index.ts";
 import type { DaemonConnection } from "../client.ts";
 import { registerDaemonReporter } from "../reporter.ts";
 import { registerAgentSurfaces } from "../surfaces.ts";
 import type { DaemonToolDeps } from "../tools.ts";
-import { MockPi } from "./harness.ts";
+import { MockConnection, MockPi } from "./harness.ts";
 import { installReporterEnvHooks, telemetryFrames, waitForFrameCount } from "./reporter-harness.ts";
 
 describe("daemon reporter", () => {
@@ -19,21 +18,7 @@ describe("daemon reporter", () => {
 	};
 
 	it("emits skillName in skill tool call telemetry", async () => {
-		const sent: Frame[] = [];
-		const connection: DaemonConnection = {
-			send(frame) {
-				sent.push(frame);
-			},
-			on() {
-				return () => {};
-			},
-			onClose() {
-				return () => {};
-			},
-			close() {
-				// no-op
-			},
-		};
+		const connection = new MockConnection();
 
 		const priorReportToken = process.env.BASECAMP_REPORT_TOKEN;
 		try {
@@ -50,9 +35,9 @@ describe("daemon reporter", () => {
 				toolName: "skill",
 				args: { name: "python-development" },
 			});
-			await waitForFrameCount(sent, 2);
+			await waitForFrameCount(connection.sent, 2);
 
-			const toolCall = telemetryFrames(sent).find((frame) => frame.kind === "tool_call");
+			const toolCall = telemetryFrames(connection.sent).find((frame) => frame.kind === "tool_call");
 			assert.deepEqual(toolCall?.payload, {
 				category: "tool",
 				label: "skill",
@@ -67,21 +52,7 @@ describe("daemon reporter", () => {
 	});
 
 	it("emits bounded assistant, thinking, and tool display activity", async () => {
-		const sent: Frame[] = [];
-		const connection: DaemonConnection = {
-			send(frame) {
-				sent.push(frame);
-			},
-			on() {
-				return () => {};
-			},
-			onClose() {
-				return () => {};
-			},
-			close() {
-				// no-op
-			},
-		};
+		const connection = new MockConnection();
 		const priorReportToken = process.env.BASECAMP_REPORT_TOKEN;
 		try {
 			process.env.BASECAMP_REPORT_TOKEN = "token-for-tests";
@@ -115,9 +86,9 @@ describe("daemon reporter", () => {
 					],
 				},
 			});
-			await waitForFrameCount(sent, 6);
+			await waitForFrameCount(connection.sent, 6);
 
-			const telemetry = telemetryFrames(sent);
+			const telemetry = telemetryFrames(connection.sent);
 			const toolCall = telemetry.find((frame) => frame.kind === "tool_call");
 			assert.equal(toolCall?.payload.snippet, "bash printf 'hello'");
 			assert.equal("toolCallId" in (toolCall?.payload ?? {}), false);

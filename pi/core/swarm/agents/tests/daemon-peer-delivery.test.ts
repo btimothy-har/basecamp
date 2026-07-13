@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import type { Frame, PeerMessageDeliveryFrame } from "../../../hub/protocol/index.ts";
+import type { Frame, OutboundFrame, PeerMessageDeliveryFrame } from "../../../hub/protocol/index.ts";
 import { PROTOCOL_VERSION } from "../../../hub/protocol/index.ts";
 import { formatPeerMessageDeliveryContent, handlePeerMessageDelivery } from "../delivery.ts";
 
@@ -17,12 +17,12 @@ function deliveryFrame(overrides: Partial<PeerMessageDeliveryFrame> = {}): PeerM
 	};
 }
 
-function createMockConnection(): { sent: Frame[]; send: (frame: Frame) => void } {
+function createMockConnection(): { sent: Frame[]; send: (frame: OutboundFrame) => void } {
 	const sent: Frame[] = [];
 	return {
 		sent,
-		send(frame: Frame) {
-			sent.push(frame);
+		send(frame: OutboundFrame) {
+			sent.push({ ...frame, v: PROTOCOL_VERSION } as Frame);
 		},
 	};
 }
@@ -117,7 +117,7 @@ describe("peer message delivery", () => {
 			},
 		};
 		const connection = {
-			send(_frame: Frame): void {
+			send(_frame: OutboundFrame): void {
 				throw new Error("socket closed");
 			},
 		};

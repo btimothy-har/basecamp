@@ -1,8 +1,7 @@
-import type { PROTOCOL_VERSION } from "./version.ts";
+import type { ProtocolEnvelope } from "./version.ts";
 
-export interface WaitFrame {
+export interface WaitFrame extends ProtocolEnvelope {
 	type: "wait";
-	v: typeof PROTOCOL_VERSION;
 	agent_ids: string[];
 	agent_handles?: string[];
 	mode: "all";
@@ -17,8 +16,7 @@ export interface WaitResultItem {
 	error: string | null;
 }
 
-export interface WaitResultFrame {
+export interface WaitResultFrame extends ProtocolEnvelope {
 	type: "wait_result";
-	v: typeof PROTOCOL_VERSION;
 	results: WaitResultItem[];
 }
