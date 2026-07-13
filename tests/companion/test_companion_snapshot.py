@@ -31,7 +31,7 @@ class TestLoadSnapshot:
                         {"label": "Implement scaffold", "status": "active", "notes": "in progress"},
                     ],
                     "progress": {"completed": 1, "total": 3},
-                    "agentMode": "executor",
+                    "agentMode": "work",
                     "worktree": {
                         "label": "c266-companion-dashboard",
                         "branch": "wt/c266-companion-dashboard",
@@ -53,7 +53,7 @@ class TestLoadSnapshot:
         assert snapshot.session_id == "session-123"
         assert snapshot.updated_at == "2026-06-02T12:34:56Z"
         assert snapshot.skills_used == ["python-development", "planning"]
-        assert snapshot.agent_mode == "executor"
+        assert snapshot.agent_mode == "work"
         assert snapshot.repo_name == "basecamp"
         assert snapshot.effective_cwd == "/tmp/worktree"
 

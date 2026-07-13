@@ -30,7 +30,7 @@ def _write_snapshot(path: Path, session_id: str, effective_cwd: Path | str = "")
                 "updatedAt": "2026-06-02T12:34:56Z",
                 "goal": "Companion smoke",
                 "progress": {"completed": 1, "total": 2},
-                "agentMode": "executor",
+                "agentMode": "work",
                 "skillsUsed": ["python-development"],
                 "effectiveCwd": str(effective_cwd),
             }

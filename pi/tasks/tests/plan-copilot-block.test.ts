@@ -43,7 +43,7 @@ describe("plan copilot guard", () => {
 
 	it("does not block plan tool calls outside copilot mode", async () => {
 		const handler = registerHarness();
-		setAgentMode("executor");
+		setAgentMode("work");
 
 		const result = await handler({ type: "tool_call", toolName: "plan", toolCallId: "t1", input: {} });
 

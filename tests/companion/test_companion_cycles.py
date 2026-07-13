@@ -57,7 +57,7 @@ def test_load_goal_cycles_parses_and_ignores_extra_keys(tmp_path: Path) -> None:
                     {"label": "T2", "description": "", "criteria": "", "notes": None, "status": "deleted"},
                 ],
                 "planRef": None,
-                "agentMode": "executor",
+                "agentMode": "work",
                 "active": False,
                 "archivedAt": "2025-01-01T00:00:00Z",
             },
@@ -75,7 +75,7 @@ def test_load_goal_cycles_parses_and_ignores_extra_keys(tmp_path: Path) -> None:
     assert len(cycles) == 2
     assert isinstance(cycles[0], TaskCycle)
     assert cycles[0].goal == "First goal"
-    assert cycles[0].agent_mode == "executor"
+    assert cycles[0].agent_mode == "work"
     assert cycles[0].archived_at == "2025-01-01T00:00:00Z"
     assert cycles[0].tasks[0].description == "d1"
     assert cycles[1].active is True

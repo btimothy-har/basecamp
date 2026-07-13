@@ -126,7 +126,7 @@ describe("companion/herdr-metadata", () => {
 				snapshot({
 					tasks: [{ label: "Active task", status: "active", notes: null }],
 					worktree: { label: "worktree-label", branch: null, path: "/tmp/wt" },
-					agentMode: "executor",
+					agentMode: "work",
 					repoName: "repo-name",
 				}),
 			).customStatus,
@@ -136,7 +136,7 @@ describe("companion/herdr-metadata", () => {
 			buildHerdrMetadata(
 				snapshot({
 					worktree: { label: "worktree-label", branch: null, path: "/tmp/wt" },
-					agentMode: "executor",
+					agentMode: "work",
 					repoName: "repo-name",
 				}),
 			).customStatus,

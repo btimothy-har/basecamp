@@ -93,6 +93,21 @@ describe("session state file helpers", () => {
 		]);
 	});
 
+	it("coerces a retired agentMode to null while preserving the rest of the document", async (t) => {
+		const dir = await createTempDir(t);
+		await writeStateFile(dir, "legacy-mode", {
+			...createDefaultSessionState({ sessionId: "legacy-mode", sessionFile: "/tmp/session.json" }),
+			agentMode: "executor",
+			title: "Kept title",
+		});
+
+		const loaded = loadSessionState({ sessionId: "legacy-mode", sessionFile: "/tmp/session.json" }, dir);
+
+		// Retired modes (e.g. "executor"/"supervisor") must not invalidate the whole document.
+		assert.equal(loaded.agentMode, null);
+		assert.equal(loaded.title, "Kept title");
+	});
+
 	it("saves atomically with a fresh updatedAt and loads valid state", async (t) => {
 		const dir = await createTempDir(t);
 		const initial: BasecampSessionState = {
@@ -114,7 +129,7 @@ describe("session state file helpers", () => {
 				},
 				updatedAt: "2026-05-03T00:00:00.000Z",
 			},
-			agentMode: "supervisor",
+			agentMode: "work",
 			title: "Saved title",
 		};
 
@@ -177,7 +192,7 @@ describe("fork session state", () => {
 					},
 					updatedAt: "2026-05-03T00:00:00.000Z",
 				},
-				agentMode: "executor",
+				agentMode: "work",
 				title: "Parent title",
 			},
 			dir,
@@ -194,7 +209,7 @@ describe("fork session state", () => {
 		assert.equal(childState.sessionId, "child");
 		assert.equal(childState.sessionFile, childSessionFile);
 		assert.deepEqual(childState.activeWorktree, parentState.activeWorktree);
-		assert.equal(childState.agentMode, "executor");
+		assert.equal(childState.agentMode, "work");
 		assert.equal(childState.title, "Parent title");
 		assert.deepEqual(loadedChild, childState);
 		assert.deepEqual(loadedParent, parentState);

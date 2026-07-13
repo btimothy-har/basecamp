@@ -72,7 +72,9 @@ function isSessionState(value: unknown): value is BasecampSessionState {
 		(typeof value.sessionFile === "string" || value.sessionFile === null) &&
 		typeof value.updatedAt === "string" &&
 		(value.activeWorktree === null || isSessionStateActiveWorktree(value.activeWorktree)) &&
-		(value.agentMode === null || isAgentMode(value.agentMode)) &&
+		// Tolerate any string agentMode here; a retired mode (e.g. legacy "executor"/"supervisor")
+		// is coerced to null on load rather than invalidating the whole document.
+		(value.agentMode === null || typeof value.agentMode === "string") &&
 		(typeof value.title === "string" || value.title === null)
 	);
 }
@@ -93,7 +95,8 @@ export function loadSessionState(identity: SessionStateIdentity, stateDir?: stri
 			sessionFile: parsed.sessionFile,
 			updatedAt: parsed.updatedAt,
 			activeWorktree: parsed.activeWorktree ?? null,
-			agentMode: parsed.agentMode ?? null,
+			// Retired modes fall back to the default (null → DEFAULT_AGENT_MODE on restore).
+			agentMode: isAgentMode(parsed.agentMode) ? parsed.agentMode : null,
 			title: parsed.title ?? null,
 		};
 	} catch {

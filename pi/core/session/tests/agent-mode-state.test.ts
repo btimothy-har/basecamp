@@ -64,10 +64,10 @@ describe("agent mode session state", () => {
 		const dir = await createTempDir(t);
 		initializeCurrentSessionState(createContext("persist-default"), dir);
 
-		const mode = setAgentMode("executor");
+		const mode = setAgentMode("work");
 
-		assert.equal(mode, "executor");
-		assert.equal(getCurrentSessionState().agentMode, "executor");
+		assert.equal(mode, "work");
+		assert.equal(getCurrentSessionState().agentMode, "work");
 	});
 
 	it("accepts and persists copilot mode", async (t) => {
@@ -86,7 +86,7 @@ describe("agent mode session state", () => {
 	it("restores mode from state without overwriting the state file", async (t) => {
 		const dir = await createTempDir(t);
 		saveSessionState(
-			{ ...createDefaultSessionState({ sessionId: "restore-mode", sessionFile: null }), agentMode: "supervisor" },
+			{ ...createDefaultSessionState({ sessionId: "restore-mode", sessionFile: null }), agentMode: "analysis" },
 			dir,
 		);
 		initializeCurrentSessionState(createContext("restore-mode"), dir);
@@ -97,10 +97,10 @@ describe("agent mode session state", () => {
 		unsubscribe();
 		const loaded = loadSessionState({ sessionId: "restore-mode", sessionFile: null }, dir);
 
-		assert.equal(restored, "supervisor");
-		assert.equal(getAgentMode(), "supervisor");
-		assert.equal(loaded.agentMode, "supervisor");
-		assert.deepEqual(seen, ["supervisor"]);
+		assert.equal(restored, "analysis");
+		assert.equal(getAgentMode(), "analysis");
+		assert.equal(loaded.agentMode, "analysis");
+		assert.deepEqual(seen, ["analysis"]);
 	});
 
 	it("restores copilot mode from state", async (t) => {
@@ -127,8 +127,8 @@ describe("agent mode session state", () => {
 		const raw = await fs.readFile(buildSessionStatePath("restore-default", dir), "utf8");
 		const loaded = JSON.parse(raw) as { agentMode: string | null };
 
-		assert.equal(restored, "executor");
-		assert.equal(getAgentMode(), "executor");
+		assert.equal(restored, "work");
+		assert.equal(getAgentMode(), "work");
 		assert.equal(loaded.agentMode, null);
 	});
 
@@ -137,7 +137,7 @@ describe("agent mode session state", () => {
 
 		assert.deepEqual(
 			[cycleAgentMode(), cycleAgentMode(), cycleAgentMode(), cycleAgentMode(), cycleAgentMode()],
-			["planning", "supervisor", "executor", "analysis", "planning"],
+			["planning", "work", "analysis", "planning", "work"],
 		);
 	});
 
@@ -151,7 +151,7 @@ describe("agent mode session state", () => {
 	});
 
 	it("defines cycleable modes without copilot", () => {
-		assert.deepEqual(CYCLEABLE_AGENT_MODES, ["analysis", "planning", "supervisor", "executor"]);
+		assert.deepEqual(CYCLEABLE_AGENT_MODES, ["analysis", "planning", "work"]);
 		assert.equal(CYCLEABLE_AGENT_MODES.includes("copilot"), false);
 	});
 });

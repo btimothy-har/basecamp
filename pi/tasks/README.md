@@ -37,4 +37,4 @@ One feature, organized by function (not sub-features):
 
 ## Type contracts
 
-`TaskStatus`, `Task`, `ReviewState`, `TasksState`, `GoalCycle`, and the plan models (`PlanDraft`, `ImplementationMode`, …) live in `pi/tasks/schemas/` and are exported through `#tasks/index.ts`. For cross-domain observation, `lifecycle/` publishes a read-only `TasksReader` (`getState()` only — no mutators) via `registerTasksReader`; companion reads it through `getTasksReader()` (returns null until tasks registers it). Read-only by construction: the reader cannot mutate task state.
+`TaskStatus`, `Task`, `ReviewState`, `TasksState`, `GoalCycle`, and the plan models (`PlanDraft`, …) live in `pi/tasks/schemas/` and are exported through `#tasks/index.ts`. For cross-domain observation, `lifecycle/` publishes a read-only `TasksReader` (`getState()` only — no mutators) via `registerTasksReader`; companion reads it through `getTasksReader()` (returns null until tasks registers it). Read-only by construction: the reader cannot mutate task state.
