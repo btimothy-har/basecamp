@@ -1,7 +1,7 @@
 import type { DaemonClient } from "#core/swarm/agents/client.ts";
 import { defaultWorkstreamToolsDeps, errorMessage, type WorkstreamToolsDeps } from "./deps.ts";
 import { parseSetWorkstreamStatusParams } from "./params.ts";
-import { type SetWorkstreamStatusToolResult, statusTextResult } from "./results.ts";
+import { type SetWorkstreamStatusToolResult, toolResult } from "./results.ts";
 
 export async function executeSetWorkstreamStatus(
 	params: unknown,
@@ -9,7 +9,7 @@ export async function executeSetWorkstreamStatus(
 ): Promise<SetWorkstreamStatusToolResult> {
 	const parsed = parseSetWorkstreamStatusParams(params);
 	if (!parsed.ok) {
-		return statusTextResult(
+		return toolResult(
 			{
 				status: "failed",
 				message: parsed.message,
@@ -22,7 +22,7 @@ export async function executeSetWorkstreamStatus(
 
 	const client = await deps.getClient();
 	if (!client) {
-		return statusTextResult(
+		return toolResult(
 			{
 				status: "failed",
 				message: "basecamp hub is not connected; cannot update workstream status.",
@@ -40,7 +40,7 @@ export async function executeSetWorkstreamStatus(
 			status: parsed.value.status,
 		});
 	} catch (err) {
-		return statusTextResult(
+		return toolResult(
 			{
 				status: "failed",
 				message: `Could not update workstream status: ${errorMessage(err)}`,
@@ -52,7 +52,7 @@ export async function executeSetWorkstreamStatus(
 	}
 
 	if (result.status === "updated") {
-		return statusTextResult({
+		return toolResult({
 			status: "updated",
 			message: `Workstream "${parsed.value.workstream}" is now ${parsed.value.status}.`,
 			workstream: parsed.value.workstream,
@@ -60,7 +60,7 @@ export async function executeSetWorkstreamStatus(
 		});
 	}
 	if (result.status === "not_found") {
-		return statusTextResult(
+		return toolResult(
 			{
 				status: "not_found",
 				message: `No workstream found for "${parsed.value.workstream}".`,
@@ -71,7 +71,7 @@ export async function executeSetWorkstreamStatus(
 		);
 	}
 	if (result.status === "invalid_status") {
-		return statusTextResult(
+		return toolResult(
 			{
 				status: "invalid_status",
 				message: `Status "${parsed.value.status}" is not valid for this workstream.`,
@@ -81,7 +81,7 @@ export async function executeSetWorkstreamStatus(
 			true,
 		);
 	}
-	return statusTextResult(
+	return toolResult(
 		{
 			status: "failed",
 			message: `Daemon rejected status update: ${result.error ?? result.status}`,

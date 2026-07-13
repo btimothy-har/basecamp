@@ -4,4 +4,5 @@
 // v19: workstream create/attach/update frames + /workstreams HTTP reads.
 // v20: thread_report frame — top-level session ships its raw thread to the daemon.
 // v21: register frame gains repo + worktree_label identity facets.
-export const PROTOCOL_VERSION = 21;
+// v22: revise_workstream content-versioning frames + /workstreams detail carries version history.
+export const PROTOCOL_VERSION = 22;

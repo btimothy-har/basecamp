@@ -1,0 +1,9 @@
+{
+  "type": "revise_workstream",
+  "v": 22,
+  "request_id": "req-revise-001",
+  "workstream": "feature-auth",
+  "label": "Feature Auth v2",
+  "brief": "Refine the authentication feature",
+  "constraints": "must not break existing sessions"
+}

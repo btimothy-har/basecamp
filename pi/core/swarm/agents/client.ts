@@ -20,4 +20,5 @@ export {
 	type WorkstreamAgentView,
 	type WorkstreamDetail,
 	type WorkstreamSummary,
+	type WorkstreamVersionView,
 } from "./view/workstream.ts";

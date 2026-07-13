@@ -4,7 +4,15 @@ import type { WorktreeResult } from "#core/git/worktrees/crud.ts";
 import type { WorkspaceState, WorkspaceWorktree } from "#core/project/workspace/state.ts";
 import type { DaemonClient, WorkstreamDetail, WorkstreamSummary } from "#core/swarm/agents/client.ts";
 import type { HerdrWorkstreamOpenResult } from "../herdr.ts";
-import { executeLaunchWorkstream, type LaunchWorkstreamResultDetails, type WorkstreamToolsDeps } from "../tools.ts";
+import {
+	type CreateWorkstreamResultDetails,
+	type EditWorkstreamResultDetails,
+	executeCreateWorkstream,
+	executeEditWorkstream,
+	executeLaunchWorkstream,
+	type LaunchWorkstreamResultDetails,
+	type WorkstreamToolsDeps,
+} from "../tools.ts";
 
 export function makeWorkstreamDetail(overrides: Partial<WorkstreamDetail> = {}): WorkstreamDetail {
 	return {
@@ -16,10 +24,12 @@ export function makeWorkstreamDetail(overrides: Partial<WorkstreamDetail> = {}):
 		source_dossier_path: "/graph/pages/Dossier.md",
 		source_repo_page_path: null,
 		status: "open",
+		version: 1,
 		created_at: "2026-07-03T00:00:00.000Z",
 		updated_at: "2026-07-03T00:00:00.000Z",
 		agent_count: 0,
 		agents: [],
+		versions: [],
 		...overrides,
 	};
 }
@@ -34,6 +44,7 @@ export function makeWorkstreamSummary(overrides: Partial<WorkstreamSummary> = {}
 		source_dossier_path: "/graph/pages/Dossier.md",
 		source_repo_page_path: null,
 		status: "open",
+		version: 1,
 		created_at: "2026-07-03T00:00:00.000Z",
 		updated_at: "2026-07-03T00:00:00.000Z",
 		agent_count: 0,
@@ -45,9 +56,8 @@ interface FakeClientOptions {
 	createStatus?: "created" | "slug_conflict" | "error";
 	attachStatus?: "attached" | "not_found" | "error";
 	updateStatus?: "updated" | "not_found" | "invalid_status" | "error";
-	existingSlugs?: Set<string>;
-	workstreamDetail?: WorkstreamDetail | null;
-	workstreamSummaries?: WorkstreamSummary[] | null;
+	reviseStatus?: "revised" | "not_found" | "error";
+	reviseVersion?: number;
 }
 
 export class FakeDaemonClient {
@@ -68,6 +78,7 @@ export class FakeDaemonClient {
 		error?: string | null;
 	}[] = [];
 	readonly updateCalls: { workstream: string; status: "open" | "closed" }[] = [];
+	readonly reviseCalls: { workstream: string; label: string; brief: string; constraints?: string | null }[] = [];
 	private opts: FakeClientOptions;
 
 	constructor(opts: FakeClientOptions = {}) {
@@ -118,6 +129,16 @@ export class FakeDaemonClient {
 			error: status === "error" ? "db error" : null,
 		};
 	}
+
+	async reviseWorkstream(input: { workstream: string; label: string; brief: string; constraints?: string | null }) {
+		this.reviseCalls.push(input);
+		const status = this.opts.reviseStatus ?? "revised";
+		return {
+			status: status as "revised" | "not_found" | "error",
+			version: status === "revised" ? (this.opts.reviseVersion ?? 2) : null,
+			error: status === "error" ? "db error" : null,
+		};
+	}
 }
 
 export function makeWorkspace(overrides: Partial<WorkspaceState> = {}): WorkspaceState {
@@ -149,7 +170,7 @@ function makeContext(): ExtensionContext {
 	} as unknown as ExtensionContext;
 }
 
-export function baseParams(overrides: Record<string, unknown> = {}) {
+export function createParams(overrides: Record<string, unknown> = {}) {
 	return {
 		source: {
 			dossierPath: "/graph/pages/Dossier.md",
@@ -162,6 +183,14 @@ export function baseParams(overrides: Record<string, unknown> = {}) {
 		},
 		...overrides,
 	};
+}
+
+export function launchParams(workstream = "steady-amber-otter", overrides: Record<string, unknown> = {}) {
+	return { workstream, ...overrides };
+}
+
+export function editParams(workstream = "steady-amber-otter", overrides: Record<string, unknown> = {}) {
+	return { workstream, ...overrides };
 }
 
 export function makeDeps(client: FakeDaemonClient, overrides: Partial<WorkstreamToolsDeps> = {}) {
@@ -254,6 +283,16 @@ export function makeDeps(client: FakeDaemonClient, overrides: Partial<Workstream
 			slugSeq = 0;
 		},
 	};
+}
+
+export async function runCreate(params: unknown, deps: WorkstreamToolsDeps) {
+	const result = await executeCreateWorkstream(params, deps);
+	return { result, details: result.details as CreateWorkstreamResultDetails };
+}
+
+export async function runEdit(params: unknown, deps: WorkstreamToolsDeps) {
+	const result = await executeEditWorkstream(params, deps);
+	return { result, details: result.details as EditWorkstreamResultDetails };
 }
 
 export async function runLaunch(params: unknown, deps: WorkstreamToolsDeps) {

@@ -296,3 +296,26 @@ class UpdateWorkstreamAckFrame(BaseModel):
     request_id: str
     status: Literal["updated", "not_found", "invalid_status", "error"]
     error: str | None = None
+
+
+class ReviseWorkstreamFrame(BaseModel):
+    """Request to revise a workstream's content, retaining the prior version."""
+
+    type: Literal["revise_workstream"]
+    v: Literal[PROTOCOL_VERSION]
+    request_id: str
+    workstream: str
+    label: str
+    brief: str
+    constraints: str | None = None
+
+
+class ReviseWorkstreamAckFrame(BaseModel):
+    """Acknowledgement for a revise-workstream request, carrying the new version."""
+
+    type: Literal["revise_workstream_ack"]
+    v: Literal[PROTOCOL_VERSION]
+    request_id: str
+    status: Literal["revised", "not_found", "error"]
+    version: int | None = None
+    error: str | None = None

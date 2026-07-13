@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import sqlite3
 from pathlib import Path
 
 import pytest
@@ -36,6 +37,125 @@ def test_create_workstream_then_get_resolves_by_id_and_slug(tmp_path: Path) -> N
     assert by_id["updated_at"] == by_id["created_at"]
     assert by_slug == by_id
     assert store.get_workstream("missing") is None
+
+
+def test_create_workstream_seeds_version_one(tmp_path: Path) -> None:
+    store = Store(db_path=tmp_path / "daemon.db")
+
+    _create_workstream(store, workstream_id="ws-1", slug="alpha")
+
+    ws = store.get_workstream("ws-1")
+    assert ws is not None
+    assert ws["version"] == 1
+
+    detail = store.get_workstream_with_agents("ws-1")
+    assert detail is not None
+    assert [v["version"] for v in detail["versions"]] == [1]
+    assert detail["versions"][0]["brief"] == "Do the thing"
+
+
+def test_revise_workstream_bumps_version_and_retains_history(tmp_path: Path) -> None:
+    store = Store(db_path=tmp_path / "daemon.db")
+
+    _create_workstream(store, workstream_id="ws-1", slug="alpha", label="Alpha", brief="Do the thing")
+
+    new_version = store.revise_workstream(
+        workstream_id="ws-1",
+        label="Alpha v2",
+        brief="Do the refined thing",
+        constraints="stay in scope",
+        now="2026-02-02T00:00:00Z",
+    )
+    assert new_version == 2
+
+    ws = store.get_workstream("ws-1")
+    assert ws is not None
+    assert ws["version"] == 2
+    assert ws["label"] == "Alpha v2"
+    assert ws["brief"] == "Do the refined thing"
+    assert ws["constraints"] == "stay in scope"
+    assert ws["updated_at"] == "2026-02-02T00:00:00Z"
+    # Identity and source pointers are stable across revisions.
+    assert ws["slug"] == "alpha"
+    assert ws["source_dossier_path"] == "/tmp/dossier.md"
+
+    detail = store.get_workstream_with_agents("ws-1")
+    assert detail is not None
+    assert [v["version"] for v in detail["versions"]] == [2, 1]
+    # The old version content is retained verbatim.
+    old = detail["versions"][1]
+    assert old["version"] == 1
+    assert old["label"] == "Alpha"
+    assert old["brief"] == "Do the thing"
+    assert old["constraints"] is None
+
+
+def test_revise_workstream_missing_raises(tmp_path: Path) -> None:
+    store = Store(db_path=tmp_path / "daemon.db")
+
+    with pytest.raises(WorkstreamNotFoundError):
+        store.revise_workstream(workstream_id="ws-missing", label="x", brief="y")
+
+
+def test_list_workstream_versions_by_id_and_slug(tmp_path: Path) -> None:
+    store = Store(db_path=tmp_path / "daemon.db")
+
+    _create_workstream(store, workstream_id="ws-1", slug="alpha")
+    store.revise_workstream(workstream_id="ws-1", label="Alpha v2", brief="v2 brief")
+
+    by_id = store.list_workstream_versions("ws-1")
+    by_slug = store.list_workstream_versions("alpha")
+    assert by_id == by_slug
+    assert by_id is not None
+    assert [v["version"] for v in by_id] == [2, 1]
+    assert store.list_workstream_versions("missing") is None
+
+
+def test_workstreams_version_backfill_migrates_legacy_rows(tmp_path: Path) -> None:
+    db_path = tmp_path / "daemon.db"
+    # Build a pre-versioning workstreams table (no version column, no history table).
+    with sqlite3.connect(db_path) as connection:
+        connection.execute(
+            """
+            CREATE TABLE workstreams (
+                id TEXT PRIMARY KEY,
+                slug TEXT UNIQUE NOT NULL,
+                label TEXT NOT NULL,
+                brief TEXT NOT NULL,
+                constraints TEXT,
+                source_dossier_path TEXT NOT NULL,
+                source_repo_page_path TEXT,
+                status TEXT NOT NULL DEFAULT 'open' CHECK(status IN ('open','closed')),
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            )
+            """
+        )
+        connection.execute(
+            """
+            INSERT INTO workstreams (id, slug, label, brief, source_dossier_path, status, created_at, updated_at)
+            VALUES ('ws-legacy', 'legacy', 'Legacy', 'legacy brief', '/tmp/d.md', 'open', 't0', 't1')
+            """
+        )
+
+    store = Store(db_path=db_path)
+
+    ws = store.get_workstream("ws-legacy")
+    assert ws is not None
+    assert ws["version"] == 1
+
+    versions = store.list_workstream_versions("ws-legacy")
+    assert versions is not None
+    assert [v["version"] for v in versions] == [1]
+    assert versions[0]["brief"] == "legacy brief"
+    # The v1 snapshot's created_at is seeded from the workstream's created_at, not updated_at.
+    assert versions[0]["created_at"] == "t0"
+
+    # Re-opening the store does not double-seed the backfill.
+    Store(db_path=db_path)
+    versions_again = store.list_workstream_versions("ws-legacy")
+    assert versions_again is not None
+    assert [v["version"] for v in versions_again] == [1]
 
 
 def test_create_workstream_duplicate_slug_raises(tmp_path: Path) -> None:

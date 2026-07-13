@@ -26,6 +26,7 @@ from .frames import (
     RegisteredFrame,
     RegisterFrame,
     ResultReportFrame,
+    ReviseWorkstreamFrame,
     TelemetryFrame,
     ThreadReportFrame,
     UpdateWorkstreamFrame,
@@ -50,6 +51,7 @@ from .swarm.service import (
     list_agents,
     message_status_result,
     notify_message_delivery_terminal,
+    revise_workstream,
     schedule_disconnect_reaper,
     update_workstream,
     wait_for_agents,
@@ -310,6 +312,16 @@ def create_app(
                     await websocket.send_json(
                         serialize_frame(
                             await update_workstream(
+                                frame=inbound,
+                                store=store,
+                            )
+                        )
+                    )
+                    continue
+                if isinstance(inbound, ReviseWorkstreamFrame):
+                    await websocket.send_json(
+                        serialize_frame(
+                            await revise_workstream(
                                 frame=inbound,
                                 store=store,
                             )

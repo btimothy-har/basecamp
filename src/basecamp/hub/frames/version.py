@@ -11,4 +11,5 @@ from __future__ import annotations
 # v19: workstream create/attach/update request/ack frames.
 # v20: thread_report frame — top-level session ships its raw thread to the daemon.
 # v21: register frame gains repo + worktree_label identity facets.
-PROTOCOL_VERSION = 21
+# v22: revise_workstream content-versioning frames + /workstreams detail carries version history.
+PROTOCOL_VERSION = 22

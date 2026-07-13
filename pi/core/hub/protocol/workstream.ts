@@ -59,3 +59,22 @@ export interface UpdateWorkstreamAckFrame {
 	status: "updated" | "not_found" | "invalid_status" | "error";
 	error?: string | null;
 }
+
+export interface ReviseWorkstreamFrame {
+	type: "revise_workstream";
+	v: typeof PROTOCOL_VERSION;
+	request_id: string;
+	workstream: string;
+	label: string;
+	brief: string;
+	constraints?: string | null;
+}
+
+export interface ReviseWorkstreamAckFrame {
+	type: "revise_workstream_ack";
+	v: typeof PROTOCOL_VERSION;
+	request_id: string;
+	status: "revised" | "not_found" | "error";
+	version?: number | null;
+	error?: string | null;
+}

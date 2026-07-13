@@ -11,10 +11,12 @@ const NEW_FRAME_TYPES = [
 	"attach_workstream_agent_ack",
 	"update_workstream",
 	"update_workstream_ack",
+	"revise_workstream",
+	"revise_workstream_ack",
 ] as const;
 
 describe("daemon workstream frames", () => {
-	it("FRAME_TYPES contains the six new workstream types", () => {
+	it("FRAME_TYPES contains the workstream frame types", () => {
 		for (const type of NEW_FRAME_TYPES) {
 			assert.ok(FRAME_TYPES.includes(type), `FRAME_TYPES missing ${type}`);
 		}
@@ -253,5 +255,60 @@ describe("daemon workstream client methods", () => {
 		});
 
 		assert.deepEqual(await promise, { status: "updated", error: null });
+	});
+
+	it("reviseWorkstream sends full content and resolves with the new version", async () => {
+		const connection = new MockConnection();
+		const client = createDaemonClient(connection);
+
+		const promise = client.reviseWorkstream({
+			workstream: "alpha",
+			label: "Alpha v2",
+			brief: "Do the refined thing",
+			constraints: "stay in scope",
+		});
+		await new Promise((resolve) => setImmediate(resolve));
+
+		const outbound = connection.sent[0] as Extract<Frame, { type: "revise_workstream" }>;
+		assert.equal(outbound.type, "revise_workstream");
+		assert.equal(outbound.v, PROTOCOL_VERSION);
+		assert.equal(typeof outbound.request_id, "string");
+		assert.equal(outbound.workstream, "alpha");
+		assert.equal(outbound.label, "Alpha v2");
+		assert.equal(outbound.brief, "Do the refined thing");
+		assert.equal(outbound.constraints, "stay in scope");
+
+		connection.emit({
+			type: "revise_workstream_ack",
+			v: PROTOCOL_VERSION,
+			request_id: outbound.request_id,
+			status: "revised",
+			version: 2,
+			error: null,
+		});
+
+		assert.deepEqual(await promise, { status: "revised", version: 2, error: null });
+	});
+
+	it("reviseWorkstream maps undefined constraints to null on the wire", async () => {
+		const connection = new MockConnection();
+		const client = createDaemonClient(connection);
+
+		const promise = client.reviseWorkstream({ workstream: "alpha", label: "Alpha", brief: "brief" });
+		await new Promise((resolve) => setImmediate(resolve));
+
+		const outbound = connection.sent[0] as Extract<Frame, { type: "revise_workstream" }>;
+		assert.equal(outbound.constraints, null);
+
+		connection.emit({
+			type: "revise_workstream_ack",
+			v: PROTOCOL_VERSION,
+			request_id: outbound.request_id,
+			status: "not_found",
+			version: null,
+			error: null,
+		});
+
+		assert.deepEqual(await promise, { status: "not_found", version: null, error: null });
 	});
 });

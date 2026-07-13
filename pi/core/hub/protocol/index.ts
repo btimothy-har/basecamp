@@ -28,6 +28,8 @@ import type {
 	AttachWorkstreamAgentFrame,
 	CreateWorkstreamAckFrame,
 	CreateWorkstreamFrame,
+	ReviseWorkstreamAckFrame,
+	ReviseWorkstreamFrame,
 	UpdateWorkstreamAckFrame,
 	UpdateWorkstreamFrame,
 } from "./workstream.ts";
@@ -70,7 +72,9 @@ export type Frame =
 	| AttachWorkstreamAgentFrame
 	| AttachWorkstreamAgentAckFrame
 	| UpdateWorkstreamFrame
-	| UpdateWorkstreamAckFrame;
+	| UpdateWorkstreamAckFrame
+	| ReviseWorkstreamFrame
+	| ReviseWorkstreamAckFrame;
 
 export const FRAME_TYPES = [
 	"register",
@@ -99,6 +103,8 @@ export const FRAME_TYPES = [
 	"attach_workstream_agent_ack",
 	"update_workstream",
 	"update_workstream_ack",
+	"revise_workstream",
+	"revise_workstream_ack",
 ] as const;
 
 const KNOWN_TYPE_SET = new Set<string>(FRAME_TYPES);

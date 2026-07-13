@@ -163,18 +163,22 @@ describe("assemblePrompt", () => {
 			readOnly: false,
 		});
 
-		// staged handoff: launch_workstream stages a pane + slug; user starts pi with --workstream
+		// decoupled surface: create/edit shape the record; launch stages the worktree + pane
+		assert.match(prompt, /create_workstream/);
+		assert.match(prompt, /edit_workstream/);
 		assert.match(prompt, /launch_workstream/);
 		assert.match(prompt, /list_workstreams/);
 		assert.match(prompt, /set_workstream_status/);
 		// the migrated tool name replaces the deprecated launch-index name
 		assert.doesNotMatch(prompt, /list_workstream_launches/);
+		// content versioning: edit revises in place and retains the prior version
+		assert.match(prompt, /keeps the old version/);
 		assert.match(prompt, /It does not start an agent/);
 		assert.match(prompt, /Tell the user to run `pi --workstream` in the opened pane/);
 		assert.match(prompt, /infers the slug from the worktree label/);
 		assert.match(prompt, /`cd <worktree-path> && pi --workstream=<slug>`/);
-		// carry an existing workstream across repos via workstream_id
-		assert.match(prompt, /carry an existing workstream into the current repo by passing its `workstream_id`/);
+		// launch is decoupled from the record, so the same workstream carries across repos
+		assert.match(prompt, /launched into a different repo for cross-repo coordination/);
 		// --copilot dropped the plan() sibling framing; copilot stages but does not implement in-session
 		assert.doesNotMatch(prompt, /plan\(\)/);
 		assert.doesNotMatch(prompt, /siblings, not replacements/);

@@ -1,7 +1,7 @@
 import type { WorkstreamAgentView, WorkstreamSummary } from "#core/swarm/agents/client.ts";
 import { defaultWorkstreamToolsDeps, errorMessage, type WorkstreamToolsDeps } from "./deps.ts";
 import { parseListWorkstreamsParams } from "./params.ts";
-import { type ListWorkstreamsToolResult, listTextResult } from "./results.ts";
+import { type ListWorkstreamsToolResult, toolResult } from "./results.ts";
 
 export async function executeListWorkstreams(
 	params: unknown,
@@ -15,7 +15,7 @@ export async function executeListWorkstreams(
 		try {
 			const detail = await deps.getWorkstreamDetail(socketPath, parsed.query);
 			if (detail) {
-				return listTextResult({
+				return toolResult({
 					status: "ok",
 					message: `Found workstream ${detail.slug ?? detail.id}.`,
 					count: 1,
@@ -38,7 +38,7 @@ export async function executeListWorkstreams(
 			...(parsed.query ? { query: parsed.query } : {}),
 		});
 	} catch (err) {
-		return listTextResult(
+		return toolResult(
 			{
 				status: "failed",
 				message: `Could not list workstreams: ${errorMessage(err)}`,
@@ -51,7 +51,7 @@ export async function executeListWorkstreams(
 	}
 
 	if (summaries === null) {
-		return listTextResult(
+		return toolResult(
 			{
 				status: "failed",
 				message: "basecamp hub is not connected; cannot list workstreams.",
@@ -64,7 +64,7 @@ export async function executeListWorkstreams(
 		);
 	}
 
-	return listTextResult({
+	return toolResult({
 		status: "ok",
 		message: `Found ${summaries.length} workstream${summaries.length === 1 ? "" : "s"}.`,
 		count: summaries.length,

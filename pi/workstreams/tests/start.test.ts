@@ -11,7 +11,12 @@ import {
 	initializeCurrentSessionState,
 	resetCurrentSessionState,
 } from "#core/session/state/index.ts";
-import { defaultWorkstreamStartDeps, parseWorkstreamFlagValue, registerWorkstreamStartup } from "../start.ts";
+import {
+	defaultWorkstreamStartDeps,
+	parseWorkstreamFlagValue,
+	registerWorkstreamStartup,
+	sessionHasPriorTurns,
+} from "../start.ts";
 import { FakeDaemonClient, makeCtx, makeDeps } from "./start-harness.ts";
 
 class FakePi {
@@ -97,6 +102,22 @@ describe("registerWorkstreamStartup", () => {
 		assert.equal(client.attachCalls.length, 1);
 	});
 
+	it("does not re-inject the brief or re-force mode when the session already has turns", async () => {
+		const client = new FakeDaemonClient();
+		const harness = makeDeps(client);
+		const pi = new FakePi();
+		const { ctx } = makeCtx();
+
+		registerWorkstreamStartup(pi as unknown as ExtensionAPI, async () => null, harness.deps);
+		pi.setFlag("workstream", true);
+		harness.setPriorTurns(true); // resume/reload/fork/compact — the brief is already in the thread
+		await pi.emitSessionStart(ctx);
+
+		assert.equal(pi.userMessages.length, 0);
+		assert.equal(harness.enterExploreModeCalls.length, 0);
+		assert.equal(client.attachCalls.length, 0);
+	});
+
 	it("does nothing on session_start when --workstream is absent", async () => {
 		const client = new FakeDaemonClient();
 		const harness = makeDeps(client);
@@ -135,6 +156,44 @@ describe("defaultWorkstreamStartDeps enterExploreMode", () => {
 
 		assert.equal(getAgentMode(), "planning");
 		assert.equal(getCurrentSessionState().agentMode, "planning");
+	});
+});
+
+describe("sessionHasPriorTurns", () => {
+	function ctxWithEntries(entries: unknown[]): ExtensionContext {
+		return { sessionManager: { getEntries: () => entries } } as unknown as ExtensionContext;
+	}
+
+	it("is false for a fresh session with no entries", () => {
+		assert.equal(sessionHasPriorTurns(ctxWithEntries([])), false);
+	});
+
+	it("is false when no sessionManager reader is available", () => {
+		assert.equal(sessionHasPriorTurns({ sessionManager: {} } as unknown as ExtensionContext), false);
+	});
+
+	it("is true when a user or assistant message is present", () => {
+		assert.equal(sessionHasPriorTurns(ctxWithEntries([{ type: "message", message: { role: "user" } }])), true);
+		assert.equal(sessionHasPriorTurns(ctxWithEntries([{ type: "message", message: { role: "assistant" } }])), true);
+	});
+
+	it("ignores non-conversation entries (tool results, custom entries)", () => {
+		assert.equal(
+			sessionHasPriorTurns(
+				ctxWithEntries([
+					{ type: "message", message: { role: "toolResult" } },
+					{ type: "custom", data: {} },
+				]),
+			),
+			false,
+		);
+	});
+
+	it("falls back to getBranch when getEntries is absent", () => {
+		const ctx = {
+			sessionManager: { getBranch: () => [{ type: "message", message: { role: "user" } }] },
+		} as unknown as ExtensionContext;
+		assert.equal(sessionHasPriorTurns(ctx), true);
 	});
 });
 

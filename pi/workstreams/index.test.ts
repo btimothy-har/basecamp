@@ -72,6 +72,8 @@ describe("workstreams entrypoint", () => {
 		registerWorkstreams(pi as unknown as ExtensionAPI);
 
 		const toolNames = new Set(pi.tools.map((tool) => tool.name));
+		assert.equal(toolNames.has("create_workstream"), true);
+		assert.equal(toolNames.has("edit_workstream"), true);
 		assert.equal(toolNames.has("launch_workstream"), true);
 		assert.equal(toolNames.has("list_workstreams"), true);
 		assert.equal(toolNames.has("set_workstream_status"), true);

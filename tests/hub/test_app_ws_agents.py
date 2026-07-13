@@ -272,6 +272,41 @@ def test_ws_workstream_create_attach_update_flow(tmp_path: Path) -> None:
 
             ws.send_json(
                 {
+                    "type": "revise_workstream",
+                    "v": PROTOCOL_VERSION,
+                    "request_id": "revise-1",
+                    "workstream": "feature-auth",
+                    "label": "Feature Auth v2",
+                    "brief": "Implement auth, refined",
+                    "constraints": "keep sessions working",
+                }
+            )
+            revised = ws.receive_json()
+            assert revised == {
+                "type": "revise_workstream_ack",
+                "v": PROTOCOL_VERSION,
+                "request_id": "revise-1",
+                "status": "revised",
+                "version": 2,
+                "error": None,
+            }
+
+            ws.send_json(
+                {
+                    "type": "revise_workstream",
+                    "v": PROTOCOL_VERSION,
+                    "request_id": "revise-2",
+                    "workstream": "unknown-slug",
+                    "label": "x",
+                    "brief": "y",
+                }
+            )
+            revise_not_found = ws.receive_json()
+            assert revise_not_found["type"] == "revise_workstream_ack"
+            assert revise_not_found["status"] == "not_found"
+
+            ws.send_json(
+                {
                     "type": "update_workstream",
                     "v": PROTOCOL_VERSION,
                     "request_id": "update-1",
@@ -316,6 +351,9 @@ def test_ws_workstream_create_attach_update_flow(tmp_path: Path) -> None:
         ws_row = store.get_workstream_with_agents("feature-auth")
         assert ws_row is not None
         assert ws_row["status"] == "closed"
+        assert ws_row["version"] == 2
+        assert ws_row["label"] == "Feature Auth v2"
+        assert [v["version"] for v in ws_row["versions"]] == [2, 1]
         agent_ids = [agent["agent_id"] for agent in ws_row["agents"]]
         assert "root" in agent_ids
 
@@ -357,6 +395,8 @@ def test_http_workstreams_list_and_detail(tmp_path: Path) -> None:
         assert detail_response.status_code == 200
         detail = detail_response.json()
         assert detail["slug"] == "feature-auth"
+        assert detail["version"] == 1
+        assert [v["version"] for v in detail["versions"]] == [1]
         assert isinstance(detail["agents"], list)
         assert any(agent["agent_id"] == "root" for agent in detail["agents"])
 

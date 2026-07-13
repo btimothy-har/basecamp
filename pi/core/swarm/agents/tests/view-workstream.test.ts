@@ -28,6 +28,7 @@ describe("daemon workstream HTTP helpers", () => {
 					source_dossier_path: "/tmp/dossier.md",
 					source_repo_page_path: null,
 					status: "open",
+					version: 1,
 					created_at: "2026-01-01T00:00:00Z",
 					updated_at: "2026-01-01T00:00:01Z",
 					agent_count: 2,
@@ -41,6 +42,7 @@ describe("daemon workstream HTTP helpers", () => {
 		const [ws] = result;
 		assert.equal(ws?.id, "ws-1");
 		assert.equal(ws?.slug, "alpha");
+		assert.equal(ws?.version, 1);
 		assert.equal(ws?.agent_count, 2);
 	});
 
@@ -59,6 +61,7 @@ describe("daemon workstream HTTP helpers", () => {
 			source_dossier_path: "/tmp/dossier.md",
 			source_repo_page_path: "/tmp/page.md",
 			status: "open",
+			version: 2,
 			created_at: "2026-01-01T00:00:00Z",
 			updated_at: "2026-01-01T00:00:01Z",
 			agent_count: 1,
@@ -75,14 +78,35 @@ describe("daemon workstream HTTP helpers", () => {
 				},
 				"bad",
 			],
+			versions: [
+				{
+					version: 2,
+					label: "Alpha v2",
+					brief: "Do the refined thing",
+					constraints: "stay small",
+					created_at: "2026-01-01T00:00:01Z",
+				},
+				{
+					version: 1,
+					label: "Alpha",
+					brief: "Do the thing",
+					constraints: null,
+					created_at: "2026-01-01T00:00:00Z",
+				},
+				"bad",
+			],
 		});
 
 		assert.ok(result);
 		assert.equal(result.id, "ws-1");
+		assert.equal(result.version, 2);
 		assert.equal(result.agents.length, 1);
 		const [agent] = result.agents;
 		assert.equal(agent?.agent_handle, "quiet-badger-3dc450");
 		assert.equal(agent?.run_status, "running");
+		assert.equal(result.versions.length, 2);
+		assert.equal(result.versions[0]?.version, 2);
+		assert.equal(result.versions[1]?.brief, "Do the thing");
 	});
 
 	it("parseWorkstreamDetailResponse returns null for non-object payloads", () => {

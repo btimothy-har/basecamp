@@ -34,6 +34,8 @@ from .swarm import (
     PeerMessageFrame,
     PeerMessageRelation,
     ResultReportFrame,
+    ReviseWorkstreamAckFrame,
+    ReviseWorkstreamFrame,
     TelemetryFrame,
     UpdateWorkstreamAckFrame,
     UpdateWorkstreamFrame,
@@ -106,7 +108,9 @@ Frame = Annotated[
     | AttachWorkstreamAgentFrame
     | AttachWorkstreamAgentAckFrame
     | UpdateWorkstreamFrame
-    | UpdateWorkstreamAckFrame,
+    | UpdateWorkstreamAckFrame
+    | ReviseWorkstreamFrame
+    | ReviseWorkstreamAckFrame,
     Field(discriminator="type"),
 ]
 
@@ -152,6 +156,8 @@ __all__ = [
     "RegisterFrame",
     "RegisteredFrame",
     "ResultReportFrame",
+    "ReviseWorkstreamAckFrame",
+    "ReviseWorkstreamFrame",
     "TelemetryFrame",
     "ThreadReportFrame",
     "ThreadReportNode",
