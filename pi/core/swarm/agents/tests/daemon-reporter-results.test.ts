@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { type Frame, PROTOCOL_VERSION } from "../../../hub/protocol/index.ts";
+import type { Frame } from "../../../hub/protocol/index.ts";
 import type { DaemonConnection } from "../client.ts";
 import { registerDaemonReporter } from "../reporter.ts";
 import {
@@ -9,7 +9,7 @@ import {
 	BASECAMP_RUNNER_MANAGED_RESULT,
 	readRunResultSidecar,
 } from "../run-result.ts";
-import { MockPi } from "./harness.ts";
+import { MockConnection, MockPi } from "./harness.ts";
 import {
 	deferred,
 	installReporterEnvHooks,
@@ -22,21 +22,7 @@ describe("daemon reporter results", () => {
 	installReporterEnvHooks();
 
 	it("sends telemetry and final result report", async () => {
-		const sent: Frame[] = [];
-		const connection: DaemonConnection = {
-			send(frame) {
-				sent.push({ ...frame, v: PROTOCOL_VERSION } as Frame);
-			},
-			on() {
-				return () => {};
-			},
-			onClose() {
-				return () => {};
-			},
-			close() {
-				// no-op
-			},
-		};
+		const connection = new MockConnection();
 
 		const gate = deferred<DaemonConnection>();
 		const priorReportToken = process.env.BASECAMP_REPORT_TOKEN;
@@ -67,9 +53,9 @@ describe("daemon reporter results", () => {
 
 			gate.resolve(connection);
 			await Promise.all([toolStart, toolEnd, turnEnd, agentEnd]);
-			await waitForFrameCount(sent, 7);
+			await waitForFrameCount(connection.sent, 7);
 
-			const telemetry = telemetryFrames(sent);
+			const telemetry = telemetryFrames(connection.sent);
 			assert.deepEqual(
 				telemetry.map((frame) => frame.kind),
 				["tool_execution_start", "tool_call", "tool_execution_end", "tool_result", "turn_end", "agent_result"],
@@ -83,7 +69,7 @@ describe("daemon reporter results", () => {
 			assert.equal(telemetry.find((frame) => frame.kind === "tool_result")?.payload.snippet, "completed");
 			assert.equal(telemetry.find((frame) => frame.kind === "agent_result")?.payload.snippet, "final");
 
-			const resultReport = sent.find(
+			const resultReport = connection.sent.find(
 				(frame): frame is Extract<Frame, { type: "result_report" }> => frame.type === "result_report",
 			);
 			assert.ok(resultReport);
@@ -92,7 +78,7 @@ describe("daemon reporter results", () => {
 			assert.equal(resultReport.status, "ok");
 			assert.equal(resultReport.result, "final");
 			assert.equal(resultReport.report_token, "token-for-tests");
-			for (const frame of telemetryFrames(sent)) {
+			for (const frame of telemetryFrames(connection.sent)) {
 				assert.equal(frame.report_token, "token-for-tests");
 			}
 		} finally {
@@ -102,21 +88,7 @@ describe("daemon reporter results", () => {
 	});
 
 	it("writes runner-managed non-empty final result sidecar without result report", async () => {
-		const sent: Frame[] = [];
-		const connection: DaemonConnection = {
-			send(frame) {
-				sent.push({ ...frame, v: PROTOCOL_VERSION } as Frame);
-			},
-			on() {
-				return () => {};
-			},
-			onClose() {
-				return () => {};
-			},
-			close() {
-				// no-op
-			},
-		};
+		const connection = new MockConnection();
 
 		const runResultPath = await tempRunResultPath();
 		const priorReportToken = process.env.BASECAMP_REPORT_TOKEN;
@@ -136,16 +108,16 @@ describe("daemon reporter results", () => {
 				type: "agent_end",
 				messages: [{ role: "assistant", content: [{ type: "text", text: "final" }] }],
 			});
-			await waitForFrameCount(sent, 1);
+			await waitForFrameCount(connection.sent, 1);
 
-			const telemetry = telemetryFrames(sent);
+			const telemetry = telemetryFrames(connection.sent);
 			assert.deepEqual(
 				telemetry.map((frame) => frame.kind),
 				["agent_result"],
 			);
 			assert.equal(telemetry[0]?.payload.snippet, "final");
 			assert.equal(
-				sent.some((frame) => frame.type === "result_report"),
+				connection.sent.some((frame) => frame.type === "result_report"),
 				false,
 			);
 			assert.deepEqual(await readRunResultSidecar(runResultPath), {
@@ -161,21 +133,7 @@ describe("daemon reporter results", () => {
 	});
 
 	it("writes runner-managed empty final result sidecar without result report", async () => {
-		const sent: Frame[] = [];
-		const connection: DaemonConnection = {
-			send(frame) {
-				sent.push({ ...frame, v: PROTOCOL_VERSION } as Frame);
-			},
-			on() {
-				return () => {};
-			},
-			onClose() {
-				return () => {};
-			},
-			close() {
-				// no-op
-			},
-		};
+		const connection = new MockConnection();
 
 		const runResultPath = await tempRunResultPath();
 		const priorReportToken = process.env.BASECAMP_REPORT_TOKEN;
@@ -196,7 +154,7 @@ describe("daemon reporter results", () => {
 				messages: [],
 			});
 
-			assert.deepEqual(sent, []);
+			assert.deepEqual(connection.sent, []);
 			assert.deepEqual(await readRunResultSidecar(runResultPath), {
 				run_id: "run-1",
 				agent_id: "agent-1",
@@ -210,21 +168,7 @@ describe("daemon reporter results", () => {
 	});
 
 	it("bounds agent result telemetry snippets", async () => {
-		const sent: Frame[] = [];
-		const connection: DaemonConnection = {
-			send(frame) {
-				sent.push({ ...frame, v: PROTOCOL_VERSION } as Frame);
-			},
-			on() {
-				return () => {};
-			},
-			onClose() {
-				return () => {};
-			},
-			close() {
-				// no-op
-			},
-		};
+		const connection = new MockConnection();
 		const priorReportToken = process.env.BASECAMP_REPORT_TOKEN;
 		try {
 			process.env.BASECAMP_REPORT_TOKEN = "token-for-tests";
@@ -240,16 +184,16 @@ describe("daemon reporter results", () => {
 				type: "agent_end",
 				messages: [{ role: "assistant", content: [{ type: "text", text: finalText }] }],
 			});
-			await waitForFrameCount(sent, 2);
+			await waitForFrameCount(connection.sent, 2);
 
-			const telemetry = telemetryFrames(sent);
+			const telemetry = telemetryFrames(connection.sent);
 			const snippet = telemetry.find((frame) => frame.kind === "agent_result")?.payload.snippet;
 			assert.equal(typeof snippet, "string");
 			assert.equal((snippet as string).length, 240);
 			assert.equal((snippet as string).endsWith("…"), true);
 			assert.equal((snippet as string).includes(finalText), false);
 
-			const resultReport = sent.find(
+			const resultReport = connection.sent.find(
 				(frame): frame is Extract<Frame, { type: "result_report" }> => frame.type === "result_report",
 			);
 			assert.equal(resultReport?.result, finalText);
@@ -260,21 +204,7 @@ describe("daemon reporter results", () => {
 	});
 
 	it("emits full assistant message text with bounded snippets", async () => {
-		const sent: Frame[] = [];
-		const connection: DaemonConnection = {
-			send(frame) {
-				sent.push({ ...frame, v: PROTOCOL_VERSION } as Frame);
-			},
-			on() {
-				return () => {};
-			},
-			onClose() {
-				return () => {};
-			},
-			close() {
-				// no-op
-			},
-		};
+		const connection = new MockConnection();
 		const priorReportToken = process.env.BASECAMP_REPORT_TOKEN;
 		try {
 			process.env.BASECAMP_REPORT_TOKEN = "token-for-tests";
@@ -293,9 +223,9 @@ describe("daemon reporter results", () => {
 					content: [{ type: "text", text }],
 				},
 			});
-			await waitForFrameCount(sent, 1);
+			await waitForFrameCount(connection.sent, 1);
 
-			const output = telemetryFrames(sent).find((frame) => frame.kind === "assistant_output");
+			const output = telemetryFrames(connection.sent).find((frame) => frame.kind === "assistant_output");
 			assert.equal(output?.payload.text, text);
 			assert.equal(typeof output?.payload.snippet, "string");
 			assert.equal((output?.payload.snippet as string).length, 240);

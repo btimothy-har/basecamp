@@ -19,6 +19,7 @@ from types import TracebackType
 from pydantic import ValidationError
 
 from ..frames import (
+    PROTOCOL_VERSION,
     ErrorFrame,
     RegisteredFrame,
     RegisterFrame,
@@ -203,7 +204,7 @@ class AttemptDaemonProxy:
     def _parse_next_frame(self, websocket: object) -> object:
         message = websocket.recv()
         payload = json.loads(message)
-        if not isinstance(payload, dict):
+        if not isinstance(payload, dict) or payload.get("v") != PROTOCOL_VERSION:
             raise InvalidProxyFrameError
         return parse_frame(payload)
 

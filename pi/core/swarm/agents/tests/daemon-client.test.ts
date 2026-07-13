@@ -47,6 +47,8 @@ describe("daemon client", () => {
 		socket.emit("open");
 		const register = JSON.parse(socket.sent[0] ?? "{}") as Extract<Frame, { type: "register" }>;
 		assert.equal(register.type, "register");
+		// The one real end-to-end encodeFrame path: assert it stamped the protocol version.
+		assert.equal(register.v, PROTOCOL_VERSION);
 		assert.equal(register.node_id, "node-1");
 		assert.equal(register.agent_handle, "quiet-badger-3dc450");
 		assert.equal(register.session_file, null);
