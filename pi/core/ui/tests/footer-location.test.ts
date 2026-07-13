@@ -87,7 +87,7 @@ afterEach(() => {
 });
 
 describe("footer location line", () => {
-	it("does not render a mode label for default executor mode", async (t) => {
+	it("does not render a mode label for default work mode", async (t) => {
 		process.chdir(await createGitCheckout(t, "feature/footer-branch"));
 
 		const footer = await renderFooter(120);
@@ -109,7 +109,7 @@ describe("footer location line", () => {
 		}
 	});
 
-	it("rerenders when mode changes away from executor", async (t) => {
+	it("rerenders when mode changes away from work", async (t) => {
 		process.chdir(await createGitCheckout(t, "feature/footer-branch"));
 
 		setAgentMode("planning");

@@ -5,13 +5,13 @@
  * keep their ✓ status, changed sections reset to ★ (needs re-review).
  */
 
-import type { ImplementationMode, PlanDraft, PlanSection } from "../schemas/plan.ts";
+import type { PlanDraft, PlanSection } from "../schemas/plan.ts";
 import { SECTION_NAMES } from "../schemas/plan.ts";
 import type { ReviewState, TaskStatus } from "../schemas/task.ts";
 import type { HandoffWorktreeResult } from "./handoff/index.ts";
 import type { WorktreeSetupSummary } from "./handoff/worktree-setup.ts";
 
-export type ApprovedPlanMode = "analysis" | ImplementationMode;
+export type ApprovedPlanMode = "analysis" | "implementation";
 
 export interface TaskInput {
 	label: string;
@@ -216,7 +216,6 @@ export function buildApprovedResult(
 		result.plan_mode = "analysis";
 		result.next_step = "Analysis plan approved, you may begin executing the analysis tasks.";
 	} else {
-		result.implementation_mode = mode;
 		result.handoff_status = "scheduled";
 		result.next_step =
 			"Plan has been approved. Do not start implementation; wait for the user's confirmation to start work. Acknowledge and end the turn.";

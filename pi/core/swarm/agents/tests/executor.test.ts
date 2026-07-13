@@ -125,15 +125,19 @@ const SUPPORT_TOOLS = [
 const PARENT_ONLY_TOOLS = ["plan", "escalate"];
 
 describe("subagent tool allowlist", () => {
-	it("gives every subagent the unified write-capable toolset without parent-only tools", () => {
+	it("gives every subagent a read-only toolset (no write/edit) without parent-only tools", () => {
 		const tools = toolNamesFromArgs(buildToolArgs(null));
 
-		for (const tool of ["read", "write", "edit", "bash", "grep", "find", "ls", ...SUPPORT_TOOLS]) {
+		for (const tool of ["read", "bash", "grep", "find", "ls", ...SUPPORT_TOOLS]) {
 			assert.equal(tools.includes(tool), true, `${tool} should be available`);
 		}
-		for (const tool of PARENT_ONLY_TOOLS) {
+		for (const tool of ["write", "edit", ...PARENT_ONLY_TOOLS]) {
 			assert.equal(tools.includes(tool), false, `${tool} should not be available`);
 		}
+	});
+
+	it("launches every subagent with --read-only", () => {
+		assert.equal(buildToolArgs(null).includes("--read-only"), true);
 	});
 });
 

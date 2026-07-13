@@ -25,5 +25,3 @@ export interface PlanDraft {
 	tasks: Task[];
 	tasksReview: ReviewState;
 }
-
-export type ImplementationMode = "supervisor" | "executor";

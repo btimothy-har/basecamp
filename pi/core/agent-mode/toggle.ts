@@ -4,9 +4,8 @@ import { type AgentMode, cycleAgentMode, getAgentMode } from "./index.ts";
 const MODE_LABELS: Record<AgentMode, string> = {
 	analysis: "Analysis/research",
 	planning: "Explore",
+	work: "Work",
 	copilot: "Repo copilot",
-	supervisor: "Supervisor",
-	executor: "IC/executor",
 };
 
 export function registerModeShortcut(pi: ExtensionAPI): void {

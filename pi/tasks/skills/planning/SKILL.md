@@ -67,7 +67,7 @@ Before calling `plan()`, align on the boundaries that prevent drift. Decide what
 
 ### Formalise with `plan()`
 
-The conversation that produced this plan does not survive it. On approval the plan is handed off and the discovery dialogue is compacted away — the executor sees the plan, not this chat. Treat every section as the only durable record of the work: inline the evidence, decisions, file paths, commands, and constraints needed to act, and never lean on "as discussed above" or assumed shared memory. If a detail matters for execution and lives only in the conversation, it belongs in the plan.
+The conversation that produced this plan does not survive it. On approval the plan is handed off and the discovery dialogue is compacted away — the implementer sees the plan, not this chat. Treat every section as the only durable record of the work: inline the evidence, decisions, file paths, commands, and constraints needed to act, and never lean on "as discussed above" or assumed shared memory. If a detail matters for execution and lives only in the conversation, it belongs in the plan.
 
 Call `plan()` only after discovery and discussion have converged. Convergence requires a final recommendation, not just a list of options: you should be able to state which alternatives were invalidated, which assumptions survived, what uncertainty remains, and why the recommended plan is the best next step. The plan sections should reflect the agreed direction, not introduce new thinking.
 
@@ -92,13 +92,13 @@ The user reviews via an interactive overlay. They may:
 
 If feedback is returned, address it and re-submit. Unchanged approved sections keep their status.
 
-Once every item is approved and submitted, follow the plan result. Implementation plans ask for supervisor vs IC/executor posture; if the approved result includes a scheduled handoff, do not begin implementation in the current turn. End the turn and let Basecamp start the fresh handoff turn so the selected posture prompt is loaded. Analysis-mode plans stay in analysis mode; begin the approved analysis tasks without supervisor/executor handoff.
+Once every item is approved and submitted, follow the plan result. Implementation plans hand off to work mode; if the approved result includes a scheduled handoff, do not begin implementation in the current turn. End the turn and let Basecamp start the fresh handoff turn so the work posture prompt is loaded. Analysis-mode plans stay in analysis mode; begin the approved analysis tasks without an implementation handoff.
 
 ---
 
 ## What Good Looks Like
 
-A good plan is fully self-contained. Once approved, the discovery conversation is compacted away and cannot be reopened — the plan is the only artifact the executor inherits, so it must be specific enough that another agent could execute it without that conversation.
+A good plan is fully self-contained. Once approved, the discovery conversation is compacted away and cannot be reopened — the plan is the only artifact the implementer inherits, so it must be specific enough that another agent could execute it without that conversation.
 
 - **Goal** — one clear outcome, not a vague improvement area
 - **Context** — evidence from the actual system, source data, workflow, or user need

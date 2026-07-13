@@ -12,7 +12,7 @@ export type AgentMode = SessionStateAgentMode;
 export const AGENT_MODES: readonly AgentMode[] = SESSION_STATE_AGENT_MODES;
 export const CYCLEABLE_AGENT_MODES: readonly AgentMode[] = AGENT_MODES.filter((mode) => mode !== "copilot");
 
-const DEFAULT_AGENT_MODE: AgentMode = "executor";
+const DEFAULT_AGENT_MODE: AgentMode = "work";
 
 type AgentModeListener = (mode: AgentMode) => void;
 

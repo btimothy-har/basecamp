@@ -51,7 +51,7 @@ describe("assemblePrompt", () => {
 			readOnly: false,
 		});
 
-		assert.match(prompt, /# Direct Execution/);
+		assert.match(prompt, /# Work/);
 		assert.match(prompt, /# Your Role as an Engineer/);
 		assert.match(prompt, /You are a \*\*partner\*\*, not a follower\./);
 		assert.match(prompt, /## Git & GitHub/);
@@ -218,8 +218,8 @@ describe("assemblePrompt", () => {
 		assert.match(copilotPrompt, /^- bash — Run a command$/m);
 		assert.doesNotMatch(copilotPrompt, /^- plan —/m);
 
-		useAgentMode(t, "executor");
-		const executorPrompt = assemblePrompt({
+		useAgentMode(t, "work");
+		const workPrompt = assemblePrompt({
 			workspace: null,
 			project: null,
 			effectiveCwd: "/repo",
@@ -230,8 +230,8 @@ describe("assemblePrompt", () => {
 			readOnly: false,
 		});
 
-		assert.match(executorPrompt, /Tools \(2\):/);
-		assert.match(executorPrompt, /^- plan — Submit a plan$/m);
+		assert.match(workPrompt, /Tools \(2\):/);
+		assert.match(workPrompt, /^- plan — Submit a plan$/m);
 	});
 
 	it("places Repo Logseq after project context and before the environment block", async (t) => {

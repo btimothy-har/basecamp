@@ -27,7 +27,6 @@ import {
 	HANDOFF_COMPACTION_THRESHOLD_PERCENT,
 	type PendingImplementationHandoff,
 	runHandoff,
-	selectImplementationMode,
 } from "../workflows/handoff/index.ts";
 import { showReviewOverlay } from "../workflows/review/index.ts";
 import { renderPartial, renderSuccess } from "./render.ts";
@@ -58,7 +57,7 @@ export function registerPlan(pi: ExtensionAPI, runtime: TasksRuntime): PlanAcces
 			const sendHandoff = () => {
 				if (handoffSent) return;
 				handoffSent = true;
-				pi.sendUserMessage(buildHandoffMessage(handoff.mode));
+				pi.sendUserMessage(buildHandoffMessage());
 			};
 
 			const usagePercent = ctx.getContextUsage()?.percent;
@@ -87,7 +86,7 @@ export function registerPlan(pi: ExtensionAPI, runtime: TasksRuntime): PlanAcces
 		description:
 			"Submit a structured plan for user review. Blocks until the user approves or provides feedback. " +
 			"On approval, creates the goal and tasks. Analysis plans stay in analysis mode; " +
-			"implementation plans ask for supervisor vs IC/executor posture. " +
+			"implementation plans hand off to an execution worktree for direct implementation. " +
 			"On feedback, returns structured feedback for revision.",
 		promptSnippet: "Submit a structured plan for review, approval, and work handoff",
 		parameters: Type.Object({
@@ -162,13 +161,6 @@ export function registerPlan(pi: ExtensionAPI, runtime: TasksRuntime): PlanAcces
 				return { content: [{ type: "text", text: result }], details: undefined };
 			}
 
-			const implementationMode = await selectImplementationMode(ctx);
-			if (!implementationMode) {
-				return cancelledResult(
-					"Plan approved, but an execution pathway was not selected. Seek user confirmation to begin implementation.",
-				);
-			}
-
 			const outcome = await runHandoff(pi, ctx, { goal: draft.goal.content, worktreeSlug: draft.worktreeSlug });
 			if (outcome.status === "cancelled") {
 				return cancelledResult(
@@ -182,16 +174,18 @@ export function registerPlan(pi: ExtensionAPI, runtime: TasksRuntime): PlanAcces
 				};
 			}
 
-			setAgentMode(implementationMode);
+			// Implementation plans hand off to work mode: the primary session implements
+			// directly (subagents are read-only). This replaces the old supervisor/IC choice.
+			setAgentMode("work");
 			startGoalCycle(runtime, {
 				goal: draft.goal.content,
 				tasks: approvedTasks,
 				planRef,
-				agentMode: implementationMode,
+				agentMode: "work",
 			});
-			pendingImplementationHandoff = buildPendingImplementationHandoff(draft, implementationMode, outcome.worktree);
+			pendingImplementationHandoff = buildPendingImplementationHandoff(draft, outcome.worktree);
 
-			const result = buildApprovedResult(draft, implementationMode, outcome.worktree, outcome.setupSummary);
+			const result = buildApprovedResult(draft, "implementation", outcome.worktree, outcome.setupSummary);
 			draft = null;
 			return { content: [{ type: "text", text: result }], details: undefined };
 		},
@@ -219,8 +213,7 @@ export function registerPlan(pi: ExtensionAPI, runtime: TasksRuntime): PlanAcces
 				}
 
 				if (parsed.status === "approved") {
-					const approvedMode = parsed.implementation_mode ?? parsed.plan_mode;
-					const mode = approvedMode ? ` → ${approvedMode}` : "";
+					const mode = parsed.plan_mode ? ` → ${parsed.plan_mode}` : "";
 					return renderSuccess(`plan approved${mode}`, theme);
 				}
 

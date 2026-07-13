@@ -120,6 +120,9 @@ export function buildPiArgs(
 
 	args.push("--no-prompt-templates");
 
+	// Every dispatched agent is read-only; the primary session is the sole mutator.
+	args.push("--read-only");
+
 	const effectivePrompt = agent?.systemPrompt ?? null;
 
 	if (effectivePrompt) {

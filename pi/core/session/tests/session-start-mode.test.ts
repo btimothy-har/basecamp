@@ -78,7 +78,7 @@ describe("registerSession copilot mode startup", () => {
 	it("sets copilot mode on session_start when the copilot flag is present", async (t) => {
 		const dir = await createTempDir(t);
 		saveSessionState(
-			{ ...createDefaultSessionState({ sessionId: "copilot-start", sessionFile: null }), agentMode: "supervisor" },
+			{ ...createDefaultSessionState({ sessionId: "copilot-start", sessionFile: null }), agentMode: "work" },
 			dir,
 		);
 		initializeCurrentSessionState(createContext("copilot-start"), dir);
@@ -94,7 +94,7 @@ describe("registerSession copilot mode startup", () => {
 	it("restores the stored mode on session_start when the copilot flag is absent", async (t) => {
 		const dir = await createTempDir(t);
 		saveSessionState(
-			{ ...createDefaultSessionState({ sessionId: "restore-start", sessionFile: null }), agentMode: "supervisor" },
+			{ ...createDefaultSessionState({ sessionId: "restore-start", sessionFile: null }), agentMode: "work" },
 			dir,
 		);
 		initializeCurrentSessionState(createContext("restore-start"), dir);
@@ -103,6 +103,6 @@ describe("registerSession copilot mode startup", () => {
 
 		await pi.emitSessionStart();
 
-		assert.equal(getAgentMode(), "supervisor");
+		assert.equal(getAgentMode(), "work");
 	});
 });

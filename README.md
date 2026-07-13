@@ -181,11 +181,11 @@ project context (configured context plus AGENTS.md/CLAUDE.md)
 runtime environment (paths, platform, date, git/worktree state)
 ```
 
-Built-in prompt files can be overridden by creating matching files under `~/.pi/basecamp/workspace/prompts/` (for example, `~/.pi/basecamp/workspace/prompts/environment.md` or `~/.pi/basecamp/workspace/prompts/modes/executor.md`).
+Built-in prompt files can be overridden by creating matching files under `~/.pi/basecamp/workspace/prompts/` (for example, `~/.pi/basecamp/workspace/prompts/environment.md` or `~/.pi/basecamp/workspace/prompts/modes/work.md`).
 
 ### Session Modes
 
-The session mode sets the agent's posture and is shown in the footer. Cycle between `analysis`, `explore` (planning), `supervisor`, and `executor` with shift+tab.
+The session mode sets the agent's posture and is shown in the footer. Cycle between `analysis`, `explore` (planning), and `work` (the default) with shift+tab. Dispatched subagents are read-only; the primary session is the sole mutator.
 
 `copilot` is a locked, launch-only mode: start it with `pi --copilot`. It is immutable — shift+tab can neither enter nor leave it — and the `plan()` handoff is disabled in it (a copilot session stages execution-ready workstreams with `launch_workstream` instead of implementing in-session). `pi --copilot` takes precedence over `pi --workstream` if both are passed.
 

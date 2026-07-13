@@ -1,6 +1,6 @@
 /**
- * Implementation handoff — execution posture selection, worktree targeting,
- * and the deferred handoff message (with optional pre-handoff compaction).
+ * Implementation handoff — worktree targeting and the deferred handoff
+ * message (with optional pre-handoff compaction).
  */
 
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
@@ -14,7 +14,7 @@ import {
 	type WorkspaceWorktree,
 } from "#core/project/workspace/state.ts";
 import { shortSessionId } from "#core/session/session-id.ts";
-import type { ImplementationMode, PlanDraft } from "../../schemas/plan.ts";
+import type { PlanDraft } from "../../schemas/plan.ts";
 import type { TaskStatus } from "../../schemas/task.ts";
 import { collectApprovedNotes } from "../draft.ts";
 import {
@@ -62,20 +62,8 @@ export type HandoffWorktreeResult = {
 };
 
 export interface PendingImplementationHandoff {
-	mode: ImplementationMode;
 	worktree: HandoffWorktreeContext;
 	plan: HandoffPlanContext;
-}
-
-const IMPLEMENTATION_MODE_CHOICES = ["Execute as Supervisor", "Execute as IC/executor"] as const;
-
-export async function selectImplementationMode(ctx: ExtensionContext): Promise<ImplementationMode | null> {
-	if (!ctx.hasUI) return null;
-
-	const choice = await ctx.ui.select("Execute approved plan as", [...IMPLEMENTATION_MODE_CHOICES]);
-	if (choice === "Execute as Supervisor") return "supervisor";
-	if (choice === "Execute as IC/executor") return "executor";
-	return null;
 }
 
 export async function selectWorktreeTarget(
@@ -107,11 +95,7 @@ export async function selectWorktreeTarget(
 
 export const HANDOFF_COMPACTION_THRESHOLD_PERCENT = 30;
 
-export function buildHandoffMessage(mode: ImplementationMode): string {
-	if (mode === "supervisor") {
-		return "Plan looks good — proceed as supervisor. Delegate bounded investigation and implementation to subagents; keep synthesis, decisions, and integration here.";
-	}
-
+export function buildHandoffMessage(): string {
 	return "Plan looks good — proceed with direct implementation.";
 }
 
@@ -127,13 +111,11 @@ export function buildWorktreeActivationFailedResult(label: string, error: unknow
 
 export function buildPendingImplementationHandoff(
 	draft: PlanDraft,
-	mode: ImplementationMode,
 	worktree: HandoffWorktreeResult,
 ): PendingImplementationHandoff {
 	const repo = requireWorkspaceState().repo;
 	if (!repo) throw new Error("Implementation handoff requires a git repository");
 	return {
-		mode,
 		worktree: {
 			label: worktree.label,
 			path: worktree.worktreeDir,
@@ -174,7 +156,6 @@ export function buildHandoffCompactionInstructions(handoff: PendingImplementatio
 		`Boundaries: ${handoff.plan.boundaries}`,
 		"",
 		"Execution handoff:",
-		`Mode: ${handoff.mode}`,
 		`Selected worktree: ${handoff.worktree.label} (${handoff.worktree.branch})`,
 		`Worktree path: ${handoff.worktree.path}`,
 		`Worktree status: ${handoff.worktree.created ? "created" : "resumed"}`,

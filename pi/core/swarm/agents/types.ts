@@ -35,9 +35,12 @@ export const TASK_TRACKING_TOOLS = [
 	"delete_task",
 ] as const;
 export const SUBAGENT_SUPPORT_TOOLS = ["skill", ...TASK_TRACKING_TOOLS, "bq_query"] as const;
-// One unified, write-capable toolset for every dispatched agent: the
-// mutative/read-only-by-persona distinction (and its guards) is retired.
-export const AGENT_TOOLS = ["read", "write", "edit", "bash", "grep", "find", "ls"] as const;
+// One uniform read-only toolset for every dispatched agent: subagents investigate,
+// review, and report; the primary session is the sole mutator ("main does all edits").
+// `write`/`edit` are withheld from every agent. `bash` stays (scouts need git log/gh,
+// reviewers need git diff) and is deliberately NOT a mutation sandbox — true bash
+// containment is the container-isolation direction (docs/design/agent-isolation.md).
+export const AGENT_TOOLS = ["read", "bash", "grep", "find", "ls"] as const;
 
 export function getAgentToolAllowlist(): string[] {
 	return [...AGENT_TOOLS, ...SUBAGENT_SUPPORT_TOOLS];

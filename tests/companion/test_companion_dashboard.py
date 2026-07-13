@@ -293,7 +293,7 @@ def test_dashboard_autopin_navigation_and_repin(tmp_path: Path) -> None:
                         {"label": "T1", "description": "d1", "criteria": "c1", "status": "completed", "notes": "n1"},
                         {"label": "T2", "description": "d2", "criteria": "c2", "status": "completed", "notes": None},
                     ],
-                    "agentMode": "executor",
+                    "agentMode": "work",
                     "active": False,
                     "archivedAt": "2025-01-01T00:00:00Z",
                 },
