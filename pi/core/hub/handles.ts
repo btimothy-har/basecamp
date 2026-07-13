@@ -24,6 +24,19 @@ export function buildAgentHandle(): string {
 	return buildAgentHandleFromEntropy(randomUUID().replace(/-/g, ""));
 }
 
+/**
+ * Derive a handle deterministically from a seed (a node id): same seed → same
+ * handle, so a top-level session keeps a stable, addressable identity across
+ * reload/resume (see identity.ts), and peers cache that handle to reach it.
+ *
+ * The mapping is therefore a contract, not an implementation detail — it holds
+ * only for a fixed algorithm and word bank. Changing seededRng, the entropy
+ * slicing, or the shared naming bank re-derives a different handle for every
+ * existing seed. A session live across such a change reconnects under the new
+ * handle (the daemon overwrites the stored handle with the freshly-derived one
+ * on reconnect), and peers addressing the old handle get a silent "unknown"
+ * ack, not an error. Change deliberately.
+ */
 export function buildDeterministicAgentHandle(seed: string): string {
 	return buildAgentHandleFromEntropy(createHash("sha256").update(seed).digest("hex"));
 }
