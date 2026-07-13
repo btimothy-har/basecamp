@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { NAME_BANK } from "../bank.ts";
-import { generateName } from "../generate.ts";
+import { ADJECTIVES, NAME_BANK, NOUNS } from "../bank.ts";
+import { ADJ_ADJ_NOUN, ADJ_NOUN, generateName } from "../generate.ts";
 
 function sequenceRng(values: number[]): () => number {
 	let index = 0;
@@ -15,47 +15,53 @@ function sequenceRng(values: number[]): () => number {
 	};
 }
 
-describe("NAME_BANK", () => {
-	it("contains only unique lowercase-letter words", () => {
+describe("word bank", () => {
+	it("has unique lowercase-letter words with adjectives and nouns disjoint", () => {
 		assert.equal(new Set(NAME_BANK).size, NAME_BANK.length);
+		assert.equal(NAME_BANK.length, ADJECTIVES.length + NOUNS.length);
 		for (const word of NAME_BANK) {
 			assert.match(word, /^[a-z]{2,}$/);
 		}
 	});
 
-	it("is large enough to keep the three-word namespace comfortable", () => {
-		assert.ok(NAME_BANK.length >= 150, `expected at least 150 words, got ${NAME_BANK.length}`);
+	it("keeps the adjective-adjective-noun namespace comfortable", () => {
+		// ~50% collision odds sit near 1.18 * sqrt(namespace); >1M keeps headroom for many slugs.
+		const namespace = ADJECTIVES.length * (ADJECTIVES.length - 1) * NOUNS.length;
+		assert.ok(namespace >= 1_000_000, `expected at least 1M combinations, got ${namespace}`);
 	});
 });
 
 describe("generateName", () => {
-	it("defaults to three distinct lowercase hyphen-joined words matching safe label rules", () => {
+	it("defaults to adjective-adjective-noun with two distinct adjectives", () => {
 		const name = generateName({ rng: sequenceRng([0, 0, 0]) });
-		const words = name.split("-");
+		const [first, second, third] = name.split("-");
 
-		assert.match(name, /^[A-Za-z0-9][A-Za-z0-9._-]*$/);
 		assert.match(name, /^[a-z]+-[a-z]+-[a-z]+$/);
-		assert.equal(words.length, 3);
-		assert.equal(new Set(words).size, 3);
+		assert.ok(ADJECTIVES.includes(first ?? ""));
+		assert.ok(ADJECTIVES.includes(second ?? ""));
+		assert.notEqual(first, second);
+		assert.ok(NOUNS.includes(third ?? ""));
 	});
 
-	it("supports two-word names for callers that append their own id", () => {
-		const name = generateName({ words: 2, rng: sequenceRng([0, 0]) });
+	it("builds adjective-noun for handle-style callers", () => {
+		const name = generateName({ pattern: ADJ_NOUN, rng: sequenceRng([0, 0]) });
+		const [first, second] = name.split("-");
 
 		assert.match(name, /^[a-z]+-[a-z]+$/);
-		assert.equal(name.split("-").length, 2);
+		assert.ok(ADJECTIVES.includes(first ?? ""));
+		assert.ok(NOUNS.includes(second ?? ""));
 	});
 
 	it("uses injected rng deterministically", () => {
-		const first = generateName({ rng: sequenceRng([0, 0, 0]) });
-		const second = generateName({ rng: sequenceRng([0, 0, 0]) });
+		const first = generateName({ pattern: ADJ_ADJ_NOUN, rng: sequenceRng([0, 0, 0]) });
+		const second = generateName({ pattern: ADJ_ADJ_NOUN, rng: sequenceRng([0, 0, 0]) });
 
-		assert.equal(first, `${NAME_BANK[0]}-${NAME_BANK[1]}-${NAME_BANK[2]}`);
+		assert.equal(first, `${ADJECTIVES[0]}-${ADJECTIVES[1]}-${NOUNS[0]}`);
 		assert.equal(second, first);
 	});
 
 	it("regenerates when a candidate is already taken", () => {
-		const firstName = `${NAME_BANK[0]}-${NAME_BANK[1]}-${NAME_BANK[2]}`;
+		const firstName = `${ADJECTIVES[0]}-${ADJECTIVES[1]}-${NOUNS[0]}`;
 		const taken = new Set([firstName]);
 		const seen: string[] = [];
 		const name = generateName({

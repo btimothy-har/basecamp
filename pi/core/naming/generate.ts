@@ -1,12 +1,23 @@
-import { NAME_BANK } from "./bank.ts";
+import { ADJECTIVES, NOUNS } from "./bank.ts";
+
+export type PartOfSpeech = "adjective" | "noun";
+
+const POOLS: Record<PartOfSpeech, readonly string[]> = {
+	adjective: ADJECTIVES,
+	noun: NOUNS,
+};
+
+/** Agent-handle grammar: `adjective-noun` (callers append a unique id, e.g. a hex suffix). */
+export const ADJ_NOUN: readonly PartOfSpeech[] = ["adjective", "noun"];
+
+/** Readable-slug grammar: `adjective-adjective-noun`. */
+export const ADJ_ADJ_NOUN: readonly PartOfSpeech[] = ["adjective", "adjective", "noun"];
 
 export interface GenerateNameOptions {
-	/** How many words to join. Defaults to 3 (readable slugs); 2 suits handles that append their own id. */
-	words?: 2 | 3;
+	/** Part of speech per position. Defaults to adjective-adjective-noun. */
+	pattern?: readonly PartOfSpeech[];
 	/** Randomness source in [0, 1). Defaults to Math.random; pass a seeded rng for deterministic output. */
 	rng?: () => number;
-	/** Whether the chosen words must differ from one another. Defaults to true. */
-	distinct?: boolean;
 	/** Optional collision check; a truthy result rejects the candidate and retries. */
 	isTaken?: (name: string) => boolean;
 	/** How many candidates to try before giving up when isTaken keeps rejecting. Defaults to 50. */
@@ -21,15 +32,21 @@ function randomIndex(length: number, rng: () => number): number {
 	return Math.floor(value * length);
 }
 
-function candidateName(wordCount: number, distinct: boolean, rng: () => number): string {
-	const pool = [...NAME_BANK];
+function candidateName(pattern: readonly PartOfSpeech[], rng: () => number): string {
+	// One mutable copy per part of speech, so repeated slots (e.g. two adjectives)
+	// never draw the same word; different parts draw from disjoint lists already.
+	const pools = new Map<PartOfSpeech, string[]>();
 	const words: string[] = [];
 
-	for (let i = 0; i < wordCount; i += 1) {
-		const index = randomIndex(pool.length, rng);
-		const word = distinct ? pool.splice(index, 1)[0] : pool[index];
+	for (const pos of pattern) {
+		let pool = pools.get(pos);
+		if (!pool) {
+			pool = [...POOLS[pos]];
+			pools.set(pos, pool);
+		}
+		const [word] = pool.splice(randomIndex(pool.length, rng), 1);
 		if (!word) {
-			throw new Error("Unable to select a name word.");
+			throw new Error(`Not enough ${pos} words to build the requested name.`);
 		}
 		words.push(word);
 	}
@@ -38,18 +55,18 @@ function candidateName(wordCount: number, distinct: boolean, rng: () => number):
 }
 
 /**
- * Build a readable hyphen-joined name from the shared word bank — e.g.
- * `steady-calm-otter`. Callers own any prefix/suffix (a `copilot/` label, a
- * hex handle id, a session tag); this returns only the words.
+ * Build a readable hyphen-joined name from the shared word bank following a
+ * part-of-speech pattern — e.g. `steady-calm-otter` for adjective-adjective-noun.
+ * Callers own any prefix/suffix (a `copilot/` label, a hex handle id, a session
+ * tag); this returns only the words.
  */
 export function generateName(options: GenerateNameOptions = {}): string {
 	const rng = options.rng ?? Math.random;
-	const wordCount = options.words ?? 3;
-	const distinct = options.distinct ?? true;
+	const pattern = options.pattern ?? ADJ_ADJ_NOUN;
 	const maxAttempts = options.maxAttempts ?? 50;
 
 	for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
-		const candidate = candidateName(wordCount, distinct, rng);
+		const candidate = candidateName(pattern, rng);
 		if (!options.isTaken?.(candidate)) {
 			return candidate;
 		}
