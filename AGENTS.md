@@ -124,3 +124,12 @@ There are no per-file exceptions and no suppression mechanism. (Files that preda
 - **Python**: `uv run pytest` uses root `pyproject.toml` — `testpaths` is root `tests/`, with a subdir per domain (`tests/core/`, `tests/workspace/`, `tests/swarm/`, `tests/companion/`) beside the CLI-shell tests; imports resolve via the editable install (`uv sync`), no `pythonpath` stitching.
 - **TypeScript**: `npm test` runs the Node test runner over every domain's `pi/<domain>/**/*.test.ts` (one child process per test file), plus `pi/extension.test.ts` (whole-graph load + registration under strict Node). A new domain's tests must be added to the `test` glob list in `package.json`.
 - **Tests live beside their code**: `pi/<domain>/**/tests/` (TS) and `tests/<domain>/` (Python).
+
+## Pull Requests
+
+Open every PR **as a draft** and drive it to done in order — never skip a step or open one ready for review:
+
+1. **Open in draft.** No PR starts ready for review.
+2. **Get CI green.** Poll the PR's checks (`.github/workflows/ci.yml`) and fix whatever fails; do not proceed while CI is red.
+3. **Mark ready once CI is green.** Flipping the PR out of draft is also what triggers `.github/workflows/claude-review.yml` (it skips drafts), so the reviewer only ever sees a green, ready PR.
+4. **Clear the review.** Poll for the Claude review, fix every issue it raises, and reply to and/or resolve every review comment before treating the PR as done.
