@@ -65,7 +65,7 @@ The distinction is **user-facing vs. backgrounded**, and it is founded on an **e
 - `agent` — a human session is attached (the interactive launcher sets `BASECAMP_USER_FACING=1`).
 - `worker` — fully backgrounded; the daemon/dispatch path spawns it and does **not** set the flag.
 
-**Why an explicit flag and not `hasUI` / json-mode.** `ctx.hasUI` is `false` in print/JSON mode (`pi/engineering/skills/pi-development/references/EXTENSIONS.md:215`) — a *rendering* concern, not an identity one. A headless top-level automation run (`pi -p` at depth 0) would misclassify as a worker under a json-mode proxy, and the companion already conflates the two by gating panes on `hasUI && depth===0` (`pi/companion/panes/provider.ts:23`). The launcher, by contrast, *knows* which kind it is spawning. `hasUI` may still be carried as a separate **`attended`** boolean (is a human watching *right now*), decoupled from the structural `kind`.
+**Why an explicit flag and not `hasUI` / json-mode.** `ctx.hasUI` is `false` in print/JSON mode (`pi/engineering/skills/pi-development/references/EXTENSIONS.md:215`) — a *rendering* concern, not an identity one. A headless top-level automation run (`pi -p` at depth 0) would misclassify as a worker under a json-mode proxy, and the companion already conflates the two by gating panes on `hasUI && depth===0` (`pi/companion/panes/provider.ts:23`). The launcher, by contrast, *knows* which kind it is spawning. There is **no separate `attended` facet**: whether the human is currently looking (detached, alt-tabbed) doesn't change identity — `kind` alone is the durable signal, and a live "watching now" indicator, if ever wanted, is runtime connection status, not identity.
 
 **Change in `identity.ts`.** The role derivation moves off depth — today `const role = safeDepth > 0 ? "agent" : "session"` (`pi/core/hub/identity.ts:48`) — to reading the flag: `kind = process.env.BASECAMP_USER_FACING ? "agent" : "worker"`.
 
@@ -99,7 +99,7 @@ This diverges from #244's plain deletion *and* from its "no distinction" thesis:
 Two protections, both at the **pi launch / register handshake** — never in normal operation:
 
 - **Set-once assignment.** An agent's workstream membership (`workstream_agents`, §5) is written once at its first `--workstream` launch and is **immutable** — re-launch/re-registration must **not re-home it** to another workstream. One agent carries one membership; the additive model already "never overwrites" (AGENTS.md), so this is consistent with it. The `agents`-row upsert updates mutable identity columns but never touches the membership.
-- **No double-live-instance.** Launching an agent whose id **already holds a live connection** in the daemon registry warns/fails at register — you don't run one agent twice. A persisted-but-idle row with no live connection is a normal reconnect / re-task target, not a conflict.
+- **No double-live-instance.** Launching an agent whose id **already holds a live connection** in the daemon registry **warns** at register — you don't run one agent twice. (Warn-and-continue for now; a hard block that PID-verifies the live holder and auto-reclaims a dead one is deferred — §14.) A persisted-but-idle row with no live connection is a normal reconnect / re-task target, not a conflict.
 
 Everything else is silent and normal: a first launch, a brand-new agent's assignment, and a same-session reconnect/reload (which upserts the same row) never warn.
 
@@ -113,7 +113,7 @@ Remove `run_kind` (`mutative | named-read-only | ad-hoc`, `pi/core/swarm/agents/
 
 A node **joins** (`register` → `upsert_agent`, `app.py:151`), goes **idle** (WS disconnect → `schedule_disconnect_reaper`, `app.py:334`; the row persists), and eventually **expires**.
 
-Expiry is **soft**, a **single global TTL**, tracked **per-row** off `last_seen_at`: on expiry the row is marked and **filtered out of the live roster / `list_agents`**, but **retained** for history. Any activity (reconnect, re-task, telemetry) resets it. This finally cashes the TTL that [async-agents.md](./async-agents.md) §6.5/§10 deferred; a hard-delete sweep remains a later follow-up. One TTL for all kinds (workers are the bulk of accumulation, but a uniform TTL is simpler and sufficient).
+Expiry is **soft**, a **fixed 24-hour TTL** (a constant, not a config knob — long-running by design), tracked **per-row** off `last_seen_at` and applied **only to rows with no live connection** (a connected session is never expired). On expiry the row is marked and **filtered out of the live roster / `list_agents`**, but **retained** for history; any activity (reconnect, re-task, telemetry) resets it. This finally cashes the TTL that [async-agents.md](./async-agents.md) §6.5/§10 deferred; a hard-delete sweep remains a later follow-up. One TTL for all kinds — uniform is simpler and sufficient.
 
 ## 9. How it connects — the three overlays (recap)
 
@@ -139,7 +139,7 @@ The scoping lenses (follow-up) filter overlay-3's roster by the facets from §5 
 
 ## 11. Schema, frame & boundary impact
 
-- **`agents` table** (`src/basecamp/hub/store/agents/schema.py:16-33`): **add** `repo`, `worktree_label`, `user_facing` (or derive `kind`), `expires_at`; **rename** `role` → `kind` (remap `session→agent`, `agent→worker`); **drop** `product_role`, `run_kind`. Additive columns follow the existing `ALTER TABLE` pattern; the rename + drops need a one-shot migration (SQLite: rebuild, or stop-writing + backfill).
+- **`agents` table** (`src/basecamp/hub/store/agents/schema.py:16-33`): **add** `repo`, `worktree_label`, `user_facing` (or derive `kind`), `expires_at`; **rename** `role` → `kind` (remap `session→agent`, `agent→worker`); **drop** `product_role`, `run_kind`. All of it is trivial + idempotent and rides the daemon's existing startup schema-ensure (`_ensure_*_column`); because the `PROTOCOL_VERSION` bump forces a daemon restart on upgrade (async-agents §5.3), that ensure fires **right after install** — no separate migration hook, no lazy per-row logic. (`role→kind` is a guarded one-shot UPDATE; the drops use SQLite `DROP COLUMN`, 3.35+.)
 - **`RegisterFrame`** (`pi/core/hub/protocol/register.ts:3-16` + the Python Pydantic mirror + JSON fixtures): **add** `repo`, `worktree_label`, `user_facing`; `role → kind`; **drop** `product_role`. This is a wire change → **bump `PROTOCOL_VERSION`** and move the three hand-maintained copies together.
 - **`identity.ts`**: rewrite the `role`/`product_role` derivation (`:48`, `:65`, `:69-76`) into `kind` + facet reads (`BASECAMP_REPO` / `BASECAMP_WORKTREE_LABEL` / `BASECAMP_USER_FACING`); drop the `agent-role.ts` import.
 - **`policy.py`: unchanged.** No new deny path. **`directory.py`** listing gains the facet columns in its projection and an optional `expires_at` filter.
@@ -147,12 +147,12 @@ The scoping lenses (follow-up) filter overlay-3's roster by the facets from §5 
 - **Deletes**: `pi/core/agent-role.ts` + `pi/core/tests/agent-role.test.ts`; the `daemon-identity` / `plan-handoff-worktree` / `workstreams/start` tests repoint; `pi/workstreams/start.ts` drops the registrant.
 - **Tool-surface note** (unchanged, but now legible): top-level `agent`s get `dispatch`/`list`/`wait`; `worker`s get `ask`/`message`/`cancel` (`pi/core/swarm/agents/surfaces.ts:52-69`). The `kind` rename makes that split self-documenting.
 
-## 12. Open questions
+## 12. Settled details
 
-- **(a) Keep a distinct `attended` (`hasUI`) boolean** separate from `kind`, or is `kind` enough for the dashboard's "human watching now" lens?
-- **(b) The TTL value** — a concrete default, and a config knob vs. a constant.
-- **(c) Row migration** — remap `role→kind` and drop `product_role`/`run_kind` in one shot at daemon start vs. lazily.
-- **(d) Warn vs. hard-fail** on a double-live-instance launch (§6.1) — surface-and-continue, or block the launch outright.
+- **(a) No `attended` facet.** `kind` is the durable signal; detach / alt-tab doesn't change identity, and a live "watching now" indicator (if ever needed) is runtime status, not identity (§4).
+- **(b) TTL = 24h, constant.** A fixed long-running constant (not a config knob), applied only to rows with no live connection (§8).
+- **(c) Migration rides the startup schema-ensure.** Trivial + idempotent, so it runs via the daemon's existing `_ensure_*_column` at startup — which the upgrade's forced daemon restart fires right after install (§11).
+- **(d) Warn now, hard-fail later.** The double-live-instance launch warns-and-continues this pass; the PID-verified hard block is deferred (§6.1, §14).
 
 ## 13. Sequencing (green at every step)
 
@@ -166,3 +166,5 @@ The scoping lenses (follow-up) filter overlay-3's roster by the facets from §5 
 ## 14. Deferred — the next pass
 
 **Worker worktree isolation (1 worker = 1 worktree).** This pass has workers **share** the dispatcher's worktree (§7). The next pass gives each dispatched worker its **own** worktree, removing the shared-tree write-coordination burden entirely. It likely **promotes the worktree to a per-worker value on the spawn spec / env** — the dispatcher or daemon mints a worktree per worker and sets that worker's `BASECAMP_WORKTREE_*`, rather than the worker inheriting the dispatcher's — so the `worktree` identity facet (§5) flips from *inherited* to *worker-owned*. Scoped and designed in that pass; it does not block this one.
+
+**Hard-fail on double-live-instance.** §6.1 warns for now. The follow-up upgrades it to a hard block that PID-liveness-verifies the existing holder (the lease stale-reclaim idiom, async-agents §7.4) — refuse when genuinely live, auto-reclaim when dead — so relaunch-after-crash still works while true double-instances are prevented.
