@@ -107,7 +107,7 @@ Everything else is silent and normal: a first launch, a brand-new agent's assign
 
 Remove `run_kind` (`mutative | named-read-only | ad-hoc`, `pi/core/swarm/agents/types.ts:42`), `MUTATIVE_AGENT_NAME` (`types.ts:28`), the persona-driven `--read-only` gating, the in-process run guard (mutative-runs-solo), and the mutation-lease direction ([async-agents.md](./async-agents.md) §7.4 — Phase 3, never fully shipped). This is pre-mesh safety scaffolding; and because the `worker` *persona* was special **only** by being the mutative one, dropping the concept also frees the name for `kind = worker`.
 
-**Consequence (open — §12).** Nothing then serializes concurrent writers to a shared worktree. The design must choose, deliberately: workers **share** the active worktree (concurrent writes are the operator's concern) or workers get **isolated** worktrees. This pass names the fork; it does not resolve it.
+**Consequence (resolved).** Nothing then serializes concurrent writers to a shared worktree. **For now workers share** the dispatcher's assigned worktree — concurrent mutating writes are the dispatching agent's concern (don't fan out mutating workers in parallel on one tree). **Isolation — 1 worker = 1 worktree — is the planned next pass** (§14), which removes the shared-tree coordination burden entirely.
 
 ## 8. Lifecycle & expiry
 
@@ -149,17 +149,20 @@ The scoping lenses (follow-up) filter overlay-3's roster by the facets from §5 
 
 ## 12. Open questions
 
-- **(a) Shared vs. isolated worktrees for workers** (§7) — the one real downstream decision from dropping the mutation guards.
-- **(b) Keep a distinct `attended` (`hasUI`) boolean** separate from `kind`, or is `kind` enough for the dashboard's "human watching now" lens?
-- **(c) The TTL value** — a concrete default, and a config knob vs. a constant.
-- **(d) Row migration** — remap `role→kind` and drop `product_role`/`run_kind` in one shot at daemon start vs. lazily.
-- **(e) Warn vs. hard-fail** on a double-live-instance launch (§6.1) — surface-and-continue, or block the launch outright.
+- **(a) Keep a distinct `attended` (`hasUI`) boolean** separate from `kind`, or is `kind` enough for the dashboard's "human watching now" lens?
+- **(b) The TTL value** — a concrete default, and a config knob vs. a constant.
+- **(c) Row migration** — remap `role→kind` and drop `product_role`/`run_kind` in one shot at daemon start vs. lazily.
+- **(d) Warn vs. hard-fail** on a double-live-instance launch (§6.1) — surface-and-continue, or block the launch outright.
 
 ## 13. Sequencing (green at every step)
 
 1. **Facets in, no deletes.** Add `repo`/`worktree_label` to identity → `RegisterFrame` → row (additive; version bump); join `workstream_agents` for `is_workstream_agent`. Nothing reads them yet. Green.
 2. **`kind` + `USER_FACING`.** Rename `role`→`kind`, derive from the flag, remap rows. Green.
 3. **Execute #244.** Repoint handoff onto `is_workstream_agent`; delete `agent-role.ts` + `product_role` + the registrant + tests. Green.
-4. **Drop mutative.** Remove `run_kind` + guards + `MUTATIVE_AGENT_NAME`; resolve §12(a) first. Green.
+4. **Drop mutative.** Remove `run_kind` + guards + `MUTATIVE_AGENT_NAME`; workers share the dispatcher's worktree (§7). Green.
 5. **Soft expiry.** `expires_at` + roster filter + activity reset. Green.
 6. **Doc-true** AGENTS.md (the identity/env sections) + this record.
+
+## 14. Deferred — the next pass
+
+**Worker worktree isolation (1 worker = 1 worktree).** This pass has workers **share** the dispatcher's worktree (§7). The next pass gives each dispatched worker its **own** worktree, removing the shared-tree write-coordination burden entirely. It likely **promotes the worktree to a per-worker value on the spawn spec / env** — the dispatcher or daemon mints a worktree per worker and sets that worker's `BASECAMP_WORKTREE_*`, rather than the worker inheriting the dispatcher's — so the `worktree` identity facet (§5) flips from *inherited* to *worker-owned*. Scoped and designed in that pass; it does not block this one.
