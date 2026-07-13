@@ -78,7 +78,7 @@ Important fields:
 - `session_name`, `depth`, `cwd`: safe directory/observability metadata.
 - `session_file`: optional registered transcript file path used only as an ask fork source after authorization succeeds. It is not exposed in LLM-facing tools.
 - `repo`: optional canonical `<org>/<name>` repo identity facet for the registered node.
-- `worktree_label`: optional active worktree label facet (e.g. `copilot/<slug>`), or empty when no worktree is active.
+- `worktree_label`: optional active worktree label facet (e.g. `copilot/<slug>`), or `null` when no worktree is active.
 
 ### `dispatch` client → daemon
 

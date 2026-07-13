@@ -62,12 +62,12 @@ A node's identity decomposes into three groups: a **stable core** (who / where i
 
 The distinction is **user-facing vs. backgrounded**, and it is founded on an **explicit signal the launcher stamps**, not inferred:
 
-- `agent` — a human session is attached (the interactive launcher sets `BASECAMP_USER_FACING=1`).
-- `worker` — fully backgrounded; the daemon/dispatch path spawns it and does **not** set the flag.
+- `agent` — a human session is attached; the flag is left unset (the daemon stamps only workers).
+- `worker` — fully backgrounded; the daemon/dispatch path spawns it and stamps `BASECAMP_USER_FACING=0`.
 
 **Why an explicit flag and not `hasUI` / json-mode.** `ctx.hasUI` is `false` in print/JSON mode (`pi/engineering/skills/pi-development/references/EXTENSIONS.md:215`) — a *rendering* concern, not an identity one. A headless top-level automation run (`pi -p` at depth 0) would misclassify as a worker under a json-mode proxy, and the companion already conflates the two by gating panes on `hasUI && depth===0` (`pi/companion/panes/provider.ts:23`). The launcher, by contrast, *knows* which kind it is spawning. There is **no separate `attended` facet**: whether the human is currently looking (detached, alt-tabbed) doesn't change identity — `kind` alone is the durable signal, and a live "watching now" indicator, if ever wanted, is runtime connection status, not identity.
 
-**Change in `identity.ts`.** The role derivation moves off depth — today `const role = safeDepth > 0 ? "agent" : "session"` (`pi/core/hub/identity.ts:48`) — to reading the flag: `kind = process.env.BASECAMP_USER_FACING ? "agent" : "worker"`.
+**Change in `identity.ts`.** The role derivation moves off depth — today `const role = safeDepth > 0 ? "agent" : "session"` (`pi/core/hub/identity.ts:48`) — to reading the flag: `kind = process.env.BASECAMP_USER_FACING === "0" ? "worker" : "agent"` (absent ⇒ `agent`, matching §15's as-built semantics).
 
 **Vocabulary migration (footgun — flag it in the migration).** The word `agent` flips meaning: today `role="agent"` is the *spawned* node and `role="session"` is the top-level one; under `kind`, `agent` is the *top-level/user-facing* node and `worker` is the spawned one. The row remap is `session → agent`, `agent → worker`.
 
@@ -143,7 +143,7 @@ The scoping lenses (follow-up) filter overlay-3's roster by the facets from §5 
 - **`RegisterFrame`** (`pi/core/hub/protocol/register.ts:3-16` + the Python Pydantic mirror + JSON fixtures): **add** `repo`, `worktree_label`, `user_facing`; `role → kind`; **drop** `product_role`. This is a wire change → **bump `PROTOCOL_VERSION`** and move the three hand-maintained copies together.
 - **`identity.ts`**: rewrite the `role`/`product_role` derivation (`:48`, `:65`, `:69-76`) into `kind` + facet reads (`BASECAMP_REPO` / `BASECAMP_WORKTREE_LABEL` / `BASECAMP_USER_FACING`); drop the `agent-role.ts` import.
 - **`policy.py`: unchanged.** No new deny path. **`directory.py`** listing gains the facet columns in its projection and an optional `expires_at` filter.
-- **Python child env** (`src/basecamp/hub/swarm/process.py`): workers simply lack `BASECAMP_USER_FACING`; the interactive launcher sets it.
+- **Python child env** (`src/basecamp/hub/swarm/process.py`): workers are stamped `BASECAMP_USER_FACING=0`; user-facing sessions leave it unset.
 - **Deletes**: `pi/core/agent-role.ts` + `pi/core/tests/agent-role.test.ts`; the `daemon-identity` / `plan-handoff-worktree` / `workstreams/start` tests repoint; `pi/workstreams/start.ts` drops the registrant.
 - **Tool-surface note** (unchanged, but now legible): top-level `agent`s get `dispatch`/`list`/`wait`; `worker`s get `ask`/`message`/`cancel` (`pi/core/swarm/agents/surfaces.ts:52-69`). The `kind` rename makes that split self-documenting.
 

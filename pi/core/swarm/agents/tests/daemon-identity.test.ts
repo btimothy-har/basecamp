@@ -139,10 +139,14 @@ describe("deriveDaemonIdentity", () => {
 		const priorAgentId = process.env.BASECAMP_AGENT_ID;
 		const priorAgentHandle = process.env.BASECAMP_AGENT_HANDLE;
 		const priorUserFacing = process.env.BASECAMP_USER_FACING;
+		const priorRepo = process.env.BASECAMP_REPO;
+		const priorWorktreeLabel = process.env.BASECAMP_WORKTREE_LABEL;
 
 		process.env.BASECAMP_AGENT_DEPTH = "1";
 		process.env.BASECAMP_AGENT_ID = "agent-spawned";
 		process.env.BASECAMP_USER_FACING = "0";
+		process.env.BASECAMP_REPO = "acme/widgets";
+		process.env.BASECAMP_WORKTREE_LABEL = "copilot/brave-otter-quill";
 		process.env.BASECAMP_AGENT_HANDLE = "quiet-badger-3dc450";
 
 		try {
@@ -150,6 +154,8 @@ describe("deriveDaemonIdentity", () => {
 			assert.equal(identity.role, "worker");
 			assert.equal(identity.node_id, "agent-spawned");
 			assert.equal(identity.agent_handle, "quiet-badger-3dc450");
+			assert.equal(identity.repo, "acme/widgets");
+			assert.equal(identity.worktree_label, "copilot/brave-otter-quill");
 		} finally {
 			if (priorDepth === undefined) delete process.env.BASECAMP_AGENT_DEPTH;
 			else process.env.BASECAMP_AGENT_DEPTH = priorDepth;
@@ -159,6 +165,10 @@ describe("deriveDaemonIdentity", () => {
 			else process.env.BASECAMP_AGENT_HANDLE = priorAgentHandle;
 			if (priorUserFacing === undefined) delete process.env.BASECAMP_USER_FACING;
 			else process.env.BASECAMP_USER_FACING = priorUserFacing;
+			if (priorRepo === undefined) delete process.env.BASECAMP_REPO;
+			else process.env.BASECAMP_REPO = priorRepo;
+			if (priorWorktreeLabel === undefined) delete process.env.BASECAMP_WORKTREE_LABEL;
+			else process.env.BASECAMP_WORKTREE_LABEL = priorWorktreeLabel;
 		}
 	});
 });
