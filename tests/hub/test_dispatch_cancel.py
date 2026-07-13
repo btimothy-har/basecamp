@@ -48,7 +48,7 @@ async def test_cancel_agent_known_but_unauthorized_returns_not_authorized(tmp_pa
         parent_id=None,
         sibling_group=None,
         depth=0,
-        role="session",
+        role="agent",
         session_name="root",
         cwd="/tmp/root",
     )
@@ -58,7 +58,7 @@ async def test_cancel_agent_known_but_unauthorized_returns_not_authorized(tmp_pa
         parent_id=None,
         sibling_group=None,
         depth=1,
-        role="agent",
+        role="worker",
         session_name="outside-agent",
         cwd="/tmp/outside",
     )
@@ -92,7 +92,7 @@ async def test_cancel_agent_authorized_without_live_run_returns_already_terminal
         parent_id=None,
         sibling_group=None,
         depth=0,
-        role="session",
+        role="agent",
         session_name="root",
         cwd="/tmp/root",
     )
@@ -102,7 +102,7 @@ async def test_cancel_agent_authorized_without_live_run_returns_already_terminal
         parent_id="root",
         sibling_group="root",
         depth=1,
-        role="agent",
+        role="worker",
         session_name="child-agent",
         cwd="/tmp/child",
     )
@@ -155,7 +155,7 @@ async def test_cancel_agent_authorized_live_run_fails_run_terminates_process_and
         parent_id=None,
         sibling_group=None,
         depth=0,
-        role="session",
+        role="agent",
         session_name="root",
         cwd="/tmp/root",
     )
@@ -165,7 +165,7 @@ async def test_cancel_agent_authorized_live_run_fails_run_terminates_process_and
         parent_id="root",
         sibling_group="root",
         depth=1,
-        role="agent",
+        role="worker",
         session_name="child-agent",
         cwd="/tmp/child",
     )
@@ -220,7 +220,7 @@ async def test_cancel_agent_recursively_cancels_live_subtree_runs_and_wakes_wait
         terminated.append(pgid)
 
     monkeypatch.setattr("basecamp.hub.swarm.service.cancel.terminate_process_group_if_runner", record_terminate)
-    _upsert_test_agent(store, agent_id="root", parent_id=None, depth=0, role="session")
+    _upsert_test_agent(store, agent_id="root", parent_id=None, depth=0, role="agent")
     _upsert_test_agent(store, agent_id="target", agent_handle="target-handle", parent_id="root", depth=1)
     _upsert_test_agent(store, agent_id="child", parent_id="target", depth=2)
     _upsert_test_agent(store, agent_id="grandchild", parent_id="child", depth=3)
@@ -282,7 +282,7 @@ async def test_cancel_agent_terminal_target_with_live_descendant_returns_cancell
         terminated.append(pgid)
 
     monkeypatch.setattr("basecamp.hub.swarm.service.cancel.terminate_process_group_if_runner", record_terminate)
-    _upsert_test_agent(store, agent_id="root", parent_id=None, depth=0, role="session")
+    _upsert_test_agent(store, agent_id="root", parent_id=None, depth=0, role="agent")
     _upsert_test_agent(store, agent_id="target", agent_handle="target-handle", parent_id="root", depth=1)
     _upsert_test_agent(store, agent_id="child", parent_id="target", depth=2)
     store.create_run(

@@ -23,12 +23,12 @@ def test_ws_peer_message_ack_is_immediate_and_delivery_is_forwarded(tmp_path: Pa
 
     with TestClient(app) as client:
         with client.websocket_connect("/ws") as sender_ws:
-            _register_ws(sender_ws, node_id="root", role="session", parent_id=None, sibling_group="sg-root")
+            _register_ws(sender_ws, node_id="root", role="agent", parent_id=None, sibling_group="sg-root")
             with client.websocket_connect("/ws") as target_ws:
                 _register_ws(
                     target_ws,
                     node_id="agent-1",
-                    role="agent",
+                    role="worker",
                     parent_id="root",
                     sibling_group="sg-agent",
                     agent_handle="target",
@@ -68,7 +68,7 @@ def test_ws_peer_message_sessions_and_agents_are_messageable_by_public_handle(tm
             _register_ws(
                 root_ws,
                 node_id="root",
-                role="session",
+                role="agent",
                 parent_id=None,
                 sibling_group="sg-root",
                 agent_handle="root-handle",
@@ -77,7 +77,7 @@ def test_ws_peer_message_sessions_and_agents_are_messageable_by_public_handle(tm
                 _register_ws(
                     agent_ws,
                     node_id="agent-1",
-                    role="agent",
+                    role="worker",
                     parent_id="root",
                     sibling_group="root",
                     agent_handle="agent-handle",
@@ -123,12 +123,12 @@ def test_ws_peer_message_agent_without_public_handle_delivers_null_from_handle(t
 
     with TestClient(app) as client:
         with client.websocket_connect("/ws") as root_ws:
-            _register_ws(root_ws, node_id="root", role="session", parent_id=None, sibling_group="sg-root")
+            _register_ws(root_ws, node_id="root", role="agent", parent_id=None, sibling_group="sg-root")
             with client.websocket_connect("/ws") as sender_ws:
                 _register_ws(
                     sender_ws,
                     node_id="sender-private-id",
-                    role="agent",
+                    role="worker",
                     parent_id="root",
                     sibling_group="root",
                 )
@@ -136,7 +136,7 @@ def test_ws_peer_message_agent_without_public_handle_delivers_null_from_handle(t
                     _register_ws(
                         target_ws,
                         node_id="agent-1",
-                        role="agent",
+                        role="worker",
                         parent_id="root",
                         sibling_group="root",
                         agent_handle="target",
@@ -157,12 +157,12 @@ def test_ws_peer_message_delivery_ack_queued_updates_status(tmp_path: Path) -> N
 
     with TestClient(app) as client:
         with client.websocket_connect("/ws") as sender_ws:
-            _register_ws(sender_ws, node_id="root", role="session", parent_id=None, sibling_group="sg-root")
+            _register_ws(sender_ws, node_id="root", role="agent", parent_id=None, sibling_group="sg-root")
             with client.websocket_connect("/ws") as target_ws:
                 _register_ws(
                     target_ws,
                     node_id="agent-1",
-                    role="agent",
+                    role="worker",
                     parent_id="root",
                     sibling_group="sg-agent",
                     agent_handle="target",
@@ -200,12 +200,12 @@ def test_ws_peer_message_delivery_ack_failed_updates_status_and_error(tmp_path: 
 
     with TestClient(app) as client:
         with client.websocket_connect("/ws") as sender_ws:
-            _register_ws(sender_ws, node_id="root", role="session", parent_id=None, sibling_group="sg-root")
+            _register_ws(sender_ws, node_id="root", role="agent", parent_id=None, sibling_group="sg-root")
             with client.websocket_connect("/ws") as target_ws:
                 _register_ws(
                     target_ws,
                     node_id="agent-1",
-                    role="agent",
+                    role="worker",
                     parent_id="root",
                     sibling_group="sg-agent",
                     agent_handle="target",
@@ -241,14 +241,14 @@ def test_ws_peer_message_unavailable_without_live_target_and_wait_returns_unavai
         parent_id="root",
         sibling_group="sg-agent",
         depth=1,
-        role="agent",
+        role="worker",
         session_name="target",
         cwd="/tmp/target",
     )
 
     with TestClient(app) as client:
         with client.websocket_connect("/ws") as sender_ws:
-            _register_ws(sender_ws, node_id="root", role="session", parent_id=None, sibling_group="sg-root")
+            _register_ws(sender_ws, node_id="root", role="agent", parent_id=None, sibling_group="sg-root")
 
             sender_ws.send_json(_peer_message("request-unavailable", target_handle="target", message="hello"))
             ack = sender_ws.receive_json()
@@ -271,7 +271,7 @@ def test_ws_peer_message_known_handle_is_contactable_while_missing_and_private_i
         parent_id=None,
         sibling_group="outside-root",
         depth=0,
-        role="session",
+        role="agent",
         session_name="outside-root",
         cwd="/tmp/outside-root",
     )
@@ -281,7 +281,7 @@ def test_ws_peer_message_known_handle_is_contactable_while_missing_and_private_i
         parent_id="outside-root",
         sibling_group="outside-root",
         depth=1,
-        role="agent",
+        role="worker",
         session_name="outside",
         cwd="/tmp/outside",
     )
@@ -290,7 +290,7 @@ def test_ws_peer_message_known_handle_is_contactable_while_missing_and_private_i
         parent_id="root",
         sibling_group="root",
         depth=1,
-        role="agent",
+        role="worker",
         session_name="private-agent",
         cwd="/tmp/private-agent",
     )
@@ -299,7 +299,7 @@ def test_ws_peer_message_known_handle_is_contactable_while_missing_and_private_i
 
     with TestClient(app) as client:
         with client.websocket_connect("/ws") as sender_ws:
-            _register_ws(sender_ws, node_id="root", role="session", parent_id=None, sibling_group="sg-root")
+            _register_ws(sender_ws, node_id="root", role="agent", parent_id=None, sibling_group="sg-root")
 
             sender_ws.send_json(_peer_message("request-missing", target_handle="missing", message="hello"))
             missing = sender_ws.receive_json()
@@ -342,12 +342,12 @@ def test_ws_peer_message_delivery_ack_from_non_target_is_ignored(tmp_path: Path)
 
     with TestClient(app) as client:
         with client.websocket_connect("/ws") as sender_ws:
-            _register_ws(sender_ws, node_id="root", role="session", parent_id=None, sibling_group="sg-root")
+            _register_ws(sender_ws, node_id="root", role="agent", parent_id=None, sibling_group="sg-root")
             with client.websocket_connect("/ws") as target_ws:
                 _register_ws(
                     target_ws,
                     node_id="agent-1",
-                    role="agent",
+                    role="worker",
                     parent_id="root",
                     sibling_group="sg-agent",
                     agent_handle="target",
@@ -356,7 +356,7 @@ def test_ws_peer_message_delivery_ack_from_non_target_is_ignored(tmp_path: Path)
                     _register_ws(
                         other_ws,
                         node_id="other-agent",
-                        role="agent",
+                        role="worker",
                         parent_id="root",
                         sibling_group="sg-other",
                         agent_handle="other",

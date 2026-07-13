@@ -43,7 +43,7 @@ def test_create_run_stores_dispatcher_and_updates_current_run(tmp_path: Path) ->
         parent_id=None,
         sibling_group="sg",
         depth=1,
-        role="agent",
+        role="worker",
         session_name="session-a",
         cwd="/tmp/a",
     )
@@ -116,7 +116,7 @@ def test_resolve_agent_root_follows_parents_defensively(tmp_path: Path) -> None:
         parent_id=None,
         sibling_group="sg-root",
         depth=0,
-        role="session",
+        role="agent",
         session_name="root-session",
         cwd="/tmp/root",
     )
@@ -125,7 +125,7 @@ def test_resolve_agent_root_follows_parents_defensively(tmp_path: Path) -> None:
         parent_id="root",
         sibling_group="sg-a1",
         depth=1,
-        role="agent",
+        role="worker",
         session_name="agent-a1",
         cwd="/tmp/a1",
     )
@@ -134,7 +134,7 @@ def test_resolve_agent_root_follows_parents_defensively(tmp_path: Path) -> None:
         parent_id="missing-parent",
         sibling_group="sg-lost",
         depth=1,
-        role="agent",
+        role="worker",
         session_name="lost",
         cwd="/tmp/lost",
     )
@@ -154,7 +154,7 @@ def test_create_run_rejects_non_terminal_duplicate_for_agent(tmp_path: Path) -> 
         parent_id=None,
         sibling_group="sg",
         depth=1,
-        role="agent",
+        role="worker",
         session_name="session-a",
         cwd="/tmp/a",
     )
@@ -193,7 +193,7 @@ def test_set_run_result_preserves_agent_current_run_id(tmp_path: Path) -> None:
         parent_id=None,
         sibling_group="sg",
         depth=1,
-        role="agent",
+        role="worker",
         session_name="session-a",
         cwd="/tmp/a",
     )
@@ -225,7 +225,7 @@ def test_set_run_result_if_unset_preserves_agent_current_run_id(tmp_path: Path) 
         parent_id=None,
         sibling_group="sg",
         depth=1,
-        role="agent",
+        role="worker",
         session_name="session-a",
         cwd="/tmp/a",
     )

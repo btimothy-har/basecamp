@@ -3,7 +3,7 @@ import type { PROTOCOL_VERSION } from "./version.ts";
 export interface RegisterFrame {
 	type: "register";
 	v: typeof PROTOCOL_VERSION;
-	role: "session" | "agent";
+	role: "agent" | "worker";
 	node_id: string;
 	agent_handle?: string | null;
 	parent_id: string | null;

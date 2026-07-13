@@ -69,7 +69,7 @@ def test_dispatch_rejects_duplicate_agent_handle(tmp_path: Path) -> None:
         parent_id=None,
         sibling_group=None,
         depth=1,
-        role="agent",
+        role="worker",
         session_name="agent-1",
         cwd=str(tmp_path),
     )
@@ -80,7 +80,7 @@ def test_dispatch_rejects_duplicate_agent_handle(tmp_path: Path) -> None:
         parent_id="session-node",
         sibling_group=None,
         depth=1,
-        role="agent",
+        role="worker",
         session_name="existing",
         cwd=str(tmp_path),
     )
@@ -339,7 +339,7 @@ def test_dispatch_rejected_when_depth_cap_exceeded(tmp_path: Path, monkeypatch) 
                     {
                         "type": "register",
                         "v": PROTOCOL_VERSION,
-                        "role": "agent",
+                        "role": "worker",
                         "node_id": "depth-two-agent",
                         "parent_id": "parent",
                         "sibling_group": None,

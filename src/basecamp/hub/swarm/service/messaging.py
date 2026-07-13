@@ -34,7 +34,7 @@ class AcceptedPeerMessage:
 def _sender_product_role(sender: dict[str, Any] | None) -> str | None:
     if sender is None:
         return None
-    if sender.get("role") == "agent":
+    if sender.get("role") == "worker":
         return safe_product_role(sender.get("agent_type")) or "subagent"
     return safe_product_role(sender.get("product_role")) or None
 
@@ -195,7 +195,7 @@ def _public_sender_handle(sender: dict[str, Any] | None) -> str | None:
 
 
 def _public_message_handle(agent: dict[str, Any] | None) -> str | None:
-    if agent is None or agent.get("role") not in {"agent", "session"}:
+    if agent is None or agent.get("role") not in {"agent", "worker"}:
         return None
     return _public_handle(agent)
 

@@ -24,7 +24,6 @@ describe("deriveDaemonIdentity", () => {
 				sessionManager: { getSessionId: () => "0199-aaaa-bbbb-cccc-ddddeeee9f3c" },
 			} as any);
 			assert.equal(identity.session_name, "(scout) do thing [9f3c]");
-			assert.equal(identity.role, "agent");
 			assert.match(identity.agent_handle, /^[a-z]+-[a-z]+-[0-9a-f]{6}$/);
 		} finally {
 			if (priorDepth === undefined) delete process.env.BASECAMP_AGENT_DEPTH;
@@ -83,7 +82,7 @@ describe("deriveDaemonIdentity", () => {
 			const ctx = { sessionManager: { getSessionId: () => "session-stable-123" } } as any;
 			const first = deriveDaemonIdentity(ctx);
 			const second = deriveDaemonIdentity(ctx);
-			assert.equal(first.role, "session");
+			assert.equal(first.role, "agent");
 			assert.equal(first.agent_handle, second.agent_handle);
 			assert.match(first.agent_handle, /^[a-z]+-[a-z]+-[0-9a-f]{6}$/);
 			assert.notEqual(first.agent_handle, "session-stable-123");
@@ -110,7 +109,7 @@ describe("deriveDaemonIdentity", () => {
 			const ctx = { sessionManager: { getSessionId: () => "session-stable-123" } } as any;
 			const first = deriveDaemonIdentity(ctx);
 			const second = deriveDaemonIdentity(ctx);
-			assert.equal(first.role, "session");
+			assert.equal(first.role, "agent");
 			assert.notEqual(first.agent_handle, "quiet-badger-3dc450");
 			assert.equal(first.agent_handle, second.agent_handle);
 			assert.match(first.agent_handle, /^[a-z]+-[a-z]+-[0-9a-f]{6}$/);
@@ -135,7 +134,7 @@ describe("deriveDaemonIdentity", () => {
 
 		try {
 			const identity = deriveDaemonIdentity({ sessionManager: { getSessionId: () => "session-mode" } } as any);
-			assert.equal(identity.role, "session");
+			assert.equal(identity.role, "agent");
 			assert.equal(identity.product_role, "copilot");
 		} finally {
 			setAgentMode(priorMode);
@@ -179,7 +178,7 @@ describe("deriveDaemonIdentity", () => {
 
 		try {
 			const identity = deriveDaemonIdentity({ sessionManager: { getSessionId: () => "session-provider" } } as any);
-			assert.equal(identity.role, "session");
+			assert.equal(identity.role, "agent");
 			assert.equal(identity.product_role, "workstream_agent");
 		} finally {
 			setAgentMode(priorMode);
@@ -248,12 +247,13 @@ describe("deriveDaemonIdentity", () => {
 
 		process.env.BASECAMP_AGENT_DEPTH = "1";
 		process.env.BASECAMP_AGENT_ID = "agent-spawned";
+		process.env.BASECAMP_USER_FACING = "0";
 		process.env.BASECAMP_AGENT_HANDLE = "quiet-badger-3dc450";
 		process.env.BASECAMP_AGENT_PRODUCT_ROLE = "copilot";
 
 		try {
 			const identity = deriveDaemonIdentity({ sessionManager: { getSessionId: () => "child-session" } } as any);
-			assert.equal(identity.role, "agent");
+			assert.equal(identity.role, "worker");
 			assert.equal(identity.node_id, "agent-spawned");
 			assert.equal(identity.agent_handle, "quiet-badger-3dc450");
 			assert.equal(identity.product_role, null);

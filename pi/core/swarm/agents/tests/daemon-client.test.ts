@@ -34,7 +34,7 @@ describe("daemon client", () => {
 			{
 				node_id: "node-1",
 				agent_handle: "quiet-badger-3dc450",
-				role: "session",
+				role: "agent",
 				parent_id: null,
 				sibling_group: null,
 				depth: 0,
@@ -65,7 +65,7 @@ describe("daemon client", () => {
 			{
 				node_id: "node-1",
 				agent_handle: "quiet-badger-3dc450",
-				role: "session",
+				role: "agent",
 				parent_id: null,
 				sibling_group: null,
 				depth: 0,

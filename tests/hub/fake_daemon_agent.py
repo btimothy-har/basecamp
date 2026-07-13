@@ -82,7 +82,7 @@ def main() -> int:
                 {
                     "type": "register",
                     "v": PROTOCOL_VERSION,
-                    "role": "agent",
+                    "role": "worker",
                     "node_id": node_id,
                     "parent_id": parent,
                     "sibling_group": None,

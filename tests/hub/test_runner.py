@@ -99,7 +99,7 @@ def test_attempt_proxy_register_frame_preserves_child_session_name(tmp_path: Pat
     child_register = RegisterFrame(
         type="register",
         v=PROTOCOL_VERSION,
-        role="agent",
+        role="worker",
         node_id="child-node",
         agent_handle="amber-fox-a1b2c3",
         parent_id="parent-node",

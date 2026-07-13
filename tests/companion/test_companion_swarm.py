@@ -30,7 +30,7 @@ def test_daemon_parser_reads_task_and_activity() -> None:
                 "agent_id_short": "abc123",
                 "agent_type": "worker",
                 "model": "gpt-5.5",
-                "role": "agent",
+                "role": "worker",
                 "session_name": "worker",
                 "status": "running",
                 "result_preview": None,
@@ -119,7 +119,7 @@ def test_daemon_parser_tolerates_malformed_optional_projection() -> None:
             {
                 "agent_handle": "brisk-lynx-a1b2c3",
                 "agent_type": "worker",
-                "role": "agent",
+                "role": "worker",
                 "session_name": "worker",
                 "status": "running",
                 "result_preview": None,

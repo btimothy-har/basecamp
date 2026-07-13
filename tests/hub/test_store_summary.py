@@ -37,7 +37,7 @@ def test_get_run_summary_scope_and_counts_include_descendants(tmp_path: Path) ->
         parent_id=None,
         sibling_group="sg-root",
         depth=0,
-        role="session",
+        role="agent",
         session_name="root-session",
         cwd="/tmp/root",
     )
@@ -46,7 +46,7 @@ def test_get_run_summary_scope_and_counts_include_descendants(tmp_path: Path) ->
         parent_id="root",
         sibling_group="sg-child",
         depth=1,
-        role="agent",
+        role="worker",
         session_name="child-agent",
         cwd="/tmp/child",
     )
@@ -64,7 +64,7 @@ def test_get_run_summary_scope_and_counts_include_descendants(tmp_path: Path) ->
         parent_id=None,
         sibling_group="sg-outside",
         depth=0,
-        role="session",
+        role="agent",
         session_name="outside-session",
         cwd="/tmp/outside",
     )
@@ -130,7 +130,7 @@ def test_get_run_summary_handles_cyclic_agent_relationships(tmp_path: Path) -> N
         parent_id=None,
         sibling_group="sg-root",
         depth=0,
-        role="session",
+        role="agent",
         session_name="root-session",
         cwd="/tmp/root",
     )
@@ -139,7 +139,7 @@ def test_get_run_summary_handles_cyclic_agent_relationships(tmp_path: Path) -> N
         parent_id="root",
         sibling_group="sg-child",
         depth=1,
-        role="agent",
+        role="worker",
         session_name="child-agent",
         cwd="/tmp/child",
     )
@@ -148,7 +148,7 @@ def test_get_run_summary_handles_cyclic_agent_relationships(tmp_path: Path) -> N
         parent_id="child",
         sibling_group="sg-root",
         depth=0,
-        role="session",
+        role="agent",
         session_name="root-session",
         cwd="/tmp/root",
     )
@@ -190,7 +190,7 @@ def test_get_run_summary_orders_agents_descending_and_respects_limit(tmp_path: P
         parent_id=None,
         sibling_group="sg-root",
         depth=0,
-        role="session",
+        role="agent",
         session_name="root-session",
         cwd="/tmp/root",
     )
@@ -204,7 +204,7 @@ def test_get_run_summary_orders_agents_descending_and_respects_limit(tmp_path: P
             parent_id="root",
             sibling_group=f"sg-{agent_id}",
             depth=1,
-            role="agent",
+            role="worker",
             session_name=agent_id,
             cwd=f"/tmp/{agent_id}",
         )
@@ -239,7 +239,7 @@ def test_get_run_summary_does_not_expose_spec_or_tokens(tmp_path: Path) -> None:
         parent_id=None,
         sibling_group="sg-root",
         depth=0,
-        role="session",
+        role="agent",
         session_name="root-session",
         cwd="/tmp/root",
     )
@@ -248,7 +248,7 @@ def test_get_run_summary_does_not_expose_spec_or_tokens(tmp_path: Path) -> None:
         parent_id="root",
         sibling_group="sg-child",
         depth=1,
-        role="agent",
+        role="worker",
         session_name="child-agent",
         cwd="/tmp/child",
     )

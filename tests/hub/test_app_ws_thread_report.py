@@ -48,7 +48,7 @@ def test_ws_thread_report_persists_nodes_and_session_pointers(tmp_path: Path) ->
     client = TestClient(app)
 
     with client.websocket_connect("/ws") as websocket:
-        _register_ws(websocket, node_id="session-1", role="session", parent_id=None, sibling_group="sg-1")
+        _register_ws(websocket, node_id="session-1", role="agent", parent_id=None, sibling_group="sg-1")
         websocket.send_json(
             {
                 "type": "thread_report",
@@ -77,7 +77,7 @@ def test_ws_thread_report_keyed_by_authenticated_connection_node(tmp_path: Path)
     client = TestClient(app)
 
     with client.websocket_connect("/ws") as websocket:
-        _register_ws(websocket, node_id="session-1", role="session", parent_id=None, sibling_group="sg-1")
+        _register_ws(websocket, node_id="session-1", role="agent", parent_id=None, sibling_group="sg-1")
         websocket.send_json(
             {
                 "type": "thread_report",
@@ -100,7 +100,7 @@ def test_ws_thread_report_wakes_scheduler_with_authenticated_node_and_seq(tmp_pa
     client = TestClient(app)
 
     with client.websocket_connect("/ws") as websocket:
-        _register_ws(websocket, node_id="session-1", role="session", parent_id=None, sibling_group="sg-1")
+        _register_ws(websocket, node_id="session-1", role="agent", parent_id=None, sibling_group="sg-1")
         websocket.send_json(
             {
                 "type": "thread_report",
@@ -126,7 +126,7 @@ def test_bare_create_app_ingests_but_runs_no_analysis(tmp_path: Path) -> None:
     client = TestClient(create_app(store))
 
     with client.websocket_connect("/ws") as websocket:
-        _register_ws(websocket, node_id="session-1", role="session", parent_id=None, sibling_group="sg-1")
+        _register_ws(websocket, node_id="session-1", role="agent", parent_id=None, sibling_group="sg-1")
         websocket.send_json(
             {
                 "type": "thread_report",

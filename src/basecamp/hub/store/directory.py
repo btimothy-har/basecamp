@@ -59,7 +59,7 @@ class DirectoryMixin:
             FROM scoped_agents AS s
             INNER JOIN agents AS a ON a.id = s.id
             LEFT JOIN runs AS r ON r.id = a.current_run_id
-            WHERE a.role != 'session'
+            WHERE a.role != 'agent'
               AND (a.agent_type IS NULL OR a.agent_type != 'ask')
             {awaitable_filter}
             ORDER BY a.depth ASC, a.id ASC
@@ -132,7 +132,7 @@ class DirectoryMixin:
                 ON r.id = a.current_run_id
                AND r.dispatcher_id = ?
             WHERE a.id IN ({placeholders})
-              AND a.role != 'session'
+              AND a.role != 'agent'
             """
 
         with self._connect() as connection:
@@ -166,7 +166,7 @@ class DirectoryMixin:
                 ON r.id = a.current_run_id
                AND r.dispatcher_id = ?
             WHERE a.agent_handle IN ({placeholders})
-              AND a.role != 'session'
+              AND a.role != 'agent'
             """
 
         with self._connect() as connection:

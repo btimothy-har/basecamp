@@ -14,7 +14,7 @@ import {
 export interface DaemonIdentity {
 	node_id: string;
 	agent_handle: string;
-	role: "session" | "agent";
+	role: "agent" | "worker";
 	parent_id: string | null;
 	sibling_group: string | null;
 	depth: number;

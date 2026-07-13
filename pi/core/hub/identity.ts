@@ -45,7 +45,10 @@ export function deriveDaemonIdentity(ctx: ExtensionContext, deps?: Partial<Daemo
 	const safeDepth = Number.isFinite(depth) && depth >= 0 ? depth : 0;
 	const nodeId = process.env.BASECAMP_AGENT_ID ?? ctx.sessionManager.getSessionId();
 	const explicitHandle = safeDepth > 0 ? process.env.BASECAMP_AGENT_HANDLE?.trim() : undefined;
-	const role = safeDepth > 0 ? "agent" : "session";
+	// Node kind: user-facing "agent" vs fully-backgrounded "worker". Founded on an
+	// explicit flag the daemon stamps on spawned workers (BASECAMP_USER_FACING=0),
+	// not on json-mode/hasUI; everything not daemon-spawned defaults to "agent".
+	const role = process.env.BASECAMP_USER_FACING === "0" ? "worker" : "agent";
 	return {
 		node_id: nodeId,
 		agent_handle: explicitHandle || buildDeterministicAgentHandle(nodeId),
@@ -68,8 +71,8 @@ export function deriveDaemonIdentity(ctx: ExtensionContext, deps?: Partial<Daemo
 	};
 }
 
-function resolveAgentRole(role: "session" | "agent"): string | null {
-	if (role !== "session") return null;
+function resolveAgentRole(role: "agent" | "worker"): string | null {
+	if (role !== "agent") return null;
 	const providerOverride = sanitizeDisplayLabel(resolveAgentRoleOverride(), 64);
 	if (providerOverride) return providerOverride;
 	const explicit = sanitizeDisplayLabel(process.env.BASECAMP_AGENT_PRODUCT_ROLE, 64);

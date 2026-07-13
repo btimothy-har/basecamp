@@ -212,7 +212,7 @@ class AttemptDaemonProxy:
         return RegisterFrame(
             type="register",
             v=PROTOCOL_VERSION,
-            role="agent",
+            role="worker",
             node_id=self._context.agent_id,
             agent_handle=self._context.agent_handle or child_register.agent_handle,
             parent_id=self._context.parent_session,
@@ -333,7 +333,7 @@ def send_result_report(context: RunnerContext, final: FinalRunResult) -> None:
     register = RegisterFrame(
         type="register",
         v=PROTOCOL_VERSION,
-        role="agent",
+        role="worker",
         node_id=context.agent_id,
         agent_handle=context.agent_handle,
         parent_id=context.parent_session,

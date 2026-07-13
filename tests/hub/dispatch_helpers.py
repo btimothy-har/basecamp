@@ -130,7 +130,7 @@ def _register_session(websocket, *, node_id: str, cwd: str) -> None:
             {
                 "type": "register",
                 "v": PROTOCOL_VERSION,
-                "role": "session",
+                "role": "agent",
                 "node_id": node_id,
                 "parent_id": None,
                 "sibling_group": None,
@@ -150,7 +150,7 @@ def _register_agent(websocket, *, node_id: str, cwd: str) -> None:
             {
                 "type": "register",
                 "v": PROTOCOL_VERSION,
-                "role": "agent",
+                "role": "worker",
                 "node_id": node_id,
                 "parent_id": None,
                 "sibling_group": None,

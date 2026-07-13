@@ -1,7 +1,7 @@
 {
   "type": "register",
   "v": 21,
-  "role": "session",
+  "role": "agent",
   "node_id": "session-123",
   "parent_id": null,
   "sibling_group": null,

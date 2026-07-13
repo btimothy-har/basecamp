@@ -108,7 +108,7 @@ def test_get_run_messages_deduplicates_terminal_result_and_validates_scope(tmp_p
         parent_id=None,
         sibling_group="sg-outside",
         depth=0,
-        role="session",
+        role="agent",
         session_name="outside-root",
         cwd="/tmp/outside",
     )
@@ -117,7 +117,7 @@ def test_get_run_messages_deduplicates_terminal_result_and_validates_scope(tmp_p
         parent_id="outside-root",
         sibling_group="sg-outside-child",
         depth=1,
-        role="agent",
+        role="worker",
         session_name="outside-agent",
         cwd="/tmp/outside-agent",
     )

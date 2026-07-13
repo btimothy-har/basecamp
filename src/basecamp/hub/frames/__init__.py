@@ -49,7 +49,7 @@ class RegisterFrame(BaseModel):
 
     type: Literal["register"]
     v: Literal[PROTOCOL_VERSION]
-    role: Literal["session", "agent"]
+    role: Literal["agent", "worker"]
     node_id: str
     agent_handle: str | None = None
     parent_id: str | None

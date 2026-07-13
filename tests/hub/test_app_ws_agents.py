@@ -18,7 +18,7 @@ def test_ws_list_agents_returns_same_root_non_session_rows_and_awaitable_filters
         parent_id=None,
         sibling_group="sg-root",
         depth=0,
-        role="session",
+        role="agent",
         session_name="root-session",
         cwd="/tmp/root",
     )
@@ -27,7 +27,7 @@ def test_ws_list_agents_returns_same_root_non_session_rows_and_awaitable_filters
         parent_id="root",
         sibling_group="sg-a1",
         depth=1,
-        role="agent",
+        role="worker",
         session_name="agent-one",
         cwd="/tmp/a1",
     )
@@ -36,7 +36,7 @@ def test_ws_list_agents_returns_same_root_non_session_rows_and_awaitable_filters
         parent_id="agent-1",
         sibling_group="sg-a2",
         depth=2,
-        role="agent",
+        role="worker",
         session_name="agent-two",
         cwd="/tmp/a2",
     )
@@ -45,7 +45,7 @@ def test_ws_list_agents_returns_same_root_non_session_rows_and_awaitable_filters
         parent_id=None,
         sibling_group="sg-out",
         depth=0,
-        role="session",
+        role="agent",
         session_name="outside-session",
         cwd="/tmp/out",
     )
@@ -54,7 +54,7 @@ def test_ws_list_agents_returns_same_root_non_session_rows_and_awaitable_filters
         parent_id="outside-root",
         sibling_group="sg-out-a",
         depth=1,
-        role="agent",
+        role="worker",
         session_name="outside-agent",
         cwd="/tmp/out-a",
     )
@@ -86,7 +86,7 @@ def test_ws_list_agents_returns_same_root_non_session_rows_and_awaitable_filters
                 {
                     "type": "register",
                     "v": PROTOCOL_VERSION,
-                    "role": "session",
+                    "role": "agent",
                     "node_id": "root",
                     "parent_id": None,
                     "sibling_group": "sg-root",
@@ -102,7 +102,7 @@ def test_ws_list_agents_returns_same_root_non_session_rows_and_awaitable_filters
                     {
                         "type": "register",
                         "v": PROTOCOL_VERSION,
-                        "role": "agent",
+                        "role": "worker",
                         "node_id": "agent-1",
                         "parent_id": "root",
                         "sibling_group": "sg-a1",
@@ -131,7 +131,7 @@ def test_ws_list_agents_returns_same_root_non_session_rows_and_awaitable_filters
                             "agent_id": "agent-1",
                             "agent_handle": "agent-1",
                             "parent_id": "root",
-                            "role": "agent",
+                            "role": "worker",
                             "session_name": "agent-one",
                             "depth": 1,
                             "status": "running",
@@ -142,7 +142,7 @@ def test_ws_list_agents_returns_same_root_non_session_rows_and_awaitable_filters
                             "agent_id": "agent-2",
                             "agent_handle": "agent-2",
                             "parent_id": "agent-1",
-                            "role": "agent",
+                            "role": "worker",
                             "session_name": "agent-two",
                             "depth": 2,
                             "status": "completed",
@@ -170,7 +170,7 @@ def test_ws_list_agents_returns_same_root_non_session_rows_and_awaitable_filters
                             "agent_id": "agent-2",
                             "agent_handle": "agent-2",
                             "parent_id": "agent-1",
-                            "role": "agent",
+                            "role": "worker",
                             "session_name": "agent-two",
                             "depth": 2,
                             "status": "completed",
@@ -186,7 +186,7 @@ def test_ws_cancel_unknown_handle_returns_not_found_ack(tmp_path: Path) -> None:
 
     with TestClient(app) as client:
         with client.websocket_connect("/ws") as websocket:
-            _register_ws(websocket, node_id="root", role="session", parent_id=None, sibling_group="sg-root")
+            _register_ws(websocket, node_id="root", role="agent", parent_id=None, sibling_group="sg-root")
             websocket.send_json(
                 {
                     "type": "cancel",
@@ -211,7 +211,7 @@ def test_ws_workstream_create_attach_update_flow(tmp_path: Path) -> None:
 
     with TestClient(app) as client:
         with client.websocket_connect("/ws") as ws:
-            _register_ws(ws, node_id="root", role="session", parent_id=None, sibling_group="sg-root")
+            _register_ws(ws, node_id="root", role="agent", parent_id=None, sibling_group="sg-root")
 
             ws.send_json(
                 {
@@ -335,7 +335,7 @@ def test_http_workstreams_list_and_detail(tmp_path: Path) -> None:
         parent_id=None,
         sibling_group="sg-root",
         depth=0,
-        role="session",
+        role="agent",
         session_name="root-session",
         cwd="/tmp/root",
     )

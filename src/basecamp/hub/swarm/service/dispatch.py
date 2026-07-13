@@ -91,7 +91,7 @@ def _metadata_mismatches(*, existing: dict[str, Any], frame: DispatchFrame) -> b
 
 
 def _is_dispatchable_agent(agent: dict[str, Any]) -> bool:
-    return agent.get("role") != "session" and agent.get("agent_type") != "ask"
+    return agent.get("role") != "agent" and agent.get("agent_type") != "ask"
 
 
 def _registered_session_file(agent: dict[str, Any]) -> Path | None:
@@ -227,7 +227,7 @@ async def prepare_dispatch(
                 parent_id=dispatcher_node_id,
                 sibling_group=dispatcher_node_id,
                 depth=child_depth,
-                role="agent",
+                role="worker",
                 session_name=frame.agent_handle or agent_id,
                 cwd=frame.spec.cwd,
                 agent_handle=frame.agent_handle,
@@ -242,7 +242,7 @@ async def prepare_dispatch(
                 parent_id=existing_agent.get("parent_id"),
                 sibling_group=existing_agent.get("sibling_group"),
                 depth=child_depth,
-                role=str(existing_agent.get("role") or "agent"),
+                role=str(existing_agent.get("role") or "worker"),
                 session_name=str(existing_agent.get("session_name") or resolved_handle or agent_id),
                 cwd=frame.spec.cwd,
                 agent_handle=resolved_handle,

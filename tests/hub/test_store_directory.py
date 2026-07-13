@@ -16,7 +16,7 @@ def test_get_agents_current_runs_filters_by_dispatcher(tmp_path: Path) -> None:
         parent_id=None,
         sibling_group="sg",
         depth=1,
-        role="agent",
+        role="worker",
         session_name="session-a",
         cwd="/tmp/a",
     )
@@ -69,7 +69,7 @@ def test_get_agents_current_runs_excludes_sessions_from_wait_projection(tmp_path
         parent_id=None,
         sibling_group=None,
         depth=0,
-        role="session",
+        role="agent",
         session_name="root-session",
         cwd="/tmp/root",
     )
@@ -94,7 +94,7 @@ def test_get_root_agent_directory_scopes_to_root_and_excludes_sessions(tmp_path:
         parent_id=None,
         sibling_group="sg-root",
         depth=0,
-        role="session",
+        role="agent",
         session_name="root-session",
         cwd="/tmp/root",
     )
@@ -103,7 +103,7 @@ def test_get_root_agent_directory_scopes_to_root_and_excludes_sessions(tmp_path:
         parent_id="root",
         sibling_group="sg-a1",
         depth=1,
-        role="agent",
+        role="worker",
         session_name="agent-a1",
         cwd="/tmp/a1",
     )
@@ -121,7 +121,7 @@ def test_get_root_agent_directory_scopes_to_root_and_excludes_sessions(tmp_path:
         parent_id=None,
         sibling_group="sg-out",
         depth=0,
-        role="session",
+        role="agent",
         session_name="outside-session",
         cwd="/tmp/out",
     )
@@ -130,7 +130,7 @@ def test_get_root_agent_directory_scopes_to_root_and_excludes_sessions(tmp_path:
         parent_id="outside-root",
         sibling_group="sg-oa",
         depth=1,
-        role="agent",
+        role="worker",
         session_name="outside-agent",
         cwd="/tmp/out-agent",
     )
@@ -163,7 +163,7 @@ def test_get_root_agent_directory_scopes_to_root_and_excludes_sessions(tmp_path:
     assert rows[1]["parent_id"] == "agent-1"
     assert rows[0]["status"] == "running"
     assert rows[1]["status"] == "completed"
-    assert rows[0]["role"] == "agent"
+    assert rows[0]["role"] == "worker"
     assert rows[1]["role"] == "worker"
     assert rows[0]["awaitable"] is False
     assert rows[1]["awaitable"] is False
@@ -179,7 +179,7 @@ def test_get_root_agent_directory_includes_sanitized_current_task_and_stable_age
         parent_id=None,
         sibling_group="sg-root",
         depth=0,
-        role="session",
+        role="agent",
         session_name="root-session",
         cwd="/tmp/root",
     )
@@ -188,7 +188,7 @@ def test_get_root_agent_directory_includes_sanitized_current_task_and_stable_age
         parent_id="root",
         sibling_group="sg-a1",
         depth=1,
-        role="agent",
+        role="worker",
         session_name="swift-panda-5604f5",
         cwd="/tmp/a1",
         agent_handle="swift-panda-5604f5",
@@ -212,7 +212,7 @@ def test_get_root_agent_directory_includes_sanitized_current_task_and_stable_age
         parent_id="root",
         sibling_group="sg-a1",
         depth=1,
-        role="agent",
+        role="worker",
         session_name="swift-panda-5604f5",
         cwd="/tmp/a1-retask",
     )
@@ -243,7 +243,7 @@ def test_get_root_agent_directory_excludes_ask_agents_but_run_summary_includes_t
         parent_id=None,
         sibling_group="sg-root",
         depth=0,
-        role="session",
+        role="agent",
         session_name="root-session",
         cwd="/tmp/root",
     )
@@ -252,7 +252,7 @@ def test_get_root_agent_directory_excludes_ask_agents_but_run_summary_includes_t
         parent_id="root",
         sibling_group="sg-normal",
         depth=1,
-        role="agent",
+        role="worker",
         session_name="normal-agent",
         cwd="/tmp/normal",
     )
@@ -261,7 +261,7 @@ def test_get_root_agent_directory_excludes_ask_agents_but_run_summary_includes_t
         parent_id="root",
         sibling_group="sg-ask",
         depth=1,
-        role="agent",
+        role="worker",
         session_name="ask-agent",
         cwd="/tmp/ask",
         agent_type="ask",
@@ -298,7 +298,7 @@ def test_get_root_agent_directory_filters_awaitable_agents_only(tmp_path: Path) 
         parent_id=None,
         sibling_group="sg-root",
         depth=0,
-        role="session",
+        role="agent",
         session_name="root-session",
         cwd="/tmp/root",
     )
@@ -307,7 +307,7 @@ def test_get_root_agent_directory_filters_awaitable_agents_only(tmp_path: Path) 
         parent_id="root",
         sibling_group="sg-a1",
         depth=1,
-        role="agent",
+        role="worker",
         session_name="agent-a1",
         cwd="/tmp/a1",
     )
@@ -357,7 +357,7 @@ def test_get_root_agent_directory_handles_cycle_and_missing_parent_defensively(t
         parent_id="cycle-b",
         sibling_group="sg-a",
         depth=1,
-        role="agent",
+        role="worker",
         session_name="cycle-a",
         cwd="/tmp/a",
     )
@@ -366,20 +366,20 @@ def test_get_root_agent_directory_handles_cycle_and_missing_parent_defensively(t
         parent_id="cycle-a",
         sibling_group="sg-b",
         depth=2,
-        role="agent",
+        role="worker",
         session_name="cycle-b",
         cwd="/tmp/b",
     )
     rows = store.get_root_agent_directory(requester_node_id="cycle-a", awaitable=False)
     assert {row["agent_id"] for row in rows} == {"cycle-a", "cycle-b"}
-    assert all(row["role"] != "session" for row in rows)
+    assert all(row["role"] != "agent" for row in rows)
 
     store.upsert_agent(
         agent_id="lost",
         parent_id="missing-parent",
         sibling_group="sg-lost",
         depth=3,
-        role="agent",
+        role="worker",
         session_name="lost",
         cwd="/tmp/c",
     )
