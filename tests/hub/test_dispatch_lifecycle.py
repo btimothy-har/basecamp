@@ -21,6 +21,7 @@ from basecamp.hub.swarm.process import (
     terminate_process_group,
     terminate_process_group_if_runner,
 )
+from basecamp.hub.swarm.run_result import FinalRunResult, RunResultSidecar, write_run_result
 
 pytestmark = pytest.mark.usefixtures("_isolate_run_result_home")
 
@@ -294,6 +295,7 @@ async def test_spawn_agent_process_starts_new_session(
         daemon_socket_path="/tmp/daemon.sock",
         dispatcher_node_id="root",
         child_depth=1,
+        result_path=tmp_path / "result.json",
     )
 
     assert spawned is process
@@ -317,6 +319,7 @@ async def test_reap_agent_process_removes_registry_process_when_store_update_fai
             registry=registry,
             store=_FailingStore(),
             on_finalize=on_finalize,
+            result_path=Path("/nonexistent/result.json"),
         )
 
     assert registry.pop_process(run_id) is None
@@ -364,6 +367,7 @@ async def test_reap_agent_process_does_not_overwrite_reported_result(tmp_path: P
         registry=registry,
         store=store,
         on_finalize=on_finalize,
+        result_path=tmp_path / "missing-result.json",
     )
 
     run = store.get_run(run_id)
@@ -372,4 +376,60 @@ async def test_reap_agent_process_does_not_overwrite_reported_result(tmp_path: P
     assert run["result"] == "runner-final-result"
     assert run["exit_code"] == 7
     assert finalized == []
+    assert registry.pop_process(run_id) is None
+
+
+@pytest.mark.asyncio
+async def test_reap_agent_process_completes_run_from_sidecar_final(tmp_path: Path) -> None:
+    # Regression for #259: the runner records its final result in the sidecar
+    # before exiting, so the reaper must finalize from it rather than racing the
+    # async result_report frame and stamping ``failed`` on a completed run.
+    run_id = "run-sidecar-final"
+    agent_id = "agent-sidecar-final"
+    registry = Registry()
+    process = _FakeProcess()
+    store = Store(db_path=tmp_path / "daemon.db")
+    finalized: list[str] = []
+
+    store.upsert_agent(
+        agent_id=agent_id,
+        agent_handle=None,
+        parent_id=None,
+        sibling_group=None,
+        depth=1,
+        role="worker",
+        session_name=agent_id,
+        cwd=str(tmp_path),
+    )
+    store.create_run(run_id=run_id, agent_id=agent_id, dispatcher_id="session-node", spec={})
+
+    result_path = tmp_path / "result.json"
+    write_run_result(
+        result_path,
+        RunResultSidecar(
+            run_id=run_id,
+            agent_id=agent_id,
+            attempts=[],
+            final=FinalRunResult(status="ok", result="from-sidecar", error=None, retry_count=1),
+        ),
+    )
+    registry.set_process(run_id, process)
+
+    async def on_finalize(finalized_run_id: str) -> None:
+        finalized.append(finalized_run_id)
+
+    await reap_agent_process(
+        run_id=run_id,
+        process=process,
+        registry=registry,
+        store=store,
+        on_finalize=on_finalize,
+        result_path=result_path,
+    )
+
+    run = store.get_run(run_id)
+    assert run is not None
+    assert run["status"] == "completed"
+    assert run["result"] == "from-sidecar"
+    assert finalized == [run_id]
     assert registry.pop_process(run_id) is None

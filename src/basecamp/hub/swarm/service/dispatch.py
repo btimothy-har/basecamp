@@ -15,7 +15,7 @@ from ...frames import DispatchFrame
 from ...registry import Registry
 from ...store import ActiveRunExistsError, DuplicateAgentHandleError, Store
 from ..process import reap_agent_process, spawn_agent_process
-from ..run_result import agent_session_file
+from ..run_result import agent_session_file, run_result_path
 from .messaging import _public_message_handle
 from .waiting import notify_run_finalized
 
@@ -296,6 +296,9 @@ async def dispatch_agent(
     if isinstance(dispatch, DispatchRejection):
         return DispatchAck(status="rejected", reason=dispatch.reason)
 
+    # Derive the sidecar path once so the runner (which writes its final result
+    # here) and the reaper (which reads it to finalize) agree on the exact file.
+    result_path = run_result_path(dispatch.agent_id, frame.run_id, home_dir=frame.spec.env.get("HOME"))
     try:
         process = await spawn_agent_process(
             run_id=frame.run_id,
@@ -305,6 +308,7 @@ async def dispatch_agent(
             daemon_socket_path=daemon_socket_path,
             dispatcher_node_id=dispatcher_node_id,
             child_depth=dispatch.child_depth,
+            result_path=result_path,
             agent_handle=dispatch.agent_handle,
             fork_source_path=dispatch.fork_source_path,
         )
@@ -326,6 +330,7 @@ async def dispatch_agent(
             registry=registry,
             store=store,
             on_finalize=on_finalize,
+            result_path=result_path,
         )
     )
     reapers.add(reap_task)
