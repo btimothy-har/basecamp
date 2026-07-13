@@ -1,23 +1,23 @@
 import { createHash, randomUUID } from "node:crypto";
+import { generateName } from "../naming/index.ts";
 
-const HANDLE_ADJECTIVES = [
-	"amber",
-	"brisk",
-	"calm",
-	"clear",
-	"ember",
-	"mossy",
-	"quiet",
-	"silver",
-	"steady",
-	"swift",
-] as const;
-const HANDLE_NOUNS = ["badger", "falcon", "fox", "heron", "lynx", "otter", "panda", "raven", "tiger", "wren"] as const;
+/**
+ * A deterministic [0, 1) stream derived from an opaque hex seed, so name
+ * selection over the shared word bank is reproducible for a given entropy.
+ */
+function seededRng(seed: string): () => number {
+	let counter = 0;
+	return () => {
+		const digest = createHash("sha256").update(`${seed}:${counter}`).digest();
+		counter += 1;
+		return digest.readUIntBE(0, 6) / 2 ** 48;
+	};
+}
 
+/** Compose a `word-word-hex6` handle from a hex entropy string. */
 function buildAgentHandleFromEntropy(entropy: string): string {
-	const adjective = HANDLE_ADJECTIVES[Number.parseInt(entropy.slice(0, 2), 16) % HANDLE_ADJECTIVES.length];
-	const noun = HANDLE_NOUNS[Number.parseInt(entropy.slice(2, 4), 16) % HANDLE_NOUNS.length];
-	return `${adjective}-${noun}-${entropy.slice(4, 10)}`;
+	const name = generateName({ words: 2, rng: seededRng(entropy) });
+	return `${name}-${entropy.slice(0, 6)}`;
 }
 
 export function buildAgentHandle(): string {
@@ -25,6 +25,5 @@ export function buildAgentHandle(): string {
 }
 
 export function buildDeterministicAgentHandle(seed: string): string {
-	const entropy = createHash("sha256").update(seed).digest("hex");
-	return buildAgentHandleFromEntropy(entropy);
+	return buildAgentHandleFromEntropy(createHash("sha256").update(seed).digest("hex"));
 }
