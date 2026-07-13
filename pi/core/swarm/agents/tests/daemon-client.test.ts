@@ -72,7 +72,6 @@ describe("daemon client", () => {
 				session_name: "Root Session",
 				cwd: "/repo",
 				session_file: "/tmp/pi-session.jsonl",
-				product_role: "workstream_agent",
 			},
 			{ socketPath: "/tmp/basecamp-test.sock", webSocketFactory: () => socket as any },
 		);
@@ -81,7 +80,6 @@ describe("daemon client", () => {
 		const register = JSON.parse(socket.sent[0] ?? "{}") as Extract<Frame, { type: "register" }>;
 		assert.equal(register.type, "register");
 		assert.equal(register.session_file, "/tmp/pi-session.jsonl");
-		assert.equal(register.product_role, "workstream_agent");
 
 		socket.emit(
 			"message",

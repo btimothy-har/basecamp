@@ -221,7 +221,8 @@ class AttemptDaemonProxy:
             session_name=child_register.session_name,
             cwd=child_register.cwd,
             session_file=child_register.session_file,
-            product_role=child_register.product_role,
+            repo=child_register.repo,
+            worktree_label=child_register.worktree_label,
         )
 
     def _forward_bidirectional_frames(self, child_websocket: object, daemon_websocket: object) -> None:

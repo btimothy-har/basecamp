@@ -12,7 +12,6 @@ export interface RegisterFrame {
 	session_name: string;
 	cwd: string;
 	session_file?: string | null;
-	product_role?: string | null;
 	repo?: string | null;
 	worktree_label?: string | null;
 }

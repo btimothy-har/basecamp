@@ -159,7 +159,6 @@ def create_app(
                     cwd=parsed.cwd,
                     agent_handle=parsed.agent_handle,
                     session_file=parsed.session_file,
-                    product_role=parsed.product_role,
                     repo=parsed.repo,
                     worktree_label=parsed.worktree_label,
                 )

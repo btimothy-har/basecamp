@@ -36,7 +36,7 @@ def _sender_product_role(sender: dict[str, Any] | None) -> str | None:
         return None
     if sender.get("role") == "worker":
         return safe_product_role(sender.get("agent_type")) or "subagent"
-    return safe_product_role(sender.get("product_role")) or None
+    return None
 
 
 async def accept_peer_message(

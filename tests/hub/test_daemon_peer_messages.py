@@ -10,61 +10,23 @@ from basecamp.hub.store import Store
 from basecamp.hub.swarm.service import AcceptedPeerMessage, accept_peer_message
 
 
-def test_accept_peer_message_includes_stored_sender_product_role_for_unknown_relation(tmp_path: Path) -> None:
-    store = Store(db_path=tmp_path / "daemon.db")
-    store.upsert_agent(
-        agent_id="sender-session",
-        parent_id=None,
-        sibling_group="sender-root",
-        depth=0,
-        role="agent",
-        session_name="Sender",
-        cwd=str(tmp_path),
-        agent_handle="clear-falcon-80cda5",
-        product_role="copilot",
-    )
-    store.upsert_agent(
-        agent_id="target-session",
-        parent_id=None,
-        sibling_group="target-root",
-        depth=0,
-        role="agent",
-        session_name="Target",
-        cwd=str(tmp_path),
-        agent_handle="quiet-badger-3dc450",
-    )
-
-    accepted = asyncio.run(
-        accept_peer_message(
-            frame=_peer_message(target_handle="quiet-badger-3dc450"),
-            requester_node_id="sender-session",
-            store=store,
-        )
-    )
-
-    assert isinstance(accepted, AcceptedPeerMessage)
-    assert accepted.delivery.from_relation == "unknown"
-    assert accepted.delivery.from_product_role == "copilot"
-
-
-def test_accept_peer_message_sanitizes_sender_product_role_and_agent_type(tmp_path: Path) -> None:
+def test_accept_peer_message_sanitizes_sender_agent_type(tmp_path: Path) -> None:
     store = Store(db_path=tmp_path / "daemon.db")
     dirty_role = f"\x1b[31m{'x' * 70}\x1b[0m"
     expected_role = f"{'x' * 63}…"
     store.upsert_agent(
-        agent_id="sender-session",
+        agent_id="root",
         parent_id=None,
         sibling_group="root",
         depth=0,
         role="agent",
-        session_name="Sender Session",
+        session_name="Root",
         cwd=str(tmp_path),
-        agent_handle="sender-session-handle",
-        product_role=dirty_role,
+        agent_handle="root-handle",
     )
     store.upsert_agent(
         agent_id="sender-agent",
-        parent_id="sender-session",
+        parent_id="root",
         sibling_group="root",
         depth=1,
         role="worker",
@@ -75,7 +37,7 @@ def test_accept_peer_message_sanitizes_sender_product_role_and_agent_type(tmp_pa
     )
     store.upsert_agent(
         agent_id="target-agent",
-        parent_id="sender-session",
+        parent_id="root",
         sibling_group="root",
         depth=1,
         role="worker",
@@ -84,13 +46,6 @@ def test_accept_peer_message_sanitizes_sender_product_role_and_agent_type(tmp_pa
         agent_handle="target-agent-handle",
     )
 
-    session_sender = asyncio.run(
-        accept_peer_message(
-            frame=_peer_message(request_id="request-session", target_handle="target-agent-handle"),
-            requester_node_id="sender-session",
-            store=store,
-        )
-    )
     agent_sender = asyncio.run(
         accept_peer_message(
             frame=_peer_message(request_id="request-agent", target_handle="target-agent-handle"),
@@ -99,8 +54,6 @@ def test_accept_peer_message_sanitizes_sender_product_role_and_agent_type(tmp_pa
         )
     )
 
-    assert isinstance(session_sender, AcceptedPeerMessage)
-    assert session_sender.delivery.from_product_role == expected_role
     assert isinstance(agent_sender, AcceptedPeerMessage)
     assert agent_sender.delivery.from_product_role == expected_role
 
@@ -127,7 +80,6 @@ def test_accept_peer_message_agent_sender_falls_back_to_agent_type_or_subagent(t
         cwd=str(tmp_path),
         agent_handle="sender-agent-handle",
         agent_type="testing-specialist",
-        product_role="copilot",
     )
     store.upsert_agent(
         agent_id="sender-agent-no-type",

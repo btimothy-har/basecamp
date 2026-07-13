@@ -15,13 +15,13 @@ function worktree(overrides: Partial<WorkspaceWorktree> = {}): WorkspaceWorktree
 }
 
 describe("shouldReuseActiveWorktreeForHandoff", () => {
-	it("reuses active worktrees only for workstream agents", () => {
-		const activeWorktree = worktree();
+	it("reuses the active worktree only when it is a workstream (copilot/) worktree", () => {
+		const workstreamWorktree = worktree({ label: "copilot/three-word-slug" });
+		const planWorktree = worktree({ label: "wt-bt/current-workstream" });
 
-		assert.equal(shouldReuseActiveWorktreeForHandoff("workstream_agent", activeWorktree), true);
-		assert.equal(shouldReuseActiveWorktreeForHandoff("workstream_agent", null), false);
-		assert.equal(shouldReuseActiveWorktreeForHandoff(null, activeWorktree), false);
-		assert.equal(shouldReuseActiveWorktreeForHandoff("copilot", activeWorktree), false);
+		assert.equal(shouldReuseActiveWorktreeForHandoff(workstreamWorktree), true);
+		assert.equal(shouldReuseActiveWorktreeForHandoff(planWorktree), false);
+		assert.equal(shouldReuseActiveWorktreeForHandoff(null), false);
 	});
 });
 

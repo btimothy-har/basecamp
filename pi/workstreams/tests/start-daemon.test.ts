@@ -1,7 +1,6 @@
 import assert from "node:assert/strict";
 import { afterEach, describe, it } from "node:test";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { resetAgentRoleForTesting } from "#core/agent-role.ts";
 import type { WorkspaceWorktree } from "#core/project/workspace/state.ts";
 import { startWorkstream, type WorkstreamStartDeps } from "../start.ts";
 import { FakeDaemonClient, makeCtx, makeDeps, makeWorkspace, makeWorkstreamDetail } from "./start-harness.ts";
@@ -16,8 +15,6 @@ async function runStart(
 }
 
 describe("workstream startup (daemon-backed)", () => {
-	afterEach(resetAgentRoleForTesting);
-
 	it("infers the workstream from the copilot/<slug> worktree label and attaches + injects the brief", async () => {
 		const client = new FakeDaemonClient();
 		const harness = makeDeps(client);

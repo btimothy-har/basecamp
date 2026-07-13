@@ -29,7 +29,6 @@ class AgentsSchemaMixin:
                 run_kind TEXT,
                 model TEXT,
                 session_file TEXT,
-                product_role TEXT,
                 repo TEXT,
                 worktree_label TEXT
             )
@@ -40,9 +39,9 @@ class AgentsSchemaMixin:
         self._ensure_agents_metadata_columns(connection)
         self._ensure_agents_model_column(connection)
         self._ensure_agents_session_file_column(connection)
-        self._ensure_agents_product_role_column(connection)
         self._ensure_agents_facet_columns(connection)
         self._migrate_agents_role_values(connection)
+        self._drop_agents_product_role_column(connection)
 
     def _ensure_agents_current_run_id_column(self, connection: sqlite3.Connection) -> None:
         columns = connection.execute("PRAGMA table_info(agents)").fetchall()
@@ -92,11 +91,12 @@ class AgentsSchemaMixin:
         if "session_file" not in names:
             connection.execute("ALTER TABLE agents ADD COLUMN session_file TEXT")
 
-    def _ensure_agents_product_role_column(self, connection: sqlite3.Connection) -> None:
+    def _drop_agents_product_role_column(self, connection: sqlite3.Connection) -> None:
+        """Drop the retired product_role column (removed with the agent-role seam)."""
         columns = connection.execute("PRAGMA table_info(agents)").fetchall()
         names = {column[1] for column in columns}
-        if "product_role" not in names:
-            connection.execute("ALTER TABLE agents ADD COLUMN product_role TEXT")
+        if "product_role" in names:
+            connection.execute("ALTER TABLE agents DROP COLUMN product_role")
 
     def _ensure_agents_facet_columns(self, connection: sqlite3.Connection) -> None:
         columns = connection.execute("PRAGMA table_info(agents)").fetchall()
