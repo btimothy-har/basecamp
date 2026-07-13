@@ -1,9 +1,11 @@
 /**
  * Adjectives for generated readable names — the descriptor slots in
- * `adjective-noun` handles and `adjective-adjective-noun` slugs. Lowercase
- * ASCII only, so a name is always safe as a git ref, worktree label, and path
- * segment. Keep every entry unique and disjoint from `nouns.ts` (tests enforce
- * both); grow the list rather than reusing a word.
+ * `adjective-noun` handles and `adjective-adjective-noun` slugs. This list is
+ * deliberately the larger bank: adjectives fill two of the three slug slots, so
+ * each one carries more namespace than a noun does. Lowercase ASCII only, so a
+ * name is always safe as a git ref, worktree label, and path segment. Keep every
+ * entry unique and disjoint from `nouns.ts` (tests enforce both); grow the list
+ * rather than reusing a word.
  */
 export const ADJECTIVES: readonly string[] = [
 	"steady",
@@ -108,4 +110,52 @@ export const ADJECTIVES: readonly string[] = [
 	"intrepid",
 	"valorous",
 	"stout",
+	"amiable",
+	"affable",
+	"gracious",
+	"tender",
+	"benevolent",
+	"convivial",
+	"sociable",
+	"hospitable",
+	"tactful",
+	"prudent",
+	"sensible",
+	"thoughtful",
+	"considerate",
+	"diligent",
+	"dutiful",
+	"studious",
+	"meticulous",
+	"resolute",
+	"steadfast",
+	"staunch",
+	"tenacious",
+	"fearless",
+	"audacious",
+	"adventurous",
+	"rapid",
+	"zippy",
+	"peppy",
+	"perky",
+	"snappy",
+	"springy",
+	"frisky",
+	"vivacious",
+	"dynamic",
+	"vigorous",
+	"robust",
+	"fervent",
+	"luminous",
+	"gleaming",
+	"lustrous",
+	"glossy",
+	"pristine",
+	"immaculate",
+	"limpid",
+	"verdant",
+	"golden",
+	"crimson",
+	"azure",
+	"tawny",
 ];
