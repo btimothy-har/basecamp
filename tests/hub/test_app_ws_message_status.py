@@ -27,7 +27,7 @@ def test_ws_message_status_immediate_authorized_and_unknown_for_missing_or_unaut
         parent_id=None,
         sibling_group="sg-root",
         depth=0,
-        role="session",
+        role="agent",
         session_name="root",
         cwd="/tmp/root",
     )
@@ -37,7 +37,7 @@ def test_ws_message_status_immediate_authorized_and_unknown_for_missing_or_unaut
         parent_id="root",
         sibling_group="sg-target",
         depth=1,
-        role="agent",
+        role="worker",
         session_name="target",
         cwd="/tmp/target",
     )
@@ -57,7 +57,7 @@ def test_ws_message_status_immediate_authorized_and_unknown_for_missing_or_unaut
 
     with TestClient(app) as client:
         with client.websocket_connect("/ws") as sender_ws:
-            _register_ws(sender_ws, node_id="root", role="session", parent_id=None, sibling_group="sg-root")
+            _register_ws(sender_ws, node_id="root", role="agent", parent_id=None, sibling_group="sg-root")
             statuses = []
             for message_id in ["accepted-message", "sent-message", "queued-message", "missing-message"]:
                 sender_ws.send_json(_message_status(message_id))
@@ -67,7 +67,7 @@ def test_ws_message_status_immediate_authorized_and_unknown_for_missing_or_unaut
             _register_ws(
                 outsider_ws,
                 node_id="outside-root",
-                role="session",
+                role="agent",
                 parent_id=None,
                 sibling_group="outside-root",
             )
@@ -90,12 +90,12 @@ def test_ws_message_status_wait_until_delivery_wakes_on_queued_failed_and_unavai
     with TestClient(app) as client:
         for terminal_status in ["queued", "failed"]:
             with client.websocket_connect("/ws") as sender_ws:
-                _register_ws(sender_ws, node_id="root", role="session", parent_id=None, sibling_group="sg-root")
+                _register_ws(sender_ws, node_id="root", role="agent", parent_id=None, sibling_group="sg-root")
                 with client.websocket_connect("/ws") as target_ws:
                     _register_ws(
                         target_ws,
                         node_id="agent-1",
-                        role="agent",
+                        role="worker",
                         parent_id="root",
                         sibling_group="sg-agent",
                         agent_handle="target",
@@ -127,12 +127,12 @@ def test_ws_message_status_wait_until_delivery_wakes_on_queued_failed_and_unavai
             parent_id="root",
             sibling_group="sg-offline",
             depth=1,
-            role="agent",
+            role="worker",
             session_name="offline",
             cwd="/tmp/offline",
         )
         with client.websocket_connect("/ws") as sender_ws:
-            _register_ws(sender_ws, node_id="root", role="session", parent_id=None, sibling_group="sg-root")
+            _register_ws(sender_ws, node_id="root", role="agent", parent_id=None, sibling_group="sg-root")
             sender_ws.send_json(_peer_message("request-offline", target_handle="offline", message="hello"))
             message_id = sender_ws.receive_json()["message_id"]
             sender_ws.send_json(_message_status(message_id, wait_until_delivery=True, timeout_s=2))
@@ -150,7 +150,7 @@ def test_ws_message_status_wait_until_delivery_timeout_returns_current_nontermin
         parent_id=None,
         sibling_group="sg-root",
         depth=0,
-        role="session",
+        role="agent",
         session_name="root",
         cwd="/tmp/root",
     )
@@ -160,7 +160,7 @@ def test_ws_message_status_wait_until_delivery_timeout_returns_current_nontermin
         parent_id="root",
         sibling_group="sg-target",
         depth=1,
-        role="agent",
+        role="worker",
         session_name="target",
         cwd="/tmp/target",
     )
@@ -188,7 +188,7 @@ def test_ws_message_status_wait_until_delivery_timeout_returns_current_nontermin
 
     with TestClient(app) as client:
         with client.websocket_connect("/ws") as sender_ws:
-            _register_ws(sender_ws, node_id="root", role="session", parent_id=None, sibling_group="sg-root")
+            _register_ws(sender_ws, node_id="root", role="agent", parent_id=None, sibling_group="sg-root")
             sender_ws.send_json(_message_status("accepted-message", wait_until_delivery=True, timeout_s=0.01))
             accepted = sender_ws.receive_json()
             sender_ws.send_json(_message_status("sent-message", wait_until_delivery=True, timeout_s=-1))

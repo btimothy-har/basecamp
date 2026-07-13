@@ -1,6 +1,6 @@
 {
   "type": "attach_workstream_agent",
-  "v": 20,
+  "v": 21,
   "request_id": "req-attach-001",
   "workstream": "feature-auth",
   "repo": "btimothy-har/basecamp",

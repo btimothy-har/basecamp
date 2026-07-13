@@ -37,6 +37,7 @@ export type BasecampEnvVar =
 	| "BASECAMP_AGENT_DEPTH"
 	| "BASECAMP_AGENT_MAX_DEPTH"
 	| "BASECAMP_SESSION_NAME"
+	| "BASECAMP_USER_FACING"
 	| "BASECAMP_BROWSER_PATH";
 
 /** Typed getter for a BASECAMP_* env var. Returns undefined if not set. */

@@ -1,11 +1,10 @@
 {
   "type": "dispatch",
-  "v": 20,
+  "v": 21,
   "run_id": "run-001",
   "agent_id": "00000000-0000-4000-8000-000000000042",
   "agent_handle": "mossy-otter-a1b2c3",
   "agent_type": "scout",
-  "run_kind": "primary",
   "model": "claude-sonnet-4-5",
   "spec": {
     "argv": [

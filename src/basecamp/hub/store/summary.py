@@ -243,7 +243,7 @@ class SummaryMixin:
                 INNER JOIN scoped_agents AS s ON s.id = a.id
                 LEFT JOIN runs AS r ON r.id = a.current_run_id
                 WHERE a.agent_handle = ?
-                  AND a.role != 'session'
+                  AND a.role != 'agent'
                 LIMIT 1
                 """,
                 (root_id, agent_handle),
@@ -358,7 +358,7 @@ class SummaryMixin:
                 FROM agents AS a
                 INNER JOIN scoped_agents AS s ON s.id = a.id
                 LEFT JOIN runs AS r ON r.id = a.current_run_id
-                WHERE a.role != 'session'
+                WHERE a.role != 'agent'
                 ORDER BY COALESCE(r.created_at, a.created_at) DESC, a.agent_handle ASC
                 LIMIT ?
                 """,

@@ -5,7 +5,7 @@ import { resolveDaemonPaths } from "../../hub/index.ts";
 import type { AgentConfig } from "./discovery.ts";
 import { buildAgentRunName, buildPiArgs, sanitizeAgentSpawnEnv } from "./executor.ts";
 import { resolveModel } from "./model-resolution.ts";
-import { type AgentRunKind, DEFAULT_AGENT_MAX_DEPTH, getAgentRunKind } from "./types.ts";
+import { DEFAULT_AGENT_MAX_DEPTH } from "./types.ts";
 
 const SUBAGENT_EXCLUDED_EXTENSION_TOOLS = new Set(["agent", "escalate", "browser_eval", "browser_screenshot"]);
 
@@ -55,7 +55,6 @@ export interface SharedAgentLaunchPlan {
 	agentLabel: string;
 	model: string | undefined;
 	name: string;
-	runKind: AgentRunKind;
 	environment: Record<string, string>;
 	extensionTools: string[];
 	spawnCwd: string;
@@ -87,16 +86,6 @@ function resolveWorkspaceSelection(workspace: LaunchWorkspaceState | null): {
 
 function resolveSessionDir(agentId: string): string {
 	return path.join(resolveDaemonPaths().agentsDir, agentId, "session");
-}
-
-function mutativeWorktreeFailure(runKind: AgentRunKind, worktreeDir: string | null): SharedAgentLaunchFailure | null {
-	if (runKind !== "mutative" || worktreeDir) return null;
-	return {
-		ok: false,
-		agentLabel: "worker",
-		message:
-			"Mutative worker agents require an active execution worktree. Approve an implementation plan and activate a worktree first.",
-	};
 }
 
 export function buildAgentEnv(opts: { name: string; parentSession: string; project: string }): Record<string, string> {
@@ -189,9 +178,6 @@ export function buildAgentLaunchSpec(input: SharedAgentLaunchInput): SharedAgent
 	});
 	const extensionTools = getBasecampExtensionToolNames(input.pi, input.basecampExtensionRoot);
 	const { cwd, worktreeDir } = resolveWorkspaceSelection(input.workspace);
-	const runKind = getAgentRunKind(agent);
-	const mutativeFailure = mutativeWorktreeFailure(runKind, worktreeDir);
-	if (mutativeFailure) return mutativeFailure;
 
 	const sessionDir = resolveSessionDir(input.agentId);
 	const { args, agentDir } = buildPiArgs(agent, input.task, {
@@ -210,7 +196,6 @@ export function buildAgentLaunchSpec(input: SharedAgentLaunchInput): SharedAgent
 			agentLabel: requested || "ad-hoc",
 			model,
 			name,
-			runKind,
 			environment,
 			extensionTools,
 			spawnCwd: cwd,

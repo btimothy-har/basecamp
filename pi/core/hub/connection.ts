@@ -14,14 +14,15 @@ import {
 export interface DaemonIdentity {
 	node_id: string;
 	agent_handle: string;
-	role: "session" | "agent";
+	role: "agent" | "worker";
 	parent_id: string | null;
 	sibling_group: string | null;
 	depth: number;
 	session_name: string;
 	cwd: string;
 	session_file?: string | null;
-	product_role?: string | null;
+	repo?: string | null;
+	worktree_label?: string | null;
 }
 
 export interface ConnectOptions {
@@ -91,7 +92,8 @@ export async function connect(identity: DaemonIdentity, options: ConnectOptions 
 			session_name: identity.session_name,
 			cwd: identity.cwd,
 			session_file: identity.session_file ?? null,
-			product_role: identity.product_role ?? null,
+			repo: identity.repo ?? null,
+			worktree_label: identity.worktree_label ?? null,
 		};
 
 		ws.on("open", () => {

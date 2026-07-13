@@ -11,7 +11,6 @@ export interface ListAgentItem {
 	agent_id: string;
 	agent_handle?: string | null;
 	agent_type?: string | null;
-	run_kind?: string | null;
 	parent_id: string | null;
 	role: string;
 	session_name: string;

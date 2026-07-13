@@ -49,7 +49,7 @@ class RegisterFrame(BaseModel):
 
     type: Literal["register"]
     v: Literal[PROTOCOL_VERSION]
-    role: Literal["session", "agent"]
+    role: Literal["agent", "worker"]
     node_id: str
     agent_handle: str | None = None
     parent_id: str | None
@@ -58,7 +58,8 @@ class RegisterFrame(BaseModel):
     session_name: str
     cwd: str
     session_file: str | None = None
-    product_role: str | None = None
+    repo: str | None = None
+    worktree_label: str | None = None
 
 
 class RegisteredFrame(BaseModel):

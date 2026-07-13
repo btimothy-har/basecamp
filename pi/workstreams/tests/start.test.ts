@@ -6,7 +6,6 @@ import { afterEach, describe, it } from "node:test";
 import type { ExtensionAPI, ExtensionContext, SessionStartEvent } from "@earendil-works/pi-coding-agent";
 import { resetCopilotLaunchForTesting, setCopilotLaunchReader } from "#core/agent-mode/copilot.ts";
 import { getAgentMode, resetAgentMode } from "#core/agent-mode/index.ts";
-import { resetAgentRoleForTesting, resolveAgentRoleOverride } from "#core/agent-role.ts";
 import {
 	getCurrentSessionState,
 	initializeCurrentSessionState,
@@ -49,7 +48,6 @@ class FakePi {
 
 describe("registerWorkstreamStartup", () => {
 	afterEach(() => {
-		resetAgentRoleForTesting();
 		resetCopilotLaunchForTesting();
 	});
 
@@ -64,26 +62,6 @@ describe("registerWorkstreamStartup", () => {
 				"Start the workstream for the current worktree. Bare --workstream infers the workstream from the copilot/<slug> worktree label; --workstream=<slug|id> resolves explicitly.",
 			type: "boolean",
 		});
-	});
-
-	it("registers a agent-role provider for any present --workstream flag", () => {
-		const pi = new FakePi();
-		const harness = makeDeps(new FakeDaemonClient());
-
-		registerWorkstreamStartup(pi as unknown as ExtensionAPI, async () => null, harness.deps);
-		assert.equal(resolveAgentRoleOverride(), null);
-
-		pi.setFlag("workstream", true);
-		assert.equal(resolveAgentRoleOverride(), "workstream_agent");
-
-		// --copilot takes precedence: role resolves to null while copilot is launched
-		setCopilotLaunchReader(() => true);
-		assert.equal(resolveAgentRoleOverride(), null);
-		setCopilotLaunchReader(() => false);
-		assert.equal(resolveAgentRoleOverride(), "workstream_agent");
-
-		pi.setFlag("workstream", undefined);
-		assert.equal(resolveAgentRoleOverride(), null);
 	});
 
 	it("copilot takes precedence over --workstream on session_start", async () => {

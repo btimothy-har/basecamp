@@ -33,7 +33,6 @@ class DispatchFrame(BaseModel):
     agent_id: str | None = None
     agent_handle: str | None = None
     agent_type: str | None = None
-    run_kind: str | None = None
     model: str | None = None
     spec: DispatchSpec
 
@@ -118,7 +117,6 @@ class ListAgentItem(BaseModel):
     agent_id: str
     agent_handle: str | None = None
     agent_type: str | None = None
-    run_kind: str | None = None
     parent_id: str | None
     role: str
     session_name: str

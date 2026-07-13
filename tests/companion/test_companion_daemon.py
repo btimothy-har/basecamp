@@ -70,7 +70,7 @@ def test_poll_parses_summary_and_encodes_root_id_and_limit() -> None:
                 "agent_id_short": "def456",
                 "agent_type": "scout",
                 "model": "claude-sonnet-4-5",
-                "role": "agent",
+                "role": "worker",
                 "session_name": "scout",
                 "status": "completed",
                 "result_preview": "ok",
@@ -100,7 +100,7 @@ def test_poll_parses_summary_and_encodes_root_id_and_limit() -> None:
     assert result.agents[0] == DaemonSummaryAgent(
         agent_handle="mossy-otter-b2c3d4",
         agent_type="scout",
-        role="agent",
+        role="worker",
         session_name="scout",
         status="completed",
         result_preview="ok",
@@ -157,7 +157,7 @@ def test_daemon_parser_reads_agent_skills() -> None:
             {
                 "agent_handle": "mossy-otter-b2c3d4",
                 "agent_type": "scout",
-                "role": "agent",
+                "role": "worker",
                 "session_name": "scout",
                 "status": "running",
                 "result_preview": None,

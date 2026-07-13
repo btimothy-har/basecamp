@@ -3,7 +3,7 @@ import type { PROTOCOL_VERSION } from "./version.ts";
 export interface RegisterFrame {
 	type: "register";
 	v: typeof PROTOCOL_VERSION;
-	role: "session" | "agent";
+	role: "agent" | "worker";
 	node_id: string;
 	agent_handle?: string | null;
 	parent_id: string | null;
@@ -12,7 +12,8 @@ export interface RegisterFrame {
 	session_name: string;
 	cwd: string;
 	session_file?: string | null;
-	product_role?: string | null;
+	repo?: string | null;
+	worktree_label?: string | null;
 }
 
 export interface RegisteredFrame {

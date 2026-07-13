@@ -99,7 +99,7 @@ def test_attempt_proxy_register_frame_preserves_child_session_name(tmp_path: Pat
     child_register = RegisterFrame(
         type="register",
         v=PROTOCOL_VERSION,
-        role="agent",
+        role="worker",
         node_id="child-node",
         agent_handle="amber-fox-a1b2c3",
         parent_id="parent-node",
@@ -186,7 +186,6 @@ def test_attempt_proxy_forwards_dispatch_without_inline_daemon_recv(tmp_path: Pa
         agent_id="ask-agent-1",
         agent_handle="amber-fox-a1b2c3",
         agent_type="ask",
-        run_kind="ad-hoc",
         model="default",
         spec=DispatchSpec(
             argv=["pi", "answer this"],

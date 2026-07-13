@@ -1,16 +1,16 @@
 # Pi Swarm Daemon Protocol
 
-Protocol version: `20`
+Protocol version: `21`
 
 All frames are JSON objects with an envelope:
 
 ```json
-{"type":"<frame_type>","v":20,...}
+{"type":"<frame_type>","v":21,...}
 ```
 
 Version handling:
 - The daemon validates `v` on every inbound frame.
-- If `v != 20`, the daemon sends an `error` frame with `code: "protocol_version"` and closes the connection.
+- If `v != 21`, the daemon sends an `error` frame with `code: "protocol_version"` and closes the connection.
 - The extension treats the protocol as a client-visible capability gate, not only a frame-shape version. A version mismatch restarts the host daemon during ensure-daemon.
 - v15 adds known-public-handle contact for `peer_message` and fork-`ask`: contact is authorized without a live relationship when the target is addressed by its known public handle (see below).
 - v16 adds registered session transcript paths for fork-ask and product-role metadata for peer-message display.
@@ -18,11 +18,12 @@ Version handling:
 - v18 adds cancel-agent request/ack frames and dispatched-run lifecycle hardening: process-group spawn, dispatcher-disconnect grace reaping, and startup reconciliation of orphaned runs.
 - v19 adds workstream management frames (`create_workstream`/`attach_workstream_agent`/`update_workstream` + acks) and HTTP GET `/workstreams` read endpoints.
 - v20 adds the `thread_report` frame: a top-level session ships its raw `getBranch()` thread to the daemon at end of turn for the companion analyzer (see `docs/design/companion-daemon-broker.md`).
+- v21 adds first-class node-identity facets (`repo`, `worktree_label`) to `register`, renames node roles to `agent` (user-facing) / `worker` (backgrounded) derived from `BASECAMP_USER_FACING`, and removes the retired `product_role` (register display role) and `run_kind` (dispatch/list mutative kind) fields along with the agent-role and mutative seams.
 
 ## Transport
 
 - HTTP over Unix domain socket (UDS):
-  - `GET /health` → `{"status":"ok","protocol":20}`
+  - `GET /health` → `{"status":"ok","protocol":21}`
   - `GET /runs/summary?root_id=<id>` returns safe agent-level observability for the companion dashboard.
   - `GET /runs/messages?root_id=<id>&agent_handle=<handle>` returns selected-agent assistant message detail for the companion dashboard.
   - `GET /workstreams` returns a filtered list of workstreams (query params: `status`, `repo`, `dossier_path`, `query`).
@@ -47,7 +48,7 @@ The public daemon-agent identity is `agent_handle`, a readable path-safe alias s
 
 LLM-facing tools should not present `run_id` or `agent_id` as user handles. Capability is separate from identity. Top-level/copilot sessions and started workstream sessions are contactable but not taskable: they may receive `message_agent` and may be asked by canonical handle when the daemon has a forkable session file, but they are not dispatchable, retaskable, awaitable, or listed by `list_agents`. Dispatched worker agents are taskable under the existing dispatcher/retask constraints. Ask answerers are transient and hidden from task directories.
 
-The daemon enforces one primary active run per dispatchable agent. `agents.current_run_id` points at the latest primary run, including terminal runs, so `wait_for_agent(agent_handle)` can retrieve final results until a later primary run replaces it. Retasking an existing handle is conservative: the current run must already be terminal, `agent_type` / `run_kind` for that handle are immutable, and session/ask handles are rejected as non-dispatchable.
+The daemon enforces one primary active run per dispatchable agent. `agents.current_run_id` points at the latest primary run, including terminal runs, so `wait_for_agent(agent_handle)` can retrieve final results until a later primary run replaces it. Retasking an existing handle is conservative: the current run must already be terminal, `agent_type` for that handle is immutable, and session/ask handles are rejected as non-dispatchable.
 
 ## Run lifecycle and cleanup
 
@@ -73,10 +74,11 @@ Important fields:
 - `node_id`: internal caller identity. For async agents this is the private `agent_id`.
 - `agent_handle`: public alias for the registered node. Current clients send this for both root sessions and async agents.
 - `parent_id`: parent node, or `null` for a root session.
-- `role`: `session` or `agent`.
+- `role`: `agent` (user-facing session) or `worker` (fully backgrounded), derived from `BASECAMP_USER_FACING`.
 - `session_name`, `depth`, `cwd`: safe directory/observability metadata.
 - `session_file`: optional registered transcript file path used only as an ask fork source after authorization succeeds. It is not exposed in LLM-facing tools.
-- `product_role`: optional safe display role such as `copilot` or a session mode. Peer-message recipients may see it as display metadata; it is not a routable identity.
+- `repo`: optional canonical `<org>/<name>` repo identity facet for the registered node.
+- `worktree_label`: optional active worktree label facet (e.g. `copilot/<slug>`), or `null` when no worktree is active.
 
 ### `dispatch` client → daemon
 
@@ -86,7 +88,7 @@ Important fields:
 - `run_id`: private request/execution correlation id.
 - `agent_id`: private durable agent identity. If omitted, daemon may mint one as a fallback.
 - `agent_handle`: public readable handle for dispatch/list/wait UX. When it matches an existing session or ask-only row, dispatch is rejected as non-dispatchable.
-- `agent_type` and `run_kind`: immutable per handle after the first dispatch.
+- `agent_type`: immutable per handle after the first dispatch.
 - `model`: public display model selected for the agent run. If the extension uses Pi's default model, it sends/stores `default`.
 - `spec`: opaque TypeScript-authored spawn spec.
 - `spec.fork_from`: optional; a target agent handle/id. When present, the daemon resolves it to the target's registered session file or daemon-managed agent session sidecar and forks it (`pi --fork`) into a new read-only answerer session — used by the agent ask capability. Omitted/null for normal dispatch. Resolution by known public handle authorizes the fork-ask across relationships (as with `peer_message`); the private-`agent_id` fallback stays relationship-gated. If no safe fork source exists, the target is reported as unavailable without distinguishing missing, unauthorized, or non-forkable targets.
@@ -118,7 +120,7 @@ The extension splits `getBranch()` into per-entry `nodes` — `id`, `parent_id`,
 ```json
 {
   "type": "thread_report",
-  "v": 20,
+  "v": 21,
   "node_id": "00000000-0000-4000-8000-000000000042",
   "session_id": "session-abc",
   "session_file": "/home/u/.pi/sessions/session-abc.jsonl",
@@ -137,7 +139,7 @@ Waits for one or more public agent handles:
 ```json
 {
   "type": "wait",
-  "v": 20,
+  "v": 21,
   "agent_ids": [],
   "agent_handles": ["mossy-otter-a1b2c3"],
   "mode": "all",
@@ -168,7 +170,7 @@ Requests a safe directory of agents visible under the caller's root session:
 ```json
 {
   "type": "list_agents",
-  "v": 20,
+  "v": 21,
   "request_id": "list-001",
   "awaitable": true
 }
@@ -182,7 +184,6 @@ Returns same-root agent directory rows:
 
 - `agent_handle`
 - `agent_type`
-- `run_kind`
 - `parent_id`
 - `role`
 - `session_name`
@@ -400,6 +401,6 @@ Reports protocol/parse errors and closes the WebSocket for fatal frame errors. C
 A minimal client flow is:
 
 1. Connect to `/ws` over the UDS.
-2. Send `register` with `v: 20`.
+2. Send `register` with `v: 21`.
 3. Send `dispatch` with private `run_id` / `agent_id` and public `agent_handle`.
 4. Use the `agent_handle` with `wait` or discover agents through `list_agents`.

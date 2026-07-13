@@ -22,7 +22,7 @@ def _agent(**overrides: object) -> DaemonSummaryAgent:
     values = {
         "agent_handle": "brisk-lynx-a1b2c3",
         "agent_type": "worker",
-        "role": "agent",
+        "role": "worker",
         "session_name": "worker",
         "status": "running",
         "result_preview": None,

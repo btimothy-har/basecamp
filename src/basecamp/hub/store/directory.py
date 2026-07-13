@@ -4,9 +4,14 @@ from __future__ import annotations
 
 import json
 import sqlite3
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from .text import _preview_text
+
+# Soft-expiry TTL for the live agent roster: rows with no live connection and no
+# activity within this window are dropped from list_agents (the row is retained).
+AGENT_TTL_HOURS = 24
 
 
 class DirectoryMixin:
@@ -17,13 +22,21 @@ class DirectoryMixin:
         *,
         requester_node_id: str,
         awaitable: bool = False,
+        live_node_ids: set[str] | None = None,
     ) -> list[dict[str, Any]]:
-        """List non-session agents under the caller's root with safe status metadata."""
+        """List non-session agents under the caller's root with safe status metadata.
+
+        Soft expiry: rows whose agent has no live connection and has not been seen
+        within AGENT_TTL_HOURS are dropped from the live roster.
+        """
 
         root_id = self.resolve_agent_root(requester_node_id)
         if root_id is None:
             return []
 
+        live = list(live_node_ids or ())
+        cutoff = (datetime.now(UTC) - timedelta(hours=AGENT_TTL_HOURS)).isoformat()
+        live_clause = f"a.id IN ({', '.join('?' for _ in live)})" if live else "0"
         awaitable_filter = "" if not awaitable else " AND r.id IS NOT NULL AND r.dispatcher_id = ? "
         query = f"""
             WITH RECURSIVE scoped_agents(id, parent_id, path) AS (
@@ -42,7 +55,6 @@ class DirectoryMixin:
                 a.id AS agent_id,
                 a.agent_handle,
                 a.agent_type,
-                a.run_kind,
                 a.parent_id,
                 a.role,
                 a.session_name,
@@ -59,19 +71,20 @@ class DirectoryMixin:
             FROM scoped_agents AS s
             INNER JOIN agents AS a ON a.id = s.id
             LEFT JOIN runs AS r ON r.id = a.current_run_id
-            WHERE a.role != 'session'
+            WHERE a.role != 'agent'
               AND (a.agent_type IS NULL OR a.agent_type != 'ask')
+              AND (a.last_seen_at >= ? OR {live_clause})
             {awaitable_filter}
             ORDER BY a.depth ASC, a.id ASC
             """
 
-        params: tuple[Any, ...] = (root_id, requester_node_id)
+        params: list[Any] = [root_id, requester_node_id, cutoff, *live]
         if awaitable:
-            params = (root_id, requester_node_id, requester_node_id)
+            params.append(requester_node_id)
 
         with self._connect() as connection:
             connection.row_factory = sqlite3.Row
-            rows = connection.execute(query, params).fetchall()
+            rows = connection.execute(query, tuple(params)).fetchall()
 
         directory: list[dict[str, Any]] = []
         for row in rows:
@@ -90,7 +103,6 @@ class DirectoryMixin:
                     "agent_id": row["agent_id"],
                     "agent_handle": row["agent_handle"],
                     "agent_type": row["agent_type"],
-                    "run_kind": row["run_kind"],
                     "parent_id": row["parent_id"],
                     "role": row["role"],
                     "session_name": row["session_name"],
@@ -132,7 +144,7 @@ class DirectoryMixin:
                 ON r.id = a.current_run_id
                AND r.dispatcher_id = ?
             WHERE a.id IN ({placeholders})
-              AND a.role != 'session'
+              AND a.role != 'agent'
             """
 
         with self._connect() as connection:
@@ -166,7 +178,7 @@ class DirectoryMixin:
                 ON r.id = a.current_run_id
                AND r.dispatcher_id = ?
             WHERE a.agent_handle IN ({placeholders})
-              AND a.role != 'session'
+              AND a.role != 'agent'
             """
 
         with self._connect() as connection:

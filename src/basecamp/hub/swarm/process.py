@@ -63,6 +63,8 @@ def build_child_env(
         "BASECAMP_AGENT_ID": agent_id,
         "BASECAMP_PARENT_SESSION": dispatcher_node_id,
         "BASECAMP_AGENT_DEPTH": str(child_depth),
+        # Daemon-spawned children are backgrounded workers, never user-facing.
+        "BASECAMP_USER_FACING": "0",
     }
     # The public handle is daemon-owned: never let a requester-supplied spec.env
     # value survive as the child's identity.

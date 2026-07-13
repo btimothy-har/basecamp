@@ -117,7 +117,6 @@ describe("dispatch_agent guards and acks", () => {
 		assert.match(first.agent_handle ?? "", /^[a-z]+-[a-z]+-[0-9a-f]{6}$/);
 		assert.equal(first.spec.env.BASECAMP_AGENT_HANDLE, first.agent_handle);
 		assert.equal(first.agent_type, "scout");
-		assert.equal(first.run_kind, "named-read-only");
 
 		connection.emit({
 			type: "dispatch_ack",
@@ -179,9 +178,8 @@ describe("dispatch_agent guards and acks", () => {
 					agent_id: "00000000-0000-4000-8000-000000000001",
 					agent_handle: "scout-amber-fox-a1b2c3",
 					agent_type: "scout",
-					run_kind: "named-read-only",
 					parent_id: "session-id",
-					role: "agent",
+					role: "worker",
 					session_name: "scout-amber-fox-a1b2c3",
 					depth: 1,
 					status: "completed",
@@ -195,7 +193,6 @@ describe("dispatch_agent guards and acks", () => {
 		assert.equal(dispatch.agent_id, "00000000-0000-4000-8000-000000000001");
 		assert.equal(dispatch.agent_handle, "scout-amber-fox-a1b2c3");
 		assert.equal(dispatch.agent_type, "scout");
-		assert.equal(dispatch.run_kind, "named-read-only");
 
 		connection.emit({
 			type: "dispatch_ack",
@@ -240,9 +237,8 @@ describe("dispatch_agent guards and acks", () => {
 					agent_id: "00000000-0000-4000-8000-000000000001",
 					agent_handle: "scout-amber-fox-a1b2c3",
 					agent_type: "scout",
-					run_kind: "named-read-only",
 					parent_id: "session-id",
-					role: "agent",
+					role: "worker",
 					session_name: "scout-amber-fox-a1b2c3",
 					depth: 1,
 					status: "completed",

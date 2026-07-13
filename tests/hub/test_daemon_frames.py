@@ -41,8 +41,8 @@ def _frame_union_type_set() -> set[str]:
     return frame_types
 
 
-def test_protocol_version_is_20() -> None:
-    assert PROTOCOL_VERSION == 20
+def test_protocol_version_is_21() -> None:
+    assert PROTOCOL_VERSION == 21
 
 
 def test_fixture_file_set_matches_frame_union_discriminator_types() -> None:

@@ -56,6 +56,11 @@ class Registry:
 
         return node_id in self._connections
 
+    def live_node_ids(self) -> set[str]:
+        """Return the set of node ids with a live websocket connection."""
+
+        return set(self._connections.keys())
+
     def set_run_owner(self, run_id: str, node_id: str) -> None:
         """Associate a run id with a node id."""
 

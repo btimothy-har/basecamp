@@ -21,7 +21,7 @@ async def test_prepare_dispatch_preserves_canonical_handle_on_retask_by_id(tmp_p
         parent_id=None,
         sibling_group=None,
         depth=0,
-        role="session",
+        role="agent",
         session_name="root-session",
         cwd=str(tmp_path),
     )
@@ -31,7 +31,7 @@ async def test_prepare_dispatch_preserves_canonical_handle_on_retask_by_id(tmp_p
         parent_id="root",
         sibling_group="root",
         depth=1,
-        role="agent",
+        role="worker",
         session_name="worker-agent",
         cwd=str(tmp_path),
         agent_type="scout",
@@ -81,7 +81,7 @@ async def test_prepare_dispatch_rejects_conflicting_handle_rename_on_retask(tmp_
         parent_id=None,
         sibling_group=None,
         depth=0,
-        role="session",
+        role="agent",
         session_name="root-session",
         cwd=str(tmp_path),
     )
@@ -91,7 +91,7 @@ async def test_prepare_dispatch_rejects_conflicting_handle_rename_on_retask(tmp_
         parent_id="root",
         sibling_group="root",
         depth=1,
-        role="agent",
+        role="worker",
         session_name="worker-agent",
         cwd=str(tmp_path),
         agent_type="scout",
@@ -143,7 +143,7 @@ async def test_prepare_dispatch_rejects_session_as_dispatch_target_by_handle_or_
         parent_id=None,
         sibling_group=None,
         depth=0,
-        role="session",
+        role="agent",
         session_name="root-session",
         cwd=str(tmp_path),
     )
@@ -177,7 +177,7 @@ async def test_prepare_dispatch_rejects_session_as_dispatch_target_by_handle_or_
 
     root = store.get_agent("root")
     assert root is not None
-    assert root["role"] == "session"
+    assert root["role"] == "agent"
 
 
 @pytest.mark.asyncio
@@ -188,7 +188,7 @@ async def test_prepare_dispatch_rejects_existing_ask_agent_as_dispatch_target(tm
         parent_id=None,
         sibling_group=None,
         depth=0,
-        role="session",
+        role="agent",
         session_name="root-session",
         cwd=str(tmp_path),
     )
@@ -198,7 +198,7 @@ async def test_prepare_dispatch_rejects_existing_ask_agent_as_dispatch_target(tm
         parent_id="root",
         sibling_group="root",
         depth=1,
-        role="agent",
+        role="worker",
         session_name="ask-agent",
         cwd=str(tmp_path),
         agent_type="ask",
@@ -235,7 +235,7 @@ async def test_prepare_dispatch_persists_new_agent_sibling_group(tmp_path: Path)
         parent_id=None,
         sibling_group=None,
         depth=0,
-        role="session",
+        role="agent",
         session_name="root-session",
         cwd=str(tmp_path),
     )

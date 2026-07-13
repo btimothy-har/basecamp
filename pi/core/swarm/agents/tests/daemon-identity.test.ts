@@ -1,7 +1,5 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { getAgentMode, setAgentMode } from "../../../agent-mode/index.ts";
-import { registerAgentRoleProvider, resetAgentRoleForTesting } from "../../../agent-role.ts";
 import { deriveDaemonIdentity } from "../../../hub/identity.ts";
 import { installDaemonToolTestHooks } from "./harness.ts";
 
@@ -24,7 +22,6 @@ describe("deriveDaemonIdentity", () => {
 				sessionManager: { getSessionId: () => "0199-aaaa-bbbb-cccc-ddddeeee9f3c" },
 			} as any);
 			assert.equal(identity.session_name, "(scout) do thing [9f3c]");
-			assert.equal(identity.role, "agent");
 			assert.match(identity.agent_handle, /^[a-z]+-[a-z]+-[0-9a-f]{6}$/);
 		} finally {
 			if (priorDepth === undefined) delete process.env.BASECAMP_AGENT_DEPTH;
@@ -83,7 +80,7 @@ describe("deriveDaemonIdentity", () => {
 			const ctx = { sessionManager: { getSessionId: () => "session-stable-123" } } as any;
 			const first = deriveDaemonIdentity(ctx);
 			const second = deriveDaemonIdentity(ctx);
-			assert.equal(first.role, "session");
+			assert.equal(first.role, "agent");
 			assert.equal(first.agent_handle, second.agent_handle);
 			assert.match(first.agent_handle, /^[a-z]+-[a-z]+-[0-9a-f]{6}$/);
 			assert.notEqual(first.agent_handle, "session-stable-123");
@@ -110,7 +107,7 @@ describe("deriveDaemonIdentity", () => {
 			const ctx = { sessionManager: { getSessionId: () => "session-stable-123" } } as any;
 			const first = deriveDaemonIdentity(ctx);
 			const second = deriveDaemonIdentity(ctx);
-			assert.equal(first.role, "session");
+			assert.equal(first.role, "agent");
 			assert.notEqual(first.agent_handle, "quiet-badger-3dc450");
 			assert.equal(first.agent_handle, second.agent_handle);
 			assert.match(first.agent_handle, /^[a-z]+-[a-z]+-[0-9a-f]{6}$/);
@@ -121,109 +118,6 @@ describe("deriveDaemonIdentity", () => {
 			else process.env.BASECAMP_AGENT_ID = priorAgentId;
 			if (priorAgentHandle === undefined) delete process.env.BASECAMP_AGENT_HANDLE;
 			else process.env.BASECAMP_AGENT_HANDLE = priorAgentHandle;
-		}
-	});
-
-	it("deriveDaemonIdentity includes current session mode as product_role for top-level sessions", () => {
-		const priorDepth = process.env.BASECAMP_AGENT_DEPTH;
-		const priorProductRole = process.env.BASECAMP_AGENT_PRODUCT_ROLE;
-		const priorMode = getAgentMode();
-
-		delete process.env.BASECAMP_AGENT_DEPTH;
-		delete process.env.BASECAMP_AGENT_PRODUCT_ROLE;
-		setAgentMode("copilot");
-
-		try {
-			const identity = deriveDaemonIdentity({ sessionManager: { getSessionId: () => "session-mode" } } as any);
-			assert.equal(identity.role, "session");
-			assert.equal(identity.product_role, "copilot");
-		} finally {
-			setAgentMode(priorMode);
-			if (priorDepth === undefined) delete process.env.BASECAMP_AGENT_DEPTH;
-			else process.env.BASECAMP_AGENT_DEPTH = priorDepth;
-			if (priorProductRole === undefined) delete process.env.BASECAMP_AGENT_PRODUCT_ROLE;
-			else process.env.BASECAMP_AGENT_PRODUCT_ROLE = priorProductRole;
-		}
-	});
-
-	it("deriveDaemonIdentity honors sanitized explicit product-role override", () => {
-		const priorDepth = process.env.BASECAMP_AGENT_DEPTH;
-		const priorProductRole = process.env.BASECAMP_AGENT_PRODUCT_ROLE;
-		const priorMode = getAgentMode();
-
-		delete process.env.BASECAMP_AGENT_DEPTH;
-		process.env.BASECAMP_AGENT_PRODUCT_ROLE = "  supervisor\nmode  ";
-		setAgentMode("copilot");
-
-		try {
-			const identity = deriveDaemonIdentity({ sessionManager: { getSessionId: () => "session-override" } } as any);
-			assert.equal(identity.product_role, "supervisor mode");
-		} finally {
-			setAgentMode(priorMode);
-			if (priorDepth === undefined) delete process.env.BASECAMP_AGENT_DEPTH;
-			else process.env.BASECAMP_AGENT_DEPTH = priorDepth;
-			if (priorProductRole === undefined) delete process.env.BASECAMP_AGENT_PRODUCT_ROLE;
-			else process.env.BASECAMP_AGENT_PRODUCT_ROLE = priorProductRole;
-		}
-	});
-
-	it("deriveDaemonIdentity prefers session product-role provider before env and mode", () => {
-		const priorDepth = process.env.BASECAMP_AGENT_DEPTH;
-		const priorProductRole = process.env.BASECAMP_AGENT_PRODUCT_ROLE;
-		const priorMode = getAgentMode();
-
-		delete process.env.BASECAMP_AGENT_DEPTH;
-		process.env.BASECAMP_AGENT_PRODUCT_ROLE = "copilot_env";
-		setAgentMode("executor");
-		registerAgentRoleProvider({ resolveAgentRole: () => "  workstream_agent\n " });
-
-		try {
-			const identity = deriveDaemonIdentity({ sessionManager: { getSessionId: () => "session-provider" } } as any);
-			assert.equal(identity.role, "session");
-			assert.equal(identity.product_role, "workstream_agent");
-		} finally {
-			setAgentMode(priorMode);
-			resetAgentRoleForTesting();
-			if (priorDepth === undefined) delete process.env.BASECAMP_AGENT_DEPTH;
-			else process.env.BASECAMP_AGENT_DEPTH = priorDepth;
-			if (priorProductRole === undefined) delete process.env.BASECAMP_AGENT_PRODUCT_ROLE;
-			else process.env.BASECAMP_AGENT_PRODUCT_ROLE = priorProductRole;
-		}
-	});
-
-	it("deriveDaemonIdentity falls back when session product-role provider is empty or throws", () => {
-		const priorDepth = process.env.BASECAMP_AGENT_DEPTH;
-		const priorProductRole = process.env.BASECAMP_AGENT_PRODUCT_ROLE;
-		const priorMode = getAgentMode();
-
-		delete process.env.BASECAMP_AGENT_DEPTH;
-		delete process.env.BASECAMP_AGENT_PRODUCT_ROLE;
-		setAgentMode("copilot");
-
-		try {
-			registerAgentRoleProvider({ resolveAgentRole: () => "   " });
-			assert.equal(
-				deriveDaemonIdentity({ sessionManager: { getSessionId: () => "session-empty-provider" } } as any).product_role,
-				"copilot",
-			);
-
-			registerAgentRoleProvider({
-				resolveAgentRole: () => {
-					throw new Error("boom");
-				},
-			});
-			assert.equal(
-				deriveDaemonIdentity({ sessionManager: { getSessionId: () => "session-throwing-provider" } } as any)
-					.product_role,
-				"copilot",
-			);
-		} finally {
-			setAgentMode(priorMode);
-			resetAgentRoleForTesting();
-			if (priorDepth === undefined) delete process.env.BASECAMP_AGENT_DEPTH;
-			else process.env.BASECAMP_AGENT_DEPTH = priorDepth;
-			if (priorProductRole === undefined) delete process.env.BASECAMP_AGENT_PRODUCT_ROLE;
-			else process.env.BASECAMP_AGENT_PRODUCT_ROLE = priorProductRole;
 		}
 	});
 
@@ -244,19 +138,24 @@ describe("deriveDaemonIdentity", () => {
 		const priorDepth = process.env.BASECAMP_AGENT_DEPTH;
 		const priorAgentId = process.env.BASECAMP_AGENT_ID;
 		const priorAgentHandle = process.env.BASECAMP_AGENT_HANDLE;
-		const priorProductRole = process.env.BASECAMP_AGENT_PRODUCT_ROLE;
+		const priorUserFacing = process.env.BASECAMP_USER_FACING;
+		const priorRepo = process.env.BASECAMP_REPO;
+		const priorWorktreeLabel = process.env.BASECAMP_WORKTREE_LABEL;
 
 		process.env.BASECAMP_AGENT_DEPTH = "1";
 		process.env.BASECAMP_AGENT_ID = "agent-spawned";
+		process.env.BASECAMP_USER_FACING = "0";
+		process.env.BASECAMP_REPO = "acme/widgets";
+		process.env.BASECAMP_WORKTREE_LABEL = "copilot/brave-otter-quill";
 		process.env.BASECAMP_AGENT_HANDLE = "quiet-badger-3dc450";
-		process.env.BASECAMP_AGENT_PRODUCT_ROLE = "copilot";
 
 		try {
 			const identity = deriveDaemonIdentity({ sessionManager: { getSessionId: () => "child-session" } } as any);
-			assert.equal(identity.role, "agent");
+			assert.equal(identity.role, "worker");
 			assert.equal(identity.node_id, "agent-spawned");
 			assert.equal(identity.agent_handle, "quiet-badger-3dc450");
-			assert.equal(identity.product_role, null);
+			assert.equal(identity.repo, "acme/widgets");
+			assert.equal(identity.worktree_label, "copilot/brave-otter-quill");
 		} finally {
 			if (priorDepth === undefined) delete process.env.BASECAMP_AGENT_DEPTH;
 			else process.env.BASECAMP_AGENT_DEPTH = priorDepth;
@@ -264,8 +163,12 @@ describe("deriveDaemonIdentity", () => {
 			else process.env.BASECAMP_AGENT_ID = priorAgentId;
 			if (priorAgentHandle === undefined) delete process.env.BASECAMP_AGENT_HANDLE;
 			else process.env.BASECAMP_AGENT_HANDLE = priorAgentHandle;
-			if (priorProductRole === undefined) delete process.env.BASECAMP_AGENT_PRODUCT_ROLE;
-			else process.env.BASECAMP_AGENT_PRODUCT_ROLE = priorProductRole;
+			if (priorUserFacing === undefined) delete process.env.BASECAMP_USER_FACING;
+			else process.env.BASECAMP_USER_FACING = priorUserFacing;
+			if (priorRepo === undefined) delete process.env.BASECAMP_REPO;
+			else process.env.BASECAMP_REPO = priorRepo;
+			if (priorWorktreeLabel === undefined) delete process.env.BASECAMP_WORKTREE_LABEL;
+			else process.env.BASECAMP_WORKTREE_LABEL = priorWorktreeLabel;
 		}
 	});
 });

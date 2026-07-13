@@ -19,7 +19,7 @@ def test_upsert_agent_persists_and_is_idempotent(tmp_path: Path) -> None:
         parent_id=None,
         sibling_group="sg",
         depth=1,
-        role="agent",
+        role="worker",
         session_name="session-a",
         cwd="/tmp/a",
     )
@@ -28,7 +28,7 @@ def test_upsert_agent_persists_and_is_idempotent(tmp_path: Path) -> None:
         parent_id="parent-1",
         sibling_group="sg",
         depth=2,
-        role="agent",
+        role="worker",
         session_name="session-b",
         cwd="/tmp/b",
     )
@@ -56,7 +56,7 @@ def test_upsert_agent_persists_gets_and_preserves_handle(tmp_path: Path) -> None
         parent_id=None,
         sibling_group="sg",
         depth=1,
-        role="agent",
+        role="worker",
         session_name="session-a",
         cwd="/tmp/a",
         model="claude-sonnet-4-5",
@@ -66,7 +66,7 @@ def test_upsert_agent_persists_gets_and_preserves_handle(tmp_path: Path) -> None
         parent_id=None,
         sibling_group="sg",
         depth=1,
-        role="agent",
+        role="worker",
         session_name="session-b",
         cwd="/tmp/b",
     )
@@ -89,7 +89,7 @@ def test_get_subtree_agent_ids_returns_root_and_descendants_only(tmp_path: Path)
         parent_id=None,
         sibling_group=None,
         depth=0,
-        role="session",
+        role="agent",
         session_name="root",
         cwd="/tmp/root",
     )
@@ -98,7 +98,7 @@ def test_get_subtree_agent_ids_returns_root_and_descendants_only(tmp_path: Path)
         parent_id="root",
         sibling_group="root",
         depth=1,
-        role="agent",
+        role="worker",
         session_name="child",
         cwd="/tmp/child",
     )
@@ -107,7 +107,7 @@ def test_get_subtree_agent_ids_returns_root_and_descendants_only(tmp_path: Path)
         parent_id="child",
         sibling_group="child",
         depth=2,
-        role="agent",
+        role="worker",
         session_name="grandchild",
         cwd="/tmp/grandchild",
     )
@@ -116,7 +116,7 @@ def test_get_subtree_agent_ids_returns_root_and_descendants_only(tmp_path: Path)
         parent_id=None,
         sibling_group=None,
         depth=0,
-        role="session",
+        role="agent",
         session_name="sibling-root",
         cwd="/tmp/sibling-root",
     )
@@ -133,7 +133,7 @@ def test_upsert_agent_preserves_sibling_group_when_unset(tmp_path: Path) -> None
         parent_id="parent-1",
         sibling_group="parent-1",
         depth=1,
-        role="agent",
+        role="worker",
         session_name="session-a",
         cwd="/tmp/a",
     )
@@ -142,7 +142,7 @@ def test_upsert_agent_preserves_sibling_group_when_unset(tmp_path: Path) -> None
         parent_id="parent-1",
         sibling_group=None,
         depth=1,
-        role="agent",
+        role="worker",
         session_name="session-b",
         cwd="/tmp/b",
     )
@@ -162,7 +162,7 @@ def test_upsert_agent_rejects_duplicate_handle(tmp_path: Path) -> None:
         parent_id=None,
         sibling_group="sg",
         depth=1,
-        role="agent",
+        role="worker",
         session_name="session-a",
         cwd="/tmp/a",
     )
@@ -174,7 +174,7 @@ def test_upsert_agent_rejects_duplicate_handle(tmp_path: Path) -> None:
             parent_id=None,
             sibling_group="sg",
             depth=1,
-            role="agent",
+            role="worker",
             session_name="session-b",
             cwd="/tmp/b",
         )
@@ -190,7 +190,7 @@ def test_upsert_agent_rejects_fallback_handle_collision(tmp_path: Path) -> None:
         parent_id=None,
         sibling_group="sg",
         depth=1,
-        role="agent",
+        role="worker",
         session_name="session-a",
         cwd="/tmp/a",
     )
@@ -201,7 +201,46 @@ def test_upsert_agent_rejects_fallback_handle_collision(tmp_path: Path) -> None:
             parent_id=None,
             sibling_group="sg",
             depth=1,
-            role="agent",
+            role="worker",
             session_name="session-b",
             cwd="/tmp/b",
         )
+
+
+def test_upsert_agent_persists_facets_and_preserves_them_on_null(tmp_path: Path) -> None:
+    db_path = tmp_path / "daemon.db"
+    store = Store(db_path=db_path)
+
+    store.upsert_agent(
+        agent_id="agent-1",
+        parent_id=None,
+        sibling_group="sg",
+        depth=0,
+        role="agent",
+        session_name="session-a",
+        cwd="/tmp/a",
+        repo="acme/widgets",
+        worktree_label="copilot/brave-otter-quill",
+    )
+
+    with sqlite3.connect(db_path) as connection:
+        stored = connection.execute("SELECT repo, worktree_label FROM agents WHERE id = 'agent-1'").fetchone()
+    assert stored == ("acme/widgets", "copilot/brave-otter-quill")
+
+    # A lightweight re-register (e.g. a result-report) sends no facets; the stored
+    # values must survive rather than being clobbered to NULL.
+    store.upsert_agent(
+        agent_id="agent-1",
+        parent_id=None,
+        sibling_group="sg",
+        depth=0,
+        role="worker",
+        session_name="session-a",
+        cwd="/tmp/a",
+        repo=None,
+        worktree_label=None,
+    )
+
+    with sqlite3.connect(db_path) as connection:
+        preserved = connection.execute("SELECT repo, worktree_label FROM agents WHERE id = 'agent-1'").fetchone()
+    assert preserved == ("acme/widgets", "copilot/brave-otter-quill")

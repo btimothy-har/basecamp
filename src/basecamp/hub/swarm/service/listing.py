@@ -14,11 +14,13 @@ async def list_agents(
     frame: ListAgentsFrame,
     store: Store,
     requester_node_id: str,
+    live_node_ids: set[str] | None = None,
 ) -> list[ListAgentItem]:
     rows = await asyncio.to_thread(
         store.get_root_agent_directory,
         requester_node_id=requester_node_id,
         awaitable=frame.awaitable,
+        live_node_ids=live_node_ids,
     )
     items: list[ListAgentItem] = []
     for row in rows:
@@ -36,7 +38,5 @@ async def list_agents(
             values["task"] = row["task"]
         if row.get("agent_type") is not None:
             values["agent_type"] = row["agent_type"]
-        if row.get("run_kind") is not None:
-            values["run_kind"] = row["run_kind"]
         items.append(ListAgentItem(**values))
     return items

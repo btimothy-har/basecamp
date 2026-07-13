@@ -1,7 +1,6 @@
 import type { ExtensionAPI, ExtensionContext, SessionStartEvent } from "@earendil-works/pi-coding-agent";
 import { isCopilotLaunch } from "#core/agent-mode/copilot.ts";
 import { setAgentMode } from "#core/agent-mode/index.ts";
-import { registerAgentRoleProvider } from "#core/agent-role.ts";
 import { resolveDaemonPaths } from "#core/hub/index.ts";
 import {
 	getWorkspaceState,
@@ -249,11 +248,6 @@ export function registerWorkstreamStartup(
 		description:
 			"Start the workstream for the current worktree. Bare --workstream infers the workstream from the copilot/<slug> worktree label; --workstream=<slug|id> resolves explicitly.",
 		type: "boolean",
-	});
-
-	// --copilot is owned by core/pi and takes precedence; read it via isCopilotLaunch() rather than re-registering.
-	registerAgentRoleProvider({
-		resolveAgentRole: () => (isCopilotLaunch() || pi.getFlag("workstream") === undefined ? null : "workstream_agent"),
 	});
 
 	pi.on("session_start", async (event, ctx) => {

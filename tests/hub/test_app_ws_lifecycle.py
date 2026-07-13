@@ -30,7 +30,7 @@ def test_ws_register_returns_registered(tmp_path: Path) -> None:
                 {
                     "type": "register",
                     "v": PROTOCOL_VERSION,
-                    "role": "session",
+                    "role": "agent",
                     "node_id": "node-1",
                     "parent_id": None,
                     "sibling_group": "sg-main",
@@ -60,7 +60,7 @@ def test_ws_disconnect_schedules_disconnect_reaper(tmp_path: Path, monkeypatch: 
 
     with TestClient(app) as client:
         with client.websocket_connect("/ws") as websocket:
-            _register_ws(websocket, node_id="node-1", role="session", parent_id=None, sibling_group="sg-main")
+            _register_ws(websocket, node_id="node-1", role="agent", parent_id=None, sibling_group="sg-main")
 
     assert calls == ["node-1"]
 
@@ -80,9 +80,9 @@ def test_ws_reregister_cancels_disconnect_reaper(tmp_path: Path, monkeypatch: py
 
     with TestClient(app) as client:
         with client.websocket_connect("/ws") as first:
-            _register_ws(first, node_id="node-1", role="session", parent_id=None, sibling_group="sg-main")
+            _register_ws(first, node_id="node-1", role="agent", parent_id=None, sibling_group="sg-main")
         with client.websocket_connect("/ws") as second:
-            _register_ws(second, node_id="node-1", role="session", parent_id=None, sibling_group="sg-main")
+            _register_ws(second, node_id="node-1", role="agent", parent_id=None, sibling_group="sg-main")
 
     assert cancelled == ["node-1", "node-1"]
 
@@ -96,7 +96,7 @@ def test_ws_duplicate_active_registration_is_rejected(tmp_path: Path) -> None:
                 {
                     "type": "register",
                     "v": PROTOCOL_VERSION,
-                    "role": "session",
+                    "role": "agent",
                     "node_id": "node-1",
                     "parent_id": None,
                     "sibling_group": None,
@@ -112,7 +112,7 @@ def test_ws_duplicate_active_registration_is_rejected(tmp_path: Path) -> None:
                     {
                         "type": "register",
                         "v": PROTOCOL_VERSION,
-                        "role": "session",
+                        "role": "agent",
                         "node_id": "node-1",
                         "parent_id": None,
                         "sibling_group": None,
@@ -136,7 +136,7 @@ def test_ws_version_mismatch_returns_protocol_error(tmp_path: Path) -> None:
                 {
                     "type": "register",
                     "v": 99,
-                    "role": "session",
+                    "role": "agent",
                     "node_id": "node-1",
                     "parent_id": None,
                     "sibling_group": None,
@@ -161,7 +161,7 @@ def test_ws_unsupported_inbound_frame_returns_error(tmp_path: Path) -> None:
                 {
                     "type": "register",
                     "v": PROTOCOL_VERSION,
-                    "role": "session",
+                    "role": "agent",
                     "node_id": "node-1",
                     "parent_id": None,
                     "sibling_group": None,
@@ -188,11 +188,11 @@ def test_ws_unsupported_inbound_frame_returns_error(tmp_path: Path) -> None:
     assert "registered" in reply["message"]
 
 
-def test_health_returns_protocol_20(tmp_path: Path) -> None:
+def test_health_returns_protocol_21(tmp_path: Path) -> None:
     app = _build_app(tmp_path)
 
     with TestClient(app) as client:
         response = client.get("/health")
 
     assert response.status_code == 200
-    assert response.json()["protocol"] == 20
+    assert response.json()["protocol"] == 21

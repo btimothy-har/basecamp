@@ -225,7 +225,7 @@ def test_swarm_polls_messages_for_selected_agent_when_session_active(tmp_path: P
                 DaemonSummaryAgent(
                     agent_handle="selected-agent",
                     agent_type="worker",
-                    role="agent",
+                    role="worker",
                     session_name="selected",
                     status="running",
                     result_preview=None,
@@ -238,7 +238,7 @@ def test_swarm_polls_messages_for_selected_agent_when_session_active(tmp_path: P
                 DaemonSummaryAgent(
                     agent_handle="other-agent",
                     agent_type="scout",
-                    role="agent",
+                    role="worker",
                     session_name="other",
                     status="running",
                     result_preview=None,

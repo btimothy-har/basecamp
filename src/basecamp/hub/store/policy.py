@@ -126,7 +126,7 @@ class PolicyMixin:
 
     @staticmethod
     def _agent_has_public_handle(agent: dict[str, Any]) -> bool:
-        if agent.get("role") not in {"agent", "session"}:
+        if agent.get("role") not in {"agent", "worker"}:
             return False
         handle = agent.get("agent_handle")
         agent_id = agent.get("id")

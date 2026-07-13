@@ -337,7 +337,7 @@ async def test_reap_agent_process_does_not_overwrite_reported_result(tmp_path: P
         parent_id=None,
         sibling_group=None,
         depth=1,
-        role="agent",
+        role="worker",
         session_name=agent_id,
         cwd=str(tmp_path),
     )

@@ -83,15 +83,11 @@ def _hash_report_token(report_token: str) -> str:
 
 def _metadata_mismatches(*, existing: dict[str, Any], frame: DispatchFrame) -> bool:
     existing_agent_type = existing.get("agent_type")
-    if isinstance(existing_agent_type, str) and frame.agent_type and existing_agent_type != frame.agent_type:
-        return True
-
-    existing_run_kind = existing.get("run_kind")
-    return bool(isinstance(existing_run_kind, str) and frame.run_kind and existing_run_kind != frame.run_kind)
+    return bool(isinstance(existing_agent_type, str) and frame.agent_type and existing_agent_type != frame.agent_type)
 
 
 def _is_dispatchable_agent(agent: dict[str, Any]) -> bool:
-    return agent.get("role") != "session" and agent.get("agent_type") != "ask"
+    return agent.get("role") != "agent" and agent.get("agent_type") != "ask"
 
 
 def _registered_session_file(agent: dict[str, Any]) -> Path | None:
@@ -227,12 +223,11 @@ async def prepare_dispatch(
                 parent_id=dispatcher_node_id,
                 sibling_group=dispatcher_node_id,
                 depth=child_depth,
-                role="agent",
+                role="worker",
                 session_name=frame.agent_handle or agent_id,
                 cwd=frame.spec.cwd,
                 agent_handle=frame.agent_handle,
                 agent_type=frame.agent_type,
-                run_kind=frame.run_kind,
                 model=frame.model or "default",
             )
         else:
@@ -242,12 +237,11 @@ async def prepare_dispatch(
                 parent_id=existing_agent.get("parent_id"),
                 sibling_group=existing_agent.get("sibling_group"),
                 depth=child_depth,
-                role=str(existing_agent.get("role") or "agent"),
+                role=str(existing_agent.get("role") or "worker"),
                 session_name=str(existing_agent.get("session_name") or resolved_handle or agent_id),
                 cwd=frame.spec.cwd,
                 agent_handle=resolved_handle,
                 agent_type=frame.agent_type,
-                run_kind=frame.run_kind,
                 model=frame.model or "default",
             )
     except DuplicateAgentHandleError:

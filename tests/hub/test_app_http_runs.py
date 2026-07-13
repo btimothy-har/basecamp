@@ -20,7 +20,7 @@ def test_runs_summary_endpoint_returns_child_agents(tmp_path: Path) -> None:
         parent_id=None,
         sibling_group="sg-root",
         depth=0,
-        role="session",
+        role="agent",
         session_name="root-session",
         cwd="/tmp/root",
     )
@@ -29,7 +29,7 @@ def test_runs_summary_endpoint_returns_child_agents(tmp_path: Path) -> None:
         parent_id="root",
         sibling_group="sg-child",
         depth=1,
-        role="agent",
+        role="worker",
         session_name="child-agent",
         cwd="/tmp/child",
     )
@@ -75,7 +75,7 @@ def test_runs_summary_endpoint_marks_session_active_for_registered_root(tmp_path
         parent_id=None,
         sibling_group="sg-root",
         depth=0,
-        role="session",
+        role="agent",
         session_name="root-session",
         cwd="/tmp/root",
     )
@@ -86,7 +86,7 @@ def test_runs_summary_endpoint_marks_session_active_for_registered_root(tmp_path
                 {
                     "type": "register",
                     "v": PROTOCOL_VERSION,
-                    "role": "session",
+                    "role": "agent",
                     "node_id": "root",
                     "parent_id": None,
                     "sibling_group": "sg-root",
@@ -132,7 +132,7 @@ def test_runs_summary_endpoint_respects_limit(tmp_path: Path) -> None:
         parent_id=None,
         sibling_group="sg-root",
         depth=0,
-        role="session",
+        role="agent",
         session_name="root-session",
         cwd="/tmp/root",
     )
@@ -146,7 +146,7 @@ def test_runs_summary_endpoint_respects_limit(tmp_path: Path) -> None:
             parent_id="root",
             sibling_group=f"sg-{agent_id}",
             depth=1,
-            role="agent",
+            role="worker",
             session_name=agent_id,
             cwd=f"/tmp/{agent_id}",
         )
@@ -184,7 +184,7 @@ def test_runs_summary_endpoint_omits_sensitive_and_full_fields(tmp_path: Path) -
         parent_id=None,
         sibling_group="sg-root",
         depth=0,
-        role="session",
+        role="agent",
         session_name="root-session",
         cwd="/tmp/root",
     )
@@ -193,7 +193,7 @@ def test_runs_summary_endpoint_omits_sensitive_and_full_fields(tmp_path: Path) -
         parent_id="root",
         sibling_group="sg-child",
         depth=1,
-        role="agent",
+        role="worker",
         session_name="child-agent",
         cwd="/tmp/child",
     )
@@ -259,7 +259,7 @@ def test_runs_messages_endpoint_projects_selected_agent_messages(tmp_path: Path)
         parent_id=None,
         sibling_group="sg-root",
         depth=0,
-        role="session",
+        role="agent",
         session_name="root-session",
         cwd="/tmp/root",
     )
@@ -268,7 +268,7 @@ def test_runs_messages_endpoint_projects_selected_agent_messages(tmp_path: Path)
         parent_id="root",
         sibling_group="sg-child",
         depth=1,
-        role="agent",
+        role="worker",
         session_name="child-agent",
         cwd="/tmp/child",
     )
@@ -323,7 +323,7 @@ def test_runs_summary_endpoint_projects_task_log_and_activity(tmp_path: Path) ->
         parent_id=None,
         sibling_group="sg-root",
         depth=0,
-        role="session",
+        role="agent",
         session_name="root-session",
         cwd="/tmp/root",
     )
@@ -332,7 +332,7 @@ def test_runs_summary_endpoint_projects_task_log_and_activity(tmp_path: Path) ->
         parent_id="root",
         sibling_group="sg-child",
         depth=1,
-        role="agent",
+        role="worker",
         session_name="child-agent",
         cwd="/tmp/child",
     )

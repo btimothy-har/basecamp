@@ -62,7 +62,7 @@ def _summary_agent(store: Store, *, agent_id: str = "agent-1") -> None:
         parent_id=None,
         sibling_group="sg-root",
         depth=0,
-        role="session",
+        role="agent",
         session_name="root-session",
         cwd="/tmp/root",
     )
@@ -71,7 +71,7 @@ def _summary_agent(store: Store, *, agent_id: str = "agent-1") -> None:
         parent_id="root",
         sibling_group="sg-child",
         depth=1,
-        role="agent",
+        role="worker",
         session_name="child-agent",
         cwd="/tmp/child",
     )

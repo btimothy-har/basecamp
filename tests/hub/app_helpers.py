@@ -65,7 +65,7 @@ def _register_ws(
         "node_id": node_id,
         "parent_id": parent_id,
         "sibling_group": sibling_group,
-        "depth": 0 if role == "session" else 1,
+        "depth": 0 if role == "agent" else 1,
         "session_name": node_id,
         "cwd": f"/tmp/{node_id}",
     }

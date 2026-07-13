@@ -24,7 +24,7 @@ async def test_prepare_dispatch_resolves_fork_from_target_handle(tmp_path: Path)
         parent_id=None,
         sibling_group="sg-root",
         depth=0,
-        role="session",
+        role="agent",
         session_name="root-session",
         cwd=str(tmp_path),
     )
@@ -34,7 +34,7 @@ async def test_prepare_dispatch_resolves_fork_from_target_handle(tmp_path: Path)
         parent_id="root",
         sibling_group="sg-target",
         depth=1,
-        role="agent",
+        role="worker",
         session_name="target-agent",
         cwd=str(tmp_path),
     )
@@ -77,7 +77,7 @@ async def test_prepare_dispatch_resolves_fork_from_session_handle(tmp_path: Path
         parent_id=None,
         sibling_group=None,
         depth=0,
-        role="session",
+        role="agent",
         session_name="root-session",
         cwd=str(tmp_path),
     )
@@ -87,7 +87,7 @@ async def test_prepare_dispatch_resolves_fork_from_session_handle(tmp_path: Path
         parent_id="root",
         sibling_group="root",
         depth=1,
-        role="agent",
+        role="worker",
         session_name="child-agent",
         cwd=str(tmp_path),
     )
@@ -127,7 +127,7 @@ async def test_prepare_dispatch_resolves_fork_from_registered_external_session_f
         parent_id=None,
         sibling_group=None,
         depth=0,
-        role="session",
+        role="agent",
         session_name="root-session",
         cwd=str(tmp_path),
     )
@@ -137,7 +137,7 @@ async def test_prepare_dispatch_resolves_fork_from_registered_external_session_f
         parent_id=None,
         sibling_group=None,
         depth=0,
-        role="session",
+        role="agent",
         session_name="external-session",
         cwd=str(tmp_path),
         session_file=str(session_file),
@@ -193,7 +193,7 @@ async def test_prepare_dispatch_rejects_unusable_registered_external_session_fil
         parent_id=None,
         sibling_group=None,
         depth=0,
-        role="session",
+        role="agent",
         session_name="root-session",
         cwd=str(tmp_path),
     )
@@ -203,7 +203,7 @@ async def test_prepare_dispatch_rejects_unusable_registered_external_session_fil
         parent_id=None,
         sibling_group=None,
         depth=0,
-        role="session",
+        role="agent",
         session_name="external-session",
         cwd=str(tmp_path),
         session_file=str(tmp_path / session_file) if session_file == symlink.name else session_file,
@@ -245,7 +245,7 @@ async def test_prepare_dispatch_allows_fork_from_known_public_handle_across_unre
         parent_id=None,
         sibling_group=None,
         depth=0,
-        role="session",
+        role="agent",
         session_name="root-session",
         cwd=str(tmp_path),
     )
@@ -254,7 +254,7 @@ async def test_prepare_dispatch_allows_fork_from_known_public_handle_across_unre
         parent_id=None,
         sibling_group=None,
         depth=0,
-        role="session",
+        role="agent",
         session_name="outside-root-session",
         cwd=str(tmp_path),
     )
@@ -264,7 +264,7 @@ async def test_prepare_dispatch_allows_fork_from_known_public_handle_across_unre
         parent_id="outside-root",
         sibling_group="outside-root",
         depth=1,
-        role="agent",
+        role="worker",
         session_name="outside-agent",
         cwd=str(tmp_path),
     )
@@ -305,7 +305,7 @@ async def test_prepare_dispatch_rejects_fork_from_private_id_across_unrelated_ro
         parent_id=None,
         sibling_group=None,
         depth=0,
-        role="session",
+        role="agent",
         session_name="root-session",
         cwd=str(tmp_path),
     )
@@ -314,7 +314,7 @@ async def test_prepare_dispatch_rejects_fork_from_private_id_across_unrelated_ro
         parent_id=None,
         sibling_group=None,
         depth=0,
-        role="session",
+        role="agent",
         session_name="outside-root-session",
         cwd=str(tmp_path),
     )
@@ -324,7 +324,7 @@ async def test_prepare_dispatch_rejects_fork_from_private_id_across_unrelated_ro
         parent_id="outside-root",
         sibling_group="outside-root",
         depth=1,
-        role="agent",
+        role="worker",
         session_name="outside-agent",
         cwd=str(tmp_path),
     )
@@ -362,7 +362,7 @@ async def test_prepare_dispatch_rejects_unknown_fork_from_target(tmp_path: Path)
         parent_id=None,
         sibling_group="sg-root",
         depth=0,
-        role="session",
+        role="agent",
         session_name="root-session",
         cwd=str(tmp_path),
     )

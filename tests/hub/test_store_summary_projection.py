@@ -78,7 +78,7 @@ def test_get_run_summary_projects_safe_task_log_and_activity(tmp_path: Path) -> 
         parent_id=None,
         sibling_group="sg-root",
         depth=0,
-        role="session",
+        role="agent",
         session_name="root-session",
         cwd="/tmp/root",
     )
@@ -87,7 +87,7 @@ def test_get_run_summary_projects_safe_task_log_and_activity(tmp_path: Path) -> 
         parent_id="root",
         sibling_group="sg-child",
         depth=1,
-        role="agent",
+        role="worker",
         session_name="child-agent",
         cwd="/tmp/child",
         model="claude-haiku-4-5",

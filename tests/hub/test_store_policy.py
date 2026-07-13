@@ -16,7 +16,7 @@ def test_can_ask_allows_ancestors_descendants_and_siblings_only(tmp_path: Path) 
         parent_id=None,
         sibling_group=None,
         depth=0,
-        role="session",
+        role="agent",
         session_name="root-session",
         cwd="/tmp/root",
     )
@@ -25,7 +25,7 @@ def test_can_ask_allows_ancestors_descendants_and_siblings_only(tmp_path: Path) 
         parent_id="root",
         sibling_group="root",
         depth=1,
-        role="agent",
+        role="worker",
         session_name="agent-a",
         cwd="/tmp/a",
     )
@@ -34,7 +34,7 @@ def test_can_ask_allows_ancestors_descendants_and_siblings_only(tmp_path: Path) 
         parent_id="root",
         sibling_group="root",
         depth=1,
-        role="agent",
+        role="worker",
         session_name="agent-b",
         cwd="/tmp/b",
     )
@@ -43,7 +43,7 @@ def test_can_ask_allows_ancestors_descendants_and_siblings_only(tmp_path: Path) 
         parent_id="agent-a",
         sibling_group="agent-a",
         depth=2,
-        role="agent",
+        role="worker",
         session_name="grandchild",
         cwd="/tmp/grandchild",
     )
@@ -52,7 +52,7 @@ def test_can_ask_allows_ancestors_descendants_and_siblings_only(tmp_path: Path) 
         parent_id=None,
         sibling_group=None,
         depth=0,
-        role="session",
+        role="agent",
         session_name="outside-root",
         cwd="/tmp/outside-root",
     )
@@ -61,7 +61,7 @@ def test_can_ask_allows_ancestors_descendants_and_siblings_only(tmp_path: Path) 
         parent_id="outside-root",
         sibling_group="outside-root",
         depth=1,
-        role="agent",
+        role="worker",
         session_name="outside-agent",
         cwd="/tmp/outside-agent",
     )
@@ -85,7 +85,7 @@ def test_can_message_allows_visible_sessions_agents_and_siblings_only(tmp_path: 
         parent_id=None,
         sibling_group=None,
         depth=0,
-        role="session",
+        role="agent",
         session_name="root-session",
         cwd="/tmp/root",
     )
@@ -94,7 +94,7 @@ def test_can_message_allows_visible_sessions_agents_and_siblings_only(tmp_path: 
         parent_id="root",
         sibling_group="root",
         depth=1,
-        role="agent",
+        role="worker",
         session_name="agent-a",
         cwd="/tmp/a",
     )
@@ -103,7 +103,7 @@ def test_can_message_allows_visible_sessions_agents_and_siblings_only(tmp_path: 
         parent_id="root",
         sibling_group="root",
         depth=1,
-        role="agent",
+        role="worker",
         session_name="agent-b",
         cwd="/tmp/b",
     )
@@ -112,7 +112,7 @@ def test_can_message_allows_visible_sessions_agents_and_siblings_only(tmp_path: 
         parent_id="agent-a",
         sibling_group="agent-a",
         depth=2,
-        role="agent",
+        role="worker",
         session_name="grandchild",
         cwd="/tmp/grandchild",
     )
@@ -121,7 +121,7 @@ def test_can_message_allows_visible_sessions_agents_and_siblings_only(tmp_path: 
         parent_id=None,
         sibling_group=None,
         depth=0,
-        role="session",
+        role="agent",
         session_name="outside-root",
         cwd="/tmp/outside-root",
     )
@@ -130,7 +130,7 @@ def test_can_message_allows_visible_sessions_agents_and_siblings_only(tmp_path: 
         parent_id="outside-root",
         sibling_group="outside-root",
         depth=1,
-        role="agent",
+        role="worker",
         session_name="outside-agent",
         cwd="/tmp/outside-agent",
     )
@@ -165,7 +165,7 @@ def test_can_cancel_allows_dispatcher_ancestors_only_and_rejects_public_handle_a
         parent_id=None,
         sibling_group=None,
         depth=0,
-        role="session",
+        role="agent",
         session_name="root",
         cwd="/tmp/root",
     )
@@ -174,7 +174,7 @@ def test_can_cancel_allows_dispatcher_ancestors_only_and_rejects_public_handle_a
         parent_id="root",
         sibling_group="root",
         depth=1,
-        role="agent",
+        role="worker",
         session_name="parent",
         cwd="/tmp/parent",
     )
@@ -184,7 +184,7 @@ def test_can_cancel_allows_dispatcher_ancestors_only_and_rejects_public_handle_a
         parent_id="parent",
         sibling_group="parent",
         depth=2,
-        role="agent",
+        role="worker",
         session_name="grandchild",
         cwd="/tmp/grandchild",
     )
@@ -200,7 +200,7 @@ def test_can_cancel_allows_dispatcher_ancestors_only_and_rejects_public_handle_a
         parent_id=None,
         sibling_group=None,
         depth=0,
-        role="session",
+        role="agent",
         session_name="unrelated",
         cwd="/tmp/unrelated",
     )
@@ -210,7 +210,7 @@ def test_can_cancel_allows_dispatcher_ancestors_only_and_rejects_public_handle_a
         parent_id="unrelated",
         sibling_group="unrelated",
         depth=1,
-        role="agent",
+        role="worker",
         session_name="retasked",
         cwd="/tmp/retasked",
     )
@@ -239,7 +239,7 @@ def test_known_public_handle_contact_is_allowed_across_unrelated_roots(tmp_path:
         parent_id=None,
         sibling_group="sg-root",
         depth=0,
-        role="session",
+        role="agent",
         session_name="root-session",
         cwd="/tmp/root",
     )
@@ -248,7 +248,7 @@ def test_known_public_handle_contact_is_allowed_across_unrelated_roots(tmp_path:
         parent_id=None,
         sibling_group="outside-root",
         depth=0,
-        role="session",
+        role="agent",
         session_name="outside-root",
         cwd="/tmp/outside-root",
     )
@@ -258,7 +258,7 @@ def test_known_public_handle_contact_is_allowed_across_unrelated_roots(tmp_path:
         parent_id="outside-root",
         sibling_group="outside-root",
         depth=1,
-        role="agent",
+        role="worker",
         session_name="outside-agent",
         cwd="/tmp/outside-agent",
     )
@@ -267,7 +267,7 @@ def test_known_public_handle_contact_is_allowed_across_unrelated_roots(tmp_path:
         parent_id="outside-root",
         sibling_group="outside-root",
         depth=1,
-        role="agent",
+        role="worker",
         session_name="private-agent",
         cwd="/tmp/private-agent",
     )

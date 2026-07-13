@@ -69,7 +69,7 @@ def test_dispatch_rejects_duplicate_agent_handle(tmp_path: Path) -> None:
         parent_id=None,
         sibling_group=None,
         depth=1,
-        role="agent",
+        role="worker",
         session_name="agent-1",
         cwd=str(tmp_path),
     )
@@ -80,7 +80,7 @@ def test_dispatch_rejects_duplicate_agent_handle(tmp_path: Path) -> None:
         parent_id="session-node",
         sibling_group=None,
         depth=1,
-        role="agent",
+        role="worker",
         session_name="existing",
         cwd=str(tmp_path),
     )
@@ -126,7 +126,6 @@ def test_dispatch_retasks_terminal_agent_by_handle(tmp_path: Path) -> None:
                 agent_id=agent_id,
                 agent_handle=handle,
                 agent_type="scout",
-                run_kind="named-read-only",
             )
             assert first_ack["status"] == "spawned"
 
@@ -146,7 +145,6 @@ def test_dispatch_retasks_terminal_agent_by_handle(tmp_path: Path) -> None:
                 spec=_dispatch_spec(tmp_path),
                 agent_handle=handle,
                 agent_type="scout",
-                run_kind="named-read-only",
             )
 
         assert second_ack == {
@@ -164,7 +162,6 @@ def test_dispatch_retasks_terminal_agent_by_handle(tmp_path: Path) -> None:
         assert agent is not None
         assert agent["current_run_id"] == "run-retask-second"
         assert agent["agent_type"] == "scout"
-        assert agent["run_kind"] == "named-read-only"
     finally:
         _stop_daemon(server, thread, uds_path)
 
@@ -188,7 +185,6 @@ def test_dispatch_rejects_retask_handle_from_other_root(tmp_path: Path) -> None:
                 agent_id=agent_id,
                 agent_handle=handle,
                 agent_type="scout",
-                run_kind="named-read-only",
             )
             assert first_ack["status"] == "spawned"
 
@@ -208,7 +204,6 @@ def test_dispatch_rejects_retask_handle_from_other_root(tmp_path: Path) -> None:
                 spec=_dispatch_spec(tmp_path),
                 agent_handle=handle,
                 agent_type="scout",
-                run_kind="named-read-only",
             )
 
         assert second_ack == {
@@ -245,7 +240,6 @@ def test_dispatch_rejects_active_retask_by_handle(tmp_path: Path) -> None:
                 agent_id=agent_id,
                 agent_handle=handle,
                 agent_type="scout",
-                run_kind="named-read-only",
             )
             second_ack = _dispatch(
                 websocket,
@@ -253,7 +247,6 @@ def test_dispatch_rejects_active_retask_by_handle(tmp_path: Path) -> None:
                 spec=_dispatch_spec(tmp_path),
                 agent_handle=handle,
                 agent_type="scout",
-                run_kind="named-read-only",
             )
 
         assert first_ack["status"] == "spawned"
@@ -287,7 +280,6 @@ def test_dispatch_rejects_agent_type_change_for_handle(tmp_path: Path) -> None:
                 agent_id=f"agent-{uuid.uuid4()}",
                 agent_handle=handle,
                 agent_type="scout",
-                run_kind="named-read-only",
             )
             assert first_ack["status"] == "spawned"
 
@@ -307,7 +299,6 @@ def test_dispatch_rejects_agent_type_change_for_handle(tmp_path: Path) -> None:
                 spec=_dispatch_spec(tmp_path),
                 agent_handle=handle,
                 agent_type="worker",
-                run_kind="mutative",
             )
 
         assert second_ack == {
@@ -339,7 +330,7 @@ def test_dispatch_rejected_when_depth_cap_exceeded(tmp_path: Path, monkeypatch) 
                     {
                         "type": "register",
                         "v": PROTOCOL_VERSION,
-                        "role": "agent",
+                        "role": "worker",
                         "node_id": "depth-two-agent",
                         "parent_id": "parent",
                         "sibling_group": None,

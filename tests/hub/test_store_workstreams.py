@@ -67,7 +67,7 @@ def test_list_workstreams_honors_status_dossier_query_and_repo(tmp_path: Path) -
         parent_id=None,
         sibling_group="sg",
         depth=1,
-        role="agent",
+        role="worker",
         session_name="session-a",
         cwd="/tmp/a",
     )
@@ -122,7 +122,7 @@ def test_attach_workstream_agent_appends_distinct_and_preserves_joined_at(tmp_pa
         parent_id=None,
         sibling_group="sg",
         depth=1,
-        role="agent",
+        role="worker",
         session_name="session-a",
         cwd="/tmp/a",
     )
@@ -131,7 +131,7 @@ def test_attach_workstream_agent_appends_distinct_and_preserves_joined_at(tmp_pa
         parent_id=None,
         sibling_group="sg",
         depth=1,
-        role="agent",
+        role="worker",
         session_name="session-b",
         cwd="/tmp/b",
     )
@@ -185,7 +185,7 @@ def test_attach_workstream_agent_missing_workstream_raises(tmp_path: Path) -> No
         parent_id=None,
         sibling_group="sg",
         depth=1,
-        role="agent",
+        role="worker",
         session_name="session-a",
         cwd="/tmp/a",
     )
@@ -204,7 +204,7 @@ def test_get_workstream_with_agents_populates_run_status(tmp_path: Path) -> None
         parent_id=None,
         sibling_group="sg",
         depth=1,
-        role="agent",
+        role="worker",
         session_name="session-a",
         cwd="/tmp/a",
     )

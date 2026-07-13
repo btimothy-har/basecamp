@@ -21,7 +21,7 @@ function toCatalogItem(agent: AgentConfig): CatalogItem {
 		meta: {
 			source: agent.source,
 			model: agent.model,
-			tools: getAgentToolAllowlist(agent).join(", "),
+			tools: getAgentToolAllowlist().join(", "),
 		},
 	};
 }

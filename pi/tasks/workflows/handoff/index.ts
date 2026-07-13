@@ -4,7 +4,6 @@
  */
 
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { resolveAgentRoleOverride } from "#core/agent-role.ts";
 import { readWorktreeSetupCommand } from "#core/host/config.ts";
 import { runWorktreeSetup } from "#core/project/workspace/setup.ts";
 import {
@@ -232,11 +231,10 @@ export function workspaceWorktreeToHandoffWorktree(target: WorkspaceWorktree): H
 	};
 }
 
-export function shouldReuseActiveWorktreeForHandoff(
-	agentRole: string | null,
-	activeWorktree: WorkspaceWorktree | null,
-): boolean {
-	return agentRole === "workstream_agent" && activeWorktree !== null;
+export function shouldReuseActiveWorktreeForHandoff(activeWorktree: WorkspaceWorktree | null): boolean {
+	// Reuse the active worktree on handoff when it is a workstream worktree
+	// (copilot/<slug>); a plain session in the main checkout gets the picker.
+	return activeWorktree !== null && activeWorktree.label.startsWith("copilot/");
 }
 
 export type HandoffOutcome =
@@ -258,7 +256,7 @@ export async function runHandoff(
 	const activeWorktree = getWorkspaceState()?.activeWorktree ?? null;
 
 	let worktree: HandoffWorktreeResult;
-	if (activeWorktree && shouldReuseActiveWorktreeForHandoff(resolveAgentRoleOverride(), activeWorktree)) {
+	if (activeWorktree && shouldReuseActiveWorktreeForHandoff(activeWorktree)) {
 		worktree = workspaceWorktreeToHandoffWorktree(activeWorktree);
 	} else {
 		const target = await selectWorktreeTarget(ctx, plan.goal, plan.worktreeSlug);

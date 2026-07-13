@@ -26,10 +26,10 @@ class AgentsSchemaMixin:
                 current_run_id TEXT,
                 agent_handle TEXT,
                 agent_type TEXT,
-                run_kind TEXT,
                 model TEXT,
                 session_file TEXT,
-                product_role TEXT
+                repo TEXT,
+                worktree_label TEXT
             )
             """
         )
@@ -38,7 +38,9 @@ class AgentsSchemaMixin:
         self._ensure_agents_metadata_columns(connection)
         self._ensure_agents_model_column(connection)
         self._ensure_agents_session_file_column(connection)
-        self._ensure_agents_product_role_column(connection)
+        self._ensure_agents_facet_columns(connection)
+        self._migrate_agents_role_values(connection)
+        self._drop_agents_retired_columns(connection)
 
     def _ensure_agents_current_run_id_column(self, connection: sqlite3.Connection) -> None:
         columns = connection.execute("PRAGMA table_info(agents)").fetchall()
@@ -73,8 +75,6 @@ class AgentsSchemaMixin:
         names = {column[1] for column in columns}
         if "agent_type" not in names:
             connection.execute("ALTER TABLE agents ADD COLUMN agent_type TEXT")
-        if "run_kind" not in names:
-            connection.execute("ALTER TABLE agents ADD COLUMN run_kind TEXT")
 
     def _ensure_agents_model_column(self, connection: sqlite3.Connection) -> None:
         columns = connection.execute("PRAGMA table_info(agents)").fetchall()
@@ -88,8 +88,36 @@ class AgentsSchemaMixin:
         if "session_file" not in names:
             connection.execute("ALTER TABLE agents ADD COLUMN session_file TEXT")
 
-    def _ensure_agents_product_role_column(self, connection: sqlite3.Connection) -> None:
+    def _drop_agents_retired_columns(self, connection: sqlite3.Connection) -> None:
+        """Drop retired columns: product_role (agent-role seam), run_kind (mutative guards).
+
+        ``ALTER TABLE ... DROP COLUMN`` needs SQLite 3.35+. On older engines we skip
+        the drops: both columns are inert (no reader or writer references them), so
+        retaining them is harmless and never worth crash-looping daemon start over.
+        """
+        if sqlite3.sqlite_version_info < (3, 35, 0):
+            return
         columns = connection.execute("PRAGMA table_info(agents)").fetchall()
         names = {column[1] for column in columns}
-        if "product_role" not in names:
-            connection.execute("ALTER TABLE agents ADD COLUMN product_role TEXT")
+        if "product_role" in names:
+            connection.execute("ALTER TABLE agents DROP COLUMN product_role")
+        if "run_kind" in names:
+            connection.execute("ALTER TABLE agents DROP COLUMN run_kind")
+
+    def _ensure_agents_facet_columns(self, connection: sqlite3.Connection) -> None:
+        columns = connection.execute("PRAGMA table_info(agents)").fetchall()
+        names = {column[1] for column in columns}
+        if "repo" not in names:
+            connection.execute("ALTER TABLE agents ADD COLUMN repo TEXT")
+        if "worktree_label" not in names:
+            connection.execute("ALTER TABLE agents ADD COLUMN worktree_label TEXT")
+
+    def _migrate_agents_role_values(self, connection: sqlite3.Connection) -> None:
+        """One-shot remap of legacy node-kind values: session->agent, agent->worker."""
+        version = connection.execute("PRAGMA user_version").fetchone()[0]
+        if version >= 1:
+            return
+        connection.execute(
+            "UPDATE agents SET role = CASE role WHEN 'session' THEN 'agent' WHEN 'agent' THEN 'worker' ELSE role END"
+        )
+        connection.execute("PRAGMA user_version = 1")
