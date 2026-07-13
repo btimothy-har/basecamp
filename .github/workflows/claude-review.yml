@@ -1,0 +1,62 @@
+name: Claude Review
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened, ready_for_review]
+
+permissions:
+  contents: read
+  pull-requests: write
+  id-token: write
+
+jobs:
+  review:
+    name: Claude Code Review
+    # Skip drafts (mirrors the old CodeRabbit drafts: false).
+    if: github.event.pull_request.draft == false
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+          persist-credentials: true
+
+      - name: Claude review
+        uses: anthropics/claude-code-action@v1
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          # track_progress posts one tracking/summary comment per run, so each
+          # push gets its own incremental review batch instead of overwriting.
+          track_progress: true
+          # bypassPermissions is the CI-oriented auto-approve mode (it replaced
+          # --dangerously-skip-permissions), so the reviewer never stalls or
+          # burns turns on permission denials. allowedTools still governs which
+          # tools are *available*, so Bash + the inline-comment tool stay listed.
+          claude_args: '--max-turns 100 --permission-mode bypassPermissions --allowedTools "mcp__github_inline_comment__create_inline_comment,Bash"'
+          prompt: |
+            REPO: ${{ github.repository }}
+            PR NUMBER: ${{ github.event.pull_request.number }}
+
+            You are an independent counter-check on this pull request for
+            basecamp, a project-aware Pi extension suite for AI coding agents (a
+            TypeScript Pi extension plus a Python `basecamp` CLI and hub daemon).
+            Be a skeptic, not a co-signer: try to disprove the change rather than
+            confirm it, and judge it against the code, not the PR description or
+            comments — those are claims, not evidence. Plausible, confident-looking
+            code is exactly where subtle bugs hide, and basecamp's worst failures
+            are silent — state lost on `/reload`, a tool the fully-replaced prompt
+            never surfaces, a hub frame the daemon can't parse — so read the
+            lifecycle and edge cases the happy path glosses over.
+
+            Read the repo's CLAUDE.md, AGENTS.md, and REVIEW.md and follow them;
+            REVIEW.md is the highest-priority guide for what to flag, at what
+            severity, and how to report. Make every finding self-contained and
+            specific enough to act on without a follow-up: file:line, the concrete
+            input, state, or sequence that breaks it, and a one-line fix direction.
+
+            Post each finding as an inline comment on the exact line(s) using
+            `mcp__github_inline_comment__create_inline_comment` with
+            `confirmed: true`. Only post GitHub comments — do not emit the review
+            as a chat message.
