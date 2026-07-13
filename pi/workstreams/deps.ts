@@ -2,6 +2,7 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { getOrCreateWorktree, type WorktreeResult } from "#core/git/worktrees/crud.ts";
 import { readWorktreeSetupCommand } from "#core/host/config.ts";
 import { resolveDaemonPaths } from "#core/hub/index.ts";
+import { ADJ_ADJ_NOUN, generateName } from "#core/naming/index.ts";
 import { runWorktreeSetup, type WorktreeSetupResult } from "#core/project/workspace/setup.ts";
 import {
 	getWorkspaceState,
@@ -17,7 +18,6 @@ import {
 	type WorkstreamSummary,
 } from "#core/swarm/agents/client.ts";
 import { type HerdrWorkstreamOpenResult, openWorkstreamInHerdr } from "./herdr.ts";
-import { generateWorkstreamName as generateGenericWorkstreamName } from "./name.ts";
 
 export interface WorkstreamToolsDeps {
 	getWorkspaceState(): WorkspaceState | null;
@@ -58,7 +58,7 @@ export function defaultWorkstreamToolsDeps(getConnection: () => Promise<unknown>
 		readWorktreeSetupCommand,
 		runWorktreeSetup,
 		openWorkstreamInHerdr,
-		generateWorkstreamName: (isTaken) => generateGenericWorkstreamName({ isTaken }),
+		generateWorkstreamName: (isTaken) => generateName({ pattern: ADJ_ADJ_NOUN, isTaken }),
 		getClient: async () => {
 			const connection = await getConnection();
 			if (!connection) return null;
