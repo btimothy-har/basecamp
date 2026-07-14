@@ -348,9 +348,12 @@ def test_reclaim_agent_worktree_removes_from_main_root(monkeypatch: pytest.Monke
 
     reclaim_agent_worktree("/wt/agent-abc/worker")
 
-    # Resolve the common git dir from the worktree, then remove the worktree from the main root.
+    # Resolve the common git dir, then unlock + remove WITHOUT --force so git refuses (preserves)
+    # a dirty tree — an agent that exited without committing never loses its diff silently.
     assert ["git", "-C", "/wt/agent-abc/worker", "rev-parse", "--path-format=absolute", "--git-common-dir"] in calls
-    assert ["git", "-C", "/home/u/repo", "worktree", "remove", "--force", "/wt/agent-abc/worker"] in calls
+    assert ["git", "-C", "/home/u/repo", "worktree", "unlock", "/wt/agent-abc/worker"] in calls
+    assert ["git", "-C", "/home/u/repo", "worktree", "remove", "/wt/agent-abc/worker"] in calls
+    assert not any("--force" in call for call in calls)
 
 
 def test_reclaim_agent_worktree_skips_when_common_dir_unresolved(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -366,3 +369,25 @@ def test_reclaim_agent_worktree_skips_when_common_dir_unresolved(monkeypatch: py
 
     # The rev-parse probe fails, so no `worktree remove` is attempted.
     assert all("remove" not in args for args in calls)
+
+
+def test_reconcile_orphaned_runs_reclaims_owned_worktree(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # A run orphaned by a daemon crash never fired its reaper, so reconciliation must reclaim
+    # its worktree — the sweep can't (the crash-interrupted branch is not merged yet).
+    store = Store(db_path=tmp_path / "daemon.db")
+    reclaimed: list[str] = []
+    monkeypatch.setattr("basecamp.hub.swarm.process._process_group_is_runner", lambda _pgid: False)
+    monkeypatch.setattr("basecamp.hub.swarm.process.reclaim_agent_worktree", reclaimed.append)
+    store.create_run(
+        run_id="run-owns-wt",
+        agent_id="agent-owns-wt",
+        dispatcher_id="root",
+        spec={"owned_worktree": "/wt/agent-xyz/worker"},
+    )
+
+    reconcile_orphaned_runs(store)
+
+    assert reclaimed == ["/wt/agent-xyz/worker"]

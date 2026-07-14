@@ -13,20 +13,31 @@ class RunsReaderMixin:
     """Run and run-event queries."""
 
     def get_nonterminal_runs(self) -> list[dict[str, Any]]:
-        """Return runs that are not in a terminal status."""
+        """Return runs that are not in a terminal status.
+
+        Includes the parsed ``spec_json`` so restart reconciliation can reclaim a mutative
+        agent's ``owned_worktree`` (the reaper's counterpart after a daemon crash).
+        """
 
         with self._connect() as connection:
             connection.row_factory = sqlite3.Row
             rows = connection.execute(
                 """
-                SELECT id, agent_id, pgid, status
+                SELECT id, agent_id, pgid, status, spec_json
                 FROM runs
                 WHERE status NOT IN (?, ?)
                 """,
                 TERMINAL_STATUSES,
             ).fetchall()
 
-        return [dict(row) for row in rows]
+        results: list[dict[str, Any]] = []
+        for row in rows:
+            result = dict(row)
+            spec_json = result.get("spec_json")
+            if isinstance(spec_json, str):
+                result["spec_json"] = json.loads(spec_json)
+            results.append(result)
+        return results
 
     def get_run(self, run_id: str) -> dict[str, Any] | None:
         """Fetch a run by id as a dict, or None when absent."""

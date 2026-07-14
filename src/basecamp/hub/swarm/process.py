@@ -236,6 +236,14 @@ def reconcile_orphaned_runs(store: Store) -> None:
             error=error,
         )
 
+        # A run orphaned by a daemon crash never had its reaper fire, so reclaim its worktree
+        # here — the reaper's counterpart. The merged-worktree sweep can't cover this case: a
+        # crash-interrupted run's branch has not been merged yet.
+        spec = row.get("spec_json")
+        owned_worktree = spec.get("owned_worktree") if isinstance(spec, dict) else None
+        if owned_worktree:
+            reclaim_agent_worktree(owned_worktree)
+
 
 def _reap_outcome(exit_code: int, result_path: str | Path) -> tuple[str, str | None, str | None]:
     """Finalization for a reaped runner, preferring its recorded final result.
@@ -268,6 +276,11 @@ def reclaim_agent_worktree(worktree: str) -> None:
     as the deliverable for the parent to merge. Best-effort — any failure is left to the
     session-start sweep backstop. Run from the main checkout (resolved via the common git dir),
     since a worktree cannot remove itself.
+
+    Removes only a CLEAN worktree: ``git worktree remove`` (no ``--force``) refuses one that
+    still has uncommitted or untracked changes, so an agent that exited without committing
+    never has its diff silently discarded — a dirty tree is left for the parent/sweep. The
+    worktree was locked as a liveness guard, so unlock it first.
     """
     try:
         common = subprocess.run(
@@ -281,7 +294,14 @@ def reclaim_agent_worktree(worktree: str) -> None:
             return
         main_root = os.path.dirname(common.stdout.strip())
         subprocess.run(
-            ["git", "-C", main_root, "worktree", "remove", "--force", worktree],
+            ["git", "-C", main_root, "worktree", "unlock", worktree],
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=15,
+        )
+        subprocess.run(
+            ["git", "-C", main_root, "worktree", "remove", worktree],
             capture_output=True,
             text=True,
             check=False,

@@ -104,7 +104,9 @@ def test_get_nonterminal_runs_returns_pending_and_running_only(tmp_path: Path) -
 
     rows = store.get_nonterminal_runs()
 
-    assert rows == [{"id": "run-running", "agent_id": "agent-running", "pgid": 4321, "status": "running"}]
+    assert rows == [
+        {"id": "run-running", "agent_id": "agent-running", "pgid": 4321, "status": "running", "spec_json": {}}
+    ]
 
 
 def test_resolve_agent_root_follows_parents_defensively(tmp_path: Path) -> None:
