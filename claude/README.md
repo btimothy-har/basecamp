@@ -66,7 +66,7 @@ performs today, so basecamp config stays the single source of truth.
 | Logseq memory curation (append) | ❌ | **MCP tools** · Tier 2 |
 | BigQuery `bq_query` | ❌ | **MCP tool** (optional), or a dedicated BigQuery MCP |
 | Skills: `sql`, `data-warehousing`, `python-development`, `marimo`, `data-analysis`, `planning`, `gather`, `agents` | ✅ skills | **Native** — `skills/` (port `SKILL.md` verbatim) |
-| Copilot posture (was a session mode) | ⚠️ modes don't port as enforced | **Native** — new `copilot` skill |
+| Session-mode postures (analysis / planning / work / copilot) | ⚠️ don't port as *enforced* modes | **Native** — posture skills in `skills/` |
 | Per-repo session setup (was the worktree setup hook) | ✅ hooks | **Native** — `hooks/hooks.json` → `SessionStart` |
 | `bash-reviewer` | ✅ `auto` mode; and MCP can't intercept host `Bash` | **Native hook** if wanted (`PreToolUse`); else drop |
 | basecamp slash commands | ✅ commands / skills | **Native** — `commands/` |
@@ -80,7 +80,6 @@ performs today, so basecamp config stays the single source of truth.
 | Model aliases (`/model-aliases`) | ✅ `/model` | **Drop** |
 | Workspace guards (protected checkout, `allowed_dirs`) | ✅ permissions + sandbox | **Drop** |
 | Browser (`browser_eval`, `browser_screenshot`) | ⚠️ Playwright MCP exists | **Drop** — use an existing browser MCP |
-| analysis / planning / work session modes | ✅ plan mode + default posture | **Drop** — postures don't port as enforced modes |
 
 ## Tiers
 
