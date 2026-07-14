@@ -25,6 +25,8 @@ export interface DaemonDispatchFrameOptions {
 	env: Record<string, string>;
 	resumePath?: string | null;
 	forkFrom?: string | null;
+	// A mutative agent's own worktree; the daemon reaper removes it when the run exits.
+	ownedWorktree?: string | null;
 }
 
 export interface DaemonDispatchResult {
@@ -144,6 +146,7 @@ export function createDaemonClient(connection: DaemonConnection): DaemonClient {
 					env: input.env,
 					resume_path: input.resumePath ?? null,
 					fork_from: input.forkFrom ?? null,
+					owned_worktree: input.ownedWorktree ?? null,
 				},
 			});
 

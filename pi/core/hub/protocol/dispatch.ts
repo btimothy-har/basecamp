@@ -14,6 +14,7 @@ export interface DispatchFrame extends ProtocolEnvelope {
 		resume_path: string | null;
 		fork_from?: string | null;
 		task: string;
+		owned_worktree?: string | null;
 	};
 }
 

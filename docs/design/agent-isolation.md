@@ -1,94 +1,168 @@
 # Agent Isolation — Design
 
-**Status:** PROPOSED · design-only, **not implemented**. Captures the direction for containing what a dispatched agent's `bash` can do, and for safely re-enabling *mutative* agents on top of that containment. · **Scope:** Run each dispatched agent inside an OS-level sandbox (container / `sandbox-exec` / namespaces) whose filesystem view is a disposable copy of the repo; write results back to the host as a diff the trusted host applies. · **Extends:** [async-agents.md](./async-agents.md) (the daemon + spawn/teardown lifecycle), [agent-roles-identities.md](./agent-roles-identities.md) (which **dropped** the mutative/`run_kind` guards this doc's interim posture replaces). · **Motivates:** [#252](https://github.com/btimothy-har/basecamp/issues/252) (reviewers fed untrusted content), [#253](https://github.com/btimothy-har/basecamp/issues/253) (no-worktree bash reaches the main checkout), [#254](https://github.com/btimothy-har/basecamp/issues/254).
+**Status:** PROPOSED · design-only, **not implemented**. Supersedes this doc's earlier container/`sandbox-exec` direction. · **Scope:** Re-enable *mutative* dispatched agents by giving each its own git worktree, confining writes to it (structured guard + bash-reviewer), and integrating the result up the tree by merge — with the human review gate at the worktree immediately off main (W0). No OS container. · **Extends:** [async-agents.md](./async-agents.md) (daemon spawn/teardown lifecycle) — and **reverses** its "shared worktree + mutation lease" choice (§2/§9.2/§7.4). · **Motivates:** [#252](https://github.com/btimothy-har/basecamp/issues/252), [#253](https://github.com/btimothy-har/basecamp/issues/253), [#254](https://github.com/btimothy-har/basecamp/issues/254).
 
 ---
 
 ## 1. Problem statement
 
-Dispatched agents read *untrusted* content — the code under `/code-review`, arbitrary repos a scout is pointed at, PR diffs. A prompt-injection payload in that content can try to make the agent mutate the user's real repository. The identity/role rework ([#244](https://github.com/btimothy-har/basecamp/issues/244), [agent-roles-identities.md](./agent-roles-identities.md)) removed the per-persona guards, and the interim response (this repo's current state) is a **read-only toolset**: `getAgentToolAllowlist()` (`pi/core/swarm/agents/types.ts`) withholds `write`/`edit` from every dispatched agent, each is launched with `--read-only`, and the primary session is the sole mutator.
+Dispatched agents read *untrusted* content — the code under `/code-review`, arbitrary repos a scout is pointed at, PR diffs. A prompt-injection payload there can try to make an agent mutate the user's real repository. The interim response (this repo's current state) is a **uniform read-only toolset**: `getAgentToolAllowlist()` (`pi/core/swarm/agents/types.ts`) withholds `write`/`edit` from every dispatched agent, each is launched `--read-only`, and the primary session is the sole mutator (`worker` returns a change *proposal*, it does not edit).
 
-That closes the **structured** mutation path — but not `bash`, and `bash` cannot be closed on a shared filesystem:
+That is safe but limiting: real work has to funnel through one mutator. We want **mutative agents back** — agents that edit, run tools, and hand real changes up — without exposing the user's checkout. The blocker has always been `bash`: on a shared filesystem a read-only *toolset* is defense-in-depth, not a wall (`echo x > /abs/path`, `sed -i`, `tee`, `cp` all escape it, and the static bash gate triages them to ALLOW).
 
-- **The static bash gate does not catch plain writes.** `pi/bash-reviewer/triage/` classifies `rm -rf`, `sudo`, `dd`, and git/gh mutations, but `echo x > /abs/path`, `sed -i`, `tee`, and `cp` all triage to **ALLOW** and run unguarded. `git-mutation` is even auto-*approved* for a no-UI subagent (`SUBAGENT_APPROVE_CATEGORIES`, `pi/bash-reviewer/review.ts`).
-- **A worktree is not a sandbox.** The workspace guard (`pi/core/project/workspace/guards.ts`) rewrites only *relative* bash cwd into the active worktree; an absolute-path write (`echo x > /Users/.../main-checkout/f`) escapes it, and its bash branch early-returns entirely when no worktree is active (#253). The worktree shares the host filesystem, user, and permissions.
+The earlier version of this doc concluded the only real boundary for `bash` is an OS sandbox (container / `sandbox-exec` / namespaces) over a disposable repo copy, writing results back as a host-applied diff ("Option C"). **That direction is dropped.** §2 explains why, and the rest of the doc specifies what replaces it.
 
-**Conclusion:** on a shared filesystem, read-only-by-toolset is defense-in-depth, not a wall. The only real boundary for `bash` is OS-level isolation. That same boundary is what would let us **bring back mutative agents** without exposing the main checkout — the reason to invest in it.
+## 2. Decision — worktree confinement, not containers
 
-## 2. Direction — disposable sandbox, host-applied write-back
+"Do we need a container?" decomposes into two orthogonal axes:
 
-Run each dispatched agent inside an OS sandbox whose only writable filesystem is a **disposable copy of the repo**. Inside the sandbox the agent may edit and `bash` freely; nothing it does reaches the host except a **diff the host chooses to apply**.
+- **Axis 1 — coherence + write-back:** mutative agents produce changes that land cleanly. Solved by a *worktree strategy* + git. No container.
+- **Axis 2 — bash blast-radius:** an injected `rm -rf ~` / `echo > /abs/host/path` can't reach the host. Only an OS sandbox closes this.
+
+Re-enabling mutative agents is entirely an Axis-1 problem; the container is a pure Axis-2 add-on. We take Axis 1 (per-agent worktrees) and **decline the container**, for three reasons:
+
+1. **It fights the daemon.** Every agent depends on the `0600` daemon UDS for telemetry, `wait_for_agent`, `ask_agent`, and peer messaging (async-agents §5). A container must either **sever** that socket (losing the whole async-collaboration surface) or **bind-mount** it in (handing a possibly-injected agent a live capability to spawn/lease/message — `0600` is moot once mounted). Worktrees keep the agent an ordinary host process with its normal daemon connection.
+2. **It's leaky anyway.** The agent still needs its model key + `gh`/git credentials *inside* the sandbox — the very secrets the boundary was meant to protect.
+3. **It's outside the threat model.** async-agents §5.1 already declares same-user processes inside the trust boundary (UDS is local-user-only). A container defends against an actor the project already trusts, at real cost (per-agent startup latency, image upkeep, cross-platform parity).
+
+The cost of declining it is explicit and accepted: **`bash` blast-radius stays uncontained** (see §6). We raise the bar with the bash-reviewer (§4.3) but do not claim a wall.
+
+## 3. The model
+
+### 3.1 One rule: write only your own active worktree
+
+Every actor — the human-facing session *and* every dispatched agent — may make structured/`bash` writes **only within its own active worktree** (plus the session scratch dir and other registered allowed-roots). No active worktree ⇒ no repo writes. This single rule replaces the special-cased "protected checkout" apparatus:
+
+- The **main checkout is nobody's worktree**, so it is never writable by anyone — *protected as a corollary*, with no dedicated machinery.
+- Pre-handoff (a work-mode session sitting on main with no worktree yet) ⇒ "no write scope yet, activate one first."
+
+`validateProtectedCheckout`'s special protected-root logic and the two-branch protected-checkout guard collapse into this one rule.
+
+### 3.2 Per-agent worktrees + upward merge
+
+A dispatched **mutative** agent is launched into **its own** locked worktree, branched from its parent's `HEAD`. It works there, **commits to its branch**, and stops — it *produces a branch*, it does not merge. The **parent** integrates that branch into the parent's own worktree by `git merge`, on review. Read-only agents (scouts, reviewers, `ask`) keep sharing the parent's checkout read-only (they need live WIP, and they don't write).
+
+This is recursive — "parent" is whoever dispatched. The tree of the two human workflows converges here:
 
 ```
-DISPATCH ─ daemon spawns agent INSIDE a sandbox
-   │        (mount ns / container / sandbox-exec)
-   ▼
-  sandbox fs:  /workspace = disposable repo copy   (host main checkout NOT in the namespace)
-   │
-   ├─ agent edits + bash freely; absolute paths to the host checkout do not exist here
-   │
-   ▼
-TEARDOWN ─ daemon extracts `git diff` → writes `<tmp>/<agent_id>.diff`
-   │
-   ▼
-HOST ─ trusted host validates the diff (scope-checks touched paths) and `git apply`s it,
-        or discards it. The sandbox is destroyed.
+Path 1 (interactive):  main → plan-approved W0 → agent worktrees
+Path 2 (copilot):      main → workstream W0     → agent worktrees
+
+              main  (root; reached only via PR from W0)
+                │
+                W0  (human-facing worktree — the sole human gate)
+              ╱  │  ╲
+            W1  W2  W3   (agent worktrees; each merges up into its parent)
+            │
+            W1a … (depth-capped; parent integrates children autonomously)
 ```
 
-Two agent classes ride on the same mechanism:
+Per-agent worktrees **dissolve the mutation lease**: the lease existed only to serialize writers on a *shared* tree (async-agents §7.4). Separate worktrees have no shared writer, so the lease and its deadlock-cycle detection (Phase 3) are unnecessary. `git worktree lock` here is a *liveness* guard (stop cleanup/migration from yanking a tree mid-run), not a mutation lease.
 
-- **Read-only agents** (scouts, reviewers, `ask`) — no write-back; the sandbox is pure blast-radius containment. `bash` genuinely cannot touch the host checkout because that path is not in the sandbox's namespace.
-- **Mutative agents** (re-enabled) — the diff is the deliverable; the host is the gate on what actually lands.
+### 3.3 Trust model
 
-## 3. Write-back — Option C (host-applied diff artifact)
+**W0 — the worktree immediately off main — is the sole human review gate.** All sub-agent changes converge into it, and it reaches main only through the existing PR flow. Everything below W0 is one **autonomous** trust domain: agent-to-agent integration is *not* human-gated; the human reviews only the **aggregate** that lands in W0. The subtree is bounded by the depth cap (default 2), so it is shallow, not unbounded recursion.
 
-Three write-back mechanisms were considered:
+"Only W0 is gated" splits the threat surface, and W0 covers exactly one half:
 
-| | Mechanism | Isolation | Verdict |
-|---|---|---|---|
-| A | Bind-mount a host worktree into the sandbox | Weak — must also expose `.git`, which the sandbox can then corrupt | rejected |
-| B | Clone in, `git fetch` out (host objects read-only) | Strong; clean git audit trail | viable fallback |
-| **C** | **Agent works on a throwaway copy; daemon emits `git diff`; trusted host validates + `git apply`s** | **Strong; host is the gate on what lands** | **chosen** |
+- **In-scope malicious content** (a sub-agent slips a backdoor into code it was legitimately editing, which merges up): caught **only** at W0. So the W0 review is **load-bearing** — the single failure mode of the whole model is a human blind-approving the W0→main diff.
+- **Escape / exfiltration** (a sub-agent writes *outside* its worktree, or reads secrets and phones home): W0 review **structurally cannot** catch this — it never appears in W0's diff. The only defense is per-level worktree confinement + bash-reviewer, and with no human checkpoint below W0 there is no backstop if the bash-reviewer is evaded.
 
-**Option C** keeps the security property through write-back: the sandbox never writes host state directly. On teardown the daemon **artifacts the result back as a `.diff` file in tmp** (`<tmp>/<agent_id>.diff`); the host scope-checks that the diff touches only expected paths and applies it (or rejects it). This is the natural extension of the read-only posture — you already don't trust what the agent's `bash` did, so you validate its output before letting it land.
+Both sit inside the same-user local-dev trust boundary (async-agents §5.1). This is a deliberate, bounded place to land — the design states it plainly rather than implying a wall.
 
-## 4. Daemon lifecycle hooks
+## 4. Mechanics
 
-The daemon already owns agent spawn and teardown (see [async-agents.md](./async-agents.md)); the map below is where sandboxing wires in. Line numbers are indicative.
+### 4.1 Naming
 
-- **Spawn** — `spawn_agent_process` (`src/basecamp/hub/swarm/process.py`, the single `asyncio.create_subprocess_exec(*argv, cwd=…)`). Wrap `argv` in the sandbox launcher (`docker run …` / `sandbox-exec …` / `bwrap …`) and provision the disposable repo copy here. `agent_id`, `run_id`, `spec.cwd`, and `spec.argv` are all in hand at the call site.
-- **Teardown** — the reaper's `finally` (`process.py`, `reap_agent_process`) fires exactly once per run on *any* child exit including crash. Extract the diff and destroy the sandbox here.
-- **Restart reconciliation** — `reconcile_orphaned_runs` (`process.py`, wired at daemon startup) is today the only orphan sweep, and it reclaims **processes + DB rows only**. It must be extended to reclaim orphaned sandboxes and stale `.diff` artifacts.
-- **Lifecycle keys to the *agent*, not the run.** Agent rows are reused across retasks (`prepare_dispatch` existing-agent branch); a sandbox that outlives a single run must be agent-scoped, while the reaper fires per-run. Be deliberate about this mismatch.
+Sub-agent worktrees and branches share one reserved namespace, disjoint from every human-facing name (`wt-<prefix>/<slug>`, `copilot/<slug>`, `<user-prefix>/…`):
 
-Worktree CRUD (`pi/core/git/worktrees/crud.ts`) has create/attach/list/move but **no remove primitive** — any disposable-copy scheme adds its own teardown; it does not reuse the plan-approval worktree machinery.
+- **Worktree label & branch (same string):** `agent-<id>/<name>` — e.g. `agent-3f9a2c/worker`.
+- **Path:** `~/.worktrees/<org>/<repo>/agent-<id>/<name>/`.
 
-## 5. Costs & open questions
+`<id>` is a prefix of the dispatcher-minted `agent_id` UUID — available at provision time with **no dependency on daemon handle-derivation** — sized long enough that a label collision (which would fail `worktree add`) is implausible across concurrent agents. `<name>` is the agent type (`worker`, …), `adhoc` for ad-hoc agents. Id-first gives each agent its own `agent-<id>/` directory (whole-subtree teardown) and front-loads uniqueness. Reserve the `agent-` prefix — no user-prefix may produce `agent-*`. The branch **outlives** the worktree (§4.5): teardown removes the directory but keeps `agent-<id>/<name>` for the parent to merge, and the parent deletes the branch only after integrating.
 
-- **Runtime dependency + portability.** A container runtime (Docker/Podman) or an OS sandbox per platform (macOS `sandbox-exec` / Apple `container`; Linux `bwrap` / namespaces). Cross-platform parity is the largest tax.
-- **Per-agent latency.** Current spawn is milliseconds; a container is seconds plus image/copy setup. Read-only scouts are dispatched liberally — startup cost matters.
-- **Secrets into the sandbox.** The agent still needs its model API key and `gh`/git credentials *inside* the sandbox, which partially reopens the boundary. Scoping/rotating those is an open question.
-- **Repo state in.** Bind-mount (fast, but couples to host paths) vs. clone/copy (isolated, slower for large repos) vs. a shared read-only object store with a copy-on-write working tree.
-- **Diff validation policy.** What path scope is "expected", and what happens on a diff that touches outside it — reject, or surface for human review.
+### 4.2 Dispatch — the `readOnly` fork
 
-## 6. Interim posture (shipped)
+Agent config gains one bit, `readOnly?: boolean`, **fail-closed (default `true`)**: omit it → today's safe read-only behavior; `worker` sets `readOnly: false`. The name aligns with the existing `--read-only` flag / `read-only.md` vocabulary; defaulting to the safe value if forgotten is the right failure mode, and it matches reality (scouts/reviewers/`ask` are read-only; `worker` is the exception).
 
-Until the sandbox exists, the boundary is the **read-only toolset** — every dispatched agent gets `read/bash/grep/find/ls` (no `write`/`edit`) plus `--read-only`, the primary session is the sole mutator, and the `worker` agent returns a change proposal rather than editing (`pi/core/swarm/agents/types.ts`, `executor.ts`, `builtin/worker.md`). The workspace guard independently hard-blocks structured writes to the protected main checkout even with no active worktree (`pi/core/project/workspace/guards.ts`; pinned end-to-end by `pi/core/swarm/agents/tests/launch-workspace.test.ts` for #254). The residual `bash` write path is the accepted gap this document exists to eventually close.
+- **read-only agent** ⇒ today's path verbatim: `cwd`=repo root, `--worktree-dir`=parent's worktree (shared), `--read-only`, read-only toolset.
+- **mutative agent** ⇒ provision `agent-<id>/<name>` from the parent's `HEAD`, lock it; **spawn with `cwd`=that worktree** (the workstream pattern), so `runtime.initialize` auto-adopts it via `isLinkedWorktree` (protectedRoot=main, activeWorktree=Wn) — no `--worktree-dir` needed; **no** `--read-only`; `write`/`edit` added; bash-reviewer active. Repo identity stays canonical because `resolveGitInfo` derives `repoName` from the remote URL, not the cwd basename (this corrects the async-agents §6.6 rationale, which claimed cwd had to be the repo root for identity).
 
-## 7. Prior art — Claude Code worktrees (the file-isolation layer)
+The daemon is **unchanged** — the spawn spec's `cwd`/argv travel opaquely (async-agents §6.2); `spawn_agent_process` executes them as-is.
 
-Claude Code ([docs](https://code.claude.com/docs/en/worktrees)) ships a mature per-session and **per-subagent** worktree model. Its own framing is the load-bearing point: *"Worktrees handle file isolation."* It never claims bash containment — edits in one session simply don't touch another's files. That **confirms this document's thesis**: a worktree is not a security sandbox; it is where edits land and how they merge back. The two concerns are separate layers:
+### 4.3 Confinement — the guard + symmetric bash review
 
-- **Worktree = file-isolation + write-back.** One agent's edits don't collide with another's; the worktree is a branch, so "write-back" is an ordinary merge (simpler than §3's diff-artifact, which the container case needs because its filesystem is separate).
-- **Container / OS-sandbox = bash-isolation.** What bash can *reach* (§2). Absolute-path writes and `rm -rf ~` are only contained here, never by a worktree.
+Both layers read one shared **`allowed_dirs`** primitive built into core (`allowedWriteDirsFrom` / `listAllowedWriteDirs` in `pi/core/project/workspace/state.ts`): the current write scope = **active worktree ∪ session scratch ∪ allowed-roots**; main is never in it. Because each pi process has its own workspace state, an agent process resolves this to its own `Wn` and the human session to `W0` with no branching. Both are applied to agents *and* the user's own `!bash`, held to one rule (§3.1):
 
-They compose: a mutative agent runs in a **worktree inside a container** — the container bounds bash, the worktree bounds edits and carries the branch back.
+- **Structured `write`/`edit`:** the workspace guard blocks any mutation whose resolved path is outside `allowed_dirs` — closing the absolute-path escape (e.g. writing into a sibling worktree by absolute path). *(Implemented.)*
+- **`bash` (agent bash and user `!bash` alike):** routed through the bash-reviewer against the same `allowed_dirs`, which parses write-targets (redirects, `sed -i`, `tee`) a structured path check can't see. This enforces the "nobody edits main" contract *symmetrically*. `!git status` passes; `!echo x > main/f` is refused. *(Later increment — the primitive is ready.)*
 
-Claude Code's mechanics also refute two objections previously raised against per-agent ephemeral worktrees here, and are the template if/when basecamp re-enables mutative agents:
+This is bar-raising, not a wall (§6): a review can be evaded by dynamic paths, symlinks, or indirection. It belongs to the same defense-in-depth tier as the read-only toolset.
 
-- **`isolation: worktree`** subagent frontmatter → a temporary worktree **auto-removed when the subagent finishes without changes** (issue #253's deferred "1 agent = 1 worktree" pass, proven).
-- **`worktree.baseRef: "head"`** branches from local `HEAD` so the worktree **carries in-progress/unpushed work** — the answer to "a fresh worktree misses the parent's WIP", which reviewers/scouts need.
-- **Teardown lifecycle**: clean → auto-remove; dirty → keep/prompt; a `cleanupPeriodDays` sweep reaps stale clean worktrees; **`git worktree lock` is held while the agent runs** so cleanup can't race it. (basecamp's `pi/core/git/worktrees/crud.ts` still has no remove primitive — this is the model to build.)
-- **`.worktreeinclude`** (gitignore syntax) copies gitignored config (`.env`) into the fresh checkout — the gap a bare `git worktree add` leaves.
+### 4.4 Commit contract
 
-**Bearing on the current (read-only) posture:** with every dispatched agent read-only, per-agent worktrees buy little *now* — read-only agents create no edit-collisions, and a worktree wouldn't close the bash path anyway. So the file-isolation layer is deferred to the mutative-agent work, where it pairs with the container's bash-isolation layer above; it is not a substitute for it.
+A mutative agent's branch is its only deliverable, so it must not finish dirty. A **mutative-only completion guard** — the same interception shape as the runner's empty-result retry (async-agents §6.3.1) — checks `git status --porcelain` in the agent's worktree at run completion; if dirty, it steers the agent back to commit and re-finish. **No auto-commit override** — the agent commits its own work. Bound the reminders (≈2); still dirty after that ⇒ fail the run (uncommitted work is honestly discarded at teardown, not silently rescued).
+
+### 4.5 Integration & teardown
+
+Integration is a **judgment** step (review the diff, resolve conflicts), so it is plain `bash` + `git` in the trusted parent — **no integration tool**. The branch name is deterministic (`agent-<id>/<name>`) and the parent already holds `<id>` from dispatch/`wait_for_agent`, so it merges without a lookup.
+
+Worktree and branch have **decoupled lifetimes**, and worktree teardown is **system-owned** (the bash-reviewer blocks every `git worktree` subcommand). The **daemon reaper removes the worktree when the agent's run exits** — `reclaim_agent_worktree` (`src/basecamp/hub/swarm/process.py`), keyed by the spawn spec's `owned_worktree` (which the dispatcher sets for mutative agents) — the symmetric bookend to provision-at-dispatch, so worktrees never leak. It removes only a *clean* worktree (`git worktree remove` without `--force`), so an agent that exited without committing never has its diff silently discarded — a dirty tree is left for the parent/sweep. A daemon crash mid-run is covered symmetrically: restart reconciliation (`reconcile_orphaned_runs`) reclaims the orphaned run's `owned_worktree` too. The committed branch persists as the deliverable; the parent `git merge`s it and then `git branch -d`s it (both allowed — neither is a `git worktree` command, and the branch is free to delete once the reaper removed its worktree). A **session-start merged-worktree sweep** (`pi/core/git/worktrees/sweep.ts`) is the backstop for the rare reaper miss (e.g. a daemon crash mid-reap): it removes `agent-*` worktrees whose branch is already merged into a non-agent branch. Residual: a *finished-but-never-merged* branch left undeleted lingers as a cheap ref until a later pass.
+
+### 4.6 W0 provisioning — the leaned-on contract
+
+W0 branches from the main checkout's **current `HEAD`** (respects a user intentionally on a feature branch; matches Claude Code's `baseRef: head`). The **on-default-branch gate is dropped.** The **clean-assertion is kept** — but reframed as the *enforcement of a load-bearing contract*: because branch-from-HEAD depends on main being clean, and we enforce that on agents, we must enforce it on the user too, or it is silent WIP-stranding.
+
+Because the check is load-bearing at exactly one instant (W0 creation), lift it out of the git layer (where it throws *at* creation ⇒ teardown of in-flight handoff state) up into the runtime as a **pre-flight gate + proactive alert**:
+
+- **Pre-flight gate** at the decision points — plan approval (`pi/tasks/workflows/handoff`) and `launch_workstream` (`pi/workstreams/provision.ts`) — asserts main clean (and target label free) **before any provisioning** (worktree, pane, up-to-3-min setup hook). Dirty ⇒ abort with guidance, **zero teardown**.
+- **Ambient alert** — check main cleanliness at `session_start` and on entering planning/work mode, surfaced in the UI (`pi/core/ui/header.ts`) so the user commits/stashes *while still discussing*, before ever reaching the gate. No per-turn polling.
+
+`validateProtectedCheckout`'s clean-assertion stays as the innermost belt, but with the pre-flight in front it should almost never fire.
+
+## 5. What this drops or reverses
+
+- **Container / `sandbox-exec` / Option C disposable-copy + host-applied diff** — dropped (§2).
+- **async-agents §2 non-goal "No worktree-per-agent + merge" and §9.2's rejection of it** — reversed; per-agent worktrees are now the model.
+- **Mutation lease + deadlock detection (§7.4, Phase 3)** — dissolved by per-agent worktrees; `git worktree lock` is a liveness guard only.
+- **`validateProtectedCheckout` on-default-branch gate + in-creation clean-throw** — the branch gate is removed; the clean-check relocates to a pre-flight runtime gate.
+- **The special "protected checkout" guard branches** — collapsed into the one uniform worktree rule; the generic `workspace/guards.ts` grab-bag becomes a simple worktree-confinement module.
+- **`unsafe-edit`** (`unsafe-edit.ts`, `buildUnsafeEditGuidance`, the `unsafeEdit` state) — retired. It existed only to let the human-facing session edit the *protected checkout directly*; under the uniform rule main is nobody's worktree and never writable, so the escape hatch contradicts the contract now being enforced.
+
+## 6. Residual risk (stated, not hidden)
+
+- **Uncontained `bash` below W0.** The bash-reviewer raises the bar but is a review, not enforcement; a determined injection can still escape a worktree. There is no human backstop below W0 for escape/exfiltration (§3.3).
+- **External-editor drift on main.** Real-time edits to the main checkout between transitions aren't interceptable (short of absurd file-watching). This is caught at the next point we depend on the contract — the W0-creation pre-flight — which is the only instant it is load-bearing.
+
+Both are accepted consequences of operating inside the same-user local trust boundary.
+
+## 7. Component placement
+
+The daemon (`src/basecamp/hub/`) needs **no change** — this is a TS-side feature. Everything worktree-semantic lives in the dispatching pi process.
+
+| Design element | Home |
+|---|---|
+| `remove` / `lock` / `unlock` / branch-from-ref primitives | `pi/core/git/worktrees/crud.ts` (224 lines — watch the 350 cap; split to `lifecycle.ts` if it grows) |
+| Worktree reaper (primary teardown, on run exit) | `reclaim_agent_worktree` in `src/basecamp/hub/swarm/process.py`, keyed by the spawn spec's `owned_worktree` — **implemented** |
+| Merged-worktree sweep (session-start backstop) | `pi/core/git/worktrees/sweep.ts`, wired beside the legacy migration — **implemented** |
+| Worktree-confinement guard (dismantle the grab-bag → simple confinement) | stays in `pi/core/project/workspace/` (reframed from `guards.ts`); data-cohesion is with `WorkspaceState`, not the stateless git layer |
+| Retire `unsafe-edit.ts` + `buildUnsafeEditGuidance` + `unsafeEdit` state | `pi/core/project/workspace/`, `pi/system-prompt/context-builders.ts` |
+| Retire `validateProtectedCheckout` special logic | `pi/core/git/worktrees/crud.ts` |
+| `readOnly` agent-config bit | `pi/core/swarm/agents/discovery.ts`; `worker` in `pi/core/swarm/agents/builtin/worker.md` |
+| Dispatch fork (mutative → provision + no `--read-only` + `write`/`edit`) | `pi/core/swarm/agents/executor.ts` + `launch.ts` |
+| Completion guard (commit-before-finish) | agent-side hook in `pi/core/swarm/agents/` (TS, mutative-only) — *not* the Python runner |
+| Symmetric bash-reviewer against authorized-dirs | `pi/bash-reviewer/` (review/triage) consuming write-scope from `#core/project/workspace` state |
+| Pre-flight gate + shared "is main dirty?" helper | gate calls in `pi/tasks/workflows/handoff` & `pi/workstreams/provision.ts`; helper once in `pi/core/git/` |
+| Ambient dirty-main alert | `pi/core/ui/header.ts` + a `session_start`/mode-change check |
+
+Layering call: `pi/core/git/worktrees/` stays **stateless primitives** (git verbs, no pi hooks, no session state — testable in isolation). Worktree *confinement* is session-runtime enforcement whose data-cohesion is with `WorkspaceState` (it reads active-worktree / effective-cwd / allowed-roots and writes no git), so it stays in `workspace/` even though its *subject* is worktrees. The guard is already DI-shaped (`getState`/`getAllowedRoots` providers), so this is a rename + simplification, not a move.
+
+Open placement seam: the bash-reviewer must read the current write scope (active worktree) from workspace state — a `#core/project/workspace` import from the `bash-reviewer` domain, boundary-checked.
+
+## 8. Prototype slice
+
+Prove provision → confine → commit → merge → teardown end-to-end with the smallest cut: `crud.ts` primitives (1) + `readOnly` fork (4.2) + the uniform guard (4.3, structured only) + one mutative `worker` that commits a branch which the human-facing agent merges into W0 **by hand**. Defer to follow-ups: the symmetric bash-reviewer authorized-dirs pass, the completion guard, and the pre-flight/ambient alert. (The merged-worktree sweep is implemented — §4.5.)
+
+## 9. Prior art — Claude Code worktrees
+
+Claude Code's framing is load-bearing here: *"Worktrees handle file isolation."* It never claims bash containment — edits in one session simply don't touch another's files. That confirms the split this doc rests on: a worktree is where edits land and how they merge back (Axis 1), **not** a security sandbox for what bash can reach (Axis 2). Its mechanics are the template for the pieces above: `isolation: worktree` auto-removed when a subagent finishes clean; `worktree.baseRef: "head"` to carry in-progress work (our §4.6); `git worktree lock` held while the agent runs (our liveness guard); a `cleanupPeriodDays` sweep (our orphan sweep, §4.5).

@@ -15,7 +15,7 @@ Understand existing code, patterns, and conventions before suggesting modificati
 - Irreversible remote operations require user confirmation, including force-push, remote ref deletion, and `push --mirror` / `push --all`.
 - Opening or modifying PRs and issues (`gh pr create|comment|edit|merge`, `gh issue create|comment|edit`) is routed to the user for review before it runs.
 - The protected checkout must stay clean. Edits land in the active worktree, and when Basecamp reports an active worktree, git runs from that worktree.
-- Do not manage worktrees directly with `git worktree`; those subcommands are blocked. The system creates and activates an execution worktree upon implementation plan approval.
+- Do not manage worktrees directly with `git worktree`; those subcommands are blocked. The system creates execution worktrees automatically — on implementation plan approval, and one per mutative `worker` you dispatch — and reclaims them for you. To integrate a finished worker's change, `git merge` its branch (that is a normal git command, not a worktree command).
 - Raw `bq query` in bash is blocked. Write SQL to a file and use the `bq_query` tool.
 
 ## Searching
@@ -58,4 +58,4 @@ You have access to a scratch directory (path shown in session details below). Us
 
 Async daemon subagent tools are available in this environment: `dispatch_agent`, `list_agents`, and `wait_for_agent`. Use the `agents` skill for agent selection, dispatch patterns, and result collection guidance.
 
-Named read-only agents may fan out for parallel investigation and review. Be conservative with `worker`: do not parallelize `worker` against the same worktree until daemon mutation leases exist.
+Named read-only agents may fan out for parallel investigation and review. Each mutative `worker` gets its own isolated worktree (branched from your current one), so you can run several concurrently; when one finishes, `git merge` its branch into your worktree to integrate its work.

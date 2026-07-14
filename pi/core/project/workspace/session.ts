@@ -7,6 +7,7 @@ import * as fs from "node:fs/promises";
 import * as path from "node:path";
 import type { ExtensionAPI, ExtensionContext, SessionStartEvent } from "@earendil-works/pi-coding-agent";
 import { migrateLegacyWorktrees } from "../../git/worktrees/migrate.ts";
+import { sweepAgentWorktrees } from "../../git/worktrees/sweep.ts";
 import { readLogseqGraphDir } from "../../host/config.ts";
 import { getCurrentSessionState } from "../../session/state/index.ts";
 import { workspaceMatchesActiveWorktreeState } from "./affinity.ts";
@@ -93,6 +94,26 @@ async function migrateLegacyWorktreesForSession(
 	}
 }
 
+async function sweepAgentWorktreesForSession(
+	pi: ExtensionAPI,
+	ctx: ExtensionContext,
+	isSubagent: boolean,
+): Promise<void> {
+	if (isSubagent) return;
+
+	try {
+		const state = requireWorkspaceState();
+		if (!state.repo) return;
+
+		const result = await sweepAgentWorktrees(pi, state.repo.root);
+		if (result.removed.length > 0) {
+			ctx.ui.notify(`basecamp: reclaimed ${result.removed.length} merged agent worktree(s)`, "info");
+		}
+	} catch {
+		/* sweep is best-effort and must not interrupt session start */
+	}
+}
+
 function loadDotenv(root: string): void {
 	const dotenvPath = path.join(root, ".env");
 	try {
@@ -157,6 +178,7 @@ export function registerWorkspaceSession(pi: ExtensionAPI): void {
 		});
 
 		await migrateLegacyWorktreesForSession(pi, ctx, launchCwd, isSubagent);
+		await sweepAgentWorktreesForSession(pi, ctx, isSubagent);
 
 		if (worktreeDir) {
 			try {

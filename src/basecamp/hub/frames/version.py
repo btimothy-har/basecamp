@@ -16,7 +16,8 @@ from pydantic import BaseModel
 # v20: thread_report frame — top-level session ships its raw thread to the daemon.
 # v21: register frame gains repo + worktree_label identity facets.
 # v22: revise_workstream content-versioning frames + /workstreams detail carries version history.
-PROTOCOL_VERSION = 22
+# v23: dispatch spec gains owned_worktree — the reaper removes a mutative agent's worktree on run exit.
+PROTOCOL_VERSION = 23
 
 
 class ProtocolFrame(BaseModel):

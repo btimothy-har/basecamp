@@ -20,7 +20,7 @@ Use these tools for agent delegation and collaboration; if agents are unavailabl
 
 Default to the narrowest agent that fits:
 - **Named read-only agents** (`scout`, `devils-advocate`, `code-clarity-specialist`, `docs-specialist`, `security-specialist`, `testing-specialist`) may fan out for investigation, search, review, and second opinions.
-- **worker** is the only mutative agent and requires an active execution worktree. Never run more than one `worker` concurrently against the same worktree.
+- **worker** is the only mutative agent: it works in its **own** isolated worktree (branched from your current HEAD), commits its change to a branch, and reports back — so you can run several `worker`s in parallel. Dispatching a `worker` requires you to be in an execution worktree (it branches from yours).
 - **Ad-hoc agents** are read-only by tool allowlist. Use them only for narrow tasks when no named agent fits.
 
 Do not dispatch agents for trivial one-step work you can do directly.
@@ -79,4 +79,12 @@ A subagent receives no conversation history. Include:
 
 ## Integration
 
-Review subagent output critically. The parent agent remains responsible for validating evidence, making decisions, applying any changes, and communicating results.
+Review subagent output critically — you validate evidence, make decisions, and communicate results.
+
+Read-only agents return findings; you apply any changes yourself. A **worker** instead commits its change to its own branch (reported as `agent-<id>/worker`) and its worktree is torn down when it finishes. To integrate a finished worker:
+
+1. `wait_for_agent` on its handle and read its final report (a PR-style summary of what changed).
+2. From your own worktree, `git merge agent-<id>/worker` to bring the change in, resolving any conflicts as normal.
+3. Then `git branch -d agent-<id>/worker` to delete the merged branch (allowed — it is not a `git worktree` command). The **worktree** is removed for you when the agent exits; never run `git worktree remove` (that is blocked, and worktree lifecycle is system-managed).
+
+If a worker's change isn't wanted, just don't merge its branch — it's reclaimed either way.

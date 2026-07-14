@@ -127,6 +127,8 @@ describe("worktree pure utilities", () => {
 				"wt-b1/Feature.1",
 				"copilot/steady-amber-otter",
 				"copilot/feature",
+				"agent-3f9a2c/worker",
+				"agent-a1b2c3d4/adhoc",
 			]) {
 				assert.doesNotThrow(() => ensureWorktreeLabel(label));
 			}

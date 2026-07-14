@@ -58,6 +58,7 @@ describe("buildPiArgs task text", () => {
 			model: undefined,
 			sessionDir,
 			extensionTools: [],
+			readOnly: true,
 		});
 
 		try {
@@ -76,6 +77,7 @@ describe("buildPiArgs task text", () => {
 			model: undefined,
 			sessionDir,
 			extensionTools: [],
+			readOnly: true,
 		});
 
 		try {
@@ -97,13 +99,14 @@ function toolNamesFromArgs(args: string[]): string[] {
 	return args[toolsIndex + 1]?.split(",") ?? [];
 }
 
-function buildToolArgs(agent: AgentConfig | null): string[] {
+function buildToolArgs(agent: AgentConfig | null, readOnly = true): string[] {
 	const sessionDir = fs.mkdtempSync(path.join(os.tmpdir(), "basecamp-agent-session-"));
 	const { args, agentDir } = buildPiArgs(agent, "inspect tools", {
 		name: `agent-tools-${randomUUID()}`,
 		model: undefined,
 		sessionDir,
 		extensionTools: ["dispatch_agent", "list_agents", "wait_for_agent"],
+		readOnly,
 	});
 	fs.rmSync(sessionDir, { recursive: true, force: true });
 	fs.rmSync(agentDir, { recursive: true, force: true });
@@ -138,6 +141,21 @@ describe("subagent tool allowlist", () => {
 
 	it("launches every subagent with --read-only", () => {
 		assert.equal(buildToolArgs(null).includes("--read-only"), true);
+	});
+});
+
+describe("mutative agent tool allowlist", () => {
+	it("gives a mutative agent write/edit and omits --read-only", () => {
+		const args = buildToolArgs(null, false);
+		const tools = toolNamesFromArgs(args);
+
+		for (const tool of ["read", "bash", "grep", "find", "ls", "write", "edit", ...SUPPORT_TOOLS]) {
+			assert.equal(tools.includes(tool), true, `${tool} should be available`);
+		}
+		for (const tool of PARENT_ONLY_TOOLS) {
+			assert.equal(tools.includes(tool), false, `${tool} should not be available`);
+		}
+		assert.equal(args.includes("--read-only"), false);
 	});
 });
 
