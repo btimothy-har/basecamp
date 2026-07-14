@@ -3,113 +3,16 @@ import * as fs from "node:fs/promises";
 import * as os from "node:os";
 import * as path from "node:path";
 import { describe, it } from "node:test";
-import type { UserBashEvent, UserBashEventResult } from "@earendil-works/pi-coding-agent";
-import { registerWorkspaceGuards } from "../guards.ts";
-import type { WorkspaceState as BasecampWorkspaceState } from "../state.ts";
-
-interface GuardEvent {
-	type: "tool_call";
-	toolCallId: string;
-	toolName: string;
-	input: { path?: string; command?: string };
-}
-
-type GuardResult = { block?: boolean; reason?: string } | undefined;
-type GuardHandler = (event: GuardEvent) => GuardResult | Promise<GuardResult>;
-type UserBashHandler = (
-	event: UserBashEvent,
-) => UserBashEventResult | Promise<UserBashEventResult | undefined> | undefined;
-
-const REPO_ROOT = "/repo";
-const WORKTREE_DIR = "/worktrees/repo/feature";
-const ALLOWED_ROOT = "/allowed";
-
-function baseWorkspaceState(overrides: Partial<BasecampWorkspaceState> = {}): BasecampWorkspaceState {
-	return {
-		launchCwd: REPO_ROOT,
-		effectiveCwd: REPO_ROOT,
-		scratchDir: "/tmp/pi/repo",
-		repo: {
-			isRepo: true,
-			name: "repo",
-			root: REPO_ROOT,
-			remoteUrl: "git@github.com:test/repo.git",
-		},
-		protectedRoot: REPO_ROOT,
-		activeWorktree: null,
-		unsafeEdit: false,
-		...overrides,
-	};
-}
-
-function activeWorktreeState(overrides: Partial<BasecampWorkspaceState> = {}): BasecampWorkspaceState {
-	return baseWorkspaceState({
-		launchCwd: REPO_ROOT,
-		effectiveCwd: WORKTREE_DIR,
-		activeWorktree: {
-			kind: "git-worktree",
-			label: "feature",
-			path: WORKTREE_DIR,
-			branch: "bh/feature",
-			created: false,
-		},
-		...overrides,
-	});
-}
-
-function createGuards(
-	state: BasecampWorkspaceState,
-	allowedRoots: string[] = [],
-): { toolCall: GuardHandler; userBash: UserBashHandler } {
-	let toolCallHandler: GuardHandler | null = null;
-	let userBashHandler: UserBashHandler | null = null;
-
-	registerWorkspaceGuards(
-		{
-			on(name: string, fn: GuardHandler | UserBashHandler) {
-				if (name === "tool_call") toolCallHandler = fn as GuardHandler;
-				if (name === "user_bash") userBashHandler = fn as UserBashHandler;
-			},
-		} as never,
-		{
-			getState: () => state,
-			getAllowedRoots: () => allowedRoots,
-		},
-	);
-
-	assert.ok(toolCallHandler, "tool_call guard should be registered");
-	assert.ok(userBashHandler, "user_bash guard should be registered");
-	return { toolCall: toolCallHandler, userBash: userBashHandler };
-}
-
-function createGuard(state: BasecampWorkspaceState, allowedRoots: string[] = []): GuardHandler {
-	return createGuards(state, allowedRoots).toolCall;
-}
-
-async function runToolCallGuard(
-	state: BasecampWorkspaceState,
-	toolName: string,
-	input: GuardEvent["input"],
-	allowedRoots: string[] = [],
-): Promise<{ event: GuardEvent; result: GuardResult }> {
-	const event: GuardEvent = {
-		type: "tool_call",
-		toolCallId: "tool-1",
-		toolName,
-		input,
-	};
-	const result = await createGuard(state, allowedRoots)(event);
-	return { event, result };
-}
-
-async function runGuard(
-	state: BasecampWorkspaceState,
-	toolName: string,
-	inputPath: string,
-	allowedRoots: string[] = [],
-): Promise<{ event: GuardEvent; result: GuardResult }> {
-	return runToolCallGuard(state, toolName, { path: inputPath }, allowedRoots);
-}
+import {
+	ALLOWED_ROOT,
+	activeWorktreeState,
+	baseWorkspaceState,
+	createGuards,
+	REPO_ROOT,
+	runGuard,
+	runToolCallGuard,
+	WORKTREE_DIR,
+} from "./guards-harness.ts";
 
 describe("worktree guards bash cwd", () => {
 	it("prefixes bash tool calls with the effective cwd when a worktree is active", async () => {
@@ -276,7 +179,9 @@ describe("worktree guards unsafe-edit", () => {
 		const { result } = await runGuard(activeWorktreeState({ unsafeEdit: true }), "edit", "../outside.ts");
 
 		assert.equal(result?.block, true);
-		assert.match(result.reason ?? "", /escapes the active worktree/);
+		// A relative mutation that escapes the worktree resolves outside the write scope, so the
+		// allowed_dirs confinement now catches it (a superset of the old relative-escape check).
+		assert.match(result.reason ?? "", /outside your writable scope/);
 	});
 
 	it("allows paths under allowed roots to bypass active worktree confinement", async () => {
@@ -318,5 +223,34 @@ describe("worktree guards unsafe-edit", () => {
 
 		assert.equal(result, undefined);
 		assert.equal(event.input.path, path.join(WORKTREE_DIR, "src/file.ts"));
+	});
+});
+
+describe("worktree guards write-scope confinement (allowed_dirs)", () => {
+	const SIBLING_WORKTREE = "/worktrees/repo/other-agent";
+
+	it("blocks an absolute mutation into a sibling worktree outside the write scope", async () => {
+		const { result } = await runGuard(activeWorktreeState(), "write", path.join(SIBLING_WORKTREE, "f.ts"));
+
+		assert.equal(result?.block, true);
+		assert.match(result.reason ?? "", /outside your writable scope/);
+	});
+
+	it("allows a mutation inside the active worktree", async () => {
+		const { result } = await runGuard(activeWorktreeState(), "write", path.join(WORKTREE_DIR, "src/f.ts"));
+
+		assert.equal(result, undefined);
+	});
+
+	it("allows a mutation inside the scratch dir", async () => {
+		const { result } = await runGuard(activeWorktreeState(), "write", "/tmp/pi/repo/note.md");
+
+		assert.equal(result, undefined);
+	});
+
+	it("does not confine read tools to the write scope", async () => {
+		const { result } = await runGuard(activeWorktreeState(), "read", path.join(SIBLING_WORKTREE, "f.ts"));
+
+		assert.equal(result, undefined);
 	});
 });

@@ -37,6 +37,9 @@ interface ParentModelContext {
 export interface SharedAgentLaunchInput {
 	pi: ExtensionAPI;
 	getAgents: () => AgentConfig[];
+	// When the caller already resolved the requested agent, pass it to avoid a second
+	// discoverAgents() scan (`undefined` ⇒ resolve here; `null` ⇒ resolved-but-unknown).
+	resolvedAgent?: AgentConfig | null;
 	basecampExtensionRoot: string;
 	requestedAgent?: string;
 	namePrefix: string;
@@ -48,6 +51,9 @@ export interface SharedAgentLaunchInput {
 	agentId: string;
 	parentSession: string;
 	project: string;
+	// Set for a mutative agent: its own provisioned worktree (Wn). The agent spawns with
+	// cwd=Wn (auto-adopted) instead of repo-root + --worktree-dir. Absent ⇒ read-only path.
+	mutativeWorktreeDir?: string | null;
 }
 
 export interface SharedAgentLaunchPlan {
@@ -156,13 +162,33 @@ export function buildAgentTitleBase(agentName: string | null | undefined, task: 
 
 export function buildAgentLaunchSpec(input: SharedAgentLaunchInput): SharedAgentLaunchResult {
 	const requested = input.requestedAgent || undefined;
-	const agents = input.getAgents();
-	const agent = requested ? (agents.find((candidate) => candidate.name === requested) ?? null) : null;
+	const agent =
+		input.resolvedAgent !== undefined
+			? input.resolvedAgent
+			: requested
+				? (input.getAgents().find((candidate) => candidate.name === requested) ?? null)
+				: null;
 	if (requested && !agent) {
+		const available =
+			input
+				.getAgents()
+				.map((a) => a.name)
+				.join(", ") || "none";
 		return {
 			ok: false,
 			agentLabel: requested,
-			message: `Unknown agent: ${requested}. Available: ${agents.map((a) => a.name).join(", ") || "none"}`,
+			message: `Unknown agent: ${requested}. Available: ${available}`,
+		};
+	}
+
+	// Fail-closed: a mutative agent must have a provisioned worktree, or it would fall back to
+	// the shared parent worktree with write tools (docs/design/agent-isolation.md §4.2).
+	const readOnly = agent?.readOnly ?? true;
+	if (!readOnly && !input.mutativeWorktreeDir) {
+		return {
+			ok: false,
+			agentLabel: agent?.name ?? "ad-hoc",
+			message: `Mutative agent "${agent?.name ?? ""}" requires a provisioned worktree; none was supplied.`,
 		};
 	}
 
@@ -177,7 +203,11 @@ export function buildAgentLaunchSpec(input: SharedAgentLaunchInput): SharedAgent
 		project: input.project,
 	});
 	const extensionTools = getBasecampExtensionToolNames(input.pi, input.basecampExtensionRoot);
-	const { cwd, worktreeDir } = resolveWorkspaceSelection(input.workspace);
+	const selection = resolveWorkspaceSelection(input.workspace);
+	// A mutative agent spawns directly in its own worktree (cwd=Wn, auto-adopted via
+	// isLinkedWorktree) instead of repo-root + --worktree-dir (docs/design/agent-isolation.md §4.2).
+	const spawnCwd = input.mutativeWorktreeDir ?? selection.cwd;
+	const worktreeDir = input.mutativeWorktreeDir ? null : selection.worktreeDir;
 
 	const sessionDir = resolveSessionDir(input.agentId);
 	const { args, agentDir } = buildPiArgs(agent, input.task, {
@@ -187,6 +217,7 @@ export function buildAgentLaunchSpec(input: SharedAgentLaunchInput): SharedAgent
 		sessionDir,
 		sessionId: input.agentId,
 		extensionTools,
+		readOnly,
 	});
 
 	return {
@@ -198,7 +229,7 @@ export function buildAgentLaunchSpec(input: SharedAgentLaunchInput): SharedAgent
 			name,
 			environment,
 			extensionTools,
-			spawnCwd: cwd,
+			spawnCwd,
 			worktreeDir,
 			sessionDir,
 			sessionId: input.agentId,

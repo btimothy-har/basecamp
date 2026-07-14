@@ -35,13 +35,20 @@ export const TASK_TRACKING_TOOLS = [
 	"delete_task",
 ] as const;
 export const SUBAGENT_SUPPORT_TOOLS = ["skill", ...TASK_TRACKING_TOOLS, "bq_query"] as const;
-// One uniform read-only toolset for every dispatched agent: subagents investigate,
-// review, and report; the primary session is the sole mutator ("main does all edits").
-// `write`/`edit` are withheld from every agent. `bash` stays (scouts need git log/gh,
-// reviewers need git diff) and is deliberately NOT a mutation sandbox — true bash
-// containment is the container-isolation direction (docs/design/agent-isolation.md).
+// The read-only toolset for a dispatched agent: subagents investigate, review, and
+// report; `write`/`edit` are withheld. `bash` stays (scouts need git log/gh, reviewers
+// need git diff). Read-only agents share the parent's worktree and see live WIP.
 export const AGENT_TOOLS = ["read", "bash", "grep", "find", "ls"] as const;
+
+// A mutative agent additionally gets `write`/`edit`. It is confined to its OWN worktree
+// (branched from the parent's HEAD), commits its branch, and the parent integrates it by
+// merge — the worktree is the boundary, not a shared sandbox (docs/design/agent-isolation.md).
+export const MUTATIVE_AGENT_TOOLS = ["write", "edit"] as const;
 
 export function getAgentToolAllowlist(): string[] {
 	return [...AGENT_TOOLS, ...SUBAGENT_SUPPORT_TOOLS];
+}
+
+export function getMutativeAgentToolAllowlist(): string[] {
+	return [...AGENT_TOOLS, ...MUTATIVE_AGENT_TOOLS, ...SUBAGENT_SUPPORT_TOOLS];
 }

@@ -1,6 +1,6 @@
 {
   "type": "create_workstream",
-  "v": 22,
+  "v": 23,
   "request_id": "req-create-001",
   "workstream_id": "ws-001",
   "slug": "feature-auth",

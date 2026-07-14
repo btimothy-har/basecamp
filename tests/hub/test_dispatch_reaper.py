@@ -5,13 +5,14 @@ from __future__ import annotations
 import asyncio
 import sqlite3
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 from dispatch_helpers import _FakePidProcess
 
 from basecamp.hub.registry import Registry, Waiter
 from basecamp.hub.store import Store
-from basecamp.hub.swarm.process import reconcile_orphaned_runs
+from basecamp.hub.swarm.process import reclaim_agent_worktree, reconcile_orphaned_runs
 from basecamp.hub.swarm.run_result import (
     FinalRunResult,
     RunResultSidecar,
@@ -332,3 +333,36 @@ def test_reconcile_orphaned_runs_skips_unverified_group_but_marks_failed(
     assert run is not None
     assert run["status"] == "failed"
     assert run["error"] == "daemon_restart_reconciled"
+
+
+def test_reclaim_agent_worktree_removes_from_main_root(monkeypatch: pytest.MonkeyPatch) -> None:
+    calls: list[list[str]] = []
+
+    def fake_run(args: list[str], **_kwargs: object) -> SimpleNamespace:
+        calls.append(args)
+        if "rev-parse" in args:
+            return SimpleNamespace(returncode=0, stdout="/home/u/repo/.git\n", stderr="")
+        return SimpleNamespace(returncode=0, stdout="", stderr="")
+
+    monkeypatch.setattr("basecamp.hub.swarm.process.subprocess.run", fake_run)
+
+    reclaim_agent_worktree("/wt/agent-abc/worker")
+
+    # Resolve the common git dir from the worktree, then remove the worktree from the main root.
+    assert ["git", "-C", "/wt/agent-abc/worker", "rev-parse", "--path-format=absolute", "--git-common-dir"] in calls
+    assert ["git", "-C", "/home/u/repo", "worktree", "remove", "--force", "/wt/agent-abc/worker"] in calls
+
+
+def test_reclaim_agent_worktree_skips_when_common_dir_unresolved(monkeypatch: pytest.MonkeyPatch) -> None:
+    calls: list[list[str]] = []
+
+    def fake_run(args: list[str], **_kwargs: object) -> SimpleNamespace:
+        calls.append(args)
+        return SimpleNamespace(returncode=1, stdout="", stderr="not a git repository")
+
+    monkeypatch.setattr("basecamp.hub.swarm.process.subprocess.run", fake_run)
+
+    reclaim_agent_worktree("/gone")
+
+    # The rev-parse probe fails, so no `worktree remove` is attempted.
+    assert all("remove" not in args for args in calls)

@@ -8,7 +8,7 @@
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import { type AgentConfig, getAgentToolAllowlist } from "./types.ts";
+import { type AgentConfig, getAgentToolAllowlist, getMutativeAgentToolAllowlist } from "./types.ts";
 
 const AGENT_BASE = path.join(os.tmpdir(), "basecamp-agents");
 const TASK_ARG_LIMIT = 8000;
@@ -77,6 +77,8 @@ export interface PiArgsOpts {
 	sessionDir: string;
 	sessionId?: string;
 	extensionTools: string[];
+	// Fail-closed: read-only ⇒ --read-only + no-write toolset; mutative ⇒ own worktree + write/edit.
+	readOnly: boolean;
 }
 
 export function ensureAgentDir(name: string): string {
@@ -120,8 +122,9 @@ export function buildPiArgs(
 
 	args.push("--no-prompt-templates");
 
-	// Every dispatched agent is read-only; the primary session is the sole mutator.
-	args.push("--read-only");
+	// Read-only agents get --read-only; a mutative agent instead works (and commits) in its
+	// own worktree, which the parent integrates by merge (docs/design/agent-isolation.md).
+	if (opts.readOnly) args.push("--read-only");
 
 	const effectivePrompt = agent?.systemPrompt ?? null;
 
@@ -131,7 +134,8 @@ export function buildPiArgs(
 		args.push("--agent-prompt", promptFile);
 	}
 
-	const tools = [...new Set([...getAgentToolAllowlist(), ...opts.extensionTools])];
+	const baseTools = opts.readOnly ? getAgentToolAllowlist() : getMutativeAgentToolAllowlist();
+	const tools = [...new Set([...baseTools, ...opts.extensionTools])];
 	args.push("--tools", tools.join(","));
 
 	const taskText = buildAgentTaskText(task);

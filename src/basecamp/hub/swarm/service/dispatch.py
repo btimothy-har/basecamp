@@ -331,6 +331,7 @@ async def dispatch_agent(
             store=store,
             on_finalize=on_finalize,
             result_path=result_path,
+            owned_worktree=frame.spec.owned_worktree,
         )
     )
     reapers.add(reap_task)

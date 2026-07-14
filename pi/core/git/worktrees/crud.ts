@@ -120,8 +120,11 @@ export function validateNoSymlinkedWorktreePath(worktreeDir: string, root = WORK
 	}
 }
 
-const NESTED_WORKTREE_NAMESPACE_RE = /^(?:wt-[a-z0-9]{2}|copilot)$/;
-const NESTED_WORKTREE_LABEL_RE = /^(?:wt-[a-z0-9]{2}|copilot)\/[A-Za-z0-9][A-Za-z0-9._-]*$/;
+// `agent-<id>` is the reserved namespace for dispatched mutative-agent worktrees
+// (docs/design/agent-isolation.md). Distinct `agent-` prefix ⇒ disjoint from the
+// human-facing `wt-xx` / `copilot` namespaces, so no user label can collide.
+const NESTED_WORKTREE_NAMESPACE_RE = /^(?:wt-[a-z0-9]{2}|copilot|agent-[a-z0-9]+)$/;
+const NESTED_WORKTREE_LABEL_RE = /^(?:wt-[a-z0-9]{2}|copilot|agent-[a-z0-9]+)\/[A-Za-z0-9][A-Za-z0-9._-]*$/;
 
 function isNestedWorktreeNamespace(value: string | undefined): boolean {
 	return typeof value === "string" && NESTED_WORKTREE_NAMESPACE_RE.test(value);

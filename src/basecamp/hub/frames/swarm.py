@@ -22,6 +22,8 @@ class DispatchSpec(BaseModel):
     resume_path: str | None
     fork_from: str | None = None
     task: str
+    # A mutative agent's own worktree; the reaper removes it when the run exits (keeping its branch).
+    owned_worktree: str | None = None
 
 
 class DispatchFrame(ProtocolFrame):

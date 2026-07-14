@@ -2,7 +2,7 @@ import * as os from "node:os";
 import * as path from "node:path";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { createLocalBashOperations, isToolCallEventType } from "@earendil-works/pi-coding-agent";
-import { getWorkspaceState, listWorkspaceAllowedRoots, type WorkspaceState } from "./state.ts";
+import { allowedWriteDirsFrom, getWorkspaceState, listWorkspaceAllowedRoots, type WorkspaceState } from "./state.ts";
 
 /** Expand ~ in path (mirrors pi's path-utils expandPath). */
 function expandPath(filePath: string): string {
@@ -125,7 +125,26 @@ export function registerWorkspaceGuards(pi: ExtensionAPI, options: RegisterWorks
 
 		if (isAllowedPath(getAllowedRoots(), resolved)) return;
 
-		if (!isAbsolute && !isPathWithin(resolved, worktreeDir)) {
+		const withinWorktree = isPathWithin(resolved, worktreeDir);
+
+		// Confinement: a structured write/edit must land inside the current write scope
+		// (allowed_dirs = active worktree ∪ scratch ∪ allowed-roots). This closes the
+		// absolute-path escape — e.g. writing into a sibling worktree by absolute path —
+		// that a relative-only check missed (docs/design/agent-isolation.md). Computed only on
+		// the mutation path so read/grep/find/ls calls don't allocate it.
+		if (isStructuredMutation) {
+			const allowedDirs = allowedWriteDirsFrom(state, getAllowedRoots());
+			if (!allowedDirs.some((dir) => isPathWithin(resolved, dir))) {
+				return {
+					block: true,
+					reason:
+						`Path "${input.path}" is outside your writable scope. ` +
+						`Writes are confined to: ${allowedDirs.join(", ")}.`,
+				};
+			}
+		}
+
+		if (!isAbsolute && !withinWorktree) {
 			return {
 				block: true,
 				reason: `Relative path "${input.path}" escapes the active worktree (${worktreeDir}).`,

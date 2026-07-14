@@ -32,7 +32,7 @@ We want agents that can run **concurrently**, **persist their conversational thr
 
 - **No RPC / warm-process agents.** Agents are not long-lived resident processes exposing a call interface. (See Rejected Alternatives.)
 - **No cross-machine / networked operation.** Single host only; the transport is a Unix domain socket.
-- **No worktree-per-agent + merge.** Agents share one worktree, serialized by a lease — not isolated branches that are later merged.
+- **No worktree-per-agent + merge.** Agents share one worktree, serialized by a lease — not isolated branches that are later merged. *(Superseded — see [agent-isolation.md](./agent-isolation.md). To re-enable mutative agents, per-agent worktrees + upward merge were adopted; this held only for the shared-worktree model and dissolves the mutation lease below.)*
 - **No per-edit locking.** Mutation coherence is at the task grain, not the individual file-write grain.
 - **No retained synchronous code path in the final architecture.** The system is async-always; synchronous behavior is recovered by an explicit wait primitive, not a parallel code path.
 - **No automatic pruning** of agent threads or `.jsonl` files in v1. Cleanup is manual.
@@ -396,6 +396,8 @@ This directory is intentionally not a complete message-target directory. Handles
 
 ### 7.4 Mutation lease & deadlock detection
 
+> **Superseded — see [agent-isolation.md](./agent-isolation.md).** This whole section (lease, whole-task hold, deadlock-cycle rejection) exists only to serialize writers on a *shared* worktree. Mutative agents now each get their *own* worktree, so there is no shared writer to serialize — the lease and its deadlock detection are dissolved. `git worktree lock` is retained only as a *liveness* guard (stop cleanup from yanking a tree mid-run), not a mutation lease. The rest of this section is kept as record of the shared-worktree design.
+
 The daemon owns a per-worktree mutation lease. Acquisition timing: a mutative run acquires the worktree's lease at **run admission** — the daemon grants the lease as a precondition of launching the run, so the transient agent process never begins work without holding it. If the lease is unavailable the mutative run **queues** at admission (subject to the deadlock check below) rather than launching and blocking mid-task. The run holds the lease for its full task and releases it on completion or failure. Read-only runs never acquire the mutation lease and can run concurrently.
 
 The full-task hold is required for correctness. Real changes are read-modify-write sequences spanning multiple steps/files against one git index/HEAD. Per-edit locking permits interleaving between one writer's read and later write, which allows lost updates and incoherent composite diffs. Whole-task ownership prevents that class.
@@ -487,7 +489,7 @@ Both limits are configurable tunables. They are complementary: depth cap bounds 
 - **RPC / warm-process agents.** Their only strong benefit is in-memory residency; that conflicts with the "not in memory at rest" requirement. Transient agent process execution plus thread file resume preserves continuity without resident workers.
 - **Flat broker (reference style) instead of a central daemon.** A flat router cannot reliably own ACL, a host-global concurrency cap, mutation lease state, or deadlock detection over the wait-for graph. Those controls require a single coordinator with full graph visibility.
 - **Daemon parses pi formats.** That couples Python coordination logic to pi's changing event/wire formats. TS-side translation isolates that change surface (§5.2).
-- **Worktree-per-agent + merge.** It shifts collaboration cost into merge/conflict management and divergent trees. A shared worktree plus mutation lease preserves one coherent state.
+- **Worktree-per-agent + merge.** It shifts collaboration cost into merge/conflict management and divergent trees. A shared worktree plus mutation lease preserves one coherent state. *(Reversed — see [agent-isolation.md](./agent-isolation.md). The merge/conflict cost is accepted precisely because the integrating parent is the human-in-the-loop at W0; in exchange, per-agent worktrees dissolve the lease and its deadlock detection.)*
 - **Per-edit locking.** It does not protect read-modify-write sequences and reintroduces races (§7.4). Whole-task holding is the selected safety boundary.
 - **Retained synchronous code path.** Parallel sync+async implementations would duplicate behavior and drift over time. Async-always with `wait_for_agent` recovers blocking semantics with one path.
 - **Automatic pruning in v1.** It adds lifecycle policy complexity early without proven need; thread file artifacts are expected to be small. Manual cleanup now, TTL sweep later.
@@ -504,7 +506,7 @@ Both limits are configurable tunables. They are complementary: depth cap bounds 
 
 - **Phase 2b — Collaboration.** Delivered live-only collaboration primitives: fork-based `ask_agent` consultation (§7.6), store-backed one-way `message_agent`, and `message_status` with optional wait-until-delivery (§7.2). Parent/root sessions now register canonical public handles with the same shape as dispatched agents and are messageable/askable when visible, without becoming dispatchable/retaskable/awaitable worker targets. The attempt proxy is bidirectional for daemon-pushed peer deliveries into spawned agents. Result-ping was dropped (`wait_for_agent` is the sole run-result join). Still future: offline/no-live-process re-task-on-message from reusable spawn specs (§6.4).
 
-- **Phase 3 — Mutation safety.** Goal: ship per-worktree whole-task mutation lease with stale reclaim and daemon-side deadlock cycle rejection using the global wait-for graph (§7.4).
+- **Phase 3 — Mutation safety.** ~~Goal: ship per-worktree whole-task mutation lease with stale reclaim and daemon-side deadlock cycle rejection using the global wait-for graph (§7.4).~~ **Superseded — see [agent-isolation.md](./agent-isolation.md).** Mutation safety is now provided by per-agent worktree isolation + human-gated integration at W0, not a daemon mutation lease. This phase is retired.
 
 - **Phase 4 — Limits & scale.** Goal: add host-global concurrency cap enforcement, spawn queueing, and tunable limit configuration (§7.5).
 

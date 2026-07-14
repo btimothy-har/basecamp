@@ -5,7 +5,8 @@
 // v20: thread_report frame — top-level session ships its raw thread to the daemon.
 // v21: register frame gains repo + worktree_label identity facets.
 // v22: revise_workstream content-versioning frames + /workstreams detail carries version history.
-export const PROTOCOL_VERSION = 22;
+// v23: dispatch spec gains owned_worktree — the reaper removes a mutative agent's worktree on run exit.
+export const PROTOCOL_VERSION = 23;
 
 /**
  * The version envelope every wire frame carries. Frame interfaces `extends` this
