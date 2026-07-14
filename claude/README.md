@@ -49,64 +49,38 @@ Every basecamp capability lands in one of four homes, decided by two questions �
 
 ## Full inventory
 
-### → MCP server — context (resources + the `instructions` router)
+One row per basecamp capability: whether Claude Code already covers it, and
+where it lands. The MCP-context rows resolve from the `projects` section of
+`~/.pi/basecamp/config.json` — the same resolution `pi/core/project/config.ts`
+performs today, so basecamp config stays the single source of truth.
 
-| Capability | Surface | Tier |
+| Capability | Claude Code native? | Home / verdict |
 | --- | --- | --- |
-| Related project directories (awareness) | `instructions` field (2KB) + `basecamp://project/dirs` | 0 |
-| Project custom context (named context file, AGENTS.md/CLAUDE.md) | `basecamp://project/context` | 0 |
-| Logseq repo memory (repo cockpit, work dossiers) | `basecamp://logseq/repo`, `basecamp://logseq/dossier/<slug>` (read) | 1 |
-
-All resolved from the `projects` section of `~/.pi/basecamp/config.json` — the
-same resolution `pi/core/project/config.ts` performs today, so basecamp config
-stays the single source of truth for a project's `additionalDirs` and context.
-
-### → MCP server — orchestration tools (Tier 2, local stdio only)
-
-| Capability | Surface | Note |
-| --- | --- | --- |
-| Worktree lifecycle (create / switch) | tools | opinionated `~/.worktrees/<org>/<name>/<label>` layout CC lacks |
-| Workstreams (create / edit / launch / list / status) | tools + list resource | daemon-backed (SQLite store) |
-| Cross-session agent messaging (`ask_agent`, `message_agent`) | tools | basecamp's differentiator over CC's within-session subagents |
-| Herdr pane launching | tool (shell-out) or `monitors/` status push | host tmux only; no-ops in web sessions |
-| Logseq memory curation (append) | tools | the write side of the Tier-1 read resources |
-| BigQuery `bq_query` | tool (optional) | project-specific; or a dedicated BigQuery MCP |
-
-Tier 2 turns the server from *awareness* into *orchestration* — a deliberate
-scope jump. Because these tools shell out to the host, they work only in local
-stdio sessions.
-
-### → Native plugin components (static)
-
-| Capability | Home |
-| --- | --- |
-| Skills: `sql`, `data-warehousing`, `python-development`, `marimo`, `data-analysis`, `planning`, `gather`, `agents` | `skills/` — port existing `SKILL.md` files verbatim |
-| Copilot posture (was a session mode) | a new `copilot` skill in `skills/` |
-| Per-repo session setup (was the worktree setup hook) | `hooks/hooks.json` → `SessionStart` |
-| Bash/git command triage (`bash-reviewer`) | `hooks/hooks.json` → `PreToolUse`, *only if wanted* — see Dropped |
-| basecamp slash commands | `commands/` (or `skills/`) |
-
-### → External (not shippable by the plugin)
-
-| Capability | Home |
-| --- | --- |
-| Cross-repo read boundary (`Read(~/code/**)` allow rule + secret `deny`s) | user's `~/.claude/settings.json`, or written once by `basecamp setup` |
-
-### → Dropped — Claude Code already provides it
-
-| basecamp capability | Native Claude Code equivalent |
-| --- | --- |
-| `dispatch_agent` / within-session subagents | native subagents + `agents/` |
-| `plan()` / plan mode | native plan mode |
-| Task tracking (`create_tasks`, `start_task`, …) | native todos |
-| `escalate` | native ask-user |
-| Nested AGENTS.md / CLAUDE.md injection | native hierarchical `CLAUDE.md` loading (cwd + parents) |
-| `/code-review` + `report_findings` | native `/review` + `security-review` skill |
-| `bash-reviewer` as an always-on reviewer | `auto` mode's background safety checks — and MCP can't intercept the host `Bash` tool regardless |
-| Model aliases (`/model-aliases`) | native `/model` |
-| Workspace guards (protected checkout, `allowed_dirs`) | native permission rules + sandbox |
-| Browser (`browser_eval`, `browser_screenshot`) | an existing Playwright / Puppeteer MCP |
-| analysis / planning / work session modes | plan mode + default posture (postures don't port as *enforced* modes) |
+| Related project directories (awareness) | ❌ no dynamic-instruction channel | **MCP** — `instructions` + `basecamp://project/dirs` · Tier 0 |
+| Project custom context (context file, AGENTS.md/CLAUDE.md) | ❌ | **MCP** — `basecamp://project/context` · Tier 0 |
+| Logseq repo memory (cockpit, dossiers) | ❌ no analog | **MCP resource** (read) · Tier 1 |
+| Worktree lifecycle (create / switch) | ⚠️ raw git worktrees, not this lifecycle | **MCP tool** · Tier 2, local-only |
+| Workstreams (create / edit / launch / list / status) | ❌ no analog | **MCP tools + resource** · Tier 2, daemon-backed |
+| Cross-session agent messaging (`ask_agent`, `message_agent`) | ⚠️ subagents are within-session only | **MCP tools** · Tier 2 |
+| Herdr pane launching | ❌ no analog | **MCP tool** (shell-out) or `monitors/` · Tier 2, local-only |
+| Logseq memory curation (append) | ❌ | **MCP tools** · Tier 2 |
+| BigQuery `bq_query` | ❌ | **MCP tool** (optional), or a dedicated BigQuery MCP |
+| Skills: `sql`, `data-warehousing`, `python-development`, `marimo`, `data-analysis`, `planning`, `gather`, `agents` | ✅ skills | **Native** — `skills/` (port `SKILL.md` verbatim) |
+| Copilot posture (was a session mode) | ⚠️ modes don't port as enforced | **Native** — new `copilot` skill |
+| Per-repo session setup (was the worktree setup hook) | ✅ hooks | **Native** — `hooks/hooks.json` → `SessionStart` |
+| `bash-reviewer` | ✅ `auto` mode; and MCP can't intercept host `Bash` | **Native hook** if wanted (`PreToolUse`); else drop |
+| basecamp slash commands | ✅ commands / skills | **Native** — `commands/` |
+| Cross-repo read boundary (`Read(~/code/**)` + secret `deny`s) | ✅ settings | **External** — user settings, or `basecamp setup` |
+| `dispatch_agent` / within-session subagents | ✅ subagents + `agents/` | **Drop** |
+| `plan()` / plan mode | ✅ plan mode | **Drop** |
+| Task tracking (`create_tasks`, `start_task`, …) | ✅ todos | **Drop** |
+| `escalate` | ✅ ask-user | **Drop** |
+| Nested AGENTS.md / CLAUDE.md injection | ✅ hierarchical `CLAUDE.md` (cwd + parents) | **Drop** |
+| `/code-review` + `report_findings` | ✅ `/review` + `security-review` skill | **Drop** |
+| Model aliases (`/model-aliases`) | ✅ `/model` | **Drop** |
+| Workspace guards (protected checkout, `allowed_dirs`) | ✅ permissions + sandbox | **Drop** |
+| Browser (`browser_eval`, `browser_screenshot`) | ⚠️ Playwright MCP exists | **Drop** — use an existing browser MCP |
+| analysis / planning / work session modes | ✅ plan mode + default posture | **Drop** — postures don't port as enforced modes |
 
 ## Tiers
 
