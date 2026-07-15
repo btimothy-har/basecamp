@@ -329,6 +329,8 @@ pi/browser/
 ```
 Follow-up (not layout): dedupe `scratchDir()`/`timestampForFile()` across the two tools into `tools/output.ts`.
 
+> **Post-rearchitecture update (2026-07-15):** the custom Puppeteer/CDP adapter and both Pi tools were retired. The current `pi/browser/` domain contains an exact-pinned `@playwright/cli` shim (`bin/playwright-cli`), a Basecamp-owned on-demand skill (`skills/playwright-cli/`), primary/subagent resource and PATH policy in `index.ts`, and focused tests. Playwright now owns a fresh persistent profile; legacy profile/process state is untouched.
+
 ### 6.11 companion-py test & Python-portion note
 
 Python tests move beside their code to `src/basecamp/<domain>/tests/` (in-package). This ships them in the wheel unless excluded — a packaging call for the executor; the alternative is a repo-root `tests/<domain>/`. Either way `pyproject.toml` `testpaths` re-point per §5.2.

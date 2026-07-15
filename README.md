@@ -101,6 +101,12 @@ Use it to list, add, edit, or remove configured projects.
 | `/title [text]` | Generate a session title from the conversation, or set one manually |
 | `/model-aliases` | Manage model aliases (list, add, edit, remove) |
 
+### Browser Automation
+
+Primary sessions can load the `playwright-cli` skill to automate an installed Chrome or Brave browser. Basecamp uses an exact-pinned local CLI through its gated `playwright-cli` command—no global install, browser download, or MCP server is required. Accessibility snapshots and element refs are the default interaction loop; screenshots are written outside the repository and then inspected with Pi's `read` tool.
+
+Playwright starts with a fresh managed persistent profile, and browser artifacts default to the private bounded directory `~/.pi/basecamp/browser/playwright-output`. Set `BASECAMP_BROWSER_PATH` for a custom Chromium executable; explicit `PLAYWRIGHT_MCP_*` environment overrides are also honored. Browser access is not exposed to subagents. Upgrades do not migrate or delete the former `~/.pi/basecamp/browser/profile`.
+
 ### Subagents
 
 Use the `agents` skill for agent selection and async daemon dispatch guidance:

@@ -33,7 +33,7 @@ pi/                            # ① the Pi extension (TypeScript)
 ├── tasks/                      # layered: schemas/ · lifecycle/ (state) · workflows/ (draft·review·handoff) · tools/ (task-tools·plan·guards·commands); skills/
 ├── bash-reviewer/              # LLM bash reviewer: index (guard), review, triage/, llm adapter
 ├── engineering/                # bigquery/ (bq_query tool + bq-CLI adapter, one module), skills/ + prompts/
-└── browser/                    # browser automation (puppeteer-core over CDP): tools/ + chrome adapter
+└── browser/                    # primary-only browser automation: pinned Playwright CLI shim + on-demand skill
 
 src/basecamp/                  # ② the basecamp Python package (one ordinary src-layout package)
 ├── cli.py                      # Click entry point (setup, projects, environments, companion, hub)
@@ -58,6 +58,12 @@ Cross-domain TypeScript imports use Node subpath imports (`#core/*` freely; othe
 The system prompt is fully replaced, not appended. This gives complete control over the agent's behavior but means basecamp must provide everything pi's default prompt would (environment context, tool guidance, etc.). Pi's tool definitions and skill listings are sourced dynamically via `getAllTools()`/`getCommands()` and included in the assembled prompt.
 
 Prompts are layered (environment → working style → project context → tools/skills) so that each concern is independently overridable. Project context is assembled directly into the system prompt alongside all other layers.
+
+### Browser Automation
+
+`pi/browser/` exposes no custom browser tools. Primary sessions discover the Basecamp-owned `playwright-cli` skill on demand and receive one private PATH entry containing only a gated shim for the exact-pinned `@playwright/cli`; subagents receive neither, and direct shim execution rejects `BASECAMP_AGENT_DEPTH > 0`. The shim defaults to a headed persistent Playwright session using system Chrome (Brave fallback on macOS), honors `BASECAMP_BROWSER_PATH` and explicit `PLAYWRIGHT_MCP_*` overrides, blocks installation commands, and routes auto-named artifacts to the private bounded `~/.pi/basecamp/browser/playwright-output` directory. Screenshots are inspected with `read` after the CLI writes the PNG.
+
+Playwright owns a fresh managed persistent profile. The retired `~/.pi/basecamp/browser/profile` and any legacy Chrome/CDP process are never migrated, modified, or terminated by Basecamp.
 
 ### Session Modes
 

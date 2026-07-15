@@ -166,7 +166,7 @@ describe("buildPiArgs skill discovery", () => {
 });
 
 describe("getBasecampExtensionToolNames", () => {
-	it("excludes parent-only and browser tools from subagent extension tools", () => {
+	it("excludes parent-only tools from subagent extension tools", () => {
 		const extensionRoot = fs.mkdtempSync(path.join(os.tmpdir(), "basecamp-extension-root-"));
 		try {
 			const sourceInfo = (name: string) => ({
@@ -174,7 +174,7 @@ describe("getBasecampExtensionToolNames", () => {
 				baseDir: extensionRoot,
 				path: path.join(extensionRoot, `${name}.ts`),
 			});
-			const tools = ["bq_query", "browser_eval", "browser_screenshot", "agent", "escalate"].map((name) => ({
+			const tools = ["bq_query", "agent", "escalate"].map((name) => ({
 				name,
 				sourceInfo: sourceInfo(name),
 			}));

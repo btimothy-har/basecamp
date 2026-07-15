@@ -79,7 +79,7 @@ performs today, so basecamp config stays the single source of truth.
 | `/code-review` + `report_findings` | ✅ `/review` + `security-review` skill | **Drop** |
 | Model aliases (`/model-aliases`) | ✅ `/model` | **Drop** |
 | Workspace guards (protected checkout, `allowed_dirs`) | ✅ permissions + sandbox | **Drop** |
-| Browser (`browser_eval`, `browser_screenshot`) | ⚠️ Playwright MCP exists | **Drop** — use an existing browser MCP |
+| Browser automation (`playwright-cli` skill) | ⚠️ Playwright MCP exists | **Drop** — use an existing browser MCP |
 
 ## Tiers
 
