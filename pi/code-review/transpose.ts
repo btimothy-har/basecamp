@@ -1,5 +1,5 @@
 import type { Api, AssistantMessage, Context, Model, ToolCall } from "@earendil-works/pi-ai";
-import { complete as defaultComplete } from "@earendil-works/pi-ai";
+import { complete as defaultComplete } from "@earendil-works/pi-ai/compat";
 import { Value } from "@sinclair/typebox/value";
 import { resolveForcedToolChoice, resolvePortableReasoningEffort } from "#core/model/resolution.ts";
 import { type Dimension, type Finding, ReportFindingsArgs, report_findings } from "./findings.ts";
@@ -7,7 +7,7 @@ import { type Dimension, type Finding, ReportFindingsArgs, report_findings } fro
 export interface TransposeDeps {
 	model: Model<Api>;
 	auth: { apiKey?: string; headers?: Record<string, string> };
-	complete?: typeof import("@earendil-works/pi-ai").complete;
+	complete?: typeof import("@earendil-works/pi-ai/compat").complete;
 	signal?: AbortSignal;
 }
 
