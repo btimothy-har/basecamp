@@ -117,6 +117,7 @@ class TestGitDiffRefs:
 
     def test_uncommitted_uses_head(self) -> None:
         assert delta_render._git_diff_refs("abc123", FileStatus(path="f.py", status="modified"), "uncommitted") == [
+            "-M",
             "HEAD",
             "--",
             "f.py",
@@ -124,6 +125,7 @@ class TestGitDiffRefs:
 
     def test_committed_uses_base_and_head(self) -> None:
         assert delta_render._git_diff_refs("abc123", FileStatus(path="f.py", status="modified"), "committed") == [
+            "-M",
             "abc123",
             "HEAD",
             "--",
@@ -132,7 +134,50 @@ class TestGitDiffRefs:
 
     def test_all_uses_base_only(self) -> None:
         assert delta_render._git_diff_refs("abc123", FileStatus(path="f.py", status="modified"), "all") == [
+            "-M",
             "abc123",
             "--",
             "f.py",
         ]
+
+    def test_renamed_includes_old_path(self) -> None:
+        refs = delta_render._git_diff_refs(
+            "abc123",
+            FileStatus(path="new.py", status="renamed", old_path="old.py"),
+            "all",
+        )
+        assert refs == ["-M", "abc123", "--", "old.py", "new.py"]
+
+
+class TestRenamedFileRender:
+    """A renamed+edited file must render its real change, not a whole-file add."""
+
+    def test_renamed_edited_file_is_not_all_added(self, tmp_path: Path) -> None:
+        _clear_cache()
+        if delta_path() is None:
+            pytest.skip("delta binary not installed")
+
+        _run(tmp_path, "init", "-q")
+        _run(tmp_path, "config", "user.email", "t@t.test")
+        _run(tmp_path, "config", "user.name", "t")
+        old = tmp_path / "old.txt"
+        old.write_text("line1\nline2\nline3\n")
+        _run(tmp_path, "add", "-A")
+        _run(tmp_path, "commit", "-q", "-m", "init")
+        # Rename then edit exactly one line in the working tree.
+        _run(tmp_path, "mv", "old.txt", "new.txt")
+        (tmp_path / "new.txt").write_text("line1\nline2 CHANGED\nline3\n")
+
+        result = render_file_diff(
+            cwd=tmp_path,
+            base_commit="HEAD",
+            file=FileStatus(path="new.txt", status="renamed", old_path="old.txt"),
+            mode="uncommitted",
+            width=120,
+        )
+        assert isinstance(result, Text)
+        # The unchanged lines must survive as context; an all-"added" render would
+        # mark every line as an addition. "line1" appears in the diff either way,
+        # but the true edit shows the CHANGED marker without re-adding line3.
+        assert "CHANGED" in result.plain
+        assert "line3" in result.plain

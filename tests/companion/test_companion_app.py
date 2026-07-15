@@ -12,6 +12,7 @@ from textual.widgets import ContentSwitcher, DirectoryTree, Footer, ListView, St
 
 from basecamp.companion.app import CompanionApp
 from basecamp.companion.delta_render import delta_path
+from basecamp.companion.diff import DiffLine
 from basecamp.companion.ui.dashboard import DashboardBody
 from basecamp.companion.ui.diff import DiffBody, DiffView, FileList
 from basecamp.companion.ui.swarm import SwarmBody
@@ -100,14 +101,14 @@ def test_companion_app_headless_smoke(tmp_path: Path) -> None:
             diff_view = app.query_one("#diff-view", DiffView)
             full_signature = diff_view._last_signature
             assert full_signature is not None
-            full_line_count = len(full_signature[2])
+            full_line_count = len(full_signature[3])
 
             await pilot.press("c")
             await pilot.pause(0.1)
 
             compact_signature = diff_view._last_signature
             assert compact_signature is not None
-            compact_line_count = len(compact_signature[2])
+            compact_line_count = len(compact_signature[3])
             assert 0 < compact_line_count < full_line_count
 
             diff_content = app.query_one("#diff-content", Static)
@@ -356,3 +357,20 @@ def test_diff_pane_renders_through_delta_when_available(tmp_path: Path) -> None:
             assert "│" in content
 
     asyncio.run(run())
+
+
+def test_diff_signature_tracks_width_for_delta_only() -> None:
+    """A delta render's width is part of its signature so resize invalidates it."""
+
+    view = DiffView()
+    lines = [DiffLine(kind="added", text="x", line_no=1)]
+
+    # With a delta render, differing widths yield differing signatures (resize
+    # re-renders); without one, width is ignored (Rich reflows at display time).
+    sig_w80 = view._signature("f.py", "", lines, width=80)
+    sig_w120 = view._signature("f.py", "", lines, width=120)
+    assert sig_w80 != sig_w120
+
+    sig_fallback_a = view._signature("f.py", "", lines, width=None)
+    sig_fallback_b = view._signature("f.py", "", lines, width=None)
+    assert sig_fallback_a == sig_fallback_b

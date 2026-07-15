@@ -41,15 +41,20 @@ def _git_diff_refs(base_commit: str, file: FileStatus, mode: DiffMode) -> list[s
     """Build the `git diff` ref/path arguments matching the given scope.
 
     Mirrors the ref selection in :func:`basecamp.companion.diff.file_diff_lines`
-    so the delta and fallback renderers show the identical change range.
+    so the delta and fallback renderers show the identical change range. Rename
+    detection (`-M`) plus the old path are included when the file was renamed, so
+    a renamed+edited file shows its true change rather than a whole-file add.
     """
 
-    path = file.path
+    # Pathspec covers both endpoints of a rename so git can pair old -> new.
+    paths = [file.old_path, file.path] if file.old_path else [file.path]
+    pathspec = ["--", *paths]
+
     if mode == "uncommitted":
-        return ["HEAD", "--", path]
+        return ["-M", "HEAD", *pathspec]
     if mode == "committed":
-        return [base_commit, "HEAD", "--", path]
-    return [base_commit, "--", path]
+        return ["-M", base_commit, "HEAD", *pathspec]
+    return ["-M", base_commit, *pathspec]
 
 
 def render_file_diff(
