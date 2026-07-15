@@ -1,0 +1,83 @@
+#!/bin/sh
+set -eu
+
+depth="${BASECAMP_AGENT_DEPTH:-0}"
+case "$depth" in
+	*[!0-9]*)
+		echo "playwright-cli is unavailable: invalid BASECAMP_AGENT_DEPTH" >&2
+		exit 1
+		;;
+esac
+if [ "$depth" -gt 0 ]; then
+	echo "playwright-cli is only available in primary Basecamp sessions" >&2
+	exit 1
+fi
+
+command_name=""
+expect_session_name=false
+for argument in "$@"; do
+	if [ "$expect_session_name" = true ]; then
+		expect_session_name=false
+		continue
+	fi
+	case "$argument" in
+		-s|--session) expect_session_name=true ;;
+		-*) ;;
+		*)
+			command_name="$argument"
+			break
+			;;
+	esac
+done
+case "$command_name" in
+	install|install-browser)
+		echo "playwright-cli browser installation is managed by Basecamp" >&2
+		exit 1
+		;;
+esac
+
+umask 077
+script_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+extension_root=$(CDPATH= cd -- "$script_dir/../../.." && pwd)
+cli_entry="$extension_root/node_modules/@playwright/cli/playwright-cli.js"
+if [ ! -f "$cli_entry" ]; then
+	echo "playwright-cli is unavailable: pinned @playwright/cli dependency is missing" >&2
+	exit 1
+fi
+
+: "${PLAYWRIGHT_MCP_HEADLESS:=false}"
+: "${PLAYWRIGHT_MCP_ISOLATED:=false}"
+: "${PLAYWRIGHT_MCP_BROWSER:=chrome}"
+: "${PLAYWRIGHT_MCP_OUTPUT_MAX_SIZE:=536870912}"
+export PLAYWRIGHT_MCP_HEADLESS PLAYWRIGHT_MCP_ISOLATED PLAYWRIGHT_MCP_BROWSER PLAYWRIGHT_MCP_OUTPUT_MAX_SIZE
+export NO_UPDATE_NOTIFIER=1
+
+if [ -z "${PLAYWRIGHT_MCP_OUTPUT_DIR:-}" ]; then
+	PLAYWRIGHT_MCP_OUTPUT_DIR="${HOME:?HOME is required}/.pi/basecamp/browser/playwright-output"
+	mkdir -p "$PLAYWRIGHT_MCP_OUTPUT_DIR"
+	chmod 700 "$PLAYWRIGHT_MCP_OUTPUT_DIR"
+	export PLAYWRIGHT_MCP_OUTPUT_DIR
+fi
+
+if [ -z "${PLAYWRIGHT_MCP_EXECUTABLE_PATH:-}" ]; then
+	if [ -n "${BASECAMP_BROWSER_PATH:-}" ]; then
+		if [ ! -x "$BASECAMP_BROWSER_PATH" ]; then
+			echo "playwright-cli is unavailable: BASECAMP_BROWSER_PATH is not executable: $BASECAMP_BROWSER_PATH" >&2
+			exit 1
+		fi
+		PLAYWRIGHT_MCP_EXECUTABLE_PATH="$BASECAMP_BROWSER_PATH"
+	elif [ "$(uname -s)" = "Darwin" ]; then
+		chrome_path="/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
+		brave_path="/Applications/Brave Browser.app/Contents/MacOS/Brave Browser"
+		if [ -x "$chrome_path" ]; then
+			PLAYWRIGHT_MCP_EXECUTABLE_PATH="$chrome_path"
+		elif [ -x "$brave_path" ]; then
+			PLAYWRIGHT_MCP_EXECUTABLE_PATH="$brave_path"
+		fi
+	fi
+	if [ -n "${PLAYWRIGHT_MCP_EXECUTABLE_PATH:-}" ]; then
+		export PLAYWRIGHT_MCP_EXECUTABLE_PATH
+	fi
+fi
+
+exec node "$cli_entry" "$@"
