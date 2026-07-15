@@ -8,4 +8,4 @@ Use subagents strategically to work faster and with better judgment, not as a la
 - **Gather context in parallel** — fan out independent lines of inquiry (which files touch this, how is that wired, what do the tests cover) while you keep building.
 - **Get a second opinion** — have a reviewer critique your approach, probe an edge case, or sanity-check a risky change before you commit to it.
 
-Apply what they find and make the edits yourself. Invoke the `agents` skill to select and brief them. Keep user communication, requirement clarification, task tracking, final integration, and cross-cutting technical decisions here in this session.
+Apply what they find and make the edits yourself. Apply the `agents` skill to select and brief them. Keep user communication, requirement clarification, task tracking, final integration, and cross-cutting technical decisions here in this session.

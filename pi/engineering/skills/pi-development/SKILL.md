@@ -1,6 +1,6 @@
 ---
 name: pi-development
-description: Developing pi extensions, skills, prompt templates, themes, and packages. Use when creating or modifying TypeScript extensions that register tools/commands/events, writing SKILL.md files, authoring prompt templates, building JSON themes, or packaging for distribution.
+description: Guidance for developing pi extensions, skills, prompt templates, themes, and packages. Relevant work includes TypeScript extensions that register tools/commands/events, SKILL.md files, prompt templates, JSON themes, and distribution packages.
 ---
 
 # Pi Development

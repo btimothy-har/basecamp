@@ -48,7 +48,7 @@ For standalone scripts, include inline metadata at the top of the file:
 
 `uv run` automatically installs these dependencies in an isolated environment.
 
-Always invoke any relevant python skills that you have access to.
+Always apply any relevant Python skill guidance that you have access to.
 
 ## Scratch Directory
 
@@ -56,6 +56,6 @@ You have access to a scratch directory (path shown in session details below). Us
 
 ## Subagents
 
-Async daemon subagent tools are available in this environment: `dispatch_agent`, `list_agents`, and `wait_for_agent`. Use the `agents` skill for agent selection, dispatch patterns, and result collection guidance.
+Async daemon subagent tools are available in this environment: `dispatch_agent`, `list_agents`, and `wait_for_agent`. Apply the `agents` skill for agent selection, dispatch patterns, and result collection guidance.
 
 Named read-only agents may fan out for parallel investigation and review. Each mutative `worker` gets its own isolated worktree (branched from your current one), so you can run several concurrently; when one finishes, `git merge` its branch into your worktree to integrate its work.

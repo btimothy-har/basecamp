@@ -1,6 +1,6 @@
 ---
 name: gather
-description: "Invoke when gathering requirements or asking questions. Task start triggers: 'help me with', 'I want to', 'build/create/implement', feature requests, requirements ambiguity, scope clarification. Mid-task triggers: clarifying requirements, small non-architectural decisions, handling edge cases, confirming decisions. Redirect architectural, multi-step, or consequential approach discovery to planning."
+description: "Requirements-gathering guidance for task starts, ambiguity, scope clarification, and user questions. Task start triggers: 'help me with', 'I want to', 'build/create/implement', and feature requests. Mid-task triggers: clarifying requirements, small non-architectural decisions, handling edge cases, and confirming decisions. Architectural, multi-step, or consequential approach discovery belongs in planning."
 ---
 
 # Gather
@@ -9,7 +9,7 @@ description: "Invoke when gathering requirements or asking questions. Task start
 
 Gather information from users to enable informed execution. This skill provides interview techniques (micro-skills) and a lightweight pipeline for turning ambiguous requests into clear requirements.
 
-Use gather as the front door for requirements ambiguity, scope clarification, preferences, priorities, and small discovery gaps. When the request requires architectural exploration, multi-step implementation strategy, or consequential approach selection, gather enough context to name the uncertainty, then hand off to the `planning` skill.
+Apply gather as the front door for requirements ambiguity, scope clarification, preferences, priorities, and small discovery gaps. When the request requires architectural exploration, multi-step implementation strategy, or consequential approach selection, gather enough context to name the uncertainty, then apply the `planning` skill.
 
 ---
 
@@ -189,7 +189,7 @@ I'll switch to `planning` to evaluate the options and converge on an implementat
 | Unclear priority | "If only two of these three, which two matter most?" |
 | Constraint pressure | "Given constraints, which requirement is safest to defer?" |
 
-**Scaling**: Small gap → concise clarifying question and quick confirmation. Requirements ambiguity → focused interview and capture. Architectural, multi-step, or consequential implementation choices → identify assumptions/questions and invoke `planning`.
+**Scaling**: Small gap → concise clarifying question and quick confirmation. Requirements ambiguity → focused interview and capture. Architectural, multi-step, or consequential implementation choices → identify assumptions/questions and apply `planning`.
 
 ### Phase 3: Capture
 

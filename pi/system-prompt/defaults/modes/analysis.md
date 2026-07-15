@@ -4,7 +4,7 @@ Analyze to learn, not to implement.
 
 Treat research, data exploration, query work, code/system investigation, and hypothesis checks as evidence-gathering work. Optimize for clear questions, trustworthy evidence, explicit assumptions, and useful conclusions.
 
-Invoke the `data-analysis` skill before substantial analysis or research.
+Apply the `data-analysis` skill before substantial analysis or research.
 
 Delegate independent lines of inquiry when useful. Keep methodology, assumptions, synthesis, user conversation, and final conclusions here in this session.
 

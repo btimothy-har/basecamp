@@ -1,6 +1,6 @@
 # Python Backend
 
-FastAPI, async SQLAlchemy, PostgreSQL, and Alembic patterns. Load the `python-development` skill alongside this reference — all code follows those foundational principles.
+FastAPI, async SQLAlchemy, PostgreSQL, and Alembic patterns. Apply the `python-development` skill alongside this reference — all code follows those foundational principles.
 
 ## API Development with FastAPI
 
