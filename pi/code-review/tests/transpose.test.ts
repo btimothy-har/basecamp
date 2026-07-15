@@ -76,7 +76,7 @@ describe("transposeReport", () => {
 				context.tools?.map((tool) => tool.name),
 				["report_findings"],
 			);
-			assert.deepEqual(options?.toolChoice, { type: "function", function: { name: "report_findings" } });
+			assert.deepEqual(options?.toolChoice, { type: "function", name: "report_findings" });
 
 			return assistantMessage([
 				toolCall({

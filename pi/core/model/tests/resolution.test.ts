@@ -183,6 +183,14 @@ describe("completion option helpers", () => {
 		});
 		assert.deepEqual(resolveForcedToolChoice(completionModel({ api: "openai-responses" }), "report_findings"), {
 			type: "function",
+			name: "report_findings",
+		});
+		assert.equal(
+			resolveForcedToolChoice(completionModel({ api: "openai-codex-responses" }), "report_findings"),
+			"required",
+		);
+		assert.deepEqual(resolveForcedToolChoice(completionModel({ api: "openai-completions" }), "report_findings"), {
+			type: "function",
 			function: { name: "report_findings" },
 		});
 	});

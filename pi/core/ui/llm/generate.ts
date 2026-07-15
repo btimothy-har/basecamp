@@ -1,6 +1,7 @@
 /** Title generation — the LLM call, response validation, and extraction wrapper. */
 
-import { complete, type Tool, type ToolCall } from "@earendil-works/pi-ai";
+import type { Tool, ToolCall } from "@earendil-works/pi-ai";
+import { complete } from "@earendil-works/pi-ai/compat";
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { type Static, Type } from "@sinclair/typebox";
 import { Value } from "@sinclair/typebox/value";
