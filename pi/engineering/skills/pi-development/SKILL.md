@@ -55,7 +55,7 @@ On-demand capability packages following the [Agent Skills standard](https://agen
 ```markdown
 ---
 name: my-skill
-description: What this skill does and when to use it. Be specific — this determines when the agent loads it.
+description: Guidance for [domain or workflow]. Relevant work includes [specific triggers and keywords].
 ---
 
 # My Skill
