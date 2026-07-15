@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
+
 from rich.syntax import Syntax
 from rich.text import Text
 from textual.app import ComposeResult
@@ -12,6 +14,8 @@ from textual.widgets import Label, ListItem, ListView, Static
 
 from basecamp.companion.diff import DiffLine, FileStatus
 from basecamp.companion.ui.syntax import lexer_for_filename
+
+type DeltaFactory = Callable[[int], Text | None]
 
 
 class FileList(Vertical):
@@ -139,7 +143,7 @@ class DiffView(VerticalScroll):
 
     def __init__(self, *args: object, **kwargs: object) -> None:
         super().__init__(*args, **kwargs)
-        self._last_signature: tuple[str, str, tuple[tuple[str, str, int | None], ...]] | None = None
+        self._last_signature: tuple[str, str, int | None, tuple[tuple[str, str, int | None], ...]] | None = None
 
     def compose(self) -> ComposeResult:
         """Compose content holder."""
@@ -151,10 +155,14 @@ class DiffView(VerticalScroll):
         file_path: str,
         status_message: str,
         diff_lines: list[DiffLine],
-    ) -> tuple[str, str, tuple[tuple[str, str, int | None], ...]]:
+        width: int | None,
+    ) -> tuple[str, str, int | None, tuple[tuple[str, str, int | None], ...]]:
+        # width is tracked only for the width-baked delta render; it is None for
+        # the built-in renderer, whose Rich Text reflows at display time.
         return (
             file_path,
             status_message,
+            width,
             tuple((line.kind, line.text, line.line_no) for line in diff_lines),
         )
 
@@ -197,10 +205,28 @@ class DiffView(VerticalScroll):
 
         return rendered
 
-    def update_diff(self, file_path: str, status_message: str, diff_lines: list[DiffLine]) -> None:
-        """Update diff rendering when content has changed."""
+    def update_diff(
+        self,
+        file_path: str,
+        status_message: str,
+        diff_lines: list[DiffLine],
+        delta_factory: DeltaFactory | None = None,
+    ) -> None:
+        """Update diff rendering when content has changed.
 
-        signature = self._signature(file_path=file_path, status_message=status_message, diff_lines=diff_lines)
+        When ``delta_factory`` is supplied and returns Rich text, that
+        higher-fidelity render is shown; otherwise the built-in renderer draws
+        ``diff_lines``. The factory is only invoked on content change or a delta
+        width change (both folded into the signature), never every refresh tick.
+        """
+
+        delta_width = max(self.size.width - 2, 1)
+        signature = self._signature(
+            file_path=file_path,
+            status_message=status_message,
+            diff_lines=diff_lines,
+            width=delta_width if delta_factory is not None else None,
+        )
         if signature == self._last_signature:
             return
 
@@ -208,7 +234,12 @@ class DiffView(VerticalScroll):
         if status_message:
             content.update(status_message)
         else:
-            content.update(self._render_diff(file_path=file_path, diff_lines=diff_lines))
+            rendered: Text | None = None
+            if delta_factory is not None:
+                rendered = delta_factory(delta_width)
+            if rendered is None:
+                rendered = self._render_diff(file_path=file_path, diff_lines=diff_lines)
+            content.update(rendered)
 
         self._last_signature = signature
 

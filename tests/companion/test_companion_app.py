@@ -7,9 +7,12 @@ import json
 import subprocess
 from pathlib import Path
 
+import pytest
 from textual.widgets import ContentSwitcher, DirectoryTree, Footer, ListView, Static
 
 from basecamp.companion.app import CompanionApp
+from basecamp.companion.delta_render import delta_path
+from basecamp.companion.diff import DiffLine
 from basecamp.companion.ui.dashboard import DashboardBody
 from basecamp.companion.ui.diff import DiffBody, DiffView, FileList
 from basecamp.companion.ui.swarm import SwarmBody
@@ -98,14 +101,14 @@ def test_companion_app_headless_smoke(tmp_path: Path) -> None:
             diff_view = app.query_one("#diff-view", DiffView)
             full_signature = diff_view._last_signature
             assert full_signature is not None
-            full_line_count = len(full_signature[2])
+            full_line_count = len(full_signature[3])
 
             await pilot.press("c")
             await pilot.pause(0.1)
 
             compact_signature = diff_view._last_signature
             assert compact_signature is not None
-            compact_line_count = len(compact_signature[2])
+            compact_line_count = len(compact_signature[3])
             assert 0 < compact_line_count < full_line_count
 
             diff_content = app.query_one("#diff-content", Static)
@@ -319,3 +322,55 @@ def test_refresh_is_noop_when_not_running(tmp_path: Path) -> None:
     assert app.is_running is False
 
     app._refresh()  # would raise NoMatches/ScreenStackError without the guard
+
+
+def test_diff_pane_renders_through_delta_when_available(tmp_path: Path) -> None:
+    """When delta is installed, the assembled app renders the diff via delta (styled Text)."""
+
+    if delta_path() is None:
+        pytest.skip("delta binary not installed")
+
+    repo = tmp_path / "repo"
+    snapshot_path = tmp_path / "snapshot.json"
+    _build_repo(repo)
+    _write_snapshot(snapshot_path, session_id="abcd-1234-5678-90ef")
+
+    app = CompanionApp(snapshot_path=snapshot_path, cwd=repo)
+
+    async def run() -> None:
+        async with app.run_test() as pilot:
+            await pilot.pause(0.3)
+            await pilot.press("m")  # dashboard -> diff
+            await pilot.pause(0.2)
+
+            # b_small.txt is a small text change; navigate to it for a compact render.
+            file_list = app.query_one("#file-list", FileList)
+            for _ in range(6):
+                if file_list.selected_file and file_list.selected_file.path == "b_small.txt":
+                    break
+                await pilot.press("right")
+                await pilot.pause(0.1)
+
+            content = str(app.query_one("#diff-content", Static).render())
+            # delta renders side-by-side column separators (│) that the built-in
+            # unified renderer never emits — proof the delta path produced this.
+            assert "│" in content
+
+    asyncio.run(run())
+
+
+def test_diff_signature_tracks_width_for_delta_only() -> None:
+    """A delta render's width is part of its signature so resize invalidates it."""
+
+    view = DiffView()
+    lines = [DiffLine(kind="added", text="x", line_no=1)]
+
+    # With a delta render, differing widths yield differing signatures (resize
+    # re-renders); without one, width is ignored (Rich reflows at display time).
+    sig_w80 = view._signature("f.py", "", lines, width=80)
+    sig_w120 = view._signature("f.py", "", lines, width=120)
+    assert sig_w80 != sig_w120
+
+    sig_fallback_a = view._signature("f.py", "", lines, width=None)
+    sig_fallback_b = view._signature("f.py", "", lines, width=None)
+    assert sig_fallback_a == sig_fallback_b
