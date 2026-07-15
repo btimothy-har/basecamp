@@ -33,8 +33,8 @@ function baseEnv(home: string): NodeJS.ProcessEnv {
 	return env;
 }
 
-function runShim(args: string[], env: NodeJS.ProcessEnv) {
-	return spawnSync(shimPath, args, { encoding: "utf8", env });
+function runShim(args: string[], env: NodeJS.ProcessEnv, cwd?: string) {
+	return spawnSync(shimPath, args, { cwd, encoding: "utf8", env });
 }
 
 function escapeRegex(value: string): string {
@@ -149,6 +149,19 @@ describe("playwright-cli shim", () => {
 			const result = runShim(args, baseEnv(home));
 			assert.notEqual(result.status, 0);
 			assert.match(result.stderr, /installation is managed by Basecamp/);
+		}
+	});
+
+	it("allows help for installation commands without running them", (t) => {
+		const home = tempDir(t, "basecamp-browser-install-help-home-");
+		for (const args of [
+			["--help", "install"],
+			["install-browser", "--help"],
+		]) {
+			const result = runShim(args, baseEnv(home), home);
+			assert.equal(result.status, 0, result.stderr);
+			assert.match(result.stdout, /playwright-cli/);
+			assert.equal(fs.existsSync(path.join(home, ".playwright")), false);
 		}
 	});
 });

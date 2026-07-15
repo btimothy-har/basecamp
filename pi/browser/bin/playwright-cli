@@ -15,6 +15,7 @@ fi
 
 command_name=""
 expect_session_name=false
+informational=false
 for argument in "$@"; do
 	if [ "$expect_session_name" = true ]; then
 		expect_session_name=false
@@ -22,19 +23,21 @@ for argument in "$@"; do
 	fi
 	case "$argument" in
 		-s|--session) expect_session_name=true ;;
+		-h|--help|-v|--version) informational=true ;;
 		-*) ;;
 		*)
-			command_name="$argument"
-			break
+			if [ -z "$command_name" ]; then command_name="$argument"; fi
 			;;
 	esac
 done
-case "$command_name" in
-	install|install-browser)
-		echo "playwright-cli browser installation is managed by Basecamp" >&2
-		exit 1
-		;;
-esac
+if [ "$informational" = false ]; then
+	case "$command_name" in
+		install|install-browser)
+			echo "playwright-cli browser installation is managed by Basecamp" >&2
+			exit 1
+			;;
+	esac
+fi
 
 umask 077
 script_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
