@@ -49,11 +49,11 @@ Do not use `eval` or `run-code` when a dedicated CLI command expresses the actio
 Snapshots are the default inspection method. When pixels matter, save a screenshot and then inspect the reported PNG path with Pi's `read` tool.
 
 ```bash
-playwright-cli screenshot --filename=page.png
-playwright-cli screenshot e15 --filename=element.png
+playwright-cli screenshot
+playwright-cli screenshot e15
 ```
 
-Browser artifacts are routed outside the project checkout. Do not redirect snapshots or screenshots into the repository unless the user explicitly requests a project artifact.
+Let Playwright choose the output filename so the shim routes it outside the project checkout. A relative `--filename` writes into the current directory; use one only when the user explicitly requests a project artifact.
 
 ## Tabs and lifecycle
 
