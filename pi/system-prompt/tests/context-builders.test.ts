@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import type { WorkspaceState } from "#core/project/workspace/state.ts";
-import { buildUnsafeEditGuidance, buildWorktreeWarning } from "../context-builders.ts";
+import { buildCapabilitiesIndex, buildUnsafeEditGuidance, buildWorktreeWarning } from "../context-builders.ts";
 
 function workspace(overrides: Partial<WorkspaceState>): WorkspaceState {
 	return {
@@ -26,6 +26,26 @@ function workspace(overrides: Partial<WorkspaceState>): WorkspaceState {
 		...overrides,
 	};
 }
+
+describe("capabilities index", () => {
+	it("distinguishes loading a skill from applying it", () => {
+		const index = buildCapabilitiesIndex({
+			toolItems: [],
+			skillItems: [],
+			agentItems: [],
+			includeAgents: false,
+		});
+
+		assert.match(index, /Skill lifecycle:/);
+		assert.match(index, /Before applying a relevant skill, load it if its instructions are not already present\./);
+		assert.match(index, /Reuse loaded instructions across ordinary turns and tasks/);
+		assert.match(
+			index,
+			/Reload only when the instructions are no longer in active context or an intentional refresh is needed\./,
+		);
+		assert.doesNotMatch(index, /Use `skill` to load .* before using it/);
+	});
+});
 
 describe("unsafe-edit context", () => {
 	it("keeps the default active-worktree warning when unsafe-edit is off", () => {

@@ -128,10 +128,14 @@ export function buildCapabilitiesIndex(opts: {
 
 	ensureBlankLine(lines);
 	lines.push(
-		"Use `skill` to load a skill's full instructions into context before using it.",
+		"Skill lifecycle:",
+		"- `skill` loads a skill's full instructions into this agent's active context.",
+		"- Before applying a relevant skill, load it if its instructions are not already present.",
+		"- Reuse loaded instructions across ordinary turns and tasks; relevance alone is not a reason to reload.",
+		"- Reload only when the instructions are no longer in active context or an intentional refresh is needed.",
 		"",
 		"`skill` example:",
-		'- Load skill instructions: `skill({ name: "python-development" })`',
+		'- Load missing instructions: `skill({ name: "python-development" })`',
 	);
 
 	return lines.join("\n");
