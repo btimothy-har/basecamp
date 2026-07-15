@@ -39,7 +39,7 @@ Per basecamp capability: whether Claude Code covers it natively (a gain — noth
 | Skills | native skills — port `SKILL.md` verbatim | ✅ full |
 | Code review | native `/code-review` + cloud ultrareview | ✅ full (more capable) |
 | Subagent fan-out | native Agent tool + Workflows | ✅ full |
-| Browser automation | native browser tools | ✅ full |
+| Browser automation | external MCP (e.g. Playwright) | 🟢 high — not native, needs a separate server |
 | Task / plan tracking | native todos + Plan mode | ✅ full |
 | Model selection / aliases | native `/model` + per-agent `model:` | ✅ full |
 | BigQuery / engineering tools | an MCP server | ✅ full |
