@@ -30,11 +30,33 @@ Why the pivot:
 
 One insight from the old design survives the pivot: **enforcement lives in a `PreToolUse` hook, not the prompt** — correctness never depended on prompt freshness ([`guards.ts`](../../pi/core/project/workspace/guards.ts)). Worktrees ride Claude Code's native machinery (`-w`, `EnterWorktree`, `isolation: worktree`, auto-cleanup); how the lifecycle is surfaced is a delivery detail in [`claude/README.md`](../../claude/README.md).
 
-## 4. Retired vs. delivered
+## 4. Feature parity — retired vs. delivered
 
-**Retired (not ported):** the hub daemon and swarm intercommunication (ask/message/handles), workstream SQLite, the companion dashboard/TUI, full-system-prompt replacement, the launcher, and Pi-specific plumbing (global-registry, session-state, catalog). Cross-session orchestration is available only as an *optional* daemon-backed Tier-2 MCP layer, never a requirement.
+Per basecamp capability: whether Claude Code covers it natively (a gain — nothing to build), it ports (a build), or it is dropped, and how faithfully it lands. Delivery *homes* (MCP server / native plugin component / tier) live in [`claude/README.md`](../../claude/README.md)'s inventory; this is the *parity* lens behind §2's "no real capability loss."
 
-**Delivered (the plugin — see [`claude/README.md`](../../claude/README.md)):** dynamic project context via a stdio MCP server (related dirs + custom context + Logseq resources); native skills, hooks, commands, and specialist agents; a `SessionStart` setup hook; an optional `PreToolUse` bash/path guard.
+| basecamp capability | On Claude Code | Parity |
+|---|---|---|
+| Skills | native skills — port `SKILL.md` verbatim | ✅ full |
+| Code review | native `/code-review` + cloud ultrareview | ✅ full (more capable) |
+| Subagent fan-out | native Agent tool + Workflows | ✅ full |
+| Browser automation | native browser tools | ✅ full |
+| Task / plan tracking | native todos + Plan mode | ✅ full |
+| Model selection / aliases | native `/model` + per-agent `model:` | ✅ full |
+| BigQuery / engineering tools | an MCP server | ✅ full |
+| Project context + related dirs | MCP `instructions` (2KB) + resources | 🟢 high — the plugin's core value |
+| Logseq repo memory / dossier | MCP resources (read) | 🟢 high |
+| Specialist agent personas | native subagents (`agents/`) | 🟢 high (personas only) |
+| Bash review | `PreToolUse` hook (or native `auto`) | 🟢 high |
+| Per-repo session setup | `SessionStart` hook | 🟢 high |
+| Worktree lifecycle | native worktrees + optional MCP tool | 🟡 medium — native covers most; scheme via hook |
+| Workspace write guards | native permissions + sandbox (or `PreToolUse`) | 🟡 medium |
+| Agent modes (analysis/planning/work) | Plan mode + posture text | 🟡 partial — copilot/workstream dropped |
+| Cross-session intercommunication | optional daemon-backed Tier-2 MCP | 🟡 optional — young; Agent Teams is the successor |
+| Full system-prompt replacement | — (MCP context injection suffices) | 🗑️ dropped by design |
+| Custom TUI chrome | native TUI + statusline | 🗑️ dropped (native preferred) |
+| Hub daemon · companion · workstream SQLite | — | 🗑️ retired |
+
+**In one line:** the ✅/🟢 rows are native or near-native (retired *scaffolding*, not lost *capability*); the 🟡 rows are the real build (worktree scheme, guards, optional orchestration); the 🗑️ rows are dropped by decision, not by inability. Cross-session orchestration remains available only as the *optional* Tier-2 layer, never a requirement.
 
 ## 5. Prior art (recover, don't rebuild)
 
