@@ -1,6 +1,6 @@
 ---
 name: pi-development
-description: Developing pi extensions, skills, prompt templates, themes, and packages. Use when creating or modifying TypeScript extensions that register tools/commands/events, writing SKILL.md files, authoring prompt templates, building JSON themes, or packaging for distribution.
+description: Guidance for developing pi extensions, skills, prompt templates, themes, and packages. Relevant work includes TypeScript extensions that register tools/commands/events, SKILL.md files, prompt templates, JSON themes, and distribution packages.
 ---
 
 # Pi Development
@@ -55,7 +55,7 @@ On-demand capability packages following the [Agent Skills standard](https://agen
 ```markdown
 ---
 name: my-skill
-description: What this skill does and when to use it. Be specific — this determines when the agent loads it.
+description: Guidance for [domain or workflow]. Relevant work includes [specific triggers and keywords].
 ---
 
 # My Skill

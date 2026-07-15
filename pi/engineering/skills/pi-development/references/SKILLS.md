@@ -20,7 +20,7 @@ my-skill/
 ```markdown
 ---
 name: my-skill
-description: What this skill does and when to use it. Be specific — this determines when the agent loads it.
+description: Guidance for [domain or workflow]. Relevant work includes [specific triggers and keywords].
 ---
 
 # My Skill
@@ -48,7 +48,7 @@ Use **relative paths** from the skill directory for all references.
 | Field | Required | Description |
 |-------|----------|-------------|
 | `name` | Yes | Max 64 chars. Lowercase `a-z`, `0-9`, hyphens. Must match parent directory. |
-| `description` | Yes | Max 1024 chars. What the skill does and when to use it. |
+| `description` | Yes | Max 1024 chars. Specific capability, applicability, triggers, and keywords. |
 | `license` | No | License name or reference |
 | `compatibility` | No | Max 500 chars. Environment requirements. |
 | `metadata` | No | Arbitrary key-value mapping |
@@ -67,11 +67,11 @@ Invalid: `PDF-Processing`, `-pdf`, `pdf--processing`
 
 ### Description Best Practices
 
-The description determines when the agent loads the skill. Be specific.
+The description determines when the agent loads the skill. Describe both capability and applicability with specific, declarative language.
 
 **Good:**
 ```yaml
-description: Extracts text and tables from PDF files, fills PDF forms, and merges multiple PDFs. Use when working with PDF documents.
+description: PDF document guidance for extracting text and tables, filling forms, and merging files. Keywords: PDF, document extraction, forms, merge.
 ```
 
 **Poor:**
@@ -79,7 +79,7 @@ description: Extracts text and tables from PDF files, fills PDF forms, and merge
 description: Helps with PDFs.
 ```
 
-Include keywords that help the agent match tasks to the skill.
+Include keywords that help the agent match tasks to the skill. Avoid imperative "Use when..." phrasing, which can read like a repeated load instruction after the skill is already active.
 
 ## Locations
 

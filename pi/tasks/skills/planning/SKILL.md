@@ -1,6 +1,6 @@
 ---
 name: planning
-description: "Invoke before formalising execution after discovery. Triggers: 'plan this', 'let's plan', multi-step implementation or refactoring, architectural decisions, substantial analysis or validation. Do NOT use plan() to start exploration."
+description: "Planning guidance for formalising execution after discovery. Triggers: 'plan this', 'let's plan', multi-step implementation or refactoring, architectural decisions, and substantial analysis or validation. plan() is not for starting exploration."
 ---
 
 # Planning
@@ -39,7 +39,7 @@ Do not use `plan()` to begin exploration. If you do not yet understand the curre
 
 ### Build Context
 
-Investigate before formalising. Read the relevant code, docs, configuration, schemas, prior decisions, or logs needed to understand the problem. Use the `gather` skill when user requirements need clarification, and ask only for gaps you cannot resolve from available context.
+Investigate before formalising. Read the relevant code, docs, configuration, schemas, prior decisions, or logs needed to understand the problem. Apply the `gather` skill when user requirements need clarification, and ask only for gaps you cannot resolve from available context.
 
 You are ready to move toward a plan when you can explain what exists, what is changing, why it matters, and what constraints shape the solution from evidence rather than untested assumptions.
 

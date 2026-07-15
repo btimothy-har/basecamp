@@ -6,7 +6,7 @@ Validate the code changes made on this branch.
 Additional focus (if provided): $ARGUMENTS
 
 ## Start With Context
-1. Use the `gather` skill first to understand the local change before proposing validation.
+1. Apply the `gather` skill first to understand the local change before proposing validation.
 2. Read the diff, touched files, and nearby code needed to understand intent and blast radius.
 
 ## Understand Changed Surfaces and Risk
@@ -24,7 +24,7 @@ Do not assume new tests should be written; pick the method that best matches the
 Prefer fast, direct evidence first, then deeper checks only where risk justifies them.
 
 ## Plan Before Execution
-Before running anything, invoke the `planning` skill and submit a structured validation plan with `plan()`.
+Before running anything, apply the `planning` skill and submit a structured validation plan with `plan()`.
 The plan should name:
 - what changed and the main risks
 - which validation methods you will use, and why each one fits

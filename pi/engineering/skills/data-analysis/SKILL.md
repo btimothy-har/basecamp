@@ -1,6 +1,6 @@
 ---
 name: data-analysis
-description: "Use for data analysis, statistical study design, exploratory queries, metric investigation, cohort analysis, experiment review, anomaly investigation, and evidence-based recommendations. Keywords: data analysis, research, queries, metrics, cohorts, population, experiment, hypothesis, evidence."
+description: "Analysis guidance for statistical study design, exploratory queries, metric investigation, cohort analysis, experiment review, anomaly investigation, and evidence-based recommendations. Keywords: data analysis, research, queries, metrics, cohorts, population, experiment, hypothesis, evidence."
 ---
 
 # Data Analysis and Research
@@ -9,7 +9,7 @@ Answer questions with evidence. Treat non-trivial analysis like a study: define 
 
 ## When to Use
 
-Use this skill for:
+Apply this skill to:
 - exploratory data analysis
 - metric, dashboard, or anomaly investigation
 - cohort, funnel, retention, revenue, or usage analysis
@@ -19,7 +19,7 @@ Use this skill for:
 - code, log, or document research where the output is findings
 - evidence-based recommendations
 
-Load related skills when needed:
+Apply related skills when needed, loading their instructions only when absent:
 - `sql` for SQL queries and query performance
 - `python-development` for Python scripts
 - `marimo` for reactive notebooks
@@ -85,7 +85,7 @@ Do not infer semantics from names alone. Inspect schemas, samples, docs, or exis
 
 ### 4. Plan Complex Analysis
 
-For complex analysis or research, invoke the `planning` skill before using `plan()`. The plan should cover:
+For complex analysis or research, apply the `planning` skill before using `plan()`. The plan should cover:
 - question and decision
 - base population and unit of analysis
 - source tables/files/docs

@@ -10,6 +10,15 @@ Basecamp fully *replaces* pi's default system prompt rather than appending to it
 - **`context-builders.ts`** — pure fragment builders: worktree warning, unsafe-edit guidance, project-context block, capabilities index.
 - **`defaults/`** — the shipped fragments: `environment.md`, `modes/<mode>.md`, `styles/<style>.md`. Each is overridable per-user (see below).
 
+## Skill lifecycle language
+
+Prompt fragments distinguish loading a skill from applying it:
+
+- **Load** means call `skill(...)` to add full instructions to the current agent's active context.
+- **Apply** means follow instructions already present in that context.
+
+The capabilities index owns this contract. Shipped prompt fragments should tell agents to apply relevant skills and reserve load language for missing instructions. A new turn or task is not itself a reason to reload; context loss and intentional refresh are.
+
 ## Defaults ↔ user override
 
 `loadPromptFile` / `loadWorkingStyle` read the user dir first (`~/.pi/basecamp/prompts` · `.../styles`), then fall back to `defaults/`.

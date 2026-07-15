@@ -1,11 +1,11 @@
 ---
 name: agents
-description: "Delegate bounded work to named or ad-hoc agents, track active work, and collect results."
+description: "Agent delegation guidance for bounded work, active-run tracking, and result collection."
 ---
 
 # Agents
 
-Use this skill to delegate bounded work to agents while you keep working.
+Apply this skill to delegate bounded work to agents while you keep working.
 
 Use these tools for agent delegation and collaboration; if agents are unavailable, they return a tool error:
 - `dispatch_agent({ agent?, task, name?, agent_handle? })` — start or retask a dispatchable async worker and return a public `agent_handle`.
