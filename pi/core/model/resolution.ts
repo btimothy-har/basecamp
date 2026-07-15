@@ -63,5 +63,7 @@ export function resolvePortableReasoningEffort(model: Model<Api>): ModelThinking
 
 export function resolveForcedToolChoice(model: Model<Api>, toolName: string): unknown {
 	if (model.api === "anthropic-messages") return { type: "tool", name: toolName };
+	if (model.api === "openai-responses") return { type: "function", name: toolName };
+	if (model.api === "openai-codex-responses") return "required";
 	return { type: "function", function: { name: toolName } };
 }

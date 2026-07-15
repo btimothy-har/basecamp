@@ -115,7 +115,18 @@ describe("gate completion options", () => {
 		});
 	});
 
-	it("uses OpenAI/function toolChoice for non-Anthropic APIs", () => {
+	it("uses flat function toolChoice for OpenAI Responses models", () => {
+		assert.deepEqual(resolveGateToolChoice(model({ api: "openai-responses", provider: "openai" })), {
+			type: "function",
+			name: "gate_decision",
+		});
+	});
+
+	it("requires the sole tool for OpenAI Codex Responses models", () => {
+		assert.equal(resolveGateToolChoice(model({ api: "openai-codex-responses", provider: "openai-codex" })), "required");
+	});
+
+	it("uses nested function toolChoice for OpenAI Completions models", () => {
 		assert.deepEqual(resolveGateToolChoice(model({ api: "openai-completions", provider: "openai" })), {
 			type: "function",
 			function: { name: "gate_decision" },
@@ -168,14 +179,14 @@ describe("runGate", () => {
 		}
 	});
 
-	it("passes portable reasoning effort for reasoning models", async () => {
+	it("passes OpenAI Responses toolChoice and portable reasoning effort", async () => {
 		const decision: GateDecision = { decision: "approve", risk: "none", reason: "ok" };
 		const result = await runGate({
-			model: model({ api: "openai-completions", provider: "openai", reasoning: true }),
+			model: model({ api: "openai-responses", provider: "openai", reasoning: true }),
 			auth: { apiKey: "test-key" },
 			context: buildGateContext([], "git status"),
 			complete: async (_model, _context, options) => {
-				assert.deepEqual(options?.toolChoice, { type: "function", function: { name: "gate_decision" } });
+				assert.deepEqual(options?.toolChoice, { type: "function", name: "gate_decision" });
 				assert.equal(options?.reasoningEffort, "low");
 				return assistantWithToolCall("gate_decision", decision);
 			},
