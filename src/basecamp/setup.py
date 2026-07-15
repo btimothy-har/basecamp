@@ -10,13 +10,15 @@ from basecamp.core.settings import settings
 from basecamp.workspace.ui import console
 
 
-def _check_prerequisite(name: str, command: str) -> bool:
+def _check_prerequisite(name: str, command: str, hint: str | None = None) -> bool:
     """Check if a command is available on PATH."""
     found = shutil.which(command) is not None
     if found:
         console.print(f"  [green]✓[/green] {name}")
     else:
         console.print(f"  [red]✗[/red] {name} [dim]({command} not found on PATH)[/dim]")
+        if hint:
+            console.print(f"      [dim]{hint}[/dim]")
     return found
 
 
@@ -63,6 +65,14 @@ def execute_setup() -> None:
     ok = True
     ok = _check_prerequisite("pi", "pi") and ok
     ok = _check_prerequisite("git", "git") and ok
+    ok = (
+        _check_prerequisite(
+            "delta",
+            "delta",
+            hint="git-delta powers the companion diff viewer — brew install git-delta / cargo install git-delta",
+        )
+        and ok
+    )
     if not ok:
         console.print()
         console.print("[red]Missing prerequisites. Install them and try again.[/red]")

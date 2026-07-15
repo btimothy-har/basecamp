@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from rich.text import Text
 from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.containers import Horizontal
@@ -15,6 +16,7 @@ from basecamp.companion.daemon import (
     DaemonSummary,
     DaemonSummarySource,
 )
+from basecamp.companion.delta_render import render_file_diff
 from basecamp.companion.diff import (
     DIFF_MODES,
     DiffMode,
@@ -365,7 +367,24 @@ class CompanionApp(App[None]):
         if self._compact and not status_message and diff_lines:
             diff_lines = collapse_unchanged(diff_lines)
 
-        diff_view.update_diff(file_path=selected_file.path, status_message=status_message, diff_lines=diff_lines)
+        delta_factory = None
+        if not status_message and diff_lines:
+
+            def delta_factory(width: int, _file: FileStatus = selected_file) -> Text | None:
+                return render_file_diff(
+                    cwd=self.cwd,
+                    base_commit=self._base_commit,
+                    file=_file,
+                    mode=self._diff_mode,
+                    width=width,
+                )
+
+        diff_view.update_diff(
+            file_path=selected_file.path,
+            status_message=status_message,
+            diff_lines=diff_lines,
+            delta_factory=delta_factory,
+        )
 
     def _ensure_dashboard_source(self, session_id: str) -> DashboardSource:
         return ensure_dashboard_source(self, session_id)

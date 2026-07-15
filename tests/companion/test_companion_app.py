@@ -7,9 +7,11 @@ import json
 import subprocess
 from pathlib import Path
 
+import pytest
 from textual.widgets import ContentSwitcher, DirectoryTree, Footer, ListView, Static
 
 from basecamp.companion.app import CompanionApp
+from basecamp.companion.delta_render import delta_path
 from basecamp.companion.ui.dashboard import DashboardBody
 from basecamp.companion.ui.diff import DiffBody, DiffView, FileList
 from basecamp.companion.ui.swarm import SwarmBody
@@ -319,3 +321,38 @@ def test_refresh_is_noop_when_not_running(tmp_path: Path) -> None:
     assert app.is_running is False
 
     app._refresh()  # would raise NoMatches/ScreenStackError without the guard
+
+
+def test_diff_pane_renders_through_delta_when_available(tmp_path: Path) -> None:
+    """When delta is installed, the assembled app renders the diff via delta (styled Text)."""
+
+    if delta_path() is None:
+        pytest.skip("delta binary not installed")
+
+    repo = tmp_path / "repo"
+    snapshot_path = tmp_path / "snapshot.json"
+    _build_repo(repo)
+    _write_snapshot(snapshot_path, session_id="abcd-1234-5678-90ef")
+
+    app = CompanionApp(snapshot_path=snapshot_path, cwd=repo)
+
+    async def run() -> None:
+        async with app.run_test() as pilot:
+            await pilot.pause(0.3)
+            await pilot.press("m")  # dashboard -> diff
+            await pilot.pause(0.2)
+
+            # b_small.txt is a small text change; navigate to it for a compact render.
+            file_list = app.query_one("#file-list", FileList)
+            for _ in range(6):
+                if file_list.selected_file and file_list.selected_file.path == "b_small.txt":
+                    break
+                await pilot.press("right")
+                await pilot.pause(0.1)
+
+            content = str(app.query_one("#diff-content", Static).render())
+            # delta renders side-by-side column separators (│) that the built-in
+            # unified renderer never emits — proof the delta path produced this.
+            assert "│" in content
+
+    asyncio.run(run())

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
+
 from rich.syntax import Syntax
 from rich.text import Text
 from textual.app import ComposeResult
@@ -12,6 +14,8 @@ from textual.widgets import Label, ListItem, ListView, Static
 
 from basecamp.companion.diff import DiffLine, FileStatus
 from basecamp.companion.ui.syntax import lexer_for_filename
+
+type DeltaFactory = Callable[[int], Text | None]
 
 
 class FileList(Vertical):
@@ -197,8 +201,20 @@ class DiffView(VerticalScroll):
 
         return rendered
 
-    def update_diff(self, file_path: str, status_message: str, diff_lines: list[DiffLine]) -> None:
-        """Update diff rendering when content has changed."""
+    def update_diff(
+        self,
+        file_path: str,
+        status_message: str,
+        diff_lines: list[DiffLine],
+        delta_factory: DeltaFactory | None = None,
+    ) -> None:
+        """Update diff rendering when content has changed.
+
+        When ``delta_factory`` is supplied and returns Rich text, that
+        higher-fidelity render is shown; otherwise the built-in renderer draws
+        ``diff_lines``. The factory is only invoked on content change (guarded by
+        the signature check), never on every refresh tick.
+        """
 
         signature = self._signature(file_path=file_path, status_message=status_message, diff_lines=diff_lines)
         if signature == self._last_signature:
@@ -208,7 +224,12 @@ class DiffView(VerticalScroll):
         if status_message:
             content.update(status_message)
         else:
-            content.update(self._render_diff(file_path=file_path, diff_lines=diff_lines))
+            rendered: Text | None = None
+            if delta_factory is not None:
+                rendered = delta_factory(max(self.size.width - 2, 1))
+            if rendered is None:
+                rendered = self._render_diff(file_path=file_path, diff_lines=diff_lines)
+            content.update(rendered)
 
         self._last_signature = signature
 
