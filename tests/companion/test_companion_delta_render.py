@@ -160,24 +160,32 @@ class TestRenamedFileRender:
         _run(tmp_path, "init", "-q")
         _run(tmp_path, "config", "user.email", "t@t.test")
         _run(tmp_path, "config", "user.name", "t")
-        old = tmp_path / "old.txt"
-        old.write_text("line1\nline2\nline3\n")
+        # A realistically-sized file: git's rename detection ignores tiny files,
+        # so a 3-line fixture would render identically with or without the fix.
+        # Distinct non-prefix markers top and bottom, filler in between.
+        lines = ["UNIQUETOPMARKER"] + [f"filler_{i}" for i in range(2, 40)] + ["UNIQUEBOTTOMMARKER"]
+        (tmp_path / "old.txt").write_text("\n".join(lines) + "\n")
         _run(tmp_path, "add", "-A")
         _run(tmp_path, "commit", "-q", "-m", "init")
-        # Rename then edit exactly one line in the working tree.
+        # Rename, then edit exactly one line in the middle of the working tree.
         _run(tmp_path, "mv", "old.txt", "new.txt")
-        (tmp_path / "new.txt").write_text("line1\nline2 CHANGED\nline3\n")
+        lines[20] = "filler_21_THEEDIT"
+        (tmp_path / "new.txt").write_text("\n".join(lines) + "\n")
 
         result = render_file_diff(
             cwd=tmp_path,
             base_commit="HEAD",
             file=FileStatus(path="new.txt", status="renamed", old_path="old.txt"),
             mode="uncommitted",
-            width=120,
+            width=140,
         )
         assert isinstance(result, Text)
-        # The unchanged lines must survive as context; an all-"added" render would
-        # mark every line as an addition. "line1" appears in the diff either way,
-        # but the true edit shows the CHANGED marker without re-adding line3.
-        assert "CHANGED" in result.plain
-        assert "line3" in result.plain
+        # The one real edit is shown...
+        assert "THEEDIT" in result.plain
+        # ...but the distant unchanged top/bottom lines must NOT appear: a
+        # rename-paired diff renders only the changed hunk + nearby context.
+        # The pre-fix refs (single path, no -M) rendered the whole file as
+        # added, so both markers were present — asserting their absence fails
+        # if the rename fix is reverted (verified against the buggy refs).
+        assert "UNIQUETOPMARKER" not in result.plain
+        assert "UNIQUEBOTTOMMARKER" not in result.plain
