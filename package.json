@@ -45,7 +45,6 @@
 	"dependencies": {
 		"@playwright/cli": "0.1.17",
 		"@sinclair/typebox": "^0.34.0",
-		"puppeteer-core": "^24.0.0",
 		"ws": "^8"
 	},
 	"peerDependencies": {
