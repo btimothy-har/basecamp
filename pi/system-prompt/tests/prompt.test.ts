@@ -58,6 +58,44 @@ describe("assemblePrompt", () => {
 		assert.match(prompt, /Use `git` and `gh` directly in bash like a normal developer\./);
 	});
 
+	it("keeps skill lifecycle guidance in primary and agent prompts", async (t) => {
+		useDefaultAgentMode(t);
+		await useTempHome(t);
+		const options = {
+			workspace: null,
+			project: null,
+			effectiveCwd: "/repo",
+			toolItems: [],
+			skillItems: [],
+			agentItems: [],
+			contextFiles: [],
+			readOnly: false,
+		};
+		const assertLifecycle = (prompt: string): void => {
+			assert.equal(prompt.match(/Skill lifecycle:/g)?.length, 1);
+			assert.match(prompt, /load it if its instructions are not already present/);
+			assert.match(prompt, /Reuse loaded instructions across ordinary turns and tasks/);
+			assert.match(prompt, /an intentional refresh is needed/);
+			assert.doesNotMatch(prompt, /\b(?:Always )?[Ii]nvoke\b[^\n]*\bskills?\b/);
+		};
+		const modeExpectations = [
+			["work", /Apply the `agents` skill to select and brief them/],
+			["analysis", /Apply the `data-analysis` skill before substantial analysis or research/],
+			["planning", /Apply `planning` for discovery\/convergence methodology/],
+		] as const;
+
+		for (const [mode, expected] of modeExpectations) {
+			setAgentMode(mode);
+			const prompt = assemblePrompt(options);
+			assertLifecycle(prompt);
+			assert.match(prompt, expected);
+		}
+
+		const agentPrompt = assemblePrompt({ ...options, agentPrompt: "custom agent prompt", readOnly: true });
+		assertLifecycle(agentPrompt);
+		assert.match(agentPrompt, /Always apply any relevant Python skill guidance/);
+	});
+
 	it("uses user prompt and style overrides before built-ins", async (t) => {
 		useDefaultAgentMode(t);
 		const homeDir = await useTempHome(t);
