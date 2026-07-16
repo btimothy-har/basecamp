@@ -2,9 +2,15 @@
 
 Both handlers key off the hook stdin JSON that Claude Code delivers
 (``session_id``, ``cwd``, ``transcript_path``, and — on SessionStart —
-``agent_type``; on SessionEnd, ``reason``). Transient Task-tool subagents are
-skipped: the hub tracks top-level sessions, while within-session fan-out is
-Claude Code's own concern.
+``agent_type``/``source``; on SessionEnd, ``reason``). Transient Task-tool
+subagents are skipped: the hub tracks top-level sessions, while within-session
+fan-out is Claude Code's own concern.
+
+Liveness is per *episode*, not per session: SessionStart opens an episode
+(stamped with its ``source``) and SessionEnd closes it (stamped with its
+``reason``). Because a resume or ``/clear`` fires a SessionEnd *and* a matching
+SessionStart, both are handled uniformly — the closing/opening pair brackets the
+engagement without any special-casing, and the durable session row is never ended.
 """
 
 from __future__ import annotations
@@ -13,49 +19,52 @@ import os
 from collections.abc import Mapping
 from typing import Any
 
-from basecamp.hub.claude.client import build_register_frame, end_session, register_session, resolve_node_id
+from basecamp.hub.claude.client import build_register_body, end_session, register_session
 
-# SessionEnd reasons where the *same* session_id keeps running — /clear (context
-# reset) and resume (conversation reload), each paired with a SessionStart
-# (source=clear/resume) that continues the session. These must NOT mark the row
-# ended. Every other reason (logout, prompt_input_exit, bypass_permissions_disabled,
-# other) — and an absent/unknown reason — is a genuine termination and defaults to
-# ending the row, so a live session never leaks as perpetually-open.
-_CONTINUATION_END_REASONS = frozenset({"clear", "resume"})
+
+def _str_field(payload: Mapping[str, Any], key: str) -> str | None:
+    """Return a non-empty string payload field, else ``None``.
+
+    Normalizes an empty string to ``None`` (mirroring the identity builder's
+    ``_clean``) so an absent ``source``/``reason``/``cwd`` is stored as NULL rather
+    than "" if Claude Code ever sends the key with an empty value.
+    """
+
+    value = payload.get(key)
+    return value if isinstance(value, str) and value else None
 
 
 def handle_session_start(payload: Mapping[str, Any], *, env: Mapping[str, str] | None = None) -> None:
-    """Register a fresh top-level session with the daemon."""
+    """Register a top-level session and open a fresh episode for it."""
 
     if payload.get("agent_type") == "subagent":
         return
     session_id = payload.get("session_id")
     if not isinstance(session_id, str) or not session_id:
         return
-    cwd = payload.get("cwd") if isinstance(payload.get("cwd"), str) else None
-    transcript = payload.get("transcript_path") if isinstance(payload.get("transcript_path"), str) else None
-    frame = build_register_frame(
+    cwd = _str_field(payload, "cwd")
+    transcript = _str_field(payload, "transcript_path")
+    source = _str_field(payload, "source")
+    body = build_register_body(
         session_id=session_id,
         cwd=cwd or os.getcwd(),
         transcript_path=transcript,
+        source=source,
         env=env,
     )
-    register_session(frame)
+    register_session(body)
 
 
-def handle_session_end(payload: Mapping[str, Any], *, env: Mapping[str, str] | None = None) -> None:
-    """Mark a session ended (best-effort; no-op if the daemon is down).
+def handle_session_end(payload: Mapping[str, Any]) -> None:
+    """Close the session's open episode (best-effort; no-op if the daemon is down).
 
-    Deregisters under the same key SessionStart registered — ``BASECAMP_AGENT_ID``
-    when set, else the native session id — so a daemon-spawned worker's row is
-    actually closed instead of left dangling. A /clear or resume (the session
-    keeps running, only its context resets) is skipped so the still-live row is
-    not spuriously marked ended.
+    Every SessionEnd closes the current episode, stamped with its ``reason`` — a
+    ``/clear`` or resume is no longer special-cased, because the paired SessionStart
+    opens the next episode. The durable ``sessions`` row is never marked ended.
     """
 
     session_id = payload.get("session_id")
     if not isinstance(session_id, str) or not session_id:
         return
-    if payload.get("reason") in _CONTINUATION_END_REASONS:
-        return
-    end_session(resolve_node_id(session_id, env))
+    reason = _str_field(payload, "reason")
+    end_session(session_id, reason=reason)

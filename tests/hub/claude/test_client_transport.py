@@ -16,13 +16,13 @@ import uvicorn
 
 from basecamp.hub.claude.app import create_claude_app
 from basecamp.hub.claude.client import transport as transport_mod
-from basecamp.hub.claude.client.identity import build_register_frame
+from basecamp.hub.claude.client.identity import build_register_body
 from basecamp.hub.claude.client.paths import DaemonPaths
 from basecamp.hub.claude.client.sessions import end_session, register_session
 from basecamp.hub.claude.client.transport import HealthResult, health_ping
+from basecamp.hub.claude.contract import CLAUDE_PROTOCOL_VERSION
 from basecamp.hub.claude.server import UdsServer
 from basecamp.hub.claude.store import SessionStore
-from basecamp.hub.frames import PROTOCOL_VERSION
 
 
 class _ThreadedServer(UdsServer):
@@ -79,7 +79,7 @@ def test_health_ping_connection_error_is_unhealthy(monkeypatch: pytest.MonkeyPat
 def _running_daemon(tmp_path: Path) -> Iterator[tuple[DaemonPaths, SessionStore]]:
     uds_path = Path("/tmp") / f"basecamp-claude-{os.getpid()}-{uuid.uuid4().hex[:8]}.sock"
     uds_path.unlink(missing_ok=True)
-    store = SessionStore(db_path=tmp_path / "sessions.db")
+    store = SessionStore(db_path=tmp_path / "daemon.db")
     config = uvicorn.Config(app=create_claude_app(store), uds=str(uds_path), log_level="error")
     server = _ThreadedServer(config)
     thread = threading.Thread(target=server.run, daemon=True)
@@ -93,7 +93,7 @@ def _running_daemon(tmp_path: Path) -> Iterator[tuple[DaemonPaths, SessionStore]
             socket=uds_path,
             spawn_lock=tmp_path / "daemon.spawn.lock",
             pidfile=tmp_path / "daemon.pid",
-            db=tmp_path / "sessions.db",
+            db=tmp_path / "daemon.db",
         )
         yield paths, store
     finally:
@@ -104,20 +104,21 @@ def _running_daemon(tmp_path: Path) -> Iterator[tuple[DaemonPaths, SessionStore]
 
 def test_register_and_end_session_over_uds(tmp_path: Path) -> None:
     with _running_daemon(tmp_path) as (paths, store):
-        assert health_ping(str(paths.socket)) == HealthResult(ok=True, protocol=PROTOCOL_VERSION)
+        assert health_ping(str(paths.socket)) == HealthResult(ok=True, protocol=CLAUDE_PROTOCOL_VERSION)
 
-        frame = build_register_frame(
+        body = build_register_body(
             session_id="sess-e2e",
             cwd="/work/e2e",
             transcript_path="/transcripts/e2e.jsonl",
+            source="startup",
             env={"BASECAMP_REPO": "test/e2e"},
         )
-        outcome = register_session(frame, paths=paths)
+        outcome = register_session(body, paths=paths)
         assert outcome.status == 200
         assert outcome.body["status"] == "registered"
         assert [row["session_id"] for row in store.list_open_sessions()] == ["sess-e2e"]
 
-        assert end_session("sess-e2e", paths=paths) is True
+        assert end_session("sess-e2e", reason="logout", paths=paths) is True
         assert store.list_open_sessions() == []
 
 
@@ -133,6 +134,6 @@ def test_end_session_returns_false_when_daemon_absent(tmp_path: Path) -> None:
         socket=tmp_path / "absent.sock",
         spawn_lock=tmp_path / "daemon.spawn.lock",
         pidfile=tmp_path / "daemon.pid",
-        db=tmp_path / "sessions.db",
+        db=tmp_path / "daemon.db",
     )
     assert end_session("sess-x", paths=paths) is False

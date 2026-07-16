@@ -1,7 +1,7 @@
 """Claude runtime path helpers, rooted at a single promotable constant.
 
 Everything the Claude Code session lifecycle writes — the daemon socket, its
-pidfile, the spawn lock, the sessions database, and the hook failure log — lives
+pidfile, the spawn lock, the daemon database, and the hook failure log — lives
 under ONE root. Transitionally that root sits beside the legacy Pi runtime under
 ``~/.pi/basecamp/claude`` so the two daemons never share a socket or database;
 promotion later is a single edit of ``_CLAUDE_RUNTIME_SEGMENTS`` (drop ``.pi``),
@@ -41,6 +41,6 @@ def claude_spawn_lock_path(home: Path | None = None) -> Path:
     return claude_runtime_dir(home) / "daemon.spawn.lock"
 
 
-def claude_sessions_db_path(home: Path | None = None) -> Path:
-    """Return the Claude daemon's SQLite sessions database path."""
-    return claude_runtime_dir(home) / "sessions.db"
+def claude_daemon_db_path(home: Path | None = None) -> Path:
+    """Return the Claude daemon's SQLite database path (sessions + episodes)."""
+    return claude_runtime_dir(home) / "daemon.db"

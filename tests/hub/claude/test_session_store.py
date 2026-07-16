@@ -1,4 +1,4 @@
-"""Tests for the Claude ``SessionStore`` liveness store (``ended_at`` marker)."""
+"""Tests for the durable ``sessions`` store (identity + episode-derived liveness)."""
 
 from __future__ import annotations
 
@@ -10,72 +10,63 @@ import pytest
 from basecamp.hub.claude.store import SessionStore
 
 
-def _register(store: SessionStore, session_id: str, **overrides: object) -> None:
-    kwargs: dict[str, object] = {
-        "session_id": session_id,
-        "role": "agent",
-        "session_name": session_id,
-        "cwd": f"/tmp/{session_id}",
-    }
-    kwargs.update(overrides)
-    store.upsert_session(**kwargs)
+def _live_session(store: SessionStore, session_id: str, *, source: str | None = None, **facets: object) -> None:
+    """Register a session and open an episode so ``list_open_sessions`` reports it live."""
+    facets.setdefault("cwd", f"/tmp/{session_id}")
+    store.upsert_session(session_id=session_id, **facets)
+    store.open_episode(session_id=session_id, source=source)
 
 
-def test_new_session_starts_open(tmp_path: Path) -> None:
-    store = SessionStore(db_path=tmp_path / "sessions.db")
+def test_registered_session_with_open_episode_is_live(tmp_path: Path) -> None:
+    store = SessionStore(db_path=tmp_path / "daemon.db")
 
-    _register(store, "session-1")
+    _live_session(store, "session-1")
 
     assert [row["session_id"] for row in store.list_open_sessions()] == ["session-1"]
 
 
-def test_mark_session_ended_closes_it(tmp_path: Path) -> None:
-    store = SessionStore(db_path=tmp_path / "sessions.db")
-    _register(store, "session-1")
+def test_session_without_an_episode_is_not_live(tmp_path: Path) -> None:
+    # Liveness is derived from episodes; a bare durable row is not "open".
+    store = SessionStore(db_path=tmp_path / "daemon.db")
 
-    ended = store.mark_session_ended("session-1")
+    store.upsert_session(session_id="session-1", cwd="/tmp/session-1")
 
-    assert ended is True
     assert store.list_open_sessions() == []
 
 
-def test_mark_session_ended_returns_false_for_unknown_id(tmp_path: Path) -> None:
-    store = SessionStore(db_path=tmp_path / "sessions.db")
-
-    assert store.mark_session_ended("nope") is False
-
-
-def test_re_register_reopens_ended_session_and_preserves_created_at(tmp_path: Path) -> None:
-    db_path = tmp_path / "sessions.db"
+def test_re_register_preserves_created_at_and_refreshes_facets(tmp_path: Path) -> None:
+    db_path = tmp_path / "daemon.db"
     store = SessionStore(db_path=db_path)
-    _register(store, "session-1")
+    _live_session(store, "session-1", repo="acme/widgets")
     with sqlite3.connect(db_path) as connection:
         original_created = connection.execute(
             "SELECT created_at FROM sessions WHERE session_id = 'session-1'"
         ).fetchone()[0]
-    store.mark_session_ended("session-1")
 
-    _register(store, "session-1", session_name="resumed")
+    # A resume or /clear re-registers the same id with (possibly) new facets.
+    store.upsert_session(session_id="session-1", cwd="/work/resumed", repo="acme/gadgets")
 
-    open_ids = [row["session_id"] for row in store.list_open_sessions()]
-    assert open_ids == ["session-1"]
     with sqlite3.connect(db_path) as connection:
-        row = connection.execute(
-            "SELECT ended_at, created_at, session_name FROM sessions WHERE session_id = 'session-1'"
-        ).fetchone()
-    assert row[0] is None  # ended_at reset on re-register
-    assert row[1] == original_created  # created_at preserved
-    assert row[2] == "resumed"  # facets refreshed
+        row = connection.execute("SELECT created_at, cwd, repo FROM sessions WHERE session_id = 'session-1'").fetchone()
+    assert row[0] == original_created  # created_at preserved
+    assert row[1] == "/work/resumed"  # facets refreshed
+    assert row[2] == "acme/gadgets"
 
 
-def test_list_open_sessions_excludes_ended_and_orders_by_last_seen(tmp_path: Path) -> None:
-    db_path = tmp_path / "sessions.db"
+def test_list_open_sessions_excludes_sessions_whose_episode_closed(tmp_path: Path) -> None:
+    store = SessionStore(db_path=tmp_path / "daemon.db")
+    _live_session(store, "live")
+    _live_session(store, "gone")
+    store.close_episode(session_id="gone")
+
+    assert [row["session_id"] for row in store.list_open_sessions()] == ["live"]
+
+
+def test_list_open_sessions_orders_by_last_seen_desc(tmp_path: Path) -> None:
+    db_path = tmp_path / "daemon.db"
     store = SessionStore(db_path=db_path)
-    _register(store, "old")
-    _register(store, "mid")
-    _register(store, "new")
-    _register(store, "gone")
-    store.mark_session_ended("gone")
+    for session_id in ("old", "mid", "new"):
+        _live_session(store, session_id)
 
     # Force deterministic, distinct last_seen ordering rather than racing _now().
     with sqlite3.connect(db_path) as connection:
@@ -86,18 +77,16 @@ def test_list_open_sessions_excludes_ended_and_orders_by_last_seen(tmp_path: Pat
         ]:
             connection.execute("UPDATE sessions SET last_seen_at = ? WHERE session_id = ?", (seen, session_id))
 
-    open_ids = [row["session_id"] for row in store.list_open_sessions()]
-    assert open_ids == ["new", "mid", "old"]
+    assert [row["session_id"] for row in store.list_open_sessions()] == ["new", "mid", "old"]
 
 
-def test_list_open_sessions_projects_identity_facets(tmp_path: Path) -> None:
-    store = SessionStore(db_path=tmp_path / "sessions.db")
-    _register(
+def test_list_open_sessions_projects_identity_and_live_episode_facets(tmp_path: Path) -> None:
+    store = SessionStore(db_path=tmp_path / "daemon.db")
+    _live_session(
         store,
         "session-1",
-        role="worker",
-        depth=1,
-        parent_id="root",
+        source="resume",
+        cwd="/work/dir",
         transcript_path="/transcripts/session-1.jsonl",
         repo="acme/widgets",
         worktree_label="copilot/brave-otter-quill",
@@ -110,21 +99,21 @@ def test_list_open_sessions_projects_identity_facets(tmp_path: Path) -> None:
     assert row["repo"] == "acme/widgets"
     assert row["worktree_label"] == "copilot/brave-otter-quill"
     assert row["transcript_path"] == "/transcripts/session-1.jsonl"
-    assert row["role"] == "worker"
-    assert row["parent_id"] == "root"
-    assert row["depth"] == 1
+    assert row["cwd"] == "/work/dir"
+    assert row["handle"] is None
+    assert row["episode_source"] == "resume"
+    assert row["episode_started_at"]
     assert set(row) == {
         "session_id",
-        "role",
-        "depth",
-        "parent_id",
-        "session_name",
-        "cwd",
-        "transcript_path",
         "repo",
         "worktree_label",
+        "handle",
+        "cwd",
+        "transcript_path",
         "created_at",
         "last_seen_at",
+        "episode_source",
+        "episode_started_at",
     }
 
 
@@ -133,5 +122,5 @@ def test_store_defaults_db_path_under_the_claude_runtime(tmp_path: Path, monkeyp
 
     store = SessionStore()
 
-    assert store.db_path == tmp_path / ".pi" / "basecamp" / "claude" / "sessions.db"
+    assert store.db_path == tmp_path / ".pi" / "basecamp" / "claude" / "daemon.db"
     assert store.db_path.parent.is_dir()

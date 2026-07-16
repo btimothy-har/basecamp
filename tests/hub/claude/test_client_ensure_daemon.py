@@ -13,8 +13,13 @@ from basecamp.hub.claude.client.errors import DaemonProtocolMismatchError, Daemo
 from basecamp.hub.claude.client.paths import DaemonPaths, daemon_paths
 from basecamp.hub.claude.client.spawn import ensure_daemon
 from basecamp.hub.claude.client.transport import HealthResult
+from basecamp.hub.claude.contract import CLAUDE_PROTOCOL_VERSION
 
-PROTOCOL = 23
+PROTOCOL = CLAUDE_PROTOCOL_VERSION
+# Any protocol the client does not speak; used to exercise the terminate/respawn
+# and mismatch-raise paths without pinning to a literal that might one day equal
+# CLAUDE_PROTOCOL_VERSION.
+INCOMPATIBLE_PROTOCOL = PROTOCOL + 1
 
 
 def _paths(tmp_path: Path) -> DaemonPaths:
@@ -92,8 +97,8 @@ def test_spawns_when_absent_then_becomes_healthy(tmp_path: Path) -> None:
 def test_terminates_incompatible_daemon_then_respawns(tmp_path: Path) -> None:
     ping = _Ping(
         [
-            HealthResult(ok=True, protocol=1),  # initial: live but wrong protocol
-            HealthResult(ok=True, protocol=1),  # under the lock: still wrong
+            HealthResult(ok=True, protocol=INCOMPATIBLE_PROTOCOL),  # initial: live but wrong protocol
+            HealthResult(ok=True, protocol=INCOMPATIBLE_PROTOCOL),  # under the lock: still wrong
             HealthResult(ok=True, protocol=PROTOCOL),  # after terminate + spawn
         ]
     )
@@ -119,7 +124,7 @@ def test_protocol_mismatch_after_spawn_raises(tmp_path: Path) -> None:
         [
             HealthResult(ok=False),
             HealthResult(ok=False),
-            HealthResult(ok=True, protocol=99),  # comes up, but wrong protocol
+            HealthResult(ok=True, protocol=INCOMPATIBLE_PROTOCOL),  # comes up, but wrong protocol
         ]
     )
 
