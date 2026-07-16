@@ -1,0 +1,37 @@
+#!/bin/sh
+# Dispatch a Claude Code lifecycle hook event to basecamp (strictly fail-open).
+#
+# `uv tool install` exposes `basecamp-hook` beside `basecamp` in the same bin
+# dir, so we resolve it from that install rather than an ambient interpreter.
+# Resolution order: on PATH, then beside the `basecamp` entry point, then uv's
+# documented tool-bin resolution ($UV_TOOL_BIN_DIR, $XDG_BIN_HOME,
+# $XDG_DATA_HOME/../bin, ~/.local/bin) for a GUI launch whose PATH lacks them.
+# Guard against recursing into this shim if the plugin bin/ is itself on PATH.
+self="$(command -v -- "$0" 2>/dev/null || printf '%s' "$0")"
+
+runnable() {
+  [ -n "$1" ] && [ -x "$1" ] && [ "$1" != "$self" ]
+}
+
+# 1. Directly on PATH (terminal launch: the install's bin dir is on PATH).
+cli="$(command -v basecamp-hook 2>/dev/null || true)"
+if runnable "$cli"; then exec "$cli" "$@"; fi
+
+# 2. Beside the `basecamp` entry point (same install, same dir).
+base="$(command -v basecamp 2>/dev/null || true)"
+if [ -n "$base" ]; then
+  sib="$(dirname -- "$base")/basecamp-hook"
+  if runnable "$sib"; then exec "$sib" "$@"; fi
+fi
+
+# 3. uv's documented tool-bin locations, in uv's own precedence order (a GUI
+#    launch may drop these from PATH). $UV_TOOL_BIN_DIR is the intentional
+#    override (containers/CI) and must win over the XDG defaults.
+for dir in "${UV_TOOL_BIN_DIR:-}" "${XDG_BIN_HOME:-}" "${XDG_DATA_HOME:-$HOME/.local/share}/../bin" "$HOME/.local/bin"; do
+  [ -n "$dir" ] || continue
+  if runnable "$dir/basecamp-hook"; then exec "$dir/basecamp-hook" "$@"; fi
+done
+
+# Fail-open: a hook must never break a session, so exit 0 even when unresolved.
+echo "basecamp-hook: basecamp is not installed (run: uv run install.py)" >&2
+exit 0

@@ -1,0 +1,8 @@
+{
+	"name": "basecamp",
+	"version": "0.1.0",
+	"description": "Project awareness for basecamp projects: related directories and curated project context.",
+	"author": {
+		"name": "Brian Har"
+	}
+}

@@ -111,7 +111,10 @@ export function spawnDaemonProcess(
 	dbPath: string,
 	spawnFn: SpawnLike = spawn,
 ): void {
-	const child = spawnFn("basecamp", ["hub", "--uds", socketPath, "--pidfile", pidPath, "--db", dbPath], {
+	// `basecamp hub` now defaults to the Claude session hub; the Pi swarm daemon
+	// (this caller) must pass --legacy so it keeps booting the full swarm app
+	// (/ws, /runs, /workstreams, …) on the swarm socket. Dropped when Pi retires.
+	const child = spawnFn("basecamp", ["hub", "--legacy", "--uds", socketPath, "--pidfile", pidPath, "--db", dbPath], {
 		detached: true,
 		stdio: "ignore",
 	});
