@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import sqlite3
 from pathlib import Path
 
 import pytest
@@ -172,6 +173,33 @@ def test_ingest_session_sweep_survives_a_parse_error_in_the_main_file(
 
     assert count == 1  # main parse blew up (0) but the sweep still reached the sidecar
     assert store.has_agent_nodes("s1", "alpha") is True
+
+
+def test_ingest_session_sweep_survives_a_store_write_failure(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    # The store write, not just the parse, must be per-file isolated: a record_nodes
+    # call that loses the (WAL is still single-writer) writer-writer race past
+    # busy_timeout raises OperationalError, and that must degrade only that one sidecar
+    # to 0 — never abort the sweep and permanently drop every remaining sidecar.
+    store = SessionStore(db_path=tmp_path / "daemon.db")
+    main = _transcript(tmp_path / "t.jsonl", "m1")
+    _sidecar(main, "alpha", "x1", tool_use_id="toolu_alpha")  # sorted first -> fails first
+    _sidecar(main, "beta", "y1", tool_use_id="toolu_beta")
+
+    real_record = store.record_nodes
+
+    def _flaky_record(*, source_agent_id: str | None = None, **kwargs: object) -> int:
+        if source_agent_id == "alpha":
+            msg = "database is locked"
+            raise sqlite3.OperationalError(msg)
+        return real_record(source_agent_id=source_agent_id, **kwargs)
+
+    monkeypatch.setattr(store, "record_nodes", _flaky_record)
+
+    count = ingest_session(store, session_id="s1", transcript_path=str(main), episode_id="e1", sweep_sidecars=True)
+
+    assert count == 2  # m1 (main) + y1 (beta); alpha's write blew up but did not abort the sweep
+    assert store.has_agent_nodes("s1", "alpha") is False
+    assert store.has_agent_nodes("s1", "beta") is True
 
 
 def test_ingest_session_no_main_path_no_sidecar_returns_zero(tmp_path: Path) -> None:

@@ -39,6 +39,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import sqlite3
 from collections.abc import Callable
 from pathlib import Path
 
@@ -62,10 +63,11 @@ def ingest_session(
 ) -> int:
     """Parse a transcript and/or its subagent sidecars and store every node.
 
-    Returns the total number of newly stored nodes. Best-effort and idempotent: a
-    missing or unreadable file logs and contributes 0 rather than raising, and
-    re-ingesting unchanged files inserts nothing (every node collides on its ``uuid``
-    primary key). Three modes, selected by the caller's trigger:
+    Returns the total number of newly stored nodes. Best-effort and idempotent: a file
+    that is missing, unreadable, unparseable, or whose store write loses a contended
+    lock logs and contributes 0 rather than raising, and re-ingesting unchanged files
+    inserts nothing (every node collides on its ``uuid`` primary key). Three modes,
+    selected by the caller's trigger:
 
     - ``agent_transcript_path`` set (SubagentStop): ingest that one complete sidecar
       and nothing else — the main file is captured by its own triggers.
@@ -73,8 +75,9 @@ def ingest_session(
       under ``subagents/`` not already stored.
     - neither (PreCompact): ingest the main file only.
 
-    The main file and each sidecar are read independently, so a missing main file
-    never suppresses the sidecars (or vice versa).
+    The main file and each sidecar are read *and stored* independently, so a failure
+    on any one of them (missing, unparseable, or a contended write) never suppresses
+    the others.
     """
 
     if agent_transcript_path:
@@ -122,28 +125,35 @@ def _ingest_file(
     source_agent_id: str | None = None,
     source_tool_use_id: str | None = None,
 ) -> int:
-    """Parse one JSONL file and record its nodes; 0 on a missing/unreadable file."""
+    """Parse one JSONL file and record its nodes; 0 on any single-file failure.
+
+    Fully self-contained per file: a missing/unreadable file, a parse/decode error the
+    resilient parser could not itself absorb, *and* a store-write failure all degrade
+    this one file to 0. Nothing here may propagate — the whole point is that a
+    SessionEnd sweep processes each file independently, so one bad file must never
+    abort the loop and silently drop every remaining sidecar (SessionEnd is the sole
+    sweep trigger, so that loss would be permanent, not merely delayed).
+    """
 
     if not path.is_file():
         logger.warning("transcript ingest skipped: no file at %s (session %s)", path, session_id)
         return 0
     try:
         nodes = parse_transcript(path)
-    except (OSError, ValueError) as exc:
-        # OSError: the file went unreadable between the is_file() check and the read.
-        # ValueError: a parse-time error the resilient parser could not itself absorb
-        # (e.g. a decode failure). Either way one bad file must degrade to 0 and never
-        # propagate — otherwise it would abort a SessionEnd sweep mid-loop, silently
-        # dropping every remaining sidecar. Keeps the "read independently" contract true.
-        logger.warning("transcript ingest failed to read %s: %s", path, exc)
+        return store.record_nodes(
+            session_id=session_id,
+            episode_id=episode_id,
+            nodes=nodes,
+            source_agent_id=source_agent_id,
+            source_tool_use_id=source_tool_use_id,
+        )
+    except (OSError, ValueError, sqlite3.OperationalError) as exc:
+        # OSError: file unreadable after the is_file() check. ValueError: an unabsorbed
+        # parse/decode error. OperationalError: the record_nodes write lost the (WAL is
+        # still single-writer) writer-writer race past busy_timeout — the same failure
+        # the /end route guards. Any of them degrades this one file, never the sweep.
+        logger.warning("transcript ingest failed for %s: %s", path, exc)
         return 0
-    return store.record_nodes(
-        session_id=session_id,
-        episode_id=episode_id,
-        nodes=nodes,
-        source_agent_id=source_agent_id,
-        source_tool_use_id=source_tool_use_id,
-    )
 
 
 class IngestScheduler:
