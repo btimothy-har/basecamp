@@ -7,6 +7,7 @@ import time
 from pathlib import Path
 from typing import Any
 
+import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
@@ -193,6 +194,25 @@ def test_ingest_body_path_overrides_stored_path(tmp_path: Path) -> None:
 
     assert response.json()["scheduled"] is True
     assert calls[0]["transcript_path"] == "/override.jsonl"
+
+
+def test_ingest_returns_not_scheduled_when_the_store_is_busy(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    # A contended lock that outlasts busy_timeout raises OperationalError on the reads;
+    # the route degrades to an explicit not-scheduled reply, never an unhandled 500.
+    client, store, calls = _build_with_recorder(tmp_path)
+
+    def _boom(**_kwargs: object) -> object:
+        msg = "database is locked"
+        raise sqlite3.OperationalError(msg)
+
+    with client:
+        client.post("/sessions", json=_register_body("session-1", transcript_path="/stored.jsonl"))
+        monkeypatch.setattr(store, "current_episode_id", _boom)
+        response = client.post("/sessions/session-1/ingest", json={"reason": "session-end", "sweep_sidecars": True})
+
+    assert response.status_code == 200
+    assert response.json() == {"session_id": "session-1", "scheduled": False, "reason": "store busy"}
+    assert calls == []
 
 
 def test_ingest_without_a_known_path_is_not_scheduled(tmp_path: Path) -> None:

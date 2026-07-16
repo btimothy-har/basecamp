@@ -56,7 +56,7 @@ One verbatim row per node, keyed by the node's own `uuid`. Additive, create-if-n
 | `line_json` | the verbatim JSONL line — the opaque source of truth |
 | `first_seen_at` | when this daemon first stored the node |
 
-Both `source_*` columns are batch-level: stamped on every node of one sidecar file, `NULL` for the main file. They are additive nullable columns — safe to add because `transcript_nodes` is **brand-new in this increment** (a fresh/promotable DB), the store having no `ALTER`-based migration.
+Both `source_*` columns are batch-level: stamped on every node of one sidecar file, `NULL` for the main file. Because the store has **no `ALTER`-based migration** (tables are created once, fully-formed, and never altered), `transcript_nodes` is introduced **with these columns from the start** — this feature ships as a single commit, so no reachable revision ever creates a narrower version of the table that a persistent `~/.pi/basecamp/claude/daemon.db` could then diverge from. Adding a column in a follow-up would silently break ingestion against an already-created table (`CREATE TABLE IF NOT EXISTS` is a no-op, and `record_nodes` would reference a missing column); the single-commit introduction is what keeps that from happening.
 
 Indexes: `session_id`, `parent_uuid`, `source_tool_use_id` (parent → children lookup). `INSERT OR IGNORE` + the `uuid` PK is the whole idempotency and fork-dedup story.
 
@@ -79,7 +79,7 @@ SessionEnd / PreCompact / SubagentStop hook  →  client.ingest_transcript (best
 - **`hooks/session.py`** — `handle_pre_compact` (main only, payload path), `handle_session_end` (ingests with `sweep_sidecars=True` **before closing the episode** so tail nodes are tagged with the ending engagement), and `handle_subagent_stop` (targets the payload's `agent_transcript_path`).
 - **`app.py`** — a shutdown `lifespan` drains the ingest scheduler (bounded, 3s) so a detached SessionEnd ingest completes before the process exits; the respawn path's stop timeout (`client/process.py`, 5s) is held above that window so a graceful drain beats SIGKILL.
 
-Concurrency: ingest now writes on a background thread while lifecycle writes continue on the request path, so `_connect()` sets `PRAGMA busy_timeout` — a contended write waits rather than erroring; `INSERT OR IGNORE` keeps concurrent ingests safe.
+Concurrency: ingest writes on background threads (parallel `SubagentStop` sweeps can run several at once) while lifecycle reads/writes continue on the request path. `_init_db` enables **`journal_mode=WAL`** so readers never block behind the single writer — otherwise a background ingest write could stall the `/ingest` route's synchronous reads (`get_transcript_path`/`current_episode_id`) until `busy_timeout` elapsed and they errored, and a 500 there would be silently read as "not scheduled" by the fail-open client, dropping the guaranteed SessionEnd ingest. `_connect` still sets `PRAGMA busy_timeout` (per-connection) so a contended *write* waits rather than erroring, and the route wraps its reads in a `try/except sqlite3.OperationalError` that degrades to an explicit `{scheduled: false}` instead of an unhandled 500. `INSERT OR IGNORE` keeps concurrent ingests safe.
 
 ## 6. Non-goals (deferred, by decision)
 

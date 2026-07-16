@@ -32,8 +32,8 @@ from .transcripts import TranscriptsMixin
 
 __all__ = ["SessionStore"]
 
-#: Wait (ms) for a contended write lock rather than failing. Ingest now runs on a
-#: background thread while lifecycle writes continue on the request path, so a
+#: Wait (ms) for a contended write lock rather than failing. Ingest runs on a
+#: background thread while lifecycle reads/writes continue on the request path, so a
 #: brief busy wait replaces a "database is locked" error under that concurrency.
 _BUSY_TIMEOUT_MS = 5000
 
@@ -55,14 +55,26 @@ class SessionStore(SessionsMixin, EpisodesMixin, TranscriptsMixin):
         return datetime.now(UTC).isoformat()
 
     def _init_db(self) -> None:
-        """Create both objects' tables on one connection.
+        """Enable WAL, then create every object's table on one connection.
 
         Order-independent: every table uses ``IF NOT EXISTS`` and holds no declared
         FK constraint (``episodes.session_id`` is a logical ref), so each object
         initializes its own schema in isolation — same convention as the Pi store.
+
+        ``journal_mode=WAL`` is a **persistent, file-level** property set once here (it
+        survives across connections and daemon restarts). Under the default rollback
+        journal a write takes a file lock that blocks every reader, so a background
+        ingest write (e.g. parallel ``SubagentStop`` sweeps) could stall the request
+        path's reads — ``get_transcript_path``/``current_episode_id`` behind the
+        ``/ingest`` route — until ``busy_timeout`` elapsed and they errored, silently
+        dropping the guaranteed SessionEnd ingest. WAL lets readers run concurrently
+        with the single writer, so those reads no longer block behind an ingest. Set
+        before any DDL so it is not attempted inside a transaction; an existing
+        rollback-mode DB is flipped to WAL on the next daemon start.
         """
 
         with self._connect() as connection:
+            connection.execute("PRAGMA journal_mode=WAL")
             self._init_sessions_schema(connection)
             self._init_episodes_schema(connection)
             self._init_transcripts_schema(connection)

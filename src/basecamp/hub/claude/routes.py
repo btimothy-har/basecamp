@@ -15,6 +15,8 @@ frame package can be deleted without touching this path.
 from __future__ import annotations
 
 import asyncio
+import logging
+import sqlite3
 from collections.abc import Callable
 from typing import Any
 
@@ -23,6 +25,8 @@ from fastapi import FastAPI
 from .contract import CLAUDE_PROTOCOL_VERSION, SessionEndBody, SessionRegisterBody, TranscriptIngestBody
 from .ingest import IngestScheduler
 from .store import SessionStore
+
+logger = logging.getLogger(__name__)
 
 ScheduleIngest = Callable[..., None]
 
@@ -72,12 +76,19 @@ def register_claude_routes(
     async def ingest_transcript(session_id: str, body: TranscriptIngestBody) -> dict[str, Any]:
         # Resolve path + live episode synchronously (episode may close right after a
         # SessionEnd ingest), then hand the slow file parse to the background scheduler.
-        transcript_path = body.transcript_path or await asyncio.to_thread(store.get_transcript_path, session_id)
+        # WAL keeps these reads from blocking behind an in-flight ingest write, but a
+        # contended lock can still time out; degrade to an explicit not-scheduled reply
+        # rather than a 500 the fail-open client would silently read as "not scheduled".
+        try:
+            transcript_path = body.transcript_path or await asyncio.to_thread(store.get_transcript_path, session_id)
+            episode_id = await asyncio.to_thread(store.current_episode_id, session_id=session_id)
+        except sqlite3.OperationalError:
+            logger.warning("ingest not scheduled: store busy resolving session %s", session_id)
+            return {"session_id": session_id, "scheduled": False, "reason": "store busy"}
         # A SubagentStop targets its own sidecar and needs no main path; every other
         # trigger reads the main file, so a missing path there is nothing to ingest.
         if not transcript_path and not body.agent_transcript_path:
             return {"session_id": session_id, "scheduled": False, "reason": "no transcript path"}
-        episode_id = await asyncio.to_thread(store.current_episode_id, session_id=session_id)
         schedule_ingest(
             session_id=session_id,
             transcript_path=transcript_path,

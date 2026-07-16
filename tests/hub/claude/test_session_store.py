@@ -17,6 +17,17 @@ def _live_session(store: SessionStore, session_id: str, *, source: str | None = 
     store.open_episode(session_id=session_id, source=source)
 
 
+def test_store_enables_wal_mode(tmp_path: Path) -> None:
+    # WAL is what keeps request-path reads from blocking behind a background ingest
+    # write; it is a persistent file property, so it holds on a reopened DB too.
+    db_path = tmp_path / "daemon.db"
+    SessionStore(db_path=db_path)
+
+    with sqlite3.connect(db_path) as connection:
+        mode = connection.execute("PRAGMA journal_mode").fetchone()[0]
+    assert mode.lower() == "wal"
+
+
 def test_registered_session_with_open_episode_is_live(tmp_path: Path) -> None:
     store = SessionStore(db_path=tmp_path / "daemon.db")
 
