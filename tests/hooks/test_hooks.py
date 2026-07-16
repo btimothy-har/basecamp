@@ -99,6 +99,20 @@ def test_session_start_registers_valid_session(monkeypatch: pytest.MonkeyPatch) 
     assert body.source == "startup"
 
 
+def test_session_start_normalizes_empty_string_fields_to_none(monkeypatch: pytest.MonkeyPatch) -> None:
+    # An empty source/transcript is treated as absent (NULL), not stored as "".
+    bodies = []
+    monkeypatch.setattr(session_mod, "register_session", bodies.append)
+
+    session_mod.handle_session_start(
+        {"session_id": "s1", "cwd": "/work", "transcript_path": "", "source": ""},
+        env={"BASECAMP_REPO": "acme/widgets"},
+    )
+
+    assert bodies[0].source is None
+    assert bodies[0].transcript_path is None
+
+
 def test_session_start_skips_subagent(monkeypatch: pytest.MonkeyPatch) -> None:
     called = []
     monkeypatch.setattr(session_mod, "register_session", called.append)
@@ -145,6 +159,15 @@ def test_session_end_threads_absent_reason_as_none(monkeypatch: pytest.MonkeyPat
     monkeypatch.setattr(session_mod, "end_session", lambda sid, *, reason=None: ended.append((sid, reason)))
 
     session_mod.handle_session_end({"session_id": "s1"})
+
+    assert ended == [("s1", None)]
+
+
+def test_session_end_normalizes_empty_reason_to_none(monkeypatch: pytest.MonkeyPatch) -> None:
+    ended = []
+    monkeypatch.setattr(session_mod, "end_session", lambda sid, *, reason=None: ended.append((sid, reason)))
+
+    session_mod.handle_session_end({"session_id": "s1", "reason": ""})
 
     assert ended == [("s1", None)]
 

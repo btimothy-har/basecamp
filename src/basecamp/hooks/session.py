@@ -22,6 +22,18 @@ from typing import Any
 from basecamp.hub.claude.client import build_register_body, end_session, register_session
 
 
+def _str_field(payload: Mapping[str, Any], key: str) -> str | None:
+    """Return a non-empty string payload field, else ``None``.
+
+    Normalizes an empty string to ``None`` (mirroring the identity builder's
+    ``_clean``) so an absent ``source``/``reason``/``cwd`` is stored as NULL rather
+    than "" if Claude Code ever sends the key with an empty value.
+    """
+
+    value = payload.get(key)
+    return value if isinstance(value, str) and value else None
+
+
 def handle_session_start(payload: Mapping[str, Any], *, env: Mapping[str, str] | None = None) -> None:
     """Register a top-level session and open a fresh episode for it."""
 
@@ -30,9 +42,9 @@ def handle_session_start(payload: Mapping[str, Any], *, env: Mapping[str, str] |
     session_id = payload.get("session_id")
     if not isinstance(session_id, str) or not session_id:
         return
-    cwd = payload.get("cwd") if isinstance(payload.get("cwd"), str) else None
-    transcript = payload.get("transcript_path") if isinstance(payload.get("transcript_path"), str) else None
-    source = payload.get("source") if isinstance(payload.get("source"), str) else None
+    cwd = _str_field(payload, "cwd")
+    transcript = _str_field(payload, "transcript_path")
+    source = _str_field(payload, "source")
     body = build_register_body(
         session_id=session_id,
         cwd=cwd or os.getcwd(),
@@ -54,5 +66,5 @@ def handle_session_end(payload: Mapping[str, Any]) -> None:
     session_id = payload.get("session_id")
     if not isinstance(session_id, str) or not session_id:
         return
-    reason = payload.get("reason") if isinstance(payload.get("reason"), str) else None
+    reason = _str_field(payload, "reason")
     end_session(session_id, reason=reason)
