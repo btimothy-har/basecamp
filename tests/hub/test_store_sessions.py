@@ -82,14 +82,52 @@ def test_list_open_sessions_excludes_ended_and_orders_by_last_seen(tmp_path: Pat
     assert open_ids == ["new", "mid", "old"]
 
 
+def test_list_open_sessions_excludes_workers(tmp_path: Path) -> None:
+    # Dispatched swarm workers (role='worker') share the agents table but are never
+    # ended via a SessionEnd hook, so list_open_sessions must not report them.
+    store = Store(db_path=tmp_path / "daemon.db")
+    _register(store, "session-1", role="agent")
+    _register(store, "worker-1", role="worker", depth=1, parent_id="session-1")
+
+    open_ids = [row["id"] for row in store.list_open_sessions()]
+    assert open_ids == ["session-1"]
+
+
+def test_pre_migration_rows_are_backfilled_as_ended(tmp_path: Path) -> None:
+    # A realistic pre-ended_at database (schema already past the role remap, i.e.
+    # user_version=1, but with no ended_at column). Its rows predate the hook
+    # lifecycle, so opening the store must backfill them as ended rather than
+    # report them as open forever.
+    db_path = tmp_path / "daemon.db"
+    with sqlite3.connect(db_path) as connection:
+        connection.execute(
+            """
+            CREATE TABLE agents (
+                id TEXT PRIMARY KEY, parent_id TEXT, depth INTEGER, role TEXT,
+                session_name TEXT, cwd TEXT, created_at TEXT, last_seen_at TEXT
+            )
+            """
+        )
+        connection.execute(
+            """
+            INSERT INTO agents (id, role, depth, created_at, last_seen_at)
+            VALUES ('stale', 'agent', 0, NULL, '2020-01-01T00:00:00+00:00')
+            """
+        )
+        connection.execute("PRAGMA user_version = 1")
+        connection.commit()
+
+    store = Store(db_path=db_path)
+
+    assert store.list_open_sessions() == []
+
+
 def test_list_open_sessions_projects_identity_facets(tmp_path: Path) -> None:
     store = Store(db_path=tmp_path / "daemon.db")
     _register(
         store,
         "session-1",
-        role="worker",
-        depth=1,
-        parent_id="root",
+        role="agent",
         session_file="/transcripts/session-1.jsonl",
         repo="acme/widgets",
         worktree_label="copilot/brave-otter-quill",
@@ -102,8 +140,8 @@ def test_list_open_sessions_projects_identity_facets(tmp_path: Path) -> None:
     assert row["repo"] == "acme/widgets"
     assert row["worktree_label"] == "copilot/brave-otter-quill"
     assert row["session_file"] == "/transcripts/session-1.jsonl"
-    assert row["role"] == "worker"
-    assert row["parent_id"] == "root"
+    assert row["role"] == "agent"
+    assert row["parent_id"] is None
     assert set(row) == {
         "id",
         "role",

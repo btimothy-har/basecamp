@@ -121,16 +121,27 @@ def test_session_end_marks_ended(monkeypatch: pytest.MonkeyPatch) -> None:
     ended = []
     monkeypatch.setattr(session_mod, "end_session", ended.append)
 
-    session_mod.handle_session_end({"session_id": "s1"})
+    session_mod.handle_session_end({"session_id": "s1"}, env={})
 
     assert ended == ["s1"]
+
+
+def test_session_end_keys_on_agent_id_when_set(monkeypatch: pytest.MonkeyPatch) -> None:
+    # A daemon-spawned worker registers under BASECAMP_AGENT_ID, so it must be
+    # ended under the same key — not the native session id.
+    ended = []
+    monkeypatch.setattr(session_mod, "end_session", ended.append)
+
+    session_mod.handle_session_end({"session_id": "s1"}, env={"BASECAMP_AGENT_ID": "node-9"})
+
+    assert ended == ["node-9"]
 
 
 def test_session_end_skips_missing_session_id(monkeypatch: pytest.MonkeyPatch) -> None:
     ended = []
     monkeypatch.setattr(session_mod, "end_session", ended.append)
 
-    session_mod.handle_session_end({})
-    session_mod.handle_session_end({"session_id": ""})
+    session_mod.handle_session_end({}, env={})
+    session_mod.handle_session_end({"session_id": ""}, env={})
 
     assert ended == []

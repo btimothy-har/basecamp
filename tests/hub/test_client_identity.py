@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from basecamp.hub.client.identity import _parse_repo_identity, build_register_frame
+from basecamp.hub.client.identity import _parse_repo_identity, build_register_frame, resolve_node_id
 
 
 def test_env_driven_worker_populates_all_facets() -> None:
@@ -94,10 +94,23 @@ def test_depth_is_sanitized(depth_raw: str, expected: int) -> None:
         ("https://host/org/sub/widgets.git", "sub/widgets"),
         ("widgets", None),
         ("", None),
+        # Filesystem-path origins are not remote URLs: return None so the caller
+        # falls through to the toplevel basename, matching derive_repo_identity.
+        ("/home/user/org/repo", None),
+        ("file:///srv/git/org/repo.git", None),
     ],
 )
 def test_parse_repo_identity(url: str, expected: str | None) -> None:
     assert _parse_repo_identity(url) == expected
+
+
+def test_resolve_node_id_prefers_agent_id() -> None:
+    assert resolve_node_id("sess-1", {"BASECAMP_AGENT_ID": "node-9"}) == "node-9"
+
+
+def test_resolve_node_id_falls_back_to_session_id() -> None:
+    assert resolve_node_id("sess-1", {}) == "sess-1"
+    assert resolve_node_id("sess-1", {"BASECAMP_AGENT_ID": "   "}) == "sess-1"
 
 
 def test_repo_derived_from_git_origin(tmp_path: Path) -> None:

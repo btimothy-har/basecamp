@@ -12,7 +12,7 @@ import os
 from collections.abc import Mapping
 from typing import Any
 
-from basecamp.hub.client import build_register_frame, end_session, register_session
+from basecamp.hub.client import build_register_frame, end_session, register_session, resolve_node_id
 
 
 def handle_session_start(payload: Mapping[str, Any], *, env: Mapping[str, str] | None = None) -> None:
@@ -34,10 +34,15 @@ def handle_session_start(payload: Mapping[str, Any], *, env: Mapping[str, str] |
     register_session(frame)
 
 
-def handle_session_end(payload: Mapping[str, Any]) -> None:
-    """Mark a session ended (best-effort; no-op if the daemon is down)."""
+def handle_session_end(payload: Mapping[str, Any], *, env: Mapping[str, str] | None = None) -> None:
+    """Mark a session ended (best-effort; no-op if the daemon is down).
+
+    Deregisters under the same key SessionStart registered — ``BASECAMP_AGENT_ID``
+    when set, else the native session id — so a daemon-spawned worker's row is
+    actually closed instead of left dangling.
+    """
 
     session_id = payload.get("session_id")
     if not isinstance(session_id, str) or not session_id:
         return
-    end_session(session_id)
+    end_session(resolve_node_id(session_id, env))

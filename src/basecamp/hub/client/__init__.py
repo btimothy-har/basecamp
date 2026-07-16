@@ -9,7 +9,7 @@ the daemon's FastAPI/uvicorn app.
 from __future__ import annotations
 
 from .errors import DaemonError, DaemonProtocolMismatchError, DaemonUnavailableError
-from .identity import build_register_frame
+from .identity import build_register_frame, resolve_node_id
 from .paths import DaemonPaths, daemon_paths
 from .sessions import RegisterOutcome, end_session, register_session
 from .spawn import ensure_daemon
@@ -29,4 +29,5 @@ __all__ = [
     "health_ping",
     "post_json",
     "register_session",
+    "resolve_node_id",
 ]

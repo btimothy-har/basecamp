@@ -26,10 +26,17 @@ class AgentsReaderMixin:
             return dict(row) if row is not None else None
 
     def list_open_sessions(self) -> list[dict[str, Any]]:
-        """Return registered sessions that are still open (``ended_at IS NULL``).
+        """Return open top-level *sessions* (``role = 'agent'``, ``ended_at IS NULL``).
 
         Ordered most-recently-seen first. This is the durable, restart-surviving
-        view of live sessions the hook-driven lifecycle registers.
+        view of the top-level sessions the hook-driven lifecycle registers.
+
+        The ``role = 'agent'`` filter is the mirror of the swarm directory's
+        ``role != 'agent'`` clause (see :meth:`get_root_agent_directory`): dispatched
+        swarm workers are ``role = 'worker'`` and are reaped via the run/disconnect
+        path, never via a SessionEnd hook, so without this filter their rows (which
+        keep ``ended_at IS NULL``) would accumulate here unbounded and conflate
+        backgrounded workers with hook-registered sessions.
         """
 
         with self._connect() as connection:
@@ -39,7 +46,7 @@ class AgentsReaderMixin:
                 SELECT id, role, depth, parent_id, session_name, cwd,
                        session_file, repo, worktree_label, created_at, last_seen_at
                 FROM agents
-                WHERE ended_at IS NULL
+                WHERE ended_at IS NULL AND role = 'agent'
                 ORDER BY last_seen_at DESC
                 """
             ).fetchall()

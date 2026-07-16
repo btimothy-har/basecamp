@@ -11,10 +11,12 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
+import httpx
+
 from ..frames import RegisterFrame, serialize_frame
 from .paths import DaemonPaths, daemon_paths
 from .spawn import ensure_daemon
-from .transport import health_ping, post_json
+from .transport import post_json
 
 
 @dataclass(frozen=True)
@@ -35,11 +37,16 @@ def register_session(frame: RegisterFrame, *, paths: DaemonPaths | None = None) 
 
 
 def end_session(session_id: str, *, paths: DaemonPaths | None = None) -> bool:
-    """Best-effort mark a session ended; ``False`` if no daemon is reachable."""
+    """Best-effort mark a session ended; ``False`` if the daemon is unreachable.
+
+    Never spawns a daemon (nothing to end if none is reachable) and never raises:
+    a single POST whose transport failure — no socket, connection refused mid-race
+    — resolves to ``False`` instead of two round-trips (health probe + POST).
+    """
 
     resolved = paths or daemon_paths()
-    socket = str(resolved.socket)
-    if not health_ping(socket).ok:
+    try:
+        status, body = post_json(str(resolved.socket), f"/sessions/{session_id}/end", {})
+    except (httpx.HTTPError, OSError):
         return False
-    status, body = post_json(socket, f"/sessions/{session_id}/end", {})
     return status == 200 and isinstance(body, dict) and bool(body.get("ended"))
