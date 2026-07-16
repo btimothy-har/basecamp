@@ -1,22 +1,24 @@
 # Claude Code Compatibility — Decision & Rationale
 
-**Status:** DECIDED (2026-07) · **Scope:** Why basecamp standardizes on Claude Code, and how it maps · **Supersedes:** the launcher / full-system-prompt-replacement design this doc previously specified (abandoned — see §3) · **Delivery design:** [`claude/README.md`](../../claude/README.md) (the plugin + MCP context server) · **Prior art:** a working pre-Pi Claude Code app in deleted history (§5) · **Related:** [async-agents](./async-agents.md)
+**Status:** DECIDED (2026-07) · **Scope:** Why basecamp standardizes on Claude Code, and how it maps · **Supersedes:** the launcher / full-system-prompt-replacement design this doc previously specified (abandoned — see §3) · **Delivery design:** [`claude/README.md`](../../claude/README.md) (the plugin + MCP context server) · **Prior art:** a working pre-Pi Claude Code app in deleted history (§5) · **Related:** [async-agents](./async-agents.md), [transcript-ingestion](./transcript-ingestion.md) · **Refinement:** the hub is kept-slimmed, not retired — see the correction note below
 
 basecamp standardizes on **Claude Code as its single runtime** for both work and personal use; the Pi extension is retired rather than maintained in parallel. This document records the decision and its rationale. The *delivery* — a Claude Code plugin bundling native components plus a stdio MCP context server — is specified in [`claude/README.md`](../../claude/README.md); this doc is the *why* above it.
+
+> **Correction (2026-07, post-decision refinement).** "Retire the hub" was too strong. What is retired is the **Pi *swarm* daemon** — its WebSocket wire, dispatch mesh, and analysis pipeline. A **slimmed, all-Python hub daemon is kept**, rebuilt clean-room over a Unix socket to persist coordination state: `sessions` + `episodes` + `transcript_nodes`, and workstreams. The load-bearing insight is that the old hub's real cost was the **cross-language TS↔Python wire protocol** (hand-maintained in triplicate), *not* the daemon itself — going all-Python (one versioned contract) removes that cost, which reverses the retire-the-hub call. Transcript *content* now lands in this daemon: see [transcript-ingestion](./transcript-ingestion.md). The `🗑️ retired` daemon row in §4 is re-scoped accordingly.
 
 ---
 
 ## 1. Decision
 
 - **One runtime, not two.** The forcing question was never "Pi vs. Claude Code" but "one runtime or two." A Pi extension for work plus a Claude Code port for personal use is a 2× solo maintenance burden with no offsetting benefit — and "work = Pi" is a *choice*, not a constraint (no other user depends on basecamp-on-Pi). One runtime dissolves the cross-runtime convergence problem outright: no hub bridge, no two extensions, no shared-protocol tax.
-- **The runtime is Claude Code.** basecamp becomes a Claude Code plugin; the Pi extension and its Python daemon are retired.
+- **The runtime is Claude Code.** basecamp becomes a Claude Code plugin; the Pi extension and its *swarm* daemon are retired (a slimmed all-Python hub daemon is kept — see the correction note above).
 
 ## 2. Rationale
 
 - **Leverage over rebuild.** Most of basecamp exists to give Pi what Claude Code ships natively — MCP, subagents + workflows, skills, code review, browser tools, task/plan tracking, model selection, native git worktrees. That scaffolding is *retired, not lost*: the capability is native. Pi hand-builds every future feature; Claude Code inherits Anthropic's platform investment — including net-new capabilities (scheduling, routines, cloud agents) — for free.
 - **No real capability loss.** The candidate losses did not survive scrutiny. (1) Full prompt control — §3 abandons *full replacement*, but the MCP-`instructions` + resources channel carries basecamp's project context natively, which is the need it served. (2) TUI — Claude Code's own is preferred. (3) Mature agent intercommunication — basecamp's own is *young, not mature* (the wire protocol has churned steadily, v15 → v23 and counting; mutative agents re-enabled at HEAD), so it is low-loss to drop and a burden to keep; Anthropic's Agent Teams is the maintained successor. Cross-session coordination, if still wanted, survives as an *optional* daemon-backed Tier-2 MCP layer ([`claude/README.md`](../../claude/README.md)), not a mandatory port.
-- **Sunk cost is not a reason.** The hub daemon, companion TUI, and ~half the extension are real work, but sunk — and much of it existed only to compensate for Pi's barebones runtime.
-- **Situational awareness without the hub.** The one durable want the hub served splits cleanly: in-session observability → external tools (Herdr / hunk.dev); cross-session context continuity → the dossier (a shared Logseq/markdown record). Leverage-don't-build applies here too.
+- **Sunk cost is not a reason.** The Pi swarm mesh, companion TUI, and ~half the extension are real work, but sunk — and much of it existed only to compensate for Pi's barebones runtime. (The hub *daemon* itself is kept, slimmed to an all-Python coordination store — see the correction note above.)
+- **Awareness doesn't depend on the daemon.** The one durable want the hub served splits cleanly: in-session observability → external tools (Herdr / hunk.dev); cross-session context continuity → the dossier (a shared Logseq/markdown record). Tier-0 awareness is pure config resolution and works even when the daemon is down; the kept hub is for *coordination* (and now transcript storage), never a prerequisite for awareness.
 
 ## 3. Delivery: plugin, not launcher (a pivot)
 
@@ -53,10 +55,11 @@ Per basecamp capability: whether Claude Code covers it natively (a gain — noth
 | Agent modes (analysis/planning/work) | Plan mode + posture text | 🟡 partial — copilot/workstream dropped |
 | Cross-session intercommunication | optional daemon-backed Tier-2 MCP | 🟡 optional — young; Agent Teams is the successor |
 | Full system-prompt replacement | — (MCP context injection suffices) | 🗑️ dropped by design |
-| Custom TUI chrome | native TUI + statusline | 🗑️ dropped (native preferred) |
-| Hub daemon · companion · workstream SQLite | — | 🗑️ retired |
+| Custom TUI chrome · companion dashboard | native TUI + statusline (+ external Herdr) | 🗑️ dropped (native preferred) |
+| Pi swarm daemon (WebSocket · dispatch · analysis mesh) | — | 🗑️ retired |
+| Hub daemon: sessions · episodes · transcripts · workstream SQLite | slimmed all-Python daemon over UDS | 🟢 kept (clean-room rebuild) |
 
-**In one line:** the ✅/🟢 rows are native or near-native (retired *scaffolding*, not lost *capability*); the 🟡 rows are the real build (worktree scheme, guards, optional orchestration); the 🗑️ rows are dropped by decision, not by inability. Cross-session orchestration remains available only as the *optional* Tier-2 layer, never a requirement.
+**In one line:** most ✅/🟢 rows are native or near-native (retired *scaffolding*, not lost *capability*) — the exception is the kept hub daemon, a deliberate slimmed rebuild that is the Tier-2 coordination substrate (and now the transcript store); the 🟡 rows are the real build (worktree scheme, guards, optional orchestration); the 🗑️ rows are dropped by decision, not by inability. Cross-session orchestration remains available only as the *optional* Tier-2 layer, never a requirement.
 
 ## 5. Prior art (recover, don't rebuild)
 

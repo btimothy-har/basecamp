@@ -17,6 +17,17 @@ def _live_session(store: SessionStore, session_id: str, *, source: str | None = 
     store.open_episode(session_id=session_id, source=source)
 
 
+def test_store_enables_wal_mode(tmp_path: Path) -> None:
+    # WAL is what keeps request-path reads from blocking behind a background ingest
+    # write; it is a persistent file property, so it holds on a reopened DB too.
+    db_path = tmp_path / "daemon.db"
+    SessionStore(db_path=db_path)
+
+    with sqlite3.connect(db_path) as connection:
+        mode = connection.execute("PRAGMA journal_mode").fetchone()[0]
+    assert mode.lower() == "wal"
+
+
 def test_registered_session_with_open_episode_is_live(tmp_path: Path) -> None:
     store = SessionStore(db_path=tmp_path / "daemon.db")
 
@@ -115,6 +126,16 @@ def test_list_open_sessions_projects_identity_and_live_episode_facets(tmp_path: 
         "episode_source",
         "episode_started_at",
     }
+
+
+def test_get_transcript_path_returns_stored_path_or_none(tmp_path: Path) -> None:
+    store = SessionStore(db_path=tmp_path / "daemon.db")
+    store.upsert_session(session_id="s1", cwd="/tmp/s1", transcript_path="/transcripts/s1.jsonl")
+    store.upsert_session(session_id="s2", cwd="/tmp/s2")  # no transcript path
+
+    assert store.get_transcript_path("s1") == "/transcripts/s1.jsonl"
+    assert store.get_transcript_path("s2") is None
+    assert store.get_transcript_path("unknown") is None
 
 
 def test_store_defaults_db_path_under_the_claude_runtime(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

@@ -3,7 +3,10 @@
 Short-lived SessionStart/SessionEnd hooks POST here rather than holding a
 WebSocket: liveness is a durable ``episodes`` row in the store, not a live
 connection (a hook process exits the instant it returns). Register opens an
-episode; end closes it; the durable ``sessions`` row is never ended. The wire
+episode; end closes it; the durable ``sessions`` row is never ended. Ingest is
+the one route that touches the transcript itself: the PreCompact/SessionEnd hook
+POSTs here and the daemon reads the on-disk JSONL, returning before the
+(backgrounded) parse finishes. The wire
 bodies are the Claude-owned :mod:`..contract` models — no ``hub/frames``
 dependency — so FastAPI validates ``session_id``/``cwd`` for free and the Pi
 frame package can be deleted without touching this path.
@@ -12,16 +15,39 @@ frame package can be deleted without touching this path.
 from __future__ import annotations
 
 import asyncio
+import logging
+import sqlite3
+from collections.abc import Callable
 from typing import Any
 
 from fastapi import FastAPI
 
-from .contract import CLAUDE_PROTOCOL_VERSION, SessionEndBody, SessionRegisterBody
+from .contract import CLAUDE_PROTOCOL_VERSION, SessionEndBody, SessionRegisterBody, TranscriptIngestBody
+from .ingest import IngestScheduler
 from .store import SessionStore
 
+logger = logging.getLogger(__name__)
 
-def register_claude_routes(app: FastAPI, *, store: SessionStore) -> None:
-    """Register the Claude daemon's health + session-lifecycle endpoints on ``app``."""
+ScheduleIngest = Callable[..., None]
+
+
+def register_claude_routes(
+    app: FastAPI,
+    *,
+    store: SessionStore,
+    schedule_ingest: ScheduleIngest | None = None,
+) -> None:
+    """Register the Claude daemon's health + session-lifecycle + ingest endpoints.
+
+    ``schedule_ingest`` is the seam for firing a background transcript ingest;
+    when omitted a default :class:`IngestScheduler` over ``store`` is used (tests
+    inject a recorder to assert scheduling without touching the filesystem).
+    """
+
+    if schedule_ingest is None:
+        scheduler = IngestScheduler(store)
+        app.state.ingest_scheduler = scheduler
+        schedule_ingest = scheduler.schedule
 
     @app.get("/health")
     async def health() -> dict[str, Any]:
@@ -43,8 +69,46 @@ def register_claude_routes(app: FastAPI, *, store: SessionStore) -> None:
 
     @app.post("/sessions/{session_id}/end")
     async def end_session(session_id: str, body: SessionEndBody) -> dict[str, Any]:
-        ended = await asyncio.to_thread(store.close_episode, session_id=session_id, reason=body.reason)
+        # ``close_episode`` is a write, and the SessionEnd hook fires the (backgrounded)
+        # sidecar-sweep ingest immediately before this /end. Under WAL readers no longer
+        # block, but SQLite is still single-writer, so this UPDATE can wait behind the
+        # in-flight ingest write up to ``busy_timeout`` and then raise. Unguarded that is
+        # a 500 the fail-open client reads as ``ended: false`` — and unlike a delayed
+        # ingest the episode's ``end_reason`` is then lost for good (the next
+        # ``open_episode`` force-closes it with a NULL reason). Degrade explicitly, the
+        # same way /ingest does, rather than surfacing an unhandled error.
+        try:
+            ended = await asyncio.to_thread(store.close_episode, session_id=session_id, reason=body.reason)
+        except sqlite3.OperationalError:
+            logger.warning("session end not recorded: store busy closing episode for %s", session_id)
+            return {"session_id": session_id, "ended": False, "reason": "store busy"}
         return {"session_id": session_id, "ended": ended}
+
+    @app.post("/sessions/{session_id}/ingest")
+    async def ingest_transcript(session_id: str, body: TranscriptIngestBody) -> dict[str, Any]:
+        # Resolve path + live episode synchronously (episode may close right after a
+        # SessionEnd ingest), then hand the slow file parse to the background scheduler.
+        # WAL keeps these reads from blocking behind an in-flight ingest write, but a
+        # contended lock can still time out; degrade to an explicit not-scheduled reply
+        # rather than a 500 the fail-open client would silently read as "not scheduled".
+        try:
+            transcript_path = body.transcript_path or await asyncio.to_thread(store.get_transcript_path, session_id)
+            episode_id = await asyncio.to_thread(store.current_episode_id, session_id=session_id)
+        except sqlite3.OperationalError:
+            logger.warning("ingest not scheduled: store busy resolving session %s", session_id)
+            return {"session_id": session_id, "scheduled": False, "reason": "store busy"}
+        # A SubagentStop targets its own sidecar and needs no main path; every other
+        # trigger reads the main file, so a missing path there is nothing to ingest.
+        if not transcript_path and not body.agent_transcript_path:
+            return {"session_id": session_id, "scheduled": False, "reason": "no transcript path"}
+        schedule_ingest(
+            session_id=session_id,
+            transcript_path=transcript_path,
+            episode_id=episode_id,
+            sweep_sidecars=body.sweep_sidecars,
+            agent_transcript_path=body.agent_transcript_path,
+        )
+        return {"session_id": session_id, "scheduled": True}
 
     @app.get("/sessions")
     async def list_sessions() -> dict[str, Any]:
