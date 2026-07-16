@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from basecamp.hub.client.identity import _parse_repo_identity, build_register_frame, resolve_node_id
+from basecamp.hub.claude.client.identity import _parse_repo_identity, build_register_frame, resolve_node_id
 
 
 def test_env_driven_worker_populates_all_facets() -> None:

@@ -37,7 +37,6 @@ from .frames import (
 )
 from .http_routes import register_http_routes
 from .registry import Registry
-from .session_routes import register_session_routes
 from .store import DuplicateAgentHandleError, Store
 from .swarm.service import (
     AcceptedPeerMessage,
@@ -106,7 +105,6 @@ def create_app(
     delivery_tasks: set[asyncio.Task[None]] = set()
 
     register_http_routes(app, store=store, registry=registry)
-    register_session_routes(app, store=store)
 
     @app.websocket("/ws")
     async def websocket_endpoint(websocket: WebSocket) -> None:

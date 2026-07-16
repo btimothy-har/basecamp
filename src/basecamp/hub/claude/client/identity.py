@@ -15,7 +15,7 @@ import re
 import subprocess
 from collections.abc import Mapping
 
-from ..frames import RegisterFrame
+from ...frames import RegisterFrame
 
 # Bounded so a slow/hung git never stacks toward the SessionStart hook timeout:
 # two sequential calls (origin + toplevel) plus ensure_daemon's 5s budget must

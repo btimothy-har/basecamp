@@ -10,7 +10,6 @@ import rich_click as click
 from basecamp.companion.app import run_companion
 from basecamp.core.cli.config_group import config
 from basecamp.core.exceptions import LauncherError
-from basecamp.hub.server import run_hub
 from basecamp.installer import run_interactive_install
 from basecamp.setup import execute_setup
 from basecamp.workspace.ui import err_console
@@ -97,9 +96,30 @@ def dashboard(snapshot_path: Path, cwd: Path, scratch_dir: Path | None) -> None:
     type=click.Path(path_type=Path),
     help="Optional path to write the daemon PID file.",
 )
-def hub(uds_path: Path, db_path: Path | None, pidfile_path: Path | None) -> None:
-    """Run the basecamp hub daemon."""
-    run_hub(str(uds_path), str(db_path) if db_path else None, str(pidfile_path) if pidfile_path else None)
+@click.option(
+    "--legacy",
+    is_flag=True,
+    help="Run the legacy Pi swarm daemon instead of the Claude session hub.",
+)
+def hub(uds_path: Path, db_path: Path | None, pidfile_path: Path | None, *, legacy: bool) -> None:
+    """Run the basecamp hub daemon (the Claude session hub by default).
+
+    Imports are deferred so the default Claude daemon never pulls in the Pi swarm
+    service graph (``basecamp.hub.server``) just to start.
+    """
+    db = str(db_path) if db_path else None
+    pidfile = str(pidfile_path) if pidfile_path else None
+    if legacy:
+        # Lazy: importing the Pi server pulls in the whole swarm service graph.
+        from basecamp.hub.server import run_hub  # noqa: PLC0415
+
+        run_hub(str(uds_path), db, pidfile)
+        return
+
+    # Lazy for symmetry (and so the default path stays swarm-free by construction).
+    from basecamp.hub.claude.server import run_claude_hub  # noqa: PLC0415
+
+    run_claude_hub(str(uds_path), db, pidfile)
 
 
 @basecamp.command()

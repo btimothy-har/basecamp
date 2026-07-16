@@ -13,7 +13,7 @@ import os
 from collections.abc import Mapping
 from typing import Any
 
-from basecamp.hub.client import build_register_frame, end_session, register_session, resolve_node_id
+from basecamp.hub.claude.client import build_register_frame, end_session, register_session, resolve_node_id
 
 # SessionEnd reasons where the *same* session_id keeps running — /clear (context
 # reset) and resume (conversation reload), each paired with a SessionStart

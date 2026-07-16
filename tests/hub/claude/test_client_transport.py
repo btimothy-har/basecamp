@@ -14,15 +14,15 @@ import httpx
 import pytest
 import uvicorn
 
-from basecamp.hub.app import create_app
-from basecamp.hub.client import transport as transport_mod
-from basecamp.hub.client.identity import build_register_frame
-from basecamp.hub.client.paths import DaemonPaths
-from basecamp.hub.client.sessions import end_session, register_session
-from basecamp.hub.client.transport import HealthResult, health_ping
+from basecamp.hub.claude.app import create_claude_app
+from basecamp.hub.claude.client import transport as transport_mod
+from basecamp.hub.claude.client.identity import build_register_frame
+from basecamp.hub.claude.client.paths import DaemonPaths
+from basecamp.hub.claude.client.sessions import end_session, register_session
+from basecamp.hub.claude.client.transport import HealthResult, health_ping
+from basecamp.hub.claude.server import UdsServer
+from basecamp.hub.claude.store import SessionStore
 from basecamp.hub.frames import PROTOCOL_VERSION
-from basecamp.hub.server import UdsServer
-from basecamp.hub.store import Store
 
 
 class _ThreadedServer(UdsServer):
@@ -76,11 +76,11 @@ def test_health_ping_connection_error_is_unhealthy(monkeypatch: pytest.MonkeyPat
 
 
 @contextmanager
-def _running_daemon(tmp_path: Path) -> Iterator[tuple[DaemonPaths, Store]]:
-    uds_path = Path("/tmp") / f"basecamp-client-{os.getpid()}-{uuid.uuid4().hex[:8]}.sock"
+def _running_daemon(tmp_path: Path) -> Iterator[tuple[DaemonPaths, SessionStore]]:
+    uds_path = Path("/tmp") / f"basecamp-claude-{os.getpid()}-{uuid.uuid4().hex[:8]}.sock"
     uds_path.unlink(missing_ok=True)
-    store = Store(db_path=tmp_path / "daemon.db")
-    config = uvicorn.Config(app=create_app(store), uds=str(uds_path), log_level="error")
+    store = SessionStore(db_path=tmp_path / "sessions.db")
+    config = uvicorn.Config(app=create_claude_app(store), uds=str(uds_path), log_level="error")
     server = _ThreadedServer(config)
     thread = threading.Thread(target=server.run, daemon=True)
     thread.start()
@@ -93,7 +93,7 @@ def _running_daemon(tmp_path: Path) -> Iterator[tuple[DaemonPaths, Store]]:
             socket=uds_path,
             spawn_lock=tmp_path / "daemon.spawn.lock",
             pidfile=tmp_path / "daemon.pid",
-            db=tmp_path / "daemon.db",
+            db=tmp_path / "sessions.db",
         )
         yield paths, store
     finally:
@@ -115,10 +115,16 @@ def test_register_and_end_session_over_uds(tmp_path: Path) -> None:
         outcome = register_session(frame, paths=paths)
         assert outcome.status == 200
         assert outcome.body["status"] == "registered"
-        assert [row["id"] for row in store.list_open_sessions()] == ["sess-e2e"]
+        assert [row["session_id"] for row in store.list_open_sessions()] == ["sess-e2e"]
 
         assert end_session("sess-e2e", paths=paths) is True
         assert store.list_open_sessions() == []
+
+
+def test_socket_is_restricted_to_owner_only(tmp_path: Path) -> None:
+    with _running_daemon(tmp_path) as (paths, _store):
+        mode = paths.socket.stat().st_mode & 0o777
+        assert mode == 0o600
 
 
 def test_end_session_returns_false_when_daemon_absent(tmp_path: Path) -> None:
@@ -127,6 +133,6 @@ def test_end_session_returns_false_when_daemon_absent(tmp_path: Path) -> None:
         socket=tmp_path / "absent.sock",
         spawn_lock=tmp_path / "daemon.spawn.lock",
         pidfile=tmp_path / "daemon.pid",
-        db=tmp_path / "daemon.db",
+        db=tmp_path / "sessions.db",
     )
     assert end_session("sess-x", paths=paths) is False

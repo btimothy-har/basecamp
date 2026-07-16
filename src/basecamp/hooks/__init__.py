@@ -16,7 +16,7 @@ from collections.abc import Mapping, Sequence
 from datetime import UTC, datetime
 from typing import Any
 
-from basecamp.core.paths import swarm_runtime_dir
+from basecamp.hub.claude.paths import claude_runtime_dir
 
 from .session import handle_session_end, handle_session_start
 
@@ -51,7 +51,7 @@ def _read_payload() -> Mapping[str, Any]:
 
 def _log_failure(event: str) -> None:
     try:
-        log_path = swarm_runtime_dir() / "hooks.log"
+        log_path = claude_runtime_dir() / "hooks.log"
         log_path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
         stamp = datetime.now(UTC).isoformat()
         with log_path.open("a", encoding="utf-8") as handle:

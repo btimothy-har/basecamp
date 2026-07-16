@@ -1,13 +1,19 @@
-"""Daemon session-lifecycle HTTP route tests (register / end / list)."""
+"""Claude daemon HTTP route tests (health / register / end / list)."""
 
 from __future__ import annotations
 
 from pathlib import Path
 
-from app_helpers import _build_app_with_store
 from fastapi.testclient import TestClient
 
+from basecamp.hub.claude.app import create_claude_app
+from basecamp.hub.claude.store import SessionStore
 from basecamp.hub.frames import PROTOCOL_VERSION
+
+
+def _build(tmp_path: Path) -> tuple[TestClient, SessionStore]:
+    store = SessionStore(db_path=tmp_path / "sessions.db")
+    return TestClient(create_claude_app(store)), store
 
 
 def _register_body(node_id: str, **overrides: object) -> dict[str, object]:
@@ -26,10 +32,20 @@ def _register_body(node_id: str, **overrides: object) -> dict[str, object]:
     return body
 
 
-def test_register_then_end_round_trip(tmp_path: Path) -> None:
-    app, store = _build_app_with_store(tmp_path)
+def test_health_reports_protocol(tmp_path: Path) -> None:
+    client, _store = _build(tmp_path)
 
-    with TestClient(app) as client:
+    with client:
+        response = client.get("/health")
+
+    assert response.status_code == 200
+    assert response.json() == {"status": "ok", "protocol": PROTOCOL_VERSION}
+
+
+def test_register_then_end_round_trip(tmp_path: Path) -> None:
+    client, _store = _build(tmp_path)
+
+    with client:
         registered = client.post("/sessions", json=_register_body("session-1"))
         assert registered.status_code == 200
         assert registered.json() == {
@@ -40,7 +56,7 @@ def test_register_then_end_round_trip(tmp_path: Path) -> None:
 
         listed = client.get("/sessions")
         assert listed.status_code == 200
-        assert [row["id"] for row in listed.json()["sessions"]] == ["session-1"]
+        assert [row["session_id"] for row in listed.json()["sessions"]] == ["session-1"]
 
         ended = client.post("/sessions/session-1/end")
         assert ended.status_code == 200
@@ -51,9 +67,9 @@ def test_register_then_end_round_trip(tmp_path: Path) -> None:
 
 
 def test_register_persists_identity_facets(tmp_path: Path) -> None:
-    app, store = _build_app_with_store(tmp_path)
+    client, store = _build(tmp_path)
 
-    with TestClient(app) as client:
+    with client:
         response = client.post(
             "/sessions",
             json=_register_body(
@@ -68,56 +84,38 @@ def test_register_persists_identity_facets(tmp_path: Path) -> None:
         )
     assert response.status_code == 200
 
-    agent = store.get_agent("session-1")
-    assert agent is not None
-    assert agent["repo"] == "acme/widgets"
-    assert agent["worktree_label"] == "copilot/brave-otter-quill"
-    assert agent["session_file"] == "/transcripts/s1.jsonl"
-    assert agent["role"] == "worker"
+    rows = store.list_open_sessions()
+    assert len(rows) == 1
+    row = rows[0]
+    assert row["repo"] == "acme/widgets"
+    assert row["worktree_label"] == "copilot/brave-otter-quill"
+    assert row["transcript_path"] == "/transcripts/s1.jsonl"
+    assert row["role"] == "worker"
 
 
 def test_register_rejects_wrong_protocol_version(tmp_path: Path) -> None:
-    app, _store = _build_app_with_store(tmp_path)
+    client, _store = _build(tmp_path)
 
-    with TestClient(app) as client:
+    with client:
         response = client.post("/sessions", json=_register_body("session-1", v=999))
 
     assert response.status_code == 422
 
 
 def test_register_rejects_wrong_frame_type(tmp_path: Path) -> None:
-    app, _store = _build_app_with_store(tmp_path)
+    client, _store = _build(tmp_path)
 
-    with TestClient(app) as client:
+    with client:
         response = client.post("/sessions", json=_register_body("session-1", type="peer_message"))
 
     assert response.status_code == 422
 
 
 def test_end_unknown_session_reports_not_ended(tmp_path: Path) -> None:
-    app, _store = _build_app_with_store(tmp_path)
+    client, _store = _build(tmp_path)
 
-    with TestClient(app) as client:
+    with client:
         response = client.post("/sessions/ghost/end")
 
     assert response.status_code == 200
     assert response.json() == {"node_id": "ghost", "ended": False}
-
-
-def test_duplicate_handle_returns_conflict(tmp_path: Path) -> None:
-    app, store = _build_app_with_store(tmp_path)
-    store.upsert_agent(
-        agent_id="existing",
-        agent_handle="shared",
-        parent_id=None,
-        sibling_group=None,
-        depth=0,
-        role="agent",
-        session_name="existing",
-        cwd="/tmp/existing",
-    )
-
-    with TestClient(app) as client:
-        response = client.post("/sessions", json=_register_body("session-2", agent_handle="shared"))
-
-    assert response.status_code == 409

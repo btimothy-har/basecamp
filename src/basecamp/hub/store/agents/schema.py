@@ -29,8 +29,7 @@ class AgentsSchemaMixin:
                 model TEXT,
                 session_file TEXT,
                 repo TEXT,
-                worktree_label TEXT,
-                ended_at TEXT
+                worktree_label TEXT
             )
             """
         )
@@ -40,7 +39,6 @@ class AgentsSchemaMixin:
         self._ensure_agents_model_column(connection)
         self._ensure_agents_session_file_column(connection)
         self._ensure_agents_facet_columns(connection)
-        self._ensure_agents_ended_at_column(connection)
         self._migrate_agents_role_values(connection)
         self._drop_agents_retired_columns(connection)
 
@@ -113,27 +111,6 @@ class AgentsSchemaMixin:
             connection.execute("ALTER TABLE agents ADD COLUMN repo TEXT")
         if "worktree_label" not in names:
             connection.execute("ALTER TABLE agents ADD COLUMN worktree_label TEXT")
-
-    def _ensure_agents_ended_at_column(self, connection: sqlite3.Connection) -> None:
-        # ended_at is the durable session-liveness marker (NULL = open/live). It
-        # survives daemon restarts, unlike the in-memory WebSocket registry, which
-        # is what the hook-driven Claude Code session lifecycle relies on.
-        columns = connection.execute("PRAGMA table_info(agents)").fetchall()
-        names = {column[1] for column in columns}
-        if "ended_at" in names:
-            return
-        connection.execute("ALTER TABLE agents ADD COLUMN ended_at TEXT")
-        # Rows that predate this column predate the hook-driven session lifecycle,
-        # so none of them is a live hook session. Backfill them as already-ended so
-        # list_open_sessions (open == ended_at IS NULL) never reports stale
-        # pre-migration rows as live. A genuine resume re-registers, and
-        # upsert_agent resets ended_at to NULL. Runs only on the one migration that
-        # first adds the column (daemon start, before any connection), so it never
-        # clobbers a live session.
-        connection.execute(
-            "UPDATE agents SET ended_at = COALESCE(last_seen_at, created_at, ?)",
-            (self._now(),),
-        )
 
     def _migrate_agents_role_values(self, connection: sqlite3.Connection) -> None:
         """One-shot remap of legacy node-kind values: session->agent, agent->worker."""

@@ -9,10 +9,10 @@ from pathlib import Path
 
 import pytest
 
-from basecamp.hub.client.errors import DaemonProtocolMismatchError, DaemonUnavailableError
-from basecamp.hub.client.paths import DaemonPaths, daemon_paths
-from basecamp.hub.client.spawn import ensure_daemon
-from basecamp.hub.client.transport import HealthResult
+from basecamp.hub.claude.client.errors import DaemonProtocolMismatchError, DaemonUnavailableError
+from basecamp.hub.claude.client.paths import DaemonPaths, daemon_paths
+from basecamp.hub.claude.client.spawn import ensure_daemon
+from basecamp.hub.claude.client.transport import HealthResult
 
 PROTOCOL = 23
 

@@ -17,7 +17,7 @@ def _set_stdin(monkeypatch: pytest.MonkeyPatch, text: str) -> None:
 
 
 def _log_path(home: Path) -> Path:
-    return home / ".pi" / "basecamp" / "swarm" / "hooks.log"
+    return home / ".pi" / "basecamp" / "claude" / "hooks.log"
 
 
 # --- main() dispatch (fail-open) -------------------------------------------------

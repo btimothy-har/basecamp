@@ -25,7 +25,7 @@ import time
 from collections.abc import Callable
 from pathlib import Path
 
-from ..frames import PROTOCOL_VERSION
+from ...frames import PROTOCOL_VERSION
 from .errors import DaemonProtocolMismatchError, DaemonUnavailableError
 from .paths import DaemonPaths
 from .process import pid_alive, terminate_daemon

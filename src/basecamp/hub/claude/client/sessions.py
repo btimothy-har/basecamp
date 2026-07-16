@@ -13,7 +13,7 @@ from typing import Any
 
 import httpx
 
-from ..frames import RegisterFrame, serialize_frame
+from ...frames import RegisterFrame, serialize_frame
 from .paths import DaemonPaths, daemon_paths
 from .spawn import ensure_daemon
 from .transport import post_json
