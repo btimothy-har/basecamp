@@ -25,7 +25,7 @@ import time
 from collections.abc import Callable
 from pathlib import Path
 
-from ...frames import PROTOCOL_VERSION
+from ..contract import CLAUDE_PROTOCOL_VERSION
 from .errors import DaemonProtocolMismatchError, DaemonUnavailableError
 from .paths import DaemonPaths
 from .process import pid_alive, terminate_daemon
@@ -73,7 +73,7 @@ def default_spawn_daemon(paths: DaemonPaths) -> None:
 def ensure_daemon(
     paths: DaemonPaths,
     *,
-    protocol_version: int = PROTOCOL_VERSION,
+    protocol_version: int = CLAUDE_PROTOCOL_VERSION,
     ping: HealthPing = health_ping,
     spawn: SpawnDaemon = default_spawn_daemon,
     terminate: TerminateDaemon = terminate_daemon,

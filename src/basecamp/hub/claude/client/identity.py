@@ -1,11 +1,10 @@
-"""Derive a session's :class:`RegisterFrame` from hook stdin + environment.
+"""Derive a session's register body from hook stdin + environment.
 
-Mirrors the connector's ``identity.ts`` field-for-field, adapted to Claude Code:
-``node_id`` is the session id (``CLAUDE_CODE_SESSION_ID`` / hook stdin), and the
-env chain (``BASECAMP_*``) still drives role/depth/parent when a daemon-spawned
-worker sets it. ``repo`` falls back to a git-origin derivation so a plain
-``claude`` session — which has no launcher setting ``BASECAMP_REPO`` — is still
-identified by its canonical ``<org>/<name>``.
+The session's identity is the native ``session_id`` (from ``CLAUDE_CODE_SESSION_ID``
+/ hook stdin) — there is no ``BASECAMP_AGENT_ID`` indirection or worker re-keying
+on the Claude path (that was a Pi swarm concept). ``repo`` falls back to a
+git-origin derivation so a plain ``claude`` session — which has no launcher
+setting ``BASECAMP_REPO`` — is still identified by its canonical ``<org>/<name>``.
 """
 
 from __future__ import annotations
@@ -15,7 +14,7 @@ import re
 import subprocess
 from collections.abc import Mapping
 
-from ...frames import RegisterFrame
+from ..contract import SessionRegisterBody
 
 # Bounded so a slow/hung git never stacks toward the SessionStart hook timeout:
 # two sequential calls (origin + toplevel) plus ensure_daemon's 5s budget must
@@ -25,46 +24,27 @@ _GIT_TIMEOUT_S = 3
 _SSH_REMOTE = re.compile(r"^[^@]+@[^:]+:(?P<path>.+)$")
 
 
-def resolve_node_id(session_id: str, env: Mapping[str, str] | None = None) -> str:
-    """The daemon key for a session: ``BASECAMP_AGENT_ID`` if set, else the session id.
-
-    Single-sourced so the SessionStart register and the SessionEnd deregister key
-    the same row — a daemon-spawned worker whose ``BASECAMP_AGENT_ID`` differs from
-    the native session id must be *ended* under the same id it *registered* under.
-    """
-
-    environ = env if env is not None else os.environ
-    return _clean(environ.get("BASECAMP_AGENT_ID")) or session_id
-
-
-def build_register_frame(
+def build_register_body(
     *,
     session_id: str,
     cwd: str,
     transcript_path: str | None,
+    source: str | None = None,
     env: Mapping[str, str] | None = None,
-) -> RegisterFrame:
-    """Build the register frame for a Claude Code session."""
+) -> SessionRegisterBody:
+    """Build the register body for a Claude Code session."""
 
     environ = env if env is not None else os.environ
-    node_id = resolve_node_id(session_id, environ)
-    role = "worker" if environ.get("BASECAMP_USER_FACING") == "0" else "agent"
     repo = _clean(environ.get("BASECAMP_REPO")) or _derive_repo(cwd)
     worktree_label = _clean(environ.get("BASECAMP_WORKTREE_LABEL"))
-    session_name = _clean(environ.get("BASECAMP_SESSION_NAME")) or worktree_label or repo or _basename(cwd) or node_id
-    return RegisterFrame(
-        type="register",
-        role=role,
-        node_id=node_id,
-        agent_handle=None,
-        parent_id=_clean(environ.get("BASECAMP_PARENT_SESSION")),
-        sibling_group=_clean(environ.get("BASECAMP_SIBLING_GROUP")),
-        depth=_safe_depth(environ.get("BASECAMP_AGENT_DEPTH")),
-        session_name=session_name,
+    return SessionRegisterBody(
+        session_id=session_id,
         cwd=cwd,
-        session_file=transcript_path or None,
+        transcript_path=transcript_path or None,
         repo=repo,
         worktree_label=worktree_label,
+        handle=None,
+        source=source,
     )
 
 
@@ -77,14 +57,6 @@ def _clean(value: str | None) -> str | None:
 
 def _basename(path: str) -> str | None:
     return os.path.basename(path.rstrip("/")) or None
-
-
-def _safe_depth(raw: str | None) -> int:
-    try:
-        depth = int(raw) if raw is not None else 0
-    except ValueError:
-        return 0
-    return depth if depth >= 0 else 0
 
 
 def _derive_repo(cwd: str) -> str | None:

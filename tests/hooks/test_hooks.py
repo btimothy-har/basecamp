@@ -82,19 +82,21 @@ def test_malformed_json_is_swallowed_and_handler_not_reached(monkeypatch: pytest
 
 
 def test_session_start_registers_valid_session(monkeypatch: pytest.MonkeyPatch) -> None:
-    frames = []
-    monkeypatch.setattr(session_mod, "register_session", frames.append)
+    bodies = []
+    monkeypatch.setattr(session_mod, "register_session", bodies.append)
 
     session_mod.handle_session_start(
-        {"session_id": "s1", "cwd": "/work", "transcript_path": "/t.jsonl"},
+        {"session_id": "s1", "cwd": "/work", "transcript_path": "/t.jsonl", "source": "startup"},
         env={"BASECAMP_REPO": "acme/widgets"},
     )
 
-    assert len(frames) == 1
-    assert frames[0].node_id == "s1"
-    assert frames[0].cwd == "/work"
-    assert frames[0].session_file == "/t.jsonl"
-    assert frames[0].repo == "acme/widgets"
+    assert len(bodies) == 1
+    body = bodies[0]
+    assert body.session_id == "s1"
+    assert body.cwd == "/work"
+    assert body.transcript_path == "/t.jsonl"
+    assert body.repo == "acme/widgets"
+    assert body.source == "startup"
 
 
 def test_session_start_skips_subagent(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -117,62 +119,41 @@ def test_session_start_skips_missing_session_id(monkeypatch: pytest.MonkeyPatch)
     assert called == []
 
 
-def test_session_end_marks_ended(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_session_end_closes_the_current_episode(monkeypatch: pytest.MonkeyPatch) -> None:
     ended = []
-    monkeypatch.setattr(session_mod, "end_session", ended.append)
+    monkeypatch.setattr(session_mod, "end_session", lambda sid, *, reason=None: ended.append((sid, reason)))
 
-    session_mod.handle_session_end({"session_id": "s1"}, env={})
+    session_mod.handle_session_end({"session_id": "s1", "reason": "logout"})
 
-    assert ended == ["s1"]
+    assert ended == [("s1", "logout")]
 
 
 @pytest.mark.parametrize("reason", ["clear", "resume"])
-def test_session_end_skips_continuation_reasons(monkeypatch: pytest.MonkeyPatch, reason: str) -> None:
-    # /clear and resume keep the same session_id running — do not mark ended.
+def test_session_end_closes_episode_even_on_continuation_reasons(monkeypatch: pytest.MonkeyPatch, reason: str) -> None:
+    # /clear and resume are no longer skipped: each fires a SessionEnd that closes
+    # the current episode, and the paired SessionStart opens the next one.
     ended = []
-    monkeypatch.setattr(session_mod, "end_session", ended.append)
+    monkeypatch.setattr(session_mod, "end_session", lambda sid, *, reason=None: ended.append((sid, reason)))
 
-    session_mod.handle_session_end({"session_id": "s1", "reason": reason}, env={})
+    session_mod.handle_session_end({"session_id": "s1", "reason": reason})
 
-    assert ended == []
+    assert ended == [("s1", reason)]
 
 
-@pytest.mark.parametrize("reason", ["logout", "prompt_input_exit", "bypass_permissions_disabled", "other"])
-def test_session_end_marks_ended_on_termination_reasons(monkeypatch: pytest.MonkeyPatch, reason: str) -> None:
+def test_session_end_threads_absent_reason_as_none(monkeypatch: pytest.MonkeyPatch) -> None:
     ended = []
-    monkeypatch.setattr(session_mod, "end_session", ended.append)
+    monkeypatch.setattr(session_mod, "end_session", lambda sid, *, reason=None: ended.append((sid, reason)))
 
-    session_mod.handle_session_end({"session_id": "s1", "reason": reason}, env={})
+    session_mod.handle_session_end({"session_id": "s1"})
 
-    assert ended == ["s1"]
-
-
-def test_session_end_marks_ended_when_reason_absent(monkeypatch: pytest.MonkeyPatch) -> None:
-    # Unknown/absent reason defaults to termination so a session never leaks open.
-    ended = []
-    monkeypatch.setattr(session_mod, "end_session", ended.append)
-
-    session_mod.handle_session_end({"session_id": "s1"}, env={})
-
-    assert ended == ["s1"]
-
-
-def test_session_end_keys_on_agent_id_when_set(monkeypatch: pytest.MonkeyPatch) -> None:
-    # A daemon-spawned worker registers under BASECAMP_AGENT_ID, so it must be
-    # ended under the same key — not the native session id.
-    ended = []
-    monkeypatch.setattr(session_mod, "end_session", ended.append)
-
-    session_mod.handle_session_end({"session_id": "s1"}, env={"BASECAMP_AGENT_ID": "node-9"})
-
-    assert ended == ["node-9"]
+    assert ended == [("s1", None)]
 
 
 def test_session_end_skips_missing_session_id(monkeypatch: pytest.MonkeyPatch) -> None:
     ended = []
-    monkeypatch.setattr(session_mod, "end_session", ended.append)
+    monkeypatch.setattr(session_mod, "end_session", lambda sid, *, reason=None: ended.append((sid, reason)))
 
-    session_mod.handle_session_end({}, env={})
-    session_mod.handle_session_end({"session_id": ""}, env={})
+    session_mod.handle_session_end({})
+    session_mod.handle_session_end({"session_id": ""})
 
     assert ended == []

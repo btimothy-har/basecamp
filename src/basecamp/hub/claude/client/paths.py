@@ -12,9 +12,9 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from ..paths import (
+    claude_daemon_db_path,
     claude_pidfile_path,
     claude_runtime_dir,
-    claude_sessions_db_path,
     claude_socket_path,
     claude_spawn_lock_path,
 )
@@ -39,5 +39,5 @@ def daemon_paths(home: Path | None = None) -> DaemonPaths:
         socket=claude_socket_path(home),
         spawn_lock=claude_spawn_lock_path(home),
         pidfile=claude_pidfile_path(home),
-        db=claude_sessions_db_path(home),
+        db=claude_daemon_db_path(home),
     )
