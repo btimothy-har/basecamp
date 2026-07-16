@@ -107,3 +107,19 @@ def test_empty_file_yields_no_nodes(tmp_path: Path) -> None:
     path = _write(tmp_path / "t.jsonl")
 
     assert parse_transcript(path) == []
+
+
+def test_invalid_utf8_line_is_skipped_and_good_prefix_kept(tmp_path: Path) -> None:
+    # A line truncated mid-multibyte character (the mid-write case PreCompact reads)
+    # is invalid UTF-8. Strict decoding would raise UnicodeDecodeError from the file
+    # iterator and lose every already-parsed node; replacement decoding must skip only
+    # the bad line and keep the good prefix (and any good lines after it).
+    good_before = json.dumps({"uuid": "a", "type": "user"}).encode("utf-8")
+    good_after = json.dumps({"uuid": "b", "type": "assistant"}).encode("utf-8")
+    truncated_multibyte = b'{"uuid":"bad","note":"\xe2\x82'  # '\xe2\x82' starts € but is cut off
+    path = tmp_path / "t.jsonl"
+    path.write_bytes(good_before + b"\n" + truncated_multibyte + b"\n" + good_after + b"\n")
+
+    nodes = parse_transcript(path)
+
+    assert [n["uuid"] for n in nodes] == ["a", "b"]

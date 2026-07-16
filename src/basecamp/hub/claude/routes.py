@@ -69,7 +69,19 @@ def register_claude_routes(
 
     @app.post("/sessions/{session_id}/end")
     async def end_session(session_id: str, body: SessionEndBody) -> dict[str, Any]:
-        ended = await asyncio.to_thread(store.close_episode, session_id=session_id, reason=body.reason)
+        # ``close_episode`` is a write, and the SessionEnd hook fires the (backgrounded)
+        # sidecar-sweep ingest immediately before this /end. Under WAL readers no longer
+        # block, but SQLite is still single-writer, so this UPDATE can wait behind the
+        # in-flight ingest write up to ``busy_timeout`` and then raise. Unguarded that is
+        # a 500 the fail-open client reads as ``ended: false`` — and unlike a delayed
+        # ingest the episode's ``end_reason`` is then lost for good (the next
+        # ``open_episode`` force-closes it with a NULL reason). Degrade explicitly, the
+        # same way /ingest does, rather than surfacing an unhandled error.
+        try:
+            ended = await asyncio.to_thread(store.close_episode, session_id=session_id, reason=body.reason)
+        except sqlite3.OperationalError:
+            logger.warning("session end not recorded: store busy closing episode for %s", session_id)
+            return {"session_id": session_id, "ended": False, "reason": "store busy"}
         return {"session_id": session_id, "ended": ended}
 
     @app.post("/sessions/{session_id}/ingest")

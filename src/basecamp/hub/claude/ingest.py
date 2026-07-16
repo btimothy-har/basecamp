@@ -129,7 +129,12 @@ def _ingest_file(
         return 0
     try:
         nodes = parse_transcript(path)
-    except OSError as exc:
+    except (OSError, ValueError) as exc:
+        # OSError: the file went unreadable between the is_file() check and the read.
+        # ValueError: a parse-time error the resilient parser could not itself absorb
+        # (e.g. a decode failure). Either way one bad file must degrade to 0 and never
+        # propagate — otherwise it would abort a SessionEnd sweep mid-loop, silently
+        # dropping every remaining sidecar. Keeps the "read independently" contract true.
         logger.warning("transcript ingest failed to read %s: %s", path, exc)
         return 0
     return store.record_nodes(

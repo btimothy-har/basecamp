@@ -9,6 +9,7 @@ import pytest
 
 from basecamp.hub.claude.ingest import IngestScheduler, ingest_session
 from basecamp.hub.claude.store import SessionStore
+from basecamp.hub.claude.transcript import parse_transcript
 
 
 def _transcript(path: Path, *uuids: str) -> Path:
@@ -133,6 +134,44 @@ def test_ingest_session_sweep_skips_already_stored_sidecar(tmp_path: Path) -> No
 
     assert swept == 1  # only the main file's node was new
     assert store.count_transcript_nodes("s1") == 3
+
+
+def test_ingest_session_sweep_survives_a_corrupt_main_file(tmp_path: Path) -> None:
+    # A main file whose tail is truncated mid-multibyte character (invalid UTF-8) must
+    # not abort the sweep: the good prefix is stored and every sidecar is still ingested.
+    store = SessionStore(db_path=tmp_path / "daemon.db")
+    main = tmp_path / "t.jsonl"
+    good = json.dumps({"uuid": "m1", "type": "user"}).encode("utf-8")
+    main.write_bytes(good + b"\n" + b'{"uuid":"m2","x":"\xe2\x82' + b"\n")  # good line + truncated tail
+    _sidecar(main, "alpha", "x1", tool_use_id="toolu_alpha")
+
+    count = ingest_session(store, session_id="s1", transcript_path=str(main), episode_id="e1", sweep_sidecars=True)
+
+    assert count == 2  # m1 (good) + x1 (sidecar); the corrupt m2 line is skipped
+    assert store.has_agent_nodes("s1", "alpha") is True
+
+
+def test_ingest_session_sweep_survives_a_parse_error_in_the_main_file(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Defense in depth: even a hard parse-time error on one file degrades to 0 rather
+    # than propagating out of the sweep loop and dropping every remaining sidecar.
+    store = SessionStore(db_path=tmp_path / "daemon.db")
+    main = _transcript(tmp_path / "t.jsonl", "m1")
+    _sidecar(main, "alpha", "x1", tool_use_id="toolu_alpha")
+
+    def _raise_on_main(path: Path) -> list[dict[str, object]]:
+        if path.name == "t.jsonl":
+            msg = "unabsorbed parse error"
+            raise ValueError(msg)
+        return parse_transcript(path)
+
+    monkeypatch.setattr("basecamp.hub.claude.ingest.parse_transcript", _raise_on_main)
+
+    count = ingest_session(store, session_id="s1", transcript_path=str(main), episode_id="e1", sweep_sidecars=True)
+
+    assert count == 1  # main parse blew up (0) but the sweep still reached the sidecar
+    assert store.has_agent_nodes("s1", "alpha") is True
 
 
 def test_ingest_session_no_main_path_no_sidecar_returns_zero(tmp_path: Path) -> None:

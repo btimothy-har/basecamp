@@ -16,8 +16,9 @@ stored verbatim in ``line_json``; only the handful of fields the store routes on
 ``isSidechain``, ``timestamp``) are lifted out. ``seq`` is the physical line index
 so original file order survives even though reconstruction walks ``parentUuid``.
 
-Parsing is line-by-line and lenient: a blank, malformed, or non-object line is
-skipped (best-effort), never fatal — a corrupt tail must not lose the good prefix.
+Parsing is line-by-line and lenient: a blank, malformed, non-object, or
+invalid-UTF-8 line is skipped (best-effort), never fatal — a corrupt tail must not
+lose the good prefix.
 """
 
 from __future__ import annotations
@@ -38,7 +39,16 @@ def parse_transcript(path: Path) -> list[dict[str, Any]]:
 
 
 def _iter_nodes(path: Path) -> Iterator[dict[str, Any]]:
-    with path.open("r", encoding="utf-8") as handle:
+    # ``errors="replace"`` is what makes the "corrupt tail must not lose the good
+    # prefix" guarantee real. A transcript whose tail is a line truncated mid-
+    # multibyte character — the exact mid-write state PreCompact/SessionEnd can read —
+    # is invalid UTF-8; strict decoding would raise UnicodeDecodeError *from this
+    # iterator* (a ValueError, not the OSError the caller guards), aborting the whole
+    # parse and discarding every already-parsed node. With replacement the bad bytes
+    # become U+FFFD, so the offending line simply fails ``json.loads`` and is skipped
+    # like any other malformed line, and U+FFFD (unlike surrogateescape) re-encodes to
+    # UTF-8 cleanly, so a partially-corrupt line we do keep is still safe to store.
+    with path.open("r", encoding="utf-8", errors="replace") as handle:
         for index, line in enumerate(handle):
             node = _parse_line(line, index)
             if node is not None:

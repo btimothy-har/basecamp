@@ -215,6 +215,26 @@ def test_ingest_returns_not_scheduled_when_the_store_is_busy(tmp_path: Path, mon
     assert calls == []
 
 
+def test_end_returns_not_ended_when_the_store_is_busy(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    # SessionEnd fires the backgrounded sweep ingest immediately before /end, so
+    # close_episode's write can wait behind that ingest write past busy_timeout and
+    # raise. The route degrades to an explicit not-ended reply, never an unhandled 500
+    # the fail-open client would misread (silently losing the episode's end_reason).
+    client, store, _calls = _build_with_recorder(tmp_path)
+
+    def _boom(**_kwargs: object) -> object:
+        msg = "database is locked"
+        raise sqlite3.OperationalError(msg)
+
+    with client:
+        client.post("/sessions", json=_register_body("session-1", source="startup"))
+        monkeypatch.setattr(store, "close_episode", _boom)
+        response = client.post("/sessions/session-1/end", json={"reason": "logout"})
+
+    assert response.status_code == 200
+    assert response.json() == {"session_id": "session-1", "ended": False, "reason": "store busy"}
+
+
 def test_ingest_without_a_known_path_is_not_scheduled(tmp_path: Path) -> None:
     client, _store, calls = _build_with_recorder(tmp_path)
 
